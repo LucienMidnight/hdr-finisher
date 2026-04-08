@@ -18,9 +18,20 @@ class PreviewKind(str, Enum):
     SDR = "sdr"
 
 
+class ScopeMode(str, Enum):
+    HISTOGRAM = "histogram"
+    WAVEFORM = "waveform"
+
+
 class ToneMapper(str, Enum):
     ACES = "aces"
     REINHARD = "reinhard"
+
+
+class OverlayMode(str, Enum):
+    OFF = "off"
+    FALSE_COLOR = "false_color"
+    ZEBRA = "zebra"
 
 
 class CapabilityStatus(str, Enum):
@@ -45,6 +56,8 @@ class SourceImageDescriptor(BaseModel):
     working_space: str = "ACEScg"
     source_color_space: str | None = None
     transfer_function: str | None = None
+    interpretation_mode: str = "auto"
+    color_space_confident: bool = True
 
 
 class MetadataPayload(BaseModel):
@@ -85,6 +98,10 @@ class SDRAdjustments(BaseModel):
 class SharedAdjustments(BaseModel):
     active_focus: PreviewKind = PreviewKind.HDR
     curves_enabled: bool = False
+    overlay_mode: OverlayMode = OverlayMode.OFF
+    overlay_preset: str = "web_1000_100"
+    overlay_opacity: float = 0.72
+    overlay_threshold: float = 1.0
     luma_curve: list[list[float]] = Field(
         default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
     )
@@ -137,10 +154,26 @@ class PreviewRequest(BaseModel):
 class HistogramChannel(BaseModel):
     name: str
     bins: list[int]
+    grid: list[list[int]] = Field(default_factory=list)
+
+
+class ScopeGuide(BaseModel):
+    value: float
+    label: str
+
+
+class ScopeStat(BaseModel):
+    label: str
+    value: str
 
 
 class ScopeResponse(BaseModel):
     preview_kind: PreviewKind
+    scope_type: str = "histogram"
+    x_axis: str = "normalized"
+    bin_edges: list[float] = Field(default_factory=list)
+    guides: list[ScopeGuide] = Field(default_factory=list)
+    stats: list[ScopeStat] = Field(default_factory=list)
     channels: list[HistogramChannel]
 
 

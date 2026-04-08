@@ -75,7 +75,71 @@ def test_real_png_upload_preview_and_scopes() -> None:
     assert scopes.status_code == 200
     payload = scopes.json()
     assert payload["preview_kind"] == "hdr"
-    assert len(payload["channels"]) == 3
+    assert len(payload["channels"]) == 4
+    assert payload["scope_type"] == "reference_nits_histogram"
+    assert payload["x_axis"] == "reference_nits_log10"
+    assert len(payload["stats"]) >= 3
+
+    waveform = client.get(f"/api/session/{session_id}/scopes?kind=hdr&mode=waveform")
+    assert waveform.status_code == 200
+    waveform_payload = waveform.json()
+    assert waveform_payload["scope_type"] == "reference_nits_waveform"
+    assert len(waveform_payload["channels"][0]["grid"]) == 64
+
+
+def test_overlay_endpoint_returns_png_when_enabled() -> None:
+    upload = client.post("/api/session", files={"file": ("fixture.png", make_png_bytes(), "image/png")})
+    assert upload.status_code == 200
+    session_id = upload.json()["session"]["session_id"]
+
+    overlay = client.post(
+        f"/api/session/{session_id}/overlay/sdr",
+        json={
+            "adjustments": {
+                "hdr": {"exposure": 0, "highlight_rolloff": 0.25, "shadow_lift": 0, "white_balance_kelvin": 6500, "tint": 0},
+                "sdr": {"exposure": 0, "highlight_recovery": 0.25, "shadow": 0, "contrast": 0, "tone_mapper": "aces"},
+                "shared": {
+                    "active_focus": "sdr",
+                    "curves_enabled": False,
+                    "overlay_mode": "zebra",
+                    "overlay_opacity": 0.72,
+                    "overlay_threshold": 0.2,
+                },
+            }
+        },
+    )
+    assert overlay.status_code == 200
+    assert overlay.headers["content-type"] == "image/png"
+
+
+def test_real_exr_upload_preview_and_scopes() -> None:
+    exr_path = Path(__file__).resolve().parent / "fixtures" / "linear_unconfirmed.exr"
+    upload = client.post(
+        "/api/session",
+        files={"file": ("linear_unconfirmed.exr", exr_path.read_bytes(), "image/x-exr")},
+    )
+    assert upload.status_code == 200
+    payload = upload.json()
+    session_id = payload["session"]["session_id"]
+    assert payload["session"]["source"]["suffix"] == ".exr"
+    assert payload["session"]["analysis"]["classification"] == "HDR_LINEAR_UNCONFIRMED"
+
+    preview = client.post(
+        f"/api/session/{session_id}/preview/hdr",
+        json={
+            "adjustments": {
+                "hdr": {"exposure": 0, "highlight_rolloff": 0.25, "shadow_lift": 0, "white_balance_kelvin": 6500, "tint": 0},
+                "sdr": {"exposure": 0, "highlight_recovery": 0.25, "shadow": 0, "contrast": 0, "tone_mapper": "aces"},
+                "shared": {"active_focus": "hdr", "curves_enabled": False},
+            }
+        },
+    )
+    assert preview.status_code == 200
+
+    scopes = client.get(f"/api/session/{session_id}/scopes?kind=hdr&mode=waveform")
+    assert scopes.status_code == 200
+    scope_payload = scopes.json()
+    assert scope_payload["scope_type"] == "reference_nits_waveform"
 
 
 def test_interpretation_endpoint_returns_updated_session(monkeypatch) -> None:

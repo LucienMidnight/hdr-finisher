@@ -13,9 +13,10 @@ from .capabilities import probe_capabilities
 from .config import APP_NAME, APP_VERSION, DEFAULT_HOST, DEFAULT_PORT, FRONTEND_DIR, SAMPLES_DIR
 from .exporters import build_export_backends
 from .loader import LoaderError
-from .models import ExportSettings, PreviewKind, PreviewRequest, SessionSummary, SourceInterpretationOverride
+from .models import ExportSettings, PreviewKind, PreviewRequest, ScopeMode, SessionSummary, SourceInterpretationOverride
+from .overlay import render_overlay_bytes
 from .preview import render_preview_bytes
-from .scopes import build_histogram
+from .scopes import build_scope
 from .sessions import SessionStore
 
 
@@ -110,13 +111,36 @@ def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
     return Response(content=body, media_type=media_type)
 
 
+@app.post("/api/session/{session_id}/overlay/{kind}")
+def overlay(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Response:
+    try:
+        session = store.update_adjustments(session_id, request.adjustments)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    if request.adjustments.shared.overlay_mode == "off":
+        return Response(status_code=204)
+
+    try:
+        body, media_type = render_overlay_bytes(
+            session.image,
+            request.adjustments,
+            kind,
+            session.preview.long_edge,
+            sdr_reference_image=session.sdr_reference_image,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return Response(content=body, media_type=media_type)
+
+
 @app.get("/api/session/{session_id}/scopes")
-def scopes(session_id: str, kind: PreviewKind = PreviewKind.HDR):
+def scopes(session_id: str, kind: PreviewKind = PreviewKind.HDR, mode: ScopeMode = ScopeMode.HISTOGRAM):
     try:
         session = store.get(session_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return build_histogram(session.image, session.adjustments, kind, sdr_reference_image=session.sdr_reference_image)
+    return build_scope(session.image, session.adjustments, kind, mode, sdr_reference_image=session.sdr_reference_image)
 
 
 @app.post("/api/session/{session_id}/export")

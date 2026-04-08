@@ -13,7 +13,7 @@ def classify_hdr(image: np.ndarray, metadata: dict[str, Any], suffix: str) -> HD
     transfer = detect_transfer_function(metadata, suffix)
     linear_hint = transfer == "LINEAR"
     encoded_hint = transfer in {"PQ", "HLG"}
-    needs_override = False
+    needs_override = bool(metadata.get("needs_color_override"))
     heif_aux_types = metadata.get("heif_aux_types") or []
     gainmap_applied = bool(metadata.get("apple_hdr_gainmap_applied"))
 
@@ -30,6 +30,8 @@ def classify_hdr(image: np.ndarray, metadata: dict[str, Any], suffix: str) -> HD
     elif peak > 1.0:
         classification = HDRClassification.HDR_TRUE
         badge = f"True HDR detected, peak {compute_peak_stops(image):.2f} stops above diffuse white."
+        if needs_override:
+            badge += " Source color space is ambiguous; review source settings."
     elif encoded_hint:
         classification = HDRClassification.HDR_ENCODED
         badge = f"HDR encoded input detected via {transfer} metadata, peak linear value {peak:.3f}."

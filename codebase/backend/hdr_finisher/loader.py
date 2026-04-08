@@ -7,7 +7,7 @@ from io import BytesIO
 import numpy as np
 
 from .analysis import classify_hdr
-from .color import detect_transfer_function, normalize_to_acescg
+from .color import detect_color_space, detect_transfer_function, normalize_to_acescg
 from .models import SourceImageDescriptor
 
 
@@ -46,7 +46,10 @@ def load_image(
             metadata[key] = overrides[key]
     if overrides:
         metadata["user_override"] = {key: value for key, value in overrides.items() if value is not None}
+        if metadata["user_override"]:
+            metadata["needs_color_override"] = False
 
+    metadata["color_space"] = detect_color_space(metadata, suffix)
     metadata["transfer_function"] = metadata.get("transfer_function") or detect_transfer_function(metadata, suffix)
     sdr_reference_image = metadata.pop("sdr_reference_image", None)
     normalized = normalize_to_acescg(image, metadata.get("color_space"), metadata.get("transfer_function"))
@@ -59,6 +62,8 @@ def load_image(
         dtype=str(normalized.dtype),
         source_color_space=metadata.get("color_space"),
         transfer_function=metadata.get("transfer_function"),
+        interpretation_mode="manual" if metadata.get("user_override") else "auto",
+        color_space_confident=not bool(metadata.get("needs_color_override")),
     )
     analysis = classify_hdr(normalized, metadata, suffix)
     return normalized, descriptor, metadata, analysis, sdr_reference_image
@@ -125,12 +130,18 @@ def _load_exr(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
         channel = np.frombuffer(file.channel(name, float_type), dtype=np.float32)
         channels.append(channel.reshape(height, width))
     image = np.stack(channels, axis=-1)
+    chromaticities_name, chromaticities_raw, chromaticities_confident = _infer_exr_chromaticities(header.get("chromaticities"))
     metadata = {
         "bit_depth": "32f",
-        "color_space": str(header.get("chromaticities", "ACEScg")),
+        "color_space": chromaticities_name,
         "transfer_function": "LINEAR",
         "header_keys": [str(key) for key in header.keys()],
+        "chromaticities_name": chromaticities_name,
+        "chromaticities_raw": chromaticities_raw,
+        "needs_color_override": not chromaticities_confident,
     }
+    if not chromaticities_confident:
+        metadata["color_space_note"] = "EXR chromaticities missing or ambiguous. Manual source interpretation is recommended."
     return image, metadata
 
 
@@ -337,3 +348,67 @@ def _compute_apple_headroom(maker33: float, maker48: float) -> float:
         else:
             stops = -0.303 * maker48 + 2.303
     return float(2.0 ** max(stops, 0.0))
+
+
+def _infer_exr_chromaticities(value: Any) -> tuple[str | None, dict[str, tuple[float, float]] | None, bool]:
+    raw = _read_exr_chromaticities(value)
+    if raw is None:
+        return None, None, False
+
+    known = {
+        "ACEScg": {
+            "red": (0.713, 0.293),
+            "green": (0.165, 0.830),
+            "blue": (0.128, 0.044),
+            "white": (0.32168, 0.33767),
+        },
+        "BT.2020": {
+            "red": (0.708, 0.292),
+            "green": (0.170, 0.797),
+            "blue": (0.131, 0.046),
+            "white": (0.3127, 0.3290),
+        },
+        "sRGB": {
+            "red": (0.640, 0.330),
+            "green": (0.300, 0.600),
+            "blue": (0.150, 0.060),
+            "white": (0.3127, 0.3290),
+        },
+        "Display P3": {
+            "red": (0.680, 0.320),
+            "green": (0.265, 0.690),
+            "blue": (0.150, 0.060),
+            "white": (0.3127, 0.3290),
+        },
+    }
+
+    best_name = None
+    best_error = float("inf")
+    for name, reference in known.items():
+        error = sum(
+            abs(raw[key][0] - reference[key][0]) + abs(raw[key][1] - reference[key][1])
+            for key in ("red", "green", "blue", "white")
+        )
+        if error < best_error:
+            best_error = error
+            best_name = name
+
+    return best_name, raw, best_error < 0.08
+
+
+def _read_exr_chromaticities(value: Any) -> dict[str, tuple[float, float]] | None:
+    if value is None:
+        return None
+    try:
+        red = getattr(value, "red")
+        green = getattr(value, "green")
+        blue = getattr(value, "blue")
+        white = getattr(value, "white")
+        return {
+            "red": (float(red.x), float(red.y)),
+            "green": (float(green.x), float(green.y)),
+            "blue": (float(blue.x), float(blue.y)),
+            "white": (float(white.x), float(white.y)),
+        }
+    except Exception:
+        return None

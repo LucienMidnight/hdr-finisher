@@ -31,6 +31,29 @@ def detect_transfer_function(metadata: dict[str, Any], suffix: str) -> str | Non
     return None
 
 
+def detect_color_space(metadata: dict[str, Any], suffix: str) -> str | None:
+    explicit = metadata.get("color_space")
+    if explicit and str(explicit).strip().lower() not in {"unknown", "none", ""}:
+        return str(explicit)
+
+    chromaticities_name = metadata.get("chromaticities_name")
+    if chromaticities_name:
+        return str(chromaticities_name)
+
+    text = " ".join(str(value).lower() for value in metadata.values() if value is not None)
+    if "acescg" in text:
+        return "ACEScg"
+    if "rec.2020" in text or "bt.2020" in text or "bt2020" in text:
+        return "BT.2020"
+    if "display p3" in text:
+        return "Display P3"
+    if "srgb" in text or "rec.709" in text or "bt.709" in text or "scene-linear" in text:
+        return "sRGB"
+    if suffix == ".exr":
+        return None
+    return "sRGB"
+
+
 def normalize_to_acescg(image: np.ndarray, source_color_space: str | None = None, transfer_function: str | None = None) -> np.ndarray:
     sanitized = sanitize_array(image)
     transfer = _canonical_transfer_function(transfer_function)
@@ -86,6 +109,10 @@ def _canonical_colourspace(value: str | None, transfer: str | None) -> str:
         return SRGB_COLOURSPACE
 
     text = str(value).strip().lower()
+    if "scene-linear rec.2020" in text or "linear rec.2020" in text:
+        return BT2020_COLOURSPACE
+    if "scene-linear srgb" in text or "linear srgb" in text or "linear rec.709" in text or "scene-linear rec.709" in text:
+        return SRGB_COLOURSPACE
     if "acescg" in text:
         return ACESCG_COLOURSPACE
     if "aces2065" in text or "ap0" in text:

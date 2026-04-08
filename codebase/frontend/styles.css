@@ -27,15 +27,31 @@ body {
     linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 18%),
     linear-gradient(135deg, rgba(255, 255, 255, 0.015), transparent 42%),
     var(--bg);
+  overflow-x: auto;
 }
 
 .app-shell {
   display: grid;
-  grid-template-columns: clamp(272px, 18vw, 320px) minmax(560px, 1fr) clamp(320px, 22vw, 390px);
+  width: min(1760px, calc(100vw - 120px));
+  max-width: min(1760px, calc(100vw - 120px));
+  grid-template-columns: minmax(220px, 250px) minmax(0, 1fr) minmax(336px, 384px);
   height: 100vh;
-  gap: 18px;
-  padding: 18px;
+  gap: 14px;
+  padding: 14px 18px 14px 14px;
+  margin: 0 auto;
   overflow: hidden;
+}
+
+.inspector {
+  grid-column: 1;
+}
+
+.workspace-main {
+  grid-column: 2;
+}
+
+.right-rail {
+  grid-column: 3;
 }
 
 .panel,
@@ -75,7 +91,7 @@ body {
 
 .inspector,
 .right-rail {
-  padding: 16px 14px;
+  padding: 16px;
   display: grid;
   align-content: start;
   gap: 14px;
@@ -94,7 +110,8 @@ body {
 
 .right-rail {
   overflow-y: auto;
-  scrollbar-gutter: stable both-edges;
+  scrollbar-gutter: stable;
+  min-width: 0;
 }
 
 .workspace-main {
@@ -189,9 +206,23 @@ label,
 .section-panel,
 .control-card,
 .preview-readout {
+  position: relative;
   padding: 12px;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid var(--border-soft);
+  min-width: 0;
+}
+
+.control-card.frame-corners::before,
+.control-card.frame-corners::after,
+.section-panel.frame-corners::before,
+.section-panel.frame-corners::after {
+  content: none;
+}
+
+.right-rail.frame-corners::before,
+.right-rail.frame-corners::after {
+  content: none;
 }
 
 .section-heading,
@@ -213,7 +244,7 @@ label,
 }
 
 .right-rail::-webkit-scrollbar {
-  width: 12px;
+  width: 9px;
 }
 
 .right-rail::-webkit-scrollbar-track {
@@ -226,7 +257,7 @@ label,
 .right-rail::-webkit-scrollbar-thumb {
   background:
     linear-gradient(180deg, #f1eee5, #cbc6b6);
-  border: 2px solid #151515;
+  border: 1px solid #151515;
   border-radius: 0;
   box-shadow: inset 0 0 0 1px rgba(17, 17, 17, 0.35);
 }
@@ -265,6 +296,11 @@ label,
   gap: 10px;
   background: rgba(239, 187, 85, 0.08);
   color: #ffe4a8;
+}
+
+#source-settings-panel {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
 }
 
 .hidden {
@@ -374,7 +410,7 @@ label,
   align-items: center;
   justify-content: center;
   min-height: 0;
-  margin: 16px;
+  margin: 18px;
   padding: clamp(18px, 4.5%, 34px);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 25%),
@@ -401,6 +437,15 @@ label,
   height: auto;
   object-fit: contain;
   display: none;
+}
+
+#preview-overlay {
+  position: absolute;
+  inset: auto;
+  display: none;
+  pointer-events: none;
+  image-rendering: auto;
+  filter: saturate(1.04);
 }
 
 .empty-state {
@@ -452,14 +497,16 @@ label,
 
 .right-rail {
   grid-template-rows: auto auto auto;
-  padding-right: 12px;
+  padding-right: 20px;
 }
 
 .rail-heading-row {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: flex-start;
+  flex-wrap: wrap;
   gap: 12px;
+  min-width: 0;
 }
 
 label {
@@ -472,17 +519,30 @@ label {
 }
 
 input[type="range"],
+input[type="text"],
 select {
   width: 100%;
   accent-color: #e7e3d7;
 }
 
-select {
+select,
+input[type="text"] {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 0;
   background: #121212;
   color: var(--text);
+}
+
+.scope-mode-select {
+  width: auto;
+  min-width: 0;
+  flex: 1 1 124px;
+  padding: 6px 10px;
+  font-family: "Consolas", "Lucida Console", monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .toggle-row {
@@ -492,10 +552,59 @@ select {
   gap: 12px;
 }
 
+.field-inline {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+}
+
 .toggle-row input[type="checkbox"] {
   width: 18px;
   height: 18px;
   accent-color: #ece9df;
+}
+
+.tooltip-chip {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--border);
+  background: #161616;
+  color: var(--muted-strong);
+  font-size: 0.72rem;
+  line-height: 1;
+  cursor: help;
+}
+
+.tooltip-chip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  right: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  width: min(240px, 52vw);
+  padding: 10px 12px;
+  background: rgba(10, 10, 10, 0.96);
+  border: 1px solid var(--border);
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0.02em;
+  line-height: 1.45;
+  font-size: 0.72rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+  z-index: 4;
+}
+
+.tooltip-chip:hover::after,
+.tooltip-chip:focus-visible::after {
+  opacity: 1;
 }
 
 .curve-toolbar {
@@ -578,6 +687,10 @@ select {
   border: 1px solid var(--border);
 }
 
+.scope-stats {
+  margin-top: 4px;
+}
+
 #curve-editor {
   display: block;
   width: 100%;
@@ -597,7 +710,9 @@ select {
 
 @media (max-width: 1480px) {
   .app-shell {
-    grid-template-columns: 280px minmax(460px, 1fr) 320px;
+    width: min(1440px, calc(100vw - 64px));
+    max-width: min(1440px, calc(100vw - 64px));
+    grid-template-columns: 204px minmax(0, 1fr) 320px;
   }
 
   .preview-readout {
@@ -605,11 +720,31 @@ select {
   }
 }
 
+@media (max-width: 1680px) {
+  .app-shell {
+    width: min(1600px, calc(100vw - 96px));
+    max-width: min(1600px, calc(100vw - 96px));
+    grid-template-columns: 212px minmax(0, 1fr) 336px;
+    gap: 12px;
+    padding: 12px 16px 12px 12px;
+  }
+
+  .viewport-frame {
+    margin: 14px;
+  }
+}
+
 @media (max-width: 1320px) {
   .app-shell {
-    grid-template-columns: 252px minmax(380px, 1fr) 286px;
+    width: min(1280px, calc(100vw - 40px));
+    max-width: min(1280px, calc(100vw - 40px));
+    grid-template-columns: 212px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
     gap: 14px;
     padding: 14px;
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
   }
 
   .inspector,
@@ -620,6 +755,27 @@ select {
 
   .viewport-frame {
     margin: 12px;
+  }
+
+  .inspector {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    height: auto;
+    overflow: visible;
+  }
+
+  .workspace-main {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .right-rail {
+    grid-column: 2;
+    grid-row: 2;
+    height: auto;
+    overflow: visible;
+    grid-template-rows: none;
+    padding-right: 12px;
   }
 }
 

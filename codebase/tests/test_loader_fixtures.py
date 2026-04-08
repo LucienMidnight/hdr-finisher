@@ -30,7 +30,22 @@ def test_load_real_linear_exr_fixture() -> None:
     assert source.suffix == ".exr"
     assert image.shape == (12, 18, 3)
     assert metadata["transfer_function"] == "LINEAR"
+    assert source.source_color_space is None
+    assert source.color_space_confident is False
     assert image.max() <= 1.0
+    assert analysis.classification == HDRClassification.HDR_LINEAR_UNCONFIRMED
+    assert analysis.needs_color_override is True
+    assert sdr_reference is None
+
+
+def test_manual_bt2020_override_applies_to_linear_exr_fixture() -> None:
+    image, source, metadata, analysis, sdr_reference = load_image(
+        fixture_path("linear_unconfirmed.exr"),
+        overrides={"color_space": "BT.2020", "transfer_function": "LINEAR"},
+    )
+    assert source.source_color_space == "BT.2020"
+    assert source.interpretation_mode == "manual"
+    assert metadata["user_override"]["color_space"] == "BT.2020"
     assert analysis.classification == HDRClassification.HDR_LINEAR_UNCONFIRMED
     assert analysis.needs_color_override is True
     assert sdr_reference is None

@@ -8,7 +8,10 @@ from hdr_finisher.color import normalize_to_acescg, sanitize_array
 from hdr_finisher.exporters import _linear_to_bt2020_pq_yuv10, _linear_to_pq_rgb10, _linear_to_srgb8
 from hdr_finisher.loader import _apply_apple_hdr_gainmap, _compute_apple_headroom
 from hdr_finisher.models import AdjustmentState, HDRClassification, PreviewKind
+from hdr_finisher.overlay import build_overlay_rgba
 from hdr_finisher.preview import downsample_image
+from hdr_finisher.models import ScopeMode
+from hdr_finisher.scopes import build_scope
 
 
 def test_sanitize_array_replaces_invalid_values() -> None:
@@ -155,3 +158,69 @@ def test_hdr_curves_can_bias_individual_channels() -> None:
 
     output = apply_adjustments(image, adjustments, PreviewKind.HDR)
     assert output[0, 0, 0] > output[0, 0, 1]
+
+
+def test_false_color_overlay_returns_rgba_pixels() -> None:
+    image = np.ones((4, 4, 3), dtype=np.float32) * 2.0
+    adjustments = AdjustmentState.model_validate(
+        {
+            "shared": {
+                "overlay_mode": "false_color",
+                "overlay_opacity": 0.7,
+            }
+        }
+    )
+
+    overlay = build_overlay_rgba(image, adjustments, PreviewKind.HDR)
+    assert overlay.shape == (4, 4, 4)
+    assert overlay.dtype == np.uint8
+    assert overlay[..., 3].max() > 0
+
+
+def test_zebra_overlay_is_transparent_below_threshold() -> None:
+    image = np.ones((4, 4, 3), dtype=np.float32) * 0.2
+    adjustments = AdjustmentState.model_validate(
+        {
+            "shared": {
+                "overlay_mode": "zebra",
+                "overlay_opacity": 0.8,
+                "overlay_threshold": 2.0,
+            }
+        }
+    )
+
+    overlay = build_overlay_rgba(image, adjustments, PreviewKind.HDR)
+    assert overlay.shape == (4, 4, 4)
+    assert np.all(overlay[..., 3] == 0)
+
+
+def test_hdr_scope_reports_reference_nits_and_stats() -> None:
+    image = np.ones((8, 8, 3), dtype=np.float32) * 1.8
+    scope = build_scope(image, AdjustmentState(), PreviewKind.HDR)
+    assert scope.scope_type == "reference_nits_histogram"
+    assert scope.x_axis == "reference_nits_log10"
+    assert len(scope.guides) >= 5
+    assert any(stat.label == "Peak" for stat in scope.stats)
+    assert len(scope.bin_edges) == 65
+    assert any(channel.name == "Y" for channel in scope.channels)
+
+
+def test_sdr_scope_reports_normalized_histogram() -> None:
+    image = np.ones((8, 8, 3), dtype=np.float32) * 0.5
+    scope = build_scope(image, AdjustmentState(), PreviewKind.SDR)
+    assert scope.scope_type == "normalized_histogram"
+    assert scope.x_axis == "normalized"
+    assert len(scope.guides) == 3
+    assert any(channel.name == "Y" for channel in scope.channels)
+
+
+def test_hdr_waveform_reports_density_grid() -> None:
+    image = np.linspace(0.18, 3.6, 32, dtype=np.float32)
+    image = np.tile(image, (16, 1))
+    image = np.stack([image, image, image], axis=-1)
+    scope = build_scope(image, AdjustmentState(), PreviewKind.HDR, ScopeMode.WAVEFORM)
+    assert scope.scope_type == "reference_nits_waveform"
+    assert scope.channels[0].bins == []
+    assert len(scope.channels[0].grid) == 64
+    assert len(scope.channels[0].grid[0]) > 0
+    assert any(channel.name == "Y" for channel in scope.channels)

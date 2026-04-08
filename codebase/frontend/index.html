@@ -43,18 +43,42 @@
           <h2>Signal State</h2>
         </div>
         <div id="badge" class="badge neutral">No file loaded.</div>
+        <div class="field-inline">
+          <button id="source-settings-toggle" class="utility-button utility-button-small" type="button">Source Settings</button>
+        </div>
         <div id="override-warning" class="warning hidden">
-          <div>This file needs a color interpretation override before export decisions are trustworthy.</div>
-          <label>Interpret As
-            <select id="interpretation-select">
-              <option value="linear_srgb">Scene-Linear sRGB</option>
-              <option value="linear_acescg">ACEScg Linear</option>
-              <option value="pq_bt2020">BT.2020 PQ HDR</option>
-              <option value="hlg_bt2020">BT.2020 HLG HDR</option>
-              <option value="sdr_srgb">SDR sRGB</option>
+          <div id="override-message">This file needs a color interpretation override before export decisions are trustworthy.</div>
+        </div>
+        <div id="source-settings-panel" class="warning hidden">
+          <label>Interpretation Mode
+            <select id="interpretation-mode">
+              <option value="auto">Auto Detect</option>
+              <option value="manual">Manual Override</option>
             </select>
           </label>
-          <button id="apply-interpretation" type="button">Apply Interpretation</button>
+          <label>Color Primaries
+            <select id="interpretation-color-space">
+              <option value="auto">Auto</option>
+              <option value="linear_srgb">Scene-Linear sRGB / Rec.709</option>
+              <option value="linear_bt2020">Scene-Linear Rec.2020</option>
+              <option value="linear_acescg">ACEScg Linear</option>
+              <option value="linear_p3">Display P3 Linear</option>
+            </select>
+          </label>
+          <label>Transfer Function
+            <select id="interpretation-transfer">
+              <option value="auto">Auto</option>
+              <option value="linear">Linear</option>
+              <option value="pq">PQ</option>
+              <option value="hlg">HLG</option>
+              <option value="srgb">sRGB</option>
+            </select>
+          </label>
+          <p id="source-settings-note" class="muted curve-status">Color Primaries controls gamut. Transfer Function controls encoding. Rec.2020 + PQ is HDR video style; Rec.2020 + Linear is scene-linear wide gamut.</p>
+          <div class="command-stack">
+            <button id="apply-interpretation" type="button">Apply Settings</button>
+            <button id="reset-interpretation" class="utility-button" type="button">Reset To Auto</button>
+          </div>
         </div>
       </section>
 
@@ -84,6 +108,7 @@
 
         <div class="viewport-frame" id="dropzone">
           <img id="preview-image" alt="Preview will appear here">
+          <img id="preview-overlay" alt="" aria-hidden="true">
           <div id="empty-state" class="empty-state">
             <span class="empty-state-title">Drop an image here</span>
             <span class="empty-state-copy">or use Import Image to open a single HDR-capable source file</span>
@@ -113,11 +138,24 @@
         <div class="section-heading">
           <p class="section-kicker">Scopes</p>
           <div class="rail-heading-row">
-            <h2>Histogram</h2>
-            <span id="scope-kind-label" class="scope-readout">HDR</span>
+            <h2 id="scope-title">Histogram</h2>
+            <div class="field-inline">
+              <select id="scope-mode" class="scope-mode-select">
+                <option value="histogram">Histogram</option>
+                <option value="waveform">Waveform</option>
+              </select>
+              <select id="scope-channel-mode" class="scope-mode-select">
+                <option value="composite">Composite</option>
+                <option value="luma">Luma</option>
+                <option value="parade">RGB Parade</option>
+              </select>
+              <span id="scope-kind-label" class="scope-readout">HDR</span>
+            </div>
           </div>
         </div>
+        <p id="scope-note" class="muted curve-status">Reference scopes will appear here after a preview is rendered.</p>
         <canvas id="histogram" width="360" height="220"></canvas>
+        <dl id="scope-stats" class="metadata-list scope-stats"></dl>
       </section>
 
       <section class="stack section-panel frame-corners">
@@ -154,6 +192,45 @@
             </select>
           </label>
         </div>
+
+        <div class="stack control-card frame-corners">
+          <div class="section-heading">
+            <p class="section-kicker">Viewport Aid</p>
+            <h2>Overlay</h2>
+          </div>
+          <label>Mode
+            <span class="field-inline">
+              <span>Overlay Mode</span>
+              <span class="tooltip-chip" tabindex="0" data-tooltip="False color maps luminance zones to diagnostic colors. Zebra draws striped warnings above the selected threshold.">?</span>
+            </span>
+            <select id="overlay-mode" data-path="shared.overlay_mode">
+              <option value="off">Off</option>
+              <option value="false_color">False Color</option>
+              <option value="zebra">Zebra</option>
+            </select>
+          </label>
+          <label>Preset
+            <span class="field-inline">
+              <span>False Color Target</span>
+              <span class="tooltip-chip" tabindex="0" data-tooltip="These presets shift false-color bands around common HDR reference-white and peak-luminance conventions so the colors mean something concrete while you grade.">?</span>
+            </span>
+            <select id="overlay-preset" data-path="shared.overlay_preset">
+              <option value="web_1000_100">Web HDR 1000 nit / 100 nit white</option>
+              <option value="bt2408_1000_203">BT.2408 1000 nit / 203 nit ref white</option>
+              <option value="bt2408_4000_203">BT.2408 4000 nit / 203 nit ref white</option>
+              <option value="sdr_100">SDR 100 nit white</option>
+            </select>
+          </label>
+          <p id="overlay-preset-note" class="muted curve-status">False color preset notes will appear here.</p>
+          <label>Opacity <input type="range" min="0.1" max="1" step="0.05" value="0.72" data-path="shared.overlay_opacity"></label>
+          <label>Zebra Threshold
+            <span class="field-inline">
+              <span>Threshold</span>
+              <span class="tooltip-chip" tabindex="0" data-tooltip="In HDR view, 1.0 equals this app's diffuse-white anchor of 100 nits. So 2.0 is about 200 nits, 10.0 would be about 1000 nits if we exposed the range that high.">?</span>
+            </span>
+            <input type="range" min="0.1" max="4" step="0.05" value="1" data-path="shared.overlay_threshold">
+          </label>
+        </div>
       </section>
 
       <section class="stack section-panel frame-corners">
@@ -183,6 +260,12 @@
           <p class="section-kicker">Output</p>
           <h2>Export Target</h2>
         </div>
+        <label>Filename
+          <input id="export-filename" type="text" value="hdr_finisher_export">
+        </label>
+        <label>Save Folder
+          <input id="export-directory" type="text" value="">
+        </label>
         <label>Format
           <select id="export-format">
             <option value="avif_gain_map">AVIF + Gain Map</option>
