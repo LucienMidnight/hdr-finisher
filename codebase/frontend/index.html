@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HDR Finisher</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="panel inspector frame-corners">
+      <div class="brand-block">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div>
+          <p class="eyebrow">Offline HDR Finishing Utility</p>
+          <h1>HDR Finisher</h1>
+          <p class="subhead">Neutral workspace for gain-map finishing, diagnostics, and export.</p>
+        </div>
+      </div>
+
+      <section class="stack section-panel frame-corners">
+        <div class="section-heading">
+          <p class="section-kicker">Session</p>
+          <h2 id="session-name">No active session</h2>
+        </div>
+        <div class="command-stack">
+          <span class="command-chip">ACEScg Pipeline</span>
+          <span class="command-chip">Local Encode</span>
+          <span class="command-chip">Single Image Mode</span>
+        </div>
+      </section>
+
+      <input id="file-input" type="file" accept=".exr,.tif,.tiff,.hdr,.pfm,.heic,.heif,.png,.jpg,.jpeg" hidden>
+
+      <div class="inspector-actions">
+        <button id="import-button" class="utility-button" type="button">Import Image</button>
+        <button id="eject-button" class="utility-button" type="button">Eject Current Image</button>
+      </div>
+
+      <section class="stack section-panel frame-corners">
+        <div class="section-heading">
+          <p class="section-kicker">Analyzer</p>
+          <h2>Signal State</h2>
+        </div>
+        <div id="badge" class="badge neutral">No file loaded.</div>
+        <div id="override-warning" class="warning hidden">
+          <div>This file needs a color interpretation override before export decisions are trustworthy.</div>
+          <label>Interpret As
+            <select id="interpretation-select">
+              <option value="linear_srgb">Scene-Linear sRGB</option>
+              <option value="linear_acescg">ACEScg Linear</option>
+              <option value="pq_bt2020">BT.2020 PQ HDR</option>
+              <option value="hlg_bt2020">BT.2020 HLG HDR</option>
+              <option value="sdr_srgb">SDR sRGB</option>
+            </select>
+          </label>
+          <button id="apply-interpretation" type="button">Apply Interpretation</button>
+        </div>
+      </section>
+
+      <section class="stack section-panel frame-corners">
+        <div class="section-heading">
+          <p class="section-kicker">Metadata</p>
+          <h2>Source Readout</h2>
+        </div>
+        <dl id="metadata-list" class="metadata-list"></dl>
+      </section>
+    </aside>
+
+    <main class="workspace-main">
+      <section class="viewport-panel frame-corners">
+        <div class="toolbar panel-toolbar">
+          <div class="panel-heading">
+            <p class="section-kicker">Viewport</p>
+            <h2>Preview Scope</h2>
+          </div>
+          <div class="viewport-actions">
+            <div class="segmented">
+              <button id="view-hdr" class="active" data-kind="hdr">View HDR</button>
+              <button id="view-sdr" data-kind="sdr">View SDR Fallback</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="viewport-frame" id="dropzone">
+          <img id="preview-image" alt="Preview will appear here">
+          <div id="empty-state" class="empty-state">
+            <span class="empty-state-title">Drop an image here</span>
+            <span class="empty-state-copy">or use Import Image to open a single HDR-capable source file</span>
+          </div>
+          <div id="preview-status" class="preview-status hidden" aria-live="polite"></div>
+        </div>
+
+        <div class="preview-readout frame-corners">
+          <div class="readout-block">
+            <p class="section-kicker">Preview Output</p>
+            <dl id="preview-output-list" class="readout-list"></dl>
+          </div>
+          <div class="readout-block">
+            <p class="section-kicker">Display Probe</p>
+            <dl id="display-info-list" class="readout-list"></dl>
+          </div>
+          <div class="readout-block">
+            <p class="section-kicker">Source Interpretation</p>
+            <dl id="source-preview-list" class="readout-list"></dl>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <aside class="panel right-rail frame-corners">
+      <section class="stack section-panel frame-corners">
+        <div class="section-heading">
+          <p class="section-kicker">Scopes</p>
+          <div class="rail-heading-row">
+            <h2>Histogram</h2>
+            <span id="scope-kind-label" class="scope-readout">HDR</span>
+          </div>
+        </div>
+        <canvas id="histogram" width="360" height="220"></canvas>
+      </section>
+
+      <section class="stack section-panel frame-corners">
+        <div class="section-heading">
+          <p class="section-kicker">Controls</p>
+          <h2>Adjustment Matrix</h2>
+        </div>
+
+        <div class="stack control-card frame-corners">
+          <div class="section-heading">
+            <p class="section-kicker">HDR Lane</p>
+            <h2>Scene Output</h2>
+          </div>
+          <label>Exposure <input type="range" min="-4" max="4" step="0.1" value="0" data-path="hdr.exposure"></label>
+          <label>Highlight Rolloff <input type="range" min="0" max="2" step="0.05" value="0.25" data-path="hdr.highlight_rolloff"></label>
+          <label>Shadow Lift <input type="range" min="-0.5" max="0.5" step="0.01" value="0" data-path="hdr.shadow_lift"></label>
+          <label>White Balance <input type="range" min="2000" max="12000" step="100" value="6500" data-path="hdr.white_balance_kelvin"></label>
+          <label>Tint <input type="range" min="-1" max="1" step="0.05" value="0" data-path="hdr.tint"></label>
+        </div>
+
+        <div class="stack control-card frame-corners">
+          <div class="section-heading">
+            <p class="section-kicker">SDR Lane</p>
+            <h2>Fallback Base</h2>
+          </div>
+          <label>SDR Exposure <input type="range" min="-4" max="4" step="0.1" value="0" data-path="sdr.exposure"></label>
+          <label>Highlight Recovery <input type="range" min="0" max="2" step="0.05" value="0.25" data-path="sdr.highlight_recovery"></label>
+          <label>Shadow <input type="range" min="-1" max="1" step="0.05" value="0" data-path="sdr.shadow"></label>
+          <label>Contrast <input type="range" min="-1" max="1" step="0.05" value="0" data-path="sdr.contrast"></label>
+          <label>Tone Mapper
+            <select id="tone-mapper" data-path="sdr.tone_mapper">
+              <option value="aces">ACES</option>
+              <option value="reinhard">Reinhard</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section class="stack section-panel frame-corners">
+        <div class="section-heading">
+          <p class="section-kicker">Curves</p>
+          <h2>RGB Curves</h2>
+        </div>
+        <label class="toggle-row">
+          <span>Enable Curves</span>
+          <input id="curves-enabled" type="checkbox" data-path="shared.curves_enabled">
+        </label>
+        <div class="curve-toolbar">
+          <div class="channel-tabs">
+            <button type="button" class="curve-channel active" data-curve-channel="luma">Luma</button>
+            <button type="button" class="curve-channel" data-curve-channel="red">Red</button>
+            <button type="button" class="curve-channel" data-curve-channel="green">Green</button>
+            <button type="button" class="curve-channel" data-curve-channel="blue">Blue</button>
+          </div>
+          <button id="curve-reset" type="button" class="utility-button utility-button-small">Reset Curve</button>
+        </div>
+        <canvas id="curve-editor" width="320" height="220"></canvas>
+        <p id="curve-status" class="muted curve-status">Curves apply to the currently active preview side.</p>
+      </section>
+
+      <section class="stack section-panel frame-corners">
+        <div class="section-heading">
+          <p class="section-kicker">Output</p>
+          <h2>Export Target</h2>
+        </div>
+        <label>Format
+          <select id="export-format">
+            <option value="avif_gain_map">AVIF + Gain Map</option>
+            <option value="jpeg_ultrahdr">JPEG Ultra HDR</option>
+            <option value="jpegxl_gain_map">JPEG XL + Gain Map</option>
+            <option value="sdr_png">SDR PNG</option>
+          </select>
+        </label>
+        <label>Quality <input id="export-quality" type="range" min="1" max="100" value="85"></label>
+        <button id="export-button">Export</button>
+        <div id="export-status" class="muted">Export backends are capability-gated in this milestone.</div>
+      </section>
+    </aside>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Build / runtime outputs
+codebase/exports/
+codebase/_tmp_avif_test/
+codebase/preview_probe.avif
+
+# Local test media and personal captures
+IMG_4109.HEIC
+
+# Large working assets not intended for git by default
+*.exr
+*.hdr
+*.pfm

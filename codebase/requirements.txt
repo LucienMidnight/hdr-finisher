@@ -1,0 +1,12 @@
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30,<1.0
+python-multipart>=0.0.9,<1.0
+numpy>=1.26,<3.0
+Pillow>=10.4,<12.0
+pydantic>=2.8,<3.0
+tifffile>=2024.8.30
+imageio>=2.36
+colour-science>=0.4.6
+openexr>=3.2.4
+pillow-heif>=0.18
+exifread>=3.0.0
