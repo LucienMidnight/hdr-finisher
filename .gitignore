@@ -27,3 +27,6 @@ IMG_4109.HEIC
 *.exr
 *.hdr
 *.pfm
+
+# Internal MD docs
+ai/md/
