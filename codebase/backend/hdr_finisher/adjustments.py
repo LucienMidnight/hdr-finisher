@@ -28,7 +28,9 @@ def _apply_hdr_adjustments(image: np.ndarray, adjustments: AdjustmentState) -> n
         excess = np.clip(result - threshold, 0.0, None)
         result = np.where(result > threshold, threshold + excess / (1.0 + hdr.highlight_rolloff * excess), result)
     if hdr.shadow_lift != 0:
-        result = np.maximum(result + hdr.shadow_lift, 0.0)
+        luma = np.clip(0.2126 * result[..., 0] + 0.7152 * result[..., 1] + 0.0722 * result[..., 2], 0.0, 1.0)
+        lift_factor = np.clip(hdr.shadow_lift * (1.0 - luma), None, 1.0)
+        result = result * (1.0 + lift_factor[..., None])
     result = _apply_white_balance(result, hdr.white_balance_kelvin, hdr.tint)
     result = _apply_shared_curves(result, adjustments, PreviewKind.HDR)
     return np.clip(result, 0.0, None)
@@ -38,18 +40,18 @@ def _apply_sdr_adjustments(image: np.ndarray, adjustments: AdjustmentState) -> n
     sdr = adjustments.sdr
     hdr_adjusted = _apply_hdr_adjustments(image, adjustments)
     result = hdr_adjusted * np.float32(2.0 ** sdr.exposure)
+    if sdr.highlight_recovery > 0:
+        result = np.power(np.clip(result, 0.0, 1.0), 1.0 + (sdr.highlight_recovery * 0.5))
+    if sdr.shadow != 0:
+        result = np.clip(result + sdr.shadow * 0.08, 0.0, 1.0)
+    if sdr.contrast != 0:
+        midpoint = 0.5
+        result = np.clip((result - midpoint) * (1.0 + sdr.contrast * 0.6) + midpoint, 0.0, 1.0)
     if sdr.tone_mapper == ToneMapper.REINHARD:
         result = result / (1.0 + result)
     else:
         a, b, c, d, e = 2.51, 0.03, 2.43, 0.59, 0.14
         result = np.clip((result * (a * result + b)) / (result * (c * result + d) + e), 0.0, 1.0)
-    if sdr.highlight_recovery > 0:
-        result = np.power(np.clip(result, 0.0, 1.0), 1.0 + (sdr.highlight_recovery * 0.5))
-    if sdr.shadow != 0:
-        result = np.clip(result + sdr.shadow * 0.15, 0.0, 1.0)
-    if sdr.contrast != 0:
-        midpoint = 0.5
-        result = np.clip((result - midpoint) * (1.0 + sdr.contrast) + midpoint, 0.0, 1.0)
     return _apply_shared_curves(result, adjustments, PreviewKind.SDR)
 
 
@@ -57,13 +59,13 @@ def _apply_sdr_adjustments_to_reference(image: np.ndarray, adjustments: Adjustme
     sdr = adjustments.sdr
     result = np.clip(image.astype(np.float32, copy=True), 0.0, 1.0)
     result *= np.float32(2.0 ** sdr.exposure)
-    if sdr.highlight_recovery > 0:
-        result = np.power(np.clip(result, 0.0, 1.0), 1.0 + (sdr.highlight_recovery * 0.35))
     if sdr.shadow != 0:
-        result = np.clip(result + sdr.shadow * 0.12, 0.0, 1.0)
+        result = np.clip(result + sdr.shadow * 0.08, 0.0, 1.0)
     if sdr.contrast != 0:
         midpoint = 0.5
-        result = np.clip((result - midpoint) * (1.0 + sdr.contrast) + midpoint, 0.0, 1.0)
+        result = np.clip((result - midpoint) * (1.0 + sdr.contrast * 0.6) + midpoint, 0.0, 1.0)
+    if sdr.highlight_recovery > 0:
+        result = np.power(np.clip(result, 0.0, 1.0), 1.0 + (sdr.highlight_recovery * 0.35))
     return np.clip(_apply_shared_curves(result, adjustments, PreviewKind.SDR), 0.0, 1.0)
 
 
@@ -112,16 +114,18 @@ def _apply_shared_curves(image: np.ndarray, adjustments: AdjustmentState, kind: 
     return _curve_domain_decode(np.clip(working, 0.0, 1.0), kind)
 
 
+HDR_CURVE_MAX = 10.0
+
+
 def _curve_domain_encode(image: np.ndarray, kind: PreviewKind) -> np.ndarray:
     if kind == PreviewKind.HDR:
-        return image / (1.0 + np.maximum(image, 0.0))
+        return np.clip(np.log2(1.0 + np.clip(image, 0.0, None)) / np.log2(1.0 + HDR_CURVE_MAX), 0.0, 1.0)
     return np.clip(image, 0.0, 1.0)
 
 
 def _curve_domain_decode(image: np.ndarray, kind: PreviewKind) -> np.ndarray:
     if kind == PreviewKind.HDR:
-        safe = np.clip(image, 0.0, 0.9995)
-        return safe / np.maximum(1.0 - safe, 1e-5)
+        return np.clip(np.power(2.0, image * np.log2(1.0 + HDR_CURVE_MAX)) - 1.0, 0.0, None)
     return np.clip(image, 0.0, 1.0)
 
 

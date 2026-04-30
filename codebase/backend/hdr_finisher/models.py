@@ -71,10 +71,17 @@ class MetadataPayload(BaseModel):
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
+class SourceLatitude(str, Enum):
+    WIDE = "WIDE"
+    MEDIUM = "MEDIUM"
+    NARROW = "NARROW"
+
+
 class HDRAnalysis(BaseModel):
     classification: HDRClassification
     peak_linear: float
     peak_stops_above_diffuse_white: float | None = None
+    source_latitude: SourceLatitude = SourceLatitude.MEDIUM
     needs_color_override: bool = False
     badge_message: str
 

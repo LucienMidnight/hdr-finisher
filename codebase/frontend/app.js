@@ -1,3 +1,33 @@
+const latitudePresets = {
+  WIDE: {
+    "hdr.exposure": [-4, 4, 0.1],
+    "hdr.highlight_rolloff": [0, 2, 0.05],
+    "hdr.shadow_lift": [-0.5, 0.5, 0.01],
+    "sdr.exposure": [-4, 4, 0.1],
+    "sdr.highlight_recovery": [0, 2, 0.05],
+    "sdr.shadow": [-1, 1, 0.05],
+    "sdr.contrast": [-0.5, 0.5, 0.05],
+  },
+  MEDIUM: {
+    "hdr.exposure": [-3, 3, 0.1],
+    "hdr.highlight_rolloff": [0, 1.5, 0.05],
+    "hdr.shadow_lift": [-0.3, 0.3, 0.01],
+    "sdr.exposure": [-3, 3, 0.1],
+    "sdr.highlight_recovery": [0, 1.5, 0.05],
+    "sdr.shadow": [-0.5, 0.5, 0.05],
+    "sdr.contrast": [-0.3, 0.3, 0.05],
+  },
+  NARROW: {
+    "hdr.exposure": [-2, 2, 0.1],
+    "hdr.highlight_rolloff": [0, 1, 0.05],
+    "hdr.shadow_lift": [-0.2, 0.2, 0.01],
+    "sdr.exposure": [-2, 2, 0.1],
+    "sdr.highlight_recovery": [0, 1, 0.05],
+    "sdr.shadow": [-0.3, 0.3, 0.05],
+    "sdr.contrast": [-0.3, 0.3, 0.05],
+  },
+};
+
 const state = {
   session: null,
   capabilities: {},
@@ -294,6 +324,7 @@ function renderSession() {
   els.overrideMessage.textContent = overrideMessage(session);
   syncInterpretationControls(session);
   state.sourceSettingsOpen = state.sourceSettingsOpen || session.analysis.needs_color_override;
+  applyLatitudePresets(session.analysis.source_latitude);
   renderSourceSettingsVisibility();
   renderSourceSettingsControls();
   renderMetadata(session);
@@ -380,6 +411,7 @@ function sourceInterpretationEntries() {
     ["Interpretation", state.session.source.interpretation_mode || "auto"],
     ["Working", state.session.source.working_space || "ACEScg"],
     ["Signal", state.session.analysis.classification],
+    ["Latitude", state.session.analysis.source_latitude],
     ["Source Depth", state.session.metadata.bit_depth || "unknown"],
   ];
 }
@@ -393,6 +425,18 @@ function renderKeyValueList(container, entries) {
     dd.textContent = value;
     container.append(dt, dd);
   }
+}
+
+function applyLatitudePresets(latitude) {
+  const preset = latitudePresets[latitude] || latitudePresets.MEDIUM;
+  Object.entries(preset).forEach(([path, [min, max, step]]) => {
+    const control = document.querySelector(`[data-path="${path}"]`);
+    if (control) {
+      control.min = min;
+      control.max = max;
+      control.step = step;
+    }
+  });
 }
 
 function debouncePreview() {
