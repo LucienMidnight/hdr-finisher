@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HDR Finisher</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
@@ -169,11 +170,16 @@
             <p class="section-kicker">HDR Lane</p>
             <h2>Scene Output</h2>
           </div>
-          <label>Exposure <input type="range" min="-4" max="4" step="0.1" value="0" data-path="hdr.exposure"></label>
-          <label>Highlight Rolloff <input type="range" min="0" max="2" step="0.05" value="0.25" data-path="hdr.highlight_rolloff"></label>
-          <label>Shadow Lift <input type="range" min="-0.5" max="0.5" step="0.01" value="0" data-path="hdr.shadow_lift"></label>
-          <label>White Balance <input type="range" min="2000" max="12000" step="100" value="6500" data-path="hdr.white_balance_kelvin"></label>
-          <label>Tint <input type="range" min="-1" max="1" step="0.05" value="0" data-path="hdr.tint"></label>
+          <label>Exposure <input type="range" min="-4" max="4" step="0.05" value="0" data-path="hdr.exposure"></label>
+          <label>Highlight Rolloff <input type="range" min="0" max="2" step="0.01" value="0.25" data-path="hdr.highlight_rolloff"></label>
+          <label>Shadow Lift <input type="range" min="-0.5" max="0.5" step="0.005" value="0" data-path="hdr.shadow_lift"></label>
+          <label>Lift <input type="range" min="-0.5" max="0.5" step="0.005" value="0" data-path="hdr.lift"></label>
+          <label>Gamma <input type="range" min="-1" max="1" step="0.005" value="0" data-path="hdr.gamma"></label>
+          <label>Gain <input type="range" min="-0.5" max="0.5" step="0.005" value="0" data-path="hdr.gain"></label>
+          <label>Contrast <input type="range" min="-1" max="1" step="0.001" value="0" data-path="hdr.contrast"></label>
+          <label>Contrast Pivot <input type="range" min="0.02" max="1" step="0.0005" value="0.1845" data-path="hdr.contrast_pivot"></label>
+          <label>White Balance <input type="range" min="2000" max="12000" step="50" value="6500" data-path="hdr.white_balance_kelvin"></label>
+          <label>Tint <input type="range" min="-1" max="1" step="0.01" value="0" data-path="hdr.tint"></label>
         </div>
 
         <div class="stack control-card frame-corners">
@@ -181,10 +187,14 @@
             <p class="section-kicker">SDR Lane</p>
             <h2>Fallback Base</h2>
           </div>
-          <label>SDR Exposure <input type="range" min="-4" max="4" step="0.1" value="0" data-path="sdr.exposure"></label>
-          <label>Highlight Recovery <input type="range" min="0" max="2" step="0.05" value="0.25" data-path="sdr.highlight_recovery"></label>
-          <label>Shadow <input type="range" min="-1" max="1" step="0.05" value="0" data-path="sdr.shadow"></label>
-          <label>Contrast <input type="range" min="-0.5" max="0.5" step="0.05" value="0" data-path="sdr.contrast"></label>
+          <label>SDR Exposure <input type="range" min="-4" max="4" step="0.05" value="0" data-path="sdr.exposure"></label>
+          <label>Highlight Recovery <input type="range" min="0" max="2" step="0.01" value="0.25" data-path="sdr.highlight_recovery"></label>
+          <label>Shadow <input type="range" min="-1" max="1" step="0.01" value="0" data-path="sdr.shadow"></label>
+          <label>Lift <input type="range" min="-0.5" max="0.5" step="0.005" value="0" data-path="sdr.lift"></label>
+          <label>Gamma <input type="range" min="-1" max="1" step="0.005" value="0" data-path="sdr.gamma"></label>
+          <label>Gain <input type="range" min="-0.5" max="0.5" step="0.005" value="0" data-path="sdr.gain"></label>
+          <label>Contrast <input type="range" min="-1" max="1" step="0.001" value="0" data-path="sdr.contrast"></label>
+          <label>Contrast Pivot <input type="range" min="0.02" max="0.98" step="0.005" value="0.5" data-path="sdr.contrast_pivot"></label>
           <label>Tone Mapper
             <select id="tone-mapper" data-path="sdr.tone_mapper">
               <option value="aces">ACES</option>
@@ -222,7 +232,7 @@
             </select>
           </label>
           <p id="overlay-preset-note" class="muted curve-status">False color preset notes will appear here.</p>
-          <label>Opacity <input type="range" min="0.1" max="1" step="0.05" value="0.72" data-path="shared.overlay_opacity"></label>
+          <label>Opacity <input type="range" min="0.1" max="1" step="0.01" value="0.72" data-path="shared.overlay_opacity"></label>
           <label>Zebra Threshold
             <span class="field-inline">
               <span>Threshold</span>
@@ -240,7 +250,7 @@
         </div>
         <label class="toggle-row">
           <span>Enable Curves</span>
-          <input id="curves-enabled" type="checkbox" data-path="shared.curves_enabled">
+          <input id="curves-enabled" type="checkbox">
         </label>
         <div class="curve-toolbar">
           <div class="channel-tabs">
@@ -249,7 +259,11 @@
             <button type="button" class="curve-channel" data-curve-channel="green">Green</button>
             <button type="button" class="curve-channel" data-curve-channel="blue">Blue</button>
           </div>
-          <button id="curve-reset" type="button" class="utility-button utility-button-small">Reset Curve</button>
+          <div class="curve-actions">
+            <button id="curve-add" type="button" class="utility-button utility-button-small">Add Point</button>
+            <button id="curve-remove" type="button" class="utility-button utility-button-small">Remove Point</button>
+            <button id="curve-reset" type="button" class="utility-button utility-button-small">Reset Curve</button>
+          </div>
         </div>
         <canvas id="curve-editor" width="320" height="220"></canvas>
         <p id="curve-status" class="muted curve-status">Curves apply to the currently active preview side.</p>
@@ -264,7 +278,10 @@
           <input id="export-filename" type="text" value="hdr_finisher_export">
         </label>
         <label>Save Folder
-          <input id="export-directory" type="text" value="">
+          <span class="directory-picker-row">
+            <input id="export-directory" type="text" value="">
+            <button id="export-directory-browse" class="utility-button utility-button-small" type="button">Browse</button>
+          </span>
         </label>
         <label>Format
           <select id="export-format">

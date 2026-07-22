@@ -1,30 +1,57 @@
 const latitudePresets = {
   WIDE: {
-    "hdr.exposure": [-4, 4, 0.1],
-    "hdr.highlight_rolloff": [0, 2, 0.05],
-    "hdr.shadow_lift": [-0.5, 0.5, 0.01],
-    "sdr.exposure": [-4, 4, 0.1],
-    "sdr.highlight_recovery": [0, 2, 0.05],
-    "sdr.shadow": [-1, 1, 0.05],
-    "sdr.contrast": [-0.5, 0.5, 0.05],
+    "hdr.exposure": [-4, 4, 0.05],
+    "hdr.highlight_rolloff": [0, 2, 0.01],
+    "hdr.shadow_lift": [-0.5, 0.5, 0.005],
+    "hdr.lift": [-0.5, 0.5, 0.005],
+    "hdr.gamma": [-1, 1, 0.005],
+    "hdr.gain": [-0.5, 0.5, 0.005],
+    "hdr.contrast": [-1, 1, 0.001],
+    "hdr.contrast_pivot": [0.02, 1, 0.0005],
+    "sdr.exposure": [-4, 4, 0.05],
+    "sdr.highlight_recovery": [0, 2, 0.01],
+    "sdr.shadow": [-1, 1, 0.01],
+    "sdr.lift": [-0.5, 0.5, 0.005],
+    "sdr.gamma": [-1, 1, 0.005],
+    "sdr.gain": [-0.5, 0.5, 0.005],
+    "sdr.contrast": [-1, 1, 0.001],
+    "sdr.contrast_pivot": [0.02, 0.98, 0.005],
   },
   MEDIUM: {
-    "hdr.exposure": [-3, 3, 0.1],
-    "hdr.highlight_rolloff": [0, 1.5, 0.05],
-    "hdr.shadow_lift": [-0.3, 0.3, 0.01],
-    "sdr.exposure": [-3, 3, 0.1],
-    "sdr.highlight_recovery": [0, 1.5, 0.05],
-    "sdr.shadow": [-0.5, 0.5, 0.05],
-    "sdr.contrast": [-0.3, 0.3, 0.05],
+    "hdr.exposure": [-3, 3, 0.05],
+    "hdr.highlight_rolloff": [0, 1.5, 0.01],
+    "hdr.shadow_lift": [-0.3, 0.3, 0.005],
+    "hdr.lift": [-0.35, 0.35, 0.005],
+    "hdr.gamma": [-0.75, 0.75, 0.005],
+    "hdr.gain": [-0.35, 0.35, 0.005],
+    "hdr.contrast": [-0.75, 0.75, 0.001],
+    "hdr.contrast_pivot": [0.02, 0.75, 0.0005],
+    "sdr.exposure": [-3, 3, 0.05],
+    "sdr.highlight_recovery": [0, 1.5, 0.01],
+    "sdr.shadow": [-0.5, 0.5, 0.01],
+    "sdr.lift": [-0.35, 0.35, 0.005],
+    "sdr.gamma": [-0.75, 0.75, 0.005],
+    "sdr.gain": [-0.35, 0.35, 0.005],
+    "sdr.contrast": [-0.75, 0.75, 0.001],
+    "sdr.contrast_pivot": [0.05, 0.95, 0.005],
   },
   NARROW: {
-    "hdr.exposure": [-2, 2, 0.1],
-    "hdr.highlight_rolloff": [0, 1, 0.05],
-    "hdr.shadow_lift": [-0.2, 0.2, 0.01],
-    "sdr.exposure": [-2, 2, 0.1],
-    "sdr.highlight_recovery": [0, 1, 0.05],
-    "sdr.shadow": [-0.3, 0.3, 0.05],
-    "sdr.contrast": [-0.3, 0.3, 0.05],
+    "hdr.exposure": [-2, 2, 0.05],
+    "hdr.highlight_rolloff": [0, 1, 0.01],
+    "hdr.shadow_lift": [-0.2, 0.2, 0.005],
+    "hdr.lift": [-0.25, 0.25, 0.005],
+    "hdr.gamma": [-0.5, 0.5, 0.005],
+    "hdr.gain": [-0.25, 0.25, 0.005],
+    "hdr.contrast": [-0.5, 0.5, 0.001],
+    "hdr.contrast_pivot": [0.02, 0.5, 0.0005],
+    "sdr.exposure": [-2, 2, 0.05],
+    "sdr.highlight_recovery": [0, 1, 0.01],
+    "sdr.shadow": [-0.3, 0.3, 0.01],
+    "sdr.lift": [-0.25, 0.25, 0.005],
+    "sdr.gamma": [-0.5, 0.5, 0.005],
+    "sdr.gain": [-0.25, 0.25, 0.005],
+    "sdr.contrast": [-0.5, 0.5, 0.001],
+    "sdr.contrast_pivot": [0.05, 0.95, 0.005],
   },
 };
 
@@ -36,8 +63,39 @@ const state = {
   scopeChannelMode: "composite",
   sourceSettingsOpen: false,
   adjustments: {
-    hdr: { exposure: 0, highlight_rolloff: 0.25, shadow_lift: 0, white_balance_kelvin: 6500, tint: 0 },
-    sdr: { exposure: 0, highlight_recovery: 0.25, shadow: 0, contrast: 0, tone_mapper: "aces" },
+    hdr: {
+      exposure: 0,
+      highlight_rolloff: 0.25,
+      shadow_lift: 0,
+      lift: 0,
+      gamma: 0,
+      gain: 0,
+      contrast: 0,
+      contrast_pivot: 0.1845,
+      white_balance_kelvin: 6500,
+      tint: 0,
+      curves_enabled: false,
+      luma_curve: defaultCurvePoints(),
+      red_curve: defaultCurvePoints(),
+      green_curve: defaultCurvePoints(),
+      blue_curve: defaultCurvePoints(),
+    },
+    sdr: {
+      exposure: 0,
+      highlight_recovery: 0.25,
+      shadow: 0,
+      lift: 0,
+      gamma: 0,
+      gain: 0,
+      contrast: 0,
+      contrast_pivot: 0.5,
+      tone_mapper: "aces",
+      curves_enabled: false,
+      luma_curve: defaultCurvePoints(),
+      red_curve: defaultCurvePoints(),
+      green_curve: defaultCurvePoints(),
+      blue_curve: defaultCurvePoints(),
+    },
     shared: {
       active_focus: "hdr",
       curves_enabled: false,
@@ -45,14 +103,11 @@ const state = {
       overlay_preset: "web_1000_100",
       overlay_opacity: 0.72,
       overlay_threshold: 1,
-      luma_curve: defaultCurvePoints(),
-      red_curve: defaultCurvePoints(),
-      green_curve: defaultCurvePoints(),
-      blue_curve: defaultCurvePoints(),
     },
   },
   selectedCurveChannel: "luma",
   activeCurvePoint: null,
+  selectedCurvePoint: 2,
   previewAbortController: null,
   overlayAbortController: null,
   refreshTimer: null,
@@ -68,8 +123,39 @@ const state = {
 };
 
 const defaultAdjustments = () => ({
-  hdr: { exposure: 0, highlight_rolloff: 0.25, shadow_lift: 0, white_balance_kelvin: 6500, tint: 0 },
-  sdr: { exposure: 0, highlight_recovery: 0.25, shadow: 0, contrast: 0, tone_mapper: "aces" },
+  hdr: {
+    exposure: 0,
+    highlight_rolloff: 0.25,
+    shadow_lift: 0,
+    lift: 0,
+    gamma: 0,
+    gain: 0,
+    contrast: 0,
+    contrast_pivot: 0.1845,
+    white_balance_kelvin: 6500,
+    tint: 0,
+    curves_enabled: false,
+    luma_curve: defaultCurvePoints(),
+    red_curve: defaultCurvePoints(),
+    green_curve: defaultCurvePoints(),
+    blue_curve: defaultCurvePoints(),
+  },
+  sdr: {
+    exposure: 0,
+    highlight_recovery: 0.25,
+    shadow: 0,
+    lift: 0,
+    gamma: 0,
+    gain: 0,
+    contrast: 0,
+    contrast_pivot: 0.5,
+    tone_mapper: "aces",
+    curves_enabled: false,
+    luma_curve: defaultCurvePoints(),
+    red_curve: defaultCurvePoints(),
+    green_curve: defaultCurvePoints(),
+    blue_curve: defaultCurvePoints(),
+  },
   shared: {
     active_focus: state.currentView,
     curves_enabled: false,
@@ -77,10 +163,6 @@ const defaultAdjustments = () => ({
     overlay_preset: "web_1000_100",
     overlay_opacity: 0.72,
     overlay_threshold: 1,
-    luma_curve: defaultCurvePoints(),
-    red_curve: defaultCurvePoints(),
-    green_curve: defaultCurvePoints(),
-    blue_curve: defaultCurvePoints(),
   },
 });
 
@@ -105,6 +187,8 @@ const els = {
   curveStatus: document.getElementById("curve-status"),
   overlayPresetNote: document.getElementById("overlay-preset-note"),
   curveReset: document.getElementById("curve-reset"),
+  curveAdd: document.getElementById("curve-add"),
+  curveRemove: document.getElementById("curve-remove"),
   curveChannelButtons: [...document.querySelectorAll("[data-curve-channel]")],
   metadataList: document.getElementById("metadata-list"),
   previewOutputList: document.getElementById("preview-output-list"),
@@ -126,10 +210,18 @@ const els = {
   exportStatus: document.getElementById("export-status"),
   exportFilename: document.getElementById("export-filename"),
   exportDirectory: document.getElementById("export-directory"),
+  exportDirectoryBrowse: document.getElementById("export-directory-browse"),
   exportFormat: document.getElementById("export-format"),
   exportQuality: document.getElementById("export-quality"),
   viewButtons: [...document.querySelectorAll(".segmented button")],
   controls: [...document.querySelectorAll("[data-path]")],
+};
+
+const overlayPresetNotes = {
+  web_1000_100: "Built for web-HDR finishing with 100 nit diffuse white and a 1000 nit highlight ceiling. Best default for AVIF gain-map work and common consumer HDR displays.",
+  bt2408_1000_203: "Uses the ITU-R BT.2408 style 203 nit HDR reference white with a 1000 nit peak target. Useful when you want false color to align with PQ/HLG reference-white practice.",
+  bt2408_4000_203: "Keeps the 203 nit BT.2408 reference white but stretches warning bands toward a 4000 nit mastering ceiling. Good for checking very bright highlight intent.",
+  sdr_100: "Treats 100 nits as both white and ceiling. Handy when judging the SDR fallback or when you want the overlay to behave like an SDR exposure aid.",
 };
 
 boot();
@@ -141,13 +233,6 @@ async function boot() {
   renderOverlayPresetNote();
   window.addEventListener("resize", syncOverlayPlacement);
 }
-
-const overlayPresetNotes = {
-  web_1000_100: "Built for web-HDR finishing with 100 nit diffuse white and a 1000 nit highlight ceiling. Best default for AVIF gain-map work and common consumer HDR displays.",
-  bt2408_1000_203: "Uses the ITU-R BT.2408 style 203 nit HDR reference white with a 1000 nit peak target. Useful when you want false color to align with PQ/HLG reference-white practice.",
-  bt2408_4000_203: "Keeps the 203 nit BT.2408 reference white but stretches warning bands toward a 4000 nit mastering ceiling. Good for checking very bright highlight intent.",
-  sdr_100: "Treats 100 nits as both white and ceiling. Handy when judging the SDR fallback or when you want the overlay to behave like an SDR exposure aid.",
-};
 
 function bindEvents() {
   els.fileInput.addEventListener("change", async (event) => {
@@ -196,6 +281,10 @@ function bindEvents() {
       button.classList.add("active");
       state.currentView = button.dataset.kind;
       state.adjustments.shared.active_focus = state.currentView;
+      state.selectedCurvePoint = Math.min(state.selectedCurvePoint ?? 0, currentCurveValues().length - 1);
+      syncCurveControlsFromState();
+      renderCurveChannelTabs();
+      drawCurveEditor();
       renderReadouts();
       await refreshPreview();
       await refreshOverlay();
@@ -207,10 +296,17 @@ function bindEvents() {
     control.addEventListener("input", () => {
       const value = control.type === "range" ? Number(control.value) : control.type === "checkbox" ? control.checked : control.value;
       setValueByPath(state.adjustments, control.dataset.path, value);
-      if (control.dataset.path === "shared.curves_enabled") drawCurveEditor();
       if (control.dataset.path === "shared.overlay_preset") renderOverlayPresetNote();
       debouncePreview();
     });
+  });
+  bindRangeResetControls();
+
+  els.curvesEnabled.addEventListener("input", () => {
+    setValueByPath(state.adjustments, curveEnabledPath(), els.curvesEnabled.checked);
+    drawCurveEditor();
+    renderReadouts();
+    debouncePreview();
   });
 
   els.curveChannelButtons.forEach((button) => {
@@ -222,12 +318,24 @@ function bindEvents() {
   });
   els.curveReset.addEventListener("click", () => {
     setCurveValues(state.selectedCurveChannel, defaultCurvePoints());
+    state.selectedCurvePoint = 2;
+    drawCurveEditor();
+    debouncePreview();
+  });
+  els.curveAdd.addEventListener("click", () => {
+    addCurvePoint();
+    drawCurveEditor();
+    debouncePreview();
+  });
+  els.curveRemove.addEventListener("click", () => {
+    removeCurvePoint();
     drawCurveEditor();
     debouncePreview();
   });
   bindCurveEditor();
 
   els.exportButton.addEventListener("click", exportCurrentSession);
+  els.exportDirectoryBrowse.addEventListener("click", chooseExportDirectory);
   els.applyInterpretationButton.addEventListener("click", applyInterpretationOverride);
   els.resetInterpretationButton.addEventListener("click", resetInterpretationToAuto);
   els.ejectButton.addEventListener("click", ejectCurrentSession);
@@ -247,6 +355,17 @@ async function loadCapabilities() {
   const response = await fetch("/api/capabilities");
   const data = await response.json();
   state.capabilities = data.capabilities;
+}
+
+function bindRangeResetControls() {
+  document.querySelectorAll('input[type="range"]').forEach((control) => {
+    control.addEventListener("dblclick", (event) => {
+      event.preventDefault();
+      control.value = control.defaultValue;
+      control.dispatchEvent(new Event("input", { bubbles: true }));
+      control.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  });
 }
 
 async function uploadFile(file) {
@@ -307,7 +426,9 @@ async function ejectCurrentSession() {
   hidePreviewMessage();
   renderSessionChrome();
   state.selectedCurveChannel = "luma";
+  state.selectedCurvePoint = 2;
   renderCurveChannelTabs();
+  syncCurveControlsFromState();
   drawCurveEditor();
   renderOverlayPresetNote();
 }
@@ -330,6 +451,7 @@ function renderSession() {
   renderMetadata(session);
   renderReadouts();
   syncControlsFromState();
+  syncCurveControlsFromState();
   renderSessionChrome();
   drawCurveEditor();
   renderOverlayPresetNote();
@@ -362,7 +484,9 @@ function renderReadouts() {
   renderKeyValueList(els.previewOutputList, previewOutputEntries());
   renderKeyValueList(els.displayInfoList, displayProbeEntries());
   renderKeyValueList(els.sourcePreviewList, sourceInterpretationEntries());
-  els.curveStatus.textContent = `Curves apply to the currently active preview side: ${state.adjustments.shared.active_focus.toUpperCase()}.`;
+  const lane = currentCurveLane().toUpperCase();
+  const enabled = getValueByPath(state.adjustments, curveEnabledPath()) ? "enabled" : "disabled";
+  els.curveStatus.textContent = `${lane} curves are ${enabled}. Curve edits affect only the ${lane} preview/export branch.`;
 }
 
 function renderOverlayPresetNote() {
@@ -791,6 +915,28 @@ async function exportCurrentSession() {
   }
 }
 
+async function chooseExportDirectory() {
+  els.exportDirectoryBrowse.disabled = true;
+  els.exportStatus.textContent = "Opening folder picker...";
+  const response = await fetch("/api/export-directory", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ initial_directory: els.exportDirectory.value || null }),
+  });
+  const payload = await safeJson(response);
+  els.exportDirectoryBrowse.disabled = false;
+  if (!response.ok) {
+    els.exportStatus.textContent = payload?.detail || "Folder picker failed.";
+    return;
+  }
+  if (payload?.directory) {
+    els.exportDirectory.value = payload.directory;
+    els.exportStatus.textContent = `Save folder set to ${payload.directory}`;
+    return;
+  }
+  els.exportStatus.textContent = "Folder selection cancelled.";
+}
+
 async function applyInterpretationOverride() {
   if (!state.session) return;
   const override = interpretationPayload();
@@ -850,6 +996,11 @@ function syncControlsFromState() {
   });
 }
 
+function syncCurveControlsFromState() {
+  els.curvesEnabled.checked = Boolean(getValueByPath(state.adjustments, curveEnabledPath()));
+  els.curveRemove.disabled = currentCurveValues().length <= 2 || isLockedCurveEndpoint(state.selectedCurvePoint);
+}
+
 function renderSessionChrome() {
   els.ejectButton.disabled = !state.session;
 }
@@ -865,6 +1016,7 @@ function bindCurveEditor() {
   const beginDrag = (clientX, clientY) => {
     const rect = canvas.getBoundingClientRect();
     state.activeCurvePoint = nearestCurvePointIndex(clientX, clientY, rect);
+    state.selectedCurvePoint = state.activeCurvePoint;
     updateCurveFromPointer(clientX, clientY);
     const move = (event) => {
       event.preventDefault();
@@ -875,6 +1027,7 @@ function bindCurveEditor() {
       window.removeEventListener("pointerup", stop);
       window.removeEventListener("pointercancel", stop);
       state.activeCurvePoint = null;
+      syncCurveControlsFromState();
       debouncePreview();
     };
     window.addEventListener("pointermove", move);
@@ -899,6 +1052,7 @@ function updateCurveFromPointer(clientX, clientY) {
   else point[0] = clamp(normalizedX, curve[index - 1][0] + 0.02, curve[index + 1][0] - 0.02);
   point[1] = clamp(normalizedY, 0, 1);
   curve[index] = point;
+  state.selectedCurvePoint = index;
   setCurveValues(state.selectedCurveChannel, curve);
   drawCurveEditor();
 }
@@ -952,28 +1106,36 @@ function drawCurveEditor() {
   curve.forEach(([xValue, yValue], index) => {
     const x = padding + xValue * (width - padding * 2);
     const y = height - padding - yValue * (height - padding * 2);
-    ctx.fillStyle = index === 0 || index === curve.length - 1 ? "#7f7a6f" : "#ece9df";
+    ctx.fillStyle = index === state.selectedCurvePoint ? "#efbb55" : index === 0 || index === curve.length - 1 ? "#7f7a6f" : "#ece9df";
     ctx.beginPath();
-    ctx.arc(x, y, index === 0 || index === curve.length - 1 ? 4 : 5, 0, Math.PI * 2);
+    ctx.arc(x, y, index === state.selectedCurvePoint ? 6 : index === 0 || index === curve.length - 1 ? 4 : 5, 0, Math.PI * 2);
     ctx.fill();
   });
+  syncCurveControlsFromState();
 }
 
 function currentCurveValues() {
   const path = curvePath(state.selectedCurveChannel);
-  return getValueByPath(state.adjustments, path).map(([x, y]) => [x, y]);
+  const values = getValueByPath(state.adjustments, path) || defaultCurvePoints();
+  return values.map(([x, y]) => [x, y]);
 }
 
 function setCurveValues(channel, values) {
-  setValueByPath(state.adjustments, curvePath(channel), values);
+  const normalized = normalizeCurvePoints(values);
+  state.selectedCurvePoint = Math.min(state.selectedCurvePoint ?? 0, normalized.length - 1);
+  setValueByPath(state.adjustments, curvePath(channel), normalized);
 }
 
 function curvePath(channel) {
-  return `shared.${channel}_curve`;
+  return `${currentCurveLane()}.${channel}_curve`;
 }
 
-function curvePointCount() {
-  return currentCurveValues().length;
+function curveEnabledPath() {
+  return `${currentCurveLane()}.curves_enabled`;
+}
+
+function currentCurveLane() {
+  return state.currentView === "sdr" ? "sdr" : "hdr";
 }
 
 function nearestCurvePointIndex(clientX, clientY, rect) {
@@ -992,6 +1154,53 @@ function nearestCurvePointIndex(clientX, clientY, rect) {
   return nearestIndex;
 }
 
+function addCurvePoint() {
+  const curve = currentCurveValues();
+  if (curve.length >= 16) return;
+  let insertIndex = 1;
+  let widestGap = -1;
+  for (let index = 0; index < curve.length - 1; index += 1) {
+    const gap = curve[index + 1][0] - curve[index][0];
+    if (gap > widestGap) {
+      widestGap = gap;
+      insertIndex = index + 1;
+    }
+  }
+  const x = curve[insertIndex - 1][0] + widestGap / 2;
+  const [[, y]] = sampleCurvePoints(curve, 1, x);
+  curve.splice(insertIndex, 0, [x, y]);
+  state.selectedCurvePoint = insertIndex;
+  setCurveValues(state.selectedCurveChannel, curve);
+}
+
+function removeCurvePoint() {
+  const curve = currentCurveValues();
+  const index = state.selectedCurvePoint ?? Math.floor(curve.length / 2);
+  if (curve.length <= 2 || isLockedCurveEndpoint(index)) return;
+  curve.splice(index, 1);
+  state.selectedCurvePoint = Math.min(index, curve.length - 2);
+  setCurveValues(state.selectedCurveChannel, curve);
+}
+
+function isLockedCurveEndpoint(index) {
+  const curve = currentCurveValues();
+  return index <= 0 || index >= curve.length - 1;
+}
+
+function normalizeCurvePoints(points) {
+  const sorted = points
+    .map(([x, y]) => [clamp(Number(x), 0, 1), clamp(Number(y), 0, 1)])
+    .sort((a, b) => a[0] - b[0])
+    .slice(0, 16);
+  if (sorted.length < 2) return defaultCurvePoints();
+  sorted[0][0] = 0;
+  sorted[sorted.length - 1][0] = 1;
+  for (let index = 1; index < sorted.length - 1; index += 1) {
+    sorted[index][0] = clamp(sorted[index][0], sorted[index - 1][0] + 0.02, sorted[index + 1][0] - 0.02);
+  }
+  return sorted;
+}
+
 function curveColor(channel) {
   if (channel === "red") return "#ff8585";
   if (channel === "green") return "#7fe6a8";
@@ -1007,8 +1216,10 @@ function defaultCurvePoints() {
   return [[0, 0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1, 1]];
 }
 
-function sampleCurvePoints(points, samples) {
-  const sampleX = Array.from({ length: samples }, (_, index) => index / (samples - 1));
+function sampleCurvePoints(points, samples, forcedX = null) {
+  const sampleX = forcedX === null
+    ? Array.from({ length: samples }, (_, index) => samples <= 1 ? 0 : index / (samples - 1))
+    : [forcedX];
   const sampleY = monotoneCurveValues(points, sampleX);
   return sampleX.map((x, index) => [x, sampleY[index]]);
 }

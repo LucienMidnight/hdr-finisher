@@ -2,16 +2,13 @@ from __future__ import annotations
 
 import os
 import shutil
-import sys
 from pathlib import Path
 
-from .config import PROJECT_ROOT
+from .config import BIN_DIR
 
 
 def bundled_binary_dir() -> Path:
-    if hasattr(sys, "_MEIPASS"):
-        return Path(sys._MEIPASS) / "bin"
-    return PROJECT_ROOT / "bin"
+    return BIN_DIR
 
 
 def resolve_binary(command: str) -> Path | None:

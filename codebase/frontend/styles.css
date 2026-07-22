@@ -534,6 +534,18 @@ input[type="text"] {
   color: var(--text);
 }
 
+.directory-picker-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.directory-picker-row .utility-button-small {
+  min-width: 82px;
+  white-space: nowrap;
+}
+
 .scope-mode-select {
   width: auto;
   min-width: 0;
@@ -616,6 +628,12 @@ input[type="text"] {
 }
 
 .channel-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.curve-actions {
   display: inline-flex;
   flex-wrap: wrap;
   gap: 6px;

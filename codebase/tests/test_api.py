@@ -207,3 +207,17 @@ def test_export_endpoint_returns_backend_payload(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["backend"] == "avif_gain_map"
     assert response.json()["output_path"].endswith(".avif")
+
+
+def test_export_directory_endpoint_returns_selected_folder(monkeypatch) -> None:
+    monkeypatch.setattr("hdr_finisher.main.pick_directory", lambda initial_directory=None: "D:\\Exports")
+    response = client.post("/api/export-directory", json={"initial_directory": "D:\\"})
+    assert response.status_code == 200
+    assert response.json()["directory"] == "D:\\Exports"
+
+
+def test_export_directory_endpoint_allows_cancel(monkeypatch) -> None:
+    monkeypatch.setattr("hdr_finisher.main.pick_directory", lambda initial_directory=None: None)
+    response = client.post("/api/export-directory", json={})
+    assert response.status_code == 200
+    assert response.json()["directory"] is None

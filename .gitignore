@@ -19,6 +19,7 @@ Thumbs.db
 codebase/exports/
 codebase/_tmp_avif_test/
 codebase/preview_probe.avif
+codebase/output/
 
 # Local test media and personal captures
 IMG_4109.HEIC

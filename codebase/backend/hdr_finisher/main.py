@@ -12,8 +12,18 @@ from fastapi.staticfiles import StaticFiles
 from .capabilities import probe_capabilities
 from .config import APP_NAME, APP_VERSION, DEFAULT_HOST, DEFAULT_PORT, FRONTEND_DIR, SAMPLES_DIR
 from .exporters import build_export_backends
+from .folder_picker import pick_directory
 from .loader import LoaderError
-from .models import ExportSettings, PreviewKind, PreviewRequest, ScopeMode, SessionSummary, SourceInterpretationOverride
+from .models import (
+    DirectoryPickRequest,
+    DirectoryPickResponse,
+    ExportSettings,
+    PreviewKind,
+    PreviewRequest,
+    ScopeMode,
+    SessionSummary,
+    SourceInterpretationOverride,
+)
 from .overlay import render_overlay_bytes
 from .preview import render_preview_bytes
 from .scopes import build_scope
@@ -157,6 +167,15 @@ def export(session_id: str, settings: ExportSettings):
     if not result.accepted:
         return JSONResponse(status_code=501, content=result.model_dump())
     return result
+
+
+@app.post("/api/export-directory")
+def export_directory(request: DirectoryPickRequest) -> DirectoryPickResponse:
+    try:
+        directory = pick_directory(request.initial_directory)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return DirectoryPickResponse(directory=directory)
 
 
 @app.get("/")

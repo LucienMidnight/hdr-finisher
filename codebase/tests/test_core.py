@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from hdr_finisher.adjustments import apply_adjustments
 from hdr_finisher.analysis import classify_hdr
 from hdr_finisher.color import normalize_to_acescg, sanitize_array
 from hdr_finisher.exporters import _linear_to_bt2020_pq_yuv10, _linear_to_pq_rgb10, _linear_to_srgb8
 from hdr_finisher.loader import _apply_apple_hdr_gainmap, _compute_apple_headroom
-from hdr_finisher.models import AdjustmentState, HDRClassification, PreviewKind
+from hdr_finisher.models import AdjustmentState, ExportSettings, HDRAdjustments, HDRClassification, PreviewKind
 from hdr_finisher.overlay import build_overlay_rgba
 from hdr_finisher.preview import downsample_image
 from hdr_finisher.models import ScopeMode
-from hdr_finisher.scopes import build_scope
+from hdr_finisher.scopes import _rgb_to_reference_nits, build_scope
 
 
 def test_sanitize_array_replaces_invalid_values() -> None:
@@ -160,6 +161,125 @@ def test_hdr_curves_can_bias_individual_channels() -> None:
     assert output[0, 0, 0] > output[0, 0, 1]
 
 
+def test_hdr_branch_curves_do_not_affect_sdr_branch() -> None:
+    image = np.ones((2, 2, 3), dtype=np.float32) * 0.5
+    baseline = apply_adjustments(image, AdjustmentState(), PreviewKind.SDR)
+    adjustments = AdjustmentState.model_validate(
+        {
+            "hdr": {
+                "curves_enabled": True,
+                "luma_curve": [[0.0, 0.0], [0.4, 0.08], [1.0, 0.08]],
+            },
+            "sdr": {"curves_enabled": False},
+        }
+    )
+
+    output = apply_adjustments(image, adjustments, PreviewKind.SDR)
+    assert np.allclose(output, baseline)
+
+
+def test_all_hdr_lane_controls_are_isolated_from_sdr_fallback() -> None:
+    image = np.array([[[0.05, 0.18, 0.5], [1.0, 4.0, 20.0]]], dtype=np.float32)
+    baseline = apply_adjustments(image, AdjustmentState(), PreviewKind.SDR)
+    adjustments = AdjustmentState.model_validate(
+        {
+            "hdr": {
+                "exposure": 1.5,
+                "highlight_rolloff": 1.5,
+                "shadow_lift": 0.4,
+                "lift": 0.2,
+                "gamma": -0.3,
+                "gain": 0.25,
+                "contrast": 0.5,
+                "contrast_pivot": 0.3,
+                "white_balance_kelvin": 11000,
+                "tint": 0.8,
+                "curves_enabled": True,
+                "luma_curve": [[0.0, 0.0], [0.5, 0.1], [1.0, 0.3]],
+            }
+        }
+    )
+
+    output = apply_adjustments(image, adjustments, PreviewKind.SDR)
+
+    np.testing.assert_allclose(output, baseline, rtol=0.0, atol=0.0)
+
+
+def test_all_hdr_lane_controls_are_isolated_from_embedded_sdr_reference() -> None:
+    scene = np.ones((1, 3, 3), dtype=np.float32) * 4.0
+    reference = np.repeat(np.array([0.1, 0.5, 0.9], dtype=np.float32).reshape(1, -1, 1), 3, axis=2)
+    baseline = apply_adjustments(scene, AdjustmentState(), PreviewKind.SDR, sdr_reference_image=reference)
+    adjustments = AdjustmentState.model_validate(
+        {
+            "hdr": {
+                "exposure": -2.0,
+                "highlight_rolloff": 2.0,
+                "shadow_lift": -0.5,
+                "lift": -0.4,
+                "gamma": 0.6,
+                "gain": -0.3,
+                "contrast": -0.7,
+                "white_balance_kelvin": 2500,
+                "tint": -0.9,
+            }
+        }
+    )
+
+    output = apply_adjustments(scene, adjustments, PreviewKind.SDR, sdr_reference_image=reference)
+
+    np.testing.assert_allclose(output, baseline, rtol=0.0, atol=0.0)
+
+
+def test_sdr_branch_curves_do_not_affect_hdr_branch() -> None:
+    image = np.ones((2, 2, 3), dtype=np.float32) * 0.5
+    baseline = apply_adjustments(image, AdjustmentState(), PreviewKind.HDR)
+    adjustments = AdjustmentState.model_validate(
+        {
+            "hdr": {"curves_enabled": False},
+            "sdr": {
+                "curves_enabled": True,
+                "luma_curve": [[0.0, 0.0], [0.4, 0.08], [1.0, 0.08]],
+            },
+        }
+    )
+
+    output = apply_adjustments(image, adjustments, PreviewKind.HDR)
+    assert np.allclose(output, baseline)
+
+
+def test_variable_point_curves_are_supported() -> None:
+    image = np.ones((2, 2, 3), dtype=np.float32) * 0.5
+    adjustments = AdjustmentState.model_validate(
+        {
+            "sdr": {
+                "curves_enabled": True,
+                "luma_curve": [[0.0, 0.0], [0.2, 0.12], [0.5, 0.35], [0.7, 0.55], [0.9, 0.72], [1.0, 0.85]],
+            }
+        }
+    )
+
+    output = apply_adjustments(image, adjustments, PreviewKind.SDR)
+    assert output.mean() < apply_adjustments(image, AdjustmentState(), PreviewKind.SDR).mean()
+
+
+def test_sdr_lift_gamma_gain_controls_target_luminance_sections() -> None:
+    image = np.array([[[0.08, 0.08, 0.08], [0.5, 0.5, 0.5], [0.9, 0.9, 0.9]]], dtype=np.float32)
+    lifted = apply_adjustments(image, AdjustmentState.model_validate({"sdr": {"lift": 0.15}}), PreviewKind.SDR)
+    gained = apply_adjustments(image, AdjustmentState.model_validate({"sdr": {"gain": 0.15}}), PreviewKind.SDR)
+    baseline = apply_adjustments(image, AdjustmentState(), PreviewKind.SDR)
+
+    assert lifted[0, 0].mean() - baseline[0, 0].mean() > lifted[0, 2].mean() - baseline[0, 2].mean()
+    assert gained[0, 2].mean() - baseline[0, 2].mean() > gained[0, 0].mean() - baseline[0, 0].mean()
+
+
+def test_hdr_contrast_pivot_keeps_middle_gray_near_stable() -> None:
+    image = np.array([[[0.1845, 0.1845, 0.1845], [2.0, 2.0, 2.0]]], dtype=np.float32)
+    output = apply_adjustments(image, AdjustmentState.model_validate({"hdr": {"contrast": 0.5, "contrast_pivot": 0.1845}}), PreviewKind.HDR)
+
+    assert abs(float(output[0, 0].mean()) - 0.1845) < 0.02
+    assert output[0, 1].mean() > image[0, 1].mean()
+
+
 def test_false_color_overlay_returns_rgba_pixels() -> None:
     image = np.ones((4, 4, 3), dtype=np.float32) * 2.0
     adjustments = AdjustmentState.model_validate(
@@ -194,6 +314,49 @@ def test_zebra_overlay_is_transparent_below_threshold() -> None:
     assert np.all(overlay[..., 3] == 0)
 
 
+def test_overlay_opacity_step_changes_alpha_gradually() -> None:
+    image = np.ones((4, 4, 3), dtype=np.float32) * 2.0
+    baseline = build_overlay_rgba(
+        image,
+        AdjustmentState.model_validate({"shared": {"overlay_mode": "zebra", "overlay_opacity": 0.72}}),
+        PreviewKind.HDR,
+    )
+    stepped = build_overlay_rgba(
+        image,
+        AdjustmentState.model_validate({"shared": {"overlay_mode": "zebra", "overlay_opacity": 0.73}}),
+        PreviewKind.HDR,
+    )
+
+    assert 1 <= int(stepped[..., 3].max()) - int(baseline[..., 3].max()) <= 4
+
+
+def test_zebra_threshold_step_moves_cutoff_without_invalid_alpha() -> None:
+    levels = np.linspace(0.15, 0.25, 32, dtype=np.float32)
+    image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
+    baseline = build_overlay_rgba(
+        image,
+        AdjustmentState.model_validate({"shared": {"overlay_mode": "zebra", "overlay_threshold": 1.0}}),
+        PreviewKind.HDR,
+    )
+    stepped = build_overlay_rgba(
+        image,
+        AdjustmentState.model_validate({"shared": {"overlay_mode": "zebra", "overlay_threshold": 1.05}}),
+        PreviewKind.HDR,
+    )
+
+    assert np.count_nonzero(stepped[..., 3]) <= np.count_nonzero(baseline[..., 3])
+    assert stepped[..., 3].dtype == np.uint8
+
+
+def test_export_quality_slider_bounds_are_enforced() -> None:
+    assert ExportSettings(quality=1).quality == 1
+    assert ExportSettings(quality=100).quality == 100
+    with pytest.raises(ValueError):
+        ExportSettings(quality=0)
+    with pytest.raises(ValueError):
+        ExportSettings(quality=101)
+
+
 def test_hdr_scope_reports_reference_nits_and_stats() -> None:
     image = np.ones((8, 8, 3), dtype=np.float32) * 1.8
     scope = build_scope(image, AdjustmentState(), PreviewKind.HDR)
@@ -203,6 +366,28 @@ def test_hdr_scope_reports_reference_nits_and_stats() -> None:
     assert any(stat.label == "Peak" for stat in scope.stats)
     assert len(scope.bin_edges) == 65
     assert any(channel.name == "Y" for channel in scope.channels)
+
+
+def test_reference_nits_anchor_matches_prd_values() -> None:
+    image = np.array([[[0.18, 0.18, 0.18], [1.8, 1.8, 1.8]]], dtype=np.float32)
+    nits = _rgb_to_reference_nits(image)
+    assert np.allclose(nits[0, 0], 100.0)
+    assert np.allclose(nits[0, 1], 1000.0)
+
+
+def test_hdr_scope_threshold_percentages_for_known_luminance() -> None:
+    image = np.zeros((2, 2, 3), dtype=np.float32)
+    image[0, 0, :] = 0.18
+    image[0, 1, :] = 0.3654
+    image[1, 0, :] = 1.8
+    image[1, 1, :] = 0.09
+    adjustments = AdjustmentState(hdr=HDRAdjustments(highlight_rolloff=0))
+    scope = build_scope(image, adjustments, PreviewKind.HDR)
+    stats = {stat.label: stat.value for stat in scope.stats}
+    assert stats["Peak"] == "1000.0 nit"
+    assert stats["% > 100"] == "50.00%"
+    assert stats["% > 203"] == "25.00%"
+    assert stats["% > 1000"] == "0.00%"
 
 
 def test_sdr_scope_reports_normalized_histogram() -> None:
@@ -224,3 +409,23 @@ def test_hdr_waveform_reports_density_grid() -> None:
     assert len(scope.channels[0].grid) == 64
     assert len(scope.channels[0].grid[0]) > 0
     assert any(channel.name == "Y" for channel in scope.channels)
+
+
+def test_hdr_waveform_places_bright_columns_higher_than_dark_columns() -> None:
+    image = np.ones((8, 8, 3), dtype=np.float32) * 0.18
+    image[:, 4:, :] = 1.8
+    adjustments = AdjustmentState(hdr=HDRAdjustments(highlight_rolloff=0))
+    scope = build_scope(image, adjustments, PreviewKind.HDR, ScopeMode.WAVEFORM, bins=16, waveform_columns=8)
+    y_grid = np.array(next(channel.grid for channel in scope.channels if channel.name == "Y"))
+    first_half_row = int(np.argmax(y_grid[:, :4].sum(axis=1)))
+    second_half_row = int(np.argmax(y_grid[:, 4:].sum(axis=1)))
+    assert second_half_row > first_half_row
+
+
+def test_sdr_source_has_predictable_internal_hdr_scope_anchor() -> None:
+    image = np.ones((4, 4, 3), dtype=np.float32) * 0.18
+    analysis = classify_hdr(image, {}, ".png")
+    scope = build_scope(image, AdjustmentState(), PreviewKind.HDR)
+    stats = {stat.label: stat.value for stat in scope.stats}
+    assert analysis.classification == HDRClassification.SDR_ONLY
+    assert stats["Peak"] == "100.0 nit"

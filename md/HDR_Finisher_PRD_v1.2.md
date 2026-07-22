@@ -94,16 +94,24 @@ These are the controls available while viewing the image in true HDR. All adjust
 - **Global Exposure** â€” linear gain multiplier on the full HDR array
 - **Highlight Rolloff** â€” soft compression of values above a user-defined threshold; the most critical control for HDR headroom management
 - **Shadow Lift / Black Point** â€” floor adjustment
+- **Lift / Gamma / Gain** â€” luminance-zone controls evaluated as smooth stop offsets in scene-linear light
+- **Contrast / Pivot** â€” scene-linear contrast evaluated in exposure-value space around a user-controlled linear-light pivot
 - **White Balance** â€” temperature (Kelvin) and tint sliders; applies a per-channel multiplier to the float data
+
+HDR controls must remain continuous at their neutral values, preserve luminance ordering, and must not introduce an implicit ceiling when enabled. Values above the curve editor's nominal range pass through unless the user deliberately applies a highlight adjustment.
 
 ### SDR Side Controls (affect only the SDR base image baked into the gain map)
 - **SDR Exposure** â€” independent exposure control for the SDR rendition
-- **SDR Highlight Recovery** â€” how aggressively the SDR version rolls off bright areas
+- **SDR Highlight Recovery** â€” a monotonic display shoulder that holds 0.18 mid-gray stable while progressively lowering highlights
 - **SDR Shadow** â€” independent shadow control
-- **Contrast** â€” midtone contrast adjustment for the SDR base
+- **Lift / Gamma / Gain** â€” display-referred luminance-zone trims applied after SDR tone mapping
+- **Contrast / Pivot** â€” display-referred midtone contrast for matching the SDR base to the HDR rendition
 
-### Shared
-- **RGB Curves Editor** â€” a single curves control with separate R, G, B, and Luma channels; affects whichever "side" (HDR or SDR) is currently in preview focus
+### Curves
+- **Independent HDR and SDR RGB Curves** â€” each lane stores separate R, G, B, and Luma curves; editing the active preview lane must never alter the other lane
+- Curves support adding and removing control points, retain locked endpoints, and preserve over-range HDR values outside the editor domain
+
+The HDR and SDR lanes are independent grading branches after source interpretation. HDR-lane exposure, rolloff, shadows, lift/gamma/gain, contrast, white balance/tint, and curves must not alter the SDR fallback; SDR-lane controls must not alter the HDR alternate. Color-space interpretation and conversion into the ACEScg working space happen before this branch and remain shared.
 
 ### Tone Mapping Operators (v1)
 The SDR base rendition is generated using the following operators:
@@ -392,11 +400,31 @@ The repository is no longer at the original vertical-slice stage. It now provide
 ### Current Blockers and Known Gaps
 - JPEG Ultra HDR export is still stubbed; `libultrahdr` / `ultrahdr_app` is not wired yet
 - JPEG XL gain-map export is still stubbed; `cjxl` is not wired yet
-- Packaging and distribution work (PyInstaller, signing, notarization, clean-machine validation) is not started
+- Packaging and distribution work is still at the alpha scaffold stage. The near-term target is a technical Windows alpha build, likely a zipped PyInstaller artifact rather than a polished installer.
 - Windows Photos remains an unreliable validation target for AVIF gain-map HDR compared with Brave / Chromium browsers
 - Preview AVIF quality is now usable, but still tunable; a future user-facing preview-quality control may be worthwhile
 - EXR automatic color-space detection is safer now, but still depends on source metadata / chromaticities; fully robust auto-detection remains a quality target rather than a solved problem
 - The right-rail layout is now usable, but broader UI polish and simplification are still warranted once core feature work settles
+
+### Technical Alpha Packaging Direction
+The first public packaging milestone should serve technical users rather than broad consumer distribution. A signed installer is not required for this alpha. The expected artifact is a GitHub Release containing a zipped Windows build that runs without a local Python install, includes the required AVIF encoder binaries, and clearly documents known limitations.
+
+The alpha release should prioritize:
+- Windows first
+- AVIF + gain-map export, SDR PNG export, and the existing import / preview / adjustment workflow
+- Bundled sample media or a one-command sample generation path
+- Clear capability reporting for bundled binaries and optional export backends
+- Clean-machine validation on Windows
+- Release notes that state Chromium / Brave / Edge are the preferred HDR validation targets
+
+The alpha release should not be blocked by:
+- A polished installer
+- Windows code signing
+- macOS signing / notarization
+- JPEG XL export
+- JPEG Ultra HDR export, unless it becomes straightforward to wire before packaging
+
+After the technical alpha proves the workflow, the packaging track can move toward a conventional installer, signing, macOS `.app` packaging, notarization, and broader release automation.
 
 ### Implementation Reality vs PRD
 - **Preview transport:** the PRD target of true HDR browser preview is now implemented. HDR previews are served as PQ AVIF and SDR previews remain display-safe fallback images.
@@ -404,13 +432,18 @@ The repository is no longer at the original vertical-slice stage. It now provide
 - **HEIC auxiliary gain maps:** iPhone HDR HEIC files are no longer decoded as false SDR when Apple auxiliary gain-map data is present; the gain map is applied and the embedded SDR base is preserved separately for fallback output.
 - **Source ambiguity handling:** the `HDR_LINEAR_UNCONFIRMED` / ambiguous color-state warning now has a real user override workflow in the UI and backend session model.
 - **Source override UX:** the app now separates color primaries from transfer function and exposes a manual Source Settings workflow more like Resolve's auto/manual color-management split.
-- **Adjustment layer:** the HDR and SDR sliders remain real, and the PRD's RGB curves editor requirement is now implemented for the active preview side.
+- **Adjustment layer:** HDR primaries use continuous scene-linear stop-domain math, SDR trims remain independent and display-safe, and HDR/SDR curves now have separate state with add/remove point controls.
+- **Branch isolation:** the SDR fallback now starts from the neutral interpreted source or embedded HEIC SDR reference, never from the HDR-graded branch; HDR-lane controls are regression-tested for zero influence on both SDR paths.
+- **Wide-range control QA:** every image-affecting slider is regression-tested by one browser step against wide EXR-like values for finite output, luminance ordering, and gradual response; the SDR-reference path is tested separately.
 - **Scopes:** the original histogram goal is now exceeded by an HDR waveform mode, reference-nit labeling, and luma / parade diagnostics that make the tool more useful on SDR-only displays.
 - **Viewport diagnostics:** false color and zebra overlays are now implemented, including named HDR luminance presets and explanatory tooltips.
 - **UI state reliability:** the earlier broken-image / empty-state overlap bug has been cleaned up, and a later layout pass resolved right-rail clipping, tooltip placement, overlay-image positioning, and stray frame-corner ornament bugs.
 
 ### Current UI Testing Notes
 - The UI has been refactored into a three-rail layout: Inspector on the left, preview center, controls/scopes/export on the right
+- A repo-local Playwright preview script now smoke-tests the local UI in Chrome and writes artifacts under `codebase/output/playwright/`
+- A repo-local alpha QA harness now runs tests, capability checks, sample AVIF export, AVIF metadata inspection, and Playwright preview, with reports under `codebase/output/qa/`
+- A Windows alpha build script now targets a zipped PyInstaller folder artifact and smoke-tests the packaged app before archiving
 - Import can now happen either through the `Import Image` button or by dropping directly into the preview viewport
 - The left rail intentionally hides its scrollbar in normal desktop use while remaining scrollable if overflow occurs
 - Technical preview readouts now show app output transport, browser display probe data, and source interpretation details
@@ -424,11 +457,12 @@ The repository is no longer at the original vertical-slice stage. It now provide
 - The diagnostic overlay image is now positioned against the rendered preview image box rather than using independent layout assumptions
 
 ### Recommended Next Steps After This Checkpoint
-1. Implement JPEG Ultra HDR export, since it remains a major advertised output target and is still stubbed
-2. Decide whether JPEG XL gain-map export should follow immediately or remain deferred behind packaging / distribution work
-3. Add packaging work for Windows first, including binary bundling and clean-machine validation
-4. Continue real-world validation of edited EXR workflows now that import, scopes, and export are behaving
-5. Reserve a later pass for UI polish / simplification once the remaining export and packaging gaps are closed
+1. Create the Windows technical alpha package first: PyInstaller build, bundled AVIF binaries, zipped release artifact, and clean-machine validation
+2. Add concise GitHub Release notes with supported workflow, known limitations, and Chromium / Brave / Edge HDR validation guidance
+3. Continue real-world validation of edited EXR workflows now that import, scopes, and export are behaving
+4. Implement JPEG Ultra HDR export after the alpha package unless the `libultrahdr` CLI integration becomes low-friction before release
+5. Keep JPEG XL gain-map export deferred unless it becomes strategically important or easy to ship
+6. Reserve installer polish, code signing, macOS packaging, notarization, and broader UI simplification for post-alpha milestones
 
 ---
 

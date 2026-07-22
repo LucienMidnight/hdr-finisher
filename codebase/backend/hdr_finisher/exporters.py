@@ -249,7 +249,7 @@ def _validate_avif_output(path: Path) -> str | None:
     return "Output was written, but gain map metadata could not be confirmed."
 
 
-def export_sample_hdr_reference() -> ExportResponse:
+def export_sample_hdr_reference(output_path: Path | None = None) -> ExportResponse:
     session = type(
         "SampleSession",
         (),
@@ -259,8 +259,9 @@ def export_sample_hdr_reference() -> ExportResponse:
             "adjustments": AdjustmentState(),
         },
     )()
-    SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
-    settings = ExportSettings(format="avif_gain_map", quality=90, output_path=str(SAMPLES_DIR / "hdr_reference.avif"))
+    target_path = output_path or (SAMPLES_DIR / "hdr_reference.avif")
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    settings = ExportSettings(format="avif_gain_map", quality=90, output_path=str(target_path))
     backend = AVIFGainMapExportBackend(
         CapabilityInfo(name="avif gain map export", status=CapabilityStatus.AVAILABLE, detail="Sample export")
     )

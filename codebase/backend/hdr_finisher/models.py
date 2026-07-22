@@ -90,16 +90,51 @@ class HDRAdjustments(BaseModel):
     exposure: float = 0.0
     highlight_rolloff: float = 0.25
     shadow_lift: float = 0.0
+    lift: float = 0.0
+    gamma: float = 0.0
+    gain: float = 0.0
+    contrast: float = 0.0
+    contrast_pivot: float = 0.1845
     white_balance_kelvin: int = 6500
     tint: float = 0.0
+    curves_enabled: bool = False
+    luma_curve: list[list[float]] = Field(
+        default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
+    )
+    red_curve: list[list[float]] = Field(
+        default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
+    )
+    green_curve: list[list[float]] = Field(
+        default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
+    )
+    blue_curve: list[list[float]] = Field(
+        default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
+    )
 
 
 class SDRAdjustments(BaseModel):
     exposure: float = 0.0
     highlight_recovery: float = 0.25
     shadow: float = 0.0
+    lift: float = 0.0
+    gamma: float = 0.0
+    gain: float = 0.0
     contrast: float = 0.0
+    contrast_pivot: float = 0.5
     tone_mapper: ToneMapper = ToneMapper.ACES
+    curves_enabled: bool = False
+    luma_curve: list[list[float]] = Field(
+        default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
+    )
+    red_curve: list[list[float]] = Field(
+        default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
+    )
+    green_curve: list[list[float]] = Field(
+        default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
+    )
+    blue_curve: list[list[float]] = Field(
+        default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
+    )
 
 
 class SharedAdjustments(BaseModel):
@@ -186,7 +221,7 @@ class ScopeResponse(BaseModel):
 
 class ExportSettings(BaseModel):
     format: str = "avif_gain_map"
-    quality: int = 85
+    quality: int = Field(default=85, ge=1, le=100)
     output_path: str | None = None
 
 
@@ -195,3 +230,11 @@ class ExportResponse(BaseModel):
     backend: str
     message: str
     output_path: str | None = None
+
+
+class DirectoryPickRequest(BaseModel):
+    initial_directory: str | None = None
+
+
+class DirectoryPickResponse(BaseModel):
+    directory: str | None = None

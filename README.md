@@ -71,6 +71,46 @@ python run_app.py
 
 Then open `http://127.0.0.1:8000` in a Chromium-based browser (Chrome, Brave, or Edge) for correct HDR preview rendering.
 
+## UI Preview Automation
+
+The repo includes a small Playwright smoke-preview script for checking the local UI in Chrome:
+
+```powershell
+cd codebase
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\playwright_preview.ps1
+```
+
+The script starts the local app if needed, reuses the machine's existing Playwright browser cache when available, prefers installed Chrome, and writes its screenshot/result files to `codebase/output/playwright/`. Add `-Headed` for a visible browser window or `-KeepServer` to leave the local app running afterward.
+
+## Alpha QA And Packaging
+
+Run the full alpha QA harness:
+
+```powershell
+cd codebase
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\run_alpha_qa.ps1
+```
+
+This runs tests, JavaScript syntax validation, capability reporting, sample AVIF export, AVIF metadata inspection, and Playwright UI preview. Reports are written to `codebase/output/qa/`.
+
+Build the technical Windows alpha package:
+
+```powershell
+cd codebase
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_windows.ps1
+```
+
+The build uses PyInstaller folder mode, smoke-tests the packaged app, and writes `codebase/output/package/HDRFinisher-alpha-windows.zip`. If PyInstaller is missing, install dev dependencies with `python -m pip install -r requirements-dev.txt`.
+
+For private HEIC/EXR validation without committing media:
+
+```powershell
+cd codebase
+python .\tools\local_media_probe.py "D:\path\to\image.heic" "D:\path\to\render.exr" --export
+```
+
+Manual HDR-display checks are tracked in `md\Alpha_Manual_QA_Checklist.md`.
+
 ---
 
 ## License
