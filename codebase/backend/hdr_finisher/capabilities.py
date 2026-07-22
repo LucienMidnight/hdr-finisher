@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+from pathlib import Path
+import subprocess
 
 from .binaries import resolve_binary
 from .models import CapabilityInfo, CapabilityStatus
@@ -30,6 +32,41 @@ def _composite_status(name: str, commands: list[str]) -> CapabilityInfo:
     return CapabilityInfo(name=name, status=CapabilityStatus.AVAILABLE, detail=f"Required binaries found: {detail}.")
 
 
+def _ultrahdr_status() -> CapabilityInfo:
+    resolved = resolve_binary("ultrahdr_app")
+    if resolved is None:
+        return CapabilityInfo(
+            name="JPEG Ultra HDR (JPG + Gain Map)",
+            status=CapabilityStatus.MISSING,
+            detail="Binary 'ultrahdr_app' was not found in the bundled bin/ directory or on PATH.",
+        )
+    try:
+        result = subprocess.run(
+            [str(resolved)], capture_output=True, text=True, check=False, timeout=5
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return CapabilityInfo(
+            name="JPEG Ultra HDR (JPG + Gain Map)",
+            status=CapabilityStatus.UNVERIFIED,
+            detail=f"Found {Path(resolved).name}, but it could not be executed: {exc}",
+        )
+    help_text = f"{result.stdout}\n{result.stderr}".lower()
+    if "ultra hdr demo application" not in help_text or "probe mode" not in help_text:
+        return CapabilityInfo(
+            name="JPEG Ultra HDR (JPG + Gain Map)",
+            status=CapabilityStatus.UNVERIFIED,
+            detail=f"Binary at {resolved} does not expose the expected current ultrahdr_app CLI.",
+        )
+    return CapabilityInfo(
+        name="JPEG Ultra HDR (JPG + Gain Map)",
+        status=CapabilityStatus.AVAILABLE,
+        detail=(
+            f"Compatible ultrahdr_app found at {resolved}. Each export is validated for both "
+            "Ultra HDR v1 XMP and ISO 21496-1 metadata."
+        ),
+    )
+
+
 def probe_capabilities() -> dict[str, CapabilityInfo]:
     return {
         "numpy": _module_status("numpy", "numpy"),
@@ -44,6 +81,6 @@ def probe_capabilities() -> dict[str, CapabilityInfo]:
         "avif_encoder": _binary_status("avifenc", "avifenc"),
         "avif_decoder": _binary_status("avifdec", "avifdec"),
         "avif_gain_map_tool": _binary_status("avifgainmaputil", "avifgainmaputil"),
-        "ultrahdr_encoder": _binary_status("libultrahdr", "ultrahdr_app"),
+        "ultrahdr_encoder": _ultrahdr_status(),
         "jpegxl_encoder": _binary_status("cjxl", "cjxl"),
     }

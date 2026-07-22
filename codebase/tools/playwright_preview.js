@@ -12,13 +12,11 @@ function hasFlag(name) {
   return process.argv.includes(name);
 }
 
-function chromeExecutable() {
+function edgeExecutable() {
   const candidates = [
-    process.env.PLAYWRIGHT_CHROME_PATH,
-    process.env.ProgramFiles && path.join(process.env.ProgramFiles, "Google", "Chrome", "Application", "chrome.exe"),
-    process.env["ProgramFiles(x86)"] && path.join(process.env["ProgramFiles(x86)"], "Google", "Chrome", "Application", "chrome.exe"),
-    process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, "Google", "Chrome", "Application", "chrome.exe"),
+    process.env.PLAYWRIGHT_EDGE_PATH,
     process.env.ProgramFiles && path.join(process.env.ProgramFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
+    process.env["ProgramFiles(x86)"] && path.join(process.env["ProgramFiles(x86)"], "Microsoft", "Edge", "Application", "msedge.exe"),
   ].filter(Boolean);
 
   return candidates.find((candidate) => fs.existsSync(candidate)) || null;
@@ -29,7 +27,7 @@ async function main() {
   const screenshot = argValue("--screenshot", path.join("output", "playwright", "hdr-finisher-ui.png"));
   const resultPath = argValue("--result", path.join("output", "playwright", "preview-result.json"));
   const headed = hasFlag("--headed");
-  const executablePath = chromeExecutable();
+  const executablePath = edgeExecutable();
   const consoleErrors = [];
   const pageErrors = [];
 
@@ -130,7 +128,7 @@ async function main() {
       ok: true,
       url: page.url(),
       title: await page.title(),
-      browser: executablePath ? "installed Chrome/Edge executable" : "Playwright cached Chromium",
+      browser: executablePath ? "installed Edge executable" : "Playwright cached Chromium",
       executablePath,
       screenshot,
       controlChecks,

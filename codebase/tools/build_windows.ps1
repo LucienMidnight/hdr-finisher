@@ -1,6 +1,7 @@
 param(
     [switch]$SkipTests,
-    [switch]$SkipPlaywright
+    [switch]$SkipPlaywright,
+    [int]$SmokeTestPort = 8011
 )
 
 $ErrorActionPreference = "Stop"
@@ -79,11 +80,18 @@ try {
     if (-not (Test-Path $exePath)) {
         throw "Expected packaged executable not found: $exePath"
     }
-    if (Test-Health "http://127.0.0.1:8000") {
-        throw "Port 8000 is already serving /health before the packaged smoke test. Stop the existing HDR Finisher/dev server and rerun packaging."
+    $smokeBaseUri = "http://127.0.0.1:$SmokeTestPort"
+    if (Test-Health $smokeBaseUri) {
+        throw "Port $SmokeTestPort is already serving /health before the packaged smoke test. Choose another -SmokeTestPort."
     }
 
-    $process = Start-PackagedApp $exePath
+    $previousPort = $env:HDR_FINISHER_PORT
+    $env:HDR_FINISHER_PORT = $SmokeTestPort.ToString()
+    try {
+        $process = Start-PackagedApp $exePath
+    } finally {
+        $env:HDR_FINISHER_PORT = $previousPort
+    }
     try {
         $ready = $false
         for ($i = 0; $i -lt 40; $i++) {
@@ -91,13 +99,13 @@ try {
             if ($process.HasExited) {
                 throw "Packaged app exited early: $($process.StandardError.ReadToEnd())"
             }
-            if (Test-Health "http://127.0.0.1:8000") {
+            if (Test-Health $smokeBaseUri) {
                 $ready = $true
                 break
             }
         }
         if (-not $ready) {
-            throw "Packaged app did not become healthy on http://127.0.0.1:8000"
+            throw "Packaged app did not become healthy on $smokeBaseUri"
         }
     } finally {
         if ($process -and -not $process.HasExited) {

@@ -4,11 +4,15 @@ import os
 import shutil
 from pathlib import Path
 
-from .config import BIN_DIR
+from .config import BIN_DIR, RUNTIME_ROOT
 
 
 def bundled_binary_dir() -> Path:
     return BIN_DIR
+
+
+def runtime_binary_dir() -> Path:
+    return RUNTIME_ROOT / "bin"
 
 
 def resolve_binary(command: str) -> Path | None:
@@ -17,8 +21,11 @@ def resolve_binary(command: str) -> Path | None:
     if os.name == "nt" and not command.lower().endswith(".exe"):
         names.insert(0, f"{command}.exe")
 
-    for name in names:
-        candidates.append(bundled_binary_dir() / name)
+    for directory in (bundled_binary_dir(), runtime_binary_dir()):
+        for name in names:
+            candidate = directory / name
+            if candidate not in candidates:
+                candidates.append(candidate)
 
     for candidate in candidates:
         if candidate.exists():

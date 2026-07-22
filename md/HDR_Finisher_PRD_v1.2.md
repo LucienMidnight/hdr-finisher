@@ -1,5 +1,5 @@
 # Project Scope Document: HDR Finisher
-### Open-Source HDR Web Conversion & Finishing Utility â€” v1.1
+### Open-Source HDR Web Conversion & Finishing Utility â€” v1.2
 
 ---
 
@@ -20,7 +20,7 @@ As of early 2026, producing a high-quality AVIF with a properly crafted gain map
 - Accepts HDR output from non-Adobe editors (Blender, Affinity Photo, darktable, DXO PhotoLab, etc.)
 - Displays the image in true HDR while making adjustments
 - Gives the user explicit, creative control over the SDR fallback rendition embedded in the gain map
-- Exports a finished AVIF or JPEG XL with a standards-compliant gain map
+- Exports a finished AVIF or JPEG Ultra HDR with a standards-compliant gain map
 
 HDR Finisher fills this gap. It is intentionally **not** a full image editor. It is a **finishing layer** â€” the last step before web export â€” designed to be used after the user has completed their primary editing work in whatever software they prefer.
 
@@ -33,7 +33,7 @@ HDR Finisher fills this gap. It is intentionally **not** a full image editor. It
 - Displays them in true HDR via a browser-based viewport
 - Provides global finishing adjustments (see Section 6)
 - Gives explicit creative control over the SDR version embedded in the gain map
-- Exports production-ready AVIF with gain map and JPEG XL
+- Exports production-ready AVIF and technical-alpha JPEG Ultra HDR with gain maps
 
 ### What This App Deliberately Does Not Do
 - RAW file processing / demosaicing (users should bring processed files)
@@ -80,7 +80,7 @@ Valid HDR inputs, but metadata must be checked. A 16-bit TIFF without PQ/HLG enc
 | Format | Priority | Notes |
 |---|---|---|
 | AVIF + ISO 21496-1 Gain Map | **Primary** | Best quality-to-file-size ratio for web at 4K; ~95% browser support as of mid-2025 |
-| JPEG Ultra HDR (JPG + Gain Map) | **Secondary** | 100% browser-safe fallback; larger files; ideal for CMS upload, social, or Firefox compatibility |
+| JPEG Ultra HDR (JPG + Gain Map) | **Secondary** | Legacy JPEG-safe SDR fallback plus HDR gain map; HDR rendering support varies by browser, OS, and platform recompression |
 | SDR JPEG / PNG | **Utility** | Tone-mapped fallback for legacy contexts; 8-bit |
 | JPEG XL + Gain Map | **Stretch Goal** | Excellent format; Chrome support expected mid-2026 |
 
@@ -187,12 +187,12 @@ These are C/C++ command-line tools, not Python libraries. They must be compiled 
 |---|---|---|
 | `avifgainmaputil` | AVIF + gain map encoding | From `libavif` / AOMedia; separate Win/macOS builds required |
 | `cjxl` / `djxl` | JPEG XL encoding | From `libjxl`; stretch goal |
-| `libultrahdr` CLI | JPEG Ultra HDR encoding | Google open-source; AVIF/HEIF support planned for 2026 |
+| `ultrahdr_app` from `libultrahdr` | JPEG Ultra HDR encoding and validation | Built from pinned Google source with both `UHDR_WRITE_XMP=ON` and `UHDR_WRITE_ISO=ON`; resolved from bundled `bin/`, packaged runtime `bin/`, or `PATH` |
 
 **Packaging Note:** All three binaries require OS-specific pre-built releases or build-from-source steps. This must be accounted for in the CI/CD pipeline. The Python layer calls these via `subprocess` with managed temp file paths.
 
 ### Gain Map Encoding Precision
-v1 uses **10-bit logarithmic gain map encoding** per ISO 21496-1 recommendations. This balances file size, banding avoidance, and compatibility with current browser implementations. Higher precision (16-bit float) is deferred to v2.
+The AVIF path uses a **10-bit logarithmic gain map**. JPEG Ultra HDR uses libultrahdr's standards-conforming JPEG gain map representation (8-bit gain-map samples) and carries both Ultra HDR v1 XMP and ISO 21496-1 metadata. Higher-precision gain maps remain deferred.
 
 ---
 
@@ -287,16 +287,25 @@ v1 uses **10-bit logarithmic gain map encoding** per ISO 21496-1 recommendations
   3. Call `compute_gain_map()` to produce 10-bit logarithmic gain map array
   4. Route to `avifgainmaputil` (AVIF) or `cjxl` (JXL) via subprocess
   5. Return output file path to frontend for download prompt
-- Implement JPEG Ultra HDR export path via `libultrahdr`
+- Maintain JPEG Ultra HDR export through the current verified `ultrahdr_app` CLI and validate both metadata representations before publishing the staged file
 - Implement SDR JPEG/PNG fallback export
 - Quality/compression controls for each format
 
 ### Phase 6 â€” Packaging & Distribution
 - PyInstaller configuration for Windows (`.exe`) and macOS (`.app`)
-- Bundle OS-specific `avifgainmaputil`, `libultrahdr`, and `cjxl` binaries
+- Bundle OS-specific `avifgainmaputil` and `ultrahdr_app` binaries; keep `cjxl` deferred with JPEG XL
 - Handle PATH management and binary permissions at runtime
 - Test on clean machines (no Python installed) on both platforms
 - GitHub release pipeline with signed builds (macOS notarization required to avoid Gatekeeper warning)
+
+### Licensing & Commercial Distribution
+- HDR Finisher is currently distributed under **GPL-3.0**. It may be sold, bundled with paid support, or funded by donations, but anyone receiving a binary must also be able to obtain the corresponding source and build materials under GPL-3.0. Recipients retain the right to modify and redistribute their copies.
+- User-authored input media and exported JPEG, AVIF, or PNG files are **not** placed under GPL-3.0 merely because HDR Finisher processed them.
+- A future proprietary or dual-licensed edition is possible only for code whose copyright is controlled by the project owner. Relicensing contributed code requires the relevant copyright holders' permission, and already-published GPL releases remain available under GPL-3.0.
+- Google `libultrahdr` is distributed under the terms of both the MIT License and Apache License 2.0, which are compatible with HDR Finisher's GPL-3.0 distribution. Packages containing `ultrahdr_app` must retain the upstream copyright and license texts.
+- Adobe grants a worldwide, royalty-free patent license for compliant Gain Map implementations. Distributed source and documentation must prominently retain the required notice: **"This product includes Gain Map technology under license by Adobe."** The implementation must remain standards-compliant to rely on that grant.
+- `libjpeg-turbo` and any other compiled dependencies keep their own permissive notices. Release archives must include `THIRD_PARTY_NOTICES.md` and the copied license files under the packaged `bin/licenses/` directory.
+- The licensing requirements are release-compliance work, not an encoder availability restriction: no per-user, per-export, or royalty payment is expected for the compliant Ultra HDR path described here.
 
 ---
 
@@ -398,7 +407,7 @@ The repository is no longer at the original vertical-slice stage. It now provide
   - local git backup workflow was verified with commit + push to GitHub remote
 
 ### Current Blockers and Known Gaps
-- JPEG Ultra HDR export is still stubbed; `libultrahdr` / `ultrahdr_app` is not wired yet
+- JPEG Ultra HDR export is implemented and capability-gated. A pinned Windows source-build helper is provided because upstream does not publish a Windows CLI binary; clean-machine binary redistribution validation remains release work.
 - JPEG XL gain-map export is still stubbed; `cjxl` is not wired yet
 - Packaging and distribution work is still at the alpha scaffold stage. The near-term target is a technical Windows alpha build, likely a zipped PyInstaller artifact rather than a polished installer.
 - Windows Photos remains an unreliable validation target for AVIF gain-map HDR compared with Brave / Chromium browsers
@@ -422,7 +431,7 @@ The alpha release should not be blocked by:
 - Windows code signing
 - macOS signing / notarization
 - JPEG XL export
-- JPEG Ultra HDR export, unless it becomes straightforward to wire before packaging
+- A polished JPEG Ultra HDR encoder download/install experience; the technical-alpha source-build and bundled-binary path is sufficient for this milestone
 
 After the technical alpha proves the workflow, the packaging track can move toward a conventional installer, signing, macOS `.app` packaging, notarization, and broader release automation.
 
@@ -441,7 +450,7 @@ After the technical alpha proves the workflow, the packaging track can move towa
 
 ### Current UI Testing Notes
 - The UI has been refactored into a three-rail layout: Inspector on the left, preview center, controls/scopes/export on the right
-- A repo-local Playwright preview script now smoke-tests the local UI in Chrome and writes artifacts under `codebase/output/playwright/`
+- A repo-local Playwright preview script smoke-tests the local UI in Edge or bundled Chromium and writes artifacts under `codebase/output/playwright/`
 - A repo-local alpha QA harness now runs tests, capability checks, sample AVIF export, AVIF metadata inspection, and Playwright preview, with reports under `codebase/output/qa/`
 - A Windows alpha build script now targets a zipped PyInstaller folder artifact and smoke-tests the packaged app before archiving
 - Import can now happen either through the `Import Image` button or by dropping directly into the preview viewport
@@ -460,7 +469,7 @@ After the technical alpha proves the workflow, the packaging track can move towa
 1. Create the Windows technical alpha package first: PyInstaller build, bundled AVIF binaries, zipped release artifact, and clean-machine validation
 2. Add concise GitHub Release notes with supported workflow, known limitations, and Chromium / Brave / Edge HDR validation guidance
 3. Continue real-world validation of edited EXR workflows now that import, scopes, and export are behaving
-4. Implement JPEG Ultra HDR export after the alpha package unless the `libultrahdr` CLI integration becomes low-friction before release
+4. Validate JPEG Ultra HDR on HDR and SDR monitors, legacy JPEG decoders, current HDR browser workflows, and private Instagram uploads
 5. Keep JPEG XL gain-map export deferred unless it becomes strategically important or easy to ship
 6. Reserve installer polish, code signing, macOS packaging, notarization, and broader UI simplification for post-alpha milestones
 
@@ -496,6 +505,7 @@ This repository's root `.gitignore` already excludes local exports, EXR / HDR wo
 
 ---
 
-*Document version 1.1 - revised following technical review*
+*Document version 1.2 - revised following technical review and JPEG Ultra HDR implementation*
 *Changes from v1.0: ACEScg internal working space; diffuse white definition; HEIC auxiliary gain map requirement; NaN/Inf sanitization; HDR detection logic (HDR\_LINEAR\_UNCONFIRMED state); gain map bit depth locked to 10-bit logarithmic; tone mapping operators specified; large EXR memory risk added; OCIO v2 deferral noted.*
 *April 8, 2026 implementation addendum: false color / zebra overlays, HDR reference-nit histogram and waveform scopes, source interpretation manual override workflow, EXR validation notes, export filename/save-path controls, UI bug-fix summary, and the local git backup / push workflow are now recorded in this PRD.*
+*July 22, 2026 implementation addendum: JPEG Ultra HDR now consumes independent HDR and SDR branches through libultrahdr, publishes atomically only after legacy / gain-map / metadata / decoder validation, supports bundled and packaged binary discovery, and includes a pinned Windows build and attribution workflow. JPEG XL remains out of scope.*

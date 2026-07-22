@@ -11,6 +11,7 @@ datas = [
     ("bin", "bin"),
     ("../README.md", "."),
     ("../LICENSE", "."),
+    ("../THIRD_PARTY_NOTICES.md", "."),
     ("../md/Alpha_Manual_QA_Checklist.md", "docs"),
 ]
 

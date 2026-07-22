@@ -106,6 +106,23 @@ try {
                 (Join-Path $QaDir "hdr_reference_avif.json")
             )
         }
+        if ($summary.capabilities.ultrahdr_encoder.status -eq "available") {
+            $ultraHdrOutput = Join-Path $QaDir "hdr_reference_ultrahdr.jpg"
+            $ultraHdrJson = Join-Path $QaDir "hdr_reference_ultrahdr.json"
+            Invoke-QaStep "sample-ultrahdr-export-validate" {
+                Invoke-LoggedCommand "sample-ultrahdr-export-validate" "python" @(
+                    "tools\generate_ultrahdr_reference.py",
+                    "--output", $ultraHdrOutput,
+                    "--json", $ultraHdrJson
+                )
+            }
+            $summary.ultrahdr = Get-Content -LiteralPath $ultraHdrJson -Raw | ConvertFrom-Json
+        } else {
+            $summary.ultrahdr = [ordered]@{
+                status = "skipped"
+                detail = $summary.capabilities.ultrahdr_encoder.detail
+            }
+        }
     }
     if (-not $SkipPlaywright) {
         Invoke-QaStep "playwright-preview" {
@@ -114,16 +131,18 @@ try {
                 "-ExecutionPolicy",
                 "Bypass",
                 "-File",
-                ".\tools\playwright_preview.ps1"
+                ".\tools\playwright_preview.ps1",
+                "-Url",
+                "http://127.0.0.1:8012"
             )
         }
     }
-    Invoke-QaStep "jxl-uhd-capability" {
+    Invoke-QaStep "optional-export-capability-summary" {
         $toolState = [ordered]@{
             cjxl = if (Get-Command cjxl -ErrorAction SilentlyContinue) { "available" } else { "missing" }
             djxl = if (Get-Command djxl -ErrorAction SilentlyContinue) { "available" } else { "missing" }
-            ultrahdr_app = if (Get-Command ultrahdr_app -ErrorAction SilentlyContinue) { "available" } else { "missing" }
-            note = "JPEG XL and Ultra HDR export remain deferred and capability-gated for this alpha."
+            ultrahdr_app = $summary.capabilities.ultrahdr_encoder.status
+            note = "JPEG XL remains deferred. JPEG Ultra HDR is validated when the pinned bundled encoder is available."
         }
         $summary.jxl_uhd = $toolState
         $toolState | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $QaDir "jxl_uhd_capability.json")

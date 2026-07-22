@@ -1,6 +1,6 @@
 # HDR Finisher
 
-**Open-source HDR finishing and AVIF gain map export utility for web publishing.**
+**Open-source HDR finishing and AVIF / JPEG gain-map export utility for web publishing.**
 
 HDR Finisher is a standalone, offline desktop application for Windows and macOS. It is the missing last-mile link in a professional HDR photography and CGI workflow: ingest 32-bit floating-point and HDR-encoded images from any editing software, make global finishing adjustments while viewing true HDR output in real time, and export web-ready AVIF files with embedded ISO 21496-1 gain maps — the same output standard that previously required an Adobe subscription.
 
@@ -14,6 +14,7 @@ HDR Finisher is a standalone, offline desktop application for Windows and macOS.
 - Displays images in true HDR via a local browser viewport
 - Provides global finishing adjustments for both the HDR output and the SDR fallback embedded in the gain map
 - Exports production-ready AVIF with ISO 21496-1 gain map
+- Exports backward-compatible JPEG Ultra HDR (`.jpg`) with an authored SDR fallback, authored HDR rendition, Ultra HDR v1 XMP, and ISO 21496-1 metadata when the pinned encoder is installed
 - Exports SDR JPEG/PNG fallback for legacy contexts
 
 ## What It Deliberately Does Not Do
@@ -34,7 +35,7 @@ HDR Finisher is a finishing and export tool, not a general image editor. It has 
 
 ---
 
-## Current State (April 2026)
+## Current State (July 2026, v0.1.16)
 
 The following is working in the current build:
 
@@ -46,9 +47,21 @@ The following is working in the current build:
 - Histogram and waveform scopes with HDR reference-nit labeling
 - False color and zebra diagnostic overlays
 - Real AVIF + ISO 21496-1 gain map export
+- JPEG Ultra HDR (JPG + Gain Map) technical-alpha export through Google's `libultrahdr`
 - SDR PNG export
 
-**Not yet implemented:** JPEG Ultra HDR export, JPEG XL export, packaging/installer.
+**Not yet implemented:** JPEG XL export and a polished installer. The technical PyInstaller package is available, but JPEG Ultra HDR is capability-gated until a compatible `ultrahdr_app` is built or supplied.
+
+### Enable JPEG Ultra HDR on Windows
+
+Google does not publish a prebuilt Windows `ultrahdr_app`. With CMake and Visual Studio 2022 Build Tools installed, build the pinned source and validate it with:
+
+```powershell
+cd codebase
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_libultrahdr_windows.ps1
+```
+
+The script enables both `UHDR_WRITE_XMP=ON` and `UHDR_WRITE_ISO=ON`, runs upstream tests, performs a real generated-media encode/decode check, and places the executable and redistribution notices under `codebase/bin/`. A user-supplied `ultrahdr_app` on `PATH` also works, but exports are rejected unless the result contains both metadata formats and passes libultrahdr decoding.
 
 ---
 
@@ -73,14 +86,14 @@ Then open `http://127.0.0.1:8000` in a Chromium-based browser (Chrome, Brave, or
 
 ## UI Preview Automation
 
-The repo includes a small Playwright smoke-preview script for checking the local UI in Chrome:
+The repo includes a small Playwright smoke-preview script for checking the local UI in Edge or Playwright's bundled Chromium:
 
 ```powershell
 cd codebase
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\playwright_preview.ps1
 ```
 
-The script starts the local app if needed, reuses the machine's existing Playwright browser cache when available, prefers installed Chrome, and writes its screenshot/result files to `codebase/output/playwright/`. Add `-Headed` for a visible browser window or `-KeepServer` to leave the local app running afterward.
+The script starts the local app if needed, reuses the machine's existing Playwright browser cache when available, prefers installed Edge, and writes its screenshot/result files to `codebase/output/playwright/`. Add `-Headed` for a visible browser window or `-KeepServer` to leave the local app running afterward.
 
 ## Alpha QA And Packaging
 
@@ -91,7 +104,7 @@ cd codebase
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\run_alpha_qa.ps1
 ```
 
-This runs tests, JavaScript syntax validation, capability reporting, sample AVIF export, AVIF metadata inspection, and Playwright UI preview. Reports are written to `codebase/output/qa/`.
+This runs tests, JavaScript syntax validation, capability reporting, sample AVIF export, AVIF metadata inspection, and Playwright UI preview. When `ultrahdr_app` is available it also creates a real JPEG Ultra HDR sample, confirms both metadata schemes, decodes the SDR fallback with Pillow, decodes the HDR rendition with libultrahdr, and checks the highlight luminance relationship. Reports are written to `codebase/output/qa/`.
 
 Build the technical Windows alpha package:
 
@@ -114,6 +127,8 @@ Manual HDR-display checks are tracked in `md\Alpha_Manual_QA_Checklist.md`.
 ---
 
 ## License
+
+Optional bundled encoders retain their upstream licenses and notices; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 GPL-3.0 — see [LICENSE](LICENSE) for details.
 

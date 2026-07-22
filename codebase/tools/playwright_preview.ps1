@@ -65,7 +65,13 @@ if (-not (Test-AppHealth $baseUri)) {
     $processInfo.RedirectStandardError = $true
     $serverProcess = New-Object System.Diagnostics.Process
     $serverProcess.StartInfo = $processInfo
-    $null = $serverProcess.Start()
+    $previousPort = $env:HDR_FINISHER_PORT
+    $env:HDR_FINISHER_PORT = ([Uri]$Url).Port.ToString()
+    try {
+        $null = $serverProcess.Start()
+    } finally {
+        $env:HDR_FINISHER_PORT = $previousPort
+    }
     $serverStarted = $true
 
     $ready = $false

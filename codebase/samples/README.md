@@ -10,4 +10,4 @@ If an HDR AVIF looks different between Windows Photos and a browser, treat that 
 Current local finding as of April 8, 2026:
 - Brave is the preferred validation target for AVIF gain-map HDR.
 - Windows Photos may display the same AVIF gain-map file without switching into HDR mode even when the file behaves correctly in Brave.
-- For a future Windows-friendly verification path, add either native HDR AVIF export or JPEG Ultra HDR export alongside AVIF gain-map output.
+- When `ultrahdr_app` is available, `tools/generate_ultrahdr_reference.py` creates a JPEG Ultra HDR sample and validates legacy SDR decoding, embedded Ultra HDR v1 / ISO 21496-1 metadata, libultrahdr HDR decoding, and brighter reconstructed highlights.
