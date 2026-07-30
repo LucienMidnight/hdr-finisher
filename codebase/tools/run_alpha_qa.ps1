@@ -85,7 +85,7 @@ function Join-ProcessArguments {
 
 Push-Location $Root
 try {
-    Invoke-QaStep "pytest" { Invoke-LoggedCommand "pytest" "python" @("-m", "pytest", "-q") }
+    Invoke-QaStep "pytest" { Invoke-LoggedCommand "pytest" "python" @("-m", "pytest", "-q", "tests") }
     Invoke-QaStep "node-check" { Invoke-LoggedCommand "node-check" "node" @("--check", "frontend\app.js") }
     Invoke-QaStep "capabilities" {
         $capabilityJson = & python "tools\check_capabilities.py"
