@@ -1,6 +1,10 @@
 param(
     [string]$Url = "http://127.0.0.1:8000",
     [string]$ScreenshotPath = "",
+    [string]$InputPath = "",
+    [string]$SourceReportPath = "",
+    [int]$ViewportWidth = 1440,
+    [int]$ViewportHeight = 1000,
     [switch]$Headed,
     [switch]$KeepServer
 )
@@ -105,7 +109,25 @@ if ($nodeModules) {
 }
 
 $script = Join-Path $PSScriptRoot "playwright_preview.js"
-$nodeArgs = @($script, "--url", $Url, "--screenshot", $ScreenshotPath, "--result", (Join-Path $OutputDir "preview-result.json"))
+$nodeArgs = @(
+    $script,
+    "--url", $Url,
+    "--screenshot", $ScreenshotPath,
+    "--result", (Join-Path $OutputDir "preview-result.json"),
+    "--export-screenshot", (Join-Path $Root "output\design-qa\export-sheet.png"),
+    "--viewport-width", $ViewportWidth,
+    "--viewport-height", $ViewportHeight
+)
+if ($InputPath) {
+    $nodeArgs += @("--input", (Resolve-Path $InputPath))
+}
+if ($SourceReportPath) {
+    $nodeArgs += @(
+        "--source-report", (Resolve-Path $SourceReportPath),
+        "--source-screenshot", (Join-Path $Root "output\design-qa\source-wireframe.png"),
+        "--comparison-screenshot", (Join-Path $Root "output\design-qa\comparison.png")
+    )
+}
 if ($Headed) {
     $nodeArgs += "--headed"
 }

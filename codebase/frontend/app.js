@@ -62,6 +62,37 @@ const state = {
   scopeMode: "histogram",
   scopeChannelMode: "composite",
   sourceSettingsOpen: false,
+  metadataOpen: false,
+  interpretationGateDismissed: false,
+  zoomMode: "fit",
+  activeDockTab: "histogram",
+  dockCollapsed: false,
+  lastScope: null,
+  lastExportPath: "",
+  compareHoldTimer: null,
+  compareHeld: false,
+  comparePeekActive: false,
+  previewGeneration: { hdr: 0, sdr: 0 },
+  previewCache: { hdr: null, sdr: null },
+  previewControllers: { hdr: null, sdr: null },
+  previewInfoByLane: {
+    hdr: {
+      mediaType: "n/a",
+      transport: "n/a",
+      colorSpace: "n/a",
+      transfer: "n/a",
+      bitDepth: "n/a",
+      notes: "No preview yet",
+    },
+    sdr: {
+      mediaType: "n/a",
+      transport: "n/a",
+      colorSpace: "n/a",
+      transfer: "n/a",
+      bitDepth: "n/a",
+      notes: "No preview yet",
+    },
+  },
   adjustments: {
     hdr: {
       exposure: 0,
@@ -170,18 +201,31 @@ const els = {
   fileInput: document.getElementById("file-input"),
   dropzone: document.getElementById("dropzone"),
   importButton: document.getElementById("import-button"),
+  emptyImportButton: document.getElementById("empty-import-button"),
   ejectButton: document.getElementById("eject-button"),
   badge: document.getElementById("badge"),
+  fileSummary: document.getElementById("file-summary"),
+  sourceConfidence: document.getElementById("source-confidence"),
+  sourceRailExpand: document.getElementById("source-rail-expand"),
+  capabilitySummary: document.getElementById("capability-summary"),
   overrideWarning: document.getElementById("override-warning"),
   overrideMessage: document.getElementById("override-message"),
+  attentionFix: document.getElementById("attention-fix"),
   sourceSettingsToggle: document.getElementById("source-settings-toggle"),
   sourceSettingsPanel: document.getElementById("source-settings-panel"),
+  interpretationSummary: document.getElementById("interpretation-summary"),
   interpretationMode: document.getElementById("interpretation-mode"),
   interpretationColorSpace: document.getElementById("interpretation-color-space"),
   interpretationTransfer: document.getElementById("interpretation-transfer"),
   sourceSettingsNote: document.getElementById("source-settings-note"),
   applyInterpretationButton: document.getElementById("apply-interpretation"),
   resetInterpretationButton: document.getElementById("reset-interpretation"),
+  metadataToggle: document.getElementById("metadata-toggle"),
+  metadataPanel: document.getElementById("metadata-panel"),
+  interpretationGate: document.getElementById("interpretation-gate"),
+  interpretationGateCopy: document.getElementById("interpretation-gate-copy"),
+  acceptInterpretation: document.getElementById("accept-interpretation"),
+  manualInterpretation: document.getElementById("manual-interpretation"),
   curvesEnabled: document.getElementById("curves-enabled"),
   curveEditor: document.getElementById("curve-editor"),
   curveStatus: document.getElementById("curve-status"),
@@ -199,6 +243,19 @@ const els = {
   previewOverlay: document.getElementById("preview-overlay"),
   emptyState: document.getElementById("empty-state"),
   previewStatus: document.getElementById("preview-status"),
+  falseColorLegend: document.getElementById("false-color-legend"),
+  viewerLaneLabel: document.getElementById("viewer-lane-label"),
+  viewerBranchNote: document.getElementById("viewer-branch-note"),
+  laneNote: document.getElementById("lane-note"),
+  compareButton: document.getElementById("compare-button"),
+  compareStatus: document.getElementById("compare-status"),
+  zoomFit: document.getElementById("zoom-fit"),
+  zoomActual: document.getElementById("zoom-actual"),
+  zoomReadout: document.getElementById("zoom-readout"),
+  overlayToggle: document.getElementById("overlay-toggle"),
+  overlayClose: document.getElementById("overlay-close"),
+  overlayPopover: document.getElementById("overlay-popover"),
+  probeReadout: document.getElementById("probe-readout"),
   scopeTitle: document.getElementById("scope-title"),
   scopeNote: document.getElementById("scope-note"),
   scopeKindLabel: document.getElementById("scope-kind-label"),
@@ -206,15 +263,39 @@ const els = {
   scopeChannelMode: document.getElementById("scope-channel-mode"),
   scopeStats: document.getElementById("scope-stats"),
   histogram: document.getElementById("histogram"),
+  analysisDock: document.getElementById("analysis-dock"),
+  dockCollapse: document.getElementById("dock-collapse"),
+  dockSummary: document.getElementById("dock-summary"),
+  dockTabs: [...document.querySelectorAll("[data-dock-tab]")],
+  scopeView: document.getElementById("scope-view"),
+  technicalView: document.getElementById("technical-view"),
   exportButton: document.getElementById("export-button"),
+  exportSheet: document.getElementById("export-sheet"),
+  exportClose: document.getElementById("export-close"),
+  exportConfirmButton: document.getElementById("export-confirm-button"),
   exportStatus: document.getElementById("export-status"),
   exportFilename: document.getElementById("export-filename"),
   exportDirectory: document.getElementById("export-directory"),
   exportDirectoryBrowse: document.getElementById("export-directory-browse"),
   exportFormat: document.getElementById("export-format"),
   exportQuality: document.getElementById("export-quality"),
-  viewButtons: [...document.querySelectorAll(".segmented button")],
+  exportQualityValue: document.getElementById("export-quality-value"),
+  exportResult: document.getElementById("export-result"),
+  exportResultPath: document.getElementById("export-result-path"),
+  copyExportPath: document.getElementById("copy-export-path"),
+  exportFormatChoices: [...document.querySelectorAll('input[name="export-format-choice"]')],
+  formatCards: [...document.querySelectorAll("[data-format-card]")],
+  preflightItems: [...document.querySelectorAll("[data-preflight]")],
+  viewButtons: [...document.querySelectorAll("[data-kind]")],
   controls: [...document.querySelectorAll("[data-path]")],
+  valueOutputs: [...document.querySelectorAll("[data-value-path]")],
+  lanePanels: [...document.querySelectorAll("[data-lane-panel]")],
+  groupToggles: [...document.querySelectorAll(".group-toggle")],
+  groupResets: [...document.querySelectorAll("[data-reset-group]")],
+  controlRows: [...document.querySelectorAll("[data-control-path]")],
+  modifiedCounts: [...document.querySelectorAll("[data-modified-count]")],
+  gradeModifiedSummary: document.getElementById("grade-modified-summary"),
+  curveGroupState: document.getElementById("curve-group-state"),
 };
 
 const overlayPresetNotes = {
@@ -224,14 +305,43 @@ const overlayPresetNotes = {
   sdr_100: "Treats 100 nits as both white and ceiling. Handy when judging the SDR fallback or when you want the overlay to behave like an SDR exposure aid.",
 };
 
+const controlGroups = {
+  "hdr-tone": ["hdr.exposure", "hdr.highlight_rolloff", "hdr.contrast", "hdr.contrast_pivot", "hdr.shadow_lift"],
+  "hdr-color": ["hdr.white_balance_kelvin", "hdr.tint"],
+  "hdr-zones": ["hdr.lift", "hdr.gamma", "hdr.gain"],
+  "sdr-base": ["sdr.tone_mapper"],
+  "sdr-tone": ["sdr.exposure", "sdr.highlight_recovery", "sdr.contrast", "sdr.contrast_pivot", "sdr.shadow"],
+  "sdr-zones": ["sdr.lift", "sdr.gamma", "sdr.gain"],
+};
+
+const branchCopy = {
+  hdr: "Graded HDR rendition. Exported as the PQ HDR image.",
+  sdr: "Independent fallback baked into the gain map. This is what viewers without HDR gain-map support will see.",
+};
+
+const capabilityForFormat = {
+  avif_gain_map: "avif_gain_map_encoder",
+  jpeg_ultrahdr: "ultrahdr_encoder",
+  sdr_png: "pillow",
+};
+
 boot();
 
 async function boot() {
   bindEvents();
+  await loadCapabilities().catch(() => {
+    els.capabilitySummary.textContent = "Encoder status unavailable";
+    els.capabilitySummary.className = "capability-chip attention";
+  });
   renderReadouts();
   drawCurveEditor();
   renderOverlayPresetNote();
+  renderLaneChrome();
+  renderControlState();
+  renderCapabilities();
+  renderExportPreflight();
   window.addEventListener("resize", syncOverlayPlacement);
+  window.addEventListener("resize", updateZoomReadout);
 }
 
 function bindEvents() {
@@ -241,10 +351,32 @@ function bindEvents() {
     event.target.value = "";
   });
   els.importButton.addEventListener("click", () => els.fileInput.click());
+  els.emptyImportButton.addEventListener("click", () => els.fileInput.click());
+  els.sourceRailExpand.addEventListener("click", () => {
+    const rail = els.sourceRailExpand.closest(".source-rail");
+    const expanded = rail.classList.toggle("pinned-open");
+    els.sourceRailExpand.setAttribute("aria-expanded", String(expanded));
+    els.sourceRailExpand.textContent = expanded ? "Close" : "Source";
+    if (!expanded) els.sourceRailExpand.blur();
+  });
   els.sourceSettingsToggle.addEventListener("click", () => {
     state.sourceSettingsOpen = !state.sourceSettingsOpen;
     renderSourceSettingsVisibility();
   });
+  els.metadataToggle.addEventListener("click", () => {
+    state.metadataOpen = !state.metadataOpen;
+    renderMetadataVisibility();
+  });
+  els.attentionFix.addEventListener("click", openManualInterpretation);
+  els.acceptInterpretation.addEventListener("click", () => {
+    state.interpretationGateDismissed = true;
+    els.overrideWarning.classList.add("hidden");
+    els.sourceConfidence.textContent = "Assumption accepted";
+    els.interpretationSummary.textContent = "Auto assumption";
+    renderInterpretationGate();
+    renderExportPreflight();
+  });
+  els.manualInterpretation.addEventListener("click", openManualInterpretation);
   els.interpretationMode.addEventListener("change", () => {
     renderSourceSettingsControls();
   });
@@ -277,18 +409,7 @@ function bindEvents() {
 
   els.viewButtons.forEach((button) => {
     button.addEventListener("click", async () => {
-      els.viewButtons.forEach((item) => item.classList.remove("active"));
-      button.classList.add("active");
-      state.currentView = button.dataset.kind;
-      state.adjustments.shared.active_focus = state.currentView;
-      state.selectedCurvePoint = Math.min(state.selectedCurvePoint ?? 0, currentCurveValues().length - 1);
-      syncCurveControlsFromState();
-      renderCurveChannelTabs();
-      drawCurveEditor();
-      renderReadouts();
-      await refreshPreview();
-      await refreshOverlay();
-      await refreshScopes();
+      await switchLane(button.dataset.kind);
     });
   });
 
@@ -296,8 +417,17 @@ function bindEvents() {
     control.addEventListener("input", () => {
       const value = control.type === "range" ? Number(control.value) : control.type === "checkbox" ? control.checked : control.value;
       setValueByPath(state.adjustments, control.dataset.path, value);
-      if (control.dataset.path === "shared.overlay_preset") renderOverlayPresetNote();
-      debouncePreview();
+      const path = control.dataset.path;
+      if (path === "shared.overlay_preset") renderOverlayPresetNote();
+      updateControlReadouts();
+      renderControlState();
+      if (path.startsWith("shared.overlay_")) {
+        debounceOverlayAndScopes();
+      } else {
+        const lane = path.startsWith("sdr.") ? "sdr" : "hdr";
+        invalidatePreview(lane);
+        debouncePreview(lane);
+      }
     });
   });
   bindRangeResetControls();
@@ -306,7 +436,9 @@ function bindEvents() {
     setValueByPath(state.adjustments, curveEnabledPath(), els.curvesEnabled.checked);
     drawCurveEditor();
     renderReadouts();
-    debouncePreview();
+    invalidatePreview(state.currentView);
+    renderControlState();
+    debouncePreview(state.currentView);
   });
 
   els.curveChannelButtons.forEach((button) => {
@@ -317,28 +449,79 @@ function bindEvents() {
     });
   });
   els.curveReset.addEventListener("click", () => {
-    setCurveValues(state.selectedCurveChannel, defaultCurvePoints());
+    setValueByPath(state.adjustments, curveEnabledPath(), false);
+    ["luma", "red", "green", "blue"].forEach((channel) => {
+      setCurveValues(channel, defaultCurvePoints());
+    });
     state.selectedCurvePoint = 2;
+    syncCurveControlsFromState();
     drawCurveEditor();
-    debouncePreview();
+    invalidatePreview(state.currentView);
+    renderControlState();
+    debouncePreview(state.currentView);
   });
   els.curveAdd.addEventListener("click", () => {
     addCurvePoint();
     drawCurveEditor();
-    debouncePreview();
+    invalidatePreview(state.currentView);
+    renderControlState();
+    debouncePreview(state.currentView);
   });
   els.curveRemove.addEventListener("click", () => {
     removeCurvePoint();
     drawCurveEditor();
-    debouncePreview();
+    invalidatePreview(state.currentView);
+    renderControlState();
+    debouncePreview(state.currentView);
   });
   bindCurveEditor();
 
-  els.exportButton.addEventListener("click", exportCurrentSession);
+  els.exportButton.addEventListener("click", openExportSheet);
+  els.exportClose.addEventListener("click", closeExportSheet);
+  els.exportConfirmButton.addEventListener("click", exportCurrentSession);
   els.exportDirectoryBrowse.addEventListener("click", chooseExportDirectory);
   els.applyInterpretationButton.addEventListener("click", applyInterpretationOverride);
   els.resetInterpretationButton.addEventListener("click", resetInterpretationToAuto);
   els.ejectButton.addEventListener("click", ejectCurrentSession);
+  els.copyExportPath.addEventListener("click", copyLastExportPath);
+
+  els.groupToggles.forEach((button) => {
+    button.addEventListener("click", () => {
+      const group = button.closest(".control-group");
+      const collapsed = group.classList.toggle("collapsed");
+      button.setAttribute("aria-expanded", String(!collapsed));
+    });
+  });
+  els.groupResets.forEach((button) => {
+    button.addEventListener("click", () => resetControlGroup(button.dataset.resetGroup));
+  });
+
+  els.zoomFit.addEventListener("click", () => setZoomMode("fit"));
+  els.zoomActual.addEventListener("click", () => setZoomMode("actual"));
+  els.overlayToggle.addEventListener("click", toggleOverlayPopover);
+  els.overlayClose.addEventListener("click", closeOverlayPopover);
+  els.dockCollapse.addEventListener("click", toggleAnalysisDock);
+  els.dockTabs.forEach((button) => {
+    button.addEventListener("click", () => activateDockTab(button.dataset.dockTab));
+  });
+  els.exportFormatChoices.forEach((choice) => {
+    choice.addEventListener("change", () => {
+      if (!choice.checked) return;
+      els.exportFormat.value = choice.value;
+      renderFormatCards();
+      renderExportPreflight();
+    });
+  });
+  els.exportQuality.addEventListener("input", () => {
+    els.exportQualityValue.textContent = els.exportQuality.value;
+  });
+
+  bindCompareControl();
+  bindKeyboardShortcuts();
+  els.dropzone.addEventListener("mousemove", updateProbeReadout);
+  els.dropzone.addEventListener("mouseleave", () => {
+    els.probeReadout.textContent = "Move over the image for pixel coordinates";
+  });
 
   if (window.matchMedia) {
     ["(dynamic-range: high)", "(color-gamut: p3)", "(color-gamut: rec2020)"].forEach((query) => {
@@ -385,11 +568,18 @@ async function uploadFile(file) {
   }
   state.session = payload.session;
   state.adjustments = payload.session.adjustments;
+  state.currentView = "hdr";
+  state.adjustments.shared.active_focus = "hdr";
+  state.interpretationGateDismissed = false;
+  clearPreviewCache();
+  invalidatePreview("hdr");
+  invalidatePreview("sdr");
   renderSession();
   seedExportFieldsFromSession();
   await refreshPreview();
   await refreshOverlay();
   await refreshScopes();
+  prepareInactivePreview();
 }
 
 async function ejectCurrentSession() {
@@ -397,6 +587,12 @@ async function ejectCurrentSession() {
   await fetch("/api/session/current", { method: "DELETE" }).catch(() => null);
   state.session = null;
   state.adjustments = defaultAdjustments();
+  state.currentView = "hdr";
+  state.adjustments.shared.active_focus = "hdr";
+  state.interpretationGateDismissed = false;
+  state.lastScope = null;
+  state.lastExportPath = "";
+  clearPreviewCache();
   state.previewInfo = {
     mediaType: "n/a",
     transport: "n/a",
@@ -409,7 +605,9 @@ async function ejectCurrentSession() {
   clearPreviewOverlay();
   els.badge.textContent = "No file loaded.";
   els.badge.className = "badge neutral";
-  els.sessionName.textContent = "No active session";
+  els.sessionName.textContent = "No active image";
+  els.fileSummary.textContent = "Import one HDR-capable source to begin";
+  els.sourceConfidence.textContent = "Waiting";
   els.metadataList.innerHTML = "";
   els.overrideWarning.classList.add("hidden");
   els.sourceSettingsPanel.classList.add("hidden");
@@ -417,7 +615,8 @@ async function ejectCurrentSession() {
   els.interpretationColorSpace.value = "auto";
   els.interpretationTransfer.value = "auto";
   state.sourceSettingsOpen = false;
-  els.exportStatus.textContent = "Export backends are capability-gated in this milestone.";
+  els.exportStatus.textContent = "Choose a format and destination.";
+  els.exportResult.classList.add("hidden");
   els.exportFilename.value = "hdr_finisher_export";
   els.exportDirectory.value = "";
   syncControlsFromState();
@@ -431,20 +630,26 @@ async function ejectCurrentSession() {
   syncCurveControlsFromState();
   drawCurveEditor();
   renderOverlayPresetNote();
+  renderMetadataVisibility();
+  renderInterpretationGate();
+  renderLaneChrome();
+  renderControlState();
+  renderExportPreflight();
 }
 
 function renderSession() {
   const session = state.session;
   els.sessionName.textContent = session.source.filename;
-  clearPreviewImage();
   clearPreviewOverlay();
   setPreviewMessage(`Rendering ${state.currentView.toUpperCase()} preview...`);
   els.badge.textContent = session.analysis.badge_message;
   els.badge.className = badgeClass(session.analysis.classification);
   els.overrideWarning.classList.toggle("hidden", !session.analysis.needs_color_override);
   els.overrideMessage.textContent = overrideMessage(session);
+  els.interpretationSummary.textContent = interpretationSummary(session);
+  els.sourceConfidence.textContent = session.source.color_space_confident ? "Confirmed" : "Review";
+  els.fileSummary.textContent = `${session.source.suffix.toUpperCase()} · ${session.source.width} × ${session.source.height} · ${session.source.working_space}`;
   syncInterpretationControls(session);
-  state.sourceSettingsOpen = state.sourceSettingsOpen || session.analysis.needs_color_override;
   applyLatitudePresets(session.analysis.source_latitude);
   renderSourceSettingsVisibility();
   renderSourceSettingsControls();
@@ -455,6 +660,11 @@ function renderSession() {
   renderSessionChrome();
   drawCurveEditor();
   renderOverlayPresetNote();
+  renderMetadataVisibility();
+  renderInterpretationGate();
+  renderLaneChrome();
+  renderControlState();
+  renderExportPreflight();
 }
 
 function renderMetadata(session) {
@@ -492,6 +702,10 @@ function renderReadouts() {
 function renderOverlayPresetNote() {
   const preset = state.adjustments.shared.overlay_preset || "web_1000_100";
   els.overlayPresetNote.textContent = overlayPresetNotes[preset] || overlayPresetNotes.web_1000_100;
+  const mode = state.adjustments.shared.overlay_mode || "off";
+  const label = mode === "false_color" ? "False color" : mode === "zebra" ? "Zebra" : "Off";
+  els.overlayToggle.textContent = `Overlays: ${label}`;
+  els.falseColorLegend.classList.toggle("hidden", mode !== "false_color" || !state.session);
 }
 
 function previewOutputEntries() {
@@ -563,25 +777,53 @@ function applyLatitudePresets(latitude) {
   });
 }
 
-function debouncePreview() {
+function debouncePreview(lane = state.currentView) {
   window.clearTimeout(state.refreshTimer);
   state.refreshTimer = window.setTimeout(async () => {
-    await refreshPreview();
-    await refreshOverlay();
-    await refreshScopes();
+    if (lane === state.currentView) {
+      await refreshPreview();
+      await refreshOverlay();
+      await refreshScopes();
+      prepareInactivePreview();
+    } else {
+      await renderPreviewForLane(lane, false);
+    }
   }, 180);
 }
 
+function debounceOverlayAndScopes() {
+  window.clearTimeout(state.refreshTimer);
+  state.refreshTimer = window.setTimeout(async () => {
+    renderOverlayPresetNote();
+    await refreshOverlay();
+    await refreshScopes();
+  }, 120);
+}
+
 async function refreshPreview() {
-  if (!state.session) return;
-  if (state.previewAbortController) state.previewAbortController.abort();
-  state.previewAbortController = new AbortController();
-  setPreviewMessage(`Rendering ${state.currentView.toUpperCase()} preview...`);
-  const response = await fetch(`/api/session/${state.session.session_id}/preview/${state.currentView}`, {
+  return renderPreviewForLane(state.currentView, true);
+}
+
+async function renderPreviewForLane(lane, displayWhenReady) {
+  if (!state.session) return false;
+  const cached = state.previewCache[lane];
+  const generation = state.previewGeneration[lane];
+  if (cached?.generation === generation) {
+    if (displayWhenReady && state.currentView === lane && !state.comparePeekActive) showCachedPreview(lane);
+    renderCompareStatus();
+    return true;
+  }
+
+  state.previewControllers[lane]?.abort();
+  const controller = new AbortController();
+  state.previewControllers[lane] = controller;
+  if (displayWhenReady) setPreviewMessage(`Rendering ${lane.toUpperCase()} preview...`);
+
+  const response = await fetch(`/api/session/${state.session.session_id}/preview/${lane}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ adjustments: state.adjustments }),
-    signal: state.previewAbortController.signal,
+    signal: controller.signal,
   }).catch((error) => {
     if (error.name === "AbortError") return { aborted: true };
     console.error(error);
@@ -589,23 +831,35 @@ async function refreshPreview() {
   });
   if (!response || response.aborted) return;
   if (response.status === 409) {
-    setPreviewMessage("Dropped a stale preview request. Refreshing...");
-    return;
+    if (displayWhenReady) setPreviewMessage("A newer adjustment replaced this render.");
+    return false;
   }
   if (!response.ok) {
     const payload = await safeJson(response);
-    setPreviewError(payload?.detail || "Preview failed to render.");
-    clearPreviewImage();
-    clearPreviewOverlay();
-    return;
+    if (displayWhenReady) {
+      setPreviewError(payload?.detail || "Preview failed to render.");
+      clearPreviewImage();
+      clearPreviewOverlay();
+    }
+    return false;
   }
 
-  state.previewInfo = previewInfoFromResponse(response, state.currentView);
+  const previewInfo = previewInfoFromResponse(response, lane);
   const blob = await response.blob();
+  if (generation !== state.previewGeneration[lane]) return false;
   const url = URL.createObjectURL(blob);
-  await applyPreviewUrl(url);
-  els.scopeKindLabel.textContent = state.currentView.toUpperCase();
-  renderReadouts();
+  const previous = state.previewCache[lane];
+  if (previous?.url) URL.revokeObjectURL(previous.url);
+  state.previewCache[lane] = { url, generation };
+  state.previewInfoByLane[lane] = previewInfo;
+  if (displayWhenReady && state.currentView === lane && !state.comparePeekActive) {
+    await applyPreviewUrl(url);
+    state.previewInfo = previewInfo;
+    els.scopeKindLabel.textContent = lane.toUpperCase();
+    renderReadouts();
+  }
+  renderCompareStatus();
+  return true;
 }
 
 async function refreshOverlay() {
@@ -646,7 +900,10 @@ async function refreshScopes() {
   const response = await fetch(`/api/session/${state.session.session_id}/scopes?kind=${state.currentView}&mode=${state.scopeMode}`);
   if (!response.ok) return;
   const payload = await response.json();
+  state.lastScope = payload;
   drawHistogram(payload);
+  renderDockSummary();
+  renderExportPreflight();
 }
 
 function drawHistogram(scope) {
@@ -659,6 +916,8 @@ function drawHistogram(scope) {
     els.scopeTitle.textContent = "Histogram";
     els.scopeNote.textContent = "Reference scopes will appear here after a preview is rendered.";
     els.scopeStats.innerHTML = "";
+    state.lastScope = null;
+    renderDockSummary();
     return;
   }
   els.scopeTitle.textContent = scopeTitleFor(scope);
@@ -672,7 +931,7 @@ function drawHistogram(scope) {
   renderKeyValueList(els.scopeStats, (scope.stats || []).map((item) => [item.label, item.value]));
 
   const channels = filteredScopeChannels(scope.channels);
-  const palette = { R: "#ff6b6b", G: "#5cd6b3", B: "#5fa8ff", Y: "#ece9df" };
+  const palette = { R: "#d97f78", G: "#87b995", B: "#6e9fb5", Y: "#cfd4d6" };
   const maxValue = Math.max(1, ...channels.flatMap((channel) => channel.bins));
   const plotLeft = scope.preview_kind === "hdr" ? 52 : 14;
   const plotRight = 10;
@@ -681,7 +940,7 @@ function drawHistogram(scope) {
   const plotWidth = canvas.width - plotLeft - plotRight;
   const plotHeight = canvas.height - plotTop - plotBottom;
 
-  ctx.font = "11px Consolas";
+  ctx.font = '11px "IBM Plex Mono", "Cascadia Mono", Consolas';
   ctx.textBaseline = "middle";
   ctx.fillStyle = "rgba(236, 233, 223, 0.72)";
   ctx.strokeStyle = "rgba(236, 233, 223, 0.18)";
@@ -897,6 +1156,9 @@ function splitOutputPath(path) {
 async function exportCurrentSession() {
   if (!state.session) return;
   const outputPath = buildExportOutputPath();
+  els.exportConfirmButton.disabled = true;
+  els.exportStatus.textContent = "Encoding and validating the finished file…";
+  els.exportResult.classList.add("hidden");
   const response = await fetch(`/api/session/${state.session.session_id}/export`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -906,12 +1168,20 @@ async function exportCurrentSession() {
       output_path: outputPath,
     }),
   });
-  const payload = await response.json();
+  const payload = await safeJson(response);
+  els.exportConfirmButton.disabled = false;
+  if (!response.ok) {
+    els.exportStatus.textContent = payload?.detail || "Export failed.";
+    return;
+  }
   els.exportStatus.textContent = payload.message || "Export request finished.";
   if (payload.output_path) {
     const parsed = splitOutputPath(payload.output_path);
     els.exportFilename.value = parsed.filename;
     els.exportDirectory.value = parsed.directory;
+    state.lastExportPath = payload.output_path;
+    els.exportResultPath.textContent = payload.output_path;
+    els.exportResult.classList.remove("hidden");
   }
 }
 
@@ -955,10 +1225,15 @@ async function applyInterpretationOverride() {
     return;
   }
   state.session = payload.session;
+  state.adjustments = payload.session.adjustments;
+  state.interpretationGateDismissed = false;
+  invalidatePreview("hdr");
+  invalidatePreview("sdr");
   renderSession();
   await refreshPreview();
   await refreshOverlay();
   await refreshScopes();
+  prepareInactivePreview();
 }
 
 async function resetInterpretationToAuto() {
@@ -994,6 +1269,7 @@ function syncControlsFromState() {
     if (control.type === "checkbox") control.checked = Boolean(value);
     else control.value = String(value);
   });
+  updateControlReadouts();
 }
 
 function syncCurveControlsFromState() {
@@ -1002,7 +1278,16 @@ function syncCurveControlsFromState() {
 }
 
 function renderSessionChrome() {
-  els.ejectButton.disabled = !state.session;
+  const hasSession = Boolean(state.session);
+  els.ejectButton.disabled = !hasSession;
+  els.exportButton.disabled = !hasSession;
+  els.emptyImportButton.disabled = hasSession;
+  document.querySelectorAll(".grade-rail input, .grade-rail select, .grade-rail button").forEach((control) => {
+    control.disabled = !hasSession;
+  });
+  els.viewButtons.forEach((button) => {
+    button.disabled = !hasSession;
+  });
 }
 
 function renderCurveChannelTabs() {
@@ -1028,7 +1313,9 @@ function bindCurveEditor() {
       window.removeEventListener("pointercancel", stop);
       state.activeCurvePoint = null;
       syncCurveControlsFromState();
-      debouncePreview();
+      invalidatePreview(state.currentView);
+      renderControlState();
+      debouncePreview(state.currentView);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", stop);
@@ -1037,6 +1324,38 @@ function bindCurveEditor() {
 
   canvas.addEventListener("pointerdown", (event) => {
     beginDrag(event.clientX, event.clientY);
+  });
+  canvas.addEventListener("keydown", (event) => {
+    const curve = currentCurveValues();
+    const index = state.selectedCurvePoint ?? Math.floor(curve.length / 2);
+    if (event.key === "Enter") {
+      event.preventDefault();
+      addCurvePoint();
+    } else if (event.key === "Delete" || event.key === "Backspace") {
+      event.preventDefault();
+      removeCurvePoint();
+    } else if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
+      event.preventDefault();
+      const point = [...curve[index]];
+      const step = event.shiftKey ? 0.05 : 0.01;
+      if (event.key === "ArrowLeft" && !isLockedCurveEndpoint(index)) {
+        point[0] = clamp(point[0] - step, curve[index - 1][0] + 0.02, curve[index + 1][0] - 0.02);
+      }
+      if (event.key === "ArrowRight" && !isLockedCurveEndpoint(index)) {
+        point[0] = clamp(point[0] + step, curve[index - 1][0] + 0.02, curve[index + 1][0] - 0.02);
+      }
+      if (event.key === "ArrowUp") point[1] = clamp(point[1] + step, 0, 1);
+      if (event.key === "ArrowDown") point[1] = clamp(point[1] - step, 0, 1);
+      curve[index] = point;
+      setCurveValues(state.selectedCurveChannel, curve);
+    } else {
+      return;
+    }
+    drawCurveEditor();
+    syncCurveControlsFromState();
+    invalidatePreview(state.currentView);
+    renderControlState();
+    debouncePreview(state.currentView);
   });
 }
 
@@ -1265,7 +1584,6 @@ function monotoneCurveValues(points, sampleX) {
 }
 
 async function applyPreviewUrl(url) {
-  const previousUrl = els.previewImage.dataset.objectUrl;
   try {
     await new Promise((resolve, reject) => {
       els.previewImage.onload = () => resolve();
@@ -1273,20 +1591,18 @@ async function applyPreviewUrl(url) {
       els.previewImage.src = url;
     });
   } catch (error) {
-    URL.revokeObjectURL(url);
     setPreviewError(error.message || "Preview image failed to decode.");
-    clearPreviewImage();
     return;
   } finally {
     els.previewImage.onload = null;
     els.previewImage.onerror = null;
   }
 
-  if (previousUrl) URL.revokeObjectURL(previousUrl);
-  els.previewImage.dataset.objectUrl = url;
   els.previewImage.style.display = "block";
   els.emptyState.style.display = "none";
+  setZoomMode(state.zoomMode);
   syncOverlayPlacement();
+  updateZoomReadout();
   hidePreviewMessage();
 }
 
@@ -1314,9 +1630,6 @@ async function applyOverlayUrl(url) {
 }
 
 function clearPreviewImage() {
-  const previousUrl = els.previewImage.dataset.objectUrl;
-  if (previousUrl) URL.revokeObjectURL(previousUrl);
-  delete els.previewImage.dataset.objectUrl;
   els.previewImage.removeAttribute("src");
   els.previewImage.style.display = "none";
   els.emptyState.style.display = "grid";
@@ -1381,6 +1694,7 @@ function syncInterpretationControls(session) {
 
 function renderSourceSettingsVisibility() {
   els.sourceSettingsPanel.classList.toggle("hidden", !state.sourceSettingsOpen || !state.session);
+  els.sourceSettingsToggle.setAttribute("aria-expanded", String(state.sourceSettingsOpen && Boolean(state.session)));
 }
 
 function renderSourceSettingsControls() {
@@ -1478,6 +1792,475 @@ function previewInfoFromResponse(response, kind) {
     bitDepth: "8-bit",
     notes: "Embedded or derived SDR fallback",
   };
+}
+
+function renderMetadataVisibility() {
+  const open = state.metadataOpen && Boolean(state.session);
+  els.metadataPanel.classList.toggle("hidden", !open);
+  els.metadataToggle.setAttribute("aria-expanded", String(open));
+}
+
+function openManualInterpretation() {
+  if (!state.session) return;
+  state.sourceSettingsOpen = true;
+  els.interpretationMode.value = "manual";
+  renderSourceSettingsVisibility();
+  renderSourceSettingsControls();
+  els.interpretationColorSpace.focus();
+}
+
+function renderInterpretationGate() {
+  const needsReview = Boolean(state.session?.analysis?.needs_color_override);
+  const visible = needsReview && !state.interpretationGateDismissed;
+  els.interpretationGate.classList.toggle("hidden", !visible);
+  if (needsReview) {
+    els.interpretationGateCopy.textContent = overrideMessage(state.session);
+  }
+}
+
+async function switchLane(lane) {
+  if (!["hdr", "sdr"].includes(lane)) return;
+  if (state.currentView === lane && cacheReady(lane)) {
+    renderLaneChrome();
+    return;
+  }
+  state.currentView = lane;
+  state.adjustments.shared.active_focus = lane;
+  state.selectedCurvePoint = Math.min(state.selectedCurvePoint ?? 0, currentCurveValues().length - 1);
+  renderLaneChrome();
+  syncCurveControlsFromState();
+  renderCurveChannelTabs();
+  drawCurveEditor();
+  renderReadouts();
+  if (cacheReady(lane)) await showCachedPreview(lane);
+  else await refreshPreview();
+  await refreshOverlay();
+  await refreshScopes();
+  prepareInactivePreview();
+}
+
+function renderLaneChrome() {
+  const lane = state.currentView;
+  const label = lane === "hdr" ? "HDR Grade" : "SDR Fallback";
+  document.body.dataset.activeLane = lane;
+  els.viewButtons.forEach((button) => button.classList.toggle("active", button.dataset.kind === lane));
+  els.lanePanels.forEach((panel) => panel.classList.toggle("hidden", panel.dataset.lanePanel !== lane));
+  els.viewerLaneLabel.textContent = label;
+  els.viewerBranchNote.textContent = branchCopy[lane];
+  els.laneNote.textContent = branchCopy[lane];
+  els.scopeKindLabel.textContent = lane.toUpperCase();
+  state.previewInfo = state.previewInfoByLane[lane];
+  renderCompareStatus();
+  updateControlReadouts();
+  renderControlState();
+}
+
+function invalidatePreview(lane) {
+  state.previewGeneration[lane] += 1;
+  renderCompareStatus();
+  renderExportPreflight();
+}
+
+function clearPreviewCache() {
+  for (const lane of ["hdr", "sdr"]) {
+    state.previewControllers[lane]?.abort();
+    state.previewControllers[lane] = null;
+    const cached = state.previewCache[lane];
+    if (cached?.url) URL.revokeObjectURL(cached.url);
+    state.previewCache[lane] = null;
+    state.previewGeneration[lane] = 0;
+  }
+  state.comparePeekActive = false;
+  clearPreviewImage();
+}
+
+function cacheReady(lane) {
+  const cached = state.previewCache[lane];
+  return Boolean(cached?.url && cached.generation === state.previewGeneration[lane]);
+}
+
+async function showCachedPreview(lane) {
+  const cached = state.previewCache[lane];
+  if (!cached?.url) return;
+  await applyPreviewUrl(cached.url);
+  state.previewInfo = state.previewInfoByLane[lane];
+  renderReadouts();
+}
+
+function prepareInactivePreview() {
+  if (!state.session) return;
+  const other = state.currentView === "hdr" ? "sdr" : "hdr";
+  if (cacheReady(other)) {
+    renderCompareStatus();
+    return;
+  }
+  window.setTimeout(() => {
+    renderPreviewForLane(other, false).catch(() => null);
+  }, 80);
+}
+
+function renderCompareStatus() {
+  if (!state.session) {
+    els.compareStatus.textContent = "No comparison";
+    els.compareButton.disabled = true;
+    return;
+  }
+  const other = state.currentView === "hdr" ? "sdr" : "hdr";
+  const ready = cacheReady(other);
+  els.compareButton.disabled = !ready;
+  els.compareStatus.textContent = ready ? `${other.toUpperCase()} ready` : `Preparing ${other.toUpperCase()}…`;
+}
+
+function bindCompareControl() {
+  els.compareButton.addEventListener("click", async () => {
+    const other = state.currentView === "hdr" ? "sdr" : "hdr";
+    if (cacheReady(other)) await switchLane(other);
+  });
+}
+
+function beginCompareHold() {
+  if (!state.session || state.compareHoldTimer || state.comparePeekActive) return;
+  state.compareHeld = true;
+  state.compareHoldTimer = window.setTimeout(async () => {
+    state.compareHoldTimer = null;
+    if (!state.compareHeld) return;
+    await peekOtherLane();
+  }, 180);
+}
+
+async function endCompareHold() {
+  if (!state.compareHeld) return;
+  state.compareHeld = false;
+  if (state.compareHoldTimer) {
+    window.clearTimeout(state.compareHoldTimer);
+    state.compareHoldTimer = null;
+    const other = state.currentView === "hdr" ? "sdr" : "hdr";
+    if (cacheReady(other)) await switchLane(other);
+    return;
+  }
+  if (state.comparePeekActive) await restoreActiveLane();
+}
+
+async function peekOtherLane() {
+  const other = state.currentView === "hdr" ? "sdr" : "hdr";
+  if (!cacheReady(other)) {
+    els.compareStatus.textContent = `Preparing ${other.toUpperCase()}…`;
+    return;
+  }
+  state.comparePeekActive = true;
+  clearPreviewOverlay();
+  await showCachedPreview(other);
+  els.viewerLaneLabel.textContent = `${other.toUpperCase()} peek · release V`;
+}
+
+async function restoreActiveLane() {
+  state.comparePeekActive = false;
+  await showCachedPreview(state.currentView);
+  renderLaneChrome();
+  await refreshOverlay();
+}
+
+function bindKeyboardShortcuts() {
+  window.addEventListener("keydown", (event) => {
+    if (event.repeat || isTypingTarget(event.target)) return;
+    const key = event.key.toLowerCase();
+    if (key === "v") {
+      event.preventDefault();
+      beginCompareHold();
+    } else if (key === "f") {
+      event.preventDefault();
+      setZoomMode("fit");
+    } else if (key === "a") {
+      event.preventDefault();
+      setZoomMode("actual");
+    } else if (key === "s") {
+      event.preventDefault();
+      toggleAnalysisDock();
+    } else if (key === "c") {
+      event.preventDefault();
+      cycleOverlayMode();
+    } else if (key === "d") {
+      event.preventDefault();
+      els.fileInput.click();
+    } else if (key === "x") {
+      event.preventDefault();
+      openExportSheet();
+    }
+  });
+  window.addEventListener("keyup", (event) => {
+    if (event.key.toLowerCase() === "v" && !isTypingTarget(event.target)) {
+      event.preventDefault();
+      endCompareHold();
+    }
+  });
+}
+
+function isTypingTarget(target) {
+  return target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement;
+}
+
+function setZoomMode(mode) {
+  state.zoomMode = mode === "actual" ? "actual" : "fit";
+  const actual = state.zoomMode === "actual";
+  els.previewImage.classList.toggle("zoom-actual", actual);
+  els.dropzone.classList.toggle("zoom-actual", actual);
+  els.zoomFit.classList.toggle("active", !actual);
+  els.zoomActual.classList.toggle("active", actual);
+  updateZoomReadout();
+  window.setTimeout(syncOverlayPlacement, 0);
+}
+
+function updateZoomReadout() {
+  if (!state.session || els.previewImage.style.display === "none") {
+    els.zoomReadout.textContent = state.zoomMode === "actual" ? "1:1" : "Fit";
+    return;
+  }
+  if (state.zoomMode === "actual") {
+    els.zoomReadout.textContent = "100%";
+    return;
+  }
+  const sourceWidth = Math.max(1, state.session.source.width);
+  const percent = Math.round((els.previewImage.getBoundingClientRect().width / sourceWidth) * 100);
+  els.zoomReadout.textContent = `Fit ${Math.max(1, percent)}%`;
+}
+
+function toggleOverlayPopover() {
+  const open = els.overlayPopover.classList.toggle("hidden") === false;
+  els.overlayToggle.setAttribute("aria-expanded", String(open));
+}
+
+function closeOverlayPopover() {
+  els.overlayPopover.classList.add("hidden");
+  els.overlayToggle.setAttribute("aria-expanded", "false");
+  els.overlayToggle.focus();
+}
+
+function cycleOverlayMode() {
+  const order = ["off", "false_color", "zebra"];
+  const current = state.adjustments.shared.overlay_mode || "off";
+  const next = order[(order.indexOf(current) + 1) % order.length];
+  state.adjustments.shared.overlay_mode = next;
+  const control = document.querySelector('[data-path="shared.overlay_mode"]');
+  if (control) control.value = next;
+  renderOverlayPresetNote();
+  refreshOverlay();
+}
+
+function toggleAnalysisDock() {
+  state.dockCollapsed = !state.dockCollapsed;
+  els.analysisDock.classList.toggle("collapsed", state.dockCollapsed);
+  els.dockCollapse.textContent = state.dockCollapsed ? "Open" : "Collapse";
+  els.dockCollapse.setAttribute("aria-expanded", String(!state.dockCollapsed));
+}
+
+async function activateDockTab(tab) {
+  state.activeDockTab = tab;
+  state.dockCollapsed = false;
+  els.analysisDock.classList.remove("collapsed");
+  els.dockCollapse.textContent = "Collapse";
+  els.dockCollapse.setAttribute("aria-expanded", "true");
+  els.dockTabs.forEach((button) => {
+    const active = button.dataset.dockTab === tab;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  const technical = tab === "technical";
+  els.scopeView.classList.toggle("hidden", technical);
+  els.technicalView.classList.toggle("hidden", !technical);
+  if (technical) return;
+  state.scopeMode = tab === "waveform" || tab === "parade" ? "waveform" : "histogram";
+  state.scopeChannelMode = tab === "parade" ? "parade" : "composite";
+  els.scopeMode.value = state.scopeMode;
+  els.scopeChannelMode.value = state.scopeChannelMode;
+  await refreshScopes();
+}
+
+function renderDockSummary() {
+  const stats = state.lastScope?.stats || [];
+  const wanted = stats.filter((item) => /Peak|% > 1000/.test(item.label)).slice(0, 2);
+  els.dockSummary.textContent = wanted.length
+    ? wanted.map((item) => `${item.label} ${item.value}`).join(" · ")
+    : "Full-resolution processing stats";
+}
+
+function updateControlReadouts() {
+  els.valueOutputs.forEach((output) => {
+    const path = output.dataset.valuePath;
+    const value = getValueByPath(state.adjustments, path);
+    if (value === undefined) return;
+    const text = formatControlValue(path, value);
+    output.textContent = text;
+    const control = document.querySelector(`[data-path="${path}"]`);
+    if (control) control.setAttribute("aria-valuetext", text);
+  });
+}
+
+function formatControlValue(path, value) {
+  const numeric = Number(value);
+  if (path.endsWith("white_balance_kelvin")) return `${Math.round(numeric)} K`;
+  if (path.endsWith(".exposure")) return `${numeric.toFixed(2)} EV`;
+  if (path === "shared.overlay_opacity") return `${Math.round(numeric * 100)}%`;
+  if (path === "shared.overlay_threshold") return `${Math.round(numeric * 100)} nit`;
+  if (path.endsWith("contrast_pivot")) return numeric.toFixed(path.startsWith("hdr.") ? 4 : 3);
+  if (path.endsWith("contrast") || path.endsWith("lift") || path.endsWith("gain") || path.endsWith("gamma") || path.endsWith("shadow_lift")) return numeric.toFixed(3);
+  return numeric.toFixed(2);
+}
+
+function renderControlState() {
+  const defaults = defaultAdjustments();
+  els.controlRows.forEach((row) => {
+    row.classList.toggle("modified", isPathModified(row.dataset.controlPath, defaults));
+  });
+  for (const [group, paths] of Object.entries(controlGroups)) {
+    const count = paths.filter((path) => isPathModified(path, defaults)).length;
+    const output = document.querySelector(`[data-modified-count="${group}"]`);
+    if (output) output.textContent = count ? `${count} modified` : "Default";
+  }
+  for (const lane of ["hdr", "sdr"]) {
+    const keys = Object.keys(defaults[lane]).filter((key) => !key.endsWith("_curve"));
+    const modified = keys.some((key) => !valuesEqual(state.adjustments[lane]?.[key], defaults[lane][key]))
+      || laneCurvesModified(lane, defaults);
+    const button = els.viewButtons.find((item) => item.dataset.kind === lane);
+    button?.classList.toggle("modified", modified);
+  }
+  const currentLaneDefaults = defaults[state.currentView];
+  const modifiedCount = Object.keys(currentLaneDefaults).filter((key) => !valuesEqual(state.adjustments[state.currentView]?.[key], currentLaneDefaults[key])).length;
+  els.gradeModifiedSummary.textContent = modifiedCount ? `${modifiedCount} modified` : "Default";
+  els.curveGroupState.textContent = laneCurvesModified(state.currentView, defaults) ? "Modified" : "Default";
+}
+
+function isPathModified(path, defaults = defaultAdjustments()) {
+  return !valuesEqual(getValueByPath(state.adjustments, path), getValueByPath(defaults, path));
+}
+
+function valuesEqual(left, right) {
+  if (Array.isArray(left) || Array.isArray(right)) return JSON.stringify(left) === JSON.stringify(right);
+  return left === right;
+}
+
+function laneCurvesModified(lane, defaults = defaultAdjustments()) {
+  return ["curves_enabled", "luma_curve", "red_curve", "green_curve", "blue_curve"]
+    .some((key) => !valuesEqual(state.adjustments[lane]?.[key], defaults[lane][key]));
+}
+
+function resetControlGroup(group) {
+  const paths = controlGroups[group] || [];
+  if (!paths.length) return;
+  const defaults = defaultAdjustments();
+  paths.forEach((path) => setValueByPath(state.adjustments, path, getValueByPath(defaults, path)));
+  syncControlsFromState();
+  invalidatePreview(group.startsWith("sdr-") ? "sdr" : "hdr");
+  renderControlState();
+  debouncePreview(group.startsWith("sdr-") ? "sdr" : "hdr");
+}
+
+function openExportSheet() {
+  if (!state.session) return;
+  renderCapabilities();
+  renderFormatCards();
+  renderExportPreflight();
+  els.exportStatus.textContent = "Choose a format and destination.";
+  if (typeof els.exportSheet.showModal === "function") els.exportSheet.showModal();
+  else els.exportSheet.setAttribute("open", "");
+}
+
+function closeExportSheet() {
+  if (typeof els.exportSheet.close === "function") els.exportSheet.close();
+  else els.exportSheet.removeAttribute("open");
+  els.exportButton.focus();
+}
+
+function renderCapabilities() {
+  const keys = ["avif_gain_map_encoder", "ultrahdr_encoder", "jpegxl_encoder"];
+  const available = keys.filter((key) => state.capabilities[key]?.status === "available").length;
+  els.capabilitySummary.textContent = `${available}/3 encoders ready`;
+  els.capabilitySummary.className = `capability-chip ${available >= 2 ? "ready" : "attention"}`;
+
+  document.querySelectorAll("[data-capability-for]").forEach((element) => {
+    const capability = state.capabilities[element.dataset.capabilityFor];
+    const ready = capability?.status === "available";
+    element.textContent = ready ? "Ready" : capability?.status === "unverified" ? "Unverified" : "Unavailable";
+    element.className = ready ? "ready" : "attention";
+    element.title = capability?.detail || "Capability status unavailable.";
+  });
+
+  const jxl = state.capabilities.jpegxl_encoder;
+  document.getElementById("jxl-capability").textContent = jxl?.status === "available"
+    ? "JPEG XL encoder detected · gain-map export is not enabled in this build"
+    : "JPEG XL · not in this build";
+
+  els.formatCards.forEach((card) => {
+    const format = card.dataset.formatCard;
+    const capability = state.capabilities[capabilityForFormat[format]];
+    const availableForExport = capability?.status === "available";
+    card.classList.toggle("unavailable", !availableForExport);
+    const radio = card.querySelector("input");
+    radio.disabled = !availableForExport;
+    card.title = availableForExport ? "" : capability?.detail || "This export path is unavailable.";
+  });
+
+  const selected = els.exportFormatChoices.find((choice) => choice.checked && !choice.disabled);
+  if (!selected) {
+    const fallback = els.exportFormatChoices.find((choice) => !choice.disabled);
+    if (fallback) {
+      fallback.checked = true;
+      els.exportFormat.value = fallback.value;
+    }
+  }
+}
+
+function renderFormatCards() {
+  els.formatCards.forEach((card) => {
+    card.classList.toggle("selected", card.dataset.formatCard === els.exportFormat.value);
+  });
+}
+
+function renderExportPreflight() {
+  const needsOverride = Boolean(state.session?.analysis?.needs_color_override);
+  const sourceReady = Boolean(state.session) && (!needsOverride || state.interpretationGateDismissed);
+  const encoderKey = capabilityForFormat[els.exportFormat.value];
+  const encoderReady = state.capabilities[encoderKey]?.status === "available";
+  setPreflight(
+    "source",
+    sourceReady,
+    sourceReady ? "Source interpretation confirmed" : "Source interpretation needs confirmation",
+  );
+  setPreflight("hdr", cacheReady("hdr"), cacheReady("hdr") ? "HDR branch ready" : "HDR preview preparing");
+  setPreflight("sdr", cacheReady("sdr"), cacheReady("sdr") ? "SDR fallback ready" : "SDR fallback preparing");
+  setPreflight("encoder", encoderReady, encoderReady ? "Encoder available" : "Encoder unavailable");
+  els.exportConfirmButton.disabled = !state.session || !sourceReady || !encoderReady;
+}
+
+function setPreflight(name, pass, label) {
+  const item = els.preflightItems.find((element) => element.dataset.preflight === name);
+  if (!item) return;
+  item.textContent = label;
+  item.classList.toggle("pass", pass);
+  item.classList.toggle("warn", !pass);
+}
+
+async function copyLastExportPath() {
+  if (!state.lastExportPath) return;
+  try {
+    await navigator.clipboard.writeText(state.lastExportPath);
+    els.copyExportPath.textContent = "Copied";
+  } catch {
+    els.copyExportPath.textContent = "Copy failed";
+  }
+}
+
+function updateProbeReadout(event) {
+  if (!state.session || els.previewImage.style.display === "none") return;
+  const rect = els.previewImage.getBoundingClientRect();
+  if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) {
+    els.probeReadout.textContent = "Move over the image for pixel coordinates";
+    return;
+  }
+  const normalizedX = (event.clientX - rect.left) / Math.max(1, rect.width);
+  const normalizedY = (event.clientY - rect.top) / Math.max(1, rect.height);
+  const x = Math.min(state.session.source.width - 1, Math.max(0, Math.floor(normalizedX * state.session.source.width)));
+  const y = Math.min(state.session.source.height - 1, Math.max(0, Math.floor(normalizedY * state.session.source.height)));
+  els.probeReadout.textContent = `x ${x} · y ${y} · ${state.currentView.toUpperCase()} preview`;
 }
 
 renderSessionChrome();

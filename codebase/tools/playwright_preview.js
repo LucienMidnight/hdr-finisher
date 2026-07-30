@@ -26,6 +26,13 @@ async function main() {
   const url = argValue("--url", "http://127.0.0.1:8000");
   const screenshot = argValue("--screenshot", path.join("output", "playwright", "hdr-finisher-ui.png"));
   const resultPath = argValue("--result", path.join("output", "playwright", "preview-result.json"));
+  const inputPath = argValue("--input");
+  const sourceReportPath = argValue("--source-report");
+  const sourceScreenshot = argValue("--source-screenshot", path.join("output", "design-qa", "source-wireframe.png"));
+  const comparisonScreenshot = argValue("--comparison-screenshot", path.join("output", "design-qa", "comparison.png"));
+  const exportScreenshot = argValue("--export-screenshot", path.join("output", "design-qa", "export-sheet.png"));
+  const viewportWidth = Number(argValue("--viewport-width", "1440"));
+  const viewportHeight = Number(argValue("--viewport-height", "1000"));
   const headed = hasFlag("--headed");
   const executablePath = edgeExecutable();
   const consoleErrors = [];
@@ -33,6 +40,11 @@ async function main() {
 
   fs.mkdirSync(path.dirname(screenshot), { recursive: true });
   fs.mkdirSync(path.dirname(resultPath), { recursive: true });
+  if (sourceReportPath) {
+    fs.mkdirSync(path.dirname(sourceScreenshot), { recursive: true });
+    fs.mkdirSync(path.dirname(comparisonScreenshot), { recursive: true });
+  }
+  if (inputPath) fs.mkdirSync(path.dirname(exportScreenshot), { recursive: true });
 
   const browser = await chromium.launch({
     headless: !headed,
@@ -41,7 +53,7 @@ async function main() {
 
   try {
     const page = await browser.newPage({
-      viewport: { width: 1440, height: 1000 },
+      viewport: { width: viewportWidth, height: viewportHeight },
       deviceScaleFactor: 1,
     });
     page.on("console", (message) => {
@@ -117,12 +129,113 @@ async function main() {
       throw new Error(`Range reset audit failed: ${JSON.stringify(failedResets)}`);
     }
 
-    await page.locator('[data-path="hdr.contrast"]').evaluate((control) => {
-      control.value = String(Number(control.value) + Number(control.step));
-      control.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    await page.waitForTimeout(250);
+    if (inputPath) {
+      await page.locator("#file-input").setInputFiles(inputPath);
+      await page.locator("#session-name").waitFor({ state: "visible", timeout: 30000 });
+      await page.waitForFunction(() => {
+        const sessionName = document.getElementById("session-name");
+        return sessionName && sessionName.textContent && sessionName.textContent !== "No active image";
+      }, { timeout: 30000 });
+      const gate = page.locator("#interpretation-gate");
+      if (await gate.isVisible()) {
+        await page.locator("#accept-interpretation").click();
+      }
+      await page.locator("#preview-image").waitFor({ state: "visible", timeout: 120000 });
+      await page.locator("#view-sdr").click();
+      await page.waitForFunction(() => document.body.dataset.activeLane === "sdr");
+      await page.locator("#view-hdr").click();
+      await page.waitForFunction(() => document.body.dataset.activeLane === "hdr");
+      await page.locator('[data-dock-tab="technical"]').click();
+      await page.locator('[data-dock-tab="waveform"]').click();
+      await page.locator("#overlay-toggle").click();
+      await page.locator("#overlay-close").click();
+      await page.locator("#zoom-actual").click();
+      await page.locator("#zoom-fit").click();
+      if (await page.locator("#source-rail-expand").isVisible()) {
+        await page.locator("#source-rail-expand").click();
+        await page.waitForFunction(() => document.querySelector(".source-rail")?.classList.contains("pinned-open"));
+        await page.locator("#source-rail-expand").click();
+        await page.waitForFunction(() => !document.querySelector(".source-rail")?.classList.contains("pinned-open"));
+      }
+      await page.locator("#export-button").click();
+      await page.locator("#export-sheet").waitFor({ state: "visible" });
+      await page.screenshot({ path: exportScreenshot, fullPage: true });
+      await page.locator("#export-close").click();
+      await page.waitForTimeout(500);
+    } else {
+      await page.locator('[data-path="hdr.contrast"]').evaluate((control) => {
+        control.value = String(Number(control.value) + Number(control.step));
+        control.dispatchEvent(new Event("input", { bubbles: true }));
+        control.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+      });
+      await page.waitForTimeout(250);
+    }
     await page.screenshot({ path: screenshot, fullPage: true });
+
+    let sourceEvidence = null;
+    if (sourceReportPath) {
+      const sourcePage = await browser.newPage({
+        viewport: { width: viewportWidth, height: viewportHeight },
+        deviceScaleFactor: 1,
+      });
+      const reportHtml = fs.readFileSync(sourceReportPath, "utf8");
+      const componentMatch = reportHtml.match(/<x-dc>([\s\S]*?)<\/x-dc>/i);
+      const componentHtml = (componentMatch ? componentMatch[1] : reportHtml)
+        .replaceAll("{{ accent }}", "#6E9FB5")
+        .replace(/<sc-if[^>]*>/gi, "<div>")
+        .replace(/<\/sc-if>/gi, "</div>")
+        .replace(/<\/?helmet>/gi, "");
+      await sourcePage.setContent(`<!doctype html><html><head><meta charset="utf-8"></head><body>${componentHtml}</body></html>`, {
+        waitUntil: "load",
+        timeout: 30000,
+      });
+      const sourceFrame = sourcePage.locator('[style*="height:520px"]').first();
+      await sourceFrame.waitFor({ state: "visible", timeout: 10000 });
+      await sourceFrame.screenshot({ path: sourceScreenshot });
+      const sourceBox = await sourceFrame.boundingBox();
+      const implementationSize = await page.evaluate(() => ({
+        width: document.documentElement.scrollWidth,
+        height: document.documentElement.scrollHeight,
+      }));
+      const sourceImageUrl = `data:image/png;base64,${fs.readFileSync(sourceScreenshot).toString("base64")}`;
+      const implementationImageUrl = `data:image/png;base64,${fs.readFileSync(screenshot).toString("base64")}`;
+      const comparisonPage = await browser.newPage({
+        viewport: { width: 1800, height: 1050 },
+        deviceScaleFactor: 1,
+      });
+      await comparisonPage.setContent(`
+        <!doctype html>
+        <html>
+          <head>
+            <style>
+              * { box-sizing: border-box; }
+              body { margin: 0; padding: 24px; background: #0b0c0d; color: #dde1e3; font: 14px system-ui, sans-serif; }
+              main { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+              figure { margin: 0; min-width: 0; }
+              figcaption { margin-bottom: 8px; color: #a9b1b6; letter-spacing: .08em; text-transform: uppercase; }
+              img { display: block; width: 100%; height: auto; border: 1px solid #2a2e32; }
+            </style>
+          </head>
+          <body>
+            <main>
+              <figure><figcaption>Source wireframe</figcaption><img src="${sourceImageUrl}"></figure>
+              <figure><figcaption>Edge implementation · ${viewportWidth}×${viewportHeight}</figcaption><img src="${implementationImageUrl}"></figure>
+            </main>
+          </body>
+        </html>
+      `, { waitUntil: "load" });
+      await comparisonPage.waitForFunction(() => [...document.images].every((image) => image.complete));
+      await comparisonPage.screenshot({ path: comparisonScreenshot, fullPage: true });
+      sourceEvidence = {
+        report: sourceReportPath,
+        screenshot: sourceScreenshot,
+        sourceBox,
+        implementationSize,
+        comparisonScreenshot,
+      };
+      await comparisonPage.close();
+      await sourcePage.close();
+    }
 
     const result = {
       ok: true,
@@ -131,6 +244,10 @@ async function main() {
       browser: executablePath ? "installed Edge executable" : "Playwright cached Chromium",
       executablePath,
       screenshot,
+      inputPath,
+      exportScreenshot: inputPath ? exportScreenshot : null,
+      viewport: { width: viewportWidth, height: viewportHeight, deviceScaleFactor: 1 },
+      sourceEvidence,
       controlChecks,
       resetChecks,
       consoleErrors,
