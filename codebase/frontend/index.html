@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HDR Finisher</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="/static/styles.css?v=20260731-tone-controls">
+  <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
   <div class="app-shell">
@@ -112,9 +112,14 @@
           <div class="viewer-tools">
             <button id="compare-button" class="tool-button" type="button" title="Tap V to switch. Hold V to peek at the other branch.">A/B · V</button>
             <span id="compare-status" class="tool-status">Preparing SDR…</span>
-            <button id="zoom-fit" class="tool-button active" type="button">Fit</button>
-            <button id="zoom-actual" class="tool-button" type="button">1:1</button>
-            <span id="zoom-readout" class="tool-status">Fit</span>
+            <div class="zoom-control" role="group" aria-label="Image zoom">
+              <button id="zoom-out" class="zoom-step" type="button" aria-label="Zoom out" title="Zoom out">&minus;</button>
+              <input id="zoom-readout" class="zoom-value" type="text" value="Fit" inputmode="decimal" aria-label="Zoom percentage" title="Enter a zoom percentage">
+              <input id="zoom-slider" class="zoom-slider" type="range" min="0" max="100" step="0.1" value="0" aria-label="Zoom level" data-no-double-reset>
+              <button id="zoom-in" class="zoom-step" type="button" aria-label="Zoom in" title="Zoom in">+</button>
+              <button id="zoom-fit" class="tool-button active" type="button" title="Fit image in viewer (F)">Fit</button>
+              <button id="zoom-actual" class="tool-button" type="button" title="Show one image pixel per screen pixel (A)">100%</button>
+            </div>
             <button id="overlay-toggle" class="tool-button" type="button" aria-expanded="false" aria-controls="overlay-popover">Overlays: Off</button>
           </div>
           <div id="overlay-popover" class="overlay-popover hidden">
@@ -156,8 +161,11 @@
         </div>
 
         <div class="viewport-frame" id="dropzone">
-          <img id="preview-image" alt="Current HDR Finisher preview">
-          <img id="preview-overlay" alt="" aria-hidden="true">
+          <div id="preview-stage" class="preview-stage">
+            <canvas id="preview-canvas" aria-label="WebGPU draft preview"></canvas>
+            <img id="preview-image" alt="Current HDR Finisher preview" draggable="false">
+            <img id="preview-overlay" alt="" aria-hidden="true" draggable="false">
+          </div>
           <div id="empty-state" class="empty-state">
             <p class="empty-state-title">Drop an HDR image anywhere in the viewer</p>
             <p class="empty-state-copy">EXR, TIFF, Radiance HDR, PFM, HEIC, JPEG, or PNG</p>
@@ -529,6 +537,7 @@
     </div>
   </dialog>
 
-  <script src="/static/app.js?v=20260731-tone-controls"></script>
+  <script src="/static/webgpu-preview.js"></script>
+  <script src="/static/app.js"></script>
 </body>
 </html>

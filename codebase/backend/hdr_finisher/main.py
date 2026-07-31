@@ -5,7 +5,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import uvicorn
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -25,9 +25,10 @@ from .models import (
     SessionSummary,
     SourceInterpretationOverride,
 )
-from .overlay import render_overlay_bytes
-from .preview import render_preview_bytes
-from .scopes import build_scope
+from .overlay import encode_processed_overlay_bytes
+from .preview import encode_processed_preview_bytes
+from .render_cache import StaleRender, encode_rgba32f_proxy
+from .scopes import build_scope_from_processed
 from .sessions import SessionStore
 
 
@@ -118,13 +119,15 @@ def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
 
     token = store.next_preview_token(session_id, kind)
     try:
-        body, media_type = render_preview_bytes(
-            session.image,
+        processed = session.render_cache.adjusted_frame(
             request.adjustments,
             kind,
-            session.preview.long_edge,
-            sdr_reference_image=session.sdr_reference_image,
+            request.long_edge or session.preview.long_edge,
+            is_current=lambda: session.preview_tokens[kind] == token,
         )
+        body, media_type = encode_processed_preview_bytes(processed, kind, hdr_display=request.hdr_display)
+    except StaleRender:
+        return JSONResponse(status_code=409, content={"detail": "Stale preview request dropped."})
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -144,25 +147,91 @@ def overlay(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
         return Response(status_code=204)
 
     try:
-        body, media_type = render_overlay_bytes(
-            session.image,
+        processed = session.render_cache.adjusted_frame(
             request.adjustments,
             kind,
-            session.preview.long_edge,
-            sdr_reference_image=session.sdr_reference_image,
+            request.long_edge or session.preview.long_edge,
         )
+        body, media_type = encode_processed_overlay_bytes(processed, request.adjustments, kind)
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return Response(content=body, media_type=media_type)
 
 
 @app.get("/api/session/{session_id}/scopes")
-def scopes(session_id: str, kind: PreviewKind = PreviewKind.HDR, mode: ScopeMode = ScopeMode.HISTOGRAM):
+def scopes(
+    session_id: str,
+    kind: PreviewKind = PreviewKind.HDR,
+    mode: ScopeMode = ScopeMode.HISTOGRAM,
+    bins: int | None = Query(default=None, ge=32, le=384),
+    columns: int = Query(default=512, ge=64, le=1024),
+    long_edge: int = Query(default=960, ge=256, le=2000),
+):
     try:
         session = store.get(session_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return build_scope(session.image, session.adjustments, kind, mode, sdr_reference_image=session.sdr_reference_image)
+    processed = session.render_cache.adjusted_frame(
+        session.adjustments,
+        kind,
+        long_edge,
+    )
+    return build_scope_from_processed(
+        processed,
+        kind,
+        mode=mode,
+        bins=bins,
+        waveform_columns=columns,
+    )
+
+
+@app.post("/api/session/{session_id}/scopes")
+def scopes_for_adjustments(
+    session_id: str,
+    request: PreviewRequest,
+    kind: PreviewKind = PreviewKind.HDR,
+    mode: ScopeMode = ScopeMode.HISTOGRAM,
+    bins: int | None = Query(default=None, ge=32, le=384),
+    columns: int = Query(default=512, ge=64, le=1024),
+    long_edge: int = Query(default=960, ge=256, le=2000),
+):
+    try:
+        session = store.update_adjustments(session_id, request.adjustments)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    processed = session.render_cache.adjusted_frame(request.adjustments, kind, long_edge)
+    return build_scope_from_processed(
+        processed,
+        kind,
+        mode=mode,
+        bins=bins,
+        waveform_columns=columns,
+    )
+
+
+@app.get("/api/session/{session_id}/proxy/{kind}")
+def webgpu_proxy(
+    session_id: str,
+    kind: PreviewKind,
+    long_edge: int = Query(default=1600, ge=256, le=2000),
+) -> Response:
+    try:
+        session = store.get(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    proxy, working_space = session.render_cache.source_proxy(kind, long_edge)
+    body, bytes_per_row = encode_rgba32f_proxy(proxy)
+    height, width = proxy.shape[:2]
+    return Response(
+        content=body,
+        media_type="application/octet-stream",
+        headers={
+            "X-Image-Width": str(width),
+            "X-Image-Height": str(height),
+            "X-Bytes-Per-Row": str(bytes_per_row),
+            "X-Working-Space": working_space,
+        },
+    )
 
 
 @app.post("/api/session/{session_id}/export")
@@ -194,6 +263,7 @@ def export_directory(request: DirectoryPickRequest) -> DirectoryPickResponse:
 def root() -> HTMLResponse:
     html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
     html = html.replace('/static/styles.css', f'/static/styles.css?v={APP_VERSION}')
+    html = html.replace('/static/webgpu-preview.js', f'/static/webgpu-preview.js?v={APP_VERSION}')
     html = html.replace('/static/app.js', f'/static/app.js?v={APP_VERSION}')
     return HTMLResponse(content=html)
 

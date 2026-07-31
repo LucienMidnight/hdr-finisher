@@ -427,7 +427,7 @@ def test_hdr_waveform_reports_density_grid() -> None:
     scope = build_scope(image, AdjustmentState(), PreviewKind.HDR, ScopeMode.WAVEFORM)
     assert scope.scope_type == "reference_nits_waveform"
     assert scope.channels[0].bins == []
-    assert len(scope.channels[0].grid) == 64
+    assert len(scope.channels[0].grid) == 256
     assert len(scope.channels[0].grid[0]) > 0
     assert any(channel.name == "Y" for channel in scope.channels)
 
@@ -441,6 +441,21 @@ def test_hdr_waveform_places_bright_columns_higher_than_dark_columns() -> None:
     first_half_row = int(np.argmax(y_grid[:, :4].sum(axis=1)))
     second_half_row = int(np.argmax(y_grid[:, 4:].sum(axis=1)))
     assert second_half_row > first_half_row
+
+
+def test_waveform_aggregates_every_source_pixel_into_horizontal_strips() -> None:
+    image = np.ones((12, 100, 3), dtype=np.float32) * 0.18
+    scope = build_scope(
+        image,
+        AdjustmentState(hdr=HDRAdjustments(highlight_rolloff=0)),
+        PreviewKind.HDR,
+        ScopeMode.WAVEFORM,
+        bins=16,
+        waveform_columns=10,
+    )
+    red_grid = np.array(next(channel.grid for channel in scope.channels if channel.name == "R"))
+    assert red_grid.shape == (16, 10)
+    assert int(red_grid.sum()) == image.shape[0] * image.shape[1]
 
 
 def test_sdr_source_has_predictable_internal_hdr_scope_anchor() -> None:

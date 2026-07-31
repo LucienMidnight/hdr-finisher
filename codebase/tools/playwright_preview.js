@@ -37,6 +37,9 @@ async function main() {
   const executablePath = edgeExecutable();
   const consoleErrors = [];
   const pageErrors = [];
+  let wheelZoomCheck = null;
+  let nativeDragCheck = null;
+  let gpuPreviewCheck = null;
 
   fs.mkdirSync(path.dirname(screenshot), { recursive: true });
   fs.mkdirSync(path.dirname(resultPath), { recursive: true });
@@ -112,7 +115,7 @@ async function main() {
       throw new Error(`Range control audit failed: ${JSON.stringify(failedControls)}`);
     }
 
-    const resetChecks = await page.locator('input[type="range"]').evaluateAll((controls) => {
+    const resetChecks = await page.locator('input[type="range"]:not([data-no-double-reset])').evaluateAll((controls) => {
       return controls.map((control) => {
         const defaultValue = control.defaultValue;
         control.value = control.value === control.max ? control.min : control.max;
@@ -143,15 +146,78 @@ async function main() {
         await page.locator("#accept-interpretation").click();
       }
       await page.locator("#preview-image").waitFor({ state: "visible", timeout: 120000 });
+      gpuPreviewCheck = await page.evaluate(() => {
+        const entries = [...document.querySelectorAll("#display-info-list dt")];
+        const gpuLabel = entries.find((entry) => entry.textContent === "GPU Preview");
+        return {
+          navigatorGpu: Boolean(navigator.gpu),
+          status: gpuLabel?.nextElementSibling?.textContent || "not reported",
+        };
+      });
+      nativeDragCheck = await page.locator("#preview-image").evaluate((image) => {
+        const event = new DragEvent("dragstart", {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: new DataTransfer(),
+        });
+        const dispatchResult = image.dispatchEvent(event);
+        return {
+          draggable: image.draggable,
+          defaultPrevented: event.defaultPrevented,
+          dispatchResult,
+          ok: image.draggable === false && event.defaultPrevented && dispatchResult === false,
+        };
+      });
+      if (!nativeDragCheck.ok) throw new Error(`Preview drag audit failed: ${JSON.stringify(nativeDragCheck)}`);
       await page.locator("#view-sdr").click();
       await page.waitForFunction(() => document.body.dataset.activeLane === "sdr");
       await page.locator("#view-hdr").click();
       await page.waitForFunction(() => document.body.dataset.activeLane === "hdr");
       await page.locator('[data-dock-tab="technical"]').click();
       await page.locator('[data-dock-tab="waveform"]').click();
+      await page.waitForFunction(() => document.getElementById("scope-title")?.textContent?.includes("Waveform"), { timeout: 120000 });
       await page.locator("#overlay-toggle").click();
       await page.locator("#overlay-close").click();
       await page.locator("#zoom-actual").click();
+      await page.locator("#zoom-fit").click();
+      const zoomBefore = await page.locator("#preview-image").evaluate((image) => {
+        const rect = image.getBoundingClientRect();
+        return {
+          width: rect.width,
+          anchorX: rect.left + rect.width * 0.72,
+          anchorY: rect.top + rect.height * 0.38,
+        };
+      });
+      await page.mouse.move(zoomBefore.anchorX, zoomBefore.anchorY);
+      await page.mouse.wheel(0, -240);
+      await page.waitForTimeout(100);
+      const zoomAfter = await page.locator("#preview-image").evaluate((image, before) => {
+        const rect = image.getBoundingClientRect();
+        const frame = document.getElementById("dropzone").getBoundingClientRect();
+        return {
+          width: rect.width,
+          height: rect.height,
+          frameWidth: frame.width,
+          frameHeight: frame.height,
+          normalizedX: (before.anchorX - rect.left) / rect.width,
+          normalizedY: (before.anchorY - rect.top) / rect.height,
+          readout: document.getElementById("zoom-readout")?.value,
+        };
+      }, zoomBefore);
+      wheelZoomCheck = {
+        beforeWidth: zoomBefore.width,
+        afterWidth: zoomAfter.width,
+        anchorDriftX: Math.abs(zoomAfter.normalizedX - 0.72),
+        anchorDriftY: Math.abs(zoomAfter.normalizedY - 0.38),
+        readout: zoomAfter.readout,
+      };
+      const horizontalAnchorOk = zoomAfter.width <= zoomAfter.frameWidth || wheelZoomCheck.anchorDriftX < 0.02;
+      const verticalAnchorOk = zoomAfter.height <= zoomAfter.frameHeight || wheelZoomCheck.anchorDriftY < 0.02;
+      wheelZoomCheck.ok = wheelZoomCheck.afterWidth > wheelZoomCheck.beforeWidth
+        && horizontalAnchorOk
+        && verticalAnchorOk
+        && !/^Fit/.test(wheelZoomCheck.readout || "");
+      if (!wheelZoomCheck.ok) throw new Error(`Wheel zoom audit failed: ${JSON.stringify(wheelZoomCheck)}`);
       await page.locator("#zoom-fit").click();
       if (await page.locator("#source-rail-expand").isVisible()) {
         await page.locator("#source-rail-expand").click();
@@ -252,6 +318,9 @@ async function main() {
       sourceEvidence,
       controlChecks,
       resetChecks,
+      wheelZoomCheck,
+      nativeDragCheck,
+      gpuPreviewCheck,
       consoleErrors,
       pageErrors,
     };

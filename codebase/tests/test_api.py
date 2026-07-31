@@ -101,7 +101,13 @@ def test_real_png_upload_preview_and_scopes() -> None:
     assert waveform.status_code == 200
     waveform_payload = waveform.json()
     assert waveform_payload["scope_type"] == "reference_nits_waveform"
-    assert len(waveform_payload["channels"][0]["grid"]) == 64
+    assert len(waveform_payload["channels"][0]["grid"]) == 256
+
+    proxy = client.get(f"/api/session/{session_id}/proxy/hdr?long_edge=512")
+    assert proxy.status_code == 200
+    assert proxy.headers["content-type"] == "application/octet-stream"
+    assert int(proxy.headers["x-image-width"]) <= 512
+    assert int(proxy.headers["x-bytes-per-row"]) % 256 == 0
 
 
 def test_clearing_session_removes_owned_upload_temp_file() -> None:

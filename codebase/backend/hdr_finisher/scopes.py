@@ -40,12 +40,24 @@ def build_scope(
     kind: PreviewKind,
     mode: ScopeMode = ScopeMode.HISTOGRAM,
     bins: int | None = None,
-    waveform_columns: int = 128,
+    waveform_columns: int = 512,
     sdr_reference_image: np.ndarray | None = None,
 ) -> ScopeResponse:
     processed = apply_adjustments(image, adjustments, kind, sdr_reference_image=sdr_reference_image)
     if mode == ScopeMode.WAVEFORM:
-        return _build_waveform(processed, kind, bins=bins or 64, columns=waveform_columns)
+        return _build_waveform(processed, kind, bins=bins or 256, columns=waveform_columns)
+    return _build_histogram(processed, kind, bins=bins or 256)
+
+
+def build_scope_from_processed(
+    processed: np.ndarray,
+    kind: PreviewKind,
+    mode: ScopeMode = ScopeMode.HISTOGRAM,
+    bins: int | None = None,
+    waveform_columns: int = 512,
+) -> ScopeResponse:
+    if mode == ScopeMode.WAVEFORM:
+        return _build_waveform(processed, kind, bins=bins or 256, columns=waveform_columns)
     return _build_histogram(processed, kind, bins=bins or 256)
 
 
@@ -142,14 +154,14 @@ def _build_waveform(processed: np.ndarray, kind: PreviewKind, bins: int, columns
 
 def _waveform_grid(values: np.ndarray, edges: np.ndarray, columns: int) -> list[list[int]]:
     height, width = values.shape[:2]
-    if width <= columns:
-        column_indices = np.arange(width, dtype=np.int32)
-    else:
-        column_indices = np.linspace(0, width - 1, columns).astype(np.int32)
-    grid = np.zeros((len(edges) - 1, len(column_indices)), dtype=np.int32)
+    output_columns = max(1, min(columns, width))
+    column_edges = np.linspace(0, width, output_columns + 1, dtype=np.int32)
+    grid = np.zeros((len(edges) - 1, output_columns), dtype=np.int32)
 
-    for target_x, source_x in enumerate(column_indices):
-        column_values = values[:, source_x]
+    for target_x in range(output_columns):
+        start = int(column_edges[target_x])
+        stop = max(start + 1, int(column_edges[target_x + 1]))
+        column_values = values[:, start:stop].reshape(-1)
         hist, _ = np.histogram(column_values, bins=edges)
         grid[:, target_x] = hist.astype(np.int32)
     return grid.tolist()

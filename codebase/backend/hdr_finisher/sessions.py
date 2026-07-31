@@ -11,6 +11,7 @@ from .capabilities import probe_capabilities
 from .loader import load_image
 from .metadata import extract_metadata
 from .models import AdjustmentState, HDRAnalysis, PreviewKind, PreviewSettings, SessionPayload, SourceImageDescriptor, SourceInterpretationOverride
+from .render_cache import SessionRenderCache
 
 
 @dataclass
@@ -26,6 +27,10 @@ class LoadedSession:
     adjustments: AdjustmentState = field(default_factory=AdjustmentState)
     preview: PreviewSettings = field(default_factory=PreviewSettings)
     preview_tokens: dict[PreviewKind, int] = field(default_factory=lambda: {PreviewKind.HDR: 0, PreviewKind.SDR: 0})
+    render_cache: SessionRenderCache = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self.render_cache = SessionRenderCache(self.image, self.sdr_reference_image)
 
     def to_payload(self) -> SessionPayload:
         return SessionPayload(
@@ -117,6 +122,7 @@ class SessionStore:
             session.metadata = metadata
             session.analysis = analysis
             session.preview_tokens = {PreviewKind.HDR: 0, PreviewKind.SDR: 0}
+            session.render_cache.replace_source(image, sdr_reference_image)
             return session
 
     def next_preview_token(self, session_id: str, kind: PreviewKind) -> int:

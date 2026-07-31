@@ -194,6 +194,8 @@ class SourceInterpretationOverride(BaseModel):
 class PreviewRequest(BaseModel):
     adjustments: AdjustmentState
     request_id: str | None = None
+    long_edge: int | None = Field(default=None, ge=256, le=2000)
+    hdr_display: bool = True
 
 
 class HistogramChannel(BaseModel):

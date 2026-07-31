@@ -9,7 +9,7 @@ import numpy as np
 
 from .adjustments import apply_adjustments
 from .binaries import resolve_binary
-from .color import acescg_to_linear_bt2020
+from .color import acescg_to_linear_bt2020, acescg_to_linear_srgb
 from .config import MAX_PREVIEW_LONG_EDGE, PREVIEW_IMAGE_FORMAT
 from .models import AdjustmentState, PreviewKind
 
@@ -26,6 +26,25 @@ def render_preview_bytes(
     if kind == PreviewKind.HDR:
         return _encode_hdr_avif(downsampled), "image/avif"
     return _encode_png_sdr(downsampled), "image/png"
+
+
+def encode_processed_preview_bytes(
+    processed: np.ndarray,
+    kind: PreviewKind,
+    *,
+    hdr_display: bool = True,
+) -> tuple[bytes, str]:
+    if kind == PreviewKind.HDR:
+        if not hdr_display:
+            return _encode_png_sdr(_hdr_to_sdr_display(processed)), "image/png"
+        return _encode_hdr_avif(processed), "image/avif"
+    return _encode_png_sdr(processed), "image/png"
+
+
+def _hdr_to_sdr_display(image: np.ndarray) -> np.ndarray:
+    """Match the deterministic WebGPU HDR fallback used on SDR displays."""
+    display = np.clip(acescg_to_linear_srgb(image), 0.0, None)
+    return display / (np.float32(1.0) + display)
 
 
 def downsample_image(image: np.ndarray, max_long_edge: int) -> np.ndarray:

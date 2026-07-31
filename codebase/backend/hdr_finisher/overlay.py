@@ -33,6 +33,16 @@ def render_overlay_bytes(
     return _encode_overlay_png(overlay), "image/png"
 
 
+def encode_processed_overlay_bytes(
+    processed: np.ndarray,
+    adjustments: AdjustmentState,
+    kind: PreviewKind,
+) -> tuple[bytes, str]:
+    if adjustments.shared.overlay_mode == OverlayMode.OFF:
+        return b"", "image/png"
+    return _encode_overlay_png(build_overlay_rgba(processed, adjustments, kind)), "image/png"
+
+
 def build_overlay_rgba(image: np.ndarray, adjustments: AdjustmentState, kind: PreviewKind) -> np.ndarray:
     mode = adjustments.shared.overlay_mode
     opacity = np.clip(np.float32(adjustments.shared.overlay_opacity), 0.0, 1.0)

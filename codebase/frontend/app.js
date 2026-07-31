@@ -61,6 +61,10 @@ const latitudePresets = {
   },
 };
 
+const MIN_ZOOM_PERCENT = 1;
+const MAX_ZOOM_PERCENT = 3200;
+const ZOOM_STEPS = [1, 2, 3, 4, 5, 6.25, 8.33, 12.5, 16.67, 25, 33.33, 50, 66.67, 100, 200, 300, 400, 500, 600, 800, 1200, 1600, 2400, 3200];
+
 const state = {
   session: null,
   capabilities: {},
@@ -71,6 +75,7 @@ const state = {
   metadataOpen: false,
   interpretationGateDismissed: false,
   zoomMode: "fit",
+  zoomPercent: 100,
   activeDockTab: "histogram",
   dockCollapsed: false,
   lastScope: null,
@@ -149,7 +154,14 @@ const state = {
   selectedCurvePoint: 2,
   previewAbortController: null,
   overlayAbortController: null,
+  scopeAbortController: null,
   refreshTimer: null,
+  settleTimer: null,
+  gpuRenderSerial: 0,
+  gpuRenderFrame: null,
+  gpuQueuedLane: null,
+  gpuPreview: null,
+  gpuSurfaceHdr: false,
   previewInfo: {
     mediaType: "n/a",
     transport: "n/a",
@@ -163,6 +175,8 @@ const state = {
 
 let scopeResizeObserver = null;
 let scopeResizeFrame = null;
+let viewerResizeObserver = null;
+let viewerResizeFrame = null;
 
 const defaultAdjustments = () => ({
   hdr: {
@@ -252,6 +266,8 @@ const els = {
   displayInfoList: document.getElementById("display-info-list"),
   sourcePreviewList: document.getElementById("source-preview-list"),
   sessionName: document.getElementById("session-name"),
+  previewStage: document.getElementById("preview-stage"),
+  previewCanvas: document.getElementById("preview-canvas"),
   previewImage: document.getElementById("preview-image"),
   previewOverlay: document.getElementById("preview-overlay"),
   emptyState: document.getElementById("empty-state"),
@@ -264,6 +280,9 @@ const els = {
   compareStatus: document.getElementById("compare-status"),
   zoomFit: document.getElementById("zoom-fit"),
   zoomActual: document.getElementById("zoom-actual"),
+  zoomOut: document.getElementById("zoom-out"),
+  zoomIn: document.getElementById("zoom-in"),
+  zoomSlider: document.getElementById("zoom-slider"),
   zoomReadout: document.getElementById("zoom-readout"),
   overlayToggle: document.getElementById("overlay-toggle"),
   overlayClose: document.getElementById("overlay-close"),
@@ -342,6 +361,7 @@ boot();
 
 async function boot() {
   bindEvents();
+  await initializeGpuPreview();
   await loadCapabilities().catch(() => {
     els.capabilitySummary.textContent = "Encoder status unavailable";
     els.capabilitySummary.className = "capability-chip attention";
@@ -354,8 +374,15 @@ async function boot() {
   renderCapabilities();
   renderExportPreflight();
   window.addEventListener("resize", syncOverlayPlacement);
-  window.addEventListener("resize", updateZoomReadout);
   observeScopeSize();
+  observeViewerSize();
+}
+
+async function initializeGpuPreview() {
+  if (!window.HDRWebGPUPreview) return;
+  state.gpuPreview = new window.HDRWebGPUPreview(els.previewCanvas);
+  await state.gpuPreview.initialize();
+  state.displayInfo.gpu = state.gpuPreview.detail;
 }
 
 function observeScopeSize() {
@@ -371,6 +398,22 @@ function observeScopeSize() {
     });
   });
   scopeResizeObserver.observe(els.histogram);
+}
+
+function observeViewerSize() {
+  const refreshGeometry = () => {
+    if (viewerResizeFrame !== null) cancelAnimationFrame(viewerResizeFrame);
+    viewerResizeFrame = requestAnimationFrame(() => {
+      viewerResizeFrame = null;
+      applyZoomGeometry();
+    });
+  };
+  if (!window.ResizeObserver) {
+    window.addEventListener("resize", refreshGeometry);
+    return;
+  }
+  viewerResizeObserver = new ResizeObserver(refreshGeometry);
+  viewerResizeObserver.observe(els.dropzone);
 }
 
 function bindEvents() {
@@ -432,8 +475,11 @@ function bindEvents() {
   els.dropzone.addEventListener("drop", async (event) => {
     event.preventDefault();
     els.dropzone.classList.remove("drag-active");
-    const [file] = event.dataTransfer.files;
+    const [file] = event.dataTransfer?.files || [];
     if (file) await uploadFile(file);
+  });
+  [els.previewImage, els.previewOverlay].forEach((image) => {
+    image.addEventListener("dragstart", (event) => event.preventDefault());
   });
 
   els.viewButtons.forEach((button) => {
@@ -527,6 +573,25 @@ function bindEvents() {
 
   els.zoomFit.addEventListener("click", () => setZoomMode("fit"));
   els.zoomActual.addEventListener("click", () => setZoomMode("actual"));
+  els.zoomOut.addEventListener("click", () => stepZoom(-1));
+  els.zoomIn.addEventListener("click", () => stepZoom(1));
+  els.zoomSlider.addEventListener("input", () => {
+    setCustomZoom(sliderToZoomPercent(Number(els.zoomSlider.value)));
+  });
+  els.zoomReadout.addEventListener("focus", () => els.zoomReadout.select());
+  els.zoomReadout.addEventListener("change", commitZoomReadout);
+  els.zoomReadout.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitZoomReadout();
+      els.zoomReadout.blur();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      updateZoomReadout();
+      els.zoomReadout.blur();
+    }
+  });
+  els.dropzone.addEventListener("wheel", handleViewerWheel, { passive: false });
   els.overlayToggle.addEventListener("click", toggleOverlayPopover);
   els.overlayClose.addEventListener("click", closeOverlayPopover);
   els.dockCollapse.addEventListener("click", toggleAnalysisDock);
@@ -557,6 +622,7 @@ function bindEvents() {
       const media = window.matchMedia(query);
       media.addEventListener?.("change", () => {
         state.displayInfo = buildDisplayProbe();
+        state.displayInfo.gpu = state.gpuPreview?.detail || "Backend fallback";
         renderReadouts();
       });
     });
@@ -570,7 +636,7 @@ async function loadCapabilities() {
 }
 
 function bindRangeResetControls() {
-  document.querySelectorAll('input[type="range"]').forEach((control) => {
+  document.querySelectorAll('input[type="range"]:not([data-no-double-reset])').forEach((control) => {
     control.addEventListener("dblclick", (event) => {
       event.preventDefault();
       control.value = control.defaultValue;
@@ -599,13 +665,13 @@ async function uploadFile(file) {
     state.adjustments.shared.active_focus = "hdr";
     state.interpretationGateDismissed = false;
     clearPreviewCache();
+    state.gpuPreview?.resetSession(payload.session.session_id);
     invalidatePreview("hdr");
     invalidatePreview("sdr");
     renderSession();
     seedExportFieldsFromSession();
-    await refreshPreview();
-    await refreshOverlay();
-    await refreshScopes();
+    await renderGpuDraft("hdr");
+    await Promise.all([refreshPreview(), refreshOverlay(), refreshScopes(state.session.preview?.long_edge || 1600)]);
     prepareInactivePreview();
   } catch (error) {
     console.error(error);
@@ -632,6 +698,7 @@ async function ejectCurrentSession() {
   state.lastScope = null;
   state.lastExportPath = "";
   clearPreviewCache();
+  state.gpuPreview?.resetSession();
   state.previewInfo = {
     mediaType: "n/a",
     transport: "n/a",
@@ -766,6 +833,7 @@ function displayProbeEntries() {
     ["Pixel Ratio", state.displayInfo.pixelRatio],
     ["Screen Depth", state.displayInfo.screenDepth],
     ["Browser", state.displayInfo.browser],
+    ["GPU Preview", state.displayInfo.gpu || "Backend fallback"],
   ];
 }
 
@@ -817,17 +885,46 @@ function applyLatitudePresets(latitude) {
 }
 
 function debouncePreview(lane = state.currentView) {
+  if (lane === state.currentView) queueGpuDraft(lane);
   window.clearTimeout(state.refreshTimer);
+  window.clearTimeout(state.settleTimer);
+  const gpuDraftActive = Boolean(state.gpuPreview?.available && lane === state.currentView);
   state.refreshTimer = window.setTimeout(async () => {
     if (lane === state.currentView) {
-      await refreshPreview();
-      await refreshOverlay();
-      await refreshScopes();
-      prepareInactivePreview();
+      if (gpuDraftActive) await refreshScopes(960);
+      else await Promise.all([renderPreviewForLane(lane, true, 960), refreshScopes(960)]);
     } else {
-      await renderPreviewForLane(lane, false);
+      await renderPreviewForLane(lane, false, 960);
     }
-  }, 180);
+  }, gpuDraftActive ? 80 : 70);
+  state.settleTimer = window.setTimeout(() => settlePreview(lane), gpuDraftActive ? 240 : 320);
+}
+
+function queueGpuDraft(lane = state.currentView) {
+  state.gpuQueuedLane = lane;
+  if (state.gpuRenderFrame !== null) return;
+  state.gpuRenderFrame = requestAnimationFrame(() => {
+    state.gpuRenderFrame = null;
+    const queuedLane = state.gpuQueuedLane;
+    state.gpuQueuedLane = null;
+    renderGpuDraft(queuedLane).catch(() => null);
+  });
+}
+
+async function settlePreview(lane = state.currentView) {
+  if (!state.session) return;
+  const display = lane === state.currentView;
+  const longEdge = state.session.preview?.long_edge || 1600;
+  if (display) {
+    await Promise.all([
+      renderPreviewForLane(lane, true, longEdge),
+      refreshOverlay(longEdge),
+      refreshScopes(longEdge),
+    ]);
+    prepareInactivePreview();
+  } else {
+    await renderPreviewForLane(lane, false, longEdge);
+  }
 }
 
 function debounceOverlayAndScopes() {
@@ -840,14 +937,14 @@ function debounceOverlayAndScopes() {
 }
 
 async function refreshPreview() {
-  return renderPreviewForLane(state.currentView, true);
+  return renderPreviewForLane(state.currentView, true, state.session?.preview?.long_edge || 1600);
 }
 
-async function renderPreviewForLane(lane, displayWhenReady) {
+async function renderPreviewForLane(lane, displayWhenReady, longEdge = 1600) {
   if (!state.session) return false;
   const cached = state.previewCache[lane];
   const generation = state.previewGeneration[lane];
-  if (cached?.generation === generation) {
+  if (cached?.generation === generation && (cached.longEdge || 0) >= longEdge) {
     if (displayWhenReady && state.currentView === lane && !state.comparePeekActive) showCachedPreview(lane);
     renderCompareStatus();
     return true;
@@ -861,7 +958,11 @@ async function renderPreviewForLane(lane, displayWhenReady) {
   const response = await fetch(`/api/session/${state.session.session_id}/preview/${lane}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ adjustments: state.adjustments }),
+    body: JSON.stringify({
+      adjustments: state.adjustments,
+      long_edge: longEdge,
+      hdr_display: mediaQueryMatch("(dynamic-range: high)"),
+    }),
     signal: controller.signal,
   }).catch((error) => {
     if (error.name === "AbortError") return { aborted: true };
@@ -889,19 +990,26 @@ async function renderPreviewForLane(lane, displayWhenReady) {
   const url = URL.createObjectURL(blob);
   const previous = state.previewCache[lane];
   if (previous?.url) URL.revokeObjectURL(previous.url);
-  state.previewCache[lane] = { url, generation };
-  state.previewInfoByLane[lane] = previewInfo;
+  state.previewCache[lane] = { url, generation, longEdge };
   if (displayWhenReady && state.currentView === lane && !state.comparePeekActive) {
-    await applyPreviewUrl(url);
-    state.previewInfo = previewInfo;
-    els.scopeKindLabel.textContent = lane.toUpperCase();
-    renderReadouts();
+    const keptGpuSurface = shouldKeepHdrGpuSurface(lane)
+      && await renderGpuDraft(lane)
+      && state.gpuSurfaceHdr;
+    if (!keptGpuSurface) {
+      state.previewInfoByLane[lane] = previewInfo;
+      await applyPreviewUrl(url);
+      state.previewInfo = previewInfo;
+      els.scopeKindLabel.textContent = lane.toUpperCase();
+      renderReadouts();
+    }
+  } else {
+    state.previewInfoByLane[lane] = previewInfo;
   }
   renderCompareStatus();
   return true;
 }
 
-async function refreshOverlay() {
+async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 1600) {
   if (!state.session) return;
   if (state.adjustments.shared.overlay_mode === "off") {
     clearPreviewOverlay();
@@ -912,7 +1020,7 @@ async function refreshOverlay() {
   const response = await fetch(`/api/session/${state.session.session_id}/overlay/${state.currentView}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ adjustments: state.adjustments }),
+    body: JSON.stringify({ adjustments: state.adjustments, long_edge: longEdge }),
     signal: state.overlayAbortController.signal,
   }).catch((error) => {
     if (error.name === "AbortError") return { aborted: true };
@@ -934,15 +1042,42 @@ async function refreshOverlay() {
   await applyOverlayUrl(url);
 }
 
-async function refreshScopes() {
+async function refreshScopes(longEdge = 960) {
   if (!state.session) return;
-  const response = await fetch(`/api/session/${state.session.session_id}/scopes?kind=${state.currentView}&mode=${state.scopeMode}`);
+  if (state.scopeAbortController) state.scopeAbortController.abort();
+  const controller = new AbortController();
+  state.scopeAbortController = controller;
+  const lane = state.currentView;
+  const mode = state.scopeMode;
+  const resolution = mode === "waveform" ? waveformRequestResolution() : null;
+  const resolutionQuery = resolution ? `&bins=${resolution.bins}&columns=${resolution.columns}` : "";
+  const response = await fetch(`/api/session/${state.session.session_id}/scopes?kind=${lane}&mode=${mode}&long_edge=${longEdge}${resolutionQuery}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ adjustments: state.adjustments, long_edge: longEdge }),
+    signal: controller.signal,
+  }).catch((error) => {
+    if (error.name === "AbortError") return null;
+    console.error(error);
+    return null;
+  });
+  if (!response || controller !== state.scopeAbortController) return;
   if (!response.ok) return;
   const payload = await response.json();
+  if (controller !== state.scopeAbortController || lane !== state.currentView || mode !== state.scopeMode) return;
   state.lastScope = payload;
   drawHistogram(payload);
   renderDockSummary();
   renderExportPreflight();
+}
+
+function waveformRequestResolution() {
+  const width = Math.max(1, els.histogram.clientWidth);
+  const height = Math.max(1, els.histogram.clientHeight);
+  return {
+    columns: Math.round(clamp(width / 2, 256, 768)),
+    bins: Math.round(clamp(height * 1.5, 128, 384)),
+  };
 }
 
 function drawHistogram(scope) {
@@ -975,7 +1110,7 @@ function drawHistogram(scope) {
   const channels = filteredScopeChannels(scope.channels);
   const palette = { R: "#ff5b61", G: "#55e579", B: "#4d9cff", Y: "#d8dddf" };
   const isWaveform = scope.scope_type.includes("waveform");
-  const plotLeft = isWaveform ? 52 : 14;
+  const plotLeft = isWaveform ? 62 : 14;
   const plotRight = 10;
   const plotTop = 8;
   const plotBottom = 22;
@@ -1033,8 +1168,8 @@ function drawScopeGrid(ctx, scope, isWaveform, plotLeft, plotTop, plotWidth, plo
       ctx.lineTo(plotLeft + plotWidth, y);
       ctx.stroke();
       if (showLabel) {
-        ctx.textAlign = "left";
-        ctx.fillText(guide.label, 2, y);
+        ctx.textAlign = "right";
+        ctx.fillText(waveformGuideLabel(scope, guide), plotLeft - 7, clamp(y, plotTop + 6, plotTop + plotHeight - 6));
       }
     } else {
       const x = plotLeft + normalized * plotWidth;
@@ -1054,6 +1189,19 @@ function drawScopeGrid(ctx, scope, isWaveform, plotLeft, plotTop, plotWidth, plo
 function scopeGuidesForDisplay(scope) {
   if (scope.preview_kind === "hdr") return new Set([1, 10, 100, 203, 1000, 4000]);
   return new Set([0.18, 0.5, 1]);
+}
+
+function waveformGuideLabel(scope, guide) {
+  if (scope.preview_kind !== "hdr") return guide.label;
+  const labels = {
+    1: "1 nit",
+    10: "10",
+    100: "100 white",
+    203: "203",
+    1000: "1K peak",
+    4000: "4K peak",
+  };
+  return labels[Number(guide.value)] || guide.label;
 }
 
 function guidePosition(scope, value) {
@@ -1126,22 +1274,53 @@ function drawWaveform(ctx, scope, channels, palette, plotLeft, plotTop, plotWidt
     drawWaveformParade(ctx, channels.filter((channel) => channel.name !== "Y"), palette, plotLeft, plotTop, plotWidth, plotHeight);
     return;
   }
-  const columnCount = Math.max(1, channels[0]?.grid?.[0]?.length || 0);
-  const rowCount = Math.max(1, channels[0]?.grid?.length || 0);
-  const maxValue = Math.max(1, ...channels.flatMap((channel) => channel.grid.flat()));
+  const peak = robustWaveformPeak(channels);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(plotLeft, plotTop, plotWidth, plotHeight);
+  ctx.clip();
+  ctx.globalCompositeOperation = channels.length > 1 ? "screen" : "source-over";
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
   channels.forEach((channel) => {
-    const color = hexToRgb(palette[channel.name]);
-    channel.grid.forEach((row, rowIndex) => {
-      const y = plotTop + plotHeight - (rowIndex / Math.max(rowCount - 1, 1)) * plotHeight;
-      row.forEach((value, columnIndex) => {
-        if (value <= 0) return;
-        const x = plotLeft + (columnIndex / Math.max(columnCount - 1, 1)) * plotWidth;
-        const alpha = Math.min(0.9, value / maxValue);
-        ctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`;
-        ctx.fillRect(x, y, Math.max(1, plotWidth / columnCount), Math.max(1, plotHeight / rowCount));
-      });
+    const density = waveformDensityCanvas(channel, hexToRgb(palette[channel.name]), peak);
+    if (density) ctx.drawImage(density, plotLeft, plotTop, plotWidth, plotHeight);
+  });
+  ctx.restore();
+}
+
+function robustWaveformPeak(channels) {
+  const populations = channels
+    .flatMap((channel) => (channel.grid || []).flat())
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .sort((a, b) => a - b);
+  if (!populations.length) return 1;
+  return Math.max(1, populations[Math.floor((populations.length - 1) * 0.995)]);
+}
+
+function waveformDensityCanvas(channel, color, peak) {
+  const grid = channel.grid || [];
+  const rowCount = grid.length;
+  const columnCount = grid[0]?.length || 0;
+  if (!rowCount || !columnCount) return null;
+  const surface = document.createElement("canvas");
+  surface.width = columnCount;
+  surface.height = rowCount;
+  const surfaceContext = surface.getContext("2d");
+  const pixels = surfaceContext.createImageData(columnCount, rowCount);
+  grid.forEach((row, rowIndex) => {
+    row.forEach((value, columnIndex) => {
+      if (value <= 0) return;
+      const density = Math.min(1, value / Math.max(1, peak));
+      const offset = (((rowCount - 1 - rowIndex) * columnCount) + columnIndex) * 4;
+      pixels.data[offset] = color.r;
+      pixels.data[offset + 1] = color.g;
+      pixels.data[offset + 2] = color.b;
+      pixels.data[offset + 3] = Math.round(0.62 * Math.pow(density, 0.7) * 255);
     });
   });
+  surfaceContext.putImageData(pixels, 0, 0);
+  return surface;
 }
 
 function drawHistogramParade(ctx, channels, palette, plotLeft, plotTop, plotWidth, plotHeight) {
@@ -1163,22 +1342,17 @@ function drawHistogramParade(ctx, channels, palette, plotLeft, plotTop, plotWidt
 
 function drawWaveformParade(ctx, channels, palette, plotLeft, plotTop, plotWidth, plotHeight) {
   const laneWidth = plotWidth / Math.max(channels.length, 1);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(plotLeft, plotTop, plotWidth, plotHeight);
+  ctx.clip();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
   channels.forEach((channel, laneIndex) => {
-    const maxValue = Math.max(1, ...channel.grid.flat());
-    const color = hexToRgb(palette[channel.name]);
-    const columnCount = Math.max(1, channel.grid?.[0]?.length || 0);
-    const rowCount = Math.max(1, channel.grid?.length || 0);
-    channel.grid.forEach((row, rowIndex) => {
-      const y = plotTop + plotHeight - (rowIndex / Math.max(rowCount - 1, 1)) * plotHeight;
-      row.forEach((value, columnIndex) => {
-        if (value <= 0) return;
-        const x = plotLeft + laneIndex * laneWidth + (columnIndex / Math.max(columnCount - 1, 1)) * (laneWidth - 6);
-        const alpha = Math.min(0.9, value / maxValue);
-        ctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`;
-        ctx.fillRect(x, y, Math.max(1, (laneWidth - 6) / columnCount), Math.max(1, plotHeight / rowCount));
-      });
-    });
+    const density = waveformDensityCanvas(channel, hexToRgb(palette[channel.name]), robustWaveformPeak([channel]));
+    if (density) ctx.drawImage(density, plotLeft + laneIndex * laneWidth + 3, plotTop, Math.max(1, laneWidth - 6), plotHeight);
   });
+  ctx.restore();
 }
 
 function filteredScopeChannels(channels) {
@@ -1209,12 +1383,13 @@ function hexToRgb(value) {
 }
 
 function syncOverlayPlacement() {
-  if (els.previewImage.style.display === "none" || els.previewOverlay.style.display === "none") return;
-  const frameRect = els.dropzone.getBoundingClientRect();
-  const imageRect = els.previewImage.getBoundingClientRect();
+  const preview = activePreviewElement();
+  if (!previewIsVisible() || els.previewOverlay.style.display === "none") return;
+  const stageRect = els.previewStage.getBoundingClientRect();
+  const imageRect = preview.getBoundingClientRect();
   if (!imageRect.width || !imageRect.height) return;
-  els.previewOverlay.style.left = `${imageRect.left - frameRect.left}px`;
-  els.previewOverlay.style.top = `${imageRect.top - frameRect.top}px`;
+  els.previewOverlay.style.left = `${imageRect.left - stageRect.left + imageRect.width / 2}px`;
+  els.previewOverlay.style.top = `${imageRect.top - stageRect.top + imageRect.height / 2}px`;
   els.previewOverlay.style.width = `${imageRect.width}px`;
   els.previewOverlay.style.height = `${imageRect.height}px`;
 }
@@ -1351,10 +1526,10 @@ async function applyInterpretationOverride() {
     state.interpretationGateDismissed = false;
     invalidatePreview("hdr");
     invalidatePreview("sdr");
+    state.gpuPreview?.resetSession(payload.session.session_id);
     renderSession();
-    await refreshPreview();
-    await refreshOverlay();
-    await refreshScopes();
+    await renderGpuDraft(state.currentView);
+    await Promise.all([refreshPreview(), refreshOverlay(), refreshScopes(state.session.preview?.long_edge || 1600)]);
     prepareInactivePreview();
   } catch (error) {
     console.error(error);
@@ -1415,6 +1590,9 @@ function renderSessionChrome() {
   });
   els.viewButtons.forEach((button) => {
     button.disabled = !hasSession;
+  });
+  [els.zoomOut, els.zoomIn, els.zoomSlider, els.zoomReadout, els.zoomFit, els.zoomActual].forEach((control) => {
+    control.disabled = !hasSession;
   });
 }
 
@@ -1502,6 +1680,8 @@ function updateCurveFromPointer(clientX, clientY) {
   state.selectedCurvePoint = index;
   setCurveValues(state.selectedCurveChannel, curve);
   drawCurveEditor();
+  invalidatePreview(state.currentView);
+  queueGpuDraft(state.currentView);
 }
 
 function drawCurveEditor() {
@@ -1726,12 +1906,54 @@ async function applyPreviewUrl(url) {
     els.previewImage.onerror = null;
   }
 
+  els.previewCanvas.style.display = "none";
   els.previewImage.style.display = "block";
   els.emptyState.style.display = "none";
   setZoomMode(state.zoomMode);
   syncOverlayPlacement();
   updateZoomReadout();
   hidePreviewMessage();
+}
+
+async function renderGpuDraft(lane = state.currentView) {
+  if (!state.session || lane !== state.currentView || !state.gpuPreview?.available) return false;
+  if (state.adjustments.shared.overlay_mode !== "off" || state.comparePeekActive) return false;
+  const serial = ++state.gpuRenderSerial;
+  try {
+    const result = await state.gpuPreview.render(
+      state.session.session_id,
+      lane,
+      state.adjustments,
+      sampleCurvePoints,
+      state.session.preview?.long_edge || 1600,
+    );
+    if (!result || serial !== state.gpuRenderSerial || lane !== state.currentView) return false;
+    state.gpuSurfaceHdr = Boolean(result.hdr);
+    els.previewImage.style.display = "none";
+    els.previewCanvas.style.display = "block";
+    els.emptyState.style.display = "none";
+    state.previewInfo = {
+      mediaType: "WebGPU canvas",
+      transport: "GPU texture",
+      colorSpace: result.hdr ? "Display P3 extended" : "sRGB",
+      transfer: "linear canvas",
+      bitDepth: result.hdr ? "16-bit float" : "display native",
+      notes: "Interactive GPU draft; settled preview remains export-authoritative",
+    };
+    state.previewInfoByLane[lane] = state.previewInfo;
+    setZoomMode(state.zoomMode);
+    renderReadouts();
+    hidePreviewMessage();
+    return true;
+  } catch (error) {
+    console.warn("WebGPU draft render failed; using backend preview.", error);
+    state.gpuPreview.available = false;
+    state.gpuSurfaceHdr = false;
+    state.gpuPreview.detail = error?.message || "WebGPU draft failed";
+    state.displayInfo.gpu = state.gpuPreview.detail;
+    renderReadouts();
+    return false;
+  }
 }
 
 async function applyOverlayUrl(url) {
@@ -1760,8 +1982,17 @@ async function applyOverlayUrl(url) {
 function clearPreviewImage() {
   els.previewImage.removeAttribute("src");
   els.previewImage.style.display = "none";
+  els.previewCanvas.style.display = "none";
   els.emptyState.style.display = "grid";
   clearPreviewOverlay();
+}
+
+function activePreviewElement() {
+  return els.previewCanvas.style.display !== "none" ? els.previewCanvas : els.previewImage;
+}
+
+function previewIsVisible() {
+  return Boolean(state.session && activePreviewElement().style.display !== "none");
 }
 
 function clearPreviewOverlay() {
@@ -1903,6 +2134,16 @@ function mediaQueryMatch(query) {
 function previewInfoFromResponse(response, kind) {
   const mediaType = response.headers.get("content-type") || "unknown";
   if (kind === "hdr") {
+    if (mediaType.startsWith("image/png")) {
+      return {
+        mediaType,
+        transport: "PNG",
+        colorSpace: "sRGB",
+        transfer: "sRGB",
+        bitDepth: "8-bit",
+        notes: "Deterministic HDR-to-SDR preview for a standard-range display",
+      };
+    }
     return {
       mediaType,
       transport: "AVIF",
@@ -1960,10 +2201,8 @@ async function switchLane(lane) {
   renderCurveChannelTabs();
   drawCurveEditor();
   renderReadouts();
-  if (cacheReady(lane)) await showCachedPreview(lane);
-  else await refreshPreview();
-  await refreshOverlay();
-  await refreshScopes();
+  const previewTask = cacheReady(lane) ? showCachedPreview(lane) : refreshPreview();
+  await Promise.all([previewTask, refreshOverlay(), refreshScopes(state.session.preview?.long_edge || 1600)]);
   prepareInactivePreview();
 }
 
@@ -1999,6 +2238,7 @@ function clearPreviewCache() {
     state.previewGeneration[lane] = 0;
   }
   state.comparePeekActive = false;
+  state.gpuSurfaceHdr = false;
   clearPreviewImage();
 }
 
@@ -2010,6 +2250,7 @@ function cacheReady(lane) {
 async function showCachedPreview(lane) {
   const cached = state.previewCache[lane];
   if (!cached?.url) return;
+  if (shouldKeepHdrGpuSurface(lane) && await renderGpuDraft(lane) && state.gpuSurfaceHdr) return;
   await applyPreviewUrl(cached.url);
   state.previewInfo = state.previewInfoByLane[lane];
   renderReadouts();
@@ -2128,28 +2369,136 @@ function isTypingTarget(target) {
 }
 
 function setZoomMode(mode) {
-  state.zoomMode = mode === "actual" ? "actual" : "fit";
-  const actual = state.zoomMode === "actual";
-  els.previewImage.classList.toggle("zoom-actual", actual);
-  els.dropzone.classList.toggle("zoom-actual", actual);
-  els.zoomFit.classList.toggle("active", !actual);
-  els.zoomActual.classList.toggle("active", actual);
+  if (mode === "actual") {
+    setCustomZoom(100);
+    return;
+  }
+  if (mode === "custom") {
+    setCustomZoom(state.zoomPercent);
+    return;
+  }
+  state.zoomMode = "fit";
+  els.dropzone.scrollLeft = 0;
+  els.dropzone.scrollTop = 0;
+  applyZoomGeometry();
+}
+
+function shouldKeepHdrGpuSurface(lane) {
+  return lane === "hdr"
+    && lane === state.currentView
+    && Boolean(state.gpuPreview?.available)
+    && mediaQueryMatch("(dynamic-range: high)")
+    && state.adjustments.shared.overlay_mode === "off"
+    && !state.comparePeekActive;
+}
+
+function setCustomZoom(percent, anchor = null) {
+  const nextPercent = clamp(Number(percent) || 100, MIN_ZOOM_PERCENT, MAX_ZOOM_PERCENT);
+  const preview = activePreviewElement();
+  const imageVisible = previewIsVisible();
+  const oldRect = imageVisible ? preview.getBoundingClientRect() : null;
+  const anchorX = anchor?.clientX ?? (els.dropzone.getBoundingClientRect().left + els.dropzone.clientWidth / 2);
+  const anchorY = anchor?.clientY ?? (els.dropzone.getBoundingClientRect().top + els.dropzone.clientHeight / 2);
+  const normalizedX = oldRect?.width ? clamp((anchorX - oldRect.left) / oldRect.width, 0, 1) : 0.5;
+  const normalizedY = oldRect?.height ? clamp((anchorY - oldRect.top) / oldRect.height, 0, 1) : 0.5;
+
+  state.zoomMode = "custom";
+  state.zoomPercent = nextPercent;
+  applyZoomGeometry();
+
+  if (oldRect) {
+    const newRect = preview.getBoundingClientRect();
+    els.dropzone.scrollLeft += (newRect.left + normalizedX * newRect.width) - anchorX;
+    els.dropzone.scrollTop += (newRect.top + normalizedY * newRect.height) - anchorY;
+  }
+  syncOverlayPlacement();
+}
+
+function applyZoomGeometry() {
+  const preview = activePreviewElement();
+  const visible = previewIsVisible();
+  els.dropzone.classList.toggle("zoom-custom", state.zoomMode === "custom");
+  els.zoomFit.classList.toggle("active", state.zoomMode === "fit");
+  els.zoomActual.classList.toggle("active", state.zoomMode === "custom" && Math.abs(state.zoomPercent - 100) < 0.01);
+  if (!visible) {
+    updateZoomReadout();
+    return;
+  }
+
+  const sourceWidth = Math.max(1, state.session.source.width || preview.naturalWidth || preview.width);
+  const sourceHeight = Math.max(1, state.session.source.height || preview.naturalHeight || preview.height);
+  const frameWidth = Math.max(1, els.dropzone.clientWidth);
+  const frameHeight = Math.max(1, els.dropzone.clientHeight);
+  const fitPercent = Math.min(frameWidth / sourceWidth, frameHeight / sourceHeight) * 100;
+  const percent = state.zoomMode === "fit" ? fitPercent : state.zoomPercent;
+  const displayWidth = Math.max(1, sourceWidth * percent / 100);
+  const displayHeight = Math.max(1, sourceHeight * percent / 100);
+
+  els.previewStage.style.width = `${Math.max(frameWidth, displayWidth)}px`;
+  els.previewStage.style.height = `${Math.max(frameHeight, displayHeight)}px`;
+  els.previewImage.style.width = `${displayWidth}px`;
+  els.previewImage.style.height = `${displayHeight}px`;
+  els.previewCanvas.style.width = `${displayWidth}px`;
+  els.previewCanvas.style.height = `${displayHeight}px`;
+  state.zoomPercent = percent;
   updateZoomReadout();
-  window.setTimeout(syncOverlayPlacement, 0);
+  syncOverlayPlacement();
 }
 
 function updateZoomReadout() {
-  if (!state.session || els.previewImage.style.display === "none") {
-    els.zoomReadout.textContent = state.zoomMode === "actual" ? "1:1" : "Fit";
+  const percent = Math.max(0.01, state.zoomPercent || 100);
+  if (document.activeElement !== els.zoomReadout) {
+    els.zoomReadout.value = state.zoomMode === "fit" ? `Fit ${formatZoomPercent(percent)}` : formatZoomPercent(percent);
+  }
+  els.zoomSlider.value = String(zoomPercentToSlider(clamp(percent, MIN_ZOOM_PERCENT, MAX_ZOOM_PERCENT)));
+  els.zoomSlider.setAttribute("aria-valuetext", state.zoomMode === "fit" ? `Fit, ${formatZoomPercent(percent)}` : formatZoomPercent(percent));
+}
+
+function formatZoomPercent(percent) {
+  const digits = percent < 10 ? 1 : 0;
+  return `${Number(percent).toFixed(digits)}%`;
+}
+
+function commitZoomReadout() {
+  const raw = els.zoomReadout.value.trim();
+  if (/^fit/i.test(raw)) {
+    setZoomMode("fit");
     return;
   }
-  if (state.zoomMode === "actual") {
-    els.zoomReadout.textContent = "100%";
-    return;
-  }
-  const sourceWidth = Math.max(1, state.session.source.width);
-  const percent = Math.round((els.previewImage.getBoundingClientRect().width / sourceWidth) * 100);
-  els.zoomReadout.textContent = `Fit ${Math.max(1, percent)}%`;
+  const percent = Number.parseFloat(raw.replace("%", ""));
+  if (Number.isFinite(percent)) setCustomZoom(percent);
+  else updateZoomReadout();
+}
+
+function stepZoom(direction) {
+  const current = state.zoomPercent || 100;
+  const epsilon = 0.001;
+  const next = direction > 0
+    ? ZOOM_STEPS.find((value) => value > current + epsilon) ?? MAX_ZOOM_PERCENT
+    : [...ZOOM_STEPS].reverse().find((value) => value < current - epsilon) ?? MIN_ZOOM_PERCENT;
+  setCustomZoom(next);
+}
+
+function handleViewerWheel(event) {
+  if (!previewIsVisible()) return;
+  const imageRect = activePreviewElement().getBoundingClientRect();
+  if (event.clientX < imageRect.left || event.clientX > imageRect.right || event.clientY < imageRect.top || event.clientY > imageRect.bottom) return;
+  event.preventDefault();
+  const delta = event.deltaMode === WheelEvent.DOM_DELTA_LINE
+    ? event.deltaY * 16
+    : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+      ? event.deltaY * els.dropzone.clientHeight
+      : event.deltaY;
+  const nextPercent = (state.zoomPercent || 100) * Math.exp(-delta * 0.0022);
+  setCustomZoom(nextPercent, { clientX: event.clientX, clientY: event.clientY });
+}
+
+function zoomPercentToSlider(percent) {
+  return Math.log(percent / MIN_ZOOM_PERCENT) / Math.log(MAX_ZOOM_PERCENT / MIN_ZOOM_PERCENT) * 100;
+}
+
+function sliderToZoomPercent(value) {
+  return MIN_ZOOM_PERCENT * Math.pow(MAX_ZOOM_PERCENT / MIN_ZOOM_PERCENT, clamp(value, 0, 100) / 100);
 }
 
 function toggleOverlayPopover() {
@@ -2387,8 +2736,8 @@ async function copyLastExportPath() {
 }
 
 function updateProbeReadout(event) {
-  if (!state.session || els.previewImage.style.display === "none") return;
-  const rect = els.previewImage.getBoundingClientRect();
+  if (!previewIsVisible()) return;
+  const rect = activePreviewElement().getBoundingClientRect();
   if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) {
     els.probeReadout.textContent = "Move over the image for pixel coordinates";
     return;

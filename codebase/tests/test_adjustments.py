@@ -378,3 +378,50 @@ def test_sdr_reference_slider_step_is_finite_ordered_and_gradual(path: str, step
     assert np.all(np.isfinite(moved)), f"{path} produced non-finite SDR-reference pixels"
     assert np.all(np.diff(moved[0, :, 0]) >= -1e-6), f"{path} inverted SDR-reference luminance ordering"
     assert float(np.max(np.abs(moved - baseline))) < 0.12, f"{path} changed too much in one UI step"
+
+
+@pytest.mark.parametrize(
+    ("kind", "branch_name", "field_name", "values"),
+    [
+        (PreviewKind.HDR, "hdr", "exposure", (-1.3, 1.3)),
+        (PreviewKind.HDR, "hdr", "highlight_rolloff", (0.0, 0.75)),
+        (PreviewKind.HDR, "hdr", "shadow_lift", (-0.13, 0.13)),
+        (PreviewKind.HDR, "hdr", "lift", (-0.16, 0.16)),
+        (PreviewKind.HDR, "hdr", "gamma", (-0.32, 0.32)),
+        (PreviewKind.HDR, "hdr", "gain", (-0.16, 0.16)),
+        (PreviewKind.HDR, "hdr", "contrast", (-0.32, 0.32)),
+        (PreviewKind.HDR, "hdr", "contrast_pivot", (0.08, 0.4)),
+        (PreviewKind.HDR, "hdr", "white_balance_kelvin", (3900, 9100)),
+        (PreviewKind.HDR, "hdr", "tint", (-0.65, 0.65)),
+        (PreviewKind.SDR, "sdr", "exposure", (-1.3, 1.3)),
+        (PreviewKind.SDR, "sdr", "highlight_recovery", (0.0, 1.3)),
+        (PreviewKind.SDR, "sdr", "tone_contrast", (0.68, 1.32)),
+        (PreviewKind.SDR, "sdr", "tone_skew", (-0.65, 0.65)),
+        (PreviewKind.SDR, "sdr", "shadow", (-0.32, 0.32)),
+        (PreviewKind.SDR, "sdr", "lift", (-0.16, 0.16)),
+        (PreviewKind.SDR, "sdr", "gamma", (-0.32, 0.32)),
+        (PreviewKind.SDR, "sdr", "gain", (-0.16, 0.16)),
+        (PreviewKind.SDR, "sdr", "contrast", (-0.32, 0.32)),
+        (PreviewKind.SDR, "sdr", "contrast_pivot", (0.19, 0.81)),
+    ],
+)
+def test_representative_slider_travel_remains_display_safe_and_ordered(
+    kind: PreviewKind,
+    branch_name: str,
+    field_name: str,
+    values: tuple[float, float],
+) -> None:
+    levels = np.geomspace(1e-6, 1000.0, 512, dtype=np.float32)
+    image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
+
+    for value in values:
+        state = AdjustmentState()
+        setattr(getattr(state, branch_name), field_name, value)
+        output = apply_adjustments(image, state, kind)
+        luma = output[0].mean(axis=1)
+
+        assert np.all(np.isfinite(output)), f"{branch_name}.{field_name} produced non-finite output at {value}"
+        assert float(output.min()) >= 0.0, f"{branch_name}.{field_name} produced negative output at {value}"
+        assert np.all(np.diff(luma) >= -1e-5), f"{branch_name}.{field_name} inverted tone ordering at {value}"
+        if kind == PreviewKind.SDR:
+            assert float(output.max()) <= 1.0, f"{branch_name}.{field_name} escaped the SDR display range at {value}"
