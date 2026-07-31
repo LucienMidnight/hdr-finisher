@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import numpy as np
+import pytest
+import tifffile
+
 from conftest import fixture_path
 
-from hdr_finisher.loader import load_image
+from hdr_finisher.loader import LoaderError, _classify_icc_profile_name, _load_tiff, load_image
 from hdr_finisher.models import HDRClassification
 
 
@@ -23,6 +27,45 @@ def test_load_real_tiff_fixture_with_hdr_headroom() -> None:
     assert analysis.classification == HDRClassification.HDR_TRUE
     assert analysis.peak_linear > 1.0
     assert sdr_reference is None
+
+
+def test_load_float_tiff_with_deflate_predictor(tmp_path) -> None:
+    pytest.importorskip("imagecodecs")
+    source_path = tmp_path / "darktable-float-predictor.tif"
+    source = np.linspace(0.01, 4.0, 18 * 12 * 3, dtype=np.float32).reshape(12, 18, 3)
+    tifffile.imwrite(source_path, source, compression="deflate", predictor=True, photometric="rgb")
+
+    decoded, _ = _load_tiff(source_path)
+    assert np.array_equal(decoded, source)
+
+    image, descriptor, metadata, analysis, sdr_reference = load_image(
+        source_path,
+        overrides={"color_space": "BT.2020", "transfer_function": "LINEAR"},
+    )
+
+    assert descriptor.suffix == ".tif"
+    assert metadata["bit_depth"] == "float32"
+    assert image.shape == source.shape
+    assert analysis.classification == HDRClassification.HDR_TRUE
+    assert sdr_reference is None
+
+
+def test_darktable_linear_rec2020_profile_name_is_recognized() -> None:
+    assert _classify_icc_profile_name("Linear Rec2020 RGB - darktable") == "BT.2020"
+
+
+def test_loader_wraps_unexpected_decoder_errors(monkeypatch, tmp_path) -> None:
+    source_path = tmp_path / "broken.tif"
+    source_path.write_bytes(b"not a tiff")
+
+    def fail_tiff_decode(path):
+        _ = path
+        raise ValueError("decoder exploded")
+
+    monkeypatch.setattr("hdr_finisher.loader._load_tiff", fail_tiff_decode)
+
+    with pytest.raises(LoaderError, match="Could not decode TIFF input: decoder exploded"):
+        load_image(source_path)
 
 
 def test_load_real_linear_exr_fixture() -> None:

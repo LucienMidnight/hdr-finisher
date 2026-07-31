@@ -5,6 +5,7 @@ from pathlib import Path
 from conftest import make_png_bytes
 from fastapi.testclient import TestClient
 
+from hdr_finisher.loader import LoaderError
 from hdr_finisher.main import app
 from hdr_finisher.models import ExportResponse, HDRAnalysis, HDRClassification, MetadataPayload, SessionPayload, SourceImageDescriptor
 
@@ -51,6 +52,18 @@ def test_upload_creates_session(monkeypatch) -> None:
     response = client.post("/api/session", files={"file": ("fixture.png", b"stub", "image/png")})
     assert response.status_code == 200
     assert response.json()["session"]["session_id"] == "abc123"
+
+
+def test_upload_decode_failure_returns_json_detail(monkeypatch) -> None:
+    def fail_create_session(source_path: Path):
+        _ = source_path
+        raise LoaderError("Could not decode TIFF input: invalid floating-point predictor")
+
+    monkeypatch.setattr("hdr_finisher.main.store.create_session", fail_create_session)
+    response = client.post("/api/session", files={"file": ("fixture.tif", b"stub", "image/tiff")})
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Could not decode TIFF input: invalid floating-point predictor"}
 
 
 def test_real_png_upload_preview_and_scopes() -> None:

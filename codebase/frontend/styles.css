@@ -946,6 +946,85 @@ body[data-active-lane="sdr"] .grade-rail {
   text-transform: none;
 }
 
+.label-with-help {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 5px;
+  width: auto;
+}
+
+.select-control {
+  display: grid;
+  gap: 6px;
+}
+
+.select-control label {
+  color: var(--muted);
+}
+
+.help-tip {
+  position: relative;
+  display: inline-grid;
+  flex: 0 0 15px;
+  width: 15px;
+  min-width: 15px;
+  height: 15px;
+  min-height: 15px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  appearance: none;
+  background: var(--raised);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 1;
+  place-items: center;
+}
+
+.help-tip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 7px);
+  left: -84px;
+  width: 220px;
+  padding: 8px 9px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #16191b;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+  color: var(--body);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: 0;
+  opacity: 0;
+  pointer-events: none;
+  text-align: left;
+  text-transform: none;
+  transform: translateY(-2px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.help-tip:hover::after,
+.help-tip:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.help-tip:hover,
+.help-tip:focus-visible {
+  z-index: 50;
+}
+
+.control-disabled {
+  opacity: 0.42;
+}
+
 output {
   color: var(--body);
   font-size: 10px;

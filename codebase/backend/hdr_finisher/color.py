@@ -13,6 +13,16 @@ BT2020_COLOURSPACE = "ITU-R BT.2020"
 DISPLAY_P3_COLOURSPACE = "Display P3"
 
 
+def acescg_to_linear_srgb(image: np.ndarray) -> np.ndarray:
+    converted = RGB_to_RGB(
+        image.astype(np.float32, copy=False),
+        RGB_COLOURSPACES[ACESCG_COLOURSPACE],
+        RGB_COLOURSPACES[SRGB_COLOURSPACE],
+        chromatic_adaptation_transform="CAT02",
+    )
+    return np.asarray(converted, dtype=np.float32)
+
+
 def sanitize_array(image: np.ndarray) -> np.ndarray:
     image = np.nan_to_num(image.astype(np.float32, copy=False), nan=0.0, posinf=65504.0, neginf=0.0)
     return np.clip(image, 0.0, None)

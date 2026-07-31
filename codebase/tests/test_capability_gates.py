@@ -6,6 +6,7 @@ from hdr_finisher.models import CapabilityStatus
 
 def test_jxl_and_ultrahdr_exports_are_capability_gated() -> None:
     capabilities = probe_capabilities()
+    assert "imagecodecs" in capabilities
     assert "jpegxl_encoder" in capabilities
     assert "ultrahdr_encoder" in capabilities
     assert capabilities["jpegxl_encoder"].status in {CapabilityStatus.AVAILABLE, CapabilityStatus.MISSING}

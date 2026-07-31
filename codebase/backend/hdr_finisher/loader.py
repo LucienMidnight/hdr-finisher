@@ -20,18 +20,25 @@ def load_image(
     overrides: dict[str, str | None] | None = None,
 ) -> tuple[np.ndarray, SourceImageDescriptor, dict[str, Any], Any, np.ndarray | None]:
     suffix = path.suffix.lower()
-    if suffix in {".png", ".jpg", ".jpeg", ".bmp"}:
-        image, metadata = _load_with_pillow(path)
-    elif suffix in {".tif", ".tiff"}:
-        image, metadata = _load_tiff(path)
-    elif suffix == ".exr":
-        image, metadata = _load_exr(path)
-    elif suffix in {".hdr", ".pfm"}:
-        image, metadata = _load_hdr_like(path)
-    elif suffix in {".heic", ".heif"}:
-        image, metadata = _load_heif(path)
-    else:
-        raise LoaderError(f"Unsupported input format: {suffix}")
+    try:
+        if suffix in {".png", ".jpg", ".jpeg", ".bmp"}:
+            image, metadata = _load_with_pillow(path)
+        elif suffix in {".tif", ".tiff"}:
+            image, metadata = _load_tiff(path)
+        elif suffix == ".exr":
+            image, metadata = _load_exr(path)
+        elif suffix in {".hdr", ".pfm"}:
+            image, metadata = _load_hdr_like(path)
+        elif suffix in {".heic", ".heif"}:
+            image, metadata = _load_heif(path)
+        else:
+            raise LoaderError(f"Unsupported input format: {suffix}")
+    except LoaderError:
+        raise
+    except Exception as exc:
+        detail = str(exc).strip() or exc.__class__.__name__
+        label = "TIFF" if suffix in {".tif", ".tiff"} else suffix.removeprefix(".").upper() or "image"
+        raise LoaderError(f"Could not decode {label} input: {detail}") from exc
 
     if image.ndim == 2:
         image = image[..., None]
@@ -96,13 +103,18 @@ def _load_tiff(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
         page = tif.pages[0]
         metadata = {
             "bit_depth": str(array.dtype),
-            "color_space": getattr(page, "photometric", None) or "unknown",
+            "color_space": "unknown",
             "transfer_function": None,
+            "photometric": str(getattr(page, "photometric", "unknown")),
+            "needs_color_override": True,
         }
         if getattr(page, "tags", None) is not None:
-            color_profile = page.tags.get("ColorMap") or page.tags.get("ICCProfile")
+            color_profile = page.tags.get("InterColorProfile") or page.tags.get("ICCProfile")
             if color_profile is not None:
-                metadata["icc_profile_name"] = str(color_profile.value)[:128]
+                profile_name = _read_icc_profile_name(color_profile.value)
+                metadata["icc_profile_name"] = profile_name
+                metadata["color_space"] = _classify_icc_profile_name(profile_name)
+                metadata["needs_color_override"] = metadata["color_space"] == "unknown"
 
     if np.issubdtype(array.dtype, np.integer):
         max_value = float(np.iinfo(array.dtype).max)
@@ -110,6 +122,29 @@ def _load_tiff(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
     else:
         normalized = array.astype(np.float32)
     return normalized, metadata
+
+
+def _read_icc_profile_name(profile_data: bytes) -> str:
+    try:
+        from PIL import ImageCms
+
+        profile = ImageCms.ImageCmsProfile(BytesIO(profile_data))
+        return ImageCms.getProfileName(profile).strip()
+    except Exception:
+        return "unknown"
+
+
+def _classify_icc_profile_name(profile_name: str) -> str:
+    text = profile_name.strip().lower()
+    if "acescg" in text:
+        return "ACEScg"
+    if "2020" in text:
+        return "BT.2020"
+    if "display p3" in text:
+        return "Display P3"
+    if "srgb" in text or "rec.709" in text or "bt.709" in text:
+        return "sRGB"
+    return "unknown"
 
 
 def _load_exr(path: Path) -> tuple[np.ndarray, dict[str, Any]]:

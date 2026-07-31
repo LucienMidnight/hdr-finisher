@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HDR Finisher</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/styles.css?v=20260731-tone-controls">
 </head>
 <body>
   <div class="app-shell">
@@ -342,12 +342,34 @@
             <button class="group-reset text-button" type="button" data-reset-group="sdr-base">Reset</button>
           </div>
           <div class="control-group-body">
-            <label>Tone Mapper
+            <div class="select-control">
+              <span class="label-with-help"><label for="tone-mapper">Tone Mapper</label>
+                <button class="help-tip" type="button" aria-label="About tone mappers" data-tooltip="Chooses how the photograph's full brightness range is shaped for SDR. Filmic is the neutral starting point.">?</button>
+              </span>
               <select id="tone-mapper" data-path="sdr.tone_mapper">
+                <option value="filmic">Filmic</option>
                 <option value="aces">ACES</option>
                 <option value="reinhard">Reinhard</option>
               </select>
-            </label>
+            </div>
+            <div class="control-row" data-control-path="sdr.tone_contrast" data-filmic-control>
+              <div class="control-heading">
+                <span class="label-with-help"><label for="sdr-tone-contrast">Curve Contrast</label>
+                  <button class="help-tip" type="button" aria-label="About curve contrast" data-tooltip="Sets how strongly tones separate around the midtones. Lower is softer and holds more range; higher gives deeper shadows and brighter highlights.">?</button>
+                </span>
+                <output data-value-path="sdr.tone_contrast">1.00</output>
+              </div>
+              <input id="sdr-tone-contrast" type="range" min="0.5" max="1.5" step="0.01" value="1" data-path="sdr.tone_contrast">
+            </div>
+            <div class="control-row" data-control-path="sdr.tone_skew" data-filmic-control>
+              <div class="control-heading">
+                <span class="label-with-help"><label for="sdr-tone-skew">Contrast Skew</label>
+                  <button class="help-tip" type="button" aria-label="About contrast skew" data-tooltip="Moves tonal separation toward one end of the photograph. Left emphasizes darker tones and keeps highlights gentler; right opens shadows and gives brighter areas more snap.">?</button>
+                </span>
+                <output data-value-path="sdr.tone_skew">0.00</output>
+              </div>
+              <input id="sdr-tone-skew" type="range" min="-1" max="1" step="0.01" value="0" data-path="sdr.tone_skew">
+            </div>
             <p class="helper">What viewers or devices without HDR gain-map support will see.</p>
           </div>
         </section>
@@ -363,8 +385,8 @@
               <input id="sdr-exposure" type="range" min="-4" max="4" step="0.05" value="0" data-path="sdr.exposure">
             </div>
             <div class="control-row featured-control" data-control-path="sdr.highlight_recovery">
-              <div class="control-heading"><label for="sdr-recovery">Highlight Recovery</label><output data-value-path="sdr.highlight_recovery">0.25</output></div>
-              <input id="sdr-recovery" type="range" min="0" max="2" step="0.01" value="0.25" data-path="sdr.highlight_recovery">
+              <div class="control-heading"><label for="sdr-recovery">Highlight Recovery</label><output data-value-path="sdr.highlight_recovery">0.60</output></div>
+              <input id="sdr-recovery" type="range" min="0" max="2" step="0.01" value="0.6" data-path="sdr.highlight_recovery">
             </div>
             <div class="control-pair">
               <div class="control-row" data-control-path="sdr.contrast">
@@ -507,6 +529,6 @@
     </div>
   </dialog>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=20260731-tone-controls"></script>
 </body>
 </html>

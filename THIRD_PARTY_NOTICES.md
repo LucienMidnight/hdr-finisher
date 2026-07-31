@@ -1,5 +1,12 @@
 # Third-party notices
 
+HDR Finisher uses Christoph Gohlke's
+[`imagecodecs`](https://github.com/cgohlke/imagecodecs) library through `tifffile` to decode TIFF
+compression and prediction schemes, including floating-point predictors. Imagecodecs is distributed
+under the BSD 3-Clause License and bundles additional open-source codec libraries under their
+respective licenses. Source distributions and packaged applications must retain the imagecodecs
+license and the third-party license files shipped with the installed package.
+
 HDR Finisher can redistribute a locally or CI-built `ultrahdr_app` from Google's
 [`libultrahdr`](https://github.com/google/libultrahdr) project. libultrahdr is distributed under the
 terms of both the MIT License and Apache License 2.0. Binary distributions must include those license terms,

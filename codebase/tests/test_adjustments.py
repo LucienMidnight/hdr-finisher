@@ -180,6 +180,60 @@ def test_sdr_tone_mapping_preserves_wide_exr_highlight_ordering() -> None:
     assert np.all(np.diff(output_levels) > 0.0)
 
 
+def test_default_sdr_render_holds_scene_middle_gray() -> None:
+    image = np.full((2, 2, 3), 0.18, dtype=np.float32)
+    output = _apply_sdr_adjustments(
+        image,
+        AdjustmentState(sdr=SDRAdjustments(highlight_recovery=0.0)),
+    )
+
+    assert np.allclose(output, 0.18, atol=0.005)
+
+
+def test_filmic_curve_contrast_changes_steepness_around_middle_gray() -> None:
+    levels = np.array([0.04, 0.18, 1.0], dtype=np.float32)
+    image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
+    soft = _apply_sdr_adjustments(
+        image,
+        AdjustmentState(sdr=SDRAdjustments(tone_contrast=0.6, highlight_recovery=0.0)),
+    )[0, :, 0]
+    strong = _apply_sdr_adjustments(
+        image,
+        AdjustmentState(sdr=SDRAdjustments(tone_contrast=1.4, highlight_recovery=0.0)),
+    )[0, :, 0]
+
+    assert strong[0] < soft[0]
+    assert np.isclose(strong[1], soft[1], atol=0.005)
+    assert strong[2] > soft[2]
+
+
+def test_filmic_skew_moves_emphasis_between_shadows_and_highlights() -> None:
+    levels = np.array([0.04, 0.18, 1.0], dtype=np.float32)
+    image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
+    toward_shadows = _apply_sdr_adjustments(
+        image,
+        AdjustmentState(sdr=SDRAdjustments(tone_skew=-0.8, highlight_recovery=0.0)),
+    )[0, :, 0]
+    toward_highlights = _apply_sdr_adjustments(
+        image,
+        AdjustmentState(sdr=SDRAdjustments(tone_skew=0.8, highlight_recovery=0.0)),
+    )[0, :, 0]
+
+    assert toward_highlights[0] > toward_shadows[0]
+    assert np.isclose(toward_highlights[1], toward_shadows[1], atol=0.005)
+    assert toward_highlights[2] > toward_shadows[2]
+
+
+def test_default_sdr_render_compresses_wide_gamut_colors_without_clipping_hue() -> None:
+    image = np.array([[[2.0, 0.15, 0.02], [0.02, 1.5, 0.1], [0.05, 0.2, 3.0]]], dtype=np.float32)
+    output = _apply_sdr_adjustments(image, AdjustmentState())
+
+    assert np.all(np.isfinite(output))
+    assert float(output.min()) >= 0.0
+    assert float(output.max()) <= 1.0
+    assert np.all(np.sum(output, axis=-1) > 0.0)
+
+
 def test_sdr_highlight_recovery_is_visible_and_targets_highlights() -> None:
     levels = np.array([0.18, 0.5, 1.0, 4.0], dtype=np.float32)
     image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)

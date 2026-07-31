@@ -79,6 +79,8 @@ async function main() {
       "hdr.tint": 0.01,
       "sdr.exposure": 0.05,
       "sdr.highlight_recovery": 0.01,
+      "sdr.tone_contrast": 0.01,
+      "sdr.tone_skew": 0.01,
       "sdr.shadow": 0.01,
       "sdr.lift": 0.005,
       "sdr.gamma": 0.005,

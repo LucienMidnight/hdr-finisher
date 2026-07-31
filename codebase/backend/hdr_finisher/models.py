@@ -24,6 +24,7 @@ class ScopeMode(str, Enum):
 
 
 class ToneMapper(str, Enum):
+    FILMIC = "filmic"
     ACES = "aces"
     REINHARD = "reinhard"
 
@@ -114,14 +115,16 @@ class HDRAdjustments(BaseModel):
 
 class SDRAdjustments(BaseModel):
     exposure: float = 0.0
-    highlight_recovery: float = 0.25
+    highlight_recovery: float = 0.6
+    tone_contrast: float = Field(default=1.0, ge=0.5, le=1.5)
+    tone_skew: float = Field(default=0.0, ge=-1.0, le=1.0)
     shadow: float = 0.0
     lift: float = 0.0
     gamma: float = 0.0
     gain: float = 0.0
     contrast: float = 0.0
     contrast_pivot: float = 0.5
-    tone_mapper: ToneMapper = ToneMapper.ACES
+    tone_mapper: ToneMapper = ToneMapper.FILMIC
     curves_enabled: bool = False
     luma_curve: list[list[float]] = Field(
         default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]

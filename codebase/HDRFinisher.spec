@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 
 block_cipher = None
@@ -15,13 +15,17 @@ datas = [
     ("../md/Alpha_Manual_QA_Checklist.md", "docs"),
 ]
 
+imagecodecs_datas, imagecodecs_binaries, imagecodecs_hiddenimports = collect_all("imagecodecs")
+datas += imagecodecs_datas
+
 hiddenimports = ["tkinter", "tkinter.filedialog"]
 hiddenimports += collect_submodules("uvicorn")
+hiddenimports += imagecodecs_hiddenimports
 
 a = Analysis(
     ["run_app.py"],
     pathex=["backend"],
-    binaries=[],
+    binaries=imagecodecs_binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],

@@ -25,6 +25,8 @@ HDR Finisher is a finishing and export tool, not a general image editor. It has 
 
 ## Supported Input Formats
 
+TIFF imports include lossless Deflate/LZW compression and integer or floating-point predictors commonly emitted by darktable, Affinity Photo, and Adobe applications.
+
 | Format | Extension |
 |---|---|
 | OpenEXR | `.exr` |
@@ -67,7 +69,7 @@ The script enables both `UHDR_WRITE_XMP=ON` and `UHDR_WRITE_ISO=ON`, runs upstre
 
 ## How to Run (Local Development)
 
-Requires Python 3.10+.
+Requires Python 3.12+.
 
 ```bash
 # Create and activate a virtual environment

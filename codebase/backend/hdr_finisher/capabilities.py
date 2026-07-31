@@ -72,6 +72,7 @@ def probe_capabilities() -> dict[str, CapabilityInfo]:
         "numpy": _module_status("numpy", "numpy"),
         "pillow": _module_status("pillow", "PIL"),
         "tifffile": _module_status("tifffile", "tifffile"),
+        "imagecodecs": _module_status("imagecodecs", "imagecodecs"),
         "imageio": _module_status("imageio", "imageio"),
         "colour_science": _module_status("colour-science", "colour"),
         "openexr": _module_status("openexr", "OpenEXR"),

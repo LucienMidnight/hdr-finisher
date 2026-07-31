@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from .color import acescg_to_linear_srgb
 from .models import AdjustmentState, PreviewKind, ToneMapper
 
 
@@ -42,9 +43,9 @@ def _apply_sdr_adjustments(image: np.ndarray, adjustments: AdjustmentState) -> n
     sdr = adjustments.sdr
     result = np.clip(image.astype(np.float32, copy=True) * np.float32(2.0 ** sdr.exposure), 0.0, None)
     if sdr.shadow != 0:
-        shadow_mask = 1.0 - _smoothstep(0.0, 0.5, _linear_luma(result))
+        shadow_mask = 1.0 - _smoothstep(0.0, 0.5, _acescg_luma(result))
         result = np.clip(result + sdr.shadow * 0.08 * shadow_mask[..., None], 0.0, None)
-    result = _tone_map_sdr(result, sdr.tone_mapper)
+    result = _tone_map_sdr(result, sdr.tone_mapper, sdr.tone_contrast, sdr.tone_skew)
     result = _apply_sdr_highlight_recovery(result, sdr.highlight_recovery)
     result = _apply_luminance_section_controls(result, sdr, PreviewKind.SDR)
     return _apply_curves(result, adjustments, PreviewKind.SDR)
@@ -167,23 +168,73 @@ def _rolloff_scene_highlights(image: np.ndarray, strength: float) -> np.ndarray:
     return np.where(positive_luma[..., None] > 1.0, result * ratio[..., None], result)
 
 
-def _tone_map_sdr(image: np.ndarray, tone_mapper: ToneMapper) -> np.ndarray:
-    """Tone-map luminance and scale RGB together to minimize hue shifts."""
+def _tone_map_sdr(
+    image: np.ndarray,
+    tone_mapper: ToneMapper,
+    tone_contrast: float = 1.0,
+    tone_skew: float = 0.0,
+) -> np.ndarray:
+    """Render scene-linear ACEScg into display-linear sRGB."""
     result = np.clip(image.astype(np.float32, copy=False), 0.0, None)
-    luma = _linear_luma(result)
+    luma = _acescg_luma(result)
     if tone_mapper == ToneMapper.REINHARD:
         mapped_luma = luma / (1.0 + luma)
-    else:
+    elif tone_mapper == ToneMapper.ACES:
         a, b, c, d, e = 2.51, 0.03, 2.43, 0.59, 0.14
         mapped_luma = (luma * (a * luma + b)) / (luma * (c * luma + d) + e)
         mapped_luma /= a / c
+    else:
+        # This filmic sigmoid always passes through middle gray. Curve contrast
+        # sets its overall steepness; skew varies the shadow and highlight
+        # steepness independently while blending smoothly around middle gray.
+        middle_gray = np.float32(0.18)
+        base_power = np.float32(1.1 * np.clip(tone_contrast, 0.5, 1.5))
+        skew = np.float32(np.clip(tone_skew, -1.0, 1.0))
+        shadow_power = base_power * np.exp2(np.float32(-0.75) * skew)
+        highlight_power = base_power * np.exp2(np.float32(0.75) * skew)
+        log_exposure = np.log(np.maximum(luma, 1e-8) / middle_gray)
+        highlight_blend = _smoothstep(-0.5, 0.5, log_exposure)
+        local_power = shadow_power * (1.0 - highlight_blend) + highlight_power * highlight_blend
+        middle_log_odds = np.log(middle_gray / (1.0 - middle_gray))
+        log_odds = middle_log_odds + local_power * log_exposure
+        mapped_luma = 1.0 / (1.0 + np.exp(-np.clip(log_odds, -32.0, 32.0)))
+        mapped_luma = np.where(luma > 0.0, mapped_luma, 0.0)
     mapped_luma = np.clip(mapped_luma, 0.0, 1.0)
     ratio = np.where(luma > 1e-8, mapped_luma / np.maximum(luma, 1e-8), 0.0).astype(np.float32)
-    return np.clip(result * ratio[..., None], 0.0, 1.0)
+    display_rgb = acescg_to_linear_srgb(result * ratio[..., None])
+    return _compress_to_srgb_gamut(display_rgb)
+
+
+def _compress_to_srgb_gamut(image: np.ndarray) -> np.ndarray:
+    """Reduce out-of-gamut chroma toward display luma without changing hue."""
+    rgb = image.astype(np.float32, copy=False)
+    luma = np.clip(_linear_luma(rgb), 0.0, 1.0)
+    minimum = np.min(rgb, axis=-1)
+    maximum = np.max(rgb, axis=-1)
+    scale = np.ones_like(luma, dtype=np.float32)
+
+    below_black = minimum < 0.0
+    scale = np.where(
+        below_black,
+        np.minimum(scale, luma / np.maximum(luma - minimum, 1e-8)),
+        scale,
+    )
+    above_white = maximum > 1.0
+    scale = np.where(
+        above_white,
+        np.minimum(scale, (1.0 - luma) / np.maximum(maximum - luma, 1e-8)),
+        scale,
+    )
+    compressed = luma[..., None] + (rgb - luma[..., None]) * np.clip(scale[..., None], 0.0, 1.0)
+    return np.clip(compressed, 0.0, 1.0)
 
 
 def _linear_luma(image: np.ndarray) -> np.ndarray:
     return 0.2126 * image[..., 0] + 0.7152 * image[..., 1] + 0.0722 * image[..., 2]
+
+
+def _acescg_luma(image: np.ndarray) -> np.ndarray:
+    return 0.2722287 * image[..., 0] + 0.6740818 * image[..., 1] + 0.0536895 * image[..., 2]
 
 
 def _contrast_pivot_in_curve_domain(branch_adjustments: object, kind: PreviewKind) -> np.float32:

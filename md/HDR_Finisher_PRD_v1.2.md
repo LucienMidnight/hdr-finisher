@@ -479,7 +479,7 @@ After the technical alpha proves the workflow, the packaging track can move towa
 
 This PRD defines the target product, but the current repository already provides a runnable local development slice for implementation and testing.
 
-1. Create and activate a Python 3.10+ virtual environment
+1. Create and activate a Python 3.12+ virtual environment
 2. Install dependencies with `pip install -r requirements-dev.txt`
 3. Run the local app with `python run_app.py`
 4. Open `http://127.0.0.1:8000`

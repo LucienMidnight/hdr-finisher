@@ -10,6 +10,8 @@ const latitudePresets = {
     "hdr.contrast_pivot": [0.02, 1, 0.0005],
     "sdr.exposure": [-4, 4, 0.05],
     "sdr.highlight_recovery": [0, 2, 0.01],
+    "sdr.tone_contrast": [0.5, 1.5, 0.01],
+    "sdr.tone_skew": [-1, 1, 0.01],
     "sdr.shadow": [-1, 1, 0.01],
     "sdr.lift": [-0.5, 0.5, 0.005],
     "sdr.gamma": [-1, 1, 0.005],
@@ -28,6 +30,8 @@ const latitudePresets = {
     "hdr.contrast_pivot": [0.02, 0.75, 0.0005],
     "sdr.exposure": [-3, 3, 0.05],
     "sdr.highlight_recovery": [0, 1.5, 0.01],
+    "sdr.tone_contrast": [0.5, 1.5, 0.01],
+    "sdr.tone_skew": [-1, 1, 0.01],
     "sdr.shadow": [-0.5, 0.5, 0.01],
     "sdr.lift": [-0.35, 0.35, 0.005],
     "sdr.gamma": [-0.75, 0.75, 0.005],
@@ -46,6 +50,8 @@ const latitudePresets = {
     "hdr.contrast_pivot": [0.02, 0.5, 0.0005],
     "sdr.exposure": [-2, 2, 0.05],
     "sdr.highlight_recovery": [0, 1, 0.01],
+    "sdr.tone_contrast": [0.5, 1.5, 0.01],
+    "sdr.tone_skew": [-1, 1, 0.01],
     "sdr.shadow": [-0.3, 0.3, 0.01],
     "sdr.lift": [-0.25, 0.25, 0.005],
     "sdr.gamma": [-0.5, 0.5, 0.005],
@@ -113,14 +119,16 @@ const state = {
     },
     sdr: {
       exposure: 0,
-      highlight_recovery: 0.25,
+      highlight_recovery: 0.6,
+      tone_contrast: 1,
+      tone_skew: 0,
       shadow: 0,
       lift: 0,
       gamma: 0,
       gain: 0,
       contrast: 0,
       contrast_pivot: 0.5,
-      tone_mapper: "aces",
+      tone_mapper: "filmic",
       curves_enabled: false,
       luma_curve: defaultCurvePoints(),
       red_curve: defaultCurvePoints(),
@@ -173,14 +181,16 @@ const defaultAdjustments = () => ({
   },
   sdr: {
     exposure: 0,
-    highlight_recovery: 0.25,
+    highlight_recovery: 0.6,
+    tone_contrast: 1,
+    tone_skew: 0,
     shadow: 0,
     lift: 0,
     gamma: 0,
     gain: 0,
     contrast: 0,
     contrast_pivot: 0.5,
-    tone_mapper: "aces",
+    tone_mapper: "filmic",
     curves_enabled: false,
     luma_curve: defaultCurvePoints(),
     red_curve: defaultCurvePoints(),
@@ -309,7 +319,7 @@ const controlGroups = {
   "hdr-tone": ["hdr.exposure", "hdr.highlight_rolloff", "hdr.contrast", "hdr.contrast_pivot", "hdr.shadow_lift"],
   "hdr-color": ["hdr.white_balance_kelvin", "hdr.tint"],
   "hdr-zones": ["hdr.lift", "hdr.gamma", "hdr.gain"],
-  "sdr-base": ["sdr.tone_mapper"],
+  "sdr-base": ["sdr.tone_mapper", "sdr.tone_contrast", "sdr.tone_skew"],
   "sdr-tone": ["sdr.exposure", "sdr.highlight_recovery", "sdr.contrast", "sdr.contrast_pivot", "sdr.shadow"],
   "sdr-zones": ["sdr.lift", "sdr.gamma", "sdr.gain"],
 };
@@ -556,30 +566,40 @@ async function uploadFile(file) {
   formData.append("file", file);
   els.badge.textContent = "Loading image and building session...";
   setPreviewMessage("Preparing session...");
-  const response = await fetch("/api/session", { method: "POST", body: formData });
-  const payload = await response.json();
-  if (!response.ok) {
-    els.badge.textContent = payload.detail || "Upload failed.";
-    els.badge.className = "badge bad";
-    setPreviewError("Upload failed before a preview could be created.");
-    clearPreviewImage();
-    clearPreviewOverlay();
-    return;
+  try {
+    const response = await fetch("/api/session", { method: "POST", body: formData });
+    const payload = await safeJson(response);
+    if (!response.ok || !payload?.session) {
+      const detail = payload?.detail || `Upload failed with HTTP ${response.status}.`;
+      showUploadError(detail);
+      return;
+    }
+    state.session = payload.session;
+    state.adjustments = payload.session.adjustments;
+    state.currentView = "hdr";
+    state.adjustments.shared.active_focus = "hdr";
+    state.interpretationGateDismissed = false;
+    clearPreviewCache();
+    invalidatePreview("hdr");
+    invalidatePreview("sdr");
+    renderSession();
+    seedExportFieldsFromSession();
+    await refreshPreview();
+    await refreshOverlay();
+    await refreshScopes();
+    prepareInactivePreview();
+  } catch (error) {
+    console.error(error);
+    showUploadError("The upload could not reach the local HDR Finisher server.");
   }
-  state.session = payload.session;
-  state.adjustments = payload.session.adjustments;
-  state.currentView = "hdr";
-  state.adjustments.shared.active_focus = "hdr";
-  state.interpretationGateDismissed = false;
-  clearPreviewCache();
-  invalidatePreview("hdr");
-  invalidatePreview("sdr");
-  renderSession();
-  seedExportFieldsFromSession();
-  await refreshPreview();
-  await refreshOverlay();
-  await refreshScopes();
-  prepareInactivePreview();
+}
+
+function showUploadError(message) {
+  els.badge.textContent = message;
+  els.badge.className = "badge bad";
+  setPreviewError(message);
+  clearPreviewImage();
+  clearPreviewOverlay();
 }
 
 async function ejectCurrentSession() {
@@ -2101,6 +2121,8 @@ function formatControlValue(path, value) {
   if (path.endsWith(".exposure")) return `${numeric.toFixed(2)} EV`;
   if (path === "shared.overlay_opacity") return `${Math.round(numeric * 100)}%`;
   if (path === "shared.overlay_threshold") return `${Math.round(numeric * 100)} nit`;
+  if (path === "sdr.tone_contrast") return numeric.toFixed(2);
+  if (path === "sdr.tone_skew") return numeric > 0 ? `+${numeric.toFixed(2)}` : numeric.toFixed(2);
   if (path.endsWith("contrast_pivot")) return numeric.toFixed(path.startsWith("hdr.") ? 4 : 3);
   if (path.endsWith("contrast") || path.endsWith("lift") || path.endsWith("gain") || path.endsWith("gamma") || path.endsWith("shadow_lift")) return numeric.toFixed(3);
   return numeric.toFixed(2);
@@ -2108,6 +2130,13 @@ function formatControlValue(path, value) {
 
 function renderControlState() {
   const defaults = defaultAdjustments();
+  const filmicEnabled = state.adjustments.sdr?.tone_mapper === "filmic";
+  document.querySelectorAll("[data-filmic-control]").forEach((row) => {
+    row.classList.toggle("control-disabled", !filmicEnabled);
+    row.querySelectorAll("input").forEach((input) => {
+      input.disabled = !filmicEnabled;
+    });
+  });
   els.controlRows.forEach((row) => {
     row.classList.toggle("modified", isPathModified(row.dataset.controlPath, defaults));
   });
