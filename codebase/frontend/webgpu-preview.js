@@ -1,5 +1,5 @@
 (function () {
-  const PARAM_COUNT = 24;
+  const PARAM_COUNT = 36;
   const CURVE_SAMPLES = 1024;
 
   class HDRWebGPUPreview {
@@ -190,7 +190,25 @@
     // The PQ preview/export transport tops out at 10,000 nits while the app's
     // scene-linear 0.18 reference maps to 100 nits.
     params[17] = 18;
+    params[18] = lane === "hdr" && branch.tone_equalizer_enabled ? 1 : 0;
+    params[19] = lane === "hdr" ? Math.min(1, Math.max(0, branch.tone_equalizer_smoothing ?? 0.5)) : 0;
+    const toneBands = normalizedToneEqualizerBands(branch.tone_equalizer_bands);
+    toneBands.forEach((value, index) => {
+      params[20 + index] = lane === "hdr" ? value : 0;
+    });
     return params;
+  }
+
+  function normalizedToneEqualizerBands(values) {
+    const corrections = Array.from({ length: 13 }, (_, index) => {
+      const value = Number(Array.isArray(values) ? values[index] : 0);
+      return Number.isFinite(value) ? Math.min(2, Math.max(-2, value)) : 0;
+    });
+    const targets = corrections.map((value, index) => (index - 6) + value);
+    for (let index = 1; index < targets.length; index += 1) {
+      targets[index] = Math.max(targets[index], targets[index - 1] + 0.001);
+    }
+    return targets.map((value, index) => value - (index - 6));
   }
 
   function buildCurves(lane, adjustments, curveSampler) {
@@ -323,6 +341,45 @@
       if (y <= 0.00000001) { return input; }
       return input * (pivot * exp2(clamp(targetStops, -32.0, 32.0)) / y);
     }
+    fn toneEqualizerTarget(index: u32) -> f32 {
+      return (f32(index) - 6.0) + p[20u + index];
+    }
+    fn toneEqualizerSlope(index: u32) -> f32 {
+      if (index == 0u) { return toneEqualizerTarget(1u) - toneEqualizerTarget(0u); }
+      if (index >= 12u) { return toneEqualizerTarget(12u) - toneEqualizerTarget(11u); }
+      let previous = toneEqualizerTarget(index) - toneEqualizerTarget(index - 1u);
+      let following = toneEqualizerTarget(index + 1u) - toneEqualizerTarget(index);
+      if (previous <= 0.0 || following <= 0.0) { return 0.0; }
+      return 2.0 * previous * following / (previous + following);
+    }
+    fn hdrToneEqualizer(input: vec3f) -> vec3f {
+      if (p[18] < 0.5) { return input; }
+      let y = max(lumaAces(input), 0.0);
+      if (y <= 0.00000001) { return input; }
+      let inputEv = log2(max(y, 0.00000001) / 0.18);
+      var targetEv = inputEv;
+      if (inputEv < -6.0) {
+        targetEv += p[20];
+      } else if (inputEv > 6.0) {
+        targetEv += p[32];
+      } else {
+        let segment = min(u32(floor(inputEv + 6.0)), 11u);
+        let local = inputEv - (f32(segment) - 6.0);
+        let y0 = toneEqualizerTarget(segment);
+        let y1 = toneEqualizerTarget(segment + 1u);
+        let m0 = toneEqualizerSlope(segment);
+        let m1 = toneEqualizerSlope(segment + 1u);
+        let local2 = local * local;
+        let local3 = local2 * local;
+        let cubic = (2.0 * local3 - 3.0 * local2 + 1.0) * y0
+          + (local3 - 2.0 * local2 + local) * m0
+          + (-2.0 * local3 + 3.0 * local2) * y1
+          + (local3 - local2) * m1;
+        let linear = mix(y0, y1, local);
+        targetEv = mix(linear, cubic, clamp(p[19], 0.0, 1.0));
+      }
+      return input * (0.18 * exp2(clamp(targetEv, -32.0, 32.0)) / y);
+    }
     fn srgbEncode(value: f32) -> f32 {
       return select(1.055 * pow(clamp(value, 0.0, 1.0), 1.0 / 2.4) - 0.055, value * 12.92, value <= 0.0031308);
     }
@@ -387,7 +444,7 @@
       return compressSrgbGamut(acescgToSrgb(scaled));
     }
     fn renderHdr(source: vec3f) -> vec3f {
-      var rgb = applyCurves(hdrLuminanceControls(hdrBase(source)), true);
+      var rgb = applyCurves(hdrLuminanceControls(hdrToneEqualizer(hdrBase(source))), true);
       if (p[16] > 0.5) {
         // Extended canvas values are relative to nominal display white. Keep the
         // app's 0.18 scene-linear reference near 100 nits on a 203-nit canvas.

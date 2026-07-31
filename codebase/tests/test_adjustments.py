@@ -119,6 +119,99 @@ def test_hdr_shadow_lift_does_not_clip() -> None:
     assert not np.any(np.isinf(output)), "HDR shadow lift should not produce infinities"
 
 
+def test_neutral_hdr_tone_equalizer_is_identity() -> None:
+    levels = np.geomspace(0.001, 18.0, 128, dtype=np.float32)
+    image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
+    state = AdjustmentState(
+        hdr=HDRAdjustments(
+            highlight_rolloff=0.0,
+            tone_equalizer_enabled=True,
+        )
+    )
+
+    output = _apply_hdr_adjustments(image, state)
+
+    np.testing.assert_allclose(output, image, rtol=1e-6, atol=1e-7)
+
+
+def test_hdr_tone_equalizer_can_lift_lower_bands_while_protecting_highlights() -> None:
+    input_ev = np.array([-4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 4.0], dtype=np.float32)
+    levels = np.float32(0.18) * np.exp2(input_ev)
+    image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
+    bands = [0.0] * 13
+    bands[2] = 1.5  # -4 EV
+    bands[3] = 1.5  # -3 EV
+    bands[4] = 0.75  # -2 EV, returning smoothly to neutral by -1 EV
+    state = AdjustmentState(
+        hdr=HDRAdjustments(
+            highlight_rolloff=0.0,
+            tone_equalizer_enabled=True,
+            tone_equalizer_bands=bands,
+            tone_equalizer_smoothing=0.75,
+        )
+    )
+
+    output = _apply_hdr_adjustments(image, state)[0, :, 0]
+
+    assert output[0] / levels[0] > 2.7
+    assert output[1] / levels[1] > 2.7
+    np.testing.assert_allclose(output[3:], levels[3:], rtol=1e-5, atol=1e-6)
+
+
+def test_hdr_tone_equalizer_preserves_luminance_order_for_aggressive_api_state() -> None:
+    levels = np.geomspace(0.18 * (2.0**-7), 0.18 * (2.0**6.64), 1024, dtype=np.float32)
+    image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
+    state = AdjustmentState(
+        hdr=HDRAdjustments(
+            highlight_rolloff=0.0,
+            tone_equalizer_enabled=True,
+            tone_equalizer_bands=[2.0, -2.0, 2.0, -2.0, 2.0, -2.0, 2.0, -2.0, 2.0, -2.0, 2.0, -2.0, 2.0],
+            tone_equalizer_smoothing=1.0,
+        )
+    )
+
+    output = _apply_hdr_adjustments(image, state)[0, :, 0]
+
+    assert np.all(np.isfinite(output))
+    assert np.all(np.diff(output) >= -1e-6)
+
+
+def test_hdr_tone_equalizer_is_hue_preserving() -> None:
+    image = np.array([[[0.03, 0.07, 0.12]]], dtype=np.float32)
+    bands = [0.5] * 13
+    state = AdjustmentState(
+        hdr=HDRAdjustments(
+            highlight_rolloff=0.0,
+            tone_equalizer_enabled=True,
+            tone_equalizer_bands=bands,
+        )
+    )
+
+    output = _apply_hdr_adjustments(image, state)
+    channel_gain = output[0, 0] / image[0, 0]
+
+    np.testing.assert_allclose(channel_gain, np.repeat(channel_gain[0], 3), rtol=1e-6, atol=1e-6)
+
+
+def test_plus_six_tone_equalizer_band_controls_values_through_pq_ceiling() -> None:
+    input_ev = np.array([6.0, np.log2(100.0)], dtype=np.float32)
+    levels = np.float32(0.18) * np.exp2(input_ev)
+    image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
+    bands = [0.0] * 13
+    bands[-1] = 0.5
+    state = AdjustmentState(
+        hdr=HDRAdjustments(
+            highlight_rolloff=0.0,
+            tone_equalizer_enabled=True,
+            tone_equalizer_bands=bands,
+        )
+    )
+
+    output = _apply_hdr_adjustments(image, state)[0, :, 0]
+
+    np.testing.assert_allclose(output / levels, np.sqrt(2.0), rtol=1e-5, atol=1e-5)
+
+
 def test_hdr_highlight_rolloff_preserves_wide_exr_latitude_and_ordering() -> None:
     levels = np.array([1.0, 2.0, 10.0, 50.0, 1000.0], dtype=np.float32)
     image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)

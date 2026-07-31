@@ -6,6 +6,13 @@ from .color import acescg_to_linear_srgb
 from .models import AdjustmentState, PreviewKind, ToneMapper
 
 
+TONE_EQUALIZER_MIN_EV = -6
+TONE_EQUALIZER_MAX_EV = 6
+TONE_EQUALIZER_BAND_COUNT = TONE_EQUALIZER_MAX_EV - TONE_EQUALIZER_MIN_EV + 1
+TONE_EQUALIZER_MAX_ADJUSTMENT_EV = 2.0
+_TONE_EQUALIZER_MIN_TARGET_STEP = np.float32(1e-3)
+
+
 def apply_adjustments(
     image: np.ndarray,
     adjustments: AdjustmentState,
@@ -21,6 +28,7 @@ def apply_adjustments(
 
 def _apply_hdr_adjustments(image: np.ndarray, adjustments: AdjustmentState) -> np.ndarray:
     result = _apply_hdr_base_adjustments(image, adjustments)
+    result = _apply_hdr_tone_equalizer(result, adjustments.hdr)
     result = _apply_luminance_section_controls(result, adjustments.hdr, PreviewKind.HDR)
     result = _apply_curves(result, adjustments, PreviewKind.HDR)
     return np.clip(result, 0.0, None)
@@ -154,6 +162,96 @@ def _apply_scene_luminance_controls(image: np.ndarray, branch_adjustments: objec
     target_luma = pivot * np.exp2(np.clip(target_stops, -32.0, 32.0))
     ratio = np.where(positive_luma > 1e-8, target_luma / np.maximum(positive_luma, 1e-8), 1.0).astype(np.float32)
     return np.where(positive_luma[..., None] > 1e-8, result * ratio[..., None], result)
+
+
+def _apply_hdr_tone_equalizer(image: np.ndarray, hdr_adjustments: object) -> np.ndarray:
+    """Apply fixed scene-referred EV-band exposure corrections without clipping HDR headroom."""
+    if not bool(getattr(hdr_adjustments, "tone_equalizer_enabled", False)):
+        return image
+
+    corrections = _tone_equalizer_corrections(hdr_adjustments)
+    if not np.any(corrections):
+        return image
+
+    result = image.astype(np.float32, copy=True)
+    luma = _acescg_luma(result)
+    positive_luma = np.clip(luma, 0.0, None)
+    input_ev = np.log2(np.maximum(positive_luma, 1e-8) / np.float32(0.18))
+    target_ev = _sample_tone_equalizer_target_ev(
+        input_ev,
+        corrections,
+        float(getattr(hdr_adjustments, "tone_equalizer_smoothing", 0.5)),
+    )
+    target_luma = np.float32(0.18) * np.exp2(np.clip(target_ev, -32.0, 32.0))
+    ratio = np.where(positive_luma > 1e-8, target_luma / np.maximum(positive_luma, 1e-8), 1.0).astype(np.float32)
+    return np.where(positive_luma[..., None] > 1e-8, result * ratio[..., None], result)
+
+
+def _tone_equalizer_corrections(hdr_adjustments: object) -> np.ndarray:
+    values = np.asarray(getattr(hdr_adjustments, "tone_equalizer_bands", []), dtype=np.float32)
+    if values.shape != (TONE_EQUALIZER_BAND_COUNT,):
+        return np.zeros(TONE_EQUALIZER_BAND_COUNT, dtype=np.float32)
+    return np.clip(values, -TONE_EQUALIZER_MAX_ADJUSTMENT_EV, TONE_EQUALIZER_MAX_ADJUSTMENT_EV)
+
+
+def _tone_equalizer_targets(corrections: np.ndarray) -> np.ndarray:
+    band_ev = np.arange(TONE_EQUALIZER_MIN_EV, TONE_EQUALIZER_MAX_EV + 1, dtype=np.float32)
+    targets = band_ev + corrections.astype(np.float32, copy=False)
+    # API clients can bypass the graph's drag constraints. Keep their mappings
+    # ordered as a final safety guard so tonal values never reverse.
+    for index in range(1, targets.size):
+        targets[index] = max(targets[index], targets[index - 1] + _TONE_EQUALIZER_MIN_TARGET_STEP)
+    return targets
+
+
+def _sample_tone_equalizer_target_ev(
+    input_ev: np.ndarray,
+    corrections: np.ndarray,
+    smoothing: float,
+) -> np.ndarray:
+    targets = _tone_equalizer_targets(corrections)
+    clipped_ev = np.clip(input_ev, TONE_EQUALIZER_MIN_EV, TONE_EQUALIZER_MAX_EV)
+    segment = np.minimum(
+        np.floor(clipped_ev - TONE_EQUALIZER_MIN_EV).astype(np.int32),
+        TONE_EQUALIZER_BAND_COUNT - 2,
+    )
+    local = clipped_ev - (segment.astype(np.float32) + np.float32(TONE_EQUALIZER_MIN_EV))
+
+    deltas = np.diff(targets)
+    slopes = np.empty_like(targets)
+    slopes[0] = deltas[0]
+    slopes[-1] = deltas[-1]
+    for index in range(1, targets.size - 1):
+        previous = deltas[index - 1]
+        following = deltas[index]
+        slopes[index] = (
+            np.float32(0.0)
+            if previous <= 0.0 or following <= 0.0
+            else np.float32(2.0) * previous * following / (previous + following)
+        )
+
+    y0 = targets[segment]
+    y1 = targets[segment + 1]
+    m0 = slopes[segment]
+    m1 = slopes[segment + 1]
+    local2 = local * local
+    local3 = local2 * local
+    cubic = (
+        ((np.float32(2.0) * local3) - (np.float32(3.0) * local2) + np.float32(1.0)) * y0
+        + (local3 - (np.float32(2.0) * local2) + local) * m0
+        + ((-np.float32(2.0) * local3) + (np.float32(3.0) * local2)) * y1
+        + (local3 - local2) * m1
+    )
+    linear = y0 + (y1 - y0) * local
+    amount = np.float32(np.clip(smoothing, 0.0, 1.0))
+    mapped = linear * (np.float32(1.0) - amount) + cubic * amount
+
+    # Outside the editable range, continue the nearest band's exposure offset.
+    lower_correction = targets[0] - np.float32(TONE_EQUALIZER_MIN_EV)
+    upper_correction = targets[-1] - np.float32(TONE_EQUALIZER_MAX_EV)
+    mapped = np.where(input_ev < TONE_EQUALIZER_MIN_EV, input_ev + lower_correction, mapped)
+    mapped = np.where(input_ev > TONE_EQUALIZER_MAX_EV, input_ev + upper_correction, mapped)
+    return mapped.astype(np.float32, copy=False)
 
 
 def _apply_sdr_highlight_recovery(image: np.ndarray, strength: float) -> np.ndarray:

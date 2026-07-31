@@ -61,9 +61,23 @@ const latitudePresets = {
   },
 };
 
+const TONE_EQUALIZER_MIN_EV = -6;
+const TONE_EQUALIZER_MAX_EV = 6;
+const TONE_EQUALIZER_PQ_MAX_EV = Math.log2(10000 / 100);
+const TONE_EQUALIZER_MAX_ADJUSTMENT_EV = 2;
+const TONE_EQUALIZER_MIN_TARGET_STEP = 0.001;
+const TONE_EQUALIZER_BAND_COUNT = TONE_EQUALIZER_MAX_EV - TONE_EQUALIZER_MIN_EV + 1;
+
 const MIN_ZOOM_PERCENT = 1;
 const MAX_ZOOM_PERCENT = 3200;
 const ZOOM_STEPS = [1, 2, 3, 4, 5, 6.25, 8.33, 12.5, 16.67, 25, 33.33, 50, 66.67, 100, 200, 300, 400, 500, 600, 800, 1200, 1600, 2400, 3200];
+const LAYOUT_DEFAULTS = { railW: 268, gradeW: 320, dockH: 208, dockOpen: true, dockTab: "histogram" };
+const LAYOUT_LIMITS = {
+  railW: [200, 380],
+  gradeW: [280, 420],
+  dockH: [96, 340],
+};
+const LAYOUT_SETTLE_DELAY = 120;
 
 const state = {
   session: null,
@@ -109,6 +123,9 @@ const state = {
       exposure: 0,
       highlight_rolloff: 0.25,
       shadow_lift: 0,
+      tone_equalizer_enabled: false,
+      tone_equalizer_bands: defaultToneEqualizerBands(),
+      tone_equalizer_smoothing: 0.5,
       lift: 0,
       gamma: 0,
       gain: 0,
@@ -152,6 +169,8 @@ const state = {
   selectedCurveChannel: "luma",
   activeCurvePoint: null,
   selectedCurvePoint: 2,
+  activeToneEqualizerBand: null,
+  selectedToneEqualizerBand: 6,
   previewAbortController: null,
   overlayAbortController: null,
   scopeAbortController: null,
@@ -171,6 +190,9 @@ const state = {
     notes: "No preview yet",
   },
   displayInfo: buildDisplayProbe(),
+  layout: { ...LAYOUT_DEFAULTS },
+  layoutBucket: null,
+  layoutSettleTimer: null,
 };
 
 let scopeResizeObserver = null;
@@ -183,6 +205,9 @@ const defaultAdjustments = () => ({
     exposure: 0,
     highlight_rolloff: 0.25,
     shadow_lift: 0,
+    tone_equalizer_enabled: false,
+    tone_equalizer_bands: defaultToneEqualizerBands(),
+    tone_equalizer_smoothing: 0.5,
     lift: 0,
     gamma: 0,
     gain: 0,
@@ -227,6 +252,11 @@ const defaultAdjustments = () => ({
 const els = {
   fileInput: document.getElementById("file-input"),
   dropzone: document.getElementById("dropzone"),
+  appShell: document.querySelector(".app-shell"),
+  workspaceMain: document.querySelector(".workspace-main"),
+  sourceSplitter: document.getElementById("source-splitter"),
+  gradeSplitter: document.getElementById("grade-splitter"),
+  dockSplitter: document.getElementById("dock-splitter"),
   importButton: document.getElementById("import-button"),
   emptyImportButton: document.getElementById("empty-import-button"),
   ejectButton: document.getElementById("eject-button"),
@@ -255,6 +285,10 @@ const els = {
   manualInterpretation: document.getElementById("manual-interpretation"),
   curvesEnabled: document.getElementById("curves-enabled"),
   curveEditor: document.getElementById("curve-editor"),
+  toneEqualizerEditor: document.getElementById("tone-equalizer-editor"),
+  toneEqualizerBandValue: document.getElementById("tone-equalizer-band-value"),
+  toneEqualizerBandLabel: document.getElementById("tone-equalizer-band-label"),
+  toneEqualizerBandOutput: document.getElementById("tone-equalizer-band-output"),
   curveStatus: document.getElementById("curve-status"),
   overlayPresetNote: document.getElementById("overlay-preset-note"),
   curveReset: document.getElementById("curve-reset"),
@@ -339,6 +373,7 @@ const overlayPresetNotes = {
 
 const controlGroups = {
   "hdr-tone": ["hdr.exposure", "hdr.highlight_rolloff", "hdr.contrast", "hdr.contrast_pivot", "hdr.shadow_lift"],
+  "hdr-equalizer": ["hdr.tone_equalizer_enabled", "hdr.tone_equalizer_bands", "hdr.tone_equalizer_smoothing"],
   "hdr-color": ["hdr.white_balance_kelvin", "hdr.tint"],
   "hdr-zones": ["hdr.lift", "hdr.gamma", "hdr.gain"],
   "sdr-base": ["sdr.tone_mapper", "sdr.tone_contrast", "sdr.tone_skew"],
@@ -360,6 +395,7 @@ const capabilityForFormat = {
 boot();
 
 async function boot() {
+  initializeInstrumentShell();
   bindEvents();
   await initializeGpuPreview();
   await loadCapabilities().catch(() => {
@@ -368,6 +404,7 @@ async function boot() {
   });
   renderReadouts();
   drawCurveEditor();
+  drawToneEqualizerEditor();
   renderOverlayPresetNote();
   renderLaneChrome();
   renderControlState();
@@ -414,6 +451,301 @@ function observeViewerSize() {
   }
   viewerResizeObserver = new ResizeObserver(refreshGeometry);
   viewerResizeObserver.observe(els.dropzone);
+}
+
+function initializeInstrumentShell() {
+  restoreLayoutState();
+  enhanceRangeControls();
+  initSplitter({
+    element: els.sourceSplitter,
+    stateKey: "railW",
+    cssVar: "--rail-w",
+    axis: "x",
+    direction: 1,
+  });
+  initSplitter({
+    element: els.gradeSplitter,
+    stateKey: "gradeW",
+    cssVar: "--grade-w",
+    axis: "x",
+    direction: -1,
+  });
+  initSplitter({
+    element: els.dockSplitter,
+    stateKey: "dockH",
+    cssVar: "--dock-h",
+    axis: "y",
+    direction: -1,
+  });
+  window.addEventListener("resize", debounceLayoutBucketRestore);
+}
+
+function viewportBucket() {
+  if (window.innerWidth >= 2100) return "2100+";
+  if (window.innerWidth >= 1600) return "1600";
+  return "1280";
+}
+
+function layoutStorageKey(bucket = viewportBucket()) {
+  return `hdr-finisher-layout:${bucket}`;
+}
+
+function safeStoredLayout(bucket = viewportBucket()) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(layoutStorageKey(bucket)) || "null");
+    if (!parsed || typeof parsed !== "object") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function restoreLayoutState() {
+  const bucket = viewportBucket();
+  state.layoutBucket = bucket;
+  const stored = safeStoredLayout(bucket) || {};
+  state.layout = {
+    railW: clamp(Number(stored.railW) || LAYOUT_DEFAULTS.railW, ...LAYOUT_LIMITS.railW),
+    gradeW: clamp(Number(stored.gradeW) || LAYOUT_DEFAULTS.gradeW, ...LAYOUT_LIMITS.gradeW),
+    dockH: clamp(Number(stored.dockH) || LAYOUT_DEFAULTS.dockH, ...LAYOUT_LIMITS.dockH),
+    dockOpen: stored.dockOpen !== false,
+    dockTab: ["histogram", "waveform", "parade", "technical"].includes(stored.dockTab) ? stored.dockTab : LAYOUT_DEFAULTS.dockTab,
+  };
+  applyLayoutState();
+}
+
+function applyLayoutState() {
+  els.appShell.style.setProperty("--rail-w", `${state.layout.railW}px`);
+  els.appShell.style.setProperty("--grade-w", `${state.layout.gradeW}px`);
+  els.appShell.style.setProperty("--dock-h", `${state.layout.dockH}px`);
+  state.dockCollapsed = !state.layout.dockOpen;
+  state.activeDockTab = state.layout.dockTab;
+  els.analysisDock.classList.toggle("collapsed", state.dockCollapsed);
+  els.dockCollapse.textContent = state.dockCollapsed ? "Open" : "Collapse";
+  els.dockCollapse.setAttribute("aria-expanded", String(!state.dockCollapsed));
+  els.dockTabs.forEach((button) => {
+    const active = button.dataset.dockTab === state.activeDockTab;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  const technical = state.activeDockTab === "technical";
+  els.scopeView.classList.toggle("hidden", technical);
+  els.technicalView.classList.toggle("hidden", !technical);
+  if (!technical) {
+    state.scopeMode = state.activeDockTab === "waveform" || state.activeDockTab === "parade" ? "waveform" : "histogram";
+    state.scopeChannelMode = state.activeDockTab === "parade" ? "parade" : "composite";
+    els.scopeMode.value = state.scopeMode;
+    els.scopeChannelMode.value = state.scopeChannelMode;
+  }
+  updateSplitterAria();
+}
+
+function persistLayoutState() {
+  state.layout.dockOpen = !state.dockCollapsed;
+  state.layout.dockTab = state.activeDockTab;
+  try {
+    localStorage.setItem(layoutStorageKey(state.layoutBucket), JSON.stringify(state.layout));
+  } catch {
+    // Layout persistence is a convenience; private browsing can reject storage.
+  }
+}
+
+function debounceLayoutBucketRestore() {
+  window.clearTimeout(debounceLayoutBucketRestore.timer);
+  debounceLayoutBucketRestore.timer = window.setTimeout(() => {
+    const nextBucket = viewportBucket();
+    if (nextBucket === state.layoutBucket) return;
+    persistLayoutState();
+    restoreLayoutState();
+    dispatchLayoutSettled();
+  }, LAYOUT_SETTLE_DELAY);
+}
+
+function updateSplitterAria() {
+  const entries = [
+    [els.sourceSplitter, "railW"],
+    [els.gradeSplitter, "gradeW"],
+    [els.dockSplitter, "dockH"],
+  ];
+  entries.forEach(([element, key]) => element?.setAttribute("aria-valuenow", String(Math.round(state.layout[key]))));
+}
+
+function scheduleLayoutSettled() {
+  window.clearTimeout(state.layoutSettleTimer);
+  state.layoutSettleTimer = window.setTimeout(dispatchLayoutSettled, LAYOUT_SETTLE_DELAY);
+}
+
+function dispatchLayoutSettled() {
+  applyZoomGeometry();
+  drawHistogram(state.lastScope || []);
+  drawToneEqualizerEditor();
+  document.dispatchEvent(new CustomEvent("layout:settled", { detail: { ...state.layout } }));
+}
+
+function initSplitter({ element, stateKey, cssVar, axis, direction }) {
+  if (!element) return;
+  const [minimum, maximum] = LAYOUT_LIMITS[stateKey];
+  let frame = null;
+  let pendingValue = state.layout[stateKey];
+
+  const writeValue = (requested) => {
+    pendingValue = clamp(requested, minimum, maximum);
+    if (frame !== null) return;
+    frame = requestAnimationFrame(() => {
+      frame = null;
+      state.layout[stateKey] = pendingValue;
+      els.appShell.style.setProperty(cssVar, `${pendingValue}px`);
+      element.setAttribute("aria-valuenow", String(Math.round(pendingValue)));
+    });
+  };
+
+  const commit = () => {
+    if (frame !== null) {
+      cancelAnimationFrame(frame);
+      frame = null;
+      state.layout[stateKey] = pendingValue;
+      els.appShell.style.setProperty(cssVar, `${pendingValue}px`);
+    }
+    element.classList.remove("dragging");
+    document.documentElement.removeAttribute("data-resizing");
+    document.documentElement.style.cursor = "";
+    persistLayoutState();
+    scheduleLayoutSettled();
+  };
+
+  element.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const pointerId = event.pointerId;
+    const startPosition = axis === "x" ? event.clientX : event.clientY;
+    const startValue = state.layout[stateKey];
+    element.setPointerCapture(pointerId);
+    element.classList.add("dragging");
+    document.documentElement.dataset.resizing = "true";
+    document.documentElement.style.cursor = axis === "x" ? "col-resize" : "row-resize";
+
+    const move = (moveEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      const position = axis === "x" ? moveEvent.clientX : moveEvent.clientY;
+      writeValue(startValue + (position - startPosition) * direction);
+    };
+    const stop = (stopEvent) => {
+      if (stopEvent.pointerId !== pointerId) return;
+      element.removeEventListener("pointermove", move);
+      element.removeEventListener("pointerup", stop);
+      element.removeEventListener("pointercancel", stop);
+      if (element.hasPointerCapture(pointerId)) element.releasePointerCapture(pointerId);
+      commit();
+    };
+    element.addEventListener("pointermove", move);
+    element.addEventListener("pointerup", stop);
+    element.addEventListener("pointercancel", stop);
+  });
+
+  element.addEventListener("dblclick", (event) => {
+    event.preventDefault();
+    writeValue(LAYOUT_DEFAULTS[stateKey]);
+    commit();
+  });
+
+  element.addEventListener("keydown", (event) => {
+    const vertical = axis === "y";
+    const decreaseKey = vertical ? "ArrowDown" : "ArrowLeft";
+    const increaseKey = vertical ? "ArrowUp" : "ArrowRight";
+    let next = null;
+    if (event.key === decreaseKey) next = state.layout[stateKey] - 8;
+    if (event.key === increaseKey) next = state.layout[stateKey] + 8;
+    if (event.key === "Home") next = minimum;
+    if (event.key === "End") next = maximum;
+    if (next === null) return;
+    event.preventDefault();
+    writeValue(next);
+    commit();
+  });
+}
+
+function enhanceRangeControls() {
+  document.querySelectorAll('input[type="range"]').forEach((control) => {
+    if (control.closest(".range-shell")) return;
+    const shell = document.createElement("span");
+    shell.className = "range-shell";
+    const track = document.createElement("span");
+    track.className = "slider-track";
+    const fill = document.createElement("span");
+    fill.className = "slider-fill";
+    const ticks = document.createElement("span");
+    ticks.className = "slider-ticks";
+    ticks.setAttribute("aria-hidden", "true");
+    for (let index = 0; index < 9; index += 1) ticks.append(document.createElement("i"));
+    control.before(shell);
+    shell.append(track, fill, ticks, control);
+    updateRangeVisual(control);
+    control.addEventListener("input", () => updateRangeVisual(control));
+    bindInstrumentRangePointer(control, shell);
+  });
+}
+
+function updateRangeVisual(control) {
+  const minimum = Number(control.min);
+  const maximum = Number(control.max);
+  const value = Number(control.value);
+  const percent = maximum > minimum ? clamp((value - minimum) / (maximum - minimum), 0, 1) * 100 : 0;
+  const shell = control.closest(".range-shell");
+  if (!shell) return;
+  shell.style.setProperty("--pos", `${percent}%`);
+  shell.style.setProperty("--fill-w", `${percent}%`);
+}
+
+function bindInstrumentRangePointer(control, shell) {
+  control.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || control.disabled) return;
+    event.preventDefault();
+    control.focus({ preventScroll: true });
+    const pointerId = event.pointerId;
+    const rect = control.getBoundingClientRect();
+    const minimum = Number(control.min);
+    const maximum = Number(control.max);
+    const step = Number(control.step) || (maximum - minimum) / 100;
+    const startX = event.clientX;
+    const startValue = Number(control.value);
+    const precision = event.altKey ? 0.05 : event.shiftKey ? 0.2 : 1;
+    shell.classList.add("dragging");
+    control.setPointerCapture(pointerId);
+
+    const quantize = (requested) => {
+      const clamped = clamp(requested, minimum, maximum);
+      const steps = Math.round((clamped - minimum) / step);
+      return clamp(minimum + steps * step, minimum, maximum);
+    };
+    const setFromPointer = (clientX) => {
+      const requested = precision < 1
+        ? startValue + ((clientX - startX) / Math.max(rect.width, 1)) * (maximum - minimum) * precision
+        : minimum + clamp((clientX - rect.left) / Math.max(rect.width, 1), 0, 1) * (maximum - minimum);
+      const next = quantize(requested);
+      if (Number(control.value) === next) return;
+      control.value = String(next);
+      control.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+
+    setFromPointer(event.clientX);
+    const move = (moveEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      moveEvent.preventDefault();
+      setFromPointer(moveEvent.clientX);
+    };
+    const stop = (stopEvent) => {
+      if (stopEvent.pointerId !== pointerId) return;
+      control.removeEventListener("pointermove", move);
+      control.removeEventListener("pointerup", stop);
+      control.removeEventListener("pointercancel", stop);
+      if (control.hasPointerCapture(pointerId)) control.releasePointerCapture(pointerId);
+      shell.classList.remove("dragging");
+      control.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    control.addEventListener("pointermove", move);
+    control.addEventListener("pointerup", stop);
+    control.addEventListener("pointercancel", stop);
+  });
 }
 
 function bindEvents() {
@@ -494,6 +826,7 @@ function bindEvents() {
       setValueByPath(state.adjustments, control.dataset.path, value);
       const path = control.dataset.path;
       if (path === "shared.overlay_preset") renderOverlayPresetNote();
+      if (path.startsWith("hdr.tone_equalizer_")) drawToneEqualizerEditor();
       updateControlReadouts();
       renderControlState();
       if (path.startsWith("shared.overlay_")) {
@@ -550,6 +883,7 @@ function bindEvents() {
     debouncePreview(state.currentView);
   });
   bindCurveEditor();
+  bindToneEqualizerEditor();
 
   els.exportButton.addEventListener("click", openExportSheet);
   els.exportClose.addEventListener("click", closeExportSheet);
@@ -732,9 +1066,11 @@ async function ejectCurrentSession() {
   renderSessionChrome();
   state.selectedCurveChannel = "luma";
   state.selectedCurvePoint = 2;
+  state.selectedToneEqualizerBand = 6;
   renderCurveChannelTabs();
   syncCurveControlsFromState();
   drawCurveEditor();
+  drawToneEqualizerEditor();
   renderOverlayPresetNote();
   renderMetadataVisibility();
   renderInterpretationGate();
@@ -765,6 +1101,7 @@ function renderSession() {
   syncCurveControlsFromState();
   renderSessionChrome();
   drawCurveEditor();
+  drawToneEqualizerEditor();
   renderOverlayPresetNote();
   renderMetadataVisibility();
   renderInterpretationGate();
@@ -896,7 +1233,7 @@ function debouncePreview(lane = state.currentView) {
     } else {
       await renderPreviewForLane(lane, false, 960);
     }
-  }, gpuDraftActive ? 80 : 70);
+  }, 90);
   state.settleTimer = window.setTimeout(() => settlePreview(lane), gpuDraftActive ? 240 : 320);
 }
 
@@ -1086,7 +1423,7 @@ function drawHistogram(scope) {
   if (!surface) return;
   const { ctx, width, height } = surface;
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = "#090b0c";
+  ctx.fillStyle = uiToken("--deep");
   ctx.fillRect(0, 0, width, height);
   if (!scope?.channels?.length) {
     els.scopeTitle.textContent = "Histogram";
@@ -1108,7 +1445,12 @@ function drawHistogram(scope) {
   renderKeyValueList(els.scopeStats, (scope.stats || []).map((item) => [item.label, item.value]));
 
   const channels = filteredScopeChannels(scope.channels);
-  const palette = { R: "#ff5b61", G: "#55e579", B: "#4d9cff", Y: "#d8dddf" };
+  const palette = {
+    R: uiToken("--scope-red"),
+    G: uiToken("--scope-green"),
+    B: uiToken("--scope-blue"),
+    Y: uiToken("--scope-luma"),
+  };
   const isWaveform = scope.scope_type.includes("waveform");
   const plotLeft = isWaveform ? 62 : 14;
   const plotRight = 10;
@@ -1570,9 +1912,13 @@ function syncControlsFromState() {
     const value = getValueByPath(state.adjustments, control.dataset.path);
     if (value === undefined) return;
     if (control.type === "checkbox") control.checked = Boolean(value);
-    else control.value = String(value);
+    else {
+      control.value = String(value);
+      if (control.type === "range") updateRangeVisual(control);
+    }
   });
   updateControlReadouts();
+  syncToneEqualizerControls();
 }
 
 function syncCurveControlsFromState() {
@@ -1591,6 +1937,8 @@ function renderSessionChrome() {
   els.viewButtons.forEach((button) => {
     button.disabled = !hasSession;
   });
+  els.toneEqualizerEditor.setAttribute("aria-disabled", String(!hasSession));
+  els.toneEqualizerEditor.tabIndex = hasSession ? 0 : -1;
   [els.zoomOut, els.zoomIn, els.zoomSlider, els.zoomReadout, els.zoomFit, els.zoomActual].forEach((control) => {
     control.disabled = !hasSession;
   });
@@ -1600,6 +1948,269 @@ function renderCurveChannelTabs() {
   els.curveChannelButtons.forEach((button) => {
     button.classList.toggle("active", button.dataset.curveChannel === state.selectedCurveChannel);
   });
+}
+
+function bindToneEqualizerEditor() {
+  const canvas = els.toneEqualizerEditor;
+  const beginDrag = (clientX, clientY) => {
+    if (!state.session) return;
+    const rect = canvas.getBoundingClientRect();
+    state.activeToneEqualizerBand = nearestToneEqualizerBandIndex(clientX, rect);
+    state.selectedToneEqualizerBand = state.activeToneEqualizerBand;
+    updateToneEqualizerFromPointer(clientY, rect);
+    const move = (event) => {
+      event.preventDefault();
+      updateToneEqualizerFromPointer(event.clientY, rect);
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      state.activeToneEqualizerBand = null;
+      renderControlState();
+      debouncePreview("hdr");
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+  };
+
+  canvas.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    beginDrag(event.clientX, event.clientY);
+  });
+  canvas.addEventListener("keydown", (event) => {
+    if (!state.session) return;
+    const index = state.selectedToneEqualizerBand;
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      if (event.key === "ArrowLeft") state.selectedToneEqualizerBand = Math.max(0, index - 1);
+      if (event.key === "ArrowRight") state.selectedToneEqualizerBand = Math.min(TONE_EQUALIZER_BAND_COUNT - 1, index + 1);
+      if (event.key === "Home") state.selectedToneEqualizerBand = 0;
+      if (event.key === "End") state.selectedToneEqualizerBand = TONE_EQUALIZER_BAND_COUNT - 1;
+      syncToneEqualizerControls();
+      drawToneEqualizerEditor();
+      return;
+    }
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    event.preventDefault();
+    const step = event.shiftKey ? 0.25 : 0.05;
+    const direction = event.key === "ArrowUp" ? 1 : -1;
+    setToneEqualizerBand(index, currentToneEqualizerBands()[index] + direction * step);
+    renderControlState();
+    debouncePreview("hdr");
+  });
+
+  els.toneEqualizerBandValue.addEventListener("input", () => {
+    if (!state.session) return;
+    setToneEqualizerBand(state.selectedToneEqualizerBand, Number(els.toneEqualizerBandValue.value));
+  });
+  els.toneEqualizerBandValue.addEventListener("change", () => {
+    renderControlState();
+    debouncePreview("hdr");
+  });
+}
+
+function updateToneEqualizerFromPointer(clientY, rect) {
+  const paddingTop = 16 / els.toneEqualizerEditor.height;
+  const paddingBottom = 28 / els.toneEqualizerEditor.height;
+  const normalizedY = clamp((clientY - rect.top) / rect.height, paddingTop, 1 - paddingBottom);
+  const graphY = (normalizedY - paddingTop) / Math.max(1 - paddingTop - paddingBottom, 1e-6);
+  const value = TONE_EQUALIZER_MAX_ADJUSTMENT_EV - graphY * TONE_EQUALIZER_MAX_ADJUSTMENT_EV * 2;
+  setToneEqualizerBand(state.activeToneEqualizerBand ?? state.selectedToneEqualizerBand, value);
+}
+
+function nearestToneEqualizerBandIndex(clientX, rect) {
+  const paddingLeft = 26 / els.toneEqualizerEditor.width;
+  const paddingRight = 14 / els.toneEqualizerEditor.width;
+  const normalizedX = clamp((clientX - rect.left) / rect.width, paddingLeft, 1 - paddingRight);
+  const graphX = (normalizedX - paddingLeft) / Math.max(1 - paddingLeft - paddingRight, 1e-6);
+  const inputEv = TONE_EQUALIZER_MIN_EV + graphX * (TONE_EQUALIZER_PQ_MAX_EV - TONE_EQUALIZER_MIN_EV);
+  return clamp(Math.round(inputEv) - TONE_EQUALIZER_MIN_EV, 0, TONE_EQUALIZER_BAND_COUNT - 1);
+}
+
+function setToneEqualizerBand(index, requestedValue) {
+  const bands = currentToneEqualizerBands();
+  const [minimum, maximum] = toneEqualizerBandLimits(index, bands);
+  const rounded = Math.round(clamp(Number(requestedValue) || 0, minimum, maximum) * 100) / 100;
+  bands[index] = clamp(rounded, Math.ceil(minimum * 100) / 100, Math.floor(maximum * 100) / 100);
+  state.adjustments.hdr.tone_equalizer_bands = bands;
+  state.adjustments.hdr.tone_equalizer_enabled = true;
+  state.selectedToneEqualizerBand = index;
+  syncControlsFromState();
+  drawToneEqualizerEditor();
+  invalidatePreview("hdr");
+  queueGpuDraft("hdr");
+}
+
+function toneEqualizerBandLimits(index, bands = currentToneEqualizerBands()) {
+  const inputEv = TONE_EQUALIZER_MIN_EV + index;
+  let minimum = -TONE_EQUALIZER_MAX_ADJUSTMENT_EV;
+  let maximum = TONE_EQUALIZER_MAX_ADJUSTMENT_EV;
+  if (index > 0) {
+    const previousTarget = (inputEv - 1) + bands[index - 1];
+    minimum = Math.max(minimum, previousTarget + TONE_EQUALIZER_MIN_TARGET_STEP - inputEv);
+  }
+  if (index < bands.length - 1) {
+    const nextTarget = (inputEv + 1) + bands[index + 1];
+    maximum = Math.min(maximum, nextTarget - TONE_EQUALIZER_MIN_TARGET_STEP - inputEv);
+  }
+  return [minimum, Math.max(minimum, maximum)];
+}
+
+function syncToneEqualizerControls() {
+  const bands = currentToneEqualizerBands();
+  const index = clamp(state.selectedToneEqualizerBand ?? 6, 0, bands.length - 1);
+  state.selectedToneEqualizerBand = index;
+  const inputEv = TONE_EQUALIZER_MIN_EV + index;
+  const value = bands[index];
+  const [minimum, maximum] = toneEqualizerBandLimits(index, bands);
+  els.toneEqualizerBandValue.setAttribute("aria-valuemin", String(Math.ceil(minimum * 100) / 100));
+  els.toneEqualizerBandValue.setAttribute("aria-valuemax", String(Math.floor(maximum * 100) / 100));
+  els.toneEqualizerBandValue.value = String(value);
+  els.toneEqualizerBandLabel.textContent = `${formatSignedEv(inputEv, 0)} · ${formatToneBandNits(100 * (2 ** inputEv))}`;
+  els.toneEqualizerBandOutput.textContent = formatSignedEv(value, 2);
+}
+
+function drawToneEqualizerEditor() {
+  const canvas = els.toneEqualizerEditor;
+  const ctx = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  const left = 26;
+  const right = 14;
+  const top = 16;
+  const bottom = 28;
+  const graphWidth = width - left - right;
+  const graphHeight = height - top - bottom;
+  const bands = currentToneEqualizerBands();
+  const smoothing = clamp(Number(state.adjustments.hdr?.tone_equalizer_smoothing ?? 0.5), 0, 1);
+  const enabled = Boolean(state.adjustments.hdr?.tone_equalizer_enabled);
+  const xForEv = (inputEv) => left + ((inputEv - TONE_EQUALIZER_MIN_EV) / (TONE_EQUALIZER_PQ_MAX_EV - TONE_EQUALIZER_MIN_EV)) * graphWidth;
+  const yForAdjustment = (value) => top + ((TONE_EQUALIZER_MAX_ADJUSTMENT_EV - value) / (TONE_EQUALIZER_MAX_ADJUSTMENT_EV * 2)) * graphHeight;
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = uiToken("--app");
+  ctx.fillRect(0, 0, width, height);
+  ctx.font = '9px "IBM Plex Mono", "Cascadia Mono", monospace';
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  for (let adjustment = -2; adjustment <= 2; adjustment += 1) {
+    const y = yForAdjustment(adjustment);
+    ctx.strokeStyle = adjustment === 0 ? "rgba(236,233,223,0.26)" : "rgba(255,255,255,0.08)";
+    ctx.beginPath();
+    ctx.moveTo(left, y);
+    ctx.lineTo(width - right, y);
+    ctx.stroke();
+    ctx.fillStyle = uiToken("--quiet");
+    ctx.fillText(formatSignedEv(adjustment, 0), left - 5, y);
+  }
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  for (let inputEv = TONE_EQUALIZER_MIN_EV; inputEv <= TONE_EQUALIZER_MAX_EV; inputEv += 1) {
+    const x = xForEv(inputEv);
+    ctx.strokeStyle = inputEv === 0 ? "rgba(110,159,181,0.32)" : "rgba(255,255,255,0.06)";
+    ctx.beginPath();
+    ctx.moveTo(x, top);
+    ctx.lineTo(x, height - bottom);
+    ctx.stroke();
+    if (inputEv % 2 === 0) {
+      ctx.fillStyle = inputEv === 0 ? uiToken("--equalizer-axis") : uiToken("--quiet");
+      ctx.fillText(formatSignedEv(inputEv, 0), x, height - bottom + 7);
+    }
+  }
+  const pqX = xForEv(TONE_EQUALIZER_PQ_MAX_EV);
+  ctx.setLineDash([3, 3]);
+  ctx.strokeStyle = "rgba(217,182,114,0.65)";
+  ctx.beginPath();
+  ctx.moveTo(pqX, top);
+  ctx.lineTo(pqX, height - bottom);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = uiToken("--attention");
+  ctx.textAlign = "right";
+  ctx.fillText("10K", pqX, 3);
+
+  ctx.strokeStyle = enabled ? uiToken("--text") : uiToken("--quiet");
+  ctx.lineWidth = 2.25;
+  ctx.beginPath();
+  for (let sample = 0; sample < 180; sample += 1) {
+    const inputEv = TONE_EQUALIZER_MIN_EV + (sample / 179) * (TONE_EQUALIZER_PQ_MAX_EV - TONE_EQUALIZER_MIN_EV);
+    const adjustment = sampleToneEqualizerAdjustment(inputEv, bands, smoothing);
+    const x = xForEv(inputEv);
+    const y = yForAdjustment(adjustment);
+    if (sample === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  bands.forEach((value, index) => {
+    const inputEv = TONE_EQUALIZER_MIN_EV + index;
+    const selected = index === state.selectedToneEqualizerBand;
+    ctx.fillStyle = selected ? uiToken("--equalizer-selected") : enabled ? uiToken("--curve-neutral") : uiToken("--quiet");
+    ctx.beginPath();
+    ctx.arc(xForEv(inputEv), yForAdjustment(value), selected ? 5.5 : 4, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  syncToneEqualizerControls();
+}
+
+function sampleToneEqualizerAdjustment(inputEv, values, smoothing) {
+  const corrections = normalizedToneEqualizerBands(values);
+  if (inputEv <= TONE_EQUALIZER_MIN_EV) return corrections[0];
+  if (inputEv >= TONE_EQUALIZER_MAX_EV) return corrections.at(-1);
+  const targets = corrections.map((value, index) => (TONE_EQUALIZER_MIN_EV + index) + value);
+  const deltas = targets.slice(1).map((value, index) => value - targets[index]);
+  const slopes = targets.map((_, index) => {
+    if (index === 0) return deltas[0];
+    if (index === targets.length - 1) return deltas.at(-1);
+    const previous = deltas[index - 1];
+    const following = deltas[index];
+    return previous <= 0 || following <= 0 ? 0 : (2 * previous * following) / (previous + following);
+  });
+  const segment = Math.min(Math.floor(inputEv - TONE_EQUALIZER_MIN_EV), TONE_EQUALIZER_BAND_COUNT - 2);
+  const local = inputEv - (TONE_EQUALIZER_MIN_EV + segment);
+  const local2 = local * local;
+  const local3 = local2 * local;
+  const y0 = targets[segment];
+  const y1 = targets[segment + 1];
+  const cubic = ((2 * local3) - (3 * local2) + 1) * y0
+    + (local3 - (2 * local2) + local) * slopes[segment]
+    + ((-2 * local3) + (3 * local2)) * y1
+    + (local3 - local2) * slopes[segment + 1];
+  const linear = y0 + (y1 - y0) * local;
+  return ((linear * (1 - smoothing)) + (cubic * smoothing)) - inputEv;
+}
+
+function normalizedToneEqualizerBands(values) {
+  const corrections = Array.from({ length: TONE_EQUALIZER_BAND_COUNT }, (_, index) => {
+    const value = Number(Array.isArray(values) ? values[index] : 0);
+    return Number.isFinite(value) ? clamp(value, -2, 2) : 0;
+  });
+  const targets = corrections.map((value, index) => (TONE_EQUALIZER_MIN_EV + index) + value);
+  for (let index = 1; index < targets.length; index += 1) {
+    targets[index] = Math.max(targets[index], targets[index - 1] + TONE_EQUALIZER_MIN_TARGET_STEP);
+  }
+  return targets.map((value, index) => value - (TONE_EQUALIZER_MIN_EV + index));
+}
+
+function currentToneEqualizerBands() {
+  return Array.from({ length: TONE_EQUALIZER_BAND_COUNT }, (_, index) => {
+    const value = Number(state.adjustments.hdr?.tone_equalizer_bands?.[index]);
+    return Number.isFinite(value) ? clamp(value, -2, 2) : 0;
+  });
+}
+
+function formatSignedEv(value, digits) {
+  const numeric = Math.abs(value) < 0.0005 ? 0 : Number(value);
+  return `${numeric >= 0 ? "+" : ""}${numeric.toFixed(digits)} EV`;
+}
+
+function formatToneBandNits(value) {
+  if (value >= 1000) return `${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 1)}k nit`;
+  if (value >= 10) return `${Math.round(value)} nit`;
+  return `${value.toFixed(1)} nit`;
 }
 
 function bindCurveEditor() {
@@ -1695,7 +2306,7 @@ function drawCurveEditor() {
   const channelColor = curveColor(state.selectedCurveChannel);
 
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = "#101010";
+  ctx.fillStyle = uiToken("--app");
   ctx.fillRect(0, 0, width, height);
 
   ctx.strokeStyle = "rgba(255,255,255,0.08)";
@@ -1733,7 +2344,11 @@ function drawCurveEditor() {
   curve.forEach(([xValue, yValue], index) => {
     const x = padding + xValue * (width - padding * 2);
     const y = height - padding - yValue * (height - padding * 2);
-    ctx.fillStyle = index === state.selectedCurvePoint ? "#efbb55" : index === 0 || index === curve.length - 1 ? "#7f7a6f" : "#ece9df";
+    ctx.fillStyle = index === state.selectedCurvePoint
+      ? uiToken("--curve-selected")
+      : index === 0 || index === curve.length - 1
+        ? uiToken("--curve-endpoint")
+        : uiToken("--curve-neutral");
     ctx.beginPath();
     ctx.arc(x, y, index === state.selectedCurvePoint ? 6 : index === 0 || index === curve.length - 1 ? 4 : 5, 0, Math.PI * 2);
     ctx.fill();
@@ -1829,10 +2444,14 @@ function normalizeCurvePoints(points) {
 }
 
 function curveColor(channel) {
-  if (channel === "red") return "#ff8585";
-  if (channel === "green") return "#7fe6a8";
-  if (channel === "blue") return "#7db8ff";
-  return "#ece9df";
+  if (channel === "red") return uiToken("--curve-red");
+  if (channel === "green") return uiToken("--curve-green");
+  if (channel === "blue") return uiToken("--curve-blue");
+  return uiToken("--curve-neutral");
+}
+
+function uiToken(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
 function clamp(value, min, max) {
@@ -1841,6 +2460,10 @@ function clamp(value, min, max) {
 
 function defaultCurvePoints() {
   return [[0, 0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1, 1]];
+}
+
+function defaultToneEqualizerBands() {
+  return Array(TONE_EQUALIZER_BAND_COUNT).fill(0);
 }
 
 function sampleCurvePoints(points, samples, forcedX = null) {
@@ -2525,14 +3148,19 @@ function cycleOverlayMode() {
 
 function toggleAnalysisDock() {
   state.dockCollapsed = !state.dockCollapsed;
+  state.layout.dockOpen = !state.dockCollapsed;
   els.analysisDock.classList.toggle("collapsed", state.dockCollapsed);
   els.dockCollapse.textContent = state.dockCollapsed ? "Open" : "Collapse";
   els.dockCollapse.setAttribute("aria-expanded", String(!state.dockCollapsed));
+  persistLayoutState();
+  scheduleLayoutSettled();
 }
 
 async function activateDockTab(tab) {
   state.activeDockTab = tab;
   state.dockCollapsed = false;
+  state.layout.dockOpen = true;
+  state.layout.dockTab = tab;
   els.analysisDock.classList.remove("collapsed");
   els.dockCollapse.textContent = "Collapse";
   els.dockCollapse.setAttribute("aria-expanded", "true");
@@ -2544,6 +3172,8 @@ async function activateDockTab(tab) {
   const technical = tab === "technical";
   els.scopeView.classList.toggle("hidden", technical);
   els.technicalView.classList.toggle("hidden", !technical);
+  persistLayoutState();
+  scheduleLayoutSettled();
   if (technical) return;
   state.scopeMode = tab === "waveform" || tab === "parade" ? "waveform" : "histogram";
   state.scopeChannelMode = tab === "parade" ? "parade" : "composite";
@@ -2601,6 +3231,7 @@ function renderControlState() {
     const count = paths.filter((path) => isPathModified(path, defaults)).length;
     const output = document.querySelector(`[data-modified-count="${group}"]`);
     if (output) output.textContent = count ? `${count} modified` : "Default";
+    output?.closest(".control-group")?.classList.toggle("modified", count > 0);
   }
   for (const lane of ["hdr", "sdr"]) {
     const keys = Object.keys(defaults[lane]).filter((key) => !key.endsWith("_curve"));
@@ -2635,6 +3266,7 @@ function resetControlGroup(group) {
   const defaults = defaultAdjustments();
   paths.forEach((path) => setValueByPath(state.adjustments, path, getValueByPath(defaults, path)));
   syncControlsFromState();
+  if (group === "hdr-equalizer") drawToneEqualizerEditor();
   invalidatePreview(group.startsWith("sdr-") ? "sdr" : "hdr");
   renderControlState();
   debouncePreview(group.startsWith("sdr-") ? "sdr" : "hdr");

@@ -114,6 +114,7 @@ if ($nodeModules) {
 }
 
 $script = Join-Path $PSScriptRoot "playwright_preview.js"
+$layoutScript = Join-Path $PSScriptRoot "playwright_layout_qa.js"
 $nodeArgs = @(
     $script,
     "--url", $Url,
@@ -136,6 +137,15 @@ if ($SourceReportPath) {
 if ($Headed) {
     $nodeArgs += "--headed"
 }
+$layoutArgs = @(
+    $layoutScript,
+    "--url", $Url,
+    "--screenshot", (Join-Path $Root "output\design-qa\layout-1280.png"),
+    "--result", (Join-Path $Root "output\design-qa\layout-qa.json")
+)
+if ($InputPath) {
+    $layoutArgs += @("--input", (Resolve-Path $InputPath))
+}
 
 try {
     $exitCode = 0
@@ -143,11 +153,20 @@ try {
         $node = Get-Command node -ErrorAction Stop
         & $node.Source @nodeArgs
         $exitCode = $LASTEXITCODE
+        if ($exitCode -eq 0) {
+            & $node.Source @layoutArgs
+            $exitCode = $LASTEXITCODE
+        }
     } else {
         $npx = Get-Command npx.cmd -ErrorAction Stop
         $npxArgs = @("--yes", "--package", "playwright", "node") + $nodeArgs
         & $npx.Source @npxArgs
         $exitCode = $LASTEXITCODE
+        if ($exitCode -eq 0) {
+            $npxLayoutArgs = @("--yes", "--package", "playwright", "node") + $layoutArgs
+            & $npx.Source @npxLayoutArgs
+            $exitCode = $LASTEXITCODE
+        }
     }
 } finally {
     if ($serverStarted -and -not $KeepServer -and $serverProcess -and -not $serverProcess.HasExited) {

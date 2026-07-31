@@ -91,6 +91,13 @@ class HDRAdjustments(BaseModel):
     exposure: float = 0.0
     highlight_rolloff: float = 0.25
     shadow_lift: float = 0.0
+    tone_equalizer_enabled: bool = False
+    tone_equalizer_bands: list[float] = Field(
+        default_factory=lambda: [0.0] * 13,
+        min_length=13,
+        max_length=13,
+    )
+    tone_equalizer_smoothing: float = Field(default=0.5, ge=0.0, le=1.0)
     lift: float = 0.0
     gamma: float = 0.0
     gain: float = 0.0

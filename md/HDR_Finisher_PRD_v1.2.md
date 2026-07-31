@@ -91,6 +91,7 @@ Valid HDR inputs, but metadata must be checked. A 16-bit TIFF without PQ/HLG enc
 These are the controls available while viewing the image in true HDR. All adjustments are non-destructive proxies applied to the in-memory float array; they are baked into the export.
 
 ### HDR Side Controls (affect the HDR output layer)
+- **Tone Equalizer** — global, scene-referred exposure-band control with thirteen fixed nodes from -6 EV through +6 EV relative to the app's 0.18 / 100-nit diffuse-white reference. Each node supports up to +/-2 EV, the curve remains monotonic and hue-preserving, and the UI marks the 10,000-nit PQ boundary at +6.64 EV.
 - **Global Exposure** â€” linear gain multiplier on the full HDR array
 - **Highlight Rolloff** â€” soft compression of values above a user-defined threshold; the most critical control for HDR headroom management
 - **Shadow Lift / Black Point** â€” floor adjustment
@@ -99,6 +100,8 @@ These are the controls available while viewing the image in true HDR. All adjust
 - **White Balance** â€” temperature (Kelvin) and tint sliders; applies a per-channel multiplier to the float data
 
 HDR controls must remain continuous at their neutral values, preserve luminance ordering, and must not introduce an implicit ceiling when enabled. Values above the curve editor's nominal range pass through unless the user deliberately applies a highlight adjustment.
+
+**HDR primary deprecation note:** Lift / Gamma / Gain are demoted legacy compatibility controls now that the Tone Equalizer is available. Keep them through real-image validation and preset/session compatibility testing, then remove the HDR controls and their processing path if they remain deprecated and no required workflow depends on them. This note does not apply to the independent SDR fallback trims.
 
 ### SDR Side Controls (affect only the SDR base image baked into the gain map)
 - **SDR Exposure** â€” independent exposure control for the SDR rendition
@@ -199,6 +202,7 @@ The AVIF path uses a **10-bit logarithmic gain map**. JPEG Ultra HDR uses libult
 ## 9. UI Layout
 
 ### Left Sidebar â€” The Inspector
+- Resizable source rail: 268 px default, 200-380 px limits, keyboard-adjustable in 8 px increments, double-click reset, and viewport-bucket persistence
 - Drag-and-drop zone (accepts all Tier 1 and Tier 2 formats)
 - **Data Analyzer Badge:**
   - ðŸŸ¢ `True HDR Detected â€” Peak: X.X stops above diffuse white`
@@ -214,8 +218,10 @@ The AVIF path uses a **10-bit logarithmic gain map**. JPEG Ultra HDR uses libult
 - The SDR toggle shows exactly what will be baked into the gain map base
 
 ### Right Sidebar â€” Finishing Controls
+- Resizable grade rail: 320 px default, 280-420 px limits, keyboard-adjustable in 8 px increments, double-click reset, and viewport-bucket persistence
 - Segmented control: `[ HDR Adjustments ] [ SDR Adjustments ]`
-- Sliders (see Section 6)
+- Continuous instrument sliders with a narrow bar handle, eighth-scale landmarks, fixed tabular readouts, full-row hit targets, double-click reset, and Shift / Alt precision dragging (landmarks never snap)
+- Banded disclosure headers with rotating carets, modified counts/dots, and contextual group reset actions
 - RGB Curves editor
 - Output format selector with quality/compression controls
 - Export button
@@ -225,6 +231,7 @@ The AVIF path uses a **10-bit logarithmic gain map**. JPEG Ultra HDR uses libult
 - Export filename and save-path controls
 
 ### Bottom Panel â€” Scopes
+- Resizable analysis dock: 208 px default, 96-340 px limits, 28 px collapsed strip, keyboard adjustment, double-click reset, and persisted height/open/tab state
 - RGB Histogram (reflects the currently active view â€” HDR or SDR)
 - False color / zebra overlay toggle (highlights clipped or over-range pixels)
 - HDR reference-nit scopes use the app's internal anchor of `0.18 scene-linear = 100 nits`
@@ -420,8 +427,7 @@ The repository is no longer at the original vertical-slice stage. It now provide
 - Windows Photos remains an unreliable validation target for AVIF gain-map HDR compared with Brave / Chromium browsers
 - Preview AVIF quality is now usable, but still tunable; a future user-facing preview-quality control may be worthwhile
 - EXR automatic color-space detection is safer now, but still depends on source metadata / chromaticities; fully robust auto-detection remains a quality target rather than a solved problem
-- The current three-rail UI is functional but still visually dense. Workflow hierarchy, HDR/SDR branch clarity, control grouping, export guidance, and responsive viewport behavior need a focused UX pass before the installer is finalized.
-- Very small source images are currently displayed at their intrinsic dimensions instead of being enlarged to a useful fit-to-viewport preview.
+- The major three-rail UI-density and responsive-shell pass is complete. Export guidance and final installer-era copy remain candidates for smaller follow-up refinement.
 
 ### Technical Alpha Packaging Direction
 The portable technical-alpha milestone has been reached locally: the zipped Windows build runs without a local Python install and includes the required AVIF and JPEG Ultra HDR encoder binaries. The next packaging milestone is a conventional per-user Windows installer, after a focused UI/UX and installer-readiness pass.
@@ -451,14 +457,17 @@ After the Windows installer proves the workflow on clean machines, the packaging
 - **Source ambiguity handling:** the `HDR_LINEAR_UNCONFIRMED` / ambiguous color-state warning now has a real user override workflow in the UI and backend session model.
 - **Source override UX:** the app now separates color primaries from transfer function and exposes a manual Source Settings workflow more like Resolve's auto/manual color-management split.
 - **Adjustment layer:** HDR primaries use continuous scene-linear stop-domain math, SDR trims remain independent and display-safe, and HDR/SDR curves now have separate state with add/remove point controls.
+- **HDR tone equalizer:** the HDR branch now includes a fixed -6 EV through +6 EV exposure-band graph with a marked +6.64 EV / 10,000-nit PQ boundary, monotonic smoothing, hue-preserving RGB scaling, and matching backend/export and WebGPU-preview processing. HDR Lift / Gamma / Gain remain demoted for compatibility pending a later removal decision.
 - **Branch isolation:** the SDR fallback now starts from the neutral interpreted source or embedded HEIC SDR reference, never from the HDR-graded branch; HDR-lane controls are regression-tested for zero influence on both SDR paths.
 - **Wide-range control QA:** every image-affecting slider is regression-tested by one browser step against wide EXR-like values for finite output, luminance ordering, and gradual response; the SDR-reference path is tested separately.
 - **Scopes:** the original histogram goal is now exceeded by an HDR waveform mode, reference-nit labeling, and luma / parade diagnostics that make the tool more useful on SDR-only displays.
 - **Viewport diagnostics:** false color and zebra overlays are now implemented, including named HDR luminance presets and explanatory tooltips.
 - **UI state reliability:** the earlier broken-image / empty-state overlap bug has been cleaned up, and a later layout pass resolved right-rail clipping, tooltip placement, overlay-image positioning, and stray frame-corner ornament bugs.
+- **Instrument UI pass:** the source rail, grade rail, and analysis dock are now directly resizable with clamped mouse, keyboard, double-click-reset, and viewport-bucket persistence behavior. Control groups use banded disclosure headers, and native accessible ranges retain keyboard semantics while adding continuous bar-handle interaction, fixed numeric readouts, scale landmarks, precision modifiers, and a trailing 90 ms preview request cadence.
 
 ### Current UI Testing Notes
 - The UI has been refactored into a three-rail layout: Inspector on the left, preview center, controls/scopes/export on the right
+- At 1280 px the shell has no horizontal overflow, the grade rail retains at least 180 px of usable slider track, and all three splitters remain keyboard accessible and persistent
 - A repo-local Playwright preview script smoke-tests the local UI in Edge or bundled Chromium and writes artifacts under `codebase/output/playwright/`
 - A repo-local alpha QA harness now runs tests, capability checks, sample AVIF export, AVIF metadata inspection, and Playwright preview, with reports under `codebase/output/qa/`
 - A Windows alpha build script now targets a zipped PyInstaller folder artifact and smoke-tests the packaged app before archiving
@@ -475,8 +484,8 @@ After the Windows installer proves the workflow on clean machines, the packaging
 - The diagnostic overlay image is now positioned against the rendered preview image box rather than using independent layout assumptions
 
 ### Recommended Next Steps After This Checkpoint
-1. Complete a focused UI/UX refinement pass before freezing the installer: improve workflow hierarchy, simplify the dense right rail, clarify the independent HDR and SDR fallback lanes, improve export guidance, and make small images scale to a useful fit-to-viewport preview
-2. Complete installer-readiness changes in the application: automatic browser launch, single-instance and port-conflict handling, clean shutdown, user-writable runtime directories, path portability, quiet console behavior, and application icon/version metadata
+1. Complete installer-readiness changes in the application: automatic browser launch, single-instance and port-conflict handling, clean shutdown, user-writable runtime directories, path portability, quiet console behavior, and application icon/version metadata
+2. Run a smaller export-guidance and installer-copy refinement after the real installer flow exists
 3. Re-run the full QA harness and continue real-world validation with EXR, HEIC, TIFF, AVIF gain-map, and JPEG Ultra HDR media across HDR and SDR displays, modern Chromium browsers, and legacy JPEG decoders
 4. Build a conventional per-user Windows installer with shortcuts, uninstall support, bundled notices/licenses, and the portable ZIP retained as an alternative
 5. Validate install, first launch, export, upgrade, and uninstall behavior on a clean Windows machine or VM
@@ -521,3 +530,4 @@ This repository's root `.gitignore` already excludes local exports, EXR / HDR wo
 *April 8, 2026 implementation addendum: false color / zebra overlays, HDR reference-nit histogram and waveform scopes, source interpretation manual override workflow, EXR validation notes, export filename/save-path controls, UI bug-fix summary, and the local git backup / push workflow are now recorded in this PRD.*
 *July 22, 2026 implementation addendum: JPEG Ultra HDR now consumes independent HDR and SDR branches through libultrahdr, publishes atomically only after legacy / gain-map / metadata / decoder validation, supports bundled and packaged binary discovery, and includes a pinned Windows build and attribution workflow. JPEG XL remains out of scope.*
 *July 30, 2026 implementation addendum: the pinned libultrahdr Windows build, native tests, complete 110-test alpha QA run, real-image JPEG Ultra HDR validation, packaged capability check, and portable PyInstaller ZIP all pass. The delivery sequence is now UI/UX refinement, installer-readiness work, a conventional Windows installer with clean-machine validation, and then macOS packaging. JPEG XL remains deferred.*
+*July 31, 2026 implementation addendum: the instrument-style UI pass adds a tokenized dark visual system, banded disclosure groups, continuous bar-handle sliders, and persisted keyboard-accessible source/grade/dock splitters. The 1280 px shell and 90 ms preview cadence have dedicated browser regression coverage.*

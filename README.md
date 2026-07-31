@@ -95,7 +95,7 @@ cd codebase
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\playwright_preview.ps1
 ```
 
-The script starts the local app if needed, reuses the machine's existing Playwright browser cache when available, prefers installed Edge, and writes its screenshot/result files to `codebase/output/playwright/`. Add `-Headed` for a visible browser window or `-KeepServer` to leave the local app running afterward.
+The script starts the local app if needed, reuses the machine's existing Playwright browser cache when available, prefers installed Edge, and writes its screenshot/result files to `codebase/output/playwright/`. It also runs the 1280 px layout regression covering splitter keyboard control, persistence, double-click reset, dock collapse/restore, minimum slider width, and horizontal overflow. Add `-Headed` for a visible browser window or `-KeepServer` to leave the local app running afterward.
 
 ## Alpha QA And Packaging
 

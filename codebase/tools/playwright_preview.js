@@ -40,6 +40,7 @@ async function main() {
   let wheelZoomCheck = null;
   let nativeDragCheck = null;
   let gpuPreviewCheck = null;
+  let toneEqualizerInteractionCheck = null;
 
   fs.mkdirSync(path.dirname(screenshot), { recursive: true });
   fs.mkdirSync(path.dirname(resultPath), { recursive: true });
@@ -73,6 +74,7 @@ async function main() {
       "hdr.exposure": 0.05,
       "hdr.highlight_rolloff": 0.01,
       "hdr.shadow_lift": 0.005,
+      "hdr.tone_equalizer_smoothing": 0.01,
       "hdr.lift": 0.005,
       "hdr.gamma": 0.005,
       "hdr.gain": 0.005,
@@ -154,6 +156,39 @@ async function main() {
           status: gpuLabel?.nextElementSibling?.textContent || "not reported",
         };
       });
+      await page.locator("#tone-equalizer-band-value").evaluate((control) => {
+        control.value = "0.5";
+        control.dispatchEvent(new Event("input", { bubbles: true }));
+        control.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      await page.waitForTimeout(120);
+      const adjustedToneEqualizer = await page.evaluate(() => ({
+        enabled: document.getElementById("tone-equalizer-enabled")?.checked,
+        output: document.getElementById("tone-equalizer-band-output")?.textContent,
+        groupState: document.querySelector('[data-modified-count="hdr-equalizer"]')?.textContent,
+        gpuCanvasVisible: getComputedStyle(document.getElementById("preview-canvas")).display !== "none",
+      }));
+      await page.locator('[data-reset-group="hdr-equalizer"]').click();
+      await page.waitForTimeout(120);
+      const resetToneEqualizer = await page.evaluate(() => ({
+        enabled: document.getElementById("tone-equalizer-enabled")?.checked,
+        output: document.getElementById("tone-equalizer-band-output")?.textContent,
+        groupState: document.querySelector('[data-modified-count="hdr-equalizer"]')?.textContent,
+      }));
+      toneEqualizerInteractionCheck = {
+        adjusted: adjustedToneEqualizer,
+        reset: resetToneEqualizer,
+        ok: adjustedToneEqualizer.enabled === true
+          && adjustedToneEqualizer.output === "+0.50 EV"
+          && /modified/.test(adjustedToneEqualizer.groupState || "")
+          && adjustedToneEqualizer.gpuCanvasVisible === true
+          && resetToneEqualizer.enabled === false
+          && resetToneEqualizer.output === "+0.00 EV"
+          && resetToneEqualizer.groupState === "Default",
+      };
+      if (!toneEqualizerInteractionCheck.ok) {
+        throw new Error(`Tone equalizer interaction audit failed: ${JSON.stringify(toneEqualizerInteractionCheck)}`);
+      }
       nativeDragCheck = await page.locator("#preview-image").evaluate((image) => {
         const event = new DragEvent("dragstart", {
           bubbles: true,
@@ -321,6 +356,7 @@ async function main() {
       wheelZoomCheck,
       nativeDragCheck,
       gpuPreviewCheck,
+      toneEqualizerInteractionCheck,
       consoleErrors,
       pageErrors,
     };

@@ -102,6 +102,18 @@
       <p class="scope-boundary">Global finishing only. No layers, masks, RAW processing, or local adjustments.</p>
     </aside>
 
+    <div
+      id="source-splitter"
+      class="splitter splitter-vertical source-splitter"
+      role="separator"
+      tabindex="0"
+      aria-label="Resize source rail"
+      aria-orientation="vertical"
+      aria-valuemin="200"
+      aria-valuemax="380"
+      aria-valuenow="268"
+    ></div>
+
     <main class="workspace-main">
       <section class="viewer-panel panel" aria-label="Viewer">
         <div class="viewer-bar">
@@ -194,6 +206,18 @@
         </div>
       </section>
 
+      <div
+        id="dock-splitter"
+        class="splitter splitter-horizontal dock-splitter"
+        role="separator"
+        tabindex="0"
+        aria-label="Resize analysis dock"
+        aria-orientation="horizontal"
+        aria-valuemin="96"
+        aria-valuemax="340"
+        aria-valuenow="208"
+      ></div>
+
       <section id="analysis-dock" class="analysis-dock panel" aria-label="Analysis">
         <div class="dock-bar">
           <div class="dock-tabs" role="tablist" aria-label="Analysis views">
@@ -253,6 +277,18 @@
       </section>
     </main>
 
+    <div
+      id="grade-splitter"
+      class="splitter splitter-vertical grade-splitter"
+      role="separator"
+      tabindex="0"
+      aria-label="Resize grade rail"
+      aria-orientation="vertical"
+      aria-valuemin="280"
+      aria-valuemax="420"
+      aria-valuenow="320"
+    ></div>
+
     <aside class="grade-rail panel" aria-label="Grade">
       <div class="grade-header">
         <div>
@@ -304,6 +340,32 @@
           </div>
         </section>
 
+        <section class="control-group" data-group="hdr-equalizer">
+          <div class="control-group-header">
+            <button class="group-toggle" type="button" aria-expanded="true">Tone Equalizer <span data-modified-count="hdr-equalizer">Default</span></button>
+            <button class="group-reset text-button" type="button" data-reset-group="hdr-equalizer">Reset</button>
+          </div>
+          <div class="control-group-body">
+            <label class="toggle-row" data-control-path="hdr.tone_equalizer_enabled">
+              <span>Enable equalizer</span>
+              <input id="tone-equalizer-enabled" type="checkbox" data-path="hdr.tone_equalizer_enabled">
+            </label>
+            <p class="helper">Adjust exposure by scene brightness. 0 EV is the app's 100-nit diffuse-white reference; the dashed edge marks the 10,000-nit PQ limit.</p>
+            <canvas id="tone-equalizer-editor" width="320" height="220" tabindex="0" aria-label="HDR tone equalizer. Use left and right arrows to select a band and up and down arrows to adjust exposure."></canvas>
+            <div class="tone-equalizer-selected">
+              <div class="control-heading">
+                <label for="tone-equalizer-band-value">Selected band <strong id="tone-equalizer-band-label">0 EV · 100 nit</strong></label>
+                <output id="tone-equalizer-band-output">+0.00 EV</output>
+              </div>
+              <input id="tone-equalizer-band-value" type="range" min="-2" max="2" step="0.05" value="0">
+            </div>
+            <div class="control-row" data-control-path="hdr.tone_equalizer_smoothing">
+              <div class="control-heading"><label for="tone-equalizer-smoothing">Curve smoothing</label><output data-value-path="hdr.tone_equalizer_smoothing">0.50</output></div>
+              <input id="tone-equalizer-smoothing" type="range" min="0" max="1" step="0.01" value="0.5" data-path="hdr.tone_equalizer_smoothing">
+            </div>
+          </div>
+        </section>
+
         <section class="control-group" data-group="hdr-color">
           <div class="control-group-header">
             <button class="group-toggle" type="button" aria-expanded="true">Color <span data-modified-count="hdr-color">Default</span></button>
@@ -321,12 +383,13 @@
           </div>
         </section>
 
-        <section class="control-group collapsed" data-group="hdr-zones">
+        <section class="control-group collapsed legacy-controls" data-group="hdr-zones">
           <div class="control-group-header">
-            <button class="group-toggle" type="button" aria-expanded="false">Zones <span data-modified-count="hdr-zones">Default</span></button>
+            <button class="group-toggle" type="button" aria-expanded="false">Legacy primaries <span data-modified-count="hdr-zones">Default</span></button>
             <button class="group-reset text-button" type="button" data-reset-group="hdr-zones">Reset</button>
           </div>
           <div class="control-group-body">
+            <p class="helper">Lift, Gamma, and Gain remain available for compatibility but are superseded by the Tone Equalizer.</p>
             <div class="control-row" data-control-path="hdr.lift">
               <div class="control-heading"><label for="hdr-lift">Lift</label><output data-value-path="hdr.lift">0.000</output></div>
               <input id="hdr-lift" type="range" min="-0.5" max="0.5" step="0.005" value="0" data-path="hdr.lift">
