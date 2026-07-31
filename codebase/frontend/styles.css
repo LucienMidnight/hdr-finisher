@@ -778,8 +778,10 @@ body[data-active-lane="sdr"] .lane-dot {
 
 #histogram {
   display: block;
+  box-sizing: border-box;
   width: 100%;
   height: 100%;
+  max-width: 100%;
   min-height: 112px;
   border: 1px solid var(--hairline);
   background: var(--viewer);

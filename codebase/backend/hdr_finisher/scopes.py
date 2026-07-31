@@ -39,14 +39,14 @@ def build_scope(
     adjustments: AdjustmentState,
     kind: PreviewKind,
     mode: ScopeMode = ScopeMode.HISTOGRAM,
-    bins: int = 64,
+    bins: int | None = None,
     waveform_columns: int = 128,
     sdr_reference_image: np.ndarray | None = None,
 ) -> ScopeResponse:
     processed = apply_adjustments(image, adjustments, kind, sdr_reference_image=sdr_reference_image)
     if mode == ScopeMode.WAVEFORM:
-        return _build_waveform(processed, kind, bins=bins, columns=waveform_columns)
-    return _build_histogram(processed, kind, bins=bins)
+        return _build_waveform(processed, kind, bins=bins or 64, columns=waveform_columns)
+    return _build_histogram(processed, kind, bins=bins or 256)
 
 
 def _build_histogram(processed: np.ndarray, kind: PreviewKind, bins: int) -> ScopeResponse:
@@ -181,7 +181,7 @@ def _sdr_stats(luma: np.ndarray) -> list[ScopeStat]:
 
 
 def _rgb_to_reference_nits(image: np.ndarray) -> np.ndarray:
-    luminance = 0.2126 * image[..., 0] + 0.7152 * image[..., 1] + 0.0722 * image[..., 2]
+    luminance = 0.2722287 * image[..., 0] + 0.6740818 * image[..., 1] + 0.0536895 * image[..., 2]
     return np.clip((luminance / 0.18) * 100.0, 0.0, None)
 
 
@@ -192,7 +192,7 @@ def _channel_to_reference_nits(channel: np.ndarray) -> np.ndarray:
 def _format_nits(value: float) -> str:
     if value >= 1000.0:
         return f"{value:.0f} nit"
-    if value >= 100.0:
+    if value >= 99.995:
         return f"{value:.1f} nit"
     return f"{value:.2f} nit"
 

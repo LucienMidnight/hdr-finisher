@@ -9,6 +9,7 @@ import numpy as np
 
 from .adjustments import apply_adjustments
 from .binaries import resolve_binary
+from .color import acescg_to_linear_bt2020
 from .config import MAX_PREVIEW_LONG_EDGE, PREVIEW_IMAGE_FORMAT
 from .models import AdjustmentState, PreviewKind
 
@@ -122,7 +123,8 @@ def _write_hdr_y4m(path: Path, image: np.ndarray) -> None:
 
 
 def _linear_to_bt2020_pq_yuv10(image: np.ndarray) -> np.ndarray:
-    pq_rgb = _linear_to_pq_rgb10(image).astype(np.float32) / 1023.0
+    linear_bt2020 = acescg_to_linear_bt2020(image)
+    pq_rgb = _linear_to_pq_rgb10(linear_bt2020).astype(np.float32) / 1023.0
 
     r = pq_rgb[..., 0]
     g = pq_rgb[..., 1]

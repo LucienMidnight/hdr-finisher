@@ -394,7 +394,7 @@ The repository is no longer at the original vertical-slice stage. It now provide
 - `samples/` - bundled HDR reference assets for local verification
 
 ### Verification Completed at This Checkpoint
-- `pytest -q tests\test_loader_fixtures.py tests\test_api.py tests\test_core.py` passes with `32 passed`
+- The full Windows alpha QA harness passes with `110 passed`, JavaScript syntax validation, capability checks, sample export inspection, and Playwright browser smoke tests
 - `node --check frontend/app.js` passes
 - Local manual validation on April 8, 2026 confirmed:
   - true HDR preview is working in Brave
@@ -405,35 +405,44 @@ The repository is no longer at the original vertical-slice stage. It now provide
   - synthetic EXR exposure charts produce sensible histogram and waveform separation
   - a real Blender render validates useful HDR waveform reads on both HDR and SDR displays
   - local git backup workflow was verified with commit + push to GitHub remote
+- Windows JPEG Ultra HDR validation completed on July 30, 2026:
+  - the pinned Google `libultrahdr` source revision builds successfully with MSVC and its native unit tests pass
+  - `ultrahdr_app.exe` is bundled with the application together with the required license and attribution notices
+  - both the generated reference export and a real full-resolution image pass legacy JPEG decode, embedded gain-map detection, Ultra HDR v1 XMP detection, ISO 21496-1 metadata detection, and native libultrahdr HDR decode
+  - validation confirms two embedded JPEG images and that the decoded HDR result is brighter than the SDR base
+  - the packaged Windows application reports JPEG Ultra HDR export as available
+  - the PyInstaller portable Windows alpha ZIP has been rebuilt and smoke-tested with the verified encoder included
 
 ### Current Blockers and Known Gaps
-- JPEG Ultra HDR export is implemented and capability-gated. A pinned Windows source-build helper is provided because upstream does not publish a Windows CLI binary; clean-machine binary redistribution validation remains release work.
+- The Windows JPEG Ultra HDR implementation blocker is cleared: the native encoder is built, bundled, attributed, and validated. Remaining release work is clean-machine redistribution validation; macOS will require its own native build and packaging path.
 - JPEG XL gain-map export is still stubbed; `cjxl` is not wired yet
-- Packaging and distribution work is still at the alpha scaffold stage. The near-term target is a technical Windows alpha build, likely a zipped PyInstaller artifact rather than a polished installer.
+- A portable PyInstaller Windows alpha ZIP now exists and passes its smoke test. A conventional installer, upgrade/uninstall behavior, version metadata, and clean-machine testing are not yet complete.
 - Windows Photos remains an unreliable validation target for AVIF gain-map HDR compared with Brave / Chromium browsers
 - Preview AVIF quality is now usable, but still tunable; a future user-facing preview-quality control may be worthwhile
 - EXR automatic color-space detection is safer now, but still depends on source metadata / chromaticities; fully robust auto-detection remains a quality target rather than a solved problem
-- The right-rail layout is now usable, but broader UI polish and simplification are still warranted once core feature work settles
+- The current three-rail UI is functional but still visually dense. Workflow hierarchy, HDR/SDR branch clarity, control grouping, export guidance, and responsive viewport behavior need a focused UX pass before the installer is finalized.
+- Very small source images are currently displayed at their intrinsic dimensions instead of being enlarged to a useful fit-to-viewport preview.
 
 ### Technical Alpha Packaging Direction
-The first public packaging milestone should serve technical users rather than broad consumer distribution. A signed installer is not required for this alpha. The expected artifact is a GitHub Release containing a zipped Windows build that runs without a local Python install, includes the required AVIF encoder binaries, and clearly documents known limitations.
+The portable technical-alpha milestone has been reached locally: the zipped Windows build runs without a local Python install and includes the required AVIF and JPEG Ultra HDR encoder binaries. The next packaging milestone is a conventional per-user Windows installer, after a focused UI/UX and installer-readiness pass.
 
-The alpha release should prioritize:
+The Windows release should prioritize:
 - Windows first
-- AVIF + gain-map export, SDR PNG export, and the existing import / preview / adjustment workflow
+- AVIF + gain-map export, JPEG Ultra HDR export, SDR PNG export, and the existing import / preview / adjustment workflow
 - Bundled sample media or a one-command sample generation path
-- Clear capability reporting for bundled binaries and optional export backends
-- Clean-machine validation on Windows
+- Clear capability reporting and actionable errors for bundled export backends
+- Automatic browser launch, reliable single-instance / port handling, clean shutdown, and user-writable runtime directories
+- Application icon and version metadata, Start menu integration, uninstall support, and retention of the portable ZIP option
+- Clean-machine install, upgrade, export, and uninstall validation on Windows
 - Release notes that state Chromium / Brave / Edge are the preferred HDR validation targets
 
-The alpha release should not be blocked by:
-- A polished installer
+The Windows installer release should not be blocked by:
 - Windows code signing
 - macOS signing / notarization
 - JPEG XL export
-- A polished JPEG Ultra HDR encoder download/install experience; the technical-alpha source-build and bundled-binary path is sufficient for this milestone
+- Broader editing scope such as RAW development, local adjustments, layers, cataloging, or batch processing
 
-After the technical alpha proves the workflow, the packaging track can move toward a conventional installer, signing, macOS `.app` packaging, notarization, and broader release automation.
+After the Windows installer proves the workflow on clean machines, the packaging track can move to a macOS `.app` and `.dmg`, native macOS encoder builds, signing/notarization, and broader release automation.
 
 ### Implementation Reality vs PRD
 - **Preview transport:** the PRD target of true HDR browser preview is now implemented. HDR previews are served as PQ AVIF and SDR previews remain display-safe fallback images.
@@ -466,12 +475,14 @@ After the technical alpha proves the workflow, the packaging track can move towa
 - The diagnostic overlay image is now positioned against the rendered preview image box rather than using independent layout assumptions
 
 ### Recommended Next Steps After This Checkpoint
-1. Create the Windows technical alpha package first: PyInstaller build, bundled AVIF binaries, zipped release artifact, and clean-machine validation
-2. Add concise GitHub Release notes with supported workflow, known limitations, and Chromium / Brave / Edge HDR validation guidance
-3. Continue real-world validation of edited EXR workflows now that import, scopes, and export are behaving
-4. Validate JPEG Ultra HDR on HDR and SDR monitors, legacy JPEG decoders, current HDR browser workflows, and private Instagram uploads
-5. Keep JPEG XL gain-map export deferred unless it becomes strategically important or easy to ship
-6. Reserve installer polish, code signing, macOS packaging, notarization, and broader UI simplification for post-alpha milestones
+1. Complete a focused UI/UX refinement pass before freezing the installer: improve workflow hierarchy, simplify the dense right rail, clarify the independent HDR and SDR fallback lanes, improve export guidance, and make small images scale to a useful fit-to-viewport preview
+2. Complete installer-readiness changes in the application: automatic browser launch, single-instance and port-conflict handling, clean shutdown, user-writable runtime directories, path portability, quiet console behavior, and application icon/version metadata
+3. Re-run the full QA harness and continue real-world validation with EXR, HEIC, TIFF, AVIF gain-map, and JPEG Ultra HDR media across HDR and SDR displays, modern Chromium browsers, and legacy JPEG decoders
+4. Build a conventional per-user Windows installer with shortcuts, uninstall support, bundled notices/licenses, and the portable ZIP retained as an alternative
+5. Validate install, first launch, export, upgrade, and uninstall behavior on a clean Windows machine or VM
+6. Publish concise GitHub Release notes with checksums, supported workflows, known limitations, and Chromium / Brave / Edge HDR validation guidance
+7. Start the macOS track after the Windows installer stabilizes: build and validate native encoder binaries on macOS, package the app as `.app` / `.dmg`, then address signing and notarization
+8. Keep JPEG XL gain-map export deferred unless it becomes strategically important or straightforward to ship
 
 ---
 
@@ -509,3 +520,4 @@ This repository's root `.gitignore` already excludes local exports, EXR / HDR wo
 *Changes from v1.0: ACEScg internal working space; diffuse white definition; HEIC auxiliary gain map requirement; NaN/Inf sanitization; HDR detection logic (HDR\_LINEAR\_UNCONFIRMED state); gain map bit depth locked to 10-bit logarithmic; tone mapping operators specified; large EXR memory risk added; OCIO v2 deferral noted.*
 *April 8, 2026 implementation addendum: false color / zebra overlays, HDR reference-nit histogram and waveform scopes, source interpretation manual override workflow, EXR validation notes, export filename/save-path controls, UI bug-fix summary, and the local git backup / push workflow are now recorded in this PRD.*
 *July 22, 2026 implementation addendum: JPEG Ultra HDR now consumes independent HDR and SDR branches through libultrahdr, publishes atomically only after legacy / gain-map / metadata / decoder validation, supports bundled and packaged binary discovery, and includes a pinned Windows build and attribution workflow. JPEG XL remains out of scope.*
+*July 30, 2026 implementation addendum: the pinned libultrahdr Windows build, native tests, complete 110-test alpha QA run, real-image JPEG Ultra HDR validation, packaged capability check, and portable PyInstaller ZIP all pass. The delivery sequence is now UI/UX refinement, installer-readiness work, a conventional Windows installer with clean-machine validation, and then macOS packaging. JPEG XL remains deferred.*

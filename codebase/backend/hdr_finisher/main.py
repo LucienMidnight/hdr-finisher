@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import atexit
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -39,6 +40,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 store = SessionStore()
+atexit.register(store.clear)
 capabilities = probe_capabilities()
 export_backends = build_export_backends(capabilities)
 SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
@@ -60,14 +62,24 @@ def api_capabilities() -> dict[str, object]:
 @app.post("/api/session")
 async def create_session(file: UploadFile = File(...)) -> SessionSummary:
     suffix = Path(file.filename or "").suffix
-    with NamedTemporaryFile(delete=False, suffix=suffix) as temp:
-        temp.write(await file.read())
-        temp_path = Path(temp.name)
-
+    temp_path: Path | None = None
+    transferred = False
     try:
-        payload = store.create_session(temp_path)
+        with NamedTemporaryFile(delete=False, suffix=suffix) as temp:
+            temp_path = Path(temp.name)
+            while chunk := await file.read(1024 * 1024):
+                temp.write(chunk)
+        payload = store.create_session(
+            temp_path,
+            original_filename=file.filename,
+            owns_source_path=True,
+        )
+        transferred = True
     except LoaderError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        if temp_path is not None and not transferred:
+            temp_path.unlink(missing_ok=True)
     return SessionSummary(session=payload)
 
 

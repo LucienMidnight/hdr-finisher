@@ -22,6 +22,7 @@ class LoadedSession:
     source: SourceImageDescriptor
     analysis: HDRAnalysis
     metadata: dict
+    owns_source_path: bool = False
     adjustments: AdjustmentState = field(default_factory=AdjustmentState)
     preview: PreviewSettings = field(default_factory=PreviewSettings)
     preview_tokens: dict[PreviewKind, int] = field(default_factory=lambda: {PreviewKind.HDR: 0, PreviewKind.SDR: 0})
@@ -43,20 +44,37 @@ class SessionStore:
         self._lock = RLock()
         self._current: LoadedSession | None = None
 
-    def create_session(self, source_path: Path) -> SessionPayload:
-        image, source, metadata, analysis, sdr_reference_image = load_image(source_path)
-        session = LoadedSession(
-            session_id=uuid4().hex,
-            source_path=source_path,
-            image=image,
-            sdr_reference_image=sdr_reference_image,
-            source=source,
-            analysis=analysis,
-            metadata=metadata,
-        )
+    def create_session(
+        self,
+        source_path: Path,
+        original_filename: str | None = None,
+        owns_source_path: bool = False,
+    ) -> SessionPayload:
+        try:
+            image, source, metadata, analysis, sdr_reference_image = load_image(source_path)
+            if original_filename:
+                source.filename = Path(str(original_filename).replace("\\", "/")).name
+            session = LoadedSession(
+                session_id=uuid4().hex,
+                source_path=source_path,
+                image=image,
+                sdr_reference_image=sdr_reference_image,
+                source=source,
+                analysis=analysis,
+                metadata=metadata,
+                owns_source_path=owns_source_path,
+            )
+            payload = session.to_payload()
+        except Exception:
+            if owns_source_path:
+                _remove_owned_source(source_path)
+            raise
         with self._lock:
+            previous = self._current
             self._current = session
-        return session.to_payload()
+        if previous is not None and previous.owns_source_path:
+            _remove_owned_source(previous.source_path)
+        return payload
 
     def current(self) -> LoadedSession | None:
         with self._lock:
@@ -64,7 +82,10 @@ class SessionStore:
 
     def clear(self) -> None:
         with self._lock:
+            previous = self._current
             self._current = None
+        if previous is not None and previous.owns_source_path:
+            _remove_owned_source(previous.source_path)
 
     def get(self, session_id: str) -> LoadedSession:
         session = self.current()
@@ -81,6 +102,7 @@ class SessionStore:
     def update_source_interpretation(self, session_id: str, override: SourceInterpretationOverride) -> LoadedSession:
         with self._lock:
             session = self.get(session_id)
+            original_filename = session.source.filename
             image, source, metadata, analysis, sdr_reference_image = load_image(
                 session.source_path,
                 overrides={
@@ -88,6 +110,7 @@ class SessionStore:
                     "transfer_function": override.transfer_function,
                 },
             )
+            source.filename = original_filename
             session.image = image
             session.sdr_reference_image = sdr_reference_image
             session.source = source
@@ -106,3 +129,10 @@ class SessionStore:
         with self._lock:
             session = self.get(session_id)
             return session.preview_tokens[kind] == token
+
+
+def _remove_owned_source(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass

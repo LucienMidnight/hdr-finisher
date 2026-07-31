@@ -220,7 +220,7 @@
                 </select>
               </div>
             </div>
-            <canvas id="histogram" width="720" height="220"></canvas>
+            <canvas id="histogram" width="720" height="220" aria-label="Image scope"></canvas>
           </div>
           <div class="scope-readings">
             <p id="scope-note" class="helper">Reference scopes will appear after a preview is rendered.</p>
@@ -413,7 +413,7 @@
           <div class="control-group-body">
             <div class="control-row" data-control-path="sdr.lift">
               <div class="control-heading"><label for="sdr-lift">Lift</label><output data-value-path="sdr.lift">0.000</output></div>
-              <input id="sdr-lift" type="range" min="-0.5" max="0.5" step="0.005" value="0" data-path="sdr.lift">
+              <input id="sdr-lift" type="range" min="-0.5" max="0.5" step="0.002" value="0" data-path="sdr.lift">
             </div>
             <div class="control-row" data-control-path="sdr.gamma">
               <div class="control-heading"><label for="sdr-gamma">Gamma</label><output data-value-path="sdr.gamma">0.000</output></div>

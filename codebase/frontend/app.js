@@ -13,7 +13,7 @@ const latitudePresets = {
     "sdr.tone_contrast": [0.5, 1.5, 0.01],
     "sdr.tone_skew": [-1, 1, 0.01],
     "sdr.shadow": [-1, 1, 0.01],
-    "sdr.lift": [-0.5, 0.5, 0.005],
+    "sdr.lift": [-0.5, 0.5, 0.002],
     "sdr.gamma": [-1, 1, 0.005],
     "sdr.gain": [-0.5, 0.5, 0.005],
     "sdr.contrast": [-1, 1, 0.001],
@@ -33,7 +33,7 @@ const latitudePresets = {
     "sdr.tone_contrast": [0.5, 1.5, 0.01],
     "sdr.tone_skew": [-1, 1, 0.01],
     "sdr.shadow": [-0.5, 0.5, 0.01],
-    "sdr.lift": [-0.35, 0.35, 0.005],
+    "sdr.lift": [-0.35, 0.35, 0.002],
     "sdr.gamma": [-0.75, 0.75, 0.005],
     "sdr.gain": [-0.35, 0.35, 0.005],
     "sdr.contrast": [-0.75, 0.75, 0.001],
@@ -53,7 +53,7 @@ const latitudePresets = {
     "sdr.tone_contrast": [0.5, 1.5, 0.01],
     "sdr.tone_skew": [-1, 1, 0.01],
     "sdr.shadow": [-0.3, 0.3, 0.01],
-    "sdr.lift": [-0.25, 0.25, 0.005],
+    "sdr.lift": [-0.25, 0.25, 0.002],
     "sdr.gamma": [-0.5, 0.5, 0.005],
     "sdr.gain": [-0.25, 0.25, 0.005],
     "sdr.contrast": [-0.5, 0.5, 0.001],
@@ -160,6 +160,9 @@ const state = {
   },
   displayInfo: buildDisplayProbe(),
 };
+
+let scopeResizeObserver = null;
+let scopeResizeFrame = null;
 
 const defaultAdjustments = () => ({
   hdr: {
@@ -352,6 +355,22 @@ async function boot() {
   renderExportPreflight();
   window.addEventListener("resize", syncOverlayPlacement);
   window.addEventListener("resize", updateZoomReadout);
+  observeScopeSize();
+}
+
+function observeScopeSize() {
+  if (!window.ResizeObserver) {
+    window.addEventListener("resize", () => drawHistogram(state.lastScope || []));
+    return;
+  }
+  scopeResizeObserver = new ResizeObserver(() => {
+    if (scopeResizeFrame !== null) cancelAnimationFrame(scopeResizeFrame);
+    scopeResizeFrame = requestAnimationFrame(() => {
+      scopeResizeFrame = null;
+      drawHistogram(state.lastScope || []);
+    });
+  });
+  scopeResizeObserver.observe(els.histogram);
 }
 
 function bindEvents() {
@@ -928,10 +947,12 @@ async function refreshScopes() {
 
 function drawHistogram(scope) {
   const canvas = els.histogram;
-  const ctx = canvas.getContext("2d");
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "#0f0f0f";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const surface = resizeScopeCanvas(canvas);
+  if (!surface) return;
+  const { ctx, width, height } = surface;
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#090b0c";
+  ctx.fillRect(0, 0, width, height);
   if (!scope?.channels?.length) {
     els.scopeTitle.textContent = "Histogram";
     els.scopeNote.textContent = "Reference scopes will appear here after a preview is rendered.";
@@ -941,54 +962,98 @@ function drawHistogram(scope) {
     return;
   }
   els.scopeTitle.textContent = scopeTitleFor(scope);
+  canvas.setAttribute("aria-label", els.scopeTitle.textContent);
   els.scopeNote.textContent = scope.preview_kind === "hdr"
     ? scope.scope_type.includes("waveform")
       ? "HDR waveform plots horizontal image position against reference nits. Reference nits use the app's internal model: 0.18 scene-linear equals 100 nits."
-      : "Reference nits use the app's internal HDR model: 0.18 scene-linear equals 100 nits. Actual playback brightness still depends on browser and display."
+      : "HDR histogram plots reference luminance from left to right on a logarithmic nit scale. Density is log-scaled to retain fine tonal detail."
     : scope.scope_type.includes("waveform")
       ? "SDR waveform plots horizontal image position against normalized tone-mapped output."
-      : "SDR histogram shows normalized display-safe values from 0 to 1 after tone mapping.";
+      : "SDR histogram plots display-safe values from black to white. Density is log-scaled so small tonal populations remain visible.";
   renderKeyValueList(els.scopeStats, (scope.stats || []).map((item) => [item.label, item.value]));
 
   const channels = filteredScopeChannels(scope.channels);
-  const palette = { R: "#d97f78", G: "#87b995", B: "#6e9fb5", Y: "#cfd4d6" };
-  const maxValue = Math.max(1, ...channels.flatMap((channel) => channel.bins));
-  const plotLeft = scope.preview_kind === "hdr" ? 52 : 14;
+  const palette = { R: "#ff5b61", G: "#55e579", B: "#4d9cff", Y: "#d8dddf" };
+  const isWaveform = scope.scope_type.includes("waveform");
+  const plotLeft = isWaveform ? 52 : 14;
   const plotRight = 10;
   const plotTop = 8;
-  const plotBottom = 20;
-  const plotWidth = canvas.width - plotLeft - plotRight;
-  const plotHeight = canvas.height - plotTop - plotBottom;
+  const plotBottom = 22;
+  const plotWidth = Math.max(1, width - plotLeft - plotRight);
+  const plotHeight = Math.max(1, height - plotTop - plotBottom);
 
   ctx.font = '11px "IBM Plex Mono", "Cascadia Mono", Consolas';
   ctx.textBaseline = "middle";
-  ctx.fillStyle = "rgba(236, 233, 223, 0.72)";
-  ctx.strokeStyle = "rgba(236, 233, 223, 0.18)";
+  drawScopeGrid(ctx, scope, isWaveform, plotLeft, plotTop, plotWidth, plotHeight, height);
+
+  if (scope.scope_type.includes("waveform")) drawWaveform(ctx, scope, channels, palette, plotLeft, plotTop, plotWidth, plotHeight);
+  else drawResolveHistogram(ctx, channels, palette, plotLeft, plotTop, plotWidth, plotHeight);
+}
+
+function resizeScopeCanvas(canvas) {
+  const width = Math.round(canvas.clientWidth);
+  const height = Math.round(canvas.clientHeight);
+  if (width < 2 || height < 2) return null;
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const bitmapWidth = Math.round(width * dpr);
+  const bitmapHeight = Math.round(height * dpr);
+  if (canvas.width !== bitmapWidth || canvas.height !== bitmapHeight) {
+    canvas.width = bitmapWidth;
+    canvas.height = bitmapHeight;
+  }
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  return { ctx, width, height };
+}
+
+function drawScopeGrid(ctx, scope, isWaveform, plotLeft, plotTop, plotWidth, plotHeight, canvasHeight) {
+  ctx.save();
   ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgba(224, 232, 235, 0.08)";
+  [0, 0.25, 0.5, 0.75, 1].forEach((position) => {
+    const y = plotTop + plotHeight - position * plotHeight;
+    ctx.beginPath();
+    ctx.moveTo(plotLeft, y);
+    ctx.lineTo(plotLeft + plotWidth, y);
+    ctx.stroke();
+  });
+
+  const labeledGuides = scopeGuidesForDisplay(scope);
   (scope.guides || []).forEach((guide) => {
     const normalized = guidePosition(scope, guide.value);
-    if (scope.preview_kind === "hdr") {
+    const showLabel = labeledGuides.has(Number(guide.value));
+    ctx.strokeStyle = showLabel ? "rgba(224, 232, 235, 0.17)" : "rgba(224, 232, 235, 0.08)";
+    ctx.fillStyle = "rgba(224, 232, 235, 0.62)";
+    if (isWaveform) {
       const y = plotTop + plotHeight - normalized * plotHeight;
       ctx.beginPath();
       ctx.moveTo(plotLeft, y);
       ctx.lineTo(plotLeft + plotWidth, y);
       ctx.stroke();
-      ctx.fillText(guide.label, 2, y);
+      if (showLabel) {
+        ctx.textAlign = "left";
+        ctx.fillText(guide.label, 2, y);
+      }
     } else {
       const x = plotLeft + normalized * plotWidth;
       ctx.beginPath();
       ctx.moveTo(x, plotTop);
       ctx.lineTo(x, plotTop + plotHeight);
       ctx.stroke();
-      ctx.textAlign = "center";
-      ctx.fillText(guide.label, x, canvas.height - 6);
-      ctx.textAlign = "start";
+      if (showLabel) {
+        ctx.textAlign = normalized <= 0.02 ? "left" : normalized >= 0.98 ? "right" : "center";
+        ctx.fillText(guide.label, x, canvasHeight - 7);
+      }
     }
   });
+  ctx.restore();
+}
 
-  if (scope.scope_type.includes("waveform")) drawWaveform(ctx, scope, channels, palette, plotLeft, plotTop, plotWidth, plotHeight);
-  else if (scope.preview_kind === "hdr") drawHdrReferenceScope(ctx, channels, palette, maxValue, plotLeft, plotTop, plotWidth, plotHeight);
-  else drawSdrHistogram(ctx, channels, palette, maxValue, plotLeft, plotTop, plotWidth, plotHeight);
+function scopeGuidesForDisplay(scope) {
+  if (scope.preview_kind === "hdr") return new Set([1, 10, 100, 203, 1000, 4000]);
+  return new Set([0.18, 0.5, 1]);
 }
 
 function guidePosition(scope, value) {
@@ -1000,43 +1065,60 @@ function guidePosition(scope, value) {
   return Math.min(1, Math.max(0, value));
 }
 
-function drawHdrReferenceScope(ctx, channels, palette, maxValue, plotLeft, plotTop, plotWidth, plotHeight) {
+function drawResolveHistogram(ctx, channels, palette, plotLeft, plotTop, plotWidth, plotHeight) {
   if (state.scopeChannelMode === "parade") {
-    drawHistogramParade(ctx, channels.filter((channel) => channel.name !== "Y"), palette, maxValue, plotLeft, plotTop, plotWidth, plotHeight);
+    drawHistogramParade(ctx, channels.filter((channel) => channel.name !== "Y"), palette, plotLeft, plotTop, plotWidth, plotHeight);
     return;
   }
+  const peak = robustHistogramPeak(channels);
+  ctx.save();
+  ctx.globalCompositeOperation = channels.length > 1 ? "lighter" : "source-over";
   channels.forEach((channel) => {
-    ctx.beginPath();
-    ctx.strokeStyle = palette[channel.name];
-    ctx.lineWidth = 1.75;
-    channel.bins.forEach((value, index) => {
-      const normalizedIndex = index / (channel.bins.length - 1);
-      const x = plotLeft + (value / maxValue) * plotWidth;
-      const y = plotTop + plotHeight - normalizedIndex * plotHeight;
-      if (index === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
+    drawHistogramTrace(ctx, channel, palette[channel.name], peak, plotLeft, plotTop, plotWidth, plotHeight);
   });
+  ctx.restore();
 }
 
-function drawSdrHistogram(ctx, channels, palette, maxValue, plotLeft, plotTop, plotWidth, plotHeight) {
-  if (state.scopeChannelMode === "parade") {
-    drawHistogramParade(ctx, channels.filter((channel) => channel.name !== "Y"), palette, maxValue, plotLeft, plotTop, plotWidth, plotHeight);
-    return;
-  }
-  channels.forEach((channel) => {
-    ctx.beginPath();
-    ctx.strokeStyle = palette[channel.name];
-    ctx.lineWidth = 2;
-    channel.bins.forEach((value, index) => {
-      const x = plotLeft + (index / (channel.bins.length - 1)) * plotWidth;
-      const y = plotTop + plotHeight - (value / maxValue) * plotHeight;
-      if (index === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
+function robustHistogramPeak(channels) {
+  const populations = channels
+    .flatMap((channel) => channel.bins || [])
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .sort((a, b) => a - b);
+  if (!populations.length) return 1;
+  return Math.max(1, populations[Math.floor((populations.length - 1) * 0.985)]);
+}
+
+function histogramHeight(value, peak) {
+  if (value <= 0) return 0;
+  return Math.min(1, Math.log1p(value) / Math.log1p(Math.max(peak, 1)));
+}
+
+function drawHistogramTrace(ctx, channel, color, peak, plotLeft, plotTop, plotWidth, plotHeight) {
+  const bins = channel.bins || [];
+  if (!bins.length) return;
+  const baseline = plotTop + plotHeight;
+  const colorRgb = hexToRgb(color);
+  const points = bins.map((value, index) => ({
+    x: plotLeft + (index / Math.max(bins.length - 1, 1)) * plotWidth,
+    y: baseline - histogramHeight(value, peak) * plotHeight,
+  }));
+
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, baseline);
+  points.forEach((point) => ctx.lineTo(point.x, point.y));
+  ctx.lineTo(points[points.length - 1].x, baseline);
+  ctx.closePath();
+  ctx.fillStyle = `rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.22)`;
+  ctx.fill();
+
+  ctx.beginPath();
+  points.forEach((point, index) => {
+    if (index === 0) ctx.moveTo(point.x, point.y);
+    else ctx.lineTo(point.x, point.y);
   });
+  ctx.strokeStyle = `rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.9)`;
+  ctx.lineWidth = 1.15;
+  ctx.stroke();
 }
 
 function drawWaveform(ctx, scope, channels, palette, plotLeft, plotTop, plotWidth, plotHeight) {
@@ -1062,20 +1144,20 @@ function drawWaveform(ctx, scope, channels, palette, plotLeft, plotTop, plotWidt
   });
 }
 
-function drawHistogramParade(ctx, channels, palette, maxValue, plotLeft, plotTop, plotWidth, plotHeight) {
+function drawHistogramParade(ctx, channels, palette, plotLeft, plotTop, plotWidth, plotHeight) {
   const laneWidth = plotWidth / Math.max(channels.length, 1);
   channels.forEach((channel, laneIndex) => {
-    ctx.beginPath();
-    ctx.strokeStyle = palette[channel.name];
-    ctx.lineWidth = 1.8;
-    channel.bins.forEach((value, index) => {
-      const laneLeft = plotLeft + laneIndex * laneWidth;
-      const x = laneLeft + (index / Math.max(channel.bins.length - 1, 1)) * (laneWidth - 8);
-      const y = plotTop + plotHeight - (value / maxValue) * plotHeight;
-      if (index === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
+    const laneLeft = plotLeft + laneIndex * laneWidth + 4;
+    drawHistogramTrace(
+      ctx,
+      channel,
+      palette[channel.name],
+      robustHistogramPeak([channel]),
+      laneLeft,
+      plotTop,
+      Math.max(1, laneWidth - 8),
+      plotHeight,
+    );
   });
 }
 
@@ -1114,7 +1196,7 @@ function scopeTitleFor(scope) {
   if (scope.scope_type === "reference_nits_waveform") return `HDR Reference Waveform${suffix}`;
   if (scope.scope_type === "normalized_waveform") return `SDR Waveform${suffix}`;
   if (scope.scope_type === "reference_nits_histogram") return `Reference Nit Histogram${suffix}`;
-  return "SDR Histogram";
+  return `SDR Histogram${suffix}`;
 }
 
 function hexToRgb(value) {
@@ -1149,7 +1231,13 @@ function buildExportOutputPath() {
   const filename = sanitizeFilename(els.exportFilename.value || "hdr_finisher_export");
   const extension = exportExtensionForFormat(els.exportFormat.value);
   const directory = (els.exportDirectory.value || "").trim();
-  return directory ? `${directory}\\${filename}${extension}` : `${filename}${extension}`;
+  return joinExportPath(directory, `${filename}${extension}`);
+}
+
+function joinExportPath(directory, filename) {
+  if (!directory) return filename;
+  const separator = directory.includes("\\") && !directory.includes("/") ? "\\" : "/";
+  return `${directory.replace(/[\\/]$/, "")}${separator}${filename}`;
 }
 
 function sanitizeFilename(value) {
@@ -1165,11 +1253,12 @@ function exportExtensionForFormat(format) {
 
 function splitOutputPath(path) {
   const normalized = String(path || "");
+  const separator = normalized.includes("\\") && !normalized.includes("/") ? "\\" : "/";
   const parts = normalized.split(/[/\\]/);
   const filename = parts.pop() || "";
   return {
     filename: filename.replace(/\.[^.]+$/, ""),
-    directory: parts.join("\\"),
+    directory: parts.join(separator),
   };
 }
 
@@ -1179,52 +1268,64 @@ async function exportCurrentSession() {
   els.exportConfirmButton.disabled = true;
   els.exportStatus.textContent = "Encoding and validating the finished file…";
   els.exportResult.classList.add("hidden");
-  const response = await fetch(`/api/session/${state.session.session_id}/export`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      format: els.exportFormat.value,
-      quality: Number(els.exportQuality.value),
-      output_path: outputPath,
-    }),
-  });
-  const payload = await safeJson(response);
-  els.exportConfirmButton.disabled = false;
-  if (!response.ok) {
-    els.exportStatus.textContent = payload?.detail || "Export failed.";
-    return;
-  }
-  els.exportStatus.textContent = payload.message || "Export request finished.";
-  if (payload.output_path) {
-    const parsed = splitOutputPath(payload.output_path);
-    els.exportFilename.value = parsed.filename;
-    els.exportDirectory.value = parsed.directory;
-    state.lastExportPath = payload.output_path;
-    els.exportResultPath.textContent = payload.output_path;
-    els.exportResult.classList.remove("hidden");
+  try {
+    const response = await fetch(`/api/session/${state.session.session_id}/export`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        format: els.exportFormat.value,
+        quality: Number(els.exportQuality.value),
+        output_path: outputPath,
+      }),
+    });
+    const payload = await safeJson(response);
+    if (!response.ok) {
+      els.exportStatus.textContent = payload?.detail || "Export failed.";
+      return;
+    }
+    els.exportStatus.textContent = payload.message || "Export request finished.";
+    if (payload.output_path) {
+      const parsed = splitOutputPath(payload.output_path);
+      els.exportFilename.value = parsed.filename;
+      els.exportDirectory.value = parsed.directory;
+      state.lastExportPath = payload.output_path;
+      els.exportResultPath.textContent = payload.output_path;
+      els.exportResult.classList.remove("hidden");
+    }
+  } catch (error) {
+    console.error(error);
+    els.exportStatus.textContent = "Export could not reach the local HDR Finisher server.";
+  } finally {
+    els.exportConfirmButton.disabled = false;
   }
 }
 
 async function chooseExportDirectory() {
   els.exportDirectoryBrowse.disabled = true;
   els.exportStatus.textContent = "Opening folder picker...";
-  const response = await fetch("/api/export-directory", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ initial_directory: els.exportDirectory.value || null }),
-  });
-  const payload = await safeJson(response);
-  els.exportDirectoryBrowse.disabled = false;
-  if (!response.ok) {
-    els.exportStatus.textContent = payload?.detail || "Folder picker failed.";
-    return;
+  try {
+    const response = await fetch("/api/export-directory", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ initial_directory: els.exportDirectory.value || null }),
+    });
+    const payload = await safeJson(response);
+    if (!response.ok) {
+      els.exportStatus.textContent = payload?.detail || "Folder picker failed.";
+      return;
+    }
+    if (payload?.directory) {
+      els.exportDirectory.value = payload.directory;
+      els.exportStatus.textContent = `Save folder set to ${payload.directory}`;
+      return;
+    }
+    els.exportStatus.textContent = "Folder selection cancelled.";
+  } catch (error) {
+    console.error(error);
+    els.exportStatus.textContent = "Folder picker could not reach the local HDR Finisher server.";
+  } finally {
+    els.exportDirectoryBrowse.disabled = false;
   }
-  if (payload?.directory) {
-    els.exportDirectory.value = payload.directory;
-    els.exportStatus.textContent = `Save folder set to ${payload.directory}`;
-    return;
-  }
-  els.exportStatus.textContent = "Folder selection cancelled.";
 }
 
 async function applyInterpretationOverride() {
@@ -1232,28 +1333,35 @@ async function applyInterpretationOverride() {
   const override = interpretationPayload();
   els.badge.textContent = "Re-interpreting source file...";
   setPreviewMessage("Rebuilding preview with the new interpretation...");
-  const response = await fetch(`/api/session/${state.session.session_id}/interpretation`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(override),
-  });
-  const payload = await safeJson(response);
-  if (!response.ok || !payload?.session) {
-    els.badge.textContent = payload?.detail || "Interpretation override failed.";
+  try {
+    const response = await fetch(`/api/session/${state.session.session_id}/interpretation`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(override),
+    });
+    const payload = await safeJson(response);
+    if (!response.ok || !payload?.session) {
+      els.badge.textContent = payload?.detail || "Interpretation override failed.";
+      els.badge.className = "badge bad";
+      setPreviewError(payload?.detail || "Interpretation override failed.");
+      return;
+    }
+    state.session = payload.session;
+    state.adjustments = payload.session.adjustments;
+    state.interpretationGateDismissed = false;
+    invalidatePreview("hdr");
+    invalidatePreview("sdr");
+    renderSession();
+    await refreshPreview();
+    await refreshOverlay();
+    await refreshScopes();
+    prepareInactivePreview();
+  } catch (error) {
+    console.error(error);
+    els.badge.textContent = "Interpretation override could not reach the local HDR Finisher server.";
     els.badge.className = "badge bad";
-    setPreviewError(payload?.detail || "Interpretation override failed.");
-    return;
+    setPreviewError(els.badge.textContent);
   }
-  state.session = payload.session;
-  state.adjustments = payload.session.adjustments;
-  state.interpretationGateDismissed = false;
-  invalidatePreview("hdr");
-  invalidatePreview("sdr");
-  renderSession();
-  await refreshPreview();
-  await refreshOverlay();
-  await refreshScopes();
-  prepareInactivePreview();
 }
 
 async function resetInterpretationToAuto() {

@@ -11,6 +11,7 @@ import numpy as np
 
 from .adjustments import apply_adjustments
 from .binaries import resolve_binary
+from .color import acescg_to_linear_bt2020
 from .config import EXPORTS_DIR, SAMPLES_DIR
 from .models import AdjustmentState, CapabilityInfo, CapabilityStatus, ExportResponse, ExportSettings, PreviewKind
 from .test_pattern import build_hdr_test_pattern
@@ -97,7 +98,12 @@ class AVIFGainMapExportBackend(ExportBackend):
             sdr_reference_image=getattr(session, "sdr_reference_image", None),
         )
 
+        staged_output: Path | None = None
         try:
+            with NamedTemporaryFile(
+                prefix=f".{output_path.stem}.", suffix=".gainmap.tmp.avif", dir=output_path.parent, delete=False
+            ) as staged_file:
+                staged_output = Path(staged_file.name)
             with TemporaryDirectory(prefix="hdr_finisher_export_") as temp_dir_name:
                 temp_dir = Path(temp_dir_name)
                 base_path = temp_dir / "base.png"
@@ -127,21 +133,28 @@ class AVIFGainMapExportBackend(ExportBackend):
                         "combine",
                         str(base_path),
                         str(hdr_avif_path),
-                        str(output_path),
+                        str(staged_output),
                         "--cicp-base",
                         "1/13/0",
                         "--cicp-alternate",
                         "9/16/9",
                         "--depth-gain-map",
                         "10",
+                        "--qgain-map",
+                        str(int(settings.quality)),
+                        "--max-headroom",
+                        "0",
                         "-q",
                         str(int(settings.quality)),
                     ]
                 )
-        except ExportProcessError as exc:
+            validation = _validate_avif_output(staged_output)
+            os.replace(staged_output, output_path)
+            staged_output = None
+        except (ExportProcessError, OSError, ValueError) as exc:
+            _remove_incomplete_output(staged_output)
             return ExportResponse(accepted=False, backend=self.name, message=str(exc), output_path=str(output_path))
 
-        validation = _validate_avif_output(output_path)
         message = f"AVIF gain map export finished at {output_path}"
         if validation:
             message = f"{message}. {validation}"
@@ -237,6 +250,8 @@ def _resolve_output_path(session_id: str, settings: ExportSettings, suffix: str)
         target = Path(settings.output_path)
         if target.suffix.lower() != suffix:
             target = target.with_suffix(suffix)
+        if not target.is_absolute():
+            target = EXPORTS_DIR / target
     else:
         target = EXPORTS_DIR / f"{session_id}{suffix}"
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -280,18 +295,9 @@ def _write_hdr_linear_rgba_f16(path: Path, image: np.ndarray) -> None:
 
 def _acescg_to_bt2020_linear(image: np.ndarray) -> np.ndarray:
     try:
-        from colour import RGB_COLOURSPACES
-        from colour.models import RGB_to_RGB
+        return acescg_to_linear_bt2020(image)
     except ImportError as exc:
         raise ExportProcessError("colour-science is required for JPEG Ultra HDR color conversion.") from exc
-
-    converted = RGB_to_RGB(
-        image.astype(np.float32, copy=False),
-        RGB_COLOURSPACES["ACEScg"],
-        RGB_COLOURSPACES["ITU-R BT.2020"],
-        chromatic_adaptation_transform="CAT02",
-    )
-    return np.asarray(converted, dtype=np.float32)
 
 
 def _target_hdr_peak_nits(image: np.ndarray) -> float:
@@ -447,7 +453,8 @@ def _linear_to_pq_rgb10(image: np.ndarray) -> np.ndarray:
 
 
 def _linear_to_bt2020_pq_yuv10(image: np.ndarray) -> np.ndarray:
-    pq_rgb = _linear_to_pq_rgb10(image).astype(np.float32) / 1023.0
+    linear_bt2020 = _acescg_to_bt2020_linear(image)
+    pq_rgb = _linear_to_pq_rgb10(linear_bt2020).astype(np.float32) / 1023.0
 
     r = pq_rgb[..., 0]
     g = pq_rgb[..., 1]
@@ -496,10 +503,11 @@ def _validate_avif_output(path: Path) -> str | None:
         return None
     result = subprocess.run([str(avifdec), "--info", str(path)], capture_output=True, text=True, check=False)
     if result.returncode != 0:
-        return "Output was written, but avifdec validation could not confirm it."
+        detail = result.stderr.strip() or result.stdout.strip() or "avifdec could not decode the result."
+        raise ExportProcessError(f"AVIF validation failed: {detail}")
     if "Gain map" in result.stdout:
         return "Validated with avifdec."
-    return "Output was written, but gain map metadata could not be confirmed."
+    raise ExportProcessError("AVIF validation did not find an embedded gain map.")
 
 
 def export_sample_hdr_reference(output_path: Path | None = None) -> ExportResponse:

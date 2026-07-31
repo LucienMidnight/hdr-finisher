@@ -7,6 +7,12 @@ $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $QaDir = Join-Path $Root "output\qa"
 New-Item -ItemType Directory -Force -Path $QaDir | Out-Null
+$VenvPython = Join-Path $Root ".venv\Scripts\python.exe"
+$Python = if (Test-Path -LiteralPath $VenvPython) {
+    $VenvPython
+} else {
+    (Get-Command python -ErrorAction Stop).Source
+}
 
 $summary = [ordered]@{
     generated_at = (Get-Date).ToString("o")
@@ -85,10 +91,10 @@ function Join-ProcessArguments {
 
 Push-Location $Root
 try {
-    Invoke-QaStep "pytest" { Invoke-LoggedCommand "pytest" "python" @("-m", "pytest", "-q", "tests") }
+    Invoke-QaStep "pytest" { Invoke-LoggedCommand "pytest" $Python @("-m", "pytest", "-q", "tests") }
     Invoke-QaStep "node-check" { Invoke-LoggedCommand "node-check" "node" @("--check", "frontend\app.js") }
     Invoke-QaStep "capabilities" {
-        $capabilityJson = & python "tools\check_capabilities.py"
+        $capabilityJson = & $Python "tools\check_capabilities.py"
         if ($LASTEXITCODE -ne 0) {
             throw "Capability check failed."
         }
@@ -97,9 +103,9 @@ try {
     }
     if (-not $SkipSampleExport) {
         $sampleOutput = Join-Path $QaDir "hdr_reference.avif"
-        Invoke-QaStep "sample-export" { Invoke-LoggedCommand "sample-export" "python" @("tools\generate_hdr_reference.py", "--output", $sampleOutput) }
+        Invoke-QaStep "sample-export" { Invoke-LoggedCommand "sample-export" $Python @("tools\generate_hdr_reference.py", "--output", $sampleOutput) }
         Invoke-QaStep "sample-avif-info" {
-            Invoke-LoggedCommand "sample-avif-info" "python" @(
+            Invoke-LoggedCommand "sample-avif-info" $Python @(
                 "tools\avif_info.py",
                 $sampleOutput,
                 "--json",
@@ -110,7 +116,7 @@ try {
             $ultraHdrOutput = Join-Path $QaDir "hdr_reference_ultrahdr.jpg"
             $ultraHdrJson = Join-Path $QaDir "hdr_reference_ultrahdr.json"
             Invoke-QaStep "sample-ultrahdr-export-validate" {
-                Invoke-LoggedCommand "sample-ultrahdr-export-validate" "python" @(
+                Invoke-LoggedCommand "sample-ultrahdr-export-validate" $Python @(
                     "tools\generate_ultrahdr_reference.py",
                     "--output", $ultraHdrOutput,
                     "--json", $ultraHdrJson

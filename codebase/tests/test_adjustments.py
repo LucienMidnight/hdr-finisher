@@ -26,6 +26,37 @@ def test_gentle_contrast_negative_at_max_slider_stays_in_range() -> None:
     assert output.max() <= 1.0, "SDR negative contrast should not exceed 1.0"
 
 
+def test_sdr_contrast_is_gentle_for_scene_linear_midtones() -> None:
+    levels = np.array([0.03, 0.08, 0.18, 0.35, 0.7], dtype=np.float32)
+    image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
+    baseline = _apply_sdr_adjustments(
+        image,
+        AdjustmentState(sdr=SDRAdjustments(highlight_recovery=0.0)),
+    )
+    contrasted = _apply_sdr_adjustments(
+        image,
+        AdjustmentState(sdr=SDRAdjustments(contrast=0.25, highlight_recovery=0.0)),
+    )
+
+    assert np.all(np.diff(contrasted[0, :, 0]) > 0.0)
+    assert 0.0 < float(np.max(np.abs(contrasted - baseline))) < 0.08
+
+
+def test_sdr_lift_is_a_fine_perceptual_shadow_adjustment() -> None:
+    image = np.full((2, 2, 3), 0.03, dtype=np.float32)
+    baseline = _apply_sdr_adjustments(
+        image,
+        AdjustmentState(sdr=SDRAdjustments(highlight_recovery=0.0)),
+    )
+    lifted = _apply_sdr_adjustments(
+        image,
+        AdjustmentState(sdr=SDRAdjustments(lift=0.1, highlight_recovery=0.0)),
+    )
+
+    change = float(np.max(lifted - baseline))
+    assert 0.0 < change < 0.02
+
+
 def test_sdr_shadow_multiplier_is_gentle() -> None:
     state = AdjustmentState(sdr=SDRAdjustments(shadow=1.0))
     image = np.ones((4, 4, 3), dtype=np.float32) * 0.3
@@ -294,7 +325,7 @@ def test_single_sdr_exposure_step_is_continuous_for_wide_exr() -> None:
         (PreviewKind.SDR, "sdr.exposure", 0.05),
         (PreviewKind.SDR, "sdr.highlight_recovery", 0.01),
         (PreviewKind.SDR, "sdr.shadow", 0.01),
-        (PreviewKind.SDR, "sdr.lift", 0.005),
+        (PreviewKind.SDR, "sdr.lift", 0.002),
         (PreviewKind.SDR, "sdr.gamma", 0.005),
         (PreviewKind.SDR, "sdr.gain", 0.005),
         (PreviewKind.SDR, "sdr.contrast", 0.001),
@@ -324,7 +355,7 @@ def test_one_slider_step_is_finite_ordered_and_gradual(kind: PreviewKind, path: 
         ("sdr.exposure", 0.05),
         ("sdr.highlight_recovery", 0.01),
         ("sdr.shadow", 0.01),
-        ("sdr.lift", 0.005),
+        ("sdr.lift", 0.002),
         ("sdr.gamma", 0.005),
         ("sdr.gain", 0.005),
         ("sdr.contrast", 0.001),

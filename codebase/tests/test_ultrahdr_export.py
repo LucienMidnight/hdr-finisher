@@ -12,6 +12,7 @@ import hdr_finisher.binaries as binaries
 import hdr_finisher.capabilities as capability_module
 import hdr_finisher.exporters as exporter_module
 from hdr_finisher.exporters import (
+    AVIFGainMapExportBackend,
     ExportProcessError,
     JPEGUltraHDRExportBackend,
     _build_ultrahdr_encode_command,
@@ -175,6 +176,94 @@ def test_encoder_failure_cleans_staged_file_and_preserves_existing_output(monkey
     assert "encoder exploded" in result.message
     assert output.read_bytes() == b"previous-good-export"
     assert list(tmp_path.glob(".*.ultrahdr.tmp.jpg")) == []
+
+
+def test_avif_export_applies_quality_to_gain_map_and_replaces_atomically(monkeypatch, tmp_path: Path) -> None:
+    binaries_by_name = {}
+    for name in ("avifenc", "avifgainmaputil"):
+        binary = tmp_path / f"{name}.exe"
+        binary.write_bytes(b"test")
+        binaries_by_name[name] = binary
+    output = tmp_path / "existing.avif"
+    output.write_bytes(b"previous-good-export")
+    commands: list[list[str]] = []
+
+    def fake_run(command: list[str]):
+        commands.append(command)
+        if command[1] == "combine":
+            Path(command[4]).write_bytes(b"complete-gain-map-avif")
+        else:
+            Path(command[-1]).write_bytes(b"alternate-avif")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(exporter_module, "resolve_binary", lambda name: binaries_by_name.get(name))
+    monkeypatch.setattr(exporter_module, "_write_sdr_png", lambda path, _image: path.write_bytes(b"base"))
+    monkeypatch.setattr(exporter_module, "_write_hdr_y4m", lambda path, _image: path.write_bytes(b"hdr"))
+    monkeypatch.setattr(exporter_module, "_run_command", fake_run)
+    monkeypatch.setattr(exporter_module, "_validate_avif_output", lambda _path: "validated")
+
+    result = AVIFGainMapExportBackend(_available_capability()).export(
+        _session(), ExportSettings(format="avif_gain_map", quality=91, output_path=str(output))
+    )
+
+    assert result.accepted is True
+    assert output.read_bytes() == b"complete-gain-map-avif"
+    combine = next(command for command in commands if command[1] == "combine")
+    assert combine[combine.index("--qgain-map") + 1] == "91"
+    assert combine[combine.index("--max-headroom") + 1] == "0"
+    assert Path(combine[4]) != output
+    assert list(tmp_path.glob(".*.gainmap.tmp.avif")) == []
+
+
+def test_avif_failure_preserves_existing_output_and_removes_partial_stage(monkeypatch, tmp_path: Path) -> None:
+    binary = tmp_path / "encoder.exe"
+    binary.write_bytes(b"test")
+    output = tmp_path / "existing.avif"
+    output.write_bytes(b"previous-good-export")
+
+    def failing_run(command: list[str]):
+        if command[1] == "combine":
+            Path(command[4]).write_bytes(b"partial")
+            raise ExportProcessError("gain map encoder exploded")
+        Path(command[-1]).write_bytes(b"alternate-avif")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(exporter_module, "resolve_binary", lambda _name: binary)
+    monkeypatch.setattr(exporter_module, "_write_sdr_png", lambda path, _image: path.write_bytes(b"base"))
+    monkeypatch.setattr(exporter_module, "_write_hdr_y4m", lambda path, _image: path.write_bytes(b"hdr"))
+    monkeypatch.setattr(exporter_module, "_run_command", failing_run)
+
+    result = AVIFGainMapExportBackend(_available_capability()).export(
+        _session(), ExportSettings(format="avif_gain_map", quality=85, output_path=str(output))
+    )
+
+    assert result.accepted is False
+    assert "encoder exploded" in result.message
+    assert output.read_bytes() == b"previous-good-export"
+    assert list(tmp_path.glob(".*.gainmap.tmp.avif")) == []
+
+
+def test_relative_export_path_is_anchored_in_export_directory(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(exporter_module, "EXPORTS_DIR", tmp_path)
+    resolved = exporter_module._resolve_output_path(
+        "session", ExportSettings(format="avif_gain_map", output_path="nested/result"), ".avif"
+    )
+    assert Path(resolved) == (tmp_path / "nested" / "result.avif").resolve()
+
+
+def test_avif_validation_rejects_file_without_gain_map(monkeypatch, tmp_path: Path) -> None:
+    output = tmp_path / "plain.avif"
+    output.write_bytes(b"plain")
+    decoder = tmp_path / "avifdec.exe"
+    decoder.write_bytes(b"test")
+    monkeypatch.setattr(exporter_module, "resolve_binary", lambda _name: decoder)
+    monkeypatch.setattr(
+        exporter_module.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args=args[0], returncode=0, stdout="Image decoded", stderr=""),
+    )
+    with pytest.raises(ExportProcessError, match="embedded gain map"):
+        exporter_module._validate_avif_output(output)
 
 
 def test_marker_and_legacy_validation_accepts_both_metadata_formats(monkeypatch, tmp_path: Path) -> None:

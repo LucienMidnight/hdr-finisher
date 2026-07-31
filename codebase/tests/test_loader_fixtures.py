@@ -3,10 +3,18 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import tifffile
+from PIL import Image, ImageCms
 
 from conftest import fixture_path
 
-from hdr_finisher.loader import LoaderError, _classify_icc_profile_name, _load_tiff, load_image
+from hdr_finisher.loader import (
+    LoaderError,
+    _classify_icc_profile_name,
+    _load_tiff,
+    _normalize_tiff_layout,
+    _select_exr_rgb_channels,
+    load_image,
+)
 from hdr_finisher.models import HDRClassification
 
 
@@ -26,7 +34,53 @@ def test_load_real_tiff_fixture_with_hdr_headroom() -> None:
     assert metadata["bit_depth"] == "float32"
     assert analysis.classification == HDRClassification.HDR_TRUE
     assert analysis.peak_linear > 1.0
+    assert source.source_color_space is None
+    assert source.color_space_confident is False
+    np.testing.assert_allclose(image, tifffile.imread(fixture_path("hdr_headroom.tiff")))
     assert sdr_reference is None
+
+
+def test_tiff_planar_and_multipage_layouts_are_normalized_to_first_hwc_image() -> None:
+    planar = np.stack([np.full((4, 6), channel, dtype=np.float32) for channel in (1, 2, 3)])
+    normalized_planar = _normalize_tiff_layout(planar, "SYX")
+    assert normalized_planar.shape == (4, 6, 3)
+    np.testing.assert_array_equal(normalized_planar[0, 0], [1, 2, 3])
+
+    multipage = np.stack([normalized_planar, normalized_planar + 10])
+    normalized_multipage = _normalize_tiff_layout(multipage, "QYXS")
+    np.testing.assert_array_equal(normalized_multipage, normalized_planar)
+
+
+def test_layered_exr_rgb_channels_prefer_combined_layer() -> None:
+    channels = ["ViewLayer.Albedo.R", "ViewLayer.Albedo.G", "ViewLayer.Albedo.B", "ViewLayer.Combined.B", "ViewLayer.Combined.R", "ViewLayer.Combined.G"]
+    assert _select_exr_rgb_channels(channels) == (
+        "ViewLayer.Combined.R",
+        "ViewLayer.Combined.G",
+        "ViewLayer.Combined.B",
+    )
+
+
+def test_pillow_import_applies_exif_orientation(tmp_path) -> None:
+    source_path = tmp_path / "rotated.jpg"
+    image = Image.new("RGB", (3, 2), (128, 64, 32))
+    exif = Image.Exif()
+    exif[274] = 6
+    image.save(source_path, exif=exif)
+
+    loaded, descriptor, *_ = load_image(source_path)
+    assert loaded.shape[:2] == (3, 2)
+    assert (descriptor.width, descriptor.height) == (2, 3)
+
+
+def test_pillow_import_converts_embedded_icc_profile_to_srgb(tmp_path) -> None:
+    source_path = tmp_path / "profiled.png"
+    profile = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+    Image.new("RGB", (4, 3), (128, 128, 128)).save(source_path, icc_profile=profile)
+
+    loaded, descriptor, metadata, *_ = load_image(source_path)
+    assert descriptor.source_color_space == "sRGB"
+    assert metadata["icc_converted_to_srgb"] is True
+    assert float(loaded.mean()) == pytest.approx(0.216, abs=0.01)
 
 
 def test_load_float_tiff_with_deflate_predictor(tmp_path) -> None:

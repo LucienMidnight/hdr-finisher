@@ -50,7 +50,7 @@ def _false_color_overlay(image: np.ndarray, adjustments: AdjustmentState, opacit
     preset = FALSE_COLOR_PRESETS.get(adjustments.shared.overlay_preset, FALSE_COLOR_PRESETS["web_1000_100"])
     reference_white = np.float32(preset["reference_white_nits"])
     peak_nits = np.float32(preset["peak_nits"])
-    luminance_nits = _luminance_nits(image)
+    luminance_nits = _luminance_nits(image, kind)
 
     bands = np.array(
         [
@@ -97,15 +97,21 @@ def _zebra_overlay(image: np.ndarray, opacity: np.float32, threshold: np.float32
 
 def _luminance(image: np.ndarray, kind: PreviewKind) -> np.ndarray:
     image = np.clip(image.astype(np.float32, copy=False), 0.0, None)
-    luminance = 0.2126 * image[..., 0] + 0.7152 * image[..., 1] + 0.0722 * image[..., 2]
+    if kind == PreviewKind.HDR:
+        luminance = 0.2722287 * image[..., 0] + 0.6740818 * image[..., 1] + 0.0536895 * image[..., 2]
+    else:
+        luminance = 0.2126 * image[..., 0] + 0.7152 * image[..., 1] + 0.0722 * image[..., 2]
     if kind == PreviewKind.HDR:
         return luminance / 0.18
     return np.clip(luminance, 0.0, 1.0)
 
 
-def _luminance_nits(image: np.ndarray) -> np.ndarray:
+def _luminance_nits(image: np.ndarray, kind: PreviewKind = PreviewKind.HDR) -> np.ndarray:
     image = np.clip(image.astype(np.float32, copy=False), 0.0, None)
-    luminance = 0.2126 * image[..., 0] + 0.7152 * image[..., 1] + 0.0722 * image[..., 2]
+    if kind == PreviewKind.HDR:
+        luminance = 0.2722287 * image[..., 0] + 0.6740818 * image[..., 1] + 0.0536895 * image[..., 2]
+    else:
+        luminance = 0.2126 * image[..., 0] + 0.7152 * image[..., 1] + 0.0722 * image[..., 2]
     return (luminance / 0.18) * 100.0
 
 

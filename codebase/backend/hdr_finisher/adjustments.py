@@ -32,7 +32,7 @@ def _apply_hdr_base_adjustments(image: np.ndarray, adjustments: AdjustmentState)
     result *= np.float32(2.0 ** hdr.exposure)
     result = _rolloff_scene_highlights(result, hdr.highlight_rolloff)
     if hdr.shadow_lift != 0:
-        luma = np.clip(0.2126 * result[..., 0] + 0.7152 * result[..., 1] + 0.0722 * result[..., 2], 0.0, 1.0)
+        luma = np.clip(_acescg_luma(result), 0.0, 1.0)
         lift_factor = np.clip(hdr.shadow_lift * (1.0 - luma), None, 1.0)
         result = result * (1.0 + lift_factor[..., None])
     result = _apply_white_balance(result, hdr.white_balance_kelvin, hdr.tint)
@@ -83,13 +83,19 @@ def _apply_luminance_section_controls(image: np.ndarray, branch_adjustments: obj
     if kind == PreviewKind.HDR:
         return _apply_scene_luminance_controls(image, branch_adjustments)
 
-    working = _curve_domain_encode(image.astype(np.float32, copy=True), kind)
-    luma = np.clip(0.2126 * working[..., 0] + 0.7152 * working[..., 1] + 0.0722 * working[..., 2], 0.0, 1.0)
+    # SDR primaries should feel perceptually uniform even though the pipeline stores
+    # linear-light pixels. Work on an encoded luma signal, then scale linear RGB
+    # together so the adjustment remains hue preserving.
+    working = np.clip(image.astype(np.float32, copy=True), 0.0, 1.0)
+    linear_luma = np.clip(_linear_luma(working), 0.0, 1.0)
+    luma = _srgb_encode(linear_luma)
     target_luma = luma.copy()
 
     if contrast != 0.0:
         pivot = _contrast_pivot_in_curve_domain(branch_adjustments, kind)
-        slope = np.float32(2.0 ** contrast)
+        # A full slider unit is one half-stop of contrast slope. The previous
+        # one-stop mapping was excessively strong for scene-linear sources.
+        slope = np.float32(2.0 ** (contrast * 0.5))
         target_luma = (target_luma - pivot) * slope + pivot
 
     shadow_mask = 1.0 - _smoothstep(0.05, 0.65, luma)
@@ -97,7 +103,9 @@ def _apply_luminance_section_controls(image: np.ndarray, branch_adjustments: obj
     midtone_mask = np.clip(1.0 - np.abs(luma - 0.5) / 0.42, 0.0, 1.0) ** 2
 
     if lift != 0.0:
-        target_luma += np.float32(lift) * shadow_mask
+        # Lift is an intentionally fine toe offset rather than a direct linear
+        # addition. At full travel it moves the encoded black region by 0.125.
+        target_luma += np.float32(lift * 0.25) * shadow_mask
     if gamma != 0.0:
         exponent = np.float32(2.0 ** (-gamma))
         gamma_mapped = np.power(np.clip(target_luma, 0.0, 1.0), exponent)
@@ -108,16 +116,23 @@ def _apply_luminance_section_controls(image: np.ndarray, branch_adjustments: obj
         else:
             target_luma += np.float32(gain) * highlight_mask * target_luma
 
-    target_luma = np.clip(target_luma, 0.0, 1.0)
-    luma_ratio = np.where(luma > 1e-5, target_luma / np.maximum(luma, 1e-5), 0.0).astype(np.float32)
-    working = np.where(luma[..., None] > 1e-5, working * luma_ratio[..., None], target_luma[..., None])
-    return _curve_domain_decode(np.clip(working, 0.0, 1.0), kind)
+    target_linear_luma = _srgb_decode(np.clip(target_luma, 0.0, 1.0))
+    luma_ratio = np.where(
+        linear_luma > 1e-6,
+        target_linear_luma / np.maximum(linear_luma, 1e-6),
+        0.0,
+    ).astype(np.float32)
+    return np.where(
+        linear_luma[..., None] > 1e-6,
+        working * luma_ratio[..., None],
+        target_linear_luma[..., None],
+    )
 
 
 def _apply_scene_luminance_controls(image: np.ndarray, branch_adjustments: object) -> np.ndarray:
     """Apply HDR primary controls as smooth stop offsets in scene-linear light."""
     result = image.astype(np.float32, copy=True)
-    luma = _linear_luma(result)
+    luma = _acescg_luma(result)
     positive_luma = np.clip(luma, 0.0, None)
     pivot = np.float32(max(float(getattr(branch_adjustments, "contrast_pivot", 0.1845)), 1e-6))
     stops = np.log2(np.maximum(positive_luma, 1e-8) / pivot)
@@ -159,7 +174,7 @@ def _rolloff_scene_highlights(image: np.ndarray, strength: float) -> np.ndarray:
     if strength <= 0.0:
         return image
     result = image.astype(np.float32, copy=False)
-    luma = _linear_luma(result)
+    luma = _acescg_luma(result)
     positive_luma = np.clip(luma, 0.0, None)
     highlight_stops = np.log2(np.maximum(positive_luma, 1.0))
     compressed_stops = highlight_stops / (1.0 + np.float32(strength) * highlight_stops / 40.0)
@@ -237,6 +252,24 @@ def _acescg_luma(image: np.ndarray) -> np.ndarray:
     return 0.2722287 * image[..., 0] + 0.6740818 * image[..., 1] + 0.0536895 * image[..., 2]
 
 
+def _srgb_encode(value: np.ndarray) -> np.ndarray:
+    positive = np.clip(value.astype(np.float32, copy=False), 0.0, 1.0)
+    return np.where(
+        positive <= 0.0031308,
+        positive * np.float32(12.92),
+        np.float32(1.055) * np.power(positive, np.float32(1.0 / 2.4)) - np.float32(0.055),
+    ).astype(np.float32)
+
+
+def _srgb_decode(value: np.ndarray) -> np.ndarray:
+    encoded = np.clip(value.astype(np.float32, copy=False), 0.0, 1.0)
+    return np.where(
+        encoded <= 0.04045,
+        encoded / np.float32(12.92),
+        np.power((encoded + np.float32(0.055)) / np.float32(1.055), np.float32(2.4)),
+    ).astype(np.float32)
+
+
 def _contrast_pivot_in_curve_domain(branch_adjustments: object, kind: PreviewKind) -> np.float32:
     pivot = float(getattr(branch_adjustments, "contrast_pivot", 0.5))
     if kind == PreviewKind.HDR:
@@ -280,7 +313,7 @@ def _apply_curve_set(image: np.ndarray, curve_source: object, kind: PreviewKind)
     blue_lut_x, blue_lut_y = _build_curve_lut(blue_curve)
     luma_lut_x, luma_lut_y = _build_curve_lut(luma_curve)
 
-    luma = _linear_luma(working)
+    luma = _acescg_luma(working) if kind == PreviewKind.HDR else _linear_luma(working)
     curve_luma = np.clip(luma, 0.0, 1.0)
     interpolated_luma = np.interp(curve_luma, luma_lut_x, luma_lut_y, left=luma_y[0], right=luma_y[-1]).astype(np.float32)
     mapped_luma = np.where((luma >= 0.0) & (luma <= 1.0), interpolated_luma, luma)

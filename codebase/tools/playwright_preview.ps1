@@ -58,10 +58,15 @@ $serverStarted = $false
 $serverProcess = $null
 
 if (-not (Test-AppHealth $baseUri)) {
-    $python = Get-Command python -ErrorAction Stop
+    $venvPython = Join-Path $Root ".venv\Scripts\python.exe"
+    $pythonPath = if (Test-Path -LiteralPath $venvPython) {
+        $venvPython
+    } else {
+        (Get-Command python -ErrorAction Stop).Source
+    }
     $stderr = Join-Path $OutputDir "server.stderr.log"
     $processInfo = New-Object System.Diagnostics.ProcessStartInfo
-    $processInfo.FileName = $python.Source
+    $processInfo.FileName = $pythonPath
     $processInfo.Arguments = "run_app.py"
     $processInfo.WorkingDirectory = $Root
     $processInfo.UseShellExecute = $false

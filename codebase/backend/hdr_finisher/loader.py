@@ -42,6 +42,8 @@ def load_image(
 
     if image.ndim == 2:
         image = image[..., None]
+    if image.ndim != 3:
+        raise LoaderError(f"Decoded image has unsupported dimensions {image.shape}; expected a single 2D image.")
     if image.shape[2] == 1:
         image = np.repeat(image, 3, axis=2)
     if image.shape[2] > 3:
@@ -78,16 +80,39 @@ def load_image(
 
 def _load_with_pillow(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
     try:
-        from PIL import Image
+        from PIL import Image, ImageOps
     except ImportError as exc:
         raise LoaderError("Pillow is required for bitmap input formats.") from exc
 
     with Image.open(path) as img:
-        image = img.convert("RGB")
         metadata = dict(img.info)
+        oriented = ImageOps.exif_transpose(img)
+        icc_profile = metadata.get("icc_profile")
+        if icc_profile:
+            profile_name = _read_icc_profile_name(icc_profile)
+            metadata["icc_profile_name"] = profile_name
+            try:
+                from PIL import ImageCms
+
+                image = ImageCms.profileToProfile(
+                    oriented,
+                    ImageCms.ImageCmsProfile(BytesIO(icc_profile)),
+                    ImageCms.createProfile("sRGB"),
+                    outputMode="RGB",
+                )
+                metadata["source_icc_profile_name"] = profile_name
+                metadata["color_space"] = "sRGB"
+                metadata["transfer_function"] = "sRGB"
+                metadata["icc_converted_to_srgb"] = True
+            except Exception:
+                image = oriented.convert("RGB")
+                metadata["color_space"] = _classify_icc_profile_name(profile_name)
+                metadata["needs_color_override"] = metadata["color_space"] == "unknown"
+        else:
+            image = oriented.convert("RGB")
+            metadata["color_space"] = "sRGB"
         array = np.asarray(image)
         metadata["bit_depth"] = str(array.dtype)
-        metadata["color_space"] = metadata.get("icc_profile_name", metadata.get("srgb", "sRGB"))
         normalized = array.astype(np.float32) / 255.0
     return normalized, metadata
 
@@ -99,13 +124,16 @@ def _load_tiff(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
         raise LoaderError("tifffile is required for TIFF input.") from exc
 
     with tifffile.TiffFile(path) as tif:
-        array = tif.asarray()
+        series = tif.series[0]
+        array = series.asarray()
+        array = _normalize_tiff_layout(array, getattr(series, "axes", None))
         page = tif.pages[0]
         metadata = {
             "bit_depth": str(array.dtype),
             "color_space": "unknown",
             "transfer_function": None,
             "photometric": str(getattr(page, "photometric", "unknown")),
+            "series_axes": str(getattr(series, "axes", "")),
             "needs_color_override": True,
         }
         if getattr(page, "tags", None) is not None:
@@ -122,6 +150,37 @@ def _load_tiff(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
     else:
         normalized = array.astype(np.float32)
     return normalized, metadata
+
+
+def _normalize_tiff_layout(array: np.ndarray, axes: str | None) -> np.ndarray:
+    """Return the first TIFF image as HxWxC regardless of page/sample layout."""
+    result = np.asarray(array)
+    labels = list(str(axes or "").upper())
+
+    if labels and len(labels) == result.ndim and "Y" in labels and "X" in labels:
+        channel_axis = next((index for index, label in enumerate(labels) if label in {"S", "C"}), None)
+        keep = {labels.index("Y"), labels.index("X")}
+        if channel_axis is not None:
+            keep.add(channel_axis)
+        for axis in range(result.ndim - 1, -1, -1):
+            if axis not in keep:
+                result = np.take(result, 0, axis=axis)
+                labels.pop(axis)
+                keep = {index - (1 if index > axis else 0) for index in keep if index != axis}
+        y_axis = labels.index("Y")
+        x_axis = labels.index("X")
+        channel_axis = next((index for index, label in enumerate(labels) if label in {"S", "C"}), None)
+        order = [y_axis, x_axis] + ([channel_axis] if channel_axis is not None else [])
+        result = np.transpose(result, order)
+    elif result.ndim == 3 and result.shape[0] in {1, 2, 3, 4} and result.shape[-1] not in {1, 2, 3, 4}:
+        result = np.moveaxis(result, 0, -1)
+    elif result.ndim > 3:
+        while result.ndim > 3:
+            result = result[0]
+
+    if result.ndim not in {2, 3}:
+        raise LoaderError(f"Unsupported TIFF sample layout {array.shape} with axes '{axes or 'unknown'}'.")
+    return result
 
 
 def _read_icc_profile_name(profile_data: bytes) -> str:
@@ -155,22 +214,29 @@ def _load_exr(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
         raise LoaderError("OpenEXR bindings are required for EXR input.") from exc
 
     file = OpenEXR.InputFile(str(path))
-    header = file.header()
-    dw = header["dataWindow"]
-    width = dw.max.x - dw.min.x + 1
-    height = dw.max.y - dw.min.y + 1
-    float_type = Imath.PixelType(Imath.PixelType.FLOAT)
-    channels = []
-    for name in ("R", "G", "B"):
-        channel = np.frombuffer(file.channel(name, float_type), dtype=np.float32)
-        channels.append(channel.reshape(height, width))
-    image = np.stack(channels, axis=-1)
+    try:
+        header = file.header()
+        dw = header["dataWindow"]
+        width = dw.max.x - dw.min.x + 1
+        height = dw.max.y - dw.min.y + 1
+        float_type = Imath.PixelType(Imath.PixelType.FLOAT)
+        channel_names = _select_exr_rgb_channels(header.get("channels", {}).keys())
+        channels = []
+        for name in channel_names:
+            channel = np.frombuffer(file.channel(name, float_type), dtype=np.float32)
+            channels.append(channel.reshape(height, width))
+        image = np.stack(channels, axis=-1)
+    finally:
+        close = getattr(file, "close", None)
+        if callable(close):
+            close()
     chromaticities_name, chromaticities_raw, chromaticities_confident = _infer_exr_chromaticities(header.get("chromaticities"))
     metadata = {
         "bit_depth": "32f",
         "color_space": chromaticities_name,
         "transfer_function": "LINEAR",
         "header_keys": [str(key) for key in header.keys()],
+        "selected_rgb_channels": list(channel_names),
         "chromaticities_name": chromaticities_name,
         "chromaticities_raw": chromaticities_raw,
         "needs_color_override": not chromaticities_confident,
@@ -178,6 +244,28 @@ def _load_exr(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
     if not chromaticities_confident:
         metadata["color_space_note"] = "EXR chromaticities missing or ambiguous. Manual source interpretation is recommended."
     return image, metadata
+
+
+def _select_exr_rgb_channels(channel_names: Any) -> tuple[str, str, str]:
+    names = [str(name) for name in channel_names]
+    by_lower = {name.lower(): name for name in names}
+    if all(channel in by_lower for channel in ("r", "g", "b")):
+        return by_lower["r"], by_lower["g"], by_lower["b"]
+
+    groups: dict[str, dict[str, str]] = {}
+    for name in names:
+        if "." not in name:
+            continue
+        prefix, component = name.rsplit(".", 1)
+        component = component.lower()
+        if component in {"r", "g", "b"}:
+            groups.setdefault(prefix, {})[component] = name
+    complete = [(prefix, group) for prefix, group in groups.items() if all(channel in group for channel in ("r", "g", "b"))]
+    if complete:
+        prefix, group = sorted(complete, key=lambda item: ("combined" not in item[0].lower(), item[0].lower()))[0]
+        _ = prefix
+        return group["r"], group["g"], group["b"]
+    raise LoaderError(f"EXR does not contain an RGB channel set. Available channels: {', '.join(sorted(names))}")
 
 
 def _load_hdr_like(path: Path) -> tuple[np.ndarray, dict[str, Any]]:

@@ -23,6 +23,16 @@ def acescg_to_linear_srgb(image: np.ndarray) -> np.ndarray:
     return np.asarray(converted, dtype=np.float32)
 
 
+def acescg_to_linear_bt2020(image: np.ndarray) -> np.ndarray:
+    converted = RGB_to_RGB(
+        image.astype(np.float32, copy=False),
+        RGB_COLOURSPACES[ACESCG_COLOURSPACE],
+        RGB_COLOURSPACES[BT2020_COLOURSPACE],
+        chromatic_adaptation_transform="CAT02",
+    )
+    return np.asarray(converted, dtype=np.float32)
+
+
 def sanitize_array(image: np.ndarray) -> np.ndarray:
     image = np.nan_to_num(image.astype(np.float32, copy=False), nan=0.0, posinf=65504.0, neginf=0.0)
     return np.clip(image, 0.0, None)
@@ -59,7 +69,7 @@ def detect_color_space(metadata: dict[str, Any], suffix: str) -> str | None:
         return "Display P3"
     if "srgb" in text or "rec.709" in text or "bt.709" in text or "scene-linear" in text:
         return "sRGB"
-    if suffix == ".exr":
+    if suffix == ".exr" or metadata.get("needs_color_override"):
         return None
     return "sRGB"
 
@@ -67,6 +77,13 @@ def detect_color_space(metadata: dict[str, Any], suffix: str) -> str | None:
 def normalize_to_acescg(image: np.ndarray, source_color_space: str | None = None, transfer_function: str | None = None) -> np.ndarray:
     sanitized = sanitize_array(image)
     transfer = _canonical_transfer_function(transfer_function)
+
+    # Do not apply an irreversible gamut or transfer transform when the source
+    # primaries are explicitly unknown. PQ and HLG are standardized on BT.2020
+    # in the supported import paths, so those remain safe to normalize.
+    if source_color_space is None and transfer not in {"PQ", "HLG", "sRGB"}:
+        return sanitized
+
     colourspace = _canonical_colourspace(source_color_space, transfer)
 
     if transfer == "PQ":
@@ -76,7 +93,9 @@ def normalize_to_acescg(image: np.ndarray, source_color_space: str | None = None
     if colourspace == ACESCG_COLOURSPACE:
         return sanitized
     if colourspace in RGB_COLOURSPACES:
-        apply_cctf_decoding = colourspace == SRGB_COLOURSPACE and transfer is None
+        apply_cctf_decoding = transfer == "sRGB" or (
+            transfer is None and colourspace in {SRGB_COLOURSPACE, DISPLAY_P3_COLOURSPACE}
+        )
         converted = RGB_to_RGB(
             sanitized,
             colourspace,

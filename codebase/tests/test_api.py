@@ -6,7 +6,7 @@ from conftest import make_png_bytes
 from fastapi.testclient import TestClient
 
 from hdr_finisher.loader import LoaderError
-from hdr_finisher.main import app
+from hdr_finisher.main import app, store
 from hdr_finisher.models import ExportResponse, HDRAnalysis, HDRClassification, MetadataPayload, SessionPayload, SourceImageDescriptor
 
 
@@ -20,8 +20,8 @@ def test_capabilities_endpoint() -> None:
 
 
 def test_upload_creates_session(monkeypatch) -> None:
-    def fake_create_session(source_path: Path):
-        _ = source_path
+    def fake_create_session(source_path: Path, **_kwargs):
+        source_path.unlink()
         return SessionPayload(
             session_id="abc123",
             source=SourceImageDescriptor(
@@ -55,8 +55,10 @@ def test_upload_creates_session(monkeypatch) -> None:
 
 
 def test_upload_decode_failure_returns_json_detail(monkeypatch) -> None:
-    def fail_create_session(source_path: Path):
-        _ = source_path
+    observed: dict[str, Path] = {}
+
+    def fail_create_session(source_path: Path, **_kwargs):
+        observed["source_path"] = source_path
         raise LoaderError("Could not decode TIFF input: invalid floating-point predictor")
 
     monkeypatch.setattr("hdr_finisher.main.store.create_session", fail_create_session)
@@ -64,11 +66,13 @@ def test_upload_decode_failure_returns_json_detail(monkeypatch) -> None:
 
     assert response.status_code == 400
     assert response.json() == {"detail": "Could not decode TIFF input: invalid floating-point predictor"}
+    assert not observed["source_path"].exists()
 
 
 def test_real_png_upload_preview_and_scopes() -> None:
     upload = client.post("/api/session", files={"file": ("fixture.png", make_png_bytes(), "image/png")})
     assert upload.status_code == 200
+    assert upload.json()["session"]["source"]["filename"] == "fixture.png"
     session_id = upload.json()["session"]["session_id"]
 
     preview = client.post(
@@ -98,6 +102,30 @@ def test_real_png_upload_preview_and_scopes() -> None:
     waveform_payload = waveform.json()
     assert waveform_payload["scope_type"] == "reference_nits_waveform"
     assert len(waveform_payload["channels"][0]["grid"]) == 64
+
+
+def test_clearing_session_removes_owned_upload_temp_file() -> None:
+    upload = client.post("/api/session", files={"file": ("owned.png", make_png_bytes(), "image/png")})
+    assert upload.status_code == 200
+    staged_path = store.current().source_path
+    assert staged_path.exists()
+
+    response = client.delete("/api/session/current")
+    assert response.status_code == 200
+    assert not staged_path.exists()
+
+
+def test_source_interpretation_preserves_uploaded_filename() -> None:
+    upload = client.post("/api/session", files={"file": ("original-name.png", make_png_bytes(), "image/png")})
+    assert upload.status_code == 200
+    session_id = upload.json()["session"]["session_id"]
+
+    response = client.post(
+        f"/api/session/{session_id}/interpretation",
+        json={"color_space": "sRGB", "transfer_function": "sRGB"},
+    )
+    assert response.status_code == 200
+    assert response.json()["session"]["source"]["filename"] == "original-name.png"
 
 
 def test_overlay_endpoint_returns_png_when_enabled() -> None:

@@ -82,7 +82,7 @@ async function main() {
       "sdr.tone_contrast": 0.01,
       "sdr.tone_skew": 0.01,
       "sdr.shadow": 0.01,
-      "sdr.lift": 0.005,
+      "sdr.lift": 0.002,
       "sdr.gamma": 0.005,
       "sdr.gain": 0.005,
       "sdr.contrast": 0.001,

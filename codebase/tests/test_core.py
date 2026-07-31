@@ -82,6 +82,21 @@ def test_normalize_srgb_to_acescg_applies_real_transform() -> None:
     assert normalized[0, 0, 1] > 0.0
 
 
+def test_explicit_srgb_transfer_is_decoded_before_acescg_conversion() -> None:
+    image = np.full((1, 1, 3), 0.5, dtype=np.float32)
+    implicit = normalize_to_acescg(image, "sRGB", None)
+    explicit = normalize_to_acescg(image, "sRGB", "sRGB")
+
+    np.testing.assert_allclose(explicit, implicit, rtol=1e-6, atol=1e-6)
+    assert float(explicit.mean()) == pytest.approx(0.214, abs=0.002)
+
+
+def test_unidentified_linear_pixels_are_not_assumed_to_be_srgb() -> None:
+    image = np.array([[[0.25, 0.5, 2.0]]], dtype=np.float32)
+    normalized = normalize_to_acescg(image, None, "LINEAR")
+    np.testing.assert_array_equal(normalized, image)
+
+
 def test_normalize_pq_bt2020_to_acescg_creates_hdr_headroom() -> None:
     image = np.ones((1, 1, 3), dtype=np.float32) * 0.75
     normalized = normalize_to_acescg(image, "BT.2020", "PQ")
@@ -364,7 +379,7 @@ def test_hdr_scope_reports_reference_nits_and_stats() -> None:
     assert scope.x_axis == "reference_nits_log10"
     assert len(scope.guides) >= 5
     assert any(stat.label == "Peak" for stat in scope.stats)
-    assert len(scope.bin_edges) == 65
+    assert len(scope.bin_edges) == 257
     assert any(channel.name == "Y" for channel in scope.channels)
 
 
@@ -373,6 +388,12 @@ def test_reference_nits_anchor_matches_prd_values() -> None:
     nits = _rgb_to_reference_nits(image)
     assert np.allclose(nits[0, 0], 100.0)
     assert np.allclose(nits[0, 1], 1000.0)
+
+
+def test_reference_nits_uses_acescg_ap1_luminance_coefficients() -> None:
+    image = np.array([[[0.18, 0.0, 0.0]]], dtype=np.float32)
+    nits = _rgb_to_reference_nits(image)
+    assert nits[0, 0] == pytest.approx(0.2722287 * 100.0, rel=1e-6)
 
 
 def test_hdr_scope_threshold_percentages_for_known_luminance() -> None:
