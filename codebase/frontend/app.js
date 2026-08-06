@@ -193,6 +193,12 @@ const state = {
   layout: { ...LAYOUT_DEFAULTS },
   layoutBucket: null,
   layoutSettleTimer: null,
+  proofMode: "authoring",
+  proofArtifact: null,
+  proofMatrix: null,
+  proofDirty: true,
+  displayTelemetry: null,
+  evidenceRecords: [],
 };
 
 let scopeResizeObserver = null;
@@ -258,6 +264,7 @@ const els = {
   gradeSplitter: document.getElementById("grade-splitter"),
   dockSplitter: document.getElementById("dock-splitter"),
   importButton: document.getElementById("import-button"),
+  testPatternButton: document.getElementById("test-pattern-button"),
   emptyImportButton: document.getElementById("empty-import-button"),
   ejectButton: document.getElementById("eject-button"),
   badge: document.getElementById("badge"),
@@ -304,6 +311,33 @@ const els = {
   previewCanvas: document.getElementById("preview-canvas"),
   previewImage: document.getElementById("preview-image"),
   previewOverlay: document.getElementById("preview-overlay"),
+  proofModeButtons: [...document.querySelectorAll("[data-proof-mode]")],
+  deliveryMatrixView: document.getElementById("delivery-matrix-view"),
+  liveBrowserView: document.getElementById("live-browser-view"),
+  proofFormat: document.getElementById("proof-format"),
+  proofDisplay: document.getElementById("proof-display"),
+  buildProofButton: document.getElementById("build-proof-button"),
+  displayTelemetry: document.getElementById("display-telemetry"),
+  matrixStatus: document.getElementById("matrix-status"),
+  matrixGrid: document.getElementById("matrix-grid"),
+  liveHeadroom: document.getElementById("live-headroom"),
+  liveMimeMode: document.getElementById("live-mime-mode"),
+  dynamicRangeLimit: document.getElementById("dynamic-range-limit"),
+  livePresentation: document.getElementById("live-presentation"),
+  refreshLiveButton: document.getElementById("refresh-live-button"),
+  liveCompatibility: document.getElementById("live-compatibility"),
+  liveProofImage: document.getElementById("live-proof-image"),
+  liveProofFrame: document.getElementById("live-proof-frame"),
+  liveMatrixImage: document.getElementById("live-matrix-image"),
+  liveArtifactMeta: document.getElementById("live-artifact-meta"),
+  liveMatrixMeta: document.getElementById("live-matrix-meta"),
+  observationForm: document.getElementById("observation-form"),
+  observationHighlights: document.getElementById("observation-highlights"),
+  observationMidtones: document.getElementById("observation-midtones"),
+  observationColor: document.getElementById("observation-color"),
+  observationOverall: document.getElementById("observation-overall"),
+  observationNotes: document.getElementById("observation-notes"),
+  observationStatus: document.getElementById("observation-status"),
   emptyState: document.getElementById("empty-state"),
   previewStatus: document.getElementById("preview-status"),
   falseColorLegend: document.getElementById("false-color-legend"),
@@ -755,6 +789,17 @@ function bindEvents() {
     event.target.value = "";
   });
   els.importButton.addEventListener("click", () => els.fileInput.click());
+  els.testPatternButton.addEventListener("click", async () => {
+    els.badge.textContent = "Generating delivery proof test pattern...";
+    try {
+      const response = await fetch("/api/proof/test-pattern");
+      if (!response.ok) throw new Error(`Test pattern failed with HTTP ${response.status}.`);
+      const file = new File([await response.blob()], "hdr_delivery_proof_pattern.tiff", { type: "image/tiff" });
+      await uploadFile(file);
+    } catch (error) {
+      showUploadError(error?.message || "The delivery proof test pattern could not be generated.");
+    }
+  });
   els.emptyImportButton.addEventListener("click", () => els.fileInput.click());
   els.sourceRailExpand.addEventListener("click", () => {
     const rail = els.sourceRailExpand.closest(".source-rail");
@@ -1108,6 +1153,7 @@ function renderSession() {
   renderLaneChrome();
   renderControlState();
   renderExportPreflight();
+  window.HDRProofing?.reset();
 }
 
 function renderMetadata(session) {
@@ -2847,6 +2893,7 @@ function renderLaneChrome() {
 
 function invalidatePreview(lane) {
   state.previewGeneration[lane] += 1;
+  window.HDRProofing?.invalidate();
   renderCompareStatus();
   renderExportPreflight();
 }
@@ -2863,6 +2910,7 @@ function clearPreviewCache() {
   state.comparePeekActive = false;
   state.gpuSurfaceHdr = false;
   clearPreviewImage();
+  window.HDRProofing?.reset();
 }
 
 function cacheReady(lane) {

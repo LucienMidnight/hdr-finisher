@@ -113,7 +113,7 @@ These Blender labels are based on the Blender 5.x color-management and image-for
 
 ---
 
-## Current State (July 2026, v0.1.16)
+## Current State (August 2026, v0.2.0)
 
 The following is working in the current build:
 
@@ -127,6 +127,10 @@ The following is working in the current build:
 - Real AVIF + ISO 21496-1 gain map export
 - JPEG Ultra HDR (JPG + Gain Map) technical-alpha export through Google's `libultrahdr`
 - SDR PNG export
+- Delivery Matrix proofing at fixed encoded headroom targets
+- Live Browser Check using content-hashed JPEG Ultra HDR and AVIF gain-map proxies
+- Windows HDR, SDR-white, DXGI luminance, and nominal-headroom telemetry
+- Local, structured browser/display evidence records with a 180-day verification window
 
 **Not yet implemented:** JPEG XL export and a polished installer. The technical PyInstaller package is available, but JPEG Ultra HDR is capability-gated until a compatible `ultrahdr_app` is built or supplied.
 
@@ -201,6 +205,24 @@ python .\tools\local_media_probe.py "D:\path\to\image.heic" "D:\path\to\render.e
 ```
 
 Manual HDR-display checks are tracked in `md\Alpha_Manual_QA_Checklist.md`.
+
+## Delivery Proofing
+
+The viewer has three distinct modes: **Authoring**, **Delivery Matrix**, and **Live Browser**. The Delivery Matrix reconstructs the encoded gain map at fixed headroom targets. Live Browser serves the exact content-hashed encoded proxy to the installed browser and presents it beside the closest matrix tile. It also exposes correct/wrong MIME, `dynamic-range-limit`, and common CSS composition paths, then saves structured visual observations locally.
+
+JPEG Ultra HDR is the provisional default; AVIF gain maps remain fully available. This is practical delivery proofing rather than display certification. A consistent 5–10% difference can be acceptable when highlight placement, gradients, clipping behavior, and color remain perceptually close.
+
+The implementation status, manual test sequence, acceptance rules, evidence locations, and hosting-pipeline queue are maintained in [`md/Delivery_Proofing_Sprint.md`](md/Delivery_Proofing_Sprint.md).
+
+To compare an original export against direct or transformed hosting URLs:
+
+```powershell
+cd codebase
+$env:PYTHONPATH = "backend"
+python .\tools\verify_hosted_gainmap.py .\output\image.jpg https://example.com/image.jpg
+```
+
+The report includes hashes, response MIME and caching headers, gain-map presence, metadata survival, and whether the hosted bytes are identical to the local export.
 
 ---
 

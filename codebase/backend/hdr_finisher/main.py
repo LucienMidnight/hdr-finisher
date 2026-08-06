@@ -7,7 +7,7 @@ from tempfile import NamedTemporaryFile
 import uvicorn
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .capabilities import probe_capabilities
@@ -18,9 +18,15 @@ from .loader import LoaderError
 from .models import (
     DirectoryPickRequest,
     DirectoryPickResponse,
+    BrowserEvidenceRecord,
+    BrowserEvidenceResponse,
     ExportSettings,
     PreviewKind,
     PreviewRequest,
+    ProofArtifactRequest,
+    ProofArtifactResponse,
+    ProofMatrixRequest,
+    ProofMatrixResponse,
     ScopeMode,
     SessionSummary,
     SourceInterpretationOverride,
@@ -28,8 +34,11 @@ from .models import (
 from .overlay import encode_processed_overlay_bytes
 from .preview import encode_processed_preview_bytes
 from .render_cache import StaleRender, encode_rgba32f_proxy
+from .display_probe import probe_displays
+from .proofing import EvidenceStore, ProofArtifactStore
 from .scopes import build_scope_from_processed
 from .sessions import SessionStore
+from .test_pattern import build_delivery_proof_pattern
 
 
 app = FastAPI(title=APP_NAME, version=APP_VERSION)
@@ -44,6 +53,8 @@ store = SessionStore()
 atexit.register(store.clear)
 capabilities = probe_capabilities()
 export_backends = build_export_backends(capabilities)
+proof_store = ProofArtifactStore()
+evidence_store = EvidenceStore()
 SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
@@ -250,6 +261,103 @@ def export(session_id: str, settings: ExportSettings):
     return result
 
 
+@app.post("/api/session/{session_id}/proof/artifact", response_model=ProofArtifactResponse)
+def create_proof_artifact(session_id: str, request: ProofArtifactRequest) -> ProofArtifactResponse:
+    try:
+        session = store.update_adjustments(session_id, request.adjustments)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    backend = export_backends.get(request.format)
+    if backend is None:
+        raise HTTPException(status_code=400, detail=f"Unsupported proof format: {request.format}")
+    try:
+        return proof_store.create(session, request, backend)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+
+
+@app.get("/api/proof/artifact/{artifact_name}")
+def proof_artifact(artifact_name: str, mime: str | None = Query(default=None)) -> FileResponse:
+    artifact_id = Path(artifact_name).stem
+    try:
+        artifact = proof_store.artifact(artifact_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    media_type = "application/octet-stream" if mime == "wrong" else artifact.media_type
+    return FileResponse(
+        artifact.path,
+        media_type=media_type,
+        headers={
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "ETag": f'"{artifact.sha256}"',
+            "X-Content-SHA256": artifact.sha256,
+            "X-HDR-Finisher-Format": artifact.format,
+        },
+    )
+
+
+@app.post("/api/proof/matrix", response_model=ProofMatrixResponse)
+def proof_matrix(request: ProofMatrixRequest) -> ProofMatrixResponse:
+    try:
+        return proof_store.matrix(request.artifact_id, request.display_headroom)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+
+
+@app.get("/api/proof/tile/{tile_name}")
+def proof_tile(tile_name: str) -> FileResponse:
+    tile_id = Path(tile_name).stem
+    try:
+        tile = proof_store.tile(tile_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return FileResponse(
+        tile.path,
+        media_type=tile.media_type,
+        headers={"Cache-Control": "public, max-age=31536000, immutable", "ETag": f'"{tile.tile_id}"'},
+    )
+
+
+@app.get("/api/display")
+def display_telemetry() -> dict[str, object]:
+    return probe_displays()
+
+
+@app.get("/api/proof/test-pattern")
+def delivery_test_pattern() -> Response:
+    try:
+        import tifffile
+        from io import BytesIO
+
+        buffer = BytesIO()
+        tifffile.imwrite(buffer, build_delivery_proof_pattern(), photometric="rgb")
+        return Response(
+            content=buffer.getvalue(),
+            media_type="image/tiff",
+            headers={"Content-Disposition": 'inline; filename="hdr_delivery_proof_pattern.tiff"'},
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Could not generate the delivery test pattern: {exc}") from exc
+
+
+@app.get("/api/proof/evidence", response_model=BrowserEvidenceResponse)
+def list_proof_evidence() -> BrowserEvidenceResponse:
+    return evidence_store.list()
+
+
+@app.post("/api/proof/evidence", response_model=BrowserEvidenceResponse)
+def add_proof_evidence(record: BrowserEvidenceRecord) -> BrowserEvidenceResponse:
+    try:
+        proof_store.artifact(record.artifact_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return evidence_store.add(record)
+
+
 @app.post("/api/export-directory")
 def export_directory(request: DirectoryPickRequest) -> DirectoryPickResponse:
     try:
@@ -265,6 +373,7 @@ def root() -> HTMLResponse:
     html = html.replace('/static/styles.css', f'/static/styles.css?v={APP_VERSION}')
     html = html.replace('/static/webgpu-preview.js', f'/static/webgpu-preview.js?v={APP_VERSION}')
     html = html.replace('/static/app.js', f'/static/app.js?v={APP_VERSION}')
+    html = html.replace('/static/proofing-ui.js', f'/static/proofing-ui.js?v={APP_VERSION}')
     return HTMLResponse(content=html)
 
 

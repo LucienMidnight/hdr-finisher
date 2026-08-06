@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from enum import Enum
 from typing import Any
 
@@ -232,7 +233,7 @@ class ScopeResponse(BaseModel):
 
 
 class ExportSettings(BaseModel):
-    format: str = "avif_gain_map"
+    format: str = "jpeg_ultrahdr"
     quality: int = Field(default=85, ge=1, le=100)
     output_path: str | None = None
 
@@ -250,3 +251,74 @@ class DirectoryPickRequest(BaseModel):
 
 class DirectoryPickResponse(BaseModel):
     directory: str | None = None
+
+
+class ProofArtifactRequest(BaseModel):
+    adjustments: AdjustmentState
+    format: str = "jpeg_ultrahdr"
+    quality: int = Field(default=90, ge=1, le=100)
+    long_edge: int = Field(default=1200, ge=256, le=1600)
+
+
+class ProofArtifactResponse(BaseModel):
+    artifact_id: str
+    format: str
+    media_type: str
+    byte_size: int
+    sha256: str
+    url: str
+    wrong_mime_url: str
+    width: int
+    height: int
+    quality: int
+    metadata_summary: str
+    encoded_headroom: float
+
+
+class ProofMatrixRequest(BaseModel):
+    artifact_id: str
+    display_headroom: float | None = Field(default=None, ge=0.0, le=16.0)
+
+
+class ProofMatrixTile(BaseModel):
+    id: str
+    label: str
+    target_headroom: float
+    url: str
+    peak_nits: float
+    clipped_percent: float
+    above_display_headroom: bool | None = None
+
+
+class ProofMatrixResponse(BaseModel):
+    artifact_id: str
+    encoded_headroom: float
+    reconstruction: str
+    tiles: list[ProofMatrixTile]
+
+
+class BrowserEvidenceRecord(BaseModel):
+    artifact_id: str
+    format: str
+    browser_name: str = "Unknown"
+    browser_version: str = "Unknown"
+    operating_system: str = "Unknown"
+    display_label: str = "Unknown display"
+    hdr_state: str = "unknown"
+    sdr_white_nits: float | None = None
+    max_luminance_nits: float | None = None
+    nominal_headroom: float | None = None
+    dynamic_range_limit: str = "no-limit"
+    mime_mode: str = "correct"
+    presentation_variant: str = "native"
+    highlight_observation: str
+    midtone_observation: str
+    color_observation: str
+    overall_observation: str
+    notes: str = ""
+    observed_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class BrowserEvidenceResponse(BaseModel):
+    records: list[BrowserEvidenceRecord]
+    stale_after_days: int = 180

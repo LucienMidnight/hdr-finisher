@@ -33,6 +33,26 @@ def acescg_to_linear_bt2020(image: np.ndarray) -> np.ndarray:
     return np.asarray(converted, dtype=np.float32)
 
 
+def linear_srgb_to_acescg(image: np.ndarray) -> np.ndarray:
+    converted = RGB_to_RGB(
+        image.astype(np.float32, copy=False),
+        RGB_COLOURSPACES[SRGB_COLOURSPACE],
+        RGB_COLOURSPACES[ACESCG_COLOURSPACE],
+        chromatic_adaptation_transform="CAT02",
+    )
+    return np.asarray(converted, dtype=np.float32)
+
+
+def linear_bt2020_to_acescg(image: np.ndarray) -> np.ndarray:
+    converted = RGB_to_RGB(
+        image.astype(np.float32, copy=False),
+        RGB_COLOURSPACES[BT2020_COLOURSPACE],
+        RGB_COLOURSPACES[ACESCG_COLOURSPACE],
+        chromatic_adaptation_transform="CAT02",
+    )
+    return np.asarray(converted, dtype=np.float32)
+
+
 def sanitize_array(image: np.ndarray) -> np.ndarray:
     image = np.nan_to_num(image.astype(np.float32, copy=False), nan=0.0, posinf=65504.0, neginf=0.0)
     return np.clip(image, 0.0, None)

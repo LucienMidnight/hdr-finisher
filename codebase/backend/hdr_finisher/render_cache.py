@@ -48,6 +48,10 @@ class SessionRenderCache:
             return sdr_reference, "linear-srgb"
         return source, "acescg"
 
+    def source_pair(self, long_edge: int) -> tuple[np.ndarray, np.ndarray | None]:
+        """Return the matched source and authored-SDR proxy inputs used by exporters."""
+        return self._proxies(long_edge)
+
     def adjusted_frame(
         self,
         adjustments: AdjustmentState,

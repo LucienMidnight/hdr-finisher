@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 APP_NAME = "HDR Finisher"
-APP_VERSION = "0.1.21"
+APP_VERSION = "0.2.0"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -28,6 +28,7 @@ FRONTEND_DIR = RESOURCE_ROOT / "frontend"
 BIN_DIR = RESOURCE_ROOT / "bin"
 EXPORTS_DIR = RUNTIME_ROOT / "exports"
 SAMPLES_DIR = RESOURCE_ROOT / "samples"
+APP_DATA_DIR = Path(os.environ.get("LOCALAPPDATA", str(RUNTIME_ROOT))) / "HDR Finisher"
 MAX_PREVIEW_LONG_EDGE = 1920
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = int(os.environ.get("HDR_FINISHER_PORT", "8000"))

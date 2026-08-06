@@ -23,6 +23,7 @@
       <div class="top-actions">
         <input id="file-input" type="file" accept=".exr,.tif,.tiff,.hdr,.pfm,.heic,.heif,.png,.jpg,.jpeg" hidden>
         <button id="import-button" class="button-secondary" type="button">Import</button>
+        <button id="test-pattern-button" class="button-secondary" type="button">Test pattern</button>
         <button id="eject-button" class="button-secondary" type="button">Eject</button>
         <span class="pipeline-chip">ACEScg · Local · Single image</span>
         <span class="capability-chip" id="capability-summary">Checking encoders…</span>
@@ -117,6 +118,11 @@
     <main class="workspace-main">
       <section class="viewer-panel panel" aria-label="Viewer">
         <div class="viewer-bar">
+          <div class="proof-mode-switch" role="tablist" aria-label="Proofing mode">
+            <button class="proof-mode-button active" type="button" data-proof-mode="authoring" role="tab" aria-selected="true">Authoring</button>
+            <button class="proof-mode-button" type="button" data-proof-mode="matrix" role="tab" aria-selected="false">Delivery Matrix</button>
+            <button class="proof-mode-button" type="button" data-proof-mode="live" role="tab" aria-selected="false">Live Browser</button>
+          </div>
           <div class="viewer-lane">
             <span class="lane-dot" aria-hidden="true"></span>
             <span id="viewer-lane-label">HDR Grade</span>
@@ -178,6 +184,59 @@
             <img id="preview-image" alt="Current HDR Finisher preview" draggable="false">
             <img id="preview-overlay" alt="" aria-hidden="true" draggable="false">
           </div>
+          <section id="delivery-matrix-view" class="proof-view hidden" aria-label="Fixed-headroom reconstruction">
+            <div class="proof-toolbar">
+              <div>
+                <p class="section-kicker">Fixed-headroom reconstruction</p>
+                <p class="proof-intro">Pixels are fixed for each target. Their presentation still depends on this browser, Windows, and the display.</p>
+              </div>
+              <label>Format
+                <select id="proof-format">
+                  <option value="jpeg_ultrahdr">JPEG Ultra HDR · provisional default</option>
+                  <option value="avif_gain_map">AVIF gain map</option>
+                </select>
+              </label>
+              <label>Active display<select id="proof-display"><option value="">Detecting…</option></select></label>
+              <button id="build-proof-button" class="button-primary" type="button">Build proof</button>
+            </div>
+            <div id="display-telemetry" class="proof-telemetry">Reading display telemetry…</div>
+            <div id="matrix-status" class="proof-status">Build a proof to create fixed-headroom tiles from delivered bytes.</div>
+            <div id="matrix-grid" class="matrix-grid" aria-live="polite"></div>
+          </section>
+          <section id="live-browser-view" class="proof-view hidden" aria-label="Live Browser Check">
+            <div class="proof-toolbar">
+              <div>
+                <p class="section-kicker">Observed on this device</p>
+                <p class="proof-intro">The left image is the exact encoded proxy. The right image is the selected fixed-headroom reconstruction.</p>
+              </div>
+              <label>Matrix target<select id="live-headroom"></select></label>
+              <label>Image MIME<select id="live-mime-mode"><option value="correct">Correct</option><option value="wrong">Deliberately wrong</option></select></label>
+              <label>dynamic-range-limit<select id="dynamic-range-limit"><option value="no-limit">no-limit</option><option value="standard">standard</option></select></label>
+              <label>Presentation<select id="live-presentation"><option value="native">Native</option><option value="css-scale">CSS size</option><option value="transform">Transform</option><option value="opacity">Opacity 0.8</option><option value="transition">Transition</option></select></label>
+              <button id="refresh-live-button" class="button-secondary" type="button">Refresh exact bytes</button>
+            </div>
+            <div id="live-compatibility" class="compatibility-unknown">No verified compatibility record for this browser/version.</div>
+            <div class="live-comparison">
+              <figure class="proof-figure">
+                <figcaption><strong>Live Browser Check</strong><span id="live-artifact-meta">No artifact</span></figcaption>
+                <div id="live-proof-frame" class="proof-image-frame"><img id="live-proof-image" alt="Exact gain-map proxy rendered by this browser"></div>
+              </figure>
+              <figure class="proof-figure">
+                <figcaption><strong>Matching matrix tile</strong><span id="live-matrix-meta">No tile selected</span></figcaption>
+                <div class="proof-image-frame"><img id="live-matrix-image" alt="Fixed-headroom reconstruction"></div>
+              </figure>
+            </div>
+            <form id="observation-form" class="observation-form">
+              <p class="section-kicker">Structured visual observation</p>
+              <label>Highlights<select id="observation-highlights" required><option value="matched">Matched</option><option value="slightly-different">Slightly different</option><option value="clipped">Clipped</option><option value="significantly-dimmer-brighter">Significantly dimmer/brighter</option></select></label>
+              <label>Midtones<select id="observation-midtones" required><option value="matched">Matched</option><option value="shifted">Shifted</option></select></label>
+              <label>Color<select id="observation-color" required><option value="matched">Matched</option><option value="saturation-difference">Saturation difference</option><option value="hue-difference">Hue difference</option></select></label>
+              <label>Overall<select id="observation-overall" required><option value="effectively-equivalent">Effectively equivalent</option><option value="acceptable-difference">Acceptable difference</option><option value="clearly-wrong">Clearly wrong</option></select></label>
+              <label class="observation-notes">Notes<input id="observation-notes" type="text" placeholder="Reload behavior, monitor move, clipping, or color notes"></label>
+              <button id="save-observation" class="button-secondary" type="submit">Save evidence</button>
+              <span id="observation-status" class="proof-status">Not recorded</span>
+            </form>
+          </section>
           <div id="empty-state" class="empty-state">
             <p class="empty-state-title">Drop an HDR image anywhere in the viewer</p>
             <p class="empty-state-copy">EXR, TIFF, Radiance HDR, PFM, HEIC, JPEG, or PNG</p>
@@ -536,18 +595,18 @@
       <button id="export-close" class="text-button" type="button">Close</button>
     </div>
 
-    <input id="export-format" type="hidden" value="avif_gain_map">
+    <input id="export-format" type="hidden" value="jpeg_ultrahdr">
     <div class="format-cards" role="radiogroup" aria-label="Export format">
-      <label class="format-card selected" data-format-card="avif_gain_map">
-        <input type="radio" name="export-format-choice" value="avif_gain_map" checked>
-        <span class="format-card-top"><span>Recommended</span><span data-capability-for="avif_gain_map_encoder">Checking…</span></span>
+      <label class="format-card" data-format-card="avif_gain_map">
+        <input type="radio" name="export-format-choice" value="avif_gain_map">
+        <span class="format-card-top"><span>Mainstream alternative</span><span data-capability-for="avif_gain_map_encoder">Checking…</span></span>
         <strong>AVIF + gain map</strong>
         <span>Best quality per byte for the web. HDR in current Chromium browsers; your SDR version appears everywhere else.</span>
         <small>ISO 21496-1 · 10-bit logarithmic gain map</small>
       </label>
-      <label class="format-card" data-format-card="jpeg_ultrahdr">
-        <input type="radio" name="export-format-choice" value="jpeg_ultrahdr">
-        <span class="format-card-top"><span>Widest fallback</span><span data-capability-for="ultrahdr_encoder">Checking…</span></span>
+      <label class="format-card selected" data-format-card="jpeg_ultrahdr">
+        <input type="radio" name="export-format-choice" value="jpeg_ultrahdr" checked>
+        <span class="format-card-top"><span>Provisional default</span><span data-capability-for="ultrahdr_encoder">Checking…</span></span>
         <strong>JPEG Ultra HDR</strong>
         <span>Opens as a normal JPEG anywhere. HDR appears in supported viewers; recompression may remove it.</span>
         <small>Ultra HDR v1 XMP + ISO 21496-1 · 8-bit gain map</small>
@@ -602,5 +661,6 @@
 
   <script src="/static/webgpu-preview.js"></script>
   <script src="/static/app.js"></script>
+  <script src="/static/proofing-ui.js"></script>
 </body>
 </html>
