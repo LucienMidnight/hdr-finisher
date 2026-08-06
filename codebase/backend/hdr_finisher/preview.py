@@ -55,9 +55,28 @@ def downsample_image(image: np.ndarray, max_long_edge: int) -> np.ndarray:
     scale = max_long_edge / long_edge
     target_h = max(1, int(round(height * scale)))
     target_w = max(1, int(round(width * scale)))
-    ys = np.linspace(0, height - 1, target_h).astype(np.int32)
-    xs = np.linspace(0, width - 1, target_w).astype(np.int32)
-    return image[np.ix_(ys, xs)]
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise RuntimeError("Pillow is required for filtered preview resizing.") from exc
+
+    source = image.astype(np.float32, copy=False)
+    channels = source[..., None] if source.ndim == 2 else source
+    resized_channels = []
+    for channel_index in range(channels.shape[2]):
+        channel = channels[..., channel_index]
+        resized = np.asarray(
+            Image.fromarray(channel).resize((target_w, target_h), Image.Resampling.LANCZOS),
+            dtype=np.float32,
+        )
+        # Filtering must not invent negative light or HDR peaks beyond the
+        # source channel's range.
+        resized_channels.append(np.clip(resized, float(np.min(channel)), float(np.max(channel))))
+
+    result = np.stack(resized_channels, axis=-1)
+    if source.ndim == 2:
+        return result[..., 0]
+    return result
 
 
 def _encode_png(image: np.ndarray) -> bytes:

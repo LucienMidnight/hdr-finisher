@@ -49,6 +49,21 @@ def test_preview_downsample_obeys_long_edge_cap() -> None:
     assert max(result.shape[:2]) == 100
 
 
+def test_preview_downsample_filters_high_frequency_detail_without_losing_hdr_range() -> None:
+    checker = (np.indices((256, 256)).sum(axis=0) % 2).astype(np.float32)
+    image = np.stack([checker * 4.0, checker * 2.0, checker], axis=-1)
+
+    result = downsample_image(image, 32)
+
+    assert result.shape == (32, 32, 3)
+    assert result.dtype == np.float32
+    assert np.all(np.isfinite(result))
+    assert float(np.min(result)) >= 0.0
+    assert float(np.max(result[..., 0])) <= 4.0
+    assert np.allclose(np.mean(result, axis=(0, 1)), [2.0, 1.0, 0.5], atol=0.03)
+    assert float(np.std(result[..., 0])) < 0.1
+
+
 def test_sdr_export_quantization_returns_uint8() -> None:
     image = np.ones((2, 2, 3), dtype=np.float32) * 0.5
     quantized = _linear_to_srgb8(image)

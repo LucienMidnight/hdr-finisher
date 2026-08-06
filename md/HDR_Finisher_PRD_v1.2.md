@@ -322,6 +322,7 @@ The AVIF path uses a **10-bit logarithmic gain map**. JPEG Ultra HDR uses libult
 |---|---|---|
 | `avifgainmaputil` binary packaging complexity | High | Confirm binary builds for both platforms in Phase 0 before writing any other code |
 | AVIF preview encoding too slow for interactive use | Medium | Downsample previews; use fast encoder presets; debounce slider events |
+| Reference HDR preview and delivered browser rendering do not match in apparent brightness | High | Keep the authored 100-nit-reference HDR view, but explicitly distinguish it from display-adaptive delivery. Evaluate a **Browser Delivery** mode that encodes a proxy with the real AVIF gain-map pipeline and presents it through a normal browser image element, allowing the active browser and monitor to apply their actual headroom adaptation and tone mapping. Do not claim an exact Chrome simulation from coarse web capability probes. |
 | Color space metadata missing or ambiguous in input files | Medium | Implement explicit user override: "This file has no color profile â€” please select one" dialog |
 | macOS Gatekeeper rejecting unsigned binary | High | Budget time for Apple Developer ID signing and notarization |
 | `libultrahdr` AVIF support not yet released | Low | JPEG Ultra HDR (JPG) is fully functional now; AVIF via libultrahdr is a 2026 addition |
@@ -380,6 +381,8 @@ The repository is no longer at the original vertical-slice stage. It now provide
 - Bundled HDR reference sample generation and serving
 - EXR import validation against synthetic and real Blender exports
 - Automated tests for core math, classification behavior, HEIC reconstruction, preview/export helpers, scopes, and API flow
+- Float-preserving Lanczos proxy downsampling with regression coverage for high-frequency detail, replacing unfiltered point decimation that produced severe mesh and foliage aliasing
+- Validated Affinity build 4646 Sony RAW handoff guidance using a 32-bit floating-point OpenEXR in linear Display P3
 
 ### Current API Surface
 - `POST /api/session`
@@ -419,6 +422,13 @@ The repository is no longer at the original vertical-slice stage. It now provide
   - validation confirms two embedded JPEG images and that the decoded HDR result is brighter than the SDR base
   - the packaged Windows application reports JPEG Ultra HDR export as available
   - the PyInstaller portable Windows alpha ZIP has been rebuilt and smoke-tested with the verified encoder included
+- Affinity-to-HDR-Finisher round-trip validation completed on August 6, 2026:
+  - a 42.39 MP Sony ILCE-7RM3 ARW was developed in Canva-era Affinity build 4646 as RGB/32 HDR, converted to `Display P3 (Linear)`, and exported as single-layer OpenEXR 32-bit float
+  - Affinity's TIFF `RGB 32-bit` export was proven to contain bounded unsigned-integer samples and is therefore rejected as the recommended true-HDR interchange for this build
+  - the OpenEXR retained a `13.59` linear peak, or 6.24 stops above diffuse white; because Affinity omitted EXR chromaticities, HDR Finisher correctly required the matching manual `Display P3 Linear` interpretation
+  - post-fix preview detail was visually validated against Affinity; the final quality-85 AVIF gain-map export retained matching detail/noise, activated HDR in Chrome on the HDR monitor, and selected the authored SDR fallback when moved to the SDR monitor
+  - delivery inspection confirmed an 8-bit sRGB base, 10-bit YUV444 logarithmic gain map, BT.2020/PQ alternate, base headroom `0.00`, and alternate headroom `5.26035`
+  - the export folder picker failed during the live Windows test; direct destination-path entry worked and remains the temporary fallback
 
 ### Current Blockers and Known Gaps
 - The Windows JPEG Ultra HDR implementation blocker is cleared: the native encoder is built, bundled, attributed, and validated. Remaining release work is clean-machine redistribution validation; macOS will require its own native build and packaging path.
@@ -426,6 +436,11 @@ The repository is no longer at the original vertical-slice stage. It now provide
 - A portable PyInstaller Windows alpha ZIP now exists and passes its smoke test. A conventional installer, upgrade/uninstall behavior, version metadata, and clean-machine testing are not yet complete.
 - Windows Photos remains an unreliable validation target for AVIF gain-map HDR compared with Brave / Chromium browsers
 - Preview AVIF quality is now usable, but still tunable; a future user-facing preview-quality control may be worthwhile
+- The current HDR Finisher canvas is an authored/reference presentation with a fixed 100-nit diffuse-white basis, while Chrome's gain-map image presentation adapts to the active monitor's available HDR headroom and applies browser/display tone mapping. Users will reasonably expect these views to match, but apparent brightness can differ even when the file is valid. The UI must explain and address this distinction before release.
+- Browser APIs currently provide coarse HDR capability signals such as `(dynamic-range: high)`, not a stable numerical report of the active display's exact headroom or the browser's private tone-mapping decisions. Native monitor queries may provide nominal luminance data but cannot guarantee reproduction of a browser's delivery rendering.
+- The preferred direction is a **Browser Delivery** preview, not a Chrome-specific emulation: build a downsampled AVIF through the same HDR alternate, SDR base, and ISO 21496-1 gain-map pipeline as final export, then let the active browser render it in a normal image element. Preserve the existing reference HDR view for grading and label both modes clearly. An optional deterministic headroom simulator may later expose SDR, +1 through +4 stops, and full-authored-HDR checks without claiming browser equivalence.
+- Cross-browser behavior remains a delivery QA concern. A browser-native delivery preview reflects only the current browser, OS, monitor, and HDR settings; it cannot predict Safari, Firefox, a television, or a different display. Unsupported gain-map renderers should naturally show the SDR base and the UI should report that limitation without treating it as a failed export.
+- The Windows export folder picker failed in real use while direct path entry succeeded; diagnose and fix the picker before installer release.
 - EXR automatic color-space detection is safer now, but still depends on source metadata / chromaticities; fully robust auto-detection remains a quality target rather than a solved problem
 - The major three-rail UI-density and responsive-shell pass is complete. Export guidance and final installer-era copy remain candidates for smaller follow-up refinement.
 
@@ -452,6 +467,8 @@ After the Windows installer proves the workflow on clean machines, the packaging
 
 ### Implementation Reality vs PRD
 - **Preview transport:** the PRD target of true HDR browser preview is now implemented. HDR previews are served as PQ AVIF and SDR previews remain display-safe fallback images.
+- **Preview resampling:** the 1920-pixel proxy remains intentionally bounded, but its downsampling now uses per-channel float32 Lanczos filtering clamped to the source channel extrema. This removes the severe alias/noise pattern caused by integer point sampling without inventing negative light or new HDR peaks. UI `100%` remains proxy-pixel 1:1, not source-pixel 1:1.
+- **Reference versus delivery rendering:** the live HDR canvas and the final gain-map image are intentionally different presentation paths. Reference HDR is suitable for authoring; final browser rendering is display-adaptive. Product copy and a proposed Browser Delivery preview must make that distinction explicit rather than promising brightness identity.
 - **Color-management pipeline:** the previously scaffolded `colour-science` layer is now active for supported transforms instead of being metadata-only.
 - **HEIC auxiliary gain maps:** iPhone HDR HEIC files are no longer decoded as false SDR when Apple auxiliary gain-map data is present; the gain map is applied and the embedded SDR base is preserved separately for fallback output.
 - **Source ambiguity handling:** the `HDR_LINEAR_UNCONFIRMED` / ambiguous color-state warning now has a real user override workflow in the UI and backend session model.
@@ -484,14 +501,17 @@ After the Windows installer proves the workflow on clean machines, the packaging
 - The diagnostic overlay image is now positioned against the rendered preview image box rather than using independent layout assumptions
 
 ### Recommended Next Steps After This Checkpoint
-1. Complete installer-readiness changes in the application: automatic browser launch, single-instance and port-conflict handling, clean shutdown, user-writable runtime directories, path portability, quiet console behavior, and application icon/version metadata
-2. Run a smaller export-guidance and installer-copy refinement after the real installer flow exists
-3. Re-run the full QA harness and continue real-world validation with EXR, HEIC, TIFF, AVIF gain-map, and JPEG Ultra HDR media across HDR and SDR displays, modern Chromium browsers, and legacy JPEG decoders
-4. Build a conventional per-user Windows installer with shortcuts, uninstall support, bundled notices/licenses, and the portable ZIP retained as an alternative
-5. Validate install, first launch, export, upgrade, and uninstall behavior on a clean Windows machine or VM
-6. Publish concise GitHub Release notes with checksums, supported workflows, known limitations, and Chromium / Brave / Edge HDR validation guidance
-7. Start the macOS track after the Windows installer stabilizes: build and validate native encoder binaries on macOS, package the app as `.app` / `.dmg`, then address signing and notarization
-8. Keep JPEG XL gain-map export deferred unless it becomes strategically important or straightforward to ship
+1. Decide and prototype the reference-versus-delivery preview UX. Prefer **Reference HDR**, **Browser Delivery**, and **SDR Fallback** modes; generate Browser Delivery with the real proxy gain-map encoder and let the active browser perform its native rendering.
+2. Fix the Windows export folder picker and retain direct path entry as a resilient fallback.
+3. Complete installer-readiness changes in the application: automatic browser launch, single-instance and port-conflict handling, clean shutdown, user-writable runtime directories, path portability, quiet console behavior, and application icon/version metadata
+4. Continue the documented real-application source-export validation with darktable RAW and Blender 5.2 LTS after the completed Affinity build 4646 workflow.
+5. Run a smaller export-guidance and installer-copy refinement after the real installer flow exists
+6. Re-run the full QA harness and continue real-world validation with EXR, HEIC, TIFF, AVIF gain-map, and JPEG Ultra HDR media across HDR and SDR displays, modern Chromium browsers, and legacy JPEG decoders
+7. Build a conventional per-user Windows installer with shortcuts, uninstall support, bundled notices/licenses, and the portable ZIP retained as an alternative
+8. Validate install, first launch, export, upgrade, and uninstall behavior on a clean Windows machine or VM
+9. Publish concise GitHub Release notes with checksums, supported workflows, known limitations, and Chromium / Brave / Edge HDR validation guidance
+10. Start the macOS track after the Windows installer stabilizes: build and validate native encoder binaries on macOS, package the app as `.app` / `.dmg`, then address signing and notarization
+11. Keep JPEG XL gain-map export deferred unless it becomes strategically important or straightforward to ship
 
 ---
 
@@ -531,3 +551,4 @@ This repository's root `.gitignore` already excludes local exports, EXR / HDR wo
 *July 22, 2026 implementation addendum: JPEG Ultra HDR now consumes independent HDR and SDR branches through libultrahdr, publishes atomically only after legacy / gain-map / metadata / decoder validation, supports bundled and packaged binary discovery, and includes a pinned Windows build and attribution workflow. JPEG XL remains out of scope.*
 *July 30, 2026 implementation addendum: the pinned libultrahdr Windows build, native tests, complete 110-test alpha QA run, real-image JPEG Ultra HDR validation, packaged capability check, and portable PyInstaller ZIP all pass. The delivery sequence is now UI/UX refinement, installer-readiness work, a conventional Windows installer with clean-machine validation, and then macOS packaging. JPEG XL remains deferred.*
 *July 31, 2026 implementation addendum: the instrument-style UI pass adds a tokenized dark visual system, banded disclosure groups, continuous bar-handle sliders, and persisted keyboard-accessible source/grade/dock splitters. The 1280 px shell and 90 ms preview cadence have dedicated browser regression coverage.*
+*August 6, 2026 implementation addendum: the Affinity build 4646 Sony RAW workflow is validated through linear Display P3 OpenEXR import and quality-85 AVIF gain-map delivery on paired HDR/SDR monitors. Affinity's bounded integer TIFF limitation and missing EXR chromaticities are documented; manual `Display P3 Linear` interpretation is required. Float-preserving Lanczos preview downsampling fixes severe high-frequency aliasing and has automated plus real-image validation. Chrome's display-adaptive gain-map tone mapping does not necessarily match HDR Finisher's fixed-reference canvas brightness, so a clearly labelled Browser Delivery preview using the real proxy gain-map pipeline is now a release-facing UX requirement under consideration. The Windows export folder picker also requires repair.*
