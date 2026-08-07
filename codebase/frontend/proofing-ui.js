@@ -1,360 +1,417 @@
 (() => {
-  document.body.dataset.proofMode = state.proofMode;
+  const SETTINGS_KEY = "hdr-finisher-chrome-proof-v1";
+  const FIXED_TARGETS = new Set(["400", "600", "1000", "2000", "4000"]);
+  let requestGeneration = 0;
+  let artifactDirty = true;
+  let phase = "idle";
+  let errorMessage = "";
+  let reviewSuggestion = "";
+  let autoFallbackNotice = false;
 
-  els.proofModeButtons.forEach((button) => {
-    button.addEventListener("click", () => activateProofMode(button.dataset.proofMode));
-  });
-  els.buildProofButton.addEventListener("click", () => buildDeliveryProof().catch(showProofError));
-  els.proofFormat.addEventListener("change", invalidateProofing);
-  els.proofDisplay.addEventListener("change", () => {
-    renderDisplayTelemetry();
-    if (state.proofArtifact) buildProofMatrix().catch(showProofError);
-  });
-  els.liveHeadroom.addEventListener("change", renderLiveComparison);
-  els.liveMimeMode.addEventListener("change", renderLiveComparison);
-  els.dynamicRangeLimit.addEventListener("change", renderLiveComparison);
-  els.livePresentation.addEventListener("change", renderLiveComparison);
-  els.refreshLiveButton.addEventListener("click", refreshLiveBytes);
-  els.observationForm.addEventListener("submit", saveObservation);
+  restoreSettings();
+  bindProofEvents();
+  window.HDRProofing = {
+    invalidate: invalidateProof,
+    reset: resetProof,
+    settled: proofPreviewSettled,
+    syncLane: renderProofUi,
+    render: renderProofUi,
+    reviewExportFormat,
+  };
+  refreshDisplayTelemetry().catch(() => null).finally(renderProofUi);
+  renderProofUi();
 
-  Promise.all([refreshDisplayTelemetry(), loadEvidenceRecords()]).catch(() => null);
-  window.HDRProofing = { invalidate: invalidateProofing, reset: resetProofing };
-
-  function activateProofMode(mode) {
-    if (!["authoring", "matrix", "live"].includes(mode)) return;
-    state.proofMode = mode;
-    document.body.dataset.proofMode = mode;
-    els.proofModeButtons.forEach((button) => {
-      const active = button.dataset.proofMode === mode;
-      button.classList.toggle("active", active);
-      button.setAttribute("aria-selected", String(active));
+  function bindProofEvents() {
+    els.chromeProofToggle.addEventListener("click", toggleProof);
+    els.chromeProofRefresh.addEventListener("click", buildProofOnDemand);
+    els.chromeProofFormat.addEventListener("change", () => {
+      state.proofFormat = els.chromeProofFormat.value;
+      artifactDirty = true;
+      markProofDirty();
+      persistSettings();
     });
-    els.previewStage.classList.toggle("hidden", mode !== "authoring");
-    els.deliveryMatrixView.classList.toggle("hidden", mode !== "matrix");
-    els.liveBrowserView.classList.toggle("hidden", mode !== "live");
-    renderProofOverlays(mode);
-    els.probeReadout.textContent = mode === "authoring"
-      ? "Move over the image for pixel coordinates"
-      : "Delivery proof uses content-hashed encoded bytes";
-    els.viewerBranchNote.textContent = mode === "authoring"
-      ? branchCopy[state.currentView]
-      : mode === "matrix"
-        ? "Fixed-headroom reconstruction · presentation remains display-dependent."
-        : "Live Browser Check · authoritative for this browser, OS, and display only.";
-    if (mode !== "authoring" && state.session && state.proofDirty) {
-      buildDeliveryProof().catch(showProofError);
-    }
-    if (mode === "live") renderLiveComparison();
+    els.chromeProofTarget.addEventListener("change", () => {
+      state.proofTarget = els.chromeProofTarget.value;
+      markProofDirty();
+      persistSettings();
+      renderProofUi();
+    });
+    els.chromeProofCustomNits.addEventListener("change", () => {
+      const value = Math.round(clamp(Number(els.chromeProofCustomNits.value) || 1000, 100, 10000));
+      els.chromeProofCustomNits.value = String(value);
+      state.proofCustomNits = value;
+      markProofDirty();
+      persistSettings();
+    });
+    els.chromeProofDisplay.addEventListener("change", () => {
+      state.proofDisplayId = els.chromeProofDisplay.value;
+      markProofDirty();
+      persistSettings();
+      renderProofUi();
+    });
+    els.chromeProofImage.addEventListener("dragstart", (event) => event.preventDefault());
+    els.reviewChromeProof.addEventListener("click", () => reviewExportFormat(els.exportFormat.value));
+    window.addEventListener("focus", refreshAutoProofOnFocus);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") refreshAutoProofOnFocus();
+    });
+    window.addEventListener("hdrfinisher:workflowchange", (event) => {
+      if (event.detail?.workflow === "proof") refreshDisplayTelemetry().catch(() => null).finally(renderProofUi);
+      else renderProofUi();
+    });
   }
 
-  function renderProofOverlays(mode) {
-    const gateVisible = mode === "authoring"
-      && Boolean(state.session?.analysis?.needs_color_override)
-      && !state.interpretationGateDismissed;
-    els.interpretationGate.classList.toggle("hidden", !gateVisible);
-    const legendVisible = mode === "authoring"
-      && state.adjustments.shared.overlay_mode === "false_color"
-      && Boolean(state.session);
-    els.falseColorLegend.classList.toggle("hidden", !legendVisible);
-  }
-
-  function resetProofing() {
-    state.proofArtifact = null;
-    state.proofMatrix = null;
-    state.proofDirty = true;
-    clearProofViews();
-    els.buildProofButton.disabled = !state.session;
-  }
-
-  function invalidateProofing() {
-    state.proofDirty = true;
-    state.proofArtifact = null;
-    state.proofMatrix = null;
-    clearProofViews();
-    els.matrixStatus.textContent = state.session
-      ? "Adjustments or format changed. Rebuild before relying on delivery proof."
-      : "Import an image to build a delivery proof.";
-  }
-
-  function clearProofViews() {
-    els.matrixGrid.replaceChildren();
-    els.liveProofImage.removeAttribute("src");
-    els.liveMatrixImage.removeAttribute("src");
-    els.liveHeadroom.replaceChildren();
-    els.liveArtifactMeta.textContent = "No current artifact";
-    els.liveMatrixMeta.textContent = "No current tile";
-  }
-
-  async function buildDeliveryProof() {
+  async function toggleProof() {
     if (!state.session) return;
-    const encoderKey = capabilityForFormat[els.proofFormat.value];
-    if (state.capabilities[encoderKey]?.status !== "available") {
-      throw new Error(state.capabilities[encoderKey]?.detail || "The selected proof encoder is unavailable.");
+    if (state.proofEnabled) {
+      state.proofEnabled = false;
+      cancelPendingProof();
+      phase = "idle";
+      syncProofPresentation();
+      renderProofUi();
+      return;
     }
-    els.buildProofButton.disabled = true;
-    els.matrixStatus.textContent = "Encoding the exact delivery proxy…";
+    await refreshDisplayTelemetry().catch(() => null);
+    state.proofEnabled = true;
+    phase = state.proofDirty ? "updating" : "idle";
+    syncProofPresentation();
+    renderProofUi();
+    if (state.proofDirty || !state.proofReconstruction) await refreshProof().catch(() => null);
+  }
+
+  async function buildProofOnDemand() {
+    if (!state.session) return;
+    state.proofEnabled = true;
+    await refreshDisplayTelemetry().catch(() => null);
+    await refreshProof().catch(() => null);
+  }
+
+  function invalidateProof() {
+    if (!state.session) return;
+    artifactDirty = true;
+    markProofDirty();
+  }
+
+  function proofPreviewSettled() {
+    // Proof generation is intentionally explicit; settled grades only update the authored preview.
+  }
+
+  function markProofDirty() {
+    state.proofDirty = true;
+    phase = state.proofReconstruction ? "stale" : "idle";
+    errorMessage = "";
+    renderProofUi();
+    renderExportPreflight();
+  }
+
+  function resetProof() {
+    state.proofEnabled = false;
+    state.proofArtifact = null;
+    state.proofReconstruction = null;
+    state.proofDirty = true;
+    artifactDirty = true;
+    phase = "idle";
+    errorMessage = "";
+    reviewSuggestion = "";
+    cancelPendingProof();
+    els.chromeProofImage.removeAttribute("src");
+    els.chromeProofImage.style.display = "none";
+    renderProofUi();
+  }
+
+  function cancelPendingProof() {
+    requestGeneration += 1;
+  }
+
+  async function refreshProof() {
+    if (!state.session) return;
+    const encoderKey = capabilityForFormat[state.proofFormat];
+    const capability = state.capabilities[encoderKey];
+    if (capability?.status !== "available") {
+      showProofFailure(capability?.detail || "The selected proof encoder is unavailable.");
+      return;
+    }
+    if (state.proofTarget === "auto" && !selectedDisplay()?.nominal_headroom && selectedDisplay()?.nominal_headroom !== 0) {
+      fallbackFromUnavailableAuto();
+    }
+
+    const generation = ++requestGeneration;
+    phase = "updating";
+    errorMessage = "";
+    renderProofUi();
     try {
-      const response = await fetch(`/api/session/${state.session.session_id}/proof/artifact`, {
+      let artifact = state.proofArtifact;
+      if (artifactDirty || !artifact || artifact.format !== state.proofFormat) {
+        const artifactResponse = await fetch(`/api/session/${state.session.session_id}/proof/artifact`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            adjustments: state.adjustments,
+            format: state.proofFormat,
+            quality: Number(els.exportQuality.value) || 85,
+            jpeg_gain_map_quality: Number(els.jpegGainMapQuality.value) || 100,
+            jpeg_gain_map_scale: els.jpegGainMapScale.value || "full",
+            long_edge: Math.min(1200, state.session.preview?.long_edge || 1200),
+          }),
+        });
+        const payload = await artifactResponse.json();
+        if (!artifactResponse.ok) throw new Error(payload?.detail || "Chrome proof encoding failed.");
+        if (generation !== requestGeneration) return;
+        artifact = payload;
+      }
+
+      const reconstructionResponse = await fetch("/api/proof/reconstruction", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          adjustments: state.adjustments,
-          format: els.proofFormat.value,
-          quality: Number(els.exportQuality.value) || 85,
-          jpeg_gain_map_quality: Number(els.jpegGainMapQuality.value) || 100,
-          jpeg_gain_map_scale: els.jpegGainMapScale.value || "full",
-          long_edge: Math.min(1200, state.session.preview?.long_edge || 1200),
-        }),
+        body: JSON.stringify({ artifact_id: artifact.artifact_id, target: proofTargetRequest() }),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.detail || "Delivery proxy encoding failed.");
-      state.proofArtifact = payload;
+      const reconstruction = await reconstructionResponse.json();
+      if (!reconstructionResponse.ok) throw new Error(reconstruction?.detail || "Chrome proof reconstruction failed.");
+      await preloadImage(reconstruction.tile.url);
+      if (generation !== requestGeneration) return;
+
+      state.proofArtifact = artifact;
+      state.proofReconstruction = reconstruction;
       state.proofDirty = false;
-      const jpegMetadata = payload.jpeg_gain_map
-        ? ` · decoded ${payload.jpeg_gain_map.reconstruction_gamut} · useBaseColorSpace=${payload.jpeg_gain_map.use_base_color_space ? 1 : 0}`
-        : "";
-      els.matrixStatus.textContent = `Encoded ${formatBytes(payload.byte_size)} · SHA-256 ${payload.sha256.slice(0, 16)}… · ${payload.metadata_summary}${jpegMetadata}`;
-      await buildProofMatrix();
-      await loadEvidenceRecords();
-      renderLiveComparison();
-    } finally {
-      els.buildProofButton.disabled = !state.session;
+      artifactDirty = false;
+      phase = "idle";
+      els.chromeProofImage.src = reconstruction.tile.url;
+      syncProofPresentation();
+      renderProofUi();
+    } catch (error) {
+      if (generation !== requestGeneration) return;
+      showProofFailure(error?.message || "Chrome proof failed.");
     }
   }
 
-  async function buildProofMatrix() {
-    if (!state.proofArtifact) return;
-    els.matrixStatus.textContent = "Reconstructing encoded gain map at fixed headroom targets…";
-    const display = selectedProofDisplay();
-    const response = await fetch("/api/proof/matrix", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        artifact_id: state.proofArtifact.artifact_id,
-        display_headroom: Number.isFinite(display?.nominal_headroom) ? display.nominal_headroom : null,
-      }),
-    });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload?.detail || "Matrix reconstruction failed.");
-    state.proofMatrix = payload;
-    renderProofMatrix();
-    const jpegMetadata = state.proofArtifact.jpeg_gain_map;
-    const gamut = jpegMetadata ? ` · decoded ${jpegMetadata.reconstruction_gamut}` : "";
-    els.matrixStatus.textContent = `${payload.reconstruction} · encoded full headroom ${payload.encoded_headroom.toFixed(2)} stops${gamut}.`;
-  }
-
-  function renderProofMatrix() {
-    els.matrixGrid.replaceChildren();
-    els.liveHeadroom.replaceChildren();
-    for (const tile of state.proofMatrix?.tiles || []) {
-      const card = document.createElement("article");
-      card.className = `matrix-tile${tile.above_display_headroom ? " above-headroom" : ""}`;
-      const header = document.createElement("div");
-      header.className = "matrix-tile-header";
-      const title = document.createElement("strong");
-      title.textContent = tile.label;
-      const target = document.createElement("span");
-      target.className = "proof-status";
-      target.textContent = `H ${tile.target_headroom.toFixed(2)}`;
-      header.append(title, target);
-      const image = document.createElement("img");
-      image.src = tile.url;
-      image.alt = `${tile.label} fixed-headroom reconstruction`;
-      const stats = document.createElement("div");
-      stats.className = "matrix-tile-stats";
-      const peak = document.createElement("span");
-      peak.textContent = `Peak ${tile.peak_nits.toFixed(0)} nit`;
-      const clipped = document.createElement("span");
-      clipped.textContent = `${tile.clipped_percent.toFixed(2)}% above target`;
-      stats.append(peak, clipped);
-      card.append(header, image, stats);
-      if (tile.above_display_headroom) {
-        const warning = document.createElement("p");
-        warning.className = "headroom-warning";
-        warning.textContent = "Above current nominal display headroom · visible result may be compressed or clipped.";
-        card.append(warning);
-      }
-      els.matrixGrid.append(card);
-      const option = document.createElement("option");
-      option.value = tile.id;
-      option.textContent = `${tile.label} · ${tile.target_headroom.toFixed(2)} stops`;
-      els.liveHeadroom.append(option);
+  function proofTargetRequest() {
+    if (state.proofTarget === "auto") {
+      return { mode: "auto", display_id: state.proofDisplayId || null };
     }
-    const display = selectedProofDisplay();
-    if (display?.nominal_headroom != null) {
-      const closest = [...(state.proofMatrix?.tiles || [])].sort(
-        (left, right) => Math.abs(left.target_headroom - display.nominal_headroom)
-          - Math.abs(right.target_headroom - display.nominal_headroom),
-      )[0];
-      if (closest) els.liveHeadroom.value = closest.id;
+    if (state.proofTarget === "full") return { mode: "full", display_id: state.proofDisplayId || null };
+    const peakNits = state.proofTarget === "custom" ? state.proofCustomNits : Number(state.proofTarget);
+    return { mode: "fixed", peak_nits: peakNits, display_id: state.proofDisplayId || null };
+  }
+
+  function showProofFailure(message) {
+    phase = "error";
+    errorMessage = message;
+    state.proofDirty = true;
+    renderProofUi();
+  }
+
+  function syncProofPresentation() {
+    const suspended = state.activeWorkflow !== "proof" || state.currentView !== "hdr" || state.comparePeekActive;
+    const canShow = Boolean(state.proofEnabled && !suspended && state.proofReconstruction && els.chromeProofImage.src);
+    els.chromeProofImage.style.display = canShow ? "block" : "none";
+    if (state.activeWorkflow === "proof" && state.proofEnabled && state.currentView === "hdr" && !state.comparePeekActive) {
+      els.viewerBranchNote.textContent = canShow
+        ? `Chrome Proof · ${proofFormatLabel()} · ${proofTargetLabel()} · scopes remain authored HDR.`
+        : "Chrome Proof is not current · build or refresh it from the Proof settings rail.";
+      els.scopeKindLabel.textContent = "HDR · AUTHORED";
+    } else {
+      els.viewerBranchNote.textContent = branchCopy[state.currentView];
+      els.scopeKindLabel.textContent = state.currentView.toUpperCase();
     }
-    renderLiveComparison();
+    if (state.session) applyZoomGeometry();
   }
 
-  function renderLiveComparison() {
-    const artifact = state.proofArtifact;
-    const tile = state.proofMatrix?.tiles?.find((item) => item.id === els.liveHeadroom.value)
-      || state.proofMatrix?.tiles?.[0];
-    if (!artifact || !tile) return;
-    const artifactUrl = els.liveMimeMode.value === "wrong" ? artifact.wrong_mime_url : artifact.url;
-    els.liveProofImage.src = artifactUrl;
-    els.liveMatrixImage.src = tile.url;
-    els.liveProofImage.style.setProperty("dynamic-range-limit", els.dynamicRangeLimit.value);
-    els.liveMatrixImage.style.setProperty("dynamic-range-limit", els.dynamicRangeLimit.value);
-    els.liveProofFrame.dataset.presentation = els.livePresentation.value;
-    els.liveArtifactMeta.textContent = `${artifact.format} · ${artifact.width}×${artifact.height} · ${artifact.sha256.slice(0, 12)}…`;
-    els.liveMatrixMeta.textContent = `${tile.label} · peak ${tile.peak_nits.toFixed(0)} nit · ${tile.clipped_percent.toFixed(2)}% above target`;
-    renderCompatibilityStatus();
+  function renderProofUi() {
+    const hasSession = Boolean(state.session);
+    const encoderKey = capabilityForFormat[state.proofFormat];
+    const encoderReady = state.capabilities[encoderKey]?.status === "available";
+    els.chromeProofToggle.disabled = !hasSession || !encoderReady;
+    els.chromeProofToggle.checked = state.proofEnabled;
+    els.chromeProofRefresh.disabled = !hasSession || !encoderReady || phase === "updating";
+    els.chromeProofRefresh.textContent = phase === "updating"
+      ? "Building proof…"
+      : state.proofReconstruction ? "Refresh proof" : "Build proof";
+    els.chromeProofFormat.value = state.proofFormat;
+    els.chromeProofTarget.value = state.proofTarget;
+    els.chromeProofCustomNits.value = String(state.proofCustomNits);
+    els.chromeProofCustomField.classList.toggle("hidden", state.proofTarget !== "custom");
+    els.chromeProofDisplay.disabled = !(state.displayTelemetry?.displays || []).length;
+    for (const option of els.chromeProofFormat.options) {
+      const key = capabilityForFormat[option.value];
+      option.disabled = state.capabilities[key]?.status !== "available";
+    }
+    const suspended = state.proofEnabled && state.activeWorkflow === "proof" && (state.currentView !== "hdr" || state.comparePeekActive);
+    if (!state.proofEnabled) els.chromeProofInlineStatus.textContent = "Off";
+    else if (suspended) els.chromeProofInlineStatus.textContent = "Suspended";
+    else if (phase === "updating") els.chromeProofInlineStatus.textContent = "Updating…";
+    else if (phase === "error") els.chromeProofInlineStatus.textContent = "Unavailable";
+    else if (state.proofDirty) els.chromeProofInlineStatus.textContent = "Stale";
+    else els.chromeProofInlineStatus.textContent = proofTargetShortLabel();
+    els.chromeProofStatus.textContent = proofStatusMessage(encoderReady);
+    els.chromeProofStatus.dataset.state = phase;
+    syncProofPresentation();
+    renderExportPreflight();
+    renderWorkflowContext();
   }
 
-  function refreshLiveBytes() {
-    if (!state.proofArtifact) return;
-    const base = els.liveMimeMode.value === "wrong"
-      ? state.proofArtifact.wrong_mime_url
-      : state.proofArtifact.url;
-    const separator = base.includes("?") ? "&" : "?";
-    els.liveProofImage.src = `${base}${separator}refresh=${Date.now()}`;
-    const tile = state.proofMatrix?.tiles?.find((item) => item.id === els.liveHeadroom.value);
-    if (tile) els.liveMatrixImage.src = `${tile.url}?refresh=${Date.now()}`;
+  function proofStatusMessage(encoderReady) {
+    if (!state.session) return "Import an image to begin proofing.";
+    if (!encoderReady) return state.capabilities[capabilityForFormat[state.proofFormat]]?.detail || "The selected encoder is unavailable.";
+    if (phase === "error") return `${errorMessage} The last valid proof remains available.`;
+    if (phase === "updating") return state.proofReconstruction
+      ? "Updating from delivered bytes. The previous proof remains visible until the new one is ready."
+      : "Encoding and reconstructing the first Chrome proof…";
+    if (state.proofEnabled && state.currentView === "sdr") return "Chrome Proof is suspended on SDR Fallback and will resume on HDR Grade.";
+    if (state.proofReconstruction && state.proofDirty) return `Stale · ${proofFormatLabel()} · ${proofTargetLabel()}. Adjustments or delivery settings changed.`;
+    if (!state.proofReconstruction) {
+      const fallback = autoFallbackNotice ? " Auto is unavailable, so 1,000 nits was selected." : "";
+      return `${proofFormatLabel()} · ${proofTargetLabel()}. Build the proof when you are ready to review.${fallback}`;
+    }
+    const result = state.proofReconstruction;
+    const details = [`${proofFormatLabel()} · ${result.target_label}`, `${result.resolved_headroom.toFixed(2)} stops`];
+    if (result.display_label) details.push(result.display_label);
+    if (result.capped_by_encoded_headroom) details.push(`capped by encoded ${result.encoded_headroom.toFixed(2)} stops`);
+    if (result.display_can_represent === false) details.push("selected reference exceeds this display's reported headroom");
+    if (autoFallbackNotice) details.push("Auto unavailable; using the 1,000-nit default");
+    if (reviewSuggestion) details.push(reviewSuggestion);
+    return details.join(" · ");
   }
 
   async function refreshDisplayTelemetry() {
+    const previous = JSON.stringify(state.displayTelemetry?.displays || []);
     try {
       const response = await fetch("/api/display");
+      if (!response.ok) throw new Error("Display telemetry is unavailable.");
       state.displayTelemetry = await response.json();
-    } catch {
-      state.displayTelemetry = { displays: [], detail: "Native display telemetry unavailable." };
+    } catch (error) {
+      state.displayTelemetry = { source: "unavailable", displays: [], detail: error?.message || "Display telemetry is unavailable." };
     }
-    els.proofDisplay.replaceChildren();
-    for (const display of state.displayTelemetry.displays || []) {
+    populateDisplayOptions();
+    const changed = previous !== JSON.stringify(state.displayTelemetry?.displays || []);
+    if (changed && state.proofTarget === "auto" && state.proofReconstruction) {
+      state.proofDirty = true;
+    }
+    return changed;
+  }
+
+  function populateDisplayOptions() {
+    const displays = state.displayTelemetry?.displays || [];
+    const previous = state.proofDisplayId;
+    els.chromeProofDisplay.replaceChildren();
+    for (const display of displays) {
       const option = document.createElement("option");
       option.value = display.id;
-      option.textContent = `${display.name}${display.primary ? " · primary" : ""}${display.hdr_enabled ? " · HDR on" : " · SDR"}`;
-      if (display.primary) option.selected = true;
-      els.proofDisplay.append(option);
+      const headroom = Number.isFinite(display.nominal_headroom) ? ` · ${display.nominal_headroom.toFixed(2)} stops` : " · headroom unavailable";
+      option.textContent = `${display.name}${display.primary ? " · primary" : ""}${headroom}`;
+      els.chromeProofDisplay.append(option);
     }
-    if (!els.proofDisplay.options.length) {
+    if (displays.length) {
+      const selected = displays.find((display) => display.id === previous)
+        || displays.find((display) => display.primary)
+        || displays[0];
+      state.proofDisplayId = selected.id;
+      els.chromeProofDisplay.value = selected.id;
+      autoFallbackNotice = false;
+    } else {
       const option = document.createElement("option");
       option.value = "";
-      option.textContent = "Browser observation only";
-      els.proofDisplay.append(option);
+      option.textContent = "Display telemetry unavailable";
+      els.chromeProofDisplay.append(option);
+      state.proofDisplayId = "";
     }
-    renderDisplayTelemetry();
+    const autoOption = [...els.chromeProofTarget.options].find((option) => option.value === "auto");
+    const autoAvailable = displays.some((display) => Number.isFinite(display.nominal_headroom));
+    if (autoOption) autoOption.disabled = !autoAvailable;
+    if (!autoAvailable && state.proofTarget === "auto") fallbackFromUnavailableAuto();
+    persistSettings();
   }
 
-  function selectedProofDisplay() {
-    return (state.displayTelemetry?.displays || []).find((display) => display.id === els.proofDisplay.value)
-      || (state.displayTelemetry?.displays || []).find((display) => display.primary)
-      || state.displayTelemetry?.displays?.[0]
-      || null;
+  function fallbackFromUnavailableAuto() {
+    state.proofTarget = "1000";
+    els.chromeProofTarget.value = "1000";
+    state.proofDirty = true;
+    errorMessage = "Auto is unavailable; using the 1,000-nit default. Choose another fixed target if needed.";
+    phase = "idle";
+    autoFallbackNotice = true;
+    persistSettings();
   }
 
-  function renderDisplayTelemetry() {
-    const display = selectedProofDisplay();
-    if (!display) {
-      const browserRange = mediaQueryMatch("(dynamic-range: high)") ? "high" : "standard/unknown";
-      els.displayTelemetry.textContent = `${state.displayTelemetry?.detail || "No native display data."} Browser dynamic range: ${browserRange}.`;
-      return;
+  async function refreshAutoProofOnFocus() {
+    if (state.activeWorkflow !== "proof" || state.proofTarget !== "auto") return;
+    const changed = await refreshDisplayTelemetry().catch(() => false);
+    if (changed) markProofDirty();
+  }
+
+  function selectedDisplay() {
+    return (state.displayTelemetry?.displays || []).find((display) => display.id === state.proofDisplayId) || null;
+  }
+
+  function reviewExportFormat(format) {
+    if (format === "sdr_png") return;
+    const label = format === "avif_gain_map" ? "AVIF + gain map" : "JPEG Ultra HDR";
+    if (state.proofFormat !== format) {
+      state.proofFormat = format;
+      artifactDirty = true;
+      markProofDirty();
+      persistSettings();
     }
-    const headroom = display.nominal_headroom == null ? "unknown" : `${display.nominal_headroom.toFixed(2)} stops`;
-    els.displayTelemetry.textContent = `${display.name} · HDR ${display.hdr_enabled ? "on" : "off"} · ${display.bits_per_channel || "?"}-bit · SDR white ${display.sdr_white_nits ?? "?"} nit · DXGI peak ${display.max_luminance_nits ?? "?"} nit · nominal headroom ${headroom}`;
+    reviewSuggestion = `Proof settings now match the selected ${label} export.`;
+    activateWorkflowTab("proof", { focus: true });
+    els.chromeProofFormat.focus();
+    renderProofUi();
   }
 
-  async function loadEvidenceRecords() {
+  function proofFormatLabel() {
+    return state.proofFormat === "avif_gain_map" ? "AVIF" : "JPEG Ultra HDR";
+  }
+
+  function proofTargetLabel() {
+    if (state.proofTarget === "auto") {
+      const display = selectedDisplay();
+      return display ? `Auto · ${display.name}` : "Auto · current display";
+    }
+    if (state.proofTarget === "full") return "Full encoded range";
+    const nits = state.proofTarget === "custom" ? state.proofCustomNits : Number(state.proofTarget);
+    return `${Number(nits).toLocaleString()} nits`;
+  }
+
+  function proofTargetShortLabel() {
+    if (state.proofTarget === "auto") return "Auto";
+    if (state.proofTarget === "full") return "Full";
+    const nits = state.proofTarget === "custom" ? state.proofCustomNits : Number(state.proofTarget);
+    return `${Number(nits).toLocaleString()} nit`;
+  }
+
+  function restoreSettings() {
     try {
-      const response = await fetch("/api/proof/evidence");
-      const payload = await response.json();
-      state.evidenceRecords = payload.records || [];
+      const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+      if (["jpeg_ultrahdr", "avif_gain_map"].includes(saved.format)) state.proofFormat = saved.format;
+      if (["auto", "full", "custom"].includes(saved.target) || FIXED_TARGETS.has(saved.target)) state.proofTarget = saved.target;
+      if (Number.isFinite(saved.customNits)) state.proofCustomNits = clamp(saved.customNits, 100, 10000);
+      if (typeof saved.displayId === "string") state.proofDisplayId = saved.displayId;
     } catch {
-      state.evidenceRecords = [];
+      // Local proof preferences are optional.
     }
-    renderCompatibilityStatus();
   }
 
-  async function renderCompatibilityStatus() {
-    const info = await browserIdentity();
-    const format = state.proofArtifact?.format || els.proofFormat.value;
-    const cutoff = Date.now() - 180 * 24 * 60 * 60 * 1000;
-    const record = [...state.evidenceRecords].reverse().find((item) => (
-      item.format === format
-      && item.browser_name === info.name
-      && item.browser_version === info.version
-      && Date.parse(item.observed_at) >= cutoff
-    ));
-    els.liveCompatibility.textContent = record
-      ? `Verified ${new Date(record.observed_at).toLocaleDateString()} · ${record.overall_observation.replaceAll("-", " ")} · ${record.display_label}`
-      : `No verified compatibility record for ${info.name} ${info.version} · ${format}.`;
+  function persistSettings() {
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+        format: state.proofFormat,
+        target: state.proofTarget,
+        customNits: state.proofCustomNits,
+        displayId: state.proofDisplayId,
+      }));
+    } catch {
+      // Proofing remains usable when local storage is unavailable.
+    }
   }
 
-  async function saveObservation(event) {
-    event.preventDefault();
-    if (!state.proofArtifact) return;
-    const browser = await browserIdentity();
-    const display = selectedProofDisplay();
-    const response = await fetch("/api/proof/evidence", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        artifact_id: state.proofArtifact.artifact_id,
-        format: state.proofArtifact.format,
-        browser_name: browser.name,
-        browser_version: browser.version,
-        operating_system: navigator.userAgentData?.platform || navigator.platform || "Unknown",
-        display_label: display?.name || "Unknown display",
-        hdr_state: mediaQueryMatch("(dynamic-range: high)") ? "high" : "standard-or-unknown",
-        sdr_white_nits: display?.sdr_white_nits ?? null,
-        max_luminance_nits: display?.max_luminance_nits ?? null,
-        nominal_headroom: display?.nominal_headroom ?? null,
-        dynamic_range_limit: els.dynamicRangeLimit.value,
-        mime_mode: els.liveMimeMode.value,
-        presentation_variant: els.livePresentation.value,
-        highlight_observation: els.observationHighlights.value,
-        midtone_observation: els.observationMidtones.value,
-        color_observation: els.observationColor.value,
-        overall_observation: els.observationOverall.value,
-        notes: els.observationNotes.value.trim(),
-      }),
+  function preloadImage(url) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = resolve;
+      image.onerror = () => reject(new Error("The reconstructed proof image could not be displayed."));
+      image.src = url;
     });
-    const payload = await response.json();
-    if (!response.ok) {
-      els.observationStatus.textContent = payload?.detail || "Evidence could not be saved.";
-      return;
-    }
-    state.evidenceRecords = payload.records || [];
-    els.observationStatus.textContent = "Evidence saved locally.";
-    renderCompatibilityStatus();
   }
 
-  async function browserIdentity() {
-    let brands = navigator.userAgentData?.brands || [];
-    if (navigator.userAgentData?.getHighEntropyValues) {
-      try {
-        const details = await navigator.userAgentData.getHighEntropyValues(["fullVersionList"]);
-        if (details.fullVersionList?.length) brands = details.fullVersionList;
-      } catch {
-        // Browser privacy policy may intentionally withhold full version data.
-      }
-    }
-    const preferredNames = ["Microsoft Edge", "Google Chrome", "Opera", "Chromium"];
-    const preferred = preferredNames
-      .map((name) => brands.find((brand) => brand.brand === name))
-      .find(Boolean)
-      || brands.find((brand) => !/Not.A.Brand/i.test(brand.brand))
-      || brands[0];
-    if (preferred) return { name: preferred.brand, version: preferred.version };
-    const match = navigator.userAgent.match(/(Firefox|Edg|Chrome|Version)\/([0-9.]+)/);
-    return { name: match?.[1] || "Unknown", version: match?.[2] || "Unknown" };
-  }
-
-  function formatBytes(value) {
-    const bytes = Number(value) || 0;
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-  }
-
-  function showProofError(error) {
-    els.matrixStatus.textContent = error?.message || "Delivery proof failed.";
-    els.buildProofButton.disabled = !state.session;
+  function clamp(value, minimum, maximum) {
+    return Math.min(maximum, Math.max(minimum, value));
   }
 })();

@@ -55,7 +55,8 @@ def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     assert "Export file" not in html
     assert "JPEG XL" not in html
     assert "not in this build" not in html
-    assert "Selected fixed-headroom reference" in html
+    assert "Chrome Proof" in html
+    assert 'id="chrome-proof-target"' in html
     assert 'id="jpeg-gain-map-quality"' in html
     assert 'id="jpeg-gain-map-scale"' in html
     assert 'class="export-filename-field"' in html
@@ -65,6 +66,39 @@ def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     assert ".jpeg-advanced-settings" in css
     assert '"quality jpeg"' in css
     assert '"filename folder"' in css
+
+
+def test_linear_workflow_uses_tab_specific_rails_and_reports_export_readiness() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    proofing = (FRONTEND / "proofing-ui.js").read_text(encoding="utf-8")
+    assert 'data-workflow-tab="grade"' in html
+    assert 'data-workflow-tab="proof"' in html
+    assert 'data-workflow-tab="export"' in html
+    assert 'data-workflow-panel="grade"' in html
+    assert 'data-workflow-panel="proof"' in html
+    assert 'data-workflow-panel="export"' in html
+    assert 'id="chrome-proof-toggle"' in html
+    assert 'id="chrome-proof-refresh"' in html
+    assert 'id="chrome-proof-popover"' not in html
+    assert 'id="chrome-proof-image"' in html
+    assert 'id="review-chrome-proof"' in html
+    assert 'data-preflight="proof"' in html
+    assert '<dialog id="export-sheet"' not in html
+    assert 'id="export-sheet" class="export-sheet workflow-side-panel panel"' in html
+    assert "Delivery Matrix" not in html
+    assert "Live Browser" not in html
+    assert 'id="delivery-matrix-view"' not in html
+    assert 'id="live-browser-view"' not in html
+    assert "/api/proof/reconstruction" in proofing
+    assert "Proof generation is intentionally explicit" in proofing
+    assert "PROOF_IDLE_MS" not in proofing
+    assert "requestGeneration" in proofing
+    assert 'state.activeWorkflow !== "proof"' in proofing
+    assert 'state.currentView !== "hdr"' in proofing
+    assert "renderProofPreflight" in javascript
+    assert "Chrome proof is stale" in javascript
+    assert "Proofed ${formatName}, not selected ${exportName}" in javascript
 
 
 def test_grade_rail_keeps_a_readable_minimum_width() -> None:

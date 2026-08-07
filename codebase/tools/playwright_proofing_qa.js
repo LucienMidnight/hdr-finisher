@@ -8,9 +8,6 @@ function browserExecutable() {
     process.env.PLAYWRIGHT_CHROME_PATH,
     process.env.ProgramFiles && path.join(process.env.ProgramFiles, "Google", "Chrome", "Application", "chrome.exe"),
     process.env["ProgramFiles(x86)"] && path.join(process.env["ProgramFiles(x86)"], "Google", "Chrome", "Application", "chrome.exe"),
-    process.env.PLAYWRIGHT_EDGE_PATH,
-    process.env.ProgramFiles && path.join(process.env.ProgramFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
-    process.env["ProgramFiles(x86)"] && path.join(process.env["ProgramFiles(x86)"], "Microsoft", "Edge", "Application", "msedge.exe"),
   ].filter(Boolean);
   return candidates.find((candidate) => fs.existsSync(candidate));
 }
@@ -18,14 +15,14 @@ function browserExecutable() {
 async function main() {
   const url = process.argv[2] || "http://127.0.0.1:8765";
   const input = process.argv[3] || path.join(__dirname, "..", "tests", "fixtures", "hdr_headroom.tiff");
-  const output = process.argv[4] || path.join(__dirname, "..", "output", "proofing-qa");
+  const output = process.argv[4] || path.join(__dirname, "..", "output", "proofing-qa-chrome");
   fs.mkdirSync(output, { recursive: true });
   const consoleErrors = [];
   const pageErrors = [];
-  const executablePath = browserExecutable();
-  const browser = await chromium.launch({ headless: true, executablePath });
+  const browser = await chromium.launch({ headless: true, executablePath: browserExecutable() });
   try {
     const page = await browser.newPage({ viewport: { width: 1800, height: 1050 }, deviceScaleFactor: 1 });
+    await page.addInitScript(() => localStorage.removeItem("hdr-finisher-chrome-proof-v1"));
     page.on("console", (message) => {
       if (message.type() === "error") consoleErrors.push(message.text());
     });
@@ -35,47 +32,106 @@ async function main() {
     await page.waitForFunction(() => document.getElementById("session-name")?.textContent !== "No active image", { timeout: 30000 });
     const gate = page.locator("#interpretation-gate");
     if (await gate.isVisible()) await page.locator("#accept-interpretation").click();
-    await page.locator('[data-proof-mode="matrix"]').click();
-    await page.locator(".matrix-tile").first().waitFor({ state: "visible", timeout: 120000 });
-    await page.evaluate(() => refreshScopes(256));
-    if (await page.locator(".matrix-tile").count() < 5) {
-      throw new Error("A background scope refresh cleared the delivery proof.");
+
+    if (await page.locator('[data-proof-mode="matrix"], #delivery-matrix-view, #live-browser-view').count()) {
+      throw new Error("Legacy proofing tabs are still present.");
     }
-    await page.screenshot({ path: path.join(output, "matrix.png"), fullPage: true });
-    const matrix = await page.evaluate(() => ({
-      mode: document.body.dataset.proofMode,
-      tiles: document.querySelectorAll(".matrix-tile").length,
-      warnings: document.querySelectorAll(".matrix-tile.above-headroom").length,
-      telemetry: document.getElementById("display-telemetry")?.textContent,
-      status: document.getElementById("matrix-status")?.textContent,
-      horizontalOverflow: document.documentElement.scrollWidth - window.innerWidth,
-    }));
-    await page.locator('[data-proof-mode="live"]').click();
-    await page.locator("#live-proof-image").waitFor({ state: "visible", timeout: 30000 });
-    await page.locator("#live-proof-image").evaluate((image) => image.decode());
-    await page.screenshot({ path: path.join(output, "live.png"), fullPage: true });
-    const live = await page.evaluate(() => ({
-      mode: document.body.dataset.proofMode,
-      userAgent: navigator.userAgent,
-      liveNaturalWidth: document.getElementById("live-proof-image")?.naturalWidth,
-      matrixNaturalWidth: document.getElementById("live-matrix-image")?.naturalWidth,
-      compatibility: document.getElementById("live-compatibility")?.textContent,
-      dynamicRangeLimitSupported: CSS.supports("dynamic-range-limit", "no-limit"),
-    }));
-    for (const variant of ["css-scale", "transform", "opacity", "transition"]) {
-      await page.locator("#live-presentation").selectOption(variant);
-      const applied = await page.locator("#live-proof-frame").getAttribute("data-presentation");
-      if (applied !== variant) throw new Error(`Presentation variant did not apply: ${variant}`);
+    const workflowLabels = await page.locator("[data-workflow-tab]").allTextContents();
+    if (workflowLabels.map((label) => label.trim()).join(",") !== "Grade,Proof,Export") {
+      throw new Error(`Unexpected workflow tabs: ${workflowLabels.join(", ")}`);
     }
-    await page.locator("#test-pattern-button").click();
+    await page.locator('[data-workflow-tab="proof"]').click();
+    const proofFormat = await page.locator("#chrome-proof-format option:not([disabled])").first().getAttribute("value");
+    await page.locator("#chrome-proof-format").selectOption(proofFormat);
+    await page.locator("#chrome-proof-target").selectOption("1000");
+    await page.locator("#chrome-proof-toggle").click();
+    await page.locator("#chrome-proof-image").waitFor({ state: "visible", timeout: 120000 });
+    await page.locator("#chrome-proof-image").evaluate((image) => image.decode());
+    await page.waitForFunction(() => !["Updating…", "Stale"].includes(document.getElementById("chrome-proof-inline-status")?.textContent), { timeout: 120000 });
+    const firstProofUrl = await page.locator("#chrome-proof-image").getAttribute("src");
+    await page.screenshot({ path: path.join(output, "chrome-proof.png"), fullPage: true });
+
+    await page.locator('[data-workflow-tab="grade"]').click();
+    await page.locator('[data-path="hdr.exposure"]').evaluate((control) => {
+      control.value = String(Math.min(Number(control.max), Number(control.value) + 0.25));
+      control.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await page.locator('[data-workflow-tab="proof"]').click();
+    const visibleWhileStale = await page.locator("#chrome-proof-image").isVisible();
+    const staleStatus = await page.locator("#chrome-proof-inline-status").textContent();
+    const staleProofUrl = await page.locator("#chrome-proof-image").getAttribute("src");
+    if (staleProofUrl !== firstProofUrl || staleStatus !== "Stale") {
+      throw new Error(`Proof rebuilt during grading: ${staleStatus}`);
+    }
+    await page.locator("#chrome-proof-refresh").click();
     await page.waitForFunction(
-      () => document.getElementById("session-name")?.textContent === "hdr_delivery_proof_pattern.tiff",
-      { timeout: 30000 },
+      (previous) => {
+        const image = document.getElementById("chrome-proof-image");
+        const status = document.getElementById("chrome-proof-inline-status")?.textContent;
+        return image?.getAttribute("src") !== previous && !["Updating…", "Stale"].includes(status);
+      },
+      firstProofUrl,
+      { timeout: 120000 },
     );
-    const testPatternLoaded = await page.locator("#session-name").textContent();
-    const result = { matrix, live, testPatternLoaded, consoleErrors, pageErrors };
+
+    await page.locator('[data-workflow-tab="grade"]').click();
+    await page.locator('[data-kind="sdr"]').click();
+    await page.locator('[data-workflow-tab="proof"]').click();
+    const suspended = {
+      imageVisible: await page.locator("#chrome-proof-image").isVisible(),
+      status: await page.locator("#chrome-proof-inline-status").textContent(),
+    };
+    await page.locator('[data-workflow-tab="grade"]').click();
+    await page.locator('[data-kind="hdr"]').click();
+    await page.locator('[data-workflow-tab="proof"]').click();
+    const resumedVisible = await page.locator("#chrome-proof-image").isVisible();
+    await page.locator("#chrome-proof-toggle").click();
+    const authoredVisible = await page.evaluate(() => [...document.querySelectorAll("#preview-image, #preview-canvas")]
+      .some((element) => getComputedStyle(element).display !== "none"));
+
+    await page.locator('[data-workflow-tab="export"]').click();
+    await page.screenshot({ path: path.join(output, "export-rail.png"), fullPage: true });
+    const alternateFormat = proofFormat === "avif_gain_map" ? "jpeg_ultrahdr" : "avif_gain_map";
+    const alternate = page.locator(`input[name="export-format-choice"][value="${alternateFormat}"]`);
+    let mismatchStatus = "alternate encoder unavailable";
+    if (!await alternate.isDisabled()) {
+      await alternate.evaluate((control) => {
+        control.checked = true;
+        control.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      mismatchStatus = await page.locator("#export-proof-status").textContent();
+      await page.locator("#review-chrome-proof").click();
+      if (!await page.locator("#proof-workflow-panel").isVisible()) throw new Error("Review action did not open the Proof stage.");
+    }
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.screenshot({ path: path.join(output, "chrome-proof-1280.png"), fullPage: true });
+    const result = await page.evaluate(({ proofFormat, workflowLabels, mismatchStatus, visibleWhileStale, suspended, resumedVisible, authoredVisible }) => ({
+      proofFormat,
+      workflowLabels,
+      mismatchStatus,
+      visibleWhileStale,
+      suspended,
+      resumedVisible,
+      authoredVisible,
+      targetOptions: [...document.querySelectorAll("#chrome-proof-target option")].map((option) => option.textContent),
+      horizontalOverflow: document.documentElement.scrollWidth - window.innerWidth,
+      userAgent: navigator.userAgent,
+    }), { proofFormat, workflowLabels, mismatchStatus, visibleWhileStale, suspended, resumedVisible, authoredVisible });
+    result.consoleErrors = consoleErrors;
+    result.pageErrors = pageErrors;
     fs.writeFileSync(path.join(output, "result.json"), JSON.stringify(result, null, 2));
-    if (consoleErrors.length || pageErrors.length || matrix.tiles < 5 || live.liveNaturalWidth < 1 || !testPatternLoaded) {
+    if (
+      consoleErrors.length
+      || pageErrors.length
+      || staleStatus !== "Stale"
+      || !visibleWhileStale
+      || suspended.imageVisible
+      || suspended.status !== "Suspended"
+      || !resumedVisible
+      || result.horizontalOverflow > 1
+      || (!mismatchStatus.includes("Proofed") && mismatchStatus !== "alternate encoder unavailable")
+    ) {
       throw new Error(JSON.stringify(result));
     }
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);

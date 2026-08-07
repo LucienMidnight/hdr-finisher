@@ -390,6 +390,23 @@ class ProofMatrixRequest(BaseModel):
     display_headroom: float | None = Field(default=None, ge=0.0, le=16.0)
 
 
+class ProofReconstructionTarget(BaseModel):
+    mode: Literal["auto", "fixed", "full"] = "auto"
+    peak_nits: float | None = Field(default=None, ge=100.0, le=10000.0)
+    display_id: str | None = None
+
+    @model_validator(mode="after")
+    def validate_fixed_target(self) -> "ProofReconstructionTarget":
+        if self.mode == "fixed" and self.peak_nits is None:
+            raise ValueError("peak_nits is required for a fixed proof target")
+        return self
+
+
+class ProofReconstructionRequest(BaseModel):
+    artifact_id: str
+    target: ProofReconstructionTarget
+
+
 class ProofMatrixTile(BaseModel):
     id: str
     label: str
@@ -405,6 +422,27 @@ class ProofMatrixResponse(BaseModel):
     encoded_headroom: float
     reconstruction: str
     tiles: list[ProofMatrixTile]
+
+
+class ProofReconstructionResponse(BaseModel):
+    artifact_id: str
+    format: str
+    target_mode: Literal["auto", "fixed", "full"]
+    target_label: str
+    requested_headroom: float
+    resolved_headroom: float
+    requested_peak_nits: float | None = None
+    resolved_reference_peak_nits: float
+    encoded_headroom: float
+    capped_by_encoded_headroom: bool
+    display_id: str | None = None
+    display_label: str | None = None
+    display_headroom: float | None = None
+    display_max_luminance_nits: float | None = None
+    display_can_represent: bool | None = None
+    reconstruction: str
+    cache_id: str
+    tile: ProofMatrixTile
 
 
 class BrowserEvidenceRecord(BaseModel):

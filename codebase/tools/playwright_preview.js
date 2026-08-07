@@ -295,10 +295,10 @@ async function main() {
         await page.locator("#source-rail-expand").click();
         await page.waitForFunction(() => !document.querySelector(".source-rail")?.classList.contains("pinned-open"));
       }
-      await page.locator("#export-button").click();
+      await page.locator('[data-workflow-tab="export"]').click();
       await page.locator("#export-sheet").waitFor({ state: "visible" });
       await page.screenshot({ path: exportScreenshot, fullPage: true });
-      await page.locator("#export-close").click();
+      await page.locator('[data-workflow-tab="grade"]').click();
       await page.waitForTimeout(500);
     } else {
       await page.locator('[data-path="hdr.contrast"]').evaluate((control) => {

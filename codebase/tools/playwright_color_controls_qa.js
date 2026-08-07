@@ -82,12 +82,12 @@ async function main() {
       overwriteDialog = dialog.message();
       await dialog.accept();
     });
-    await page.locator("#export-button").click();
+    await page.locator('[data-workflow-tab="export"]').click();
     const defaultExportDirectory = await page.locator("#export-directory").inputValue();
     await page.locator("#export-filename").fill("overwrite-qa");
     await page.locator("#export-confirm-button").click();
     await page.waitForFunction(() => document.getElementById("export-status")?.textContent === "QA export accepted", null, { timeout: 10000 });
-    await page.locator("#export-close").click();
+    await page.locator('[data-workflow-tab="grade"]').click();
     await page.locator("#view-hdr").click();
 
     const group = page.locator('[data-group="hdr-color"]');

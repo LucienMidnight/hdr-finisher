@@ -84,6 +84,7 @@ const state = {
   session: null,
   capabilities: {},
   currentView: "hdr",
+  activeWorkflow: "grade",
   scopeMode: "histogram",
   scopeChannelMode: "composite",
   sourceSettingsOpen: false,
@@ -243,12 +244,15 @@ const state = {
   layout: { ...LAYOUT_DEFAULTS },
   layoutBucket: null,
   layoutSettleTimer: null,
-  proofMode: "authoring",
+  proofEnabled: false,
   proofArtifact: null,
-  proofMatrix: null,
+  proofReconstruction: null,
   proofDirty: true,
+  proofFormat: "jpeg_ultrahdr",
+  proofTarget: "auto",
+  proofCustomNits: 1000,
+  proofDisplayId: "",
   displayTelemetry: null,
-  evidenceRecords: [],
 };
 
 let scopeResizeObserver = null;
@@ -369,6 +373,7 @@ const els = {
   sourceConfidence: document.getElementById("source-confidence"),
   sourceRailExpand: document.getElementById("source-rail-expand"),
   capabilitySummary: document.getElementById("capability-summary"),
+  workflowTabs: [...document.querySelectorAll("[data-workflow-tab]")],
   overrideWarning: document.getElementById("override-warning"),
   overrideMessage: document.getElementById("override-message"),
   attentionFix: document.getElementById("attention-fix"),
@@ -405,6 +410,7 @@ const els = {
   curveRemove: document.getElementById("curve-remove"),
   curveChannelButtons: [...document.querySelectorAll("[data-curve-channel]")],
   metadataList: document.getElementById("metadata-list"),
+  workflowContextList: document.getElementById("workflow-context-list"),
   previewOutputList: document.getElementById("preview-output-list"),
   displayInfoList: document.getElementById("display-info-list"),
   sourcePreviewList: document.getElementById("source-preview-list"),
@@ -413,33 +419,16 @@ const els = {
   previewCanvas: document.getElementById("preview-canvas"),
   previewImage: document.getElementById("preview-image"),
   previewOverlay: document.getElementById("preview-overlay"),
-  proofModeButtons: [...document.querySelectorAll("[data-proof-mode]")],
-  deliveryMatrixView: document.getElementById("delivery-matrix-view"),
-  liveBrowserView: document.getElementById("live-browser-view"),
-  proofFormat: document.getElementById("proof-format"),
-  proofDisplay: document.getElementById("proof-display"),
-  buildProofButton: document.getElementById("build-proof-button"),
-  displayTelemetry: document.getElementById("display-telemetry"),
-  matrixStatus: document.getElementById("matrix-status"),
-  matrixGrid: document.getElementById("matrix-grid"),
-  liveHeadroom: document.getElementById("live-headroom"),
-  liveMimeMode: document.getElementById("live-mime-mode"),
-  dynamicRangeLimit: document.getElementById("dynamic-range-limit"),
-  livePresentation: document.getElementById("live-presentation"),
-  refreshLiveButton: document.getElementById("refresh-live-button"),
-  liveCompatibility: document.getElementById("live-compatibility"),
-  liveProofImage: document.getElementById("live-proof-image"),
-  liveProofFrame: document.getElementById("live-proof-frame"),
-  liveMatrixImage: document.getElementById("live-matrix-image"),
-  liveArtifactMeta: document.getElementById("live-artifact-meta"),
-  liveMatrixMeta: document.getElementById("live-matrix-meta"),
-  observationForm: document.getElementById("observation-form"),
-  observationHighlights: document.getElementById("observation-highlights"),
-  observationMidtones: document.getElementById("observation-midtones"),
-  observationColor: document.getElementById("observation-color"),
-  observationOverall: document.getElementById("observation-overall"),
-  observationNotes: document.getElementById("observation-notes"),
-  observationStatus: document.getElementById("observation-status"),
+  chromeProofImage: document.getElementById("chrome-proof-image"),
+  chromeProofToggle: document.getElementById("chrome-proof-toggle"),
+  chromeProofInlineStatus: document.getElementById("chrome-proof-inline-status"),
+  chromeProofRefresh: document.getElementById("chrome-proof-refresh"),
+  chromeProofFormat: document.getElementById("chrome-proof-format"),
+  chromeProofTarget: document.getElementById("chrome-proof-target"),
+  chromeProofCustomField: document.getElementById("chrome-proof-custom-field"),
+  chromeProofCustomNits: document.getElementById("chrome-proof-custom-nits"),
+  chromeProofDisplay: document.getElementById("chrome-proof-display"),
+  chromeProofStatus: document.getElementById("chrome-proof-status"),
   emptyState: document.getElementById("empty-state"),
   previewStatus: document.getElementById("preview-status"),
   falseColorLegend: document.getElementById("false-color-legend"),
@@ -471,9 +460,7 @@ const els = {
   dockTabs: [...document.querySelectorAll("[data-dock-tab]")],
   scopeView: document.getElementById("scope-view"),
   technicalView: document.getElementById("technical-view"),
-  exportButton: document.getElementById("export-button"),
   exportSheet: document.getElementById("export-sheet"),
-  exportClose: document.getElementById("export-close"),
   exportConfirmButton: document.getElementById("export-confirm-button"),
   exportStatus: document.getElementById("export-status"),
   exportFilename: document.getElementById("export-filename"),
@@ -492,6 +479,8 @@ const els = {
   exportFormatChoices: [...document.querySelectorAll('input[name="export-format-choice"]')],
   formatCards: [...document.querySelectorAll("[data-format-card]")],
   preflightItems: [...document.querySelectorAll("[data-preflight]")],
+  exportProofStatus: document.getElementById("export-proof-status"),
+  reviewChromeProof: document.getElementById("review-chrome-proof"),
   viewButtons: [...document.querySelectorAll("[data-kind]")],
   controls: [...document.querySelectorAll("[data-path]")],
   valueOutputs: [...document.querySelectorAll("[data-value-path]")],
@@ -549,6 +538,7 @@ boot();
 
 async function boot() {
   initializeInstrumentShell();
+  activateWorkflowTab("grade", { focus: false });
   bindEvents();
   await initializeGpuPreview();
   await loadCapabilities().catch(() => {
@@ -903,6 +893,19 @@ function bindInstrumentRangePointer(control, shell) {
 }
 
 function bindEvents() {
+  els.workflowTabs.forEach((button) => {
+    button.addEventListener("click", () => activateWorkflowTab(button.dataset.workflowTab));
+    button.addEventListener("keydown", (event) => {
+      if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+      event.preventDefault();
+      const enabled = els.workflowTabs.filter((tab) => !tab.disabled);
+      const current = enabled.indexOf(button);
+      const direction = event.key === 'ArrowRight' ? 1 : -1;
+      const next = enabled[(current + direction + enabled.length) % enabled.length];
+      next?.focus();
+      if (next) activateWorkflowTab(next.dataset.workflowTab, { focus: false });
+    });
+  });
   els.fileInput.addEventListener("change", async (event) => {
     const [file] = event.target.files;
     if (file) await uploadFile(file);
@@ -1055,8 +1058,6 @@ function bindEvents() {
   bindToneEqualizerEditor();
   bindZoneScopeOverlays();
 
-  els.exportButton.addEventListener("click", openExportSheet);
-  els.exportClose.addEventListener("click", closeExportSheet);
   els.exportConfirmButton.addEventListener("click", exportCurrentSession);
   els.exportDirectoryBrowse.addEventListener("click", chooseExportDirectory);
   els.applyInterpretationButton.addEventListener("click", applyInterpretationOverride);
@@ -1119,14 +1120,18 @@ function bindEvents() {
       els.exportFormat.value = choice.value;
       renderFormatCards();
       renderExportPreflight();
+      renderWorkflowContext();
     });
   });
   els.exportQuality.addEventListener("input", () => {
     els.exportQualityValue.textContent = els.exportQuality.value;
+    window.HDRProofing?.invalidate("settings");
   });
   els.jpegGainMapQuality.addEventListener("input", () => {
     els.jpegGainMapQualityValue.textContent = els.jpegGainMapQuality.value;
+    window.HDRProofing?.invalidate("settings");
   });
+  els.jpegGainMapScale.addEventListener("change", () => window.HDRProofing?.invalidate("settings"));
 
   bindCompareControl();
   bindKeyboardShortcuts();
@@ -1188,6 +1193,7 @@ async function uploadFile(file) {
     state.session = payload.session;
     state.adjustments = payload.session.adjustments;
     state.currentView = "hdr";
+    activateWorkflowTab("grade", { focus: false });
     state.adjustments.shared.active_focus = "hdr";
     state.interpretationGateDismissed = false;
     clearPreviewCache();
@@ -1219,6 +1225,7 @@ async function ejectCurrentSession() {
   state.session = null;
   state.adjustments = defaultAdjustments();
   state.currentView = "hdr";
+  activateWorkflowTab("grade", { focus: false });
   state.adjustments.shared.active_focus = "hdr";
   state.interpretationGateDismissed = false;
   state.lastScope = null;
@@ -1330,6 +1337,7 @@ function renderReadouts() {
   renderKeyValueList(els.previewOutputList, previewOutputEntries());
   renderKeyValueList(els.displayInfoList, displayProbeEntries());
   renderKeyValueList(els.sourcePreviewList, sourceInterpretationEntries());
+  renderWorkflowContext();
   const lane = currentCurveLane().toUpperCase();
   const enabled = getValueByPath(state.adjustments, curveEnabledPath()) ? "enabled" : "disabled";
   els.curveStatus.textContent = `${lane} curves are ${enabled}. Curve edits affect only the ${lane} preview/export branch.`;
@@ -1365,6 +1373,41 @@ function displayProbeEntries() {
     ["Browser", state.displayInfo.browser],
     ["GPU Preview", state.displayInfo.gpu || "Backend fallback"],
   ];
+}
+
+function renderWorkflowContext() {
+  if (!els.workflowContextList) return;
+  const selectedDisplay = (state.displayTelemetry?.displays || [])
+    .find((display) => display.id === state.proofDisplayId);
+  const proofFormat = state.proofFormat === "avif_gain_map" ? "AVIF + gain map" : "JPEG Ultra HDR";
+  const exportFormat = {
+    avif_gain_map: "AVIF + gain map",
+    jpeg_ultrahdr: "JPEG Ultra HDR",
+    sdr_png: "PNG (SDR)",
+  }[els.exportFormat?.value] || "Not selected";
+  const proofStatus = !state.proofReconstruction
+    ? "Not built"
+    : state.proofDirty ? "Stale" : "Current";
+  const entriesByWorkflow = {
+    grade: [
+      ["Stage", "Grade"],
+      ["View", state.currentView === "sdr" ? "SDR fallback" : "HDR grade"],
+      ["Format", state.session?.source?.suffix || "n/a"],
+    ],
+    proof: [
+      ["Stage", "Chrome Proof"],
+      ["Status", proofStatus],
+      ["Format", proofFormat],
+      ["Display ID", selectedDisplay?.id || state.proofDisplayId || "Unavailable"],
+    ],
+    export: [
+      ["Stage", "Export"],
+      ["Format", exportFormat],
+      ["Proof", proofStatus],
+      ["Display ID", selectedDisplay?.id || state.proofDisplayId || "Unavailable"],
+    ],
+  };
+  renderKeyValueList(els.workflowContextList, entriesByWorkflow[state.activeWorkflow] || entriesByWorkflow.grade);
 }
 
 function sourceInterpretationEntries() {
@@ -1455,6 +1498,7 @@ async function settlePreview(lane = state.currentView) {
   } else {
     await renderPreviewForLane(lane, false, longEdge);
   }
+  window.HDRProofing?.settled(lane);
 }
 
 function debounceOverlayAndScopes() {
@@ -2180,7 +2224,9 @@ function syncCurveControlsFromState() {
 function renderSessionChrome() {
   const hasSession = Boolean(state.session);
   els.ejectButton.disabled = !hasSession;
-  els.exportButton.disabled = !hasSession;
+  els.workflowTabs.forEach((button) => {
+    button.disabled = button.dataset.workflowTab !== "grade" && !hasSession;
+  });
   els.emptyImportButton.disabled = hasSession;
   document.querySelectorAll(".grade-rail input, .grade-rail select, .grade-rail button").forEach((control) => {
     control.disabled = !hasSession;
@@ -2193,6 +2239,7 @@ function renderSessionChrome() {
   [els.zoomOut, els.zoomIn, els.zoomSlider, els.zoomReadout, els.zoomFit, els.zoomActual].forEach((control) => {
     control.disabled = !hasSession;
   });
+  window.HDRProofing?.render();
 }
 
 function renderCurveChannelTabs() {
@@ -3033,6 +3080,7 @@ function clearPreviewImage() {
 }
 
 function activePreviewElement() {
+  if (els.chromeProofImage?.style.display !== "none") return els.chromeProofImage;
   return els.previewCanvas.style.display !== "none" ? els.previewCanvas : els.previewImage;
 }
 
@@ -3262,6 +3310,7 @@ function renderLaneChrome() {
   els.laneNote.textContent = branchCopy[lane];
   els.scopeKindLabel.textContent = lane.toUpperCase();
   state.previewInfo = state.previewInfoByLane[lane];
+  window.HDRProofing?.syncLane();
   renderCompareStatus();
   updateControlReadouts();
   renderControlState();
@@ -3269,7 +3318,7 @@ function renderLaneChrome() {
 
 function invalidatePreview(lane) {
   state.previewGeneration[lane] += 1;
-  window.HDRProofing?.invalidate();
+  window.HDRProofing?.invalidate(lane);
   renderCompareStatus();
   renderExportPreflight();
 }
@@ -3364,6 +3413,7 @@ async function peekOtherLane() {
     return;
   }
   state.comparePeekActive = true;
+  window.HDRProofing?.syncLane();
   clearPreviewOverlay();
   await showCachedPreview(other);
   els.viewerLaneLabel.textContent = `${other.toUpperCase()} peek · release V`;
@@ -3371,6 +3421,7 @@ async function peekOtherLane() {
 
 async function restoreActiveLane() {
   state.comparePeekActive = false;
+  window.HDRProofing?.syncLane();
   await showCachedPreview(state.currentView);
   renderLaneChrome();
   await refreshOverlay();
@@ -3487,6 +3538,10 @@ function applyZoomGeometry() {
   els.previewImage.style.height = `${displayHeight}px`;
   els.previewCanvas.style.width = `${displayWidth}px`;
   els.previewCanvas.style.height = `${displayHeight}px`;
+  if (els.chromeProofImage) {
+    els.chromeProofImage.style.width = `${displayWidth}px`;
+    els.chromeProofImage.style.height = `${displayHeight}px`;
+  }
   state.zoomPercent = percent;
   updateZoomReadout();
   syncOverlayPlacement();
@@ -3727,21 +3782,36 @@ function resetControlGroup(group) {
   debouncePreview(group.startsWith("sdr-") ? "sdr" : "hdr");
 }
 
-function openExportSheet() {
+function activateWorkflowTab(workflow, { focus = false } = {}) {
+  const next = ["grade", "proof", "export"].includes(workflow) ? workflow : "grade";
+  if (next !== "grade" && !state.session) return;
+  state.activeWorkflow = next;
+  document.body.dataset.workflow = next;
+  els.workflowTabs.forEach((button) => {
+    const active = button.dataset.workflowTab === next;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+    if (active && focus) button.focus();
+  });
+  if (next === "export") prepareExportRail();
+  renderWorkflowContext();
+  window.HDRProofing?.render();
+  window.dispatchEvent(new CustomEvent("hdrfinisher:workflowchange", { detail: { workflow: next } }));
+}
+
+function prepareExportRail() {
   if (!state.session) return;
   if (!els.exportDirectory.value.trim()) els.exportDirectory.value = state.defaultExportDirectory;
   renderCapabilities();
   renderFormatCards();
   renderExportPreflight();
   els.exportStatus.textContent = "Choose a format and destination.";
-  if (typeof els.exportSheet.showModal === "function") els.exportSheet.showModal();
-  else els.exportSheet.setAttribute("open", "");
 }
 
-function closeExportSheet() {
-  if (typeof els.exportSheet.close === "function") els.exportSheet.close();
-  else els.exportSheet.removeAttribute("open");
-  els.exportButton.focus();
+function openExportSheet() {
+  if (!state.session) return;
+  activateWorkflowTab("export", { focus: true });
 }
 
 function renderCapabilities() {
@@ -3783,6 +3853,7 @@ function renderCapabilities() {
       els.exportFormat.value = fallback.value;
     }
   }
+  window.HDRProofing?.render();
 }
 
 function renderFormatCards() {
@@ -3805,7 +3876,35 @@ function renderExportPreflight() {
   setPreflight("hdr", cacheReady("hdr"), cacheReady("hdr") ? "HDR branch ready" : "HDR preview preparing");
   setPreflight("sdr", cacheReady("sdr"), cacheReady("sdr") ? "SDR fallback ready" : "SDR fallback preparing");
   setPreflight("encoder", encoderReady, encoderReady ? "Encoder available" : "Encoder unavailable");
+  renderProofPreflight();
   els.exportConfirmButton.disabled = !state.session || !sourceReady || !encoderReady;
+}
+
+function renderProofPreflight() {
+  const row = els.preflightItems.find((element) => element.dataset.preflight === "proof");
+  if (!row || !els.exportProofStatus || !els.reviewChromeProof) return;
+  row.classList.remove("pass", "warn");
+  els.reviewChromeProof.classList.toggle("hidden", els.exportFormat.value === "sdr_png" || !state.session);
+  if (els.exportFormat.value === "sdr_png") {
+    els.exportProofStatus.textContent = "Chrome HDR proof not applicable to SDR PNG";
+    return;
+  }
+  const formatName = state.proofArtifact?.format === "avif_gain_map" ? "AVIF" : "JPEG Ultra HDR";
+  const targetName = state.proofReconstruction?.target_label || "selected target";
+  if (!state.proofArtifact || !state.proofReconstruction) {
+    els.exportProofStatus.textContent = "Chrome proof has not been reviewed";
+    row.classList.add("warn");
+  } else if (state.proofDirty) {
+    els.exportProofStatus.textContent = `Chrome proof is stale · ${formatName} · ${targetName}`;
+    row.classList.add("warn");
+  } else if (state.proofArtifact.format !== els.exportFormat.value) {
+    const exportName = els.exportFormat.value === "avif_gain_map" ? "AVIF" : "JPEG Ultra HDR";
+    els.exportProofStatus.textContent = `Proofed ${formatName}, not selected ${exportName}`;
+    row.classList.add("warn");
+  } else {
+    els.exportProofStatus.textContent = `Chrome proof reviewed · ${formatName} · ${targetName}`;
+    row.classList.add("pass");
+  }
 }
 
 function setPreflight(name, pass, label) {

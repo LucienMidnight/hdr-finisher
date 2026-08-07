@@ -32,6 +32,8 @@ from .models import (
     ProofArtifactResponse,
     ProofMatrixResponse,
     ProofMatrixTile,
+    ProofReconstructionRequest,
+    ProofReconstructionResponse,
 )
 from .preview import _encode_hdr_avif
 
@@ -148,6 +150,7 @@ class ProofArtifactStore:
         self._artifacts: dict[str, ProofArtifact] = {}
         self._tiles: dict[str, ProofTile] = {}
         self._request_cache: dict[str, str] = {}
+        self._target_cache: dict[str, ProofMatrixTile] = {}
         atexit.register(self.clear)
 
     def clear(self) -> None:
@@ -155,6 +158,7 @@ class ProofArtifactStore:
             self._artifacts.clear()
             self._tiles.clear()
             self._request_cache.clear()
+            self._target_cache.clear()
         shutil.rmtree(self.root, ignore_errors=True)
 
     def create(
@@ -265,7 +269,6 @@ class ProofArtifactStore:
 
     def matrix(self, artifact_id: str, display_headroom: float | None) -> ProofMatrixResponse:
         artifact = self.artifact(artifact_id)
-        base_endpoint, alternate_endpoint = self._matrix_endpoints(artifact)
         targets = list(MATRIX_HEADROOMS)
         full = max(0.0, artifact.encoded_headroom)
         if not any(abs(item - full) < 0.01 for item in targets):
@@ -273,35 +276,7 @@ class ProofArtifactStore:
         tiles: list[ProofMatrixTile] = []
         for target in targets:
             label = "Full" if abs(target - full) < 0.01 and target not in MATRIX_HEADROOMS else f"+{target:g} stops"
-            reconstructed = reconstruct_from_endpoints(
-                base_endpoint,
-                alternate_endpoint,
-                max(artifact.encoded_headroom, 0.01),
-                target,
-                display_ratio_sdr=(artifact.jpeg_gain_map.hdr_capacity_min if artifact.jpeg_gain_map else 1.0),
-                offset_sdr=(artifact.jpeg_gain_map.offset_sdr if artifact.jpeg_gain_map else 1.0 / 64.0),
-                offset_hdr=(artifact.jpeg_gain_map.offset_hdr if artifact.jpeg_gain_map else 1.0 / 64.0),
-            )
-            tile_bytes = self._encoded_matrix_tile(artifact, target, reconstructed)
-            tile_hash = hashlib.sha256(tile_bytes).hexdigest()
-            tile_id = tile_hash[:24]
-            tile_path = self.root / f"tile-{tile_id}.avif"
-            if not tile_path.exists():
-                tile_path.write_bytes(tile_bytes)
-            with self._lock:
-                self._tiles[tile_id] = ProofTile(tile_id=tile_id, path=tile_path, media_type="image/avif")
-            peak_nits, clipped = _image_stats(reconstructed, target)
-            tiles.append(
-                ProofMatrixTile(
-                    id=tile_id,
-                    label=label,
-                    target_headroom=round(float(target), 4),
-                    url=f"/api/proof/tile/{tile_id}.avif",
-                    peak_nits=round(peak_nits, 1),
-                    clipped_percent=round(clipped, 3),
-                    above_display_headroom=(target > display_headroom + 0.05) if display_headroom is not None else None,
-                )
-            )
+            tiles.append(self._target_tile(artifact, target, label, display_headroom))
         return ProofMatrixResponse(
             artifact_id=artifact.artifact_id,
             encoded_headroom=round(artifact.encoded_headroom, 4),
@@ -311,6 +286,116 @@ class ProofArtifactStore:
                 else "Encoded JPEG endpoints reconstructed with ISO/Skia weighting"
             ),
             tiles=tiles,
+        )
+
+    def reconstruction(
+        self,
+        request: ProofReconstructionRequest,
+        displays: list[dict[str, Any]],
+    ) -> ProofReconstructionResponse:
+        artifact = self.artifact(request.artifact_id)
+        display = _select_proof_display(displays, request.target.display_id)
+        display_headroom = _optional_float(display.get("nominal_headroom")) if display else None
+        display_max_nits = _optional_float(display.get("max_luminance_nits")) if display else None
+
+        if request.target.mode == "auto":
+            if display is None or display_headroom is None:
+                raise ValueError("Automatic proofing is unavailable because display headroom could not be read.")
+            requested_headroom = max(0.0, display_headroom)
+            requested_peak_nits = display_max_nits
+            target_label = f"Auto · {display.get('name') or 'current display'}"
+        elif request.target.mode == "fixed":
+            requested_peak_nits = float(request.target.peak_nits or 1000.0)
+            requested_headroom = target_headroom_for_peak_nits(requested_peak_nits)
+            target_label = f"{requested_peak_nits:g} nits"
+        else:
+            requested_headroom = max(0.0, artifact.encoded_headroom)
+            requested_peak_nits = None
+            target_label = "Full encoded range"
+
+        encoded_headroom = max(0.0, artifact.encoded_headroom)
+        resolved_headroom = min(requested_headroom, encoded_headroom)
+        capped = requested_headroom > encoded_headroom + 0.0001
+        tile = self._target_tile(artifact, resolved_headroom, target_label, display_headroom)
+        reconstruction = self._reconstruction_label(artifact)
+        return ProofReconstructionResponse(
+            artifact_id=artifact.artifact_id,
+            format=artifact.format,
+            target_mode=request.target.mode,
+            target_label=target_label,
+            requested_headroom=round(requested_headroom, 4),
+            resolved_headroom=round(resolved_headroom, 4),
+            requested_peak_nits=round(requested_peak_nits, 1) if requested_peak_nits is not None else None,
+            resolved_reference_peak_nits=round(100.0 * (2.0 ** resolved_headroom), 1),
+            encoded_headroom=round(encoded_headroom, 4),
+            capped_by_encoded_headroom=capped,
+            display_id=str(display.get("id")) if display else None,
+            display_label=str(display.get("name")) if display else None,
+            display_headroom=round(display_headroom, 4) if display_headroom is not None else None,
+            display_max_luminance_nits=round(display_max_nits, 1) if display_max_nits is not None else None,
+            display_can_represent=(resolved_headroom <= display_headroom + 0.05) if display_headroom is not None else None,
+            reconstruction=reconstruction,
+            cache_id=f"{artifact.artifact_id}:{resolved_headroom:.6f}",
+            tile=tile,
+        )
+
+    def _target_tile(
+        self,
+        artifact: ProofArtifact,
+        target: float,
+        label: str,
+        display_headroom: float | None,
+    ) -> ProofMatrixTile:
+        resolved_target = min(max(float(target), 0.0), max(artifact.encoded_headroom, 0.0))
+        cache_key = f"{artifact.artifact_id}:{resolved_target:.6f}"
+        with self._lock:
+            cached = self._target_cache.get(cache_key)
+        if cached is None:
+            base_endpoint, alternate_endpoint = self._matrix_endpoints(artifact)
+            reconstructed = reconstruct_from_endpoints(
+                base_endpoint,
+                alternate_endpoint,
+                max(artifact.encoded_headroom, 0.01),
+                resolved_target,
+                display_ratio_sdr=(artifact.jpeg_gain_map.hdr_capacity_min if artifact.jpeg_gain_map else 1.0),
+                offset_sdr=(artifact.jpeg_gain_map.offset_sdr if artifact.jpeg_gain_map else 1.0 / 64.0),
+                offset_hdr=(artifact.jpeg_gain_map.offset_hdr if artifact.jpeg_gain_map else 1.0 / 64.0),
+            )
+            tile_bytes = self._encoded_matrix_tile(artifact, resolved_target, reconstructed)
+            tile_hash = hashlib.sha256(tile_bytes).hexdigest()
+            tile_id = tile_hash[:24]
+            tile_path = self.root / f"tile-{tile_id}.avif"
+            if not tile_path.exists():
+                tile_path.write_bytes(tile_bytes)
+            with self._lock:
+                self._tiles[tile_id] = ProofTile(tile_id=tile_id, path=tile_path, media_type="image/avif")
+            peak_nits, clipped = _image_stats(reconstructed, resolved_target)
+            cached = ProofMatrixTile(
+                id=tile_id,
+                label=label,
+                target_headroom=round(resolved_target, 4),
+                url=f"/api/proof/tile/{tile_id}.avif",
+                peak_nits=round(peak_nits, 1),
+                clipped_percent=round(clipped, 3),
+                above_display_headroom=None,
+            )
+            with self._lock:
+                self._target_cache[cache_key] = cached
+        return cached.model_copy(
+            update={
+                "label": label,
+                "above_display_headroom": (
+                    resolved_target > display_headroom + 0.05 if display_headroom is not None else None
+                ),
+            }
+        )
+
+    @staticmethod
+    def _reconstruction_label(artifact: ProofArtifact) -> str:
+        return (
+            "Encoded AVIF gain map tone-mapped by libavif"
+            if artifact.format == "avif_gain_map"
+            else "Encoded JPEG endpoints reconstructed with ISO/Skia weighting"
         )
 
     def _matrix_endpoints(self, artifact: ProofArtifact) -> tuple[np.ndarray, np.ndarray]:
@@ -411,6 +496,26 @@ class ProofArtifactStore:
             encoded_headroom=round(artifact.encoded_headroom, 4),
             jpeg_gain_map=artifact.jpeg_gain_map,
         )
+
+
+def _select_proof_display(displays: list[dict[str, Any]], display_id: str | None) -> dict[str, Any] | None:
+    if display_id:
+        selected = next((display for display in displays if str(display.get("id")) == display_id), None)
+        if selected is not None:
+            return selected
+    return next((display for display in displays if bool(display.get("primary"))), None) or (displays[0] if displays else None)
+
+
+def target_headroom_for_peak_nits(peak_nits: float) -> float:
+    return max(0.0, math.log2(float(peak_nits) / 100.0))
+
+
+def _optional_float(value: object) -> float | None:
+    try:
+        parsed = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
 
 
 class EvidenceStore:

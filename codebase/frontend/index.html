@@ -18,6 +18,12 @@
         </div>
       </div>
 
+      <nav class="workflow-tabs" aria-label="Workflow stages">
+        <button class="workflow-tab active" type="button" data-workflow-tab="grade" aria-selected="true">Grade</button>
+        <button class="workflow-tab" type="button" data-workflow-tab="proof" aria-selected="false">Proof</button>
+        <button class="workflow-tab" type="button" data-workflow-tab="export" aria-selected="false">Export</button>
+      </nav>
+
       <div class="top-file-meta" id="file-summary">Import one HDR-capable source to begin</div>
 
       <div class="top-actions">
@@ -27,7 +33,6 @@
         <button id="eject-button" class="button-secondary" type="button">Eject</button>
         <span class="pipeline-chip">ACEScg · Local · Single image</span>
         <span class="capability-chip" id="capability-summary">Checking encoders…</span>
-        <button id="export-button" class="button-primary" type="button">Export...</button>
       </div>
     </header>
 
@@ -100,6 +105,11 @@
         </div>
       </section>
 
+      <section class="workflow-context">
+        <p class="section-kicker">Workflow</p>
+        <dl id="workflow-context-list" class="metadata-list"></dl>
+      </section>
+
       <p class="scope-boundary">Global finishing only. No layers, masks, RAW processing, or local adjustments.</p>
     </aside>
 
@@ -118,11 +128,6 @@
     <main class="workspace-main">
       <section class="viewer-panel panel" aria-label="Viewer">
         <div class="viewer-bar">
-          <div class="proof-mode-switch" role="tablist" aria-label="Proofing mode">
-            <button class="proof-mode-button active" type="button" data-proof-mode="authoring" role="tab" aria-selected="true">Authoring</button>
-            <button class="proof-mode-button" type="button" data-proof-mode="matrix" role="tab" aria-selected="false">Delivery Matrix</button>
-            <button class="proof-mode-button" type="button" data-proof-mode="live" role="tab" aria-selected="false">Live Browser</button>
-          </div>
           <div class="viewer-lane">
             <span class="lane-dot" aria-hidden="true"></span>
             <span id="viewer-lane-label">HDR Grade</span>
@@ -176,6 +181,46 @@
               <input id="overlay-threshold" type="range" min="0.1" max="4" step="0.05" value="1" data-path="shared.overlay_threshold">
             </div>
           </div>
+          <aside id="proof-workflow-panel" class="workflow-side-panel proof-rail panel" data-workflow-panel="proof" aria-label="Chrome Proof settings">
+            <div class="workflow-rail-header">
+              <div><p class="section-kicker">Browser review</p><h1>Chrome Proof</h1></div>
+              <span id="chrome-proof-inline-status" class="status-text muted">Off</span>
+            </div>
+            <label class="proof-enable-row">
+              <span><strong>Show Chrome proof</strong><small>Preview delivered gain-map behavior</small></span>
+              <input id="chrome-proof-toggle" type="checkbox" aria-label="Show Chrome proof">
+            </label>
+            <div class="proof-settings-grid">
+              <label>Delivery format
+                <select id="chrome-proof-format">
+                  <option value="jpeg_ultrahdr">JPEG Ultra HDR</option>
+                  <option value="avif_gain_map">AVIF + gain map</option>
+                </select>
+              </label>
+              <label>Target display peak
+                <select id="chrome-proof-target">
+                  <option value="auto">Auto · current display</option>
+                  <option value="400">400 nits</option>
+                  <option value="600">600 nits</option>
+                  <option value="1000">1,000 nits</option>
+                  <option value="2000">2,000 nits</option>
+                  <option value="4000">4,000 nits</option>
+                  <option value="full">Full encoded range</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
+              <label id="chrome-proof-custom-field" class="hidden">Custom peak
+                <span class="proof-nits-input"><input id="chrome-proof-custom-nits" type="number" min="100" max="10000" step="50" value="1000"><span>nits</span></span>
+              </label>
+              <label>Active display
+                <select id="chrome-proof-display"><option value="">Detecting…</option></select>
+              </label>
+            </div>
+            <div id="chrome-proof-status" class="chrome-proof-status" aria-live="polite">Import an image to begin proofing.</div>
+            <p class="proof-explainer">The target reconstructs delivered gain-map bytes for that reference headroom. It is not a hard clip and never changes the grade or export.</p>
+            <p class="proof-explainer">Proofs refresh on demand. Grading changes mark the result stale without interrupting editing.</p>
+            <button id="chrome-proof-refresh" class="button-primary rail-primary-action" type="button">Build proof</button>
+          </aside>
         </div>
 
         <div class="viewport-frame" id="dropzone">
@@ -183,60 +228,8 @@
             <canvas id="preview-canvas" aria-label="WebGPU draft preview"></canvas>
             <img id="preview-image" alt="Current HDR Finisher preview" draggable="false">
             <img id="preview-overlay" alt="" aria-hidden="true" draggable="false">
+            <img id="chrome-proof-image" alt="Chrome fixed-headroom proof preview" draggable="false">
           </div>
-          <section id="delivery-matrix-view" class="proof-view hidden" aria-label="Fixed-headroom reconstruction">
-            <div class="proof-toolbar">
-              <div>
-                <p class="section-kicker">Fixed-headroom reconstruction</p>
-                <p class="proof-intro">Pixels are fixed for each target. Their presentation still depends on this browser, Windows, and the display.</p>
-              </div>
-              <label>Format
-                <select id="proof-format">
-                  <option value="jpeg_ultrahdr">JPEG Ultra HDR · provisional default</option>
-                  <option value="avif_gain_map">AVIF gain map</option>
-                </select>
-              </label>
-              <label>Active display<select id="proof-display"><option value="">Detecting…</option></select></label>
-              <button id="build-proof-button" class="button-primary" type="button">Build proof</button>
-            </div>
-            <div id="display-telemetry" class="proof-telemetry">Reading display telemetry…</div>
-            <div id="matrix-status" class="proof-status">Build a proof to create fixed-headroom tiles from delivered bytes.</div>
-            <div id="matrix-grid" class="matrix-grid" aria-live="polite"></div>
-          </section>
-          <section id="live-browser-view" class="proof-view hidden" aria-label="Live Browser Check">
-            <div class="proof-toolbar">
-              <div>
-                <p class="section-kicker">Observed on this device</p>
-                <p class="proof-intro">The left image is the exact encoded proxy. The right image is the selected fixed-headroom reconstruction.</p>
-              </div>
-              <label>Matrix target<select id="live-headroom"></select></label>
-              <label>Image MIME<select id="live-mime-mode"><option value="correct">Correct</option><option value="wrong">Deliberately wrong</option></select></label>
-              <label>dynamic-range-limit<select id="dynamic-range-limit"><option value="no-limit">no-limit</option><option value="standard">standard</option></select></label>
-              <label>Presentation<select id="live-presentation"><option value="native">Native</option><option value="css-scale">CSS size</option><option value="transform">Transform</option><option value="opacity">Opacity 0.8</option><option value="transition">Transition</option></select></label>
-              <button id="refresh-live-button" class="button-secondary" type="button">Refresh exact bytes</button>
-            </div>
-            <div id="live-compatibility" class="compatibility-unknown">No verified compatibility record for this browser/version.</div>
-            <div class="live-comparison">
-              <figure class="proof-figure">
-                <figcaption><strong>Live Browser Check</strong><span id="live-artifact-meta">No artifact</span></figcaption>
-                <div id="live-proof-frame" class="proof-image-frame"><img id="live-proof-image" alt="Exact gain-map proxy rendered by this browser"></div>
-              </figure>
-              <figure class="proof-figure">
-                <figcaption><strong>Selected fixed-headroom reference</strong><span id="live-matrix-meta">No tile selected</span></figcaption>
-                <div class="proof-image-frame"><img id="live-matrix-image" alt="Fixed-headroom reconstruction"></div>
-              </figure>
-            </div>
-            <form id="observation-form" class="observation-form">
-              <p class="section-kicker">Structured visual observation</p>
-              <label>Highlights<select id="observation-highlights" required><option value="matched">Matched</option><option value="slightly-different">Slightly different</option><option value="clipped">Clipped</option><option value="significantly-dimmer-brighter">Significantly dimmer/brighter</option></select></label>
-              <label>Midtones<select id="observation-midtones" required><option value="matched">Matched</option><option value="shifted">Shifted</option></select></label>
-              <label>Color<select id="observation-color" required><option value="matched">Matched</option><option value="saturation-difference">Saturation difference</option><option value="hue-difference">Hue difference</option></select></label>
-              <label>Overall<select id="observation-overall" required><option value="effectively-equivalent">Effectively equivalent</option><option value="acceptable-difference">Acceptable difference</option><option value="clearly-wrong">Clearly wrong</option></select></label>
-              <label class="observation-notes">Notes<input id="observation-notes" type="text" placeholder="Reload behavior, monitor move, clipping, or color notes"></label>
-              <button id="save-observation" class="button-secondary" type="submit">Save evidence</button>
-              <span id="observation-status" class="proof-status">Not recorded</span>
-            </form>
-          </section>
           <div id="empty-state" class="empty-state">
             <p class="empty-state-title">Drop an HDR image anywhere in the viewer</p>
             <p class="empty-state-copy">EXR, TIFF, Radiance HDR, PFM, HEIC, JPEG, or PNG</p>
@@ -348,7 +341,8 @@
       aria-valuenow="320"
     ></div>
 
-    <aside class="grade-rail panel" aria-label="Grade">
+    <aside class="grade-rail panel" aria-label="Workflow settings">
+      <section id="grade-workflow-panel" class="workflow-rail-panel" data-workflow-panel="grade" aria-label="Grade settings">
       <div class="grade-header">
         <div>
           <p class="section-kicker">Adjustments</p>
@@ -677,16 +671,16 @@
           <p id="curve-status" class="helper">Curves apply only to the active branch.</p>
         </div>
       </section>
+      </section>
     </aside>
   </div>
 
-  <dialog id="export-sheet" class="export-sheet">
+  <aside id="export-sheet" class="export-sheet workflow-side-panel panel" data-workflow-panel="export" aria-label="Export settings">
     <div class="sheet-header">
       <div>
         <p class="section-kicker">Delivery</p>
         <h1>Export finished image</h1>
       </div>
-      <button id="export-close" class="text-button" type="button">Close</button>
     </div>
 
     <input id="export-format" type="hidden" value="jpeg_ultrahdr">
@@ -746,6 +740,7 @@
         <li data-preflight="hdr">HDR branch ready</li>
         <li data-preflight="sdr">SDR fallback reviewed</li>
         <li data-preflight="encoder">Encoder available</li>
+        <li data-preflight="proof" class="proof-preflight-row"><span id="export-proof-status">Chrome proof has not been reviewed</span><button id="review-chrome-proof" class="text-button" type="button">Review Chrome Proof</button></li>
       </ul>
     </section>
 
@@ -758,7 +753,7 @@
       <p>Validate HDR output in current Chromium, Brave, or Edge.</p>
       <button id="export-confirm-button" class="button-primary" type="button">Export...</button>
     </div>
-  </dialog>
+  </aside>
 
   <script src="/static/webgpu-preview.js"></script>
   <script src="/static/app.js"></script>

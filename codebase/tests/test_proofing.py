@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+import math
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +19,7 @@ from hdr_finisher.models import (
     ExportResponse,
     JPEGGainMapProofMetadata,
     ProofArtifactRequest,
+    ProofReconstructionRequest,
 )
 from hdr_finisher.proofing import (
     EvidenceStore,
@@ -27,6 +29,7 @@ from hdr_finisher.proofing import (
     _inspect_jpeg_gain_map,
     apply_gain_map_formula,
     reconstruct_from_endpoints,
+    target_headroom_for_peak_nits,
 )
 from hdr_finisher.color import linear_bt2020_to_acescg, linear_srgb_to_acescg
 from hdr_finisher.render_cache import SessionRenderCache
@@ -70,6 +73,14 @@ def test_endpoint_reconstruction_preserves_base_and_alternate() -> None:
     alternate = base * np.array([4.0, 3.0, 2.0], dtype=np.float32)
     np.testing.assert_allclose(reconstruct_from_endpoints(base, alternate, 3.0, 0.0), base, atol=2e-6)
     np.testing.assert_allclose(reconstruct_from_endpoints(base, alternate, 3.0, 3.0), alternate, atol=2e-5)
+
+
+@pytest.mark.parametrize(
+    ("peak_nits", "expected_headroom"),
+    [(400, 2.0), (600, math.log2(6)), (1000, math.log2(10)), (2000, math.log2(20)), (4000, math.log2(40))],
+)
+def test_chrome_proof_nit_presets_use_100_nit_reference_white(peak_nits: float, expected_headroom: float) -> None:
+    assert target_headroom_for_peak_nits(peak_nits) == pytest.approx(expected_headroom)
 
 
 def test_endpoint_reconstruction_uses_encoded_offsets_and_clamps_above_capacity() -> None:
@@ -203,6 +214,39 @@ def test_artifact_is_content_hashed_cached_and_matrix_is_stable(monkeypatch, tmp
     first = store.create(session, request, _FakeBackend())
     second = store.create(session, request, _FakeBackend())
     matrix = store.matrix(first.artifact_id, display_headroom=1.5)
+    fixed = store.reconstruction(
+        ProofReconstructionRequest(
+            artifact_id=first.artifact_id,
+            target={"mode": "fixed", "peak_nits": 400, "display_id": "display-1"},
+        ),
+        [{"id": "display-1", "name": "Reference display", "nominal_headroom": 4.0, "max_luminance_nits": 1600}],
+    )
+    fixed_again = store.reconstruction(
+        ProofReconstructionRequest(
+            artifact_id=first.artifact_id,
+            target={"mode": "fixed", "peak_nits": 400, "display_id": "display-1"},
+        ),
+        [{"id": "display-1", "name": "Reference display", "nominal_headroom": 4.0, "max_luminance_nits": 1600}],
+    )
+    auto = store.reconstruction(
+        ProofReconstructionRequest(
+            artifact_id=first.artifact_id,
+            target={"mode": "auto", "display_id": "display-1"},
+        ),
+        [{"id": "display-1", "name": "Reference display", "nominal_headroom": 1.5, "max_luminance_nits": 1000}],
+    )
+    capped = store.reconstruction(
+        ProofReconstructionRequest(
+            artifact_id=first.artifact_id,
+            target={"mode": "fixed", "peak_nits": 10000},
+        ),
+        [],
+    )
+    with pytest.raises(ValueError, match="display headroom"):
+        store.reconstruction(
+            ProofReconstructionRequest(artifact_id=first.artifact_id, target={"mode": "auto"}),
+            [],
+        )
 
     assert first.artifact_id == second.artifact_id
     assert first.sha256 == second.sha256
@@ -210,6 +254,35 @@ def test_artifact_is_content_hashed_cached_and_matrix_is_stable(monkeypatch, tmp
     assert len(matrix.tiles) == 5
     assert matrix.tiles[0].above_display_headroom is False
     assert matrix.tiles[-1].above_display_headroom is True
+    assert fixed.resolved_headroom == pytest.approx(2.0)
+    assert fixed.tile.id == matrix.tiles[2].id
+    assert fixed_again.cache_id == fixed.cache_id
+    assert fixed_again.tile.id == fixed.tile.id
+    assert fixed.display_can_represent is True
+    assert auto.resolved_headroom == pytest.approx(1.5)
+    assert auto.display_label == "Reference display"
+    assert capped.resolved_headroom == pytest.approx(3.0)
+    assert capped.capped_by_encoded_headroom is True
+
+
+def test_auto_reconstruction_requires_display_headroom() -> None:
+    response = client.post(
+        "/api/proof/reconstruction",
+        json={"artifact_id": "missing", "target": {"mode": "auto"}},
+    )
+    assert response.status_code == 404
+
+    validation = client.post(
+        "/api/proof/reconstruction",
+        json={"artifact_id": "missing", "target": {"mode": "fixed"}},
+    )
+    assert validation.status_code == 422
+    for invalid_peak in (99, 10001):
+        bounds = client.post(
+            "/api/proof/reconstruction",
+            json={"artifact_id": "missing", "target": {"mode": "fixed", "peak_nits": invalid_peak}},
+        )
+        assert bounds.status_code == 422
 
 
 def test_evidence_store_round_trips_records(tmp_path: Path) -> None:
@@ -281,4 +354,18 @@ def test_real_proof_artifact_and_matrix_endpoints(
     matrix = matrix_response.json()
     assert len(matrix["tiles"]) >= 5
     assert all(client.get(tile["url"]).status_code == 200 for tile in matrix["tiles"])
+
+    reconstruction_response = client.post(
+        "/api/proof/reconstruction",
+        json={
+            "artifact_id": artifact["artifact_id"],
+            "target": {"mode": "fixed", "peak_nits": 1000},
+        },
+    )
+    assert reconstruction_response.status_code == 200, reconstruction_response.text
+    reconstruction = reconstruction_response.json()
+    assert reconstruction["format"] == format_name
+    assert reconstruction["target_label"] == "1000 nits"
+    assert reconstruction["resolved_headroom"] <= reconstruction["encoded_headroom"]
+    assert client.get(reconstruction["tile"]["url"]).status_code == 200
     session_store.clear()

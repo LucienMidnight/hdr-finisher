@@ -27,6 +27,8 @@ from .models import (
     ProofArtifactResponse,
     ProofMatrixRequest,
     ProofMatrixResponse,
+    ProofReconstructionRequest,
+    ProofReconstructionResponse,
     ScopeMode,
     SessionSummary,
     SourceInterpretationOverride,
@@ -314,6 +316,20 @@ def proof_matrix(request: ProofMatrixRequest) -> ProofMatrixResponse:
         return proof_store.matrix(request.artifact_id, request.display_headroom)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+
+
+@app.post("/api/proof/reconstruction", response_model=ProofReconstructionResponse)
+def proof_reconstruction(request: ProofReconstructionRequest) -> ProofReconstructionResponse:
+    telemetry = probe_displays()
+    displays = telemetry.get("displays")
+    try:
+        return proof_store.reconstruction(request, displays if isinstance(displays, list) else [])
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=501, detail=str(exc)) from exc
 
