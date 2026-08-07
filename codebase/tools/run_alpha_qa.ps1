@@ -93,6 +93,7 @@ Push-Location $Root
 try {
     Invoke-QaStep "pytest" { Invoke-LoggedCommand "pytest" $Python @("-m", "pytest", "-q", "tests") }
     Invoke-QaStep "node-check" { Invoke-LoggedCommand "node-check" "node" @("--check", "frontend\app.js") }
+    Invoke-QaStep "node-check-webgpu" { Invoke-LoggedCommand "node-check-webgpu" "node" @("--check", "frontend\webgpu-preview.js") }
     Invoke-QaStep "node-check-proofing" { Invoke-LoggedCommand "node-check-proofing" "node" @("--check", "frontend\proofing-ui.js") }
     Invoke-QaStep "capabilities" {
         $capabilityJson = & $Python "tools\check_capabilities.py"

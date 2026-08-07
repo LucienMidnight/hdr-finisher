@@ -13,6 +13,102 @@ BT2020_COLOURSPACE = "ITU-R BT.2020"
 DISPLAY_P3_COLOURSPACE = "Display P3"
 
 
+def rgb_primaries_adjustment_matrix(
+    red_hue: float = 0.0,
+    red_purity: float = 0.0,
+    green_hue: float = 0.0,
+    green_purity: float = 0.0,
+    blue_hue: float = 0.0,
+    blue_purity: float = 0.0,
+    tint_hue: float = 0.0,
+    tint_purity: float = 0.0,
+) -> np.ndarray:
+    """Build a darktable-style primary adjustment in the ACEScg xy gamut.
+
+    Hue rotates a primary's white-to-primary ray and purity scales its distance
+    to the ACEScg gamut boundary. Tint moves the achromatic point in the same
+    geometry. The returned column-vector matrix is identity at all defaults.
+    """
+    colourspace = RGB_COLOURSPACES[ACESCG_COLOURSPACE]
+    primaries = np.asarray(colourspace.primaries, dtype=np.float64)
+    white = np.asarray(colourspace.whitepoint, dtype=np.float64)
+    hue_values = (red_hue, green_hue, blue_hue)
+    purity_values = (red_purity, green_purity, blue_purity)
+    custom_primaries = np.stack(
+        [
+            _rotate_scale_xy_primary(
+                white,
+                primaries,
+                primaries[index],
+                float(hue_values[index]),
+                max(0.01, 1.0 + float(purity_values[index]) / 100.0),
+            )
+            for index in range(3)
+        ]
+    )
+    custom_white = _rotate_scale_xy_primary(
+        white,
+        primaries,
+        primaries[0],
+        float(tint_hue),
+        np.clip(float(tint_purity) / 100.0, 0.0, 0.99),
+    )
+    base_rgb_to_xyz = np.asarray(colourspace.matrix_RGB_to_XYZ, dtype=np.float64)
+    try:
+        custom_rgb_to_xyz = _rgb_to_xyz_matrix(custom_primaries, custom_white)
+        adjustment = np.linalg.solve(base_rgb_to_xyz, custom_rgb_to_xyz)
+    except np.linalg.LinAlgError:
+        return np.eye(3, dtype=np.float32)
+    if not np.all(np.isfinite(adjustment)) or np.max(np.abs(adjustment)) > 64.0:
+        return np.eye(3, dtype=np.float32)
+    return adjustment.astype(np.float32)
+
+
+def _rotate_scale_xy_primary(
+    white: np.ndarray,
+    gamut: np.ndarray,
+    reference_primary: np.ndarray,
+    hue_degrees: float,
+    purity_scale: float,
+) -> np.ndarray:
+    base_direction = reference_primary - white
+    angle = np.arctan2(base_direction[1], base_direction[0]) + np.deg2rad(hue_degrees)
+    direction = np.array([np.cos(angle), np.sin(angle)], dtype=np.float64)
+    edge_distance = _ray_triangle_distance(white, direction, gamut)
+    return white + direction * edge_distance * purity_scale
+
+
+def _ray_triangle_distance(origin: np.ndarray, direction: np.ndarray, triangle: np.ndarray) -> float:
+    distances: list[float] = []
+    for index in range(3):
+        start = triangle[index]
+        edge = triangle[(index + 1) % 3] - start
+        # origin + t * direction = start + u * edge
+        system = np.column_stack((direction, -edge))
+        determinant = float(np.linalg.det(system))
+        if abs(determinant) < 1e-12:
+            continue
+        distance, edge_position = np.linalg.solve(system, start - origin)
+        if distance >= -1e-9 and -1e-9 <= edge_position <= 1.0 + 1e-9:
+            distances.append(max(0.0, float(distance)))
+    if not distances:
+        return float(np.linalg.norm(triangle[0] - origin))
+    return min(distances)
+
+
+def _rgb_to_xyz_matrix(primaries: np.ndarray, white: np.ndarray) -> np.ndarray:
+    unscaled = np.stack(
+        [
+            np.array([xy[0] / xy[1], 1.0, (1.0 - xy[0] - xy[1]) / xy[1]], dtype=np.float64)
+            for xy in primaries
+        ],
+        axis=1,
+    )
+    white_xyz = np.array([white[0] / white[1], 1.0, (1.0 - white[0] - white[1]) / white[1]])
+    scales = np.linalg.solve(unscaled, white_xyz)
+    return unscaled @ np.diag(scales)
+
+
 def acescg_to_linear_srgb(image: np.ndarray) -> np.ndarray:
     converted = RGB_to_RGB(
         image.astype(np.float32, copy=False),

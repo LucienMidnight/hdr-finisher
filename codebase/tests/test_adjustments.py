@@ -5,8 +5,19 @@ import copy
 import numpy as np
 import pytest
 
-from hdr_finisher.adjustments import apply_adjustments, _apply_hdr_adjustments, _apply_sdr_adjustments, _curve_domain_encode, _curve_domain_decode
+from hdr_finisher.adjustments import (
+    _apply_hdr_adjustments,
+    _apply_hdr_color,
+    _apply_saturation_vibrance,
+    _apply_sdr_adjustments,
+    _curve_domain_decode,
+    _curve_domain_encode,
+    _primary_zone_masks,
+    _rolloff_scene_highlights,
+    apply_adjustments,
+)
 from hdr_finisher.analysis import classify_hdr
+from hdr_finisher.color import rgb_primaries_adjustment_matrix
 from hdr_finisher.models import AdjustmentState, HDRAdjustments, PreviewKind, SDRAdjustments, SourceLatitude
 
 
@@ -134,6 +145,36 @@ def test_neutral_hdr_tone_equalizer_is_identity() -> None:
     np.testing.assert_allclose(output, image, rtol=1e-6, atol=1e-7)
 
 
+def test_legacy_thirteen_band_equalizer_migrates_to_positioned_nodes() -> None:
+    bands = [round((index - 6) / 12, 4) for index in range(13)]
+    migrated = HDRAdjustments.model_validate({"tone_equalizer_bands": bands})
+
+    assert len(migrated.tone_equalizer_nodes) == 13
+    assert [node.input_ev for node in migrated.tone_equalizer_nodes] == list(range(-6, 7))
+    assert [node.adjustment_ev for node in migrated.tone_equalizer_nodes] == bands
+
+
+@pytest.mark.parametrize("count", [1, 17])
+def test_tone_equalizer_rejects_node_counts_outside_limits(count: int) -> None:
+    with pytest.raises(ValueError):
+        HDRAdjustments.model_validate(
+            {"tone_equalizer_nodes": [{"input_ev": -6 + index * 0.5, "adjustment_ev": 0} for index in range(count)]}
+        )
+
+
+def test_tone_equalizer_sorts_nodes_and_locks_endpoints() -> None:
+    adjustments = HDRAdjustments.model_validate(
+        {
+            "tone_equalizer_nodes": [
+                {"input_ev": 4, "adjustment_ev": 0.2},
+                {"input_ev": -2, "adjustment_ev": -0.1},
+                {"input_ev": 1, "adjustment_ev": 0.3},
+            ]
+        }
+    )
+    assert [node.input_ev for node in adjustments.tone_equalizer_nodes] == [-6.0, 1.0, 6.0]
+
+
 def test_hdr_tone_equalizer_can_lift_lower_bands_while_protecting_highlights() -> None:
     input_ev = np.array([-4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 4.0], dtype=np.float32)
     levels = np.float32(0.18) * np.exp2(input_ev)
@@ -220,6 +261,152 @@ def test_hdr_highlight_rolloff_preserves_wide_exr_latitude_and_ordering() -> Non
 
     assert output.max() > 500.0
     assert np.all(np.diff(output[0, :, 0]) > 0.0)
+
+
+def test_hdr_rolloff_is_identity_at_zero_and_below_start() -> None:
+    levels = np.array([0.05, 0.18, 0.71, 0.72, 2.0, 18.0], dtype=np.float32)
+    image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
+    np.testing.assert_array_equal(_rolloff_scene_highlights(image, 0.0, 400.0), image)
+    rolled = _rolloff_scene_highlights(image, 1.0, 400.0)
+    np.testing.assert_allclose(rolled[0, :4], image[0, :4], rtol=1e-6, atol=1e-7)
+    assert np.all(np.diff(rolled[0, :, 0]) > 0.0)
+    assert rolled[0, -1, 0] < image[0, -1, 0]
+
+
+def test_hdr_curve_domain_places_graphics_white_and_peak_predictably() -> None:
+    values = np.array([[[0.0, 0.09, 0.18], [0.36, 18.0, 36.0]]], dtype=np.float32)
+    encoded = _curve_domain_encode(values, PreviewKind.HDR)
+    np.testing.assert_allclose(encoded[0, 0], [0.0, 0.25, 0.5], atol=1e-6)
+    assert encoded[0, 1, 0] > 0.5
+    np.testing.assert_allclose(encoded[0, 1, 1], 1.0, atol=1e-6)
+    assert encoded[0, 1, 2] > 1.0
+    np.testing.assert_allclose(_curve_domain_decode(encoded, PreviewKind.HDR), values, rtol=2e-6, atol=1e-6)
+
+
+def test_lgg_range_and_pivot_move_zone_masks() -> None:
+    stops = np.linspace(-8, 8, 257, dtype=np.float32)
+    defaults = HDRAdjustments()
+    moved = HDRAdjustments(lift_pivot=1.0, lift_range=2.0, gamma_pivot=2.0, gamma_range=1.0, gain_pivot=4.0, gain_range=2.0)
+    default_lift, default_gamma, default_gain = _primary_zone_masks(stops, defaults)
+    moved_lift, moved_gamma, moved_gain = _primary_zone_masks(stops, moved)
+
+    assert stops[np.argmin(np.abs(moved_lift - 0.5))] > stops[np.argmin(np.abs(default_lift - 0.5))]
+    assert stops[np.argmax(moved_gamma)] > stops[np.argmax(default_gamma)]
+    assert stops[np.argmin(np.abs(moved_gain - 0.5))] > stops[np.argmin(np.abs(default_gain - 0.5))]
+
+
+def test_hdr_section_bypass_retains_settings_but_removes_render_effect() -> None:
+    image = np.array([[[0.04, 0.08, 0.16], [0.4, 0.7, 1.2], [2.0, 4.0, 8.0]]], dtype=np.float32)
+    bypassed = AdjustmentState(
+        hdr=HDRAdjustments(
+            tone_section_enabled=False,
+            tone_equalizer_section_enabled=False,
+            color_section_enabled=False,
+            primaries_section_enabled=False,
+            curves_section_enabled=False,
+            exposure=2,
+            highlight_rolloff=2,
+            shadow_lift=0.4,
+            tone_equalizer_enabled=True,
+            tone_equalizer_nodes=[
+                {"input_ev": -6, "adjustment_ev": 1},
+                {"input_ev": 6, "adjustment_ev": -1},
+            ],
+            white_balance_kelvin=9000,
+            tint=0.8,
+            saturation=0.7,
+            vibrance=0.5,
+            red_hue=12,
+            blue_purity=45,
+            tint_hue=-80,
+            tint_purity=8,
+            lift=0.3,
+            gamma=-0.4,
+            gain=0.25,
+            curves_enabled=True,
+            luma_curve=[[0, 0], [1, 0.5]],
+        )
+    )
+    np.testing.assert_allclose(_apply_hdr_adjustments(image, bypassed), image, rtol=1e-6, atol=1e-7)
+
+
+def test_rgb_primaries_defaults_are_identity_and_keep_gray_neutral() -> None:
+    np.testing.assert_allclose(rgb_primaries_adjustment_matrix(), np.eye(3), atol=2e-6)
+    matrix = rgb_primaries_adjustment_matrix(red_hue=8, red_purity=25, green_hue=-6, blue_purity=40)
+    np.testing.assert_allclose(matrix @ np.ones(3), np.ones(3), atol=2e-6)
+
+
+def test_rgb_primary_hue_and_tint_follow_darktable_style_semantics() -> None:
+    red_toward_yellow = rgb_primaries_adjustment_matrix(red_hue=5) @ np.array([1.0, 0.0, 0.0])
+    assert red_toward_yellow[1] > 0.0
+    neutral = np.ones((1, 1, 3), dtype=np.float32) * 0.18
+    tinted = _apply_hdr_color(neutral, HDRAdjustments(tint_hue=-120, tint_purity=8))
+    assert not np.allclose(tinted, neutral)
+
+
+def test_saturation_preserves_luma_and_vibrance_favors_low_chroma_colors() -> None:
+    image = np.array([[[0.40, 0.45, 0.50], [0.05, 0.30, 0.80]]], dtype=np.float32)
+    saturated = _apply_saturation_vibrance(image, 0.4, 0.0)
+    weights = np.array([0.2722287, 0.6740818, 0.0536895], dtype=np.float32)
+    np.testing.assert_allclose(saturated @ weights, image @ weights, atol=2e-6)
+
+    vibrant = _apply_saturation_vibrance(image, 0.0, 0.8)
+    luma = image @ weights
+    original_chroma = np.linalg.norm(image - luma[..., None], axis=-1)
+    vibrant_chroma = np.linalg.norm(vibrant - luma[..., None], axis=-1)
+    boost = vibrant_chroma / original_chroma
+    assert boost[0, 0] > boost[0, 1]
+
+
+def test_minus_one_saturation_is_achromatic() -> None:
+    image = np.array([[[0.2, 0.7, 1.3]]], dtype=np.float32)
+    output = _apply_saturation_vibrance(image, -1.0, 0.6)
+    np.testing.assert_allclose(output[..., 0], output[..., 1], atol=1e-7)
+    np.testing.assert_allclose(output[..., 1], output[..., 2], atol=1e-7)
+
+
+def test_sdr_follows_hdr_color_grade_by_default() -> None:
+    image = np.array([[[0.12, 0.30, 0.65], [0.70, 0.24, 0.08]]], dtype=np.float32)
+    linked = AdjustmentState(
+        hdr=HDRAdjustments(saturation=0.35, red_hue=6, blue_purity=25),
+        sdr=SDRAdjustments(highlight_recovery=0.0),
+    )
+    neutral = AdjustmentState(sdr=SDRAdjustments(highlight_recovery=0.0, match_hdr_color=False))
+
+    linked_output = apply_adjustments(image, linked, PreviewKind.SDR, sdr_reference_image=image)
+    neutral_output = apply_adjustments(image, neutral, PreviewKind.SDR, sdr_reference_image=image)
+
+    assert not np.allclose(linked_output, neutral_output)
+
+
+def test_sdr_manual_color_is_independent_when_hdr_match_is_disabled() -> None:
+    image = np.array([[[0.18, 0.35, 0.62]]], dtype=np.float32)
+    first = AdjustmentState(
+        hdr=HDRAdjustments(red_hue=15, saturation=0.8),
+        sdr=SDRAdjustments(match_hdr_color=False, saturation=-0.25, green_hue=5, highlight_recovery=0.0),
+    )
+    second = copy.deepcopy(first)
+    second.hdr.red_hue = -15
+    second.hdr.saturation = -0.8
+
+    first_output = apply_adjustments(image, first, PreviewKind.SDR, sdr_reference_image=image)
+    second_output = apply_adjustments(image, second, PreviewKind.SDR, sdr_reference_image=image)
+
+    np.testing.assert_allclose(first_output, second_output, atol=1e-7)
+
+
+def test_linked_sdr_color_respects_hdr_color_bypass() -> None:
+    image = np.array([[[0.18, 0.35, 0.62]]], dtype=np.float32)
+    state = AdjustmentState(
+        hdr=HDRAdjustments(color_section_enabled=False, saturation=0.9, red_hue=18),
+        sdr=SDRAdjustments(highlight_recovery=0.0),
+    )
+    baseline = AdjustmentState(sdr=SDRAdjustments(highlight_recovery=0.0, match_hdr_color=False))
+    np.testing.assert_allclose(
+        apply_adjustments(image, state, PreviewKind.SDR, sdr_reference_image=image),
+        apply_adjustments(image, baseline, PreviewKind.SDR, sdr_reference_image=image),
+        atol=1e-7,
+    )
 
 
 def test_single_hdr_highlight_rolloff_step_is_gradual() -> None:
@@ -393,6 +580,74 @@ def test_sdr_reference_highlight_recovery_holds_mid_gray_and_recovers_white() ->
     assert np.all(np.diff(recovered[0, :, 0]) > 0.0)
 
 
+def test_sdr_reference_neutral_base_rendition_is_identity() -> None:
+    levels = np.linspace(0.0, 1.0, 257, dtype=np.float32)
+    reference = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
+    scene = np.ones_like(reference)
+    state = AdjustmentState(sdr=SDRAdjustments(highlight_recovery=0.0))
+
+    output = apply_adjustments(scene, state, PreviewKind.SDR, sdr_reference_image=reference)
+
+    np.testing.assert_array_equal(output, reference)
+
+
+def test_sdr_reference_filmic_controls_change_the_render() -> None:
+    levels = np.linspace(0.01, 0.99, 257, dtype=np.float32)
+    reference = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
+    scene = np.ones_like(reference)
+    baseline = apply_adjustments(
+        scene,
+        AdjustmentState(sdr=SDRAdjustments(highlight_recovery=0.0)),
+        PreviewKind.SDR,
+        sdr_reference_image=reference,
+    )
+
+    for state in (
+        AdjustmentState(sdr=SDRAdjustments(tone_contrast=1.4, highlight_recovery=0.0)),
+        AdjustmentState(sdr=SDRAdjustments(tone_skew=-0.8, highlight_recovery=0.0)),
+    ):
+        output = apply_adjustments(scene, state, PreviewKind.SDR, sdr_reference_image=reference)
+        assert float(np.max(np.abs(output - baseline))) > 0.02
+        assert np.all(np.diff(output[0, :, 0]) >= -1e-6)
+
+
+def test_sdr_reference_tone_mapper_selection_changes_the_render() -> None:
+    levels = np.linspace(0.01, 0.99, 257, dtype=np.float32)
+    reference = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
+    scene = np.ones_like(reference)
+    outputs = {
+        mapper: apply_adjustments(
+            scene,
+            AdjustmentState(sdr=SDRAdjustments(tone_mapper=mapper, highlight_recovery=0.0)),
+            PreviewKind.SDR,
+            sdr_reference_image=reference,
+        )
+        for mapper in ("filmic", "aces", "reinhard")
+    }
+
+    assert float(np.max(np.abs(outputs["aces"] - outputs["filmic"]))) > 0.02
+    assert float(np.max(np.abs(outputs["reinhard"] - outputs["filmic"]))) > 0.02
+
+
+def test_sdr_reference_base_rendition_bypass_disables_retone_mapping() -> None:
+    levels = np.linspace(0.0, 1.0, 257, dtype=np.float32)
+    reference = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
+    scene = np.ones_like(reference)
+    state = AdjustmentState(
+        sdr=SDRAdjustments(
+            base_section_enabled=False,
+            tone_mapper="aces",
+            tone_contrast=1.5,
+            tone_skew=1.0,
+            highlight_recovery=0.0,
+        )
+    )
+
+    output = apply_adjustments(scene, state, PreviewKind.SDR, sdr_reference_image=reference)
+
+    np.testing.assert_array_equal(output, reference)
+
+
 def test_single_sdr_exposure_step_is_continuous_for_wide_exr() -> None:
     levels = np.geomspace(0.001, 1000.0, 128, dtype=np.float32)
     image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
@@ -415,6 +670,10 @@ def test_single_sdr_exposure_step_is_continuous_for_wide_exr() -> None:
         (PreviewKind.HDR, "hdr.contrast", 0.001),
         (PreviewKind.HDR, "hdr.white_balance_kelvin", 50),
         (PreviewKind.HDR, "hdr.tint", 0.01),
+        (PreviewKind.HDR, "hdr.saturation", 0.01),
+        (PreviewKind.HDR, "hdr.vibrance", 0.01),
+        (PreviewKind.HDR, "hdr.red_hue", 0.1),
+        (PreviewKind.HDR, "hdr.red_purity", 0.5),
         (PreviewKind.SDR, "sdr.exposure", 0.05),
         (PreviewKind.SDR, "sdr.highlight_recovery", 0.01),
         (PreviewKind.SDR, "sdr.shadow", 0.01),

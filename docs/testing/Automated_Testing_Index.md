@@ -21,11 +21,11 @@ Set `PYTHONPATH` to the resolved `backend` directory when running pytest outside
 | Source metadata and ambiguity | `test_loader_fixtures.py`, `test_api.py` | Exact recognized OCIO IDs, unknown/similar IDs, chromaticity precedence/conflict policy, ICC naming, transfer-only override safety, manual override/reset lifecycle |
 | ACEScg normalization | `test_core.py`, `test_loader_fixtures.py` | sRGB, BT.2020, PQ, ACEScg pass-through, unknown-linear preservation, and numerical normalization of the Blender fixture |
 | HDR classification/headroom | `test_core.py`, `test_adjustments.py` | Strict `1.0` boundary, encoded and scene-linear classifications, Apple gain-map path, source-latitude policy |
-| HDR/SDR finishing | `test_adjustments.py`, `test_core.py` | Branch isolation, highlight ordering/rolloff continuity, finite slider travel, hue behavior, SDR tone mapping and embedded fallback behavior |
+| HDR/SDR finishing | `test_adjustments.py`, `test_core.py`, `test_frontend_contract.py` | Variable-node equalizer migration/limits, targeting masks, section bypass, fixed HDR curve domain, highlight ordering/rolloff continuity, branch isolation, hue behavior, and grading interaction contracts |
 | Float preview/resampling | `test_core.py`, `test_render_cache.py`, `test_preview_display.py` | Long-edge cap, float/HDR-range preservation, high-frequency filtering, proxy reuse/alignment, SDR-display fallback math |
 | Scopes and overlays | `test_core.py` | AP1 luminance, 100/203/1000-nit guides and strict thresholds, histograms, waveform aggregation, false color, zebra alpha/cutoff |
-| Export and metadata | `test_ultrahdr_export.py`, `test_avif_info.py`, `test_proofing.py` | Quality propagation, independent renditions, atomic replacement, failure cleanup, AVIF gain-map metadata, dual JPEG metadata, legacy fallback decode, optional real round trips |
-| API/session/preflight | `test_api.py`, `test_capability_gates.py` | Upload cleanup, interpretation lifecycle, preview/scopes/proxy routes, unsupported format rejection, backend capability rejection, folder-picker responses |
+| Export and metadata | `test_ultrahdr_export.py`, `test_avif_info.py`, `test_proofing.py` | Independent base/gain-map quality and scale, proof/export parity, metadata-selected JPEG gamut conversion, encoded offsets/capacity, atomic replacement, AVIF gain-map metadata, legacy fallback decode, and optional real round trips |
+| API/session/preflight | `test_api.py`, `test_capability_gates.py`, `test_folder_picker.py` | Upload cleanup, interpretation lifecycle, preview/scopes/proxy routes, unsupported format rejection, backend capability rejection, and Windows STA picker selection/cancellation/failure paths |
 | Delivery/hosting | `test_proofing.py`, `test_hosting_probe.py` | Fixed-headroom reconstruction, content hashes/cache, evidence persistence, metadata survival and destructive conversion detection |
 
 ## Remaining gaps
@@ -34,6 +34,6 @@ Set `PYTHONPATH` to the resolved `backend` directory when running pytest outside
 - Real Affinity and high-resolution Blender rendering remain manual/local checks for decoder performance, saturated highlights, gradients, downsampling, and clipping diagnostics.
 - Physical HDR/SDR monitor behavior, browser/compositor differences, Instagram handling, and hosting transformations require the manual procedures in this directory.
 - Capability-aware encoder tests validate installed binaries, but CI should eventually publish a matrix showing which optional encoders ran rather than treating skips as equivalent to executed round trips.
-- Packaged clean-machine testing, the Windows folder-picker issue, macOS packaging, and JPEG XL remain outside the mandatory pytest tier.
+- Packaged clean-machine testing, macOS packaging, and JPEG XL remain outside the mandatory pytest tier. Windows picker behavior is unit-covered; packaged interaction remains a manual check.
 
 Generated reports are evidence from a particular run. Record durable conclusions in `docs/testing/`, not only under `codebase/output/`.

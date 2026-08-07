@@ -6,6 +6,7 @@ from conftest import make_png_bytes
 from fastapi.testclient import TestClient
 
 from hdr_finisher.loader import LoaderError
+from hdr_finisher.exporters import ExportOverwriteRequired
 from hdr_finisher.main import app, store
 from hdr_finisher.models import ExportResponse, HDRAnalysis, HDRClassification, MetadataPayload, SessionPayload, SourceImageDescriptor
 
@@ -319,6 +320,27 @@ def test_export_endpoint_rejects_unknown_format_before_backend_dispatch() -> Non
     assert response.json()["detail"] == "Unsupported export format: not_a_format"
 
 
+def test_export_endpoint_requires_explicit_overwrite_confirmation(monkeypatch, tmp_path: Path) -> None:
+    upload = client.post("/api/session", files={"file": ("fixture.png", make_png_bytes(), "image/png")})
+    session_id = upload.json()["session"]["session_id"]
+    output = tmp_path / "existing.jpg"
+    output.write_bytes(b"existing")
+
+    class ConflictingBackend:
+        def export(self, session, settings):
+            _ = session, settings
+            raise ExportOverwriteRequired(output)
+
+    monkeypatch.setattr("hdr_finisher.main.export_backends", {"jpeg_ultrahdr": ConflictingBackend()})
+    response = client.post(
+        f"/api/session/{session_id}/export",
+        json={"format": "jpeg_ultrahdr", "output_path": str(output)},
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "overwrite_required"
+    assert response.json()["detail"]["output_path"] == str(output)
+
+
 def test_export_endpoint_reports_backend_preflight_rejection(monkeypatch) -> None:
     upload = client.post("/api/session", files={"file": ("fixture.png", make_png_bytes(), "image/png")})
     session_id = upload.json()["session"]["session_id"]
@@ -352,3 +374,12 @@ def test_export_directory_endpoint_allows_cancel(monkeypatch) -> None:
     response = client.post("/api/export-directory", json={})
     assert response.status_code == 200
     assert response.json()["directory"] is None
+
+
+def test_default_export_directory_endpoint_creates_and_returns_folder(monkeypatch, tmp_path: Path) -> None:
+    expected = tmp_path / "Default Exports"
+    monkeypatch.setattr("hdr_finisher.main.EXPORTS_DIR", expected)
+    response = client.get("/api/export-directory/default")
+    assert response.status_code == 200
+    assert Path(response.json()["directory"]) == expected.resolve()
+    assert expected.is_dir()

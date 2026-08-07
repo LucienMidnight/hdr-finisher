@@ -27,7 +27,7 @@
         <button id="eject-button" class="button-secondary" type="button">Eject</button>
         <span class="pipeline-chip">ACEScg · Local · Single image</span>
         <span class="capability-chip" id="capability-summary">Checking encoders…</span>
-        <button id="export-button" class="button-primary" type="button">Export</button>
+        <button id="export-button" class="button-primary" type="button">Export...</button>
       </div>
     </header>
 
@@ -222,7 +222,7 @@
                 <div id="live-proof-frame" class="proof-image-frame"><img id="live-proof-image" alt="Exact gain-map proxy rendered by this browser"></div>
               </figure>
               <figure class="proof-figure">
-                <figcaption><strong>Matching matrix tile</strong><span id="live-matrix-meta">No tile selected</span></figcaption>
+                <figcaption><strong>Selected fixed-headroom reference</strong><span id="live-matrix-meta">No tile selected</span></figcaption>
                 <div class="proof-image-frame"><img id="live-matrix-image" alt="Fixed-headroom reconstruction"></div>
               </figure>
             </div>
@@ -371,6 +371,7 @@
         <section class="control-group" data-group="hdr-tone">
           <div class="control-group-header">
             <button class="group-toggle" type="button" aria-expanded="true">Tone <span data-modified-count="hdr-tone">Default</span></button>
+            <button class="section-bypass text-button" type="button" data-section-path="hdr.tone_section_enabled" aria-pressed="true" aria-label="Toggle Tone preview">&#9673;</button>
             <button class="group-reset text-button" type="button" data-reset-group="hdr-tone">Reset</button>
           </div>
           <div class="control-group-body">
@@ -379,8 +380,12 @@
               <input id="hdr-exposure" type="range" min="-4" max="4" step="0.05" value="0" data-path="hdr.exposure">
             </div>
             <div class="control-row featured-control" data-control-path="hdr.highlight_rolloff">
-              <div class="control-heading"><label for="hdr-rolloff">Highlight Rolloff</label><output data-value-path="hdr.highlight_rolloff">0.25</output></div>
-              <input id="hdr-rolloff" type="range" min="0" max="2" step="0.01" value="0.25" data-path="hdr.highlight_rolloff">
+              <div class="control-heading"><label for="hdr-rolloff">Highlight Rolloff</label><output data-value-path="hdr.highlight_rolloff">0.00</output></div>
+              <input id="hdr-rolloff" type="range" min="0" max="2" step="0.01" value="0" data-path="hdr.highlight_rolloff">
+            </div>
+            <div class="control-row" data-control-path="hdr.highlight_rolloff_start_nits">
+              <div class="control-heading"><label for="hdr-rolloff-start">Rolloff Start</label><output data-value-path="hdr.highlight_rolloff_start_nits">400 nit</output></div>
+              <input id="hdr-rolloff-start" type="range" min="100" max="4000" step="25" value="400" data-path="hdr.highlight_rolloff_start_nits">
             </div>
             <div class="control-pair">
               <div class="control-row" data-control-path="hdr.contrast">
@@ -402,6 +407,7 @@
         <section class="control-group" data-group="hdr-equalizer">
           <div class="control-group-header">
             <button class="group-toggle" type="button" aria-expanded="true">Tone Equalizer <span data-modified-count="hdr-equalizer">Default</span></button>
+            <button class="section-bypass text-button" type="button" data-section-path="hdr.tone_equalizer_section_enabled" aria-pressed="true" aria-label="Toggle Tone Equalizer preview">&#9673;</button>
             <button class="group-reset text-button" type="button" data-reset-group="hdr-equalizer">Reset</button>
           </div>
           <div class="control-group-body">
@@ -410,7 +416,14 @@
               <input id="tone-equalizer-enabled" type="checkbox" data-path="hdr.tone_equalizer_enabled">
             </label>
             <p class="helper">Adjust exposure by scene brightness. 0 EV is the app's 100-nit diffuse-white reference; the dashed edge marks the 10,000-nit PQ limit.</p>
-            <canvas id="tone-equalizer-editor" width="320" height="220" tabindex="0" aria-label="HDR tone equalizer. Use left and right arrows to select a band and up and down arrows to adjust exposure."></canvas>
+            <canvas id="tone-equalizer-editor" width="320" height="220" tabindex="0" aria-label="HDR tone equalizer. Use left and right arrows to select a band, up and down arrows to adjust exposure, brackets to change influence, and Delete to remove an interior band."></canvas>
+            <div class="curve-actions tone-equalizer-actions">
+              <button id="tone-equalizer-add" type="button" class="text-button">Add Band</button>
+              <button id="tone-equalizer-remove" type="button" class="text-button">Remove Band</button>
+              <span id="tone-equalizer-radius" class="helper">Influence 1.50 EV</span>
+              <button id="tone-equalizer-radius-down" type="button" class="text-button" aria-label="Decrease proportional influence radius">-</button>
+              <button id="tone-equalizer-radius-up" type="button" class="text-button" aria-label="Increase proportional influence radius">+</button>
+            </div>
             <div class="tone-equalizer-selected">
               <div class="control-heading">
                 <label for="tone-equalizer-band-value">Selected band <strong id="tone-equalizer-band-label">0 EV · 100 nit</strong></label>
@@ -428,6 +441,7 @@
         <section class="control-group" data-group="hdr-color">
           <div class="control-group-header">
             <button class="group-toggle" type="button" aria-expanded="true">Color <span data-modified-count="hdr-color">Default</span></button>
+            <button class="section-bypass text-button" type="button" data-section-path="hdr.color_section_enabled" aria-pressed="true" aria-label="Toggle Color preview">&#9673;</button>
             <button class="group-reset text-button" type="button" data-reset-group="hdr-color">Reset</button>
           </div>
           <div class="control-group-body">
@@ -436,30 +450,62 @@
               <input id="hdr-wb" type="range" min="2000" max="12000" step="50" value="6500" data-path="hdr.white_balance_kelvin">
             </div>
             <div class="control-row" data-control-path="hdr.tint">
-              <div class="control-heading"><label for="hdr-tint">Tint</label><output data-value-path="hdr.tint">0.00</output></div>
+              <div class="control-heading"><label for="hdr-tint">Green / Magenta Tint</label><output data-value-path="hdr.tint">0.00</output></div>
               <input id="hdr-tint" type="range" min="-1" max="1" step="0.01" value="0" data-path="hdr.tint">
             </div>
+            <p class="control-subsection-label">Colorfulness</p>
+            <div class="control-row" data-control-path="hdr.saturation">
+              <div class="control-heading"><label for="hdr-saturation">Saturation</label><output data-value-path="hdr.saturation">0%</output></div>
+              <input id="hdr-saturation" type="range" min="-1" max="1" step="0.01" value="0" data-path="hdr.saturation">
+            </div>
+            <div class="control-row" data-control-path="hdr.vibrance">
+              <div class="control-heading"><label for="hdr-vibrance">Vibrance <span class="help-tip" tabindex="0" data-tip="Targets lower-chroma colors more strongly and protects colors that are already saturated.">?</span></label><output data-value-path="hdr.vibrance">0%</output></div>
+              <input id="hdr-vibrance" type="range" min="-1" max="1" step="0.01" value="0" data-path="hdr.vibrance">
+            </div>
+            <p class="control-subsection-label">RGB Primaries</p>
+            <p class="helper rgb-primaries-helper">Scene-linear ACEScg primary shaping. Hue rotates each primary; Purity moves it toward or beyond the working gamut edge. Grays remain neutral unless Tint Purity is raised.</p>
+            <div class="control-row primary-red-hue" data-control-path="hdr.red_hue"><div class="control-heading"><label for="hdr-red-hue">Red Hue</label><output data-value-path="hdr.red_hue">0.0°</output></div><input id="hdr-red-hue" type="range" min="-30" max="30" step="0.1" value="0" data-path="hdr.red_hue"></div>
+            <div class="control-row primary-red-purity" data-control-path="hdr.red_purity"><div class="control-heading"><label for="hdr-red-purity">Red Purity</label><output data-value-path="hdr.red_purity">0%</output></div><input id="hdr-red-purity" type="range" min="-95" max="100" step="0.5" value="0" data-path="hdr.red_purity"></div>
+            <div class="control-row primary-green-hue" data-control-path="hdr.green_hue"><div class="control-heading"><label for="hdr-green-hue">Green Hue</label><output data-value-path="hdr.green_hue">0.0°</output></div><input id="hdr-green-hue" type="range" min="-30" max="30" step="0.1" value="0" data-path="hdr.green_hue"></div>
+            <div class="control-row primary-green-purity" data-control-path="hdr.green_purity"><div class="control-heading"><label for="hdr-green-purity">Green Purity</label><output data-value-path="hdr.green_purity">0%</output></div><input id="hdr-green-purity" type="range" min="-95" max="100" step="0.5" value="0" data-path="hdr.green_purity"></div>
+            <div class="control-row primary-blue-hue" data-control-path="hdr.blue_hue"><div class="control-heading"><label for="hdr-blue-hue">Blue Hue</label><output data-value-path="hdr.blue_hue">0.0°</output></div><input id="hdr-blue-hue" type="range" min="-30" max="30" step="0.1" value="0" data-path="hdr.blue_hue"></div>
+            <div class="control-row primary-blue-purity" data-control-path="hdr.blue_purity"><div class="control-heading"><label for="hdr-blue-purity">Blue Purity</label><output data-value-path="hdr.blue_purity">0%</output></div><input id="hdr-blue-purity" type="range" min="-95" max="100" step="0.5" value="0" data-path="hdr.blue_purity"></div>
+            <div class="control-row primary-tint-hue" data-control-path="hdr.tint_hue"><div class="control-heading"><label for="hdr-tint-hue">Tint Hue</label><output data-value-path="hdr.tint_hue">0.0°</output></div><input id="hdr-tint-hue" type="range" min="-180" max="180" step="0.5" value="0" data-path="hdr.tint_hue"></div>
+            <div class="control-row primary-tint-purity" data-control-path="hdr.tint_purity"><div class="control-heading"><label for="hdr-tint-purity">Tint Purity</label><output data-value-path="hdr.tint_purity">0%</output></div><input id="hdr-tint-purity" type="range" min="0" max="20" step="0.5" value="0" data-path="hdr.tint_purity"></div>
           </div>
         </section>
 
-        <section class="control-group collapsed legacy-controls" data-group="hdr-zones">
+        <section class="control-group collapsed" data-group="hdr-zones">
           <div class="control-group-header">
-            <button class="group-toggle" type="button" aria-expanded="false">Legacy primaries <span data-modified-count="hdr-zones">Default</span></button>
+            <button class="group-toggle" type="button" aria-expanded="false">Lift, Gamma, Gain <span data-modified-count="hdr-zones">Default</span></button>
+            <button class="section-bypass text-button" type="button" data-section-path="hdr.primaries_section_enabled" aria-pressed="true" aria-label="Toggle Lift, Gamma, Gain preview">&#9673;</button>
             <button class="group-reset text-button" type="button" data-reset-group="hdr-zones">Reset</button>
           </div>
           <div class="control-group-body">
-            <p class="helper">Lift, Gamma, and Gain remain available for compatibility but are superseded by the Tone Equalizer.</p>
+            <p class="helper">Range controls how wide a luminance zone is; Pivot moves that zone through the scene range. Hover or focus a zone to reveal its scope influence.</p>
             <div class="control-row" data-control-path="hdr.lift">
               <div class="control-heading"><label for="hdr-lift">Lift</label><output data-value-path="hdr.lift">0.000</output></div>
               <input id="hdr-lift" type="range" min="-0.5" max="0.5" step="0.005" value="0" data-path="hdr.lift">
+            </div>
+            <div class="control-pair zone-targeting" data-zone-hover="lift" tabindex="0">
+              <div class="control-row" data-control-path="hdr.lift_range"><div class="control-heading"><label for="hdr-lift-range">Lift Range</label><output data-value-path="hdr.lift_range">4.00 EV</output></div><input id="hdr-lift-range" type="range" min="0.5" max="12" step="0.25" value="4" data-path="hdr.lift_range"></div>
+              <div class="control-row" data-control-path="hdr.lift_pivot"><div class="control-heading"><label for="hdr-lift-pivot">Lift Pivot</label><output data-value-path="hdr.lift_pivot">-2.00 EV</output></div><input id="hdr-lift-pivot" type="range" min="-8" max="8" step="0.25" value="-2" data-path="hdr.lift_pivot"></div>
             </div>
             <div class="control-row" data-control-path="hdr.gamma">
               <div class="control-heading"><label for="hdr-gamma">Gamma</label><output data-value-path="hdr.gamma">0.000</output></div>
               <input id="hdr-gamma" type="range" min="-1" max="1" step="0.005" value="0" data-path="hdr.gamma">
             </div>
+            <div class="control-pair zone-targeting" data-zone-hover="gamma" tabindex="0">
+              <div class="control-row" data-control-path="hdr.gamma_range"><div class="control-heading"><label for="hdr-gamma-range">Gamma Range</label><output data-value-path="hdr.gamma_range">4.25 EV</output></div><input id="hdr-gamma-range" type="range" min="0.5" max="12" step="0.25" value="4.25" data-path="hdr.gamma_range"></div>
+              <div class="control-row" data-control-path="hdr.gamma_pivot"><div class="control-heading"><label for="hdr-gamma-pivot">Gamma Pivot</label><output data-value-path="hdr.gamma_pivot">0.00 EV</output></div><input id="hdr-gamma-pivot" type="range" min="-8" max="8" step="0.25" value="0" data-path="hdr.gamma_pivot"></div>
+            </div>
             <div class="control-row" data-control-path="hdr.gain">
               <div class="control-heading"><label for="hdr-gain">Gain</label><output data-value-path="hdr.gain">0.000</output></div>
               <input id="hdr-gain" type="range" min="-0.5" max="0.5" step="0.005" value="0" data-path="hdr.gain">
+            </div>
+            <div class="control-pair zone-targeting" data-zone-hover="gain" tabindex="0">
+              <div class="control-row" data-control-path="hdr.gain_range"><div class="control-heading"><label for="hdr-gain-range">Gain Range</label><output data-value-path="hdr.gain_range">4.00 EV</output></div><input id="hdr-gain-range" type="range" min="0.5" max="12" step="0.25" value="4" data-path="hdr.gain_range"></div>
+              <div class="control-row" data-control-path="hdr.gain_pivot"><div class="control-heading"><label for="hdr-gain-pivot">Gain Pivot</label><output data-value-path="hdr.gain_pivot">2.00 EV</output></div><input id="hdr-gain-pivot" type="range" min="-8" max="8" step="0.25" value="2" data-path="hdr.gain_pivot"></div>
             </div>
           </div>
         </section>
@@ -469,6 +515,7 @@
         <section class="control-group" data-group="sdr-base">
           <div class="control-group-header">
             <button class="group-toggle" type="button" aria-expanded="true">Base rendition <span data-modified-count="sdr-base">Default</span></button>
+            <button class="section-bypass text-button" type="button" data-section-path="sdr.base_section_enabled" aria-pressed="true" aria-label="Toggle Base rendition preview">&#9673;</button>
             <button class="group-reset text-button" type="button" data-reset-group="sdr-base">Reset</button>
           </div>
           <div class="control-group-body">
@@ -507,6 +554,7 @@
         <section class="control-group" data-group="sdr-tone">
           <div class="control-group-header">
             <button class="group-toggle" type="button" aria-expanded="true">Tone <span data-modified-count="sdr-tone">Default</span></button>
+            <button class="section-bypass text-button" type="button" data-section-path="sdr.tone_section_enabled" aria-pressed="true" aria-label="Toggle SDR Tone preview">&#9673;</button>
             <button class="group-reset text-button" type="button" data-reset-group="sdr-tone">Reset</button>
           </div>
           <div class="control-group-body">
@@ -535,9 +583,42 @@
           </div>
         </section>
 
+        <section class="control-group" data-group="sdr-color">
+          <div class="control-group-header">
+            <button class="group-toggle" type="button" aria-expanded="true">Color <span data-modified-count="sdr-color">Following HDR</span></button>
+            <button class="section-bypass text-button" type="button" data-section-path="sdr.color_section_enabled" aria-pressed="true" aria-label="Toggle SDR Color preview">&#9673;</button>
+            <button class="group-reset text-button" type="button" data-reset-group="sdr-color">Reset</button>
+          </div>
+          <div class="control-group-body">
+            <label class="toggle-row sdr-color-match-toggle" data-control-path="sdr.match_hdr_color">
+              <span>Follow HDR Color <small>Perceptual match</small></span>
+              <input id="sdr-match-hdr-color" type="checkbox" data-path="sdr.match_hdr_color" checked>
+            </label>
+            <p class="helper sdr-color-link-note">Uses the live HDR color grade through the SDR gamut conversion. Turn this off to make an independent SDR color adjustment.</p>
+            <div data-sdr-manual-color>
+              <div class="control-row" data-control-path="sdr.white_balance_kelvin"><div class="control-heading"><label for="sdr-wb">Temperature</label><output data-value-path="sdr.white_balance_kelvin">6500 K</output></div><input id="sdr-wb" type="range" min="2000" max="12000" step="50" value="6500" data-path="sdr.white_balance_kelvin"></div>
+              <div class="control-row" data-control-path="sdr.tint"><div class="control-heading"><label for="sdr-tint">Green / Magenta Tint</label><output data-value-path="sdr.tint">0.00</output></div><input id="sdr-tint" type="range" min="-1" max="1" step="0.01" value="0" data-path="sdr.tint"></div>
+              <p class="control-subsection-label">Colorfulness</p>
+              <div class="control-row" data-control-path="sdr.saturation"><div class="control-heading"><label for="sdr-saturation">Saturation</label><output data-value-path="sdr.saturation">0%</output></div><input id="sdr-saturation" type="range" min="-1" max="1" step="0.01" value="0" data-path="sdr.saturation"></div>
+              <div class="control-row" data-control-path="sdr.vibrance"><div class="control-heading"><label for="sdr-vibrance">Vibrance <span class="help-tip" tabindex="0" data-tip="Targets lower-chroma colors more strongly and protects colors that are already saturated.">?</span></label><output data-value-path="sdr.vibrance">0%</output></div><input id="sdr-vibrance" type="range" min="-1" max="1" step="0.01" value="0" data-path="sdr.vibrance"></div>
+              <p class="control-subsection-label">RGB Primaries</p>
+              <p class="helper rgb-primaries-helper">Independent scene-linear primary shaping for the SDR fallback.</p>
+              <div class="control-row primary-red-hue" data-control-path="sdr.red_hue"><div class="control-heading"><label for="sdr-red-hue">Red Hue</label><output data-value-path="sdr.red_hue">0.0°</output></div><input id="sdr-red-hue" type="range" min="-30" max="30" step="0.1" value="0" data-path="sdr.red_hue"></div>
+              <div class="control-row primary-red-purity" data-control-path="sdr.red_purity"><div class="control-heading"><label for="sdr-red-purity">Red Purity</label><output data-value-path="sdr.red_purity">0%</output></div><input id="sdr-red-purity" type="range" min="-95" max="100" step="0.5" value="0" data-path="sdr.red_purity"></div>
+              <div class="control-row primary-green-hue" data-control-path="sdr.green_hue"><div class="control-heading"><label for="sdr-green-hue">Green Hue</label><output data-value-path="sdr.green_hue">0.0°</output></div><input id="sdr-green-hue" type="range" min="-30" max="30" step="0.1" value="0" data-path="sdr.green_hue"></div>
+              <div class="control-row primary-green-purity" data-control-path="sdr.green_purity"><div class="control-heading"><label for="sdr-green-purity">Green Purity</label><output data-value-path="sdr.green_purity">0%</output></div><input id="sdr-green-purity" type="range" min="-95" max="100" step="0.5" value="0" data-path="sdr.green_purity"></div>
+              <div class="control-row primary-blue-hue" data-control-path="sdr.blue_hue"><div class="control-heading"><label for="sdr-blue-hue">Blue Hue</label><output data-value-path="sdr.blue_hue">0.0°</output></div><input id="sdr-blue-hue" type="range" min="-30" max="30" step="0.1" value="0" data-path="sdr.blue_hue"></div>
+              <div class="control-row primary-blue-purity" data-control-path="sdr.blue_purity"><div class="control-heading"><label for="sdr-blue-purity">Blue Purity</label><output data-value-path="sdr.blue_purity">0%</output></div><input id="sdr-blue-purity" type="range" min="-95" max="100" step="0.5" value="0" data-path="sdr.blue_purity"></div>
+              <div class="control-row primary-tint-hue" data-control-path="sdr.tint_hue"><div class="control-heading"><label for="sdr-tint-hue">Tint Hue</label><output data-value-path="sdr.tint_hue">0.0°</output></div><input id="sdr-tint-hue" type="range" min="-180" max="180" step="0.5" value="0" data-path="sdr.tint_hue"></div>
+              <div class="control-row primary-tint-purity" data-control-path="sdr.tint_purity"><div class="control-heading"><label for="sdr-tint-purity">Tint Purity</label><output data-value-path="sdr.tint_purity">0%</output></div><input id="sdr-tint-purity" type="range" min="0" max="20" step="0.5" value="0" data-path="sdr.tint_purity"></div>
+            </div>
+          </div>
+        </section>
+
         <section class="control-group collapsed" data-group="sdr-zones">
           <div class="control-group-header">
-            <button class="group-toggle" type="button" aria-expanded="false">Zones <span data-modified-count="sdr-zones">Default</span></button>
+            <button class="group-toggle" type="button" aria-expanded="false">Lift, Gamma, Gain <span data-modified-count="sdr-zones">Default</span></button>
+            <button class="section-bypass text-button" type="button" data-section-path="sdr.primaries_section_enabled" aria-pressed="true" aria-label="Toggle SDR Lift, Gamma, Gain preview">&#9673;</button>
             <button class="group-reset text-button" type="button" data-reset-group="sdr-zones">Reset</button>
           </div>
           <div class="control-group-body">
@@ -545,13 +626,25 @@
               <div class="control-heading"><label for="sdr-lift">Lift</label><output data-value-path="sdr.lift">0.000</output></div>
               <input id="sdr-lift" type="range" min="-0.5" max="0.5" step="0.002" value="0" data-path="sdr.lift">
             </div>
+            <div class="control-pair zone-targeting" data-zone-hover="lift" tabindex="0">
+              <div class="control-row" data-control-path="sdr.lift_range"><div class="control-heading"><label for="sdr-lift-range">Lift Range</label><output data-value-path="sdr.lift_range">4.00 EV</output></div><input id="sdr-lift-range" type="range" min="0.5" max="12" step="0.25" value="4" data-path="sdr.lift_range"></div>
+              <div class="control-row" data-control-path="sdr.lift_pivot"><div class="control-heading"><label for="sdr-lift-pivot">Lift Pivot</label><output data-value-path="sdr.lift_pivot">-2.00 EV</output></div><input id="sdr-lift-pivot" type="range" min="-8" max="8" step="0.25" value="-2" data-path="sdr.lift_pivot"></div>
+            </div>
             <div class="control-row" data-control-path="sdr.gamma">
               <div class="control-heading"><label for="sdr-gamma">Gamma</label><output data-value-path="sdr.gamma">0.000</output></div>
               <input id="sdr-gamma" type="range" min="-1" max="1" step="0.005" value="0" data-path="sdr.gamma">
             </div>
+            <div class="control-pair zone-targeting" data-zone-hover="gamma" tabindex="0">
+              <div class="control-row" data-control-path="sdr.gamma_range"><div class="control-heading"><label for="sdr-gamma-range">Gamma Range</label><output data-value-path="sdr.gamma_range">4.25 EV</output></div><input id="sdr-gamma-range" type="range" min="0.5" max="12" step="0.25" value="4.25" data-path="sdr.gamma_range"></div>
+              <div class="control-row" data-control-path="sdr.gamma_pivot"><div class="control-heading"><label for="sdr-gamma-pivot">Gamma Pivot</label><output data-value-path="sdr.gamma_pivot">0.00 EV</output></div><input id="sdr-gamma-pivot" type="range" min="-8" max="8" step="0.25" value="0" data-path="sdr.gamma_pivot"></div>
+            </div>
             <div class="control-row" data-control-path="sdr.gain">
               <div class="control-heading"><label for="sdr-gain">Gain</label><output data-value-path="sdr.gain">0.000</output></div>
               <input id="sdr-gain" type="range" min="-0.5" max="0.5" step="0.005" value="0" data-path="sdr.gain">
+            </div>
+            <div class="control-pair zone-targeting" data-zone-hover="gain" tabindex="0">
+              <div class="control-row" data-control-path="sdr.gain_range"><div class="control-heading"><label for="sdr-gain-range">Gain Range</label><output data-value-path="sdr.gain_range">4.00 EV</output></div><input id="sdr-gain-range" type="range" min="0.5" max="12" step="0.25" value="4" data-path="sdr.gain_range"></div>
+              <div class="control-row" data-control-path="sdr.gain_pivot"><div class="control-heading"><label for="sdr-gain-pivot">Gain Pivot</label><output data-value-path="sdr.gain_pivot">2.00 EV</output></div><input id="sdr-gain-pivot" type="range" min="-8" max="8" step="0.25" value="2" data-path="sdr.gain_pivot"></div>
             </div>
           </div>
         </section>
@@ -560,6 +653,7 @@
       <section class="control-group collapsed" data-group="curves">
         <div class="control-group-header">
           <button class="group-toggle" type="button" aria-expanded="false">Curves <span id="curve-group-state">Default</span></button>
+          <button class="section-bypass text-button" type="button" data-section-path="current.curves_section_enabled" aria-pressed="true" aria-label="Toggle Curves preview">&#9673;</button>
           <button id="curve-reset" class="group-reset text-button" type="button">Reset</button>
         </div>
         <div class="control-group-body">
@@ -620,17 +714,24 @@
       </label>
     </div>
 
-    <div class="unavailable-format" id="jxl-capability">JPEG XL · not in this build</div>
-
     <div class="export-settings">
       <div class="control-row export-quality-row">
         <div class="control-heading"><label for="export-quality">Quality</label><output id="export-quality-value">85</output></div>
         <input id="export-quality" type="range" min="1" max="100" value="85">
       </div>
-      <label>Filename
+      <div id="jpeg-advanced-settings" class="jpeg-advanced-settings">
+        <div class="control-row">
+          <div class="control-heading"><label for="jpeg-gain-map-quality">Gain-map Quality</label><output id="jpeg-gain-map-quality-value">100</output></div>
+          <input id="jpeg-gain-map-quality" type="range" min="1" max="100" value="100">
+        </div>
+        <label>Gain-map Resolution
+          <select id="jpeg-gain-map-scale"><option value="full" selected>Full</option><option value="half">Half</option></select>
+        </label>
+      </div>
+      <label class="export-filename-field">Filename
         <input id="export-filename" type="text" value="hdr_finisher_export">
       </label>
-      <label>Save Folder
+      <label class="export-directory-field">Save Folder
         <span class="directory-picker-row">
           <input id="export-directory" type="text" value="">
           <button id="export-directory-browse" class="button-secondary" type="button">Browse</button>
@@ -655,7 +756,7 @@
     </div>
     <div class="sheet-actions">
       <p>Validate HDR output in current Chromium, Brave, or Edge.</p>
-      <button id="export-confirm-button" class="button-primary" type="button">Export file</button>
+      <button id="export-confirm-button" class="button-primary" type="button">Export...</button>
     </div>
   </dialog>
 

@@ -100,7 +100,9 @@
         body: JSON.stringify({
           adjustments: state.adjustments,
           format: els.proofFormat.value,
-          quality: Math.max(85, Number(els.exportQuality.value) || 90),
+          quality: Number(els.exportQuality.value) || 85,
+          jpeg_gain_map_quality: Number(els.jpegGainMapQuality.value) || 100,
+          jpeg_gain_map_scale: els.jpegGainMapScale.value || "full",
           long_edge: Math.min(1200, state.session.preview?.long_edge || 1200),
         }),
       });
@@ -108,7 +110,10 @@
       if (!response.ok) throw new Error(payload?.detail || "Delivery proxy encoding failed.");
       state.proofArtifact = payload;
       state.proofDirty = false;
-      els.matrixStatus.textContent = `Encoded ${formatBytes(payload.byte_size)} · SHA-256 ${payload.sha256.slice(0, 16)}… · ${payload.metadata_summary}`;
+      const jpegMetadata = payload.jpeg_gain_map
+        ? ` · decoded ${payload.jpeg_gain_map.reconstruction_gamut} · useBaseColorSpace=${payload.jpeg_gain_map.use_base_color_space ? 1 : 0}`
+        : "";
+      els.matrixStatus.textContent = `Encoded ${formatBytes(payload.byte_size)} · SHA-256 ${payload.sha256.slice(0, 16)}… · ${payload.metadata_summary}${jpegMetadata}`;
       await buildProofMatrix();
       await loadEvidenceRecords();
       renderLiveComparison();
@@ -133,7 +138,9 @@
     if (!response.ok) throw new Error(payload?.detail || "Matrix reconstruction failed.");
     state.proofMatrix = payload;
     renderProofMatrix();
-    els.matrixStatus.textContent = `${payload.reconstruction} · encoded full headroom ${payload.encoded_headroom.toFixed(2)} stops.`;
+    const jpegMetadata = state.proofArtifact.jpeg_gain_map;
+    const gamut = jpegMetadata ? ` · decoded ${jpegMetadata.reconstruction_gamut}` : "";
+    els.matrixStatus.textContent = `${payload.reconstruction} · encoded full headroom ${payload.encoded_headroom.toFixed(2)} stops${gamut}.`;
   }
 
   function renderProofMatrix() {

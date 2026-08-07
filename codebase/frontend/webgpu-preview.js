@@ -1,5 +1,5 @@
 (function () {
-  const PARAM_COUNT = 36;
+  const PARAM_COUNT = 73;
   const CURVE_SAMPLES = 1024;
 
   class HDRWebGPUPreview {
@@ -167,48 +167,167 @@
     }
   }
 
+  const IDENTITY_3X3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  const ACESCG_PRIMARIES = [[0.713, 0.293], [0.165, 0.830], [0.128, 0.044]];
+  const ACESCG_WHITE = [0.32168, 0.33767];
+
+  function multiply3x3(left, right) {
+    const output = new Array(9).fill(0);
+    for (let row = 0; row < 3; row += 1) {
+      for (let column = 0; column < 3; column += 1) {
+        for (let inner = 0; inner < 3; inner += 1) output[row * 3 + column] += left[row * 3 + inner] * right[inner * 3 + column];
+      }
+    }
+    return output;
+  }
+
+  function invert3x3(matrix) {
+    const [a, b, c, d, e, f, g, h, i] = matrix;
+    const determinant = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+    if (Math.abs(determinant) < 1e-12) return null;
+    return [
+      e * i - f * h, c * h - b * i, b * f - c * e,
+      f * g - d * i, a * i - c * g, c * d - a * f,
+      d * h - e * g, b * g - a * h, a * e - b * d,
+    ].map((value) => value / determinant);
+  }
+
+  function rgbToXyzMatrix(primaries, white) {
+    const unscaled = [
+      primaries[0][0] / primaries[0][1], primaries[1][0] / primaries[1][1], primaries[2][0] / primaries[2][1],
+      1, 1, 1,
+      (1 - primaries[0][0] - primaries[0][1]) / primaries[0][1],
+      (1 - primaries[1][0] - primaries[1][1]) / primaries[1][1],
+      (1 - primaries[2][0] - primaries[2][1]) / primaries[2][1],
+    ];
+    const inverse = invert3x3(unscaled);
+    if (!inverse) return null;
+    const whiteXyz = [white[0] / white[1], 1, (1 - white[0] - white[1]) / white[1]];
+    const scales = [0, 1, 2].map((row) => inverse[row * 3] * whiteXyz[0] + inverse[row * 3 + 1] * whiteXyz[1] + inverse[row * 3 + 2] * whiteXyz[2]);
+    return unscaled.map((value, index) => value * scales[index % 3]);
+  }
+
+  function rayTriangleDistance(origin, direction, triangle) {
+    let nearest = Infinity;
+    for (let index = 0; index < 3; index += 1) {
+      const start = triangle[index];
+      const end = triangle[(index + 1) % 3];
+      const edge = [end[0] - start[0], end[1] - start[1]];
+      const determinant = direction[1] * edge[0] - direction[0] * edge[1];
+      if (Math.abs(determinant) < 1e-12) continue;
+      const delta = [start[0] - origin[0], start[1] - origin[1]];
+      const distance = (edge[0] * delta[1] - edge[1] * delta[0]) / determinant;
+      const edgePosition = (direction[0] * delta[1] - direction[1] * delta[0]) / determinant;
+      if (distance >= -1e-9 && edgePosition >= -1e-9 && edgePosition <= 1 + 1e-9) nearest = Math.min(nearest, Math.max(0, distance));
+    }
+    return Number.isFinite(nearest) ? nearest : Math.hypot(triangle[0][0] - origin[0], triangle[0][1] - origin[1]);
+  }
+
+  function rotateScalePrimary(reference, hueDegrees, purityScale) {
+    const baseAngle = Math.atan2(reference[1] - ACESCG_WHITE[1], reference[0] - ACESCG_WHITE[0]);
+    const angle = baseAngle + hueDegrees * Math.PI / 180;
+    const direction = [Math.cos(angle), Math.sin(angle)];
+    const distance = rayTriangleDistance(ACESCG_WHITE, direction, ACESCG_PRIMARIES);
+    return [ACESCG_WHITE[0] + direction[0] * distance * purityScale, ACESCG_WHITE[1] + direction[1] * distance * purityScale];
+  }
+
+  function rgbPrimariesAdjustmentMatrix(branch) {
+    const customPrimaries = ACESCG_PRIMARIES.map((primary, index) => {
+      const channel = ["red", "green", "blue"][index];
+      const hue = Number(branch?.[`${channel}_hue`]) || 0;
+      const purity = Math.max(0.01, 1 + (Number(branch?.[`${channel}_purity`]) || 0) / 100);
+      return rotateScalePrimary(primary, hue, purity);
+    });
+    const tintHue = Number(branch?.tint_hue) || 0;
+    const tintPurity = Math.min(0.99, Math.max(0, (Number(branch?.tint_purity) || 0) / 100));
+    const customWhite = rotateScalePrimary(ACESCG_PRIMARIES[0], tintHue, tintPurity);
+    const base = rgbToXyzMatrix(ACESCG_PRIMARIES, ACESCG_WHITE);
+    const custom = rgbToXyzMatrix(customPrimaries, customWhite);
+    const inverseBase = base && invert3x3(base);
+    if (!custom || !inverseBase) return IDENTITY_3X3;
+    const adjustment = multiply3x3(inverseBase, custom);
+    return adjustment.every((value) => Number.isFinite(value) && Math.abs(value) <= 64) ? adjustment : IDENTITY_3X3;
+  }
+
+  function colorSettingsNeutral(branch) {
+    if ((Number(branch?.white_balance_kelvin) || 6500) !== 6500) return false;
+    return [
+      "tint", "saturation", "vibrance",
+      "red_hue", "red_purity", "green_hue", "green_purity",
+      "blue_hue", "blue_purity", "tint_hue", "tint_purity",
+    ].every((name) => Math.abs(Number(branch?.[name]) || 0) < 0.000001);
+  }
+
   function buildParams(lane, adjustments, workingSpace, hdrSurface) {
     const params = new Float32Array(PARAM_COUNT);
     const branch = adjustments[lane];
+    const followsHdrColor = lane === "sdr" && branch.match_hdr_color !== false;
+    const colorSource = followsHdrColor ? adjustments.hdr : branch;
     params[0] = lane === "hdr" ? 1 : 0;
     params[1] = workingSpace === "linear-srgb" ? 1 : 0;
-    params[2] = branch.exposure || 0;
-    params[3] = lane === "hdr" ? branch.highlight_rolloff || 0 : branch.highlight_recovery || 0;
-    params[4] = lane === "hdr" ? branch.shadow_lift || 0 : branch.shadow || 0;
-    params[5] = branch.lift || 0;
-    params[6] = branch.gamma || 0;
-    params[7] = branch.gain || 0;
-    params[8] = branch.contrast || 0;
+    const toneEnabled = branch.tone_section_enabled !== false;
+    const primariesEnabled = branch.primaries_section_enabled !== false;
+    const colorEnabled = branch.color_section_enabled !== false && (!followsHdrColor || adjustments.hdr.color_section_enabled !== false);
+    const colorActive = colorEnabled && !colorSettingsNeutral(colorSource);
+    const baseEnabled = lane !== "sdr" || branch.base_section_enabled !== false;
+    params[2] = toneEnabled ? branch.exposure || 0 : 0;
+    params[3] = toneEnabled ? (lane === "hdr" ? branch.highlight_rolloff || 0 : branch.highlight_recovery || 0) : 0;
+    params[4] = toneEnabled ? (lane === "hdr" ? branch.shadow_lift || 0 : branch.shadow || 0) : 0;
+    params[5] = primariesEnabled ? branch.lift || 0 : 0;
+    params[6] = primariesEnabled ? branch.gamma || 0 : 0;
+    params[7] = primariesEnabled ? branch.gain || 0 : 0;
+    params[8] = toneEnabled ? branch.contrast || 0 : 0;
     params[9] = branch.contrast_pivot || (lane === "hdr" ? 0.1845 : 0.5);
-    params[10] = branch.white_balance_kelvin || 6500;
-    params[11] = branch.tint || 0;
-    params[12] = branch.tone_mapper === "aces" ? 1 : branch.tone_mapper === "reinhard" ? 2 : 0;
-    params[13] = branch.tone_contrast ?? 1;
-    params[14] = branch.tone_skew || 0;
-    params[15] = branch.curves_enabled ? 1 : 0;
+    params[10] = colorActive ? colorSource.white_balance_kelvin || 6500 : 6500;
+    params[11] = colorActive ? colorSource.tint || 0 : 0;
+    params[12] = baseEnabled ? (branch.tone_mapper === "aces" ? 1 : branch.tone_mapper === "reinhard" ? 2 : 0) : 0;
+    params[13] = baseEnabled ? branch.tone_contrast ?? 1 : 1;
+    params[14] = baseEnabled ? branch.tone_skew || 0 : 0;
+    params[15] = branch.curves_enabled && branch.curves_section_enabled !== false ? 1 : 0;
     params[16] = hdrSurface ? 1 : 0;
     // The PQ preview/export transport tops out at 10,000 nits while the app's
     // scene-linear 0.18 reference maps to 100 nits.
     params[17] = 18;
-    params[18] = lane === "hdr" && branch.tone_equalizer_enabled ? 1 : 0;
+    params[18] = lane === "hdr" && branch.tone_equalizer_enabled && branch.tone_equalizer_section_enabled !== false ? 1 : 0;
     params[19] = lane === "hdr" ? Math.min(1, Math.max(0, branch.tone_equalizer_smoothing ?? 0.5)) : 0;
-    const toneBands = normalizedToneEqualizerBands(branch.tone_equalizer_bands);
-    toneBands.forEach((value, index) => {
-      params[20 + index] = lane === "hdr" ? value : 0;
+    const toneNodes = normalizedToneEqualizerNodes(branch.tone_equalizer_nodes);
+    params[20] = lane === "hdr" ? toneNodes.length : 0;
+    toneNodes.forEach((node, index) => {
+      params[21 + index] = lane === "hdr" ? node.input_ev : 0;
+      params[37 + index] = lane === "hdr" ? node.adjustment_ev : 0;
     });
+    params[53] = lane === "hdr" ? ((branch.highlight_rolloff_start_nits ?? 400) * 0.18 / 100) : 0;
+    params[54] = branch.lift_pivot ?? -2;
+    params[55] = branch.lift_range ?? 4;
+    params[56] = branch.gamma_pivot ?? 0;
+    params[57] = branch.gamma_range ?? 4.25;
+    params[58] = branch.gain_pivot ?? 2;
+    params[59] = branch.gain_range ?? 4;
+    params[60] = baseEnabled ? 1 : 0;
+    const colorMatrix = colorActive ? rgbPrimariesAdjustmentMatrix(colorSource) : IDENTITY_3X3;
+    colorMatrix.forEach((value, index) => { params[61 + index] = value; });
+    params[70] = colorActive ? colorSource.saturation || 0 : 0;
+    params[71] = colorActive ? colorSource.vibrance || 0 : 0;
+    params[72] = colorActive ? 1 : 0;
     return params;
   }
 
-  function normalizedToneEqualizerBands(values) {
-    const corrections = Array.from({ length: 13 }, (_, index) => {
-      const value = Number(Array.isArray(values) ? values[index] : 0);
-      return Number.isFinite(value) ? Math.min(2, Math.max(-2, value)) : 0;
-    });
-    const targets = corrections.map((value, index) => (index - 6) + value);
+  function normalizedToneEqualizerNodes(values) {
+    const source = Array.isArray(values) && values.length >= 2
+      ? values.slice(0, 16)
+      : [-6, -3, 0, 3, 6].map((inputEv) => ({ input_ev: inputEv, adjustment_ev: 0 }));
+    const nodes = source.map((node) => ({
+      input_ev: Math.min(6, Math.max(-6, Number(node?.input_ev) || 0)),
+      adjustment_ev: Math.min(2, Math.max(-2, Number(node?.adjustment_ev) || 0)),
+    })).sort((left, right) => left.input_ev - right.input_ev);
+    nodes[0].input_ev = -6;
+    nodes[nodes.length - 1].input_ev = 6;
+    const targets = nodes.map((node) => node.input_ev + node.adjustment_ev);
     for (let index = 1; index < targets.length; index += 1) {
       targets[index] = Math.max(targets[index], targets[index - 1] + 0.001);
     }
-    return targets.map((value, index) => value - (index - 6));
+    nodes.forEach((node, index) => { node.adjustment_ev = Math.min(2, Math.max(-2, targets[index] - node.input_ev)); });
+    return nodes;
   }
 
   function buildCurves(lane, adjustments, curveSampler) {
@@ -247,30 +366,47 @@
       return t * t * (3.0 - 2.0 * t);
     }
     fn curveValue(channel: u32, value: f32) -> f32 {
+      let base = channel * 1024u;
+      if (value < 0.0) {
+        let slope = (curveLuts[base + 1u] - curveLuts[base]) * 1023.0;
+        return curveLuts[base] + value * slope;
+      }
+      if (value > 1.0) {
+        let slope = (curveLuts[base + 1023u] - curveLuts[base + 1022u]) * 1023.0;
+        return curveLuts[base + 1023u] + (value - 1.0) * slope;
+      }
       let location = clamp(value, 0.0, 1.0) * 1023.0;
       let lower = u32(floor(location));
       let upper = min(lower + 1u, 1023u);
       let amount = fract(location);
-      let base = channel * 1024u;
       return mix(curveLuts[base + lower], curveLuts[base + upper], amount);
+    }
+    fn curveEncodeChannel(value: f32) -> f32 {
+      if (value < 0.0) { return value / 0.36; }
+      if (value <= 0.18) { return 0.5 * value / 0.18; }
+      return 0.5 + 0.5 * log2(value / 0.18) / log2(100.0);
+    }
+    fn curveDecodeChannel(value: f32) -> f32 {
+      if (value <= 0.5) { return value * 0.36; }
+      return 0.18 * exp2((value - 0.5) * 2.0 * log2(100.0));
     }
     fn curveEncode(rgb: vec3f, hdr: bool) -> vec3f {
       if (!hdr) { return clamp(rgb, vec3f(0.0), vec3f(1.0)); }
-      return sign(rgb) * log2(vec3f(1.0) + abs(rgb)) / log2(11.0);
+      return vec3f(curveEncodeChannel(rgb.r), curveEncodeChannel(rgb.g), curveEncodeChannel(rgb.b));
     }
     fn curveDecode(rgb: vec3f, hdr: bool) -> vec3f {
       if (!hdr) { return clamp(rgb, vec3f(0.0), vec3f(1.0)); }
-      return sign(rgb) * (pow(vec3f(2.0), abs(rgb) * log2(11.0)) - vec3f(1.0));
+      return vec3f(curveDecodeChannel(rgb.r), curveDecodeChannel(rgb.g), curveDecodeChannel(rgb.b));
     }
     fn applyCurves(input: vec3f, hdr: bool) -> vec3f {
       if (p[15] < 0.5) { return input; }
       var rgb = curveEncode(input, hdr);
       let sourceLuma = select(lumaSrgb(rgb), lumaAces(rgb), hdr);
-      let mappedLuma = select(sourceLuma, curveValue(0u, sourceLuma), sourceLuma >= 0.0 && sourceLuma <= 1.0);
+      let mappedLuma = curveValue(0u, sourceLuma);
       if (abs(sourceLuma) > 0.00001) { rgb *= mappedLuma / sourceLuma; }
       for (var channel = 0u; channel < 3u; channel++) {
         let value = rgb[channel];
-        if (value >= 0.0 && value <= 1.0) { rgb[channel] = curveValue(channel + 1u, value); }
+        rgb[channel] = curveValue(channel + 1u, value);
       }
       return curveDecode(rgb, hdr);
     }
@@ -279,6 +415,13 @@
         1.7048873310 * rgb.r - 0.6241572745 * rgb.g - 0.0808867739 * rgb.b,
        -0.1295209353 * rgb.r + 1.1383993260 * rgb.g - 0.0087792418 * rgb.b,
        -0.0241270599 * rgb.r - 0.1246206123 * rgb.g + 1.1488221099 * rgb.b
+      );
+    }
+    fn srgbToAcescg(rgb: vec3f) -> vec3f {
+      return vec3f(
+        0.6130974024 * rgb.r + 0.3395231366 * rgb.g + 0.0473794610 * rgb.b,
+        0.0701937225 * rgb.r + 0.9163538791 * rgb.g + 0.0134523985 * rgb.b,
+        0.0206155922 * rgb.r + 0.1095697729 * rgb.g + 0.8698146349 * rgb.b
       );
     }
     fn acescgToP3(rgb: vec3f) -> vec3f {
@@ -315,40 +458,71 @@
       let offset = (p[10] - 6500.0) / 6500.0;
       return input * vec3f(1.0 + offset * 0.15, 1.0 + p[11] * 0.08, 1.0 - offset * 0.15);
     }
+    fn hdrColor(input: vec3f) -> vec3f {
+      let rgb = vec3f(
+        p[61] * input.r + p[62] * input.g + p[63] * input.b,
+        p[64] * input.r + p[65] * input.g + p[66] * input.b,
+        p[67] * input.r + p[68] * input.g + p[69] * input.b
+      );
+      let y = lumaAces(rgb);
+      let neutral = vec3f(y);
+      let chroma = rgb - neutral;
+      let maximum = max(rgb.r, max(rgb.g, rgb.b));
+      let minimum = min(rgb.r, min(rgb.g, rgb.b));
+      let denominator = max(max(abs(maximum), abs(minimum)), max(abs(y), 0.000001));
+      let relativeChroma = clamp((maximum - minimum) / denominator, 0.0, 1.0);
+      let vibranceWeight = pow(1.0 - relativeChroma, 2.0);
+      let vibranceFactor = max(0.0, 1.0 + p[71] * vibranceWeight);
+      let saturationFactor = max(0.0, 1.0 + p[70]);
+      return neutral + chroma * vibranceFactor * saturationFactor;
+    }
     fn hdrBase(input: vec3f) -> vec3f {
       var rgb = input * exp2(p[2]);
       let y = max(lumaAces(rgb), 0.0);
-      if (p[3] > 0.0 && y > 1.0) {
-        let stops = log2(max(y, 1.0));
-        let targetValue = exp2(stops / (1.0 + p[3] * stops / 40.0));
+      let start = max(p[53], 0.000001);
+      if (p[3] > 0.0 && y > start) {
+        let amount = p[3] / 50.0;
+        let targetValue = start + log(1.0 + amount * (y - start)) / amount;
         rgb *= targetValue / max(y, 0.00000001);
       }
       if (p[4] != 0.0) {
         let lift = min(p[4] * (1.0 - clamp(lumaAces(rgb), 0.0, 1.0)), 1.0);
         rgb *= 1.0 + lift;
       }
-      return whiteBalance(rgb);
+      return rgb;
     }
-    fn hdrLuminanceControls(input: vec3f) -> vec3f {
-      if (p[5] == 0.0 && p[6] == 0.0 && p[7] == 0.0 && p[8] == 0.0) { return input; }
+    fn hdrContrast(input: vec3f) -> vec3f {
+      if (p[8] == 0.0) { return input; }
       let y = max(lumaAces(input), 0.0);
       let pivot = max(p[9], 0.000001);
       let stops = log2(max(y, 0.00000001) / pivot);
-      var targetStops = stops * exp2(p[8]);
-      targetStops += 2.0 * p[5] * (1.0 - smoothRange(-4.0, 0.0, stops));
-      targetStops += 2.0 * p[6] * exp2(-0.5 * pow(stops / 1.5, 2.0));
-      targetStops += 2.0 * p[7] * smoothRange(0.0, 4.0, stops);
+      let targetStops = stops * exp2(p[8]);
       if (y <= 0.00000001) { return input; }
       return input * (pivot * exp2(clamp(targetStops, -32.0, 32.0)) / y);
     }
+    fn hdrPrimaries(input: vec3f) -> vec3f {
+      if (p[5] == 0.0 && p[6] == 0.0 && p[7] == 0.0) { return input; }
+      let y = max(lumaAces(input), 0.0);
+      let pivot = max(p[9], 0.000001);
+      let stops = log2(max(y, 0.00000001) / pivot);
+      var targetStops = stops;
+      targetStops += 2.0 * p[5] * (1.0 - smoothRange(p[54] - p[55] * 0.5, p[54] + p[55] * 0.5, stops));
+      let gammaSigma = max(p[57] / 2.355, 0.1);
+      targetStops += 2.0 * p[6] * exp(-0.5 * pow((stops - p[56]) / gammaSigma, 2.0));
+      targetStops += 2.0 * p[7] * smoothRange(p[58] - p[59] * 0.5, p[58] + p[59] * 0.5, stops);
+      if (y <= 0.00000001) { return input; }
+      return input * (pivot * exp2(clamp(targetStops, -32.0, 32.0)) / y);
+    }
+    fn toneEqualizerNodeEv(index: u32) -> f32 { return p[21u + index]; }
     fn toneEqualizerTarget(index: u32) -> f32 {
-      return (f32(index) - 6.0) + p[20u + index];
+      return toneEqualizerNodeEv(index) + p[37u + index];
     }
     fn toneEqualizerSlope(index: u32) -> f32 {
-      if (index == 0u) { return toneEqualizerTarget(1u) - toneEqualizerTarget(0u); }
-      if (index >= 12u) { return toneEqualizerTarget(12u) - toneEqualizerTarget(11u); }
-      let previous = toneEqualizerTarget(index) - toneEqualizerTarget(index - 1u);
-      let following = toneEqualizerTarget(index + 1u) - toneEqualizerTarget(index);
+      let count = u32(p[20]);
+      if (index == 0u) { return (toneEqualizerTarget(1u) - toneEqualizerTarget(0u)) / max(toneEqualizerNodeEv(1u) - toneEqualizerNodeEv(0u), 0.0001); }
+      if (index + 1u >= count) { return (toneEqualizerTarget(index) - toneEqualizerTarget(index - 1u)) / max(toneEqualizerNodeEv(index) - toneEqualizerNodeEv(index - 1u), 0.0001); }
+      let previous = (toneEqualizerTarget(index) - toneEqualizerTarget(index - 1u)) / max(toneEqualizerNodeEv(index) - toneEqualizerNodeEv(index - 1u), 0.0001);
+      let following = (toneEqualizerTarget(index + 1u) - toneEqualizerTarget(index)) / max(toneEqualizerNodeEv(index + 1u) - toneEqualizerNodeEv(index), 0.0001);
       if (previous <= 0.0 || following <= 0.0) { return 0.0; }
       return 2.0 * previous * following / (previous + following);
     }
@@ -358,17 +532,23 @@
       if (y <= 0.00000001) { return input; }
       let inputEv = log2(max(y, 0.00000001) / 0.18);
       var targetEv = inputEv;
+      let count = u32(p[20]);
       if (inputEv < -6.0) {
-        targetEv += p[20];
+        targetEv += p[37];
       } else if (inputEv > 6.0) {
-        targetEv += p[32];
+        targetEv += p[37u + count - 1u];
       } else {
-        let segment = min(u32(floor(inputEv + 6.0)), 11u);
-        let local = inputEv - (f32(segment) - 6.0);
+        var segment = 0u;
+        for (var index = 0u; index < 15u; index++) {
+          if (index + 1u < count && inputEv >= toneEqualizerNodeEv(index + 1u)) { segment = index + 1u; }
+        }
+        segment = min(segment, count - 2u);
+        let width = max(toneEqualizerNodeEv(segment + 1u) - toneEqualizerNodeEv(segment), 0.0001);
+        let local = (inputEv - toneEqualizerNodeEv(segment)) / width;
         let y0 = toneEqualizerTarget(segment);
         let y1 = toneEqualizerTarget(segment + 1u);
-        let m0 = toneEqualizerSlope(segment);
-        let m1 = toneEqualizerSlope(segment + 1u);
+        let m0 = toneEqualizerSlope(segment) * width;
+        let m1 = toneEqualizerSlope(segment + 1u) * width;
         let local2 = local * local;
         let local3 = local2 * local;
         let cubic = (2.0 * local3 - 3.0 * local2 + 1.0) * y0
@@ -396,16 +576,27 @@
     fn displayEncode(rgb: vec3f) -> vec3f {
       return vec3f(displayEncodeChannel(rgb.r), displayEncodeChannel(rgb.g), displayEncodeChannel(rgb.b));
     }
-    fn sdrLuminanceControls(input: vec3f) -> vec3f {
-      if (p[5] == 0.0 && p[6] == 0.0 && p[7] == 0.0 && p[8] == 0.0) { return input; }
+    fn sdrContrast(input: vec3f) -> vec3f {
+      if (p[8] == 0.0) { return input; }
+      let rgb = clamp(input, vec3f(0.0), vec3f(1.0));
+      let linearY = clamp(lumaSrgb(rgb), 0.0, 1.0);
+      let encodedY = srgbEncode(linearY);
+      let targetValue = (encodedY - p[9]) * exp2(p[8] * 0.5) + p[9];
+      let targetY = srgbDecode(clamp(targetValue, 0.0, 1.0));
+      if (linearY > 0.000001) { return rgb * (targetY / linearY); }
+      return vec3f(targetY);
+    }
+    fn sdrPrimaries(input: vec3f) -> vec3f {
+      if (p[5] == 0.0 && p[6] == 0.0 && p[7] == 0.0) { return input; }
       let rgb = clamp(input, vec3f(0.0), vec3f(1.0));
       let linearY = clamp(lumaSrgb(rgb), 0.0, 1.0);
       let encodedY = srgbEncode(linearY);
       var targetValue = encodedY;
-      if (p[8] != 0.0) { targetValue = (targetValue - p[9]) * exp2(p[8] * 0.5) + p[9]; }
-      let shadowMask = 1.0 - smoothRange(0.05, 0.65, encodedY);
-      let highlightMask = smoothRange(0.35, 0.95, encodedY);
-      let midtoneMask = pow(clamp(1.0 - abs(encodedY - 0.5) / 0.42, 0.0, 1.0), 2.0);
+      let zoneStops = log2(max(encodedY, 0.000001) / 0.5);
+      let shadowMask = 1.0 - smoothRange(p[54] - p[55] * 0.5, p[54] + p[55] * 0.5, zoneStops);
+      let highlightMask = smoothRange(p[58] - p[59] * 0.5, p[58] + p[59] * 0.5, zoneStops);
+      let gammaSigma = max(p[57] / 2.355, 0.1);
+      let midtoneMask = exp(-0.5 * pow((zoneStops - p[56]) / gammaSigma, 2.0));
       targetValue += p[5] * 0.25 * shadowMask;
       if (p[6] != 0.0) { targetValue = mix(targetValue, pow(clamp(targetValue, 0.0, 1.0), exp2(-p[6])), midtoneMask); }
       if (p[7] > 0.0) { targetValue += p[7] * highlightMask * (1.0 - targetValue); }
@@ -422,9 +613,7 @@
       let targetValue = y * (1.0 + amount * 0.18) / (1.0 + amount * y);
       return select(vec3f(0.0), rgb * (targetValue / max(y, 0.00000001)), y > 0.00000001);
     }
-    fn toneMap(input: vec3f) -> vec3f {
-      let rgb = max(input, vec3f(0.0));
-      let y = lumaAces(rgb);
+    fn toneCurveLuma(y: f32) -> f32 {
       var mapped = 0.0;
       if (p[12] > 1.5) {
         mapped = y / (1.0 + y);
@@ -439,12 +628,37 @@
         let middleOdds = log(0.18 / 0.82);
         mapped = select(0.0, 1.0 / (1.0 + exp(-clamp(middleOdds + localPower * logExposure, -32.0, 32.0))), y > 0.0);
       }
-      mapped = clamp(mapped, 0.0, 1.0);
+      return clamp(mapped, 0.0, 1.0);
+    }
+    fn toneMap(input: vec3f) -> vec3f {
+      let rgb = max(input, vec3f(0.0));
+      let y = lumaAces(rgb);
+      let mapped = toneCurveLuma(y);
       let scaled = select(vec3f(0.0), rgb * (mapped / max(y, 0.00000001)), y > 0.00000001);
       return compressSrgbGamut(acescgToSrgb(scaled));
     }
+    fn retoneMapSdrReference(input: vec3f) -> vec3f {
+      let rgb = clamp(input, vec3f(0.0), vec3f(1.0));
+      if (p[12] < 0.5 && abs(p[13] - 1.0) < 0.000001 && abs(p[14]) < 0.000001) { return rgb; }
+      let y = lumaSrgb(rgb);
+      let boundedY = clamp(y, 0.0000001, 0.9999999);
+      let middleGray = 0.18;
+      let middleOdds = log(middleGray / (1.0 - middleGray));
+      let referenceOdds = log(boundedY / (1.0 - boundedY));
+      let sceneY = select(0.0, middleGray * exp(clamp((referenceOdds - middleOdds) / 1.1, -32.0, 32.0)), y > 0.0);
+      let mapped = toneCurveLuma(sceneY);
+      return clamp(select(vec3f(0.0), rgb * (mapped / max(y, 0.00000001)), y > 0.00000001), vec3f(0.0), vec3f(1.0));
+    }
+    fn sceneColor(input: vec3f) -> vec3f {
+      if (p[72] < 0.5) { return input; }
+      return hdrColor(whiteBalance(input));
+    }
+    fn sdrReferenceColor(input: vec3f) -> vec3f {
+      if (p[72] < 0.5) { return input; }
+      return compressSrgbGamut(acescgToSrgb(sceneColor(srgbToAcescg(input))));
+    }
     fn renderHdr(source: vec3f) -> vec3f {
-      var rgb = applyCurves(hdrLuminanceControls(hdrToneEqualizer(hdrBase(source))), true);
+      var rgb = applyCurves(hdrPrimaries(hdrToneEqualizer(sceneColor(hdrContrast(hdrBase(source))))), true);
       if (p[16] > 0.5) {
         // Extended canvas values are relative to nominal display white. Keep the
         // app's 0.18 scene-linear reference near 100 nits on a 203-nit canvas.
@@ -464,14 +678,15 @@
           let mask = 1.0 - smoothRange(0.0, 0.5, lumaSrgb(rgb));
           rgb = max(rgb + vec3f(p[4] * 0.08 * mask), vec3f(0.0));
         }
-        rgb = applyCurves(sdrLuminanceControls(highlightRecovery(rgb)), false);
+        if (p[60] > 0.5) { rgb = retoneMapSdrReference(rgb); }
+        rgb = applyCurves(sdrPrimaries(sdrReferenceColor(sdrContrast(highlightRecovery(rgb)))), false);
       } else {
         rgb = max(source * exp2(p[2]), vec3f(0.0));
         if (p[4] != 0.0) {
           let mask = 1.0 - smoothRange(0.0, 0.5, lumaAces(rgb));
           rgb = max(rgb + vec3f(p[4] * 0.08 * mask), vec3f(0.0));
         }
-        rgb = applyCurves(sdrLuminanceControls(highlightRecovery(toneMap(rgb))), false);
+        rgb = applyCurves(sdrPrimaries(sdrContrast(highlightRecovery(toneMap(sceneColor(rgb))))), false);
       }
       return clamp(rgb, vec3f(0.0), vec3f(1.0));
     }

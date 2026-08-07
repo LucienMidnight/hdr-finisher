@@ -10,7 +10,8 @@ Use this checklist after `tools\run_alpha_qa.ps1` and `tools\build_windows.ps1` 
 - Confirm capabilities show AVIF gain-map export available, JPEG Ultra HDR available when the pinned encoder is bundled, and JPEG XL deferred.
 - Import the bundled/sample HDR reference workflow and export AVIF + gain map.
 - Inspect the exported AVIF with `avifdec --info` and confirm gain map metadata is present.
-- Export `JPEG Ultra HDR (JPG + Gain Map)` and confirm the output uses the selected folder, filename, `.jpg` extension, and quality.
+- Export `JPEG Ultra HDR (JPG + Gain Map)` and confirm the output uses the selected folder, filename, `.jpg` extension, base quality, gain-map quality, and gain-map resolution.
+- Confirm Browse opens the native Windows folder picker, supports a path containing spaces, and reports cancellation without an error.
 - Run `ultrahdr_app -m 1 -j <export.jpg> -P` and confirm gain-map metadata is reported.
 
 ## HDR And SDR Displays
@@ -30,6 +31,7 @@ Use this checklist after `tools\run_alpha_qa.ps1` and `tools\build_windows.ps1` 
 - Confirm source interpretation, manual override behavior, waveform shape, false color/zebra behavior, and exported AVIF gain-map metadata.
 
 ## JPEG Ultra HDR / Instagram / Browser
+- Follow [JPEG Ultra HDR Reliability](JPEG_Ultra_HDR_Reliability.md) for the separate edge-fidelity and matrix-color checks using the iPhone and Blender fixtures.
 - On an HDR monitor with Windows HDR enabled, open the exported `.jpg` in an Ultra HDR-capable Edge/Brave workflow and confirm highlights exceed the SDR rendition without unexpected hue shifts.
 - Move the same window to an SDR monitor and confirm the authored SDR fallback remains display-safe and visually intentional.
 - Open the `.jpg` with a legacy JPEG-only decoder and confirm it displays normally with no corruption or dependency on the gain map.

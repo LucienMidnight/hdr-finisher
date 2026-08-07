@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
+const { spawnSync } = require("child_process");
 const { chromium } = require("playwright");
-const { PNG } = require("pngjs");
 
 function edgeExecutable() {
   const candidates = [
@@ -13,33 +13,26 @@ function edgeExecutable() {
 }
 
 function compareScreenshots(gpuBuffer, settledBuffer) {
-  const gpu = PNG.sync.read(gpuBuffer);
-  const settled = PNG.sync.read(settledBuffer);
-  if (gpu.width !== settled.width || gpu.height !== settled.height) {
-    throw new Error(`Preview geometry changed from ${gpu.width}x${gpu.height} to ${settled.width}x${settled.height}`);
-  }
-  const channelErrors = [];
-  let sum = 0;
-  let changedPixels = 0;
-  for (let offset = 0; offset < gpu.data.length; offset += 4) {
-    let pixelMax = 0;
-    for (let channel = 0; channel < 3; channel += 1) {
-      const difference = Math.abs(gpu.data[offset + channel] - settled.data[offset + channel]);
-      channelErrors.push(difference);
-      sum += difference;
-      pixelMax = Math.max(pixelMax, difference);
-    }
-    if (pixelMax > 8) changedPixels += 1;
-  }
-  channelErrors.sort((a, b) => a - b);
-  const pixels = gpu.width * gpu.height;
-  return {
-    width: gpu.width,
-    height: gpu.height,
-    meanAbsoluteError: sum / channelErrors.length / 255,
-    p95ChannelError: channelErrors[Math.floor(channelErrors.length * 0.95)] / 255,
-    visiblyChangedFraction: changedPixels / pixels,
-  };
+  const python = path.join(__dirname, "..", ".venv", "Scripts", "python.exe");
+  const script = [
+    "import base64, io, json, sys",
+    "import numpy as np",
+    "from PIL import Image",
+    "payload=json.load(sys.stdin)",
+    "gpu=np.asarray(Image.open(io.BytesIO(base64.b64decode(payload['gpu']))).convert('RGB'), dtype=np.int16)",
+    "settled=np.asarray(Image.open(io.BytesIO(base64.b64decode(payload['settled']))).convert('RGB'), dtype=np.int16)",
+    "assert gpu.shape == settled.shape, f'Preview geometry changed: {gpu.shape} vs {settled.shape}'",
+    "difference=np.abs(gpu-settled)",
+    "result={'width':int(gpu.shape[1]),'height':int(gpu.shape[0]),'meanAbsoluteError':float(np.mean(difference)/255),'p95ChannelError':float(np.percentile(difference,95)/255),'visiblyChangedFraction':float(np.mean(np.max(difference,axis=2)>8))}",
+    "print(json.dumps(result))",
+  ].join("\n");
+  const comparison = spawnSync(python, ["-c", script], {
+    input: JSON.stringify({ gpu: gpuBuffer.toString("base64"), settled: settledBuffer.toString("base64") }),
+    encoding: "utf8",
+    maxBuffer: 32 * 1024 * 1024,
+  });
+  if (comparison.status !== 0) throw new Error(comparison.stderr || comparison.stdout || "Could not compare preview screenshots");
+  return JSON.parse(comparison.stdout);
 }
 
 async function captureCurrent(page, label, outputDir) {

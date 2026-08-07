@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 import tifffile
 from fastapi.testclient import TestClient
+from PIL import Image
 
 import hdr_finisher.proofing as proofing_module
 from hdr_finisher.models import (
@@ -15,15 +16,19 @@ from hdr_finisher.models import (
     CapabilityInfo,
     CapabilityStatus,
     ExportResponse,
+    JPEGGainMapProofMetadata,
     ProofArtifactRequest,
 )
 from hdr_finisher.proofing import (
     EvidenceStore,
     GainMapParameters,
+    ProofArtifact,
     ProofArtifactStore,
+    _inspect_jpeg_gain_map,
     apply_gain_map_formula,
     reconstruct_from_endpoints,
 )
+from hdr_finisher.color import linear_bt2020_to_acescg, linear_srgb_to_acescg
 from hdr_finisher.render_cache import SessionRenderCache
 from hdr_finisher.main import app, capabilities, store as session_store
 
@@ -65,6 +70,112 @@ def test_endpoint_reconstruction_preserves_base_and_alternate() -> None:
     alternate = base * np.array([4.0, 3.0, 2.0], dtype=np.float32)
     np.testing.assert_allclose(reconstruct_from_endpoints(base, alternate, 3.0, 0.0), base, atol=2e-6)
     np.testing.assert_allclose(reconstruct_from_endpoints(base, alternate, 3.0, 3.0), alternate, atol=2e-5)
+
+
+def test_endpoint_reconstruction_uses_encoded_offsets_and_clamps_above_capacity() -> None:
+    base = np.array([[[0.0, 0.02, 0.4], [0.08, 0.25, 0.7]]], dtype=np.float32)
+    alternate = np.array([[[0.001, 0.18, 1.2], [0.5, 1.5, 3.0]]], dtype=np.float32)
+    midpoint = reconstruct_from_endpoints(
+        base,
+        alternate,
+        2.0,
+        1.0,
+        display_ratio_sdr=1.0,
+        offset_sdr=1e-7,
+        offset_hdr=2e-7,
+    )
+    full = reconstruct_from_endpoints(
+        base,
+        alternate,
+        2.0,
+        12.0,
+        display_ratio_sdr=1.0,
+        offset_sdr=1e-7,
+        offset_hdr=2e-7,
+    )
+    assert np.all(midpoint >= 0)
+    assert np.any(np.abs(midpoint - reconstruct_from_endpoints(base, alternate, 2.0, 1.0)) > 1e-5)
+    np.testing.assert_allclose(full, alternate, rtol=2e-5, atol=2e-6)
+
+
+def test_jpeg_probe_metadata_is_parsed_into_structured_fields(monkeypatch, tmp_path: Path) -> None:
+    probe = """
+--maxContentBoost 16
+--offsetSdr 1e-07
+--offsetHdr 2e-07
+--hdrCapacityMin 1.25
+--hdrCapacityMax 8
+--useBaseColorSpace 1
+"""
+    monkeypatch.setattr(proofing_module, "resolve_binary", lambda _name: tmp_path / "ultrahdr_app.exe")
+    monkeypatch.setattr(
+        proofing_module,
+        "_run_command",
+        lambda command: type("Result", (), {"stdout": probe, "stderr": ""})(),
+    )
+    metadata = _inspect_jpeg_gain_map(tmp_path / "proof.jpg")
+    assert metadata.use_base_color_space is True
+    assert metadata.base_gamut == "sRGB / BT.709"
+    assert metadata.alternate_gamut == "BT.2020"
+    assert metadata.reconstruction_gamut == "sRGB / BT.709"
+    assert metadata.max_content_boost == pytest.approx(16.0)
+    assert metadata.hdr_capacity_min == pytest.approx(1.25)
+    assert metadata.hdr_capacity_max == pytest.approx(8.0)
+    assert metadata.offset_sdr == pytest.approx(1e-7)
+    assert metadata.offset_hdr == pytest.approx(2e-7)
+
+
+@pytest.mark.parametrize("use_base_color_space", [True, False])
+def test_jpeg_full_endpoint_uses_metadata_selected_decoded_gamut(
+    monkeypatch,
+    tmp_path: Path,
+    use_base_color_space: bool,
+) -> None:
+    store = ProofArtifactStore()
+    store.root = tmp_path
+    jpeg_path = tmp_path / "fixture.jpg"
+    Image.new("RGB", (2, 1), (64, 96, 128)).save(jpeg_path, quality=95)
+    decoded = np.array([[[0.9, 0.15, 0.05], [0.1, 0.7, 0.2]]], dtype=np.float32)
+    decoded_rgba = np.concatenate([decoded, np.ones((1, 2, 1), dtype=np.float32)], axis=2)
+    decoded_rgba.astype("<f2").tofile(tmp_path / "decoded-gamut-test.rgba-f16.raw")
+    metadata = JPEGGainMapProofMetadata(
+        use_base_color_space=use_base_color_space,
+        base_gamut="sRGB / BT.709",
+        alternate_gamut="BT.2020",
+        reconstruction_gamut="sRGB / BT.709" if use_base_color_space else "BT.2020",
+        min_content_boost=1.0,
+        max_content_boost=8.0,
+        gamma=1.0,
+        hdr_capacity_min=1.0,
+        hdr_capacity_max=8.0,
+        offset_sdr=1e-7,
+        offset_hdr=1e-7,
+    )
+    artifact = ProofArtifact(
+        artifact_id="gamut-test",
+        format="jpeg_ultrahdr",
+        path=jpeg_path,
+        media_type="image/jpeg",
+        sha256="0" * 64,
+        width=2,
+        height=1,
+        quality=85,
+        metadata_summary="fixture",
+        encoded_headroom=3.0,
+        hdr_authored=np.zeros((1, 2, 3), dtype=np.float32),
+        sdr_authored=np.zeros((1, 2, 3), dtype=np.float32),
+        jpeg_gain_map=metadata,
+    )
+    monkeypatch.setattr(proofing_module, "resolve_binary", lambda _name: tmp_path / "ultrahdr_app.exe")
+    _, endpoint = store._matrix_endpoints(artifact)
+    scaled = decoded * np.float32(203.0 * 0.18 / 100.0)
+    expected = linear_srgb_to_acescg(scaled) if use_base_color_space else linear_bt2020_to_acescg(scaled)
+    np.testing.assert_allclose(endpoint, np.clip(expected, 0, None), rtol=2e-3, atol=3e-4)
+
+    expected_sum = np.maximum(expected.sum(axis=-1, keepdims=True), 1e-8)
+    endpoint_sum = np.maximum(endpoint.sum(axis=-1, keepdims=True), 1e-8)
+    mean_chromaticity_error = float(np.mean(np.abs(endpoint / endpoint_sum - expected / expected_sum)))
+    assert mean_chromaticity_error < 0.01
 
 
 class _FakeBackend:

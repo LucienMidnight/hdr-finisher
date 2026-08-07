@@ -18,6 +18,7 @@ Generated output must not be the only copy of a procedure or durable conclusion.
 
 - [Alpha Manual QA Checklist](Alpha_Manual_QA_Checklist.md) — packaged application, HDR/SDR display, HEIC, EXR, and export checks.
 - [Delivery Proofing Sprint](Delivery_Proofing_Sprint.md) — browser/display proofing protocol, acceptance gates, and hosting-survival work.
+- [JPEG Ultra HDR Reliability](JPEG_Ultra_HDR_Reliability.md) — separate edge-fidelity and matrix-color failure modes, automated thresholds, and iPhone/Blender procedures.
 - [Source Export Validation Log](Source_Export_Validation_Log.md) — validated source-editor handoff workflows and findings.
 
 ## Automated entry points

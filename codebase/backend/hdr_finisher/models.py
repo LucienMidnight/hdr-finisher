@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class HDRClassification(str, Enum):
@@ -88,24 +88,56 @@ class HDRAnalysis(BaseModel):
     badge_message: str
 
 
+class ToneEqualizerNode(BaseModel):
+    input_ev: float = Field(ge=-6.0, le=6.0)
+    adjustment_ev: float = Field(default=0.0, ge=-2.0, le=2.0)
+
+
+def _default_tone_equalizer_nodes() -> list[ToneEqualizerNode]:
+    return [ToneEqualizerNode(input_ev=value) for value in (-6.0, -3.0, 0.0, 3.0, 6.0)]
+
+
 class HDRAdjustments(BaseModel):
+    tone_section_enabled: bool = True
+    tone_equalizer_section_enabled: bool = True
+    color_section_enabled: bool = True
+    primaries_section_enabled: bool = True
+    curves_section_enabled: bool = True
     exposure: float = 0.0
-    highlight_rolloff: float = 0.25
+    highlight_rolloff: float = 0.0
+    highlight_rolloff_start_nits: float = Field(default=400.0, ge=100.0, le=4000.0)
     shadow_lift: float = 0.0
     tone_equalizer_enabled: bool = False
-    tone_equalizer_bands: list[float] = Field(
-        default_factory=lambda: [0.0] * 13,
-        min_length=13,
-        max_length=13,
+    tone_equalizer_nodes: list[ToneEqualizerNode] = Field(
+        default_factory=_default_tone_equalizer_nodes,
+        min_length=2,
+        max_length=16,
     )
+    tone_equalizer_influence_radius: float = Field(default=1.5, ge=0.25, le=12.0)
     tone_equalizer_smoothing: float = Field(default=0.5, ge=0.0, le=1.0)
     lift: float = 0.0
     gamma: float = 0.0
     gain: float = 0.0
+    lift_pivot: float = Field(default=-2.0, ge=-8.0, le=8.0)
+    lift_range: float = Field(default=4.0, ge=0.5, le=12.0)
+    gamma_pivot: float = Field(default=0.0, ge=-8.0, le=8.0)
+    gamma_range: float = Field(default=4.25, ge=0.5, le=12.0)
+    gain_pivot: float = Field(default=2.0, ge=-8.0, le=8.0)
+    gain_range: float = Field(default=4.0, ge=0.5, le=12.0)
     contrast: float = 0.0
     contrast_pivot: float = 0.1845
     white_balance_kelvin: int = 6500
     tint: float = 0.0
+    saturation: float = Field(default=0.0, ge=-1.0, le=1.0)
+    vibrance: float = Field(default=0.0, ge=-1.0, le=1.0)
+    red_hue: float = Field(default=0.0, ge=-180.0, le=180.0)
+    red_purity: float = Field(default=0.0, ge=-99.0, le=400.0)
+    green_hue: float = Field(default=0.0, ge=-180.0, le=180.0)
+    green_purity: float = Field(default=0.0, ge=-99.0, le=400.0)
+    blue_hue: float = Field(default=0.0, ge=-180.0, le=180.0)
+    blue_purity: float = Field(default=0.0, ge=-99.0, le=400.0)
+    tint_hue: float = Field(default=0.0, ge=-180.0, le=180.0)
+    tint_purity: float = Field(default=0.0, ge=0.0, le=99.0)
     curves_enabled: bool = False
     luma_curve: list[list[float]] = Field(
         default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
@@ -120,8 +152,48 @@ class HDRAdjustments(BaseModel):
         default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
     )
 
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_tone_equalizer_bands(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or "tone_equalizer_nodes" in value:
+            return value
+        bands = value.get("tone_equalizer_bands")
+        if not isinstance(bands, list) or len(bands) != 13:
+            return value
+        migrated = dict(value)
+        migrated["tone_equalizer_nodes"] = [
+            {"input_ev": float(index - 6), "adjustment_ev": float(adjustment)}
+            for index, adjustment in enumerate(bands)
+        ]
+        migrated.pop("tone_equalizer_bands", None)
+        return migrated
+
+    @model_validator(mode="after")
+    def normalize_tone_equalizer_nodes(self) -> "HDRAdjustments":
+        nodes = sorted(self.tone_equalizer_nodes, key=lambda node: node.input_ev)
+        normalized: list[ToneEqualizerNode] = []
+        for index, node in enumerate(nodes):
+            input_ev = node.input_ev
+            if index == 0:
+                input_ev = -6.0
+            elif index == len(nodes) - 1:
+                input_ev = 6.0
+            else:
+                minimum = normalized[-1].input_ev + 0.1
+                maximum = 6.0 - 0.1 * (len(nodes) - index - 1)
+                input_ev = min(max(input_ev, minimum), maximum)
+            normalized.append(ToneEqualizerNode(input_ev=input_ev, adjustment_ev=node.adjustment_ev))
+        self.tone_equalizer_nodes = normalized
+        return self
+
 
 class SDRAdjustments(BaseModel):
+    base_section_enabled: bool = True
+    tone_section_enabled: bool = True
+    color_section_enabled: bool = True
+    primaries_section_enabled: bool = True
+    curves_section_enabled: bool = True
+    match_hdr_color: bool = True
     exposure: float = 0.0
     highlight_recovery: float = 0.6
     tone_contrast: float = Field(default=1.0, ge=0.5, le=1.5)
@@ -130,8 +202,26 @@ class SDRAdjustments(BaseModel):
     lift: float = 0.0
     gamma: float = 0.0
     gain: float = 0.0
+    lift_pivot: float = Field(default=-2.0, ge=-8.0, le=8.0)
+    lift_range: float = Field(default=4.0, ge=0.5, le=12.0)
+    gamma_pivot: float = Field(default=0.0, ge=-8.0, le=8.0)
+    gamma_range: float = Field(default=4.25, ge=0.5, le=12.0)
+    gain_pivot: float = Field(default=2.0, ge=-8.0, le=8.0)
+    gain_range: float = Field(default=4.0, ge=0.5, le=12.0)
     contrast: float = 0.0
     contrast_pivot: float = 0.5
+    white_balance_kelvin: int = 6500
+    tint: float = 0.0
+    saturation: float = Field(default=0.0, ge=-1.0, le=1.0)
+    vibrance: float = Field(default=0.0, ge=-1.0, le=1.0)
+    red_hue: float = Field(default=0.0, ge=-180.0, le=180.0)
+    red_purity: float = Field(default=0.0, ge=-99.0, le=400.0)
+    green_hue: float = Field(default=0.0, ge=-180.0, le=180.0)
+    green_purity: float = Field(default=0.0, ge=-99.0, le=400.0)
+    blue_hue: float = Field(default=0.0, ge=-180.0, le=180.0)
+    blue_purity: float = Field(default=0.0, ge=-99.0, le=400.0)
+    tint_hue: float = Field(default=0.0, ge=-180.0, le=180.0)
+    tint_purity: float = Field(default=0.0, ge=0.0, le=99.0)
     tone_mapper: ToneMapper = ToneMapper.FILMIC
     curves_enabled: bool = False
     luma_curve: list[list[float]] = Field(
@@ -235,7 +325,10 @@ class ScopeResponse(BaseModel):
 class ExportSettings(BaseModel):
     format: str = "jpeg_ultrahdr"
     quality: int = Field(default=85, ge=1, le=100)
+    jpeg_gain_map_quality: int = Field(default=100, ge=1, le=100)
+    jpeg_gain_map_scale: Literal["full", "half"] = "full"
     output_path: str | None = None
+    overwrite: bool = False
 
 
 class ExportResponse(BaseModel):
@@ -257,7 +350,23 @@ class ProofArtifactRequest(BaseModel):
     adjustments: AdjustmentState
     format: str = "jpeg_ultrahdr"
     quality: int = Field(default=90, ge=1, le=100)
+    jpeg_gain_map_quality: int = Field(default=100, ge=1, le=100)
+    jpeg_gain_map_scale: Literal["full", "half"] = "full"
     long_edge: int = Field(default=1200, ge=256, le=1600)
+
+
+class JPEGGainMapProofMetadata(BaseModel):
+    use_base_color_space: bool
+    base_gamut: str
+    alternate_gamut: str
+    reconstruction_gamut: str
+    min_content_boost: float
+    max_content_boost: float
+    gamma: float
+    hdr_capacity_min: float
+    hdr_capacity_max: float
+    offset_sdr: float
+    offset_hdr: float
 
 
 class ProofArtifactResponse(BaseModel):
@@ -273,6 +382,7 @@ class ProofArtifactResponse(BaseModel):
     quality: int
     metadata_summary: str
     encoded_headroom: float
+    jpeg_gain_map: JPEGGainMapProofMetadata | None = None
 
 
 class ProofMatrixRequest(BaseModel):

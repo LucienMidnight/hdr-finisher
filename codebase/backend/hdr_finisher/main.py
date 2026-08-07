@@ -11,8 +11,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .capabilities import probe_capabilities
-from .config import APP_NAME, APP_VERSION, DEFAULT_HOST, DEFAULT_PORT, FRONTEND_DIR, SAMPLES_DIR
-from .exporters import build_export_backends
+from .config import APP_NAME, APP_VERSION, DEFAULT_HOST, DEFAULT_PORT, EXPORTS_DIR, FRONTEND_DIR, SAMPLES_DIR
+from .exporters import ExportOverwriteRequired, build_export_backends
 from .folder_picker import pick_directory
 from .loader import LoaderError
 from .models import (
@@ -255,7 +255,17 @@ def export(session_id: str, settings: ExportSettings):
     backend = export_backends.get(settings.format)
     if backend is None:
         raise HTTPException(status_code=400, detail=f"Unsupported export format: {settings.format}")
-    result = backend.export(session, settings)
+    try:
+        result = backend.export(session, settings)
+    except ExportOverwriteRequired as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "overwrite_required",
+                "message": f"A file named {exc.output_path.name} already exists. Replace it?",
+                "output_path": str(exc.output_path),
+            },
+        ) from exc
     if not result.accepted:
         return JSONResponse(status_code=501, content=result.model_dump())
     return result
@@ -365,6 +375,12 @@ def export_directory(request: DirectoryPickRequest) -> DirectoryPickResponse:
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return DirectoryPickResponse(directory=directory)
+
+
+@app.get("/api/export-directory/default", response_model=DirectoryPickResponse)
+def default_export_directory() -> DirectoryPickResponse:
+    EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    return DirectoryPickResponse(directory=str(EXPORTS_DIR.resolve()))
 
 
 @app.get("/")

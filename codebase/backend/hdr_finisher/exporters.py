@@ -28,6 +28,12 @@ class ExportBackend(ABC):
         raise NotImplementedError
 
 
+class ExportOverwriteRequired(FileExistsError):
+    def __init__(self, output_path: Path) -> None:
+        self.output_path = output_path
+        super().__init__(f"A file already exists at {output_path}")
+
+
 class StubExportBackend(ExportBackend):
     name = "stub"
 
@@ -56,6 +62,7 @@ class SDRPNGExportBackend(ExportBackend):
             return ExportResponse(accepted=False, backend=self.name, message=self.capability.detail)
 
         output_path = _resolve_output_path(getattr(session, "session_id", "session"), settings, ".png")
+        _require_overwrite_permission(Path(output_path), settings)
         image = apply_adjustments(
             getattr(session, "image"),
             getattr(session, "adjustments"),
@@ -88,6 +95,7 @@ class AVIFGainMapExportBackend(ExportBackend):
             )
 
         output_path = Path(_resolve_output_path(getattr(session, "session_id", "session"), settings, ".avif"))
+        _require_overwrite_permission(output_path, settings)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         hdr_image = apply_adjustments(getattr(session, "image"), getattr(session, "adjustments"), PreviewKind.HDR)
@@ -179,6 +187,7 @@ class JPEGUltraHDRExportBackend(ExportBackend):
             )
 
         output_path = Path(_resolve_output_path(getattr(session, "session_id", "session"), settings, ".jpg"))
+        _require_overwrite_permission(output_path, settings)
         hdr_image = apply_adjustments(getattr(session, "image"), getattr(session, "adjustments"), PreviewKind.HDR)
         sdr_image = apply_adjustments(
             getattr(session, "image"),
@@ -217,6 +226,8 @@ class JPEGUltraHDRExportBackend(ExportBackend):
                     width=int(hdr_image.shape[1]),
                     height=int(hdr_image.shape[0]),
                     quality=int(settings.quality),
+                    gain_map_quality=int(settings.jpeg_gain_map_quality),
+                    gain_map_scale=settings.jpeg_gain_map_scale,
                     target_peak_nits=_target_hdr_peak_nits(hdr_image),
                 )
                 _run_command(command)
@@ -256,6 +267,11 @@ def _resolve_output_path(session_id: str, settings: ExportSettings, suffix: str)
         target = EXPORTS_DIR / f"{session_id}{suffix}"
     target.parent.mkdir(parents=True, exist_ok=True)
     return str(target.resolve())
+
+
+def _require_overwrite_permission(output_path: Path, settings: ExportSettings) -> None:
+    if output_path.exists() and not settings.overwrite:
+        raise ExportOverwriteRequired(output_path)
 
 
 def _write_sdr_png(path: Path, image: np.ndarray) -> None:
@@ -320,12 +336,18 @@ def _build_ultrahdr_encode_command(
     width: int,
     height: int,
     quality: int,
+    gain_map_quality: int,
+    gain_map_scale: str,
     target_peak_nits: float,
 ) -> list[str]:
     if width <= 0 or height <= 0:
         raise ValueError("Ultra HDR dimensions must be positive.")
     if not 1 <= quality <= 100:
         raise ValueError("Ultra HDR quality must be between 1 and 100.")
+    if not 1 <= gain_map_quality <= 100:
+        raise ValueError("Ultra HDR gain-map quality must be between 1 and 100.")
+    if gain_map_scale not in {"full", "half"}:
+        raise ValueError("Ultra HDR gain-map scale must be 'full' or 'half'.")
     return [
         str(ultrahdr_app),
         "-m",
@@ -351,9 +373,9 @@ def _build_ultrahdr_encode_command(
         "-q",
         str(quality),
         "-Q",
-        str(quality),
+        str(gain_map_quality),
         "-s",
-        "2",
+        "1" if gain_map_scale == "full" else "2",
         "-M",
         "1",
         "-G",

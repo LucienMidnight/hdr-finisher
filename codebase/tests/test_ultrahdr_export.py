@@ -13,6 +13,7 @@ import hdr_finisher.capabilities as capability_module
 import hdr_finisher.exporters as exporter_module
 from hdr_finisher.exporters import (
     AVIFGainMapExportBackend,
+    ExportOverwriteRequired,
     ExportProcessError,
     JPEGUltraHDRExportBackend,
     _build_ultrahdr_encode_command,
@@ -26,6 +27,16 @@ from hdr_finisher.test_pattern import build_hdr_test_pattern
 
 def _available_capability() -> CapabilityInfo:
     return CapabilityInfo(name="JPEG Ultra HDR", status=CapabilityStatus.AVAILABLE, detail="test")
+
+
+def test_existing_export_requires_explicit_overwrite_permission(tmp_path: Path) -> None:
+    output = tmp_path / "existing.jpg"
+    output.write_bytes(b"keep-me")
+    with pytest.raises(ExportOverwriteRequired, match="already exists"):
+        JPEGUltraHDRExportBackend(_available_capability()).export(
+            _session(), ExportSettings(format="jpeg_ultrahdr", output_path=str(output))
+        )
+    assert output.read_bytes() == b"keep-me"
 
 
 def _session(image: np.ndarray | None = None, adjustments: AdjustmentState | None = None) -> object:
@@ -91,6 +102,8 @@ def test_ultrahdr_command_uses_current_raw_intent_cli_and_quality(tmp_path: Path
         width=640,
         height=480,
         quality=87,
+        gain_map_quality=100,
+        gain_map_scale="full",
         target_peak_nits=1250.5,
     )
     assert command[:3] == [str(tmp_path / "ultrahdr_app.exe"), "-m", "0"]
@@ -100,7 +113,8 @@ def test_ultrahdr_command_uses_current_raw_intent_cli_and_quality(tmp_path: Path
     assert command[command.index("-C") + 1] == "2"
     assert command[command.index("-c") + 1] == "0"
     assert command[command.index("-q") + 1] == "87"
-    assert command[command.index("-Q") + 1] == "87"
+    assert command[command.index("-Q") + 1] == "100"
+    assert command[command.index("-s") + 1] == "1"
     assert command[command.index("-L") + 1] == "1250.5"
     assert command[command.index("-z") + 1].endswith("finished.jpg")
 
@@ -116,6 +130,8 @@ def test_ultrahdr_command_rejects_out_of_range_quality(tmp_path: Path, quality: 
             width=2,
             height=2,
             quality=quality,
+            gain_map_quality=100,
+            gain_map_scale="full",
             target_peak_nits=1000,
         )
 
@@ -153,6 +169,36 @@ def test_export_uses_independent_hdr_and_sdr_branches_and_forces_jpg(monkeypatch
     assert observed["kinds"] == [PreviewKind.HDR, PreviewKind.SDR]
     command = observed["command"]
     assert command[command.index("-q") + 1] == "73"
+    assert command[command.index("-Q") + 1] == "100"
+    assert command[command.index("-s") + 1] == "1"
+
+
+def test_ultrahdr_export_honors_explicit_half_resolution_gain_map(monkeypatch, tmp_path: Path) -> None:
+    binary = tmp_path / "ultrahdr_app.exe"
+    binary.write_bytes(b"test")
+    observed: dict[str, list[str]] = {}
+
+    def fake_run(command: list[str]):
+        observed["command"] = command
+        Path(command[command.index("-z") + 1]).write_bytes(b"encoded")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(exporter_module, "resolve_binary", lambda _name: binary)
+    monkeypatch.setattr(exporter_module, "_run_command", fake_run)
+    monkeypatch.setattr(exporter_module, "_validate_ultrahdr_output", lambda *_args: "validated")
+    result = JPEGUltraHDRExportBackend(_available_capability()).export(
+        _session(),
+        ExportSettings(
+            format="jpeg_ultrahdr",
+            quality=85,
+            jpeg_gain_map_quality=93,
+            jpeg_gain_map_scale="half",
+            output_path=str(tmp_path / "half.jpg"),
+        ),
+    )
+    assert result.accepted
+    assert observed["command"][observed["command"].index("-Q") + 1] == "93"
+    assert observed["command"][observed["command"].index("-s") + 1] == "2"
 
 
 def test_encoder_failure_cleans_staged_file_and_preserves_existing_output(monkeypatch, tmp_path: Path) -> None:
@@ -169,7 +215,7 @@ def test_encoder_failure_cleans_staged_file_and_preserves_existing_output(monkey
     monkeypatch.setattr(exporter_module, "resolve_binary", lambda _name: binary)
     monkeypatch.setattr(exporter_module, "_run_command", failing_run)
     result = JPEGUltraHDRExportBackend(_available_capability()).export(
-        _session(), ExportSettings(format="jpeg_ultrahdr", quality=85, output_path=str(output))
+        _session(), ExportSettings(format="jpeg_ultrahdr", quality=85, output_path=str(output), overwrite=True)
     )
 
     assert result.accepted is False
@@ -203,7 +249,7 @@ def test_avif_export_applies_quality_to_gain_map_and_replaces_atomically(monkeyp
     monkeypatch.setattr(exporter_module, "_validate_avif_output", lambda _path: "validated")
 
     result = AVIFGainMapExportBackend(_available_capability()).export(
-        _session(), ExportSettings(format="avif_gain_map", quality=91, output_path=str(output))
+        _session(), ExportSettings(format="avif_gain_map", quality=91, output_path=str(output), overwrite=True)
     )
 
     assert result.accepted is True
@@ -234,7 +280,7 @@ def test_avif_failure_preserves_existing_output_and_removes_partial_stage(monkey
     monkeypatch.setattr(exporter_module, "_run_command", failing_run)
 
     result = AVIFGainMapExportBackend(_available_capability()).export(
-        _session(), ExportSettings(format="avif_gain_map", quality=85, output_path=str(output))
+        _session(), ExportSettings(format="avif_gain_map", quality=85, output_path=str(output), overwrite=True)
     )
 
     assert result.accepted is False

@@ -26,6 +26,7 @@ from .models import (
     BrowserEvidenceRecord,
     BrowserEvidenceResponse,
     ExportSettings,
+    JPEGGainMapProofMetadata,
     PreviewKind,
     ProofArtifactRequest,
     ProofArtifactResponse,
@@ -53,6 +54,7 @@ class ProofArtifact:
     encoded_headroom: float
     hdr_authored: np.ndarray
     sdr_authored: np.ndarray
+    jpeg_gain_map: JPEGGainMapProofMetadata | None = None
 
 
 @dataclass
@@ -107,24 +109,34 @@ def apply_gain_map_formula(
     return np.nan_to_num(result, nan=0.0, posinf=65504.0, neginf=0.0).clip(0.0)
 
 
-def reconstruct_from_endpoints(base: np.ndarray, alternate: np.ndarray, encoded_headroom: float, target: float) -> np.ndarray:
+def reconstruct_from_endpoints(
+    base: np.ndarray,
+    alternate: np.ndarray,
+    encoded_headroom: float,
+    target: float,
+    *,
+    display_ratio_sdr: float = 1.0,
+    offset_sdr: float = 1.0 / 64.0,
+    offset_hdr: float = 1.0 / 64.0,
+) -> np.ndarray:
     """Build an ISO-equivalent gain map from decoded endpoints and apply it."""
-    epsilon = np.full((3,), 1.0 / 64.0, dtype=np.float32)
+    epsilon_sdr = np.full((3,), offset_sdr, dtype=np.float32)
+    epsilon_hdr = np.full((3,), offset_hdr, dtype=np.float32)
     base_rgb = np.clip(base[..., :3].astype(np.float32, copy=False), 0.0, None)
     alternate_rgb = np.clip(alternate[..., :3].astype(np.float32, copy=False), 0.0, None)
-    log_gain = np.log(alternate_rgb + epsilon) - np.log(base_rgb + epsilon)
+    log_gain = np.log(alternate_rgb + epsilon_hdr) - np.log(base_rgb + epsilon_sdr)
     gain_min = np.min(log_gain, axis=(0, 1)).astype(np.float32)
     gain_max = np.max(log_gain, axis=(0, 1)).astype(np.float32)
     span = np.maximum(gain_max - gain_min, np.float32(1e-6))
     normalized = np.clip((log_gain - gain_min) / span, 0.0, 1.0)
     parameters = GainMapParameters(
-        display_ratio_sdr=1.0,
+        display_ratio_sdr=max(float(display_ratio_sdr), 1e-8),
         display_ratio_hdr=float(2.0 ** max(encoded_headroom, 0.0)),
         gain_min=gain_min,
         gain_max=gain_max,
         gamma=np.ones((3,), dtype=np.float32),
-        epsilon_sdr=epsilon,
-        epsilon_hdr=epsilon,
+        epsilon_sdr=epsilon_sdr,
+        epsilon_hdr=epsilon_hdr,
     )
     return apply_gain_map_formula(base_rgb, normalized, parameters, target)
 
@@ -171,7 +183,13 @@ class ProofArtifactStore:
         staged = self.root / f"request-{signature}{suffix}"
         result = backend.export(
             proxy_session,
-            ExportSettings(format=request.format, quality=request.quality, output_path=str(staged)),
+            ExportSettings(
+                format=request.format,
+                quality=request.quality,
+                jpeg_gain_map_quality=request.jpeg_gain_map_quality,
+                jpeg_gain_map_scale=request.jpeg_gain_map_scale,
+                output_path=str(staged),
+            ),
         )
         if not result.accepted or not result.output_path:
             raise RuntimeError(result.message)
@@ -204,6 +222,12 @@ class ProofArtifactStore:
             None,
         )
         encoded_headroom, metadata_summary = _inspect_artifact(final_path, request.format)
+        jpeg_gain_map = None
+        if request.format == "jpeg_ultrahdr":
+            try:
+                jpeg_gain_map = _inspect_jpeg_gain_map(final_path)
+            except (OSError, ValueError, RuntimeError):
+                jpeg_gain_map = _default_jpeg_gain_map_metadata(encoded_headroom)
         height, width = hdr_authored.shape[:2]
         artifact = ProofArtifact(
             artifact_id=artifact_id,
@@ -218,6 +242,7 @@ class ProofArtifactStore:
             encoded_headroom=encoded_headroom,
             hdr_authored=np.ascontiguousarray(hdr_authored, dtype=np.float32),
             sdr_authored=np.ascontiguousarray(sdr_matrix_endpoint, dtype=np.float32),
+            jpeg_gain_map=jpeg_gain_map,
         )
         with self._lock:
             self._artifacts[artifact_id] = artifact
@@ -253,6 +278,9 @@ class ProofArtifactStore:
                 alternate_endpoint,
                 max(artifact.encoded_headroom, 0.01),
                 target,
+                display_ratio_sdr=(artifact.jpeg_gain_map.hdr_capacity_min if artifact.jpeg_gain_map else 1.0),
+                offset_sdr=(artifact.jpeg_gain_map.offset_sdr if artifact.jpeg_gain_map else 1.0 / 64.0),
+                offset_hdr=(artifact.jpeg_gain_map.offset_hdr if artifact.jpeg_gain_map else 1.0 / 64.0),
             )
             tile_bytes = self._encoded_matrix_tile(artifact, target, reconstructed)
             tile_hash = hashlib.sha256(tile_bytes).hexdigest()
@@ -323,7 +351,11 @@ class ProofArtifactStore:
             decoded = decoded.reshape(artifact.height, artifact.width, 4)[..., :3]
             # libultrahdr linear output uses 1.0 == 203 nits. HDR Finisher uses
             # 0.18 == 100 nits, so convert back to the app's scene-linear scale.
-            alternate = linear_bt2020_to_acescg(decoded * np.float32(203.0 * 0.18 / 100.0))
+            decoded *= np.float32(203.0 * 0.18 / 100.0)
+            if artifact.jpeg_gain_map is None or artifact.jpeg_gain_map.use_base_color_space:
+                alternate = linear_srgb_to_acescg(decoded)
+            else:
+                alternate = linear_bt2020_to_acescg(decoded)
             return np.clip(base, 0.0, None), np.clip(alternate, 0.0, None)
         except (OSError, ValueError, RuntimeError):
             return artifact.sdr_authored, artifact.hdr_authored
@@ -377,6 +409,7 @@ class ProofArtifactStore:
             quality=artifact.quality,
             metadata_summary=artifact.metadata_summary,
             encoded_headroom=round(artifact.encoded_headroom, 4),
+            jpeg_gain_map=artifact.jpeg_gain_map,
         )
 
 
@@ -421,15 +454,56 @@ def _inspect_artifact(path: Path, format_name: str) -> tuple[float, str]:
         headroom = float(gain.get("alternate_headroom", 0.0))
         return headroom, "ISO 21496-1 AVIF gain map; SDR base; 10-bit gain map"
 
+    metadata = _inspect_jpeg_gain_map(path)
+    headroom = math.log2(max(1.0, metadata.hdr_capacity_max))
+    return headroom, "Ultra HDR v1 XMP + ISO 21496-1; SDR JPEG base; 8-bit gain map"
+
+
+def _inspect_jpeg_gain_map(path: Path) -> JPEGGainMapProofMetadata:
     ultrahdr = resolve_binary("ultrahdr_app")
     if ultrahdr is None:
-        return 0.0, "Ultra HDR v1 + ISO 21496-1 metadata; headroom probe unavailable"
+        raise RuntimeError("Ultra HDR metadata probe is unavailable.")
     result = _run_command([str(ultrahdr), "-m", "1", "-j", str(path), "-P"])
     probe = f"{result.stdout}\n{result.stderr}"
-    match = re.search(r"hdrCapacityMax\D+([0-9]+(?:\.[0-9]+)?)", probe, flags=re.IGNORECASE)
-    ratio = float(match.group(1)) if match else 1.0
-    headroom = math.log2(max(1.0, ratio))
-    return headroom, "Ultra HDR v1 XMP + ISO 21496-1; SDR JPEG base; 8-bit gain map"
+
+    def scalar(name: str, default: float) -> float:
+        match = re.search(
+            rf"{re.escape(name)}\s+([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)",
+            probe,
+            flags=re.IGNORECASE,
+        )
+        return float(match.group(1)) if match else default
+
+    use_base = bool(round(scalar("--useBaseColorSpace", 1.0)))
+    return JPEGGainMapProofMetadata(
+        use_base_color_space=use_base,
+        base_gamut="sRGB / BT.709",
+        alternate_gamut="BT.2020",
+        reconstruction_gamut="sRGB / BT.709" if use_base else "BT.2020",
+        min_content_boost=max(scalar("--minContentBoost", 1.0), 1e-8),
+        max_content_boost=max(scalar("--maxContentBoost", 1.0), 1e-8),
+        gamma=max(scalar("--gamma", 1.0), 1e-8),
+        hdr_capacity_min=max(scalar("--hdrCapacityMin", 1.0), 1e-8),
+        hdr_capacity_max=max(scalar("--hdrCapacityMax", 1.0), 1.0),
+        offset_sdr=max(scalar("--offsetSdr", 1.0 / 64.0), 0.0),
+        offset_hdr=max(scalar("--offsetHdr", 1.0 / 64.0), 0.0),
+    )
+
+
+def _default_jpeg_gain_map_metadata(encoded_headroom: float) -> JPEGGainMapProofMetadata:
+    return JPEGGainMapProofMetadata(
+        use_base_color_space=True,
+        base_gamut="sRGB / BT.709",
+        alternate_gamut="BT.2020",
+        reconstruction_gamut="sRGB / BT.709",
+        min_content_boost=1.0,
+        max_content_boost=float(2.0 ** max(encoded_headroom, 0.0)),
+        gamma=1.0,
+        hdr_capacity_min=1.0,
+        hdr_capacity_max=float(2.0 ** max(encoded_headroom, 0.0)),
+        offset_sdr=1.0 / 64.0,
+        offset_hdr=1.0 / 64.0,
+    )
 
 
 def _image_stats(image: np.ndarray, target_headroom: float) -> tuple[float, float]:

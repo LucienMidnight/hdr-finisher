@@ -218,11 +218,12 @@ def test_hdr_branch_curves_do_not_affect_sdr_branch() -> None:
     assert np.allclose(output, baseline)
 
 
-def test_all_hdr_lane_controls_are_isolated_from_sdr_fallback() -> None:
+def test_all_hdr_lane_controls_are_isolated_from_manual_sdr_fallback() -> None:
     image = np.array([[[0.05, 0.18, 0.5], [1.0, 4.0, 20.0]]], dtype=np.float32)
     baseline = apply_adjustments(image, AdjustmentState(), PreviewKind.SDR)
     adjustments = AdjustmentState.model_validate(
         {
+            "sdr": {"match_hdr_color": False},
             "hdr": {
                 "exposure": 1.5,
                 "highlight_rolloff": 1.5,
@@ -245,12 +246,13 @@ def test_all_hdr_lane_controls_are_isolated_from_sdr_fallback() -> None:
     np.testing.assert_allclose(output, baseline, rtol=0.0, atol=0.0)
 
 
-def test_all_hdr_lane_controls_are_isolated_from_embedded_sdr_reference() -> None:
+def test_all_hdr_lane_controls_are_isolated_from_manual_embedded_sdr_reference() -> None:
     scene = np.ones((1, 3, 3), dtype=np.float32) * 4.0
     reference = np.repeat(np.array([0.1, 0.5, 0.9], dtype=np.float32).reshape(1, -1, 1), 3, axis=2)
     baseline = apply_adjustments(scene, AdjustmentState(), PreviewKind.SDR, sdr_reference_image=reference)
     adjustments = AdjustmentState.model_validate(
         {
+            "sdr": {"match_hdr_color": False},
             "hdr": {
                 "exposure": -2.0,
                 "highlight_rolloff": 2.0,
