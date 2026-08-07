@@ -354,7 +354,7 @@ The following are reasonable future features but are explicitly deferred to avoi
 
 ## 13. Current Repository Checkpoint (2026-08-06)
 
-The repository is no longer at the original vertical-slice stage. It now provides a usable single-image HDR finishing workflow with real AVIF and JPEG Ultra HDR gain-map export, true HDR browser preview, Apple HEIC HDR reconstruction, independent SDR fallback control, scopes and diagnostics, and delivery proofing that distinguishes authored intent, encoded fixed-headroom reconstruction, and the installed browser's live rendering. Detailed browser-proofing status and the evidence protocol are maintained in `md/Delivery_Proofing_Sprint.md`.
+The repository is no longer at the original vertical-slice stage. It now provides a usable single-image HDR finishing workflow with real AVIF and JPEG Ultra HDR gain-map export, true HDR browser preview, Apple HEIC HDR reconstruction, independent SDR fallback control, scopes and diagnostics, and delivery proofing that distinguishes authored intent, encoded fixed-headroom reconstruction, and the installed browser's live rendering. Detailed browser-proofing status and the evidence protocol are maintained in `docs/testing/Delivery_Proofing_Sprint.md`.
 
 ### Implemented in the Current Slice
 - Single-session local workflow with import, eject, and drag-and-drop into the main viewport
@@ -413,14 +413,18 @@ The repository is no longer at the original vertical-slice stage. It now provide
 - `POST /api/proof/evidence`
 
 ### Current Repository Layout
+- `docs/product/` - product requirements and architecture direction
+- `docs/testing/` - manual QA procedures, acceptance criteria, and durable validation logs
 - `backend/hdr_finisher/` - FastAPI app, session store, loaders, color pipeline, adjustment math, preview/scopes/export services
 - `frontend/` - static HTML/CSS/JS app served by FastAPI
 - `tests/` - unit and API tests with synthetic and real fixture coverage
 - `tools/` - helper scripts for samples, fixtures, and capability checks
 - `samples/` - bundled HDR reference assets for local verification
+- `local-test-media/` - ignored private and large inputs for hands-on validation
+- `output/` - ignored generated reports, exports, screenshots, packages, and run evidence
 
 ### Verification Completed at This Checkpoint
-- The full test suite passes with `175 passed, 1 skipped`; the alpha QA harness, capability checks, and JavaScript syntax checks also pass
+- The full test suite passes with `198 passed, 0 skipped`; the alpha QA harness, capability checks, and JavaScript syntax checks also pass
 - Real JPEG Ultra HDR and AVIF gain-map proof proxies and fixed-headroom matrices are covered by integration tests using the bundled production encoders
 - Formula tests cover known whole-stop gain-map results and base/full endpoint reconstruction
 - Installed headless Google Chrome 150 and Edge 151 proofing smoke tests pass with no console/page errors, exact proxy decode, all presentation variants, generated test-pattern import, and proof persistence across background scope refreshes
@@ -527,7 +531,7 @@ After the Windows installer proves the workflow on clean machines, the packaging
 2. Compare exact JPEG Ultra HDR and AVIF proxies against the nearest matrix tile in headed Windows Chrome. Accept a stable 5–10% bias when highlight placement, clipping, gradients, and color remain close; investigate obvious clipping/color differences or discrepancies clearly above roughly 10%.
 3. Record Chrome behavior when moving between HDR and SDR displays and when Windows HDR is toggled, including immediate repaint, reload, and full restart outcomes.
 4. Test JPEG and AVIF separately in Firefox, Mac Chrome, and Safari. Treat Safari headroom conclusions on the available 500-nit MacBook as exploratory.
-5. Run the hosting survival sequence: Cloudflare Pages direct bytes, Cloudflare transformations, WordPress originals/generated sizes, and one additional optimizer/CDN. Keep JPEG as provisional default unless the evidence threshold in `md/Delivery_Proofing_Sprint.md` is met.
+5. Run the hosting survival sequence: Cloudflare Pages direct bytes, Cloudflare transformations, WordPress originals/generated sizes, and one additional optimizer/CDN. Keep JPEG as provisional default unless the evidence threshold in `docs/testing/Delivery_Proofing_Sprint.md` is met.
 6. Fix the Windows export folder picker and retain direct path entry as a resilient fallback.
 7. Complete installer-readiness changes: automatic browser launch, single-instance and port-conflict handling, clean shutdown, user-writable runtime directories, path portability, quiet console behavior, and application icon/version metadata.
 8. Continue documented darktable RAW and Blender 5.2 LTS source-export validation after the completed Affinity workflow.
@@ -572,4 +576,4 @@ This repository's root `.gitignore` already excludes local exports, EXR / HDR wo
 *July 22, 2026 implementation addendum: JPEG Ultra HDR now consumes independent HDR and SDR branches through libultrahdr, publishes atomically only after legacy / gain-map / metadata / decoder validation, supports bundled and packaged binary discovery, and includes a pinned Windows build and attribution workflow. JPEG XL remains out of scope.*
 *July 30, 2026 implementation addendum: the pinned libultrahdr Windows build, native tests, complete 110-test alpha QA run, real-image JPEG Ultra HDR validation, packaged capability check, and portable PyInstaller ZIP all pass. The delivery sequence is now UI/UX refinement, installer-readiness work, a conventional Windows installer with clean-machine validation, and then macOS packaging. JPEG XL remains deferred.*
 *July 31, 2026 implementation addendum: the instrument-style UI pass adds a tokenized dark visual system, banded disclosure groups, continuous bar-handle sliders, and persisted keyboard-accessible source/grade/dock splitters. The 1280 px shell and 90 ms preview cadence have dedicated browser regression coverage.*
-*August 6, 2026 implementation addendum: the Affinity build 4646 Sony RAW workflow is validated through linear Display P3 OpenEXR import and quality-85 AVIF gain-map delivery on paired HDR/SDR monitors. Affinity's bounded integer TIFF limitation and missing EXR chromaticities are documented; manual `Display P3 Linear` interpretation is required. Float-preserving Lanczos preview downsampling fixes severe high-frequency aliasing and has automated plus real-image validation. Delivery proofing is now implemented for JPEG Ultra HDR and AVIF through separate Authoring, fixed-headroom Matrix, and Live Browser views with Windows headroom telemetry, content-hashed proxies, structured evidence, generated test media, and hosting-survival tooling. Automated coverage passes at 175 tests plus installed-Chrome/Edge smoke and 1280 px layout QA. Physical Windows Chrome parity, monitor/HDR state changes, cross-browser behavior, and real hosting pipelines remain the next evidence phase; the Windows export folder picker also requires repair.*
+*August 6, 2026 implementation addendum: the Affinity build 4646 Sony RAW workflow is validated through linear Display P3 OpenEXR import and quality-85 AVIF gain-map delivery on paired HDR/SDR monitors. Affinity's bounded integer TIFF limitation and missing EXR chromaticities are documented; manual `Display P3 Linear` interpretation is required. Float-preserving Lanczos preview downsampling fixes severe high-frequency aliasing and has automated plus real-image validation. Delivery proofing is now implemented for JPEG Ultra HDR and AVIF through separate Authoring, fixed-headroom Matrix, and Live Browser views with Windows headroom telemetry, content-hashed proxies, structured evidence, generated test media, and hosting-survival tooling. Automated coverage passes at 198 tests plus installed-Chrome/Edge smoke and 1280 px layout QA. Physical Windows Chrome parity, monitor/HDR state changes, cross-browser behavior, and real hosting pipelines remain the next evidence phase; the Windows export folder picker also requires repair.*

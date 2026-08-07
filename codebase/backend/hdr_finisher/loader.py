@@ -11,6 +11,16 @@ from .color import detect_color_space, detect_transfer_function, normalize_to_ac
 from .models import SourceImageDescriptor
 
 
+EXR_COLOR_INTEROP_SPACES = {
+    # OpenColorIO color space interoperability IDs emitted by Blender 5.2.
+    # Keep this allowlist exact: an unknown ID must continue to require review.
+    "lin_rec709_scene": "sRGB",
+    "lin_rec2020_scene": "BT.2020",
+    "lin_p3d65_scene": "Display P3",
+    "lin_ap1_scene": "ACEScg",
+}
+
+
 class LoaderError(RuntimeError):
     """Raised when an image cannot be loaded."""
 
@@ -55,7 +65,10 @@ def load_image(
             metadata[key] = overrides[key]
     if overrides:
         metadata["user_override"] = {key: value for key, value in overrides.items() if value is not None}
-        if metadata["user_override"]:
+        # A transfer-only override cannot resolve unknown or conflicting source
+        # primaries. Only an explicit color-space choice is sufficient to clear
+        # the manual-review gate.
+        if metadata["user_override"].get("color_space"):
             metadata["needs_color_override"] = False
 
     metadata["color_space"] = detect_color_space(metadata, suffix)
@@ -231,17 +244,37 @@ def _load_exr(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
         if callable(close):
             close()
     chromaticities_name, chromaticities_raw, chromaticities_confident = _infer_exr_chromaticities(header.get("chromaticities"))
+    interop_name, interop_id, interop_confident = _infer_exr_color_interop_id(header.get("colorInteropID"))
+
+    color_space, color_space_source, color_space_confident, metadata_conflict = _resolve_exr_color_space(
+        chromaticities_name,
+        chromaticities_confident,
+        interop_name,
+        interop_confident,
+    )
+
     metadata = {
         "bit_depth": "32f",
-        "color_space": chromaticities_name,
+        "color_space": color_space,
         "transfer_function": "LINEAR",
         "header_keys": [str(key) for key in header.keys()],
         "selected_rgb_channels": list(channel_names),
         "chromaticities_name": chromaticities_name,
         "chromaticities_raw": chromaticities_raw,
-        "needs_color_override": not chromaticities_confident,
+        "color_interop_id": interop_id,
+        "color_interop_name": interop_name,
+        "color_space_source": color_space_source,
+        "needs_color_override": not color_space_confident,
     }
-    if not chromaticities_confident:
+    if metadata_conflict:
+        metadata["color_space_note"] = (
+            "EXR chromaticities and colorInteropID disagree. Manual source interpretation is required."
+        )
+    elif interop_confident and not chromaticities_confident:
+        metadata["color_space_note"] = (
+            f"EXR color space recognized from colorInteropID '{interop_id}'."
+        )
+    elif not color_space_confident:
         metadata["color_space_note"] = "EXR chromaticities missing or ambiguous. Manual source interpretation is recommended."
     return image, metadata
 
@@ -517,6 +550,48 @@ def _infer_exr_chromaticities(value: Any) -> tuple[str | None, dict[str, tuple[f
             best_name = name
 
     return best_name, raw, best_error < 0.08
+
+
+def _infer_exr_color_interop_id(value: Any) -> tuple[str | None, str | None, bool]:
+    interop_id = _read_exr_text(value)
+    if not interop_id:
+        return None, None, False
+    color_space = EXR_COLOR_INTEROP_SPACES.get(interop_id)
+    return color_space, interop_id, color_space is not None
+
+
+def _resolve_exr_color_space(
+    chromaticities_name: str | None,
+    chromaticities_confident: bool,
+    interop_name: str | None,
+    interop_confident: bool,
+) -> tuple[str | None, str | None, bool, bool]:
+    conflict = bool(
+        chromaticities_confident
+        and interop_confident
+        and chromaticities_name != interop_name
+    )
+    if conflict:
+        return None, "conflict", False, True
+    if chromaticities_confident:
+        return chromaticities_name, "chromaticities", True, False
+    if interop_confident:
+        return interop_name, "colorInteropID", True, False
+    return None, None, False, False
+
+
+def _read_exr_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace").strip("\x00") or None
+    if isinstance(value, str):
+        return value.strip("\x00") or None
+    nested = getattr(value, "value", None)
+    if nested is not None and nested is not value:
+        return _read_exr_text(nested)
+    text = str(value).strip("\x00")
+    return text or None
 
 
 def _read_exr_chromaticities(value: Any) -> dict[str, tuple[float, float]] | None:

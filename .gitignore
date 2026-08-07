@@ -23,11 +23,13 @@ codebase/output/
 
 # Local test media and personal captures
 IMG_4109.HEIC
+codebase/local-test-media/*
+!codebase/local-test-media/README.md
 
 # Large working assets not intended for git by default
 *.exr
 *.hdr
 *.pfm
 
-# Internal MD docs
-ai/md/
+# Small deterministic EXR fixtures are part of the automated test suite.
+!codebase/tests/fixtures/*.exr

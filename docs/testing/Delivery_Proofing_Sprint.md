@@ -98,7 +98,7 @@ Local evidence lives at `%LOCALAPPDATA%\HDR Finisher\delivery-proof-evidence.jso
 
 ## Current evidence
 
-The current suite completes with **175 passed and 1 skipped**. Automated coverage includes:
+The current suite completes with **198 passed and 0 skipped** on the fully provisioned Windows development environment. Automated coverage includes:
 
 - whole-stop formula conformance at 0, +2, and +4 stops;
 - base/full endpoint reconstruction checks;

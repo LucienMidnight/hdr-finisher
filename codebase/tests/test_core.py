@@ -30,6 +30,16 @@ def test_hdr_true_classification_when_values_exceed_one() -> None:
     assert analysis.classification == HDRClassification.HDR_TRUE
 
 
+def test_hdr_headroom_classification_uses_strict_one_point_zero_boundary() -> None:
+    at_boundary = np.full((1, 1, 3), 1.0, dtype=np.float32)
+    above_boundary = np.full((1, 1, 3), np.nextafter(np.float32(1.0), np.float32(2.0)), dtype=np.float32)
+
+    assert classify_hdr(at_boundary, {}, ".png").classification == HDRClassification.SDR_ONLY
+    analysis = classify_hdr(above_boundary, {}, ".png")
+    assert analysis.classification == HDRClassification.HDR_TRUE
+    assert analysis.peak_linear > 1.0
+
+
 def test_linear_unconfirmed_when_linear_metadata_has_no_headroom() -> None:
     image = np.ones((2, 2, 3), dtype=np.float32) * 0.9
     analysis = classify_hdr(image, {"transfer_function": "LINEAR"}, ".tif")
@@ -423,6 +433,22 @@ def test_hdr_scope_threshold_percentages_for_known_luminance() -> None:
     assert stats["Peak"] == "1000.0 nit"
     assert stats["% > 100"] == "50.00%"
     assert stats["% > 203"] == "25.00%"
+    assert stats["% > 1000"] == "0.00%"
+
+
+def test_hdr_scope_thresholds_exclude_values_exactly_on_each_guide() -> None:
+    guide_nits = np.array([100.0, 203.0, 1000.0], dtype=np.float32)
+    levels = guide_nits * np.float32(0.18 / 100.0)
+    image = np.repeat(levels.reshape(1, 3, 1), 3, axis=2)
+    scope = build_scope(
+        image,
+        AdjustmentState(hdr=HDRAdjustments(highlight_rolloff=0)),
+        PreviewKind.HDR,
+    )
+    stats = {stat.label: stat.value for stat in scope.stats}
+
+    assert stats["% > 100"] == "66.67%"
+    assert stats["% > 203"] == "33.33%"
     assert stats["% > 1000"] == "0.00%"
 
 

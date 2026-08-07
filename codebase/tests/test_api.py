@@ -233,6 +233,59 @@ def test_interpretation_endpoint_returns_updated_session(monkeypatch) -> None:
     assert response.json()["session"]["source"]["source_color_space"] == "ACEScg"
 
 
+def test_real_exr_interpretation_override_and_auto_reset_preserve_review_state() -> None:
+    exr_path = Path(__file__).resolve().parent / "fixtures" / "linear_unconfirmed.exr"
+    upload = client.post(
+        "/api/session",
+        files={"file": ("linear_unconfirmed.exr", exr_path.read_bytes(), "image/x-exr")},
+    )
+    assert upload.status_code == 200
+    session_id = upload.json()["session"]["session_id"]
+    assert upload.json()["session"]["analysis"]["needs_color_override"] is True
+
+    manual = client.post(
+        f"/api/session/{session_id}/interpretation",
+        json={"color_space": "BT.2020", "transfer_function": "LINEAR"},
+    )
+    assert manual.status_code == 200
+    manual_session = manual.json()["session"]
+    assert manual_session["source"]["filename"] == "linear_unconfirmed.exr"
+    assert manual_session["source"]["interpretation_mode"] == "manual"
+    assert manual_session["source"]["color_space_confident"] is True
+    assert manual_session["analysis"]["classification"] == "HDR_LINEAR_UNCONFIRMED"
+    assert manual_session["analysis"]["needs_color_override"] is True
+
+    automatic = client.post(
+        f"/api/session/{session_id}/interpretation",
+        json={"color_space": None, "transfer_function": None},
+    )
+    assert automatic.status_code == 200
+    automatic_session = automatic.json()["session"]
+    assert automatic_session["source"]["interpretation_mode"] == "auto"
+    assert automatic_session["source"]["color_space_confident"] is False
+    assert automatic_session["analysis"]["needs_color_override"] is True
+
+
+def test_transfer_only_api_override_keeps_ambiguous_exr_under_review() -> None:
+    exr_path = Path(__file__).resolve().parent / "fixtures" / "linear_unconfirmed.exr"
+    upload = client.post(
+        "/api/session",
+        files={"file": ("linear_unconfirmed.exr", exr_path.read_bytes(), "image/x-exr")},
+    )
+    session_id = upload.json()["session"]["session_id"]
+
+    response = client.post(
+        f"/api/session/{session_id}/interpretation",
+        json={"color_space": None, "transfer_function": "LINEAR"},
+    )
+
+    assert response.status_code == 200
+    session = response.json()["session"]
+    assert session["source"]["source_color_space"] is None
+    assert session["source"]["color_space_confident"] is False
+    assert session["analysis"]["needs_color_override"] is True
+
+
 def test_export_endpoint_returns_backend_payload(monkeypatch) -> None:
     upload = client.post("/api/session", files={"file": ("fixture.png", make_png_bytes(), "image/png")})
     assert upload.status_code == 200
@@ -254,6 +307,37 @@ def test_export_endpoint_returns_backend_payload(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["backend"] == "avif_gain_map"
     assert response.json()["output_path"].endswith(".avif")
+
+
+def test_export_endpoint_rejects_unknown_format_before_backend_dispatch() -> None:
+    upload = client.post("/api/session", files={"file": ("fixture.png", make_png_bytes(), "image/png")})
+    session_id = upload.json()["session"]["session_id"]
+
+    response = client.post(f"/api/session/{session_id}/export", json={"format": "not_a_format"})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Unsupported export format: not_a_format"
+
+
+def test_export_endpoint_reports_backend_preflight_rejection(monkeypatch) -> None:
+    upload = client.post("/api/session", files={"file": ("fixture.png", make_png_bytes(), "image/png")})
+    session_id = upload.json()["session"]["session_id"]
+
+    class RejectingBackend:
+        def export(self, session, settings):
+            _ = session, settings
+            return ExportResponse(
+                accepted=False,
+                backend="avif_gain_map",
+                message="AVIF encoder capability is unavailable",
+            )
+
+    monkeypatch.setattr("hdr_finisher.main.export_backends", {"avif_gain_map": RejectingBackend()})
+    response = client.post(f"/api/session/{session_id}/export", json={"format": "avif_gain_map"})
+
+    assert response.status_code == 501
+    assert response.json()["accepted"] is False
+    assert "capability is unavailable" in response.json()["message"]
 
 
 def test_export_directory_endpoint_returns_selected_folder(monkeypatch) -> None:

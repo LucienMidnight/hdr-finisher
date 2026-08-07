@@ -95,11 +95,13 @@ Use a single-layer OpenEXR as an intermediate render, not a display-ready PNG/JP
 
 1. In **Output Properties**, set **File Format** to **OpenEXR** (single layer), **Color** to **RGB** or **RGBA**, and **Color Depth** to **Float (Full)** / 32-bit.
 2. Choose **ZIP** or **PIZ** lossless compression. Avoid DWAA/DWAB for a finishing master.
-3. Keep the output in the scene-linear render space. Do not bake AgX, Filmic, Standard, exposure, gamma, or another display/view transform into the EXR.
-4. With Blender's standard OCIO configuration, interpret the result in HDR Finisher as **Scene-Linear sRGB / Rec.709**. If the Blender project uses an ACES OCIO configuration and renders in ACEScg, choose **ACEScg Linear** instead.
-5. Prefer a single combined RGB(A) image for the handoff. Multilayer EXR is intended for compositing and can make the intended beauty pass ambiguous.
+3. Under Output **Color Management**, choose **Override**, then **Color Space: Linear Rec.2020** when using Blender's standard OCIO configuration. This makes the EXR handoff explicit, uses wide-gamut RGB coordinates, and remains independent of the user's display device, View Transform, Look, exposure, and gamma settings. Those scene settings may still control how the render is viewed locally, but they must not define the interchange encoding.
+4. If the project deliberately uses a custom ACES OCIO configuration and renders in ACEScg, override the output to **ACEScg** instead. Do not choose a Display, View Inverse, Log, Non-Color, or other display-referred output space for the beauty render.
+5. Set **Dither** to `0.00`. Disable **Compositing** and **Sequencer** for a clean renderer handoff unless their output is intentionally part of the finished image; otherwise Blender can write the Composite node or Video Sequencer result instead of the untouched camera render.
+6. Import a standard-config **Linear Rec.2020** result into HDR Finisher. Blender 5.2 writes `colorInteropID: lin_rec2020_scene` rather than standard EXR `chromaticities`; HDR Finisher recognizes this exact OCIO interoperability ID and selects **Scene-Linear Rec.2020** automatically. Confirm that the Inspector reports the source interpretation as **Confirmed**. If the tag is absent, unknown, or conflicts with chromaticities, select the matching interpretation manually. An explicitly tagged ACEScg result is recognized as **ACEScg Linear**.
+7. Prefer a single combined RGB(A) image for the handoff. Multilayer EXR is intended for compositing and can make the intended beauty pass ambiguous.
 
-These Blender labels are based on the Blender 5.x color-management and image-format documentation and will be checked against the installed 5.2 LTS UI before this section is marked validated.
+The OpenEXR, Float (Full), ZIP, Output Color Management override, and Linear Rec.2020 labels have been checked against Blender 5.2 LTS and validated with a real rendered-file A/B. Matching Linear Rec.709 and Linear Rec.2020 exports normalized to nearly identical ACEScg pixels in HDR Finisher (0.011% mean relative difference), confirming that the override changes the interchange coordinates without changing the intended rendered scene.
 
 ### Reference Documentation
 
@@ -166,6 +168,10 @@ python run_app.py
 
 Then open `http://127.0.0.1:8000` in a Chromium-based browser (Chrome, Brave, or Edge) for correct HDR preview rendering.
 
+## Testing And Validation
+
+Start with the [testing and validation guide](docs/testing/README.md). It identifies the automated suite, manual QA procedures, private local test media, bundled samples, and generated evidence without requiring contributors to guess between `fixtures` and `output` directories. The broader [documentation index](docs/README.md) also links product and design material.
+
 ## UI Preview Automation
 
 The repo includes a small Playwright smoke-preview script for checking the local UI in Edge or Playwright's bundled Chromium:
@@ -204,7 +210,7 @@ cd codebase
 python .\tools\local_media_probe.py "D:\path\to\image.heic" "D:\path\to\render.exr" --export
 ```
 
-Manual HDR-display checks are tracked in `md\Alpha_Manual_QA_Checklist.md`.
+Manual HDR-display checks are tracked in the [Alpha Manual QA Checklist](docs/testing/Alpha_Manual_QA_Checklist.md).
 
 ## Delivery Proofing
 
@@ -212,7 +218,7 @@ The viewer has three distinct modes: **Authoring**, **Delivery Matrix**, and **L
 
 JPEG Ultra HDR is the provisional default; AVIF gain maps remain fully available. This is practical delivery proofing rather than display certification. A consistent 5–10% difference can be acceptable when highlight placement, gradients, clipping behavior, and color remain perceptually close.
 
-The implementation status, manual test sequence, acceptance rules, evidence locations, and hosting-pipeline queue are maintained in [`md/Delivery_Proofing_Sprint.md`](md/Delivery_Proofing_Sprint.md).
+The implementation status, manual test sequence, acceptance rules, evidence locations, and hosting-pipeline queue are maintained in the [Delivery Proofing Sprint](docs/testing/Delivery_Proofing_Sprint.md).
 
 To compare an original export against direct or transformed hosting URLs:
 

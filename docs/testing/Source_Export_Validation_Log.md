@@ -2,6 +2,24 @@
 
 This log records real-application validation of the source export workflows documented in `README.md`.
 
+## Blender 5.2 LTS — Output Setup
+
+- Date: 2026-08-07
+- Application version: Blender 5.2.0 LTS
+- Status: rendered-file A/B and HDR Finisher import validated; live HDR-display and gain-map delivery checks pending
+- Verified single-layer output controls: `OpenEXR (.exr)`, `RGB` / `RGBA`, `Float (Full)`, and `ZIP`.
+- Verified Output Color Management controls: `Follow Scene` / `Override`, with both `Linear Rec.709` and `Linear Rec.2020` available as explicit overrides.
+- Published guidance now recommends `Override > Linear Rec.2020` for Blender's standard OCIO configuration. This uses wide-gamut interchange coordinates and separates the file encoding from local Display, View Transform, Look, exposure, and gamma settings.
+- For a deliberately configured ACEScg project, the matching explicit output and HDR Finisher interpretation remain `ACEScg` / `ACEScg Linear`.
+- Baseline handoff disables Compositing and Sequencer unless their output is intentional, and sets Dither to `0.00` for deterministic float output.
+- A controlled 540 x 540 A/B used the same scene and settings with only the output override changed. Both files are float32 RGB OpenEXR with ZIP compression, finite positive samples, and substantial unbounded HDR headroom.
+- Blender wrote no standard EXR `chromaticities` attribute. It did write `colorInteropID` values `lin_rec709_scene` and `lin_rec2020_scene`. HDR Finisher now recognizes these exact OCIO interoperability IDs and automatically selects the matching scene-linear source space.
+- After interpreting the files as Linear Rec.709 and Linear Rec.2020 respectively, their ACEScg results had a mean absolute channel difference of `0.000397`, RMSE `0.001931`, and mean relative difference of `0.0113%`. `94.65%` of pixels matched within `0.001` in every channel. Peak ACEScg luminance was `55.7306` versus `55.7402`; the maximum luminance difference was `0.00952`.
+- Neither file contained negative or non-finite samples, so the loader's input sanitization had no effect on this comparison. Matched SDR previews were visually indistinguishable.
+- The A/B confirms that Linear Rec.2020 preserves the intended scene while providing the preferred wide-gamut interchange encoding. Linear Rec.709 remains technically valid when selected with its matching import interpretation.
+- Automatic identification is deliberately allowlisted and also covers Blender/OCIO's `lin_p3d65_scene` and `lin_ap1_scene` IDs. Unknown IDs remain untrusted, and disagreement between a recognized ID and standard EXR chromaticities requires manual review.
+- Remaining validation: verify the higher-resolution Rec.2020 file in the live HDR canvas, scopes, diagnostics, and gain-map export.
+
 ## Affinity (Canva-era unified app) — Sony RAW
 
 - Date: 2026-08-06
@@ -60,6 +78,6 @@ This log records real-application validation of the source export workflows docu
 - Post-fix live A/B validation: user reports preview noise/aliasing is significantly better. A 100% proxy crop shows coherent woven-mesh structure instead of the prior salt-and-pepper pattern. Filtered float32 Lanczos proxy resampling is visually validated on the real 42.39 MP Affinity EXR.
 - Delivery pre-flight reached with all checks ready: source interpretation confirmed, HDR branch ready, SDR fallback ready, and encoder available. Selected primary output is `AVIF + gain map` (ISO 21496-1, 10-bit logarithmic gain map) at quality `85`; JPEG Ultra HDR and SDR PNG are also reported ready, while JPEG XL is unavailable in this build.
 - Export dialog `Browse` folder picker failed during the Windows live test and displayed `Folder picker failed.` Pasting the destination path directly was a successful workaround; track the picker behavior as a separate UI defect.
-- Quality-85 AVIF gain-map export completed at `codebase/output/manual-validation/Affinity_DSC06898_DisplayP3_Linear_32f_finished.avif`, and HDR Finisher reports successful post-export validation with `avifdec`.
+- Quality-85 AVIF gain-map export completed and is retained locally at `codebase/output/manual-test-runs/affinity-2026-08-06/Affinity_DSC06898_DisplayP3_Linear_32f_finished.avif`; HDR Finisher reports successful post-export validation with `avifdec`.
 - Live delivery validation used Chrome with monitor 1 in HDR mode and monitor 2 in SDR mode. HDR gain-map presentation activated on monitor 1; moving the same Chrome content to monitor 2 selected the intended SDR fallback. Exported noise/detail matched Affinity extremely closely, as expected because no additional denoising was authored.
 - Chrome's HDR brightness did not exactly match HDR Finisher's live HDR canvas. Technical inspection confirms a valid 5320 x 7968 AVIF with an 8-bit sRGB base, 10-bit YUV444 logarithmic gain map, BT.2020/PQ alternate, base headroom `0.00`, and alternate headroom `5.26035`. This is expected display-adaptive behavior: Chrome applies the gain map according to the active monitor's current HDR headroom and performs display tone mapping, while HDR Finisher presents the authored rendition against its explicit 100-nit diffuse-white reference. Treat color/detail/fallback selection as round-trip invariants; do not require pixel-identical on-screen brightness between these two presentation paths.
