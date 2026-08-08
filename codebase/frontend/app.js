@@ -72,11 +72,11 @@ const TONE_EQUALIZER_MAX_NODE_COUNT = 16;
 const MIN_ZOOM_PERCENT = 1;
 const MAX_ZOOM_PERCENT = 3200;
 const ZOOM_STEPS = [1, 2, 3, 4, 5, 6.25, 8.33, 12.5, 16.67, 25, 33.33, 50, 66.67, 100, 200, 300, 400, 500, 600, 800, 1200, 1600, 2400, 3200];
-const LAYOUT_DEFAULTS = { railW: 268, gradeW: 320, dockH: 208, dockOpen: true, dockTab: "histogram" };
+const LAYOUT_DEFAULTS = { railW: 268, gradeW: 320, dockH: 252, dockOpen: true, dockTab: "histogram" };
 const LAYOUT_LIMITS = {
   railW: [200, 380],
   gradeW: [300, 420],
-  dockH: [96, 340],
+  dockH: [240, 340],
 };
 const LAYOUT_SETTLE_DELAY = 120;
 
@@ -84,11 +84,11 @@ const state = {
   session: null,
   capabilities: {},
   currentView: "hdr",
-  activeWorkflow: "grade",
+  activeWorkflow: "import",
   scopeMode: "histogram",
   scopeChannelMode: "composite",
-  sourceSettingsOpen: false,
-  metadataOpen: false,
+  sourceSettingsOpen: true,
+  metadataOpen: true,
   interpretationGateDismissed: false,
   zoomMode: "fit",
   zoomPercent: 100,
@@ -431,6 +431,8 @@ const els = {
   chromeProofStatus: document.getElementById("chrome-proof-status"),
   emptyState: document.getElementById("empty-state"),
   previewStatus: document.getElementById("preview-status"),
+  previewStatusCopy: document.getElementById("preview-status-copy"),
+  previewProgress: document.getElementById("preview-progress"),
   falseColorLegend: document.getElementById("false-color-legend"),
   viewerLaneLabel: document.getElementById("viewer-lane-label"),
   viewerBranchNote: document.getElementById("viewer-branch-note"),
@@ -446,7 +448,6 @@ const els = {
   overlayToggle: document.getElementById("overlay-toggle"),
   overlayClose: document.getElementById("overlay-close"),
   overlayPopover: document.getElementById("overlay-popover"),
-  probeReadout: document.getElementById("probe-readout"),
   scopeTitle: document.getElementById("scope-title"),
   scopeNote: document.getElementById("scope-note"),
   scopeKindLabel: document.getElementById("scope-kind-label"),
@@ -538,7 +539,7 @@ boot();
 
 async function boot() {
   initializeInstrumentShell();
-  activateWorkflowTab("grade", { focus: false });
+  activateWorkflowTab("import", { focus: false });
   bindEvents();
   await initializeGpuPreview();
   await loadCapabilities().catch(() => {
@@ -599,6 +600,7 @@ function observeViewerSize() {
 
 function initializeInstrumentShell() {
   restoreLayoutState();
+  restoreSourceRailState();
   enhanceRangeControls();
   initSplitter({
     element: els.sourceSplitter,
@@ -622,6 +624,29 @@ function initializeInstrumentShell() {
     direction: -1,
   });
   window.addEventListener("resize", debounceLayoutBucketRestore);
+}
+
+function restoreSourceRailState() {
+  let collapsed = false;
+  try {
+    collapsed = localStorage.getItem("hdr-finisher-source-collapsed") === "true";
+  } catch (_) {
+    collapsed = false;
+  }
+  const rail = els.sourceRailExpand.closest(".source-rail");
+  rail.classList.toggle("collapsed", collapsed);
+  els.appShell.classList.toggle("source-collapsed", collapsed);
+  els.sourceRailExpand.setAttribute("aria-expanded", String(!collapsed));
+  els.sourceRailExpand.setAttribute("aria-label", collapsed ? "Expand source metadata" : "Collapse source metadata");
+  els.sourceRailExpand.textContent = collapsed ? "Show" : "Hide";
+}
+
+function persistSourceRailState(collapsed) {
+  try {
+    localStorage.setItem("hdr-finisher-source-collapsed", String(collapsed));
+  } catch (_) {
+    // Collapsing still works when storage is unavailable.
+  }
 }
 
 function viewportBucket() {
@@ -926,10 +951,13 @@ function bindEvents() {
   els.emptyImportButton.addEventListener("click", () => els.fileInput.click());
   els.sourceRailExpand.addEventListener("click", () => {
     const rail = els.sourceRailExpand.closest(".source-rail");
-    const expanded = rail.classList.toggle("pinned-open");
-    els.sourceRailExpand.setAttribute("aria-expanded", String(expanded));
-    els.sourceRailExpand.textContent = expanded ? "Close" : "Source";
-    if (!expanded) els.sourceRailExpand.blur();
+    const collapsed = !rail.classList.contains("collapsed");
+    rail.classList.toggle("collapsed", collapsed);
+    els.appShell.classList.toggle("source-collapsed", collapsed);
+    els.sourceRailExpand.setAttribute("aria-expanded", String(!collapsed));
+    els.sourceRailExpand.setAttribute("aria-label", collapsed ? "Expand source metadata" : "Collapse source metadata");
+    els.sourceRailExpand.textContent = collapsed ? "Show" : "Hide";
+    persistSourceRailState(collapsed);
   });
   els.sourceSettingsToggle.addEventListener("click", () => {
     state.sourceSettingsOpen = !state.sourceSettingsOpen;
@@ -1135,11 +1163,6 @@ function bindEvents() {
 
   bindCompareControl();
   bindKeyboardShortcuts();
-  els.dropzone.addEventListener("mousemove", updateProbeReadout);
-  els.dropzone.addEventListener("mouseleave", () => {
-    els.probeReadout.textContent = "Move over the image for pixel coordinates";
-  });
-
   if (window.matchMedia) {
     ["(dynamic-range: high)", "(color-gamut: p3)", "(color-gamut: rec2020)"].forEach((query) => {
       const media = window.matchMedia(query);
@@ -1225,7 +1248,7 @@ async function ejectCurrentSession() {
   state.session = null;
   state.adjustments = defaultAdjustments();
   state.currentView = "hdr";
-  activateWorkflowTab("grade", { focus: false });
+  activateWorkflowTab("import", { focus: false });
   state.adjustments.shared.active_focus = "hdr";
   state.interpretationGateDismissed = false;
   state.lastScope = null;
@@ -1253,7 +1276,8 @@ async function ejectCurrentSession() {
   els.interpretationMode.value = "auto";
   els.interpretationColorSpace.value = "auto";
   els.interpretationTransfer.value = "auto";
-  state.sourceSettingsOpen = false;
+  state.sourceSettingsOpen = true;
+  state.metadataOpen = true;
   els.exportStatus.textContent = "Choose a format and destination.";
   els.exportResult.classList.add("hidden");
   els.exportFilename.value = "hdr_finisher_export";
@@ -2225,10 +2249,10 @@ function renderSessionChrome() {
   const hasSession = Boolean(state.session);
   els.ejectButton.disabled = !hasSession;
   els.workflowTabs.forEach((button) => {
-    button.disabled = button.dataset.workflowTab !== "grade" && !hasSession;
+    button.disabled = button.dataset.workflowTab !== "import" && !hasSession;
   });
   els.emptyImportButton.disabled = hasSession;
-  document.querySelectorAll(".grade-rail input, .grade-rail select, .grade-rail button").forEach((control) => {
+  document.querySelectorAll("#grade-workflow-panel input, #grade-workflow-panel select, #grade-workflow-panel button").forEach((control) => {
     control.disabled = !hasSession;
   });
   els.viewButtons.forEach((button) => {
@@ -3101,18 +3125,22 @@ function clearPreviewOverlay() {
 }
 
 function setPreviewMessage(message) {
-  els.previewStatus.textContent = message;
+  els.previewStatusCopy.textContent = message;
+  els.previewProgress.removeAttribute("value");
+  els.previewProgress.classList.remove("hidden");
   els.previewStatus.classList.remove("hidden", "error");
 }
 
 function setPreviewError(message) {
-  els.previewStatus.textContent = message;
+  els.previewStatusCopy.textContent = message;
+  els.previewProgress.classList.add("hidden");
   els.previewStatus.classList.remove("hidden");
   els.previewStatus.classList.add("error");
 }
 
 function hidePreviewMessage() {
-  els.previewStatus.textContent = "";
+  els.previewStatusCopy.textContent = "";
+  els.previewProgress.classList.add("hidden");
   els.previewStatus.classList.add("hidden");
   els.previewStatus.classList.remove("error");
 }
@@ -3720,7 +3748,7 @@ function renderControlState() {
   for (const [group, paths] of Object.entries(controlGroups)) {
     const count = paths.filter((path) => isPathModified(path, defaults)).length;
     const output = document.querySelector(`[data-modified-count="${group}"]`);
-    if (output) output.textContent = count ? `${count} modified` : "Default";
+    if (output) output.textContent = count ? `${count} mod` : "";
     output?.closest(".control-group")?.classList.toggle("modified", count > 0);
   }
   if (followsHdrColor) {
@@ -3740,8 +3768,8 @@ function renderControlState() {
   const modifiedCount = Object.keys(currentLaneDefaults)
     .filter((key) => !key.endsWith("_section_enabled"))
     .filter((key) => !valuesEqual(state.adjustments[state.currentView]?.[key], currentLaneDefaults[key])).length;
-  els.gradeModifiedSummary.textContent = modifiedCount ? `${modifiedCount} modified` : "Default";
-  els.curveGroupState.textContent = laneCurvesModified(state.currentView, defaults) ? "Modified" : "Default";
+  els.gradeModifiedSummary.textContent = modifiedCount ? `${modifiedCount} modified` : "";
+  els.curveGroupState.textContent = laneCurvesModified(state.currentView, defaults) ? "Modified" : "";
   els.sectionBypasses.forEach((button) => {
     const path = button.dataset.sectionPath === "current.curves_section_enabled"
       ? `${state.currentView}.curves_section_enabled`
@@ -3783,8 +3811,8 @@ function resetControlGroup(group) {
 }
 
 function activateWorkflowTab(workflow, { focus = false } = {}) {
-  const next = ["grade", "proof", "export"].includes(workflow) ? workflow : "grade";
-  if (next !== "grade" && !state.session) return;
+  const next = ["import", "grade", "proof", "export"].includes(workflow) ? workflow : "import";
+  if (next !== "import" && !state.session) return;
   state.activeWorkflow = next;
   document.body.dataset.workflow = next;
   els.workflowTabs.forEach((button) => {
@@ -3923,20 +3951,6 @@ async function copyLastExportPath() {
   } catch {
     els.copyExportPath.textContent = "Copy failed";
   }
-}
-
-function updateProbeReadout(event) {
-  if (!previewIsVisible()) return;
-  const rect = activePreviewElement().getBoundingClientRect();
-  if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) {
-    els.probeReadout.textContent = "Move over the image for pixel coordinates";
-    return;
-  }
-  const normalizedX = (event.clientX - rect.left) / Math.max(1, rect.width);
-  const normalizedY = (event.clientY - rect.top) / Math.max(1, rect.height);
-  const x = Math.min(state.session.source.width - 1, Math.max(0, Math.floor(normalizedX * state.session.source.width)));
-  const y = Math.min(state.session.source.height - 1, Math.max(0, Math.floor(normalizedY * state.session.source.height)));
-  els.probeReadout.textContent = `x ${x} · y ${y} · ${state.currentView.toUpperCase()} preview`;
 }
 
 renderSessionChrome();

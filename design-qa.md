@@ -1,39 +1,42 @@
-# Design QA — Linear HDR Finisher Workflow
+# Design QA - HDR Finisher UI redesign
 
-## Visual source
+## Comparison target
 
-- Existing HDR Finisher desktop editor and `codebase/output/proofing-qa-chrome/chrome-proof.png` before this restructuring.
-- User-directed structure: top-level Grade, Proof, Export stages; stable left information rail; stable center viewer and technical dock; stage-specific right settings rail.
+- Source visual truth: `docs/design/Codex Image Aug 8, 2026, 12_29_30 AM.png`
+- Supporting specification: `docs/design/HDR finisher UI redesign/Redesign notes.md`
+- Annotation evidence: browser comments 1-11 supplied on August 8, 2026
+- Implementation: `codebase/frontend/index.html`, `styles.css`, and `app.js`
+- Intended state: Grade workflow, HDR rendition, metadata expanded, histogram visible
 
-## Target criteria
+## Evidence
 
-- Preserve the existing dark instrument-panel visual system, spacing, typography, rail widths, viewer behavior, and scope dock.
-- Make Grade, Proof, and Export visibly sequential and keyboard accessible.
-- Keep proof generation explicit and retain the last valid proof when the grade becomes stale.
-- Present proof controls and export controls in the right rail without popovers or modal dialogs.
-- Show stage, status, format, and display ID context in the left information rail.
-- Avoid horizontal overflow at 1800×1050 and 1280×800.
+- The browser annotation screenshots identify the exact regions requested for this refinement pass.
+- Updated implementation screenshot: unavailable.
+- The Codex in-app browser exposed the user's local HDR Finisher tab, but blocked agent capture because its admin security policy could not be verified.
+- Full-view and focused-region visual comparison therefore remain blocked; no alternate browser or indirect capture path was used.
 
-## Verified states
+## Implemented annotation changes
 
-- Grade stage: existing HDR/SDR controls remain in the right rail.
-- Proof stage: current proof, stale proof, manual refresh, SDR suspension, and proof-off authored preview.
-- Export stage: vertical format selection, production quality controls, filename/folder, proof-aware preflight, and export action.
-- Export-to-Proof review handoff selects the export format and focuses Proof settings.
-- Arrow-key navigation moves between enabled workflow tabs.
+- Preview preparation is now a large centered status with a semantic indeterminate progress bar.
+- Interpretation and metadata disclosures open by default and use wrapping, narrow-column layouts.
+- Left-rail tiles share a 14 px vertical padding rhythm.
+- Preview metadata moved from the removed probe strip into a dedicated left-rail section.
+- Viewer, metadata, control panel, and HDR/SDR control names match the annotations.
+- The histogram dock defaults to 252 px and cannot be resized below 240 px.
+- The application layout has a 720 px minimum height and scrolls rather than clipping below that viewport.
+- The existing bypass glyph remains because no icon library is bundled in the frontend.
 
-## Visual comparison
+## Static and behavioral validation
 
-- Reference and implementation were compared at 1800×1050 using the same HDR headroom fixture and Chrome 151.
-- Final screenshots: `codebase/output/proofing-qa-chrome/chrome-proof.png`, `codebase/output/proofing-qa-chrome/export-rail.png`, and `codebase/output/proofing-qa-chrome/chrome-proof-1280.png`.
-- No clipped rails, toolbar collisions, modal overlays, or page-level horizontal overflow were observed.
+- Full automated suite: 246 passed, 1 skipped.
+- Focused frontend contract suite: 7 passed.
+- JavaScript syntax check: passed.
+- Git whitespace check: passed.
+- Contract coverage includes the progress state, open metadata sections, preview metadata placement, naming, removed probe copy, and protected scope height.
 
-## Validation
+## Remaining visual check
 
-- Chrome UI QA: passed at 1800×1050 and 1280×800.
-- Console errors: 0.
-- Page errors: 0.
-- Page-level horizontal overflow: 0 px.
-- Automated suite: 245 passed, 1 skipped.
+- Reload the open local preview and inspect the Grade state at the annotated viewport.
+- Confirm the loading overlay during an image import, metadata wrapping at the narrowest rail width, and the complete histogram at the minimum supported height.
 
-final result: passed
+final result: blocked

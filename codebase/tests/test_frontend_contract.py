@@ -72,9 +72,11 @@ def test_linear_workflow_uses_tab_specific_rails_and_reports_export_readiness() 
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     proofing = (FRONTEND / "proofing-ui.js").read_text(encoding="utf-8")
+    assert 'data-workflow-tab="import"' in html
     assert 'data-workflow-tab="grade"' in html
     assert 'data-workflow-tab="proof"' in html
     assert 'data-workflow-tab="export"' in html
+    assert 'data-workflow-panel="import"' in html
     assert 'data-workflow-panel="grade"' in html
     assert 'data-workflow-panel="proof"' in html
     assert 'data-workflow-panel="export"' in html
@@ -90,6 +92,10 @@ def test_linear_workflow_uses_tab_specific_rails_and_reports_export_readiness() 
     assert "Live Browser" not in html
     assert 'id="delivery-matrix-view"' not in html
     assert 'id="live-browser-view"' not in html
+    assert "Global finishing only" not in html
+    assert 'id="source-rail-expand"' in html
+    assert 'class="source-file-identity"' in html
+    assert '["import", "grade", "proof", "export"]' in javascript
     assert "/api/proof/reconstruction" in proofing
     assert "Proof generation is intentionally explicit" in proofing
     assert "PROOF_IDLE_MS" not in proofing
@@ -104,6 +110,30 @@ def test_linear_workflow_uses_tab_specific_rails_and_reports_export_readiness() 
 def test_grade_rail_keeps_a_readable_minimum_width() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     assert "gradeW: [300, 420]" in javascript
+
+
+def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    assert '<aside class="source-rail panel" aria-label="Metadata">' in html
+    assert html.count("<h1>Control Panel</h1>") == 4
+    assert "HDR Controls" in html
+    assert "SDR Controls" in html
+    assert '<span>Preview Window</span>' in html
+    assert 'class="preview-metadata-panel"' in html
+    assert 'id="preview-status-copy"' in html
+    assert '<progress id="preview-progress"' in html
+    assert 'class="probe-strip"' not in html
+    assert 'id="probe-readout"' not in html
+    assert "Move over the image" not in html
+    assert "sourceSettingsOpen: true" in javascript
+    assert "metadataOpen: true" in javascript
+    assert "dockH: [240, 340]" in javascript
+    assert "dockH: 252" in javascript
+    assert "updateProbeReadout" not in javascript
+    assert ".preview-progress" in css
+    assert "min-height: 720px" in css
 
 
 def test_webgpu_pipeline_preserves_cpu_section_order_and_fixed_hdr_curve_domain() -> None:

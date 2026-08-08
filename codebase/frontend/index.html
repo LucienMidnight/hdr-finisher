@@ -12,38 +12,31 @@
     <header class="top-bar" aria-label="Application controls">
       <div class="product-lockup">
         <span class="product-mark" aria-hidden="true">HF</span>
-        <div>
-          <p class="eyebrow">HDR Finisher</p>
-          <p class="top-file-name" id="session-name">No active image</p>
-        </div>
+        <p class="product-name">HDR Finisher</p>
       </div>
 
       <nav class="workflow-tabs" aria-label="Workflow stages">
-        <button class="workflow-tab active" type="button" data-workflow-tab="grade" aria-selected="true">Grade</button>
-        <button class="workflow-tab" type="button" data-workflow-tab="proof" aria-selected="false">Proof</button>
-        <button class="workflow-tab" type="button" data-workflow-tab="export" aria-selected="false">Export</button>
+        <button class="workflow-tab active" type="button" data-workflow-tab="import" aria-selected="true"><span aria-hidden="true">01</span>Import</button>
+        <button class="workflow-tab" type="button" data-workflow-tab="grade" aria-selected="false"><span aria-hidden="true">02</span>Grade</button>
+        <button class="workflow-tab" type="button" data-workflow-tab="proof" aria-selected="false"><span aria-hidden="true">03</span>Proof</button>
+        <button class="workflow-tab" type="button" data-workflow-tab="export" aria-selected="false"><span aria-hidden="true">04</span>Export</button>
       </nav>
 
-      <div class="top-file-meta" id="file-summary">Import one HDR-capable source to begin</div>
-
       <div class="top-actions">
-        <input id="file-input" type="file" accept=".exr,.tif,.tiff,.hdr,.pfm,.heic,.heif,.png,.jpg,.jpeg" hidden>
-        <button id="import-button" class="button-secondary" type="button">Import</button>
-        <button id="test-pattern-button" class="button-secondary" type="button">Test pattern</button>
-        <button id="eject-button" class="button-secondary" type="button">Eject</button>
-        <span class="pipeline-chip">ACEScg · Local · Single image</span>
-        <span class="capability-chip" id="capability-summary">Checking encoders…</span>
+        <span class="window-control-reserve" aria-hidden="true"></span>
       </div>
     </header>
 
-    <aside class="source-rail panel" aria-label="Source">
-      <button id="source-rail-expand" class="source-rail-expand" type="button" aria-expanded="false">Source</button>
+    <aside class="source-rail panel" aria-label="Metadata">
       <div class="rail-title-row">
-        <div>
-          <p class="section-kicker">Input</p>
-          <h1>Source</h1>
-        </div>
+        <h1>Metadata</h1>
         <span class="status-text muted" id="source-confidence">Waiting</span>
+        <button id="source-rail-expand" class="source-rail-expand text-button" type="button" aria-expanded="true" aria-label="Collapse source metadata">Hide</button>
+      </div>
+
+      <div class="source-file-identity">
+        <p class="top-file-name" id="session-name">No active image</p>
+        <p class="top-file-meta" id="file-summary">Import one HDR-capable source to begin</p>
       </div>
 
       <section class="source-summary">
@@ -105,12 +98,16 @@
         </div>
       </section>
 
-      <section class="workflow-context">
-        <p class="section-kicker">Workflow</p>
-        <dl id="workflow-context-list" class="metadata-list"></dl>
+      <section class="preview-metadata-panel" aria-labelledby="preview-metadata-title">
+        <p id="preview-metadata-title" class="source-panel-title">Preview Window</p>
+        <dl class="metadata-list preview-metadata-list">
+          <dt>View</dt>
+          <dd id="viewer-lane-label">HDR grade</dd>
+        </dl>
+        <p id="viewer-branch-note" class="preview-branch-note">Graded HDR rendition. Exported as the PQ HDR image.</p>
       </section>
 
-      <p class="scope-boundary">Global finishing only. No layers, masks, RAW processing, or local adjustments.</p>
+      <dl id="workflow-context-list" class="metadata-list hidden" aria-hidden="true"></dl>
     </aside>
 
     <div
@@ -130,7 +127,7 @@
         <div class="viewer-bar">
           <div class="viewer-lane">
             <span class="lane-dot" aria-hidden="true"></span>
-            <span id="viewer-lane-label">HDR Grade</span>
+            <span>Preview Window</span>
           </div>
           <div class="viewer-tools">
             <button id="compare-button" class="tool-button" type="button" title="Tap V to switch. Hold V to peek at the other branch.">A/B · V</button>
@@ -183,7 +180,7 @@
           </div>
           <aside id="proof-workflow-panel" class="workflow-side-panel proof-rail panel" data-workflow-panel="proof" aria-label="Chrome Proof settings">
             <div class="workflow-rail-header">
-              <div><p class="section-kicker">Browser review</p><h1>Chrome Proof</h1></div>
+              <div><p class="section-kicker">Browser review</p><h1>Control Panel</h1></div>
               <span id="chrome-proof-inline-status" class="status-text muted">Off</span>
             </div>
             <label class="proof-enable-row">
@@ -249,12 +246,10 @@
               <button id="manual-interpretation" class="button-secondary" type="button">Set manually</button>
             </div>
           </div>
-          <div id="preview-status" class="preview-status hidden" aria-live="polite"></div>
-        </div>
-
-        <div class="probe-strip">
-          <span id="probe-readout">Move over the image for pixel values</span>
-          <span id="viewer-branch-note">Graded HDR rendition. Exported as the PQ HDR image.</span>
+          <div id="preview-status" class="preview-status hidden" aria-live="polite" role="status">
+            <span id="preview-status-copy"></span>
+            <progress id="preview-progress" class="preview-progress" aria-label="Preview progress"></progress>
+          </div>
         </div>
       </section>
 
@@ -265,9 +260,9 @@
         tabindex="0"
         aria-label="Resize analysis dock"
         aria-orientation="horizontal"
-        aria-valuemin="96"
+        aria-valuemin="240"
         aria-valuemax="340"
-        aria-valuenow="208"
+        aria-valuenow="252"
       ></div>
 
       <section id="analysis-dock" class="analysis-dock panel" aria-label="Analysis">
@@ -342,21 +337,31 @@
     ></div>
 
     <aside class="grade-rail panel" aria-label="Workflow settings">
+      <section id="import-workflow-panel" class="workflow-rail-panel import-workflow-panel" data-workflow-panel="import" aria-label="Import settings">
+        <div class="grade-header">
+          <h1>Control Panel</h1>
+        </div>
+        <input id="file-input" type="file" accept=".exr,.tif,.tiff,.hdr,.pfm,.heic,.heif,.png,.jpg,.jpeg" hidden>
+        <div class="import-actions">
+          <button id="import-button" class="button-primary" type="button">Choose image</button>
+          <button id="eject-button" class="button-secondary" type="button">Eject current image</button>
+          <button id="test-pattern-button" class="button-secondary" type="button">Load test pattern</button>
+        </div>
+      </section>
       <section id="grade-workflow-panel" class="workflow-rail-panel" data-workflow-panel="grade" aria-label="Grade settings">
       <div class="grade-header">
         <div>
-          <p class="section-kicker">Adjustments</p>
-          <h1>Grade</h1>
+          <h1>Control Panel</h1>
         </div>
         <span id="grade-modified-summary" class="status-text muted">Default</span>
       </div>
 
       <div class="lane-switch" role="group" aria-label="Active rendition">
         <button id="view-hdr" class="active" data-kind="hdr" type="button">
-          <span>HDR Grade</span><span class="modified-indicator" aria-hidden="true"></span>
+          <span>HDR Controls</span><span class="modified-indicator" aria-hidden="true"></span>
         </button>
         <button id="view-sdr" data-kind="sdr" type="button">
-          <span>SDR Fallback</span><span class="modified-indicator" aria-hidden="true"></span>
+          <span>SDR Controls</span><span class="modified-indicator" aria-hidden="true"></span>
         </button>
       </div>
       <p id="lane-note" class="lane-note">Graded HDR rendition. Exported as the PQ HDR image.</p>
@@ -400,8 +405,8 @@
 
         <section class="control-group" data-group="hdr-equalizer">
           <div class="control-group-header">
-            <button class="group-toggle" type="button" aria-expanded="true">Tone Equalizer <span data-modified-count="hdr-equalizer">Default</span></button>
-            <button class="section-bypass text-button" type="button" data-section-path="hdr.tone_equalizer_section_enabled" aria-pressed="true" aria-label="Toggle Tone Equalizer preview">&#9673;</button>
+            <button class="group-toggle" type="button" aria-expanded="true">Exposure Bands <span data-modified-count="hdr-equalizer">Default</span></button>
+            <button class="section-bypass text-button" type="button" data-section-path="hdr.tone_equalizer_section_enabled" aria-pressed="true" aria-label="Toggle Exposure Bands preview">&#9673;</button>
             <button class="group-reset text-button" type="button" data-reset-group="hdr-equalizer">Reset</button>
           </div>
           <div class="control-group-body">
@@ -678,9 +683,9 @@
   <aside id="export-sheet" class="export-sheet workflow-side-panel panel" data-workflow-panel="export" aria-label="Export settings">
     <div class="sheet-header">
       <div>
-        <p class="section-kicker">Delivery</p>
-        <h1>Export finished image</h1>
+        <h1>Control Panel</h1>
       </div>
+      <span class="capability-chip" id="capability-summary">Checking encoders…</span>
     </div>
 
     <input id="export-format" type="hidden" value="jpeg_ultrahdr">
@@ -750,7 +755,6 @@
       <button id="copy-export-path" class="text-button" type="button">Copy path</button>
     </div>
     <div class="sheet-actions">
-      <p>Validate HDR output in current Chromium, Brave, or Edge.</p>
       <button id="export-confirm-button" class="button-primary" type="button">Export...</button>
     </div>
   </aside>
