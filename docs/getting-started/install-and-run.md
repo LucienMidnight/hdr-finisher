@@ -1,0 +1,80 @@
+# Install and Run
+
+HDR Finisher is currently a technical alpha. Windows has a tested package-building path; other platforms should be treated as source-run development environments.
+
+## Requirements
+
+- Python 3.12 or newer
+- A current Chromium-family browser for the validated HDR preview path
+- An HDR-capable GPU/display chain for visual HDR review
+- Optional native encoders for AVIF gain maps and JPEG Ultra HDR
+
+The application works offline. It starts a local FastAPI server and opens a browser interface at `http://127.0.0.1:8000`. Images remain on the local machine unless you separately upload an export elsewhere.
+
+## Run from source
+
+From `codebase/`, create a virtual environment and install development dependencies.
+
+### Windows PowerShell
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements-dev.txt
+python run_app.py
+```
+
+### macOS shell
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-dev.txt
+python run_app.py
+```
+
+Open the local address in Chrome, Edge, or Brave. Current physical HDR and delivery validation is Windows/Chromium-focused; see [macOS status](../setup/macos.md).
+
+## Encoder capabilities
+
+The UI reports encoder availability. Missing an encoder does not prevent import, grading, scopes, SDR PNG export, or whichever gain-map backend remains available.
+
+### JPEG Ultra HDR
+
+JPEG Ultra HDR requires a compatible `ultrahdr_app` in `codebase/bin/` or on `PATH`. HDR Finisher rejects the result unless it decodes and contains both Ultra HDR v1 and ISO 21496-1 metadata.
+
+On Windows, the pinned source build can be reproduced with:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_libultrahdr_windows.ps1
+```
+
+The script requires CMake and Visual Studio 2022 Build Tools, runs upstream tests, and performs a real encode/decode check.
+
+### AVIF gain maps
+
+AVIF gain-map export requires `avifenc`, `avifdec`, and `avifgainmaputil`. The application searches its bundled binary directory and `PATH`.
+
+## Windows technical-alpha package
+
+From `codebase/`:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_windows.ps1
+```
+
+The PyInstaller folder-mode build is smoke-tested and written below `codebase/output/package/`. This is a technical artifact, not a signed installer.
+
+## Verify the installation
+
+1. Open the application.
+2. Choose **Load test pattern**.
+3. Confirm the viewer and scopes populate.
+4. Check the capability status in Export.
+5. On an HDR display, confirm the operating system and browser report HDR capability in the Technical panel.
+
+For contributor-level verification, use the [testing index](../testing/README.md).
+
+## Security and privacy boundary
+
+The server binds to the local loopback address by default. HDR Finisher has no account system or database. Sessions, previews, and temporary encoder files are local and transient; finished exports are written only to the destination you choose.

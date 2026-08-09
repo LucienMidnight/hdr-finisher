@@ -1,253 +1,60 @@
 # HDR Finisher
 
-**Open-source HDR finishing and AVIF / JPEG gain-map export utility for web publishing.**
+HDR Finisher is an offline finishing and export application for HDR photographs and rendered images. It accepts high-dynamic-range sources, lets you author separate HDR and SDR renditions, and exports adaptive gain-map images for the web.
 
-HDR Finisher is a standalone, offline desktop application for Windows and macOS. It is the missing last-mile link in a professional HDR photography and CGI workflow: ingest 32-bit floating-point and HDR-encoded images from any editing software, make global finishing adjustments while viewing true HDR output in real time, and export web-ready AVIF files with embedded ISO 21496-1 gain maps — the same output standard that previously required an Adobe subscription.
+The project is an early technical alpha. The current implementation and packaged build are validated primarily on Windows with Chromium-based browsers. Running from source on macOS is possible, but native display telemetry, the folder picker, packaging, and physical HDR validation are not yet at Windows parity. See [Known limitations](docs/known-limitations.md) before relying on it for delivery work.
 
-**This is early-stage prototype software.** Core functionality works, but expect rough edges. Feedback welcome.
+## What it is for
 
----
+Use HDR Finisher after RAW development, compositing, or rendering. It is the final global grade and delivery step:
 
-## What It Does
+1. Import a scene-linear EXR/TIFF/HDR source or supported HDR HEIC.
+2. Confirm how the source color values should be interpreted.
+3. Grade the HDR rendition.
+4. Create and inspect the SDR fallback.
+5. Proof how the gain map adapts to different displays.
+6. Export JPEG Ultra HDR, AVIF with a gain map, or SDR PNG.
 
-- Accepts HDR output from non-Adobe editors (Blender, Affinity Photo, darktable, DXO PhotoLab, and others)
-- Displays images in true HDR via a local browser viewport
-- Provides global finishing adjustments for both the HDR output and the SDR fallback embedded in the gain map
-- Exports production-ready AVIF with ISO 21496-1 gain map
-- Exports backward-compatible JPEG Ultra HDR (`.jpg`) with an authored SDR fallback, authored HDR rendition, Ultra HDR v1 XMP, and ISO 21496-1 metadata when the pinned encoder is installed
-- Exports SDR JPEG/PNG fallback for legacy contexts
+HDR Finisher is not a RAW developer, layer compositor, masking tool, or local retouching application.
 
-## What It Deliberately Does Not Do
+## Start here
 
-HDR Finisher is a finishing and export tool, not a general image editor. It has no RAW processing, local adjustments, masking, layer compositing, or batch automation. Bring your finished files here as the last step before web export.
+- [Five-minute quick start](docs/getting-started/quick-start.md)
+- [Install and run](docs/getting-started/install-and-run.md)
+- [Prepare files from Affinity, darktable, Blender, or an iPhone](docs/workflows/source-preparation.md)
+- [Choose system and monitor settings](docs/setup/monitors.md)
+- [Browse the complete documentation](docs/README.md)
 
----
+## Supported inputs and outputs
 
-## Supported Input Formats
+| Direction | Formats | Important note |
+|---|---|---|
+| Input | OpenEXR, TIFF, Radiance HDR, PFM, HEIC/HEIF, PNG, JPEG | An accepted file is not necessarily a valid HDR handoff. Source primaries and transfer function still matter. |
+| Output | JPEG Ultra HDR | Backward-compatible SDR JPEG with an 8-bit gain map and Ultra HDR v1 plus ISO 21496-1 metadata. Requires a compatible `ultrahdr_app`. |
+| Output | AVIF with gain map | SDR base plus BT.2020/PQ alternate and a 10-bit gain map. Requires the bundled or discoverable AVIF tools. |
+| Output | SDR PNG | The authored SDR rendition without HDR data. |
 
-TIFF imports include lossless Deflate/LZW compression and integer or floating-point predictors commonly emitted by darktable, Affinity Photo, and Adobe applications.
+## Color pipeline in one paragraph
 
-| Format | Extension |
-|---|---|
-| OpenEXR | `.exr` |
-| 32-bit TIFF | `.tif`, `.tiff` |
-| Radiance HDR | `.hdr` |
-| HEIC / HEIF (iPhone HDR) | `.heic` |
-| 16-bit TIFF (PQ or HLG) | `.tif`, `.tiff` |
+Sources are normalized to a float32, scene-linear ACEScg working image when their encoding is known. HDR Finisher defines linear ACEScg `0.18` as 100-nit diffuse white. The HDR rendition remains scene-linear through grading and is encoded as BT.2020/PQ for preview and export. The SDR rendition is independently tone-mapped and rendered to sRGB. Gain-map exports store the SDR result plus enough information to reconstruct an adaptive HDR result. Read the [color-pipeline specification](docs/concepts/color-pipeline.md) before integrating a new source or exporter.
 
----
+## Development
 
-## Preparing Files For HDR Finisher
+HDR Finisher uses Python 3.12+, FastAPI, NumPy, colour-science, Pillow, OpenEXR, tifffile, a plain HTML/CSS/JavaScript interface, and optional native encoders. The browser is the application viewport; processing and authoritative export rendering remain local.
 
-HDR Finisher is the last step in the workflow, not the RAW developer or renderer. Finish the source edit first, but hand it off **before** converting it to an 8/16-bit SDR image or baking a display tone map. A useful source file has:
+See [Architecture](docs/technical/architecture.md), [Development guide](docs/technical/development.md), and [Testing and validation](docs/testing/README.md).
 
-- floating-point RGB pixels with highlight values above `1.0`;
-- a linear transfer function;
-- known color primaries (embedded ICC profile or EXR chromaticities); and
-- no lossy compression.
+## Project status
 
-After import, check **Source Space**, **Transfer**, and the HDR classification in the Inspector. If the source interpretation is marked **Review**, choose the manual interpretation that exactly matches the export setting below. Do not choose a space merely because it looks closest.
+- Windows technical-alpha packaging is available.
+- macOS has source-run guidance but no validated package or native display telemetry.
+- JPEG Ultra HDR and AVIF gain-map availability is capability-gated.
+- JPEG XL, batch processing, local adjustments, and polished installers are not implemented.
 
-The workflows below are preliminary and are being validated with real application exports. The Affinity workflow is the first test target.
+## License and third-party software
 
-### Affinity (Canva-era build 4646) — Sony RAW (`.ARW`)
+HDR Finisher is GPL-3.0. Optional encoders retain their upstream licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-Use a single-layer, 32-bit floating-point OpenEXR. Real build 4646 testing confirmed that this preserves unbounded HDR highlights. Affinity's TIFF **RGB 32-bit** export instead stores unsigned 32-bit integers; it is high precision but bounded and is not a true-HDR handoff.
-
-1. Before opening the RAW, choose **Edit > Settings > Assistant**, scroll to the bottom, and click **Develop Assistant...**.
-2. Set **RAW engine** to **Affinity RAW** and **RAW output format** to **RGB (32 bit HDR)**. In build 4646, **Default tone curve** is disabled and fixed at **Standard** for this configuration. **Exposure bias: Take no action**, automatic lens correction, color noise reduction, and light sharpening are suitable baseline settings.
-3. Open the Sony `.ARW`, make the desired Develop Persona adjustments, and click **Develop**. A linked or embedded RAW layer is useful if you want to revise the development later.
-4. Choose **Document > Setup > Convert Format / ICC Profile...**. Confirm **RGB/32 (HDR)** and convert from Affinity's default **wsRGB (Linear)** to the recommended Affinity handoff profile, **Display P3 (Linear)**, with **Relative Colorimetric** intent and black point compensation off. Use **Convert**, not **Assign**. Do not export `wsRGB` directly: HDR Finisher does not yet support that source space safely.
-5. Finish global or local editing without using Tone Mapping Persona and without converting the document to RGB/16 or RGB/8. Preserve highlight detail above the SDR range for HDR Finisher.
-6. In **32-bit Preview**, enable HDR, leave preview exposure at `0` and gamma at `1`, use the ICC display transform, and leave **Clip to Max (Peak)** off. A monitor reference white of `100` nits matches HDR Finisher's diffuse-white reference.
-7. Choose **File > Export > EXR > OpenEXR 32-bit linear** (not layered) and set:
-   - **Area/size:** whole document at native dimensions
-   - **Color profile from name:** on
-   - **Multi channel:** off
-   - **Compression:** ZIP
-   - **Image pixels:** 32 bit (FLOAT)
-8. Import the `.exr` into HDR Finisher. Affinity build 4646 does not write EXR chromaticities in this workflow, so source interpretation is expected to show **Review**. Select the matching recommended import interpretation, **Display P3 Linear**, manually; do not leave the ambiguous EXR primaries on automatic interpretation. Affinity's **Display P3 (Linear)** and HDR Finisher's **Display P3 Linear** are the same primaries and linear transfer function with slightly different punctuation.
-
-Validated with a 42.39 MP Sony ILCE-7RM3 `.ARW`: the EXR retained a peak of `13.59` linear (6.24 stops above diffuse white), while the TIFF test was bounded below `1.0`. After applying **Display P3 Linear** manually, HDR Finisher's colors matched Affinity while presenting the retained HDR brightness. Do not use JPEG, PNG, TIFF, a layered EXR, or a tone-mapped export for this handoff. Affinity's linear wsRGB and ROMM/ProPhoto RGB spaces are not yet safe automatic HDR Finisher inputs; converting to linear Display P3 avoids an incorrect primaries assumption while retaining a wider gamut than sRGB.
-
-**Preview resolution:** HDR Finisher renders a proxy capped at 1920 pixels on the long edge, so **100%** means one proxy pixel per screen pixel rather than one original source pixel. Proxy generation uses float-preserving Lanczos resampling to suppress aliasing in mesh, fabric, foliage, and other fine detail. Return to the source editor or inspect the final export for critical source-resolution noise and sharpness judgments.
-
-**Validate the delivered gain map:** Open the exported AVIF in a current Chromium browser on an HDR display, then move the same browser window to an SDR display to confirm the fallback. Color and detail should follow the authored HDR and SDR renditions, but do not expect the HDR browser image to be brightness-identical to HDR Finisher's live canvas. The AVIF is display-adaptive: Chromium applies the gain map according to the active display's available HDR headroom and may perform additional display tone mapping. HDR Finisher's canvas shows the authored HDR rendition with a fixed 100-nit diffuse-white reference. This brightness adaptation is expected and is not, by itself, an export failure.
-
-### darktable — RAW Photo
-
-OpenEXR is the preferred handoff from darktable because it carries scene-linear floating-point data and can describe its primaries with EXR chromaticities.
-
-1. Complete the RAW development with scene-referred modules. Disable **filmic rgb** or **sigmoid** for this handoff so the display rendering is not baked into the source intended for HDR Finisher.
-2. In **output color profile** (or the export module's **profile** setting), choose **linear Rec2020 RGB**.
-3. Export with:
-   - **File format:** OpenEXR
-   - **Bit depth:** 32-bit float
-   - **Compression:** ZIP or PIZ (lossless); avoid DWAA/DWAB
-   - **Size:** native dimensions, no upscaling
-4. Import the `.exr`. The expected interpretation is **Linear BT.2020**. If automatic detection requests review, select that exact interpretation manually.
-
-A 32-bit TIFF with **linear Rec2020 RGB** embedded is the fallback if EXR export is unavailable. Do not select ordinary sRGB, Adobe RGB, or a display-referred profile: those choices can bake a transfer curve or constrain the HDR handoff.
-
-### Blender 5.2 LTS — Render
-
-Use a single-layer OpenEXR as an intermediate render, not a display-ready PNG/JPEG.
-
-1. In **Output Properties**, set **File Format** to **OpenEXR** (single layer), **Color** to **RGB** or **RGBA**, and **Color Depth** to **Float (Full)** / 32-bit.
-2. Choose **ZIP** or **PIZ** lossless compression. Avoid DWAA/DWAB for a finishing master.
-3. Under Output **Color Management**, choose **Override**, then **Color Space: Linear Rec.2020** when using Blender's standard OCIO configuration. This makes the EXR handoff explicit, uses wide-gamut RGB coordinates, and remains independent of the user's display device, View Transform, Look, exposure, and gamma settings. Those scene settings may still control how the render is viewed locally, but they must not define the interchange encoding.
-4. If the project deliberately uses a custom ACES OCIO configuration and renders in ACEScg, override the output to **ACEScg** instead. Do not choose a Display, View Inverse, Log, Non-Color, or other display-referred output space for the beauty render.
-5. Set **Dither** to `0.00`. Disable **Compositing** and **Sequencer** for a clean renderer handoff unless their output is intentionally part of the finished image; otherwise Blender can write the Composite node or Video Sequencer result instead of the untouched camera render.
-6. Import a standard-config **Linear Rec.2020** result into HDR Finisher. Blender 5.2 writes `colorInteropID: lin_rec2020_scene` rather than standard EXR `chromaticities`; HDR Finisher recognizes this exact OCIO interoperability ID and selects **Scene-Linear Rec.2020** automatically. Confirm that the Inspector reports the source interpretation as **Confirmed**. If the tag is absent, unknown, or conflicts with chromaticities, select the matching interpretation manually. An explicitly tagged ACEScg result is recognized as **ACEScg Linear**.
-7. Prefer a single combined RGB(A) image for the handoff. Multilayer EXR is intended for compositing and can make the intended beauty pass ambiguous.
-
-The OpenEXR, Float (Full), ZIP, Output Color Management override, and Linear Rec.2020 labels have been checked against Blender 5.2 LTS and validated with a real rendered-file A/B. Matching Linear Rec.709 and Linear Rec.2020 exports normalized to nearly identical ACEScg pixels in HDR Finisher (0.011% mean relative difference), confirming that the override changes the interchange coordinates without changing the intended rendered scene.
-
-### Reference Documentation
-
-- [Affinity Photo 2: Developing a RAW image](https://affinity.help/photo2/English.lproj/pages/Raw/raw.html) (background reference; build 4646 UI is under validation)
-- [Affinity Photo 2: 32-bit HDR editing](https://affinity.help/photo2/English.lproj/pages/HDR/hdr_editing.html) (background reference)
-- [Affinity Photo 2: Export settings](https://affinity.help/photo2/English.lproj/pages/ExportPersona/exportSettings.html) (background reference)
-- [darktable: output color profile](https://docs.darktable.org/usermanual/development/en/module-reference/processing-modules/output-color-profile/)
-- [darktable: EXR and TIFF export options](https://docs.darktable.org/usermanual/development/en/special-topics/program-invocation/darktable-cli/)
-- [Blender: Color Management](https://docs.blender.org/manual/en/latest/render/color_management.html)
-- [Blender: Supported Graphics Formats](https://docs.blender.org/manual/en/latest/files/media/image_formats.html)
-
----
-
-## Current State (August 2026, v0.2.0)
-
-The following is working in the current build:
-
-- HDR classification, metadata inspection, and source interpretation override
-- True HDR browser preview via PQ AVIF transport
-- Apple HEIC auxiliary gain map detection and reconstruction
-- Independent HDR and SDR adjustment controls
-- RGB Curves editor (Luma / R / G / B channels)
-- Histogram and waveform scopes with HDR reference-nit labeling
-- False color and zebra diagnostic overlays
-- Real AVIF + ISO 21496-1 gain map export
-- JPEG Ultra HDR (JPG + Gain Map) technical-alpha export through Google's `libultrahdr`
-- SDR PNG export
-- Delivery Matrix proofing at fixed encoded headroom targets
-- Live Browser Check using content-hashed JPEG Ultra HDR and AVIF gain-map proxies
-- Windows HDR, SDR-white, DXGI luminance, and nominal-headroom telemetry
-- Local, structured browser/display evidence records with a 180-day verification window
-
-**Not yet implemented:** JPEG XL export and a polished installer. The technical PyInstaller package is available, but JPEG Ultra HDR is capability-gated until a compatible `ultrahdr_app` is built or supplied.
-
-### Enable JPEG Ultra HDR on Windows
-
-Google does not publish a prebuilt Windows `ultrahdr_app`. With CMake and Visual Studio 2022 Build Tools installed, build the pinned source and validate it with:
-
-```powershell
-cd codebase
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_libultrahdr_windows.ps1
-```
-
-The script enables both `UHDR_WRITE_XMP=ON` and `UHDR_WRITE_ISO=ON`, runs upstream tests, performs a real generated-media encode/decode check, and places the executable and redistribution notices under `codebase/bin/`. A user-supplied `ultrahdr_app` on `PATH` also works, but exports are rejected unless the result contains both metadata formats and passes libultrahdr decoding.
-
----
-
-## How to Run (Local Development)
-
-Requires Python 3.12+.
-
-```bash
-# Create and activate a virtual environment
-python -m venv .venv
-.venv\Scripts\activate  # Windows
-source .venv/bin/activate  # macOS
-
-# Install dependencies
-pip install -r requirements-dev.txt
-
-# Run the app
-python run_app.py
-```
-
-Then open `http://127.0.0.1:8000` in a Chromium-based browser (Chrome, Brave, or Edge) for correct HDR preview rendering.
-
-## Testing And Validation
-
-Start with the [testing and validation guide](docs/testing/README.md). It identifies the automated suite, manual QA procedures, private local test media, bundled samples, and generated evidence without requiring contributors to guess between `fixtures` and `output` directories. The broader [documentation index](docs/README.md) also links product and design material.
-
-## UI Preview Automation
-
-The repo includes a small Playwright smoke-preview script for checking the local UI in Edge or Playwright's bundled Chromium:
-
-```powershell
-cd codebase
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\playwright_preview.ps1
-```
-
-The script starts the local app if needed, reuses the machine's existing Playwright browser cache when available, prefers installed Edge, and writes its screenshot/result files to `codebase/output/playwright/`. It also runs the 1280 px layout regression covering splitter keyboard control, persistence, double-click reset, dock collapse/restore, minimum slider width, and horizontal overflow. Add `-Headed` for a visible browser window or `-KeepServer` to leave the local app running afterward.
-
-## Alpha QA And Packaging
-
-Run the full alpha QA harness:
-
-```powershell
-cd codebase
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\run_alpha_qa.ps1
-```
-
-This runs tests, JavaScript syntax validation, capability reporting, sample AVIF export, AVIF metadata inspection, and Playwright UI preview. When `ultrahdr_app` is available it also creates a real JPEG Ultra HDR sample, confirms both metadata schemes, decodes the SDR fallback with Pillow, decodes the HDR rendition with libultrahdr, and checks the highlight luminance relationship. Reports are written to `codebase/output/qa/`.
-
-Build the technical Windows alpha package:
-
-```powershell
-cd codebase
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_windows.ps1
-```
-
-The build uses PyInstaller folder mode, smoke-tests the packaged app, and writes `codebase/output/package/HDRFinisher-alpha-windows.zip`. If PyInstaller is missing, install dev dependencies with `python -m pip install -r requirements-dev.txt`.
-
-For private HEIC/EXR validation without committing media:
-
-```powershell
-cd codebase
-python .\tools\local_media_probe.py "D:\path\to\image.heic" "D:\path\to\render.exr" --export
-```
-
-Manual HDR-display checks are tracked in the [Alpha Manual QA Checklist](docs/testing/Alpha_Manual_QA_Checklist.md).
-
-## Delivery Proofing
-
-The viewer has three distinct modes: **Authoring**, **Delivery Matrix**, and **Live Browser**. The Delivery Matrix reconstructs the encoded gain map at fixed headroom targets. Live Browser serves the exact content-hashed encoded proxy to the installed browser and presents it beside the closest matrix tile. It also exposes correct/wrong MIME, `dynamic-range-limit`, and common CSS composition paths, then saves structured visual observations locally.
-
-JPEG Ultra HDR is the provisional default; AVIF gain maps remain fully available. This is practical delivery proofing rather than display certification. A consistent 5–10% difference can be acceptable when highlight placement, gradients, clipping behavior, and color remain perceptually close.
-
-The implementation status, manual test sequence, acceptance rules, evidence locations, and hosting-pipeline queue are maintained in the [Delivery Proofing Sprint](docs/testing/Delivery_Proofing_Sprint.md).
-
-To compare an original export against direct or transformed hosting URLs:
-
-```powershell
-cd codebase
-$env:PYTHONPATH = "backend"
-python .\tools\verify_hosted_gainmap.py .\output\image.jpg https://example.com/image.jpg
-```
-
-The report includes hashes, response MIME and caching headers, gain-map presence, metadata survival, and whether the hosted bytes are identical to the local export.
-
----
-
-## License
-
-Optional bundled encoders retain their upstream licenses and notices; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-GPL-3.0 — see [LICENSE](LICENSE) for details.
-
----
-
-## Created By
-
-Steven Funcke ([@LucienMidnight](https://github.com/LucienMidnight))
-
----
-
-## Support the Project
-
-If you find this useful, donations are appreciated and help keep development going.
+Created by Steven Funcke ([@LucienMidnight](https://github.com/LucienMidnight)).
 
 [Donate via PayPal](https://www.paypal.com/ncp/payment/TMM9TRHJUUTJS)
