@@ -4,12 +4,11 @@ The viewer shows the current HDR or SDR branch. The analysis dock measures the p
 
 ## Preview paths
 
-HDR Finisher has two complementary render paths:
+On a supported GPU, the WebGPU canvas is both the interactive and settled authoring preview. Input events are coalesced to one render per animation frame, and settling does not request or decode a PNG/AVIF replacement. The CPU/export pipeline remains authoritative for Chrome Proof and final export.
 
-- **Interactive WebGPU draft:** a low-latency browser-canvas update while adjusting controls, when WebGPU is available.
-- **Settled backend preview:** processed by the Python pipeline and encoded for the active branch. This is the export-authoritative preview path.
+Without WebGPU, the app keeps a smaller CPU working proxy and presents raw RGBA8 pixels in a persistent canvas. The current image stays visible while replacement work is pending.
 
-If WebGPU is missing or fails, the application falls back to backend previews. A successful fast draft does not replace the settled result; small discrepancies should be judged against the backend and final export.
+The optional **High-quality preview** preference lives on the Technical tab. It uses a larger idle GPU proxy and a refined scope after you pause. It is off by default, is stored only in the browser profile, and never changes source interpretation, adjustments, proof settings, export dimensions, or export quality.
 
 ## HDR and SDR viewing
 
@@ -25,7 +24,7 @@ The **A/B · V** control switches branches. Tap `V` to switch; hold it to peek a
 - **100%** means one preview-proxy pixel per screen pixel.
 - The slider, plus/minus controls, or typed percentage set other zooms.
 
-Preview proxies are capped at 1,920 pixels on the long edge. Therefore, 100% is not necessarily one original source pixel per display pixel. Use the source editor or final full-resolution export for critical sharpness, fine noise, demosaicing, and texture judgments.
+Fast proxies are display-aware and normally capped near 1,024 px during interaction and 1,200 px when settled. High-quality refinement may use 1,600–2,000 px. Therefore, 100% is not necessarily one original source pixel per display pixel. Use the source editor or final full-resolution export for critical sharpness, fine noise, demosaicing, and texture judgments.
 
 Proxy resampling preserves float values and uses a high-quality filter, but downsampling can still hide single-pixel clipping or artifacts.
 
@@ -84,6 +83,8 @@ Use zebras to locate clipping risk or regions above a chosen delivery target. A 
 
 Scopes are generated from the processed proxy or render cache using the same adjustment pipeline. They are deterministic numerical diagnostics, not instruments measuring the screen.
 
+The freshness badge reads **Updating**, **Preview**, **Settled**, or **Refined**. The last valid scope remains on screen while the next generation is computed. Preview scopes trade density for cadence; the peak readout and clipping flag are calculated separately from waveform normalization so a tiny highlight cannot be hidden merely by the drawing scale.
+
 They cannot reveal:
 
 - Actual panel luminance
@@ -97,7 +98,7 @@ Combine scopes with [Chrome Proof](proof.md) and physical delivery checks.
 
 ## Watch out for
 
-- Judging settled output before the draft preview has been replaced
+- Treating Preview scope density as full-source analysis
 - Mistaking an SDR-compatible HDR preview representation for true HDR
 - Reading 100% zoom as source resolution
 - Using the wrong false-color reference white

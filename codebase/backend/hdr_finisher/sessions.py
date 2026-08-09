@@ -27,6 +27,7 @@ class LoadedSession:
     adjustments: AdjustmentState = field(default_factory=AdjustmentState)
     preview: PreviewSettings = field(default_factory=PreviewSettings)
     preview_tokens: dict[PreviewKind, int] = field(default_factory=lambda: {PreviewKind.HDR: 0, PreviewKind.SDR: 0})
+    scope_tokens: dict[PreviewKind, int] = field(default_factory=lambda: {PreviewKind.HDR: 0, PreviewKind.SDR: 0})
     render_cache: SessionRenderCache = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -122,6 +123,7 @@ class SessionStore:
             session.metadata = metadata
             session.analysis = analysis
             session.preview_tokens = {PreviewKind.HDR: 0, PreviewKind.SDR: 0}
+            session.scope_tokens = {PreviewKind.HDR: 0, PreviewKind.SDR: 0}
             session.render_cache.replace_source(image, sdr_reference_image)
             return session
 
@@ -135,6 +137,17 @@ class SessionStore:
         with self._lock:
             session = self.get(session_id)
             return session.preview_tokens[kind] == token
+
+    def next_scope_token(self, session_id: str, kind: PreviewKind) -> int:
+        with self._lock:
+            session = self.get(session_id)
+            session.scope_tokens[kind] += 1
+            return session.scope_tokens[kind]
+
+    def is_scope_current(self, session_id: str, kind: PreviewKind, token: int) -> bool:
+        with self._lock:
+            session = self.get(session_id)
+            return session.scope_tokens[kind] == token
 
 
 def _remove_owned_source(path: Path) -> None:

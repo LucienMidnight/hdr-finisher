@@ -34,8 +34,8 @@ from .models import (
     SourceInterpretationOverride,
 )
 from .overlay import encode_processed_overlay_bytes
-from .preview import encode_processed_preview_bytes
-from .render_cache import StaleRender, encode_rgba32f_proxy
+from .preview import encode_processed_preview_bytes, encode_processed_rgba8
+from .render_cache import StaleRender, encode_rgba_proxy
 from .display_probe import probe_displays
 from .proofing import EvidenceStore, ProofArtifactStore
 from .scopes import build_scope_from_processed
@@ -149,6 +149,42 @@ def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
     return Response(content=body, media_type=media_type)
 
 
+@app.post("/api/session/{session_id}/preview-raw/{kind}")
+def preview_raw(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Response:
+    """Render ordinary CPU fallback grading directly into a browser canvas."""
+    try:
+        session = store.update_adjustments(session_id, request.adjustments)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    token = store.next_preview_token(session_id, kind)
+    try:
+        processed = session.render_cache.adjusted_frame(
+            request.adjustments,
+            kind,
+            request.long_edge or (768 if kind == PreviewKind.SDR else 960),
+            is_current=lambda: session.preview_tokens[kind] == token,
+        )
+        body = encode_processed_rgba8(processed, kind)
+    except StaleRender:
+        return JSONResponse(status_code=409, content={"detail": "Stale raw preview request dropped."})
+    if not store.is_preview_current(session_id, kind, token):
+        return JSONResponse(status_code=409, content={"detail": "Stale raw preview request dropped."})
+    height, width = processed.shape[:2]
+    return Response(
+        content=body,
+        media_type="application/octet-stream",
+        headers={
+            "X-Image-Width": str(width),
+            "X-Image-Height": str(height),
+            "X-Generation": str(request.generation if request.generation is not None else token),
+            "X-Preview-Lane": kind.value,
+            "X-Display-Interpretation": "srgb-rgba8",
+            "X-Cache-Identity": f"{session_id}:{kind.value}:{token}",
+        },
+    )
+
+
 @app.post("/api/session/{session_id}/overlay/{kind}")
 def overlay(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Response:
     try:
@@ -184,17 +220,13 @@ def scopes(
         session = store.get(session_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    processed = session.render_cache.adjusted_frame(
+    return session.render_cache.scope_result(
         session.adjustments,
         kind,
         long_edge,
-    )
-    return build_scope_from_processed(
-        processed,
-        kind,
-        mode=mode,
-        bins=bins,
-        waveform_columns=columns,
+        mode.value,
+        bins or 256,
+        columns,
     )
 
 
@@ -212,14 +244,22 @@ def scopes_for_adjustments(
         session = store.update_adjustments(session_id, request.adjustments)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    processed = session.render_cache.adjusted_frame(request.adjustments, kind, long_edge)
-    return build_scope_from_processed(
-        processed,
-        kind,
-        mode=mode,
-        bins=bins,
-        waveform_columns=columns,
-    )
+    token = store.next_scope_token(session_id, kind)
+    try:
+        result = session.render_cache.scope_result(
+            request.adjustments,
+            kind,
+            long_edge,
+            mode.value,
+            bins or 256,
+            columns,
+            is_current=lambda: session.scope_tokens[kind] == token,
+        )
+    except StaleRender:
+        return JSONResponse(status_code=409, content={"detail": "Stale scope request dropped."})
+    result.tier = request.tier
+    result.generation = request.generation
+    return result
 
 
 @app.get("/api/session/{session_id}/proxy/{kind}")
@@ -227,13 +267,14 @@ def webgpu_proxy(
     session_id: str,
     kind: PreviewKind,
     long_edge: int = Query(default=1600, ge=256, le=2000),
+    format: str = Query(default="rgba16f", pattern="^(rgba16f|rgba32f)$"),
 ) -> Response:
     try:
         session = store.get(session_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     proxy, working_space = session.render_cache.source_proxy(kind, long_edge)
-    body, bytes_per_row = encode_rgba32f_proxy(proxy)
+    body, bytes_per_row, pixel_format = encode_rgba_proxy(proxy, prefer_half=format == "rgba16f")
     height, width = proxy.shape[:2]
     return Response(
         content=body,
@@ -243,8 +284,18 @@ def webgpu_proxy(
             "X-Image-Height": str(height),
             "X-Bytes-Per-Row": str(bytes_per_row),
             "X-Working-Space": working_space,
+            "X-Pixel-Format": pixel_format,
         },
     )
+
+
+@app.get("/api/session/{session_id}/diagnostics")
+def session_diagnostics(session_id: str) -> dict[str, object]:
+    try:
+        session = store.get(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"render_cache": session.render_cache.diagnostics()}
 
 
 @app.post("/api/session/{session_id}/export")

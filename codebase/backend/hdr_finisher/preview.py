@@ -41,6 +41,21 @@ def encode_processed_preview_bytes(
     return _encode_png_sdr(processed), "image/png"
 
 
+def encode_processed_rgba8(processed: np.ndarray, kind: PreviewKind) -> bytes:
+    """Return display-ready RGBA8 for the persistent no-WebGPU canvas path."""
+    display = _hdr_to_sdr_display(processed) if kind == PreviewKind.HDR else np.clip(processed, 0.0, 1.0)
+    encoded = np.where(
+        display <= 0.0031308,
+        display * 12.92,
+        1.055 * np.power(np.clip(display, 0.0, 1.0), 1.0 / 2.4) - 0.055,
+    )
+    rgb = (np.clip(encoded, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
+    rgba = np.empty((*rgb.shape[:2], 4), dtype=np.uint8)
+    rgba[..., :3] = rgb[..., :3]
+    rgba[..., 3] = 255
+    return np.ascontiguousarray(rgba).tobytes()
+
+
 def _hdr_to_sdr_display(image: np.ndarray) -> np.ndarray:
     """Match the deterministic WebGPU HDR fallback used on SDR displays."""
     display = np.clip(acescg_to_linear_srgb(image), 0.0, None)

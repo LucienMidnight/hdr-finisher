@@ -73,8 +73,9 @@ def test_upload_decode_failure_returns_json_detail(monkeypatch) -> None:
 def test_real_png_upload_preview_and_scopes() -> None:
     upload = client.post("/api/session", files={"file": ("fixture.png", make_png_bytes(), "image/png")})
     assert upload.status_code == 200
-    assert upload.json()["session"]["source"]["filename"] == "fixture.png"
-    session_id = upload.json()["session"]["session_id"]
+    upload_payload = upload.json()
+    assert upload_payload["session"]["source"]["filename"] == "fixture.png"
+    session_id = upload_payload["session"]["session_id"]
 
     preview = client.post(
         f"/api/session/{session_id}/preview/hdr",
@@ -109,6 +110,37 @@ def test_real_png_upload_preview_and_scopes() -> None:
     assert proxy.headers["content-type"] == "application/octet-stream"
     assert int(proxy.headers["x-image-width"]) <= 512
     assert int(proxy.headers["x-bytes-per-row"]) % 256 == 0
+
+    half_proxy = client.get(f"/api/session/{session_id}/proxy/hdr?long_edge=512&format=rgba16f")
+    assert half_proxy.headers["x-pixel-format"] == "rgba16float"
+    assert len(half_proxy.content) <= len(proxy.content)
+
+    raw = client.post(
+        f"/api/session/{session_id}/preview-raw/sdr",
+        json={"adjustments": upload_payload["session"]["adjustments"], "long_edge": 512, "generation": 7},
+    )
+    assert raw.status_code == 200
+    assert raw.headers["x-generation"] == "7"
+    assert raw.headers["x-preview-lane"] == "sdr"
+    assert len(raw.content) == int(raw.headers["x-image-width"]) * int(raw.headers["x-image-height"]) * 4
+
+    interactive_scope = client.post(
+        f"/api/session/{session_id}/scopes?kind=hdr&mode=waveform&bins=128&columns=256&long_edge=768",
+        json={
+            "adjustments": upload_payload["session"]["adjustments"],
+            "generation": 9,
+            "tier": "interactive",
+            "long_edge": 768,
+        },
+    )
+    assert interactive_scope.status_code == 200
+    assert interactive_scope.json()["tier"] == "interactive"
+    assert interactive_scope.json()["generation"] == 9
+    assert interactive_scope.json()["normalization_peak"] >= 1
+
+    diagnostics = client.get(f"/api/session/{session_id}/diagnostics")
+    assert diagnostics.status_code == 200
+    assert diagnostics.json()["render_cache"]["managed_bytes"] > 0
 
 
 def test_clearing_session_removes_owned_upload_temp_file() -> None:

@@ -124,6 +124,8 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     assert 'class="preview-metadata-panel"' in html
     assert 'id="preview-status-copy"' in html
     assert '<progress id="preview-progress"' in html
+    assert 'id="override-warning"' not in html
+    assert 'id="apply-interpretation" class="button-primary"' in html
     assert 'class="probe-strip"' not in html
     assert 'id="probe-readout"' not in html
     assert "Move over the image" not in html
@@ -133,6 +135,9 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     assert "dockH: 252" in javascript
     assert "updateProbeReadout" not in javascript
     assert ".preview-progress" in css
+    assert "Processing complete. Decoding preview..." in javascript
+    assert "{ showProgress: false }" in javascript
+    assert "renderPreviewForLane(lane, true, longEdge, { showProgress: false })" in javascript
     assert "min-height: 720px" in css
 
 
@@ -147,3 +152,23 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_fixed_hdr_curve_domain(
     assert "if (value <= 0.18) { return 0.5 * value / 0.18; }" in shader
     assert "log2(value / 0.18) / log2(100.0)" in shader
     assert "let amount = p[3] / 50.0" in shader
+
+
+def test_interactive_preview_scheduler_and_quality_preference_contract() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    scheduler = (FRONTEND / "preview-scheduler.js").read_text(encoding="utf-8")
+    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+
+    assert 'id="high-quality-preview" type="checkbox"' in html
+    assert "Uses more GPU memory for a larger preview. Export quality is unchanged." in html
+    assert 'id="scope-freshness"' in html and 'aria-live="polite"' in html
+    assert '/static/preview-scheduler.js' in html
+    assert "HIGH_QUALITY_PREVIEW_KEY" in javascript
+    assert "preview-raw" in javascript
+    assert 'tier: "interactive"' in scheduler
+    assert "requestAnimationFrame" in scheduler
+    assert "cancelIdleWork" in scheduler
+    assert "rgba16f" in webgpu and "X-Pixel-Format" in webgpu
+    assert "this.paramBuffer" in webgpu and "this.curveBuffer" in webgpu
+    assert "Settled WebGPU authoring preview" in javascript

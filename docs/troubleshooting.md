@@ -30,19 +30,19 @@ High bit depth does not guarantee HDR headroom.
 3. Keep the browser window fully on the HDR display.
 4. Restart the browser after changing OS HDR or profiles.
 5. Confirm the browser is current and Chromium-based for the validated path.
-6. Check whether the settled preview says it is an HDR AVIF/PQ path rather than an SDR-compatible fallback.
+6. Check whether the Technical tab reports an HDR-capable WebGPU canvas or the SDR-compatible fallback.
 
 An SDR display can show a usable representation, but it cannot emit the authored HDR luminance.
 
 ## The preview changes after I stop dragging
 
-The first image may be a WebGPU interactive draft; the settled backend preview replaces it and is export-authoritative. Small changes can expose GPU/backend parity issues or different display presentation.
+Fast mode keeps the same WebGPU surface after settling, so a routine encoded-image swap should not occur. High-quality mode may atomically replace the proxy after longer idle, and a device-loss fallback may move to the raw CPU canvas.
 
-Wait for the preview to settle. If the difference is large or systematic:
+If the difference is large or systematic:
 
 - Check the browser console.
 - Run the GPU parity QA tool.
-- Compare the settled preview with a final export.
+- Compare the authoring preview with an explicit Chrome Proof or final export.
 - Record the GPU/browser/version and the affected controls.
 
 ## Highlights are clipped
@@ -145,7 +145,9 @@ Full-resolution float32 RGB images are large, and HDR/SDR processing can create 
 
 - Close/eject the current image before loading another large source.
 - Avoid unnecessarily huge intermediates.
-- Confirm WebGPU is available for interactive drafts.
+- Confirm WebGPU is available for the settled authoring preview.
+- Leave High-quality preview off when GPU memory is constrained; export quality is unchanged.
+- Check `/api/session/{id}/diagnostics` when cache growth, evictions, or duplicate work is suspected.
 - Expect final export to take longer than the proxy preview.
 
 If reporting performance, include dimensions, file type, available RAM, GPU/browser, control state, and whether the delay is import, preview, scope, proof, or export.

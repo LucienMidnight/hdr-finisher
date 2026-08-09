@@ -41,13 +41,6 @@
 
       <section class="source-summary">
         <div id="badge" class="badge neutral">No file loaded.</div>
-        <div id="override-warning" class="attention-item hidden">
-          <div>
-            <p class="attention-label">Attention</p>
-            <p id="override-message">Confirm how this source should be interpreted before export.</p>
-          </div>
-          <button id="attention-fix" class="text-button" type="button">Fix</button>
-        </div>
       </section>
 
       <section class="disclosure-panel">
@@ -82,7 +75,7 @@
           </label>
           <p id="source-settings-note" class="helper">Use Manual only when metadata is missing or you know the source pipeline.</p>
           <div class="button-row">
-            <button id="apply-interpretation" class="button-secondary" type="button">Apply</button>
+            <button id="apply-interpretation" class="button-primary" type="button">Apply</button>
             <button id="reset-interpretation" class="text-button" type="button">Reset to auto</button>
           </div>
         </div>
@@ -275,6 +268,7 @@
           </div>
           <div class="dock-status">
             <span id="scope-kind-label" class="scope-readout">HDR</span>
+            <span id="scope-freshness" class="scope-readout" role="status" aria-live="polite">Waiting</span>
             <span id="dock-summary">Full-resolution processing stats</span>
             <button id="dock-collapse" class="text-button" type="button" aria-expanded="true">Collapse</button>
           </div>
@@ -308,6 +302,14 @@
         </div>
 
         <div id="technical-view" class="dock-content technical-layout hidden">
+          <div class="readout-block preview-preferences">
+            <p class="section-kicker">Preview preference</p>
+            <label class="toggle-row" for="high-quality-preview">
+              <input id="high-quality-preview" type="checkbox">
+              <span>High-quality preview</span>
+            </label>
+            <p id="high-quality-preview-help" class="helper">Uses more GPU memory for a larger preview. Export quality is unchanged.</p>
+          </div>
           <div class="readout-block">
             <p class="section-kicker">Output</p>
             <dl id="preview-output-list" class="readout-list"></dl>
@@ -760,6 +762,7 @@
   </aside>
 
   <script src="/static/webgpu-preview.js"></script>
+  <script src="/static/preview-scheduler.js"></script>
   <script src="/static/app.js"></script>
   <script src="/static/proofing-ui.js"></script>
 </body>

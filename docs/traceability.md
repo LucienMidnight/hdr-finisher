@@ -9,9 +9,10 @@ This index maps user-facing areas to their current state model, implementation, 
 | Import/eject/test pattern | Session routes | `main.py`, `sessions.py`, `loader.py`, `test_pattern.py`, `app.js` | [Import](user-guide/import.md) |
 | Interpretation | `SourceInterpretationOverride` | `loader.py`, `color.py`, interpretation UI in `app.js` | [Import](user-guide/import.md) |
 | Metadata/classification | `SourceImageDescriptor`, `MetadataPayload`, `HDRAnalysis` | `metadata.py`, `analysis.py`, `loader.py` | [Import](user-guide/import.md) |
-| HDR/SDR viewer | `PreviewRequest`, `PreviewKind` | `preview.py`, `render_cache.py`, `webgpu-preview.js`, `app.js` | [Viewer](user-guide/viewer-and-analysis.md) |
+| HDR/SDR viewer | `PreviewRequest`, `PreviewKind` | `preview.py`, `render_cache.py`, `preview-scheduler.js`, `webgpu-preview.js`, `app.js` | [Viewer](user-guide/viewer-and-analysis.md) |
 | A/B and zoom | Frontend state | `app.js`, `styles.css` | [Viewer](user-guide/viewer-and-analysis.md) |
-| Histogram/waveform/parade | `ScopeResponse` | `scopes.py`, scope drawing in `app.js` | [Viewer](user-guide/viewer-and-analysis.md) |
+| Histogram/waveform/parade | `ScopeResponse` tier/generation/peak | `scopes.py`, scope cache, scope drawing in `app.js` | [Viewer](user-guide/viewer-and-analysis.md) |
+| High-quality preview | Browser-profile preference | scheduler/refinement and proxy selection in `app.js` | [Viewer](user-guide/viewer-and-analysis.md#preview-paths) |
 | False color/zebras | `SharedAdjustments.overlay_*` | `overlay.py`, overlay UI in `app.js` | [Viewer](user-guide/viewer-and-analysis.md) |
 | Technical panel | Session/display/preview payloads | `display_probe.py`, `app.js` | [Viewer](user-guide/viewer-and-analysis.md) |
 
@@ -64,7 +65,7 @@ This index maps user-facing areas to their current state model, implementation, 
 | Source loaders and fixture interpretation | `test_loader_fixtures.py`, `test_core.py` |
 | Adjustments and curves/equalizer/color | `test_adjustments.py` |
 | API contracts and session paths | `test_api.py` |
-| Preview/display encoding | `test_preview_display.py`, `test_render_cache.py` |
+| Preview/display/performance pipeline | `test_preview_display.py`, `test_render_cache.py`, `test_performance_pipeline.py`, `tests/performance/preview-performance.js` |
 | Frontend labels/state contract | `test_frontend_contract.py` |
 | Capabilities | `test_capability_gates.py` |
 | AVIF inspection | `test_avif_info.py` |

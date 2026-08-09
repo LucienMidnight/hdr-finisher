@@ -2,6 +2,8 @@
 
 The automated suite is risk-oriented rather than coverage-percentage driven. Private photographs and large renderer outputs are never required by CI.
 
+The dated [Interactive Preview Performance Validation](Interactive_Preview_Performance_Validation_2026-08-09.md) records the sprint's final benchmark results, approved observable parity envelope, and remaining physical-display sign-off procedure.
+
 ## Test tiers
 
 | Tier | Contents | Run from `codebase/` |
@@ -11,6 +13,7 @@ The automated suite is risk-oriented rather than coverage-percentage driven. Pri
 | Encoder/export integration | Real AVIF preview and gain-map inspection, JPEG Ultra HDR encode/legacy decode/HDR decode, and proof-artifact reconstruction. Tests skip with an explicit reason when the required binary is unavailable. | `.\.venv\Scripts\python.exe -m pytest -q tests/test_avif_info.py tests/test_ultrahdr_export.py tests/test_proofing.py` |
 | Optional local media | Large Blender/Affinity EXRs and private iPhone HEIC media in ignored `local-test-media/inputs/`; results go to ignored `output/` | `.\.venv\Scripts\python.exe .\tools\local_media_probe.py <paths> --export` |
 | Alpha harness | Full pytest, JavaScript syntax checks, capability report, sample export/inspection, and browser layout smoke | `powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\run_alpha_qa.ps1` |
+| Preview performance | Fast/high-quality/forced-fallback browser matrix, event-to-frame/scope timing, request payloads, long tasks, heap trend, and browser errors | `npm run test:performance` |
 
 Set `PYTHONPATH` to the resolved `backend` directory when running pytest outside the project scripts.
 
@@ -22,10 +25,10 @@ Set `PYTHONPATH` to the resolved `backend` directory when running pytest outside
 | ACEScg normalization | `test_core.py`, `test_loader_fixtures.py` | sRGB, BT.2020, PQ, ACEScg pass-through, unknown-linear preservation, and numerical normalization of the Blender fixture |
 | HDR classification/headroom | `test_core.py`, `test_adjustments.py` | Strict `1.0` boundary, encoded and scene-linear classifications, Apple gain-map path, source-latitude policy |
 | HDR/SDR finishing | `test_adjustments.py`, `test_core.py`, `test_frontend_contract.py` | Variable-node equalizer migration/limits, targeting masks, section bypass, fixed HDR curve domain, highlight ordering/rolloff continuity, branch isolation, hue behavior, and grading interaction contracts |
-| Float preview/resampling | `test_core.py`, `test_render_cache.py`, `test_preview_display.py` | Long-edge cap, float/HDR-range preservation, high-frequency filtering, proxy reuse/alignment, SDR-display fallback math |
-| Scopes and overlays | `test_core.py` | AP1 luminance, 100/203/1000-nit guides and strict thresholds, histograms, waveform aggregation, false color, zebra alpha/cutoff |
+| Float preview/resampling | `test_core.py`, `test_render_cache.py`, `test_preview_display.py`, `test_performance_pipeline.py` | Display-aware caps, float/HDR-range preservation, half-float precision/range fallback, byte accounting/eviction, single-flight reuse, raw SDR-display fallback math |
+| Scopes and overlays | `test_core.py`, `test_performance_pipeline.py` | AP1 luminance, 100/203/1000-nit guides and strict thresholds, vectorized waveform equivalence, tiny-highlight peak priority, normalization, false color, zebra alpha/cutoff |
 | Export and metadata | `test_ultrahdr_export.py`, `test_avif_info.py`, `test_proofing.py` | Independent base/gain-map quality and scale, proof/export parity, metadata-selected JPEG gamut conversion, encoded offsets/capacity, atomic replacement, AVIF gain-map metadata, legacy fallback decode, and optional real round trips |
-| API/session/preflight | `test_api.py`, `test_capability_gates.py`, `test_folder_picker.py` | Upload cleanup, interpretation lifecycle, preview/scopes/proxy routes, unsupported format rejection, backend capability rejection, and Windows STA picker selection/cancellation/failure paths |
+| API/session/preflight | `test_api.py`, `test_capability_gates.py`, `test_folder_picker.py` | Upload cleanup, interpretation lifecycle, encoded/raw preview, tiered scopes, proxy format, diagnostics, unsupported format rejection, backend capability rejection, and Windows STA picker paths |
 | Delivery/hosting | `test_proofing.py`, `test_hosting_probe.py` | Fixed-headroom reconstruction, content hashes/cache, evidence persistence, metadata survival and destructive conversion detection |
 
 ## Remaining gaps

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+from functools import lru_cache
 from pathlib import Path
 import subprocess
 
@@ -67,7 +68,8 @@ def _ultrahdr_status() -> CapabilityInfo:
     )
 
 
-def probe_capabilities() -> dict[str, CapabilityInfo]:
+@lru_cache(maxsize=1)
+def _probe_capabilities_cached() -> dict[str, CapabilityInfo]:
     return {
         "numpy": _module_status("numpy", "numpy"),
         "pillow": _module_status("pillow", "PIL"),
@@ -85,3 +87,13 @@ def probe_capabilities() -> dict[str, CapabilityInfo]:
         "ultrahdr_encoder": _ultrahdr_status(),
         "jpegxl_encoder": _binary_status("cjxl", "cjxl"),
     }
+
+
+def probe_capabilities() -> dict[str, CapabilityInfo]:
+    """Return process-cached capability results without exposing the cached mapping."""
+    return dict(_probe_capabilities_cached())
+
+
+def invalidate_capability_cache() -> None:
+    """Invalidate after executable search-path or bundled-binary configuration changes."""
+    _probe_capabilities_cached.cache_clear()

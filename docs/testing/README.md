@@ -20,6 +20,7 @@ Generated output must not be the only copy of a procedure or durable conclusion.
 - [Delivery Proofing Sprint](Delivery_Proofing_Sprint.md) — browser/display proofing protocol, acceptance gates, and hosting-survival work.
 - [JPEG Ultra HDR Reliability](JPEG_Ultra_HDR_Reliability.md) — separate edge-fidelity and matrix-color failure modes, automated thresholds, and iPhone/Blender procedures.
 - [Source Export Validation Log](Source_Export_Validation_Log.md) — validated source-editor handoff workflows and findings.
+- [Interactive Preview Performance Validation — 2026-08-09](Interactive_Preview_Performance_Validation_2026-08-09.md) — final automated measurements, approved parity envelope, physical-display procedure, and platform sign-off fields.
 
 ## Automated entry points
 

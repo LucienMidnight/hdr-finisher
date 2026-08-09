@@ -292,6 +292,8 @@ class SourceInterpretationOverride(BaseModel):
 class PreviewRequest(BaseModel):
     adjustments: AdjustmentState
     request_id: str | None = None
+    generation: int | None = Field(default=None, ge=0)
+    tier: Literal["interactive", "settled", "refinement"] = "settled"
     long_edge: int | None = Field(default=None, ge=256, le=2000)
     hdr_display: bool = True
 
@@ -315,6 +317,11 @@ class ScopeStat(BaseModel):
 class ScopeResponse(BaseModel):
     preview_kind: PreviewKind
     scope_type: str = "histogram"
+    tier: Literal["interactive", "settled", "refinement"] = "settled"
+    generation: int | None = None
+    normalization_peak: int = 1
+    peak_value: float = 0.0
+    clipped: bool = False
     x_axis: str = "normalized"
     bin_edges: list[float] = Field(default_factory=list)
     guides: list[ScopeGuide] = Field(default_factory=list)

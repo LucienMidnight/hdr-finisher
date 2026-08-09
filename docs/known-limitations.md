@@ -42,9 +42,10 @@ Ejecting or replacing the image discards unsaved adjustment state.
 
 ## Preview limitations
 
-- Proxy is capped at 1,920 pixels on the long edge.
+- Fast proxies are display-aware; high-quality refinement is capped at 2,000 pixels on the long edge.
 - 100% zoom refers to proxy pixels, not necessarily original pixels.
-- WebGPU is an interactive draft; backend processing is authoritative.
+- WebGPU is the settled authoring preview where parity and device support are validated; explicit proof and export remain backend-authoritative.
+- Routine scopes analyze the current preview proxy, not every full-source pixel. Tiny source-resolution features can be reduced by proxy downsampling.
 - An SDR-compatible representation is not true HDR output.
 - Browser/display tone mapping can differ from the authoring canvas.
 - Headless automated tests cannot certify emitted luminance.

@@ -41,9 +41,9 @@ flowchart LR
 | `color.py` | Source detection, normalization, RGB conversions, primaries adjustment matrix |
 | `analysis.py` | HDR classification and source-latitude summary |
 | `adjustments.py` | HDR/SDR creative processing and curve/equalizer math |
-| `preview.py` | SDR PNG and BT.2020/PQ AVIF preview encoding, proxy downsampling |
-| `render_cache.py` | Per-session processed-image cache and float proxy transport |
-| `scopes.py` | Histograms, waveforms, reference-nit statistics |
+| `preview.py` | Proof-oriented PNG/AVIF encoding, raw RGBA8 fallback transport, proxy downsampling |
+| `render_cache.py` | Byte-budgeted processed/proxy/scope caches, single-flight work, RGBA16F/RGBA32F transport |
+| `scopes.py` | Vectorized histograms/waveforms, peak/clipping data, reference-nit statistics |
 | `overlay.py` | False-color and zebra images |
 | `exporters.py` | SDR PNG, AVIF gain map, JPEG Ultra HDR, staging and validation |
 | `proofing.py` | Encoded proof artifacts, gain-map reconstruction, evidence records |
@@ -56,8 +56,9 @@ flowchart LR
 
 - `index.html`: four-stage workflow and accessible control structure.
 - `styles.css`: panel layout, resizable rails/dock, responsive behavior, visual state.
-- `app.js`: session state, controls, preview scheduling, scopes, overlays, curves, equalizer, export UI.
-- `webgpu-preview.js`: interactive GPU draft renderer using float proxy data.
+- `app.js`: session state, scheduler integration, scopes, overlays, curves, equalizer, export UI.
+- `preview-scheduler.js`: animation-frame coalescing, tiered scope timing, settle/refinement priority, generation state.
+- `webgpu-preview.js`: settled authoring renderer using reusable buffers/bind groups and guarded half-float proxies.
 - `proofing-ui.js`: proof artifact controls, reconstruction state, and observation workflow.
 
 The frontend deliberately has no build framework. This keeps packaging and offline operation simple, but places more state coordination in plain JavaScript.
@@ -78,16 +79,18 @@ There is no database and no persistent project-file format. Ejecting/replacing t
 
 ## Preview scheduling
 
-Control changes can request a fast WebGPU draft while a settled backend preview, overlay, and scope update are scheduled. Generation IDs and abortable requests prevent stale responses from replacing newer state. The opposite branch is prepared and cached to support fast A/B peeking.
+The interaction-aware scheduler coalesces control input to one WebGPU render per animation frame. Interactive scope work is throttled, normal settling follows after roughly 110 ms idle, and optional high-quality refinement follows only after longer idle. Image, scope, refinement, and inactive-lane work have separate generations; requests are abortable and stale results are rejected by both frontend and backend checks.
 
-The WebGPU proxy is packed float32 RGBA data. GPU draft parity is tested, but the backend processed image remains authoritative for scopes, proof, and export.
+The validated WebGPU surface remains the settled authoring preview for HDR and SDR. Source proxies prefer aligned RGBA16F and fall back to RGBA32F for non-finite or out-of-range values. Uniform/storage buffers, bind groups, textures, and canvas configuration are reused. The backend remains authoritative for proof and export.
+
+Fallback scopes use vectorized bin-index generation and `numpy.bincount`. Scope results and adjusted frames are single-flight and cached by source state, lane, proxy level, dimensions, and adjustment signature. Cache diagnostics report managed bytes, hits, misses, evictions, in-flight work, and stale cancellations.
 
 ## API shape
 
 Major route groups:
 
 - `/api/session`: import, fetch, clear, reinterpret
-- `/api/session/{id}/preview|overlay|scopes|proxy`: processed views and diagnostics
+- `/api/session/{id}/preview|preview-raw|overlay|scopes|proxy|diagnostics`: processed views, raw fallback, proxies, and cache diagnostics
 - `/api/session/{id}/export`: validated final output
 - `/api/proof/*`: proof artifacts, reconstruction, tiles, evidence, test pattern
 - `/api/display`: native display telemetry where supported

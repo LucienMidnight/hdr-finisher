@@ -72,6 +72,7 @@ Documentation reflects the active implementation as of **August 9, 2026**. Brows
 - [Known limitations and support status](known-limitations.md)
 - [Implementation traceability](traceability.md)
 - [Product requirements](product/HDR_Finisher_PRD_v1.2.md) — historical intent and planning, not the user manual
+- [Interactive preview and scopes performance sprint](product/Interactive_Preview_and_Scopes_Performance_Sprint_PRD.md) — implementation plan, performance budgets, and acceptance gates
 - [Design work](design/README.md)
 - [Testing and validation](testing/README.md)
 

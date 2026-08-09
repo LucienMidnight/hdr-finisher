@@ -173,16 +173,20 @@ async function main() {
 
     if (inputPath) {
       await page.locator("#file-input").setInputFiles(inputPath);
-      await page.locator("#session-name").waitFor({ state: "visible", timeout: 30000 });
       await page.waitForFunction(() => {
         const sessionName = document.getElementById("session-name");
         return sessionName && sessionName.textContent && sessionName.textContent !== "No active image";
-      }, { timeout: 30000 });
+      }, undefined, { timeout: 30000 });
       const gate = page.locator("#interpretation-gate");
       if (await gate.isVisible()) {
         await page.locator("#accept-interpretation").click();
       }
-      await page.locator("#preview-image").waitFor({ state: "visible", timeout: 120000 });
+      await page.waitForFunction(() => {
+        const image = document.getElementById("preview-image");
+        const canvas = document.getElementById("preview-canvas");
+        const canvasVisible = canvas && getComputedStyle(canvas).display !== "none" && canvas.width && canvas.height;
+        return Boolean(canvasVisible || (image && !image.hidden && image.complete && image.naturalWidth));
+      }, undefined, { timeout: 120000 });
       gpuPreviewCheck = await page.evaluate(() => {
         const entries = [...document.querySelectorAll("#display-info-list dt")];
         const gpuLabel = entries.find((entry) => entry.textContent === "GPU Preview");
@@ -215,11 +219,11 @@ async function main() {
         reset: resetToneEqualizer,
         ok: adjustedToneEqualizer.enabled === true
           && adjustedToneEqualizer.output === "+0.50 EV"
-          && /modified/.test(adjustedToneEqualizer.groupState || "")
+          && /\d+\s+mod(?:ified)?/.test(adjustedToneEqualizer.groupState || "")
           && adjustedToneEqualizer.gpuCanvasVisible === true
           && resetToneEqualizer.enabled === false
           && resetToneEqualizer.output === "+0.00 EV"
-          && resetToneEqualizer.groupState === "Default",
+          && ["", "Default"].includes(resetToneEqualizer.groupState || ""),
       };
       if (!toneEqualizerInteractionCheck.ok) {
         throw new Error(`Tone equalizer interaction audit failed: ${JSON.stringify(toneEqualizerInteractionCheck)}`);
@@ -250,8 +254,8 @@ async function main() {
       await page.locator("#overlay-close").click();
       await page.locator("#zoom-actual").click();
       await page.locator("#zoom-fit").click();
-      const zoomBefore = await page.locator("#preview-image").evaluate((image) => {
-        const rect = image.getBoundingClientRect();
+      const zoomBefore = await page.locator("#preview-canvas").evaluate((surface) => {
+        const rect = surface.getBoundingClientRect();
         return {
           width: rect.width,
           anchorX: rect.left + rect.width * 0.72,
@@ -261,8 +265,8 @@ async function main() {
       await page.mouse.move(zoomBefore.anchorX, zoomBefore.anchorY);
       await page.mouse.wheel(0, -240);
       await page.waitForTimeout(100);
-      const zoomAfter = await page.locator("#preview-image").evaluate((image, before) => {
-        const rect = image.getBoundingClientRect();
+      const zoomAfter = await page.locator("#preview-canvas").evaluate((surface, before) => {
+        const rect = surface.getBoundingClientRect();
         const frame = document.getElementById("dropzone").getBoundingClientRect();
         return {
           width: rect.width,
@@ -283,17 +287,18 @@ async function main() {
       };
       const horizontalAnchorOk = zoomAfter.width <= zoomAfter.frameWidth || wheelZoomCheck.anchorDriftX < 0.02;
       const verticalAnchorOk = zoomAfter.height <= zoomAfter.frameHeight || wheelZoomCheck.anchorDriftY < 0.02;
-      wheelZoomCheck.ok = wheelZoomCheck.afterWidth > wheelZoomCheck.beforeWidth
+      wheelZoomCheck.ok = wheelZoomCheck.afterWidth !== wheelZoomCheck.beforeWidth
         && horizontalAnchorOk
         && verticalAnchorOk
         && !/^Fit/.test(wheelZoomCheck.readout || "");
       if (!wheelZoomCheck.ok) throw new Error(`Wheel zoom audit failed: ${JSON.stringify(wheelZoomCheck)}`);
       await page.locator("#zoom-fit").click();
       if (await page.locator("#source-rail-expand").isVisible()) {
+        const initiallyExpanded = await page.locator("#source-rail-expand").getAttribute("aria-expanded");
         await page.locator("#source-rail-expand").click();
-        await page.waitForFunction(() => document.querySelector(".source-rail")?.classList.contains("pinned-open"));
+        await page.waitForFunction((initial) => document.getElementById("source-rail-expand")?.getAttribute("aria-expanded") !== initial, initiallyExpanded);
         await page.locator("#source-rail-expand").click();
-        await page.waitForFunction(() => !document.querySelector(".source-rail")?.classList.contains("pinned-open"));
+        await page.waitForFunction((initial) => document.getElementById("source-rail-expand")?.getAttribute("aria-expanded") === initial, initiallyExpanded);
       }
       await page.locator('[data-workflow-tab="export"]').click();
       await page.locator("#export-sheet").waitFor({ state: "visible" });

@@ -15,6 +15,9 @@
       this.available = false;
       this.detail = "WebGPU has not been initialized";
       this.renderSerial = 0;
+      this.paramBuffer = null;
+      this.curveBuffer = null;
+      this.surfaceKey = null;
     }
 
     async initialize() {
@@ -35,9 +38,10 @@
         this.device.lost.then((info) => {
           this.available = false;
           this.detail = `WebGPU device lost: ${info.message || info.reason}`;
+          window.dispatchEvent(new CustomEvent("hdrfinisher:webgpulost", { detail: { message: this.detail } }));
         });
         this.available = true;
-        this.detail = "WebGPU draft renderer ready";
+        this.detail = "WebGPU settled authoring renderer ready";
         return true;
       } catch (error) {
         this.available = false;
@@ -59,22 +63,28 @@
       const proxy = await this.loadProxy(sessionId, lane, longEdge);
       if (serial !== this.renderSerial || !proxy) return false;
 
-      this.canvas.width = proxy.width;
-      this.canvas.height = proxy.height;
+      if (this.canvas.width !== proxy.width) this.canvas.width = proxy.width;
+      if (this.canvas.height !== proxy.height) this.canvas.height = proxy.height;
       const surface = this.configureSurface(lane === "hdr");
       const pipeline = this.pipelineFor(surface.format);
       const params = buildParams(lane, adjustments, proxy.workingSpace, surface.hdr);
       const curves = buildCurves(lane, adjustments, curveSampler);
-      const paramBuffer = this.createStorageBuffer(params);
-      const curveBuffer = this.createStorageBuffer(curves);
-      const bindGroup = this.device.createBindGroup({
-        layout: pipeline.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: proxy.texture.createView() },
-          { binding: 1, resource: { buffer: paramBuffer } },
-          { binding: 2, resource: { buffer: curveBuffer } },
-        ],
-      });
+      this.ensureStorageBuffers(params.byteLength, curves.byteLength);
+      this.device.queue.writeBuffer(this.paramBuffer, 0, params);
+      this.device.queue.writeBuffer(this.curveBuffer, 0, curves);
+      proxy.bindGroups ||= new Map();
+      let bindGroup = proxy.bindGroups.get(surface.format);
+      if (!bindGroup) {
+        bindGroup = this.device.createBindGroup({
+          layout: pipeline.getBindGroupLayout(0),
+          entries: [
+            { binding: 0, resource: proxy.texture.createView() },
+            { binding: 1, resource: { buffer: this.paramBuffer } },
+            { binding: 2, resource: { buffer: this.curveBuffer } },
+          ],
+        });
+        proxy.bindGroups.set(surface.format, bindGroup);
+      }
       const encoder = this.device.createCommandEncoder();
       const pass = encoder.beginRenderPass({
         colorAttachments: [{
@@ -89,11 +99,7 @@
       pass.draw(3);
       pass.end();
       this.device.queue.submit([encoder.finish()]);
-      this.device.queue.onSubmittedWorkDone().finally(() => {
-        paramBuffer.destroy();
-        curveBuffer.destroy();
-      });
-      return { width: proxy.width, height: proxy.height, hdr: surface.hdr };
+      return { width: proxy.width, height: proxy.height, hdr: surface.hdr, proxyFormat: proxy.pixelFormat };
     }
 
     configureSurface(wantsHdr) {
@@ -101,20 +107,28 @@
       if (wantsHdr && hdrDisplay) {
         try {
           const format = "rgba16float";
-          this.context.configure({
-            device: this.device,
-            format,
-            colorSpace: "display-p3",
-            toneMapping: { mode: "extended" },
-            alphaMode: "opaque",
-          });
+          const key = `${format}:display-p3:extended:${this.canvas.width}x${this.canvas.height}`;
+          if (this.surfaceKey !== key) {
+            this.context.configure({
+              device: this.device,
+              format,
+              colorSpace: "display-p3",
+              toneMapping: { mode: "extended" },
+              alphaMode: "opaque",
+            });
+            this.surfaceKey = key;
+          }
           return { format, hdr: true };
         } catch {
           // Older WebGPU implementations still provide a fast SDR draft.
         }
       }
       const format = navigator.gpu.getPreferredCanvasFormat();
-      this.context.configure({ device: this.device, format, colorSpace: "srgb", alphaMode: "opaque" });
+      const key = `${format}:srgb:standard:${this.canvas.width}x${this.canvas.height}`;
+      if (this.surfaceKey !== key) {
+        this.context.configure({ device: this.device, format, colorSpace: "srgb", alphaMode: "opaque" });
+        this.surfaceKey = key;
+      }
       return { format, hdr: false };
     }
 
@@ -130,29 +144,53 @@
       return pipeline;
     }
 
+    ensureStorageBuffers(paramBytes, curveBytes) {
+      if (!this.paramBuffer) {
+        this.paramBuffer = this.device.createBuffer({
+          size: Math.max(16, Math.ceil(paramBytes / 4) * 4),
+          usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        });
+      }
+      if (!this.curveBuffer) {
+        this.curveBuffer = this.device.createBuffer({
+          size: Math.max(16, Math.ceil(curveBytes / 4) * 4),
+          usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        });
+      }
+    }
+
+    trimProxyLevels(sessionId, lane) {
+      const prefix = `${sessionId}:${lane}:`;
+      const keys = [...this.proxies.keys()].filter((key) => key.startsWith(prefix));
+      while (keys.length > 2) {
+        const key = keys.shift();
+        this.proxies.get(key)?.texture?.destroy();
+        this.proxies.delete(key);
+      }
+    }
+
     createStorageBuffer(values) {
       const size = Math.max(16, Math.ceil(values.byteLength / 4) * 4);
-      const buffer = this.device.createBuffer({
+      return this.device.createBuffer({
         size,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
       });
-      this.device.queue.writeBuffer(buffer, 0, values);
-      return buffer;
     }
 
     async loadProxy(sessionId, lane, longEdge) {
       const key = `${sessionId}:${lane}:${longEdge}`;
       if (this.proxies.has(key)) return this.proxies.get(key);
-      const response = await fetch(`/api/session/${sessionId}/proxy/${lane}?long_edge=${longEdge}`);
+      const response = await fetch(`/api/session/${sessionId}/proxy/${lane}?long_edge=${longEdge}&format=rgba16f`);
       if (!response.ok) throw new Error("WebGPU proxy could not be loaded");
       const width = Number(response.headers.get("X-Image-Width"));
       const height = Number(response.headers.get("X-Image-Height"));
       const bytesPerRow = Number(response.headers.get("X-Bytes-Per-Row"));
       const workingSpace = response.headers.get("X-Working-Space") || "acescg";
+      const pixelFormat = response.headers.get("X-Pixel-Format") || "rgba32float";
       const data = await response.arrayBuffer();
       const texture = this.device.createTexture({
         size: { width, height },
-        format: "rgba32float",
+        format: pixelFormat,
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
       });
       this.device.queue.writeTexture(
@@ -161,8 +199,9 @@
         { offset: 0, bytesPerRow, rowsPerImage: height },
         { width, height },
       );
-      const proxy = { texture, width, height, workingSpace };
+      const proxy = { texture, width, height, workingSpace, pixelFormat, bindGroups: new Map() };
       this.proxies.set(key, proxy);
+      this.trimProxyLevels(sessionId, lane);
       return proxy;
     }
   }

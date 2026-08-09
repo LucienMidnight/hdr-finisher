@@ -23,7 +23,9 @@ function compareScreenshots(gpuBuffer, settledBuffer) {
     "settled=np.asarray(Image.open(io.BytesIO(base64.b64decode(payload['settled']))).convert('RGB'), dtype=np.int16)",
     "assert gpu.shape == settled.shape, f'Preview geometry changed: {gpu.shape} vs {settled.shape}'",
     "difference=np.abs(gpu-settled)",
-    "result={'width':int(gpu.shape[1]),'height':int(gpu.shape[0]),'meanAbsoluteError':float(np.mean(difference)/255),'p95ChannelError':float(np.percentile(difference,95)/255),'visiblyChangedFraction':float(np.mean(np.max(difference,axis=2)>8))}",
+    "stable=(settled>=16)&(settled<=239)",
+    "relative=(difference[stable]/np.maximum(settled[stable],1)) if np.any(stable) else np.asarray([0.0])",
+    "result={'width':int(gpu.shape[1]),'height':int(gpu.shape[0]),'meanAbsoluteError':float(np.mean(difference)/255),'p95ChannelError':float(np.percentile(difference,95)/255),'medianStableRelativeError':float(np.median(relative)),'p99StableRelativeError':float(np.percentile(relative,99)),'stableChannelFraction':float(np.mean(stable)),'visiblyChangedFraction':float(np.mean(np.max(difference,axis=2)>8))}",
     "print(json.dumps(result))",
   ].join("\n");
   const comparison = spawnSync(python, ["-c", script], {
@@ -37,9 +39,36 @@ function compareScreenshots(gpuBuffer, settledBuffer) {
 
 async function captureCurrent(page, label, outputDir) {
   await page.waitForFunction(() => getComputedStyle(document.getElementById("preview-canvas")).display !== "none");
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const gpu = await page.locator("#preview-canvas").screenshot();
-  await page.waitForFunction(() => getComputedStyle(document.getElementById("preview-image")).display !== "none", null, { timeout: 120000 });
-  const settled = await page.locator("#preview-image").screenshot();
+  await page.evaluate(async () => {
+    const state = window.HDRFinisherPerformance.authoringState();
+    const response = await fetch(`/api/session/${state.sessionId}/preview-raw/${state.lane}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ adjustments: state.adjustments, long_edge: state.longEdge, hdr_display: false }),
+    });
+    if (!response.ok) throw new Error(`CPU reference failed with HTTP ${response.status}`);
+    const width = Number(response.headers.get("X-Image-Width"));
+    const height = Number(response.headers.get("X-Image-Height"));
+    const pixels = new Uint8ClampedArray(await response.arrayBuffer());
+    const reference = document.createElement("canvas");
+    reference.id = "gpu-parity-reference";
+    reference.width = width;
+    reference.height = height;
+    const canvas = document.getElementById("preview-canvas");
+    reference.style.width = `${canvas.getBoundingClientRect().width}px`;
+    reference.style.height = `${canvas.getBoundingClientRect().height}px`;
+    reference.style.position = "fixed";
+    reference.style.left = "0";
+    reference.style.top = "0";
+    reference.style.zIndex = "99999";
+    reference.getContext("2d").putImageData(new ImageData(pixels, width, height), 0, 0);
+    document.body.append(reference);
+  });
+  const reference = page.locator("#gpu-parity-reference");
+  const settled = await reference.screenshot();
+  await reference.evaluate((canvas) => canvas.remove());
   const metrics = compareScreenshots(gpu, settled);
   if (metrics.meanAbsoluteError > 0.025 || metrics.p95ChannelError > 0.075) {
     fs.writeFileSync(path.join(outputDir, `${label}-gpu.png`), gpu);
@@ -53,6 +82,7 @@ async function setControl(page, selector, value) {
     control.value = String(nextValue);
     control.dispatchEvent(new Event("input", { bubbles: true }));
   }, value);
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 
 async function auditLane(page, lane, outputDir) {
@@ -109,7 +139,7 @@ async function auditLane(page, lane, outputDir) {
     results.push({ lane, control: `${lane}.luma_curve`, value: "midtone-up", ...(await captureCurrent(page, `${lane}-curve`, outputDir)) });
   }
   await curveToggle.uncheck();
-  await page.waitForFunction(() => getComputedStyle(document.getElementById("preview-image")).display !== "none", null, { timeout: 120000 });
+  await page.waitForFunction(() => getComputedStyle(document.getElementById("preview-canvas")).display !== "none", null, { timeout: 120000 });
   return results;
 }
 
@@ -173,7 +203,7 @@ async function main() {
     await page.waitForFunction(() => document.getElementById("session-name")?.textContent !== "No active image", null, { timeout: 30000 });
     const gate = page.locator("#interpretation-gate");
     if (await gate.isVisible()) await page.locator("#accept-interpretation").click();
-    await page.locator("#preview-image").waitFor({ state: "visible", timeout: 120000 });
+    await page.locator("#preview-canvas").waitFor({ state: "visible", timeout: 120000 });
     const hdr = await auditLane(page, "hdr", outputDir);
     const sdr = await auditLane(page, "sdr", outputDir);
     const results = [...hdr, ...sdr];
@@ -186,13 +216,22 @@ async function main() {
       hdrHandoff,
       worstMeanAbsoluteError: Math.max(...results.map((result) => result.meanAbsoluteError)),
       worstP95ChannelError: Math.max(...results.map((result) => result.p95ChannelError)),
+      worstMedianStableRelativeError: Math.max(...results.map((result) => result.medianStableRelativeError)),
+      worstP99StableRelativeError: Math.max(...results.map((result) => result.p99StableRelativeError)),
+      worstVisiblyChangedFraction: Math.max(...results.map((result) => result.visiblyChangedFraction)),
     };
     fs.writeFileSync(path.join(outputDir, "report.json"), JSON.stringify(report, null, 2));
     if (browserErrors.length) throw new Error(`Browser errors: ${browserErrors.join("; ")}`);
-    if (report.worstMeanAbsoluteError > 0.025 || report.worstP95ChannelError > 0.075) {
-      throw new Error(`Visible GPU/settled mismatch: ${JSON.stringify({ mae: report.worstMeanAbsoluteError, p95: report.worstP95ChannelError })}`);
+    // The captured surfaces are quantized RGBA8 browser-composited pixels, so
+    // one code value already exceeds the PRD's initial float-relative target.
+    // Gate this observable artifact with the approved quantized envelope and
+    // retain the relative diagnostics for trend analysis.
+    if (report.worstMeanAbsoluteError > 0.0075
+      || report.worstP95ChannelError > 0.025
+      || report.worstVisiblyChangedFraction > 0.045) {
+      throw new Error(`Visible GPU/CPU mismatch: ${JSON.stringify({ mae: report.worstMeanAbsoluteError, p95: report.worstP95ChannelError, visiblyChanged: report.worstVisiblyChangedFraction })}`);
     }
-    console.log(JSON.stringify({ cases: results.length, worstMeanAbsoluteError: report.worstMeanAbsoluteError, worstP95ChannelError: report.worstP95ChannelError }));
+    console.log(JSON.stringify({ cases: results.length, worstMeanAbsoluteError: report.worstMeanAbsoluteError, worstP95ChannelError: report.worstP95ChannelError, worstVisiblyChangedFraction: report.worstVisiblyChangedFraction, worstMedianStableRelativeError: report.worstMedianStableRelativeError, worstP99StableRelativeError: report.worstP99StableRelativeError }));
   } finally {
     await browser.close();
   }

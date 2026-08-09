@@ -88,6 +88,9 @@ def _build_hdr_histogram(processed: np.ndarray, bins: int) -> ScopeResponse:
         guides=HDR_GUIDES,
         stats=_hdr_stats(luminance_nits),
         channels=channels,
+        normalization_peak=_normalization_peak(channels),
+        peak_value=float(np.max(luminance_nits)),
+        clipped=bool(np.any(luminance_nits >= 10000.0)),
     )
 
 
@@ -110,6 +113,9 @@ def _build_sdr_histogram(processed: np.ndarray, bins: int) -> ScopeResponse:
         guides=SDR_GUIDES,
         stats=_sdr_stats(luma),
         channels=channels,
+        normalization_peak=_normalization_peak(channels),
+        peak_value=float(np.max(luma)),
+        clipped=bool(np.any(luma >= 1.0)),
     )
 
 
@@ -132,6 +138,9 @@ def _build_waveform(processed: np.ndarray, kind: PreviewKind, bins: int, columns
             guides=HDR_GUIDES,
             stats=_hdr_stats(luminance_nits),
             channels=channels,
+            normalization_peak=_normalization_peak(channels),
+            peak_value=float(np.max(luminance_nits)),
+            clipped=bool(np.any(luminance_nits >= 10000.0)),
         )
 
     edges = np.linspace(0.0, 1.0, bins + 1, dtype=np.float32)
@@ -149,22 +158,40 @@ def _build_waveform(processed: np.ndarray, kind: PreviewKind, bins: int, columns
         guides=SDR_GUIDES,
         stats=_sdr_stats(luma),
         channels=channels,
+        normalization_peak=_normalization_peak(channels),
+        peak_value=float(np.max(luma)),
+        clipped=bool(np.any(luma >= 1.0)),
     )
 
 
 def _waveform_grid(values: np.ndarray, edges: np.ndarray, columns: int) -> list[list[int]]:
-    height, width = values.shape[:2]
+    """Build a waveform with one vectorized bincount instead of a Python loop per column."""
+    _height, width = values.shape[:2]
     output_columns = max(1, min(columns, width))
+    bin_count = len(edges) - 1
+    bin_indices = np.searchsorted(edges, values, side="right") - 1
+    np.clip(bin_indices, 0, bin_count - 1, out=bin_indices)
     column_edges = np.linspace(0, width, output_columns + 1, dtype=np.int32)
-    grid = np.zeros((len(edges) - 1, output_columns), dtype=np.int32)
+    target_columns = np.repeat(np.arange(output_columns, dtype=np.int64), np.diff(column_edges))
+    combined = bin_indices.astype(np.int64, copy=False) * output_columns + target_columns[None, :]
+    grid = np.bincount(combined.reshape(-1), minlength=bin_count * output_columns)
+    return grid.reshape(bin_count, output_columns).astype(np.int32, copy=False).tolist()
 
-    for target_x in range(output_columns):
-        start = int(column_edges[target_x])
-        stop = max(start + 1, int(column_edges[target_x + 1]))
-        column_values = values[:, start:stop].reshape(-1)
-        hist, _ = np.histogram(column_values, bins=edges)
-        grid[:, target_x] = hist.astype(np.int32)
-    return grid.tolist()
+
+def _normalization_peak(channels: list[HistogramChannel]) -> int:
+    populations: list[np.ndarray] = []
+    for channel in channels:
+        values = channel.bins if channel.bins else [value for row in channel.grid for value in row]
+        if values:
+            positive = np.asarray(values, dtype=np.int64)
+            positive = positive[positive > 0]
+            if positive.size:
+                populations.append(positive)
+    if not populations:
+        return 1
+    combined = np.concatenate(populations)
+    percentile = 99.5 if any(channel.grid for channel in channels) else 98.5
+    return max(1, int(np.percentile(combined, percentile)))
 
 
 def _hdr_edges(bins: int) -> np.ndarray:

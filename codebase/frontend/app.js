@@ -79,6 +79,8 @@ const LAYOUT_LIMITS = {
   dockH: [240, 340],
 };
 const LAYOUT_SETTLE_DELAY = 120;
+const HIGH_QUALITY_PREVIEW_KEY = "hdr-finisher:high-quality-preview:v1";
+const waveformCanvasCache = new WeakMap();
 
 const state = {
   session: null,
@@ -95,6 +97,10 @@ const state = {
   activeDockTab: "histogram",
   dockCollapsed: false,
   lastScope: null,
+  scopeGeneration: 0,
+  highQualityPreview: false,
+  previewScheduler: null,
+  gpuPreparedLane: { hdr: false, sdr: false },
   scopeZoneOverlay: null,
   lastExportPath: "",
   defaultExportDirectory: "",
@@ -374,9 +380,6 @@ const els = {
   sourceRailExpand: document.getElementById("source-rail-expand"),
   capabilitySummary: document.getElementById("capability-summary"),
   workflowTabs: [...document.querySelectorAll("[data-workflow-tab]")],
-  overrideWarning: document.getElementById("override-warning"),
-  overrideMessage: document.getElementById("override-message"),
-  attentionFix: document.getElementById("attention-fix"),
   sourceSettingsToggle: document.getElementById("source-settings-toggle"),
   sourceSettingsPanel: document.getElementById("source-settings-panel"),
   interpretationSummary: document.getElementById("interpretation-summary"),
@@ -451,6 +454,7 @@ const els = {
   scopeTitle: document.getElementById("scope-title"),
   scopeNote: document.getElementById("scope-note"),
   scopeKindLabel: document.getElementById("scope-kind-label"),
+  scopeFreshness: document.getElementById("scope-freshness"),
   scopeMode: document.getElementById("scope-mode"),
   scopeChannelMode: document.getElementById("scope-channel-mode"),
   scopeStats: document.getElementById("scope-stats"),
@@ -461,6 +465,7 @@ const els = {
   dockTabs: [...document.querySelectorAll("[data-dock-tab]")],
   scopeView: document.getElementById("scope-view"),
   technicalView: document.getElementById("technical-view"),
+  highQualityPreview: document.getElementById("high-quality-preview"),
   exportSheet: document.getElementById("export-sheet"),
   exportConfirmButton: document.getElementById("export-confirm-button"),
   exportStatus: document.getElementById("export-status"),
@@ -538,7 +543,9 @@ const capabilityForFormat = {
 boot();
 
 async function boot() {
+  restorePreviewPreference();
   initializeInstrumentShell();
+  initializePreviewScheduler();
   activateWorkflowTab("import", { focus: false });
   bindEvents();
   await initializeGpuPreview();
@@ -565,6 +572,42 @@ async function initializeGpuPreview() {
   state.gpuPreview = new window.HDRWebGPUPreview(els.previewCanvas);
   await state.gpuPreview.initialize();
   state.displayInfo.gpu = state.gpuPreview.detail;
+}
+
+function restorePreviewPreference() {
+  try {
+    state.highQualityPreview = localStorage.getItem(HIGH_QUALITY_PREVIEW_KEY) === "true";
+  } catch {
+    state.highQualityPreview = false;
+  }
+  if (els.highQualityPreview) els.highQualityPreview.checked = state.highQualityPreview;
+}
+
+function initializePreviewScheduler() {
+  if (!window.HDRPreviewScheduler) return;
+  state.previewScheduler = new window.HDRPreviewScheduler({
+    highQuality: () => state.highQualityPreview,
+    onFrame: (task) => renderGpuDraft(task.lane, { longEdge: interactiveProxyLongEdge() }),
+    onScope: (task) => refreshScopes(scopeLongEdge(task.tier), {
+      tier: task.tier,
+      generation: task.scopeGeneration,
+      lane: task.lane,
+    }),
+    onSettle: (task) => settlePreview(task.lane, task),
+    onRefine: (task) => refinePreview(task.lane, task),
+    onInactive: (task) => preloadInactiveLane(task.lane, task.applicationGeneration),
+  });
+  window.HDRFinisherPerformance = {
+    snapshot: () => state.previewScheduler.snapshot(),
+    sessionId: () => state.session?.session_id || null,
+    previewMode: () => state.highQualityPreview ? "high-quality" : state.gpuPreview?.available ? "fast" : "cpu-fallback",
+    authoringState: () => ({
+      sessionId: state.session?.session_id || null,
+      lane: state.currentView,
+      adjustments: JSON.parse(JSON.stringify(state.adjustments)),
+      longEdge: settledProxyLongEdge(),
+    }),
+  };
 }
 
 function observeScopeSize() {
@@ -918,6 +961,9 @@ function bindInstrumentRangePointer(control, shell) {
 }
 
 function bindEvents() {
+  window.addEventListener("unhandledrejection", (event) => {
+    if (event.reason?.name === "AbortError") event.preventDefault();
+  });
   els.workflowTabs.forEach((button) => {
     button.addEventListener("click", () => activateWorkflowTab(button.dataset.workflowTab));
     button.addEventListener("keydown", (event) => {
@@ -967,10 +1013,8 @@ function bindEvents() {
     state.metadataOpen = !state.metadataOpen;
     renderMetadataVisibility();
   });
-  els.attentionFix.addEventListener("click", openManualInterpretation);
   els.acceptInterpretation.addEventListener("click", () => {
     state.interpretationGateDismissed = true;
-    els.overrideWarning.classList.add("hidden");
     els.sourceConfidence.textContent = "Assumption accepted";
     els.interpretationSummary.textContent = "Auto assumption";
     renderInterpretationGate();
@@ -982,11 +1026,26 @@ function bindEvents() {
   });
   els.scopeMode.addEventListener("change", async () => {
     state.scopeMode = els.scopeMode.value;
-    await refreshScopes();
+    await refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
   });
   els.scopeChannelMode.addEventListener("change", async () => {
     state.scopeChannelMode = els.scopeChannelMode.value;
-    await refreshScopes();
+    await refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
+  });
+  els.highQualityPreview?.addEventListener("change", () => {
+    state.highQualityPreview = els.highQualityPreview.checked;
+    try {
+      localStorage.setItem(HIGH_QUALITY_PREVIEW_KEY, String(state.highQualityPreview));
+    } catch {
+      // Private browsing can deny storage; the in-memory preference still works.
+    }
+    state.gpuPreview?.resetSession(state.session?.session_id || null);
+    state.gpuPreparedLane = { hdr: false, sdr: false };
+    if (state.session) {
+      invalidatePreview(state.currentView);
+      debouncePreview(state.currentView);
+    }
+    renderReadouts();
   });
 
   ["dragenter", "dragover"].forEach((eventName) => {
@@ -1017,6 +1076,10 @@ function bindEvents() {
   });
 
   els.controls.forEach((control) => {
+    control.addEventListener("pointerdown", () => state.previewScheduler?.beginInteraction());
+    ["pointerup", "pointercancel", "change"].forEach((eventName) => {
+      control.addEventListener(eventName, () => state.previewScheduler?.endInteraction());
+    });
     control.addEventListener("input", () => {
       const value = control.type === "range" ? Number(control.value) : control.type === "checkbox" ? control.checked : control.value;
       setValueByPath(state.adjustments, control.dataset.path, value);
@@ -1163,6 +1226,12 @@ function bindEvents() {
 
   bindCompareControl();
   bindKeyboardShortcuts();
+  window.addEventListener("hdrfinisher:webgpulost", (event) => {
+    state.displayInfo.gpu = event.detail?.message || "WebGPU device lost; using CPU fallback";
+    state.gpuSurfaceHdr = false;
+    renderReadouts();
+    if (state.session) settlePreview(state.currentView).catch(() => null);
+  });
   if (window.matchMedia) {
     ["(dynamic-range: high)", "(color-gamut: p3)", "(color-gamut: rec2020)"].forEach((query) => {
       const media = window.matchMedia(query);
@@ -1204,7 +1273,7 @@ async function uploadFile(file) {
   const formData = new FormData();
   formData.append("file", file);
   els.badge.textContent = "Loading image and building session...";
-  setPreviewMessage("Preparing session...");
+  setPreviewMessage("Reading source file...", 8);
   try {
     const response = await fetch("/api/session", { method: "POST", body: formData });
     const payload = await safeJson(response);
@@ -1214,6 +1283,7 @@ async function uploadFile(file) {
       return;
     }
     state.session = payload.session;
+    setPreviewMessage("Source decoded. Preparing preview...", 28);
     state.adjustments = payload.session.adjustments;
     state.currentView = "hdr";
     activateWorkflowTab("grade", { focus: false });
@@ -1225,8 +1295,13 @@ async function uploadFile(file) {
     invalidatePreview("sdr");
     renderSession();
     seedExportFieldsFromSession();
-    await renderGpuDraft("hdr");
-    await Promise.all([refreshPreview(), refreshOverlay(), refreshScopes(state.session.preview?.long_edge || 1600)]);
+    const gpuReady = await renderGpuDraft("hdr", { hideStatus: false, longEdge: settledProxyLongEdge() });
+    await Promise.all([
+      gpuReady ? Promise.resolve(true) : refreshPreview({ progressSteps: [36, 76, 92] }),
+      refreshOverlay(),
+      refreshScopes(scopeLongEdge("settled"), { tier: "settled" }),
+    ]);
+    hidePreviewMessage();
     prepareInactivePreview();
   } catch (error) {
     console.error(error);
@@ -1271,7 +1346,6 @@ async function ejectCurrentSession() {
   els.fileSummary.textContent = "Import one HDR-capable source to begin";
   els.sourceConfidence.textContent = "Waiting";
   els.metadataList.innerHTML = "";
-  els.overrideWarning.classList.add("hidden");
   els.sourceSettingsPanel.classList.add("hidden");
   els.interpretationMode.value = "auto";
   els.interpretationColorSpace.value = "auto";
@@ -1306,11 +1380,8 @@ function renderSession() {
   const session = state.session;
   els.sessionName.textContent = session.source.filename;
   clearPreviewOverlay();
-  setPreviewMessage(`Rendering ${state.currentView.toUpperCase()} preview...`);
   els.badge.textContent = session.analysis.badge_message;
   els.badge.className = badgeClass(session.analysis.classification);
-  els.overrideWarning.classList.toggle("hidden", !session.analysis.needs_color_override);
-  els.overrideMessage.textContent = overrideMessage(session);
   els.interpretationSummary.textContent = interpretationSummary(session);
   els.sourceConfidence.textContent = session.source.color_space_confident ? "Confirmed" : "Review";
   els.fileSummary.textContent = `${session.source.suffix.toUpperCase()} · ${session.source.width} × ${session.source.height} · ${session.source.working_space}`;
@@ -1379,6 +1450,8 @@ function renderOverlayPresetNote() {
 function previewOutputEntries() {
   return [
     ["View", state.currentView.toUpperCase()],
+    ["Preview Mode", state.highQualityPreview ? "High quality" : "Fast"],
+    ["Scope", els.scopeFreshness?.textContent || "Waiting"],
     ["Transport", state.previewInfo.transport],
     ["Media", state.previewInfo.mediaType],
     ["Space", state.previewInfo.colorSpace],
@@ -1482,19 +1555,13 @@ function applyLatitudePresets(latitude) {
 }
 
 function debouncePreview(lane = state.currentView) {
-  if (lane === state.currentView) queueGpuDraft(lane);
-  window.clearTimeout(state.refreshTimer);
-  window.clearTimeout(state.settleTimer);
-  const gpuDraftActive = Boolean(state.gpuPreview?.available && lane === state.currentView);
-  state.refreshTimer = window.setTimeout(async () => {
-    if (lane === state.currentView) {
-      if (gpuDraftActive) await refreshScopes(960);
-      else await Promise.all([renderPreviewForLane(lane, true, 960), refreshScopes(960)]);
-    } else {
-      await renderPreviewForLane(lane, false, 960);
-    }
-  }, 90);
-  state.settleTimer = window.setTimeout(() => settlePreview(lane), gpuDraftActive ? 240 : 320);
+  if (!state.previewScheduler) {
+    queueGpuDraft(lane);
+    window.clearTimeout(state.settleTimer);
+    state.settleTimer = window.setTimeout(() => settlePreview(lane), 120);
+    return;
+  }
+  state.previewScheduler.schedule(lane, state.previewGeneration[lane]);
 }
 
 function queueGpuDraft(lane = state.currentView) {
@@ -1508,21 +1575,52 @@ function queueGpuDraft(lane = state.currentView) {
   });
 }
 
-async function settlePreview(lane = state.currentView) {
+async function settlePreview(lane = state.currentView, task = {}) {
   if (!state.session) return;
   const display = lane === state.currentView;
-  const longEdge = state.session.preview?.long_edge || 1600;
+  const longEdge = settledProxyLongEdge();
   if (display) {
-    await Promise.all([
-      renderPreviewForLane(lane, true, longEdge),
-      refreshOverlay(longEdge),
-      refreshScopes(longEdge),
-    ]);
+    if (state.gpuPreview?.available) {
+      const rendered = await renderGpuDraft(lane, { longEdge });
+      if (rendered) await refreshOverlay(longEdge);
+      else await renderPreviewForLane(lane, true, longEdge, { showProgress: false });
+    } else {
+      await renderPreviewForLane(lane, true, longEdge, { showProgress: false });
+    }
     prepareInactivePreview();
   } else {
-    await renderPreviewForLane(lane, false, longEdge);
+    state.previewScheduler?.scheduleInactive(lane, state.previewGeneration[lane]);
   }
   window.HDRProofing?.settled(lane);
+}
+
+async function refinePreview(lane, task = {}) {
+  if (!state.session || !state.highQualityPreview || lane !== state.currentView || !state.gpuPreview?.available) return;
+  if (task.applicationGeneration !== undefined && task.applicationGeneration !== state.previewGeneration[lane]) return;
+  await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
+}
+
+function displayedLongEdge() {
+  const rect = els.dropzone.getBoundingClientRect();
+  return Math.max(rect.width, rect.height) * Math.max(1, window.devicePixelRatio || 1);
+}
+
+function interactiveProxyLongEdge() {
+  return Math.round(clamp(displayedLongEdge(), 512, 1024));
+}
+
+function settledProxyLongEdge() {
+  return Math.round(clamp(displayedLongEdge(), 768, state.highQualityPreview ? 1200 : 1200));
+}
+
+function refinementProxyLongEdge() {
+  return Math.round(clamp(displayedLongEdge() * 1.5, 1600, 2000));
+}
+
+function scopeLongEdge(tier) {
+  if (tier === "interactive") return Math.min(768, interactiveProxyLongEdge());
+  if (tier === "refinement") return Math.min(1600, refinementProxyLongEdge());
+  return Math.min(1200, settledProxyLongEdge());
 }
 
 function debounceOverlayAndScopes() {
@@ -1534,12 +1632,18 @@ function debounceOverlayAndScopes() {
   }, 120);
 }
 
-async function refreshPreview() {
-  return renderPreviewForLane(state.currentView, true, state.session?.preview?.long_edge || 1600);
+async function refreshPreview(options = {}) {
+  return renderPreviewForLane(state.currentView, true, state.session?.preview?.long_edge || 1600, options);
 }
 
-async function renderPreviewForLane(lane, displayWhenReady, longEdge = 1600) {
+async function renderPreviewForLane(
+  lane,
+  displayWhenReady,
+  longEdge = 1600,
+  { showProgress = true, progressSteps = [12, 76, 92], raw = !state.gpuPreview?.available } = {},
+) {
   if (!state.session) return false;
+  if (raw) return renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showProgress });
   const cached = state.previewCache[lane];
   const generation = state.previewGeneration[lane];
   if (cached?.generation === generation && (cached.longEdge || 0) >= longEdge) {
@@ -1551,7 +1655,7 @@ async function renderPreviewForLane(lane, displayWhenReady, longEdge = 1600) {
   state.previewControllers[lane]?.abort();
   const controller = new AbortController();
   state.previewControllers[lane] = controller;
-  if (displayWhenReady) setPreviewMessage(`Rendering ${lane.toUpperCase()} preview...`);
+  if (displayWhenReady && showProgress) setPreviewMessage(`Rendering ${lane.toUpperCase()} preview...`, progressSteps[0]);
 
   const response = await fetch(`/api/session/${state.session.session_id}/preview/${lane}`, {
     method: "POST",
@@ -1569,7 +1673,7 @@ async function renderPreviewForLane(lane, displayWhenReady, longEdge = 1600) {
   });
   if (!response || response.aborted) return;
   if (response.status === 409) {
-    if (displayWhenReady) setPreviewMessage("A newer adjustment replaced this render.");
+    if (displayWhenReady && showProgress) setPreviewMessage("A newer adjustment replaced this render.", progressSteps[0]);
     return false;
   }
   if (!response.ok) {
@@ -1582,6 +1686,7 @@ async function renderPreviewForLane(lane, displayWhenReady, longEdge = 1600) {
     return false;
   }
 
+  if (displayWhenReady && showProgress) setPreviewMessage("Processing complete. Decoding preview...", progressSteps[1]);
   const previewInfo = previewInfoFromResponse(response, lane);
   const blob = await response.blob();
   if (generation !== state.previewGeneration[lane]) return false;
@@ -1590,6 +1695,7 @@ async function renderPreviewForLane(lane, displayWhenReady, longEdge = 1600) {
   if (previous?.url) URL.revokeObjectURL(previous.url);
   state.previewCache[lane] = { url, generation, longEdge };
   if (displayWhenReady && state.currentView === lane && !state.comparePeekActive) {
+    if (showProgress) setPreviewMessage("Presenting preview...", progressSteps[2]);
     const keptGpuSurface = shouldKeepHdrGpuSurface(lane)
       && await renderGpuDraft(lane)
       && state.gpuSurfaceHdr;
@@ -1605,6 +1711,78 @@ async function renderPreviewForLane(lane, displayWhenReady, longEdge = 1600) {
   }
   renderCompareStatus();
   return true;
+}
+
+async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showProgress = false } = {}) {
+  const generation = state.previewGeneration[lane];
+  const cached = state.previewCache[lane];
+  if (cached?.raw && cached.generation === generation && cached.longEdge >= longEdge) {
+    if (displayWhenReady && lane === state.currentView) applyRawPreview(cached);
+    return true;
+  }
+  state.previewControllers[lane]?.abort();
+  const controller = new AbortController();
+  state.previewControllers[lane] = controller;
+  if (displayWhenReady && showProgress) setPreviewMessage(`Rendering ${lane.toUpperCase()} canvas preview...`, 24);
+  const response = await fetch(`/api/session/${state.session.session_id}/preview-raw/${lane}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      adjustments: state.adjustments,
+      long_edge: longEdge,
+      generation,
+      tier: "settled",
+      hdr_display: false,
+    }),
+    signal: controller.signal,
+  }).catch((error) => {
+    if (error.name !== "AbortError") console.error(error);
+    return null;
+  });
+  if (!response || response.status === 409 || controller !== state.previewControllers[lane]) return false;
+  if (!response.ok) return false;
+  const width = Number(response.headers.get("X-Image-Width"));
+  const height = Number(response.headers.get("X-Image-Height"));
+  const rawGeneration = Number(response.headers.get("X-Generation"));
+  const data = new Uint8ClampedArray(await response.arrayBuffer());
+  if (generation !== state.previewGeneration[lane] || rawGeneration !== generation) return false;
+  const frame = { raw: data, width, height, generation, longEdge };
+  state.previewCache[lane] = frame;
+  if (displayWhenReady && lane === state.currentView && !state.comparePeekActive) applyRawPreview(frame);
+  state.previewInfoByLane[lane] = {
+    mediaType: "application/octet-stream",
+    transport: "Raw RGBA8",
+    colorSpace: "sRGB",
+    transfer: "sRGB",
+    bitDepth: "8-bit",
+    notes: "Persistent CPU fallback canvas; export quality is unchanged",
+  };
+  return true;
+}
+
+function applyRawPreview(frame) {
+  let canvas = els.previewCanvas;
+  let context = canvas.getContext("2d");
+  if (!context) {
+    const replacement = document.createElement("canvas");
+    replacement.id = canvas.id;
+    replacement.className = canvas.className;
+    canvas.replaceWith(replacement);
+    els.previewCanvas = replacement;
+    canvas = replacement;
+    context = canvas.getContext("2d");
+  }
+  canvas.width = frame.width;
+  canvas.height = frame.height;
+  context.putImageData(new ImageData(frame.raw, frame.width, frame.height), 0, 0);
+  els.previewImage.style.display = "none";
+  canvas.style.display = "block";
+  els.emptyState.style.display = "none";
+  state.gpuSurfaceHdr = false;
+  state.previewInfo = state.previewInfoByLane[state.currentView];
+  hidePreviewMessage();
+  applyZoomGeometry();
+  renderReadouts();
 }
 
 async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 1600) {
@@ -1640,30 +1818,40 @@ async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 16
   await applyOverlayUrl(url);
 }
 
-async function refreshScopes(longEdge = 960) {
+async function refreshScopes(longEdge = 960, { tier = "settled", generation = null, lane = state.currentView } = {}) {
   if (!state.session) return;
   if (state.scopeAbortController) state.scopeAbortController.abort();
   const controller = new AbortController();
   state.scopeAbortController = controller;
-  const lane = state.currentView;
+  const requestGeneration = generation ?? (state.scopeGeneration + 1);
+  state.scopeGeneration = Math.max(state.scopeGeneration, requestGeneration);
   const mode = state.scopeMode;
-  const resolution = mode === "waveform" ? waveformRequestResolution() : null;
-  const resolutionQuery = resolution ? `&bins=${resolution.bins}&columns=${resolution.columns}` : "";
+  const resolution = tier === "interactive"
+    ? { bins: mode === "waveform" ? 128 : 256, columns: 256 }
+    : mode === "waveform" ? waveformRequestResolution() : { bins: 256, columns: 256 };
+  const resolutionQuery = `&bins=${resolution.bins}&columns=${resolution.columns}`;
+  if (!els.scopeFreshness.classList.contains("updating")) {
+    els.scopeFreshness.textContent = "Updating";
+    els.scopeFreshness.classList.add("updating");
+  }
   const response = await fetch(`/api/session/${state.session.session_id}/scopes?kind=${lane}&mode=${mode}&long_edge=${longEdge}${resolutionQuery}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ adjustments: state.adjustments, long_edge: longEdge }),
+    body: JSON.stringify({ adjustments: state.adjustments, long_edge: longEdge, generation: requestGeneration, tier }),
     signal: controller.signal,
   }).catch((error) => {
     if (error.name === "AbortError") return null;
     console.error(error);
     return null;
   });
-  if (!response || controller !== state.scopeAbortController) return;
+  if (!response || response.status === 409 || controller !== state.scopeAbortController) return;
   if (!response.ok) return;
   const payload = await response.json();
   if (controller !== state.scopeAbortController || lane !== state.currentView || mode !== state.scopeMode) return;
+  if (payload.generation !== null && payload.generation !== requestGeneration) return;
   state.lastScope = payload;
+  els.scopeFreshness.textContent = tier === "interactive" ? "Preview" : tier === "refinement" ? "Refined" : "Settled";
+  els.scopeFreshness.classList.remove("updating");
   drawHistogram(payload);
   renderDockSummary();
   renderExportPreflight();
@@ -1886,6 +2074,7 @@ function drawResolveHistogram(ctx, channels, palette, plotLeft, plotTop, plotWid
 }
 
 function robustHistogramPeak(channels) {
+  if (Number.isFinite(state.lastScope?.normalization_peak)) return Math.max(1, state.lastScope.normalization_peak);
   const populations = channels
     .flatMap((channel) => channel.bins || [])
     .filter((value) => Number.isFinite(value) && value > 0)
@@ -1948,6 +2137,7 @@ function drawWaveform(ctx, scope, channels, palette, plotLeft, plotTop, plotWidt
 }
 
 function robustWaveformPeak(channels) {
+  if (Number.isFinite(state.lastScope?.normalization_peak)) return Math.max(1, state.lastScope.normalization_peak);
   const populations = channels
     .flatMap((channel) => (channel.grid || []).flat())
     .filter((value) => Number.isFinite(value) && value > 0)
@@ -1961,6 +2151,9 @@ function waveformDensityCanvas(channel, color, peak) {
   const rowCount = grid.length;
   const columnCount = grid[0]?.length || 0;
   if (!rowCount || !columnCount) return null;
+  const cacheKey = `${color.r},${color.g},${color.b}:${peak}:${rowCount}x${columnCount}`;
+  const cached = waveformCanvasCache.get(channel);
+  if (cached?.key === cacheKey) return cached.canvas;
   const surface = document.createElement("canvas");
   surface.width = columnCount;
   surface.height = rowCount;
@@ -1978,6 +2171,7 @@ function waveformDensityCanvas(channel, color, peak) {
     });
   });
   surfaceContext.putImageData(pixels, 0, 0);
+  waveformCanvasCache.set(channel, { key: cacheKey, canvas: surface });
   return surface;
 }
 
@@ -2168,7 +2362,7 @@ async function applyInterpretationOverride() {
   if (!state.session) return;
   const override = interpretationPayload();
   els.badge.textContent = "Re-interpreting source file...";
-  setPreviewMessage("Rebuilding preview with the new interpretation...");
+  setPreviewMessage("Re-interpreting source file...", 8);
   try {
     const response = await fetch(`/api/session/${state.session.session_id}/interpretation`, {
       method: "POST",
@@ -2183,14 +2377,20 @@ async function applyInterpretationOverride() {
       return;
     }
     state.session = payload.session;
+    setPreviewMessage("Interpretation applied. Preparing preview...", 28);
     state.adjustments = payload.session.adjustments;
     state.interpretationGateDismissed = false;
     invalidatePreview("hdr");
     invalidatePreview("sdr");
     state.gpuPreview?.resetSession(payload.session.session_id);
     renderSession();
-    await renderGpuDraft(state.currentView);
-    await Promise.all([refreshPreview(), refreshOverlay(), refreshScopes(state.session.preview?.long_edge || 1600)]);
+    const gpuReady = await renderGpuDraft(state.currentView, { hideStatus: false, longEdge: settledProxyLongEdge() });
+    await Promise.all([
+      gpuReady ? Promise.resolve(true) : refreshPreview({ progressSteps: [36, 76, 92] }),
+      refreshOverlay(),
+      refreshScopes(scopeLongEdge("settled"), { tier: "settled" }),
+    ]);
+    hidePreviewMessage();
     prepareInactivePreview();
   } catch (error) {
     console.error(error);
@@ -3016,9 +3216,12 @@ async function applyPreviewUrl(url) {
   hidePreviewMessage();
 }
 
-async function renderGpuDraft(lane = state.currentView) {
-  if (!state.session || lane !== state.currentView || !state.gpuPreview?.available) return false;
-  if (state.adjustments.shared.overlay_mode !== "off" || state.comparePeekActive) return false;
+async function renderGpuDraft(
+  lane = state.currentView,
+  { hideStatus = true, longEdge = settledProxyLongEdge(), allowInactive = false } = {},
+) {
+  if (!state.session || (!allowInactive && lane !== state.currentView) || !state.gpuPreview?.available) return false;
+  if (state.comparePeekActive && !allowInactive) return false;
   const serial = ++state.gpuRenderSerial;
   try {
     const result = await state.gpuPreview.render(
@@ -3026,9 +3229,10 @@ async function renderGpuDraft(lane = state.currentView) {
       lane,
       state.adjustments,
       sampleCurvePoints,
-      state.session.preview?.long_edge || 1600,
+      longEdge,
     );
-    if (!result || serial !== state.gpuRenderSerial || lane !== state.currentView) return false;
+    if (!result || serial !== state.gpuRenderSerial || (!allowInactive && lane !== state.currentView)) return false;
+    state.gpuPreparedLane[lane] = true;
     state.gpuSurfaceHdr = Boolean(result.hdr);
     els.previewImage.style.display = "none";
     els.previewCanvas.style.display = "block";
@@ -3038,16 +3242,16 @@ async function renderGpuDraft(lane = state.currentView) {
       transport: "GPU texture",
       colorSpace: result.hdr ? "Display P3 extended" : "sRGB",
       transfer: "linear canvas",
-      bitDepth: result.hdr ? "16-bit float" : "display native",
-      notes: "Interactive GPU draft; settled preview remains export-authoritative",
+      bitDepth: result.proxyFormat === "rgba16float" ? "16-bit float proxy" : "32-bit float proxy",
+      notes: `Settled WebGPU authoring preview · ${longEdge}px proxy · export quality unchanged`,
     };
     state.previewInfoByLane[lane] = state.previewInfo;
     setZoomMode(state.zoomMode);
     renderReadouts();
-    hidePreviewMessage();
+    if (hideStatus) hidePreviewMessage();
     return true;
   } catch (error) {
-    console.warn("WebGPU draft render failed; using backend preview.", error);
+    console.warn("WebGPU authoring render failed; using raw CPU preview.", error);
     state.gpuPreview.available = false;
     state.gpuSurfaceHdr = false;
     state.gpuPreview.detail = error?.message || "WebGPU draft failed";
@@ -3124,9 +3328,11 @@ function clearPreviewOverlay() {
   els.previewOverlay.style.height = "";
 }
 
-function setPreviewMessage(message) {
+function setPreviewMessage(message, progress = 0) {
   els.previewStatusCopy.textContent = message;
-  els.previewProgress.removeAttribute("value");
+  els.previewProgress.value = clamp(Number(progress) || 0, 0, 100);
+  els.previewProgress.max = 100;
+  els.previewProgress.setAttribute("aria-valuetext", `${Math.round(els.previewProgress.value)}% — ${message}`);
   els.previewProgress.classList.remove("hidden");
   els.previewStatus.classList.remove("hidden", "error");
 }
@@ -3140,6 +3346,7 @@ function setPreviewError(message) {
 
 function hidePreviewMessage() {
   els.previewStatusCopy.textContent = "";
+  els.previewProgress.removeAttribute("aria-valuetext");
   els.previewProgress.classList.add("hidden");
   els.previewStatus.classList.add("hidden");
   els.previewStatus.classList.remove("error");
@@ -3322,8 +3529,10 @@ async function switchLane(lane) {
   renderCurveChannelTabs();
   drawCurveEditor();
   renderReadouts();
-  const previewTask = cacheReady(lane) ? showCachedPreview(lane) : refreshPreview();
-  await Promise.all([previewTask, refreshOverlay(), refreshScopes(state.session.preview?.long_edge || 1600)]);
+  const previewTask = state.gpuPreview?.available
+    ? renderGpuDraft(lane, { longEdge: settledProxyLongEdge() })
+    : cacheReady(lane) ? showCachedPreview(lane) : refreshPreview();
+  await Promise.all([previewTask, refreshOverlay(), refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane })]);
   prepareInactivePreview();
 }
 
@@ -3352,6 +3561,7 @@ function invalidatePreview(lane) {
 }
 
 function clearPreviewCache() {
+  state.previewScheduler?.cancel();
   for (const lane of ["hdr", "sdr"]) {
     state.previewControllers[lane]?.abort();
     state.previewControllers[lane] = null;
@@ -3362,20 +3572,28 @@ function clearPreviewCache() {
   }
   state.comparePeekActive = false;
   state.gpuSurfaceHdr = false;
+  state.gpuPreparedLane = { hdr: false, sdr: false };
+  state.scopeGeneration = 0;
+  els.scopeFreshness.textContent = "Waiting";
+  els.scopeFreshness.classList.remove("updating");
   clearPreviewImage();
   window.HDRProofing?.reset();
 }
 
 function cacheReady(lane) {
   const cached = state.previewCache[lane];
-  return Boolean(cached?.url && cached.generation === state.previewGeneration[lane]);
+  return Boolean(
+    state.gpuPreparedLane[lane]
+    || (cached?.generation === state.previewGeneration[lane] && (cached.url || cached.raw)),
+  );
 }
 
 async function showCachedPreview(lane) {
   const cached = state.previewCache[lane];
-  if (!cached?.url) return;
-  if (shouldKeepHdrGpuSurface(lane) && await renderGpuDraft(lane) && state.gpuSurfaceHdr) return;
-  await applyPreviewUrl(cached.url);
+  if (state.gpuPreparedLane[lane] && await renderGpuDraft(lane, { allowInactive: lane !== state.currentView })) return;
+  if (!cached) return;
+  if (cached.raw) applyRawPreview(cached);
+  else if (cached.url) await applyPreviewUrl(cached.url);
   state.previewInfo = state.previewInfoByLane[lane];
   renderReadouts();
 }
@@ -3387,9 +3605,19 @@ function prepareInactivePreview() {
     renderCompareStatus();
     return;
   }
-  window.setTimeout(() => {
-    renderPreviewForLane(other, false).catch(() => null);
-  }, 80);
+  state.previewScheduler?.scheduleInactive(other, state.previewGeneration[other]);
+}
+
+async function preloadInactiveLane(lane, generation) {
+  if (!state.session || generation !== state.previewGeneration[lane] || !state.gpuPreview?.available) return;
+  try {
+    await state.gpuPreview.loadProxy(state.session.session_id, lane, settledProxyLongEdge());
+    if (generation !== state.previewGeneration[lane]) return;
+    state.gpuPreparedLane[lane] = true;
+    renderCompareStatus();
+  } catch (error) {
+    console.debug("Inactive GPU lane preparation skipped.", error);
+  }
 }
 
 function renderCompareStatus() {
@@ -3510,11 +3738,8 @@ function setZoomMode(mode) {
 }
 
 function shouldKeepHdrGpuSurface(lane) {
-  return lane === "hdr"
-    && lane === state.currentView
+  return lane === state.currentView
     && Boolean(state.gpuPreview?.available)
-    && mediaQueryMatch("(dynamic-range: high)")
-    && state.adjustments.shared.overlay_mode === "off"
     && !state.comparePeekActive;
 }
 

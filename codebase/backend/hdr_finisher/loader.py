@@ -20,6 +20,17 @@ EXR_COLOR_INTEROP_SPACES = {
     "lin_ap1_scene": "ACEScg",
 }
 
+# Display-P3 and sRGB share D65, so the hot-path linear conversion is a fixed
+# float32 matrix and does not require a general-purpose colour transform.
+DISPLAY_P3_TO_SRGB = np.asarray(
+    [
+        [1.2247453, -0.2249044, -0.0000000],
+        [-0.0420581, 1.0420810, -0.0000790],
+        [-0.0196423, -0.0786549, 1.0985372],
+    ],
+    dtype=np.float32,
+)
+
 
 class LoaderError(RuntimeError):
     """Raised when an image cannot be loaded."""
@@ -354,7 +365,8 @@ def _load_heif(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
         aux_image = primary.get_aux_image(aux_id)
         aux_array = np.asarray(aux_image).astype(np.float32) / 255.0
         base_array = _normalize_integer_image(array)
-        metadata["sdr_reference_image"] = _display_p3_to_linear_srgb(base_array)
+        base_linear_p3 = _srgb_eotf_float32(base_array)
+        metadata["sdr_reference_image"] = _linear_display_p3_to_linear_srgb(base_linear_p3)
         resized_gainmap = np.asarray(
             Image.fromarray((np.clip(aux_array, 0.0, 1.0) * 255.0).astype(np.uint8), mode="L").resize(
                 (base_array.shape[1], base_array.shape[0]),
@@ -362,7 +374,7 @@ def _load_heif(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
             ),
             dtype=np.float32,
         ) / 255.0
-        array = _apply_apple_hdr_gainmap(base_array, resized_gainmap, float(metadata["apple_hdr_headroom"]))
+        array = _apply_apple_hdr_gainmap_linear(base_linear_p3, resized_gainmap, float(metadata["apple_hdr_headroom"]))
         metadata["color_space"] = profile_desc or "Display P3"
         metadata["transfer_function"] = "LINEAR"
         metadata["bit_depth"] = "32f"
@@ -426,31 +438,32 @@ def _normalize_integer_image(array: np.ndarray) -> np.ndarray:
 
 
 def _apply_apple_hdr_gainmap(dp3_sdr: np.ndarray, hdrgainmap: np.ndarray, headroom: float) -> np.ndarray:
-    try:
-        import colour
-    except ImportError as exc:
-        raise LoaderError("colour-science is required to apply Apple HDR gain maps.") from exc
+    dp3_sdr_linear = _srgb_eotf_float32(dp3_sdr)
+    return _apply_apple_hdr_gainmap_linear(dp3_sdr_linear, hdrgainmap, headroom)
 
-    dp3_sdr_linear = colour.models.eotf_sRGB(np.clip(dp3_sdr.astype(np.float32, copy=False), 0.0, 1.0))
-    hdrgainmap_linear = colour.models.eotf_sRGB(np.clip(hdrgainmap.astype(np.float32, copy=False), 0.0, 1.0))
+
+def _apply_apple_hdr_gainmap_linear(dp3_sdr_linear: np.ndarray, hdrgainmap: np.ndarray, headroom: float) -> np.ndarray:
+    hdrgainmap_linear = _srgb_eotf_float32(hdrgainmap)
     scale_factor_map = 1.0 + (max(headroom, 1.0) - 1.0) * hdrgainmap_linear
-    return dp3_sdr_linear * scale_factor_map[..., None]
+    return np.asarray(dp3_sdr_linear * scale_factor_map[..., None], dtype=np.float32)
 
 
 def _display_p3_to_linear_srgb(image: np.ndarray) -> np.ndarray:
-    try:
-        from colour.models import RGB_to_RGB, eotf_sRGB
-    except ImportError as exc:
-        raise LoaderError("colour-science is required for HEIC SDR base conversion.") from exc
+    return _linear_display_p3_to_linear_srgb(_srgb_eotf_float32(image))
 
-    dp3_linear = eotf_sRGB(np.clip(image.astype(np.float32, copy=False), 0.0, 1.0))
-    srgb_linear = RGB_to_RGB(
-        dp3_linear,
-        "Display P3",
-        "sRGB",
-        chromatic_adaptation_transform="CAT02",
-    )
-    return np.clip(srgb_linear, 0.0, 1.0).astype(np.float32)
+
+def _linear_display_p3_to_linear_srgb(dp3_linear: np.ndarray) -> np.ndarray:
+    srgb_linear = np.matmul(dp3_linear.astype(np.float32, copy=False), DISPLAY_P3_TO_SRGB.T)
+    return np.clip(srgb_linear, 0.0, 1.0).astype(np.float32, copy=False)
+
+
+def _srgb_eotf_float32(image: np.ndarray) -> np.ndarray:
+    encoded = np.clip(image.astype(np.float32, copy=False), 0.0, 1.0)
+    return np.where(
+        encoded <= np.float32(0.04045),
+        encoded / np.float32(12.92),
+        np.power((encoded + np.float32(0.055)) / np.float32(1.055), np.float32(2.4)),
+    ).astype(np.float32, copy=False)
 
 
 def _read_apple_hdr_metadata(path: Path) -> dict[str, Any]:
