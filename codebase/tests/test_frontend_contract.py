@@ -29,7 +29,7 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert 'data-path="hdr.vibrance"' in html
     assert 'data-path="hdr.red_hue"' in html
     assert 'data-path="hdr.tint_purity"' in html
-    assert 'data-path="sdr.match_hdr_color"' in html
+    assert 'data-path="sdr.match_hdr_color"' not in html
     assert 'data-path="sdr.saturation"' in html
     assert 'data-path="sdr.red_hue"' in html
     assert "/api/export-directory/default" in script
@@ -46,6 +46,31 @@ def test_equalizer_interactions_include_non_scrolling_wheel_and_keyboard_alterna
     assert "moveToneEqualizerNodeHorizontally" in javascript
     assert "pointerenter" in javascript and "focusin" in javascript
     assert "drawZoneScopeOverlay" in javascript
+
+
+def test_redundant_enable_controls_are_removed_and_equalizer_schedules_live_scopes() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="tone-equalizer-enabled"' not in html
+    assert 'id="curves-enabled"' not in html
+    assert 'id="sdr-match-hdr-color"' not in html
+    assert "Enable equalizer" not in html
+    assert "Enable curves" not in html
+    assert "queueGpuDraft(\"hdr\");" not in javascript[javascript.index("function updateToneEqualizerFromPointer"):javascript.index("function toneEqualizerBandLimits")]
+    assert javascript.count('debouncePreview("hdr");') >= 2
+
+
+def test_scope_zoom_exposes_4000_and_10000_nit_computation_ranges() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    assert '<span>Scope zoom</span>' in html
+    assert 'id="scope-zoom"' in html
+    assert '<option value="4000">4K nits</option>' in html
+    assert '<option value="10000">10K nits</option>' in html
+    assert "max_nits=${maxNits}" in javascript
+    assert "request.maxNits" in javascript
 
 
 def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:

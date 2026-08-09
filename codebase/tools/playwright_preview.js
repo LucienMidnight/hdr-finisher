@@ -195,33 +195,42 @@ async function main() {
           status: gpuLabel?.nextElementSibling?.textContent || "not reported",
         };
       });
+      const histogramBeforeEqualizer = await page.locator("#histogram").evaluate((canvas) => canvas.toDataURL());
+      const equalizerScopeResponse = page.waitForResponse((response) => {
+        if (!/\/scopes\?/.test(response.url()) || response.request().method() !== "POST") return false;
+        const adjustments = response.request().postDataJSON()?.adjustments;
+        return adjustments?.hdr?.tone_equalizer_nodes?.some((node) => Math.abs(Number(node.adjustment_ev) - 0.5) < 0.001);
+      }, { timeout: 10000 });
       await page.locator("#tone-equalizer-band-value").evaluate((control) => {
         control.value = "0.5";
         control.dispatchEvent(new Event("input", { bubbles: true }));
-        control.dispatchEvent(new Event("change", { bubbles: true }));
       });
-      await page.waitForTimeout(120);
+      const scopeResponse = await equalizerScopeResponse;
+      await page.waitForFunction(() => document.getElementById("scope-freshness")?.textContent !== "Updating", null, { timeout: 10000 });
+      await page.waitForTimeout(50);
+      const histogramAfterEqualizer = await page.locator("#histogram").evaluate((canvas) => canvas.toDataURL());
+      await page.locator("#tone-equalizer-band-value").dispatchEvent("change");
       const adjustedToneEqualizer = await page.evaluate(() => ({
-        enabled: document.getElementById("tone-equalizer-enabled")?.checked,
         output: document.getElementById("tone-equalizer-band-output")?.textContent,
         groupState: document.querySelector('[data-modified-count="hdr-equalizer"]')?.textContent,
         gpuCanvasVisible: getComputedStyle(document.getElementById("preview-canvas")).display !== "none",
       }));
+      adjustedToneEqualizer.scopeStatus = scopeResponse.status();
+      adjustedToneEqualizer.histogramChanged = histogramAfterEqualizer !== histogramBeforeEqualizer;
       await page.locator('[data-reset-group="hdr-equalizer"]').click();
       await page.waitForTimeout(120);
       const resetToneEqualizer = await page.evaluate(() => ({
-        enabled: document.getElementById("tone-equalizer-enabled")?.checked,
         output: document.getElementById("tone-equalizer-band-output")?.textContent,
         groupState: document.querySelector('[data-modified-count="hdr-equalizer"]')?.textContent,
       }));
       toneEqualizerInteractionCheck = {
         adjusted: adjustedToneEqualizer,
         reset: resetToneEqualizer,
-        ok: adjustedToneEqualizer.enabled === true
-          && adjustedToneEqualizer.output === "+0.50 EV"
+        ok: adjustedToneEqualizer.output === "+0.50 EV"
           && /\d+\s+mod(?:ified)?/.test(adjustedToneEqualizer.groupState || "")
           && adjustedToneEqualizer.gpuCanvasVisible === true
-          && resetToneEqualizer.enabled === false
+          && adjustedToneEqualizer.scopeStatus === 200
+          && adjustedToneEqualizer.histogramChanged === true
           && resetToneEqualizer.output === "+0.00 EV"
           && ["", "Default"].includes(resetToneEqualizer.groupState || ""),
       };

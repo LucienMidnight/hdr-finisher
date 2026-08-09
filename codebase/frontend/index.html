@@ -291,6 +291,13 @@
                   <option value="luma">Luma</option>
                   <option value="parade">RGB Parade</option>
                 </select>
+                <label class="scope-zoom-control" for="scope-zoom">
+                  <span>Scope zoom</span>
+                  <select id="scope-zoom" class="scope-mode-select">
+                    <option value="4000">4K nits</option>
+                    <option value="10000">10K nits</option>
+                  </select>
+                </label>
               </div>
             </div>
             <canvas id="histogram" width="720" height="220" aria-label="Image scope"></canvas>
@@ -412,10 +419,6 @@
             <button class="group-reset text-button" type="button" data-reset-group="hdr-equalizer">Reset</button>
           </div>
           <div class="control-group-body">
-            <label class="toggle-row" data-control-path="hdr.tone_equalizer_enabled">
-              <span>Enable equalizer</span>
-              <input id="tone-equalizer-enabled" type="checkbox" data-path="hdr.tone_equalizer_enabled">
-            </label>
             <p class="helper">Adjust exposure by scene brightness. 0 EV is the app's 100-nit diffuse-white reference; the dashed edge marks the 10,000-nit PQ limit.</p>
             <canvas id="tone-equalizer-editor" width="320" height="220" tabindex="0" aria-label="HDR tone equalizer. Use left and right arrows to select a band, up and down arrows to adjust exposure, brackets to change influence, and Delete to remove an interior band."></canvas>
             <div class="curve-actions tone-equalizer-actions">
@@ -586,16 +589,11 @@
 
         <section class="control-group" data-group="sdr-color">
           <div class="control-group-header">
-            <button class="group-toggle" type="button" aria-expanded="true">Color <span data-modified-count="sdr-color">Following HDR</span></button>
+            <button class="group-toggle" type="button" aria-expanded="true">Color <span data-modified-count="sdr-color"></span></button>
             <button class="section-bypass text-button" type="button" data-section-path="sdr.color_section_enabled" aria-pressed="true" aria-label="Toggle SDR Color preview">&#9673;</button>
             <button class="group-reset text-button" type="button" data-reset-group="sdr-color">Reset</button>
           </div>
           <div class="control-group-body">
-            <label class="toggle-row sdr-color-match-toggle" data-control-path="sdr.match_hdr_color">
-              <span>Follow HDR Color <small>Perceptual match</small></span>
-              <input id="sdr-match-hdr-color" type="checkbox" data-path="sdr.match_hdr_color" checked>
-            </label>
-            <p class="helper sdr-color-link-note">Uses the live HDR color grade through the SDR gamut conversion. Turn this off to make an independent SDR color adjustment.</p>
             <div data-sdr-manual-color>
               <div class="control-row" data-control-path="sdr.white_balance_kelvin"><div class="control-heading"><label for="sdr-wb">Temperature</label><output data-value-path="sdr.white_balance_kelvin">6500 K</output></div><input id="sdr-wb" type="range" min="2000" max="12000" step="50" value="6500" data-path="sdr.white_balance_kelvin"></div>
               <div class="control-row" data-control-path="sdr.tint"><div class="control-heading"><label for="sdr-tint">Green / Magenta Tint</label><output data-value-path="sdr.tint">0.00</output></div><input id="sdr-tint" type="range" min="-1" max="1" step="0.01" value="0" data-path="sdr.tint"></div>
@@ -658,10 +656,6 @@
           <button id="curve-reset" class="group-reset text-button" type="button">Reset</button>
         </div>
         <div class="control-group-body">
-          <label class="toggle-row">
-            <span>Enable curves</span>
-            <input id="curves-enabled" type="checkbox">
-          </label>
           <div class="curve-toolbar">
             <div class="channel-tabs">
               <button type="button" class="curve-channel active" data-curve-channel="luma">Luma</button>

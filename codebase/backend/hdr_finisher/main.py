@@ -30,6 +30,7 @@ from .models import (
     ProofReconstructionRequest,
     ProofReconstructionResponse,
     ScopeMode,
+    ScopeMaxNits,
     SessionSummary,
     SourceInterpretationOverride,
 )
@@ -215,6 +216,7 @@ def scopes(
     bins: int | None = Query(default=None, ge=32, le=384),
     columns: int = Query(default=512, ge=64, le=1024),
     long_edge: int = Query(default=960, ge=256, le=2000),
+    max_nits: ScopeMaxNits = Query(default=ScopeMaxNits.NITS_4000),
 ):
     try:
         session = store.get(session_id)
@@ -227,6 +229,7 @@ def scopes(
         mode.value,
         bins or 256,
         columns,
+        int(max_nits.value),
     )
 
 
@@ -239,6 +242,7 @@ def scopes_for_adjustments(
     bins: int | None = Query(default=None, ge=32, le=384),
     columns: int = Query(default=512, ge=64, le=1024),
     long_edge: int = Query(default=960, ge=256, le=2000),
+    max_nits: ScopeMaxNits = Query(default=ScopeMaxNits.NITS_4000),
 ):
     try:
         session = store.update_adjustments(session_id, request.adjustments)
@@ -253,6 +257,7 @@ def scopes_for_adjustments(
             mode.value,
             bins or 256,
             columns,
+            int(max_nits.value),
             is_current=lambda: session.scope_tokens[kind] == token,
         )
     except StaleRender:

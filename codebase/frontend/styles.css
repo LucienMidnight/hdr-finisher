@@ -863,6 +863,16 @@ body[data-active-lane="sdr"] .lane-dot {
   gap: 6px;
 }
 
+.scope-zoom-control {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
 .scope-mode-select {
   width: auto;
   min-width: 112px;
@@ -1121,28 +1131,6 @@ body[data-active-lane="sdr"] .grade-rail {
 
 .control-disabled {
   opacity: 0.42;
-}
-
-.linked-controls {
-  opacity: 0.42;
-  transition: opacity 120ms ease;
-}
-
-.sdr-color-match-toggle span {
-  display: flex;
-  flex-direction: column;
-}
-
-.sdr-color-match-toggle small {
-  color: var(--muted);
-  font-size: 9px;
-  font-weight: 400;
-  letter-spacing: 0;
-  text-transform: none;
-}
-
-.sdr-color-link-note {
-  margin-bottom: 8px;
 }
 
 output {

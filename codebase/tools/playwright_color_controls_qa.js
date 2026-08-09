@@ -43,21 +43,15 @@ async function main() {
 
     await page.locator("#view-sdr").click();
     await page.waitForFunction(() => document.getElementById("view-sdr")?.classList.contains("active"), null, { timeout: 30000 });
-    const linked = {
+    const sdrColor = {
       status: await page.locator('[data-modified-count="sdr-color"]').textContent(),
       redHueDisabled: await page.locator('[data-path="sdr.red_hue"]').isDisabled(),
       saturationDisabled: await page.locator('[data-path="sdr.saturation"]').isDisabled(),
     };
-    await page.locator('[data-path="sdr.match_hdr_color"]').uncheck();
     await setControl(page, "sdr.red_hue", -4);
-    const manual = {
+    const adjustedSdrColor = {
       redHueDisabled: await page.locator('[data-path="sdr.red_hue"]').isDisabled(),
       redHue: await page.locator('[data-path="sdr.red_hue"]').inputValue(),
-    };
-    await page.locator('[data-path="sdr.match_hdr_color"]').check();
-    const relinked = {
-      redHueDisabled: await page.locator('[data-path="sdr.red_hue"]').isDisabled(),
-      retainedManualRedHue: await page.locator('[data-path="sdr.red_hue"]').inputValue(),
     };
     const exportRequests = [];
     let overwriteDialog = "";
@@ -129,13 +123,11 @@ async function main() {
         && reset.redHue === "0"
         && reset.vibrance === "0"
         && reset.enabled === "true"
-        && /Following HDR/.test(linked.status || "")
-        && linked.redHueDisabled === true
-        && linked.saturationDisabled === true
-        && manual.redHueDisabled === false
-        && manual.redHue === "-4"
-        && relinked.redHueDisabled === true
-        && relinked.retainedManualRedHue === "-4"
+        && sdrColor.status === ""
+        && sdrColor.redHueDisabled === false
+        && sdrColor.saturationDisabled === false
+        && adjustedSdrColor.redHueDisabled === false
+        && adjustedSdrColor.redHue === "-4"
         && defaultExportDirectory.length > 0
         && exportRequests.length === 2
         && exportRequests[0].overwrite === false
@@ -145,9 +137,8 @@ async function main() {
       retained,
       bypassed,
       reset,
-      linked,
-      manual,
-      relinked,
+      sdrColor,
+      adjustedSdrColor,
       defaultExportDirectory,
       exportRequests: exportRequests.map(({ overwrite, output_path }) => ({ overwrite, output_path })),
       overwriteDialog,

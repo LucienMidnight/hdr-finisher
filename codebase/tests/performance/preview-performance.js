@@ -94,7 +94,7 @@ async function exerciseControls(page, repetitions) {
   const representative = [
     ['[data-path="hdr.contrast"]', 0.2],
     ['[data-path="hdr.saturation"]', 0.15],
-    ['[data-path="hdr.tone_equalizer_enabled"]', true],
+    ['[data-path="hdr.tone_equalizer_smoothing"]', 0.65],
   ];
   for (const [selector, value] of representative) {
     await page.locator(selector).evaluate((control, next) => {
@@ -104,11 +104,6 @@ async function exerciseControls(page, repetitions) {
       control.dispatchEvent(new Event("change", { bubbles: true }));
     }, value);
   }
-  await page.locator("#curves-enabled").evaluate((control) => {
-    control.checked = true;
-    control.dispatchEvent(new Event("input", { bubbles: true }));
-    control.dispatchEvent(new Event("change", { bubbles: true }));
-  });
   await page.locator('[data-path="shared.overlay_mode"]').selectOption("zebra", { force: true });
   await page.locator('[data-path="shared.overlay_mode"]').dispatchEvent("input");
   await page.locator('[data-path="shared.overlay_mode"]').selectOption("off", { force: true });

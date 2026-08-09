@@ -127,8 +127,6 @@ async function auditLane(page, lane, outputDir) {
   if (await curveGroup.evaluate((group) => group.classList.contains("collapsed"))) {
     await curveGroup.locator(".group-toggle").click();
   }
-  const curveToggle = page.locator("#curves-enabled");
-  if (!(await curveToggle.isChecked())) await curveToggle.check();
   const editor = page.locator("#curve-editor");
   const box = await editor.boundingBox();
   if (box) {
@@ -138,7 +136,7 @@ async function auditLane(page, lane, outputDir) {
     await page.mouse.up();
     results.push({ lane, control: `${lane}.luma_curve`, value: "midtone-up", ...(await captureCurrent(page, `${lane}-curve`, outputDir)) });
   }
-  await curveToggle.uncheck();
+  await page.locator("#curve-reset").click();
   await page.waitForFunction(() => getComputedStyle(document.getElementById("preview-canvas")).display !== "none", null, { timeout: 120000 });
   return results;
 }

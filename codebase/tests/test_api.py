@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from conftest import make_png_bytes
 from fastapi.testclient import TestClient
 
@@ -43,7 +45,7 @@ def test_upload_creates_session(monkeypatch) -> None:
             adjustments={
                 "hdr": {"exposure": 0, "highlight_rolloff": 0.25, "shadow_lift": 0, "white_balance_kelvin": 6500, "tint": 0},
                 "sdr": {"exposure": 0, "highlight_recovery": 0.25, "shadow": 0, "contrast": 0, "tone_mapper": "aces"},
-                "shared": {"active_focus": "hdr", "curves_enabled": False},
+                "shared": {},
             },
             preview={"long_edge": 1600, "format": "png"},
             capabilities={},
@@ -83,7 +85,7 @@ def test_real_png_upload_preview_and_scopes() -> None:
             "adjustments": {
                 "hdr": {"exposure": 0, "highlight_rolloff": 0.25, "shadow_lift": 0, "white_balance_kelvin": 6500, "tint": 0},
                 "sdr": {"exposure": 0, "highlight_recovery": 0.25, "shadow": 0, "contrast": 0, "tone_mapper": "aces"},
-                "shared": {"active_focus": "hdr", "curves_enabled": False},
+                "shared": {},
             }
         },
     )
@@ -98,6 +100,15 @@ def test_real_png_upload_preview_and_scopes() -> None:
     assert payload["scope_type"] == "reference_nits_histogram"
     assert payload["x_axis"] == "reference_nits_log10"
     assert len(payload["stats"]) >= 3
+    assert payload["bin_edges"][-1] == pytest.approx(4000.0, rel=1e-5)
+
+    scopes_10k = client.get(f"/api/session/{session_id}/scopes?kind=hdr&max_nits=10000")
+    assert scopes_10k.status_code == 200
+    assert scopes_10k.json()["bin_edges"][-1] == pytest.approx(10000.0, rel=1e-5)
+    assert any(guide["value"] == 10000.0 for guide in scopes_10k.json()["guides"])
+
+    unsupported_zoom = client.get(f"/api/session/{session_id}/scopes?kind=hdr&max_nits=6000")
+    assert unsupported_zoom.status_code == 422
 
     waveform = client.get(f"/api/session/{session_id}/scopes?kind=hdr&mode=waveform")
     assert waveform.status_code == 200
@@ -179,8 +190,6 @@ def test_overlay_endpoint_returns_png_when_enabled() -> None:
                 "hdr": {"exposure": 0, "highlight_rolloff": 0.25, "shadow_lift": 0, "white_balance_kelvin": 6500, "tint": 0},
                 "sdr": {"exposure": 0, "highlight_recovery": 0.25, "shadow": 0, "contrast": 0, "tone_mapper": "aces"},
                 "shared": {
-                    "active_focus": "sdr",
-                    "curves_enabled": False,
                     "overlay_mode": "zebra",
                     "overlay_opacity": 0.72,
                     "overlay_threshold": 0.2,
@@ -210,7 +219,7 @@ def test_real_exr_upload_preview_and_scopes() -> None:
             "adjustments": {
                 "hdr": {"exposure": 0, "highlight_rolloff": 0.25, "shadow_lift": 0, "white_balance_kelvin": 6500, "tint": 0},
                 "sdr": {"exposure": 0, "highlight_recovery": 0.25, "shadow": 0, "contrast": 0, "tone_mapper": "aces"},
-                "shared": {"active_focus": "hdr", "curves_enabled": False},
+                "shared": {},
             }
         },
     )
@@ -252,7 +261,7 @@ def test_interpretation_endpoint_returns_updated_session(monkeypatch) -> None:
                     adjustments={
                         "hdr": {"exposure": 0, "highlight_rolloff": 0.25, "shadow_lift": 0, "white_balance_kelvin": 6500, "tint": 0},
                         "sdr": {"exposure": 0, "highlight_recovery": 0.25, "shadow": 0, "contrast": 0, "tone_mapper": "aces"},
-                        "shared": {"active_focus": "hdr", "curves_enabled": False},
+                        "shared": {},
                     },
                     preview={"long_edge": 1600, "format": "png"},
                     capabilities={},

@@ -24,7 +24,8 @@ HDR_GUIDES = [
     ScopeGuide(value=600.0, label="600"),
     ScopeGuide(value=1000.0, label="1000 peak"),
     ScopeGuide(value=2000.0, label="2000"),
-    ScopeGuide(value=4000.0, label="4000 peak"),
+    ScopeGuide(value=4000.0, label="4000"),
+    ScopeGuide(value=10000.0, label="10000 PQ peak"),
 ]
 
 SDR_GUIDES = [
@@ -42,11 +43,12 @@ def build_scope(
     bins: int | None = None,
     waveform_columns: int = 512,
     sdr_reference_image: np.ndarray | None = None,
+    max_nits: int = 4000,
 ) -> ScopeResponse:
     processed = apply_adjustments(image, adjustments, kind, sdr_reference_image=sdr_reference_image)
     if mode == ScopeMode.WAVEFORM:
-        return _build_waveform(processed, kind, bins=bins or 256, columns=waveform_columns)
-    return _build_histogram(processed, kind, bins=bins or 256)
+        return _build_waveform(processed, kind, bins=bins or 256, columns=waveform_columns, max_nits=max_nits)
+    return _build_histogram(processed, kind, bins=bins or 256, max_nits=max_nits)
 
 
 def build_scope_from_processed(
@@ -55,29 +57,31 @@ def build_scope_from_processed(
     mode: ScopeMode = ScopeMode.HISTOGRAM,
     bins: int | None = None,
     waveform_columns: int = 512,
+    max_nits: int = 4000,
 ) -> ScopeResponse:
     if mode == ScopeMode.WAVEFORM:
-        return _build_waveform(processed, kind, bins=bins or 256, columns=waveform_columns)
-    return _build_histogram(processed, kind, bins=bins or 256)
+        return _build_waveform(processed, kind, bins=bins or 256, columns=waveform_columns, max_nits=max_nits)
+    return _build_histogram(processed, kind, bins=bins or 256, max_nits=max_nits)
 
 
-def _build_histogram(processed: np.ndarray, kind: PreviewKind, bins: int) -> ScopeResponse:
+def _build_histogram(processed: np.ndarray, kind: PreviewKind, bins: int, max_nits: int) -> ScopeResponse:
     if kind == PreviewKind.HDR:
-        return _build_hdr_histogram(processed, bins=bins)
+        return _build_hdr_histogram(processed, bins=bins, max_nits=max_nits)
     return _build_sdr_histogram(processed, bins=bins)
 
 
-def _build_hdr_histogram(processed: np.ndarray, bins: int) -> ScopeResponse:
+def _build_hdr_histogram(processed: np.ndarray, bins: int, max_nits: int) -> ScopeResponse:
+    ceiling = _hdr_scope_ceiling(max_nits)
     clipped = np.clip(processed.astype(np.float32, copy=False), 0.0, None)
     luminance_nits = _rgb_to_reference_nits(clipped)
-    edges = _hdr_edges(bins)
+    edges = _hdr_edges(bins, ceiling)
 
     channels = []
     for idx, name in enumerate(("R", "G", "B")):
         channel_nits = _channel_to_reference_nits(clipped[..., idx])
-        hist, _ = np.histogram(np.clip(channel_nits, 1.0, 4000.0), bins=edges)
+        hist, _ = np.histogram(np.clip(channel_nits, 1.0, ceiling), bins=edges)
         channels.append(HistogramChannel(name=name, bins=hist.astype(int).tolist()))
-    luma_hist, _ = np.histogram(np.clip(luminance_nits, 1.0, 4000.0), bins=edges)
+    luma_hist, _ = np.histogram(np.clip(luminance_nits, 1.0, ceiling), bins=edges)
     channels.append(HistogramChannel(name="Y", bins=luma_hist.astype(int).tolist()))
 
     return ScopeResponse(
@@ -85,7 +89,7 @@ def _build_hdr_histogram(processed: np.ndarray, bins: int) -> ScopeResponse:
         scope_type="reference_nits_histogram",
         x_axis="reference_nits_log10",
         bin_edges=[float(edge) for edge in edges.tolist()],
-        guides=HDR_GUIDES,
+        guides=[guide for guide in HDR_GUIDES if guide.value <= ceiling],
         stats=_hdr_stats(luminance_nits),
         channels=channels,
         normalization_peak=_normalization_peak(channels),
@@ -119,23 +123,24 @@ def _build_sdr_histogram(processed: np.ndarray, bins: int) -> ScopeResponse:
     )
 
 
-def _build_waveform(processed: np.ndarray, kind: PreviewKind, bins: int, columns: int) -> ScopeResponse:
+def _build_waveform(processed: np.ndarray, kind: PreviewKind, bins: int, columns: int, max_nits: int) -> ScopeResponse:
     clipped = np.clip(processed.astype(np.float32, copy=False), 0.0, None if kind == PreviewKind.HDR else 1.0)
     if kind == PreviewKind.HDR:
-        edges = _hdr_edges(bins)
+        ceiling = _hdr_scope_ceiling(max_nits)
+        edges = _hdr_edges(bins, ceiling)
         channels = []
         luminance_nits = _rgb_to_reference_nits(clipped)
         for idx, name in enumerate(("R", "G", "B")):
             channel_nits = _channel_to_reference_nits(clipped[..., idx])
-            grid = _waveform_grid(np.clip(channel_nits, 1.0, 4000.0), edges, columns)
+            grid = _waveform_grid(np.clip(channel_nits, 1.0, ceiling), edges, columns)
             channels.append(HistogramChannel(name=name, bins=[], grid=grid))
-        channels.append(HistogramChannel(name="Y", bins=[], grid=_waveform_grid(np.clip(luminance_nits, 1.0, 4000.0), edges, columns)))
+        channels.append(HistogramChannel(name="Y", bins=[], grid=_waveform_grid(np.clip(luminance_nits, 1.0, ceiling), edges, columns)))
         return ScopeResponse(
             preview_kind=PreviewKind.HDR,
             scope_type="reference_nits_waveform",
             x_axis="reference_nits_log10",
             bin_edges=[float(edge) for edge in edges.tolist()],
-            guides=HDR_GUIDES,
+            guides=[guide for guide in HDR_GUIDES if guide.value <= ceiling],
             stats=_hdr_stats(luminance_nits),
             channels=channels,
             normalization_peak=_normalization_peak(channels),
@@ -194,8 +199,12 @@ def _normalization_peak(channels: list[HistogramChannel]) -> int:
     return max(1, int(np.percentile(combined, percentile)))
 
 
-def _hdr_edges(bins: int) -> np.ndarray:
-    log_edges = np.linspace(np.log10(1.0), np.log10(4000.0), bins + 1, dtype=np.float32)
+def _hdr_scope_ceiling(max_nits: int) -> int:
+    return 10000 if int(max_nits) == 10000 else 4000
+
+
+def _hdr_edges(bins: int, max_nits: int = 4000) -> np.ndarray:
+    log_edges = np.linspace(np.log10(1.0), np.log10(_hdr_scope_ceiling(max_nits)), bins + 1, dtype=np.float32)
     return np.power(10.0, log_edges, dtype=np.float32)
 
 

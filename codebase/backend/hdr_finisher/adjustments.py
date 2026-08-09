@@ -159,7 +159,7 @@ def _apply_sdr_adjustments_to_reference(image: np.ndarray, adjustments: Adjustme
         )
     if _sdr_color_is_enabled(adjustments):
         acescg = linear_srgb_to_acescg(result)
-        graded = _apply_hdr_color(acescg, _effective_sdr_color_settings(adjustments))
+        graded = _apply_hdr_color(acescg, adjustments.sdr)
         result = _compress_to_srgb_gamut(acescg_to_linear_srgb(graded))
     if sdr.primaries_section_enabled:
         result = _apply_luminance_section_controls(
@@ -170,16 +170,10 @@ def _apply_sdr_adjustments_to_reference(image: np.ndarray, adjustments: Adjustme
     return np.clip(result, 0.0, 1.0)
 
 
-def _effective_sdr_color_settings(adjustments: AdjustmentState):
-    return adjustments.hdr if adjustments.sdr.match_hdr_color else adjustments.sdr
-
-
 def _sdr_color_is_enabled(adjustments: AdjustmentState) -> bool:
     if not adjustments.sdr.color_section_enabled:
         return False
-    if adjustments.sdr.match_hdr_color and not adjustments.hdr.color_section_enabled:
-        return False
-    return not _color_settings_are_neutral(_effective_sdr_color_settings(adjustments))
+    return not _color_settings_are_neutral(adjustments.sdr)
 
 
 def _apply_white_balance(image: np.ndarray, kelvin: int, tint: float) -> np.ndarray:
@@ -293,9 +287,6 @@ def _apply_scene_luminance_controls(
 
 def _apply_hdr_tone_equalizer(image: np.ndarray, hdr_adjustments: object) -> np.ndarray:
     """Apply fixed scene-referred EV-band exposure corrections without clipping HDR headroom."""
-    if not bool(getattr(hdr_adjustments, "tone_equalizer_enabled", False)):
-        return image
-
     node_ev, corrections = _tone_equalizer_nodes(hdr_adjustments)
     if not np.any(corrections):
         return image
@@ -576,16 +567,17 @@ def _smoothstep(edge0: float, edge1: float, value: np.ndarray) -> np.ndarray:
 
 def _apply_curves(image: np.ndarray, adjustments: AdjustmentState, kind: PreviewKind) -> np.ndarray:
     branch = adjustments.hdr if kind == PreviewKind.HDR else adjustments.sdr
-    if getattr(branch, "curves_enabled", False):
-        return _apply_curve_set(image, branch, kind)
-    return _apply_legacy_shared_curves(image, adjustments, kind)
-
-
-def _apply_legacy_shared_curves(image: np.ndarray, adjustments: AdjustmentState, kind: PreviewKind) -> np.ndarray:
-    shared = adjustments.shared
-    if not shared.curves_enabled or shared.active_focus != kind:
+    if _curve_set_is_neutral(branch):
         return image
-    return _apply_curve_set(image, shared, kind)
+    return _apply_curve_set(image, branch, kind)
+
+
+def _curve_set_is_neutral(curve_source: object) -> bool:
+    for name in ("luma_curve", "red_curve", "green_curve", "blue_curve"):
+        curve = _normalize_curve_points(getattr(curve_source, name))
+        if not np.allclose(curve[:, 0], curve[:, 1], rtol=0.0, atol=1e-7):
+            return False
+    return True
 
 
 def _apply_curve_set(image: np.ndarray, curve_source: object, kind: PreviewKind) -> np.ndarray:

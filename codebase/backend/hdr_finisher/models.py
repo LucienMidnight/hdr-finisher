@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class HDRClassification(str, Enum):
@@ -22,6 +22,11 @@ class PreviewKind(str, Enum):
 class ScopeMode(str, Enum):
     HISTOGRAM = "histogram"
     WAVEFORM = "waveform"
+
+
+class ScopeMaxNits(str, Enum):
+    NITS_4000 = "4000"
+    NITS_10000 = "10000"
 
 
 class ToneMapper(str, Enum):
@@ -98,6 +103,8 @@ def _default_tone_equalizer_nodes() -> list[ToneEqualizerNode]:
 
 
 class HDRAdjustments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     tone_section_enabled: bool = True
     tone_equalizer_section_enabled: bool = True
     color_section_enabled: bool = True
@@ -107,7 +114,6 @@ class HDRAdjustments(BaseModel):
     highlight_rolloff: float = 0.0
     highlight_rolloff_start_nits: float = Field(default=400.0, ge=100.0, le=4000.0)
     shadow_lift: float = 0.0
-    tone_equalizer_enabled: bool = False
     tone_equalizer_nodes: list[ToneEqualizerNode] = Field(
         default_factory=_default_tone_equalizer_nodes,
         min_length=2,
@@ -138,7 +144,6 @@ class HDRAdjustments(BaseModel):
     blue_purity: float = Field(default=0.0, ge=-99.0, le=400.0)
     tint_hue: float = Field(default=0.0, ge=-180.0, le=180.0)
     tint_purity: float = Field(default=0.0, ge=0.0, le=99.0)
-    curves_enabled: bool = False
     luma_curve: list[list[float]] = Field(
         default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
     )
@@ -188,12 +193,13 @@ class HDRAdjustments(BaseModel):
 
 
 class SDRAdjustments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     base_section_enabled: bool = True
     tone_section_enabled: bool = True
     color_section_enabled: bool = True
     primaries_section_enabled: bool = True
     curves_section_enabled: bool = True
-    match_hdr_color: bool = True
     exposure: float = 0.0
     highlight_recovery: float = 0.6
     tone_contrast: float = Field(default=1.0, ge=0.5, le=1.5)
@@ -223,7 +229,6 @@ class SDRAdjustments(BaseModel):
     tint_hue: float = Field(default=0.0, ge=-180.0, le=180.0)
     tint_purity: float = Field(default=0.0, ge=0.0, le=99.0)
     tone_mapper: ToneMapper = ToneMapper.FILMIC
-    curves_enabled: bool = False
     luma_curve: list[list[float]] = Field(
         default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
     )
@@ -239,24 +244,12 @@ class SDRAdjustments(BaseModel):
 
 
 class SharedAdjustments(BaseModel):
-    active_focus: PreviewKind = PreviewKind.HDR
-    curves_enabled: bool = False
+    model_config = ConfigDict(extra="forbid")
+
     overlay_mode: OverlayMode = OverlayMode.OFF
     overlay_preset: str = "web_1000_100"
     overlay_opacity: float = 0.72
     overlay_threshold: float = 1.0
-    luma_curve: list[list[float]] = Field(
-        default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
-    )
-    red_curve: list[list[float]] = Field(
-        default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
-    )
-    green_curve: list[list[float]] = Field(
-        default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
-    )
-    blue_curve: list[list[float]] = Field(
-        default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
-    )
 
 
 class AdjustmentState(BaseModel):

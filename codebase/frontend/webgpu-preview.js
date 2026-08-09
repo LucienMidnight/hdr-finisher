@@ -297,16 +297,28 @@
     ].every((name) => Math.abs(Number(branch?.[name]) || 0) < 0.000001);
   }
 
+  function curveSetNeutral(branch) {
+    return ["luma_curve", "red_curve", "green_curve", "blue_curve"].every((name) => {
+      const points = branch?.[name];
+      return Array.isArray(points) && points.length >= 2
+        && points.every((point) => Array.isArray(point) && Math.abs(Number(point[0]) - Number(point[1])) < 0.000001);
+    });
+  }
+
+  function toneEqualizerNeutral(branch) {
+    const nodes = branch?.tone_equalizer_nodes;
+    return !Array.isArray(nodes) || nodes.every((node) => Math.abs(Number(node?.adjustment_ev) || 0) < 0.000001);
+  }
+
   function buildParams(lane, adjustments, workingSpace, hdrSurface) {
     const params = new Float32Array(PARAM_COUNT);
     const branch = adjustments[lane];
-    const followsHdrColor = lane === "sdr" && branch.match_hdr_color !== false;
-    const colorSource = followsHdrColor ? adjustments.hdr : branch;
+    const colorSource = branch;
     params[0] = lane === "hdr" ? 1 : 0;
     params[1] = workingSpace === "linear-srgb" ? 1 : 0;
     const toneEnabled = branch.tone_section_enabled !== false;
     const primariesEnabled = branch.primaries_section_enabled !== false;
-    const colorEnabled = branch.color_section_enabled !== false && (!followsHdrColor || adjustments.hdr.color_section_enabled !== false);
+    const colorEnabled = branch.color_section_enabled !== false;
     const colorActive = colorEnabled && !colorSettingsNeutral(colorSource);
     const baseEnabled = lane !== "sdr" || branch.base_section_enabled !== false;
     params[2] = toneEnabled ? branch.exposure || 0 : 0;
@@ -322,12 +334,12 @@
     params[12] = baseEnabled ? (branch.tone_mapper === "aces" ? 1 : branch.tone_mapper === "reinhard" ? 2 : 0) : 0;
     params[13] = baseEnabled ? branch.tone_contrast ?? 1 : 1;
     params[14] = baseEnabled ? branch.tone_skew || 0 : 0;
-    params[15] = branch.curves_enabled && branch.curves_section_enabled !== false ? 1 : 0;
+    params[15] = branch.curves_section_enabled !== false && !curveSetNeutral(branch) ? 1 : 0;
     params[16] = hdrSurface ? 1 : 0;
     // The PQ preview/export transport tops out at 10,000 nits while the app's
     // scene-linear 0.18 reference maps to 100 nits.
     params[17] = 18;
-    params[18] = lane === "hdr" && branch.tone_equalizer_enabled && branch.tone_equalizer_section_enabled !== false ? 1 : 0;
+    params[18] = lane === "hdr" && branch.tone_equalizer_section_enabled !== false && !toneEqualizerNeutral(branch) ? 1 : 0;
     params[19] = lane === "hdr" ? Math.min(1, Math.max(0, branch.tone_equalizer_smoothing ?? 0.5)) : 0;
     const toneNodes = normalizedToneEqualizerNodes(branch.tone_equalizer_nodes);
     params[20] = lane === "hdr" ? toneNodes.length : 0;

@@ -35,7 +35,7 @@ class SessionRenderCache:
     _source_proxies: OrderedDict[int, np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
     _sdr_proxies: OrderedDict[int, np.ndarray | None] = field(default_factory=OrderedDict, init=False, repr=False)
     _frames: OrderedDict[tuple[str, int, str], np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
-    _scopes: OrderedDict[tuple[str, int, str, str, int, int], Any] = field(default_factory=OrderedDict, init=False, repr=False)
+    _scopes: OrderedDict[tuple[str, int, str, str, int, int, int], Any] = field(default_factory=OrderedDict, init=False, repr=False)
     _inflight: dict[tuple[object, ...], Event] = field(default_factory=dict, init=False, repr=False)
     _hits: int = field(default=0, init=False, repr=False)
     _misses: int = field(default=0, init=False, repr=False)
@@ -123,12 +123,13 @@ class SessionRenderCache:
         mode: str,
         bins: int,
         columns: int,
+        max_nits: int = 4000,
         is_current: Callable[[], bool] | None = None,
     ) -> Any:
         """Return a cached, single-flight scope payload for the adjusted proxy."""
         edge = max(256, int(long_edge))
         signature = adjustment_signature(adjustments)
-        key = (kind.value, edge, signature, mode, int(bins), int(columns))
+        key = (kind.value, edge, signature, mode, int(bins), int(columns), int(max_nits))
         flight_key = ("scope", *key)
         while True:
             with self._lock:
@@ -160,6 +161,7 @@ class SessionRenderCache:
                 mode=ScopeMode(mode),
                 bins=bins,
                 waveform_columns=columns,
+                max_nits=max_nits,
             )
             if is_current is not None and not is_current():
                 with self._lock:

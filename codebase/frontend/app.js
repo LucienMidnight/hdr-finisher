@@ -80,6 +80,7 @@ const LAYOUT_LIMITS = {
 };
 const LAYOUT_SETTLE_DELAY = 120;
 const HIGH_QUALITY_PREVIEW_KEY = "hdr-finisher:high-quality-preview:v1";
+const SCOPE_ZOOM_KEY = "hdr-finisher:scope-zoom:v1";
 const waveformCanvasCache = new WeakMap();
 
 const state = {
@@ -89,6 +90,7 @@ const state = {
   activeWorkflow: "import",
   scopeMode: "histogram",
   scopeChannelMode: "composite",
+  scopeMaxNits: 4000,
   sourceSettingsOpen: true,
   metadataOpen: true,
   interpretationGateDismissed: false,
@@ -139,7 +141,6 @@ const state = {
       highlight_rolloff: 0,
       highlight_rolloff_start_nits: 400,
       shadow_lift: 0,
-      tone_equalizer_enabled: false,
       tone_equalizer_nodes: defaultToneEqualizerNodes(),
       tone_equalizer_influence_radius: 1.5,
       tone_equalizer_smoothing: 0.5,
@@ -166,7 +167,6 @@ const state = {
       blue_purity: 0,
       tint_hue: 0,
       tint_purity: 0,
-      curves_enabled: false,
       luma_curve: defaultCurvePoints(),
       red_curve: defaultCurvePoints(),
       green_curve: defaultCurvePoints(),
@@ -178,7 +178,6 @@ const state = {
       color_section_enabled: true,
       primaries_section_enabled: true,
       curves_section_enabled: true,
-      match_hdr_color: true,
       exposure: 0,
       highlight_recovery: 0.6,
       tone_contrast: 1,
@@ -208,15 +207,12 @@ const state = {
       tint_hue: 0,
       tint_purity: 0,
       tone_mapper: "filmic",
-      curves_enabled: false,
       luma_curve: defaultCurvePoints(),
       red_curve: defaultCurvePoints(),
       green_curve: defaultCurvePoints(),
       blue_curve: defaultCurvePoints(),
     },
     shared: {
-      active_focus: "hdr",
-      curves_enabled: false,
       overlay_mode: "off",
       overlay_preset: "web_1000_100",
       overlay_opacity: 0.72,
@@ -230,7 +226,8 @@ const state = {
   selectedToneEqualizerBand: 2,
   previewAbortController: null,
   overlayAbortController: null,
-  scopeAbortController: null,
+  scopeRequestInFlight: null,
+  pendingScopeRequest: null,
   refreshTimer: null,
   settleTimer: null,
   gpuRenderSerial: 0,
@@ -277,7 +274,6 @@ const defaultAdjustments = () => ({
     highlight_rolloff: 0,
     highlight_rolloff_start_nits: 400,
     shadow_lift: 0,
-    tone_equalizer_enabled: false,
     tone_equalizer_nodes: defaultToneEqualizerNodes(),
     tone_equalizer_influence_radius: 1.5,
     tone_equalizer_smoothing: 0.5,
@@ -304,7 +300,6 @@ const defaultAdjustments = () => ({
     blue_purity: 0,
     tint_hue: 0,
     tint_purity: 0,
-    curves_enabled: false,
     luma_curve: defaultCurvePoints(),
     red_curve: defaultCurvePoints(),
     green_curve: defaultCurvePoints(),
@@ -316,7 +311,6 @@ const defaultAdjustments = () => ({
     color_section_enabled: true,
     primaries_section_enabled: true,
     curves_section_enabled: true,
-    match_hdr_color: true,
     exposure: 0,
     highlight_recovery: 0.6,
     tone_contrast: 1,
@@ -346,15 +340,12 @@ const defaultAdjustments = () => ({
     tint_hue: 0,
     tint_purity: 0,
     tone_mapper: "filmic",
-    curves_enabled: false,
     luma_curve: defaultCurvePoints(),
     red_curve: defaultCurvePoints(),
     green_curve: defaultCurvePoints(),
     blue_curve: defaultCurvePoints(),
   },
   shared: {
-    active_focus: state.currentView,
-    curves_enabled: false,
     overlay_mode: "off",
     overlay_preset: "web_1000_100",
     overlay_opacity: 0.72,
@@ -395,7 +386,6 @@ const els = {
   interpretationGateCopy: document.getElementById("interpretation-gate-copy"),
   acceptInterpretation: document.getElementById("accept-interpretation"),
   manualInterpretation: document.getElementById("manual-interpretation"),
-  curvesEnabled: document.getElementById("curves-enabled"),
   curveEditor: document.getElementById("curve-editor"),
   toneEqualizerEditor: document.getElementById("tone-equalizer-editor"),
   toneEqualizerBandValue: document.getElementById("tone-equalizer-band-value"),
@@ -457,6 +447,7 @@ const els = {
   scopeFreshness: document.getElementById("scope-freshness"),
   scopeMode: document.getElementById("scope-mode"),
   scopeChannelMode: document.getElementById("scope-channel-mode"),
+  scopeZoom: document.getElementById("scope-zoom"),
   scopeStats: document.getElementById("scope-stats"),
   histogram: document.getElementById("histogram"),
   analysisDock: document.getElementById("analysis-dock"),
@@ -509,12 +500,12 @@ const overlayPresetNotes = {
 
 const controlGroups = {
   "hdr-tone": ["hdr.exposure", "hdr.highlight_rolloff", "hdr.highlight_rolloff_start_nits", "hdr.contrast", "hdr.contrast_pivot", "hdr.shadow_lift"],
-  "hdr-equalizer": ["hdr.tone_equalizer_enabled", "hdr.tone_equalizer_nodes", "hdr.tone_equalizer_influence_radius", "hdr.tone_equalizer_smoothing"],
+  "hdr-equalizer": ["hdr.tone_equalizer_nodes", "hdr.tone_equalizer_influence_radius", "hdr.tone_equalizer_smoothing"],
   "hdr-color": ["hdr.white_balance_kelvin", "hdr.tint", "hdr.saturation", "hdr.vibrance", "hdr.red_hue", "hdr.red_purity", "hdr.green_hue", "hdr.green_purity", "hdr.blue_hue", "hdr.blue_purity", "hdr.tint_hue", "hdr.tint_purity"],
   "hdr-zones": ["hdr.lift", "hdr.lift_range", "hdr.lift_pivot", "hdr.gamma", "hdr.gamma_range", "hdr.gamma_pivot", "hdr.gain", "hdr.gain_range", "hdr.gain_pivot"],
   "sdr-base": ["sdr.tone_mapper", "sdr.tone_contrast", "sdr.tone_skew"],
   "sdr-tone": ["sdr.exposure", "sdr.highlight_recovery", "sdr.contrast", "sdr.contrast_pivot", "sdr.shadow"],
-  "sdr-color": ["sdr.match_hdr_color", "sdr.white_balance_kelvin", "sdr.tint", "sdr.saturation", "sdr.vibrance", "sdr.red_hue", "sdr.red_purity", "sdr.green_hue", "sdr.green_purity", "sdr.blue_hue", "sdr.blue_purity", "sdr.tint_hue", "sdr.tint_purity"],
+  "sdr-color": ["sdr.white_balance_kelvin", "sdr.tint", "sdr.saturation", "sdr.vibrance", "sdr.red_hue", "sdr.red_purity", "sdr.green_hue", "sdr.green_purity", "sdr.blue_hue", "sdr.blue_purity", "sdr.tint_hue", "sdr.tint_purity"],
   "sdr-zones": ["sdr.lift", "sdr.lift_range", "sdr.lift_pivot", "sdr.gamma", "sdr.gamma_range", "sdr.gamma_pivot", "sdr.gain", "sdr.gain_range", "sdr.gain_pivot"],
 };
 
@@ -577,10 +568,13 @@ async function initializeGpuPreview() {
 function restorePreviewPreference() {
   try {
     state.highQualityPreview = localStorage.getItem(HIGH_QUALITY_PREVIEW_KEY) === "true";
+    const savedScopeZoom = Number(localStorage.getItem(SCOPE_ZOOM_KEY));
+    if ([4000, 10000].includes(savedScopeZoom)) state.scopeMaxNits = savedScopeZoom;
   } catch {
     state.highQualityPreview = false;
   }
   if (els.highQualityPreview) els.highQualityPreview.checked = state.highQualityPreview;
+  if (els.scopeZoom) els.scopeZoom.value = String(state.scopeMaxNits);
 }
 
 function initializePreviewScheduler() {
@@ -1032,6 +1026,15 @@ function bindEvents() {
     state.scopeChannelMode = els.scopeChannelMode.value;
     await refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
   });
+  els.scopeZoom.addEventListener("change", async () => {
+    state.scopeMaxNits = Number(els.scopeZoom.value) === 10000 ? 10000 : 4000;
+    try {
+      localStorage.setItem(SCOPE_ZOOM_KEY, String(state.scopeMaxNits));
+    } catch {
+      // The in-memory preference still works when browser storage is unavailable.
+    }
+    await refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
+  });
   els.highQualityPreview?.addEventListener("change", () => {
     state.highQualityPreview = els.highQualityPreview.checked;
     try {
@@ -1093,23 +1096,11 @@ function bindEvents() {
       } else {
         const lane = path.startsWith("sdr.") ? "sdr" : "hdr";
         invalidatePreview(lane);
-        if (lane === "hdr" && state.adjustments.sdr?.match_hdr_color && controlGroups["hdr-color"].includes(path)) {
-          invalidatePreview("sdr");
-        }
         debouncePreview(lane);
       }
     });
   });
   bindRangeResetControls();
-
-  els.curvesEnabled.addEventListener("input", () => {
-    setValueByPath(state.adjustments, curveEnabledPath(), els.curvesEnabled.checked);
-    drawCurveEditor();
-    renderReadouts();
-    invalidatePreview(state.currentView);
-    renderControlState();
-    debouncePreview(state.currentView);
-  });
 
   els.curveChannelButtons.forEach((button) => {
     button.addEventListener("click", () => {
@@ -1120,7 +1111,6 @@ function bindEvents() {
   });
   els.curveReset.addEventListener("click", () => {
     setValueByPath(state.adjustments, `${currentCurveLane()}.curves_section_enabled`, true);
-    setValueByPath(state.adjustments, curveEnabledPath(), false);
     ["luma", "red", "green", "blue"].forEach((channel) => {
       setCurveValues(channel, defaultCurvePoints());
     });
@@ -1287,7 +1277,6 @@ async function uploadFile(file) {
     state.adjustments = payload.session.adjustments;
     state.currentView = "hdr";
     activateWorkflowTab("grade", { focus: false });
-    state.adjustments.shared.active_focus = "hdr";
     state.interpretationGateDismissed = false;
     clearPreviewCache();
     state.gpuPreview?.resetSession(payload.session.session_id);
@@ -1324,7 +1313,6 @@ async function ejectCurrentSession() {
   state.adjustments = defaultAdjustments();
   state.currentView = "hdr";
   activateWorkflowTab("import", { focus: false });
-  state.adjustments.shared.active_focus = "hdr";
   state.interpretationGateDismissed = false;
   state.lastScope = null;
   state.lastExportPath = "";
@@ -1434,8 +1422,7 @@ function renderReadouts() {
   renderKeyValueList(els.sourcePreviewList, sourceInterpretationEntries());
   renderWorkflowContext();
   const lane = currentCurveLane().toUpperCase();
-  const enabled = getValueByPath(state.adjustments, curveEnabledPath()) ? "enabled" : "disabled";
-  els.curveStatus.textContent = `${lane} curves are ${enabled}. Curve edits affect only the ${lane} preview/export branch.`;
+  els.curveStatus.textContent = `Curve edits affect only the ${lane} preview/export branch.`;
 }
 
 function renderOverlayPresetNote() {
@@ -1618,7 +1605,7 @@ function refinementProxyLongEdge() {
 }
 
 function scopeLongEdge(tier) {
-  if (tier === "interactive") return Math.min(768, interactiveProxyLongEdge());
+  if (tier === "interactive") return Math.min(512, interactiveProxyLongEdge());
   if (tier === "refinement") return Math.min(1600, refinementProxyLongEdge());
   return Math.min(1200, settledProxyLongEdge());
 }
@@ -1818,43 +1805,105 @@ async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 16
   await applyOverlayUrl(url);
 }
 
-async function refreshScopes(longEdge = 960, { tier = "settled", generation = null, lane = state.currentView } = {}) {
-  if (!state.session) return;
-  if (state.scopeAbortController) state.scopeAbortController.abort();
-  const controller = new AbortController();
-  state.scopeAbortController = controller;
+function refreshScopes(longEdge = 960, { tier = "settled", generation = null, lane = state.currentView } = {}) {
+  if (!state.session) return Promise.resolve(false);
   const requestGeneration = generation ?? (state.scopeGeneration + 1);
   state.scopeGeneration = Math.max(state.scopeGeneration, requestGeneration);
   const mode = state.scopeMode;
   const resolution = tier === "interactive"
-    ? { bins: mode === "waveform" ? 128 : 256, columns: 256 }
+    ? { bins: mode === "waveform" ? 96 : 128, columns: 192 }
     : mode === "waveform" ? waveformRequestResolution() : { bins: 256, columns: 256 };
-  const resolutionQuery = `&bins=${resolution.bins}&columns=${resolution.columns}`;
-  if (!els.scopeFreshness.classList.contains("updating")) {
-    els.scopeFreshness.textContent = "Updating";
-    els.scopeFreshness.classList.add("updating");
-  }
-  const response = await fetch(`/api/session/${state.session.session_id}/scopes?kind=${lane}&mode=${mode}&long_edge=${longEdge}${resolutionQuery}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ adjustments: state.adjustments, long_edge: longEdge, generation: requestGeneration, tier }),
-    signal: controller.signal,
-  }).catch((error) => {
-    if (error.name === "AbortError") return null;
-    console.error(error);
-    return null;
+
+  return new Promise((resolve) => {
+    enqueueScopeRequest({
+      sessionId: state.session.session_id,
+      lane,
+      mode,
+      tier,
+      generation: requestGeneration,
+      longEdge,
+      resolution,
+      maxNits: state.scopeMaxNits,
+      adjustments: JSON.parse(JSON.stringify(state.adjustments)),
+      resolve,
+      controller: null,
+    });
   });
-  if (!response || response.status === 409 || controller !== state.scopeAbortController) return;
-  if (!response.ok) return;
-  const payload = await response.json();
-  if (controller !== state.scopeAbortController || lane !== state.currentView || mode !== state.scopeMode) return;
-  if (payload.generation !== null && payload.generation !== requestGeneration) return;
-  state.lastScope = payload;
-  els.scopeFreshness.textContent = tier === "interactive" ? "Preview" : tier === "refinement" ? "Refined" : "Settled";
-  els.scopeFreshness.classList.remove("updating");
-  drawHistogram(payload);
-  renderDockSummary();
-  renderExportPreflight();
+}
+
+function enqueueScopeRequest(request) {
+  const active = state.scopeRequestInFlight;
+  if (!active) {
+    void runScopeRequest(request);
+    return;
+  }
+
+  state.pendingScopeRequest?.resolve(false);
+  state.pendingScopeRequest = request;
+  markScopeUpdating();
+
+  // Switching source, lane, or scope mode is a hard transition. Continuous
+  // adjustment updates for the same view deliberately do not abort the active
+  // request: its intermediate result is useful feedback while the latest state
+  // waits in the single-slot queue.
+  if (scopeRequestKey(active) !== scopeRequestKey(request)) active.controller?.abort();
+}
+
+function scopeRequestKey(request) {
+  return `${request.sessionId}:${request.lane}:${request.mode}:${request.maxNits}`;
+}
+
+function markScopeUpdating() {
+  els.scopeFreshness.textContent = "Updating";
+  els.scopeFreshness.classList.add("updating");
+}
+
+function scopeFreshnessLabel(tier) {
+  return tier === "interactive" ? "Preview" : tier === "refinement" ? "Refined" : "Settled";
+}
+
+async function runScopeRequest(request) {
+  const controller = new AbortController();
+  request.controller = controller;
+  state.scopeRequestInFlight = request;
+  markScopeUpdating();
+  let applied = false;
+
+  try {
+    const { sessionId, lane, mode, tier, generation, longEdge, resolution, maxNits, adjustments } = request;
+    const resolutionQuery = `&bins=${resolution.bins}&columns=${resolution.columns}`;
+    const response = await fetch(`/api/session/${sessionId}/scopes?kind=${lane}&mode=${mode}&long_edge=${longEdge}&max_nits=${maxNits}${resolutionQuery}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ adjustments, long_edge: longEdge, generation, tier }),
+      signal: controller.signal,
+    });
+    if (response.status === 409 || !response.ok) return false;
+    const payload = await response.json();
+    if (state.session?.session_id !== sessionId || lane !== state.currentView || mode !== state.scopeMode) return false;
+    if (payload.generation !== null && payload.generation !== generation) return false;
+    state.lastScope = payload;
+    els.scopeFreshness.textContent = scopeFreshnessLabel(tier);
+    drawHistogram(payload);
+    renderDockSummary();
+    renderExportPreflight();
+    applied = true;
+    return true;
+  } catch (error) {
+    if (error.name !== "AbortError") console.error(error);
+    return false;
+  } finally {
+    if (state.scopeRequestInFlight === request) state.scopeRequestInFlight = null;
+    request.resolve(applied);
+    const next = state.pendingScopeRequest;
+    state.pendingScopeRequest = null;
+    if (next) {
+      void runScopeRequest(next);
+    } else {
+      els.scopeFreshness.classList.remove("updating");
+      if (!applied) els.scopeFreshness.textContent = state.lastScope ? scopeFreshnessLabel(state.lastScope.tier) : "Waiting";
+    }
+  }
 }
 
 function waveformRequestResolution() {
@@ -1979,7 +2028,10 @@ function drawScopeGrid(ctx, scope, isWaveform, plotLeft, plotTop, plotWidth, plo
 }
 
 function scopeGuidesForDisplay(scope) {
-  if (scope.preview_kind === "hdr") return new Set([1, 10, 100, 203, 1000, 4000]);
+  if (scope.preview_kind === "hdr") {
+    const ceiling = scopeHdrCeiling(scope);
+    return new Set(ceiling >= 10000 ? [1, 10, 100, 203, 1000, 4000, 10000] : [1, 10, 100, 203, 1000, 4000]);
+  }
   return new Set([0.18, 0.5, 1]);
 }
 
@@ -1992,6 +2044,7 @@ function waveformGuideLabel(scope, guide) {
     203: "203",
     1000: "1K peak",
     4000: "4K peak",
+    10000: "10K PQ",
   };
   return labels[Number(guide.value)] || guide.label;
 }
@@ -1999,10 +2052,15 @@ function waveformGuideLabel(scope, guide) {
 function guidePosition(scope, value) {
   if (scope.preview_kind === "hdr") {
     const min = Math.log10(1);
-    const max = Math.log10(4000);
+    const max = Math.log10(scopeHdrCeiling(scope));
     return (Math.log10(Math.max(value, 1)) - min) / (max - min);
   }
   return Math.min(1, Math.max(0, value));
+}
+
+function scopeHdrCeiling(scope) {
+  const edge = Number(scope?.bin_edges?.[scope.bin_edges.length - 1]);
+  return Number.isFinite(edge) && edge >= 10000 - 1 ? 10000 : 4000;
 }
 
 function bindZoneScopeOverlays() {
@@ -2441,7 +2499,6 @@ function syncControlsFromState() {
 }
 
 function syncCurveControlsFromState() {
-  els.curvesEnabled.checked = Boolean(getValueByPath(state.adjustments, curveEnabledPath()));
   els.curveRemove.disabled = currentCurveValues().length <= 2 || isLockedCurveEndpoint(state.selectedCurvePoint);
 }
 
@@ -2476,6 +2533,7 @@ function bindToneEqualizerEditor() {
   const canvas = els.toneEqualizerEditor;
   const beginDrag = (clientX, clientY) => {
     if (!state.session) return;
+    state.previewScheduler?.beginInteraction();
     const rect = canvas.getBoundingClientRect();
     state.activeToneEqualizerBand = nearestToneEqualizerBandIndex(clientX, rect);
     state.selectedToneEqualizerBand = state.activeToneEqualizerBand;
@@ -2491,7 +2549,7 @@ function bindToneEqualizerEditor() {
       window.removeEventListener("pointercancel", stop);
       state.activeToneEqualizerBand = null;
       renderControlState();
-      debouncePreview("hdr");
+      state.previewScheduler?.endInteraction();
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", stop);
@@ -2546,16 +2604,18 @@ function bindToneEqualizerEditor() {
     const direction = event.key === "ArrowUp" ? 1 : -1;
     setToneEqualizerBand(index, currentToneEqualizerNodes()[index].adjustment_ev + direction * step);
     renderControlState();
-    debouncePreview("hdr");
   });
 
   els.toneEqualizerBandValue.addEventListener("input", () => {
     if (!state.session) return;
     setToneEqualizerBand(state.selectedToneEqualizerBand, Number(els.toneEqualizerBandValue.value));
   });
+  els.toneEqualizerBandValue.addEventListener("pointerdown", () => state.previewScheduler?.beginInteraction());
+  ["pointerup", "pointercancel"].forEach((eventName) => {
+    els.toneEqualizerBandValue.addEventListener(eventName, () => state.previewScheduler?.endInteraction());
+  });
   els.toneEqualizerBandValue.addEventListener("change", () => {
     renderControlState();
-    debouncePreview("hdr");
   });
   els.toneEqualizerAdd.addEventListener("click", () => addToneEqualizerNode());
   els.toneEqualizerRemove.addEventListener("click", removeToneEqualizerNode);
@@ -2588,11 +2648,10 @@ function updateToneEqualizerFromPointer(clientX, clientY, rect, startingNodes) {
     }
   });
   state.adjustments.hdr.tone_equalizer_nodes = normalizeToneEqualizerNodes(nodes);
-  state.adjustments.hdr.tone_equalizer_enabled = true;
   syncControlsFromState();
   drawToneEqualizerEditor();
   invalidatePreview("hdr");
-  queueGpuDraft("hdr");
+  debouncePreview("hdr");
 }
 
 function nearestToneEqualizerBandIndex(clientX, rect) {
@@ -2609,12 +2668,11 @@ function setToneEqualizerBand(index, requestedValue) {
   const rounded = Math.round(clamp(Number(requestedValue) || 0, minimum, maximum) * 100) / 100;
   nodes[index].adjustment_ev = clamp(rounded, Math.ceil(minimum * 100) / 100, Math.floor(maximum * 100) / 100);
   state.adjustments.hdr.tone_equalizer_nodes = normalizeToneEqualizerNodes(nodes);
-  state.adjustments.hdr.tone_equalizer_enabled = true;
   state.selectedToneEqualizerBand = index;
   syncControlsFromState();
   drawToneEqualizerEditor();
   invalidatePreview("hdr");
-  queueGpuDraft("hdr");
+  debouncePreview("hdr");
 }
 
 function toneEqualizerBandLimits(index, nodes = currentToneEqualizerNodes()) {
@@ -2662,7 +2720,7 @@ function drawToneEqualizerEditor() {
   const graphHeight = height - top - bottom;
   const nodes = currentToneEqualizerNodes();
   const smoothing = clamp(Number(state.adjustments.hdr?.tone_equalizer_smoothing ?? 0.5), 0, 1);
-  const enabled = Boolean(state.adjustments.hdr?.tone_equalizer_enabled);
+  const enabled = state.adjustments.hdr?.tone_equalizer_section_enabled !== false;
   const xForEv = (inputEv) => left + ((inputEv - TONE_EQUALIZER_MIN_EV) / (TONE_EQUALIZER_PQ_MAX_EV - TONE_EQUALIZER_MIN_EV)) * graphWidth;
   const yForAdjustment = (value) => top + ((TONE_EQUALIZER_MAX_ADJUSTMENT_EV - value) / (TONE_EQUALIZER_MAX_ADJUSTMENT_EV * 2)) * graphHeight;
 
@@ -2817,7 +2875,6 @@ function addToneEqualizerNode(preferredEv = null) {
   nodes.sort((left, right) => left.input_ev - right.input_ev);
   state.selectedToneEqualizerBand = nodes.findIndex((node) => node.input_ev === inputEv);
   state.adjustments.hdr.tone_equalizer_nodes = normalizeToneEqualizerNodes(nodes);
-  state.adjustments.hdr.tone_equalizer_enabled = true;
   drawToneEqualizerEditor();
   renderControlState();
   invalidatePreview("hdr");
@@ -3048,10 +3105,6 @@ function setCurveValues(channel, values) {
 
 function curvePath(channel) {
   return `${currentCurveLane()}.${channel}_curve`;
-}
-
-function curveEnabledPath() {
-  return `${currentCurveLane()}.curves_enabled`;
 }
 
 function currentCurveLane() {
@@ -3522,7 +3575,6 @@ async function switchLane(lane) {
     return;
   }
   state.currentView = lane;
-  state.adjustments.shared.active_focus = lane;
   state.selectedCurvePoint = Math.min(state.selectedCurvePoint ?? 0, currentCurveValues().length - 1);
   renderLaneChrome();
   syncCurveControlsFromState();
@@ -3562,6 +3614,10 @@ function invalidatePreview(lane) {
 
 function clearPreviewCache() {
   state.previewScheduler?.cancel();
+  state.scopeRequestInFlight?.controller?.abort();
+  state.pendingScopeRequest?.resolve(false);
+  state.scopeRequestInFlight = null;
+  state.pendingScopeRequest = null;
   for (const lane of ["hdr", "sdr"]) {
     state.previewControllers[lane]?.abort();
     state.previewControllers[lane] = null;
@@ -3960,13 +4016,6 @@ function renderControlState() {
       input.disabled = !filmicEnabled;
     });
   });
-  const followsHdrColor = state.adjustments.sdr?.match_hdr_color !== false;
-  document.querySelectorAll("[data-sdr-manual-color]").forEach((container) => {
-    container.classList.toggle("linked-controls", followsHdrColor);
-    container.querySelectorAll("input").forEach((input) => {
-      input.disabled = followsHdrColor || !state.session;
-    });
-  });
   els.controlRows.forEach((row) => {
     row.classList.toggle("modified", isPathModified(row.dataset.controlPath, defaults));
   });
@@ -3975,12 +4024,6 @@ function renderControlState() {
     const output = document.querySelector(`[data-modified-count="${group}"]`);
     if (output) output.textContent = count ? `${count} mod` : "";
     output?.closest(".control-group")?.classList.toggle("modified", count > 0);
-  }
-  if (followsHdrColor) {
-    const linkedCount = controlGroups["hdr-color"].filter((path) => isPathModified(path, defaults)).length;
-    const output = document.querySelector('[data-modified-count="sdr-color"]');
-    if (output) output.textContent = linkedCount ? `Following HDR / ${linkedCount} linked` : "Following HDR";
-    output?.closest(".control-group")?.classList.toggle("modified", linkedCount > 0);
   }
   for (const lane of ["hdr", "sdr"]) {
     const keys = Object.keys(defaults[lane]).filter((key) => !key.endsWith("_curve") && !key.endsWith("_section_enabled"));
@@ -4017,7 +4060,7 @@ function valuesEqual(left, right) {
 }
 
 function laneCurvesModified(lane, defaults = defaultAdjustments()) {
-  return ["curves_enabled", "luma_curve", "red_curve", "green_curve", "blue_curve"]
+  return ["luma_curve", "red_curve", "green_curve", "blue_curve"]
     .some((key) => !valuesEqual(state.adjustments[lane]?.[key], defaults[lane][key]));
 }
 

@@ -155,15 +155,17 @@ def test_apply_apple_hdr_gainmap_increases_highlight_energy() -> None:
     assert combined.max() > 0.5
 
 
-def test_sdr_curves_apply_only_to_active_focus() -> None:
+def test_sdr_curves_apply_only_to_sdr_branch() -> None:
     image = np.ones((1, 1, 3), dtype=np.float32) * 0.5
     adjustments = AdjustmentState.model_validate(
         {
             "hdr": {"exposure": 0, "highlight_rolloff": 0.25, "shadow_lift": 0, "white_balance_kelvin": 6500, "tint": 0},
-            "sdr": {"exposure": 0, "highlight_recovery": 0.25, "shadow": 0, "contrast": 0, "tone_mapper": "aces"},
-            "shared": {
-                "active_focus": "sdr",
-                "curves_enabled": True,
+            "sdr": {
+                "exposure": 0,
+                "highlight_recovery": 0.25,
+                "shadow": 0,
+                "contrast": 0,
+                "tone_mapper": "aces",
                 "luma_curve": [[0.0, 0.0], [0.18, 0.2], [0.45, 0.35], [0.72, 0.55], [1.0, 0.8]],
                 "red_curve": [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]],
                 "green_curve": [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]],
@@ -184,16 +186,18 @@ def test_hdr_curves_can_bias_individual_channels() -> None:
     image = np.array([[[2.0, 1.0, 1.0]]], dtype=np.float32)
     adjustments = AdjustmentState.model_validate(
         {
-            "hdr": {"exposure": 0, "highlight_rolloff": 0.25, "shadow_lift": 0, "white_balance_kelvin": 6500, "tint": 0},
-            "sdr": {"exposure": 0, "highlight_recovery": 0.25, "shadow": 0, "contrast": 0, "tone_mapper": "aces"},
-            "shared": {
-                "active_focus": "hdr",
-                "curves_enabled": True,
+            "hdr": {
+                "exposure": 0,
+                "highlight_rolloff": 0.25,
+                "shadow_lift": 0,
+                "white_balance_kelvin": 6500,
+                "tint": 0,
                 "luma_curve": [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]],
                 "red_curve": [[0.0, 0.0], [0.2, 0.3], [0.45, 0.65], [0.7, 0.9], [1.0, 1.0]],
                 "green_curve": [[0.0, 0.0], [0.2, 0.2], [0.45, 0.45], [0.7, 0.65], [1.0, 0.9]],
                 "blue_curve": [[0.0, 0.0], [0.2, 0.2], [0.45, 0.45], [0.7, 0.65], [1.0, 0.9]],
             },
+            "sdr": {"exposure": 0, "highlight_recovery": 0.25, "shadow": 0, "contrast": 0, "tone_mapper": "aces"},
         }
     )
 
@@ -207,10 +211,8 @@ def test_hdr_branch_curves_do_not_affect_sdr_branch() -> None:
     adjustments = AdjustmentState.model_validate(
         {
             "hdr": {
-                "curves_enabled": True,
                 "luma_curve": [[0.0, 0.0], [0.4, 0.08], [1.0, 0.08]],
             },
-            "sdr": {"curves_enabled": False},
         }
     )
 
@@ -223,7 +225,6 @@ def test_all_hdr_lane_controls_are_isolated_from_manual_sdr_fallback() -> None:
     baseline = apply_adjustments(image, AdjustmentState(), PreviewKind.SDR)
     adjustments = AdjustmentState.model_validate(
         {
-            "sdr": {"match_hdr_color": False},
             "hdr": {
                 "exposure": 1.5,
                 "highlight_rolloff": 1.5,
@@ -235,7 +236,6 @@ def test_all_hdr_lane_controls_are_isolated_from_manual_sdr_fallback() -> None:
                 "contrast_pivot": 0.3,
                 "white_balance_kelvin": 11000,
                 "tint": 0.8,
-                "curves_enabled": True,
                 "luma_curve": [[0.0, 0.0], [0.5, 0.1], [1.0, 0.3]],
             }
         }
@@ -252,7 +252,6 @@ def test_all_hdr_lane_controls_are_isolated_from_manual_embedded_sdr_reference()
     baseline = apply_adjustments(scene, AdjustmentState(), PreviewKind.SDR, sdr_reference_image=reference)
     adjustments = AdjustmentState.model_validate(
         {
-            "sdr": {"match_hdr_color": False},
             "hdr": {
                 "exposure": -2.0,
                 "highlight_rolloff": 2.0,
@@ -277,9 +276,7 @@ def test_sdr_branch_curves_do_not_affect_hdr_branch() -> None:
     baseline = apply_adjustments(image, AdjustmentState(), PreviewKind.HDR)
     adjustments = AdjustmentState.model_validate(
         {
-            "hdr": {"curves_enabled": False},
             "sdr": {
-                "curves_enabled": True,
                 "luma_curve": [[0.0, 0.0], [0.4, 0.08], [1.0, 0.08]],
             },
         }
@@ -294,7 +291,6 @@ def test_variable_point_curves_are_supported() -> None:
     adjustments = AdjustmentState.model_validate(
         {
             "sdr": {
-                "curves_enabled": True,
                 "luma_curve": [[0.0, 0.0], [0.2, 0.12], [0.5, 0.35], [0.7, 0.55], [0.9, 0.72], [1.0, 0.85]],
             }
         }
@@ -408,6 +404,31 @@ def test_hdr_scope_reports_reference_nits_and_stats() -> None:
     assert any(stat.label == "Peak" for stat in scope.stats)
     assert len(scope.bin_edges) == 257
     assert any(channel.name == "Y" for channel in scope.channels)
+
+
+def test_hdr_scope_zoom_defaults_to_4000_nits_and_can_cover_full_pq_range() -> None:
+    levels_nits = np.array([4000.0, 6000.0, 10000.0], dtype=np.float32)
+    levels = levels_nits * np.float32(0.18 / 100.0)
+    image = np.repeat(levels.reshape(1, 3, 1), 3, axis=2)
+    default_scope = build_scope(
+        image,
+        AdjustmentState(hdr=HDRAdjustments(highlight_rolloff=0)),
+        PreviewKind.HDR,
+    )
+    scope = build_scope(
+        image,
+        AdjustmentState(hdr=HDRAdjustments(highlight_rolloff=0)),
+        PreviewKind.HDR,
+        max_nits=10000,
+    )
+    luma = next(channel for channel in scope.channels if channel.name == "Y")
+    populated_bins = np.flatnonzero(np.asarray(luma.bins))
+
+    assert default_scope.bin_edges[-1] == pytest.approx(4000.0, rel=1e-5)
+    assert all(guide.value <= 4000.0 for guide in default_scope.guides)
+    assert scope.bin_edges[-1] == pytest.approx(10000.0, rel=1e-5)
+    assert len(populated_bins) == 3
+    assert any(guide.value == 10000.0 for guide in scope.guides)
 
 
 def test_reference_nits_anchor_matches_prd_values() -> None:
