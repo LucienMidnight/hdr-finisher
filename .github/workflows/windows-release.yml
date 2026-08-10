@@ -1,0 +1,93 @@
+name: Windows release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-windows-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            codebase/requirements.txt
+            codebase/requirements-dev.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: codebase/package-lock.json
+
+      - name: Install dependencies
+        working-directory: codebase
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+          npm ci
+
+      - name: Verify release tag matches application version
+        if: startsWith(github.ref, 'refs/tags/')
+        working-directory: codebase
+        shell: pwsh
+        run: |
+          $appVersion = (python -c "import sys; sys.path.insert(0, 'backend'); from hdr_finisher.config import APP_VERSION; print(APP_VERSION)").Trim()
+          $expectedTag = "v$appVersion"
+          if ($expectedTag -ne "${{ github.ref_name }}") {
+              throw "Release tag ${{ github.ref_name }} does not match application version $expectedTag."
+          }
+
+      - name: Test and build Windows package
+        working-directory: codebase
+        shell: pwsh
+        run: .\tools\build_windows.ps1 -SkipPlaywright
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: HDR-Finisher-Windows-x64
+          path: |
+            codebase/output/package/*.zip
+            codebase/output/package/*.sha256
+          if-no-files-found: error
+
+      - name: Publish GitHub Release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $assets = Get-ChildItem -LiteralPath codebase\output\package -File
+          if (-not $assets) {
+              throw "No release assets were produced."
+          }
+          $assetPaths = @($assets.FullName)
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -eq 0) {
+              gh release upload $tag @assetPaths --clobber
+          } else {
+              gh release create $tag @assetPaths --title "HDR Finisher $tag" --generate-notes
+          }
+          if ($LASTEXITCODE -ne 0) {
+              throw "GitHub Release publication failed."
+          }

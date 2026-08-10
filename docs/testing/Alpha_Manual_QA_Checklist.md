@@ -3,9 +3,10 @@
 Use this checklist after `tools\run_alpha_qa.ps1` and `tools\build_windows.ps1` pass.
 
 ## Packaged Alpha
-- Unzip `codebase\output\package\HDRFinisher-alpha-windows.zip` on a Windows machine without relying on the source checkout.
-- Run `HDRFinisher.exe`.
-- Open `http://127.0.0.1:8000` in Edge or Brave for manual HDR checks.
+- Unzip `codebase\output\package\HDR-Finisher-v*-Windows-x64.zip` on a Windows machine without Python or the source checkout.
+- Run **HDR Finisher.exe** from the extracted folder root and confirm the browser launcher displays the expected application version.
+- Confirm the launcher and application work at the displayed `http://127.0.0.1:<port>` address in Edge or Brave.
+- Repeat with port 8000 occupied and confirm HDR Finisher selects another local port instead of failing.
 - Confirm `/health` returns `{"status":"ok"}`.
 - Confirm capabilities show AVIF gain-map export available, JPEG Ultra HDR available when the pinned encoder is bundled, and JPEG XL deferred.
 - Import the bundled/sample HDR reference workflow and export AVIF + gain map.

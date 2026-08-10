@@ -5,12 +5,24 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Root = Resolve-Path (Join-Path $PSScriptRoot "..")
-$PackageDir = Join-Path $Root "output\package"
-$DistDir = Join-Path $PackageDir "dist"
-$WorkDir = Join-Path $PackageDir "build"
-$ZipPath = Join-Path $PackageDir "HDRFinisher-alpha-windows.zip"
+$Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$OutputRoot = [IO.Path]::GetFullPath((Join-Path $Root "output"))
+$PackageDir = [IO.Path]::GetFullPath((Join-Path $OutputRoot "package"))
+$StagingDir = Join-Path $PackageDir "staging"
+$DistDir = Join-Path $StagingDir "dist"
+$WorkDir = Join-Path $StagingDir "build"
 $QaScript = Join-Path $PSScriptRoot "run_alpha_qa.ps1"
+$VenvPython = Join-Path $Root ".venv\Scripts\python.exe"
+$Python = if (Test-Path -LiteralPath $VenvPython) {
+    $VenvPython
+} else {
+    (Get-Command python -ErrorAction Stop).Source
+}
+
+$expectedPrefix = $OutputRoot.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+if (-not $PackageDir.StartsWith($expectedPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Refusing to clean package path outside the output directory: $PackageDir"
+}
 
 function Test-Health {
     param([string]$BaseUri)
@@ -38,10 +50,19 @@ function Start-PackagedApp {
 
 Push-Location $Root
 try {
-    python -c "import PyInstaller" 2>$null
+    & $Python -c "import PyInstaller"
     if ($LASTEXITCODE -ne 0) {
         throw "PyInstaller is not installed. Run: python -m pip install -r requirements-dev.txt"
     }
+
+    $Version = (& $Python -c "import sys; sys.path.insert(0, 'backend'); from hdr_finisher.config import APP_VERSION; print(APP_VERSION)").Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $Version) {
+        throw "Could not read the HDR Finisher version."
+    }
+
+    $ReleaseStem = "HDR-Finisher-v$Version-Windows-x64"
+    $ZipPath = Join-Path $PackageDir "$ReleaseStem.zip"
+    $ChecksumPath = "$ZipPath.sha256"
 
     if (-not $SkipTests) {
         $qaArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $QaScript)
@@ -54,18 +75,14 @@ try {
         }
     }
 
-    New-Item -ItemType Directory -Force -Path $PackageDir | Out-Null
-    if (Test-Path $DistDir) {
-        Remove-Item -LiteralPath $DistDir -Recurse -Force
+    # This directory contains generated packages only. Recreate it so stale
+    # executables can never survive beside a newer release artifact.
+    if (Test-Path -LiteralPath $PackageDir) {
+        Remove-Item -LiteralPath $PackageDir -Recurse -Force
     }
-    if (Test-Path $WorkDir) {
-        Remove-Item -LiteralPath $WorkDir -Recurse -Force
-    }
-    if (Test-Path $ZipPath) {
-        Remove-Item -LiteralPath $ZipPath -Force
-    }
+    New-Item -ItemType Directory -Force -Path $StagingDir | Out-Null
 
-    python -m PyInstaller `
+    & $Python -m PyInstaller `
         --noconfirm `
         --clean `
         --distpath $DistDir `
@@ -76,10 +93,12 @@ try {
         throw "PyInstaller build failed."
     }
 
-    $exePath = Join-Path $DistDir "HDRFinisher\HDRFinisher.exe"
-    if (-not (Test-Path $exePath)) {
-        throw "Expected packaged executable not found: $exePath"
+    $BundleDir = Join-Path $DistDir "HDR Finisher"
+    $ExePath = Join-Path $BundleDir "HDR Finisher.exe"
+    if (-not (Test-Path -LiteralPath $ExePath)) {
+        throw "Expected packaged executable not found: $ExePath"
     }
+
     $smokeBaseUri = "http://127.0.0.1:$SmokeTestPort"
     if (Test-Health $smokeBaseUri) {
         throw "Port $SmokeTestPort is already serving /health before the packaged smoke test. Choose another -SmokeTestPort."
@@ -90,7 +109,7 @@ try {
     $env:HDR_FINISHER_PORT = $SmokeTestPort.ToString()
     $env:HDR_FINISHER_NO_BROWSER = "1"
     try {
-        $process = Start-PackagedApp $exePath
+        $process = Start-PackagedApp $ExePath
     } finally {
         $env:HDR_FINISHER_PORT = $previousPort
         $env:HDR_FINISHER_NO_BROWSER = $previousNoBrowser
@@ -116,8 +135,17 @@ try {
         }
     }
 
-    Compress-Archive -LiteralPath (Join-Path $DistDir "HDRFinisher") -DestinationPath $ZipPath -Force
-    Write-Host "Windows alpha package written to $ZipPath"
+    Compress-Archive -Path (Join-Path $BundleDir "*") -DestinationPath $ZipPath -Force
+    $checksum = Get-FileHash -Algorithm SHA256 -LiteralPath $ZipPath
+    "{0}  {1}" -f $checksum.Hash.ToLowerInvariant(), (Split-Path $ZipPath -Leaf) |
+        Set-Content -LiteralPath $ChecksumPath -Encoding ascii -NoNewline
+
+    Remove-Item -LiteralPath $StagingDir -Recurse -Force
+    Write-Host "Windows release package: $ZipPath"
+    Write-Host "SHA-256 checksum:       $ChecksumPath"
 } finally {
+    if (Test-Path -LiteralPath $StagingDir) {
+        Remove-Item -LiteralPath $StagingDir -Recurse -Force
+    }
     Pop-Location
 }

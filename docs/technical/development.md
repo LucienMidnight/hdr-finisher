@@ -91,7 +91,7 @@ The current package workflow is Windows PyInstaller folder mode:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_windows.ps1
 ```
 
-It smoke-tests the packaged server and writes an archive below `codebase/output/package/`. macOS signing/notarization and installer work are not implemented.
+It removes the previous generated package directory, smoke-tests the packaged server, and leaves only a versioned ZIP plus SHA-256 checksum below `codebase/output/package/`. The extracted ZIP presents **HDR Finisher.exe** as the single user entry point. macOS signing/notarization and installer work are not implemented.
 
 ## API changes
 

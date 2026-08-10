@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import socket
+import sys
 import threading
 import time
 import webbrowser
@@ -23,6 +25,39 @@ def server_url(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> str:
     if ":" in display_host and not display_host.startswith("["):
         display_host = f"[{display_host}]"
     return f"http://{display_host}:{port}"
+
+
+def find_available_port(
+    host: str = DEFAULT_HOST,
+    preferred_port: int = DEFAULT_PORT,
+    search_count: int = 20,
+) -> int:
+    """Return the preferred local port or a nearby available alternative."""
+    family = socket.AF_INET6 if ":" in host else socket.AF_INET
+    candidates = range(preferred_port, min(preferred_port + search_count, 65536))
+    for candidate in candidates:
+        with socket.socket(family, socket.SOCK_STREAM) as probe:
+            try:
+                probe.bind((host, candidate))
+            except OSError:
+                continue
+            return candidate
+
+    with socket.socket(family, socket.SOCK_STREAM) as probe:
+        probe.bind((host, 0))
+        return int(probe.getsockname()[1])
+
+
+def set_console_title() -> None:
+    """Give the Windows server window a clear lifecycle instruction."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.kernel32.SetConsoleTitleW(f"{APP_NAME} - keep this window open")
+    except (AttributeError, OSError):
+        pass
 
 
 def open_server_url(
@@ -67,7 +102,10 @@ def run() -> None:
     """Start HDR Finisher and present its browser address clearly."""
     from .main import app
 
-    service = LauncherServer(app)
+    set_console_title()
+    port_is_explicit = "HDR_FINISHER_PORT" in os.environ
+    port = DEFAULT_PORT if port_is_explicit else find_available_port()
+    service = LauncherServer(app, port=port)
     print()
     print("  +--------------------------------------------+")
     print(f"  |  {APP_NAME.upper():<27} v{APP_VERSION:<10}|")
@@ -75,6 +113,8 @@ def run() -> None:
     print("  +--------------------------------------------+")
     print()
     print("  Starting the local server...")
+    if port != DEFAULT_PORT:
+        print(f"  Port {DEFAULT_PORT} is unavailable; using port {port} instead.")
     service.start()
     try:
         deadline = time.monotonic() + 15.0

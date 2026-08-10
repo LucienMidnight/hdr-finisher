@@ -105,18 +105,31 @@ try {
     }
     if (-not $SkipSampleExport) {
         $sampleOutput = Join-Path $QaDir "hdr_reference.avif"
+        $sampleInfo = Join-Path $QaDir "hdr_reference_avif.json"
+        if (Test-Path -LiteralPath $sampleOutput) {
+            Remove-Item -LiteralPath $sampleOutput -Force
+        }
+        if (Test-Path -LiteralPath $sampleInfo) {
+            Remove-Item -LiteralPath $sampleInfo -Force
+        }
         Invoke-QaStep "sample-export" { Invoke-LoggedCommand "sample-export" $Python @("tools\generate_hdr_reference.py", "--output", $sampleOutput) }
         Invoke-QaStep "sample-avif-info" {
             Invoke-LoggedCommand "sample-avif-info" $Python @(
                 "tools\avif_info.py",
                 $sampleOutput,
                 "--json",
-                (Join-Path $QaDir "hdr_reference_avif.json")
+                $sampleInfo
             )
         }
         if ($summary.capabilities.ultrahdr_encoder.status -eq "available") {
             $ultraHdrOutput = Join-Path $QaDir "hdr_reference_ultrahdr.jpg"
             $ultraHdrJson = Join-Path $QaDir "hdr_reference_ultrahdr.json"
+            if (Test-Path -LiteralPath $ultraHdrOutput) {
+                Remove-Item -LiteralPath $ultraHdrOutput -Force
+            }
+            if (Test-Path -LiteralPath $ultraHdrJson) {
+                Remove-Item -LiteralPath $ultraHdrJson -Force
+            }
             Invoke-QaStep "sample-ultrahdr-export-validate" {
                 Invoke-LoggedCommand "sample-ultrahdr-export-validate" $Python @(
                     "tools\generate_ultrahdr_reference.py",

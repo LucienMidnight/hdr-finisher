@@ -19,6 +19,9 @@ HDR Finisher is not a RAW developer, layer compositor, masking tool, or local re
 
 ## Start here
 
+- **Windows users:** download the latest `HDR-Finisher-v*-Windows-x64.zip` from
+  [GitHub Releases](https://github.com/LucienMidnight/hdr-finisher/releases), extract it, and double-click
+  **HDR Finisher.exe**. Do not open `frontend/launcher.html` directly.
 - [Five-minute quick start](docs/getting-started/quick-start.md)
 - [Install and run](docs/getting-started/install-and-run.md)
 - [Prepare files from Affinity, darktable, Blender, or an iPhone](docs/workflows/source-preparation.md)

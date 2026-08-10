@@ -467,7 +467,8 @@ def root() -> HTMLResponse:
 
 @app.get("/launcher")
 def launcher() -> HTMLResponse:
-    return HTMLResponse(content=(FRONTEND_DIR / "launcher.html").read_text(encoding="utf-8"))
+    html = (FRONTEND_DIR / "launcher.html").read_text(encoding="utf-8")
+    return HTMLResponse(content=html.replace("__HDR_FINISHER_VERSION__", APP_VERSION))
 
 
 def run() -> None:

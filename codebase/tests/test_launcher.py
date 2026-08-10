@@ -7,7 +7,8 @@ from urllib.request import urlopen
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from hdr_finisher.launcher import LauncherServer, open_server_url, server_url
+from hdr_finisher.config import APP_VERSION
+from hdr_finisher.launcher import LauncherServer, find_available_port, open_server_url, server_url
 from hdr_finisher.main import app
 
 
@@ -31,6 +32,19 @@ def test_open_server_url_uses_supplied_browser_opener() -> None:
     assert opened == ["http://127.0.0.1:8000"]
 
 
+def test_find_available_port_skips_occupied_preferred_port() -> None:
+    with socket.socket() as occupied:
+        occupied.bind(("127.0.0.1", 0))
+        occupied.listen()
+        preferred_port = int(occupied.getsockname()[1])
+
+        selected_port = find_available_port(preferred_port=preferred_port)
+
+    assert selected_port != preferred_port
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", selected_port))
+
+
 def test_launcher_page_exposes_open_and_copy_controls() -> None:
     response = TestClient(app).get("/launcher")
 
@@ -39,6 +53,8 @@ def test_launcher_page_exposes_open_and_copy_controls() -> None:
     assert 'id="copy-address"' in response.text
     assert 'href="/">Open HDR Finisher</a>' in response.text
     assert "Chrome, Edge, or Brave" in response.text
+    assert "__HDR_FINISHER_VERSION__" not in response.text
+    assert f"v{APP_VERSION}" in response.text
 
 
 def test_launcher_server_starts_and_stops() -> None:

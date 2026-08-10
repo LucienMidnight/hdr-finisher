@@ -11,6 +11,16 @@ HDR Finisher is currently a technical alpha. Windows has a tested package-buildi
 
 The application works offline. It starts a local FastAPI server, displays the browser address in its launcher window, and opens a browser launcher page. Choose **Open HDR Finisher**, choose **Copy address** and paste it into another browser, or select and copy the displayed address manually. Keep the launcher window open while using the application. Images remain on the local machine unless you separately upload an export elsewhere.
 
+## Run the Windows release
+
+1. Download the latest `HDR-Finisher-v*-Windows-x64.zip` from
+   [GitHub Releases](https://github.com/LucienMidnight/hdr-finisher/releases).
+2. Extract the ZIP to a normal local folder.
+3. Double-click **HDR Finisher.exe**.
+4. Keep the HDR Finisher server window open while you work.
+
+The browser launcher opens automatically. If port 8000 is unavailable, HDR Finisher selects another local port and displays the address. Do not open `frontend/launcher.html` from the source tree; a directly opened HTML file has no application server behind it and will show a `file://` address.
+
 ## Run from source
 
 From `codebase/`, create a virtual environment and install development dependencies.
@@ -63,7 +73,7 @@ From `codebase/`:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_windows.ps1
 ```
 
-The PyInstaller folder-mode build is smoke-tested and written below `codebase/output/package/`. This is a technical artifact, not a signed installer.
+The PyInstaller folder-mode build is smoke-tested and written as a versioned ZIP plus SHA-256 checksum below `codebase/output/package/`. The ZIP contains **HDR Finisher.exe** at its root and is the artifact published to GitHub Releases. It is not currently code-signed.
 
 ## Verify the installation
 
