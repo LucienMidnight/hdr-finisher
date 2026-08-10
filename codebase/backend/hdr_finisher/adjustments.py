@@ -575,41 +575,55 @@ def _apply_curves(image: np.ndarray, adjustments: AdjustmentState, kind: Preview
 def _curve_set_is_neutral(curve_source: object) -> bool:
     for name in ("luma_curve", "red_curve", "green_curve", "blue_curve"):
         curve = _normalize_curve_points(getattr(curve_source, name))
-        if not np.allclose(curve[:, 0], curve[:, 1], rtol=0.0, atol=1e-7):
+        if not _curve_is_neutral_points(curve):
             return False
     return True
 
 
+def _curve_is_neutral_points(curve: np.ndarray) -> bool:
+    return bool(np.allclose(curve[:, 0], curve[:, 1], rtol=0.0, atol=1e-7))
+
+
 def _apply_curve_set(image: np.ndarray, curve_source: object, kind: PreviewKind) -> np.ndarray:
     result = image.astype(np.float32, copy=True)
-    working = _curve_domain_encode(result, kind)
 
     luma_curve = _normalize_curve_points(getattr(curve_source, "luma_curve"))
     red_curve = _normalize_curve_points(getattr(curve_source, "red_curve"))
     green_curve = _normalize_curve_points(getattr(curve_source, "green_curve"))
     blue_curve = _normalize_curve_points(getattr(curve_source, "blue_curve"))
 
-    luma_x = luma_curve[:, 0]
-    luma_y = luma_curve[:, 1]
-    red_lut_x, red_lut_y = _build_curve_lut(red_curve)
-    green_lut_x, green_lut_y = _build_curve_lut(green_curve)
-    blue_lut_x, blue_lut_y = _build_curve_lut(blue_curve)
-    luma_lut_x, luma_lut_y = _build_curve_lut(luma_curve)
+    # A luma curve must operate on scene/display-linear luminance. Applying its
+    # gain after logarithmically encoding each HDR channel makes the subsequent
+    # per-channel exponential decode change RGB ratios, which can turn a small
+    # shadow adjustment into an extreme blue/cyan cast.
+    if kind == PreviewKind.SDR:
+        result = np.clip(result, 0.0, 1.0)
+    if not _curve_is_neutral_points(luma_curve):
+        luma_lut_x, luma_lut_y = _build_curve_lut(luma_curve)
+        luma = _acescg_luma(result) if kind == PreviewKind.HDR else _linear_luma(result)
+        curve_luma = _curve_domain_encode(luma, kind)
+        if kind == PreviewKind.HDR:
+            mapped_curve_luma = _sample_curve_extended(curve_luma, luma_curve, luma_lut_x, luma_lut_y)
+        else:
+            mapped_curve_luma = np.interp(
+                curve_luma, luma_lut_x, luma_lut_y, left=luma_curve[0, 1], right=luma_curve[-1, 1]
+            ).astype(np.float32)
+        mapped_luma = _curve_domain_decode(mapped_curve_luma, kind)
+        luma_gain = np.ones_like(luma, dtype=np.float32)
+        np.divide(mapped_luma, luma, out=luma_gain, where=np.abs(luma) > 1e-5)
+        result *= luma_gain[..., None]
 
-    luma = _acescg_luma(working) if kind == PreviewKind.HDR else _linear_luma(working)
-    if kind == PreviewKind.HDR:
-        mapped_luma = _sample_curve_extended(luma, luma_curve, luma_lut_x, luma_lut_y)
-    else:
-        curve_luma = np.clip(luma, 0.0, 1.0)
-        mapped_luma = np.interp(
-            curve_luma, luma_lut_x, luma_lut_y, left=luma_y[0], right=luma_y[-1]
-        ).astype(np.float32)
-    luma_gain = np.where(np.abs(luma) > 1e-5, mapped_luma / luma, 1.0).astype(np.float32)
-    working *= luma_gain[..., None]
+    # RGB curves intentionally remain per-channel in the perceptual/log curve
+    # domain. They can alter hue by design; the luma curve above cannot.
+    rgb_curves = (red_curve, green_curve, blue_curve)
+    active_rgb_channels = [index for index, curve in enumerate(rgb_curves) if not _curve_is_neutral_points(curve)]
+    if not active_rgb_channels:
+        return result
 
-    for channel_index, (curve, lut_x, lut_y) in enumerate(
-        ((red_curve, red_lut_x, red_lut_y), (green_curve, green_lut_x, green_lut_y), (blue_curve, blue_lut_x, blue_lut_y))
-    ):
+    working = _curve_domain_encode(result, kind)
+    for channel_index in active_rgb_channels:
+        curve = rgb_curves[channel_index]
+        lut_x, lut_y = _build_curve_lut(curve)
         channel = working[..., channel_index]
         if kind == PreviewKind.HDR:
             working[..., channel_index] = _sample_curve_extended(channel, curve, lut_x, lut_y)
@@ -624,13 +638,20 @@ def _apply_curve_set(image: np.ndarray, curve_source: object, kind: PreviewKind)
 HDR_CURVE_REFERENCE_WHITE = np.float32(0.18)
 HDR_CURVE_MAX_NITS = np.float32(10000.0)
 HDR_CURVE_STOP_SPAN = np.float32(np.log2(HDR_CURVE_MAX_NITS / 100.0))
+# Match the derivative of the highlight log branch at reference white. The old
+# linear shadow branch was 4.6x flatter there, creating a visible kink whenever
+# the default middle control point moved away from the identity line.
+HDR_CURVE_SHADOW_POWER = np.float32(np.log(HDR_CURVE_MAX_NITS / 100.0))
 
 
 def _curve_domain_encode(image: np.ndarray, kind: PreviewKind) -> np.ndarray:
     if kind == PreviewKind.HDR:
         value = image.astype(np.float32, copy=False)
         positive = np.maximum(value, 0.0)
-        below_white = np.float32(0.5) * positive / HDR_CURVE_REFERENCE_WHITE
+        below_white = np.float32(0.5) * np.power(
+            positive / HDR_CURVE_REFERENCE_WHITE,
+            np.float32(1.0) / HDR_CURVE_SHADOW_POWER,
+        )
         above_white = np.float32(0.5) + np.float32(0.5) * (
             np.log2(np.maximum(positive, HDR_CURVE_REFERENCE_WHITE) / HDR_CURVE_REFERENCE_WHITE)
             / HDR_CURVE_STOP_SPAN
@@ -643,11 +664,15 @@ def _curve_domain_encode(image: np.ndarray, kind: PreviewKind) -> np.ndarray:
 def _curve_domain_decode(image: np.ndarray, kind: PreviewKind) -> np.ndarray:
     if kind == PreviewKind.HDR:
         value = image.astype(np.float32, copy=False)
-        below_white = value * np.float32(2.0) * HDR_CURVE_REFERENCE_WHITE
+        below_white = HDR_CURVE_REFERENCE_WHITE * np.power(
+            np.maximum(value * np.float32(2.0), 0.0),
+            HDR_CURVE_SHADOW_POWER,
+        )
         above_white = HDR_CURVE_REFERENCE_WHITE * np.exp2(
             (value - np.float32(0.5)) * np.float32(2.0) * HDR_CURVE_STOP_SPAN
         )
-        return np.where(value <= np.float32(0.5), below_white, above_white)
+        decoded = np.where(value <= np.float32(0.5), below_white, above_white)
+        return np.where(value >= 0.0, decoded, value * np.float32(2.0) * HDR_CURVE_REFERENCE_WHITE)
     return np.clip(image, 0.0, 1.0)
 
 

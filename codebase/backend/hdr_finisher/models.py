@@ -102,6 +102,11 @@ def _default_tone_equalizer_nodes() -> list[ToneEqualizerNode]:
     return [ToneEqualizerNode(input_ev=value) for value in (-6.0, -3.0, 0.0, 3.0, 6.0)]
 
 
+def _default_curve_points() -> list[list[float]]:
+    """Return a neutral curve whose middle point has broad, gentle influence."""
+    return [[0.0, 0.0], [0.5, 0.5], [1.0, 1.0]]
+
+
 class HDRAdjustments(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -144,18 +149,10 @@ class HDRAdjustments(BaseModel):
     blue_purity: float = Field(default=0.0, ge=-99.0, le=400.0)
     tint_hue: float = Field(default=0.0, ge=-180.0, le=180.0)
     tint_purity: float = Field(default=0.0, ge=0.0, le=99.0)
-    luma_curve: list[list[float]] = Field(
-        default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
-    )
-    red_curve: list[list[float]] = Field(
-        default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
-    )
-    green_curve: list[list[float]] = Field(
-        default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
-    )
-    blue_curve: list[list[float]] = Field(
-        default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
-    )
+    luma_curve: list[list[float]] = Field(default_factory=_default_curve_points)
+    red_curve: list[list[float]] = Field(default_factory=_default_curve_points)
+    green_curve: list[list[float]] = Field(default_factory=_default_curve_points)
+    blue_curve: list[list[float]] = Field(default_factory=_default_curve_points)
 
     @model_validator(mode="before")
     @classmethod
@@ -229,18 +226,10 @@ class SDRAdjustments(BaseModel):
     tint_hue: float = Field(default=0.0, ge=-180.0, le=180.0)
     tint_purity: float = Field(default=0.0, ge=0.0, le=99.0)
     tone_mapper: ToneMapper = ToneMapper.FILMIC
-    luma_curve: list[list[float]] = Field(
-        default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
-    )
-    red_curve: list[list[float]] = Field(
-        default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
-    )
-    green_curve: list[list[float]] = Field(
-        default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
-    )
-    blue_curve: list[list[float]] = Field(
-        default_factory=lambda: [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
-    )
+    luma_curve: list[list[float]] = Field(default_factory=_default_curve_points)
+    red_curve: list[list[float]] = Field(default_factory=_default_curve_points)
+    green_curve: list[list[float]] = Field(default_factory=_default_curve_points)
+    blue_curve: list[list[float]] = Field(default_factory=_default_curve_points)
 
 
 class SharedAdjustments(BaseModel):

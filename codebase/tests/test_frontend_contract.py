@@ -61,6 +61,29 @@ def test_redundant_enable_controls_are_removed_and_equalizer_schedules_live_scop
     assert javascript.count('debouncePreview("hdr");') >= 2
 
 
+def test_curve_drag_uses_live_preview_scheduler_and_broad_default_shape() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    curve_binding = javascript[javascript.index("function bindCurveEditor"):javascript.index("function drawCurveEditor")]
+
+    assert "state.previewScheduler?.beginInteraction()" in curve_binding
+    assert "debouncePreview(state.currentView)" in curve_binding
+    assert "state.previewScheduler?.endInteraction()" in curve_binding
+    assert "queueGpuDraft(state.currentView)" not in curve_binding
+    assert "const verticalScale = curveVerticalAdjustmentScale(index, curve.length)" in curve_binding
+    assert "return index === 0 || index === pointCount - 1 ? 0.18 : 0.35" in curve_binding
+    assert "const verticalStep = step * Math.min(1, curveVerticalAdjustmentScale(index, curve.length) / 0.35)" in curve_binding
+    assert "return [[0, 0], [0.5, 0.5], [1, 1]]" in javascript
+    assert 'if (tier === "interactive") return Math.min(384, interactiveProxyLongEdge())' in javascript
+
+
+def test_curve_panel_reset_is_visible_when_curves_are_modified() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="curve-reset" class="group-reset text-button"' in html
+    assert 'els.curveReset.closest(".control-group")?.classList.toggle("modified", curvesModified)' in javascript
+
+
 def test_scope_zoom_exposes_4000_and_10000_nit_computation_ranges() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
@@ -174,8 +197,12 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_fixed_hdr_curve_domain(
     assert "toneMap(sceneColor(rgb))" in shader
     assert "sdrPrimaries(sdrContrast(highlightRecovery(toneMap(sceneColor(rgb)))))" in shader
     assert "retoneMapSdrReference(rgb)" in shader
-    assert "if (value <= 0.18) { return 0.5 * value / 0.18; }" in shader
+    assert "if (value <= 0.18) { return 0.5 * pow(value / 0.18, 1.0 / log(100.0)); }" in shader
+    assert "if (value <= 0.5) { return 0.18 * pow(2.0 * value, log(100.0)); }" in shader
     assert "log2(value / 0.18) / log2(100.0)" in shader
+    assert "let curveLuma = select(clamp(sourceLuma, 0.0, 1.0), curveEncodeChannel(sourceLuma), hdr)" in shader
+    assert "let mappedLuma = select(mappedCurveLuma, curveDecodeChannel(mappedCurveLuma), hdr)" in shader
+    assert "rgb = curveEncode(rgb, hdr)" in shader
     assert "let amount = p[3] / 50.0" in shader
 
 
@@ -196,4 +223,18 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     assert "cancelIdleWork" in scheduler
     assert "rgba16f" in webgpu and "X-Pixel-Format" in webgpu
     assert "this.paramBuffer" in webgpu and "this.curveBuffer" in webgpu
+    assert "this.curveSampleCache" in webgpu
     assert "Settled WebGPU authoring preview" in javascript
+
+
+def test_waveform_resolution_policy_reduces_payload_without_coarse_refresh_columns() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    assert "waveformRequestResolution(tier)" in javascript
+    assert "columns: Math.round(clamp(width / 2, 320, 384))" in javascript
+    assert 'bins: tier === "interactive" ? 64 : tier === "refinement" ? 160 : 128' in javascript
+    assert 'if (tier === "interactive") return Math.min(requestedLongEdge, 512)' in javascript
+    assert 'if (tier === "refinement") return Math.min(requestedLongEdge, 960)' in javascript
+    assert "return Math.min(requestedLongEdge, 768)" in javascript
+    assert "smoothedWaveformPopulation(row, columnIndex)" in javascript
+    assert "return (left + 2 * center + right) * 0.25" in javascript

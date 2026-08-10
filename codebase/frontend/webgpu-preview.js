@@ -17,6 +17,7 @@
       this.renderSerial = 0;
       this.paramBuffer = null;
       this.curveBuffer = null;
+      this.curveSampleCache = new Map();
       this.surfaceKey = null;
     }
 
@@ -54,6 +55,7 @@
       this.sessionId = sessionId;
       for (const proxy of this.proxies.values()) proxy.texture?.destroy();
       this.proxies.clear();
+      this.curveSampleCache.clear();
     }
 
     async render(sessionId, lane, adjustments, curveSampler, longEdge = 1600) {
@@ -68,7 +70,7 @@
       const surface = this.configureSurface(lane === "hdr");
       const pipeline = this.pipelineFor(surface.format);
       const params = buildParams(lane, adjustments, proxy.workingSpace, surface.hdr);
-      const curves = buildCurves(lane, adjustments, curveSampler);
+      const curves = buildCurves(lane, adjustments, curveSampler, this.curveSampleCache);
       this.ensureStorageBuffers(params.byteLength, curves.byteLength);
       this.device.queue.writeBuffer(this.paramBuffer, 0, params);
       this.device.queue.writeBuffer(this.curveBuffer, 0, curves);
@@ -381,11 +383,18 @@
     return nodes;
   }
 
-  function buildCurves(lane, adjustments, curveSampler) {
+  function buildCurves(lane, adjustments, curveSampler, sampleCache) {
     const branch = adjustments[lane];
     const packed = new Float32Array(CURVE_SAMPLES * 4);
     ["luma_curve", "red_curve", "green_curve", "blue_curve"].forEach((name, channel) => {
-      const samples = curveSampler(branch[name], CURVE_SAMPLES);
+      const signature = JSON.stringify(branch[name]);
+      const cacheKey = `${lane}:${name}`;
+      let cached = sampleCache.get(cacheKey);
+      if (!cached || cached.signature !== signature) {
+        cached = { signature, samples: curveSampler(branch[name], CURVE_SAMPLES) };
+        sampleCache.set(cacheKey, cached);
+      }
+      const samples = cached.samples;
       for (let index = 0; index < CURVE_SAMPLES; index += 1) {
         const sample = samples[index];
         packed[channel * CURVE_SAMPLES + index] = Array.isArray(sample) ? sample[1] : sample;
@@ -434,11 +443,12 @@
     }
     fn curveEncodeChannel(value: f32) -> f32 {
       if (value < 0.0) { return value / 0.36; }
-      if (value <= 0.18) { return 0.5 * value / 0.18; }
+      if (value <= 0.18) { return 0.5 * pow(value / 0.18, 1.0 / log(100.0)); }
       return 0.5 + 0.5 * log2(value / 0.18) / log2(100.0);
     }
     fn curveDecodeChannel(value: f32) -> f32 {
-      if (value <= 0.5) { return value * 0.36; }
+      if (value < 0.0) { return value * 0.36; }
+      if (value <= 0.5) { return 0.18 * pow(2.0 * value, log(100.0)); }
       return 0.18 * exp2((value - 0.5) * 2.0 * log2(100.0));
     }
     fn curveEncode(rgb: vec3f, hdr: bool) -> vec3f {
@@ -451,10 +461,13 @@
     }
     fn applyCurves(input: vec3f, hdr: bool) -> vec3f {
       if (p[15] < 0.5) { return input; }
-      var rgb = curveEncode(input, hdr);
+      var rgb = select(clamp(input, vec3f(0.0), vec3f(1.0)), input, hdr);
       let sourceLuma = select(lumaSrgb(rgb), lumaAces(rgb), hdr);
-      let mappedLuma = curveValue(0u, sourceLuma);
+      let curveLuma = select(clamp(sourceLuma, 0.0, 1.0), curveEncodeChannel(sourceLuma), hdr);
+      let mappedCurveLuma = curveValue(0u, curveLuma);
+      let mappedLuma = select(mappedCurveLuma, curveDecodeChannel(mappedCurveLuma), hdr);
       if (abs(sourceLuma) > 0.00001) { rgb *= mappedLuma / sourceLuma; }
+      rgb = curveEncode(rgb, hdr);
       for (var channel = 0u; channel < 3u; channel++) {
         let value = rgb[channel];
         rgb[channel] = curveValue(channel + 1u, value);

@@ -221,7 +221,7 @@ const state = {
   },
   selectedCurveChannel: "luma",
   activeCurvePoint: null,
-  selectedCurvePoint: 2,
+  selectedCurvePoint: 1,
   activeToneEqualizerBand: null,
   selectedToneEqualizerBand: 2,
   previewAbortController: null,
@@ -1114,7 +1114,7 @@ function bindEvents() {
     ["luma", "red", "green", "blue"].forEach((channel) => {
       setCurveValues(channel, defaultCurvePoints());
     });
-    state.selectedCurvePoint = 2;
+    state.selectedCurvePoint = Math.floor(defaultCurvePoints().length / 2);
     syncCurveControlsFromState();
     drawCurveEditor();
     invalidatePreview(state.currentView);
@@ -1350,7 +1350,7 @@ async function ejectCurrentSession() {
   hidePreviewMessage();
   renderSessionChrome();
   state.selectedCurveChannel = "luma";
-  state.selectedCurvePoint = 2;
+  state.selectedCurvePoint = Math.floor(currentCurveValues().length / 2);
   state.selectedToneEqualizerBand = 6;
   renderCurveChannelTabs();
   syncCurveControlsFromState();
@@ -1605,7 +1605,9 @@ function refinementProxyLongEdge() {
 }
 
 function scopeLongEdge(tier) {
-  if (tier === "interactive") return Math.min(512, interactiveProxyLongEdge());
+  // Interactive scopes favor visible motion; the settled pass restores the
+  // denser authoring result immediately after the drag ends.
+  if (tier === "interactive") return Math.min(384, interactiveProxyLongEdge());
   if (tier === "refinement") return Math.min(1600, refinementProxyLongEdge());
   return Math.min(1200, settledProxyLongEdge());
 }
@@ -1810,9 +1812,10 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
   const requestGeneration = generation ?? (state.scopeGeneration + 1);
   state.scopeGeneration = Math.max(state.scopeGeneration, requestGeneration);
   const mode = state.scopeMode;
-  const resolution = tier === "interactive"
-    ? { bins: mode === "waveform" ? 96 : 128, columns: 192 }
-    : mode === "waveform" ? waveformRequestResolution() : { bins: 256, columns: 256 };
+  const resolution = mode === "waveform"
+    ? waveformRequestResolution(tier)
+    : tier === "interactive" ? { bins: 128, columns: 192 } : { bins: 256, columns: 256 };
+  const effectiveLongEdge = mode === "waveform" ? waveformScopeLongEdge(tier, longEdge) : longEdge;
 
   return new Promise((resolve) => {
     enqueueScopeRequest({
@@ -1821,7 +1824,7 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
       mode,
       tier,
       generation: requestGeneration,
-      longEdge,
+      longEdge: effectiveLongEdge,
       resolution,
       maxNits: state.scopeMaxNits,
       adjustments: JSON.parse(JSON.stringify(state.adjustments)),
@@ -1906,13 +1909,23 @@ async function runScopeRequest(request) {
   }
 }
 
-function waveformRequestResolution() {
+function waveformRequestResolution(tier) {
   const width = Math.max(1, els.histogram.clientWidth);
-  const height = Math.max(1, els.histogram.clientHeight);
   return {
-    columns: Math.round(clamp(width / 2, 256, 768)),
-    bins: Math.round(clamp(height * 1.5, 128, 384)),
+    // Keep horizontal resolution nearly constant across refresh tiers. The old
+    // 192-column interactive grid expanded each bucket into a conspicuous bar
+    // before the denser settled result replaced it.
+    columns: Math.round(clamp(width / 2, 320, 384)),
+    // Vertical density dominates waveform payload and JSON parsing cost, while
+    // contributing much less to perceived positional detail than columns do.
+    bins: tier === "interactive" ? 64 : tier === "refinement" ? 160 : 128,
   };
+}
+
+function waveformScopeLongEdge(tier, requestedLongEdge) {
+  if (tier === "interactive") return Math.min(requestedLongEdge, 512);
+  if (tier === "refinement") return Math.min(requestedLongEdge, 960);
+  return Math.min(requestedLongEdge, 768);
 }
 
 function drawHistogram(scope) {
@@ -2209,7 +2222,7 @@ function waveformDensityCanvas(channel, color, peak) {
   const rowCount = grid.length;
   const columnCount = grid[0]?.length || 0;
   if (!rowCount || !columnCount) return null;
-  const cacheKey = `${color.r},${color.g},${color.b}:${peak}:${rowCount}x${columnCount}`;
+  const cacheKey = `${color.r},${color.g},${color.b}:${peak}:${rowCount}x${columnCount}:h3`;
   const cached = waveformCanvasCache.get(channel);
   if (cached?.key === cacheKey) return cached.canvas;
   const surface = document.createElement("canvas");
@@ -2218,7 +2231,8 @@ function waveformDensityCanvas(channel, color, peak) {
   const surfaceContext = surface.getContext("2d");
   const pixels = surfaceContext.createImageData(columnCount, rowCount);
   grid.forEach((row, rowIndex) => {
-    row.forEach((value, columnIndex) => {
+    row.forEach((_value, columnIndex) => {
+      const value = smoothedWaveformPopulation(row, columnIndex);
       if (value <= 0) return;
       const density = Math.min(1, value / Math.max(1, peak));
       const offset = (((rowCount - 1 - rowIndex) * columnCount) + columnIndex) * 4;
@@ -2231,6 +2245,13 @@ function waveformDensityCanvas(channel, color, peak) {
   surfaceContext.putImageData(pixels, 0, 0);
   waveformCanvasCache.set(channel, { key: cacheKey, canvas: surface });
   return surface;
+}
+
+function smoothedWaveformPopulation(row, columnIndex) {
+  const center = Number(row[columnIndex]) || 0;
+  const left = columnIndex > 0 ? Number(row[columnIndex - 1]) || 0 : center;
+  const right = columnIndex + 1 < row.length ? Number(row[columnIndex + 1]) || 0 : center;
+  return (left + 2 * center + right) * 0.25;
 }
 
 function drawHistogramParade(ctx, channels, palette, plotLeft, plotTop, plotWidth, plotHeight) {
@@ -2926,13 +2947,20 @@ function formatToneBandNits(value) {
 function bindCurveEditor() {
   const canvas = els.curveEditor;
   const beginDrag = (clientX, clientY) => {
+    if (!state.session) return;
+    state.previewScheduler?.beginInteraction();
     const rect = canvas.getBoundingClientRect();
     state.activeCurvePoint = nearestCurvePointIndex(clientX, clientY, rect);
     state.selectedCurvePoint = state.activeCurvePoint;
-    updateCurveFromPointer(clientX, clientY);
+    const dragOrigin = {
+      clientX,
+      clientY,
+      point: [...currentCurveValues()[state.activeCurvePoint]],
+    };
+    updateCurveFromPointer(clientX, clientY, dragOrigin);
     const move = (event) => {
       event.preventDefault();
-      updateCurveFromPointer(event.clientX, event.clientY);
+      updateCurveFromPointer(event.clientX, event.clientY, dragOrigin);
     };
     const stop = () => {
       window.removeEventListener("pointermove", move);
@@ -2942,7 +2970,7 @@ function bindCurveEditor() {
       syncCurveControlsFromState();
       invalidatePreview(state.currentView);
       renderControlState();
-      debouncePreview(state.currentView);
+      state.previewScheduler?.endInteraction();
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", stop);
@@ -2965,14 +2993,15 @@ function bindCurveEditor() {
       event.preventDefault();
       const point = [...curve[index]];
       const step = event.shiftKey ? 0.05 : 0.01;
+      const verticalStep = step * Math.min(1, curveVerticalAdjustmentScale(index, curve.length) / 0.35);
       if (event.key === "ArrowLeft" && !isLockedCurveEndpoint(index)) {
         point[0] = clamp(point[0] - step, curve[index - 1][0] + 0.02, curve[index + 1][0] - 0.02);
       }
       if (event.key === "ArrowRight" && !isLockedCurveEndpoint(index)) {
         point[0] = clamp(point[0] + step, curve[index - 1][0] + 0.02, curve[index + 1][0] - 0.02);
       }
-      if (event.key === "ArrowUp") point[1] = clamp(point[1] + step, 0, 1);
-      if (event.key === "ArrowDown") point[1] = clamp(point[1] - step, 0, 1);
+      if (event.key === "ArrowUp") point[1] = clamp(point[1] + verticalStep, 0, 1);
+      if (event.key === "ArrowDown") point[1] = clamp(point[1] - verticalStep, 0, 1);
       curve[index] = point;
       setCurveValues(state.selectedCurveChannel, curve);
     } else {
@@ -2986,13 +3015,20 @@ function bindCurveEditor() {
   });
 }
 
-function updateCurveFromPointer(clientX, clientY) {
+function updateCurveFromPointer(clientX, clientY, dragOrigin = null) {
   const rect = els.curveEditor.getBoundingClientRect();
   const index = state.activeCurvePoint ?? nearestCurvePointIndex(clientX, clientY, rect);
-  const normalizedX = clamp((clientX - rect.left) / rect.width, 0, 1);
-  const normalizedY = 1 - clamp((clientY - rect.top) / rect.height, 0, 1);
   const curve = currentCurveValues();
   const point = [...curve[index]];
+  const directX = clamp((clientX - rect.left) / rect.width, 0, 1);
+  const directY = 1 - clamp((clientY - rect.top) / rect.height, 0, 1);
+  const normalizedX = dragOrigin
+    ? dragOrigin.point[0] + (clientX - dragOrigin.clientX) / Math.max(rect.width, 1)
+    : directX;
+  const verticalScale = curveVerticalAdjustmentScale(index, curve.length);
+  const normalizedY = dragOrigin
+    ? dragOrigin.point[1] - ((clientY - dragOrigin.clientY) / Math.max(rect.height, 1)) * verticalScale
+    : directY;
   if (index === 0) point[0] = 0;
   else if (index === curve.length - 1) point[0] = 1;
   else point[0] = clamp(normalizedX, curve[index - 1][0] + 0.02, curve[index + 1][0] - 0.02);
@@ -3002,7 +3038,14 @@ function updateCurveFromPointer(clientX, clientY) {
   setCurveValues(state.selectedCurveChannel, curve);
   drawCurveEditor();
   invalidatePreview(state.currentView);
-  queueGpuDraft(state.currentView);
+  debouncePreview(state.currentView);
+}
+
+function curveVerticalAdjustmentScale(index, pointCount) {
+  if (currentCurveLane() !== "hdr" || state.selectedCurveChannel !== "luma") return 1;
+  // The endpoints alter the black floor and highlight ceiling, so give them
+  // roughly twice the precision of the broad middle-tone control.
+  return index === 0 || index === pointCount - 1 ? 0.18 : 0.35;
 }
 
 function drawCurveEditor() {
@@ -3190,7 +3233,9 @@ function clamp(value, min, max) {
 }
 
 function defaultCurvePoints() {
-  return [[0, 0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1, 1]];
+  // The middle point should shape a broad tonal region. Extra neutral quarter
+  // points pin that edit into a narrow hump and make small HDR changes abrupt.
+  return [[0, 0], [0.5, 0.5], [1, 1]];
 }
 
 function defaultToneEqualizerNodes() {
@@ -4037,7 +4082,9 @@ function renderControlState() {
     .filter((key) => !key.endsWith("_section_enabled"))
     .filter((key) => !valuesEqual(state.adjustments[state.currentView]?.[key], currentLaneDefaults[key])).length;
   els.gradeModifiedSummary.textContent = modifiedCount ? `${modifiedCount} modified` : "";
-  els.curveGroupState.textContent = laneCurvesModified(state.currentView, defaults) ? "Modified" : "";
+  const curvesModified = laneCurvesModified(state.currentView, defaults);
+  els.curveGroupState.textContent = curvesModified ? "Modified" : "";
+  els.curveReset.closest(".control-group")?.classList.toggle("modified", curvesModified);
   els.sectionBypasses.forEach((button) => {
     const path = button.dataset.sectionPath === "current.curves_section_enabled"
       ? `${state.currentView}.curves_section_enabled`

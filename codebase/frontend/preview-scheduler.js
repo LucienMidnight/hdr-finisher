@@ -1,6 +1,6 @@
 (function () {
   const DEFAULTS = {
-    interactiveScopeMs: 75,
+    interactiveScopeMs: 60,
     settleMs: 110,
     refinementMs: 520,
   };

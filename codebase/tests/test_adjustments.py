@@ -8,6 +8,7 @@ import pytest
 from hdr_finisher.adjustments import (
     _apply_hdr_adjustments,
     _apply_hdr_color,
+    _apply_curve_set,
     _apply_saturation_vibrance,
     _apply_sdr_adjustments,
     _curve_domain_decode,
@@ -110,6 +111,27 @@ def test_identity_hdr_curves_preserve_values_above_curve_editor_range() -> None:
     output = _apply_hdr_adjustments(image, state)
 
     np.testing.assert_allclose(output, image, rtol=1e-5, atol=1e-5)
+
+
+def test_hdr_luma_curve_preserves_blue_rich_pixel_channel_ratios() -> None:
+    image = np.array([[[0.08, 0.16, 1.8], [0.4, 0.7, 4.0]]], dtype=np.float32)
+    adjustments = HDRAdjustments(
+        luma_curve=[[0.0, 0.0], [0.25, 0.30], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
+    )
+
+    output = _apply_curve_set(image, adjustments, PreviewKind.HDR)
+
+    input_ratios = image / image[..., :1]
+    output_ratios = output / output[..., :1]
+    np.testing.assert_allclose(output_ratios, input_ratios, rtol=2e-5, atol=2e-5)
+    assert not np.allclose(output, image), "The luma curve should still change luminance"
+
+
+def test_default_curve_has_one_broad_middle_control_point() -> None:
+    expected = [[0.0, 0.0], [0.5, 0.5], [1.0, 1.0]]
+
+    assert HDRAdjustments().luma_curve == expected
+    assert SDRAdjustments().luma_curve == expected
 
 
 def test_hdr_shadow_lift_is_luminance_masked() -> None:
@@ -285,11 +307,22 @@ def test_hdr_rolloff_is_identity_at_zero_and_below_start() -> None:
 def test_hdr_curve_domain_places_graphics_white_and_peak_predictably() -> None:
     values = np.array([[[0.0, 0.09, 0.18], [0.36, 18.0, 36.0]]], dtype=np.float32)
     encoded = _curve_domain_encode(values, PreviewKind.HDR)
-    np.testing.assert_allclose(encoded[0, 0], [0.0, 0.25, 0.5], atol=1e-6)
+    expected_half_white = 0.5 * np.power(0.5, 1.0 / np.log(100.0))
+    np.testing.assert_allclose(encoded[0, 0], [0.0, expected_half_white, 0.5], atol=1e-6)
     assert encoded[0, 1, 0] > 0.5
     np.testing.assert_allclose(encoded[0, 1, 1], 1.0, atol=1e-6)
     assert encoded[0, 1, 2] > 1.0
     np.testing.assert_allclose(_curve_domain_decode(encoded, PreviewKind.HDR), values, rtol=2e-6, atol=1e-6)
+
+
+def test_hdr_curve_domain_has_matched_slope_at_reference_white() -> None:
+    epsilon = np.float32(1e-4)
+    encoded = np.array([0.5 - epsilon, 0.5, 0.5 + epsilon], dtype=np.float32)
+    decoded = _curve_domain_decode(encoded, PreviewKind.HDR)
+    lower_slope = (decoded[1] - decoded[0]) / epsilon
+    upper_slope = (decoded[2] - decoded[1]) / epsilon
+
+    assert lower_slope == pytest.approx(upper_slope, rel=2e-3)
 
 
 def test_lgg_range_and_pivot_move_zone_masks() -> None:
