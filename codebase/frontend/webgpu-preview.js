@@ -14,11 +14,11 @@
       this.sessionId = null;
       this.available = false;
       this.detail = "WebGPU has not been initialized";
-      this.renderSerial = 0;
+      this.renderSerials = new WeakMap();
       this.paramBuffer = null;
       this.curveBuffer = null;
       this.curveSampleCache = new Map();
-      this.surfaceKey = null;
+      this.surfaceKeys = new WeakMap();
     }
 
     async initialize() {
@@ -53,21 +53,29 @@
 
     resetSession(sessionId = null) {
       this.sessionId = sessionId;
+      this.renderSerials = new WeakMap();
       for (const proxy of this.proxies.values()) proxy.texture?.destroy();
       this.proxies.clear();
       this.curveSampleCache.clear();
     }
 
     async render(sessionId, lane, adjustments, curveSampler, longEdge = 1600) {
+      return this.renderTo(this.canvas, sessionId, lane, adjustments, curveSampler, longEdge);
+    }
+
+    async renderTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600) {
       if (!this.available || !sessionId) return false;
       if (this.sessionId !== sessionId) this.resetSession(sessionId);
-      const serial = ++this.renderSerial;
+      const serial = (this.renderSerials.get(canvas) || 0) + 1;
+      this.renderSerials.set(canvas, serial);
       const proxy = await this.loadProxy(sessionId, lane, longEdge);
-      if (serial !== this.renderSerial || !proxy) return false;
+      if (serial !== this.renderSerials.get(canvas) || !proxy) return false;
 
-      if (this.canvas.width !== proxy.width) this.canvas.width = proxy.width;
-      if (this.canvas.height !== proxy.height) this.canvas.height = proxy.height;
-      const surface = this.configureSurface(lane === "hdr");
+      if (canvas.width !== proxy.width) canvas.width = proxy.width;
+      if (canvas.height !== proxy.height) canvas.height = proxy.height;
+      const context = canvas.getContext("webgpu");
+      if (!context) throw new Error("The comparison WebGPU canvas context is unavailable");
+      const surface = this.configureSurface(canvas, context, lane === "hdr");
       const pipeline = this.pipelineFor(surface.format);
       const params = buildParams(lane, adjustments, proxy.workingSpace, surface.hdr);
       const curves = buildCurves(lane, adjustments, curveSampler, this.curveSampleCache);
@@ -90,7 +98,7 @@
       const encoder = this.device.createCommandEncoder();
       const pass = encoder.beginRenderPass({
         colorAttachments: [{
-          view: this.context.getCurrentTexture().createView(),
+          view: context.getCurrentTexture().createView(),
           clearValue: { r: 0, g: 0, b: 0, a: 1 },
           loadOp: "clear",
           storeOp: "store",
@@ -104,21 +112,21 @@
       return { width: proxy.width, height: proxy.height, hdr: surface.hdr, proxyFormat: proxy.pixelFormat };
     }
 
-    configureSurface(wantsHdr) {
+    configureSurface(canvas, context, wantsHdr) {
       const hdrDisplay = Boolean(window.matchMedia?.("(dynamic-range: high)").matches);
       if (wantsHdr && hdrDisplay) {
         try {
           const format = "rgba16float";
-          const key = `${format}:display-p3:extended:${this.canvas.width}x${this.canvas.height}`;
-          if (this.surfaceKey !== key) {
-            this.context.configure({
+          const key = `${format}:display-p3:extended:${canvas.width}x${canvas.height}`;
+          if (this.surfaceKeys.get(canvas) !== key) {
+            context.configure({
               device: this.device,
               format,
               colorSpace: "display-p3",
               toneMapping: { mode: "extended" },
               alphaMode: "opaque",
             });
-            this.surfaceKey = key;
+            this.surfaceKeys.set(canvas, key);
           }
           return { format, hdr: true };
         } catch {
@@ -126,10 +134,10 @@
         }
       }
       const format = navigator.gpu.getPreferredCanvasFormat();
-      const key = `${format}:srgb:standard:${this.canvas.width}x${this.canvas.height}`;
-      if (this.surfaceKey !== key) {
-        this.context.configure({ device: this.device, format, colorSpace: "srgb", alphaMode: "opaque" });
-        this.surfaceKey = key;
+      const key = `${format}:srgb:standard:${canvas.width}x${canvas.height}`;
+      if (this.surfaceKeys.get(canvas) !== key) {
+        context.configure({ device: this.device, format, colorSpace: "srgb", alphaMode: "opaque" });
+        this.surfaceKeys.set(canvas, key);
       }
       return { format, hdr: false };
     }

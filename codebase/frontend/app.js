@@ -81,6 +81,8 @@ const LAYOUT_LIMITS = {
 const LAYOUT_SETTLE_DELAY = 120;
 const HIGH_QUALITY_PREVIEW_KEY = "hdr-finisher:high-quality-preview:v1";
 const SCOPE_ZOOM_KEY = "hdr-finisher:scope-zoom:v1";
+const COMPARE_LAYOUT_KEY = "hdr-finisher:compare-layout:v1";
+const COMPARE_LAYOUTS = new Set(["single", "split-vertical", "split-horizontal", "side-horizontal", "side-vertical"]);
 const waveformCanvasCache = new WeakMap();
 
 const state = {
@@ -109,6 +111,9 @@ const state = {
   compareHoldTimer: null,
   compareHeld: false,
   comparePeekActive: false,
+  compareLayout: "single",
+  comparisonRenderedLane: null,
+  comparisonRenderedGeneration: null,
   previewGeneration: { hdr: 0, sdr: 0 },
   previewCache: { hdr: null, sdr: null },
   previewControllers: { hdr: null, sdr: null },
@@ -409,8 +414,12 @@ const els = {
   sourcePreviewList: document.getElementById("source-preview-list"),
   sessionName: document.getElementById("session-name"),
   previewStage: document.getElementById("preview-stage"),
+  previewPrimaryPane: document.getElementById("preview-primary-pane"),
+  previewSecondaryPane: document.getElementById("preview-secondary-pane"),
   previewCanvas: document.getElementById("preview-canvas"),
   previewImage: document.getElementById("preview-image"),
+  comparisonCanvas: document.getElementById("comparison-canvas"),
+  comparisonImage: document.getElementById("comparison-image"),
   previewOverlay: document.getElementById("preview-overlay"),
   chromeProofImage: document.getElementById("chrome-proof-image"),
   chromeProofToggle: document.getElementById("chrome-proof-toggle"),
@@ -431,6 +440,7 @@ const els = {
   viewerBranchNote: document.getElementById("viewer-branch-note"),
   laneNote: document.getElementById("lane-note"),
   compareButton: document.getElementById("compare-button"),
+  compareLayoutButtons: [...document.querySelectorAll("button[data-compare-layout]")],
   compareStatus: document.getElementById("compare-status"),
   zoomFit: document.getElementById("zoom-fit"),
   zoomActual: document.getElementById("zoom-actual"),
@@ -484,6 +494,8 @@ const els = {
   lanePanels: [...document.querySelectorAll("[data-lane-panel]")],
   groupToggles: [...document.querySelectorAll(".group-toggle")],
   groupResets: [...document.querySelectorAll("[data-reset-group]")],
+  sdrMatchHdrColors: document.getElementById("sdr-match-hdr-colors"),
+  sdrResetColors: document.getElementById("sdr-reset-colors"),
   sectionBypasses: [...document.querySelectorAll("[data-section-path]")],
   controlRows: [...document.querySelectorAll("[data-control-path]")],
   modifiedCounts: [...document.querySelectorAll("[data-modified-count]")],
@@ -508,6 +520,7 @@ const controlGroups = {
   "sdr-color": ["sdr.white_balance_kelvin", "sdr.tint", "sdr.saturation", "sdr.vibrance", "sdr.red_hue", "sdr.red_purity", "sdr.green_hue", "sdr.green_purity", "sdr.blue_hue", "sdr.blue_purity", "sdr.tint_hue", "sdr.tint_purity"],
   "sdr-zones": ["sdr.lift", "sdr.lift_range", "sdr.lift_pivot", "sdr.gamma", "sdr.gamma_range", "sdr.gamma_pivot", "sdr.gain", "sdr.gain_range", "sdr.gain_pivot"],
 };
+const COLOR_CONTROL_KEYS = controlGroups["hdr-color"].map((path) => path.slice("hdr.".length));
 
 const sectionPathForGroup = {
   "hdr-tone": "hdr.tone_section_enabled",
@@ -550,6 +563,7 @@ async function boot() {
   drawToneEqualizerEditor();
   renderOverlayPresetNote();
   renderLaneChrome();
+  renderCompareLayout();
   renderControlState();
   renderCapabilities();
   renderExportPreflight();
@@ -570,6 +584,8 @@ function restorePreviewPreference() {
     state.highQualityPreview = localStorage.getItem(HIGH_QUALITY_PREVIEW_KEY) === "true";
     const savedScopeZoom = Number(localStorage.getItem(SCOPE_ZOOM_KEY));
     if ([4000, 10000].includes(savedScopeZoom)) state.scopeMaxNits = savedScopeZoom;
+    const savedCompareLayout = localStorage.getItem(COMPARE_LAYOUT_KEY);
+    if (COMPARE_LAYOUTS.has(savedCompareLayout)) state.compareLayout = savedCompareLayout;
   } catch {
     state.highQualityPreview = false;
   }
@@ -1068,7 +1084,7 @@ function bindEvents() {
     const [file] = event.dataTransfer?.files || [];
     if (file) await uploadFile(file);
   });
-  [els.previewImage, els.previewOverlay].forEach((image) => {
+  [els.previewImage, els.comparisonImage, els.previewOverlay].forEach((image) => {
     image.addEventListener("dragstart", (event) => event.preventDefault());
   });
 
@@ -1156,6 +1172,8 @@ function bindEvents() {
   els.groupResets.forEach((button) => {
     button.addEventListener("click", () => resetControlGroup(button.dataset.resetGroup));
   });
+  els.sdrMatchHdrColors.addEventListener("click", matchHdrColorsToSdr);
+  els.sdrResetColors.addEventListener("click", resetSdrColorSliders);
   els.sectionBypasses.forEach((button) => {
     button.addEventListener("click", () => {
       const path = button.dataset.sectionPath === "current.curves_section_enabled"
@@ -1589,7 +1607,9 @@ async function refinePreview(lane, task = {}) {
 
 function displayedLongEdge() {
   const rect = els.dropzone.getBoundingClientRect();
-  return Math.max(rect.width, rect.height) * Math.max(1, window.devicePixelRatio || 1);
+  const paneWidth = state.compareLayout === "side-horizontal" ? rect.width / 2 : rect.width;
+  const paneHeight = state.compareLayout === "side-vertical" ? rect.height / 2 : rect.height;
+  return Math.max(paneWidth, paneHeight) * Math.max(1, window.devicePixelRatio || 1);
 }
 
 function interactiveProxyLongEdge() {
@@ -1772,6 +1792,25 @@ function applyRawPreview(frame) {
   hidePreviewMessage();
   applyZoomGeometry();
   renderReadouts();
+}
+
+function applyRawComparisonPreview(frame) {
+  let canvas = els.comparisonCanvas;
+  let context = canvas.getContext("2d");
+  if (!context) {
+    const replacement = document.createElement("canvas");
+    replacement.id = canvas.id;
+    replacement.setAttribute("aria-label", canvas.getAttribute("aria-label") || "Settled comparison preview");
+    canvas.replaceWith(replacement);
+    els.comparisonCanvas = replacement;
+    canvas = replacement;
+    context = canvas.getContext("2d");
+  }
+  canvas.width = frame.width;
+  canvas.height = frame.height;
+  context.putImageData(new ImageData(frame.raw, frame.width, frame.height), 0, 0);
+  els.comparisonImage.style.display = "none";
+  canvas.style.display = "block";
 }
 
 async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 1600) {
@@ -2316,11 +2355,11 @@ function hexToRgb(value) {
 function syncOverlayPlacement() {
   const preview = activePreviewElement();
   if (!previewIsVisible() || els.previewOverlay.style.display === "none") return;
-  const stageRect = els.previewStage.getBoundingClientRect();
+  const paneRect = els.previewPrimaryPane.getBoundingClientRect();
   const imageRect = preview.getBoundingClientRect();
   if (!imageRect.width || !imageRect.height) return;
-  els.previewOverlay.style.left = `${imageRect.left - stageRect.left + imageRect.width / 2}px`;
-  els.previewOverlay.style.top = `${imageRect.top - stageRect.top + imageRect.height / 2}px`;
+  els.previewOverlay.style.left = `${imageRect.left - paneRect.left + imageRect.width / 2}px`;
+  els.previewOverlay.style.top = `${imageRect.top - paneRect.top + imageRect.height / 2}px`;
   els.previewOverlay.style.width = `${imageRect.width}px`;
   els.previewOverlay.style.height = `${imageRect.height}px`;
 }
@@ -3314,6 +3353,25 @@ async function applyPreviewUrl(url) {
   hidePreviewMessage();
 }
 
+async function applyComparisonUrl(url) {
+  try {
+    await new Promise((resolve, reject) => {
+      els.comparisonImage.onload = () => resolve();
+      els.comparisonImage.onerror = () => reject(new Error("Comparison image could not load settled preview data."));
+      els.comparisonImage.src = url;
+    });
+  } catch (error) {
+    console.warn(error);
+    return false;
+  } finally {
+    els.comparisonImage.onload = null;
+    els.comparisonImage.onerror = null;
+  }
+  els.comparisonCanvas.style.display = "none";
+  els.comparisonImage.style.display = "block";
+  return true;
+}
+
 async function renderGpuDraft(
   lane = state.currentView,
   { hideStatus = true, longEdge = settledProxyLongEdge(), allowInactive = false } = {},
@@ -3403,6 +3461,16 @@ function clearPreviewImage() {
   els.previewCanvas.style.display = "none";
   els.emptyState.style.display = "grid";
   clearPreviewOverlay();
+}
+
+function clearComparisonPreview({ keepRenderedState = false } = {}) {
+  els.comparisonImage.removeAttribute("src");
+  els.comparisonImage.style.display = "none";
+  els.comparisonCanvas.style.display = "none";
+  if (!keepRenderedState) {
+    state.comparisonRenderedLane = null;
+    state.comparisonRenderedGeneration = null;
+  }
 }
 
 function activePreviewElement() {
@@ -3630,6 +3698,10 @@ async function switchLane(lane) {
     ? renderGpuDraft(lane, { longEdge: settledProxyLongEdge() })
     : cacheReady(lane) ? showCachedPreview(lane) : refreshPreview();
   await Promise.all([previewTask, refreshOverlay(), refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane })]);
+  if (state.compareLayout !== "single") {
+    const other = lane === "hdr" ? "sdr" : "hdr";
+    await renderComparisonPreview(other, { force: true });
+  }
   prepareInactivePreview();
 }
 
@@ -3637,6 +3709,9 @@ function renderLaneChrome() {
   const lane = state.currentView;
   const label = lane === "hdr" ? "HDR Grade" : "SDR Fallback";
   document.body.dataset.activeLane = lane;
+  els.previewStage.dataset.primaryLane = lane;
+  els.previewPrimaryPane.dataset.lane = lane;
+  els.previewSecondaryPane.dataset.lane = lane === "hdr" ? "sdr" : "hdr";
   els.viewButtons.forEach((button) => button.classList.toggle("active", button.dataset.kind === lane));
   els.lanePanels.forEach((panel) => panel.classList.toggle("hidden", panel.dataset.lanePanel !== lane));
   els.viewerLaneLabel.textContent = label;
@@ -3672,12 +3747,15 @@ function clearPreviewCache() {
     state.previewGeneration[lane] = 0;
   }
   state.comparePeekActive = false;
+  state.comparisonRenderedLane = null;
+  state.comparisonRenderedGeneration = null;
   state.gpuSurfaceHdr = false;
   state.gpuPreparedLane = { hdr: false, sdr: false };
   state.scopeGeneration = 0;
   els.scopeFreshness.textContent = "Waiting";
   els.scopeFreshness.classList.remove("updating");
   clearPreviewImage();
+  clearComparisonPreview();
   window.HDRProofing?.reset();
 }
 
@@ -3702,6 +3780,10 @@ async function showCachedPreview(lane) {
 function prepareInactivePreview() {
   if (!state.session) return;
   const other = state.currentView === "hdr" ? "sdr" : "hdr";
+  if (state.compareLayout !== "single") {
+    renderComparisonPreview(other).catch(() => null);
+    return;
+  }
   if (cacheReady(other)) {
     renderCompareStatus();
     return;
@@ -3711,6 +3793,10 @@ function prepareInactivePreview() {
 
 async function preloadInactiveLane(lane, generation) {
   if (!state.session || generation !== state.previewGeneration[lane] || !state.gpuPreview?.available) return;
+  if (state.compareLayout !== "single" && lane !== state.currentView) {
+    await renderComparisonPreview(lane);
+    return;
+  }
   try {
     await state.gpuPreview.loadProxy(state.session.session_id, lane, settledProxyLongEdge());
     if (generation !== state.previewGeneration[lane]) return;
@@ -3724,24 +3810,39 @@ async function preloadInactiveLane(lane, generation) {
 function renderCompareStatus() {
   if (!state.session) {
     els.compareStatus.textContent = "No comparison";
-    els.compareButton.disabled = true;
+    els.compareLayoutButtons.forEach((button) => { button.disabled = true; });
     return;
   }
   const other = state.currentView === "hdr" ? "sdr" : "hdr";
   const ready = cacheReady(other);
-  els.compareButton.disabled = !ready;
-  els.compareStatus.textContent = ready ? `${other.toUpperCase()} ready` : `Preparing ${other.toUpperCase()}…`;
+  els.compareLayoutButtons.forEach((button) => { button.disabled = false; });
+  els.compareButton.disabled = state.compareLayout === "single" && !ready;
+  els.compareStatus.textContent = state.compareLayout === "single"
+    ? ready ? `${other.toUpperCase()} ready` : `Preparing ${other.toUpperCase()}…`
+    : `HDR + SDR · scopes: ${state.currentView.toUpperCase()}`;
 }
 
 function bindCompareControl() {
-  els.compareButton.addEventListener("click", async () => {
-    const other = state.currentView === "hdr" ? "sdr" : "hdr";
-    if (cacheReady(other)) await switchLane(other);
+  els.compareLayoutButtons.forEach((button) => {
+    button.addEventListener("click", async () => {
+      const layout = button.dataset.compareLayout;
+      if (layout === "single" && state.compareLayout === "single") {
+        const other = state.currentView === "hdr" ? "sdr" : "hdr";
+        if (cacheReady(other)) await switchLane(other);
+        return;
+      }
+      await setCompareLayout(layout);
+    });
   });
 }
 
 function beginCompareHold() {
   if (!state.session || state.compareHoldTimer || state.comparePeekActive) return;
+  if (state.compareLayout !== "single") {
+    const other = state.currentView === "hdr" ? "sdr" : "hdr";
+    switchLane(other).catch(() => null);
+    return;
+  }
   state.compareHeld = true;
   state.compareHoldTimer = window.setTimeout(async () => {
     state.compareHoldTimer = null;
@@ -3751,6 +3852,7 @@ function beginCompareHold() {
 }
 
 async function endCompareHold() {
+  if (state.compareLayout !== "single") return;
   if (!state.compareHeld) return;
   state.compareHeld = false;
   if (state.compareHoldTimer) {
@@ -3764,6 +3866,7 @@ async function endCompareHold() {
 }
 
 async function peekOtherLane() {
+  if (state.compareLayout !== "single") return;
   const other = state.currentView === "hdr" ? "sdr" : "hdr";
   if (!cacheReady(other)) {
     els.compareStatus.textContent = `Preparing ${other.toUpperCase()}…`;
@@ -3782,6 +3885,95 @@ async function restoreActiveLane() {
   await showCachedPreview(state.currentView);
   renderLaneChrome();
   await refreshOverlay();
+}
+
+async function setCompareLayout(layout) {
+  if (!COMPARE_LAYOUTS.has(layout)) return;
+  state.compareLayout = layout;
+  state.comparePeekActive = false;
+  try {
+    localStorage.setItem(COMPARE_LAYOUT_KEY, layout);
+  } catch {
+    // The layout still applies for this session when storage is unavailable.
+  }
+  renderCompareLayout();
+  if (layout === "single") {
+    await showCachedPreview(state.currentView);
+    await refreshOverlay();
+    return;
+  }
+  const other = state.currentView === "hdr" ? "sdr" : "hdr";
+  await renderComparisonPreview(other, { force: true });
+}
+
+function renderCompareLayout() {
+  const layout = COMPARE_LAYOUTS.has(state.compareLayout) ? state.compareLayout : "single";
+  els.previewStage.dataset.compareLayout = layout;
+  els.previewSecondaryPane.setAttribute("aria-hidden", String(layout === "single"));
+  els.compareLayoutButtons.forEach((button) => {
+    const active = button.dataset.compareLayout === layout;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+  if (layout === "single") clearComparisonPreview({ keepRenderedState: true });
+  applyZoomGeometry();
+  syncOverlayPlacement();
+  renderCompareStatus();
+}
+
+async function renderComparisonPreview(lane, { force = false } = {}) {
+  if (!state.session || state.compareLayout === "single" || lane === state.currentView) return false;
+  const generation = state.previewGeneration[lane];
+  const alreadyRendered = state.comparisonRenderedLane === lane
+    && state.comparisonRenderedGeneration === generation
+    && (els.comparisonCanvas.style.display !== "none" || els.comparisonImage.style.display !== "none");
+  if (!force && alreadyRendered) return true;
+
+  els.previewSecondaryPane.dataset.lane = lane;
+  if (state.gpuPreview?.available) {
+    try {
+      const result = await state.gpuPreview.renderTo(
+        els.comparisonCanvas,
+        state.session.session_id,
+        lane,
+        state.adjustments,
+        sampleCurvePoints,
+        settledProxyLongEdge(),
+      );
+      if (result && lane !== state.currentView && generation === state.previewGeneration[lane]) {
+        state.gpuPreparedLane[lane] = true;
+        els.comparisonImage.style.display = "none";
+        els.comparisonCanvas.style.display = "block";
+        state.comparisonRenderedLane = lane;
+        state.comparisonRenderedGeneration = generation;
+        applyZoomGeometry();
+        renderCompareStatus();
+        return true;
+      }
+    } catch (error) {
+      console.warn("Comparison WebGPU render failed; using the settled backend preview.", error);
+    }
+  }
+
+  let cached = state.previewCache[lane];
+  if (!(cached?.generation === generation && (cached.raw || cached.url))) {
+    await renderPreviewForLane(lane, false, settledProxyLongEdge(), {
+      showProgress: false,
+      raw: !state.gpuPreview?.available,
+    });
+    cached = state.previewCache[lane];
+  }
+  if (!cached || lane === state.currentView || generation !== state.previewGeneration[lane]) return false;
+  if (cached.raw) applyRawComparisonPreview(cached);
+  else if (cached.url) {
+    const applied = await applyComparisonUrl(cached.url);
+    if (!applied) return false;
+  } else return false;
+  state.comparisonRenderedLane = lane;
+  state.comparisonRenderedGeneration = generation;
+  applyZoomGeometry();
+  renderCompareStatus();
+  return true;
 }
 
 function bindKeyboardShortcuts() {
@@ -3881,17 +4073,25 @@ function applyZoomGeometry() {
   const sourceHeight = Math.max(1, state.session.source.height || preview.naturalHeight || preview.height);
   const frameWidth = Math.max(1, els.dropzone.clientWidth);
   const frameHeight = Math.max(1, els.dropzone.clientHeight);
-  const fitPercent = Math.min(frameWidth / sourceWidth, frameHeight / sourceHeight) * 100;
+  const paneWidth = state.compareLayout === "side-horizontal" ? frameWidth / 2 : frameWidth;
+  const paneHeight = state.compareLayout === "side-vertical" ? frameHeight / 2 : frameHeight;
+  const fitPercent = Math.min(paneWidth / sourceWidth, paneHeight / sourceHeight) * 100;
   const percent = state.zoomMode === "fit" ? fitPercent : state.zoomPercent;
   const displayWidth = Math.max(1, sourceWidth * percent / 100);
   const displayHeight = Math.max(1, sourceHeight * percent / 100);
 
-  els.previewStage.style.width = `${Math.max(frameWidth, displayWidth)}px`;
-  els.previewStage.style.height = `${Math.max(frameHeight, displayHeight)}px`;
+  const stageContentWidth = state.compareLayout === "side-horizontal" ? displayWidth * 2 : displayWidth;
+  const stageContentHeight = state.compareLayout === "side-vertical" ? displayHeight * 2 : displayHeight;
+  els.previewStage.style.width = `${Math.max(frameWidth, stageContentWidth)}px`;
+  els.previewStage.style.height = `${Math.max(frameHeight, stageContentHeight)}px`;
   els.previewImage.style.width = `${displayWidth}px`;
   els.previewImage.style.height = `${displayHeight}px`;
   els.previewCanvas.style.width = `${displayWidth}px`;
   els.previewCanvas.style.height = `${displayHeight}px`;
+  els.comparisonImage.style.width = `${displayWidth}px`;
+  els.comparisonImage.style.height = `${displayHeight}px`;
+  els.comparisonCanvas.style.width = `${displayWidth}px`;
+  els.comparisonCanvas.style.height = `${displayHeight}px`;
   if (els.chromeProofImage) {
     els.chromeProofImage.style.width = `${displayWidth}px`;
     els.chromeProofImage.style.height = `${displayHeight}px`;
@@ -4123,6 +4323,25 @@ function resetControlGroup(group) {
   invalidatePreview(group.startsWith("sdr-") ? "sdr" : "hdr");
   renderControlState();
   debouncePreview(group.startsWith("sdr-") ? "sdr" : "hdr");
+}
+
+function setSdrColorSliders(source) {
+  if (!state.session || !source) return;
+  COLOR_CONTROL_KEYS.forEach((key) => {
+    state.adjustments.sdr[key] = source[key];
+  });
+  syncControlsFromState();
+  invalidatePreview("sdr");
+  renderControlState();
+  debouncePreview("sdr");
+}
+
+function matchHdrColorsToSdr() {
+  setSdrColorSliders(state.adjustments.hdr);
+}
+
+function resetSdrColorSliders() {
+  setSdrColorSliders(defaultAdjustments().sdr);
 }
 
 function activateWorkflowTab(workflow, { focus = false } = {}) {

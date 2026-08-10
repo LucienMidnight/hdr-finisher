@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Open HDR Finisher</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0a0e13;
+      color: #f3f6f8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background:
+        radial-gradient(circle at 20% 10%, rgba(53, 116, 145, .22), transparent 34rem),
+        #0a0e13;
+    }
+    main {
+      width: min(650px, 100%);
+      padding: clamp(26px, 5vw, 46px);
+      border: 1px solid #29343e;
+      border-radius: 18px;
+      background: rgba(16, 22, 29, .96);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, .42);
+    }
+    .eyebrow {
+      margin: 0 0 8px;
+      color: #72d9b0;
+      font-size: 12px;
+      font-weight: 750;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    h1 { margin: 0; font-size: clamp(30px, 6vw, 46px); letter-spacing: -.04em; }
+    .intro { margin: 12px 0 28px; color: #afbdc9; line-height: 1.55; }
+    label { display: block; margin-bottom: 8px; color: #dbe4ea; font-size: 14px; font-weight: 650; }
+    .address-row { display: flex; gap: 10px; }
+    input {
+      min-width: 0;
+      flex: 1;
+      padding: 12px 14px;
+      border: 1px solid #384754;
+      border-radius: 9px;
+      background: #090d12;
+      color: #dce9f1;
+      font: 14px ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+    button, .primary {
+      min-height: 44px;
+      padding: 0 18px;
+      border: 1px solid #405363;
+      border-radius: 9px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button { background: #19242e; color: #e8eef2; }
+    .actions { display: flex; gap: 10px; margin: 18px 0 28px; }
+    .primary {
+      display: inline-grid;
+      place-items: center;
+      border-color: #58c99b;
+      background: #58c99b;
+      color: #07130e;
+      text-decoration: none;
+    }
+    button:hover, button:focus-visible, .primary:hover, .primary:focus-visible { filter: brightness(1.12); }
+    .compatibility {
+      padding-top: 22px;
+      border-top: 1px solid #29343e;
+      color: #aebbc5;
+      font-size: 14px;
+      line-height: 1.55;
+    }
+    .compatibility strong { color: #e8eef2; }
+    #copy-status { min-height: 22px; margin: 8px 0 0; color: #72d9b0; font-size: 13px; }
+    @media (max-width: 520px) {
+      .address-row, .actions { align-items: stretch; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Local application ready</p>
+    <h1>HDR Finisher</h1>
+    <p class="intro">
+      Open HDR Finisher in this browser, or copy the local address and paste it into another supported browser.
+      Your images remain on this computer.
+    </p>
+
+    <label for="server-address">HDR Finisher address</label>
+    <div class="address-row">
+      <input id="server-address" readonly aria-describedby="copy-status">
+      <button id="copy-address" type="button">Copy address</button>
+    </div>
+    <p id="copy-status" role="status" aria-live="polite"></p>
+
+    <div class="actions">
+      <a class="primary" href="/">Open HDR Finisher</a>
+    </div>
+
+    <div class="compatibility">
+      <strong>Recommended:</strong> a current version of Chrome, Edge, or Brave.<br>
+      <span id="browser-status">Checking this browser...</span><br>
+      Keep the HDR Finisher launcher window open while you work.
+    </div>
+  </main>
+  <script>
+    const address = window.location.origin;
+    const addressInput = document.querySelector('#server-address');
+    const copyButton = document.querySelector('#copy-address');
+    const copyStatus = document.querySelector('#copy-status');
+    const browserStatus = document.querySelector('#browser-status');
+    addressInput.value = address;
+
+    copyButton.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(address);
+      } catch (_error) {
+        addressInput.focus();
+        addressInput.select();
+        document.execCommand('copy');
+      }
+      copyStatus.textContent = 'Address copied. Paste it into your preferred browser.';
+    });
+
+    async function browserName() {
+      if (navigator.brave && await navigator.brave.isBrave()) return ['Brave', true];
+      const ua = navigator.userAgent;
+      if (/Edg\//.test(ua)) return ['Microsoft Edge', true];
+      if (/Chrome\//.test(ua) && !/Edg\//.test(ua)) return ['Chrome or Chromium', true];
+      if (/Firefox\//.test(ua)) return ['Firefox', false];
+      if (/Safari\//.test(ua) && !/Chrome\//.test(ua)) return ['Safari', false];
+      return ['an unidentified browser', false];
+    }
+
+    browserName().then(([name, recommended]) => {
+      browserStatus.textContent = recommended
+        ? `This appears to be ${name}, which is in the recommended browser family.`
+        : `This appears to be ${name}. For the validated HDR preview path, copy the address into Chrome, Edge, or Brave.`;
+    });
+  </script>
+</body>
+</html>

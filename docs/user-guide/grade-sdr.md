@@ -11,7 +11,7 @@ Start with:
 1. Filmic Base Rendition at neutral settings.
 2. Exposure and Highlight Recovery.
 3. Contrast/Pivot and Shadow.
-4. Follow HDR Color enabled.
+4. Match HDR colors, then refine the SDR color controls if needed.
 5. Lift/Gamma/Gain or Curves only when needed.
 
 ## Base Rendition
@@ -53,13 +53,13 @@ Operate in the display-linear SDR domain. Pivot identifies the normalized value 
 
 Adds or removes low-end brightness with a mask that fades toward midtones. Small values are normally sufficient.
 
-## Follow HDR Color
+## Match HDR colors
 
-When enabled, the SDR branch uses the live HDR white balance, primary shaping, saturation, and vibrance before conversion to the SDR gamut. This is the recommended default because it keeps the two renditions perceptually related.
+**Match HDR colors** is a one-shot starting point. It copies the current HDR Temperature, Tint, Saturation, Vibrance, and RGB Primaries slider positions into the SDR Color panel. It does not link the branches, and it does not copy Exposure or any other tone control.
 
-Turn it off when the SDR fallback genuinely needs a different treatment—for example, wide-gamut HDR color becomes unattractive after SDR gamut compression, or the fallback requires reduced saturation.
+After matching, every SDR color slider remains independently editable. Later HDR color changes do not affect SDR unless you press **Match HDR colors** again. Use **Reset** to return only the SDR color sliders to their neutral defaults; SDR Exposure and the other tone controls are preserved.
 
-With independent color enabled, SDR has the same Temperature, Tint, Saturation, Vibrance, and RGB Primaries controls as HDR. These controls still operate through ACEScg for primary shaping, then convert back to display-linear sRGB.
+The SDR color controls operate through ACEScg for primary shaping, then convert back to display-linear sRGB.
 
 ## SDR gamut compression
 
@@ -78,7 +78,7 @@ SDR Curves work from 0 to 1 rather than the HDR logarithmic upper range. Luma ch
 For a scene-linear source without an authored SDR reference:
 
 1. SDR exposure and shadow
-2. Effective color grade (HDR-linked or independent)
+2. Independent SDR color grade (optionally initialized from HDR with Match HDR colors)
 3. Selected tone map into display-linear sRGB
 4. Highlight Recovery and contrast
 5. Lift/Gamma/Gain
@@ -90,7 +90,7 @@ For an authored SDR reference such as supported Apple HDR HEIC:
 2. Exposure and shadow
 3. Optional Base Rendition re-tone-map
 4. Highlight Recovery and contrast
-5. Effective color grade through ACEScg and back to sRGB
+5. SDR color grade through ACEScg and back to sRGB
 6. Lift/Gamma/Gain and Curves
 
 The final result is clipped to the normalized SDR range.
@@ -108,6 +108,6 @@ The final result is clipped to the normalized SDR range.
 
 - Treating the fallback as an automatic tone-map by-product
 - Using extreme Highlight Recovery until the image looks flat
-- Disabling Follow HDR Color without realizing subsequent HDR color changes no longer carry over
+- Expecting Match HDR colors to remain linked after the one-shot copy
 - Expecting exact color identity between wide-gamut HDR and sRGB SDR
 - Correcting a wrong source interpretation independently in each branch

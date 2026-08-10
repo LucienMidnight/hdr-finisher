@@ -11,7 +11,7 @@ BACKEND = ROOT / "backend"
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
-from hdr_finisher.main import run
+from hdr_finisher.launcher import run
 
 
 if __name__ == "__main__":

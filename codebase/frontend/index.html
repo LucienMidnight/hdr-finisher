@@ -123,7 +123,23 @@
             <span>Preview Window</span>
           </div>
           <div class="viewer-tools">
-            <button id="compare-button" class="tool-button" type="button" title="Tap V to switch. Hold V to peek at the other branch.">A/B · V</button>
+            <div class="comparison-modes" role="group" aria-label="Preview comparison layout">
+              <button id="compare-button" class="tool-button compare-mode-button active" type="button" data-compare-layout="single" aria-label="Single frame" aria-pressed="true" title="Single frame · tap V to switch, hold V to peek">
+                <svg viewBox="0 0 20 16" aria-hidden="true"><rect x="2.5" y="2.5" width="15" height="11" rx="1"/></svg>
+              </button>
+              <button class="tool-button compare-mode-button" type="button" data-compare-layout="split-vertical" aria-label="Vertical split" aria-pressed="false" title="Vertical split · HDR left, SDR right">
+                <svg viewBox="0 0 20 16" aria-hidden="true"><rect x="2.5" y="2.5" width="15" height="11" rx="1"/><path d="M10 3v10"/></svg>
+              </button>
+              <button class="tool-button compare-mode-button" type="button" data-compare-layout="split-horizontal" aria-label="Horizontal split" aria-pressed="false" title="Horizontal split · HDR top, SDR bottom">
+                <svg viewBox="0 0 20 16" aria-hidden="true"><rect x="2.5" y="2.5" width="15" height="11" rx="1"/><path d="M3 8h14"/></svg>
+              </button>
+              <button class="tool-button compare-mode-button" type="button" data-compare-layout="side-horizontal" aria-label="Side-by-side horizontal" aria-pressed="false" title="Side by side · HDR left, SDR right">
+                <svg viewBox="0 0 20 16" aria-hidden="true"><rect x="1.5" y="3" width="7" height="10" rx="1"/><rect x="11.5" y="3" width="7" height="10" rx="1"/></svg>
+              </button>
+              <button class="tool-button compare-mode-button" type="button" data-compare-layout="side-vertical" aria-label="Side-by-side vertical" aria-pressed="false" title="Stacked · HDR top, SDR bottom">
+                <svg viewBox="0 0 20 16" aria-hidden="true"><rect x="3" y="1" width="14" height="5.5" rx="1"/><rect x="3" y="9.5" width="14" height="5.5" rx="1"/></svg>
+              </button>
+            </div>
             <span id="compare-status" class="tool-status">Preparing SDR…</span>
             <div class="zoom-control" role="group" aria-label="Image zoom">
               <button id="zoom-out" class="zoom-step" type="button" aria-label="Zoom out" title="Zoom out">&minus;</button>
@@ -214,11 +230,20 @@
         </div>
 
         <div class="viewport-frame" id="dropzone">
-          <div id="preview-stage" class="preview-stage">
-            <canvas id="preview-canvas" aria-label="WebGPU draft preview"></canvas>
-            <img id="preview-image" alt="Current HDR Finisher preview" draggable="false">
-            <img id="preview-overlay" alt="" aria-hidden="true" draggable="false">
-            <img id="chrome-proof-image" alt="Chrome fixed-headroom proof preview" draggable="false">
+          <div id="preview-stage" class="preview-stage" data-compare-layout="single" data-primary-lane="hdr">
+            <div id="preview-primary-pane" class="preview-pane preview-primary-pane" data-lane="hdr">
+              <canvas id="preview-canvas" aria-label="Active HDR Finisher preview"></canvas>
+              <img id="preview-image" alt="Active HDR Finisher preview" draggable="false">
+              <img id="preview-overlay" alt="" aria-hidden="true" draggable="false">
+              <img id="chrome-proof-image" alt="Chrome fixed-headroom proof preview" draggable="false">
+            </div>
+            <div id="preview-secondary-pane" class="preview-pane preview-secondary-pane" data-lane="sdr" aria-hidden="true">
+              <canvas id="comparison-canvas" aria-label="Settled comparison preview"></canvas>
+              <img id="comparison-image" alt="Settled comparison preview" draggable="false">
+            </div>
+            <div class="comparison-divider" aria-hidden="true"></div>
+            <span class="comparison-label comparison-label-hdr">HDR</span>
+            <span class="comparison-label comparison-label-sdr">SDR</span>
           </div>
           <div id="empty-state" class="empty-state">
             <p class="empty-state-title">Drop an HDR image anywhere in the viewer</p>
@@ -591,9 +616,13 @@
           <div class="control-group-header">
             <button class="group-toggle" type="button" aria-expanded="true">Color <span data-modified-count="sdr-color"></span></button>
             <button class="section-bypass text-button" type="button" data-section-path="sdr.color_section_enabled" aria-pressed="true" aria-label="Toggle SDR Color preview">&#9673;</button>
-            <button class="group-reset text-button" type="button" data-reset-group="sdr-color">Reset</button>
           </div>
           <div class="control-group-body">
+            <div class="sdr-color-actions" role="group" aria-label="SDR color actions">
+              <button id="sdr-match-hdr-colors" class="button-secondary" type="button">Match HDR colors</button>
+              <button id="sdr-reset-colors" class="text-button" type="button">Reset</button>
+            </div>
+            <p class="helper">Copies the current HDR color slider positions once. SDR color remains fully editable afterward; tone and exposure stay independent.</p>
             <div data-sdr-manual-color>
               <div class="control-row" data-control-path="sdr.white_balance_kelvin"><div class="control-heading"><label for="sdr-wb">Temperature</label><output data-value-path="sdr.white_balance_kelvin">6500 K</output></div><input id="sdr-wb" type="range" min="2000" max="12000" step="50" value="6500" data-path="sdr.white_balance_kelvin"></div>
               <div class="control-row" data-control-path="sdr.tint"><div class="control-heading"><label for="sdr-tint">Green / Magenta Tint</label><output data-value-path="sdr.tint">0.00</output></div><input id="sdr-tint" type="range" min="-1" max="1" step="0.01" value="0" data-path="sdr.tint"></div>

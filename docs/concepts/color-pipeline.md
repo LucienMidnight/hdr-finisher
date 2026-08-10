@@ -132,7 +132,7 @@ HDR luma coefficients are ACEScg-derived: `0.2722287 R + 0.6740818 G + 0.0536895
 ### From a scene-linear source
 
 1. SDR exposure and shadow in ACEScg
-2. Linked HDR color or independent SDR color in ACEScg
+2. Independent SDR color in ACEScg, optionally initialized by copying the HDR color controls
 3. Tone-map ACEScg luma
 4. Convert to display-linear sRGB with CAT02
 5. Compress to the sRGB cube toward display luma

@@ -86,11 +86,14 @@ try {
     }
 
     $previousPort = $env:HDR_FINISHER_PORT
+    $previousNoBrowser = $env:HDR_FINISHER_NO_BROWSER
     $env:HDR_FINISHER_PORT = $SmokeTestPort.ToString()
+    $env:HDR_FINISHER_NO_BROWSER = "1"
     try {
         $process = Start-PackagedApp $exePath
     } finally {
         $env:HDR_FINISHER_PORT = $previousPort
+        $env:HDR_FINISHER_NO_BROWSER = $previousNoBrowser
     }
     try {
         $ready = $false

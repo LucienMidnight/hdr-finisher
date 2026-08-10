@@ -9,7 +9,7 @@ HDR Finisher is currently a technical alpha. Windows has a tested package-buildi
 - An HDR-capable GPU/display chain for visual HDR review
 - Optional native encoders for AVIF gain maps and JPEG Ultra HDR
 
-The application works offline. It starts a local FastAPI server and opens a browser interface at `http://127.0.0.1:8000`. Images remain on the local machine unless you separately upload an export elsewhere.
+The application works offline. It starts a local FastAPI server, displays the browser address in its launcher window, and opens a browser launcher page. Choose **Open HDR Finisher**, choose **Copy address** and paste it into another browser, or select and copy the displayed address manually. Keep the launcher window open while using the application. Images remain on the local machine unless you separately upload an export elsewhere.
 
 ## Run from source
 

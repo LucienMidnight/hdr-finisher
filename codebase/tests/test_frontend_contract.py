@@ -32,6 +32,11 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert 'data-path="sdr.match_hdr_color"' not in html
     assert 'data-path="sdr.saturation"' in html
     assert 'data-path="sdr.red_hue"' in html
+    assert 'id="sdr-match-hdr-colors"' in html
+    assert 'id="sdr-reset-colors"' in html
+    assert 'const COLOR_CONTROL_KEYS = controlGroups["hdr-color"]' in script
+    assert "function matchHdrColorsToSdr()" in script
+    assert "function resetSdrColorSliders()" in script
     assert "/api/export-directory/default" in script
     assert "window.confirm" in script
     assert "overwrite," in script
@@ -225,6 +230,29 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     assert "this.paramBuffer" in webgpu and "this.curveBuffer" in webgpu
     assert "this.curveSampleCache" in webgpu
     assert "Settled WebGPU authoring preview" in javascript
+
+
+def test_viewer_exposes_icon_comparison_layouts_with_active_lane_scopes() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+
+    for layout in ["single", "split-vertical", "split-horizontal", "side-horizontal", "side-vertical"]:
+        assert f'data-compare-layout="{layout}"' in html
+    assert html.count('class="tool-button compare-mode-button') == 5
+    assert html.count('<svg viewBox="0 0 20 16"') == 5
+    assert 'id="comparison-canvas"' in html
+    assert 'id="comparison-image"' in html
+    assert 'id="compare-button"' in html and "A/B" not in html
+    assert 'COMPARE_LAYOUT_KEY = "hdr-finisher:compare-layout:v1"' in javascript
+    assert 'HDR + SDR · scopes: ${state.currentView.toUpperCase()}' in javascript
+    assert 'refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane })' in javascript
+    assert "renderComparisonPreview(other, { force: true })" in javascript
+    assert "state.gpuPreview.renderTo(" in javascript
+    assert "async renderTo(canvas" in webgpu
+    assert '.preview-stage[data-compare-layout="split-vertical"]' in css
+    assert '.preview-stage[data-compare-layout="side-vertical"]' in css
 
 
 def test_waveform_resolution_policy_reduces_payload_without_coarse_refresh_columns() -> None:

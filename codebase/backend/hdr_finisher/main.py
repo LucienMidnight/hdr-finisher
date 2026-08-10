@@ -465,6 +465,11 @@ def root() -> HTMLResponse:
     return HTMLResponse(content=html)
 
 
+@app.get("/launcher")
+def launcher() -> HTMLResponse:
+    return HTMLResponse(content=(FRONTEND_DIR / "launcher.html").read_text(encoding="utf-8"))
+
+
 def run() -> None:
     uvicorn.run("hdr_finisher.main:app", host=DEFAULT_HOST, port=DEFAULT_PORT, reload=False)
 

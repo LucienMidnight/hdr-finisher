@@ -48,10 +48,28 @@ async function main() {
       redHueDisabled: await page.locator('[data-path="sdr.red_hue"]').isDisabled(),
       saturationDisabled: await page.locator('[data-path="sdr.saturation"]').isDisabled(),
     };
+    await setControl(page, "sdr.exposure", 1.25);
+    await setControl(page, "sdr.red_hue", -4);
+    await page.locator("#sdr-match-hdr-colors").click();
+    const matchedSdrColor = {
+      vibrance: await page.locator('[data-path="sdr.vibrance"]').inputValue(),
+      redHue: await page.locator('[data-path="sdr.red_hue"]').inputValue(),
+      redPurity: await page.locator('[data-path="sdr.red_purity"]').inputValue(),
+      bluePurity: await page.locator('[data-path="sdr.blue_purity"]').inputValue(),
+      exposure: await page.locator('[data-path="sdr.exposure"]').inputValue(),
+    };
     await setControl(page, "sdr.red_hue", -4);
     const adjustedSdrColor = {
       redHueDisabled: await page.locator('[data-path="sdr.red_hue"]').isDisabled(),
       redHue: await page.locator('[data-path="sdr.red_hue"]').inputValue(),
+    };
+    await page.locator("#sdr-reset-colors").click();
+    const resetSdrColor = {
+      vibrance: await page.locator('[data-path="sdr.vibrance"]').inputValue(),
+      redHue: await page.locator('[data-path="sdr.red_hue"]').inputValue(),
+      redPurity: await page.locator('[data-path="sdr.red_purity"]').inputValue(),
+      bluePurity: await page.locator('[data-path="sdr.blue_purity"]').inputValue(),
+      exposure: await page.locator('[data-path="sdr.exposure"]').inputValue(),
     };
     const exportRequests = [];
     let overwriteDialog = "";
@@ -116,7 +134,7 @@ async function main() {
         && metrics.labels.some((label) => label.startsWith("Vibrance"))
         && metrics.labels.includes("Red Hue")
         && metrics.labels.includes("Tint Purity")
-        && metrics.modified === "4 modified"
+        && /^4 mod(?:ified)?$/.test(metrics.modified)
         && metrics.redTrack !== "none"
         && retained === "8"
         && bypassed === "false"
@@ -126,8 +144,18 @@ async function main() {
         && sdrColor.status === ""
         && sdrColor.redHueDisabled === false
         && sdrColor.saturationDisabled === false
+        && matchedSdrColor.vibrance === "0.35"
+        && matchedSdrColor.redHue === "8"
+        && matchedSdrColor.redPurity === "20"
+        && matchedSdrColor.bluePurity === "30"
+        && matchedSdrColor.exposure === "1.25"
         && adjustedSdrColor.redHueDisabled === false
         && adjustedSdrColor.redHue === "-4"
+        && resetSdrColor.vibrance === "0"
+        && resetSdrColor.redHue === "0"
+        && resetSdrColor.redPurity === "0"
+        && resetSdrColor.bluePurity === "0"
+        && resetSdrColor.exposure === "1.25"
         && defaultExportDirectory.length > 0
         && exportRequests.length === 2
         && exportRequests[0].overwrite === false
@@ -138,7 +166,9 @@ async function main() {
       bypassed,
       reset,
       sdrColor,
+      matchedSdrColor,
       adjustedSdrColor,
+      resetSdrColor,
       defaultExportDirectory,
       exportRequests: exportRequests.map(({ overwrite, output_path }) => ({ overwrite, output_path })),
       overwriteDialog,

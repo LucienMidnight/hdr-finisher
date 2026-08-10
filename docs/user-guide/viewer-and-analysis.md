@@ -16,7 +16,9 @@ The optional **High-quality preview** preference lives on the Technical tab. It 
 
 **SDR Controls** shows the authored sRGB fallback.
 
-The **A/B · V** control switches branches. Tap `V` to switch; hold it to peek at the other prepared branch. Comparing branches is useful for composition and color continuity, but they are not intended to have identical highlight brightness.
+The comparison icons select single frame, vertical split, horizontal split, side-by-side, or stacked viewing. HDR stays on the left or top and SDR stays on the right or bottom. The active **HDR Controls** or **SDR Controls** branch is highlighted; edits and scopes always follow that active branch while the other preview remains at its last settled result.
+
+In single-frame mode, tap `V` (or click the active single-frame icon) to switch branches and hold `V` to peek at the other prepared branch. In a two-frame mode, `V` changes the active editing branch while both remain visible. Comparing branches is useful for composition and color continuity, but they are not intended to have identical highlight brightness.
 
 ## Zoom and resolution
 

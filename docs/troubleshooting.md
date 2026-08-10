@@ -71,8 +71,8 @@ This is expected when one display is HDR and the other is SDR, or when their SDR
 
 Wide-gamut ACEScg/BT.2020 colors must fit sRGB for the fallback. HDR Finisher compresses out-of-gamut chroma toward luma. Try:
 
-- Review **Follow HDR Color** behavior.
-- Disable it and reduce/adapt SDR saturation or primaries deliberately.
+- Use **Match HDR colors** as a starting point.
+- Reduce or adapt the independent SDR saturation or primaries deliberately.
 - Inspect RGB parade/channel clipping.
 - Confirm the monitor is not forcing its native gamut for SDR.
 

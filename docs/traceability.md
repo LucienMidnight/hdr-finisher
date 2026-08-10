@@ -41,8 +41,8 @@ This index maps user-facing areas to their current state model, implementation, 
 | Exposure/Shadow | `sdr.exposure`, `sdr.shadow` | SDR branch entry processing | [SDR grade](user-guide/grade-sdr.md#tone) |
 | Highlight Recovery | `sdr.highlight_recovery` | `_apply_sdr_highlight_recovery` | [SDR grade](user-guide/grade-sdr.md#highlight-recovery) |
 | Contrast/Pivot | `sdr.contrast`, `contrast_pivot` | `_apply_luminance_section_controls` | [SDR grade](user-guide/grade-sdr.md#contrast-and-pivot) |
-| Follow HDR Color | `sdr.match_hdr_color` | `_effective_sdr_color_settings` | [SDR grade](user-guide/grade-sdr.md#follow-hdr-color) |
-| Independent color | SDR color/primary fields | `_apply_hdr_color` via SDR conversion path | [SDR grade](user-guide/grade-sdr.md#follow-hdr-color) |
+| Match HDR colors / Reset | HDR and SDR color/primary fields | Frontend one-shot slider copy/reset | [SDR grade](user-guide/grade-sdr.md#match-hdr-colors) |
+| Independent color | SDR color/primary fields | `_apply_hdr_color` via SDR conversion path | [SDR grade](user-guide/grade-sdr.md#match-hdr-colors) |
 | Lift/Gamma/Gain | SDR values, pivots/ranges | `_primary_zone_masks` and luminance controls | [SDR grade](user-guide/grade-sdr.md#lift-gamma-gain-and-curves) |
 | Curves | SDR channel curves | `_apply_curves` in SDR domain | [SDR grade](user-guide/grade-sdr.md#lift-gamma-gain-and-curves) |
 
