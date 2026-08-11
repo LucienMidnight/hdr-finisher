@@ -10,10 +10,10 @@ The dated [Interactive Preview Performance Validation](Interactive_Preview_Perfo
 |---|---|---|
 | Fast deterministic | Color normalization, HDR classification boundaries, adjustment invariants, SDR fallback, scopes, diagnostics, preview math, cache behavior, API validation, and mocked exporter failure/atomicity paths | `.\.venv\Scripts\python.exe -m pytest -q tests` |
 | Small file-level | Tracked PNG, float TIFF, untagged linear EXR, and Blender `colorInteropID` EXR fixtures under `tests/fixtures/` | `.\.venv\Scripts\python.exe -m pytest -q tests/test_loader_fixtures.py tests/test_api.py` |
-| Encoder/export integration | Real AVIF preview and gain-map inspection, JPEG Ultra HDR encode/legacy decode/HDR decode, and proof-artifact reconstruction. Tests skip with an explicit reason when the required binary is unavailable. | `.\.venv\Scripts\python.exe -m pytest -q tests/test_avif_info.py tests/test_ultrahdr_export.py tests/test_proofing.py` |
+| Encoder/import/export integration | Real AVIF preview and gain-map inspection, direct-PQ and gain-map AVIF import, JPEG Ultra HDR encode/legacy/HDR import, two-generation round trips, and proof-artifact reconstruction. Tests skip with an explicit reason when the required binary is unavailable. | `.\.venv\Scripts\python.exe -m pytest -q tests/test_avif_info.py tests/test_ultrahdr_export.py tests/test_gainmap_import.py tests/test_proofing.py` |
 | Optional local media | Large Blender/Affinity EXRs and private iPhone HEIC media in ignored `local-test-media/inputs/`; results go to ignored `output/` | `.\.venv\Scripts\python.exe .\tools\local_media_probe.py <paths> --export` |
 | Alpha harness | Full pytest, JavaScript syntax checks, capability report, sample export/inspection, and browser layout smoke | `powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\run_alpha_qa.ps1` |
-| Preview performance | Fast/high-quality/forced-fallback browser matrix, event-to-frame/scope timing, request payloads, long tasks, heap trend, and browser errors | `npm run test:performance` |
+| Preview performance | Fast/high-quality/forced-fallback browser matrix, event-to-frame/scope timing, backend requests, JSON parse, Canvas draw, request payloads, long tasks, heap trend, and browser errors | `npm run test:performance` |
 
 Set `PYTHONPATH` to the resolved `backend` directory when running pytest outside the project scripts.
 
@@ -27,7 +27,7 @@ Set `PYTHONPATH` to the resolved `backend` directory when running pytest outside
 | HDR/SDR finishing | `test_adjustments.py`, `test_core.py`, `test_frontend_contract.py` | Variable-node equalizer migration/limits, targeting masks, section bypass, fixed HDR curve domain, highlight ordering/rolloff continuity, branch isolation, hue behavior, and grading interaction contracts |
 | Float preview/resampling | `test_core.py`, `test_render_cache.py`, `test_preview_display.py`, `test_performance_pipeline.py` | Display-aware caps, float/HDR-range preservation, half-float precision/range fallback, byte accounting/eviction, single-flight reuse, raw SDR-display fallback math |
 | Scopes and overlays | `test_core.py`, `test_performance_pipeline.py` | AP1 luminance, 100/203/1000-nit guides and strict thresholds, vectorized waveform equivalence, tiny-highlight peak priority, normalization, false color, zebra alpha/cutoff |
-| Export and metadata | `test_ultrahdr_export.py`, `test_avif_info.py`, `test_proofing.py` | Independent base/gain-map quality and scale, proof/export parity, metadata-selected JPEG gamut conversion, encoded offsets/capacity, atomic replacement, AVIF gain-map metadata, legacy fallback decode, and optional real round trips |
+| Import/export and metadata | `test_gainmap_import.py`, `test_ultrahdr_export.py`, `test_avif_info.py`, `test_proofing.py` | Independent base/gain-map quality and scale, proof/export parity, direct-PQ and gain-map AVIF input, JPEG Ultra HDR input without silent SDR fallback, metadata-selected gamut conversion, encoded offsets/capacity, atomic replacement, and two-generation lossy round trips |
 | API/session/preflight | `test_api.py`, `test_capability_gates.py`, `test_folder_picker.py` | Upload cleanup, interpretation lifecycle, encoded/raw preview, tiered scopes, proxy format, diagnostics, unsupported format rejection, backend capability rejection, and Windows STA picker paths |
 | Delivery/hosting | `test_proofing.py`, `test_hosting_probe.py` | Fixed-headroom reconstruction, content hashes/cache, evidence persistence, metadata survival and destructive conversion detection |
 
@@ -37,6 +37,6 @@ Set `PYTHONPATH` to the resolved `backend` directory when running pytest outside
 - Real Affinity and high-resolution Blender rendering remain manual/local checks for decoder performance, saturated highlights, gradients, downsampling, and clipping diagnostics.
 - Physical HDR/SDR monitor behavior, browser/compositor differences, Instagram handling, and hosting transformations require the manual procedures in this directory.
 - Capability-aware encoder tests validate installed binaries, but CI should eventually publish a matrix showing which optional encoders ran rather than treating skips as equivalent to executed round trips.
-- Packaged clean-machine testing, macOS packaging, and JPEG XL remain outside the mandatory pytest tier. Windows picker behavior is unit-covered; packaged interaction remains a manual check.
+- Clean-machine and macOS packaging plus JPEG XL remain outside the mandatory pytest tier. The Windows package is smoke-tested during build; this sprint additionally verified a frozen AVIF gain-map upload. Windows picker behavior is unit-covered; interactive clean-machine use remains manual.
 
 Generated reports are evidence from a particular run. Record durable conclusions in `docs/testing/`, not only under `codebase/output/`.

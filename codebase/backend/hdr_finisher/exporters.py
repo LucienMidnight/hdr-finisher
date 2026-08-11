@@ -281,7 +281,7 @@ def _write_sdr_png(path: Path, image: np.ndarray) -> None:
         raise ExportProcessError("Pillow is required to write SDR export intermediates.") from exc
 
     image_8bit = _linear_to_srgb8(image)
-    Image.fromarray(image_8bit, mode="RGB").save(path, format="PNG")
+    Image.fromarray(image_8bit).save(path, format="PNG")
 
 
 def _linear_to_srgb8(image: np.ndarray) -> np.ndarray:

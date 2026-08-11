@@ -8,6 +8,7 @@ import numpy as np
 
 from .analysis import classify_hdr
 from .color import detect_color_space, detect_transfer_function, normalize_to_acescg
+from .gainmap_decoders import GainMapDecodeError, decode_avif, decode_ultrahdr_jpeg, is_ultrahdr_jpeg
 from .models import SourceImageDescriptor
 
 
@@ -42,7 +43,14 @@ def load_image(
 ) -> tuple[np.ndarray, SourceImageDescriptor, dict[str, Any], Any, np.ndarray | None]:
     suffix = path.suffix.lower()
     try:
-        if suffix in {".png", ".jpg", ".jpeg", ".bmp"}:
+        if suffix in {".jpg", ".jpeg"} and is_ultrahdr_jpeg(path):
+            image, sdr_reference_image, metadata = decode_ultrahdr_jpeg(path)
+            metadata["sdr_reference_image"] = sdr_reference_image
+        elif suffix == ".avif":
+            image, sdr_reference_image, metadata = decode_avif(path)
+            if sdr_reference_image is not None:
+                metadata["sdr_reference_image"] = sdr_reference_image
+        elif suffix in {".png", ".jpg", ".jpeg", ".bmp"}:
             image, metadata = _load_with_pillow(path)
         elif suffix in {".tif", ".tiff"}:
             image, metadata = _load_tiff(path)
@@ -56,6 +64,8 @@ def load_image(
             raise LoaderError(f"Unsupported input format: {suffix}")
     except LoaderError:
         raise
+    except GainMapDecodeError as exc:
+        raise LoaderError(str(exc)) from exc
     except Exception as exc:
         detail = str(exc).strip() or exc.__class__.__name__
         label = "TIFF" if suffix in {".tif", ".tiff"} else suffix.removeprefix(".").upper() or "image"

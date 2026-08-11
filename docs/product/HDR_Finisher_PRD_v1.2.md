@@ -67,11 +67,18 @@ Valid HDR inputs, but metadata must be checked. A 16-bit TIFF without PQ/HLG enc
 | 16-bit TIFF (PQ or HLG) | `.tif`, `.tiff` | Must contain PQ or HLG transfer function in ICC/color profile metadata |
 | HEIC / HEIF | `.heic` | iPhone native HDR captures (10â€“12 bit PQ/HLG). **The HEIF parser must detect and apply auxiliary gain maps stored within the container when present.** iPhone HDR photos often contain an SDR base image plus an embedded gain map; decoding only the primary image will produce a false SDR result. |
 
-### Tier 3 â€” Future / Stretch Goal
-| Format | Extension | Notes |
+| AVIF HDR / ISO 21496-1 gain map | `.avif` | Supported through bundled libavif tools. Plain SDR, direct PQ/HLG HDR, and standards-compliant gain-map AVIF are routed explicitly; malformed or unsupported HDR metadata is rejected rather than silently presented as SDR. |
+| JPEG Ultra HDR | `.jpg`, `.jpeg` | Gain-map JPEGs are detected before the ordinary Pillow JPEG path and reconstructed through the bundled libultrahdr decoder. The legacy SDR base is retained independently. Plain JPEG remains supported as SDR. |
+
+### Future Input Research (Not Yet Supported)
+| Format | Extension | Research boundary |
 |---|---|---|
-| Linear DNG | `.dng` | Lightroom HDR Merge output; requires `rawpy` (LibRaw) â€” larger binary |
-| JPEG XL (HDR) | `.jxl` | Round-trip editing support; requires `libjxl` |
+| JPEG XL (HDR / gain map) | `.jxl` | Later. Current interoperability and preservation value do not justify another native toolchain and proof matrix yet. Reconsider only with a representative corpus and verified Windows/macOS, editor, browser, and hosting round trips. |
+| Rendered Linear DNG | `.dng` | Later, constrained input-only candidate. A future proposal must define explicit rendered RGB samples, color interpretation, white balance, black/white levels, baseline exposure, and orientation. Mosaiced RAW, demosaicing, camera profiles, and general RAW development remain outside v1. |
+
+### Input Round-Trip Principle
+
+Formats produced by HDR Finisher are priority import candidates. AVIF gain-map and JPEG Ultra HDR round trips compare the exact exported artifact with its re-imported HDR rendition and independent SDR fallback, including gain-map presence, color primaries, transfer function, reference white, encoded headroom, clipping, highlight ordering, dimensions, orientation, and representative pixel/perceptual parity. Valid HDR exports must never be silently reduced to their SDR base, double-decode PQ/HLG, apply a gain map twice, or double-tone-map the SDR branch. Two-generation lossy round trips are accepted within explicit SDR, HDR-distribution, and headroom tolerances rather than requiring byte or pixel identity.
 
 ---
 
@@ -158,9 +165,10 @@ Responsible for: UI layout, HDR image display (via PQ-encoded AVIF served locall
 | `fastapi` + `uvicorn` | Local API server | |
 | `numpy` | All float array math | Core dependency for everything |
 | `tifffile` | 32-bit TIFF read/write | Replaces FreeImage; actively maintained |
+| `imagecodecs` | Compressed TIFF segment decoding | Keep the current dependency and full packaged codec set for import reliability. A later evidence-led packaging pass may retain only the TIFF codecs proven necessary by a representative compatibility corpus; do not remove or narrow it before that corpus and packaged-app tests exist. Bundled codecs do not automatically make their file extensions valid HDR Finisher inputs. |
 | `openexr` (ASWF) | EXR read | Official Academy Software Foundation binding |
 | `imageio` | Radiance HDR (`.hdr`), PFM | Narrow use â€” these specific formats only |
-| `rawpy` | Linear DNG decode | Wraps LibRaw; Tier 3 input; increases binary size |
+| `rawpy` (research candidate) | Potential Linear DNG decode | Not a current production dependency. Evaluate its LibRaw behavior, color/metadata fidelity, maintenance, and binary-size cost before defining a supported DNG subset. |
 | `pillow-heif` | HEIC decode | Required for iPhone HDR input; must support auxiliary image extraction for embedded gain maps |
 | `colour-science` (`colour`) | Color space transforms, tone mapping algorithms, chromatic adaptation | Critical â€” handles ACEScgâ†’BT.2020, ACES RRT, PQ math. v1 uses colour-science; full OpenColorIO integration is deferred to v2 for DCC pipeline parity. |
 | `exifread` | EXIF metadata extraction from DNG/TIFF | |
@@ -301,6 +309,7 @@ The AVIF path uses a **10-bit logarithmic gain map**. JPEG Ultra HDR uses libult
 ### Phase 6 â€” Packaging & Distribution
 - PyInstaller configuration for Windows (`.exe`) and macOS (`.app`)
 - Bundle OS-specific `avifgainmaputil` and `ultrahdr_app` binaries; keep `cjxl` deferred with JPEG XL
+- Keep `imagecodecs` packaged as-is for the current installer. Record its size separately and revisit selective codec collection only after TIFF compatibility fixtures cover representative uncompressed, LZW, Deflate/ZIP with predictors, PackBits, tiled/striped, integer, and floating-point files from real source applications.
 - Handle PATH management and binary permissions at runtime
 - Test on clean machines (no Python installed) on both platforms
 - GitHub release pipeline with signed builds (macOS notarization required to avoid Gatekeeper warning)
@@ -352,15 +361,17 @@ The following are reasonable future features but are explicitly deferred to avoi
 ---
 
 
-## 13. Current Repository Checkpoint (2026-08-06)
+## 13. Current Repository Checkpoint (2026-08-11)
 
-The repository is no longer at the original vertical-slice stage. It now provides a usable single-image HDR finishing workflow with real AVIF and JPEG Ultra HDR gain-map export, true HDR browser preview, Apple HEIC HDR reconstruction, independent SDR fallback control, scopes and diagnostics, and delivery proofing that distinguishes authored intent, encoded fixed-headroom reconstruction, and the installed browser's live rendering. Detailed browser-proofing status and the evidence protocol are maintained in `docs/testing/Delivery_Proofing_Sprint.md`.
+The repository is no longer at the original vertical-slice stage. It now provides a usable single-image HDR finishing workflow with real AVIF and JPEG Ultra HDR gain-map export and re-import, true HDR browser preview, Apple HEIC HDR reconstruction, independent SDR fallback control, scopes and diagnostics, and delivery proofing that distinguishes authored intent, encoded fixed-headroom reconstruction, and the installed browser's live rendering. Detailed browser-proofing status and the evidence protocol are maintained in `docs/testing/Delivery_Proofing_Sprint.md`; the August 11 codebase, performance, packaging, and round-trip evidence is maintained in `docs/testing/Codebase_Review_Cleanup_and_Round_Trip_Results_2026-08-11.md`.
 
 ### Implemented in the Current Slice
 - Single-session local workflow with import, eject, and drag-and-drop into the main viewport
 - HDR classification, metadata inspection, and source interpretation override flow
 - Real `colour-science` normalization into ACEScg for supported source types
 - Apple HEIC auxiliary HDR gain-map detection and reconstruction
+- AVIF import for plain SDR, direct PQ/HLG HDR, and ISO 21496-1 gain-map files, with explicit native-decoder capability gates and strict malformed-HDR failure behavior
+- JPEG Ultra HDR detection and native reconstruction before the ordinary JPEG path, preserving the independently decoded legacy SDR base
 - True HDR browser preview using downsampled PQ AVIF transport
 - SDR fallback preview using the preserved embedded SDR base when available
 - HDR and SDR adjustment controls with real backend math
@@ -391,6 +402,7 @@ The repository is no longer at the original vertical-slice stage. It now provide
 - Automated tests for core math, classification behavior, HEIC reconstruction, preview/export helpers, scopes, and API flow
 - Float-preserving Lanczos proxy downsampling with regression coverage for high-frequency detail, replacing unfiltered point decimation that produced severe mesh and foliage aliasing
 - Validated Affinity build 4646 Sony RAW handoff guidance using a 32-bit floating-point OpenEXR in linear Display P3
+- Shared AVIF/JPEG gain-map decoder adaptation and metadata parsing used by import and proofing instead of duplicated format policy
 
 ### Current API Surface
 - `POST /api/session`
@@ -424,7 +436,12 @@ The repository is no longer at the original vertical-slice stage. It now provide
 - `output/` - ignored generated reports, exports, screenshots, packages, and run evidence
 
 ### Verification Completed at This Checkpoint
-- The full test suite passes with `198 passed, 0 skipped`; the alpha QA harness, capability checks, and JavaScript syntax checks also pass
+- The full deterministic suite passes with `280 passed`; the focused gain-map/proofing suite and JavaScript syntax checks also pass
+- Production AVIF gain-map and JPEG Ultra HDR files pass first- and second-generation export/re-import checks for HDR classification, independent SDR relationship, HDR peak/distribution, highlight ordering, dimensions/orientation, and bounded headroom drift
+- Scope acceptance checks are good: the isolated 4,000-nit highlight regression passes, waveform aggregation matches its exact reference, sustained histogram/waveform drag QA produces continuously changing non-empty canvases with no browser errors, and the retained scope remains visible while a newer result is updating
+- Preview-quality choices cannot change export values: the preference affects only proxy resolution and scheduling, while export requests contain no preview-quality field and production exporters process the full source image with the authoritative session adjustments
+- The enforced EXR/TIFF/HEIC browser matrix passes all nine fast, high-quality, and CPU-fallback scenarios with zero stale results applied; first visible scope feedback is 61–72 ms p95 and all scenarios finish `Settled`
+- The latest Windows portable package was rebuilt from this checkpoint, passed packaged `/health`, reported both AVIF gain-map and JPEG Ultra HDR decoders as available from frozen resources, and re-imported a production AVIF gain-map export as `HDR_TRUE`. The ZIP is 84,247,676 bytes (80.34 MiB), with SHA-256 `ab7264fc43bcb5d43db4c57573b654db37f36e5cbcd69739d192e279ce121dd7`.
 - Real JPEG Ultra HDR and AVIF gain-map proof proxies and fixed-headroom matrices are covered by integration tests using the bundled production encoders
 - Formula tests cover known whole-stop gain-map results and base/full endpoint reconstruction
 - Installed headless Google Chrome 150 and Edge 151 proofing smoke tests pass with no console/page errors, exact proxy decode, all presentation variants, generated test-pattern import, and proof persistence across background scope refreshes
@@ -457,6 +474,8 @@ The repository is no longer at the original vertical-slice stage. It now provide
 ### Current Blockers and Known Gaps
 - The Windows JPEG Ultra HDR implementation blocker is cleared: the native encoder is built, bundled, attributed, and validated. Remaining release work is clean-machine redistribution validation; macOS will require its own native build and packaging path.
 - JPEG XL gain-map export is still stubbed; `cjxl` is not wired yet
+- DNG and JPEG XL input are research candidates for the coming days/weeks, not commitments for the current installer milestone. DNG research must preserve the boundary between importing an already-rendered HDR interchange and becoming a RAW development application.
+- The complete `imagecodecs` package remains intentionally bundled for TIFF reliability. Selective codec packaging is a later size optimization, gated by a representative TIFF corpus and clean packaged-build testing.
 - A portable PyInstaller Windows alpha ZIP now exists and passes its smoke test. A conventional installer, upgrade/uninstall behavior, version metadata, and clean-machine testing are not yet complete.
 - Windows Photos remains an unreliable validation target for AVIF gain-map HDR compared with Brave / Chromium browsers
 - Preview AVIF quality is now usable, but still tunable; a future user-facing preview-quality control may be worthwhile
@@ -495,6 +514,7 @@ After the Windows installer proves the workflow on clean machines, the packaging
 - **Reference versus delivery rendering:** Authoring, Fixed-headroom Delivery Matrix, and Live Browser Check are now separate views. The matrix is authoritative for encoded reconstruction; the live view is authoritative for the tested browser/OS/display. Neither promises brightness identity with the authored fixed-reference canvas.
 - **Color-management pipeline:** the previously scaffolded `colour-science` layer is now active for supported transforms instead of being metadata-only.
 - **HEIC auxiliary gain maps:** iPhone HDR HEIC files are no longer decoded as false SDR when Apple auxiliary gain-map data is present; the gain map is applied and the embedded SDR base is preserved separately for fallback output.
+- **AVIF and JPEG Ultra HDR input:** both production HDR export formats now have standards-aware re-import paths. Native decoders reconstruct HDR once, preserve or explicitly recover the independent SDR rendition, normalize color once into ACEScg, retain useful gain-map/headroom metadata, and fail explicitly when advertised HDR cannot be decoded safely.
 - **Source ambiguity handling:** the `HDR_LINEAR_UNCONFIRMED` / ambiguous color-state warning now has a real user override workflow in the UI and backend session model.
 - **Source override UX:** the app now separates color primaries from transfer function and exposes a manual Source Settings workflow more like Resolve's auto/manual color-management split.
 - **Adjustment layer:** HDR primaries use continuous scene-linear stop-domain math, SDR trims remain independent and display-safe, and HDR/SDR curves now have separate state with add/remove point controls.
@@ -527,7 +547,7 @@ After the Windows installer proves the workflow on clean machines, the packaging
 - The diagnostic overlay image is now positioned against the rendered preview image box rather than using independent layout assumptions
 
 ### Recommended Next Steps After This Checkpoint
-1. Run the Windows SDR-white response sequence first using the generated test target at low, middle, high, and useful whole-stop-adjacent settings. Confirm artifact/tile hashes remain fixed and save structured highlight, midtone, color, overall, reload, and restart observations.
+1. Run the Windows SDR-white response sequence using the generated test target at low, middle, high, and useful whole-stop-adjacent settings. Confirm artifact/tile hashes remain fixed and save structured highlight, midtone, color, overall, reload, and restart observations.
 2. Compare exact JPEG Ultra HDR and AVIF proxies against the nearest matrix tile in headed Windows Chrome. Accept a stable 5–10% bias when highlight placement, clipping, gradients, and color remain close; investigate obvious clipping/color differences or discrepancies clearly above roughly 10%.
 3. Record Chrome behavior when moving between HDR and SDR displays and when Windows HDR is toggled, including immediate repaint, reload, and full restart outcomes.
 4. Test JPEG and AVIF separately in Firefox, Mac Chrome, and Safari. Treat Safari headroom conclusions on the available 500-nit MacBook as exploratory.
@@ -535,8 +555,9 @@ After the Windows installer proves the workflow on clean machines, the packaging
 6. Fix the Windows export folder picker and retain direct path entry as a resilient fallback.
 7. Complete installer-readiness changes: automatic browser launch, single-instance and port-conflict handling, clean shutdown, user-writable runtime directories, path portability, quiet console behavior, and application icon/version metadata.
 8. Continue documented darktable RAW and Blender 5.2 LTS source-export validation after the completed Affinity workflow.
-9. Build and clean-machine validate a conventional per-user Windows installer, then publish release notes with checksums, supported workflows, evidence-backed browser claims, and known limitations.
-10. Start native macOS encoder and `.app`/`.dmg` packaging after the Windows installer stabilizes. Keep JPEG XL deferred unless it becomes strategically important or straightforward to ship.
+9. Keep JPEG XL and DNG deferred until representative interoperability corpora and packaging evidence justify a deliberate product decision.
+10. Build and clean-machine validate a conventional per-user Windows installer, then publish release notes with checksums, supported workflows, evidence-backed browser claims, and known limitations.
+11. Start native macOS encoder and `.app`/`.dmg` packaging after the Windows installer stabilizes. Keep JPEG XL deferred unless later evidence makes it strategically important and practical to ship.
 
 ---
 
@@ -577,3 +598,4 @@ This repository's root `.gitignore` already excludes local exports, EXR / HDR wo
 *July 30, 2026 implementation addendum: the pinned libultrahdr Windows build, native tests, complete 110-test alpha QA run, real-image JPEG Ultra HDR validation, packaged capability check, and portable PyInstaller ZIP all pass. The delivery sequence is now UI/UX refinement, installer-readiness work, a conventional Windows installer with clean-machine validation, and then macOS packaging. JPEG XL remains deferred.*
 *July 31, 2026 implementation addendum: the instrument-style UI pass adds a tokenized dark visual system, banded disclosure groups, continuous bar-handle sliders, and persisted keyboard-accessible source/grade/dock splitters. The 1280 px shell and 90 ms preview cadence have dedicated browser regression coverage.*
 *August 6, 2026 implementation addendum: the Affinity build 4646 Sony RAW workflow is validated through linear Display P3 OpenEXR import and quality-85 AVIF gain-map delivery on paired HDR/SDR monitors. Affinity's bounded integer TIFF limitation and missing EXR chromaticities are documented; manual `Display P3 Linear` interpretation is required. Float-preserving Lanczos preview downsampling fixes severe high-frequency aliasing and has automated plus real-image validation. Delivery proofing is now implemented for JPEG Ultra HDR and AVIF through separate Authoring, fixed-headroom Matrix, and Live Browser views with Windows headroom telemetry, content-hashed proxies, structured evidence, generated test media, and hosting-survival tooling. Automated coverage passes at 198 tests plus installed-Chrome/Edge smoke and 1280 px layout QA. Physical Windows Chrome parity, monitor/HDR state changes, cross-browser behavior, and real hosting pipelines remain the next evidence phase; the Windows export folder picker also requires repair.*
+*August 11, 2026 implementation addendum: the full `imagecodecs` package remains in the installer for TIFF reliability. Standards-aware AVIF and JPEG Ultra HDR import is implemented with strict decoder capability gates, independent HDR/SDR recovery, and two-generation production round-trip coverage. The deterministic suite passes at 280 tests, the enforced EXR/TIFF/HEIC browser matrix passes all nine scenarios with zero stale results, and follow-up checks confirm retained non-blank scopes during updates, exact waveform aggregation, isolated 4,000-nit highlight preservation, and preview/export independence. JPEG XL and DNG remain evidence-gated research items rather than v1 commitments.*

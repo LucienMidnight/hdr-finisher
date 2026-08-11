@@ -181,6 +181,27 @@ async function runScenario(browser, options) {
     }).observe({ type: "longtask", buffered: true });
   });
   await page.goto(options.url, { waitUntil: "networkidle" });
+  await page.evaluate(() => {
+    window.__hdrScopeClientMetrics = { parseMs: [], drawMs: [] };
+    const originalJson = Response.prototype.json;
+    Response.prototype.json = async function instrumentedJson(...args) {
+      const started = performance.now();
+      const payload = await originalJson.apply(this, args);
+      if (this.url.includes("/scopes?")) {
+        window.__hdrScopeClientMetrics.parseMs.push(performance.now() - started);
+      }
+      return payload;
+    };
+    const originalDrawHistogram = window.drawHistogram;
+    window.drawHistogram = function instrumentedDrawHistogram(...args) {
+      const started = performance.now();
+      try {
+        return originalDrawHistogram.apply(this, args);
+      } finally {
+        window.__hdrScopeClientMetrics.drawMs.push(performance.now() - started);
+      }
+    };
+  });
   const loadStarted = performance.now();
   await page.locator("#file-input").setInputFiles(options.input);
   await page.waitForFunction(() => {
@@ -209,6 +230,7 @@ async function runScenario(browser, options) {
     longTasks: window.__hdrLongTasks || [],
     webgpu: Boolean(navigator.gpu),
     freshness: document.getElementById("scope-freshness")?.textContent,
+    scopeClientMetrics: window.__hdrScopeClientMetrics || { parseMs: [], drawMs: [] },
   }));
   await context.close();
   return {
@@ -227,6 +249,10 @@ async function runScenario(browser, options) {
       ? (cacheAfter.render_cache.managed_bytes - cacheBefore.render_cache.managed_bytes) / cacheBefore.render_cache.managed_bytes
       : null,
     ...browserMetrics,
+    scopeClientTiming: {
+      parse: summarize(browserMetrics.scopeClientMetrics.parseMs),
+      draw: summarize(browserMetrics.scopeClientMetrics.drawMs),
+    },
     consoleErrors,
     expectedAborts,
     pageErrors,

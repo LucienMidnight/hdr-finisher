@@ -7,7 +7,6 @@ import hashlib
 import json
 import math
 from pathlib import Path
-import re
 import shutil
 from tempfile import mkdtemp
 from threading import RLock
@@ -22,6 +21,7 @@ from .binaries import resolve_binary
 from .color import acescg_to_linear_bt2020, linear_bt2020_to_acescg, linear_srgb_to_acescg
 from .config import APP_DATA_DIR, APP_VERSION
 from .exporters import ExportBackend, _run_command
+from .gainmap_decoders import parse_jpeg_gain_map_probe
 from .models import (
     BrowserEvidenceRecord,
     BrowserEvidenceResponse,
@@ -570,29 +570,8 @@ def _inspect_jpeg_gain_map(path: Path) -> JPEGGainMapProofMetadata:
         raise RuntimeError("Ultra HDR metadata probe is unavailable.")
     result = _run_command([str(ultrahdr), "-m", "1", "-j", str(path), "-P"])
     probe = f"{result.stdout}\n{result.stderr}"
-
-    def scalar(name: str, default: float) -> float:
-        match = re.search(
-            rf"{re.escape(name)}\s+([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)",
-            probe,
-            flags=re.IGNORECASE,
-        )
-        return float(match.group(1)) if match else default
-
-    use_base = bool(round(scalar("--useBaseColorSpace", 1.0)))
-    return JPEGGainMapProofMetadata(
-        use_base_color_space=use_base,
-        base_gamut="sRGB / BT.709",
-        alternate_gamut="BT.2020",
-        reconstruction_gamut="sRGB / BT.709" if use_base else "BT.2020",
-        min_content_boost=max(scalar("--minContentBoost", 1.0), 1e-8),
-        max_content_boost=max(scalar("--maxContentBoost", 1.0), 1e-8),
-        gamma=max(scalar("--gamma", 1.0), 1e-8),
-        hdr_capacity_min=max(scalar("--hdrCapacityMin", 1.0), 1e-8),
-        hdr_capacity_max=max(scalar("--hdrCapacityMax", 1.0), 1.0),
-        offset_sdr=max(scalar("--offsetSdr", 1.0 / 64.0), 0.0),
-        offset_hdr=max(scalar("--offsetHdr", 1.0 / 64.0), 0.0),
-    )
+    # Input loading and proofing share parsing while retaining an injectable runner.
+    return parse_jpeg_gain_map_probe(probe, strict=False)
 
 
 def _default_jpeg_gain_map_metadata(encoded_headroom: float) -> JPEGGainMapProofMetadata:

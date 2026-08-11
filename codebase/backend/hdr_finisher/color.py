@@ -1,10 +1,26 @@
 from __future__ import annotations
 
 from typing import Any
+import warnings
 
 import numpy as np
-from colour import RGB_COLOURSPACES
-from colour.models import RGB_to_RGB, eotf_BT2100_HLG, eotf_ST2084
+
+# HDR Finisher does not exercise colour-science's optional plotting or SciPy
+# APIs. Suppress only those two import-time capability notices; all other
+# colour warnings remain visible because they can signal real color errors.
+with warnings.catch_warnings():
+    warnings.filterwarnings(
+        "ignore",
+        message=r'"SciPy" related API features are not available:.*',
+        module=r"colour\.utilities\.verbose",
+    )
+    warnings.filterwarnings(
+        "ignore",
+        message=r'"Matplotlib" related API features are not available:.*',
+        module=r"colour\.utilities\.verbose",
+    )
+    from colour import RGB_COLOURSPACES
+    from colour.models import RGB_to_RGB, eotf_BT2100_HLG, eotf_ST2084
 
 
 ACESCG_COLOURSPACE = "ACEScg"

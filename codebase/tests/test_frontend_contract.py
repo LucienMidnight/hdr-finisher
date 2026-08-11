@@ -11,6 +11,11 @@ ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend"
 
 
+def test_file_picker_advertises_avif_round_trip_input() -> None:
+    markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    assert 'accept=".exr,.tif,.tiff,.hdr,.pfm,.heic,.heif,.avif,.png,.jpg,.jpeg"' in markup
+
+
 def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -> None:
     response = TestClient(app).get("/")
     assert response.status_code == 200

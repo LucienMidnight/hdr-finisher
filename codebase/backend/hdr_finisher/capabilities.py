@@ -70,6 +70,7 @@ def _ultrahdr_status() -> CapabilityInfo:
 
 @lru_cache(maxsize=1)
 def _probe_capabilities_cached() -> dict[str, CapabilityInfo]:
+    ultrahdr = _ultrahdr_status()
     return {
         "numpy": _module_status("numpy", "numpy"),
         "pillow": _module_status("pillow", "PIL"),
@@ -84,7 +85,13 @@ def _probe_capabilities_cached() -> dict[str, CapabilityInfo]:
         "avif_encoder": _binary_status("avifenc", "avifenc"),
         "avif_decoder": _binary_status("avifdec", "avifdec"),
         "avif_gain_map_tool": _binary_status("avifgainmaputil", "avifgainmaputil"),
-        "ultrahdr_encoder": _ultrahdr_status(),
+        "avif_gain_map_decoder": _composite_status(
+            "AVIF gain-map input", ["avifgainmaputil", "avifdec"]
+        ),
+        "ultrahdr_encoder": ultrahdr,
+        "ultrahdr_decoder": ultrahdr.model_copy(
+            update={"name": "JPEG Ultra HDR input"}
+        ),
         "jpegxl_encoder": _binary_status("cjxl", "cjxl"),
     }
 
