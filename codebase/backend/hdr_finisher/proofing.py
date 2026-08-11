@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import atexit
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
@@ -12,6 +13,7 @@ from tempfile import mkdtemp
 from threading import RLock
 from types import SimpleNamespace
 from typing import Any
+from uuid import uuid4
 
 import numpy as np
 
@@ -184,29 +186,39 @@ class ProofArtifactStore:
             adjustments=request.adjustments,
         )
         suffix = ".jpg" if request.format == "jpeg_ultrahdr" else ".avif"
-        staged = self.root / f"request-{signature}{suffix}"
-        result = backend.export(
-            proxy_session,
-            ExportSettings(
-                format=request.format,
-                quality=request.quality,
-                jpeg_gain_map_quality=request.jpeg_gain_map_quality,
-                jpeg_gain_map_scale=request.jpeg_gain_map_scale,
-                output_path=str(staged),
-            ),
-        )
-        if not result.accepted or not result.output_path:
-            raise RuntimeError(result.message)
-        output_path = Path(result.output_path)
-        payload = output_path.read_bytes()
-        digest = hashlib.sha256(payload).hexdigest()
-        artifact_id = digest[:24]
-        final_path = self.root / f"{artifact_id}{suffix}"
-        if output_path != final_path:
-            if final_path.exists():
-                output_path.unlink(missing_ok=True)
-            else:
-                output_path.replace(final_path)
+        # Proofs are internal cache artifacts, not user exports. Use a unique
+        # staging target so concurrent/retried builds cannot collide, and allow
+        # the exporter to replace that owned target if it created a partial file.
+        staged = self.root / f"request-{signature}-{uuid4().hex}{suffix}"
+        try:
+            result = backend.export(
+                proxy_session,
+                ExportSettings(
+                    format=request.format,
+                    quality=request.quality,
+                    jpeg_gain_map_quality=request.jpeg_gain_map_quality,
+                    jpeg_gain_map_scale=request.jpeg_gain_map_scale,
+                    output_path=str(staged),
+                    overwrite=True,
+                ),
+            )
+            if not result.accepted or not result.output_path:
+                raise RuntimeError(result.message)
+            output_path = Path(result.output_path)
+            payload = output_path.read_bytes()
+            digest = hashlib.sha256(payload).hexdigest()
+            artifact_id = digest[:24]
+            final_path = self.root / f"{artifact_id}{suffix}"
+            if output_path != final_path:
+                if final_path.exists():
+                    output_path.unlink(missing_ok=True)
+                else:
+                    output_path.replace(final_path)
+        finally:
+            # Cleanup must never hide the encoder/inspection failure that the UI
+            # needs to report. A unique future stage also makes a locked remnant harmless.
+            with suppress(OSError):
+                staged.unlink(missing_ok=True)
 
         hdr_authored = apply_adjustments(source, request.adjustments, PreviewKind.HDR)
         sdr_authored = apply_adjustments(

@@ -47,6 +47,16 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert "overwrite," in script
 
 
+def test_tint_controls_follow_darktable_hue_mapping() -> None:
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    assert ".primary-tint-hue .slider-track { background: linear-gradient(90deg, #53a7b1, #5368b5, #b84f9a, #e05273, #d3ad5b, #54a579, #53a7b1); }" in css
+    assert "const DARKTABLE_TINT_HUE_STOPS" in javascript
+    assert "function syncTintPurityVisuals()" in javascript
+    assert "darktableTintHueColor(state.adjustments[lane].tint_hue)" in javascript
+
+
 def test_equalizer_interactions_include_non_scrolling_wheel_and_keyboard_alternatives() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     assert 'canvas.addEventListener("wheel"' in javascript
@@ -69,6 +79,17 @@ def test_redundant_enable_controls_are_removed_and_equalizer_schedules_live_scop
     assert "Enable curves" not in html
     assert "queueGpuDraft(\"hdr\");" not in javascript[javascript.index("function updateToneEqualizerFromPointer"):javascript.index("function toneEqualizerBandLimits")]
     assert javascript.count('debouncePreview("hdr");') >= 2
+
+
+def test_equalizer_chart_drag_syncs_the_selected_band_range_visual() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    sync_controls = javascript[
+        javascript.index("function syncToneEqualizerControls"):
+        javascript.index("function drawToneEqualizerEditor")
+    ]
+
+    assert "els.toneEqualizerBandValue.value = String(value);" in sync_controls
+    assert "updateRangeVisual(els.toneEqualizerBandValue);" in sync_controls
 
 
 def test_curve_drag_uses_live_preview_scheduler_and_broad_default_shape() -> None:
@@ -130,6 +151,7 @@ def test_linear_workflow_uses_tab_specific_rails_and_reports_export_readiness() 
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     proofing = (FRONTEND / "proofing-ui.js").read_text(encoding="utf-8")
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
     assert 'data-workflow-tab="import"' in html
     assert 'data-workflow-tab="grade"' in html
     assert 'data-workflow-tab="proof"' in html
@@ -140,6 +162,9 @@ def test_linear_workflow_uses_tab_specific_rails_and_reports_export_readiness() 
     assert 'data-workflow-panel="export"' in html
     assert 'id="chrome-proof-toggle"' in html
     assert 'id="chrome-proof-refresh"' in html
+    assert 'id="chrome-proof-watermark-toggle"' in html
+    assert 'id="chrome-proof-watermark"' in html
+    assert html.index('id="chrome-proof-refresh"') < html.index('id="chrome-proof-status"')
     assert 'id="chrome-proof-popover"' not in html
     assert 'id="chrome-proof-image"' in html
     assert 'id="review-chrome-proof"' in html
@@ -155,9 +180,17 @@ def test_linear_workflow_uses_tab_specific_rails_and_reports_export_readiness() 
     assert 'class="source-file-identity"' in html
     assert '["import", "grade", "proof", "export"]' in javascript
     assert "/api/proof/reconstruction" in proofing
+    assert "async function parseProofResponse" in proofing
+    assert "const body = await response.text();" in proofing
     assert "Proof generation is intentionally explicit" in proofing
     assert "PROOF_IDLE_MS" not in proofing
     assert "requestGeneration" in proofing
+    assert "state.proofWatermarkEnabled" in proofing
+    assert "showWatermark: state.proofWatermarkEnabled" in proofing
+    assert 'els.scopeKindLabel.textContent = "HDR";' in proofing
+    assert "AUTHORED" not in proofing
+    assert "#chrome-proof-watermark" in css and "opacity: .5;" in css
+    assert '.chrome-proof-status[data-state="stale"]' in css
     assert 'state.activeWorkflow !== "proof"' in proofing
     assert 'state.currentView !== "hdr"' in proofing
     assert "renderProofPreflight" in javascript

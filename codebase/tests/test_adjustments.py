@@ -380,8 +380,12 @@ def test_rgb_primary_hue_and_tint_follow_darktable_style_semantics() -> None:
     red_toward_yellow = rgb_primaries_adjustment_matrix(red_hue=5) @ np.array([1.0, 0.0, 0.0])
     assert red_toward_yellow[1] > 0.0
     neutral = np.ones((1, 1, 3), dtype=np.float32) * 0.18
-    tinted = _apply_hdr_color(neutral, HDRAdjustments(tint_hue=-120, tint_purity=8))
-    assert not np.allclose(tinted, neutral)
+    red_tint = _apply_hdr_color(neutral, HDRAdjustments(tint_hue=0, tint_purity=8))[0, 0]
+    blue_tint = _apply_hdr_color(neutral, HDRAdjustments(tint_hue=-120, tint_purity=8))[0, 0]
+    green_tint = _apply_hdr_color(neutral, HDRAdjustments(tint_hue=120, tint_purity=8))[0, 0]
+    assert red_tint[0] > red_tint[1] and red_tint[0] > red_tint[2]
+    assert blue_tint[2] > blue_tint[0] and blue_tint[2] > blue_tint[1]
+    assert green_tint[1] > green_tint[0] and green_tint[1] > green_tint[2]
 
 
 def test_saturation_preserves_luma_and_vibrance_favors_low_chroma_colors() -> None:

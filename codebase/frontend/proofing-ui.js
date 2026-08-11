@@ -23,6 +23,11 @@
 
   function bindProofEvents() {
     els.chromeProofToggle.addEventListener("click", toggleProof);
+    els.chromeProofWatermarkToggle.addEventListener("change", () => {
+      state.proofWatermarkEnabled = els.chromeProofWatermarkToggle.checked;
+      persistSettings();
+      syncProofPresentation();
+    });
     els.chromeProofRefresh.addEventListener("click", buildProofOnDemand);
     els.chromeProofFormat.addEventListener("change", () => {
       state.proofFormat = els.chromeProofFormat.value;
@@ -154,8 +159,7 @@
             long_edge: Math.min(1200, state.session.preview?.long_edge || 1200),
           }),
         });
-        const payload = await artifactResponse.json();
-        if (!artifactResponse.ok) throw new Error(payload?.detail || "Chrome proof encoding failed.");
+        const payload = await parseProofResponse(artifactResponse, "Chrome proof encoding failed.");
         if (generation !== requestGeneration) return;
         artifact = payload;
       }
@@ -165,8 +169,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ artifact_id: artifact.artifact_id, target: proofTargetRequest() }),
       });
-      const reconstruction = await reconstructionResponse.json();
-      if (!reconstructionResponse.ok) throw new Error(reconstruction?.detail || "Chrome proof reconstruction failed.");
+      const reconstruction = await parseProofResponse(reconstructionResponse, "Chrome proof reconstruction failed.");
       await preloadImage(reconstruction.tile.url);
       if (generation !== requestGeneration) return;
 
@@ -182,6 +185,25 @@
       if (generation !== requestGeneration) return;
       showProofFailure(error?.message || "Chrome proof failed.");
     }
+  }
+
+  async function parseProofResponse(response, fallbackMessage) {
+    const body = await response.text();
+    let payload = null;
+    if (body) {
+      try {
+        payload = JSON.parse(body);
+      } catch (_error) {
+        if (response.ok) throw new Error(fallbackMessage);
+      }
+    }
+    if (response.ok && payload !== null) return payload;
+
+    const detail = payload?.detail;
+    const message = typeof detail === "string"
+      ? detail
+      : detail?.message || payload?.message || body.trim() || `${fallbackMessage} (HTTP ${response.status})`;
+    throw new Error(message);
   }
 
   function proofTargetRequest() {
@@ -204,11 +226,12 @@
     const suspended = state.activeWorkflow !== "proof" || state.currentView !== "hdr" || state.comparePeekActive;
     const canShow = Boolean(state.proofEnabled && !suspended && state.proofReconstruction && els.chromeProofImage.src);
     els.chromeProofImage.style.display = canShow ? "block" : "none";
+    els.chromeProofWatermark.style.display = canShow && state.proofWatermarkEnabled ? "flex" : "none";
     if (state.activeWorkflow === "proof" && state.proofEnabled && state.currentView === "hdr" && !state.comparePeekActive) {
       els.viewerBranchNote.textContent = canShow
-        ? `Chrome Proof · ${proofFormatLabel()} · ${proofTargetLabel()} · scopes remain authored HDR.`
+        ? `Chrome Proof · ${proofFormatLabel()} · ${proofTargetLabel()} · scopes: HDR.`
         : "Chrome Proof is not current · build or refresh it from the Proof settings rail.";
-      els.scopeKindLabel.textContent = "HDR · AUTHORED";
+      els.scopeKindLabel.textContent = "HDR";
     } else {
       els.viewerBranchNote.textContent = branchCopy[state.currentView];
       els.scopeKindLabel.textContent = state.currentView.toUpperCase();
@@ -222,6 +245,7 @@
     const encoderReady = state.capabilities[encoderKey]?.status === "available";
     els.chromeProofToggle.disabled = !hasSession || !encoderReady;
     els.chromeProofToggle.checked = state.proofEnabled;
+    els.chromeProofWatermarkToggle.checked = state.proofWatermarkEnabled;
     els.chromeProofRefresh.disabled = !hasSession || !encoderReady || phase === "updating";
     els.chromeProofRefresh.textContent = phase === "updating"
       ? "Building proof…"
@@ -257,7 +281,7 @@
       ? "Updating from delivered bytes. The previous proof remains visible until the new one is ready."
       : "Encoding and reconstructing the first Chrome proof…";
     if (state.proofEnabled && state.currentView === "sdr") return "Chrome Proof is suspended on SDR Fallback and will resume on HDR Grade.";
-    if (state.proofReconstruction && state.proofDirty) return `Stale · ${proofFormatLabel()} · ${proofTargetLabel()}. Adjustments or delivery settings changed.`;
+    if (state.proofReconstruction && state.proofDirty) return `STALE PROOF · ${proofFormatLabel()} · ${proofTargetLabel()}. Refresh to include the latest adjustments or delivery settings.`;
     if (!state.proofReconstruction) {
       const fallback = autoFallbackNotice ? " Auto is unavailable, so 1,000 nits was selected." : "";
       return `${proofFormatLabel()} · ${proofTargetLabel()}. Build the proof when you are ready to review.${fallback}`;
@@ -384,6 +408,7 @@
       if (["auto", "full", "custom"].includes(saved.target) || FIXED_TARGETS.has(saved.target)) state.proofTarget = saved.target;
       if (Number.isFinite(saved.customNits)) state.proofCustomNits = clamp(saved.customNits, 100, 10000);
       if (typeof saved.displayId === "string") state.proofDisplayId = saved.displayId;
+      if (typeof saved.showWatermark === "boolean") state.proofWatermarkEnabled = saved.showWatermark;
     } catch {
       // Local proof preferences are optional.
     }
@@ -396,6 +421,7 @@
         target: state.proofTarget,
         customNits: state.proofCustomNits,
         displayId: state.proofDisplayId,
+        showWatermark: state.proofWatermarkEnabled,
       }));
     } catch {
       // Proofing remains usable when local storage is unavailable.

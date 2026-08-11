@@ -192,9 +192,48 @@ def test_jpeg_full_endpoint_uses_metadata_selected_decoded_gamut(
 class _FakeBackend:
     def export(self, session: object, settings: object) -> ExportResponse:
         output = Path(getattr(settings, "output_path"))
+        assert getattr(settings, "overwrite") is True
         output.write_bytes(b"encoded-proof-artifact")
         assert getattr(session, "image").shape[:2] == (12, 16)
         return ExportResponse(accepted=True, backend="fake", message="ok", output_path=str(output))
+
+
+class _FailOnceWithPartialArtifactBackend:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def export(self, _session: object, settings: object) -> ExportResponse:
+        self.calls += 1
+        output = Path(getattr(settings, "output_path"))
+        output.write_bytes(b"partial" if self.calls == 1 else b"encoded-proof-artifact")
+        return ExportResponse(
+            accepted=self.calls > 1,
+            backend="fake",
+            message="simulated interrupted proof build",
+            output_path=str(output) if self.calls > 1 else None,
+        )
+
+
+def test_failed_proof_build_cleans_internal_staging_file_before_retry(monkeypatch, tmp_path: Path) -> None:
+    store = ProofArtifactStore()
+    store.root = tmp_path
+    image = np.full((12, 16, 3), 0.18, dtype=np.float32)
+    session = type(
+        "Session",
+        (),
+        {"session_id": "proof-retry", "render_cache": SessionRenderCache(image, None)},
+    )()
+    request = ProofArtifactRequest(adjustments=AdjustmentState(), format="jpeg_ultrahdr", long_edge=256)
+    backend = _FailOnceWithPartialArtifactBackend()
+    monkeypatch.setattr(proofing_module, "_inspect_artifact", lambda *_args: (3.0, "test metadata"))
+
+    with pytest.raises(RuntimeError, match="simulated interrupted proof build"):
+        store.create(session, request, backend)
+
+    assert list(tmp_path.glob("request-*")) == []
+    response = store.create(session, request, backend)
+    assert response.artifact_id
+    assert list(tmp_path.glob("request-*")) == []
 
 
 def test_artifact_is_content_hashed_cached_and_matrix_is_stable(monkeypatch, tmp_path: Path) -> None:

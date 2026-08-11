@@ -68,6 +68,15 @@ const TONE_EQUALIZER_MAX_ADJUSTMENT_EV = 2;
 const TONE_EQUALIZER_MIN_TARGET_STEP = 0.001;
 const TONE_EQUALIZER_MIN_NODE_COUNT = 2;
 const TONE_EQUALIZER_MAX_NODE_COUNT = 16;
+const DARKTABLE_TINT_HUE_STOPS = [
+  [-180, [83, 167, 177]],
+  [-120, [83, 104, 181]],
+  [-60, [184, 79, 154]],
+  [0, [224, 82, 115]],
+  [60, [211, 173, 91]],
+  [120, [84, 165, 121]],
+  [180, [83, 167, 177]],
+];
 
 const MIN_ZOOM_PERCENT = 1;
 const MAX_ZOOM_PERCENT = 3200;
@@ -260,6 +269,7 @@ const state = {
   proofTarget: "auto",
   proofCustomNits: 1000,
   proofDisplayId: "",
+  proofWatermarkEnabled: true,
   displayTelemetry: null,
 };
 
@@ -422,7 +432,9 @@ const els = {
   comparisonImage: document.getElementById("comparison-image"),
   previewOverlay: document.getElementById("preview-overlay"),
   chromeProofImage: document.getElementById("chrome-proof-image"),
+  chromeProofWatermark: document.getElementById("chrome-proof-watermark"),
   chromeProofToggle: document.getElementById("chrome-proof-toggle"),
+  chromeProofWatermarkToggle: document.getElementById("chrome-proof-watermark-toggle"),
   chromeProofInlineStatus: document.getElementById("chrome-proof-inline-status"),
   chromeProofRefresh: document.getElementById("chrome-proof-refresh"),
   chromeProofFormat: document.getElementById("chrome-proof-format"),
@@ -2760,6 +2772,7 @@ function syncToneEqualizerControls() {
   els.toneEqualizerBandValue.setAttribute("aria-valuemin", String(Math.ceil(minimum * 100) / 100));
   els.toneEqualizerBandValue.setAttribute("aria-valuemax", String(Math.floor(maximum * 100) / 100));
   els.toneEqualizerBandValue.value = String(value);
+  updateRangeVisual(els.toneEqualizerBandValue);
   els.toneEqualizerBandLabel.textContent = `${formatSignedEv(inputEv, 0)} · ${formatToneBandNits(100 * (2 ** inputEv))}`;
   els.toneEqualizerBandOutput.textContent = formatSignedEv(value, 2);
   els.toneEqualizerRadius.textContent = `Influence ${Number(state.adjustments.hdr.tone_equalizer_influence_radius || 1.5).toFixed(2)} EV`;
@@ -4096,6 +4109,10 @@ function applyZoomGeometry() {
     els.chromeProofImage.style.width = `${displayWidth}px`;
     els.chromeProofImage.style.height = `${displayHeight}px`;
   }
+  if (els.chromeProofWatermark) {
+    els.chromeProofWatermark.style.width = `${displayWidth}px`;
+    els.chromeProofWatermark.style.height = `${displayHeight}px`;
+  }
   state.zoomPercent = percent;
   updateZoomReadout();
   syncOverlayPlacement();
@@ -4233,6 +4250,27 @@ function updateControlReadouts() {
     const control = document.querySelector(`[data-path="${path}"]`);
     if (control) control.setAttribute("aria-valuetext", text);
   });
+  syncTintPurityVisuals();
+}
+
+function syncTintPurityVisuals() {
+  for (const lane of ["hdr", "sdr"]) {
+    const control = document.querySelector(`[data-path="${lane}.tint_purity"]`);
+    const track = control?.closest(".range-shell")?.querySelector(".slider-track");
+    if (!track) continue;
+    track.style.background = `linear-gradient(90deg, #718080, ${darktableTintHueColor(state.adjustments[lane].tint_hue)})`;
+  }
+}
+
+function darktableTintHueColor(requestedHue) {
+  const hue = clamp(Number(requestedHue) || 0, -180, 180);
+  const upperIndex = DARKTABLE_TINT_HUE_STOPS.findIndex(([angle]) => angle >= hue);
+  const lowerIndex = Math.max(0, upperIndex - 1);
+  const [lowerAngle, lowerColor] = DARKTABLE_TINT_HUE_STOPS[lowerIndex];
+  const [upperAngle, upperColor] = DARKTABLE_TINT_HUE_STOPS[Math.max(upperIndex, 0)];
+  const mix = upperAngle === lowerAngle ? 0 : (hue - lowerAngle) / (upperAngle - lowerAngle);
+  const channels = lowerColor.map((channel, index) => Math.round(channel + (upperColor[index] - channel) * mix));
+  return `rgb(${channels.join(", ")})`;
 }
 
 function formatControlValue(path, value) {
