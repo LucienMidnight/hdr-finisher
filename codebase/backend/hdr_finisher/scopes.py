@@ -200,7 +200,10 @@ def _normalization_peak(channels: list[HistogramChannel]) -> int:
 
 
 def _hdr_scope_ceiling(max_nits: int) -> int:
-    return 10000 if int(max_nits) == 10000 else 4000
+    requested = int(max_nits)
+    if requested == 1000:
+        return 1000
+    return 10000 if requested == 10000 else 4000
 
 
 def _hdr_edges(bins: int, max_nits: int = 4000) -> np.ndarray:

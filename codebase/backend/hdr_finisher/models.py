@@ -25,6 +25,7 @@ class ScopeMode(str, Enum):
 
 
 class ScopeMaxNits(str, Enum):
+    NITS_1000 = "1000"
     NITS_4000 = "4000"
     NITS_10000 = "10000"
 
@@ -116,8 +117,9 @@ class HDRAdjustments(BaseModel):
     primaries_section_enabled: bool = True
     curves_section_enabled: bool = True
     exposure: float = 0.0
-    highlight_rolloff: float = 0.0
-    highlight_rolloff_start_nits: float = Field(default=400.0, ge=100.0, le=4000.0)
+    highlight_compression_start_nits: float = Field(default=400.0, ge=100.0, le=4000.0)
+    highlight_compression_target_nits: float = Field(default=1000.0, ge=200.0, le=10000.0)
+    highlight_compression_softness: float = Field(default=0.0, ge=0.0, le=100.0)
     shadow_lift: float = 0.0
     tone_equalizer_nodes: list[ToneEqualizerNode] = Field(
         default_factory=_default_tone_equalizer_nodes,
@@ -156,22 +158,33 @@ class HDRAdjustments(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def migrate_tone_equalizer_bands(cls, value: Any) -> Any:
-        if not isinstance(value, dict) or "tone_equalizer_nodes" in value:
-            return value
-        bands = value.get("tone_equalizer_bands")
-        if not isinstance(bands, list) or len(bands) != 13:
+    def migrate_legacy_hdr_controls(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
             return value
         migrated = dict(value)
-        migrated["tone_equalizer_nodes"] = [
-            {"input_ev": float(index - 6), "adjustment_ev": float(adjustment)}
-            for index, adjustment in enumerate(bands)
-        ]
-        migrated.pop("tone_equalizer_bands", None)
+        if "highlight_compression_softness" not in migrated and "highlight_rolloff" in migrated:
+            # The replacement control must be opt-in. Reusing a saved rolloff
+            # strength here would alter an imported preview before the user has
+            # touched Highlight Compression in the current UI.
+            migrated["highlight_compression_softness"] = 0.0
+        if "highlight_compression_start_nits" not in migrated and "highlight_rolloff_start_nits" in migrated:
+            migrated["highlight_compression_start_nits"] = migrated["highlight_rolloff_start_nits"]
+        migrated.pop("highlight_rolloff", None)
+        migrated.pop("highlight_rolloff_start_nits", None)
+        if "tone_equalizer_nodes" not in migrated:
+            bands = migrated.get("tone_equalizer_bands")
+            if isinstance(bands, list) and len(bands) == 13:
+                migrated["tone_equalizer_nodes"] = [
+                    {"input_ev": float(index - 6), "adjustment_ev": float(adjustment)}
+                    for index, adjustment in enumerate(bands)
+                ]
+                migrated.pop("tone_equalizer_bands", None)
         return migrated
 
     @model_validator(mode="after")
     def normalize_tone_equalizer_nodes(self) -> "HDRAdjustments":
+        if self.highlight_compression_target_nits <= self.highlight_compression_start_nits:
+            raise ValueError("highlight compression target must be brighter than its start")
         nodes = sorted(self.tone_equalizer_nodes, key=lambda node: node.input_ev)
         normalized: list[ToneEqualizerNode] = []
         for index, node in enumerate(nodes):
@@ -238,7 +251,7 @@ class SharedAdjustments(BaseModel):
     overlay_mode: OverlayMode = OverlayMode.OFF
     overlay_preset: str = "web_1000_100"
     overlay_opacity: float = 0.72
-    overlay_threshold: float = 1.0
+    overlay_threshold: float = Field(default=100.0, ge=1.0, le=10000.0)
 
 
 class AdjustmentState(BaseModel):

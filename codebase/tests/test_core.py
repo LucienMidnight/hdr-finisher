@@ -342,7 +342,7 @@ def test_zebra_overlay_is_transparent_below_threshold() -> None:
             "shared": {
                 "overlay_mode": "zebra",
                 "overlay_opacity": 0.8,
-                "overlay_threshold": 2.0,
+                "overlay_threshold": 200.0,
             }
         }
     )
@@ -373,12 +373,12 @@ def test_zebra_threshold_step_moves_cutoff_without_invalid_alpha() -> None:
     image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
     baseline = build_overlay_rgba(
         image,
-        AdjustmentState.model_validate({"shared": {"overlay_mode": "zebra", "overlay_threshold": 1.0}}),
+        AdjustmentState.model_validate({"shared": {"overlay_mode": "zebra", "overlay_threshold": 100.0}}),
         PreviewKind.HDR,
     )
     stepped = build_overlay_rgba(
         image,
-        AdjustmentState.model_validate({"shared": {"overlay_mode": "zebra", "overlay_threshold": 1.05}}),
+        AdjustmentState.model_validate({"shared": {"overlay_mode": "zebra", "overlay_threshold": 105.0}}),
         PreviewKind.HDR,
     )
 
@@ -429,6 +429,23 @@ def test_hdr_scope_zoom_defaults_to_4000_nits_and_can_cover_full_pq_range() -> N
     assert scope.bin_edges[-1] == pytest.approx(10000.0, rel=1e-5)
     assert len(populated_bins) == 3
     assert any(guide.value == 10000.0 for guide in scope.guides)
+
+
+def test_hdr_scope_can_zoom_to_1000_nits() -> None:
+    levels_nits = np.array([100.0, 203.0, 1000.0, 4000.0], dtype=np.float32)
+    levels = levels_nits * np.float32(0.18 / 100.0)
+    image = np.repeat(levels.reshape(1, 4, 1), 3, axis=2)
+
+    scope = build_scope(
+        image,
+        AdjustmentState(hdr=HDRAdjustments(highlight_rolloff=0)),
+        PreviewKind.HDR,
+        max_nits=1000,
+    )
+
+    assert scope.bin_edges[-1] == pytest.approx(1000.0, rel=1e-5)
+    assert all(guide.value <= 1000.0 for guide in scope.guides)
+    assert any(guide.value == 1000.0 for guide in scope.guides)
 
 
 def test_reference_nits_anchor_matches_prd_values() -> None:

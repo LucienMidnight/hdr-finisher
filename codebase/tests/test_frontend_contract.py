@@ -28,7 +28,11 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert 'id="tone-equalizer-radius"' in html
     assert html.count("data-section-path=") == 9
     assert html.count("data-zone-hover=") == 6
-    assert "Rolloff Start" in html
+    assert "Highlight Compression" in html
+    assert "Target Peak" in html
+    assert 'data-path="hdr.highlight_compression_start_nits"' in html
+    assert 'data-path="hdr.highlight_compression_target_nits"' in html
+    assert 'data-path="hdr.highlight_compression_softness"' in html
     assert "RGB Primaries" in html
     assert 'data-path="hdr.saturation"' in html
     assert 'data-path="hdr.vibrance"' in html
@@ -115,16 +119,28 @@ def test_curve_panel_reset_is_visible_when_curves_are_modified() -> None:
     assert 'els.curveReset.closest(".control-group")?.classList.toggle("modified", curvesModified)' in javascript
 
 
-def test_scope_zoom_exposes_4000_and_10000_nit_computation_ranges() -> None:
+def test_scope_zoom_exposes_1000_4000_and_10000_nit_computation_ranges() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
     assert '<span>Scope zoom</span>' in html
     assert 'id="scope-zoom"' in html
+    assert '<option value="1000">1K nits</option>' in html
     assert '<option value="4000">4K nits</option>' in html
     assert '<option value="10000">10K nits</option>' in html
     assert "max_nits=${maxNits}" in javascript
     assert "request.maxNits" in javascript
+
+
+def test_overlay_ui_explains_reference_nit_zebras_and_has_a_false_color_key() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="false-color-key"' in html
+    assert "Highlights pixels at or above this reference-nit level." in html
+    assert 'id="overlay-threshold" type="range" min="10" max="4000" step="10" value="100"' in html
+    assert "function renderFalseColorKey" in javascript
+    assert 'if (path === "shared.overlay_threshold") return `${Math.round(numeric)} nit`;' in javascript
 
 
 def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
@@ -134,7 +150,7 @@ def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     assert "Export file" not in html
     assert "JPEG XL" not in html
     assert "not in this build" not in html
-    assert "Chrome Proof" in html
+    assert "Chromium Proof" in html
     assert 'id="chrome-proof-target"' in html
     assert 'id="jpeg-gain-map-quality"' in html
     assert 'id="jpeg-gain-map-scale"' in html
@@ -194,7 +210,7 @@ def test_linear_workflow_uses_tab_specific_rails_and_reports_export_readiness() 
     assert 'state.activeWorkflow !== "proof"' in proofing
     assert 'state.currentView !== "hdr"' in proofing
     assert "renderProofPreflight" in javascript
-    assert "Chrome proof is stale" in javascript
+    assert "Chromium proof is stale" in javascript
     assert "Proofed ${formatName}, not selected ${exportName}" in javascript
 
 
@@ -234,7 +250,7 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
 
 def test_webgpu_pipeline_preserves_cpu_section_order_and_fixed_hdr_curve_domain() -> None:
     shader = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
-    assert "const PARAM_COUNT = 73" in shader
+    assert "const PARAM_COUNT = 74" in shader
     assert "hdrPrimaries(hdrToneEqualizer(sceneColor(hdrContrast(hdrBase(source)))))" in shader
     assert "sdrReferenceColor(sdrContrast(highlightRecovery(rgb)))" in shader
     assert "toneMap(sceneColor(rgb))" in shader
@@ -246,7 +262,9 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_fixed_hdr_curve_domain(
     assert "let curveLuma = select(clamp(sourceLuma, 0.0, 1.0), curveEncodeChannel(sourceLuma), hdr)" in shader
     assert "let mappedLuma = select(mappedCurveLuma, curveDecodeChannel(mappedCurveLuma), hdr)" in shader
     assert "rgb = curveEncode(rgb, hdr)" in shader
-    assert "let amount = p[3] / 50.0" in shader
+    assert "let targetLevel = max(p[73], start + 0.0018)" in shader
+    assert "let target =" not in shader
+    assert "let softness = clamp(p[3] / 100.0, 0.0, 1.0)" in shader
 
 
 def test_interactive_preview_scheduler_and_quality_preference_contract() -> None:
@@ -254,9 +272,15 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     scheduler = (FRONTEND / "preview-scheduler.js").read_text(encoding="utf-8")
     webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
 
     assert 'id="high-quality-preview" type="checkbox"' in html
+    assert "High-res Preview" in html
     assert "Uses more GPU memory for a larger preview. Export quality is unchanged." in html
+    assert html.index('id="overlay-toggle"') < html.index('id="high-quality-preview"') < html.index('id="overlay-popover"')
+    assert ".toolbar-preview-toggle::after" in css
+    assert "overflow-wrap: anywhere;" in css
+    assert "white-space: normal;" in css
     assert 'id="scope-freshness"' in html and 'aria-live="polite"' in html
     assert '/static/preview-scheduler.js' in html
     assert "HIGH_QUALITY_PREVIEW_KEY" in javascript
@@ -283,14 +307,22 @@ def test_viewer_exposes_icon_comparison_layouts_with_active_lane_scopes() -> Non
     assert 'id="comparison-canvas"' in html
     assert 'id="comparison-image"' in html
     assert 'id="compare-button"' in html and "A/B" not in html
+    assert 'id="compare-status"' not in html
+    assert html.count('class="viewer-tool-divider"') == 3
+    assert 'class="zoom-presets" role="group" aria-label="Zoom presets"' in html
     assert 'COMPARE_LAYOUT_KEY = "hdr-finisher:compare-layout:v1"' in javascript
-    assert 'HDR + SDR · scopes: ${state.currentView.toUpperCase()}' in javascript
+    assert 'els.compareStatus' not in javascript
     assert 'refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane })' in javascript
     assert "renderComparisonPreview(other, { force: true })" in javascript
     assert "state.gpuPreview.renderTo(" in javascript
     assert "async renderTo(canvas" in webgpu
     assert '.preview-stage[data-compare-layout="split-vertical"]' in css
     assert '.preview-stage[data-compare-layout="side-vertical"]' in css
+    assert ".tool-button.compare-mode-button" in css
+    assert "flex: 0 0 7ch;" in css
+    assert "width: clamp(120px, 13vw, 190px);" in css
+    assert ".viewer-tool-divider" in css
+    assert ".zoom-presets" in css
 
 
 def test_waveform_resolution_policy_reduces_payload_without_coarse_refresh_columns() -> None:

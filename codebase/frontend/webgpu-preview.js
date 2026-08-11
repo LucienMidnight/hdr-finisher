@@ -1,5 +1,5 @@
 (function () {
-  const PARAM_COUNT = 73;
+  const PARAM_COUNT = 74;
   const CURVE_SAMPLES = 1024;
 
   class HDRWebGPUPreview {
@@ -332,7 +332,7 @@
     const colorActive = colorEnabled && !colorSettingsNeutral(colorSource);
     const baseEnabled = lane !== "sdr" || branch.base_section_enabled !== false;
     params[2] = toneEnabled ? branch.exposure || 0 : 0;
-    params[3] = toneEnabled ? (lane === "hdr" ? branch.highlight_rolloff || 0 : branch.highlight_recovery || 0) : 0;
+    params[3] = toneEnabled ? (lane === "hdr" ? branch.highlight_compression_softness || 0 : branch.highlight_recovery || 0) : 0;
     params[4] = toneEnabled ? (lane === "hdr" ? branch.shadow_lift || 0 : branch.shadow || 0) : 0;
     params[5] = primariesEnabled ? branch.lift || 0 : 0;
     params[6] = primariesEnabled ? branch.gamma || 0 : 0;
@@ -357,7 +357,7 @@
       params[21 + index] = lane === "hdr" ? node.input_ev : 0;
       params[37 + index] = lane === "hdr" ? node.adjustment_ev : 0;
     });
-    params[53] = lane === "hdr" ? ((branch.highlight_rolloff_start_nits ?? 400) * 0.18 / 100) : 0;
+    params[53] = lane === "hdr" ? ((branch.highlight_compression_start_nits ?? 400) * 0.18 / 100) : 0;
     params[54] = branch.lift_pivot ?? -2;
     params[55] = branch.lift_range ?? 4;
     params[56] = branch.gamma_pivot ?? 0;
@@ -370,6 +370,7 @@
     params[70] = colorActive ? colorSource.saturation || 0 : 0;
     params[71] = colorActive ? colorSource.vibrance || 0 : 0;
     params[72] = colorActive ? 1 : 0;
+    params[73] = lane === "hdr" ? ((branch.highlight_compression_target_nits ?? 1000) * 0.18 / 100) : 0;
     return params;
   }
 
@@ -553,8 +554,26 @@
       let y = max(lumaAces(rgb), 0.0);
       let start = max(p[53], 0.000001);
       if (p[3] > 0.0 && y > start) {
-        let amount = p[3] / 50.0;
-        let targetValue = start + log(1.0 + amount * (y - start)) / amount;
+        let targetLevel = max(p[73], start + 0.0018);
+        let span = targetLevel - start;
+        let normalized = (y - start) / span;
+        let softness = clamp(p[3] / 100.0, 0.0, 1.0);
+        let exponent = exp2(5.0 * (1.0 - softness));
+        var compressed: f32;
+        if (normalized <= 1.0) {
+          compressed = normalized / pow(1.0 + pow(normalized, exponent), 1.0 / exponent);
+        } else {
+          compressed = 1.0 / pow(1.0 + pow(1.0 / normalized, exponent), 1.0 / exponent);
+        }
+        if (compressed > 0.99999) { compressed = 1.0; }
+        let activationPosition = clamp(p[3] / 10.0, 0.0, 1.0);
+        let activation = activationPosition * activationPosition * (3.0 - 2.0 * activationPosition);
+        var targetValue: f32;
+        if (activation >= 1.0) {
+          targetValue = start + span * compressed;
+        } else {
+          targetValue = start + mix(y - start, span * compressed, activation);
+        }
         rgb *= targetValue / max(y, 0.00000001);
       }
       if (p[4] != 0.0) {

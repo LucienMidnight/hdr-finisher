@@ -1,7 +1,7 @@
 const latitudePresets = {
   WIDE: {
     "hdr.exposure": [-4, 4, 0.05],
-    "hdr.highlight_rolloff": [0, 2, 0.01],
+    "hdr.highlight_compression_softness": [0, 100, 1],
     "hdr.shadow_lift": [-0.5, 0.5, 0.005],
     "hdr.lift": [-0.5, 0.5, 0.005],
     "hdr.gamma": [-1, 1, 0.005],
@@ -21,7 +21,7 @@ const latitudePresets = {
   },
   MEDIUM: {
     "hdr.exposure": [-3, 3, 0.05],
-    "hdr.highlight_rolloff": [0, 1.5, 0.01],
+    "hdr.highlight_compression_softness": [0, 100, 1],
     "hdr.shadow_lift": [-0.3, 0.3, 0.005],
     "hdr.lift": [-0.35, 0.35, 0.005],
     "hdr.gamma": [-0.75, 0.75, 0.005],
@@ -41,7 +41,7 @@ const latitudePresets = {
   },
   NARROW: {
     "hdr.exposure": [-2, 2, 0.05],
-    "hdr.highlight_rolloff": [0, 1, 0.01],
+    "hdr.highlight_compression_softness": [0, 100, 1],
     "hdr.shadow_lift": [-0.2, 0.2, 0.005],
     "hdr.lift": [-0.25, 0.25, 0.005],
     "hdr.gamma": [-0.5, 0.5, 0.005],
@@ -152,8 +152,9 @@ const state = {
       primaries_section_enabled: true,
       curves_section_enabled: true,
       exposure: 0,
-      highlight_rolloff: 0,
-      highlight_rolloff_start_nits: 400,
+      highlight_compression_start_nits: 400,
+      highlight_compression_target_nits: 1000,
+      highlight_compression_softness: 0,
       shadow_lift: 0,
       tone_equalizer_nodes: defaultToneEqualizerNodes(),
       tone_equalizer_influence_radius: 1.5,
@@ -230,7 +231,7 @@ const state = {
       overlay_mode: "off",
       overlay_preset: "web_1000_100",
       overlay_opacity: 0.72,
-      overlay_threshold: 1,
+      overlay_threshold: 100,
     },
   },
   selectedCurveChannel: "luma",
@@ -286,8 +287,9 @@ const defaultAdjustments = () => ({
     primaries_section_enabled: true,
     curves_section_enabled: true,
     exposure: 0,
-    highlight_rolloff: 0,
-    highlight_rolloff_start_nits: 400,
+    highlight_compression_start_nits: 400,
+    highlight_compression_target_nits: 1000,
+    highlight_compression_softness: 0,
     shadow_lift: 0,
     tone_equalizer_nodes: defaultToneEqualizerNodes(),
     tone_equalizer_influence_radius: 1.5,
@@ -364,7 +366,7 @@ const defaultAdjustments = () => ({
     overlay_mode: "off",
     overlay_preset: "web_1000_100",
     overlay_opacity: 0.72,
-    overlay_threshold: 1,
+    overlay_threshold: 100,
   },
 });
 
@@ -413,6 +415,7 @@ const els = {
   toneEqualizerRadius: document.getElementById("tone-equalizer-radius"),
   curveStatus: document.getElementById("curve-status"),
   overlayPresetNote: document.getElementById("overlay-preset-note"),
+  falseColorKey: document.getElementById("false-color-key"),
   curveReset: document.getElementById("curve-reset"),
   curveAdd: document.getElementById("curve-add"),
   curveRemove: document.getElementById("curve-remove"),
@@ -453,7 +456,6 @@ const els = {
   laneNote: document.getElementById("lane-note"),
   compareButton: document.getElementById("compare-button"),
   compareLayoutButtons: [...document.querySelectorAll("button[data-compare-layout]")],
-  compareStatus: document.getElementById("compare-status"),
   zoomFit: document.getElementById("zoom-fit"),
   zoomActual: document.getElementById("zoom-actual"),
   zoomOut: document.getElementById("zoom-out"),
@@ -523,7 +525,7 @@ const overlayPresetNotes = {
 };
 
 const controlGroups = {
-  "hdr-tone": ["hdr.exposure", "hdr.highlight_rolloff", "hdr.highlight_rolloff_start_nits", "hdr.contrast", "hdr.contrast_pivot", "hdr.shadow_lift"],
+  "hdr-tone": ["hdr.exposure", "hdr.highlight_compression_start_nits", "hdr.highlight_compression_target_nits", "hdr.highlight_compression_softness", "hdr.contrast", "hdr.contrast_pivot", "hdr.shadow_lift"],
   "hdr-equalizer": ["hdr.tone_equalizer_nodes", "hdr.tone_equalizer_influence_radius", "hdr.tone_equalizer_smoothing"],
   "hdr-color": ["hdr.white_balance_kelvin", "hdr.tint", "hdr.saturation", "hdr.vibrance", "hdr.red_hue", "hdr.red_purity", "hdr.green_hue", "hdr.green_purity", "hdr.blue_hue", "hdr.blue_purity", "hdr.tint_hue", "hdr.tint_purity"],
   "hdr-zones": ["hdr.lift", "hdr.lift_range", "hdr.lift_pivot", "hdr.gamma", "hdr.gamma_range", "hdr.gamma_pivot", "hdr.gain", "hdr.gain_range", "hdr.gain_pivot"],
@@ -532,6 +534,15 @@ const controlGroups = {
   "sdr-color": ["sdr.white_balance_kelvin", "sdr.tint", "sdr.saturation", "sdr.vibrance", "sdr.red_hue", "sdr.red_purity", "sdr.green_hue", "sdr.green_purity", "sdr.blue_hue", "sdr.blue_purity", "sdr.tint_hue", "sdr.tint_purity"],
   "sdr-zones": ["sdr.lift", "sdr.lift_range", "sdr.lift_pivot", "sdr.gamma", "sdr.gamma_range", "sdr.gamma_pivot", "sdr.gain", "sdr.gain_range", "sdr.gain_pivot"],
 };
+
+const overlayPresetLevels = {
+  web_1000_100: { referenceWhite: 100, peak: 1000 },
+  bt2408_1000_203: { referenceWhite: 203, peak: 1000 },
+  bt2408_4000_203: { referenceWhite: 203, peak: 4000 },
+  sdr_100: { referenceWhite: 100, peak: 100 },
+};
+
+const falseColorPalette = ["#2e006b", "#002ed9", "#009eff", "#00d959", "#fae02e", "#ff7a1f", "#ff1f1f"];
 const COLOR_CONTROL_KEYS = controlGroups["hdr-color"].map((path) => path.slice("hdr.".length));
 
 const sectionPathForGroup = {
@@ -595,7 +606,7 @@ function restorePreviewPreference() {
   try {
     state.highQualityPreview = localStorage.getItem(HIGH_QUALITY_PREVIEW_KEY) === "true";
     const savedScopeZoom = Number(localStorage.getItem(SCOPE_ZOOM_KEY));
-    if ([4000, 10000].includes(savedScopeZoom)) state.scopeMaxNits = savedScopeZoom;
+    if ([1000, 4000, 10000].includes(savedScopeZoom)) state.scopeMaxNits = savedScopeZoom;
     const savedCompareLayout = localStorage.getItem(COMPARE_LAYOUT_KEY);
     if (COMPARE_LAYOUTS.has(savedCompareLayout)) state.compareLayout = savedCompareLayout;
   } catch {
@@ -1055,7 +1066,8 @@ function bindEvents() {
     await refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
   });
   els.scopeZoom.addEventListener("change", async () => {
-    state.scopeMaxNits = Number(els.scopeZoom.value) === 10000 ? 10000 : 4000;
+    const requestedMaxNits = Number(els.scopeZoom.value);
+    state.scopeMaxNits = [1000, 4000, 10000].includes(requestedMaxNits) ? requestedMaxNits : 4000;
     try {
       localStorage.setItem(SCOPE_ZOOM_KEY, String(state.scopeMaxNits));
     } catch {
@@ -1115,6 +1127,7 @@ function bindEvents() {
       const value = control.type === "range" ? Number(control.value) : control.type === "checkbox" ? control.checked : control.value;
       setValueByPath(state.adjustments, control.dataset.path, value);
       const path = control.dataset.path;
+      if (path.startsWith("hdr.highlight_compression_")) normalizeHighlightCompressionControls(path);
       if (path === "shared.overlay_preset") renderOverlayPresetNote();
       if (path.startsWith("hdr.tone_equalizer_")) drawToneEqualizerEditor();
       updateControlReadouts();
@@ -1461,7 +1474,52 @@ function renderOverlayPresetNote() {
   const mode = state.adjustments.shared.overlay_mode || "off";
   const label = mode === "false_color" ? "False color" : mode === "zebra" ? "Zebra" : "Off";
   els.overlayToggle.textContent = `Overlays: ${label}`;
+  renderFalseColorKey(preset, mode);
   els.falseColorLegend.classList.toggle("hidden", mode !== "false_color" || !state.session);
+}
+
+function renderFalseColorKey(preset, mode) {
+  if (!els.falseColorKey) return;
+  els.falseColorKey.classList.toggle("hidden", mode !== "false_color");
+  const levels = overlayPresetLevels[preset] || overlayPresetLevels.web_1000_100;
+  const highlightStart = Math.max(levels.referenceWhite, Math.min(levels.referenceWhite * 2, levels.peak * 0.5));
+  const boundaries = [
+    levels.referenceWhite * 0.1,
+    levels.referenceWhite * 0.25,
+    levels.referenceWhite * 0.5,
+    levels.referenceWhite,
+    highlightStart,
+    levels.peak,
+  ];
+  const ranges = boundaries.map((upper, index) => ({
+    lower: index === 0 ? null : boundaries[index - 1],
+    upper,
+    paletteIndex: index,
+  }));
+  ranges.push({ lower: boundaries[boundaries.length - 1], upper: null, paletteIndex: falseColorPalette.length - 1 });
+  const items = ranges
+    .filter(({ lower, upper }) => lower === null || upper === null || upper > lower)
+    .map(({ lower, upper, paletteIndex }) => {
+      const item = document.createElement("span");
+      item.className = "false-color-key-item";
+      const swatch = document.createElement("i");
+      swatch.className = "false-color-key-swatch";
+      swatch.style.backgroundColor = falseColorPalette[paletteIndex];
+      const text = document.createElement("span");
+      text.textContent = lower === null
+        ? `< ${formatReferenceNits(upper)}`
+        : upper === null
+          ? `≥ ${formatReferenceNits(lower)}`
+          : `${formatReferenceNits(lower)}–${formatReferenceNits(upper)}`;
+      item.append(swatch, text);
+      return item;
+    });
+  els.falseColorKey.replaceChildren(...items);
+}
+
+function formatReferenceNits(value) {
+  const rounded = value >= 100 ? Math.round(value) : Math.round(value * 10) / 10;
+  return `${rounded.toLocaleString()} nit`;
 }
 
 function previewOutputEntries() {
@@ -1509,7 +1567,7 @@ function renderWorkflowContext() {
       ["Format", state.session?.source?.suffix || "n/a"],
     ],
     proof: [
-      ["Stage", "Chrome Proof"],
+      ["Stage", "Chromium Proof"],
       ["Status", proofStatus],
       ["Format", proofFormat],
       ["Display ID", selectedDisplay?.id || state.proofDisplayId || "Unavailable"],
@@ -2094,7 +2152,9 @@ function drawScopeGrid(ctx, scope, isWaveform, plotLeft, plotTop, plotWidth, plo
 function scopeGuidesForDisplay(scope) {
   if (scope.preview_kind === "hdr") {
     const ceiling = scopeHdrCeiling(scope);
-    return new Set(ceiling >= 10000 ? [1, 10, 100, 203, 1000, 4000, 10000] : [1, 10, 100, 203, 1000, 4000]);
+    if (ceiling >= 10000) return new Set([1, 10, 100, 203, 1000, 4000, 10000]);
+    if (ceiling >= 4000) return new Set([1, 10, 100, 203, 1000, 4000]);
+    return new Set([1, 10, 100, 203, 1000]);
   }
   return new Set([0.18, 0.5, 1]);
 }
@@ -2124,7 +2184,10 @@ function guidePosition(scope, value) {
 
 function scopeHdrCeiling(scope) {
   const edge = Number(scope?.bin_edges?.[scope.bin_edges.length - 1]);
-  return Number.isFinite(edge) && edge >= 10000 - 1 ? 10000 : 4000;
+  if (!Number.isFinite(edge)) return 4000;
+  if (edge >= 10000 - 1) return 10000;
+  if (edge >= 4000 - 1) return 4000;
+  return 1000;
 }
 
 function bindZoneScopeOverlays() {
@@ -2568,6 +2631,23 @@ function syncControlsFromState() {
   });
   updateControlReadouts();
   syncToneEqualizerControls();
+}
+
+function normalizeHighlightCompressionControls(changedPath) {
+  const hdr = state.adjustments.hdr;
+  if (hdr.highlight_compression_target_nits <= hdr.highlight_compression_start_nits) {
+    if (changedPath.endsWith("start_nits")) {
+      hdr.highlight_compression_target_nits = Math.min(10000, hdr.highlight_compression_start_nits + 25);
+    } else {
+      hdr.highlight_compression_start_nits = Math.max(100, hdr.highlight_compression_target_nits - 25);
+    }
+  }
+  for (const path of ["hdr.highlight_compression_start_nits", "hdr.highlight_compression_target_nits"]) {
+    const control = document.querySelector(`[data-path="${path}"]`);
+    if (!control) continue;
+    control.value = String(getValueByPath(state.adjustments, path));
+    updateRangeVisual(control);
+  }
 }
 
 function syncCurveControlsFromState() {
@@ -3822,7 +3902,6 @@ async function preloadInactiveLane(lane, generation) {
 
 function renderCompareStatus() {
   if (!state.session) {
-    els.compareStatus.textContent = "No comparison";
     els.compareLayoutButtons.forEach((button) => { button.disabled = true; });
     return;
   }
@@ -3830,9 +3909,6 @@ function renderCompareStatus() {
   const ready = cacheReady(other);
   els.compareLayoutButtons.forEach((button) => { button.disabled = false; });
   els.compareButton.disabled = state.compareLayout === "single" && !ready;
-  els.compareStatus.textContent = state.compareLayout === "single"
-    ? ready ? `${other.toUpperCase()} ready` : `Preparing ${other.toUpperCase()}…`
-    : `HDR + SDR · scopes: ${state.currentView.toUpperCase()}`;
 }
 
 function bindCompareControl() {
@@ -3882,7 +3958,6 @@ async function peekOtherLane() {
   if (state.compareLayout !== "single") return;
   const other = state.currentView === "hdr" ? "sdr" : "hdr";
   if (!cacheReady(other)) {
-    els.compareStatus.textContent = `Preparing ${other.toUpperCase()}…`;
     return;
   }
   state.comparePeekActive = true;
@@ -4121,10 +4196,11 @@ function applyZoomGeometry() {
 function updateZoomReadout() {
   const percent = Math.max(0.01, state.zoomPercent || 100);
   if (document.activeElement !== els.zoomReadout) {
-    els.zoomReadout.value = state.zoomMode === "fit" ? `Fit ${formatZoomPercent(percent)}` : formatZoomPercent(percent);
+    els.zoomReadout.value = formatZoomPercent(percent);
   }
   els.zoomSlider.value = String(zoomPercentToSlider(clamp(percent, MIN_ZOOM_PERCENT, MAX_ZOOM_PERCENT)));
   els.zoomSlider.setAttribute("aria-valuetext", state.zoomMode === "fit" ? `Fit, ${formatZoomPercent(percent)}` : formatZoomPercent(percent));
+  updateRangeVisual(els.zoomSlider);
 }
 
 function formatZoomPercent(percent) {
@@ -4280,9 +4356,10 @@ function formatControlValue(path, value) {
   if (path.endsWith("_purity") || path.endsWith(".saturation") || path.endsWith(".vibrance")) return `${numeric > 0 ? "+" : ""}${Math.round(path.endsWith("_purity") ? numeric : numeric * 100)}%`;
   if (path.endsWith(".exposure")) return `${numeric.toFixed(2)} EV`;
   if (path.endsWith("_nits")) return `${Math.round(numeric)} nit`;
+  if (path.endsWith("highlight_compression_softness")) return numeric <= 0 ? "Off" : `${Math.round(numeric)}%`;
   if (path.endsWith("_range") || (path.endsWith("_pivot") && !path.endsWith("contrast_pivot"))) return `${numeric.toFixed(2)} EV`;
   if (path === "shared.overlay_opacity") return `${Math.round(numeric * 100)}%`;
-  if (path === "shared.overlay_threshold") return `${Math.round(numeric * 100)} nit`;
+  if (path === "shared.overlay_threshold") return `${Math.round(numeric)} nit`;
   if (path === "sdr.tone_contrast") return numeric.toFixed(2);
   if (path === "sdr.tone_skew") return numeric > 0 ? `+${numeric.toFixed(2)}` : numeric.toFixed(2);
   if (path.endsWith("contrast_pivot")) return numeric.toFixed(path.startsWith("hdr.") ? 4 : 3);
@@ -4486,23 +4563,23 @@ function renderProofPreflight() {
   row.classList.remove("pass", "warn");
   els.reviewChromeProof.classList.toggle("hidden", els.exportFormat.value === "sdr_png" || !state.session);
   if (els.exportFormat.value === "sdr_png") {
-    els.exportProofStatus.textContent = "Chrome HDR proof not applicable to SDR PNG";
+    els.exportProofStatus.textContent = "Chromium HDR proof not applicable to SDR PNG";
     return;
   }
   const formatName = state.proofArtifact?.format === "avif_gain_map" ? "AVIF" : "JPEG Ultra HDR";
   const targetName = state.proofReconstruction?.target_label || "selected target";
   if (!state.proofArtifact || !state.proofReconstruction) {
-    els.exportProofStatus.textContent = "Chrome proof has not been reviewed";
+    els.exportProofStatus.textContent = "Chromium proof has not been reviewed";
     row.classList.add("warn");
   } else if (state.proofDirty) {
-    els.exportProofStatus.textContent = `Chrome proof is stale · ${formatName} · ${targetName}`;
+    els.exportProofStatus.textContent = `Chromium proof is stale · ${formatName} · ${targetName}`;
     row.classList.add("warn");
   } else if (state.proofArtifact.format !== els.exportFormat.value) {
     const exportName = els.exportFormat.value === "avif_gain_map" ? "AVIF" : "JPEG Ultra HDR";
     els.exportProofStatus.textContent = `Proofed ${formatName}, not selected ${exportName}`;
     row.classList.add("warn");
   } else {
-    els.exportProofStatus.textContent = `Chrome proof reviewed · ${formatName} · ${targetName}`;
+    els.exportProofStatus.textContent = `Chromium proof reviewed · ${formatName} · ${targetName}`;
     row.classList.add("pass");
   }
 }

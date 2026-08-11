@@ -102,6 +102,11 @@ def test_real_png_upload_preview_and_scopes() -> None:
     assert len(payload["stats"]) >= 3
     assert payload["bin_edges"][-1] == pytest.approx(4000.0, rel=1e-5)
 
+    scopes_1k = client.get(f"/api/session/{session_id}/scopes?kind=hdr&max_nits=1000")
+    assert scopes_1k.status_code == 200
+    assert scopes_1k.json()["bin_edges"][-1] == pytest.approx(1000.0, rel=1e-5)
+    assert all(guide["value"] <= 1000.0 for guide in scopes_1k.json()["guides"])
+
     scopes_10k = client.get(f"/api/session/{session_id}/scopes?kind=hdr&max_nits=10000")
     assert scopes_10k.status_code == 200
     assert scopes_10k.json()["bin_edges"][-1] == pytest.approx(10000.0, rel=1e-5)
@@ -192,7 +197,7 @@ def test_overlay_endpoint_returns_png_when_enabled() -> None:
                 "shared": {
                     "overlay_mode": "zebra",
                     "overlay_opacity": 0.72,
-                    "overlay_threshold": 0.2,
+                    "overlay_threshold": 20.0,
                 },
             }
         },

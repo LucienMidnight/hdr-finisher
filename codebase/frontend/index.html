@@ -140,16 +140,29 @@
                 <svg viewBox="0 0 20 16" aria-hidden="true"><rect x="3" y="1" width="14" height="5.5" rx="1"/><rect x="3" y="9.5" width="14" height="5.5" rx="1"/></svg>
               </button>
             </div>
-            <span id="compare-status" class="tool-status">Preparing SDR…</span>
+            <span class="viewer-tool-divider" aria-hidden="true">|</span>
             <div class="zoom-control" role="group" aria-label="Image zoom">
               <button id="zoom-out" class="zoom-step" type="button" aria-label="Zoom out" title="Zoom out">&minus;</button>
-              <input id="zoom-readout" class="zoom-value" type="text" value="Fit" inputmode="decimal" aria-label="Zoom percentage" title="Enter a zoom percentage">
+              <input id="zoom-readout" class="zoom-value" type="text" value="100%" inputmode="decimal" aria-label="Zoom percentage" title="Enter a zoom percentage">
               <input id="zoom-slider" class="zoom-slider" type="range" min="0" max="100" step="0.1" value="0" aria-label="Zoom level" data-no-double-reset>
               <button id="zoom-in" class="zoom-step" type="button" aria-label="Zoom in" title="Zoom in">+</button>
+            </div>
+            <span class="viewer-tool-divider" aria-hidden="true">|</span>
+            <div class="zoom-presets" role="group" aria-label="Zoom presets">
               <button id="zoom-fit" class="tool-button active" type="button" title="Fit image in viewer (F)">Fit</button>
               <button id="zoom-actual" class="tool-button" type="button" title="Show one image pixel per screen pixel (A)">100%</button>
             </div>
+            <span class="viewer-tool-divider" aria-hidden="true">|</span>
             <button id="overlay-toggle" class="tool-button" type="button" aria-expanded="false" aria-controls="overlay-popover">Overlays: Off</button>
+            <label
+              class="toolbar-preview-toggle"
+              for="high-quality-preview"
+              data-tooltip="Uses more GPU memory for a larger preview. Export quality is unchanged."
+              title="Uses more GPU memory for a larger preview. Export quality is unchanged."
+            >
+              <span>High-res Preview</span>
+              <input id="high-quality-preview" type="checkbox">
+            </label>
           </div>
           <div id="overlay-popover" class="overlay-popover hidden">
             <div class="popover-heading">
@@ -172,6 +185,7 @@
               </select>
             </label>
             <p id="overlay-preset-note" class="helper">False color preset notes will appear here.</p>
+            <div id="false-color-key" class="false-color-key" aria-label="False color key"></div>
             <div class="control-row compact-control">
               <div class="control-heading">
                 <label for="overlay-opacity">Opacity</label>
@@ -181,20 +195,21 @@
             </div>
             <div class="control-row compact-control">
               <div class="control-heading">
-                <label for="overlay-threshold">Zebra Threshold</label>
+                <label for="overlay-threshold">Zebra threshold</label>
                 <output data-value-path="shared.overlay_threshold">100 nit</output>
               </div>
-              <input id="overlay-threshold" type="range" min="0.1" max="4" step="0.05" value="1" data-path="shared.overlay_threshold">
+              <input id="overlay-threshold" type="range" min="10" max="4000" step="10" value="100" data-path="shared.overlay_threshold">
+              <p class="helper overlay-control-note">Highlights pixels at or above this reference-nit level.</p>
             </div>
           </div>
-          <aside id="proof-workflow-panel" class="workflow-side-panel proof-rail panel" data-workflow-panel="proof" aria-label="Chrome Proof settings">
+          <aside id="proof-workflow-panel" class="workflow-side-panel proof-rail panel" data-workflow-panel="proof" aria-label="Chromium Proof settings">
             <div class="workflow-rail-header">
               <div><p class="section-kicker">Browser review</p><h1>Control Panel</h1></div>
               <span id="chrome-proof-inline-status" class="status-text muted">Off</span>
             </div>
             <label class="proof-enable-row">
-              <span><strong>Show Chrome proof</strong><small>Preview delivered gain-map behavior</small></span>
-              <input id="chrome-proof-toggle" type="checkbox" aria-label="Show Chrome proof">
+              <span><strong>Show Chromium proof</strong><small>See the delivered image through your current browser's native HDR rendering pipeline</small></span>
+              <input id="chrome-proof-toggle" type="checkbox" aria-label="Show Chromium proof">
             </label>
             <label class="proof-enable-row proof-watermark-row">
               <span><strong>Show Proof watermark</strong><small>Label the proof directly on the image</small></span>
@@ -239,7 +254,7 @@
               <canvas id="preview-canvas" aria-label="Active HDR Finisher preview"></canvas>
               <img id="preview-image" alt="Active HDR Finisher preview" draggable="false">
               <img id="preview-overlay" alt="" aria-hidden="true" draggable="false">
-              <img id="chrome-proof-image" alt="Chrome fixed-headroom proof preview" draggable="false">
+              <img id="chrome-proof-image" alt="Chromium fixed-headroom proof preview" draggable="false">
               <span id="chrome-proof-watermark" aria-hidden="true">PROOF</span>
             </div>
             <div id="preview-secondary-pane" class="preview-pane preview-secondary-pane" data-lane="sdr" aria-hidden="true">
@@ -324,6 +339,7 @@
                 <label class="scope-zoom-control" for="scope-zoom">
                   <span>Scope zoom</span>
                   <select id="scope-zoom" class="scope-mode-select">
+                    <option value="1000">1K nits</option>
                     <option value="4000">4K nits</option>
                     <option value="10000">10K nits</option>
                   </select>
@@ -339,14 +355,6 @@
         </div>
 
         <div id="technical-view" class="dock-content technical-layout hidden">
-          <div class="readout-block preview-preferences">
-            <p class="section-kicker">Preview preference</p>
-            <label class="toggle-row" for="high-quality-preview">
-              <input id="high-quality-preview" type="checkbox">
-              <span>High-quality preview</span>
-            </label>
-            <p id="high-quality-preview-help" class="helper">Uses more GPU memory for a larger preview. Export quality is unchanged.</p>
-          </div>
           <div class="readout-block">
             <p class="section-kicker">Output</p>
             <dl id="preview-output-list" class="readout-list"></dl>
@@ -417,13 +425,18 @@
               <div class="control-heading"><label for="hdr-exposure">Exposure</label><output data-value-path="hdr.exposure">0.00 EV</output></div>
               <input id="hdr-exposure" type="range" min="-4" max="4" step="0.05" value="0" data-path="hdr.exposure">
             </div>
-            <div class="control-row featured-control" data-control-path="hdr.highlight_rolloff">
-              <div class="control-heading"><label for="hdr-rolloff">Highlight Rolloff</label><output data-value-path="hdr.highlight_rolloff">0.00</output></div>
-              <input id="hdr-rolloff" type="range" min="0" max="2" step="0.01" value="0" data-path="hdr.highlight_rolloff">
+            <p class="control-subsection-label">Highlight Compression</p>
+            <div class="control-row" data-control-path="hdr.highlight_compression_start_nits">
+              <div class="control-heading"><label for="hdr-compression-start">Start</label><output data-value-path="hdr.highlight_compression_start_nits">400 nit</output></div>
+              <input id="hdr-compression-start" type="range" min="100" max="4000" step="25" value="400" data-path="hdr.highlight_compression_start_nits">
             </div>
-            <div class="control-row" data-control-path="hdr.highlight_rolloff_start_nits">
-              <div class="control-heading"><label for="hdr-rolloff-start">Rolloff Start</label><output data-value-path="hdr.highlight_rolloff_start_nits">400 nit</output></div>
-              <input id="hdr-rolloff-start" type="range" min="100" max="4000" step="25" value="400" data-path="hdr.highlight_rolloff_start_nits">
+            <div class="control-row" data-control-path="hdr.highlight_compression_target_nits">
+              <div class="control-heading"><label for="hdr-compression-target">Target Peak</label><output data-value-path="hdr.highlight_compression_target_nits">1000 nit</output></div>
+              <input id="hdr-compression-target" type="range" min="200" max="10000" step="25" value="1000" data-path="hdr.highlight_compression_target_nits">
+            </div>
+            <div class="control-row featured-control" data-control-path="hdr.highlight_compression_softness">
+              <div class="control-heading"><label for="hdr-compression-softness">Softness</label><output data-value-path="hdr.highlight_compression_softness">Off</output></div>
+              <input id="hdr-compression-softness" type="range" min="0" max="100" step="1" value="0" data-path="hdr.highlight_compression_softness">
             </div>
             <div class="control-pair">
               <div class="control-row" data-control-path="hdr.contrast">
@@ -775,7 +788,7 @@
         <li data-preflight="hdr">HDR branch ready</li>
         <li data-preflight="sdr">SDR fallback reviewed</li>
         <li data-preflight="encoder">Encoder available</li>
-        <li data-preflight="proof" class="proof-preflight-row"><span id="export-proof-status">Chrome proof has not been reviewed</span><button id="review-chrome-proof" class="text-button" type="button">Review Chrome Proof</button></li>
+        <li data-preflight="proof" class="proof-preflight-row"><span id="export-proof-status">Chromium proof has not been reviewed</span><button id="review-chrome-proof" class="text-button" type="button">Review Chromium Proof</button></li>
       </ul>
     </section>
 

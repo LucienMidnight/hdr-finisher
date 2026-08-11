@@ -202,6 +202,14 @@ async function main() {
     const gate = page.locator("#interpretation-gate");
     if (await gate.isVisible()) await page.locator("#accept-interpretation").click();
     await page.locator("#preview-canvas").waitFor({ state: "visible", timeout: 120000 });
+    const gpuStatus = await page.evaluate(() => {
+      const label = [...document.querySelectorAll("#display-info-list dt")]
+        .find((entry) => entry.textContent.trim() === "GPU Preview");
+      return label?.nextElementSibling?.textContent?.trim() || "not reported";
+    });
+    if (!/renderer ready/i.test(gpuStatus)) {
+      throw new Error(`WebGPU renderer did not initialize: ${gpuStatus}`);
+    }
     const hdr = await auditLane(page, "hdr", outputDir);
     const sdr = await auditLane(page, "sdr", outputDir);
     const results = [...hdr, ...sdr];

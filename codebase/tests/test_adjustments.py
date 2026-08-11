@@ -13,6 +13,7 @@ from hdr_finisher.adjustments import (
     _apply_sdr_adjustments,
     _curve_domain_decode,
     _curve_domain_encode,
+    _compress_scene_highlights,
     _primary_zone_masks,
     _rolloff_scene_highlights,
     apply_adjustments,
@@ -302,6 +303,42 @@ def test_hdr_rolloff_is_identity_at_zero_and_below_start() -> None:
     np.testing.assert_allclose(rolled[0, :4], image[0, :4], rtol=1e-6, atol=1e-7)
     assert np.all(np.diff(rolled[0, :, 0]) > 0.0)
     assert rolled[0, -1, 0] < image[0, -1, 0]
+
+
+def test_highlight_compression_is_neutral_when_softness_is_off() -> None:
+    image = np.repeat(np.array([0.18, 0.72, 1.8, 18.0], dtype=np.float32).reshape(1, -1, 1), 3, axis=2)
+    np.testing.assert_array_equal(_compress_scene_highlights(image, 400.0, 1000.0, 0.0), image)
+
+
+def test_highlight_compression_preserves_start_and_approaches_target_monotonically() -> None:
+    levels = np.array([0.18, 0.72, 1.0, 1.8, 18.0, 1800.0], dtype=np.float32)
+    image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
+    compressed = _compress_scene_highlights(image, 400.0, 1000.0, 60.0)[0, :, 0]
+
+    np.testing.assert_allclose(compressed[:2], levels[:2], rtol=1e-6, atol=1e-7)
+    assert np.all(np.diff(compressed) >= -1e-6)
+    assert compressed[-1] <= 1.8
+    assert compressed[-1] > 1.79
+
+
+def test_legacy_rolloff_payload_migrates_without_activating_highlight_compression() -> None:
+    migrated = HDRAdjustments(highlight_rolloff=0.5, highlight_rolloff_start_nits=500.0)
+    assert migrated.highlight_compression_softness == 0.0
+    assert migrated.highlight_compression_start_nits == 500.0
+    assert "highlight_rolloff" not in migrated.model_dump()
+
+
+def test_highlight_compression_start_and_target_are_neutral_until_softness_changes() -> None:
+    image = np.repeat(np.array([0.18, 0.72, 1.8, 18.0], dtype=np.float32).reshape(1, -1, 1), 3, axis=2)
+    state = AdjustmentState(
+        hdr=HDRAdjustments(
+            highlight_compression_start_nits=100.0,
+            highlight_compression_target_nits=200.0,
+            highlight_compression_softness=0.0,
+        )
+    )
+
+    np.testing.assert_array_equal(_apply_hdr_adjustments(image, state), image)
 
 
 def test_hdr_curve_domain_places_graphics_white_and_peak_predictably() -> None:
@@ -706,7 +743,7 @@ def test_single_sdr_exposure_step_is_continuous_for_wide_exr() -> None:
     ("kind", "path", "step"),
     [
         (PreviewKind.HDR, "hdr.exposure", 0.05),
-        (PreviewKind.HDR, "hdr.highlight_rolloff", 0.01),
+        (PreviewKind.HDR, "hdr.highlight_compression_softness", 1),
         (PreviewKind.HDR, "hdr.shadow_lift", 0.005),
         (PreviewKind.HDR, "hdr.lift", 0.005),
         (PreviewKind.HDR, "hdr.gamma", 0.005),
@@ -780,7 +817,7 @@ def test_sdr_reference_slider_step_is_finite_ordered_and_gradual(path: str, step
     ("kind", "branch_name", "field_name", "values"),
     [
         (PreviewKind.HDR, "hdr", "exposure", (-1.3, 1.3)),
-        (PreviewKind.HDR, "hdr", "highlight_rolloff", (0.0, 0.75)),
+        (PreviewKind.HDR, "hdr", "highlight_compression_softness", (0.0, 75.0)),
         (PreviewKind.HDR, "hdr", "shadow_lift", (-0.13, 0.13)),
         (PreviewKind.HDR, "hdr", "lift", (-0.16, 0.16)),
         (PreviewKind.HDR, "hdr", "gamma", (-0.32, 0.32)),

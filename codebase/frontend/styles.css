@@ -534,31 +534,42 @@ body[data-active-lane="sdr"] .lane-dot {
   gap: 5px;
 }
 
+.viewer-tool-divider {
+  padding: 0 5px;
+  color: var(--border);
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1;
+  user-select: none;
+}
+
 .comparison-modes {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
-  background: var(--deep);
-}
-
-.compare-mode-button {
-  display: grid;
-  width: 28px;
-  min-width: 28px;
-  height: 24px;
-  min-height: 24px;
-  padding: 3px;
-  place-items: center;
-  border-color: transparent;
+  gap: 4px;
+  padding: 0;
+  border: 0;
   background: transparent;
 }
 
+.tool-button.compare-mode-button {
+  display: grid;
+  flex: 0 0 30px;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--hairline);
+  background: var(--input);
+}
+
 .compare-mode-button svg {
+  display: block;
   width: 20px;
   height: 16px;
+  margin: auto;
   fill: none;
   stroke: currentColor;
   stroke-linecap: square;
@@ -579,6 +590,12 @@ body[data-active-lane="sdr"] .lane-dot {
   padding: 0 4px;
   border-left: 1px solid var(--hairline);
   border-right: 1px solid var(--hairline);
+}
+
+.zoom-presets {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .zoom-step {
@@ -602,7 +619,10 @@ body[data-active-lane="sdr"] .lane-dot {
 }
 
 .zoom-value {
-  width: 54px;
+  flex: 0 0 7ch;
+  width: 7ch;
+  min-width: 7ch;
+  max-width: 7ch;
   height: 24px;
   padding: 2px 5px;
   border: 1px solid var(--border);
@@ -614,7 +634,7 @@ body[data-active-lane="sdr"] .lane-dot {
 }
 
 .zoom-slider {
-  width: 72px;
+  width: 100%;
   height: 18px;
   margin: 0 2px;
   accent-color: var(--accent);
@@ -631,6 +651,62 @@ body[data-active-lane="sdr"] .lane-dot {
 .tool-button.active {
   border-color: var(--accent);
   color: var(--text);
+}
+
+.toolbar-preview-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 26px;
+  padding: 3px 7px;
+  color: var(--body);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.toolbar-preview-toggle input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.toolbar-preview-toggle::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 7px);
+  right: 0;
+  width: 230px;
+  padding: 8px 9px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--tooltip);
+  box-shadow: 0 8px 24px var(--shadow);
+  color: var(--body);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+  opacity: 0;
+  pointer-events: none;
+  text-align: left;
+  text-transform: none;
+  white-space: normal;
+  transform: translateY(-2px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.toolbar-preview-toggle:hover::after,
+.toolbar-preview-toggle:focus-within::after {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .tool-status {
@@ -656,6 +732,43 @@ body[data-active-lane="sdr"] .lane-dot {
 .popover-heading {
   color: var(--text);
   font-weight: 500;
+}
+
+.false-color-key {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 10px;
+  padding: 9px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--viewer) 64%, transparent);
+}
+
+.false-color-key.hidden {
+  display: none;
+}
+
+.false-color-key-item {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 1.25;
+}
+
+.false-color-key-swatch {
+  width: 12px;
+  height: 12px;
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 2px;
+}
+
+.overlay-control-note {
+  margin-top: 7px;
 }
 
 .viewport-frame {
@@ -1886,8 +1999,8 @@ input[type="range"] {
     gap: 3px;
   }
 
-  .zoom-slider {
-    width: 58px;
+  .zoom-control .range-shell {
+    width: 120px;
   }
 }
 
@@ -1915,7 +2028,6 @@ input[type="range"] {
   }
 
   .dock-summary,
-  #compare-status,
   #viewer-branch-note {
     display: none;
   }
@@ -2119,11 +2231,53 @@ body[data-active-lane="sdr"] .grade-rail {
 }
 
 .zoom-control .range-shell {
-  width: 72px;
+  flex: 1 1 150px;
+  width: clamp(120px, 13vw, 190px);
 }
 
 .zoom-control .slider-ticks {
   display: none;
+}
+
+@media (max-width: 1399px) {
+  .viewer-tools {
+    gap: 2px;
+  }
+
+  .viewer-tool-divider {
+    padding-inline: 2px;
+  }
+
+  .tool-button.compare-mode-button {
+    flex-basis: 22px;
+    width: 22px;
+    min-width: 22px;
+    height: 26px;
+    min-height: 26px;
+  }
+
+  .viewer-tools > .tool-button,
+  .zoom-presets .tool-button {
+    padding-inline: 5px;
+  }
+
+  .toolbar-preview-toggle {
+    gap: 4px;
+    padding-inline: 3px;
+  }
+
+  .zoom-control .range-shell {
+    flex-basis: 60px;
+    width: 60px;
+    min-width: 60px;
+  }
+
+  .zoom-value {
+    flex-basis: 6.5ch;
+    width: 6.5ch;
+    min-width: 6.5ch;
+    max-width: 6.5ch;
+  }
 }
 
 .probe-strip {

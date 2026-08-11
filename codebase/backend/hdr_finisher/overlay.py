@@ -50,8 +50,8 @@ def build_overlay_rgba(image: np.ndarray, adjustments: AdjustmentState, kind: Pr
     if mode == OverlayMode.FALSE_COLOR:
         return _false_color_overlay(image, adjustments, opacity, kind)
     if mode == OverlayMode.ZEBRA:
-        threshold = np.float32(max(adjustments.shared.overlay_threshold, 1e-4))
-        return _zebra_overlay(image, opacity, threshold, kind)
+        threshold_nits = np.float32(max(adjustments.shared.overlay_threshold, 1.0))
+        return _zebra_overlay(image, opacity, threshold_nits, kind)
     height, width = image.shape[:2]
     return np.zeros((height, width, 4), dtype=np.uint8)
 
@@ -62,13 +62,14 @@ def _false_color_overlay(image: np.ndarray, adjustments: AdjustmentState, opacit
     peak_nits = np.float32(preset["peak_nits"])
     luminance_nits = _luminance_nits(image, kind)
 
+    highlight_start = max(reference_white, min(reference_white * 2.0, peak_nits * 0.5))
     bands = np.array(
         [
             reference_white * 0.1,
             reference_white * 0.25,
             reference_white * 0.5,
             reference_white,
-            min(reference_white * 2.0, peak_nits * 0.5),
+            highlight_start,
             peak_nits,
         ],
         dtype=np.float32,
@@ -89,17 +90,17 @@ def _false_color_overlay(image: np.ndarray, adjustments: AdjustmentState, opacit
     return _stack_rgba(palette, alpha)
 
 
-def _zebra_overlay(image: np.ndarray, opacity: np.float32, threshold: np.float32, kind: PreviewKind) -> np.ndarray:
-    metric = _luminance(image, kind)
-    hot = metric >= threshold
+def _zebra_overlay(image: np.ndarray, opacity: np.float32, threshold_nits: np.float32, kind: PreviewKind) -> np.ndarray:
+    metric_nits = _luminance_nits(image, kind)
+    hot = metric_nits >= threshold_nits
     if not np.any(hot):
         height, width = image.shape[:2]
         return np.zeros((height, width, 4), dtype=np.uint8)
 
-    yy, xx = np.indices(metric.shape)
+    yy, xx = np.indices(metric_nits.shape)
     stripes = ((xx + yy) // 10) % 2 == 0
 
-    rgba = np.zeros((*metric.shape, 4), dtype=np.uint8)
+    rgba = np.zeros((*metric_nits.shape, 4), dtype=np.uint8)
     rgba[..., :3] = np.where(stripes[..., None], 255, 24).astype(np.uint8)
     rgba[..., 3] = np.where(hot, np.uint8(np.clip(opacity * 255.0, 0.0, 255.0)), 0)
     return rgba

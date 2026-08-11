@@ -159,7 +159,7 @@
             long_edge: Math.min(1200, state.session.preview?.long_edge || 1200),
           }),
         });
-        const payload = await parseProofResponse(artifactResponse, "Chrome proof encoding failed.");
+        const payload = await parseProofResponse(artifactResponse, "Chromium proof encoding failed.");
         if (generation !== requestGeneration) return;
         artifact = payload;
       }
@@ -169,7 +169,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ artifact_id: artifact.artifact_id, target: proofTargetRequest() }),
       });
-      const reconstruction = await parseProofResponse(reconstructionResponse, "Chrome proof reconstruction failed.");
+      const reconstruction = await parseProofResponse(reconstructionResponse, "Chromium proof reconstruction failed.");
       await preloadImage(reconstruction.tile.url);
       if (generation !== requestGeneration) return;
 
@@ -183,7 +183,7 @@
       renderProofUi();
     } catch (error) {
       if (generation !== requestGeneration) return;
-      showProofFailure(error?.message || "Chrome proof failed.");
+      showProofFailure(error?.message || "Chromium proof failed.");
     }
   }
 
@@ -229,8 +229,8 @@
     els.chromeProofWatermark.style.display = canShow && state.proofWatermarkEnabled ? "flex" : "none";
     if (state.activeWorkflow === "proof" && state.proofEnabled && state.currentView === "hdr" && !state.comparePeekActive) {
       els.viewerBranchNote.textContent = canShow
-        ? `Chrome Proof · ${proofFormatLabel()} · ${proofTargetLabel()} · scopes: HDR.`
-        : "Chrome Proof is not current · build or refresh it from the Proof settings rail.";
+        ? `Chromium Proof · ${proofFormatLabel()} · ${proofTargetLabel()} · scopes: HDR.`
+        : "Chromium Proof is not current · build or refresh it from the Proof settings rail.";
       els.scopeKindLabel.textContent = "HDR";
     } else {
       els.viewerBranchNote.textContent = branchCopy[state.currentView];
@@ -279,8 +279,8 @@
     if (phase === "error") return `${errorMessage} The last valid proof remains available.`;
     if (phase === "updating") return state.proofReconstruction
       ? "Updating from delivered bytes. The previous proof remains visible until the new one is ready."
-      : "Encoding and reconstructing the first Chrome proof…";
-    if (state.proofEnabled && state.currentView === "sdr") return "Chrome Proof is suspended on SDR Fallback and will resume on HDR Grade.";
+      : "Encoding and reconstructing the first Chromium proof…";
+    if (state.proofEnabled && state.currentView === "sdr") return "Chromium Proof is suspended on SDR Fallback and will resume on HDR Grade.";
     if (state.proofReconstruction && state.proofDirty) return `STALE PROOF · ${proofFormatLabel()} · ${proofTargetLabel()}. Refresh to include the latest adjustments or delivery settings.`;
     if (!state.proofReconstruction) {
       const fallback = autoFallbackNotice ? " Auto is unavailable, so 1,000 nits was selected." : "";

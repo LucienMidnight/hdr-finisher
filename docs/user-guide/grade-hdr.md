@@ -21,15 +21,15 @@ Multiplies scene-linear RGB by `2^EV`. A +1 EV change doubles linear light; -1 E
 
 Use it for global placement, not to solve only one bright region.
 
-### Highlight Rolloff
+### Highlight Compression
 
-Applies a continuous logarithmic shoulder above **Rolloff Start**. It reduces the rate at which bright luminance rises while keeping the transition continuous.
+Gently brings highlights above **Start** toward **Target Peak**. **Softness** controls how early the shoulder engages: low values preserve contrast until close to the target, while high values create a broader, gentler transition. At 0%, highlight compression is off.
 
-Use it when highlights feel abrupt, exceed the useful delivery range, or need a gentler shoulder. Excessive rolloff makes HDR look flat and can compress separation between different bright materials.
+Use it when highlights feel abrupt, exceed the useful delivery range, or need a gentler shoulder. Excessive compression can make HDR look flat and reduce separation between bright materials.
 
-### Rolloff Start
-
-Defines the luminance, in the app’s reference nits, above which the shoulder begins. Start higher to protect more mid/high tones; start lower to shape a broader portion of the image.
+- **Start** is the reference-nit level above which the shoulder begins. Set it higher to protect more mid/high tones or lower to shape a broader portion of the image.
+- **Target Peak** is the reference-nit ceiling the compressed highlights approach.
+- **Softness** controls the shape of the transition. At 0% the operation is neutral; increasing it moves from a firm late shoulder toward broad, gentle compression.
 
 ### Contrast and Pivot
 

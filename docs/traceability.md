@@ -22,7 +22,7 @@ This index maps user-facing areas to their current state model, implementation, 
 |---|---|---|---|
 | Tone bypass/reset | `hdr.tone_section_enabled` | `_apply_hdr_adjustments` | [HDR grade](user-guide/grade-hdr.md#tone) |
 | Exposure | `hdr.exposure` | `_apply_hdr_base_adjustments` | [HDR grade](user-guide/grade-hdr.md#exposure) |
-| Highlight Rolloff/Start | `hdr.highlight_rolloff`, `highlight_rolloff_start_nits` | `_rolloff_scene_highlights` | [HDR grade](user-guide/grade-hdr.md#highlight-rolloff) |
+| Highlight Compression | `hdr.highlight_compression_start_nits`, `highlight_compression_target_nits`, `highlight_compression_softness` | `_compress_scene_highlights` | [HDR grade](user-guide/grade-hdr.md#highlight-compression) |
 | Contrast/Pivot | `hdr.contrast`, `contrast_pivot` | `_apply_luminance_section_controls` | [HDR grade](user-guide/grade-hdr.md#contrast-and-pivot) |
 | Shadow / Black | `hdr.shadow_lift` | `_apply_hdr_base_adjustments` | [HDR grade](user-guide/grade-hdr.md#shadow--black) |
 | Exposure Bands | `hdr.tone_equalizer_*` | `_apply_hdr_tone_equalizer`, monotonic mapping helpers | [HDR grade](user-guide/grade-hdr.md#exposure-bands) |

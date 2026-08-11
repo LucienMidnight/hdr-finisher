@@ -27,7 +27,7 @@ Open **Grade > HDR Controls**.
 A safe order is:
 
 1. **Exposure** for overall placement.
-2. **Highlight Rolloff** and **Rolloff Start** if bright detail is too abrupt.
+2. **Highlight Compression** if bright detail is too abrupt: choose where it starts, the intended peak, and how softly highlights approach it.
 3. **Exposure Bands** for brightness-specific corrections.
 4. **Temperature, Tint, Saturation, and Vibrance** for broad color work.
 5. **Lift, Gamma, Gain** or **Curves** for targeted finishing.

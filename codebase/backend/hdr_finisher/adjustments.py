@@ -103,7 +103,12 @@ def _apply_hdr_base_adjustments(image: np.ndarray, adjustments: AdjustmentState)
     hdr = adjustments.hdr
     result = image.astype(np.float32, copy=True)
     result *= np.float32(2.0 ** hdr.exposure)
-    result = _rolloff_scene_highlights(result, hdr.highlight_rolloff, hdr.highlight_rolloff_start_nits)
+    result = _compress_scene_highlights(
+        result,
+        hdr.highlight_compression_start_nits,
+        hdr.highlight_compression_target_nits,
+        hdr.highlight_compression_softness,
+    )
     if hdr.shadow_lift != 0:
         luma = np.clip(_acescg_luma(result), 0.0, 1.0)
         lift_factor = np.clip(hdr.shadow_lift * (1.0 - luma), None, 1.0)
@@ -408,19 +413,50 @@ def _apply_sdr_highlight_recovery(image: np.ndarray, strength: float) -> np.ndar
 
 
 def _rolloff_scene_highlights(image: np.ndarray, strength: float, start_nits: float = 400.0) -> np.ndarray:
-    """Apply a continuous logarithmic HDR shoulder above a luminance-defined start."""
-    if strength <= 0.0:
+    """Compatibility wrapper for the former 0..2 highlight-rolloff control."""
+    return _compress_scene_highlights(image, start_nits, 1000.0, max(0.0, strength) * 50.0)
+
+
+def _compress_scene_highlights(
+    image: np.ndarray,
+    start_nits: float = 400.0,
+    target_nits: float = 1000.0,
+    softness: float = 0.0,
+) -> np.ndarray:
+    """Compress luminance above ``start_nits`` smoothly toward ``target_nits``."""
+    if softness <= 0.0:
         return image
     result = image.astype(np.float32, copy=False)
     luma = _acescg_luma(result)
     positive_luma = np.clip(luma, 0.0, None)
     start = np.float32(max(start_nits, 1.0) * 0.18 / 100.0)
-    # Scale the UI amount so a single slider step remains subtle while the
-    # upper end still provides a materially stronger shoulder than the legacy control.
-    amount = np.float32(max(strength, 0.0) / 50.0)
+    target = np.float32(max(target_nits, start_nits + 1.0) * 0.18 / 100.0)
+    span = np.float32(target - start)
     excess = np.maximum(positive_luma - start, 0.0)
-    compressed = np.log1p(amount * excess) / amount
-    target_luma = np.where(positive_luma > start, start + compressed, positive_luma)
+    normalized = excess / span
+    # A generalized soft ceiling preserves unit slope at the start and approaches
+    # the selected target without clipping. Higher softness makes the shoulder
+    # engage earlier; lower values keep more contrast until close to the target.
+    exponent = np.float32(2.0 ** (5.0 * (1.0 - min(max(softness, 0.0), 100.0) / 100.0)))
+    compressed_normalized = np.zeros_like(normalized, dtype=np.float32)
+    lower = (normalized > 0.0) & (normalized <= 1.0)
+    upper = normalized > 1.0
+    with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+        compressed_normalized[lower] = normalized[lower] / np.power(
+            1.0 + np.power(normalized[lower], exponent), 1.0 / exponent
+        )
+        compressed_normalized[upper] = 1.0 / np.power(
+            1.0 + np.power(1.0 / normalized[upper], exponent), 1.0 / exponent
+        )
+    compressed_normalized = np.where(compressed_normalized > 0.99999, 1.0, compressed_normalized)
+    activation = np.float32(min(max(softness / 10.0, 0.0), 1.0))
+    activation = activation * activation * (np.float32(3.0) - np.float32(2.0) * activation)
+    compressed_excess = (
+        span * compressed_normalized
+        if activation >= 1.0
+        else excess + activation * (span * compressed_normalized - excess)
+    )
+    target_luma = np.where(positive_luma > start, start + compressed_excess, positive_luma)
     ratio = np.where(positive_luma > 1e-8, target_luma / np.maximum(positive_luma, 1e-8), 1.0).astype(np.float32)
     return np.where(positive_luma[..., None] > start, result * ratio[..., None], result)
 
