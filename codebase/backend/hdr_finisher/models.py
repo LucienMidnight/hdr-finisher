@@ -88,6 +88,8 @@ class SourceLatitude(str, Enum):
 class HDRAnalysis(BaseModel):
     classification: HDRClassification
     peak_linear: float
+    peak_luma_linear: float | None = None
+    robust_peak_luma_linear: float | None = None
     peak_stops_above_diffuse_white: float | None = None
     source_latitude: SourceLatitude = SourceLatitude.MEDIUM
     needs_color_override: bool = False
@@ -108,19 +110,78 @@ def _default_curve_points() -> list[list[float]]:
     return [[0.0, 0.0], [0.5, 0.5], [1.0, 1.0]]
 
 
+class FilmLookAdjustments(BaseModel):
+    """Scene-aware finishing controls shared by the HDR and SDR branches."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reference_model: Literal[
+        "custom",
+        "large_format_fine",
+        "35mm_fine",
+        "35mm_balanced",
+        "35mm_fast",
+        "16mm_fine",
+    ] = "custom"
+    look_strength: float = Field(default=100.0, ge=0.0, le=100.0)
+    print_strength: float = Field(default=0.0, ge=0.0, le=100.0)
+    print_contrast: float = Field(default=0.0, ge=-100.0, le=100.0)
+    print_toe: float = Field(default=0.0, ge=-100.0, le=100.0)
+    print_shoulder: float = Field(default=0.0, ge=-100.0, le=100.0)
+    color_density: float = Field(default=0.0, ge=-100.0, le=100.0)
+
+    grain_enabled: bool = True
+    grain_amount: float = Field(default=0.0, ge=0.0, le=100.0)
+    grain_size: float = Field(default=50.0, ge=0.0, le=100.0)
+    grain_softness: float = Field(default=25.0, ge=0.0, le=100.0)
+    grain_chroma: float = Field(default=0.0, ge=0.0, le=100.0)
+    grain_shadow_response: float = Field(default=100.0, ge=0.0, le=150.0)
+    grain_midtone_response: float = Field(default=100.0, ge=0.0, le=150.0)
+    grain_highlight_response: float = Field(default=100.0, ge=0.0, le=150.0)
+    film_resolution: float = Field(default=100.0, ge=0.0, le=100.0)
+
+    halation_enabled: bool = True
+    halation_amount: float = Field(default=0.0, ge=0.0, le=100.0)
+    halation_sensitivity: float = Field(default=75.0, ge=0.0, le=100.0)
+    halation_radius: float = Field(default=0.2, ge=0.0, le=5.0)
+    halation_hue_offset: float = Field(default=0.0, ge=-100.0, le=100.0)
+    halation_saturation: float = Field(default=75.0, ge=0.0, le=100.0)
+    halation_view_map: bool = False
+
+    bloom_enabled: bool = True
+    bloom_amount: float = Field(default=0.0, ge=0.0, le=100.0)
+    bloom_sensitivity: float = Field(default=80.0, ge=0.0, le=100.0)
+    bloom_radius: float = Field(default=0.5, ge=0.0, le=10.0)
+    bloom_highlight_detail: float = Field(default=75.0, ge=0.0, le=100.0)
+
+    image_structure_enabled: bool = True
+    image_softness: float = Field(default=0.0, ge=0.0, le=100.0)
+    microcontrast: float = Field(default=0.0, ge=-100.0, le=100.0)
+
+
 class HDRAdjustments(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     tone_section_enabled: bool = True
+    highlight_section_enabled: bool = True
     tone_equalizer_section_enabled: bool = True
     color_section_enabled: bool = True
     primaries_section_enabled: bool = True
     curves_section_enabled: bool = True
-    exposure: float = 0.0
-    highlight_compression_start_nits: float = Field(default=400.0, ge=100.0, le=4000.0)
-    highlight_compression_target_nits: float = Field(default=1000.0, ge=200.0, le=10000.0)
+    film_look_section_enabled: bool = True
+    film_look: FilmLookAdjustments = Field(default_factory=FilmLookAdjustments)
+    exposure: float = Field(default=0.0, ge=-8.0, le=8.0)
+    highlight_compression_start_nits: float = Field(default=400.0, ge=1.0, le=9999.0)
+    highlight_compression_target_nits: float = Field(default=1000.0, ge=2.0, le=10000.0)
     highlight_compression_softness: float = Field(default=0.0, ge=0.0, le=100.0)
-    shadow_lift: float = 0.0
+    highlight_compression_mode: Literal["off", "peak_fit", "soft_ceiling"] = "off"
+    highlight_compression_peak_measurement: Literal["maximum", "robust", "manual"] = "maximum"
+    highlight_compression_source_peak_nits: float = Field(default=1000.0, ge=1.0, le=1_000_000.0)
+    highlight_compression_manual_peak_nits: float = Field(default=1000.0, ge=1.0, le=1_000_000.0)
+    highlight_compression_peak_detail: float = Field(default=35.0, ge=0.0, le=100.0)
+    highlight_compression_bias: float = Field(default=0.0, ge=-100.0, le=100.0)
+    highlight_compression_color_handling: Literal["preserve_color", "path_to_white"] = "preserve_color"
+    shadow_lift: float = Field(default=0.0, ge=-1.0, le=1.0)
     tone_equalizer_nodes: list[ToneEqualizerNode] = Field(
         default_factory=_default_tone_equalizer_nodes,
         min_length=2,
@@ -128,21 +189,21 @@ class HDRAdjustments(BaseModel):
     )
     tone_equalizer_influence_radius: float = Field(default=1.5, ge=0.25, le=12.0)
     tone_equalizer_smoothing: float = Field(default=0.5, ge=0.0, le=1.0)
-    lift: float = 0.0
-    gamma: float = 0.0
-    gain: float = 0.0
-    lift_pivot: float = Field(default=-2.0, ge=-8.0, le=8.0)
-    lift_range: float = Field(default=4.0, ge=0.5, le=12.0)
-    gamma_pivot: float = Field(default=0.0, ge=-8.0, le=8.0)
-    gamma_range: float = Field(default=4.25, ge=0.5, le=12.0)
-    gain_pivot: float = Field(default=2.0, ge=-8.0, le=8.0)
-    gain_range: float = Field(default=4.0, ge=0.5, le=12.0)
-    contrast: float = 0.0
-    contrast_pivot: float = 0.1845
-    white_balance_kelvin: int = 6500
-    tint: float = 0.0
-    saturation: float = Field(default=0.0, ge=-1.0, le=1.0)
-    vibrance: float = Field(default=0.0, ge=-1.0, le=1.0)
+    lift: float = Field(default=0.0, ge=-1.0, le=1.0)
+    gamma: float = Field(default=0.0, ge=-2.0, le=2.0)
+    gain: float = Field(default=0.0, ge=-1.0, le=1.0)
+    lift_pivot: float = Field(default=-2.0, ge=-12.0, le=12.0)
+    lift_range: float = Field(default=4.0, ge=0.5, le=24.0)
+    gamma_pivot: float = Field(default=0.0, ge=-12.0, le=12.0)
+    gamma_range: float = Field(default=4.25, ge=0.5, le=24.0)
+    gain_pivot: float = Field(default=2.0, ge=-12.0, le=12.0)
+    gain_range: float = Field(default=4.0, ge=0.5, le=24.0)
+    contrast: float = Field(default=0.0, ge=-2.0, le=2.0)
+    contrast_pivot: float = Field(default=0.1845, ge=0.0001, le=18.0)
+    white_balance_kelvin: int = Field(default=6500, ge=1000, le=25000)
+    tint: float = Field(default=0.0, ge=-2.0, le=2.0)
+    saturation: float = Field(default=0.0, ge=-1.0, le=3.0)
+    vibrance: float = Field(default=0.0, ge=-1.0, le=3.0)
     red_hue: float = Field(default=0.0, ge=-180.0, le=180.0)
     red_purity: float = Field(default=0.0, ge=-99.0, le=400.0)
     green_hue: float = Field(default=0.0, ge=-180.0, le=180.0)
@@ -162,6 +223,10 @@ class HDRAdjustments(BaseModel):
         if not isinstance(value, dict):
             return value
         migrated = dict(value)
+        if "highlight_compression_mode" not in migrated:
+            migrated["highlight_compression_mode"] = (
+                "soft_ceiling" if float(migrated.get("highlight_compression_softness", 0.0) or 0.0) > 0.0 else "off"
+            )
         if "highlight_compression_softness" not in migrated and "highlight_rolloff" in migrated:
             # The replacement control must be opt-in. Reusing a saved rolloff
             # strength here would alter an imported preview before the user has
@@ -210,26 +275,28 @@ class SDRAdjustments(BaseModel):
     color_section_enabled: bool = True
     primaries_section_enabled: bool = True
     curves_section_enabled: bool = True
-    exposure: float = 0.0
-    highlight_recovery: float = 0.6
+    film_look_section_enabled: bool = True
+    film_look: FilmLookAdjustments = Field(default_factory=FilmLookAdjustments)
+    exposure: float = Field(default=0.0, ge=-8.0, le=8.0)
+    highlight_recovery: float = Field(default=0.6, ge=0.0, le=4.0)
     tone_contrast: float = Field(default=1.0, ge=0.5, le=1.5)
     tone_skew: float = Field(default=0.0, ge=-1.0, le=1.0)
-    shadow: float = 0.0
-    lift: float = 0.0
-    gamma: float = 0.0
-    gain: float = 0.0
-    lift_pivot: float = Field(default=-2.0, ge=-8.0, le=8.0)
-    lift_range: float = Field(default=4.0, ge=0.5, le=12.0)
-    gamma_pivot: float = Field(default=0.0, ge=-8.0, le=8.0)
-    gamma_range: float = Field(default=4.25, ge=0.5, le=12.0)
-    gain_pivot: float = Field(default=2.0, ge=-8.0, le=8.0)
-    gain_range: float = Field(default=4.0, ge=0.5, le=12.0)
-    contrast: float = 0.0
-    contrast_pivot: float = 0.5
-    white_balance_kelvin: int = 6500
-    tint: float = 0.0
-    saturation: float = Field(default=0.0, ge=-1.0, le=1.0)
-    vibrance: float = Field(default=0.0, ge=-1.0, le=1.0)
+    shadow: float = Field(default=0.0, ge=-2.0, le=2.0)
+    lift: float = Field(default=0.0, ge=-1.0, le=1.0)
+    gamma: float = Field(default=0.0, ge=-2.0, le=2.0)
+    gain: float = Field(default=0.0, ge=-1.0, le=1.0)
+    lift_pivot: float = Field(default=-2.0, ge=-12.0, le=12.0)
+    lift_range: float = Field(default=4.0, ge=0.5, le=24.0)
+    gamma_pivot: float = Field(default=0.0, ge=-12.0, le=12.0)
+    gamma_range: float = Field(default=4.25, ge=0.5, le=24.0)
+    gain_pivot: float = Field(default=2.0, ge=-12.0, le=12.0)
+    gain_range: float = Field(default=4.0, ge=0.5, le=24.0)
+    contrast: float = Field(default=0.0, ge=-2.0, le=2.0)
+    contrast_pivot: float = Field(default=0.5, ge=0.001, le=0.999)
+    white_balance_kelvin: int = Field(default=6500, ge=1000, le=25000)
+    tint: float = Field(default=0.0, ge=-2.0, le=2.0)
+    saturation: float = Field(default=0.0, ge=-1.0, le=3.0)
+    vibrance: float = Field(default=0.0, ge=-1.0, le=3.0)
     red_hue: float = Field(default=0.0, ge=-180.0, le=180.0)
     red_purity: float = Field(default=0.0, ge=-99.0, le=400.0)
     green_hue: float = Field(default=0.0, ge=-180.0, le=180.0)
@@ -252,6 +319,7 @@ class SharedAdjustments(BaseModel):
     overlay_preset: str = "web_1000_100"
     overlay_opacity: float = 0.72
     overlay_threshold: float = Field(default=100.0, ge=1.0, le=10000.0)
+    film_grain_seed: int = Field(default=271828, ge=0, le=2_147_483_647)
 
 
 class AdjustmentState(BaseModel):

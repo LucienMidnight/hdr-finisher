@@ -411,7 +411,7 @@
           <span>SDR Controls</span><span class="modified-indicator" aria-hidden="true"></span>
         </button>
       </div>
-      <p id="lane-note" class="lane-note">Graded HDR rendition. Exported as the PQ HDR image.</p>
+      <p id="lane-note" class="lane-note">Graded HDR rendition. Exported as the PQ HDR image. Double-click any value to type it.</p>
 
       <div class="lane-panel" data-lane-panel="hdr">
         <section class="control-group" data-group="hdr-tone">
@@ -424,19 +424,6 @@
             <div class="control-row" data-control-path="hdr.exposure">
               <div class="control-heading"><label for="hdr-exposure">Exposure</label><output data-value-path="hdr.exposure">0.00 EV</output></div>
               <input id="hdr-exposure" type="range" min="-4" max="4" step="0.05" value="0" data-path="hdr.exposure">
-            </div>
-            <p class="control-subsection-label">Highlight Compression</p>
-            <div class="control-row" data-control-path="hdr.highlight_compression_start_nits">
-              <div class="control-heading"><label for="hdr-compression-start">Start</label><output data-value-path="hdr.highlight_compression_start_nits">400 nit</output></div>
-              <input id="hdr-compression-start" type="range" min="100" max="4000" step="25" value="400" data-path="hdr.highlight_compression_start_nits">
-            </div>
-            <div class="control-row" data-control-path="hdr.highlight_compression_target_nits">
-              <div class="control-heading"><label for="hdr-compression-target">Target Peak</label><output data-value-path="hdr.highlight_compression_target_nits">1000 nit</output></div>
-              <input id="hdr-compression-target" type="range" min="200" max="10000" step="25" value="1000" data-path="hdr.highlight_compression_target_nits">
-            </div>
-            <div class="control-row featured-control" data-control-path="hdr.highlight_compression_softness">
-              <div class="control-heading"><label for="hdr-compression-softness">Softness</label><output data-value-path="hdr.highlight_compression_softness">Off</output></div>
-              <input id="hdr-compression-softness" type="range" min="0" max="100" step="1" value="0" data-path="hdr.highlight_compression_softness">
             </div>
             <div class="control-pair">
               <div class="control-row" data-control-path="hdr.contrast">
@@ -452,6 +439,70 @@
               <div class="control-heading"><label for="hdr-shadow">Shadow / Black</label><output data-value-path="hdr.shadow_lift">0.000</output></div>
               <input id="hdr-shadow" type="range" min="-0.5" max="0.5" step="0.005" value="0" data-path="hdr.shadow_lift">
             </div>
+          </div>
+        </section>
+
+        <section class="control-group" data-group="hdr-highlights">
+          <div class="control-group-header">
+            <button class="group-toggle" type="button" aria-expanded="true">Highlight Compression <span data-modified-count="hdr-highlights">Default</span></button>
+            <button class="section-bypass text-button" type="button" data-section-path="hdr.highlight_section_enabled" aria-pressed="true" aria-label="Toggle Highlight Compression preview">&#9673;</button>
+            <button class="group-reset text-button" type="button" data-reset-group="hdr-highlights">Reset</button>
+          </div>
+          <div class="control-group-body">
+            <div class="control-row select-control" data-control-path="hdr.highlight_compression_mode">
+              <div class="control-heading"><label for="hdr-compression-mode">Mode</label></div>
+              <select id="hdr-compression-mode" data-path="hdr.highlight_compression_mode">
+                <option value="off">Off</option>
+                <option value="peak_fit">Peak Fit</option>
+                <option value="soft_ceiling">Soft Ceiling</option>
+              </select>
+            </div>
+            <div class="control-row" data-control-path="hdr.highlight_compression_start_nits">
+              <div class="control-heading"><label for="hdr-compression-start">Start</label><output data-value-path="hdr.highlight_compression_start_nits">400 nit</output></div>
+              <input id="hdr-compression-start" type="range" min="100" max="4000" step="25" value="400" data-path="hdr.highlight_compression_start_nits">
+            </div>
+            <div class="control-row" data-control-path="hdr.highlight_compression_target_nits">
+              <div class="control-heading"><label for="hdr-compression-target">Target Peak</label><output data-value-path="hdr.highlight_compression_target_nits">1000 nit</output></div>
+              <input id="hdr-compression-target" type="range" min="200" max="10000" step="25" value="1000" data-path="hdr.highlight_compression_target_nits">
+            </div>
+            <div class="control-row featured-control" data-control-path="hdr.highlight_compression_softness">
+              <div class="control-heading"><label for="hdr-compression-softness">Softness</label><output data-value-path="hdr.highlight_compression_softness">Off</output></div>
+              <input id="hdr-compression-softness" type="range" min="0" max="100" step="0.5" value="0" data-path="hdr.highlight_compression_softness">
+            </div>
+            <div class="control-row featured-control" data-control-path="hdr.highlight_compression_peak_detail">
+              <div class="control-heading"><label for="hdr-compression-detail">Highlight Detail</label><output data-value-path="hdr.highlight_compression_peak_detail">35%</output></div>
+              <input id="hdr-compression-detail" type="range" min="0" max="100" step="1" value="35" data-path="hdr.highlight_compression_peak_detail">
+            </div>
+            <figure class="highlight-compression-visual">
+              <canvas id="highlight-compression-graph" width="320" height="150" aria-label="Highlight compression input-to-output transfer graph"></canvas>
+              <figcaption id="highlight-compression-summary">Compression is off.</figcaption>
+            </figure>
+            <details class="highlight-compression-advanced">
+              <summary>Advanced highlight controls</summary>
+              <div class="control-row select-control" data-control-path="hdr.highlight_compression_peak_measurement">
+                <div class="control-heading"><label for="hdr-compression-measurement">Input Peak</label></div>
+                <select id="hdr-compression-measurement" data-path="hdr.highlight_compression_peak_measurement">
+                  <option value="maximum">Measured maximum</option>
+                  <option value="robust">Ignore isolated pixels</option>
+                  <option value="manual">Manual</option>
+                </select>
+              </div>
+              <div class="control-row" data-control-path="hdr.highlight_compression_manual_peak_nits">
+                <div class="control-heading"><label for="hdr-compression-manual-peak">Manual Source Peak</label><output data-value-path="hdr.highlight_compression_manual_peak_nits">1000 nit</output></div>
+                <input id="hdr-compression-manual-peak" type="range" min="100" max="100000" step="100" value="1000" data-path="hdr.highlight_compression_manual_peak_nits">
+              </div>
+              <div class="control-row" data-control-path="hdr.highlight_compression_bias">
+                <div class="control-heading"><label for="hdr-compression-bias">Compression Bias</label><output data-value-path="hdr.highlight_compression_bias">0</output></div>
+                <input id="hdr-compression-bias" type="range" min="-100" max="100" step="1" value="0" data-path="hdr.highlight_compression_bias">
+              </div>
+              <div class="control-row select-control" data-control-path="hdr.highlight_compression_color_handling">
+                <div class="control-heading"><label for="hdr-compression-color">Highlight Color</label></div>
+                <select id="hdr-compression-color" data-path="hdr.highlight_compression_color_handling">
+                  <option value="preserve_color">Preserve color</option>
+                  <option value="path_to_white">AgX-style path to white</option>
+                </select>
+              </div>
+            </details>
           </div>
         </section>
 
@@ -717,6 +768,88 @@
           </div>
           <canvas id="curve-editor" width="320" height="220" tabindex="0" aria-label="RGB curve editor"></canvas>
           <p id="curve-status" class="helper">Curves apply only to the active branch.</p>
+        </div>
+      </section>
+
+      <section class="control-group collapsed film-look-group" data-group="film-look">
+        <div class="control-group-header">
+          <button class="group-toggle" type="button" aria-expanded="false">Film Look <span id="film-look-state">Default</span></button>
+          <button class="section-bypass text-button" type="button" data-section-path="current.film_look_section_enabled" aria-pressed="true" aria-label="Toggle Film Look preview">&#9673;</button>
+          <button id="film-look-reset" class="group-reset text-button" type="button">Reset</button>
+        </div>
+        <div class="control-group-body">
+          <div id="film-look-sdr-actions" class="film-look-actions hidden">
+            <button id="film-look-match-hdr" class="button-secondary" type="button">Match HDR film look</button>
+            <span>Copies the HDR look once; SDR remains independently editable.</span>
+          </div>
+          <label class="film-reference-field" for="film-reference-model">Reference Model
+            <select id="film-reference-model" data-path="current.film_look.reference_model" title="Generic behavior informed by published VISION3 sensitometry, granularity, and MTF data; not an exact stock emulation.">
+              <option value="custom">Custom / Neutral</option>
+              <option value="large_format_fine">Large Format Fine</option>
+              <option value="35mm_fine">35mm Fine</option>
+              <option value="35mm_balanced">35mm Balanced</option>
+              <option value="35mm_fast">35mm Fast</option>
+              <option value="16mm_fine">16mm Fine</option>
+            </select>
+          </label>
+          <p class="helper film-reference-note">Reference models populate editable cinema-response controls. They are generic finishing models, not named-stock emulations.</p>
+          <div class="control-row" data-control-path="current.film_look.look_strength"><div class="control-heading"><label for="film-look-strength">Look Strength</label><output data-value-path="current.film_look.look_strength">100%</output></div><input id="film-look-strength" type="range" min="0" max="100" step="1" value="100" data-path="current.film_look.look_strength"></div>
+
+          <div class="film-module-header"><strong>Film Response</strong><span>Cinema Print</span></div>
+          <div class="control-row" data-control-path="current.film_look.print_strength"><div class="control-heading"><label for="film-print-strength">Print Strength</label><output data-value-path="current.film_look.print_strength">0%</output></div><input id="film-print-strength" type="range" min="0" max="100" step="1" value="0" data-path="current.film_look.print_strength"></div>
+          <div class="control-pair">
+            <div class="control-row" data-control-path="current.film_look.print_contrast"><div class="control-heading"><label for="film-print-contrast">Contrast</label><output data-value-path="current.film_look.print_contrast">0%</output></div><input id="film-print-contrast" type="range" min="-100" max="100" step="1" value="0" data-path="current.film_look.print_contrast"></div>
+            <div class="control-row" data-control-path="current.film_look.color_density"><div class="control-heading"><label for="film-color-density">Color Density</label><output data-value-path="current.film_look.color_density">0%</output></div><input id="film-color-density" type="range" min="-100" max="100" step="1" value="0" data-path="current.film_look.color_density"></div>
+          </div>
+          <div class="control-pair">
+            <div class="control-row" data-control-path="current.film_look.print_toe"><div class="control-heading"><label for="film-print-toe">Toe</label><output data-value-path="current.film_look.print_toe">0%</output></div><input id="film-print-toe" type="range" min="-100" max="100" step="1" value="0" data-path="current.film_look.print_toe"></div>
+            <div class="control-row" data-control-path="current.film_look.print_shoulder"><div class="control-heading"><label for="film-print-shoulder">Shoulder</label><output data-value-path="current.film_look.print_shoulder">0%</output></div><input id="film-print-shoulder" type="range" min="-100" max="100" step="1" value="0" data-path="current.film_look.print_shoulder"></div>
+          </div>
+
+          <div class="film-module-header"><strong>Halation</strong><label class="film-module-toggle"><input type="checkbox" checked data-path="current.film_look.halation_enabled"> Enabled</label></div>
+          <div class="control-pair">
+            <div class="control-row" data-control-path="current.film_look.halation_amount"><div class="control-heading"><label for="film-halation-amount">Amount</label><output data-value-path="current.film_look.halation_amount">0%</output></div><input id="film-halation-amount" type="range" min="0" max="100" step="1" value="0" data-path="current.film_look.halation_amount"></div>
+            <div class="control-row" data-control-path="current.film_look.halation_sensitivity"><div class="control-heading"><label for="film-halation-sensitivity">Sensitivity</label><output data-value-path="current.film_look.halation_sensitivity">75%</output></div><input id="film-halation-sensitivity" type="range" min="0" max="100" step="1" value="75" data-path="current.film_look.halation_sensitivity"></div>
+          </div>
+          <div class="control-row" data-control-path="current.film_look.halation_radius"><div class="control-heading"><label for="film-halation-radius">Radius</label><output data-value-path="current.film_look.halation_radius">0.20% diag</output></div><input id="film-halation-radius" type="range" min="0" max="2" step="0.02" value="0.2" data-path="current.film_look.halation_radius"></div>
+          <div class="control-pair">
+            <div class="control-row" data-control-path="current.film_look.halation_hue_offset"><div class="control-heading"><label for="film-halation-hue">Hue Offset</label><output data-value-path="current.film_look.halation_hue_offset">0%</output></div><input id="film-halation-hue" type="range" min="-100" max="100" step="1" value="0" data-path="current.film_look.halation_hue_offset"></div>
+            <div class="control-row" data-control-path="current.film_look.halation_saturation"><div class="control-heading"><label for="film-halation-saturation">Saturation</label><output data-value-path="current.film_look.halation_saturation">75%</output></div><input id="film-halation-saturation" type="range" min="0" max="100" step="1" value="75" data-path="current.film_look.halation_saturation"></div>
+          </div>
+          <label class="film-map-toggle"><input type="checkbox" data-path="current.film_look.halation_view_map"> View qualification map</label>
+
+          <div class="film-module-header"><strong>Bloom &amp; Diffusion</strong><label class="film-module-toggle"><input type="checkbox" checked data-path="current.film_look.bloom_enabled"> Enabled</label></div>
+          <div class="control-pair">
+            <div class="control-row" data-control-path="current.film_look.bloom_amount"><div class="control-heading"><label for="film-bloom-amount">Amount</label><output data-value-path="current.film_look.bloom_amount">0%</output></div><input id="film-bloom-amount" type="range" min="0" max="100" step="1" value="0" data-path="current.film_look.bloom_amount"></div>
+            <div class="control-row" data-control-path="current.film_look.bloom_sensitivity"><div class="control-heading"><label for="film-bloom-sensitivity">Sensitivity</label><output data-value-path="current.film_look.bloom_sensitivity">80%</output></div><input id="film-bloom-sensitivity" type="range" min="0" max="100" step="1" value="80" data-path="current.film_look.bloom_sensitivity"></div>
+          </div>
+          <div class="control-pair">
+            <div class="control-row" data-control-path="current.film_look.bloom_radius"><div class="control-heading"><label for="film-bloom-radius">Radius</label><output data-value-path="current.film_look.bloom_radius">0.50% diag</output></div><input id="film-bloom-radius" type="range" min="0" max="4" step="0.05" value="0.5" data-path="current.film_look.bloom_radius"></div>
+            <div class="control-row" data-control-path="current.film_look.bloom_highlight_detail"><div class="control-heading"><label for="film-bloom-detail">Highlight Detail</label><output data-value-path="current.film_look.bloom_highlight_detail">75%</output></div><input id="film-bloom-detail" type="range" min="0" max="100" step="1" value="75" data-path="current.film_look.bloom_highlight_detail"></div>
+          </div>
+
+          <div class="film-module-header"><strong>Image Structure</strong><label class="film-module-toggle"><input type="checkbox" checked data-path="current.film_look.image_structure_enabled"> Enabled</label></div>
+          <div class="control-pair">
+            <div class="control-row" data-control-path="current.film_look.image_softness"><div class="control-heading"><label for="film-image-softness">Image Softness</label><output data-value-path="current.film_look.image_softness">0%</output></div><input id="film-image-softness" type="range" min="0" max="100" step="1" value="0" data-path="current.film_look.image_softness"></div>
+            <div class="control-row" data-control-path="current.film_look.microcontrast"><div class="control-heading"><label for="film-microcontrast">Microcontrast</label><output data-value-path="current.film_look.microcontrast">0%</output></div><input id="film-microcontrast" type="range" min="-100" max="100" step="1" value="0" data-path="current.film_look.microcontrast"></div>
+          </div>
+
+          <div class="film-module-header"><strong>Grain</strong><label class="film-module-toggle"><input type="checkbox" checked data-path="current.film_look.grain_enabled"> Enabled</label></div>
+          <div class="control-pair">
+            <div class="control-row" data-control-path="current.film_look.grain_amount"><div class="control-heading"><label for="film-grain-amount">Amount</label><output data-value-path="current.film_look.grain_amount">0%</output></div><input id="film-grain-amount" type="range" min="0" max="100" step="1" value="0" data-path="current.film_look.grain_amount"></div>
+            <div class="control-row" data-control-path="current.film_look.grain_size"><div class="control-heading"><label for="film-grain-size">Size</label><output data-value-path="current.film_look.grain_size">50%</output></div><input id="film-grain-size" type="range" min="0" max="100" step="1" value="50" data-path="current.film_look.grain_size"></div>
+          </div>
+          <div class="control-pair">
+            <div class="control-row" data-control-path="current.film_look.grain_softness"><div class="control-heading"><label for="film-grain-softness">Grain Softness</label><output data-value-path="current.film_look.grain_softness">25%</output></div><input id="film-grain-softness" type="range" min="0" max="100" step="1" value="25" data-path="current.film_look.grain_softness"></div>
+            <div class="control-row" data-control-path="current.film_look.grain_chroma"><div class="control-heading"><label for="film-grain-chroma">Chroma</label><output data-value-path="current.film_look.grain_chroma">0%</output></div><input id="film-grain-chroma" type="range" min="0" max="100" step="1" value="0" data-path="current.film_look.grain_chroma"></div>
+          </div>
+          <div class="control-row" data-control-path="current.film_look.film_resolution"><div class="control-heading"><label for="film-resolution">Film Resolution</label><output data-value-path="current.film_look.film_resolution">100%</output></div><input id="film-resolution" type="range" min="0" max="100" step="1" value="100" data-path="current.film_look.film_resolution"></div>
+          <div class="film-response-grid">
+            <div class="control-row" data-control-path="current.film_look.grain_shadow_response"><div class="control-heading"><label for="film-grain-shadow">Shadow Response</label><output data-value-path="current.film_look.grain_shadow_response">100%</output></div><input id="film-grain-shadow" type="range" min="0" max="150" step="1" value="100" data-path="current.film_look.grain_shadow_response"></div>
+            <div class="control-row" data-control-path="current.film_look.grain_midtone_response"><div class="control-heading"><label for="film-grain-mid">Midtone Response</label><output data-value-path="current.film_look.grain_midtone_response">100%</output></div><input id="film-grain-mid" type="range" min="0" max="150" step="1" value="100" data-path="current.film_look.grain_midtone_response"></div>
+            <div class="control-row" data-control-path="current.film_look.grain_highlight_response"><div class="control-heading"><label for="film-grain-highlight">Highlight Response</label><output data-value-path="current.film_look.grain_highlight_response">100%</output></div><input id="film-grain-highlight" type="range" min="0" max="150" step="1" value="100" data-path="current.film_look.grain_highlight_response"></div>
+          </div>
+          <p class="helper">Grain is sampled from one shared deterministic field in HDR and SDR and is always processed last.</p>
         </div>
       </section>
       </section>

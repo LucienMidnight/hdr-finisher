@@ -9,9 +9,12 @@ The HDR branch defines the brightest intended rendition. It remains scene-linear
 3. Correct broad color.
 4. Use brightness-selective tools for local tonal populations.
 5. Finish with Lift/Gamma/Gain or Curves.
-6. Check the waveform, lower-headroom proof targets, and SDR branch.
+6. Add the Film Look after the grade is stable.
+7. Check the waveform, lower-headroom proof targets, and SDR branch.
 
 Section bypass buttons let you audition a group without destroying its settings. **Reset** returns only that group to defaults.
+
+Every numeric readout can also be typed directly, including controlled values beyond normal slider travel. See [Grading Controls Reference](grading-controls-reference.md) for keyboard behavior, plain-language control descriptions, and all slider and direct-entry limits.
 
 ## Tone
 
@@ -20,16 +23,6 @@ Section bypass buttons let you audition a group without destroying its settings.
 Multiplies scene-linear RGB by `2^EV`. A +1 EV change doubles linear light; -1 EV halves it. Exposure moves everything, including diffuse white and specular highlights.
 
 Use it for global placement, not to solve only one bright region.
-
-### Highlight Compression
-
-Gently brings highlights above **Start** toward **Target Peak**. **Softness** controls how early the shoulder engages: low values preserve contrast until close to the target, while high values create a broader, gentler transition. At 0%, highlight compression is off.
-
-Use it when highlights feel abrupt, exceed the useful delivery range, or need a gentler shoulder. Excessive compression can make HDR look flat and reduce separation between bright materials.
-
-- **Start** is the reference-nit level above which the shoulder begins. Set it higher to protect more mid/high tones or lower to shape a broader portion of the image.
-- **Target Peak** is the reference-nit ceiling the compressed highlights approach.
-- **Softness** controls the shape of the transition. At 0% the operation is neutral; increasing it moves from a firm late shoulder toward broad, gentle compression.
 
 ### Contrast and Pivot
 
@@ -40,6 +33,27 @@ Changing contrast can also change apparent saturation and highlight placement. R
 ### Shadow / Black
 
 Applies a luma-weighted change that is strongest in dark regions and fades toward brighter values. Use small adjustments to seat blacks or reveal low-level detail. It is not a local shadow-recovery algorithm and cannot restore clipped source data.
+
+## Highlights
+
+Highlights is a separate, independently bypassable section after Tone. Both compression modes therefore see the result of Exposure, Contrast, Pivot, and Shadow / Black.
+
+### Highlight Compression
+
+Use **Peak Fit** for most HDR work. It measures the source highlight peak, constructs a smooth curve in stops, and maps that peak exactly to **Target Peak**. Unlike a nearly flat ceiling, its **Highlight Detail** control can retain a positive slope at the brightest end, which helps rounded reflections and emissive objects keep visible shape.
+
+- **Start** protects tones below the shoulder. When an extreme source peak, low target, and high detail cannot all fit above Start without reversing the curve, Peak Fit automatically widens the shoulder below the requested value. The transfer graph shows the actual curve and its caption reports the effective start.
+- **Target Peak** is the brightest intended luminance after the Highlights section and the upper anchor of Peak Fit.
+- **Highlight Detail** is the local stop contrast retained at the source peak. Start around 35%. Lower it when the peak still feels too sharp; raise it when the brightest forms look flat.
+- **Soft Ceiling** is the former asymptotic compressor. Its **Softness** control is useful when you do not want a measured peak anchor, but extreme inputs can bunch together near the ceiling.
+
+The compact graph plots input nits horizontally and output nits vertically. The dashed diagonal means no compression; the cyan curve shows the active mapping. In **Advanced highlight controls**, choose the absolute maximum, a robust measurement that ignores isolated pixels, or a manual source peak. **Compression Bias** redistributes contrast through the shoulder without moving its endpoints.
+
+**Highlight Color** controls what happens to saturated highlights. **Preserve color** is the default: it scales RGB together, preserving hue and channel ratios while anchoring ACEScg luminance. Because Target Peak is a luminance target, a saturated red, green, or blue channel can legitimately extend above it. **AgX-style path to white** gradually reduces chroma through the shoulder and caps every ACEScg channel at Target Peak, so extreme colored lights approach neutral white instead. This borrows the useful highlight trajectory from AgX, but is not a full AgX display transform.
+
+Peak measurement is based on ACEScg luminance rather than the brightest individual RGB channel. Manual Source Peak is specified before Tone controls. Peak Fit runs after Exposure, Shadow / Black, and Contrast, so its graph and endpoint account for all three and Contrast can no longer pull its anchor away from Target Peak.
+
+Target Peak is local to the Highlights section, not a permanent clamp on the finished image. Exposure Bands, Color, Lift/Gamma/Gain, Curves, and Film Look remain creative stages after it and can move the final waveform peak. Recheck the scope after using those sections.
 
 ## Exposure Bands
 
@@ -104,16 +118,34 @@ That makes the upper half useful for HDR stops rather than spending most of the 
 
 Use Luma first for tonal shape. RGB channel curves alter color balance and can cause channel-specific clipping or hue shifts.
 
+## Film Look
+
+Film Look is the final creative layer after Curves. Its reference models—Large Format Fine, 35mm Fine, 35mm Balanced, 35mm Fast, and 16mm Fine—populate every control, but remain editable. They are generic cinema-finishing models informed by published motion-picture film behavior, not claims of exact stock matching.
+
+- **Cinema Print** shapes contrast, toe, shoulder, and subtractive color density in a perceptual scene-aware domain. It preserves HDR headroom rather than imposing a literal print-film white level.
+- **Halation** adds warm edge scatter around branch-relative highlights. Sensitivity selects analogous highlight populations in HDR and SDR; **View qualification map** is a preview diagnostic and is never baked into an export.
+- **Bloom & Diffusion** creates a broader, mostly neutral highlight glow using a smooth linear-light diffusion filter. Highlight Detail separates optical bloom from core diffusion: at 100% the source edge stays intact beneath the added glow; lower values progressively move highlight energy outward and soften the bright core.
+- **Image Structure** softens brittle digital edges or adjusts microcontrast before grain.
+- **Grain** varies through shadows, midtones, and highlights. Film Resolution controls the pre-grain resolving character; grain is always the last operation.
+
+Radius values are percentages of image diagonal, so their apparent scale remains consistent between proxy preview and full-resolution export. The HDR and SDR branches share a deterministic grain field while retaining independent grain strength and response.
+
 ## Processing order
 
 The current HDR order is:
 
-1. Exposure, highlight rolloff, shadow/black, and contrast
-2. White balance, primary shaping, saturation, and vibrance
-3. Exposure Bands
-4. Lift/Gamma/Gain
-5. Curves
-6. Clamp final negative values to zero
+1. Tone: exposure, shadow/black, and contrast
+2. Highlights: Soft Ceiling or Peak Fit, including optional highlight path to white
+3. White balance, primary shaping, saturation, and vibrance
+4. Exposure Bands
+5. Lift/Gamma/Gain
+6. Curves
+7. Film Response and Color Density
+8. Halation
+9. Bloom/Diffusion
+10. Image Softness and Microcontrast
+11. Grain
+12. Clamp final negative values to zero
 
 Order matters. A curve sees the result of every preceding enabled section.
 

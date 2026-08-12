@@ -22,7 +22,8 @@ This index maps user-facing areas to their current state model, implementation, 
 |---|---|---|---|
 | Tone bypass/reset | `hdr.tone_section_enabled` | `_apply_hdr_adjustments` | [HDR grade](user-guide/grade-hdr.md#tone) |
 | Exposure | `hdr.exposure` | `_apply_hdr_base_adjustments` | [HDR grade](user-guide/grade-hdr.md#exposure) |
-| Highlight Compression | `hdr.highlight_compression_start_nits`, `highlight_compression_target_nits`, `highlight_compression_softness` | `_compress_scene_highlights` | [HDR grade](user-guide/grade-hdr.md#highlight-compression) |
+| Highlights bypass/reset | `hdr.highlight_section_enabled` | `_apply_hdr_adjustments` | [HDR grade](user-guide/grade-hdr.md#highlights) |
+| Highlight Compression | `hdr.highlight_compression_mode`, `highlight_compression_start_nits`, `highlight_compression_target_nits`, `highlight_compression_softness`, `highlight_compression_peak_*`, `highlight_compression_bias`, `highlight_compression_color_handling` | `_compress_scene_highlights`, `_tone_adjusted_source_peak_nits` | [HDR grade](user-guide/grade-hdr.md#highlight-compression) |
 | Contrast/Pivot | `hdr.contrast`, `contrast_pivot` | `_apply_luminance_section_controls` | [HDR grade](user-guide/grade-hdr.md#contrast-and-pivot) |
 | Shadow / Black | `hdr.shadow_lift` | `_apply_hdr_base_adjustments` | [HDR grade](user-guide/grade-hdr.md#shadow--black) |
 | Exposure Bands | `hdr.tone_equalizer_*` | `_apply_hdr_tone_equalizer`, monotonic mapping helpers | [HDR grade](user-guide/grade-hdr.md#exposure-bands) |
@@ -31,6 +32,7 @@ This index maps user-facing areas to their current state model, implementation, 
 | RGB Primaries/Tint | `hdr.*_hue`, `hdr.*_purity` | `rgb_primaries_adjustment_matrix` | [HDR grade](user-guide/grade-hdr.md#rgb-primaries) |
 | Lift/Gamma/Gain | `hdr.lift/gamma/gain`, pivots/ranges | `_primary_zone_masks`, `_apply_luminance_section_controls` | [HDR grade](user-guide/grade-hdr.md#lift-gamma-gain) |
 | Curves | `hdr.curves_enabled`, channel curves | `_apply_curves`, `_apply_curve_set` | [HDR grade](user-guide/grade-hdr.md#curves) |
+| Film Look | `hdr.film_look_section_enabled`, `hdr.film_look.*`, `shared.film_grain_seed` | `_apply_film_look` and ordered module helpers | [HDR grade](user-guide/grade-hdr.md#film-look) |
 
 ## SDR grade
 
@@ -45,6 +47,7 @@ This index maps user-facing areas to their current state model, implementation, 
 | Independent color | SDR color/primary fields | `_apply_hdr_color` via SDR conversion path | [SDR grade](user-guide/grade-sdr.md#match-hdr-colors) |
 | Lift/Gamma/Gain | SDR values, pivots/ranges | `_primary_zone_masks` and luminance controls | [SDR grade](user-guide/grade-sdr.md#lift-gamma-gain-and-curves) |
 | Curves | SDR channel curves | `_apply_curves` in SDR domain | [SDR grade](user-guide/grade-sdr.md#lift-gamma-gain-and-curves) |
+| Match HDR film look / independent Film Look | `sdr.film_look_section_enabled`, `sdr.film_look.*`, shared seed | Frontend one-shot deep copy; `_apply_film_look` | [SDR grade](user-guide/grade-sdr.md#match-hdr-film-look) |
 
 ## Proof and export
 

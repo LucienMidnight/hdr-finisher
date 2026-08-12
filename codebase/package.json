@@ -2,6 +2,7 @@
   "name": "hdr-finisher-browser-tests",
   "private": true,
   "scripts": {
+    "test:grading-value-entry": "node tests/grading-value-entry.js",
     "test:performance": "node tests/performance/preview-performance.js"
   },
   "devDependencies": {

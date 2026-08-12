@@ -26,13 +26,23 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert 'id="tone-equalizer-add"' in html
     assert 'id="tone-equalizer-remove"' in html
     assert 'id="tone-equalizer-radius"' in html
-    assert html.count("data-section-path=") == 9
+    assert html.count("data-section-path=") == 11
     assert html.count("data-zone-hover=") == 6
     assert "Highlight Compression" in html
+    assert 'data-group="hdr-highlights"' in html
+    assert 'data-section-path="hdr.highlight_section_enabled"' in html
+    assert html.index('data-group="hdr-highlights"') > html.index('data-group="hdr-tone"')
+    assert html.index('data-group="hdr-highlights"') < html.index('data-group="hdr-equalizer"')
     assert "Target Peak" in html
     assert 'data-path="hdr.highlight_compression_start_nits"' in html
     assert 'data-path="hdr.highlight_compression_target_nits"' in html
     assert 'data-path="hdr.highlight_compression_softness"' in html
+    assert 'data-path="hdr.highlight_compression_mode"' in html
+    assert 'data-path="hdr.highlight_compression_peak_detail"' in html
+    assert 'data-path="hdr.highlight_compression_color_handling"' in html
+    assert "AgX-style path to white" in html
+    assert 'id="highlight-compression-graph"' in html
+    assert "Advanced highlight controls" in html
     assert "RGB Primaries" in html
     assert 'data-path="hdr.saturation"' in html
     assert 'data-path="hdr.vibrance"' in html
@@ -49,6 +59,39 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert "/api/export-directory/default" in script
     assert "window.confirm" in script
     assert "overwrite," in script
+
+
+def test_grade_readouts_support_bounded_direct_numeric_entry() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+
+    assert html.count("data-value-path=") >= 50
+    assert "const MANUAL_VALUE_RULES" in javascript
+    assert "function enhanceEditableGradeValues()" in javascript
+    assert "function normalizeManualControlValue(path, text)" in javascript
+    assert "function syncRangeControlFromState(path" in javascript
+    assert 'event.key === "Enter" || event.key === "F2"' in javascript
+    assert 'event.key === "Escape"' in javascript
+    assert '"hdr.highlight_compression_start_nits": { min: 1, max: 9999' in javascript
+    assert '"hdr.highlight_compression_target_nits": { min: 2, max: 10000' in javascript
+    assert '"hdr.exposure": { min: -8, max: 8' in javascript
+    assert '"sdr.highlight_recovery": { min: 0, max: 4' in javascript
+    assert 'entryScale: 100' in javascript
+    assert "Double-click any value to type it." in html
+    assert "Double-click any value to type it." in javascript
+    assert ".editable-value[data-editing=\"true\"]" in css
+    assert ".range-shell.manual-overflow" in css
+
+
+def test_highlight_compression_softness_uses_half_percent_slider_steps() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="hdr-compression-softness" type="range" min="0" max="100" step="0.5"' in html
+    assert javascript.count('"hdr.highlight_compression_softness": [0, 100, 0.5]') == 3
+    assert '"hdr.highlight_compression_softness": { min: 0, max: 100, decimals: 1 }' in javascript
+    assert 'numeric.toFixed(1)' in javascript
 
 
 def test_tint_controls_follow_darktable_hue_mapping() -> None:
@@ -250,8 +293,8 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
 
 def test_webgpu_pipeline_preserves_cpu_section_order_and_fixed_hdr_curve_domain() -> None:
     shader = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
-    assert "const PARAM_COUNT = 74" in shader
-    assert "hdrPrimaries(hdrToneEqualizer(sceneColor(hdrContrast(hdrBase(source)))))" in shader
+    assert "const PARAM_COUNT = 111" in shader
+    assert "hdrPrimaries(hdrToneEqualizer(sceneColor(hdrPeakFit(hdrSoftCeiling(hdrContrast(hdrBase(source)))))))" in shader
     assert "sdrReferenceColor(sdrContrast(highlightRecovery(rgb)))" in shader
     assert "toneMap(sceneColor(rgb))" in shader
     assert "sdrPrimaries(sdrContrast(highlightRecovery(toneMap(sceneColor(rgb)))))" in shader
@@ -265,6 +308,42 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_fixed_hdr_curve_domain(
     assert "let targetLevel = max(p[73], start + 0.0018)" in shader
     assert "let target =" not in shader
     assert "let softness = clamp(p[3] / 100.0, 0.0, 1.0)" in shader
+    assert 'branch.highlight_compression_mode === "peak_fit" ? 1' in shader
+    assert 'branch.highlight_compression_color_handling === "path_to_white"' in shader
+    assert "fn hdrPeakFit(input: vec3f) -> vec3f" in shader
+    assert "fn hdrSoftCeiling(input: vec3f) -> vec3f" in shader
+    assert "let chromaScale = min(pathScale, channelScale)" in shader
+    assert "let requiredRatio = clamp(" in shader
+    assert "let targetValue = exp2(effectiveStartStop + stopSpan * mapped)" in shader
+    assert 'entryPoint: "baseFragmentMain"' in shader
+    assert 'entryPoint: "filmResponseFragmentMain"' in shader
+    assert 'entryPoint: "fragmentMain"' in shader
+    assert "filmResponse(textureLoad(sourceTexture" in shader
+    assert "spatialExtractFragmentMain" in shader
+    assert "spatialBlurHorizontalFragmentMain" in shader
+    assert "spatialBlurVerticalFragmentMain" in shader
+    assert "let diffusion = (spatial.rgb - qualified)" in shader
+    assert "chromaHighlightGuard" in shader
+    assert "rgb *= exp2(vec3f(mono * amount))" in shader
+
+
+def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    assert html.index('data-group="film-look"') > html.index('data-group="curves"')
+    for label in ["Large Format Fine", "35mm Fine", "35mm Balanced", "35mm Fast", "16mm Fine"]:
+        assert label in html
+    for path in [
+        "print_strength", "color_density", "grain_amount", "grain_shadow_response",
+        "grain_midtone_response", "grain_highlight_response", "halation_amount",
+        "bloom_amount", "image_softness", "microcontrast",
+    ]:
+        assert f'data-path="current.film_look.{path}"' in html
+    assert 'id="film-look-match-hdr"' in html
+    assert "state.adjustments.sdr.film_look = JSON.parse(JSON.stringify(state.adjustments.hdr.film_look))" in javascript
+    assert "const topLevelEnabled = state.adjustments.sdr.film_look_section_enabled" in javascript
+    assert "film_grain_seed: 271828" in javascript
 
 
 def test_interactive_preview_scheduler_and_quality_preference_contract() -> None:

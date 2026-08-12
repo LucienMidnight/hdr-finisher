@@ -34,6 +34,14 @@ class ExportOverwriteRequired(FileExistsError):
         super().__init__(f"A file already exists at {output_path}")
 
 
+def _finishing_adjustments_for_export(session: object) -> AdjustmentState:
+    """Strip viewer-only diagnostic maps without changing the saved grade."""
+    adjustments = getattr(session, "adjustments").model_copy(deep=True)
+    adjustments.hdr.film_look.halation_view_map = False
+    adjustments.sdr.film_look.halation_view_map = False
+    return adjustments
+
+
 class StubExportBackend(ExportBackend):
     name = "stub"
 
@@ -65,7 +73,7 @@ class SDRPNGExportBackend(ExportBackend):
         _require_overwrite_permission(Path(output_path), settings)
         image = apply_adjustments(
             getattr(session, "image"),
-            getattr(session, "adjustments"),
+            _finishing_adjustments_for_export(session),
             PreviewKind.SDR,
             sdr_reference_image=getattr(session, "sdr_reference_image", None),
         )
@@ -98,10 +106,11 @@ class AVIFGainMapExportBackend(ExportBackend):
         _require_overwrite_permission(output_path, settings)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        hdr_image = apply_adjustments(getattr(session, "image"), getattr(session, "adjustments"), PreviewKind.HDR)
+        finishing_adjustments = _finishing_adjustments_for_export(session)
+        hdr_image = apply_adjustments(getattr(session, "image"), finishing_adjustments, PreviewKind.HDR)
         sdr_image = apply_adjustments(
             getattr(session, "image"),
-            getattr(session, "adjustments"),
+            finishing_adjustments,
             PreviewKind.SDR,
             sdr_reference_image=getattr(session, "sdr_reference_image", None),
         )
@@ -188,10 +197,11 @@ class JPEGUltraHDRExportBackend(ExportBackend):
 
         output_path = Path(_resolve_output_path(getattr(session, "session_id", "session"), settings, ".jpg"))
         _require_overwrite_permission(output_path, settings)
-        hdr_image = apply_adjustments(getattr(session, "image"), getattr(session, "adjustments"), PreviewKind.HDR)
+        finishing_adjustments = _finishing_adjustments_for_export(session)
+        hdr_image = apply_adjustments(getattr(session, "image"), finishing_adjustments, PreviewKind.HDR)
         sdr_image = apply_adjustments(
             getattr(session, "image"),
-            getattr(session, "adjustments"),
+            finishing_adjustments,
             PreviewKind.SDR,
             sdr_reference_image=getattr(session, "sdr_reference_image", None),
         )

@@ -114,18 +114,25 @@ This is an Apple-specific auxiliary-gain reconstruction, distinct from the later
 The HDR branch remains linear ACEScg. Current order:
 
 1. Exposure (`2^EV`)
-2. Logarithmic highlight rolloff above the selected nit start
-3. Shadow/black adjustment
-4. Contrast about a linear pivot
+2. Shadow/black adjustment
+3. Contrast about a linear pivot
+4. Highlights section: Soft Ceiling or Peak Fit, with optional ACEScg path to white
 5. White balance
 6. ACEScg primary/tint matrix
 7. Saturation and vibrance
 8. Monotonic scene-EV Exposure Bands
 9. Lift/Gamma/Gain luminance zones
 10. HDR-domain luma/R/G/B curves
-11. Final non-negative clip
+11. Film Response and subtractive Color Density
+12. Halation
+13. Bloom/Diffusion
+14. Image Softness and Microcontrast
+15. Seeded density-aware Grain
+16. Final non-negative clip
 
 HDR luma coefficients are ACEScg-derived: `0.2722287 R + 0.6740818 G + 0.0536895 B`.
+
+Peak Fit predicts the measured source peak after the independently bypassable Tone section, then anchors the Highlights-stage luminance to Target Peak. Preserve color scales RGB together. The optional AgX-inspired path-to-white reduces chroma through the shoulder and constrains individual ACEScg channels to the target. Later creative sections are deliberately not peak constrained.
 
 ## SDR adjustment branch
 
@@ -139,6 +146,7 @@ HDR luma coefficients are ACEScg-derived: `0.2722287 R + 0.6740818 G + 0.0536895
 6. Highlight Recovery and contrast
 7. Lift/Gamma/Gain
 8. SDR-domain curves
+9. Film Response/Color Density, Halation, Bloom, Image Structure, and Grain
 
 ### From an authored SDR HEIC reference
 
@@ -162,6 +170,12 @@ SDR curves use the bounded 0–1 domain. HDR curves map:
 - Values from `0.18` to the 10,000-nit equivalent logarithmically into graph 0.5 to 1.
 
 Values beyond graph endpoints are extended with endpoint slopes before conversion back to the branch domain.
+
+## Film Look
+
+Both branches carry the same nested `film_look` schema and a separate top-level bypass. Film Response works in a perceptual branch domain, so the HDR path retains values above diffuse white rather than applying an SDR print ceiling. Halation and Bloom qualify highlights relative to that branch. Spatial radii are stored as percentages of image diagonal.
+
+The CPU renderer and two-pass WebGPU renderer use the same operation order and parameter meanings. `shared.film_grain_seed` anchors the spatial grain field across HDR and SDR; branch-specific response controls may change its amplitude but not its phase. The Halation qualification map is a viewer diagnostic and export backends force it off on a deep copy of the adjustment state.
 
 ## Scopes and overlays
 

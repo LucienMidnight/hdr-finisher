@@ -2,7 +2,7 @@
 
 This manual is organized by what you are trying to do. You do not need to understand color science before using HDR Finisher, but the technical detail is available when a source, display, or delivery pipeline needs closer control.
 
-Documentation reflects the active implementation as of **August 9, 2026**. Browser, operating-system, and display behavior can change; dated platform guidance links to first-party sources.
+Documentation reflects the active implementation as of **August 12, 2026**. Browser, operating-system, and display behavior can change; dated platform guidance links to first-party sources.
 
 ## Choose a path
 
@@ -50,6 +50,7 @@ Documentation reflects the active implementation as of **August 9, 2026**. Brows
 - [Viewer, scopes, and overlays](user-guide/viewer-and-analysis.md)
 - [HDR grading](user-guide/grade-hdr.md)
 - [SDR fallback grading](user-guide/grade-sdr.md)
+- [Grading controls and direct-entry limits](user-guide/grading-controls-reference.md)
 - [Chrome Proof](user-guide/proof.md)
 - [Export and delivery](user-guide/export.md)
 

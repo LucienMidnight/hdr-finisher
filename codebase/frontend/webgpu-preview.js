@@ -1,5 +1,5 @@
 (function () {
-  const PARAM_COUNT = 74;
+  const PARAM_COUNT = 111;
   const CURVE_SAMPLES = 1024;
 
   class HDRWebGPUPreview {
@@ -19,6 +19,9 @@
       this.curveBuffer = null;
       this.curveSampleCache = new Map();
       this.surfaceKeys = new WeakMap();
+      this.intermediates = new Map();
+      this.bindGroupLayout = null;
+      this.pipelineLayout = null;
     }
 
     async initialize() {
@@ -36,6 +39,22 @@
         const compilation = await this.module.getCompilationInfo();
         const errors = compilation.messages.filter((message) => message.type === "error");
         if (errors.length) throw new Error(errors.map((message) => message.message).join("; "));
+        this.bindGroupLayout = this.device.createBindGroupLayout({
+          entries: [
+            { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "unfilterable-float" } },
+            { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
+            { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
+            { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
+            { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
+          ],
+        });
+        this.spatialSampler = this.device.createSampler({
+          magFilter: "linear",
+          minFilter: "linear",
+          addressModeU: "clamp-to-edge",
+          addressModeV: "clamp-to-edge",
+        });
+        this.pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.bindGroupLayout] });
         this.device.lost.then((info) => {
           this.available = false;
           this.detail = `WebGPU device lost: ${info.message || info.reason}`;
@@ -56,6 +75,13 @@
       this.renderSerials = new WeakMap();
       for (const proxy of this.proxies.values()) proxy.texture?.destroy();
       this.proxies.clear();
+      for (const intermediate of this.intermediates.values()) {
+        intermediate.baseTexture?.destroy();
+        intermediate.filmTexture?.destroy();
+        intermediate.spatialATexture?.destroy();
+        intermediate.spatialBTexture?.destroy();
+      }
+      this.intermediates.clear();
       this.curveSampleCache.clear();
     }
 
@@ -76,26 +102,94 @@
       const context = canvas.getContext("webgpu");
       if (!context) throw new Error("The comparison WebGPU canvas context is unavailable");
       const surface = this.configureSurface(canvas, context, lane === "hdr");
-      const pipeline = this.pipelineFor(surface.format);
+      const pipelines = this.pipelineFor(surface.format);
       const params = buildParams(lane, adjustments, proxy.workingSpace, surface.hdr);
       const curves = buildCurves(lane, adjustments, curveSampler, this.curveSampleCache);
       this.ensureStorageBuffers(params.byteLength, curves.byteLength);
       this.device.queue.writeBuffer(this.paramBuffer, 0, params);
       this.device.queue.writeBuffer(this.curveBuffer, 0, curves);
-      proxy.bindGroups ||= new Map();
-      let bindGroup = proxy.bindGroups.get(surface.format);
-      if (!bindGroup) {
-        bindGroup = this.device.createBindGroup({
-          layout: pipeline.getBindGroupLayout(0),
+      const intermediate = this.ensureIntermediate(canvas, proxy.width, proxy.height);
+      const makeBindGroup = (sourceView, spatialView) => this.device.createBindGroup({
+          layout: this.bindGroupLayout,
           entries: [
-            { binding: 0, resource: proxy.texture.createView() },
+            { binding: 0, resource: sourceView },
             { binding: 1, resource: { buffer: this.paramBuffer } },
             { binding: 2, resource: { buffer: this.curveBuffer } },
+            { binding: 3, resource: spatialView },
+            { binding: 4, resource: this.spatialSampler },
           ],
-        });
-        proxy.bindGroups.set(surface.format, bindGroup);
-      }
+      });
+      const baseBindGroup = makeBindGroup(proxy.texture.createView(), intermediate.spatialATexture.createView());
+      const responseBindGroup = makeBindGroup(intermediate.baseTexture.createView(), intermediate.spatialATexture.createView());
+      const extractBindGroup = makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialBTexture.createView());
+      const horizontalBindGroup = makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialATexture.createView());
+      const verticalBindGroup = makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialBTexture.createView());
+      const compositeBindGroup = makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialATexture.createView());
       const encoder = this.device.createCommandEncoder();
+      const basePass = encoder.beginRenderPass({
+        colorAttachments: [{
+          view: intermediate.baseTexture.createView(),
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          loadOp: "clear",
+          storeOp: "store",
+        }],
+      });
+      basePass.setPipeline(pipelines.base);
+      basePass.setBindGroup(0, baseBindGroup);
+      basePass.draw(3);
+      basePass.end();
+      const responsePass = encoder.beginRenderPass({
+        colorAttachments: [{
+          view: intermediate.filmTexture.createView(),
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          loadOp: "clear",
+          storeOp: "store",
+        }],
+      });
+      responsePass.setPipeline(pipelines.response);
+      responsePass.setBindGroup(0, responseBindGroup);
+      responsePass.draw(3);
+      responsePass.end();
+      const spatialActive = params[78] > 0.5 && params[79] > 0
+        && (params[85] > 0.5 || (params[92] > 0.5 && params[93] > 0));
+      if (spatialActive) {
+        const extractPass = encoder.beginRenderPass({
+          colorAttachments: [{
+            view: intermediate.spatialATexture.createView(),
+            clearValue: { r: 0, g: 0, b: 0, a: 0 },
+            loadOp: "clear",
+            storeOp: "store",
+          }],
+        });
+        extractPass.setPipeline(pipelines.extract);
+        extractPass.setBindGroup(0, extractBindGroup);
+        extractPass.draw(3);
+        extractPass.end();
+        const horizontalPass = encoder.beginRenderPass({
+          colorAttachments: [{
+            view: intermediate.spatialBTexture.createView(),
+            clearValue: { r: 0, g: 0, b: 0, a: 0 },
+            loadOp: "clear",
+            storeOp: "store",
+          }],
+        });
+        horizontalPass.setPipeline(pipelines.blurHorizontal);
+        horizontalPass.setBindGroup(0, horizontalBindGroup);
+        horizontalPass.draw(3);
+        horizontalPass.end();
+        const verticalPass = encoder.beginRenderPass({
+          colorAttachments: [{
+            view: intermediate.spatialATexture.createView(),
+            clearValue: { r: 0, g: 0, b: 0, a: 0 },
+            loadOp: "clear",
+            storeOp: "store",
+          }],
+        });
+        verticalPass.setPipeline(pipelines.blurVertical);
+        verticalPass.setBindGroup(0, verticalBindGroup);
+        verticalPass.draw(3);
+        verticalPass.end();
+      }
       const pass = encoder.beginRenderPass({
         colorAttachments: [{
           view: context.getCurrentTexture().createView(),
@@ -104,8 +198,8 @@
           storeOp: "store",
         }],
       });
-      pass.setPipeline(pipeline);
-      pass.setBindGroup(0, bindGroup);
+      pass.setPipeline(pipelines.composite);
+      pass.setBindGroup(0, compositeBindGroup);
       pass.draw(3);
       pass.end();
       this.device.queue.submit([encoder.finish()]);
@@ -144,14 +238,76 @@
 
     pipelineFor(format) {
       if (this.pipelines.has(format)) return this.pipelines.get(format);
-      const pipeline = this.device.createRenderPipeline({
-        layout: "auto",
+      const base = this.device.createRenderPipeline({
+        layout: this.pipelineLayout,
+        vertex: { module: this.module, entryPoint: "vertexMain" },
+        fragment: { module: this.module, entryPoint: "baseFragmentMain", targets: [{ format: "rgba16float" }] },
+        primitive: { topology: "triangle-list" },
+      });
+      const response = this.device.createRenderPipeline({
+        layout: this.pipelineLayout,
+        vertex: { module: this.module, entryPoint: "vertexMain" },
+        fragment: { module: this.module, entryPoint: "filmResponseFragmentMain", targets: [{ format: "rgba16float" }] },
+        primitive: { topology: "triangle-list" },
+      });
+      const extract = this.device.createRenderPipeline({
+        layout: this.pipelineLayout,
+        vertex: { module: this.module, entryPoint: "vertexMain" },
+        fragment: { module: this.module, entryPoint: "spatialExtractFragmentMain", targets: [{ format: "rgba16float" }] },
+        primitive: { topology: "triangle-list" },
+      });
+      const blurHorizontal = this.device.createRenderPipeline({
+        layout: this.pipelineLayout,
+        vertex: { module: this.module, entryPoint: "vertexMain" },
+        fragment: { module: this.module, entryPoint: "spatialBlurHorizontalFragmentMain", targets: [{ format: "rgba16float" }] },
+        primitive: { topology: "triangle-list" },
+      });
+      const blurVertical = this.device.createRenderPipeline({
+        layout: this.pipelineLayout,
+        vertex: { module: this.module, entryPoint: "vertexMain" },
+        fragment: { module: this.module, entryPoint: "spatialBlurVerticalFragmentMain", targets: [{ format: "rgba16float" }] },
+        primitive: { topology: "triangle-list" },
+      });
+      const composite = this.device.createRenderPipeline({
+        layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
         fragment: { module: this.module, entryPoint: "fragmentMain", targets: [{ format }] },
         primitive: { topology: "triangle-list" },
       });
-      this.pipelines.set(format, pipeline);
-      return pipeline;
+      const pipelines = { base, response, extract, blurHorizontal, blurVertical, composite };
+      this.pipelines.set(format, pipelines);
+      return pipelines;
+    }
+
+    ensureIntermediate(canvas, width, height) {
+      const current = this.intermediates.get(canvas);
+      if (current?.width === width && current?.height === height) return current;
+      current?.baseTexture?.destroy();
+      current?.filmTexture?.destroy();
+      current?.spatialATexture?.destroy();
+      current?.spatialBTexture?.destroy();
+      const createTexture = () => this.device.createTexture({
+        size: { width, height },
+        format: "rgba16float",
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      });
+      const spatialWidth = Math.max(1, Math.ceil(width / 4));
+      const spatialHeight = Math.max(1, Math.ceil(height / 4));
+      const createSpatialTexture = () => this.device.createTexture({
+        size: { width: spatialWidth, height: spatialHeight },
+        format: "rgba16float",
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      });
+      const intermediate = {
+        baseTexture: createTexture(),
+        filmTexture: createTexture(),
+        spatialATexture: createSpatialTexture(),
+        spatialBTexture: createSpatialTexture(),
+        width,
+        height,
+      };
+      this.intermediates.set(canvas, intermediate);
+      return intermediate;
     }
 
     ensureStorageBuffers(paramBytes, curveBytes) {
@@ -320,6 +476,24 @@
     return !Array.isArray(nodes) || nodes.every((node) => Math.abs(Number(node?.adjustment_ev) || 0) < 0.000001);
   }
 
+  function toneAdjustedHighlightPeakLinear(branch, toneEnabled) {
+    let peak = Math.max(1, Number(branch.highlight_compression_source_peak_nits) || 1000) * 0.18 / 100;
+    if (!toneEnabled) return peak;
+    peak *= Math.pow(2, Number(branch.exposure) || 0);
+    const shadowLift = Number(branch.shadow_lift) || 0;
+    if (shadowLift !== 0) {
+      const liftFactor = Math.min(1, shadowLift * (1 - Math.min(1, Math.max(0, peak))));
+      peak *= 1 + liftFactor;
+    }
+    const contrast = Number(branch.contrast) || 0;
+    if (contrast !== 0 && peak > 0.00000001) {
+      const pivot = Math.max(Number(branch.contrast_pivot) || 0.1845, 0.000001);
+      const stops = Math.log2(Math.max(peak, 0.00000001) / pivot);
+      peak = pivot * Math.pow(2, Math.min(32, Math.max(-32, stops * Math.pow(2, contrast))));
+    }
+    return Math.max(0.0018, peak);
+  }
+
   function buildParams(lane, adjustments, workingSpace, hdrSurface) {
     const params = new Float32Array(PARAM_COUNT);
     const branch = adjustments[lane];
@@ -327,12 +501,15 @@
     params[0] = lane === "hdr" ? 1 : 0;
     params[1] = workingSpace === "linear-srgb" ? 1 : 0;
     const toneEnabled = branch.tone_section_enabled !== false;
+    const highlightEnabled = lane === "hdr" && branch.highlight_section_enabled !== false;
     const primariesEnabled = branch.primaries_section_enabled !== false;
     const colorEnabled = branch.color_section_enabled !== false;
     const colorActive = colorEnabled && !colorSettingsNeutral(colorSource);
     const baseEnabled = lane !== "sdr" || branch.base_section_enabled !== false;
     params[2] = toneEnabled ? branch.exposure || 0 : 0;
-    params[3] = toneEnabled ? (lane === "hdr" ? branch.highlight_compression_softness || 0 : branch.highlight_recovery || 0) : 0;
+    params[3] = lane === "hdr"
+      ? (highlightEnabled ? branch.highlight_compression_softness || 0 : 0)
+      : (toneEnabled ? branch.highlight_recovery || 0 : 0);
     params[4] = toneEnabled ? (lane === "hdr" ? branch.shadow_lift || 0 : branch.shadow || 0) : 0;
     params[5] = primariesEnabled ? branch.lift || 0 : 0;
     params[6] = primariesEnabled ? branch.gamma || 0 : 0;
@@ -371,6 +548,45 @@
     params[71] = colorActive ? colorSource.vibrance || 0 : 0;
     params[72] = colorActive ? 1 : 0;
     params[73] = lane === "hdr" ? ((branch.highlight_compression_target_nits ?? 1000) * 0.18 / 100) : 0;
+    params[74] = highlightEnabled ? (branch.highlight_compression_mode === "peak_fit" ? 1 : branch.highlight_compression_mode === "soft_ceiling" ? 2 : 0) : 0;
+    params[75] = lane === "hdr" ? toneAdjustedHighlightPeakLinear(branch, toneEnabled) : 0;
+    params[76] = lane === "hdr" ? Math.min(1, Math.max(0, (branch.highlight_compression_peak_detail ?? 35) / 100)) : 0;
+    params[77] = lane === "hdr" ? Math.min(1, Math.max(-1, (branch.highlight_compression_bias ?? 0) / 100)) * 0.6 : 0;
+    const film = branch.film_look || {};
+    const filmEnabled = branch.film_look_section_enabled !== false;
+    params[78] = filmEnabled ? 1 : 0;
+    params[79] = filmEnabled ? (film.look_strength ?? 100) / 100 : 0;
+    params[80] = (film.print_strength || 0) / 100;
+    params[81] = (film.print_contrast || 0) / 100;
+    params[82] = (film.print_toe || 0) / 100;
+    params[83] = (film.print_shoulder || 0) / 100;
+    params[84] = (film.color_density || 0) / 100;
+    params[85] = film.halation_enabled !== false && ((film.halation_amount || 0) > 0 || film.halation_view_map) ? 1 : 0;
+    params[86] = (film.halation_amount || 0) / 100;
+    params[87] = (film.halation_sensitivity ?? 75) / 100;
+    params[88] = film.halation_radius ?? 0.2;
+    params[89] = (film.halation_hue_offset || 0) / 100;
+    params[90] = (film.halation_saturation ?? 75) / 100;
+    params[91] = film.halation_view_map ? 1 : 0;
+    params[92] = film.bloom_enabled !== false ? 1 : 0;
+    params[93] = (film.bloom_amount || 0) / 100;
+    params[94] = (film.bloom_sensitivity ?? 80) / 100;
+    params[95] = film.bloom_radius ?? 0.5;
+    params[96] = (film.bloom_highlight_detail ?? 75) / 100;
+    params[97] = film.image_structure_enabled !== false ? 1 : 0;
+    params[98] = (film.image_softness || 0) / 100;
+    params[99] = (film.microcontrast || 0) / 100;
+    params[100] = film.grain_enabled !== false ? 1 : 0;
+    params[101] = (film.grain_amount || 0) / 100;
+    params[102] = (film.grain_size ?? 50) / 100;
+    params[103] = (film.grain_softness ?? 25) / 100;
+    params[104] = (film.grain_chroma || 0) / 100;
+    params[105] = (film.grain_shadow_response ?? 100) / 100;
+    params[106] = (film.grain_midtone_response ?? 100) / 100;
+    params[107] = (film.grain_highlight_response ?? 100) / 100;
+    params[108] = (film.film_resolution ?? 100) / 100;
+    params[109] = adjustments.shared?.film_grain_seed ?? 271828;
+    params[110] = lane === "hdr" && branch.highlight_compression_color_handling === "path_to_white" ? 1 : 0;
     return params;
   }
 
@@ -418,6 +634,8 @@
     @group(0) @binding(0) var sourceTexture: texture_2d<f32>;
     @group(0) @binding(1) var<storage, read> p: array<f32>;
     @group(0) @binding(2) var<storage, read> curveLuts: array<f32>;
+    @group(0) @binding(3) var spatialTexture: texture_2d<f32>;
+    @group(0) @binding(4) var spatialSampler: sampler;
 
     struct VertexOut { @builtin(position) position: vec4f }
 
@@ -551,31 +769,6 @@
     }
     fn hdrBase(input: vec3f) -> vec3f {
       var rgb = input * exp2(p[2]);
-      let y = max(lumaAces(rgb), 0.0);
-      let start = max(p[53], 0.000001);
-      if (p[3] > 0.0 && y > start) {
-        let targetLevel = max(p[73], start + 0.0018);
-        let span = targetLevel - start;
-        let normalized = (y - start) / span;
-        let softness = clamp(p[3] / 100.0, 0.0, 1.0);
-        let exponent = exp2(5.0 * (1.0 - softness));
-        var compressed: f32;
-        if (normalized <= 1.0) {
-          compressed = normalized / pow(1.0 + pow(normalized, exponent), 1.0 / exponent);
-        } else {
-          compressed = 1.0 / pow(1.0 + pow(1.0 / normalized, exponent), 1.0 / exponent);
-        }
-        if (compressed > 0.99999) { compressed = 1.0; }
-        let activationPosition = clamp(p[3] / 10.0, 0.0, 1.0);
-        let activation = activationPosition * activationPosition * (3.0 - 2.0 * activationPosition);
-        var targetValue: f32;
-        if (activation >= 1.0) {
-          targetValue = start + span * compressed;
-        } else {
-          targetValue = start + mix(y - start, span * compressed, activation);
-        }
-        rgb *= targetValue / max(y, 0.00000001);
-      }
       if (p[4] != 0.0) {
         let lift = min(p[4] * (1.0 - clamp(lumaAces(rgb), 0.0, 1.0)), 1.0);
         rgb *= 1.0 + lift;
@@ -590,6 +783,71 @@
       let targetStops = stops * exp2(p[8]);
       if (y <= 0.00000001) { return input; }
       return input * (pivot * exp2(clamp(targetStops, -32.0, 32.0)) / y);
+    }
+    fn hdrSoftCeiling(input: vec3f) -> vec3f {
+      if (p[74] != 2.0 || p[3] <= 0.0) { return input; }
+      let y = max(lumaAces(input), 0.0);
+      let start = max(p[53], 0.000001);
+      if (y <= start) { return input; }
+      let targetLevel = max(p[73], start + 0.0018);
+      let span = targetLevel - start;
+      let normalized = (y - start) / span;
+      let softness = clamp(p[3] / 100.0, 0.0, 1.0);
+      let exponent = exp2(5.0 * (1.0 - softness));
+      var compressed: f32;
+      if (normalized <= 1.0) {
+        compressed = normalized / pow(1.0 + pow(normalized, exponent), 1.0 / exponent);
+      } else {
+        compressed = 1.0 / pow(1.0 + pow(1.0 / normalized, exponent), 1.0 / exponent);
+      }
+      if (compressed > 0.99999) { compressed = 1.0; }
+      let activationPosition = clamp(p[3] / 10.0, 0.0, 1.0);
+      let activation = activationPosition * activationPosition * (3.0 - 2.0 * activationPosition);
+      var targetValue: f32;
+      if (activation >= 1.0) {
+        targetValue = start + span * compressed;
+      } else {
+        targetValue = start + mix(y - start, span * compressed, activation);
+      }
+      return input * (targetValue / max(y, 0.00000001));
+    }
+    fn hdrPeakFit(input: vec3f) -> vec3f {
+      if (p[74] != 1.0) { return input; }
+      let y = max(lumaAces(input), 0.0);
+      let start = max(p[53], 0.000001);
+      let targetLevel = max(p[73], start + 0.0018);
+      let peakLevel = max(p[75], targetLevel);
+      if (peakLevel <= targetLevel) { return input; }
+      let startStop = log2(start);
+      let targetStop = log2(targetLevel);
+      let peakStop = log2(peakLevel);
+      let curveBias = p[77];
+      let requestedRatio = (targetStop - startStop) / max(peakStop - startStop, 0.000001);
+      let requiredRatio = clamp((1.0 / (1.0 + curveBias) + p[76] / (1.0 - curveBias)) / 3.0, 0.001, 0.95);
+      var effectiveStartStop = startStop;
+      if (requestedRatio < requiredRatio) {
+        effectiveStartStop = (targetStop - requiredRatio * peakStop) / (1.0 - requiredRatio);
+      }
+      let effectiveStart = exp2(effectiveStartStop);
+      if (y <= effectiveStart) { return input; }
+      let u = clamp((log2(y) - effectiveStartStop) / max(peakStop - effectiveStartStop, 0.000001), 0.0, 1.0);
+      let w = clamp(u + curveBias * u * (1.0 - u), 0.0, 1.0);
+      let stopSpan = targetStop - effectiveStartStop;
+      let m0 = (peakStop - effectiveStartStop) / max(stopSpan * (1.0 + curveBias), 0.000001);
+      let m1 = p[76] * (peakStop - effectiveStartStop) / max(stopSpan * (1.0 - curveBias), 0.000001);
+      let mapped = w * (1.0 - w) * (1.0 - w) * m0 + w * w * (3.0 - 2.0 * w) + w * w * (w - 1.0) * m1;
+      let targetValue = exp2(effectiveStartStop + stopSpan * mapped);
+      let mappedRgb = input * (targetValue / max(y, 0.00000001));
+      if (p[110] < 0.5) { return mappedRgb; }
+      let progress = u * u * (3.0 - 2.0 * u);
+      let pathScale = 1.0 - progress;
+      let maximumChroma = max(mappedRgb.r, max(mappedRgb.g, mappedRgb.b)) - targetValue;
+      var channelScale = 1.0;
+      if (maximumChroma > 0.00000001) {
+        channelScale = clamp((targetLevel - targetValue) / maximumChroma, 0.0, 1.0);
+      }
+      let chromaScale = min(pathScale, channelScale);
+      return vec3f(targetValue) + (mappedRgb - vec3f(targetValue)) * chromaScale;
     }
     fn hdrPrimaries(input: vec3f) -> vec3f {
       if (p[5] == 0.0 && p[6] == 0.0 && p[7] == 0.0) { return input; }
@@ -748,8 +1006,10 @@
       if (p[72] < 0.5) { return input; }
       return compressSrgbGamut(acescgToSrgb(sceneColor(srgbToAcescg(input))));
     }
-    fn renderHdr(source: vec3f) -> vec3f {
-      var rgb = applyCurves(hdrPrimaries(hdrToneEqualizer(sceneColor(hdrContrast(hdrBase(source))))), true);
+    fn renderHdrBase(source: vec3f) -> vec3f {
+      return max(applyCurves(hdrPrimaries(hdrToneEqualizer(sceneColor(hdrPeakFit(hdrSoftCeiling(hdrContrast(hdrBase(source))))))), true), vec3f(0.0));
+    }
+    fn displayHdr(rgb: vec3f) -> vec3f {
       if (p[16] > 0.5) {
         // Extended canvas values are relative to nominal display white. Keep the
         // app's 0.18 scene-linear reference near 100 nits on a 203-nit canvas.
@@ -761,7 +1021,7 @@
       let display = max(acescgToSrgb(rgb), vec3f(0.0));
       return display / (vec3f(1.0) + display);
     }
-    fn renderSdr(source: vec3f) -> vec3f {
+    fn renderSdrBase(source: vec3f) -> vec3f {
       var rgb: vec3f;
       if (p[1] > 0.5) {
         rgb = clamp(source, vec3f(0.0), vec3f(1.0)) * exp2(p[2]);
@@ -782,11 +1042,202 @@
       return clamp(rgb, vec3f(0.0), vec3f(1.0));
     }
 
-    @fragment fn fragmentMain(input: VertexOut) -> @location(0) vec4f {
+    fn filmLuma(rgb: vec3f) -> f32 {
+      return select(lumaSrgb(rgb), lumaAces(rgb), p[0] > 0.5);
+    }
+    fn filmSignalFromLuma(value: f32) -> f32 {
+      return select(srgbEncode(clamp(value, 0.0, 1.0)), curveEncodeChannel(max(value, 0.0)), p[0] > 0.5);
+    }
+    fn filmLumaFromSignal(value: f32) -> f32 {
+      return select(srgbDecode(clamp(value, 0.0, 1.0)), curveDecodeChannel(value), p[0] > 0.5);
+    }
+    fn filmResponse(input: vec3f) -> vec3f {
+      if (p[78] < 0.5 || p[79] <= 0.0) { return input; }
+      let sourceY = max(filmLuma(input), 0.0);
+      var rgb = input;
+      if (p[80] > 0.0 && sourceY > 0.0000001) {
+        let signal = filmSignalFromLuma(sourceY);
+        var mapped = 0.5 + (signal - 0.5) * exp2(0.55 * p[81] * p[79]);
+        mapped -= p[82] * p[79] * 0.10 * (1.0 - smoothRange(0.08, 0.58, signal));
+        mapped -= p[83] * p[79] * 0.10 * smoothRange(0.42, 0.98, signal);
+        if (p[0] < 0.5) { mapped = clamp(mapped, 0.0, 1.0); }
+        let targetY = mix(sourceY, filmLumaFromSignal(mapped), p[80] * p[79]);
+        rgb *= targetY / sourceY;
+      }
+      if (p[84] != 0.0) {
+        let y = filmLuma(rgb);
+        let neutral = vec3f(y);
+        let maximum = max(rgb.r, max(rgb.g, rgb.b));
+        let minimum = min(rgb.r, min(rgb.g, rgb.b));
+        let relative = clamp((maximum - minimum) / max(abs(y), 0.00001), 0.0, 2.0);
+        let density = p[84] * p[79];
+        rgb = neutral + (rgb - neutral) * exp2(0.45 * density);
+        rgb *= max(0.75, 1.0 - density * 0.045 * relative);
+      }
+      return max(rgb, vec3f(0.0));
+    }
+    fn boundedCoordinate(coordinate: vec2i) -> vec2i {
+      let dimensions = textureDimensions(sourceTexture);
+      return clamp(coordinate, vec2i(0), vec2i(dimensions) - vec2i(1));
+    }
+    fn sampleFilm(coordinate: vec2i) -> vec3f {
+      return textureLoad(sourceTexture, boundedCoordinate(coordinate), 0).rgb;
+    }
+    fn spatialOffset(percentDiagonal: f32) -> i32 {
+      let dimensions = vec2f(textureDimensions(sourceTexture));
+      return max(1, i32(round(length(dimensions) * max(percentDiagonal, 0.0) / 100.0)));
+    }
+    fn filmBlur(coordinate: vec2i, percentDiagonal: f32) -> vec3f {
+      let radius = spatialOffset(percentDiagonal);
+      let halfRadius = max(1, radius / 2);
+      var total = sampleFilm(coordinate) * 4.0;
+      total += sampleFilm(coordinate + vec2i(radius, 0));
+      total += sampleFilm(coordinate + vec2i(-radius, 0));
+      total += sampleFilm(coordinate + vec2i(0, radius));
+      total += sampleFilm(coordinate + vec2i(0, -radius));
+      total += sampleFilm(coordinate + vec2i(halfRadius, halfRadius));
+      total += sampleFilm(coordinate + vec2i(-halfRadius, halfRadius));
+      total += sampleFilm(coordinate + vec2i(halfRadius, -halfRadius));
+      total += sampleFilm(coordinate + vec2i(-halfRadius, -halfRadius));
+      return total / 12.0;
+    }
+    fn filmHighlightMask(rgb: vec3f, sensitivity: f32) -> f32 {
+      let threshold = 0.92 - 0.50 * clamp(sensitivity, 0.0, 1.0);
+      return smoothRange(threshold, threshold + 0.16, filmSignalFromLuma(max(filmLuma(rgb), 0.0)));
+    }
+    fn qualifiedSample(coordinate: vec2i, sensitivity: f32) -> vec3f {
+      let rgb = sampleFilm(coordinate);
+      return rgb * filmHighlightMask(rgb, sensitivity);
+    }
+
+    fn packedQualifiedSample(coordinate: vec2f) -> vec4f {
+      let rgb = sampleFilm(vec2i(coordinate));
+      let bloomMask = filmHighlightMask(rgb, p[94]);
+      let halationMask = filmHighlightMask(rgb, p[87]);
+      let bloom = rgb * bloomMask * select(0.0, 1.0, p[92] > 0.5 && p[93] > 0.0);
+      let halation = max(filmLuma(rgb), 0.0) * halationMask * select(0.0, 1.0, p[85] > 0.5);
+      return vec4f(bloom, halation);
+    }
+    fn sampleSpatial(uv: vec2f) -> vec4f {
+      return textureSampleLevel(spatialTexture, spatialSampler, clamp(uv, vec2f(0.0), vec2f(1.0)), 0.0);
+    }
+    fn spatialBlur(direction: vec2f, coordinate: vec2f) -> vec4f {
+      let dimensions = vec2f(textureDimensions(spatialTexture));
+      let uv = coordinate / dimensions;
+      let bloomRadius = max(0.5, length(dimensions) * max(p[95], 0.0) / 100.0);
+      let halationRadius = max(0.5, length(dimensions) * max(p[88], 0.0) / 100.0);
+      var bloomTotal = vec3f(0.0);
+      var halationTotal = 0.0;
+      var weightTotal = 0.0;
+      for (var index: i32 = -4; index <= 4; index = index + 1) {
+        let normalized = f32(index) / 4.0;
+        let weight = exp(-4.5 * normalized * normalized);
+        let bloomUv = uv + direction * normalized * bloomRadius / dimensions;
+        let halationUv = uv + direction * normalized * halationRadius / dimensions;
+        bloomTotal += sampleSpatial(bloomUv).rgb * weight;
+        halationTotal += sampleSpatial(halationUv).a * weight;
+        weightTotal += weight;
+      }
+      return vec4f(bloomTotal / weightTotal, halationTotal / weightTotal);
+    }
+    fn grainHash(coordinate: vec2f, salt: f32) -> f32 {
+      return fract(sin(dot(coordinate, vec2f(12.9898, 78.233)) + p[109] * 0.001 + salt) * 43758.5453) * 2.0 - 1.0;
+    }
+    fn applyFilmLook(coordinate: vec2i) -> vec3f {
+      var rgb = sampleFilm(coordinate);
+      if (p[78] < 0.5 || p[79] <= 0.0) { return rgb; }
+      let dimensions = vec2f(textureDimensions(sourceTexture));
+      let spatial = sampleSpatial((vec2f(coordinate) + vec2f(0.5)) / dimensions);
+      if (p[85] > 0.5) {
+        let qualified = rgb * filmHighlightMask(rgb, p[87]);
+        let haloY = max(spatial.a - max(filmLuma(qualified), 0.0) * 0.35, 0.0);
+        let angle = radians(12.0 + 45.0 * p[89]);
+        let warm = vec3f(1.0, 0.34 + 0.18 * sin(angle), 0.07 + 0.10 * max(cos(angle), 0.0));
+        let warmY = lumaSrgb(warm);
+        let tint = mix(vec3f(warmY), warm, clamp(p[90], 0.0, 1.0));
+        if (p[91] > 0.5) { return vec3f(clamp(filmSignalFromLuma(haloY), 0.0, 1.0)); }
+        rgb += haloY * tint * (0.28 * p[86] * p[79]);
+      }
+      if (p[92] > 0.5 && p[93] > 0.0) {
+        let qualified = rgb * filmHighlightMask(rgb, p[94]);
+        let amount = p[93] * p[79];
+        let additive = spatial.rgb * (0.22 * amount);
+        let diffusion = (spatial.rgb - qualified) * ((1.0 - p[96]) * 0.35 * amount);
+        rgb = max(rgb + additive + diffusion, vec3f(0.0));
+      }
+      let structureBlur = filmBlur(coordinate, 0.06);
+      if (p[97] > 0.5) {
+        let structureSource = rgb;
+        rgb = structureSource
+          + (structureBlur - structureSource) * p[98] * p[79] * 0.65
+          + (structureSource - structureBlur) * p[99] * p[79] * 0.5;
+      }
+      if (p[100] > 0.5 && p[108] < 1.0) {
+        let resolutionLoss = (1.0 - p[108]) * p[79];
+        rgb += (filmBlur(coordinate, 0.04 + 0.08 * resolutionLoss) - rgb) * resolutionLoss * 0.7;
+      }
+      if (p[100] > 0.5 && p[101] > 0.0) {
+        let dimensions = vec2f(textureDimensions(sourceTexture));
+        let pitch = max(1.0, length(dimensions) / 2400.0 * (0.85 + 1.8 * p[102] + 1.2 * p[103]));
+        let grainCoordinate = vec2f(coordinate) / pitch;
+        let mono = mix(grainHash(grainCoordinate, 0.0), grainHash(grainCoordinate * 0.53, 17.0), p[103] * 0.55);
+        let signal = clamp(filmSignalFromLuma(max(filmLuma(rgb), 0.0)), 0.0, 1.0);
+        let shadowWeight = pow(1.0 - signal, 2.0);
+        let highlightWeight = pow(signal, 2.0);
+        let midWeight = max(0.0, 1.0 - shadowWeight - highlightWeight);
+        let response = shadowWeight * p[105] + midWeight * p[106] + highlightWeight * p[107];
+        let amount = 0.18 * p[101] * p[79] * response;
+        rgb *= exp2(vec3f(mono * amount));
+        if (p[104] > 0.0) {
+          let chroma = vec3f(grainHash(grainCoordinate, 31.0), grainHash(grainCoordinate, 59.0), grainHash(grainCoordinate, 83.0));
+          let chromaHighlightGuard = 1.0 - 0.8 * smoothRange(0.88, 1.0, signal);
+          rgb *= exp2(chroma * amount * p[104] * chromaHighlightGuard * 0.45);
+        }
+      }
+      return max(rgb, vec3f(0.0));
+    }
+
+    @fragment fn baseFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let dimensions = textureDimensions(sourceTexture);
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let source = textureLoad(sourceTexture, coordinate, 0).rgb;
-      let output = select(renderSdr(source), renderHdr(source), p[0] > 0.5);
+      let output = select(renderSdrBase(source), renderHdrBase(source), p[0] > 0.5);
+      return vec4f(output, 1.0);
+    }
+
+    @fragment fn filmResponseFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let dimensions = textureDimensions(sourceTexture);
+      let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
+      return vec4f(filmResponse(textureLoad(sourceTexture, coordinate, 0).rgb), 1.0);
+    }
+
+    @fragment fn spatialExtractFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let sourceDimensions = vec2f(textureDimensions(sourceTexture));
+      let targetDimensions = vec2f(textureDimensions(spatialTexture));
+      let scale = sourceDimensions / targetDimensions;
+      let center = input.position.xy * scale;
+      let offset = scale * 0.25;
+      return (
+        packedQualifiedSample(center + vec2f(-offset.x, -offset.y))
+        + packedQualifiedSample(center + vec2f(offset.x, -offset.y))
+        + packedQualifiedSample(center + vec2f(-offset.x, offset.y))
+        + packedQualifiedSample(center + vec2f(offset.x, offset.y))
+      ) * 0.25;
+    }
+
+    @fragment fn spatialBlurHorizontalFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      return spatialBlur(vec2f(1.0, 0.0), input.position.xy);
+    }
+
+    @fragment fn spatialBlurVerticalFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      return spatialBlur(vec2f(0.0, 1.0), input.position.xy);
+    }
+
+    @fragment fn fragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let dimensions = textureDimensions(sourceTexture);
+      let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
+      let filmOutput = applyFilmLook(coordinate);
+      let output = select(clamp(filmOutput, vec3f(0.0), vec3f(1.0)), displayHdr(filmOutput), p[0] > 0.5);
       return vec4f(displayEncode(output), 1.0);
     }
   `;

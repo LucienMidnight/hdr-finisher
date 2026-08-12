@@ -23,6 +23,109 @@ from hdr_finisher.color import rgb_primaries_adjustment_matrix
 from hdr_finisher.models import AdjustmentState, HDRAdjustments, PreviewKind, SDRAdjustments, SharedAdjustments, SourceLatitude
 
 
+@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
+def test_neutral_film_look_is_pixel_identical(kind: PreviewKind) -> None:
+    rng = np.random.default_rng(912)
+    image = rng.random((28, 36, 3), dtype=np.float32)
+    if kind == PreviewKind.HDR:
+        image *= np.float32(12.0)
+    enabled = AdjustmentState()
+    bypassed = enabled.model_copy(deep=True)
+    getattr(bypassed, kind.value).film_look_section_enabled = False
+
+    np.testing.assert_array_equal(
+        apply_adjustments(image, enabled, kind),
+        apply_adjustments(image, bypassed, kind),
+    )
+
+
+def test_film_grain_is_deterministic_and_seeded_from_shared_adjustments() -> None:
+    image = np.full((32, 48, 3), 0.18, dtype=np.float32)
+    state = AdjustmentState()
+    state.hdr.film_look.grain_amount = 55
+    state.hdr.film_look.grain_size = 45
+    first = apply_adjustments(image, state, PreviewKind.HDR)
+    second = apply_adjustments(image, state, PreviewKind.HDR)
+    np.testing.assert_array_equal(first, second)
+
+    changed_seed = state.model_copy(deep=True)
+    changed_seed.shared.film_grain_seed += 1
+    third = apply_adjustments(image, changed_seed, PreviewKind.HDR)
+    assert not np.array_equal(first, third)
+
+
+def test_film_response_preserves_hdr_headroom_without_print_ceiling() -> None:
+    levels = np.array([0.18, 1.8, 7.2, 18.0], dtype=np.float32)
+    image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
+    state = AdjustmentState()
+    look = state.hdr.film_look
+    look.print_strength = 100
+    look.print_contrast = 18
+    look.print_toe = 10
+    look.print_shoulder = 30
+    look.color_density = 20
+    output = apply_adjustments(image, state, PreviewKind.HDR)
+
+    assert np.all(np.isfinite(output))
+    assert float(output[0, -1, 0]) > 1.0
+    assert np.all(np.diff(output[0, :, 0]) > 0.0)
+
+
+def test_halation_and_bloom_are_spatial_and_grain_remains_last() -> None:
+    image = np.zeros((41, 41, 3), dtype=np.float32)
+    image[20, 20] = 8.0
+    state = AdjustmentState()
+    look = state.hdr.film_look
+    look.halation_amount = 70
+    look.halation_radius = 2.0
+    look.bloom_amount = 45
+    look.bloom_radius = 3.0
+    look.grain_amount = 30
+    output = apply_adjustments(image, state, PreviewKind.HDR)
+
+    assert float(np.max(output[18:23, 18:23])) > 0.0
+    assert float(np.std(output[10:31, 10:31])) > 0.0
+
+
+def test_bloom_highlight_detail_controls_real_core_diffusion() -> None:
+    image = np.zeros((81, 81, 3), dtype=np.float32)
+    image[38:43, 38:43] = 8.0
+    detailed = AdjustmentState()
+    look = detailed.hdr.film_look
+    look.bloom_amount = 100
+    look.bloom_radius = 4.0
+    look.bloom_sensitivity = 100
+    look.bloom_highlight_detail = 100
+    look.halation_enabled = False
+
+    diffused = detailed.model_copy(deep=True)
+    diffused.hdr.film_look.bloom_highlight_detail = 0
+    detailed_output = apply_adjustments(image, detailed, PreviewKind.HDR)
+    diffused_output = apply_adjustments(image, diffused, PreviewKind.HDR)
+
+    assert float(diffused_output[40, 40, 0]) < float(detailed_output[40, 40, 0])
+    assert float(diffused_output[34, 40, 0]) > float(detailed_output[34, 40, 0])
+    assert np.all(np.isfinite(diffused_output))
+    assert float(diffused_output.min()) >= 0.0
+
+
+def test_bloom_has_a_smooth_monotonic_hard_edge_profile() -> None:
+    image = np.zeros((101, 101, 3), dtype=np.float32)
+    image[:, :51] = 8.0
+    state = AdjustmentState()
+    look = state.hdr.film_look
+    look.bloom_amount = 100
+    look.bloom_radius = 4.0
+    look.bloom_sensitivity = 100
+    look.bloom_highlight_detail = 35
+    look.halation_enabled = False
+
+    output = apply_adjustments(image, state, PreviewKind.HDR)
+    dark_side_profile = output[50, 51:71, 0]
+    assert np.all(np.diff(dark_side_profile) <= 1e-6)
+    assert len(np.unique(np.round(dark_side_profile, 5))) > 5
+
+
 def test_gentle_contrast_at_max_slider_stays_in_range() -> None:
     state = AdjustmentState(sdr=SDRAdjustments(contrast=0.5))
     image = np.ones((4, 4, 3), dtype=np.float32) * 0.5
@@ -181,6 +284,53 @@ def test_removed_adjustment_toggles_are_not_part_of_the_schema() -> None:
         SDRAdjustments.model_validate({"match_hdr_color": True})
 
 
+def test_direct_entry_headroom_is_accepted_by_adjustment_models() -> None:
+    hdr = HDRAdjustments(
+        exposure=8,
+        highlight_compression_start_nits=9999,
+        highlight_compression_target_nits=10000,
+        contrast=2,
+        contrast_pivot=18,
+        white_balance_kelvin=25000,
+        saturation=3,
+        red_purity=400,
+        lift_range=24,
+        gain_pivot=12,
+    )
+    sdr = SDRAdjustments(
+        exposure=-8,
+        highlight_recovery=4,
+        shadow=-2,
+        contrast_pivot=0.999,
+        white_balance_kelvin=1000,
+        vibrance=3,
+        gamma=-2,
+        gamma_range=24,
+    )
+
+    assert hdr.highlight_compression_target_nits == 10000
+    assert hdr.red_purity == 400
+    assert sdr.highlight_recovery == 4
+    assert sdr.gamma_range == 24
+
+
+@pytest.mark.parametrize(
+    ("model", "values"),
+    [
+        (HDRAdjustments, {"exposure": 8.01}),
+        (HDRAdjustments, {"highlight_compression_start_nits": 10000, "highlight_compression_target_nits": 10000}),
+        (HDRAdjustments, {"white_balance_kelvin": 25001}),
+        (HDRAdjustments, {"saturation": 3.01}),
+        (SDRAdjustments, {"highlight_recovery": 4.01}),
+        (SDRAdjustments, {"contrast_pivot": 1.0}),
+        (SDRAdjustments, {"gamma_range": 24.01}),
+    ],
+)
+def test_direct_entry_safety_caps_reject_out_of_range_api_values(model, values) -> None:
+    with pytest.raises(ValueError):
+        model.model_validate(values)
+
+
 def test_legacy_thirteen_band_equalizer_migrates_to_positioned_nodes() -> None:
     bands = [round((index - 6) / 12, 4) for index in range(13)]
     migrated = HDRAdjustments.model_validate({"tone_equalizer_bands": bands})
@@ -319,6 +469,103 @@ def test_highlight_compression_preserves_start_and_approaches_target_monotonical
     assert np.all(np.diff(compressed) >= -1e-6)
     assert compressed[-1] <= 1.8
     assert compressed[-1] > 1.79
+
+
+def test_peak_fit_anchors_extreme_peak_and_preserves_positive_highlight_slope() -> None:
+    source_peak_nits = 21676.7
+    levels_nits = np.geomspace(10.0, source_peak_nits, 512).astype(np.float32)
+    levels = levels_nits * np.float32(0.18 / 100.0)
+    image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
+    compressed = _compress_scene_highlights(
+        image,
+        100.0,
+        1000.0,
+        0.0,
+        mode="peak_fit",
+        source_peak_nits=source_peak_nits,
+        peak_detail=35.0,
+        bias=0.0,
+    )[0, :, 0]
+    compressed_nits = compressed * np.float32(100.0 / 0.18)
+
+    np.testing.assert_allclose(compressed_nits[-1], 1000.0, rtol=2e-5)
+    assert np.all(np.diff(compressed_nits) > 0.0)
+    assert compressed_nits[-32] < compressed_nits[-1]
+
+
+def test_peak_fit_anchor_is_applied_after_other_tone_controls() -> None:
+    source_peak_nits = 17333.0
+    source_peak = np.float32(source_peak_nits * 0.18 / 100.0)
+    image = np.full((1, 1, 3), source_peak, dtype=np.float32)
+    state = AdjustmentState(
+        hdr=HDRAdjustments(
+            exposure=-0.85,
+            shadow_lift=-0.455,
+            contrast=-0.187,
+            contrast_pivot=0.02,
+            highlight_compression_mode="peak_fit",
+            highlight_compression_start_nits=400.0,
+            highlight_compression_target_nits=1000.0,
+            highlight_compression_source_peak_nits=source_peak_nits,
+        )
+    )
+
+    output = _apply_hdr_adjustments(image, state)
+    output_nits = output[0, 0, 0] * np.float32(100.0 / 0.18)
+
+    np.testing.assert_allclose(output_nits, 1000.0, rtol=3e-5)
+
+
+def test_highlights_section_bypass_is_independent_from_tone() -> None:
+    source_peak_nits = 4000.0
+    image = np.full((1, 1, 3), source_peak_nits * 0.18 / 100.0, dtype=np.float32)
+    active = AdjustmentState(
+        hdr=HDRAdjustments(
+            exposure=-1.0,
+            highlight_compression_mode="peak_fit",
+            highlight_compression_target_nits=1000.0,
+            highlight_compression_source_peak_nits=source_peak_nits,
+        )
+    )
+    bypassed = active.model_copy(deep=True)
+    bypassed.hdr.highlight_section_enabled = False
+
+    active_output = _apply_hdr_adjustments(image, active)
+    bypassed_output = _apply_hdr_adjustments(image, bypassed)
+
+    np.testing.assert_allclose(active_output[0, 0, 0] * 100.0 / 0.18, 1000.0, rtol=3e-5)
+    np.testing.assert_allclose(bypassed_output[0, 0, 0] * 100.0 / 0.18, 2000.0, rtol=3e-5)
+
+
+def test_peak_fit_path_to_white_caps_saturated_peak_channels() -> None:
+    image = np.array([[[0.0, 0.0, 3.0], [50.0, 5.0, 2.0]]], dtype=np.float32)
+    source_peak_nits = float(np.dot(image[0, 1], [0.2722287, 0.6740818, 0.0536895]) * 100.0 / 0.18)
+    preserved = _compress_scene_highlights(
+        image,
+        400.0,
+        1000.0,
+        mode="peak_fit",
+        source_peak_nits=source_peak_nits,
+        color_handling="preserve_color",
+    )
+    neutralized = _compress_scene_highlights(
+        image,
+        400.0,
+        1000.0,
+        mode="peak_fit",
+        source_peak_nits=source_peak_nits,
+        color_handling="path_to_white",
+    )
+
+    assert preserved.max() > 1.8
+    assert neutralized[0, 1].max() <= 1.8 + 2e-5
+    np.testing.assert_array_equal(neutralized[0, 0], image[0, 0])
+    np.testing.assert_allclose(neutralized[0, 1], [1.8, 1.8, 1.8], rtol=3e-5, atol=3e-5)
+
+
+def test_saved_softness_without_mode_migrates_to_soft_ceiling() -> None:
+    migrated = HDRAdjustments(highlight_compression_softness=60.0)
+    assert migrated.highlight_compression_mode == "soft_ceiling"
 
 
 def test_legacy_rolloff_payload_migrates_without_activating_highlight_compression() -> None:

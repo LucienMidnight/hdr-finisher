@@ -2,6 +2,8 @@
 
 The SDR branch is a full creative rendition, not a preview convenience. It becomes the primary/base image in gain-map exports and is what ordinary JPEG readers, unsupported browsers, many social services, and all SDR PNG exports display.
 
+Every numeric readout can also be typed directly, including controlled values beyond normal slider travel. See [Grading Controls Reference](grading-controls-reference.md) for keyboard behavior, plain-language control descriptions, and all slider and direct-entry limits.
+
 ## The basic goal
 
 Preserve the subject, color relationships, and important highlight detail in a conventional SDR image without trying to imitate HDR brightness. A strong fallback should look intentional on its own.
@@ -13,6 +15,7 @@ Start with:
 3. Contrast/Pivot and Shadow.
 4. Match HDR colors, then refine the SDR color controls if needed.
 5. Lift/Gamma/Gain or Curves only when needed.
+6. Use **Match HDR film look** as a starting point, then refine for the SDR rendition.
 
 ## Base Rendition
 
@@ -73,6 +76,12 @@ SDR Lift/Gamma/Gain uses the same stop-relative zone concept as the HDR branch, 
 
 SDR Curves work from 0 to 1 rather than the HDR logarithmic upper range. Luma changes brightness; RGB curves change channel balance. Curves are stored independently per branch.
 
+## Match HDR film look
+
+When SDR is active, **Match HDR film look** makes a one-time copy of the HDR reference model, all continuous Film Look values, and the Halation, Bloom, Image Structure, and Grain enabled states. It deliberately preserves the SDR Film Look section's top-level bypass state. After the copy, every SDR value remains independent; later HDR changes are not linked.
+
+Sensitivity is branch-relative, so a copied Halation or Bloom value qualifies an analogous bright population rather than reusing an HDR nit threshold. Both branches sample the same seeded grain field to keep gain-map reconstruction from mixing unrelated noise patterns.
+
 ## Processing order
 
 For a scene-linear source without an authored SDR reference:
@@ -83,6 +92,7 @@ For a scene-linear source without an authored SDR reference:
 4. Highlight Recovery and contrast
 5. Lift/Gamma/Gain
 6. Curves
+7. Film Response/Color Density, Halation, Bloom, Image Structure, then Grain
 
 For an authored SDR reference such as supported Apple HDR HEIC:
 
@@ -92,6 +102,7 @@ For an authored SDR reference such as supported Apple HDR HEIC:
 4. Highlight Recovery and contrast
 5. SDR color grade through ACEScg and back to sRGB
 6. Lift/Gamma/Gain and Curves
+7. Film Response/Color Density, Halation, Bloom, Image Structure, then Grain
 
 The final result is clipped to the normalized SDR range.
 

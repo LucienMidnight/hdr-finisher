@@ -10,6 +10,14 @@ from .models import HDRAnalysis, HDRClassification, SourceLatitude
 
 def classify_hdr(image: np.ndarray, metadata: dict[str, Any], suffix: str) -> HDRAnalysis:
     peak = float(np.max(image)) if image.size else 0.0
+    if image.size and image.ndim >= 3 and image.shape[-1] >= 3:
+        luma = np.tensordot(image[..., :3], np.array([0.2722287, 0.6740818, 0.0536895], dtype=np.float32), axes=([-1], [0]))
+        positive_luma = np.clip(luma, 0.0, None)
+        peak_luma = float(np.max(positive_luma))
+        robust_peak_luma = float(np.quantile(positive_luma, 0.9999))
+    else:
+        peak_luma = peak
+        robust_peak_luma = peak
     transfer = detect_transfer_function(metadata, suffix)
     linear_hint = transfer == "LINEAR"
     encoded_hint = transfer in {"PQ", "HLG"}
@@ -54,6 +62,8 @@ def classify_hdr(image: np.ndarray, metadata: dict[str, Any], suffix: str) -> HD
     return HDRAnalysis(
         classification=classification,
         peak_linear=peak,
+        peak_luma_linear=peak_luma,
+        robust_peak_luma_linear=robust_peak_luma,
         peak_stops_above_diffuse_white=compute_peak_stops(image),
         source_latitude=latitude,
         needs_color_override=needs_override,

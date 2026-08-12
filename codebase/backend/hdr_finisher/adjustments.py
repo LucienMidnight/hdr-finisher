@@ -34,6 +34,27 @@ def _apply_hdr_adjustments(image: np.ndarray, adjustments: AdjustmentState) -> n
         result = _apply_luminance_section_controls(
             result, hdr, PreviewKind.HDR, apply_primaries=False, apply_contrast=True
         )
+    if hdr.highlight_section_enabled:
+        if hdr.highlight_compression_mode == "peak_fit":
+            result = _compress_scene_highlights(
+                result,
+                hdr.highlight_compression_start_nits,
+                hdr.highlight_compression_target_nits,
+                hdr.highlight_compression_softness,
+                mode="peak_fit",
+                source_peak_nits=_tone_adjusted_source_peak_nits(hdr, tone_enabled=hdr.tone_section_enabled),
+                peak_detail=hdr.highlight_compression_peak_detail,
+                bias=hdr.highlight_compression_bias,
+                color_handling=hdr.highlight_compression_color_handling,
+            )
+        elif hdr.highlight_compression_mode == "soft_ceiling":
+            result = _compress_scene_highlights(
+                result,
+                hdr.highlight_compression_start_nits,
+                hdr.highlight_compression_target_nits,
+                hdr.highlight_compression_softness,
+                mode="soft_ceiling",
+            )
     if hdr.color_section_enabled:
         result = _apply_hdr_color(result, hdr)
     if hdr.tone_equalizer_section_enabled:
@@ -44,6 +65,8 @@ def _apply_hdr_adjustments(image: np.ndarray, adjustments: AdjustmentState) -> n
         )
     if hdr.curves_section_enabled:
         result = _apply_curves(result, adjustments, PreviewKind.HDR)
+    if hdr.film_look_section_enabled:
+        result = _apply_film_look(result, adjustments, PreviewKind.HDR)
     return np.clip(result, 0.0, None)
 
 
@@ -103,17 +126,29 @@ def _apply_hdr_base_adjustments(image: np.ndarray, adjustments: AdjustmentState)
     hdr = adjustments.hdr
     result = image.astype(np.float32, copy=True)
     result *= np.float32(2.0 ** hdr.exposure)
-    result = _compress_scene_highlights(
-        result,
-        hdr.highlight_compression_start_nits,
-        hdr.highlight_compression_target_nits,
-        hdr.highlight_compression_softness,
-    )
     if hdr.shadow_lift != 0:
         luma = np.clip(_acescg_luma(result), 0.0, 1.0)
         lift_factor = np.clip(hdr.shadow_lift * (1.0 - luma), None, 1.0)
         result = result * (1.0 + lift_factor[..., None])
     return result
+
+
+def _tone_adjusted_source_peak_nits(hdr: object, *, tone_enabled: bool = True) -> float:
+    """Predict the measured source peak after controls preceding Peak Fit."""
+    peak = max(float(getattr(hdr, "highlight_compression_source_peak_nits", 1000.0)), 1.0)
+    if not tone_enabled:
+        return peak
+    peak_linear = peak * 0.18 / 100.0 * (2.0 ** float(getattr(hdr, "exposure", 0.0)))
+    shadow_lift = float(getattr(hdr, "shadow_lift", 0.0))
+    if shadow_lift != 0.0:
+        lift_factor = float(np.clip(shadow_lift * (1.0 - np.clip(peak_linear, 0.0, 1.0)), None, 1.0))
+        peak_linear *= 1.0 + lift_factor
+    contrast = float(getattr(hdr, "contrast", 0.0))
+    if contrast != 0.0 and peak_linear > 1e-8:
+        pivot = max(float(getattr(hdr, "contrast_pivot", 0.1845)), 1e-6)
+        stops = np.log2(max(peak_linear, 1e-8) / pivot)
+        peak_linear = pivot * float(np.exp2(np.clip(stops * (2.0 ** contrast), -32.0, 32.0)))
+    return max(1.0, peak_linear * 100.0 / 0.18)
 
 
 def _apply_sdr_adjustments(image: np.ndarray, adjustments: AdjustmentState) -> np.ndarray:
@@ -139,7 +174,11 @@ def _apply_sdr_adjustments(image: np.ndarray, adjustments: AdjustmentState) -> n
         result = _apply_luminance_section_controls(
             result, sdr, PreviewKind.SDR, apply_primaries=True, apply_contrast=False
         )
-    return _apply_curves(result, adjustments, PreviewKind.SDR) if sdr.curves_section_enabled else result
+    if sdr.curves_section_enabled:
+        result = _apply_curves(result, adjustments, PreviewKind.SDR)
+    if sdr.film_look_section_enabled:
+        result = _apply_film_look(result, adjustments, PreviewKind.SDR)
+    return np.clip(result, 0.0, 1.0)
 
 
 def _apply_sdr_adjustments_to_reference(image: np.ndarray, adjustments: AdjustmentState) -> np.ndarray:
@@ -172,6 +211,8 @@ def _apply_sdr_adjustments_to_reference(image: np.ndarray, adjustments: Adjustme
         )
     if sdr.curves_section_enabled:
         result = _apply_curves(result, adjustments, PreviewKind.SDR)
+    if sdr.film_look_section_enabled:
+        result = _apply_film_look(result, adjustments, PreviewKind.SDR)
     return np.clip(result, 0.0, 1.0)
 
 
@@ -422,15 +463,76 @@ def _compress_scene_highlights(
     start_nits: float = 400.0,
     target_nits: float = 1000.0,
     softness: float = 0.0,
+    *,
+    mode: str = "soft_ceiling",
+    source_peak_nits: float = 1000.0,
+    peak_detail: float = 35.0,
+    bias: float = 0.0,
+    color_handling: str = "preserve_color",
 ) -> np.ndarray:
     """Compress luminance above ``start_nits`` smoothly toward ``target_nits``."""
-    if softness <= 0.0:
+    if mode == "off" or (mode == "soft_ceiling" and softness <= 0.0):
         return image
     result = image.astype(np.float32, copy=False)
     luma = _acescg_luma(result)
     positive_luma = np.clip(luma, 0.0, None)
     start = np.float32(max(start_nits, 1.0) * 0.18 / 100.0)
     target = np.float32(max(target_nits, start_nits + 1.0) * 0.18 / 100.0)
+    if mode == "peak_fit":
+        peak = np.float32(max(source_peak_nits, target_nits) * 0.18 / 100.0)
+        if peak <= target:
+            return image
+        start_stop = float(np.log2(start))
+        target_stop = float(np.log2(target))
+        peak_stop = float(np.log2(peak))
+        detail = min(max(float(peak_detail) / 100.0, 0.0), 1.0)
+        curve_bias = min(max(float(bias) / 100.0, -1.0), 1.0) * 0.6
+        required_ratio = (
+            1.0 / (1.0 + curve_bias) + detail / (1.0 - curve_bias)
+        ) / 3.0
+        required_ratio = min(max(required_ratio, 0.001), 0.95)
+        requested_ratio = (target_stop - start_stop) / max(peak_stop - start_stop, 1e-6)
+        effective_start_stop = start_stop
+        if requested_ratio < required_ratio:
+            effective_start_stop = (target_stop - required_ratio * peak_stop) / (1.0 - required_ratio)
+        effective_start = np.float32(2.0 ** effective_start_stop)
+        input_stop = np.log2(np.maximum(positive_luma, effective_start))
+        u = np.clip((input_stop - effective_start_stop) / max(peak_stop - effective_start_stop, 1e-6), 0.0, 1.0)
+        w = np.clip(u + curve_bias * u * (1.0 - u), 0.0, 1.0)
+        stop_span = target_stop - effective_start_stop
+        normalized_start_slope = (peak_stop - effective_start_stop) / max(stop_span * (1.0 + curve_bias), 1e-6)
+        normalized_end_slope = detail * (peak_stop - effective_start_stop) / max(stop_span * (1.0 - curve_bias), 1e-6)
+        h10 = w * (1.0 - w) * (1.0 - w)
+        h01 = w * w * (3.0 - 2.0 * w)
+        h11 = w * w * (w - 1.0)
+        mapped_normalized = h10 * normalized_start_slope + h01 + h11 * normalized_end_slope
+        mapped_stop = effective_start_stop + stop_span * mapped_normalized
+        target_luma = np.where(
+            positive_luma > effective_start,
+            np.exp2(mapped_stop).astype(np.float32),
+            positive_luma,
+        )
+        ratio = np.where(positive_luma > 1e-8, target_luma / np.maximum(positive_luma, 1e-8), 1.0).astype(np.float32)
+        mapped = np.where(positive_luma[..., None] > effective_start, result * ratio[..., None], result)
+        if color_handling == "path_to_white":
+            # AgX-inspired, but deliberately simpler: progressively reduce
+            # chroma through the Peak Fit shoulder and guarantee that no ACEScg
+            # channel exceeds Target Peak. Luminance and the tone curve remain
+            # unchanged; only the highlight color trajectory differs.
+            neutral = target_luma[..., None]
+            progress = u * u * (np.float32(3.0) - np.float32(2.0) * u)
+            path_scale = np.float32(1.0) - progress
+            maximum_chroma = np.max(mapped, axis=-1) - target_luma
+            channel_scale = np.where(
+                maximum_chroma > 1e-8,
+                np.clip((target - target_luma) / np.maximum(maximum_chroma, 1e-8), 0.0, 1.0),
+                1.0,
+            ).astype(np.float32)
+            chroma_scale = np.minimum(path_scale, channel_scale)
+            color_mapped = neutral + (mapped - neutral) * chroma_scale[..., None]
+            mapped = np.where(positive_luma[..., None] > effective_start, color_mapped, mapped)
+        return mapped.astype(np.float32, copy=False)
+
     span = np.float32(target - start)
     excess = np.maximum(positive_luma - start, 0.0)
     normalized = excess / span
@@ -606,6 +708,268 @@ def _apply_curves(image: np.ndarray, adjustments: AdjustmentState, kind: Preview
     if _curve_set_is_neutral(branch):
         return image
     return _apply_curve_set(image, branch, kind)
+
+
+def _apply_film_look(image: np.ndarray, adjustments: AdjustmentState, kind: PreviewKind) -> np.ndarray:
+    """Apply the finishing look after curves, with grain deliberately last."""
+    branch = adjustments.hdr if kind == PreviewKind.HDR else adjustments.sdr
+    look = branch.film_look
+    strength = np.float32(look.look_strength / 100.0)
+    active = any(
+        (
+            look.print_strength,
+            look.color_density,
+            look.halation_amount if look.halation_enabled else 0.0,
+            look.bloom_amount if look.bloom_enabled else 0.0,
+            look.image_softness if look.image_structure_enabled else 0.0,
+            look.microcontrast if look.image_structure_enabled else 0.0,
+            100.0 - look.film_resolution if look.grain_enabled else 0.0,
+            look.grain_amount if look.grain_enabled else 0.0,
+        )
+    )
+    if not active and not (look.halation_enabled and look.halation_view_map):
+        return image
+
+    result = image.astype(np.float32, copy=True)
+    result = _apply_film_response(result, look, kind, strength)
+
+    if look.halation_enabled:
+        result, halation_map = _apply_halation(result, look, kind, strength)
+        if look.halation_view_map:
+            return halation_map
+    if look.bloom_enabled and look.bloom_amount > 0.0 and strength > 0.0:
+        result = _apply_bloom(result, look, kind, strength)
+    if look.image_structure_enabled:
+        result = _apply_image_structure(result, look, kind, strength)
+    if look.grain_enabled:
+        result = _apply_film_resolution(result, look, strength)
+        if look.grain_amount > 0.0 and strength > 0.0:
+            result = _apply_density_grain(result, look, kind, adjustments.shared.film_grain_seed, strength)
+    return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
+
+
+def _film_luma(image: np.ndarray, kind: PreviewKind) -> np.ndarray:
+    return _acescg_luma(image) if kind == PreviewKind.HDR else _linear_luma(image)
+
+
+def _film_encode_luma(luma: np.ndarray, kind: PreviewKind) -> np.ndarray:
+    if kind == PreviewKind.HDR:
+        return _curve_domain_encode(luma, kind)
+    return _srgb_encode(np.clip(luma, 0.0, 1.0))
+
+
+def _film_decode_luma(signal: np.ndarray, kind: PreviewKind) -> np.ndarray:
+    if kind == PreviewKind.HDR:
+        return _curve_domain_decode(signal, kind)
+    return _srgb_decode(np.clip(signal, 0.0, 1.0))
+
+
+def _apply_film_response(image: np.ndarray, look: object, kind: PreviewKind, master: np.float32) -> np.ndarray:
+    print_mix = np.float32(look.print_strength / 100.0) * master
+    density = np.float32(look.color_density / 100.0) * master
+    if print_mix == 0.0 and density == 0.0:
+        return image
+
+    source_luma = np.maximum(_film_luma(image, kind), 0.0)
+    target_luma = source_luma
+    if print_mix > 0.0:
+        signal = _film_encode_luma(source_luma, kind)
+        contrast = np.float32(look.print_contrast / 100.0) * master
+        toe = np.float32(look.print_toe / 100.0) * master
+        shoulder = np.float32(look.print_shoulder / 100.0) * master
+        mapped = np.float32(0.5) + (signal - np.float32(0.5)) * np.float32(2.0**(0.55 * contrast))
+        mapped -= toe * np.float32(0.10) * (np.float32(1.0) - _smoothstep(0.08, 0.58, signal))
+        mapped -= shoulder * np.float32(0.10) * _smoothstep(0.42, 0.98, signal)
+        if kind == PreviewKind.SDR:
+            mapped = np.clip(mapped, 0.0, 1.0)
+        target_luma = _film_decode_luma(mapped, kind)
+        target_luma = source_luma + (target_luma - source_luma) * print_mix
+
+    gain = np.ones_like(source_luma, dtype=np.float32)
+    np.divide(target_luma, source_luma, out=gain, where=source_luma > 1e-7)
+    result = image * gain[..., None]
+    if density != 0.0:
+        # Positive density increases subtractive dye separation while slightly
+        # lowering highly saturated colors, unlike a simple saturation control.
+        neutral = (_acescg_luma(result) if kind == PreviewKind.HDR else _linear_luma(result))[..., None]
+        chroma = result - neutral
+        maximum = np.max(result, axis=-1, keepdims=True)
+        minimum = np.min(result, axis=-1, keepdims=True)
+        relative = np.clip((maximum - minimum) / np.maximum(np.abs(neutral), 1e-5), 0.0, 2.0)
+        chroma_scale = np.float32(2.0 ** (0.45 * float(density)))
+        result = neutral + chroma * chroma_scale
+        result *= np.maximum(np.float32(0.75), np.float32(1.0) - density * np.float32(0.045) * relative)
+    return result.astype(np.float32)
+
+
+def _radius_pixels(image: np.ndarray, percent_diagonal: float, maximum: int = 256) -> int:
+    diagonal = float(np.hypot(image.shape[0], image.shape[1]))
+    return int(np.clip(round(diagonal * max(0.0, percent_diagonal) / 100.0), 0, maximum))
+
+
+def _box_blur_axis(image: np.ndarray, radius: int, axis: int) -> np.ndarray:
+    if radius <= 0:
+        return image
+    pads = [(0, 0)] * image.ndim
+    pads[axis] = (radius, radius)
+    padded = np.pad(image, pads, mode="edge")
+    cumulative = np.cumsum(padded, axis=axis, dtype=np.float32)
+    zero_shape = list(cumulative.shape)
+    zero_shape[axis] = 1
+    cumulative = np.concatenate((np.zeros(zero_shape, dtype=np.float32), cumulative), axis=axis)
+    high = [slice(None)] * image.ndim
+    low = [slice(None)] * image.ndim
+    width = 2 * radius + 1
+    high[axis] = slice(width, None)
+    low[axis] = slice(None, -width)
+    return ((cumulative[tuple(high)] - cumulative[tuple(low)]) / np.float32(width)).astype(np.float32)
+
+
+def _box_blur(image: np.ndarray, radius: int) -> np.ndarray:
+    if radius <= 0:
+        return image
+    return _box_blur_axis(_box_blur_axis(image, radius, 0), radius, 1)
+
+
+def _diffusion_blur(image: np.ndarray, radius: int) -> np.ndarray:
+    """Approximate a smooth optical point-spread function in linear light.
+
+    Three small box passes approach a Gaussian while retaining the cumulative-
+    sum performance of the previous blur.  A single large box creates visible
+    square shoulders around diagonal and point highlights.
+    """
+    if radius <= 0:
+        return image
+    pass_radius = max(1, int(round(radius * 0.58)))
+    result = image
+    for _ in range(3):
+        result = _box_blur(result, pass_radius)
+    return result
+
+
+def _highlight_mask(image: np.ndarray, kind: PreviewKind, sensitivity: float) -> np.ndarray:
+    signal = _film_encode_luma(np.maximum(_film_luma(image, kind), 0.0), kind)
+    threshold = np.float32(0.92 - 0.50 * np.clip(sensitivity / 100.0, 0.0, 1.0))
+    return _smoothstep(float(threshold), float(threshold + 0.16), signal).astype(np.float32)
+
+
+def _halation_tint(hue_offset: float, saturation: float) -> np.ndarray:
+    angle = np.deg2rad(np.float32(12.0 + 0.45 * hue_offset))
+    warm = np.array(
+        [1.0, 0.34 + 0.18 * np.sin(angle), 0.07 + 0.10 * np.maximum(np.cos(angle), 0.0)],
+        dtype=np.float32,
+    )
+    neutral = np.full(3, np.dot(warm, np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)), dtype=np.float32)
+    return neutral + (warm - neutral) * np.float32(np.clip(saturation / 100.0, 0.0, 1.0))
+
+
+def _apply_halation(
+    image: np.ndarray, look: object, kind: PreviewKind, master: np.float32
+) -> tuple[np.ndarray, np.ndarray]:
+    mask = _highlight_mask(image, kind, look.halation_sensitivity)
+    source = np.maximum(image, 0.0) * mask[..., None]
+    radius = _radius_pixels(image, look.halation_radius)
+    blurred = _diffusion_blur(source, max(1, radius))
+    edge_scatter = np.maximum(blurred - source * np.float32(0.35), 0.0)
+    tint = _halation_tint(look.halation_hue_offset, look.halation_saturation)
+    halo_luma = _film_luma(edge_scatter, kind)
+    halo = halo_luma[..., None] * tint
+    map_signal = _film_encode_luma(np.maximum(halo_luma, 0.0), kind)
+    halation_map = np.repeat(np.clip(map_signal, 0.0, 1.0)[..., None], 3, axis=-1).astype(np.float32)
+    amount = np.float32(0.28 * look.halation_amount / 100.0) * master
+    return (image + halo * amount).astype(np.float32), halation_map
+
+
+def _apply_bloom(image: np.ndarray, look: object, kind: PreviewKind, master: np.float32) -> np.ndarray:
+    mask = _highlight_mask(image, kind, look.bloom_sensitivity)
+    source = np.maximum(image, 0.0) * mask[..., None]
+    radius = max(1, _radius_pixels(image, look.bloom_radius))
+    blurred = _diffusion_blur(source, radius)
+    detail = np.float32(np.clip(look.bloom_highlight_detail / 100.0, 0.0, 1.0))
+    amount = np.float32(look.bloom_amount / 100.0) * master
+
+    # Bloom is the additive veil; diffusion is an energy-moving low-pass that
+    # can soften the core instead of merely drawing a larger glow around it.
+    # Highlight Detail crossfades only the diffusion component, so 100% keeps
+    # the source edge intact while still allowing ordinary optical bloom.
+    additive = blurred * (np.float32(0.22) * amount)
+    diffusion = (blurred - source) * ((np.float32(1.0) - detail) * np.float32(0.35) * amount)
+    return np.maximum(image + additive + diffusion, 0.0).astype(np.float32)
+
+
+def _apply_image_structure(image: np.ndarray, look: object, kind: PreviewKind, master: np.float32) -> np.ndarray:
+    softness = np.float32(look.image_softness / 100.0) * master
+    microcontrast = np.float32(look.microcontrast / 100.0) * master
+    if softness == 0.0 and microcontrast == 0.0:
+        return image
+    radius = max(1, _radius_pixels(image, 0.06, maximum=24))
+    low_pass = _box_blur(image, radius)
+    result = image + (low_pass - image) * softness * np.float32(0.65)
+    result += (image - low_pass) * microcontrast * np.float32(0.5)
+    return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
+
+
+def _apply_film_resolution(image: np.ndarray, look: object, master: np.float32) -> np.ndarray:
+    loss = np.float32((100.0 - look.film_resolution) / 100.0) * master
+    if loss <= 0.0:
+        return image
+    radius = max(1, _radius_pixels(image, 0.04 + 0.08 * float(loss), maximum=32))
+    return (image + (_box_blur(image, radius) - image) * loss * np.float32(0.7)).astype(np.float32)
+
+
+def _apply_density_grain(
+    image: np.ndarray, look: object, kind: PreviewKind, seed: int, master: np.float32
+) -> np.ndarray:
+    height, width = image.shape[:2]
+    yy, xx = np.indices((height, width), dtype=np.float32)
+    diagonal = np.float32(np.hypot(height, width))
+    pitch = np.maximum(
+        np.float32(1.0),
+        diagonal / np.float32(2400.0)
+        * np.float32(0.85 + 1.8 * look.grain_size / 100.0 + 1.2 * look.grain_softness / 100.0),
+    )
+    grain_x = xx / pitch
+    grain_y = yy / pitch
+    monochrome = _grain_hash(grain_x, grain_y, seed, 0.0)
+    softer = _grain_hash(grain_x * np.float32(0.53), grain_y * np.float32(0.53), seed, 17.0)
+    monochrome = monochrome + (softer - monochrome) * np.float32(0.55 * look.grain_softness / 100.0)
+
+    signal = np.clip(_film_encode_luma(np.maximum(_film_luma(image, kind), 0.0), kind), 0.0, 1.0)
+    shadow_weight = np.square(np.float32(1.0) - signal)
+    highlight_weight = np.square(signal)
+    midtone_weight = np.maximum(np.float32(0.0), np.float32(1.0) - shadow_weight - highlight_weight)
+    response = (
+        shadow_weight * np.float32(look.grain_shadow_response / 100.0)
+        + midtone_weight * np.float32(look.grain_midtone_response / 100.0)
+        + highlight_weight * np.float32(look.grain_highlight_response / 100.0)
+    )
+    amount = np.float32(0.18 * look.grain_amount / 100.0) * master
+    density_noise = monochrome * response * amount
+    result = np.maximum(image, 0.0) * np.exp2(density_noise[..., None])
+
+    chroma_mix = np.float32(look.grain_chroma / 100.0)
+    if chroma_mix > 0.0:
+        channel_noise = np.stack(
+            [_grain_hash(grain_x, grain_y, seed, salt) for salt in (31.0, 59.0, 83.0)], axis=-1
+        )
+        # Dye-cloud color variation becomes objectionable pinhole color at the
+        # display boundary.  Film grain remains present there, but converges to
+        # monochrome as the highlight approaches clipping.
+        chroma_highlight_guard = np.float32(1.0) - np.float32(0.8) * _smoothstep(0.88, 1.0, signal)
+        result *= np.exp2(
+            channel_noise
+            * response[..., None]
+            * amount
+            * chroma_mix
+            * chroma_highlight_guard[..., None]
+            * np.float32(0.45)
+        )
+    return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
+
+
+def _grain_hash(x: np.ndarray, y: np.ndarray, seed: int, salt: float) -> np.ndarray:
+    phase = x * np.float32(12.9898) + y * np.float32(78.233) + np.float32(seed * 0.001 + salt)
+    return (np.mod(np.sin(phase) * np.float32(43758.5453), np.float32(1.0)) * np.float32(2.0) - np.float32(1.0)).astype(np.float32)
 
 
 def _curve_set_is_neutral(curve_source: object) -> bool:

@@ -32,6 +32,15 @@ class LoadedSession:
 
     def __post_init__(self) -> None:
         self.render_cache = SessionRenderCache(self.image, self.sdr_reference_image)
+        self._sync_highlight_source_peaks()
+
+    def _sync_highlight_source_peaks(self) -> None:
+        hdr = self.adjustments.hdr
+        measured = self.analysis.peak_luma_linear
+        if measured is None:
+            measured = self.analysis.peak_linear
+        source_peak_nits = max(1.0, float(measured) * 100.0 / 0.18)
+        hdr.highlight_compression_source_peak_nits = source_peak_nits
 
     def to_payload(self) -> SessionPayload:
         return SessionPayload(
@@ -122,6 +131,8 @@ class SessionStore:
             session.source = source
             session.metadata = metadata
             session.analysis = analysis
+            if session.adjustments.hdr.highlight_compression_peak_measurement != "manual":
+                session._sync_highlight_source_peaks()
             session.preview_tokens = {PreviewKind.HDR: 0, PreviewKind.SDR: 0}
             session.scope_tokens = {PreviewKind.HDR: 0, PreviewKind.SDR: 0}
             session.render_cache.replace_source(image, sdr_reference_image)

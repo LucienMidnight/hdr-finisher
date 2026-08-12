@@ -1,7 +1,9 @@
 const latitudePresets = {
   WIDE: {
     "hdr.exposure": [-4, 4, 0.05],
-    "hdr.highlight_compression_softness": [0, 100, 1],
+    "hdr.highlight_compression_softness": [0, 100, 0.5],
+    "hdr.highlight_compression_peak_detail": [0, 100, 1],
+    "hdr.highlight_compression_bias": [-100, 100, 1],
     "hdr.shadow_lift": [-0.5, 0.5, 0.005],
     "hdr.lift": [-0.5, 0.5, 0.005],
     "hdr.gamma": [-1, 1, 0.005],
@@ -21,7 +23,9 @@ const latitudePresets = {
   },
   MEDIUM: {
     "hdr.exposure": [-3, 3, 0.05],
-    "hdr.highlight_compression_softness": [0, 100, 1],
+    "hdr.highlight_compression_softness": [0, 100, 0.5],
+    "hdr.highlight_compression_peak_detail": [0, 100, 1],
+    "hdr.highlight_compression_bias": [-100, 100, 1],
     "hdr.shadow_lift": [-0.3, 0.3, 0.005],
     "hdr.lift": [-0.35, 0.35, 0.005],
     "hdr.gamma": [-0.75, 0.75, 0.005],
@@ -41,7 +45,9 @@ const latitudePresets = {
   },
   NARROW: {
     "hdr.exposure": [-2, 2, 0.05],
-    "hdr.highlight_compression_softness": [0, 100, 1],
+    "hdr.highlight_compression_softness": [0, 100, 0.5],
+    "hdr.highlight_compression_peak_detail": [0, 100, 1],
+    "hdr.highlight_compression_bias": [-100, 100, 1],
     "hdr.shadow_lift": [-0.2, 0.2, 0.005],
     "hdr.lift": [-0.25, 0.25, 0.005],
     "hdr.gamma": [-0.5, 0.5, 0.005],
@@ -60,6 +66,84 @@ const latitudePresets = {
     "sdr.contrast_pivot": [0.05, 0.95, 0.005],
   },
 };
+
+// Slider travel stays deliberately conservative for fast visual grading. These
+// limits are the wider safety envelope accepted by direct numeric entry and the
+// backend API. `decimals` controls stored precision, not slider step size.
+const MANUAL_VALUE_RULES = {
+  "hdr.exposure": { min: -8, max: 8, decimals: 2 },
+  "hdr.highlight_compression_start_nits": { min: 1, max: 9999, decimals: 0 },
+  "hdr.highlight_compression_target_nits": { min: 2, max: 10000, decimals: 0 },
+  "hdr.highlight_compression_softness": { min: 0, max: 100, decimals: 1 },
+  "hdr.highlight_compression_peak_detail": { min: 0, max: 100, decimals: 0 },
+  "hdr.highlight_compression_manual_peak_nits": { min: 1, max: 1000000, decimals: 0 },
+  "hdr.highlight_compression_bias": { min: -100, max: 100, decimals: 0 },
+  "hdr.contrast": { min: -2, max: 2, decimals: 3 },
+  "hdr.contrast_pivot": { min: 0.0001, max: 18, decimals: 4 },
+  "hdr.shadow_lift": { min: -1, max: 1, decimals: 3 },
+  "hdr.tone_equalizer_smoothing": { min: 0, max: 1, decimals: 2 },
+  "sdr.tone_contrast": { min: 0.5, max: 1.5, decimals: 2 },
+  "sdr.tone_skew": { min: -1, max: 1, decimals: 2 },
+  "sdr.exposure": { min: -8, max: 8, decimals: 2 },
+  "sdr.highlight_recovery": { min: 0, max: 4, decimals: 2 },
+  "sdr.contrast": { min: -2, max: 2, decimals: 3 },
+  "sdr.contrast_pivot": { min: 0.001, max: 0.999, decimals: 3 },
+  "sdr.shadow": { min: -2, max: 2, decimals: 2 },
+};
+
+for (const lane of ["hdr", "sdr"]) {
+  Object.assign(MANUAL_VALUE_RULES, {
+    [`${lane}.white_balance_kelvin`]: { min: 1000, max: 25000, decimals: 0 },
+    [`${lane}.tint`]: { min: -2, max: 2, decimals: 2 },
+    [`${lane}.saturation`]: { min: -1, max: 3, decimals: 2, entryScale: 100 },
+    [`${lane}.vibrance`]: { min: -1, max: 3, decimals: 2, entryScale: 100 },
+    [`${lane}.red_hue`]: { min: -180, max: 180, decimals: 1 },
+    [`${lane}.red_purity`]: { min: -99, max: 400, decimals: 1 },
+    [`${lane}.green_hue`]: { min: -180, max: 180, decimals: 1 },
+    [`${lane}.green_purity`]: { min: -99, max: 400, decimals: 1 },
+    [`${lane}.blue_hue`]: { min: -180, max: 180, decimals: 1 },
+    [`${lane}.blue_purity`]: { min: -99, max: 400, decimals: 1 },
+    [`${lane}.tint_hue`]: { min: -180, max: 180, decimals: 1 },
+    [`${lane}.tint_purity`]: { min: 0, max: 99, decimals: 1 },
+    [`${lane}.lift`]: { min: -1, max: 1, decimals: 3 },
+    [`${lane}.lift_range`]: { min: 0.5, max: 24, decimals: 2 },
+    [`${lane}.lift_pivot`]: { min: -12, max: 12, decimals: 2 },
+    [`${lane}.gamma`]: { min: -2, max: 2, decimals: 3 },
+    [`${lane}.gamma_range`]: { min: 0.5, max: 24, decimals: 2 },
+    [`${lane}.gamma_pivot`]: { min: -12, max: 12, decimals: 2 },
+    [`${lane}.gain`]: { min: -1, max: 1, decimals: 3 },
+    [`${lane}.gain_range`]: { min: 0.5, max: 24, decimals: 2 },
+    [`${lane}.gain_pivot`]: { min: -12, max: 12, decimals: 2 },
+  });
+}
+
+Object.assign(MANUAL_VALUE_RULES, {
+  "current.film_look.look_strength": { min: 0, max: 100, decimals: 0 },
+  "current.film_look.print_strength": { min: 0, max: 100, decimals: 0 },
+  "current.film_look.print_contrast": { min: -100, max: 100, decimals: 0 },
+  "current.film_look.print_toe": { min: -100, max: 100, decimals: 0 },
+  "current.film_look.print_shoulder": { min: -100, max: 100, decimals: 0 },
+  "current.film_look.color_density": { min: -100, max: 100, decimals: 0 },
+  "current.film_look.grain_amount": { min: 0, max: 100, decimals: 0 },
+  "current.film_look.grain_size": { min: 0, max: 100, decimals: 0 },
+  "current.film_look.grain_softness": { min: 0, max: 100, decimals: 0 },
+  "current.film_look.grain_chroma": { min: 0, max: 100, decimals: 0 },
+  "current.film_look.grain_shadow_response": { min: 0, max: 150, decimals: 0 },
+  "current.film_look.grain_midtone_response": { min: 0, max: 150, decimals: 0 },
+  "current.film_look.grain_highlight_response": { min: 0, max: 150, decimals: 0 },
+  "current.film_look.film_resolution": { min: 0, max: 100, decimals: 0 },
+  "current.film_look.halation_amount": { min: 0, max: 100, decimals: 0 },
+  "current.film_look.halation_sensitivity": { min: 0, max: 100, decimals: 0 },
+  "current.film_look.halation_radius": { min: 0, max: 5, decimals: 2 },
+  "current.film_look.halation_hue_offset": { min: -100, max: 100, decimals: 0 },
+  "current.film_look.halation_saturation": { min: 0, max: 100, decimals: 0 },
+  "current.film_look.bloom_amount": { min: 0, max: 100, decimals: 0 },
+  "current.film_look.bloom_sensitivity": { min: 0, max: 100, decimals: 0 },
+  "current.film_look.bloom_radius": { min: 0, max: 10, decimals: 2 },
+  "current.film_look.bloom_highlight_detail": { min: 0, max: 100, decimals: 0 },
+  "current.film_look.image_softness": { min: 0, max: 100, decimals: 0 },
+  "current.film_look.microcontrast": { min: -100, max: 100, decimals: 0 },
+});
 
 const TONE_EQUALIZER_MIN_EV = -6;
 const TONE_EQUALIZER_MAX_EV = 6;
@@ -147,6 +231,7 @@ const state = {
   adjustments: {
     hdr: {
       tone_section_enabled: true,
+      highlight_section_enabled: true,
       tone_equalizer_section_enabled: true,
       color_section_enabled: true,
       primaries_section_enabled: true,
@@ -155,6 +240,13 @@ const state = {
       highlight_compression_start_nits: 400,
       highlight_compression_target_nits: 1000,
       highlight_compression_softness: 0,
+      highlight_compression_mode: "off",
+      highlight_compression_peak_measurement: "maximum",
+      highlight_compression_source_peak_nits: 1000,
+      highlight_compression_manual_peak_nits: 1000,
+      highlight_compression_peak_detail: 35,
+      highlight_compression_bias: 0,
+      highlight_compression_color_handling: "preserve_color",
       shadow_lift: 0,
       tone_equalizer_nodes: defaultToneEqualizerNodes(),
       tone_equalizer_influence_radius: 1.5,
@@ -279,17 +371,69 @@ let scopeResizeFrame = null;
 let viewerResizeObserver = null;
 let viewerResizeFrame = null;
 
+const defaultFilmLook = () => ({
+  reference_model: "custom",
+  look_strength: 100,
+  print_strength: 0,
+  print_contrast: 0,
+  print_toe: 0,
+  print_shoulder: 0,
+  color_density: 0,
+  grain_enabled: true,
+  grain_amount: 0,
+  grain_size: 50,
+  grain_softness: 25,
+  grain_chroma: 0,
+  grain_shadow_response: 100,
+  grain_midtone_response: 100,
+  grain_highlight_response: 100,
+  film_resolution: 100,
+  halation_enabled: true,
+  halation_amount: 0,
+  halation_sensitivity: 75,
+  halation_radius: 0.2,
+  halation_hue_offset: 0,
+  halation_saturation: 75,
+  halation_view_map: false,
+  bloom_enabled: true,
+  bloom_amount: 0,
+  bloom_sensitivity: 80,
+  bloom_radius: 0.5,
+  bloom_highlight_detail: 75,
+  image_structure_enabled: true,
+  image_softness: 0,
+  microcontrast: 0,
+});
+
+const FILM_LOOK_PRESETS = {
+  large_format_fine: { print_strength: 44, print_contrast: 7, print_toe: 4, print_shoulder: 10, color_density: 10, grain_amount: 16, grain_size: 22, grain_softness: 48, grain_chroma: 12, grain_shadow_response: 82, grain_midtone_response: 100, grain_highlight_response: 112, film_resolution: 98, halation_amount: 7, halation_sensitivity: 82, halation_radius: 0.16, halation_hue_offset: 0, halation_saturation: 70, bloom_amount: 5, bloom_sensitivity: 86, bloom_radius: 0.34, bloom_highlight_detail: 88, image_softness: 3, microcontrast: -3 },
+  "35mm_fine": { print_strength: 48, print_contrast: 9, print_toe: 6, print_shoulder: 12, color_density: 13, grain_amount: 24, grain_size: 35, grain_softness: 40, grain_chroma: 16, grain_shadow_response: 86, grain_midtone_response: 100, grain_highlight_response: 116, film_resolution: 95, halation_amount: 9, halation_sensitivity: 78, halation_radius: 0.2, halation_hue_offset: 0, halation_saturation: 76, bloom_amount: 6, bloom_sensitivity: 82, bloom_radius: 0.42, bloom_highlight_detail: 84, image_softness: 5, microcontrast: -4 },
+  "35mm_balanced": { print_strength: 52, print_contrast: 10, print_toe: 7, print_shoulder: 14, color_density: 16, grain_amount: 34, grain_size: 50, grain_softness: 34, grain_chroma: 20, grain_shadow_response: 90, grain_midtone_response: 104, grain_highlight_response: 120, film_resolution: 92, halation_amount: 11, halation_sensitivity: 74, halation_radius: 0.24, halation_hue_offset: 0, halation_saturation: 80, bloom_amount: 8, bloom_sensitivity: 78, bloom_radius: 0.5, bloom_highlight_detail: 80, image_softness: 7, microcontrast: -5 },
+  "35mm_fast": { print_strength: 55, print_contrast: 8, print_toe: 9, print_shoulder: 16, color_density: 18, grain_amount: 48, grain_size: 68, grain_softness: 28, grain_chroma: 28, grain_shadow_response: 96, grain_midtone_response: 110, grain_highlight_response: 126, film_resolution: 86, halation_amount: 14, halation_sensitivity: 68, halation_radius: 0.3, halation_hue_offset: 3, halation_saturation: 84, bloom_amount: 10, bloom_sensitivity: 72, bloom_radius: 0.62, bloom_highlight_detail: 74, image_softness: 10, microcontrast: -7 },
+  "16mm_fine": { print_strength: 50, print_contrast: 6, print_toe: 8, print_shoulder: 15, color_density: 15, grain_amount: 54, grain_size: 78, grain_softness: 32, grain_chroma: 24, grain_shadow_response: 100, grain_midtone_response: 112, grain_highlight_response: 128, film_resolution: 80, halation_amount: 13, halation_sensitivity: 70, halation_radius: 0.34, halation_hue_offset: 2, halation_saturation: 82, bloom_amount: 9, bloom_sensitivity: 74, bloom_radius: 0.58, bloom_highlight_detail: 76, image_softness: 13, microcontrast: -9 },
+};
+
 const defaultAdjustments = () => ({
   hdr: {
     tone_section_enabled: true,
+    highlight_section_enabled: true,
     tone_equalizer_section_enabled: true,
     color_section_enabled: true,
     primaries_section_enabled: true,
     curves_section_enabled: true,
+    film_look_section_enabled: true,
+    film_look: defaultFilmLook(),
     exposure: 0,
     highlight_compression_start_nits: 400,
     highlight_compression_target_nits: 1000,
     highlight_compression_softness: 0,
+    highlight_compression_mode: "off",
+    highlight_compression_peak_measurement: "maximum",
+    highlight_compression_source_peak_nits: 1000,
+    highlight_compression_manual_peak_nits: 1000,
+    highlight_compression_peak_detail: 35,
+    highlight_compression_bias: 0,
+    highlight_compression_color_handling: "preserve_color",
     shadow_lift: 0,
     tone_equalizer_nodes: defaultToneEqualizerNodes(),
     tone_equalizer_influence_radius: 1.5,
@@ -328,6 +472,8 @@ const defaultAdjustments = () => ({
     color_section_enabled: true,
     primaries_section_enabled: true,
     curves_section_enabled: true,
+    film_look_section_enabled: true,
+    film_look: defaultFilmLook(),
     exposure: 0,
     highlight_recovery: 0.6,
     tone_contrast: 1,
@@ -367,8 +513,12 @@ const defaultAdjustments = () => ({
     overlay_preset: "web_1000_100",
     overlay_opacity: 0.72,
     overlay_threshold: 100,
+    film_grain_seed: 271828,
   },
 });
+
+// Keep the pre-session UI state on the same schema returned by the backend.
+state.adjustments = defaultAdjustments();
 
 const els = {
   fileInput: document.getElementById("file-input"),
@@ -405,6 +555,8 @@ const els = {
   manualInterpretation: document.getElementById("manual-interpretation"),
   curveEditor: document.getElementById("curve-editor"),
   toneEqualizerEditor: document.getElementById("tone-equalizer-editor"),
+  highlightCompressionGraph: document.getElementById("highlight-compression-graph"),
+  highlightCompressionSummary: document.getElementById("highlight-compression-summary"),
   toneEqualizerBandValue: document.getElementById("tone-equalizer-band-value"),
   toneEqualizerBandLabel: document.getElementById("tone-equalizer-band-label"),
   toneEqualizerBandOutput: document.getElementById("tone-equalizer-band-output"),
@@ -510,6 +662,10 @@ const els = {
   groupResets: [...document.querySelectorAll("[data-reset-group]")],
   sdrMatchHdrColors: document.getElementById("sdr-match-hdr-colors"),
   sdrResetColors: document.getElementById("sdr-reset-colors"),
+  filmLookReset: document.getElementById("film-look-reset"),
+  filmLookMatchHdr: document.getElementById("film-look-match-hdr"),
+  filmLookSdrActions: document.getElementById("film-look-sdr-actions"),
+  filmLookState: document.getElementById("film-look-state"),
   sectionBypasses: [...document.querySelectorAll("[data-section-path]")],
   controlRows: [...document.querySelectorAll("[data-control-path]")],
   modifiedCounts: [...document.querySelectorAll("[data-modified-count]")],
@@ -525,7 +681,8 @@ const overlayPresetNotes = {
 };
 
 const controlGroups = {
-  "hdr-tone": ["hdr.exposure", "hdr.highlight_compression_start_nits", "hdr.highlight_compression_target_nits", "hdr.highlight_compression_softness", "hdr.contrast", "hdr.contrast_pivot", "hdr.shadow_lift"],
+  "hdr-tone": ["hdr.exposure", "hdr.contrast", "hdr.contrast_pivot", "hdr.shadow_lift"],
+  "hdr-highlights": ["hdr.highlight_compression_mode", "hdr.highlight_compression_start_nits", "hdr.highlight_compression_target_nits", "hdr.highlight_compression_softness", "hdr.highlight_compression_peak_detail", "hdr.highlight_compression_peak_measurement", "hdr.highlight_compression_manual_peak_nits", "hdr.highlight_compression_bias", "hdr.highlight_compression_color_handling"],
   "hdr-equalizer": ["hdr.tone_equalizer_nodes", "hdr.tone_equalizer_influence_radius", "hdr.tone_equalizer_smoothing"],
   "hdr-color": ["hdr.white_balance_kelvin", "hdr.tint", "hdr.saturation", "hdr.vibrance", "hdr.red_hue", "hdr.red_purity", "hdr.green_hue", "hdr.green_purity", "hdr.blue_hue", "hdr.blue_purity", "hdr.tint_hue", "hdr.tint_purity"],
   "hdr-zones": ["hdr.lift", "hdr.lift_range", "hdr.lift_pivot", "hdr.gamma", "hdr.gamma_range", "hdr.gamma_pivot", "hdr.gain", "hdr.gain_range", "hdr.gain_pivot"],
@@ -547,6 +704,7 @@ const COLOR_CONTROL_KEYS = controlGroups["hdr-color"].map((path) => path.slice("
 
 const sectionPathForGroup = {
   "hdr-tone": "hdr.tone_section_enabled",
+  "hdr-highlights": "hdr.highlight_section_enabled",
   "hdr-equalizer": "hdr.tone_equalizer_section_enabled",
   "hdr-color": "hdr.color_section_enabled",
   "hdr-zones": "hdr.primaries_section_enabled",
@@ -557,8 +715,8 @@ const sectionPathForGroup = {
 };
 
 const branchCopy = {
-  hdr: "Graded HDR rendition. Exported as the PQ HDR image.",
-  sdr: "Independent fallback baked into the gain map. This is what viewers without HDR gain-map support will see.",
+  hdr: "Graded HDR rendition. Exported as the PQ HDR image. Double-click any value to type it.",
+  sdr: "Independent fallback baked into the gain map. This is what viewers without HDR gain-map support will see. Double-click any value to type it.",
 };
 
 const capabilityForFormat = {
@@ -678,6 +836,7 @@ function initializeInstrumentShell() {
   restoreLayoutState();
   restoreSourceRailState();
   enhanceRangeControls();
+  enhanceEditableGradeValues();
   initSplitter({
     element: els.sourceSplitter,
     stateKey: "railW",
@@ -930,6 +1089,165 @@ function enhanceRangeControls() {
   });
 }
 
+function enhanceEditableGradeValues() {
+  els.valueOutputs.forEach((output) => {
+    const path = output.dataset.valuePath;
+    const rule = MANUAL_VALUE_RULES[path];
+    if (!rule || !output.closest("#grade-workflow-panel")) return;
+    bindEditableValue(output, {
+      getValue: () => getValueByPath(state.adjustments, path),
+      normalize: (text) => normalizeManualControlValue(path, text),
+      commit: ({ value }) => commitAdjustmentValue(path, value, { manual: true }),
+      label: () => `${output.closest(".control-heading")?.querySelector("label")?.textContent?.trim() || path} value`,
+      range: () => manualRangeLabel(path, rule),
+    });
+  });
+
+  bindEditableValue(els.toneEqualizerBandOutput, {
+    getValue: () => currentToneEqualizerNodes()[state.selectedToneEqualizerBand]?.adjustment_ev ?? 0,
+    normalize: (text) => normalizeManualNumber(text, {
+      min: toneEqualizerBandLimits(state.selectedToneEqualizerBand)[0],
+      max: toneEqualizerBandLimits(state.selectedToneEqualizerBand)[1],
+      decimals: 2,
+    }),
+    commit: ({ value }) => setToneEqualizerBand(state.selectedToneEqualizerBand, value),
+    label: () => "Selected Exposure Band adjustment",
+    range: () => {
+      const [minimum, maximum] = toneEqualizerBandLimits(state.selectedToneEqualizerBand);
+      return `${formatSignedEv(minimum, 2)} to ${formatSignedEv(maximum, 2)}`;
+    },
+  });
+
+  bindEditableValue(els.toneEqualizerRadius, {
+    getValue: () => state.adjustments.hdr.tone_equalizer_influence_radius,
+    normalize: (text) => normalizeManualNumber(text, { min: 0.25, max: 12, decimals: 2 }),
+    commit: ({ value }) => {
+      state.adjustments.hdr.tone_equalizer_influence_radius = value;
+      syncToneEqualizerControls();
+      drawToneEqualizerEditor();
+      renderControlState();
+    },
+    label: () => "Exposure Band influence",
+    range: () => "0.25 EV to 12.00 EV",
+  });
+}
+
+function bindEditableValue(element, { getValue, normalize, commit, label, range }) {
+  if (!element) return;
+  element.classList.add("editable-value");
+  element.tabIndex = 0;
+
+  const refreshAccessibility = () => {
+    const rangeText = range();
+    element.title = `Double-click or press Enter to type a value. Manual range: ${rangeText}.`;
+    element.setAttribute("aria-label", `${label()}. Press Enter to edit. Manual range ${rangeText}.`);
+  };
+  refreshAccessibility();
+
+  let editing = false;
+  let previousText = "";
+  const finish = () => {
+    editing = false;
+    element.dataset.editing = "false";
+    element.removeAttribute("contenteditable");
+    element.removeAttribute("role");
+    refreshAccessibility();
+  };
+  const cancel = () => {
+    if (!editing) return;
+    finish();
+    element.textContent = previousText;
+  };
+  const apply = () => {
+    if (!editing) return;
+    const normalized = normalize(element.textContent);
+    if (!normalized) {
+      cancel();
+      return;
+    }
+    finish();
+    commit(normalized);
+    if (normalized.clamped) {
+      element.classList.remove("value-clamped");
+      requestAnimationFrame(() => element.classList.add("value-clamped"));
+      window.setTimeout(() => element.classList.remove("value-clamped"), 900);
+    }
+  };
+  const begin = () => {
+    if (editing || !state.session) return;
+    const pairedControl = element.dataset.valuePath
+      ? document.querySelector(`[data-path="${element.dataset.valuePath}"]`)
+      : null;
+    if (pairedControl?.disabled) return;
+    editing = true;
+    previousText = element.textContent;
+    element.dataset.editing = "true";
+    element.setAttribute("contenteditable", "plaintext-only");
+    element.setAttribute("role", "textbox");
+    const value = Number(getValue());
+    const rule = element.dataset.valuePath ? MANUAL_VALUE_RULES[element.dataset.valuePath] : null;
+    element.textContent = String(rule?.entryScale ? value * rule.entryScale : value);
+    element.focus({ preventScroll: true });
+    const selection = window.getSelection();
+    const contents = document.createRange();
+    contents.selectNodeContents(element);
+    selection.removeAllRanges();
+    selection.addRange(contents);
+  };
+
+  element.addEventListener("dblclick", (event) => {
+    event.preventDefault();
+    begin();
+  });
+  element.addEventListener("keydown", (event) => {
+    if (!editing && (event.key === "Enter" || event.key === "F2")) {
+      event.preventDefault();
+      begin();
+      return;
+    }
+    if (!editing) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      apply();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      cancel();
+    }
+  });
+  element.addEventListener("blur", apply);
+}
+
+function normalizeManualControlValue(path, text) {
+  const rule = MANUAL_VALUE_RULES[path];
+  if (!rule) return null;
+  const parsed = parseManualNumber(text);
+  if (!Number.isFinite(parsed)) return null;
+  const storedValue = rule.entryScale ? parsed / rule.entryScale : parsed;
+  return normalizeManualNumber(storedValue, rule);
+}
+
+function normalizeManualNumber(textOrValue, rule) {
+  const parsed = typeof textOrValue === "number" ? textOrValue : parseManualNumber(textOrValue);
+  if (!Number.isFinite(parsed)) return null;
+  const bounded = clamp(parsed, rule.min, rule.max);
+  const scale = 10 ** rule.decimals;
+  return {
+    value: Math.round(bounded * scale) / scale,
+    clamped: bounded !== parsed,
+  };
+}
+
+function parseManualNumber(text) {
+  let normalized = String(text ?? "").trim().replace(/\u2212/g, "-");
+  normalized = normalized.replace(/(\d),(?=\d{3}(?:\D|$))/g, "$1").replace(",", ".");
+  const match = normalized.match(/[+-]?(?:\d+(?:\.\d*)?|\.\d+)/);
+  return match ? Number(match[0]) : Number.NaN;
+}
+
+function manualRangeLabel(path, rule) {
+  return `${formatControlValue(path, rule.min)} to ${formatControlValue(path, rule.max)}`;
+}
+
 function updateRangeVisual(control) {
   const minimum = Number(control.min);
   const maximum = Number(control.max);
@@ -1125,20 +1443,7 @@ function bindEvents() {
     });
     control.addEventListener("input", () => {
       const value = control.type === "range" ? Number(control.value) : control.type === "checkbox" ? control.checked : control.value;
-      setValueByPath(state.adjustments, control.dataset.path, value);
-      const path = control.dataset.path;
-      if (path.startsWith("hdr.highlight_compression_")) normalizeHighlightCompressionControls(path);
-      if (path === "shared.overlay_preset") renderOverlayPresetNote();
-      if (path.startsWith("hdr.tone_equalizer_")) drawToneEqualizerEditor();
-      updateControlReadouts();
-      renderControlState();
-      if (path.startsWith("shared.overlay_")) {
-        debounceOverlayAndScopes();
-      } else {
-        const lane = path.startsWith("sdr.") ? "sdr" : "hdr";
-        invalidatePreview(lane);
-        debouncePreview(lane);
-      }
+      commitAdjustmentValue(control.dataset.path, value);
     });
   });
   bindRangeResetControls();
@@ -1199,11 +1504,11 @@ function bindEvents() {
   });
   els.sdrMatchHdrColors.addEventListener("click", matchHdrColorsToSdr);
   els.sdrResetColors.addEventListener("click", resetSdrColorSliders);
+  els.filmLookReset?.addEventListener("click", resetFilmLook);
+  els.filmLookMatchHdr?.addEventListener("click", matchHdrFilmLookToSdr);
   els.sectionBypasses.forEach((button) => {
     button.addEventListener("click", () => {
-      const path = button.dataset.sectionPath === "current.curves_section_enabled"
-        ? `${state.currentView}.curves_section_enabled`
-        : button.dataset.sectionPath;
+      const path = resolveAdjustmentPath(button.dataset.sectionPath);
       setValueByPath(state.adjustments, path, !Boolean(getValueByPath(state.adjustments, path)));
       invalidatePreview(path.startsWith("sdr.") ? "sdr" : "hdr");
       renderControlState();
@@ -1625,6 +1930,7 @@ function applyLatitudePresets(latitude) {
       control.min = min;
       control.max = max;
       control.step = step;
+      syncRangeControlFromState(path, control);
     }
   });
 }
@@ -2609,14 +2915,39 @@ function badgeClass(classification) {
 }
 
 function setValueByPath(target, path, value) {
-  const parts = path.split(".");
+  const parts = resolveAdjustmentPath(path).split(".");
   let cursor = target;
   for (let index = 0; index < parts.length - 1; index += 1) cursor = cursor[parts[index]];
   cursor[parts.at(-1)] = value;
 }
 
 function getValueByPath(target, path) {
-  return path.split(".").reduce((cursor, key) => cursor?.[key], target);
+  return resolveAdjustmentPath(path).split(".").reduce((cursor, key) => cursor?.[key], target);
+}
+
+function resolveAdjustmentPath(path) {
+  return path?.startsWith("current.") ? `${state.currentView}.${path.slice("current.".length)}` : path;
+}
+
+function commitAdjustmentValue(path, value, { manual = false } = {}) {
+  if (manual) state.previewScheduler?.beginInteraction();
+  setValueByPath(state.adjustments, path, value);
+  const resolvedPath = resolveAdjustmentPath(path);
+  if (resolvedPath.endsWith(".film_look.reference_model") && value !== "custom") applyFilmLookPreset(value);
+  if (resolvedPath.startsWith("hdr.highlight_compression_")) normalizeHighlightCompressionControls(resolvedPath);
+  if (path === "shared.overlay_preset") renderOverlayPresetNote();
+  if (path.startsWith("hdr.tone_equalizer_")) drawToneEqualizerEditor();
+  syncRangeControlFromState(path);
+  updateControlReadouts();
+  renderControlState();
+  if (path.startsWith("shared.overlay_")) {
+    debounceOverlayAndScopes();
+  } else {
+    const lane = resolvedPath.startsWith("sdr.") ? "sdr" : "hdr";
+    invalidatePreview(lane);
+    debouncePreview(lane);
+  }
+  if (manual) state.previewScheduler?.endInteraction();
 }
 
 function syncControlsFromState() {
@@ -2625,8 +2956,8 @@ function syncControlsFromState() {
     if (value === undefined) return;
     if (control.type === "checkbox") control.checked = Boolean(value);
     else {
-      control.value = String(value);
-      if (control.type === "range") updateRangeVisual(control);
+      if (control.type === "range") syncRangeControlFromState(control.dataset.path, control);
+      else control.value = String(value);
     }
   });
   updateControlReadouts();
@@ -2637,17 +2968,175 @@ function normalizeHighlightCompressionControls(changedPath) {
   const hdr = state.adjustments.hdr;
   if (hdr.highlight_compression_target_nits <= hdr.highlight_compression_start_nits) {
     if (changedPath.endsWith("start_nits")) {
-      hdr.highlight_compression_target_nits = Math.min(10000, hdr.highlight_compression_start_nits + 25);
+      hdr.highlight_compression_target_nits = Math.min(10000, hdr.highlight_compression_start_nits + 1);
     } else {
-      hdr.highlight_compression_start_nits = Math.max(100, hdr.highlight_compression_target_nits - 25);
+      hdr.highlight_compression_start_nits = Math.max(1, hdr.highlight_compression_target_nits - 1);
     }
   }
   for (const path of ["hdr.highlight_compression_start_nits", "hdr.highlight_compression_target_nits"]) {
-    const control = document.querySelector(`[data-path="${path}"]`);
-    if (!control) continue;
-    control.value = String(getValueByPath(state.adjustments, path));
-    updateRangeVisual(control);
+    syncRangeControlFromState(path);
   }
+  if (changedPath.endsWith("peak_measurement") || changedPath.endsWith("manual_peak_nits")) {
+    syncHighlightCompressionSourcePeak();
+  }
+}
+
+function syncHighlightCompressionSourcePeak() {
+  const hdr = state.adjustments.hdr;
+  if (!hdr) return;
+  if (hdr.highlight_compression_peak_measurement === "manual") {
+    hdr.highlight_compression_source_peak_nits = Number(hdr.highlight_compression_manual_peak_nits) || 1000;
+    return;
+  }
+  const analysis = state.session?.analysis;
+  const linear = hdr.highlight_compression_peak_measurement === "robust"
+    ? (analysis?.robust_peak_luma_linear ?? analysis?.peak_luma_linear ?? analysis?.peak_linear)
+    : (analysis?.peak_luma_linear ?? analysis?.peak_linear);
+  if (Number.isFinite(Number(linear))) {
+    hdr.highlight_compression_source_peak_nits = Math.max(1, Number(linear) * 100 / 0.18);
+  }
+}
+
+function toneAdjustedHighlightPeakNits(hdr) {
+  let peakLinear = Math.max(1, Number(hdr.highlight_compression_source_peak_nits) || 1000) * 0.18 / 100;
+  if (hdr.tone_section_enabled === false) return Math.max(1, peakLinear * 100 / 0.18);
+  peakLinear *= 2 ** (Number(hdr.exposure) || 0);
+  const shadowLift = Number(hdr.shadow_lift) || 0;
+  if (shadowLift !== 0) {
+    const liftFactor = clamp(shadowLift * (1 - clamp(peakLinear, 0, 1)), Number.NEGATIVE_INFINITY, 1);
+    peakLinear *= 1 + liftFactor;
+  }
+  const contrast = Number(hdr.contrast) || 0;
+  if (contrast !== 0 && peakLinear > 0.00000001) {
+    const pivot = Math.max(Number(hdr.contrast_pivot) || 0.1845, 0.000001);
+    const stops = Math.log2(Math.max(peakLinear, 0.00000001) / pivot);
+    peakLinear = pivot * (2 ** clamp(stops * (2 ** contrast), -32, 32));
+  }
+  return Math.max(1, peakLinear * 100 / 0.18);
+}
+
+function peakFitCurveInfo(hdr) {
+  const start = Math.max(1, Number(hdr.highlight_compression_start_nits) || 400);
+  const target = Math.max(start + 1, Number(hdr.highlight_compression_target_nits) || 1000);
+  const peak = Math.max(target, toneAdjustedHighlightPeakNits(hdr));
+  const startStop = Math.log2(start);
+  const targetStop = Math.log2(target);
+  const peakStop = Math.log2(peak);
+  const detail = clamp((Number(hdr.highlight_compression_peak_detail) || 0) / 100, 0, 1);
+  const bias = clamp((Number(hdr.highlight_compression_bias) || 0) / 100, -1, 1) * 0.6;
+  const requiredRatio = clamp((1 / (1 + bias) + detail / (1 - bias)) / 3, 0.001, 0.95);
+  const requestedRatio = (targetStop - startStop) / Math.max(peakStop - startStop, 0.000001);
+  const effectiveStartStop = requestedRatio < requiredRatio
+    ? (targetStop - requiredRatio * peakStop) / (1 - requiredRatio)
+    : startStop;
+  return { start, target, peak, startStop, targetStop, peakStop, detail, bias, effectiveStartStop };
+}
+
+function mapHighlightNits(inputNits, hdr) {
+  const mode = hdr.highlight_compression_mode || "off";
+  if (mode === "off") return inputNits;
+  if (mode === "soft_ceiling") {
+    const softness = Number(hdr.highlight_compression_softness) || 0;
+    if (softness <= 0) return inputNits;
+    const start = Number(hdr.highlight_compression_start_nits) || 400;
+    const target = Math.max(start + 1, Number(hdr.highlight_compression_target_nits) || 1000);
+    if (inputNits <= start) return inputNits;
+    const normalized = (inputNits - start) / (target - start);
+    const exponent = 2 ** (5 * (1 - clamp(softness / 100, 0, 1)));
+    const compressed = normalized <= 1
+      ? normalized / ((1 + normalized ** exponent) ** (1 / exponent))
+      : 1 / ((1 + (1 / normalized) ** exponent) ** (1 / exponent));
+    const position = clamp(softness / 10, 0, 1);
+    const activation = position * position * (3 - 2 * position);
+    return start + ((inputNits - start) + activation * ((target - start) * compressed - (inputNits - start)));
+  }
+  const info = peakFitCurveInfo(hdr);
+  if (inputNits <= 2 ** info.effectiveStartStop) return inputNits;
+  const u = clamp((Math.log2(inputNits) - info.effectiveStartStop) / Math.max(info.peakStop - info.effectiveStartStop, 0.000001), 0, 1);
+  const w = clamp(u + info.bias * u * (1 - u), 0, 1);
+  const span = info.targetStop - info.effectiveStartStop;
+  const m0 = (info.peakStop - info.effectiveStartStop) / Math.max(span * (1 + info.bias), 0.000001);
+  const m1 = info.detail * (info.peakStop - info.effectiveStartStop) / Math.max(span * (1 - info.bias), 0.000001);
+  const mapped = w * (1 - w) * (1 - w) * m0 + w * w * (3 - 2 * w) + w * w * (w - 1) * m1;
+  return 2 ** (info.effectiveStartStop + span * mapped);
+}
+
+function renderHighlightCompressionControls() {
+  const hdr = state.adjustments.hdr;
+  if (!hdr || !els.highlightCompressionGraph) return;
+  syncHighlightCompressionSourcePeak();
+  const mode = hdr.highlight_compression_mode || "off";
+  document.querySelector('[data-control-path="hdr.highlight_compression_softness"]')?.toggleAttribute("hidden", mode !== "soft_ceiling");
+  document.querySelector('[data-control-path="hdr.highlight_compression_peak_detail"]')?.toggleAttribute("hidden", mode !== "peak_fit");
+  document.querySelector('[data-control-path="hdr.highlight_compression_color_handling"]')?.toggleAttribute("hidden", mode !== "peak_fit");
+  document.querySelector('[data-control-path="hdr.highlight_compression_manual_peak_nits"]')?.toggleAttribute("hidden", hdr.highlight_compression_peak_measurement !== "manual");
+
+  const canvas = els.highlightCompressionGraph;
+  const context = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  const pad = { left: 35, right: 9, top: 9, bottom: 24 };
+  const sourcePeak = Math.max(1000, mode === "peak_fit"
+    ? toneAdjustedHighlightPeakNits(hdr)
+    : (Number(hdr.highlight_compression_source_peak_nits) || 1000) * (2 ** (Number(hdr.exposure) || 0)));
+  const maximum = Math.max(10000, sourcePeak, Number(hdr.highlight_compression_target_nits) * 1.5);
+  const minimum = 10;
+  const xFor = (value) => pad.left + (Math.log10(clamp(value, minimum, maximum)) - Math.log10(minimum)) / (Math.log10(maximum) - Math.log10(minimum)) * (width - pad.left - pad.right);
+  const yFor = (value) => height - pad.bottom - (Math.log10(clamp(value, minimum, maximum)) - Math.log10(minimum)) / (Math.log10(maximum) - Math.log10(minimum)) * (height - pad.top - pad.bottom);
+  context.clearRect(0, 0, width, height);
+  context.strokeStyle = "#343d41";
+  context.fillStyle = "#93a0a4";
+  context.font = "9px monospace";
+  for (const tick of [10, 100, 1000, 10000, 100000]) {
+    if (tick > maximum) continue;
+    context.beginPath();
+    context.moveTo(xFor(tick), pad.top);
+    context.lineTo(xFor(tick), height - pad.bottom);
+    context.moveTo(pad.left, yFor(tick));
+    context.lineTo(width - pad.right, yFor(tick));
+    context.stroke();
+    context.fillText(tick >= 1000 ? `${tick / 1000}k` : String(tick), xFor(tick) - 6, height - 8);
+  }
+  context.setLineDash([4, 3]);
+  context.strokeStyle = "#6d777b";
+  context.beginPath(); context.moveTo(xFor(minimum), yFor(minimum)); context.lineTo(xFor(maximum), yFor(maximum)); context.stroke();
+  context.setLineDash([]);
+  context.strokeStyle = "#68d7ed";
+  context.lineWidth = 2;
+  context.beginPath();
+  for (let index = 0; index <= 160; index += 1) {
+    const input = minimum * ((maximum / minimum) ** (index / 160));
+    const x = xFor(input);
+    const y = yFor(mapHighlightNits(input, hdr));
+    if (index === 0) context.moveTo(x, y); else context.lineTo(x, y);
+  }
+  context.stroke();
+  context.lineWidth = 1;
+  if (mode === "off") {
+    els.highlightCompressionSummary.textContent = "Compression is off. The cyan identity line leaves highlights unchanged.";
+  } else if (mode === "soft_ceiling") {
+    els.highlightCompressionSummary.textContent = `Soft Ceiling approaches ${Math.round(hdr.highlight_compression_target_nits)} nit without a hard peak anchor.`;
+  } else {
+    const info = peakFitCurveInfo(hdr);
+    const effective = 2 ** info.effectiveStartStop;
+    const adjusted = effective < Number(hdr.highlight_compression_start_nits) * 0.99;
+    const colorNote = hdr.highlight_compression_color_handling === "path_to_white"
+      ? "; saturated highlights fade toward white"
+      : "; color ratios are preserved";
+    els.highlightCompressionSummary.textContent = `Peak Fit maps the ${Math.round(info.peak)}-nit peak after Tone controls to ${Math.round(info.target)} nit${adjusted ? `; smoothness widens the shoulder to ${Math.round(effective)} nit` : ""}${colorNote}.`;
+  }
+}
+
+function syncRangeControlFromState(path, requestedControl = null) {
+  const control = requestedControl || document.querySelector(`[data-path="${path}"]`);
+  if (!control || control.type !== "range") return;
+  const value = Number(getValueByPath(state.adjustments, path));
+  const minimum = Number(control.min);
+  const maximum = Number(control.max);
+  const outsideSlider = value < minimum || value > maximum;
+  control.value = String(clamp(value, minimum, maximum));
+  control.closest(".range-shell")?.classList.toggle("manual-overflow", outsideSlider);
+  updateRangeVisual(control);
 }
 
 function syncCurveControlsFromState() {
@@ -2854,8 +3343,12 @@ function syncToneEqualizerControls() {
   els.toneEqualizerBandValue.value = String(value);
   updateRangeVisual(els.toneEqualizerBandValue);
   els.toneEqualizerBandLabel.textContent = `${formatSignedEv(inputEv, 0)} · ${formatToneBandNits(100 * (2 ** inputEv))}`;
-  els.toneEqualizerBandOutput.textContent = formatSignedEv(value, 2);
-  els.toneEqualizerRadius.textContent = `Influence ${Number(state.adjustments.hdr.tone_equalizer_influence_radius || 1.5).toFixed(2)} EV`;
+  if (els.toneEqualizerBandOutput.dataset.editing !== "true") {
+    els.toneEqualizerBandOutput.textContent = formatSignedEv(value, 2);
+  }
+  if (els.toneEqualizerRadius.dataset.editing !== "true") {
+    els.toneEqualizerRadius.textContent = `Influence ${Number(state.adjustments.hdr.tone_equalizer_influence_radius || 1.5).toFixed(2)} EV`;
+  }
   els.toneEqualizerRemove.disabled = nodes.length <= TONE_EQUALIZER_MIN_NODE_COUNT || index === 0 || index === nodes.length - 1;
   els.toneEqualizerAdd.disabled = nodes.length >= TONE_EQUALIZER_MAX_NODE_COUNT;
 }
@@ -3812,6 +4305,8 @@ function renderLaneChrome() {
   els.laneNote.textContent = branchCopy[lane];
   els.scopeKindLabel.textContent = lane.toUpperCase();
   state.previewInfo = state.previewInfoByLane[lane];
+  els.filmLookSdrActions?.classList.toggle("hidden", lane !== "sdr");
+  syncControlsFromState();
   window.HDRProofing?.syncLane();
   renderCompareStatus();
   updateControlReadouts();
@@ -4318,6 +4813,7 @@ function renderDockSummary() {
 
 function updateControlReadouts() {
   els.valueOutputs.forEach((output) => {
+    if (output.dataset.editing === "true") return;
     const path = output.dataset.valuePath;
     const value = getValueByPath(state.adjustments, path);
     if (value === undefined) return;
@@ -4356,7 +4852,17 @@ function formatControlValue(path, value) {
   if (path.endsWith("_purity") || path.endsWith(".saturation") || path.endsWith(".vibrance")) return `${numeric > 0 ? "+" : ""}${Math.round(path.endsWith("_purity") ? numeric : numeric * 100)}%`;
   if (path.endsWith(".exposure")) return `${numeric.toFixed(2)} EV`;
   if (path.endsWith("_nits")) return `${Math.round(numeric)} nit`;
-  if (path.endsWith("highlight_compression_softness")) return numeric <= 0 ? "Off" : `${Math.round(numeric)}%`;
+  if (path.includes("film_look") && path.endsWith("_radius")) return `${numeric.toFixed(2)}% diag`;
+  if (path.includes("film_look")) {
+    const signed = /(contrast|toe|shoulder|density|microcontrast|hue_offset)$/.test(path);
+    return `${signed && numeric > 0 ? "+" : ""}${Math.round(numeric)}%`;
+  }
+  if (path.endsWith("highlight_compression_softness")) {
+    if (numeric <= 0) return "Off";
+    return `${Number.isInteger(numeric) ? numeric.toFixed(0) : numeric.toFixed(1)}%`;
+  }
+  if (path.endsWith("highlight_compression_peak_detail")) return `${Math.round(numeric)}%`;
+  if (path.endsWith("highlight_compression_bias")) return `${numeric > 0 ? "+" : ""}${Math.round(numeric)}`;
   if (path.endsWith("_range") || (path.endsWith("_pivot") && !path.endsWith("contrast_pivot"))) return `${numeric.toFixed(2)} EV`;
   if (path === "shared.overlay_opacity") return `${Math.round(numeric * 100)}%`;
   if (path === "shared.overlay_threshold") return `${Math.round(numeric)} nit`;
@@ -4376,6 +4882,7 @@ function renderControlState() {
       input.disabled = !filmicEnabled;
     });
   });
+  renderHighlightCompressionControls();
   els.controlRows.forEach((row) => {
     row.classList.toggle("modified", isPathModified(row.dataset.controlPath, defaults));
   });
@@ -4386,7 +4893,7 @@ function renderControlState() {
     output?.closest(".control-group")?.classList.toggle("modified", count > 0);
   }
   for (const lane of ["hdr", "sdr"]) {
-    const keys = Object.keys(defaults[lane]).filter((key) => !key.endsWith("_curve") && !key.endsWith("_section_enabled"));
+    const keys = Object.keys(defaults[lane]).filter((key) => !key.endsWith("_curve") && !key.endsWith("_section_enabled") && key !== "highlight_compression_source_peak_nits");
     const modified = keys.some((key) => !valuesEqual(state.adjustments[lane]?.[key], defaults[lane][key]))
       || laneCurvesModified(lane, defaults);
     const button = els.viewButtons.find((item) => item.dataset.kind === lane);
@@ -4394,16 +4901,17 @@ function renderControlState() {
   }
   const currentLaneDefaults = defaults[state.currentView];
   const modifiedCount = Object.keys(currentLaneDefaults)
-    .filter((key) => !key.endsWith("_section_enabled"))
+    .filter((key) => !key.endsWith("_section_enabled") && key !== "highlight_compression_source_peak_nits")
     .filter((key) => !valuesEqual(state.adjustments[state.currentView]?.[key], currentLaneDefaults[key])).length;
   els.gradeModifiedSummary.textContent = modifiedCount ? `${modifiedCount} modified` : "";
   const curvesModified = laneCurvesModified(state.currentView, defaults);
   els.curveGroupState.textContent = curvesModified ? "Modified" : "";
   els.curveReset.closest(".control-group")?.classList.toggle("modified", curvesModified);
+  const filmModified = !valuesEqual(state.adjustments[state.currentView]?.film_look, currentLaneDefaults.film_look);
+  if (els.filmLookState) els.filmLookState.textContent = filmModified ? "Modified" : "";
+  els.filmLookReset?.closest(".control-group")?.classList.toggle("modified", filmModified);
   els.sectionBypasses.forEach((button) => {
-    const path = button.dataset.sectionPath === "current.curves_section_enabled"
-      ? `${state.currentView}.curves_section_enabled`
-      : button.dataset.sectionPath;
+    const path = resolveAdjustmentPath(button.dataset.sectionPath);
     const enabled = getValueByPath(state.adjustments, path) !== false;
     button.classList.toggle("bypassed", !enabled);
     button.setAttribute("aria-pressed", String(enabled));
@@ -4417,7 +4925,7 @@ function isPathModified(path, defaults = defaultAdjustments()) {
 }
 
 function valuesEqual(left, right) {
-  if (Array.isArray(left) || Array.isArray(right)) return JSON.stringify(left) === JSON.stringify(right);
+  if ((left && typeof left === "object") || (right && typeof right === "object")) return JSON.stringify(left) === JSON.stringify(right);
   return left === right;
 }
 
@@ -4457,6 +4965,34 @@ function matchHdrColorsToSdr() {
 
 function resetSdrColorSliders() {
   setSdrColorSliders(defaultAdjustments().sdr);
+}
+
+function applyFilmLookPreset(referenceModel) {
+  const preset = FILM_LOOK_PRESETS[referenceModel];
+  if (!preset) return;
+  Object.assign(state.adjustments[state.currentView].film_look, preset, { reference_model: referenceModel });
+  syncControlsFromState();
+}
+
+function resetFilmLook() {
+  const lane = state.currentView;
+  state.adjustments[lane].film_look = defaultFilmLook();
+  state.adjustments[lane].film_look_section_enabled = true;
+  syncControlsFromState();
+  invalidatePreview(lane);
+  renderControlState();
+  debouncePreview(lane);
+}
+
+function matchHdrFilmLookToSdr() {
+  if (!state.session) return;
+  const topLevelEnabled = state.adjustments.sdr.film_look_section_enabled;
+  state.adjustments.sdr.film_look = JSON.parse(JSON.stringify(state.adjustments.hdr.film_look));
+  state.adjustments.sdr.film_look_section_enabled = topLevelEnabled;
+  syncControlsFromState();
+  invalidatePreview("sdr");
+  renderControlState();
+  debouncePreview("sdr");
 }
 
 function activateWorkflowTab(workflow, { focus = false } = {}) {
