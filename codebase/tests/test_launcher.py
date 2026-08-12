@@ -57,6 +57,16 @@ def test_launcher_page_exposes_open_and_copy_controls() -> None:
     assert f"v{APP_VERSION}" in response.text
 
 
+def test_application_root_versions_static_assets_and_disables_html_caching() -> None:
+    response = TestClient(app).get("/")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert "__HDR_FINISHER_ASSET_VERSION__" not in response.text
+    assert f'/static/app.js?v={APP_VERSION}' in response.text
+    assert f'/static/styles.css?v={APP_VERSION}' in response.text
+
+
 def test_launcher_server_starts_and_stops() -> None:
     test_app = FastAPI()
 

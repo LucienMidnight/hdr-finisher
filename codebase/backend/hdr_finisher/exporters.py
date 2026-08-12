@@ -52,6 +52,7 @@ def _render_export_branch(
         kind,
         sdr_reference_image=getattr(session, "sdr_reference_image", None),
         include_grain=False,
+        local_adjustments=getattr(session, "local_adjustments", None),
     )
     image = apply_output_finishing(image, settings.output_finishing, kind)
     return apply_final_grain(image, adjustments, kind)

@@ -198,6 +198,18 @@ const state = {
   capabilities: {},
   currentView: "hdr",
   activeWorkflow: "import",
+  gradeMode: "global",
+  editDocument: null,
+  editRevision: 0,
+  selectedLocalId: null,
+  localTool: null,
+  localShowMask: false,
+  compareWithoutLocals: false,
+  localPointerGesture: null,
+  localErase: false,
+  projectPath: "",
+  globalEditDirty: false,
+  documentDirty: false,
   scopeMode: "histogram",
   scopeChannelMode: "composite",
   scopeMaxNits: 4000,
@@ -570,6 +582,8 @@ const defaultAdjustments = () => ({
 state.adjustments = defaultAdjustments();
 
 const els = {
+  projectOpen: document.getElementById("project-open"),
+  projectSave: document.getElementById("project-save"),
   fileInput: document.getElementById("file-input"),
   dropzone: document.getElementById("dropzone"),
   appShell: document.querySelector(".app-shell"),
@@ -635,6 +649,33 @@ const els = {
   comparisonCanvas: document.getElementById("comparison-canvas"),
   comparisonImage: document.getElementById("comparison-image"),
   previewOverlay: document.getElementById("preview-overlay"),
+  localMaskOverlay: document.getElementById("local-mask-overlay"),
+  gradeModeGlobal: document.getElementById("grade-mode-global"),
+  gradeModeLocal: document.getElementById("grade-mode-local"),
+  localAdjustmentGroup: document.getElementById("local-adjustments-group"),
+  localAdjustmentCount: document.getElementById("local-adjustment-count"),
+  localPanel: document.getElementById("local-adjustments-panel"),
+  localToolButtons: [...document.querySelectorAll("[data-local-tool]")],
+  localEraser: document.getElementById("local-eraser"),
+  localAdjustmentList: document.getElementById("local-adjustment-list"),
+  localEmpty: document.getElementById("local-empty"),
+  localEditor: document.getElementById("local-editor"),
+  localCompare: document.getElementById("local-compare"),
+  localRename: document.getElementById("local-rename"),
+  localDuplicate: document.getElementById("local-duplicate"),
+  localInvert: document.getElementById("local-invert"),
+  localDelete: document.getElementById("local-delete"),
+  localMoveUp: document.getElementById("local-move-up"),
+  localMoveDown: document.getElementById("local-move-down"),
+  localBypass: document.getElementById("local-bypass"),
+  localShowMask: document.getElementById("local-show-mask"),
+  localAddMask: document.getElementById("local-add-mask"),
+  localMaskTreeSummary: document.getElementById("local-mask-tree-summary"),
+  localOpacity: document.getElementById("local-opacity"),
+  localOpacityValue: document.getElementById("local-opacity-value"),
+  localLaneButtons: [...document.querySelectorAll("[data-local-lane]")],
+  localGradeControls: [...document.querySelectorAll("[data-local-grade]")],
+  localExposureValue: document.getElementById("local-exposure-value"),
   chromeProofImage: document.getElementById("chrome-proof-image"),
   chromeProofWatermark: document.getElementById("chrome-proof-watermark"),
   chromeProofToggle: document.getElementById("chrome-proof-toggle"),
@@ -847,7 +888,12 @@ async function boot() {
   renderControlState();
   renderCapabilities();
   renderExportPreflight();
-  window.addEventListener("resize", syncOverlayPlacement);
+  setGradeMode("global");
+  renderLocalAdjustments();
+  window.addEventListener("resize", () => {
+    syncOverlayPlacement();
+    renderLocalMaskOverlay();
+  });
   observeScopeSize();
   observeGraphEditorSizes();
   observeViewerSize();
@@ -1395,6 +1441,9 @@ function bindEvents() {
     els.sourceRailExpand.setAttribute("aria-label", collapsed ? "Expand source metadata" : "Collapse source metadata");
     els.sourceRailExpand.textContent = collapsed ? "Show" : "Hide";
   });
+  bindLocalAdjustmentEvents();
+  els.projectOpen?.addEventListener("click", openProjectFromPath);
+  els.projectSave?.addEventListener("click", saveProjectToPath);
   els.sourceSettingsToggle.addEventListener("click", () => {
     state.sourceSettingsOpen = !state.sourceSettingsOpen;
     renderSourceSettingsVisibility();
@@ -1528,6 +1577,7 @@ function bindEvents() {
       const group = button.closest(".control-group");
       const collapsed = group.classList.toggle("collapsed");
       button.setAttribute("aria-expanded", String(!collapsed));
+      if (group === els.localAdjustmentGroup) setGradeMode(collapsed ? "global" : "local");
       renderVignetteCenter();
     });
   });
@@ -1663,6 +1713,11 @@ async function uploadFile(file) {
     state.session = payload.session;
     setPreviewMessage("Source decoded. Preparing preview...", 28);
     state.adjustments = payload.session.adjustments;
+    state.editDocument = payload.session.edit_document;
+    state.editRevision = payload.session.edit_revision || 0;
+    state.documentDirty = Boolean(payload.session.dirty);
+    state.selectedLocalId = null;
+    state.projectPath = "";
     state.currentView = "hdr";
     activateWorkflowTab("grade", { focus: false });
     state.interpretationGateDismissed = false;
@@ -1671,6 +1726,7 @@ async function uploadFile(file) {
     invalidatePreview("hdr");
     invalidatePreview("sdr");
     renderSession();
+    renderLocalAdjustments();
     seedExportFieldsFromSession();
     const gpuReady = await renderGpuDraft("hdr", { hideStatus: false, longEdge: settledProxyLongEdge() });
     await Promise.all([
@@ -1699,6 +1755,12 @@ async function ejectCurrentSession() {
   await fetch("/api/session/current", { method: "DELETE" }).catch(() => null);
   state.session = null;
   state.adjustments = defaultAdjustments();
+  state.editDocument = null;
+  state.editRevision = 0;
+  state.documentDirty = false;
+  state.selectedLocalId = null;
+  state.projectPath = "";
+  state.compareWithoutLocals = false;
   state.currentView = "hdr";
   activateWorkflowTab("import", { focus: false });
   state.interpretationGateDismissed = false;
@@ -2001,6 +2063,7 @@ function queueGpuDraft(lane = state.currentView) {
 
 async function settlePreview(lane = state.currentView, task = {}) {
   if (!state.session) return;
+  await syncGlobalEditState();
   const display = lane === state.currentView;
   const longEdge = settledProxyLongEdge();
   if (display) {
@@ -2089,7 +2152,8 @@ async function renderPreviewForLane(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      adjustments: state.adjustments,
+      edit_revision: state.editRevision,
+      include_locals: !state.compareWithoutLocals,
       long_edge: longEdge,
       hdr_display: mediaQueryMatch("(dynamic-range: high)"),
     }),
@@ -2156,7 +2220,8 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      adjustments: state.adjustments,
+      edit_revision: state.editRevision,
+      include_locals: !state.compareWithoutLocals,
       long_edge: longEdge,
       generation,
       tier: "settled",
@@ -2233,6 +2298,7 @@ function applyRawComparisonPreview(frame) {
 }
 
 async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 1600) {
+  await syncGlobalEditState();
   if (!state.session) return;
   if (state.adjustments.shared.overlay_mode === "off") {
     clearPreviewOverlay();
@@ -2243,7 +2309,7 @@ async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 16
   const response = await fetch(`/api/session/${state.session.session_id}/overlay/${state.currentView}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ adjustments: state.adjustments, long_edge: longEdge }),
+    body: JSON.stringify({ edit_revision: state.editRevision, include_locals: !state.compareWithoutLocals, long_edge: longEdge }),
     signal: state.overlayAbortController.signal,
   }).catch((error) => {
     if (error.name === "AbortError") return { aborted: true };
@@ -2267,6 +2333,9 @@ async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 16
 
 function refreshScopes(longEdge = 960, { tier = "settled", generation = null, lane = state.currentView } = {}) {
   if (!state.session) return Promise.resolve(false);
+  if (state.globalEditDirty) {
+    return syncGlobalEditState().then(() => refreshScopes(longEdge, { tier, generation, lane }));
+  }
   const requestGeneration = generation ?? (state.scopeGeneration + 1);
   state.scopeGeneration = Math.max(state.scopeGeneration, requestGeneration);
   const mode = state.scopeMode;
@@ -2285,7 +2354,8 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
       longEdge: effectiveLongEdge,
       resolution,
       maxNits: state.scopeMaxNits,
-      adjustments: JSON.parse(JSON.stringify(state.adjustments)),
+      edit_revision: state.editRevision,
+      include_locals: !state.compareWithoutLocals,
       resolve,
       controller: null,
     });
@@ -2331,15 +2401,25 @@ async function runScopeRequest(request) {
   let applied = false;
 
   try {
-    const { sessionId, lane, mode, tier, generation, longEdge, resolution, maxNits, adjustments } = request;
+    const { sessionId, lane, mode, tier, generation, longEdge, resolution, maxNits, edit_revision, include_locals } = request;
     const resolutionQuery = `&bins=${resolution.bins}&columns=${resolution.columns}`;
-    const response = await fetch(`/api/session/${sessionId}/scopes?kind=${lane}&mode=${mode}&long_edge=${longEdge}&max_nits=${maxNits}${resolutionQuery}`, {
+    const requestScope = (revision) => fetch(`/api/session/${sessionId}/scopes?kind=${lane}&mode=${mode}&long_edge=${longEdge}&max_nits=${maxNits}${resolutionQuery}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ adjustments, long_edge: longEdge, generation, tier }),
+      body: JSON.stringify({ edit_revision: revision, include_locals, long_edge: longEdge, generation, tier }),
       signal: controller.signal,
     });
-    if (response.status === 409 || !response.ok) return false;
+    let response = await requestScope(edit_revision);
+    if (response.status === 409) {
+      await refreshEditState();
+      if (state.session?.session_id !== sessionId || lane !== state.currentView || mode !== state.scopeMode) return false;
+      request.edit_revision = state.editRevision;
+      response = await requestScope(state.editRevision);
+    }
+    if (!response.ok) {
+      els.scopeNote.textContent = `The ${mode} could not be refreshed. It will retry with the next edit.`;
+      return false;
+    }
     const payload = await response.json();
     if (state.session?.session_id !== sessionId || lane !== state.currentView || mode !== state.scopeMode) return false;
     if (payload.generation !== null && payload.generation !== generation) return false;
@@ -2859,6 +2939,7 @@ function splitOutputPath(path) {
 
 async function exportCurrentSession() {
   if (!state.session) return;
+  await syncGlobalEditState();
   const outputPath = buildExportOutputPath();
   els.exportConfirmButton.disabled = true;
   els.exportStatus.textContent = "Encoding and validating the finished file…";
@@ -2947,11 +3028,15 @@ async function applyInterpretationOverride() {
     state.session = payload.session;
     setPreviewMessage("Interpretation applied. Preparing preview...", 28);
     state.adjustments = payload.session.adjustments;
+    state.editDocument = payload.session.edit_document;
+    state.editRevision = payload.session.edit_revision || 0;
+    state.documentDirty = Boolean(payload.session.dirty);
     state.interpretationGateDismissed = false;
     invalidatePreview("hdr");
     invalidatePreview("sdr");
     state.gpuPreview?.resetSession(payload.session.session_id);
     renderSession();
+    renderLocalAdjustments();
     const gpuReady = await renderGpuDraft(state.currentView, { hideStatus: false, longEdge: settledProxyLongEdge() });
     await Promise.all([
       gpuReady ? Promise.resolve(true) : refreshPreview({ progressSteps: [36, 76, 92] }),
@@ -3051,6 +3136,7 @@ function closeCropMode(commit) {
   els.cropToolToggle?.setAttribute("aria-pressed", "false");
   els.cropEditorOverlay?.setAttribute("aria-hidden", "true");
   syncControlsFromState();
+  renderLocalAdjustments();
   invalidatePreview("hdr");
   invalidatePreview("sdr");
   debouncePreview(state.currentView);
@@ -3514,7 +3600,11 @@ function renderSessionChrome() {
   });
   els.emptyImportButton.disabled = hasSession;
   document.querySelectorAll("#grade-workflow-panel input, #grade-workflow-panel select, #grade-workflow-panel button").forEach((control) => {
-    control.disabled = !hasSession;
+    if (control.matches("[data-local-tool], #grade-mode-local")) {
+      control.disabled = false;
+    } else {
+      control.disabled = !hasSession;
+    }
   });
   els.viewButtons.forEach((button) => {
     button.disabled = !hasSession;
@@ -3524,6 +3614,7 @@ function renderSessionChrome() {
   [els.zoomOut, els.zoomIn, els.zoomSlider, els.zoomReadout, els.zoomFit, els.zoomActual].forEach((control) => {
     control.disabled = !hasSession;
   });
+  updateLocalToolState();
   window.HDRProofing?.render();
 }
 
@@ -4601,6 +4692,8 @@ async function renderGpuDraft(
       state.adjustments,
       sampleCurvePoints,
       longEdge,
+      state.compareWithoutLocals ? [] : localAdjustments(),
+      state.editRevision,
     );
     if (!result || serial !== state.gpuRenderSerial || (!allowInactive && lane !== state.currentView)) return false;
     state.gpuPreparedLane[lane] = true;
@@ -4644,6 +4737,7 @@ function requestSessionExport(outputPath, overwrite) {
       jpeg_gain_map_scale: els.jpegGainMapScale.value,
       output_path: outputPath,
       overwrite,
+      edit_revision: state.editRevision,
       output_finishing: {
         resize_mode: resizeMode,
         long_edge: resizeMode === "long_edge" ? Number(els.exportLongEdge.value) : null,
@@ -4937,7 +5031,11 @@ function renderLaneChrome() {
   els.previewStage.dataset.primaryLane = lane;
   els.previewPrimaryPane.dataset.lane = lane;
   els.previewSecondaryPane.dataset.lane = lane === "hdr" ? "sdr" : "hdr";
-  els.viewButtons.forEach((button) => button.classList.toggle("active", button.dataset.kind === lane));
+  els.viewButtons.forEach((button) => {
+    const active = button.dataset.kind === lane;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
   els.lanePanels.forEach((panel) => panel.classList.toggle("hidden", panel.dataset.lanePanel !== lane));
   els.viewerLaneLabel.textContent = label;
   els.viewerBranchNote.textContent = branchCopy[lane];
@@ -4954,7 +5052,11 @@ function renderLaneChrome() {
   renderControlState();
 }
 
-function invalidatePreview(lane) {
+function invalidatePreview(lane, { local = false } = {}) {
+  if (!local && state.session) {
+    state.globalEditDirty = true;
+    state.documentDirty = true;
+  }
   state.previewGeneration[lane] += 1;
   window.HDRProofing?.invalidate(lane);
   renderCompareStatus();
@@ -5158,6 +5260,8 @@ async function renderComparisonPreview(lane, { force = false } = {}) {
         state.adjustments,
         sampleCurvePoints,
         settledProxyLongEdge(),
+        state.compareWithoutLocals ? [] : localAdjustments(),
+        state.editRevision,
       );
       if (result && lane !== state.currentView && generation === state.previewGeneration[lane]) {
         state.gpuPreparedLane[lane] = true;
@@ -5199,7 +5303,13 @@ function bindKeyboardShortcuts() {
   window.addEventListener("keydown", (event) => {
     if (event.repeat || isTypingTarget(event.target)) return;
     const key = event.key.toLowerCase();
-    if (key === "v") {
+    if ((event.ctrlKey || event.metaKey) && key === "z") {
+      event.preventDefault();
+      queueEditCommand(event.shiftKey ? "redo" : "undo");
+    } else if ((event.ctrlKey || event.metaKey) && key === "y") {
+      event.preventDefault();
+      queueEditCommand("redo");
+    } else if (key === "v") {
       event.preventDefault();
       beginCompareHold();
     } else if (key === "f") {
@@ -5817,6 +5927,788 @@ async function copyLastExportPath() {
   } catch {
     els.copyExportPath.textContent = "Copy failed";
   }
+}
+
+function defaultLocalGrade() {
+  return {
+    enabled: true,
+    exposure: 0,
+    highlights: 0,
+    midtones: 0,
+    shadows: 0,
+    blacks: 0,
+    contrast: 0,
+    contrast_pivot: 0.18,
+    white_balance_kelvin: 6500,
+    tint: 0,
+    saturation: 0,
+    vibrance: 0,
+    luma_curve: defaultCurvePoints(),
+    red_curve: defaultCurvePoints(),
+    green_curve: defaultCurvePoints(),
+    blue_curve: defaultCurvePoints(),
+    color_grading: defaultColorGrading(),
+  };
+}
+
+function newMaskLeaf(type) {
+  if (type === "brush") {
+    return {
+      type,
+      strokes: [{ points: [{ x: 0.5, y: 0.5, pressure: 1 }], radius: 0.025, hardness: 0.75, flow: 1, opacity: 1, smoothing: 0.35, erase: false }],
+    };
+  }
+  if (type === "linear_gradient") {
+    return { type, start: { x: 0.25, y: 0.5 }, end: { x: 0.75, y: 0.5 } };
+  }
+  if (type === "luminance_range") {
+    return { type, fade_in_start_ev: -12, full_start_ev: -8, full_end_ev: 6, fade_out_end_ev: 10 };
+  }
+  return {
+    type: "path",
+    nodes: [
+      { x: 0.3, y: 0.3, node_type: "smooth" },
+      { x: 0.7, y: 0.3, node_type: "smooth" },
+      { x: 0.7, y: 0.7, node_type: "smooth" },
+      { x: 0.3, y: 0.7, node_type: "smooth" },
+    ],
+    feather: 0.02,
+  };
+}
+
+function newLocalAdjustment(type) {
+  const number = (state.editDocument?.local_adjustments?.length || 0) + 1;
+  return {
+    id: crypto.randomUUID(),
+    name: `Local Adjustment ${number}`,
+    enabled: true,
+    opacity: 1,
+    mask: { operator: "leaf", leaf: newMaskLeaf(type), children: [], inverted: false },
+    hdr_grade: defaultLocalGrade(),
+    sdr_grade: defaultLocalGrade(),
+  };
+}
+
+function bindLocalAdjustmentEvents() {
+  els.gradeModeGlobal?.addEventListener("click", () => setGradeMode("global"));
+  els.localToolButtons.forEach((button) => button.addEventListener("click", async () => {
+    if (!state.session) {
+      els.badge.textContent = "Load an image before creating a local adjustment.";
+      els.badge.className = "badge warn";
+      if (els.localEmpty) els.localEmpty.textContent = "Load an image, then choose a mask tool to create the first local adjustment.";
+      updateLocalToolState();
+      return;
+    }
+    state.localTool = button.dataset.localTool;
+    state.localErase = false;
+    updateLocalToolState();
+    if (!state.editDocument) await refreshEditState();
+    if (!state.editDocument) {
+      els.badge.textContent = "Local adjustment state is not ready. Please try the mask tool again.";
+      els.badge.className = "badge warn";
+      return;
+    }
+    const local = newLocalAdjustment(state.localTool);
+    state.selectedLocalId = local.id;
+    setGradeMode("local");
+    const created = await queueEditCommand("create_local", { local });
+    if (!created) {
+      state.selectedLocalId = localAdjustments()[0]?.id || null;
+      renderLocalAdjustments();
+    }
+  }));
+  els.localEraser?.addEventListener("click", () => {
+    if (els.localEraser.disabled) return;
+    state.localErase = !state.localErase;
+    updateLocalToolState();
+  });
+  els.localAdjustmentList?.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-local-id]");
+    if (!button) return;
+    state.selectedLocalId = button.dataset.localId;
+    state.localTool = selectedLocal()?.mask?.leaf?.type || null;
+    renderLocalAdjustments();
+  });
+  els.localLaneButtons.forEach((button) => button.addEventListener("click", async () => {
+    await switchLane(button.dataset.localLane);
+    renderLocalAdjustments();
+  }));
+  els.localOpacity?.addEventListener("input", () => {
+    const local = selectedLocal();
+    if (!local) return;
+    local.opacity = Number(els.localOpacity.value);
+    els.localOpacityValue.textContent = `${Math.round(local.opacity * 100)}%`;
+  });
+  els.localOpacity?.addEventListener("change", () => commitSelectedLocal());
+  els.localGradeControls.forEach((control) => {
+    control.addEventListener("input", () => {
+      const local = selectedLocal();
+      if (!local) return;
+      local[`${state.currentView}_grade`][control.dataset.localGrade] = Number(control.value);
+      if (control.dataset.localGrade === "exposure") els.localExposureValue.textContent = `${Number(control.value).toFixed(2)} EV`;
+    });
+    control.addEventListener("change", () => commitSelectedLocal());
+  });
+  els.localRename?.addEventListener("click", () => {
+    const local = selectedLocal();
+    if (!local) return;
+    const name = window.prompt("Local adjustment name", local.name)?.trim();
+    if (name) {
+      local.name = name;
+      commitSelectedLocal();
+    }
+  });
+  els.localDuplicate?.addEventListener("click", async () => {
+    const local = selectedLocal();
+    if (!local) return;
+    const copy = JSON.parse(JSON.stringify(local));
+    copy.id = crypto.randomUUID();
+    copy.name = `${local.name} copy`;
+    const index = localAdjustments().findIndex((item) => item.id === local.id) + 1;
+    state.selectedLocalId = copy.id;
+    await queueEditCommand("create_local", { local: copy, index });
+  });
+  els.localInvert?.addEventListener("click", () => {
+    const local = selectedLocal();
+    if (!local) return;
+    local.mask.inverted = !local.mask.inverted;
+    commitSelectedLocal();
+  });
+  els.localBypass?.addEventListener("click", () => {
+    const local = selectedLocal();
+    if (!local) return;
+    local.enabled = !local.enabled;
+    commitSelectedLocal();
+  });
+  els.localDelete?.addEventListener("click", async () => {
+    const local = selectedLocal();
+    if (!local) return;
+    await queueEditCommand("delete_local", {}, local.id);
+    state.selectedLocalId = localAdjustments()[0]?.id || null;
+    renderLocalAdjustments();
+  });
+  els.localMoveUp?.addEventListener("click", () => moveSelectedLocal(-1));
+  els.localMoveDown?.addEventListener("click", () => moveSelectedLocal(1));
+  els.localShowMask?.addEventListener("click", () => {
+    state.localShowMask = !state.localShowMask;
+    renderLocalAdjustments();
+  });
+  els.localCompare?.addEventListener("click", () => {
+    state.compareWithoutLocals = !state.compareWithoutLocals;
+    els.localCompare.setAttribute("aria-pressed", String(state.compareWithoutLocals));
+    invalidatePreview("hdr", { local: true });
+    invalidatePreview("sdr", { local: true });
+    debouncePreview(state.currentView);
+  });
+  els.localAddMask?.addEventListener("click", () => addSubMask());
+  bindLocalMaskCanvas();
+}
+
+function setGradeMode(mode) {
+  state.gradeMode = mode === "local" ? "local" : "global";
+  document.body.dataset.gradeMode = state.gradeMode;
+  els.gradeModeGlobal?.classList.toggle("active", state.gradeMode === "global");
+  els.gradeModeLocal?.classList.toggle("active", state.gradeMode === "local");
+  els.gradeModeGlobal?.setAttribute("aria-pressed", String(state.gradeMode === "global"));
+  if (els.localAdjustmentGroup) {
+    const localActive = state.gradeMode === "local";
+    els.localAdjustmentGroup.classList.toggle("collapsed", !localActive);
+    els.gradeModeLocal?.setAttribute("aria-expanded", String(localActive));
+  }
+  renderLocalMaskOverlay();
+}
+
+function updateLocalToolState() {
+  const local = selectedLocal();
+  const brushSelected = Boolean(local && firstMaskLeaf(local.mask, "brush"));
+  els.localToolButtons.forEach((button) => {
+    const active = button.dataset.localTool === state.localTool;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+    button.disabled = false;
+  });
+  if (els.localEraser) {
+    els.localEraser.disabled = !brushSelected;
+    if (!brushSelected) state.localErase = false;
+    els.localEraser.classList.toggle("active", state.localErase);
+    els.localEraser.setAttribute("aria-pressed", String(state.localErase));
+  }
+}
+
+function localAdjustments() {
+  return state.editDocument?.local_adjustments || [];
+}
+
+function selectedLocal() {
+  return localAdjustments().find((item) => item.id === state.selectedLocalId) || null;
+}
+
+function renderLocalAdjustments() {
+  if (!els.localAdjustmentList) return;
+  const locals = localAdjustments();
+  if (els.localAdjustmentCount) els.localAdjustmentCount.textContent = locals.length ? String(locals.length) : "0";
+  if (!state.selectedLocalId && locals.length) state.selectedLocalId = locals[0].id;
+  els.localAdjustmentList.innerHTML = "";
+  locals.forEach((local, index) => {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.localId = local.id;
+    button.classList.toggle("active", local.id === state.selectedLocalId);
+    const maskType = firstMaskLeaf(local.mask)?.type || "mask";
+    button.innerHTML = `<span aria-hidden="true">${local.enabled ? "◉" : "○"}</span><span>${escapeHtml(local.name)}</span><small>${index + 1} · ${escapeHtml(maskType.replaceAll("_", " "))}</small>`;
+    item.append(button);
+    els.localAdjustmentList.append(item);
+  });
+  const local = selectedLocal();
+  els.localEmpty?.classList.toggle("hidden", locals.length > 0);
+  if (!locals.length && els.localEmpty) {
+    els.localEmpty.textContent = state.session
+      ? "Choose a mask tool to create the first local adjustment."
+      : "Load an image, then choose a mask tool to create the first local adjustment.";
+  }
+  els.localEditor?.classList.toggle("hidden", !local);
+  if (els.projectSave) {
+    els.projectSave.disabled = !state.session;
+    els.projectSave.textContent = state.documentDirty ? "Save project *" : "Save project";
+  }
+  if (local) {
+    els.localOpacity.value = String(local.opacity);
+    els.localOpacityValue.textContent = `${Math.round(local.opacity * 100)}%`;
+    els.localBypass.setAttribute("aria-pressed", String(!local.enabled));
+    els.localBypass.textContent = local.enabled ? "Bypass" : "Enable";
+    els.localShowMask.setAttribute("aria-pressed", String(state.localShowMask));
+    els.localLaneButtons.forEach((button) => {
+      const active = button.dataset.localLane === state.currentView;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-selected", String(active));
+    });
+    const grade = local[`${state.currentView}_grade`];
+    els.localGradeControls.forEach((control) => {
+      control.value = String(grade[control.dataset.localGrade]);
+    });
+    els.localExposureValue.textContent = `${Number(grade.exposure).toFixed(2)} EV`;
+    renderMaskTreeEditor(local);
+  } else if (els.localMaskTreeSummary) {
+    els.localMaskTreeSummary.textContent = "";
+  }
+  updateLocalToolState();
+  renderLocalMaskOverlay();
+}
+
+function renderMaskTreeEditor(local) {
+  const leaf = firstMaskLeaf(local.mask);
+  els.localMaskTreeSummary.innerHTML = `<div>${escapeHtml(maskExpressionLabel(local.mask))}</div>`;
+  if (!leaf) return;
+  if (leaf.type === "luminance_range") {
+    const names = ["fade_in_start_ev", "full_start_ev", "full_end_ev", "fade_out_end_ev"];
+    names.forEach((name) => {
+      const label = document.createElement("label");
+      label.textContent = name.replaceAll("_", " ");
+      const input = document.createElement("input");
+      input.type = "range";
+      input.min = "-24";
+      input.max = "24";
+      input.step = "0.1";
+      input.value = String(leaf[name]);
+      input.addEventListener("change", () => {
+        leaf[name] = Number(input.value);
+        const ordered = names.map((field) => leaf[field]).sort((a, b) => a - b);
+        names.forEach((field, index) => { leaf[field] = ordered[index]; });
+        commitSelectedLocal();
+      });
+      label.append(input);
+      els.localMaskTreeSummary.append(label);
+    });
+  } else if (leaf.type === "brush") {
+    const stroke = leaf.strokes[0];
+    [["radius", 0.002, 0.2, 0.002], ["hardness", 0, 1, 0.01], ["flow", 0, 1, 0.01]].forEach(([name, min, max, step]) => {
+      const label = document.createElement("label");
+      label.textContent = name;
+      const input = document.createElement("input");
+      Object.assign(input, { type: "range", min: String(min), max: String(max), step: String(step), value: String(stroke[name]) });
+      input.addEventListener("change", () => { stroke[name] = Number(input.value); commitSelectedLocal(); });
+      label.append(input);
+      els.localMaskTreeSummary.append(label);
+    });
+  } else if (leaf.type === "path") {
+    const label = document.createElement("label");
+    label.textContent = "feather";
+    const input = document.createElement("input");
+    Object.assign(input, { type: "range", min: "0", max: "0.5", step: "0.002", value: String(leaf.feather || 0) });
+    input.addEventListener("change", () => { leaf.feather = Number(input.value); commitSelectedLocal(); });
+    label.append(input);
+    els.localMaskTreeSummary.append(label);
+  }
+}
+
+function firstMaskLeaf(expression, type = null) {
+  if (!expression) return null;
+  if (expression.operator === "leaf") return !type || expression.leaf?.type === type ? expression.leaf : null;
+  for (const child of expression.children || []) {
+    const found = firstMaskLeaf(child, type);
+    if (found) return found;
+  }
+  return null;
+}
+
+function maskExpressionLabel(expression) {
+  if (expression.operator === "leaf") return `${expression.inverted ? "invert " : ""}${expression.leaf?.type?.replaceAll("_", " ") || "empty"}`;
+  const children = (expression.children || []).map(maskExpressionLabel).join(` ${expression.operator} `);
+  return `${expression.inverted ? "invert " : ""}(${children})`;
+}
+
+async function addSubMask() {
+  const local = selectedLocal();
+  if (!local) return;
+  const type = window.prompt("Sub-mask type: brush, linear_gradient, luminance_range, or path", "brush")?.trim();
+  if (!["brush", "linear_gradient", "luminance_range", "path"].includes(type)) return;
+  const operator = window.prompt("Combine using union, intersect, or subtract", "union")?.trim();
+  if (!["union", "intersect", "subtract"].includes(operator)) return;
+  local.mask = {
+    operator,
+    leaf: null,
+    children: [local.mask, { operator: "leaf", leaf: newMaskLeaf(type), children: [], inverted: false }],
+    inverted: false,
+  };
+  state.localTool = type;
+  await commitSelectedLocal();
+}
+
+async function moveSelectedLocal(direction) {
+  const locals = localAdjustments();
+  const index = locals.findIndex((item) => item.id === state.selectedLocalId);
+  const next = index + direction;
+  if (index < 0 || next < 0 || next >= locals.length) return;
+  const order = locals.map((item) => item.id);
+  [order[index], order[next]] = [order[next], order[index]];
+  await queueEditCommand("reorder_locals", { order });
+}
+
+async function commitSelectedLocal() {
+  const local = selectedLocal();
+  if (!local) return;
+  await queueEditCommand("update_local", { local: JSON.parse(JSON.stringify(local)) }, local.id);
+}
+
+function queueEditCommand(commandType, payload = {}, targetId = null) {
+  if (commandType !== "set_global_adjustments" && state.globalEditDirty) {
+    return syncGlobalEditState().then(() => queueEditCommand(commandType, payload, targetId));
+  }
+  state.editCommandQueue = (state.editCommandQueue || Promise.resolve()).then(async () => {
+    if (!state.session) return false;
+    const response = await fetch(`/api/session/${state.session.session_id}/edit-commands`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ commands: [{ expected_revision: state.editRevision, command_type: commandType, target_id: targetId, payload }] }),
+    });
+    const result = await safeJson(response);
+    if (response.status === 409) {
+      await refreshEditState();
+      throw new Error(result?.detail?.message || "The edit state changed in another request.");
+    }
+    if (!response.ok) throw new Error(result?.detail || "The local edit was rejected.");
+    state.editRevision = result.revision;
+    state.editDocument = result.document;
+    state.documentDirty = Boolean(result.dirty);
+    state.adjustments = result.document.global_adjustments;
+    invalidatePreview("hdr", { local: true });
+    invalidatePreview("sdr", { local: true });
+    renderLocalAdjustments();
+    debouncePreview(state.currentView);
+    return true;
+  }).catch((error) => {
+    console.error(error);
+    els.badge.textContent = error.message;
+    els.badge.className = "badge bad";
+    return false;
+  });
+  return state.editCommandQueue;
+}
+
+async function syncGlobalEditState() {
+  if (!state.session || !state.globalEditDirty) return true;
+  state.globalEditDirty = false;
+  const adjustments = JSON.parse(JSON.stringify(state.adjustments));
+  const applied = await queueEditCommand("set_global_adjustments", { adjustments });
+  if (!applied) state.globalEditDirty = true;
+  return applied;
+}
+
+async function refreshEditState() {
+  if (!state.session) return;
+  const response = await fetch(`/api/session/${state.session.session_id}/edit-state`);
+  const result = await safeJson(response);
+  if (!response.ok) return;
+  state.editRevision = result.revision;
+  state.editDocument = result.document;
+  state.documentDirty = Boolean(result.dirty);
+  state.adjustments = result.document.global_adjustments;
+  renderLocalAdjustments();
+}
+
+function bindLocalMaskCanvas() {
+  const canvas = els.localMaskOverlay;
+  if (!canvas) return;
+  canvas.addEventListener("pointerdown", (event) => {
+    const local = selectedLocal();
+    if (!local || state.gradeMode !== "local") return;
+    const point = localPointerPoint(event);
+    const leaf = firstMaskLeaf(local.mask, state.localTool) || firstMaskLeaf(local.mask);
+    if (!leaf || !point) return;
+    if (!["brush", "linear_gradient", "luminance_range", "path"].includes(leaf.type)) return;
+    if (leaf.type === "luminance_range" && Math.abs(point.y - .14) > .08) return;
+    canvas.setPointerCapture(event.pointerId);
+    if (leaf.type === "brush") {
+      const source = leaf.strokes[0] || { radius: 0.025, hardness: 0.75, flow: 1, opacity: 1, smoothing: 0.35, erase: false };
+      state.localPointerGesture = { type: "brush", leaf, stroke: { ...source, erase: state.localErase, points: [{ ...point, pressure: event.pressure || 1 }] } };
+    } else if (leaf.type === "linear_gradient") {
+      leaf.start = point;
+      leaf.end = point;
+      state.localPointerGesture = { type: "linear_gradient", leaf };
+    } else if (leaf.type === "luminance_range") {
+      const fields = ["fade_in_start_ev", "full_start_ev", "full_end_ev", "fade_out_end_ev"];
+      const handlePositions = fields.map((field) => .12 + clamp((Number(leaf[field]) + 24) / 48, 0, 1) * .76);
+      const handleIndex = handlePositions.reduce((nearest, position, index) => (
+        Math.abs(position - point.x) < nearest.distance ? { index, distance: Math.abs(position - point.x) } : nearest
+      ), { index: 0, distance: Infinity }).index;
+      state.localPointerGesture = { type: "luminance_range", leaf, handleIndex };
+      updateLuminanceRangeHandle(leaf, handleIndex, point.x);
+    } else if (leaf.type === "path") {
+      const nearest = leaf.nodes.reduce((best, node, index) => {
+        const distance = (node.x - point.x) ** 2 + (node.y - point.y) ** 2;
+        return distance < best.distance ? { index, distance } : best;
+      }, { index: 0, distance: Infinity });
+      state.localPointerGesture = { type: "path", leaf, nodeIndex: nearest.index };
+      leaf.nodes[nearest.index].x = point.x;
+      leaf.nodes[nearest.index].y = point.y;
+    }
+    renderLocalMaskOverlay();
+  });
+  canvas.addEventListener("pointermove", (event) => {
+    const gesture = state.localPointerGesture;
+    if (!gesture) return;
+    const point = localPointerPoint(event);
+    if (!point) return;
+    if (gesture.type === "brush") gesture.stroke.points.push({ ...point, pressure: event.pressure || 1 });
+    else if (gesture.type === "linear_gradient") gesture.leaf.end = point;
+    else if (gesture.type === "luminance_range") updateLuminanceRangeHandle(gesture.leaf, gesture.handleIndex, point.x);
+    else if (gesture.type === "path") Object.assign(gesture.leaf.nodes[gesture.nodeIndex], point);
+    renderLocalMaskOverlay();
+  });
+  const end = async (event) => {
+    const gesture = state.localPointerGesture;
+    if (!gesture) return;
+    state.localPointerGesture = null;
+    if (gesture.type === "brush") gesture.leaf.strokes.push(gesture.stroke);
+    if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    await commitSelectedLocal();
+  };
+  canvas.addEventListener("pointerup", end);
+  canvas.addEventListener("pointercancel", end);
+}
+
+function updateLuminanceRangeHandle(leaf, handleIndex, normalizedX) {
+  const fields = ["fade_in_start_ev", "full_start_ev", "full_end_ev", "fade_out_end_ev"];
+  const unclamped = ((clamp(normalizedX, .12, .88) - .12) / .76) * 48 - 24;
+  const lower = handleIndex === 0 ? -24 : Number(leaf[fields[handleIndex - 1]]);
+  const upper = handleIndex === fields.length - 1 ? 24 : Number(leaf[fields[handleIndex + 1]]);
+  leaf[fields[handleIndex]] = Number(clamp(unclamped, lower, upper).toFixed(2));
+}
+
+function localPointerPoint(event) {
+  const preview = activePreviewElement();
+  if (!preview) return null;
+  const rect = preview.getBoundingClientRect();
+  return {
+    x: clamp((event.clientX - rect.left) / Math.max(rect.width, 1), 0, 1),
+    y: clamp((event.clientY - rect.top) / Math.max(rect.height, 1), 0, 1),
+  };
+}
+
+function renderLocalMaskOverlay() {
+  const canvas = els.localMaskOverlay;
+  if (!canvas) return;
+  const local = selectedLocal();
+  const active = state.gradeMode === "local" && Boolean(local);
+  canvas.classList.toggle("editing", active);
+  const rect = els.previewPrimaryPane?.getBoundingClientRect();
+  if (!rect?.width || !rect?.height) return;
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.round(rect.width * ratio));
+  canvas.height = Math.max(1, Math.round(rect.height * ratio));
+  const context = canvas.getContext("2d");
+  context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  context.clearRect(0, 0, rect.width, rect.height);
+  if (!active) return;
+  const preview = activePreviewElement();
+  const imageRect = preview?.getBoundingClientRect();
+  if (!imageRect) return;
+  const offsetX = imageRect.left - rect.left;
+  const offsetY = imageRect.top - rect.top;
+  const x = (value) => offsetX + value * imageRect.width;
+  const y = (value) => offsetY + value * imageRect.height;
+  if (state.localShowMask) {
+    context.fillStyle = "rgba(255, 45, 58, .18)";
+    context.fillRect(offsetX, offsetY, imageRect.width, imageRect.height);
+  }
+  drawMaskExpression(context, local.mask, x, y);
+}
+
+function drawMaskExpression(context, expression, x, y) {
+  if (expression.operator !== "leaf") {
+    (expression.children || []).forEach((child) => drawMaskExpression(context, child, x, y));
+    return;
+  }
+  const leaf = expression.leaf;
+  if (!leaf) return;
+  context.save();
+  context.strokeStyle = "rgba(238, 252, 255, .98)";
+  context.fillStyle = "rgba(255, 68, 76, .22)";
+  context.lineWidth = 2;
+  if (leaf.type === "linear_gradient") {
+    drawLinearGradientGizmo(context, leaf, x, y);
+  } else if (leaf.type === "brush") {
+    for (const stroke of leaf.strokes || []) {
+      const radius = Math.max(2, Math.abs(x(stroke.radius) - x(0)));
+      context.lineWidth = radius * 2;
+      context.lineCap = "round";
+      context.lineJoin = "round";
+      drawLocalGizmoStroke(context, () => {
+        context.beginPath();
+        stroke.points.forEach((point, index) => index ? context.lineTo(x(point.x), y(point.y)) : context.moveTo(x(point.x), y(point.y)));
+        if (stroke.points.length === 1) {
+          context.lineTo(x(stroke.points[0].x) + 0.01, y(stroke.points[0].y));
+        }
+      }, Math.max(2, radius * 2), "rgba(238, 252, 255, .88)");
+      const lastPoint = stroke.points.at(-1);
+      if (lastPoint) drawBrushGizmo(context, lastPoint, stroke, x, y);
+    }
+    const gesture = state.localPointerGesture;
+    if (gesture?.type === "brush" && gesture.leaf === leaf) {
+      drawLocalGizmoStroke(context, () => {
+        context.beginPath();
+        gesture.stroke.points.forEach((point, index) => index ? context.lineTo(x(point.x), y(point.y)) : context.moveTo(x(point.x), y(point.y)));
+      }, Math.max(2, Math.abs(x(gesture.stroke.radius) - x(0)) * 2));
+      const lastPoint = gesture.stroke.points.at(-1);
+      if (lastPoint) drawBrushGizmo(context, lastPoint, gesture.stroke, x, y);
+    }
+  } else if (leaf.type === "luminance_range") {
+    drawLuminanceRangeGizmo(context, leaf, x, y);
+  } else if (leaf.type === "path") {
+    const path = () => {
+      context.beginPath();
+      leaf.nodes.forEach((node, index) => index ? context.lineTo(x(node.x), y(node.y)) : context.moveTo(x(node.x), y(node.y)));
+      context.closePath();
+    };
+    path();
+    if (state.localShowMask) context.fill();
+    drawLocalGizmoStroke(context, path, 2);
+    leaf.nodes.forEach((node) => drawLocalGizmoHandle(context, x(node.x), y(node.y), 6));
+  }
+  context.restore();
+}
+
+function drawLocalGizmoStroke(context, path, width = 2, color = "rgba(238, 252, 255, .98)") {
+  context.save();
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  context.strokeStyle = "rgba(0, 0, 0, .88)";
+  context.lineWidth = width + 3;
+  path();
+  context.stroke();
+  context.strokeStyle = color;
+  context.lineWidth = width;
+  path();
+  context.stroke();
+  context.restore();
+}
+
+function drawLocalGizmoHandle(context, centerX, centerY, radius = 7) {
+  context.save();
+  context.beginPath();
+  context.arc(centerX, centerY, radius + 2, 0, Math.PI * 2);
+  context.fillStyle = "rgba(0, 0, 0, .88)";
+  context.fill();
+  context.beginPath();
+  context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+  context.fillStyle = "#142226";
+  context.fill();
+  context.strokeStyle = "#74e5ee";
+  context.lineWidth = 2;
+  context.stroke();
+  context.beginPath();
+  context.arc(centerX, centerY, 2, 0, Math.PI * 2);
+  context.fillStyle = "#ffffff";
+  context.fill();
+  context.restore();
+}
+
+function drawLinearGradientGizmo(context, leaf, x, y) {
+  const start = { x: x(leaf.start.x), y: y(leaf.start.y) };
+  const end = { x: x(leaf.end.x), y: y(leaf.end.y) };
+  const deltaX = end.x - start.x;
+  const deltaY = end.y - start.y;
+  const length = Math.max(1, Math.hypot(deltaX, deltaY));
+  const normalX = -deltaY / length;
+  const normalY = deltaX / length;
+  const boundaryLength = Math.max(80, Math.min(Math.abs(x(1) - x(0)), Math.abs(y(1) - y(0))) * .32);
+  const boundary = (point) => {
+    context.beginPath();
+    context.moveTo(point.x - normalX * boundaryLength, point.y - normalY * boundaryLength);
+    context.lineTo(point.x + normalX * boundaryLength, point.y + normalY * boundaryLength);
+  };
+  context.save();
+  context.setLineDash([7, 6]);
+  drawLocalGizmoStroke(context, () => boundary(start), 1.5, "rgba(238, 252, 255, .82)");
+  drawLocalGizmoStroke(context, () => boundary(end), 1.5, "rgba(238, 252, 255, .82)");
+  context.restore();
+  drawLocalGizmoStroke(context, () => {
+    context.beginPath();
+    context.moveTo(start.x, start.y);
+    context.lineTo(end.x, end.y);
+  }, 2);
+  drawLocalGizmoHandle(context, start.x, start.y);
+  drawLocalGizmoHandle(context, end.x, end.y);
+}
+
+function drawBrushGizmo(context, point, stroke, x, y) {
+  const centerX = x(point.x);
+  const centerY = y(point.y);
+  const radius = Math.max(10, Math.abs(x(stroke.radius) - x(0)));
+  context.save();
+  context.beginPath();
+  context.arc(centerX, centerY, radius + 2, 0, Math.PI * 2);
+  context.strokeStyle = "rgba(0, 0, 0, .9)";
+  context.lineWidth = 4;
+  context.stroke();
+  context.beginPath();
+  context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+  context.strokeStyle = "#74e5ee";
+  context.lineWidth = 2;
+  context.stroke();
+  context.beginPath();
+  context.setLineDash([4, 4]);
+  context.arc(centerX, centerY, Math.max(4, radius * Number(stroke.hardness || 0)), 0, Math.PI * 2);
+  context.strokeStyle = "rgba(255, 255, 255, .9)";
+  context.lineWidth = 1;
+  context.stroke();
+  context.setLineDash([]);
+  context.beginPath();
+  context.arc(centerX, centerY, 3, 0, Math.PI * 2);
+  context.fillStyle = stroke.erase ? "#ff6b72" : "#ffffff";
+  context.fill();
+  context.restore();
+}
+
+function drawLuminanceRangeGizmo(context, leaf, x, y) {
+  const left = x(.12);
+  const right = x(.88);
+  const top = y(.07);
+  const bottom = y(.18);
+  const barY = y(.14);
+  const position = (ev) => left + clamp((Number(ev) + 24) / 48, 0, 1) * (right - left);
+  const handles = [leaf.fade_in_start_ev, leaf.full_start_ev, leaf.full_end_ev, leaf.fade_out_end_ev].map(position);
+  context.save();
+  context.fillStyle = "rgba(8, 12, 14, .88)";
+  context.strokeStyle = "rgba(116, 229, 238, .65)";
+  context.lineWidth = 1;
+  context.fillRect(left - 16, top - 12, right - left + 32, bottom - top + 24);
+  context.strokeRect(left - 16, top - 12, right - left + 32, bottom - top + 24);
+  context.fillStyle = "#dffbff";
+  context.font = "600 11px sans-serif";
+  context.textBaseline = "top";
+  context.fillText("LUMINANCE RANGE", left, top - 5);
+  drawLocalGizmoStroke(context, () => {
+    context.beginPath();
+    context.moveTo(left, barY);
+    context.lineTo(right, barY);
+  }, 2, "rgba(255, 255, 255, .72)");
+  drawLocalGizmoStroke(context, () => {
+    context.beginPath();
+    context.moveTo(handles[1], barY);
+    context.lineTo(handles[2], barY);
+  }, 5, "#74e5ee");
+  handles.forEach((handleX, index) => {
+    drawLocalGizmoHandle(context, handleX, barY, index === 1 || index === 2 ? 7 : 5);
+  });
+  context.fillStyle = "rgba(223, 251, 255, .78)";
+  context.font = "10px monospace";
+  context.textBaseline = "bottom";
+  context.fillText(`${Number(leaf.fade_in_start_ev).toFixed(1)} EV`, left, bottom + 5);
+  const endLabel = `${Number(leaf.fade_out_end_ev).toFixed(1)} EV`;
+  context.fillText(endLabel, right - context.measureText(endLabel).width, bottom + 5);
+  context.restore();
+}
+
+async function openProjectFromPath() {
+  const path = window.prompt("Path to a .hdrfinisher project", state.projectPath || "");
+  if (!path) return;
+  let sourcePath = null;
+  let response = await fetch("/api/project/open", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
+  if (!response.ok) {
+    sourcePath = window.prompt("The saved source is unavailable or changed. Select the matching original source path.", "");
+    if (!sourcePath) return;
+    response = await fetch("/api/project/open", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, source_path: sourcePath }),
+    });
+  }
+  const payload = await safeJson(response);
+  if (!response.ok || !payload?.session) {
+    window.alert(payload?.detail || "The project could not be opened.");
+    return;
+  }
+  state.session = payload.session;
+  state.adjustments = payload.session.adjustments;
+  state.editDocument = payload.session.edit_document;
+  state.editRevision = payload.session.edit_revision || 0;
+  state.documentDirty = Boolean(payload.session.dirty);
+  state.selectedLocalId = state.editDocument.local_adjustments[0]?.id || null;
+  state.projectPath = path;
+  state.currentView = "hdr";
+  clearPreviewCache();
+  state.gpuPreview?.resetSession(payload.session.session_id);
+  activateWorkflowTab("grade", { focus: false });
+  renderSession();
+  renderLocalAdjustments();
+  await refreshPreview();
+  await refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
+}
+
+async function saveProjectToPath() {
+  if (!state.session) return;
+  const path = window.prompt("Save project path", state.projectPath || `${state.session.source.filename}.hdrfinisher`);
+  if (!path) return;
+  let sourcePath = state.editDocument?.source?.durable_path || null;
+  if (!sourcePath) {
+    sourcePath = window.prompt("Path to the durable original source (the project stores no source pixels)", "");
+    if (!sourcePath) return;
+  }
+  const response = await fetch(`/api/session/${state.session.session_id}/project/save`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path, source_path: sourcePath }),
+  });
+  const payload = await safeJson(response);
+  if (!response.ok) {
+    window.alert(payload?.detail || "The project could not be saved.");
+    return;
+  }
+  state.projectPath = payload.path;
+  state.editDocument = payload.document;
+  state.documentDirty = false;
+  els.badge.textContent = `Project saved · revision ${payload.revision}`;
+  els.badge.className = "badge good";
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
 }
 
 renderSessionChrome();

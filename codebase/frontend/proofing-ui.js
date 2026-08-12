@@ -144,6 +144,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             adjustments: state.adjustments,
+            edit_revision: state.editRevision,
             format: state.proofFormat,
             quality: Number(els.exportQuality.value) || 85,
             jpeg_gain_map_quality: Number(els.jpegGainMapQuality.value) || 100,

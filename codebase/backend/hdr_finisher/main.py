@@ -20,6 +20,9 @@ from .models import (
     DirectoryPickResponse,
     BrowserEvidenceRecord,
     BrowserEvidenceResponse,
+    EditCommandBatch,
+    EditDocument,
+    EditStateResponse,
     ExportSettings,
     PreviewKind,
     PreviewRequest,
@@ -29,6 +32,9 @@ from .models import (
     ProofMatrixResponse,
     ProofReconstructionRequest,
     ProofReconstructionResponse,
+    ProjectOpenRequest,
+    ProjectResponse,
+    ProjectSaveRequest,
     ScopeMode,
     ScopeMaxNits,
     SessionSummary,
@@ -39,8 +45,9 @@ from .preview import encode_processed_preview_bytes, encode_processed_rgba8
 from .render_cache import StaleRender, encode_rgba_proxy
 from .display_probe import probe_displays
 from .proofing import EvidenceStore, ProofArtifactStore
+from .projects import ProjectError, open_project, save_project
 from .scopes import build_scope_from_processed
-from .sessions import SessionStore
+from .sessions import EditCommandError, RevisionConflictError, SessionStore
 from .test_pattern import build_delivery_proof_pattern
 
 
@@ -62,6 +69,36 @@ SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 app.mount("/samples", StaticFiles(directory=str(SAMPLES_DIR)), name="samples")
+
+
+def _check_revision(actual_revision: int, expected_revision: int | None) -> None:
+    if expected_revision is not None and expected_revision != actual_revision:
+        raise RevisionConflictError(expected_revision, actual_revision)
+
+
+def _resolve_edit_request(session_id: str, adjustments, edit_revision: int | None):
+    session = store.get(session_id)
+    _check_revision(session.edit_revision, edit_revision)
+    if adjustments is not None:
+        # Compatibility bridge while global controls migrate to edit commands.
+        # Revision checking still guarantees that locals are never rendered from
+        # a stale ordered document.
+        if adjustments != session.adjustments:
+            session = store.update_adjustments(session_id, adjustments)
+            session.render_cache.clear_adjusted()
+    return session, session.adjustments
+
+
+def _revision_conflict(exc: RevisionConflictError) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": "edit_revision_mismatch",
+            "message": str(exc),
+            "expected_revision": exc.expected,
+            "current_revision": exc.actual,
+        },
+    )
 
 
 @app.get("/health")
@@ -124,20 +161,87 @@ def update_interpretation(session_id: str, override: SourceInterpretationOverrid
     return SessionSummary(session=session.to_payload())
 
 
+@app.get("/api/session/{session_id}/edit-state", response_model=EditStateResponse)
+def get_edit_state(session_id: str) -> EditStateResponse:
+    try:
+        return store.edit_state(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.put("/api/session/{session_id}/edit-state", response_model=EditStateResponse)
+def put_edit_state(
+    session_id: str,
+    document: EditDocument,
+    expected_revision: int = Query(ge=0),
+) -> EditStateResponse:
+    try:
+        return store.replace_edit_document(session_id, document, expected_revision)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RevisionConflictError as exc:
+        raise _revision_conflict(exc) from exc
+    except (EditCommandError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/session/{session_id}/edit-commands", response_model=EditStateResponse)
+def post_edit_commands(session_id: str, batch: EditCommandBatch) -> EditStateResponse:
+    try:
+        return store.apply_edit_commands(session_id, batch.commands)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RevisionConflictError as exc:
+        raise _revision_conflict(exc) from exc
+    except (EditCommandError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/session/{session_id}/project/save", response_model=ProjectResponse)
+def save_project_file(session_id: str, request: ProjectSaveRequest) -> ProjectResponse:
+    try:
+        session = store.get(session_id)
+        return save_project(
+            session,
+            Path(request.path),
+            Path(request.source_path) if request.source_path else None,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (ProjectError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/project/open", response_model=SessionSummary)
+def open_project_file(request: ProjectOpenRequest) -> SessionSummary:
+    try:
+        session = open_project(
+            store,
+            Path(request.path),
+            Path(request.source_path) if request.source_path else None,
+        )
+    except (ProjectError, LoaderError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return SessionSummary(session=session.to_payload())
+
+
 @app.post("/api/session/{session_id}/preview/{kind}")
 def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Response:
     try:
-        session = store.update_adjustments(session_id, request.adjustments)
+        session, adjustments = _resolve_edit_request(session_id, request.adjustments, request.edit_revision)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RevisionConflictError as exc:
+        raise _revision_conflict(exc) from exc
 
     token = store.next_preview_token(session_id, kind)
     try:
         processed = session.render_cache.adjusted_frame(
-            request.adjustments,
+            adjustments,
             kind,
             request.long_edge or session.preview.long_edge,
             is_current=lambda: session.preview_tokens[kind] == token,
+            local_adjustments=session.local_adjustments if request.include_locals else [],
         )
         body, media_type = encode_processed_preview_bytes(processed, kind, hdr_display=request.hdr_display)
     except StaleRender:
@@ -154,17 +258,20 @@ def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
 def preview_raw(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Response:
     """Render ordinary CPU fallback grading directly into a browser canvas."""
     try:
-        session = store.update_adjustments(session_id, request.adjustments)
+        session, adjustments = _resolve_edit_request(session_id, request.adjustments, request.edit_revision)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RevisionConflictError as exc:
+        raise _revision_conflict(exc) from exc
 
     token = store.next_preview_token(session_id, kind)
     try:
         processed = session.render_cache.adjusted_frame(
-            request.adjustments,
+            adjustments,
             kind,
             request.long_edge or (768 if kind == PreviewKind.SDR else 960),
             is_current=lambda: session.preview_tokens[kind] == token,
+            local_adjustments=session.local_adjustments if request.include_locals else [],
         )
         body = encode_processed_rgba8(processed, kind)
     except StaleRender:
@@ -189,20 +296,23 @@ def preview_raw(session_id: str, kind: PreviewKind, request: PreviewRequest) -> 
 @app.post("/api/session/{session_id}/overlay/{kind}")
 def overlay(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Response:
     try:
-        session = store.update_adjustments(session_id, request.adjustments)
+        session, adjustments = _resolve_edit_request(session_id, request.adjustments, request.edit_revision)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RevisionConflictError as exc:
+        raise _revision_conflict(exc) from exc
 
-    if request.adjustments.shared.overlay_mode == "off":
+    if adjustments.shared.overlay_mode == "off":
         return Response(status_code=204)
 
     try:
         processed = session.render_cache.adjusted_frame(
-            request.adjustments,
+            adjustments,
             kind,
             request.long_edge or session.preview.long_edge,
+            local_adjustments=session.local_adjustments if request.include_locals else [],
         )
-        body, media_type = encode_processed_overlay_bytes(processed, request.adjustments, kind)
+        body, media_type = encode_processed_overlay_bytes(processed, adjustments, kind)
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return Response(content=body, media_type=media_type)
@@ -217,11 +327,15 @@ def scopes(
     columns: int = Query(default=512, ge=64, le=1024),
     long_edge: int = Query(default=960, ge=256, le=2000),
     max_nits: ScopeMaxNits = Query(default=ScopeMaxNits.NITS_4000),
+    edit_revision: int | None = Query(default=None, ge=0),
 ):
     try:
         session = store.get(session_id)
+        _check_revision(session.edit_revision, edit_revision)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RevisionConflictError as exc:
+        raise _revision_conflict(exc) from exc
     return session.render_cache.scope_result(
         session.adjustments,
         kind,
@@ -230,6 +344,7 @@ def scopes(
         bins or 256,
         columns,
         int(max_nits.value),
+        local_adjustments=session.local_adjustments,
     )
 
 
@@ -245,13 +360,15 @@ def scopes_for_adjustments(
     max_nits: ScopeMaxNits = Query(default=ScopeMaxNits.NITS_4000),
 ):
     try:
-        session = store.update_adjustments(session_id, request.adjustments)
+        session, adjustments = _resolve_edit_request(session_id, request.adjustments, request.edit_revision)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RevisionConflictError as exc:
+        raise _revision_conflict(exc) from exc
     token = store.next_scope_token(session_id, kind)
     try:
         result = session.render_cache.scope_result(
-            request.adjustments,
+            adjustments,
             kind,
             long_edge,
             mode.value,
@@ -259,6 +376,7 @@ def scopes_for_adjustments(
             columns,
             int(max_nits.value),
             is_current=lambda: session.scope_tokens[kind] == token,
+            local_adjustments=session.local_adjustments if request.include_locals else [],
         )
     except StaleRender:
         return JSONResponse(status_code=409, content={"detail": "Stale scope request dropped."})
@@ -294,6 +412,37 @@ def webgpu_proxy(
     )
 
 
+@app.get("/api/session/{session_id}/local-mask/{local_id}")
+def local_mask_proxy(
+    session_id: str,
+    local_id: str,
+    long_edge: int = Query(default=1600, ge=256, le=2000),
+    edit_revision: int | None = Query(default=None, ge=0),
+) -> Response:
+    try:
+        session = store.get(session_id)
+        _check_revision(session.edit_revision, edit_revision)
+        local = next(item for item in session.local_adjustments if item.id == local_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except StopIteration as exc:
+        raise HTTPException(status_code=404, detail=f"Local adjustment '{local_id}' was not found.") from exc
+    except RevisionConflictError as exc:
+        raise _revision_conflict(exc) from exc
+    mask = session.render_cache.compiled_local_mask(session.adjustments, local, long_edge)
+    height, width = mask.shape
+    return Response(
+        content=mask.tobytes(order="C"),
+        media_type="application/octet-stream",
+        headers={
+            "X-Image-Width": str(width),
+            "X-Image-Height": str(height),
+            "X-Pixel-Format": "r8unorm",
+            "X-Local-Adjustment": local.id,
+        },
+    )
+
+
 @app.get("/api/session/{session_id}/diagnostics")
 def session_diagnostics(session_id: str) -> dict[str, object]:
     try:
@@ -307,8 +456,11 @@ def session_diagnostics(session_id: str) -> dict[str, object]:
 def export(session_id: str, settings: ExportSettings):
     try:
         session = store.get(session_id)
+        _check_revision(session.edit_revision, settings.edit_revision)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RevisionConflictError as exc:
+        raise _revision_conflict(exc) from exc
 
     backend = export_backends.get(settings.format)
     if backend is None:
@@ -332,14 +484,16 @@ def export(session_id: str, settings: ExportSettings):
 @app.post("/api/session/{session_id}/proof/artifact", response_model=ProofArtifactResponse)
 def create_proof_artifact(session_id: str, request: ProofArtifactRequest) -> ProofArtifactResponse:
     try:
-        session = store.update_adjustments(session_id, request.adjustments)
+        session, adjustments = _resolve_edit_request(session_id, request.adjustments, request.edit_revision)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RevisionConflictError as exc:
+        raise _revision_conflict(exc) from exc
     backend = export_backends.get(request.format)
     if backend is None:
         raise HTTPException(status_code=400, detail=f"Unsupported proof format: {request.format}")
     try:
-        return proof_store.create(session, request, backend)
+        return proof_store.create(session, request.model_copy(update={"adjustments": adjustments}), backend)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -458,11 +612,8 @@ def default_export_directory() -> DirectoryPickResponse:
 @app.get("/")
 def root() -> HTMLResponse:
     html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
-    html = html.replace('/static/styles.css', f'/static/styles.css?v={APP_VERSION}')
-    html = html.replace('/static/webgpu-preview.js', f'/static/webgpu-preview.js?v={APP_VERSION}')
-    html = html.replace('/static/app.js', f'/static/app.js?v={APP_VERSION}')
-    html = html.replace('/static/proofing-ui.js', f'/static/proofing-ui.js?v={APP_VERSION}')
-    return HTMLResponse(content=html)
+    html = html.replace("__HDR_FINISHER_ASSET_VERSION__", APP_VERSION)
+    return HTMLResponse(content=html, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/launcher")

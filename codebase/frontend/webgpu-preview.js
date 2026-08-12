@@ -20,6 +20,8 @@
       this.curveSampleCache = new Map();
       this.surfaceKeys = new WeakMap();
       this.intermediates = new Map();
+      this.localMasks = new Map();
+      this.localParamBuffers = new Map();
       this.bindGroupLayout = null;
       this.pipelineLayout = null;
     }
@@ -80,22 +82,31 @@
         intermediate.filmTexture?.destroy();
         intermediate.spatialATexture?.destroy();
         intermediate.spatialBTexture?.destroy();
+        intermediate.localTexture?.destroy();
       }
       this.intermediates.clear();
+      for (const mask of this.localMasks.values()) mask.texture?.destroy();
+      this.localMasks.clear();
+      for (const buffer of this.localParamBuffers.values()) buffer.destroy();
+      this.localParamBuffers.clear();
       this.curveSampleCache.clear();
     }
 
-    async render(sessionId, lane, adjustments, curveSampler, longEdge = 1600) {
-      return this.renderTo(this.canvas, sessionId, lane, adjustments, curveSampler, longEdge);
+    async render(sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0) {
+      return this.renderTo(this.canvas, sessionId, lane, adjustments, curveSampler, longEdge, localAdjustments, editRevision);
     }
 
-    async renderTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600) {
+    async renderTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0) {
       if (!this.available || !sessionId) return false;
       if (this.sessionId !== sessionId) this.resetSession(sessionId);
       const serial = (this.renderSerials.get(canvas) || 0) + 1;
       this.renderSerials.set(canvas, serial);
       const proxy = await this.loadProxy(sessionId, lane, longEdge);
       if (serial !== this.renderSerials.get(canvas) || !proxy) return false;
+      const activeLocals = localAdjustments.filter((local) => local.enabled !== false && local.opacity > 0 && local[`${lane}_grade`]?.enabled !== false);
+      if (!activeLocals.every((local) => gpuLocalSupported(local[`${lane}_grade`]))) return false;
+      const masks = await Promise.all(activeLocals.map((local) => this.loadLocalMask(sessionId, local, longEdge, editRevision)));
+      if (serial !== this.renderSerials.get(canvas) || masks.some((mask) => !mask)) return false;
 
       if (canvas.width !== proxy.width) canvas.width = proxy.width;
       if (canvas.height !== proxy.height) canvas.height = proxy.height;
@@ -109,18 +120,17 @@
       this.device.queue.writeBuffer(this.paramBuffer, 0, params);
       this.device.queue.writeBuffer(this.curveBuffer, 0, curves);
       const intermediate = this.ensureIntermediate(canvas, proxy.width, proxy.height);
-      const makeBindGroup = (sourceView, spatialView) => this.device.createBindGroup({
+      const makeBindGroup = (sourceView, spatialView, parameterBuffer = this.paramBuffer) => this.device.createBindGroup({
           layout: this.bindGroupLayout,
           entries: [
             { binding: 0, resource: sourceView },
-            { binding: 1, resource: { buffer: this.paramBuffer } },
+            { binding: 1, resource: { buffer: parameterBuffer } },
             { binding: 2, resource: { buffer: this.curveBuffer } },
             { binding: 3, resource: spatialView },
             { binding: 4, resource: this.spatialSampler },
           ],
       });
       const baseBindGroup = makeBindGroup(proxy.texture.createView(), intermediate.spatialATexture.createView());
-      const responseBindGroup = makeBindGroup(intermediate.baseTexture.createView(), intermediate.spatialATexture.createView());
       const extractBindGroup = makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialBTexture.createView());
       const horizontalBindGroup = makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialATexture.createView());
       const verticalBindGroup = makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialBTexture.createView());
@@ -138,6 +148,27 @@
       basePass.setBindGroup(0, baseBindGroup);
       basePass.draw(3);
       basePass.end();
+      let localSource = intermediate.baseTexture;
+      for (let index = 0; index < activeLocals.length; index += 1) {
+        const local = activeLocals[index];
+        const target = index % 2 === 0 ? intermediate.localTexture : intermediate.baseTexture;
+        const localBuffer = this.localParamBuffer(local, lane);
+        const localBindGroup = makeBindGroup(localSource.createView(), masks[index].texture.createView(), localBuffer);
+        const localPass = encoder.beginRenderPass({
+          colorAttachments: [{
+            view: target.createView(),
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            loadOp: "clear",
+            storeOp: "store",
+          }],
+        });
+        localPass.setPipeline(pipelines.local);
+        localPass.setBindGroup(0, localBindGroup);
+        localPass.draw(3);
+        localPass.end();
+        localSource = target;
+      }
+      const responseBindGroup = makeBindGroup(localSource.createView(), intermediate.spatialATexture.createView());
       const responsePass = encoder.beginRenderPass({
         colorAttachments: [{
           view: intermediate.filmTexture.createView(),
@@ -250,6 +281,12 @@
         fragment: { module: this.module, entryPoint: "filmResponseFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
+      const local = this.device.createRenderPipeline({
+        layout: this.pipelineLayout,
+        vertex: { module: this.module, entryPoint: "vertexMain" },
+        fragment: { module: this.module, entryPoint: "localAdjustmentFragmentMain", targets: [{ format: "rgba16float" }] },
+        primitive: { topology: "triangle-list" },
+      });
       const extract = this.device.createRenderPipeline({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
@@ -274,7 +311,7 @@
         fragment: { module: this.module, entryPoint: "fragmentMain", targets: [{ format }] },
         primitive: { topology: "triangle-list" },
       });
-      const pipelines = { base, response, extract, blurHorizontal, blurVertical, composite };
+      const pipelines = { base, local, response, extract, blurHorizontal, blurVertical, composite };
       this.pipelines.set(format, pipelines);
       return pipelines;
     }
@@ -286,6 +323,7 @@
       current?.filmTexture?.destroy();
       current?.spatialATexture?.destroy();
       current?.spatialBTexture?.destroy();
+      current?.localTexture?.destroy();
       const createTexture = () => this.device.createTexture({
         size: { width, height },
         format: "rgba16float",
@@ -301,6 +339,7 @@
       const intermediate = {
         baseTexture: createTexture(),
         filmTexture: createTexture(),
+        localTexture: createTexture(),
         spatialATexture: createSpatialTexture(),
         spatialBTexture: createSpatialTexture(),
         width,
@@ -369,6 +408,64 @@
       this.proxies.set(key, proxy);
       this.trimProxyLevels(sessionId, lane);
       return proxy;
+    }
+
+    async loadLocalMask(sessionId, local, longEdge, editRevision) {
+      const maskSignature = JSON.stringify(local.mask);
+      const key = `${sessionId}:${local.id}:${longEdge}:${maskSignature}`;
+      const cached = this.localMasks.get(key);
+      if (cached) {
+        this.localMasks.delete(key);
+        this.localMasks.set(key, cached);
+        return cached;
+      }
+      const response = await fetch(`/api/session/${sessionId}/local-mask/${encodeURIComponent(local.id)}?long_edge=${longEdge}&edit_revision=${editRevision}`);
+      if (!response.ok) return null;
+      const width = Number(response.headers.get("X-Image-Width"));
+      const height = Number(response.headers.get("X-Image-Height"));
+      const source = new Uint8Array(await response.arrayBuffer());
+      const bytesPerRow = Math.ceil(width / 256) * 256;
+      const padded = bytesPerRow === width ? source : new Uint8Array(bytesPerRow * height);
+      if (padded !== source) {
+        for (let row = 0; row < height; row += 1) padded.set(source.subarray(row * width, (row + 1) * width), row * bytesPerRow);
+      }
+      const texture = this.device.createTexture({
+        size: { width, height },
+        format: "r8unorm",
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      });
+      this.device.queue.writeTexture(
+        { texture },
+        padded,
+        { bytesPerRow, rowsPerImage: height },
+        { width, height },
+      );
+      const entry = { texture, width, height, byteSize: width * height };
+      this.localMasks.set(key, entry);
+      this.trimLocalMaskCache(longEdge > 1600 ? 160 * 1024 * 1024 : 96 * 1024 * 1024);
+      return entry;
+    }
+
+    trimLocalMaskCache(budget) {
+      let total = [...this.localMasks.values()].reduce((sum, entry) => sum + entry.byteSize, 0);
+      while (this.localMasks.size && total > budget) {
+        const [key, entry] = this.localMasks.entries().next().value;
+        entry.texture.destroy();
+        this.localMasks.delete(key);
+        total -= entry.byteSize;
+      }
+    }
+
+    localParamBuffer(local, lane) {
+      const key = `${local.id}:${lane}`;
+      let buffer = this.localParamBuffers.get(key);
+      const values = buildLocalParams(local, lane);
+      if (!buffer) {
+        buffer = this.createStorageBuffer(values);
+        this.localParamBuffers.set(key, buffer);
+      }
+      this.device.queue.writeBuffer(buffer, 0, values);
+      return buffer;
     }
   }
 
@@ -645,6 +742,33 @@
       }
     });
     return packed;
+  }
+
+  function gpuLocalSupported(grade) {
+    if (!grade || !curveSetNeutral(grade)) return false;
+    const grading = grade.color_grading || {};
+    if (Math.abs(Number(grading.balance) || 0) > 0.000001 || Math.abs((Number(grading.blending) || 50) - 50) > 0.000001) return false;
+    return [grading.shadows, grading.midtones, grading.highlights].every((wheel) =>
+      !wheel || [wheel.hue, wheel.saturation, wheel.luminance_ev].every((value) => Math.abs(Number(value) || 0) < 0.000001));
+  }
+
+  function buildLocalParams(local, lane) {
+    const grade = local[`${lane}_grade`];
+    const values = new Float32Array(16);
+    values[0] = lane === "hdr" ? 1 : 0;
+    values[1] = Number(local.opacity) || 0;
+    values[2] = Number(grade.exposure) || 0;
+    values[3] = Number(grade.highlights) || 0;
+    values[4] = Number(grade.midtones) || 0;
+    values[5] = Number(grade.shadows) || 0;
+    values[6] = Number(grade.blacks) || 0;
+    values[7] = Number(grade.contrast) || 0;
+    values[8] = Math.max(0.001, Number(grade.contrast_pivot) || 0.18);
+    values[9] = Number(grade.white_balance_kelvin) || 6500;
+    values[10] = Number(grade.tint) || 0;
+    values[11] = Number(grade.saturation) || 0;
+    values[12] = Number(grade.vibrance) || 0;
+    return values;
   }
 
   window.HDRWebGPUPreview = HDRWebGPUPreview;
@@ -1260,12 +1384,59 @@
       return max(rgb * exp2(p[124] * mask), vec3f(0.0));
     }
 
+    fn localSaturation(input: vec3f) -> vec3f {
+      let y = lumaAces(input);
+      let neutral = vec3f(y);
+      let chroma = input - neutral;
+      let maximum = max(input.r, max(input.g, input.b));
+      let minimum = min(input.r, min(input.g, input.b));
+      let denominator = max(max(abs(maximum), abs(minimum)), max(abs(y), 0.000001));
+      let relativeChroma = clamp((maximum - minimum) / denominator, 0.0, 1.0);
+      let vibranceWeight = pow(1.0 - relativeChroma, 2.0);
+      return neutral + chroma * max(0.0, 1.0 + p[12] * vibranceWeight) * max(0.0, 1.0 + p[11]);
+    }
+
+    fn applyLocalGrade(input: vec3f) -> vec3f {
+      let hdr = p[0] > 0.5;
+      let sourceY = max(select(lumaSrgb(input), lumaAces(input), hdr), 0.00000001);
+      let pivot = max(p[8], 0.000001);
+      let stops = log2(sourceY / pivot);
+      let blacks = clamp((-stops - 3.0) / 3.0, 0.0, 1.0);
+      let shadows = clamp(1.0 - abs(stops + 2.0) / 2.5, 0.0, 1.0);
+      let midtones = clamp(1.0 - abs(stops) / 2.5, 0.0, 1.0);
+      let highlights = clamp((stops - 0.5) / 3.0, 0.0, 1.0);
+      let zoneEv = p[6] * blacks + p[5] * shadows + p[4] * midtones + p[3] * highlights;
+      let targetStops = stops * exp2(p[7]) + zoneEv + p[2];
+      var rgb = input * (pivot * exp2(clamp(targetStops, -32.0, 24.0)) / sourceY);
+      if (hdr) {
+        let offset = (p[9] - 6500.0) / 6500.0;
+        rgb *= vec3f(1.0 + offset * 0.15, 1.0 + p[10] * 0.08, 1.0 - offset * 0.15);
+        rgb = localSaturation(rgb);
+      } else {
+        var aces = srgbToAcescg(rgb);
+        let offset = (p[9] - 6500.0) / 6500.0;
+        aces *= vec3f(1.0 + offset * 0.15, 1.0 + p[10] * 0.08, 1.0 - offset * 0.15);
+        rgb = acescgToSrgb(localSaturation(aces));
+      }
+      return max(rgb, vec3f(0.0));
+    }
+
     @fragment fn baseFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let dimensions = textureDimensions(sourceTexture);
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let source = textureLoad(sourceTexture, coordinate, 0).rgb;
       let output = select(renderSdrBase(source), renderHdrBase(source), p[0] > 0.5);
       return vec4f(output, 1.0);
+    }
+
+    @fragment fn localAdjustmentFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let dimensions = textureDimensions(sourceTexture);
+      let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
+      let source = textureLoad(sourceTexture, coordinate, 0).rgb;
+      let maskDimensions = textureDimensions(spatialTexture);
+      let maskCoordinate = clamp(coordinate, vec2i(0), vec2i(maskDimensions) - vec2i(1));
+      let influence = clamp(textureLoad(spatialTexture, maskCoordinate, 0).r * p[1], 0.0, 1.0);
+      return vec4f(mix(source, applyLocalGrade(source), influence), 1.0);
     }
 
     @fragment fn filmResponseFragmentMain(input: VertexOut) -> @location(0) vec4f {

@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -423,6 +424,206 @@ class AdjustmentState(BaseModel):
     shared: SharedAdjustments = Field(default_factory=SharedAdjustments)
 
 
+class MaskPoint(BaseModel):
+    """A point in normalized, uncropped source coordinates."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    x: float = Field(ge=0.0, le=1.0)
+    y: float = Field(ge=0.0, le=1.0)
+    pressure: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
+class BrushStroke(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    points: list[MaskPoint] = Field(min_length=1, max_length=16384)
+    radius: float = Field(default=0.025, gt=0.0, le=1.0)
+    hardness: float = Field(default=0.75, ge=0.0, le=1.0)
+    flow: float = Field(default=1.0, ge=0.0, le=1.0)
+    opacity: float = Field(default=1.0, ge=0.0, le=1.0)
+    smoothing: float = Field(default=0.35, ge=0.0, le=1.0)
+    erase: bool = False
+
+
+class PathNode(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    x: float = Field(ge=0.0, le=1.0)
+    y: float = Field(ge=0.0, le=1.0)
+    in_x: float | None = Field(default=None, ge=0.0, le=1.0)
+    in_y: float | None = Field(default=None, ge=0.0, le=1.0)
+    out_x: float | None = Field(default=None, ge=0.0, le=1.0)
+    out_y: float | None = Field(default=None, ge=0.0, le=1.0)
+    node_type: Literal["sharp", "smooth"] = "smooth"
+    feather: float | None = Field(default=None, ge=0.0, le=0.5)
+
+
+class MaskLeaf(BaseModel):
+    """Typed mask payload.
+
+    One public model keeps recursive command payloads stable while leaf-specific
+    validation below rejects fields that do not make sense for the selected type.
+    Sampled leaves are serializable but remain renderer feature-gated.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal[
+        "brush",
+        "linear_gradient",
+        "luminance_range",
+        "path",
+        "sampled_point",
+        "sampled_gradient",
+    ]
+    strokes: list[BrushStroke] = Field(default_factory=list, max_length=4096)
+    start: MaskPoint | None = None
+    end: MaskPoint | None = None
+    fade_in_start_ev: float = Field(default=-12.0, ge=-24.0, le=24.0)
+    full_start_ev: float = Field(default=-8.0, ge=-24.0, le=24.0)
+    full_end_ev: float = Field(default=6.0, ge=-24.0, le=24.0)
+    fade_out_end_ev: float = Field(default=10.0, ge=-24.0, le=24.0)
+    nodes: list[PathNode] = Field(default_factory=list, max_length=16384)
+    feather: float = Field(default=0.0, ge=0.0, le=0.5)
+    sample: MaskPoint | None = None
+    radius: float = Field(default=0.2, gt=0.0, le=2.0)
+    luma_tolerance_ev: float = Field(default=1.0, gt=0.0, le=12.0)
+    chroma_tolerance: float = Field(default=0.08, gt=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def validate_leaf_payload(self) -> "MaskLeaf":
+        if self.type == "brush" and not self.strokes:
+            raise ValueError("brush masks require at least one stroke")
+        if self.type in {"linear_gradient", "sampled_gradient"} and (self.start is None or self.end is None):
+            raise ValueError(f"{self.type} masks require start and end points")
+        if self.type == "path" and len(self.nodes) < 3:
+            raise ValueError("path masks require at least three nodes")
+        if self.type == "sampled_point" and self.sample is None:
+            raise ValueError("sampled_point masks require a sample point")
+        if not (
+            self.fade_in_start_ev
+            <= self.full_start_ev
+            <= self.full_end_ev
+            <= self.fade_out_end_ev
+        ):
+            raise ValueError("luminance range handles must be ordered")
+        return self
+
+
+class MaskExpression(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operator: Literal["leaf", "union", "intersect", "subtract"] = "leaf"
+    leaf: MaskLeaf | None = None
+    children: list["MaskExpression"] = Field(default_factory=list, max_length=64)
+    inverted: bool = False
+
+    @model_validator(mode="after")
+    def validate_expression(self) -> "MaskExpression":
+        if self.operator == "leaf":
+            if self.leaf is None or self.children:
+                raise ValueError("leaf expressions require exactly one leaf payload")
+        elif self.leaf is not None or len(self.children) < 2:
+            raise ValueError("mask operators require at least two child expressions")
+        return self
+
+
+def _default_local_mask() -> MaskExpression:
+    return MaskExpression(
+        leaf=MaskLeaf(
+            type="linear_gradient",
+            start=MaskPoint(x=0.25, y=0.5),
+            end=MaskPoint(x=0.75, y=0.5),
+        )
+    )
+
+
+class LocalGrade(BaseModel):
+    """Pixel-local controls supported by the first local-rendering phase."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    exposure: float = Field(default=0.0, ge=-8.0, le=8.0)
+    highlights: float = Field(default=0.0, ge=-2.0, le=2.0)
+    midtones: float = Field(default=0.0, ge=-2.0, le=2.0)
+    shadows: float = Field(default=0.0, ge=-2.0, le=2.0)
+    blacks: float = Field(default=0.0, ge=-2.0, le=2.0)
+    contrast: float = Field(default=0.0, ge=-2.0, le=2.0)
+    contrast_pivot: float = Field(default=0.18, ge=0.001, le=4.0)
+    white_balance_kelvin: int = Field(default=6500, ge=1000, le=25000)
+    tint: float = Field(default=0.0, ge=-2.0, le=2.0)
+    saturation: float = Field(default=0.0, ge=-1.0, le=3.0)
+    vibrance: float = Field(default=0.0, ge=-1.0, le=3.0)
+    luma_curve: list[list[float]] = Field(default_factory=_default_curve_points)
+    red_curve: list[list[float]] = Field(default_factory=_default_curve_points)
+    green_curve: list[list[float]] = Field(default_factory=_default_curve_points)
+    blue_curve: list[list[float]] = Field(default_factory=_default_curve_points)
+    color_grading: ColorGradingAdjustments = Field(default_factory=ColorGradingAdjustments)
+
+
+class LocalAdjustment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(default_factory=lambda: str(uuid4()), min_length=1, max_length=128)
+    name: str = Field(default="Local Adjustment", min_length=1, max_length=120)
+    enabled: bool = True
+    opacity: float = Field(default=1.0, ge=0.0, le=1.0)
+    mask: MaskExpression = Field(default_factory=_default_local_mask)
+    hdr_grade: LocalGrade = Field(default_factory=LocalGrade)
+    sdr_grade: LocalGrade = Field(default_factory=LocalGrade)
+
+
+class SourceReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    filename: str
+    fingerprint_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    durable_path: str | None = None
+    byte_size: int | None = Field(default=None, ge=0)
+
+
+class EditDocument(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = 1
+    source: SourceReference
+    interpretation_override: "SourceInterpretationOverride" = Field(default_factory=lambda: SourceInterpretationOverride())
+    global_adjustments: AdjustmentState = Field(default_factory=AdjustmentState)
+    local_adjustments: list[LocalAdjustment] = Field(default_factory=list, max_length=256)
+
+
+class EditCommand(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int = Field(ge=0)
+    command_type: Literal[
+        "replace_document",
+        "set_global_adjustments",
+        "create_local",
+        "update_local",
+        "delete_local",
+        "reorder_locals",
+        "undo",
+        "redo",
+    ]
+    target_id: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class EditCommandBatch(BaseModel):
+    commands: list[EditCommand] = Field(min_length=1, max_length=100)
+
+
+class EditStateResponse(BaseModel):
+    revision: int = Field(ge=0)
+    document: EditDocument
+    dirty: bool = False
+    can_undo: bool = False
+    can_redo: bool = False
+
+
 class PreviewSettings(BaseModel):
     long_edge: int = 1600
     format: str = "png"
@@ -434,6 +635,11 @@ class SessionPayload(BaseModel):
     metadata: MetadataPayload
     analysis: HDRAnalysis
     adjustments: AdjustmentState
+    edit_document: EditDocument | None = None
+    edit_revision: int = Field(default=0, ge=0)
+    dirty: bool = False
+    can_undo: bool = False
+    can_redo: bool = False
     preview: PreviewSettings
     capabilities: dict[str, CapabilityInfo]
 
@@ -448,12 +654,14 @@ class SourceInterpretationOverride(BaseModel):
 
 
 class PreviewRequest(BaseModel):
-    adjustments: AdjustmentState
+    adjustments: AdjustmentState | None = None
+    edit_revision: int | None = Field(default=None, ge=0)
     request_id: str | None = None
     generation: int | None = Field(default=None, ge=0)
     tier: Literal["interactive", "settled", "refinement"] = "settled"
     long_edge: int | None = Field(default=None, ge=256, le=2000)
     hdr_display: bool = True
+    include_locals: bool = True
 
 
 class HistogramChannel(BaseModel):
@@ -494,6 +702,7 @@ class ExportSettings(BaseModel):
     jpeg_gain_map_scale: Literal["full", "half"] = "full"
     output_path: str | None = None
     overwrite: bool = False
+    edit_revision: int | None = Field(default=None, ge=0)
     output_finishing: OutputFinishingSettings = Field(default_factory=OutputFinishingSettings)
 
 
@@ -513,13 +722,30 @@ class DirectoryPickResponse(BaseModel):
 
 
 class ProofArtifactRequest(BaseModel):
-    adjustments: AdjustmentState
+    adjustments: AdjustmentState | None = None
+    edit_revision: int | None = Field(default=None, ge=0)
     format: str = "jpeg_ultrahdr"
     quality: int = Field(default=90, ge=1, le=100)
     jpeg_gain_map_quality: int = Field(default=100, ge=1, le=100)
     jpeg_gain_map_scale: Literal["full", "half"] = "full"
     long_edge: int = Field(default=1200, ge=256, le=1600)
     output_finishing: OutputFinishingSettings = Field(default_factory=OutputFinishingSettings)
+
+
+class ProjectSaveRequest(BaseModel):
+    path: str
+    source_path: str | None = None
+
+
+class ProjectOpenRequest(BaseModel):
+    path: str
+    source_path: str | None = None
+
+
+class ProjectResponse(BaseModel):
+    path: str
+    revision: int = Field(ge=0)
+    document: EditDocument
 
 
 class JPEGGainMapProofMetadata(BaseModel):

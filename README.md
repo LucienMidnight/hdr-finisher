@@ -15,7 +15,7 @@ Use HDR Finisher after RAW development, compositing, or rendering. It is the fin
 5. Proof how the gain map adapts to different displays.
 6. Export JPEG Ultra HDR, AVIF with a gain map, or SDR PNG.
 
-HDR Finisher is not a RAW developer, layer compositor, masking tool, or local retouching application.
+HDR Finisher is not a RAW developer or layer compositor. Its local-adjustment mode is intended for finishing masks and selective grades, not pixel-cloning or full retouching.
 
 ## Start here
 
@@ -52,7 +52,7 @@ See [Architecture](docs/technical/architecture.md), [Development guide](docs/tec
 - Windows technical-alpha packaging is available.
 - macOS has source-run guidance but no validated package or native display telemetry.
 - JPEG Ultra HDR and AVIF gain-map availability is capability-gated.
-- JPEG XL, batch processing, local adjustments, and polished installers are not implemented.
+- JPEG XL, batch processing, sampled content selectors, and polished installers are not implemented. Brush, gradient, luminance-range, and path local adjustments are available; sampled selectors remain build-gated pending IP review.
 
 ## License and third-party software
 

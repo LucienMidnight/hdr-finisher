@@ -4,7 +4,7 @@ import numpy as np
 
 from .color import acescg_to_linear_srgb, linear_srgb_to_acescg, rgb_primaries_adjustment_matrix
 from .finishing import apply_geometry
-from .models import AdjustmentState, PreviewKind, ToneMapper
+from .models import AdjustmentState, LocalAdjustment, PreviewKind, ToneMapper
 
 
 TONE_EQUALIZER_MIN_EV = -6
@@ -21,16 +21,49 @@ def apply_adjustments(
     sdr_reference_image: np.ndarray | None = None,
     *,
     include_grain: bool = True,
+    local_adjustments: list[LocalAdjustment] | None = None,
+    compiled_local_masks: dict[str, np.ndarray] | None = None,
 ) -> np.ndarray:
+    geometry = adjustments.shared.geometry
+    fixed_source = apply_geometry(image, geometry)
     if kind == PreviewKind.HDR:
-        return _apply_hdr_adjustments(apply_geometry(image, adjustments.shared.geometry), adjustments, include_grain)
+        return _apply_hdr_adjustments(
+            fixed_source,
+            adjustments,
+            include_grain,
+            local_adjustments=local_adjustments,
+            fixed_source=fixed_source,
+            compiled_local_masks=compiled_local_masks,
+        )
     if sdr_reference_image is not None:
-        reference = apply_geometry(sdr_reference_image, adjustments.shared.geometry)
-        return _apply_sdr_adjustments_to_reference(reference, adjustments, include_grain)
-    return _apply_sdr_adjustments(apply_geometry(image, adjustments.shared.geometry), adjustments, include_grain)
+        reference = apply_geometry(sdr_reference_image, geometry)
+        return _apply_sdr_adjustments_to_reference(
+            reference,
+            adjustments,
+            include_grain,
+            local_adjustments=local_adjustments,
+            fixed_source=fixed_source,
+            compiled_local_masks=compiled_local_masks,
+        )
+    return _apply_sdr_adjustments(
+        fixed_source,
+        adjustments,
+        include_grain,
+        local_adjustments=local_adjustments,
+        fixed_source=fixed_source,
+        compiled_local_masks=compiled_local_masks,
+    )
 
 
-def _apply_hdr_adjustments(image: np.ndarray, adjustments: AdjustmentState, include_grain: bool = True) -> np.ndarray:
+def _apply_hdr_adjustments(
+    image: np.ndarray,
+    adjustments: AdjustmentState,
+    include_grain: bool = True,
+    *,
+    local_adjustments: list[LocalAdjustment] | None = None,
+    fixed_source: np.ndarray | None = None,
+    compiled_local_masks: dict[str, np.ndarray] | None = None,
+) -> np.ndarray:
     hdr = adjustments.hdr
     result = image.astype(np.float32, copy=True)
     if hdr.tone_section_enabled:
@@ -71,6 +104,17 @@ def _apply_hdr_adjustments(image: np.ndarray, adjustments: AdjustmentState, incl
         result = _apply_curves(result, adjustments, PreviewKind.HDR)
     if hdr.color_grading_section_enabled:
         result = _apply_color_grading(result, hdr.color_grading, PreviewKind.HDR)
+    if local_adjustments:
+        from .local_adjustments import apply_local_stack
+
+        result = apply_local_stack(
+            result,
+            image if fixed_source is None else fixed_source,
+            local_adjustments,
+            PreviewKind.HDR,
+            adjustments.shared.geometry,
+            compiled_masks=compiled_local_masks,
+        )
     if hdr.film_look_section_enabled:
         result = _apply_film_look(result, adjustments, PreviewKind.HDR, include_grain=False)
     if hdr.vignette_section_enabled:
@@ -161,7 +205,15 @@ def _tone_adjusted_source_peak_nits(hdr: object, *, tone_enabled: bool = True) -
     return max(1.0, peak_linear * 100.0 / 0.18)
 
 
-def _apply_sdr_adjustments(image: np.ndarray, adjustments: AdjustmentState, include_grain: bool = True) -> np.ndarray:
+def _apply_sdr_adjustments(
+    image: np.ndarray,
+    adjustments: AdjustmentState,
+    include_grain: bool = True,
+    *,
+    local_adjustments: list[LocalAdjustment] | None = None,
+    fixed_source: np.ndarray | None = None,
+    compiled_local_masks: dict[str, np.ndarray] | None = None,
+) -> np.ndarray:
     sdr = adjustments.sdr
     result = image.astype(np.float32, copy=True)
     if sdr.tone_section_enabled:
@@ -188,6 +240,17 @@ def _apply_sdr_adjustments(image: np.ndarray, adjustments: AdjustmentState, incl
         result = _apply_curves(result, adjustments, PreviewKind.SDR)
     if sdr.color_grading_section_enabled:
         result = _apply_color_grading(result, sdr.color_grading, PreviewKind.SDR)
+    if local_adjustments:
+        from .local_adjustments import apply_local_stack
+
+        result = apply_local_stack(
+            result,
+            image if fixed_source is None else fixed_source,
+            local_adjustments,
+            PreviewKind.SDR,
+            adjustments.shared.geometry,
+            compiled_masks=compiled_local_masks,
+        )
     if sdr.film_look_section_enabled:
         result = _apply_film_look(result, adjustments, PreviewKind.SDR, include_grain=False)
     if sdr.vignette_section_enabled:
@@ -198,7 +261,13 @@ def _apply_sdr_adjustments(image: np.ndarray, adjustments: AdjustmentState, incl
 
 
 def _apply_sdr_adjustments_to_reference(
-    image: np.ndarray, adjustments: AdjustmentState, include_grain: bool = True
+    image: np.ndarray,
+    adjustments: AdjustmentState,
+    include_grain: bool = True,
+    *,
+    local_adjustments: list[LocalAdjustment] | None = None,
+    fixed_source: np.ndarray | None = None,
+    compiled_local_masks: dict[str, np.ndarray] | None = None,
 ) -> np.ndarray:
     sdr = adjustments.sdr
     result = np.clip(image.astype(np.float32, copy=True), 0.0, 1.0)
@@ -231,6 +300,17 @@ def _apply_sdr_adjustments_to_reference(
         result = _apply_curves(result, adjustments, PreviewKind.SDR)
     if sdr.color_grading_section_enabled:
         result = _apply_color_grading(result, sdr.color_grading, PreviewKind.SDR)
+    if local_adjustments:
+        from .local_adjustments import apply_local_stack
+
+        result = apply_local_stack(
+            result,
+            image if fixed_source is None else fixed_source,
+            local_adjustments,
+            PreviewKind.SDR,
+            adjustments.shared.geometry,
+            compiled_masks=compiled_local_masks,
+        )
     if sdr.film_look_section_enabled:
         result = _apply_film_look(result, adjustments, PreviewKind.SDR, include_grain=False)
     if sdr.vignette_section_enabled:

@@ -507,6 +507,39 @@ def test_startup_is_ephemeral_and_all_grade_groups_begin_collapsed() -> None:
     assert "localStorage" not in proofing
 
 
+def test_local_adjustments_use_group_and_folder_hierarchy_with_immediate_tool_state() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+
+    assert 'class="control-group collapsed local-adjustments-group"' in html
+    assert 'id="grade-mode-global"' not in html
+    assert 'class="lane-folder-shell"' in html
+    assert html.count('role="tablist"') >= 2
+    assert 'class="local-lane-folder"' in html
+    assert 'class="local-stack-surface"' in html
+    assert 'aria-pressed="false" title="Create a linear-gradient adjustment"' in html
+    assert "function updateLocalToolState()" in javascript
+    assert "updateLocalToolState();\n    if (!state.editDocument) await refreshEditState();" in javascript
+    assert 'if (!state.editDocument) await refreshEditState();' in javascript
+    assert 'button.disabled = false;' in javascript
+    assert 'els.localEraser.disabled = !brushSelected;' in javascript
+    assert 'if (group === els.localAdjustmentGroup) setGradeMode(collapsed ? "global" : "local");' in javascript
+    assert 'body[data-grade-mode="local"] #grade-workflow-panel > :not(.grade-header):not(.local-adjustments-group)' not in css
+    assert 'if (response.status === 409)' in javascript
+    assert 'response = await requestScope(state.editRevision);' in javascript
+    assert ".lane-folder-shell > .lane-switch button.active" in css
+    assert '.control-group[data-group="geometry"] #crop-open' in css
+
+
+def test_frontend_assets_use_the_application_version_for_cache_busting() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+
+    assert html.count("__HDR_FINISHER_ASSET_VERSION__") == 5
+    assert '/static/app.js?v=__HDR_FINISHER_ASSET_VERSION__' in html
+    assert '/static/styles.css?v=__HDR_FINISHER_ASSET_VERSION__' in html
+
+
 def test_modified_status_uses_one_unabbreviated_term() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
