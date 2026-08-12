@@ -29,6 +29,12 @@ async function editValue(locator, value, { keyboardOnly = false } = {}) {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
     await page.click("#test-pattern-button");
     await page.waitForFunction(() => document.body.dataset.workflow === "grade");
+    for (const groupName of ["hdr-tone", "hdr-highlights", "hdr-equalizer", "hdr-color"]) {
+      const group = page.locator(`[data-group="${groupName}"]`);
+      if (await group.evaluate((element) => element.classList.contains("collapsed"))) {
+        await group.locator(".group-toggle").click();
+      }
+    }
 
     const gradeReadouts = page.locator('#grade-workflow-panel [data-value-path]');
     const editableReadouts = page.locator('#grade-workflow-panel [data-value-path].editable-value');

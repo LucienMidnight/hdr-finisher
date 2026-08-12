@@ -75,7 +75,7 @@ An imported upload is copied into a temporary owned source, decoded, normalized,
 - Preview settings and capabilities
 - Render cache
 
-There is no database and no persistent project-file format. Ejecting/replacing the session discards unsaved adjustments. Exports and manually recorded proof evidence are the durable artifacts.
+There is no database and no persistent project-file format. Ejecting/replacing the session discards unsaved adjustments. Reloading or restarting also resets interface preferences and layout to canonical defaults. Exports and manually recorded proof evidence are the durable artifacts.
 
 ## Preview scheduling
 

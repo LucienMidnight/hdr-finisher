@@ -34,7 +34,7 @@ Native Chrome rendering is authoritative for the tested browser/device combinati
 - JPEG proof tiles use the encoded JPEG SDR endpoint and libultrahdr-decoded HDR endpoint, then apply ISO/Skia gain-map weighting.
 - Auto uses the selected Windows display's nominal headroom. Fixed presets are 400, 600, 1,000, 2,000, and 4,000 nits against HDR Finisher's 100-nit reference white; Full uses encoded headroom; Custom accepts 100–10,000 nits.
 - Proof targets above encoded capacity are capped and disclosed. Targets above the active display's reported headroom remain selectable with a nonblocking warning.
-- Proof format and target persist, while the preview-only toggle starts off for every new source. SDR Fallback and A/B peeks suspend the proof and resume it on HDR Grade.
+- Proof format, target, display, and watermark choices last only for the current page session and return to defaults on reload. The preview-only toggle starts off for every new source. SDR Fallback and A/B peeks suspend the proof and resume it on HDR Grade.
 
 The formula follows the Skia gain-map definition and implementation; no extra Chromium-only weighting stage was found:
 

@@ -8,7 +8,7 @@ On a supported GPU, the WebGPU canvas is both the interactive and settled author
 
 Without WebGPU, the app keeps a smaller CPU working proxy and presents raw RGBA8 pixels in a persistent canvas. The current image stays visible while replacement work is pending.
 
-The optional **High-quality preview** preference lives on the Technical tab. It uses a larger idle GPU proxy and a refined scope after you pause. It is off by default, is stored only in the browser profile, and never changes source interpretation, adjustments, proof settings, export dimensions, or export quality.
+The optional **High-quality preview** preference lives on the Technical tab. It uses a larger idle GPU proxy and a refined scope after you pause. It is off on every app load, lasts only for the current page session, and never changes source interpretation, adjustments, proof settings, export dimensions, or export quality.
 
 ## HDR and SDR viewing
 

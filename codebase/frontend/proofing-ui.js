@@ -1,6 +1,4 @@
 (() => {
-  const SETTINGS_KEY = "hdr-finisher-chrome-proof-v1";
-  const FIXED_TARGETS = new Set(["400", "600", "1000", "2000", "4000"]);
   let requestGeneration = 0;
   let artifactDirty = true;
   let phase = "idle";
@@ -8,7 +6,6 @@
   let reviewSuggestion = "";
   let autoFallbackNotice = false;
 
-  restoreSettings();
   bindProofEvents();
   window.HDRProofing = {
     invalidate: invalidateProof,
@@ -25,7 +22,6 @@
     els.chromeProofToggle.addEventListener("click", toggleProof);
     els.chromeProofWatermarkToggle.addEventListener("change", () => {
       state.proofWatermarkEnabled = els.chromeProofWatermarkToggle.checked;
-      persistSettings();
       syncProofPresentation();
     });
     els.chromeProofRefresh.addEventListener("click", buildProofOnDemand);
@@ -33,12 +29,10 @@
       state.proofFormat = els.chromeProofFormat.value;
       artifactDirty = true;
       markProofDirty();
-      persistSettings();
     });
     els.chromeProofTarget.addEventListener("change", () => {
       state.proofTarget = els.chromeProofTarget.value;
       markProofDirty();
-      persistSettings();
       renderProofUi();
     });
     els.chromeProofCustomNits.addEventListener("change", () => {
@@ -46,12 +40,10 @@
       els.chromeProofCustomNits.value = String(value);
       state.proofCustomNits = value;
       markProofDirty();
-      persistSettings();
     });
     els.chromeProofDisplay.addEventListener("change", () => {
       state.proofDisplayId = els.chromeProofDisplay.value;
       markProofDirty();
-      persistSettings();
       renderProofUi();
     });
     els.chromeProofImage.addEventListener("dragstart", (event) => event.preventDefault());
@@ -342,7 +334,6 @@
     const autoAvailable = displays.some((display) => Number.isFinite(display.nominal_headroom));
     if (autoOption) autoOption.disabled = !autoAvailable;
     if (!autoAvailable && state.proofTarget === "auto") fallbackFromUnavailableAuto();
-    persistSettings();
   }
 
   function fallbackFromUnavailableAuto() {
@@ -352,7 +343,6 @@
     errorMessage = "Auto is unavailable; using the 1,000-nit default. Choose another fixed target if needed.";
     phase = "idle";
     autoFallbackNotice = true;
-    persistSettings();
   }
 
   async function refreshAutoProofOnFocus() {
@@ -372,7 +362,6 @@
       state.proofFormat = format;
       artifactDirty = true;
       markProofDirty();
-      persistSettings();
     }
     reviewSuggestion = `Proof settings now match the selected ${label} export.`;
     activateWorkflowTab("proof", { focus: true });
@@ -399,33 +388,6 @@
     if (state.proofTarget === "full") return "Full";
     const nits = state.proofTarget === "custom" ? state.proofCustomNits : Number(state.proofTarget);
     return `${Number(nits).toLocaleString()} nit`;
-  }
-
-  function restoreSettings() {
-    try {
-      const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
-      if (["jpeg_ultrahdr", "avif_gain_map"].includes(saved.format)) state.proofFormat = saved.format;
-      if (["auto", "full", "custom"].includes(saved.target) || FIXED_TARGETS.has(saved.target)) state.proofTarget = saved.target;
-      if (Number.isFinite(saved.customNits)) state.proofCustomNits = clamp(saved.customNits, 100, 10000);
-      if (typeof saved.displayId === "string") state.proofDisplayId = saved.displayId;
-      if (typeof saved.showWatermark === "boolean") state.proofWatermarkEnabled = saved.showWatermark;
-    } catch {
-      // Local proof preferences are optional.
-    }
-  }
-
-  function persistSettings() {
-    try {
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify({
-        format: state.proofFormat,
-        target: state.proofTarget,
-        customNits: state.proofCustomNits,
-        displayId: state.proofDisplayId,
-        showWatermark: state.proofWatermarkEnabled,
-      }));
-    } catch {
-      // Proofing remains usable when local storage is unavailable.
-    }
   }
 
   function preloadImage(url) {

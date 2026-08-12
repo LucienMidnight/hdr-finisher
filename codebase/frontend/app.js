@@ -172,9 +172,13 @@ const LAYOUT_LIMITS = {
   dockH: [240, 340],
 };
 const LAYOUT_SETTLE_DELAY = 120;
-const HIGH_QUALITY_PREVIEW_KEY = "hdr-finisher:high-quality-preview:v1";
-const SCOPE_ZOOM_KEY = "hdr-finisher:scope-zoom:v1";
-const COMPARE_LAYOUT_KEY = "hdr-finisher:compare-layout:v1";
+const LEGACY_UI_PREFERENCE_KEYS = new Set([
+  "hdr-finisher:high-quality-preview:v1",
+  "hdr-finisher:scope-zoom:v1",
+  "hdr-finisher:compare-layout:v1",
+  "hdr-finisher-source-collapsed",
+  "hdr-finisher-chrome-proof-v1",
+]);
 const COMPARE_LAYOUTS = new Set(["single", "split-vertical", "split-horizontal", "side-horizontal", "side-vertical"]);
 const waveformCanvasCache = new WeakMap();
 
@@ -186,8 +190,8 @@ const state = {
   scopeMode: "histogram",
   scopeChannelMode: "composite",
   scopeMaxNits: 4000,
-  sourceSettingsOpen: true,
-  metadataOpen: true,
+  sourceSettingsOpen: false,
+  metadataOpen: false,
   interpretationGateDismissed: false,
   zoomMode: "fit",
   zoomPercent: 100,
@@ -352,7 +356,6 @@ const state = {
   },
   displayInfo: buildDisplayProbe(),
   layout: { ...LAYOUT_DEFAULTS },
-  layoutBucket: null,
   layoutSettleTimer: null,
   proofEnabled: false,
   proofArtifact: null,
@@ -728,7 +731,8 @@ const capabilityForFormat = {
 boot();
 
 async function boot() {
-  restorePreviewPreference();
+  clearLegacyUiPreferences();
+  initializePreviewPreferences();
   initializeInstrumentShell();
   initializePreviewScheduler();
   activateWorkflowTab("import", { focus: false });
@@ -760,16 +764,21 @@ async function initializeGpuPreview() {
   state.displayInfo.gpu = state.gpuPreview.detail;
 }
 
-function restorePreviewPreference() {
+function clearLegacyUiPreferences() {
   try {
-    state.highQualityPreview = localStorage.getItem(HIGH_QUALITY_PREVIEW_KEY) === "true";
-    const savedScopeZoom = Number(localStorage.getItem(SCOPE_ZOOM_KEY));
-    if ([1000, 4000, 10000].includes(savedScopeZoom)) state.scopeMaxNits = savedScopeZoom;
-    const savedCompareLayout = localStorage.getItem(COMPARE_LAYOUT_KEY);
-    if (COMPARE_LAYOUTS.has(savedCompareLayout)) state.compareLayout = savedCompareLayout;
+    const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
+    keys
+      .filter((key) => LEGACY_UI_PREFERENCE_KEYS.has(key) || key?.startsWith("hdr-finisher-layout:"))
+      .forEach((key) => localStorage.removeItem(key));
   } catch {
-    state.highQualityPreview = false;
+    // Startup defaults do not depend on browser storage being available.
   }
+}
+
+function initializePreviewPreferences() {
+  state.highQualityPreview = false;
+  state.scopeMaxNits = 4000;
+  state.compareLayout = "single";
   if (els.highQualityPreview) els.highQualityPreview.checked = state.highQualityPreview;
   if (els.scopeZoom) els.scopeZoom.value = String(state.scopeMaxNits);
 }
@@ -833,8 +842,8 @@ function observeViewerSize() {
 }
 
 function initializeInstrumentShell() {
-  restoreLayoutState();
-  restoreSourceRailState();
+  initializeLayoutState();
+  initializeSourceRailState();
   enhanceRangeControls();
   enhanceEditableGradeValues();
   initSplitter({
@@ -858,16 +867,10 @@ function initializeInstrumentShell() {
     axis: "y",
     direction: -1,
   });
-  window.addEventListener("resize", debounceLayoutBucketRestore);
 }
 
-function restoreSourceRailState() {
-  let collapsed = false;
-  try {
-    collapsed = localStorage.getItem("hdr-finisher-source-collapsed") === "true";
-  } catch (_) {
-    collapsed = false;
-  }
+function initializeSourceRailState() {
+  const collapsed = false;
   const rail = els.sourceRailExpand.closest(".source-rail");
   rail.classList.toggle("collapsed", collapsed);
   els.appShell.classList.toggle("source-collapsed", collapsed);
@@ -876,45 +879,8 @@ function restoreSourceRailState() {
   els.sourceRailExpand.textContent = collapsed ? "Show" : "Hide";
 }
 
-function persistSourceRailState(collapsed) {
-  try {
-    localStorage.setItem("hdr-finisher-source-collapsed", String(collapsed));
-  } catch (_) {
-    // Collapsing still works when storage is unavailable.
-  }
-}
-
-function viewportBucket() {
-  if (window.innerWidth >= 2100) return "2100+";
-  if (window.innerWidth >= 1600) return "1600";
-  return "1280";
-}
-
-function layoutStorageKey(bucket = viewportBucket()) {
-  return `hdr-finisher-layout:${bucket}`;
-}
-
-function safeStoredLayout(bucket = viewportBucket()) {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(layoutStorageKey(bucket)) || "null");
-    if (!parsed || typeof parsed !== "object") return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function restoreLayoutState() {
-  const bucket = viewportBucket();
-  state.layoutBucket = bucket;
-  const stored = safeStoredLayout(bucket) || {};
-  state.layout = {
-    railW: clamp(Number(stored.railW) || LAYOUT_DEFAULTS.railW, ...LAYOUT_LIMITS.railW),
-    gradeW: clamp(Number(stored.gradeW) || LAYOUT_DEFAULTS.gradeW, ...LAYOUT_LIMITS.gradeW),
-    dockH: clamp(Number(stored.dockH) || LAYOUT_DEFAULTS.dockH, ...LAYOUT_LIMITS.dockH),
-    dockOpen: stored.dockOpen !== false,
-    dockTab: ["histogram", "waveform", "parade", "technical"].includes(stored.dockTab) ? stored.dockTab : LAYOUT_DEFAULTS.dockTab,
-  };
+function initializeLayoutState() {
+  state.layout = { ...LAYOUT_DEFAULTS };
   applyLayoutState();
 }
 
@@ -942,27 +908,6 @@ function applyLayoutState() {
     els.scopeChannelMode.value = state.scopeChannelMode;
   }
   updateSplitterAria();
-}
-
-function persistLayoutState() {
-  state.layout.dockOpen = !state.dockCollapsed;
-  state.layout.dockTab = state.activeDockTab;
-  try {
-    localStorage.setItem(layoutStorageKey(state.layoutBucket), JSON.stringify(state.layout));
-  } catch {
-    // Layout persistence is a convenience; private browsing can reject storage.
-  }
-}
-
-function debounceLayoutBucketRestore() {
-  window.clearTimeout(debounceLayoutBucketRestore.timer);
-  debounceLayoutBucketRestore.timer = window.setTimeout(() => {
-    const nextBucket = viewportBucket();
-    if (nextBucket === state.layoutBucket) return;
-    persistLayoutState();
-    restoreLayoutState();
-    dispatchLayoutSettled();
-  }, LAYOUT_SETTLE_DELAY);
 }
 
 function updateSplitterAria() {
@@ -1013,7 +958,6 @@ function initSplitter({ element, stateKey, cssVar, axis, direction }) {
     element.classList.remove("dragging");
     document.documentElement.removeAttribute("data-resizing");
     document.documentElement.style.cursor = "";
-    persistLayoutState();
     scheduleLayoutSettled();
   };
 
@@ -1354,7 +1298,6 @@ function bindEvents() {
     els.sourceRailExpand.setAttribute("aria-expanded", String(!collapsed));
     els.sourceRailExpand.setAttribute("aria-label", collapsed ? "Expand source metadata" : "Collapse source metadata");
     els.sourceRailExpand.textContent = collapsed ? "Show" : "Hide";
-    persistSourceRailState(collapsed);
   });
   els.sourceSettingsToggle.addEventListener("click", () => {
     state.sourceSettingsOpen = !state.sourceSettingsOpen;
@@ -1386,20 +1329,10 @@ function bindEvents() {
   els.scopeZoom.addEventListener("change", async () => {
     const requestedMaxNits = Number(els.scopeZoom.value);
     state.scopeMaxNits = [1000, 4000, 10000].includes(requestedMaxNits) ? requestedMaxNits : 4000;
-    try {
-      localStorage.setItem(SCOPE_ZOOM_KEY, String(state.scopeMaxNits));
-    } catch {
-      // The in-memory preference still works when browser storage is unavailable.
-    }
     await refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
   });
   els.highQualityPreview?.addEventListener("change", () => {
     state.highQualityPreview = els.highQualityPreview.checked;
-    try {
-      localStorage.setItem(HIGH_QUALITY_PREVIEW_KEY, String(state.highQualityPreview));
-    } catch {
-      // Private browsing can deny storage; the in-memory preference still works.
-    }
     state.gpuPreview?.resetSession(state.session?.session_id || null);
     state.gpuPreparedLane = { hdr: false, sdr: false };
     if (state.session) {
@@ -3172,14 +3105,14 @@ function renderCurveChannelTabs() {
 
 function bindToneEqualizerEditor() {
   const canvas = els.toneEqualizerEditor;
-  const beginDrag = (clientX, clientY) => {
+  const beginDrag = (clientX, clientY, bandIndex) => {
     if (!state.session) return;
     state.previewScheduler?.beginInteraction();
     const rect = canvas.getBoundingClientRect();
-    state.activeToneEqualizerBand = nearestToneEqualizerBandIndex(clientX, rect);
+    state.activeToneEqualizerBand = bandIndex;
     state.selectedToneEqualizerBand = state.activeToneEqualizerBand;
     const startingNodes = currentToneEqualizerNodes();
-    updateToneEqualizerFromPointer(clientX, clientY, rect, startingNodes);
+    drawToneEqualizerEditor();
     const move = (event) => {
       event.preventDefault();
       updateToneEqualizerFromPointer(event.clientX, event.clientY, rect, startingNodes);
@@ -3198,12 +3131,24 @@ function bindToneEqualizerEditor() {
   };
 
   canvas.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || !state.session) return;
     event.preventDefault();
-    beginDrag(event.clientX, event.clientY);
+    const rect = canvas.getBoundingClientRect();
+    const bandIndex = toneEqualizerNodeIndexAtPointer(event.clientX, event.clientY, rect);
+    if (bandIndex !== null) {
+      beginDrag(event.clientX, event.clientY, bandIndex);
+      return;
+    }
+    const curveHit = toneEqualizerCurveHitAtPointer(event.clientX, event.clientY, rect);
+    if (curveHit) addToneEqualizerNode(curveHit.inputEv);
   });
-  canvas.addEventListener("dblclick", (event) => {
+  canvas.addEventListener("contextmenu", (event) => {
     event.preventDefault();
-    addToneEqualizerNode(toneEqualizerEvFromPointer(event.clientX, canvas.getBoundingClientRect()));
+    if (!state.session) return;
+    const bandIndex = toneEqualizerNodeIndexAtPointer(event.clientX, event.clientY, canvas.getBoundingClientRect());
+    if (bandIndex === null) return;
+    state.selectedToneEqualizerBand = bandIndex;
+    removeToneEqualizerNode(bandIndex);
   });
   canvas.addEventListener("wheel", (event) => {
     event.preventDefault();
@@ -3259,7 +3204,7 @@ function bindToneEqualizerEditor() {
     renderControlState();
   });
   els.toneEqualizerAdd.addEventListener("click", () => addToneEqualizerNode());
-  els.toneEqualizerRemove.addEventListener("click", removeToneEqualizerNode);
+  els.toneEqualizerRemove.addEventListener("click", () => removeToneEqualizerNode());
   els.toneEqualizerRadiusDown.addEventListener("click", () => changeToneEqualizerRadius(-0.25));
   els.toneEqualizerRadiusUp.addEventListener("click", () => changeToneEqualizerRadius(0.25));
 }
@@ -3295,12 +3240,51 @@ function updateToneEqualizerFromPointer(clientX, clientY, rect, startingNodes) {
   debouncePreview("hdr");
 }
 
-function nearestToneEqualizerBandIndex(clientX, rect) {
+function toneEqualizerPointerPosition(clientX, clientY, rect) {
+  const canvas = els.toneEqualizerEditor;
+  return {
+    x: (clientX - rect.left) * canvas.width / Math.max(rect.width, 1),
+    y: (clientY - rect.top) * canvas.height / Math.max(rect.height, 1),
+  };
+}
+
+function toneEqualizerCanvasPosition(inputEv, adjustmentEv) {
+  const canvas = els.toneEqualizerEditor;
+  const left = 26;
+  const right = 14;
+  const top = 16;
+  const bottom = 28;
+  return {
+    x: left + ((inputEv - TONE_EQUALIZER_MIN_EV) / (TONE_EQUALIZER_PQ_MAX_EV - TONE_EQUALIZER_MIN_EV)) * (canvas.width - left - right),
+    y: top + ((TONE_EQUALIZER_MAX_ADJUSTMENT_EV - adjustmentEv) / (TONE_EQUALIZER_MAX_ADJUSTMENT_EV * 2)) * (canvas.height - top - bottom),
+  };
+}
+
+function toneEqualizerNodeIndexAtPointer(clientX, clientY, rect) {
+  const pointer = toneEqualizerPointerPosition(clientX, clientY, rect);
+  let nearestIndex = null;
+  let nearestDistance = 10 ** 2;
+  currentToneEqualizerNodes().forEach((node, index) => {
+    const position = toneEqualizerCanvasPosition(node.input_ev, node.adjustment_ev);
+    const distance = ((position.x - pointer.x) ** 2) + ((position.y - pointer.y) ** 2);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestIndex = index;
+    }
+  });
+  return nearestIndex;
+}
+
+function toneEqualizerCurveHitAtPointer(clientX, clientY, rect) {
+  const pointer = toneEqualizerPointerPosition(clientX, clientY, rect);
   const inputEv = toneEqualizerEvFromPointer(clientX, rect);
-  const nodes = currentToneEqualizerNodes();
-  return nodes.reduce((best, node, index) => (
-    Math.abs(node.input_ev - inputEv) < Math.abs(nodes[best].input_ev - inputEv) ? index : best
-  ), 0);
+  const adjustmentEv = sampleToneEqualizerAdjustment(
+    inputEv,
+    currentToneEqualizerNodes(),
+    Number(state.adjustments.hdr.tone_equalizer_smoothing || 0.5),
+  );
+  const curvePosition = toneEqualizerCanvasPosition(inputEv, adjustmentEv);
+  return Math.abs(curvePosition.y - pointer.y) <= 8 ? { inputEv, adjustmentEv } : null;
 }
 
 function setToneEqualizerBand(index, requestedValue) {
@@ -3527,9 +3511,9 @@ function addToneEqualizerNode(preferredEv = null) {
   debouncePreview("hdr");
 }
 
-function removeToneEqualizerNode() {
+function removeToneEqualizerNode(requestedIndex = null) {
   const nodes = currentToneEqualizerNodes();
-  const index = state.selectedToneEqualizerBand;
+  const index = requestedIndex ?? state.selectedToneEqualizerBand;
   if (nodes.length <= TONE_EQUALIZER_MIN_NODE_COUNT || index <= 0 || index >= nodes.length - 1) return;
   nodes.splice(index, 1);
   state.selectedToneEqualizerBand = Math.min(index, nodes.length - 2);
@@ -3571,30 +3555,35 @@ function formatToneBandNits(value) {
 
 function bindCurveEditor() {
   const canvas = els.curveEditor;
-  const beginDrag = (clientX, clientY) => {
+  const beginDrag = (clientX, clientY, pointIndex) => {
     if (!state.session) return;
     state.previewScheduler?.beginInteraction();
-    const rect = canvas.getBoundingClientRect();
-    state.activeCurvePoint = nearestCurvePointIndex(clientX, clientY, rect);
+    state.activeCurvePoint = pointIndex;
     state.selectedCurvePoint = state.activeCurvePoint;
     const dragOrigin = {
       clientX,
       clientY,
       point: [...currentCurveValues()[state.activeCurvePoint]],
     };
-    updateCurveFromPointer(clientX, clientY, dragOrigin);
+    let dragged = false;
+    drawCurveEditor();
     const move = (event) => {
       event.preventDefault();
+      dragged ||= Math.hypot(event.clientX - clientX, event.clientY - clientY) >= 3;
+      if (!dragged) return;
       updateCurveFromPointer(event.clientX, event.clientY, dragOrigin);
     };
-    const stop = () => {
+    const stop = (event) => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", stop);
       window.removeEventListener("pointercancel", stop);
       state.activeCurvePoint = null;
+      if (!dragged && event.type !== "pointercancel") removeCurvePoint(pointIndex);
+      drawCurveEditor();
       syncCurveControlsFromState();
       invalidatePreview(state.currentView);
       renderControlState();
+      debouncePreview(state.currentView);
       state.previewScheduler?.endInteraction();
     };
     window.addEventListener("pointermove", move);
@@ -3603,7 +3592,21 @@ function bindCurveEditor() {
   };
 
   canvas.addEventListener("pointerdown", (event) => {
-    beginDrag(event.clientX, event.clientY);
+    if (event.button !== 0 || !state.session) return;
+    event.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const pointIndex = curvePointIndexAtPointer(event.clientX, event.clientY, rect);
+    if (pointIndex !== null) {
+      beginDrag(event.clientX, event.clientY, pointIndex);
+      return;
+    }
+    const curveHit = curveHitAtPointer(event.clientX, event.clientY, rect);
+    if (!curveHit) return;
+    addCurvePoint(curveHit.x);
+    drawCurveEditor();
+    invalidatePreview(state.currentView);
+    renderControlState();
+    debouncePreview(state.currentView);
   });
   canvas.addEventListener("keydown", (event) => {
     const curve = currentCurveValues();
@@ -3642,11 +3645,13 @@ function bindCurveEditor() {
 
 function updateCurveFromPointer(clientX, clientY, dragOrigin = null) {
   const rect = els.curveEditor.getBoundingClientRect();
-  const index = state.activeCurvePoint ?? nearestCurvePointIndex(clientX, clientY, rect);
+  const index = state.activeCurvePoint;
+  if (index === null) return;
   const curve = currentCurveValues();
   const point = [...curve[index]];
-  const directX = clamp((clientX - rect.left) / rect.width, 0, 1);
-  const directY = 1 - clamp((clientY - rect.top) / rect.height, 0, 1);
+  const direct = curvePointerPosition(clientX, clientY, rect);
+  const directX = direct.x;
+  const directY = direct.y;
   const normalizedX = dragOrigin
     ? dragOrigin.point[0] + (clientX - dragOrigin.clientX) / Math.max(rect.width, 1)
     : directX;
@@ -3678,7 +3683,7 @@ function drawCurveEditor() {
   const ctx = canvas.getContext("2d");
   const width = canvas.width;
   const height = canvas.height;
-  const padding = 18;
+  const padding = curveEditorPadding();
   const curve = currentCurveValues();
   const curveSamples = sampleCurvePoints(curve, 96);
   const channelColor = curveColor(state.selectedCurveChannel);
@@ -3779,14 +3784,40 @@ function currentCurveLane() {
   return state.currentView === "sdr" ? "sdr" : "hdr";
 }
 
-function nearestCurvePointIndex(clientX, clientY, rect) {
-  const normalizedX = clamp((clientX - rect.left) / rect.width, 0, 1);
-  const normalizedY = 1 - clamp((clientY - rect.top) / rect.height, 0, 1);
+function curveEditorPadding() {
+  return 18;
+}
+
+function curvePointerPosition(clientX, clientY, rect) {
+  const canvas = els.curveEditor;
+  const padding = curveEditorPadding();
+  const canvasX = (clientX - rect.left) * canvas.width / Math.max(rect.width, 1);
+  const canvasY = (clientY - rect.top) * canvas.height / Math.max(rect.height, 1);
+  return {
+    canvasX,
+    canvasY,
+    x: clamp((canvasX - padding) / Math.max(canvas.width - padding * 2, 1), 0, 1),
+    y: 1 - clamp((canvasY - padding) / Math.max(canvas.height - padding * 2, 1), 0, 1),
+  };
+}
+
+function curvePointCanvasPosition([x, y]) {
+  const canvas = els.curveEditor;
+  const padding = curveEditorPadding();
+  return {
+    x: padding + x * (canvas.width - padding * 2),
+    y: canvas.height - padding - y * (canvas.height - padding * 2),
+  };
+}
+
+function curvePointIndexAtPointer(clientX, clientY, rect) {
+  const pointer = curvePointerPosition(clientX, clientY, rect);
   const curve = currentCurveValues();
-  let nearestIndex = 0;
-  let nearestDistance = Number.POSITIVE_INFINITY;
-  curve.forEach(([x, y], index) => {
-    const distance = ((x - normalizedX) ** 2) + ((y - normalizedY) ** 2);
+  let nearestIndex = null;
+  let nearestDistance = 10 ** 2;
+  curve.forEach((point, index) => {
+    const position = curvePointCanvasPosition(point);
+    const distance = ((position.x - pointer.canvasX) ** 2) + ((position.y - pointer.canvasY) ** 2);
     if (distance < nearestDistance) {
       nearestDistance = distance;
       nearestIndex = index;
@@ -3795,28 +3826,43 @@ function nearestCurvePointIndex(clientX, clientY, rect) {
   return nearestIndex;
 }
 
-function addCurvePoint() {
+function curveHitAtPointer(clientX, clientY, rect) {
+  const pointer = curvePointerPosition(clientX, clientY, rect);
+  const [[, curveY]] = sampleCurvePoints(currentCurveValues(), 1, pointer.x);
+  const curvePosition = curvePointCanvasPosition([pointer.x, curveY]);
+  if (Math.abs(curvePosition.y - pointer.canvasY) > 8) return null;
+  return { x: pointer.x, y: curveY };
+}
+
+function addCurvePoint(requestedX = null) {
   const curve = currentCurveValues();
   if (curve.length >= 16) return;
   let insertIndex = 1;
   let widestGap = -1;
-  for (let index = 0; index < curve.length - 1; index += 1) {
-    const gap = curve[index + 1][0] - curve[index][0];
-    if (gap > widestGap) {
-      widestGap = gap;
-      insertIndex = index + 1;
+  if (requestedX === null) {
+    for (let index = 0; index < curve.length - 1; index += 1) {
+      const gap = curve[index + 1][0] - curve[index][0];
+      if (gap > widestGap) {
+        widestGap = gap;
+        insertIndex = index + 1;
+      }
     }
+  } else {
+    insertIndex = curve.findIndex(([x]) => x > requestedX);
+    if (insertIndex <= 0) return;
+    widestGap = curve[insertIndex][0] - curve[insertIndex - 1][0];
   }
-  const x = curve[insertIndex - 1][0] + widestGap / 2;
+  const x = requestedX === null ? curve[insertIndex - 1][0] + widestGap / 2 : requestedX;
+  if (x - curve[insertIndex - 1][0] < 0.02 || curve[insertIndex][0] - x < 0.02) return;
   const [[, y]] = sampleCurvePoints(curve, 1, x);
   curve.splice(insertIndex, 0, [x, y]);
   state.selectedCurvePoint = insertIndex;
   setCurveValues(state.selectedCurveChannel, curve);
 }
 
-function removeCurvePoint() {
+function removeCurvePoint(requestedIndex = null) {
   const curve = currentCurveValues();
-  const index = state.selectedCurvePoint ?? Math.floor(curve.length / 2);
+  const index = requestedIndex ?? state.selectedCurvePoint ?? Math.floor(curve.length / 2);
   if (curve.length <= 2 || isLockedCurveEndpoint(index)) return;
   curve.splice(index, 1);
   state.selectedCurvePoint = Math.min(index, curve.length - 2);
@@ -3858,9 +3904,8 @@ function clamp(value, min, max) {
 }
 
 function defaultCurvePoints() {
-  // The middle point should shape a broad tonal region. Extra neutral quarter
-  // points pin that edit into a narrow hump and make small HDR changes abrupt.
-  return [[0, 0], [0.5, 0.5], [1, 1]];
+  // Keep three editable controls between the fixed black and white anchors.
+  return [[0, 0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1, 1]];
 }
 
 function defaultToneEqualizerNodes() {
@@ -4474,11 +4519,6 @@ async function setCompareLayout(layout) {
   if (!COMPARE_LAYOUTS.has(layout)) return;
   state.compareLayout = layout;
   state.comparePeekActive = false;
-  try {
-    localStorage.setItem(COMPARE_LAYOUT_KEY, layout);
-  } catch {
-    // The layout still applies for this session when storage is unavailable.
-  }
   renderCompareLayout();
   if (layout === "single") {
     await showCachedPreview(state.currentView);
@@ -4773,7 +4813,6 @@ function toggleAnalysisDock() {
   els.analysisDock.classList.toggle("collapsed", state.dockCollapsed);
   els.dockCollapse.textContent = state.dockCollapsed ? "Open" : "Collapse";
   els.dockCollapse.setAttribute("aria-expanded", String(!state.dockCollapsed));
-  persistLayoutState();
   scheduleLayoutSettled();
 }
 
@@ -4793,7 +4832,6 @@ async function activateDockTab(tab) {
   const technical = tab === "technical";
   els.scopeView.classList.toggle("hidden", technical);
   els.technicalView.classList.toggle("hidden", !technical);
-  persistLayoutState();
   scheduleLayoutSettled();
   if (technical) return;
   state.scopeMode = tab === "waveform" || tab === "parade" ? "waveform" : "histogram";
@@ -4889,7 +4927,7 @@ function renderControlState() {
   for (const [group, paths] of Object.entries(controlGroups)) {
     const count = paths.filter((path) => isPathModified(path, defaults)).length;
     const output = document.querySelector(`[data-modified-count="${group}"]`);
-    if (output) output.textContent = count ? `${count} mod` : "";
+    if (output) output.textContent = count ? `${count} modified` : "";
     output?.closest(".control-group")?.classList.toggle("modified", count > 0);
   }
   for (const lane of ["hdr", "sdr"]) {

@@ -231,8 +231,8 @@ def test_hdr_luma_curve_preserves_blue_rich_pixel_channel_ratios() -> None:
     assert not np.allclose(output, image), "The luma curve should still change luminance"
 
 
-def test_default_curve_has_one_broad_middle_control_point() -> None:
-    expected = [[0.0, 0.0], [0.5, 0.5], [1.0, 1.0]]
+def test_default_curve_has_three_editable_control_points() -> None:
+    expected = [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
 
     assert HDRAdjustments().luma_curve == expected
     assert SDRAdjustments().luma_curve == expected

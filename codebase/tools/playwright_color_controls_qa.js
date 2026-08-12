@@ -103,6 +103,9 @@ async function main() {
     await page.locator("#view-hdr").click();
 
     const group = page.locator('[data-group="hdr-color"]');
+    if (await group.evaluate((element) => element.classList.contains("collapsed"))) {
+      await group.locator(".group-toggle").click();
+    }
     await group.scrollIntoViewIfNeeded();
     await group.screenshot({ path: screenshot });
     const metrics = await group.evaluate((element) => ({

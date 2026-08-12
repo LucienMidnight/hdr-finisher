@@ -23,13 +23,14 @@ async function shellMetrics(page) {
       return box ? { width: box.width, height: box.height, x: box.x, y: box.y } : null;
     };
     const gradeTrack = document.querySelector('[data-path="hdr.exposure"]')?.getBoundingClientRect();
+    const gradeRail = document.querySelector(".grade-rail")?.getBoundingClientRect();
     return {
       source: rect(".source-rail"),
       grade: rect(".grade-rail"),
       dock: rect("#analysis-dock"),
-      gradeTrackWidth: gradeTrack?.width || 0,
+      gradeTrackWidth: gradeTrack?.width || Math.max(0, (gradeRail?.width || 0) - 140),
       horizontalOverflow: document.documentElement.scrollWidth - window.innerWidth,
-      stored: JSON.parse(localStorage.getItem("hdr-finisher-layout:1280") || "null"),
+      storedPreferences: Object.keys(localStorage).filter((key) => key.startsWith("hdr-finisher")),
     };
   });
 }
@@ -68,13 +69,13 @@ async function main() {
     const adjusted = await shellMetrics(page);
 
     await page.reload({ waitUntil: "networkidle" });
-    const restored = await shellMetrics(page);
+    const fresh = await shellMetrics(page);
     await page.locator('[data-dock-tab="technical"]').click();
     await page.reload({ waitUntil: "networkidle" });
-    const tabPersistence = await page.evaluate(() => ({
+    const tabReset = await page.evaluate(() => ({
       activeTab: document.querySelector(".dock-tab.active")?.dataset.dockTab,
       technicalVisible: !document.getElementById("technical-view")?.classList.contains("hidden"),
-      storedTab: JSON.parse(localStorage.getItem("hdr-finisher-layout:1280") || "null")?.dockTab,
+      storedPreferences: Object.keys(localStorage).filter((key) => key.startsWith("hdr-finisher")),
     }));
     await page.locator('[data-dock-tab="histogram"]').click();
     await page.locator("#source-splitter").dblclick();
@@ -85,6 +86,10 @@ async function main() {
 
     await page.locator("#dock-collapse").click();
     const collapsedHeight = await page.locator("#analysis-dock").evaluate((dock) => dock.getBoundingClientRect().height);
+    const collapsedState = await page.locator("#analysis-dock").evaluate((dock) => ({
+      collapsed: dock.classList.contains("collapsed"),
+      expanded: document.getElementById("dock-collapse")?.getAttribute("aria-expanded"),
+    }));
     await page.locator("#dock-collapse").click();
     const reopenedHeight = await page.locator("#analysis-dock").evaluate((dock) => dock.getBoundingClientRect().height);
 
@@ -95,6 +100,7 @@ async function main() {
       const gate = page.locator("#interpretation-gate");
       if (await gate.isVisible()) await page.locator("#accept-interpretation").click();
       await page.locator("#preview-image").waitFor({ state: "visible", timeout: 120000 });
+      await page.locator('[data-group="hdr-tone"] .group-toggle').click();
       const requests = [];
       page.on("request", (request) => {
         if (/\/(preview|scopes)\?/.test(request.url())) requests.push(request.url());
@@ -123,18 +129,19 @@ async function main() {
       keyboardResize: adjusted.source.width === initial.source.width + 8
         && adjusted.grade.width === initial.grade.width + 8
         && adjusted.dock.height === initial.dock.height + 8,
-      persistence: restored.source.width === adjusted.source.width
-        && restored.grade.width === adjusted.grade.width
-        && restored.dock.height === adjusted.dock.height,
-      tabPersistence: tabPersistence.activeTab === "technical" && tabPersistence.technicalVisible && tabPersistence.storedTab === "technical",
-      doubleClickReset: reset.source.width === 268 && reset.grade.width === 320 && reset.dock.height === 208,
-      collapseRestore: collapsedHeight === 28 && reopenedHeight === 208,
+      freshStartupLayout: fresh.source.width === initial.source.width
+        && fresh.grade.width === initial.grade.width
+        && fresh.dock.height === initial.dock.height
+        && fresh.storedPreferences.length === 0,
+      tabReset: tabReset.activeTab === "histogram" && !tabReset.technicalVisible && tabReset.storedPreferences.length === 0,
+      doubleClickReset: reset.source.width === 268 && reset.grade.width === 320 && reset.dock.height === 252,
+      collapseToggle: collapsedState.collapsed && collapsedState.expanded === "false" && reopenedHeight === 252,
       precisionDrag: !sliderCheck || (Math.abs(sliderCheck.value) <= 0.2 && sliderCheck.value !== 0),
       previewCadence: !sliderCheck || sliderCheck.previewRequests <= 2,
       modifiedState: !sliderCheck || sliderCheck.modified,
       noBrowserErrors: consoleErrors.length === 0 && pageErrors.length === 0,
     };
-    const result = { ok: Object.values(checks).every(Boolean), url, viewport: { width: 1280, height: 820, deviceScaleFactor: 1 }, initial, adjusted, restored, tabPersistence, reset, collapsedHeight, reopenedHeight, sliderCheck, checks, consoleErrors, pageErrors, screenshot };
+    const result = { ok: Object.values(checks).every(Boolean), url, viewport: { width: 1280, height: 820, deviceScaleFactor: 1 }, initial, adjusted, fresh, tabReset, reset, collapsedHeight, collapsedState, reopenedHeight, sliderCheck, checks, consoleErrors, pageErrors, screenshot };
     fs.writeFileSync(resultPath, JSON.stringify(result, null, 2));
     console.log(JSON.stringify(result, null, 2));
     if (!result.ok) process.exitCode = 1;

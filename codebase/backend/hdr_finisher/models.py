@@ -106,8 +106,8 @@ def _default_tone_equalizer_nodes() -> list[ToneEqualizerNode]:
 
 
 def _default_curve_points() -> list[list[float]]:
-    """Return a neutral curve whose middle point has broad, gentle influence."""
-    return [[0.0, 0.0], [0.5, 0.5], [1.0, 1.0]]
+    """Return a neutral curve with three editable points between fixed endpoints."""
+    return [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
 
 
 class FilmLookAdjustments(BaseModel):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -105,7 +106,16 @@ def test_tint_controls_follow_darktable_hue_mapping() -> None:
 
 
 def test_equalizer_interactions_include_non_scrolling_wheel_and_keyboard_alternatives() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    equalizer_binding = javascript[javascript.index("function bindToneEqualizerEditor"):javascript.index("function updateToneEqualizerFromPointer")]
+
+    assert "Left-click the curve to add a band" in html
+    assert "right-click an interior band to remove it" in html
+    assert "toneEqualizerNodeIndexAtPointer(event.clientX, event.clientY, rect)" in equalizer_binding
+    assert "toneEqualizerCurveHitAtPointer(event.clientX, event.clientY, rect)" in equalizer_binding
+    assert 'canvas.addEventListener("contextmenu"' in equalizer_binding
+    assert "removeToneEqualizerNode(bandIndex)" in equalizer_binding
     assert 'canvas.addEventListener("wheel"' in javascript
     assert "event.preventDefault();" in javascript
     assert "{ passive: false }" in javascript
@@ -139,7 +149,7 @@ def test_equalizer_chart_drag_syncs_the_selected_band_range_visual() -> None:
     assert "updateRangeVisual(els.toneEqualizerBandValue);" in sync_controls
 
 
-def test_curve_drag_uses_live_preview_scheduler_and_broad_default_shape() -> None:
+def test_curve_drag_uses_live_preview_scheduler_and_three_point_default_shape() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     curve_binding = javascript[javascript.index("function bindCurveEditor"):javascript.index("function drawCurveEditor")]
 
@@ -150,8 +160,21 @@ def test_curve_drag_uses_live_preview_scheduler_and_broad_default_shape() -> Non
     assert "const verticalScale = curveVerticalAdjustmentScale(index, curve.length)" in curve_binding
     assert "return index === 0 || index === pointCount - 1 ? 0.18 : 0.35" in curve_binding
     assert "const verticalStep = step * Math.min(1, curveVerticalAdjustmentScale(index, curve.length) / 0.35)" in curve_binding
-    assert "return [[0, 0], [0.5, 0.5], [1, 1]]" in javascript
+    assert "return [[0, 0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1, 1]]" in javascript
     assert 'if (tier === "interactive") return Math.min(384, interactiveProxyLongEdge())' in javascript
+
+
+def test_curve_canvas_clicks_add_and_remove_exact_points() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    curve_binding = javascript[javascript.index("function bindCurveEditor"):javascript.index("function updateCurveFromPointer")]
+
+    assert "Click the curve to add a point" in html
+    assert "curvePointIndexAtPointer(event.clientX, event.clientY, rect)" in curve_binding
+    assert "if (!dragged && event.type !== \"pointercancel\") removeCurvePoint(pointIndex);" in curve_binding
+    assert "const curveHit = curveHitAtPointer(event.clientX, event.clientY, rect);" in curve_binding
+    assert "addCurvePoint(curveHit.x);" in curve_binding
+    assert "const padding = curveEditorPadding();" in javascript
 
 
 def test_curve_panel_reset_is_visible_when_curves_are_modified() -> None:
@@ -245,7 +268,7 @@ def test_linear_workflow_uses_tab_specific_rails_and_reports_export_readiness() 
     assert "PROOF_IDLE_MS" not in proofing
     assert "requestGeneration" in proofing
     assert "state.proofWatermarkEnabled" in proofing
-    assert "showWatermark: state.proofWatermarkEnabled" in proofing
+    assert "localStorage" not in proofing
     assert 'els.scopeKindLabel.textContent = "HDR";' in proofing
     assert "AUTHORED" not in proofing
     assert "#chrome-proof-watermark" in css and "opacity: .5;" in css
@@ -279,8 +302,8 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     assert 'class="probe-strip"' not in html
     assert 'id="probe-readout"' not in html
     assert "Move over the image" not in html
-    assert "sourceSettingsOpen: true" in javascript
-    assert "metadataOpen: true" in javascript
+    assert "sourceSettingsOpen: false" in javascript
+    assert "metadataOpen: false" in javascript
     assert "dockH: [240, 340]" in javascript
     assert "dockH: 252" in javascript
     assert "updateProbeReadout" not in javascript
@@ -362,7 +385,7 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     assert "white-space: normal;" in css
     assert 'id="scope-freshness"' in html and 'aria-live="polite"' in html
     assert '/static/preview-scheduler.js' in html
-    assert "HIGH_QUALITY_PREVIEW_KEY" in javascript
+    assert "state.highQualityPreview = false" in javascript
     assert "preview-raw" in javascript
     assert 'tier: "interactive"' in scheduler
     assert "requestAnimationFrame" in scheduler
@@ -389,7 +412,7 @@ def test_viewer_exposes_icon_comparison_layouts_with_active_lane_scopes() -> Non
     assert 'id="compare-status"' not in html
     assert html.count('class="viewer-tool-divider"') == 3
     assert 'class="zoom-presets" role="group" aria-label="Zoom presets"' in html
-    assert 'COMPARE_LAYOUT_KEY = "hdr-finisher:compare-layout:v1"' in javascript
+    assert 'state.compareLayout = "single"' in javascript
     assert 'els.compareStatus' not in javascript
     assert 'refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane })' in javascript
     assert "renderComparisonPreview(other, { force: true })" in javascript
@@ -402,6 +425,29 @@ def test_viewer_exposes_icon_comparison_layouts_with_active_lane_scopes() -> Non
     assert "width: clamp(120px, 13vw, 190px);" in css
     assert ".viewer-tool-divider" in css
     assert ".zoom-presets" in css
+
+
+def test_startup_is_ephemeral_and_all_grade_groups_begin_collapsed() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    proofing = (FRONTEND / "proofing-ui.js").read_text(encoding="utf-8")
+
+    group_sections = re.findall(r'<section class="control-group[^"]*"[^>]*>', html)
+    group_toggles = re.findall(r'<button class="group-toggle"[^>]*aria-expanded="([^"]+)"', html)
+    assert group_sections and all("collapsed" in section for section in group_sections)
+    assert len(group_toggles) == len(group_sections)
+    assert set(group_toggles) == {"false"}
+    assert "clearLegacyUiPreferences();" in javascript
+    assert "localStorage.setItem" not in javascript
+    assert "localStorage.getItem" not in javascript
+    assert "localStorage" not in proofing
+
+
+def test_modified_status_uses_one_unabbreviated_term() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    assert "`${count} modified`" in javascript
+    assert "`${count} mod`" not in javascript
 
 
 def test_waveform_resolution_policy_reduces_payload_without_coarse_refresh_columns() -> None:

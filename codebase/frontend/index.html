@@ -414,9 +414,9 @@
       <p id="lane-note" class="lane-note">Graded HDR rendition. Exported as the PQ HDR image. Double-click any value to type it.</p>
 
       <div class="lane-panel" data-lane-panel="hdr">
-        <section class="control-group" data-group="hdr-tone">
+        <section class="control-group collapsed" data-group="hdr-tone">
           <div class="control-group-header">
-            <button class="group-toggle" type="button" aria-expanded="true">Tone <span data-modified-count="hdr-tone">Default</span></button>
+            <button class="group-toggle" type="button" aria-expanded="false">Tone <span data-modified-count="hdr-tone">Default</span></button>
             <button class="section-bypass text-button" type="button" data-section-path="hdr.tone_section_enabled" aria-pressed="true" aria-label="Toggle Tone preview">&#9673;</button>
             <button class="group-reset text-button" type="button" data-reset-group="hdr-tone">Reset</button>
           </div>
@@ -442,9 +442,9 @@
           </div>
         </section>
 
-        <section class="control-group" data-group="hdr-highlights">
+        <section class="control-group collapsed" data-group="hdr-highlights">
           <div class="control-group-header">
-            <button class="group-toggle" type="button" aria-expanded="true">Highlight Compression <span data-modified-count="hdr-highlights">Default</span></button>
+            <button class="group-toggle" type="button" aria-expanded="false">Highlight Compression <span data-modified-count="hdr-highlights">Default</span></button>
             <button class="section-bypass text-button" type="button" data-section-path="hdr.highlight_section_enabled" aria-pressed="true" aria-label="Toggle Highlight Compression preview">&#9673;</button>
             <button class="group-reset text-button" type="button" data-reset-group="hdr-highlights">Reset</button>
           </div>
@@ -506,15 +506,15 @@
           </div>
         </section>
 
-        <section class="control-group" data-group="hdr-equalizer">
+        <section class="control-group collapsed" data-group="hdr-equalizer">
           <div class="control-group-header">
-            <button class="group-toggle" type="button" aria-expanded="true">Exposure Bands <span data-modified-count="hdr-equalizer">Default</span></button>
+            <button class="group-toggle" type="button" aria-expanded="false">Exposure Bands <span data-modified-count="hdr-equalizer">Default</span></button>
             <button class="section-bypass text-button" type="button" data-section-path="hdr.tone_equalizer_section_enabled" aria-pressed="true" aria-label="Toggle Exposure Bands preview">&#9673;</button>
             <button class="group-reset text-button" type="button" data-reset-group="hdr-equalizer">Reset</button>
           </div>
           <div class="control-group-body">
             <p class="helper">Adjust exposure by scene brightness. 0 EV is the app's 100-nit diffuse-white reference; the dashed edge marks the 10,000-nit PQ limit.</p>
-            <canvas id="tone-equalizer-editor" width="320" height="220" tabindex="0" aria-label="HDR tone equalizer. Use left and right arrows to select a band, up and down arrows to adjust exposure, brackets to change influence, and Delete to remove an interior band."></canvas>
+            <canvas id="tone-equalizer-editor" width="320" height="220" tabindex="0" aria-label="HDR exposure bands editor. Left-click the curve to add a band, right-click an interior band to remove it, or drag a band to adjust it. Use left and right arrows to select a band, up and down arrows to adjust exposure, brackets to change influence, and Delete to remove an interior band."></canvas>
             <div class="curve-actions tone-equalizer-actions">
               <button id="tone-equalizer-add" type="button" class="text-button">Add Band</button>
               <button id="tone-equalizer-remove" type="button" class="text-button">Remove Band</button>
@@ -536,9 +536,9 @@
           </div>
         </section>
 
-        <section class="control-group" data-group="hdr-color">
+        <section class="control-group collapsed" data-group="hdr-color">
           <div class="control-group-header">
-            <button class="group-toggle" type="button" aria-expanded="true">Color <span data-modified-count="hdr-color">Default</span></button>
+            <button class="group-toggle" type="button" aria-expanded="false">Color <span data-modified-count="hdr-color">Default</span></button>
             <button class="section-bypass text-button" type="button" data-section-path="hdr.color_section_enabled" aria-pressed="true" aria-label="Toggle Color preview">&#9673;</button>
             <button class="group-reset text-button" type="button" data-reset-group="hdr-color">Reset</button>
           </div>
@@ -610,9 +610,9 @@
       </div>
 
       <div class="lane-panel hidden" data-lane-panel="sdr">
-        <section class="control-group" data-group="sdr-base">
+        <section class="control-group collapsed" data-group="sdr-base">
           <div class="control-group-header">
-            <button class="group-toggle" type="button" aria-expanded="true">Base rendition <span data-modified-count="sdr-base">Default</span></button>
+            <button class="group-toggle" type="button" aria-expanded="false">Base rendition <span data-modified-count="sdr-base">Default</span></button>
             <button class="section-bypass text-button" type="button" data-section-path="sdr.base_section_enabled" aria-pressed="true" aria-label="Toggle Base rendition preview">&#9673;</button>
             <button class="group-reset text-button" type="button" data-reset-group="sdr-base">Reset</button>
           </div>
@@ -649,9 +649,9 @@
           </div>
         </section>
 
-        <section class="control-group" data-group="sdr-tone">
+        <section class="control-group collapsed" data-group="sdr-tone">
           <div class="control-group-header">
-            <button class="group-toggle" type="button" aria-expanded="true">Tone <span data-modified-count="sdr-tone">Default</span></button>
+            <button class="group-toggle" type="button" aria-expanded="false">Tone <span data-modified-count="sdr-tone">Default</span></button>
             <button class="section-bypass text-button" type="button" data-section-path="sdr.tone_section_enabled" aria-pressed="true" aria-label="Toggle SDR Tone preview">&#9673;</button>
             <button class="group-reset text-button" type="button" data-reset-group="sdr-tone">Reset</button>
           </div>
@@ -681,9 +681,9 @@
           </div>
         </section>
 
-        <section class="control-group" data-group="sdr-color">
+        <section class="control-group collapsed" data-group="sdr-color">
           <div class="control-group-header">
-            <button class="group-toggle" type="button" aria-expanded="true">Color <span data-modified-count="sdr-color"></span></button>
+            <button class="group-toggle" type="button" aria-expanded="false">Color <span data-modified-count="sdr-color"></span></button>
             <button class="section-bypass text-button" type="button" data-section-path="sdr.color_section_enabled" aria-pressed="true" aria-label="Toggle SDR Color preview">&#9673;</button>
           </div>
           <div class="control-group-body">
@@ -766,7 +766,7 @@
               <button id="curve-remove" type="button" class="text-button">Remove</button>
             </div>
           </div>
-          <canvas id="curve-editor" width="320" height="220" tabindex="0" aria-label="RGB curve editor"></canvas>
+          <canvas id="curve-editor" width="320" height="220" tabindex="0" aria-label="RGB curve editor. Click the curve to add a point, click an interior point to remove it, or drag a point to adjust it."></canvas>
           <p id="curve-status" class="helper">Curves apply only to the active branch.</p>
         </div>
       </section>
