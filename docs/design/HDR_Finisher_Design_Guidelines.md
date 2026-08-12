@@ -109,11 +109,55 @@ Reserve saturated RGB colors for channel-specific scopes and curve channels. Do 
 ## Curves and graphical editors
 
 - Curves begin neutral with three editable points at 25%, 50%, and 75%, plus fixed black and white endpoints.
-- Clicking the curve line adds a point at that position.
-- Clicking an interior point removes it; dragging adjusts it.
+- Left-clicking the curve line adds a point at that position.
+- Left-clicking an existing point selects it; left-dragging adjusts it.
+- Right-clicking an interior point removes it.
 - Fixed endpoints cannot be removed.
 - Selected points use the selected-point token; channel curves use their channel tokens.
 - Canvas instructions must be available through an accessible label and keyboard operation.
+
+### Curve graph component tokens
+
+The curve graph is a reusable instrument component. Its runtime values live in `frontend/styles.css`; canvas code must read these tokens rather than introduce literal colors or sizes.
+
+| Element | Token | Current value | Rule |
+|---|---|---:|---|
+| Graph grid | `--curve-grid` | `#ffffff14` | Quiet one-pixel horizontal grid; use on both HDR and SDR curves |
+| Identity line | `--curve-identity` | `#ece9df2e` | Neutral diagonal reference below the authored curve |
+| Luma / neutral curve and point | `--curve-neutral` | `#ece9df` | SDR Luma stroke and unselected interior points |
+| Red channel curve | `--curve-red` | `#ff8585` | Red-channel stroke only |
+| Green channel curve | `--curve-green` | `#7fe6a8` | Green-channel stroke only |
+| Blue channel curve | `--curve-blue` | `#7db8ff` | Blue-channel stroke only |
+| Fixed endpoint fill | `--curve-endpoint` | `#7f7a6f` | SDR endpoint fill; HDR endpoints use their exposure-band color |
+| SDR selected fill | `--curve-selected` | `#efbb55` | Selected SDR point fill; HDR selection retains its exposure-band fill |
+| Curve width | `--curve-line-width` | `2.5` | Main curve stroke width in canvas pixels |
+| Editable point radius | `--curve-node-radius` | `5` | Default interior control point |
+| Endpoint radius | `--curve-endpoint-radius` | `4` | Fixed black and white anchors are intentionally smaller |
+| Selected point radius | `--curve-selected-radius` | `6` | Selected control point expands without changing its center |
+| Selected ring | `--curve-selected-ring` | `#edf0f1` | High-contrast outline around the selected point |
+| Selected ring width | `--curve-selected-ring-width` | `1.5` | Canvas-pixel outline; selection cannot rely on fill color alone |
+| Axis label | `--curve-axis-label` | `#e0e8ebad` | Two-row compact nit labels below the HDR plot |
+| Reference-white guide | `--curve-reference-line` | `#97e0ec7a` | Stronger vertical guide at the active exposure preset's reference white |
+| Exposure-band wash | `--curve-band-opacity` | `0.1` | Background band opacity; preserves curve and grid legibility |
+
+HDR exposure-band colors are shared by the False Color key and the curve graph. The ordered tokens are:
+
+| Band role | Token | Current value |
+|---|---|---:|
+| Deep shadow | `--exposure-band-deep-shadow` | `#2e006b` |
+| Shadow | `--exposure-band-shadow` | `#002ed9` |
+| Low midtone | `--exposure-band-low-mid` | `#009eff` |
+| Midtone | `--exposure-band-mid` | `#00d959` |
+| Reference white | `--exposure-band-white` | `#fae02e` |
+| Highlight | `--exposure-band-highlight` | `#ff7a1f` |
+| Peak / over-range | `--exposure-band-peak` | `#ff1f1f` |
+
+- HDR graph backgrounds use low-opacity vertical exposure bands derived from the selected exposure preset. Boundary guides, Luma curve segments, and point fills use the same ordered palette.
+- Red, Green, and Blue curves retain their channel-token stroke so channel identity remains unambiguous; their HDR background and nodes still expose the input exposure bands.
+- HDR point selection uses the exposure-band fill plus the selected ring. SDR point selection uses `--curve-selected`; SDR endpoints use `--curve-endpoint`, and other SDR points use `--curve-neutral`.
+- A displaced point carries the shared return-to-home cue on the side facing the identity line: below a point that is above identity, and above a point that is below identity.
+- HDR nit labels include the `0` endpoint, every visible exposure-band boundary, and the `10K` PQ endpoint. Labels may use two rows and must be collision-checked; do not hide the low-end labels to solve overlap.
+- The HDR horizontal domain must match processing: the 100-nit diffuse-white anchor is at 50%, the shadow half uses the production shadow-power mapping, and the upper half is logarithmic through 10,000 nits.
 
 Exposure Bands follows the same direct-manipulation principle with distinct mouse buttons:
 
@@ -122,6 +166,52 @@ Exposure Bands follows the same direct-manipulation principle with distinct mous
 - Left-drag an existing band to adjust its input position and exposure effect.
 - The darkest and brightest endpoint bands cannot be removed.
 - Add Band, Remove Band, and keyboard controls remain available as explicit alternatives.
+
+### Exposure Bands graph component tokens
+
+Exposure Bands is a stop-based equalizer centered on the 100-nit diffuse-white reference. Its canvas must use the equalizer tokens in `codebase/frontend/styles.css`.
+
+| Element | Token | Current value | Rule |
+|---|---|---:|---|
+| Minor grid | `--equalizer-grid` | `#ffffff14` | One-pixel EV grid |
+| Zero-adjustment grid | `--equalizer-grid-strong` | `#ece9df42` | Stronger horizontal home line at 0 EV adjustment |
+| Diffuse-white guide | `--equalizer-zero` | `#6e9fb552` | Vertical input guide at 0 EV / 100 nit |
+| PQ-limit guide | `--equalizer-pq` | `#d9b672a6` | Dashed vertical guide at 10,000 nits |
+| Zero-axis label | `--equalizer-axis` | `#9fbcca` | Emphasizes the 0 EV input label |
+| Active curve | `--equalizer-curve` | `#edf0f1` | Enabled equalizer curve stroke |
+| Default point | `--equalizer-node` | `#ece9df` | Unselected enabled band point |
+| Selected point | `--equalizer-selected` | `#efbb55` | Selected band point and influence emphasis |
+| Disabled state | `--equalizer-disabled` | `#7f878d` | Bypassed curve and point treatment |
+| Influence wash | `--equalizer-influence-wash` | `#efbb5517` | Selected band's horizontal influence range |
+| Curve width | `--equalizer-line-width` | `2.25` | Main curve stroke in canvas pixels |
+| Default point radius | `--equalizer-node-radius` | `4` | Unselected band point |
+| Selected point radius | `--equalizer-selected-radius` | `5.5` | Selected band point |
+
+- Input brightness is labeled primarily in EV because band spacing, horizontal movement, and influence radius are stop-based. The selected-band readout pairs EV with nits, for example `0 EV · 100 nit`; the graph also labels the 10K PQ boundary.
+- The horizontal input domain runs from -6 EV through the 10,000-nit PQ boundary. The vertical adjustment domain runs from -2 EV to +2 EV with 0 EV as home.
+- Positive adjustments place a point above home and show the shared cue beneath it. Negative adjustments place a point below home and show the cue above it. Neutral points show no cue.
+- The selected influence wash communicates reach only; it must not obscure the curve, grid, points, or return-to-home cues.
+
+### Shared return-to-home indicator tokens
+
+Curves and Exposure Bands use the same directional cue geometry and color. The cue always sits on the side of the point facing its home line and disappears within the neutral tolerance.
+
+| Element | Token | Current value | Rule |
+|---|---|---:|---|
+| Cue color | `--graph-home-cue-color` | `#edf0f1` | Reuses the existing neutral/selection-ring color; do not add a direction color |
+| Cue opacity | `--graph-home-cue-opacity` | `0.62` | Keeps the indicator subordinate to the point |
+| Point gap | `--graph-home-cue-gap` | `1.5` | Clear space between point edge and cue |
+| Cap length | `--graph-home-cue-length` | `6` | Width of the horizontal directional cap |
+| Stroke width | `--graph-home-cue-width` | `1` | Hairline cue stroke in canvas pixels |
+| Neutral tolerance | `--graph-home-epsilon` | `0.006` | Suppresses visual noise at home |
+
+### Graph canvas resolution and layout
+
+- Curve and Exposure Bands canvases use the same 16:11 displayed aspect ratio.
+- The bitmap backing size must equal the current CSS-pixel size multiplied by `window.devicePixelRatio`; drawing coordinates, line widths, hit testing, and documented point sizes remain in logical CSS pixels.
+- A `ResizeObserver` redraws both editors after disclosure, rail resizing, window resizing, or display-scale changes. Do not stretch a fixed 320×220 bitmap to fill the rail.
+- Exposure Bands reserves a 34 px logical left gutter and 14 px right gutter. Signed Y-axis labels, including their `+`/`−` prefix and `EV` unit, must remain fully inside the canvas.
+- Curve labels and Exposure Bands labels use the same device-scale-aware text rendering path. Preserve whole logical-pixel label positions where practical and never compensate for blur by increasing font weight.
 
 ## Spacing and geometry
 

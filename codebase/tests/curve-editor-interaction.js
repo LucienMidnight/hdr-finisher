@@ -3,19 +3,19 @@ const { chromium } = require("playwright");
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
 
 function curvePointPosition(box, x, y) {
-  const scaleX = box.width / 320;
-  const scaleY = box.height / 220;
-  const paddingX = 18 * scaleX;
-  const paddingY = 18 * scaleY;
+  const left = 18;
+  const right = 14;
+  const top = 14;
+  const bottom = 34;
   return {
-    x: paddingX + x * (box.width - paddingX * 2),
-    y: box.height - paddingY - y * (box.height - paddingY * 2),
+    x: left + x * (box.width - left - right),
+    y: box.height - bottom - y * (box.height - top - bottom),
   };
 }
 
 (async () => {
   const browser = await chromium.launch({ headless: true, channel: "chrome" });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 2 });
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
@@ -35,12 +35,17 @@ function curvePointPosition(box, x, y) {
 
     const box = await curve.boundingBox();
     if (!box) throw new Error("Curve editor was not visible.");
+    const highResolution = await curve.evaluate((canvas) => canvas.width >= Math.floor(canvas.clientWidth * window.devicePixelRatio));
+    if (!highResolution) throw new Error("Curve editor backing resolution did not match its displayed size and device pixel ratio.");
     const addedPoint = curvePointPosition(box, 0.375, 0.375);
     await curve.click({ position: addedPoint });
     if (await pointCount() !== 6) throw new Error("Clicking the curve line did not add a point.");
 
     await curve.click({ position: addedPoint });
-    if (await pointCount() !== 5) throw new Error("Clicking the new point did not remove it.");
+    if (await pointCount() !== 6) throw new Error("Left-clicking a point should select it without removing it.");
+
+    await curve.click({ position: addedPoint, button: "right" });
+    if (await pointCount() !== 5) throw new Error("Right-clicking the new point did not remove it.");
 
     const middle = curvePointPosition(box, 0.5, 0.5);
     await page.mouse.move(box.x + middle.x, box.y + middle.y);

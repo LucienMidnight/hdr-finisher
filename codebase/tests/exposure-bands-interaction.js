@@ -5,12 +5,10 @@ const minEv = -6;
 const pqMaxEv = Math.log2(10000 / 100);
 
 function graphPosition(box, inputEv, adjustmentEv = 0) {
-  const scaleX = box.width / 320;
-  const scaleY = box.height / 220;
-  const left = 26 * scaleX;
-  const right = 14 * scaleX;
-  const top = 16 * scaleY;
-  const bottom = 28 * scaleY;
+  const left = 34;
+  const right = 14;
+  const top = 16;
+  const bottom = 28;
   return {
     x: left + ((inputEv - minEv) / (pqMaxEv - minEv)) * (box.width - left - right),
     y: top + ((2 - adjustmentEv) / 4) * (box.height - top - bottom),
@@ -19,7 +17,7 @@ function graphPosition(box, inputEv, adjustmentEv = 0) {
 
 (async () => {
   const browser = await chromium.launch({ headless: true, channel: "chrome" });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 2 });
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
@@ -37,6 +35,8 @@ function graphPosition(box, inputEv, adjustmentEv = 0) {
 
     const box = await editor.boundingBox();
     if (!box) throw new Error("Exposure Bands editor was not visible.");
+    const highResolution = await editor.evaluate((canvas) => canvas.width >= Math.floor(canvas.clientWidth * window.devicePixelRatio));
+    if (!highResolution) throw new Error("Exposure Bands backing resolution did not match its displayed size and device pixel ratio.");
     const newBand = graphPosition(box, -1.5);
     await editor.click({ position: newBand });
     if (await nodeCount() !== 6) throw new Error("Left-clicking the Exposure Bands curve did not add a band.");

@@ -164,17 +164,48 @@ def test_curve_drag_uses_live_preview_scheduler_and_three_point_default_shape() 
     assert 'if (tier === "interactive") return Math.min(384, interactiveProxyLongEdge())' in javascript
 
 
-def test_curve_canvas_clicks_add_and_remove_exact_points() -> None:
+def test_curve_canvas_left_clicks_add_or_select_and_right_click_removes() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     curve_binding = javascript[javascript.index("function bindCurveEditor"):javascript.index("function updateCurveFromPointer")]
 
-    assert "Click the curve to add a point" in html
+    assert "Left-click the curve to add a point" in html
+    assert "right-click an interior point to remove it" in html
     assert "curvePointIndexAtPointer(event.clientX, event.clientY, rect)" in curve_binding
-    assert "if (!dragged && event.type !== \"pointercancel\") removeCurvePoint(pointIndex);" in curve_binding
+    assert 'if (!dragged && event.type !== "pointercancel") removeCurvePoint(pointIndex);' not in curve_binding
     assert "const curveHit = curveHitAtPointer(event.clientX, event.clientY, rect);" in curve_binding
     assert "addCurvePoint(curveHit.x);" in curve_binding
-    assert "const padding = curveEditorPadding();" in javascript
+    assert 'canvas.addEventListener("contextmenu"' in curve_binding
+    assert "removeCurvePoint(pointIndex);" in curve_binding
+    assert "const layout = curveEditorLayout();" in javascript
+
+
+def test_hdr_curve_graph_uses_tokenized_exposure_band_styling() -> None:
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    for token in (
+        "--curve-line-width",
+        "--curve-node-radius",
+        "--curve-endpoint-radius",
+        "--curve-selected-radius",
+        "--curve-selected-ring",
+        "--graph-home-cue-opacity",
+        "--graph-home-epsilon",
+        "--equalizer-curve",
+        "--equalizer-node-radius",
+        "--equalizer-selected-radius",
+        "--curve-band-opacity",
+        "--exposure-band-deep-shadow",
+        "--exposure-band-peak",
+    ):
+        assert token in css
+    assert "drawCurveExposureBands" in javascript
+    assert "curveExposureGradient" in javascript
+    assert "curveDomainPositionForNits" in javascript
+    assert "compactCurveNitLabel" in javascript
+    assert javascript.count("drawGraphHomeCue") >= 3
+    assert "drawGraphHomeCue(ctx, x, y, radius, node.adjustment_ev)" in javascript
 
 
 def test_curve_panel_reset_is_visible_when_curves_are_modified() -> None:

@@ -390,6 +390,7 @@ let scopeResizeObserver = null;
 let scopeResizeFrame = null;
 let viewerResizeObserver = null;
 let viewerResizeFrame = null;
+let graphEditorResizeObserver = null;
 
 const defaultFilmLook = () => ({
   reference_model: "custom",
@@ -788,7 +789,15 @@ const overlayPresetLevels = {
   sdr_100: { referenceWhite: 100, peak: 100 },
 };
 
-const falseColorPalette = ["#2e006b", "#002ed9", "#009eff", "#00d959", "#fae02e", "#ff7a1f", "#ff1f1f"];
+const falseColorPaletteTokens = [
+  "--exposure-band-deep-shadow",
+  "--exposure-band-shadow",
+  "--exposure-band-low-mid",
+  "--exposure-band-mid",
+  "--exposure-band-white",
+  "--exposure-band-highlight",
+  "--exposure-band-peak",
+];
 const COLOR_CONTROL_KEYS = controlGroups["hdr-color"].map((path) => path.slice("hdr.".length));
 
 const sectionPathForGroup = {
@@ -840,6 +849,7 @@ async function boot() {
   renderExportPreflight();
   window.addEventListener("resize", syncOverlayPlacement);
   observeScopeSize();
+  observeGraphEditorSizes();
   observeViewerSize();
 }
 
@@ -1816,6 +1826,26 @@ function renderOverlayPresetNote() {
 function renderFalseColorKey(preset, mode) {
   if (!els.falseColorKey) return;
   els.falseColorKey.classList.toggle("hidden", mode !== "false_color");
+  const items = falseColorBandsForPreset(preset)
+    .map(({ lower, upper, paletteIndex }) => {
+      const item = document.createElement("span");
+      item.className = "false-color-key-item";
+      const swatch = document.createElement("i");
+      swatch.className = "false-color-key-swatch";
+      swatch.style.backgroundColor = exposureBandColor(paletteIndex);
+      const text = document.createElement("span");
+      text.textContent = lower === null
+        ? `< ${formatReferenceNits(upper)}`
+        : upper === null
+          ? `≥ ${formatReferenceNits(lower)}`
+          : `${formatReferenceNits(lower)}–${formatReferenceNits(upper)}`;
+      item.append(swatch, text);
+      return item;
+    });
+  els.falseColorKey.replaceChildren(...items);
+}
+
+function falseColorBandsForPreset(preset) {
   const levels = overlayPresetLevels[preset] || overlayPresetLevels.web_1000_100;
   const highlightStart = Math.max(levels.referenceWhite, Math.min(levels.referenceWhite * 2, levels.peak * 0.5));
   const boundaries = [
@@ -1831,25 +1861,8 @@ function renderFalseColorKey(preset, mode) {
     upper,
     paletteIndex: index,
   }));
-  ranges.push({ lower: boundaries[boundaries.length - 1], upper: null, paletteIndex: falseColorPalette.length - 1 });
-  const items = ranges
-    .filter(({ lower, upper }) => lower === null || upper === null || upper > lower)
-    .map(({ lower, upper, paletteIndex }) => {
-      const item = document.createElement("span");
-      item.className = "false-color-key-item";
-      const swatch = document.createElement("i");
-      swatch.className = "false-color-key-swatch";
-      swatch.style.backgroundColor = falseColorPalette[paletteIndex];
-      const text = document.createElement("span");
-      text.textContent = lower === null
-        ? `< ${formatReferenceNits(upper)}`
-        : upper === null
-          ? `≥ ${formatReferenceNits(lower)}`
-          : `${formatReferenceNits(lower)}–${formatReferenceNits(upper)}`;
-      item.append(swatch, text);
-      return item;
-    });
-  els.falseColorKey.replaceChildren(...items);
+  ranges.push({ lower: boundaries.at(-1), upper: null, paletteIndex: falseColorPaletteTokens.length - 1 });
+  return ranges.filter(({ lower, upper }) => lower === null || upper === null || upper > lower);
 }
 
 function formatReferenceNits(value) {
@@ -2375,7 +2388,7 @@ function waveformScopeLongEdge(tier, requestedLongEdge) {
 
 function drawHistogram(scope) {
   const canvas = els.histogram;
-  const surface = resizeScopeCanvas(canvas);
+  const surface = resizeCanvasSurface(canvas);
   if (!surface) return;
   const { ctx, width, height } = surface;
   ctx.clearRect(0, 0, width, height);
@@ -2424,7 +2437,7 @@ function drawHistogram(scope) {
   else drawResolveHistogram(ctx, channels, palette, plotLeft, plotTop, plotWidth, plotHeight);
 }
 
-function resizeScopeCanvas(canvas) {
+function resizeCanvasSurface(canvas) {
   const width = Math.round(canvas.clientWidth);
   const height = Math.round(canvas.clientHeight);
   if (width < 2 || height < 2) return null;
@@ -2440,6 +2453,26 @@ function resizeScopeCanvas(canvas) {
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
   return { ctx, width, height };
+}
+
+function observeGraphEditorSizes() {
+  const redraw = (canvas) => {
+    if (canvas.clientWidth < 2 || canvas.clientHeight < 2) return;
+    if (canvas === els.curveEditor) drawCurveEditor();
+    if (canvas === els.toneEqualizerEditor) drawToneEqualizerEditor();
+  };
+  if (!window.ResizeObserver) {
+    window.addEventListener("resize", () => {
+      redraw(els.curveEditor);
+      redraw(els.toneEqualizerEditor);
+    });
+    return;
+  }
+  graphEditorResizeObserver = new ResizeObserver((entries) => {
+    entries.forEach(({ target }) => redraw(target));
+  });
+  graphEditorResizeObserver.observe(els.curveEditor);
+  graphEditorResizeObserver.observe(els.toneEqualizerEditor);
 }
 
 function drawScopeGrid(ctx, scope, isWaveform, plotLeft, plotTop, plotWidth, plotHeight, canvasHeight) {
@@ -3252,7 +3285,10 @@ function commitAdjustmentValue(path, value, { manual = false } = {}) {
   const resolvedPath = resolveAdjustmentPath(path);
   if (resolvedPath.endsWith(".film_look.reference_model") && value !== "custom") applyFilmLookPreset(value);
   if (resolvedPath.startsWith("hdr.highlight_compression_")) normalizeHighlightCompressionControls(resolvedPath);
-  if (path === "shared.overlay_preset") renderOverlayPresetNote();
+  if (path === "shared.overlay_preset") {
+    renderOverlayPresetNote();
+    drawCurveEditor();
+  }
   if (path.startsWith("hdr.tone_equalizer_")) drawToneEqualizerEditor();
   syncRangeControlFromState(path);
   updateControlReadouts();
@@ -3604,8 +3640,9 @@ function bindToneEqualizerEditor() {
 }
 
 function updateToneEqualizerFromPointer(clientX, clientY, rect, startingNodes) {
-  const paddingTop = 16 / els.toneEqualizerEditor.height;
-  const paddingBottom = 28 / els.toneEqualizerEditor.height;
+  const layout = toneEqualizerEditorLayout();
+  const paddingTop = layout.top / Math.max(rect.height, 1);
+  const paddingBottom = layout.bottom / Math.max(rect.height, 1);
   const normalizedY = clamp((clientY - rect.top) / rect.height, paddingTop, 1 - paddingBottom);
   const graphY = (normalizedY - paddingTop) / Math.max(1 - paddingTop - paddingBottom, 1e-6);
   const value = TONE_EQUALIZER_MAX_ADJUSTMENT_EV - graphY * TONE_EQUALIZER_MAX_ADJUSTMENT_EV * 2;
@@ -3635,22 +3672,19 @@ function updateToneEqualizerFromPointer(clientX, clientY, rect, startingNodes) {
 }
 
 function toneEqualizerPointerPosition(clientX, clientY, rect) {
-  const canvas = els.toneEqualizerEditor;
   return {
-    x: (clientX - rect.left) * canvas.width / Math.max(rect.width, 1),
-    y: (clientY - rect.top) * canvas.height / Math.max(rect.height, 1),
+    x: clientX - rect.left,
+    y: clientY - rect.top,
   };
 }
 
 function toneEqualizerCanvasPosition(inputEv, adjustmentEv) {
   const canvas = els.toneEqualizerEditor;
-  const left = 26;
-  const right = 14;
-  const top = 16;
-  const bottom = 28;
+  const { width, height } = canvasLogicalSize(canvas);
+  const { left, right, top, bottom } = toneEqualizerEditorLayout();
   return {
-    x: left + ((inputEv - TONE_EQUALIZER_MIN_EV) / (TONE_EQUALIZER_PQ_MAX_EV - TONE_EQUALIZER_MIN_EV)) * (canvas.width - left - right),
-    y: top + ((TONE_EQUALIZER_MAX_ADJUSTMENT_EV - adjustmentEv) / (TONE_EQUALIZER_MAX_ADJUSTMENT_EV * 2)) * (canvas.height - top - bottom),
+    x: left + ((inputEv - TONE_EQUALIZER_MIN_EV) / (TONE_EQUALIZER_PQ_MAX_EV - TONE_EQUALIZER_MIN_EV)) * (width - left - right),
+    y: top + ((TONE_EQUALIZER_MAX_ADJUSTMENT_EV - adjustmentEv) / (TONE_EQUALIZER_MAX_ADJUSTMENT_EV * 2)) * (height - top - bottom),
   };
 }
 
@@ -3733,13 +3767,10 @@ function syncToneEqualizerControls() {
 
 function drawToneEqualizerEditor() {
   const canvas = els.toneEqualizerEditor;
-  const ctx = canvas.getContext("2d");
-  const width = canvas.width;
-  const height = canvas.height;
-  const left = 26;
-  const right = 14;
-  const top = 16;
-  const bottom = 28;
+  const surface = resizeCanvasSurface(canvas);
+  if (!surface) return;
+  const { ctx, width, height } = surface;
+  const { left, right, top, bottom } = toneEqualizerEditorLayout();
   const graphWidth = width - left - right;
   const graphHeight = height - top - bottom;
   const nodes = currentToneEqualizerNodes();
@@ -3756,7 +3787,7 @@ function drawToneEqualizerEditor() {
   ctx.textBaseline = "middle";
   for (let adjustment = -2; adjustment <= 2; adjustment += 1) {
     const y = yForAdjustment(adjustment);
-    ctx.strokeStyle = adjustment === 0 ? "rgba(236,233,223,0.26)" : "rgba(255,255,255,0.08)";
+    ctx.strokeStyle = adjustment === 0 ? uiToken("--equalizer-grid-strong") : uiToken("--equalizer-grid");
     ctx.beginPath();
     ctx.moveTo(left, y);
     ctx.lineTo(width - right, y);
@@ -3769,7 +3800,7 @@ function drawToneEqualizerEditor() {
   ctx.textBaseline = "top";
   for (let inputEv = TONE_EQUALIZER_MIN_EV; inputEv <= TONE_EQUALIZER_MAX_EV; inputEv += 1) {
     const x = xForEv(inputEv);
-    ctx.strokeStyle = inputEv === 0 ? "rgba(110,159,181,0.32)" : "rgba(255,255,255,0.06)";
+    ctx.strokeStyle = inputEv === 0 ? uiToken("--equalizer-zero") : uiToken("--equalizer-grid");
     ctx.beginPath();
     ctx.moveTo(x, top);
     ctx.lineTo(x, height - bottom);
@@ -3781,7 +3812,7 @@ function drawToneEqualizerEditor() {
   }
   const pqX = xForEv(TONE_EQUALIZER_PQ_MAX_EV);
   ctx.setLineDash([3, 3]);
-  ctx.strokeStyle = "rgba(217,182,114,0.65)";
+  ctx.strokeStyle = uiToken("--equalizer-pq");
   ctx.beginPath();
   ctx.moveTo(pqX, top);
   ctx.lineTo(pqX, height - bottom);
@@ -3791,8 +3822,8 @@ function drawToneEqualizerEditor() {
   ctx.textAlign = "right";
   ctx.fillText("10K", pqX, 3);
 
-  ctx.strokeStyle = enabled ? uiToken("--text") : uiToken("--quiet");
-  ctx.lineWidth = 2.25;
+  ctx.strokeStyle = enabled ? uiToken("--equalizer-curve") : uiToken("--equalizer-disabled");
+  ctx.lineWidth = uiNumberToken("--equalizer-line-width", 2.25);
   ctx.beginPath();
   for (let sample = 0; sample < 180; sample += 1) {
     const inputEv = TONE_EQUALIZER_MIN_EV + (sample / 179) * (TONE_EQUALIZER_PQ_MAX_EV - TONE_EQUALIZER_MIN_EV);
@@ -3809,16 +3840,26 @@ function drawToneEqualizerEditor() {
     const radius = Number(state.adjustments.hdr?.tone_equalizer_influence_radius || 1.5);
     const start = xForEv(Math.max(TONE_EQUALIZER_MIN_EV, selectedNode.input_ev - radius));
     const end = xForEv(Math.min(TONE_EQUALIZER_MAX_EV, selectedNode.input_ev + radius));
-    ctx.fillStyle = "rgba(239,187,85,0.09)";
+    ctx.fillStyle = uiToken("--equalizer-influence-wash");
     ctx.fillRect(start, top, end - start, graphHeight);
   }
   nodes.forEach((node, index) => {
     const inputEv = node.input_ev;
     const selected = index === state.selectedToneEqualizerBand;
-    ctx.fillStyle = selected ? uiToken("--equalizer-selected") : enabled ? uiToken("--curve-neutral") : uiToken("--quiet");
+    const radius = selected
+      ? uiNumberToken("--equalizer-selected-radius", 5.5)
+      : uiNumberToken("--equalizer-node-radius", 4);
+    ctx.fillStyle = selected
+      ? uiToken("--equalizer-selected")
+      : enabled
+        ? uiToken("--equalizer-node")
+        : uiToken("--equalizer-disabled");
     ctx.beginPath();
-    ctx.arc(xForEv(inputEv), yForAdjustment(node.adjustment_ev), selected ? 5.5 : 4, 0, Math.PI * 2);
+    const x = xForEv(inputEv);
+    const y = yForAdjustment(node.adjustment_ev);
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.fill();
+    drawGraphHomeCue(ctx, x, y, radius, node.adjustment_ev);
   });
   syncToneEqualizerControls();
 }
@@ -3872,8 +3913,9 @@ function currentToneEqualizerNodes() {
 }
 
 function toneEqualizerEvFromPointer(clientX, rect) {
-  const paddingLeft = 26 / els.toneEqualizerEditor.width;
-  const paddingRight = 14 / els.toneEqualizerEditor.width;
+  const layout = toneEqualizerEditorLayout();
+  const paddingLeft = layout.left / Math.max(rect.width, 1);
+  const paddingRight = layout.right / Math.max(rect.width, 1);
   const normalizedX = clamp((clientX - rect.left) / rect.width, paddingLeft, 1 - paddingRight);
   const graphX = (normalizedX - paddingLeft) / Math.max(1 - paddingLeft - paddingRight, 1e-6);
   return TONE_EQUALIZER_MIN_EV + graphX * (TONE_EQUALIZER_PQ_MAX_EV - TONE_EQUALIZER_MIN_EV);
@@ -3967,12 +4009,11 @@ function bindCurveEditor() {
       if (!dragged) return;
       updateCurveFromPointer(event.clientX, event.clientY, dragOrigin);
     };
-    const stop = (event) => {
+    const stop = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", stop);
       window.removeEventListener("pointercancel", stop);
       state.activeCurvePoint = null;
-      if (!dragged && event.type !== "pointercancel") removeCurvePoint(pointIndex);
       drawCurveEditor();
       syncCurveControlsFromState();
       invalidatePreview(state.currentView);
@@ -3997,6 +4038,18 @@ function bindCurveEditor() {
     const curveHit = curveHitAtPointer(event.clientX, event.clientY, rect);
     if (!curveHit) return;
     addCurvePoint(curveHit.x);
+    drawCurveEditor();
+    invalidatePreview(state.currentView);
+    renderControlState();
+    debouncePreview(state.currentView);
+  });
+  canvas.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    if (!state.session) return;
+    const pointIndex = curvePointIndexAtPointer(event.clientX, event.clientY, canvas.getBoundingClientRect());
+    if (pointIndex === null || isLockedCurveEndpoint(pointIndex)) return;
+    state.selectedCurvePoint = pointIndex;
+    removeCurvePoint(pointIndex);
     drawCurveEditor();
     invalidatePreview(state.currentView);
     renderControlState();
@@ -4074,88 +4127,204 @@ function curveVerticalAdjustmentScale(index, pointCount) {
 
 function drawCurveEditor() {
   const canvas = els.curveEditor;
-  const ctx = canvas.getContext("2d");
-  const width = canvas.width;
-  const height = canvas.height;
-  const padding = curveEditorPadding();
+  const surface = resizeCanvasSurface(canvas);
+  if (!surface) return;
+  const { ctx, width, height } = surface;
+  const layout = curveEditorLayout();
+  const plotLeft = layout.left;
+  const plotTop = layout.top;
+  const plotRight = width - layout.right;
+  const plotBottom = height - layout.bottom;
+  const plotWidth = plotRight - plotLeft;
+  const plotHeight = plotBottom - plotTop;
   const curve = currentCurveValues();
   const curveSamples = sampleCurvePoints(curve, 96);
-  const channelColor = curveColor(state.selectedCurveChannel);
 
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = uiToken("--app");
   ctx.fillRect(0, 0, width, height);
 
-  ctx.strokeStyle = "rgba(255,255,255,0.08)";
+  if (currentCurveLane() === "hdr") {
+    drawCurveExposureBands(ctx, layout, width, height);
+  }
+
+  ctx.strokeStyle = uiToken("--curve-grid");
   ctx.lineWidth = 1;
   for (let step = 0; step <= 4; step += 1) {
-    const x = padding + ((width - padding * 2) * step) / 4;
-    const y = padding + ((height - padding * 2) * step) / 4;
-    ctx.beginPath();
-    ctx.moveTo(x, padding);
-    ctx.lineTo(x, height - padding);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(padding, y);
-    ctx.lineTo(width - padding, y);
-    ctx.stroke();
-  }
-
-  if (currentCurveLane() === "hdr") {
-    const guides = [
-      [100, 0.5, "100"],
-      ...[200, 400, 800, 1600, 3200, 6400].map((nits) => [nits, 0.5 + 0.5 * Math.log10(nits / 100) / 2, `${nits}`]),
-      [10000, 1, "10K"],
-    ];
-    ctx.save();
-    ctx.font = '9px "IBM Plex Mono", "Cascadia Mono", Consolas';
-    ctx.textBaseline = "bottom";
-    guides.forEach(([nits, normalized, label]) => {
-      const x = padding + normalized * (width - padding * 2);
-      ctx.strokeStyle = nits === 100 ? "rgba(151,224,236,0.36)" : "rgba(255,255,255,0.10)";
+    const x = plotLeft + (plotWidth * step) / 4;
+    const y = plotTop + (plotHeight * step) / 4;
+    if (currentCurveLane() !== "hdr") {
       ctx.beginPath();
-      ctx.moveTo(x, padding);
-      ctx.lineTo(x, height - padding);
+      ctx.moveTo(x, plotTop);
+      ctx.lineTo(x, plotBottom);
       ctx.stroke();
-      if (nits === 100 || nits === 400 || nits === 1600 || nits === 6400 || nits === 10000) {
-        ctx.fillStyle = "rgba(224,232,235,0.58)";
-        ctx.textAlign = normalized >= 0.98 ? "right" : "center";
-        ctx.fillText(label, x, height - 2);
-      }
-    });
-    ctx.restore();
+    }
+    ctx.beginPath();
+    ctx.moveTo(plotLeft, y);
+    ctx.lineTo(plotRight, y);
+    ctx.stroke();
   }
 
-  ctx.strokeStyle = "rgba(236,233,223,0.18)";
+  ctx.strokeStyle = uiToken("--curve-identity");
   ctx.beginPath();
-  ctx.moveTo(padding, height - padding);
-  ctx.lineTo(width - padding, padding);
+  ctx.moveTo(plotLeft, plotBottom);
+  ctx.lineTo(plotRight, plotTop);
   ctx.stroke();
 
-  ctx.strokeStyle = channelColor;
-  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = currentCurveLane() === "hdr" && state.selectedCurveChannel === "luma"
+    ? curveExposureGradient(ctx, plotLeft, plotRight)
+    : curveColor(state.selectedCurveChannel);
+  ctx.lineWidth = uiNumberToken("--curve-line-width", 2.5);
   ctx.beginPath();
   curveSamples.forEach(([xValue, yValue], index) => {
-    const x = padding + xValue * (width - padding * 2);
-    const y = height - padding - yValue * (height - padding * 2);
+    const x = plotLeft + xValue * plotWidth;
+    const y = plotBottom - yValue * plotHeight;
     if (index === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   });
   ctx.stroke();
 
   curve.forEach(([xValue, yValue], index) => {
-    const x = padding + xValue * (width - padding * 2);
-    const y = height - padding - yValue * (height - padding * 2);
-    ctx.fillStyle = index === state.selectedCurvePoint
-      ? uiToken("--curve-selected")
-      : index === 0 || index === curve.length - 1
-        ? uiToken("--curve-endpoint")
-        : uiToken("--curve-neutral");
+    const x = plotLeft + xValue * plotWidth;
+    const y = plotBottom - yValue * plotHeight;
+    const selected = index === state.selectedCurvePoint;
+    ctx.fillStyle = currentCurveLane() === "hdr"
+      ? curveExposureColorAt(xValue)
+      : selected
+        ? uiToken("--curve-selected")
+        : index === 0 || index === curve.length - 1
+          ? uiToken("--curve-endpoint")
+          : uiToken("--curve-neutral");
     ctx.beginPath();
-    ctx.arc(x, y, index === state.selectedCurvePoint ? 6 : index === 0 || index === curve.length - 1 ? 4 : 5, 0, Math.PI * 2);
+    const radius = selected
+      ? uiNumberToken("--curve-selected-radius", 6)
+      : index === 0 || index === curve.length - 1
+        ? uiNumberToken("--curve-endpoint-radius", 4)
+        : uiNumberToken("--curve-node-radius", 5);
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.fill();
+    if (selected) {
+      ctx.strokeStyle = uiToken("--curve-selected-ring");
+      ctx.lineWidth = uiNumberToken("--curve-selected-ring-width", 1.5);
+      ctx.stroke();
+    }
+    drawGraphHomeCue(ctx, x, y, radius, yValue - xValue);
   });
   syncCurveControlsFromState();
+}
+
+function drawGraphHomeCue(ctx, x, y, radius, deviation) {
+  if (Math.abs(deviation) < uiNumberToken("--graph-home-epsilon", 0.006)) return;
+  const towardIdentity = deviation > 0 ? 1 : -1;
+  const gap = uiNumberToken("--graph-home-cue-gap", 1.5);
+  const length = uiNumberToken("--graph-home-cue-length", 6);
+  const startY = y + towardIdentity * (radius + gap);
+  const capY = startY + towardIdentity * 3;
+  ctx.save();
+  ctx.globalAlpha = uiNumberToken("--graph-home-cue-opacity", 0.62);
+  ctx.strokeStyle = uiToken("--graph-home-cue-color");
+  ctx.lineWidth = uiNumberToken("--graph-home-cue-width", 1);
+  ctx.beginPath();
+  ctx.moveTo(x, startY);
+  ctx.lineTo(x, capY);
+  ctx.moveTo(x - length / 2, capY);
+  ctx.lineTo(x + length / 2, capY);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawCurveExposureBands(ctx, layout, width, height) {
+  const plotLeft = layout.left;
+  const plotTop = layout.top;
+  const plotRight = width - layout.right;
+  const plotBottom = height - layout.bottom;
+  const plotWidth = plotRight - plotLeft;
+  const plotHeight = plotBottom - plotTop;
+  const preset = state.adjustments.shared.overlay_preset || "web_1000_100";
+  const bands = falseColorBandsForPreset(preset);
+
+  ctx.save();
+  ctx.globalAlpha = uiNumberToken("--curve-band-opacity", 0.1);
+  bands.forEach(({ lower, upper, paletteIndex }) => {
+    const start = curveDomainPositionForNits(lower ?? 0);
+    const end = curveDomainPositionForNits(upper ?? 10000);
+    ctx.fillStyle = exposureBandColor(paletteIndex);
+    ctx.fillRect(plotLeft + start * plotWidth, plotTop, Math.max(0, (end - start) * plotWidth), plotHeight);
+  });
+  ctx.restore();
+
+  const levels = overlayPresetLevels[preset] || overlayPresetLevels.web_1000_100;
+  const labelValues = [...new Set([
+    0,
+    ...bands.flatMap(({ lower, upper }) => [lower, upper]),
+    10000,
+  ].filter((value) => value !== null && value >= 0 && value <= 10000))].sort((a, b) => a - b);
+
+  ctx.save();
+  ctx.font = '9px "IBM Plex Mono", "Cascadia Mono", Consolas';
+  ctx.textBaseline = "top";
+  const lastLabelRight = [-Infinity, -Infinity];
+  labelValues.forEach((nits) => {
+    const normalized = curveDomainPositionForNits(nits);
+    const x = plotLeft + normalized * plotWidth;
+    const boundaryBand = bands.find(({ upper }) => upper !== null && Math.abs(upper - nits) < 0.001);
+    const boundaryColor = boundaryBand ? exposureBandColor(boundaryBand.paletteIndex) : uiToken("--quiet");
+    ctx.strokeStyle = nits === levels.referenceWhite ? uiToken("--curve-reference-line") : `${boundaryColor}80`;
+    ctx.lineWidth = nits === levels.referenceWhite ? 1.4 : 1;
+    ctx.beginPath();
+    ctx.moveTo(x, plotTop);
+    ctx.lineTo(x, plotBottom);
+    ctx.stroke();
+
+    const label = compactCurveNitLabel(nits);
+    const labelWidth = ctx.measureText(label).width;
+    const labelX = clamp(x, plotLeft + labelWidth / 2, plotRight - labelWidth / 2);
+    const leftEdge = labelX - labelWidth / 2;
+    const row = lastLabelRight.findIndex((rightEdge) => leftEdge >= rightEdge + 5);
+    if (row < 0) return;
+    ctx.fillStyle = nits === levels.referenceWhite ? uiToken("--equalizer-axis") : uiToken("--curve-axis-label");
+    ctx.textAlign = "center";
+    ctx.fillText(label, labelX, plotBottom + 5 + row * 10);
+    lastLabelRight[row] = labelX + labelWidth / 2;
+  });
+  ctx.restore();
+}
+
+function curveExposureGradient(ctx, plotLeft, plotRight) {
+  const preset = state.adjustments.shared.overlay_preset || "web_1000_100";
+  const gradient = ctx.createLinearGradient(plotLeft, 0, plotRight, 0);
+  falseColorBandsForPreset(preset).forEach(({ lower, upper, paletteIndex }) => {
+    const start = curveDomainPositionForNits(lower ?? 0);
+    const end = curveDomainPositionForNits(upper ?? 10000);
+    gradient.addColorStop(start, exposureBandColor(paletteIndex));
+    gradient.addColorStop(Math.max(start, end - 0.0001), exposureBandColor(paletteIndex));
+  });
+  return gradient;
+}
+
+function curveExposureColorAt(normalized) {
+  const nits = curveDomainNitsForPosition(normalized);
+  const preset = state.adjustments.shared.overlay_preset || "web_1000_100";
+  const band = falseColorBandsForPreset(preset).find(({ upper }) => upper === null || nits < upper);
+  return exposureBandColor(band?.paletteIndex ?? falseColorPaletteTokens.length - 1);
+}
+
+function curveDomainPositionForNits(value) {
+  const nits = clamp(Number(value) || 0, 0, 10000);
+  if (nits <= 100) return 0.5 * ((nits / 100) ** (1 / Math.log(100)));
+  return clamp(0.5 + 0.5 * Math.log2(nits / 100) / Math.log2(100), 0, 1);
+}
+
+function curveDomainNitsForPosition(value) {
+  const normalized = clamp(Number(value) || 0, 0, 1);
+  if (normalized <= 0.5) return 100 * ((normalized * 2) ** Math.log(100));
+  return 100 * (2 ** ((normalized - 0.5) * 2 * Math.log2(100)));
+}
+
+function compactCurveNitLabel(value) {
+  if (value >= 1000) return `${Number((value / 1000).toFixed(value % 1000 === 0 ? 0 : 1))}K`;
+  if (value >= 10) return `${Math.round(value)}`;
+  return `${Number(value.toFixed(1))}`;
 }
 
 function currentCurveValues() {
@@ -4178,29 +4347,40 @@ function currentCurveLane() {
   return state.currentView === "sdr" ? "sdr" : "hdr";
 }
 
-function curveEditorPadding() {
-  return 18;
+function curveEditorLayout() {
+  return { left: 18, right: 14, top: 14, bottom: 34 };
+}
+
+function toneEqualizerEditorLayout() {
+  return { left: 34, right: 14, top: 16, bottom: 28 };
+}
+
+function canvasLogicalSize(canvas) {
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width >= 2 && rect.height >= 2) return { width: rect.width, height: rect.height };
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  return { width: canvas.width / dpr, height: canvas.height / dpr };
 }
 
 function curvePointerPosition(clientX, clientY, rect) {
-  const canvas = els.curveEditor;
-  const padding = curveEditorPadding();
-  const canvasX = (clientX - rect.left) * canvas.width / Math.max(rect.width, 1);
-  const canvasY = (clientY - rect.top) * canvas.height / Math.max(rect.height, 1);
+  const layout = curveEditorLayout();
+  const canvasX = clientX - rect.left;
+  const canvasY = clientY - rect.top;
   return {
     canvasX,
     canvasY,
-    x: clamp((canvasX - padding) / Math.max(canvas.width - padding * 2, 1), 0, 1),
-    y: 1 - clamp((canvasY - padding) / Math.max(canvas.height - padding * 2, 1), 0, 1),
+    x: clamp((canvasX - layout.left) / Math.max(rect.width - layout.left - layout.right, 1), 0, 1),
+    y: 1 - clamp((canvasY - layout.top) / Math.max(rect.height - layout.top - layout.bottom, 1), 0, 1),
   };
 }
 
 function curvePointCanvasPosition([x, y]) {
   const canvas = els.curveEditor;
-  const padding = curveEditorPadding();
+  const { width, height } = canvasLogicalSize(canvas);
+  const layout = curveEditorLayout();
   return {
-    x: padding + x * (canvas.width - padding * 2),
-    y: canvas.height - padding - y * (canvas.height - padding * 2),
+    x: layout.left + x * (width - layout.left - layout.right),
+    y: height - layout.bottom - y * (height - layout.top - layout.bottom),
   };
 }
 
@@ -4291,6 +4471,15 @@ function curveColor(channel) {
 
 function uiToken(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function uiNumberToken(name, fallback) {
+  const value = Number.parseFloat(uiToken(name));
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function exposureBandColor(index) {
+  return uiToken(falseColorPaletteTokens[clamp(index, 0, falseColorPaletteTokens.length - 1)]);
 }
 
 function clamp(value, min, max) {
