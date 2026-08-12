@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from .color import acescg_to_linear_srgb, linear_srgb_to_acescg, rgb_primaries_adjustment_matrix
+from .finishing import apply_geometry
 from .models import AdjustmentState, PreviewKind, ToneMapper
 
 
@@ -18,15 +19,18 @@ def apply_adjustments(
     adjustments: AdjustmentState,
     kind: PreviewKind,
     sdr_reference_image: np.ndarray | None = None,
+    *,
+    include_grain: bool = True,
 ) -> np.ndarray:
     if kind == PreviewKind.HDR:
-        return _apply_hdr_adjustments(image, adjustments)
+        return _apply_hdr_adjustments(apply_geometry(image, adjustments.shared.geometry), adjustments, include_grain)
     if sdr_reference_image is not None:
-        return _apply_sdr_adjustments_to_reference(sdr_reference_image, adjustments)
-    return _apply_sdr_adjustments(image, adjustments)
+        reference = apply_geometry(sdr_reference_image, adjustments.shared.geometry)
+        return _apply_sdr_adjustments_to_reference(reference, adjustments, include_grain)
+    return _apply_sdr_adjustments(apply_geometry(image, adjustments.shared.geometry), adjustments, include_grain)
 
 
-def _apply_hdr_adjustments(image: np.ndarray, adjustments: AdjustmentState) -> np.ndarray:
+def _apply_hdr_adjustments(image: np.ndarray, adjustments: AdjustmentState, include_grain: bool = True) -> np.ndarray:
     hdr = adjustments.hdr
     result = image.astype(np.float32, copy=True)
     if hdr.tone_section_enabled:
@@ -65,8 +69,14 @@ def _apply_hdr_adjustments(image: np.ndarray, adjustments: AdjustmentState) -> n
         )
     if hdr.curves_section_enabled:
         result = _apply_curves(result, adjustments, PreviewKind.HDR)
+    if hdr.color_grading_section_enabled:
+        result = _apply_color_grading(result, hdr.color_grading, PreviewKind.HDR)
     if hdr.film_look_section_enabled:
-        result = _apply_film_look(result, adjustments, PreviewKind.HDR)
+        result = _apply_film_look(result, adjustments, PreviewKind.HDR, include_grain=False)
+    if hdr.vignette_section_enabled:
+        result = _apply_vignette(result, hdr.vignette, PreviewKind.HDR)
+    if include_grain:
+        result = apply_final_grain(result, adjustments, PreviewKind.HDR)
     return np.clip(result, 0.0, None)
 
 
@@ -151,7 +161,7 @@ def _tone_adjusted_source_peak_nits(hdr: object, *, tone_enabled: bool = True) -
     return max(1.0, peak_linear * 100.0 / 0.18)
 
 
-def _apply_sdr_adjustments(image: np.ndarray, adjustments: AdjustmentState) -> np.ndarray:
+def _apply_sdr_adjustments(image: np.ndarray, adjustments: AdjustmentState, include_grain: bool = True) -> np.ndarray:
     sdr = adjustments.sdr
     result = image.astype(np.float32, copy=True)
     if sdr.tone_section_enabled:
@@ -176,12 +186,20 @@ def _apply_sdr_adjustments(image: np.ndarray, adjustments: AdjustmentState) -> n
         )
     if sdr.curves_section_enabled:
         result = _apply_curves(result, adjustments, PreviewKind.SDR)
+    if sdr.color_grading_section_enabled:
+        result = _apply_color_grading(result, sdr.color_grading, PreviewKind.SDR)
     if sdr.film_look_section_enabled:
-        result = _apply_film_look(result, adjustments, PreviewKind.SDR)
+        result = _apply_film_look(result, adjustments, PreviewKind.SDR, include_grain=False)
+    if sdr.vignette_section_enabled:
+        result = _apply_vignette(result, sdr.vignette, PreviewKind.SDR)
+    if include_grain:
+        result = apply_final_grain(result, adjustments, PreviewKind.SDR)
     return np.clip(result, 0.0, 1.0)
 
 
-def _apply_sdr_adjustments_to_reference(image: np.ndarray, adjustments: AdjustmentState) -> np.ndarray:
+def _apply_sdr_adjustments_to_reference(
+    image: np.ndarray, adjustments: AdjustmentState, include_grain: bool = True
+) -> np.ndarray:
     sdr = adjustments.sdr
     result = np.clip(image.astype(np.float32, copy=True), 0.0, 1.0)
     if sdr.tone_section_enabled:
@@ -211,8 +229,14 @@ def _apply_sdr_adjustments_to_reference(image: np.ndarray, adjustments: Adjustme
         )
     if sdr.curves_section_enabled:
         result = _apply_curves(result, adjustments, PreviewKind.SDR)
+    if sdr.color_grading_section_enabled:
+        result = _apply_color_grading(result, sdr.color_grading, PreviewKind.SDR)
     if sdr.film_look_section_enabled:
-        result = _apply_film_look(result, adjustments, PreviewKind.SDR)
+        result = _apply_film_look(result, adjustments, PreviewKind.SDR, include_grain=False)
+    if sdr.vignette_section_enabled:
+        result = _apply_vignette(result, sdr.vignette, PreviewKind.SDR)
+    if include_grain:
+        result = apply_final_grain(result, adjustments, PreviewKind.SDR)
     return np.clip(result, 0.0, 1.0)
 
 
@@ -710,7 +734,9 @@ def _apply_curves(image: np.ndarray, adjustments: AdjustmentState, kind: Preview
     return _apply_curve_set(image, branch, kind)
 
 
-def _apply_film_look(image: np.ndarray, adjustments: AdjustmentState, kind: PreviewKind) -> np.ndarray:
+def _apply_film_look(
+    image: np.ndarray, adjustments: AdjustmentState, kind: PreviewKind, *, include_grain: bool = True
+) -> np.ndarray:
     """Apply the finishing look after curves, with grain deliberately last."""
     branch = adjustments.hdr if kind == PreviewKind.HDR else adjustments.sdr
     look = branch.film_look
@@ -743,9 +769,81 @@ def _apply_film_look(image: np.ndarray, adjustments: AdjustmentState, kind: Prev
         result = _apply_image_structure(result, look, kind, strength)
     if look.grain_enabled:
         result = _apply_film_resolution(result, look, strength)
-        if look.grain_amount > 0.0 and strength > 0.0:
+        if include_grain and look.grain_amount > 0.0 and strength > 0.0:
             result = _apply_density_grain(result, look, kind, adjustments.shared.film_grain_seed, strength)
     return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
+
+
+def apply_final_grain(image: np.ndarray, adjustments: AdjustmentState, kind: PreviewKind) -> np.ndarray:
+    """Synthesize deterministic film grain at the current (preview or final export) resolution."""
+    branch = adjustments.hdr if kind == PreviewKind.HDR else adjustments.sdr
+    if not branch.film_look_section_enabled:
+        return image
+    look = branch.film_look
+    strength = np.float32(look.look_strength / 100.0)
+    if not look.grain_enabled or look.grain_amount <= 0.0 or strength <= 0.0:
+        return image
+    return _apply_density_grain(image, look, kind, adjustments.shared.film_grain_seed, strength)
+
+
+def _apply_color_grading(image: np.ndarray, grading: object, kind: PreviewKind) -> np.ndarray:
+    wheels = (grading.shadows, grading.midtones, grading.highlights)
+    if all(wheel.saturation == 0.0 and wheel.luminance_ev == 0.0 for wheel in wheels):
+        return image
+    weights = np.array([0.2722287, 0.6740818, 0.0536895], dtype=np.float32) if kind == PreviewKind.HDR else np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+    source_luma = np.maximum(_acescg_luma(image) if kind == PreviewKind.HDR else _linear_luma(image), 0.0)
+    if kind == PreviewKind.HDR:
+        zone_signal = np.log2(np.maximum(source_luma, 1e-7) / np.float32(0.18))
+    else:
+        zone_signal = np.log2(np.maximum(_srgb_encode(np.clip(source_luma, 0.0, 1.0)), 1e-7) / np.float32(0.5))
+    balance = np.float32(grading.balance / 50.0)
+    width = np.float32(0.55 + 3.45 * grading.blending / 100.0)
+    shadow = 1.0 - _smoothstep(float(-1.0 + balance - width * 0.5), float(-1.0 + balance + width * 0.5), zone_signal)
+    highlight = _smoothstep(float(1.0 + balance - width * 0.5), float(1.0 + balance + width * 0.5), zone_signal)
+    midtone = np.maximum(0.0, 1.0 - shadow - highlight)
+    masks = np.stack((shadow, midtone, highlight), axis=-1).astype(np.float32)
+    masks /= np.maximum(np.sum(masks, axis=-1, keepdims=True), 1e-6)
+
+    tint = np.zeros_like(image, dtype=np.float32)
+    luminance_ev = np.zeros_like(source_luma, dtype=np.float32)
+    for index, wheel in enumerate(wheels):
+        angle = np.deg2rad(np.float32(wheel.hue))
+        vector = np.array(
+            [np.cos(angle), np.cos(angle - 2.0 * np.pi / 3.0), np.cos(angle + 2.0 * np.pi / 3.0)],
+            dtype=np.float32,
+        )
+        vector -= np.dot(vector, weights)
+        vector /= max(float(np.max(np.abs(vector))), 1e-6)
+        tint += masks[..., index, None] * vector * np.float32(wheel.saturation / 400.0)
+        luminance_ev += masks[..., index] * np.float32(wheel.luminance_ev)
+    tinted = image.astype(np.float32, copy=False) + tint * source_luma[..., None]
+    tinted_luma = np.maximum(np.einsum("...c,c->...", tinted, weights, optimize=True), 1e-7)
+    tinted *= (source_luma / tinted_luma)[..., None]
+    tinted *= np.exp2(luminance_ev)[..., None]
+    return np.clip(tinted, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
+
+
+def _apply_vignette(image: np.ndarray, vignette: object, kind: PreviewKind) -> np.ndarray:
+    if vignette.amount == 0.0:
+        return image
+    height, width = image.shape[:2]
+    y, x = np.mgrid[0:height, 0:width].astype(np.float32)
+    scale = np.float32(max(1.0, 0.5 * min(width, height)))
+    dx = np.abs((x - np.float32(vignette.center_x * max(width - 1, 1))) / scale)
+    dy = np.abs((y - np.float32(vignette.center_y * max(height - 1, 1))) / scale)
+    roundness = float(vignette.roundness) / 100.0
+    exponent = 2.0 + 6.0 * roundness if roundness >= 0.0 else 2.0 + roundness
+    radius = np.power(np.power(dx, exponent) + np.power(dy, exponent), 1.0 / exponent)
+    midpoint = np.float32(0.15 + 0.70 * vignette.midpoint / 100.0)
+    feather_width = np.float32(0.02 + 0.98 * vignette.feather / 100.0)
+    mask = _smoothstep(float(midpoint), float(midpoint + feather_width), radius)
+    ev = np.float32(2.0 * vignette.amount / 100.0)
+    if ev < 0.0 and vignette.highlight_protection > 0.0:
+        luma = np.maximum(_film_luma(image, kind), 0.0)
+        highlight = _smoothstep(0.55, 0.95, _film_encode_luma(luma, kind))
+        mask *= 1.0 - highlight * np.float32(vignette.highlight_protection / 100.0)
+    gain = np.exp2(ev * mask)
+    return np.clip(image.astype(np.float32, copy=False) * gain[..., None], 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
 
 
 def _film_luma(image: np.ndarray, kind: PreviewKind) -> np.ndarray:

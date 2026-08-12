@@ -9,10 +9,11 @@ import subprocess
 
 import numpy as np
 
-from .adjustments import apply_adjustments
+from .adjustments import apply_adjustments, apply_final_grain
 from .binaries import resolve_binary
 from .color import acescg_to_linear_bt2020
 from .config import EXPORTS_DIR, SAMPLES_DIR
+from .finishing import apply_output_finishing
 from .models import AdjustmentState, CapabilityInfo, CapabilityStatus, ExportResponse, ExportSettings, PreviewKind
 from .test_pattern import build_hdr_test_pattern
 
@@ -40,6 +41,20 @@ def _finishing_adjustments_for_export(session: object) -> AdjustmentState:
     adjustments.hdr.film_look.halation_view_map = False
     adjustments.sdr.film_look.halation_view_map = False
     return adjustments
+
+
+def _render_export_branch(
+    session: object, settings: ExportSettings, kind: PreviewKind, adjustments: AdjustmentState
+) -> np.ndarray:
+    image = apply_adjustments(
+        getattr(session, "image"),
+        adjustments,
+        kind,
+        sdr_reference_image=getattr(session, "sdr_reference_image", None),
+        include_grain=False,
+    )
+    image = apply_output_finishing(image, settings.output_finishing, kind)
+    return apply_final_grain(image, adjustments, kind)
 
 
 class StubExportBackend(ExportBackend):
@@ -71,12 +86,8 @@ class SDRPNGExportBackend(ExportBackend):
 
         output_path = _resolve_output_path(getattr(session, "session_id", "session"), settings, ".png")
         _require_overwrite_permission(Path(output_path), settings)
-        image = apply_adjustments(
-            getattr(session, "image"),
-            _finishing_adjustments_for_export(session),
-            PreviewKind.SDR,
-            sdr_reference_image=getattr(session, "sdr_reference_image", None),
-        )
+        finishing_adjustments = _finishing_adjustments_for_export(session)
+        image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
         _write_sdr_png(Path(output_path), image)
         return ExportResponse(
             accepted=True,
@@ -107,13 +118,8 @@ class AVIFGainMapExportBackend(ExportBackend):
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         finishing_adjustments = _finishing_adjustments_for_export(session)
-        hdr_image = apply_adjustments(getattr(session, "image"), finishing_adjustments, PreviewKind.HDR)
-        sdr_image = apply_adjustments(
-            getattr(session, "image"),
-            finishing_adjustments,
-            PreviewKind.SDR,
-            sdr_reference_image=getattr(session, "sdr_reference_image", None),
-        )
+        hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
+        sdr_image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
 
         staged_output: Path | None = None
         try:
@@ -198,13 +204,8 @@ class JPEGUltraHDRExportBackend(ExportBackend):
         output_path = Path(_resolve_output_path(getattr(session, "session_id", "session"), settings, ".jpg"))
         _require_overwrite_permission(output_path, settings)
         finishing_adjustments = _finishing_adjustments_for_export(session)
-        hdr_image = apply_adjustments(getattr(session, "image"), finishing_adjustments, PreviewKind.HDR)
-        sdr_image = apply_adjustments(
-            getattr(session, "image"),
-            finishing_adjustments,
-            PreviewKind.SDR,
-            sdr_reference_image=getattr(session, "sdr_reference_image", None),
-        )
+        hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
+        sdr_image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
 
         if hdr_image.shape != sdr_image.shape or hdr_image.ndim != 3 or hdr_image.shape[2] < 3:
             return ExportResponse(

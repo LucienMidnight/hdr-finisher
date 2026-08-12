@@ -1,5 +1,5 @@
 (function () {
-  const PARAM_COUNT = 111;
+  const PARAM_COUNT = 131;
   const CURVE_SAMPLES = 1024;
 
   class HDRWebGPUPreview {
@@ -587,6 +587,25 @@
     params[108] = (film.film_resolution ?? 100) / 100;
     params[109] = adjustments.shared?.film_grain_seed ?? 271828;
     params[110] = lane === "hdr" && branch.highlight_compression_color_handling === "path_to_white" ? 1 : 0;
+    const grading = branch.color_grading || {};
+    params[111] = branch.color_grading_section_enabled !== false ? 1 : 0;
+    params[112] = 0.55 + 3.45 * (grading.blending ?? 50) / 100;
+    params[113] = (grading.balance || 0) / 50;
+    [grading.shadows || {}, grading.midtones || {}, grading.highlights || {}].forEach((wheel, index) => {
+      params[114 + index * 3] = wheel.hue || 0;
+      params[115 + index * 3] = (wheel.saturation || 0) / 400;
+      params[116 + index * 3] = wheel.luminance_ev || 0;
+    });
+    const vignette = branch.vignette || {};
+    params[123] = branch.vignette_section_enabled !== false ? 1 : 0;
+    params[124] = 2 * (vignette.amount || 0) / 100;
+    params[125] = 0.15 + 0.70 * (vignette.midpoint ?? 50) / 100;
+    const roundness = (vignette.roundness || 0) / 100;
+    params[126] = roundness >= 0 ? 2 + 6 * roundness : 2 + roundness;
+    params[127] = 0.02 + 0.98 * (vignette.feather ?? 75) / 100;
+    params[128] = (vignette.highlight_protection || 0) / 100;
+    params[129] = vignette.center_x ?? 0.5;
+    params[130] = vignette.center_y ?? 0.5;
     return params;
   }
 
@@ -783,6 +802,34 @@
       let targetStops = stops * exp2(p[8]);
       if (y <= 0.00000001) { return input; }
       return input * (pivot * exp2(clamp(targetStops, -32.0, 32.0)) / y);
+    }
+    fn gradingVector(hue: f32, hdr: bool) -> vec3f {
+      let angle = radians(hue);
+      var tint = vec3f(cos(angle), cos(angle - 2.0943951), cos(angle + 2.0943951));
+      let neutral = select(lumaSrgb(tint), lumaAces(tint), hdr);
+      tint -= vec3f(neutral);
+      return tint / max(max(abs(tint.r), abs(tint.g)), max(abs(tint.b), 0.000001));
+    }
+    fn applyColorGrading(input: vec3f, hdr: bool) -> vec3f {
+      if (p[111] < 0.5) { return input; }
+      let sourceY = max(select(lumaSrgb(input), lumaAces(input), hdr), 0.0);
+      let signal = select(log2(max(srgbEncode(sourceY), 0.0000001) / 0.5), log2(max(sourceY, 0.0000001) / 0.18), hdr);
+      let shadow = 1.0 - smoothRange(-1.0 + p[113] - p[112] * 0.5, -1.0 + p[113] + p[112] * 0.5, signal);
+      let highlight = smoothRange(1.0 + p[113] - p[112] * 0.5, 1.0 + p[113] + p[112] * 0.5, signal);
+      let midtone = max(0.0, 1.0 - shadow - highlight);
+      let total = max(shadow + midtone + highlight, 0.000001);
+      let masks = vec3f(shadow, midtone, highlight) / total;
+      var tint = vec3f(0.0);
+      var luminanceEv = 0.0;
+      for (var index: u32 = 0u; index < 3u; index = index + 1u) {
+        let offset = 114 + index * 3;
+        tint += gradingVector(p[offset], hdr) * p[offset + 1] * masks[index];
+        luminanceEv += p[offset + 2] * masks[index];
+      }
+      var result = input + tint * sourceY;
+      let tintedY = max(select(lumaSrgb(result), lumaAces(result), hdr), 0.0000001);
+      result *= sourceY / tintedY;
+      return max(result * exp2(luminanceEv), vec3f(0.0));
     }
     fn hdrSoftCeiling(input: vec3f) -> vec3f {
       if (p[74] != 2.0 || p[3] <= 0.0) { return input; }
@@ -1007,7 +1054,7 @@
       return compressSrgbGamut(acescgToSrgb(sceneColor(srgbToAcescg(input))));
     }
     fn renderHdrBase(source: vec3f) -> vec3f {
-      return max(applyCurves(hdrPrimaries(hdrToneEqualizer(sceneColor(hdrPeakFit(hdrSoftCeiling(hdrContrast(hdrBase(source))))))), true), vec3f(0.0));
+      return max(applyColorGrading(applyCurves(hdrPrimaries(hdrToneEqualizer(sceneColor(hdrPeakFit(hdrSoftCeiling(hdrContrast(hdrBase(source))))))), true), true), vec3f(0.0));
     }
     fn displayHdr(rgb: vec3f) -> vec3f {
       if (p[16] > 0.5) {
@@ -1030,14 +1077,14 @@
           rgb = max(rgb + vec3f(p[4] * 0.08 * mask), vec3f(0.0));
         }
         if (p[60] > 0.5) { rgb = retoneMapSdrReference(rgb); }
-        rgb = applyCurves(sdrPrimaries(sdrReferenceColor(sdrContrast(highlightRecovery(rgb)))), false);
+        rgb = applyColorGrading(applyCurves(sdrPrimaries(sdrReferenceColor(sdrContrast(highlightRecovery(rgb)))), false), false);
       } else {
         rgb = max(source * exp2(p[2]), vec3f(0.0));
         if (p[4] != 0.0) {
           let mask = 1.0 - smoothRange(0.0, 0.5, lumaAces(rgb));
           rgb = max(rgb + vec3f(p[4] * 0.08 * mask), vec3f(0.0));
         }
-        rgb = applyCurves(sdrPrimaries(sdrContrast(highlightRecovery(toneMap(sceneColor(rgb))))), false);
+        rgb = applyColorGrading(applyCurves(sdrPrimaries(sdrContrast(highlightRecovery(toneMap(sceneColor(rgb))))), false), false);
       }
       return clamp(rgb, vec3f(0.0), vec3f(1.0));
     }
@@ -1145,7 +1192,7 @@
     }
     fn applyFilmLook(coordinate: vec2i) -> vec3f {
       var rgb = sampleFilm(coordinate);
-      if (p[78] < 0.5 || p[79] <= 0.0) { return rgb; }
+      if (p[78] < 0.5 || p[79] <= 0.0) { return applyVignette(rgb, coordinate); }
       let dimensions = vec2f(textureDimensions(sourceTexture));
       let spatial = sampleSpatial((vec2f(coordinate) + vec2f(0.5)) / dimensions);
       if (p[85] > 0.5) {
@@ -1176,6 +1223,7 @@
         let resolutionLoss = (1.0 - p[108]) * p[79];
         rgb += (filmBlur(coordinate, 0.04 + 0.08 * resolutionLoss) - rgb) * resolutionLoss * 0.7;
       }
+      rgb = applyVignette(rgb, coordinate);
       if (p[100] > 0.5 && p[101] > 0.0) {
         let dimensions = vec2f(textureDimensions(sourceTexture));
         let pitch = max(1.0, length(dimensions) / 2400.0 * (0.85 + 1.8 * p[102] + 1.2 * p[103]));
@@ -1195,6 +1243,21 @@
         }
       }
       return max(rgb, vec3f(0.0));
+    }
+    fn applyVignette(rgb: vec3f, coordinate: vec2i) -> vec3f {
+      if (p[123] < 0.5 || abs(p[124]) < 0.000001) { return rgb; }
+      let dimensions = vec2f(textureDimensions(sourceTexture));
+      let center = vec2f(p[129], p[130]) * max(dimensions - vec2f(1.0), vec2f(1.0));
+      let scale = max(1.0, 0.5 * min(dimensions.x, dimensions.y));
+      let delta = abs((vec2f(coordinate) - center) / scale);
+      let exponent = max(p[126], 1.0);
+      let radius = pow(pow(delta.x, exponent) + pow(delta.y, exponent), 1.0 / exponent);
+      var mask = smoothRange(p[125], p[125] + p[127], radius);
+      if (p[124] < 0.0 && p[128] > 0.0) {
+        let highlight = smoothRange(0.55, 0.95, filmSignalFromLuma(max(filmLuma(rgb), 0.0)));
+        mask *= 1.0 - highlight * p[128];
+      }
+      return max(rgb * exp2(p[124] * mask), vec3f(0.0));
     }
 
     @fragment fn baseFragmentMain(input: VertexOut) -> @location(0) vec4f {

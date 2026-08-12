@@ -159,6 +159,92 @@ class FilmLookAdjustments(BaseModel):
     microcontrast: float = Field(default=0.0, ge=-100.0, le=100.0)
 
 
+class ColorWheelAdjustments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    hue: float = Field(default=0.0, ge=0.0, le=360.0)
+    saturation: float = Field(default=0.0, ge=0.0, le=100.0)
+    luminance_ev: float = Field(default=0.0, ge=-1.0, le=1.0)
+
+
+class ColorGradingAdjustments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    shadows: ColorWheelAdjustments = Field(default_factory=ColorWheelAdjustments)
+    midtones: ColorWheelAdjustments = Field(default_factory=ColorWheelAdjustments)
+    highlights: ColorWheelAdjustments = Field(default_factory=ColorWheelAdjustments)
+    blending: float = Field(default=50.0, ge=0.0, le=100.0)
+    balance: float = Field(default=0.0, ge=-100.0, le=100.0)
+
+
+class VignetteAdjustments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount: float = Field(default=0.0, ge=-100.0, le=100.0)
+    midpoint: float = Field(default=50.0, ge=0.0, le=100.0)
+    roundness: float = Field(default=0.0, ge=-100.0, le=100.0)
+    feather: float = Field(default=75.0, ge=0.0, le=100.0)
+    highlight_protection: float = Field(default=0.0, ge=0.0, le=100.0)
+    center_x: float = Field(default=0.5, ge=0.0, le=1.0)
+    center_y: float = Field(default=0.5, ge=0.0, le=1.0)
+
+
+class CropRectangle(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    x: float = Field(default=0.0, ge=0.0, lt=1.0)
+    y: float = Field(default=0.0, ge=0.0, lt=1.0)
+    width: float = Field(default=1.0, gt=0.0, le=1.0)
+    height: float = Field(default=1.0, gt=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def validate_bounds(self) -> "CropRectangle":
+        if self.x + self.width > 1.0 + 1e-7 or self.y + self.height > 1.0 + 1e-7:
+            raise ValueError("crop rectangle must stay within normalized image bounds")
+        return self
+
+
+class CustomAspectRatio(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    width: float = Field(default=1.0, gt=0.0, le=10000.0)
+    height: float = Field(default=1.0, gt=0.0, le=10000.0)
+
+
+class GeometryAdjustments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rotation: Literal[0, 90, 180, 270] = 0
+    flip_horizontal: bool = False
+    flip_vertical: bool = False
+    straighten_angle: float = Field(default=0.0, ge=-45.0, le=45.0)
+    crop: CropRectangle = Field(default_factory=CropRectangle)
+    ratio_mode: Literal[
+        "free", "original", "1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "2:1", "custom"
+    ] = "free"
+    custom_ratio: CustomAspectRatio = Field(default_factory=CustomAspectRatio)
+
+
+class OutputFinishingSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    resize_mode: Literal["original", "long_edge", "fit"] = "original"
+    long_edge: int | None = Field(default=None, ge=1, le=100000)
+    width: int | None = Field(default=None, ge=1, le=100000)
+    height: int | None = Field(default=None, ge=1, le=100000)
+    prevent_enlargement: bool = True
+    sharpening: Literal["off", "subtle", "standard", "strong"] = "off"
+    method: Literal["edge_aware_multiscale"] = "edge_aware_multiscale"
+
+    @model_validator(mode="after")
+    def validate_resize_dimensions(self) -> "OutputFinishingSettings":
+        if self.resize_mode == "long_edge" and self.long_edge is None:
+            raise ValueError("long_edge is required when resize_mode is long_edge")
+        if self.resize_mode == "fit" and (self.width is None or self.height is None):
+            raise ValueError("width and height are required when resize_mode is fit")
+        return self
+
+
 class HDRAdjustments(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -169,7 +255,11 @@ class HDRAdjustments(BaseModel):
     primaries_section_enabled: bool = True
     curves_section_enabled: bool = True
     film_look_section_enabled: bool = True
+    color_grading_section_enabled: bool = True
+    vignette_section_enabled: bool = True
     film_look: FilmLookAdjustments = Field(default_factory=FilmLookAdjustments)
+    color_grading: ColorGradingAdjustments = Field(default_factory=ColorGradingAdjustments)
+    vignette: VignetteAdjustments = Field(default_factory=VignetteAdjustments)
     exposure: float = Field(default=0.0, ge=-8.0, le=8.0)
     highlight_compression_start_nits: float = Field(default=400.0, ge=1.0, le=9999.0)
     highlight_compression_target_nits: float = Field(default=1000.0, ge=2.0, le=10000.0)
@@ -276,7 +366,11 @@ class SDRAdjustments(BaseModel):
     primaries_section_enabled: bool = True
     curves_section_enabled: bool = True
     film_look_section_enabled: bool = True
+    color_grading_section_enabled: bool = True
+    vignette_section_enabled: bool = True
     film_look: FilmLookAdjustments = Field(default_factory=FilmLookAdjustments)
+    color_grading: ColorGradingAdjustments = Field(default_factory=ColorGradingAdjustments)
+    vignette: VignetteAdjustments = Field(default_factory=VignetteAdjustments)
     exposure: float = Field(default=0.0, ge=-8.0, le=8.0)
     highlight_recovery: float = Field(default=0.6, ge=0.0, le=4.0)
     tone_contrast: float = Field(default=1.0, ge=0.5, le=1.5)
@@ -320,6 +414,7 @@ class SharedAdjustments(BaseModel):
     overlay_opacity: float = 0.72
     overlay_threshold: float = Field(default=100.0, ge=1.0, le=10000.0)
     film_grain_seed: int = Field(default=271828, ge=0, le=2_147_483_647)
+    geometry: GeometryAdjustments = Field(default_factory=GeometryAdjustments)
 
 
 class AdjustmentState(BaseModel):
@@ -399,6 +494,7 @@ class ExportSettings(BaseModel):
     jpeg_gain_map_scale: Literal["full", "half"] = "full"
     output_path: str | None = None
     overwrite: bool = False
+    output_finishing: OutputFinishingSettings = Field(default_factory=OutputFinishingSettings)
 
 
 class ExportResponse(BaseModel):
@@ -423,6 +519,7 @@ class ProofArtifactRequest(BaseModel):
     jpeg_gain_map_quality: int = Field(default=100, ge=1, le=100)
     jpeg_gain_map_scale: Literal["full", "half"] = "full"
     long_edge: int = Field(default=1200, ge=256, le=1600)
+    output_finishing: OutputFinishingSettings = Field(default_factory=OutputFinishingSettings)
 
 
 class JPEGGainMapProofMetadata(BaseModel):

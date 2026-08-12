@@ -118,6 +118,17 @@ for (const lane of ["hdr", "sdr"]) {
 }
 
 Object.assign(MANUAL_VALUE_RULES, {
+  "shared.geometry.straighten_angle": { min: -45, max: 45, decimals: 1 },
+  "current.color_grading.shadows.luminance_ev": { min: -1, max: 1, decimals: 2 },
+  "current.color_grading.midtones.luminance_ev": { min: -1, max: 1, decimals: 2 },
+  "current.color_grading.highlights.luminance_ev": { min: -1, max: 1, decimals: 2 },
+  "current.color_grading.blending": { min: 0, max: 100, decimals: 0 },
+  "current.color_grading.balance": { min: -100, max: 100, decimals: 0 },
+  "current.vignette.amount": { min: -100, max: 100, decimals: 0 },
+  "current.vignette.midpoint": { min: 0, max: 100, decimals: 0 },
+  "current.vignette.roundness": { min: -100, max: 100, decimals: 0 },
+  "current.vignette.feather": { min: 0, max: 100, decimals: 0 },
+  "current.vignette.highlight_protection": { min: 0, max: 100, decimals: 0 },
   "current.film_look.look_strength": { min: 0, max: 100, decimals: 0 },
   "current.film_look.print_strength": { min: 0, max: 100, decimals: 0 },
   "current.film_look.print_contrast": { min: -100, max: 100, decimals: 0 },
@@ -212,6 +223,12 @@ const state = {
   comparisonRenderedLane: null,
   comparisonRenderedGeneration: null,
   previewGeneration: { hdr: 0, sdr: 0 },
+  cropMode: false,
+  cropDraftOriginal: null,
+  cropGuide: "none",
+  cropGridDensity: 8,
+  cropDrag: null,
+  vignettePickCenter: false,
   previewCache: { hdr: null, sdr: null },
   previewControllers: { hdr: null, sdr: null },
   previewInfoByLane: {
@@ -416,6 +433,25 @@ const FILM_LOOK_PRESETS = {
   "16mm_fine": { print_strength: 50, print_contrast: 6, print_toe: 8, print_shoulder: 15, color_density: 15, grain_amount: 54, grain_size: 78, grain_softness: 32, grain_chroma: 24, grain_shadow_response: 100, grain_midtone_response: 112, grain_highlight_response: 128, film_resolution: 80, halation_amount: 13, halation_sensitivity: 70, halation_radius: 0.34, halation_hue_offset: 2, halation_saturation: 82, bloom_amount: 9, bloom_sensitivity: 74, bloom_radius: 0.58, bloom_highlight_detail: 76, image_softness: 13, microcontrast: -9 },
 };
 
+const defaultColorGrading = () => ({
+  shadows: { hue: 0, saturation: 0, luminance_ev: 0 },
+  midtones: { hue: 0, saturation: 0, luminance_ev: 0 },
+  highlights: { hue: 0, saturation: 0, luminance_ev: 0 },
+  blending: 50,
+  balance: 0,
+});
+
+const defaultVignette = () => ({ amount: 0, midpoint: 50, roundness: 0, feather: 75, highlight_protection: 0, center_x: 0.5, center_y: 0.5 });
+const defaultGeometry = () => ({
+  rotation: 0,
+  flip_horizontal: false,
+  flip_vertical: false,
+  straighten_angle: 0,
+  crop: { x: 0, y: 0, width: 1, height: 1 },
+  ratio_mode: "free",
+  custom_ratio: { width: 1, height: 1 },
+});
+
 const defaultAdjustments = () => ({
   hdr: {
     tone_section_enabled: true,
@@ -425,7 +461,11 @@ const defaultAdjustments = () => ({
     primaries_section_enabled: true,
     curves_section_enabled: true,
     film_look_section_enabled: true,
+    color_grading_section_enabled: true,
+    vignette_section_enabled: true,
     film_look: defaultFilmLook(),
+    color_grading: defaultColorGrading(),
+    vignette: defaultVignette(),
     exposure: 0,
     highlight_compression_start_nits: 400,
     highlight_compression_target_nits: 1000,
@@ -476,7 +516,11 @@ const defaultAdjustments = () => ({
     primaries_section_enabled: true,
     curves_section_enabled: true,
     film_look_section_enabled: true,
+    color_grading_section_enabled: true,
+    vignette_section_enabled: true,
     film_look: defaultFilmLook(),
+    color_grading: defaultColorGrading(),
+    vignette: defaultVignette(),
     exposure: 0,
     highlight_recovery: 0.6,
     tone_contrast: 1,
@@ -517,6 +561,7 @@ const defaultAdjustments = () => ({
     overlay_opacity: 0.72,
     overlay_threshold: 100,
     film_grain_seed: 271828,
+    geometry: defaultGeometry(),
   },
 });
 
@@ -674,6 +719,46 @@ const els = {
   modifiedCounts: [...document.querySelectorAll("[data-modified-count]")],
   gradeModifiedSummary: document.getElementById("grade-modified-summary"),
   curveGroupState: document.getElementById("curve-group-state"),
+  cropOpen: document.getElementById("crop-open"),
+  cropToolToggle: document.getElementById("crop-tool-toggle"),
+  cropEditorOverlay: document.getElementById("crop-editor-overlay"),
+  cropBox: document.getElementById("crop-box"),
+  cropGuideCanvas: document.getElementById("crop-guide-canvas"),
+  cropDone: document.getElementById("crop-done"),
+  cropCancel: document.getElementById("crop-cancel"),
+  cropResetFrame: document.getElementById("crop-reset-frame"),
+  cropGuide: document.getElementById("crop-guide"),
+  cropGridDensity: document.getElementById("crop-grid-density"),
+  cropGridDensityValue: document.getElementById("crop-grid-density-value"),
+  cropGridDensityRow: document.getElementById("crop-grid-density-row"),
+  cropRatio: document.getElementById("crop-ratio"),
+  customRatioFields: document.getElementById("custom-ratio-fields"),
+  rotateLeft: document.getElementById("rotate-left"),
+  rotateRight: document.getElementById("rotate-right"),
+  flipHorizontal: document.getElementById("flip-horizontal"),
+  flipVertical: document.getElementById("flip-vertical"),
+  swapCustomRatio: document.getElementById("swap-custom-ratio"),
+  colorGradingReset: document.getElementById("color-grading-reset"),
+  colorGradingMatchHdr: document.getElementById("color-grading-match-hdr"),
+  colorGradingSdrActions: document.getElementById("color-grading-sdr-actions"),
+  colorGradingState: document.getElementById("color-grading-state"),
+  vignetteReset: document.getElementById("vignette-reset"),
+  vignetteMatchHdr: document.getElementById("vignette-match-hdr"),
+  vignetteSdrActions: document.getElementById("vignette-sdr-actions"),
+  vignetteState: document.getElementById("vignette-state"),
+  vignettePickCenter: document.getElementById("vignette-pick-center"),
+  vignetteCenterHandle: document.getElementById("vignette-center-handle"),
+  vignetteCenterX: document.getElementById("vignette-center-x"),
+  vignetteCenterY: document.getElementById("vignette-center-y"),
+  vignetteHighlightProtectionRow: document.getElementById("vignette-highlight-protection-row"),
+  exportResizeMode: document.getElementById("export-resize-mode"),
+  exportLongEdge: document.getElementById("export-long-edge"),
+  exportWidth: document.getElementById("export-width"),
+  exportHeight: document.getElementById("export-height"),
+  exportLongEdgeRow: document.getElementById("export-long-edge-row"),
+  exportFitRow: document.getElementById("export-fit-row"),
+  exportPreventEnlargement: document.getElementById("export-prevent-enlargement"),
+  exportSharpening: document.getElementById("export-sharpening"),
 };
 
 const overlayPresetNotes = {
@@ -684,6 +769,7 @@ const overlayPresetNotes = {
 };
 
 const controlGroups = {
+  geometry: ["shared.geometry"],
   "hdr-tone": ["hdr.exposure", "hdr.contrast", "hdr.contrast_pivot", "hdr.shadow_lift"],
   "hdr-highlights": ["hdr.highlight_compression_mode", "hdr.highlight_compression_start_nits", "hdr.highlight_compression_target_nits", "hdr.highlight_compression_softness", "hdr.highlight_compression_peak_detail", "hdr.highlight_compression_peak_measurement", "hdr.highlight_compression_manual_peak_nits", "hdr.highlight_compression_bias", "hdr.highlight_compression_color_handling"],
   "hdr-equalizer": ["hdr.tone_equalizer_nodes", "hdr.tone_equalizer_influence_radius", "hdr.tone_equalizer_smoothing"],
@@ -1375,7 +1461,9 @@ function bindEvents() {
       control.addEventListener(eventName, () => state.previewScheduler?.endInteraction());
     });
     control.addEventListener("input", () => {
-      const value = control.type === "range" ? Number(control.value) : control.type === "checkbox" ? control.checked : control.value;
+      const value = control.type === "range" || control.type === "number"
+        ? Number(control.value)
+        : control.type === "checkbox" ? control.checked : control.value;
       commitAdjustmentValue(control.dataset.path, value);
     });
   });
@@ -1430,6 +1518,7 @@ function bindEvents() {
       const group = button.closest(".control-group");
       const collapsed = group.classList.toggle("collapsed");
       button.setAttribute("aria-expanded", String(!collapsed));
+      renderVignetteCenter();
     });
   });
   els.groupResets.forEach((button) => {
@@ -1439,6 +1528,13 @@ function bindEvents() {
   els.sdrResetColors.addEventListener("click", resetSdrColorSliders);
   els.filmLookReset?.addEventListener("click", resetFilmLook);
   els.filmLookMatchHdr?.addEventListener("click", matchHdrFilmLookToSdr);
+  els.colorGradingReset?.addEventListener("click", () => resetLaneObject("color_grading", defaultColorGrading()));
+  els.colorGradingMatchHdr?.addEventListener("click", () => matchLaneObject("color_grading"));
+  els.vignetteReset?.addEventListener("click", () => resetLaneObject("vignette", defaultVignette()));
+  els.vignetteMatchHdr?.addEventListener("click", () => matchLaneObject("vignette"));
+  bindColorWheels();
+  bindCropEditor();
+  bindVignetteCenter();
   els.sectionBypasses.forEach((button) => {
     button.addEventListener("click", () => {
       const path = resolveAdjustmentPath(button.dataset.sectionPath);
@@ -1494,6 +1590,7 @@ function bindEvents() {
     window.HDRProofing?.invalidate("settings");
   });
   els.jpegGainMapScale.addEventListener("change", () => window.HDRProofing?.invalidate("settings"));
+  els.exportResizeMode?.addEventListener("change", renderOutputFinishingControls);
 
   bindCompareControl();
   bindKeyboardShortcuts();
@@ -2668,14 +2765,20 @@ function hexToRgb(value) {
 
 function syncOverlayPlacement() {
   const preview = activePreviewElement();
-  if (!previewIsVisible() || els.previewOverlay.style.display === "none") return;
+  if (!previewIsVisible()) return;
   const paneRect = els.previewPrimaryPane.getBoundingClientRect();
   const imageRect = preview.getBoundingClientRect();
   if (!imageRect.width || !imageRect.height) return;
-  els.previewOverlay.style.left = `${imageRect.left - paneRect.left + imageRect.width / 2}px`;
-  els.previewOverlay.style.top = `${imageRect.top - paneRect.top + imageRect.height / 2}px`;
-  els.previewOverlay.style.width = `${imageRect.width}px`;
-  els.previewOverlay.style.height = `${imageRect.height}px`;
+  if (els.previewOverlay.style.display !== "none") {
+    els.previewOverlay.style.left = `${imageRect.left - paneRect.left + imageRect.width / 2}px`;
+    els.previewOverlay.style.top = `${imageRect.top - paneRect.top + imageRect.height / 2}px`;
+    els.previewOverlay.style.width = `${imageRect.width}px`;
+    els.previewOverlay.style.height = `${imageRect.height}px`;
+  }
+  if (els.cropEditorOverlay) Object.assign(els.cropEditorOverlay.style, {
+    left: `${imageRect.left - paneRect.left}px`, top: `${imageRect.top - paneRect.top}px`, width: `${imageRect.width}px`, height: `${imageRect.height}px`, right: "auto", bottom: "auto",
+  });
+  renderVignetteCenter();
 }
 
 function seedExportFieldsFromSession() {
@@ -2858,6 +2961,287 @@ function getValueByPath(target, path) {
   return resolveAdjustmentPath(path).split(".").reduce((cursor, key) => cursor?.[key], target);
 }
 
+function bindCropEditor() {
+  els.cropOpen?.addEventListener("click", openCropMode);
+  els.cropToolToggle?.addEventListener("click", () => state.cropMode ? closeCropMode(true) : openCropMode());
+  els.cropDone?.addEventListener("click", () => closeCropMode(true));
+  els.cropCancel?.addEventListener("click", () => closeCropMode(false));
+  els.cropResetFrame?.addEventListener("click", () => {
+    state.adjustments.shared.geometry.crop = { x: 0, y: 0, width: 1, height: 1 };
+    renderCropFrame();
+  });
+  els.cropGuide?.addEventListener("change", () => {
+    state.cropGuide = els.cropGuide.value;
+    renderCropOptions();
+    drawCropGuide();
+  });
+  els.cropGridDensity?.addEventListener("input", () => {
+    state.cropGridDensity = Number(els.cropGridDensity.value);
+    renderCropOptions();
+    drawCropGuide();
+  });
+  els.rotateLeft?.addEventListener("click", () => rotateGeometry(-90));
+  els.rotateRight?.addEventListener("click", () => rotateGeometry(90));
+  els.flipHorizontal?.addEventListener("click", () => commitAdjustmentValue("shared.geometry.flip_horizontal", !state.adjustments.shared.geometry.flip_horizontal));
+  els.flipVertical?.addEventListener("click", () => commitAdjustmentValue("shared.geometry.flip_vertical", !state.adjustments.shared.geometry.flip_vertical));
+  els.swapCustomRatio?.addEventListener("click", () => {
+    const ratio = state.adjustments.shared.geometry.custom_ratio;
+    [ratio.width, ratio.height] = [ratio.height, ratio.width];
+    syncControlsFromState();
+    constrainCropToRatio();
+  });
+  els.cropRatio?.addEventListener("change", constrainCropToRatio);
+  els.cropBox?.addEventListener("pointerdown", beginCropDrag);
+  window.addEventListener("pointermove", moveCropDrag);
+  window.addEventListener("pointerup", endCropDrag);
+}
+
+function openCropMode() {
+  if (!state.session || state.cropMode) return;
+  state.cropMode = true;
+  state.cropDraftOriginal = JSON.parse(JSON.stringify(state.adjustments.shared.geometry));
+  els.cropEditorOverlay?.classList.remove("hidden");
+  els.cropToolToggle?.classList.add("active");
+  els.cropToolToggle?.setAttribute("aria-pressed", "true");
+  els.cropEditorOverlay?.setAttribute("aria-hidden", "false");
+  renderCropFrame();
+}
+
+function closeCropMode(commit) {
+  if (!state.cropMode) return;
+  if (!commit && state.cropDraftOriginal) state.adjustments.shared.geometry = state.cropDraftOriginal;
+  state.cropMode = false;
+  state.cropDraftOriginal = null;
+  state.cropDrag = null;
+  els.cropEditorOverlay?.classList.add("hidden");
+  els.cropToolToggle?.classList.remove("active");
+  els.cropToolToggle?.setAttribute("aria-pressed", "false");
+  els.cropEditorOverlay?.setAttribute("aria-hidden", "true");
+  syncControlsFromState();
+  invalidatePreview("hdr");
+  invalidatePreview("sdr");
+  debouncePreview(state.currentView);
+}
+
+function rotateGeometry(delta) {
+  const geometry = state.adjustments.shared.geometry;
+  geometry.rotation = (geometry.rotation + delta + 360) % 360;
+  geometry.crop = { x: 0, y: 0, width: 1, height: 1 };
+  syncControlsFromState();
+  invalidatePreview("hdr");
+  invalidatePreview("sdr");
+  debouncePreview(state.currentView);
+}
+
+function renderCropOptions() {
+  if (!els.cropGuide) return;
+  els.cropGuide.value = state.cropGuide;
+  els.cropGridDensity.value = String(state.cropGridDensity);
+  els.cropGridDensityValue.textContent = `${state.cropGridDensity}\u00d7${state.cropGridDensity}`;
+  els.cropGridDensityRow.classList.toggle("hidden", state.cropGuide !== "grid");
+  els.customRatioFields?.classList.toggle("hidden", state.adjustments.shared?.geometry?.ratio_mode !== "custom");
+  renderCropFrame();
+}
+
+function renderCropFrame() {
+  if (!state.cropMode || !els.cropBox) return;
+  const crop = state.adjustments.shared.geometry.crop;
+  Object.assign(els.cropBox.style, { left: `${crop.x * 100}%`, top: `${crop.y * 100}%`, width: `${crop.width * 100}%`, height: `${crop.height * 100}%` });
+  requestAnimationFrame(drawCropGuide);
+}
+
+function cropAspectRatio() {
+  const geometry = state.adjustments.shared.geometry;
+  if (geometry.ratio_mode === "free") return null;
+  if (geometry.ratio_mode === "original") {
+    const source = state.session?.source;
+    if (!source) return null;
+    return [90, 270].includes(geometry.rotation) ? source.height / source.width : source.width / source.height;
+  }
+  if (geometry.ratio_mode === "custom") return geometry.custom_ratio.width / geometry.custom_ratio.height;
+  const [width, height] = geometry.ratio_mode.split(":").map(Number);
+  return width / height;
+}
+
+function constrainCropToRatio() {
+  const ratio = cropAspectRatio();
+  if (!ratio) return renderCropFrame();
+  const paneRatio = Math.max(0.01, els.cropEditorOverlay.clientWidth / Math.max(1, els.cropEditorOverlay.clientHeight));
+  const crop = state.adjustments.shared.geometry.crop;
+  crop.height = Math.min(1 - crop.y, crop.width * paneRatio / ratio);
+  crop.width = Math.min(1 - crop.x, crop.height * ratio / paneRatio);
+  renderCropFrame();
+}
+
+function beginCropDrag(event) {
+  if (!state.cropMode || event.button !== 0) return;
+  event.preventDefault();
+  const rect = els.cropEditorOverlay.getBoundingClientRect();
+  state.cropDrag = { handle: event.target.dataset.cropHandle || "move", startX: event.clientX, startY: event.clientY, rect, crop: { ...state.adjustments.shared.geometry.crop } };
+  els.cropBox.setPointerCapture?.(event.pointerId);
+}
+
+function moveCropDrag(event) {
+  const drag = state.cropDrag;
+  if (!drag) return;
+  const dx = (event.clientX - drag.startX) / Math.max(1, drag.rect.width);
+  const dy = (event.clientY - drag.startY) / Math.max(1, drag.rect.height);
+  const next = { ...drag.crop };
+  if (drag.handle === "move") {
+    next.x = Math.max(0, Math.min(1 - next.width, drag.crop.x + dx));
+    next.y = Math.max(0, Math.min(1 - next.height, drag.crop.y + dy));
+  } else {
+    if (drag.handle.includes("w")) { const right = drag.crop.x + drag.crop.width; next.x = Math.max(0, Math.min(right - 0.02, drag.crop.x + dx)); next.width = right - next.x; }
+    if (drag.handle.includes("e")) next.width = Math.max(0.02, Math.min(1 - drag.crop.x, drag.crop.width + dx));
+    if (drag.handle.includes("n")) { const bottom = drag.crop.y + drag.crop.height; next.y = Math.max(0, Math.min(bottom - 0.02, drag.crop.y + dy)); next.height = bottom - next.y; }
+    if (drag.handle.includes("s")) next.height = Math.max(0.02, Math.min(1 - drag.crop.y, drag.crop.height + dy));
+    const ratio = cropAspectRatio();
+    if (ratio) {
+      const paneRatio = drag.rect.width / Math.max(1, drag.rect.height);
+      next.height = Math.min(1 - next.y, next.width * paneRatio / ratio);
+      next.width = Math.min(1 - next.x, next.height * ratio / paneRatio);
+    }
+  }
+  state.adjustments.shared.geometry.crop = next;
+  renderCropFrame();
+}
+
+function endCropDrag() { state.cropDrag = null; }
+
+function drawCropGuide() {
+  if (!state.cropMode || !els.cropGuideCanvas) return;
+  const canvas = els.cropGuideCanvas;
+  const width = Math.max(1, Math.round(els.cropBox.clientWidth * (window.devicePixelRatio || 1)));
+  const height = Math.max(1, Math.round(els.cropBox.clientHeight * (window.devicePixelRatio || 1)));
+  canvas.width = width; canvas.height = height;
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, width, height); context.strokeStyle = "rgba(255,255,255,.82)"; context.lineWidth = window.devicePixelRatio || 1;
+  const line = (x1, y1, x2, y2) => { context.beginPath(); context.moveTo(x1, y1); context.lineTo(x2, y2); context.stroke(); };
+  if (state.cropGuide === "diagonals") { line(0, 0, width, height); line(width, 0, 0, height); return; }
+  let positions = [];
+  if (state.cropGuide === "thirds") positions = [1 / 3, 2 / 3];
+  if (state.cropGuide === "golden") positions = [0.382, 0.618];
+  if (state.cropGuide === "grid") positions = Array.from({ length: state.cropGridDensity - 1 }, (_, index) => (index + 1) / state.cropGridDensity);
+  positions.forEach((position) => { line(position * width, 0, position * width, height); line(0, position * height, width, position * height); });
+}
+
+function bindColorWheels() {
+  document.querySelectorAll(".color-wheel-pad").forEach((pad) => {
+    const update = (event) => {
+      const rect = pad.getBoundingClientRect();
+      const dx = event.clientX - rect.left - rect.width / 2;
+      const dy = event.clientY - rect.top - rect.height / 2;
+      const radius = Math.min(1, Math.hypot(dx, dy) / Math.max(1, rect.width / 2));
+      const hue = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
+      const wheel = pad.closest("[data-wheel]").dataset.wheel;
+      setValueByPath(state.adjustments, `current.color_grading.${wheel}.hue`, hue);
+      setValueByPath(state.adjustments, `current.color_grading.${wheel}.saturation`, radius * 100);
+      syncControlsFromState();
+      invalidatePreview(state.currentView);
+      debouncePreview(state.currentView);
+    };
+    pad.addEventListener("pointerdown", (event) => { pad.setPointerCapture(event.pointerId); update(event); });
+    pad.addEventListener("pointermove", (event) => { if (pad.hasPointerCapture(event.pointerId)) update(event); });
+    pad.addEventListener("keydown", (event) => {
+      if (["Delete", "Backspace", "Home"].includes(event.key)) {
+        event.preventDefault();
+        const wheel = pad.closest("[data-wheel]").dataset.wheel;
+        setValueByPath(state.adjustments, `current.color_grading.${wheel}`, { hue: 0, saturation: 0, luminance_ev: 0 });
+        syncControlsFromState(); invalidatePreview(state.currentView); debouncePreview(state.currentView);
+        return;
+      }
+      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+      event.preventDefault();
+      const wheel = pad.closest("[data-wheel]").dataset.wheel;
+      const base = `current.color_grading.${wheel}`;
+      const step = event.shiftKey ? 5 : 1;
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        const direction = event.key === "ArrowRight" ? 1 : -1;
+        setValueByPath(state.adjustments, `${base}.hue`, (getValueByPath(state.adjustments, `${base}.hue`) + direction * step + 360) % 360);
+      } else {
+        const direction = event.key === "ArrowUp" ? 1 : -1;
+        setValueByPath(state.adjustments, `${base}.saturation`, Math.max(0, Math.min(100, getValueByPath(state.adjustments, `${base}.saturation`) + direction * step)));
+      }
+      syncControlsFromState(); invalidatePreview(state.currentView); debouncePreview(state.currentView);
+    });
+    pad.addEventListener("dblclick", () => {
+      const wheel = pad.closest("[data-wheel]").dataset.wheel;
+      setValueByPath(state.adjustments, `current.color_grading.${wheel}`, { hue: 0, saturation: 0, luminance_ev: 0 });
+      syncControlsFromState(); invalidatePreview(state.currentView); debouncePreview(state.currentView);
+    });
+  });
+}
+
+function renderColorWheels() {
+  document.querySelectorAll(".grading-wheel").forEach((container) => {
+    const wheel = state.adjustments[state.currentView]?.color_grading?.[container.dataset.wheel];
+    const puck = container.querySelector(".color-wheel-puck");
+    if (!wheel || !puck) return;
+    const radius = Math.min(100, Math.max(0, wheel.saturation)) * 0.45;
+    const angle = wheel.hue * Math.PI / 180;
+    puck.style.left = `${50 + Math.cos(angle) * radius}%`;
+    puck.style.top = `${50 + Math.sin(angle) * radius}%`;
+  });
+}
+
+function bindVignetteCenter() {
+  const commitNumeric = () => {
+    state.adjustments[state.currentView].vignette.center_x = Math.max(0, Math.min(1, Number(els.vignetteCenterX.value) / 100));
+    state.adjustments[state.currentView].vignette.center_y = Math.max(0, Math.min(1, Number(els.vignetteCenterY.value) / 100));
+    renderVignetteCenter(); invalidatePreview(state.currentView); debouncePreview(state.currentView);
+  };
+  els.vignetteCenterX?.addEventListener("change", commitNumeric);
+  els.vignetteCenterY?.addEventListener("change", commitNumeric);
+  els.vignettePickCenter?.addEventListener("click", () => {
+    state.vignettePickCenter = !state.vignettePickCenter;
+    renderVignetteCenter();
+  });
+  els.vignetteCenterHandle?.addEventListener("pointerdown", (event) => els.vignetteCenterHandle.setPointerCapture(event.pointerId));
+  els.vignetteCenterHandle?.addEventListener("pointermove", (event) => {
+    if (!els.vignetteCenterHandle.hasPointerCapture(event.pointerId)) return;
+    const rect = activePreviewElement().getBoundingClientRect();
+    updateVignetteCenter((event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height);
+  });
+  els.vignetteCenterHandle?.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+    event.preventDefault();
+    const vignette = state.adjustments[state.currentView].vignette;
+    const step = event.shiftKey ? 0.05 : 0.01;
+    if (event.key === "ArrowLeft") vignette.center_x -= step;
+    if (event.key === "ArrowRight") vignette.center_x += step;
+    if (event.key === "ArrowUp") vignette.center_y -= step;
+    if (event.key === "ArrowDown") vignette.center_y += step;
+    updateVignetteCenter(vignette.center_x, vignette.center_y);
+  });
+}
+
+function updateVignetteCenter(x, y) {
+  const vignette = state.adjustments[state.currentView].vignette;
+  vignette.center_x = Math.max(0, Math.min(1, x)); vignette.center_y = Math.max(0, Math.min(1, y));
+  renderVignetteCenter(); invalidatePreview(state.currentView); debouncePreview(state.currentView);
+}
+
+function renderVignetteCenter() {
+  if (!els.vignetteCenterHandle) return;
+  const vignette = state.adjustments[state.currentView]?.vignette || defaultVignette();
+  els.vignetteCenterX.value = String(Math.round(vignette.center_x * 100));
+  els.vignetteCenterY.value = String(Math.round(vignette.center_y * 100));
+  const preview = activePreviewElement();
+  const paneRect = els.previewPrimaryPane?.getBoundingClientRect();
+  const imageRect = preview?.getBoundingClientRect();
+  if (paneRect && imageRect) {
+    els.vignetteCenterHandle.style.left = `${imageRect.left - paneRect.left + imageRect.width * vignette.center_x}px`;
+    els.vignetteCenterHandle.style.top = `${imageRect.top - paneRect.top + imageRect.height * vignette.center_y}px`;
+  }
+  const groupOpen = !document.querySelector(".vignette-group")?.classList.contains("collapsed");
+  const visible = state.activeWorkflow === "grade" && (state.vignettePickCenter || groupOpen);
+  els.vignetteCenterHandle.classList.toggle("hidden", !visible);
+  els.vignettePickCenter?.setAttribute("aria-pressed", String(state.vignettePickCenter));
+  const dark = vignette.amount < 0;
+  els.vignetteHighlightProtectionRow?.classList.toggle("control-disabled", !dark);
+  els.vignetteHighlightProtectionRow?.querySelector("input")?.toggleAttribute("disabled", !dark);
+}
+
 function resolveAdjustmentPath(path) {
   return path?.startsWith("current.") ? `${state.currentView}.${path.slice("current.".length)}` : path;
 }
@@ -2875,6 +3259,11 @@ function commitAdjustmentValue(path, value, { manual = false } = {}) {
   renderControlState();
   if (path.startsWith("shared.overlay_")) {
     debounceOverlayAndScopes();
+  } else if (resolvedPath.startsWith("shared.geometry")) {
+    renderCropOptions();
+    invalidatePreview("hdr");
+    invalidatePreview("sdr");
+    debouncePreview(state.currentView);
   } else {
     const lane = resolvedPath.startsWith("sdr.") ? "sdr" : "hdr";
     invalidatePreview(lane);
@@ -2890,11 +3279,16 @@ function syncControlsFromState() {
     if (control.type === "checkbox") control.checked = Boolean(value);
     else {
       if (control.type === "range") syncRangeControlFromState(control.dataset.path, control);
-      else control.value = String(value);
+      else if (control.type === "number" && /color_grading\..+\.(hue|saturation)$/.test(control.dataset.path)) {
+        control.value = String(Math.round(Number(value)));
+      } else control.value = String(value);
     }
   });
   updateControlReadouts();
   syncToneEqualizerControls();
+  renderCropOptions();
+  renderColorWheels();
+  renderVignetteCenter();
 }
 
 function normalizeHighlightCompressionControls(changedPath) {
@@ -4007,6 +4401,7 @@ async function renderGpuDraft(
   lane = state.currentView,
   { hideStatus = true, longEdge = settledProxyLongEdge(), allowInactive = false } = {},
 ) {
+  if (!valuesEqual(state.adjustments.shared?.geometry, defaultGeometry())) return false;
   if (!state.session || (!allowInactive && lane !== state.currentView) || !state.gpuPreview?.available) return false;
   if (state.comparePeekActive && !allowInactive) return false;
   const serial = ++state.gpuRenderSerial;
@@ -4049,6 +4444,7 @@ async function renderGpuDraft(
 }
 
 function requestSessionExport(outputPath, overwrite) {
+  const resizeMode = els.exportResizeMode?.value || "original";
   return fetch(`/api/session/${state.session.session_id}/export`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -4059,6 +4455,15 @@ function requestSessionExport(outputPath, overwrite) {
       jpeg_gain_map_scale: els.jpegGainMapScale.value,
       output_path: outputPath,
       overwrite,
+      output_finishing: {
+        resize_mode: resizeMode,
+        long_edge: resizeMode === "long_edge" ? Number(els.exportLongEdge.value) : null,
+        width: resizeMode === "fit" ? Number(els.exportWidth.value) : null,
+        height: resizeMode === "fit" ? Number(els.exportHeight.value) : null,
+        prevent_enlargement: els.exportPreventEnlargement.checked,
+        sharpening: els.exportSharpening.value,
+        method: "edge_aware_multiscale",
+      },
     }),
   });
 }
@@ -4351,6 +4756,8 @@ function renderLaneChrome() {
   els.scopeKindLabel.textContent = lane.toUpperCase();
   state.previewInfo = state.previewInfoByLane[lane];
   els.filmLookSdrActions?.classList.toggle("hidden", lane !== "sdr");
+  els.colorGradingSdrActions?.classList.toggle("hidden", lane !== "sdr");
+  els.vignetteSdrActions?.classList.toggle("hidden", lane !== "sdr");
   syncControlsFromState();
   window.HDRProofing?.syncLane();
   renderCompareStatus();
@@ -4618,6 +5025,11 @@ function bindKeyboardShortcuts() {
     } else if (key === "c") {
       event.preventDefault();
       cycleOverlayMode();
+    } else if (key === "o" && state.cropMode) {
+      event.preventDefault();
+      const guides = ["none", "thirds", "diagonals", "golden", "grid"];
+      state.cropGuide = guides[(guides.indexOf(state.cropGuide) + 1) % guides.length];
+      renderCropOptions();
     } else if (key === "d") {
       event.preventDefault();
       els.fileInput.click();
@@ -4885,6 +5297,12 @@ function darktableTintHueColor(requestedHue) {
 
 function formatControlValue(path, value) {
   const numeric = Number(value);
+  if (path.endsWith("straighten_angle")) return `${numeric.toFixed(1)}\u00b0`;
+  if (path.endsWith("luminance_ev")) return `${numeric.toFixed(2)} EV`;
+  if (path.includes("color_grading") || path.includes("vignette")) {
+    if (path.endsWith(".hue")) return `${Math.round(numeric)}\u00b0`;
+    return `${numeric > 0 && path.endsWith("balance") ? "+" : ""}${Math.round(numeric)}${path.endsWith("balance") ? "" : "%"}`;
+  }
   if (path.endsWith("white_balance_kelvin")) return `${Math.round(numeric)} K`;
   if (path.endsWith("_hue")) return `${numeric > 0 ? "+" : ""}${numeric.toFixed(1)}°`;
   if (path.endsWith("_purity") || path.endsWith(".saturation") || path.endsWith(".vibrance")) return `${numeric > 0 ? "+" : ""}${Math.round(path.endsWith("_purity") ? numeric : numeric * 100)}%`;
@@ -4948,6 +5366,12 @@ function renderControlState() {
   const filmModified = !valuesEqual(state.adjustments[state.currentView]?.film_look, currentLaneDefaults.film_look);
   if (els.filmLookState) els.filmLookState.textContent = filmModified ? "Modified" : "";
   els.filmLookReset?.closest(".control-group")?.classList.toggle("modified", filmModified);
+  const gradingModified = !valuesEqual(state.adjustments[state.currentView]?.color_grading, currentLaneDefaults.color_grading);
+  if (els.colorGradingState) els.colorGradingState.textContent = gradingModified ? "Modified" : "";
+  els.colorGradingReset?.closest(".control-group")?.classList.toggle("modified", gradingModified);
+  const vignetteModified = !valuesEqual(state.adjustments[state.currentView]?.vignette, currentLaneDefaults.vignette);
+  if (els.vignetteState) els.vignetteState.textContent = vignetteModified ? "Modified" : "";
+  els.vignetteReset?.closest(".control-group")?.classList.toggle("modified", vignetteModified);
   els.sectionBypasses.forEach((button) => {
     const path = resolveAdjustmentPath(button.dataset.sectionPath);
     const enabled = getValueByPath(state.adjustments, path) !== false;
@@ -4981,9 +5405,11 @@ function resetControlGroup(group) {
   if (sectionPath) setValueByPath(state.adjustments, sectionPath, true);
   syncControlsFromState();
   if (group === "hdr-equalizer") drawToneEqualizerEditor();
-  invalidatePreview(group.startsWith("sdr-") ? "sdr" : "hdr");
+  if (group === "geometry") {
+    invalidatePreview("hdr"); invalidatePreview("sdr");
+  } else invalidatePreview(group.startsWith("sdr-") ? "sdr" : "hdr");
   renderControlState();
-  debouncePreview(group.startsWith("sdr-") ? "sdr" : "hdr");
+  debouncePreview(group === "geometry" ? state.currentView : group.startsWith("sdr-") ? "sdr" : "hdr");
 }
 
 function setSdrColorSliders(source) {
@@ -5033,9 +5459,36 @@ function matchHdrFilmLookToSdr() {
   debouncePreview("sdr");
 }
 
+function resetLaneObject(key, neutral) {
+  const lane = state.currentView;
+  state.adjustments[lane][key] = JSON.parse(JSON.stringify(neutral));
+  state.adjustments[lane][`${key}_section_enabled`] = true;
+  syncControlsFromState();
+  invalidatePreview(lane);
+  renderControlState();
+  debouncePreview(lane);
+}
+
+function matchLaneObject(key) {
+  if (!state.session) return;
+  state.adjustments.sdr[key] = JSON.parse(JSON.stringify(state.adjustments.hdr[key]));
+  syncControlsFromState();
+  invalidatePreview("sdr");
+  renderControlState();
+  debouncePreview("sdr");
+}
+
+function renderOutputFinishingControls() {
+  const mode = els.exportResizeMode?.value || "original";
+  els.exportLongEdgeRow?.classList.toggle("hidden", mode !== "long_edge");
+  els.exportFitRow?.classList.toggle("hidden", mode !== "fit");
+  window.HDRProofing?.invalidate("settings");
+}
+
 function activateWorkflowTab(workflow, { focus = false } = {}) {
   const next = ["import", "grade", "proof", "export"].includes(workflow) ? workflow : "import";
   if (next !== "import" && !state.session) return;
+  if (next !== "grade" && state.cropMode) closeCropMode(true);
   state.activeWorkflow = next;
   document.body.dataset.workflow = next;
   els.workflowTabs.forEach((button) => {
@@ -5049,6 +5502,7 @@ function activateWorkflowTab(workflow, { focus = false } = {}) {
   renderWorkflowContext();
   window.HDRProofing?.render();
   window.dispatchEvent(new CustomEvent("hdrfinisher:workflowchange", { detail: { workflow: next } }));
+  renderVignetteCenter();
 }
 
 function prepareExportRail() {

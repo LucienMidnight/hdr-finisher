@@ -27,7 +27,7 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert 'id="tone-equalizer-add"' in html
     assert 'id="tone-equalizer-remove"' in html
     assert 'id="tone-equalizer-radius"' in html
-    assert html.count("data-section-path=") == 11
+    assert html.count("data-section-path=") == 13
     assert html.count("data-zone-hover=") == 6
     assert "Highlight Compression" in html
     assert 'data-group="hdr-highlights"' in html
@@ -316,7 +316,7 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
 
 def test_webgpu_pipeline_preserves_cpu_section_order_and_fixed_hdr_curve_domain() -> None:
     shader = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
-    assert "const PARAM_COUNT = 111" in shader
+    assert "const PARAM_COUNT = 131" in shader
     assert "hdrPrimaries(hdrToneEqualizer(sceneColor(hdrPeakFit(hdrSoftCeiling(hdrContrast(hdrBase(source)))))))" in shader
     assert "sdrReferenceColor(sdrContrast(highlightRecovery(rgb)))" in shader
     assert "toneMap(sceneColor(rgb))" in shader
@@ -343,6 +343,39 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_fixed_hdr_curve_domain(
     assert 'entryPoint: "fragmentMain"' in shader
     assert "filmResponse(textureLoad(sourceTexture" in shader
     assert "spatialExtractFragmentMain" in shader
+    assert "fn applyColorGrading" in shader
+    assert "srgbEncode(sourceY)" in shader
+    assert "srgbEncode(vec3f(sourceY))" not in shader
+    assert "fn applyVignette" in shader
+
+
+def test_advanced_finishing_controls_are_wired_to_the_editor_and_export_contract() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    script = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    shader = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    assert 'data-group="geometry"' in html
+    assert 'id="crop-guide"' in html
+    assert 'id="crop-grid-density"' in html
+    assert 'data-group="color-grading"' in html
+    assert 'id="color-grading-match-hdr"' in html
+    assert 'data-group="vignette"' in html
+    assert 'id="vignette-center-handle"' in html
+    assert 'id="export-sharpening"' in html
+    assert 'id="export-resize-mode"' in html
+    assert 'method: "edge_aware_multiscale"' in script
+    assert 'const guides = ["none", "thirds", "diagonals", "golden", "grid"]' in script
+    assert "Â" not in html and "Ã" not in html
+    assert "Â" not in script and "Ã" not in script
+    assert "90&deg;" in html and "8&times;8" in html
+    assert "\\u00b0" in script and "\\u00d7" in script
+    assert ".color-wheel-pad::before" in css
+    assert "inset: 4px" in css
+    assert "inset 0 0 0 50px #7778" not in css
+    for wheel in ["shadows", "midtones", "highlights"]:
+        assert f'max="360" step="1" value="0" data-path="current.color_grading.{wheel}.hue"' in html
+        assert f'max="100" step="1" value="0" data-path="current.color_grading.{wheel}.saturation"' in html
+    assert "/color_grading\\..+\\.(hue|saturation)$/" in script
     assert "spatialBlurHorizontalFragmentMain" in shader
     assert "spatialBlurVerticalFragmentMain" in shader
     assert "let diffusion = (spatial.rgb - qualified)" in shader

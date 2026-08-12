@@ -141,8 +141,8 @@ def test_export_uses_independent_hdr_and_sdr_branches_and_forces_jpg(monkeypatch
     binary.write_bytes(b"test")
     observed: dict[str, object] = {"kinds": []}
 
-    def fake_adjustments(image, adjustments, kind, sdr_reference_image=None):
-        _ = image, adjustments, sdr_reference_image
+    def fake_adjustments(image, adjustments, kind, sdr_reference_image=None, **kwargs):
+        _ = image, adjustments, sdr_reference_image, kwargs
         observed["kinds"].append(kind)
         level = 1.8 if kind == PreviewKind.HDR else 0.2
         return np.full((4, 6, 3), level, dtype=np.float32)

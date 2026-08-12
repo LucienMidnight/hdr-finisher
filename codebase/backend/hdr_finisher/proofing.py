@@ -17,12 +17,11 @@ from uuid import uuid4
 
 import numpy as np
 
-from .adjustments import apply_adjustments
 from .avif_info import inspect_avif
 from .binaries import resolve_binary
 from .color import acescg_to_linear_bt2020, linear_bt2020_to_acescg, linear_srgb_to_acescg
 from .config import APP_DATA_DIR, APP_VERSION
-from .exporters import ExportBackend, _run_command
+from .exporters import ExportBackend, _finishing_adjustments_for_export, _render_export_branch, _run_command
 from .gainmap_decoders import parse_jpeg_gain_map_probe
 from .models import (
     BrowserEvidenceRecord,
@@ -190,17 +189,19 @@ class ProofArtifactStore:
         # staging target so concurrent/retried builds cannot collide, and allow
         # the exporter to replace that owned target if it created a partial file.
         staged = self.root / f"request-{signature}-{uuid4().hex}{suffix}"
+        export_settings = ExportSettings(
+            format=request.format,
+            quality=request.quality,
+            jpeg_gain_map_quality=request.jpeg_gain_map_quality,
+            jpeg_gain_map_scale=request.jpeg_gain_map_scale,
+            output_path=str(staged),
+            overwrite=True,
+            output_finishing=request.output_finishing,
+        )
         try:
             result = backend.export(
                 proxy_session,
-                ExportSettings(
-                    format=request.format,
-                    quality=request.quality,
-                    jpeg_gain_map_quality=request.jpeg_gain_map_quality,
-                    jpeg_gain_map_scale=request.jpeg_gain_map_scale,
-                    output_path=str(staged),
-                    overwrite=True,
-                ),
+                export_settings,
             )
             if not result.accepted or not result.output_path:
                 raise RuntimeError(result.message)
@@ -220,13 +221,9 @@ class ProofArtifactStore:
             with suppress(OSError):
                 staged.unlink(missing_ok=True)
 
-        hdr_authored = apply_adjustments(source, request.adjustments, PreviewKind.HDR)
-        sdr_authored = apply_adjustments(
-            source,
-            request.adjustments,
-            PreviewKind.SDR,
-            sdr_reference_image=sdr_reference,
-        )
+        finishing_adjustments = _finishing_adjustments_for_export(proxy_session)
+        hdr_authored = _render_export_branch(proxy_session, export_settings, PreviewKind.HDR, finishing_adjustments)
+        sdr_authored = _render_export_branch(proxy_session, export_settings, PreviewKind.SDR, finishing_adjustments)
         # The SDR branch is display-linear sRGB where 1.0 is reference white.
         # Matrix rendering uses the HDR working convention where 0.18 is
         # 100-nit diffuse white, so normalize the endpoint before applying a
