@@ -488,6 +488,10 @@ class MaskLeaf(BaseModel):
     mask_opacity: float = Field(default=1.0, ge=0.0, le=1.0)
     start: MaskPoint | None = None
     end: MaskPoint | None = None
+    gradient_midpoint_1: float = Field(default=1.0 / 3.0, gt=0.0, lt=1.0)
+    gradient_midpoint_2: float = Field(default=2.0 / 3.0, gt=0.0, lt=1.0)
+    gradient_fan: float = Field(default=0.0, ge=-1.0, le=1.0)
+    gradient_luma_enabled: bool = False
     fade_in_start_ev: float = Field(default=-12.0, ge=-24.0, le=24.0)
     full_start_ev: float = Field(default=-8.0, ge=-24.0, le=24.0)
     full_end_ev: float = Field(default=6.0, ge=-24.0, le=24.0)
@@ -503,6 +507,8 @@ class MaskLeaf(BaseModel):
     def validate_leaf_payload(self) -> "MaskLeaf":
         if self.type in {"linear_gradient", "sampled_gradient"} and (self.start is None or self.end is None):
             raise ValueError(f"{self.type} masks require start and end points")
+        if self.gradient_midpoint_1 >= self.gradient_midpoint_2:
+            raise ValueError("gradient midpoint controls must be ordered")
         if self.type == "path" and len(self.nodes) < 3:
             raise ValueError("path masks require at least three nodes")
         if self.type == "sampled_point" and self.sample is None:

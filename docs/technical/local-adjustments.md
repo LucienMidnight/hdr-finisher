@@ -8,6 +8,8 @@ Local adjustments are an ordered stage between global color grading and post-loc
 
 Mask leaves use normalized coordinates in the uncropped source. Supported shipping leaves are brush strokes, linear gradients, four-handle scene-EV luminance ranges, and closed paths with sharp or smooth Bezier nodes. Sampled point and sampled gradient records are serializable, but evaluate to an empty mask unless `HDR_FINISHER_ENABLE_SAMPLED_MASKS=1`; release builds must keep that flag off until the documented IP review is complete.
 
+Linear gradients are full density at the first point and fade to zero at the second. Two ordered on-axis controls place the two-thirds and one-third falloff anchors. A signed fan control bows the zero-density boundary, and per-gradient opacity is applied to both the red editing overlay and the rendered grade. Optional four-handle scene-EV refinement can protect shadows or highlights.
+
 Mask algebra is deliberately soft:
 
 - Union: `max(a, b)`

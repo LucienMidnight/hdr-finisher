@@ -100,8 +100,8 @@ async function authoritativeMaskAlphaQuality(page) {
     assert(gradientGlyph === 0xe76f, `Gradient tool is not using the graduated-band Fluent glyph (${gradientGlyph}).`);
     const lumaGlyph = await page.locator(".local-tool-luma .local-tool-icon").evaluate((node) => getComputedStyle(node, "::before").content.replaceAll('"', "").codePointAt(0));
     assert(lumaGlyph === 0xe9e9, `Luma tool is not using the temporary equalizer placeholder (${lumaGlyph}).`);
-    const brushLabels = await panels.nth(0).locator(".local-brush-control > span").allTextContents();
-    const maskLabels = await panels.nth(1).locator(".local-brush-control > span").allTextContents();
+    const brushLabels = await panels.nth(0).locator(".local-brush-control > .instrument-control-label").allTextContents();
+    const maskLabels = await panels.nth(1).locator(".local-brush-control > .instrument-control-label").allTextContents();
     assert(brushLabels.join("|").replace(/\d+(?:\.\d+)?%/g, "") === "Size|Feather|Flow|Density", `Unexpected brush controls: ${brushLabels.join(", ")}`);
     assert(maskLabels.join("|").replace(/[+\-]?\d+(?:\.\d+)?%/g, "") === "Opacity|Shift Edge|Feather", `Unexpected mask controls: ${maskLabels.join(", ")}`);
     assert(await panels.nth(1).locator('input[type="range"]').first().isDisabled(), "Painted-mask controls should be disabled before the first stroke.");

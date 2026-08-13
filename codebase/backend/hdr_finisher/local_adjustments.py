@@ -79,8 +79,12 @@ def _mask_needs_full_frame_evaluation(expression: MaskExpression) -> bool:
     if expression.operator == "leaf":
         return bool(
             expression.leaf
-            and expression.leaf.type == "brush"
-            and (expression.leaf.mask_feather > 0.0 or expression.leaf.mask_shift_edge != 0.0)
+            and (
+                (
+                    expression.leaf.type == "brush"
+                    and (expression.leaf.mask_feather > 0.0 or expression.leaf.mask_shift_edge != 0.0)
+                )
+            )
         )
     return any(_mask_needs_full_frame_evaluation(child) for child in expression.children)
 
@@ -123,9 +127,8 @@ def evaluate_mask(
             result = _feather_brush_mask(result, source_x, source_y, leaf.mask_feather)
     if expression.inverted:
         result = 1.0 - result
-    if expression.operator == "leaf" and expression.leaf is not None and expression.leaf.type == "brush":
-        leaf = expression.leaf
-        result *= np.float32(leaf.mask_opacity)
+    if expression.operator == "leaf" and expression.leaf is not None:
+        result *= np.float32(expression.leaf.mask_opacity)
     return np.clip(result, 0.0, 1.0).astype(np.float32)
 
 
@@ -176,7 +179,7 @@ def _evaluate_leaf(
     if leaf is None:
         return np.zeros(source_x.shape, dtype=np.float32)
     if leaf.type == "linear_gradient":
-        return _linear_gradient(leaf, source_x, source_y)
+        return _linear_gradient(leaf, fixed_source_tile, source_x, source_y)
     if leaf.type == "luminance_range":
         return _luminance_range(leaf, fixed_source_tile)
     if leaf.type == "brush":
@@ -188,13 +191,36 @@ def _evaluate_leaf(
     return _sampled_mask(leaf, fixed_source_tile, source_x, source_y)
 
 
-def _linear_gradient(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+def _linear_gradient(leaf: MaskLeaf, image: np.ndarray, x: np.ndarray, y: np.ndarray) -> np.ndarray:
     start = leaf.start
     end = leaf.end
     dx = np.float32(end.x - start.x)
     dy = np.float32(end.y - start.y)
     denominator = max(float(dx * dx + dy * dy), 1e-8)
-    return np.clip(((x - start.x) * dx + (y - start.y) * dy) / denominator, 0.0, 1.0).astype(np.float32)
+    length = np.float32(math.sqrt(denominator))
+    axis_position = ((x - start.x) * dx + (y - start.y) * dy) / denominator
+
+    # Fan bends the zero-density boundary while keeping the full-density start
+    # anchored. A bounded perpendicular coordinate keeps the control stable far
+    # outside the image and allows both outward fans and inward pinches.
+    perpendicular = ((x - start.x) * -dy + (y - start.y) * dx) / max(float(length), 1e-8)
+    perpendicular = np.tanh(perpendicular / max(float(length), 1e-8))
+    fan_scale = np.clip(
+        1.0 + np.float32(leaf.gradient_fan * 0.8) * perpendicular * perpendicular,
+        0.2,
+        1.8,
+    )
+    position = axis_position / fan_scale
+
+    midpoint_1 = float(leaf.gradient_midpoint_1)
+    midpoint_2 = float(leaf.gradient_midpoint_2)
+    xp = np.array([0.0, midpoint_1, midpoint_2, 1.0], dtype=np.float32)
+    fp = np.array([1.0, 2.0 / 3.0, 1.0 / 3.0, 0.0], dtype=np.float32)
+    spatial = np.interp(position, xp, fp, left=1.0, right=0.0).astype(np.float32)
+
+    if leaf.gradient_luma_enabled:
+        spatial *= _luminance_range(leaf, image)
+    return np.clip(spatial, 0.0, 1.0).astype(np.float32)
 
 
 def _luminance_range(leaf: MaskLeaf, image: np.ndarray) -> np.ndarray:

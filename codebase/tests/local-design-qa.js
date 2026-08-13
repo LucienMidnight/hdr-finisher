@@ -95,6 +95,28 @@ function assert(condition, message) {
       return { background: style.backgroundColor, radius: style.borderRadius, shadow: style.boxShadow };
     });
     assert(JSON.stringify(localHdrStyle) === JSON.stringify(globalHdrStyle), `Local rendition tabs do not match the global tabs: ${JSON.stringify({ localHdrStyle, globalHdrStyle })}`);
+    const tabGeometry = await page.locator(".local-lane-folder").evaluate((folder) => {
+      const tab = folder.querySelector('[data-local-lane="hdr"]');
+      const controls = folder.querySelector(".local-grade-controls");
+      const folderBox = folder.getBoundingClientRect();
+      const tabBox = tab.getBoundingClientRect();
+      const controlsBox = controls.getBoundingClientRect();
+      const rootStyle = getComputedStyle(document.documentElement);
+      return {
+        folder: { x: folderBox.x, width: folderBox.width },
+        tabBottom: tabBox.bottom,
+        controls: { x: controlsBox.x, y: controlsBox.y, width: controlsBox.width },
+        tokens: {
+          rowHeight: rootStyle.getPropertyValue("--instrument-control-row-min-h").trim(),
+          trackHeight: rootStyle.getPropertyValue("--instrument-slider-track-h").trim(),
+          thumbWidth: rootStyle.getPropertyValue("--instrument-slider-thumb-w").trim(),
+          tabRuleWidth: rootStyle.getPropertyValue("--instrument-tab-rule-w").trim(),
+        },
+      };
+    });
+    assert(Math.abs(tabGeometry.controls.x - tabGeometry.folder.x) < 1 && Math.abs(tabGeometry.controls.width - tabGeometry.folder.width) < 1, `Local tab boundary is not full width: ${JSON.stringify(tabGeometry)}`);
+    assert(Math.abs(tabGeometry.controls.y - tabGeometry.tabBottom) < 1.1, `Local tab boundary is detached from the tabs: ${JSON.stringify(tabGeometry)}`);
+    assert(JSON.stringify(tabGeometry.tokens) === JSON.stringify({ rowHeight: "36px", trackHeight: "2px", thumbWidth: "2px", tabRuleWidth: "1px" }), `Instrument component tokens are missing or changed: ${JSON.stringify(tabGeometry.tokens)}`);
     await page.locator('[data-local-lane="sdr"]').click();
     await page.waitForFunction(() => document.querySelector('[data-local-lane="sdr"]')?.getAttribute("aria-selected") === "true");
     assert(await page.locator('[data-local-lane="sdr"]').getAttribute("aria-selected") === "true", "SDR lane did not activate.");
@@ -118,6 +140,65 @@ function assert(condition, message) {
       labelColumns: getComputedStyle(node.querySelector("label")).gridTemplateColumns,
     }));
     assert(lightSliderWidths.every((item) => Math.abs(item.width - referenceSliderWidth) < 1), `Light slider widths are inconsistent: ${JSON.stringify({ lightSliderWidths, lightLayoutDebug })}`);
+    const instrumentRows = await page.locator(".local-lane-folder .instrument-slider-control").evaluateAll((rows) => rows.map((row) => {
+      const heading = row.querySelector(".control-heading") || row.querySelector(":scope > span");
+      const shell = row.querySelector(":scope > .range-shell");
+      const rowBox = row.getBoundingClientRect();
+      const headingBox = heading?.getBoundingClientRect();
+      const shellBox = shell?.getBoundingClientRect();
+      return {
+        fullWidth: Boolean(shellBox) && Math.abs(shellBox.x - rowBox.x) < 1 && Math.abs(shellBox.width - rowBox.width) < 1,
+        stacked: Boolean(headingBox && shellBox) && shellBox.y >= headingBox.bottom - 0.5,
+        ticks: shell?.querySelectorAll(".slider-ticks i").length || 0,
+      };
+    }));
+    assert(instrumentRows.length > 10, "Shared instrument slider component is not applied throughout local controls.");
+    assert(instrumentRows.every((row) => row.fullWidth && row.stacked && row.ticks === 9), `Local instrument slider geometry is inconsistent: ${JSON.stringify(instrumentRows)}`);
+
+    const sliderPositions = await page.evaluate(async () => {
+      const local = selectedLocal();
+      const originalHdr = JSON.parse(JSON.stringify(local.hdr_grade));
+      const originalSdr = JSON.parse(JSON.stringify(local.sdr_grade));
+      Object.assign(local.hdr_grade, {
+        exposure: 4,
+        highlights: -1,
+        midtones: 1,
+        shadows: -0.5,
+        blacks: 1.5,
+        contrast: -1.5,
+        white_balance_kelvin: 17650,
+      });
+      Object.assign(local.sdr_grade, {
+        exposure: -4,
+        highlights: 1.5,
+        midtones: -1.5,
+        shadows: 1,
+        blacks: -1,
+        contrast: 0.5,
+        white_balance_kelvin: 3500,
+      });
+      const snapshot = (lane) => [...document.querySelectorAll(".local-grade-controls input[type=range]")].map((control) => {
+        const minimum = Number(control.min);
+        const maximum = Number(control.max);
+        const expected = ((Number(control.value) - minimum) / (maximum - minimum)) * 100;
+        const rendered = Number.parseFloat(control.closest(".range-shell").style.getPropertyValue("--pos"));
+        return { lane, name: control.dataset.localGrade, expected, rendered };
+      });
+      const sdrSwitch = switchLane("sdr");
+      const sdrPositions = snapshot("sdr");
+      await sdrSwitch;
+      const hdrSwitch = switchLane("hdr");
+      const hdrPositions = snapshot("hdr");
+      await hdrSwitch;
+      local.hdr_grade = originalHdr;
+      local.sdr_grade = originalSdr;
+      renderLocalAdjustments();
+      return [...sdrPositions, ...hdrPositions];
+    });
+    assert(
+      sliderPositions.every(({ expected, rendered }) => Math.abs(expected - rendered) < 0.001),
+      `Local slider visuals detached from their current values: ${JSON.stringify(sliderPositions)}`,
+    );
 
     await localGroup.screenshot({ path: path.join(outputDir, "implementation-full.png") });
     const sliderImplementationPath = path.join(outputDir, "sliders-implementation.png");

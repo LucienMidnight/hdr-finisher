@@ -350,6 +350,7 @@ The following are reasonable future features but are explicitly deferred to avoi
 - Preset saving / loading for adjustment stacks
 - Soft proofing for specific display profiles
 - Any local/masked adjustment
+- Chroma-aware mask exclusion for Gradient and Brush masks. Explore a selector that derives representative hue buckets from the spatially masked region, preserves multiple commonly represented colors, and progressively excludes uncommon hues. Defer until the interaction model, neutral-color behavior, preview cost, and multi-color sampling behavior can be designed and validated together.
 - Integration with darktable, Lightroom, or any external editor via plugin or watch folder
 - Mobile / web-hosted version
 - Windows on ARM
@@ -547,6 +548,9 @@ After the Windows installer proves the workflow on clean machines, the packaging
 - The diagnostic overlay image is now positioned against the rendered preview image box rather than using independent layout assumptions
 
 ### Recommended Next Steps After This Checkpoint
+
+**Next working session — August 14, 2026:** fix and harden the remaining local-adjustment mask tools: **Gradient, Luma, and Path**. For each tool, verify that the red overlay and applied grade consume the same mask, interactive and settled previews agree, editing remains responsive, serialization and undo survive round trips, and representative control and geometry configurations pass automated browser tests plus screenshot review. Preserve the intentional separation between tool-specific controls and whole-mask controls established for Brush.
+
 1. Run the Windows SDR-white response sequence using the generated test target at low, middle, high, and useful whole-stop-adjacent settings. Confirm artifact/tile hashes remain fixed and save structured highlight, midtone, color, overall, reload, and restart observations.
 2. Compare exact JPEG Ultra HDR and AVIF proxies against the nearest matrix tile in headed Windows Chrome. Accept a stable 5–10% bias when highlight placement, clipping, gradients, and color remain close; investigate obvious clipping/color differences or discrepancies clearly above roughly 10%.
 3. Record Chrome behavior when moving between HDR and SDR displays and when Windows HDR is toggled, including immediate repaint, reload, and full restart outcomes.

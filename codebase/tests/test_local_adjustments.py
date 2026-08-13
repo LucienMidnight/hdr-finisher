@@ -58,9 +58,69 @@ def test_mask_algebra_uses_soft_union_intersection_subtraction_and_inversion() -
     subtract = MaskExpression(operator="subtract", children=[forward, backward])
 
     np.testing.assert_allclose(evaluate_mask(union, reference, x, y), np.maximum(x, 1.0 - x))
-    np.testing.assert_allclose(evaluate_mask(intersect, reference, x, y), x * (1.0 - x))
-    np.testing.assert_allclose(evaluate_mask(subtract, reference, x, y), x * x)
-    np.testing.assert_allclose(evaluate_mask(_gradient().model_copy(update={"inverted": True}), reference, x, y), 1.0 - x)
+    np.testing.assert_allclose(evaluate_mask(intersect, reference, x, y), x * (1.0 - x), atol=1e-6)
+    np.testing.assert_allclose(evaluate_mask(subtract, reference, x, y), (1.0 - x) ** 2, atol=1e-6)
+    np.testing.assert_allclose(evaluate_mask(_gradient().model_copy(update={"inverted": True}), reference, x, y), x, atol=1e-6)
+
+
+def test_gradient_starts_full_fades_to_zero_and_uses_two_falloff_anchors() -> None:
+    reference = np.full((1, 7, 3), 0.18, dtype=np.float32)
+    x = np.linspace(0.0, 1.0, 7, dtype=np.float32)[None, :]
+    y = np.full_like(x, 0.5)
+    mask = evaluate_mask(_gradient(), reference, x, y)
+
+    np.testing.assert_allclose(mask, [[1.0, 5 / 6, 2 / 3, 1 / 2, 1 / 3, 1 / 6, 0.0]], atol=1e-6)
+
+    compressed = _leaf(MaskLeaf(
+        type="linear_gradient",
+        start=MaskPoint(x=0.0, y=0.5),
+        end=MaskPoint(x=1.0, y=0.5),
+        gradient_midpoint_1=0.1,
+        gradient_midpoint_2=0.2,
+    ))
+    compressed_mask = evaluate_mask(compressed, reference, x, y)
+    assert compressed_mask[0, 1] < mask[0, 1]
+    assert compressed_mask[0, 0] == pytest.approx(1.0)
+    assert compressed_mask[0, -1] == pytest.approx(0.0)
+
+
+def test_gradient_fan_curves_the_zero_end_without_moving_the_center_anchors() -> None:
+    reference = np.full((5, 5, 3), 0.18, dtype=np.float32)
+    x = np.linspace(0.0, 1.0, 5, dtype=np.float32)[None, :].repeat(5, axis=0)
+    y = x.T
+    plain = evaluate_mask(_gradient(), reference, x, y)
+    fanned = evaluate_mask(_leaf(MaskLeaf(
+        type="linear_gradient",
+        start=MaskPoint(x=0.0, y=0.5),
+        end=MaskPoint(x=1.0, y=0.5),
+        gradient_fan=1.0,
+    )), reference, x, y)
+
+    np.testing.assert_allclose(fanned[2], plain[2], atol=1e-6)
+    assert fanned[0, 3] > plain[0, 3]
+
+
+def test_gradient_luminance_range_can_preserve_deep_blacks() -> None:
+    ev = np.array([-12.0, -8.0, -4.0, 0.0], dtype=np.float32)
+    values = 0.18 * np.exp2(ev)
+    reference = np.repeat(values[None, :, None], 3, axis=-1).astype(np.float32)
+    x = np.zeros((1, 4), dtype=np.float32)
+    y = np.full_like(x, 0.5)
+    gradient = _leaf(MaskLeaf(
+        type="linear_gradient",
+        start=MaskPoint(x=0.0, y=0.5),
+        end=MaskPoint(x=1.0, y=0.5),
+        gradient_luma_enabled=True,
+        fade_in_start_ev=-12,
+        full_start_ev=-8,
+        full_end_ev=8,
+        fade_out_end_ev=12,
+    ))
+    mask = evaluate_mask(gradient, reference, x, y)
+
+    assert mask[0, 0] == pytest.approx(0.0)
+    assert mask[0, 1] == pytest.approx(1.0)
+    assert mask[0, 2] == pytest.approx(1.0)
 
 
 def test_luminance_range_is_an_ev_trapezoid_relative_to_diffuse_white() -> None:
@@ -416,8 +476,8 @@ def test_local_mask_selection_is_fixed_while_lane_grades_are_independent() -> No
     hdr = apply_adjustments(image, state, PreviewKind.HDR, local_adjustments=[local])
     sdr = apply_adjustments(image, state, PreviewKind.SDR, local_adjustments=[local])
 
-    assert hdr[8, -1].mean() > hdr[8, 0].mean()
-    assert sdr[8, -1].mean() < sdr[8, 0].mean()
+    assert hdr[8, 0].mean() > hdr[8, -1].mean()
+    assert sdr[8, 0].mean() < sdr[8, -1].mean()
 
 
 def test_tiled_local_stack_is_deterministic_across_tile_sizes() -> None:

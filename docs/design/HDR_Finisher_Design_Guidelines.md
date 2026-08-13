@@ -109,14 +109,35 @@ Reserve saturated RGB colors for channel-specific scopes and curve channels. Do 
 - Disabled controls remain legible enough to explain the pipeline but cannot appear active.
 - Interactive preview feedback should begin promptly; settled scopes and refinements may follow.
 - Preview-only controls must say when they do not affect export quality.
-- Local-adjustment sliders use one standardized three-column row: 70 px label, flexible track, and 54 px value, with 6 px gaps. Every slider in a section must use the full flexible track width.
-- Local-adjustment slider labels use 10 px medium-weight IBM Plex Sans; values use 9 px semibold IBM Plex Mono. Labels remain sentence case.
-- Local-adjustment slider tracks are 2 px high with a 2 px by 14 px square neutral thumb. Track, fill, ticks, labels, and values must not change shape or weight between Exposure, tonal-region, Contrast, Color, and Adjustment Opacity rows.
+- Global and local adjustments use the shared `.instrument-slider-control` component. The first row holds the sentence-case control name at left and its numerical value at right; the marked slider occupies the complete second row below it.
+- Instrument-slider labels use medium-weight IBM Plex Sans and values use semibold IBM Plex Mono. Every slider in a section uses the full available row width; local controls must not revert to a side-by-side label / track / value layout.
+- Tracks, fills, ticks, labels, values, and bar thumbs must not change shape or weight between global grading, local Light and Color controls, Brush Controls, Gradient Controls, and Adjustment Opacity.
 - Double-clicking any adjustment slider resets it to its declared default and immediately commits the change. This applies to static and dynamically generated controls; utility sliders such as zoom may opt out explicitly when reset would conflict with their interaction model.
 - Brush Mask Controls apply after stroke composition in this order: Shift Edge, Feather, then Opacity. Shift Edge is a signed control (negative contracts, positive expands). Feather performs a float32, aspect-ratio-aware Gaussian smoothing of the shifted mask so both the overlay and the applied grade share a continuous edge at every preview resolution.
 - Brush Control Feather uses a monotonic perceptual response curve with fine control at low values and full falloff at 100%. Overlapping samples within one stroke use maximum falloff coverage rather than accumulating alpha, so increasing Feather must never harden the rendered edge.
 - The Gradient mask tool uses the Fluent `GripperBarHorizontal` glyph (`E76F`) so its icon reads as graduated horizontal bands, not stacked windows or duplicated layers.
 - The Luma mask tool temporarily uses the Fluent `Equalizer` glyph (`E9E9`) as a placeholder for the four-handle luminance-range illustration. Replace it with the final supplied icon asset when available; do not return to a stopwatch or timer metaphor.
+
+### Instrument slider and rendition-tab component tokens
+
+These layout tokens are authoritative in `frontend/styles.css` and are shared by global and local adjustment components.
+
+| Role | Token | Current value |
+|---|---|---:|
+| Control-row minimum height | `--instrument-control-row-min-h` | `36px` |
+| Heading minimum height | `--instrument-control-heading-min-h` | `16px` |
+| Heading label/value gap | `--instrument-control-heading-gap` | `8px` |
+| Heading-to-slider gap | `--instrument-control-stack-gap` | `2px` |
+| Slider interaction height | `--instrument-slider-hit-h` | `20px` |
+| Track top inset | `--instrument-slider-track-top` | `8px` |
+| Track height | `--instrument-slider-track-h` | `2px` |
+| Neutral / hover thumb width | `--instrument-slider-thumb-w`, `--instrument-slider-thumb-hover-w` | `2px`, `3px` |
+| Thumb height | `--instrument-slider-thumb-h` | `14px` |
+| Tick top inset | `--instrument-slider-tick-top` | `7px` |
+| Rendition-tab boundary | `--instrument-tab-rule-w`, `--instrument-tab-rule-color` | `1px`, `--hairline` |
+| Local-control inset | `--local-control-inset` | `12px` |
+
+The HDR/SDR rendition switch and its content boundary form one tab component. The boundary spans the full content surface, sits directly under the tabs, and is covered by the selected tab's bottom edge. It must not be inset, detached, or duplicated by the first control section.
 
 ## Curves and graphical editors
 

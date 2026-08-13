@@ -7,6 +7,8 @@
     "test:exposure-bands": "node tests/exposure-bands-interaction.js",
     "test:local-adjustments": "node tests/local-adjustments-interaction.js",
     "test:brush-mask": "node tests/brush-mask-interaction.js",
+    "test:gradient-mask": "node tests/gradient-mask-interaction.js",
+    "test:local-design": "node tests/local-design-qa.js",
     "test:startup-state": "node tests/startup-state.js",
     "test:performance": "node tests/performance/preview-performance.js"
   },

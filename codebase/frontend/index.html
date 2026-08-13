@@ -430,7 +430,13 @@
           <button class="local-tool-luma" type="button" data-local-tool="luminance_range" aria-pressed="false" title="Create a scene-luminance range adjustment"><span class="local-tool-icon" aria-hidden="true"></span><span>Luma</span></button>
           <button class="local-tool-path" type="button" data-local-tool="path" aria-pressed="false" title="Create a closed Bezier-path adjustment"><span class="local-tool-icon" aria-hidden="true"></span><span>Path</span></button>
         </div>
-        <button id="local-show-mask" class="local-overlay-toggle" type="button" aria-pressed="false"><span class="local-overlay-icon" aria-hidden="true"></span><span>Show overlay</span></button>
+        <div class="local-overlay-actions">
+          <button id="local-show-mask" class="local-overlay-toggle" type="button" aria-pressed="false"><span class="local-overlay-icon" aria-hidden="true"></span><span>Show overlay</span></button>
+          <span class="local-overlay-color-control">
+            <button id="local-overlay-color-button" class="local-overlay-color-button" type="button" aria-label="Choose overlay color"><span id="local-overlay-color-swatch" class="local-overlay-color-swatch" aria-hidden="true"></span><span>Overlay color</span></button>
+            <input id="local-overlay-color" type="color" value="#ff263d" tabindex="-1" aria-hidden="true">
+          </span>
+        </div>
         <div class="local-stack-heading">
           <span>Adjustments</span>
           <button id="local-compare" class="text-button" type="button" aria-pressed="false">Compare without</button>
@@ -457,6 +463,7 @@
               <button id="local-invert" type="button" aria-pressed="false">Invert painted mask</button>
             </div>
           </div>
+          <div id="local-gradient-controls" class="local-gradient-controls hidden" aria-live="polite"></div>
           <div class="local-lane-folder">
             <div class="local-section-heading local-controls-heading">Local Adjustment Controls</div>
             <div class="local-lane-switch" role="tablist" aria-label="Local grade rendition">
@@ -469,27 +476,27 @@
                   <strong id="local-light-heading">Light Controls</strong>
                   <span>Local grade</span>
                 </div>
-                <div class="control-row"><div class="control-heading"><label for="local-exposure">Exposure</label><output id="local-exposure-value" data-local-grade-output="exposure">0.00 EV</output></div><input id="local-exposure" data-local-grade="exposure" type="range" min="-8" max="8" step="0.05" value="0"></div>
+                <div class="control-row instrument-slider-control"><div class="control-heading"><label for="local-exposure">Exposure</label><output id="local-exposure-value" data-local-grade-output="exposure">0.00 EV</output></div><input id="local-exposure" data-local-grade="exposure" type="range" min="-8" max="8" step="0.05" value="0"></div>
                 <div class="local-four-way">
-                  <label><span>Highlights</span><input data-local-grade="highlights" type="range" min="-2" max="2" step="0.02" value="0"><output data-local-grade-output="highlights">0</output></label>
-                  <label><span>Midtones</span><input data-local-grade="midtones" type="range" min="-2" max="2" step="0.02" value="0"><output data-local-grade-output="midtones">0</output></label>
-                  <label><span>Shadows</span><input data-local-grade="shadows" type="range" min="-2" max="2" step="0.02" value="0"><output data-local-grade-output="shadows">0</output></label>
-                  <label><span>Blacks</span><input data-local-grade="blacks" type="range" min="-2" max="2" step="0.02" value="0"><output data-local-grade-output="blacks">0</output></label>
+                  <div class="control-row instrument-slider-control"><div class="control-heading"><label>Highlights</label><output data-local-grade-output="highlights">0</output></div><input data-local-grade="highlights" type="range" min="-2" max="2" step="0.02" value="0"></div>
+                  <div class="control-row instrument-slider-control"><div class="control-heading"><label>Midtones</label><output data-local-grade-output="midtones">0</output></div><input data-local-grade="midtones" type="range" min="-2" max="2" step="0.02" value="0"></div>
+                  <div class="control-row instrument-slider-control"><div class="control-heading"><label>Shadows</label><output data-local-grade-output="shadows">0</output></div><input data-local-grade="shadows" type="range" min="-2" max="2" step="0.02" value="0"></div>
+                  <div class="control-row instrument-slider-control"><div class="control-heading"><label>Blacks</label><output data-local-grade-output="blacks">0</output></div><input data-local-grade="blacks" type="range" min="-2" max="2" step="0.02" value="0"></div>
                 </div>
-                <div class="control-row"><div class="control-heading"><label>Contrast</label></div><input data-local-grade="contrast" type="range" min="-2" max="2" step="0.02" value="0"></div>
+                <div class="control-row instrument-slider-control"><div class="control-heading"><label>Contrast</label><output data-local-grade-output="contrast">0</output></div><input data-local-grade="contrast" type="range" min="-2" max="2" step="0.02" value="0"></div>
               </section>
               <section class="local-grade-section" data-local-grade-section="color" aria-labelledby="local-color-heading">
                 <div class="local-mask-subpanel-heading">
                   <strong id="local-color-heading">Color Controls</strong>
                   <span>Local grade</span>
                 </div>
-                <div class="control-row"><div class="control-heading"><label>Temperature</label></div><input data-local-grade="white_balance_kelvin" type="range" min="1000" max="25000" step="50" value="6500"></div>
-                <div class="control-row"><div class="control-heading"><label>Tint</label></div><input data-local-grade="tint" type="range" min="-2" max="2" step="0.02" value="0"></div>
-                <div class="control-row"><div class="control-heading"><label>Saturation</label></div><input data-local-grade="saturation" type="range" min="-1" max="3" step="0.02" value="0"></div>
-                <div class="control-row"><div class="control-heading"><label>Vibrance</label></div><input data-local-grade="vibrance" type="range" min="-1" max="3" step="0.02" value="0"></div>
+                <div class="control-row instrument-slider-control"><div class="control-heading"><label>Temperature</label><output data-local-grade-output="white_balance_kelvin">6500 K</output></div><input data-local-grade="white_balance_kelvin" type="range" min="1000" max="25000" step="50" value="6500"></div>
+                <div class="control-row instrument-slider-control"><div class="control-heading"><label>Tint</label><output data-local-grade-output="tint">0</output></div><input data-local-grade="tint" type="range" min="-2" max="2" step="0.02" value="0"></div>
+                <div class="control-row instrument-slider-control"><div class="control-heading"><label>Saturation</label><output data-local-grade-output="saturation">0</output></div><input data-local-grade="saturation" type="range" min="-1" max="3" step="0.02" value="0"></div>
+                <div class="control-row instrument-slider-control"><div class="control-heading"><label>Vibrance</label><output data-local-grade-output="vibrance">0</output></div><input data-local-grade="vibrance" type="range" min="-1" max="3" step="0.02" value="0"></div>
               </section>
             </div>
-            <div class="control-row local-adjustment-opacity">
+            <div class="control-row instrument-slider-control local-adjustment-opacity">
               <div class="control-heading"><label for="local-opacity">Adjustment opacity</label><output id="local-opacity-value">100%</output></div>
               <input id="local-opacity" type="range" min="0" max="1" step="0.01" value="1">
             </div>
