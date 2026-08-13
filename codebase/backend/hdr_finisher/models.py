@@ -478,6 +478,14 @@ class MaskLeaf(BaseModel):
         "sampled_gradient",
     ]
     strokes: list[BrushStroke] = Field(default_factory=list, max_length=4096)
+    brush_radius: float = Field(default=0.025, gt=0.0, le=1.0)
+    brush_hardness: float = Field(default=0.75, ge=0.0, le=1.0)
+    brush_flow: float = Field(default=1.0, ge=0.0, le=1.0)
+    brush_opacity: float = Field(default=1.0, ge=0.0, le=1.0)
+    brush_smoothing: float = Field(default=0.35, ge=0.0, le=1.0)
+    mask_shift_edge: float = Field(default=0.0, ge=-0.05, le=0.05)
+    mask_feather: float = Field(default=0.0, ge=0.0, le=0.05)
+    mask_opacity: float = Field(default=1.0, ge=0.0, le=1.0)
     start: MaskPoint | None = None
     end: MaskPoint | None = None
     fade_in_start_ev: float = Field(default=-12.0, ge=-24.0, le=24.0)
@@ -493,8 +501,6 @@ class MaskLeaf(BaseModel):
 
     @model_validator(mode="after")
     def validate_leaf_payload(self) -> "MaskLeaf":
-        if self.type == "brush" and not self.strokes:
-            raise ValueError("brush masks require at least one stroke")
         if self.type in {"linear_gradient", "sampled_gradient"} and (self.start is None or self.end is None):
             raise ValueError(f"{self.type} masks require start and end points")
         if self.type == "path" and len(self.nodes) < 3:
@@ -662,6 +668,16 @@ class PreviewRequest(BaseModel):
     long_edge: int | None = Field(default=None, ge=256, le=2000)
     hdr_display: bool = True
     include_locals: bool = True
+
+
+class LocalMaskPreviewRequest(BaseModel):
+    """A non-persistent mask draft compiled against the current session source."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mask: MaskExpression
+    edit_revision: int | None = Field(default=None, ge=0)
+    long_edge: int = Field(default=1600, ge=256, le=2000)
 
 
 class HistogramChannel(BaseModel):

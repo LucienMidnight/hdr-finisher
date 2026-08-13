@@ -10,7 +10,7 @@ import numpy as np
 from .adjustments import apply_adjustments
 from .finishing import apply_geometry
 from .local_adjustments import compile_preview_mask
-from .models import AdjustmentState, LocalAdjustment, PreviewKind
+from .models import AdjustmentState, LocalAdjustment, MaskExpression, PreviewKind
 from .preview import downsample_image
 
 
@@ -89,6 +89,19 @@ class SessionRenderCache:
         source, _sdr_reference = self._proxies(edge)
         masks = self._compiled_masks(source, adjustments, [local_adjustment], edge)
         return masks[local_adjustment.id]
+
+    def compiled_mask_draft(
+        self,
+        adjustments: AdjustmentState,
+        expression: MaskExpression,
+        long_edge: int,
+    ) -> np.ndarray:
+        """Compile an uncommitted mask with the exact settled-render pipeline."""
+        edge = max(256, int(long_edge))
+        source, _sdr_reference = self._proxies(edge)
+        geometry = adjustments.shared.geometry
+        fixed_source = apply_geometry(source, geometry)
+        return compile_preview_mask(fixed_source, expression, geometry)
 
     def adjusted_frame(
         self,

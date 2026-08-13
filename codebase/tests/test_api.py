@@ -159,6 +159,69 @@ def test_real_png_upload_preview_and_scopes() -> None:
     assert diagnostics.json()["render_cache"]["managed_bytes"] > 0
 
 
+def test_local_mask_draft_matches_the_same_mask_after_commit() -> None:
+    upload = client.post("/api/session", files={"file": ("mask.png", make_png_bytes(), "image/png")})
+    assert upload.status_code == 200
+    session_id = upload.json()["session"]["session_id"]
+    mask = {
+        "operator": "leaf",
+        "leaf": {
+            "type": "brush",
+            "strokes": [{
+                "points": [{"x": 0.25, "y": 0.5}, {"x": 0.75, "y": 0.5}],
+                "radius": 0.08,
+                "hardness": 0.7,
+                "flow": 1.0,
+                "opacity": 1.0,
+            }],
+        },
+    }
+    local = {"id": "draft-mask", "name": "Draft mask", "mask": mask}
+    created = client.post(
+        f"/api/session/{session_id}/edit-commands",
+        json={"commands": [{
+            "expected_revision": 0,
+            "command_type": "create_local",
+            "payload": {"local": local},
+        }]},
+    )
+    assert created.status_code == 200
+    committed_local = created.json()["document"]["local_adjustments"][0]
+    draft_mask = committed_local["mask"]
+    draft_mask["leaf"]["mask_shift_edge"] = 0.02
+    draft_mask["leaf"]["mask_feather"] = 0.05
+    draft_mask["leaf"]["mask_opacity"] = 0.63
+
+    draft = client.post(
+        f"/api/session/{session_id}/local-mask/draft-mask/preview",
+        json={"mask": draft_mask, "edit_revision": 1, "long_edge": 256},
+    )
+    assert draft.status_code == 200
+    assert draft.headers["x-mask-preview"] == "draft"
+    unchanged = client.get(f"/api/session/{session_id}/edit-state")
+    assert unchanged.json()["revision"] == 1
+    assert unchanged.json()["document"]["local_adjustments"][0]["mask"]["leaf"]["mask_feather"] == 0
+
+    committed_local["mask"] = draft_mask
+    updated = client.post(
+        f"/api/session/{session_id}/edit-commands",
+        json={"commands": [{
+            "expected_revision": 1,
+            "command_type": "update_local",
+            "target_id": "draft-mask",
+            "payload": {"local": committed_local},
+        }]},
+    )
+    assert updated.status_code == 200
+    settled = client.get(
+        f"/api/session/{session_id}/local-mask/draft-mask?long_edge=256&edit_revision=2"
+    )
+    assert settled.status_code == 200
+    assert draft.headers["x-image-width"] == settled.headers["x-image-width"]
+    assert draft.headers["x-image-height"] == settled.headers["x-image-height"]
+    assert draft.content == settled.content
+
+
 def test_clearing_session_removes_owned_upload_temp_file() -> None:
     upload = client.post("/api/session", files={"file": ("owned.png", make_png_bytes(), "image/png")})
     assert upload.status_code == 200

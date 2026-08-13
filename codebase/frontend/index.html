@@ -422,60 +422,76 @@
           </button>
         </div>
         <div id="local-adjustments-panel" class="control-group-body local-adjustments-panel" aria-label="Local adjustments">
+        <div class="local-section-heading">Mask Tools</div>
         <div class="local-tool-strip" role="toolbar" aria-label="Add local mask">
-          <button type="button" data-local-tool="brush" aria-pressed="false" title="Create a pressure-aware brush adjustment">Brush</button>
-          <button id="local-eraser" type="button" aria-pressed="false" title="Paint subtraction strokes on the selected brush mask">Erase</button>
-          <button type="button" data-local-tool="linear_gradient" aria-pressed="false" title="Create a linear-gradient adjustment">Gradient</button>
-          <button type="button" data-local-tool="luminance_range" aria-pressed="false" title="Create a scene-luminance range adjustment">Luma</button>
-          <button type="button" data-local-tool="path" aria-pressed="false" title="Create a closed Bezier-path adjustment">Path</button>
+          <button class="local-tool-brush" type="button" data-local-tool="brush" aria-pressed="false" title="Create a pressure-aware brush adjustment"><span class="local-tool-icon" aria-hidden="true"></span><span>Brush</span></button>
+          <button class="local-tool-erase" id="local-eraser" type="button" aria-pressed="false" title="Paint subtraction strokes on the selected brush mask"><span class="local-tool-icon" aria-hidden="true"></span><span>Erase</span></button>
+          <button class="local-tool-gradient" type="button" data-local-tool="linear_gradient" aria-pressed="false" title="Create a linear-gradient adjustment"><span class="local-tool-icon" aria-hidden="true"></span><span>Gradient</span></button>
+          <button class="local-tool-luma" type="button" data-local-tool="luminance_range" aria-pressed="false" title="Create a scene-luminance range adjustment"><span class="local-tool-icon" aria-hidden="true"></span><span>Luma</span></button>
+          <button class="local-tool-path" type="button" data-local-tool="path" aria-pressed="false" title="Create a closed Bezier-path adjustment"><span class="local-tool-icon" aria-hidden="true"></span><span>Path</span></button>
         </div>
+        <button id="local-show-mask" class="local-overlay-toggle" type="button" aria-pressed="false"><span class="local-overlay-icon" aria-hidden="true"></span><span>Show overlay</span></button>
         <div class="local-stack-heading">
-          <span>Adjustment stack</span>
+          <span>Adjustments</span>
           <button id="local-compare" class="text-button" type="button" aria-pressed="false">Compare without</button>
         </div>
         <div class="local-stack-surface">
           <ol id="local-adjustment-list" class="local-adjustment-list" aria-label="Local adjustment stack"></ol>
           <div id="local-empty" class="local-empty">Choose a mask tool to create the first local adjustment.</div>
         </div>
+        <div class="local-action-row local-stack-primary-actions">
+          <button id="local-rename" type="button">Rename</button>
+          <button id="local-duplicate" type="button"><span class="local-duplicate-icon" aria-hidden="true"></span><span class="local-action-label">Duplicate</span></button>
+          <button id="local-delete" class="local-stack-icon-button" type="button" aria-label="Remove selected local adjustment" title="Remove selected local adjustment">−</button>
+          <button id="local-add-adjustment" class="local-stack-icon-button" type="button" aria-label="Add local adjustment" title="Add local adjustment">+</button>
+        </div>
+        <div class="local-action-row local-stack-secondary-actions">
+          <button id="local-move-up" type="button" aria-label="Move local adjustment up" title="Move local adjustment up"><span class="local-move-up-icon" aria-hidden="true"></span></button>
+          <button id="local-move-down" type="button" aria-label="Move local adjustment down" title="Move local adjustment down"><span class="local-move-down-icon" aria-hidden="true"></span></button>
+          <button id="local-bypass" type="button" aria-pressed="false">Bypass</button>
+        </div>
         <div id="local-editor" class="local-editor hidden">
-          <div class="local-action-row">
-            <button id="local-rename" type="button">Rename</button>
-            <button id="local-duplicate" type="button">Duplicate</button>
-            <button id="local-invert" type="button">Invert</button>
-            <button id="local-delete" type="button">Delete</button>
-          </div>
-          <div class="local-action-row">
-            <button id="local-move-up" type="button" aria-label="Move local adjustment up">Move up</button>
-            <button id="local-move-down" type="button" aria-label="Move local adjustment down">Move down</button>
-            <button id="local-bypass" type="button" aria-pressed="false">Bypass</button>
-            <button id="local-show-mask" type="button" aria-pressed="false">Show mask</button>
-          </div>
           <div class="local-mask-tree">
-            <div class="local-stack-heading"><span>Mask expression</span><button id="local-add-mask" class="text-button" type="button">Add sub-mask</button></div>
             <div id="local-mask-tree-summary"></div>
-          </div>
-          <div class="control-row">
-            <div class="control-heading"><label for="local-opacity">Opacity</label><output id="local-opacity-value">100%</output></div>
-            <input id="local-opacity" type="range" min="0" max="1" step="0.01" value="1">
+            <div id="local-mask-footer-actions" class="local-mask-footer-actions">
+              <button id="local-invert" type="button" aria-pressed="false">Invert painted mask</button>
+            </div>
           </div>
           <div class="local-lane-folder">
+            <div class="local-section-heading local-controls-heading">Local Adjustment Controls</div>
             <div class="local-lane-switch" role="tablist" aria-label="Local grade rendition">
-              <button type="button" role="tab" data-local-lane="hdr" class="active" aria-selected="true">HDR Controls</button>
-              <button type="button" role="tab" data-local-lane="sdr" aria-selected="false">SDR Controls</button>
+              <button type="button" role="tab" data-local-lane="hdr" class="active" aria-selected="true"><strong>HDR</strong><span>Local grade</span></button>
+              <button type="button" role="tab" data-local-lane="sdr" aria-selected="false"><strong>SDR</strong><span>Local grade</span></button>
             </div>
-            <div class="local-grade-controls" role="tabpanel">
-            <div class="control-row"><div class="control-heading"><label for="local-exposure">Exposure</label><output id="local-exposure-value">0.00 EV</output></div><input id="local-exposure" data-local-grade="exposure" type="range" min="-8" max="8" step="0.05" value="0"></div>
-            <div class="local-four-way">
-              <label>Highlights<input data-local-grade="highlights" type="range" min="-2" max="2" step="0.02" value="0"></label>
-              <label>Midtones<input data-local-grade="midtones" type="range" min="-2" max="2" step="0.02" value="0"></label>
-              <label>Shadows<input data-local-grade="shadows" type="range" min="-2" max="2" step="0.02" value="0"></label>
-              <label>Blacks<input data-local-grade="blacks" type="range" min="-2" max="2" step="0.02" value="0"></label>
+            <div class="local-grade-controls">
+              <section class="local-grade-section" data-local-grade-section="light" aria-labelledby="local-light-heading">
+                <div class="local-mask-subpanel-heading">
+                  <strong id="local-light-heading">Light Controls</strong>
+                  <span>Local grade</span>
+                </div>
+                <div class="control-row"><div class="control-heading"><label for="local-exposure">Exposure</label><output id="local-exposure-value" data-local-grade-output="exposure">0.00 EV</output></div><input id="local-exposure" data-local-grade="exposure" type="range" min="-8" max="8" step="0.05" value="0"></div>
+                <div class="local-four-way">
+                  <label><span>Highlights</span><input data-local-grade="highlights" type="range" min="-2" max="2" step="0.02" value="0"><output data-local-grade-output="highlights">0</output></label>
+                  <label><span>Midtones</span><input data-local-grade="midtones" type="range" min="-2" max="2" step="0.02" value="0"><output data-local-grade-output="midtones">0</output></label>
+                  <label><span>Shadows</span><input data-local-grade="shadows" type="range" min="-2" max="2" step="0.02" value="0"><output data-local-grade-output="shadows">0</output></label>
+                  <label><span>Blacks</span><input data-local-grade="blacks" type="range" min="-2" max="2" step="0.02" value="0"><output data-local-grade-output="blacks">0</output></label>
+                </div>
+                <div class="control-row"><div class="control-heading"><label>Contrast</label></div><input data-local-grade="contrast" type="range" min="-2" max="2" step="0.02" value="0"></div>
+              </section>
+              <section class="local-grade-section" data-local-grade-section="color" aria-labelledby="local-color-heading">
+                <div class="local-mask-subpanel-heading">
+                  <strong id="local-color-heading">Color Controls</strong>
+                  <span>Local grade</span>
+                </div>
+                <div class="control-row"><div class="control-heading"><label>Temperature</label></div><input data-local-grade="white_balance_kelvin" type="range" min="1000" max="25000" step="50" value="6500"></div>
+                <div class="control-row"><div class="control-heading"><label>Tint</label></div><input data-local-grade="tint" type="range" min="-2" max="2" step="0.02" value="0"></div>
+                <div class="control-row"><div class="control-heading"><label>Saturation</label></div><input data-local-grade="saturation" type="range" min="-1" max="3" step="0.02" value="0"></div>
+                <div class="control-row"><div class="control-heading"><label>Vibrance</label></div><input data-local-grade="vibrance" type="range" min="-1" max="3" step="0.02" value="0"></div>
+              </section>
             </div>
-            <div class="control-row"><div class="control-heading"><label>Contrast</label></div><input data-local-grade="contrast" type="range" min="-2" max="2" step="0.02" value="0"></div>
-            <div class="control-row"><div class="control-heading"><label>Temperature</label></div><input data-local-grade="white_balance_kelvin" type="range" min="1000" max="25000" step="50" value="6500"></div>
-            <div class="control-row"><div class="control-heading"><label>Tint</label></div><input data-local-grade="tint" type="range" min="-2" max="2" step="0.02" value="0"></div>
-            <div class="control-row"><div class="control-heading"><label>Saturation</label></div><input data-local-grade="saturation" type="range" min="-1" max="3" step="0.02" value="0"></div>
-            <div class="control-row"><div class="control-heading"><label>Vibrance</label></div><input data-local-grade="vibrance" type="range" min="-1" max="3" step="0.02" value="0"></div>
+            <div class="control-row local-adjustment-opacity">
+              <div class="control-heading"><label for="local-opacity">Adjustment opacity</label><output id="local-opacity-value">100%</output></div>
+              <input id="local-opacity" type="range" min="0" max="1" step="0.01" value="1">
             </div>
           </div>
         </div>

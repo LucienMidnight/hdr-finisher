@@ -33,6 +33,16 @@ def apply_local_stack(
 
     result = image.astype(np.float32, copy=True)
     height, width = result.shape[:2]
+    runtime_masks = compiled_masks
+    for local in active:
+        if not _mask_needs_full_frame_evaluation(local.mask):
+            continue
+        if runtime_masks is None:
+            runtime_masks = {}
+        elif runtime_masks is compiled_masks:
+            runtime_masks = dict(runtime_masks)
+        if local.id not in runtime_masks:
+            runtime_masks[local.id] = compile_preview_mask(fixed_source, local.mask, geometry)
     for top in range(0, height, tile_size):
         bottom = min(top + tile_size, height)
         for left in range(0, width, tile_size):
@@ -52,7 +62,7 @@ def apply_local_stack(
                 grade = local.hdr_grade if kind == PreviewKind.HDR else local.sdr_grade
                 if not grade.enabled:
                     continue
-                compiled = compiled_masks.get(local.id) if compiled_masks else None
+                compiled = runtime_masks.get(local.id) if runtime_masks else None
                 if compiled is not None and compiled.shape == (height, width):
                     mask = compiled[top:bottom, left:right].astype(np.float32) / np.float32(255.0)
                 else:
@@ -63,6 +73,16 @@ def apply_local_stack(
                 candidate = _apply_local_grade(tile, grade, kind)
                 tile[...] = tile + (candidate - tile) * influence[..., None]
     return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
+
+
+def _mask_needs_full_frame_evaluation(expression: MaskExpression) -> bool:
+    if expression.operator == "leaf":
+        return bool(
+            expression.leaf
+            and expression.leaf.type == "brush"
+            and (expression.leaf.mask_feather > 0.0 or expression.leaf.mask_shift_edge != 0.0)
+        )
+    return any(_mask_needs_full_frame_evaluation(child) for child in expression.children)
 
 
 def compile_preview_mask(
@@ -95,8 +115,17 @@ def evaluate_mask(
                 result = result * child
             else:
                 result = result * (1.0 - child)
+    if expression.operator == "leaf" and expression.leaf is not None and expression.leaf.type == "brush":
+        leaf = expression.leaf
+        if leaf.mask_shift_edge != 0.0 and np.any(result > 0.0):
+            result = _shift_brush_mask(result, source_x, source_y, leaf.mask_shift_edge)
+        if leaf.mask_feather > 0.0 and np.any(result > 0.0):
+            result = _feather_brush_mask(result, source_x, source_y, leaf.mask_feather)
     if expression.inverted:
         result = 1.0 - result
+    if expression.operator == "leaf" and expression.leaf is not None and expression.leaf.type == "brush":
+        leaf = expression.leaf
+        result *= np.float32(leaf.mask_opacity)
     return np.clip(result, 0.0, 1.0).astype(np.float32)
 
 
@@ -185,27 +214,233 @@ def _brush_mask(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> np.ndarray:
         points = stroke.points
         if len(points) == 1:
             point = points[0]
-            stroke_mask = _soft_disc(x, y, point.x, point.y, stroke.radius * point.pressure, stroke.hardness)
+            radius = stroke.radius * point.pressure
+            rows, columns = _brush_shape_roi(x, y, point.x, point.y, point.x, point.y, radius)
+            if rows.stop > rows.start and columns.stop > columns.start:
+                stroke_mask[rows, columns] = _soft_disc(
+                    x[rows, columns],
+                    y[rows, columns],
+                    point.x,
+                    point.y,
+                    radius,
+                    stroke.hardness,
+                )
         else:
             for first, second in zip(points[:-1], points[1:]):
                 pressure = max(0.05, 0.5 * (first.pressure + second.pressure))
+                radius = stroke.radius * pressure
+                rows, columns = _brush_shape_roi(x, y, first.x, first.y, second.x, second.y, radius)
+                if rows.stop <= rows.start or columns.stop <= columns.start:
+                    continue
                 segment = _soft_segment(
-                    x,
-                    y,
+                    x[rows, columns],
+                    y[rows, columns],
                     first.x,
                     first.y,
                     second.x,
                     second.y,
-                    stroke.radius * pressure,
+                    radius,
                     stroke.hardness,
                 )
-                stroke_mask = np.maximum(stroke_mask, segment)
-        stroke_mask *= np.float32(stroke.flow * stroke.opacity)
+                stroke_mask[rows, columns] = np.maximum(stroke_mask[rows, columns], segment)
         if stroke.erase:
-            result *= 1.0 - stroke_mask
+            erase_strength = np.minimum(
+                np.float32(stroke.opacity),
+                stroke_mask * np.float32(stroke.flow),
+            )
+            result *= 1.0 - erase_strength
         else:
-            result = np.maximum(result, stroke_mask)
+            # Repeated low-flow passes build coverage, while opacity is the
+            # ceiling for this brush preset. A lower-opacity stroke must never
+            # reduce coverage that was painted previously.
+            accumulated = np.minimum(
+                np.float32(stroke.opacity),
+                result + stroke_mask * np.float32(stroke.flow),
+            )
+            result = np.maximum(result, accumulated)
     return result
+
+
+def _feather_brush_mask(mask: np.ndarray, x: np.ndarray, y: np.ndarray, value: float) -> np.ndarray:
+    pixel_radii = _mask_radii_pixels(x, y, _painted_mask_feather_radius(value))
+    if max(pixel_radii) < 0.25:
+        return mask
+    blurred = _gaussian_blur_float(mask, pixel_radii)
+    # Feather is a true smoothing operation, not an additive halo. Normalize
+    # the blurred alpha back to the painted peak so Density remains stable even
+    # when a small mark is feathered heavily.
+    source_peak = float(np.max(mask))
+    blurred_peak = float(np.max(blurred))
+    if source_peak <= 0.0 or blurred_peak <= 0.0:
+        return np.zeros_like(mask, dtype=np.float32)
+    return np.clip(blurred * np.float32(source_peak / blurred_peak), 0.0, source_peak).astype(np.float32)
+
+
+def _shift_brush_mask(mask: np.ndarray, x: np.ndarray, y: np.ndarray, radius: float) -> np.ndarray:
+    """Move a painted mask edge without coupling the move to feather softness."""
+    pixel_radii = _mask_radii_pixels(x, y, abs(radius))
+    if max(pixel_radii) < 0.25:
+        return mask
+    source_peak = float(np.max(mask))
+    if source_peak <= 0.0:
+        return np.zeros_like(mask, dtype=np.float32)
+    # Shift Edge changes mask geometry, not painted Density. Normalize before
+    # thresholding so a 35% mask contracts by the same distance as a 100% mask,
+    # then restore its original peak.
+    normalized = mask / np.float32(source_peak)
+    blurred = _gaussian_blur_float(normalized, pixel_radii)
+    # A one-sigma threshold moves the 50% contour by approximately the requested
+    # radius while retaining the source contour's rounded geometry. The narrow
+    # smoothstep avoids a quantized edge in the r8 mask cache.
+    threshold = np.float32(0.158655 if radius > 0.0 else 0.841345)
+    half_band = np.float32(0.035)
+    shifted = np.clip((blurred - (threshold - half_band)) / (half_band * 2.0), 0.0, 1.0)
+    shifted = shifted * shifted * (np.float32(3.0) - np.float32(2.0) * shifted)
+    shifted *= np.float32(source_peak)
+    if radius > 0.0:
+        return np.maximum(mask, shifted).astype(np.float32)
+    return np.minimum(mask, shifted).astype(np.float32)
+
+
+def _gaussian_blur_float(
+    mask: np.ndarray,
+    sigma: float | tuple[float, float],
+    passes: int = 6,
+) -> np.ndarray:
+    """Blur mask alpha without the banding of Pillow's 8-bit large-radius path.
+
+    A sequence of float32 box filters converges on a Gaussian while retaining
+    sub-byte values between passes. That precision matters when a contracted
+    mark is feathered across a large area: quantizing the low blurred peak to
+    uint8 before normalization can leave only a handful of visible plateaus.
+    """
+    sigma_x, sigma_y = (sigma, sigma) if isinstance(sigma, (int, float)) else sigma
+    if max(sigma_x, sigma_y) < 0.25:
+        return mask.astype(np.float32, copy=False)
+    result = mask.astype(np.float32, copy=True)
+    for width in _gaussian_box_widths(float(sigma_x), passes):
+        radius = max(0, (width - 1) // 2)
+        if radius:
+            result = _box_blur_axis(result, radius, axis=1)
+    for width in _gaussian_box_widths(float(sigma_y), passes):
+        radius = max(0, (width - 1) // 2)
+        if radius:
+            result = _box_blur_axis(result, radius, axis=0)
+    return np.clip(result, 0.0, 1.0).astype(np.float32, copy=False)
+
+
+def _gaussian_box_widths(sigma: float, passes: int) -> list[int]:
+    """Return odd box widths whose combined variance approximates sigma."""
+    count = max(1, int(passes))
+    ideal = math.sqrt(12.0 * sigma * sigma / count + 1.0)
+    lower = int(math.floor(ideal))
+    if lower % 2 == 0:
+        lower -= 1
+    lower = max(1, lower)
+    upper = lower + 2
+    numerator = 12.0 * sigma * sigma - count * lower * lower - 4 * count * lower - 3 * count
+    lower_count = int(round(numerator / (-4 * lower - 4)))
+    lower_count = min(count, max(0, lower_count))
+    return [lower] * lower_count + [upper] * (count - lower_count)
+
+
+def _box_blur_axis(values: np.ndarray, radius: int, axis: int) -> np.ndarray:
+    """Apply one edge-extended float32 box pass in linear time."""
+    padding = [(0, 0)] * values.ndim
+    padding[axis] = (radius, radius)
+    padded = np.pad(values, padding, mode="edge")
+    zero_shape = list(padded.shape)
+    zero_shape[axis] = 1
+    cumulative = np.concatenate(
+        [
+            np.zeros(zero_shape, dtype=np.float32),
+            np.cumsum(padded, axis=axis, dtype=np.float32),
+        ],
+        axis=axis,
+    )
+    width = radius * 2 + 1
+    after = [slice(None)] * values.ndim
+    before = [slice(None)] * values.ndim
+    after[axis] = slice(width, None)
+    before[axis] = slice(None, -width)
+    return (cumulative[tuple(after)] - cumulative[tuple(before)]) / np.float32(width)
+
+
+def _mask_radii_pixels(x: np.ndarray, y: np.ndarray, radius: float) -> tuple[float, float]:
+    x_step = 0.0
+    y_step = 0.0
+    if x.shape[1] > 1:
+        x_step = float(math.hypot(x[0, 1] - x[0, 0], y[0, 1] - y[0, 0]))
+    if x.shape[0] > 1:
+        y_step = float(math.hypot(x[1, 0] - x[0, 0], y[1, 0] - y[0, 0]))
+    fallback = next((step for step in (x_step, y_step) if step > 1e-12), 1.0)
+    x_step = x_step if x_step > 1e-12 else fallback
+    y_step = y_step if y_step > 1e-12 else fallback
+    return (
+        min(2048.0, max(0.0, radius / x_step)),
+        min(2048.0, max(0.0, radius / y_step)),
+    )
+
+
+def _painted_mask_feather_radius(value: float) -> float:
+    """Map the UI amount to a strong, continuous source-space blur radius."""
+    amount = min(1.0, max(0.0, float(value) / 0.05))
+    return 0.18 * amount**0.75
+
+
+def _brush_shape_roi(
+    x: np.ndarray,
+    y: np.ndarray,
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+    radius: float,
+) -> tuple[slice, slice]:
+    """Return a conservative pixel ROI for a source-space brush capsule.
+
+    Source-coordinate grids are affine for crop, flip, straighten, and quarter
+    rotation. Inverting that affine map avoids evaluating every brush segment
+    against every pixel in the preview frame.
+    """
+    height, width = x.shape
+    if height < 2 or width < 2:
+        return slice(0, height), slice(0, width)
+
+    origin = np.array([x[0, 0], y[0, 0]], dtype=np.float64)
+    transform = np.array(
+        [
+            [x[0, 1] - x[0, 0], x[1, 0] - x[0, 0]],
+            [y[0, 1] - y[0, 0], y[1, 0] - y[0, 0]],
+        ],
+        dtype=np.float64,
+    )
+    determinant = float(np.linalg.det(transform))
+    if abs(determinant) < 1e-12:
+        return slice(0, height), slice(0, width)
+
+    inverse = np.linalg.inv(transform)
+    minimum_x = min(x0, x1) - radius
+    maximum_x = max(x0, x1) + radius
+    minimum_y = min(y0, y1) - radius
+    maximum_y = max(y0, y1) + radius
+    corners = np.array(
+        [
+            [minimum_x, minimum_y],
+            [minimum_x, maximum_y],
+            [maximum_x, minimum_y],
+            [maximum_x, maximum_y],
+        ],
+        dtype=np.float64,
+    )
+    pixel_coordinates = (inverse @ (corners - origin).T).T
+    columns = pixel_coordinates[:, 0]
+    rows = pixel_coordinates[:, 1]
+    left = max(0, int(math.floor(float(np.min(columns)))) - 1)
+    right = min(width, int(math.ceil(float(np.max(columns)))) + 2)
+    top = max(0, int(math.floor(float(np.min(rows)))) - 1)
+    bottom = min(height, int(math.ceil(float(np.max(rows)))) + 2)
+    return slice(top, bottom), slice(left, right)
 
 
 def _soft_disc(

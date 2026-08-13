@@ -24,6 +24,7 @@ from .models import (
     EditDocument,
     EditStateResponse,
     ExportSettings,
+    LocalMaskPreviewRequest,
     PreviewKind,
     PreviewRequest,
     ProofArtifactRequest,
@@ -439,6 +440,38 @@ def local_mask_proxy(
             "X-Image-Height": str(height),
             "X-Pixel-Format": "r8unorm",
             "X-Local-Adjustment": local.id,
+        },
+    )
+
+
+@app.post("/api/session/{session_id}/local-mask/{local_id}/preview")
+def local_mask_preview_proxy(
+    session_id: str,
+    local_id: str,
+    request: LocalMaskPreviewRequest,
+) -> Response:
+    """Compile a live mask-control draft without changing edit history."""
+    try:
+        session = store.get(session_id)
+        _check_revision(session.edit_revision, request.edit_revision)
+        next(item for item in session.local_adjustments if item.id == local_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except StopIteration as exc:
+        raise HTTPException(status_code=404, detail=f"Local adjustment '{local_id}' was not found.") from exc
+    except RevisionConflictError as exc:
+        raise _revision_conflict(exc) from exc
+    mask = session.render_cache.compiled_mask_draft(session.adjustments, request.mask, request.long_edge)
+    height, width = mask.shape
+    return Response(
+        content=mask.tobytes(order="C"),
+        media_type="application/octet-stream",
+        headers={
+            "X-Image-Width": str(width),
+            "X-Image-Height": str(height),
+            "X-Pixel-Format": "r8unorm",
+            "X-Local-Adjustment": local_id,
+            "X-Mask-Preview": "draft",
         },
     )
 

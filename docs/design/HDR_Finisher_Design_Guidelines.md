@@ -2,7 +2,7 @@
 
 Status: living guideline for the shipped application
 
-Last updated: 2026-08-12
+Last updated: 2026-08-13
 
 This guideline is authoritative for current UI behavior and supersedes persistence language in older product and sprint documents.
 
@@ -47,6 +47,8 @@ Keep source facts separate from grade decisions, grade decisions separate from v
 ## Disclosure groups
 
 - Use a right-pointing caret for collapsed groups and rotate it 90 degrees when expanded.
+- Use the shared Fluent disclosure chevron at 18 px with semibold visual weight. Do not substitute a small text caret; the glyph should remain clearly visible without dominating its label inside the 38 px header target.
+- Bound every expanded top-level panel at the top and bottom with the 3 px neutral `--panel-border-external` token; leave its left and right edges open. Separate collapsed groups and regions inside an expanded panel with the 1 px blue-grey `--panel-border-internal` token. External and internal boundaries must not share color or weight.
 - The whole labeled header is the disclosure target; Reset and bypass remain separate targets.
 - New grade groups start collapsed unless a documented workflow requirement says otherwise.
 - A group body opens directly below its header and must not shift unrelated controls horizontally.
@@ -76,6 +78,8 @@ Runtime tokens in `frontend/styles.css` are authoritative. Use semantic tokens r
 | Panel | `--panel` | `#171a1c` | Rails and panels |
 | Raised | `--raised` | `#1f2325` | Elevated controls |
 | Hairline | `--hairline` | `#26292c` | Quiet separators |
+| External panel border | `--panel-border-external` | `#566168` | 3 px top and bottom boundaries on an expanded top-level panel; no left/right rule |
+| Internal panel border | `--panel-border-internal` | `#344750` | Soft blue-grey 1 px separators inside panels and between collapsed groups |
 | Text | `--text` | `#edf0f1` | Primary labels |
 | Muted | `--muted` | `#9fa7ac` | Secondary information |
 | Accent | `--accent` | `#6e9fb5` | Active and modified state |
@@ -105,6 +109,14 @@ Reserve saturated RGB colors for channel-specific scopes and curve channels. Do 
 - Disabled controls remain legible enough to explain the pipeline but cannot appear active.
 - Interactive preview feedback should begin promptly; settled scopes and refinements may follow.
 - Preview-only controls must say when they do not affect export quality.
+- Local-adjustment sliders use one standardized three-column row: 70 px label, flexible track, and 54 px value, with 6 px gaps. Every slider in a section must use the full flexible track width.
+- Local-adjustment slider labels use 10 px medium-weight IBM Plex Sans; values use 9 px semibold IBM Plex Mono. Labels remain sentence case.
+- Local-adjustment slider tracks are 2 px high with a 2 px by 14 px square neutral thumb. Track, fill, ticks, labels, and values must not change shape or weight between Exposure, tonal-region, Contrast, Color, and Adjustment Opacity rows.
+- Double-clicking any adjustment slider resets it to its declared default and immediately commits the change. This applies to static and dynamically generated controls; utility sliders such as zoom may opt out explicitly when reset would conflict with their interaction model.
+- Brush Mask Controls apply after stroke composition in this order: Shift Edge, Feather, then Opacity. Shift Edge is a signed control (negative contracts, positive expands). Feather performs a float32, aspect-ratio-aware Gaussian smoothing of the shifted mask so both the overlay and the applied grade share a continuous edge at every preview resolution.
+- Brush Control Feather uses a monotonic perceptual response curve with fine control at low values and full falloff at 100%. Overlapping samples within one stroke use maximum falloff coverage rather than accumulating alpha, so increasing Feather must never harden the rendered edge.
+- The Gradient mask tool uses the Fluent `GripperBarHorizontal` glyph (`E76F`) so its icon reads as graduated horizontal bands, not stacked windows or duplicated layers.
+- The Luma mask tool temporarily uses the Fluent `Equalizer` glyph (`E9E9`) as a placeholder for the four-handle luminance-range illustration. Replace it with the final supplied icon asset when available; do not return to a stopwatch or timer metaphor.
 
 ## Curves and graphical editors
 
@@ -222,7 +234,7 @@ Use the runtime tokens and existing component rhythm as the baseline:
 - Analysis dock: 252 px default.
 - Control row: 38 px.
 - Corner radius: 3 px.
-- Hairlines separate dense regions; avoid nested heavy borders.
+- Hairlines separate dense regions. Expanded top-level panels use the documented 3 px external top and bottom boundaries with open side edges; internal panel boundaries and collapsed-group separators remain 1 px. Avoid nested heavy borders.
 - Keep hit targets comfortably larger than their visible glyphs.
 
 Resizable regions may change during the current session, but return to these defaults on reload.

@@ -192,6 +192,11 @@ const LEGACY_UI_PREFERENCE_KEYS = new Set([
 ]);
 const COMPARE_LAYOUTS = new Set(["single", "split-vertical", "split-horizontal", "side-horizontal", "side-vertical"]);
 const waveformCanvasCache = new WeakMap();
+const localBrushMaskCanvasCache = new Map();
+const localBrushGestureCanvasCache = new WeakMap();
+const localAuthoritativeMaskCache = new Map();
+const localAuthoritativeMaskRequests = new Map();
+let localMaskOverlayFrame = 0;
 
 const state = {
   session: null,
@@ -206,6 +211,15 @@ const state = {
   localShowMask: false,
   compareWithoutLocals: false,
   localPointerGesture: null,
+  localBrushCursor: null,
+  localBrushPreviewPinned: false,
+  localBrushVisibleBounds: null,
+  localAdjustmentMenuId: null,
+  localMaskDraftDirty: false,
+  localMaskDraftTimer: 0,
+  localMaskDraftController: null,
+  localMaskDraftGeneration: 0,
+  localMaskDraftPending: null,
   localErase: false,
   projectPath: "",
   globalEditDirty: false,
@@ -663,17 +677,19 @@ const els = {
   localCompare: document.getElementById("local-compare"),
   localRename: document.getElementById("local-rename"),
   localDuplicate: document.getElementById("local-duplicate"),
+  localAddAdjustment: document.getElementById("local-add-adjustment"),
   localInvert: document.getElementById("local-invert"),
   localDelete: document.getElementById("local-delete"),
   localMoveUp: document.getElementById("local-move-up"),
   localMoveDown: document.getElementById("local-move-down"),
   localBypass: document.getElementById("local-bypass"),
   localShowMask: document.getElementById("local-show-mask"),
-  localAddMask: document.getElementById("local-add-mask"),
   localMaskTreeSummary: document.getElementById("local-mask-tree-summary"),
+  localMaskFooterActions: document.getElementById("local-mask-footer-actions"),
   localOpacity: document.getElementById("local-opacity"),
   localOpacityValue: document.getElementById("local-opacity-value"),
   localLaneButtons: [...document.querySelectorAll("[data-local-lane]")],
+  localGradeOutputs: [...document.querySelectorAll("[data-local-grade-output]")],
   localGradeControls: [...document.querySelectorAll("[data-local-grade]")],
   localExposureValue: document.getElementById("local-exposure-value"),
   chromeProofImage: document.getElementById("chrome-proof-image"),
@@ -1687,13 +1703,13 @@ async function loadDefaultExportDirectory() {
 }
 
 function bindRangeResetControls() {
-  document.querySelectorAll('input[type="range"]:not([data-no-double-reset])').forEach((control) => {
-    control.addEventListener("dblclick", (event) => {
-      event.preventDefault();
-      control.value = control.defaultValue;
-      control.dispatchEvent(new Event("input", { bubbles: true }));
-      control.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+  document.addEventListener("dblclick", (event) => {
+    const control = event.target.closest('input[type="range"]:not([data-no-double-reset])');
+    if (!control || control.disabled) return;
+    event.preventDefault();
+    control.value = control.dataset.defaultValue ?? control.defaultValue;
+    control.dispatchEvent(new Event("input", { bubbles: true }));
+    control.dispatchEvent(new Event("change", { bubbles: true }));
   });
 }
 
@@ -5955,7 +5971,15 @@ function newMaskLeaf(type) {
   if (type === "brush") {
     return {
       type,
-      strokes: [{ points: [{ x: 0.5, y: 0.5, pressure: 1 }], radius: 0.025, hardness: 0.75, flow: 1, opacity: 1, smoothing: 0.35, erase: false }],
+      strokes: [],
+      brush_radius: 0.025,
+      brush_hardness: 0.75,
+      brush_flow: 1,
+      brush_opacity: 1,
+      brush_smoothing: 0.35,
+      mask_shift_edge: 0,
+      mask_feather: 0,
+      mask_opacity: 1,
     };
   }
   if (type === "linear_gradient") {
@@ -6001,6 +6025,7 @@ function bindLocalAdjustmentEvents() {
     }
     state.localTool = button.dataset.localTool;
     state.localErase = false;
+    if (state.localTool === "brush") state.localShowMask = true;
     updateLocalToolState();
     if (!state.editDocument) await refreshEditState();
     if (!state.editDocument) {
@@ -6022,11 +6047,39 @@ function bindLocalAdjustmentEvents() {
     state.localErase = !state.localErase;
     updateLocalToolState();
   });
-  els.localAdjustmentList?.addEventListener("click", (event) => {
+  els.localAdjustmentList?.addEventListener("click", async (event) => {
+    const menuAction = event.target.closest("button[data-local-menu-action]");
+    if (menuAction) {
+      state.selectedLocalId = menuAction.dataset.localId;
+      state.localAdjustmentMenuId = null;
+      renderLocalAdjustments();
+      if (menuAction.dataset.localMenuAction === "add-sub-mask") await addSubMask();
+      return;
+    }
+    const menuButton = event.target.closest("button[data-local-menu-id]");
+    if (menuButton) {
+      const localId = menuButton.dataset.localMenuId;
+      state.selectedLocalId = localId;
+      state.localTool = firstMaskLeaf(selectedLocal()?.mask)?.type || null;
+      state.localAdjustmentMenuId = state.localAdjustmentMenuId === localId ? null : localId;
+      renderLocalAdjustments();
+      return;
+    }
     const button = event.target.closest("button[data-local-id]");
     if (!button) return;
     state.selectedLocalId = button.dataset.localId;
-    state.localTool = selectedLocal()?.mask?.leaf?.type || null;
+    state.localTool = firstMaskLeaf(selectedLocal()?.mask)?.type || null;
+    state.localAdjustmentMenuId = null;
+    renderLocalAdjustments();
+  });
+  document.addEventListener("pointerdown", (event) => {
+    if (!state.localAdjustmentMenuId || event.target.closest(".local-adjustment-menu, .local-adjustment-menu-button")) return;
+    state.localAdjustmentMenuId = null;
+    renderLocalAdjustments();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !state.localAdjustmentMenuId) return;
+    state.localAdjustmentMenuId = null;
     renderLocalAdjustments();
   });
   els.localLaneButtons.forEach((button) => button.addEventListener("click", async () => {
@@ -6045,7 +6098,7 @@ function bindLocalAdjustmentEvents() {
       const local = selectedLocal();
       if (!local) return;
       local[`${state.currentView}_grade`][control.dataset.localGrade] = Number(control.value);
-      if (control.dataset.localGrade === "exposure") els.localExposureValue.textContent = `${Number(control.value).toFixed(2)} EV`;
+      updateLocalGradeOutput(control.dataset.localGrade, Number(control.value));
     });
     control.addEventListener("change", () => commitSelectedLocal());
   });
@@ -6067,6 +6120,16 @@ function bindLocalAdjustmentEvents() {
     const index = localAdjustments().findIndex((item) => item.id === local.id) + 1;
     state.selectedLocalId = copy.id;
     await queueEditCommand("create_local", { local: copy, index });
+  });
+  els.localAddAdjustment?.addEventListener("click", async () => {
+    if (!state.session) return;
+    const type = state.localTool || firstMaskLeaf(selectedLocal()?.mask)?.type || "brush";
+    const local = newLocalAdjustment(type);
+    state.selectedLocalId = local.id;
+    if (type === "brush") state.localShowMask = true;
+    const created = await queueEditCommand("create_local", { local });
+    if (!created) state.selectedLocalId = localAdjustments()[0]?.id || null;
+    renderLocalAdjustments();
   });
   els.localInvert?.addEventListener("click", () => {
     const local = selectedLocal();
@@ -6100,7 +6163,6 @@ function bindLocalAdjustmentEvents() {
     invalidatePreview("sdr", { local: true });
     debouncePreview(state.currentView);
   });
-  els.localAddMask?.addEventListener("click", () => addSubMask());
   bindLocalMaskCanvas();
 }
 
@@ -6148,16 +6210,44 @@ function renderLocalAdjustments() {
   const locals = localAdjustments();
   if (els.localAdjustmentCount) els.localAdjustmentCount.textContent = locals.length ? String(locals.length) : "0";
   if (!state.selectedLocalId && locals.length) state.selectedLocalId = locals[0].id;
+  if (state.localAdjustmentMenuId && !locals.some((local) => local.id === state.localAdjustmentMenuId)) {
+    state.localAdjustmentMenuId = null;
+  }
   els.localAdjustmentList.innerHTML = "";
   locals.forEach((local, index) => {
     const item = document.createElement("li");
+    item.className = "local-adjustment-item";
     const button = document.createElement("button");
     button.type = "button";
+    button.className = "local-adjustment-select";
     button.dataset.localId = local.id;
     button.classList.toggle("active", local.id === state.selectedLocalId);
     const maskType = firstMaskLeaf(local.mask)?.type || "mask";
-    button.innerHTML = `<span aria-hidden="true">${local.enabled ? "◉" : "○"}</span><span>${escapeHtml(local.name)}</span><small>${index + 1} · ${escapeHtml(maskType.replaceAll("_", " "))}</small>`;
-    item.append(button);
+    button.innerHTML = `<span class="local-adjustment-state" aria-hidden="true">${local.enabled ? "◉" : "○"}</span><span class="local-adjustment-copy"><span>${escapeHtml(local.name)}</span><small>${escapeHtml(localMaskTypeLabel(maskType))}</small></span>`;
+    const menuButton = document.createElement("button");
+    menuButton.type = "button";
+    menuButton.className = "local-adjustment-menu-button";
+    menuButton.dataset.localMenuId = local.id;
+    menuButton.setAttribute("aria-label", `More actions for ${local.name}`);
+    menuButton.setAttribute("aria-haspopup", "menu");
+    menuButton.setAttribute("aria-expanded", String(state.localAdjustmentMenuId === local.id));
+    menuButton.title = `More actions for ${local.name}`;
+    menuButton.textContent = "⋯";
+    item.append(button, menuButton);
+    if (state.localAdjustmentMenuId === local.id) {
+      const menu = document.createElement("div");
+      menu.className = "local-adjustment-menu";
+      menu.setAttribute("role", "menu");
+      menu.setAttribute("aria-label", `Actions for ${local.name}`);
+      const addMask = document.createElement("button");
+      addMask.type = "button";
+      addMask.setAttribute("role", "menuitem");
+      addMask.dataset.localMenuAction = "add-sub-mask";
+      addMask.dataset.localId = local.id;
+      addMask.textContent = "Add sub-mask";
+      menu.append(addMask);
+      item.append(menu);
+    }
     els.localAdjustmentList.append(item);
   });
   const local = selectedLocal();
@@ -6168,6 +6258,14 @@ function renderLocalAdjustments() {
       : "Load an image, then choose a mask tool to create the first local adjustment.";
   }
   els.localEditor?.classList.toggle("hidden", !local);
+  const selectedIndex = local ? locals.findIndex((item) => item.id === local.id) : -1;
+  if (els.localAddAdjustment) els.localAddAdjustment.disabled = !state.session;
+  if (els.localRename) els.localRename.disabled = !local;
+  if (els.localDuplicate) els.localDuplicate.disabled = !local;
+  if (els.localDelete) els.localDelete.disabled = !local;
+  if (els.localMoveUp) els.localMoveUp.disabled = !local || selectedIndex <= 0;
+  if (els.localMoveDown) els.localMoveDown.disabled = !local || selectedIndex >= locals.length - 1;
+  if (els.localBypass) els.localBypass.disabled = !local;
   if (els.projectSave) {
     els.projectSave.disabled = !state.session;
     els.projectSave.textContent = state.documentDirty ? "Save project *" : "Save project";
@@ -6177,7 +6275,12 @@ function renderLocalAdjustments() {
     els.localOpacityValue.textContent = `${Math.round(local.opacity * 100)}%`;
     els.localBypass.setAttribute("aria-pressed", String(!local.enabled));
     els.localBypass.textContent = local.enabled ? "Bypass" : "Enable";
+    const brushLeaf = firstMaskLeaf(local.mask, "brush");
+    els.localInvert.setAttribute("aria-pressed", String(Boolean(local.mask.inverted)));
+    els.localInvert.textContent = local.mask.inverted ? "Restore mask" : "Invert mask";
+    els.localInvert.disabled = Boolean(brushLeaf && !(brushLeaf.strokes || []).length);
     els.localShowMask.setAttribute("aria-pressed", String(state.localShowMask));
+    els.localShowMask.innerHTML = `<span class="local-overlay-icon" aria-hidden="true"></span><span>${state.localShowMask ? "Hide overlay" : "Show overlay"}</span>`;
     els.localLaneButtons.forEach((button) => {
       const active = button.dataset.localLane === state.currentView;
       button.classList.toggle("active", active);
@@ -6186,8 +6289,8 @@ function renderLocalAdjustments() {
     const grade = local[`${state.currentView}_grade`];
     els.localGradeControls.forEach((control) => {
       control.value = String(grade[control.dataset.localGrade]);
+      updateLocalGradeOutput(control.dataset.localGrade, Number(control.value));
     });
-    els.localExposureValue.textContent = `${Number(grade.exposure).toFixed(2)} EV`;
     renderMaskTreeEditor(local);
   } else if (els.localMaskTreeSummary) {
     els.localMaskTreeSummary.textContent = "";
@@ -6196,12 +6299,39 @@ function renderLocalAdjustments() {
   renderLocalMaskOverlay();
 }
 
+function localMaskTypeLabel(type) {
+  return ({
+    brush: "Brush",
+    linear_gradient: "Linear gradient",
+    luminance_range: "Luma range",
+    path: "Path",
+  })[type] || type.replaceAll("_", " ");
+}
+
+function updateLocalGradeOutput(name, value) {
+  let output = els.localGradeOutputs.find((candidate) => candidate.dataset.localGradeOutput === name);
+  if (!output) {
+    const control = els.localGradeControls.find((candidate) => candidate.dataset.localGrade === name);
+    const heading = control?.closest(".control-row")?.querySelector(".control-heading");
+    if (!heading) return;
+    output = document.createElement("output");
+    output.dataset.localGradeOutput = name;
+    heading.append(output);
+    els.localGradeOutputs.push(output);
+  }
+  if (name === "exposure") output.textContent = `${value.toFixed(2)} EV`;
+  else if (name === "white_balance_kelvin") output.textContent = `${Math.round(value)} K`;
+  else output.textContent = Math.abs(value) < 0.005 ? "0" : value.toFixed(2);
+}
+
 function renderMaskTreeEditor(local) {
   const leaf = firstMaskLeaf(local.mask);
-  els.localMaskTreeSummary.innerHTML = `<div>${escapeHtml(maskExpressionLabel(local.mask))}</div>`;
+  els.localMaskFooterActions?.append(els.localInvert);
+  els.localMaskTreeSummary.textContent = "";
   if (!leaf) return;
   if (leaf.type === "luminance_range") {
-    const names = ["fade_in_start_ev", "full_start_ev", "full_end_ev", "fade_out_end_ev"];
+    const defaults = { fade_in_start_ev: -12, full_start_ev: -8, full_end_ev: 6, fade_out_end_ev: 10 };
+    const names = Object.keys(defaults);
     names.forEach((name) => {
       const label = document.createElement("label");
       label.textContent = name.replaceAll("_", " ");
@@ -6211,6 +6341,7 @@ function renderMaskTreeEditor(local) {
       input.max = "24";
       input.step = "0.1";
       input.value = String(leaf[name]);
+      input.dataset.defaultValue = String(defaults[name]);
       input.addEventListener("change", () => {
         leaf[name] = Number(input.value);
         const ordered = names.map((field) => leaf[field]).sort((a, b) => a - b);
@@ -6221,25 +6352,157 @@ function renderMaskTreeEditor(local) {
       els.localMaskTreeSummary.append(label);
     });
   } else if (leaf.type === "brush") {
-    const stroke = leaf.strokes[0];
-    [["radius", 0.002, 0.2, 0.002], ["hardness", 0, 1, 0.01], ["flow", 0, 1, 0.01]].forEach(([name, min, max, step]) => {
-      const label = document.createElement("label");
-      label.textContent = name;
-      const input = document.createElement("input");
-      Object.assign(input, { type: "range", min: String(min), max: String(max), step: String(step), value: String(stroke[name]) });
-      input.addEventListener("change", () => { stroke[name] = Number(input.value); commitSelectedLocal(); });
-      label.append(input);
-      els.localMaskTreeSummary.append(label);
+    const settings = brushSettings(leaf);
+    const hasStrokes = Boolean((leaf.strokes || []).length);
+    const brushPanel = createLocalMaskSubpanel("Brush Controls", "New strokes");
+    [
+      { name: "brush_radius", label: "Size", min: 0.002, max: 0.2, step: 0.001, value: settings.radius, defaultValue: 0.025, display: (value) => `${(value * 200).toFixed(1)}%` },
+      { name: "brush_hardness", label: "Feather", min: 0, max: 100, step: 1, value: (1 - settings.hardness) * 100, defaultValue: 25, display: (value) => `${Math.round(value)}%`, store: (value) => 1 - value / 100 },
+      { name: "brush_flow", label: "Flow", min: 1, max: 100, step: 1, value: settings.flow * 100, defaultValue: 100, display: (value) => `${Math.round(value)}%`, store: (value) => value / 100 },
+      { name: "brush_opacity", label: "Density", min: 1, max: 100, step: 1, value: settings.opacity * 100, defaultValue: 100, display: (value) => `${Math.round(value)}%`, store: (value) => value / 100 },
+    ].forEach((definition) => appendLocalMaskSlider(brushPanel, leaf, definition, {
+      commit: () => commitSelectedLocal({ refreshPreview: false }),
+      previewBrush: true,
+    }));
+
+    const maskPanel = createLocalMaskSubpanel("Mask Controls", hasStrokes ? "All strokes" : "Paint to enable");
+    [
+      { name: "mask_opacity", label: "Opacity", min: 0, max: 100, step: 1, value: Number(leaf.mask_opacity ?? 1) * 100, defaultValue: 100, display: (value) => `${Math.round(value)}%`, store: (value) => value / 100 },
+      { name: "mask_shift_edge", label: "Shift Edge", min: -100, max: 100, step: 1, value: Number(leaf.mask_shift_edge || 0) * 2000, defaultValue: 0, display: (value) => `${value > 0 ? "+" : ""}${Math.round(value)}%`, store: (value) => value / 2000 },
+      { name: "mask_feather", label: "Feather", min: 0, max: 100, step: 1, value: Number(leaf.mask_feather || 0) * 2000, defaultValue: 0, display: (value) => `${Math.round(value)}%`, store: (value) => value / 2000 },
+    ].forEach((definition) => appendLocalMaskSlider(maskPanel, leaf, definition, {
+      disabled: !hasStrokes,
+      hideBrushPreview: true,
+    }));
+    const actions = document.createElement("div");
+    actions.className = "local-brush-actions";
+    const undoStroke = document.createElement("button");
+    undoStroke.type = "button";
+    undoStroke.textContent = "Undo stroke";
+    undoStroke.disabled = !hasStrokes;
+    undoStroke.addEventListener("click", () => {
+      leaf.strokes.pop();
+      commitSelectedLocal();
     });
+    const clearStrokes = document.createElement("button");
+    clearStrokes.type = "button";
+    clearStrokes.textContent = "Clear brush";
+    clearStrokes.disabled = !hasStrokes;
+    clearStrokes.addEventListener("click", () => {
+      leaf.strokes = [];
+      commitSelectedLocal();
+    });
+    actions.append(els.localInvert, clearStrokes, undoStroke);
+    els.localInvert.textContent = local.mask.inverted ? "Restore Mask" : "Invert Mask";
+    els.localInvert.disabled = !hasStrokes;
+    maskPanel.append(actions);
+    els.localMaskTreeSummary.append(brushPanel, maskPanel);
   } else if (leaf.type === "path") {
     const label = document.createElement("label");
     label.textContent = "feather";
     const input = document.createElement("input");
     Object.assign(input, { type: "range", min: "0", max: "0.5", step: "0.002", value: String(leaf.feather || 0) });
+    input.dataset.defaultValue = "0";
     input.addEventListener("change", () => { leaf.feather = Number(input.value); commitSelectedLocal(); });
     label.append(input);
     els.localMaskTreeSummary.append(label);
   }
+}
+
+function createLocalMaskSubpanel(title, note) {
+  const panel = document.createElement("section");
+  panel.className = "local-mask-subpanel";
+  const heading = document.createElement("div");
+  heading.className = "local-mask-subpanel-heading";
+  const label = document.createElement("strong");
+  label.textContent = title;
+  const hint = document.createElement("span");
+  hint.textContent = note;
+  heading.append(label, hint);
+  panel.append(heading);
+  return panel;
+}
+
+function appendLocalMaskSlider(panel, leaf, definition, options = {}) {
+  const { name, label: labelText, min, max, step, value, defaultValue = value, display, store = (next) => next } = definition;
+  const label = document.createElement("label");
+  label.className = "local-brush-control";
+  const heading = document.createElement("span");
+  heading.textContent = labelText;
+  const output = document.createElement("output");
+  output.textContent = display(value);
+  const input = document.createElement("input");
+  Object.assign(input, { type: "range", min: String(min), max: String(max), step: String(step), value: String(value), disabled: Boolean(options.disabled) });
+  input.dataset.defaultValue = String(defaultValue);
+  if (options.previewBrush) {
+    input.addEventListener("focus", () => showBrushSettingsPreview(leaf));
+    input.addEventListener("pointerdown", () => showBrushSettingsPreview(leaf));
+  }
+  if (options.hideBrushPreview) {
+    input.addEventListener("focus", hideBrushSettingsPreview);
+    input.addEventListener("pointerdown", hideBrushSettingsPreview);
+  }
+  input.addEventListener("input", () => {
+    const next = Number(input.value);
+    leaf[name] = store(next);
+    if (name.startsWith("mask_")) {
+      state.localMaskDraftDirty = true;
+      scheduleAuthoritativeLocalMaskDraft(selectedLocal());
+    }
+    output.textContent = display(next);
+    if (options.previewBrush) showBrushSettingsPreview(leaf);
+    if (options.hideBrushPreview) hideBrushSettingsPreview();
+    queueLocalMaskOverlayRender();
+  });
+  input.addEventListener("change", () => (options.commit || commitSelectedLocal)());
+  label.append(heading, input, output);
+  panel.append(label);
+}
+
+function brushSettings(leaf) {
+  const fallback = leaf?.strokes?.at(-1) || {};
+  return {
+    radius: Number(leaf?.brush_radius ?? fallback.radius ?? 0.025),
+    hardness: Number(leaf?.brush_hardness ?? fallback.hardness ?? 0.75),
+    flow: Number(leaf?.brush_flow ?? fallback.flow ?? 1),
+    opacity: Number(leaf?.brush_opacity ?? fallback.opacity ?? 1),
+    smoothing: Number(leaf?.brush_smoothing ?? fallback.smoothing ?? 0.35),
+  };
+}
+
+function brushStrokeSettings(leaf) {
+  const settings = brushSettings(leaf);
+  const feather = brushFeatherExtent(settings.hardness);
+  const radius = settings.radius * (1 + feather);
+  return {
+    ...settings,
+    radius,
+    hardness: settings.radius / Math.max(radius, 1e-6),
+  };
+}
+
+function brushFeatherExtent(hardness) {
+  const amount = 1 - clamp(Number(hardness), 0, 1);
+  // A perceptual curve keeps the first few slider points precise while still
+  // reaching the full outer falloff at 100%. The result is strictly monotonic.
+  return Math.pow(amount, 1.6);
+}
+
+function showBrushSettingsPreview(leaf) {
+  const settings = brushSettings(leaf);
+  const featherRadius = settings.radius * (1 + brushFeatherExtent(settings.hardness));
+  state.localBrushCursor = {
+    x: clamp(1 - featherRadius - 0.012, featherRadius, 1 - featherRadius),
+    y: clamp(0.5, featherRadius, 1 - featherRadius),
+  };
+  state.localBrushPreviewPinned = true;
+  queueLocalMaskOverlayRender();
+}
+
+function hideBrushSettingsPreview() {
+  state.localBrushPreviewPinned = false;
+  state.localBrushCursor = null;
+  queueLocalMaskOverlayRender();
 }
 
 function firstMaskLeaf(expression, type = null) {
@@ -6250,12 +6513,6 @@ function firstMaskLeaf(expression, type = null) {
     if (found) return found;
   }
   return null;
-}
-
-function maskExpressionLabel(expression) {
-  if (expression.operator === "leaf") return `${expression.inverted ? "invert " : ""}${expression.leaf?.type?.replaceAll("_", " ") || "empty"}`;
-  const children = (expression.children || []).map(maskExpressionLabel).join(` ${expression.operator} `);
-  return `${expression.inverted ? "invert " : ""}(${children})`;
 }
 
 async function addSubMask() {
@@ -6285,15 +6542,24 @@ async function moveSelectedLocal(direction) {
   await queueEditCommand("reorder_locals", { order });
 }
 
-async function commitSelectedLocal() {
+async function commitSelectedLocal({ refreshPreview = true } = {}) {
   const local = selectedLocal();
   if (!local) return;
-  await queueEditCommand("update_local", { local: JSON.parse(JSON.stringify(local)) }, local.id);
+  const committed = await queueEditCommand("update_local", { local: JSON.parse(JSON.stringify(local)) }, local.id, { refreshPreview });
+  if (committed) {
+    window.clearTimeout(state.localMaskDraftTimer);
+    state.localMaskDraftController?.abort();
+    state.localMaskDraftController = null;
+    state.localMaskDraftPending = null;
+    state.localMaskDraftGeneration += 1;
+    state.localMaskDraftDirty = false;
+    queueLocalMaskOverlayRender();
+  }
 }
 
-function queueEditCommand(commandType, payload = {}, targetId = null) {
+function queueEditCommand(commandType, payload = {}, targetId = null, { refreshPreview = true } = {}) {
   if (commandType !== "set_global_adjustments" && state.globalEditDirty) {
-    return syncGlobalEditState().then(() => queueEditCommand(commandType, payload, targetId));
+    return syncGlobalEditState().then(() => queueEditCommand(commandType, payload, targetId, { refreshPreview }));
   }
   state.editCommandQueue = (state.editCommandQueue || Promise.resolve()).then(async () => {
     if (!state.session) return false;
@@ -6312,10 +6578,12 @@ function queueEditCommand(commandType, payload = {}, targetId = null) {
     state.editDocument = result.document;
     state.documentDirty = Boolean(result.dirty);
     state.adjustments = result.document.global_adjustments;
-    invalidatePreview("hdr", { local: true });
-    invalidatePreview("sdr", { local: true });
     renderLocalAdjustments();
-    debouncePreview(state.currentView);
+    if (refreshPreview) {
+      invalidatePreview("hdr", { local: true });
+      invalidatePreview("sdr", { local: true });
+      debouncePreview(state.currentView);
+    }
     return true;
   }).catch((error) => {
     console.error(error);
@@ -6351,6 +6619,7 @@ function bindLocalMaskCanvas() {
   const canvas = els.localMaskOverlay;
   if (!canvas) return;
   canvas.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
     const local = selectedLocal();
     if (!local || state.gradeMode !== "local") return;
     const point = localPointerPoint(event);
@@ -6358,10 +6627,13 @@ function bindLocalMaskCanvas() {
     if (!leaf || !point) return;
     if (!["brush", "linear_gradient", "luminance_range", "path"].includes(leaf.type)) return;
     if (leaf.type === "luminance_range" && Math.abs(point.y - .14) > .08) return;
+    canvas.focus({ preventScroll: true });
     canvas.setPointerCapture(event.pointerId);
     if (leaf.type === "brush") {
-      const source = leaf.strokes[0] || { radius: 0.025, hardness: 0.75, flow: 1, opacity: 1, smoothing: 0.35, erase: false };
-      state.localPointerGesture = { type: "brush", leaf, stroke: { ...source, erase: state.localErase, points: [{ ...point, pressure: event.pressure || 1 }] } };
+      const source = brushStrokeSettings(leaf);
+      state.localBrushCursor = point;
+      state.localBrushPreviewPinned = false;
+      state.localPointerGesture = { type: "brush", leaf, stroke: { ...source, erase: state.localErase || event.altKey, points: [{ ...point, pressure: brushPointerPressure(event) }] } };
     } else if (leaf.type === "linear_gradient") {
       leaf.start = point;
       leaf.end = point;
@@ -6387,14 +6659,22 @@ function bindLocalMaskCanvas() {
   });
   canvas.addEventListener("pointermove", (event) => {
     const gesture = state.localPointerGesture;
-    if (!gesture) return;
     const point = localPointerPoint(event);
     if (!point) return;
-    if (gesture.type === "brush") gesture.stroke.points.push({ ...point, pressure: event.pressure || 1 });
+    const activeLeaf = firstMaskLeaf(selectedLocal()?.mask, "brush");
+    if (activeLeaf && state.localTool === "brush") {
+      state.localBrushCursor = point;
+      state.localBrushPreviewPinned = false;
+    }
+    if (!gesture) {
+      if (activeLeaf && state.localTool === "brush") queueLocalMaskOverlayRender();
+      return;
+    }
+    if (gesture.type === "brush") appendBrushPointerPoints(gesture.stroke, event);
     else if (gesture.type === "linear_gradient") gesture.leaf.end = point;
     else if (gesture.type === "luminance_range") updateLuminanceRangeHandle(gesture.leaf, gesture.handleIndex, point.x);
     else if (gesture.type === "path") Object.assign(gesture.leaf.nodes[gesture.nodeIndex], point);
-    renderLocalMaskOverlay();
+    queueLocalMaskOverlayRender();
   });
   const end = async (event) => {
     const gesture = state.localPointerGesture;
@@ -6406,6 +6686,27 @@ function bindLocalMaskCanvas() {
   };
   canvas.addEventListener("pointerup", end);
   canvas.addEventListener("pointercancel", end);
+  canvas.addEventListener("pointerleave", () => {
+    if (state.localPointerGesture) return;
+    if (!state.localBrushPreviewPinned) state.localBrushCursor = null;
+    queueLocalMaskOverlayRender();
+  });
+}
+
+function brushPointerPressure(event) {
+  return event.pointerType === "pen" && event.pressure > 0 ? event.pressure : 1;
+}
+
+function appendBrushPointerPoints(stroke, event) {
+  const samples = event.getCoalescedEvents?.() || [event];
+  for (const sample of samples) {
+    const point = localPointerPoint(sample);
+    if (!point) continue;
+    const previous = stroke.points.at(-1);
+    const minimumSpacing = Math.max(0.0005, Number(stroke.radius) * 0.04);
+    if (previous && Math.hypot(point.x - previous.x, point.y - previous.y) < minimumSpacing) continue;
+    stroke.points.push({ ...point, pressure: brushPointerPressure(sample) });
+  }
 }
 
 function updateLuminanceRangeHandle(leaf, handleIndex, normalizedX) {
@@ -6420,6 +6721,8 @@ function localPointerPoint(event) {
   const preview = activePreviewElement();
   if (!preview) return null;
   const rect = preview.getBoundingClientRect();
+  const outside = event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom;
+  if (outside && !state.localPointerGesture) return null;
   return {
     x: clamp((event.clientX - rect.left) / Math.max(rect.width, 1), 0, 1),
     y: clamp((event.clientY - rect.top) / Math.max(rect.height, 1), 0, 1),
@@ -6446,18 +6749,43 @@ function renderLocalMaskOverlay() {
   if (!imageRect) return;
   const offsetX = imageRect.left - rect.left;
   const offsetY = imageRect.top - rect.top;
+  const gradeEdge = els.gradeSplitter?.getBoundingClientRect().left;
+  state.localBrushVisibleBounds = {
+    left: 0,
+    top: 0,
+    right: Math.min(rect.width, Number.isFinite(gradeEdge) ? gradeEdge - rect.left : rect.width),
+    bottom: rect.height,
+  };
   const x = (value) => offsetX + value * imageRect.width;
   const y = (value) => offsetY + value * imageRect.height;
-  if (state.localShowMask) {
-    context.fillStyle = "rgba(255, 45, 58, .18)";
-    context.fillRect(offsetX, offsetY, imageRect.width, imageRect.height);
-  }
-  drawMaskExpression(context, local.mask, x, y);
+  const maskSignature = JSON.stringify(local.mask);
+  const authoritative = local.mask?.operator === "leaf"
+    ? localAuthoritativeMaskCache.get(local.id)
+    : null;
+  drawMaskExpression(context, local.mask, x, y, {
+    localId: local.id,
+    // During a control drag, retain the most recent exact backend frame until
+    // the exact draft for the new slider value arrives. Never flash over to
+    // the materially different Canvas blur approximation.
+    authoritative: authoritative && (state.localMaskDraftDirty || authoritative.signature === maskSignature)
+      ? authoritative
+      : null,
+    exactMaskPending: state.localMaskDraftDirty,
+  });
+  void queueAuthoritativeLocalMask(local);
 }
 
-function drawMaskExpression(context, expression, x, y) {
+function queueLocalMaskOverlayRender() {
+  if (localMaskOverlayFrame) return;
+  localMaskOverlayFrame = window.requestAnimationFrame(() => {
+    localMaskOverlayFrame = 0;
+    renderLocalMaskOverlay();
+  });
+}
+
+function drawMaskExpression(context, expression, x, y, options = {}) {
   if (expression.operator !== "leaf") {
-    (expression.children || []).forEach((child) => drawMaskExpression(context, child, x, y));
+    (expression.children || []).forEach((child) => drawMaskExpression(context, child, x, y, options));
     return;
   }
   const leaf = expression.leaf;
@@ -6469,30 +6797,11 @@ function drawMaskExpression(context, expression, x, y) {
   if (leaf.type === "linear_gradient") {
     drawLinearGradientGizmo(context, leaf, x, y);
   } else if (leaf.type === "brush") {
-    for (const stroke of leaf.strokes || []) {
-      const radius = Math.max(2, Math.abs(x(stroke.radius) - x(0)));
-      context.lineWidth = radius * 2;
-      context.lineCap = "round";
-      context.lineJoin = "round";
-      drawLocalGizmoStroke(context, () => {
-        context.beginPath();
-        stroke.points.forEach((point, index) => index ? context.lineTo(x(point.x), y(point.y)) : context.moveTo(x(point.x), y(point.y)));
-        if (stroke.points.length === 1) {
-          context.lineTo(x(stroke.points[0].x) + 0.01, y(stroke.points[0].y));
-        }
-      }, Math.max(2, radius * 2), "rgba(238, 252, 255, .88)");
-      const lastPoint = stroke.points.at(-1);
-      if (lastPoint) drawBrushGizmo(context, lastPoint, stroke, x, y);
-    }
     const gesture = state.localPointerGesture;
-    if (gesture?.type === "brush" && gesture.leaf === leaf) {
-      drawLocalGizmoStroke(context, () => {
-        context.beginPath();
-        gesture.stroke.points.forEach((point, index) => index ? context.lineTo(x(point.x), y(point.y)) : context.moveTo(x(point.x), y(point.y)));
-      }, Math.max(2, Math.abs(x(gesture.stroke.radius) - x(0)) * 2));
-      const lastPoint = gesture.stroke.points.at(-1);
-      if (lastPoint) drawBrushGizmo(context, lastPoint, gesture.stroke, x, y);
-    }
+    const activeStroke = gesture?.type === "brush" && gesture.leaf === leaf ? gesture.stroke : null;
+    if (state.localShowMask) drawBrushMaskOverlay(context, leaf, activeStroke, x, y, expression.inverted, options);
+    const cursor = state.localBrushCursor || activeStroke?.points?.at(-1);
+    if (cursor) drawBrushGizmo(context, cursor, brushSettings(leaf), x, y);
   } else if (leaf.type === "luminance_range") {
     drawLuminanceRangeGizmo(context, leaf, x, y);
   } else if (leaf.type === "path") {
@@ -6507,6 +6816,345 @@ function drawMaskExpression(context, expression, x, y) {
     leaf.nodes.forEach((node) => drawLocalGizmoHandle(context, x(node.x), y(node.y), 6));
   }
   context.restore();
+}
+
+function drawBrushMaskOverlay(context, leaf, activeStroke, x, y, inverted = false, options = {}) {
+  const left = x(0);
+  const top = y(0);
+  const width = Math.max(1, Math.round(x(1) - left));
+  const height = Math.max(1, Math.round(y(1) - top));
+  const strokes = leaf.strokes || [];
+  const signature = `${width}x${height}:${JSON.stringify(strokes)}`;
+  const cacheKey = options.localId || leaf;
+  let cached = localBrushMaskCanvasCache.get(cacheKey);
+  if (!cached || cached.signature !== signature) {
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const canvasContext = canvas.getContext("2d");
+    for (const stroke of strokes) drawBrushMaskStroke(canvasContext, stroke, width, height);
+    cached = { signature, canvas };
+    localBrushMaskCanvasCache.set(cacheKey, cached);
+  }
+  const canUseAuthoritative = Boolean(options.authoritative);
+  let maskCanvas = canUseAuthoritative ? options.authoritative.canvas : cached.canvas;
+  let finalMask = canUseAuthoritative;
+  if (activeStroke) {
+    const baseKey = `${signature}:${options.authoritative?.key || "draft"}`;
+    let gestureCanvas = localBrushGestureCanvasCache.get(activeStroke);
+    if (!gestureCanvas || gestureCanvas.baseKey !== baseKey) {
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext("2d").drawImage(canUseAuthoritative ? options.authoritative.canvas : cached.canvas, 0, 0, width, height);
+      gestureCanvas = { baseKey, canvas, renderedPointCount: 0 };
+      localBrushGestureCanvasCache.set(activeStroke, gestureCanvas);
+    }
+    const firstNewPoint = Math.max(0, gestureCanvas.renderedPointCount - 1);
+    const pendingPoints = activeStroke.points.slice(firstNewPoint);
+    if (pendingPoints.length && (gestureCanvas.renderedPointCount === 0 || pendingPoints.length > 1)) {
+      const draftStroke = {
+        ...activeStroke,
+        points: pendingPoints,
+        opacity: canUseAuthoritative && !activeStroke.erase
+          ? Number(activeStroke.opacity) * clamp(Number(leaf.mask_opacity ?? 1), 0, 1)
+          : Number(activeStroke.opacity),
+      };
+      drawBrushMaskStroke(gestureCanvas.canvas.getContext("2d"), draftStroke, width, height);
+      gestureCanvas.renderedPointCount = activeStroke.points.length;
+    }
+    maskCanvas = gestureCanvas.canvas;
+  }
+  if (!finalMask && !options.exactMaskPending) maskCanvas = postProcessBrushMaskPreview(maskCanvas, leaf, width, height);
+  // Shift/Feather generate alpha outside the painted source. Colorize only
+  // after those operations so newly covered pixels cannot retain black RGB.
+  const tintedCanvas = document.createElement("canvas");
+  tintedCanvas.width = width;
+  tintedCanvas.height = height;
+  const tintedContext = tintedCanvas.getContext("2d");
+  tintedContext.drawImage(maskCanvas, 0, 0, width, height);
+  tintBrushMask(tintedContext, width, height);
+  maskCanvas = tintedCanvas;
+  if (inverted && !finalMask) {
+    const invertedCanvas = document.createElement("canvas");
+    invertedCanvas.width = width;
+    invertedCanvas.height = height;
+    const invertedContext = invertedCanvas.getContext("2d");
+    invertedContext.fillStyle = "rgb(255, 38, 61)";
+    invertedContext.fillRect(0, 0, width, height);
+    invertedContext.globalCompositeOperation = "destination-out";
+    invertedContext.drawImage(maskCanvas, 0, 0);
+    maskCanvas = invertedCanvas;
+  }
+  context.save();
+  const overlayAlpha = finalMask ? 0.52 : 0.52 * clamp(Number(leaf.mask_opacity ?? 1), 0, 1);
+  context.globalAlpha = overlayAlpha;
+  context.drawImage(maskCanvas, left, top, width, height);
+  context.restore();
+}
+
+async function queueAuthoritativeLocalMask(local) {
+  if (!state.session || !local || local.mask?.operator !== "leaf" || local.mask.leaf?.type !== "brush") return;
+  if (!(local.mask.leaf.strokes || []).length) return;
+  if (state.localMaskDraftDirty) return;
+  const signature = JSON.stringify(local.mask);
+  const longEdge = settledProxyLongEdge();
+  const revision = state.editRevision;
+  const key = `${state.session.session_id}:${local.id}:${longEdge}:${revision}:${signature}`;
+  const cached = localAuthoritativeMaskCache.get(local.id);
+  if (cached?.key === key || localAuthoritativeMaskRequests.has(key)) return;
+  const request = fetch(`/api/session/${state.session.session_id}/local-mask/${encodeURIComponent(local.id)}?long_edge=${longEdge}&edit_revision=${revision}`)
+    .then(async (response) => {
+      if (!response.ok) return;
+      const width = Number(response.headers.get("X-Image-Width"));
+      const height = Number(response.headers.get("X-Image-Height"));
+      const alpha = new Uint8Array(await response.arrayBuffer());
+      if (revision !== state.editRevision || signature !== JSON.stringify(selectedLocal()?.mask)) return;
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const pixels = new Uint8ClampedArray(width * height * 4);
+      for (let sourceIndex = 0, targetIndex = 0; sourceIndex < alpha.length; sourceIndex += 1, targetIndex += 4) {
+        pixels[targetIndex + 3] = alpha[sourceIndex];
+      }
+      canvas.getContext("2d").putImageData(new ImageData(pixels, width, height), 0, 0);
+      localAuthoritativeMaskCache.set(local.id, { key, signature, canvas });
+      while (localAuthoritativeMaskCache.size > 8) {
+        localAuthoritativeMaskCache.delete(localAuthoritativeMaskCache.keys().next().value);
+      }
+      queueLocalMaskOverlayRender();
+    })
+    .catch((error) => console.warn("Authoritative local mask could not be loaded.", error))
+    .finally(() => localAuthoritativeMaskRequests.delete(key));
+  localAuthoritativeMaskRequests.set(key, request);
+  await request;
+}
+
+function scheduleAuthoritativeLocalMaskDraft(local) {
+  if (!state.session || !local || local.mask?.operator !== "leaf" || local.mask.leaf?.type !== "brush") return;
+  if (!(local.mask.leaf.strokes || []).length) return;
+  const signature = JSON.stringify(local.mask);
+  state.localMaskDraftPending = {
+    localId: local.id,
+    mask: JSON.parse(signature),
+    signature,
+    revision: state.editRevision,
+    longEdge: settledProxyLongEdge(),
+    generation: state.localMaskDraftGeneration,
+  };
+  if (state.localMaskDraftController || state.localMaskDraftTimer) return;
+  state.localMaskDraftTimer = window.setTimeout(flushAuthoritativeLocalMaskDraft, 16);
+}
+
+function flushAuthoritativeLocalMaskDraft() {
+  state.localMaskDraftTimer = 0;
+  if (state.localMaskDraftController || !state.localMaskDraftPending) return;
+  const pending = state.localMaskDraftPending;
+  state.localMaskDraftPending = null;
+  void loadAuthoritativeLocalMaskDraft(
+    pending.localId,
+    pending.mask,
+    pending.signature,
+    pending.revision,
+    pending.longEdge,
+    pending.generation,
+  );
+}
+
+async function loadAuthoritativeLocalMaskDraft(localId, mask, signature, revision, longEdge, generation) {
+  const controller = new AbortController();
+  state.localMaskDraftController = controller;
+  try {
+    const response = await fetch(
+      `/api/session/${state.session.session_id}/local-mask/${encodeURIComponent(localId)}/preview`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({ mask, edit_revision: revision, long_edge: longEdge }),
+      },
+    );
+    if (!response.ok) return;
+    const width = Number(response.headers.get("X-Image-Width"));
+    const height = Number(response.headers.get("X-Image-Height"));
+    const alpha = new Uint8Array(await response.arrayBuffer());
+    if (
+      generation !== state.localMaskDraftGeneration
+      || revision !== state.editRevision
+      || localId !== state.selectedLocalId
+    ) return;
+    const canvas = alphaMaskCanvas(alpha, width, height);
+    localAuthoritativeMaskCache.set(localId, {
+      key: `draft:${revision}:${longEdge}:${signature}`,
+      signature,
+      canvas,
+    });
+    trimAuthoritativeLocalMaskCache();
+    queueLocalMaskOverlayRender();
+  } catch (error) {
+    if (error?.name !== "AbortError") console.warn("Authoritative local mask draft could not be loaded.", error);
+  } finally {
+    if (state.localMaskDraftController === controller) state.localMaskDraftController = null;
+    if (state.localMaskDraftPending && state.localMaskDraftDirty && !state.localMaskDraftTimer) {
+      state.localMaskDraftTimer = window.setTimeout(flushAuthoritativeLocalMaskDraft, 16);
+    }
+  }
+}
+
+function alphaMaskCanvas(alpha, width, height) {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const pixels = new Uint8ClampedArray(width * height * 4);
+  for (let sourceIndex = 0, targetIndex = 0; sourceIndex < alpha.length; sourceIndex += 1, targetIndex += 4) {
+    pixels[targetIndex + 3] = alpha[sourceIndex];
+  }
+  canvas.getContext("2d").putImageData(new ImageData(pixels, width, height), 0, 0);
+  return canvas;
+}
+
+function trimAuthoritativeLocalMaskCache() {
+  while (localAuthoritativeMaskCache.size > 8) {
+    localAuthoritativeMaskCache.delete(localAuthoritativeMaskCache.keys().next().value);
+  }
+}
+
+function postProcessBrushMaskPreview(source, leaf, width, height) {
+  let result = source;
+  const shift = clamp(Number(leaf.mask_shift_edge || 0), -0.05, 0.05);
+  if (Math.abs(shift) > 0) {
+    const blurred = document.createElement("canvas");
+    blurred.width = width;
+    blurred.height = height;
+    const blurredContext = blurred.getContext("2d");
+    blurredContext.filter = `blur(${Math.max(0.25, Math.abs(shift) * width)}px)`;
+    blurredContext.drawImage(result, 0, 0);
+    const sourcePixels = result.getContext("2d").getImageData(0, 0, width, height);
+    const shiftedPixels = blurredContext.getImageData(0, 0, width, height);
+    const threshold = shift > 0 ? 0.158655 : 0.841345;
+    const halfBand = 0.035;
+    for (let index = 3; index < shiftedPixels.data.length; index += 4) {
+      let level = clamp((shiftedPixels.data[index] / 255 - threshold + halfBand) / (halfBand * 2), 0, 1);
+      level = level * level * (3 - 2 * level);
+      const shiftedAlpha = Math.round(level * 255);
+      shiftedPixels.data[index] = shift > 0
+        ? Math.max(sourcePixels.data[index], shiftedAlpha)
+        : Math.min(sourcePixels.data[index], shiftedAlpha);
+    }
+    blurredContext.filter = "none";
+    blurredContext.putImageData(shiftedPixels, 0, 0);
+    result = blurred;
+  }
+
+  const featherAmount = clamp(Number(leaf.mask_feather || 0) / 0.05, 0, 1);
+  if (featherAmount <= 0) return result;
+  const softened = document.createElement("canvas");
+  softened.width = width;
+  softened.height = height;
+  const softenedContext = softened.getContext("2d");
+  const sourcePixels = result.getContext("2d").getImageData(0, 0, width, height);
+  const featherRadius = 0.18 * Math.pow(featherAmount, 0.75);
+  softenedContext.filter = `blur(${Math.max(0.25, featherRadius * width)}px)`;
+  softenedContext.drawImage(result, 0, 0);
+  const outputPixels = softenedContext.getImageData(0, 0, width, height);
+  let sourcePeak = 0;
+  let blurredPeak = 0;
+  for (let index = 3; index < outputPixels.data.length; index += 4) {
+    sourcePeak = Math.max(sourcePeak, sourcePixels.data[index]);
+    blurredPeak = Math.max(blurredPeak, outputPixels.data[index]);
+  }
+  // Keep the painted density stable while replacing the hard boundary with a
+  // real Gaussian transition. This avoids the old solid edge plus faint halo.
+  const peakScale = blurredPeak > 0 ? sourcePeak / blurredPeak : 0;
+  for (let index = 3; index < outputPixels.data.length; index += 4) {
+    outputPixels.data[index] = Math.min(sourcePeak, Math.round(outputPixels.data[index] * peakScale));
+  }
+  softenedContext.filter = "none";
+  softenedContext.putImageData(outputPixels, 0, 0);
+  return softened;
+}
+
+function tintBrushMask(context, width, height) {
+  context.save();
+  context.globalCompositeOperation = "source-in";
+  context.fillStyle = "rgb(255, 38, 61)";
+  context.fillRect(0, 0, width, height);
+  context.restore();
+}
+
+function drawBrushMaskStroke(context, stroke, width, height) {
+  const points = stroke.points || [];
+  if (!points.length) return;
+  const baseRadius = Math.max(1, Number(stroke.radius) * width);
+  const hardness = clamp(Number(stroke.hardness), 0, 1);
+  const flow = clamp(Number(stroke.flow), 0, 1);
+  const opacity = clamp(Number(stroke.opacity), 0, 1);
+  const maximumRadius = baseRadius;
+  const pointXs = points.map((point) => Number(point.x) * width);
+  const pointYs = points.map((point) => Number(point.y) * height);
+  const roiLeft = Math.max(0, Math.floor(Math.min(...pointXs) - maximumRadius));
+  const roiRight = Math.min(width - 1, Math.ceil(Math.max(...pointXs) + maximumRadius));
+  const roiTop = Math.max(0, Math.floor(Math.min(...pointYs) - maximumRadius));
+  const roiBottom = Math.min(height - 1, Math.ceil(Math.max(...pointYs) + maximumRadius));
+  const roiWidth = roiRight - roiLeft + 1;
+  const roiHeight = roiBottom - roiTop + 1;
+  if (roiWidth <= 0 || roiHeight <= 0) return;
+  const strokeMask = new Float32Array(roiWidth * roiHeight);
+
+  const applyCapsule = (first, second, pressure) => {
+    const radius = Math.max(1, baseRadius * clamp(Number(pressure), 0.05, 1));
+    const inner = radius * hardness;
+    const featherWidth = Math.max(radius - inner, 1e-6);
+    const x0 = Number(first.x) * width;
+    const y0 = Number(first.y) * height;
+    const x1 = Number(second.x) * width;
+    const y1 = Number(second.y) * height;
+    const left = Math.max(0, Math.floor(Math.min(x0, x1) - radius));
+    const right = Math.min(width - 1, Math.ceil(Math.max(x0, x1) + radius));
+    const top = Math.max(0, Math.floor(Math.min(y0, y1) - radius));
+    const bottom = Math.min(height - 1, Math.ceil(Math.max(y0, y1) + radius));
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const denominator = Math.max(dx * dx + dy * dy, 1e-8);
+    for (let row = top; row <= bottom; row += 1) {
+      for (let column = left; column <= right; column += 1) {
+        const projection = clamp(((column - x0) * dx + (row - y0) * dy) / denominator, 0, 1);
+        const nearestX = x0 + projection * dx;
+        const nearestY = y0 + projection * dy;
+        const distance = Math.hypot(column - nearestX, row - nearestY);
+        if (distance >= radius) continue;
+        const coverage = distance <= inner ? 1 : 1 - (distance - inner) / featherWidth;
+        const index = (row - roiTop) * roiWidth + column - roiLeft;
+        strokeMask[index] = Math.max(strokeMask[index], coverage);
+      }
+    }
+  };
+
+  if (points.length === 1) {
+    applyCapsule(points[0], points[0], points[0].pressure ?? 1);
+  } else {
+    for (let index = 1; index < points.length; index += 1) {
+      const first = points[index - 1];
+      const second = points[index];
+      applyCapsule(first, second, (Number(first.pressure ?? 1) + Number(second.pressure ?? 1)) * 0.5);
+    }
+  }
+
+  const image = context.getImageData(roiLeft, roiTop, roiWidth, roiHeight);
+  for (let index = 0; index < strokeMask.length; index += 1) {
+    const coverage = strokeMask[index];
+    if (coverage <= 0) continue;
+    const alphaIndex = index * 4 + 3;
+    const existing = image.data[alphaIndex] / 255;
+    const next = stroke.erase
+      ? existing * (1 - Math.min(opacity, coverage * flow))
+      : Math.max(existing, Math.min(opacity, existing + coverage * flow));
+    image.data[alphaIndex - 3] = 0;
+    image.data[alphaIndex - 2] = 0;
+    image.data[alphaIndex - 1] = 0;
+    image.data[alphaIndex] = Math.round(next * 255);
+  }
+  context.putImageData(image, roiLeft, roiTop);
 }
 
 function drawLocalGizmoStroke(context, path, width = 2, color = "rgba(238, 252, 255, .98)") {
@@ -6573,30 +7221,50 @@ function drawLinearGradientGizmo(context, leaf, x, y) {
 }
 
 function drawBrushGizmo(context, point, stroke, x, y) {
-  const centerX = x(point.x);
-  const centerY = y(point.y);
-  const radius = Math.max(10, Math.abs(x(stroke.radius) - x(0)));
+  const radius = Math.max(2, Math.abs(x(stroke.radius) - x(0)));
+  const feather = brushFeatherExtent(stroke.hardness);
+  const featherRadius = radius * (1 + feather);
+  let centerX = x(point.x);
+  let centerY = y(point.y);
+  if (state.localBrushPreviewPinned) {
+    const scale = Math.max(context.getTransform().a, 1e-6);
+    const bounds = state.localBrushVisibleBounds || { left: 0, top: 0, right: context.canvas.width / scale, bottom: context.canvas.height / scale };
+    const visibleLeft = Math.max(bounds.left, Math.min(x(0), x(1)));
+    const visibleRight = Math.min(bounds.right, Math.max(x(0), x(1)));
+    const visibleTop = Math.max(bounds.top, Math.min(y(0), y(1)));
+    const visibleBottom = Math.min(bounds.bottom, Math.max(y(0), y(1)));
+    centerX = visibleRight - featherRadius - 3;
+    centerY = clamp(centerY, visibleTop + featherRadius + 3, visibleBottom - featherRadius - 3);
+    if (visibleRight - visibleLeft < featherRadius * 2 + 6) centerX = (visibleLeft + visibleRight) / 2;
+    if (visibleBottom - visibleTop < featherRadius * 2 + 6) centerY = (visibleTop + visibleBottom) / 2;
+  }
   context.save();
   context.beginPath();
-  context.arc(centerX, centerY, radius + 2, 0, Math.PI * 2);
-  context.strokeStyle = "rgba(0, 0, 0, .9)";
-  context.lineWidth = 4;
-  context.stroke();
-  context.beginPath();
   context.arc(centerX, centerY, radius, 0, Math.PI * 2);
-  context.strokeStyle = "#74e5ee";
-  context.lineWidth = 2;
-  context.stroke();
-  context.beginPath();
-  context.setLineDash([4, 4]);
-  context.arc(centerX, centerY, Math.max(4, radius * Number(stroke.hardness || 0)), 0, Math.PI * 2);
-  context.strokeStyle = "rgba(255, 255, 255, .9)";
+  context.strokeStyle = "rgba(218, 222, 223, .94)";
   context.lineWidth = 1;
   context.stroke();
-  context.setLineDash([]);
+  if (feather > 0.001) {
+    const dashOffset = -((performance.now() / 70) % 12);
+    context.beginPath();
+    context.setLineDash([6, 6]);
+    context.lineDashOffset = dashOffset;
+    context.arc(centerX, centerY, featherRadius, 0, Math.PI * 2);
+    context.strokeStyle = "rgba(8, 10, 11, .94)";
+    context.lineWidth = 1.5;
+    context.stroke();
+    context.beginPath();
+    context.lineDashOffset = dashOffset + 6;
+    context.arc(centerX, centerY, featherRadius, 0, Math.PI * 2);
+    context.strokeStyle = "rgba(245, 247, 247, .94)";
+    context.lineWidth = 1.5;
+    context.stroke();
+    context.setLineDash([]);
+    queueLocalMaskOverlayRender();
+  }
   context.beginPath();
-  context.arc(centerX, centerY, 3, 0, Math.PI * 2);
-  context.fillStyle = stroke.erase ? "#ff6b72" : "#ffffff";
+  context.arc(centerX, centerY, 1.5, 0, Math.PI * 2);
+  context.fillStyle = stroke.erase ? "#ff6b72" : "rgba(235, 238, 239, .96)";
   context.fill();
   context.restore();
 }
