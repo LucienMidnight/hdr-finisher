@@ -41,7 +41,8 @@ async function redOverlayPixels(locator) {
     const createResponse = page.waitForResponse((response) =>
       response.url().includes("/edit-commands") && response.request().method() === "POST" && response.status() === 200,
     );
-    const exactMaskResponse = page.waitForResponse((response) =>
+    const gpuResident = await page.evaluate(() => Boolean(state.gpuPreview?.available));
+    const exactMaskResponse = gpuResident ? null : page.waitForResponse((response) =>
       /\/local-mask\/[^/]+\?/.test(response.url()) && response.request().method() === "GET" && response.status() === 200,
     );
     await page.locator('[data-local-tool="luminance_range"]').click();
@@ -62,11 +63,18 @@ async function redOverlayPixels(locator) {
     assert(await page.locator(".local-brush-control .instrument-control-label", { hasText: "Feather" }).count() === 1, "Luma Feather is missing.");
     assert(await page.locator("#local-show-mask").getAttribute("aria-pressed") === "true", "A new luma mask did not enable its overlay.");
 
-    const exactMask = await exactMaskResponse;
-    assert((await exactMask.body()).length > 1000, "The authoritative luma overlay was empty.");
+    if (exactMaskResponse) {
+      const exactMask = await exactMaskResponse;
+      assert((await exactMask.body()).length > 1000, "The authoritative luma overlay was empty.");
+    }
     await page.waitForTimeout(100);
     const overlay = page.locator("#local-mask-overlay");
-    assert(await redOverlayPixels(overlay) > 100, "The authoritative luma mask was not painted into the viewport overlay.");
+    if (gpuResident) {
+      const resources = await page.evaluate(() => window.HDRFinisherPerformance.gpuSnapshot().resources);
+      assert(resources.sceneLuminanceTextures > 0 && resources.localMasks > 0, `The GPU-resident luma overlay was not retained: ${JSON.stringify(resources)}`);
+    } else {
+      assert(await redOverlayPixels(overlay) > 100, "The authoritative luma mask was not painted into the viewport overlay.");
+    }
 
     const previewBox = await page.locator("#preview-canvas").boundingBox();
     assert(previewBox && previewBox.width > 100 && previewBox.height > 100, "The preview is unavailable for luma sampling.");
@@ -119,9 +127,11 @@ async function redOverlayPixels(locator) {
     const initialRefinement = await page.locator(".luma-refine-range input").evaluateAll((inputs) => [Number(inputs[0].value), Number(inputs[1].value)]);
     assert(initialRefinement[0] === 0 && initialRefinement[1] === 1, `A quick range did not reset refinement: ${JSON.stringify(initialRefinement)}`);
 
-    const refineDraft = page.waitForResponse((response) =>
-      response.url().includes("/local-mask/") && response.url().endsWith("/preview") && response.request().method() === "POST" && response.status() === 200,
-    );
+    const refineDraft = gpuResident
+      ? page.evaluate(() => new Promise((resolve) => window.addEventListener("hdrfinisher:mask-presented", () => resolve(true), { once: true })))
+      : page.waitForResponse((response) =>
+        response.url().includes("/local-mask/") && response.url().endsWith("/preview") && response.request().method() === "POST" && response.status() === 200,
+      );
     const refineLower = page.locator('.luma-refine-range input[aria-label="Lower refined edge"]');
     await refineLower.evaluate((input) => {
       input.value = "0.25";
@@ -139,9 +149,11 @@ async function redOverlayPixels(locator) {
     await page.waitForTimeout(150);
 
     const feather = page.locator('.local-brush-control:has-text("Feather") input[type="range"]');
-    const draftResponse = page.waitForResponse((response) =>
-      response.url().includes("/local-mask/") && response.url().endsWith("/preview") && response.request().method() === "POST" && response.status() === 200,
-    );
+    const draftResponse = gpuResident
+      ? page.evaluate(() => new Promise((resolve) => window.addEventListener("hdrfinisher:mask-presented", () => resolve(true), { once: true })))
+      : page.waitForResponse((response) =>
+        response.url().includes("/local-mask/") && response.url().endsWith("/preview") && response.request().method() === "POST" && response.status() === 200,
+      );
     await feather.evaluate((input) => {
       input.value = "50";
       input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -162,7 +174,7 @@ async function redOverlayPixels(locator) {
     await page.locator(".local-mask-subpanel", { hasText: "Luma Controls" }).screenshot({ path: path.resolve(__dirname, "../output/playwright/luma-controls-ui.png") });
 
     if (pageErrors.length) throw new Error(`Browser errors: ${pageErrors.join(" | ")}`);
-    console.log(JSON.stringify({ sampled, innerAfterAdd, innerAfterRemove, overlayPixels: await redOverlayPixels(overlay) }));
+    console.log(JSON.stringify({ sampled, innerAfterAdd, innerAfterRemove, gpuResident, overlayPixels: await redOverlayPixels(overlay) }));
   } finally {
     await browser.close();
   }

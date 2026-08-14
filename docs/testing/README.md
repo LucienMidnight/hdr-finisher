@@ -22,6 +22,7 @@ Generated output must not be the only copy of a procedure or durable conclusion.
 - [Source Export Validation Log](Source_Export_Validation_Log.md) — validated source-editor handoff workflows and findings.
 - [Interactive Preview Performance Validation — 2026-08-09](Interactive_Preview_Performance_Validation_2026-08-09.md) — final automated measurements, approved parity envelope, physical-display procedure, and platform sign-off fields.
 - [GPU Local Adjustments Phase 0/1 Validation — 2026-08-14](GPU_Local_Adjustments_Phase_0_1_Validation_2026-08-14.md) — deterministic Luma opacity/feather baseline, Phase 1 measurements, live-scope evidence, CPU/GPU parity, and Brush/Gradient preservation results.
+- [GPU Local Adjustments Phase 2 Validation — 2026-08-14](GPU_Local_Adjustments_Phase_2_Validation_2026-08-14.md) — GPU-resident scene Luma, qualification, cached separable Feather, mask overlay, parity, fallback, and Phase 2 exit-gate evidence.
 - [Codebase Review, Scope Performance, and HDR Round-Trip Sprint](Codebase_Review_Cleanup_and_Round_Trip_Sprint.md) — clean-task implementation brief for evidence-led code cleanup, scope profiling, packaging review, and AVIF/JPEG Ultra HDR re-import investigation, with JPEG XL and DNG feasibility follow-up.
 
 ## Automated entry points

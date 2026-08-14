@@ -1,5 +1,5 @@
 (function () {
-  const PARAM_COUNT = 131;
+  const PARAM_COUNT = 136;
   const CURVE_SAMPLES = 1024;
 
   class HDRWebGPUPreview {
@@ -9,8 +9,12 @@
       this.adapter = null;
       this.device = null;
       this.module = null;
+      this.maskModule = null;
       this.pipelines = new Map();
       this.proxies = new Map();
+      this.proxyInflight = new Map();
+      this.sceneLuminance = new Map();
+      this.sceneLuminanceInflight = new Map();
       this.sessionId = null;
       this.available = false;
       this.detail = "WebGPU has not been initialized";
@@ -24,6 +28,9 @@
       this.localParamBuffers = new Map();
       this.bindGroupLayout = null;
       this.pipelineLayout = null;
+      this.maskBindGroupLayout = null;
+      this.maskPipelineLayout = null;
+      this.maskPipelines = null;
       this.instrumentationEnabled = false;
       this.performanceMetrics = { renders: [] };
       this.adapterInfo = null;
@@ -52,8 +59,12 @@
         this.context = this.canvas.getContext("webgpu");
         if (!this.context) throw new Error("The WebGPU canvas context is unavailable");
         this.module = this.device.createShaderModule({ code: SHADER_SOURCE });
-        const compilation = await this.module.getCompilationInfo();
-        const errors = compilation.messages.filter((message) => message.type === "error");
+        this.maskModule = this.device.createShaderModule({ code: LUMA_MASK_SHADER_SOURCE });
+        const [compilation, maskCompilation] = await Promise.all([
+          this.module.getCompilationInfo(),
+          this.maskModule.getCompilationInfo(),
+        ]);
+        const errors = [...compilation.messages, ...maskCompilation.messages].filter((message) => message.type === "error");
         if (errors.length) throw new Error(errors.map((message) => message.message).join("; "));
         this.bindGroupLayout = this.device.createBindGroupLayout({
           entries: [
@@ -62,6 +73,7 @@
             { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
             { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
             { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
+            { binding: 5, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
           ],
         });
         this.spatialSampler = this.device.createSampler({
@@ -71,6 +83,18 @@
           addressModeV: "clamp-to-edge",
         });
         this.pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.bindGroupLayout] });
+        this.maskBindGroupLayout = this.device.createBindGroupLayout({
+          entries: [
+            { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "unfilterable-float" } },
+            { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
+          ],
+        });
+        this.maskPipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.maskBindGroupLayout] });
+        this.maskPipelines = {
+          sceneLuminance: this.createMaskPipeline("sceneLuminanceFragmentMain"),
+          qualify: this.createMaskPipeline("lumaQualificationFragmentMain"),
+          refine: this.createMaskPipeline("maskRefinementFragmentMain"),
+        };
         this.device.lost.then((info) => {
           this.available = false;
           this.detail = `WebGPU device lost: ${info.message || info.reason}`;
@@ -91,6 +115,10 @@
       this.renderSerials = new WeakMap();
       for (const proxy of this.proxies.values()) proxy.texture?.destroy();
       this.proxies.clear();
+      this.proxyInflight.clear();
+      for (const scene of this.sceneLuminance.values()) scene.texture?.destroy();
+      this.sceneLuminance.clear();
+      this.sceneLuminanceInflight.clear();
       for (const intermediate of this.intermediates.values()) {
         intermediate.baseTexture?.destroy();
         intermediate.filmTexture?.destroy();
@@ -99,20 +127,20 @@
         intermediate.localTexture?.destroy();
       }
       this.intermediates.clear();
-      for (const mask of this.localMasks.values()) mask.texture?.destroy();
+      for (const mask of this.localMasks.values()) this.destroyLocalMaskEntry(mask);
       this.localMasks.clear();
       for (const buffer of this.localParamBuffers.values()) buffer.destroy();
       this.localParamBuffers.clear();
       this.curveSampleCache.clear();
     }
 
-    async render(sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0) {
-      return this.renderTo(this.canvas, sessionId, lane, adjustments, curveSampler, longEdge, localAdjustments, editRevision);
+    async render(sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null) {
+      return this.renderTo(this.canvas, sessionId, lane, adjustments, curveSampler, longEdge, localAdjustments, editRevision, maskOverlay);
     }
 
     setInstrumentationEnabled(enabled = true) {
       this.instrumentationEnabled = Boolean(enabled);
-      if (enabled) this.performanceMetrics = { renders: [] };
+      if (enabled) this.performanceMetrics = { renders: [], maskEvents: [] };
     }
 
     diagnosticsSnapshot() {
@@ -121,10 +149,17 @@
         available: this.available,
         detail: this.detail,
         renders: this.performanceMetrics.renders.map((entry) => ({ ...entry })),
+        maskEvents: (this.performanceMetrics.maskEvents || []).map((entry) => ({ ...entry })),
+        resources: {
+          proxies: this.proxies.size,
+          sceneLuminanceTextures: this.sceneLuminance.size,
+          localMasks: this.localMasks.size,
+          localMaskBytes: [...this.localMasks.values()].reduce((sum, entry) => sum + entry.byteSize, 0),
+        },
       };
     }
 
-    async renderTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0) {
+    async renderTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null) {
       if (!this.available || !sessionId) return false;
       const renderStartedAt = performance.now();
       if (this.sessionId !== sessionId) this.resetSession(sessionId);
@@ -135,7 +170,13 @@
       if (serial !== this.renderSerials.get(canvas) || !proxy) return false;
       const activeLocals = localAdjustments.filter((local) => local.enabled !== false && local.opacity > 0 && local[`${lane}_grade`]?.enabled !== false);
       if (!activeLocals.every((local) => gpuLocalSupported(local[`${lane}_grade`]))) return false;
-      const masks = await Promise.all(activeLocals.map((local) => this.loadLocalMask(sessionId, local, longEdge, editRevision)));
+      const masks = await Promise.all(activeLocals.map((local) => this.loadLocalMask(
+        sessionId,
+        local,
+        longEdge,
+        editRevision,
+        () => serial === this.renderSerials.get(canvas),
+      )));
       const masksReadyAt = performance.now();
       if (serial !== this.renderSerials.get(canvas) || masks.some((mask) => !mask)) return false;
 
@@ -146,12 +187,23 @@
       const surface = this.configureSurface(canvas, context, lane === "hdr");
       const pipelines = this.pipelineFor(surface.format);
       const params = buildParams(lane, adjustments, proxy.workingSpace, surface.hdr);
+      const overlayIndex = maskOverlay?.localId
+        ? activeLocals.findIndex((local) => local.id === maskOverlay.localId)
+        : -1;
+      const overlayMask = overlayIndex >= 0 ? masks[overlayIndex] : null;
+      const overlayLocal = overlayIndex >= 0 ? activeLocals[overlayIndex] : null;
+      const overlayColor = Array.isArray(maskOverlay?.color) ? maskOverlay.color : [0.12, 0.72, 0.86];
+      params[131] = overlayMask ? 1 : 0;
+      params[132] = overlayLocal ? gpuMaskInfluenceOpacity(overlayLocal.mask) : 0;
+      params[133] = Number(overlayColor[0]) || 0;
+      params[134] = Number(overlayColor[1]) || 0;
+      params[135] = Number(overlayColor[2]) || 0;
       const curves = buildCurves(lane, adjustments, curveSampler, this.curveSampleCache);
       this.ensureStorageBuffers(params.byteLength, curves.byteLength);
       this.device.queue.writeBuffer(this.paramBuffer, 0, params);
       this.device.queue.writeBuffer(this.curveBuffer, 0, curves);
       const intermediate = this.ensureIntermediate(canvas, proxy.width, proxy.height);
-      const makeBindGroup = (sourceView, spatialView, parameterBuffer = this.paramBuffer) => this.device.createBindGroup({
+      const makeBindGroup = (sourceView, spatialView, parameterBuffer = this.paramBuffer, overlayView = spatialView) => this.device.createBindGroup({
           layout: this.bindGroupLayout,
           entries: [
             { binding: 0, resource: sourceView },
@@ -159,13 +211,19 @@
             { binding: 2, resource: { buffer: this.curveBuffer } },
             { binding: 3, resource: spatialView },
             { binding: 4, resource: this.spatialSampler },
+            { binding: 5, resource: overlayView },
           ],
       });
       const baseBindGroup = makeBindGroup(proxy.texture.createView(), intermediate.spatialATexture.createView());
       const extractBindGroup = makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialBTexture.createView());
       const horizontalBindGroup = makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialATexture.createView());
       const verticalBindGroup = makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialBTexture.createView());
-      const compositeBindGroup = makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialATexture.createView());
+      const compositeBindGroup = makeBindGroup(
+        intermediate.filmTexture.createView(),
+        intermediate.spatialATexture.createView(),
+        this.paramBuffer,
+        overlayMask?.texture?.createView() || intermediate.spatialATexture.createView(),
+      );
       const encoder = this.device.createCommandEncoder();
       const gpuTiming = this.instrumentationEnabled && this.device.features.has("timestamp-query")
         ? this.createGpuTimingResources()
@@ -359,6 +417,15 @@
       return { format, hdr: false };
     }
 
+    createMaskPipeline(entryPoint) {
+      return this.device.createRenderPipeline({
+        layout: this.maskPipelineLayout,
+        vertex: { module: this.maskModule, entryPoint: "vertexMain" },
+        fragment: { module: this.maskModule, entryPoint, targets: [{ format: "rgba16float" }] },
+        primitive: { topology: "triangle-list" },
+      });
+    }
+
     pipelineFor(format) {
       if (this.pipelines.has(format)) return this.pipelines.get(format);
       const base = this.device.createRenderPipeline({
@@ -477,32 +544,42 @@
     async loadProxy(sessionId, lane, longEdge) {
       const key = `${sessionId}:${lane}:${longEdge}`;
       if (this.proxies.has(key)) return this.proxies.get(key);
-      const response = await fetch(`/api/session/${sessionId}/proxy/${lane}?long_edge=${longEdge}&format=rgba16f`);
-      if (!response.ok) throw new Error("WebGPU proxy could not be loaded");
-      const width = Number(response.headers.get("X-Image-Width"));
-      const height = Number(response.headers.get("X-Image-Height"));
-      const bytesPerRow = Number(response.headers.get("X-Bytes-Per-Row"));
-      const workingSpace = response.headers.get("X-Working-Space") || "acescg";
-      const pixelFormat = response.headers.get("X-Pixel-Format") || "rgba32float";
-      const data = await response.arrayBuffer();
-      const texture = this.device.createTexture({
-        size: { width, height },
-        format: pixelFormat,
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-      });
-      this.device.queue.writeTexture(
-        { texture },
-        data,
-        { offset: 0, bytesPerRow, rowsPerImage: height },
-        { width, height },
-      );
-      const proxy = { texture, width, height, workingSpace, pixelFormat, bindGroups: new Map() };
-      this.proxies.set(key, proxy);
-      this.trimProxyLevels(sessionId, lane);
-      return proxy;
+      if (this.proxyInflight.has(key)) return this.proxyInflight.get(key);
+      const pending = (async () => {
+        const response = await fetch(`/api/session/${sessionId}/proxy/${lane}?long_edge=${longEdge}&format=rgba16f`);
+        if (!response.ok) throw new Error("WebGPU proxy could not be loaded");
+        const width = Number(response.headers.get("X-Image-Width"));
+        const height = Number(response.headers.get("X-Image-Height"));
+        const bytesPerRow = Number(response.headers.get("X-Bytes-Per-Row"));
+        const workingSpace = response.headers.get("X-Working-Space") || "acescg";
+        const pixelFormat = response.headers.get("X-Pixel-Format") || "rgba32float";
+        const data = await response.arrayBuffer();
+        const texture = this.device.createTexture({
+          size: { width, height },
+          format: pixelFormat,
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+        });
+        this.device.queue.writeTexture(
+          { texture },
+          data,
+          { offset: 0, bytesPerRow, rowsPerImage: height },
+          { width, height },
+        );
+        const proxy = { texture, width, height, workingSpace, pixelFormat, bindGroups: new Map() };
+        this.proxies.set(key, proxy);
+        this.trimProxyLevels(sessionId, lane);
+        return proxy;
+      })();
+      this.proxyInflight.set(key, pending);
+      try {
+        return await pending;
+      } finally {
+        this.proxyInflight.delete(key);
+      }
     }
 
-    async loadLocalMask(sessionId, local, longEdge, editRevision) {
+    async loadLocalMask(sessionId, local, longEdge, editRevision, isCurrent = () => true) {
+      if (isGpuLumaMask(local.mask)) return this.loadGpuLumaMask(sessionId, local, longEdge, isCurrent);
       const spatialOnly = local.mask?.operator === "leaf" && Boolean(local.mask.leaf);
       const maskSignature = gpuMaskIdentity(local.mask);
       const key = `${sessionId}:${local.id}:${longEdge}:${maskSignature}`;
@@ -539,14 +616,199 @@
       return entry;
     }
 
+    async loadSceneLuminance(sessionId, longEdge) {
+      const key = `${sessionId}:${longEdge}`;
+      const cached = this.sceneLuminance.get(key);
+      if (cached) return { ...cached, created: false };
+      if (this.sceneLuminanceInflight.has(key)) return this.sceneLuminanceInflight.get(key);
+      const pending = (async () => {
+        const source = await this.loadProxy(sessionId, "hdr", longEdge);
+        const texture = this.createMaskTexture(source.width, source.height);
+        const params = this.createStorageBuffer(new Float32Array(4));
+        this.device.queue.writeBuffer(params, 0, new Float32Array(4));
+        const bindGroup = this.createMaskBindGroup(source.texture, params);
+        const encoder = this.device.createCommandEncoder();
+        this.encodeMaskPass(encoder, this.maskPipelines.sceneLuminance, bindGroup, texture);
+        this.device.queue.submit([encoder.finish()]);
+        params.destroy();
+        const entry = {
+          texture,
+          width: source.width,
+          height: source.height,
+          byteSize: source.width * source.height * 8,
+        };
+        this.sceneLuminance.set(key, entry);
+        const prefix = `${sessionId}:`;
+        const keys = [...this.sceneLuminance.keys()].filter((candidate) => candidate.startsWith(prefix));
+        while (keys.length > 2) {
+          const staleKey = keys.shift();
+          this.sceneLuminance.get(staleKey)?.texture?.destroy();
+          this.sceneLuminance.delete(staleKey);
+        }
+        return { ...entry, created: true };
+      })();
+      this.sceneLuminanceInflight.set(key, pending);
+      try {
+        return await pending;
+      } finally {
+        this.sceneLuminanceInflight.delete(key);
+      }
+    }
+
+    async loadGpuLumaMask(sessionId, local, longEdge, isCurrent = () => true) {
+      const startedAt = performance.now();
+      const scene = await this.loadSceneLuminance(sessionId, longEdge);
+      if (!isCurrent()) return null;
+      const baseSignature = gpuLumaBaseIdentity(local.mask);
+      const key = `${sessionId}:${local.id}:${longEdge}:gpu-luma:${baseSignature}`;
+      let entry = this.localMasks.get(key);
+      let baseRegenerated = false;
+      if (!entry) {
+        const baseTexture = this.createMaskTexture(scene.width, scene.height);
+        const horizontalTexture = this.createMaskTexture(scene.width, scene.height);
+        const refinedTexture = this.createMaskTexture(scene.width, scene.height);
+        const qualifyValues = buildGpuLumaQualificationParams(local.mask);
+        const qualifyBuffer = this.createStorageBuffer(qualifyValues);
+        this.device.queue.writeBuffer(qualifyBuffer, 0, qualifyValues);
+        entry = {
+          kind: "gpu-luma",
+          texture: baseTexture,
+          baseTexture,
+          horizontalTexture,
+          refinedTexture,
+          qualifyBuffer,
+          horizontalBuffer: this.createStorageBuffer(new Float32Array(4)),
+          verticalBuffer: this.createStorageBuffer(new Float32Array(4)),
+          width: scene.width,
+          height: scene.height,
+          byteSize: scene.width * scene.height * 8 * 3 + 48,
+          refinementIdentity: null,
+        };
+        const encoder = this.device.createCommandEncoder();
+        this.encodeMaskPass(
+          encoder,
+          this.maskPipelines.qualify,
+          this.createMaskBindGroup(scene.texture, qualifyBuffer),
+          baseTexture,
+        );
+        this.device.queue.submit([encoder.finish()]);
+        this.localMasks.set(key, entry);
+        baseRegenerated = true;
+      } else {
+        this.localMasks.delete(key);
+        this.localMasks.set(key, entry);
+      }
+
+      const leaf = local.mask.leaf;
+      const feather = Math.min(0.05, Math.max(0, Number(leaf.mask_feather) || 0));
+      const inverted = Boolean(local.mask.inverted);
+      const refinementIdentity = `${feather}:${inverted}`;
+      let refinementRan = false;
+      if (entry.refinementIdentity !== refinementIdentity) {
+        const amount = feather / 0.05;
+        const sigmaX = 0.09 * amount * entry.width;
+        const sigmaY = 0.09 * amount * entry.height;
+        if (Math.max(sigmaX, sigmaY) < 0.25 && !inverted) {
+          entry.texture = entry.baseTexture;
+        } else {
+          const horizontalValues = new Float32Array([sigmaX, sigmaY, 0, 0]);
+          const verticalValues = new Float32Array([sigmaX, sigmaY, 1, inverted ? 1 : 0]);
+          this.device.queue.writeBuffer(entry.horizontalBuffer, 0, horizontalValues);
+          this.device.queue.writeBuffer(entry.verticalBuffer, 0, verticalValues);
+          const encoder = this.device.createCommandEncoder();
+          this.encodeMaskPass(
+            encoder,
+            this.maskPipelines.refine,
+            this.createMaskBindGroup(entry.baseTexture, entry.horizontalBuffer),
+            entry.horizontalTexture,
+          );
+          this.encodeMaskPass(
+            encoder,
+            this.maskPipelines.refine,
+            this.createMaskBindGroup(entry.horizontalTexture, entry.verticalBuffer),
+            entry.refinedTexture,
+          );
+          this.device.queue.submit([encoder.finish()]);
+          entry.texture = entry.refinedTexture;
+          refinementRan = true;
+        }
+        entry.refinementIdentity = refinementIdentity;
+      }
+      this.trimLocalMaskCache(longEdge > 1600 ? 160 * 1024 * 1024 : 96 * 1024 * 1024);
+      if (this.instrumentationEnabled) {
+        const event = {
+          kind: "gpu-luma",
+          longEdge,
+          width: entry.width,
+          height: entry.height,
+          sceneLuminanceCreated: scene.created,
+          baseRegenerated,
+          refinementRan,
+          feather,
+          encodeSubmitMs: performance.now() - startedAt,
+          cpuMaskRequest: false,
+        };
+        this.performanceMetrics.maskEvents ||= [];
+        this.performanceMetrics.maskEvents.push(event);
+        if (this.performanceMetrics.maskEvents.length > 480) this.performanceMetrics.maskEvents.shift();
+      }
+      return entry;
+    }
+
+    createMaskTexture(width, height) {
+      return this.device.createTexture({
+        size: { width, height },
+        format: "rgba16float",
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      });
+    }
+
+    createMaskBindGroup(texture, parameterBuffer) {
+      return this.device.createBindGroup({
+        layout: this.maskBindGroupLayout,
+        entries: [
+          { binding: 0, resource: texture.createView() },
+          { binding: 1, resource: { buffer: parameterBuffer } },
+        ],
+      });
+    }
+
+    encodeMaskPass(encoder, pipeline, bindGroup, targetTexture) {
+      const pass = encoder.beginRenderPass({
+        colorAttachments: [{
+          view: targetTexture.createView(),
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          loadOp: "clear",
+          storeOp: "store",
+        }],
+      });
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, bindGroup);
+      pass.draw(3);
+      pass.end();
+    }
+
     trimLocalMaskCache(budget) {
       let total = [...this.localMasks.values()].reduce((sum, entry) => sum + entry.byteSize, 0);
       while (this.localMasks.size && total > budget) {
         const [key, entry] = this.localMasks.entries().next().value;
-        entry.texture.destroy();
+        this.destroyLocalMaskEntry(entry);
         this.localMasks.delete(key);
         total -= entry.byteSize;
       }
+    }
+
+    destroyLocalMaskEntry(entry) {
+      const textures = new Set([
+        entry.texture,
+        entry.baseTexture,
+        entry.horizontalTexture,
+        entry.refinedTexture,
+      ].filter(Boolean));
+      textures.forEach((texture) => texture.destroy());
+      entry.qualifyBuffer?.destroy();
+      entry.horizontalBuffer?.destroy();
+      entry.verticalBuffer?.destroy();
     }
 
     localParamBuffer(local, lane) {
@@ -878,6 +1140,35 @@
     });
   }
 
+  function isGpuLumaMask(expression) {
+    return expression?.operator === "leaf"
+      && expression.leaf?.type === "luminance_range"
+      && (!expression.children || expression.children.length === 0);
+  }
+
+  function gpuLumaBaseIdentity(expression) {
+    if (!isGpuLumaMask(expression)) return JSON.stringify(expression);
+    return JSON.stringify({
+      ...expression,
+      inverted: false,
+      leaf: {
+        ...expression.leaf,
+        mask_feather: 0,
+        mask_opacity: 1,
+      },
+    });
+  }
+
+  function buildGpuLumaQualificationParams(expression) {
+    const leaf = expression.leaf;
+    return new Float32Array([
+      Number(leaf.fade_in_start_ev),
+      Number(leaf.full_start_ev),
+      Number(leaf.full_end_ev),
+      Number(leaf.fade_out_end_ev),
+    ]);
+  }
+
   window.HDRWebGPUPreview = HDRWebGPUPreview;
 
   const SHADER_SOURCE = String.raw`
@@ -886,6 +1177,7 @@
     @group(0) @binding(2) var<storage, read> curveLuts: array<f32>;
     @group(0) @binding(3) var spatialTexture: texture_2d<f32>;
     @group(0) @binding(4) var spatialSampler: sampler;
+    @group(0) @binding(5) var overlayMaskTexture: texture_2d<f32>;
 
     struct VertexOut { @builtin(position) position: vec4f }
 
@@ -1540,9 +1832,8 @@
       let dimensions = textureDimensions(sourceTexture);
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let source = textureLoad(sourceTexture, coordinate, 0).rgb;
-      let maskDimensions = textureDimensions(spatialTexture);
-      let maskCoordinate = clamp(coordinate, vec2i(0), vec2i(maskDimensions) - vec2i(1));
-      let influence = clamp(textureLoad(spatialTexture, maskCoordinate, 0).r * p[1] * p[13], 0.0, 1.0);
+      let uv = (vec2f(coordinate) + vec2f(0.5)) / vec2f(dimensions);
+      let influence = clamp(textureSampleLevel(spatialTexture, spatialSampler, uv, 0.0).r * p[1] * p[13], 0.0, 1.0);
       return vec4f(mix(source, applyLocalGrade(source), influence), 1.0);
     }
 
@@ -1579,7 +1870,74 @@
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let filmOutput = applyFilmLook(coordinate);
       let output = select(clamp(filmOutput, vec3f(0.0), vec3f(1.0)), displayHdr(filmOutput), p[0] > 0.5);
-      return vec4f(displayEncode(output), 1.0);
+      var encoded = displayEncode(output);
+      if (p[131] > 0.5) {
+        let uv = (vec2f(coordinate) + vec2f(0.5)) / vec2f(dimensions);
+        let mask = textureSampleLevel(overlayMaskTexture, spatialSampler, uv, 0.0).r;
+        encoded = mix(encoded, vec3f(p[133], p[134], p[135]), clamp(mask * p[132] * 0.52, 0.0, 0.52));
+      }
+      return vec4f(encoded, 1.0);
+    }
+  `;
+
+  const LUMA_MASK_SHADER_SOURCE = String.raw`
+    @group(0) @binding(0) var sourceTexture: texture_2d<f32>;
+    @group(0) @binding(1) var<storage, read> p: array<f32>;
+
+    struct VertexOut { @builtin(position) position: vec4f }
+
+    @vertex fn vertexMain(@builtin(vertex_index) index: u32) -> VertexOut {
+      var positions = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));
+      var output: VertexOut;
+      output.position = vec4f(positions[index], 0.0, 1.0);
+      return output;
+    }
+
+    fn pixelCoordinate(position: vec2f) -> vec2i {
+      let dimensions = textureDimensions(sourceTexture);
+      return clamp(vec2i(position), vec2i(0), vec2i(dimensions) - vec2i(1));
+    }
+
+    @fragment fn sceneLuminanceFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let source = textureLoad(sourceTexture, pixelCoordinate(input.position.xy), 0).rgb;
+      let luma = dot(source, vec3f(0.2722287, 0.6740818, 0.0536895));
+      return vec4f(luma, luma, luma, 1.0);
+    }
+
+    @fragment fn lumaQualificationFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let luma = textureLoad(sourceTexture, pixelCoordinate(input.position.xy), 0).r;
+      let ev = log2(max(luma, 0.00000001) / 0.18);
+      let rise = clamp((ev - p[0]) / max(p[1] - p[0], 0.000001), 0.0, 1.0);
+      let fall = clamp((p[3] - ev) / max(p[3] - p[2], 0.000001), 0.0, 1.0);
+      let mask = min(rise, fall);
+      return vec4f(mask, mask, mask, 1.0);
+    }
+
+    @fragment fn maskRefinementFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let dimensions = textureDimensions(sourceTexture);
+      let coordinate = pixelCoordinate(input.position.xy);
+      let sigma = select(p[0], p[1], p[2] > 0.5);
+      var value = textureLoad(sourceTexture, coordinate, 0).r;
+      if (sigma >= 0.25) {
+        let direction = select(vec2f(1.0, 0.0), vec2f(0.0, 1.0), p[2] > 0.5);
+        let stepSize = max(1.0, sigma * 0.25);
+        var total = 0.0;
+        var weightTotal = 0.0;
+        for (var tap = -12; tap <= 12; tap = tap + 1) {
+          let offset = f32(tap) * stepSize;
+          let weight = exp(-0.5 * offset * offset / max(sigma * sigma, 0.000001));
+          let sampleCoordinate = clamp(
+            coordinate + vec2i(round(direction * offset)),
+            vec2i(0),
+            vec2i(dimensions) - vec2i(1),
+          );
+          total += textureLoad(sourceTexture, sampleCoordinate, 0).r * weight;
+          weightTotal += weight;
+        }
+        value = total / max(weightTotal, 0.000001);
+      }
+      if (p[3] > 0.5) { value = 1.0 - value; }
+      return vec4f(value, value, value, 1.0);
     }
   `;
 })();

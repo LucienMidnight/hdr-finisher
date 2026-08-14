@@ -77,16 +77,27 @@ async function canvasVariationCount(locator) {
       await button.click();
       assert(await button.getAttribute("aria-pressed") === "true", `${tool} did not expose immediate active state.`);
       await page.waitForFunction((count) => document.querySelectorAll("#local-adjustment-list > li").length === count, index + 1);
+      let gpuLuma = false;
       if (tool === "luminance_range") {
-        await page.waitForFunction(() => {
-          const local = selectedLocal();
-          const cached = local ? localAuthoritativeMaskCache.get(local.id) : null;
-          return Boolean(cached && cached.signature === localMaskSpatialSignature(local.mask));
-        });
+        gpuLuma = await page.evaluate(() => Boolean(state.gpuPreview?.available));
+        if (gpuLuma) {
+          await page.waitForFunction(() => {
+            const resources = window.HDRFinisherPerformance.gpuSnapshot().resources;
+            return resources.sceneLuminanceTextures > 0 && resources.localMasks > 0;
+          });
+        } else {
+          await page.waitForFunction(() => {
+            const local = selectedLocal();
+            const cached = local ? localAuthoritativeMaskCache.get(local.id) : null;
+            return Boolean(cached && cached.signature === localMaskSpatialSignature(local.mask));
+          });
+        }
       }
       const visiblePixels = await overlayPixelCount(page);
       if (tool === "brush") {
         assert(visiblePixels === 0, "A new brush mask should start empty instead of painting a default blob.");
+      } else if (tool === "luminance_range" && gpuLuma) {
+        assert(await page.locator("#preview-canvas").isVisible(), "The GPU-resident Luma overlay did not remain on the preview canvas.");
       } else {
         assert(visiblePixels > 100, `${tool} did not render a visible preview gizmo.`);
       }

@@ -182,9 +182,16 @@ async function rapidDrag(page, selector, values, intervalMs = 16) {
     await created;
     await page.waitForFunction(() => selectedLocal()?.mask?.leaf?.type === "luminance_range");
     await page.evaluate(async () => {
-      selectedLocal().hdr_grade.exposure = 1;
-      await commitSelectedLocal();
+      const local = selectedLocal();
+      local.hdr_grade.exposure = 1;
+      Object.assign(local.mask.leaf, {
+        fade_in_start_ev: -2,
+        full_start_ev: -1,
+        full_end_ev: 1,
+        fade_out_end_ev: 2,
+      });
       window.HDRFinisherPerformance.enableGpuInstrumentation(true);
+      await commitSelectedLocal();
     });
     await page.waitForFunction(() => state.localMaskCommitDepth === 0);
     await page.waitForTimeout(400);
@@ -287,6 +294,15 @@ async function rapidDrag(page, selector, values, intervalMs = 16) {
         maskTransport: summarize(requests.filter((request) => request.kind.startsWith("mask-")).map((request) => request.responseMs)),
         scopeTransport: summarize(requests.filter((request) => request.kind === "scope").map((request) => request.responseMs)),
       },
+      gpuResources: raw.gpu.resources,
+      gpuLumaCache: {
+        events: raw.gpu.maskEvents?.length || 0,
+        sceneLuminanceCreates: (raw.gpu.maskEvents || []).filter((entry) => entry.sceneLuminanceCreated).length,
+        baseRegenerations: (raw.gpu.maskEvents || []).filter((entry) => entry.baseRegenerated).length,
+        refinements: (raw.gpu.maskEvents || []).filter((entry) => entry.refinementRan).length,
+        cpuMaskRequests: (raw.gpu.maskEvents || []).filter((entry) => entry.cpuMaskRequest).length,
+        encodeSubmit: summarize((raw.gpu.maskEvents || []).map((entry) => entry.encodeSubmitMs)),
+      },
       requestCounts: Object.fromEntries(["mask-draft", "mask-committed", "scope", "edit-command"].map((kind) => [kind, requests.filter((request) => request.kind === kind).length])),
       scopeDraftContent: {
         requestsWithDraftLocals: requests.filter((request) => request.kind === "scope" && request.localAdjustmentCount > 0).length,
@@ -306,6 +322,9 @@ async function rapidDrag(page, selector, values, intervalMs = 16) {
     if (pageErrors.length) throw new Error(`Browser errors: ${pageErrors.join(" | ")}`);
     if (!rapidOpacity.presentationOrder.previewStrictlyIncreasing || !rapidOpacity.presentationOrder.scopeStrictlyIncreasing) {
       throw new Error("Back-and-forth opacity drag presented an out-of-order preview or scope generation.");
+    }
+    if (!rapidFeather.presentationOrder.previewStrictlyIncreasing || !rapidFeather.presentationOrder.scopeStrictlyIncreasing) {
+      throw new Error("Back-and-forth feather drag presented an out-of-order preview or scope generation.");
     }
   } finally {
     await browser.close();

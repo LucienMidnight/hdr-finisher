@@ -347,7 +347,7 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
 
 def test_webgpu_pipeline_preserves_cpu_section_order_and_fixed_hdr_curve_domain() -> None:
     shader = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
-    assert "const PARAM_COUNT = 131" in shader
+    assert "const PARAM_COUNT = 136" in shader
     assert "hdrPrimaries(hdrToneEqualizer(sceneColor(hdrPeakFit(hdrSoftCeiling(hdrContrast(hdrBase(source)))))))" in shader
     assert "sdrReferenceColor(sdrContrast(highlightRecovery(rgb)))" in shader
     assert "toneMap(sceneColor(rgb))" in shader
@@ -483,6 +483,34 @@ def test_phase_one_local_influence_and_latest_generation_contract() -> None:
     assert "gpuMaskIdentity(local.mask)" in webgpu
     assert "p[1] * p[13]" in webgpu
     assert "spatial_only=${spatialOnly}" in webgpu
+
+
+def test_phase_two_gpu_luma_retained_mask_contract() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+
+    assert 'this.loadProxy(sessionId, "hdr", longEdge)' in webgpu
+    assert 'entryPoint: "sceneLuminanceFragmentMain"' not in webgpu
+    assert 'this.createMaskPipeline("sceneLuminanceFragmentMain")' in webgpu
+    assert 'this.createMaskPipeline("lumaQualificationFragmentMain")' in webgpu
+    assert 'this.createMaskPipeline("maskRefinementFragmentMain")' in webgpu
+    assert "gpuLumaBaseIdentity(local.mask)" in webgpu
+    assert "mask_feather: 0" in webgpu and "mask_opacity: 1" in webgpu
+    assert "entry.baseTexture" in webgpu and "entry.horizontalTexture" in webgpu
+    assert "entry.refinedTexture" in webgpu
+    assert "sigmaX = 0.09 * amount * entry.width" in webgpu
+    assert "sceneLuminanceTextures: this.sceneLuminance.size" in webgpu
+    assert "cpuMaskRequest: false" in webgpu
+    assert "textureSampleLevel(spatialTexture, spatialSampler, uv, 0.0)" in webgpu
+    assert "params[129] = vignette.center_x" in webgpu
+    assert "params[130] = vignette.center_y" in webgpu
+    assert "params[131] = overlayMask ? 1 : 0" in webgpu
+    assert "vec3f(p[133], p[134], p[135])" in webgpu
+    assert "if (!isCurrent()) return null" in webgpu
+    assert "gpuLumaMaskPreviewActive" in javascript
+    assert "scheduleSpatialMaskPreview(selectedLocal())" in javascript
+    assert "if (!gpuLumaMaskPreviewActive(local)) void queueAuthoritativeLocalMask(local)" in javascript
+    assert "gpuResident: true" in javascript
 
 
 def test_viewer_exposes_icon_comparison_layouts_with_active_lane_scopes() -> None:

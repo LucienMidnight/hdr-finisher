@@ -4807,6 +4807,7 @@ async function renderGpuDraft(
   const localSnapshot = state.compareWithoutLocals
     ? []
     : JSON.parse(JSON.stringify(localAdjustments()));
+  const maskOverlay = gpuLumaMaskOverlayOptions();
   try {
     const result = await state.gpuPreview.render(
       state.session.session_id,
@@ -4816,6 +4817,7 @@ async function renderGpuDraft(
       longEdge,
       localSnapshot,
       state.editRevision,
+      maskOverlay,
     );
     if (!result || serial !== state.gpuRenderSerial || (!allowInactive && lane !== state.currentView)) return false;
     state.gpuPreparedLane[lane] = true;
@@ -4841,6 +4843,20 @@ async function renderGpuDraft(
         window.dispatchEvent(new CustomEvent("hdrfinisher:preview-presented", {
           detail: { serial, lane, longEdge, submittedAt, presentedAt },
         }));
+        if (maskOverlay) {
+          window.dispatchEvent(new CustomEvent("hdrfinisher:mask-presented", {
+            detail: {
+              localId: maskOverlay.localId,
+              generation: serial,
+              longEdge,
+              requestedAt: submittedAt,
+              presentedAt,
+              gpuResident: true,
+              cpuMaskMs: null,
+              byteLength: 0,
+            },
+          }));
+        }
       });
       return true;
   } catch (error) {
@@ -6279,6 +6295,7 @@ function bindLocalAdjustmentEvents() {
     const local = selectedLocal();
     if (!local) return;
     local.mask.inverted = !local.mask.inverted;
+    if (gpuLumaMaskPreviewActive(local)) scheduleLocalPreview();
     commitSelectedLocal();
   });
   els.localBypass?.addEventListener("click", () => {
@@ -6298,6 +6315,7 @@ function bindLocalAdjustmentEvents() {
   els.localMoveDown?.addEventListener("click", () => moveSelectedLocal(1));
   els.localShowMask?.addEventListener("click", () => {
     state.localShowMask = !state.localShowMask;
+    if (gpuLumaMaskPreviewActive()) scheduleLocalPreview();
     renderLocalAdjustments();
   });
   els.localOverlayColorButton?.addEventListener("click", () => {
@@ -6307,6 +6325,7 @@ function bindLocalAdjustmentEvents() {
   els.localOverlayColorInput?.addEventListener("input", () => {
     state.localOverlayColor = els.localOverlayColorInput.value.toLowerCase();
     if (els.localOverlayColorSwatch) els.localOverlayColorSwatch.style.backgroundColor = state.localOverlayColor;
+    if (gpuLumaMaskPreviewActive()) scheduleLocalPreview();
     queueLocalMaskOverlayRender();
   });
   els.localCompare?.addEventListener("click", () => {
@@ -6511,6 +6530,40 @@ function scheduleLocalPreview({ spatialMaskChanged = false } = {}) {
   debouncePreview(state.currentView);
 }
 
+function gpuLumaMaskPreviewActive(local = selectedLocal()) {
+  return Boolean(
+    state.gpuPreview?.available
+    && local?.mask?.operator === "leaf"
+    && local.mask.leaf?.type === "luminance_range"
+    && (!local.mask.children || local.mask.children.length === 0)
+    && valuesEqual(state.adjustments.shared?.geometry, defaultGeometry()),
+  );
+}
+
+function scheduleSpatialMaskPreview(local) {
+  if (gpuLumaMaskPreviewActive(local)) {
+    scheduleLocalPreview();
+    return;
+  }
+  state.localMaskDraftDirty = true;
+  scheduleAuthoritativeLocalMaskDraft(local);
+  scheduleLocalPreview({ spatialMaskChanged: true });
+}
+
+function gpuLumaMaskOverlayOptions() {
+  const local = selectedLocal();
+  if (
+    state.gradeMode !== "local"
+    || !state.localShowMask
+    || !gpuLumaMaskPreviewActive(local)
+  ) return null;
+  const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(state.localOverlayColor);
+  const color = match
+    ? [parseInt(match[1], 16) / 255, parseInt(match[2], 16) / 255, parseInt(match[3], 16) / 255]
+    : [1, 38 / 255, 61 / 255];
+  return { localId: local.id, color };
+}
+
 function renderMaskTreeEditor(local) {
   const leaf = firstMaskLeaf(local.mask);
   els.localMaskFooterActions?.append(els.localInvert);
@@ -6655,9 +6708,7 @@ function createLuminanceRangeControl(local, leaf) {
       setLuminanceReferenceRange(leaf, start, end, { preserveRefinement: true });
       initializedLuminanceSampleLeaves.add(leaf);
       updateLuminanceRangeControl();
-      state.localMaskDraftDirty = true;
-      scheduleAuthoritativeLocalMaskDraft(local);
-      scheduleLocalPreview({ spatialMaskChanged: true });
+      scheduleSpatialMaskPreview(local);
       queueLocalMaskOverlayRender();
     });
     input.addEventListener("change", () => commitSelectedLocal());
@@ -6711,9 +6762,7 @@ function createLuminanceRangeControl(local, leaf) {
         referenceStart + end * referenceSpan,
       );
       updateLuminanceRangeControl();
-      state.localMaskDraftDirty = true;
-      scheduleAuthoritativeLocalMaskDraft(local);
-      scheduleLocalPreview({ spatialMaskChanged: true });
+      scheduleSpatialMaskPreview(local);
       queueLocalMaskOverlayRender();
     });
     input.addEventListener("change", () => commitSelectedLocal());
@@ -6747,9 +6796,7 @@ function createLuminanceRangeControl(local, leaf) {
       setLuminanceReferenceRange(leaf, start, end, { preserveRefinement: false });
       initializedLuminanceSampleLeaves.add(leaf);
       updateLuminanceRangeControl();
-      state.localMaskDraftDirty = true;
-      scheduleAuthoritativeLocalMaskDraft(local);
-      scheduleLocalPreview({ spatialMaskChanged: true });
+      scheduleSpatialMaskPreview(local);
       queueLocalMaskOverlayRender();
       await commitSelectedLocal();
     });
@@ -6939,9 +6986,7 @@ function appendLocalMaskSlider(panel, leaf, definition, options = {}) {
     const influenceOnly = name === "mask_opacity";
     const spatialMaskChanged = !influenceOnly && (name.startsWith("mask_") || options.authoritativePreview);
     if (spatialMaskChanged) {
-      state.localMaskDraftDirty = true;
-      scheduleAuthoritativeLocalMaskDraft(selectedLocal());
-      scheduleLocalPreview({ spatialMaskChanged: true });
+      scheduleSpatialMaskPreview(selectedLocal());
     } else if (influenceOnly) {
       scheduleLocalPreview();
     }
@@ -7298,8 +7343,7 @@ async function finishLuminanceSampleGesture(gesture) {
     const sample = await safeJson(response);
     if (!response.ok) throw new Error(sample.detail || "Luminance sampling failed.");
     if (!applyLuminanceSample(gesture.leaf, sample, gesture.remove)) return;
-    state.localMaskDraftDirty = true;
-    scheduleAuthoritativeLocalMaskDraft(local);
+    scheduleSpatialMaskPreview(local);
     renderMaskTreeEditor(local);
     syncRangeVisuals(els.localEditor);
     queueLocalMaskOverlayRender();
@@ -7442,8 +7486,9 @@ function renderLocalMaskOverlay() {
       ? authoritative
       : null,
     exactMaskPending: state.localMaskDraftDirty,
+    gpuLumaOverlay: gpuLumaMaskPreviewActive(local),
   });
-  void queueAuthoritativeLocalMask(local);
+  if (!gpuLumaMaskPreviewActive(local)) void queueAuthoritativeLocalMask(local);
 }
 
 function queueLocalMaskOverlayRender() {
@@ -7485,7 +7530,7 @@ function drawMaskExpression(context, expression, x, y, options = {}) {
     const cursor = state.localBrushCursor || activeStroke?.points?.at(-1);
     if (cursor) drawBrushGizmo(context, cursor, brushSettings(leaf), x, y);
   } else if (leaf.type === "luminance_range") {
-    if (state.localShowMask && options.authoritative) {
+    if (state.localShowMask && options.authoritative && !options.gpuLumaOverlay) {
       drawAuthoritativeMaskOverlay(context, options.authoritative.canvas, x, y, options.authoritative.spatialOnly ? leaf.mask_opacity : 1);
     }
     const samplingGesture = state.localPointerGesture;

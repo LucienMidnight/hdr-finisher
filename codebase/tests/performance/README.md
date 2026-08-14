@@ -26,6 +26,8 @@ browser, adapter, fixture, and active resolutions:
 ```powershell
 npm run test:gpu-local-adjustments -- --url http://127.0.0.1:8000 --phase phase0
 npm run test:gpu-local-adjustments -- --url http://127.0.0.1:8000 --phase phase1
+npm run test:gpu-local-adjustments -- --url http://127.0.0.1:8000 --phase phase2-final
+node tools/playwright_gpu_parity.js test-pattern output/performance/gpu-local-phase2-parity --local-luma-only
 ```
 
 Generated JSON is written below `output/performance/`. Durable conclusions and

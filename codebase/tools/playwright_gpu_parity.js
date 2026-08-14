@@ -45,10 +45,17 @@ async function captureCurrent(page, label, outputDir) {
   const gpuDataUrl = await page.locator("#preview-canvas").evaluate((canvas) => canvas.toDataURL("image/png"));
   const settledDataUrl = await page.evaluate(async () => {
     const state = window.HDRFinisherPerformance.authoringState();
+    const locals = JSON.parse(JSON.stringify(localAdjustments()));
     const response = await fetch(`/api/session/${state.sessionId}/preview-raw/${state.lane}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ adjustments: state.adjustments, long_edge: state.longEdge, hdr_display: false }),
+      body: JSON.stringify({
+        adjustments: state.adjustments,
+        local_adjustments: locals,
+        include_locals: true,
+        long_edge: state.longEdge,
+        hdr_display: false,
+      }),
     });
     if (!response.ok) throw new Error(`CPU reference failed with HTTP ${response.status}`);
     const width = Number(response.headers.get("X-Image-Width"));
@@ -71,12 +78,58 @@ async function captureCurrent(page, label, outputDir) {
   return metrics;
 }
 
+async function auditLumaLocal(page, outputDir) {
+  await page.locator("#view-hdr").click();
+  await page.waitForFunction(() => document.body.dataset.activeLane === "hdr");
+  await page.locator("#grade-mode-local").click();
+  const created = page.waitForResponse((response) => response.url().includes("/edit-commands") && response.request().method() === "POST");
+  await page.locator('[data-local-tool="luminance_range"]').click();
+  await created;
+  await page.waitForFunction(() => selectedLocal()?.mask?.leaf?.type === "luminance_range");
+  if (await page.locator("#local-show-mask").getAttribute("aria-pressed") === "true") {
+    await page.locator("#local-show-mask").click();
+  }
+  await page.evaluate(() => {
+    const local = selectedLocal();
+    local.hdr_grade.exposure = 1.5;
+    const leaf = local.mask.leaf;
+    leaf.fade_in_start_ev = -2;
+    leaf.full_start_ev = -1;
+    leaf.full_end_ev = 1;
+    leaf.fade_out_end_ev = 2;
+    scheduleLocalPreview();
+  });
+  await page.waitForFunction(() => getComputedStyle(document.getElementById("preview-canvas")).display !== "none");
+  const results = [];
+  for (const feather of [0, 25, 50, 100]) {
+    await setControl(page, '[data-local-mask-param="mask_feather"]', feather);
+    results.push({
+      lane: "hdr",
+      control: "local.luma.mask_feather",
+      value: feather,
+      ...(await captureCurrent(page, `hdr-local-luma-feather-${feather}`, outputDir)),
+    });
+  }
+  return results;
+}
+
 async function setControl(page, selector, value) {
   await page.locator(selector).evaluate((control, nextValue) => {
     control.value = String(nextValue);
     control.dispatchEvent(new Event("input", { bubbles: true }));
   }, value);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+}
+
+async function loadSource(page, input) {
+  if (input === "test-pattern") {
+    await page.getByRole("button", { name: "Load test pattern" }).click();
+  } else {
+    await page.locator("#file-input").setInputFiles(input);
+  }
+  await page.waitForFunction(() => document.getElementById("session-name")?.textContent !== "No active image", null, { timeout: 30000 });
+  const gate = page.locator("#interpretation-gate");
+  if (await gate.isVisible()) await page.locator("#accept-interpretation").click();
 }
 
 async function auditLane(page, lane, outputDir) {
@@ -157,10 +210,7 @@ async function auditHdrHandoff(browser, input) {
   });
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.locator("#file-input").setInputFiles(input);
-    await page.waitForFunction(() => document.getElementById("session-name")?.textContent !== "No active image", null, { timeout: 30000 });
-    const gate = page.locator("#interpretation-gate");
-    if (await gate.isVisible()) await page.locator("#accept-interpretation").click();
+    await loadSource(page, input);
     await page.waitForFunction(() => getComputedStyle(document.getElementById("preview-canvas")).display !== "none", null, { timeout: 120000 });
     const cases = [];
     for (const [control, value] of [["hdr.exposure", 2.6], ["hdr.shadow_lift", -0.16]]) {
@@ -184,19 +234,22 @@ async function auditHdrHandoff(browser, input) {
 async function main() {
   const input = process.argv[2];
   const outputDir = process.argv[3] || path.join("output", "gpu-parity");
+  const localLumaOnly = process.argv.includes("--local-luma-only");
   if (!input) throw new Error("Usage: node tools/playwright_gpu_parity.js INPUT [OUTPUT_DIR]");
   fs.mkdirSync(outputDir, { recursive: true });
   const browser = await chromium.launch({ headless: true, executablePath: edgeExecutable() });
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 });
     const browserErrors = [];
-    page.on("console", (message) => { if (message.type() === "error") browserErrors.push(message.text()); });
+    page.on("console", (message) => {
+      if (message.type() !== "error") return;
+      const text = message.text();
+      if (/409 \(Conflict\)/i.test(text)) return;
+      browserErrors.push(text);
+    });
     page.on("pageerror", (error) => browserErrors.push(error.message));
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.locator("#file-input").setInputFiles(input);
-    await page.waitForFunction(() => document.getElementById("session-name")?.textContent !== "No active image", null, { timeout: 30000 });
-    const gate = page.locator("#interpretation-gate");
-    if (await gate.isVisible()) await page.locator("#accept-interpretation").click();
+    await loadSource(page, input);
     await page.locator("#preview-canvas").waitFor({ state: "visible", timeout: 120000 });
     const gpuStatus = await page.evaluate(() => {
       const label = [...document.querySelectorAll("#display-info-list dt")]
@@ -206,10 +259,11 @@ async function main() {
     if (!/renderer ready/i.test(gpuStatus)) {
       throw new Error(`WebGPU renderer did not initialize: ${gpuStatus}`);
     }
-    const hdr = await auditLane(page, "hdr", outputDir);
-    const sdr = await auditLane(page, "sdr", outputDir);
-    const results = [...hdr, ...sdr];
-    const hdrHandoff = await auditHdrHandoff(browser, input);
+    const hdr = localLumaOnly ? [] : await auditLane(page, "hdr", outputDir);
+    const sdr = localLumaOnly ? [] : await auditLane(page, "sdr", outputDir);
+    const lumaLocal = await auditLumaLocal(page, outputDir);
+    const results = [...hdr, ...sdr, ...lumaLocal];
+    const hdrHandoff = localLumaOnly ? [] : await auditHdrHandoff(browser, input);
     const report = {
       navigatorGpu: await page.evaluate(() => Boolean(navigator.gpu)),
       dynamicRangeHigh: await page.evaluate(() => matchMedia("(dynamic-range: high)").matches),

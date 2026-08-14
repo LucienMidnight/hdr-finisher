@@ -72,3 +72,43 @@ def test_clear_adjusted_preserves_masks_but_source_replacement_does_not() -> Non
     assert cache.diagnostics()["local_mask_entries"] == 1
     cache.replace_source(image * 2, None)
     assert cache.diagnostics()["local_mask_entries"] == 0
+
+
+def test_interactive_proxy_and_mask_work_do_not_change_authoritative_local_output() -> None:
+    rows = np.linspace(0.001, 8.0, 384, dtype=np.float32)[:, None, None]
+    columns = np.linspace(0.75, 1.25, 512, dtype=np.float32)[None, :, None]
+    image = np.repeat(rows * columns, 3, axis=2)
+    adjustments = AdjustmentState()
+    expression = MaskExpression(
+        operator="leaf",
+        leaf=MaskLeaf(
+            type="luminance_range",
+            fade_in_start_ev=-2,
+            full_start_ev=-1,
+            full_end_ev=1,
+            fade_out_end_ev=2,
+            mask_feather=0.05,
+        ),
+    )
+    local = LocalAdjustment(id="export-invariance", mask=expression)
+    local.hdr_grade.exposure = 1.5
+
+    exercised = SessionRenderCache(image, None)
+    exercised.source_proxy(PreviewKind.HDR, 256)
+    exercised.compiled_local_mask(adjustments, local, 256, spatial_only=True)
+    after_interaction = exercised.adjusted_frame(
+        adjustments,
+        PreviewKind.HDR,
+        512,
+        local_adjustments=[local],
+    )
+
+    fresh = SessionRenderCache(image, None)
+    authoritative = fresh.adjusted_frame(
+        adjustments,
+        PreviewKind.HDR,
+        512,
+        local_adjustments=[local],
+    )
+
+    np.testing.assert_array_equal(after_interaction, authoritative)
