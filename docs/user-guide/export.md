@@ -62,9 +62,11 @@ Writes the authored SDR rendition as an 8-bit sRGB PNG with no HDR or gain map. 
 
 ## Filename and destination
 
-HDR Finisher sanitizes the filename, adds the appropriate extension, and asks before overwriting an existing file. It stages complex gain-map exports and only replaces the destination after validation, reducing the chance of leaving a partial file.
+HDR Finisher sanitizes the filename, adds the appropriate extension, and asks before overwriting an existing file. **Browse** opens a native folder chooser and writes the selected directory into Destination. It stages complex gain-map exports and only replaces the destination after validation, reducing the chance of leaving a partial file.
 
-The native folder picker is Windows Forms on Windows and Tk on other platforms. If Tk is not installed with Python, type a valid destination manually or install an appropriate Python/Tk build.
+The native folder picker uses a topmost Windows file dialog configured for folder selection on Windows and Tk on other platforms. If Tk is not installed with Python, type a valid destination manually or install an appropriate Python/Tk build.
+
+Full-resolution HDR and SDR rendering, gain-map encoding, and validation can take materially longer than preview generation, especially for large sources. The Export status reports the active stage and elapsed time while work is in progress. A completed export is reported only after the staged artifact passes format validation and is moved into place.
 
 ## Color and luminance encoding
 

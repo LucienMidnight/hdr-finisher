@@ -38,7 +38,7 @@ async function canvasVariationCount(locator) {
 }
 
 (async () => {
-  const browser = await chromium.launch({ headless: true, channel: "chrome" });
+  const browser = await chromium.launch({ headless: true, channel: "msedge" });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const pageErrors = [];
   const requestFailures = [];
@@ -206,19 +206,46 @@ async function canvasVariationCount(locator) {
     await page.locator("#local-adjustment-list button[data-local-id]").nth(1).click();
 
     const histogram = page.locator("#histogram");
-    let scopeResponse = page.waitForResponse((response) => response.url().includes("/scopes?") && response.url().includes("mode=waveform") && response.status() === 200);
+    let scopeResponse = page.evaluate(() => new Promise((resolve) => {
+      const handler = (event) => {
+        if (event.detail?.mode !== "waveform") return;
+        window.removeEventListener("hdrfinisher:scope-presented", handler);
+        resolve(event.detail);
+      };
+      window.addEventListener("hdrfinisher:scope-presented", handler);
+    }));
     await page.locator('[data-dock-tab="waveform"]').click();
     await scopeResponse;
     await page.waitForFunction(() => document.querySelector("#scope-title")?.textContent?.toLowerCase().includes("waveform"));
     assert(await canvasVariationCount(histogram) > 100, "Waveform canvas remained visually blank after local edits.");
     await page.locator("#analysis-dock").screenshot({ path: path.resolve(__dirname, "../../docs/testing/local-adjustments-waveform-qa.png") });
 
-    scopeResponse = page.waitForResponse((response) => response.url().includes("/scopes?") && response.url().includes("mode=histogram") && response.status() === 200);
+    scopeResponse = page.evaluate(() => new Promise((resolve) => {
+      const handler = (event) => {
+        if (event.detail?.mode !== "histogram") return;
+        window.removeEventListener("hdrfinisher:scope-presented", handler);
+        resolve(event.detail);
+      };
+      window.addEventListener("hdrfinisher:scope-presented", handler);
+    }));
     await page.locator('[data-dock-tab="histogram"]').click();
     await scopeResponse;
     await page.waitForFunction(() => document.querySelector("#scope-title")?.textContent?.toLowerCase().includes("histogram"));
     assert(await canvasVariationCount(histogram) > 100, "Histogram canvas remained visually blank after local edits.");
     await page.locator("#analysis-dock").screenshot({ path: path.resolve(__dirname, "../../docs/testing/local-adjustments-histogram-qa.png") });
+
+    scopeResponse = page.evaluate(() => new Promise((resolve) => {
+      const handler = (event) => {
+        if (event.detail?.mode !== "vectorscope") return;
+        window.removeEventListener("hdrfinisher:scope-presented", handler);
+        resolve(event.detail);
+      };
+      window.addEventListener("hdrfinisher:scope-presented", handler);
+    }));
+    await page.locator('[data-dock-tab="vectorscope"]').click();
+    await scopeResponse;
+    await page.waitForFunction(() => document.querySelector("#scope-title")?.textContent?.toLowerCase().includes("vectorscope"));
+    assert(await canvasVariationCount(histogram) > 100, "Vectorscope canvas remained visually blank after local edits.");
 
     const localRailShot = path.resolve(__dirname, "../../docs/testing/local-adjustments-local-qa.png");
     await page.locator(".grade-rail").screenshot({ path: localRailShot });
@@ -235,6 +262,69 @@ async function canvasVariationCount(locator) {
       [...header.children].map((child) => ({ id: child.id, order: getComputedStyle(child).order })),
     );
     assert(cropOrder.find((item) => item.id === "crop-open")?.order === "2", `Crop Edit action has the wrong order: ${JSON.stringify(cropOrder)}`);
+    await page.locator("#crop-open").click();
+    assert(await page.locator(".crop-editor-panel").isVisible(), "Crop modal did not open over the viewer.");
+    assert(await page.locator("#crop-ratio option").count() >= 12, "Crop aspect-ratio presets are missing.");
+    const geometryBeforeCropDraft = await page.evaluate(() => JSON.stringify(state.adjustments.shared.geometry));
+    const previewRectBeforeCropDraft = await page.evaluate(() => {
+      const rect = activePreviewElement().getBoundingClientRect();
+      return { width: rect.width, height: rect.height };
+    });
+    await page.locator("#crop-ratio").selectOption("16:9");
+    await page.waitForTimeout(100);
+    const cropDraftState = await page.evaluate(() => ({
+      committed: JSON.stringify(state.adjustments.shared.geometry),
+      draft: JSON.parse(JSON.stringify(state.cropDraftGeometry)),
+      preview: (() => { const rect = activePreviewElement().getBoundingClientRect(); return { width: rect.width, height: rect.height }; })(),
+    }));
+    assert(cropDraftState.committed === geometryBeforeCropDraft, "Selecting a crop ratio changed committed preview geometry before Apply.");
+    assert(cropDraftState.draft.ratio_mode === "16:9", "Crop ratio was not stored in the modal draft.");
+    assert(Math.abs(cropDraftState.preview.width - previewRectBeforeCropDraft.width) < 0.5 && Math.abs(cropDraftState.preview.height - previewRectBeforeCropDraft.height) < 0.5, "Selecting a crop ratio resized the preview image before Apply.");
+    await page.locator("#crop-guide").selectOption("x");
+    await page.waitForTimeout(50);
+    assert(await canvasVariationCount(page.locator("#crop-guide-canvas")) > 2, "X-pattern crop guide did not render.");
+    await page.locator("#crop-guide").selectOption("golden");
+    await page.waitForTimeout(50);
+    assert(await canvasVariationCount(page.locator("#crop-guide-canvas")) > 2, "Golden-ratio crop guide did not render.");
+    await page.locator("#crop-cancel").click();
+    assert(await page.locator(".crop-editor-panel").isHidden(), "Crop modal did not close on Cancel.");
+    assert(await page.evaluate(() => JSON.stringify(state.adjustments.shared.geometry)) === geometryBeforeCropDraft, "Cancel did not discard the crop draft.");
+
+    await page.locator("#crop-open").click();
+    await page.locator("#crop-ratio").selectOption("4:3");
+    await page.locator("#crop-done").click();
+    assert(await page.evaluate(() => state.adjustments.shared.geometry.ratio_mode) === "4:3", "Apply crop did not commit the selected aspect ratio.");
+    await page.waitForFunction(() => {
+      const preview = activePreviewElement();
+      const bitmapWidth = preview instanceof HTMLCanvasElement ? preview.width : preview.naturalWidth;
+      const bitmapHeight = preview instanceof HTMLCanvasElement ? preview.height : preview.naturalHeight;
+      return bitmapHeight > 0 && Math.abs(bitmapWidth / bitmapHeight - 4 / 3) < 0.01;
+    }, null, { timeout: 30000 });
+    const appliedCropRatios = await page.evaluate(() => {
+      const preview = activePreviewElement();
+      const rect = preview.getBoundingClientRect();
+      const bitmapWidth = preview instanceof HTMLCanvasElement ? preview.width : preview.naturalWidth;
+      const bitmapHeight = preview instanceof HTMLCanvasElement ? preview.height : preview.naturalHeight;
+      return { bitmap: bitmapWidth / bitmapHeight, displayed: rect.width / rect.height };
+    });
+    assert(Math.abs(appliedCropRatios.displayed - appliedCropRatios.bitmap) < 0.01, `Applied crop was stretched in the viewer: ${JSON.stringify(appliedCropRatios)}`);
+
+    const vignetteGroup = page.locator(".vignette-group");
+    if (await vignetteGroup.evaluate((element) => element.classList.contains("collapsed"))) {
+      await vignetteGroup.locator(".group-toggle").click();
+    }
+    await page.locator("#vignette-center-handle").waitFor({ state: "visible" });
+    const vignettePlacement = await page.evaluate(() => {
+      const frame = activePreviewElement().getBoundingClientRect();
+      const handle = els.vignetteCenterHandle.getBoundingClientRect();
+      return {
+        frameCenterX: frame.left + frame.width / 2,
+        frameCenterY: frame.top + frame.height / 2,
+        handleCenterX: handle.left + handle.width / 2,
+        handleCenterY: handle.top + handle.height / 2,
+      };
+    });
+    assert(Math.abs(vignettePlacement.frameCenterX - vignettePlacement.handleCenterX) < 2 && Math.abs(vignettePlacement.frameCenterY - vignettePlacement.handleCenterY) < 2, `Vignette center was not placed in cropped output space: ${JSON.stringify(vignettePlacement)}`);
 
     const globalRailShot = path.resolve(__dirname, "../../docs/testing/local-adjustments-global-qa.png");
     await page.locator(".grade-rail").screenshot({ path: globalRailShot });

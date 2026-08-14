@@ -6,6 +6,8 @@ function browserExecutable() {
   const candidates = [
     process.env.PLAYWRIGHT_BROWSER_PATH,
     process.env.PLAYWRIGHT_CHROME_PATH,
+    process.env["ProgramFiles(x86)"] && path.join(process.env["ProgramFiles(x86)"], "Microsoft", "Edge", "Application", "msedge.exe"),
+    process.env.ProgramFiles && path.join(process.env.ProgramFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
     process.env.ProgramFiles && path.join(process.env.ProgramFiles, "Google", "Chrome", "Application", "chrome.exe"),
     process.env["ProgramFiles(x86)"] && path.join(process.env["ProgramFiles(x86)"], "Google", "Chrome", "Application", "chrome.exe"),
   ].filter(Boolean);
@@ -19,7 +21,8 @@ async function main() {
   fs.mkdirSync(output, { recursive: true });
   const consoleErrors = [];
   const pageErrors = [];
-  const browser = await chromium.launch({ headless: true, executablePath: browserExecutable() });
+  const executablePath = browserExecutable();
+  const browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : { channel: "msedge" }) });
   try {
     const page = await browser.newPage({ viewport: { width: 1800, height: 1050 }, deviceScaleFactor: 1 });
     await page.addInitScript(() => localStorage.removeItem("hdr-finisher-chrome-proof-v1"));
@@ -36,8 +39,8 @@ async function main() {
     if (await page.locator('[data-proof-mode="matrix"], #delivery-matrix-view, #live-browser-view').count()) {
       throw new Error("Legacy proofing tabs are still present.");
     }
-    const workflowLabels = await page.locator("[data-workflow-tab]").allTextContents();
-    if (workflowLabels.map((label) => label.trim()).join(",") !== "Grade,Proof,Export") {
+    const workflowLabels = await page.locator("[data-workflow-tab]").evaluateAll((tabs) => tabs.map((tab) => tab.dataset.workflowTab));
+    if (workflowLabels.join(",") !== "import,grade,proof,export") {
       throw new Error(`Unexpected workflow tabs: ${workflowLabels.join(", ")}`);
     }
     await page.locator('[data-workflow-tab="proof"]').click();
@@ -49,6 +52,11 @@ async function main() {
     await page.locator("#chrome-proof-image").evaluate((image) => image.decode());
     await page.waitForFunction(() => !["Updating…", "Stale"].includes(document.getElementById("chrome-proof-inline-status")?.textContent), { timeout: 120000 });
     const firstProofUrl = await page.locator("#chrome-proof-image").getAttribute("src");
+    await page.locator('[data-proof-preview="sdr"]').click();
+    const sdrProofUrl = await page.locator("#chrome-proof-image").getAttribute("src");
+    if (!sdrProofUrl || sdrProofUrl === firstProofUrl) throw new Error("SDR proof base did not replace the HDR adaptation.");
+    await page.locator('[data-proof-preview="hdr"]').click();
+    if (await page.locator("#chrome-proof-image").getAttribute("src") !== firstProofUrl) throw new Error("HDR proof adaptation did not restore.");
     await page.screenshot({ path: path.join(output, "chrome-proof.png"), fullPage: true });
 
     await page.locator('[data-workflow-tab="grade"]').click();

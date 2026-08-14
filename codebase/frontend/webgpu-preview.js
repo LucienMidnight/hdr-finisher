@@ -1,5 +1,5 @@
 (function () {
-  const PARAM_COUNT = 136;
+  const PARAM_COUNT = 140;
   const CURVE_SAMPLES = 1024;
 
   class HDRWebGPUPreview {
@@ -26,13 +26,15 @@
       this.intermediates = new Map();
       this.localMasks = new Map();
       this.localParamBuffers = new Map();
+      this.scopeSources = new WeakMap();
+      this.scopeResources = new Map();
       this.bindGroupLayout = null;
       this.pipelineLayout = null;
       this.maskBindGroupLayout = null;
       this.maskPipelineLayout = null;
       this.maskPipelines = null;
       this.instrumentationEnabled = false;
-      this.performanceMetrics = { renders: [] };
+      this.performanceMetrics = { renders: [], scopes: [] };
       this.adapterInfo = null;
     }
 
@@ -83,6 +85,12 @@
           addressModeV: "clamp-to-edge",
         });
         this.pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.bindGroupLayout] });
+        this.scopePipeline = this.device.createRenderPipeline({
+          layout: this.pipelineLayout,
+          vertex: { module: this.module, entryPoint: "vertexMain" },
+          fragment: { module: this.module, entryPoint: "scopeFragmentMain", targets: [{ format: "rgba16float" }] },
+          primitive: { topology: "triangle-list" },
+        });
         this.maskBindGroupLayout = this.device.createBindGroupLayout({
           entries: [
             { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "unfilterable-float" } },
@@ -132,6 +140,15 @@
       for (const buffer of this.localParamBuffers.values()) buffer.destroy();
       this.localParamBuffers.clear();
       this.curveSampleCache.clear();
+      this.scopeSources = new WeakMap();
+      for (const pool of this.scopeResources.values()) {
+        for (const resource of pool) {
+          resource.texture.destroy();
+          resource.readBuffer.destroy();
+          resource.paramBuffer.destroy();
+        }
+      }
+      this.scopeResources.clear();
     }
 
     async render(sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null) {
@@ -140,7 +157,7 @@
 
     setInstrumentationEnabled(enabled = true) {
       this.instrumentationEnabled = Boolean(enabled);
-      if (enabled) this.performanceMetrics = { renders: [], maskEvents: [] };
+      if (enabled) this.performanceMetrics = { renders: [], maskEvents: [], scopes: [] };
     }
 
     diagnosticsSnapshot() {
@@ -149,12 +166,15 @@
         available: this.available,
         detail: this.detail,
         renders: this.performanceMetrics.renders.map((entry) => ({ ...entry })),
+        scopes: (this.performanceMetrics.scopes || []).map((entry) => ({ ...entry })),
         maskEvents: (this.performanceMetrics.maskEvents || []).map((entry) => ({ ...entry })),
         resources: {
           proxies: this.proxies.size,
           sceneLuminanceTextures: this.sceneLuminance.size,
           localMasks: this.localMasks.size,
           localMaskBytes: [...this.localMasks.values()].reduce((sum, entry) => sum + entry.byteSize, 0),
+          scopePools: this.scopeResources.size,
+          scopeBuffers: [...this.scopeResources.values()].reduce((sum, pool) => sum + pool.length, 0),
         },
       };
     }
@@ -333,6 +353,15 @@
       }
       this.device.queue.submit([encoder.finish()]);
       const submittedAt = performance.now();
+      this.scopeSources.set(canvas, {
+        serial,
+        lane,
+        width: proxy.width,
+        height: proxy.height,
+        filmTexture: intermediate.filmTexture,
+        spatialTexture: intermediate.spatialATexture,
+        params: new Float32Array(params),
+      });
       if (this.instrumentationEnabled) {
         const metric = {
           serial,
@@ -360,6 +389,126 @@
         gpuTiming?.readBuffer.destroy();
       }
       return { width: proxy.width, height: proxy.height, hdr: surface.hdr, proxyFormat: proxy.pixelFormat };
+    }
+
+    async analyzeScope(canvas, { width = 256, height = 128, generation = 0, tier = "interactive" } = {}) {
+      if (!this.available) return null;
+      const source = this.scopeSources.get(canvas);
+      if (!source) return null;
+      const resource = this.acquireScopeResource(width, height);
+      if (!resource) return null;
+      const startedAt = performance.now();
+      resource.busy = true;
+      const params = new Float32Array(source.params);
+      params[136] = width;
+      params[137] = height;
+      this.device.queue.writeBuffer(resource.paramBuffer, 0, params);
+      const bindGroup = this.device.createBindGroup({
+        layout: this.bindGroupLayout,
+        entries: [
+          { binding: 0, resource: source.filmTexture.createView() },
+          { binding: 1, resource: { buffer: resource.paramBuffer } },
+          { binding: 2, resource: { buffer: this.curveBuffer } },
+          { binding: 3, resource: source.spatialTexture.createView() },
+          { binding: 4, resource: this.spatialSampler },
+          { binding: 5, resource: source.spatialTexture.createView() },
+        ],
+      });
+      const encoder = this.device.createCommandEncoder();
+      const pass = encoder.beginRenderPass({
+        colorAttachments: [{
+          view: resource.texture.createView(),
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          loadOp: "clear",
+          storeOp: "store",
+        }],
+      });
+      pass.setPipeline(this.scopePipeline);
+      pass.setBindGroup(0, bindGroup);
+      pass.draw(3);
+      pass.end();
+      encoder.copyTextureToBuffer(
+        { texture: resource.texture },
+        { buffer: resource.readBuffer, bytesPerRow: resource.bytesPerRow, rowsPerImage: height },
+        { width, height },
+      );
+      const encodedAt = performance.now();
+      this.device.queue.submit([encoder.finish()]);
+      const submittedAt = performance.now();
+      try {
+        await resource.readBuffer.mapAsync(GPUMapMode.READ);
+        const mappedAt = performance.now();
+        const sourceBytes = new Uint16Array(resource.readBuffer.getMappedRange());
+        const rowStride = resource.bytesPerRow / 2;
+        const pixels = new Float32Array(width * height * 3);
+        let targetIndex = 0;
+        for (let row = 0; row < height; row += 1) {
+          let sourceIndex = row * rowStride;
+          for (let column = 0; column < width; column += 1) {
+            pixels[targetIndex++] = halfToFloat(sourceBytes[sourceIndex]);
+            pixels[targetIndex++] = halfToFloat(sourceBytes[sourceIndex + 1]);
+            pixels[targetIndex++] = halfToFloat(sourceBytes[sourceIndex + 2]);
+            sourceIndex += 4;
+          }
+        }
+        const completedAt = performance.now();
+        const metric = {
+          generation,
+          tier,
+          lane: source.lane,
+          sourceSerial: source.serial,
+          width,
+          height,
+          encodeMs: encodedAt - startedAt,
+          submitMs: submittedAt - encodedAt,
+          mapReadbackMs: mappedAt - submittedAt,
+          unpackMs: completedAt - mappedAt,
+          totalMs: completedAt - startedAt,
+          byteLength: resource.bytesPerRow * height,
+        };
+        if (this.instrumentationEnabled) {
+          this.performanceMetrics.scopes.push(metric);
+          if (this.performanceMetrics.scopes.length > 240) this.performanceMetrics.scopes.shift();
+        }
+        return { pixels, width, height, lane: source.lane, sourceSerial: source.serial, metric };
+      } catch {
+        return null;
+      } finally {
+        if (resource.readBuffer.mapState === "mapped") resource.readBuffer.unmap();
+        resource.busy = false;
+      }
+    }
+
+    acquireScopeResource(width, height) {
+      const bytesPerRow = Math.ceil((width * 8) / 256) * 256;
+      const key = `${width}x${height}`;
+      let pool = this.scopeResources.get(key);
+      if (!pool) {
+        pool = [];
+        this.scopeResources.set(key, pool);
+      }
+      const available = pool.find((resource) => !resource.busy && resource.readBuffer.mapState === "unmapped");
+      if (available) return available;
+      if (pool.length >= 2) return null;
+      const resource = {
+        busy: false,
+        bytesPerRow,
+        texture: this.device.createTexture({
+          size: { width, height },
+          format: "rgba16float",
+          usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+        }),
+        readBuffer: this.device.createBuffer({
+          size: bytesPerRow * height,
+          usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+        }),
+        paramBuffer: this.device.createBuffer({
+          size: PARAM_COUNT * 4,
+          usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        }),
+      };
+      pool.push(resource);
+      return resource;
     }
 
     createGpuTimingResources() {
@@ -822,6 +971,15 @@
       this.device.queue.writeBuffer(buffer, 0, values);
       return buffer;
     }
+  }
+
+  function halfToFloat(value) {
+    const sign = (value & 0x8000) ? -1 : 1;
+    const exponent = (value >> 10) & 0x1f;
+    const fraction = value & 0x03ff;
+    if (exponent === 0) return sign * fraction * 5.960464477539063e-8;
+    if (exponent === 31) return fraction ? Number.NaN : sign * Number.POSITIVE_INFINITY;
+    return sign * (1 + fraction / 1024) * 2 ** (exponent - 15);
   }
 
   const IDENTITY_3X3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
@@ -1863,6 +2021,16 @@
 
     @fragment fn spatialBlurVerticalFragmentMain(input: VertexOut) -> @location(0) vec4f {
       return spatialBlur(vec2f(0.0, 1.0), input.position.xy);
+    }
+
+    @fragment fn scopeFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let targetDimensions = max(vec2f(p[136], p[137]), vec2f(1.0));
+      let sourceDimensions = vec2f(textureDimensions(sourceTexture));
+      let uv = clamp(input.position.xy / targetDimensions, vec2f(0.0), vec2f(0.999999));
+      let coordinate = clamp(vec2i(uv * sourceDimensions), vec2i(0), vec2i(sourceDimensions) - vec2i(1));
+      let filmOutput = applyFilmLook(coordinate);
+      let output = select(clamp(filmOutput, vec3f(0.0), vec3f(1.0)), max(filmOutput, vec3f(0.0)), p[0] > 0.5);
+      return vec4f(output, 1.0);
     }
 
     @fragment fn fragmentMain(input: VertexOut) -> @location(0) vec4f {

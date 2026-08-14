@@ -62,6 +62,29 @@ def test_vignette_center_and_highlight_protection_behave_independently() -> None
     assert guarded[-1, -1].mean() < guarded[0, 0].mean()
 
 
+def test_vignette_is_evaluated_in_cropped_output_coordinates() -> None:
+    image = np.ones((80, 160, 3), dtype=np.float32)
+    cropped_state = AdjustmentState()
+    cropped_state.shared.geometry = GeometryAdjustments(
+        crop={"x": 0.25, "y": 0.0, "width": 0.5, "height": 1.0},
+        ratio_mode="1:1",
+    )
+    cropped_state.hdr.vignette.amount = -100
+    cropped_state.hdr.vignette.midpoint = 25
+    cropped_state.hdr.vignette.feather = 50
+
+    cropped_result = apply_adjustments(image, cropped_state, PreviewKind.HDR)
+
+    already_cropped = apply_geometry(image, cropped_state.shared.geometry)
+    output_space_state = cropped_state.model_copy(deep=True)
+    output_space_state.shared.geometry = GeometryAdjustments()
+    output_space_result = apply_adjustments(already_cropped, output_space_state, PreviewKind.HDR)
+
+    assert cropped_result.shape == (80, 80, 3)
+    np.testing.assert_allclose(cropped_result, output_space_result, rtol=0.0, atol=0.0)
+    assert cropped_result[40, 40].mean() > cropped_result[0, 0].mean()
+
+
 def test_output_resize_preserves_aspect_and_prevents_enlargement() -> None:
     settings = OutputFinishingSettings(resize_mode="fit", width=500, height=500)
     assert resolve_output_dimensions(1200, 800, settings) == (500, 333)

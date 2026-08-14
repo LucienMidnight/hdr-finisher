@@ -30,6 +30,12 @@ Fast proxies are display-aware and normally capped near 1,024 px during interact
 
 Proxy resampling preserves float values and uses a high-quality filter, but downsampling can still hide single-pixel clipping or artifacts.
 
+## Crop editor
+
+Choose **Crop**, then open the crop editor to keep composition controls beside the image. Aspect presets include freeform, original, common photo/video ratios, square, portrait ratios, and a custom width/height ratio. Selecting a ratio fits a centered crop inside the current bounds; dragging an edge or corner then preserves that ratio.
+
+Composition guides include rule of thirds, golden ratio, adjustable grid, X pattern, and diagonal method. Guides are preview aids only and do not appear in the exported image. **Apply** commits the geometry edit; **Cancel** restores the crop that was active when the editor opened.
+
 ## Histogram
 
 The histogram counts processed values by brightness/channel. It answers questions such as:
@@ -51,6 +57,12 @@ The waveform preserves horizontal image position and plots brightness vertically
 - **RGB Parade** separates channels to reveal casts, channel clipping, and unequal highlight behavior.
 
 The waveform measures the processed rendition, not panel output. A 1,000-nit value remains measurable on a 300-nit SDR display even though the display cannot show it at that luminance.
+
+## Vectorscope
+
+The vectorscope plots chroma direction and saturation independently of image position. The center is neutral; samples farther from center are more saturated. Use it to compare color balance, watch saturated HDR highlights, and spot an unexpected cast that may be hard to see in the histogram.
+
+Vectorscope density is intentionally reduced during interaction and becomes more precise after the edit settles. It is a diagnostic of the authored rendition, not a gamut-compliance certification.
 
 ## Technical panel
 
@@ -83,9 +95,9 @@ Use zebras to locate clipping risk or regions above a chosen delivery target. A 
 
 ## Scope accuracy and limits
 
-Scopes are generated from the processed proxy or render cache using the same adjustment pipeline. They are deterministic numerical diagnostics, not instruments measuring the screen.
+On supported WebGPU paths, histogram, waveform, and vectorscope are generated from a compact render of the same current GPU output used by the visible preview. Unsupported geometry, proof/comparison states, and WebGPU fallback use the exact CPU scope path. Both routes describe the processed authored rendition; they are deterministic numerical diagnostics, not instruments measuring the screen.
 
-The freshness badge reads **Updating**, **Preview**, **Settled**, or **Refined**. The last valid scope remains on screen while the next generation is computed. Preview scopes trade density for cadence; the peak readout and clipping flag are calculated separately from waveform normalization so a tiny highlight cannot be hidden merely by the drawing scale.
+The freshness badge reads **Updating**, **Preview**, **Settled**, or **Refined**. The last valid scope remains on screen while the next generation is computed. Preview scopes trade density for cadence; a higher-density result replaces them after the interaction settles. The peak readout and clipping flag are calculated separately from drawing normalization so a tiny highlight cannot be hidden merely by the drawing scale.
 
 They cannot reveal:
 

@@ -23,6 +23,7 @@ class PreviewKind(str, Enum):
 class ScopeMode(str, Enum):
     HISTOGRAM = "histogram"
     WAVEFORM = "waveform"
+    VECTORSCOPE = "vectorscope"
 
 
 class ScopeMaxNits(str, Enum):

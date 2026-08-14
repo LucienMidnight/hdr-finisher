@@ -335,6 +335,9 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     assert "Move over the image" not in html
     assert "sourceSettingsOpen: false" in javascript
     assert "metadataOpen: false" in javascript
+    assert '--group-chevron-glyph: "\\E76C"' in css
+    assert ".disclosure-trigger::before" in css
+    assert '.disclosure-trigger[aria-expanded="true"]::before' in css
     assert "dockH: [240, 340]" in javascript
     assert "dockH: 252" in javascript
     assert "updateProbeReadout" not in javascript
@@ -347,7 +350,7 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
 
 def test_webgpu_pipeline_preserves_cpu_section_order_and_fixed_hdr_curve_domain() -> None:
     shader = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
-    assert "const PARAM_COUNT = 136" in shader
+    assert "const PARAM_COUNT = 140" in shader
     assert "hdrPrimaries(hdrToneEqualizer(sceneColor(hdrPeakFit(hdrSoftCeiling(hdrContrast(hdrBase(source)))))))" in shader
     assert "sdrReferenceColor(sdrContrast(highlightRecovery(rgb)))" in shader
     assert "toneMap(sceneColor(rgb))" in shader
@@ -395,7 +398,7 @@ def test_advanced_finishing_controls_are_wired_to_the_editor_and_export_contract
     assert 'id="export-sharpening"' in html
     assert 'id="export-resize-mode"' in html
     assert 'method: "edge_aware_multiscale"' in script
-    assert 'const guides = ["none", "thirds", "diagonals", "golden", "grid"]' in script
+    assert 'const guides = ["none", "thirds", "golden", "grid", "x", "diagonals"]' in script
     assert "Â" not in html and "Ã" not in html
     assert "Â" not in script and "Ã" not in script
     assert "90&deg;" in html and "8&times;8" in html

@@ -46,6 +46,7 @@ The formula follows the Skia gain-map definition and implementation; no extra Ch
 - Grade, Proof, and Export are top-level workflow stages. The source rail, viewer, zoom/pan state, and authored technical displays remain in place while the right settings rail changes by stage.
 - Chrome Proof lives in the Proof stage. Its on/off control, format, target, display, status, and explicit Build/Refresh action are in the right rail. The old Delivery Matrix and Live Browser tabs are no longer user-facing.
 - Production JPEG/AVIF proof generation is intentionally on demand. Adjustments keep the last valid proof, mark it stale, and never trigger a background rebuild.
+- A built proof exposes an in-page **HDR adaptation / SDR base** switch. Both views come from the same encoded proof artifact, so reviewers can inspect adaptive reconstruction and the exact fallback without changing workflow stages or export settings.
 - Request generations prevent an older encode or reconstruction from replacing the latest grade.
 - Scopes continue to describe authored HDR data and are labeled **HDR · AUTHORED** while proofing.
 - Export settings and preflight live in the Export-stage rail instead of a modal. Preflight reports matching, stale, missing, or format-mismatched proof state without blocking export, and can return directly to the Proof stage.

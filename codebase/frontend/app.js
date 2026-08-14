@@ -255,7 +255,7 @@ const state = {
   comparisonRenderedGeneration: null,
   previewGeneration: { hdr: 0, sdr: 0 },
   cropMode: false,
-  cropDraftOriginal: null,
+  cropDraftGeometry: null,
   cropGuide: "none",
   cropGridDensity: 8,
   cropDrag: null,
@@ -408,6 +408,8 @@ const state = {
   proofEnabled: false,
   proofArtifact: null,
   proofReconstruction: null,
+  proofSdrReconstruction: null,
+  proofPreview: "hdr",
   proofDirty: true,
   proofFormat: "jpeg_ultrahdr",
   proofTarget: "auto",
@@ -713,6 +715,8 @@ const els = {
   chromeProofCustomNits: document.getElementById("chrome-proof-custom-nits"),
   chromeProofDisplay: document.getElementById("chrome-proof-display"),
   chromeProofStatus: document.getElementById("chrome-proof-status"),
+  proofPreviewSwitch: document.getElementById("proof-preview-switch"),
+  proofPreviewButtons: [...document.querySelectorAll("[data-proof-preview]")],
   emptyState: document.getElementById("empty-state"),
   previewStatus: document.getElementById("preview-status"),
   previewStatusCopy: document.getElementById("preview-status-copy"),
@@ -799,6 +803,8 @@ const els = {
   cropGridDensityValue: document.getElementById("crop-grid-density-value"),
   cropGridDensityRow: document.getElementById("crop-grid-density-row"),
   cropRatio: document.getElementById("crop-ratio"),
+  cropCustomRatioWidth: document.getElementById("crop-custom-ratio-width"),
+  cropCustomRatioHeight: document.getElementById("crop-custom-ratio-height"),
   customRatioFields: document.getElementById("custom-ratio-fields"),
   rotateLeft: document.getElementById("rotate-left"),
   rotateRight: document.getElementById("rotate-right"),
@@ -1079,7 +1085,9 @@ function applyLayoutState() {
   els.scopeView.classList.toggle("hidden", technical);
   els.technicalView.classList.toggle("hidden", !technical);
   if (!technical) {
-    state.scopeMode = state.activeDockTab === "waveform" || state.activeDockTab === "parade" ? "waveform" : "histogram";
+    state.scopeMode = state.activeDockTab === "vectorscope"
+      ? "vectorscope"
+      : state.activeDockTab === "waveform" || state.activeDockTab === "parade" ? "waveform" : "histogram";
     state.scopeChannelMode = state.activeDockTab === "parade" ? "parade" : "composite";
     els.scopeMode.value = state.scopeMode;
     els.scopeChannelMode.value = state.scopeChannelMode;
@@ -1564,6 +1572,10 @@ function bindEvents() {
       const value = control.type === "range" || control.type === "number"
         ? Number(control.value)
         : control.type === "checkbox" ? control.checked : control.value;
+      if (state.cropMode && isCropDraftControl(control.dataset.path)) {
+        updateCropDraftControl(control.dataset.path, value);
+        return;
+      }
       commitAdjustmentValue(control.dataset.path, value);
     });
   });
@@ -2406,29 +2418,81 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
   const mode = state.scopeMode;
   const resolution = mode === "waveform"
     ? waveformRequestResolution(tier)
-    : tier === "interactive" ? { bins: 128, columns: 192 } : { bins: 256, columns: 256 };
+    : mode === "vectorscope" ? { bins: tier === "interactive" ? 96 : 128, columns: tier === "interactive" ? 96 : 128 }
+      : { bins: 256, columns: 256 };
   const effectiveLongEdge = mode === "waveform" ? waveformScopeLongEdge(tier, longEdge) : longEdge;
   const includeLocals = !state.compareWithoutLocals;
 
+  const request = {
+    sessionId: state.session.session_id,
+    lane,
+    mode,
+    tier,
+    generation: requestGeneration,
+    longEdge: effectiveLongEdge,
+    resolution,
+    maxNits: state.scopeMaxNits,
+    edit_revision: state.editRevision,
+    include_locals: includeLocals,
+    localAdjustments: state.localPreviewDirty && includeLocals
+      ? JSON.parse(JSON.stringify(localAdjustments()))
+      : null,
+    resolve: null,
+    controller: null,
+  };
+
+  if (gpuScopeEligible(lane)) {
+    return runGpuScopeRequest(request);
+  }
+
   return new Promise((resolve) => {
-    enqueueScopeRequest({
-      sessionId: state.session.session_id,
-      lane,
-      mode,
-      tier,
-      generation: requestGeneration,
-      longEdge: effectiveLongEdge,
-      resolution,
-      maxNits: state.scopeMaxNits,
-      edit_revision: state.editRevision,
-      include_locals: includeLocals,
-      localAdjustments: state.localPreviewDirty && includeLocals
-        ? JSON.parse(JSON.stringify(localAdjustments()))
-        : null,
-      resolve,
-      controller: null,
-    });
+    enqueueScopeRequest({ ...request, resolve });
   });
+}
+
+function gpuScopeEligible(lane) {
+  return Boolean(
+    state.gpuPreview?.available
+    && lane === state.currentView
+    && els.previewCanvas.style.display !== "none"
+    && valuesEqual(state.adjustments.shared?.geometry, defaultGeometry())
+    && !state.comparePeekActive
+    && state.activeWorkflow !== "proof"
+  );
+}
+
+async function runGpuScopeRequest(request) {
+  const { lane, mode, tier, generation, resolution, maxNits } = request;
+  markScopeUpdating();
+  const sampleWidth = tier === "interactive"
+    ? Math.max(64, Math.min(192, resolution.columns))
+    : Math.max(256, Math.min(384, resolution.columns));
+  const sampleHeight = tier === "interactive" ? 128 : 256;
+  const analysis = await state.gpuPreview.analyzeScope(els.previewCanvas, {
+    width: sampleWidth,
+    height: sampleHeight,
+    generation,
+    tier,
+  });
+  // A saturated two-buffer readback pool is intentional backpressure. Keep
+  // the last valid scope visible and let the next scheduled generation win;
+  // never fall back to an image-sized CPU request merely because the GPU is busy.
+  if (!analysis) return false;
+  if (generation !== state.scopeGeneration || lane !== state.currentView || mode !== state.scopeMode) {
+    state.previewScheduler?.recordStaleResult();
+    return false;
+  }
+  const payload = buildGpuScopePayload(analysis, {
+    lane,
+    mode,
+    tier,
+    generation,
+    bins: resolution.bins,
+    columns: resolution.columns,
+    maxNits,
+  });
+  presentScopePayload(payload, { generation, tier, lane, mode, source: "gpu", metric: analysis.metric });
+  return true;
 }
 
 function enqueueScopeRequest(request) {
@@ -2510,37 +2574,7 @@ async function runScopeRequest(request) {
       state.previewScheduler?.recordStaleResult();
       return false;
     }
-    state.lastScope = payload;
-    els.scopeFreshness.textContent = scopeFreshnessLabel(tier);
-    drawHistogram(payload);
-    renderDockSummary();
-    renderExportPreflight();
-    const scopeFingerprint = payload.channels.reduce((total, channel, channelIndex) => {
-      const channelWeight = channelIndex + 1;
-      const binTotal = (channel.bins || []).reduce(
-        (sum, value, index) => sum + value * (index + 1) * channelWeight,
-        0,
-      );
-      const gridTotal = (channel.grid || []).reduce(
-        (sum, row, rowIndex) => sum + row.reduce(
-          (rowSum, value, columnIndex) => rowSum + value * (rowIndex + columnIndex + 2) * channelWeight,
-          0,
-        ),
-        0,
-      );
-      return total + binTotal + gridTotal;
-    }, 0);
-    window.dispatchEvent(new CustomEvent("hdrfinisher:scope-presented", {
-      detail: {
-        generation,
-        tier,
-        lane,
-        mode,
-        peakValue: payload.peak_value,
-        fingerprint: scopeFingerprint,
-        presentedAt: performance.now(),
-      },
-    }));
+    presentScopePayload(payload, { generation, tier, lane, mode, source: "cpu" });
     applied = true;
     return true;
   } catch (error) {
@@ -2597,7 +2631,9 @@ function drawHistogram(scope) {
   }
   els.scopeTitle.textContent = scopeTitleFor(scope);
   canvas.setAttribute("aria-label", els.scopeTitle.textContent);
-  els.scopeNote.textContent = scope.preview_kind === "hdr"
+  els.scopeNote.textContent = scope.scope_type === "vectorscope"
+    ? "Vectorscope plots chroma direction and saturation from the same current authored preview. Density is log-scaled."
+    : scope.preview_kind === "hdr"
     ? scope.scope_type.includes("waveform")
       ? "HDR waveform plots horizontal image position against reference nits. Reference nits use the app's internal model: 0.18 scene-linear equals 100 nits."
       : "HDR histogram plots reference luminance from left to right on a logarithmic nit scale. Density is log-scaled to retain fine tonal detail."
@@ -2605,6 +2641,11 @@ function drawHistogram(scope) {
       ? "SDR waveform plots horizontal image position against normalized tone-mapped output."
       : "SDR histogram plots display-safe values from black to white. Density is log-scaled so small tonal populations remain visible.";
   renderKeyValueList(els.scopeStats, (scope.stats || []).map((item) => [item.label, item.value]));
+
+  if (scope.scope_type === "vectorscope") {
+    drawVectorscope(ctx, scope, width, height);
+    return;
+  }
 
   const channels = filteredScopeChannels(scope.channels);
   const palette = {
@@ -2646,6 +2687,36 @@ function resizeCanvasSurface(canvas) {
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
   return { ctx, width, height };
+}
+
+function drawVectorscope(ctx, scope, width, height) {
+  const grid = scope.channels?.[0]?.grid || [];
+  const bins = grid.length;
+  if (!bins) return;
+  const size = Math.max(1, Math.min(width - 28, height - 20));
+  const left = (width - size) / 2;
+  const top = (height - size) / 2;
+  ctx.save();
+  ctx.strokeStyle = "rgba(224,232,235,.18)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(left + size / 2, top + size / 2, size / 2, 0, Math.PI * 2);
+  ctx.moveTo(left + size / 2, top); ctx.lineTo(left + size / 2, top + size);
+  ctx.moveTo(left, top + size / 2); ctx.lineTo(left + size, top + size / 2);
+  ctx.stroke();
+  const peak = Math.max(1, scope.normalization_peak || 1);
+  const cell = size / bins;
+  for (let row = 0; row < bins; row += 1) {
+    for (let column = 0; column < bins; column += 1) {
+      const value = grid[row][column];
+      if (!value) continue;
+      const density = Math.min(1, Math.log1p(value) / Math.log1p(peak));
+      const hue = (Math.atan2(row / bins - 0.5, column / bins - 0.5) * 180 / Math.PI + 360) % 360;
+      ctx.fillStyle = `hsla(${hue}, 80%, 68%, ${0.08 + density * 0.72})`;
+      ctx.fillRect(left + column * cell, top + (bins - row - 1) * cell, Math.max(1, cell), Math.max(1, cell));
+    }
+  }
+  ctx.restore();
 }
 
 function observeGraphEditorSizes() {
@@ -2974,6 +3045,7 @@ function filteredScopeChannels(channels) {
 
 function scopeTitleFor(scope) {
   const suffix = state.scopeChannelMode === "luma" ? " Luma" : state.scopeChannelMode === "parade" ? " Parade" : "";
+  if (scope.scope_type === "vectorscope") return `${scope.preview_kind.toUpperCase()} Vectorscope`;
   if (scope.scope_type === "reference_nits_waveform") return `HDR Reference Waveform${suffix}`;
   if (scope.scope_type === "normalized_waveform") return `SDR Waveform${suffix}`;
   if (scope.scope_type === "reference_nits_histogram") return `Reference Nit Histogram${suffix}`;
@@ -3061,6 +3133,16 @@ async function exportCurrentSession() {
   els.exportConfirmButton.disabled = true;
   els.exportStatus.textContent = "Encoding and validating the finished file…";
   els.exportResult.classList.add("hidden");
+  const exportStartedAt = performance.now();
+  const exportTicker = window.setInterval(() => {
+    const elapsedSeconds = Math.max(1, Math.round((performance.now() - exportStartedAt) / 1000));
+    const expectation = elapsedSeconds < 20
+      ? "Rendering full-resolution HDR and SDR endpoints"
+      : elapsedSeconds < 60
+        ? "Encoding gain-map media; large sources can take a minute or more"
+        : "Still working locally; the final file will be validated before completion";
+    els.exportStatus.textContent = `${expectation} · ${elapsedSeconds}s elapsed`;
+  }, 1000);
   try {
     let response = await requestSessionExport(outputPath, false);
     let payload = await safeJson(response);
@@ -3092,6 +3174,7 @@ async function exportCurrentSession() {
     console.error(error);
     els.exportStatus.textContent = "Export could not reach the local HDR Finisher server.";
   } finally {
+    window.clearInterval(exportTicker);
     els.exportConfirmButton.disabled = false;
   }
 }
@@ -3202,7 +3285,9 @@ function bindCropEditor() {
   els.cropDone?.addEventListener("click", () => closeCropMode(true));
   els.cropCancel?.addEventListener("click", () => closeCropMode(false));
   els.cropResetFrame?.addEventListener("click", () => {
-    state.adjustments.shared.geometry.crop = { x: 0, y: 0, width: 1, height: 1 };
+    if (!state.cropDraftGeometry) return;
+    state.cropDraftGeometry.crop = { x: 0, y: 0, width: 1, height: 1 };
+    constrainCropToRatio();
     renderCropFrame();
   });
   els.cropGuide?.addEventListener("change", () => {
@@ -3220,12 +3305,12 @@ function bindCropEditor() {
   els.flipHorizontal?.addEventListener("click", () => commitAdjustmentValue("shared.geometry.flip_horizontal", !state.adjustments.shared.geometry.flip_horizontal));
   els.flipVertical?.addEventListener("click", () => commitAdjustmentValue("shared.geometry.flip_vertical", !state.adjustments.shared.geometry.flip_vertical));
   els.swapCustomRatio?.addEventListener("click", () => {
-    const ratio = state.adjustments.shared.geometry.custom_ratio;
+    const ratio = state.cropDraftGeometry?.custom_ratio;
+    if (!ratio) return;
     [ratio.width, ratio.height] = [ratio.height, ratio.width];
-    syncControlsFromState();
+    renderCropOptions();
     constrainCropToRatio();
   });
-  els.cropRatio?.addEventListener("change", constrainCropToRatio);
   els.cropBox?.addEventListener("pointerdown", beginCropDrag);
   window.addEventListener("pointermove", moveCropDrag);
   window.addEventListener("pointerup", endCropDrag);
@@ -3234,29 +3319,34 @@ function bindCropEditor() {
 function openCropMode() {
   if (!state.session || state.cropMode) return;
   state.cropMode = true;
-  state.cropDraftOriginal = JSON.parse(JSON.stringify(state.adjustments.shared.geometry));
+  state.cropDraftGeometry = JSON.parse(JSON.stringify(state.adjustments.shared.geometry));
   els.cropEditorOverlay?.classList.remove("hidden");
   els.cropToolToggle?.classList.add("active");
   els.cropToolToggle?.setAttribute("aria-pressed", "true");
   els.cropEditorOverlay?.setAttribute("aria-hidden", "false");
-  renderCropFrame();
+  renderCropOptions();
 }
 
 function closeCropMode(commit) {
   if (!state.cropMode) return;
-  if (!commit && state.cropDraftOriginal) state.adjustments.shared.geometry = state.cropDraftOriginal;
+  const draft = state.cropDraftGeometry;
   state.cropMode = false;
-  state.cropDraftOriginal = null;
+  state.cropDraftGeometry = null;
   state.cropDrag = null;
   els.cropEditorOverlay?.classList.add("hidden");
   els.cropToolToggle?.classList.remove("active");
   els.cropToolToggle?.setAttribute("aria-pressed", "false");
   els.cropEditorOverlay?.setAttribute("aria-hidden", "true");
+  if (commit && draft) {
+    state.adjustments.shared.geometry = JSON.parse(JSON.stringify(draft));
+  }
   syncControlsFromState();
   renderLocalAdjustments();
-  invalidatePreview("hdr");
-  invalidatePreview("sdr");
-  debouncePreview(state.currentView);
+  if (commit && draft) {
+    invalidatePreview("hdr");
+    invalidatePreview("sdr");
+    debouncePreview(state.currentView);
+  }
 }
 
 function rotateGeometry(delta) {
@@ -3271,23 +3361,49 @@ function rotateGeometry(delta) {
 
 function renderCropOptions() {
   if (!els.cropGuide) return;
+  const geometry = activeCropGeometry();
   els.cropGuide.value = state.cropGuide;
   els.cropGridDensity.value = String(state.cropGridDensity);
   els.cropGridDensityValue.textContent = `${state.cropGridDensity}\u00d7${state.cropGridDensity}`;
   els.cropGridDensityRow.classList.toggle("hidden", state.cropGuide !== "grid");
-  els.customRatioFields?.classList.toggle("hidden", state.adjustments.shared?.geometry?.ratio_mode !== "custom");
+  els.cropRatio.value = geometry.ratio_mode;
+  els.cropCustomRatioWidth.value = String(geometry.custom_ratio.width);
+  els.cropCustomRatioHeight.value = String(geometry.custom_ratio.height);
+  els.customRatioFields?.classList.toggle("hidden", geometry.ratio_mode !== "custom");
   renderCropFrame();
 }
 
 function renderCropFrame() {
   if (!state.cropMode || !els.cropBox) return;
-  const crop = state.adjustments.shared.geometry.crop;
+  const crop = activeCropGeometry().crop;
   Object.assign(els.cropBox.style, { left: `${crop.x * 100}%`, top: `${crop.y * 100}%`, width: `${crop.width * 100}%`, height: `${crop.height * 100}%` });
   requestAnimationFrame(drawCropGuide);
 }
 
+function activeCropGeometry() {
+  return state.cropMode && state.cropDraftGeometry
+    ? state.cropDraftGeometry
+    : state.adjustments.shared.geometry;
+}
+
+function isCropDraftControl(path) {
+  return path === "shared.geometry.ratio_mode" || path?.startsWith("shared.geometry.custom_ratio.");
+}
+
+function updateCropDraftControl(path, value) {
+  if (!state.cropDraftGeometry) return;
+  const relativePath = path.replace("shared.geometry.", "");
+  setValueByPath(state.cropDraftGeometry, relativePath, value);
+  if (relativePath.startsWith("custom_ratio.")) {
+    const key = relativePath.endsWith("width") ? "width" : "height";
+    state.cropDraftGeometry.custom_ratio[key] = Math.max(0.01, Number(value) || 0.01);
+  }
+  renderCropOptions();
+  constrainCropToRatio();
+}
+
 function cropAspectRatio() {
-  const geometry = state.adjustments.shared.geometry;
+  const geometry = activeCropGeometry();
   if (geometry.ratio_mode === "free") return null;
   if (geometry.ratio_mode === "original") {
     const source = state.session?.source;
@@ -3303,17 +3419,184 @@ function constrainCropToRatio() {
   const ratio = cropAspectRatio();
   if (!ratio) return renderCropFrame();
   const paneRatio = Math.max(0.01, els.cropEditorOverlay.clientWidth / Math.max(1, els.cropEditorOverlay.clientHeight));
-  const crop = state.adjustments.shared.geometry.crop;
-  crop.height = Math.min(1 - crop.y, crop.width * paneRatio / ratio);
-  crop.width = Math.min(1 - crop.x, crop.height * ratio / paneRatio);
+  const crop = activeCropGeometry().crop;
+  const centerX = crop.x + crop.width / 2;
+  const centerY = crop.y + crop.height / 2;
+  const normalizedRatio = ratio / paneRatio;
+  let width = crop.width;
+  let height = width / normalizedRatio;
+  if (height > crop.height) {
+    height = crop.height;
+    width = height * normalizedRatio;
+  }
+  const scale = Math.min(1, 1 / Math.max(width, height));
+  width *= scale;
+  height *= scale;
+  crop.width = Math.max(0.02, width);
+  crop.height = Math.max(0.02, height);
+  crop.x = clamp(centerX - crop.width / 2, 0, 1 - crop.width);
+  crop.y = clamp(centerY - crop.height / 2, 0, 1 - crop.height);
   renderCropFrame();
+}
+
+function presentScopePayload(payload, { generation, tier, lane, mode, source, metric = null }) {
+  state.lastScope = payload;
+  els.scopeFreshness.textContent = scopeFreshnessLabel(tier);
+  els.scopeFreshness.classList.remove("updating");
+  drawHistogram(payload);
+  renderDockSummary();
+  renderExportPreflight();
+  const scopeFingerprint = payload.channels.reduce((total, channel, channelIndex) => {
+    const channelWeight = channelIndex + 1;
+    const binTotal = (channel.bins || []).reduce(
+      (sum, value, index) => sum + value * (index + 1) * channelWeight,
+      0,
+    );
+    const gridTotal = (channel.grid || []).reduce(
+      (sum, row, rowIndex) => sum + row.reduce(
+        (rowSum, value, columnIndex) => rowSum + value * (rowIndex + columnIndex + 2) * channelWeight,
+        0,
+      ),
+      0,
+    );
+    return total + binTotal + gridTotal;
+  }, 0);
+  window.dispatchEvent(new CustomEvent("hdrfinisher:scope-presented", {
+    detail: {
+      generation,
+      tier,
+      lane,
+      mode,
+      source,
+      metric,
+      peakValue: payload.peak_value,
+      fingerprint: scopeFingerprint,
+      presentedAt: performance.now(),
+    },
+  }));
+}
+
+function buildGpuScopePayload(analysis, { lane, mode, tier, generation, bins, columns, maxNits }) {
+  const hdr = lane === "hdr";
+  const ceiling = maxNits === 1000 ? 1000 : maxNits === 10000 ? 10000 : 4000;
+  const channelNames = ["R", "G", "B", "Y"];
+  if (mode === "vectorscope") return buildGpuVectorscopePayload(analysis, { lane, tier, generation, bins });
+  const binEdges = hdr
+    ? Array.from({ length: bins + 1 }, (_, index) => 10 ** (Math.log10(ceiling) * index / bins))
+    : Array.from({ length: bins + 1 }, (_, index) => index / bins);
+  const counts = channelNames.map(() => new Int32Array(mode === "waveform" ? bins * columns : bins));
+  const lumaValues = new Float32Array(analysis.width * analysis.height);
+  let peak = 0;
+  let clipped = false;
+  let above100 = 0;
+  let above203 = 0;
+  let above1000 = 0;
+  for (let pixel = 0; pixel < lumaValues.length; pixel += 1) {
+    const offset = pixel * 3;
+    const r = Math.max(0, analysis.pixels[offset]);
+    const g = Math.max(0, analysis.pixels[offset + 1]);
+    const b = Math.max(0, analysis.pixels[offset + 2]);
+    const luma = hdr ? 0.2722287 * r + 0.6740818 * g + 0.0536895 * b : 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    const values = hdr
+      ? [r, g, b, luma].map((value) => value / 0.18 * 100)
+      : [r, g, b, luma].map((value) => clamp(value, 0, 1));
+    lumaValues[pixel] = values[3];
+    peak = Math.max(peak, values[3]);
+    clipped ||= values[3] >= (hdr ? 10000 : 1);
+    if (hdr) {
+      above100 += values[3] > 100 ? 1 : 0;
+      above203 += values[3] > 203 ? 1 : 0;
+      above1000 += values[3] > 1000 ? 1 : 0;
+    }
+    const sourceX = pixel % analysis.width;
+    const column = Math.min(columns - 1, Math.floor(sourceX / analysis.width * columns));
+    values.forEach((value, channel) => {
+      const bin = hdr
+        ? Math.min(bins - 1, Math.max(0, Math.floor(Math.log10(clamp(value, 1, ceiling)) / Math.log10(ceiling) * bins)))
+        : Math.min(bins - 1, Math.max(0, Math.floor(value * bins)));
+      counts[channel][mode === "waveform" ? bin * columns + column : bin] += 1;
+    });
+  }
+  const sortedLuma = Array.from(lumaValues).sort((left, right) => left - right);
+  const percentile = (amount) => sortedLuma[Math.min(sortedLuma.length - 1, Math.round((sortedLuma.length - 1) * amount))] || 0;
+  const formatNits = (value) => value >= 1000 ? `${value.toFixed(0)} nit` : value >= 99.995 ? `${value.toFixed(1)} nit` : `${value.toFixed(2)} nit`;
+  const sampleCount = Math.max(1, lumaValues.length);
+  const stats = hdr ? [
+    { label: "Peak", value: formatNits(peak) },
+    { label: "P99", value: formatNits(percentile(0.99)) },
+    { label: "P95", value: formatNits(percentile(0.95)) },
+    { label: "Median", value: formatNits(percentile(0.5)) },
+    { label: "% > 100", value: `${(above100 / sampleCount * 100).toFixed(2)}%` },
+    { label: "% > 203", value: `${(above203 / sampleCount * 100).toFixed(2)}%` },
+    { label: "% > 1000", value: `${(above1000 / sampleCount * 100).toFixed(2)}%` },
+  ] : [
+    { label: "Peak", value: peak.toFixed(3) },
+    { label: "P95", value: percentile(0.95).toFixed(3) },
+    { label: "Median", value: percentile(0.5).toFixed(3) },
+  ];
+  const channels = channelNames.map((name, index) => ({
+    name,
+    bins: mode === "waveform" ? [] : Array.from(counts[index]),
+    grid: mode === "waveform"
+      ? Array.from({ length: bins }, (_, row) => Array.from(counts[index].subarray(row * columns, (row + 1) * columns)))
+      : [],
+  }));
+  const populationPeak = Math.max(1, ...counts.map((channel) => channel.reduce((maximum, value) => Math.max(maximum, value), 0)));
+  const hdrGuides = [[1, "1 nit"], [10, "10"], [25, "25"], [50, "50"], [100, "100 white"], [203, "203 BT.2408"], [400, "400"], [600, "600"], [1000, "1000 peak"], [2000, "2000"], [4000, "4000"], [10000, "10000 PQ peak"]];
+  return {
+    preview_kind: lane,
+    scope_type: hdr ? `reference_nits_${mode}` : `normalized_${mode}`,
+    tier,
+    generation,
+    normalization_peak: populationPeak,
+    peak_value: peak,
+    clipped,
+    x_axis: hdr ? "reference_nits_log10" : "normalized",
+    bin_edges: binEdges,
+    guides: hdr ? hdrGuides.filter(([value]) => value <= ceiling).map(([value, label]) => ({ value, label })) : [{ value: 0.18, label: "18%" }, { value: 0.5, label: "50%" }, { value: 1, label: "100%" }],
+    stats,
+    channels,
+  };
+}
+
+function buildGpuVectorscopePayload(analysis, { lane, tier, generation, bins }) {
+  const hdr = lane === "hdr";
+  const grid = Array.from({ length: bins }, () => new Int32Array(bins));
+  let peak = 0;
+  for (let pixel = 0; pixel < analysis.width * analysis.height; pixel += 1) {
+    const offset = pixel * 3;
+    const r = Math.max(0, analysis.pixels[offset]);
+    const g = Math.max(0, analysis.pixels[offset + 1]);
+    const b = Math.max(0, analysis.pixels[offset + 2]);
+    const [kr, kg, kb] = hdr ? [0.2722287, 0.6740818, 0.0536895] : [0.2126, 0.7152, 0.0722];
+    const y = kr * r + kg * g + kb * b;
+    peak = Math.max(peak, hdr ? y / 0.18 * 100 : y);
+    const u = clamp(0.5 + 0.5 * (b - y) / (2 * (1 - kb)), 0, 1);
+    const v = clamp(0.5 + 0.5 * (r - y) / (2 * (1 - kr)), 0, 1);
+    grid[Math.min(bins - 1, Math.floor(v * bins))][Math.min(bins - 1, Math.floor(u * bins))] += 1;
+  }
+  const normalizationPeak = Math.max(1, ...grid.map((row) => row.reduce((maximum, value) => Math.max(maximum, value), 0)));
+  return {
+    preview_kind: lane,
+    scope_type: "vectorscope",
+    tier,
+    generation,
+    normalization_peak: normalizationPeak,
+    peak_value: peak,
+    clipped: peak >= (hdr ? 10000 : 1),
+    x_axis: "chroma_uv",
+    bin_edges: Array.from({ length: bins + 1 }, (_, index) => index / bins),
+    guides: [],
+    stats: [{ label: "Peak", value: hdr ? `${peak.toFixed(1)} nit` : peak.toFixed(3) }],
+    channels: [{ name: "Y", bins: [], grid: grid.map((row) => Array.from(row)) }],
+  };
 }
 
 function beginCropDrag(event) {
   if (!state.cropMode || event.button !== 0) return;
   event.preventDefault();
   const rect = els.cropEditorOverlay.getBoundingClientRect();
-  state.cropDrag = { handle: event.target.dataset.cropHandle || "move", startX: event.clientX, startY: event.clientY, rect, crop: { ...state.adjustments.shared.geometry.crop } };
+  state.cropDrag = { handle: event.target.dataset.cropHandle || "move", startX: event.clientX, startY: event.clientY, rect, crop: { ...activeCropGeometry().crop } };
   els.cropBox.setPointerCapture?.(event.pointerId);
 }
 
@@ -3332,17 +3615,35 @@ function moveCropDrag(event) {
     if (drag.handle.includes("n")) { const bottom = drag.crop.y + drag.crop.height; next.y = Math.max(0, Math.min(bottom - 0.02, drag.crop.y + dy)); next.height = bottom - next.y; }
     if (drag.handle.includes("s")) next.height = Math.max(0.02, Math.min(1 - drag.crop.y, drag.crop.height + dy));
     const ratio = cropAspectRatio();
-    if (ratio) {
-      const paneRatio = drag.rect.width / Math.max(1, drag.rect.height);
-      next.height = Math.min(1 - next.y, next.width * paneRatio / ratio);
-      next.width = Math.min(1 - next.x, next.height * ratio / paneRatio);
-    }
+    if (ratio) constrainDraggedCrop(next, drag, ratio);
   }
-  state.adjustments.shared.geometry.crop = next;
+  if (!state.cropDraftGeometry) return;
+  state.cropDraftGeometry.crop = next;
   renderCropFrame();
 }
 
 function endCropDrag() { state.cropDrag = null; }
+
+function constrainDraggedCrop(next, drag, ratio) {
+  const normalizedRatio = ratio / (drag.rect.width / Math.max(1, drag.rect.height));
+  const source = drag.crop;
+  const anchorX = drag.handle.includes("w") ? source.x + source.width : source.x;
+  const anchorY = drag.handle.includes("n") ? source.y + source.height : source.y;
+  let width = next.width;
+  let height = width / normalizedRatio;
+  if (!drag.handle.includes("e") && !drag.handle.includes("w")) {
+    height = next.height;
+    width = height * normalizedRatio;
+  }
+  width = Math.max(0.02, Math.min(width, drag.handle.includes("w") ? anchorX : 1 - anchorX));
+  height = Math.max(0.02, Math.min(height, drag.handle.includes("n") ? anchorY : 1 - anchorY));
+  if (height * normalizedRatio > width) height = width / normalizedRatio;
+  else width = height * normalizedRatio;
+  next.width = width;
+  next.height = height;
+  next.x = drag.handle.includes("w") ? anchorX - width : anchorX;
+  next.y = drag.handle.includes("n") ? anchorY - height : anchorY;
+}
 
 function drawCropGuide() {
   if (!state.cropMode || !els.cropGuideCanvas) return;
@@ -3353,7 +3654,13 @@ function drawCropGuide() {
   const context = canvas.getContext("2d");
   context.clearRect(0, 0, width, height); context.strokeStyle = "rgba(255,255,255,.82)"; context.lineWidth = window.devicePixelRatio || 1;
   const line = (x1, y1, x2, y2) => { context.beginPath(); context.moveTo(x1, y1); context.lineTo(x2, y2); context.stroke(); };
-  if (state.cropGuide === "diagonals") { line(0, 0, width, height); line(width, 0, 0, height); return; }
+  if (state.cropGuide === "x") { line(0, 0, width, height); line(width, 0, 0, height); return; }
+  if (state.cropGuide === "diagonals") {
+    const short = Math.min(width, height);
+    line(0, 0, short, short); line(width, 0, width - short, short);
+    line(0, height, short, height - short); line(width, height, width - short, height - short);
+    return;
+  }
   let positions = [];
   if (state.cropGuide === "thirds") positions = [1 / 3, 2 / 3];
   if (state.cropGuide === "golden") positions = [0.382, 0.618];
@@ -5476,7 +5783,7 @@ function bindKeyboardShortcuts() {
       cycleOverlayMode();
     } else if (key === "o" && state.cropMode) {
       event.preventDefault();
-      const guides = ["none", "thirds", "diagonals", "golden", "grid"];
+      const guides = ["none", "thirds", "golden", "grid", "x", "diagonals"];
       state.cropGuide = guides[(guides.indexOf(state.cropGuide) + 1) % guides.length];
       renderCropOptions();
     } else if (key === "d") {
@@ -5553,8 +5860,13 @@ function applyZoomGeometry() {
     return;
   }
 
-  const sourceWidth = Math.max(1, state.session.source.width || preview.naturalWidth || preview.width);
-  const sourceHeight = Math.max(1, state.session.source.height || preview.naturalHeight || preview.height);
+  // Geometry can change the rendered frame's dimensions. Size the viewer from
+  // the current bitmap, not the original source, or a crop is stretched back
+  // into the source aspect ratio after it is applied.
+  const renderedWidth = preview instanceof HTMLCanvasElement ? preview.width : preview.naturalWidth;
+  const renderedHeight = preview instanceof HTMLCanvasElement ? preview.height : preview.naturalHeight;
+  const sourceWidth = Math.max(1, renderedWidth || state.session.source.width);
+  const sourceHeight = Math.max(1, renderedHeight || state.session.source.height);
   const frameWidth = Math.max(1, els.dropzone.clientWidth);
   const frameHeight = Math.max(1, els.dropzone.clientHeight);
   const paneWidth = state.compareLayout === "side-horizontal" ? frameWidth / 2 : frameWidth;
@@ -5695,7 +6007,7 @@ async function activateDockTab(tab) {
   els.technicalView.classList.toggle("hidden", !technical);
   scheduleLayoutSettled();
   if (technical) return;
-  state.scopeMode = tab === "waveform" || tab === "parade" ? "waveform" : "histogram";
+  state.scopeMode = tab === "vectorscope" ? "vectorscope" : tab === "waveform" || tab === "parade" ? "waveform" : "histogram";
   state.scopeChannelMode = tab === "parade" ? "parade" : "composite";
   els.scopeMode.value = state.scopeMode;
   els.scopeChannelMode.value = state.scopeChannelMode;

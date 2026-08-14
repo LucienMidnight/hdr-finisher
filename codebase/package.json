@@ -11,9 +11,11 @@
     "test:luma-mask": "node tests/luma-mask-interaction.js",
     "test:local-design": "node tests/local-design-qa.js",
     "test:startup-state": "node tests/startup-state.js",
+    "test:source-disclosures": "node tests/source-disclosures-interaction.js",
     "test:performance": "node tests/performance/preview-performance.js",
     "test:local-mask-performance": "node tests/performance/local-mask-performance.js",
-    "test:gpu-local-adjustments": "node tests/performance/gpu-local-adjustments.js"
+    "test:gpu-local-adjustments": "node tests/performance/gpu-local-adjustments.js",
+    "test:gpu-scopes": "node tests/gpu-scope-parity.js"
   },
   "devDependencies": {
     "playwright": "^1.50.0"

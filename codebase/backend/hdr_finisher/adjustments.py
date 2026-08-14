@@ -906,6 +906,9 @@ def _apply_color_grading(image: np.ndarray, grading: object, kind: PreviewKind) 
 def _apply_vignette(image: np.ndarray, vignette: object, kind: PreviewKind) -> np.ndarray:
     if vignette.amount == 0.0:
         return image
+    # `image` is the geometry-fixed frame produced by apply_geometry(). Build
+    # the vignette entirely in that output space so its center, radius, and
+    # roundness follow the crop rather than the uncropped source dimensions.
     height, width = image.shape[:2]
     y, x = np.mgrid[0:height, 0:width].astype(np.float32)
     scale = np.float32(max(1.0, 0.5 * min(width, height)))

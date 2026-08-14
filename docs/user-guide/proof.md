@@ -30,6 +30,8 @@ Therefore, a 1,000-nit-authored result may appear closer to SDR on a 400-nit dis
 
 The proof is generated from encoded media, not merely from the live working image. That catches encoder metadata, quantization, gamut, and endpoint behavior that an unencoded simulation could miss.
 
+After the proof is built, use **HDR adaptation** to inspect the reconstruction at the selected display target and **SDR base** to inspect the exact encoded fallback without leaving the Proof page. Switching these previews does not rebuild the artifact or change export settings.
+
 ## Target display peak
 
 | Target | Good use |

@@ -28,6 +28,8 @@ def test_windows_folder_picker_passes_initial_path_through_environment(monkeypat
     assert "$owner.Show()" in command[-1]
     assert "$owner.Activate()" in command[-1]
     assert "$dialog.ShowDialog($owner)" in command[-1]
+    assert "System.Windows.Forms.OpenFileDialog" in command[-1]
+    assert "$dialog.ValidateNames = $false" in command[-1]
     assert observed["env"]["HDR_FINISHER_INITIAL_DIRECTORY"] == str(initial)
 
 

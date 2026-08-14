@@ -18,11 +18,16 @@ def _pick_directory_windows(initial_path: Path | None) -> str | None:
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
-$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-$dialog.Description = 'Choose Export Folder'
-$dialog.ShowNewFolderButton = $true
+$dialog = New-Object System.Windows.Forms.OpenFileDialog
+$dialog.Title = 'Choose Export Folder'
+$dialog.Filter = 'Folder|*.folder'
+$dialog.FileName = 'Select this folder'
+$dialog.CheckFileExists = $false
+$dialog.CheckPathExists = $true
+$dialog.ValidateNames = $false
+$dialog.AddExtension = $false
 if ($env:HDR_FINISHER_INITIAL_DIRECTORY) {
-    $dialog.SelectedPath = $env:HDR_FINISHER_INITIAL_DIRECTORY
+    $dialog.InitialDirectory = $env:HDR_FINISHER_INITIAL_DIRECTORY
 }
 $owner = New-Object System.Windows.Forms.Form
 $owner.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedToolWindow
@@ -42,7 +47,8 @@ try {
     $owner.BringToFront()
     $result = $dialog.ShowDialog($owner)
     if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
-        [Console]::Out.Write('OK' + [Environment]::NewLine + $dialog.SelectedPath)
+        $selected = [System.IO.Path]::GetDirectoryName($dialog.FileName)
+        [Console]::Out.Write('OK' + [Environment]::NewLine + $selected)
     } else {
         [Console]::Out.Write('CANCEL')
     }

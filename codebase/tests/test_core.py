@@ -539,6 +539,18 @@ def test_waveform_aggregates_every_source_pixel_into_horizontal_strips() -> None
     assert int(red_grid.sum()) == image.shape[0] * image.shape[1]
 
 
+def test_vectorscope_aggregates_every_pixel_into_compact_chroma_grid() -> None:
+    image = np.zeros((12, 16, 3), dtype=np.float32)
+    image[:, :8, 0] = 0.8
+    image[:, 8:, 2] = 0.8
+    scope = build_scope(image, AdjustmentState(), PreviewKind.SDR, ScopeMode.VECTORSCOPE, bins=32)
+    grid = np.asarray(scope.channels[0].grid)
+    assert scope.scope_type == "vectorscope"
+    assert grid.shape == (32, 32)
+    assert int(grid.sum()) == image.shape[0] * image.shape[1]
+    assert np.count_nonzero(grid) >= 2
+
+
 def test_sdr_source_has_predictable_internal_hdr_scope_anchor() -> None:
     image = np.ones((4, 4, 3), dtype=np.float32) * 0.18
     analysis = classify_hdr(image, {}, ".png")

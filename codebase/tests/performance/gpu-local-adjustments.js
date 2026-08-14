@@ -263,12 +263,16 @@ async function rapidDrag(page, selector, values, intervalMs = 16) {
           inputToMaskOverlay: summarize(opacity.map((sample) => sample.maskMs)),
           inputToScope: summarize(opacity.map((sample) => sample.scopeMs)),
           distinctScopeFingerprints: new Set(opacity.map((sample) => sample.scope?.fingerprint).filter(Number.isFinite)).size,
+          scopeSources: [...new Set(opacity.map((sample) => sample.scope?.source).filter(Boolean))],
+          scopePeakValues: opacity.map((sample) => sample.scope?.peakValue).filter(Number.isFinite),
         },
         feather: {
           inputToPreview: summarize(feather.map((sample) => sample.previewMs)),
           inputToMaskOverlay: summarize(feather.map((sample) => sample.maskMs)),
           inputToScope: summarize(feather.map((sample) => sample.scopeMs)),
           distinctScopeFingerprints: new Set(feather.map((sample) => sample.scope?.fingerprint).filter(Number.isFinite)).size,
+          scopeSources: [...new Set(feather.map((sample) => sample.scope?.source).filter(Boolean))],
+          scopePeakValues: feather.map((sample) => sample.scope?.peakValue).filter(Number.isFinite),
         },
       },
       rapidDrag: {
@@ -293,6 +297,10 @@ async function rapidDrag(page, selector, values, intervalMs = 16) {
         maskCpu: summarize(requests.map((request) => request.cpuMaskMs)),
         maskTransport: summarize(requests.filter((request) => request.kind.startsWith("mask-")).map((request) => request.responseMs)),
         scopeTransport: summarize(requests.filter((request) => request.kind === "scope").map((request) => request.responseMs)),
+        gpuScopeTotal: summarize((raw.gpu.scopes || []).map((entry) => entry.totalMs)),
+        gpuScopeEncode: summarize((raw.gpu.scopes || []).map((entry) => entry.encodeMs)),
+        gpuScopeReadback: summarize((raw.gpu.scopes || []).map((entry) => entry.mapReadbackMs)),
+        gpuScopeUnpack: summarize((raw.gpu.scopes || []).map((entry) => entry.unpackMs)),
       },
       gpuResources: raw.gpu.resources,
       gpuLumaCache: {

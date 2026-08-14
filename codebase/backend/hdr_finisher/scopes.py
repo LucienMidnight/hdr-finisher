@@ -48,6 +48,8 @@ def build_scope(
     processed = apply_adjustments(image, adjustments, kind, sdr_reference_image=sdr_reference_image)
     if mode == ScopeMode.WAVEFORM:
         return _build_waveform(processed, kind, bins=bins or 256, columns=waveform_columns, max_nits=max_nits)
+    if mode == ScopeMode.VECTORSCOPE:
+        return _build_vectorscope(processed, kind, bins=bins or 128)
     return _build_histogram(processed, kind, bins=bins or 256, max_nits=max_nits)
 
 
@@ -61,6 +63,8 @@ def build_scope_from_processed(
 ) -> ScopeResponse:
     if mode == ScopeMode.WAVEFORM:
         return _build_waveform(processed, kind, bins=bins or 256, columns=waveform_columns, max_nits=max_nits)
+    if mode == ScopeMode.VECTORSCOPE:
+        return _build_vectorscope(processed, kind, bins=bins or 128)
     return _build_histogram(processed, kind, bins=bins or 256, max_nits=max_nits)
 
 
@@ -181,6 +185,30 @@ def _waveform_grid(values: np.ndarray, edges: np.ndarray, columns: int) -> list[
     combined = bin_indices.astype(np.int64, copy=False) * output_columns + target_columns[None, :]
     grid = np.bincount(combined.reshape(-1), minlength=bin_count * output_columns)
     return grid.reshape(bin_count, output_columns).astype(np.int32, copy=False).tolist()
+
+
+def _build_vectorscope(processed: np.ndarray, kind: PreviewKind, bins: int) -> ScopeResponse:
+    rgb = np.clip(processed[..., :3].astype(np.float32, copy=False), 0.0, None if kind == PreviewKind.HDR else 1.0)
+    kr, kg, kb = (0.2722287, 0.6740818, 0.0536895) if kind == PreviewKind.HDR else (0.2126, 0.7152, 0.0722)
+    luma = kr * rgb[..., 0] + kg * rgb[..., 1] + kb * rgb[..., 2]
+    u = np.clip(0.5 + 0.5 * (rgb[..., 2] - luma) / max(2.0 * (1.0 - kb), 1e-6), 0.0, 1.0)
+    v = np.clip(0.5 + 0.5 * (rgb[..., 0] - luma) / max(2.0 * (1.0 - kr), 1e-6), 0.0, 1.0)
+    x = np.minimum((u * bins).astype(np.int32), bins - 1)
+    y = np.minimum((v * bins).astype(np.int32), bins - 1)
+    grid = np.bincount((y * bins + x).reshape(-1), minlength=bins * bins).reshape(bins, bins)
+    display_luma = (luma / 0.18) * 100.0 if kind == PreviewKind.HDR else np.clip(luma, 0.0, 1.0)
+    return ScopeResponse(
+        preview_kind=kind,
+        scope_type="vectorscope",
+        x_axis="chroma_uv",
+        bin_edges=np.linspace(0.0, 1.0, bins + 1, dtype=np.float32).tolist(),
+        guides=[],
+        stats=_hdr_stats(display_luma) if kind == PreviewKind.HDR else _sdr_stats(display_luma),
+        channels=[HistogramChannel(name="Y", bins=[], grid=grid.astype(np.int32, copy=False).tolist())],
+        normalization_peak=_normalization_peak([HistogramChannel(name="Y", bins=[], grid=grid.tolist())]),
+        peak_value=float(np.max(display_luma)),
+        clipped=bool(np.any(display_luma >= (10000.0 if kind == PreviewKind.HDR else 1.0))),
+    )
 
 
 def _normalization_peak(channels: list[HistogramChannel]) -> int:

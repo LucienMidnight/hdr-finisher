@@ -46,6 +46,11 @@
       markProofDirty();
       renderProofUi();
     });
+    els.proofPreviewButtons.forEach((button) => button.addEventListener("click", () => {
+      state.proofPreview = button.dataset.proofPreview;
+      syncProofPresentation();
+      renderProofUi();
+    }));
     els.chromeProofImage.addEventListener("dragstart", (event) => event.preventDefault());
     els.reviewChromeProof.addEventListener("click", () => reviewExportFormat(els.exportFormat.value));
     window.addEventListener("focus", refreshAutoProofOnFocus);
@@ -105,6 +110,8 @@
     state.proofEnabled = false;
     state.proofArtifact = null;
     state.proofReconstruction = null;
+    state.proofSdrReconstruction = null;
+    state.proofPreview = "hdr";
     state.proofDirty = true;
     artifactDirty = true;
     phase = "idle";
@@ -157,21 +164,28 @@
         artifact = payload;
       }
 
-      const reconstructionResponse = await fetch("/api/proof/reconstruction", {
+      const reconstructionRequest = (target) => fetch("/api/proof/reconstruction", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ artifact_id: artifact.artifact_id, target: proofTargetRequest() }),
+        body: JSON.stringify({ artifact_id: artifact.artifact_id, target }),
       });
-      const reconstruction = await parseProofResponse(reconstructionResponse, "Chromium proof reconstruction failed.");
-      await preloadImage(reconstruction.tile.url);
+      const [reconstructionResponse, sdrResponse] = await Promise.all([
+        reconstructionRequest(proofTargetRequest()),
+        reconstructionRequest({ mode: "fixed", peak_nits: 100, display_id: state.proofDisplayId || null }),
+      ]);
+      const [reconstruction, sdrReconstruction] = await Promise.all([
+        parseProofResponse(reconstructionResponse, "Chromium proof reconstruction failed."),
+        parseProofResponse(sdrResponse, "SDR proof endpoint failed."),
+      ]);
+      await Promise.all([preloadImage(reconstruction.tile.url), preloadImage(sdrReconstruction.tile.url)]);
       if (generation !== requestGeneration) return;
 
       state.proofArtifact = artifact;
       state.proofReconstruction = reconstruction;
+      state.proofSdrReconstruction = sdrReconstruction;
       state.proofDirty = false;
       artifactDirty = false;
       phase = "idle";
-      els.chromeProofImage.src = reconstruction.tile.url;
       syncProofPresentation();
       renderProofUi();
     } catch (error) {
@@ -217,7 +231,11 @@
 
   function syncProofPresentation() {
     const suspended = state.activeWorkflow !== "proof" || state.currentView !== "hdr" || state.comparePeekActive;
-    const canShow = Boolean(state.proofEnabled && !suspended && state.proofReconstruction && els.chromeProofImage.src);
+    const activeResult = state.proofPreview === "sdr" ? state.proofSdrReconstruction : state.proofReconstruction;
+    if (activeResult?.tile?.url && els.chromeProofImage.getAttribute("src") !== activeResult.tile.url) {
+      els.chromeProofImage.src = activeResult.tile.url;
+    }
+    const canShow = Boolean(state.proofEnabled && !suspended && activeResult?.tile?.url);
     els.chromeProofImage.style.display = canShow ? "block" : "none";
     els.chromeProofWatermark.style.display = canShow && state.proofWatermarkEnabled ? "flex" : "none";
     if (state.activeWorkflow === "proof" && state.proofEnabled && state.currentView === "hdr" && !state.comparePeekActive) {
@@ -261,6 +279,12 @@
     else els.chromeProofInlineStatus.textContent = proofTargetShortLabel();
     els.chromeProofStatus.textContent = proofStatusMessage(encoderReady);
     els.chromeProofStatus.dataset.state = phase;
+    els.proofPreviewSwitch.classList.toggle("hidden", !state.proofReconstruction);
+    els.proofPreviewButtons.forEach((button) => {
+      const active = button.dataset.proofPreview === state.proofPreview;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
     syncProofPresentation();
     renderExportPreflight();
     renderWorkflowContext();
