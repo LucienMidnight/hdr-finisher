@@ -107,8 +107,12 @@ def evaluate_mask(
     source_x: np.ndarray,
     source_y: np.ndarray,
 ) -> np.ndarray:
+    brush_erase_attenuation: np.ndarray | None = None
     if expression.operator == "leaf":
-        result = _evaluate_leaf(expression.leaf, fixed_source_tile, source_x, source_y)
+        if expression.leaf is not None and expression.leaf.type == "brush":
+            result, brush_erase_attenuation = _brush_masks(expression.leaf, source_x, source_y)
+        else:
+            result = _evaluate_leaf(expression.leaf, fixed_source_tile, source_x, source_y)
     else:
         children = [evaluate_mask(child, fixed_source_tile, source_x, source_y) for child in expression.children]
         result = children[0]
@@ -129,6 +133,12 @@ def evaluate_mask(
         result = 1.0 - result
     if expression.operator == "leaf" and expression.leaf is not None:
         result *= np.float32(expression.leaf.mask_opacity)
+    # Erase is the top operation for a brush mask. Applying its attenuation
+    # after Shift Edge, Feather, Invert, and Mask Opacity lets it remove every
+    # pixel visible in the finished mask, including generated coverage outside
+    # the original paint footprint.
+    if brush_erase_attenuation is not None:
+        result *= brush_erase_attenuation
     return np.clip(result, 0.0, 1.0).astype(np.float32)
 
 
@@ -233,8 +243,9 @@ def _luminance_range(leaf: MaskLeaf, image: np.ndarray) -> np.ndarray:
     return np.minimum(rise, fall).astype(np.float32)
 
 
-def _brush_mask(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+def _brush_masks(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray | None]:
     result = np.zeros(x.shape, dtype=np.float32)
+    erase_attenuation: np.ndarray | None = None
     for stroke in leaf.strokes:
         stroke_mask = np.zeros(x.shape, dtype=np.float32)
         points = stroke.points
@@ -270,11 +281,13 @@ def _brush_mask(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> np.ndarray:
                 )
                 stroke_mask[rows, columns] = np.maximum(stroke_mask[rows, columns], segment)
         if stroke.erase:
+            if erase_attenuation is None:
+                erase_attenuation = np.ones(x.shape, dtype=np.float32)
             erase_strength = np.minimum(
                 np.float32(stroke.opacity),
                 stroke_mask * np.float32(stroke.flow),
             )
-            result *= 1.0 - erase_strength
+            erase_attenuation *= 1.0 - erase_strength
         else:
             # Repeated low-flow passes build coverage, while opacity is the
             # ceiling for this brush preset. A lower-opacity stroke must never
@@ -284,6 +297,13 @@ def _brush_mask(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> np.ndarray:
                 result + stroke_mask * np.float32(stroke.flow),
             )
             result = np.maximum(result, accumulated)
+    return result, erase_attenuation
+
+
+def _brush_mask(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    result, erase_attenuation = _brush_masks(leaf, x, y)
+    if erase_attenuation is not None:
+        result *= erase_attenuation
     return result
 
 

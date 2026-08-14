@@ -49,6 +49,7 @@ async function authoritativeMaskAlphaQuality(page) {
       feather: leaf.mask_feather,
       strokes: leaf.strokes?.length || 0,
       points: leaf.strokes?.reduce((sum, stroke) => sum + (stroke.points?.length || 0), 0) || 0,
+      erases: leaf.strokes?.map((stroke) => Boolean(stroke.erase)),
       flows: leaf.strokes?.map((stroke) => stroke.flow),
       opacities: leaf.strokes?.map((stroke) => stroke.opacity),
       radii: leaf.strokes?.map((stroke) => stroke.radius),
@@ -59,8 +60,10 @@ async function authoritativeMaskAlphaQuality(page) {
     const levels = new Set();
     const histogram = new Map();
     let visiblePixels = 0;
+    let alphaSum = 0;
     for (let index = 0; index < pixels.length; index += 4) {
       const alpha = pixels[index + 3];
+      alphaSum += alpha;
       if (alpha <= 1) continue;
       visiblePixels += 1;
       levels.add(alpha);
@@ -68,11 +71,41 @@ async function authoritativeMaskAlphaQuality(page) {
     }
     return {
       visiblePixels,
+      alphaSum,
       alphaLevels: levels.size,
       largestPlateau: Math.max(0, ...histogram.values()),
       details,
     };
   });
+}
+
+async function authoritativeMaskAlphaAt(page, x, y) {
+  return page.evaluate(([normalizedX, normalizedY]) => {
+    const local = selectedLocal();
+    const canvas = local ? localAuthoritativeMaskCache.get(local.id)?.canvas : null;
+    if (!canvas) return 0;
+    const pixelX = Math.min(canvas.width - 1, Math.max(0, Math.round(normalizedX * (canvas.width - 1))));
+    const pixelY = Math.min(canvas.height - 1, Math.max(0, Math.round(normalizedY * (canvas.height - 1))));
+    return canvas.getContext("2d").getImageData(pixelX, pixelY, 1, 1).data[3];
+  }, [x, y]);
+}
+
+async function overlayMaskAlphaAt(page, x, y) {
+  return page.evaluate(([normalizedX, normalizedY]) => {
+    const overlay = document.querySelector("#local-mask-overlay");
+    const preview = document.querySelector("#preview-canvas");
+    const overlayRect = overlay.getBoundingClientRect();
+    const previewRect = preview.getBoundingClientRect();
+    const pixelX = Math.min(
+      overlay.width - 1,
+      Math.max(0, Math.round((previewRect.left + normalizedX * previewRect.width - overlayRect.left) * overlay.width / overlayRect.width)),
+    );
+    const pixelY = Math.min(
+      overlay.height - 1,
+      Math.max(0, Math.round((previewRect.top + normalizedY * previewRect.height - overlayRect.top) * overlay.height / overlayRect.height)),
+    );
+    return overlay.getContext("2d").getImageData(pixelX, pixelY, 1, 1).data[3];
+  }, [x, y]);
 }
 
 (async () => {
@@ -334,18 +367,235 @@ async function authoritativeMaskAlphaQuality(page) {
     await maskFeather.evaluate((input) => input.dispatchEvent(new Event("change", { bubbles: true })));
     assert((await matrixCommitResponse).ok(), "Restoring the post-matrix mask configuration failed.");
 
+    const brushSettingsResponse = page.waitForResponse((response) =>
+      response.url().includes("/edit-commands") && response.request().method() === "POST",
+    );
+    for (const [index, value] of [[0, "0.025"], [1, "50"], [2, "100"], [3, "100"]]) {
+      await controls.nth(index).evaluate((input, next) => {
+        input.value = next;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      }, value);
+    }
+    await controls.nth(3).evaluate((input) => input.dispatchEvent(new Event("change", { bubbles: true })));
+    assert((await brushSettingsResponse).ok(), "Committing the reproduction brush settings failed.");
+
+    const reproductionMaskResponse = page.waitForResponse((response) =>
+      response.url().includes("/edit-commands") && response.request().method() === "POST",
+    );
+    await maskShiftEdge.evaluate((input) => {
+      input.value = "50";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await maskFeather.evaluate((input) => {
+      input.value = "50";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    assert((await reproductionMaskResponse).ok(), "Committing the reproduction mask settings failed.");
+
+    const previewBox = await page.locator("#preview-canvas").boundingBox();
+    assert(previewBox, "The preview canvas is unavailable for the circle erase regression.");
+    const circlePaintResponse = page.waitForResponse((response) =>
+      response.url().includes("/edit-commands") && response.request().method() === "POST",
+    );
+    await page.mouse.move(previewBox.x + previewBox.width * 0.75, previewBox.y + previewBox.height * 0.30);
+    await page.mouse.down();
+    await page.mouse.up();
+    assert((await circlePaintResponse).ok(), "Painting the circle erase regression mask failed.");
+    await page.waitForFunction(() => {
+      const local = selectedLocal();
+      return local && localAuthoritativeMaskCache.get(local.id)?.signature === JSON.stringify(local.mask);
+    });
+
     await page.locator("#local-eraser").click();
+    const beforeErase = await authoritativeMaskAlphaQuality(page);
+    const beforeEraseCenter = await authoritativeMaskAlphaAt(page, 0.84, 0.30);
+    const revisionBeforeErase = await page.evaluate(() => state.editRevision);
+    const staleMaskRequests = [];
+    const recordMaskRequest = (request) => {
+      const url = new URL(request.url());
+      if (
+        request.method() === "GET"
+        && url.pathname.includes("/local-mask/")
+        && Number(url.searchParams.get("edit_revision")) === revisionBeforeErase
+      ) {
+        staleMaskRequests.push(request.url());
+      }
+    };
+    page.on("request", recordMaskRequest);
     const eraseResponse = page.waitForResponse((response) =>
       response.url().includes("/edit-commands") && response.request().method() === "POST",
     );
     const eraseStarted = Date.now();
-    await page.mouse.move(box.x + box.width * 0.42, box.y + box.height * 0.50);
+    await page.mouse.move(previewBox.x + previewBox.width * 0.81, previewBox.y + previewBox.height * 0.30);
     await page.mouse.down();
-    await page.mouse.move(box.x + box.width * 0.56, box.y + box.height * 0.53, { steps: 30 });
+    await page.mouse.move(previewBox.x + previewBox.width * 0.87, previewBox.y + previewBox.height * 0.30, { steps: 16 });
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const duringEraseCenterOverlay = await overlayMaskAlphaAt(page, 0.84, 0.30);
+    await page.evaluate(() => {
+      window.__eraseReleaseAlphaSamples = new Promise((resolve) => {
+        const samples = [];
+        const deadline = performance.now() + 1000;
+        const sample = () => {
+          const overlay = document.querySelector("#local-mask-overlay");
+          const preview = document.querySelector("#preview-canvas");
+          const overlayRect = overlay.getBoundingClientRect();
+          const previewRect = preview.getBoundingClientRect();
+          const pixelX = Math.round((previewRect.left + 0.84 * previewRect.width - overlayRect.left) * overlay.width / overlayRect.width);
+          const pixelY = Math.round((previewRect.top + 0.30 * previewRect.height - overlayRect.top) * overlay.height / overlayRect.height);
+          samples.push(overlay.getContext("2d").getImageData(pixelX, pixelY, 1, 1).data[3]);
+          if (performance.now() < deadline) requestAnimationFrame(sample);
+          else resolve(samples);
+        };
+        requestAnimationFrame(sample);
+      });
+    });
     await page.mouse.up();
     assert((await eraseResponse).ok(), "Erasing the painted mask failed.");
     const eraseDuration = Date.now() - eraseStarted;
+    await page.waitForFunction(() => {
+      const local = selectedLocal();
+      return local && localAuthoritativeMaskCache.get(local.id)?.signature === JSON.stringify(local.mask);
+    });
+    const settledErase = await authoritativeMaskAlphaQuality(page);
+    const settledEraseCenter = await authoritativeMaskAlphaAt(page, 0.84, 0.30);
+    const eraseReleaseAlphaSamples = await page.evaluate(() => window.__eraseReleaseAlphaSamples);
+    page.off("request", recordMaskRequest);
+    assert(
+      settledErase.alphaSum < beforeErase.alphaSum,
+      `The erase stroke reverted after pointer release: ${JSON.stringify({ beforeErase, settledErase })}`,
+    );
+    assert(
+      settledErase.details?.strokes === beforeErase.details?.strokes + 1,
+      `The committed erase stroke was not retained: ${JSON.stringify({ beforeErase, settledErase })}`,
+    );
+    assert(
+      beforeEraseCenter > 5,
+      `Shift Edge/Feather did not create coverage outside the original paint dab (${beforeEraseCenter}).`,
+    );
+    assert(
+      settledEraseCenter < beforeEraseCenter * 0.8,
+      `The eraser could not remove coverage outside the original paint bounds: ${JSON.stringify({ beforeEraseCenter, settledEraseCenter })}`,
+    );
+    assert(
+      staleMaskRequests.length === 0,
+      `Pointer release requested the pre-erase mask revision: ${JSON.stringify(staleMaskRequests)}`,
+    );
+    assert(
+      Math.max(...eraseReleaseAlphaSamples) <= duringEraseCenterOverlay + 2,
+      `The erased preview flashed back after pointer release: ${JSON.stringify({ duringEraseCenterOverlay, eraseReleaseAlphaSamples })}`,
+    );
     assert(eraseDuration < 2500, `The incremental eraser gesture is still too slow (${eraseDuration} ms).`);
+
+    // Force each preceding commit to finish while the next erase gesture is
+    // active. An older response must not detach the leaf receiving the newer
+    // stroke, and adjusted previews must wait for the final queued document.
+    await page.locator("#preview-status").waitFor({ state: "hidden", timeout: 60000 }).catch(() => null);
+    const rapidEraseBefore = await authoritativeMaskAlphaQuality(page);
+    let rapidCommitResponses = 0;
+    const prematureAdjustedPreviews = [];
+    const countRapidResponses = (response) => {
+      if (response.url().includes("/edit-commands") && response.request().method() === "POST") rapidCommitResponses += 1;
+    };
+    const recordPrematurePreview = (request) => {
+      const pathname = new URL(request.url()).pathname;
+      if (/\/preview\/(?:hdr|sdr)$/.test(pathname) && rapidCommitResponses < 3) prematureAdjustedPreviews.push(request.url());
+    };
+    page.on("response", countRapidResponses);
+    page.on("request", recordPrematurePreview);
+
+    const firstRapidResponse = page.waitForResponse((response) =>
+      response.url().includes("/edit-commands") && response.request().method() === "POST",
+    );
+    await page.mouse.move(previewBox.x + previewBox.width * 0.39, previewBox.y + previewBox.height * 0.48);
+    await page.mouse.down();
+    await page.mouse.move(previewBox.x + previewBox.width * 0.44, previewBox.y + previewBox.height * 0.49, { steps: 8 });
+    await page.mouse.up();
+
+    await page.mouse.move(previewBox.x + previewBox.width * 0.48, previewBox.y + previewBox.height * 0.50);
+    await page.mouse.down();
+    assert((await firstRapidResponse).ok(), "The first overlapping erase commit failed.");
+    const secondRapidResponse = page.waitForResponse((response) =>
+      response.url().includes("/edit-commands") && response.request().method() === "POST",
+    );
+    await page.mouse.move(previewBox.x + previewBox.width * 0.53, previewBox.y + previewBox.height * 0.52, { steps: 8 });
+    await page.mouse.up();
+
+    await page.mouse.move(previewBox.x + previewBox.width * 0.57, previewBox.y + previewBox.height * 0.53);
+    await page.mouse.down();
+    assert((await secondRapidResponse).ok(), "The second overlapping erase commit failed.");
+    const thirdRapidResponse = page.waitForResponse((response) =>
+      response.url().includes("/edit-commands") && response.request().method() === "POST",
+    );
+    await page.mouse.move(previewBox.x + previewBox.width * 0.62, previewBox.y + previewBox.height * 0.54, { steps: 8 });
+    await page.mouse.up();
+    assert((await thirdRapidResponse).ok(), "The third overlapping erase commit failed.");
+    await page.waitForFunction(() => state.localMaskCommitDepth === 0 && !state.localPointerGesture);
+    await page.waitForFunction(() => {
+      const local = selectedLocal();
+      return local && localAuthoritativeMaskCache.get(local.id)?.signature === JSON.stringify(local.mask);
+    });
+    page.off("response", countRapidResponses);
+    page.off("request", recordPrematurePreview);
+
+    const rapidEraseAfter = await authoritativeMaskAlphaQuality(page);
+    const rapidEraseState = await page.evaluate(async () => {
+      const local = selectedLocal();
+      const response = await fetch(`/api/session/${state.session.session_id}/edit-state`);
+      const server = await response.json();
+      const serverLocal = server.document.local_adjustments.find((item) => item.id === local.id);
+      return {
+        frontendStrokes: local.mask.leaf.strokes.length,
+        serverStrokes: serverLocal.mask.leaf.strokes.length,
+        finalErases: local.mask.leaf.strokes.slice(-3).map((stroke) => Boolean(stroke.erase)),
+      };
+    });
+    assert(
+      rapidEraseAfter.details.strokes === rapidEraseBefore.details.strokes + 3,
+      `Overlapping erase responses dropped a stroke: ${JSON.stringify({ rapidEraseBefore, rapidEraseAfter })}`,
+    );
+    assert(
+      rapidEraseState.frontendStrokes === rapidEraseState.serverStrokes && rapidEraseState.finalErases.every(Boolean),
+      `The optimistic mask and committed mask diverged: ${JSON.stringify(rapidEraseState)}`,
+    );
+    assert(
+      rapidEraseAfter.alphaSum < rapidEraseBefore.alphaSum,
+      `Consecutive eraser strokes did not reduce the mask: ${JSON.stringify({ rapidEraseBefore, rapidEraseAfter })}`,
+    );
+    assert(
+      prematureAdjustedPreviews.length === 0,
+      `An intermediate mask revision reached the adjusted preview: ${JSON.stringify(prematureAdjustedPreviews)}`,
+    );
+
+    const bypassResponse = page.waitForResponse((response) =>
+      response.url().includes("/edit-commands") && response.request().method() === "POST",
+    );
+    await page.locator("#local-bypass").click();
+    assert((await bypassResponse).ok(), "Bypassing the complete local adjustment failed.");
+    const bypassState = await page.evaluate(async () => {
+      const local = selectedLocal();
+      const response = await fetch(`/api/session/${state.session.session_id}/edit-state`);
+      const server = await response.json();
+      return {
+        frontendEnabled: local.enabled,
+        serverEnabled: server.document.local_adjustments.find((item) => item.id === local.id)?.enabled,
+        buttonText: document.querySelector("#local-bypass")?.textContent,
+        pressed: document.querySelector("#local-bypass")?.getAttribute("aria-pressed"),
+      };
+    });
+    assert(
+      bypassState.frontendEnabled === false
+      && bypassState.serverEnabled === false
+      && bypassState.buttonText === "Enable"
+      && bypassState.pressed === "true",
+      `Bypass did not gate the full persisted local adjustment: ${JSON.stringify(bypassState)}`,
+    );
+    const enableResponse = page.waitForResponse((response) =>
+      response.url().includes("/edit-commands") && response.request().method() === "POST",
+    );
+    await page.locator("#local-bypass").click();
+    assert((await enableResponse).ok(), "Re-enabling the complete local adjustment failed.");
+    assert(await page.evaluate(() => selectedLocal()?.enabled) === true, "Re-enabling the local adjustment did not persist in the UI.");
     await page.locator("#local-eraser").click();
 
     const invertResponse = page.waitForResponse((response) =>
@@ -379,7 +629,7 @@ async function authoritativeMaskAlphaQuality(page) {
     assert(await page.locator("#local-adjustment-list li").count() === 1, "The minus button did not remove the selected adjustment.");
 
     if (pageErrors.length) throw new Error(`Browser errors: ${pageErrors.join(" | ")}`);
-    console.log(JSON.stringify({ brushLabels, maskLabels, empty, tipPreview, tipRects, painted, expanded, feathered, authoritativeMask, maskMatrix, eraseDuration, inverted, hidden }));
+    console.log(JSON.stringify({ brushLabels, maskLabels, empty, tipPreview, tipRects, painted, expanded, feathered, authoritativeMask, maskMatrix, beforeErase, beforeEraseCenter, duringEraseCenterOverlay, eraseReleaseAlphaSamples, settledErase, settledEraseCenter, eraseDuration, rapidEraseBefore, rapidEraseAfter, rapidEraseState, prematureAdjustedPreviews, bypassState, inverted, hidden }));
   } finally {
     await browser.close();
   }

@@ -194,6 +194,7 @@ const COMPARE_LAYOUTS = new Set(["single", "split-vertical", "split-horizontal",
 const waveformCanvasCache = new WeakMap();
 const localBrushMaskCanvasCache = new Map();
 const localBrushGestureCanvasCache = new WeakMap();
+const localTintedMaskCanvasCache = new WeakMap();
 const localAuthoritativeMaskCache = new Map();
 const localAuthoritativeMaskRequests = new Map();
 let localMaskOverlayFrame = 0;
@@ -221,6 +222,8 @@ const state = {
   localMaskDraftController: null,
   localMaskDraftGeneration: 0,
   localMaskDraftPending: null,
+  localMaskCommitDepth: 0,
+  localMaskCommitRefreshPending: false,
   localErase: false,
   projectPath: "",
   globalEditDirty: false,
@@ -6676,16 +6679,31 @@ async function moveSelectedLocal(direction) {
 async function commitSelectedLocal({ refreshPreview = true } = {}) {
   const local = selectedLocal();
   if (!local) return;
-  const committed = await queueEditCommand("update_local", { local: JSON.parse(JSON.stringify(local)) }, local.id, { refreshPreview });
-  if (committed) {
-    window.clearTimeout(state.localMaskDraftTimer);
-    // Let an in-flight draft finish quietly. The generation bump below makes
-    // its response ineligible, while avoiding a browser-level request failure
-    // at the end of a fast gradient gesture.
-    state.localMaskDraftController = null;
-    state.localMaskDraftPending = null;
-    state.localMaskDraftGeneration += 1;
-    state.localMaskDraftDirty = false;
+  state.localMaskCommitDepth += 1;
+  state.localMaskCommitRefreshPending ||= refreshPreview;
+  try {
+    // Local strokes are optimistic and may overlap a previous commit. Hold the
+    // adjusted preview until the last queued commit so it cannot render an
+    // intermediate mask between strokes.
+    const committed = await queueEditCommand("update_local", { local: JSON.parse(JSON.stringify(local)) }, local.id, { refreshPreview: false });
+    if (committed) {
+      window.clearTimeout(state.localMaskDraftTimer);
+      // Let an in-flight draft finish quietly. The generation bump below makes
+      // its response ineligible, while avoiding a browser-level request failure
+      // at the end of a fast gradient gesture.
+      state.localMaskDraftController = null;
+      state.localMaskDraftPending = null;
+      state.localMaskDraftGeneration += 1;
+      state.localMaskDraftDirty = false;
+    }
+  } finally {
+    state.localMaskCommitDepth = Math.max(0, state.localMaskCommitDepth - 1);
+    if (state.localMaskCommitDepth === 0 && state.localMaskCommitRefreshPending) {
+      state.localMaskCommitRefreshPending = false;
+      invalidatePreview("hdr", { local: true });
+      invalidatePreview("sdr", { local: true });
+      debouncePreview(state.currentView);
+    }
     queueLocalMaskOverlayRender();
   }
 }
@@ -6707,8 +6725,15 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
       throw new Error(result?.detail?.message || "The edit state changed in another request.");
     }
     if (!response.ok) throw new Error(result?.detail || "The local edit was rejected.");
+    // Do not replace the object graph that a newer optimistic stroke is still
+    // mutating. A response for an earlier queued commit otherwise detaches the
+    // active gesture and can make its erase disappear on pointerup.
+    const optimisticLocals = (state.localMaskCommitDepth > 0 || state.localPointerGesture)
+      ? state.editDocument?.local_adjustments
+      : null;
     state.editRevision = result.revision;
     state.editDocument = result.document;
+    if (optimisticLocals) state.editDocument.local_adjustments = optimisticLocals;
     state.documentDirty = Boolean(result.dirty);
     state.adjustments = result.document.global_adjustments;
     renderLocalAdjustments();
@@ -6919,9 +6944,16 @@ function renderLocalMaskOverlay() {
   canvas.classList.toggle("editing", active);
   const rect = els.previewPrimaryPane?.getBoundingClientRect();
   if (!rect?.width || !rect?.height) return;
-  const ratio = window.devicePixelRatio || 1;
-  canvas.width = Math.max(1, Math.round(rect.width * ratio));
-  canvas.height = Math.max(1, Math.round(rect.height * ratio));
+  const deviceRatio = window.devicePixelRatio || 1;
+  const bitmapLongEdge = Math.max(512, Math.min(1600, settledProxyLongEdge()));
+  // The canvas element follows the zoomed image for pointer geometry, but its
+  // bitmap does not need to grow to multi-thousand-pixel zoom dimensions. Keep
+  // it at mask-proxy resolution and let CSS scale it with the preview.
+  const ratio = Math.min(deviceRatio, bitmapLongEdge / Math.max(rect.width, rect.height));
+  const bitmapWidth = Math.max(1, Math.round(rect.width * ratio));
+  const bitmapHeight = Math.max(1, Math.round(rect.height * ratio));
+  if (canvas.width !== bitmapWidth) canvas.width = bitmapWidth;
+  if (canvas.height !== bitmapHeight) canvas.height = bitmapHeight;
   const context = canvas.getContext("2d");
   context.setTransform(ratio, 0, 0, ratio, 0, 0);
   context.clearRect(0, 0, rect.width, rect.height);
@@ -6946,6 +6978,7 @@ function renderLocalMaskOverlay() {
     : null;
   drawMaskExpression(context, local.mask, x, y, {
     localId: local.id,
+    maskSignature,
     // During a control drag, retain the most recent exact backend frame until
     // the exact draft for the new slider value arrives. Never flash over to
     // the materially different Canvas blur approximation.
@@ -7004,24 +7037,47 @@ function drawMaskExpression(context, expression, x, y, options = {}) {
 function drawBrushMaskOverlay(context, leaf, activeStroke, x, y, inverted = false, options = {}) {
   const left = x(0);
   const top = y(0);
-  const width = Math.max(1, Math.round(x(1) - left));
-  const height = Math.max(1, Math.round(y(1) - top));
+  const displayWidth = Math.max(1, Math.round(x(1) - left));
+  const displayHeight = Math.max(1, Math.round(y(1) - top));
   const strokes = leaf.strokes || [];
-  const signature = `${width}x${height}:${JSON.stringify(strokes)}`;
+  const authoritativeCanvas = options.authoritative?.canvas || null;
+  const interactionLongEdge = Math.max(256, Math.min(1600, settledProxyLongEdge()));
+  const fallbackScale = Math.min(1, interactionLongEdge / Math.max(displayWidth, displayHeight));
+  const width = authoritativeCanvas?.width || Math.max(1, Math.round(displayWidth * fallbackScale));
+  const height = authoritativeCanvas?.height || Math.max(1, Math.round(displayHeight * fallbackScale));
+  const signature = `${width}x${height}:${options.maskSignature || JSON.stringify(strokes)}`;
   const cacheKey = options.localId || leaf;
-  let cached = localBrushMaskCanvasCache.get(cacheKey);
-  if (!cached || cached.signature !== signature) {
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const canvasContext = canvas.getContext("2d");
-    for (const stroke of strokes) drawBrushMaskStroke(canvasContext, stroke, width, height);
-    cached = { signature, canvas };
-    localBrushMaskCanvasCache.set(cacheKey, cached);
+  let cached = null;
+  if (!authoritativeCanvas) {
+    cached = localBrushMaskCanvasCache.get(cacheKey);
+    if (!cached || cached.signature !== signature) {
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const canvasContext = canvas.getContext("2d");
+      const eraseStrokes = [];
+      for (const stroke of strokes) {
+        if (stroke.erase) eraseStrokes.push(stroke);
+        else drawBrushMaskStroke(canvasContext, stroke, width, height);
+      }
+      // Erase is defined as the final mask stage. Cache the fully processed
+      // fallback too, since several overlay renders can occur while the
+      // authoritative mask request is in flight after pointer-up.
+      const processedCanvas = postProcessBrushMaskPreviewWithErase(
+        canvas,
+        eraseStrokes,
+        leaf,
+        width,
+        height,
+        inverted,
+      );
+      cached = { signature, processedCanvas };
+      localBrushMaskCanvasCache.set(cacheKey, cached);
+    }
   }
-  const canUseAuthoritative = Boolean(options.authoritative);
-  let maskCanvas = canUseAuthoritative ? options.authoritative.canvas : cached.canvas;
-  let finalMask = canUseAuthoritative;
+  let maskCanvas = authoritativeCanvas
+    ? authoritativeCanvas
+    : cached.processedCanvas;
   if (activeStroke) {
     const baseKey = `${signature}:${options.authoritative?.key || "draft"}`;
     let gestureCanvas = localBrushGestureCanvasCache.get(activeStroke);
@@ -7029,7 +7085,7 @@ function drawBrushMaskOverlay(context, leaf, activeStroke, x, y, inverted = fals
       const canvas = document.createElement("canvas");
       canvas.width = width;
       canvas.height = height;
-      canvas.getContext("2d").drawImage(canUseAuthoritative ? options.authoritative.canvas : cached.canvas, 0, 0, width, height);
+      canvas.getContext("2d").drawImage(maskCanvas, 0, 0, width, height);
       gestureCanvas = { baseKey, canvas, renderedPointCount: 0 };
       localBrushGestureCanvasCache.set(activeStroke, gestureCanvas);
     }
@@ -7039,7 +7095,7 @@ function drawBrushMaskOverlay(context, leaf, activeStroke, x, y, inverted = fals
       const draftStroke = {
         ...activeStroke,
         points: pendingPoints,
-        opacity: canUseAuthoritative && !activeStroke.erase
+        opacity: !activeStroke.erase
           ? Number(activeStroke.opacity) * clamp(Number(leaf.mask_opacity ?? 1), 0, 1)
           : Number(activeStroke.opacity),
       };
@@ -7048,36 +7104,18 @@ function drawBrushMaskOverlay(context, leaf, activeStroke, x, y, inverted = fals
     }
     maskCanvas = gestureCanvas.canvas;
   }
-  if (!finalMask && !options.exactMaskPending) maskCanvas = postProcessBrushMaskPreview(maskCanvas, leaf, width, height);
   // Shift/Feather generate alpha outside the painted source. Colorize only
   // after those operations so newly covered pixels cannot retain black RGB.
-  const tintedCanvas = document.createElement("canvas");
-  tintedCanvas.width = width;
-  tintedCanvas.height = height;
-  const tintedContext = tintedCanvas.getContext("2d");
-  tintedContext.drawImage(maskCanvas, 0, 0, width, height);
-  tintBrushMask(tintedContext, width, height);
-  maskCanvas = tintedCanvas;
-  if (inverted && !finalMask) {
-    const invertedCanvas = document.createElement("canvas");
-    invertedCanvas.width = width;
-    invertedCanvas.height = height;
-    const invertedContext = invertedCanvas.getContext("2d");
-    invertedContext.fillStyle = state.localOverlayColor;
-    invertedContext.fillRect(0, 0, width, height);
-    invertedContext.globalCompositeOperation = "destination-out";
-    invertedContext.drawImage(maskCanvas, 0, 0);
-    maskCanvas = invertedCanvas;
-  }
+  maskCanvas = tintedBrushMaskCanvas(maskCanvas, !activeStroke);
   context.save();
-  const overlayAlpha = finalMask ? 0.52 : 0.52 * clamp(Number(leaf.mask_opacity ?? 1), 0, 1);
-  context.globalAlpha = overlayAlpha;
-  context.drawImage(maskCanvas, left, top, width, height);
+  context.globalAlpha = 0.52;
+  context.drawImage(maskCanvas, left, top, displayWidth, displayHeight);
   context.restore();
 }
 
 async function queueAuthoritativeLocalMask(local) {
   if (!state.session || !local || local.mask?.operator !== "leaf") return;
+  if (state.localMaskCommitDepth > 0) return;
   if (!["brush", "linear_gradient"].includes(local.mask.leaf?.type)) return;
   if (local.mask.leaf?.type === "brush" && !(local.mask.leaf.strokes || []).length) return;
   if (state.localMaskDraftDirty) return;
@@ -7257,6 +7295,38 @@ function postProcessBrushMaskPreview(source, leaf, width, height) {
   softenedContext.filter = "none";
   softenedContext.putImageData(outputPixels, 0, 0);
   return softened;
+}
+
+function postProcessBrushMaskPreviewWithErase(paintedSource, eraseStrokes, leaf, width, height, inverted = false) {
+  const processed = postProcessBrushMaskPreview(paintedSource, leaf, width, height);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  context.drawImage(processed, 0, 0, width, height);
+  const output = context.getImageData(0, 0, width, height);
+  const maskOpacity = clamp(Number(leaf.mask_opacity ?? 1), 0, 1);
+  for (let index = 3; index < output.data.length; index += 4) {
+    const alpha = inverted ? 255 - output.data[index] : output.data[index];
+    output.data[index] = Math.round(alpha * maskOpacity);
+  }
+  context.putImageData(output, 0, 0);
+  for (const stroke of eraseStrokes || []) drawBrushMaskStroke(context, stroke, width, height);
+  return canvas;
+}
+
+function tintedBrushMaskCanvas(maskCanvas, cacheable = false) {
+  const color = state.localOverlayColor;
+  const cached = cacheable ? localTintedMaskCanvasCache.get(maskCanvas) : null;
+  if (cached?.color === color) return cached.canvas;
+  const canvas = document.createElement("canvas");
+  canvas.width = maskCanvas.width;
+  canvas.height = maskCanvas.height;
+  const context = canvas.getContext("2d");
+  context.drawImage(maskCanvas, 0, 0);
+  tintBrushMask(context, canvas.width, canvas.height);
+  if (cacheable) localTintedMaskCanvasCache.set(maskCanvas, { color, canvas });
+  return canvas;
 }
 
 function tintBrushMask(context, width, height) {

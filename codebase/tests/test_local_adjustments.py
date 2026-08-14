@@ -170,6 +170,122 @@ def test_brush_eraser_subtracts_from_existing_coverage() -> None:
     assert evaluate_mask(brush, reference, x, y)[1, 1] == pytest.approx(0.5)
 
 
+@pytest.mark.parametrize(
+    ("shift_edge", "feather"),
+    [(0.0, 0.04), (0.026, 0.024)],
+)
+def test_brush_eraser_cannot_strengthen_a_post_processed_mask(
+    shift_edge: float,
+    feather: float,
+) -> None:
+    reference = np.full((129, 129, 3), 0.18, dtype=np.float32)
+    x = np.linspace(0.0, 1.0, 129, dtype=np.float32)[None, :].repeat(129, axis=0)
+    y = x.T
+    paint = BrushStroke(
+        points=[MaskPoint(x=0.25, y=0.5), MaskPoint(x=0.75, y=0.5)],
+        radius=0.07,
+        hardness=0.64,
+        flow=0.35,
+        opacity=0.7,
+    )
+    erase = BrushStroke(
+        points=[MaskPoint(x=0.42, y=0.5), MaskPoint(x=0.56, y=0.5)],
+        radius=0.07,
+        hardness=0.64,
+        flow=0.35,
+        opacity=0.7,
+        erase=True,
+    )
+    painted = evaluate_mask(
+        _leaf(MaskLeaf(
+            type="brush",
+            strokes=[paint],
+            mask_shift_edge=shift_edge,
+            mask_feather=feather,
+        )),
+        reference,
+        x,
+        y,
+    )
+    erased = evaluate_mask(
+        _leaf(MaskLeaf(
+            type="brush",
+            strokes=[paint, erase],
+            mask_shift_edge=shift_edge,
+            mask_feather=feather,
+        )),
+        reference,
+        x,
+        y,
+    )
+
+    assert np.all(erased <= painted + 1e-6)
+    assert float(np.sum(erased)) < float(np.sum(painted))
+    assert erased[64, 64] < painted[64, 64] * 0.8
+
+
+@pytest.mark.parametrize(
+    ("shift_edge", "feather", "mask_opacity", "inverted"),
+    [
+        (0.04, 0.0, 1.0, False),
+        (0.0, 0.04, 1.0, False),
+        (0.04, 0.02, 0.42, False),
+        (0.04, 0.02, 1.0, True),
+        (0.04, 0.02, 0.42, True),
+    ],
+)
+def test_brush_eraser_is_applied_after_every_mask_control(
+    shift_edge: float,
+    feather: float,
+    mask_opacity: float,
+    inverted: bool,
+) -> None:
+    size = 257
+    reference = np.full((size, size, 3), 0.18, dtype=np.float32)
+    x = np.linspace(0.0, 1.0, size, dtype=np.float32)[None, :].repeat(size, axis=0)
+    y = x.T
+    paint = BrushStroke(
+        points=[MaskPoint(x=0.5, y=0.5)],
+        radius=0.08,
+        hardness=1.0,
+        flow=1.0,
+        opacity=1.0,
+    )
+    erase = BrushStroke(
+        points=[MaskPoint(x=0.60, y=0.5)],
+        radius=0.045,
+        hardness=1.0,
+        flow=1.0,
+        opacity=1.0,
+        erase=True,
+    )
+
+    def mask(strokes: list[BrushStroke]) -> MaskExpression:
+        return _leaf(
+            MaskLeaf(
+                type="brush",
+                strokes=strokes,
+                mask_shift_edge=shift_edge,
+                mask_feather=feather,
+                mask_opacity=mask_opacity,
+            ),
+            inverted=inverted,
+        )
+
+    painted = evaluate_mask(mask([paint]), reference, x, y)
+    erased = evaluate_mask(mask([paint, erase]), reference, x, y)
+    target_column = round(0.60 * (size - 1))
+
+    # This point is beyond the original 0.08-radius paint dab. Its coverage is
+    # created by Shift Edge, Feather, or Invert, so erasing it proves that the
+    # eraser is the final operation rather than being clipped to raw paint.
+    assert local_mask_module._brush_mask(MaskLeaf(type="brush", strokes=[paint]), x, y)[128, target_column] == 0.0
+    assert painted[128, target_column] > 0.05
+    assert erased[128, target_column] < painted[128, target_column] * 0.1
+    assert np.all(erased <= painted + 1e-6)
+    assert float(np.max(erased)) <= mask_opacity + 1e-6
+
+
 def test_painted_mask_feather_opacity_and_inversion_apply_after_stroke_composition() -> None:
     reference = np.full((65, 65, 3), 0.18, dtype=np.float32)
     x = np.linspace(0.0, 1.0, 65, dtype=np.float32)[None, :].repeat(65, axis=0)
@@ -478,6 +594,32 @@ def test_local_mask_selection_is_fixed_while_lane_grades_are_independent() -> No
 
     assert hdr[8, 0].mean() > hdr[8, -1].mean()
     assert sdr[8, 0].mean() < sdr[8, -1].mean()
+
+
+def test_local_bypass_gates_the_entire_adjustment_after_mask_and_grade() -> None:
+    image = np.full((32, 32, 3), 0.18, dtype=np.float32)
+    local = LocalAdjustment(
+        mask=_leaf(MaskLeaf(type="brush", strokes=[BrushStroke(
+            points=[MaskPoint(x=0.5, y=0.5)],
+            radius=0.3,
+            hardness=0.5,
+        )], mask_shift_edge=0.03, mask_feather=0.02, mask_opacity=0.6)),
+        opacity=0.75,
+        hdr_grade=LocalGrade(exposure=1.0, saturation=0.4),
+    )
+    enabled = apply_local_stack(image, image, [local], PreviewKind.HDR, GeometryAdjustments())
+    bypassed_local = local.model_copy(deep=True)
+    bypassed_local.enabled = False
+    bypassed = apply_local_stack(image, image, [bypassed_local], PreviewKind.HDR, GeometryAdjustments())
+
+    assert not np.array_equal(enabled, image)
+    np.testing.assert_array_equal(bypassed, image)
+    overlay_mask = SessionRenderCache(image, None).compiled_local_mask(
+        AdjustmentState(),
+        bypassed_local,
+        256,
+    )
+    assert np.any(overlay_mask > 0)
 
 
 def test_tiled_local_stack_is_deterministic_across_tile_sizes() -> None:

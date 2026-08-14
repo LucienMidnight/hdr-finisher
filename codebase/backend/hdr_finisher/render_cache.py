@@ -87,7 +87,12 @@ class SessionRenderCache:
     ) -> np.ndarray:
         edge = max(256, int(long_edge))
         source, _sdr_reference = self._proxies(edge)
-        masks = self._compiled_masks(source, adjustments, [local_adjustment], edge)
+        # The overlay remains inspectable while the adjustment is bypassed.
+        # Rendering filters disabled/zero-opacity locals, so compile an enabled
+        # view of this one mask without changing the persisted adjustment.
+        mask_source = local_adjustment.model_copy(update={"enabled": True, "opacity": 1.0})
+        masks = self._compiled_masks(source, adjustments, [mask_source], edge)
+        assert masks is not None
         return masks[local_adjustment.id]
 
     def compiled_mask_draft(
