@@ -159,6 +159,49 @@ def test_real_png_upload_preview_and_scopes() -> None:
     assert diagnostics.json()["render_cache"]["managed_bytes"] > 0
 
 
+def test_interactive_scopes_use_uncommitted_local_adjustments() -> None:
+    upload = client.post("/api/session", files={"file": ("scope-local.png", make_png_bytes(), "image/png")})
+    assert upload.status_code == 200
+    session = upload.json()["session"]
+    session_id = session["session_id"]
+    local = {
+        "id": "scope-draft",
+        "name": "Scope draft",
+        "mask": {
+            "operator": "leaf",
+            "leaf": {
+                "type": "brush",
+                "strokes": [{
+                    "points": [{"x": 0.5, "y": 0.5}],
+                    "radius": 1.0,
+                    "hardness": 1.0,
+                    "flow": 1.0,
+                    "opacity": 1.0,
+                }],
+            },
+        },
+        "hdr_grade": {"exposure": 2.0},
+    }
+    endpoint = f"/api/session/{session_id}/scopes?kind=hdr&mode=histogram&long_edge=256"
+    baseline = client.post(endpoint, json={
+        "adjustments": session["adjustments"],
+        "edit_revision": 0,
+        "tier": "interactive",
+        "local_adjustments": [],
+    })
+    draft = client.post(endpoint, json={
+        "adjustments": session["adjustments"],
+        "edit_revision": 0,
+        "tier": "interactive",
+        "local_adjustments": [local],
+    })
+
+    assert baseline.status_code == 200
+    assert draft.status_code == 200
+    assert draft.json()["channels"] != baseline.json()["channels"]
+    assert client.get(f"/api/session/{session_id}/edit-state").json()["document"]["local_adjustments"] == []
+
+
 def test_local_mask_draft_matches_the_same_mask_after_commit() -> None:
     upload = client.post("/api/session", files={"file": ("mask.png", make_png_bytes(), "image/png")})
     assert upload.status_code == 200
@@ -220,6 +263,27 @@ def test_local_mask_draft_matches_the_same_mask_after_commit() -> None:
     assert draft.headers["x-image-width"] == settled.headers["x-image-width"]
     assert draft.headers["x-image-height"] == settled.headers["x-image-height"]
     assert draft.content == settled.content
+
+
+def test_local_luminance_sampling_returns_a_low_precision_scene_ev_range() -> None:
+    upload = client.post("/api/session", files={"file": ("luma.png", make_png_bytes(), "image/png")})
+    assert upload.status_code == 200
+    session_id = upload.json()["session"]["session_id"]
+    response = client.post(
+        f"/api/session/{session_id}/local-luminance-sample",
+        json={
+            "points": [{"x": 0.2, "y": 0.5}, {"x": 0.5, "y": 0.5}, {"x": 0.8, "y": 0.5}],
+            "edit_revision": 0,
+            "long_edge": 512,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sample_count"] == 3
+    assert -24 <= payload["low_ev"] <= payload["center_ev"] <= payload["high_ev"] <= 24
+    assert payload["low_ev"] * 4 == pytest.approx(round(payload["low_ev"] * 4))
+    assert payload["high_ev"] * 4 == pytest.approx(round(payload["high_ev"] * 4))
 
 
 def test_clearing_session_removes_owned_upload_temp_file() -> None:

@@ -8,7 +8,16 @@ from PIL import Image
 
 from hdr_finisher.adjustments import apply_adjustments
 from hdr_finisher import local_adjustments as local_mask_module
-from hdr_finisher.local_adjustments import apply_local_stack, compile_preview_mask, evaluate_mask, source_coordinate_grid
+from hdr_finisher.local_adjustments import (
+    apply_local_stack,
+    compile_preview_mask,
+    compile_spatial_preview_mask,
+    evaluate_mask,
+    mask_influence_opacity,
+    sample_luminance_evs,
+    spatial_mask_signature,
+    source_coordinate_grid,
+)
 from hdr_finisher.models import (
     AdjustmentState,
     BrushStroke,
@@ -139,6 +148,75 @@ def test_luminance_range_is_an_ev_trapezoid_relative_to_diffuse_white() -> None:
         )
     )
     np.testing.assert_allclose(evaluate_mask(expression, reference, x, y), [[0.0, 1.0, 1.0, 1.0, 0.0]], atol=1e-5)
+
+
+def test_simple_mask_spatial_identity_excludes_only_influence_opacity() -> None:
+    original = _leaf(MaskLeaf(type="luminance_range", mask_opacity=1.0, mask_feather=0.01))
+    opacity_changed = _leaf(MaskLeaf(type="luminance_range", mask_opacity=0.2, mask_feather=0.01))
+    feather_changed = _leaf(MaskLeaf(type="luminance_range", mask_opacity=1.0, mask_feather=0.02))
+
+    assert spatial_mask_signature(original) == spatial_mask_signature(opacity_changed)
+    assert spatial_mask_signature(original) != spatial_mask_signature(feather_changed)
+
+
+def test_luminance_range_feather_softens_the_finished_spatial_mask() -> None:
+    size = 257
+    reference = np.full((size, size, 3), 0.18 * 2**4, dtype=np.float32)
+    reference[:, : size // 2, :] = 0.18
+    x = np.linspace(0.0, 1.0, size, dtype=np.float32)[None, :].repeat(size, axis=0)
+    y = x.T
+    plain_leaf = MaskLeaf(
+        type="luminance_range",
+        fade_in_start_ev=-0.01,
+        full_start_ev=0.0,
+        full_end_ev=0.0,
+        fade_out_end_ev=0.01,
+    )
+    plain = evaluate_mask(_leaf(plain_leaf), reference, x, y)
+    feathered = evaluate_mask(
+        _leaf(plain_leaf.model_copy(update={"mask_feather": 0.025})),
+        reference,
+        x,
+        y,
+    )
+
+    assert feathered[128, 32] == pytest.approx(plain[128, 32], abs=1e-4)
+    assert feathered[128, size // 2 + 10] > plain[128, size // 2 + 10]
+    assert 0.0 < feathered[128, size // 2] < 1.0
+
+
+def test_luminance_feather_uses_a_linear_half_strength_response() -> None:
+    assert local_mask_module._luminance_mask_feather_radius(0.0) == pytest.approx(0.0)
+    assert local_mask_module._luminance_mask_feather_radius(0.0005) == pytest.approx(0.0009)
+    assert local_mask_module._luminance_mask_feather_radius(0.025) == pytest.approx(0.045)
+    assert local_mask_module._luminance_mask_feather_radius(0.05) == pytest.approx(0.09)
+    assert local_mask_module._painted_mask_feather_radius(0.025) > 0.09
+
+
+def test_luminance_picker_uses_robust_neighborhood_average_and_rejects_fireflies() -> None:
+    reference = np.full((33, 33, 3), 0.18, dtype=np.float32)
+    reference[16, 16] = 0.18 * 2**20
+    low, high, center, count = sample_luminance_evs(
+        reference,
+        [MaskPoint(x=0.5, y=0.5)],
+    )
+
+    assert count == 1
+    assert center == pytest.approx(0.0)
+    assert (low, high) == pytest.approx((-0.5, 0.5))
+
+
+def test_luminance_picker_smooths_and_quantizes_dragged_ranges() -> None:
+    ev = np.linspace(-4.0, 4.0, 65, dtype=np.float32)
+    values = 0.18 * np.exp2(ev)
+    reference = np.repeat(values[None, :, None], 3, axis=-1).repeat(9, axis=0)
+    points = [MaskPoint(x=value, y=0.5) for value in np.linspace(0.2, 0.8, 17)]
+    low, high, center, count = sample_luminance_evs(reference, points)
+
+    assert count == len(points)
+    assert low < center < high
+    assert low == pytest.approx(round(low * 4) / 4)
+    assert high == pytest.approx(round(high * 4) / 4)
 
 
 def test_empty_brush_starts_clear_and_flow_builds_to_the_opacity_ceiling() -> None:
@@ -639,6 +717,56 @@ def test_preview_mask_quantization_stays_within_one_r8_step() -> None:
     floating = evaluate_mask(_gradient(), image, x, y)
     compiled = compile_preview_mask(image, _gradient(), geometry).astype(np.float32) / 255.0
     assert float(np.max(np.abs(floating - compiled))) <= (1.0 / 255.0 + 1e-7)
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        _leaf(MaskLeaf(
+            type="luminance_range",
+            fade_in_start_ev=-3.0,
+            full_start_ev=-1.0,
+            full_end_ev=1.0,
+            fade_out_end_ev=3.0,
+            mask_feather=0.018,
+            mask_opacity=0.37,
+        )),
+        _leaf(MaskLeaf(
+            type="linear_gradient",
+            start=MaskPoint(x=0.1, y=0.25),
+            end=MaskPoint(x=0.9, y=0.75),
+            gradient_fan=0.28,
+            mask_feather=0.012,
+            mask_opacity=0.37,
+        )),
+        _leaf(MaskLeaf(
+            type="brush",
+            strokes=[BrushStroke(
+                points=[MaskPoint(x=0.2, y=0.35), MaskPoint(x=0.8, y=0.65)],
+                radius=0.09,
+                hardness=0.62,
+                flow=0.7,
+                opacity=0.8,
+            )],
+            mask_shift_edge=0.014,
+            mask_feather=0.018,
+            mask_opacity=0.37,
+        )),
+    ],
+    ids=["luma", "gradient", "brush"],
+)
+def test_spatial_mask_cache_matches_cpu_influence_within_one_r8_step(expression: MaskExpression) -> None:
+    ev = np.linspace(-4.0, 4.0, 73, dtype=np.float32)
+    luminance = 0.18 * np.exp2(ev)
+    image = np.repeat(luminance[None, :, None], 3, axis=-1).repeat(47, axis=0)
+    geometry = GeometryAdjustments()
+    x, y = source_coordinate_grid(73, 47, 0, 0, 73, 47, geometry)
+
+    authoritative = evaluate_mask(expression, image, x, y)
+    cached = compile_spatial_preview_mask(image, expression, geometry).astype(np.float32) / 255.0
+    cached *= np.float32(mask_influence_opacity(expression))
+
+    assert float(np.max(np.abs(authoritative - cached))) <= (1.0 / 255.0 + 1e-7)
 
 
 def test_preview_cache_reuses_compiled_mask_when_only_grade_changes() -> None:

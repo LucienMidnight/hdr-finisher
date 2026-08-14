@@ -285,7 +285,10 @@ async function overlayMaskAlphaAt(page, x, y) {
       return local && localAuthoritativeMaskCache.get(local.id)?.signature === JSON.stringify(local.mask);
     });
     page.off("response", countFeatherDraft);
-    assert(featherDraftCount >= 2, `A continuous Feather drag only produced ${featherDraftCount} exact preview frame(s).`);
+    assert(
+      featherDraftCount >= 1 && featherDraftCount < 4,
+      `A continuous Feather drag did not collapse to a bounded latest-state preview (${featherDraftCount} exact frame(s)).`,
+    );
     const feathered = await overlayColors(overlay);
     await page.screenshot({
       path: path.resolve(__dirname, "../output/brush-qa/feathered.png"),
@@ -499,7 +502,9 @@ async function overlayMaskAlphaAt(page, x, y) {
     };
     const recordPrematurePreview = (request) => {
       const pathname = new URL(request.url()).pathname;
-      if (/\/preview\/(?:hdr|sdr)$/.test(pathname) && rapidCommitResponses < 3) prematureAdjustedPreviews.push(request.url());
+      if (/\/preview\/(?:hdr|sdr)$/.test(pathname) && rapidCommitResponses < 3) {
+        prematureAdjustedPreviews.push({ url: request.url(), committedResponses: rapidCommitResponses });
+      }
     };
     page.on("response", countRapidResponses);
     page.on("request", recordPrematurePreview);

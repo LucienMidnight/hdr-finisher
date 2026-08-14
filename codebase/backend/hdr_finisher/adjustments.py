@@ -222,7 +222,7 @@ def _apply_sdr_adjustments(
         shadow_mask = 1.0 - _smoothstep(0.0, 0.5, _acescg_luma(result))
         result = np.clip(result + sdr.shadow * 0.08 * shadow_mask[..., None], 0.0, None)
     if _sdr_color_is_enabled(adjustments):
-        result = _apply_hdr_color(result, _effective_sdr_color_settings(adjustments))
+        result = _apply_hdr_color(result, adjustments.sdr)
     tone_mapper = sdr.tone_mapper if sdr.base_section_enabled else ToneMapper.FILMIC
     tone_contrast = sdr.tone_contrast if sdr.base_section_enabled else 1.0
     tone_skew = sdr.tone_skew if sdr.base_section_enabled else 0.0

@@ -460,6 +460,31 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     assert "Settled WebGPU authoring preview" in javascript
 
 
+def test_phase_one_local_influence_and_latest_generation_contract() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    scheduler = (FRONTEND / "preview-scheduler.js").read_text(encoding="utf-8")
+    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+
+    assert 'const influenceOnly = name === "mask_opacity"' in javascript
+    assert "scheduleLocalPreview();" in javascript
+    assert "bindLocalPreviewInteraction(input);" in javascript
+    assert "active.controller?.abort();" in javascript
+    assert "window.requestAnimationFrame(flushAuthoritativeLocalMaskDraft)" in javascript
+    assert "signature !== JSON.stringify(selectedLocal()?.mask)" in javascript
+    assert "local_adjustments: requestLocals" in javascript
+    assert "local_adjustments: state.localPreviewDirty" in javascript
+    assert 'conflict?.detail === "Stale scope request dropped."' in javascript
+    assert "generation !== state.scopeGeneration" in javascript
+    assert "Math.max(state.scopeGeneration + 1, generation ?? 0)" in javascript
+    assert "preserveLocalDraft: state.localPreviewDirty" in javascript
+    assert "const adjustmentsSnapshot = JSON.parse(JSON.stringify(state.adjustments));" in javascript
+    assert "JSON.parse(JSON.stringify(localAdjustments()))" in javascript
+    assert "recordStaleResult" in scheduler
+    assert "gpuMaskIdentity(local.mask)" in webgpu
+    assert "p[1] * p[13]" in webgpu
+    assert "spatial_only=${spatialOnly}" in webgpu
+
+
 def test_viewer_exposes_icon_comparison_layouts_with_active_lane_scopes() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")

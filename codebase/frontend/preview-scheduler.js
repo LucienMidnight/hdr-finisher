@@ -34,6 +34,10 @@
       this.cancelIdleWork();
     }
 
+    recordStaleResult() {
+      this.metrics.staleResults += 1;
+    }
+
     endInteraction() {
       this.interacting = false;
       if (this.current) this.armSettle(this.current);

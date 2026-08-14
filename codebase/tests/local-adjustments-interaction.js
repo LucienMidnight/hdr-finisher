@@ -46,6 +46,7 @@ async function canvasVariationCount(locator) {
   page.on("requestfailed", (request) => {
     const failure = request.failure()?.errorText || "unknown failure";
     if (failure === "net::ERR_ABORTED" && /\/(preview|scopes)(\/|\?)/.test(request.url())) return;
+    if (failure === "net::ERR_ABORTED" && /\/local-mask\/[^/]+\/preview$/.test(new URL(request.url()).pathname)) return;
     requestFailures.push(`${request.method()} ${request.url()}: ${failure}`);
   });
 
@@ -76,6 +77,13 @@ async function canvasVariationCount(locator) {
       await button.click();
       assert(await button.getAttribute("aria-pressed") === "true", `${tool} did not expose immediate active state.`);
       await page.waitForFunction((count) => document.querySelectorAll("#local-adjustment-list > li").length === count, index + 1);
+      if (tool === "luminance_range") {
+        await page.waitForFunction(() => {
+          const local = selectedLocal();
+          const cached = local ? localAuthoritativeMaskCache.get(local.id) : null;
+          return Boolean(cached && cached.signature === localMaskSpatialSignature(local.mask));
+        });
+      }
       const visiblePixels = await overlayPixelCount(page);
       if (tool === "brush") {
         assert(visiblePixels === 0, "A new brush mask should start empty instead of painting a default blob.");

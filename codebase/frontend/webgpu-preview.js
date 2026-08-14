@@ -24,6 +24,9 @@
       this.localParamBuffers = new Map();
       this.bindGroupLayout = null;
       this.pipelineLayout = null;
+      this.instrumentationEnabled = false;
+      this.performanceMetrics = { renders: [] };
+      this.adapterInfo = null;
     }
 
     async initialize() {
@@ -34,7 +37,18 @@
       try {
         this.adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
         if (!this.adapter) throw new Error("No WebGPU adapter was returned");
-        this.device = await this.adapter.requestDevice();
+        const timestampQueries = this.adapter.features.has("timestamp-query");
+        this.device = await this.adapter.requestDevice({
+          requiredFeatures: timestampQueries ? ["timestamp-query"] : [],
+        });
+        const info = this.adapter.info || {};
+        this.adapterInfo = {
+          vendor: info.vendor || "unknown",
+          architecture: info.architecture || "unknown",
+          device: info.device || "unknown",
+          description: info.description || "unknown",
+          timestampQueries,
+        };
         this.context = this.canvas.getContext("webgpu");
         if (!this.context) throw new Error("The WebGPU canvas context is unavailable");
         this.module = this.device.createShaderModule({ code: SHADER_SOURCE });
@@ -96,16 +110,33 @@
       return this.renderTo(this.canvas, sessionId, lane, adjustments, curveSampler, longEdge, localAdjustments, editRevision);
     }
 
+    setInstrumentationEnabled(enabled = true) {
+      this.instrumentationEnabled = Boolean(enabled);
+      if (enabled) this.performanceMetrics = { renders: [] };
+    }
+
+    diagnosticsSnapshot() {
+      return {
+        adapter: this.adapterInfo,
+        available: this.available,
+        detail: this.detail,
+        renders: this.performanceMetrics.renders.map((entry) => ({ ...entry })),
+      };
+    }
+
     async renderTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0) {
       if (!this.available || !sessionId) return false;
+      const renderStartedAt = performance.now();
       if (this.sessionId !== sessionId) this.resetSession(sessionId);
       const serial = (this.renderSerials.get(canvas) || 0) + 1;
       this.renderSerials.set(canvas, serial);
       const proxy = await this.loadProxy(sessionId, lane, longEdge);
+      const proxyReadyAt = performance.now();
       if (serial !== this.renderSerials.get(canvas) || !proxy) return false;
       const activeLocals = localAdjustments.filter((local) => local.enabled !== false && local.opacity > 0 && local[`${lane}_grade`]?.enabled !== false);
       if (!activeLocals.every((local) => gpuLocalSupported(local[`${lane}_grade`]))) return false;
       const masks = await Promise.all(activeLocals.map((local) => this.loadLocalMask(sessionId, local, longEdge, editRevision)));
+      const masksReadyAt = performance.now();
       if (serial !== this.renderSerials.get(canvas) || masks.some((mask) => !mask)) return false;
 
       if (canvas.width !== proxy.width) canvas.width = proxy.width;
@@ -136,7 +167,11 @@
       const verticalBindGroup = makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialBTexture.createView());
       const compositeBindGroup = makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialATexture.createView());
       const encoder = this.device.createCommandEncoder();
+      const gpuTiming = this.instrumentationEnabled && this.device.features.has("timestamp-query")
+        ? this.createGpuTimingResources()
+        : null;
       const basePass = encoder.beginRenderPass({
+        ...(gpuTiming ? { timestampWrites: { querySet: gpuTiming.querySet, beginningOfPassWriteIndex: 0 } } : {}),
         colorAttachments: [{
           view: intermediate.baseTexture.createView(),
           clearValue: { r: 0, g: 0, b: 0, a: 1 },
@@ -222,6 +257,7 @@
         verticalPass.end();
       }
       const pass = encoder.beginRenderPass({
+        ...(gpuTiming ? { timestampWrites: { querySet: gpuTiming.querySet, endingOfPassWriteIndex: 1 } } : {}),
         colorAttachments: [{
           view: context.getCurrentTexture().createView(),
           clearValue: { r: 0, g: 0, b: 0, a: 1 },
@@ -233,8 +269,64 @@
       pass.setBindGroup(0, compositeBindGroup);
       pass.draw(3);
       pass.end();
+      if (gpuTiming) {
+        encoder.resolveQuerySet(gpuTiming.querySet, 0, 2, gpuTiming.resolveBuffer, 0);
+        encoder.copyBufferToBuffer(gpuTiming.resolveBuffer, 0, gpuTiming.readBuffer, 0, 16);
+      }
       this.device.queue.submit([encoder.finish()]);
+      const submittedAt = performance.now();
+      if (this.instrumentationEnabled) {
+        const metric = {
+          serial,
+          lane,
+          longEdge,
+          width: proxy.width,
+          height: proxy.height,
+          localCount: activeLocals.length,
+          proxyAwaitMs: proxyReadyAt - renderStartedAt,
+          maskAwaitMs: masksReadyAt - proxyReadyAt,
+          encodeSubmitMs: submittedAt - masksReadyAt,
+          submissionMs: submittedAt - renderStartedAt,
+          queueCompleteMs: null,
+          gpuMs: null,
+        };
+        this.performanceMetrics.renders.push(metric);
+        if (this.performanceMetrics.renders.length > 240) this.performanceMetrics.renders.shift();
+        void this.device.queue.onSubmittedWorkDone().then(() => {
+          metric.queueCompleteMs = performance.now() - submittedAt;
+        }).catch(() => null);
+        if (gpuTiming) this.collectGpuTiming(gpuTiming, metric);
+      } else {
+        gpuTiming?.querySet.destroy();
+        gpuTiming?.resolveBuffer.destroy();
+        gpuTiming?.readBuffer.destroy();
+      }
       return { width: proxy.width, height: proxy.height, hdr: surface.hdr, proxyFormat: proxy.pixelFormat };
+    }
+
+    createGpuTimingResources() {
+      const querySet = this.device.createQuerySet({ type: "timestamp", count: 2 });
+      const resolveBuffer = this.device.createBuffer({
+        size: 16,
+        usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
+      });
+      const readBuffer = this.device.createBuffer({
+        size: 16,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+      });
+      return { querySet, resolveBuffer, readBuffer };
+    }
+
+    collectGpuTiming(resources, metric) {
+      void resources.readBuffer.mapAsync(GPUMapMode.READ).then(() => {
+        const timestamps = new BigUint64Array(resources.readBuffer.getMappedRange());
+        metric.gpuMs = Number(timestamps[1] - timestamps[0]) / 1e6;
+        resources.readBuffer.unmap();
+      }).catch(() => null).finally(() => {
+        resources.querySet.destroy();
+        resources.resolveBuffer.destroy();
+        resources.readBuffer.destroy();
+      });
     }
 
     configureSurface(canvas, context, wantsHdr) {
@@ -411,7 +503,8 @@
     }
 
     async loadLocalMask(sessionId, local, longEdge, editRevision) {
-      const maskSignature = JSON.stringify(local.mask);
+      const spatialOnly = local.mask?.operator === "leaf" && Boolean(local.mask.leaf);
+      const maskSignature = gpuMaskIdentity(local.mask);
       const key = `${sessionId}:${local.id}:${longEdge}:${maskSignature}`;
       const cached = this.localMasks.get(key);
       if (cached) {
@@ -419,7 +512,7 @@
         this.localMasks.set(key, cached);
         return cached;
       }
-      const response = await fetch(`/api/session/${sessionId}/local-mask/${encodeURIComponent(local.id)}?long_edge=${longEdge}&edit_revision=${editRevision}`);
+      const response = await fetch(`/api/session/${sessionId}/local-mask/${encodeURIComponent(local.id)}?long_edge=${longEdge}&edit_revision=${editRevision}&spatial_only=${spatialOnly}`);
       if (!response.ok) return null;
       const width = Number(response.headers.get("X-Image-Width"));
       const height = Number(response.headers.get("X-Image-Height"));
@@ -768,7 +861,21 @@
     values[10] = Number(grade.tint) || 0;
     values[11] = Number(grade.saturation) || 0;
     values[12] = Number(grade.vibrance) || 0;
+    values[13] = gpuMaskInfluenceOpacity(local.mask);
     return values;
+  }
+
+  function gpuMaskInfluenceOpacity(expression) {
+    if (expression?.operator !== "leaf" || !expression.leaf) return 1;
+    return Math.min(1, Math.max(0, Number(expression.leaf.mask_opacity ?? 1)));
+  }
+
+  function gpuMaskIdentity(expression) {
+    if (expression?.operator !== "leaf" || !expression.leaf) return JSON.stringify(expression);
+    return JSON.stringify({
+      ...expression,
+      leaf: { ...expression.leaf, mask_opacity: 1 },
+    });
   }
 
   window.HDRWebGPUPreview = HDRWebGPUPreview;
@@ -1435,7 +1542,7 @@
       let source = textureLoad(sourceTexture, coordinate, 0).rgb;
       let maskDimensions = textureDimensions(spatialTexture);
       let maskCoordinate = clamp(coordinate, vec2i(0), vec2i(maskDimensions) - vec2i(1));
-      let influence = clamp(textureLoad(spatialTexture, maskCoordinate, 0).r * p[1], 0.0, 1.0);
+      let influence = clamp(textureLoad(spatialTexture, maskCoordinate, 0).r * p[1] * p[13], 0.0, 1.0);
       return vec4f(mix(source, applyLocalGrade(source), influence), 1.0);
     }
 

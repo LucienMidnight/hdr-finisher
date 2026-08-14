@@ -2895,6 +2895,180 @@ input[type="text"] {
   font: 9px/1.2 var(--mono, monospace);
 }
 
+.luma-sampling-hint {
+  margin: 0;
+  color: #899699;
+  font: 9px/1.45 var(--sans, sans-serif);
+}
+
+.luma-range-control {
+  display: grid;
+  gap: 7px;
+}
+
+.luma-range-heading,
+.luma-range-scale {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.luma-range-heading {
+  color: #c8d2d4;
+  font: 10px/1.2 var(--sans, sans-serif);
+}
+
+.luma-range-heading output {
+  color: #7edce2;
+  font: 9px/1.2 var(--mono, monospace);
+}
+
+.luma-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--viewer) 64%, transparent);
+}
+
+.luma-preset-button {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  min-width: 0;
+  min-height: 25px;
+  padding: 4px 5px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  gap: 6px;
+  align-items: center;
+  color: var(--muted);
+  font: 8px/1.2 var(--mono, monospace);
+  text-align: left;
+  background: transparent;
+}
+
+.luma-preset-button:hover,
+.luma-preset-button:focus-visible {
+  border-color: var(--accent);
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.luma-preset-button.active {
+  border-color: var(--accent-strong);
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 24%, var(--panel));
+}
+
+.luma-preset-button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.luma-nit-range-heading {
+  margin-top: 3px;
+}
+
+.luma-refine-range-heading {
+  margin-top: 5px;
+  padding-top: 6px;
+  border-top: 1px solid var(--hairline);
+}
+
+.luma-refine-range .luma-nit-range-rail {
+  background: color-mix(in srgb, var(--border) 78%, var(--viewer));
+}
+
+.luma-refine-range .luma-nit-range-fill {
+  background: #7edce2;
+}
+
+.luma-nit-range {
+  position: relative;
+  height: 26px;
+}
+
+.luma-nit-range-rail,
+.luma-nit-range-fill {
+  position: absolute;
+  top: 12px;
+  height: 2px;
+  border-radius: 2px;
+}
+
+.luma-nit-range-rail {
+  right: 6px;
+  left: 6px;
+  background: var(--border);
+}
+
+.luma-nit-range-fill {
+  right: calc(100% - var(--luma-range-end));
+  left: var(--luma-range-start);
+  background: var(--accent-strong);
+  box-shadow: 0 0 5px color-mix(in srgb, var(--accent) 48%, transparent);
+}
+
+.luma-nit-range input[type="range"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0 6px;
+  border: 0;
+  pointer-events: none;
+  appearance: none;
+  background: transparent;
+}
+
+.luma-nit-range input[type="range"]::-webkit-slider-runnable-track {
+  height: 1px;
+  background: transparent;
+}
+
+.luma-nit-range input[type="range"]::-webkit-slider-thumb {
+  width: 13px;
+  height: 13px;
+  margin-top: -6px;
+  border: 2px solid #dffcff;
+  border-radius: 50%;
+  pointer-events: auto;
+  appearance: none;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 72%);
+}
+
+.luma-nit-range input[type="range"]:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
+
+.luma-nit-range-values {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 5px;
+}
+
+.luma-nit-range-values output {
+  min-width: 0;
+  color: #82dce2;
+  font: 9px/1.2 var(--mono, monospace);
+}
+
+.luma-nit-range-values output:last-child {
+  text-align: right;
+}
+
+.luma-range-scale {
+  color: #768387;
+  font: 8px/1.2 var(--mono, monospace);
+}
+
 .local-brush-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;

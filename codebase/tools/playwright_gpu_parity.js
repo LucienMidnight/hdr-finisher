@@ -3,6 +3,8 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 const { chromium } = require("playwright");
 
+const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
+
 function edgeExecutable() {
   const candidates = [
     process.env.PLAYWRIGHT_EDGE_PATH,
@@ -40,8 +42,8 @@ function compareScreenshots(gpuBuffer, settledBuffer) {
 async function captureCurrent(page, label, outputDir) {
   await page.waitForFunction(() => getComputedStyle(document.getElementById("preview-canvas")).display !== "none");
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  const gpu = await page.locator("#preview-canvas").screenshot();
-  await page.evaluate(async () => {
+  const gpuDataUrl = await page.locator("#preview-canvas").evaluate((canvas) => canvas.toDataURL("image/png"));
+  const settledDataUrl = await page.evaluate(async () => {
     const state = window.HDRFinisherPerformance.authoringState();
     const response = await fetch(`/api/session/${state.sessionId}/preview-raw/${state.lane}`, {
       method: "POST",
@@ -56,19 +58,11 @@ async function captureCurrent(page, label, outputDir) {
     reference.id = "gpu-parity-reference";
     reference.width = width;
     reference.height = height;
-    const canvas = document.getElementById("preview-canvas");
-    reference.style.width = `${canvas.getBoundingClientRect().width}px`;
-    reference.style.height = `${canvas.getBoundingClientRect().height}px`;
-    reference.style.position = "fixed";
-    reference.style.left = "0";
-    reference.style.top = "0";
-    reference.style.zIndex = "99999";
     reference.getContext("2d").putImageData(new ImageData(pixels, width, height), 0, 0);
-    document.body.append(reference);
+    return reference.toDataURL("image/png");
   });
-  const reference = page.locator("#gpu-parity-reference");
-  const settled = await reference.screenshot();
-  await reference.evaluate((canvas) => canvas.remove());
+  const gpu = Buffer.from(gpuDataUrl.split(",")[1], "base64");
+  const settled = Buffer.from(settledDataUrl.split(",")[1], "base64");
   const metrics = compareScreenshots(gpu, settled);
   if (metrics.meanAbsoluteError > 0.025 || metrics.p95ChannelError > 0.075) {
     fs.writeFileSync(path.join(outputDir, `${label}-gpu.png`), gpu);
@@ -136,7 +130,9 @@ async function auditLane(page, lane, outputDir) {
     await page.mouse.up();
     results.push({ lane, control: `${lane}.luma_curve`, value: "midtone-up", ...(await captureCurrent(page, `${lane}-curve`, outputDir)) });
   }
-  await page.locator("#curve-reset").click();
+  // The redesigned header hides reset buttons until the section is modified;
+  // invoke the same DOM click without making test progress depend on CSS.
+  await page.locator("#curve-reset").evaluate((button) => button.click());
   await page.waitForFunction(() => getComputedStyle(document.getElementById("preview-canvas")).display !== "none", null, { timeout: 120000 });
   return results;
 }
@@ -160,7 +156,7 @@ async function auditHdrHandoff(browser, input) {
     };
   });
   try {
-    await page.goto("http://127.0.0.1:8000", { waitUntil: "networkidle" });
+    await page.goto(baseUrl, { waitUntil: "networkidle" });
     await page.locator("#file-input").setInputFiles(input);
     await page.waitForFunction(() => document.getElementById("session-name")?.textContent !== "No active image", null, { timeout: 30000 });
     const gate = page.locator("#interpretation-gate");
@@ -196,7 +192,7 @@ async function main() {
     const browserErrors = [];
     page.on("console", (message) => { if (message.type() === "error") browserErrors.push(message.text()); });
     page.on("pageerror", (error) => browserErrors.push(error.message));
-    await page.goto("http://127.0.0.1:8000", { waitUntil: "networkidle" });
+    await page.goto(baseUrl, { waitUntil: "networkidle" });
     await page.locator("#file-input").setInputFiles(input);
     await page.waitForFunction(() => document.getElementById("session-name")?.textContent !== "No active image", null, { timeout: 30000 });
     const gate = page.locator("#interpretation-gate");

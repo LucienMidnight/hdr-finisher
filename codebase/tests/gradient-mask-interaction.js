@@ -39,8 +39,10 @@ async function gradientZoomAlignment(page) {
       zoom: state.zoomPercent,
       mask: JSON.stringify(local.mask),
       cacheSettled: !state.localMaskDraftDirty && localAuthoritativeMaskCache.get(local.id)?.signature === JSON.stringify(local.mask),
-      backingMatchesPane: Math.abs(canvas.width - paneRect.width * devicePixelRatio) <= 1
-        && Math.abs(canvas.height - paneRect.height * devicePixelRatio) <= 1,
+      backingIsBounded: canvas.width > 0 && canvas.height > 0
+        && canvas.width <= paneRect.width * devicePixelRatio + 1
+        && canvas.height <= paneRect.height * devicePixelRatio + 1
+        && Math.max(canvas.width, canvas.height) <= 1600,
       startAligned: lightHandleAt(leaf.start),
       endAligned: lightHandleAt(leaf.end),
     };
@@ -53,7 +55,13 @@ async function gradientZoomAlignment(page) {
   const pageErrors = [];
   const requestFailures = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
-  page.on("requestfailed", (request) => requestFailures.push(`${request.method()} ${request.url()}: ${request.failure()?.errorText}`));
+  page.on("requestfailed", (request) => {
+    const failure = request.failure()?.errorText;
+    const pathname = new URL(request.url()).pathname;
+    const expectedLatestStateAbort = failure === "net::ERR_ABORTED"
+      && (/\/scopes$/.test(pathname) || /\/local-mask\/[^/]+\/preview$/.test(pathname));
+    if (!expectedLatestStateAbort) requestFailures.push(`${request.method()} ${request.url()}: ${failure}`);
+  });
 
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
@@ -123,15 +131,15 @@ async function gradientZoomAlignment(page) {
     const maskBeforeZoom = await page.evaluate(() => JSON.stringify(selectedLocal().mask));
     await page.locator("#zoom-actual").click();
     const actualAlignment = await gradientZoomAlignment(page);
-    assert(actualAlignment.backingMatchesPane && actualAlignment.startAligned && actualAlignment.endAligned, `Gradient drifted at actual-size zoom: ${JSON.stringify(actualAlignment)}`);
+    assert(actualAlignment.backingIsBounded && actualAlignment.startAligned && actualAlignment.endAligned, `Gradient drifted at actual-size zoom: ${JSON.stringify(actualAlignment)}`);
     assert(actualAlignment.cacheSettled, `Gradient overlay did not settle at actual-size zoom: ${JSON.stringify(actualAlignment)}`);
     await page.locator("#zoom-in").click();
     const steppedAlignment = await gradientZoomAlignment(page);
-    assert(steppedAlignment.backingMatchesPane && steppedAlignment.startAligned && steppedAlignment.endAligned, `Gradient drifted after zooming in: ${JSON.stringify(steppedAlignment)}`);
+    assert(steppedAlignment.backingIsBounded && steppedAlignment.startAligned && steppedAlignment.endAligned, `Gradient drifted after zooming in: ${JSON.stringify(steppedAlignment)}`);
     assert(steppedAlignment.cacheSettled, `Gradient overlay did not settle after zooming in: ${JSON.stringify(steppedAlignment)}`);
     await page.locator("#zoom-fit").click();
     const fitAlignment = await gradientZoomAlignment(page);
-    assert(fitAlignment.backingMatchesPane && fitAlignment.startAligned && fitAlignment.endAligned, `Gradient drifted after returning to Fit: ${JSON.stringify(fitAlignment)}`);
+    assert(fitAlignment.backingIsBounded && fitAlignment.startAligned && fitAlignment.endAligned, `Gradient drifted after returning to Fit: ${JSON.stringify(fitAlignment)}`);
     assert(fitAlignment.cacheSettled, `Gradient overlay did not settle after returning to Fit: ${JSON.stringify(fitAlignment)}`);
     assert(actualAlignment.mask === maskBeforeZoom && steppedAlignment.mask === maskBeforeZoom && fitAlignment.mask === maskBeforeZoom, "Zooming changed the persisted gradient coordinates.");
 

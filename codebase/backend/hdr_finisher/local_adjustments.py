@@ -6,7 +6,7 @@ import os
 import numpy as np
 
 from .color import acescg_to_linear_srgb, linear_srgb_to_acescg
-from .models import GeometryAdjustments, LocalAdjustment, LocalGrade, MaskExpression, MaskLeaf, PreviewKind
+from .models import GeometryAdjustments, LocalAdjustment, LocalGrade, MaskExpression, MaskLeaf, MaskPoint, PreviewKind
 
 
 ACESCG_LUMA = np.array([0.2722287, 0.6740818, 0.0536895], dtype=np.float32)
@@ -42,7 +42,7 @@ def apply_local_stack(
         elif runtime_masks is compiled_masks:
             runtime_masks = dict(runtime_masks)
         if local.id not in runtime_masks:
-            runtime_masks[local.id] = compile_preview_mask(fixed_source, local.mask, geometry)
+            runtime_masks[local.id] = compile_spatial_preview_mask(fixed_source, local.mask, geometry)
     for top in range(0, height, tile_size):
         bottom = min(top + tile_size, height)
         for left in range(0, width, tile_size):
@@ -65,6 +65,7 @@ def apply_local_stack(
                 compiled = runtime_masks.get(local.id) if runtime_masks else None
                 if compiled is not None and compiled.shape == (height, width):
                     mask = compiled[top:bottom, left:right].astype(np.float32) / np.float32(255.0)
+                    mask *= np.float32(mask_influence_opacity(local.mask))
                 else:
                     mask = evaluate_mask(local.mask, reference_tile, source_x, source_y)
                 influence = np.clip(mask * np.float32(local.opacity), 0.0, 1.0)
@@ -80,10 +81,8 @@ def _mask_needs_full_frame_evaluation(expression: MaskExpression) -> bool:
         return bool(
             expression.leaf
             and (
-                (
-                    expression.leaf.type == "brush"
-                    and (expression.leaf.mask_feather > 0.0 or expression.leaf.mask_shift_edge != 0.0)
-                )
+                (expression.leaf.type == "brush" and expression.leaf.mask_shift_edge != 0.0)
+                or (expression.leaf.type in {"brush", "luminance_range"} and expression.leaf.mask_feather > 0.0)
             )
         )
     return any(_mask_needs_full_frame_evaluation(child) for child in expression.children)
@@ -99,6 +98,40 @@ def compile_preview_mask(
     source_x, source_y = source_coordinate_grid(width, height, 0, 0, width, height, geometry)
     mask = evaluate_mask(expression, fixed_source, source_x, source_y)
     return np.rint(np.clip(mask, 0.0, 1.0) * 255.0).astype(np.uint8)
+
+
+def mask_influence_opacity(expression: MaskExpression) -> float:
+    """Return the redraw-only opacity for a simple leaf mask.
+
+    Boolean expressions retain their existing per-leaf evaluation semantics and
+    therefore return one here until the retained mask graph is generalized.
+    """
+    if expression.operator == "leaf" and expression.leaf is not None:
+        return float(expression.leaf.mask_opacity)
+    return 1.0
+
+
+def spatial_mask_expression(expression: MaskExpression) -> MaskExpression:
+    """Remove influence-only opacity from a simple mask's spatial identity."""
+    if expression.operator != "leaf" or expression.leaf is None:
+        return expression
+    return expression.model_copy(
+        update={"leaf": expression.leaf.model_copy(update={"mask_opacity": 1.0})},
+        deep=True,
+    )
+
+
+def spatial_mask_signature(expression: MaskExpression) -> str:
+    return spatial_mask_expression(expression).model_dump_json()
+
+
+def compile_spatial_preview_mask(
+    fixed_source: np.ndarray,
+    expression: MaskExpression,
+    geometry: GeometryAdjustments,
+) -> np.ndarray:
+    """Compile reusable spatial coverage without simple-leaf influence opacity."""
+    return compile_preview_mask(fixed_source, spatial_mask_expression(expression), geometry)
 
 
 def evaluate_mask(
@@ -127,8 +160,20 @@ def evaluate_mask(
         leaf = expression.leaf
         if leaf.mask_shift_edge != 0.0 and np.any(result > 0.0):
             result = _shift_brush_mask(result, source_x, source_y, leaf.mask_shift_edge)
-        if leaf.mask_feather > 0.0 and np.any(result > 0.0):
-            result = _feather_brush_mask(result, source_x, source_y, leaf.mask_feather)
+    if (
+        expression.operator == "leaf"
+        and expression.leaf is not None
+        and expression.leaf.type in {"brush", "luminance_range"}
+        and expression.leaf.mask_feather > 0.0
+        and np.any(result > 0.0)
+    ):
+        result = _feather_mask(
+            result,
+            source_x,
+            source_y,
+            expression.leaf.mask_feather,
+            luminance_range=expression.leaf.type == "luminance_range",
+        )
     if expression.inverted:
         result = 1.0 - result
     if expression.operator == "leaf" and expression.leaf is not None:
@@ -243,6 +288,75 @@ def _luminance_range(leaf: MaskLeaf, image: np.ndarray) -> np.ndarray:
     return np.minimum(rise, fall).astype(np.float32)
 
 
+def sample_luminance_evs(
+    image: np.ndarray,
+    points: list[MaskPoint],
+    *,
+    patch_radius: int = 3,
+    quantization_ev: float = 0.25,
+) -> tuple[float, float, float, int]:
+    """Return a low-precision robust EV interval for viewport picker points.
+
+    Each point averages a small scene-linear neighborhood after rejecting
+    median-absolute-deviation outliers. Path samples are then smoothed and
+    trimmed again so isolated noise and HDR fireflies cannot dominate the
+    selected range.
+    """
+    height, width = image.shape[:2]
+    sampled: list[float] = []
+    for point in points:
+        column = int(round(np.clip(point.x, 0.0, 1.0) * max(width - 1, 0)))
+        row = int(round(np.clip(point.y, 0.0, 1.0) * max(height - 1, 0)))
+        left = max(0, column - patch_radius)
+        right = min(width, column + patch_radius + 1)
+        top = max(0, row - patch_radius)
+        bottom = min(height, row + patch_radius + 1)
+        patch = image[top:bottom, left:right, :3]
+        luma = np.einsum("...c,c->...", patch, ACESCG_LUMA, optimize=True).reshape(-1)
+        valid = luma[np.isfinite(luma) & (luma > 1e-8)]
+        if valid.size == 0:
+            sampled.append(-24.0)
+            continue
+        ev = np.log2(valid / np.float32(0.18))
+        median = float(np.median(ev))
+        mad = float(np.median(np.abs(ev - median)))
+        cutoff = max(0.18, 3.0 * 1.4826 * mad)
+        filtered = ev[np.abs(ev - median) <= cutoff]
+        if filtered.size == 0:
+            filtered = np.array([median], dtype=np.float32)
+        sampled.append(float(np.mean(filtered, dtype=np.float64)))
+
+    values = np.asarray(sampled, dtype=np.float32)
+    if values.size >= 3:
+        padded = np.pad(values, (1, 1), mode="edge")
+        values = (
+            padded[:-2] * np.float32(0.25)
+            + padded[1:-1] * np.float32(0.5)
+            + padded[2:] * np.float32(0.25)
+        )
+        median = float(np.median(values))
+        mad = float(np.median(np.abs(values - median)))
+        cutoff = max(0.35, 3.5 * 1.4826 * mad)
+        retained = values[np.abs(values - median) <= cutoff]
+        if retained.size:
+            values = retained
+
+    center = float(np.median(values))
+    low = float(np.percentile(values, 5.0))
+    high = float(np.percentile(values, 95.0))
+    step = max(0.05, float(quantization_ev))
+    center = round(center / step) * step
+    if high - low < 0.5:
+        low = center - 0.5
+        high = center + 0.5
+    else:
+        low = math.floor((low - 0.25) / step) * step
+        high = math.ceil((high + 0.25) / step) * step
+    low = float(np.clip(low, -24.0, 24.0))
+    high = float(np.clip(high, low, 24.0))
+    return low, high, float(np.clip(center, low, high)), len(sampled)
+
+
 def _brush_masks(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray | None]:
     result = np.zeros(x.shape, dtype=np.float32)
     erase_attenuation: np.ndarray | None = None
@@ -307,8 +421,16 @@ def _brush_mask(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> np.ndarray:
     return result
 
 
-def _feather_brush_mask(mask: np.ndarray, x: np.ndarray, y: np.ndarray, value: float) -> np.ndarray:
-    pixel_radii = _mask_radii_pixels(x, y, _painted_mask_feather_radius(value))
+def _feather_mask(
+    mask: np.ndarray,
+    x: np.ndarray,
+    y: np.ndarray,
+    value: float,
+    *,
+    luminance_range: bool = False,
+) -> np.ndarray:
+    radius = _luminance_mask_feather_radius(value) if luminance_range else _painted_mask_feather_radius(value)
+    pixel_radii = _mask_radii_pixels(x, y, radius)
     if max(pixel_radii) < 0.25:
         return mask
     blurred = _gaussian_blur_float(mask, pixel_radii)
@@ -429,9 +551,15 @@ def _mask_radii_pixels(x: np.ndarray, y: np.ndarray, radius: float) -> tuple[flo
 
 
 def _painted_mask_feather_radius(value: float) -> float:
-    """Map the UI amount to a strong, continuous source-space blur radius."""
+    """Map Brush whole-mask feather to its source-space blur radius."""
     amount = min(1.0, max(0.0, float(value) / 0.05))
     return 0.18 * amount**0.75
+
+
+def _luminance_mask_feather_radius(value: float) -> float:
+    """Give Luma a linear, half-strength response with a controllable low end."""
+    amount = min(1.0, max(0.0, float(value) / 0.05))
+    return 0.09 * amount
 
 
 def _brush_shape_roi(

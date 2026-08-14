@@ -13,3 +13,21 @@ npm run test:performance -- --inputs tests/fixtures/blender_linear_rec2020.exr,t
 ```
 
 Reports are written to `output/performance/preview-performance.json`. Use `--enforce` only on the named benchmark workstation; other machines should retain the report for relative comparison.
+
+## GPU local-adjustment sprint
+
+The Luma opacity/feather and live-scope benchmark records isolated changes,
+30-event rapid drags (including opacity direction reversals), presentation-order
+guards, mask request counts, CPU mask time, transport, scheduler
+queue delay, GPU submission/presentation, optional GPU timestamp queries, scope
+freshness/content fingerprints, draft-local scope payloads, stale cancellation,
+browser, adapter, fixture, and active resolutions:
+
+```powershell
+npm run test:gpu-local-adjustments -- --url http://127.0.0.1:8000 --phase phase0
+npm run test:gpu-local-adjustments -- --url http://127.0.0.1:8000 --phase phase1
+```
+
+Generated JSON is written below `output/performance/`. Durable conclusions and
+the exact percentile method belong in the dated validation record under
+`docs/testing/`.

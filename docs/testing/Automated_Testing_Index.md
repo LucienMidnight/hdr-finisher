@@ -4,6 +4,8 @@ The automated suite is risk-oriented rather than coverage-percentage driven. Pri
 
 The dated [Interactive Preview Performance Validation](Interactive_Preview_Performance_Validation_2026-08-09.md) records the sprint's final benchmark results, approved observable parity envelope, and remaining physical-display sign-off procedure.
 
+The dated [GPU Local Adjustments Phase 0/1 Validation](GPU_Local_Adjustments_Phase_0_1_Validation_2026-08-14.md) records the local-control instrumentation, before/after Luma timings, mask-request elimination, live-scope cadence, and parity/preservation gates.
+
 ## Test tiers
 
 | Tier | Contents | Run from `codebase/` |
@@ -14,6 +16,7 @@ The dated [Interactive Preview Performance Validation](Interactive_Preview_Perfo
 | Optional local media | Large Blender/Affinity EXRs and private iPhone HEIC media in ignored `local-test-media/inputs/`; results go to ignored `output/` | `.\.venv\Scripts\python.exe .\tools\local_media_probe.py <paths> --export` |
 | Alpha harness | Full pytest, JavaScript syntax checks, capability report, sample export/inspection, and browser layout smoke | `powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\run_alpha_qa.ps1` |
 | Preview performance | Fast/high-quality/forced-fallback browser matrix, event-to-frame/scope timing, backend requests, JSON parse, Canvas draw, request payloads, long tasks, heap trend, and browser errors | `npm run test:performance` |
+| GPU local adjustments | Isolated and rapid Luma opacity/feather timing, mask request counts, backend CPU attribution, GPU queue/presentation, live-scope draft content/fingerprints, stale cancellation, adapter, and resolution | `npm run test:gpu-local-adjustments -- --url http://127.0.0.1:8000 --phase phase1` |
 
 Set `PYTHONPATH` to the resolved `backend` directory when running pytest outside the project scripts.
 
@@ -25,7 +28,7 @@ Set `PYTHONPATH` to the resolved `backend` directory when running pytest outside
 | ACEScg normalization | `test_core.py`, `test_loader_fixtures.py` | sRGB, BT.2020, PQ, ACEScg pass-through, unknown-linear preservation, and numerical normalization of the Blender fixture |
 | HDR classification/headroom | `test_core.py`, `test_adjustments.py` | Strict `1.0` boundary, encoded and scene-linear classifications, Apple gain-map path, source-latitude policy |
 | HDR/SDR finishing | `test_adjustments.py`, `test_core.py`, `test_frontend_contract.py` | Variable-node equalizer migration/limits, targeting masks, section bypass, fixed HDR curve domain, highlight ordering/rolloff continuity, branch isolation, hue behavior, and grading interaction contracts |
-| Local adjustments and projects | `test_local_adjustments.py`, `local-adjustments-interaction.js`, `brush-mask-interaction.js` | Soft mask algebra, EV luminance trapezoids, fixed-source selection, HDR/SDR grade independence, tile determinism, r8 preview quantization, compiled-mask reuse, exact draft/settled mask parity, Shift Edge and Feather interaction matrices, geometry mapping, revision conflicts, undo, project round trips, persistent stack presentation, visible on-image gizmos and gestures for every core mask, brush-only Erase eligibility, in-flow group expansion, HDR/SDR folder-tab interaction, and nonblank histogram/waveform refresh after local edits |
+| Local adjustments and projects | `test_local_adjustments.py`, `local-adjustments-interaction.js`, `luma-mask-interaction.js`, `brush-mask-interaction.js`, `gradient-mask-interaction.js` | Soft mask algebra, EV luminance trapezoids, fixed-source selection, HDR/SDR grade independence, tile determinism, spatial-mask opacity reuse, one-r8-step Luma/Gradient/Brush parity, exact draft/settled mask parity, latest-state cancellation, Shift Edge and Feather interaction matrices, geometry mapping, revision conflicts, undo, project round trips, persistent stack presentation, visible on-image gizmos and gestures for every core mask, brush-only Erase eligibility, in-flow group expansion, HDR/SDR folder-tab interaction, and nonblank live histogram/waveform refresh during local edits |
 | Float preview/resampling | `test_core.py`, `test_render_cache.py`, `test_preview_display.py`, `test_performance_pipeline.py` | Display-aware caps, float/HDR-range preservation, half-float precision/range fallback, byte accounting/eviction, single-flight reuse, raw SDR-display fallback math |
 | Scopes and overlays | `test_core.py`, `test_performance_pipeline.py` | AP1 luminance, 100/203/1000-nit guides and strict thresholds, vectorized waveform equivalence, tiny-highlight peak priority, normalization, false color, zebra alpha/cutoff |
 | Import/export and metadata | `test_gainmap_import.py`, `test_ultrahdr_export.py`, `test_avif_info.py`, `test_proofing.py` | Independent base/gain-map quality and scale, proof/export parity, direct-PQ and gain-map AVIF input, JPEG Ultra HDR input without silent SDR fallback, metadata-selected gamut conversion, encoded offsets/capacity, atomic replacement, and two-generation lossy round trips |

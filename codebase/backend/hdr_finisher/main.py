@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import atexit
+from time import perf_counter
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -24,6 +25,8 @@ from .models import (
     EditDocument,
     EditStateResponse,
     ExportSettings,
+    LocalLuminanceSampleRequest,
+    LocalLuminanceSampleResponse,
     LocalMaskPreviewRequest,
     PreviewKind,
     PreviewRequest,
@@ -242,7 +245,11 @@ def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
             kind,
             request.long_edge or session.preview.long_edge,
             is_current=lambda: session.preview_tokens[kind] == token,
-            local_adjustments=session.local_adjustments if request.include_locals else [],
+            local_adjustments=(
+                request.local_adjustments
+                if request.local_adjustments is not None
+                else session.local_adjustments
+            ) if request.include_locals else [],
         )
         body, media_type = encode_processed_preview_bytes(processed, kind, hdr_display=request.hdr_display)
     except StaleRender:
@@ -272,7 +279,11 @@ def preview_raw(session_id: str, kind: PreviewKind, request: PreviewRequest) -> 
             kind,
             request.long_edge or (768 if kind == PreviewKind.SDR else 960),
             is_current=lambda: session.preview_tokens[kind] == token,
-            local_adjustments=session.local_adjustments if request.include_locals else [],
+            local_adjustments=(
+                request.local_adjustments
+                if request.local_adjustments is not None
+                else session.local_adjustments
+            ) if request.include_locals else [],
         )
         body = encode_processed_rgba8(processed, kind)
     except StaleRender:
@@ -311,7 +322,11 @@ def overlay(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
             adjustments,
             kind,
             request.long_edge or session.preview.long_edge,
-            local_adjustments=session.local_adjustments if request.include_locals else [],
+            local_adjustments=(
+                request.local_adjustments
+                if request.local_adjustments is not None
+                else session.local_adjustments
+            ) if request.include_locals else [],
         )
         body, media_type = encode_processed_overlay_bytes(processed, adjustments, kind)
     except RuntimeError as exc:
@@ -377,7 +392,11 @@ def scopes_for_adjustments(
             columns,
             int(max_nits.value),
             is_current=lambda: session.scope_tokens[kind] == token,
-            local_adjustments=session.local_adjustments if request.include_locals else [],
+            local_adjustments=(
+                request.local_adjustments
+                if request.local_adjustments is not None
+                else session.local_adjustments
+            ) if request.include_locals else [],
         )
     except StaleRender:
         return JSONResponse(status_code=409, content={"detail": "Stale scope request dropped."})
@@ -419,6 +438,7 @@ def local_mask_proxy(
     local_id: str,
     long_edge: int = Query(default=1600, ge=256, le=2000),
     edit_revision: int | None = Query(default=None, ge=0),
+    spatial_only: bool = Query(default=False),
 ) -> Response:
     try:
         session = store.get(session_id)
@@ -430,7 +450,14 @@ def local_mask_proxy(
         raise HTTPException(status_code=404, detail=f"Local adjustment '{local_id}' was not found.") from exc
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
-    mask = session.render_cache.compiled_local_mask(session.adjustments, local, long_edge)
+    started = perf_counter()
+    mask = session.render_cache.compiled_local_mask(
+        session.adjustments,
+        local,
+        long_edge,
+        spatial_only=spatial_only,
+    )
+    cpu_mask_ms = (perf_counter() - started) * 1000.0
     height, width = mask.shape
     return Response(
         content=mask.tobytes(order="C"),
@@ -440,6 +467,8 @@ def local_mask_proxy(
             "X-Image-Height": str(height),
             "X-Pixel-Format": "r8unorm",
             "X-Local-Adjustment": local.id,
+            "X-CPU-Mask-Ms": f"{cpu_mask_ms:.3f}",
+            "X-Mask-Content": "spatial" if spatial_only else "influence",
         },
     )
 
@@ -461,7 +490,9 @@ def local_mask_preview_proxy(
         raise HTTPException(status_code=404, detail=f"Local adjustment '{local_id}' was not found.") from exc
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
+    started = perf_counter()
     mask = session.render_cache.compiled_mask_draft(session.adjustments, request.mask, request.long_edge)
+    cpu_mask_ms = (perf_counter() - started) * 1000.0
     height, width = mask.shape
     return Response(
         content=mask.tobytes(order="C"),
@@ -472,7 +503,36 @@ def local_mask_preview_proxy(
             "X-Pixel-Format": "r8unorm",
             "X-Local-Adjustment": local_id,
             "X-Mask-Preview": "draft",
+            "X-CPU-Mask-Ms": f"{cpu_mask_ms:.3f}",
         },
+    )
+
+
+@app.post(
+    "/api/session/{session_id}/local-luminance-sample",
+    response_model=LocalLuminanceSampleResponse,
+)
+def local_luminance_sample(
+    session_id: str,
+    request: LocalLuminanceSampleRequest,
+) -> LocalLuminanceSampleResponse:
+    try:
+        session = store.get(session_id)
+        _check_revision(session.edit_revision, request.edit_revision)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RevisionConflictError as exc:
+        raise _revision_conflict(exc) from exc
+    low, high, center, count = session.render_cache.sample_luminance(
+        session.adjustments,
+        request.points,
+        request.long_edge,
+    )
+    return LocalLuminanceSampleResponse(
+        low_ev=low,
+        high_ev=high,
+        center_ev=center,
+        sample_count=count,
     )
 
 

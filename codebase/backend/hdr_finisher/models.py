@@ -493,8 +493,10 @@ class MaskLeaf(BaseModel):
     gradient_fan: float = Field(default=0.0, ge=-1.0, le=1.0)
     gradient_luma_enabled: bool = False
     fade_in_start_ev: float = Field(default=-12.0, ge=-24.0, le=24.0)
+    reference_start_ev: float | None = Field(default=None, ge=-24.0, le=24.0)
     full_start_ev: float = Field(default=-8.0, ge=-24.0, le=24.0)
     full_end_ev: float = Field(default=6.0, ge=-24.0, le=24.0)
+    reference_end_ev: float | None = Field(default=None, ge=-24.0, le=24.0)
     fade_out_end_ev: float = Field(default=10.0, ge=-24.0, le=24.0)
     nodes: list[PathNode] = Field(default_factory=list, max_length=16384)
     feather: float = Field(default=0.0, ge=0.0, le=0.5)
@@ -520,6 +522,15 @@ class MaskLeaf(BaseModel):
             <= self.fade_out_end_ev
         ):
             raise ValueError("luminance range handles must be ordered")
+        if (self.reference_start_ev is None) != (self.reference_end_ev is None):
+            raise ValueError("luminance reference bounds must both be set or both be omitted")
+        if self.type == "luminance_range" and self.reference_start_ev is not None and not (
+            self.reference_start_ev
+            <= self.full_start_ev
+            <= self.full_end_ev
+            <= self.reference_end_ev
+        ):
+            raise ValueError("refined luminance range must remain inside its reference bounds")
         return self
 
 
@@ -674,6 +685,7 @@ class PreviewRequest(BaseModel):
     long_edge: int | None = Field(default=None, ge=256, le=2000)
     hdr_display: bool = True
     include_locals: bool = True
+    local_adjustments: list[LocalAdjustment] | None = None
 
 
 class LocalMaskPreviewRequest(BaseModel):
@@ -684,6 +696,23 @@ class LocalMaskPreviewRequest(BaseModel):
     mask: MaskExpression
     edit_revision: int | None = Field(default=None, ge=0)
     long_edge: int = Field(default=1600, ge=256, le=2000)
+
+
+class LocalLuminanceSampleRequest(BaseModel):
+    """Viewport points sampled against the fixed scene-linear mask source."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    points: list[MaskPoint] = Field(min_length=1, max_length=512)
+    edit_revision: int | None = Field(default=None, ge=0)
+    long_edge: int = Field(default=1600, ge=256, le=2000)
+
+
+class LocalLuminanceSampleResponse(BaseModel):
+    low_ev: float
+    high_ev: float
+    center_ev: float
+    sample_count: int = Field(ge=1)
 
 
 class HistogramChannel(BaseModel):

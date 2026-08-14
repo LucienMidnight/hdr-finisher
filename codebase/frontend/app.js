@@ -222,6 +222,7 @@ const state = {
   localMaskDraftController: null,
   localMaskDraftGeneration: 0,
   localMaskDraftPending: null,
+  localPreviewDirty: false,
   localMaskCommitDepth: 0,
   localMaskCommitRefreshPending: false,
   localErase: false,
@@ -959,7 +960,9 @@ function initializePreviewScheduler() {
   if (!window.HDRPreviewScheduler) return;
   state.previewScheduler = new window.HDRPreviewScheduler({
     highQuality: () => state.highQualityPreview,
-    onFrame: (task) => renderGpuDraft(task.lane, { longEdge: interactiveProxyLongEdge() }),
+    onFrame: (task) => state.localMaskDraftDirty
+      ? false
+      : renderGpuDraft(task.lane, { longEdge: interactiveProxyLongEdge() }),
     onScope: (task) => refreshScopes(scopeLongEdge(task.tier), {
       tier: task.tier,
       generation: task.scopeGeneration,
@@ -971,6 +974,8 @@ function initializePreviewScheduler() {
   });
   window.HDRFinisherPerformance = {
     snapshot: () => state.previewScheduler.snapshot(),
+    gpuSnapshot: () => state.gpuPreview?.diagnosticsSnapshot?.() || null,
+    enableGpuInstrumentation: (enabled = true) => state.gpuPreview?.setInstrumentationEnabled?.(enabled),
     sessionId: () => state.session?.session_id || null,
     previewMode: () => state.highQualityPreview ? "high-quality" : state.gpuPreview?.available ? "fast" : "cpu-fallback",
     authoringState: () => ({
@@ -1968,6 +1973,24 @@ function formatReferenceNits(value) {
   return `${rounded.toLocaleString()} nit`;
 }
 
+const LUMA_RANGE_MIN_NITS = 0.1;
+const LUMA_RANGE_MAX_NITS = 10000;
+const LUMA_TONAL_RAMP_EV = 0.75;
+
+function referenceNitsToEv(value) {
+  return Math.log2(clamp(Number(value), LUMA_RANGE_MIN_NITS, LUMA_RANGE_MAX_NITS) / 100);
+}
+
+function evToReferenceNits(value) {
+  return 100 * (2 ** Number(value));
+}
+
+function lumaBandLabel(lower, upper) {
+  if (lower === null) return `< ${formatReferenceNits(upper)}`;
+  if (upper === null) return `>= ${formatReferenceNits(lower)}`;
+  return `${formatReferenceNits(lower)} - ${formatReferenceNits(upper)}`;
+}
+
 function previewOutputEntries() {
   return [
     ["View", state.currentView.toUpperCase()],
@@ -2190,6 +2213,9 @@ async function renderPreviewForLane(
     body: JSON.stringify({
       edit_revision: state.editRevision,
       include_locals: !state.compareWithoutLocals,
+      local_adjustments: state.localPreviewDirty && !state.compareWithoutLocals
+        ? JSON.parse(JSON.stringify(localAdjustments()))
+        : null,
       long_edge: longEdge,
       hdr_display: mediaQueryMatch("(dynamic-range: high)"),
     }),
@@ -2372,13 +2398,17 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
   if (state.globalEditDirty) {
     return syncGlobalEditState().then(() => refreshScopes(longEdge, { tier, generation, lane }));
   }
-  const requestGeneration = generation ?? (state.scopeGeneration + 1);
-  state.scopeGeneration = Math.max(state.scopeGeneration, requestGeneration);
+  // Scheduler generations and direct refreshes originate in different
+  // counters. Normalize both into one strictly increasing presentation serial
+  // so an older response can never become current again.
+  const requestGeneration = Math.max(state.scopeGeneration + 1, generation ?? 0);
+  state.scopeGeneration = requestGeneration;
   const mode = state.scopeMode;
   const resolution = mode === "waveform"
     ? waveformRequestResolution(tier)
     : tier === "interactive" ? { bins: 128, columns: 192 } : { bins: 256, columns: 256 };
   const effectiveLongEdge = mode === "waveform" ? waveformScopeLongEdge(tier, longEdge) : longEdge;
+  const includeLocals = !state.compareWithoutLocals;
 
   return new Promise((resolve) => {
     enqueueScopeRequest({
@@ -2391,7 +2421,10 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
       resolution,
       maxNits: state.scopeMaxNits,
       edit_revision: state.editRevision,
-      include_locals: !state.compareWithoutLocals,
+      include_locals: includeLocals,
+      localAdjustments: state.localPreviewDirty && includeLocals
+        ? JSON.parse(JSON.stringify(localAdjustments()))
+        : null,
       resolve,
       controller: null,
     });
@@ -2409,11 +2442,9 @@ function enqueueScopeRequest(request) {
   state.pendingScopeRequest = request;
   markScopeUpdating();
 
-  // Switching source, lane, or scope mode is a hard transition. Continuous
-  // adjustment updates for the same view deliberately do not abort the active
-  // request: its intermediate result is useful feedback while the latest state
-  // waits in the single-slot queue.
-  if (scopeRequestKey(active) !== scopeRequestKey(request)) active.controller?.abort();
+  // The last valid scope remains visible while the newest generation replaces
+  // obsolete work. Slow scope computation must never queue in front of input.
+  active.controller?.abort();
 }
 
 function scopeRequestKey(request) {
@@ -2437,17 +2468,33 @@ async function runScopeRequest(request) {
   let applied = false;
 
   try {
-    const { sessionId, lane, mode, tier, generation, longEdge, resolution, maxNits, edit_revision, include_locals } = request;
+    const { sessionId, lane, mode, tier, generation, longEdge, resolution, maxNits, edit_revision, include_locals, localAdjustments: requestLocals } = request;
     const resolutionQuery = `&bins=${resolution.bins}&columns=${resolution.columns}`;
     const requestScope = (revision) => fetch(`/api/session/${sessionId}/scopes?kind=${lane}&mode=${mode}&long_edge=${longEdge}&max_nits=${maxNits}${resolutionQuery}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ edit_revision: revision, include_locals, long_edge: longEdge, generation, tier }),
+      body: JSON.stringify({
+        edit_revision: revision,
+        include_locals,
+        local_adjustments: requestLocals,
+        long_edge: longEdge,
+        generation,
+        tier,
+      }),
       signal: controller.signal,
     });
     let response = await requestScope(edit_revision);
     if (response.status === 409) {
-      await refreshEditState();
+      const conflict = await safeJson(response);
+      // Latest-state cancellation intentionally uses 409, but it is not an
+      // edit conflict. Reloading the committed document here can replace the
+      // optimistic slider value in the middle of a gesture and visibly flash
+      // both the preview and the next scope back to an older state.
+      if (conflict?.detail === "Stale scope request dropped.") return false;
+      await (state.editCommandQueue || Promise.resolve());
+      if (state.editRevision === edit_revision) {
+        await refreshEditState({ preserveLocalDraft: state.localPreviewDirty });
+      }
       if (state.session?.session_id !== sessionId || lane !== state.currentView || mode !== state.scopeMode) return false;
       request.edit_revision = state.editRevision;
       response = await requestScope(state.editRevision);
@@ -2459,11 +2506,41 @@ async function runScopeRequest(request) {
     const payload = await response.json();
     if (state.session?.session_id !== sessionId || lane !== state.currentView || mode !== state.scopeMode) return false;
     if (payload.generation !== null && payload.generation !== generation) return false;
+    if (generation !== state.scopeGeneration) {
+      state.previewScheduler?.recordStaleResult();
+      return false;
+    }
     state.lastScope = payload;
     els.scopeFreshness.textContent = scopeFreshnessLabel(tier);
     drawHistogram(payload);
     renderDockSummary();
     renderExportPreflight();
+    const scopeFingerprint = payload.channels.reduce((total, channel, channelIndex) => {
+      const channelWeight = channelIndex + 1;
+      const binTotal = (channel.bins || []).reduce(
+        (sum, value, index) => sum + value * (index + 1) * channelWeight,
+        0,
+      );
+      const gridTotal = (channel.grid || []).reduce(
+        (sum, row, rowIndex) => sum + row.reduce(
+          (rowSum, value, columnIndex) => rowSum + value * (rowIndex + columnIndex + 2) * channelWeight,
+          0,
+        ),
+        0,
+      );
+      return total + binTotal + gridTotal;
+    }, 0);
+    window.dispatchEvent(new CustomEvent("hdrfinisher:scope-presented", {
+      detail: {
+        generation,
+        tier,
+        lane,
+        mode,
+        peakValue: payload.peak_value,
+        fingerprint: scopeFingerprint,
+        presentedAt: performance.now(),
+      },
+    }));
     applied = true;
     return true;
   } catch (error) {
@@ -3414,6 +3491,7 @@ function commitAdjustmentValue(path, value, { manual = false } = {}) {
   if (path === "shared.overlay_preset") {
     renderOverlayPresetNote();
     drawCurveEditor();
+    renderLocalAdjustments();
   }
   if (path.startsWith("hdr.tone_equalizer_")) drawToneEqualizerEditor();
   syncRangeControlFromState(path);
@@ -4725,14 +4803,18 @@ async function renderGpuDraft(
   if (!state.session || (!allowInactive && lane !== state.currentView) || !state.gpuPreview?.available) return false;
   if (state.comparePeekActive && !allowInactive) return false;
   const serial = ++state.gpuRenderSerial;
+  const adjustmentsSnapshot = JSON.parse(JSON.stringify(state.adjustments));
+  const localSnapshot = state.compareWithoutLocals
+    ? []
+    : JSON.parse(JSON.stringify(localAdjustments()));
   try {
     const result = await state.gpuPreview.render(
       state.session.session_id,
       lane,
-      state.adjustments,
+      adjustmentsSnapshot,
       sampleCurvePoints,
       longEdge,
-      state.compareWithoutLocals ? [] : localAdjustments(),
+      localSnapshot,
       state.editRevision,
     );
     if (!result || serial !== state.gpuRenderSerial || (!allowInactive && lane !== state.currentView)) return false;
@@ -4749,11 +4831,18 @@ async function renderGpuDraft(
       bitDepth: result.proxyFormat === "rgba16float" ? "16-bit float proxy" : "32-bit float proxy",
       notes: `Settled WebGPU authoring preview · ${longEdge}px proxy · export quality unchanged`,
     };
-    state.previewInfoByLane[lane] = state.previewInfo;
+      state.previewInfoByLane[lane] = state.previewInfo;
     setZoomMode(state.zoomMode);
     renderReadouts();
-    if (hideStatus) hidePreviewMessage();
-    return true;
+      if (hideStatus) hidePreviewMessage();
+      const submittedAt = performance.now();
+      requestAnimationFrame((presentedAt) => {
+        if (serial !== state.gpuRenderSerial || (!allowInactive && lane !== state.currentView)) return;
+        window.dispatchEvent(new CustomEvent("hdrfinisher:preview-presented", {
+          detail: { serial, lane, longEdge, submittedAt, presentedAt },
+        }));
+      });
+      return true;
   } catch (error) {
     console.warn("WebGPU authoring render failed; using raw CPU preview.", error);
     state.gpuPreview.available = false;
@@ -6028,7 +6117,17 @@ function newMaskLeaf(type) {
     };
   }
   if (type === "luminance_range") {
-    return { type, fade_in_start_ev: -12, full_start_ev: -8, full_end_ev: 6, fade_out_end_ev: 10 };
+    return {
+      type,
+      fade_in_start_ev: -8.75,
+      reference_start_ev: -8,
+      full_start_ev: -8,
+      full_end_ev: 6,
+      reference_end_ev: 6,
+      fade_out_end_ev: 6.75,
+      mask_feather: 0,
+      mask_opacity: 1,
+    };
   }
   return {
     type: "path",
@@ -6067,7 +6166,7 @@ function bindLocalAdjustmentEvents() {
     }
     state.localTool = button.dataset.localTool;
     state.localErase = false;
-    if (["brush", "linear_gradient"].includes(state.localTool)) state.localShowMask = true;
+    if (["brush", "linear_gradient", "luminance_range"].includes(state.localTool)) state.localShowMask = true;
     updateLocalToolState();
     if (!state.editDocument) await refreshEditState();
     if (!state.editDocument) {
@@ -6132,16 +6231,20 @@ function bindLocalAdjustmentEvents() {
     if (!local) return;
     local.opacity = Number(els.localOpacity.value);
     els.localOpacityValue.textContent = `${Math.round(local.opacity * 100)}%`;
+    scheduleLocalPreview();
   });
-  els.localOpacity?.addEventListener("change", () => commitSelectedLocal());
+  els.localOpacity?.addEventListener("change", () => commitSelectedLocal({ refreshPreview: false }));
+  bindLocalPreviewInteraction(els.localOpacity);
   els.localGradeControls.forEach((control) => {
     control.addEventListener("input", () => {
       const local = selectedLocal();
       if (!local) return;
       local[`${state.currentView}_grade`][control.dataset.localGrade] = Number(control.value);
       updateLocalGradeOutput(control.dataset.localGrade, Number(control.value));
+      scheduleLocalPreview();
     });
-    control.addEventListener("change", () => commitSelectedLocal());
+    control.addEventListener("change", () => commitSelectedLocal({ refreshPreview: false }));
+    bindLocalPreviewInteraction(control);
   });
   els.localRename?.addEventListener("click", () => {
     const local = selectedLocal();
@@ -6167,7 +6270,7 @@ function bindLocalAdjustmentEvents() {
     const type = state.localTool || firstMaskLeaf(selectedLocal()?.mask)?.type || "brush";
     const local = newLocalAdjustment(type);
     state.selectedLocalId = local.id;
-    if (["brush", "linear_gradient"].includes(type)) state.localShowMask = true;
+    if (["brush", "linear_gradient", "luminance_range"].includes(type)) state.localShowMask = true;
     const created = await queueEditCommand("create_local", { local });
     if (!created) state.selectedLocalId = localAdjustments()[0]?.id || null;
     renderLocalAdjustments();
@@ -6382,6 +6485,32 @@ function updateLocalGradeOutput(name, value) {
   else output.textContent = Math.abs(value) < 0.005 ? "0" : value.toFixed(2);
 }
 
+function bindLocalPreviewInteraction(control) {
+  if (!control || control.dataset.previewInteractionBound === "true") return;
+  control.dataset.previewInteractionBound = "true";
+  control.addEventListener("pointerdown", () => state.previewScheduler?.beginInteraction());
+  ["pointerup", "pointercancel", "change"].forEach((eventName) => {
+    control.addEventListener(eventName, () => state.previewScheduler?.endInteraction());
+  });
+  control.addEventListener("keydown", (event) => {
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"].includes(event.key)) {
+      state.previewScheduler?.beginInteraction();
+    }
+  });
+  control.addEventListener("keyup", () => state.previewScheduler?.endInteraction());
+}
+
+function scheduleLocalPreview({ spatialMaskChanged = false } = {}) {
+  if (!state.session) return;
+  state.localPreviewDirty = true;
+  invalidatePreview("hdr", { local: true });
+  invalidatePreview("sdr", { local: true });
+  // Structural mask drafts keep the previous image until an exact current mask
+  // exists, but still use the shared scheduler for live reduced scopes.
+  if (spatialMaskChanged) state.localMaskDraftDirty = true;
+  debouncePreview(state.currentView);
+}
+
 function renderMaskTreeEditor(local) {
   const leaf = firstMaskLeaf(local.mask);
   els.localMaskFooterActions?.append(els.localInvert);
@@ -6392,27 +6521,16 @@ function renderMaskTreeEditor(local) {
   }
   if (!leaf) return;
   if (leaf.type === "luminance_range") {
-    const defaults = { fade_in_start_ev: -12, full_start_ev: -8, full_end_ev: 6, fade_out_end_ev: 10 };
-    const names = Object.keys(defaults);
-    names.forEach((name) => {
-      const label = document.createElement("label");
-      label.textContent = name.replaceAll("_", " ");
-      const input = document.createElement("input");
-      input.type = "range";
-      input.min = "-24";
-      input.max = "24";
-      input.step = "0.1";
-      input.value = String(leaf[name]);
-      input.dataset.defaultValue = String(defaults[name]);
-      input.addEventListener("change", () => {
-        leaf[name] = Number(input.value);
-        const ordered = names.map((field) => leaf[field]).sort((a, b) => a - b);
-        names.forEach((field, index) => { leaf[field] = ordered[index]; });
-        commitSelectedLocal();
-      });
-      label.append(input);
-      els.localMaskTreeSummary.append(label);
-    });
+    const panel = createLocalMaskSubpanel("Luma Controls", "Scene luminance range");
+    const helper = document.createElement("p");
+    helper.className = "luma-sampling-hint";
+    helper.textContent = "Choose a false-color band or sample the image. Presets and samples reset refinement; Alt-sampling removes tones.";
+    panel.append(helper, createLuminanceRangeControl(local, leaf));
+    [
+      { name: "mask_feather", label: "Feather", min: 0, max: 100, step: 1, value: Number(leaf.mask_feather || 0) * 2000, defaultValue: 0, display: (value) => `${Math.round(value)}%`, store: (value) => value / 2000 },
+      { name: "mask_opacity", label: "Opacity", min: 0, max: 100, step: 1, value: Number(leaf.mask_opacity ?? 1) * 100, defaultValue: 100, display: (value) => `${Math.round(value)}%`, store: (value) => value / 100 },
+    ].forEach((definition) => appendLocalMaskSlider(panel, leaf, definition, { authoritativePreview: true }));
+    els.localMaskTreeSummary.append(panel);
   } else if (leaf.type === "linear_gradient") {
     renderGradientControls(local, leaf);
   } else if (leaf.type === "brush") {
@@ -6473,6 +6591,241 @@ function renderMaskTreeEditor(local) {
   }
 }
 
+function createLuminanceRangeControl(local, leaf) {
+  const minEv = referenceNitsToEv(LUMA_RANGE_MIN_NITS);
+  const maxEv = referenceNitsToEv(LUMA_RANGE_MAX_NITS);
+  const initialReferenceStart = leaf.reference_start_ev !== null && leaf.reference_start_ev !== undefined && Number.isFinite(Number(leaf.reference_start_ev))
+    ? Number(leaf.reference_start_ev)
+    : Number(leaf.full_start_ev);
+  const initialReferenceEnd = leaf.reference_end_ev !== null && leaf.reference_end_ev !== undefined && Number.isFinite(Number(leaf.reference_end_ev))
+    ? Number(leaf.reference_end_ev)
+    : Number(leaf.full_end_ev);
+  leaf.reference_start_ev = clamp(initialReferenceStart, minEv, maxEv - 0.01);
+  leaf.reference_end_ev = clamp(initialReferenceEnd, leaf.reference_start_ev + 0.01, maxEv);
+  setLuminanceRefinedRange(
+    leaf,
+    clamp(Number(leaf.full_start_ev), leaf.reference_start_ev, leaf.reference_end_ev - 0.01),
+    clamp(Number(leaf.full_end_ev), leaf.reference_start_ev + 0.01, leaf.reference_end_ev),
+  );
+
+  const section = document.createElement("section");
+  section.className = "luma-range-control";
+  const presetHeading = document.createElement("div");
+  presetHeading.className = "luma-range-heading";
+  const presetTitle = document.createElement("span");
+  presetTitle.textContent = "Quick range";
+  const presetSummary = document.createElement("output");
+  presetHeading.append(presetTitle, presetSummary);
+
+  const presetGrid = document.createElement("div");
+  presetGrid.className = "luma-preset-grid";
+  presetGrid.setAttribute("role", "group");
+  presetGrid.setAttribute("aria-label", "False-color luminance ranges");
+  const preset = state.adjustments.shared.overlay_preset || "web_1000_100";
+  const bands = falseColorBandsForPreset(preset);
+
+  const rangeHeading = document.createElement("div");
+  rangeHeading.className = "luma-range-heading luma-nit-range-heading";
+  const rangeTitle = document.createElement("span");
+  rangeTitle.textContent = "Reference range";
+  const rangeSummary = document.createElement("output");
+  rangeHeading.append(rangeTitle, rangeSummary);
+
+  const slider = document.createElement("div");
+  slider.className = "luma-nit-range luma-reference-range";
+  const rail = document.createElement("span");
+  rail.className = "luma-nit-range-rail";
+  const fill = document.createElement("span");
+  fill.className = "luma-nit-range-fill";
+  slider.append(rail, fill);
+
+  const fields = ["reference_start_ev", "reference_end_ev"];
+  const labels = ["Lower reference-nit edge", "Upper reference-nit edge"];
+  const inputs = fields.map((field, index) => {
+    const input = document.createElement("input");
+    Object.assign(input, { type: "range", min: String(minEv), max: String(maxEv), step: "0.01", value: String(clamp(Number(leaf[field]), minEv, maxEv)) });
+    input.dataset.rangeHandle = String(index);
+    input.setAttribute("aria-label", labels[index]);
+    input.addEventListener("input", () => {
+      const gap = 0.01;
+      let start = Number(inputs[0].value);
+      let end = Number(inputs[1].value);
+      if (index === 0) start = Math.min(start, end - gap);
+      else end = Math.max(end, start + gap);
+      setLuminanceReferenceRange(leaf, start, end, { preserveRefinement: true });
+      initializedLuminanceSampleLeaves.add(leaf);
+      updateLuminanceRangeControl();
+      state.localMaskDraftDirty = true;
+      scheduleAuthoritativeLocalMaskDraft(local);
+      scheduleLocalPreview({ spatialMaskChanged: true });
+      queueLocalMaskOverlayRender();
+    });
+    input.addEventListener("change", () => commitSelectedLocal());
+    bindLocalPreviewInteraction(input);
+    slider.append(input);
+    return input;
+  });
+
+  const values = document.createElement("div");
+  values.className = "luma-nit-range-values";
+  const valueOutputs = labels.map((label) => {
+    const output = document.createElement("output");
+    output.title = label;
+    values.append(output);
+    return output;
+  });
+  const scale = document.createElement("div");
+  scale.className = "luma-range-scale luma-nit-range-scale";
+  scale.innerHTML = "<span>0.1 nit</span><span>100 nit</span><span>10,000 nit</span>";
+
+  const refineHeading = document.createElement("div");
+  refineHeading.className = "luma-range-heading luma-refine-range-heading";
+  const refineTitle = document.createElement("span");
+  refineTitle.textContent = "Refine range";
+  const refineSummary = document.createElement("output");
+  refineHeading.append(refineTitle, refineSummary);
+
+  const refineSlider = document.createElement("div");
+  refineSlider.className = "luma-nit-range luma-refine-range";
+  const refineRail = document.createElement("span");
+  refineRail.className = "luma-nit-range-rail";
+  const refineFill = document.createElement("span");
+  refineFill.className = "luma-nit-range-fill";
+  refineSlider.append(refineRail, refineFill);
+  const refineInputs = ["Lower refined edge", "Upper refined edge"].map((label, index) => {
+    const input = document.createElement("input");
+    Object.assign(input, { type: "range", min: "0", max: "1", step: "0.001", value: index ? "1" : "0" });
+    input.dataset.rangeHandle = String(index);
+    input.setAttribute("aria-label", label);
+    input.addEventListener("input", () => {
+      const gap = 0.001;
+      let start = Number(refineInputs[0].value);
+      let end = Number(refineInputs[1].value);
+      if (index === 0) start = Math.min(start, end - gap);
+      else end = Math.max(end, start + gap);
+      const referenceStart = Number(leaf.reference_start_ev);
+      const referenceSpan = Math.max(Number(leaf.reference_end_ev) - referenceStart, 0.01);
+      setLuminanceRefinedRange(
+        leaf,
+        referenceStart + start * referenceSpan,
+        referenceStart + end * referenceSpan,
+      );
+      updateLuminanceRangeControl();
+      state.localMaskDraftDirty = true;
+      scheduleAuthoritativeLocalMaskDraft(local);
+      scheduleLocalPreview({ spatialMaskChanged: true });
+      queueLocalMaskOverlayRender();
+    });
+    input.addEventListener("change", () => commitSelectedLocal());
+    bindLocalPreviewInteraction(input);
+    refineSlider.append(input);
+    return input;
+  });
+  const refineValues = document.createElement("div");
+  refineValues.className = "luma-nit-range-values luma-refine-range-values";
+  const refineValueOutputs = ["Refined lower bound", "Refined upper bound"].map((label) => {
+    const output = document.createElement("output");
+    output.title = label;
+    refineValues.append(output);
+    return output;
+  });
+
+  const bandButtons = bands.map(({ lower, upper, paletteIndex }, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "luma-preset-button";
+    button.dataset.bandIndex = String(index);
+    const swatch = document.createElement("i");
+    swatch.className = "false-color-key-swatch";
+    swatch.style.backgroundColor = exposureBandColor(paletteIndex);
+    const label = document.createElement("span");
+    label.textContent = lumaBandLabel(lower, upper);
+    button.append(swatch, label);
+    button.addEventListener("click", async () => {
+      const start = referenceNitsToEv(lower ?? LUMA_RANGE_MIN_NITS);
+      const end = referenceNitsToEv(upper ?? LUMA_RANGE_MAX_NITS);
+      setLuminanceReferenceRange(leaf, start, end, { preserveRefinement: false });
+      initializedLuminanceSampleLeaves.add(leaf);
+      updateLuminanceRangeControl();
+      state.localMaskDraftDirty = true;
+      scheduleAuthoritativeLocalMaskDraft(local);
+      scheduleLocalPreview({ spatialMaskChanged: true });
+      queueLocalMaskOverlayRender();
+      await commitSelectedLocal();
+    });
+    presetGrid.append(button);
+    return button;
+  });
+
+  function updateLuminanceRangeControl() {
+    const start = clamp(Number(leaf.reference_start_ev), minEv, maxEv);
+    const end = clamp(Number(leaf.reference_end_ev), minEv, maxEv);
+    inputs[0].value = String(start);
+    inputs[1].value = String(end);
+    const startPosition = ((start - minEv) / (maxEv - minEv)) * 100;
+    const endPosition = ((end - minEv) / (maxEv - minEv)) * 100;
+    slider.style.setProperty("--luma-range-start", `${startPosition}%`);
+    slider.style.setProperty("--luma-range-end", `${endPosition}%`);
+    const lowerNits = evToReferenceNits(start);
+    const upperNits = evToReferenceNits(end);
+    valueOutputs[0].textContent = formatReferenceNits(lowerNits);
+    valueOutputs[1].textContent = formatReferenceNits(upperNits);
+    rangeSummary.textContent = `${formatReferenceNits(lowerNits)} - ${formatReferenceNits(upperNits)}`;
+    const referenceSpan = Math.max(end - start, 0.01);
+    const refineStart = clamp((Number(leaf.full_start_ev) - start) / referenceSpan, 0, 1);
+    const refineEnd = clamp((Number(leaf.full_end_ev) - start) / referenceSpan, refineStart, 1);
+    refineInputs[0].value = String(refineStart);
+    refineInputs[1].value = String(refineEnd);
+    refineSlider.style.setProperty("--luma-range-start", `${refineStart * 100}%`);
+    refineSlider.style.setProperty("--luma-range-end", `${refineEnd * 100}%`);
+    const refinedLowerNits = evToReferenceNits(leaf.full_start_ev);
+    const refinedUpperNits = evToReferenceNits(leaf.full_end_ev);
+    refineValueOutputs[0].textContent = formatReferenceNits(refinedLowerNits);
+    refineValueOutputs[1].textContent = formatReferenceNits(refinedUpperNits);
+    refineSummary.textContent = `${formatReferenceNits(refinedLowerNits)} - ${formatReferenceNits(refinedUpperNits)}`;
+    let selectedLabel = "Custom";
+    bandButtons.forEach((button, index) => {
+      const band = bands[index];
+      const bandStart = referenceNitsToEv(band.lower ?? LUMA_RANGE_MIN_NITS);
+      const bandEnd = referenceNitsToEv(band.upper ?? LUMA_RANGE_MAX_NITS);
+      const active = Math.abs(start - bandStart) < 0.015 && Math.abs(end - bandEnd) < 0.015;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", String(active));
+      if (active) selectedLabel = lumaBandLabel(band.lower, band.upper);
+    });
+    presetSummary.textContent = selectedLabel;
+  }
+
+  section.append(presetHeading, presetGrid, rangeHeading, slider, values, scale, refineHeading, refineSlider, refineValues);
+  updateLuminanceRangeControl();
+  return section;
+}
+
+function setLuminanceReferenceRange(leaf, startEv, endEv, { preserveRefinement = true } = {}) {
+  const start = Number(clamp(startEv, -24, 23.99).toFixed(4));
+  const end = Number(clamp(endEv, start + 0.01, 24).toFixed(4));
+  const previousStart = leaf.reference_start_ev !== null && leaf.reference_start_ev !== undefined && Number.isFinite(Number(leaf.reference_start_ev)) ? Number(leaf.reference_start_ev) : Number(leaf.full_start_ev);
+  const previousEnd = leaf.reference_end_ev !== null && leaf.reference_end_ev !== undefined && Number.isFinite(Number(leaf.reference_end_ev)) ? Number(leaf.reference_end_ev) : Number(leaf.full_end_ev);
+  const previousSpan = Math.max(previousEnd - previousStart, 0.01);
+  const refinedStart = preserveRefinement ? clamp((Number(leaf.full_start_ev) - previousStart) / previousSpan, 0, 1) : 0;
+  const refinedEnd = preserveRefinement ? clamp((Number(leaf.full_end_ev) - previousStart) / previousSpan, refinedStart, 1) : 1;
+  leaf.reference_start_ev = start;
+  leaf.reference_end_ev = end;
+  const span = end - start;
+  setLuminanceRefinedRange(leaf, start + refinedStart * span, start + refinedEnd * span);
+}
+
+function setLuminanceRefinedRange(leaf, startEv, endEv) {
+  const referenceStart = leaf.reference_start_ev !== null && leaf.reference_start_ev !== undefined && Number.isFinite(Number(leaf.reference_start_ev)) ? Number(leaf.reference_start_ev) : -24;
+  const referenceEnd = leaf.reference_end_ev !== null && leaf.reference_end_ev !== undefined && Number.isFinite(Number(leaf.reference_end_ev)) ? Number(leaf.reference_end_ev) : 24;
+  const start = Number(clamp(startEv, referenceStart, referenceEnd - 0.01).toFixed(4));
+  const end = Number(clamp(endEv, start + 0.01, referenceEnd).toFixed(4));
+  leaf.full_start_ev = start;
+  leaf.full_end_ev = end;
+  leaf.fade_in_start_ev = Number(clamp(start - LUMA_TONAL_RAMP_EV, -24, start).toFixed(4));
+  leaf.fade_out_end_ev = Number(clamp(end + LUMA_TONAL_RAMP_EV, end, 24).toFixed(4));
+}
+
 function renderGradientControls(local, leaf) {
   if (!els.localGradientControls) return;
   els.localGradientControls.classList.remove("hidden");
@@ -6522,18 +6875,22 @@ function createGradientLuminanceRange(local, leaf) {
       toggle.checked = true;
       state.localMaskDraftDirty = true;
       scheduleAuthoritativeLocalMaskDraft(local);
+      scheduleLocalPreview({ spatialMaskChanged: true });
       queueLocalMaskOverlayRender();
     });
     input.addEventListener("change", () => commitSelectedLocal());
+    bindLocalPreviewInteraction(input);
     ramp.append(input);
   });
   toggle.addEventListener("change", () => {
     leaf.gradient_luma_enabled = toggle.checked;
     state.localMaskDraftDirty = true;
     scheduleAuthoritativeLocalMaskDraft(local);
+    scheduleLocalPreview({ spatialMaskChanged: true });
     queueLocalMaskOverlayRender();
     commitSelectedLocal();
   });
+  bindLocalPreviewInteraction(toggle);
   const scale = document.createElement("div");
   scale.className = "gradient-luma-scale";
   scale.innerHTML = "<span>Blacks</span><span>Midtones</span><span>Highlights</span>";
@@ -6566,6 +6923,7 @@ function appendLocalMaskSlider(panel, leaf, definition, options = {}) {
   output.textContent = display(value);
   const input = document.createElement("input");
   Object.assign(input, { type: "range", min: String(min), max: String(max), step: String(step), value: String(value), disabled: Boolean(options.disabled) });
+  input.dataset.localMaskParam = name;
   input.dataset.defaultValue = String(defaultValue);
   if (options.previewBrush) {
     input.addEventListener("focus", () => showBrushSettingsPreview(leaf));
@@ -6578,16 +6936,25 @@ function appendLocalMaskSlider(panel, leaf, definition, options = {}) {
   input.addEventListener("input", () => {
     const next = Number(input.value);
     leaf[name] = store(next);
-    if (name.startsWith("mask_") || options.authoritativePreview) {
+    const influenceOnly = name === "mask_opacity";
+    const spatialMaskChanged = !influenceOnly && (name.startsWith("mask_") || options.authoritativePreview);
+    if (spatialMaskChanged) {
       state.localMaskDraftDirty = true;
       scheduleAuthoritativeLocalMaskDraft(selectedLocal());
+      scheduleLocalPreview({ spatialMaskChanged: true });
+    } else if (influenceOnly) {
+      scheduleLocalPreview();
     }
     output.textContent = display(next);
     if (options.previewBrush) showBrushSettingsPreview(leaf);
     if (options.hideBrushPreview) hideBrushSettingsPreview();
     queueLocalMaskOverlayRender();
   });
-  input.addEventListener("change", () => (options.commit || commitSelectedLocal)());
+  input.addEventListener("change", () => {
+    if (options.commit) options.commit();
+    else commitSelectedLocal({ refreshPreview: name !== "mask_opacity" });
+  });
+  bindLocalPreviewInteraction(input);
   label.append(heading, input, output);
   panel.append(label);
   enhanceRangeControl(input);
@@ -6687,7 +7054,8 @@ async function commitSelectedLocal({ refreshPreview = true } = {}) {
     // intermediate mask between strokes.
     const committed = await queueEditCommand("update_local", { local: JSON.parse(JSON.stringify(local)) }, local.id, { refreshPreview: false });
     if (committed) {
-      window.clearTimeout(state.localMaskDraftTimer);
+      window.cancelAnimationFrame(state.localMaskDraftTimer);
+      state.localMaskDraftTimer = 0;
       // Let an in-flight draft finish quietly. The generation bump below makes
       // its response ineligible, while avoiding a browser-level request failure
       // at the end of a fast gradient gesture.
@@ -6695,10 +7063,11 @@ async function commitSelectedLocal({ refreshPreview = true } = {}) {
       state.localMaskDraftPending = null;
       state.localMaskDraftGeneration += 1;
       state.localMaskDraftDirty = false;
+      state.localPreviewDirty = false;
     }
   } finally {
     state.localMaskCommitDepth = Math.max(0, state.localMaskCommitDepth - 1);
-    if (state.localMaskCommitDepth === 0 && state.localMaskCommitRefreshPending) {
+    if (state.localMaskCommitDepth === 0 && state.localMaskCommitRefreshPending && !state.localPointerGesture) {
       state.localMaskCommitRefreshPending = false;
       invalidatePreview("hdr", { local: true });
       invalidatePreview("sdr", { local: true });
@@ -6761,16 +7130,22 @@ async function syncGlobalEditState() {
   return applied;
 }
 
-async function refreshEditState() {
+async function refreshEditState({ preserveLocalDraft = false } = {}) {
   if (!state.session) return;
+  const optimisticLocals = preserveLocalDraft
+    ? state.editDocument?.local_adjustments
+    : null;
   const response = await fetch(`/api/session/${state.session.session_id}/edit-state`);
   const result = await safeJson(response);
   if (!response.ok) return;
   state.editRevision = result.revision;
   state.editDocument = result.document;
+  if (optimisticLocals) state.editDocument.local_adjustments = optimisticLocals;
   state.documentDirty = Boolean(result.dirty);
   state.adjustments = result.document.global_adjustments;
-  renderLocalAdjustments();
+  // Rebuilding the active range input releases pointer capture. Keep the
+  // existing control alive while its optimistic local object is still in use.
+  if (!preserveLocalDraft) renderLocalAdjustments();
 }
 
 function bindLocalMaskCanvas() {
@@ -6784,7 +7159,10 @@ function bindLocalMaskCanvas() {
     const leaf = firstMaskLeaf(local.mask, state.localTool) || firstMaskLeaf(local.mask);
     if (!leaf || !point) return;
     if (!["brush", "linear_gradient", "luminance_range", "path"].includes(leaf.type)) return;
-    if (leaf.type === "luminance_range" && Math.abs(point.y - .14) > .08) return;
+    // A new structural gesture supersedes any settled preview queued by the
+    // preceding commit. Its overlay remains visible while the gesture is in
+    // progress, and the final commit schedules the next adjusted frame.
+    state.previewScheduler?.cancel();
     canvas.focus({ preventScroll: true });
     canvas.setPointerCapture(event.pointerId);
     if (leaf.type === "brush") {
@@ -6812,13 +7190,13 @@ function bindLocalMaskCanvas() {
         state.localPointerGesture = { type: "linear_gradient", leaf, handle: "end", creating: true };
       }
     } else if (leaf.type === "luminance_range") {
-      const fields = ["fade_in_start_ev", "full_start_ev", "full_end_ev", "fade_out_end_ev"];
-      const handlePositions = fields.map((field) => .12 + clamp((Number(leaf[field]) + 24) / 48, 0, 1) * .76);
-      const handleIndex = handlePositions.reduce((nearest, position, index) => (
-        Math.abs(position - point.x) < nearest.distance ? { index, distance: Math.abs(position - point.x) } : nearest
-      ), { index: 0, distance: Infinity }).index;
-      state.localPointerGesture = { type: "luminance_range", leaf, handleIndex };
-      updateLuminanceRangeHandle(leaf, handleIndex, point.x);
+      state.localPointerGesture = {
+        type: "luminance_sample",
+        leaf,
+        localId: local.id,
+        remove: event.altKey,
+        points: [point],
+      };
     } else if (leaf.type === "path") {
       const nearest = leaf.nodes.reduce((best, node, index) => {
         const distance = (node.x - point.x) ** 2 + (node.y - point.y) ** 2;
@@ -6845,7 +7223,7 @@ function bindLocalMaskCanvas() {
     }
     if (gesture.type === "brush") appendBrushPointerPoints(gesture.stroke, event);
     else if (gesture.type === "linear_gradient") updateGradientGesture(gesture, point);
-    else if (gesture.type === "luminance_range") updateLuminanceRangeHandle(gesture.leaf, gesture.handleIndex, point.x);
+    else if (gesture.type === "luminance_sample") appendLuminanceSamplePoint(gesture, point);
     else if (gesture.type === "path") Object.assign(gesture.leaf.nodes[gesture.nodeIndex], point);
     queueLocalMaskOverlayRender();
   });
@@ -6855,6 +7233,10 @@ function bindLocalMaskCanvas() {
     state.localPointerGesture = null;
     if (gesture.type === "brush") gesture.leaf.strokes.push(gesture.stroke);
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    if (gesture.type === "luminance_sample") {
+      await finishLuminanceSampleGesture(gesture);
+      return;
+    }
     await commitSelectedLocal();
   };
   canvas.addEventListener("pointerup", end);
@@ -6882,12 +7264,81 @@ function appendBrushPointerPoints(stroke, event) {
   }
 }
 
-function updateLuminanceRangeHandle(leaf, handleIndex, normalizedX) {
-  const fields = ["fade_in_start_ev", "full_start_ev", "full_end_ev", "fade_out_end_ev"];
-  const unclamped = ((clamp(normalizedX, .12, .88) - .12) / .76) * 48 - 24;
-  const lower = handleIndex === 0 ? -24 : Number(leaf[fields[handleIndex - 1]]);
-  const upper = handleIndex === fields.length - 1 ? 24 : Number(leaf[fields[handleIndex + 1]]);
-  leaf[fields[handleIndex]] = Number(clamp(unclamped, lower, upper).toFixed(2));
+// Sampling initialization is interaction state, not part of the persisted mask
+// schema. Keeping it out of edit-command payloads also lets a refreshed client
+// create Luma adjustments against an already-running older backend process.
+const initializedLuminanceSampleLeaves = new WeakSet();
+
+function isLuminanceSamplingInitialized(leaf) {
+  if (initializedLuminanceSampleLeaves.has(leaf)) return true;
+  const fields = ["full_start_ev", "full_end_ev"];
+  const defaults = [-8, 6];
+  return fields.some((field, index) => Math.abs(Number(leaf[field]) - defaults[index]) > 0.001);
+}
+
+function appendLuminanceSamplePoint(gesture, point) {
+  const previous = gesture.points.at(-1);
+  if (previous && Math.hypot(point.x - previous.x, point.y - previous.y) < 0.006) return;
+  if (gesture.points.length < 512) gesture.points.push(point);
+}
+
+async function finishLuminanceSampleGesture(gesture) {
+  const local = selectedLocal();
+  if (!state.session || !local || local.id !== gesture.localId || !gesture.points.length) return;
+  try {
+    const response = await fetch(`/api/session/${state.session.session_id}/local-luminance-sample`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        points: gesture.points,
+        edit_revision: state.editRevision,
+        long_edge: settledProxyLongEdge(),
+      }),
+    });
+    const sample = await safeJson(response);
+    if (!response.ok) throw new Error(sample.detail || "Luminance sampling failed.");
+    if (!applyLuminanceSample(gesture.leaf, sample, gesture.remove)) return;
+    state.localMaskDraftDirty = true;
+    scheduleAuthoritativeLocalMaskDraft(local);
+    renderMaskTreeEditor(local);
+    syncRangeVisuals(els.localEditor);
+    queueLocalMaskOverlayRender();
+    await commitSelectedLocal();
+  } catch (error) {
+    console.error(error);
+    els.badge.textContent = error.message;
+    els.badge.className = "badge bad";
+    queueLocalMaskOverlayRender();
+  }
+}
+
+function applyLuminanceSample(leaf, sample, remove = false) {
+  const sampleLow = clamp(Number(sample.low_ev), -24, 24);
+  const sampleHigh = clamp(Number(sample.high_ev), sampleLow, 24);
+  let fullStart = Number(leaf.full_start_ev);
+  let fullEnd = Number(leaf.full_end_ev);
+  if (!Number.isFinite(fullStart) || !Number.isFinite(fullEnd)) return false;
+  if (!remove) {
+    if (!isLuminanceSamplingInitialized(leaf)) {
+      fullStart = sampleLow;
+      fullEnd = sampleHigh;
+    } else {
+      fullStart = Math.min(fullStart, sampleLow);
+      fullEnd = Math.max(fullEnd, sampleHigh);
+    }
+  } else {
+    if (sampleHigh < fullStart || sampleLow > fullEnd) return false;
+    const midpoint = (fullStart + fullEnd) * 0.5;
+    if (Number(sample.center_ev) <= midpoint) fullStart = Math.min(fullEnd - 0.25, Math.max(fullStart, sampleHigh));
+    else fullEnd = Math.max(fullStart + 0.25, Math.min(fullEnd, sampleLow));
+  }
+  fullStart = Number(clamp(fullStart, -23.75, 23.75).toFixed(2));
+  fullEnd = Number(clamp(fullEnd, fullStart + 0.25, 24).toFixed(2));
+  leaf.reference_start_ev = fullStart;
+  leaf.reference_end_ev = fullEnd;
+  setLuminanceRefinedRange(leaf, fullStart, fullEnd);
+  initializedLuminanceSampleLeaves.add(leaf);
+  return true;
 }
 
 function gradientControlPoints(leaf) {
@@ -6973,16 +7424,21 @@ function renderLocalMaskOverlay() {
   const x = (value) => offsetX + value * imageRect.width;
   const y = (value) => offsetY + value * imageRect.height;
   const maskSignature = JSON.stringify(local.mask);
+  const spatialSignature = localMaskSpatialSignature(local.mask);
   const authoritative = local.mask?.operator === "leaf"
     ? localAuthoritativeMaskCache.get(local.id)
     : null;
   drawMaskExpression(context, local.mask, x, y, {
     localId: local.id,
     maskSignature,
+    spatialSignature,
     // During a control drag, retain the most recent exact backend frame until
     // the exact draft for the new slider value arrives. Never flash over to
     // the materially different Canvas blur approximation.
-    authoritative: authoritative && (state.localMaskDraftDirty || authoritative.signature === maskSignature)
+    authoritative: authoritative && (
+      state.localMaskDraftDirty
+      || authoritative.signature === (authoritative.spatialOnly ? spatialSignature : maskSignature)
+    )
       ? authoritative
       : null,
     exactMaskPending: state.localMaskDraftDirty,
@@ -6998,6 +7454,14 @@ function queueLocalMaskOverlayRender() {
   });
 }
 
+function localMaskSpatialSignature(expression) {
+  if (expression?.operator !== "leaf" || !expression.leaf) return JSON.stringify(expression);
+  return JSON.stringify({
+    ...expression,
+    leaf: { ...expression.leaf, mask_opacity: 1 },
+  });
+}
+
 function drawMaskExpression(context, expression, x, y, options = {}) {
   if (expression.operator !== "leaf") {
     (expression.children || []).forEach((child) => drawMaskExpression(context, child, x, y, options));
@@ -7010,7 +7474,9 @@ function drawMaskExpression(context, expression, x, y, options = {}) {
   context.fillStyle = overlayColorWithAlpha(0.22);
   context.lineWidth = 2;
   if (leaf.type === "linear_gradient") {
-    if (state.localShowMask && options.authoritative) drawAuthoritativeMaskOverlay(context, options.authoritative.canvas, x, y);
+    if (state.localShowMask && options.authoritative) {
+      drawAuthoritativeMaskOverlay(context, options.authoritative.canvas, x, y, options.authoritative.spatialOnly ? leaf.mask_opacity : 1);
+    }
     drawLinearGradientGizmo(context, leaf, x, y);
   } else if (leaf.type === "brush") {
     const gesture = state.localPointerGesture;
@@ -7019,7 +7485,13 @@ function drawMaskExpression(context, expression, x, y, options = {}) {
     const cursor = state.localBrushCursor || activeStroke?.points?.at(-1);
     if (cursor) drawBrushGizmo(context, cursor, brushSettings(leaf), x, y);
   } else if (leaf.type === "luminance_range") {
-    drawLuminanceRangeGizmo(context, leaf, x, y);
+    if (state.localShowMask && options.authoritative) {
+      drawAuthoritativeMaskOverlay(context, options.authoritative.canvas, x, y, options.authoritative.spatialOnly ? leaf.mask_opacity : 1);
+    }
+    const samplingGesture = state.localPointerGesture;
+    if (samplingGesture?.type === "luminance_sample" && samplingGesture.leaf === leaf) {
+      drawLuminanceSamplingGesture(context, samplingGesture, x, y);
+    }
   } else if (leaf.type === "path") {
     const path = () => {
       context.beginPath();
@@ -7045,7 +7517,7 @@ function drawBrushMaskOverlay(context, leaf, activeStroke, x, y, inverted = fals
   const fallbackScale = Math.min(1, interactionLongEdge / Math.max(displayWidth, displayHeight));
   const width = authoritativeCanvas?.width || Math.max(1, Math.round(displayWidth * fallbackScale));
   const height = authoritativeCanvas?.height || Math.max(1, Math.round(displayHeight * fallbackScale));
-  const signature = `${width}x${height}:${options.maskSignature || JSON.stringify(strokes)}`;
+  const signature = `${width}x${height}:${options.spatialSignature || options.maskSignature || JSON.stringify(strokes)}`;
   const cacheKey = options.localId || leaf;
   let cached = null;
   if (!authoritativeCanvas) {
@@ -7095,9 +7567,7 @@ function drawBrushMaskOverlay(context, leaf, activeStroke, x, y, inverted = fals
       const draftStroke = {
         ...activeStroke,
         points: pendingPoints,
-        opacity: !activeStroke.erase
-          ? Number(activeStroke.opacity) * clamp(Number(leaf.mask_opacity ?? 1), 0, 1)
-          : Number(activeStroke.opacity),
+        opacity: Number(activeStroke.opacity),
       };
       drawBrushMaskStroke(gestureCanvas.canvas.getContext("2d"), draftStroke, width, height);
       gestureCanvas.renderedPointCount = activeStroke.points.length;
@@ -7108,7 +7578,10 @@ function drawBrushMaskOverlay(context, leaf, activeStroke, x, y, inverted = fals
   // after those operations so newly covered pixels cannot retain black RGB.
   maskCanvas = tintedBrushMaskCanvas(maskCanvas, !activeStroke);
   context.save();
-  context.globalAlpha = 0.52;
+  const influenceOpacity = options.authoritative?.spatialOnly === false
+    ? 1
+    : clamp(Number(leaf.mask_opacity ?? 1), 0, 1);
+  context.globalAlpha = 0.52 * influenceOpacity;
   context.drawImage(maskCanvas, left, top, displayWidth, displayHeight);
   context.restore();
 }
@@ -7116,22 +7589,22 @@ function drawBrushMaskOverlay(context, leaf, activeStroke, x, y, inverted = fals
 async function queueAuthoritativeLocalMask(local) {
   if (!state.session || !local || local.mask?.operator !== "leaf") return;
   if (state.localMaskCommitDepth > 0) return;
-  if (!["brush", "linear_gradient"].includes(local.mask.leaf?.type)) return;
+  if (!["brush", "linear_gradient", "luminance_range"].includes(local.mask.leaf?.type)) return;
   if (local.mask.leaf?.type === "brush" && !(local.mask.leaf.strokes || []).length) return;
   if (state.localMaskDraftDirty) return;
-  const signature = JSON.stringify(local.mask);
+  const signature = localMaskSpatialSignature(local.mask);
   const longEdge = settledProxyLongEdge();
   const revision = state.editRevision;
-  const key = `${state.session.session_id}:${local.id}:${longEdge}:${revision}:${signature}`;
+  const key = `${state.session.session_id}:${local.id}:${longEdge}:${signature}`;
   const cached = localAuthoritativeMaskCache.get(local.id);
   if (cached?.key === key || localAuthoritativeMaskRequests.has(key)) return;
-  const request = fetch(`/api/session/${state.session.session_id}/local-mask/${encodeURIComponent(local.id)}?long_edge=${longEdge}&edit_revision=${revision}`)
+  const request = fetch(`/api/session/${state.session.session_id}/local-mask/${encodeURIComponent(local.id)}?long_edge=${longEdge}&edit_revision=${revision}&spatial_only=true`)
     .then(async (response) => {
       if (!response.ok) return;
       const width = Number(response.headers.get("X-Image-Width"));
       const height = Number(response.headers.get("X-Image-Height"));
       const alpha = new Uint8Array(await response.arrayBuffer());
-      if (revision !== state.editRevision || signature !== JSON.stringify(selectedLocal()?.mask)) return;
+      if (signature !== localMaskSpatialSignature(selectedLocal()?.mask)) return;
       const canvas = document.createElement("canvas");
       canvas.width = width;
       canvas.height = height;
@@ -7140,7 +7613,7 @@ async function queueAuthoritativeLocalMask(local) {
         pixels[targetIndex + 3] = alpha[sourceIndex];
       }
       canvas.getContext("2d").putImageData(new ImageData(pixels, width, height), 0, 0);
-      localAuthoritativeMaskCache.set(local.id, { key, signature, canvas });
+      localAuthoritativeMaskCache.set(local.id, { key, signature, canvas, spatialOnly: true });
       while (localAuthoritativeMaskCache.size > 8) {
         localAuthoritativeMaskCache.delete(localAuthoritativeMaskCache.keys().next().value);
       }
@@ -7154,7 +7627,7 @@ async function queueAuthoritativeLocalMask(local) {
 
 function scheduleAuthoritativeLocalMaskDraft(local) {
   if (!state.session || !local || local.mask?.operator !== "leaf") return;
-  if (!["brush", "linear_gradient"].includes(local.mask.leaf?.type)) return;
+  if (!["brush", "linear_gradient", "luminance_range"].includes(local.mask.leaf?.type)) return;
   if (local.mask.leaf?.type === "brush" && !(local.mask.leaf.strokes || []).length) return;
   const signature = JSON.stringify(local.mask);
   state.localMaskDraftPending = {
@@ -7163,10 +7636,14 @@ function scheduleAuthoritativeLocalMaskDraft(local) {
     signature,
     revision: state.editRevision,
     longEdge: settledProxyLongEdge(),
-    generation: state.localMaskDraftGeneration,
+    generation: ++state.localMaskDraftGeneration,
   };
-  if (state.localMaskDraftController || state.localMaskDraftTimer) return;
-  state.localMaskDraftTimer = window.setTimeout(flushAuthoritativeLocalMaskDraft, 16);
+  if (state.localMaskDraftController) {
+    state.localMaskDraftController.abort();
+    return;
+  }
+  if (state.localMaskDraftTimer) return;
+  state.localMaskDraftTimer = window.requestAnimationFrame(flushAuthoritativeLocalMaskDraft);
 }
 
 function flushAuthoritativeLocalMaskDraft() {
@@ -7187,6 +7664,7 @@ function flushAuthoritativeLocalMaskDraft() {
 async function loadAuthoritativeLocalMaskDraft(localId, mask, signature, revision, longEdge, generation) {
   const controller = new AbortController();
   state.localMaskDraftController = controller;
+  const requestedAt = performance.now();
   try {
     const response = await fetch(
       `/api/session/${state.session.session_id}/local-mask/${encodeURIComponent(localId)}/preview`,
@@ -7205,21 +7683,39 @@ async function loadAuthoritativeLocalMaskDraft(localId, mask, signature, revisio
       generation !== state.localMaskDraftGeneration
       || revision !== state.editRevision
       || localId !== state.selectedLocalId
-    ) return;
+      || signature !== JSON.stringify(selectedLocal()?.mask)
+    ) {
+      state.previewScheduler?.recordStaleResult();
+      return;
+    }
     const canvas = alphaMaskCanvas(alpha, width, height);
     localAuthoritativeMaskCache.set(localId, {
       key: `draft:${revision}:${longEdge}:${signature}`,
       signature,
       canvas,
+      spatialOnly: false,
     });
     trimAuthoritativeLocalMaskCache();
     queueLocalMaskOverlayRender();
+    requestAnimationFrame((presentedAt) => {
+      window.dispatchEvent(new CustomEvent("hdrfinisher:mask-presented", {
+        detail: {
+          localId,
+          generation,
+          longEdge,
+          requestedAt,
+          presentedAt,
+          cpuMaskMs: Number(response.headers.get("X-CPU-Mask-Ms")) || null,
+          byteLength: alpha.byteLength,
+        },
+      }));
+    });
   } catch (error) {
     if (error?.name !== "AbortError") console.warn("Authoritative local mask draft could not be loaded.", error);
   } finally {
     if (state.localMaskDraftController === controller) state.localMaskDraftController = null;
     if (state.localMaskDraftPending && state.localMaskDraftDirty && !state.localMaskDraftTimer) {
-      state.localMaskDraftTimer = window.setTimeout(flushAuthoritativeLocalMaskDraft, 16);
+      state.localMaskDraftTimer = window.requestAnimationFrame(flushAuthoritativeLocalMaskDraft);
     }
   }
 }
@@ -7305,10 +7801,9 @@ function postProcessBrushMaskPreviewWithErase(paintedSource, eraseStrokes, leaf,
   const context = canvas.getContext("2d");
   context.drawImage(processed, 0, 0, width, height);
   const output = context.getImageData(0, 0, width, height);
-  const maskOpacity = clamp(Number(leaf.mask_opacity ?? 1), 0, 1);
   for (let index = 3; index < output.data.length; index += 4) {
     const alpha = inverted ? 255 - output.data[index] : output.data[index];
-    output.data[index] = Math.round(alpha * maskOpacity);
+    output.data[index] = alpha;
   }
   context.putImageData(output, 0, 0);
   for (const stroke of eraseStrokes || []) drawBrushMaskStroke(context, stroke, width, height);
@@ -7343,7 +7838,7 @@ function overlayColorWithAlpha(alpha) {
   return `rgba(${parseInt(match[1], 16)}, ${parseInt(match[2], 16)}, ${parseInt(match[3], 16)}, ${alpha})`;
 }
 
-function drawAuthoritativeMaskOverlay(context, maskCanvas, x, y) {
+function drawAuthoritativeMaskOverlay(context, maskCanvas, x, y, influenceOpacity = 1) {
   const left = x(0);
   const top = y(0);
   const width = Math.max(1, Math.round(x(1) - left));
@@ -7355,7 +7850,7 @@ function drawAuthoritativeMaskOverlay(context, maskCanvas, x, y) {
   tintedContext.drawImage(maskCanvas, 0, 0);
   tintBrushMask(tintedContext, tinted.width, tinted.height);
   context.save();
-  context.globalAlpha = 0.52;
+  context.globalAlpha = 0.52 * clamp(Number(influenceOpacity), 0, 1);
   context.drawImage(tinted, left, top, width, height);
   context.restore();
 }
@@ -7562,43 +8057,30 @@ function drawBrushGizmo(context, point, stroke, x, y) {
   context.restore();
 }
 
-function drawLuminanceRangeGizmo(context, leaf, x, y) {
-  const left = x(.12);
-  const right = x(.88);
-  const top = y(.07);
-  const bottom = y(.18);
-  const barY = y(.14);
-  const position = (ev) => left + clamp((Number(ev) + 24) / 48, 0, 1) * (right - left);
-  const handles = [leaf.fade_in_start_ev, leaf.full_start_ev, leaf.full_end_ev, leaf.fade_out_end_ev].map(position);
+function drawLuminanceSamplingGesture(context, gesture, x, y) {
+  const points = gesture.points || [];
+  if (!points.length) return;
+  const color = gesture.remove ? "#ff8a91" : "#74e5ee";
   context.save();
-  context.fillStyle = "rgba(8, 12, 14, .88)";
-  context.strokeStyle = "rgba(116, 229, 238, .65)";
-  context.lineWidth = 1;
-  context.fillRect(left - 16, top - 12, right - left + 32, bottom - top + 24);
-  context.strokeRect(left - 16, top - 12, right - left + 32, bottom - top + 24);
-  context.fillStyle = "#dffbff";
-  context.font = "600 11px sans-serif";
-  context.textBaseline = "top";
-  context.fillText("LUMINANCE RANGE", left, top - 5);
   drawLocalGizmoStroke(context, () => {
     context.beginPath();
-    context.moveTo(left, barY);
-    context.lineTo(right, barY);
-  }, 2, "rgba(255, 255, 255, .72)");
-  drawLocalGizmoStroke(context, () => {
+    points.forEach((point, index) => index
+      ? context.lineTo(x(point.x), y(point.y))
+      : context.moveTo(x(point.x), y(point.y)));
+  }, 2, color);
+  for (const point of [points[0], points.at(-1)]) {
     context.beginPath();
-    context.moveTo(handles[1], barY);
-    context.lineTo(handles[2], barY);
-  }, 5, "#74e5ee");
-  handles.forEach((handleX, index) => {
-    drawLocalGizmoHandle(context, handleX, barY, index === 1 || index === 2 ? 7 : 5);
-  });
-  context.fillStyle = "rgba(223, 251, 255, .78)";
-  context.font = "10px monospace";
-  context.textBaseline = "bottom";
-  context.fillText(`${Number(leaf.fade_in_start_ev).toFixed(1)} EV`, left, bottom + 5);
-  const endLabel = `${Number(leaf.fade_out_end_ev).toFixed(1)} EV`;
-  context.fillText(endLabel, right - context.measureText(endLabel).width, bottom + 5);
+    context.arc(x(point.x), y(point.y), 8, 0, Math.PI * 2);
+    context.strokeStyle = color;
+    context.lineWidth = 2;
+    context.stroke();
+    context.beginPath();
+    context.moveTo(x(point.x) - 12, y(point.y));
+    context.lineTo(x(point.x) + 12, y(point.y));
+    context.moveTo(x(point.x), y(point.y) - 12);
+    context.lineTo(x(point.x), y(point.y) + 12);
+    context.stroke();
+  }
   context.restore();
 }
 

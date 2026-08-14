@@ -9,8 +9,14 @@ import numpy as np
 
 from .adjustments import apply_adjustments
 from .finishing import apply_geometry
-from .local_adjustments import compile_preview_mask
-from .models import AdjustmentState, LocalAdjustment, MaskExpression, PreviewKind
+from .local_adjustments import (
+    compile_preview_mask,
+    compile_spatial_preview_mask,
+    mask_influence_opacity,
+    sample_luminance_evs,
+    spatial_mask_signature,
+)
+from .models import AdjustmentState, LocalAdjustment, MaskExpression, MaskPoint, PreviewKind
 from .preview import downsample_image
 
 
@@ -60,13 +66,15 @@ class SessionRenderCache:
             self._sdr_proxies.clear()
             self._frames.clear()
             self._scopes.clear()
+            self._masks.clear()
             self._cancel_inflight_locked()
 
-    def clear_adjusted(self) -> None:
+    def clear_adjusted(self, *, clear_masks: bool = False) -> None:
         with self._lock:
             self._frames.clear()
             self._scopes.clear()
-            self._masks.clear()
+            if clear_masks:
+                self._masks.clear()
             self._cancel_inflight_locked()
 
     def source_proxy(self, kind: PreviewKind, long_edge: int) -> tuple[np.ndarray, str]:
@@ -84,6 +92,8 @@ class SessionRenderCache:
         adjustments: AdjustmentState,
         local_adjustment: LocalAdjustment,
         long_edge: int,
+        *,
+        spatial_only: bool = False,
     ) -> np.ndarray:
         edge = max(256, int(long_edge))
         source, _sdr_reference = self._proxies(edge)
@@ -93,7 +103,14 @@ class SessionRenderCache:
         mask_source = local_adjustment.model_copy(update={"enabled": True, "opacity": 1.0})
         masks = self._compiled_masks(source, adjustments, [mask_source], edge)
         assert masks is not None
-        return masks[local_adjustment.id]
+        mask = masks[local_adjustment.id]
+        if spatial_only or mask_influence_opacity(local_adjustment.mask) >= 1.0:
+            return mask
+        # The compatibility/influence endpoint remains byte-identical to the
+        # authoritative evaluator. Interactive GPU clients request spatial_only
+        # and keep the reusable base texture resident instead.
+        fixed_source = apply_geometry(source, adjustments.shared.geometry)
+        return compile_preview_mask(fixed_source, local_adjustment.mask, adjustments.shared.geometry)
 
     def compiled_mask_draft(
         self,
@@ -107,6 +124,18 @@ class SessionRenderCache:
         geometry = adjustments.shared.geometry
         fixed_source = apply_geometry(source, geometry)
         return compile_preview_mask(fixed_source, expression, geometry)
+
+    def sample_luminance(
+        self,
+        adjustments: AdjustmentState,
+        points: list[MaskPoint],
+        long_edge: int,
+    ) -> tuple[float, float, float, int]:
+        """Sample the same fixed ACEScg source used by content masks."""
+        edge = max(256, int(long_edge))
+        source, _sdr_reference = self._proxies(edge)
+        fixed_source = apply_geometry(source, adjustments.shared.geometry)
+        return sample_luminance_evs(fixed_source, points)
 
     def adjusted_frame(
         self,
@@ -306,14 +335,15 @@ class SessionRenderCache:
         fixed_source = apply_geometry(source, geometry)
         compiled: dict[str, np.ndarray] = {}
         for local in active:
-            key = (edge, geometry_signature, local.id, local.mask.model_dump_json())
+            mask_signature = spatial_mask_signature(local.mask)
+            key = (edge, geometry_signature, local.id, mask_signature)
             with self._lock:
                 mask = self._masks.get(key)
                 if mask is not None:
                     self._hits += 1
                     self._masks.move_to_end(key)
             if mask is None:
-                mask = compile_preview_mask(fixed_source, local.mask, geometry)
+                mask = compile_spatial_preview_mask(fixed_source, local.mask, geometry)
                 mask.setflags(write=False)
                 with self._lock:
                     existing = self._masks.get(key)
