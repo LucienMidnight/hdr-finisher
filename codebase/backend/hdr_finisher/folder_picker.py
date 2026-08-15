@@ -9,7 +9,10 @@ import sys
 def pick_directory(initial_directory: str | None = None) -> str | None:
     initial_path = _usable_initial_directory(initial_directory)
     if sys.platform == "win32":
-        return _pick_directory_windows(initial_path)
+        try:
+            return _pick_directory_tk(initial_path)
+        except RuntimeError:
+            return _pick_directory_windows(initial_path)
     return _pick_directory_tk(initial_path)
 
 
@@ -18,16 +21,11 @@ def _pick_directory_windows(initial_path: Path | None) -> str | None:
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
-$dialog = New-Object System.Windows.Forms.OpenFileDialog
-$dialog.Title = 'Choose Export Folder'
-$dialog.Filter = 'Folder|*.folder'
-$dialog.FileName = 'Select this folder'
-$dialog.CheckFileExists = $false
-$dialog.CheckPathExists = $true
-$dialog.ValidateNames = $false
-$dialog.AddExtension = $false
+$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+$dialog.Description = 'Choose Export Folder'
+$dialog.ShowNewFolderButton = $true
 if ($env:HDR_FINISHER_INITIAL_DIRECTORY) {
-    $dialog.InitialDirectory = $env:HDR_FINISHER_INITIAL_DIRECTORY
+    $dialog.SelectedPath = $env:HDR_FINISHER_INITIAL_DIRECTORY
 }
 $owner = New-Object System.Windows.Forms.Form
 $owner.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedToolWindow
@@ -47,8 +45,7 @@ try {
     $owner.BringToFront()
     $result = $dialog.ShowDialog($owner)
     if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
-        $selected = [System.IO.Path]::GetDirectoryName($dialog.FileName)
-        [Console]::Out.Write('OK' + [Environment]::NewLine + $selected)
+        [Console]::Out.Write('OK' + [Environment]::NewLine + $dialog.SelectedPath)
     } else {
         [Console]::Out.Write('CANCEL')
     }
@@ -90,19 +87,22 @@ def _pick_directory_tk(initial_path: Path | None) -> str | None:
     except ImportError as exc:
         raise RuntimeError("Native folder picker is unavailable because tkinter is not installed.") from exc
 
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)
-    root.update()
     try:
-        directory = filedialog.askdirectory(
-            parent=root,
-            title="Choose Export Folder",
-            initialdir=str(initial_path) if initial_path else None,
-            mustexist=True,
-        )
-    finally:
-        root.destroy()
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        root.update()
+        try:
+            directory = filedialog.askdirectory(
+                parent=root,
+                title="Choose Export Folder",
+                initialdir=str(initial_path) if initial_path else None,
+                mustexist=True,
+            )
+        finally:
+            root.destroy()
+    except tk.TclError as exc:
+        raise RuntimeError(f"Native Tk folder picker failed: {exc}") from exc
 
     return directory or None
 

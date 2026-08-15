@@ -237,6 +237,25 @@ def test_empty_brush_starts_clear_and_flow_builds_to_the_opacity_ceiling() -> No
     assert evaluate_mask(brush, reference, x, y)[2, 2] == pytest.approx(0.5)
 
 
+def test_brush_radius_remains_circular_on_a_landscape_image() -> None:
+    height, width = 101, 201
+    reference = np.full((height, width, 3), 0.18, dtype=np.float32)
+    x, y = source_coordinate_grid(width, height, 0, 0, width, height, GeometryAdjustments())
+    stroke = BrushStroke(
+        points=[MaskPoint(x=0.5, y=0.5)],
+        radius=0.1,
+        hardness=1.0,
+    )
+
+    mask = evaluate_mask(_leaf(MaskLeaf(type="brush", strokes=[stroke])), reference, x, y)
+    rows, columns = np.where(mask > 0.5)
+    painted_width = int(columns.max() - columns.min() + 1)
+    painted_height = int(rows.max() - rows.min() + 1)
+
+    assert abs(painted_width - painted_height) <= 1
+    assert painted_width == pytest.approx(width * stroke.radius * 2, abs=2)
+
+
 def test_brush_eraser_subtracts_from_existing_coverage() -> None:
     reference = np.full((3, 3, 3), 0.18, dtype=np.float32)
     x = np.linspace(0.0, 1.0, 3, dtype=np.float32)[None, :].repeat(3, axis=0)
@@ -246,6 +265,23 @@ def test_brush_eraser_subtracts_from_existing_coverage() -> None:
     erase = BrushStroke(points=point, radius=0.4, hardness=1.0, flow=0.5, erase=True)
     brush = _leaf(MaskLeaf(type="brush", strokes=[paint, erase]))
     assert evaluate_mask(brush, reference, x, y)[1, 1] == pytest.approx(0.5)
+
+
+def test_later_brush_stroke_can_repaint_an_erased_area() -> None:
+    reference = np.full((65, 97, 3), 0.18, dtype=np.float32)
+    x, y = source_coordinate_grid(97, 65, 0, 0, 97, 65, GeometryAdjustments())
+    point = [MaskPoint(x=0.5, y=0.5)]
+    paint = BrushStroke(points=point, radius=0.12, hardness=0.7)
+    erase = BrushStroke(points=point, radius=0.08, hardness=0.7, erase=True)
+    leaf = lambda strokes: _leaf(MaskLeaf(type="brush", strokes=strokes))
+
+    painted = evaluate_mask(leaf([paint]), reference, x, y)
+    erased = evaluate_mask(leaf([paint, erase]), reference, x, y)
+    repainted = evaluate_mask(leaf([paint, erase, paint]), reference, x, y)
+    center = (32, 48)
+
+    assert erased[center] < painted[center] * 0.05
+    assert repainted[center] == pytest.approx(painted[center])
 
 
 @pytest.mark.parametrize(
@@ -627,13 +663,16 @@ def test_brush_roi_matches_full_frame_segment_evaluation(geometry: GeometryAdjus
         opacity=0.81,
     )
     actual = local_mask_module._brush_mask(MaskLeaf(type="brush", strokes=[stroke]), x, y)
+    metric_x, metric_y, transform, origin = local_mask_module._brush_display_metric(x, y)
+    first = transform @ (np.array([stroke.points[0].x, stroke.points[0].y]) - origin)
+    second = transform @ (np.array([stroke.points[1].x, stroke.points[1].y]) - origin)
     expected_shape = local_mask_module._soft_segment(
-        x,
-        y,
-        stroke.points[0].x,
-        stroke.points[0].y,
-        stroke.points[1].x,
-        stroke.points[1].y,
+        metric_x,
+        metric_y,
+        float(first[0]),
+        float(first[1]),
+        float(second[0]),
+        float(second[1]),
         stroke.radius,
         stroke.hardness,
     )

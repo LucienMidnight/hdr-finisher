@@ -9,12 +9,16 @@
     "test:brush-mask": "node tests/brush-mask-interaction.js",
     "test:gradient-mask": "node tests/gradient-mask-interaction.js",
     "test:luma-mask": "node tests/luma-mask-interaction.js",
+    "test:mask-graph": "node tests/mask-graph-interaction.js",
+    "test:device-loss": "node tests/device-loss-fallback.js",
+    "test:export-browser": "node tests/export-file-browser-interaction.js",
     "test:local-design": "node tests/local-design-qa.js",
     "test:startup-state": "node tests/startup-state.js",
     "test:source-disclosures": "node tests/source-disclosures-interaction.js",
     "test:performance": "node tests/performance/preview-performance.js",
     "test:local-mask-performance": "node tests/performance/local-mask-performance.js",
     "test:gpu-local-adjustments": "node tests/performance/gpu-local-adjustments.js",
+    "test:many-local-layers": "node tests/performance/many-local-layers.js",
     "test:gpu-scopes": "node tests/gpu-scope-parity.js"
   },
   "devDependencies": {

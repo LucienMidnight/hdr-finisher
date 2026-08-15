@@ -113,12 +113,86 @@ async function auditLumaLocal(page, outputDir) {
   return results;
 }
 
+async function auditMaskGraph(page, outputDir) {
+  await page.locator("#view-hdr").click();
+  await page.waitForFunction(() => document.body.dataset.activeLane === "hdr");
+  await page.locator("#grade-mode-local").click();
+  const created = page.waitForResponse((response) => response.url().includes("/edit-commands") && response.request().method() === "POST");
+  await page.locator('[data-local-tool="linear_gradient"]').click();
+  await created;
+  await page.waitForFunction(() => selectedLocal()?.mask?.leaf?.type === "linear_gradient");
+  if (await page.locator("#local-show-mask").getAttribute("aria-pressed") === "true") {
+    await page.locator("#local-show-mask").click();
+  }
+  await page.evaluate(async () => {
+    const local = selectedLocal();
+    local.hdr_grade.exposure = 1.4;
+    local.mask = {
+      operator: "union",
+      leaf: null,
+      children: [
+        local.mask,
+        {
+          operator: "leaf",
+          leaf: {
+            type: "luminance_range",
+            fade_in_start_ev: -3,
+            full_start_ev: -1,
+            full_end_ev: 2,
+            fade_out_end_ev: 4,
+            mask_feather: 0.015,
+            mask_opacity: 0.6,
+          },
+          children: [],
+          inverted: false,
+        },
+      ],
+      inverted: false,
+    };
+    scheduleLocalPreview({ spatialMaskChanged: true });
+    await commitSelectedLocal();
+  });
+  await page.waitForFunction(() => state.localMaskCommitDepth === 0);
+  await page.waitForTimeout(300);
+
+  const cases = [
+    { operator: "union", gradientOpacity: 0.35, lumaOpacity: 0.6, inverted: false },
+    { operator: "intersect", gradientOpacity: 0.8, lumaOpacity: 0.45, inverted: false },
+    { operator: "subtract", gradientOpacity: 0.7, lumaOpacity: 0.65, inverted: false },
+    { operator: "subtract", gradientOpacity: 0.55, lumaOpacity: 0.3, inverted: true },
+  ];
+  const results = [];
+  for (const testCase of cases) {
+    await page.evaluate(async (next) => {
+      const local = selectedLocal();
+      local.mask.operator = next.operator;
+      local.mask.children[0].leaf.mask_opacity = next.gradientOpacity;
+      local.mask.children[1].leaf.mask_opacity = next.lumaOpacity;
+      local.mask.inverted = next.inverted;
+      scheduleLocalPreview();
+      await commitSelectedLocal();
+    }, testCase);
+    await page.waitForFunction(() => state.localMaskCommitDepth === 0);
+    await page.waitForTimeout(200);
+    results.push({
+      lane: "hdr",
+      control: "local.mask_graph",
+      value: testCase,
+      ...(await captureCurrent(page, `hdr-mask-graph-${testCase.operator}-${testCase.inverted ? "inverted" : "normal"}`, outputDir)),
+    });
+  }
+  return results;
+}
+
 async function setControl(page, selector, value) {
   await page.locator(selector).evaluate((control, nextValue) => {
     control.value = String(nextValue);
     control.dispatchEvent(new Event("input", { bubbles: true }));
   }, value);
-  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.evaluate(async () => {
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await state.gpuPreview?.device?.queue?.onSubmittedWorkDone?.();
+  });
 }
 
 async function loadSource(page, input) {
@@ -235,6 +309,7 @@ async function main() {
   const input = process.argv[2];
   const outputDir = process.argv[3] || path.join("output", "gpu-parity");
   const localLumaOnly = process.argv.includes("--local-luma-only");
+  const maskGraphOnly = process.argv.includes("--mask-graph-only");
   if (!input) throw new Error("Usage: node tools/playwright_gpu_parity.js INPUT [OUTPUT_DIR]");
   fs.mkdirSync(outputDir, { recursive: true });
   const browser = await chromium.launch({ headless: true, executablePath: edgeExecutable() });
@@ -259,11 +334,12 @@ async function main() {
     if (!/renderer ready/i.test(gpuStatus)) {
       throw new Error(`WebGPU renderer did not initialize: ${gpuStatus}`);
     }
-    const hdr = localLumaOnly ? [] : await auditLane(page, "hdr", outputDir);
-    const sdr = localLumaOnly ? [] : await auditLane(page, "sdr", outputDir);
-    const lumaLocal = await auditLumaLocal(page, outputDir);
-    const results = [...hdr, ...sdr, ...lumaLocal];
-    const hdrHandoff = localLumaOnly ? [] : await auditHdrHandoff(browser, input);
+    const hdr = (localLumaOnly || maskGraphOnly) ? [] : await auditLane(page, "hdr", outputDir);
+    const sdr = (localLumaOnly || maskGraphOnly) ? [] : await auditLane(page, "sdr", outputDir);
+    const lumaLocal = maskGraphOnly ? [] : await auditLumaLocal(page, outputDir);
+    const maskGraph = maskGraphOnly ? await auditMaskGraph(page, outputDir) : [];
+    const results = [...hdr, ...sdr, ...lumaLocal, ...maskGraph];
+    const hdrHandoff = (localLumaOnly || maskGraphOnly) ? [] : await auditHdrHandoff(browser, input);
     const report = {
       navigatorGpu: await page.evaluate(() => Boolean(navigator.gpu)),
       dynamicRangeHigh: await page.evaluate(() => matchMedia("(dynamic-range: high)").matches),

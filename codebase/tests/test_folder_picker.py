@@ -19,6 +19,7 @@ def test_windows_folder_picker_passes_initial_path_through_environment(monkeypat
         return subprocess.CompletedProcess(command, 0, f"OK\n{initial}", "")
 
     monkeypatch.setattr(folder_picker.sys, "platform", "win32")
+    monkeypatch.setattr(folder_picker, "_pick_directory_tk", lambda initial: (_ for _ in ()).throw(RuntimeError("Tk unavailable")))
     monkeypatch.setattr(folder_picker.subprocess, "run", fake_run)
 
     assert folder_picker.pick_directory(str(initial)) == str(initial)
@@ -28,9 +29,20 @@ def test_windows_folder_picker_passes_initial_path_through_environment(monkeypat
     assert "$owner.Show()" in command[-1]
     assert "$owner.Activate()" in command[-1]
     assert "$dialog.ShowDialog($owner)" in command[-1]
-    assert "System.Windows.Forms.OpenFileDialog" in command[-1]
-    assert "$dialog.ValidateNames = $false" in command[-1]
+    assert "System.Windows.Forms.FolderBrowserDialog" in command[-1]
+    assert "$dialog.SelectedPath = $env:HDR_FINISHER_INITIAL_DIRECTORY" in command[-1]
+    assert "$dialog.ShowNewFolderButton = $true" in command[-1]
     assert observed["env"]["HDR_FINISHER_INITIAL_DIRECTORY"] == str(initial)
+
+
+def test_windows_prefers_topmost_tk_picker(monkeypatch, tmp_path: Path) -> None:
+    observed: list[Path | None] = []
+    monkeypatch.setattr(folder_picker.sys, "platform", "win32")
+    monkeypatch.setattr(folder_picker, "_pick_directory_tk", lambda initial: observed.append(initial) or str(tmp_path))
+    monkeypatch.setattr(folder_picker, "_pick_directory_windows", lambda initial: pytest.fail("Windows Forms fallback should not run"))
+
+    assert folder_picker.pick_directory(str(tmp_path)) == str(tmp_path)
+    assert observed == [tmp_path]
 
 
 def test_windows_folder_picker_distinguishes_cancellation(monkeypatch) -> None:

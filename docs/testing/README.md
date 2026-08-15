@@ -24,6 +24,7 @@ Generated output must not be the only copy of a procedure or durable conclusion.
 - [GPU Local Adjustments Phase 0/1 Validation — 2026-08-14](GPU_Local_Adjustments_Phase_0_1_Validation_2026-08-14.md) — deterministic Luma opacity/feather baseline, Phase 1 measurements, live-scope evidence, CPU/GPU parity, and Brush/Gradient preservation results.
 - [GPU Local Adjustments Phase 2 Validation — 2026-08-14](GPU_Local_Adjustments_Phase_2_Validation_2026-08-14.md) — GPU-resident scene Luma, qualification, cached separable Feather, mask overlay, parity, fallback, and Phase 2 exit-gate evidence.
 - [GPU Local Adjustments Phase 3 Validation — 2026-08-14](GPU_Local_Adjustments_Phase_3_Validation_2026-08-14.md) — GPU-backed histogram, waveform, and vectorscope cadence, compact readback timing, CPU/GPU parity, stale-generation protection, and Phase 3 exit-gate evidence.
+- [GPU Local Adjustments Phase 4/5 Validation — 2026-08-15](GPU_Local_Adjustments_Phase_4_5_Validation_2026-08-15.md) — retained Boolean mask graphs, 16/32/64-local scaling, destructive device-loss fallback, Edge endurance, release regressions, and remaining physical sign-off.
 - [Codebase Review, Scope Performance, and HDR Round-Trip Sprint](Codebase_Review_Cleanup_and_Round_Trip_Sprint.md) — clean-task implementation brief for evidence-led code cleanup, scope profiling, packaging review, and AVIF/JPEG Ultra HDR re-import investigation, with JPEG XL and DNG feasibility follow-up.
 
 ## Automated entry points

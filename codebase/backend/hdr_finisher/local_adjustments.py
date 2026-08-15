@@ -360,36 +360,63 @@ def sample_luminance_evs(
 def _brush_masks(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray | None]:
     result = np.zeros(x.shape, dtype=np.float32)
     erase_attenuation: np.ndarray | None = None
+    metric_x, metric_y, metric_transform, metric_origin = _brush_display_metric(x, y)
+
+    def metric_point(point: MaskPoint) -> tuple[float, float]:
+        transformed = metric_transform @ (
+            np.array([point.x, point.y], dtype=np.float64) - metric_origin
+        )
+        return float(transformed[0]), float(transformed[1])
+
     for stroke in leaf.strokes:
         stroke_mask = np.zeros(x.shape, dtype=np.float32)
         points = stroke.points
         if len(points) == 1:
             point = points[0]
+            point_x, point_y = metric_point(point)
             radius = stroke.radius * point.pressure
-            rows, columns = _brush_shape_roi(x, y, point.x, point.y, point.x, point.y, radius)
+            rows, columns = _brush_shape_roi(
+                metric_x,
+                metric_y,
+                point_x,
+                point_y,
+                point_x,
+                point_y,
+                radius,
+            )
             if rows.stop > rows.start and columns.stop > columns.start:
                 stroke_mask[rows, columns] = _soft_disc(
-                    x[rows, columns],
-                    y[rows, columns],
-                    point.x,
-                    point.y,
+                    metric_x[rows, columns],
+                    metric_y[rows, columns],
+                    point_x,
+                    point_y,
                     radius,
                     stroke.hardness,
                 )
         else:
             for first, second in zip(points[:-1], points[1:]):
+                first_x, first_y = metric_point(first)
+                second_x, second_y = metric_point(second)
                 pressure = max(0.05, 0.5 * (first.pressure + second.pressure))
                 radius = stroke.radius * pressure
-                rows, columns = _brush_shape_roi(x, y, first.x, first.y, second.x, second.y, radius)
+                rows, columns = _brush_shape_roi(
+                    metric_x,
+                    metric_y,
+                    first_x,
+                    first_y,
+                    second_x,
+                    second_y,
+                    radius,
+                )
                 if rows.stop <= rows.start or columns.stop <= columns.start:
                     continue
                 segment = _soft_segment(
-                    x[rows, columns],
-                    y[rows, columns],
-                    first.x,
-                    first.y,
-                    second.x,
-                    second.y,
+                    metric_x[rows, columns],
+                    metric_y[rows, columns],
+                    first_x,
+                    first_y,
+                    second_x,
+                    second_y,
                     radius,
                     stroke.hardness,
                 )
@@ -406,12 +433,66 @@ def _brush_masks(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarr
             # Repeated low-flow passes build coverage, while opacity is the
             # ceiling for this brush preset. A lower-opacity stroke must never
             # reduce coverage that was painted previously.
+            paint_strength = np.minimum(
+                np.float32(stroke.opacity),
+                stroke_mask * np.float32(stroke.flow),
+            )
             accumulated = np.minimum(
                 np.float32(stroke.opacity),
-                result + stroke_mask * np.float32(stroke.flow),
+                result + paint_strength,
             )
             result = np.maximum(result, accumulated)
+            if erase_attenuation is not None:
+                # Erase is retained as a final-stage attenuation so it can cut
+                # shifted, feathered, and inverted coverage. A later paint
+                # stroke must nevertheless be able to restore that attenuation
+                # in stroke order; otherwise an erased pixel is permanent.
+                restored = np.minimum(
+                    np.float32(stroke.opacity),
+                    erase_attenuation + paint_strength,
+                )
+                erase_attenuation = np.maximum(erase_attenuation, restored)
     return result, erase_attenuation
+
+
+def _brush_display_metric(
+    x: np.ndarray,
+    y: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Map source coordinates to the browser brush's square-pixel metric.
+
+    Brush radius is expressed as a fraction of image width. Normalized source Y
+    is not in that metric on a non-square image, so measuring directly in X/Y
+    makes the authoritative mask change shape after the live Canvas stroke is
+    committed. The source grid is affine; its inverse maps both pixels and
+    stored points back to display pixels, which we scale by one horizontal-pixel
+    source step to retain the existing radius units.
+    """
+    if x.ndim != 2 or y.ndim != 2 or x.shape != y.shape or min(x.shape) < 2:
+        identity = np.eye(2, dtype=np.float64)
+        origin = np.zeros(2, dtype=np.float64)
+        return x, y, identity, origin
+
+    origin = np.array([x[0, 0], y[0, 0]], dtype=np.float64)
+    basis = np.array(
+        [
+            [x[0, 1] - x[0, 0], x[1, 0] - x[0, 0]],
+            [y[0, 1] - y[0, 0], y[1, 0] - y[0, 0]],
+        ],
+        dtype=np.float64,
+    )
+    determinant = float(np.linalg.det(basis))
+    if abs(determinant) < 1e-12:
+        identity = np.eye(2, dtype=np.float64)
+        return x, y, identity, np.zeros(2, dtype=np.float64)
+
+    horizontal_step = float(np.linalg.norm(basis[:, 0]))
+    transform = np.linalg.inv(basis) * horizontal_step
+    delta_x = x.astype(np.float64, copy=False) - origin[0]
+    delta_y = y.astype(np.float64, copy=False) - origin[1]
+    metric_x = transform[0, 0] * delta_x + transform[0, 1] * delta_y
+    metric_y = transform[1, 0] * delta_x + transform[1, 1] * delta_y
+    return metric_x.astype(np.float32), metric_y.astype(np.float32), transform, origin
 
 
 def _brush_mask(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> np.ndarray:

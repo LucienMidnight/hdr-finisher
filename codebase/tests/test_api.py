@@ -265,6 +265,63 @@ def test_local_mask_draft_matches_the_same_mask_after_commit() -> None:
     assert draft.content == settled.content
 
 
+def test_local_mask_graph_leaves_are_addressable_as_retained_spatial_masks() -> None:
+    upload = client.post("/api/session", files={"file": ("mask-graph.png", make_png_bytes(), "image/png")})
+    assert upload.status_code == 200
+    session_id = upload.json()["session"]["session_id"]
+    graph = {
+        "operator": "union",
+        "children": [
+            {
+                "operator": "leaf",
+                "leaf": {
+                    "type": "linear_gradient",
+                    "start": {"x": 0.1, "y": 0.5},
+                    "end": {"x": 0.9, "y": 0.5},
+                    "mask_opacity": 0.25,
+                },
+            },
+            {
+                "operator": "leaf",
+                "leaf": {
+                    "type": "luminance_range",
+                    "fade_in_start_ev": -12,
+                    "full_start_ev": -8,
+                    "full_end_ev": 6,
+                    "fade_out_end_ev": 10,
+                    "mask_opacity": 0.4,
+                },
+            },
+        ],
+    }
+    created = client.post(
+        f"/api/session/{session_id}/edit-commands",
+        json={"commands": [{
+            "expected_revision": 0,
+            "command_type": "create_local",
+            "payload": {"local": {"id": "mask-graph", "name": "Mask graph", "mask": graph}},
+        }]},
+    )
+    assert created.status_code == 200
+
+    first = client.get(
+        f"/api/session/{session_id}/local-mask/mask-graph?long_edge=256&edit_revision=1&spatial_only=true&mask_path=0"
+    )
+    second = client.get(
+        f"/api/session/{session_id}/local-mask/mask-graph?long_edge=256&edit_revision=1&spatial_only=true&mask_path=1"
+    )
+    invalid = client.get(
+        f"/api/session/{session_id}/local-mask/mask-graph?long_edge=256&edit_revision=1&spatial_only=true&mask_path=2"
+    )
+
+    assert first.status_code == 200 and second.status_code == 200
+    assert first.headers["x-mask-path"] == "0" and second.headers["x-mask-path"] == "1"
+    assert first.headers["x-mask-content"] == "spatial"
+    assert max(first.content) > 64  # Per-leaf opacity remains a GPU influence parameter.
+    assert max(second.content) > 102
+    assert invalid.status_code == 422
+
+
 def test_local_luminance_sampling_returns_a_low_precision_scene_ev_range() -> None:
     upload = client.post("/api/session", files={"file": ("luma.png", make_png_bytes(), "image/png")})
     assert upload.status_code == 200
@@ -556,3 +613,26 @@ def test_default_export_directory_endpoint_creates_and_returns_folder(monkeypatc
     assert response.status_code == 200
     assert Path(response.json()["directory"]) == expected.resolve()
     assert expected.is_dir()
+
+
+def test_export_directory_browser_lists_subfolders(tmp_path: Path) -> None:
+    child = tmp_path / "Child Folder"
+    child.mkdir()
+    (tmp_path / "not-a-folder.txt").write_text("ignored", encoding="utf-8")
+
+    response = client.get("/api/export-directories", params={"path": str(tmp_path)})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert Path(payload["current"]) == tmp_path.resolve()
+    assert Path(payload["parent"]) == tmp_path.resolve().parent
+    assert payload["entries"] == [
+        {"name": "Child Folder", "path": str(child.resolve()), "kind": "directory"},
+        {"name": "not-a-folder.txt", "path": str((tmp_path / "not-a-folder.txt").resolve()), "kind": "file"},
+    ]
+
+
+def test_export_directory_browser_rejects_missing_folder(tmp_path: Path) -> None:
+    response = client.get("/api/export-directories", params={"path": str(tmp_path / "missing")})
+    assert response.status_code == 400
+    assert "not available" in response.json()["detail"]

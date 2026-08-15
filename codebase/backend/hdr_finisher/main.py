@@ -28,6 +28,7 @@ from .models import (
     LocalLuminanceSampleRequest,
     LocalLuminanceSampleResponse,
     LocalMaskPreviewRequest,
+    MaskExpression,
     PreviewKind,
     PreviewRequest,
     ProofArtifactRequest,
@@ -103,6 +104,22 @@ def _revision_conflict(exc: RevisionConflictError) -> HTTPException:
             "current_revision": exc.actual,
         },
     )
+
+
+def _mask_expression_at_path(expression: MaskExpression, mask_path: str | None) -> MaskExpression:
+    """Return a retained mask-graph node addressed by dot-separated child indexes."""
+    if not mask_path:
+        return expression
+    current = expression
+    try:
+        indexes = [int(part) for part in mask_path.split(".")]
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Mask path must contain child indexes.") from exc
+    for index in indexes:
+        if index < 0 or index >= len(current.children):
+            raise HTTPException(status_code=422, detail=f"Mask path '{mask_path}' is outside the expression graph.")
+        current = current.children[index]
+    return current
 
 
 @app.get("/health")
@@ -439,6 +456,7 @@ def local_mask_proxy(
     long_edge: int = Query(default=1600, ge=256, le=2000),
     edit_revision: int | None = Query(default=None, ge=0),
     spatial_only: bool = Query(default=False),
+    mask_path: str | None = Query(default=None, pattern=r"^\d+(?:\.\d+)*$"),
 ) -> Response:
     try:
         session = store.get(session_id)
@@ -450,10 +468,18 @@ def local_mask_proxy(
         raise HTTPException(status_code=404, detail=f"Local adjustment '{local_id}' was not found.") from exc
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
+    selected_mask = _mask_expression_at_path(local.mask, mask_path)
+    mask_source = local.model_copy(
+        update={
+            "id": f"{local.id}:{mask_path}" if mask_path else local.id,
+            "mask": selected_mask,
+        },
+        deep=True,
+    )
     started = perf_counter()
     mask = session.render_cache.compiled_local_mask(
         session.adjustments,
-        local,
+        mask_source,
         long_edge,
         spatial_only=spatial_only,
     )
@@ -467,6 +493,7 @@ def local_mask_proxy(
             "X-Image-Height": str(height),
             "X-Pixel-Format": "r8unorm",
             "X-Local-Adjustment": local.id,
+            "X-Mask-Path": mask_path or "root",
             "X-CPU-Mask-Ms": f"{cpu_mask_ms:.3f}",
             "X-Mask-Content": "spatial" if spatial_only else "influence",
         },
@@ -700,6 +727,29 @@ def export_directory(request: DirectoryPickRequest) -> DirectoryPickResponse:
 def default_export_directory() -> DirectoryPickResponse:
     EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
     return DirectoryPickResponse(directory=str(EXPORTS_DIR.resolve()))
+
+
+@app.get("/api/export-directories")
+def list_export_directories(path: str | None = Query(default=None)) -> dict[str, object]:
+    requested = Path(path).expanduser() if path else EXPORTS_DIR
+    try:
+        current = requested.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=f"Folder is not available: {requested}") from exc
+    if not current.is_dir():
+        raise HTTPException(status_code=400, detail=f"Not a folder: {current}")
+    try:
+        entries = []
+        for child in sorted(current.iterdir(), key=lambda candidate: (not candidate.is_dir(), candidate.name.casefold())):
+            if child.is_dir():
+                entries.append({"name": child.name, "path": str(child.resolve()), "kind": "directory"})
+            elif child.is_file():
+                entries.append({"name": child.name, "path": str(child.resolve()), "kind": "file"})
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail=f"Could not read folder: {current}") from exc
+    parent = None if current.parent == current else str(current.parent)
+    directories = [entry for entry in entries if entry["kind"] == "directory"]
+    return {"current": str(current), "parent": parent, "entries": entries, "directories": directories}
 
 
 @app.get("/")

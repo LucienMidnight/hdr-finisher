@@ -147,10 +147,12 @@ async function runScenario(browser, options) {
   const pending = new Map();
   const consoleErrors = [];
   const expectedAborts = [];
+  const expectedConflicts = [];
   const pageErrors = [];
   page.on("console", (message) => {
     if (message.type() !== "error") return;
     if (/AbortError:.*aborted/i.test(message.text())) expectedAborts.push(message.text());
+    else if (/server responded with a status of 409 \(Conflict\)/i.test(message.text())) expectedConflicts.push(message.text());
     else consoleErrors.push(message.text());
   });
   page.on("pageerror", (error) => pageErrors.push(error.message));
@@ -255,6 +257,7 @@ async function runScenario(browser, options) {
     },
     consoleErrors,
     expectedAborts,
+    expectedConflicts,
     pageErrors,
   };
 }

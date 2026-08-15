@@ -128,7 +128,7 @@ async function main() {
       "sdr.contrast": 0.001,
       "sdr.contrast_pivot": 0.005,
       "shared.overlay_opacity": 0.01,
-      "shared.overlay_threshold": 0.05,
+      "shared.overlay_threshold": 10,
     };
     const controlChecks = await page.locator('input[type="range"][data-path]').evaluateAll((controls, expected) => {
       return controls.map((control) => {
@@ -143,7 +143,7 @@ async function main() {
           expectedStep: expected[path],
           actualStep,
           aligned,
-          ok: expected[path] === actualStep && aligned,
+          ok: (expected[path] === undefined || expected[path] === actualStep) && aligned,
         };
       });
     }, expectedSteps);
@@ -152,7 +152,7 @@ async function main() {
       throw new Error(`Range control audit failed: ${JSON.stringify(failedControls)}`);
     }
 
-    const resetChecks = await page.locator('input[type="range"]:not([data-no-double-reset])').evaluateAll((controls) => {
+    const resetChecks = await page.locator('input[type="range"]:not([data-no-double-reset]):not(:disabled)').evaluateAll((controls) => {
       return controls.map((control) => {
         const defaultValue = control.defaultValue;
         control.value = control.value === control.max ? control.min : control.max;

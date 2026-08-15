@@ -1,13 +1,13 @@
 # GPU Local Adjustments and Live Scopes Sprint
 
 **Date:** August 14, 2026  
-**Last updated:** August 14, 2026  
-**Status:** In progress — Phases 0–3 implemented and validated; Phase 4 is next  
+**Last updated:** August 15, 2026
+**Status:** Engineering complete through Phase 5; physical delivery validation remains
 **Owner:** HDR Finisher engineering  
 **Implementation commits:** `99e2395` (Phases 0/1), `fc929e6` (Phase 2)  
 **Related plan:** [Interactive Preview, Instant Scopes, and Image Pipeline Performance Sprint](Interactive_Preview_and_Scopes_Performance_Sprint_PRD.md)  
 **Related product requirements:** [HDR Finisher PRD v1.2](HDR_Finisher_PRD_v1.2.md)  
-**Validation records:** [Phase 0/1 validation](../testing/GPU_Local_Adjustments_Phase_0_1_Validation_2026-08-14.md), [Phase 2 validation](../testing/GPU_Local_Adjustments_Phase_2_Validation_2026-08-14.md), [Phase 3 validation](../testing/GPU_Local_Adjustments_Phase_3_Validation_2026-08-14.md)
+**Validation records:** [Phase 0/1 validation](../testing/GPU_Local_Adjustments_Phase_0_1_Validation_2026-08-14.md), [Phase 2 validation](../testing/GPU_Local_Adjustments_Phase_2_Validation_2026-08-14.md), [Phase 3 validation](../testing/GPU_Local_Adjustments_Phase_3_Validation_2026-08-14.md), [Phase 4/5 validation](../testing/GPU_Local_Adjustments_Phase_4_5_Validation_2026-08-15.md)
 
 ## 1. Sprint outcome
 
@@ -19,7 +19,7 @@ The governing architecture is:
 
 The browser retains a non-destructive GPU preview graph. Python/NumPy remains the authoritative reference, export, proof, and fallback implementation. Ordinary Luma opacity and feather input no longer travels through the old CPU → HTTP mask → JavaScript expansion → GPU upload loop.
 
-Phases 0–3 have achieved the retained local-preview and GPU live-scope portions of this outcome on the benchmark workstation:
+Phases 0–5 have achieved the retained local-preview, GPU live-scope, generalized mask-graph, and release-hardening portions of this outcome on the benchmark workstation:
 
 - Luma Opacity p95 improved from 39.8 ms to 4.8 ms.
 - Luma Feather p95 improved from 80.8 ms to 4.8 ms.
@@ -29,8 +29,12 @@ Phases 0–3 have achieved the retained local-preview and GPU live-scope portion
 - Histogram, waveform, and vectorscope analysis now comes from the current authored GPU output with compact reusable readback; interactive scope p95 is 25.8 ms and sustained rapid drags present 18–19 updates per second.
 - The Stage 3 browser run issued zero backend scope requests and GPU/CPU scope parity stayed within 0.21% distribution error and 0.03% peak error.
 - CPU/export behavior, WebGPU fallback, and existing Brush/Gradient behavior remain intact.
+- Boolean Union, Intersect, Subtract, and inversion now compose retained leaf masks on the GPU with exact per-leaf opacity; influence-only graph edits issue zero mask requests.
+- The 16/32/64-local benchmark uses 8.33/16.65/33.31 MB of mask resources, remains below the 96 MB gate, and completes influence edits at 7.2/4.4/5.6 ms p95.
+- Destructive WebGPU device loss falls back to the raw RGBA8 CPU canvas and a reload restores WebGPU authoring.
+- A six-mode EXR/TIFF endurance matrix passed its enforced frame and scope budgets with no unexpected browser errors.
 
-The overall sprint is not complete. Phases 4 and 5 remain for mask-graph generalization and release hardening.
+The engineering sprint is complete. Physical HDR/SDR display and delivery-path validation remains a manual release sign-off, followed by installer work in its separate scope.
 
 ## 2. Implementation status and handoff
 
@@ -41,8 +45,8 @@ The overall sprint is not complete. Phases 4 and 5 remain for mask-graph general
 | Direction-reversal stability follow-up | Complete | 30 increasing preview serials, 10 increasing scope generations, zero mask requests, no stale presentation | Commit `99e2395` |
 | Phase 2 — GPU Luma qualification and feathering | Complete | Luma Feather 4.8 ms p95; final drag propagation 5.8 ms; no CPU mask transport | Commit `fc929e6` |
 | Phase 3 — GPU-backed live scopes | Complete | 25.8 ms isolated presentation p95; 18–19 Hz rapid-drag cadence; zero backend scope requests; image preview remained within budget | Phase 3 validation record |
-| Phase 4 — Generalize the mask graph | Not started | Required: consistent retained architecture for Luma, Brush, and Gradient | Future phase |
-| Phase 5 — Hardening and release evidence | Partially covered, not complete | Phase-specific regression/fallback evidence exists; full release matrix remains | Future phase |
+| Phase 4 — Generalize the mask graph | Complete | Retained mixed-leaf Boolean graph, shared leaf caches, exact influence semantics, and 16/32/64-layer resource gate pass | Phase 4/5 validation record |
+| Phase 5 — Hardening and release evidence | Complete for automated engineering scope | Device loss/fallback/reload, EXR/TIFF endurance, UI/proof/export regression, alpha QA, and 437-test suite pass | Phase 4/5 validation record |
 
 The working tree intentionally contains this uncommitted PRD update. Do not assume unrelated modified QA images or untracked design assets belong to this sprint.
 
@@ -428,6 +432,25 @@ Expected 409 responses can appear in high-quality/fallback console output when a
 
 Browser interaction suites should run serially against the default in-memory session limit. Concurrent independent suites can evict one another's sessions and produce intentional 404 responses unrelated to product behavior.
 
+### 9.4 Post-validation interaction corrections and regression contract
+
+Hands-on Brush and Gradient QA on a non-square photograph exposed four presentation/interaction defects that were not covered by the earlier performance gates. These corrections are part of the release contract and must not be removed during later renderer, proxy, or mask-cache work.
+
+| Observed defect | Root cause | Required implementation correction | Regression lock |
+|---|---|---|---|
+| A round live Brush dab became vertically squashed after the authoritative mask settled. | Stored brush radius uses the browser's square-pixel display metric, while the CPU evaluator measured distance directly in normalized source X/Y. Those axes have different pixel scales on a landscape or portrait image. | `_brush_display_metric()` derives the affine source-grid basis, maps both evaluation pixels and stored stroke points into one square-pixel metric, and keeps the existing horizontal-width radius units. ROI clipping and segment evaluation must use that same transformed metric. | `test_brush_radius_remains_circular_on_a_landscape_image` asserts equal settled width/height and the expected diameter. The browser Brush suite continues to compare optimistic and authoritative masks. |
+| Selecting, creating, or deleting a local adjustment appeared to zoom the image in or out. | Interactive and settled previews can use different proxy long edges, such as 726 px and the 768 px settled minimum. CSS zoom geometry was recalculated from each replacement bitmap, so a resolution-only swap changed the displayed dimensions and scroll position. | `zoomReferenceFrame` retains a stable per-session, per-geometry reference long edge. Proxy resolution changes no longer affect CSS size; the current aspect remains authoritative so crop and quarter-turn geometry cannot be stretched. | Local-adjustment browser coverage must assert preview dimensions and scroll offsets remain unchanged across tool creation, selection, deletion, and settled-frame replacement at Fit, 100%, and custom zoom. |
+| After erasing a hole or edge, later Brush paint could only add outside the erased region. | Erase attenuation was accumulated as a permanent final-stage multiplier after all positive strokes, so an earlier erase always suppressed later paint. The browser fallback also collected all erase strokes and applied them last. | Preserve final-stage attenuation so erase still cuts Shift Edge, Feather, and inverted coverage, but update it in chronological stroke order: later positive paint restores prior attenuation by its flow/opacity strength. The browser fallback mirrors the same ordered attenuation model. | `test_later_brush_stroke_can_repaint_an_erased_area` requires center coverage to follow paint → erase → repaint. The browser Brush suite checks live/settled convergence and overlapping commits. |
+| The Gradient overlay flashed off and on at pointer release. | Gradient coordinates changed synchronously before draft state was marked dirty, then the previous authoritative raster was rejected for a signature mismatch before the committed replacement arrived. Gradient has no client raster fallback, leaving a transparent frame during both handoffs. | Mark a newly drawn Gradient dirty before its first synchronous overlay render and use stale-while-revalidate for Gradient/Luma authoritative rasters: retain the last valid exact overlay through draft and commit, then replace it atomically with the current exact mask. Brush continues using its local stroke raster as its fallback. | `gradient-mask-interaction.js` samples every animation frame from pointer-down through committed exact-mask settlement and fails if overlay alpha drops below the visible threshold. The validated run held the same alpha for 24 consecutive handoff frames. |
+
+The invariants behind these fixes are:
+
+1. A brush radius is a visual pixel-space radius, not an isotropic normalized-coordinate radius.
+2. Proxy resolution is transport/render quality, not viewport geometry or zoom state.
+3. Brush/erase semantics are chronological; final-stage post-processing must not make an earlier erase permanently dominant over later paint.
+4. An exact-mask replacement is atomic from the user's perspective. When no current client raster exists, keep the most recent valid authoritative raster visible until the replacement is ready.
+5. Optimistic browser masks and authoritative CPU masks must implement the same stroke-order semantics and converge after every commit.
+
 ## 10. Delivery plan
 
 ### Phase 3 — GPU-backed live scopes — complete
@@ -456,7 +479,7 @@ The benchmark measures queue delay, GPU analysis/submission, map/readback time, 
 - Share scheduling, cache, diagnostics, and differential-test infrastructure across local-adjustment types.
 - Address mask texture packing/batching before signing off the 16/32/64-local-layer performance targets.
 
-**Exit gate:** Luma, Brush, and Gradient use a consistent retained-mask architecture without performance or correctness regression.
+**Exit gate: passed.** Luma and CPU-authored spatial leaves share a retained graph, Boolean composition stays on the GPU, and mask influence changes avoid transport. Brush and Gradient interaction regressions pass. The 16/32/64-layer benchmark stays within the resource and latency gates.
 
 ### Phase 5 — Hardening and release evidence
 
@@ -466,7 +489,7 @@ The benchmark measures queue delay, GPU analysis/submission, map/readback time, 
 - Publish final before/after median and p95 results with environment metadata.
 - Update architecture, testing, troubleshooting, and user documentation.
 
-**Exit gate:** automated gates pass, fallbacks are demonstrated, final evidence is recorded, and no correctness exception is hidden behind an interactive approximation.
+**Exit gate: passed for the automated engineering scope.** Device loss, CPU fallback, reload recovery, endurance, scope parity, proofing, export integration, and the complete deterministic suite are demonstrated. The broad legacy parity sweep still reports its already-recorded saturated-blue test-pattern outlier; it is explicitly retained as a visible follow-up rather than hidden by a looser threshold.
 
 ## 11. Test inventory and remaining gaps
 
@@ -480,13 +503,13 @@ The benchmark measures queue delay, GPU analysis/submission, map/readback time, 
 | Settled scopes replace interactive scopes only when current | Implemented with generation/lane/mode admission guards |
 | GPU/CPU Luma qualification and Feather parity | Implemented for four Feather levels plus broad parity suite |
 | Interactive/settled transition tolerance | Passed without adaptive resolution; same texture is retained |
-| Brush and Gradient regression | Passing |
+| Brush and Gradient regression | Passing, including non-square circular Brush settlement, erase/repaint ordering, stable proxy/zoom geometry, and frame-by-frame Gradient handoff continuity |
 | No-WebGPU fallback | Passing smoke matrix |
-| Device-loss recovery | Runtime listener/fallback retained; full destructive-device test remains Phase 5 |
-| Long-running resource reuse and no validation errors | Initial diagnostics passing; expanded endurance remains Phase 5 |
+| Device-loss recovery | Passing destructive-device test: raw RGBA8 fallback plus WebGPU restoration after reload |
+| Long-running resource reuse and no validation errors | Passing isolated six-mode EXR/TIFF endurance matrix; expected stale-request 409s classified separately |
 | Export invariance | Automated proxy/cache invariant passing |
 | GPU-backed scope numerical parity | Passing for histogram, waveform, and vectorscope |
-| Many-local-layer scaling and batching | Not complete; Phase 4 |
+| Many-local-layer scaling and batching | Passing at 16/32/64 locals with 33.31 MB worst mask residency and zero influence-edit mask requests |
 
 ## 12. Reproduction
 
@@ -539,11 +562,11 @@ This sprint does not require:
 | Interaction-aware latest-generation scheduling | Complete |
 | Live interactive scopes with current draft state | Complete on supported GPU path; exact CPU fallback retained |
 | GPU-backed interactive and settled scope tiers | Complete |
-| CPU/GPU differential and regression tests | Complete through Phase 3, including all three scope modes |
+| CPU/GPU differential and regression tests | Complete through Phase 5, including Boolean masks, all three scope modes, and device-loss fallback |
 | Edge/Playwright performance harness | Complete |
 | Before/after Phase 0/1, Phase 2, and Phase 3 reports | Complete |
-| General retained mask graph for Brush/Gradient/Boolean | Pending Phase 4 |
-| Final release hardening and documentation | Pending Phase 5 |
+| General retained mask graph for Brush/Gradient/Boolean | Complete |
+| Final release hardening and documentation | Complete for automated engineering scope; physical delivery sign-off remains manual |
 
 ## 15. Definition of done
 
@@ -561,7 +584,7 @@ The sprint will be done when:
 - memory/resource stability and many-local-layer behavior are signed off;
 - final performance results and remaining limitations are recorded in the repository.
 
-As of this update, the local Luma preview, scheduling, stale-generation, parity, fallback, regression, and GPU-backed scope portions are complete through Phase 3. Generalized mask residency and final hardening remain open.
+As of this update, Phases 0–5 are implemented and validated for the automated engineering scope. Remaining release work is physical HDR/SDR and delivery-path validation, the known saturated-blue broad-parity follow-up, and the separately scoped installer.
 
 ## 16. Implementation map for the next thread
 

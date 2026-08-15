@@ -146,10 +146,44 @@ async function gradientZoomAlignment(page) {
     const overlay = page.locator("#local-mask-overlay");
     const previewBox = await page.locator("#preview-canvas").boundingBox();
     assert(previewBox, "Preview geometry is unavailable.");
+    await page.evaluate(() => {
+      window.__gradientHandoffSamples = [];
+      window.__sampleGradientHandoff = true;
+      const sampleFrame = () => {
+        const canvas = document.querySelector("#local-mask-overlay");
+        const canvasRect = canvas.getBoundingClientRect();
+        const previewRect = activePreviewElement().getBoundingClientRect();
+        const x = Math.round((previewRect.left - canvasRect.left + previewRect.width * 0.1) * canvas.width / canvasRect.width);
+        const y = Math.round((previewRect.top - canvasRect.top + previewRect.height * 0.5) * canvas.height / canvasRect.height);
+        window.__gradientHandoffSamples.push(canvas.getContext("2d").getImageData(x, y, 1, 1).data[3]);
+        if (window.__sampleGradientHandoff) requestAnimationFrame(sampleFrame);
+      };
+      requestAnimationFrame(sampleFrame);
+    });
     editResponse = page.waitForResponse((response) => response.url().includes("/edit-commands") && response.request().method() === "POST");
-    await page.mouse.move(previewBox.x + previewBox.width * (0.25 + 0.5 / 3), previewBox.y + previewBox.height * 0.5);
+    await page.mouse.move(previewBox.x + previewBox.width * 0.2, previewBox.y + previewBox.height * 0.5);
     await page.mouse.down();
-    await page.mouse.move(previewBox.x + previewBox.width * 0.35, previewBox.y + previewBox.height * 0.5, { steps: 5 });
+    await page.mouse.move(previewBox.x + previewBox.width * 0.8, previewBox.y + previewBox.height * 0.5, { steps: 8 });
+    await page.mouse.up();
+    assert((await editResponse).ok(), "Drawing a replacement gradient failed.");
+    await page.waitForFunction(() => {
+      const local = selectedLocal();
+      return local && !state.localMaskDraftDirty
+        && localAuthoritativeMaskCache.get(local.id)?.signature === localMaskSpatialSignature(local.mask);
+    });
+    const gradientHandoffSamples = await page.evaluate(async () => {
+      window.__sampleGradientHandoff = false;
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      return window.__gradientHandoffSamples;
+    });
+    assert(gradientHandoffSamples.length > 2, "The gradient handoff was not sampled across multiple frames.");
+    assert(Math.min(...gradientHandoffSamples) > 40, `The gradient overlay flashed off during commit: ${JSON.stringify(gradientHandoffSamples)}`);
+
+    const firstFalloff = await page.evaluate(() => gradientControlPoints(selectedLocal().mask.leaf).midpoint_1);
+    editResponse = page.waitForResponse((response) => response.url().includes("/edit-commands") && response.request().method() === "POST");
+    await page.mouse.move(previewBox.x + previewBox.width * firstFalloff.x, previewBox.y + previewBox.height * firstFalloff.y);
+    await page.mouse.down();
+    await page.mouse.move(previewBox.x + previewBox.width * 0.32, previewBox.y + previewBox.height * 0.5, { steps: 5 });
     await page.mouse.up();
     assert((await editResponse).ok(), "Dragging the first falloff control failed.");
     const midpoint = await page.evaluate(() => selectedLocal().mask.leaf.gradient_midpoint_1);
@@ -176,7 +210,7 @@ async function gradientZoomAlignment(page) {
     assert(await overlay.isVisible(), "Gradient overlay canvas disappeared.");
     if (pageErrors.length) throw new Error(`Browser errors: ${pageErrors.join(" | ")}`);
     if (requestFailures.length) throw new Error(`Request failures: ${requestFailures.join(" | ")}`);
-    console.log(JSON.stringify({ midpoint, overlayLevels, controls: labels.length, lumaHandles: 4 }));
+    console.log(JSON.stringify({ midpoint, overlayLevels, gradientHandoffSamples, controls: labels.length, lumaHandles: 4 }));
   } finally {
     await browser.close();
   }

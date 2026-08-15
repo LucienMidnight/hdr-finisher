@@ -95,6 +95,7 @@
           entries: [
             { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "unfilterable-float" } },
             { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
+            { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "unfilterable-float" } },
           ],
         });
         this.maskPipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.maskBindGroupLayout] });
@@ -102,6 +103,7 @@
           sceneLuminance: this.createMaskPipeline("sceneLuminanceFragmentMain"),
           qualify: this.createMaskPipeline("lumaQualificationFragmentMain"),
           refine: this.createMaskPipeline("maskRefinementFragmentMain"),
+          combine: this.createMaskPipeline("maskCombineFragmentMain"),
         };
         this.device.lost.then((info) => {
           this.available = false;
@@ -173,6 +175,7 @@
           sceneLuminanceTextures: this.sceneLuminance.size,
           localMasks: this.localMasks.size,
           localMaskBytes: [...this.localMasks.values()].reduce((sum, entry) => sum + entry.byteSize, 0),
+          maskGraphs: [...this.localMasks.values()].filter((entry) => entry.kind === "gpu-mask-graph").length,
           scopePools: this.scopeResources.size,
           scopeBuffers: [...this.scopeResources.values()].reduce((sum, pool) => sum + pool.length, 0),
         },
@@ -570,7 +573,7 @@
       return this.device.createRenderPipeline({
         layout: this.maskPipelineLayout,
         vertex: { module: this.maskModule, entryPoint: "vertexMain" },
-        fragment: { module: this.maskModule, entryPoint, targets: [{ format: "rgba16float" }] },
+        fragment: { module: this.maskModule, entryPoint, targets: [{ format: "r16float" }] },
         primitive: { topology: "triangle-list" },
       });
     }
@@ -728,21 +731,31 @@
     }
 
     async loadLocalMask(sessionId, local, longEdge, editRevision, isCurrent = () => true) {
-      if (isGpuLumaMask(local.mask)) return this.loadGpuLumaMask(sessionId, local, longEdge, isCurrent);
-      const spatialOnly = local.mask?.operator === "leaf" && Boolean(local.mask.leaf);
-      const maskSignature = gpuMaskIdentity(local.mask);
-      const key = `${sessionId}:${local.id}:${longEdge}:${maskSignature}`;
+      if (local.mask?.operator !== "leaf") {
+        return this.loadGpuMaskGraph(sessionId, local, longEdge, editRevision, isCurrent);
+      }
+      return this.loadMaskLeaf(sessionId, local, local.mask, "", longEdge, editRevision, isCurrent);
+    }
+
+    async loadMaskLeaf(sessionId, local, expression, maskPath, longEdge, editRevision, isCurrent = () => true) {
+      const leafLocal = { ...local, id: maskPath ? `${local.id}:${maskPath}` : local.id, mask: expression };
+      if (isGpuLumaMask(expression)) return this.loadGpuLumaMask(sessionId, leafLocal, longEdge, isCurrent);
+      const maskSignature = gpuMaskIdentity(expression);
+      const key = `${sessionId}:${longEdge}:cpu-spatial-leaf:${maskSignature}`;
       const cached = this.localMasks.get(key);
       if (cached) {
         this.localMasks.delete(key);
         this.localMasks.set(key, cached);
         return cached;
       }
-      const response = await fetch(`/api/session/${sessionId}/local-mask/${encodeURIComponent(local.id)}?long_edge=${longEdge}&edit_revision=${editRevision}&spatial_only=${spatialOnly}`);
+      const pathQuery = maskPath ? `&mask_path=${encodeURIComponent(maskPath)}` : "";
+      const startedAt = performance.now();
+      const response = await fetch(`/api/session/${sessionId}/local-mask/${encodeURIComponent(local.id)}?long_edge=${longEdge}&edit_revision=${editRevision}&spatial_only=true${pathQuery}`);
       if (!response.ok) return null;
       const width = Number(response.headers.get("X-Image-Width"));
       const height = Number(response.headers.get("X-Image-Height"));
       const source = new Uint8Array(await response.arrayBuffer());
+      if (!isCurrent()) return null;
       const bytesPerRow = Math.ceil(width / 256) * 256;
       const padded = bytesPerRow === width ? source : new Uint8Array(bytesPerRow * height);
       if (padded !== source) {
@@ -759,9 +772,118 @@
         { bytesPerRow, rowsPerImage: height },
         { width, height },
       );
-      const entry = { texture, width, height, byteSize: width * height };
+      const entry = { kind: "cpu-spatial-leaf", texture, width, height, byteSize: width * height };
       this.localMasks.set(key, entry);
       this.trimLocalMaskCache(longEdge > 1600 ? 160 * 1024 * 1024 : 96 * 1024 * 1024);
+      if (this.instrumentationEnabled) {
+        this.performanceMetrics.maskEvents ||= [];
+        this.performanceMetrics.maskEvents.push({
+          kind: "cpu-spatial-leaf",
+          maskPath: maskPath || "root",
+          longEdge,
+          width,
+          height,
+          cpuMaskMs: Number(response.headers.get("X-CPU-Mask-Ms")) || null,
+          requestMs: performance.now() - startedAt,
+          cpuMaskRequest: true,
+        });
+      }
+      return entry;
+    }
+
+    async loadGpuMaskGraph(sessionId, local, longEdge, editRevision, isCurrent = () => true) {
+      const startedAt = performance.now();
+      const layoutIdentity = gpuMaskGraphLayoutIdentity(local.mask);
+      const key = `${sessionId}:${local.id}:${longEdge}:gpu-mask-graph:${layoutIdentity}`;
+      let entry = this.localMasks.get(key);
+      const influenceIdentity = JSON.stringify(local.mask);
+      if (entry?.influenceIdentity === influenceIdentity) {
+        this.localMasks.delete(key);
+        this.localMasks.set(key, entry);
+        return entry;
+      }
+
+      const resolveNode = async (expression, path) => {
+        if (expression.operator === "leaf") {
+          const leafEntry = await this.loadMaskLeaf(sessionId, local, expression, path, longEdge, editRevision, isCurrent);
+          return leafEntry ? { expression, leafEntry, children: [] } : null;
+        }
+        const children = await Promise.all(expression.children.map((child, index) =>
+          resolveNode(child, path ? `${path}.${index}` : String(index))));
+        return children.some((child) => !child) ? null : { expression, children };
+      };
+      const resolved = await resolveNode(local.mask, "");
+      if (!resolved || !isCurrent()) return null;
+
+      const firstLeaf = firstResolvedMaskLeaf(resolved);
+      const passCount = gpuMaskGraphPassCount(local.mask);
+      if (!entry || entry.width !== firstLeaf.width || entry.height !== firstLeaf.height || entry.nodeTextures.length !== passCount) {
+        if (entry) this.destroyLocalMaskEntry(entry);
+        const nodeTextures = Array.from({ length: passCount }, () => this.createMaskTexture(firstLeaf.width, firstLeaf.height));
+        entry = {
+          kind: "gpu-mask-graph",
+          texture: nodeTextures.at(-1),
+          nodeTextures,
+          width: firstLeaf.width,
+          height: firstLeaf.height,
+          byteSize: firstLeaf.width * firstLeaf.height * 2 * passCount,
+          influenceIdentity: null,
+        };
+      }
+
+      const encoder = this.device.createCommandEncoder();
+      const parameterBuffers = [];
+      let textureIndex = 0;
+      const encodeNode = (node) => {
+        if (node.expression.operator === "leaf") {
+          return {
+            texture: node.leafEntry.texture,
+            opacity: Math.min(1, Math.max(0, Number(node.expression.leaf?.mask_opacity ?? 1))),
+          };
+        }
+        let result = encodeNode(node.children[0]);
+        for (let childIndex = 1; childIndex < node.children.length; childIndex += 1) {
+          const right = encodeNode(node.children[childIndex]);
+          const target = entry.nodeTextures[textureIndex++];
+          const finalChild = childIndex === node.children.length - 1;
+          const values = new Float32Array([
+            gpuMaskOperatorCode(node.expression.operator),
+            result.opacity,
+            right.opacity,
+            finalChild && node.expression.inverted ? 1 : 0,
+          ]);
+          const parameterBuffer = this.createStorageBuffer(values);
+          parameterBuffers.push(parameterBuffer);
+          this.device.queue.writeBuffer(parameterBuffer, 0, values);
+          this.encodeMaskPass(
+            encoder,
+            this.maskPipelines.combine,
+            this.createMaskBindGroup(result.texture, parameterBuffer, right.texture),
+            target,
+          );
+          result = { texture: target, opacity: 1 };
+        }
+        return result;
+      };
+      const result = encodeNode(resolved);
+      entry.texture = result.texture;
+      entry.influenceIdentity = influenceIdentity;
+      this.device.queue.submit([encoder.finish()]);
+      parameterBuffers.forEach((buffer) => buffer.destroy());
+      this.localMasks.set(key, entry);
+      this.trimLocalMaskCache(longEdge > 1600 ? 160 * 1024 * 1024 : 96 * 1024 * 1024);
+      if (this.instrumentationEnabled) {
+        this.performanceMetrics.maskEvents ||= [];
+        this.performanceMetrics.maskEvents.push({
+          kind: "gpu-mask-graph",
+          longEdge,
+          width: entry.width,
+          height: entry.height,
+          passCount,
+          encodeSubmitMs: performance.now() - startedAt,
+          cpuMaskRequest: false,
+        });
+      }
       return entry;
     }
 
@@ -784,7 +906,7 @@
           texture,
           width: source.width,
           height: source.height,
-          byteSize: source.width * source.height * 8,
+          byteSize: source.width * source.height * 2,
         };
         this.sceneLuminance.set(key, entry);
         const prefix = `${sessionId}:`;
@@ -809,13 +931,11 @@
       const scene = await this.loadSceneLuminance(sessionId, longEdge);
       if (!isCurrent()) return null;
       const baseSignature = gpuLumaBaseIdentity(local.mask);
-      const key = `${sessionId}:${local.id}:${longEdge}:gpu-luma:${baseSignature}`;
+      const key = `${sessionId}:${longEdge}:gpu-luma:${baseSignature}`;
       let entry = this.localMasks.get(key);
       let baseRegenerated = false;
       if (!entry) {
         const baseTexture = this.createMaskTexture(scene.width, scene.height);
-        const horizontalTexture = this.createMaskTexture(scene.width, scene.height);
-        const refinedTexture = this.createMaskTexture(scene.width, scene.height);
         const qualifyValues = buildGpuLumaQualificationParams(local.mask);
         const qualifyBuffer = this.createStorageBuffer(qualifyValues);
         this.device.queue.writeBuffer(qualifyBuffer, 0, qualifyValues);
@@ -823,14 +943,14 @@
           kind: "gpu-luma",
           texture: baseTexture,
           baseTexture,
-          horizontalTexture,
-          refinedTexture,
+          horizontalTexture: null,
+          refinedTexture: null,
           qualifyBuffer,
-          horizontalBuffer: this.createStorageBuffer(new Float32Array(4)),
-          verticalBuffer: this.createStorageBuffer(new Float32Array(4)),
+          horizontalBuffer: null,
+          verticalBuffer: null,
           width: scene.width,
           height: scene.height,
-          byteSize: scene.width * scene.height * 8 * 3 + 48,
+          byteSize: scene.width * scene.height * 2 + 16,
           refinementIdentity: null,
         };
         const encoder = this.device.createCommandEncoder();
@@ -860,6 +980,13 @@
         if (Math.max(sigmaX, sigmaY) < 0.25 && !inverted) {
           entry.texture = entry.baseTexture;
         } else {
+          if (!entry.horizontalTexture) {
+            entry.horizontalTexture = this.createMaskTexture(entry.width, entry.height);
+            entry.refinedTexture = this.createMaskTexture(entry.width, entry.height);
+            entry.horizontalBuffer = this.createStorageBuffer(new Float32Array(4));
+            entry.verticalBuffer = this.createStorageBuffer(new Float32Array(4));
+            entry.byteSize += entry.width * entry.height * 2 * 2 + 32;
+          }
           const horizontalValues = new Float32Array([sigmaX, sigmaY, 0, 0]);
           const verticalValues = new Float32Array([sigmaX, sigmaY, 1, inverted ? 1 : 0]);
           this.device.queue.writeBuffer(entry.horizontalBuffer, 0, horizontalValues);
@@ -907,17 +1034,18 @@
     createMaskTexture(width, height) {
       return this.device.createTexture({
         size: { width, height },
-        format: "rgba16float",
+        format: "r16float",
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
       });
     }
 
-    createMaskBindGroup(texture, parameterBuffer) {
+    createMaskBindGroup(texture, parameterBuffer, operandTexture = texture) {
       return this.device.createBindGroup({
         layout: this.maskBindGroupLayout,
         entries: [
           { binding: 0, resource: texture.createView() },
           { binding: 1, resource: { buffer: parameterBuffer } },
+          { binding: 2, resource: operandTexture.createView() },
         ],
       });
     }
@@ -953,6 +1081,7 @@
         entry.baseTexture,
         entry.horizontalTexture,
         entry.refinedTexture,
+        ...(entry.nodeTextures || []),
       ].filter(Boolean));
       textures.forEach((texture) => texture.destroy());
       entry.qualifyBuffer?.destroy();
@@ -1325,6 +1454,32 @@
       Number(leaf.full_end_ev),
       Number(leaf.fade_out_end_ev),
     ]);
+  }
+
+  function gpuMaskGraphLayoutIdentity(expression) {
+    if (expression?.operator === "leaf") return `leaf:${expression.leaf?.type || "unknown"}`;
+    return `node(${(expression?.children || []).map(gpuMaskGraphLayoutIdentity).join(",")})`;
+  }
+
+  function gpuMaskGraphPassCount(expression) {
+    if (expression?.operator === "leaf") return 0;
+    return Math.max(0, (expression?.children || []).length - 1)
+      + (expression?.children || []).reduce((total, child) => total + gpuMaskGraphPassCount(child), 0);
+  }
+
+  function firstResolvedMaskLeaf(node) {
+    if (node.leafEntry) return node.leafEntry;
+    for (const child of node.children || []) {
+      const leaf = firstResolvedMaskLeaf(child);
+      if (leaf) return leaf;
+    }
+    return null;
+  }
+
+  function gpuMaskOperatorCode(operator) {
+    if (operator === "intersect") return 1;
+    if (operator === "subtract") return 2;
+    return 0;
   }
 
   window.HDRWebGPUPreview = HDRWebGPUPreview;
@@ -2051,6 +2206,7 @@
   const LUMA_MASK_SHADER_SOURCE = String.raw`
     @group(0) @binding(0) var sourceTexture: texture_2d<f32>;
     @group(0) @binding(1) var<storage, read> p: array<f32>;
+    @group(0) @binding(2) var operandTexture: texture_2d<f32>;
 
     struct VertexOut { @builtin(position) position: vec4f }
 
@@ -2104,6 +2260,17 @@
         }
         value = total / max(weightTotal, 0.000001);
       }
+      if (p[3] > 0.5) { value = 1.0 - value; }
+      return vec4f(value, value, value, 1.0);
+    }
+
+    @fragment fn maskCombineFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let coordinate = pixelCoordinate(input.position.xy);
+      let left = clamp(textureLoad(sourceTexture, coordinate, 0).r * p[1], 0.0, 1.0);
+      let right = clamp(textureLoad(operandTexture, coordinate, 0).r * p[2], 0.0, 1.0);
+      var value = max(left, right);
+      if (p[0] > 0.5 && p[0] < 1.5) { value = left * right; }
+      if (p[0] > 1.5) { value = left * (1.0 - right); }
       if (p[3] > 0.5) { value = 1.0 - value; }
       return vec4f(value, value, value, 1.0);
     }

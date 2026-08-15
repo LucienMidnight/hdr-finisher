@@ -237,6 +237,7 @@ const state = {
   interpretationGateDismissed: false,
   zoomMode: "fit",
   zoomPercent: 100,
+  zoomReferenceFrame: null,
   activeDockTab: "histogram",
   dockCollapsed: false,
   lastScope: null,
@@ -758,6 +759,15 @@ const els = {
   exportFilename: document.getElementById("export-filename"),
   exportDirectory: document.getElementById("export-directory"),
   exportDirectoryBrowse: document.getElementById("export-directory-browse"),
+  directoryBrowser: document.getElementById("directory-browser"),
+  directoryBrowserPath: document.getElementById("directory-browser-path"),
+  directoryBrowserGo: document.getElementById("directory-browser-go"),
+  directoryBrowserUp: document.getElementById("directory-browser-up"),
+  directoryBrowserStatus: document.getElementById("directory-browser-status"),
+  directoryBrowserList: document.getElementById("directory-browser-list"),
+  directoryBrowserClose: document.getElementById("directory-browser-close"),
+  directoryBrowserCancel: document.getElementById("directory-browser-cancel"),
+  directoryBrowserSelect: document.getElementById("directory-browser-select"),
   exportFormat: document.getElementById("export-format"),
   exportQuality: document.getElementById("export-quality"),
   exportQualityValue: document.getElementById("export-quality-value"),
@@ -1620,6 +1630,21 @@ function bindEvents() {
 
   els.exportConfirmButton.addEventListener("click", exportCurrentSession);
   els.exportDirectoryBrowse.addEventListener("click", chooseExportDirectory);
+  els.directoryBrowserGo.addEventListener("click", () => loadExportDirectory(els.directoryBrowserPath.value));
+  els.directoryBrowserUp.addEventListener("click", () => loadExportDirectory(els.directoryBrowser.dataset.parent));
+  els.directoryBrowserPath.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    loadExportDirectory(els.directoryBrowserPath.value);
+  });
+  [els.directoryBrowserClose, els.directoryBrowserCancel].forEach((button) => {
+    button.addEventListener("click", closeExportDirectoryBrowser);
+  });
+  els.directoryBrowserSelect.addEventListener("click", selectExportDirectory);
+  els.directoryBrowser.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeExportDirectoryBrowser();
+  });
   els.applyInterpretationButton.addEventListener("click", applyInterpretationOverride);
   els.resetInterpretationButton.addEventListener("click", resetInterpretationToAuto);
   els.ejectButton.addEventListener("click", ejectCurrentSession);
@@ -2315,7 +2340,6 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
   if (generation !== state.previewGeneration[lane] || rawGeneration !== generation) return false;
   const frame = { raw: data, width, height, generation, longEdge };
   state.previewCache[lane] = frame;
-  if (displayWhenReady && lane === state.currentView && !state.comparePeekActive) applyRawPreview(frame);
   state.previewInfoByLane[lane] = {
     mediaType: "application/octet-stream",
     transport: "Raw RGBA8",
@@ -2324,6 +2348,7 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
     bitDepth: "8-bit",
     notes: "Persistent CPU fallback canvas; export quality is unchanged",
   };
+  if (displayWhenReady && lane === state.currentView && !state.comparePeekActive) applyRawPreview(frame);
   return true;
 }
 
@@ -3128,7 +3153,15 @@ function splitOutputPath(path) {
 
 async function exportCurrentSession() {
   if (!state.session) return;
-  await syncGlobalEditState();
+  const pendingApplied = await (state.editCommandQueue || Promise.resolve(true));
+  const globalsApplied = pendingApplied === false ? false : await syncGlobalEditState();
+  const editsApplied = globalsApplied === false
+    ? false
+    : await (state.editCommandQueue || Promise.resolve(true));
+  if (editsApplied === false) {
+    els.exportStatus.textContent = "Export paused because the latest edit could not be saved. Review the edit error and try again.";
+    return;
+  }
   const outputPath = buildExportOutputPath();
   els.exportConfirmButton.disabled = true;
   els.exportStatus.textContent = "Encoding and validating the finished file…";
@@ -3158,7 +3191,7 @@ async function exportCurrentSession() {
       payload = await safeJson(response);
     }
     if (!response.ok) {
-      els.exportStatus.textContent = typeof payload?.detail === "string" ? payload.detail : payload?.message || "Export failed.";
+      els.exportStatus.textContent = responseErrorMessage(payload, "Export failed.");
       return;
     }
     els.exportStatus.textContent = payload.message || "Export request finished.";
@@ -3180,31 +3213,74 @@ async function exportCurrentSession() {
 }
 
 async function chooseExportDirectory() {
-  els.exportDirectoryBrowse.disabled = true;
-  els.exportStatus.textContent = "Opening folder picker...";
+  if (!els.directoryBrowser.open) els.directoryBrowser.showModal();
+  await loadExportDirectory(els.exportDirectory.value);
+}
+
+async function loadExportDirectory(path) {
+  els.directoryBrowserStatus.textContent = "Loading folders…";
+  els.directoryBrowserList.replaceChildren();
+  els.directoryBrowserGo.disabled = true;
+  els.directoryBrowserUp.disabled = true;
+  els.directoryBrowserSelect.disabled = true;
   try {
-    const response = await fetch("/api/export-directory", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ initial_directory: els.exportDirectory.value || null }),
-    });
+    const query = path?.trim() ? `?path=${encodeURIComponent(path.trim())}` : "";
+    const response = await fetch(`/api/export-directories${query}`);
     const payload = await safeJson(response);
     if (!response.ok) {
-      els.exportStatus.textContent = payload?.detail || "Folder picker failed.";
+      els.directoryBrowserStatus.textContent = responseErrorMessage(payload, "Could not open that folder.");
       return;
     }
-    if (payload?.directory) {
-      els.exportDirectory.value = payload.directory;
-      els.exportStatus.textContent = `Save folder set to ${payload.directory}`;
-      return;
+
+    els.directoryBrowserPath.value = payload.current;
+    els.directoryBrowser.dataset.parent = payload.parent || "";
+    els.directoryBrowserUp.disabled = !payload.parent;
+    els.directoryBrowserSelect.disabled = false;
+    const entries = Array.isArray(payload.entries) ? payload.entries : [];
+    if (!entries.length) {
+      const empty = document.createElement("li");
+      empty.className = "directory-browser-empty";
+      empty.textContent = "This folder is empty.";
+      els.directoryBrowserList.append(empty);
+    } else {
+      entries.forEach((entry) => {
+        const item = document.createElement("li");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `directory-browser-entry ${entry.kind}`;
+        button.textContent = entry.name;
+        button.title = entry.path;
+        if (entry.kind === "directory") {
+          button.addEventListener("click", () => loadExportDirectory(entry.path));
+        } else {
+          button.disabled = true;
+          button.setAttribute("aria-label", `${entry.name}, file`);
+        }
+        item.append(button);
+        els.directoryBrowserList.append(item);
+      });
     }
-    els.exportStatus.textContent = "Folder selection cancelled.";
+    const folderCount = entries.filter((entry) => entry.kind === "directory").length;
+    const fileCount = entries.length - folderCount;
+    els.directoryBrowserStatus.textContent = `${folderCount} folder${folderCount === 1 ? "" : "s"}, ${fileCount} file${fileCount === 1 ? "" : "s"}`;
   } catch (error) {
     console.error(error);
-    els.exportStatus.textContent = "Folder picker could not reach the local HDR Finisher server.";
+    els.directoryBrowserStatus.textContent = "Could not reach the local HDR Finisher server.";
   } finally {
-    els.exportDirectoryBrowse.disabled = false;
+    els.directoryBrowserGo.disabled = false;
   }
+}
+
+function closeExportDirectoryBrowser() {
+  if (els.directoryBrowser.open) els.directoryBrowser.close();
+}
+
+function selectExportDirectory() {
+  const directory = els.directoryBrowserPath.value.trim();
+  if (!directory) return;
+  els.exportDirectory.value = directory;
+  els.exportStatus.textContent = `Save folder set to ${directory}`;
+  closeExportDirectoryBrowser();
 }
 
 async function applyInterpretationOverride() {
@@ -3325,6 +3401,13 @@ function openCropMode() {
   els.cropToolToggle?.setAttribute("aria-pressed", "true");
   els.cropEditorOverlay?.setAttribute("aria-hidden", "false");
   renderCropOptions();
+}
+
+function responseErrorMessage(payload, fallback) {
+  if (typeof payload?.detail === "string") return payload.detail;
+  if (typeof payload?.detail?.message === "string") return payload.detail.message;
+  if (typeof payload?.message === "string") return payload.message;
+  return fallback;
 }
 
 function closeCropMode(commit) {
@@ -5865,8 +5948,39 @@ function applyZoomGeometry() {
   // into the source aspect ratio after it is applied.
   const renderedWidth = preview instanceof HTMLCanvasElement ? preview.width : preview.naturalWidth;
   const renderedHeight = preview instanceof HTMLCanvasElement ? preview.height : preview.naturalHeight;
-  const sourceWidth = Math.max(1, renderedWidth || state.session.source.width);
-  const sourceHeight = Math.max(1, renderedHeight || state.session.source.height);
+  const renderedFrameWidth = Math.max(1, renderedWidth || state.session.source.width);
+  const renderedFrameHeight = Math.max(1, renderedHeight || state.session.source.height);
+  const renderedAspect = renderedFrameWidth / renderedFrameHeight;
+  const sessionId = state.session?.session_id || null;
+  const geometrySignature = JSON.stringify(state.adjustments?.shared?.geometry || {});
+  const previewFrameReady = preview instanceof HTMLCanvasElement
+    ? Boolean(state.gpuPreparedLane[state.currentView])
+    : Boolean(preview.complete && preview.naturalWidth > 0);
+  if (previewFrameReady && (
+    !state.zoomReferenceFrame
+    || state.zoomReferenceFrame.sessionId !== sessionId
+    || state.zoomReferenceFrame.geometrySignature !== geometrySignature
+  )) {
+    state.zoomReferenceFrame = {
+      sessionId,
+      geometrySignature,
+      longEdge: state.zoomReferenceFrame?.sessionId === sessionId
+        ? state.zoomReferenceFrame.longEdge
+        : Math.max(renderedFrameWidth, renderedFrameHeight),
+    };
+  }
+  // Settled/local previews can replace the interactive bitmap with a slightly
+  // different proxy size (for example 726px -> the 768px settled minimum).
+  // CSS geometry must use one stable per-session reference or every such swap
+  // looks like a zoom and shifts the scroll position at custom magnification.
+  // Always keep the current bitmap aspect so crops/quarter rotations are not
+  // stretched. Only proxy resolution is invisible to viewport geometry.
+  const referenceLongEdge = state.zoomReferenceFrame?.sessionId === sessionId
+    ? state.zoomReferenceFrame.longEdge
+    : Math.max(renderedFrameWidth, renderedFrameHeight);
+  const referenceAspect = renderedAspect;
+  const sourceWidth = referenceAspect >= 1 ? referenceLongEdge : referenceLongEdge * referenceAspect;
+  const sourceHeight = referenceAspect >= 1 ? referenceLongEdge / referenceAspect : referenceLongEdge;
   const frameWidth = Math.max(1, els.dropzone.clientWidth);
   const frameHeight = Math.max(1, els.dropzone.clientHeight);
   const paneWidth = state.compareLayout === "side-horizontal" ? frameWidth / 2 : frameWidth;
@@ -7544,6 +7658,10 @@ function bindLocalMaskCanvas() {
         leaf.end = point;
         leaf.gradient_midpoint_1 = 1 / 3;
         leaf.gradient_midpoint_2 = 2 / 3;
+        // The coordinates already differ from the cached authoritative mask at
+        // pointerdown. Mark the handoff dirty before the synchronous render so
+        // the last exact overlay remains visible until the first draft lands.
+        state.localMaskDraftDirty = true;
         state.localPointerGesture = { type: "linear_gradient", leaf, handle: "end", creating: true };
       }
     } else if (leaf.type === "luminance_range") {
@@ -7784,15 +7902,18 @@ function renderLocalMaskOverlay() {
   const authoritative = local.mask?.operator === "leaf"
     ? localAuthoritativeMaskCache.get(local.id)
     : null;
+  const needsAuthoritativeOverlay = ["linear_gradient", "luminance_range"].includes(local.mask?.leaf?.type);
   drawMaskExpression(context, local.mask, x, y, {
     localId: local.id,
     maskSignature,
     spatialSignature,
-    // During a control drag, retain the most recent exact backend frame until
-    // the exact draft for the new slider value arrives. Never flash over to
-    // the materially different Canvas blur approximation.
+    // Gradient and luminance masks have no client-side mask rasterizer. Keep
+    // their most recent exact frame visible across both the draft and commit
+    // handoffs, then replace it atomically when the current exact frame lands.
+    // Brush masks can instead fall back to their current local stroke raster.
     authoritative: authoritative && (
       state.localMaskDraftDirty
+      || needsAuthoritativeOverlay
       || authoritative.signature === (authoritative.spatialOnly ? spatialSignature : maskSignature)
     )
       ? authoritative
@@ -7884,17 +8005,22 @@ function drawBrushMaskOverlay(context, leaf, activeStroke, x, y, inverted = fals
       canvas.width = width;
       canvas.height = height;
       const canvasContext = canvas.getContext("2d");
-      const eraseStrokes = [];
+      let eraseAttenuation = null;
       for (const stroke of strokes) {
-        if (stroke.erase) eraseStrokes.push(stroke);
-        else drawBrushMaskStroke(canvasContext, stroke, width, height);
+        if (stroke.erase) {
+          if (!eraseAttenuation) eraseAttenuation = opaqueBrushMaskCanvas(width, height);
+          drawBrushMaskStroke(eraseAttenuation.getContext("2d"), stroke, width, height);
+        } else {
+          drawBrushMaskStroke(canvasContext, stroke, width, height);
+          if (eraseAttenuation) drawBrushMaskStroke(eraseAttenuation.getContext("2d"), stroke, width, height);
+        }
       }
-      // Erase is defined as the final mask stage. Cache the fully processed
-      // fallback too, since several overlay renders can occur while the
-      // authoritative mask request is in flight after pointer-up.
+      // Cache the fully processed fallback too, since several overlay renders
+      // can occur while the authoritative mask request is in flight after
+      // pointer-up. Ordered attenuation lets paint restore an earlier erase.
       const processedCanvas = postProcessBrushMaskPreviewWithErase(
         canvas,
-        eraseStrokes,
+        eraseAttenuation,
         leaf,
         width,
         height,
@@ -8150,7 +8276,17 @@ function postProcessBrushMaskPreview(source, leaf, width, height) {
   return softened;
 }
 
-function postProcessBrushMaskPreviewWithErase(paintedSource, eraseStrokes, leaf, width, height, inverted = false) {
+function opaqueBrushMaskCanvas(width, height) {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#000";
+  context.fillRect(0, 0, width, height);
+  return canvas;
+}
+
+function postProcessBrushMaskPreviewWithErase(paintedSource, eraseAttenuation, leaf, width, height, inverted = false) {
   const processed = postProcessBrushMaskPreview(paintedSource, leaf, width, height);
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -8158,12 +8294,14 @@ function postProcessBrushMaskPreviewWithErase(paintedSource, eraseStrokes, leaf,
   const context = canvas.getContext("2d");
   context.drawImage(processed, 0, 0, width, height);
   const output = context.getImageData(0, 0, width, height);
+  const attenuation = eraseAttenuation?.getContext("2d").getImageData(0, 0, width, height).data || null;
   for (let index = 3; index < output.data.length; index += 4) {
     const alpha = inverted ? 255 - output.data[index] : output.data[index];
-    output.data[index] = alpha;
+    output.data[index] = attenuation
+      ? Math.round(alpha * attenuation[index] / 255)
+      : alpha;
   }
   context.putImageData(output, 0, 0);
-  for (const stroke of eraseStrokes || []) drawBrushMaskStroke(context, stroke, width, height);
   return canvas;
 }
 

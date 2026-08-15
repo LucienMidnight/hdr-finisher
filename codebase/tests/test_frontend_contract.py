@@ -253,6 +253,9 @@ def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     assert 'id="jpeg-gain-map-scale"' in html
     assert 'class="export-filename-field"' in html
     assert 'class="export-directory-field"' in html
+    assert 'id="directory-browser"' in html
+    assert 'id="directory-browser-select"' in html
+    assert "/api/export-directories" in (FRONTEND / "app.js").read_text(encoding="utf-8")
     assert ".control-group-body" in css
     assert "border-top: 2px solid" in css
     assert ".jpeg-advanced-settings" in css
@@ -483,9 +486,18 @@ def test_phase_one_local_influence_and_latest_generation_contract() -> None:
     assert "const adjustmentsSnapshot = JSON.parse(JSON.stringify(state.adjustments));" in javascript
     assert "JSON.parse(JSON.stringify(localAdjustments()))" in javascript
     assert "recordStaleResult" in scheduler
-    assert "gpuMaskIdentity(local.mask)" in webgpu
+    assert "gpuMaskIdentity(expression)" in webgpu
     assert "p[1] * p[13]" in webgpu
-    assert "spatial_only=${spatialOnly}" in webgpu
+    assert "spatial_only=true${pathQuery}" in webgpu
+
+
+def test_export_waits_for_pending_edits_and_formats_structured_errors() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    assert "const pendingApplied = await (state.editCommandQueue || Promise.resolve(true));" in javascript
+    assert "const globalsApplied = pendingApplied === false ? false : await syncGlobalEditState();" in javascript
+    assert 'responseErrorMessage(payload, "Export failed.")' in javascript
+    assert 'responseErrorMessage(payload, "Could not open that folder.")' in javascript
 
 
 def test_phase_two_gpu_luma_retained_mask_contract() -> None:
@@ -514,6 +526,21 @@ def test_phase_two_gpu_luma_retained_mask_contract() -> None:
     assert "scheduleSpatialMaskPreview(selectedLocal())" in javascript
     assert "if (!gpuLumaMaskPreviewActive(local)) void queueAuthoritativeLocalMask(local)" in javascript
     assert "gpuResident: true" in javascript
+
+
+def test_phase_four_retained_boolean_mask_graph_contract() -> None:
+    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+
+    assert 'this.loadGpuMaskGraph(sessionId, local, longEdge, editRevision, isCurrent)' in webgpu
+    assert 'this.createMaskPipeline("maskCombineFragmentMain")' in webgpu
+    assert 'mask_path=${encodeURIComponent(maskPath)}' in webgpu
+    assert 'spatial_only=true${pathQuery}' in webgpu
+    assert 'kind: "gpu-mask-graph"' in webgpu
+    assert "gpuMaskGraphPassCount" in webgpu
+    assert "gpuMaskOperatorCode" in webgpu
+    assert "left * (1.0 - right)" in webgpu
+    assert "entry?.influenceIdentity === influenceIdentity" in webgpu
+    assert "maskGraphs:" in webgpu
 
 
 def test_viewer_exposes_icon_comparison_layouts_with_active_lane_scopes() -> None:

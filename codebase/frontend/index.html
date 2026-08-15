@@ -1127,6 +1127,27 @@
     </div>
   </aside>
 
+  <dialog id="directory-browser" class="directory-browser" aria-labelledby="directory-browser-title">
+    <div class="directory-browser-header">
+      <div>
+        <p class="section-kicker">Export destination</p>
+        <h2 id="directory-browser-title">Choose save folder</h2>
+      </div>
+      <button id="directory-browser-close" class="text-button" type="button" aria-label="Close folder browser">Close</button>
+    </div>
+    <div class="directory-browser-path-row">
+      <input id="directory-browser-path" type="text" aria-label="Current folder path" autocomplete="off" spellcheck="false">
+      <button id="directory-browser-go" class="button-secondary" type="button">Go</button>
+      <button id="directory-browser-up" class="button-secondary" type="button">Up</button>
+    </div>
+    <div id="directory-browser-status" class="directory-browser-status" aria-live="polite">Loading folders…</div>
+    <ul id="directory-browser-list" class="directory-browser-list" aria-label="Folders"></ul>
+    <div class="directory-browser-actions">
+      <button id="directory-browser-cancel" class="button-secondary" type="button">Cancel</button>
+      <button id="directory-browser-select" class="button-primary" type="button">Select this folder</button>
+    </div>
+  </dialog>
+
   <script src="/static/webgpu-preview.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/preview-scheduler.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/app.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
