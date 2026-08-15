@@ -452,12 +452,93 @@ class PathNode(BaseModel):
 
     x: float = Field(ge=0.0, le=1.0)
     y: float = Field(ge=0.0, le=1.0)
-    in_x: float | None = Field(default=None, ge=0.0, le=1.0)
-    in_y: float | None = Field(default=None, ge=0.0, le=1.0)
-    out_x: float | None = Field(default=None, ge=0.0, le=1.0)
-    out_y: float | None = Field(default=None, ge=0.0, le=1.0)
+    # Handles may leave the image even though the anchor itself must remain on
+    # the source. This is required for smooth edge nodes and large tangents.
+    in_x: float | None = Field(default=None, ge=-1.0, le=2.0)
+    in_y: float | None = Field(default=None, ge=-1.0, le=2.0)
+    out_x: float | None = Field(default=None, ge=-1.0, le=2.0)
+    out_y: float | None = Field(default=None, ge=-1.0, le=2.0)
     node_type: Literal["sharp", "smooth"] = "smooth"
     feather: float | None = Field(default=None, ge=0.0, le=0.5)
+
+
+class FeatherPathNode(BaseModel):
+    """Editable feather-boundary node.
+
+    Feather anchors may sit outside the image so a falloff can finish beyond a
+    source edge. The finite bounds still reject accidental runaway payloads.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    x: float = Field(ge=-1.0, le=2.0)
+    y: float = Field(ge=-1.0, le=2.0)
+    in_x: float | None = Field(default=None, ge=-1.0, le=2.0)
+    in_y: float | None = Field(default=None, ge=-1.0, le=2.0)
+    out_x: float | None = Field(default=None, ge=-1.0, le=2.0)
+    out_y: float | None = Field(default=None, ge=-1.0, le=2.0)
+    node_type: Literal["sharp", "smooth"] = "smooth"
+
+
+def _flatten_validation_path(nodes: list[PathNode | FeatherPathNode], steps: int = 12) -> list[tuple[float, float]]:
+    points: list[tuple[float, float]] = []
+    for first, second in zip(nodes, nodes[1:] + nodes[:1]):
+        p0 = (first.x, first.y)
+        p1 = (first.out_x if first.out_x is not None else first.x, first.out_y if first.out_y is not None else first.y)
+        p2 = (second.in_x if second.in_x is not None else second.x, second.in_y if second.in_y is not None else second.y)
+        p3 = (second.x, second.y)
+        curved = p0 != p1 or p2 != p3
+        count = steps if curved else 1
+        for index in range(count):
+            t = index / count
+            inverse = 1.0 - t
+            points.append((
+                inverse**3 * p0[0] + 3 * inverse**2 * t * p1[0] + 3 * inverse * t**2 * p2[0] + t**3 * p3[0],
+                inverse**3 * p0[1] + 3 * inverse**2 * t * p1[1] + 3 * inverse * t**2 * p2[1] + t**3 * p3[1],
+            ))
+    return points
+
+
+def _validation_segments_intersect(
+    first: tuple[float, float],
+    second: tuple[float, float],
+    third: tuple[float, float],
+    fourth: tuple[float, float],
+) -> bool:
+    def orientation(a: tuple[float, float], b: tuple[float, float], c: tuple[float, float]) -> float:
+        return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+    ab_c = orientation(first, second, third)
+    ab_d = orientation(first, second, fourth)
+    cd_a = orientation(third, fourth, first)
+    cd_b = orientation(third, fourth, second)
+    return ((ab_c > 1e-8 > ab_d) or (ab_c < -1e-8 < ab_d)) and (
+        (cd_a > 1e-8 > cd_b) or (cd_a < -1e-8 < cd_b)
+    )
+
+
+def _validation_path_is_simple(points: list[tuple[float, float]]) -> bool:
+    for first in range(len(points)):
+        first_next = (first + 1) % len(points)
+        for second in range(first + 1, len(points)):
+            second_next = (second + 1) % len(points)
+            if first_next == second or second_next == first or (first == 0 and second_next == 0):
+                continue
+            if _validation_segments_intersect(points[first], points[first_next], points[second], points[second_next]):
+                return False
+    return True
+
+
+def _validation_polygon_contains(point: tuple[float, float], polygon: list[tuple[float, float]]) -> bool:
+    inside = False
+    previous = len(polygon) - 1
+    for index, current in enumerate(polygon):
+        prior = polygon[previous]
+        cross = (current[1] > point[1]) != (prior[1] > point[1])
+        if cross and point[0] < (prior[0] - current[0]) * (point[1] - current[1]) / (prior[1] - current[1] + 1e-12) + current[0]:
+            inside = not inside
+        previous = index
+    return inside
 
 
 class MaskLeaf(BaseModel):
@@ -501,6 +582,8 @@ class MaskLeaf(BaseModel):
     fade_out_end_ev: float = Field(default=10.0, ge=-24.0, le=24.0)
     nodes: list[PathNode] = Field(default_factory=list, max_length=16384)
     feather: float = Field(default=0.0, ge=0.0, le=0.5)
+    feather_mode: Literal["symmetric", "outer_boundary"] = "symmetric"
+    feather_nodes: list[FeatherPathNode] = Field(default_factory=list, max_length=16384)
     sample: MaskPoint | None = None
     radius: float = Field(default=0.2, gt=0.0, le=2.0)
     luma_tolerance_ev: float = Field(default=1.0, gt=0.0, le=12.0)
@@ -514,6 +597,20 @@ class MaskLeaf(BaseModel):
             raise ValueError("gradient midpoint controls must be ordered")
         if self.type == "path" and len(self.nodes) < 3:
             raise ValueError("path masks require at least three nodes")
+        if self.type == "path" and self.feather_nodes and len(self.feather_nodes) < 3:
+            raise ValueError("editable feather boundaries require at least three nodes")
+        if self.type == "path" and self.feather_mode == "symmetric" and self.feather_nodes:
+            raise ValueError("legacy symmetric path feathering cannot carry editable feather nodes")
+        if self.type == "path":
+            inner = _flatten_validation_path(self.nodes)
+            if not _validation_path_is_simple(inner):
+                raise ValueError("path masks cannot self-intersect")
+            if self.feather_nodes:
+                outer = _flatten_validation_path(self.feather_nodes)
+                if not _validation_path_is_simple(outer):
+                    raise ValueError("editable feather boundaries cannot self-intersect")
+                if self.feather > 1e-8 and not all(_validation_polygon_contains(point, outer) for point in inner):
+                    raise ValueError("editable feather boundaries must contain the complete path")
         if self.type == "sampled_point" and self.sample is None:
             raise ValueError("sampled_point masks require a sample point")
         if not (

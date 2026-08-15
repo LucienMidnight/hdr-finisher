@@ -67,7 +67,7 @@ def apply_local_stack(
                     mask = compiled[top:bottom, left:right].astype(np.float32) / np.float32(255.0)
                     mask *= np.float32(mask_influence_opacity(local.mask))
                 else:
-                    mask = evaluate_mask(local.mask, reference_tile, source_x, source_y)
+                    mask = evaluate_mask(local.mask, reference_tile, source_x, source_y, width / max(height, 1))
                 influence = np.clip(mask * np.float32(local.opacity), 0.0, 1.0)
                 if not np.any(influence > 1e-6):
                     continue
@@ -96,7 +96,7 @@ def compile_preview_mask(
     """Compile one preview mask to an r8-equivalent array for cache reuse."""
     height, width = fixed_source.shape[:2]
     source_x, source_y = source_coordinate_grid(width, height, 0, 0, width, height, geometry)
-    mask = evaluate_mask(expression, fixed_source, source_x, source_y)
+    mask = evaluate_mask(expression, fixed_source, source_x, source_y, width / max(height, 1))
     return np.rint(np.clip(mask, 0.0, 1.0) * 255.0).astype(np.uint8)
 
 
@@ -139,15 +139,19 @@ def evaluate_mask(
     fixed_source_tile: np.ndarray,
     source_x: np.ndarray,
     source_y: np.ndarray,
+    pixel_aspect: float = 1.0,
 ) -> np.ndarray:
     brush_erase_attenuation: np.ndarray | None = None
     if expression.operator == "leaf":
         if expression.leaf is not None and expression.leaf.type == "brush":
             result, brush_erase_attenuation = _brush_masks(expression.leaf, source_x, source_y)
         else:
-            result = _evaluate_leaf(expression.leaf, fixed_source_tile, source_x, source_y)
+            result = _evaluate_leaf(expression.leaf, fixed_source_tile, source_x, source_y, pixel_aspect)
     else:
-        children = [evaluate_mask(child, fixed_source_tile, source_x, source_y) for child in expression.children]
+        children = [
+            evaluate_mask(child, fixed_source_tile, source_x, source_y, pixel_aspect)
+            for child in expression.children
+        ]
         result = children[0]
         for child in children[1:]:
             if expression.operator == "union":
@@ -230,6 +234,7 @@ def _evaluate_leaf(
     fixed_source_tile: np.ndarray,
     source_x: np.ndarray,
     source_y: np.ndarray,
+    pixel_aspect: float = 1.0,
 ) -> np.ndarray:
     if leaf is None:
         return np.zeros(source_x.shape, dtype=np.float32)
@@ -240,7 +245,7 @@ def _evaluate_leaf(
     if leaf.type == "brush":
         return _brush_mask(leaf, source_x, source_y)
     if leaf.type == "path":
-        return _path_mask(leaf, source_x, source_y)
+        return _path_mask(leaf, source_x, source_y, pixel_aspect)
     if not SAMPLED_MASKS_ENABLED:
         return np.zeros(source_x.shape, dtype=np.float32)
     return _sampled_mask(leaf, fixed_source_tile, source_x, source_y)
@@ -725,27 +730,114 @@ def _soft_segment(
     return _soft_disc(x, y, closest_x, closest_y, radius, hardness)
 
 
-def _path_mask(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+def _path_mask(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray, pixel_aspect: float = 1.0) -> np.ndarray:
     nodes = _flatten_path(leaf)
+    inside = _points_inside_polygon(x, y, nodes)
+    if leaf.feather_mode != "outer_boundary":
+        if leaf.feather <= 0.0:
+            return inside.astype(np.float32)
+        edge_distance = _distance_to_polygon(x, y, nodes, pixel_aspect)
+        feather = np.clip(edge_distance / max(leaf.feather, 1e-6), 0.0, 1.0)
+        return np.where(inside, 0.5 + 0.5 * feather, 0.5 - 0.5 * feather).astype(np.float32)
+
+    if leaf.feather_nodes:
+        outer = _flatten_path_nodes(leaf.feather_nodes)
+    elif leaf.feather > 0.0:
+        outer = _offset_polygon(nodes, leaf.feather, pixel_aspect)
+    else:
+        return inside.astype(np.float32)
+
+    outer_inside = _points_inside_polygon(x, y, outer)
+    inner_distance = _distance_to_polygon(x, y, nodes, pixel_aspect)
+    outer_distance = _distance_to_polygon(x, y, outer, pixel_aspect)
+    denominator = np.maximum(inner_distance + outer_distance, np.float32(1e-6))
+    transition = np.clip(outer_distance / denominator, 0.0, 1.0)
+    transition = transition * transition * (3.0 - 2.0 * transition)
+    return np.where(inside, 1.0, np.where(outer_inside, transition, 0.0)).astype(np.float32)
+
+
+def _points_inside_polygon(
+    x: np.ndarray,
+    y: np.ndarray,
+    vertices: list[tuple[float, float]],
+) -> np.ndarray:
     inside = np.zeros(x.shape, dtype=bool)
-    for first, second in zip(nodes, nodes[1:] + nodes[:1]):
+    for first, second in zip(vertices, vertices[1:] + vertices[:1]):
         crosses = (first[1] > y) != (second[1] > y)
         edge_x = (second[0] - first[0]) * (y - first[1]) / (second[1] - first[1] + 1e-12) + first[0]
         inside ^= crosses & (x < edge_x)
-    if leaf.feather <= 0.0:
-        return inside.astype(np.float32)
+    return inside
+
+
+def _distance_to_polygon(
+    x: np.ndarray,
+    y: np.ndarray,
+    vertices: list[tuple[float, float]],
+    pixel_aspect: float,
+) -> np.ndarray:
     edge_distance = np.full(x.shape, np.inf, dtype=np.float32)
-    for first, second in zip(nodes, nodes[1:] + nodes[:1]):
-        distance_mask = _soft_segment(x, y, first[0], first[1], second[0], second[1], leaf.feather, 0.0)
-        distance = (1.0 - distance_mask) * leaf.feather
-        edge_distance = np.minimum(edge_distance, distance)
-    feather = np.clip(edge_distance / max(leaf.feather, 1e-6), 0.0, 1.0)
-    return np.where(inside, 0.5 + 0.5 * feather, 0.5 - 0.5 * feather).astype(np.float32)
+    aspect = max(float(pixel_aspect), 1e-6)
+    scale_x = np.float32(max(aspect, 1.0))
+    scale_y = np.float32(max(1.0 / aspect, 1.0))
+    px = x * scale_x
+    py = y * scale_y
+    for first, second in zip(vertices, vertices[1:] + vertices[:1]):
+        x0 = np.float32(first[0]) * scale_x
+        y0 = np.float32(first[1]) * scale_y
+        dx = np.float32(second[0] - first[0]) * scale_x
+        dy = np.float32(second[1] - first[1]) * scale_y
+        denominator = max(float(dx * dx + dy * dy), 1e-12)
+        projection = np.clip(((px - x0) * dx + (py - y0) * dy) / denominator, 0.0, 1.0)
+        distance = np.sqrt((px - (x0 + projection * dx)) ** 2 + (py - (y0 + projection * dy)) ** 2)
+        edge_distance = np.minimum(edge_distance, distance.astype(np.float32))
+    return edge_distance
+
+
+def _offset_polygon(
+    vertices: list[tuple[float, float]],
+    amount: float,
+    pixel_aspect: float,
+) -> list[tuple[float, float]]:
+    """Build a stable miter-limited parallel polygon in display-correct space."""
+    if amount <= 0.0:
+        return list(vertices)
+    aspect = max(float(pixel_aspect), 1e-6)
+    scale_x = max(aspect, 1.0)
+    scale_y = max(1.0 / aspect, 1.0)
+    points = np.asarray([(vx * scale_x, vy * scale_y) for vx, vy in vertices], dtype=np.float64)
+    area = 0.5 * float(
+        np.sum(points[:, 0] * np.roll(points[:, 1], -1) - np.roll(points[:, 0], -1) * points[:, 1])
+    )
+    orientation = 1.0 if area >= 0.0 else -1.0
+    result: list[tuple[float, float]] = []
+    for index, point in enumerate(points):
+        previous = points[(index - 1) % len(points)]
+        following = points[(index + 1) % len(points)]
+        before = point - previous
+        after = following - point
+        before /= max(float(np.linalg.norm(before)), 1e-12)
+        after /= max(float(np.linalg.norm(after)), 1e-12)
+        before_normal = orientation * np.array([before[1], -before[0]], dtype=np.float64)
+        after_normal = orientation * np.array([after[1], -after[0]], dtype=np.float64)
+        miter = before_normal + after_normal
+        norm = float(np.linalg.norm(miter))
+        if norm <= 1e-8:
+            miter = after_normal
+        else:
+            miter /= norm
+        projection = max(float(np.dot(miter, after_normal)), 0.25)
+        distance = min(float(amount) / projection, float(amount) * 4.0)
+        shifted = point + miter * distance
+        result.append((float(shifted[0] / scale_x), float(shifted[1] / scale_y)))
+    return result
 
 
 def _flatten_path(leaf: MaskLeaf, steps: int = 12) -> list[tuple[float, float]]:
+    return _flatten_path_nodes(leaf.nodes, steps)
+
+
+def _flatten_path_nodes(nodes: list, steps: int = 12) -> list[tuple[float, float]]:
     vertices: list[tuple[float, float]] = []
-    nodes = leaf.nodes
     for first, second in zip(nodes, nodes[1:] + nodes[:1]):
         p0 = np.array([first.x, first.y], dtype=np.float32)
         p1 = np.array(

@@ -198,6 +198,7 @@ const localTintedMaskCanvasCache = new WeakMap();
 const localAuthoritativeMaskCache = new Map();
 const localAuthoritativeMaskRequests = new Map();
 let localMaskOverlayFrame = 0;
+let pathMarchingAntFrame = 0;
 
 const state = {
   session: null,
@@ -213,6 +214,14 @@ const state = {
   localOverlayColor: "#ff263d",
   compareWithoutLocals: false,
   localPointerGesture: null,
+  localPathDraft: null,
+  localPathCreatePendingId: null,
+  localPathEditMode: "path",
+  selectedPathNode: null,
+  pathKeyboardTarget: "node",
+  hoveredPathTarget: null,
+  localPathCursor: null,
+  pathInvalidGesture: false,
   localBrushCursor: null,
   localBrushPreviewPinned: false,
   localBrushVisibleBounds: null,
@@ -228,6 +237,8 @@ const state = {
   localErase: false,
   projectPath: "",
   globalEditDirty: false,
+  globalEditGeneration: 0,
+  globalEditSyncPending: null,
   documentDirty: false,
   scopeMode: "histogram",
   scopeChannelMode: "composite",
@@ -256,11 +267,18 @@ const state = {
   comparisonRenderedGeneration: null,
   previewGeneration: { hdr: 0, sdr: 0 },
   cropMode: false,
+  cropOpening: false,
   cropDraftGeometry: null,
+  cropEditBaseCrop: null,
   cropGuide: "none",
   cropGridDensity: 8,
   cropDrag: null,
+  geometryTool: null,
+  straightenGestureActive: false,
+  straightenPreviewBaseAngle: null,
+  straightenPreviewFrameRect: null,
   vignettePickCenter: false,
+  vignetteCenterGesture: null,
   previewCache: { hdr: null, sdr: null },
   previewControllers: { hdr: null, sdr: null },
   previewInfoByLane: {
@@ -672,6 +690,7 @@ const els = {
   comparisonImage: document.getElementById("comparison-image"),
   previewOverlay: document.getElementById("preview-overlay"),
   localMaskOverlay: document.getElementById("local-mask-overlay"),
+  straightenGridOverlay: document.getElementById("straighten-grid-overlay"),
   gradeModeGlobal: document.getElementById("grade-mode-global"),
   gradeModeLocal: document.getElementById("grade-mode-local"),
   localAdjustmentGroup: document.getElementById("local-adjustments-group"),
@@ -800,8 +819,11 @@ const els = {
   modifiedCounts: [...document.querySelectorAll("[data-modified-count]")],
   gradeModifiedSummary: document.getElementById("grade-modified-summary"),
   curveGroupState: document.getElementById("curve-group-state"),
-  cropOpen: document.getElementById("crop-open"),
   cropToolToggle: document.getElementById("crop-tool-toggle"),
+  rotateToolToggle: document.getElementById("rotate-tool-toggle"),
+  cropToolSettings: document.getElementById("crop-tool-settings"),
+  rotateToolSettings: document.getElementById("rotate-tool-settings"),
+  cropStraighten: document.getElementById("crop-straighten"),
   cropEditorOverlay: document.getElementById("crop-editor-overlay"),
   cropBox: document.getElementById("crop-box"),
   cropGuideCanvas: document.getElementById("crop-guide-canvas"),
@@ -1582,6 +1604,10 @@ function bindEvents() {
       const value = control.type === "range" || control.type === "number"
         ? Number(control.value)
         : control.type === "checkbox" ? control.checked : control.value;
+      if (control.dataset.path === "shared.geometry.straighten_angle") {
+        updateStraightenInteractive(value);
+        return;
+      }
       if (state.cropMode && isCropDraftControl(control.dataset.path)) {
         updateCropDraftControl(control.dataset.path, value);
         return;
@@ -2230,6 +2256,7 @@ async function renderPreviewForLane(
   { showProgress = true, progressSteps = [12, 76, 92], raw = !state.gpuPreview?.available } = {},
 ) {
   if (!state.session) return false;
+  if (await syncGlobalEditState() === false) return false;
   if (raw) return renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showProgress });
   const cached = state.previewCache[lane];
   const generation = state.previewGeneration[lane];
@@ -2373,6 +2400,7 @@ function applyRawPreview(frame) {
   state.gpuSurfaceHdr = false;
   state.previewInfo = state.previewInfoByLane[state.currentView];
   hidePreviewMessage();
+  clearInteractiveStraightenPreview();
   applyZoomGeometry();
   renderReadouts();
 }
@@ -3090,7 +3118,7 @@ function syncOverlayPlacement() {
   const preview = activePreviewElement();
   if (!previewIsVisible()) return;
   const paneRect = els.previewPrimaryPane.getBoundingClientRect();
-  const imageRect = preview.getBoundingClientRect();
+  const imageRect = state.straightenPreviewFrameRect || preview.getBoundingClientRect();
   if (!imageRect.width || !imageRect.height) return;
   if (els.previewOverlay.style.display !== "none") {
     els.previewOverlay.style.left = `${imageRect.left - paneRect.left + imageRect.width / 2}px`;
@@ -3356,8 +3384,20 @@ function getValueByPath(target, path) {
 }
 
 function bindCropEditor() {
-  els.cropOpen?.addEventListener("click", openCropMode);
-  els.cropToolToggle?.addEventListener("click", () => state.cropMode ? closeCropMode(true) : openCropMode());
+  els.cropToolToggle?.addEventListener("click", async () => {
+    if (state.geometryTool === "crop") {
+      closeCropMode(true);
+      return;
+    }
+    if (state.cropMode) closeCropMode(true);
+    state.geometryTool = "crop";
+    await openCropMode();
+  });
+  els.rotateToolToggle?.addEventListener("click", () => {
+    if (state.cropMode) closeCropMode(true);
+    state.geometryTool = state.geometryTool === "rotate" ? null : "rotate";
+    renderGeometryToolState();
+  });
   els.cropDone?.addEventListener("click", () => closeCropMode(true));
   els.cropCancel?.addEventListener("click", () => closeCropMode(false));
   els.cropResetFrame?.addEventListener("click", () => {
@@ -3390,16 +3430,41 @@ function bindCropEditor() {
   els.cropBox?.addEventListener("pointerdown", beginCropDrag);
   window.addEventListener("pointermove", moveCropDrag);
   window.addEventListener("pointerup", endCropDrag);
+  els.cropStraighten?.addEventListener("pointerdown", beginStraightenGesture);
+  els.cropStraighten?.addEventListener("keydown", beginStraightenGesture);
+  ["pointerup", "pointercancel", "change", "keyup"].forEach((eventName) => {
+    els.cropStraighten?.addEventListener(eventName, finishStraightenGesture);
+  });
+  renderGeometryToolState();
 }
 
-function openCropMode() {
+async function openCropMode() {
+  if (!state.session || state.cropMode || state.cropOpening) return;
+  state.cropOpening = true;
+  try {
+    // Straightening changes the largest valid source rectangle. Do not author
+    // crop coordinates against the pre-straighten bitmap while that geometry
+    // is still settling, or the same normalized frame targets a different
+    // aspect ratio when applied by the backend.
+    if (state.straightenPreviewBaseAngle !== null || state.globalEditDirty || state.globalEditSyncPending) {
+      if (await syncGlobalEditState() === false) return;
+      await renderPreviewForLane(state.currentView, true, settledProxyLongEdge(), { showProgress: false });
+    }
+  } finally {
+    state.cropOpening = false;
+  }
   if (!state.session || state.cropMode) return;
+  state.geometryTool = "crop";
   state.cropMode = true;
   state.cropDraftGeometry = JSON.parse(JSON.stringify(state.adjustments.shared.geometry));
+  state.cropEditBaseCrop = { ...state.cropDraftGeometry.crop };
+  // The preview already represents the committed crop. Author the next frame
+  // relative to that visible image, then compose it back into source space on
+  // Apply; reusing source-relative coordinates here double-crops the frame.
+  state.cropDraftGeometry.crop = { x: 0, y: 0, width: 1, height: 1 };
   els.cropEditorOverlay?.classList.remove("hidden");
-  els.cropToolToggle?.classList.add("active");
-  els.cropToolToggle?.setAttribute("aria-pressed", "true");
   els.cropEditorOverlay?.setAttribute("aria-hidden", "false");
+  renderGeometryToolState();
   renderCropOptions();
 }
 
@@ -3413,23 +3478,149 @@ function responseErrorMessage(payload, fallback) {
 function closeCropMode(commit) {
   if (!state.cropMode) return;
   const draft = state.cropDraftGeometry;
+  const baseCrop = state.cropEditBaseCrop;
   state.cropMode = false;
   state.cropDraftGeometry = null;
+  state.cropEditBaseCrop = null;
   state.cropDrag = null;
+  state.geometryTool = null;
   els.cropEditorOverlay?.classList.add("hidden");
-  els.cropToolToggle?.classList.remove("active");
-  els.cropToolToggle?.setAttribute("aria-pressed", "false");
   els.cropEditorOverlay?.setAttribute("aria-hidden", "true");
   if (commit && draft) {
+    if (baseCrop) {
+      draft.crop = {
+        x: baseCrop.x + draft.crop.x * baseCrop.width,
+        y: baseCrop.y + draft.crop.y * baseCrop.height,
+        width: draft.crop.width * baseCrop.width,
+        height: draft.crop.height * baseCrop.height,
+      };
+    }
     state.adjustments.shared.geometry = JSON.parse(JSON.stringify(draft));
   }
   syncControlsFromState();
+  renderGeometryToolState();
   renderLocalAdjustments();
   if (commit && draft) {
     invalidatePreview("hdr");
     invalidatePreview("sdr");
     debouncePreview(state.currentView);
   }
+}
+
+function renderGeometryToolState() {
+  const cropActive = state.geometryTool === "crop";
+  const rotateActive = state.geometryTool === "rotate";
+  els.cropToolToggle?.classList.toggle("active", cropActive);
+  els.cropToolToggle?.setAttribute("aria-pressed", String(cropActive));
+  els.rotateToolToggle?.classList.toggle("active", rotateActive);
+  els.rotateToolToggle?.setAttribute("aria-pressed", String(rotateActive));
+  els.cropToolSettings?.classList.toggle("hidden", !cropActive);
+  els.rotateToolSettings?.classList.toggle("hidden", !rotateActive);
+}
+
+function beginStraightenGesture(event = null) {
+  if (event?.type === "keydown" && !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(event.key)) return;
+  if (!state.session || state.straightenGestureActive) return;
+  state.straightenGestureActive = true;
+  if (state.straightenPreviewBaseAngle === null) {
+    state.straightenPreviewBaseAngle = Number(state.adjustments.shared.geometry.straighten_angle) || 0;
+  }
+  showStraightenGrid();
+  // Make any older authoritative geometry response stale without scheduling a
+  // replacement until this gesture finishes.
+  invalidatePreview("hdr");
+  invalidatePreview("sdr");
+}
+
+function updateStraightenInteractive(value) {
+  if (!state.session) return;
+  if (!state.straightenGestureActive) beginStraightenGesture();
+  const angle = clamp(Number(value) || 0, -45, 45);
+  state.adjustments.shared.geometry.straighten_angle = angle;
+  syncRangeControlFromState("shared.geometry.straighten_angle", els.cropStraighten);
+  updateControlReadouts();
+  renderControlState();
+  const delta = angle - (state.straightenPreviewBaseAngle ?? angle);
+  const frame = state.straightenPreviewFrameRect;
+  const radians = -delta * Math.PI / 180;
+  const sine = Math.sin(radians);
+  const cosine = Math.cos(radians);
+  const aspect = Math.max(0.01, (frame?.width || 1) / Math.max(1, frame?.height || 1));
+  const scale = Math.max(Math.abs(cosine) + Math.abs(sine) / aspect, Math.abs(cosine) + Math.abs(sine) * aspect);
+  const clipPolygon = [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]].map(([x, y]) => {
+    const sourceX = (cosine * x + sine * y / aspect) / scale;
+    const sourceY = (-sine * x * aspect + cosine * y) / scale;
+    return `${50 + sourceX * 100}% ${50 + sourceY * 100}%`;
+  }).join(", ");
+  [els.previewImage, els.previewCanvas, els.previewOverlay, els.chromeProofImage].forEach((preview) => {
+    preview?.style.setProperty("--interactive-straighten-angle", `${-delta}deg`);
+    preview?.style.setProperty("--interactive-straighten-scale", String(scale));
+    if (preview) preview.style.clipPath = `polygon(${clipPolygon})`;
+  });
+}
+
+function finishStraightenGesture() {
+  if (!state.straightenGestureActive) return;
+  state.straightenGestureActive = false;
+  hideStraightenGrid();
+  invalidatePreview("hdr");
+  invalidatePreview("sdr");
+  debouncePreview(state.currentView);
+}
+
+function showStraightenGrid() {
+  const canvas = els.straightenGridOverlay;
+  const preview = activePreviewElement();
+  const paneRect = els.previewPrimaryPane?.getBoundingClientRect();
+  const imageRect = preview?.getBoundingClientRect();
+  if (!canvas || !paneRect || !imageRect?.width || !imageRect?.height) return;
+  state.straightenPreviewFrameRect = {
+    left: imageRect.left,
+    top: imageRect.top,
+    width: imageRect.width,
+    height: imageRect.height,
+  };
+  Object.assign(canvas.style, {
+    left: `${imageRect.left - paneRect.left}px`,
+    top: `${imageRect.top - paneRect.top}px`,
+    width: `${imageRect.width}px`,
+    height: `${imageRect.height}px`,
+  });
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.round(imageRect.width * dpr));
+  canvas.height = Math.max(1, Math.round(imageRect.height * dpr));
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  const drawLines = (strokeStyle, lineWidth) => {
+    context.beginPath();
+    for (let index = 1; index < 6; index += 1) {
+      const x = Math.round(canvas.width * index / 6) + 0.5;
+      const y = Math.round(canvas.height * index / 6) + 0.5;
+      context.moveTo(x, 0); context.lineTo(x, canvas.height);
+      context.moveTo(0, y); context.lineTo(canvas.width, y);
+    }
+    context.strokeStyle = strokeStyle;
+    context.lineWidth = lineWidth * dpr;
+    context.stroke();
+  };
+  drawLines("rgba(0, 0, 0, .78)", 2.5);
+  drawLines("rgba(255, 255, 255, .88)", 1);
+  canvas.classList.remove("hidden");
+}
+
+function hideStraightenGrid() {
+  els.straightenGridOverlay?.classList.add("hidden");
+}
+
+function clearInteractiveStraightenPreview() {
+  if (state.straightenGestureActive || state.straightenPreviewBaseAngle === null) return;
+  state.straightenPreviewBaseAngle = null;
+  state.straightenPreviewFrameRect = null;
+  [els.previewImage, els.previewCanvas, els.previewOverlay, els.chromeProofImage].forEach((preview) => {
+    preview?.style.removeProperty("--interactive-straighten-angle");
+    preview?.style.removeProperty("--interactive-straighten-scale");
+    if (preview) preview.style.clipPath = "";
+  });
 }
 
 function rotateGeometry(delta) {
@@ -3498,14 +3689,47 @@ function cropAspectRatio() {
   return width / height;
 }
 
+function cropAuthoringFrameAspect() {
+  const geometry = activeCropGeometry();
+  const source = state.session?.source;
+  if (!source?.width || !source?.height) {
+    return Math.max(0.01, els.cropEditorOverlay.clientWidth / Math.max(1, els.cropEditorOverlay.clientHeight));
+  }
+  let width = Number(source.width);
+  let height = Number(source.height);
+  if ([90, 270].includes(geometry.rotation)) [width, height] = [height, width];
+  const angle = Math.abs(Number(geometry.straighten_angle) || 0) * Math.PI / 180;
+  const sine = Math.abs(Math.sin(angle));
+  const cosine = Math.abs(Math.cos(angle));
+  if (sine >= 1e-9) {
+    const widthIsLonger = width >= height;
+    const sideLong = widthIsLonger ? width : height;
+    const sideShort = widthIsLonger ? height : width;
+    let safeWidth;
+    let safeHeight;
+    if (sideShort <= 2 * sine * cosine * sideLong || Math.abs(sine - cosine) < 1e-9) {
+      const halfShort = 0.5 * sideShort;
+      safeWidth = widthIsLonger ? halfShort / sine : halfShort / cosine;
+      safeHeight = widthIsLonger ? halfShort / cosine : halfShort / sine;
+    } else {
+      const cosineDouble = cosine * cosine - sine * sine;
+      safeWidth = (width * cosine - height * sine) / cosineDouble;
+      safeHeight = (height * cosine - width * sine) / cosineDouble;
+    }
+    width = Math.max(1, Math.floor(Math.abs(safeWidth)) - 4);
+    height = Math.max(1, Math.floor(Math.abs(safeHeight)) - 4);
+  }
+  const baseCrop = state.cropEditBaseCrop || geometry.crop || { width: 1, height: 1 };
+  return Math.max(0.01, (width * baseCrop.width) / Math.max(1e-6, height * baseCrop.height));
+}
+
 function constrainCropToRatio() {
   const ratio = cropAspectRatio();
   if (!ratio) return renderCropFrame();
-  const paneRatio = Math.max(0.01, els.cropEditorOverlay.clientWidth / Math.max(1, els.cropEditorOverlay.clientHeight));
   const crop = activeCropGeometry().crop;
   const centerX = crop.x + crop.width / 2;
   const centerY = crop.y + crop.height / 2;
-  const normalizedRatio = ratio / paneRatio;
+  const normalizedRatio = ratio / cropAuthoringFrameAspect();
   let width = crop.width;
   let height = width / normalizedRatio;
   if (height > crop.height) {
@@ -3708,7 +3932,7 @@ function moveCropDrag(event) {
 function endCropDrag() { state.cropDrag = null; }
 
 function constrainDraggedCrop(next, drag, ratio) {
-  const normalizedRatio = ratio / (drag.rect.width / Math.max(1, drag.rect.height));
+  const normalizedRatio = ratio / cropAuthoringFrameAspect();
   const source = drag.crop;
   const anchorX = drag.handle.includes("w") ? source.x + source.width : source.x;
   const anchorY = drag.handle.includes("n") ? source.y + source.height : source.y;
@@ -3822,11 +4046,45 @@ function bindVignetteCenter() {
     state.vignettePickCenter = !state.vignettePickCenter;
     renderVignetteCenter();
   });
-  els.vignetteCenterHandle?.addEventListener("pointerdown", (event) => els.vignetteCenterHandle.setPointerCapture(event.pointerId));
-  els.vignetteCenterHandle?.addEventListener("pointermove", (event) => {
-    if (!els.vignetteCenterHandle.hasPointerCapture(event.pointerId)) return;
-    const rect = activePreviewElement().getBoundingClientRect();
-    updateVignetteCenter((event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height);
+  const movePointerGesture = (event) => {
+    const gesture = state.vignetteCenterGesture;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    updateVignetteCenter(
+      (event.clientX - gesture.grabOffsetX - gesture.rect.left) / gesture.rect.width,
+      (event.clientY - gesture.grabOffsetY - gesture.rect.top) / gesture.rect.height,
+      gesture.lane,
+    );
+  };
+  const finishPointerGesture = (event) => {
+    const gesture = state.vignetteCenterGesture;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    state.vignetteCenterGesture = null;
+    window.removeEventListener("pointermove", movePointerGesture);
+    window.removeEventListener("pointerup", finishPointerGesture);
+    window.removeEventListener("pointercancel", finishPointerGesture);
+    renderVignetteCenter();
+    invalidatePreview(gesture.lane);
+    debouncePreview(gesture.lane);
+    state.previewScheduler?.endInteraction();
+  };
+  els.vignetteCenterHandle?.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || !state.session) return;
+    const rect = activePreviewElement()?.getBoundingClientRect();
+    const vignette = state.adjustments[state.currentView]?.vignette;
+    if (!rect?.width || !rect?.height || !vignette) return;
+    event.preventDefault();
+    state.vignetteCenterGesture = {
+      pointerId: event.pointerId,
+      lane: state.currentView,
+      rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+      grabOffsetX: event.clientX - (rect.left + rect.width * vignette.center_x),
+      grabOffsetY: event.clientY - (rect.top + rect.height * vignette.center_y),
+    };
+    state.previewScheduler?.beginInteraction();
+    window.addEventListener("pointermove", movePointerGesture);
+    window.addEventListener("pointerup", finishPointerGesture);
+    window.addEventListener("pointercancel", finishPointerGesture);
   });
   els.vignetteCenterHandle?.addEventListener("keydown", (event) => {
     if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
@@ -3841,10 +4099,11 @@ function bindVignetteCenter() {
   });
 }
 
-function updateVignetteCenter(x, y) {
-  const vignette = state.adjustments[state.currentView].vignette;
+function updateVignetteCenter(x, y, lane = state.currentView) {
+  const vignette = state.adjustments[lane].vignette;
   vignette.center_x = Math.max(0, Math.min(1, x)); vignette.center_y = Math.max(0, Math.min(1, y));
-  renderVignetteCenter(); invalidatePreview(state.currentView); debouncePreview(state.currentView);
+  if (lane === state.currentView) renderVignetteCenter();
+  invalidatePreview(lane); debouncePreview(lane);
 }
 
 function renderVignetteCenter() {
@@ -5160,6 +5419,7 @@ async function applyPreviewUrl(url) {
   els.previewCanvas.style.display = "none";
   els.previewImage.style.display = "block";
   els.emptyState.style.display = "none";
+  clearInteractiveStraightenPreview();
   setZoomMode(state.zoomMode);
   syncOverlayPlacement();
   updateZoomReadout();
@@ -5595,6 +5855,7 @@ function renderLaneChrome() {
 function invalidatePreview(lane, { local = false } = {}) {
   if (!local && state.session) {
     state.globalEditDirty = true;
+    state.globalEditGeneration += 1;
     state.documentDirty = true;
   }
   state.previewGeneration[lane] += 1;
@@ -6573,13 +6834,10 @@ function newMaskLeaf(type) {
   }
   return {
     type: "path",
-    nodes: [
-      { x: 0.3, y: 0.3, node_type: "smooth" },
-      { x: 0.7, y: 0.3, node_type: "smooth" },
-      { x: 0.7, y: 0.7, node_type: "smooth" },
-      { x: 0.3, y: 0.7, node_type: "smooth" },
-    ],
+    nodes: [],
     feather: 0.02,
+    feather_mode: "outer_boundary",
+    feather_nodes: [],
   };
 }
 
@@ -6596,9 +6854,47 @@ function newLocalAdjustment(type) {
   };
 }
 
+async function finishLocalPathDraft() {
+  const draft = state.localPathDraft;
+  if (!draft || draft.finishing) return false;
+  const local = localAdjustments().find((item) => item.id === draft.localId);
+  const leaf = firstMaskLeaf(local?.mask, "path");
+  if (!local || !leaf || leaf.nodes.length < 3) {
+    cancelLocalPathDraft();
+    return false;
+  }
+  draft.finishing = true;
+  state.localPathCreatePendingId = local.id;
+  state.localPathDraft = null;
+  state.selectedPathNode = 0;
+  renderLocalAdjustments();
+  const created = await queueEditCommand("create_local", { local: JSON.parse(JSON.stringify(local)) });
+  state.localPathCreatePendingId = null;
+  if (!created) {
+    const index = localAdjustments().findIndex((item) => item.id === local.id);
+    if (index >= 0) localAdjustments().splice(index, 1);
+    state.selectedLocalId = localAdjustments().at(-1)?.id || null;
+    renderLocalAdjustments();
+  }
+  return created;
+}
+
+function cancelLocalPathDraft() {
+  const draft = state.localPathDraft;
+  if (!draft) return;
+  const index = localAdjustments().findIndex((item) => item.id === draft.localId);
+  if (index >= 0) localAdjustments().splice(index, 1);
+  state.localPathDraft = null;
+  state.localPointerGesture = null;
+  state.selectedPathNode = null;
+  state.selectedLocalId = localAdjustments().at(-1)?.id || null;
+  renderLocalAdjustments();
+}
+
 function bindLocalAdjustmentEvents() {
   els.gradeModeGlobal?.addEventListener("click", () => setGradeMode("global"));
   els.localToolButtons.forEach((button) => button.addEventListener("click", async () => {
+    if (state.localPathDraft) await finishLocalPathDraft();
     if (!state.session) {
       els.badge.textContent = "Load an image before creating a local adjustment.";
       els.badge.className = "badge warn";
@@ -6619,6 +6915,16 @@ function bindLocalAdjustmentEvents() {
     const local = newLocalAdjustment(state.localTool);
     state.selectedLocalId = local.id;
     setGradeMode("local");
+    if (state.localTool === "path") {
+      state.editDocument.local_adjustments.push(local);
+      state.localPathDraft = { localId: local.id, finishing: false };
+      state.localPathEditMode = "path";
+      state.selectedPathNode = null;
+      state.localShowMask = true;
+      renderLocalAdjustments();
+      els.localMaskOverlay?.focus({ preventScroll: true });
+      return;
+    }
     const created = await queueEditCommand("create_local", { local });
     if (!created) {
       state.selectedLocalId = localAdjustments()[0]?.id || null;
@@ -6656,11 +6962,22 @@ function bindLocalAdjustmentEvents() {
     renderLocalAdjustments();
   });
   document.addEventListener("pointerdown", (event) => {
+    if (state.localPathDraft && !event.target.closest("#local-mask-overlay")) void finishLocalPathDraft();
     if (!state.localAdjustmentMenuId || event.target.closest(".local-adjustment-menu, .local-adjustment-menu-button")) return;
     state.localAdjustmentMenuId = null;
     renderLocalAdjustments();
   });
   document.addEventListener("keydown", (event) => {
+    if (state.localPathDraft && event.key === "Escape") {
+      event.preventDefault();
+      cancelLocalPathDraft();
+      return;
+    }
+    if (state.localPathDraft && event.key === "Enter") {
+      event.preventDefault();
+      void finishLocalPathDraft();
+      return;
+    }
     if (event.key !== "Escape" || !state.localAdjustmentMenuId) return;
     state.localAdjustmentMenuId = null;
     renderLocalAdjustments();
@@ -6683,6 +7000,7 @@ function bindLocalAdjustmentEvents() {
       if (!local) return;
       local[`${state.currentView}_grade`][control.dataset.localGrade] = Number(control.value);
       updateLocalGradeOutput(control.dataset.localGrade, Number(control.value));
+      hideLocalMaskOverlayForGradePreview();
       scheduleLocalPreview();
     });
     control.addEventListener("change", () => commitSelectedLocal({ refreshPreview: false }));
@@ -6877,8 +7195,7 @@ function renderLocalAdjustments() {
     els.localInvert.setAttribute("aria-pressed", String(Boolean(local.mask.inverted)));
     els.localInvert.textContent = local.mask.inverted ? "Restore mask" : "Invert mask";
     els.localInvert.disabled = Boolean(brushLeaf && !(brushLeaf.strokes || []).length);
-    els.localShowMask.setAttribute("aria-pressed", String(state.localShowMask));
-    els.localShowMask.innerHTML = `<span class="local-overlay-icon" aria-hidden="true"></span><span>${state.localShowMask ? "Hide overlay" : "Show overlay"}</span>`;
+    syncLocalMaskOverlayControl();
     els.localLaneButtons.forEach((button) => {
       const active = button.dataset.localLane === state.currentView;
       button.classList.toggle("active", active);
@@ -6928,6 +7245,20 @@ function updateLocalGradeOutput(name, value) {
   if (name === "exposure") output.textContent = `${value.toFixed(2)} EV`;
   else if (name === "white_balance_kelvin") output.textContent = `${Math.round(value)} K`;
   else output.textContent = Math.abs(value) < 0.005 ? "0" : value.toFixed(2);
+}
+
+function syncLocalMaskOverlayControl() {
+  if (!els.localShowMask) return;
+  els.localShowMask.setAttribute("aria-pressed", String(state.localShowMask));
+  els.localShowMask.innerHTML = `<span class="local-overlay-icon" aria-hidden="true"></span><span>${state.localShowMask ? "Hide overlay" : "Show overlay"}</span>`;
+}
+
+function hideLocalMaskOverlayForGradePreview() {
+  if (!state.localShowMask) return;
+  state.localShowMask = false;
+  syncLocalMaskOverlayControl();
+  if (gpuLumaMaskPreviewActive()) scheduleLocalPreview();
+  queueLocalMaskOverlayRender();
 }
 
 function bindLocalPreviewInteraction(control) {
@@ -7059,15 +7390,130 @@ function renderMaskTreeEditor(local) {
     maskPanel.append(actions);
     els.localMaskTreeSummary.append(brushPanel, maskPanel);
   } else if (leaf.type === "path") {
-    const label = document.createElement("label");
-    label.textContent = "feather";
-    const input = document.createElement("input");
-    Object.assign(input, { type: "range", min: "0", max: "0.5", step: "0.002", value: String(leaf.feather || 0) });
-    input.dataset.defaultValue = "0";
-    input.addEventListener("change", () => { leaf.feather = Number(input.value); commitSelectedLocal(); });
-    label.append(input);
-    els.localMaskTreeSummary.append(label);
+    renderPathControls(local, leaf);
   }
+}
+
+function renderPathControls(local, leaf) {
+  const panel = createLocalMaskSubpanel("Path Controls", state.localPathDraft ? "Click for corners · drag for curves" : "Edit one boundary at a time");
+  const modeSwitch = document.createElement("div");
+  modeSwitch.className = "path-edit-mode";
+  modeSwitch.setAttribute("role", "group");
+  modeSwitch.setAttribute("aria-label", "Path boundary to edit");
+  for (const mode of ["path", "feather"]) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "path-mode-button";
+    button.textContent = mode === "path" ? "Path" : "Feather";
+    button.classList.toggle("active", state.localPathEditMode === mode);
+    button.setAttribute("aria-pressed", String(state.localPathEditMode === mode));
+    button.disabled = Boolean(state.localPathDraft && mode === "feather");
+    button.addEventListener("click", async () => {
+      if (mode === "feather") {
+        if (leaf.feather_mode !== "outer_boundary") leaf.feather_mode = "outer_boundary";
+        materializeFeatherNodes(leaf);
+      }
+      state.localPathEditMode = mode;
+      state.selectedPathNode = null;
+      state.pathKeyboardTarget = "node";
+      renderMaskTreeEditor(local);
+      queueLocalMaskOverlayRender();
+      if (mode === "feather") await commitSelectedLocal();
+    });
+    modeSwitch.append(button);
+  }
+  panel.append(modeSwitch);
+
+  if (!state.localPathDraft) {
+    const nodes = activePathNodes(leaf);
+    const selected = state.selectedPathNode === null ? null : nodes[state.selectedPathNode];
+    const status = document.createElement("p");
+    status.className = "path-node-status";
+    status.setAttribute("aria-live", "polite");
+    status.textContent = selected
+      ? `${state.localPathEditMode === "path" ? "Path" : "Feather"} node ${state.selectedPathNode + 1} of ${nodes.length} · ${selected.node_type}`
+      : "Select a node to edit its profile.";
+    panel.append(status);
+
+    const nodeModes = document.createElement("div");
+    nodeModes.className = "path-node-modes";
+    nodeModes.setAttribute("role", "group");
+    nodeModes.setAttribute("aria-label", "Selected node profile");
+    for (const nodeType of ["sharp", "smooth"]) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `path-node-mode path-node-mode-${nodeType}`;
+      button.disabled = !selected;
+      button.classList.toggle("active", selected?.node_type === nodeType);
+      button.setAttribute("aria-pressed", String(selected?.node_type === nodeType));
+      button.title = nodeType === "sharp" ? "Retract handles and make a sharp corner" : "Create a continuous smooth tangent";
+      const icon = document.createElement("span");
+      icon.className = "path-node-mode-icon";
+      icon.setAttribute("aria-hidden", "true");
+      const label = document.createElement("span");
+      label.textContent = nodeType === "sharp" ? "Sharp" : "Smooth";
+      button.append(icon, label);
+      button.addEventListener("click", () => setSelectedPathNodeType(leaf, nodeType));
+      nodeModes.append(button);
+    }
+    panel.append(nodeModes);
+  }
+
+  panel.append(createPathFeatherControl(local, leaf));
+  const actions = document.createElement("div");
+  actions.className = "path-feather-actions";
+  const reset = document.createElement("button");
+  reset.type = "button";
+  reset.textContent = "Reset feather shape";
+  reset.disabled = state.localPathDraft || leaf.feather_mode !== "outer_boundary";
+  reset.addEventListener("click", () => {
+    leaf.feather_nodes = uniformFeatherNodes(leaf.nodes, Number(leaf.feather || 0));
+    state.localPathEditMode = "feather";
+    state.selectedPathNode = null;
+    scheduleSpatialMaskPreview(local);
+    renderMaskTreeEditor(local);
+    queueLocalMaskOverlayRender();
+    commitSelectedLocal();
+  });
+  actions.append(reset);
+  panel.append(actions);
+  els.localMaskTreeSummary.append(panel);
+}
+
+function createPathFeatherControl(local, leaf) {
+  const label = document.createElement("label");
+  label.className = "local-brush-control control-row instrument-slider-control";
+  const heading = document.createElement("span");
+  heading.className = "instrument-control-label";
+  heading.textContent = "Feather";
+  const output = document.createElement("output");
+  output.textContent = `${Math.round(Number(leaf.feather || 0) * 200)}%`;
+  const input = document.createElement("input");
+  Object.assign(input, { type: "range", min: "0", max: "100", step: "1", value: String(Number(leaf.feather || 0) * 200) });
+  input.dataset.defaultValue = "4";
+  input.addEventListener("input", () => {
+    const previous = Number(leaf.feather || 0);
+    const next = Number(input.value) / 200;
+    if (leaf.feather_nodes?.length) {
+      const proposed = offsetBoundaryNodes(leaf.feather_nodes, next - previous);
+      if (!validFeatherGeometry(leaf.nodes, proposed)) {
+        input.value = String(previous * 200);
+        state.pathInvalidGesture = true;
+        queueLocalMaskOverlayRender();
+        return;
+      }
+      leaf.feather_nodes = proposed;
+    }
+    leaf.feather = next;
+    output.textContent = `${Math.round(Number(input.value))}%`;
+    state.pathInvalidGesture = false;
+    scheduleSpatialMaskPreview(local);
+    queueLocalMaskOverlayRender();
+  });
+  input.addEventListener("change", () => commitSelectedLocal());
+  bindLocalPreviewInteraction(input);
+  label.append(heading, output, input);
+  return label;
 }
 
 function createLuminanceRangeControl(local, leaf) {
@@ -7548,9 +7994,9 @@ async function commitSelectedLocal({ refreshPreview = true } = {}) {
   }
 }
 
-function queueEditCommand(commandType, payload = {}, targetId = null, { refreshPreview = true } = {}) {
+function queueEditCommand(commandType, payload = {}, targetId = null, { refreshPreview = true, globalEditGeneration = null } = {}) {
   if (commandType !== "set_global_adjustments" && state.globalEditDirty) {
-    return syncGlobalEditState().then(() => queueEditCommand(commandType, payload, targetId, { refreshPreview }));
+    return syncGlobalEditState().then(() => queueEditCommand(commandType, payload, targetId, { refreshPreview, globalEditGeneration }));
   }
   state.editCommandQueue = (state.editCommandQueue || Promise.resolve()).then(async () => {
     if (!state.session) return false;
@@ -7571,11 +8017,15 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
     const optimisticLocals = (state.localMaskCommitDepth > 0 || state.localPointerGesture)
       ? state.editDocument?.local_adjustments
       : null;
+    const preserveNewerGlobalEdit = globalEditGeneration !== null
+      && globalEditGeneration !== state.globalEditGeneration;
+    const optimisticAdjustments = preserveNewerGlobalEdit ? state.adjustments : null;
     state.editRevision = result.revision;
     state.editDocument = result.document;
     if (optimisticLocals) state.editDocument.local_adjustments = optimisticLocals;
-    state.documentDirty = Boolean(result.dirty);
-    state.adjustments = result.document.global_adjustments;
+    if (optimisticAdjustments) state.editDocument.global_adjustments = optimisticAdjustments;
+    state.documentDirty = preserveNewerGlobalEdit || Boolean(result.dirty);
+    state.adjustments = optimisticAdjustments || result.document.global_adjustments;
     renderLocalAdjustments();
     if (refreshPreview) {
       invalidatePreview("hdr", { local: true });
@@ -7593,12 +8043,24 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
 }
 
 async function syncGlobalEditState() {
-  if (!state.session || !state.globalEditDirty) return true;
+  if (!state.session) return true;
+  if (!state.globalEditDirty) {
+    const pending = state.globalEditSyncPending;
+    if (!pending) return true;
+    const applied = await pending;
+    if (!applied) return false;
+    return state.globalEditDirty || state.globalEditSyncPending ? syncGlobalEditState() : true;
+  }
   state.globalEditDirty = false;
+  const generation = state.globalEditGeneration;
   const adjustments = JSON.parse(JSON.stringify(state.adjustments));
-  const applied = await queueEditCommand("set_global_adjustments", { adjustments });
+  const pending = queueEditCommand("set_global_adjustments", { adjustments }, null, { globalEditGeneration: generation });
+  state.globalEditSyncPending = pending;
+  const applied = await pending;
+  if (state.globalEditSyncPending === pending) state.globalEditSyncPending = null;
   if (!applied) state.globalEditDirty = true;
-  return applied;
+  if (!applied) return false;
+  return state.globalEditDirty || state.globalEditSyncPending ? syncGlobalEditState() : true;
 }
 
 async function refreshEditState({ preserveLocalDraft = false } = {}) {
@@ -7673,13 +8135,64 @@ function bindLocalMaskCanvas() {
         points: [point],
       };
     } else if (leaf.type === "path") {
-      const nearest = leaf.nodes.reduce((best, node, index) => {
-        const distance = (node.x - point.x) ** 2 + (node.y - point.y) ** 2;
-        return distance < best.distance ? { index, distance } : best;
-      }, { index: 0, distance: Infinity });
-      state.localPointerGesture = { type: "path", leaf, nodeIndex: nearest.index };
-      leaf.nodes[nearest.index].x = point.x;
-      leaf.nodes[nearest.index].y = point.y;
+      const draft = state.localPathDraft?.localId === local.id;
+      const nodes = draft ? leaf.nodes : activePathNodes(leaf);
+      const target = pathTargetAtPointer(event, nodes, state.selectedPathNode);
+      if (draft) {
+        if (target?.type === "node" && target.index === 0 && nodes.length >= 3) {
+          if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+          void finishLocalPathDraft();
+          return;
+        }
+        const node = { x: point.x, y: point.y, in_x: null, in_y: null, out_x: null, out_y: null, node_type: "sharp" };
+        nodes.push(node);
+        state.selectedPathNode = nodes.length - 1;
+        state.localPointerGesture = {
+          type: "path_create_node",
+          leaf,
+          nodeIndex: nodes.length - 1,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          origin: { ...point },
+        };
+      } else if (target?.type === "handle") {
+        state.selectedPathNode = target.index;
+        state.localPointerGesture = {
+          type: "path_handle",
+          leaf,
+          nodes,
+          nodeIndex: target.index,
+          handle: target.handle,
+          before: JSON.parse(JSON.stringify(nodes)),
+          changed: false,
+        };
+      } else if (target?.type === "node") {
+        state.selectedPathNode = target.index;
+        state.pathKeyboardTarget = "node";
+        state.localPointerGesture = {
+          type: "path_node",
+          leaf,
+          nodes,
+          nodeIndex: target.index,
+          before: JSON.parse(JSON.stringify(nodes)),
+          origin: { ...nodes[target.index] },
+          changed: false,
+        };
+        renderMaskTreeEditor(local);
+      } else if (target?.type === "curve") {
+        const before = JSON.parse(JSON.stringify(nodes));
+        const inserted = splitPathSegment(nodes, target.segment, target.t);
+        const valid = state.localPathEditMode === "feather"
+          ? validFeatherGeometry(leaf.nodes, nodes)
+          : validPathGeometry(leaf, nodes);
+        if (!valid) nodes.splice(0, nodes.length, ...before);
+        else {
+          state.selectedPathNode = inserted;
+          scheduleSpatialMaskPreview(local);
+          renderMaskTreeEditor(local);
+          commitSelectedLocal();
+        }
+      }
     }
     renderLocalMaskOverlay();
   });
@@ -7687,6 +8200,8 @@ function bindLocalMaskCanvas() {
     const gesture = state.localPointerGesture;
     const point = localPointerPoint(event);
     if (!point) return;
+    const hoveredPathLeaf = firstMaskLeaf(selectedLocal()?.mask, "path");
+    if (hoveredPathLeaf) state.localPathCursor = point;
     const activeLeaf = firstMaskLeaf(selectedLocal()?.mask, "brush");
     if (activeLeaf && state.localTool === "brush") {
       state.localBrushCursor = point;
@@ -7694,12 +8209,24 @@ function bindLocalMaskCanvas() {
     }
     if (!gesture) {
       if (activeLeaf && state.localTool === "brush") queueLocalMaskOverlayRender();
+      const pathLeaf = firstMaskLeaf(selectedLocal()?.mask, "path");
+      if (pathLeaf) {
+        const nodes = state.localPathDraft ? pathLeaf.nodes : activePathNodes(pathLeaf);
+        const hovered = pathTargetAtPointer(event, nodes, state.selectedPathNode);
+        const signature = hovered ? `${hovered.type}:${hovered.index ?? hovered.segment}:${hovered.handle || ""}` : "";
+        if (signature !== state.hoveredPathTarget?.signature) {
+          state.hoveredPathTarget = hovered ? { ...hovered, signature } : null;
+          queueLocalMaskOverlayRender();
+        }
+      }
       return;
     }
     if (gesture.type === "brush") appendBrushPointerPoints(gesture.stroke, event);
     else if (gesture.type === "linear_gradient") updateGradientGesture(gesture, point);
     else if (gesture.type === "luminance_sample") appendLuminanceSamplePoint(gesture, point);
-    else if (gesture.type === "path") Object.assign(gesture.leaf.nodes[gesture.nodeIndex], point);
+    else if (gesture.type === "path_create_node") updatePathCreationGesture(gesture, event, point);
+    else if (gesture.type === "path_node") updatePathNodeGesture(gesture, point);
+    else if (gesture.type === "path_handle") updatePathHandleGesture(gesture, point);
     queueLocalMaskOverlayRender();
   });
   const end = async (event) => {
@@ -7712,10 +8239,43 @@ function bindLocalMaskCanvas() {
       await finishLuminanceSampleGesture(gesture);
       return;
     }
+    if (gesture.type === "path_create_node") {
+      renderMaskTreeEditor(selectedLocal());
+      queueLocalMaskOverlayRender();
+      return;
+    }
+    if ((gesture.type === "path_node" || gesture.type === "path_handle") && !gesture.changed) {
+      renderMaskTreeEditor(selectedLocal());
+      queueLocalMaskOverlayRender();
+      return;
+    }
     await commitSelectedLocal();
   };
   canvas.addEventListener("pointerup", end);
   canvas.addEventListener("pointercancel", end);
+  canvas.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    const local = selectedLocal();
+    const leaf = firstMaskLeaf(local?.mask, "path");
+    if (!leaf || state.localPathDraft) return;
+    const nodes = activePathNodes(leaf);
+    const target = pathTargetAtPointer(event, nodes, state.selectedPathNode);
+    if (target?.type !== "node" || nodes.length <= 3) return;
+    const before = JSON.parse(JSON.stringify(nodes));
+    nodes.splice(target.index, 1);
+    const valid = state.localPathEditMode === "feather"
+      ? validFeatherGeometry(leaf.nodes, nodes)
+      : validPathGeometry(leaf, nodes);
+    if (!valid) nodes.splice(0, nodes.length, ...before);
+    else {
+      state.selectedPathNode = Math.min(target.index, nodes.length - 1);
+      scheduleSpatialMaskPreview(local);
+      renderMaskTreeEditor(local);
+      queueLocalMaskOverlayRender();
+      commitSelectedLocal();
+    }
+  });
+  canvas.addEventListener("keydown", (event) => handlePathCanvasKeydown(event));
   canvas.addEventListener("pointerleave", () => {
     if (state.localPointerGesture) return;
     if (!state.localBrushPreviewPinned) state.localBrushCursor = null;
@@ -7849,16 +8409,441 @@ function updateGradientGesture(gesture, point) {
   scheduleAuthoritativeLocalMaskDraft(selectedLocal());
 }
 
+function activePathNodes(leaf) {
+  if (state.localPathEditMode !== "feather") return leaf.nodes || [];
+  materializeFeatherNodes(leaf);
+  return leaf.feather_nodes || [];
+}
+
+function materializeFeatherNodes(leaf) {
+  if (!leaf || leaf.type !== "path" || leaf.feather_nodes?.length) return;
+  leaf.feather_nodes = uniformFeatherNodes(leaf.nodes || [], Number(leaf.feather || 0));
+}
+
+function pathDisplayScale() {
+  const rect = activePreviewElement()?.getBoundingClientRect();
+  if (!rect) return { x: 1, y: 1 };
+  const short = Math.max(1, Math.min(rect.width, rect.height));
+  return { x: rect.width / short, y: rect.height / short };
+}
+
+function pathNodeVector(nodes, index) {
+  const count = nodes.length;
+  const node = nodes[index];
+  const previous = nodes[(index - 1 + count) % count];
+  const next = nodes[(index + 1) % count];
+  const scale = pathDisplayScale();
+  const before = {
+    x: (node.x - previous.x) * scale.x,
+    y: (node.y - previous.y) * scale.y,
+  };
+  const after = {
+    x: (next.x - node.x) * scale.x,
+    y: (next.y - node.y) * scale.y,
+  };
+  const normalize = (vector) => {
+    const length = Math.hypot(vector.x, vector.y) || 1;
+    return { x: vector.x / length, y: vector.y / length };
+  };
+  return { before: normalize(before), after: normalize(after) };
+}
+
+function pathSignedArea(nodes) {
+  const scale = pathDisplayScale();
+  return nodes.reduce((sum, node, index) => {
+    const next = nodes[(index + 1) % nodes.length];
+    return sum + node.x * scale.x * next.y * scale.y - next.x * scale.x * node.y * scale.y;
+  }, 0) * 0.5;
+}
+
+function pathOutwardShift(nodes, index, amount) {
+  if (!nodes.length || amount === 0) return { x: 0, y: 0 };
+  const orientation = pathSignedArea(nodes) >= 0 ? 1 : -1;
+  const { before, after } = pathNodeVector(nodes, index);
+  const beforeNormal = { x: orientation * before.y, y: -orientation * before.x };
+  const afterNormal = { x: orientation * after.y, y: -orientation * after.x };
+  let mx = beforeNormal.x + afterNormal.x;
+  let my = beforeNormal.y + afterNormal.y;
+  const length = Math.hypot(mx, my);
+  if (length < 1e-6) {
+    mx = afterNormal.x;
+    my = afterNormal.y;
+  } else {
+    mx /= length;
+    my /= length;
+  }
+  const projection = Math.max(0.25, mx * afterNormal.x + my * afterNormal.y);
+  const distance = Math.min(Math.abs(amount) / projection, Math.abs(amount) * 4) * Math.sign(amount);
+  const scale = pathDisplayScale();
+  return { x: mx * distance / scale.x, y: my * distance / scale.y };
+}
+
+function translatedPathNode(node, shift) {
+  const { feather: _unusedFeather, ...baseNode } = node;
+  const translated = {
+    ...baseNode,
+    x: clamp(Number(node.x) + shift.x, -1, 2),
+    y: clamp(Number(node.y) + shift.y, -1, 2),
+  };
+  for (const prefix of ["in", "out"]) {
+    if (node[`${prefix}_x`] === null || node[`${prefix}_x`] === undefined) continue;
+    translated[`${prefix}_x`] = clamp(Number(node[`${prefix}_x`]) + shift.x, -1, 2);
+    translated[`${prefix}_y`] = clamp(Number(node[`${prefix}_y`]) + shift.y, -1, 2);
+  }
+  return translated;
+}
+
+function uniformFeatherNodes(nodes, amount) {
+  if (!nodes?.length) return [];
+  return nodes.map((node, index) => translatedPathNode(node, pathOutwardShift(nodes, index, amount)));
+}
+
+function offsetBoundaryNodes(nodes, amount) {
+  if (!nodes?.length || Math.abs(amount) < 1e-9) return JSON.parse(JSON.stringify(nodes || []));
+  return nodes.map((node, index) => translatedPathNode(node, pathOutwardShift(nodes, index, amount)));
+}
+
+function cubicPathPoint(first, second, t) {
+  const p0 = { x: Number(first.x), y: Number(first.y) };
+  const p1 = { x: Number(first.out_x ?? first.x), y: Number(first.out_y ?? first.y) };
+  const p2 = { x: Number(second.in_x ?? second.x), y: Number(second.in_y ?? second.y) };
+  const p3 = { x: Number(second.x), y: Number(second.y) };
+  const inverse = 1 - t;
+  return {
+    x: inverse ** 3 * p0.x + 3 * inverse ** 2 * t * p1.x + 3 * inverse * t ** 2 * p2.x + t ** 3 * p3.x,
+    y: inverse ** 3 * p0.y + 3 * inverse ** 2 * t * p1.y + 3 * inverse * t ** 2 * p2.y + t ** 3 * p3.y,
+  };
+}
+
+function flattenPathNodes(nodes, steps = 16) {
+  const points = [];
+  if (!nodes?.length) return points;
+  for (let index = 0; index < nodes.length; index += 1) {
+    const first = nodes[index];
+    const second = nodes[(index + 1) % nodes.length];
+    const curved = first.out_x !== null && first.out_x !== undefined || second.in_x !== null && second.in_x !== undefined;
+    const count = curved ? steps : 1;
+    for (let sample = 0; sample < count; sample += 1) points.push(cubicPathPoint(first, second, sample / count));
+  }
+  return points;
+}
+
+function pointInsidePathPolygon(point, polygon) {
+  let inside = false;
+  for (let index = 0, previous = polygon.length - 1; index < polygon.length; previous = index++) {
+    const a = polygon[index];
+    const b = polygon[previous];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const denominator = Math.max(dx * dx + dy * dy, 1e-12);
+    const projection = clamp(((point.x - a.x) * dx + (point.y - a.y) * dy) / denominator, 0, 1);
+    if (Math.hypot(point.x - (a.x + projection * dx), point.y - (a.y + projection * dy)) <= 1e-6) return true;
+    if ((a.y > point.y) !== (b.y > point.y) && point.x < (b.x - a.x) * (point.y - a.y) / (b.y - a.y + 1e-12) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+function pathSegmentsIntersect(a, b, c, d) {
+  const orientation = (p, q, r) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  const abC = orientation(a, b, c);
+  const abD = orientation(a, b, d);
+  const cdA = orientation(c, d, a);
+  const cdB = orientation(c, d, b);
+  return ((abC > 1e-8 && abD < -1e-8) || (abC < -1e-8 && abD > 1e-8))
+    && ((cdA > 1e-8 && cdB < -1e-8) || (cdA < -1e-8 && cdB > 1e-8));
+}
+
+function simplePathPolygon(polygon) {
+  if (polygon.length < 3) return false;
+  for (let first = 0; first < polygon.length; first += 1) {
+    const firstNext = (first + 1) % polygon.length;
+    for (let second = first + 1; second < polygon.length; second += 1) {
+      const secondNext = (second + 1) % polygon.length;
+      if (first === second || firstNext === second || secondNext === first) continue;
+      if (first === 0 && secondNext === 0) continue;
+      if (pathSegmentsIntersect(polygon[first], polygon[firstNext], polygon[second], polygon[secondNext])) return false;
+    }
+  }
+  return true;
+}
+
+function validFeatherGeometry(innerNodes, outerNodes) {
+  if (!innerNodes?.length || !outerNodes?.length) return false;
+  const inner = flattenPathNodes(innerNodes);
+  const outer = flattenPathNodes(outerNodes);
+  return simplePathPolygon(inner) && simplePathPolygon(outer) && inner.every((point) => pointInsidePathPolygon(point, outer));
+}
+
+function validPathGeometry(leaf, nodes) {
+  const polygon = flattenPathNodes(nodes);
+  if (!simplePathPolygon(polygon)) return false;
+  return !leaf.feather_nodes?.length || validFeatherGeometry(nodes, leaf.feather_nodes);
+}
+
+function setSelectedPathNodeType(leaf, nodeType) {
+  const nodes = activePathNodes(leaf);
+  const index = state.selectedPathNode;
+  const node = index === null ? null : nodes[index];
+  if (!node) return;
+  if (nodeType === "sharp") {
+    node.node_type = "sharp";
+    node.in_x = node.in_y = node.out_x = node.out_y = null;
+  } else {
+    const previous = nodes[(index - 1 + nodes.length) % nodes.length];
+    const next = nodes[(index + 1) % nodes.length];
+    const dx = next.x - previous.x;
+    const dy = next.y - previous.y;
+    const length = Math.hypot(dx, dy) || 1;
+    const ux = dx / length;
+    const uy = dy / length;
+    const inLength = Math.min(Math.hypot(node.x - previous.x, node.y - previous.y) / 3, 0.15);
+    const outLength = Math.min(Math.hypot(next.x - node.x, next.y - node.y) / 3, 0.15);
+    node.node_type = "smooth";
+    node.in_x = clamp(node.x - ux * inLength, -1, 2);
+    node.in_y = clamp(node.y - uy * inLength, -1, 2);
+    node.out_x = clamp(node.x + ux * outLength, -1, 2);
+    node.out_y = clamp(node.y + uy * outLength, -1, 2);
+  }
+  scheduleSpatialMaskPreview(selectedLocal());
+  renderMaskTreeEditor(selectedLocal());
+  queueLocalMaskOverlayRender();
+  commitSelectedLocal();
+}
+
+function splitPathSegment(nodes, segmentIndex, t = 0.5) {
+  const first = nodes[segmentIndex];
+  const nextIndex = (segmentIndex + 1) % nodes.length;
+  const second = nodes[nextIndex];
+  const p0 = { x: first.x, y: first.y };
+  const p1 = { x: first.out_x ?? first.x, y: first.out_y ?? first.y };
+  const p2 = { x: second.in_x ?? second.x, y: second.in_y ?? second.y };
+  const p3 = { x: second.x, y: second.y };
+  const lerp = (a, b) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  const p01 = lerp(p0, p1);
+  const p12 = lerp(p1, p2);
+  const p23 = lerp(p2, p3);
+  const p012 = lerp(p01, p12);
+  const p123 = lerp(p12, p23);
+  const point = lerp(p012, p123);
+  const curved = Math.hypot(p1.x - p0.x, p1.y - p0.y) > 1e-8 || Math.hypot(p2.x - p3.x, p2.y - p3.y) > 1e-8;
+  if (curved) {
+    first.out_x = p01.x; first.out_y = p01.y;
+    second.in_x = p23.x; second.in_y = p23.y;
+  }
+  const inserted = curved
+    ? { x: point.x, y: point.y, in_x: p012.x, in_y: p012.y, out_x: p123.x, out_y: p123.y, node_type: "smooth" }
+    : { x: point.x, y: point.y, in_x: null, in_y: null, out_x: null, out_y: null, node_type: "sharp" };
+  const insertionIndex = segmentIndex + 1;
+  nodes.splice(insertionIndex, 0, inserted);
+  return insertionIndex;
+}
+
 function localPointerPoint(event) {
   const preview = activePreviewElement();
   if (!preview) return null;
   const rect = preview.getBoundingClientRect();
   const outside = event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom;
-  if (outside && !state.localPointerGesture) return null;
+  const pathLeaf = firstMaskLeaf(selectedLocal()?.mask, "path");
+  // A closed Path can have legal Bezier handles outside the image even though
+  // its anchors remain source-bounded. Accept pointer coordinates across the
+  // larger overlay canvas so those rendered handles can be acquired; node
+  // movement still applies the Path [0, 1] anchor clamp downstream. Draft
+  // creation remains image-bounded so an outside click cannot create a node.
+  const allowOutside = Boolean(pathLeaf && (state.localPathEditMode === "feather" || !state.localPathDraft));
+  if (outside && !state.localPointerGesture && !allowOutside) return null;
   return {
-    x: clamp((event.clientX - rect.left) / Math.max(rect.width, 1), 0, 1),
-    y: clamp((event.clientY - rect.top) / Math.max(rect.height, 1), 0, 1),
+    x: clamp((event.clientX - rect.left) / Math.max(rect.width, 1), allowOutside ? -1 : 0, allowOutside ? 2 : 1),
+    y: clamp((event.clientY - rect.top) / Math.max(rect.height, 1), allowOutside ? -1 : 0, allowOutside ? 2 : 1),
   };
+}
+
+function pathTargetAtPointer(event, nodes, selectedIndex) {
+  const rect = activePreviewElement()?.getBoundingClientRect();
+  if (!rect || !nodes?.length) return null;
+  const px = event.clientX;
+  const py = event.clientY;
+  const screen = (point) => ({ x: rect.left + point.x * rect.width, y: rect.top + point.y * rect.height });
+  const selected = selectedIndex === null ? null : nodes[selectedIndex];
+  if (selected) {
+    for (const handle of ["in", "out"]) {
+      if (selected[`${handle}_x`] === null || selected[`${handle}_x`] === undefined) continue;
+      const position = screen({ x: selected[`${handle}_x`], y: selected[`${handle}_y`] });
+      if (Math.hypot(px - position.x, py - position.y) <= 14) return { type: "handle", index: selectedIndex, handle };
+    }
+  }
+  for (let index = 0; index < nodes.length; index += 1) {
+    const position = screen(nodes[index]);
+    if (Math.hypot(px - position.x, py - position.y) <= 14) return { type: "node", index };
+  }
+  let nearest = null;
+  for (let segment = 0; segment < nodes.length; segment += 1) {
+    const first = nodes[segment];
+    const second = nodes[(segment + 1) % nodes.length];
+    for (let sample = 0; sample <= 32; sample += 1) {
+      const t = sample / 32;
+      const point = screen(cubicPathPoint(first, second, t));
+      const distance = Math.hypot(px - point.x, py - point.y);
+      if (!nearest || distance < nearest.distance) nearest = { type: "curve", segment, t, distance };
+    }
+  }
+  return nearest?.distance <= 10 ? nearest : null;
+}
+
+function updatePathCreationGesture(gesture, event, point) {
+  const node = gesture.leaf.nodes[gesture.nodeIndex];
+  if (!node) return;
+  const dragged = Math.hypot(event.clientX - gesture.clientX, event.clientY - gesture.clientY) >= 3;
+  if (!dragged) return;
+  const dx = point.x - gesture.origin.x;
+  const dy = point.y - gesture.origin.y;
+  node.node_type = "smooth";
+  node.in_x = clamp(node.x - dx, -1, 2);
+  node.in_y = clamp(node.y - dy, -1, 2);
+  node.out_x = clamp(node.x + dx, -1, 2);
+  node.out_y = clamp(node.y + dy, -1, 2);
+}
+
+function replacePathNodes(target, source) {
+  target.splice(0, target.length, ...JSON.parse(JSON.stringify(source)));
+}
+
+function updatePathNodeGesture(gesture, point) {
+  const node = gesture.nodes[gesture.nodeIndex];
+  if (!node) return;
+  const bounds = state.localPathEditMode === "feather" ? [-1, 2] : [0, 1];
+  const nextX = clamp(point.x, bounds[0], bounds[1]);
+  const nextY = clamp(point.y, bounds[0], bounds[1]);
+  const dx = nextX - gesture.origin.x;
+  const dy = nextY - gesture.origin.y;
+  const beforeNode = gesture.before[gesture.nodeIndex];
+  node.x = nextX;
+  node.y = nextY;
+  for (const handle of ["in", "out"]) {
+    if (beforeNode[`${handle}_x`] === null || beforeNode[`${handle}_x`] === undefined) continue;
+    node[`${handle}_x`] = clamp(beforeNode[`${handle}_x`] + dx, -1, 2);
+    node[`${handle}_y`] = clamp(beforeNode[`${handle}_y`] + dy, -1, 2);
+  }
+  const valid = state.localPathEditMode === "feather"
+    ? validFeatherGeometry(gesture.leaf.nodes, gesture.nodes)
+    : validPathGeometry(gesture.leaf, gesture.nodes);
+  state.pathInvalidGesture = !valid;
+  if (!valid) replacePathNodes(gesture.nodes, gesture.before);
+  else {
+    gesture.changed = true;
+    state.localMaskDraftDirty = true;
+    scheduleAuthoritativeLocalMaskDraft(selectedLocal());
+  }
+}
+
+function updatePathHandleGesture(gesture, point) {
+  const node = gesture.nodes[gesture.nodeIndex];
+  if (!node) return;
+  const handle = gesture.handle;
+  const opposite = handle === "in" ? "out" : "in";
+  node[`${handle}_x`] = clamp(point.x, -1, 2);
+  node[`${handle}_y`] = clamp(point.y, -1, 2);
+  if (node.node_type === "smooth") {
+    const originalOpposite = gesture.before[gesture.nodeIndex];
+    const oppositeLength = Math.hypot(
+      Number(originalOpposite[`${opposite}_x`] ?? node.x) - node.x,
+      Number(originalOpposite[`${opposite}_y`] ?? node.y) - node.y,
+    );
+    const dx = node[`${handle}_x`] - node.x;
+    const dy = node[`${handle}_y`] - node.y;
+    const length = Math.hypot(dx, dy) || 1;
+    node[`${opposite}_x`] = clamp(node.x - dx / length * oppositeLength, -1, 2);
+    node[`${opposite}_y`] = clamp(node.y - dy / length * oppositeLength, -1, 2);
+  }
+  const valid = state.localPathEditMode === "feather"
+    ? validFeatherGeometry(gesture.leaf.nodes, gesture.nodes)
+    : validPathGeometry(gesture.leaf, gesture.nodes);
+  state.pathInvalidGesture = !valid;
+  if (!valid) replacePathNodes(gesture.nodes, gesture.before);
+  else {
+    gesture.changed = true;
+    state.localMaskDraftDirty = true;
+    scheduleAuthoritativeLocalMaskDraft(selectedLocal());
+  }
+}
+
+function handlePathCanvasKeydown(event) {
+  const local = selectedLocal();
+  const leaf = firstMaskLeaf(local?.mask, "path");
+  if (!leaf) return;
+  if (state.localPathDraft) {
+    if (event.key === "Enter") { event.preventDefault(); void finishLocalPathDraft(); }
+    if (event.key === "Escape") { event.preventDefault(); cancelLocalPathDraft(); }
+    return;
+  }
+  const nodes = activePathNodes(leaf);
+  if (!nodes.length) return;
+  if (event.key === "[" || event.key === "]") {
+    event.preventDefault();
+    const direction = event.key === "]" ? 1 : -1;
+    state.selectedPathNode = ((state.selectedPathNode ?? (direction > 0 ? -1 : 0)) + direction + nodes.length) % nodes.length;
+    state.pathKeyboardTarget = "node";
+    renderMaskTreeEditor(local);
+    queueLocalMaskOverlayRender();
+    return;
+  }
+  if (event.key.toLowerCase() === "h") {
+    event.preventDefault();
+    const available = ["node"];
+    const selected = nodes[state.selectedPathNode ?? 0];
+    if (selected?.in_x !== null && selected?.in_x !== undefined) available.push("in", "out");
+    state.pathKeyboardTarget = available[(available.indexOf(state.pathKeyboardTarget) + 1) % available.length];
+    return;
+  }
+  if (event.key.toLowerCase() === "s") { event.preventDefault(); setSelectedPathNodeType(leaf, "sharp"); return; }
+  if (event.key.toLowerCase() === "m") { event.preventDefault(); setSelectedPathNodeType(leaf, "smooth"); return; }
+  if (event.key === "Enter") {
+    event.preventDefault();
+    const index = state.selectedPathNode ?? 0;
+    state.selectedPathNode = splitPathSegment(nodes, index, 0.5);
+    scheduleSpatialMaskPreview(local);
+    renderMaskTreeEditor(local);
+    commitSelectedLocal();
+    return;
+  }
+  if (event.key === "Delete" || event.key === "Backspace") {
+    if (nodes.length <= 3 || state.selectedPathNode === null) return;
+    event.preventDefault();
+    const before = JSON.parse(JSON.stringify(nodes));
+    nodes.splice(state.selectedPathNode, 1);
+    const valid = state.localPathEditMode === "feather" ? validFeatherGeometry(leaf.nodes, nodes) : validPathGeometry(leaf, nodes);
+    if (!valid) replacePathNodes(nodes, before);
+    else {
+      state.selectedPathNode = Math.min(state.selectedPathNode, nodes.length - 1);
+      scheduleSpatialMaskPreview(local);
+      renderMaskTreeEditor(local);
+      commitSelectedLocal();
+    }
+    return;
+  }
+  if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key) || state.selectedPathNode === null) return;
+  event.preventDefault();
+  const rect = activePreviewElement()?.getBoundingClientRect();
+  if (!rect) return;
+  const pixels = event.shiftKey ? 10 : 1;
+  const dx = event.key === "ArrowLeft" ? -pixels / rect.width : event.key === "ArrowRight" ? pixels / rect.width : 0;
+  const dy = event.key === "ArrowUp" ? -pixels / rect.height : event.key === "ArrowDown" ? pixels / rect.height : 0;
+  const node = nodes[state.selectedPathNode];
+  const target = state.pathKeyboardTarget;
+  if (target === "node") {
+    const before = { ...node };
+    node.x += dx; node.y += dy;
+    for (const handle of ["in", "out"]) {
+      if (node[`${handle}_x`] === null || node[`${handle}_x`] === undefined) continue;
+      node[`${handle}_x`] += dx; node[`${handle}_y`] += dy;
+    }
+    const valid = state.localPathEditMode === "feather" ? validFeatherGeometry(leaf.nodes, nodes) : validPathGeometry(leaf, nodes);
+    if (!valid) Object.assign(node, before);
+  } else {
+    updatePathHandleGesture({ leaf, nodes, nodeIndex: state.selectedPathNode, handle: target, before: JSON.parse(JSON.stringify(nodes)) }, { x: node[`${target}_x`] + dx, y: node[`${target}_y`] + dy });
+  }
+  scheduleSpatialMaskPreview(local);
+  queueLocalMaskOverlayRender();
+  commitSelectedLocal();
 }
 
 function renderLocalMaskOverlay() {
@@ -7971,15 +8956,7 @@ function drawMaskExpression(context, expression, x, y, options = {}) {
       drawLuminanceSamplingGesture(context, samplingGesture, x, y);
     }
   } else if (leaf.type === "path") {
-    const path = () => {
-      context.beginPath();
-      leaf.nodes.forEach((node, index) => index ? context.lineTo(x(node.x), y(node.y)) : context.moveTo(x(node.x), y(node.y)));
-      context.closePath();
-    };
-    path();
-    if (state.localShowMask) context.fill();
-    drawLocalGizmoStroke(context, path, 2);
-    leaf.nodes.forEach((node) => drawLocalGizmoHandle(context, x(node.x), y(node.y), 6));
+    drawPathMaskGizmo(context, leaf, x, y);
   }
   context.restore();
 }
@@ -8071,8 +9048,10 @@ function drawBrushMaskOverlay(context, leaf, activeStroke, x, y, inverted = fals
 
 async function queueAuthoritativeLocalMask(local) {
   if (!state.session || !local || local.mask?.operator !== "leaf") return;
+  if (state.localPathDraft?.localId === local.id) return;
+  if (state.localPathCreatePendingId === local.id) return;
   if (state.localMaskCommitDepth > 0) return;
-  if (!["brush", "linear_gradient", "luminance_range"].includes(local.mask.leaf?.type)) return;
+  if (!["brush", "linear_gradient", "luminance_range", "path"].includes(local.mask.leaf?.type)) return;
   if (local.mask.leaf?.type === "brush" && !(local.mask.leaf.strokes || []).length) return;
   if (state.localMaskDraftDirty) return;
   const signature = localMaskSpatialSignature(local.mask);
@@ -8110,7 +9089,9 @@ async function queueAuthoritativeLocalMask(local) {
 
 function scheduleAuthoritativeLocalMaskDraft(local) {
   if (!state.session || !local || local.mask?.operator !== "leaf") return;
-  if (!["brush", "linear_gradient", "luminance_range"].includes(local.mask.leaf?.type)) return;
+  if (state.localPathDraft?.localId === local.id) return;
+  if (state.localPathCreatePendingId === local.id) return;
+  if (!["brush", "linear_gradient", "luminance_range", "path"].includes(local.mask.leaf?.type)) return;
   if (local.mask.leaf?.type === "brush" && !(local.mask.leaf.strokes || []).length) return;
   const signature = JSON.stringify(local.mask);
   state.localMaskDraftPending = {
@@ -8423,6 +9404,142 @@ function drawBrushMaskStroke(context, stroke, width, height) {
     image.data[alphaIndex] = Math.round(next * 255);
   }
   context.putImageData(image, roiLeft, roiTop);
+}
+
+function tracePathBoundary(context, nodes, x, y, closed = true) {
+  context.beginPath();
+  if (!nodes?.length) return;
+  context.moveTo(x(nodes[0].x), y(nodes[0].y));
+  const segmentCount = closed ? nodes.length : Math.max(0, nodes.length - 1);
+  for (let index = 0; index < segmentCount; index += 1) {
+    const first = nodes[index];
+    const second = nodes[(index + 1) % nodes.length];
+    context.bezierCurveTo(
+      x(first.out_x ?? first.x), y(first.out_y ?? first.y),
+      x(second.in_x ?? second.x), y(second.in_y ?? second.y),
+      x(second.x), y(second.y),
+    );
+  }
+  if (closed) context.closePath();
+}
+
+function drawPathNode(context, node, index, x, y, selected, hovered, closeTarget = false) {
+  const centerX = x(node.x);
+  const centerY = y(node.y);
+  const radius = selected ? 7 : 5;
+  context.save();
+  context.lineWidth = selected ? 2.5 : 2;
+  context.strokeStyle = closeTarget ? uiToken("--ready") : selected ? uiToken("--curve-selected-ring") : uiToken("--accent");
+  context.fillStyle = selected ? uiToken("--curve-selected") : uiToken("--raised");
+  context.shadowColor = "rgba(0, 0, 0, .95)";
+  context.shadowBlur = 3;
+  context.beginPath();
+  if (node.node_type === "sharp") context.rect(centerX - radius, centerY - radius, radius * 2, radius * 2);
+  else context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+  context.fill();
+  context.stroke();
+  if (hovered) {
+    context.beginPath();
+    context.arc(centerX, centerY, radius + 4, 0, Math.PI * 2);
+    context.strokeStyle = uiToken("--text");
+    context.lineWidth = 1;
+    context.stroke();
+  }
+  context.restore();
+}
+
+function drawSelectedPathHandles(context, node, nodeIndex, x, y) {
+  if (!node) return;
+  context.save();
+  context.strokeStyle = uiToken("--accent");
+  context.lineWidth = 2;
+  for (const handle of ["in", "out"]) {
+    if (node[`${handle}_x`] === null || node[`${handle}_x`] === undefined) continue;
+    const hx = x(node[`${handle}_x`]);
+    const hy = y(node[`${handle}_y`]);
+    context.beginPath();
+    context.moveTo(x(node.x), y(node.y));
+    context.lineTo(hx, hy);
+    context.strokeStyle = "rgba(0, 0, 0, .9)";
+    context.lineWidth = 5;
+    context.stroke();
+    context.strokeStyle = uiToken("--accent");
+    context.lineWidth = 2;
+    context.stroke();
+    context.beginPath();
+    context.arc(hx, hy, 6, 0, Math.PI * 2);
+    context.fillStyle = uiToken("--raised");
+    context.fill();
+    context.strokeStyle = uiToken("--text");
+    context.lineWidth = 2;
+    context.stroke();
+    if (state.hoveredPathTarget?.type === "handle" && state.hoveredPathTarget.index === nodeIndex && state.hoveredPathTarget.handle === handle) {
+      context.beginPath();
+      context.arc(hx, hy, 10, 0, Math.PI * 2);
+      context.strokeStyle = uiToken("--curve-selected");
+      context.lineWidth = 2;
+      context.stroke();
+    }
+  }
+  context.restore();
+}
+
+function drawPathMaskGizmo(context, leaf, x, y) {
+  const draft = Boolean(state.localPathDraft && state.localPathDraft.localId === selectedLocal()?.id);
+  const inner = leaf.nodes || [];
+  const closed = !draft && inner.length >= 3;
+  const outer = leaf.feather_mode === "outer_boundary" && inner.length >= 3
+    ? (leaf.feather_nodes?.length ? leaf.feather_nodes : uniformFeatherNodes(inner, Number(leaf.feather || 0)))
+    : [];
+  const innerPath = () => tracePathBoundary(context, inner, x, y, closed);
+  if (closed && state.localShowMask) {
+    innerPath();
+    context.fillStyle = overlayColorWithAlpha(0.22);
+    context.fill();
+  }
+  if (inner.length) drawLocalGizmoStroke(context, innerPath, 2.5, state.pathInvalidGesture ? uiToken("--blocking") : uiToken("--accent"));
+  if (draft && inner.length && state.localPathCursor) {
+    context.save();
+    context.beginPath();
+    context.moveTo(x(inner.at(-1).x), y(inner.at(-1).y));
+    context.lineTo(x(state.localPathCursor.x), y(state.localPathCursor.y));
+    context.setLineDash([5, 5]);
+    context.strokeStyle = uiToken("--text");
+    context.lineWidth = 1.5;
+    context.stroke();
+    context.restore();
+  }
+  if (outer.length) {
+    context.save();
+    const reducedPathMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const outerPath = () => tracePathBoundary(context, outer, x, y, true);
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.strokeStyle = "rgba(0, 0, 0, .9)";
+    context.lineWidth = 5;
+    outerPath(); context.stroke();
+    context.strokeStyle = state.pathInvalidGesture ? uiToken("--blocking") : uiToken("--text");
+    context.lineWidth = 2;
+    context.setLineDash([7, 6]);
+    context.lineDashOffset = reducedPathMotion ? 0 : -performance.now() / 70;
+    outerPath(); context.stroke();
+    context.restore();
+    if (!reducedPathMotion && !pathMarchingAntFrame) {
+      pathMarchingAntFrame = window.requestAnimationFrame(() => {
+        pathMarchingAntFrame = 0;
+        if (firstMaskLeaf(selectedLocal()?.mask, "path")) queueLocalMaskOverlayRender();
+      });
+    }
+  }
+
+  const active = draft || state.localPathEditMode === "path" ? inner : outer;
+  const selectedIndex = draft ? state.selectedPathNode : state.selectedPathNode;
+  if (!draft) drawSelectedPathHandles(context, selectedIndex === null ? null : active[selectedIndex], selectedIndex, x, y);
+  active.forEach((node, index) => {
+    const hovered = state.hoveredPathTarget?.type === "node" && state.hoveredPathTarget.index === index;
+    const closeTarget = draft && index === 0 && inner.length >= 3 && hovered;
+    drawPathNode(context, node, index, x, y, index === selectedIndex, hovered, closeTarget);
+  });
 }
 
 function drawLocalGizmoStroke(context, path, width = 2, color = "rgba(238, 252, 255, .98)") {

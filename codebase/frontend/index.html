@@ -155,7 +155,6 @@
               <button id="zoom-actual" class="tool-button" type="button" title="Show one image pixel per screen pixel (A)">100%</button>
             </div>
             <span class="viewer-tool-divider" aria-hidden="true">|</span>
-            <button id="crop-tool-toggle" class="tool-button" type="button" aria-pressed="false" title="Crop and rotate">Crop</button>
             <button id="overlay-toggle" class="tool-button" type="button" aria-expanded="false" aria-controls="overlay-popover">Overlays: Off</button>
             <label
               class="toolbar-preview-toggle"
@@ -261,7 +260,8 @@
               <canvas id="preview-canvas" aria-label="Active HDR Finisher preview"></canvas>
               <img id="preview-image" alt="Active HDR Finisher preview" draggable="false">
               <img id="preview-overlay" alt="" aria-hidden="true" draggable="false">
-              <canvas id="local-mask-overlay" class="local-mask-overlay" aria-label="Local mask editor"></canvas>
+              <canvas id="local-mask-overlay" class="local-mask-overlay" tabindex="0" aria-label="Local mask editor. Use bracket keys to select nodes, H to cycle node and handles, arrow keys to move, Enter to add, and Delete to remove."></canvas>
+              <canvas id="straighten-grid-overlay" class="straighten-grid-overlay hidden" aria-hidden="true"></canvas>
               <img id="chrome-proof-image" alt="Chromium fixed-headroom proof preview" draggable="false">
               <span id="chrome-proof-watermark" aria-hidden="true">PROOF</span>
               <div id="crop-editor-overlay" class="crop-editor-overlay hidden" aria-hidden="true">
@@ -269,25 +269,6 @@
                   <canvas id="crop-guide-canvas" aria-hidden="true"></canvas>
                   <span class="crop-handle nw" data-crop-handle="nw"></span><span class="crop-handle n" data-crop-handle="n"></span><span class="crop-handle ne" data-crop-handle="ne"></span><span class="crop-handle e" data-crop-handle="e"></span><span class="crop-handle se" data-crop-handle="se"></span><span class="crop-handle s" data-crop-handle="s"></span><span class="crop-handle sw" data-crop-handle="sw"></span><span class="crop-handle w" data-crop-handle="w"></span>
                 </div>
-                <section class="crop-editor-panel" role="dialog" aria-modal="true" aria-labelledby="crop-editor-title">
-                  <div class="crop-editor-panel-heading"><div><span class="section-kicker">Composition</span><h2 id="crop-editor-title">Crop</h2></div><button id="crop-cancel" class="icon-button" type="button" aria-label="Cancel crop">&times;</button></div>
-                  <label>Aspect ratio
-                    <select id="crop-ratio" data-path="shared.geometry.ratio_mode">
-                      <option value="free">Free</option><option value="original">Original</option><option value="1:1">1:1</option><option value="3:2">3:2</option><option value="2:3">2:3</option><option value="4:3">4:3</option><option value="3:4">3:4</option><option value="5:4">5:4</option><option value="4:5">4:5</option><option value="16:9">16:9</option><option value="9:16">9:16</option><option value="2:1">2:1</option><option value="custom">Custom</option>
-                    </select>
-                  </label>
-                  <div id="custom-ratio-fields" class="custom-ratio-fields hidden">
-                    <label>Width <input id="crop-custom-ratio-width" type="number" min="0.01" step="0.01" value="1" data-path="shared.geometry.custom_ratio.width"></label>
-                    <button id="swap-custom-ratio" class="text-button" type="button" aria-label="Swap custom ratio orientation">Swap</button>
-                    <label>Height <input id="crop-custom-ratio-height" type="number" min="0.01" step="0.01" value="1" data-path="shared.geometry.custom_ratio.height"></label>
-                  </div>
-                  <label>Guide
-                    <select id="crop-guide"><option value="none">None</option><option value="thirds">Rule of Thirds</option><option value="golden">Golden Ratio</option><option value="grid">Grid</option><option value="x">X Pattern</option><option value="diagonals">Diagonal Method</option></select>
-                  </label>
-                  <div id="crop-grid-density-row" class="control-row hidden"><div class="control-heading"><label for="crop-grid-density">Grid density</label><output id="crop-grid-density-value">8&times;8</output></div><input id="crop-grid-density" type="range" min="2" max="16" step="1" value="8" data-no-double-reset></div>
-                  <p class="helper">Guides are editor-only. Press O to cycle them while cropping.</p>
-                  <div class="crop-editor-actions"><button id="crop-reset-frame" class="button-secondary" type="button">Reset frame</button><button id="crop-done" class="button-primary" type="button">Apply crop</button></div>
-                </section>
               </div>
               <button id="vignette-center-handle" class="vignette-center-handle hidden" type="button" aria-label="Vignette center. Arrow keys move by one percent; Shift plus arrow moves by five percent.">+</button>
             </div>
@@ -532,18 +513,41 @@
       <section class="control-group collapsed" data-group="geometry">
         <div class="control-group-header">
           <button class="group-toggle" type="button" aria-expanded="false">Crop &amp; Rotate <span data-modified-count="geometry">Default</span></button>
-          <button id="crop-open" class="text-button" type="button">Edit</button>
           <button class="group-reset text-button" type="button" data-reset-group="geometry">Reset</button>
         </div>
         <div class="control-group-body crop-options">
-          <div class="crop-action-row" role="group" aria-label="Image orientation">
-            <button id="rotate-left" class="button-secondary" type="button">Rotate left 90&deg;</button>
-            <button id="rotate-right" class="button-secondary" type="button">Rotate right 90&deg;</button>
-            <button id="flip-horizontal" class="button-secondary" type="button">Flip H</button>
-            <button id="flip-vertical" class="button-secondary" type="button">Flip V</button>
+          <div class="geometry-tool-strip" role="toolbar" aria-label="Crop and rotate tools">
+            <button id="crop-tool-toggle" class="geometry-tool-crop" type="button" aria-pressed="false" aria-controls="crop-tool-settings"><span class="geometry-tool-icon" aria-hidden="true"></span><span>Crop</span></button>
+            <button id="rotate-tool-toggle" class="geometry-tool-rotate" type="button" aria-pressed="false" aria-controls="rotate-tool-settings"><span class="geometry-tool-icon" aria-hidden="true"></span><span>Rotate</span></button>
           </div>
-          <div class="control-row" data-control-path="shared.geometry.straighten_angle"><div class="control-heading"><label for="crop-straighten">Straighten</label><output data-value-path="shared.geometry.straighten_angle">0.0&deg;</output></div><input id="crop-straighten" type="range" min="-45" max="45" step="0.1" value="0" data-path="shared.geometry.straighten_angle"></div>
-          <p class="helper">Open the crop editor for aspect-ratio presets, composition guides, and frame controls.</p>
+          <div id="crop-tool-settings" class="geometry-tool-settings hidden">
+            <label>Aspect ratio
+              <select id="crop-ratio" data-path="shared.geometry.ratio_mode">
+                <option value="free">Free</option><option value="original">Original</option><option value="1:1">1:1</option><option value="3:2">3:2</option><option value="2:3">2:3</option><option value="4:3">4:3</option><option value="3:4">3:4</option><option value="5:4">5:4</option><option value="4:5">4:5</option><option value="16:9">16:9</option><option value="9:16">9:16</option><option value="2:1">2:1</option><option value="custom">Custom</option>
+              </select>
+            </label>
+            <div id="custom-ratio-fields" class="custom-ratio-fields hidden">
+              <label>Width <input id="crop-custom-ratio-width" type="number" min="0.01" step="0.01" value="1" data-path="shared.geometry.custom_ratio.width"></label>
+              <button id="swap-custom-ratio" class="text-button" type="button" aria-label="Swap custom ratio orientation">Swap</button>
+              <label>Height <input id="crop-custom-ratio-height" type="number" min="0.01" step="0.01" value="1" data-path="shared.geometry.custom_ratio.height"></label>
+            </div>
+            <label>Guide
+              <select id="crop-guide"><option value="none">None</option><option value="thirds">Rule of Thirds</option><option value="golden">Golden Ratio</option><option value="grid">Grid</option><option value="x">X Pattern</option><option value="diagonals">Diagonal Method</option></select>
+            </label>
+            <div id="crop-grid-density-row" class="control-row hidden"><div class="control-heading"><label for="crop-grid-density">Grid density</label><output id="crop-grid-density-value">8&times;8</output></div><input id="crop-grid-density" type="range" min="2" max="16" step="1" value="8" data-no-double-reset></div>
+            <p class="helper">Drag the frame or its handles in the preview. Press O to cycle guides.</p>
+            <div class="crop-editor-actions"><button id="crop-cancel" class="button-secondary" type="button">Cancel</button><button id="crop-reset-frame" class="button-secondary" type="button">Reset frame</button><button id="crop-done" class="button-primary" type="button">Apply crop</button></div>
+          </div>
+          <div id="rotate-tool-settings" class="geometry-tool-settings hidden">
+            <div class="crop-action-row" role="group" aria-label="Image orientation">
+              <button id="rotate-left" class="button-secondary" type="button">Rotate left 90&deg;</button>
+              <button id="rotate-right" class="button-secondary" type="button">Rotate right 90&deg;</button>
+              <button id="flip-horizontal" class="button-secondary" type="button">Flip H</button>
+              <button id="flip-vertical" class="button-secondary" type="button">Flip V</button>
+            </div>
+            <div class="control-row" data-control-path="shared.geometry.straighten_angle"><div class="control-heading"><label for="crop-straighten">Straighten</label><output data-value-path="shared.geometry.straighten_angle">0.0&deg;</output></div><input id="crop-straighten" type="range" min="-45" max="45" step="0.1" value="0" data-path="shared.geometry.straighten_angle"></div>
+            <p class="helper">Straighten previews immediately while dragging and settles at full quality after release.</p>
+          </div>
         </div>
       </section>
 

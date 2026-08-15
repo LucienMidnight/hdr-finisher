@@ -149,6 +149,19 @@ The HDR/SDR rendition switch and its content boundary form one tab component. Th
 - Selected points use the selected-point token; channel curves use their channel tokens.
 - Canvas instructions must be available through an accessible label and keyboard operation.
 
+### Local path editor
+
+- Creating a path starts an unsaved draft: click for a sharp node, click-drag for a smooth node, and close through the first node, Enter, or a valid external interaction.
+- Path and Feather are explicit edit modes. Both boundaries remain visible, but only the active boundary shows interactive anchors and the selected node's handles.
+- Left-clicking a segment inserts a node; right-clicking a node removes it down to the three-node minimum, matching the global graph convention.
+- Sharp and smooth modes use icon-and-label buttons. Sharp nodes are square and smooth nodes circular, so type never depends on color alone.
+- Boundaries use a dark halo plus a high-contrast foreground stroke. The feather boundary uses marching ants, with static dashes under `prefers-reduced-motion`.
+- Selected anchors use the shared warm selection token and a contrasting ring. Visible anchors and handles are enlarged, and hit testing provides at least a 28 px target.
+- Handles appear only for the selected node. Path handles plus Feather handles and anchors may be manipulated beyond the image edge anywhere the viewer overlay remains available; a warm hover ring confirms acquisition in the letterbox.
+- The shared instrument slider controls the global feather baseline; Reset Feather Shape rebuilds a uniform boundary without changing that baseline.
+- Moving a local grade control dismisses the colored mask fill so exposure and color changes remain judgeable; the editable boundary lines stay visible.
+- Keyboard parity includes previous/next selection, node/handle target cycling, arrow nudging, segment insertion, removal, and explicit Sharp/Smooth controls.
+
 ### Curve graph component tokens
 
 The curve graph is a reusable instrument component. Its runtime values live in `frontend/styles.css`; canvas code must read these tokens rather than introduce literal colors or sizes.

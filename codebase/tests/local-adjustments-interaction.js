@@ -1,5 +1,6 @@
 const { chromium } = require("playwright");
 const path = require("path");
+const fs = require("fs");
 
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
 
@@ -38,6 +39,8 @@ async function canvasVariationCount(locator) {
 }
 
 (async () => {
+  const outputDirectory = path.resolve(__dirname, "../output/local-adjustments");
+  fs.mkdirSync(outputDirectory, { recursive: true });
   const browser = await chromium.launch({ headless: true, channel: "msedge" });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const pageErrors = [];
@@ -77,6 +80,16 @@ async function canvasVariationCount(locator) {
       await button.click();
       assert(await button.getAttribute("aria-pressed") === "true", `${tool} did not expose immediate active state.`);
       await page.waitForFunction((count) => document.querySelectorAll("#local-adjustment-list > li").length === count, index + 1);
+      if (tool === "path") {
+        const overlay = page.locator("#local-mask-overlay");
+        const box = await overlay.boundingBox();
+        assert(box, "The Path canvas is unavailable.");
+        const points = [[.30, .30], [.70, .30], [.72, .68], [.32, .70]];
+        for (const [x, y] of points) await page.mouse.click(box.x + box.width * x, box.y + box.height * y);
+        const createResponse = page.waitForResponse((response) => response.url().includes("/edit-commands") && response.request().method() === "POST");
+        await page.mouse.click(box.x + box.width * points[0][0], box.y + box.height * points[0][1]);
+        assert((await createResponse).ok(), "Closing the Path did not create its local adjustment.");
+      }
       let gpuLuma = false;
       if (tool === "luminance_range") {
         gpuLuma = await page.evaluate(() => Boolean(state.gpuPreview?.available));
@@ -102,7 +115,7 @@ async function canvasVariationCount(locator) {
         assert(visiblePixels > 100, `${tool} did not render a visible preview gizmo.`);
       }
       await page.locator("#preview-primary-pane").screenshot({
-        path: path.resolve(__dirname, `../../docs/testing/local-adjustments-${tool.replaceAll("_", "-")}-overlay-qa.png`),
+        path: path.join(outputDirectory, `local-adjustments-${tool.replaceAll("_", "-")}-overlay-qa.png`),
       });
     }
     const featherSamples = await page.evaluate(() => [0, 0.08, 0.25, 0.5, 0.75, 1].map((amount) => {
@@ -142,7 +155,7 @@ async function canvasVariationCount(locator) {
     assert(maskFeatherSmoothing.slice(1).every((sample) => Math.abs(sample.peak - maskFeatherSmoothing[0].peak) <= 2), `Mask Feather changed peak density: ${JSON.stringify(maskFeatherSmoothing)}`);
     assert(maskFeatherSmoothing.every((sample, index) => index === 0 || sample.softPixels > maskFeatherSmoothing[index - 1].softPixels), `Mask Feather did not progressively smooth the edge: ${JSON.stringify(maskFeatherSmoothing)}`);
     assert(maskFeatherSmoothing.at(-1).outside > 2, `Maximum Mask Feather is still too narrow: ${JSON.stringify(maskFeatherSmoothing)}`);
-    await page.screenshot({ path: path.resolve(__dirname, "../../docs/testing/local-adjustments-overlay-qa.png"), fullPage: false });
+    await page.screenshot({ path: path.join(outputDirectory, "local-adjustments-overlay-qa.png"), fullPage: false });
 
     const brushRow = page.locator("#local-adjustment-list button[data-local-id]").first();
     await brushRow.click();
@@ -195,7 +208,7 @@ async function canvasVariationCount(locator) {
 
     await page.locator("#local-adjustment-list button[data-local-id]").nth(3).click();
     editResponse = page.waitForResponse((response) => response.url().includes("/edit-commands") && response.request().method() === "POST");
-    await page.mouse.move(overlayBox.x + overlayBox.width * 0.32, overlayBox.y + overlayBox.height * 0.32);
+    await page.mouse.move(overlayBox.x + overlayBox.width * 0.30, overlayBox.y + overlayBox.height * 0.30);
     await page.mouse.down();
     await page.mouse.move(overlayBox.x + overlayBox.width * 0.38, overlayBox.y + overlayBox.height * 0.38, { steps: 3 });
     await page.mouse.up();
@@ -218,7 +231,7 @@ async function canvasVariationCount(locator) {
     await scopeResponse;
     await page.waitForFunction(() => document.querySelector("#scope-title")?.textContent?.toLowerCase().includes("waveform"));
     assert(await canvasVariationCount(histogram) > 100, "Waveform canvas remained visually blank after local edits.");
-    await page.locator("#analysis-dock").screenshot({ path: path.resolve(__dirname, "../../docs/testing/local-adjustments-waveform-qa.png") });
+    await page.locator("#analysis-dock").screenshot({ path: path.join(outputDirectory, "local-adjustments-waveform-qa.png") });
 
     scopeResponse = page.evaluate(() => new Promise((resolve) => {
       const handler = (event) => {
@@ -232,7 +245,7 @@ async function canvasVariationCount(locator) {
     await scopeResponse;
     await page.waitForFunction(() => document.querySelector("#scope-title")?.textContent?.toLowerCase().includes("histogram"));
     assert(await canvasVariationCount(histogram) > 100, "Histogram canvas remained visually blank after local edits.");
-    await page.locator("#analysis-dock").screenshot({ path: path.resolve(__dirname, "../../docs/testing/local-adjustments-histogram-qa.png") });
+    await page.locator("#analysis-dock").screenshot({ path: path.join(outputDirectory, "local-adjustments-histogram-qa.png") });
 
     scopeResponse = page.evaluate(() => new Promise((resolve) => {
       const handler = (event) => {
@@ -247,7 +260,7 @@ async function canvasVariationCount(locator) {
     await page.waitForFunction(() => document.querySelector("#scope-title")?.textContent?.toLowerCase().includes("vectorscope"));
     assert(await canvasVariationCount(histogram) > 100, "Vectorscope canvas remained visually blank after local edits.");
 
-    const localRailShot = path.resolve(__dirname, "../../docs/testing/local-adjustments-local-qa.png");
+    const localRailShot = path.join(outputDirectory, "local-adjustments-local-qa.png");
     await page.locator(".grade-rail").screenshot({ path: localRailShot });
 
     await localToggle.click();
@@ -258,12 +271,15 @@ async function canvasVariationCount(locator) {
     await tabs.nth(1).click();
     assert(await tabs.nth(1).getAttribute("aria-selected") === "true", "SDR folder tab did not select.");
 
-    const cropOrder = await page.locator('[data-group="geometry"] .control-group-header').evaluate((header) =>
-      [...header.children].map((child) => ({ id: child.id, order: getComputedStyle(child).order })),
-    );
-    assert(cropOrder.find((item) => item.id === "crop-open")?.order === "2", `Crop Edit action has the wrong order: ${JSON.stringify(cropOrder)}`);
-    await page.locator("#crop-open").click();
-    assert(await page.locator(".crop-editor-panel").isVisible(), "Crop modal did not open over the viewer.");
+    const geometryGroup = page.locator('[data-group="geometry"]');
+    if (await geometryGroup.evaluate((element) => element.classList.contains("collapsed"))) {
+      await geometryGroup.locator(".group-toggle").click();
+    }
+    assert(await page.locator("#crop-tool-toggle").isVisible() && await page.locator("#rotate-tool-toggle").isVisible(), "Crop and Rotate tool buttons are not both in the side panel.");
+    assert(await page.locator("#crop-tool-toggle").evaluate((button) => button.closest(".grade-rail") !== null), "Crop remained in the preview toolbar instead of the control panel.");
+    await page.locator("#crop-tool-toggle").click();
+    assert(await page.locator("#crop-tool-settings").isVisible(), "Crop settings did not open in the side panel.");
+    assert(await page.locator("#crop-editor-overlay").isVisible(), "Crop frame did not open over the viewer.");
     assert(await page.locator("#crop-ratio option").count() >= 12, "Crop aspect-ratio presets are missing.");
     const geometryBeforeCropDraft = await page.evaluate(() => JSON.stringify(state.adjustments.shared.geometry));
     const previewRectBeforeCropDraft = await page.evaluate(() => {
@@ -278,7 +294,7 @@ async function canvasVariationCount(locator) {
       preview: (() => { const rect = activePreviewElement().getBoundingClientRect(); return { width: rect.width, height: rect.height }; })(),
     }));
     assert(cropDraftState.committed === geometryBeforeCropDraft, "Selecting a crop ratio changed committed preview geometry before Apply.");
-    assert(cropDraftState.draft.ratio_mode === "16:9", "Crop ratio was not stored in the modal draft.");
+    assert(cropDraftState.draft.ratio_mode === "16:9", "Crop ratio was not stored in the side-panel draft.");
     assert(Math.abs(cropDraftState.preview.width - previewRectBeforeCropDraft.width) < 0.5 && Math.abs(cropDraftState.preview.height - previewRectBeforeCropDraft.height) < 0.5, "Selecting a crop ratio resized the preview image before Apply.");
     await page.locator("#crop-guide").selectOption("x");
     await page.waitForTimeout(50);
@@ -287,10 +303,11 @@ async function canvasVariationCount(locator) {
     await page.waitForTimeout(50);
     assert(await canvasVariationCount(page.locator("#crop-guide-canvas")) > 2, "Golden-ratio crop guide did not render.");
     await page.locator("#crop-cancel").click();
-    assert(await page.locator(".crop-editor-panel").isHidden(), "Crop modal did not close on Cancel.");
+    assert(await page.locator("#crop-tool-settings").isHidden(), "Crop settings did not close on Cancel.");
+    assert(await page.locator("#crop-editor-overlay").isHidden(), "Crop frame did not close on Cancel.");
     assert(await page.evaluate(() => JSON.stringify(state.adjustments.shared.geometry)) === geometryBeforeCropDraft, "Cancel did not discard the crop draft.");
 
-    await page.locator("#crop-open").click();
+    await page.locator("#crop-tool-toggle").click();
     await page.locator("#crop-ratio").selectOption("4:3");
     await page.locator("#crop-done").click();
     assert(await page.evaluate(() => state.adjustments.shared.geometry.ratio_mode) === "4:3", "Apply crop did not commit the selected aspect ratio.");
@@ -309,6 +326,87 @@ async function canvasVariationCount(locator) {
     });
     assert(Math.abs(appliedCropRatios.displayed - appliedCropRatios.bitmap) < 0.01, `Applied crop was stretched in the viewer: ${JSON.stringify(appliedCropRatios)}`);
 
+    await page.locator("#rotate-tool-toggle").click();
+    assert(await page.locator("#rotate-tool-settings").isVisible() && await page.locator("#crop-tool-settings").isHidden(), "Rotate did not reveal only its requisite side-panel settings.");
+    const straighten = page.locator("#crop-straighten");
+    const straightenBox = await straighten.boundingBox();
+    assert(straightenBox, "Straighten slider is unavailable.");
+    const straightenStart = await page.evaluate(() => {
+      const rect = activePreviewElement().getBoundingClientRect();
+      return { generation: { ...state.previewGeneration }, frameWidth: rect.width, frameHeight: rect.height };
+    });
+    await page.mouse.move(straightenBox.x + straightenBox.width / 2, straightenBox.y + straightenBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(straightenBox.x + straightenBox.width * 0.62, straightenBox.y + straightenBox.height / 2, { steps: 10 });
+    const straightenInteractive = await page.evaluate(() => ({
+      angle: state.adjustments.shared.geometry.straighten_angle,
+      transform: activePreviewElement().style.getPropertyValue("--interactive-straighten-angle"),
+      generation: { ...state.previewGeneration },
+      gridHidden: els.straightenGridOverlay.classList.contains("hidden"),
+      gridWidth: parseFloat(els.straightenGridOverlay.style.width),
+      gridHeight: parseFloat(els.straightenGridOverlay.style.height),
+    }));
+    assert(Math.abs(straightenInteractive.angle) > 0.5 && straightenInteractive.transform.includes("deg"), `Straighten did not update the viewer immediately: ${JSON.stringify(straightenInteractive)}`);
+    assert(Math.abs(parseFloat(straightenInteractive.transform) + straightenInteractive.angle) < 0.2, `Interactive Straighten rotated opposite to the authoritative geometry direction: ${JSON.stringify(straightenInteractive)}`);
+    assert(!straightenInteractive.gridHidden, "Straighten grid was not visible while dragging the slider.");
+    assert(Math.abs(straightenInteractive.gridWidth - straightenStart.frameWidth) < 1 && Math.abs(straightenInteractive.gridHeight - straightenStart.frameHeight) < 1, `Straighten grid did not retain the image aspect ratio: ${JSON.stringify({ straightenStart, straightenInteractive })}`);
+    assert(await canvasVariationCount(page.locator("#straighten-grid-overlay")) > 100, "Straighten grid canvas did not draw its dense alignment lines.");
+    assert(straightenInteractive.generation.hdr - straightenStart.generation.hdr === 1 && straightenInteractive.generation.sdr - straightenStart.generation.sdr === 1, `Straighten scheduled repeated authoritative geometry renders during its gesture: ${JSON.stringify({ straightenStart, straightenInteractive })}`);
+    await page.locator("#preview-primary-pane").screenshot({ path: path.join(outputDirectory, "straighten-grid-overlay-qa.png") });
+    await page.mouse.up();
+    assert(await page.locator("#straighten-grid-overlay").isHidden(), "Straighten grid remained visible after releasing the slider.");
+    const releasedStraightenAngle = await page.evaluate(() => state.adjustments.shared.geometry.straighten_angle);
+    await page.locator("#crop-tool-toggle").click();
+    await page.locator("#crop-ratio").selectOption("1:1");
+    await page.locator("#crop-done").click();
+    await page.waitForFunction(() => state.straightenPreviewBaseAngle === null, null, { timeout: 30000 }).catch(async (error) => {
+      const diagnostics = await page.evaluate(() => ({
+        straightenGestureActive: state.straightenGestureActive,
+        straightenPreviewBaseAngle: state.straightenPreviewBaseAngle,
+        globalEditDirty: state.globalEditDirty,
+        globalEditGeneration: state.globalEditGeneration,
+        hasGlobalEditSyncPending: Boolean(state.globalEditSyncPending),
+        editRevision: state.editRevision,
+        previewGeneration: { ...state.previewGeneration },
+        geometry: JSON.parse(JSON.stringify(state.adjustments.shared.geometry)),
+        previewStatus: els.previewStatus?.textContent,
+        scheduler: state.previewScheduler?.snapshot(),
+      }));
+      throw new Error(`${error.message} Diagnostics: ${JSON.stringify(diagnostics)}`);
+    });
+    assert(await page.evaluate(() => !activePreviewElement().style.getPropertyValue("--interactive-straighten-angle")), "Straighten's temporary transform remained after the authoritative preview settled.");
+    await page.waitForFunction(() => {
+      const preview = activePreviewElement();
+      const width = preview instanceof HTMLCanvasElement ? preview.width : preview.naturalWidth;
+      const height = preview instanceof HTMLCanvasElement ? preview.height : preview.naturalHeight;
+      return height > 0 && Math.abs(width / height - 1) < 0.01;
+    }, null, { timeout: 30000 }).catch(async (error) => {
+      const diagnostics = await page.evaluate(() => {
+        const preview = activePreviewElement();
+        const width = preview instanceof HTMLCanvasElement ? preview.width : preview.naturalWidth;
+        const height = preview instanceof HTMLCanvasElement ? preview.height : preview.naturalHeight;
+        return {
+          bitmap: { width, height },
+          globalEditDirty: state.globalEditDirty,
+          globalEditGeneration: state.globalEditGeneration,
+          hasGlobalEditSyncPending: Boolean(state.globalEditSyncPending),
+          editRevision: state.editRevision,
+          previewGeneration: { ...state.previewGeneration },
+          geometry: JSON.parse(JSON.stringify(state.adjustments.shared.geometry)),
+          previewStatus: els.previewStatus?.textContent,
+          scheduler: state.previewScheduler?.snapshot(),
+        };
+      });
+      throw new Error(`${error.message} Diagnostics: ${JSON.stringify(diagnostics)}`);
+    });
+    const straightenCropCommit = await page.evaluate(() => ({
+      angle: state.adjustments.shared.geometry.straighten_angle,
+      slider: Number(els.cropStraighten.value),
+      ratio: state.adjustments.shared.geometry.ratio_mode,
+    }));
+    assert(Math.abs(straightenCropCommit.angle - releasedStraightenAngle) < 0.01 && Math.abs(straightenCropCommit.slider - releasedStraightenAngle) < 0.01, `A stale geometry commit replaced the released Straighten angle: ${JSON.stringify({ releasedStraightenAngle, straightenCropCommit })}`);
+    assert(straightenCropCommit.ratio === "1:1", `Crop applied before Straighten settled was lost: ${JSON.stringify(straightenCropCommit)}`);
+
     const vignetteGroup = page.locator(".vignette-group");
     if (await vignetteGroup.evaluate((element) => element.classList.contains("collapsed"))) {
       await vignetteGroup.locator(".group-toggle").click();
@@ -326,7 +424,29 @@ async function canvasVariationCount(locator) {
     });
     assert(Math.abs(vignettePlacement.frameCenterX - vignettePlacement.handleCenterX) < 2 && Math.abs(vignettePlacement.frameCenterY - vignettePlacement.handleCenterY) < 2, `Vignette center was not placed in cropped output space: ${JSON.stringify(vignettePlacement)}`);
 
-    const globalRailShot = path.resolve(__dirname, "../../docs/testing/local-adjustments-global-qa.png");
+    const vignetteDragStart = await page.evaluate(() => {
+      const frame = activePreviewElement().getBoundingClientRect();
+      const handle = els.vignetteCenterHandle.getBoundingClientRect();
+      return {
+        frameWidth: frame.width,
+        centerX: state.adjustments[state.currentView].vignette.center_x,
+        handleX: handle.left + handle.width / 2,
+        handleY: handle.top + handle.height / 2,
+      };
+    });
+    const vignetteDragPixels = 24;
+    await page.mouse.move(vignetteDragStart.handleX + 10, vignetteDragStart.handleY);
+    await page.mouse.down();
+    await page.mouse.move(vignetteDragStart.handleX + 10 + vignetteDragPixels, vignetteDragStart.handleY, { steps: 3 });
+    await page.mouse.up();
+    const expectedVignetteCenterX = vignetteDragStart.centerX + vignetteDragPixels / vignetteDragStart.frameWidth;
+    const vignetteCenterAfterDrag = await page.evaluate(() => state.adjustments[state.currentView].vignette.center_x);
+    assert(Math.abs(vignetteCenterAfterDrag - expectedVignetteCenterX) < 0.005, `Vignette center jumped to the pointer instead of preserving its grab offset: ${JSON.stringify({ vignetteCenterAfterDrag, expectedVignetteCenterX })}`);
+    await page.waitForTimeout(500);
+    const vignetteCenterAfterRefresh = await page.evaluate(() => state.adjustments[state.currentView].vignette.center_x);
+    assert(Math.abs(vignetteCenterAfterRefresh - vignetteCenterAfterDrag) < 0.0001, `Vignette center changed after the drag ended: ${JSON.stringify({ vignetteCenterAfterDrag, vignetteCenterAfterRefresh })}`);
+
+    const globalRailShot = path.join(outputDirectory, "local-adjustments-global-qa.png");
     await page.locator(".grade-rail").screenshot({ path: globalRailShot });
 
     if (pageErrors.length) throw new Error(`Browser errors: ${pageErrors.join(" | ")}`);

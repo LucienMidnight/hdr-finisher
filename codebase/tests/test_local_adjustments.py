@@ -22,12 +22,14 @@ from hdr_finisher.models import (
     AdjustmentState,
     BrushStroke,
     EditCommand,
+    FeatherPathNode,
     GeometryAdjustments,
     LocalAdjustment,
     LocalGrade,
     MaskExpression,
     MaskLeaf,
     MaskPoint,
+    PathNode,
     PreviewKind,
 )
 from hdr_finisher.projects import open_project, save_project
@@ -183,6 +185,118 @@ def test_luminance_range_feather_softens_the_finished_spatial_mask() -> None:
     assert feathered[128, 32] == pytest.approx(plain[128, 32], abs=1e-4)
     assert feathered[128, size // 2 + 10] > plain[128, size // 2 + 10]
     assert 0.0 < feathered[128, size // 2] < 1.0
+
+
+def _path_nodes(left: float = 0.25, top: float = 0.25, right: float = 0.75, bottom: float = 0.75) -> list[PathNode]:
+    return [
+        PathNode(x=left, y=top, node_type="sharp"),
+        PathNode(x=right, y=top, node_type="sharp"),
+        PathNode(x=right, y=bottom, node_type="sharp"),
+        PathNode(x=left, y=bottom, node_type="sharp"),
+    ]
+
+
+def _feather_nodes(left: float = 0.15, top: float = 0.15, right: float = 0.85, bottom: float = 0.85) -> list[FeatherPathNode]:
+    return [
+        FeatherPathNode(x=left, y=top, node_type="sharp"),
+        FeatherPathNode(x=right, y=top, node_type="sharp"),
+        FeatherPathNode(x=right, y=bottom, node_type="sharp"),
+        FeatherPathNode(x=left, y=bottom, node_type="sharp"),
+    ]
+
+
+def test_outer_boundary_path_feather_is_solid_inside_and_falls_to_zero_at_outer_curve() -> None:
+    leaf = MaskLeaf(
+        type="path",
+        nodes=_path_nodes(),
+        feather=0.1,
+        feather_mode="outer_boundary",
+        feather_nodes=_feather_nodes(),
+    )
+    x = np.asarray([[0.5, 0.25, 0.20, 0.15, 0.10]], dtype=np.float32)
+    y = np.full_like(x, 0.5)
+    reference = np.full((1, x.shape[1], 3), 0.18, dtype=np.float32)
+    mask = evaluate_mask(_leaf(leaf), reference, x, y)
+
+    assert mask[0, 0] == pytest.approx(1.0)
+    assert mask[0, 1] == pytest.approx(1.0)
+    assert mask[0, 2] == pytest.approx(0.5, abs=0.05)
+    assert mask[0, 3] == pytest.approx(0.0, abs=1e-5)
+    assert mask[0, 4] == pytest.approx(0.0, abs=1e-5)
+
+
+def test_uniform_outer_path_feather_uses_the_short_image_edge_as_its_distance_unit() -> None:
+    leaf = MaskLeaf(type="path", nodes=_path_nodes(), feather=0.1, feather_mode="outer_boundary")
+    # On a 2:1 image, a 0.1 short-edge feather spans 0.05 normalized X or
+    # 0.1 normalized Y. Halfway samples should therefore match.
+    x = np.asarray([[0.225, 0.5]], dtype=np.float32)
+    y = np.asarray([[0.5, 0.20]], dtype=np.float32)
+    reference = np.full((1, 2, 3), 0.18, dtype=np.float32)
+    mask = evaluate_mask(_leaf(leaf), reference, x, y, pixel_aspect=2.0)
+    assert mask[0, 0] == pytest.approx(mask[0, 1], abs=0.08)
+    assert 0.25 < mask[0, 0] < 0.75
+
+
+def test_legacy_symmetric_path_feather_keeps_its_existing_boundary_semantics() -> None:
+    leaf = MaskLeaf(type="path", nodes=_path_nodes(), feather=0.1)
+    x = np.asarray([[0.25, 0.20, 0.30]], dtype=np.float32)
+    y = np.full_like(x, 0.5)
+    reference = np.full((1, 3, 3), 0.18, dtype=np.float32)
+    mask = evaluate_mask(_leaf(leaf), reference, x, y)
+    assert mask[0, 0] == pytest.approx(0.5, abs=1e-4)
+    assert mask[0, 1] < 0.5 < mask[0, 2]
+
+
+def test_path_model_rejects_crossing_and_non_containing_feather_boundaries() -> None:
+    with pytest.raises(ValueError, match="cannot self-intersect"):
+        MaskLeaf(
+            type="path",
+            nodes=[
+                PathNode(x=0.2, y=0.2), PathNode(x=0.8, y=0.8),
+                PathNode(x=0.8, y=0.2), PathNode(x=0.2, y=0.8),
+            ],
+        )
+    with pytest.raises(ValueError, match="must contain"):
+        MaskLeaf(
+            type="path",
+            nodes=_path_nodes(),
+            feather=0.1,
+            feather_mode="outer_boundary",
+            feather_nodes=_feather_nodes(0.3, 0.3, 0.7, 0.7),
+        )
+
+
+def test_outer_boundary_path_payload_round_trips_all_vector_state() -> None:
+    original = MaskLeaf(
+        type="path",
+        nodes=[
+            PathNode(x=0.2, y=0.2, out_x=0.35, out_y=0.1, node_type="smooth"),
+            PathNode(x=0.8, y=0.25, in_x=0.65, in_y=0.1, node_type="smooth"),
+            PathNode(x=0.7, y=0.8, node_type="sharp"),
+            PathNode(x=0.2, y=0.75, node_type="sharp"),
+        ],
+        feather=0.08,
+        feather_mode="outer_boundary",
+        feather_nodes=_feather_nodes(0.1, 0.1, 0.9, 0.9),
+    )
+    restored = MaskLeaf.model_validate_json(original.model_dump_json())
+    assert restored == original
+
+
+def test_outer_boundary_path_applies_local_exposure_inside_the_mask() -> None:
+    image = np.full((32, 32, 3), 0.1, dtype=np.float32)
+    leaf = MaskLeaf(
+        type="path",
+        nodes=_path_nodes(),
+        feather=0.1,
+        feather_mode="outer_boundary",
+        feather_nodes=_feather_nodes(),
+    )
+    local = LocalAdjustment(mask=_leaf(leaf), hdr_grade=LocalGrade(exposure=1.0))
+    result = apply_local_stack(image, image, [local], PreviewKind.HDR, GeometryAdjustments(), tile_size=11)
+
+    assert result[16, 16] == pytest.approx(np.full(3, 0.2), abs=1e-5)
+    assert result[1, 1] == pytest.approx(np.full(3, 0.1), abs=1e-5)
 
 
 def test_luminance_feather_uses_a_linear_half_strength_response() -> None:
@@ -869,6 +983,20 @@ def test_project_round_trip_keeps_vector_state_and_references_source(tmp_path: P
         payload.session_id,
         [EditCommand(expected_revision=0, command_type="create_local", payload={"local": local.model_dump(mode="json")})],
     )
+    path_local = LocalAdjustment(
+        name="Subject path",
+        mask=_leaf(MaskLeaf(
+            type="path",
+            nodes=_path_nodes(),
+            feather=0.08,
+            feather_mode="outer_boundary",
+            feather_nodes=_feather_nodes(),
+        )),
+    )
+    store.apply_edit_commands(
+        payload.session_id,
+        [EditCommand(expected_revision=1, command_type="create_local", payload={"local": path_local.model_dump(mode="json")})],
+    )
     project_path = tmp_path / "edit.hdrfinisher"
     saved = save_project(store.get(payload.session_id), project_path)
     assert saved.document.source.durable_path == str(source.resolve())
@@ -876,4 +1004,8 @@ def test_project_round_trip_keeps_vector_state_and_references_source(tmp_path: P
     reopened = open_project(store, project_path)
     assert reopened.local_adjustments[0].name == "Sky"
     assert reopened.local_adjustments[0].hdr_grade.exposure == pytest.approx(-0.4)
+    reopened_path = reopened.local_adjustments[1].mask.leaf
+    assert reopened_path.feather_mode == "outer_boundary"
+    assert reopened_path.feather == pytest.approx(0.08)
+    assert reopened_path.feather_nodes == path_local.mask.leaf.feather_nodes
     assert reopened.source_path == source.resolve()

@@ -8,6 +8,7 @@
     "test:local-adjustments": "node tests/local-adjustments-interaction.js",
     "test:brush-mask": "node tests/brush-mask-interaction.js",
     "test:gradient-mask": "node tests/gradient-mask-interaction.js",
+    "test:path-mask": "node tests/path-mask-interaction.js",
     "test:luma-mask": "node tests/luma-mask-interaction.js",
     "test:mask-graph": "node tests/mask-graph-interaction.js",
     "test:device-loss": "node tests/device-loss-fallback.js",

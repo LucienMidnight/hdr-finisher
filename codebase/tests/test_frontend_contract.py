@@ -394,10 +394,24 @@ def test_advanced_finishing_controls_are_wired_to_the_editor_and_export_contract
     assert 'data-group="geometry"' in html
     assert 'id="crop-guide"' in html
     assert 'id="crop-grid-density"' in html
+    assert 'id="crop-tool-toggle" class="geometry-tool-crop"' in html
+    assert 'id="rotate-tool-toggle" class="geometry-tool-rotate"' in html
+    assert 'id="crop-tool-settings" class="geometry-tool-settings hidden"' in html
+    assert 'id="rotate-tool-settings" class="geometry-tool-settings hidden"' in html
+    assert 'id="straighten-grid-overlay" class="straighten-grid-overlay hidden"' in html
+    assert html.index('id="crop-tool-toggle"') > html.index('data-group="geometry"')
+    assert "updateStraightenInteractive" in script and "clearInteractiveStraightenPreview" in script
+    assert "showStraightenGrid" in script and "hideStraightenGrid" in script
+    assert "cropEditBaseCrop" in script
+    assert "cropAuthoringFrameAspect" in script
     assert 'data-group="color-grading"' in html
     assert 'id="color-grading-match-hdr"' in html
     assert 'data-group="vignette"' in html
     assert 'id="vignette-center-handle"' in html
+    assert "vignetteCenterGesture" in script
+    assert "grabOffsetX" in script and "grabOffsetY" in script
+    assert "globalEditGeneration" in script and "preserveNewerGlobalEdit" in script
+    assert "globalEditSyncPending" in script
     assert 'id="export-sharpening"' in html
     assert 'id="export-resize-mode"' in html
     assert 'method: "edge_aware_multiscale"' in script
@@ -612,7 +626,31 @@ def test_local_adjustments_use_group_and_folder_hierarchy_with_immediate_tool_st
     assert 'if (response.status === 409)' in javascript
     assert 'response = await requestScope(state.editRevision);' in javascript
     assert ".lane-folder-shell > .lane-switch button.active" in css
-    assert '.control-group[data-group="geometry"] #crop-open' in css
+    assert ".geometry-tool-strip" in css
+
+
+def test_path_mask_exposes_draft_bezier_and_independent_feather_contract() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+
+    assert 'id="local-mask-overlay" class="local-mask-overlay" tabindex="0"' in html
+    for contract in [
+        'feather_mode: "outer_boundary"',
+        'feather_nodes: []',
+        "function finishLocalPathDraft()",
+        "function splitPathSegment(nodes, segmentIndex, t = 0.5)",
+        "function materializeFeatherNodes(leaf)",
+        "function validFeatherGeometry(innerNodes, outerNodes)",
+        "function handlePathCanvasKeydown(event)",
+        "function hideLocalMaskOverlayForGradePreview()",
+        "state.localPathCreatePendingId === local.id",
+        'state.localPathEditMode === "feather" || !state.localPathDraft',
+    ]:
+        assert contract in javascript
+    assert '.path-edit-mode' in css
+    assert '.path-node-mode' in css
+    assert 'matchMedia("(prefers-reduced-motion: reduce)")' in javascript
 
 
 def test_frontend_assets_use_the_application_version_for_cache_busting() -> None:

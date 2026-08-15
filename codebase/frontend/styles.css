@@ -1027,7 +1027,8 @@ body[data-active-lane="sdr"] .lane-dot {
   display: none;
   max-width: none;
   max-height: none;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) rotate(var(--interactive-straighten-angle, 0deg)) scale(var(--interactive-straighten-scale, 1));
+  transform-origin: center;
   user-select: none;
   -webkit-user-drag: none;
 }
@@ -3278,6 +3279,97 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
   pointer-events: auto;
 }
 
+.local-mask-overlay:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+}
+
+.straighten-grid-overlay {
+  position: absolute;
+  z-index: 15;
+  pointer-events: none;
+}
+
+.path-edit-mode,
+.path-node-modes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.path-edit-mode {
+  margin-bottom: 8px;
+}
+
+.path-mode-button,
+.path-node-mode,
+.path-feather-actions button {
+  min-height: 32px;
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  background: var(--raised);
+  color: var(--text);
+  font: 600 11px var(--sans);
+}
+
+.path-mode-button:hover:not(:disabled),
+.path-node-mode:hover:not(:disabled),
+.path-feather-actions button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.path-mode-button.active,
+.path-node-mode.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--raised));
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.path-node-status {
+  min-height: 16px;
+  margin: 2px 0 6px;
+  color: var(--muted);
+  font: 500 10px/1.4 var(--sans);
+}
+
+.path-node-mode {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.path-node-mode-icon {
+  width: 18px;
+  height: 18px;
+  background: center / contain no-repeat;
+  opacity: .82;
+}
+
+.path-node-mode-sharp .path-node-mode-icon { background-image: url("assets/path-node-sharp.png"); }
+.path-node-mode-smooth .path-node-mode-icon { background-image: url("assets/path-node-smooth.png"); }
+.path-node-mode.active .path-node-mode-icon { opacity: 1; }
+
+.path-feather-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.path-feather-actions button {
+  min-height: 28px;
+  padding: 0 9px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.path-mode-button:focus-visible,
+.path-node-mode:focus-visible,
+.path-feather-actions button:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
 /* Compact local-adjustment workspace ---------------------------------- */
 .local-adjustments-group .control-group-body {
   padding-top: 10px;
@@ -3923,7 +4015,7 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
   border: 2px solid #fff;
   border-radius: 50%;
   background: #121719;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) rotate(var(--interactive-straighten-angle, 0deg)) scale(var(--interactive-straighten-scale, 1));
   box-shadow: 0 1px 5px #000c;
   pointer-events: none;
 }
@@ -3940,11 +4032,8 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 .crop-box canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .crop-handle { position: absolute; width: 10px; height: 10px; border: 1px solid #111; background: #fff; transform: translate(-50%, -50%); }
 .crop-handle.nw { left: 0; top: 0; cursor: nwse-resize; }.crop-handle.n { left: 50%; top: 0; cursor: ns-resize; }.crop-handle.ne { left: 100%; top: 0; cursor: nesw-resize; }.crop-handle.e { left: 100%; top: 50%; cursor: ew-resize; }.crop-handle.se { left: 100%; top: 100%; cursor: nwse-resize; }.crop-handle.s { left: 50%; top: 100%; cursor: ns-resize; }.crop-handle.sw { left: 0; top: 100%; cursor: nesw-resize; }.crop-handle.w { left: 0; top: 50%; cursor: ew-resize; }
-.crop-editor-panel { position: absolute; right: 14px; top: 14px; width: min(292px, calc(100% - 28px)); display: grid; gap: 12px; padding: 16px; border: 1px solid var(--hairline); border-radius: 10px; background: #0d1518f2; box-shadow: 0 18px 48px #0009; color: var(--text); }
-.crop-editor-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.crop-editor-panel-heading h2 { margin: 2px 0 0; font-size: 18px; }
-.crop-editor-panel .control-row { margin: 0; }
-.crop-editor-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding-top: 2px; }
+.crop-editor-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding-top: 2px; }
+.crop-editor-actions button { min-width: 0; padding-inline: 5px; }
 .proof-preview-switch { display: inline-flex; align-items: center; gap: 2px; width: max-content; padding: 2px; border: 1px solid var(--hairline); border-radius: 7px; background: var(--panel); }
 .proof-preview-switch button { border: 0; border-radius: 5px; padding: 6px 10px; background: transparent; color: var(--muted); cursor: pointer; }
 .proof-preview-switch button.active { background: var(--raised); color: var(--text); box-shadow: inset 0 0 0 1px var(--hairline); }
@@ -5684,13 +5773,57 @@ body {
   background: #0b0e10;
 }
 
-.control-group[data-group="geometry"] #crop-open {
+.control-group[data-group="geometry"] .group-reset {
   order: 2;
-  margin-left: auto;
 }
 
-.control-group[data-group="geometry"] .group-reset {
-  order: 3;
+.geometry-tool-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.geometry-tool-strip button {
+  display: flex;
+  min-width: 0;
+  min-height: 58px;
+  padding: 6px 4px 5px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 3px;
+  border: 1px solid #3a4649;
+  border-radius: 5px;
+  color: #c9d1d3;
+  font-size: 10px;
+  background: #181f21;
+}
+
+.geometry-tool-strip button.active {
+  border-color: #69c9cf;
+  color: #f2ffff;
+  background: linear-gradient(180deg, #31575a, #29474a);
+  box-shadow: inset 0 0 0 1px rgb(123 222 228 / 12%);
+}
+
+.geometry-tool-icon {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  color: #edf3f4;
+  font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets", sans-serif;
+  font-size: 20px;
+  font-style: normal;
+  place-items: center;
+}
+
+.geometry-tool-crop .geometry-tool-icon::before { content: "\E7A8"; }
+.geometry-tool-rotate .geometry-tool-icon::before { content: "\E7AD"; }
+
+.geometry-tool-settings {
+  display: grid;
+  gap: 9px;
+  padding-top: 4px;
 }
 
 .lane-folder-shell {
