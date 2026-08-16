@@ -575,7 +575,8 @@ async function overlayMaskAlphaAt(page, x, y) {
     const bypassResponse = page.waitForResponse((response) =>
       response.url().includes("/edit-commands") && response.request().method() === "POST",
     );
-    await page.locator("#local-bypass").click();
+    const localBypass = page.locator("[data-local-bypass-id]").first();
+    await localBypass.click();
     assert((await bypassResponse).ok(), "Bypassing the complete local adjustment failed.");
     const bypassState = await page.evaluate(async () => {
       const local = selectedLocal();
@@ -584,21 +585,34 @@ async function overlayMaskAlphaAt(page, x, y) {
       return {
         frontendEnabled: local.enabled,
         serverEnabled: server.document.local_adjustments.find((item) => item.id === local.id)?.enabled,
-        buttonText: document.querySelector("#local-bypass")?.textContent,
-        pressed: document.querySelector("#local-bypass")?.getAttribute("aria-pressed"),
+        bypassedClass: document.querySelector("[data-local-bypass-id]")?.classList.contains("bypassed"),
+        pressed: document.querySelector("[data-local-bypass-id]")?.getAttribute("aria-pressed"),
+        color: getComputedStyle(document.querySelector("[data-local-bypass-id]")).color,
+        bypassColor: (() => {
+          const probe = document.createElement("span");
+          probe.style.color = "var(--bypass-icon-hidden)";
+          document.body.append(probe);
+          const color = getComputedStyle(probe).color;
+          probe.remove();
+          return color;
+        })(),
       };
     });
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const bypassedOverlay = await overlayColors(overlay);
     assert(
       bypassState.frontendEnabled === false
       && bypassState.serverEnabled === false
-      && bypassState.buttonText === "Enable"
-      && bypassState.pressed === "true",
+      && bypassState.bypassedClass === true
+      && bypassState.pressed === "true"
+      && bypassState.color === bypassState.bypassColor,
       `Bypass did not gate the full persisted local adjustment: ${JSON.stringify(bypassState)}`,
     );
+    assert(bypassedOverlay.visible === 0, `Bypassing a local adjustment left its mask overlay visible: ${JSON.stringify(bypassedOverlay)}`);
     const enableResponse = page.waitForResponse((response) =>
       response.url().includes("/edit-commands") && response.request().method() === "POST",
     );
-    await page.locator("#local-bypass").click();
+    await localBypass.click();
     assert((await enableResponse).ok(), "Re-enabling the complete local adjustment failed.");
     assert(await page.evaluate(() => selectedLocal()?.enabled) === true, "Re-enabling the local adjustment did not persist in the UI.");
     await page.locator("#local-eraser").click();
@@ -634,7 +648,7 @@ async function overlayMaskAlphaAt(page, x, y) {
     assert(await page.locator("#local-adjustment-list li").count() === 1, "The minus button did not remove the selected adjustment.");
 
     if (pageErrors.length) throw new Error(`Browser errors: ${pageErrors.join(" | ")}`);
-    console.log(JSON.stringify({ brushLabels, maskLabels, empty, tipPreview, tipRects, painted, expanded, feathered, authoritativeMask, maskMatrix, beforeErase, beforeEraseCenter, duringEraseCenterOverlay, eraseReleaseAlphaSamples, settledErase, settledEraseCenter, eraseDuration, rapidEraseBefore, rapidEraseAfter, rapidEraseState, prematureAdjustedPreviews, bypassState, inverted, hidden }));
+    console.log(JSON.stringify({ brushLabels, maskLabels, empty, tipPreview, tipRects, painted, expanded, feathered, authoritativeMask, maskMatrix, beforeErase, beforeEraseCenter, duringEraseCenterOverlay, eraseReleaseAlphaSamples, settledErase, settledEraseCenter, eraseDuration, rapidEraseBefore, rapidEraseAfter, rapidEraseState, prematureAdjustedPreviews, bypassState, bypassedOverlay, inverted, hidden }));
   } finally {
     await browser.close();
   }

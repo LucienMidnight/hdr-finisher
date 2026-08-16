@@ -31,14 +31,17 @@
 
     <aside class="source-rail panel" aria-label="Metadata">
       <div class="rail-title-row">
-        <h1>Metadata</h1>
-        <span class="status-text muted" id="source-confidence">Waiting</span>
+        <h1 class="panel-title">Metadata</h1>
         <button id="source-rail-expand" class="source-rail-expand text-button" type="button" aria-expanded="true" aria-label="Collapse source metadata">Hide</button>
       </div>
 
       <div class="source-file-identity">
-        <p class="top-file-name" id="session-name">No active image</p>
-        <p class="top-file-meta" id="file-summary">Import one HDR-capable source to begin</p>
+        <p class="source-file-label">File Name</p>
+        <div class="source-filename-wrap" id="session-name-wrap">
+          <p class="top-file-name" id="session-name">No active image</p>
+          <p class="title-tooltip source-filename-tooltip" id="session-name-tooltip" role="tooltip">No active image</p>
+        </div>
+        <button id="copy-source-path" class="text-button source-copy-path" type="button" disabled>Copy path</button>
       </div>
 
       <section class="source-summary">
@@ -47,8 +50,7 @@
 
       <section class="disclosure-panel">
         <button id="source-settings-toggle" class="disclosure-trigger" type="button" aria-expanded="false" aria-controls="source-settings-panel">
-          <span>Interpretation</span>
-          <span id="interpretation-summary">Auto detect</span>
+          <span>Source Interpretation</span>
         </button>
         <div id="source-settings-panel" class="disclosure-content hidden">
           <label>Mode
@@ -86,20 +88,10 @@
       <section class="disclosure-panel">
         <button id="metadata-toggle" class="disclosure-trigger" type="button" aria-expanded="false" aria-controls="metadata-panel">
           <span>Metadata</span>
-          <span>Details</span>
         </button>
         <div id="metadata-panel" class="disclosure-content hidden">
           <dl id="metadata-list" class="metadata-list"></dl>
         </div>
-      </section>
-
-      <section class="preview-metadata-panel" aria-labelledby="preview-metadata-title">
-        <p id="preview-metadata-title" class="source-panel-title">Preview Window</p>
-        <dl class="metadata-list preview-metadata-list">
-          <dt>View</dt>
-          <dd id="viewer-lane-label">HDR grade</dd>
-        </dl>
-        <p id="viewer-branch-note" class="preview-branch-note">Graded HDR rendition. Exported as the PQ HDR image.</p>
       </section>
 
       <dl id="workflow-context-list" class="metadata-list hidden" aria-hidden="true"></dl>
@@ -122,7 +114,10 @@
         <div class="viewer-bar">
           <div class="viewer-lane">
             <span class="lane-dot" aria-hidden="true"></span>
-            <span>Preview Window</span>
+            <span class="preview-title-wrap">
+              <span id="preview-window-title" class="panel-title" tabindex="0" aria-describedby="viewer-branch-note">Preview Window</span>
+              <span id="viewer-branch-note" class="title-tooltip preview-title-tooltip" role="tooltip">Displays the active HDR grade or SDR fallback with current adjustments applied. Switch renditions in the Control Panel or use the layout buttons to view them side-by-side.</span>
+            </span>
           </div>
           <div class="viewer-tools">
             <div class="comparison-modes" role="group" aria-label="Preview comparison layout">
@@ -206,7 +201,7 @@
           </div>
           <aside id="proof-workflow-panel" class="workflow-side-panel proof-rail panel" data-workflow-panel="proof" aria-label="Chromium Proof settings">
             <div class="workflow-rail-header">
-              <div><p class="section-kicker">Browser review</p><h1>Control Panel</h1></div>
+              <div><p class="section-kicker">Browser review</p><h1 class="panel-title">Control Panel</h1></div>
               <span id="chrome-proof-inline-status" class="status-text muted">Off</span>
             </div>
             <label class="proof-enable-row">
@@ -320,6 +315,7 @@
 
       <section id="analysis-dock" class="analysis-dock panel" aria-label="Analysis">
         <div class="dock-bar">
+          <h1 class="panel-title dock-panel-title">Scopes</h1>
           <div class="dock-tabs" role="tablist" aria-label="Analysis views">
             <button class="dock-tab" type="button" data-dock-tab="waveform" role="tab">Waveform</button>
             <button class="dock-tab active" type="button" data-dock-tab="histogram" role="tab">Histogram</button>
@@ -338,9 +334,9 @@
         <div id="scope-view" class="dock-content scope-layout">
           <div class="scope-visual">
             <div class="scope-heading">
-              <div>
-                <p class="section-kicker">Scopes</p>
-                <h2 id="scope-title">Histogram</h2>
+              <div class="scope-title-wrap">
+                <h2 id="scope-title" tabindex="0" aria-describedby="scope-note">Histogram</h2>
+                <p id="scope-note" class="title-tooltip" role="tooltip">Reference scopes will appear after a preview is rendered.</p>
               </div>
               <div class="field-inline">
                 <select id="scope-mode" class="scope-mode-select" aria-label="Scope mode">
@@ -366,7 +362,6 @@
             <canvas id="histogram" width="720" height="220" aria-label="Image scope"></canvas>
           </div>
           <div class="scope-readings">
-            <p id="scope-note" class="helper">Reference scopes will appear after a preview is rendered.</p>
             <dl id="scope-stats" class="metadata-list scope-stats"></dl>
           </div>
         </div>
@@ -403,7 +398,7 @@
     <aside class="grade-rail panel" aria-label="Workflow settings">
       <section id="import-workflow-panel" class="workflow-rail-panel import-workflow-panel" data-workflow-panel="import" aria-label="Import settings">
         <div class="grade-header">
-          <h1>Control Panel</h1>
+          <h1 class="panel-title">Control Panel</h1>
         </div>
         <input id="file-input" type="file" accept=".exr,.tif,.tiff,.hdr,.pfm,.heic,.heif,.avif,.png,.jpg,.jpeg" hidden>
         <div class="import-actions">
@@ -415,7 +410,7 @@
       <section id="grade-workflow-panel" class="workflow-rail-panel" data-workflow-panel="grade" aria-label="Grade settings">
       <div class="grade-header">
         <div>
-          <h1>Control Panel</h1>
+          <h1 class="panel-title">Control Panel</h1>
         </div>
         <span id="grade-modified-summary" class="status-text muted">Default</span>
       </div>
@@ -459,7 +454,6 @@
         <div class="local-action-row local-stack-secondary-actions">
           <button id="local-move-up" type="button" aria-label="Move local adjustment up" title="Move local adjustment up"><span class="local-move-up-icon" aria-hidden="true"></span></button>
           <button id="local-move-down" type="button" aria-label="Move local adjustment down" title="Move local adjustment down"><span class="local-move-down-icon" aria-hidden="true"></span></button>
-          <button id="local-bypass" type="button" aria-pressed="false">Bypass</button>
         </div>
         <div id="local-editor" class="local-editor hidden">
           <div class="local-mask-tree">
@@ -553,14 +547,15 @@
 
       <div class="lane-folder-shell">
       <div class="lane-switch" role="tablist" aria-label="Active rendition">
-        <button id="view-hdr" class="active" data-kind="hdr" type="button" role="tab" aria-selected="true">
-          <span>HDR Controls</span><span class="modified-indicator" aria-hidden="true"></span>
+        <button id="view-hdr" class="active" data-kind="hdr" type="button" role="tab" aria-selected="true" aria-labelledby="hdr-controls-label" aria-describedby="hdr-controls-tooltip">
+          <span id="hdr-controls-label">HDR Controls</span><span class="modified-indicator" aria-hidden="true"></span>
+          <span id="hdr-controls-tooltip" class="title-tooltip lane-title-tooltip" role="tooltip">Graded HDR rendition. Exported as the PQ HDR image. Double-click any value to type it.</span>
         </button>
-        <button id="view-sdr" data-kind="sdr" type="button" role="tab" aria-selected="false">
-          <span>SDR Controls</span><span class="modified-indicator" aria-hidden="true"></span>
+        <button id="view-sdr" data-kind="sdr" type="button" role="tab" aria-selected="false" aria-labelledby="sdr-controls-label" aria-describedby="sdr-controls-tooltip">
+          <span id="sdr-controls-label">SDR Controls</span><span class="modified-indicator" aria-hidden="true"></span>
+          <span id="sdr-controls-tooltip" class="title-tooltip lane-title-tooltip" role="tooltip">Independent fallback baked into the gain map. This is what viewers without HDR gain-map support will see. Double-click any value to type it.</span>
         </button>
       </div>
-      <p id="lane-note" class="lane-note">Graded HDR rendition. Exported as the PQ HDR image. Double-click any value to type it.</p>
 
       <div class="lane-panel" data-lane-panel="hdr">
         <section class="control-group collapsed" data-group="hdr-tone">
@@ -1042,7 +1037,7 @@
   <aside id="export-sheet" class="export-sheet workflow-side-panel panel" data-workflow-panel="export" aria-label="Export settings">
     <div class="sheet-header">
       <div>
-        <h1>Control Panel</h1>
+        <h1 class="panel-title">Control Panel</h1>
       </div>
       <span class="capability-chip" id="capability-summary">Checking encoders…</span>
     </div>

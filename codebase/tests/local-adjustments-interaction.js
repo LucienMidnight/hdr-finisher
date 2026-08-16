@@ -341,6 +341,8 @@ async function canvasVariationCount(locator) {
     const straightenInteractive = await page.evaluate(() => ({
       angle: state.adjustments.shared.geometry.straighten_angle,
       transform: activePreviewElement().style.getPropertyValue("--interactive-straighten-angle"),
+      scale: activePreviewElement().style.getPropertyValue("--interactive-straighten-scale"),
+      clipPath: activePreviewElement().style.clipPath,
       generation: { ...state.previewGeneration },
       gridHidden: els.straightenGridOverlay.classList.contains("hidden"),
       gridWidth: parseFloat(els.straightenGridOverlay.style.width),
@@ -348,6 +350,7 @@ async function canvasVariationCount(locator) {
     }));
     assert(Math.abs(straightenInteractive.angle) > 0.5 && straightenInteractive.transform.includes("deg"), `Straighten did not update the viewer immediately: ${JSON.stringify(straightenInteractive)}`);
     assert(Math.abs(parseFloat(straightenInteractive.transform) + straightenInteractive.angle) < 0.2, `Interactive Straighten rotated opposite to the authoritative geometry direction: ${JSON.stringify(straightenInteractive)}`);
+    assert(straightenInteractive.scale === "1" && !straightenInteractive.clipPath, `Interactive Straighten zoomed or clipped the image instead of moving it behind the fixed grid: ${JSON.stringify(straightenInteractive)}`);
     assert(!straightenInteractive.gridHidden, "Straighten grid was not visible while dragging the slider.");
     assert(Math.abs(straightenInteractive.gridWidth - straightenStart.frameWidth) < 1 && Math.abs(straightenInteractive.gridHeight - straightenStart.frameHeight) < 1, `Straighten grid did not retain the image aspect ratio: ${JSON.stringify({ straightenStart, straightenInteractive })}`);
     assert(await canvasVariationCount(page.locator("#straighten-grid-overlay")) > 100, "Straighten grid canvas did not draw its dense alignment lines.");

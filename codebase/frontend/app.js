@@ -636,14 +636,14 @@ const els = {
   emptyImportButton: document.getElementById("empty-import-button"),
   ejectButton: document.getElementById("eject-button"),
   badge: document.getElementById("badge"),
-  fileSummary: document.getElementById("file-summary"),
-  sourceConfidence: document.getElementById("source-confidence"),
   sourceRailExpand: document.getElementById("source-rail-expand"),
+  sessionNameWrap: document.getElementById("session-name-wrap"),
+  sessionNameTooltip: document.getElementById("session-name-tooltip"),
+  copySourcePath: document.getElementById("copy-source-path"),
   capabilitySummary: document.getElementById("capability-summary"),
   workflowTabs: [...document.querySelectorAll("[data-workflow-tab]")],
   sourceSettingsToggle: document.getElementById("source-settings-toggle"),
   sourceSettingsPanel: document.getElementById("source-settings-panel"),
-  interpretationSummary: document.getElementById("interpretation-summary"),
   interpretationMode: document.getElementById("interpretation-mode"),
   interpretationColorSpace: document.getElementById("interpretation-color-space"),
   interpretationTransfer: document.getElementById("interpretation-transfer"),
@@ -709,7 +709,6 @@ const els = {
   localDelete: document.getElementById("local-delete"),
   localMoveUp: document.getElementById("local-move-up"),
   localMoveDown: document.getElementById("local-move-down"),
-  localBypass: document.getElementById("local-bypass"),
   localShowMask: document.getElementById("local-show-mask"),
   localOverlayColorButton: document.getElementById("local-overlay-color-button"),
   localOverlayColorInput: document.getElementById("local-overlay-color"),
@@ -742,9 +741,7 @@ const els = {
   previewStatusCopy: document.getElementById("preview-status-copy"),
   previewProgress: document.getElementById("preview-progress"),
   falseColorLegend: document.getElementById("false-color-legend"),
-  viewerLaneLabel: document.getElementById("viewer-lane-label"),
   viewerBranchNote: document.getElementById("viewer-branch-note"),
-  laneNote: document.getElementById("lane-note"),
   compareButton: document.getElementById("compare-button"),
   compareLayoutButtons: [...document.querySelectorAll("button[data-compare-layout]")],
   zoomFit: document.getElementById("zoom-fit"),
@@ -917,8 +914,8 @@ const sectionPathForGroup = {
 };
 
 const branchCopy = {
-  hdr: "Graded HDR rendition. Exported as the PQ HDR image. Double-click any value to type it.",
-  sdr: "Independent fallback baked into the gain map. This is what viewers without HDR gain-map support will see. Double-click any value to type it.",
+  hdr: "Displays the active HDR grade or SDR fallback with current adjustments applied. Switch renditions in the Control Panel or use the layout buttons to view them side-by-side.",
+  sdr: "Displays the active HDR grade or SDR fallback with current adjustments applied. Switch renditions in the Control Panel or use the layout buttons to view them side-by-side.",
 };
 
 const capabilityForFormat = {
@@ -957,6 +954,7 @@ async function boot() {
   window.addEventListener("resize", () => {
     syncOverlayPlacement();
     renderLocalMaskOverlay();
+    syncSourceFilenameOverflow();
   });
   observeScopeSize();
   observeGraphEditorSizes();
@@ -1535,8 +1533,6 @@ function bindEvents() {
   });
   els.acceptInterpretation.addEventListener("click", () => {
     state.interpretationGateDismissed = true;
-    els.sourceConfidence.textContent = "Assumption accepted";
-    els.interpretationSummary.textContent = "Auto assumption";
     renderInterpretationGate();
     renderExportPreflight();
   });
@@ -1674,6 +1670,7 @@ function bindEvents() {
   els.applyInterpretationButton.addEventListener("click", applyInterpretationOverride);
   els.resetInterpretationButton.addEventListener("click", resetInterpretationToAuto);
   els.ejectButton.addEventListener("click", ejectCurrentSession);
+  els.copySourcePath.addEventListener("click", copySourcePath);
   els.copyExportPath.addEventListener("click", copyLastExportPath);
 
   els.groupToggles.forEach((button) => {
@@ -1884,9 +1881,8 @@ async function ejectCurrentSession() {
   clearPreviewOverlay();
   els.badge.textContent = "No file loaded.";
   els.badge.className = "badge neutral";
-  els.sessionName.textContent = "No active image";
-  els.fileSummary.textContent = "Import one HDR-capable source to begin";
-  els.sourceConfidence.textContent = "Waiting";
+  renderSourceFilename("No active image");
+  syncCopySourcePathButton();
   els.metadataList.innerHTML = "";
   els.sourceSettingsPanel.classList.add("hidden");
   els.interpretationMode.value = "auto";
@@ -1920,13 +1916,11 @@ async function ejectCurrentSession() {
 
 function renderSession() {
   const session = state.session;
-  els.sessionName.textContent = session.source.filename;
+  renderSourceFilename(session.source.filename);
   clearPreviewOverlay();
   els.badge.textContent = session.analysis.badge_message;
   els.badge.className = badgeClass(session.analysis.classification);
-  els.interpretationSummary.textContent = interpretationSummary(session);
-  els.sourceConfidence.textContent = session.source.color_space_confident ? "Confirmed" : "Review";
-  els.fileSummary.textContent = `${session.source.suffix.toUpperCase()} · ${session.source.width} × ${session.source.height} · ${session.source.working_space}`;
+  syncCopySourcePathButton();
   syncInterpretationControls(session);
   applyLatitudePresets(session.analysis.source_latitude);
   renderSourceSettingsVisibility();
@@ -3541,21 +3535,15 @@ function updateStraightenInteractive(value) {
   updateControlReadouts();
   renderControlState();
   const delta = angle - (state.straightenPreviewBaseAngle ?? angle);
-  const frame = state.straightenPreviewFrameRect;
-  const radians = -delta * Math.PI / 180;
-  const sine = Math.sin(radians);
-  const cosine = Math.cos(radians);
-  const aspect = Math.max(0.01, (frame?.width || 1) / Math.max(1, frame?.height || 1));
-  const scale = Math.max(Math.abs(cosine) + Math.abs(sine) / aspect, Math.abs(cosine) + Math.abs(sine) * aspect);
-  const clipPolygon = [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]].map(([x, y]) => {
-    const sourceX = (cosine * x + sine * y / aspect) / scale;
-    const sourceY = (-sine * x * aspect + cosine * y) / scale;
-    return `${50 + sourceX * 100}% ${50 + sourceY * 100}%`;
-  }).join(", ");
+  // Keep the image at its current viewer scale while the user straightens it.
+  // The fixed grid is the authoring reference and the image moves behind it;
+  // the authoritative render applies the largest valid-pixel crop on release.
+  // Scaling to cover the old frame here made portrait images appear to zoom by
+  // 25% or more and did not match the backend's variable-aspect safe crop.
   [els.previewImage, els.previewCanvas, els.previewOverlay, els.chromeProofImage].forEach((preview) => {
     preview?.style.setProperty("--interactive-straighten-angle", `${-delta}deg`);
-    preview?.style.setProperty("--interactive-straighten-scale", String(scale));
-    if (preview) preview.style.clipPath = `polygon(${clipPolygon})`;
+    preview?.style.setProperty("--interactive-straighten-scale", "1");
+    if (preview) preview.style.clipPath = "";
   });
 }
 
@@ -3605,6 +3593,14 @@ function showStraightenGrid() {
   };
   drawLines("rgba(0, 0, 0, .78)", 2.5);
   drawLines("rgba(255, 255, 255, .88)", 1);
+  const drawBorder = (strokeStyle, lineWidth) => {
+    const inset = lineWidth * dpr / 2;
+    context.strokeStyle = strokeStyle;
+    context.lineWidth = lineWidth * dpr;
+    context.strokeRect(inset, inset, canvas.width - inset * 2, canvas.height - inset * 2);
+  };
+  drawBorder("rgba(0, 0, 0, .9)", 4);
+  drawBorder("rgba(255, 255, 255, .95)", 1.5);
   canvas.classList.remove("hidden");
 }
 
@@ -5654,9 +5650,11 @@ function syncInterpretationControls(session) {
   els.interpretationMode.value = mode;
   els.interpretationColorSpace.value = defaultInterpretationValue(session);
   els.interpretationTransfer.value = defaultTransferValue(session);
-  els.sourceSettingsNote.textContent = session.analysis.needs_color_override
-    ? "Auto detection found an ambiguous source interpretation. Manual override is recommended before trusting export decisions."
-    : "Color Primaries controls gamut. Transfer Function controls encoding. Use Manual only when the file metadata is missing, wrong, or you know the render pipeline better than the file does.";
+  const needsReview = session.analysis.needs_color_override;
+  els.sourceSettingsNote.textContent = needsReview
+    ? "Auto detection found an ambiguous source interpretation."
+    : "Auto detection found a consistent source interpretation.";
+  els.sourceSettingsNote.classList.toggle("warning", needsReview);
 }
 
 function renderSourceSettingsVisibility() {
@@ -5826,7 +5824,6 @@ async function switchLane(lane) {
 
 function renderLaneChrome() {
   const lane = state.currentView;
-  const label = lane === "hdr" ? "HDR Grade" : "SDR Fallback";
   document.body.dataset.activeLane = lane;
   els.previewStage.dataset.primaryLane = lane;
   els.previewPrimaryPane.dataset.lane = lane;
@@ -5837,9 +5834,7 @@ function renderLaneChrome() {
     button.setAttribute("aria-selected", String(active));
   });
   els.lanePanels.forEach((panel) => panel.classList.toggle("hidden", panel.dataset.lanePanel !== lane));
-  els.viewerLaneLabel.textContent = label;
   els.viewerBranchNote.textContent = branchCopy[lane];
-  els.laneNote.textContent = branchCopy[lane];
   els.scopeKindLabel.textContent = lane.toUpperCase();
   state.previewInfo = state.previewInfoByLane[lane];
   els.filmLookSdrActions?.classList.toggle("hidden", lane !== "sdr");
@@ -6003,7 +5998,7 @@ async function peekOtherLane() {
   window.HDRProofing?.syncLane();
   clearPreviewOverlay();
   await showCachedPreview(other);
-  els.viewerLaneLabel.textContent = `${other.toUpperCase()} peek · release V`;
+  els.viewerBranchNote.textContent = `${branchCopy[other]} Release V to return to the authored preview.`;
 }
 
 async function restoreActiveLane() {
@@ -6513,7 +6508,6 @@ function renderControlState() {
     const enabled = getValueByPath(state.adjustments, path) !== false;
     button.classList.toggle("bypassed", !enabled);
     button.setAttribute("aria-pressed", String(enabled));
-    button.textContent = enabled ? "◉" : "○";
     button.closest(".control-group")?.classList.toggle("bypassed", !enabled);
   });
 }
@@ -6841,6 +6835,48 @@ function newMaskLeaf(type) {
   };
 }
 
+function sourcePathForClipboard() {
+  return state.editDocument?.source?.durable_path || null;
+}
+
+function syncCopySourcePathButton() {
+  const sourcePath = sourcePathForClipboard();
+  els.copySourcePath.disabled = !sourcePath;
+  els.copySourcePath.textContent = "Copy path";
+  els.copySourcePath.title = sourcePath
+    ? "Copy the full source path"
+    : "The original path is unavailable for browser-uploaded files";
+}
+
+async function copySourcePath() {
+  const sourcePath = sourcePathForClipboard();
+  if (!sourcePath) return;
+  try {
+    await navigator.clipboard.writeText(sourcePath);
+    els.copySourcePath.textContent = "Copied";
+  } catch {
+    els.copySourcePath.textContent = "Copy failed";
+  }
+}
+
+function renderSourceFilename(filename) {
+  els.sessionName.textContent = filename;
+  els.sessionNameTooltip.textContent = filename;
+  requestAnimationFrame(syncSourceFilenameOverflow);
+}
+
+function syncSourceFilenameOverflow() {
+  const overflowed = els.sessionName.scrollHeight > els.sessionName.clientHeight + 1;
+  els.sessionNameWrap.classList.toggle("has-overflow", overflowed);
+  if (overflowed) {
+    els.sessionName.tabIndex = 0;
+    els.sessionName.setAttribute("aria-describedby", "session-name-tooltip");
+  } else {
+    els.sessionName.removeAttribute("tabindex");
+    els.sessionName.removeAttribute("aria-describedby");
+  }
+}
+
 function newLocalAdjustment(type) {
   const number = (state.editDocument?.local_adjustments?.length || 0) + 1;
   return {
@@ -6937,6 +6973,16 @@ function bindLocalAdjustmentEvents() {
     updateLocalToolState();
   });
   els.localAdjustmentList?.addEventListener("click", async (event) => {
+    const bypassButton = event.target.closest("button[data-local-bypass-id]");
+    if (bypassButton) {
+      const local = localAdjustments().find((item) => item.id === bypassButton.dataset.localBypassId);
+      if (!local) return;
+      local.enabled = !local.enabled;
+      renderLocalAdjustments();
+      queueLocalMaskOverlayRender();
+      await queueEditCommand("update_local", { local: JSON.parse(JSON.stringify(local)) }, local.id);
+      return;
+    }
     const menuAction = event.target.closest("button[data-local-menu-action]");
     if (menuAction) {
       state.selectedLocalId = menuAction.dataset.localId;
@@ -7042,12 +7088,6 @@ function bindLocalAdjustmentEvents() {
     if (gpuLumaMaskPreviewActive(local)) scheduleLocalPreview();
     commitSelectedLocal();
   });
-  els.localBypass?.addEventListener("click", () => {
-    const local = selectedLocal();
-    if (!local) return;
-    local.enabled = !local.enabled;
-    commitSelectedLocal();
-  });
   els.localDelete?.addEventListener("click", async () => {
     const local = selectedLocal();
     if (!local) return;
@@ -7139,7 +7179,15 @@ function renderLocalAdjustments() {
     button.dataset.localId = local.id;
     button.classList.toggle("active", local.id === state.selectedLocalId);
     const maskType = firstMaskLeaf(local.mask)?.type || "mask";
-    button.innerHTML = `<span class="local-adjustment-state" aria-hidden="true">${local.enabled ? "◉" : "○"}</span><span class="local-adjustment-copy"><span>${escapeHtml(local.name)}</span><small>${escapeHtml(localMaskTypeLabel(maskType))}</small></span>`;
+    button.innerHTML = `<span class="local-adjustment-copy"><span>${escapeHtml(local.name)}</span><small>${escapeHtml(localMaskTypeLabel(maskType))}</small></span>`;
+    const bypassButton = document.createElement("button");
+    bypassButton.type = "button";
+    bypassButton.className = "local-adjustment-bypass";
+    bypassButton.classList.toggle("bypassed", !local.enabled);
+    bypassButton.dataset.localBypassId = local.id;
+    bypassButton.setAttribute("aria-label", `${local.enabled ? "Bypass" : "Show"} ${local.name}`);
+    bypassButton.setAttribute("aria-pressed", String(!local.enabled));
+    bypassButton.title = `${local.enabled ? "Bypass" : "Show"} ${local.name}`;
     const menuButton = document.createElement("button");
     menuButton.type = "button";
     menuButton.className = "local-adjustment-menu-button";
@@ -7149,7 +7197,7 @@ function renderLocalAdjustments() {
     menuButton.setAttribute("aria-expanded", String(state.localAdjustmentMenuId === local.id));
     menuButton.title = `More actions for ${local.name}`;
     menuButton.textContent = "⋯";
-    item.append(button, menuButton);
+    item.append(button, bypassButton, menuButton);
     if (state.localAdjustmentMenuId === local.id) {
       const menu = document.createElement("div");
       menu.className = "local-adjustment-menu";
@@ -7181,7 +7229,6 @@ function renderLocalAdjustments() {
   if (els.localDelete) els.localDelete.disabled = !local;
   if (els.localMoveUp) els.localMoveUp.disabled = !local || selectedIndex <= 0;
   if (els.localMoveDown) els.localMoveDown.disabled = !local || selectedIndex >= locals.length - 1;
-  if (els.localBypass) els.localBypass.disabled = !local;
   if (els.projectSave) {
     els.projectSave.disabled = !state.session;
     els.projectSave.textContent = state.documentDirty ? "Save project *" : "Save project";
@@ -7189,8 +7236,6 @@ function renderLocalAdjustments() {
   if (local) {
     els.localOpacity.value = String(local.opacity);
     els.localOpacityValue.textContent = `${Math.round(local.opacity * 100)}%`;
-    els.localBypass.setAttribute("aria-pressed", String(!local.enabled));
-    els.localBypass.textContent = local.enabled ? "Bypass" : "Enable";
     const brushLeaf = firstMaskLeaf(local.mask, "brush");
     els.localInvert.setAttribute("aria-pressed", String(Boolean(local.mask.inverted)));
     els.localInvert.textContent = local.mask.inverted ? "Restore mask" : "Invert mask";
@@ -7249,8 +7294,11 @@ function updateLocalGradeOutput(name, value) {
 
 function syncLocalMaskOverlayControl() {
   if (!els.localShowMask) return;
-  els.localShowMask.setAttribute("aria-pressed", String(state.localShowMask));
-  els.localShowMask.innerHTML = `<span class="local-overlay-icon" aria-hidden="true"></span><span>${state.localShowMask ? "Hide overlay" : "Show overlay"}</span>`;
+  const available = selectedLocal()?.enabled !== false;
+  const visible = state.localShowMask && available;
+  els.localShowMask.disabled = !available;
+  els.localShowMask.setAttribute("aria-pressed", String(visible));
+  els.localShowMask.innerHTML = `<span class="local-overlay-icon" aria-hidden="true"></span><span>${visible ? "Hide overlay" : "Show overlay"}</span>`;
 }
 
 function hideLocalMaskOverlayForGradePreview() {
@@ -7312,6 +7360,7 @@ function gpuLumaMaskOverlayOptions() {
   if (
     state.gradeMode !== "local"
     || !state.localShowMask
+    || local?.enabled === false
     || !gpuLumaMaskPreviewActive(local)
   ) return null;
   const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(state.localOverlayColor);
@@ -8850,7 +8899,7 @@ function renderLocalMaskOverlay() {
   const canvas = els.localMaskOverlay;
   if (!canvas) return;
   const local = selectedLocal();
-  const active = state.gradeMode === "local" && Boolean(local);
+  const active = state.gradeMode === "local" && Boolean(local) && local.enabled !== false;
   canvas.classList.toggle("editing", active);
   const rect = els.previewPrimaryPane?.getBoundingClientRect();
   if (!rect?.width || !rect?.height) return;
@@ -9758,6 +9807,7 @@ async function saveProjectToPath() {
   state.projectPath = payload.path;
   state.editDocument = payload.document;
   state.documentDirty = false;
+  syncCopySourcePathButton();
   els.badge.textContent = `Project saved · revision ${payload.revision}`;
   els.badge.className = "badge good";
 }

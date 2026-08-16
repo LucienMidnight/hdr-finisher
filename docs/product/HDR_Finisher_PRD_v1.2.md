@@ -528,6 +528,15 @@ After the Windows installer proves the workflow on clean machines, the packaging
 - **Instrument UI pass:** the source rail, grade rail, and analysis dock are now directly resizable with clamped mouse, keyboard, double-click-reset, and viewport-bucket persistence behavior. Control groups use banded disclosure headers, and native accessible ranges retain keyboard semantics while adding continuous bar-handle interaction, fixed numeric readouts, scale landmarks, precision modifiers, and a trailing 90 ms preview request cadence.
 
 ### Current UI Testing Notes
+
+#### Tooltip and description policy
+
+- Explanatory descriptions should generally be removed from persistent panel layout and presented as tooltips attached to the title of the feature, visualization, control, or other named object they explain.
+- Title tooltips appear after a two-second hover. The same content must also be available from keyboard focus and associated with its trigger for assistive technology.
+- Persistent inline descriptions are exceptions reserved for safety-critical guidance, required workflow state, errors, empty states, or instructions that users must read to complete the current task.
+- Tooltip copy is maintained separately in `docs/design/HDR_Finisher_Tooltip_Copy.md` so wording can be reviewed and copied into the implementation without searching application markup or scripts.
+- The Reference Nit Histogram is the reference implementation: its logarithmic reference-nit explanation is attached to the visualization title rather than occupying the readings column.
+
 - The UI has been refactored into a three-rail layout: Inspector on the left, preview center, controls/scopes/export on the right
 - At 1280 px the shell has no horizontal overflow, the grade rail retains at least 180 px of usable slider track, and all three splitters remain keyboard accessible and persistent
 - A repo-local Playwright preview script smoke-tests the local UI in Edge or bundled Chromium and writes artifacts under `codebase/output/playwright/`
@@ -546,6 +555,41 @@ After the Windows installer proves the workflow on clean machines, the packaging
   - removing corner ornaments from scrolling rail content where they produced floating artifacts
 - Overlay tooltips now open inward instead of clipping off the screen
 - The diagnostic overlay image is now positioned against the rendered preview image box rather than using independent layout assumptions
+
+### Crop and Rotate Interaction Contract (2026-08-16)
+
+The Crop and Rotate group owns one shared, destructive geometry stage for both the HDR and SDR renditions. Geometry must settle identically in preview and export; the browser may provide an optimistic interaction preview, but it must never redefine the authoritative image geometry.
+
+#### User-visible rotate and straighten behavior
+
+- **Rotate left 90 degrees** and **Rotate right 90 degrees** commit a quarter turn immediately. A positive stored rotation is clockwise, matching the button label. A quarter turn resets the crop to the full frame because the previous normalized crop belongs to the old orientation.
+- **Flip H** and **Flip V** commit shared horizontal and vertical reflections without creating lane-specific geometry.
+- **Straighten** is a continuous `-45` through `+45` degree control. While the slider is held, the currently displayed image rotates at its existing viewer scale behind a stationary alignment grid. The temporary transform must use scale `1` and no generated `clip-path`; it must not zoom to cover the old frame.
+- The stationary straighten grid retains the displayed image frame and aspect for the duration of the gesture. It uses dense high-contrast alignment lines plus a clearly drawn border around all four edges so the intended frame remains legible while image corners move through it.
+- Releasing Straighten hides the grid and requests one authoritative settled preview. That render removes unsupported rotated corners by selecting the largest centered rectangle containing only valid source pixels. In **Fit** view the resulting safe frame is fitted to the viewport; this final refit is expected content geometry, not an interactive zoom gesture.
+- If the user opens **Crop** before Straighten has settled, Crop waits for the latest shared geometry state and authoritative preview. The crop editor must never open against the pre-straighten bitmap.
+- Crop is authored against the visible settled frame. **Apply** composes the new normalized crop into any crop that was already committed; **Cancel** discards the draft. Applying a crop after straightening must preserve the released angle and the selected crop ratio.
+
+#### Implementation structure and invariants
+
+- Frontend interaction orchestration lives in `codebase/frontend/app.js`:
+  - `beginStraightenGesture` captures the committed base angle and displayed frame, shows the grid, and invalidates older preview generations.
+  - `updateStraightenInteractive` updates shared geometry and applies only the temporary rotation delta through `--interactive-straighten-angle`; `--interactive-straighten-scale` remains `1` and `clipPath` remains empty.
+  - `showStraightenGrid` freezes and draws the canvas grid and its two-pass dark/light edge border. `clearInteractiveStraightenPreview` removes temporary styles only after the authoritative replacement is ready.
+  - `finishStraightenGesture` hides the grid, invalidates both HDR and SDR preview lanes, and schedules the settled render instead of rendering on every pointer step.
+  - `openCropMode` synchronizes pending global edits and renders the settled geometry before creating a crop draft. `closeCropMode` composes the visible-frame draft into `cropEditBaseCrop` on Apply.
+  - `cropAuthoringFrameAspect` mirrors the backend's safe-rectangle calculation so fixed and custom aspect ratios are constrained in the same post-straighten coordinate space.
+- The CSS transform in `codebase/frontend/styles.css` is a temporary visual aid only. Do not put crop authority, persisted zoom, or export geometry into the CSS transform.
+- Authoritative processing lives in `codebase/backend/hdr_finisher/finishing.py::apply_geometry` and remains ordered as: quarter rotation, horizontal/vertical flips, arbitrary-angle straighten, then normalized crop.
+- `_rotate_to_valid_pixels` performs bicubic rotation with expansion, derives the largest centered valid-pixel rectangle through `_largest_rotated_rectangle`, and retains a two-pixel kernel inset on every edge. This no-invented-corners rule applies to previews and exports.
+- `zoomReferenceFrame` stabilizes display size across proxy-resolution swaps. Source geometry may update its aspect, but a preview quality or proxy long-edge change must not masquerade as zoom or alter scroll position.
+
+#### Regression requirements
+
+- `codebase/tests/local-adjustments-interaction.js` must continue to verify the live rotation direction, temporary scale `1`, empty `clipPath`, stationary grid dimensions, non-empty grid rendering, and absence of repeated authoritative renders during the drag.
+- The same browser flow must release Straighten, enter Crop immediately, apply a fixed ratio, and prove that the released angle and ratio survive synchronization and that the settled bitmap has the requested aspect without stretching.
+- `codebase/tests/test_advanced_finishing.py` must continue to prove that arbitrary-angle straightening returns finite valid pixels without padded corners and that shared geometry produces matching HDR/SDR dimensions.
+- Any change to transform order, safe-rectangle math, crop composition, preview generation, or viewport zoom must run both the focused geometry tests and the broader local-adjustments browser interaction test. Visual QA must include at least one portrait and one landscape image at a non-trivial angle.
 
 ### Local Adjustments Brush/Eraser Correctness and Performance Record (2026-08-14)
 
@@ -707,3 +751,4 @@ This repository's root `.gitignore` already excludes local exports, EXR / HDR wo
 *August 6, 2026 implementation addendum: the Affinity build 4646 Sony RAW workflow is validated through linear Display P3 OpenEXR import and quality-85 AVIF gain-map delivery on paired HDR/SDR monitors. Affinity's bounded integer TIFF limitation and missing EXR chromaticities are documented; manual `Display P3 Linear` interpretation is required. Float-preserving Lanczos preview downsampling fixes severe high-frequency aliasing and has automated plus real-image validation. Delivery proofing is now implemented for JPEG Ultra HDR and AVIF through separate Authoring, fixed-headroom Matrix, and Live Browser views with Windows headroom telemetry, content-hashed proxies, structured evidence, generated test media, and hosting-survival tooling. Automated coverage passes at 198 tests plus installed-Chrome/Edge smoke and 1280 px layout QA. Physical Windows Chrome parity, monitor/HDR state changes, cross-browser behavior, and real hosting pipelines remain the next evidence phase; the Windows export folder picker also requires repair.*
 *August 11, 2026 implementation addendum: the full `imagecodecs` package remains in the installer for TIFF reliability. Standards-aware AVIF and JPEG Ultra HDR import is implemented with strict decoder capability gates, independent HDR/SDR recovery, and two-generation production round-trip coverage. The deterministic suite passes at 280 tests, the enforced EXR/TIFF/HEIC browser matrix passes all nine scenarios with zero stale results, and follow-up checks confirm retained non-blank scopes during updates, exact waveform aggregation, isolated 4,000-nit highlight preservation, and preview/export independence. JPEG XL and DNG remain evidence-gated research items rather than v1 commitments.*
 *August 14, 2026 implementation addendum: Brush erasing is now an explicit top-of-mask attenuation stage after Shift Edge, Feather, Invert, and Mask Opacity; Bypass is the final gate over the complete local adjustment. Optimistic edit synchronization prevents pointer-release reversion, stale authoritative masks, intermediate adjusted previews, and dropped rapid erase strokes. Proxy-resolution incremental rasterization and processed/tinted mask caches reduce the recorded zoom worst case from about 354 ms to 11 ms. Focused Python, browser interaction, overlap/race, bypass, and repeatable local-mask performance coverage are recorded in the Local Adjustments Brush/Eraser section above and serve as the contract for Gradient, Luma, Path, and future mask work.*
+*August 16, 2026 implementation addendum: Crop and Rotate behavior is now explicitly contracted. Straighten rotates the current image at scale 1 behind a stationary bordered grid, then hands off to the authoritative valid-pixel crop on release. Crop waits for that settled geometry and composes visible-frame drafts into the committed crop. Frontend state ownership, backend transform order, zoom separation, and required Python/browser regression coverage are recorded in the Crop and Rotate Interaction Contract above.*

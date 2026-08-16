@@ -83,11 +83,43 @@ Runtime tokens in `frontend/styles.css` are authoritative. Use semantic tokens r
 | Text | `--text` | `#edf0f1` | Primary labels |
 | Muted | `--muted` | `#9fa7ac` | Secondary information |
 | Accent | `--accent` | `#6e9fb5` | Active and modified state |
+| Bypass icon artwork | `--bypass-icon-shape` | Eyebrow arc over outlined circular eye | Shared, replaceable visibility glyph for global groups and local adjustments |
+| Bypass icon size | `--bypass-icon-size` | `20px` | Shared icon dimensions |
+| Visible adjustment | `--bypass-icon-visible` | `var(--accent)` | Teal eye indicates the adjustment is included in the rendition |
+| Bypassed adjustment | `--bypass-icon-hidden` | `var(--quiet)` | Neutral gray eye with a diagonal strike indicates the adjustment is bypassed |
+| Bypass strike width | `--bypass-icon-strike-width` | `1.5px` | Diagonal eye-off mark weight |
 | Ready | `--ready` | `#8cbf9a` | Successful readiness |
 | Attention | `--attention` | `#d9b672` | Warnings requiring review |
 | Blocking | `--blocking` | `#d4796b` | Errors and blocking state |
 
 Reserve saturated RGB colors for channel-specific scopes and curve channels. Do not reuse error red, ready green, or attention amber as decorative accents.
+
+### Panel title component tokens
+
+Metadata, Preview Window, Control Panel, and Scopes use the shared `.panel-title` component. Runtime values remain authoritative in `frontend/styles.css`.
+
+| Role | Token | Current value |
+|---|---|---:|
+| Font family | `--panel-title-font-family` | `var(--sans)` |
+| Font size | `--panel-title-font-size` | `13px` |
+| Font weight | `--panel-title-font-weight` | `600` |
+| Letter spacing | `--panel-title-letter-spacing` | `0.06em` |
+| Color | `--panel-title-color` | `var(--text)` |
+
+Panel titles render in uppercase through the component class. Tooltip wording is maintained in `HDR_Finisher_Tooltip_Copy.md`; title-triggered explanatory tooltips use a two-second hover delay and must also open from keyboard focus.
+
+### Group title component tokens
+
+Control Panel group headings and Metadata disclosure headings share one typography contract. This includes titles such as `HIGHLIGHT COMPRESSION`, `SOURCE INTERPRETATION`, and `METADATA`. Runtime values remain authoritative in `frontend/styles.css`.
+
+| Role | Token | Current value |
+|---|---|---:|
+| Font family | `--group-title-font-family` | `var(--sans)` |
+| Font size | `--group-title-font-size` | `12px` |
+| Font weight | `--group-title-font-weight` | `600` |
+| Letter spacing | `--group-title-letter-spacing` | `0.06em` |
+| Color | `--group-title-color` | `var(--text)` |
+| Text transform | `--group-title-text-transform` | `uppercase` |
 
 ## Typography and copy
 
@@ -105,7 +137,7 @@ Reserve saturated RGB colors for channel-specific scopes and curve channels. Do 
 - Neutral values use neutral styling; modified values use the accent fill and stronger readout color.
 - Sliders retain native keyboard semantics and expose a directly editable numeric readout.
 - Double-clicking a value enables exact entry; Reset restores the documented default.
-- Bypass controls use a distinct icon/state and preserve their settings.
+- Bypass controls use the shared tokenized eye component and preserve their settings. The unstruck teal eye means visible/enabled; a neutral gray eye with a diagonal strike means bypassed. Local-adjustment eyes live in each adjustment row immediately before its overflow menu.
 - Disabled controls remain legible enough to explain the pipeline but cannot appear active.
 - Interactive preview feedback should begin promptly; settled scopes and refinements may follow.
 - Preview-only controls must say when they do not affect export quality.

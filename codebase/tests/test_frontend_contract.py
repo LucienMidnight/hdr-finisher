@@ -28,6 +28,12 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert 'id="tone-equalizer-remove"' in html
     assert 'id="tone-equalizer-radius"' in html
     assert html.count("data-section-path=") == 13
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    assert "--bypass-icon-shape:" in css
+    assert "--bypass-icon-visible: var(--accent)" in css
+    assert "--bypass-icon-hidden: var(--quiet)" in css
+    assert 'id="local-bypass"' not in html
+    assert "data-local-bypass-id" in script
     assert html.count("data-zone-hover=") == 6
     assert "Highlight Compression" in html
     assert 'data-group="hdr-highlights"' in html
@@ -62,6 +68,44 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert "overwrite," in script
 
 
+def test_panel_titles_and_scope_description_follow_shared_design_contract() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+
+    assert '<h1 class="panel-title">Metadata</h1>' in html
+    assert 'id="preview-window-title" class="panel-title" tabindex="0" aria-describedby="viewer-branch-note"' in html
+    assert 'id="viewer-branch-note" class="title-tooltip preview-title-tooltip" role="tooltip"' in html
+    assert "Switch renditions in the Control Panel or use the layout buttons to view them side-by-side." in html
+    assert 'class="preview-metadata-panel"' not in html
+    assert html.count('<h1 class="panel-title">Control Panel</h1>') == 4
+    assert '<h1 class="panel-title dock-panel-title">Scopes</h1>' in html
+    assert 'id="scope-title" tabindex="0" aria-describedby="scope-note"' in html
+    assert 'id="scope-note" class="title-tooltip" role="tooltip"' in html
+    assert "--panel-title-font-family:" in css
+    assert "--panel-title-font-size:" in css
+    assert "--group-title-font-family: var(--sans)" in css
+    assert "--group-title-font-size: 12px" in css
+    assert "--group-title-font-weight: 600" in css
+    assert ".disclosure-trigger > span:first-child" in css
+    assert "transition-delay: 2s" in css
+    assert "justify-content: flex-start" in css
+
+
+def test_rendition_descriptions_are_delayed_title_tooltips() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+
+    assert 'id="lane-note"' not in html
+    assert "laneNote:" not in javascript
+    assert 'aria-describedby="hdr-controls-tooltip"' in html
+    assert 'aria-describedby="sdr-controls-tooltip"' in html
+    assert 'id="hdr-controls-tooltip" class="title-tooltip lane-title-tooltip" role="tooltip"' in html
+    assert 'id="sdr-controls-tooltip" class="title-tooltip lane-title-tooltip" role="tooltip"' in html
+    assert ".lane-switch button:hover .lane-title-tooltip" in css
+    assert "transition-delay: 2s" in css
+
+
 def test_grade_readouts_support_bounded_direct_numeric_entry() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
@@ -80,7 +124,6 @@ def test_grade_readouts_support_bounded_direct_numeric_entry() -> None:
     assert '"sdr.highlight_recovery": { min: 0, max: 4' in javascript
     assert 'entryScale: 100' in javascript
     assert "Double-click any value to type it." in html
-    assert "Double-click any value to type it." in javascript
     assert ".editable-value[data-editing=\"true\"]" in css
     assert ".range-shell.manual-overflow" in css
 
@@ -294,6 +337,12 @@ def test_linear_workflow_uses_tab_specific_rails_and_reports_export_readiness() 
     assert "Global finishing only" not in html
     assert 'id="source-rail-expand"' in html
     assert 'class="source-file-identity"' in html
+    assert 'class="source-file-label">File Name</p>' in html
+    assert 'id="session-name-tooltip"' in html
+    assert 'id="copy-source-path"' in html
+    assert 'id="source-confidence"' not in html
+    assert 'id="file-summary"' not in html
+    assert 'id="interpretation-summary"' not in html
     assert '["import", "grade", "proof", "export"]' in javascript
     assert "/api/proof/reconstruction" in proofing
     assert "async function parseProofResponse" in proofing
@@ -324,15 +373,25 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
     assert '<aside class="source-rail panel" aria-label="Metadata">' in html
-    assert html.count("<h1>Control Panel</h1>") == 4
+    assert html.count('<h1 class="panel-title">Control Panel</h1>') == 4
     assert "HDR Controls" in html
     assert "SDR Controls" in html
-    assert '<span>Preview Window</span>' in html
-    assert 'class="preview-metadata-panel"' in html
+    assert 'id="preview-window-title" class="panel-title"' in html
+    assert 'class="preview-metadata-panel"' not in html
+    assert 'id="viewer-lane-label"' not in html
+    assert ".preview-title-wrap:hover .preview-title-tooltip" in css
     assert 'id="preview-status-copy"' in html
     assert '<progress id="preview-progress"' in html
     assert 'id="override-warning"' not in html
     assert 'id="apply-interpretation" class="button-primary"' in html
+    assert "Source Interpretation" in html
+    assert "<span>Details</span>" not in html
+    assert "Auto detection found an ambiguous source interpretation." in javascript
+    assert "Manual override is recommended before trusting export decisions." not in javascript
+    assert "#source-settings-note.warning::before" in css
+    assert "var(--attention)" in css
+    assert ".source-filename-wrap.has-overflow:hover .source-filename-tooltip" in css
+    assert "navigator.clipboard.writeText(sourcePath)" in javascript
     assert 'class="probe-strip"' not in html
     assert 'id="probe-readout"' not in html
     assert "Move over the image" not in html
