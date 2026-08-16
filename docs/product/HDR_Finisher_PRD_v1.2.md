@@ -307,12 +307,16 @@ The AVIF path uses a **10-bit logarithmic gain map**. JPEG Ultra HDR uses libult
 - Quality/compression controls for each format
 
 ### Phase 6 â€” Packaging & Distribution
+
+**Windows MVP status — August 16, 2026:** Electron package 0.3.1 has passed installed-app hands-on validation for native import, interactive adjustment, project operation, and export. The initial 0.3.0 build exposed a transient console-window flash when settled HDR previews launched `avifenc`; 0.3.1 launches all bundled encoder/decoder subprocesses without a visible console, and the installed fix was confirmed by the product owner. Branding, application icon, and installer presentation remain deliberately deferred until the functional desktop baseline receives broader workflow testing.
+
+- Execute the desktop-shell migration through [Electron Desktop Wrapper Sprint](Electron_Desktop_Wrapper_Sprint_PRD.md). Keep it on a separate feature branch until its security, lifecycle, WebGPU, project-round-trip, and clean-package gates pass.
 - PyInstaller configuration for Windows (`.exe`) and macOS (`.app`)
 - Bundle OS-specific `avifgainmaputil` and `ultrahdr_app` binaries; keep `cjxl` deferred with JPEG XL
 - Keep `imagecodecs` packaged as-is for the current installer. Record its size separately and revisit selective codec collection only after TIFF compatibility fixtures cover representative uncompressed, LZW, Deflate/ZIP with predictors, PackBits, tiled/striped, integer, and floating-point files from real source applications.
 - Handle PATH management and binary permissions at runtime
 - Test on clean machines (no Python installed) on both platforms
-- GitHub release pipeline with signed builds (macOS notarization required to avoid Gatekeeper warning)
+- GitHub release pipeline with automated builds, SHA-256 checksums, and retained build provenance. V1 preview builds may be unsigned under the launch plan below; signing is a post-V1-readiness follow-up rather than a launch blocker.
 
 ### Licensing & Commercial Distribution
 - HDR Finisher is currently distributed under **GPL-3.0**. It may be sold, bundled with paid support, or funded by donations, but anyone receiving a binary must also be able to obtain the corresponding source and build materials under GPL-3.0. Recipients retain the right to modify and redistribute their copies.
@@ -333,7 +337,7 @@ The AVIF path uses a **10-bit logarithmic gain map**. JPEG Ultra HDR uses libult
 | AVIF preview encoding too slow for interactive use | Medium | Downsample previews; use fast encoder presets; debounce slider events |
 | Reference HDR preview and delivered browser rendering do not match in apparent brightness | High | Keep the authored 100-nit-reference HDR view, but explicitly distinguish it from display-adaptive delivery. Evaluate a **Browser Delivery** mode that encodes a proxy with the real AVIF gain-map pipeline and presents it through a normal browser image element, allowing the active browser and monitor to apply their actual headroom adaptation and tone mapping. Do not claim an exact Chrome simulation from coarse web capability probes. |
 | Color space metadata missing or ambiguous in input files | Medium | Implement explicit user override: "This file has no color profile â€” please select one" dialog |
-| macOS Gatekeeper rejecting unsigned binary | High | Budget time for Apple Developer ID signing and notarization |
+| macOS Gatekeeper rejecting unsigned binary | High | Label the initial unsigned macOS package as a technical preview and document the expected Gatekeeper approval path. Before targeting ordinary Mac users, enroll in the Apple Developer Program, sign every bundled executable with Developer ID, enable hardened runtime, notarize the release, and staple the ticket. |
 | `libultrahdr` AVIF support not yet released | Low | JPEG Ultra HDR (JPG) is fully functional now; AVIF via libultrahdr is a 2026 addition |
 | Scope creep from user feature requests | Medium | Enforce scope boundary in README and in-app UI copy from day one |
 | Large EXR files exceeding available RAM | Medium | 32-bit EXR panoramas can exceed 1GB in memory before processing copies; tiled/chunked processing is deferred to v2. v1 should display a clear error rather than crashing if memory limits are exceeded. |
@@ -696,6 +700,18 @@ Work on Gradient, Luma, Path, or a future mask type must preserve these cross-to
 
 ### Recommended Next Steps After This Checkpoint
 
+#### V1 Launch Distribution and Signing Plan
+
+Signing is not a V1 launch blocker. The first public builds may ship unsigned from the project's official GitHub Releases page while the project remains free and open source.
+
+1. Produce Windows and macOS release artifacts through a documented GitHub Actions workflow where practical. Publish the matching source revision and SHA-256 checksums for every downloadable artifact.
+2. Label unsigned packages clearly as V1 preview builds. Document the exact Windows SmartScreen and macOS Gatekeeper warnings users should expect without instructing users to disable operating-system security protections globally.
+3. Keep release filenames, application identity, repository location, and download links consistent. Publish known limitations and a concise verification procedure beside each release.
+4. After the first qualifying public release, apply to the SignPath Foundation for free Windows Authenticode signing. Preserve the fully open-source license, public source/build provenance, and automated trusted-build workflow needed for eligibility.
+5. If SignPath is unavailable or declines the project, continue unsigned Windows GitHub releases until adoption justifies the cost of a conventional public code-signing certificate. Do not make Microsoft Store distribution a prerequisite; it remains an optional later channel.
+6. Treat unsigned macOS builds as technical previews because Gatekeeper imposes a stronger default block than Windows SmartScreen. When the Mac build is ready for ordinary users, enroll in the Apple Developer Program, obtain a Developer ID Application identity, sign the app and every bundled Electron/Python executable, enable hardened runtime, submit the package for notarization, and staple the returned ticket. One program membership may cover this and the owner's other Apple applications.
+7. Before calling either platform launch-ready, test the exact downloaded GitHub artifact on a clean machine. Verify checksum publication, installer/app identity, expected security prompts, import/export access, bundled backend startup and shutdown, update/reinstall behavior, and complete removal.
+
 **Next working session — August 14, 2026:** fix and harden the remaining local-adjustment mask tools: **Gradient, Luma, and Path**. For each tool, verify that the red overlay and applied grade consume the same mask, interactive and settled previews agree, editing remains responsive, serialization and undo survive round trips, and representative control and geometry configurations pass automated browser tests plus screenshot review. Preserve the intentional separation between tool-specific controls and whole-mask controls established for Brush.
 
 1. Run the Windows SDR-white response sequence using the generated test target at low, middle, high, and useful whole-stop-adjacent settings. Confirm artifact/tile hashes remain fixed and save structured highlight, midtone, color, overall, reload, and restart observations.
@@ -707,8 +723,8 @@ Work on Gradient, Luma, Path, or a future mask type must preserve these cross-to
 7. Complete installer-readiness changes: automatic browser launch, single-instance and port-conflict handling, clean shutdown, user-writable runtime directories, path portability, quiet console behavior, and application icon/version metadata.
 8. Continue documented darktable RAW and Blender 5.2 LTS source-export validation after the completed Affinity workflow.
 9. Keep JPEG XL and DNG deferred until representative interoperability corpora and packaging evidence justify a deliberate product decision.
-10. Build and clean-machine validate a conventional per-user Windows installer, then publish release notes with checksums, supported workflows, evidence-backed browser claims, and known limitations.
-11. Start native macOS encoder and `.app`/`.dmg` packaging after the Windows installer stabilizes. Keep JPEG XL deferred unless later evidence makes it strategically important and practical to ship.
+10. Build and clean-machine validate a conventional per-user Windows installer, then publish the unsigned V1 preview on the official GitHub Releases page with checksums, expected SmartScreen behavior, supported workflows, evidence-backed browser claims, and known limitations. Apply to SignPath after the public release qualifies.
+11. Start native macOS encoder and `.app`/`.dmg` packaging after the Windows installer stabilizes. An unsigned technical preview may ship with explicit Gatekeeper guidance; complete Developer ID signing and Apple notarization before presenting the Mac build to ordinary users. Keep JPEG XL deferred unless later evidence makes it strategically important and practical to ship.
 
 ---
 

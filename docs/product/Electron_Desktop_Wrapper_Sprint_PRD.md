@@ -2,7 +2,7 @@
 
 **Date:** August 16, 2026
 
-**Status:** Windows MVP implemented and packaged on `feature/electron-desktop-shell`
+**Status:** Windows MVP 0.3.1 implemented, packaged, and installed-app validated on `feature/electron-desktop-shell`
 
 **Owner:** HDR Finisher engineering
 
@@ -412,6 +412,8 @@ Packaging decision: electron-builder was selected because it covers NSIS, portab
 
 Validation evidence is recorded in [Electron Desktop Wrapper Validation — 2026-08-16](../testing/Electron_Desktop_Wrapper_Validation_2026-08-16.md). Recovery snapshots, automatic updates, optional second-display preview, richer notifications/diagnostics, and macOS adaptation remain follow-on hardening rather than blockers for the Windows MVP workflow.
 
+Installed-app acceptance was confirmed on August 16, 2026. Native adjustment and export workflows operate successfully in the NSIS-installed application. A console-window flash discovered during the first 0.3.0 hands-on pass was traced to the external `avifenc` preview process and corrected in 0.3.1 by applying Windows hidden-process flags to every bundled encoder/decoder invocation. The owner confirmed the updated installed application no longer flashes and that export completes successfully. This closes the Windows MVP functional acceptance gate; broader format/display testing and visual branding remain follow-up work.
+
 ## 13. Source references
 
 - [Electron process model](https://www.electronjs.org/docs/latest/tutorial/process-model)
@@ -431,4 +433,4 @@ Validation evidence is recorded in [Electron Desktop Wrapper Validation — 2026
 
 ---
 
-*This sprint document is an execution plan, not an implementation record. Update phase status, decisions, measurements, validation evidence, and commit references as work proceeds.*
+*This sprint document began as an execution plan and now also retains the resulting Windows MVP decisions, measurements, validation evidence, and implementation references.*
