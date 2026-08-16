@@ -43,7 +43,9 @@ Sources are normalized to a float32, scene-linear ACEScg working image when thei
 
 ## Development
 
-HDR Finisher uses Python 3.12+, FastAPI, NumPy, colour-science, Pillow, OpenEXR, tifffile, a plain HTML/CSS/JavaScript interface, and optional native encoders. The browser is the application viewport; processing and authoritative export rendering remain local.
+HDR Finisher uses Python 3.12+, FastAPI, NumPy, colour-science, Pillow, OpenEXR, tifffile, a plain HTML/CSS/JavaScript interface, Electron for the Windows desktop shell, and optional native encoders. Processing and authoritative export rendering remain local.
+
+To run the desktop shell from source, install the dependencies in `codebase/desktop` with `npm install`, then run `npm start`. To build the Windows x64 Setup and portable artifacts, run `codebase/tools/build_desktop.ps1` from PowerShell. The build script packages the Python sidecar first and writes final Electron artifacts to `codebase/dist-electron`.
 
 See [Architecture](docs/technical/architecture.md), [Development guide](docs/technical/development.md), and [Testing and validation](docs/testing/README.md).
 

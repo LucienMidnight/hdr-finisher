@@ -25,6 +25,7 @@
       syncProofPresentation();
     });
     els.chromeProofRefresh.addEventListener("click", buildProofOnDemand);
+    els.openProofExternal?.addEventListener("click", openProofExternally);
     els.chromeProofFormat.addEventListener("change", () => {
       state.proofFormat = els.chromeProofFormat.value;
       artifactDirty = true;
@@ -86,6 +87,13 @@
     state.proofEnabled = true;
     await refreshDisplayTelemetry().catch(() => null);
     await refreshProof().catch(() => null);
+  }
+
+  async function openProofExternally() {
+    if (!desktop || !state.proofArtifact || state.proofDirty) return;
+    const response = await fetch(`/api/proof/external/${state.proofArtifact.artifact_id}`, { method: "POST" });
+    const payload = await parseProofResponse(response, "The external proof link could not be created.");
+    await desktop.openProofExternally(`${window.location.origin}${payload.url}`);
   }
 
   function invalidateProof() {
@@ -261,6 +269,10 @@
     els.chromeProofRefresh.textContent = phase === "updating"
       ? "Building proof…"
       : state.proofReconstruction ? "Refresh proof" : "Build proof";
+    if (els.openProofExternal) {
+      els.openProofExternal.classList.toggle("hidden", !desktop);
+      els.openProofExternal.disabled = !desktop || !state.proofArtifact || state.proofDirty || phase === "updating";
+    }
     els.chromeProofFormat.value = state.proofFormat;
     els.chromeProofTarget.value = state.proofTarget;
     els.chromeProofCustomNits.value = String(state.proofCustomNits);

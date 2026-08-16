@@ -1,0 +1,73 @@
+{
+  "name": "hdr-finisher-desktop",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Electron desktop shell for HDR Finisher",
+  "author": "HDR Finisher contributors",
+  "license": "GPL-3.0-only",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test tests/*.test.js",
+    "test:integration": "node tests/electron-smoke.js",
+    "test:packaged": "node tests/electron-smoke.js --packaged",
+    "pack:dir": "electron-builder --dir --win x64",
+    "dist:win": "electron-builder --win nsis portable --x64"
+  },
+  "devDependencies": {
+    "electron": "43.4.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "org.hdrfinisher.app",
+    "productName": "HDR Finisher",
+    "asar": true,
+    "files": [
+      "main.js",
+      "preload.js",
+      "lib/**/*.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist/HDR Finisher Backend",
+        "to": "backend",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "../../LICENSE",
+        "to": "notices/LICENSE"
+      },
+      {
+        "from": "../../THIRD_PARTY_NOTICES.md",
+        "to": "notices/THIRD_PARTY_NOTICES.md"
+      }
+    ],
+    "win": {
+      "target": ["nsis", "portable"],
+      "fileAssociations": [
+        {
+          "ext": "hdrfinisher",
+          "name": "HDR Finisher Project",
+          "description": "HDR Finisher editing project",
+          "role": "Editor"
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "artifactName": "HDR-Finisher-Setup-${version}-${arch}.${ext}",
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "portable": {
+      "artifactName": "HDR-Finisher-Portable-${version}-${arch}.${ext}"
+    },
+    "directories": {
+      "output": "../dist-electron",
+      "buildResources": "build"
+    }
+  }
+}

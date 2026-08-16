@@ -1,24 +1,33 @@
 from __future__ import annotations
 
 import atexit
+import os
+import secrets
+import time
 from time import perf_counter
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import uvicorn
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .capabilities import probe_capabilities
 from .config import APP_NAME, APP_VERSION, DEFAULT_HOST, DEFAULT_PORT, EXPORTS_DIR, FRONTEND_DIR, SAMPLES_DIR
+from .desktop_security import DesktopPathGrants, secret_matches
 from .exporters import ExportOverwriteRequired, build_export_backends
 from .folder_picker import pick_directory
 from .loader import LoaderError
 from .models import (
     DirectoryPickRequest,
     DirectoryPickResponse,
+    DesktopPathGrantRequest,
+    DesktopPathGrantResponse,
+    DesktopProjectOpenRequest,
+    DesktopProjectSaveRequest,
+    DesktopSessionOpenRequest,
     BrowserEvidenceRecord,
     BrowserEvidenceResponse,
     EditCommandBatch,
@@ -57,6 +66,31 @@ from .test_pattern import build_delivery_proof_pattern
 
 
 app = FastAPI(title=APP_NAME, version=APP_VERSION)
+desktop_authoring_secret = os.environ.get("HDR_FINISHER_DESKTOP_SECRET")
+desktop_control_secret = os.environ.get("HDR_FINISHER_DESKTOP_CONTROL_SECRET")
+desktop_path_grants = DesktopPathGrants()
+
+
+@app.middleware("http")
+async def desktop_request_boundary(request: Request, call_next):
+    if desktop_authoring_secret and request.url.path.startswith("/api/"):
+        if request.url.path == "/api/desktop/grant":
+            allowed = secret_matches(request.headers.get("x-hdr-finisher-control"), desktop_control_secret)
+        else:
+            allowed = secret_matches(request.headers.get("x-hdr-finisher-token"), desktop_authoring_secret)
+        if not allowed:
+            return JSONResponse(status_code=401, content={"detail": "Desktop authorization is required."})
+    response = await call_next(request)
+    if desktop_authoring_secret:
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' blob: data:; connect-src 'self'; worker-src 'self' blob:; "
+            "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+        )
+        response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -70,6 +104,7 @@ capabilities = probe_capabilities()
 export_backends = build_export_backends(capabilities)
 proof_store = ProofArtifactStore()
 evidence_store = EvidenceStore()
+external_proof_tokens: dict[str, tuple[str, float]] = {}
 SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
@@ -124,7 +159,51 @@ def _mask_expression_at_path(expression: MaskExpression, mask_path: str | None) 
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok"}
+    return {"status": "ok", "version": APP_VERSION, "protocol_version": "1"}
+
+
+@app.post("/api/desktop/grant", response_model=DesktopPathGrantResponse)
+def grant_desktop_path(request: DesktopPathGrantRequest) -> DesktopPathGrantResponse:
+    try:
+        grant, path = desktop_path_grants.issue(request.path, request.intent)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return DesktopPathGrantResponse(grant=grant, path=str(path))
+
+
+@app.post("/api/desktop/session", response_model=SessionSummary)
+def create_desktop_session(request: DesktopSessionOpenRequest) -> SessionSummary:
+    try:
+        source_path = desktop_path_grants.consume(request.grant, "source-open")
+        payload = store.create_session(source_path, original_filename=source_path.name, owns_source_path=False)
+    except (ValueError, LoaderError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return SessionSummary(session=payload)
+
+
+@app.post("/api/desktop/project/open", response_model=SessionSummary)
+def open_desktop_project(request: DesktopProjectOpenRequest) -> SessionSummary:
+    try:
+        project_path = desktop_path_grants.resolve(request.project_grant, "project-open")
+        source_path = (
+            desktop_path_grants.consume(request.source_grant, "source-relink")
+            if request.source_grant else None
+        )
+        session = open_project(store, project_path, source_path)
+    except (ValueError, ProjectError, LoaderError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return SessionSummary(session=session.to_payload())
+
+
+@app.post("/api/desktop/session/{session_id}/project/save", response_model=ProjectResponse)
+def save_desktop_project(session_id: str, request: DesktopProjectSaveRequest) -> ProjectResponse:
+    try:
+        project_path = desktop_path_grants.consume(request.project_grant, "project-save")
+        return save_project(store.get(session_id), project_path)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (ValueError, ProjectError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/capabilities")
@@ -585,6 +664,16 @@ def export(session_id: str, settings: ExportSettings):
     backend = export_backends.get(settings.format)
     if backend is None:
         raise HTTPException(status_code=400, detail=f"Unsupported export format: {settings.format}")
+    if desktop_authoring_secret:
+        try:
+            if not settings.path_grant:
+                raise ValueError("Choose an export filename using the desktop Save dialog.")
+            granted_path = desktop_path_grants.resolve(settings.path_grant, "export-file")
+            if settings.output_path and Path(settings.output_path).expanduser().resolve(strict=False) != granted_path:
+                raise ValueError("The export filename does not match the desktop selection.")
+            settings = settings.model_copy(update={"output_path": str(granted_path)})
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
         result = backend.export(session, settings)
     except ExportOverwriteRequired as exc:
@@ -638,6 +727,50 @@ def proof_artifact(artifact_name: str, mime: str | None = Query(default=None)) -
             "X-HDR-Finisher-Format": artifact.format,
         },
     )
+
+
+@app.post("/api/proof/external/{artifact_id}")
+def create_external_proof_url(artifact_id: str) -> dict[str, str]:
+    try:
+        proof_store.artifact(artifact_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    token = secrets.token_urlsafe(24)
+    external_proof_tokens[token] = (artifact_id, time.monotonic() + 15 * 60)
+    return {"url": f"/proof/{token}"}
+
+
+def _external_proof_artifact(token: str):
+    record = external_proof_tokens.get(token)
+    if record is None or record[1] <= time.monotonic():
+        external_proof_tokens.pop(token, None)
+        raise HTTPException(status_code=404, detail="This proof link has expired.")
+    try:
+        return proof_store.artifact(record[0])
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/proof/{token}")
+def external_proof_page(token: str) -> HTMLResponse:
+    artifact = _external_proof_artifact(token)
+    label = "AVIF gain map" if artifact.format == "avif_gain_map" else "JPEG Ultra HDR"
+    html = f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HDR Finisher Delivery Proof</title><style>
+html,body{{margin:0;min-height:100%;background:#0d1011;color:#eef2f2;font:14px system-ui,sans-serif}}
+main{{display:grid;min-height:100vh;place-items:center;padding:24px;box-sizing:border-box}}
+figure{{margin:0;max-width:100%;text-align:center}}img{{display:block;max-width:100%;max-height:calc(100vh - 90px);object-fit:contain}}
+figcaption{{padding-top:12px;color:#b9c3c3}}
+</style></head><body><main><figure><img src="/proof/{token}/media" alt="HDR Finisher delivery proof">
+<figcaption>{label} · read-only browser proof · link expires after 15 minutes</figcaption></figure></main></body></html>"""
+    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/proof/{token}/media")
+def external_proof_media(token: str) -> FileResponse:
+    artifact = _external_proof_artifact(token)
+    return FileResponse(artifact.path, media_type=artifact.media_type, filename=artifact.path.name)
 
 
 @app.post("/api/proof/matrix", response_model=ProofMatrixResponse)

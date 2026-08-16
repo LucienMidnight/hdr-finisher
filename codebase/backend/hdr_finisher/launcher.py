@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import socket
 import sys
 import threading
@@ -71,15 +72,30 @@ def open_server_url(
 class LauncherServer:
     """Run Uvicorn beside the native launcher window."""
 
-    def __init__(self, app: Any, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> None:
+    def __init__(
+        self,
+        app: Any,
+        host: str = DEFAULT_HOST,
+        port: int = DEFAULT_PORT,
+        *,
+        listener: socket.socket | None = None,
+        log_level: str = "info",
+    ) -> None:
+        if listener is not None:
+            port = int(listener.getsockname()[1])
         self.url = server_url(host, port)
-        config = uvicorn.Config(app, host=host, port=port, log_level="info")
+        self.listener = listener
+        config = uvicorn.Config(app, host=host, port=port, log_level=log_level)
         self.server = uvicorn.Server(config)
         self.thread = threading.Thread(
-            target=self.server.run,
+            target=self._run,
             name="hdr-finisher-server",
             daemon=True,
         )
+
+    def _run(self) -> None:
+        sockets = [self.listener] if self.listener is not None else None
+        self.server.run(sockets=sockets)
 
     @property
     def started(self) -> bool:
@@ -96,6 +112,75 @@ class LauncherServer:
         self.server.should_exit = True
         if self.thread.is_alive():
             self.thread.join(timeout=timeout)
+        if self.listener is not None:
+            self.listener.close()
+
+
+def _parent_is_alive(parent_pid: int) -> bool:
+    if parent_pid <= 0:
+        return False
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            process_query_limited_information = 0x1000
+            still_active = 259
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+            kernel32.OpenProcess.restype = wintypes.HANDLE
+            kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+            kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+            kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+            handle = kernel32.OpenProcess(process_query_limited_information, False, parent_pid)
+            if not handle:
+                return False
+            try:
+                exit_code = wintypes.DWORD()
+                return bool(kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))) and exit_code.value == still_active
+            finally:
+                kernel32.CloseHandle(handle)
+        except (AttributeError, OSError):
+            return False
+    try:
+        os.kill(parent_pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def run_desktop_sidecar(parent_pid: int) -> None:
+    """Run the authenticated backend on an atomically selected loopback port."""
+    from .main import app
+
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind((DEFAULT_HOST, 0))
+    listener.listen(2048)
+    service = LauncherServer(app, port=0, listener=listener, log_level="warning")
+    service.start()
+    deadline = time.monotonic() + 20.0
+    while not service.started and service.running and time.monotonic() < deadline:
+        time.sleep(0.025)
+    if not service.started:
+        service.stop()
+        raise SystemExit("HDR Finisher desktop backend did not start.")
+
+    ready = {
+        "event": "ready",
+        "protocol_version": 1,
+        "backend_version": APP_VERSION,
+        "port": int(listener.getsockname()[1]),
+        "health_url": f"{service.url}/health",
+    }
+    print(f"HDR_FINISHER_READY {json.dumps(ready, separators=(',', ':'))}", flush=True)
+    try:
+        while service.running and _parent_is_alive(parent_pid):
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        service.stop()
 
 
 def run() -> None:

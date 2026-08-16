@@ -245,6 +245,7 @@
             <p class="proof-explainer">The target reconstructs delivered gain-map bytes for that reference headroom. It is not a hard clip and never changes the grade or export.</p>
             <p class="proof-explainer">Proofs refresh on demand. Grading changes mark the result stale without interrupting editing.</p>
             <button id="chrome-proof-refresh" class="button-primary rail-primary-action" type="button">Build proof</button>
+            <button id="open-proof-external" class="button-secondary rail-primary-action" type="button">Open proof in browser</button>
             <div id="chrome-proof-status" class="chrome-proof-status" aria-live="polite">Import an image to begin proofing.</div>
           </aside>
         </div>
@@ -1120,6 +1121,8 @@
     <div id="export-result" class="export-result hidden">
       <span id="export-result-path"></span>
       <button id="copy-export-path" class="text-button" type="button">Copy path</button>
+      <button id="reveal-export-path" class="text-button" type="button">Reveal</button>
+      <button id="open-export-path" class="text-button" type="button">Open</button>
     </div>
     <div class="sheet-actions">
       <button id="export-confirm-button" class="button-primary" type="button">Export...</button>

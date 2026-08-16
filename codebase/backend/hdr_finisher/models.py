@@ -850,6 +850,7 @@ class ExportSettings(BaseModel):
     jpeg_gain_map_quality: int = Field(default=100, ge=1, le=100)
     jpeg_gain_map_scale: Literal["full", "half"] = "full"
     output_path: str | None = None
+    path_grant: str | None = None
     overwrite: bool = False
     edit_revision: int | None = Field(default=None, ge=0)
     output_finishing: OutputFinishingSettings = Field(default_factory=OutputFinishingSettings)
@@ -868,6 +869,29 @@ class DirectoryPickRequest(BaseModel):
 
 class DirectoryPickResponse(BaseModel):
     directory: str | None = None
+
+
+class DesktopPathGrantRequest(BaseModel):
+    path: str
+    intent: Literal["source-open", "source-relink", "project-open", "project-save", "export-file"]
+
+
+class DesktopPathGrantResponse(BaseModel):
+    grant: str
+    path: str
+
+
+class DesktopSessionOpenRequest(BaseModel):
+    grant: str
+
+
+class DesktopProjectOpenRequest(BaseModel):
+    project_grant: str
+    source_grant: str | None = None
+
+
+class DesktopProjectSaveRequest(BaseModel):
+    project_grant: str
 
 
 class ProofArtifactRequest(BaseModel):

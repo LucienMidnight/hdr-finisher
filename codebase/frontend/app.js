@@ -1,3 +1,5 @@
+const desktop = window.hdrFinisherDesktop || null;
+
 const latitudePresets = {
   WIDE: {
     "hdr.exposure": [-4, 4, 0.05],
@@ -259,6 +261,8 @@ const state = {
   scopeZoneOverlay: null,
   lastExportPath: "",
   defaultExportDirectory: "",
+  desktopEnvironment: null,
+  desktopDocumentStateKey: "",
   compareHoldTimer: null,
   compareHeld: false,
   comparePeekActive: false,
@@ -728,6 +732,7 @@ const els = {
   chromeProofWatermarkToggle: document.getElementById("chrome-proof-watermark-toggle"),
   chromeProofInlineStatus: document.getElementById("chrome-proof-inline-status"),
   chromeProofRefresh: document.getElementById("chrome-proof-refresh"),
+  openProofExternal: document.getElementById("open-proof-external"),
   chromeProofFormat: document.getElementById("chrome-proof-format"),
   chromeProofTarget: document.getElementById("chrome-proof-target"),
   chromeProofCustomField: document.getElementById("chrome-proof-custom-field"),
@@ -794,6 +799,8 @@ const els = {
   exportResult: document.getElementById("export-result"),
   exportResultPath: document.getElementById("export-result-path"),
   copyExportPath: document.getElementById("copy-export-path"),
+  revealExportPath: document.getElementById("reveal-export-path"),
+  openExportPath: document.getElementById("open-export-path"),
   exportFormatChoices: [...document.querySelectorAll('input[name="export-format-choice"]')],
   formatCards: [...document.querySelectorAll("[data-format-card]")],
   preflightItems: [...document.querySelectorAll("[data-preflight]")],
@@ -933,6 +940,7 @@ async function boot() {
   initializeInstrumentShell();
   initializePreviewScheduler();
   activateWorkflowTab("import", { focus: false });
+  await initializeDesktopBridge();
   bindEvents();
   await initializeGpuPreview();
   await loadCapabilities().catch(() => {
@@ -1498,7 +1506,7 @@ function bindEvents() {
     if (file) await uploadFile(file);
     event.target.value = "";
   });
-  els.importButton.addEventListener("click", () => els.fileInput.click());
+  els.importButton.addEventListener("click", requestSourceImport);
   els.testPatternButton.addEventListener("click", async () => {
     els.badge.textContent = "Generating delivery proof test pattern...";
     try {
@@ -1510,7 +1518,7 @@ function bindEvents() {
       showUploadError(error?.message || "The delivery proof test pattern could not be generated.");
     }
   });
-  els.emptyImportButton.addEventListener("click", () => els.fileInput.click());
+  els.emptyImportButton.addEventListener("click", requestSourceImport);
   els.sourceRailExpand.addEventListener("click", () => {
     const rail = els.sourceRailExpand.closest(".source-rail");
     const collapsed = !rail.classList.contains("collapsed");
@@ -1579,7 +1587,13 @@ function bindEvents() {
     event.preventDefault();
     els.dropzone.classList.remove("drag-active");
     const [file] = event.dataTransfer?.files || [];
-    if (file) await uploadFile(file);
+    if (!file) return;
+    if (desktop) {
+      const [selection] = await desktop.resolveDroppedFiles(event.dataTransfer.files);
+      if (selection) await openDesktopSelection(selection);
+    } else {
+      await uploadFile(file);
+    }
   });
   [els.previewImage, els.comparisonImage, els.previewOverlay].forEach((image) => {
     image.addEventListener("dragstart", (event) => event.preventDefault());
@@ -1672,6 +1686,8 @@ function bindEvents() {
   els.ejectButton.addEventListener("click", ejectCurrentSession);
   els.copySourcePath.addEventListener("click", copySourcePath);
   els.copyExportPath.addEventListener("click", copyLastExportPath);
+  els.revealExportPath?.addEventListener("click", () => desktop?.revealPath(state.lastExportPath));
+  els.openExportPath?.addEventListener("click", () => desktop?.openPath(state.lastExportPath));
 
   els.groupToggles.forEach((button) => {
     button.addEventListener("click", () => {
@@ -2028,6 +2044,34 @@ function falseColorBandsForPreset(preset) {
 function formatReferenceNits(value) {
   const rounded = value >= 100 ? Math.round(value) : Math.round(value * 10) / 10;
   return `${rounded.toLocaleString()} nit`;
+}
+
+async function initializeDesktopBridge() {
+  els.revealExportPath?.classList.toggle("hidden", !desktop);
+  els.openExportPath?.classList.toggle("hidden", !desktop);
+  if (!desktop) return;
+  state.desktopEnvironment = await desktop.environment();
+  desktop.onMenuCommand(({ command }) => handleDesktopCommand(command));
+  desktop.onOpenRequest((selection) => openDesktopSelection(selection));
+}
+
+async function handleDesktopCommand(command) {
+  if (command === "open-source") return requestSourceImport();
+  if (command === "open-project") return openProjectFromPath();
+  if (command === "save") return saveProjectToPath({ saveAs: false });
+  if (command === "save-as") return saveProjectToPath({ saveAs: true });
+  if (command === "export") return openExportSheet();
+  if (command === "undo") return queueEditCommand("undo");
+  if (command === "redo") return queueEditCommand("redo");
+}
+
+async function requestSourceImport() {
+  if (!desktop) {
+    els.fileInput.click();
+    return;
+  }
+  const selection = await desktop.openSource();
+  if (selection) await openDesktopSelection({ kind: "source", ...selection });
 }
 
 const LUMA_RANGE_MIN_NITS = 0.1;
@@ -3184,7 +3228,23 @@ async function exportCurrentSession() {
     els.exportStatus.textContent = "Export paused because the latest edit could not be saved. Review the edit error and try again.";
     return;
   }
-  const outputPath = buildExportOutputPath();
+  let outputPath = buildExportOutputPath();
+  let pathGrant = null;
+  if (desktop) {
+    const extension = exportExtensionForFormat(els.exportFormat.value);
+    const selection = await desktop.chooseExportPath({
+      suggestedName: `${sanitizeFilename(els.exportFilename.value || "hdr_finisher_export")}${extension}`,
+      directory: (els.exportDirectory.value || "").trim(),
+      extension,
+      formatName: els.exportFormat.value === "avif_gain_map" ? "AVIF gain map" : els.exportFormat.value === "sdr_png" ? "PNG image" : "JPEG Ultra HDR",
+    });
+    if (!selection) {
+      els.exportStatus.textContent = "Export cancelled.";
+      return;
+    }
+    outputPath = selection.path;
+    pathGrant = selection.grant;
+  }
   els.exportConfirmButton.disabled = true;
   els.exportStatus.textContent = "Encoding and validating the finished file…";
   els.exportResult.classList.add("hidden");
@@ -3199,7 +3259,8 @@ async function exportCurrentSession() {
     els.exportStatus.textContent = `${expectation} · ${elapsedSeconds}s elapsed`;
   }, 1000);
   try {
-    let response = await requestSessionExport(outputPath, false);
+    desktop?.setOperationProgress({ kind: "export", value: 0.01, state: "indeterminate" });
+    let response = await requestSessionExport(outputPath, false, pathGrant);
     let payload = await safeJson(response);
     if (response.status === 409 && payload?.detail?.code === "overwrite_required") {
       const detail = payload.detail;
@@ -3209,7 +3270,7 @@ async function exportCurrentSession() {
         return;
       }
       els.exportStatus.textContent = "Replacing the existing file and validating the result...";
-      response = await requestSessionExport(outputPath, true);
+      response = await requestSessionExport(outputPath, true, pathGrant);
       payload = await safeJson(response);
     }
     if (!response.ok) {
@@ -3231,10 +3292,19 @@ async function exportCurrentSession() {
   } finally {
     window.clearInterval(exportTicker);
     els.exportConfirmButton.disabled = false;
+    desktop?.setOperationProgress({ kind: "export", value: -1, state: "normal" });
   }
 }
 
 async function chooseExportDirectory() {
+  if (desktop) {
+    const directory = await desktop.chooseExportDirectory(els.exportDirectory.value);
+    if (directory) {
+      els.exportDirectory.value = directory;
+      els.exportStatus.textContent = `Save folder set to ${directory}`;
+    }
+    return;
+  }
   if (!els.directoryBrowser.open) els.directoryBrowser.showModal();
   await loadExportDirectory(els.exportDirectory.value);
 }
@@ -5516,7 +5586,7 @@ async function renderGpuDraft(
   }
 }
 
-function requestSessionExport(outputPath, overwrite) {
+function requestSessionExport(outputPath, overwrite, pathGrant = null) {
   const resizeMode = els.exportResizeMode?.value || "original";
   return fetch(`/api/session/${state.session.session_id}/export`, {
     method: "POST",
@@ -5527,6 +5597,7 @@ function requestSessionExport(outputPath, overwrite) {
       jpeg_gain_map_quality: Number(els.jpegGainMapQuality.value),
       jpeg_gain_map_scale: els.jpegGainMapScale.value,
       output_path: outputPath,
+      path_grant: pathGrant,
       overwrite,
       edit_revision: state.editRevision,
       output_finishing: {
@@ -6099,7 +6170,15 @@ function bindKeyboardShortcuts() {
   window.addEventListener("keydown", (event) => {
     if (event.repeat || isTypingTarget(event.target)) return;
     const key = event.key.toLowerCase();
-    if ((event.ctrlKey || event.metaKey) && key === "z") {
+    const commandKey = event.ctrlKey || event.metaKey;
+    if (commandKey && key === "s") {
+      event.preventDefault();
+      saveProjectToPath({ saveAs: event.shiftKey });
+    } else if (commandKey && key === "o") {
+      event.preventDefault();
+      if (event.shiftKey) openProjectFromPath();
+      else requestSourceImport();
+    } else if (commandKey && key === "z") {
       event.preventDefault();
       queueEditCommand(event.shiftKey ? "redo" : "undo");
     } else if ((event.ctrlKey || event.metaKey) && key === "y") {
@@ -6127,7 +6206,7 @@ function bindKeyboardShortcuts() {
       renderCropOptions();
     } else if (key === "d") {
       event.preventDefault();
-      els.fileInput.click();
+      requestSourceImport();
     } else if (key === "x") {
       event.preventDefault();
       openExportSheet();
@@ -6476,7 +6555,7 @@ function renderControlState() {
   for (const [group, paths] of Object.entries(controlGroups)) {
     const count = paths.filter((path) => isPathModified(path, defaults)).length;
     const output = document.querySelector(`[data-modified-count="${group}"]`);
-    if (output) output.textContent = count ? `${count} modified` : "";
+    if (output) output.textContent = count ? `${count} Mod` : "";
     output?.closest(".control-group")?.classList.toggle("modified", count > 0);
   }
   for (const lane of ["hdr", "sdr"]) {
@@ -6490,18 +6569,18 @@ function renderControlState() {
   const modifiedCount = Object.keys(currentLaneDefaults)
     .filter((key) => !key.endsWith("_section_enabled") && key !== "highlight_compression_source_peak_nits")
     .filter((key) => !valuesEqual(state.adjustments[state.currentView]?.[key], currentLaneDefaults[key])).length;
-  els.gradeModifiedSummary.textContent = modifiedCount ? `${modifiedCount} modified` : "";
+  els.gradeModifiedSummary.textContent = modifiedCount ? `${modifiedCount} Mod` : "";
   const curvesModified = laneCurvesModified(state.currentView, defaults);
-  els.curveGroupState.textContent = curvesModified ? "Modified" : "";
+  els.curveGroupState.textContent = curvesModified ? "Mod" : "";
   els.curveReset.closest(".control-group")?.classList.toggle("modified", curvesModified);
   const filmModified = !valuesEqual(state.adjustments[state.currentView]?.film_look, currentLaneDefaults.film_look);
-  if (els.filmLookState) els.filmLookState.textContent = filmModified ? "Modified" : "";
+  if (els.filmLookState) els.filmLookState.textContent = filmModified ? "Mod" : "";
   els.filmLookReset?.closest(".control-group")?.classList.toggle("modified", filmModified);
   const gradingModified = !valuesEqual(state.adjustments[state.currentView]?.color_grading, currentLaneDefaults.color_grading);
-  if (els.colorGradingState) els.colorGradingState.textContent = gradingModified ? "Modified" : "";
+  if (els.colorGradingState) els.colorGradingState.textContent = gradingModified ? "Mod" : "";
   els.colorGradingReset?.closest(".control-group")?.classList.toggle("modified", gradingModified);
   const vignetteModified = !valuesEqual(state.adjustments[state.currentView]?.vignette, currentLaneDefaults.vignette);
-  if (els.vignetteState) els.vignetteState.textContent = vignetteModified ? "Modified" : "";
+  if (els.vignetteState) els.vignetteState.textContent = vignetteModified ? "Mod" : "";
   els.vignetteReset?.closest(".control-group")?.classList.toggle("modified", vignetteModified);
   els.sectionBypasses.forEach((button) => {
     const path = resolveAdjustmentPath(button.dataset.sectionPath);
@@ -6510,6 +6589,7 @@ function renderControlState() {
     button.setAttribute("aria-pressed", String(enabled));
     button.closest(".control-group")?.classList.toggle("bypassed", !enabled);
   });
+  syncDesktopDocumentState();
 }
 
 function isPathModified(path, defaults = defaultAdjustments()) {
@@ -6833,6 +6913,21 @@ function newMaskLeaf(type) {
     feather_mode: "outer_boundary",
     feather_nodes: [],
   };
+}
+
+function syncDesktopDocumentState() {
+  if (!desktop) return;
+  const displayName = state.projectPath
+    ? String(state.projectPath).split(/[/\\]/).pop()
+    : state.session?.source?.filename || "Untitled";
+  const payload = { path: state.projectPath || "", dirty: Boolean(state.documentDirty), displayName };
+  const key = JSON.stringify(payload);
+  if (key === state.desktopDocumentStateKey) return;
+  state.desktopDocumentStateKey = key;
+  desktop.setDocumentState(payload).catch((error) => {
+    state.desktopDocumentStateKey = "";
+    console.error("Desktop document state could not be synchronized.", error);
+  });
 }
 
 function sourcePathForClipboard() {
@@ -7233,6 +7328,7 @@ function renderLocalAdjustments() {
     els.projectSave.disabled = !state.session;
     els.projectSave.textContent = state.documentDirty ? "Save project *" : "Save project";
   }
+  syncDesktopDocumentState();
   if (local) {
     els.localOpacity.value = String(local.opacity);
     els.localOpacityValue.textContent = `${Math.round(local.opacity * 100)}%`;
@@ -9745,7 +9841,83 @@ function drawLuminanceSamplingGesture(context, gesture, x, y) {
   context.restore();
 }
 
-async function openProjectFromPath() {
+async function openDesktopSelection(selection) {
+  if (!selection) return;
+  if (selection.kind === "project") {
+    await openProjectFromPath(selection);
+    return;
+  }
+  els.badge.textContent = "Loading image and building session...";
+  setPreviewMessage("Reading source file...", 8);
+  const response = await fetch("/api/desktop/session", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ grant: selection.grant }),
+  });
+  const payload = await safeJson(response);
+  if (!response.ok || !payload?.session) {
+    showUploadError(payload?.detail || "The source file could not be opened.");
+    return;
+  }
+  await activateDesktopSession(payload.session, "");
+}
+
+async function activateDesktopSession(session, projectPath) {
+  state.session = session;
+  state.adjustments = session.adjustments;
+  state.editDocument = session.edit_document;
+  state.editRevision = session.edit_revision || 0;
+  state.documentDirty = Boolean(session.dirty);
+  state.selectedLocalId = state.editDocument.local_adjustments[0]?.id || null;
+  state.projectPath = projectPath || "";
+  state.currentView = "hdr";
+  state.interpretationGateDismissed = false;
+  clearPreviewCache();
+  state.gpuPreview?.resetSession(session.session_id);
+  invalidatePreview("hdr");
+  invalidatePreview("sdr");
+  activateWorkflowTab("grade", { focus: false });
+  renderSession();
+  renderLocalAdjustments();
+  seedExportFieldsFromSession();
+  const gpuReady = await renderGpuDraft("hdr", { hideStatus: false, longEdge: settledProxyLongEdge() });
+  await Promise.all([
+    gpuReady ? Promise.resolve(true) : refreshPreview({ progressSteps: [36, 76, 92] }),
+    refreshOverlay(),
+    refreshScopes(scopeLongEdge("settled"), { tier: "settled" }),
+  ]);
+  hidePreviewMessage();
+  prepareInactivePreview();
+  syncDesktopDocumentState();
+}
+
+async function openProjectFromPath(desktopSelection = null) {
+  if (desktop) {
+    const selection = desktopSelection || await desktop.openProject();
+    if (!selection) return;
+    let response = await fetch("/api/desktop/project/open", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project_grant: selection.grant }),
+    });
+    let payload = await safeJson(response);
+    if (!response.ok) {
+      const source = await desktop.relinkSource();
+      if (!source) return;
+      response = await fetch("/api/desktop/project/open", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_grant: selection.grant, source_grant: source.grant }),
+      });
+      payload = await safeJson(response);
+    }
+    if (!response.ok || !payload?.session) {
+      window.alert(payload?.detail || "The project could not be opened.");
+      return;
+    }
+    await activateDesktopSession(payload.session, selection.path);
+    return;
+  }
   const path = window.prompt("Path to a .hdrfinisher project", state.projectPath || "");
   if (!path) return;
   let sourcePath = null;
@@ -9785,8 +9957,34 @@ async function openProjectFromPath() {
   await refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
 }
 
-async function saveProjectToPath() {
+async function saveProjectToPath({ saveAs = false } = {}) {
   if (!state.session) return;
+  const pendingApplied = await (state.editCommandQueue || Promise.resolve(true));
+  const globalsApplied = pendingApplied === false ? false : await syncGlobalEditState();
+  if (globalsApplied === false) return;
+  if (desktop) {
+    const suggestedName = `${state.session.source.filename.replace(/\.[^.]+$/, "")}.hdrfinisher`;
+    const selection = await desktop.saveProject({ saveAs, suggestedName });
+    if (!selection) return;
+    const response = await fetch(`/api/desktop/session/${state.session.session_id}/project/save`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project_grant: selection.grant }),
+    });
+    const payload = await safeJson(response);
+    if (!response.ok) {
+      window.alert(payload?.detail || "The project could not be saved.");
+      return;
+    }
+    state.projectPath = payload.path;
+    state.editDocument = payload.document;
+    state.documentDirty = false;
+    syncCopySourcePathButton();
+    syncDesktopDocumentState();
+    els.badge.textContent = `Project saved · revision ${payload.revision}`;
+    els.badge.className = "badge good";
+    return;
+  }
   const path = window.prompt("Save project path", state.projectPath || `${state.session.source.filename}.hdrfinisher`);
   if (!path) return;
   let sourcePath = state.editDocument?.source?.durable_path || null;
