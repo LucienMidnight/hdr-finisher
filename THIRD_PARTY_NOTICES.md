@@ -20,3 +20,15 @@ notice files into `codebase/bin/licenses/`. It builds libjpeg-turbo as a depende
 
 HDR Finisher itself remains GPL-3.0. These notices do not change the license of HDR Finisher source
 code and must not be removed from packages that contain the optional encoder binaries.
+
+HDR Finisher vendors a selected set of outline SVGs from
+[`Tabler Icons`](https://github.com/tabler/tabler-icons). Tabler Icons is Copyright (c) 2020-2026
+Paweł Kuna and is distributed under the MIT License. The selected SVGs, pinned upstream revision,
+UI mapping, and complete license text are retained in
+`codebase/frontend/assets/icons/tabler/` and must remain present in source and packaged distributions
+that include those icons.
+
+HDR Finisher bundles IBM Plex Sans and IBM Plex Mono font software. IBM Plex is Copyright © 2017
+IBM Corp. with Reserved Font Name "Plex" and is distributed under the SIL Open Font License,
+Version 1.1. The complete license text is retained beside each bundled family under
+`codebase/frontend/assets/fonts/` and must remain present in source and packaged distributions.

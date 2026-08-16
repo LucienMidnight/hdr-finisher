@@ -4,10 +4,26 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Open HDR Finisher</title>
+  <link rel="icon" type="image/svg+xml" href="/static/assets/brand/hdr-finisher-favicon-small.svg">
   <style>
+    @font-face {
+      font-family: "IBM Plex Sans";
+      src: url("/static/assets/fonts/ibm-plex-sans/IBMPlexSans-Variable.ttf") format("truetype");
+      font-style: normal;
+      font-weight: 100 700;
+      font-stretch: 75% 100%;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "IBM Plex Mono";
+      src: url("/static/assets/fonts/ibm-plex-mono/IBMPlexMono-Regular.ttf") format("truetype");
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+    }
     :root {
       color-scheme: dark;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
       background: #0a0e13;
       color: #f3f6f8;
     }
@@ -50,7 +66,7 @@
       border-radius: 9px;
       background: #090d12;
       color: #dce9f1;
-      font: 14px ui-monospace, SFMono-Regular, Consolas, monospace;
+      font: 14px "IBM Plex Mono", Consolas, monospace;
     }
     button, .primary {
       min-height: 44px;

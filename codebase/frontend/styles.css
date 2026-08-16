@@ -1,3 +1,44 @@
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("./assets/fonts/ibm-plex-sans/IBMPlexSans-Variable.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100 700;
+  font-stretch: 75% 100%;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("./assets/fonts/ibm-plex-mono/IBMPlexMono-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("./assets/fonts/ibm-plex-mono/IBMPlexMono-Medium.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("./assets/fonts/ibm-plex-mono/IBMPlexMono-SemiBold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("./assets/fonts/ibm-plex-mono/IBMPlexMono-Bold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
 :root {
   --viewer: #0b0c0d;
   --app: #101214;
@@ -244,17 +285,13 @@ h2 {
 }
 
 .product-mark {
-  display: grid;
-  place-items: center;
+  display: block;
   width: 28px;
   height: 28px;
   flex: 0 0 auto;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius);
-  color: var(--body);
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
+  object-fit: contain;
 }
 
 .eyebrow,
@@ -2626,7 +2663,7 @@ input[type="text"] {
   margin-left: auto;
   color: var(--quiet);
   letter-spacing: .05em;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .control-group.modified .group-toggle span {
@@ -5161,9 +5198,7 @@ body[data-workflow="export"] #export-sheet {
 .product-mark {
   width: 26px;
   height: 26px;
-  border-color: #2b5b68;
-  background: #123039;
-  color: var(--accent-strong);
+  background: transparent;
 }
 
 .workflow-tabs {

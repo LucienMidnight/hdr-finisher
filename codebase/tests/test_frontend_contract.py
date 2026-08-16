@@ -10,6 +10,54 @@ from hdr_finisher.main import app
 
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend"
+DESKTOP = ROOT / "desktop"
+
+
+def test_brand_assets_and_fonts_are_bundled_locally() -> None:
+    markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    launcher = (FRONTEND / "launcher.html").read_text(encoding="utf-8")
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    desktop_package = (DESKTOP / "package.json").read_text(encoding="utf-8")
+
+    favicon_url = "/static/assets/brand/hdr-finisher-favicon-small.svg"
+    assert f'href="{favicon_url}"' in markup
+    assert f'href="{favicon_url}"' in launcher
+    assert f'src="{favicon_url}"' in markup
+    assert 'class="product-mark"' in markup
+    assert 'alt=""' in markup
+    assert "data:," not in markup
+
+    required_assets = [
+        FRONTEND / "assets" / "brand" / "hdr-finisher-favicon-small.svg",
+        FRONTEND / "assets" / "brand" / "hdr-finisher-app-icon.svg",
+        FRONTEND / "assets" / "fonts" / "ibm-plex-sans" / "IBMPlexSans-Variable.ttf",
+        FRONTEND / "assets" / "fonts" / "ibm-plex-sans" / "OFL.txt",
+        FRONTEND / "assets" / "fonts" / "ibm-plex-mono" / "IBMPlexMono-Regular.ttf",
+        FRONTEND / "assets" / "fonts" / "ibm-plex-mono" / "IBMPlexMono-Medium.ttf",
+        FRONTEND / "assets" / "fonts" / "ibm-plex-mono" / "IBMPlexMono-SemiBold.ttf",
+        FRONTEND / "assets" / "fonts" / "ibm-plex-mono" / "IBMPlexMono-Bold.ttf",
+        FRONTEND / "assets" / "fonts" / "ibm-plex-mono" / "OFL.txt",
+        DESKTOP / "assets" / "icon.svg",
+        DESKTOP / "assets" / "icon.png",
+    ]
+    assert all(asset.is_file() and asset.stat().st_size > 0 for asset in required_assets)
+
+    client = TestClient(app)
+    for asset_url in (
+        favicon_url,
+        "/static/assets/fonts/ibm-plex-sans/IBMPlexSans-Variable.ttf",
+        "/static/assets/fonts/ibm-plex-mono/IBMPlexMono-Bold.ttf",
+    ):
+        response = client.get(asset_url)
+        assert response.status_code == 200
+        assert response.content
+
+    assert css.count('font-family: "IBM Plex Sans";') >= 1
+    assert css.count('font-family: "IBM Plex Mono";') == 4
+    for weight in (400, 500, 600, 700):
+        assert f"font-weight: {weight};" in css
+    assert "Inter" not in launcher
+    assert '"icon": "assets/icon.png"' in desktop_package
 
 
 def test_file_picker_advertises_avif_round_trip_input() -> None:
@@ -720,11 +768,15 @@ def test_frontend_assets_use_the_application_version_for_cache_busting() -> None
     assert '/static/styles.css?v=__HDR_FINISHER_ASSET_VERSION__' in html
 
 
-def test_modified_status_uses_one_unabbreviated_term() -> None:
+def test_modified_status_uses_compact_sentence_case_term() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
 
-    assert "`${count} modified`" in javascript
-    assert "`${count} mod`" not in javascript
+    assert "`${count} Mod`" in javascript
+    assert 'curvesModified ? "Mod" : ""' in javascript
+    assert "`${count} modified`" not in javascript
+    assert ".group-toggle span {" in css
+    assert "text-transform: none;" in css
 
 
 def test_waveform_resolution_policy_reduces_payload_without_coarse_refresh_columns() -> None:

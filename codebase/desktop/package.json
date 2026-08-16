@@ -44,6 +44,7 @@
       }
     ],
     "win": {
+      "icon": "assets/icon.png",
       "target": ["nsis", "portable"],
       "fileAssociations": [
         {
@@ -67,7 +68,7 @@
     },
     "directories": {
       "output": "../dist-electron",
-      "buildResources": "build"
+      "buildResources": "assets"
     }
   }
 }

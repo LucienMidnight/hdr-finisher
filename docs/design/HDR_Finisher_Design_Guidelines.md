@@ -57,10 +57,10 @@ Keep source facts separate from grade decisions, grade decisions separate from v
 
 ## Modified state
 
-Use the word `modified` everywhere. Do not abbreviate it as `mod` and do not introduce synonyms such as `changed`, `edited`, or `custom` for the same state.
+Use the sentence-case abbreviation `Mod` everywhere. Do not introduce synonyms such as `changed`, `edited`, or `custom` for the same state.
 
-- Countable groups display `<number> modified`, for example `1 modified` or `4 modified`.
-- Aggregate groups such as Curves and Film Look display `Modified` when a useful item count is unavailable.
+- Countable groups display `<number> Mod`, for example `1 Mod` or `4 Mod`.
+- Aggregate groups such as Curves and Film Look display `Mod` when a useful item count is unavailable.
 - Uppercase presentation may come from CSS, but source copy remains normal case.
 - A small teal dot may reinforce modified state, but color or the dot alone must not carry the meaning.
 - Untouched group headers omit status copy. Reset is shown only for a modified group.
@@ -321,7 +321,7 @@ Before merging a UI change, confirm:
 
 - A fresh load has no restored interface preferences or adjustments.
 - Every grade group and source disclosure starts collapsed.
-- Modified wording follows this guideline and Reset clears it correctly.
+- `Mod` wording follows this guideline and Reset clears it correctly.
 - HDR and SDR lanes remain visually and behaviorally consistent.
 - Keyboard, focus, and ARIA states match pointer behavior.
 - The interface remains usable at the supported minimum width.
