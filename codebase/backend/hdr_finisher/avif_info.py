@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .binaries import resolve_binary
+from .subprocess_utils import hidden_window_options
 
 
 class AVIFInfoError(RuntimeError):
@@ -17,7 +18,13 @@ def inspect_avif(path: Path) -> dict[str, Any]:
     if avifdec is None:
         raise AVIFInfoError("avifdec is required for AVIF metadata inspection.")
 
-    result = subprocess.run([str(avifdec), "--info", str(path)], capture_output=True, text=True, check=False)
+    result = subprocess.run(
+        [str(avifdec), "--info", str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
+        **hidden_window_options(),
+    )
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip() or f"avifdec failed with exit code {result.returncode}."
         raise AVIFInfoError(detail)

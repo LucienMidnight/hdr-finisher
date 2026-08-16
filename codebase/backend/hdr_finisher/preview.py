@@ -9,6 +9,7 @@ import numpy as np
 
 from .adjustments import apply_adjustments
 from .binaries import resolve_binary
+from .subprocess_utils import hidden_window_options
 from .color import acescg_to_linear_bt2020, acescg_to_linear_srgb
 from .config import MAX_PREVIEW_LONG_EDGE, PREVIEW_IMAGE_FORMAT
 from .models import AdjustmentState, PreviewKind
@@ -153,6 +154,7 @@ def _encode_hdr_avif(image: np.ndarray) -> bytes:
                 capture_output=True,
                 text=True,
                 check=False,
+                **hidden_window_options(),
             )
             if result.returncode != 0:
                 detail = result.stderr.strip() or result.stdout.strip() or "avifenc failed to encode preview."

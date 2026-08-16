@@ -11,6 +11,7 @@ import numpy as np
 
 from .adjustments import apply_adjustments, apply_final_grain
 from .binaries import resolve_binary
+from .subprocess_utils import hidden_window_options
 from .color import acescg_to_linear_bt2020
 from .config import EXPORTS_DIR, SAMPLES_DIR
 from .finishing import apply_output_finishing
@@ -522,7 +523,13 @@ def _pq_oetf(normalized_luminance: np.ndarray) -> np.ndarray:
 
 def _run_command(command: list[str]) -> subprocess.CompletedProcess[str]:
     try:
-        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            **hidden_window_options(),
+        )
     except OSError as exc:
         raise ExportProcessError(f"Could not start {Path(command[0]).name}: {exc}") from exc
     if result.returncode != 0:
@@ -535,7 +542,13 @@ def _validate_avif_output(path: Path) -> str | None:
     avifdec = resolve_binary("avifdec")
     if avifdec is None:
         return None
-    result = subprocess.run([str(avifdec), "--info", str(path)], capture_output=True, text=True, check=False)
+    result = subprocess.run(
+        [str(avifdec), "--info", str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
+        **hidden_window_options(),
+    )
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip() or "avifdec could not decode the result."
         raise ExportProcessError(f"AVIF validation failed: {detail}")

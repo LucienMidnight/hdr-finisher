@@ -11,6 +11,7 @@ import numpy as np
 
 from .avif_info import AVIFInfoError, inspect_avif
 from .binaries import resolve_binary
+from .subprocess_utils import hidden_window_options
 from .color import (
     acescg_to_linear_srgb,
     linear_bt2020_to_acescg,
@@ -406,7 +407,13 @@ def _format_float(value: float) -> str:
 
 def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
     try:
-        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            **hidden_window_options(),
+        )
     except OSError as exc:
         raise GainMapDecodeError(f"Could not start {Path(command[0]).name}: {exc}") from exc
     if result.returncode != 0:

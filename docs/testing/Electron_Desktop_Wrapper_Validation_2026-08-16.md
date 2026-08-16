@@ -2,7 +2,9 @@
 
 ## Outcome
 
-HDR Finisher 0.3.0 has a Windows x64 Electron MVP on `feature/electron-desktop-shell`. The package retains the existing HTML/WebGPU renderer and Python image engine while replacing browser path prompts and the visible Python console with native desktop workflows and a managed private sidecar.
+HDR Finisher 0.3.1 has a Windows x64 Electron MVP on `feature/electron-desktop-shell`. The package retains the existing HTML/WebGPU renderer and Python image engine while replacing browser path prompts and the visible Python console with native desktop workflows and a managed private sidecar.
+
+Version 0.3.1 prevents bundled command-line encoders and decoders from creating transient Windows console windows. This specifically covers the `avifenc` process used by settled HDR previews, as well as export, validation, and gain-map import utilities.
 
 ## Architecture decisions
 
@@ -21,7 +23,7 @@ HDR Finisher 0.3.0 has a Windows x64 Electron MVP on `feature/electron-desktop-s
 
 | Check | Result |
 |---|---|
-| Python deterministic suite | 451 passed |
+| Python deterministic suite | 452 passed |
 | Desktop validation unit tests | 3 passed |
 | Browser startup regression | Passed |
 | Browser export regression | Passed for SDR PNG and JPEG Ultra HDR |

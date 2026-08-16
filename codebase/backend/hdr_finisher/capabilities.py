@@ -7,6 +7,7 @@ import subprocess
 
 from .binaries import resolve_binary
 from .models import CapabilityInfo, CapabilityStatus
+from .subprocess_utils import hidden_window_options
 
 
 def _module_status(name: str, import_name: str) -> CapabilityInfo:
@@ -43,7 +44,12 @@ def _ultrahdr_status() -> CapabilityInfo:
         )
     try:
         result = subprocess.run(
-            [str(resolved)], capture_output=True, text=True, check=False, timeout=5
+            [str(resolved)],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+            **hidden_window_options(),
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return CapabilityInfo(
