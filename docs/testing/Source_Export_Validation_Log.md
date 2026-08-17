@@ -81,3 +81,66 @@ This log records real-application validation of the source export workflows docu
 - Quality-85 AVIF gain-map export completed and is retained locally at `codebase/output/manual-test-runs/affinity-2026-08-06/Affinity_DSC06898_DisplayP3_Linear_32f_finished.avif`; HDR Finisher reports successful post-export validation with `avifdec`.
 - Live delivery validation used Chrome with monitor 1 in HDR mode and monitor 2 in SDR mode. HDR gain-map presentation activated on monitor 1; moving the same Chrome content to monitor 2 selected the intended SDR fallback. Exported noise/detail matched Affinity extremely closely, as expected because no additional denoising was authored.
 - Chrome's HDR brightness did not exactly match HDR Finisher's live HDR canvas. Technical inspection confirms a valid 5320 x 7968 AVIF with an 8-bit sRGB base, 10-bit YUV444 logarithmic gain map, BT.2020/PQ alternate, base headroom `0.00`, and alternate headroom `5.26035`. This is expected display-adaptive behavior: Chrome applies the gain map according to the active monitor's current HDR headroom and performs display tone mapping, while HDR Finisher presents the authored rendition against its explicit 100-nit diffuse-white reference. Treat color/detail/fallback selection as round-trip invariants; do not require pixel-identical on-screen brightness between these two presentation paths.
+
+## Adobe Lightroom Classic — HDR Output
+
+- Date: 2026-08-17
+- Application version: Lightroom Classic 14.x (HDR Output feature)
+- Test image: backlit glass/window scene, real headroom source (bright window blowout behind a glass), graded with `Develop > Basics > HDR` enabled, `HDR Limit` set to `2.3`
+- Status: Recipe A (AVIF gain map) validated after the CICP transfer-code fix; Recipe B (32-bit TIFF) validated as a real HDR source, contingent on one export setting (see below)
+
+### Recipe A — AVIF gain map
+
+- Export settings used: Image Format AVIF, HDR Output on, Maximize Compatibility on, Color Space `HDR Rec. 2020`, Quality 90.
+- Import into HDR Finisher stalled for an extended period (expected — the gain-map decode path runs two full-resolution `avifgainmaputil tonemap` + `avifdec -d 16` passes) then failed with `The AVIF SDR rendition has no supported transfer characteristic.`
+- Direct inspection with the bundled `avifgainmaputil printmetadata` confirmed the gain map itself is intact and correct: `Base headroom 0 (SDR)`, `Alternate headroom 2.29999 (HDR)` — matches the `HDR Limit 2.3` set in Lightroom exactly.
+- Direct inspection with the bundled `avifdec --info` found the root cause: primary/base image is `Color Primaries 9` (BT.2020) / `Transfer Char. 1` (BT.709); alternate image is `Color Primaries 9` / `Transfer Char. 16` (PQ). HDR Finisher's `_cicp_transfer()` in `backend/hdr_finisher/gainmap_decoders.py` only maps codes `{8, 13, 16, 18}`, so code `1` returns `None` and triggers the exact error above. This is a real HDR Finisher interop gap, not an invalid Lightroom export — CICP transfer code 1 is standards-legal for an SDR rendition, Lightroom just doesn't use HDR Finisher's own default (code 13, sRGB).
+- Fixed August 17, 2026: HDR Finisher now recognizes CICP transfer code `1` as the distinct BT.709 inverse OETF. The real 7952 × 5304 Lightroom AVIF imports as `HDR_TRUE`, preserves the exact SDR base, and retains `2.30` stops of encoded gain-map display headroom. Its measured content peak is `3.33` stops because the PQ alternate carries approximately 1000-nit content; encoded display headroom and pixel-content peak are related but not identical quantities. The same real file passes end-to-end drag/drop in the packaged Windows application.
+
+### Recipe B — 32-bit TIFF
+
+**Attempt 1 — Maximize Compatibility on, HDR Limit 2.3 (`LR-classic-hdr-source-test-1-32bit.tif`)**
+
+- Export settings used: Image Format TIFF, Compression ZIP, HDR Output on, Maximize Compatibility on, Color Space `HDR Rec. 2020`, Bit Depth 32 bits/component.
+- HDR Finisher auto-interpreted the file as `BT.2020 + LINEAR` (correct primaries/transfer) and reported `HDR_LINEAR_UNCONFIRMED` with the Technical panel showing `Source Depth: float32`, histogram `Peak 555.6 nit` (`% > 1000: 0.00%`).
+- Direct probe of the file (`tifffile` + PIL `ImageCms`) confirmed: `SampleFormat: IEEEFP` (genuine float32, not an integer masquerading as float, unlike the earlier Affinity finding), ICC profile literally named `Linear Rec. 2020`, array `min 0.0 / max 1.0` exactly, `0.0%` of pixels above `1.0`, only `1.86%` above `0.99`.
+- Initial (incorrect) conclusion at this stage: peak `1.0` was read as "no headroom." **Correction:** HDR Finisher's diffuse-white anchor is `0.18`, not `1.0`, so a peak of `1.0` is actually `log2(1.0/0.18) ≈ 2.47` stops above diffuse white — real headroom, just hard-capped. This tracked closely with the AVIF gain map's independently-measured `2.30`-stop `Alternate Headroom` from the same photo/settings, suggesting (correctly, per Attempt 2) that the cap was an artifact of one specific export setting rather than an absence of real data.
+
+**Attempt 2 — Maximize Compatibility on, HDR Limit raised to 8.0 + exposure push (`LR-classic-hdr-source-test-2-32bit-hdr-limit-8.tif`)**
+
+- Same grade/export settings as Attempt 1 except `HDR Limit` raised from `2.3` to `8.0`, plus `Exposure +1.14`, `Contrast +35`, `Highlights -37`, `Shadows +96`.
+- Peak stayed exactly `555.6 nit` / `1.0` — completely unchanged despite HDR Limit more than tripling. Median and `% > 100` / `% > 203` did shift up as expected from the exposure/shadow push. Direct probe confirmed `min 0.0 / max 1.0` still exactly, with the fraction of pixels pinned at the max growing from `1.86%` (above `0.99`) to `9.15%` (exactly at max) — consistent with more content being pushed up against the same fixed wall.
+- At this point two hypotheses were live: (a) genuine sensor/optical clipping in the original capture (plausible: ISO 800, f/4, 1/250s, direct window backlight), or (b) an export-setting-driven fixed ceiling unrelated to the real scene data. This test alone could not distinguish them, since both predict an unmoving peak with a growing clipped fraction.
+
+**Attempt 3 — Maximize Compatibility OFF, same HDR Limit 8.0 grade (`LR-classic-hdr-source-test-2-32bit-hdr-limit-8-no-max-compat.tif`)**
+
+- Identical grade to Attempt 2; only the Maximize Compatibility checkbox was unchecked.
+- Result: `HDR_TRUE` confirmed, peak `6.63 stops above diffuse white`, histogram `Peak 8511 nit`, `P99 5565 nit`, `P95 2927 nit`, `Median 73.34 nit`, `% > 1000: 7.77%`. Source Interpretation auto-detected `BT.2020 + LINEAR` with confidence `confirmed` ("Auto detection found a consistent source interpretation") instead of the ambiguous/review state seen in Attempts 1–2.
+
+**Conclusion:** Since HDR Limit was identical between Attempts 2 and 3 and only Maximize Compatibility changed, this is a clean, isolated A/B. It disproves both hypotheses raised after Attempt 2 (HDR-Limit-tracking renormalization, and real sensor clipping) — the `1.0` ceiling in Attempts 1–2 was purely an artifact of the **Maximize Compatibility** checkbox. With it checked, Lightroom's 32-bit TIFF export silently clamps/normalizes real HDR data into a bounded `[0,1]` range; with it unchecked, the TIFF carries genuine unbounded scene-linear data and HDR Finisher's automatic interpretation resolves it confidently. This is the opposite of what Maximize Compatibility does for AVIF (Recipe A), where it's required to get the gain map written at all — same checkbox, opposite correct setting per format. **Recipe B is validated as a real HDR source, provided Maximize Compatibility is left unchecked for TIFF exports.** This differs from the earlier Affinity "RGB 32-bit" finding, which was a genuine, unavoidable bug in that export path (integer clipping) rather than a misconfigured checkbox.
+
+## Adobe Photoshop — 32-bit HDR via Camera Raw
+
+- Date: 2026-08-17
+- Application version: Photoshop 27.x with Camera Raw (modern unified panel), opening the already-validated `LR-classic-hdr-source-test-2-32bit-hdr-limit-8-no-max-compat.tif` (real `6.63`-stop HDR TIFF from the Lightroom testing above) as the input
+- Status: validated end to end, via a path different from the originally-documented guess (Merge to HDR Pro / direct EXR open — neither tested)
+
+### Pipeline discovered
+
+1. Opening the TIFF routed through **Camera Raw** automatically (JPEG/TIFF Handling preference). Selected **HDR** toggle in the Edit panel. Light panel sliders were confirmed neutral on open (a rendered TIFF carries no develop history for ACR to reconstruct); `HDR Limit` was then set manually to `8.0` by the tester to match the Lightroom source, not read back from embedded metadata.
+2. On opening into the Photoshop canvas, `Image > Mode` showed **16 Bits/Channel**, with `Edit > Assign Profile` reporting the source as `P3D65 PQ Display Full 12-16-0-1` — a **display-referred, PQ-encoded** representation, not scene-linear.
+3. `Edit > Convert to Profile` at this stage showed only an irrelevant default CMYK destination (`Working CMYK - U.S. Web Coated (SWOP) v2`) and was correctly not used — a 16-bit integer document cannot represent values beyond its profile's nominal range, so converting profiles before promoting bit depth would have clipped the HDR content.
+4. `Image > Mode > 32 Bits/Channel` was used instead. This decoded the PQ curve into real linear light: `Convert to Profile`, reopened afterward, showed the source profile relabeled `P3D65 PQ Display Full 12-16-0-1 (Linear RGB Profile)` — confirming a genuine PQ→linear decode, not just a bit-depth relabel.
+5. Export was first attempted via `File > Export As`, which is a trap for this use case: 8-bit-only (PNG/JPG/GIF), with **"Convert to sRGB" checked by default** — would have silently flattened the HDR data. Corrected to `File > Save As` → **TIFF**, which offered a real TIFF Options dialog with **Bit Depth: 32 bit (Float)** already selected, ZIP/LZW/none compression, no Maximize-Compatibility-style trap.
+6. Direct probe of the exported TIFF (`PS-source-test-1-32bit.tif`) confirmed: `SampleFormat: IEEEFP`, ICC profile name `P3D65 PQ Display Full 12-16-0-1 (Linear RGB Profile)`, array `min ≈ 0.0 / max 17.83`, `12.35%` of pixels above `1.0`, peak `log2(17.83/0.18) = 6.630` stops above diffuse white.
+7. Direct parse of the embedded ICC profile's `rXYZ`/`gXYZ`/`bXYZ`/`wtpt` colorant tags (not just trusting the profile name) gave chromaticities `R(0.6820, 0.3193) G(0.2846, 0.6746) B(0.1559, 0.0660) W(0.3127, 0.3290)` — matching canonical Display P3 `R(0.6800, 0.3200) G(0.2650, 0.6900) B(0.1500, 0.0600) W(0.3127, 0.3290)` to within normal ICC fixed-point rounding. This is genuinely standard Display P3, not an idiosyncratic monitor-specific profile despite the unusual name.
+
+### Import result
+
+- First import attempt: badge correctly read `True HDR detected, peak 6.64 stops above diffuse white. Source color space is ambiguous; review source settings.` and the UI surfaced the "Source Interpretation Needs Review" prompt as designed — the ambiguity-detection mechanism worked correctly, this was not a silent failure. The preview shown alongside that prompt (and what "Use assumption" would have accepted) was **badly incorrect color** (heavy red cast, blotchy green/cyan highlights): HDR Finisher's fallback default for an unrecognized TIFF ICC profile name is **sRGB primaries with an sRGB gamma (CCTF) decode applied**. Both are wrong for this file (real primaries are Display P3, not sRGB; data is already linear, not gamma-encoded) — the gamma decode on top of already-linear data is a real double-decode, and the primaries mismatch caused the visible color error. The gap is specifically that the *offered default* is badly wrong, not that the app failed to ask.
+- First correction attempt (Color Primaries → `Display P3 Linear` only, Transfer Function left unchanged) **did not fix it** — consistent with the double-decode still being active.
+- Setting **both** Color Primaries `Display P3 Linear` and Transfer Function `Linear` together resolved it completely: badge `True HDR detected, peak 6.63 stops above diffuse white` (matches the direct probe's `6.630` to three digits), preview returned to correct color, histogram `Peak 8524 nit`, `P99 5516 nit`, `P95 2042 nit`, `Median 72.87 nit`, `% > 1000: 7.74%` — closely tracking the equivalent Lightroom-sourced numbers (`Peak 8511 nit`, `% > 1000: 7.77%`) from the same underlying photo.
+
+### Conclusion
+
+This Photoshop path is validated as a real, working HDR source, but only via the specific pipeline above (Camera Raw HDR toggle → 16-bit PQ → `Image > Mode > 32 Bits/Channel` to decode → `File > Save As` TIFF, never `Export As`) and only with **both** Source Interpretation fields manually set together. Note a real HDR Finisher gap surfaced here, independent of anything Photoshop did wrong: silently defaulting an unrecognized TIFF color space to sRGB-primaries-plus-gamma-decode is a worse failure mode than a neutral/no-op fallback would be, since it produces a confidently-wrong-looking image rather than an obviously-broken one. Worth a future fix, not yet briefed to Codex.

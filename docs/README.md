@@ -15,7 +15,7 @@ Documentation reflects the active implementation as of **August 12, 2026**. Brow
 
 ### I am a photographer
 
-1. [Prepare a source from Affinity, darktable, or an iPhone](workflows/source-preparation.md)
+1. [Prepare a source from Affinity, Lightroom, Photoshop, darktable, DxO PhotoLab, or an iPhone](workflows/source-preparation.md)
 2. [Import and confirm source interpretation](user-guide/import.md)
 3. [Grade HDR](user-guide/grade-hdr.md)
 4. [Author the SDR fallback](user-guide/grade-sdr.md)

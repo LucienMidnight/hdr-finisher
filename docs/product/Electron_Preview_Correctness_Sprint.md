@@ -422,6 +422,10 @@ Automated coverage now includes exact destructive mask geometry, source/display 
 
 The final iteration-6 installer build completed on August 17, 2026 after the complete deterministic suite passed `466` tests and the Electron unit suite passed `3` tests. Packaged-asset inspection confirmed the bidirectional geometry editor, stable-aspect viewport correction, and removal of the obsolete export-format ranking labels. The generated Windows x64 artifacts are `HDR-Finisher-Setup-0.3.5-x64.exe` (`155,928,243` bytes, SHA-256 `BB8C7A77D8EDF4184F7356DDC6FC9A4528CA96398A79F5FDFA05FAD2B1F899E6`) and `HDR-Finisher-Portable-0.3.5-x64.exe` (`155,710,787` bytes, SHA-256 `0FAD639C9ED4F06FE99A33A84840D594A206DC39E0F7E6EBB026E9D65618D975`). Launch/install acceptance remains a hands-on gate because the build was not started while another HDR Finisher instance was open.
 
+### Local build-volume maintenance note
+
+Cleanup of superseded installer outputs removed approximately 5.2 GB. An initially inaccessible obsolete `dist-electron\win-unpacked` directory was subsequently removed successfully. After the drag/drop and cross-platform icon work landed as commit `03f4546` on `main`/`origin/main`, iteration directories 6 through 10 were removed and replaced by the commit-labeled `codebase\dist-electron-main-03f4546` build. These directories are untracked generated output; cleanup did not modify application source or commit history.
+
 ## 13. User-provided brand assets task
 
 **Owner:** User / product design  
