@@ -164,7 +164,7 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "dist-electron/mac-arm64/HDR Finisher.app"
           hdiutil verify dist-electron/HDR-Finisher-*-macOS-arm64.dmg
           unzip -tq dist-electron/HDR-Finisher-*-macOS-arm64.zip
-          shasum -a 256 -c dist-electron/SHA256SUMS-macOS.txt
+          (cd dist-electron && shasum -a 256 -c SHA256SUMS-macOS.txt)
 
       - name: Upload macOS release candidates
         uses: actions/upload-artifact@v7
