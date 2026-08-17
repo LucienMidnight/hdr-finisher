@@ -24,6 +24,7 @@
   "build": {
     "appId": "org.hdrfinisher.app",
     "productName": "HDR Finisher",
+    "afterPack": "scripts/after-pack.js",
     "asar": true,
     "files": [
       "main.js",
