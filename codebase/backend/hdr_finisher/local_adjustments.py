@@ -6,6 +6,7 @@ import os
 import numpy as np
 
 from .color import acescg_to_linear_srgb, linear_srgb_to_acescg
+from .finishing import apply_geometry
 from .models import GeometryAdjustments, LocalAdjustment, LocalGrade, MaskExpression, MaskLeaf, MaskPoint, PreviewKind
 
 
@@ -132,6 +133,28 @@ def compile_spatial_preview_mask(
 ) -> np.ndarray:
     """Compile reusable spatial coverage without simple-leaf influence opacity."""
     return compile_preview_mask(fixed_source, spatial_mask_expression(expression), geometry)
+
+
+def compile_geometry_fixed_mask(
+    source: np.ndarray,
+    expression: MaskExpression,
+    geometry: GeometryAdjustments,
+    *,
+    spatial_only: bool = False,
+) -> np.ndarray:
+    """Compile a source-anchored mask through the exact image geometry stage.
+
+    Local mask coordinates belong to the imported source.  Compiling directly
+    in the geometry-fixed output requires an inverse mapping, which is easy for
+    flips and quarter turns but is not equivalent to straightening: the image
+    path expands the rotation and then crops to the largest valid rectangle.
+    Build the mask in source space and run the same destructive geometry code
+    instead so image pixels and local influence cannot diverge.
+    """
+    mask_expression = spatial_mask_expression(expression) if spatial_only else expression
+    source_mask = compile_preview_mask(source, mask_expression, GeometryAdjustments())
+    fixed = apply_geometry(source_mask[..., None], geometry)[..., 0]
+    return np.rint(np.clip(fixed, 0.0, 255.0)).astype(np.uint8)
 
 
 def evaluate_mask(

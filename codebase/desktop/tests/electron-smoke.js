@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { _electron: electron } = require("playwright");
 const electronExecutable = require("electron");
@@ -13,13 +14,21 @@ async function main() {
   fs.mkdirSync(outputDirectory, { recursive: true });
   const projectPath = path.join(outputDirectory, "electron-smoke.hdrfinisher");
   const exportPath = path.join(outputDirectory, "electron-smoke.png");
+  const userDataPath = fs.mkdtempSync(path.join(os.tmpdir(), "hdr-finisher-smoke-"));
   fs.rmSync(projectPath, { force: true });
   fs.rmSync(exportPath, { force: true });
 
   const executablePath = packaged
     ? path.join(codebase, "dist-electron", "win-unpacked", "HDR Finisher.exe")
     : electronExecutable;
-  const electronApp = await electron.launch({ executablePath, args: packaged ? [] : ["."], cwd: desktopDirectory });
+  const launchArgs = packaged ? [] : ["."];
+  launchArgs.push("--in-process-gpu", "--disable-gpu");
+  const electronApp = await electron.launch({
+    executablePath,
+    args: launchArgs,
+    cwd: desktopDirectory,
+    env: { ...process.env, HDR_FINISHER_USER_DATA_DIR: userDataPath, HDR_FINISHER_DISABLE_GPU: "1" },
+  });
   try {
     const window = await electronApp.firstWindow();
     await window.waitForSelector("#empty-import-button", { state: "visible", timeout: 30000 });

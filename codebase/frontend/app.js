@@ -199,6 +199,8 @@ const localBrushGestureCanvasCache = new WeakMap();
 const localTintedMaskCanvasCache = new WeakMap();
 const localAuthoritativeMaskCache = new Map();
 const localAuthoritativeMaskRequests = new Map();
+const geometryCoordinateMapCache = new Map();
+const geometryCoordinateMapRequests = new Map();
 let localMaskOverlayFrame = 0;
 let pathMarchingAntFrame = 0;
 
@@ -256,6 +258,8 @@ const state = {
   lastScope: null,
   scopeGeneration: 0,
   highQualityPreview: false,
+  renderingMode: "auto",
+  acceptedPresentation: null,
   previewScheduler: null,
   gpuPreparedLane: { hdr: false, sdr: false },
   scopeZoneOverlay: null,
@@ -269,10 +273,18 @@ const state = {
   compareLayout: "single",
   comparisonRenderedLane: null,
   comparisonRenderedGeneration: null,
+  comparisonRenderedGeometry: null,
   previewGeneration: { hdr: 0, sdr: 0 },
   cropMode: false,
   cropOpening: false,
   cropDraftGeometry: null,
+  rotateDraftGeometry: null,
+  rotateDraftPreviewController: null,
+  rotateDraftPreviewSerial: 0,
+  rotateDraftPreviewTimer: null,
+  rotateDraftPresentedSignature: null,
+  rotateDraftPresentedGeometry: null,
+  rotateDraftPreviewUrl: null,
   cropEditBaseCrop: null,
   cropGuide: "none",
   cropGridDensity: 8,
@@ -508,6 +520,111 @@ const defaultGeometry = () => ({
   ratio_mode: "free",
   custom_ratio: { width: 1, height: 1 },
 });
+
+function geometrySignature() {
+  return JSON.stringify(state.adjustments.shared?.geometry || defaultGeometry());
+}
+
+const IDENTITY_GEOMETRY_COORDINATE_MAP = Object.freeze({
+  outputToSource: Object.freeze([1, 0, 0, 0, 1, 0]),
+  sourceToOutput: Object.freeze([1, 0, 0, 0, 1, 0]),
+});
+
+function geometryTransformIsNeutral(geometry = state.adjustments.shared?.geometry) {
+  const crop = geometry?.crop || {};
+  return (Number(geometry?.rotation) || 0) === 0
+    && !geometry?.flip_horizontal
+    && !geometry?.flip_vertical
+    && Math.abs(Number(geometry?.straighten_angle) || 0) < 1e-8
+    && Math.abs((Number(crop.x) || 0)) < 1e-8
+    && Math.abs((Number(crop.y) || 0)) < 1e-8
+    && Math.abs((Number(crop.width) || 1) - 1) < 1e-8
+    && Math.abs((Number(crop.height) || 1) - 1) < 1e-8;
+}
+
+function geometryCoordinateMapKey(signature = geometrySignature(), longEdge = settledProxyLongEdge()) {
+  return `${state.session?.session_id || "none"}:${longEdge}:${signature}`;
+}
+
+function currentGeometryCoordinateMap() {
+  if (geometryTransformIsNeutral()) return IDENTITY_GEOMETRY_COORDINATE_MAP;
+  return geometryCoordinateMapCache.get(geometryCoordinateMapKey()) || null;
+}
+
+function affinePoint(matrix, point) {
+  return {
+    x: matrix[0] * point.x + matrix[1] * point.y + matrix[2],
+    y: matrix[3] * point.x + matrix[4] * point.y + matrix[5],
+  };
+}
+
+async function ensureGeometryCoordinateMap() {
+  if (!state.session || geometryTransformIsNeutral()) return IDENTITY_GEOMETRY_COORDINATE_MAP;
+  const signature = geometrySignature();
+  const longEdge = settledProxyLongEdge();
+  const key = geometryCoordinateMapKey(signature, longEdge);
+  const cached = geometryCoordinateMapCache.get(key);
+  if (cached) return cached;
+  const inflight = geometryCoordinateMapRequests.get(key);
+  if (inflight) return inflight;
+  const adjustments = JSON.parse(JSON.stringify(state.adjustments));
+  const request = fetch(`/api/session/${state.session.session_id}/geometry-map`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ adjustments, edit_revision: state.editRevision, long_edge: longEdge }),
+  }).then(async (response) => {
+    if (!response.ok) throw new Error(`Geometry coordinate map failed (${response.status}).`);
+    const payload = await response.json();
+    if (signature !== geometrySignature()) return null;
+    const result = {
+      outputToSource: payload.output_to_source,
+      sourceToOutput: payload.source_to_output,
+      outputWidth: payload.output_width,
+      outputHeight: payload.output_height,
+    };
+    geometryCoordinateMapCache.set(key, result);
+    while (geometryCoordinateMapCache.size > 12) {
+      geometryCoordinateMapCache.delete(geometryCoordinateMapCache.keys().next().value);
+    }
+    queueLocalMaskOverlayRender();
+    return result;
+  }).catch((error) => {
+    console.warn("Source-anchored editor geometry is unavailable.", error);
+    return null;
+  }).finally(() => geometryCoordinateMapRequests.delete(key));
+  geometryCoordinateMapRequests.set(key, request);
+  return request;
+}
+
+function gpuPreviewEligible() {
+  return state.renderingMode !== "cpu"
+    && Boolean(state.gpuPreview?.available);
+}
+
+function acceptPresentation(lane, tier, width, height, transport, fallbackReason = "") {
+  const longEdge = Math.max(Number(width) || 0, Number(height) || 0);
+  state.acceptedPresentation = {
+    lane,
+    generation: state.previewGeneration[lane],
+    geometrySignature: geometrySignature(),
+    tier,
+    width: Number(width) || null,
+    height: Number(height) || null,
+    longEdge,
+    transport,
+    fallbackReason,
+  };
+  const sourceEdge = Math.max(Number(state.session?.source?.width) || 0, Number(state.session?.source?.height) || 0);
+  const label = tier === "refinement"
+    ? `${sourceEdge && longEdge >= sourceEdge ? "Source-limited" : "High-res"} · ${longEdge}px`
+    : `${fallbackReason ? "Fallback" : "Standard"}${longEdge ? ` · ${longEdge}px` : ""}`;
+  if (els.previewQualityStatus) els.previewQualityStatus.textContent = label;
+  renderReadouts();
+}
+
+function markRefining() {
+  if (els.previewQualityStatus) els.previewQualityStatus.textContent = "Refining…";
+}
 
 const defaultAdjustments = () => ({
   hdr: {
@@ -774,6 +891,7 @@ const els = {
   scopeView: document.getElementById("scope-view"),
   technicalView: document.getElementById("technical-view"),
   highQualityPreview: document.getElementById("high-quality-preview"),
+  previewQualityStatus: document.getElementById("preview-quality-status"),
   exportSheet: document.getElementById("export-sheet"),
   exportConfirmButton: document.getElementById("export-confirm-button"),
   exportStatus: document.getElementById("export-status"),
@@ -844,6 +962,8 @@ const els = {
   customRatioFields: document.getElementById("custom-ratio-fields"),
   rotateLeft: document.getElementById("rotate-left"),
   rotateRight: document.getElementById("rotate-right"),
+  rotateApply: document.getElementById("rotate-apply"),
+  rotateCancel: document.getElementById("rotate-cancel"),
   flipHorizontal: document.getElementById("flip-horizontal"),
   flipVertical: document.getElementById("flip-vertical"),
   swapCustomRatio: document.getElementById("swap-custom-ratio"),
@@ -1567,6 +1687,7 @@ function bindEvents() {
     state.gpuPreparedLane = { hdr: false, sdr: false };
     if (state.session) {
       invalidatePreview(state.currentView);
+      if (state.highQualityPreview) markRefining();
       debouncePreview(state.currentView);
     }
     renderReadouts();
@@ -2051,11 +2172,14 @@ async function initializeDesktopBridge() {
   els.openExportPath?.classList.toggle("hidden", !desktop);
   if (!desktop) return;
   state.desktopEnvironment = await desktop.environment();
-  desktop.onMenuCommand(({ command }) => handleDesktopCommand(command));
+  state.renderingMode = ["auto", "gpu", "cpu"].includes(state.desktopEnvironment.renderingMode)
+    ? state.desktopEnvironment.renderingMode
+    : "auto";
+  desktop.onMenuCommand(({ command, payload }) => handleDesktopCommand(command, payload));
   desktop.onOpenRequest((selection) => openDesktopSelection(selection));
 }
 
-async function handleDesktopCommand(command) {
+async function handleDesktopCommand(command, payload = null) {
   if (command === "open-source") return requestSourceImport();
   if (command === "open-project") return openProjectFromPath();
   if (command === "save") return saveProjectToPath({ saveAs: false });
@@ -2063,6 +2187,21 @@ async function handleDesktopCommand(command) {
   if (command === "export") return openExportSheet();
   if (command === "undo") return queueEditCommand("undo");
   if (command === "redo") return queueEditCommand("redo");
+  if (command === "rendering-mode") return applyRenderingMode(payload?.mode);
+}
+
+async function applyRenderingMode(mode) {
+  if (!["auto", "gpu", "cpu"].includes(mode)) return false;
+  state.renderingMode = mode;
+  state.gpuPreparedLane = { hdr: false, sdr: false };
+  state.gpuPreview?.resetSession(state.session?.session_id || null);
+  if (state.session) {
+    invalidatePreview("hdr");
+    invalidatePreview("sdr");
+    await settlePreview(state.currentView);
+  }
+  renderReadouts();
+  return true;
 }
 
 async function requestSourceImport() {
@@ -2095,7 +2234,9 @@ function lumaBandLabel(lower, upper) {
 function previewOutputEntries() {
   return [
     ["View", state.currentView.toUpperCase()],
-    ["Preview Mode", state.highQualityPreview ? "High quality" : "Fast"],
+    ["Rendering", state.renderingMode === "cpu" ? "CPU Compatibility" : state.renderingMode === "gpu" ? "GPU Preferred" : "Auto"],
+    ["Preview Mode", state.acceptedPresentation?.tier === "refinement" ? "High-res presented" : state.highQualityPreview ? "High-res requested" : "Standard"],
+    ["Presented", state.acceptedPresentation?.longEdge ? `${state.acceptedPresentation.longEdge}px · ${state.acceptedPresentation.transport}` : "Waiting"],
     ["Scope", els.scopeFreshness?.textContent || "Waiting"],
     ["Transport", state.previewInfo.transport],
     ["Media", state.previewInfo.mediaType],
@@ -2227,7 +2368,7 @@ async function settlePreview(lane = state.currentView, task = {}) {
   const display = lane === state.currentView;
   const longEdge = settledProxyLongEdge();
   if (display) {
-    if (state.gpuPreview?.available) {
+    if (gpuPreviewEligible()) {
       const rendered = await renderGpuDraft(lane, { longEdge });
       if (rendered) await refreshOverlay(longEdge);
       else await renderPreviewForLane(lane, true, longEdge, { showProgress: false });
@@ -2242,9 +2383,17 @@ async function settlePreview(lane = state.currentView, task = {}) {
 }
 
 async function refinePreview(lane, task = {}) {
-  if (!state.session || !state.highQualityPreview || lane !== state.currentView || !state.gpuPreview?.available) return;
+  if (!state.session || !state.highQualityPreview || lane !== state.currentView) return;
   if (task.applicationGeneration !== undefined && task.applicationGeneration !== state.previewGeneration[lane]) return;
-  await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
+  const generation = state.previewGeneration[lane];
+  const signature = geometrySignature();
+  markRefining();
+  const rendered = gpuPreviewEligible()
+    ? await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge(), tier: "refinement" })
+    : false;
+  if (rendered || !state.highQualityPreview || lane !== state.currentView) return;
+  await renderPreviewForLane(lane, true, refinementProxyLongEdge(), { showProgress: false });
+  if (generation !== state.previewGeneration[lane] || signature !== geometrySignature() || !state.highQualityPreview) return;
 }
 
 function displayedLongEdge() {
@@ -2298,7 +2447,8 @@ async function renderPreviewForLane(
   if (raw) return renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showProgress });
   const cached = state.previewCache[lane];
   const generation = state.previewGeneration[lane];
-  if (cached?.generation === generation && (cached.longEdge || 0) >= longEdge) {
+  const signature = geometrySignature();
+  if (cached?.generation === generation && cached.geometrySignature === signature && (cached.longEdge || 0) >= longEdge) {
     if (displayWhenReady && state.currentView === lane && !state.comparePeekActive) showCachedPreview(lane);
     renderCompareStatus();
     return true;
@@ -2344,12 +2494,14 @@ async function renderPreviewForLane(
 
   if (displayWhenReady && showProgress) setPreviewMessage("Processing complete. Decoding preview...", progressSteps[1]);
   const previewInfo = previewInfoFromResponse(response, lane);
+  const width = Number(response.headers.get("X-Image-Width"));
+  const height = Number(response.headers.get("X-Image-Height"));
   const blob = await response.blob();
-  if (generation !== state.previewGeneration[lane]) return false;
+  if (generation !== state.previewGeneration[lane] || signature !== geometrySignature()) return false;
   const url = URL.createObjectURL(blob);
   const previous = state.previewCache[lane];
   if (previous?.url) URL.revokeObjectURL(previous.url);
-  state.previewCache[lane] = { url, generation, longEdge };
+  state.previewCache[lane] = { url, generation, longEdge: Math.max(width, height) || longEdge, width, height, geometrySignature: signature };
   if (displayWhenReady && state.currentView === lane && !state.comparePeekActive) {
     if (showProgress) setPreviewMessage("Presenting preview...", progressSteps[2]);
     const keptGpuSurface = shouldKeepHdrGpuSurface(lane)
@@ -2359,6 +2511,7 @@ async function renderPreviewForLane(
       state.previewInfoByLane[lane] = previewInfo;
       await applyPreviewUrl(url);
       state.previewInfo = previewInfo;
+      acceptPresentation(lane, longEdge >= refinementProxyLongEdge() ? "refinement" : "settled", width, height, previewInfo.transport, gpuPreviewEligible() ? "" : "CPU/backend");
       els.scopeKindLabel.textContent = lane.toUpperCase();
       renderReadouts();
     }
@@ -2371,8 +2524,9 @@ async function renderPreviewForLane(
 
 async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showProgress = false } = {}) {
   const generation = state.previewGeneration[lane];
+  const signature = geometrySignature();
   const cached = state.previewCache[lane];
-  if (cached?.raw && cached.generation === generation && cached.longEdge >= longEdge) {
+  if (cached?.raw && cached.generation === generation && cached.geometrySignature === signature && cached.longEdge >= longEdge) {
     if (displayWhenReady && lane === state.currentView) applyRawPreview(cached);
     return true;
   }
@@ -2402,8 +2556,8 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
   const height = Number(response.headers.get("X-Image-Height"));
   const rawGeneration = Number(response.headers.get("X-Generation"));
   const data = new Uint8ClampedArray(await response.arrayBuffer());
-  if (generation !== state.previewGeneration[lane] || rawGeneration !== generation) return false;
-  const frame = { raw: data, width, height, generation, longEdge };
+  if (generation !== state.previewGeneration[lane] || rawGeneration !== generation || signature !== geometrySignature()) return false;
+  const frame = { raw: data, width, height, generation, longEdge: Math.max(width, height) || longEdge, geometrySignature: signature };
   state.previewCache[lane] = frame;
   state.previewInfoByLane[lane] = {
     mediaType: "application/octet-stream",
@@ -2441,6 +2595,7 @@ function applyRawPreview(frame) {
   clearInteractiveStraightenPreview();
   applyZoomGeometry();
   renderReadouts();
+  acceptPresentation(state.currentView, frame.longEdge >= refinementProxyLongEdge() ? "refinement" : "settled", frame.width, frame.height, "Raw RGBA8", "CPU/backend");
 }
 
 function applyRawComparisonPreview(frame) {
@@ -3449,6 +3604,7 @@ function getValueByPath(target, path) {
 
 function bindCropEditor() {
   els.cropToolToggle?.addEventListener("click", async () => {
+    if (state.rotateDraftGeometry) closeRotateMode(false);
     if (state.geometryTool === "crop") {
       closeCropMode(true);
       return;
@@ -3459,7 +3615,13 @@ function bindCropEditor() {
   });
   els.rotateToolToggle?.addEventListener("click", () => {
     if (state.cropMode) closeCropMode(true);
-    state.geometryTool = state.geometryTool === "rotate" ? null : "rotate";
+    if (state.geometryTool === "rotate") {
+      closeRotateMode(false);
+      return;
+    }
+    state.rotateDraftGeometry = JSON.parse(JSON.stringify(state.adjustments.shared.geometry));
+    state.geometryTool = "rotate";
+    renderRotateDraftTransform();
     renderGeometryToolState();
   });
   els.cropDone?.addEventListener("click", () => closeCropMode(true));
@@ -3482,8 +3644,10 @@ function bindCropEditor() {
   });
   els.rotateLeft?.addEventListener("click", () => rotateGeometry(-90));
   els.rotateRight?.addEventListener("click", () => rotateGeometry(90));
-  els.flipHorizontal?.addEventListener("click", () => commitAdjustmentValue("shared.geometry.flip_horizontal", !state.adjustments.shared.geometry.flip_horizontal));
-  els.flipVertical?.addEventListener("click", () => commitAdjustmentValue("shared.geometry.flip_vertical", !state.adjustments.shared.geometry.flip_vertical));
+  els.flipHorizontal?.addEventListener("click", () => updateRotateDraft("flip_horizontal"));
+  els.flipVertical?.addEventListener("click", () => updateRotateDraft("flip_vertical"));
+  els.rotateApply?.addEventListener("click", () => closeRotateMode(true));
+  els.rotateCancel?.addEventListener("click", () => closeRotateMode(false));
   els.swapCustomRatio?.addEventListener("click", () => {
     const ratio = state.cropDraftGeometry?.custom_ratio;
     if (!ratio) return;
@@ -3592,8 +3756,10 @@ function beginStraightenGesture(event = null) {
   showStraightenGrid();
   // Make any older authoritative geometry response stale without scheduling a
   // replacement until this gesture finishes.
-  invalidatePreview("hdr");
-  invalidatePreview("sdr");
+  if (!state.rotateDraftGeometry) {
+    invalidatePreview("hdr");
+    invalidatePreview("sdr");
+  }
 }
 
 function updateStraightenInteractive(value) {
@@ -3610,7 +3776,7 @@ function updateStraightenInteractive(value) {
   // the authoritative render applies the largest valid-pixel crop on release.
   // Scaling to cover the old frame here made portrait images appear to zoom by
   // 25% or more and did not match the backend's variable-aspect safe crop.
-  [els.previewImage, els.previewCanvas, els.previewOverlay, els.chromeProofImage].forEach((preview) => {
+  [els.previewImage, els.previewCanvas, els.previewOverlay, els.localMaskOverlay, els.chromeProofImage].forEach((preview) => {
     preview?.style.setProperty("--interactive-straighten-angle", `${-delta}deg`);
     preview?.style.setProperty("--interactive-straighten-scale", "1");
     if (preview) preview.style.clipPath = "";
@@ -3621,9 +3787,16 @@ function finishStraightenGesture() {
   if (!state.straightenGestureActive) return;
   state.straightenGestureActive = false;
   hideStraightenGrid();
-  invalidatePreview("hdr");
-  invalidatePreview("sdr");
-  debouncePreview(state.currentView);
+  if (!state.rotateDraftGeometry) {
+    invalidatePreview("hdr");
+    invalidatePreview("sdr");
+    debouncePreview(state.currentView);
+  } else {
+    // A settled frame that was already in flight may present immediately after
+    // pointer-up. Reassert the transaction's visual transform until Apply or
+    // Cancel resolves the draft.
+    renderRotateDraftTransform();
+  }
 }
 
 function showStraightenGrid() {
@@ -3680,9 +3853,13 @@ function hideStraightenGrid() {
 
 function clearInteractiveStraightenPreview() {
   if (state.straightenGestureActive || state.straightenPreviewBaseAngle === null) return;
+  if (state.rotateDraftGeometry) {
+    renderRotateDraftTransform();
+    return;
+  }
   state.straightenPreviewBaseAngle = null;
   state.straightenPreviewFrameRect = null;
-  [els.previewImage, els.previewCanvas, els.previewOverlay, els.chromeProofImage].forEach((preview) => {
+  [els.previewImage, els.previewCanvas, els.previewOverlay, els.localMaskOverlay, els.chromeProofImage].forEach((preview) => {
     preview?.style.removeProperty("--interactive-straighten-angle");
     preview?.style.removeProperty("--interactive-straighten-scale");
     if (preview) preview.style.clipPath = "";
@@ -3694,9 +3871,168 @@ function rotateGeometry(delta) {
   geometry.rotation = (geometry.rotation + delta + 360) % 360;
   geometry.crop = { x: 0, y: 0, width: 1, height: 1 };
   syncControlsFromState();
-  invalidatePreview("hdr");
-  invalidatePreview("sdr");
-  debouncePreview(state.currentView);
+  renderRotateDraftTransform();
+  if (!state.rotateDraftGeometry) {
+    invalidatePreview("hdr");
+    invalidatePreview("sdr");
+    debouncePreview(state.currentView);
+  }
+}
+
+function updateRotateDraft(key) {
+  if (!state.rotateDraftGeometry) return;
+  state.adjustments.shared.geometry[key] = !state.adjustments.shared.geometry[key];
+  syncControlsFromState();
+  renderRotateDraftTransform();
+  renderControlState();
+}
+
+function renderRotateDraftTransform() {
+  if (!state.rotateDraftGeometry) return;
+  const original = state.rotateDraftGeometry;
+  const current = state.adjustments.shared.geometry;
+  const visualBase = state.rotateDraftPresentedGeometry || original;
+  const delta = ((Number(current.rotation) || 0) - (Number(visualBase.rotation) || 0) + 360) % 360;
+  const flipX = Boolean(current.flip_horizontal) === Boolean(visualBase.flip_horizontal) ? 1 : -1;
+  const flipY = Boolean(current.flip_vertical) === Boolean(visualBase.flip_vertical) ? 1 : -1;
+  const straightenDelta = (Number(current.straighten_angle) || 0) - (Number(visualBase.straighten_angle) || 0);
+  if (useHdrSafeGeometryDraft()) {
+    if (!valuesEqual(original, current)) queueHdrGeometryDraft();
+  }
+  [els.previewImage, els.previewCanvas, els.chromeProofImage].forEach((preview) => {
+    preview?.style.setProperty("--interactive-rotate-angle", `${delta}deg`);
+    preview?.style.setProperty("--interactive-flip-x", String(flipX));
+    preview?.style.setProperty("--interactive-flip-y", String(flipY));
+    preview?.style.setProperty("--interactive-straighten-angle", `${-straightenDelta}deg`);
+    preview?.style.setProperty("--interactive-straighten-scale", "1");
+    if (preview) preview.style.clipPath = "";
+  });
+  applySourceOverlayGeometryTransform(original, current);
+}
+
+function applySourceOverlayGeometryTransform(original, current) {
+  const delta = ((Number(current.rotation) || 0) - (Number(original.rotation) || 0) + 360) % 360;
+  const flipX = Boolean(current.flip_horizontal) === Boolean(original.flip_horizontal) ? 1 : -1;
+  const flipY = Boolean(current.flip_vertical) === Boolean(original.flip_vertical) ? 1 : -1;
+  const straightenDelta = (Number(current.straighten_angle) || 0) - (Number(original.straighten_angle) || 0);
+  [els.previewOverlay, els.localMaskOverlay].forEach((overlay) => {
+    overlay?.style.setProperty("--interactive-rotate-angle", `${delta}deg`);
+    overlay?.style.setProperty("--interactive-flip-x", String(flipX));
+    overlay?.style.setProperty("--interactive-flip-y", String(flipY));
+    overlay?.style.setProperty("--interactive-straighten-angle", `${-straightenDelta}deg`);
+    overlay?.style.setProperty("--interactive-straighten-scale", "1");
+    if (overlay) overlay.style.clipPath = "";
+  });
+}
+
+function useHdrSafeGeometryDraft() {
+  return state.currentView === "hdr" && mediaQueryMatch("(dynamic-range: high)");
+}
+
+function clearRotateDraftTransformProperties() {
+  [els.previewImage, els.previewCanvas, els.previewOverlay, els.localMaskOverlay, els.chromeProofImage].forEach((preview) => {
+    preview?.style.removeProperty("--interactive-rotate-angle");
+    preview?.style.removeProperty("--interactive-flip-x");
+    preview?.style.removeProperty("--interactive-flip-y");
+    preview?.style.removeProperty("--interactive-straighten-angle");
+    preview?.style.removeProperty("--interactive-straighten-scale");
+    if (preview) preview.style.clipPath = "";
+  });
+}
+
+function queueHdrGeometryDraft() {
+  window.clearTimeout(state.rotateDraftPreviewTimer);
+  const signature = geometrySignature();
+  if (state.rotateDraftPresentedSignature === signature) return;
+  state.rotateDraftPreviewTimer = window.setTimeout(() => {
+    void renderHdrGeometryDraft(signature).catch((error) => {
+      console.warn("HDR geometry draft render failed; keeping the committed HDR frame.", error);
+    });
+  }, 80);
+}
+
+async function renderHdrGeometryDraft(signature) {
+  if (!state.rotateDraftGeometry || signature !== geometrySignature() || !useHdrSafeGeometryDraft()) return false;
+  state.rotateDraftPreviewController?.abort();
+  const controller = new AbortController();
+  state.rotateDraftPreviewController = controller;
+  const serial = ++state.rotateDraftPreviewSerial;
+  const response = await fetch(`/api/session/${state.session.session_id}/preview/hdr`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      adjustments: JSON.parse(JSON.stringify(state.adjustments)),
+      transient_adjustments: true,
+      edit_revision: state.editRevision,
+      include_locals: !state.compareWithoutLocals,
+      local_adjustments: state.compareWithoutLocals ? [] : JSON.parse(JSON.stringify(localAdjustments())),
+      long_edge: settledProxyLongEdge(),
+      hdr_display: true,
+    }),
+    signal: controller.signal,
+  }).catch((error) => error.name === "AbortError" ? null : Promise.reject(error));
+  if (!response || !response.ok || serial !== state.rotateDraftPreviewSerial
+    || !state.rotateDraftGeometry || signature !== geometrySignature()) return false;
+  const blob = await response.blob();
+  if (!blob.type.startsWith("image/avif")) return false;
+  const url = URL.createObjectURL(blob);
+  try {
+    await new Promise((resolve, reject) => {
+      els.previewImage.onload = resolve;
+      els.previewImage.onerror = () => reject(new Error("HDR geometry draft could not be decoded."));
+      els.previewImage.src = url;
+    });
+  } finally {
+    els.previewImage.onload = null;
+    els.previewImage.onerror = null;
+  }
+  if (serial !== state.rotateDraftPreviewSerial || !state.rotateDraftGeometry || signature !== geometrySignature()) {
+    URL.revokeObjectURL(url);
+    return false;
+  }
+  if (state.rotateDraftPreviewUrl) URL.revokeObjectURL(state.rotateDraftPreviewUrl);
+  state.rotateDraftPreviewUrl = url;
+  state.rotateDraftPresentedSignature = signature;
+  state.rotateDraftPresentedGeometry = JSON.parse(JSON.stringify(state.adjustments.shared.geometry));
+  clearRotateDraftTransformProperties();
+  applySourceOverlayGeometryTransform(state.rotateDraftGeometry, state.adjustments.shared.geometry);
+  els.previewCanvas.style.display = "none";
+  els.previewImage.style.display = "block";
+  els.emptyState.style.display = "none";
+  setZoomMode(state.zoomMode);
+  syncOverlayPlacement();
+  const local = selectedLocal();
+  if (local) scheduleAuthoritativeLocalMaskDraft(local);
+  updateZoomReadout();
+  return true;
+}
+
+function closeRotateMode(commit) {
+  if (!state.rotateDraftGeometry) return;
+  const original = state.rotateDraftGeometry;
+  const presentedDraft = Boolean(state.rotateDraftPresentedSignature);
+  state.rotateDraftGeometry = null;
+  state.geometryTool = null;
+  window.clearTimeout(state.rotateDraftPreviewTimer);
+  state.rotateDraftPreviewTimer = null;
+  state.rotateDraftPreviewController?.abort();
+  state.rotateDraftPreviewController = null;
+  state.rotateDraftPresentedSignature = null;
+  state.rotateDraftPresentedGeometry = null;
+  if (!commit) state.adjustments.shared.geometry = original;
+  clearRotateDraftTransformProperties();
+  clearInteractiveStraightenPreview();
+  syncControlsFromState();
+  renderGeometryToolState();
+  renderControlState();
+  if (commit && !valuesEqual(original, state.adjustments.shared.geometry)) {
+    invalidatePreview("hdr");
+    invalidatePreview("sdr");
+    debouncePreview(state.currentView);
+  } else if (!commit && presentedDraft) {
+    void renderGpuDraft(state.currentView, { longEdge: settledProxyLongEdge() })
+      .then((rendered) => rendered || showCachedPreview(state.currentView));
+  }
 }
 
 function renderCropOptions() {
@@ -5482,6 +5818,11 @@ async function applyPreviewUrl(url) {
     els.previewImage.onerror = null;
   }
 
+  if (state.rotateDraftPreviewUrl && state.rotateDraftPreviewUrl !== url) {
+    URL.revokeObjectURL(state.rotateDraftPreviewUrl);
+    state.rotateDraftPreviewUrl = null;
+  }
+
   els.previewCanvas.style.display = "none";
   els.previewImage.style.display = "block";
   els.emptyState.style.display = "none";
@@ -5513,11 +5854,12 @@ async function applyComparisonUrl(url) {
 
 async function renderGpuDraft(
   lane = state.currentView,
-  { hideStatus = true, longEdge = settledProxyLongEdge(), allowInactive = false } = {},
+  { hideStatus = true, longEdge = settledProxyLongEdge(), allowInactive = false, tier = "settled" } = {},
 ) {
-  if (!valuesEqual(state.adjustments.shared?.geometry, defaultGeometry())) return false;
-  if (!state.session || (!allowInactive && lane !== state.currentView) || !state.gpuPreview?.available) return false;
+  if (!gpuPreviewEligible()) return false;
+  if (!state.session || (!allowInactive && lane !== state.currentView)) return false;
   if (state.comparePeekActive && !allowInactive) return false;
+  if (state.globalEditDirty && state.acceptedPresentation?.geometrySignature !== geometrySignature()) return false;
   const serial = ++state.gpuRenderSerial;
   const adjustmentsSnapshot = JSON.parse(JSON.stringify(state.adjustments));
   const localSnapshot = state.compareWithoutLocals
@@ -5538,6 +5880,10 @@ async function renderGpuDraft(
     if (!result || serial !== state.gpuRenderSerial || (!allowInactive && lane !== state.currentView)) return false;
     state.gpuPreparedLane[lane] = true;
     state.gpuSurfaceHdr = Boolean(result.hdr);
+    if (state.rotateDraftPreviewUrl) {
+      URL.revokeObjectURL(state.rotateDraftPreviewUrl);
+      state.rotateDraftPreviewUrl = null;
+    }
     els.previewImage.style.display = "none";
     els.previewCanvas.style.display = "block";
     els.emptyState.style.display = "none";
@@ -5550,6 +5896,7 @@ async function renderGpuDraft(
       notes: `Settled WebGPU authoring preview · ${longEdge}px proxy · export quality unchanged`,
     };
       state.previewInfoByLane[lane] = state.previewInfo;
+    acceptPresentation(lane, tier, result.width || longEdge, result.height || longEdge, "WebGPU");
     setZoomMode(state.zoomMode);
     renderReadouts();
       if (hideStatus) hidePreviewMessage();
@@ -5576,6 +5923,10 @@ async function renderGpuDraft(
       });
       return true;
   } catch (error) {
+    if (error?.recoverable) {
+      console.debug("WebGPU authoring render deferred until geometry commit.", error);
+      return false;
+    }
     console.warn("WebGPU authoring render failed; using raw CPU preview.", error);
     state.gpuPreview.available = false;
     state.gpuSurfaceHdr = false;
@@ -5637,6 +5988,8 @@ async function applyOverlayUrl(url) {
 }
 
 function clearPreviewImage() {
+  if (state.rotateDraftPreviewUrl) URL.revokeObjectURL(state.rotateDraftPreviewUrl);
+  state.rotateDraftPreviewUrl = null;
   els.previewImage.removeAttribute("src");
   els.previewImage.style.display = "none";
   els.previewCanvas.style.display = "none";
@@ -5651,6 +6004,7 @@ function clearComparisonPreview({ keepRenderedState = false } = {}) {
   if (!keepRenderedState) {
     state.comparisonRenderedLane = null;
     state.comparisonRenderedGeneration = null;
+    state.comparisonRenderedGeometry = null;
   }
 }
 
@@ -5721,11 +6075,20 @@ function syncInterpretationControls(session) {
   els.interpretationMode.value = mode;
   els.interpretationColorSpace.value = defaultInterpretationValue(session);
   els.interpretationTransfer.value = defaultTransferValue(session);
-  const needsReview = session.analysis.needs_color_override;
-  els.sourceSettingsNote.textContent = needsReview
+  const needsReview = session.analysis.needs_color_override && mode !== "manual";
+  els.sourceSettingsNote.textContent = sourceInterpretationStatus(session);
+  els.sourceSettingsNote.classList.toggle("warning", needsReview);
+}
+
+function sourceInterpretationStatus(session) {
+  if (session.source.interpretation_mode === "manual") {
+    const colorSpace = session.source.source_color_space || "unknown";
+    const transfer = session.source.transfer_function || "unknown";
+    return `Manual source interpretation applied: ${colorSpace} primaries + ${transfer} transfer.`;
+  }
+  return session.analysis.needs_color_override
     ? "Auto detection found an ambiguous source interpretation."
     : "Auto detection found a consistent source interpretation.";
-  els.sourceSettingsNote.classList.toggle("warning", needsReview);
 }
 
 function renderSourceSettingsVisibility() {
@@ -5775,6 +6138,7 @@ function interpretationPayloadLegacy(value) {
 }
 
 function overrideMessage(session) {
+  if (session.source.interpretation_mode === "manual") return sourceInterpretationStatus(session);
   const note = session.metadata.extra?.color_space_note;
   if (note) return note;
   if (session.analysis.needs_color_override) return "This file needs a color interpretation override before export decisions are trustworthy.";
@@ -5866,6 +6230,7 @@ function renderInterpretationGate() {
 
 async function switchLane(lane) {
   if (!["hdr", "sdr"].includes(lane)) return;
+  if (state.rotateDraftGeometry) closeRotateMode(false);
   if (state.currentView === lane && cacheReady(lane)) {
     renderLaneChrome();
     renderLocalAdjustments();
@@ -5882,9 +6247,14 @@ async function switchLane(lane) {
   renderCurveChannelTabs();
   drawCurveEditor();
   renderReadouts();
-  const previewTask = state.gpuPreview?.available
-    ? renderGpuDraft(lane, { longEdge: settledProxyLongEdge() })
-    : cacheReady(lane) ? showCachedPreview(lane) : refreshPreview();
+  const previewTask = (async () => {
+    const rendered = gpuPreviewEligible()
+      ? await renderGpuDraft(lane, { longEdge: settledProxyLongEdge() })
+      : false;
+    if (rendered) return true;
+    if (cacheReady(lane)) return showCachedPreview(lane);
+    return renderPreviewForLane(lane, true, settledProxyLongEdge(), { showProgress: false });
+  })();
   await Promise.all([previewTask, refreshOverlay(), refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane })]);
   if (state.compareLayout !== "single") {
     const other = lane === "hdr" ? "sdr" : "hdr";
@@ -5931,6 +6301,12 @@ function invalidatePreview(lane, { local = false } = {}) {
 }
 
 function clearPreviewCache() {
+  window.clearTimeout(state.rotateDraftPreviewTimer);
+  state.rotateDraftPreviewTimer = null;
+  state.rotateDraftPreviewController?.abort();
+  state.rotateDraftPreviewController = null;
+  state.rotateDraftPresentedSignature = null;
+  state.rotateDraftPresentedGeometry = null;
   state.previewScheduler?.cancel();
   state.scopeRequestInFlight?.controller?.abort();
   state.pendingScopeRequest?.resolve(false);
@@ -5947,6 +6323,7 @@ function clearPreviewCache() {
   state.comparePeekActive = false;
   state.comparisonRenderedLane = null;
   state.comparisonRenderedGeneration = null;
+  state.comparisonRenderedGeometry = null;
   state.gpuSurfaceHdr = false;
   state.gpuPreparedLane = { hdr: false, sdr: false };
   state.scopeGeneration = 0;
@@ -5960,19 +6337,25 @@ function clearPreviewCache() {
 function cacheReady(lane) {
   const cached = state.previewCache[lane];
   return Boolean(
-    state.gpuPreparedLane[lane]
-    || (cached?.generation === state.previewGeneration[lane] && (cached.url || cached.raw)),
+    (gpuPreviewEligible() && state.gpuPreparedLane[lane])
+    || (cached?.generation === state.previewGeneration[lane]
+      && cached.geometrySignature === geometrySignature()
+      && (cached.url || cached.raw)),
   );
 }
 
 async function showCachedPreview(lane) {
   const cached = state.previewCache[lane];
-  if (state.gpuPreparedLane[lane] && await renderGpuDraft(lane, { allowInactive: lane !== state.currentView })) return;
-  if (!cached) return;
+  if (gpuPreviewEligible() && state.gpuPreparedLane[lane] && await renderGpuDraft(lane, { allowInactive: lane !== state.currentView })) return true;
+  if (!cached || cached.generation !== state.previewGeneration[lane] || cached.geometrySignature !== geometrySignature()) return false;
   if (cached.raw) applyRawPreview(cached);
-  else if (cached.url) await applyPreviewUrl(cached.url);
+  else if (cached.url) {
+    await applyPreviewUrl(cached.url);
+    acceptPresentation(lane, cached.longEdge >= refinementProxyLongEdge() ? "refinement" : "settled", cached.width, cached.height, state.previewInfoByLane[lane].transport, "CPU/backend");
+  }
   state.previewInfo = state.previewInfoByLane[lane];
   renderReadouts();
+  return true;
 }
 
 function prepareInactivePreview() {
@@ -5996,7 +6379,13 @@ async function preloadInactiveLane(lane, generation) {
     return;
   }
   try {
-    await state.gpuPreview.loadProxy(state.session.session_id, lane, settledProxyLongEdge());
+    await state.gpuPreview.loadProxy(
+      state.session.session_id,
+      lane,
+      settledProxyLongEdge(),
+      geometrySignature(),
+      state.editRevision,
+    );
     if (generation !== state.previewGeneration[lane]) return;
     state.gpuPreparedLane[lane] = true;
     renderCompareStatus();
@@ -6112,13 +6501,15 @@ function renderCompareLayout() {
 async function renderComparisonPreview(lane, { force = false } = {}) {
   if (!state.session || state.compareLayout === "single" || lane === state.currentView) return false;
   const generation = state.previewGeneration[lane];
+  const signature = geometrySignature();
   const alreadyRendered = state.comparisonRenderedLane === lane
     && state.comparisonRenderedGeneration === generation
+    && state.comparisonRenderedGeometry === signature
     && (els.comparisonCanvas.style.display !== "none" || els.comparisonImage.style.display !== "none");
   if (!force && alreadyRendered) return true;
 
   els.previewSecondaryPane.dataset.lane = lane;
-  if (state.gpuPreview?.available) {
+  if (gpuPreviewEligible()) {
     try {
       const result = await state.gpuPreview.renderTo(
         els.comparisonCanvas,
@@ -6136,6 +6527,7 @@ async function renderComparisonPreview(lane, { force = false } = {}) {
         els.comparisonCanvas.style.display = "block";
         state.comparisonRenderedLane = lane;
         state.comparisonRenderedGeneration = generation;
+        state.comparisonRenderedGeometry = signature;
         applyZoomGeometry();
         renderCompareStatus();
         return true;
@@ -6146,7 +6538,7 @@ async function renderComparisonPreview(lane, { force = false } = {}) {
   }
 
   let cached = state.previewCache[lane];
-  if (!(cached?.generation === generation && (cached.raw || cached.url))) {
+  if (!(cached?.generation === generation && cached.geometrySignature === signature && (cached.raw || cached.url))) {
     await renderPreviewForLane(lane, false, settledProxyLongEdge(), {
       showProgress: false,
       raw: !state.gpuPreview?.available,
@@ -6161,6 +6553,7 @@ async function renderComparisonPreview(lane, { force = false } = {}) {
   } else return false;
   state.comparisonRenderedLane = lane;
   state.comparisonRenderedGeneration = generation;
+  state.comparisonRenderedGeometry = signature;
   applyZoomGeometry();
   renderCompareStatus();
   return true;
@@ -6302,18 +6695,26 @@ function applyZoomGeometry() {
       longEdge: state.zoomReferenceFrame?.sessionId === sessionId
         ? state.zoomReferenceFrame.longEdge
         : Math.max(renderedFrameWidth, renderedFrameHeight),
+      aspect: renderedAspect,
     };
   }
   // Settled/local previews can replace the interactive bitmap with a slightly
   // different proxy size (for example 726px -> the 768px settled minimum).
   // CSS geometry must use one stable per-session reference or every such swap
   // looks like a zoom and shifts the scroll position at custom magnification.
-  // Always keep the current bitmap aspect so crops/quarter rotations are not
-  // stretched. Only proxy resolution is invisible to viewport geometry.
+  // Keep one aspect for the whole geometry state. Interactive and settled
+  // proxies can differ by a pixel after crop/rotation rounding; using each
+  // bitmap's aspect made ordinary grading gestures appear to shift the image.
+  // A geometry-signature change captures a new aspect, while tonal/color edits
+  // can freely swap proxy resolution without changing viewport placement.
   const referenceLongEdge = state.zoomReferenceFrame?.sessionId === sessionId
     ? state.zoomReferenceFrame.longEdge
     : Math.max(renderedFrameWidth, renderedFrameHeight);
-  const referenceAspect = renderedAspect;
+  const referenceAspect = state.zoomReferenceFrame?.sessionId === sessionId
+    && state.zoomReferenceFrame.geometrySignature === geometrySignature
+    && Number.isFinite(state.zoomReferenceFrame.aspect)
+    ? state.zoomReferenceFrame.aspect
+    : renderedAspect;
   const sourceWidth = referenceAspect >= 1 ? referenceLongEdge : referenceLongEdge * referenceAspect;
   const sourceHeight = referenceAspect >= 1 ? referenceLongEdge / referenceAspect : referenceLongEdge;
   const frameWidth = Math.max(1, els.dropzone.clientWidth);
@@ -6558,6 +6959,13 @@ function renderControlState() {
     if (output) output.textContent = count ? `${count} Mod` : "";
     output?.closest(".control-group")?.classList.toggle("modified", count > 0);
   }
+  const geometryReset = els.groupResets.find((button) => button.dataset.resetGroup === "geometry");
+  if (geometryReset) {
+    const hasDraft = Boolean(state.cropDraftGeometry || state.rotateDraftGeometry);
+    geometryReset.disabled = !hasDraft && valuesEqual(state.adjustments.shared.geometry, defaults.shared.geometry);
+    geometryReset.title = "Reset all crop and rotation geometry";
+    geometryReset.setAttribute("aria-label", "Reset all crop and rotation geometry");
+  }
   for (const lane of ["hdr", "sdr"]) {
     const keys = Object.keys(defaults[lane]).filter((key) => !key.endsWith("_curve") && !key.endsWith("_section_enabled") && key !== "highlight_compression_source_peak_nits");
     const modified = keys.some((key) => !valuesEqual(state.adjustments[lane]?.[key], defaults[lane][key]))
@@ -6610,6 +7018,13 @@ function resetControlGroup(group) {
   const paths = controlGroups[group] || [];
   if (!paths.length) return;
   const defaults = defaultAdjustments();
+  if (group === "geometry") {
+    const current = state.cropDraftGeometry || state.adjustments.shared.geometry;
+    if (valuesEqual(current, defaults.shared.geometry) && !state.rotateDraftGeometry) return;
+    if (!window.confirm("Reset all crop and rotation geometry? This cannot be undone.")) return;
+    if (state.cropMode) closeCropMode(false);
+    if (state.rotateDraftGeometry) closeRotateMode(false);
+  }
   paths.forEach((path) => setValueByPath(state.adjustments, path, getValueByPath(defaults, path)));
   const sectionPath = sectionPathForGroup[group];
   if (sectionPath) setValueByPath(state.adjustments, sectionPath, true);
@@ -7228,6 +7643,7 @@ function setGradeMode(mode) {
     els.localAdjustmentGroup.classList.toggle("collapsed", !localActive);
     els.gradeModeLocal?.setAttribute("aria-expanded", String(localActive));
   }
+  if (state.gradeMode === "local") void ensureGeometryCoordinateMap();
   renderLocalMaskOverlay();
 }
 
@@ -8233,9 +8649,13 @@ function bindLocalMaskCanvas() {
     if (event.button !== 0) return;
     const local = selectedLocal();
     if (!local || state.gradeMode !== "local") return;
-    const point = localPointerPoint(event);
     const leaf = firstMaskLeaf(local.mask, state.localTool) || firstMaskLeaf(local.mask);
-    if (!leaf || !point) return;
+    if (!leaf) return;
+    const displayPoint = localDisplayPointerPoint(event);
+    const point = leaf.type === "luminance_range"
+      ? displayPoint
+      : localPointerPoint(event, displayPoint);
+    if (!point) return;
     if (!["brush", "linear_gradient", "luminance_range", "path"].includes(leaf.type)) return;
     // A new structural gesture supersedes any settled preview queued by the
     // preceding commit. Its overlay remains visible while the gesture is in
@@ -8251,10 +8671,13 @@ function bindLocalMaskCanvas() {
     } else if (leaf.type === "linear_gradient") {
       const previewRect = activePreviewElement()?.getBoundingClientRect();
       const controls = gradientControlPoints(leaf);
+      const displayPoint = sourcePointToDisplay(point);
       const nearest = Object.entries(controls).reduce((best, [handle, control]) => {
+        const displayControl = sourcePointToDisplay(control);
+        if (!displayPoint || !displayControl) return best;
         const distance = Math.hypot(
-          (control.x - point.x) * Math.max(previewRect?.width || 1, 1),
-          (control.y - point.y) * Math.max(previewRect?.height || 1, 1),
+          (displayControl.x - displayPoint.x) * Math.max(previewRect?.width || 1, 1),
+          (displayControl.y - displayPoint.y) * Math.max(previewRect?.height || 1, 1),
         );
         return distance < best.distance ? { handle, distance } : best;
       }, { handle: "end", distance: Infinity });
@@ -8343,7 +8766,9 @@ function bindLocalMaskCanvas() {
   });
   canvas.addEventListener("pointermove", (event) => {
     const gesture = state.localPointerGesture;
-    const point = localPointerPoint(event);
+    const point = gesture?.type === "luminance_sample"
+      ? localDisplayPointerPoint(event)
+      : localPointerPoint(event);
     if (!point) return;
     const hoveredPathLeaf = firstMaskLeaf(selectedLocal()?.mask, "path");
     if (hoveredPathLeaf) state.localPathCursor = point;
@@ -8783,7 +9208,7 @@ function splitPathSegment(nodes, segmentIndex, t = 0.5) {
   return insertionIndex;
 }
 
-function localPointerPoint(event) {
+function localDisplayPointerPoint(event) {
   const preview = activePreviewElement();
   if (!preview) return null;
   const rect = preview.getBoundingClientRect();
@@ -8802,22 +9227,53 @@ function localPointerPoint(event) {
   };
 }
 
+function localPointerPoint(event, displayPoint = null) {
+  const point = displayPoint || localDisplayPointerPoint(event);
+  if (!point) return null;
+  const coordinateMap = currentGeometryCoordinateMap();
+  if (!coordinateMap) {
+    void ensureGeometryCoordinateMap();
+    return null;
+  }
+  const source = affinePoint(coordinateMap.outputToSource, point);
+  const pathLeaf = firstMaskLeaf(selectedLocal()?.mask, "path");
+  const allowOutside = Boolean(pathLeaf && (state.localPathEditMode === "feather" || !state.localPathDraft));
+  return {
+    x: clamp(source.x, allowOutside ? -1 : 0, allowOutside ? 2 : 1),
+    y: clamp(source.y, allowOutside ? -1 : 0, allowOutside ? 2 : 1),
+  };
+}
+
+function sourcePointToDisplay(point) {
+  const coordinateMap = currentGeometryCoordinateMap();
+  if (!coordinateMap) {
+    void ensureGeometryCoordinateMap();
+    return null;
+  }
+  return affinePoint(coordinateMap.sourceToOutput, point);
+}
+
 function pathTargetAtPointer(event, nodes, selectedIndex) {
   const rect = activePreviewElement()?.getBoundingClientRect();
   if (!rect || !nodes?.length) return null;
   const px = event.clientX;
   const py = event.clientY;
-  const screen = (point) => ({ x: rect.left + point.x * rect.width, y: rect.top + point.y * rect.height });
+  const screen = (point) => {
+    const display = sourcePointToDisplay(point);
+    return display ? { x: rect.left + display.x * rect.width, y: rect.top + display.y * rect.height } : null;
+  };
   const selected = selectedIndex === null ? null : nodes[selectedIndex];
   if (selected) {
     for (const handle of ["in", "out"]) {
       if (selected[`${handle}_x`] === null || selected[`${handle}_x`] === undefined) continue;
       const position = screen({ x: selected[`${handle}_x`], y: selected[`${handle}_y`] });
+      if (!position) return null;
       if (Math.hypot(px - position.x, py - position.y) <= 14) return { type: "handle", index: selectedIndex, handle };
     }
   }
   for (let index = 0; index < nodes.length; index += 1) {
     const position = screen(nodes[index]);
+    if (!position) return null;
     if (Math.hypot(px - position.x, py - position.y) <= 14) return { type: "node", index };
   }
   let nearest = null;
@@ -8827,6 +9283,7 @@ function pathTargetAtPointer(event, nodes, selectedIndex) {
     for (let sample = 0; sample <= 32; sample += 1) {
       const t = sample / 32;
       const point = screen(cubicPathPoint(first, second, t));
+      if (!point) return null;
       const distance = Math.hypot(px - point.x, py - point.y);
       if (!nearest || distance < nearest.distance) nearest = { type: "curve", segment, t, distance };
     }
@@ -8970,10 +9427,22 @@ function handlePathCanvasKeydown(event) {
   const rect = activePreviewElement()?.getBoundingClientRect();
   if (!rect) return;
   const pixels = event.shiftKey ? 10 : 1;
-  const dx = event.key === "ArrowLeft" ? -pixels / rect.width : event.key === "ArrowRight" ? pixels / rect.width : 0;
-  const dy = event.key === "ArrowUp" ? -pixels / rect.height : event.key === "ArrowDown" ? pixels / rect.height : 0;
   const node = nodes[state.selectedPathNode];
   const target = state.pathKeyboardTarget;
+  const sourceTarget = target === "node"
+    ? { x: node.x, y: node.y }
+    : { x: node[`${target}_x`], y: node[`${target}_y`] };
+  const displayTarget = sourcePointToDisplay(sourceTarget);
+  const coordinateMap = currentGeometryCoordinateMap();
+  if (!displayTarget || !coordinateMap) return;
+  const displayDx = event.key === "ArrowLeft" ? -pixels / rect.width : event.key === "ArrowRight" ? pixels / rect.width : 0;
+  const displayDy = event.key === "ArrowUp" ? -pixels / rect.height : event.key === "ArrowDown" ? pixels / rect.height : 0;
+  const movedSource = affinePoint(coordinateMap.outputToSource, {
+    x: displayTarget.x + displayDx,
+    y: displayTarget.y + displayDy,
+  });
+  const dx = movedSource.x - sourceTarget.x;
+  const dy = movedSource.y - sourceTarget.y;
   if (target === "node") {
     const before = { ...node };
     node.x += dx; node.y += dy;
@@ -9033,7 +9502,7 @@ function renderLocalMaskOverlay() {
     ? localAuthoritativeMaskCache.get(local.id)
     : null;
   const needsAuthoritativeOverlay = ["linear_gradient", "luminance_range"].includes(local.mask?.leaf?.type);
-  drawMaskExpression(context, local.mask, x, y, {
+  const drawOptions = {
     localId: local.id,
     maskSignature,
     spatialSignature,
@@ -9050,8 +9519,32 @@ function renderLocalMaskOverlay() {
       : null,
     exactMaskPending: state.localMaskDraftDirty,
     gpuLumaOverlay: gpuLumaMaskPreviewActive(local),
-  });
+  };
+  drawMaskExpression(context, local.mask, x, y, { ...drawOptions, renderPhase: "mask" });
+  const coordinateMap = currentGeometryCoordinateMap();
+  if (coordinateMap) {
+    context.save();
+    applySourceGeometryCanvasTransform(context, imageRect, rect, coordinateMap.sourceToOutput);
+    drawMaskExpression(context, local.mask, x, y, { ...drawOptions, renderPhase: "gizmo" });
+    context.restore();
+  } else {
+    void ensureGeometryCoordinateMap();
+  }
   if (!gpuLumaMaskPreviewActive(local)) void queueAuthoritativeLocalMask(local);
+}
+
+function applySourceGeometryCanvasTransform(context, imageRect, paneRect, matrix) {
+  const width = Math.max(imageRect.width, 1);
+  const height = Math.max(imageRect.height, 1);
+  const offsetX = imageRect.left - paneRect.left;
+  const offsetY = imageRect.top - paneRect.top;
+  const a = matrix[0];
+  const b = matrix[3] * height / width;
+  const c = matrix[1] * width / height;
+  const d = matrix[4];
+  const e = offsetX - a * offsetX - c * offsetY + matrix[2] * width;
+  const f = offsetY - b * offsetX - d * offsetY + matrix[5] * height;
+  context.transform(a, b, c, d, e, f);
 }
 
 function queueLocalMaskOverlayRender() {
@@ -9077,31 +9570,37 @@ function drawMaskExpression(context, expression, x, y, options = {}) {
   }
   const leaf = expression.leaf;
   if (!leaf) return;
+  const renderMask = options.renderPhase !== "gizmo";
+  const renderGizmo = options.renderPhase !== "mask";
   context.save();
   context.strokeStyle = "rgba(238, 252, 255, .98)";
   context.fillStyle = overlayColorWithAlpha(0.22);
   context.lineWidth = 2;
   if (leaf.type === "linear_gradient") {
-    if (state.localShowMask && options.authoritative) {
+    if (renderMask && state.localShowMask && options.authoritative) {
       drawAuthoritativeMaskOverlay(context, options.authoritative.canvas, x, y, options.authoritative.spatialOnly ? leaf.mask_opacity : 1);
     }
-    drawLinearGradientGizmo(context, leaf, x, y);
+    if (renderGizmo) drawLinearGradientGizmo(context, leaf, x, y);
   } else if (leaf.type === "brush") {
     const gesture = state.localPointerGesture;
     const activeStroke = gesture?.type === "brush" && gesture.leaf === leaf ? gesture.stroke : null;
-    if (state.localShowMask) drawBrushMaskOverlay(context, leaf, activeStroke, x, y, expression.inverted, options);
+    if (renderMask && state.localShowMask) drawBrushMaskOverlay(context, leaf, null, x, y, expression.inverted, options);
+    if (renderGizmo && state.localShowMask && activeStroke) drawActiveBrushStrokeOverlay(context, activeStroke, x, y);
     const cursor = state.localBrushCursor || activeStroke?.points?.at(-1);
-    if (cursor) drawBrushGizmo(context, cursor, brushSettings(leaf), x, y);
+    if (renderGizmo && cursor) drawBrushGizmo(context, cursor, brushSettings(leaf), x, y);
   } else if (leaf.type === "luminance_range") {
-    if (state.localShowMask && options.authoritative && !options.gpuLumaOverlay) {
+    if (renderMask && state.localShowMask && options.authoritative && !options.gpuLumaOverlay) {
       drawAuthoritativeMaskOverlay(context, options.authoritative.canvas, x, y, options.authoritative.spatialOnly ? leaf.mask_opacity : 1);
     }
     const samplingGesture = state.localPointerGesture;
-    if (samplingGesture?.type === "luminance_sample" && samplingGesture.leaf === leaf) {
+    if (renderMask && samplingGesture?.type === "luminance_sample" && samplingGesture.leaf === leaf) {
       drawLuminanceSamplingGesture(context, samplingGesture, x, y);
     }
   } else if (leaf.type === "path") {
-    drawPathMaskGizmo(context, leaf, x, y);
+    if (renderMask && state.localShowMask && options.authoritative) {
+      drawAuthoritativeMaskOverlay(context, options.authoritative.canvas, x, y, options.authoritative.spatialOnly ? leaf.mask_opacity : 1);
+    }
+    if (renderGizmo) drawPathMaskGizmo(context, leaf, x, y, { drawFill: !options.authoritative });
   }
   context.restore();
 }
@@ -9202,7 +9701,8 @@ async function queueAuthoritativeLocalMask(local) {
   const signature = localMaskSpatialSignature(local.mask);
   const longEdge = settledProxyLongEdge();
   const revision = state.editRevision;
-  const key = `${state.session.session_id}:${local.id}:${longEdge}:${signature}`;
+  const requestedGeometrySignature = geometrySignature();
+  const key = `${state.session.session_id}:${local.id}:${longEdge}:${requestedGeometrySignature}:${signature}`;
   const cached = localAuthoritativeMaskCache.get(local.id);
   if (cached?.key === key || localAuthoritativeMaskRequests.has(key)) return;
   const request = fetch(`/api/session/${state.session.session_id}/local-mask/${encodeURIComponent(local.id)}?long_edge=${longEdge}&edit_revision=${revision}&spatial_only=true`)
@@ -9211,7 +9711,10 @@ async function queueAuthoritativeLocalMask(local) {
       const width = Number(response.headers.get("X-Image-Width"));
       const height = Number(response.headers.get("X-Image-Height"));
       const alpha = new Uint8Array(await response.arrayBuffer());
-      if (signature !== localMaskSpatialSignature(selectedLocal()?.mask)) return;
+      if (
+        signature !== localMaskSpatialSignature(selectedLocal()?.mask)
+        || requestedGeometrySignature !== geometrySignature()
+      ) return;
       const canvas = document.createElement("canvas");
       canvas.width = width;
       canvas.height = height;
@@ -9245,6 +9748,8 @@ function scheduleAuthoritativeLocalMaskDraft(local) {
     signature,
     revision: state.editRevision,
     longEdge: settledProxyLongEdge(),
+    adjustments: JSON.parse(JSON.stringify(state.adjustments)),
+    geometrySignature: geometrySignature(),
     generation: ++state.localMaskDraftGeneration,
   };
   if (state.localMaskDraftController) {
@@ -9266,11 +9771,56 @@ function flushAuthoritativeLocalMaskDraft() {
     pending.signature,
     pending.revision,
     pending.longEdge,
+    pending.adjustments,
+    pending.geometrySignature,
     pending.generation,
   );
 }
 
-async function loadAuthoritativeLocalMaskDraft(localId, mask, signature, revision, longEdge, generation) {
+function drawActiveBrushStrokeOverlay(context, stroke, x, y) {
+  const left = x(0);
+  const top = y(0);
+  const displayWidth = Math.max(1, Math.round(x(1) - left));
+  const displayHeight = Math.max(1, Math.round(y(1) - top));
+  const longEdge = Math.max(256, Math.min(1600, settledProxyLongEdge()));
+  const scale = Math.min(1, longEdge / Math.max(displayWidth, displayHeight));
+  const width = Math.max(1, Math.round(displayWidth * scale));
+  const height = Math.max(1, Math.round(displayHeight * scale));
+  let gesture = localBrushGestureCanvasCache.get(stroke);
+  if (!gesture || gesture.width !== width || gesture.height !== height) {
+    const canvas = document.createElement("canvas");
+    const tinted = document.createElement("canvas");
+    canvas.width = tinted.width = width;
+    canvas.height = tinted.height = height;
+    gesture = { canvas, tinted, width, height, renderedPointCount: 0 };
+    localBrushGestureCanvasCache.set(stroke, gesture);
+  }
+  const firstNewPoint = Math.max(0, gesture.renderedPointCount - 1);
+  const pendingPoints = stroke.points.slice(firstNewPoint);
+  if (pendingPoints.length && (gesture.renderedPointCount === 0 || pendingPoints.length > 1)) {
+    drawBrushMaskStroke(gesture.canvas.getContext("2d"), { ...stroke, points: pendingPoints }, width, height);
+    gesture.renderedPointCount = stroke.points.length;
+    const tintedContext = gesture.tinted.getContext("2d");
+    tintedContext.clearRect(0, 0, width, height);
+    tintedContext.drawImage(gesture.canvas, 0, 0);
+    tintBrushMask(tintedContext, width, height);
+  }
+  context.save();
+  context.globalAlpha = 0.52;
+  context.drawImage(gesture.tinted, left, top, displayWidth, displayHeight);
+  context.restore();
+}
+
+async function loadAuthoritativeLocalMaskDraft(
+  localId,
+  mask,
+  signature,
+  revision,
+  longEdge,
+  adjustments,
+  requestedGeometrySignature,
+  generation,
+) {
   const controller = new AbortController();
   state.localMaskDraftController = controller;
   const requestedAt = performance.now();
@@ -9281,7 +9831,7 @@ async function loadAuthoritativeLocalMaskDraft(localId, mask, signature, revisio
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
-        body: JSON.stringify({ mask, edit_revision: revision, long_edge: longEdge }),
+        body: JSON.stringify({ mask, adjustments, edit_revision: revision, long_edge: longEdge }),
       },
     );
     if (!response.ok) return;
@@ -9291,6 +9841,7 @@ async function loadAuthoritativeLocalMaskDraft(localId, mask, signature, revisio
     if (
       generation !== state.localMaskDraftGeneration
       || revision !== state.editRevision
+      || requestedGeometrySignature !== geometrySignature()
       || localId !== state.selectedLocalId
       || signature !== JSON.stringify(selectedLocal()?.mask)
     ) {
@@ -9299,12 +9850,21 @@ async function loadAuthoritativeLocalMaskDraft(localId, mask, signature, revisio
     }
     const canvas = alphaMaskCanvas(alpha, width, height);
     localAuthoritativeMaskCache.set(localId, {
-      key: `draft:${revision}:${longEdge}:${signature}`,
+      key: `draft:${revision}:${longEdge}:${requestedGeometrySignature}:${signature}`,
       signature,
       canvas,
       spatialOnly: false,
     });
     trimAuthoritativeLocalMaskCache();
+    if (state.rotateDraftGeometry && requestedGeometrySignature === geometrySignature()) {
+      [els.previewOverlay, els.localMaskOverlay].forEach((overlay) => {
+        overlay?.style.removeProperty("--interactive-rotate-angle");
+        overlay?.style.removeProperty("--interactive-flip-x");
+        overlay?.style.removeProperty("--interactive-flip-y");
+        overlay?.style.removeProperty("--interactive-straighten-angle");
+        overlay?.style.removeProperty("--interactive-straighten-scale");
+      });
+    }
     queueLocalMaskOverlayRender();
     requestAnimationFrame((presentedAt) => {
       window.dispatchEvent(new CustomEvent("hdrfinisher:mask-presented", {
@@ -9464,12 +10024,7 @@ function drawAuthoritativeMaskOverlay(context, maskCanvas, x, y, influenceOpacit
   const top = y(0);
   const width = Math.max(1, Math.round(x(1) - left));
   const height = Math.max(1, Math.round(y(1) - top));
-  const tinted = document.createElement("canvas");
-  tinted.width = maskCanvas.width;
-  tinted.height = maskCanvas.height;
-  const tintedContext = tinted.getContext("2d");
-  tintedContext.drawImage(maskCanvas, 0, 0);
-  tintBrushMask(tintedContext, tinted.width, tinted.height);
+  const tinted = tintedBrushMaskCanvas(maskCanvas, true);
   context.save();
   context.globalAlpha = 0.52 * clamp(Number(influenceOpacity), 0, 1);
   context.drawImage(tinted, left, top, width, height);
@@ -9629,7 +10184,7 @@ function drawSelectedPathHandles(context, node, nodeIndex, x, y) {
   context.restore();
 }
 
-function drawPathMaskGizmo(context, leaf, x, y) {
+function drawPathMaskGizmo(context, leaf, x, y, { drawFill = true } = {}) {
   const draft = Boolean(state.localPathDraft && state.localPathDraft.localId === selectedLocal()?.id);
   const inner = leaf.nodes || [];
   const closed = !draft && inner.length >= 3;
@@ -9637,7 +10192,7 @@ function drawPathMaskGizmo(context, leaf, x, y) {
     ? (leaf.feather_nodes?.length ? leaf.feather_nodes : uniformFeatherNodes(inner, Number(leaf.feather || 0)))
     : [];
   const innerPath = () => tracePathBoundary(context, inner, x, y, closed);
-  if (closed && state.localShowMask) {
+  if (drawFill && closed && state.localShowMask) {
     innerPath();
     context.fillStyle = overlayColorWithAlpha(0.22);
     context.fill();

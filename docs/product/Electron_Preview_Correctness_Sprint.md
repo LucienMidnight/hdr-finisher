@@ -1,7 +1,7 @@
 # Electron Preview Correctness Sprint
 
 **Date:** August 16, 2026  
-**Status:** Investigation and implementation plan  
+**Status:** Correctness and geometry-aware GPU preview implemented through iteration 6; full-installer acceptance pending
 **Branch:** `feature/electron-desktop-shell`  
 **Owner:** HDR Finisher engineering  
 **Related plan:** [Electron Desktop Wrapper Sprint](Electron_Desktop_Wrapper_Sprint_PRD.md)
@@ -16,14 +16,17 @@ This sprint delivers correctness fallback and geometry-aware GPU acceleration to
 
 | ID | Priority | Summary | Status | Safest planned direction |
 |---|---:|---|---|---|
-| BUG-01 | P1 | HDR and SDR comparison frames misalign after geometry changes | Reproduced; root cause confirmed | Bypass comparison WebGPU rendering whenever shared geometry is non-default and use the authoritative backend preview for both lanes |
-| BUG-02 | P1 | HDR Controls / SDR Controls changes the selected controls but leaves the previous rendition visible after geometry edits | Reproduced; root cause confirmed | Require lane switching to fall back to the authoritative cached/backend preview whenever the attempted GPU render is ineligible or fails |
-| BUG-03 | P1 | High-Res Preview does not refine geometry-edited images | Reproduced; root cause confirmed | Add a backend refinement fallback at the requested refinement long edge when GPU refinement is ineligible |
-| BUG-04 | P2 | Preview quality UI reports the requested mode rather than the quality actually presented | Confirmed by inspection and runtime evidence | Track and disclose requested, refining, presented, and degraded/fallback states separately |
-| FEATURE-01 | P1 | Users and tests cannot explicitly select Auto, GPU, or CPU rendering | Planned | Add an Electron **Edit > Rendering Mode** radio submenu backed by one validated persisted preference |
-| FEATURE-02 | P1 | Rotate/flip/straighten commits repeatedly instead of using one explicit geometry transaction | Planned | Add **Apply** and **Cancel** to Rotate; keep a draft visual transform and rebuild disposable preview proxies only on Apply |
-| FEATURE-03 | P1 | Crop and Rotate lack one authoritative reset to the imported frame | Planned | Add **Reset Geometry** to both tools; discard geometry caches and regenerate from the immutable imported source outside edit undo/redo |
-| PERF-01 | P1 | Geometry edits permanently move later grading interactions off the fast GPU path | Planned | Upload a cached geometry-correct half-float source proxy so later grade changes remain WebGPU-fast |
+| BUG-01 | P1 | HDR and SDR comparison frames misalign after geometry changes | Implemented; installed check pending | Comparison WebGPU rendering now shares the geometry eligibility gate and backend frames are accepted only for the current geometry signature |
+| BUG-02 | P1 | HDR Controls / SDR Controls changes the selected controls but leaves the previous rendition visible after geometry edits | Implemented; installed check pending | Lane switching now checks GPU success, then uses a generation- and geometry-matched cache or requests the authoritative backend frame |
+| BUG-03 | P1 | High-Res Preview does not refine geometry-edited images | Implemented; installed check pending | Refinement now falls back to the backend requested long edge and rejects stale generation, lane, geometry, or preference results |
+| BUG-04 | P2 | Preview quality UI reports the requested mode rather than the quality actually presented | Implemented | The toolbar and Technical readout distinguish requested, refining, presented, source-limited, and fallback states |
+| FEATURE-01 | P1 | Users and tests cannot explicitly select Auto, GPU, or CPU rendering | Implemented | Electron persists one validated **Edit > Rendering Mode** radio preference and the renderer re-presents without dirtying the project |
+| FEATURE-02 | P1 | Rotate/flip/straighten commits repeatedly instead of using one explicit geometry transaction | Implemented | Rotate, flip, and straighten share an Apply/Cancel draft and invalidate the authoritative preview once on Apply |
+| FEATURE-03 | P1 | Crop and Rotate lack one authoritative reset to the imported frame | Implemented | The shared header Reset covers all geometry, is disabled at defaults, discards drafts, confirms the non-undoable reset, and rebuilds both lanes |
+| PERF-01 | P1 | Geometry edits permanently move later grading interactions off the fast GPU path | Implemented; installed check pending | The backend prepares one authoritative geometry-correct proxy; WebGPU caches it by lane, resolution, and geometry signature so later grading remains GPU-resident |
+| BUG-05 | P1 | Rotating an HDR frame temporarily or permanently presents an SDR-looking result while HDR scopes remain active | Implemented; unpacked-app acceptance through iteration 6 | HDR rotation drafts use a transient authoritative HDR image, new geometry waits for edit commit before GPU proxy loading, and recoverable proxy conflicts no longer disable WebGPU |
+| BUG-06 | P1 | Local adjustments and their red masks do not remain attached to the image through rotate/straighten/crop | Implemented; unpacked-app acceptance through iteration 6 | Persist local masks in immutable source coordinates, compile them before exact destructive geometry, and map editor input bidirectionally through the authoritative geometry transform |
+| BUG-07 | P2 | Interactive and settled proxy swaps shift the fitted image by a few pixels during continuous grading | Implemented in iteration 6; full-installer check pending | Retain one viewport aspect for each geometry signature so proxy-resolution rounding cannot alter screen placement |
 
 ## 3. Bug list
 
@@ -380,7 +383,46 @@ Record separate budgets after a baseline run rather than combining unlike work:
 
 The sprint does not pass merely because Auto is correct. GPU Required must remain accelerated after geometry is committed, CPU Compatibility must remain usable and cancellation-safe, and Auto must select/fall back without displaying stale content.
 
-## 12. User-provided brand assets task
+## 12. Iteration-6 implementation record: rotation, HDR, and source-anchored masks
+
+### Reported failure sequence
+
+Hands-on testing exposed a connected set of geometry defects that the initial rotate transaction alone did not solve:
+
+1. Straighten moved the image while the slider was held, but releasing the pointer restored the pre-rotation preview even though the control retained the new value and Apply produced the expected geometry.
+2. Keeping the draft visible revealed a more serious color-path error: rotating an HDR source produced a dark, SDR-looking draft. Applying the rotation could leave that SDR-looking presentation visible while the scopes still described HDR data.
+3. Once the HDR preview path was corrected, an exposure adjustment painted before rotation remained fixed to the screen instead of rotating with the photographed subject. Its red mask overlay could disagree with both the transformed image and the visible exposure effect.
+4. Review found the reverse case as well: when geometry was already active, new brush, gradient, and path input was recorded in display-normalized coordinates even though persisted mask data was intended to be source-anchored.
+5. During ordinary color-wheel, curve, and slider drags, swapping the interactive proxy for the settled proxy shifted the fitted image by several pixels because their rounded intrinsic dimensions produced slightly different aspect ratios.
+
+These were not independent cosmetic errors. They showed that the editor had no single authoritative contract connecting immutable source coordinates, destructively transformed preview pixels, local-mask storage, editor hit testing, and the currently presented proxy tier.
+
+### Root cause
+
+Image geometry was applied destructively to preview pixels, but local-mask geometry used an approximate inverse transform and the frontend still treated several source-space controls as if they were display-space controls. Straighten compounds the mismatch because Pillow expansion, the valid-pixel inset, crop rounding, flips, and quarter turns all affect the final output rectangle. Reimplementing only the obvious rotation formula could not reproduce that complete path.
+
+The WebGPU proxy also loaded geometry independently from the edit-commit lifecycle. A transient rotate draft could therefore request or present a proxy for the wrong revision, and a recoverable stale-proxy conflict was treated like a permanent GPU failure. Finally, viewport layout reused a stable reference long edge but accidentally accepted each proxy bitmap's newly rounded aspect ratio.
+
+### Implemented solution
+
+- Rotate, flip, and straighten remain one explicit Apply/Cancel transaction. The draft transform stays visible after pointer release, and Apply commits the complete geometry once.
+- HDR rotate drafts use an authoritative transient HDR render. Geometry-aware GPU proxies are requested only against an accepted edit revision and canonical geometry signature; stale results are rejected without disabling WebGPU.
+- The backend prepares the geometry-correct scene-linear proxy once and caches it by session, lane, long edge, pixel format, and geometry signature. Later tonal and color edits remain GPU-resident instead of repeatedly applying crop/rotation on the CPU.
+- Local masks are compiled in neutral immutable-source coordinates and then passed through the exact same `apply_geometry(...)` operation as the image. This makes the adjustment influence and authoritative red overlay pixel-identical with rotation, flip, straighten, valid-pixel crop, and user crop.
+- The backend exposes a cached bidirectional affine coordinate map derived by passing coordinate ramps through the real geometry operation. Frontend pointer input uses output-to-source mapping before persistence; path nodes, handles, gradients, brush cursors, and other gizmos use source-to-output mapping for drawing and hit testing.
+- Mask raster and gizmo rendering are split into two phases: the authoritative transformed mask is drawn in output space, while editable controls are transformed from source space. Luminance sampling deliberately remains output-space because it samples the already transformed frame and is not persisted as mask geometry.
+- The geometry map is prefetched when Local Adjustments opens and cached per geometry/preview size. Pointer movement performs only a six-coefficient affine calculation. Brush gesture canvases and tinted overlays are retained and updated incrementally rather than allocated per pointer event.
+- Viewport sizing now stores one aspect ratio per session and geometry signature. Interactive, settled, and high-resolution proxies may change pixel density without changing the image's CSS rectangle or apparent position.
+
+### Result and regression coverage
+
+Hands-on unpacked-app testing through iteration 6 confirmed the connected rotation flow was generally working after the source-anchoring repair: straighten remains visible before Apply, HDR appearance survives rotate draft and commit, previously authored local exposure follows the image, and the red mask stays aligned. The stable-aspect correction for continuous color-wheel and curve editing is implemented and covered by the focused frontend contract; final confirmation remains part of the full-installer acceptance pass.
+
+Automated coverage now includes exact destructive mask geometry, source/display map round trips through quarter turns, flips, straighten, and crop, the geometry-map API contract, transient HDR geometry handling, stale proxy rejection, two-phase local-mask rendering, manual source-interpretation messaging, and stable viewport aspect. Focused correctness runs completed with 185 passing tests before the final viewport correction; the viewport/geometry follow-up completed with 53 passing tests and JavaScript syntax validation.
+
+The final iteration-6 installer build completed on August 17, 2026 after the complete deterministic suite passed `466` tests and the Electron unit suite passed `3` tests. Packaged-asset inspection confirmed the bidirectional geometry editor, stable-aspect viewport correction, and removal of the obsolete export-format ranking labels. The generated Windows x64 artifacts are `HDR-Finisher-Setup-0.3.5-x64.exe` (`155,928,243` bytes, SHA-256 `BB8C7A77D8EDF4184F7356DDC6FC9A4528CA96398A79F5FDFA05FAD2B1F899E6`) and `HDR-Finisher-Portable-0.3.5-x64.exe` (`155,710,787` bytes, SHA-256 `0FAD639C9ED4F06FE99A33A84840D594A206DC39E0F7E6EBB026E9D65618D975`). Launch/install acceptance remains a hands-on gate because the build was not started while another HDR Finisher instance was open.
+
+## 13. User-provided brand assets task
 
 **Owner:** User / product design  
 **Engineering support:** Validate, generate platform derivatives, bundle, and test  

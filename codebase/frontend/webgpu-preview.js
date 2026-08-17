@@ -188,7 +188,8 @@
       if (this.sessionId !== sessionId) this.resetSession(sessionId);
       const serial = (this.renderSerials.get(canvas) || 0) + 1;
       this.renderSerials.set(canvas, serial);
-      const proxy = await this.loadProxy(sessionId, lane, longEdge);
+      const geometrySignature = JSON.stringify(adjustments.shared?.geometry || {});
+      const proxy = await this.loadProxy(sessionId, lane, longEdge, geometrySignature, editRevision);
       const proxyReadyAt = performance.now();
       if (serial !== this.renderSerials.get(canvas) || !proxy) return false;
       const activeLocals = localAdjustments.filter((local) => local.enabled !== false && local.opacity > 0 && local[`${lane}_grade`]?.enabled !== false);
@@ -198,6 +199,7 @@
         local,
         longEdge,
         editRevision,
+        geometrySignature,
         () => serial === this.renderSerials.get(canvas),
       )));
       const masksReadyAt = performance.now();
@@ -693,19 +695,32 @@
       });
     }
 
-    async loadProxy(sessionId, lane, longEdge) {
-      const key = `${sessionId}:${lane}:${longEdge}`;
+    async loadProxy(sessionId, lane, longEdge, geometrySignature = "{}", editRevision = 0) {
+      const key = `${sessionId}:${lane}:${longEdge}:${geometrySignature}`;
       if (this.proxies.has(key)) return this.proxies.get(key);
       if (this.proxyInflight.has(key)) return this.proxyInflight.get(key);
       const pending = (async () => {
-        const response = await fetch(`/api/session/${sessionId}/proxy/${lane}?long_edge=${longEdge}&format=rgba16f`);
-        if (!response.ok) throw new Error("WebGPU proxy could not be loaded");
+        const response = await fetch(`/api/session/${sessionId}/proxy/${lane}?long_edge=${longEdge}&format=rgba16f&edit_revision=${editRevision}&geometry_signature=${encodeURIComponent(geometrySignature)}`);
+        if (!response.ok) {
+          const error = new Error(response.status === 409
+            ? "WebGPU geometry proxy is waiting for the committed edit"
+            : "WebGPU proxy could not be loaded");
+          error.recoverable = response.status === 409;
+          error.status = response.status;
+          throw error;
+        }
         const width = Number(response.headers.get("X-Image-Width"));
         const height = Number(response.headers.get("X-Image-Height"));
         const bytesPerRow = Number(response.headers.get("X-Bytes-Per-Row"));
         const workingSpace = response.headers.get("X-Working-Space") || "acescg";
         const pixelFormat = response.headers.get("X-Pixel-Format") || "rgba32float";
+        const acceptedGeometry = response.headers.get("X-Geometry-Signature") || "{}";
         const data = await response.arrayBuffer();
+        if (acceptedGeometry !== geometrySignature) {
+          const error = new Error("Stale WebGPU geometry proxy rejected");
+          error.recoverable = true;
+          throw error;
+        }
         const texture = this.device.createTexture({
           size: { width, height },
           format: pixelFormat,
@@ -717,7 +732,7 @@
           { offset: 0, bytesPerRow, rowsPerImage: height },
           { width, height },
         );
-        const proxy = { texture, width, height, workingSpace, pixelFormat, bindGroups: new Map() };
+        const proxy = { texture, width, height, workingSpace, pixelFormat, geometrySignature, bindGroups: new Map() };
         this.proxies.set(key, proxy);
         this.trimProxyLevels(sessionId, lane);
         return proxy;
@@ -730,18 +745,18 @@
       }
     }
 
-    async loadLocalMask(sessionId, local, longEdge, editRevision, isCurrent = () => true) {
+    async loadLocalMask(sessionId, local, longEdge, editRevision, geometrySignature, isCurrent = () => true) {
       if (local.mask?.operator !== "leaf") {
-        return this.loadGpuMaskGraph(sessionId, local, longEdge, editRevision, isCurrent);
+        return this.loadGpuMaskGraph(sessionId, local, longEdge, editRevision, geometrySignature, isCurrent);
       }
-      return this.loadMaskLeaf(sessionId, local, local.mask, "", longEdge, editRevision, isCurrent);
+      return this.loadMaskLeaf(sessionId, local, local.mask, "", longEdge, editRevision, geometrySignature, isCurrent);
     }
 
-    async loadMaskLeaf(sessionId, local, expression, maskPath, longEdge, editRevision, isCurrent = () => true) {
+    async loadMaskLeaf(sessionId, local, expression, maskPath, longEdge, editRevision, geometrySignature, isCurrent = () => true) {
       const leafLocal = { ...local, id: maskPath ? `${local.id}:${maskPath}` : local.id, mask: expression };
-      if (isGpuLumaMask(expression)) return this.loadGpuLumaMask(sessionId, leafLocal, longEdge, isCurrent);
+      if (isGpuLumaMask(expression)) return this.loadGpuLumaMask(sessionId, leafLocal, longEdge, editRevision, geometrySignature, isCurrent);
       const maskSignature = gpuMaskIdentity(expression);
-      const key = `${sessionId}:${longEdge}:cpu-spatial-leaf:${maskSignature}`;
+      const key = `${sessionId}:${longEdge}:${geometrySignature}:cpu-spatial-leaf:${maskSignature}`;
       const cached = this.localMasks.get(key);
       if (cached) {
         this.localMasks.delete(key);
@@ -791,10 +806,10 @@
       return entry;
     }
 
-    async loadGpuMaskGraph(sessionId, local, longEdge, editRevision, isCurrent = () => true) {
+    async loadGpuMaskGraph(sessionId, local, longEdge, editRevision, geometrySignature, isCurrent = () => true) {
       const startedAt = performance.now();
       const layoutIdentity = gpuMaskGraphLayoutIdentity(local.mask);
-      const key = `${sessionId}:${local.id}:${longEdge}:gpu-mask-graph:${layoutIdentity}`;
+      const key = `${sessionId}:${local.id}:${longEdge}:${geometrySignature}:gpu-mask-graph:${layoutIdentity}`;
       let entry = this.localMasks.get(key);
       const influenceIdentity = JSON.stringify(local.mask);
       if (entry?.influenceIdentity === influenceIdentity) {
@@ -805,7 +820,7 @@
 
       const resolveNode = async (expression, path) => {
         if (expression.operator === "leaf") {
-          const leafEntry = await this.loadMaskLeaf(sessionId, local, expression, path, longEdge, editRevision, isCurrent);
+          const leafEntry = await this.loadMaskLeaf(sessionId, local, expression, path, longEdge, editRevision, geometrySignature, isCurrent);
           return leafEntry ? { expression, leafEntry, children: [] } : null;
         }
         const children = await Promise.all(expression.children.map((child, index) =>
@@ -887,13 +902,13 @@
       return entry;
     }
 
-    async loadSceneLuminance(sessionId, longEdge) {
-      const key = `${sessionId}:${longEdge}`;
+    async loadSceneLuminance(sessionId, longEdge, editRevision, geometrySignature) {
+      const key = `${sessionId}:${longEdge}:${geometrySignature}`;
       const cached = this.sceneLuminance.get(key);
       if (cached) return { ...cached, created: false };
       if (this.sceneLuminanceInflight.has(key)) return this.sceneLuminanceInflight.get(key);
       const pending = (async () => {
-        const source = await this.loadProxy(sessionId, "hdr", longEdge);
+        const source = await this.loadProxy(sessionId, "hdr", longEdge, geometrySignature, editRevision);
         const texture = this.createMaskTexture(source.width, source.height);
         const params = this.createStorageBuffer(new Float32Array(4));
         this.device.queue.writeBuffer(params, 0, new Float32Array(4));
@@ -926,12 +941,12 @@
       }
     }
 
-    async loadGpuLumaMask(sessionId, local, longEdge, isCurrent = () => true) {
+    async loadGpuLumaMask(sessionId, local, longEdge, editRevision, geometrySignature, isCurrent = () => true) {
       const startedAt = performance.now();
-      const scene = await this.loadSceneLuminance(sessionId, longEdge);
+      const scene = await this.loadSceneLuminance(sessionId, longEdge, editRevision, geometrySignature);
       if (!isCurrent()) return null;
       const baseSignature = gpuLumaBaseIdentity(local.mask);
-      const key = `${sessionId}:${longEdge}:gpu-luma:${baseSignature}`;
+      const key = `${sessionId}:${longEdge}:${geometrySignature}:gpu-luma:${baseSignature}`;
       let entry = this.localMasks.get(key);
       let baseRegenerated = false;
       if (!entry) {

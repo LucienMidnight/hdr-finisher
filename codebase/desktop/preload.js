@@ -10,6 +10,7 @@ function subscribe(channel, callback) {
 contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   apiVersion: 1,
   environment: () => ipcRenderer.invoke("desktop:environment"),
+  setRenderingMode: (mode) => ipcRenderer.invoke("desktop:set-rendering-mode", mode),
   openSource: () => ipcRenderer.invoke("desktop:open-source"),
   openProject: () => ipcRenderer.invoke("desktop:open-project"),
   relinkSource: () => ipcRenderer.invoke("desktop:relink-source"),

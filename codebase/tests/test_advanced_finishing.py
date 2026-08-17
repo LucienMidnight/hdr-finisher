@@ -5,7 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from hdr_finisher.adjustments import apply_adjustments
-from hdr_finisher.finishing import apply_geometry, apply_output_finishing, resolve_output_dimensions
+from hdr_finisher.finishing import apply_geometry, apply_output_finishing, geometry_coordinate_map, resolve_output_dimensions
 from hdr_finisher.models import AdjustmentState, GeometryAdjustments, OutputFinishingSettings, PreviewKind
 
 
@@ -27,6 +27,44 @@ def test_straighten_returns_only_finite_valid_pixels_without_padding() -> None:
     assert output.shape[0] < image.shape[0]
     assert output.shape[1] < image.shape[1]
     np.testing.assert_allclose(output, 1.0, atol=1e-6)
+
+
+@pytest.mark.parametrize(
+    "geometry",
+    [
+        GeometryAdjustments(rotation=90),
+        GeometryAdjustments(rotation=270, flip_horizontal=True),
+        GeometryAdjustments(straighten_angle=17.0),
+        GeometryAdjustments(
+            rotation=90,
+            flip_vertical=True,
+            straighten_angle=-6.7,
+            crop={"x": 0.1, "y": 0.08, "width": 0.76, "height": 0.81},
+        ),
+    ],
+)
+def test_geometry_coordinate_map_round_trips_source_and_display_points(geometry: GeometryAdjustments) -> None:
+    output_to_source, source_to_output, width, height = geometry_coordinate_map(131, 79, geometry)
+    output_matrix = np.array([*output_to_source, 0.0, 0.0, 1.0], dtype=np.float64).reshape(3, 3)
+    source_matrix = np.array([*source_to_output, 0.0, 0.0, 1.0], dtype=np.float64).reshape(3, 3)
+    np.testing.assert_allclose(output_matrix @ source_matrix, np.eye(3), atol=2e-6)
+    assert width > 0 and height > 0
+
+    points = np.array([[0.23, 0.31, 1.0], [0.5, 0.5, 1.0], [0.78, 0.62, 1.0]]).T
+    displayed = source_matrix @ points
+    restored = output_matrix @ displayed
+    np.testing.assert_allclose(restored, points, atol=2e-6)
+
+
+def test_quarter_turn_coordinate_map_matches_clockwise_editor_semantics() -> None:
+    output_to_source, source_to_output, _width, _height = geometry_coordinate_map(
+        131,
+        79,
+        GeometryAdjustments(rotation=90),
+    )
+    source_matrix = np.array([*source_to_output, 0.0, 0.0, 1.0], dtype=np.float64).reshape(3, 3)
+    displayed = source_matrix @ np.array([0.23, 0.31, 1.0])
+    np.testing.assert_allclose(displayed[:2], [0.69, 0.23], atol=2e-6)
 
 
 def test_invalid_crop_and_export_dimensions_are_rejected() -> None:

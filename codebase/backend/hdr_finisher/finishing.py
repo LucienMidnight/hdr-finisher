@@ -39,6 +39,51 @@ def apply_geometry(image: np.ndarray, geometry: GeometryAdjustments) -> np.ndarr
     return np.ascontiguousarray(result[top:bottom, left:right], dtype=np.float32)
 
 
+def geometry_coordinate_map(
+    width: int,
+    height: int,
+    geometry: GeometryAdjustments,
+) -> tuple[tuple[float, ...], tuple[float, ...], int, int]:
+    """Return normalized output/source affine maps from the exact geometry path."""
+    source_x = np.broadcast_to(
+        (np.arange(width, dtype=np.float32) + np.float32(0.5)) / max(width, 1),
+        (height, width),
+    )
+    source_y = np.broadcast_to(
+        ((np.arange(height, dtype=np.float32) + np.float32(0.5)) / max(height, 1))[:, None],
+        (height, width),
+    )
+    mapped = apply_geometry(np.stack((source_x, source_y), axis=-1), geometry)
+    output_height, output_width = mapped.shape[:2]
+
+    # Geometry is affine. Fit against interior pixel centers after running the
+    # coordinate ramps through the real image operation so Pillow expansion,
+    # the valid-pixel inset, crop rounding, flips, and quarter turns are all
+    # represented by the same contract as the rendered frame.
+    sample_x = np.unique(np.linspace(1, max(1, output_width - 2), 7).round().astype(int))
+    sample_y = np.unique(np.linspace(1, max(1, output_height - 2), 7).round().astype(int))
+    sample_x = np.clip(sample_x, 0, output_width - 1)
+    sample_y = np.clip(sample_y, 0, output_height - 1)
+    grid_x, grid_y = np.meshgrid(sample_x, sample_y)
+    output_u = (grid_x.ravel().astype(np.float64) + 0.5) / max(output_width, 1)
+    output_v = (grid_y.ravel().astype(np.float64) + 0.5) / max(output_height, 1)
+    design = np.column_stack((output_u, output_v, np.ones_like(output_u)))
+    samples = mapped[grid_y.ravel(), grid_x.ravel(), :].astype(np.float64)
+    coefficients, *_ = np.linalg.lstsq(design, samples, rcond=None)
+    output_to_source_matrix = np.array(
+        [
+            [coefficients[0, 0], coefficients[1, 0], coefficients[2, 0]],
+            [coefficients[0, 1], coefficients[1, 1], coefficients[2, 1]],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=np.float64,
+    )
+    source_to_output_matrix = np.linalg.inv(output_to_source_matrix)
+    output_to_source = tuple(float(value) for value in output_to_source_matrix[:2].ravel())
+    source_to_output = tuple(float(value) for value in source_to_output_matrix[:2].ravel())
+    return output_to_source, source_to_output, output_width, output_height
+
+
 def _rotate_to_valid_pixels(image: np.ndarray, angle_degrees: float) -> np.ndarray:
     try:
         from PIL import Image

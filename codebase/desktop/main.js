@@ -19,14 +19,43 @@ const SOURCE_FILTERS = [
 ];
 const PROJECT_FILTERS = [{ name: "HDR Finisher Project", extensions: ["hdrfinisher"] }];
 
+if (process.env.HDR_FINISHER_USER_DATA_DIR) {
+  app.setPath("userData", path.resolve(process.env.HDR_FINISHER_USER_DATA_DIR));
+}
+if (process.env.HDR_FINISHER_DISABLE_GPU === "1") {
+  app.commandLine.appendSwitch("in-process-gpu");
+  app.disableHardwareAcceleration();
+}
+
 let backend = null;
 let mainWindow = null;
 let forceClose = false;
 let shuttingDown = false;
 let documentState = { path: "", dirty: false, displayName: "Untitled" };
+let renderingMode = "auto";
 let pendingOpenPaths = [];
 const knownProjectPaths = new Set();
 const grantedExportPaths = new Set();
+
+function renderingPreferencePath() {
+  return path.join(app.getPath("userData"), "rendering-preferences.json");
+}
+
+function loadRenderingPreference() {
+  try {
+    const value = JSON.parse(fs.readFileSync(renderingPreferencePath(), "utf8"));
+    if (["auto", "gpu", "cpu"].includes(value.renderingMode)) renderingMode = value.renderingMode;
+  } catch {}
+}
+
+function setRenderingMode(mode) {
+  if (!["auto", "gpu", "cpu"].includes(mode)) return false;
+  renderingMode = mode;
+  fs.writeFileSync(renderingPreferencePath(), JSON.stringify({ renderingMode }));
+  buildMenu();
+  sendCommand("rendering-mode", { mode });
+  return true;
+}
 
 function randomSecret() {
   return crypto.randomBytes(32).toString("hex");
@@ -172,7 +201,9 @@ function registerIpc() {
     electronVersion: process.versions.electron,
     appVersion: app.getVersion(),
     packaged: app.isPackaged,
+    renderingMode,
   }));
+  handle("desktop:set-rendering-mode", (mode) => setRenderingMode(mode));
   handle("desktop:open-source", async () => {
     const result = await dialog.showOpenDialog(mainWindow, { title: "Import source image", properties: ["openFile"], filters: SOURCE_FILTERS });
     return result.canceled ? null : grantPath(result.filePaths[0], "source-open");
@@ -316,6 +347,15 @@ function buildMenu() {
         { label: "Undo", accelerator: "CmdOrCtrl+Z", enabled: hasDocument, click: () => sendCommand("undo") },
         { label: "Redo", accelerator: "CmdOrCtrl+Shift+Z", enabled: hasDocument, click: () => sendCommand("redo") },
         { type: "separator" },
+        {
+          label: "Rendering Mode",
+          submenu: [
+            { label: "Auto (Recommended)", type: "radio", checked: renderingMode === "auto", click: () => setRenderingMode("auto") },
+            { label: "GPU Preferred", type: "radio", checked: renderingMode === "gpu", click: () => setRenderingMode("gpu") },
+            { label: "CPU Compatibility", type: "radio", checked: renderingMode === "cpu", click: () => setRenderingMode("cpu") },
+          ],
+        },
+        { type: "separator" },
         { role: "cut" }, { role: "copy" }, { role: "paste" }, { role: "selectAll" },
       ],
     },
@@ -458,6 +498,7 @@ if (!gotLock) {
   app.on("window-all-closed", () => beginShutdown());
   app.whenReady().then(async () => {
     app.setAppUserModelId(APP_ID);
+    loadRenderingPreference();
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
     try {
       await startBackend();

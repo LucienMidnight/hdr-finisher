@@ -1080,8 +1080,9 @@ body[data-active-lane="sdr"] .lane-dot {
   display: none;
   max-width: none;
   max-height: none;
-  transform: translate(-50%, -50%) rotate(var(--interactive-straighten-angle, 0deg)) scale(var(--interactive-straighten-scale, 1));
+  transform: translate(-50%, -50%) rotate(var(--interactive-rotate-angle, 0deg)) rotate(var(--interactive-straighten-angle, 0deg)) scale(var(--interactive-straighten-scale, 1)) scaleX(var(--interactive-flip-x, 1)) scaleY(var(--interactive-flip-y, 1));
   transform-origin: center;
+  dynamic-range-limit: no-limit;
   user-select: none;
   -webkit-user-drag: none;
 }
@@ -1137,7 +1138,8 @@ body[data-active-lane="sdr"] .lane-dot {
   max-width: none;
   max-height: none;
   pointer-events: none;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) rotate(var(--interactive-rotate-angle, 0deg)) rotate(var(--interactive-straighten-angle, 0deg)) scale(var(--interactive-straighten-scale, 1)) scaleX(var(--interactive-flip-x, 1)) scaleY(var(--interactive-flip-y, 1));
+  transform-origin: center;
   -webkit-user-drag: none;
 }
 
@@ -1589,6 +1591,12 @@ body[data-active-lane="sdr"] .grade-rail {
 
 .control-disabled {
   opacity: 0.42;
+}
+
+.preview-quality-status {
+  color: var(--quiet);
+  font: 500 11px/1.2 var(--mono);
+  white-space: nowrap;
 }
 
 .control-row[hidden] {
@@ -3354,6 +3362,8 @@ input[type="text"] {
   width: 100%;
   height: 100%;
   outline: none;
+  transform: rotate(var(--interactive-rotate-angle, 0deg)) rotate(var(--interactive-straighten-angle, 0deg)) scale(var(--interactive-straighten-scale, 1)) scaleX(var(--interactive-flip-x, 1)) scaleY(var(--interactive-flip-y, 1));
+  transform-origin: center;
   pointer-events: none;
   touch-action: none;
   user-select: none;

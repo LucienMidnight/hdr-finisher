@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from hdr_finisher.models import AdjustmentState, LocalAdjustment, MaskExpression, MaskLeaf, OverlayMode, PreviewKind
+from hdr_finisher.finishing import apply_geometry
+from hdr_finisher.models import AdjustmentState, GeometryAdjustments, LocalAdjustment, MaskExpression, MaskLeaf, OverlayMode, PreviewKind
 from hdr_finisher.render_cache import SessionRenderCache, adjustment_signature, encode_rgba32f_proxy
 
 
@@ -37,6 +38,28 @@ def test_webgpu_proxy_rows_are_aligned_rgba32f() -> None:
     assert bytes_per_row == 256
     assert len(body) == 256
     np.testing.assert_allclose(packed[0, :8], [0.25, 0.5, 1.0, 1.0, 2.0, 3.0, 4.0, 1.0])
+
+
+def test_webgpu_source_proxy_applies_committed_geometry_before_grading() -> None:
+    image = np.arange(8 * 12 * 3, dtype=np.float32).reshape(8, 12, 3)
+    adjustments = AdjustmentState()
+    adjustments.shared.geometry = GeometryAdjustments(
+        rotation=90,
+        crop={"x": 0.25, "y": 0.125, "width": 0.5, "height": 0.75},
+    )
+    cache = SessionRenderCache(image, None)
+
+    source, _working_space = cache.source_proxy(PreviewKind.HDR, 256)
+    proxy, working_space, geometry_signature = cache.geometry_source_proxy(
+        PreviewKind.HDR,
+        256,
+        adjustments,
+    )
+
+    np.testing.assert_array_equal(proxy, apply_geometry(source, adjustments.shared.geometry))
+    assert proxy.shape == (8, 4, 3)
+    assert working_space == "acescg"
+    assert geometry_signature == adjustments.shared.geometry.model_dump_json()
 
 
 def test_simple_mask_opacity_reuses_the_spatial_mask_cache() -> None:

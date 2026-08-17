@@ -8,8 +8,10 @@ from PIL import Image
 
 from hdr_finisher.adjustments import apply_adjustments
 from hdr_finisher import local_adjustments as local_mask_module
+from hdr_finisher.finishing import apply_geometry
 from hdr_finisher.local_adjustments import (
     apply_local_stack,
+    compile_geometry_fixed_mask,
     compile_preview_mask,
     compile_spatial_preview_mask,
     evaluate_mask,
@@ -935,6 +937,47 @@ def test_preview_cache_reuses_compiled_mask_when_only_grade_changes() -> None:
     assert first_diagnostics["local_mask_entries"] == 1
     assert second_diagnostics["local_mask_entries"] == 1
     assert second_diagnostics["local_mask_bytes"] == first_diagnostics["local_mask_bytes"]
+
+
+def test_straightened_local_mask_uses_the_exact_destructive_image_geometry() -> None:
+    image = np.full((79, 131, 3), 0.18, dtype=np.float32)
+    local = LocalAdjustment(
+        mask=_leaf(MaskLeaf(
+            type="brush",
+            strokes=[BrushStroke(
+                points=[MaskPoint(x=0.23, y=0.31)],
+                radius=0.075,
+                hardness=0.9,
+            )],
+        )),
+        hdr_grade=LocalGrade(exposure=1.0),
+    )
+    geometry = GeometryAdjustments(straighten_angle=17.0)
+    adjustments = AdjustmentState()
+    adjustments.shared.geometry = geometry
+
+    source_mask = compile_spatial_preview_mask(
+        image,
+        local.mask,
+        GeometryAdjustments(),
+    )
+    expected = apply_geometry(source_mask[..., None], geometry)[..., 0]
+    expected = np.rint(np.clip(expected, 0.0, 255.0)).astype(np.uint8)
+
+    compiled = compile_geometry_fixed_mask(image, local.mask, geometry, spatial_only=True)
+    cached = SessionRenderCache(image, None).compiled_local_mask(
+        adjustments,
+        local,
+        256,
+        spatial_only=True,
+    )
+    np.testing.assert_array_equal(compiled, expected)
+    np.testing.assert_array_equal(cached, expected)
+
+    rendered = apply_adjustments(image, adjustments, PreviewKind.HDR, local_adjustments=[local])
+    fixed_source = apply_geometry(image, geometry)
+    changed = np.max(np.abs(rendered - fixed_source), axis=2) > 1e-5
+    assert np.array_equal(changed, expected > 0)
 
 
 def test_source_coordinates_follow_crop_and_quarter_rotation() -> None:

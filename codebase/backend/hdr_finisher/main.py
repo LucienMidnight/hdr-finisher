@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import atexit
+import json
 import os
 import secrets
 import time
@@ -34,6 +35,8 @@ from .models import (
     EditDocument,
     EditStateResponse,
     ExportSettings,
+    GeometryMapRequest,
+    GeometryMapResponse,
     LocalLuminanceSampleRequest,
     LocalLuminanceSampleResponse,
     LocalMaskPreviewRequest,
@@ -116,10 +119,18 @@ def _check_revision(actual_revision: int, expected_revision: int | None) -> None
         raise RevisionConflictError(expected_revision, actual_revision)
 
 
-def _resolve_edit_request(session_id: str, adjustments, edit_revision: int | None):
+def _resolve_edit_request(
+    session_id: str,
+    adjustments,
+    edit_revision: int | None,
+    *,
+    transient_adjustments: bool = False,
+):
     session = store.get(session_id)
     _check_revision(session.edit_revision, edit_revision)
     if adjustments is not None:
+        if transient_adjustments:
+            return session, adjustments
         # Compatibility bridge while global controls migrate to edit commands.
         # Revision checking still guarantees that locals are never rendered from
         # a stale ordered document.
@@ -327,8 +338,15 @@ def open_project_file(request: ProjectOpenRequest) -> SessionSummary:
 
 @app.post("/api/session/{session_id}/preview/{kind}")
 def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Response:
+    if request.transient_adjustments and request.adjustments is None:
+        raise HTTPException(status_code=422, detail="Transient preview adjustments are required.")
     try:
-        session, adjustments = _resolve_edit_request(session_id, request.adjustments, request.edit_revision)
+        session, adjustments = _resolve_edit_request(
+            session_id,
+            request.adjustments,
+            request.edit_revision,
+            transient_adjustments=request.transient_adjustments,
+        )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RevisionConflictError as exc:
@@ -507,12 +525,32 @@ def webgpu_proxy(
     kind: PreviewKind,
     long_edge: int = Query(default=1600, ge=256, le=2000),
     format: str = Query(default="rgba16f", pattern="^(rgba16f|rgba32f)$"),
+    edit_revision: int | None = Query(default=None, ge=0),
+    geometry_signature: str | None = Query(default=None),
 ) -> Response:
     try:
         session = store.get(session_id)
+        _check_revision(session.edit_revision, edit_revision)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    proxy, working_space = session.render_cache.source_proxy(kind, long_edge)
+    except RevisionConflictError as exc:
+        raise _revision_conflict(exc) from exc
+    proxy, working_space, authoritative_geometry_signature = session.render_cache.geometry_source_proxy(
+        kind,
+        long_edge,
+        session.adjustments,
+    )
+    if geometry_signature is not None:
+        try:
+            requested_geometry = json.loads(geometry_signature)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail="Invalid geometry signature.") from exc
+        authoritative_geometry = session.adjustments.shared.geometry.model_dump(mode="json")
+        if requested_geometry != authoritative_geometry:
+            raise HTTPException(status_code=409, detail="Stale geometry proxy request dropped.")
+        accepted_geometry_signature = geometry_signature
+    else:
+        accepted_geometry_signature = authoritative_geometry_signature
     body, bytes_per_row, pixel_format = encode_rgba_proxy(proxy, prefer_half=format == "rgba16f")
     height, width = proxy.shape[:2]
     return Response(
@@ -524,6 +562,8 @@ def webgpu_proxy(
             "X-Bytes-Per-Row": str(bytes_per_row),
             "X-Working-Space": working_space,
             "X-Pixel-Format": pixel_format,
+            "X-Geometry-Signature": accepted_geometry_signature,
+            "X-Edit-Revision": str(session.edit_revision),
         },
     )
 
@@ -597,7 +637,11 @@ def local_mask_preview_proxy(
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
     started = perf_counter()
-    mask = session.render_cache.compiled_mask_draft(session.adjustments, request.mask, request.long_edge)
+    mask = session.render_cache.compiled_mask_draft(
+        request.adjustments or session.adjustments,
+        request.mask,
+        request.long_edge,
+    )
     cpu_mask_ms = (perf_counter() - started) * 1000.0
     height, width = mask.shape
     return Response(
@@ -611,6 +655,33 @@ def local_mask_preview_proxy(
             "X-Mask-Preview": "draft",
             "X-CPU-Mask-Ms": f"{cpu_mask_ms:.3f}",
         },
+    )
+
+
+@app.post(
+    "/api/session/{session_id}/geometry-map",
+    response_model=GeometryMapResponse,
+)
+def geometry_map(session_id: str, request: GeometryMapRequest) -> GeometryMapResponse:
+    """Return the cached bidirectional map used by source-anchored editor tools."""
+    try:
+        session = store.get(session_id)
+        _check_revision(session.edit_revision, request.edit_revision)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RevisionConflictError as exc:
+        raise _revision_conflict(exc) from exc
+    adjustments = request.adjustments or session.adjustments
+    output_to_source, source_to_output, width, height = session.render_cache.geometry_map(
+        adjustments,
+        request.long_edge,
+    )
+    return GeometryMapResponse(
+        geometry_signature=adjustments.shared.geometry.model_dump_json(),
+        output_to_source=list(output_to_source),
+        source_to_output=list(source_to_output),
+        output_width=width,
+        output_height=height,
     )
 
 

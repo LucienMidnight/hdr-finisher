@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
+from io import BytesIO
 
 import pytest
+from PIL import Image
 
 from conftest import make_png_bytes
 from fastapi.testclient import TestClient
@@ -130,6 +133,36 @@ def test_real_png_upload_preview_and_scopes() -> None:
     half_proxy = client.get(f"/api/session/{session_id}/proxy/hdr?long_edge=512&format=rgba16f")
     assert half_proxy.headers["x-pixel-format"] == "rgba16float"
     assert len(half_proxy.content) <= len(proxy.content)
+
+    geometry_signature = json.dumps(upload_payload["session"]["adjustments"]["shared"]["geometry"], separators=(",", ":"))
+    signed_proxy = client.get(
+        f"/api/session/{session_id}/proxy/hdr",
+        params={"long_edge": 512, "geometry_signature": geometry_signature},
+    )
+    assert signed_proxy.status_code == 200
+    assert signed_proxy.headers["x-geometry-signature"] == geometry_signature
+    stale_proxy = client.get(
+        f"/api/session/{session_id}/proxy/hdr",
+        params={"long_edge": 512, "geometry_signature": '{"rotation":90}'},
+    )
+    assert stale_proxy.status_code == 409
+    assert stale_proxy.json()["detail"] == "Stale geometry proxy request dropped."
+
+    draft_adjustments = json.loads(json.dumps(upload_payload["session"]["adjustments"]))
+    draft_adjustments["shared"]["geometry"]["rotation"] = 90
+    transient_preview = client.post(
+        f"/api/session/{session_id}/preview/hdr",
+        json={
+            "adjustments": draft_adjustments,
+            "transient_adjustments": True,
+            "edit_revision": store.get(session_id).edit_revision,
+            "long_edge": 512,
+            "hdr_display": False,
+        },
+    )
+    assert transient_preview.status_code == 200
+    assert Image.open(BytesIO(transient_preview.content)).size == (12, 16)
+    assert store.get(session_id).adjustments.shared.geometry.rotation == 0
 
     raw = client.post(
         f"/api/session/{session_id}/preview-raw/sdr",
@@ -341,6 +374,26 @@ def test_local_luminance_sampling_returns_a_low_precision_scene_ev_range() -> No
     assert -24 <= payload["low_ev"] <= payload["center_ev"] <= payload["high_ev"] <= 24
     assert payload["low_ev"] * 4 == pytest.approx(round(payload["low_ev"] * 4))
     assert payload["high_ev"] * 4 == pytest.approx(round(payload["high_ev"] * 4))
+
+
+def test_geometry_map_returns_bidirectional_source_anchored_editor_coordinates() -> None:
+    upload = client.post("/api/session", files={"file": ("geometry-map.png", make_png_bytes(), "image/png")})
+    assert upload.status_code == 200
+    session = upload.json()["session"]
+    adjustments = session["adjustments"]
+    adjustments["shared"]["geometry"]["rotation"] = 90
+
+    response = client.post(
+        f'/api/session/{session["session_id"]}/geometry-map',
+        json={"adjustments": adjustments, "edit_revision": 0, "long_edge": 512},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["output_to_source"]) == 6
+    assert len(payload["source_to_output"]) == 6
+    assert payload["output_width"] > 0 and payload["output_height"] > 0
+    assert payload["source_to_output"] == pytest.approx([0.0, -1.0, 1.0, 1.0, 0.0, 0.0], abs=2e-6)
 
 
 def test_clearing_session_removes_owned_upload_temp_file() -> None:

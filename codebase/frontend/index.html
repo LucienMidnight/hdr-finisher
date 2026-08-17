@@ -160,6 +160,7 @@
               <span>High-res Preview</span>
               <input id="high-quality-preview" type="checkbox">
             </label>
+            <span id="preview-quality-status" class="preview-quality-status" aria-live="polite">Standard</span>
           </div>
           <div id="overlay-popover" class="overlay-popover hidden">
             <div class="popover-heading">
@@ -542,6 +543,7 @@
             </div>
             <div class="control-row" data-control-path="shared.geometry.straighten_angle"><div class="control-heading"><label for="crop-straighten">Straighten</label><output data-value-path="shared.geometry.straighten_angle">0.0&deg;</output></div><input id="crop-straighten" type="range" min="-45" max="45" step="0.1" value="0" data-path="shared.geometry.straighten_angle"></div>
             <p class="helper">Straighten previews immediately while dragging and settles at full quality after release.</p>
+            <div class="crop-editor-actions"><button id="rotate-cancel" class="button-secondary" type="button">Cancel</button><button id="rotate-apply" class="button-primary" type="button">Apply rotation</button></div>
           </div>
         </div>
       </section>
@@ -1047,14 +1049,14 @@
     <div class="format-cards" role="radiogroup" aria-label="Export format">
       <label class="format-card" data-format-card="avif_gain_map">
         <input type="radio" name="export-format-choice" value="avif_gain_map">
-        <span class="format-card-top"><span>Mainstream alternative</span><span data-capability-for="avif_gain_map_encoder">Checking…</span></span>
+        <span class="format-card-top"><span data-capability-for="avif_gain_map_encoder">Checking…</span></span>
         <strong>AVIF + gain map</strong>
         <span>Best quality per byte for the web. HDR in current Chromium browsers; your SDR version appears everywhere else.</span>
         <small>ISO 21496-1 · 10-bit logarithmic gain map</small>
       </label>
       <label class="format-card selected" data-format-card="jpeg_ultrahdr">
         <input type="radio" name="export-format-choice" value="jpeg_ultrahdr" checked>
-        <span class="format-card-top"><span>Provisional default</span><span data-capability-for="ultrahdr_encoder">Checking…</span></span>
+        <span class="format-card-top"><span data-capability-for="ultrahdr_encoder">Checking…</span></span>
         <strong>JPEG Ultra HDR</strong>
         <span>Opens as a normal JPEG anywhere. HDR appears in supported viewers; recompression may remove it.</span>
         <small>Ultra HDR v1 XMP + ISO 21496-1 · 8-bit gain map</small>

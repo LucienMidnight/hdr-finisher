@@ -587,6 +587,74 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     assert "Settled WebGPU authoring preview" in javascript
 
 
+def test_electron_preview_correctness_contract() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    main = (DESKTOP / "main.js").read_text(encoding="utf-8")
+    preload = (DESKTOP / "preload.js").read_text(encoding="utf-8")
+
+    assert 'id="preview-quality-status"' in html and 'aria-live="polite"' in html
+    assert 'id="rotate-apply"' in html and 'id="rotate-cancel"' in html
+    assert "function gpuPreviewEligible()" in javascript
+    gpu_eligibility = javascript[
+        javascript.index("function gpuPreviewEligible()"):
+        javascript.index("function acceptPresentation")
+    ]
+    assert "defaultGeometry" not in gpu_eligibility
+    assert "geometrySignature" not in gpu_eligibility
+    assert "cached.geometrySignature === geometrySignature()" in javascript
+    assert "state.comparisonRenderedGeometry === signature" in javascript
+    assert 'renderGpuDraft(lane, { longEdge: refinementProxyLongEdge(), tier: "refinement" })' in javascript
+    assert 'renderPreviewForLane(lane, true, refinementProxyLongEdge(), { showProgress: false })' in javascript
+    assert "function closeRotateMode(commit)" in javascript
+    assert "function useHdrSafeGeometryDraft()" in javascript
+    assert 'transient_adjustments: true' in javascript
+    assert 'blob.type.startsWith("image/avif")' in javascript
+    assert "state.globalEditDirty && state.acceptedPresentation?.geometrySignature !== geometrySignature()" in javascript
+    assert "if (error?.recoverable)" in javascript
+    clear_straighten = javascript[
+        javascript.index("function clearInteractiveStraightenPreview()"):
+        javascript.index("function rotateGeometry(delta)")
+    ]
+    assert "if (state.rotateDraftGeometry)" in clear_straighten
+    assert "renderRotateDraftTransform();" in clear_straighten
+    assert 'preview?.style.setProperty("--interactive-straighten-angle", `${-straightenDelta}deg`)' in javascript
+    assert 'label: "Rendering Mode"' in main
+    assert all(label in main for label in ("Auto (Recommended)", "GPU Preferred", "CPU Compatibility"))
+    assert 'setRenderingMode: (mode)' in preload
+
+
+def test_preview_viewport_keeps_a_stable_aspect_across_interactive_and_settled_tiers() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    zoom_geometry = javascript[
+        javascript.index("function applyZoomGeometry()"):
+        javascript.index("function updateZoomReadout()")
+    ]
+
+    assert "aspect: renderedAspect" in zoom_geometry
+    assert "state.zoomReferenceFrame.geometrySignature === geometrySignature" in zoom_geometry
+    assert "? state.zoomReferenceFrame.aspect" in zoom_geometry
+    assert "const referenceAspect = renderedAspect;" not in zoom_geometry
+
+
+def test_export_format_cards_do_not_claim_a_provisional_or_alternative_ranking() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+
+    assert "Mainstream alternative" not in html
+    assert "Provisional default" not in html
+    assert 'data-capability-for="avif_gain_map_encoder"' in html
+    assert 'data-capability-for="ultrahdr_encoder"' in html
+
+
+def test_manual_source_interpretation_status_contract() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    assert 'session.source.interpretation_mode === "manual"' in javascript
+    assert "Manual source interpretation applied: ${colorSpace} primaries + ${transfer} transfer." in javascript
+    assert "els.sourceSettingsNote.textContent = sourceInterpretationStatus(session);" in javascript
+    assert "if (session.source.interpretation_mode === \"manual\") return sourceInterpretationStatus(session);" in javascript
+
+
 def test_phase_one_local_influence_and_latest_generation_contract() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     scheduler = (FRONTEND / "preview-scheduler.js").read_text(encoding="utf-8")
@@ -625,7 +693,10 @@ def test_phase_two_gpu_luma_retained_mask_contract() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
 
-    assert 'this.loadProxy(sessionId, "hdr", longEdge)' in webgpu
+    assert 'this.loadProxy(sessionId, "hdr", longEdge, geometrySignature, editRevision)' in webgpu
+    assert "geometry_signature=${encodeURIComponent(geometrySignature)}" in webgpu
+    assert "acceptedGeometry !== geometrySignature" in webgpu
+    assert "${sessionId}:${longEdge}:${geometrySignature}" in webgpu
     assert 'entryPoint: "sceneLuminanceFragmentMain"' not in webgpu
     assert 'this.createMaskPipeline("sceneLuminanceFragmentMain")' in webgpu
     assert 'this.createMaskPipeline("lumaQualificationFragmentMain")' in webgpu
@@ -652,7 +723,7 @@ def test_phase_two_gpu_luma_retained_mask_contract() -> None:
 def test_phase_four_retained_boolean_mask_graph_contract() -> None:
     webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
 
-    assert 'this.loadGpuMaskGraph(sessionId, local, longEdge, editRevision, isCurrent)' in webgpu
+    assert 'this.loadGpuMaskGraph(sessionId, local, longEdge, editRevision, geometrySignature, isCurrent)' in webgpu
     assert 'this.createMaskPipeline("maskCombineFragmentMain")' in webgpu
     assert 'mask_path=${encodeURIComponent(maskPath)}' in webgpu
     assert 'spatial_only=true${pathQuery}' in webgpu
@@ -758,6 +829,19 @@ def test_path_mask_exposes_draft_bezier_and_independent_feather_contract() -> No
     assert '.path-edit-mode' in css
     assert '.path-node-mode' in css
     assert 'matchMedia("(prefers-reduced-motion: reduce)")' in javascript
+
+
+def test_local_mask_authoring_uses_bidirectional_authoritative_geometry_mapping() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    assert 'fetch(`/api/session/${state.session.session_id}/geometry-map`' in javascript
+    assert "affinePoint(coordinateMap.outputToSource, point)" in javascript
+    assert "affinePoint(coordinateMap.sourceToOutput, point)" in javascript
+    assert "applySourceGeometryCanvasTransform(context, imageRect, rect, coordinateMap.sourceToOutput)" in javascript
+    assert 'if (state.gradeMode === "local") void ensureGeometryCoordinateMap();' in javascript
+    assert 'renderPhase: "mask"' in javascript
+    assert 'renderPhase: "gizmo"' in javascript
+    assert 'gesture?.type === "luminance_sample"' in javascript
 
 
 def test_frontend_assets_use_the_application_version_for_cache_busting() -> None:

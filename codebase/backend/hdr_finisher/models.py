@@ -776,6 +776,7 @@ class SourceInterpretationOverride(BaseModel):
 
 class PreviewRequest(BaseModel):
     adjustments: AdjustmentState | None = None
+    transient_adjustments: bool = False
     edit_revision: int | None = Field(default=None, ge=0)
     request_id: str | None = None
     generation: int | None = Field(default=None, ge=0)
@@ -792,8 +793,25 @@ class LocalMaskPreviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     mask: MaskExpression
+    adjustments: AdjustmentState | None = None
     edit_revision: int | None = Field(default=None, ge=0)
     long_edge: int = Field(default=1600, ge=256, le=2000)
+
+
+class GeometryMapRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    adjustments: AdjustmentState | None = None
+    edit_revision: int | None = Field(default=None, ge=0)
+    long_edge: int = Field(default=1600, ge=256, le=2000)
+
+
+class GeometryMapResponse(BaseModel):
+    geometry_signature: str
+    output_to_source: list[float] = Field(min_length=6, max_length=6)
+    source_to_output: list[float] = Field(min_length=6, max_length=6)
+    output_width: int = Field(gt=0)
+    output_height: int = Field(gt=0)
 
 
 class LocalLuminanceSampleRequest(BaseModel):

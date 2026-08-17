@@ -8,10 +8,9 @@ from typing import Any, Callable
 import numpy as np
 
 from .adjustments import apply_adjustments
-from .finishing import apply_geometry
+from .finishing import apply_geometry, geometry_coordinate_map
 from .local_adjustments import (
-    compile_preview_mask,
-    compile_spatial_preview_mask,
+    compile_geometry_fixed_mask,
     mask_influence_opacity,
     sample_luminance_evs,
     spatial_mask_signature,
@@ -51,6 +50,7 @@ class SessionRenderCache:
     _frames: OrderedDict[tuple[str, int, str], np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
     _scopes: OrderedDict[tuple[str, int, str, str, int, int, int], Any] = field(default_factory=OrderedDict, init=False, repr=False)
     _masks: OrderedDict[tuple[int, str, str, str], np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
+    _geometry_maps: OrderedDict[tuple[int, str], tuple[tuple[float, ...], tuple[float, ...], int, int]] = field(default_factory=OrderedDict, init=False, repr=False)
     _inflight: dict[tuple[object, ...], Event] = field(default_factory=dict, init=False, repr=False)
     _hits: int = field(default=0, init=False, repr=False)
     _misses: int = field(default=0, init=False, repr=False)
@@ -67,6 +67,7 @@ class SessionRenderCache:
             self._frames.clear()
             self._scopes.clear()
             self._masks.clear()
+            self._geometry_maps.clear()
             self._cancel_inflight_locked()
 
     def clear_adjusted(self, *, clear_masks: bool = False) -> None:
@@ -83,9 +84,43 @@ class SessionRenderCache:
             return sdr_reference, "linear-srgb"
         return source, "acescg"
 
+    def geometry_source_proxy(
+        self,
+        kind: PreviewKind,
+        long_edge: int,
+        adjustments: AdjustmentState,
+    ) -> tuple[np.ndarray, str, str]:
+        """Return the authoritative geometry-fixed source for a GPU grade proxy."""
+        proxy, working_space = self.source_proxy(kind, long_edge)
+        geometry = adjustments.shared.geometry
+        signature = geometry.model_dump_json()
+        return apply_geometry(proxy, geometry), working_space, signature
+
     def source_pair(self, long_edge: int) -> tuple[np.ndarray, np.ndarray | None]:
         """Return the matched source and authored-SDR proxy inputs used by exporters."""
         return self._proxies(long_edge)
+
+    def geometry_map(
+        self,
+        adjustments: AdjustmentState,
+        long_edge: int,
+    ) -> tuple[tuple[float, ...], tuple[float, ...], int, int]:
+        edge = max(256, int(long_edge))
+        geometry = adjustments.shared.geometry
+        key = (edge, geometry.model_dump_json())
+        with self._lock:
+            cached = self._geometry_maps.get(key)
+            if cached is not None:
+                self._geometry_maps.move_to_end(key)
+                return cached
+        source, _sdr_reference = self._proxies(edge)
+        result = geometry_coordinate_map(source.shape[1], source.shape[0], geometry)
+        with self._lock:
+            self._geometry_maps[key] = result
+            self._geometry_maps.move_to_end(key)
+            while len(self._geometry_maps) > 8:
+                self._geometry_maps.popitem(last=False)
+        return result
 
     def compiled_local_mask(
         self,
@@ -109,8 +144,7 @@ class SessionRenderCache:
         # The compatibility/influence endpoint remains byte-identical to the
         # authoritative evaluator. Interactive GPU clients request spatial_only
         # and keep the reusable base texture resident instead.
-        fixed_source = apply_geometry(source, adjustments.shared.geometry)
-        return compile_preview_mask(fixed_source, local_adjustment.mask, adjustments.shared.geometry)
+        return compile_geometry_fixed_mask(source, local_adjustment.mask, adjustments.shared.geometry)
 
     def compiled_mask_draft(
         self,
@@ -121,9 +155,7 @@ class SessionRenderCache:
         """Compile an uncommitted mask with the exact settled-render pipeline."""
         edge = max(256, int(long_edge))
         source, _sdr_reference = self._proxies(edge)
-        geometry = adjustments.shared.geometry
-        fixed_source = apply_geometry(source, geometry)
-        return compile_preview_mask(fixed_source, expression, geometry)
+        return compile_geometry_fixed_mask(source, expression, adjustments.shared.geometry)
 
     def sample_luminance(
         self,
@@ -332,7 +364,6 @@ class SessionRenderCache:
             return None
         geometry = adjustments.shared.geometry
         geometry_signature = geometry.model_dump_json()
-        fixed_source = apply_geometry(source, geometry)
         compiled: dict[str, np.ndarray] = {}
         for local in active:
             mask_signature = spatial_mask_signature(local.mask)
@@ -343,7 +374,7 @@ class SessionRenderCache:
                     self._hits += 1
                     self._masks.move_to_end(key)
             if mask is None:
-                mask = compile_spatial_preview_mask(fixed_source, local.mask, geometry)
+                mask = compile_geometry_fixed_mask(source, local.mask, geometry, spatial_only=True)
                 mask.setflags(write=False)
                 with self._lock:
                     existing = self._masks.get(key)

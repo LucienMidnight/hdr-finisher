@@ -26,6 +26,14 @@ def apply_adjustments(
 ) -> np.ndarray:
     geometry = adjustments.shared.geometry
     fixed_source = apply_geometry(image, geometry)
+    if local_adjustments and compiled_local_masks is None:
+        from .local_adjustments import compile_geometry_fixed_mask
+
+        compiled_local_masks = {
+            local.id: compile_geometry_fixed_mask(image, local.mask, geometry, spatial_only=True)
+            for local in local_adjustments
+            if local.enabled and local.opacity > 0.0
+        }
     if kind == PreviewKind.HDR:
         return _apply_hdr_adjustments(
             fixed_source,
