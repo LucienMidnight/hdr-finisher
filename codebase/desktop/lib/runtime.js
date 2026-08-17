@@ -4,10 +4,15 @@ function backendExecutableName(platform = process.platform) {
   return platform === "win32" ? "HDR Finisher Backend.exe" : "HDR Finisher Backend";
 }
 
+function pathApi(platform = process.platform) {
+  return platform === "win32" ? path.win32 : path.posix;
+}
+
 function sourcePythonPath(codebase, platform = process.platform) {
+  const platformPath = pathApi(platform);
   return platform === "win32"
-    ? path.join(codebase, ".venv", "Scripts", "python.exe")
-    : path.join(codebase, ".venv", "bin", "python");
+    ? platformPath.join(codebase, ".venv", "Scripts", "python.exe")
+    : platformPath.join(codebase, ".venv", "bin", "python");
 }
 
 function backendCommand({
@@ -18,19 +23,20 @@ function backendCommand({
   pid = process.pid,
   pythonOverride = process.env.HDR_FINISHER_PYTHON,
 }) {
+  const platformPath = pathApi(platform);
   if (isPackaged) {
-    const backendDirectory = path.join(resourcesPath, "backend");
+    const backendDirectory = platformPath.join(resourcesPath, "backend");
     return {
-      executable: path.join(backendDirectory, backendExecutableName(platform)),
+      executable: platformPath.join(backendDirectory, backendExecutableName(platform)),
       args: ["--desktop-sidecar", "--parent-pid", String(pid)],
       cwd: backendDirectory,
     };
   }
 
-  const codebase = path.resolve(desktopDirectory, "..");
+  const codebase = platformPath.resolve(desktopDirectory, "..");
   return {
     executable: pythonOverride || sourcePythonPath(codebase, platform),
-    args: [path.join(codebase, "run_app.py"), "--desktop-sidecar", "--parent-pid", String(pid)],
+    args: [platformPath.join(codebase, "run_app.py"), "--desktop-sidecar", "--parent-pid", String(pid)],
     cwd: codebase,
   };
 }

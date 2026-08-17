@@ -32,7 +32,7 @@ test("external proof URLs stay on the exact backend origin and proof route", () 
 test("desktop backend paths follow Windows and macOS bundle conventions", () => {
   assert.equal(backendExecutableName("win32"), "HDR Finisher Backend.exe");
   assert.equal(backendExecutableName("darwin"), "HDR Finisher Backend");
-  assert.equal(sourcePythonPath("/app/codebase", "win32"), "/app/codebase/.venv/Scripts/python.exe");
+  assert.equal(sourcePythonPath("C:\\app\\codebase", "win32"), "C:\\app\\codebase\\.venv\\Scripts\\python.exe");
   assert.equal(sourcePythonPath("/app/codebase", "darwin"), "/app/codebase/.venv/bin/python");
 
   const command = backendCommand({
@@ -44,4 +44,17 @@ test("desktop backend paths follow Windows and macOS bundle conventions", () => 
   });
   assert.equal(command.executable, "/HDR Finisher.app/Contents/Resources/backend/HDR Finisher Backend");
   assert.deepEqual(command.args, ["--desktop-sidecar", "--parent-pid", "42"]);
+
+  const windowsCommand = backendCommand({
+    isPackaged: true,
+    resourcesPath: "C:\\Program Files\\HDR Finisher\\resources",
+    desktopDirectory: "C:\\unused\\desktop",
+    platform: "win32",
+    pid: 43,
+  });
+  assert.equal(
+    windowsCommand.executable,
+    "C:\\Program Files\\HDR Finisher\\resources\\backend\\HDR Finisher Backend.exe",
+  );
+  assert.deepEqual(windowsCommand.args, ["--desktop-sidecar", "--parent-pid", "43"]);
 });
