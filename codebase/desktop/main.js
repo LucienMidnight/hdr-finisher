@@ -11,6 +11,8 @@ const {
   isSourcePath,
   safeSuggestedName,
 } = require("./lib/validation");
+const { backendCommand: resolveBackendCommand } = require("./lib/runtime");
+const { DEFAULT_WINDOW_BOUNDS, clampWindowBounds } = require("./lib/window-bounds");
 
 const APP_ID = "org.hdrfinisher.app";
 const SOURCE_FILTERS = [
@@ -31,6 +33,7 @@ let backend = null;
 let mainWindow = null;
 let forceClose = false;
 let shuttingDown = false;
+let quitRequested = false;
 let documentState = { path: "", dirty: false, displayName: "Untitled" };
 let renderingMode = "auto";
 let pendingOpenPaths = [];
@@ -66,19 +69,11 @@ function applicationArgs(argv) {
 }
 
 function backendCommand() {
-  if (app.isPackaged) {
-    return {
-      executable: path.join(process.resourcesPath, "backend", "HDR Finisher Backend.exe"),
-      args: ["--desktop-sidecar", "--parent-pid", String(process.pid)],
-      cwd: path.join(process.resourcesPath, "backend"),
-    };
-  }
-  const codebase = path.resolve(__dirname, "..");
-  return {
-    executable: path.join(codebase, ".venv", "Scripts", "python.exe"),
-    args: [path.join(codebase, "run_app.py"), "--desktop-sidecar", "--parent-pid", String(process.pid)],
-    cwd: codebase,
-  };
+  return resolveBackendCommand({
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    desktopDirectory: __dirname,
+  });
 }
 
 async function startBackend() {
@@ -95,6 +90,7 @@ async function startBackend() {
       ...process.env,
       HDR_FINISHER_DESKTOP_SECRET: authoringSecret,
       HDR_FINISHER_DESKTOP_CONTROL_SECRET: controlSecret,
+      HDR_FINISHER_APP_DATA_DIR: app.getPath("userData"),
       PYTHONUNBUFFERED: "1",
     },
     windowsHide: true,
@@ -162,8 +158,12 @@ async function stopBackend() {
       new Promise((resolve) => current.child.once("exit", resolve)),
       new Promise((resolve) => setTimeout(resolve, 3000)),
     ]);
-    if (current.child.exitCode === null && process.platform === "win32") {
-      spawn("taskkill.exe", ["/PID", String(current.child.pid), "/T", "/F"], { windowsHide: true });
+    if (current.child.exitCode === null) {
+      if (process.platform === "win32") {
+        spawn("taskkill.exe", ["/PID", String(current.child.pid), "/T", "/F"], { windowsHide: true });
+      } else {
+        current.child.kill("SIGKILL");
+      }
     }
   }
   current.log.end();
@@ -295,8 +295,12 @@ function registerIpc() {
     if (documentState.path) app.addRecentDocument(documentState.path);
     updateWindowDocumentState();
     if (!documentState.dirty && mainWindow?.pendingCloseAfterSave) {
-      forceClose = true;
-      mainWindow.close();
+      mainWindow.pendingCloseAfterSave = false;
+      if (quitRequested) beginShutdown();
+      else {
+        forceClose = true;
+        mainWindow.close();
+      }
     }
     return true;
   });
@@ -369,7 +373,22 @@ function buildMenu() {
       ],
     },
   ];
-  if (process.platform === "darwin") template.unshift({ label: app.name, submenu: [{ role: "about" }, { type: "separator" }, { role: "quit" }] });
+  if (process.platform === "darwin") {
+    template.unshift({
+      label: app.name,
+      submenu: [
+        { role: "about" },
+        { type: "separator" },
+        { role: "services" },
+        { type: "separator" },
+        { role: "hide" },
+        { role: "hideOthers" },
+        { role: "unhide" },
+        { type: "separator" },
+        { role: "quit" },
+      ],
+    });
+  }
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
@@ -377,13 +396,14 @@ function restoredBounds() {
   const statePath = path.join(app.getPath("userData"), "window-state.json");
   try {
     const value = JSON.parse(fs.readFileSync(statePath, "utf8"));
-    const visible = screen.getAllDisplays().some((display) => {
-      const area = display.workArea;
+    const display = screen.getAllDisplays().find((candidate) => {
+      const area = candidate.workArea;
       return value.x < area.x + area.width && value.x + value.width > area.x && value.y < area.y + area.height && value.y + value.height > area.y;
     });
-    if (visible) return value;
+    if (display) return clampWindowBounds(value, display.workArea);
   } catch {}
-  return { width: 1440, height: 940 };
+  const primary = screen.getPrimaryDisplay();
+  return clampWindowBounds(DEFAULT_WINDOW_BOUNDS, primary.workArea);
 }
 
 function saveWindowBounds() {
@@ -393,6 +413,7 @@ function saveWindowBounds() {
 }
 
 async function createWindow() {
+  forceClose = false;
   const bounds = restoredBounds();
   mainWindow = new BrowserWindow({
     ...bounds,
@@ -419,6 +440,10 @@ async function createWindow() {
     event.preventDefault();
     requestClose();
   });
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+    if (!shuttingDown) forceClose = false;
+  });
   mainWindow.once("ready-to-show", () => mainWindow.show());
   await mainWindow.loadURL(backend.url);
   updateWindowDocumentState();
@@ -444,6 +469,10 @@ async function dispatchPendingOpenPaths() {
 
 async function requestClose() {
   if (!documentState.dirty) {
+    if (quitRequested) {
+      beginShutdown();
+      return;
+    }
     forceClose = true;
     mainWindow.close();
     return;
@@ -462,14 +491,18 @@ async function requestClose() {
     mainWindow.pendingCloseAfterSave = true;
     sendCommand("save");
   } else if (choice.response === 1) {
-    forceClose = true;
-    mainWindow.close();
+    if (quitRequested) beginShutdown();
+    else {
+      forceClose = true;
+      mainWindow.close();
+    }
   }
 }
 
 async function beginShutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
+  quitRequested = true;
   forceClose = true;
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
   await stopBackend();
@@ -489,13 +522,25 @@ if (!gotLock) {
       dispatchPendingOpenPaths();
     }
   });
+  app.on("open-file", (event, filePath) => {
+    event.preventDefault();
+    if (!isProjectPath(filePath)) return;
+    pendingOpenPaths.push(filePath);
+    if (mainWindow) dispatchPendingOpenPaths();
+  });
   app.on("before-quit", (event) => {
     if (shuttingDown) return;
     event.preventDefault();
+    quitRequested = true;
     if (mainWindow && !mainWindow.isDestroyed()) requestClose();
     else beginShutdown();
   });
-  app.on("window-all-closed", () => beginShutdown());
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") beginShutdown();
+  });
+  app.on("activate", () => {
+    if (backend && !mainWindow) createWindow();
+  });
   app.whenReady().then(async () => {
     app.setAppUserModelId(APP_ID);
     loadRenderingPreference();

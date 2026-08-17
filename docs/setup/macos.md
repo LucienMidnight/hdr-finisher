@@ -1,6 +1,6 @@
 # macOS Settings for HDR Finisher
 
-**Status:** Running from source is expected on a compatible Python/macOS environment. The repository does not yet contain a packaged macOS build, native macOS display telemetry, or a complete physical browser/display validation record. Treat macOS HDR conclusions as unverified until checked on the exact Mac, browser, and display.
+**Status:** The repository contains an Apple Silicon `.app`/`.dmg` packaging workflow with a bundled Python backend and native encoder build. Native macOS display telemetry, Developer ID signing/notarization, and a complete physical browser/display validation record remain open. Treat macOS HDR conclusions as unverified until checked on the exact Mac, browser, and display.
 
 Guidance verified against Apple documentation on **August 9, 2026**.
 
@@ -9,8 +9,8 @@ Guidance verified against Apple documentation on **August 9, 2026**.
 - Use a current macOS release supported by the Mac and browser.
 - Confirm the built-in or external display supports HDR10-class output.
 - For external displays, use a cable, adapter, port, resolution, and refresh rate that preserve HDR support.
-- Install Python 3.12+ and follow [Install and run](../getting-started/install-and-run.md).
-- Ensure Python includes Tk support if you want the native export-folder picker.
+- Install the packaged Apple Silicon application, or install Python 3.12+ for a source run and follow [Install and run](../getting-started/install-and-run.md).
+- The Electron package uses native macOS open/save panels and does not depend on Tk for desktop file selection.
 
 Apple’s current general requirements are described in [Play HDR video on Mac](https://support.apple.com/en-ie/102205) and [connect external displays](https://support.apple.com/guide/mac-help/connect-an-external-display-mchl7c7ebe08/26/mac/26).
 
@@ -52,10 +52,9 @@ The deterministic Chrome Proof remains useful on macOS, but **Auto** cannot use 
 
 ## Current macOS gaps
 
-- No signed or notarized application package
+- The technical-preview application is not Developer ID signed or notarized
 - No native reading of SDR white, EDR headroom, or display luminance
-- No repository-backed validation of the Tk folder picker on current macOS
 - No maintained browser/version acceptance matrix
-- No assurance that all bundled Windows encoder binaries have macOS equivalents present
+- Intel (`x64`) Mac artifacts are not currently produced
 
 These are product-status limitations, not evidence that macOS cannot display or process HDR. They mean the user must validate more of the chain manually.

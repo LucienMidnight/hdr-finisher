@@ -185,6 +185,7 @@ const LAYOUT_LIMITS = {
   dockH: [240, 340],
 };
 const LAYOUT_SETTLE_DELAY = 120;
+const COMPACT_WORKSPACE_QUERY = "(max-width: 1499px)";
 const LEGACY_UI_PREFERENCE_KEYS = new Set([
   "hdr-finisher:high-quality-preview:v1",
   "hdr-finisher:scope-zoom:v1",
@@ -440,6 +441,10 @@ const state = {
   displayInfo: buildDisplayProbe(),
   layout: { ...LAYOUT_DEFAULTS },
   layoutSettleTimer: null,
+  compactWorkspace: false,
+  compactSourceOpen: false,
+  wideSourceCollapsed: false,
+  viewerOptionsOpen: false,
   proofEnabled: false,
   proofArtifact: null,
   proofReconstruction: null,
@@ -875,6 +880,8 @@ const els = {
   overlayToggle: document.getElementById("overlay-toggle"),
   overlayClose: document.getElementById("overlay-close"),
   overlayPopover: document.getElementById("overlay-popover"),
+  viewerOptionsToggle: document.getElementById("viewer-options-toggle"),
+  viewerOptionsPopover: document.getElementById("viewer-options-popover"),
   scopeTitle: document.getElementById("scope-title"),
   scopeNote: document.getElementById("scope-note"),
   scopeKindLabel: document.getElementById("scope-kind-label"),
@@ -1211,13 +1218,61 @@ function initializeInstrumentShell() {
 }
 
 function initializeSourceRailState() {
-  const collapsed = false;
+  const media = typeof window.matchMedia === "function" ? window.matchMedia(COMPACT_WORKSPACE_QUERY) : null;
+  state.compactWorkspace = Boolean(media?.matches);
+  state.compactSourceOpen = false;
+  state.wideSourceCollapsed = false;
+  applyResponsiveWorkspaceState();
+  media?.addEventListener?.("change", (event) => {
+    state.compactWorkspace = event.matches;
+    state.compactSourceOpen = false;
+    state.viewerOptionsOpen = false;
+    closeOverlayPopover({ restoreFocus: false });
+    applyResponsiveWorkspaceState();
+    scheduleLayoutSettled();
+  });
+}
+
+function applyResponsiveWorkspaceState() {
   const rail = els.sourceRailExpand.closest(".source-rail");
+  const collapsed = state.compactWorkspace ? !state.compactSourceOpen : state.wideSourceCollapsed;
+  els.appShell.classList.toggle("compact-workspace", state.compactWorkspace);
   rail.classList.toggle("collapsed", collapsed);
-  els.appShell.classList.toggle("source-collapsed", collapsed);
+  els.appShell.classList.toggle("source-collapsed", state.compactWorkspace || collapsed);
+  els.appShell.classList.toggle("source-overlay-open", state.compactWorkspace && state.compactSourceOpen);
   els.sourceRailExpand.setAttribute("aria-expanded", String(!collapsed));
   els.sourceRailExpand.setAttribute("aria-label", collapsed ? "Expand source metadata" : "Collapse source metadata");
   els.sourceRailExpand.textContent = collapsed ? "Show" : "Hide";
+  els.viewerOptionsPopover.classList.toggle("open", state.compactWorkspace && state.viewerOptionsOpen);
+  els.viewerOptionsToggle.setAttribute("aria-expanded", String(state.compactWorkspace && state.viewerOptionsOpen));
+}
+
+function toggleSourceRail() {
+  if (state.compactWorkspace) state.compactSourceOpen = !state.compactSourceOpen;
+  else state.wideSourceCollapsed = !state.wideSourceCollapsed;
+  applyResponsiveWorkspaceState();
+  scheduleLayoutSettled();
+}
+
+function closeCompactSourceRail({ restoreFocus = false } = {}) {
+  if (!state.compactWorkspace || !state.compactSourceOpen) return;
+  state.compactSourceOpen = false;
+  applyResponsiveWorkspaceState();
+  scheduleLayoutSettled();
+  if (restoreFocus) els.sourceRailExpand.focus();
+}
+
+function toggleViewerOptions() {
+  if (!state.compactWorkspace) return;
+  state.viewerOptionsOpen = !state.viewerOptionsOpen;
+  applyResponsiveWorkspaceState();
+}
+
+function closeViewerOptions({ restoreFocus = false } = {}) {
+  if (!state.viewerOptionsOpen) return;
+  state.viewerOptionsOpen = false;
+  applyResponsiveWorkspaceState();
+  if (restoreFocus) els.viewerOptionsToggle.focus();
 }
 
 function initializeLayoutState() {
@@ -1639,15 +1694,7 @@ function bindEvents() {
     }
   });
   els.emptyImportButton.addEventListener("click", requestSourceImport);
-  els.sourceRailExpand.addEventListener("click", () => {
-    const rail = els.sourceRailExpand.closest(".source-rail");
-    const collapsed = !rail.classList.contains("collapsed");
-    rail.classList.toggle("collapsed", collapsed);
-    els.appShell.classList.toggle("source-collapsed", collapsed);
-    els.sourceRailExpand.setAttribute("aria-expanded", String(!collapsed));
-    els.sourceRailExpand.setAttribute("aria-label", collapsed ? "Expand source metadata" : "Collapse source metadata");
-    els.sourceRailExpand.textContent = collapsed ? "Show" : "Hide";
-  });
+  els.sourceRailExpand.addEventListener("click", toggleSourceRail);
   bindLocalAdjustmentEvents();
   els.projectOpen?.addEventListener("click", openProjectFromPath);
   els.projectSave?.addEventListener("click", saveProjectToPath);
@@ -1866,6 +1913,28 @@ function bindEvents() {
   els.dropzone.addEventListener("wheel", handleViewerWheel, { passive: false });
   els.overlayToggle.addEventListener("click", toggleOverlayPopover);
   els.overlayClose.addEventListener("click", closeOverlayPopover);
+  els.viewerOptionsToggle.addEventListener("click", toggleViewerOptions);
+  document.addEventListener("pointerdown", (event) => {
+    if (state.compactSourceOpen && !event.target.closest(".source-rail")) closeCompactSourceRail();
+    if (state.viewerOptionsOpen && !event.target.closest("#viewer-options-popover, #viewer-options-toggle, #overlay-popover")) closeViewerOptions();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (!els.overlayPopover.classList.contains("hidden")) {
+      event.preventDefault();
+      closeOverlayPopover();
+      return;
+    }
+    if (state.viewerOptionsOpen) {
+      event.preventDefault();
+      closeViewerOptions({ restoreFocus: true });
+      return;
+    }
+    if (state.compactSourceOpen) {
+      event.preventDefault();
+      closeCompactSourceRail({ restoreFocus: true });
+    }
+  });
   els.dockCollapse.addEventListener("click", toggleAnalysisDock);
   els.dockTabs.forEach((button) => {
     button.addEventListener("click", () => activateDockTab(button.dataset.dockTab));
@@ -6813,10 +6882,10 @@ function toggleOverlayPopover() {
   els.overlayToggle.setAttribute("aria-expanded", String(open));
 }
 
-function closeOverlayPopover() {
+function closeOverlayPopover({ restoreFocus = true } = {}) {
   els.overlayPopover.classList.add("hidden");
   els.overlayToggle.setAttribute("aria-expanded", "false");
-  els.overlayToggle.focus();
+  if (restoreFocus) els.overlayToggle.focus();
 }
 
 function cycleOverlayMode() {

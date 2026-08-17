@@ -455,7 +455,14 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     assert "Processing complete. Decoding preview..." in javascript
     assert "{ showProgress: false }" in javascript
     assert "renderPreviewForLane(lane, true, longEdge, { showProgress: false })" in javascript
-    assert "min-height: 720px" in css
+    assert "min-width: 0" in css
+    assert "height: 100vh" in css
+    assert 'const COMPACT_WORKSPACE_QUERY = "(max-width: 1499px)"' in javascript
+    assert 'id="viewer-options-toggle"' in html
+    assert 'aria-controls="viewer-options-popover"' in html
+    assert 'aria-haspopup="true">Viewer options</button>' in html
+    assert "compact-workspace" in css
+    assert "source-overlay-open" in css
 
 
 def test_webgpu_pipeline_preserves_cpu_section_order_and_fixed_hdr_curve_domain() -> None:

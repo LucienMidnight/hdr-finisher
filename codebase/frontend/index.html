@@ -150,17 +150,20 @@
               <button id="zoom-actual" class="tool-button" type="button" title="Show one image pixel per screen pixel (A)">100%</button>
             </div>
             <span class="viewer-tool-divider" aria-hidden="true">|</span>
-            <button id="overlay-toggle" class="tool-button" type="button" aria-expanded="false" aria-controls="overlay-popover">Overlays: Off</button>
-            <label
-              class="toolbar-preview-toggle"
-              for="high-quality-preview"
-              data-tooltip="Uses more GPU memory for a larger preview. Export quality is unchanged."
-              title="Uses more GPU memory for a larger preview. Export quality is unchanged."
-            >
-              <span>High-res Preview</span>
-              <input id="high-quality-preview" type="checkbox">
-            </label>
-            <span id="preview-quality-status" class="preview-quality-status" aria-live="polite">Standard</span>
+            <button id="viewer-options-toggle" class="tool-button viewer-options-toggle" type="button" aria-expanded="false" aria-controls="viewer-options-popover" aria-haspopup="true">Viewer options</button>
+            <div id="viewer-options-popover" class="viewer-secondary-tools" role="group" aria-label="Viewer options">
+              <button id="overlay-toggle" class="tool-button" type="button" aria-expanded="false" aria-controls="overlay-popover">Overlays: Off</button>
+              <label
+                class="toolbar-preview-toggle"
+                for="high-quality-preview"
+                data-tooltip="Uses more GPU memory for a larger preview. Export quality is unchanged."
+                title="Uses more GPU memory for a larger preview. Export quality is unchanged."
+              >
+                <span>High-res Preview</span>
+                <input id="high-quality-preview" type="checkbox">
+              </label>
+              <span id="preview-quality-status" class="preview-quality-status" aria-live="polite">Standard</span>
+            </div>
           </div>
           <div id="overlay-popover" class="overlay-popover hidden">
             <div class="popover-heading">

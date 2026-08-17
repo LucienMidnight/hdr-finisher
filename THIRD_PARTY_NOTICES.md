@@ -21,6 +21,13 @@ notice files into `codebase/bin/licenses/`. It builds libjpeg-turbo as a depende
 HDR Finisher itself remains GPL-3.0. These notices do not change the license of HDR Finisher source
 code and must not be removed from packages that contain the optional encoder binaries.
 
+HDR Finisher can redistribute statically built command-line tools from
+[`libavif`](https://github.com/AOMediaCodec/libavif), which is distributed under the BSD 2-Clause
+License. The macOS native-tool build copies the exact upstream license into
+`codebase/bin/licenses/` together with the licenses and patent notices for the statically linked AOM,
+libargparse, libjpeg-turbo, libpng, libwebp/SharpYUV, libyuv, and zlib dependencies. Packages containing
+`avifenc`, `avifdec`, or `avifgainmaputil` must retain those files.
+
 HDR Finisher vendors a selected set of outline SVGs from
 [`Tabler Icons`](https://github.com/tabler/tabler-icons). Tabler Icons is Copyright (c) 2020-2026
 Paweł Kuna and is distributed under the MIT License. The selected SVGs, pinned upstream revision,

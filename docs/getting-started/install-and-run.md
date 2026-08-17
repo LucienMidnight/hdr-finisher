@@ -1,6 +1,6 @@
 # Install and Run
 
-HDR Finisher is currently a technical alpha. Windows has a tested package-building path; other platforms should be treated as source-run development environments.
+HDR Finisher is currently a technical alpha. Windows x64 and Apple Silicon macOS have native desktop packaging paths. Other platforms should be treated as source-run development environments.
 
 ## Requirements
 
@@ -21,6 +21,15 @@ The application works offline. It starts a local FastAPI server, displays the br
 
 The browser launcher opens automatically. If port 8000 is unavailable, HDR Finisher selects another local port and displays the address. Do not open `frontend/launcher.html` from the source tree; a directly opened HTML file has no application server behind it and will show a `file://` address.
 
+## Run the macOS technical preview
+
+1. Download `HDR-Finisher-<version>-macOS-arm64.dmg` on an Apple Silicon Mac.
+2. Open the DMG and drag **HDR Finisher** to Applications.
+3. Because technical-preview artifacts are not yet Developer ID signed or notarized, Control-click the app in Finder, choose **Open**, then confirm **Open** once. Do not disable Gatekeeper globally.
+4. Open `.hdrfinisher` projects from Finder or use the application File menu.
+
+The package contains its Python processing backend and native encoder tools; Python and Node are not required on the destination Mac. Intel Macs are not yet shipped as a binary artifact.
+
 ## Run from source
 
 From `codebase/`, create a virtual environment and install development dependencies.
@@ -32,6 +41,14 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements-dev.txt
 python run_app.py
+```
+
+To run the Electron shell rather than the browser launcher:
+
+```bash
+cd desktop
+npm ci
+npm start
 ```
 
 ### macOS shell
@@ -65,6 +82,12 @@ The script requires CMake and Visual Studio 2022 Build Tools, runs upstream test
 
 AVIF gain-map export requires `avifenc`, `avifdec`, and `avifgainmaputil`. The application searches its bundled binary directory and `PATH`.
 
+On macOS, build the pinned static AVIF tools and `ultrahdr_app` with:
+
+```bash
+./tools/build_native_macos.sh
+```
+
 ## Windows technical-alpha package
 
 From `codebase/`:
@@ -74,6 +97,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_windows.ps1
 ```
 
 The PyInstaller folder-mode build is smoke-tested and written as a versioned ZIP plus SHA-256 checksum below `codebase/output/package/`. The ZIP contains **HDR Finisher.exe** at its root and is the artifact published to GitHub Releases. It is not currently code-signed.
+
+## macOS technical-preview package
+
+From `codebase/`, after creating `.venv` and installing `requirements-dev.txt`:
+
+```bash
+./tools/build_desktop_macos.sh
+```
+
+The build produces an Apple Silicon `.app`, `.dmg`, `.zip`, and SHA-256 manifest below `codebase/dist-electron/`. It builds native encoders, packages the private PyInstaller backend, runs Electron Builder, and does not auto-discover a signing identity by default. Developer ID signing, hardened runtime, and notarization remain release steps once credentials are available.
 
 ## Verify the installation
 

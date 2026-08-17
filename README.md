@@ -2,7 +2,7 @@
 
 HDR Finisher is an offline finishing and export application for HDR photographs and rendered images. It accepts high-dynamic-range sources, lets you author separate HDR and SDR renditions, and exports adaptive gain-map images for the web.
 
-The project is an early technical alpha. The current implementation and packaged build are validated primarily on Windows with Chromium-based browsers. Running from source on macOS is possible, but native display telemetry, the folder picker, packaging, and physical HDR validation are not yet at Windows parity. See [Known limitations](docs/known-limitations.md) before relying on it for delivery work.
+The project is an early technical alpha. Native Windows x64 and macOS Apple Silicon desktop packages are supported, while physical HDR validation remains primarily Windows/Chromium-focused. macOS native display telemetry and the complete Mac display/browser acceptance matrix are still pending. See [Known limitations](docs/known-limitations.md) before relying on it for delivery work.
 
 ## What it is for
 
@@ -22,6 +22,7 @@ HDR Finisher is not a RAW developer or layer compositor. Its local-adjustment mo
 - **Windows users:** download the latest `HDR-Finisher-v*-Windows-x64.zip` from
   [GitHub Releases](https://github.com/LucienMidnight/hdr-finisher/releases), extract it, and double-click
   **HDR Finisher.exe**. Do not open `frontend/launcher.html` directly.
+- **Apple Silicon Mac users:** download the macOS arm64 DMG, drag **HDR Finisher** to Applications, and open it. Unsigned technical-preview builds require the one-time Finder **Open** confirmation described in [Install and run](docs/getting-started/install-and-run.md).
 - [Five-minute quick start](docs/getting-started/quick-start.md)
 - [Install and run](docs/getting-started/install-and-run.md)
 - [Prepare files from Affinity, darktable, Blender, or an iPhone](docs/workflows/source-preparation.md)
@@ -43,16 +44,16 @@ Sources are normalized to a float32, scene-linear ACEScg working image when thei
 
 ## Development
 
-HDR Finisher uses Python 3.12+, FastAPI, NumPy, colour-science, Pillow, OpenEXR, tifffile, a plain HTML/CSS/JavaScript interface, Electron for the Windows desktop shell, and optional native encoders. Processing and authoritative export rendering remain local.
+HDR Finisher uses Python 3.12+, FastAPI, NumPy, colour-science, Pillow, OpenEXR, tifffile, a plain HTML/CSS/JavaScript interface, Electron for the Windows and macOS desktop shells, and optional native encoders. Processing and authoritative export rendering remain local.
 
-To run the desktop shell from source, install the dependencies in `codebase/desktop` with `npm install`, then run `npm start`. To build the Windows x64 Setup and portable artifacts, run `codebase/tools/build_desktop.ps1` from PowerShell. The build script packages the Python sidecar first and writes final Electron artifacts to `codebase/dist-electron`.
+To run the desktop shell from source, install the dependencies in `codebase/desktop` with `npm install`, then run `npm start`. Build Windows x64 artifacts with `codebase/tools/build_desktop.ps1`; build native Apple Silicon `.app`, `.dmg`, and `.zip` artifacts with `codebase/tools/build_desktop_macos.sh`. Both workflows package the Python sidecar first and write Electron artifacts to `codebase/dist-electron`.
 
 See [Architecture](docs/technical/architecture.md), [Development guide](docs/technical/development.md), and [Testing and validation](docs/testing/README.md).
 
 ## Project status
 
-- Windows technical-alpha packaging is available.
-- macOS has source-run guidance but no validated package or native display telemetry.
+- Windows x64 and macOS Apple Silicon technical-alpha packaging are available.
+- macOS native display telemetry, signing/notarization, and physical HDR acceptance remain open release-hardening work.
 - JPEG Ultra HDR and AVIF gain-map availability is capability-gated.
 - JPEG XL, batch processing, sampled content selectors, and polished installers are not implemented. Brush, gradient, luminance-range, and path local adjustments are available; sampled selectors remain build-gated pending IP review.
 

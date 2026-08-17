@@ -84,7 +84,8 @@ def test_ultrahdr_capability_present_with_current_cli(monkeypatch, tmp_path: Pat
 def test_binary_discovery_checks_resource_and_packaged_runtime_dirs(monkeypatch, tmp_path: Path) -> None:
     resource_root = tmp_path / "resource"
     runtime_root = tmp_path / "runtime"
-    runtime_binary = runtime_root / "bin" / "ultrahdr_app.exe"
+    executable_name = "ultrahdr_app.exe" if binaries.os.name == "nt" else "ultrahdr_app"
+    runtime_binary = runtime_root / "bin" / executable_name
     runtime_binary.parent.mkdir(parents=True)
     runtime_binary.write_bytes(b"binary")
     monkeypatch.setattr(binaries, "BIN_DIR", resource_root / "bin")

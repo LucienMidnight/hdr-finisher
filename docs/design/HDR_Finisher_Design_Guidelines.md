@@ -305,6 +305,15 @@ Use the runtime tokens and existing component rhythm as the baseline:
 
 Resizable regions may change during the current session, but return to these defaults on reload.
 
+### Compact workspace
+
+- The shared frontend supports a 1100×720 viewport on macOS and Windows. Below 1500 px wide, the workspace enters compact mode.
+- Metadata is the only region collapsed automatically. Its 44 px rail remains visible, and reopening it presents a temporary 268 px overlay without reducing the viewer or Control Panel width.
+- The Control Panel remains docked at a minimum of 300 px. Scopes remains open by default and retains its explicit Collapse control.
+- Comparison layout, zoom, Fit, and 100% stay in the viewer toolbar. Overlays and High-res Preview move into the keyboard-accessible Viewer options popover.
+- Compact state and explicit panel choices last only for the current page session. Returning to a wide viewport restores the user's wide Metadata state.
+- Responsive decisions use the available viewer width for warnings and viewer chrome; warning actions must never be clipped by a rail.
+
 ## Accessibility
 
 - Every interactive control needs an accessible name.

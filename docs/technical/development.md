@@ -91,7 +91,17 @@ The current package workflow is Windows PyInstaller folder mode:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_windows.ps1
 ```
 
-It removes the previous generated package directory, smoke-tests the packaged server, and leaves only a versioned ZIP plus SHA-256 checksum below `codebase/output/package/`. The extracted ZIP presents **HDR Finisher.exe** as the single user entry point. macOS signing/notarization and installer work are not implemented.
+It removes the previous generated package directory, smoke-tests the packaged server, and leaves only a versioned ZIP plus SHA-256 checksum below `codebase/output/package/`. The extracted ZIP presents **HDR Finisher.exe** as the single user entry point.
+
+On Apple Silicon macOS:
+
+```bash
+cd codebase
+./tools/build_desktop_macos.sh
+npm --prefix desktop run test:packaged
+```
+
+The macOS workflow builds pinned static encoder tools, the PyInstaller sidecar, and unsigned `.app`, `.dmg`, and `.zip` artifacts in `codebase/dist-electron/`. Use `--skip-native-tools` only when the four native tools already exist in `codebase/bin/`. Signing and notarization require an Apple Developer identity and are intentionally separate from the reproducible local technical-preview build.
 
 ## API changes
 

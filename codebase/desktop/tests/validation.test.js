@@ -7,6 +7,7 @@ const {
   isSourcePath,
   safeSuggestedName,
 } = require("../lib/validation");
+const { backendCommand, backendExecutableName, sourcePythonPath } = require("../lib/runtime");
 
 test("desktop path types are restricted to supported extensions", () => {
   assert.equal(isSourcePath("C:\\Images\\scene.EXR"), true);
@@ -26,4 +27,21 @@ test("external proof URLs stay on the exact backend origin and proof route", () 
   assert.equal(allowedProofUrl(`${origin}/proof/example`, origin), true);
   assert.equal(allowedProofUrl(`${origin}/api/session`, origin), false);
   assert.equal(allowedProofUrl("https://example.com/proof/example", origin), false);
+});
+
+test("desktop backend paths follow Windows and macOS bundle conventions", () => {
+  assert.equal(backendExecutableName("win32"), "HDR Finisher Backend.exe");
+  assert.equal(backendExecutableName("darwin"), "HDR Finisher Backend");
+  assert.equal(sourcePythonPath("/app/codebase", "win32"), "/app/codebase/.venv/Scripts/python.exe");
+  assert.equal(sourcePythonPath("/app/codebase", "darwin"), "/app/codebase/.venv/bin/python");
+
+  const command = backendCommand({
+    isPackaged: true,
+    resourcesPath: "/HDR Finisher.app/Contents/Resources",
+    desktopDirectory: "/unused/desktop",
+    platform: "darwin",
+    pid: 42,
+  });
+  assert.equal(command.executable, "/HDR Finisher.app/Contents/Resources/backend/HDR Finisher Backend");
+  assert.deepEqual(command.args, ["--desktop-sidecar", "--parent-pid", "42"]);
 });

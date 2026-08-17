@@ -18,9 +18,10 @@ async function main() {
   fs.rmSync(projectPath, { force: true });
   fs.rmSync(exportPath, { force: true });
 
-  const executablePath = packaged
-    ? path.join(codebase, "dist-electron", "win-unpacked", "HDR Finisher.exe")
-    : electronExecutable;
+  const packagedExecutable = process.platform === "darwin"
+    ? path.join(codebase, "dist-electron", "mac-arm64", "HDR Finisher.app", "Contents", "MacOS", "HDR Finisher")
+    : path.join(codebase, "dist-electron", "win-unpacked", "HDR Finisher.exe");
+  const executablePath = packaged ? packagedExecutable : electronExecutable;
   const launchArgs = packaged ? [] : ["."];
   launchArgs.push("--in-process-gpu", "--disable-gpu");
   const electronApp = await electron.launch({
@@ -32,6 +33,18 @@ async function main() {
   try {
     const window = await electronApp.firstWindow();
     await window.waitForSelector("#empty-import-button", { state: "visible", timeout: 30000 });
+    await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1100, 720));
+    await window.waitForFunction(() => document.querySelector(".app-shell")?.classList.contains("compact-workspace"));
+    const compactLayout = await window.evaluate(() => ({
+      horizontalOverflow: document.documentElement.scrollWidth - window.innerWidth,
+      sourceCollapsed: document.querySelector(".source-rail")?.classList.contains("collapsed"),
+      gradeWidth: document.querySelector(".grade-rail")?.getBoundingClientRect().width,
+      dockCollapsed: document.querySelector("#analysis-dock")?.classList.contains("collapsed"),
+    }));
+    assert.ok(compactLayout.horizontalOverflow <= 0);
+    assert.equal(compactLayout.sourceCollapsed, true);
+    assert.ok(compactLayout.gradeWidth >= 300);
+    assert.equal(compactLayout.dockCollapsed, false);
     assert.equal(await window.title(), "HDR Finisher");
     assert.equal(await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getTitle()), "Untitled — HDR Finisher");
     assert.equal(await window.evaluate(() => typeof window.require), "undefined");
@@ -43,6 +56,13 @@ async function main() {
     const unauthorized = await fetch(`${backendOrigin}/api/capabilities`);
     assert.equal(unauthorized.status, 401);
     assert.equal(await window.evaluate(() => fetch("/api/capabilities").then((response) => response.status)), 200);
+    const capabilities = await window.evaluate(() => fetch("/api/capabilities").then((response) => response.json()));
+    if (packaged) {
+      const capabilityMap = capabilities.capabilities;
+      for (const key of ["avif_encoder", "avif_decoder", "avif_gain_map_tool", "ultrahdr_encoder", "ultrahdr_decoder"]) {
+        assert.equal(capabilityMap[key]?.status, "available", `${key} should be bundled in the macOS package`);
+      }
+    }
 
     await electronApp.evaluate(({ dialog }, selectedPath) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selectedPath] });
@@ -75,8 +95,11 @@ async function main() {
     assert.ok(fs.statSync(exportPath).size > 0);
 
     const nativeTitle = await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getTitle());
-    process.stdout.write(JSON.stringify({ environment, projectPath, exportPath, title: nativeTitle }) + "\n");
+    process.stdout.write(JSON.stringify({ environment, projectPath, exportPath, title: nativeTitle, capabilities }) + "\n");
   } finally {
+    if (process.platform === "darwin") {
+      await electronApp.evaluate(({ app }) => app.quit());
+    }
     await electronApp.close();
   }
 }

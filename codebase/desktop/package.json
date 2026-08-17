@@ -1,6 +1,6 @@
 {
   "name": "hdr-finisher-desktop",
-  "version": "0.3.5",
+  "version": "0.4.0",
   "private": true,
   "description": "Electron desktop shell for HDR Finisher",
   "author": "HDR Finisher contributors",
@@ -12,11 +12,14 @@
     "test:integration": "node tests/electron-smoke.js",
     "test:packaged": "node tests/electron-smoke.js --packaged",
     "pack:dir": "electron-builder --dir --win --x64",
-    "dist:win": "electron-builder --win nsis portable --x64"
+    "pack:dir:mac": "electron-builder --dir --mac",
+    "dist:win": "electron-builder --win nsis portable --x64",
+    "dist:mac": "electron-builder --mac dmg zip"
   },
   "devDependencies": {
     "electron": "43.4.0",
-    "electron-builder": "26.15.3"
+    "electron-builder": "26.15.3",
+    "playwright": "^1.62.1"
   },
   "build": {
     "appId": "org.hdrfinisher.app",
@@ -32,7 +35,9 @@
       {
         "from": "../dist/HDR Finisher Backend",
         "to": "backend",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "../../LICENSE",
@@ -45,7 +50,10 @@
     ],
     "win": {
       "icon": "assets/icon.png",
-      "target": ["nsis", "portable"],
+      "target": [
+        "nsis",
+        "portable"
+      ],
       "fileAssociations": [
         {
           "ext": "hdrfinisher",
@@ -54,6 +62,27 @@
           "role": "Editor"
         }
       ]
+    },
+    "mac": {
+      "icon": "assets/icon.png",
+      "category": "public.app-category.photography",
+      "artifactName": "HDR-Finisher-${version}-macOS-${arch}.${ext}",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "fileAssociations": [
+        {
+          "ext": "hdrfinisher",
+          "name": "HDR Finisher Project",
+          "description": "HDR Finisher editing project",
+          "role": "Editor"
+        }
+      ]
+    },
+    "dmg": {
+      "artifactName": "HDR-Finisher-${version}-macOS-${arch}.${ext}",
+      "title": "HDR Finisher ${version}"
     },
     "nsis": {
       "oneClick": false,

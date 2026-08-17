@@ -24,8 +24,15 @@ codebase/dist/
 codebase/dist-electron/
 codebase/.npm-cache/
 codebase/.electron-builder-cache/
+codebase/.pyinstaller-cache/
 codebase/build/
 codebase/desktop/node_modules/
+
+# Locally built platform-native encoder tools
+codebase/bin/avifenc
+codebase/bin/avifdec
+codebase/bin/avifgainmaputil
+codebase/bin/ultrahdr_app
 
 # Local test media and personal captures
 IMG_4109.HEIC

@@ -19,7 +19,8 @@ function isExportPath(value) {
 }
 
 function safeSuggestedName(value, fallback) {
-  const base = path.basename(typeof value === "string" ? value : "");
+  const normalized = (typeof value === "string" ? value : "").replaceAll("\\", "/");
+  const base = path.posix.basename(normalized);
   const cleaned = base.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").trim();
   return cleaned || fallback;
 }

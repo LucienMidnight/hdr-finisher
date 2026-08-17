@@ -605,6 +605,7 @@ input[type="text"] {
 
 .viewer-panel {
   position: relative;
+  container-type: inline-size;
   display: grid;
   grid-template-rows: 38px minmax(0, 1fr) 28px;
   min-width: 0;
@@ -641,6 +642,16 @@ body[data-active-lane="sdr"] .lane-dot {
 
 .viewer-tools {
   justify-content: flex-end;
+  gap: 5px;
+}
+
+.viewer-options-toggle {
+  display: none;
+}
+
+.viewer-secondary-tools {
+  display: flex;
+  align-items: center;
   gap: 5px;
 }
 
@@ -6413,6 +6424,120 @@ body {
   visibility: visible;
   opacity: 1;
   transition-delay: 2s;
+}
+
+/* Compact cross-platform workspace ------------------------------------- */
+
+html,
+body {
+  min-width: 0;
+  min-height: 0;
+}
+
+.app-shell {
+  min-height: 0;
+  height: 100vh;
+}
+
+.app-shell.compact-workspace {
+  grid-template-columns: 44px 0 minmax(0, 1fr) var(--splitter-size) var(--grade-w);
+}
+
+.compact-workspace .source-splitter {
+  display: none;
+}
+
+.compact-workspace.source-overlay-open .source-rail {
+  position: absolute;
+  z-index: 30;
+  top: var(--top-h);
+  bottom: 0;
+  left: 0;
+  width: var(--rail-w);
+  box-shadow: 16px 0 32px rgb(0 0 0 / 48%);
+}
+
+.compact-workspace .viewer-options-toggle {
+  display: inline-flex;
+}
+
+.compact-workspace .viewer-secondary-tools {
+  position: absolute;
+  z-index: 9;
+  top: calc(100% + 6px);
+  right: 10px;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 10px 26px var(--shadow);
+}
+
+.compact-workspace .viewer-secondary-tools.open {
+  display: flex;
+}
+
+.compact-workspace .viewer-tool-divider:last-of-type {
+  display: none;
+}
+
+.compact-workspace .scope-layout {
+  grid-template-columns: minmax(0, 1fr) clamp(160px, 25%, 200px);
+}
+
+.compact-workspace .scope-heading,
+.compact-workspace .scope-heading .field-inline {
+  flex-wrap: wrap;
+}
+
+.compact-workspace #dock-summary,
+.compact-workspace #scope-kind-label,
+.compact-workspace #scope-freshness {
+  display: none;
+}
+
+.compact-workspace .dock-bar {
+  justify-content: flex-start;
+}
+
+.compact-workspace .dock-tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: space-evenly;
+  gap: 2px;
+}
+
+.compact-workspace .dock-tab {
+  min-width: 0;
+  padding-inline: 6px;
+}
+
+.compact-workspace .dock-status {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+@container (max-width: 760px) {
+  .viewer-lane {
+    display: none;
+  }
+
+  .viewer-bar {
+    gap: 4px;
+  }
+
+  .interpretation-gate {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    width: calc(100% - 24px);
+  }
+
+  .interpretation-gate .button-row {
+    flex-wrap: wrap;
+  }
 }
 
 /* Shared typography for control groups and metadata disclosures. */
