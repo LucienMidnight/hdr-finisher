@@ -20,7 +20,7 @@ with warnings.catch_warnings():
         module=r"colour\.utilities\.verbose",
     )
     from colour import RGB_COLOURSPACES
-    from colour.models import RGB_to_RGB, eotf_BT2100_HLG, eotf_ST2084
+    from colour.models import RGB_to_RGB, eotf_BT2100_HLG, eotf_ST2084, oetf_inverse_BT709
 
 
 ACESCG_COLOURSPACE = "ACEScg"
@@ -213,7 +213,7 @@ def normalize_to_acescg(image: np.ndarray, source_color_space: str | None = None
     # Do not apply an irreversible gamut or transfer transform when the source
     # primaries are explicitly unknown. PQ and HLG are standardized on BT.2020
     # in the supported import paths, so those remain safe to normalize.
-    if source_color_space is None and transfer not in {"PQ", "HLG", "sRGB"}:
+    if source_color_space is None and transfer not in {"PQ", "HLG", "sRGB", "BT.709"}:
         return sanitized
 
     colourspace = _canonical_colourspace(source_color_space, transfer)
@@ -222,6 +222,9 @@ def normalize_to_acescg(image: np.ndarray, source_color_space: str | None = None
         return _pq_bt2020_to_acescg(sanitized)
     if transfer == "HLG":
         return _hlg_bt2020_to_acescg(sanitized)
+    if transfer == "BT.709":
+        sanitized = sanitize_array(oetf_inverse_BT709(np.clip(sanitized, 0.0, 1.0)))
+        transfer = "LINEAR"
     if colourspace == ACESCG_COLOURSPACE:
         return sanitized
     if colourspace in RGB_COLOURSPACES:
@@ -260,6 +263,8 @@ def _canonical_transfer_function(value: str | None) -> str | None:
         return "LINEAR"
     if "srgb" in text:
         return "sRGB"
+    if "bt.709" in text or "bt709" in text or "rec.709" in text or "rec709" in text:
+        return "BT.709"
     return None
 
 

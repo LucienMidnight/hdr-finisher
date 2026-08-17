@@ -151,7 +151,7 @@
   --instrument-tab-rule-w: 1px;
   --instrument-tab-rule-color: var(--hairline);
   --local-control-inset: 12px;
-  --group-chevron-glyph: "\E76C";
+  --group-chevron-shape: url("assets/icons/tabler/chevron-right.svg");
   --group-chevron-size: 18px;
   --group-chevron-width: 18px;
   --group-chevron-gap: 6px;
@@ -2660,16 +2660,14 @@ input[type="text"] {
 }
 
 .group-toggle::before {
-  content: var(--group-chevron-glyph);
+  content: "";
   display: inline-block;
   width: var(--group-chevron-width);
+  height: var(--group-chevron-width);
   margin-right: var(--group-chevron-gap);
-  color: var(--group-chevron-color);
-  font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets", sans-serif;
-  font-size: var(--group-chevron-size);
-  font-weight: 600;
-  line-height: 1;
-  text-align: center;
+  background-color: var(--group-chevron-color);
+  -webkit-mask: var(--group-chevron-shape) center / var(--group-chevron-size) no-repeat;
+  mask: var(--group-chevron-shape) center / var(--group-chevron-size) no-repeat;
   transform: rotate(0deg);
   transition: transform var(--group-chevron-transition);
 }
@@ -3530,9 +3528,22 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 .local-move-up-icon,
 .local-move-down-icon {
   display: inline-grid;
-  font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets", sans-serif;
   font-style: normal;
   place-items: center;
+}
+
+.local-tool-icon::before,
+.local-overlay-icon::before,
+.local-duplicate-icon::before,
+.local-move-up-icon::before,
+.local-move-down-icon::before {
+  content: "";
+  display: block;
+  width: 1em;
+  height: 1em;
+  background-color: currentColor;
+  -webkit-mask: var(--tabler-icon) center / contain no-repeat;
+  mask: var(--tabler-icon) center / contain no-repeat;
 }
 
 .local-tool-icon {
@@ -3542,15 +3553,15 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
   font-size: 20px;
 }
 
-.local-tool-brush .local-tool-icon::before { content: "\E790"; }
-.local-tool-erase .local-tool-icon::before { content: "\E75C"; }
-.local-tool-gradient .local-tool-icon::before { content: "\E76F"; }
-.local-tool-luma .local-tool-icon::before { content: "\E9E9"; }
-.local-tool-path .local-tool-icon::before { content: "\E70F"; }
-.local-overlay-icon::before { content: "\E890"; }
-.local-duplicate-icon::before { content: "\E8C8"; }
-.local-move-up-icon::before { content: "\E70E"; }
-.local-move-down-icon::before { content: "\E70D"; }
+.local-tool-brush .local-tool-icon { --tabler-icon: url("assets/icons/tabler/brush.svg"); }
+.local-tool-erase .local-tool-icon { --tabler-icon: url("assets/icons/tabler/eraser.svg"); }
+.local-tool-gradient .local-tool-icon { --tabler-icon: url("assets/icons/tabler/square-half.svg"); }
+.local-tool-luma .local-tool-icon { --tabler-icon: url("assets/icons/tabler/brightness-half.svg"); }
+.local-tool-path .local-tool-icon { --tabler-icon: url("assets/icons/tabler/pencil.svg"); }
+.local-overlay-icon { --tabler-icon: url("assets/icons/tabler/eye.svg"); }
+.local-duplicate-icon { --tabler-icon: url("assets/icons/tabler/copy.svg"); }
+.local-move-up-icon { --tabler-icon: url("assets/icons/tabler/arrow-up.svg"); }
+.local-move-down-icon { --tabler-icon: url("assets/icons/tabler/arrow-down.svg"); }
 
 .local-overlay-actions {
   display: flex;
@@ -5280,7 +5291,9 @@ body[data-workflow="export"] #export-sheet {
 }
 
 .source-rail .rail-title-row {
-  justify-content: flex-start;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
   padding-left: 16px;
 }
 
@@ -5296,6 +5309,7 @@ body[data-workflow="export"] #export-sheet {
   background: transparent;
   color: var(--quiet);
   writing-mode: initial;
+  white-space: nowrap;
 }
 
 .app-shell.source-collapsed {
@@ -5314,21 +5328,26 @@ body[data-workflow="export"] #export-sheet {
 
 .source-rail.collapsed .rail-title-row {
   justify-content: center;
-  min-height: 100%;
+  align-items: start;
+  min-height: 48px;
   margin: 0;
-  padding: 8px 0;
+  padding: 10px 4px;
   border: 0;
 }
 
 .source-rail.collapsed .rail-title-row > :not(.source-rail-expand) { display: none; }
 
 .source-rail.collapsed .source-rail-expand {
-  min-width: 28px;
-  min-height: 80px;
+  width: 36px;
+  min-width: 36px;
+  min-height: 28px;
+  padding: 2px;
   border: 1px solid var(--hairline);
   background: #111416;
   color: var(--muted);
-  writing-mode: vertical-rl;
+  font-size: 9px;
+  letter-spacing: .02em;
+  writing-mode: horizontal-tb;
 }
 
 .viewer-panel,
@@ -5515,12 +5534,14 @@ body[data-workflow="grade"] .import-workflow-panel { display: none; }
 }
 
 .panel-title {
+  min-width: 0;
   color: var(--panel-title-color);
   font-family: var(--panel-title-font-family);
   font-size: var(--panel-title-font-size);
   font-weight: var(--panel-title-font-weight);
   letter-spacing: var(--panel-title-letter-spacing);
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .rail-title-row .status-text {
@@ -5803,15 +5824,13 @@ body {
 }
 
 .disclosure-trigger::before {
-  content: var(--group-chevron-glyph);
+  content: "";
   display: inline-block;
   width: var(--group-chevron-width);
-  color: var(--group-chevron-color);
-  font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets", sans-serif;
-  font-size: var(--group-chevron-size);
-  font-weight: 600;
-  line-height: 1;
-  text-align: center;
+  height: var(--group-chevron-width);
+  background-color: var(--group-chevron-color);
+  -webkit-mask: var(--group-chevron-shape) center / var(--group-chevron-size) no-repeat;
+  mask: var(--group-chevron-shape) center / var(--group-chevron-size) no-repeat;
   transform: rotate(0deg);
   transition: transform var(--group-chevron-transition);
 }
@@ -5982,14 +6001,23 @@ body {
   width: 22px;
   height: 22px;
   color: #edf3f4;
-  font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets", sans-serif;
   font-size: 20px;
   font-style: normal;
   place-items: center;
 }
 
-.geometry-tool-crop .geometry-tool-icon::before { content: "\E7A8"; }
-.geometry-tool-rotate .geometry-tool-icon::before { content: "\E7AD"; }
+.geometry-tool-icon::before {
+  content: "";
+  display: block;
+  width: 1em;
+  height: 1em;
+  background-color: currentColor;
+  -webkit-mask: var(--tabler-icon) center / contain no-repeat;
+  mask: var(--tabler-icon) center / contain no-repeat;
+}
+
+.geometry-tool-crop .geometry-tool-icon { --tabler-icon: url("assets/icons/tabler/crop.svg"); }
+.geometry-tool-rotate .geometry-tool-icon { --tabler-icon: url("assets/icons/tabler/rotate-clockwise.svg"); }
 
 .geometry-tool-settings {
   display: grid;

@@ -1741,26 +1741,42 @@ function bindEvents() {
   });
 
   ["dragenter", "dragover"].forEach((eventName) => {
-    els.dropzone.addEventListener(eventName, (event) => {
+    document.addEventListener(eventName, (event) => {
+      if (!event.dataTransfer?.types?.includes("Files")) return;
       event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
       els.dropzone.classList.add("drag-active");
     });
   });
-  ["dragleave", "dragend"].forEach((eventName) => {
-    els.dropzone.addEventListener(eventName, () => {
-      els.dropzone.classList.remove("drag-active");
-    });
+  document.addEventListener("dragleave", (event) => {
+    if (event.relatedTarget || (event.clientX > 0 && event.clientY > 0)) return;
+    els.dropzone.classList.remove("drag-active");
   });
-  els.dropzone.addEventListener("drop", async (event) => {
+  document.addEventListener("drop", async (event) => {
+    if (!event.dataTransfer?.types?.includes("Files")) return;
     event.preventDefault();
     els.dropzone.classList.remove("drag-active");
-    const [file] = event.dataTransfer?.files || [];
+    const files = event.dataTransfer.files;
+    const [file] = files || [];
     if (!file) return;
-    if (desktop) {
-      const [selection] = await desktop.resolveDroppedFiles(event.dataTransfer.files);
-      if (selection) await openDesktopSelection(selection);
-    } else {
-      await uploadFile(file);
+    try {
+      if (desktop) {
+        const [selection] = await desktop.resolveDroppedFiles(files);
+        if (!selection) {
+          // Windows shell integrations and catalog applications can provide a
+          // real File without exposing a filesystem path to Electron. Upload
+          // those bytes through the local backend instead of misreporting the
+          // source extension as unsupported.
+          await uploadFile(file);
+          return;
+        }
+        await openDesktopSelection(selection);
+      } else {
+        await uploadFile(file);
+      }
+    } catch (error) {
+      console.error(error);
+      showUploadError(error?.message || "The dropped file could not be opened.");
     }
   });
   [els.previewImage, els.comparisonImage, els.previewOverlay].forEach((image) => {

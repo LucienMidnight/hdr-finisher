@@ -15,7 +15,18 @@ function assert(condition, message) {
       await page.getByRole("button", { name: "Load test pattern" }).click();
       await page.waitForFunction(() => state.session?.session_id, null, { timeout: 30000 });
       const rail = page.locator(".source-rail");
-      if (width < 1600) await rail.hover();
+      if (width < 1500) {
+        const showButton = page.getByRole("button", { name: "Expand source metadata" });
+        const collapsedLayout = await showButton.evaluate((element) => ({
+          text: element.textContent,
+          writingMode: getComputedStyle(element).writingMode,
+          rect: element.getBoundingClientRect().toJSON(),
+        }));
+        assert(collapsedLayout.text === "Show", `Collapsed source action has the wrong label: ${JSON.stringify(collapsedLayout)}`);
+        assert(collapsedLayout.writingMode === "horizontal-tb", `Collapsed Show action is vertical: ${JSON.stringify(collapsedLayout)}`);
+        assert(collapsedLayout.rect.height <= 32, `Collapsed Show action is misplaced or oversized: ${JSON.stringify(collapsedLayout)}`);
+        await showButton.click();
+      }
       const railState = await rail.evaluate((element) => ({
         classes: element.className,
         display: getComputedStyle(element).display,
@@ -24,6 +35,14 @@ function assert(condition, message) {
         workflow: document.body.dataset.workflow,
       }));
       assert(await rail.isVisible(), `Source rail is not visible at ${width}px: ${JSON.stringify(railState)}`);
+      const titleLayout = await page.locator(".rail-title-row").evaluate((row) => {
+        const title = row.querySelector(".panel-title").getBoundingClientRect();
+        const action = row.querySelector(".source-rail-expand").getBoundingClientRect();
+        return { title: title.toJSON(), action: action.toJSON(), text: row.querySelector(".panel-title").textContent };
+      });
+      assert(titleLayout.text === "Metadata", `Metadata title changed unexpectedly: ${JSON.stringify(titleLayout)}`);
+      assert(titleLayout.title.width >= 70, `Metadata title is squeezed: ${JSON.stringify(titleLayout)}`);
+      assert(titleLayout.title.right + 4 <= titleLayout.action.left, `Metadata title overlaps Hide: ${JSON.stringify(titleLayout)}`);
       for (const [toggleId, panelId] of [["source-settings-toggle", "source-settings-panel"], ["metadata-toggle", "metadata-panel"]]) {
         const toggle = page.locator(`#${toggleId}`);
         const panel = page.locator(`#${panelId}`);

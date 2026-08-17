@@ -547,8 +547,9 @@ if (!gotLock) {
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
     try {
       await startBackend();
-      session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [`${backend.url}/*`] }, (details, callback) => {
-        details.requestHeaders["X-HDR-Finisher-Token"] = backend.authoringSecret;
+      const activeBackend = backend;
+      session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [`${activeBackend.url}/*`] }, (details, callback) => {
+        details.requestHeaders["X-HDR-Finisher-Token"] = activeBackend.authoringSecret;
         callback({ requestHeaders: details.requestHeaders });
       });
       registerIpc();

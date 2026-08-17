@@ -445,7 +445,22 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     assert "Move over the image" not in html
     assert "sourceSettingsOpen: false" in javascript
     assert "metadataOpen: false" in javascript
-    assert '--group-chevron-glyph: "\\E76C"' in css
+    assert '--group-chevron-shape: url("assets/icons/tabler/chevron-right.svg")' in css
+    assert "Segoe Fluent Icons" not in css
+    for icon in (
+        "arrow-down.svg",
+        "arrow-up.svg",
+        "brightness-half.svg",
+        "brush.svg",
+        "copy.svg",
+        "crop.svg",
+        "eraser.svg",
+        "eye.svg",
+        "pencil.svg",
+        "rotate-clockwise.svg",
+        "square-half.svg",
+    ):
+        assert f'url("assets/icons/tabler/{icon}")' in css
     assert ".disclosure-trigger::before" in css
     assert '.disclosure-trigger[aria-expanded="true"]::before' in css
     assert "dockH: [240, 340]" in javascript
@@ -601,6 +616,11 @@ def test_electron_preview_correctness_contract() -> None:
     preload = (DESKTOP / "preload.js").read_text(encoding="utf-8")
 
     assert 'id="preview-quality-status"' in html and 'aria-live="polite"' in html
+    assert 'document.addEventListener("drop"' in javascript
+    assert 'document.addEventListener(eventName' in javascript
+    assert 'desktop.resolveDroppedFiles(files)' in javascript
+    assert "Windows shell integrations and catalog applications" in javascript
+    assert "await uploadFile(file);" in javascript
     assert 'id="rotate-apply"' in html and 'id="rotate-cancel"' in html
     assert "function gpuPreviewEligible()" in javascript
     gpu_eligibility = javascript[
@@ -628,6 +648,9 @@ def test_electron_preview_correctness_contract() -> None:
     assert 'preview?.style.setProperty("--interactive-straighten-angle", `${-straightenDelta}deg`)' in javascript
     assert 'label: "Rendering Mode"' in main
     assert all(label in main for label in ("Auto (Recommended)", "GPU Preferred", "CPU Compatibility"))
+    assert "const activeBackend = backend;" in main
+    assert 'activeBackend.authoringSecret' in main
+    assert 'details.requestHeaders["X-HDR-Finisher-Token"] = backend.authoringSecret' not in main
     assert 'setRenderingMode: (mode)' in preload
 
 

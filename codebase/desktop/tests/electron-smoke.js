@@ -10,6 +10,9 @@ async function main() {
   const codebase = path.resolve(desktopDirectory, "..");
   const packaged = process.argv.includes("--packaged");
   const sourcePath = path.join(codebase, "tests", "fixtures", "sdr_gradient.png");
+  const pathlessDropPath = process.env.HDR_FINISHER_DROP_FIXTURE
+    || path.join(codebase, "tests", "fixtures", "hdr_headroom.tiff");
+  const pathlessDropName = path.basename(pathlessDropPath);
   const outputDirectory = path.join(codebase, "output", "electron-smoke");
   fs.mkdirSync(outputDirectory, { recursive: true });
   const projectPath = path.join(outputDirectory, "electron-smoke.hdrfinisher");
@@ -18,9 +21,10 @@ async function main() {
   fs.rmSync(projectPath, { force: true });
   fs.rmSync(exportPath, { force: true });
 
-  const packagedExecutable = process.platform === "darwin"
+  const defaultPackagedExecutable = process.platform === "darwin"
     ? path.join(codebase, "dist-electron", "mac-arm64", "HDR Finisher.app", "Contents", "MacOS", "HDR Finisher")
     : path.join(codebase, "dist-electron", "win-unpacked", "HDR Finisher.exe");
+  const packagedExecutable = process.env.HDR_FINISHER_PACKAGED_EXECUTABLE || defaultPackagedExecutable;
   const executablePath = packaged ? packagedExecutable : electronExecutable;
   const launchArgs = packaged ? [] : ["."];
   launchArgs.push("--in-process-gpu", "--disable-gpu");
@@ -51,6 +55,9 @@ async function main() {
     const environment = await window.evaluate(() => window.hdrFinisherDesktop.environment());
     assert.equal(environment.apiVersion, 1);
     assert.equal(environment.packaged, packaged);
+    const frontendSource = await window.evaluate(() => fetch("/static/app.js").then((response) => response.text()));
+    assert.match(frontendSource, /Windows shell integrations and catalog applications/);
+    assert.doesNotMatch(frontendSource, /That dropped file type is not supported by HDR Finisher/);
 
     const backendOrigin = new URL(window.url()).origin;
     const unauthorized = await fetch(`${backendOrigin}/api/capabilities`);
@@ -63,6 +70,41 @@ async function main() {
         assert.equal(capabilityMap[key]?.status, "available", `${key} should be bundled in the macOS package`);
       }
     }
+
+    await window.locator("#file-input").setInputFiles(sourcePath);
+    await window.evaluate(() => {
+      const file = document.querySelector("#file-input").files[0];
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      document.querySelector(".rail-title-row").dispatchEvent(new DragEvent("drop", {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: transfer,
+      }));
+    });
+    await window.waitForFunction(() => document.querySelector("#session-name")?.textContent.includes("sdr_gradient.png"));
+    await window.evaluate(() => ejectCurrentSession());
+    await window.waitForFunction(() => !state.session);
+
+    await window.locator("#file-input").setInputFiles(pathlessDropPath);
+    await window.evaluate(async () => {
+      const selected = document.querySelector("#file-input").files[0];
+      const pathlessFile = new File([await selected.arrayBuffer()], selected.name, { type: selected.type });
+      const transfer = new DataTransfer();
+      transfer.items.add(pathlessFile);
+      document.querySelector(".rail-title-row").dispatchEvent(new DragEvent("drop", {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: transfer,
+      }));
+    });
+    await window.waitForFunction(
+      (expectedName) => document.querySelector("#session-name")?.textContent.includes(expectedName),
+      pathlessDropName,
+      { timeout: 120000 },
+    );
+    await window.evaluate(() => ejectCurrentSession());
+    await window.waitForFunction(() => !state.session);
 
     await electronApp.evaluate(({ dialog }, selectedPath) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selectedPath] });

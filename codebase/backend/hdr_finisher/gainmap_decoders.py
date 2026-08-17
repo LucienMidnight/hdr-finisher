@@ -360,7 +360,7 @@ def _cicp_color_space(value: Any) -> str | None:
 
 
 def _cicp_transfer(value: Any) -> str | None:
-    mapping = {8: "LINEAR", 13: "sRGB", 16: "PQ", 18: "HLG"}
+    mapping = {1: "BT.709", 8: "LINEAR", 13: "sRGB", 16: "PQ", 18: "HLG"}
     return mapping.get(value)
 
 

@@ -45,7 +45,7 @@ The source container does not by itself define color. The application needs:
 2. Transfer function
 3. Pixel values and range
 
-Supported manual primaries are ACEScg, BT.2020, Display P3, and sRGB/Rec.709. Supported transfer interpretations are Linear, PQ, HLG, and sRGB.
+Supported manual primaries are ACEScg, BT.2020, Display P3, and sRGB/Rec.709. Supported manual transfer interpretations are Linear, PQ, HLG, and sRGB. AVIF auto-detection also accepts CICP transfer code `1` as BT.709.
 
 ### Metadata priority and uncertainty
 
@@ -64,7 +64,7 @@ This differs deliberately from OpenEXR’s historical fallback recommendation to
 
 Known linear source RGB is converted with `colour.models.RGB_to_RGB` and CAT02 chromatic adaptation. ACEScg is an identity path.
 
-If sRGB or Display P3 is selected with sRGB transfer, the sRGB CCTF is decoded before the primary conversion. Linear P3 and linear sRGB/Rec.709 are not decoded again.
+If sRGB or Display P3 is selected with sRGB transfer, the sRGB CCTF is decoded before the primary conversion. AVIF tagged with CICP transfer code `1` uses colour-science's BT.709 inverse OETF instead; it is not silently treated as the numerically different sRGB curve. Linear P3 and linear sRGB/Rec.709 are not decoded again.
 
 ### PQ input
 

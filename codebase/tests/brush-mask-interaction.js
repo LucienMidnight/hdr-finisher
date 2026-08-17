@@ -129,10 +129,10 @@ async function overlayMaskAlphaAt(page, x, y) {
 
     const panels = page.locator(".local-mask-subpanel");
     assert(await panels.count() === 2, "Brush tip and painted mask controls were not split into two panels.");
-    const gradientGlyph = await page.locator(".local-tool-gradient .local-tool-icon").evaluate((node) => getComputedStyle(node, "::before").content.replaceAll('"', "").codePointAt(0));
-    assert(gradientGlyph === 0xe76f, `Gradient tool is not using the graduated-band Fluent glyph (${gradientGlyph}).`);
-    const lumaGlyph = await page.locator(".local-tool-luma .local-tool-icon").evaluate((node) => getComputedStyle(node, "::before").content.replaceAll('"', "").codePointAt(0));
-    assert(lumaGlyph === 0xe9e9, `Luma tool is not using the temporary equalizer placeholder (${lumaGlyph}).`);
+    const gradientMask = await page.locator(".local-tool-gradient .local-tool-icon").evaluate((node) => getComputedStyle(node, "::before").webkitMaskImage);
+    assert(gradientMask.includes("square-half.svg"), `Gradient tool is not using the Tabler square-half icon (${gradientMask}).`);
+    const lumaMask = await page.locator(".local-tool-luma .local-tool-icon").evaluate((node) => getComputedStyle(node, "::before").webkitMaskImage);
+    assert(lumaMask.includes("brightness-half.svg"), `Luma tool is not using the Tabler brightness-half icon (${lumaMask}).`);
     const brushLabels = await panels.nth(0).locator(".local-brush-control > .instrument-control-label").allTextContents();
     const maskLabels = await panels.nth(1).locator(".local-brush-control > .instrument-control-label").allTextContents();
     assert(brushLabels.join("|").replace(/\d+(?:\.\d+)?%/g, "") === "Size|Feather|Flow|Density", `Unexpected brush controls: ${brushLabels.join(", ")}`);

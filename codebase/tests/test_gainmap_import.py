@@ -91,6 +91,42 @@ def test_tracked_avif_gainmap_import_recovers_both_renditions() -> None:
     assert 0.9 < float(np.max(sdr_reference)) <= 1.0
 
 
+def test_avif_gainmap_accepts_bt709_transfer_on_sdr_base(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    info = {
+        "color_primaries": 9,
+        "transfer_char": 1,
+        "matrix_coeffs": 9,
+        "gain_map": {"base_headroom": 0.0, "alternate_headroom": 2.3},
+        "alternate_image": {
+            "color_primaries": 9,
+            "transfer_char": 16,
+            "matrix_coeffs": 9,
+            "bit_depth": 10,
+        },
+    }
+    monkeypatch.setattr(gainmap_decoders, "resolve_binary", lambda name: tmp_path / name)
+    monkeypatch.setattr(
+        gainmap_decoders,
+        "_run",
+        lambda _command: SimpleNamespace(stdout="Base Headroom: 0.00\nAlternate Headroom: 2.30", stderr=""),
+    )
+
+    def fake_decode(_path: Path, _avifdec: Path, output: Path | None = None) -> np.ndarray:
+        value = 0.5 if output and output.name == "sdr-base.png" else 0.25
+        return np.full((2, 3, 3), value, dtype=np.float32)
+
+    monkeypatch.setattr(gainmap_decoders, "_decode_avif_pixels", fake_decode)
+
+    _hdr, linear_sdr, metadata = gainmap_decoders._decode_avif_gain_map(tmp_path / "lightroom.avif", info)
+
+    assert gainmap_decoders._cicp_transfer(1) == "BT.709"
+    assert metadata["hdr_capacity_stops"] == pytest.approx(2.3)
+    assert metadata["sdr_base_preserved"] is True
+    assert float(np.mean(linear_sdr)) == pytest.approx(0.2596, abs=0.001)
+
+
 @pytest.mark.skipif(
     probe_capabilities()["avif_decoder"].status != CapabilityStatus.AVAILABLE,
     reason="avifdec is unavailable",
