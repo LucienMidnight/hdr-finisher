@@ -70,7 +70,9 @@ jobs:
       - name: Build Windows installers
         working-directory: codebase
         shell: pwsh
-        run: .\tools\build_desktop.ps1
+        run: |
+          $env:HDR_FINISHER_PYTHON = (Get-Command python -ErrorAction Stop).Source
+          .\tools\build_desktop.ps1
 
       - name: Smoke-test packaged Windows app
         working-directory: codebase
@@ -144,7 +146,7 @@ jobs:
 
       - name: Build Apple Silicon package
         working-directory: codebase
-        run: ./tools/build_desktop_macos.sh
+        run: HDR_FINISHER_PYTHON="$(command -v python)" ./tools/build_desktop_macos.sh
 
       - name: Run deterministic tests
         working-directory: codebase
