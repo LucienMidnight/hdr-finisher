@@ -4,10 +4,15 @@ function backendExecutableName(platform = process.platform) {
   return platform === "win32" ? "HDR Finisher Backend.exe" : "HDR Finisher Backend";
 }
 
+function pathApi(platform = process.platform) {
+  return platform === "win32" ? path.win32 : path.posix;
+}
+
 function sourcePythonPath(codebase, platform = process.platform) {
+  const platformPath = pathApi(platform);
   return platform === "win32"
-    ? path.win32.join(codebase, ".venv", "Scripts", "python.exe")
-    : path.posix.join(codebase, ".venv", "bin", "python");
+    ? platformPath.join(codebase, ".venv", "Scripts", "python.exe")
+    : platformPath.join(codebase, ".venv", "bin", "python");
 }
 
 function backendCommand({
@@ -18,7 +23,7 @@ function backendCommand({
   pid = process.pid,
   pythonOverride = process.env.HDR_FINISHER_PYTHON,
 }) {
-  const platformPath = platform === "win32" ? path.win32 : path.posix;
+  const platformPath = pathApi(platform);
   if (isPackaged) {
     const backendDirectory = platformPath.join(resourcesPath, "backend");
     return {

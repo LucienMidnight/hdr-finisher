@@ -44,4 +44,17 @@ test("desktop backend paths follow Windows and macOS bundle conventions", () => 
   });
   assert.equal(command.executable, "/HDR Finisher.app/Contents/Resources/backend/HDR Finisher Backend");
   assert.deepEqual(command.args, ["--desktop-sidecar", "--parent-pid", "42"]);
+
+  const windowsCommand = backendCommand({
+    isPackaged: true,
+    resourcesPath: "C:\\Program Files\\HDR Finisher\\resources",
+    desktopDirectory: "C:\\unused\\desktop",
+    platform: "win32",
+    pid: 43,
+  });
+  assert.equal(
+    windowsCommand.executable,
+    "C:\\Program Files\\HDR Finisher\\resources\\backend\\HDR Finisher Backend.exe",
+  );
+  assert.deepEqual(windowsCommand.args, ["--desktop-sidecar", "--parent-pid", "43"]);
 });

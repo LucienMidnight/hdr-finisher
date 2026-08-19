@@ -1,0 +1,209 @@
+name: Desktop release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            codebase/requirements.txt
+            codebase/requirements-dev.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: codebase/desktop/package-lock.json
+
+      - name: Install dependencies
+        working-directory: codebase
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+          npm ci --prefix desktop
+
+      - name: Verify release version
+        if: startsWith(github.ref, 'refs/tags/')
+        working-directory: codebase
+        shell: pwsh
+        run: |
+          $backendVersion = (python -c "import sys; sys.path.insert(0, 'backend'); from hdr_finisher.config import APP_VERSION; print(APP_VERSION)").Trim()
+          $desktopVersion = (node -p "require('./desktop/package.json').version").Trim()
+          $expectedTag = "v$backendVersion"
+          if ($backendVersion -ne $desktopVersion) {
+              throw "Backend version $backendVersion does not match desktop version $desktopVersion."
+          }
+          if ($expectedTag -ne "${{ github.ref_name }}") {
+              throw "Release tag ${{ github.ref_name }} does not match application version $expectedTag."
+          }
+
+      - name: Run deterministic tests
+        working-directory: codebase
+        shell: pwsh
+        run: |
+          python -m pytest -q tests
+          npm --prefix desktop test
+
+      - name: Build Windows installers
+        working-directory: codebase
+        shell: pwsh
+        run: |
+          $env:HDR_FINISHER_PYTHON = (Get-Command python -ErrorAction Stop).Source
+          .\tools\build_desktop.ps1
+
+      - name: Smoke-test packaged Windows app
+        working-directory: codebase
+        shell: pwsh
+        run: npm --prefix desktop run test:packaged
+
+      - name: Write Windows checksums
+        working-directory: codebase
+        shell: pwsh
+        run: |
+          $assets = Get-ChildItem -LiteralPath dist-electron -File -Filter "HDR-Finisher-*.exe"
+          if ($assets.Count -lt 2) {
+              throw "Expected both Windows Setup and Portable executables."
+          }
+          $lines = foreach ($asset in $assets) {
+              $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $asset.FullName).Hash.ToLowerInvariant()
+              "$hash  $($asset.Name)"
+          }
+          $lines | Set-Content -LiteralPath dist-electron\SHA256SUMS-Windows.txt -Encoding ascii
+
+      - name: Upload Windows release candidates
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-windows-x64
+          path: |
+            codebase/dist-electron/HDR-Finisher-Setup-*-x64.exe
+            codebase/dist-electron/HDR-Finisher-Portable-*-x64.exe
+            codebase/dist-electron/SHA256SUMS-Windows.txt
+          if-no-files-found: error
+
+  build-macos:
+    runs-on: macos-15
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            codebase/requirements.txt
+            codebase/requirements-dev.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: codebase/desktop/package-lock.json
+
+      - name: Install dependencies
+        working-directory: codebase
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+          npm ci --prefix desktop
+
+      - name: Verify Apple Silicon runner and release version
+        working-directory: codebase
+        run: |
+          test "$(uname -m)" = "arm64"
+          backend_version="$(python -c "import sys; sys.path.insert(0, 'backend'); from hdr_finisher.config import APP_VERSION; print(APP_VERSION)")"
+          desktop_version="$(node -p "require('./desktop/package.json').version")"
+          test "$backend_version" = "$desktop_version"
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+            test "v$backend_version" = "${GITHUB_REF_NAME}"
+          fi
+
+      - name: Build Apple Silicon package
+        working-directory: codebase
+        run: HDR_FINISHER_PYTHON="$(command -v python)" ./tools/build_desktop_macos.sh
+
+      - name: Run deterministic tests
+        working-directory: codebase
+        run: |
+          python -m pytest -q tests
+          npm --prefix desktop test
+
+      - name: Smoke-test packaged macOS app
+        working-directory: codebase
+        run: npm --prefix desktop run test:packaged
+
+      - name: Verify macOS artifacts
+        working-directory: codebase
+        run: |
+          codesign --verify --deep --strict --verbose=2 "dist-electron/mac-arm64/HDR Finisher.app"
+          hdiutil verify dist-electron/HDR-Finisher-*-macOS-arm64.dmg
+          unzip -tq dist-electron/HDR-Finisher-*-macOS-arm64.zip
+          (cd dist-electron && shasum -a 256 -c SHA256SUMS-macOS.txt)
+
+      - name: Upload macOS release candidates
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-macos-arm64
+          path: |
+            codebase/dist-electron/HDR-Finisher-*-macOS-arm64.dmg
+            codebase/dist-electron/HDR-Finisher-*-macOS-arm64.zip
+            codebase/dist-electron/SHA256SUMS-macOS.txt
+          if-no-files-found: error
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs:
+      - build-windows
+      - build-macos
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download verified release candidates
+        uses: actions/download-artifact@v7
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish GitHub prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" release-assets/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$tag" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "HDR Finisher $tag" \
+              --prerelease \
+              --generate-notes \
+              --notes "Unsigned technical preview. macOS users may need Finder's one-time Open flow; do not disable Gatekeeper globally. Verify downloads against the included SHA-256 checksum files."
+          fi
