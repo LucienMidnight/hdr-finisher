@@ -18,15 +18,28 @@ from hdr_finisher.exporters import (
     JPEGUltraHDRExportBackend,
     _build_ultrahdr_encode_command,
     _inspect_ultrahdr_markers,
+    _linear_to_srgb8,
     _run_command,
     _validate_ultrahdr_output,
 )
 from hdr_finisher.models import AdjustmentState, CapabilityInfo, CapabilityStatus, ExportSettings, PreviewKind
-from hdr_finisher.test_pattern import build_hdr_test_pattern
+from hdr_finisher.test_pattern import build_delivery_proof_pattern, build_hdr_test_pattern
 
 
 def _available_capability() -> CapabilityInfo:
     return CapabilityInfo(name="JPEG Ultra HDR", status=CapabilityStatus.AVAILABLE, detail="test")
+
+
+def test_ultrahdr_sdr_endpoint_dither_breaks_long_gradient_plateaus() -> None:
+    encoded = np.linspace(0.05, 0.95, 4096, dtype=np.float32)
+    linear = np.power((encoded + 0.055) / 1.055, 2.4)
+    image = np.repeat(linear.reshape(1, -1, 1), 3, axis=2)
+
+    plain = _linear_to_srgb8(image, dither=False)[0, :, 0]
+    dithered = _linear_to_srgb8(image, dither=True)[0, :, 0]
+
+    assert np.count_nonzero(np.diff(dithered)) > np.count_nonzero(np.diff(plain)) * 1.5
+    np.testing.assert_allclose(dithered.astype(np.int16), plain.astype(np.int16), atol=1)
 
 
 def test_existing_export_requires_explicit_overwrite_permission(tmp_path: Path) -> None:
@@ -386,3 +399,34 @@ def test_real_ultrahdr_export_and_decode_when_encoder_is_available(tmp_path: Pat
     decoded_hdr = np.fromfile(decoded_hdr_path, dtype="<f2").astype(np.float32).reshape(48, 64, 4)[..., :3]
     assert float(decoded_hdr.max()) > float(legacy_linear.max())
     assert float(np.percentile(decoded_hdr, 99)) > float(np.percentile(legacy_linear, 99))
+
+
+def test_real_ultrahdr_gradient_has_no_long_reconstruction_plateaus_when_encoder_is_available(tmp_path: Path) -> None:
+    capability = capability_module._ultrahdr_status()
+    if capability.status != CapabilityStatus.AVAILABLE:
+        pytest.skip(capability.detail)
+    binary = binaries.resolve_binary("ultrahdr_app")
+    assert binary is not None
+
+    width, height = 1280, 720
+    image = build_delivery_proof_pattern(width=width, height=height)
+    output = tmp_path / "gradient-ultrahdr.jpg"
+    result = JPEGUltraHDRExportBackend(capability).export(
+        _session(image, AdjustmentState()),
+        ExportSettings(
+            format="jpeg_ultrahdr",
+            quality=100,
+            jpeg_gain_map_quality=100,
+            output_path=str(output),
+        ),
+    )
+    assert result.accepted, result.message
+
+    decoded_path = tmp_path / "gradient-linear-rgba-f16.raw"
+    _run_command([str(binary), "-m", "1", "-j", str(output), "-o", "0", "-O", "4", "-z", str(decoded_path)])
+    decoded = np.fromfile(decoded_path, dtype="<f2").astype(np.float32).reshape(height, width, 4)[..., :3]
+    margin = max(8, width // 80)
+    row = decoded[(height * 5) // 6, margin:width - margin].mean(axis=1)
+    plateau = np.isclose(np.diff(row), 0.0, rtol=0.0, atol=2e-5)
+    longest = max((len(run) for run in np.split(plateau, np.flatnonzero(~plateau) + 1)), default=0)
+    assert longest <= 4

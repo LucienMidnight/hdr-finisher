@@ -1756,7 +1756,9 @@
       targetStops += 2.0 * p[5] * (1.0 - smoothRange(p[54] - p[55] * 0.5, p[54] + p[55] * 0.5, stops));
       let gammaSigma = max(p[57] / 2.355, 0.1);
       targetStops += 2.0 * p[6] * exp(-0.5 * pow((stops - p[56]) / gammaSigma, 2.0));
-      targetStops += 2.0 * p[7] * smoothRange(p[58] - p[59] * 0.5, p[58] + p[59] * 0.5, stops);
+      let gainMask = smoothRange(p[58] - p[59] * 0.5, p[58] + p[59] * 0.5, stops);
+      let gainExponent = clamp(sqrt(p[59] / 4.0), 0.5, 1.0);
+      targetStops += 2.0 * p[7] * pow(gainMask, gainExponent);
       if (y <= 0.00000001) { return input; }
       return input * (pivot * exp2(clamp(targetStops, -32.0, 32.0)) / y);
     }
@@ -1841,7 +1843,9 @@
       var targetValue = encodedY;
       let zoneStops = log2(max(encodedY, 0.000001) / 0.5);
       let shadowMask = 1.0 - smoothRange(p[54] - p[55] * 0.5, p[54] + p[55] * 0.5, zoneStops);
-      let highlightMask = smoothRange(p[58] - p[59] * 0.5, p[58] + p[59] * 0.5, zoneStops);
+      var highlightMask = smoothRange(p[58] - p[59] * 0.5, p[58] + p[59] * 0.5, zoneStops);
+      let gainExponent = clamp(sqrt(p[59] / 4.0), 0.5, 1.0);
+      highlightMask = pow(highlightMask, gainExponent);
       let gammaSigma = max(p[57] / 2.355, 0.1);
       let midtoneMask = exp(-0.5 * pow((zoneStops - p[56]) / gammaSigma, 2.0));
       targetValue += p[5] * 0.25 * shadowMask;

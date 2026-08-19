@@ -38,13 +38,24 @@ function curvePointPosition(box, x, y) {
     const highResolution = await curve.evaluate((canvas) => canvas.width >= Math.floor(canvas.clientWidth * window.devicePixelRatio));
     if (!highResolution) throw new Error("Curve editor backing resolution did not match its displayed size and device pixel ratio.");
     const addedPoint = curvePointPosition(box, 0.375, 0.375);
-    await curve.click({ position: addedPoint });
-    if (await pointCount() !== 6) throw new Error("Clicking the curve line did not add a point.");
+    await page.mouse.move(box.x + addedPoint.x, box.y + addedPoint.y);
+    await page.mouse.down();
+    await page.mouse.move(box.x + addedPoint.x + 16, box.y + addedPoint.y - 12, { steps: 3 });
+    await page.mouse.up();
+    if (await pointCount() !== 6) throw new Error("Pressing the curve line did not add a point.");
+    const createdPoint = await page.evaluate(() => {
+      const curve = window.HDRFinisherPerformance.authoringState().adjustments.hdr.luma_curve;
+      return curve.find(([x]) => x > 0.375 && x < 0.5);
+    });
+    if (!createdPoint || createdPoint[0] <= 0.375 || createdPoint[1] <= 0.375) {
+      throw new Error(`A newly created point did not follow the original drag: ${JSON.stringify(createdPoint)}`);
+    }
 
-    await curve.click({ position: addedPoint });
+    const movedPoint = curvePointPosition(box, createdPoint[0], createdPoint[1]);
+    await curve.click({ position: movedPoint });
     if (await pointCount() !== 6) throw new Error("Left-clicking a point should select it without removing it.");
 
-    await curve.click({ position: addedPoint, button: "right" });
+    await curve.click({ position: movedPoint, button: "right" });
     if (await pointCount() !== 5) throw new Error("Right-clicking the new point did not remove it.");
 
     const middle = curvePointPosition(box, 0.5, 0.5);

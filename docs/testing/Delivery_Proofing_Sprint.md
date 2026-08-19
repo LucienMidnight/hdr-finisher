@@ -139,6 +139,26 @@ The investigation must also isolate whether the Blender-scene difference comes f
 
 No physical Windows Chrome parity claim should be made until the manual sequence below has structured observations saved. Headless Edge confirms transport, layout, APIs, and decoding, but cannot certify physical HDR presentation.
 
+### Discord JPEG Ultra HDR hosting observation — August 18, 2026
+
+A locally verified HDR-capable **JPEG Ultra HDR** was uploaded to Discord. Discord's enlarged/zoomed attachment view displayed only SDR, and choosing **Open in Browser** also produced an SDR result even though the original local file retained working HDR presentation. This is currently treated as evidence that Discord's attachment pipeline serves a transcoded or otherwise altered derivative that does not preserve the Ultra HDR gain map or required metadata; it is not yet proof of the exact stripping stage.
+
+Before making a general compatibility claim, repeat the test with a deterministic JPEG Ultra HDR fixture and retain the original upload plus the exact attachment and browser-open URLs. Run `verify_hosted_gainmap.py` against each served URL and compare MIME type, dimensions, byte size, hash, gain-map presence, Ultra HDR/ISO metadata, SDR base, redirects, and content-disposition behavior with the original. Also test Discord's direct download action, if distinct, because it may return the original bytes even when inline and browser-open views use an SDR derivative.
+
+Until that verification shows otherwise, document Discord inline viewing and **Open in Browser** as SDR-only delivery paths for JPEG Ultra HDR and advise users to share the original as a downloadable file or through byte-preserving hosting when HDR preservation matters.
+
+### Instagram JPEG Ultra HDR observation — August 18, 2026
+
+A JPEG Ultra HDR uploaded as an HDR Instagram post was visually confirmed to present in HDR in both the Instagram experience on iOS and Instagram viewed in Chromium. This is positive real-platform interoperability evidence that Instagram can preserve or generate an HDR-capable delivery rendition from the JPEG Ultra HDR upload, in contrast with the SDR-only Discord observation above.
+
+The accompanying Chromium inspector capture shows the post rendered through an Instagram CDN `<img>` with responsive `src`/`srcset` variants. The selected 720-pixel-wide CDN rendition was subsequently retrieved and inspected directly. The supplied desktop copy and a fresh CDN download were byte-identical: 172,634 bytes with SHA-256 `943f296ee847eaf110ec5e788afb7663a67e303f451ae1cbd722bf8e6aeae6d2`. The response was `image/jpeg` with `Cache-Control: max-age=1209600, no-transform`.
+
+The delivered file is a valid, libultrahdr-decodable Ultra HDR rendition. It contains a 720 × 901 RGB SDR JPEG plus a 360 × 451 grayscale gain-map JPEG, Ultra HDR v1 XMP, and gain metadata reporting minimum/maximum content boost `1.0`/`4.92611`, gamma `1.0`, offsets `0.015625`, and capacity range `1.0`–`4.92611`. The Instagram derivative does **not** retain the ISO 21496-1 marker, so this is confirmed Ultra HDR v1 interoperability rather than full metadata preservation. HDR Finisher successfully reconstructed distinct 901 × 720 HDR and SDR renditions from the served file; measured luminance maxima were approximately `1.447` and `0.981` respectively relative to HDR Finisher's 100-nit reference.
+
+For a broader reproducible platform claim, also record the iOS version, Instagram app version, Chromium version, display/HDR state, upload route, post URL, selected `currentSrc`, and retrieval time. Instagram behavior may vary by client, selected responsive rendition, account rollout, and future server processing.
+
+For the current validation record, classify Instagram JPEG Ultra HDR posting as **confirmed working on the tested iOS and Chromium paths**, while avoiding a universal claim across all devices, clients, or future Instagram processing.
+
 ## Manual sequence and acceptance gates
 
 ### 1. Windows SDR white-level response — run first
@@ -180,7 +200,9 @@ Run and record each format separately where applicable:
 2. Probe Cloudflare resize, quality, and automatic-format transformation URLs separately.
 3. Repeat for WordPress original uploads and generated sizes.
 4. Repeat with one additional real optimizer or resizing CDN.
-5. Open each resulting URL in the relevant browser and record whether HDR and the SDR fallback render correctly.
+5. Test Discord upload, inline/zoom viewing, **Open in Browser**, and direct download as separate delivery paths; probe every retrievable URL or downloaded artifact rather than assuming they serve the same bytes.
+6. Repeat the Instagram JPEG Ultra HDR post workflow on iOS and Chromium, recording the served `currentSrc` or downloaded rendition where accessible.
+7. Open each resulting URL in the relevant browser and record whether HDR and the SDR fallback render correctly.
 
 Do not conflate an unsupported transformation with metadata stripping. Record unsupported operation, byte change, metadata state, and browser behavior as separate fields.
 

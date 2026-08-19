@@ -11,7 +11,7 @@ async function main() {
   const packaged = process.argv.includes("--packaged");
   const sourcePath = path.join(codebase, "tests", "fixtures", "sdr_gradient.png");
   const pathlessDropPath = process.env.HDR_FINISHER_DROP_FIXTURE
-    || path.join(codebase, "tests", "fixtures", "hdr_headroom.tiff");
+    || path.join(codebase, "tests", "fixtures", "blender_linear_rec2020.exr");
   const pathlessDropName = path.basename(pathlessDropPath);
   const outputDirectory = path.join(codebase, "output", "electron-smoke");
   fs.mkdirSync(outputDirectory, { recursive: true });
@@ -27,7 +27,6 @@ async function main() {
   const packagedExecutable = process.env.HDR_FINISHER_PACKAGED_EXECUTABLE || defaultPackagedExecutable;
   const executablePath = packaged ? packagedExecutable : electronExecutable;
   const launchArgs = packaged ? [] : ["."];
-  launchArgs.push("--in-process-gpu", "--disable-gpu");
   const electronApp = await electron.launch({
     executablePath,
     args: launchArgs,
@@ -103,17 +102,27 @@ async function main() {
       pathlessDropName,
       { timeout: 120000 },
     );
+    const droppedExrMetadata = await window.evaluate(() => ({
+      source: state.session.source,
+      metadata: state.session.metadata,
+    }));
     await window.evaluate(() => ejectCurrentSession());
     await window.waitForFunction(() => !state.session);
 
     await electronApp.evaluate(({ dialog }, selectedPath) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selectedPath] });
-    }, sourcePath);
+    }, pathlessDropPath);
     await window.evaluate(async () => {
       const selection = await window.hdrFinisherDesktop.openSource();
       await openDesktopSelection({ kind: "source", ...selection });
     });
-    await window.waitForFunction(() => document.querySelector("#session-name")?.textContent.includes("sdr_gradient.png"));
+    await window.waitForFunction((expectedName) => document.querySelector("#session-name")?.textContent.includes(expectedName), pathlessDropName);
+    const importedExrMetadata = await window.evaluate(() => ({
+      source: state.session.source,
+      metadata: state.session.metadata,
+    }));
+    assert.equal(importedExrMetadata.source.suffix, ".exr");
+    assert.deepEqual(importedExrMetadata, droppedExrMetadata);
 
     await electronApp.evaluate(({ dialog }, selectedPath) => {
       dialog.showSaveDialog = async () => ({ canceled: false, filePath: selectedPath });
@@ -135,6 +144,25 @@ async function main() {
     await window.waitForFunction(() => document.querySelector("#export-result-path")?.textContent.endsWith("electron-smoke.png"));
     assert.equal(fs.existsSync(exportPath), true);
     assert.ok(fs.statSync(exportPath).size > 0);
+
+    await electronApp.evaluate(({ dialog }, selectedPath) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: selectedPath });
+    }, exportPath);
+    const confirmCount = await window.evaluate(async () => {
+      let calls = 0;
+      const originalConfirm = window.confirm;
+      window.confirm = () => { calls += 1; return true; };
+      try { await exportCurrentSession(); } finally { window.confirm = originalConfirm; }
+      return calls;
+    });
+    assert.equal(confirmCount, 0, "native overwrite approval must not trigger a second frontend confirmation");
+
+    await electronApp.evaluate(({ dialog }) => {
+      dialog.showSaveDialog = async () => ({ canceled: true });
+    });
+    const beforeCancel = fs.readFileSync(exportPath);
+    await window.evaluate(() => exportCurrentSession());
+    assert.deepEqual(fs.readFileSync(exportPath), beforeCancel);
 
     const nativeTitle = await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getTitle());
     process.stdout.write(JSON.stringify({ environment, projectPath, exportPath, title: nativeTitle, capabilities }) + "\n");

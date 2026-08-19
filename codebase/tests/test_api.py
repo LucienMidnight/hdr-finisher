@@ -12,11 +12,31 @@ from fastapi.testclient import TestClient
 
 from hdr_finisher.loader import LoaderError
 from hdr_finisher.exporters import ExportOverwriteRequired
-from hdr_finisher.main import app, store
-from hdr_finisher.models import ExportResponse, HDRAnalysis, HDRClassification, MetadataPayload, SessionPayload, SourceImageDescriptor
+from hdr_finisher.main import _matches_approved_export_target, app, store
+from hdr_finisher.models import ExportResponse, ExportTargetIdentity, HDRAnalysis, HDRClassification, MetadataPayload, SessionPayload, SourceImageDescriptor
 
 
 client = TestClient(app)
+
+
+def test_windows_native_overwrite_identity_ignores_cross_runtime_device_id(tmp_path: Path) -> None:
+    output = tmp_path / "existing.jpg"
+    output.write_bytes(b"existing")
+    stat = output.stat()
+    approved = ExportTargetIdentity(
+        device="electron-reports-a-different-windows-volume-id",
+        inode=str(stat.st_ino),
+        size=str(stat.st_size),
+        modifiedNs=str(stat.st_mtime_ns),
+    )
+
+    assert _matches_approved_export_target(output, approved, platform_name="nt") is True
+    assert _matches_approved_export_target(output, approved, platform_name="posix") is False
+    assert _matches_approved_export_target(
+        output,
+        approved.model_copy(update={"size": str(stat.st_size + 1)}),
+        platform_name="nt",
+    ) is False
 
 
 def test_capabilities_endpoint() -> None:

@@ -426,6 +426,7 @@ const state = {
   refreshTimer: null,
   settleTimer: null,
   gpuRenderSerial: 0,
+  laneSwitchGeneration: 0,
   gpuRenderFrame: null,
   gpuQueuedLane: null,
   gpuPreview: null,
@@ -1742,7 +1743,7 @@ function bindEvents() {
 
   ["dragenter", "dragover"].forEach((eventName) => {
     document.addEventListener(eventName, (event) => {
-      if (!event.dataTransfer?.types?.includes("Files")) return;
+      if (!Array.from(event.dataTransfer?.types || []).includes("Files")) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = "copy";
       els.dropzone.classList.add("drag-active");
@@ -1753,7 +1754,7 @@ function bindEvents() {
     els.dropzone.classList.remove("drag-active");
   });
   document.addEventListener("drop", async (event) => {
-    if (!event.dataTransfer?.types?.includes("Files")) return;
+    if (!Array.from(event.dataTransfer?.types || []).includes("Files")) return;
     event.preventDefault();
     els.dropzone.classList.remove("drag-active");
     const files = event.dataTransfer.files;
@@ -1761,7 +1762,9 @@ function bindEvents() {
     if (!file) return;
     try {
       if (desktop) {
-        const [selection] = await desktop.resolveDroppedFiles(files);
+        // Pass the actual File through the preload bridge. A DOM FileList is
+        // not reliably cloneable across Electron's isolated-world boundary.
+        const selection = await desktop.resolveDroppedFile(file);
         if (!selection) {
           // Windows shell integrations and catalog applications can provide a
           // real File without exposing a filesystem path to Electron. Upload
@@ -2785,6 +2788,7 @@ function gpuScopeEligible(lane) {
   return Boolean(
     state.gpuPreview?.available
     && lane === state.currentView
+    && state.acceptedPresentation?.lane === lane
     && els.previewCanvas.style.display !== "none"
     && valuesEqual(state.adjustments.shared?.geometry, defaultGeometry())
     && !state.comparePeekActive
@@ -3470,6 +3474,7 @@ async function exportCurrentSession() {
   }
   let outputPath = buildExportOutputPath();
   let pathGrant = null;
+  let nativeOverwrite = null;
   if (desktop) {
     const extension = exportExtensionForFormat(els.exportFormat.value);
     const selection = await desktop.chooseExportPath({
@@ -3484,6 +3489,7 @@ async function exportCurrentSession() {
     }
     outputPath = selection.path;
     pathGrant = selection.grant;
+    nativeOverwrite = selection.overwriteTarget || null;
   }
   els.exportConfirmButton.disabled = true;
   els.exportStatus.textContent = "Encoding and validating the finished file…";
@@ -3500,7 +3506,7 @@ async function exportCurrentSession() {
   }, 1000);
   try {
     desktop?.setOperationProgress({ kind: "export", value: 0.01, state: "indeterminate" });
-    let response = await requestSessionExport(outputPath, false, pathGrant);
+    let response = await requestSessionExport(outputPath, Boolean(nativeOverwrite), pathGrant, nativeOverwrite);
     let payload = await safeJson(response);
     if (response.status === 409 && payload?.detail?.code === "overwrite_required") {
       const detail = payload.detail;
@@ -3510,7 +3516,7 @@ async function exportCurrentSession() {
         return;
       }
       els.exportStatus.textContent = "Replacing the existing file and validating the result...";
-      response = await requestSessionExport(outputPath, true, pathGrant);
+      response = await requestSessionExport(outputPath, true, pathGrant, null);
       payload = await safeJson(response);
     }
     if (!response.ok) {
@@ -5336,7 +5342,7 @@ function formatToneBandNits(value) {
 
 function bindCurveEditor() {
   const canvas = els.curveEditor;
-  const beginDrag = (clientX, clientY, pointIndex) => {
+  const beginDrag = (clientX, clientY, pointIndex, pointerId = null) => {
     if (!state.session) return;
     state.previewScheduler?.beginInteraction();
     state.activeCurvePoint = pointIndex;
@@ -5348,16 +5354,27 @@ function bindCurveEditor() {
     };
     let dragged = false;
     drawCurveEditor();
+    let stopped = false;
+    if (pointerId !== null && canvas.setPointerCapture) {
+      try { canvas.setPointerCapture(pointerId); } catch {}
+    }
     const move = (event) => {
+      if (pointerId !== null && event.pointerId !== pointerId) return;
       event.preventDefault();
       dragged ||= Math.hypot(event.clientX - clientX, event.clientY - clientY) >= 3;
       if (!dragged) return;
       updateCurveFromPointer(event.clientX, event.clientY, dragOrigin);
     };
-    const stop = () => {
+    const stop = (event) => {
+      if (stopped || (pointerId !== null && event?.pointerId !== undefined && event.pointerId !== pointerId)) return;
+      stopped = true;
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", stop);
       window.removeEventListener("pointercancel", stop);
+      canvas.removeEventListener("lostpointercapture", stop);
+      if (pointerId !== null && canvas.hasPointerCapture?.(pointerId)) {
+        try { canvas.releasePointerCapture(pointerId); } catch {}
+      }
       state.activeCurvePoint = null;
       drawCurveEditor();
       syncCurveControlsFromState();
@@ -5369,6 +5386,7 @@ function bindCurveEditor() {
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", stop);
     window.addEventListener("pointercancel", stop);
+    canvas.addEventListener("lostpointercapture", stop);
   };
 
   canvas.addEventListener("pointerdown", (event) => {
@@ -5377,16 +5395,14 @@ function bindCurveEditor() {
     const rect = canvas.getBoundingClientRect();
     const pointIndex = curvePointIndexAtPointer(event.clientX, event.clientY, rect);
     if (pointIndex !== null) {
-      beginDrag(event.clientX, event.clientY, pointIndex);
+      beginDrag(event.clientX, event.clientY, pointIndex, event.pointerId);
       return;
     }
     const curveHit = curveHitAtPointer(event.clientX, event.clientY, rect);
     if (!curveHit) return;
-    addCurvePoint(curveHit.x);
-    drawCurveEditor();
-    invalidatePreview(state.currentView);
-    renderControlState();
-    debouncePreview(state.currentView);
+    const insertedIndex = addCurvePoint(curveHit.x);
+    if (insertedIndex === null) return;
+    beginDrag(event.clientX, event.clientY, insertedIndex, event.pointerId);
   });
   canvas.addEventListener("contextmenu", (event) => {
     event.preventDefault();
@@ -5755,7 +5771,7 @@ function curveHitAtPointer(clientX, clientY, rect) {
 
 function addCurvePoint(requestedX = null) {
   const curve = currentCurveValues();
-  if (curve.length >= 16) return;
+  if (curve.length >= 16) return null;
   let insertIndex = 1;
   let widestGap = -1;
   if (requestedX === null) {
@@ -5768,15 +5784,16 @@ function addCurvePoint(requestedX = null) {
     }
   } else {
     insertIndex = curve.findIndex(([x]) => x > requestedX);
-    if (insertIndex <= 0) return;
+    if (insertIndex <= 0) return null;
     widestGap = curve[insertIndex][0] - curve[insertIndex - 1][0];
   }
   const x = requestedX === null ? curve[insertIndex - 1][0] + widestGap / 2 : requestedX;
-  if (x - curve[insertIndex - 1][0] < 0.02 || curve[insertIndex][0] - x < 0.02) return;
+  if (x - curve[insertIndex - 1][0] < 0.02 || curve[insertIndex][0] - x < 0.02) return null;
   const [[, y]] = sampleCurvePoints(curve, 1, x);
   curve.splice(insertIndex, 0, [x, y]);
   state.selectedCurvePoint = insertIndex;
   setCurveValues(state.selectedCurveChannel, curve);
+  return insertIndex;
 }
 
 function removeCurvePoint(requestedIndex = null) {
@@ -6022,7 +6039,7 @@ async function renderGpuDraft(
   }
 }
 
-function requestSessionExport(outputPath, overwrite, pathGrant = null) {
+function requestSessionExport(outputPath, overwrite, pathGrant = null, overwriteTarget = null) {
   const resizeMode = els.exportResizeMode?.value || "original";
   return fetch(`/api/session/${state.session.session_id}/export`, {
     method: "POST",
@@ -6035,6 +6052,7 @@ function requestSessionExport(outputPath, overwrite, pathGrant = null) {
       output_path: outputPath,
       path_grant: pathGrant,
       overwrite,
+      overwrite_target: overwriteTarget,
       edit_revision: state.editRevision,
       output_finishing: {
         resize_mode: resizeMode,
@@ -6315,6 +6333,11 @@ function renderInterpretationGate() {
 
 async function switchLane(lane) {
   if (!["hdr", "sdr"].includes(lane)) return;
+  const switchGeneration = ++state.laneSwitchGeneration;
+  // A lane change is a presentation boundary. Commit the newest optimistic
+  // global state before either lane renders so a round trip cannot replace a
+  // settled draft with an older authoritative revision.
+  if (await syncGlobalEditState() === false || switchGeneration !== state.laneSwitchGeneration) return;
   if (state.rotateDraftGeometry) closeRotateMode(false);
   if (state.currentView === lane && cacheReady(lane)) {
     renderLaneChrome();
@@ -6340,7 +6363,11 @@ async function switchLane(lane) {
     if (cacheReady(lane)) return showCachedPreview(lane);
     return renderPreviewForLane(lane, true, settledProxyLongEdge(), { showProgress: false });
   })();
-  await Promise.all([previewTask, refreshOverlay(), refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane })]);
+  await previewTask;
+  if (switchGeneration !== state.laneSwitchGeneration || lane !== state.currentView) return;
+  // GPU scopes read the presented canvas. Wait until this lane has replaced
+  // the previous lane's canvas before sampling it.
+  await Promise.all([refreshOverlay(), refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane })]);
   if (state.compareLayout !== "single") {
     const other = lane === "hdr" ? "sdr" : "hdr";
     await renderComparisonPreview(other, { force: true });
@@ -6411,6 +6438,10 @@ function clearPreviewCache() {
   state.comparisonRenderedGeometry = null;
   state.gpuSurfaceHdr = false;
   state.gpuPreparedLane = { hdr: false, sdr: false };
+  // A replacement source can have a completely different orientation. Do not
+  // let the previous session's fitted aspect survive until the new GPU canvas
+  // has presented its first frame.
+  state.zoomReferenceFrame = null;
   state.scopeGeneration = 0;
   els.scopeFreshness.textContent = "Waiting";
   els.scopeFreshness.classList.remove("updating");
@@ -7333,11 +7364,16 @@ function setPreflight(name, pass, label) {
 async function copyLastExportPath() {
   if (!state.lastExportPath) return;
   try {
-    await navigator.clipboard.writeText(state.lastExportPath);
+    await writeClipboardText(state.lastExportPath);
     els.copyExportPath.textContent = "Copied";
   } catch {
     els.copyExportPath.textContent = "Copy failed";
   }
+}
+
+async function writeClipboardText(value) {
+  if (desktop?.writeClipboardText) return desktop.writeClipboardText(value);
+  return navigator.clipboard.writeText(value);
 }
 
 function defaultLocalGrade() {
@@ -7447,7 +7483,7 @@ async function copySourcePath() {
   const sourcePath = sourcePathForClipboard();
   if (!sourcePath) return;
   try {
-    await navigator.clipboard.writeText(sourcePath);
+    await writeClipboardText(sourcePath);
     els.copySourcePath.textContent = "Copied";
   } catch {
     els.copySourcePath.textContent = "Copy failed";

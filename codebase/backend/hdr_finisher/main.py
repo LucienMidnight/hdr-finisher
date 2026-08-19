@@ -35,6 +35,7 @@ from .models import (
     EditDocument,
     EditStateResponse,
     ExportSettings,
+    ExportTargetIdentity,
     GeometryMapRequest,
     GeometryMapResponse,
     LocalLuminanceSampleRequest,
@@ -117,6 +118,29 @@ app.mount("/samples", StaticFiles(directory=str(SAMPLES_DIR)), name="samples")
 def _check_revision(actual_revision: int, expected_revision: int | None) -> None:
     if expected_revision is not None and expected_revision != actual_revision:
         raise RevisionConflictError(expected_revision, actual_revision)
+
+
+def _matches_approved_export_target(
+    path: Path,
+    approved: ExportTargetIdentity,
+    *,
+    platform_name: str | None = None,
+) -> bool:
+    try:
+        stat = path.stat()
+    except OSError:
+        return False
+    current = {
+        "device": str(stat.st_dev),
+        "inode": str(stat.st_ino),
+        "size": str(stat.st_size),
+        "modifiedNs": str(stat.st_mtime_ns),
+    }
+    expected = approved.model_dump()
+    # Node and Python expose different st_dev values for the same Windows
+    # volume. The file ID, size, and timestamp are stable across both runtimes.
+    keys = ("inode", "size", "modifiedNs") if (platform_name or os.name) == "nt" else tuple(current)
+    return all(current[key] == expected[key] for key in keys)
 
 
 def _resolve_edit_request(
@@ -743,6 +767,11 @@ def export(session_id: str, settings: ExportSettings):
             if settings.output_path and Path(settings.output_path).expanduser().resolve(strict=False) != granted_path:
                 raise ValueError("The export filename does not match the desktop selection.")
             settings = settings.model_copy(update={"output_path": str(granted_path)})
+            if settings.overwrite and settings.overwrite_target is not None and granted_path.exists():
+                if not _matches_approved_export_target(granted_path, settings.overwrite_target):
+                    # Native approval applied to a different file. Let the
+                    # exporter raise the normal authoritative overwrite prompt.
+                    settings = settings.model_copy(update={"overwrite": False, "overwrite_target": None})
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:

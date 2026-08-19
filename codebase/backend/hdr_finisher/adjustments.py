@@ -475,6 +475,12 @@ def _primary_zone_masks(stops: np.ndarray, branch_adjustments: object) -> tuple[
     sigma = np.float32(max(gamma_range / 2.355, 0.1))
     midtone = np.exp(-0.5 * ((stops - np.float32(gamma_pivot)) / sigma) ** 2).astype(np.float32)
     highlight = _smoothstep(gain_pivot - gain_range / 2.0, gain_pivot + gain_range / 2.0, stops)
+    # A very narrow transition contains few samples and previously left most
+    # selected tones near the weak foot of smoothstep. Preserve the full upper
+    # plateau while lifting the interior response smoothly; the default and
+    # wider ranges retain the established curve.
+    gain_exponent = np.float32(np.clip(np.sqrt(gain_range / 4.0), 0.5, 1.0))
+    highlight = np.power(highlight, gain_exponent).astype(np.float32)
     return shadow.astype(np.float32), midtone, highlight.astype(np.float32)
 
 

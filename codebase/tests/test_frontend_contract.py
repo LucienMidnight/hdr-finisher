@@ -265,7 +265,9 @@ def test_curve_canvas_left_clicks_add_or_select_and_right_click_removes() -> Non
     assert "curvePointIndexAtPointer(event.clientX, event.clientY, rect)" in curve_binding
     assert 'if (!dragged && event.type !== "pointercancel") removeCurvePoint(pointIndex);' not in curve_binding
     assert "const curveHit = curveHitAtPointer(event.clientX, event.clientY, rect);" in curve_binding
-    assert "addCurvePoint(curveHit.x);" in curve_binding
+    assert "const insertedIndex = addCurvePoint(curveHit.x);" in curve_binding
+    assert "beginDrag(event.clientX, event.clientY, insertedIndex, event.pointerId);" in curve_binding
+    assert 'canvas.addEventListener("lostpointercapture", stop);' in curve_binding
     assert 'canvas.addEventListener("contextmenu"' in curve_binding
     assert "removeCurvePoint(pointIndex);" in curve_binding
     assert "const layout = curveEditorLayout();" in javascript
@@ -439,7 +441,8 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     assert "#source-settings-note.warning::before" in css
     assert "var(--attention)" in css
     assert ".source-filename-wrap.has-overflow:hover .source-filename-tooltip" in css
-    assert "navigator.clipboard.writeText(sourcePath)" in javascript
+    assert "await writeClipboardText(sourcePath)" in javascript
+    assert "if (desktop?.writeClipboardText) return desktop.writeClipboardText(value);" in javascript
     assert 'class="probe-strip"' not in html
     assert 'id="probe-readout"' not in html
     assert "Move over the image" not in html
@@ -618,9 +621,11 @@ def test_electron_preview_correctness_contract() -> None:
     assert 'id="preview-quality-status"' in html and 'aria-live="polite"' in html
     assert 'document.addEventListener("drop"' in javascript
     assert 'document.addEventListener(eventName' in javascript
-    assert 'desktop.resolveDroppedFiles(files)' in javascript
+    assert 'desktop.resolveDroppedFile(file)' in javascript
     assert "Windows shell integrations and catalog applications" in javascript
     assert "await uploadFile(file);" in javascript
+    assert 'overwriteTarget: process.platform === "win32" ? existingFileIdentity(resolved) : null' in main
+    assert "Boolean(nativeOverwrite)" in javascript
     assert 'id="rotate-apply"' in html and 'id="rotate-cancel"' in html
     assert "function gpuPreviewEligible()" in javascript
     gpu_eligibility = javascript[
@@ -652,15 +657,28 @@ def test_electron_preview_correctness_contract() -> None:
     assert 'activeBackend.authoringSecret' in main
     assert 'details.requestHeaders["X-HDR-Finisher-Token"] = backend.authoringSecret' not in main
     assert 'setRenderingMode: (mode)' in preload
+    assert 'writeClipboardText: (value)' in preload
+    assert 'resolveDroppedFile: async (file)' in preload
+    assert 'webUtils.getPathForFile(file)' in preload
+    assert 'await desktop.resolveDroppedFile(file)' in javascript
+    assert 'desktop.resolveDroppedFiles(files)' not in javascript
+    assert 'handle("desktop:write-clipboard-text"' in main
+    assert "clipboard.writeText(value)" in main
+    assert "var highlightMask = smoothRange" in (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
 
 
 def test_preview_viewport_keeps_a_stable_aspect_across_interactive_and_settled_tiers() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    clear_preview_cache = javascript[
+        javascript.index("function clearPreviewCache()"):
+        javascript.index("function cacheReady")
+    ]
     zoom_geometry = javascript[
         javascript.index("function applyZoomGeometry()"):
         javascript.index("function updateZoomReadout()")
     ]
 
+    assert "state.zoomReferenceFrame = null" in clear_preview_cache
     assert "aspect: renderedAspect" in zoom_geometry
     assert "state.zoomReferenceFrame.geometrySignature === geometrySignature" in zoom_geometry
     assert "? state.zoomReferenceFrame.aspect" in zoom_geometry
@@ -784,6 +802,12 @@ def test_viewer_exposes_icon_comparison_layouts_with_active_lane_scopes() -> Non
     assert 'state.compareLayout = "single"' in javascript
     assert 'els.compareStatus' not in javascript
     assert 'refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane })' in javascript
+    switch_lane = javascript[
+        javascript.index("async function switchLane(lane)"):
+        javascript.index("function renderLaneChrome()")
+    ]
+    assert switch_lane.index("await previewTask;") < switch_lane.index('refreshScopes(scopeLongEdge("settled")')
+    assert "state.acceptedPresentation?.lane === lane" in javascript
     assert "renderComparisonPreview(other, { force: true })" in javascript
     assert "state.gpuPreview.renderTo(" in javascript
     assert "async renderTo(canvas" in webgpu

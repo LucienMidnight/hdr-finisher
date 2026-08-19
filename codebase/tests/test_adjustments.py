@@ -621,6 +621,20 @@ def test_lgg_range_and_pivot_move_zone_masks() -> None:
     assert stops[np.argmin(np.abs(moved_gain - 0.5))] > stops[np.argmin(np.abs(default_gain - 0.5))]
 
 
+def test_narrow_gain_range_preserves_useful_strength_inside_transition() -> None:
+    stops = np.linspace(-2, 6, 1025, dtype=np.float32)
+    narrow = HDRAdjustments(gain_pivot=2.0, gain_range=0.5)
+    default = HDRAdjustments(gain_pivot=2.0, gain_range=4.0)
+    narrow_gain = _primary_zone_masks(stops, narrow)[2]
+    default_gain = _primary_zone_masks(stops, default)[2]
+    pivot_index = int(np.argmin(np.abs(stops - 2.0)))
+
+    assert narrow_gain[pivot_index] >= 0.7
+    assert narrow_gain[pivot_index] > default_gain[pivot_index]
+    assert np.all(np.diff(narrow_gain) >= -1e-7)
+    assert narrow_gain[-1] == pytest.approx(1.0)
+
+
 def test_hdr_section_bypass_retains_settings_but_removes_render_effect() -> None:
     image = np.array([[[0.04, 0.08, 0.16], [0.4, 0.7, 1.2], [2.0, 4.0, 8.0]]], dtype=np.float32)
     bypassed = AdjustmentState(

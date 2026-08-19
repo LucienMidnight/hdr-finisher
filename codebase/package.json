@@ -4,6 +4,7 @@
   "scripts": {
     "test:grading-value-entry": "node tests/grading-value-entry.js",
     "test:curve-editor": "node tests/curve-editor-interaction.js",
+    "test:lane-roundtrip": "node tests/lane-roundtrip-interaction.js",
     "test:exposure-bands": "node tests/exposure-bands-interaction.js",
     "test:local-adjustments": "node tests/local-adjustments-interaction.js",
     "test:brush-mask": "node tests/brush-mask-interaction.js",

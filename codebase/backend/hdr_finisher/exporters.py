@@ -297,14 +297,36 @@ def _write_sdr_png(path: Path, image: np.ndarray) -> None:
     Image.fromarray(image_8bit).save(path, format="PNG")
 
 
-def _linear_to_srgb8(image: np.ndarray) -> np.ndarray:
+def _linear_to_srgb8(image: np.ndarray, *, dither: bool = False) -> np.ndarray:
     clipped = np.clip(image.astype(np.float32, copy=False), 0.0, 1.0)
     srgb = np.where(clipped <= 0.0031308, clipped * 12.92, 1.055 * np.power(clipped, 1.0 / 2.4) - 0.055)
+    if dither:
+        _dither_srgb_in_place(srgb)
     return np.clip(np.round(srgb * 255.0), 0.0, 255.0).astype(np.uint8)
 
 
+def _dither_srgb_in_place(srgb: np.ndarray, *, chunk_rows: int = 256) -> None:
+    """Apply decorrelated, repeatable one-LSB RGB dither with bounded scratch memory."""
+    height, width, channel_count = srgb.shape
+    x = np.arange(width, dtype=np.uint32)[None, :]
+    for row_start in range(0, height, chunk_rows):
+        row_end = min(height, row_start + chunk_rows)
+        y = np.arange(row_start, row_end, dtype=np.uint32)[:, None]
+        for channel in range(channel_count):
+            channel_seed = np.uint32(((channel + 1) * 0x9E3779B9) & 0xFFFFFFFF)
+            value = x * np.uint32(0x1F123BB5) ^ y * np.uint32(0x5F356495) ^ channel_seed
+            value ^= value >> np.uint32(16)
+            value *= np.uint32(0x7FEB352D)
+            value ^= value >> np.uint32(15)
+            noise = ((value & np.uint32(0xFFFF)).astype(np.float32) / np.float32(65535.0) - 0.5) * (2.0 / 255.0)
+            srgb[row_start:row_end, :, channel] += noise
+
+
 def _write_sdr_rgba8888(path: Path, image: np.ndarray) -> None:
-    rgb = _linear_to_srgb8(image[..., :3])
+    # Ultra HDR has an 8-bit JPEG base and an 8-bit gain map. A small,
+    # deterministic signal-domain dither prevents long quantization plateaus
+    # in smooth gradients before libultrahdr derives and compresses the map.
+    rgb = _linear_to_srgb8(image[..., :3], dither=True)
     alpha = np.full((*rgb.shape[:2], 1), 255, dtype=np.uint8)
     rgba = np.concatenate([rgb, alpha], axis=-1)
     path.write_bytes(rgba.tobytes(order="C"))

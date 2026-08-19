@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu, screen, session, shell } = require("electron");
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, screen, session, shell } = require("electron");
 const { spawn } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -189,6 +189,22 @@ function validateSender(event) {
   }
 }
 
+function existingFileIdentity(filePath) {
+  try {
+    const stat = fs.statSync(filePath, { bigint: true });
+    if (!stat.isFile()) return null;
+    return {
+      device: stat.dev.toString(),
+      inode: stat.ino.toString(),
+      size: stat.size.toString(),
+      modifiedNs: stat.mtimeNs.toString(),
+    };
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
 function registerIpc() {
   const handle = (channel, callback) => ipcMain.handle(channel, async (event, ...args) => {
     validateSender(event);
@@ -204,6 +220,11 @@ function registerIpc() {
     renderingMode,
   }));
   handle("desktop:set-rendering-mode", (mode) => setRenderingMode(mode));
+  handle("desktop:write-clipboard-text", (value) => {
+    if (typeof value !== "string" || value.length > 32768) throw new Error("Invalid clipboard text.");
+    clipboard.writeText(value);
+    return true;
+  });
   handle("desktop:open-source", async () => {
     const result = await dialog.showOpenDialog(mainWindow, { title: "Import source image", properties: ["openFile"], filters: SOURCE_FILTERS });
     return result.canceled ? null : grantPath(result.filePaths[0], "source-open");
@@ -253,7 +274,11 @@ function registerIpc() {
     if (result.canceled || !result.filePath || !isExportPath(result.filePath)) return null;
     const resolved = path.resolve(result.filePath);
     grantedExportPaths.add(resolved);
-    return grantPath(resolved, "export-file");
+    const selection = await grantPath(resolved, "export-file");
+    // A returned native Windows Save dialog has already obtained overwrite
+    // approval when this target exists. Bind that approval to the exact file
+    // identity so a later replacement still requires a fresh confirmation.
+    return { ...selection, overwriteTarget: process.platform === "win32" ? existingFileIdentity(resolved) : null };
   });
   handle("desktop:resolve-dropped-files", async (paths) => {
     if (!Array.isArray(paths) || paths.length > 16) throw new Error("Invalid dropped-file request.");

@@ -862,6 +862,13 @@ class ScopeResponse(BaseModel):
     channels: list[HistogramChannel]
 
 
+class ExportTargetIdentity(BaseModel):
+    device: str
+    inode: str
+    size: str
+    modifiedNs: str
+
+
 class ExportSettings(BaseModel):
     format: str = "jpeg_ultrahdr"
     quality: int = Field(default=85, ge=1, le=100)
@@ -870,6 +877,7 @@ class ExportSettings(BaseModel):
     output_path: str | None = None
     path_grant: str | None = None
     overwrite: bool = False
+    overwrite_target: ExportTargetIdentity | None = None
     edit_revision: int | None = Field(default=None, ge=0)
     output_finishing: OutputFinishingSettings = Field(default_factory=OutputFinishingSettings)
 
