@@ -16,6 +16,21 @@ def _module_status(name: str, import_name: str) -> CapabilityInfo:
     return CapabilityInfo(name=name, status=CapabilityStatus.MISSING, detail=f"Python module '{import_name}' is not installed.")
 
 
+def _jpegxl_status(name: str) -> CapabilityInfo:
+    try:
+        import imagecodecs
+
+        available = bool(imagecodecs.JPEGXL.available)
+        version = imagecodecs.jpegxl_version() if available else "unavailable"
+    except (ImportError, AttributeError, RuntimeError) as exc:
+        return CapabilityInfo(name=name, status=CapabilityStatus.MISSING, detail=f"imagecodecs JPEG XL support is unavailable: {exc}")
+    return CapabilityInfo(
+        name=name,
+        status=CapabilityStatus.AVAILABLE if available else CapabilityStatus.MISSING,
+        detail=f"Bundled imagecodecs codec: {version}." if available else "The bundled imagecodecs build has no libjxl codec.",
+    )
+
+
 def _binary_status(name: str, command: str) -> CapabilityInfo:
     resolved = resolve_binary(command)
     if resolved:
@@ -87,6 +102,8 @@ def _probe_capabilities_cached() -> dict[str, CapabilityInfo]:
         "openexr": _module_status("openexr", "OpenEXR"),
         "pillow_heif": _module_status("pillow-heif", "pillow_heif"),
         "exifread": _module_status("exifread", "exifread"),
+        "rawpy": _module_status("rawpy / LibRaw", "rawpy"),
+        "lensfunpy": _module_status("Lensfun corrections", "lensfunpy"),
         "avif_gain_map_encoder": _composite_status("avif gain map export", ["avifgainmaputil", "avifenc"]),
         "avif_encoder": _binary_status("avifenc", "avifenc"),
         "avif_decoder": _binary_status("avifdec", "avifdec"),
@@ -98,7 +115,12 @@ def _probe_capabilities_cached() -> dict[str, CapabilityInfo]:
         "ultrahdr_decoder": ultrahdr.model_copy(
             update={"name": "JPEG Ultra HDR input"}
         ),
-        "jpegxl_encoder": _binary_status("cjxl", "cjxl"),
+        "jpegxl_import": _jpegxl_status("JPEG XL import"),
+        "jpegxl_export": _jpegxl_status("JPEG XL HDR export"),
+        "jpegxl_encoder": _jpegxl_status("JPEG XL HDR export"),
+        "dng_import": _module_status("DNG import", "rawpy"),
+        "raw_import": _module_status("RAW import", "rawpy"),
+        "lens_correction": _module_status("Lensfun corrections", "lensfunpy"),
     }
 
 

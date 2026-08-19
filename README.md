@@ -6,7 +6,8 @@ The project is an early technical alpha. Native Windows x64 and macOS Apple Sili
 
 ## What it is for
 
-Use HDR Finisher after RAW development, compositing, or rendering. It is the final global grade and delivery step:
+Use HDR Finisher after RAW development, compositing, or rendering. Basic RAW/DNG development is also
+available as a convenience path, but remains intentionally smaller than a dedicated RAW editor:
 
 1. Import a scene-linear EXR/TIFF/HDR source or supported HDR HEIC.
 2. Confirm how the source color values should be interpreted.
@@ -33,10 +34,11 @@ HDR Finisher is not a RAW developer or layer compositor. Its local-adjustment mo
 
 | Direction | Formats | Important note |
 |---|---|---|
-| Input | OpenEXR, TIFF, Radiance HDR, PFM, HEIC/HEIF, PNG, JPEG | An accepted file is not necessarily a valid HDR handoff. Source primaries and transfer function still matter. |
+| Input | OpenEXR, TIFF, Radiance HDR, PFM, HEIC/HEIF, AVIF, JPEG XL, PNG, JPEG, DNG and selected camera RAW formats | An accepted file is not necessarily a valid HDR handoff. RAW/DNG development is a convenience beta and source primaries still matter. |
 | Output | JPEG Ultra HDR | Backward-compatible SDR JPEG with an 8-bit gain map and Ultra HDR v1 plus ISO 21496-1 metadata. Requires a compatible `ultrahdr_app`. |
 | Output | AVIF with gain map | SDR base plus BT.2020/PQ alternate and a 10-bit gain map. Requires the bundled or discoverable AVIF tools. |
 | Output | SDR PNG | The authored SDR rendition without HDR data. |
+| Output | JPEG XL HDR | Direct 12-bit Rec.2020/PQ HDR without an SDR fallback. Viewer support varies. |
 
 ## Color pipeline in one paragraph
 
@@ -55,7 +57,7 @@ See [Architecture](docs/technical/architecture.md), [Development guide](docs/tec
 - Windows x64 and macOS Apple Silicon technical-alpha packaging are available.
 - macOS native display telemetry, signing/notarization, and physical HDR acceptance remain open release-hardening work.
 - JPEG Ultra HDR and AVIF gain-map availability is capability-gated.
-- JPEG XL, batch processing, sampled content selectors, and polished installers are not implemented. Brush, gradient, luminance-range, and path local adjustments are available; sampled selectors remain build-gated pending IP review.
+- Batch processing, sampled content selectors, and polished installers are not implemented. JPEG XL HDR and convenience RAW/DNG import are capability-gated. Brush, gradient, luminance-range, and path local adjustments are available; sampled selectors remain build-gated pending IP review.
 
 ## License and third-party software
 

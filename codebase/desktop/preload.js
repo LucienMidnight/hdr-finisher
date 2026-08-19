@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   setRenderingMode: (mode) => ipcRenderer.invoke("desktop:set-rendering-mode", mode),
   writeClipboardText: (value) => ipcRenderer.invoke("desktop:write-clipboard-text", value),
   openSource: () => ipcRenderer.invoke("desktop:open-source"),
+  grantSourcePath: (filePath) => ipcRenderer.invoke("desktop:grant-source-path", filePath),
   openProject: () => ipcRenderer.invoke("desktop:open-project"),
   relinkSource: () => ipcRenderer.invoke("desktop:relink-source"),
   saveProject: (options) => ipcRenderer.invoke("desktop:save-project", options),

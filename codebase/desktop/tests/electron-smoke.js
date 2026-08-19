@@ -6,6 +6,7 @@ const { _electron: electron } = require("playwright");
 const electronExecutable = require("electron");
 
 async function main() {
+  const checkpoint = (label) => process.stdout.write(`[electron-smoke] ${label}\n`);
   const desktopDirectory = path.resolve(__dirname, "..");
   const codebase = path.resolve(desktopDirectory, "..");
   const packaged = process.argv.includes("--packaged");
@@ -36,6 +37,7 @@ async function main() {
   try {
     const window = await electronApp.firstWindow();
     await window.waitForSelector("#empty-import-button", { state: "visible", timeout: 30000 });
+    checkpoint("window ready");
     await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1100, 720));
     await window.waitForFunction(() => document.querySelector(".app-shell")?.classList.contains("compact-workspace"));
     const compactLayout = await window.evaluate(() => ({
@@ -72,6 +74,7 @@ async function main() {
 
     await window.locator("#file-input").setInputFiles(sourcePath);
     await window.waitForFunction(() => document.querySelector("#session-name")?.textContent.includes("sdr_gradient.png"));
+    checkpoint("uploaded source ready");
     const initialSessionId = await window.evaluate(() => state.session.session_id);
     await window.evaluate(() => {
       const file = document.querySelector("#file-input").files[0];
@@ -84,6 +87,7 @@ async function main() {
       }));
     });
     await window.waitForFunction((previousId) => state.session?.session_id !== previousId, initialSessionId);
+    checkpoint("filesystem drop ready");
     await window.evaluate(() => ejectCurrentSession());
     await window.waitForFunction(() => !state.session);
 
@@ -104,6 +108,7 @@ async function main() {
       pathlessDropName,
       { timeout: 120000 },
     );
+    checkpoint("pathless drop ready");
     const droppedExrMetadata = await window.evaluate(() => ({
       source: state.session.source,
       metadata: state.session.metadata,
@@ -118,19 +123,35 @@ async function main() {
       const selection = await window.hdrFinisherDesktop.openSource();
       await openDesktopSelection({ kind: "source", ...selection });
     });
-    await window.waitForFunction((expectedName) => document.querySelector("#session-name")?.textContent.includes(expectedName), pathlessDropName);
+    checkpoint("staged desktop open returned");
+    await window.waitForFunction(
+      (expectedName) => document.querySelector("#session-name")?.textContent.includes(expectedName),
+      pathlessDropName,
+      { timeout: 30000 },
+    );
+    checkpoint("staged desktop session visible");
     const importedExrMetadata = await window.evaluate(() => ({
       source: state.session.source,
       metadata: state.session.metadata,
     }));
     assert.equal(importedExrMetadata.source.suffix, ".exr");
+    // Phase timings are deliberately per-run telemetry; the staged desktop
+    // path should otherwise produce the same source and interpretation data.
+    if (droppedExrMetadata.metadata?.extra) delete droppedExrMetadata.metadata.extra.import_timings_ms;
+    if (importedExrMetadata.metadata?.extra) delete importedExrMetadata.metadata.extra.import_timings_ms;
     assert.deepEqual(importedExrMetadata, droppedExrMetadata);
+    checkpoint("staged desktop metadata verified");
 
     await electronApp.evaluate(({ dialog }, selectedPath) => {
       dialog.showSaveDialog = async () => ({ canceled: false, filePath: selectedPath });
     }, projectPath);
-    await window.evaluate(() => saveProjectToPath({ saveAs: true }));
+    await window.evaluate(() => Promise.race([
+      saveProjectToPath({ saveAs: true }),
+      new Promise((_, reject) => window.setTimeout(() => reject(new Error("Project save timed out")), 30000)),
+    ]));
+    checkpoint("project save returned");
     await window.waitForFunction(() => document.querySelector("#badge")?.textContent.includes("Project saved"));
+    checkpoint("project saved");
     assert.equal(fs.existsSync(projectPath), true);
     assert.match(await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getTitle()), /electron-smoke\.hdrfinisher/);
 
@@ -144,6 +165,7 @@ async function main() {
       await exportCurrentSession();
     });
     await window.waitForFunction(() => document.querySelector("#export-result-path")?.textContent.endsWith("electron-smoke.png"));
+    checkpoint("export ready");
     assert.equal(fs.existsSync(exportPath), true);
     assert.ok(fs.statSync(exportPath).size > 0);
 

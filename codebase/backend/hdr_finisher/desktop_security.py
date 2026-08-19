@@ -10,7 +10,8 @@ from uuid import uuid4
 
 SOURCE_EXTENSIONS = {
     ".exr", ".tif", ".tiff", ".hdr", ".pfm", ".heic", ".heif",
-    ".avif", ".png", ".jpg", ".jpeg",
+    ".avif", ".jxl", ".png", ".jpg", ".jpeg", ".dng", ".arw", ".cr2",
+    ".cr3", ".nef", ".nrw", ".raf", ".rw2", ".orf", ".ori", ".pef", ".srw",
 }
 EXPORT_EXTENSIONS = {".avif", ".jpg", ".jpeg", ".png", ".jxl"}
 

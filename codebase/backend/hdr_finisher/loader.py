@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from io import BytesIO
+from time import perf_counter
 
 import numpy as np
 
@@ -10,6 +11,9 @@ from .analysis import classify_hdr
 from .color import detect_color_space, detect_transfer_function, normalize_to_acescg
 from .gainmap_decoders import GainMapDecodeError, decode_avif, decode_ultrahdr_jpeg, is_ultrahdr_jpeg
 from .models import SourceImageDescriptor
+from .models import RawImportSettings
+from .jpegxl import JPEGXLError, decode_jpegxl
+from .raw_import import RAW_EXTENSIONS, RawImportError, decode_raw
 
 
 EXR_COLOR_INTEROP_SPACES = {
@@ -40,14 +44,20 @@ class LoaderError(RuntimeError):
 def load_image(
     path: Path,
     overrides: dict[str, str | None] | None = None,
+    raw_import_settings: RawImportSettings | None = None,
+    progress: Callable[[str, str], None] | None = None,
 ) -> tuple[np.ndarray, SourceImageDescriptor, dict[str, Any], Any, np.ndarray | None]:
     suffix = path.suffix.lower()
+    total_started = perf_counter()
+    decode_started = perf_counter()
     try:
+        if progress:
+            progress("metadata", "Reading source metadata")
         if suffix in {".jpg", ".jpeg"} and is_ultrahdr_jpeg(path):
             image, sdr_reference_image, metadata = decode_ultrahdr_jpeg(path)
             metadata["sdr_reference_image"] = sdr_reference_image
         elif suffix == ".avif":
-            image, sdr_reference_image, metadata = decode_avif(path)
+            image, sdr_reference_image, metadata = decode_avif(path, progress=progress)
             if sdr_reference_image is not None:
                 metadata["sdr_reference_image"] = sdr_reference_image
         elif suffix in {".png", ".jpg", ".jpeg", ".bmp"}:
@@ -60,16 +70,26 @@ def load_image(
             image, metadata = _load_hdr_like(path)
         elif suffix in {".heic", ".heif"}:
             image, metadata = _load_heif(path)
+        elif suffix == ".jxl":
+            if progress:
+                progress("decoding_jpegxl", "Decoding full-resolution JPEG XL")
+            image, metadata = decode_jpegxl(path)
+        elif suffix in RAW_EXTENSIONS:
+            image, metadata = decode_raw(path, raw_import_settings or RawImportSettings(), progress=progress)
         else:
             raise LoaderError(f"Unsupported input format: {suffix}")
     except LoaderError:
         raise
     except GainMapDecodeError as exc:
         raise LoaderError(str(exc)) from exc
+    except (JPEGXLError, RawImportError) as exc:
+        raise LoaderError(str(exc)) from exc
     except Exception as exc:
         detail = str(exc).strip() or exc.__class__.__name__
         label = "TIFF" if suffix in {".tif", ".tiff"} else suffix.removeprefix(".").upper() or "image"
         raise LoaderError(f"Could not decode {label} input: {detail}") from exc
+
+    decode_ms = (perf_counter() - decode_started) * 1000.0
 
     if image.ndim == 2:
         image = image[..., None]
@@ -95,7 +115,11 @@ def load_image(
     metadata["color_space"] = detect_color_space(metadata, suffix)
     metadata["transfer_function"] = metadata.get("transfer_function") or detect_transfer_function(metadata, suffix)
     sdr_reference_image = metadata.pop("sdr_reference_image", None)
+    if progress:
+        progress("color_conversion", "Converting source color to ACEScg")
+    normalize_started = perf_counter()
     normalized = normalize_to_acescg(image, metadata.get("color_space"), metadata.get("transfer_function"))
+    normalize_ms = (perf_counter() - normalize_started) * 1000.0
     descriptor = SourceImageDescriptor(
         filename=path.name,
         suffix=suffix,
@@ -108,7 +132,14 @@ def load_image(
         interpretation_mode="manual" if metadata.get("user_override") else "auto",
         color_space_confident=not bool(metadata.get("needs_color_override")),
     )
+    analysis_started = perf_counter()
     analysis = classify_hdr(normalized, metadata, suffix)
+    metadata["import_timings_ms"] = {
+        "decode": round(decode_ms, 3),
+        "normalize_to_acescg": round(normalize_ms, 3),
+        "analysis": round((perf_counter() - analysis_started) * 1000.0, 3),
+        "total": round((perf_counter() - total_started) * 1000.0, 3),
+    }
     return normalized, descriptor, metadata, analysis, sdr_reference_image
 
 

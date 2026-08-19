@@ -5,7 +5,8 @@ from pathlib import Path
 import re
 import subprocess
 from tempfile import TemporaryDirectory
-from typing import Any
+from typing import Any, Callable
+from time import perf_counter
 
 import numpy as np
 
@@ -166,19 +167,29 @@ def decode_ultrahdr_jpeg(path: Path) -> tuple[np.ndarray, np.ndarray, dict[str, 
     return np.clip(hdr, 0.0, None).astype(np.float32), linear_sdr.astype(np.float32), metadata
 
 
-def decode_avif(path: Path) -> tuple[np.ndarray, np.ndarray | None, dict[str, Any]]:
+def decode_avif(
+    path: Path, *, progress: Callable[[str, str], None] | None = None
+) -> tuple[np.ndarray, np.ndarray | None, dict[str, Any]]:
     """Decode plain, direct-HDR, or ISO 21496-1 gain-map AVIF to ACEScg."""
     avifdec = resolve_binary("avifdec")
     if avifdec is None:
         raise GainMapDecodeError("AVIF input requires the bundled avifdec decoder.")
+    inspect_started = perf_counter()
+    if progress:
+        progress("metadata", "Inspecting AVIF gain-map metadata")
     try:
         info = inspect_avif(path)
     except AVIFInfoError as exc:
         raise GainMapDecodeError(f"Could not inspect AVIF input: {exc}") from exc
 
+    inspect_ms = (perf_counter() - inspect_started) * 1000.0
     if info.get("gain_map_present"):
-        return _decode_avif_gain_map(path, info)
+        image, sdr, metadata = _decode_avif_gain_map(path, info, progress=progress)
+        metadata.setdefault("decode_timings_ms", {})["inspect"] = round(inspect_ms, 3)
+        return image, sdr, metadata
 
+    if progress:
+        progress("decoding_avif", "Decoding full-resolution AVIF")
     encoded = _decode_avif_pixels(path, avifdec)
     color_space = _cicp_color_space(info.get("color_primaries"))
     transfer = _cicp_transfer(info.get("transfer_char"))
@@ -198,12 +209,13 @@ def decode_avif(path: Path) -> tuple[np.ndarray, np.ndarray | None, dict[str, An
         "source_cicp": _cicp_payload(info),
         "orientation": info.get("transformations", "None"),
         "avif_info": _without_raw(info),
+        "decode_timings_ms": {"inspect": round(inspect_ms, 3)},
     }
     return hdr.astype(np.float32), None, metadata
 
 
 def _decode_avif_gain_map(
-    path: Path, info: dict[str, Any]
+    path: Path, info: dict[str, Any], *, progress: Callable[[str, str], None] | None = None
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
     utility = resolve_binary("avifgainmaputil")
     avifdec = resolve_binary("avifdec")
@@ -221,9 +233,13 @@ def _decode_avif_gain_map(
     if hdr_headroom <= sdr_headroom + 1e-6:
         raise GainMapDecodeError("AVIF gain-map metadata does not define distinct SDR and HDR renditions.")
 
+    timings: dict[str, float] = {}
     with TemporaryDirectory(prefix="hdr_finisher_avif_gainmap_decode_") as temp_name:
         temp_dir = Path(temp_name)
         hdr_png = temp_dir / "hdr.png"
+        if progress:
+            progress("hdr_reconstruction", "Reconstructing full-resolution HDR gain map")
+        phase_started = perf_counter()
         _run(
             [
                 str(utility),
@@ -242,7 +258,11 @@ def _decode_avif_gain_map(
         # Avoiding an intermediate AVIF encode and subsequent decode is both
         # lossless and materially faster for full-resolution camera images.
         encoded_hdr = _decode_png_pixels(hdr_png)
+        timings["hdr_reconstruction"] = round((perf_counter() - phase_started) * 1000.0, 3)
 
+        if progress:
+            progress("sdr_decode", "Decoding the AVIF SDR base rendition")
+        phase_started = perf_counter()
         base_is_sdr = float(gain["base_headroom"]) <= float(gain["alternate_headroom"])
         if base_is_sdr and abs(float(gain["base_headroom"]) - sdr_headroom) <= 1e-6:
             encoded_sdr = _decode_avif_pixels(path, avifdec, temp_dir / "sdr-base.png")
@@ -271,14 +291,21 @@ def _decode_avif_gain_map(
             )
             encoded_sdr = _decode_avif_pixels(sdr_avif, avifdec, temp_dir / "sdr.png")
             sdr_color, sdr_transfer, exact_sdr_base = "sRGB", "sRGB", False
+        timings["sdr_rendition"] = round((perf_counter() - phase_started) * 1000.0, 3)
 
+        phase_started = perf_counter()
         metadata_text = _run([str(utility), "printmetadata", str(path)]).stdout
+        timings["metadata"] = round((perf_counter() - phase_started) * 1000.0, 3)
 
+    if progress:
+        progress("color_conversion", "Converting AVIF renditions to the working space")
+    phase_started = perf_counter()
     hdr = normalize_to_acescg(encoded_hdr, "BT.2020", "PQ")
     if sdr_transfer is None:
         raise GainMapDecodeError("The AVIF SDR rendition has no supported transfer characteristic.")
     sdr_acescg = normalize_to_acescg(encoded_sdr, sdr_color, sdr_transfer)
     linear_sdr = np.clip(acescg_to_linear_srgb(sdr_acescg), 0.0, 1.0)
+    timings["color_conversion"] = round((perf_counter() - phase_started) * 1000.0, 3)
     if hdr.shape[:2] != linear_sdr.shape[:2]:
         raise GainMapDecodeError(
             f"AVIF gain-map renditions disagree on dimensions: HDR {hdr.shape[:2]}, SDR {linear_sdr.shape[:2]}."
@@ -300,6 +327,7 @@ def _decode_avif_gain_map(
         "gain_map_metadata": _parse_avif_gain_map_metadata(metadata_text),
         "orientation": info.get("transformations", "None"),
         "avif_info": _without_raw(info),
+        "decode_timings_ms": timings,
     }
     return hdr.astype(np.float32), linear_sdr.astype(np.float32), metadata
 

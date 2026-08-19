@@ -696,6 +696,32 @@ class LocalAdjustment(BaseModel):
     sdr_grade: LocalGrade = Field(default_factory=LocalGrade)
 
 
+class LensCorrectionSettings(BaseModel):
+    """Reproducible Lensfun selection without silently substituting profiles."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["off", "auto", "manual"] = "auto"
+    profile_id: str | None = Field(default=None, max_length=512)
+    database_version: str | None = Field(default=None, max_length=128)
+    distortion: bool = True
+    chromatic_aberration: bool = True
+    vignetting: bool = True
+    focal_length_mm: float | None = Field(default=None, gt=0.0, le=2000.0)
+    aperture: float | None = Field(default=None, gt=0.0, le=128.0)
+    focus_distance_m: float | None = Field(default=None, gt=0.0, le=1_000_000.0)
+
+
+class RawImportSettings(BaseModel):
+    """Small, deterministic RAW-development surface stored with the project."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    white_balance: Literal["as_shot"] = "as_shot"
+    demosaic: Literal["ahd"] = "ahd"
+    lens: LensCorrectionSettings = Field(default_factory=LensCorrectionSettings)
+
+
 class SourceReference(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -703,16 +729,29 @@ class SourceReference(BaseModel):
     fingerprint_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     durable_path: str | None = None
     byte_size: int | None = Field(default=None, ge=0)
+    raw_import_settings: RawImportSettings = Field(default_factory=RawImportSettings)
 
 
 class EditDocument(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     source: SourceReference
     interpretation_override: "SourceInterpretationOverride" = Field(default_factory=lambda: SourceInterpretationOverride())
     global_adjustments: AdjustmentState = Field(default_factory=AdjustmentState)
     local_adjustments: list[LocalAdjustment] = Field(default_factory=list, max_length=256)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_v1_document(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or value.get("schema_version", 1) != 1:
+            return value
+        migrated = dict(value)
+        migrated["schema_version"] = 2
+        source = dict(migrated.get("source") or {})
+        source.setdefault("raw_import_settings", RawImportSettings().model_dump(mode="json"))
+        migrated["source"] = source
+        return migrated
 
 
 class EditCommand(BaseModel):
@@ -887,6 +926,7 @@ class ExportResponse(BaseModel):
     backend: str
     message: str
     output_path: str | None = None
+    timings_ms: dict[str, float] = Field(default_factory=dict)
 
 
 class DirectoryPickRequest(BaseModel):
@@ -895,6 +935,10 @@ class DirectoryPickRequest(BaseModel):
 
 class DirectoryPickResponse(BaseModel):
     directory: str | None = None
+
+
+class FavoritePathRequest(BaseModel):
+    path: str
 
 
 class DesktopPathGrantRequest(BaseModel):
@@ -909,6 +953,12 @@ class DesktopPathGrantResponse(BaseModel):
 
 class DesktopSessionOpenRequest(BaseModel):
     grant: str
+    raw_import_settings: RawImportSettings = Field(default_factory=RawImportSettings)
+
+
+class ImportJobRequest(BaseModel):
+    grant: str
+    raw_import_settings: RawImportSettings = Field(default_factory=RawImportSettings)
 
 
 class DesktopProjectOpenRequest(BaseModel):

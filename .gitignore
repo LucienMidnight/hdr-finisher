@@ -20,6 +20,8 @@ codebase/exports/
 codebase/_tmp_avif_test/
 codebase/preview_probe.avif
 codebase/output/
+codebase/thumbnails/
+codebase/favorite-folders.json
 codebase/dist/
 codebase/dist-electron/
 codebase/.npm-cache/

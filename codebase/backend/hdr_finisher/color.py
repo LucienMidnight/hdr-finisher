@@ -27,6 +27,7 @@ ACESCG_COLOURSPACE = "ACEScg"
 SRGB_COLOURSPACE = "sRGB"
 BT2020_COLOURSPACE = "ITU-R BT.2020"
 DISPLAY_P3_COLOURSPACE = "Display P3"
+ACES2065_COLOURSPACE = "ACES2065-1"
 
 
 def rgb_primaries_adjustment_matrix(
@@ -163,6 +164,16 @@ def linear_bt2020_to_acescg(image: np.ndarray) -> np.ndarray:
         chromatic_adaptation_transform="CAT02",
     )
     return np.asarray(converted, dtype=np.float32)
+
+
+def aces2065_to_acescg(image: np.ndarray) -> np.ndarray:
+    converted = RGB_to_RGB(
+        image.astype(np.float32, copy=False),
+        RGB_COLOURSPACES[ACES2065_COLOURSPACE],
+        RGB_COLOURSPACES[ACESCG_COLOURSPACE],
+        chromatic_adaptation_transform=None,
+    )
+    return sanitize_array(np.asarray(converted, dtype=np.float32))
 
 
 def sanitize_array(image: np.ndarray) -> np.ndarray:

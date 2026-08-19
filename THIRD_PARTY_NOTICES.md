@@ -7,6 +7,19 @@ under the BSD 3-Clause License and bundles additional open-source codec librarie
 respective licenses. Source distributions and packaged applications must retain the imagecodecs
 license and the third-party license files shipped with the installed package.
 
+JPEG XL import and export use the libjxl codec bundled by `imagecodecs`. libjxl is distributed under
+the BSD 3-Clause License and includes a patent grant. Packaged applications must retain the libjxl
+license shipped with imagecodecs.
+
+RAW and DNG convenience import uses [`rawpy`](https://github.com/letmaik/rawpy), distributed under
+the MIT License, and LibRaw, available under the LGPL 2.1 or CDDL 1.0 dual license. Camera/lens
+correction uses [`lensfunpy`](https://github.com/letmaik/lensfunpy) and
+[`Lensfun`](https://github.com/lensfun/lensfun). Lensfun code is LGPL-3.0 and its correction database
+is CC BY-SA 3.0. Packages containing these components must retain their bundled license and database
+attribution files.
+
+> This product includes DNG technology under license by Adobe.
+
 HDR Finisher can redistribute a locally or CI-built `ultrahdr_app` from Google's
 [`libultrahdr`](https://github.com/google/libultrahdr) project. libultrahdr is distributed under the
 terms of both the MIT License and Apache License 2.0. Binary distributions must include those license terms,

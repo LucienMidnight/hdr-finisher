@@ -62,7 +62,7 @@ def test_brand_assets_and_fonts_are_bundled_locally() -> None:
 
 def test_file_picker_advertises_avif_round_trip_input() -> None:
     markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
-    assert 'accept=".exr,.tif,.tiff,.hdr,.pfm,.heic,.heif,.avif,.png,.jpg,.jpeg"' in markup
+    assert 'accept=".exr,.tif,.tiff,.hdr,.pfm,.heic,.heif,.avif,.jxl,.png,.jpg,.jpeg,.dng,.arw,.cr2,.cr3,.nef,.nrw,.raf,.rw2,.orf,.ori,.pef,.srw"' in markup
 
 
 def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -> None:
@@ -338,7 +338,7 @@ def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
     assert "Export..." in html
     assert "Export file" not in html
-    assert "JPEG XL" not in html
+    assert "JPEG XL HDR" in html
     assert "not in this build" not in html
     assert "Chromium Proof" in html
     assert 'id="chrome-proof-target"' in html
@@ -348,7 +348,7 @@ def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     assert 'class="export-directory-field"' in html
     assert 'id="directory-browser"' in html
     assert 'id="directory-browser-select"' in html
-    assert "/api/export-directories" in (FRONTEND / "app.js").read_text(encoding="utf-8")
+    assert "/api/media-browser" in (FRONTEND / "app.js").read_text(encoding="utf-8")
     assert ".control-group-body" in css
     assert "border-top: 2px solid" in css
     assert ".jpeg-advanced-settings" in css
@@ -624,7 +624,7 @@ def test_electron_preview_correctness_contract() -> None:
     assert 'desktop.resolveDroppedFile(file)' in javascript
     assert "Windows shell integrations and catalog applications" in javascript
     assert "await uploadFile(file);" in javascript
-    assert 'overwriteTarget: process.platform === "win32" ? existingFileIdentity(resolved) : null' in main
+    assert 'const nativeOverwriteApproved = process.platform === "win32" || process.platform === "darwin"' in main
     assert "Boolean(nativeOverwrite)" in javascript
     assert 'id="rotate-apply"' in html and 'id="rotate-cancel"' in html
     assert "function gpuPreviewEligible()" in javascript

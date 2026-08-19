@@ -16,7 +16,7 @@ const { DEFAULT_WINDOW_BOUNDS, clampWindowBounds } = require("./lib/window-bound
 
 const APP_ID = "org.hdrfinisher.app";
 const SOURCE_FILTERS = [
-  { name: "HDR images", extensions: ["exr", "tif", "tiff", "hdr", "pfm", "heic", "heif", "avif", "png", "jpg", "jpeg"] },
+  { name: "HDR and camera images", extensions: ["exr", "tif", "tiff", "hdr", "pfm", "heic", "heif", "avif", "jxl", "png", "jpg", "jpeg", "dng", "arw", "cr2", "cr3", "nef", "nrw", "raf", "rw2", "orf", "ori", "pef", "srw"] },
   { name: "All files", extensions: ["*"] },
 ];
 const PROJECT_FILTERS = [{ name: "HDR Finisher Project", extensions: ["hdrfinisher"] }];
@@ -228,6 +228,11 @@ function registerIpc() {
   handle("desktop:open-source", async () => {
     const result = await dialog.showOpenDialog(mainWindow, { title: "Import source image", properties: ["openFile"], filters: SOURCE_FILTERS });
     return result.canceled ? null : grantPath(result.filePaths[0], "source-open");
+  });
+  handle("desktop:grant-source-path", async (filePath) => {
+    const resolved = path.resolve(String(filePath || ""));
+    if (!isSourcePath(resolved)) throw new Error("Select a supported source image.");
+    return grantPath(resolved, "source-open");
   });
   handle("desktop:open-project", async () => {
     const result = await dialog.showOpenDialog(mainWindow, { title: "Open project", properties: ["openFile"], filters: PROJECT_FILTERS });

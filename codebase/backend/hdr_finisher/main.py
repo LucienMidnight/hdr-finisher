@@ -21,6 +21,9 @@ from .desktop_security import DesktopPathGrants, secret_matches
 from .exporters import ExportOverwriteRequired, build_export_backends
 from .folder_picker import pick_directory
 from .loader import LoaderError
+from .media_browser import MediaBrowserError, MediaBrowserStore
+from .import_jobs import ImportJobManager
+from .raw_import import list_lens_profiles
 from .models import (
     DirectoryPickRequest,
     DirectoryPickResponse,
@@ -36,8 +39,10 @@ from .models import (
     EditStateResponse,
     ExportSettings,
     ExportTargetIdentity,
+    FavoritePathRequest,
     GeometryMapRequest,
     GeometryMapResponse,
+    ImportJobRequest,
     LocalLuminanceSampleRequest,
     LocalLuminanceSampleResponse,
     LocalMaskPreviewRequest,
@@ -108,6 +113,9 @@ capabilities = probe_capabilities()
 export_backends = build_export_backends(capabilities)
 proof_store = ProofArtifactStore()
 evidence_store = EvidenceStore()
+media_browser_store = MediaBrowserStore()
+import_jobs = ImportJobManager(store, media_browser_store, workers=2)
+atexit.register(import_jobs.close)
 external_proof_tokens: dict[str, tuple[str, float]] = {}
 SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -210,10 +218,51 @@ def grant_desktop_path(request: DesktopPathGrantRequest) -> DesktopPathGrantResp
 def create_desktop_session(request: DesktopSessionOpenRequest) -> SessionSummary:
     try:
         source_path = desktop_path_grants.consume(request.grant, "source-open")
-        payload = store.create_session(source_path, original_filename=source_path.name, owns_source_path=False)
+        payload = store.create_session(
+            source_path,
+            original_filename=source_path.name,
+            owns_source_path=False,
+            raw_import_settings=request.raw_import_settings,
+        )
     except (ValueError, LoaderError, OSError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return SessionSummary(session=payload)
+
+
+@app.post("/api/import-jobs", status_code=202)
+def create_import_job(request: ImportJobRequest) -> dict[str, object]:
+    try:
+        source_path = desktop_path_grants.consume(request.grant, "source-open")
+        return import_jobs.start(source_path, request.raw_import_settings).payload()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/import-jobs/{job_id}")
+def get_import_job(job_id: str) -> dict[str, object]:
+    try:
+        return import_jobs.get(job_id).payload()
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.delete("/api/import-jobs/{job_id}")
+def cancel_import_job(job_id: str) -> dict[str, object]:
+    try:
+        return import_jobs.cancel(job_id).payload()
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/import-jobs/{job_id}/preview")
+def import_job_preview(job_id: str) -> FileResponse:
+    try:
+        job = import_jobs.get(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if job.preview_path is None or not job.preview_path.is_file():
+        raise HTTPException(status_code=404, detail="The import preview is not ready.")
+    return FileResponse(job.preview_path, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 @app.post("/api/desktop/project/open", response_model=SessionSummary)
@@ -775,6 +824,7 @@ def export(session_id: str, settings: ExportSettings):
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
+        export_started = perf_counter()
         result = backend.export(session, settings)
     except ExportOverwriteRequired as exc:
         raise HTTPException(
@@ -785,6 +835,7 @@ def export(session_id: str, settings: ExportSettings):
                 "output_path": str(exc.output_path),
             },
         ) from exc
+    result.timings_ms.setdefault("total", round((perf_counter() - export_started) * 1000.0, 3))
     if not result.accepted:
         return JSONResponse(status_code=501, content=result.model_dump())
     return result
@@ -983,6 +1034,47 @@ def list_export_directories(path: str | None = Query(default=None)) -> dict[str,
     parent = None if current.parent == current else str(current.parent)
     directories = [entry for entry in entries if entry["kind"] == "directory"]
     return {"current": str(current), "parent": parent, "entries": entries, "directories": directories}
+
+
+@app.get("/api/media-browser")
+def media_browser(path: str | None = Query(default=None), mode: str = Query(default="source")) -> dict[str, object]:
+    try:
+        return media_browser_store.list_directory(path, mode)
+    except MediaBrowserError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/media-browser/thumbnail")
+def media_browser_thumbnail(path: str = Query(), size: int = Query(default=256, ge=64, le=512)) -> FileResponse:
+    try:
+        thumbnail = media_browser_store.thumbnail(path, size)
+    except (MediaBrowserError, OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return FileResponse(thumbnail, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=31536000, immutable"})
+
+
+@app.get("/api/media-browser/favorites")
+def media_browser_favorites() -> dict[str, object]:
+    return {"favorites": media_browser_store.favorites()}
+
+
+@app.post("/api/media-browser/favorites")
+def add_media_browser_favorite(request: FavoritePathRequest) -> dict[str, object]:
+    try:
+        return {"favorites": media_browser_store.add_favorite(request.path)}
+    except MediaBrowserError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/api/media-browser/favorites")
+def remove_media_browser_favorite(path: str = Query()) -> dict[str, object]:
+    return {"favorites": media_browser_store.remove_favorite(path)}
+
+
+@app.get("/api/lens-profiles")
+def lens_profiles(q: str | None = Query(default=None), limit: int = Query(default=250, ge=1, le=1000)) -> dict[str, object]:
+    profiles = [profile.as_dict() for profile in list_lens_profiles(q, limit)]
+    return {"profiles": profiles, "available": capabilities["lens_correction"].status == "available"}
 
 
 @app.get("/")

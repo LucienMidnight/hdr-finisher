@@ -5,7 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 from threading import RLock
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 
 import numpy as np
@@ -22,6 +22,7 @@ from .models import (
     LocalAdjustment,
     PreviewKind,
     PreviewSettings,
+    RawImportSettings,
     SessionPayload,
     SourceImageDescriptor,
     SourceInterpretationOverride,
@@ -62,6 +63,7 @@ class LoadedSession:
     adjustments: AdjustmentState = field(default_factory=AdjustmentState)
     local_adjustments: list[LocalAdjustment] = field(default_factory=list)
     interpretation_override: SourceInterpretationOverride = field(default_factory=SourceInterpretationOverride)
+    raw_import_settings: RawImportSettings = field(default_factory=RawImportSettings)
     edit_revision: int = 0
     dirty: bool = False
     undo_history: list[HistoryEntry] = field(default_factory=list, repr=False)
@@ -97,6 +99,7 @@ class LoadedSession:
             fingerprint_sha256=self.source_fingerprint_sha256,
             durable_path=str(durable.resolve()) if durable is not None else None,
             byte_size=self.source_byte_size,
+            raw_import_settings=self.raw_import_settings,
         )
 
     def edit_document(self) -> EditDocument:
@@ -143,9 +146,57 @@ class SessionStore:
         source_path: Path,
         original_filename: str | None = None,
         owns_source_path: bool = False,
+        raw_import_settings: RawImportSettings | None = None,
+        progress: Callable[[str, str], None] | None = None,
     ) -> SessionPayload:
+        session = self.prepare_session(
+            source_path,
+            original_filename=original_filename,
+            owns_source_path=owns_source_path,
+            raw_import_settings=raw_import_settings,
+            progress=progress,
+        )
+        return self.activate_session(session)
+
+    def prepare_session(
+        self,
+        source_path: Path,
+        original_filename: str | None = None,
+        owns_source_path: bool = False,
+        raw_import_settings: RawImportSettings | None = None,
+        progress: Callable[[str, str], None] | None = None,
+    ) -> LoadedSession:
         try:
-            image, source, metadata, analysis, sdr_reference_image = load_image(source_path)
+            resolved_raw_settings = raw_import_settings or RawImportSettings()
+            image, source, metadata, analysis, sdr_reference_image = load_image(
+                source_path, raw_import_settings=resolved_raw_settings, progress=progress
+            )
+            lens_result = metadata.get("lens_correction") or {}
+            if (
+                source_path.suffix.lower() == ".dng"
+                and metadata.get("raw_mosaiced") is False
+                and resolved_raw_settings.lens.mode == "auto"
+                and lens_result.get("mode") == "off"
+            ):
+                resolved_raw_settings = resolved_raw_settings.model_copy(
+                    update={"lens": resolved_raw_settings.lens.model_copy(update={"mode": "off"})}
+                )
+            elif lens_result.get("requested_mode") == "manual" and lens_result.get("mode") == "off":
+                resolved_raw_settings = resolved_raw_settings.model_copy(
+                    update={"lens": resolved_raw_settings.lens.model_copy(update={"mode": "off"})}
+                )
+            elif lens_result.get("applied"):
+                profile = lens_result.get("profile") or {}
+                resolved_raw_settings = resolved_raw_settings.model_copy(
+                    update={
+                        "lens": resolved_raw_settings.lens.model_copy(
+                            update={
+                                "profile_id": profile.get("id") or resolved_raw_settings.lens.profile_id,
+                                "database_version": lens_result.get("database_version"),
+                            }
+                        )
+                    }
+                )
             if original_filename:
                 source.filename = Path(str(original_filename).replace("\\", "/")).name
             session = LoadedSession(
@@ -157,12 +208,16 @@ class SessionStore:
                 analysis=analysis,
                 metadata=metadata,
                 owns_source_path=owns_source_path,
+                raw_import_settings=resolved_raw_settings,
             )
-            payload = session.to_payload()
         except Exception:
             if owns_source_path:
                 _remove_owned_source(source_path)
             raise
+        return session
+
+    def activate_session(self, session: LoadedSession) -> SessionPayload:
+        payload = session.to_payload()
         with self._lock:
             previous = self._current
             self._current = session
@@ -384,6 +439,7 @@ class SessionStore:
                     "color_space": override.color_space,
                     "transfer_function": override.transfer_function,
                 },
+                raw_import_settings=session.raw_import_settings,
             )
             source.filename = original_filename
             session.image = image

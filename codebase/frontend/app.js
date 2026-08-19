@@ -249,6 +249,9 @@ const state = {
   scopeChannelMode: "composite",
   scopeMaxNits: 4000,
   sourceSettingsOpen: false,
+  rawSettingsOpen: false,
+  activeImportJobId: null,
+  importInProgress: false,
   metadataOpen: false,
   interpretationGateDismissed: false,
   zoomMode: "fit",
@@ -777,6 +780,21 @@ const els = {
   sourceSettingsNote: document.getElementById("source-settings-note"),
   applyInterpretationButton: document.getElementById("apply-interpretation"),
   resetInterpretationButton: document.getElementById("reset-interpretation"),
+  rawSettingsSection: document.getElementById("raw-settings-section"),
+  rawSettingsToggle: document.getElementById("raw-settings-toggle"),
+  rawSettingsPanel: document.getElementById("raw-settings-panel"),
+  lensMode: document.getElementById("lens-mode"),
+  manualLensControls: document.getElementById("manual-lens-controls"),
+  lensProfileSearch: document.getElementById("lens-profile-search"),
+  lensProfile: document.getElementById("lens-profile"),
+  lensDistortion: document.getElementById("lens-distortion"),
+  lensChromaticAberration: document.getElementById("lens-ca"),
+  lensVignetting: document.getElementById("lens-vignetting"),
+  lensFocal: document.getElementById("lens-focal"),
+  lensAperture: document.getElementById("lens-aperture"),
+  lensDistance: document.getElementById("lens-distance"),
+  lensSettingsNote: document.getElementById("lens-settings-note"),
+  applyRawSettings: document.getElementById("apply-raw-settings"),
   metadataToggle: document.getElementById("metadata-toggle"),
   metadataPanel: document.getElementById("metadata-panel"),
   interpretationGate: document.getElementById("interpretation-gate"),
@@ -908,10 +926,18 @@ const els = {
   exportDirectoryBrowse: document.getElementById("export-directory-browse"),
   directoryBrowser: document.getElementById("directory-browser"),
   directoryBrowserPath: document.getElementById("directory-browser-path"),
+  directoryBrowserKicker: document.getElementById("directory-browser-kicker"),
+  directoryBrowserTitle: document.getElementById("directory-browser-title"),
   directoryBrowserGo: document.getElementById("directory-browser-go"),
   directoryBrowserUp: document.getElementById("directory-browser-up"),
+  directoryBrowserPin: document.getElementById("directory-browser-pin"),
   directoryBrowserStatus: document.getElementById("directory-browser-status"),
   directoryBrowserList: document.getElementById("directory-browser-list"),
+  directoryBrowserPlaces: document.getElementById("directory-browser-places"),
+  directoryBrowserFavorites: document.getElementById("directory-browser-favorites"),
+  directoryBrowserPreview: document.getElementById("directory-browser-preview"),
+  directoryBrowserSelection: document.getElementById("directory-browser-selection"),
+  directoryBrowserPreviewNote: document.getElementById("directory-browser-preview-note"),
   directoryBrowserClose: document.getElementById("directory-browser-close"),
   directoryBrowserCancel: document.getElementById("directory-browser-cancel"),
   directoryBrowserSelect: document.getElementById("directory-browser-select"),
@@ -1056,6 +1082,7 @@ const branchCopy = {
 const capabilityForFormat = {
   avif_gain_map: "avif_gain_map_encoder",
   jpeg_ultrahdr: "ultrahdr_encoder",
+  jpegxl_hdr: "jpegxl_export",
   sdr_png: "pillow",
 };
 
@@ -1703,6 +1730,17 @@ function bindEvents() {
     state.sourceSettingsOpen = !state.sourceSettingsOpen;
     renderSourceSettingsVisibility();
   });
+  els.rawSettingsToggle?.addEventListener("click", () => {
+    state.rawSettingsOpen = !state.rawSettingsOpen;
+    renderRawImportControls(state.session);
+  });
+  els.lensMode?.addEventListener("change", () => renderRawImportControls(state.session));
+  let lensSearchTimer = 0;
+  els.lensProfileSearch?.addEventListener("input", () => {
+    window.clearTimeout(lensSearchTimer);
+    lensSearchTimer = window.setTimeout(loadLensProfiles, 250);
+  });
+  els.applyRawSettings?.addEventListener("click", applyRawImportSettings);
   els.metadataToggle.addEventListener("click", () => {
     state.metadataOpen = !state.metadataOpen;
     renderMetadataVisibility();
@@ -1853,17 +1891,18 @@ function bindEvents() {
 
   els.exportConfirmButton.addEventListener("click", exportCurrentSession);
   els.exportDirectoryBrowse.addEventListener("click", chooseExportDirectory);
-  els.directoryBrowserGo.addEventListener("click", () => loadExportDirectory(els.directoryBrowserPath.value));
-  els.directoryBrowserUp.addEventListener("click", () => loadExportDirectory(els.directoryBrowser.dataset.parent));
+  els.directoryBrowserGo.addEventListener("click", () => loadMediaDirectory(els.directoryBrowserPath.value));
+  els.directoryBrowserUp.addEventListener("click", () => loadMediaDirectory(els.directoryBrowser.dataset.parent));
+  els.directoryBrowserPin.addEventListener("click", pinCurrentMediaFolder);
   els.directoryBrowserPath.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") return;
     event.preventDefault();
-    loadExportDirectory(els.directoryBrowserPath.value);
+    loadMediaDirectory(els.directoryBrowserPath.value);
   });
   [els.directoryBrowserClose, els.directoryBrowserCancel].forEach((button) => {
     button.addEventListener("click", closeExportDirectoryBrowser);
   });
-  els.directoryBrowserSelect.addEventListener("click", selectExportDirectory);
+  els.directoryBrowserSelect.addEventListener("click", confirmMediaBrowserSelection);
   els.directoryBrowser.addEventListener("cancel", (event) => {
     event.preventDefault();
     closeExportDirectoryBrowser();
@@ -2028,6 +2067,14 @@ async function uploadFile(file) {
   formData.append("file", file);
   els.badge.textContent = "Loading image and building session...";
   setPreviewMessage("Reading source file...", 8);
+  const startedAt = performance.now();
+  const ticker = window.setInterval(() => {
+    const elapsed = (performance.now() - startedAt) / 1000;
+    const detail = elapsed >= 10
+      ? "The decoder is still working; the interface remains responsive"
+      : "Reading and decoding source data";
+    setIndeterminatePreviewMessage(`${detail} · ${elapsed.toFixed(1)}s elapsed`);
+  }, 250);
   try {
     const response = await fetch("/api/session", { method: "POST", body: formData });
     const payload = await safeJson(response);
@@ -2037,6 +2084,7 @@ async function uploadFile(file) {
       return;
     }
     state.session = payload.session;
+    if (els.rawSettingsPanel) delete els.rawSettingsPanel.dataset.initialized;
     setPreviewMessage("Source decoded. Preparing preview...", 28);
     state.adjustments = payload.session.adjustments;
     state.editDocument = payload.session.edit_document;
@@ -2065,6 +2113,8 @@ async function uploadFile(file) {
   } catch (error) {
     console.error(error);
     showUploadError("The upload could not reach the local HDR Finisher server.");
+  } finally {
+    window.clearInterval(ticker);
   }
 }
 
@@ -2080,6 +2130,8 @@ async function ejectCurrentSession() {
   if (!state.session) return;
   await fetch("/api/session/current", { method: "DELETE" }).catch(() => null);
   state.session = null;
+  els.rawSettingsSection?.classList.add("hidden");
+  if (els.rawSettingsPanel) delete els.rawSettingsPanel.dataset.initialized;
   state.adjustments = defaultAdjustments();
   state.editDocument = null;
   state.editRevision = 0;
@@ -2147,6 +2199,7 @@ function renderSession() {
   els.badge.className = badgeClass(session.analysis.classification);
   syncCopySourcePathButton();
   syncInterpretationControls(session);
+  renderRawImportControls(session);
   applyLatitudePresets(session.analysis.source_latitude);
   renderSourceSettingsVisibility();
   renderSourceSettingsControls();
@@ -2297,8 +2350,7 @@ async function requestSourceImport() {
     els.fileInput.click();
     return;
   }
-  const selection = await desktop.openSource();
-  if (selection) await openDesktopSelection({ kind: "source", ...selection });
+  await openMediaBrowser("source", sourcePathForClipboard()?.replace(/[\\/][^\\/]+$/, "") || "");
 }
 
 const LUMA_RANGE_MIN_NITS = 0.1;
@@ -3446,7 +3498,7 @@ function sanitizeFilename(value) {
 function exportExtensionForFormat(format) {
   if (format === "sdr_png") return ".png";
   if (format === "jpeg_ultrahdr") return ".jpg";
-  if (format === "jpegxl_gain_map") return ".jxl";
+  if (format === "jpegxl_hdr") return ".jxl";
   return ".avif";
 }
 
@@ -3481,7 +3533,7 @@ async function exportCurrentSession() {
       suggestedName: `${sanitizeFilename(els.exportFilename.value || "hdr_finisher_export")}${extension}`,
       directory: (els.exportDirectory.value || "").trim(),
       extension,
-      formatName: els.exportFormat.value === "avif_gain_map" ? "AVIF gain map" : els.exportFormat.value === "sdr_png" ? "PNG image" : "JPEG Ultra HDR",
+      formatName: els.exportFormat.value === "avif_gain_map" ? "AVIF gain map" : els.exportFormat.value === "sdr_png" ? "PNG image" : els.exportFormat.value === "jpegxl_hdr" ? "JPEG XL HDR" : "JPEG Ultra HDR",
     });
     if (!selection) {
       els.exportStatus.textContent = "Export cancelled.";
@@ -3543,27 +3595,40 @@ async function exportCurrentSession() {
 }
 
 async function chooseExportDirectory() {
-  if (desktop) {
-    const directory = await desktop.chooseExportDirectory(els.exportDirectory.value);
-    if (directory) {
-      els.exportDirectory.value = directory;
-      els.exportStatus.textContent = `Save folder set to ${directory}`;
-    }
-    return;
-  }
+  await openMediaBrowser("export_directory", els.exportDirectory.value);
+}
+
+async function openMediaBrowser(mode, path = "") {
+  els.directoryBrowser.dataset.mode = mode;
+  delete els.directoryBrowser.dataset.selectedPath;
+  els.directoryBrowserKicker.textContent = mode === "source" ? "Import source" : "Export destination";
+  els.directoryBrowserTitle.textContent = mode === "source" ? "Choose a source image" : "Choose save folder";
+  els.directoryBrowserSelect.textContent = mode === "source" ? "Open image" : "Select this folder";
+  els.directoryBrowserPreview.hidden = true;
+  els.directoryBrowserSelection.textContent = mode === "source" ? "No image selected" : "Folder selection";
+  els.directoryBrowserPreviewNote.textContent = mode === "source"
+    ? "Select a supported image to preview it."
+    : "Files remain visible so you can confirm the destination.";
   if (!els.directoryBrowser.open) els.directoryBrowser.showModal();
-  await loadExportDirectory(els.exportDirectory.value);
+  await loadMediaDirectory(path);
 }
 
 async function loadExportDirectory(path) {
+  els.directoryBrowser.dataset.mode = "export_directory";
+  return loadMediaDirectory(path);
+}
+
+async function loadMediaDirectory(path) {
   els.directoryBrowserStatus.textContent = "Loading folders…";
   els.directoryBrowserList.replaceChildren();
   els.directoryBrowserGo.disabled = true;
   els.directoryBrowserUp.disabled = true;
   els.directoryBrowserSelect.disabled = true;
   try {
-    const query = path?.trim() ? `?path=${encodeURIComponent(path.trim())}` : "";
-    const response = await fetch(`/api/export-directories${query}`);
+    const mode = els.directoryBrowser.dataset.mode || "source";
+    const params = new URLSearchParams({ mode });
+    if (path?.trim()) params.set("path", path.trim());
+    const response = await fetch(`/api/media-browser?${params}`);
     const payload = await safeJson(response);
     if (!response.ok) {
       els.directoryBrowserStatus.textContent = responseErrorMessage(payload, "Could not open that folder.");
@@ -3573,7 +3638,9 @@ async function loadExportDirectory(path) {
     els.directoryBrowserPath.value = payload.current;
     els.directoryBrowser.dataset.parent = payload.parent || "";
     els.directoryBrowserUp.disabled = !payload.parent;
-    els.directoryBrowserSelect.disabled = false;
+    els.directoryBrowserSelect.disabled = mode === "source";
+    delete els.directoryBrowser.dataset.selectedPath;
+    renderMediaBrowserNavigation(payload.places || [], payload.favorites || []);
     const entries = Array.isArray(payload.entries) ? payload.entries : [];
     if (!entries.length) {
       const empty = document.createElement("li");
@@ -3589,7 +3656,21 @@ async function loadExportDirectory(path) {
         button.textContent = entry.name;
         button.title = entry.path;
         if (entry.kind === "directory") {
-          button.addEventListener("click", () => loadExportDirectory(entry.path));
+          button.addEventListener("dblclick", () => loadMediaDirectory(entry.path));
+          button.addEventListener("click", () => {
+            els.directoryBrowser.dataset.selectedPath = entry.path;
+            els.directoryBrowserSelect.disabled = false;
+            els.directoryBrowserSelection.textContent = entry.name;
+            els.directoryBrowserPreviewNote.textContent = "Double-click to open this folder.";
+            selectMediaBrowserEntry(button);
+          });
+        } else if (mode === "source" && entry.supported) {
+          button.classList.add("supported");
+          button.addEventListener("click", () => previewMediaBrowserFile(entry, button));
+          button.addEventListener("dblclick", async () => {
+            previewMediaBrowserFile(entry, button);
+            await confirmMediaBrowserSelection();
+          });
         } else {
           button.disabled = true;
           button.setAttribute("aria-label", `${entry.name}, file`);
@@ -3609,16 +3690,99 @@ async function loadExportDirectory(path) {
   }
 }
 
+function renderMediaBrowserNavigation(places, favorites) {
+  const render = (container, entries, removable) => {
+    container.replaceChildren();
+    for (const entry of entries) {
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = entry.available ? entry.name : `${entry.name} · unavailable`;
+      button.disabled = !entry.available;
+      button.addEventListener("click", () => loadMediaDirectory(entry.path));
+      item.append(button);
+      if (removable) {
+        button.title = entry.available ? "Open favorite" : "This favorite is currently unavailable";
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "media-browser-favorite-remove";
+        remove.textContent = "Remove";
+        remove.setAttribute("aria-label", `Remove ${entry.name} from favorites`);
+        remove.addEventListener("click", async () => {
+          await fetch(`/api/media-browser/favorites?path=${encodeURIComponent(entry.path)}`, { method: "DELETE" });
+          await loadMediaDirectory(els.directoryBrowserPath.value);
+        });
+        item.append(remove);
+      }
+      container.append(item);
+    }
+  };
+  render(els.directoryBrowserPlaces, places, false);
+  render(els.directoryBrowserFavorites, favorites, true);
+}
+
+function selectMediaBrowserEntry(button) {
+  els.directoryBrowserList.querySelectorAll(".selected").forEach((entry) => entry.classList.remove("selected"));
+  button.classList.add("selected");
+}
+
+function previewMediaBrowserFile(entry, button) {
+  els.directoryBrowser.dataset.selectedPath = entry.path;
+  els.directoryBrowserSelect.disabled = false;
+  selectMediaBrowserEntry(button);
+  els.directoryBrowserPreview.src = `/api/media-browser/thumbnail?path=${encodeURIComponent(entry.path)}&size=512`;
+  els.directoryBrowserPreview.alt = `Preview of ${entry.name}`;
+  els.directoryBrowserPreview.hidden = false;
+  els.directoryBrowserSelection.textContent = entry.name;
+  const hdrPossible = window.matchMedia?.("(dynamic-range: high)")?.matches && ["avif", "jxl", "exr", "dng"].includes(entry.format);
+  els.directoryBrowserPreviewNote.textContent = `${String(entry.format || "image").toUpperCase()} · ${hdrPossible ? "HDR selected preview follows after opening" : "SDR browser thumbnail"}`;
+}
+
+async function pinCurrentMediaFolder() {
+  const path = els.directoryBrowserPath.value.trim();
+  if (!path) return;
+  const response = await fetch("/api/media-browser/favorites", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
+  const payload = await safeJson(response);
+  if (!response.ok) {
+    els.directoryBrowserStatus.textContent = responseErrorMessage(payload, "Could not pin that folder.");
+    return;
+  }
+  await loadMediaDirectory(path);
+}
+
 function closeExportDirectoryBrowser() {
   if (els.directoryBrowser.open) els.directoryBrowser.close();
 }
 
-function selectExportDirectory() {
-  const directory = els.directoryBrowserPath.value.trim();
-  if (!directory) return;
-  els.exportDirectory.value = directory;
-  els.exportStatus.textContent = `Save folder set to ${directory}`;
-  closeExportDirectoryBrowser();
+async function confirmMediaBrowserSelection() {
+  const mode = els.directoryBrowser.dataset.mode || "source";
+  const selected = els.directoryBrowser.dataset.selectedPath || els.directoryBrowserPath.value.trim();
+  if (!selected) return;
+  if (mode === "export_directory") {
+    const directory = els.directoryBrowserList.querySelector(".selected.directory")
+      ? selected
+      : els.directoryBrowserPath.value.trim();
+    els.exportDirectory.value = directory;
+    els.exportStatus.textContent = `Save folder set to ${directory}`;
+    closeExportDirectoryBrowser();
+    return;
+  }
+  if (!desktop) {
+    closeExportDirectoryBrowser();
+    els.fileInput.click();
+    return;
+  }
+  try {
+    const selection = await desktop.grantSourcePath(selected);
+    closeExportDirectoryBrowser();
+    await openDesktopSelection({ kind: "source", ...selection });
+  } catch (error) {
+    els.directoryBrowserStatus.textContent = error?.message || "Could not open that source image.";
+  }
 }
 
 async function applyInterpretationOverride() {
@@ -6141,6 +6305,15 @@ function setPreviewMessage(message, progress = 0) {
   els.previewStatus.classList.remove("hidden", "error");
 }
 
+function setIndeterminatePreviewMessage(message) {
+  els.previewStatusCopy.textContent = message;
+  els.previewProgress.removeAttribute("value");
+  els.previewProgress.max = 100;
+  els.previewProgress.setAttribute("aria-valuetext", message);
+  els.previewProgress.classList.remove("hidden");
+  els.previewStatus.classList.remove("hidden", "error");
+}
+
 function setPreviewError(message) {
   els.previewStatusCopy.textContent = message;
   els.previewProgress.classList.add("hidden");
@@ -6203,6 +6376,102 @@ function renderSourceSettingsControls() {
   const manual = els.interpretationMode.value === "manual";
   els.interpretationColorSpace.disabled = !manual;
   els.interpretationTransfer.disabled = !manual;
+}
+
+function isRawSession(session) {
+  return Boolean(session && [".dng", ".arw", ".cr2", ".cr3", ".nef", ".nrw", ".raf", ".rw2", ".orf", ".ori", ".pef", ".srw"].includes(session.source.suffix));
+}
+
+function renderRawImportControls(session) {
+  const visible = isRawSession(session);
+  els.rawSettingsSection?.classList.toggle("hidden", !visible);
+  if (!visible) return;
+  const settings = state.editDocument?.source?.raw_import_settings;
+  const lens = settings?.lens || {};
+  if (!els.rawSettingsPanel.dataset.initialized) {
+    els.lensMode.value = lens.mode || (session.source.suffix === ".dng" && session.metadata.extra?.raw_mosaiced === false ? "off" : "auto");
+    els.lensDistortion.checked = lens.distortion !== false;
+    els.lensChromaticAberration.checked = lens.chromatic_aberration !== false;
+    els.lensVignetting.checked = lens.vignetting !== false;
+    els.lensFocal.value = lens.focal_length_mm || "";
+    els.lensAperture.value = lens.aperture || "";
+    els.lensDistance.value = lens.focus_distance_m || "";
+    els.rawSettingsPanel.dataset.initialized = "true";
+  }
+  els.rawSettingsPanel.classList.toggle("hidden", !state.rawSettingsOpen);
+  els.rawSettingsToggle.setAttribute("aria-expanded", String(state.rawSettingsOpen));
+  const manual = els.lensMode.value === "manual";
+  els.manualLensControls.classList.toggle("hidden", !manual);
+  const applied = session.metadata.extra?.lens_correction;
+  els.lensSettingsNote.textContent = applied?.applied
+    ? `Applied ${applied.profile?.lens_maker || ""} ${applied.profile?.lens_model || "selected profile"}. Re-development is required after changing these controls.`
+    : applied?.warning || applied?.reason || "Auto applies only one exact profile match. Off and Manual are always available.";
+  if (manual && els.lensProfile.options.length <= 1) loadLensProfiles();
+}
+
+async function loadLensProfiles() {
+  const query = els.lensProfileSearch.value.trim();
+  const response = await fetch(`/api/lens-profiles?q=${encodeURIComponent(query)}&limit=250`);
+  const payload = await safeJson(response);
+  if (!response.ok) return;
+  const selected = state.editDocument?.source?.raw_import_settings?.lens?.profile_id || els.lensProfile.value;
+  els.lensProfile.innerHTML = "";
+  const prompt = document.createElement("option");
+  prompt.value = "";
+  prompt.textContent = payload.profiles?.length ? "Choose a Lensfun profile" : "No matching profiles";
+  els.lensProfile.append(prompt);
+  for (const profile of payload.profiles || []) {
+    const option = document.createElement("option");
+    option.value = profile.id;
+    option.textContent = `${profile.camera_maker} ${profile.camera_model} · ${profile.lens_maker} ${profile.lens_model}`.trim();
+    option.title = `${profile.mount || "Unknown mount"} · ${profile.distortion ? "distortion" : "no distortion data"} · ${profile.chromatic_aberration ? "CA" : "no CA data"} · ${profile.vignetting ? "vignetting" : "no vignetting data"}`;
+    els.lensProfile.append(option);
+  }
+  if ([...els.lensProfile.options].some((option) => option.value === selected)) els.lensProfile.value = selected;
+}
+
+function optionalPositiveNumber(element) {
+  const value = Number(element.value);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function rawImportSettingsPayload() {
+  return {
+    white_balance: "as_shot",
+    demosaic: "ahd",
+    lens: {
+      mode: els.lensMode.value,
+      profile_id: els.lensMode.value === "manual" ? els.lensProfile.value || null : null,
+      database_version: null,
+      distortion: els.lensDistortion.checked,
+      chromatic_aberration: els.lensChromaticAberration.checked,
+      vignetting: els.lensVignetting.checked,
+      focal_length_mm: optionalPositiveNumber(els.lensFocal),
+      aperture: optionalPositiveNumber(els.lensAperture),
+      focus_distance_m: optionalPositiveNumber(els.lensDistance),
+    },
+  };
+}
+
+async function applyRawImportSettings() {
+  if (!desktop || !isRawSession(state.session)) return;
+  const sourcePath = sourcePathForClipboard();
+  if (!sourcePath) {
+    els.lensSettingsNote.textContent = "Save or relink the durable source before re-development.";
+    return;
+  }
+  if (els.lensMode.value === "manual" && !els.lensProfile.value) {
+    els.lensSettingsNote.textContent = "Choose a manual Lensfun profile or switch to Auto/Off.";
+    return;
+  }
+  const selection = await desktop.grantSourcePath(sourcePath);
+  if (!selection) return;
+  els.applyRawSettings.disabled = true;
+  try {
+    await openStagedDesktopSource({ ...selection, rawImportSettings: rawImportSettingsPayload() });
+  } finally {
+    els.applyRawSettings.disabled = false;
+  }
 }
 
 function defaultTransferValue(session) {
@@ -7261,7 +7530,7 @@ function openExportSheet() {
 }
 
 function renderCapabilities() {
-  const keys = ["avif_gain_map_encoder", "ultrahdr_encoder", "jpegxl_encoder"];
+  const keys = ["avif_gain_map_encoder", "ultrahdr_encoder", "jpegxl_export"];
   const available = keys.filter((key) => state.capabilities[key]?.status === "available").length;
   els.capabilitySummary.textContent = `${available}/3 encoders ready`;
   els.capabilitySummary.className = `capability-chip ${available >= 2 ? "ready" : "attention"}`;
@@ -7323,16 +7592,19 @@ function renderExportPreflight() {
   setPreflight("sdr", cacheReady("sdr"), cacheReady("sdr") ? "SDR fallback ready" : "SDR fallback preparing");
   setPreflight("encoder", encoderReady, encoderReady ? "Encoder available" : "Encoder unavailable");
   renderProofPreflight();
-  els.exportConfirmButton.disabled = !state.session || !sourceReady || !encoderReady;
+  els.exportConfirmButton.disabled = state.importInProgress || !state.session || !sourceReady || !encoderReady;
 }
 
 function renderProofPreflight() {
   const row = els.preflightItems.find((element) => element.dataset.preflight === "proof");
   if (!row || !els.exportProofStatus || !els.reviewChromeProof) return;
   row.classList.remove("pass", "warn");
-  els.reviewChromeProof.classList.toggle("hidden", els.exportFormat.value === "sdr_png" || !state.session);
-  if (els.exportFormat.value === "sdr_png") {
-    els.exportProofStatus.textContent = "Chromium HDR proof not applicable to SDR PNG";
+  const proofApplicable = ["avif_gain_map", "jpeg_ultrahdr"].includes(els.exportFormat.value);
+  els.reviewChromeProof.classList.toggle("hidden", !proofApplicable || !state.session);
+  if (!proofApplicable) {
+    els.exportProofStatus.textContent = els.exportFormat.value === "jpegxl_hdr"
+      ? "Chromium proof unavailable for direct JPEG XL HDR"
+      : "Chromium HDR proof not applicable to SDR PNG";
     return;
   }
   const formatName = state.proofArtifact?.format === "avif_gain_map" ? "AVIF" : "JPEG Ultra HDR";
@@ -10523,23 +10795,76 @@ async function openDesktopSelection(selection) {
     await openProjectFromPath(selection);
     return;
   }
+  await openStagedDesktopSource(selection);
+}
+
+async function openStagedDesktopSource(selection) {
+  if (state.activeImportJobId) {
+    await fetch(`/api/import-jobs/${state.activeImportJobId}`, { method: "DELETE" }).catch(() => null);
+  }
   els.badge.textContent = "Loading image and building session...";
-  setPreviewMessage("Reading source file...", 8);
-  const response = await fetch("/api/desktop/session", {
+  state.importInProgress = true;
+  renderExportPreflight();
+  setIndeterminatePreviewMessage("Reading source metadata · 0.0s elapsed");
+  const response = await fetch("/api/import-jobs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ grant: selection.grant }),
+    body: JSON.stringify({ grant: selection.grant, raw_import_settings: selection.rawImportSettings || undefined }),
   });
-  const payload = await safeJson(response);
-  if (!response.ok || !payload?.session) {
-    showUploadError(payload?.detail || "The source file could not be opened.");
+  let job = await safeJson(response);
+  if (!response.ok || !job?.job_id) {
+    state.importInProgress = false;
+    showUploadError(job?.detail || "The source file could not be opened.");
     return;
   }
-  await activateDesktopSession(payload.session, "");
+  state.activeImportJobId = job.job_id;
+  const startedAt = performance.now();
+  let previewShown = false;
+  while (state.activeImportJobId === job.job_id) {
+    const elapsed = (performance.now() - startedAt) / 1000;
+    const label = job.phase_label || "Preparing source";
+    const reassurance = elapsed >= 10 ? " · still working normally" : "";
+    setIndeterminatePreviewMessage(`${label}${reassurance} · ${elapsed.toFixed(1)}s elapsed`);
+    if (job.preview_available && !previewShown) {
+      previewShown = true;
+      els.previewCanvas.style.display = "none";
+      els.previewImage.src = `${job.preview_url}?v=${Date.now()}`;
+      els.previewImage.style.display = "block";
+    }
+    if (job.state === "ready" && job.session_id) {
+      const sessionResponse = await fetch(`/api/session/${job.session_id}`);
+      const payload = await safeJson(sessionResponse);
+      state.activeImportJobId = null;
+      state.importInProgress = false;
+      if (!sessionResponse.ok || !payload?.session) {
+        showUploadError(payload?.detail || "The completed source session could not be opened.");
+        return;
+      }
+      await activateDesktopSession(payload.session, "");
+      return;
+    }
+    if (job.state === "error" || job.state === "cancelled") {
+      state.activeImportJobId = null;
+      state.importInProgress = false;
+      if (job.state === "error") showUploadError(job.error || "The source file could not be opened.");
+      return;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 250));
+    const poll = await fetch(`/api/import-jobs/${job.job_id}`);
+    job = await safeJson(poll);
+    if (!poll.ok) {
+      state.activeImportJobId = null;
+      state.importInProgress = false;
+      showUploadError(job?.detail || "Import progress could not be read.");
+      return;
+    }
+  }
 }
 
 async function activateDesktopSession(session, projectPath) {
   state.session = session;
+  state.importInProgress = false;
+  if (els.rawSettingsPanel) delete els.rawSettingsPanel.dataset.initialized;
   state.adjustments = session.adjustments;
   state.editDocument = session.edit_document;
   state.editRevision = session.edit_revision || 0;

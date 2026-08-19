@@ -48,6 +48,38 @@
         <div id="badge" class="badge neutral">No file loaded.</div>
       </section>
 
+      <section id="raw-settings-section" class="disclosure-panel hidden">
+        <button id="raw-settings-toggle" class="disclosure-trigger" type="button" aria-expanded="false" aria-controls="raw-settings-panel">
+          <span>RAW &amp; Lens Development</span>
+        </button>
+        <div id="raw-settings-panel" class="disclosure-content hidden">
+          <p class="helper">Convenience development uses as-shot white balance, AHD demosaic, linear ACES output, and no auto brightening or sharpening.</p>
+          <label>Lens correction
+            <select id="lens-mode">
+              <option value="off">Off</option>
+              <option value="auto">Auto · editable</option>
+              <option value="manual">Manual profile</option>
+            </select>
+          </label>
+          <div id="manual-lens-controls" class="hidden">
+            <label>Find profile <input id="lens-profile-search" type="search" placeholder="Camera or lens model"></label>
+            <label>Lensfun profile <select id="lens-profile"><option value="">Search profiles…</option></select></label>
+          </div>
+          <div class="checkbox-stack">
+            <label class="checkbox-row"><input id="lens-distortion" type="checkbox" checked> Distortion</label>
+            <label class="checkbox-row"><input id="lens-ca" type="checkbox" checked> Lateral chromatic aberration</label>
+            <label class="checkbox-row"><input id="lens-vignetting" type="checkbox" checked> Vignetting</label>
+          </div>
+          <div class="control-pair">
+            <label>Focal length <input id="lens-focal" type="number" min="0.1" max="2000" step="0.1" placeholder="from metadata"></label>
+            <label>Aperture <input id="lens-aperture" type="number" min="0.1" max="128" step="0.1" placeholder="from metadata"></label>
+          </div>
+          <label>Focus distance (m) <input id="lens-distance" type="number" min="0.01" max="1000000" step="0.1" placeholder="from metadata"></label>
+          <p id="lens-settings-note" class="helper">Auto applies only one exact profile match. Off and Manual are always available.</p>
+          <button id="apply-raw-settings" class="button-primary" type="button">Re-develop source</button>
+        </div>
+      </section>
+
       <section class="disclosure-panel">
         <button id="source-settings-toggle" class="disclosure-trigger" type="button" aria-expanded="false" aria-controls="source-settings-panel">
           <span>Source Interpretation</span>
@@ -405,7 +437,7 @@
         <div class="grade-header">
           <h1 class="panel-title">Control Panel</h1>
         </div>
-        <input id="file-input" type="file" accept=".exr,.tif,.tiff,.hdr,.pfm,.heic,.heif,.avif,.png,.jpg,.jpeg" hidden>
+        <input id="file-input" type="file" accept=".exr,.tif,.tiff,.hdr,.pfm,.heic,.heif,.avif,.jxl,.png,.jpg,.jpeg,.dng,.arw,.cr2,.cr3,.nef,.nrw,.raf,.rw2,.orf,.ori,.pef,.srw" hidden>
         <div class="import-actions">
           <button id="import-button" class="button-primary" type="button">Choose image</button>
           <button id="eject-button" class="button-secondary" type="button">Eject current image</button>
@@ -1064,6 +1096,13 @@
         <span>Opens as a normal JPEG anywhere. HDR appears in supported viewers; recompression may remove it.</span>
         <small>Ultra HDR v1 XMP + ISO 21496-1 · 8-bit gain map</small>
       </label>
+      <label class="format-card" data-format-card="jpegxl_hdr">
+        <input type="radio" name="export-format-choice" value="jpegxl_hdr">
+        <span class="format-card-top"><span data-capability-for="jpegxl_export">Checking…</span></span>
+        <strong>JPEG XL HDR</strong>
+        <span>Direct 12-bit HDR for compatible editors and viewers. Unlike the gain-map formats, it has no SDR fallback.</span>
+        <small>Rec.2020 PQ · direct HDR</small>
+      </label>
       <label class="format-card" data-format-card="sdr_png">
         <input type="radio" name="export-format-choice" value="sdr_png">
         <span class="format-card-top"><span>SDR only</span><span data-capability-for="pillow">Checking…</span></span>
@@ -1137,8 +1176,8 @@
   <dialog id="directory-browser" class="directory-browser" aria-labelledby="directory-browser-title">
     <div class="directory-browser-header">
       <div>
-        <p class="section-kicker">Export destination</p>
-        <h2 id="directory-browser-title">Choose save folder</h2>
+        <p id="directory-browser-kicker" class="section-kicker">Media browser</p>
+        <h2 id="directory-browser-title">Choose a source image</h2>
       </div>
       <button id="directory-browser-close" class="text-button" type="button" aria-label="Close folder browser">Close</button>
     </div>
@@ -1146,12 +1185,24 @@
       <input id="directory-browser-path" type="text" aria-label="Current folder path" autocomplete="off" spellcheck="false">
       <button id="directory-browser-go" class="button-secondary" type="button">Go</button>
       <button id="directory-browser-up" class="button-secondary" type="button">Up</button>
+      <button id="directory-browser-pin" class="button-secondary" type="button">Pin folder</button>
     </div>
     <div id="directory-browser-status" class="directory-browser-status" aria-live="polite">Loading folders…</div>
-    <ul id="directory-browser-list" class="directory-browser-list" aria-label="Folders"></ul>
+    <div class="media-browser-layout">
+      <nav class="media-browser-sidebar" aria-label="Favorite and system folders">
+        <strong>Places</strong><ul id="directory-browser-places"></ul>
+        <strong>Favorites</strong><ul id="directory-browser-favorites"></ul>
+      </nav>
+      <ul id="directory-browser-list" class="directory-browser-list" aria-label="Folders and supported images"></ul>
+      <aside class="media-browser-preview" aria-label="Selected image preview">
+        <img id="directory-browser-preview" alt="" hidden>
+        <strong id="directory-browser-selection">No image selected</strong>
+        <span id="directory-browser-preview-note">Select a supported image to preview it.</span>
+      </aside>
+    </div>
     <div class="directory-browser-actions">
       <button id="directory-browser-cancel" class="button-secondary" type="button">Cancel</button>
-      <button id="directory-browser-select" class="button-primary" type="button">Select this folder</button>
+      <button id="directory-browser-select" class="button-primary" type="button" disabled>Open image</button>
     </div>
   </dialog>
 

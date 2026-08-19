@@ -2,7 +2,8 @@ const path = require("node:path");
 
 const SOURCE_EXTENSIONS = new Set([
   ".exr", ".tif", ".tiff", ".hdr", ".pfm", ".heic", ".heif",
-  ".avif", ".png", ".jpg", ".jpeg",
+  ".avif", ".jxl", ".png", ".jpg", ".jpeg", ".dng", ".arw", ".cr2",
+  ".cr3", ".nef", ".nrw", ".raf", ".rw2", ".orf", ".ori", ".pef", ".srw",
 ]);
 const EXPORT_EXTENSIONS = new Set([".avif", ".jpg", ".jpeg", ".png", ".jxl"]);
 

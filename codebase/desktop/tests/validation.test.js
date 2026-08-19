@@ -14,6 +14,8 @@ test("desktop path types are restricted to supported extensions", () => {
   assert.equal(isSourcePath("C:\\Images\\script.exe"), false);
   assert.equal(isProjectPath("C:\\Projects\\grade.hdrfinisher"), true);
   assert.equal(isExportPath("C:\\Exports\\grade.avif"), true);
+  assert.equal(isSourcePath("C:\\Photos\\camera.dng"), true);
+  assert.equal(isSourcePath("C:\\Photos\\direct-hdr.jxl"), true);
   assert.equal(isExportPath("C:\\Exports\\grade.exe"), false);
 });
 

@@ -16,6 +16,7 @@ from .color import acescg_to_linear_bt2020
 from .config import EXPORTS_DIR, SAMPLES_DIR
 from .finishing import apply_output_finishing
 from .models import AdjustmentState, CapabilityInfo, CapabilityStatus, ExportResponse, ExportSettings, PreviewKind
+from .jpegxl import JPEGXLError, encode_hdr_jpegxl, validate_jpegxl
 from .test_pattern import build_hdr_test_pattern
 
 
@@ -261,6 +262,48 @@ class JPEGUltraHDRExportBackend(ExportBackend):
             accepted=True,
             backend=self.name,
             message=f"JPEG Ultra HDR exported to {output_path}. {validation}",
+            output_path=str(output_path),
+        )
+
+
+class JPEGXLHDRExportBackend(ExportBackend):
+    """Encode a direct-HDR 12-bit Rec.2020 PQ JPEG XL container."""
+
+    name = "jpegxl_hdr"
+
+    def export(self, session: object, settings: ExportSettings) -> ExportResponse:
+        if self.capability.status != CapabilityStatus.AVAILABLE:
+            return ExportResponse(accepted=False, backend=self.name, message=self.capability.detail)
+        output_path = Path(_resolve_output_path(getattr(session, "session_id", "session"), settings, ".jxl"))
+        _require_overwrite_permission(output_path, settings)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        finishing_adjustments = _finishing_adjustments_for_export(session)
+        hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
+        staged_output: Path | None = None
+        try:
+            payload = encode_hdr_jpegxl(hdr_image, int(settings.quality))
+            validation = validate_jpegxl(payload, hdr_image.shape[:2])
+            with NamedTemporaryFile(
+                prefix=f".{output_path.stem}.", suffix=".tmp.jxl", dir=output_path.parent, delete=False
+            ) as staged_file:
+                staged_output = Path(staged_file.name)
+                staged_file.write(payload)
+                staged_file.flush()
+                os.fsync(staged_file.fileno())
+            os.replace(staged_output, output_path)
+            staged_output = None
+        except (JPEGXLError, OSError, ValueError) as exc:
+            _remove_incomplete_output(staged_output)
+            return ExportResponse(
+                accepted=False,
+                backend=self.name,
+                message=f"JPEG XL HDR export failed: {exc}",
+                output_path=str(output_path),
+            )
+        return ExportResponse(
+            accepted=True,
+            backend=self.name,
+            message=f"JPEG XL HDR exported to {output_path}. {validation}",
             output_path=str(output_path),
         )
 
@@ -602,6 +645,6 @@ def build_export_backends(capabilities: dict[str, CapabilityInfo]) -> dict[str, 
     return {
         "avif_gain_map": AVIFGainMapExportBackend(capabilities["avif_gain_map_encoder"]),
         "jpeg_ultrahdr": JPEGUltraHDRExportBackend(capabilities["ultrahdr_encoder"]),
-        "jpegxl_gain_map": StubExportBackend(capabilities["jpegxl_encoder"]),
+        "jpegxl_hdr": JPEGXLHDRExportBackend(capabilities["jpegxl_export"]),
         "sdr_png": SDRPNGExportBackend(capabilities["pillow"]),
     }

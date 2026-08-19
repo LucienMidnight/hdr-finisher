@@ -85,7 +85,12 @@ def open_project(store: SessionStore, path: Path, source_path: Path | None = Non
     if document.source.fingerprint_sha256 and fingerprint != document.source.fingerprint_sha256:
         raise ProjectError("The selected source fingerprint does not match this project.")
 
-    payload = store.create_session(resolved_source, original_filename=document.source.filename, owns_source_path=False)
+    payload = store.create_session(
+        resolved_source,
+        original_filename=document.source.filename,
+        owns_source_path=False,
+        raw_import_settings=document.source.raw_import_settings,
+    )
     session = store.get(payload.session_id)
     if document.interpretation_override.color_space or document.interpretation_override.transfer_function:
         session = store.update_source_interpretation(payload.session_id, document.interpretation_override)
