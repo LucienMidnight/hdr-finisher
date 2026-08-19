@@ -107,15 +107,22 @@ def test_avif_gainmap_accepts_bt709_transfer_on_sdr_base(
         },
     }
     monkeypatch.setattr(gainmap_decoders, "resolve_binary", lambda name: tmp_path / name)
+
+    commands: list[list[str]] = []
+
+    def fake_run(command: list[str]) -> SimpleNamespace:
+        commands.append(command)
+        return SimpleNamespace(stdout="Base Headroom: 0.00\nAlternate Headroom: 2.30", stderr="")
+
+    monkeypatch.setattr(gainmap_decoders, "_run", fake_run)
     monkeypatch.setattr(
         gainmap_decoders,
-        "_run",
-        lambda _command: SimpleNamespace(stdout="Base Headroom: 0.00\nAlternate Headroom: 2.30", stderr=""),
+        "_decode_png_pixels",
+        lambda _path: np.full((2, 3, 3), 0.25, dtype=np.float32),
     )
 
     def fake_decode(_path: Path, _avifdec: Path, output: Path | None = None) -> np.ndarray:
-        value = 0.5 if output and output.name == "sdr-base.png" else 0.25
-        return np.full((2, 3, 3), value, dtype=np.float32)
+        return np.full((2, 3, 3), 0.5, dtype=np.float32)
 
     monkeypatch.setattr(gainmap_decoders, "_decode_avif_pixels", fake_decode)
 
@@ -125,6 +132,8 @@ def test_avif_gainmap_accepts_bt709_transfer_on_sdr_base(
     assert metadata["hdr_capacity_stops"] == pytest.approx(2.3)
     assert metadata["sdr_base_preserved"] is True
     assert float(np.mean(linear_sdr)) == pytest.approx(0.2596, abs=0.001)
+    tonemap_command = next(command for command in commands if "tonemap" in command)
+    assert tonemap_command[3].endswith("hdr.png")
 
 
 @pytest.mark.skipif(

@@ -275,10 +275,12 @@ function registerIpc() {
     const resolved = path.resolve(result.filePath);
     grantedExportPaths.add(resolved);
     const selection = await grantPath(resolved, "export-file");
-    // A returned native Windows Save dialog has already obtained overwrite
-    // approval when this target exists. Bind that approval to the exact file
-    // identity so a later replacement still requires a fresh confirmation.
-    return { ...selection, overwriteTarget: process.platform === "win32" ? existingFileIdentity(resolved) : null };
+    // A returned native Windows or macOS Save dialog has already obtained
+    // overwrite approval when this target exists. Bind that approval to the
+    // exact file identity so a later replacement still requires a fresh
+    // confirmation.
+    const nativeOverwriteApproved = process.platform === "win32" || process.platform === "darwin";
+    return { ...selection, overwriteTarget: nativeOverwriteApproved ? existingFileIdentity(resolved) : null };
   });
   handle("desktop:resolve-dropped-files", async (paths) => {
     if (!Array.isArray(paths) || paths.length > 16) throw new Error("Invalid dropped-file request.");

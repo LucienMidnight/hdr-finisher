@@ -71,6 +71,8 @@ async function main() {
     }
 
     await window.locator("#file-input").setInputFiles(sourcePath);
+    await window.waitForFunction(() => document.querySelector("#session-name")?.textContent.includes("sdr_gradient.png"));
+    const initialSessionId = await window.evaluate(() => state.session.session_id);
     await window.evaluate(() => {
       const file = document.querySelector("#file-input").files[0];
       const transfer = new DataTransfer();
@@ -81,7 +83,7 @@ async function main() {
         dataTransfer: transfer,
       }));
     });
-    await window.waitForFunction(() => document.querySelector("#session-name")?.textContent.includes("sdr_gradient.png"));
+    await window.waitForFunction((previousId) => state.session?.session_id !== previousId, initialSessionId);
     await window.evaluate(() => ejectCurrentSession());
     await window.waitForFunction(() => !state.session);
 

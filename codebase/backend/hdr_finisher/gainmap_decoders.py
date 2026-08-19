@@ -223,26 +223,25 @@ def _decode_avif_gain_map(
 
     with TemporaryDirectory(prefix="hdr_finisher_avif_gainmap_decode_") as temp_name:
         temp_dir = Path(temp_name)
-        hdr_avif = temp_dir / "hdr-rendition.avif"
+        hdr_png = temp_dir / "hdr.png"
         _run(
             [
                 str(utility),
                 "tonemap",
                 str(path),
-                str(hdr_avif),
+                str(hdr_png),
                 "--headroom",
                 _format_float(hdr_headroom),
                 "--cicp-output",
                 "9/16/9",
-                "-y",
-                "444",
                 "-d",
                 "10",
-                "-q",
-                "100",
             ]
         )
-        encoded_hdr = _decode_avif_pixels(hdr_avif, avifdec, temp_dir / "hdr.png")
+        # avifgainmaputil can write the reconstructed 16-bit PNG directly.
+        # Avoiding an intermediate AVIF encode and subsequent decode is both
+        # lossless and materially faster for full-resolution camera images.
+        encoded_hdr = _decode_png_pixels(hdr_png)
 
         base_is_sdr = float(gain["base_headroom"]) <= float(gain["alternate_headroom"])
         if base_is_sdr and abs(float(gain["base_headroom"]) - sdr_headroom) <= 1e-6:
@@ -306,21 +305,25 @@ def _decode_avif_gain_map(
 
 
 def _decode_avif_pixels(path: Path, avifdec: Path, output: Path | None = None) -> np.ndarray:
+    if output is not None:
+        png_path = output
+        png_path.parent.mkdir(parents=True, exist_ok=True)
+        _run([str(avifdec), "-d", "16", str(path), str(png_path)])
+        return _decode_png_pixels(png_path)
+
+    with TemporaryDirectory(prefix="hdr_finisher_avif_decode_") as temp_name:
+        png_path = Path(temp_name) / "decoded.png"
+        _run([str(avifdec), "-d", "16", str(path), str(png_path)])
+        return _decode_png_pixels(png_path)
+
+
+def _decode_png_pixels(path: Path) -> np.ndarray:
     try:
         import imagecodecs
     except ImportError as exc:
         raise GainMapDecodeError("imagecodecs is required to retain 10/12-bit AVIF decoder output.") from exc
 
-    if output is not None:
-        png_path = output
-        png_path.parent.mkdir(parents=True, exist_ok=True)
-        _run([str(avifdec), "-d", "16", str(path), str(png_path)])
-        decoded = imagecodecs.png_decode(png_path.read_bytes())
-    else:
-        with TemporaryDirectory(prefix="hdr_finisher_avif_decode_") as temp_name:
-            png_path = Path(temp_name) / "decoded.png"
-            _run([str(avifdec), "-d", "16", str(path), str(png_path)])
-            decoded = imagecodecs.png_decode(png_path.read_bytes())
+    decoded = imagecodecs.png_decode(path.read_bytes())
     array = np.asarray(decoded)
     if array.ndim == 2:
         array = np.repeat(array[..., None], 3, axis=2)
