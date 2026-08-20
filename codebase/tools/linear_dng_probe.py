@@ -6,18 +6,33 @@ from dataclasses import asdict, dataclass
 import json
 import os
 from pathlib import Path
+import struct
 from typing import Any
 
 
 GIB = 1024**3
 LINEAR_RAW = 34892
+OPCODE_LIST_TAGS = ("OpcodeList1", "OpcodeList2", "OpcodeList3")
 UNIMPLEMENTED_RENDER_TAGS = (
-    "OpcodeList1",
-    "OpcodeList2",
-    "OpcodeList3",
     "ProfileGainTableMap",
     "ProfileGainTableMap2",
 )
+OPCODE_NAMES = {
+    1: "WarpRectilinear",
+    2: "WarpFisheye",
+    3: "FixVignetteRadial",
+    4: "FixBadPixelsConstant",
+    5: "FixBadPixelsList",
+    6: "TrimBounds",
+    7: "MapTable",
+    8: "MapPolynomial",
+    9: "GainMap",
+    10: "DeltaPerRow",
+    11: "DeltaPerColumn",
+    12: "ScalePerRow",
+    13: "ScalePerColumn",
+    14: "WarpRectilinear2",
+}
 
 
 @dataclass(frozen=True)
@@ -91,6 +106,39 @@ def _rational_array(value: Any, count: int) -> Any:
     if flat.size == count:
         return flat
     raise ValueError(f"Expected {count} values or rational pairs; found {flat.size} elements.")
+
+
+def parse_opcode_list(value: Any) -> list[dict[str, Any]]:
+    raw = bytes(value)
+    if len(raw) < 4:
+        raise ValueError("opcode list is shorter than its count field")
+    count = struct.unpack_from(">I", raw, 0)[0]
+    position = 4
+    result: list[dict[str, Any]] = []
+    for index in range(count):
+        if position + 16 > len(raw):
+            raise ValueError(f"opcode {index} header exceeds the tag payload")
+        opcode_id, version, flags, parameter_bytes = struct.unpack_from(">IIII", raw, position)
+        position += 16
+        if position + parameter_bytes > len(raw):
+            raise ValueError(f"opcode {index} parameters exceed the tag payload")
+        version_bytes = version.to_bytes(4, "big")
+        result.append(
+            {
+                "index": index,
+                "id": opcode_id,
+                "name": OPCODE_NAMES.get(opcode_id, f"UnknownOpcode{opcode_id}"),
+                "minimum_dng_version": ".".join(str(item) for item in version_bytes),
+                "flags": flags,
+                "optional": bool(flags & 1),
+                "skip_preview_allowed": bool(flags & 2),
+                "parameter_bytes": parameter_bytes,
+            }
+        )
+        position += parameter_bytes
+    if position != len(raw):
+        raise ValueError(f"opcode list has {len(raw) - position} trailing bytes")
+    return result
 
 
 def _select_primary_page(tif: Any) -> Any:
@@ -338,7 +386,30 @@ def qualify_page(
         if _tag(page, name, metadata_page) is None:
             reasons.append(f"Required color metadata {name} is absent.")
 
-    present_render_tags = [name for name in UNIMPLEMENTED_RENDER_TAGS if _tag(page, name, metadata_page) is not None]
+    opcode_metadata: dict[str, Any] = {}
+    for name in OPCODE_LIST_TAGS:
+        tag = _tag(page, name, metadata_page)
+        if tag is None:
+            continue
+        try:
+            opcodes = parse_opcode_list(tag.value)
+        except ValueError as exc:
+            reasons.append(f"{name} is malformed: {exc}.")
+            continue
+        opcode_metadata[name] = opcodes
+        mandatory = [opcode for opcode in opcodes if not opcode["optional"]]
+        if mandatory:
+            labels = ", ".join(
+                f'{opcode["name"]} (ID {opcode["id"]}, flags 0x{opcode["flags"]:x})'
+                for opcode in mandatory
+            )
+            reasons.append(f"{name} contains unimplemented mandatory opcode(s): {labels}.")
+        elif opcodes:
+            notes.append(f"{name} contains only optional unimplemented opcodes and may be skipped.")
+
+    present_render_tags = [
+        name for name in UNIMPLEMENTED_RENDER_TAGS if _tag(page, name, metadata_page) is not None
+    ]
     if present_render_tags:
         reasons.append("Unimplemented rendering metadata is present: " + ", ".join(present_render_tags) + ".")
 
@@ -377,6 +448,7 @@ def qualify_page(
         "AsShotNeutral",
     )
     metadata = {name: _json_value(_tag_value(page, name, metadata_page=metadata_page)) for name in metadata_names}
+    metadata["opcode_lists"] = opcode_metadata
     metadata["resolved_defaults"] = {name: _json_value(value) for name, value in defaults.items()}
     return reasons, notes, metadata
 

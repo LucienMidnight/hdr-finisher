@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from types import SimpleNamespace
 from pathlib import Path
+import struct
 import sys
 
 import numpy as np
@@ -17,6 +18,7 @@ from tools.linear_dng_probe import (
     _rational_array,
     _select_primary_page,
     estimate_memory,
+    parse_opcode_list,
     qualify_page,
 )
 
@@ -56,14 +58,57 @@ def test_qualifying_linear_dng_resolves_standard_defaults() -> None:
 
 
 def test_mosaic_and_unimplemented_opcode_are_rejected_specifically() -> None:
+    mandatory_warp = struct.pack(">IIIII", 1, 1, 0x01030000, 0, 0)
     reasons, _notes, _metadata = qualify_page(
-        FakePage(photometric=32803, samples=1, tags={"OpcodeList2": b"required"}),
+        FakePage(photometric=32803, samples=1, tags={"OpcodeList2": mandatory_warp}),
         decoder_available=True,
     )
 
     assert "PhotometricInterpretation is not LinearRaw." in reasons
     assert "Linear DNG path requires exactly 3 samples per pixel; found 1." in reasons
-    assert "Unimplemented rendering metadata is present: OpcodeList2." in reasons
+    assert (
+        "OpcodeList2 contains unimplemented mandatory opcode(s): "
+        "WarpRectilinear (ID 1, flags 0x0)."
+    ) in reasons
+
+
+def test_optional_opcode_is_reported_but_does_not_reject() -> None:
+    optional_warp = struct.pack(">IIIII", 1, 1, 0x01030000, 1, 0)
+
+    reasons, notes, metadata = qualify_page(
+        FakePage(tags={"OpcodeList3": optional_warp}), decoder_available=True
+    )
+
+    assert reasons == []
+    assert "OpcodeList3 contains only optional unimplemented opcodes and may be skipped." in notes
+    assert metadata["opcode_lists"]["OpcodeList3"][0]["optional"] is True
+
+
+def test_malformed_opcode_list_is_rejected() -> None:
+    reasons, _notes, _metadata = qualify_page(
+        FakePage(tags={"OpcodeList1": b"bad"}), decoder_available=True
+    )
+
+    assert reasons == ["OpcodeList1 is malformed: opcode list is shorter than its count field."]
+
+
+def test_opcode_parser_reports_version_and_preview_flags() -> None:
+    encoded = struct.pack(">IIIII", 1, 14, 0x01060000, 3, 0)
+
+    parsed = parse_opcode_list(encoded)
+
+    assert parsed == [
+        {
+            "index": 0,
+            "id": 14,
+            "name": "WarpRectilinear2",
+            "minimum_dng_version": "1.6.0.0",
+            "flags": 3,
+            "optional": True,
+            "skip_preview_allowed": True,
+            "parameter_bytes": 0,
+        }
+    ]
 
 
 def test_memory_preflight_rejects_when_reserve_leaves_too_little_ram() -> None:

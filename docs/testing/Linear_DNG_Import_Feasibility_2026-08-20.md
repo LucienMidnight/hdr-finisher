@@ -33,6 +33,7 @@ are available.
 | `2018-05-26-11-35-40_NECTA0000_…dng` | Alkeria `nectar-preview`, Necta N4K2-7C | DNG 1.4, `LinearRaw`, 72,480 × 4,096, RGB uint16, uncompressed, one page/strip | Pass through read-only `tifffile` memory map; sparse sample and full bounded preview pass | ColorMatrix1, ForwardMatrix1, D65 calibration illuminant, AsShotNeutral, orientation present; no opcode or gain-table recipe | Coherent diagnostic train-scan preview; producer parity not tested | Structurally yes; visual sign-off pending |
 | `DSC06885_DxO.dng` | DxO PhotoLab 9.10, Sony ILCE-7RM3 | DNG 1.4; IFD0 is a 248 × 165 preview; full `LinearRaw` is a SubIFD, 7,952 × 5,304, RGB uint16, Compression 7 | Pass through `imagecodecs` full decode; 5,304 × 7,952 × 3 uint16 pixels returned | ColorMatrix1/2, two calibration illuminants, AnalogBalance, AsShotNeutral, BaselineExposure, crop, orientation present; ForwardMatrix absent; no opcode or gain-table recipe | Coherent diagnostic image with matching geometry. Supplied JPEG includes DxO edits, so color/tone parity is not a valid correctness test | **Conditional yes** after a validated ColorMatrix-only transform |
 | `lightroom-classic-DNG-test-1.dng` | Lightroom Classic 15.5 DNG export of a camera RAW; not an HDR merge | DNG 1.7; primary SubIFD is 8,000 × 5,320, one-channel CFA uint16, Compression 7. Reduced Fast Load SubIFDs include 1,988 × 1,326 JPEG XL LinearRaw | Primary structure is readable. Installed `imagecodecs` also successfully decoded the reduced JPEG XL LinearRaw proxy | Primary image carries OpcodeList3. Reduced Fast Load LinearRaw carries OpcodeList2 and is marked reduced-image | Not applicable | **Reject**: mosaiced camera RAW, not a linear-DNG source |
+| `DSC01204_ACR_Linear.dng` | Adobe Photoshop Camera Raw 18.3, explicit Linear (demosaiced) save | DNG 1.4, full primary SubIFD is 8,000 × 5,320, `LinearRaw`, RGB uint16, Compression 7 | Pass through `imagecodecs` full decode; 5,320 × 8,000 × 3 uint16 pixels returned | Required color, neutral, exposure, crop, and orientation metadata present. OpcodeList3 contains one non-optional WarpRectilinear opcode | Pixel decode and memory preflight pass; correct rendered geometry is not yet proven because the mandatory warp is not implemented | **Conditional no today**; feasible after WarpRectilinear support and reference validation |
 
 The installed LibRaw path fails on the Alkeria file before development with
 `LibRawFileUnsupportedError: Unsupported file format or not RAW file`. A future routing gate must
@@ -85,6 +86,20 @@ absent. It deliberately does not claim the complete dual-illuminant default-rend
 The original `DSC06885.ARW` is present beside the DxO export. A metadata-only LibRaw inspection reports
 an 8,000 × 5,320 sensor buffer, consistent with DxO's cropped 7,952 × 5,304 demosaiced output and
 the `OriginalRawFileName = DSC06885.ARW` provenance tag. No `rawpy.postprocess()` operation was used.
+
+## Adobe Camera Raw linear conversion
+
+Camera Raw 18.3's explicit **Linear (demosaiced)** save produced a genuine full-resolution LinearRaw
+DNG. It is 129,892,982 bytes on disk and decodes to a 255,360,000-byte uint16 RGB buffer. The estimated
+retained ACEScg source is 510,720,000 bytes; conservative import and export peaks are approximately
+1.0 GiB and 1.45 GiB, both passing on the test machine.
+
+The file contains one OpcodeList3 record: opcode ID 1 (`WarpRectilinear`), minimum DNG version 1.3,
+flags 0, and a 164-byte parameter block with three color-plane coefficient sets. Flags 0 means the
+operation is neither optional nor preview-skippable. The coefficients are not identity values: the red
+and blue planes carry small radial corrections while green is identity, consistent with lateral color
+correction. A conforming full-quality import must apply this post-demosaic warp. The prototype therefore
+rejects the file for correctness even though decoding itself succeeds.
 
 ## Large-source evidence
 
@@ -182,5 +197,6 @@ ignored `codebase/local-test-media/inputs/` or may remain at their existing exte
 | DxO PhotoLab 9.10 | **Conditional yes**: full LinearRaw decode, geometry, metadata, and memory checks pass; production requires validated ColorMatrix-only dual-illuminant handling and a neutral reference comparison |
 | DxO PureRAW | **No decision**: corpus unavailable |
 | Lightroom camera-RAW DNG export with Fast Load Data | **No**: correctly rejected as a mosaiced primary despite embedded LinearRaw JPEG XL proxies |
+| Adobe Camera Raw 18.3 explicit Linear save | **Conditional**: full decode and metadata pass, but the mandatory standard WarpRectilinear opcode must be implemented before acceptance |
 | Lightroom HDR Merge | **No decision**: corpus unavailable. The current Lightroom fixture is not an HDR merge |
 | Lightroom Panorama Merge | **No decision**: corpus unavailable |
