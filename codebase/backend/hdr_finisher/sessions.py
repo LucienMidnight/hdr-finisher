@@ -164,12 +164,22 @@ class SessionStore:
         original_filename: str | None = None,
         owns_source_path: bool = False,
         raw_import_settings: RawImportSettings | None = None,
+        interpretation_override: SourceInterpretationOverride | None = None,
         progress: Callable[[str, str], None] | None = None,
+        cancelled: Callable[[], bool] | None = None,
     ) -> LoadedSession:
         try:
             resolved_raw_settings = raw_import_settings or RawImportSettings()
+            resolved_override = interpretation_override or SourceInterpretationOverride()
             image, source, metadata, analysis, sdr_reference_image = load_image(
-                source_path, raw_import_settings=resolved_raw_settings, progress=progress
+                source_path,
+                overrides={
+                    "color_space": resolved_override.color_space,
+                    "transfer_function": resolved_override.transfer_function,
+                },
+                raw_import_settings=resolved_raw_settings,
+                progress=progress,
+                cancelled=cancelled,
             )
             lens_result = metadata.get("lens_correction") or {}
             if (
@@ -199,6 +209,10 @@ class SessionStore:
                 )
             if original_filename:
                 source.filename = Path(str(original_filename).replace("\\", "/")).name
+            if progress:
+                progress("session_indexing", "Finalizing source fingerprint and render cache")
+            if cancelled is not None and cancelled():
+                raise RuntimeError("Import cancelled")
             session = LoadedSession(
                 session_id=uuid4().hex,
                 source_path=source_path,
@@ -208,6 +222,7 @@ class SessionStore:
                 analysis=analysis,
                 metadata=metadata,
                 owns_source_path=owns_source_path,
+                interpretation_override=resolved_override,
                 raw_import_settings=resolved_raw_settings,
             )
         except Exception:
@@ -224,6 +239,30 @@ class SessionStore:
         if previous is not None and previous.owns_source_path:
             _remove_owned_source(previous.source_path)
         return payload
+
+    def redevelop_session(self, session_id: str, developed: LoadedSession) -> SessionPayload:
+        """Atomically replace source pixels while preserving the edit document."""
+        with self._lock:
+            current = self.get(session_id)
+            if developed.source_fingerprint_sha256 != current.source_fingerprint_sha256:
+                raise ValueError("RAW re-development source no longer matches the active session.")
+
+            developed.session_id = current.session_id
+            developed.source.filename = current.source.filename
+            developed.owns_source_path = current.owns_source_path
+            developed.durable_source_path = current.durable_source_path
+            developed.adjustments = current.adjustments
+            developed.local_adjustments = current.local_adjustments
+            developed.interpretation_override = current.interpretation_override
+            developed.edit_revision = current.edit_revision + 1
+            developed.dirty = True
+            developed.undo_history = current.undo_history
+            developed.redo_history = current.redo_history
+            developed.history_bytes = current.history_bytes
+            developed.preview = current.preview
+            payload = developed.to_payload()
+            self._current = developed
+            return payload
 
     def current(self) -> LoadedSession | None:
         with self._lock:
@@ -326,9 +365,14 @@ class SessionStore:
         if command_type == "replace_document":
             previous = session.edit_document()
             document = EditDocument.model_validate(payload.get("document"))
+            if document.source != previous.source:
+                raise EditCommandError("The edit-state endpoint cannot replace the session source.")
+            if document.interpretation_override != previous.interpretation_override:
+                raise EditCommandError(
+                    "Source interpretation changes must use the interpretation endpoint so pixels are reloaded."
+                )
             session.adjustments = document.global_adjustments
             session.local_adjustments = document.local_adjustments
-            session.interpretation_override = document.interpretation_override
             session.render_cache.clear_adjusted()
             return EditCommand(
                 expected_revision=current_revision,

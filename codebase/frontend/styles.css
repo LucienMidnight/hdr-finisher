@@ -2094,9 +2094,15 @@ input[type="range"] {
 }
 
 .directory-browser-entry.directory::before {
-  content: "▸";
+  content: "";
+  display: inline-block;
+  width: 16px;
+  height: 16px;
   margin-right: 8px;
-  color: var(--accent);
+  background: var(--accent);
+  vertical-align: -3px;
+  -webkit-mask: url("assets/icons/tabler/folder.svg") center / contain no-repeat;
+  mask: url("assets/icons/tabler/folder.svg") center / contain no-repeat;
 }
 
 .directory-browser-entry.file {
@@ -4922,8 +4928,6 @@ body[data-workflow="export"] #export-sheet {
 }
 
 .export-sheet .sheet-actions {
-  position: sticky;
-  bottom: 0;
   display: grid;
   gap: 8px;
   margin-top: 14px;
@@ -6005,6 +6009,18 @@ body {
   border-radius: 999px;
   overflow: hidden;
   accent-color: var(--accent);
+}
+
+.preview-status-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.preview-cancel {
+  min-width: 96px;
+  white-space: nowrap;
 }
 
 .preview-progress::-webkit-progress-bar {

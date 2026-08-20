@@ -8,7 +8,12 @@ from time import perf_counter
 import numpy as np
 
 from .analysis import classify_hdr
-from .color import detect_color_space, detect_transfer_function, normalize_to_acescg
+from .color import (
+    detect_color_space,
+    detect_transfer_function,
+    normalize_to_acescg_bounded,
+    transform_float32_bounded,
+)
 from .gainmap_decoders import GainMapDecodeError, decode_avif, decode_ultrahdr_jpeg, is_ultrahdr_jpeg
 from .models import SourceImageDescriptor
 from .models import RawImportSettings
@@ -46,38 +51,60 @@ def load_image(
     overrides: dict[str, str | None] | None = None,
     raw_import_settings: RawImportSettings | None = None,
     progress: Callable[[str, str], None] | None = None,
+    cancelled: Callable[[], bool] | None = None,
 ) -> tuple[np.ndarray, SourceImageDescriptor, dict[str, Any], Any, np.ndarray | None]:
     suffix = path.suffix.lower()
     total_started = perf_counter()
     decode_started = perf_counter()
     try:
+        _raise_if_cancelled(cancelled)
         if progress:
             progress("metadata", "Reading source metadata")
         if suffix in {".jpg", ".jpeg"} and is_ultrahdr_jpeg(path):
-            image, sdr_reference_image, metadata = decode_ultrahdr_jpeg(path)
+            image, sdr_reference_image, metadata = decode_ultrahdr_jpeg(
+                path, progress=progress, cancelled=cancelled
+            )
             metadata["sdr_reference_image"] = sdr_reference_image
         elif suffix == ".avif":
-            image, sdr_reference_image, metadata = decode_avif(path, progress=progress)
+            image, sdr_reference_image, metadata = decode_avif(
+                path, progress=progress, cancelled=cancelled
+            )
             if sdr_reference_image is not None:
                 metadata["sdr_reference_image"] = sdr_reference_image
         elif suffix in {".png", ".jpg", ".jpeg", ".bmp"}:
+            if progress:
+                progress("decoding_bitmap", "Decoding full-resolution bitmap")
             image, metadata = _load_with_pillow(path)
         elif suffix in {".tif", ".tiff"}:
+            if progress:
+                progress("decoding_tiff", "Decoding full-resolution TIFF")
             image, metadata = _load_tiff(path)
         elif suffix == ".exr":
-            image, metadata = _load_exr(path)
+            if progress:
+                progress("decoding_exr", "Decoding full-resolution OpenEXR")
+            image, metadata = _load_exr(path, cancelled=cancelled)
         elif suffix in {".hdr", ".pfm"}:
+            if progress:
+                progress("decoding_hdr", "Decoding full-resolution floating-point image")
             image, metadata = _load_hdr_like(path)
         elif suffix in {".heic", ".heif"}:
-            image, metadata = _load_heif(path)
+            if progress:
+                progress("decoding_heif", "Decoding full-resolution HEIF")
+            image, metadata = _load_heif(path, cancelled=cancelled)
         elif suffix == ".jxl":
             if progress:
                 progress("decoding_jpegxl", "Decoding full-resolution JPEG XL")
-            image, metadata = decode_jpegxl(path)
+            image, metadata = decode_jpegxl(path, cancelled=cancelled)
         elif suffix in RAW_EXTENSIONS:
-            image, metadata = decode_raw(path, raw_import_settings or RawImportSettings(), progress=progress)
+            image, metadata = decode_raw(
+                path,
+                raw_import_settings or RawImportSettings(),
+                progress=progress,
+                cancelled=cancelled,
+            )
         else:
             raise LoaderError(f"Unsupported input format: {suffix}")
+        _raise_if_cancelled(cancelled)
     except LoaderError:
         raise
     except GainMapDecodeError as exc:
@@ -118,7 +145,15 @@ def load_image(
     if progress:
         progress("color_conversion", "Converting source color to ACEScg")
     normalize_started = perf_counter()
-    normalized = normalize_to_acescg(image, metadata.get("color_space"), metadata.get("transfer_function"))
+    if metadata.get("decoder_normalized_to_acescg") and not metadata.get("user_override"):
+        normalized = image.astype(np.float32, copy=False)
+    else:
+        normalized = normalize_to_acescg_bounded(
+            image,
+            metadata.get("color_space"),
+            metadata.get("transfer_function"),
+            cancelled=cancelled,
+        )
     normalize_ms = (perf_counter() - normalize_started) * 1000.0
     descriptor = SourceImageDescriptor(
         filename=path.name,
@@ -132,8 +167,11 @@ def load_image(
         interpretation_mode="manual" if metadata.get("user_override") else "auto",
         color_space_confident=not bool(metadata.get("needs_color_override")),
     )
+    if progress:
+        progress("analysis", "Analyzing source HDR range")
+    _raise_if_cancelled(cancelled)
     analysis_started = perf_counter()
-    analysis = classify_hdr(normalized, metadata, suffix)
+    analysis = classify_hdr(normalized, metadata, suffix, cancelled=cancelled)
     metadata["import_timings_ms"] = {
         "decode": round(decode_ms, 3),
         "normalize_to_acescg": round(normalize_ms, 3),
@@ -178,7 +216,9 @@ def _load_with_pillow(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
             metadata["color_space"] = "sRGB"
         array = np.asarray(image)
         metadata["bit_depth"] = str(array.dtype)
-        normalized = array.astype(np.float32) / 255.0
+        normalized = array.astype(np.float32)
+        normalized *= np.float32(1.0 / 255.0)
+        del array
     return normalized, metadata
 
 
@@ -211,9 +251,11 @@ def _load_tiff(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
 
     if np.issubdtype(array.dtype, np.integer):
         max_value = float(np.iinfo(array.dtype).max)
-        normalized = array.astype(np.float32) / max_value
-    else:
         normalized = array.astype(np.float32)
+        normalized *= np.float32(1.0 / max_value)
+    else:
+        normalized = array.astype(np.float32, copy=False)
+    del array
     return normalized, metadata
 
 
@@ -271,7 +313,9 @@ def _classify_icc_profile_name(profile_name: str) -> str:
     return "unknown"
 
 
-def _load_exr(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
+def _load_exr(
+    path: Path, *, cancelled: Callable[[], bool] | None = None
+) -> tuple[np.ndarray, dict[str, Any]]:
     try:
         import OpenEXR
         import Imath
@@ -286,11 +330,11 @@ def _load_exr(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
         height = dw.max.y - dw.min.y + 1
         float_type = Imath.PixelType(Imath.PixelType.FLOAT)
         channel_names = _select_exr_rgb_channels(header.get("channels", {}).keys())
-        channels = []
-        for name in channel_names:
+        image = np.empty((height, width, 3), dtype=np.float32)
+        for index, name in enumerate(channel_names):
+            _raise_if_cancelled(cancelled)
             channel = np.frombuffer(file.channel(name, float_type), dtype=np.float32)
-            channels.append(channel.reshape(height, width))
-        image = np.stack(channels, axis=-1)
+            image[..., index] = channel.reshape(height, width)
     finally:
         close = getattr(file, "close", None)
         if callable(close):
@@ -368,7 +412,9 @@ def _load_hdr_like(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
     return image, metadata
 
 
-def _load_heif(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
+def _load_heif(
+    path: Path, *, cancelled: Callable[[], bool] | None = None
+) -> tuple[np.ndarray, dict[str, Any]]:
     try:
         from pillow_heif import open_heif
         from PIL import Image
@@ -404,18 +450,29 @@ def _load_heif(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
         aux_type = metadata["heif_aux_types"][0]
         aux_id = info["aux"][aux_type][0]
         aux_image = primary.get_aux_image(aux_id)
-        aux_array = np.asarray(aux_image).astype(np.float32) / 255.0
+        aux_array = np.asarray(aux_image).astype(np.float32)
+        aux_array *= np.float32(1.0 / 255.0)
         base_array = _normalize_integer_image(array)
-        base_linear_p3 = _srgb_eotf_float32(base_array)
-        metadata["sdr_reference_image"] = _linear_display_p3_to_linear_srgb(base_linear_p3)
+        base_linear_p3 = transform_float32_bounded(
+            base_array, _srgb_eotf_float32, cancelled=cancelled
+        )
+        metadata["sdr_reference_image"] = transform_float32_bounded(
+            base_linear_p3.copy(), _linear_display_p3_to_linear_srgb, cancelled=cancelled
+        )
         resized_gainmap = np.asarray(
             Image.fromarray((np.clip(aux_array, 0.0, 1.0) * 255.0).astype(np.uint8), mode="L").resize(
                 (base_array.shape[1], base_array.shape[0]),
                 resample=Image.Resampling.LANCZOS,
             ),
             dtype=np.float32,
-        ) / 255.0
-        array = _apply_apple_hdr_gainmap_linear(base_linear_p3, resized_gainmap, float(metadata["apple_hdr_headroom"]))
+        )
+        resized_gainmap *= np.float32(1.0 / 255.0)
+        array = _apply_apple_hdr_gainmap_linear_in_place(
+            base_linear_p3,
+            resized_gainmap,
+            float(metadata["apple_hdr_headroom"]),
+            cancelled=cancelled,
+        )
         metadata["color_space"] = profile_desc or "Display P3"
         metadata["transfer_function"] = "LINEAR"
         metadata["bit_depth"] = "32f"
@@ -474,8 +531,15 @@ def _profile_value(profile: Any, index: int, key: str) -> int | None:
 def _normalize_integer_image(array: np.ndarray) -> np.ndarray:
     if np.issubdtype(array.dtype, np.integer):
         max_value = float(np.iinfo(array.dtype).max)
-        return array.astype(np.float32) / max_value
-    return array.astype(np.float32)
+        normalized = array.astype(np.float32)
+        normalized *= np.float32(1.0 / max_value)
+        return normalized
+    return array.astype(np.float32, copy=False)
+
+
+def _raise_if_cancelled(cancelled: Callable[[], bool] | None) -> None:
+    if cancelled is not None and cancelled():
+        raise LoaderError("Import cancelled")
 
 
 def _apply_apple_hdr_gainmap(dp3_sdr: np.ndarray, hdrgainmap: np.ndarray, headroom: float) -> np.ndarray:
@@ -484,9 +548,28 @@ def _apply_apple_hdr_gainmap(dp3_sdr: np.ndarray, hdrgainmap: np.ndarray, headro
 
 
 def _apply_apple_hdr_gainmap_linear(dp3_sdr_linear: np.ndarray, hdrgainmap: np.ndarray, headroom: float) -> np.ndarray:
-    hdrgainmap_linear = _srgb_eotf_float32(hdrgainmap)
-    scale_factor_map = 1.0 + (max(headroom, 1.0) - 1.0) * hdrgainmap_linear
-    return np.asarray(dp3_sdr_linear * scale_factor_map[..., None], dtype=np.float32)
+    return _apply_apple_hdr_gainmap_linear_in_place(
+        dp3_sdr_linear.astype(np.float32, copy=True), hdrgainmap, headroom
+    )
+
+
+def _apply_apple_hdr_gainmap_linear_in_place(
+    dp3_sdr_linear: np.ndarray,
+    hdrgainmap: np.ndarray,
+    headroom: float,
+    *,
+    rows: int = 128,
+    cancelled: Callable[[], bool] | None = None,
+) -> np.ndarray:
+    result = dp3_sdr_linear.astype(np.float32, copy=False)
+    strip_rows = max(1, int(rows))
+    for start in range(0, result.shape[0], strip_rows):
+        _raise_if_cancelled(cancelled)
+        stop = min(start + strip_rows, result.shape[0])
+        gain_linear = _srgb_eotf_float32(hdrgainmap[start:stop])
+        scale = np.float32(1.0) + np.float32(max(headroom, 1.0) - 1.0) * gain_linear
+        result[start:stop] *= scale[..., None]
+    return result
 
 
 def _display_p3_to_linear_srgb(image: np.ndarray) -> np.ndarray:

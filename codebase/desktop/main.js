@@ -260,6 +260,23 @@ function registerIpc() {
     knownProjectPaths.add(path.resolve(projectPath));
     return grantPath(projectPath, "project-save");
   });
+  handle("desktop:confirm-unsaved-transition", async (options = {}) => {
+    if (!documentState.dirty) return "discard";
+    const actionLabel = typeof options.actionLabel === "string" && options.actionLabel.length <= 80
+      ? options.actionLabel
+      : "continue";
+    const choice = await dialog.showMessageBox(mainWindow, {
+      type: "warning",
+      title: "Save changes?",
+      message: `Save changes to ${documentState.displayName}?`,
+      detail: `Unsaved editing changes will be lost if you ${actionLabel}.`,
+      buttons: ["Save", "Discard", "Cancel"],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true,
+    });
+    return ["save", "discard", "cancel"][choice.response] || "cancel";
+  });
   handle("desktop:choose-export-directory", async (initialPath) => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: "Choose export folder",
@@ -395,7 +412,18 @@ function buildMenu() {
         { role: "cut" }, { role: "copy" }, { role: "paste" }, { role: "selectAll" },
       ],
     },
-    { label: "View", submenu: [{ role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" }, { type: "separator" }, { role: "togglefullscreen" }] },
+    {
+      label: "View",
+      submenu: [
+        { role: "reload" },
+        { type: "separator" },
+        { role: "resetZoom" },
+        { role: "zoomIn" },
+        { role: "zoomOut" },
+        { type: "separator" },
+        { role: "togglefullscreen" },
+      ],
+    },
     { label: "Window", submenu: [{ role: "minimize" }, { role: "zoom" }] },
     {
       label: "Help",

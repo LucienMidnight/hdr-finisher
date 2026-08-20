@@ -6,11 +6,11 @@ import json
 import math
 from pathlib import Path
 import struct
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
-from .color import acescg_to_linear_bt2020, normalize_to_acescg
+from .color import acescg_to_linear_bt2020, normalize_to_acescg_bounded
 
 
 class JPEGXLError(RuntimeError):
@@ -39,20 +39,28 @@ def inspect_jpegxl(path: Path) -> dict[str, Any]:
     third-party files remain editable through the existing manual source gate.
     """
 
-    payload = path.read_bytes()
-    result: dict[str, Any] = {"app_metadata": _read_app_metadata_box(payload)}
+    return _inspect_jpegxl_payload(path.read_bytes())
+
+
+def _inspect_jpegxl_payload(payload: bytes) -> dict[str, Any]:
+    result: dict[str, Any] = {"app_metadata": _validate_app_metadata(_read_app_metadata_box(payload))}
     result.update(_probe_basic_info(payload))
     return result
 
 
-def decode_jpegxl(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
+def decode_jpegxl(
+    path: Path, *, cancelled: Callable[[], bool] | None = None
+) -> tuple[np.ndarray, dict[str, Any]]:
+    _raise_if_cancelled(cancelled)
     try:
         import imagecodecs
     except ImportError as exc:
         raise JPEGXLError("JPEG XL input requires the bundled imagecodecs/libjxl decoder.") from exc
     try:
-        info = inspect_jpegxl(path)
-        decoded = np.asarray(imagecodecs.jpegxl_decode(path.read_bytes()))
+        payload = path.read_bytes()
+        info = _inspect_jpegxl_payload(payload)
+        _raise_if_cancelled(cancelled)
+        decoded = np.asarray(imagecodecs.jpegxl_decode(payload))
     except Exception as exc:
         raise JPEGXLError(f"Could not decode JPEG XL input: {exc}") from exc
 
@@ -64,19 +72,27 @@ def decode_jpegxl(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
         decoded = np.repeat(decoded, 3, axis=2)
     decoded = decoded[..., :3]
 
-    bit_depth = int(info.get("bits_per_sample") or _infer_integer_bit_depth(decoded))
+    bit_depth = _resolve_bit_depth(decoded, info)
     if np.issubdtype(decoded.dtype, np.integer):
+        if np.issubdtype(decoded.dtype, np.signedinteger) and np.any(decoded < 0):
+            raise JPEGXLError("JPEG XL returned negative integer samples.")
         maximum = float((1 << bit_depth) - 1)
-        encoded = decoded.astype(np.float32) / np.float32(maximum)
-    else:
+        if int(np.max(decoded, initial=0)) > maximum:
+            raise JPEGXLError(f"JPEG XL samples exceed the declared {bit_depth}-bit range.")
         encoded = decoded.astype(np.float32)
+        encoded *= np.float32(1.0 / maximum)
+    else:
+        encoded = decoded.astype(np.float32, copy=False)
+    del decoded
 
     app_metadata = info.get("app_metadata") or {}
     color_space = app_metadata.get("color_space")
     transfer = app_metadata.get("transfer_function")
     confident = bool(color_space and transfer)
     if confident:
-        image = normalize_to_acescg(encoded, str(color_space), str(transfer))
+        image = normalize_to_acescg_bounded(
+            encoded, str(color_space), str(transfer), cancelled=cancelled
+        )
         metadata_color = "ACEScg"
         metadata_transfer = "LINEAR"
     else:
@@ -97,7 +113,14 @@ def decode_jpegxl(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
     }
     if app_metadata:
         metadata["jpegxl_app_metadata"] = app_metadata
+    if confident:
+        metadata["decoder_normalized_to_acescg"] = True
     return np.asarray(image, dtype=np.float32), metadata
+
+
+def _raise_if_cancelled(cancelled: Callable[[], bool] | None) -> None:
+    if cancelled is not None and cancelled():
+        raise JPEGXLError("Import cancelled")
 
 
 def encode_hdr_jpegxl(image: np.ndarray, quality: int) -> bytes:
@@ -147,9 +170,18 @@ def validate_jpegxl(payload: bytes, expected_shape: tuple[int, int]) -> str:
         raise JPEGXLError(
             f"JPEG XL validation returned {decoded.shape[:2]}; expected {expected_shape}."
         )
-    metadata = _read_app_metadata_box(payload)
+    if not np.all(np.isfinite(decoded)):
+        raise JPEGXLError("JPEG XL validation returned non-finite samples.")
+    metadata = _validate_app_metadata(_read_app_metadata_box(payload))
     if metadata.get("color_space") != "BT.2020" or metadata.get("transfer_function") != "PQ":
         raise JPEGXLError("JPEG XL output is missing its Rec.2020 PQ interpretation marker.")
+    if metadata.get("bit_depth") != 12:
+        raise JPEGXLError("JPEG XL output marker does not declare 12-bit samples.")
+    if not np.issubdtype(decoded.dtype, np.integer) or int(np.max(decoded, initial=0)) > 4095:
+        raise JPEGXLError("JPEG XL output did not decode to valid 12-bit integer samples.")
+    basic_info = _probe_basic_info(payload)
+    if basic_info.get("bits_per_sample") not in {None, 12}:
+        raise JPEGXLError("JPEG XL codestream precision does not match its 12-bit marker.")
     return "Validated by decoding the 12-bit Rec.2020 PQ result."
 
 
@@ -164,15 +196,56 @@ def _pq_oetf(luminance_nits: np.ndarray) -> np.ndarray:
     return np.power((c1 + c2 * powered) / (np.float32(1.0) + c3 * powered), m2).astype(np.float32)
 
 
-def _infer_integer_bit_depth(image: np.ndarray) -> int:
-    if image.dtype == np.uint8:
-        return 8
-    maximum = int(np.max(image, initial=0))
-    required = max(1, int(math.ceil(math.log2(maximum + 1))))
-    for candidate in (8, 10, 12, 16):
-        if required <= candidate:
-            return candidate
-    return int(np.iinfo(image.dtype).bits)
+def _resolve_bit_depth(image: np.ndarray, info: dict[str, Any]) -> int:
+    probed = info.get("bits_per_sample")
+    marker = (info.get("app_metadata") or {}).get("bit_depth")
+    if probed is not None:
+        try:
+            probed = int(probed)
+        except (TypeError, ValueError) as exc:
+            raise JPEGXLError("JPEG XL decoder returned an invalid sample precision.") from exc
+        if probed <= 0 or probed > 32:
+            raise JPEGXLError("JPEG XL decoder returned an unsupported sample precision.")
+    if marker is not None and probed is not None and int(marker) != probed:
+        raise JPEGXLError("JPEG XL sample precision conflicts with its HDR Finisher marker.")
+    bit_depth = int(probed or marker or 0)
+    if np.issubdtype(image.dtype, np.integer):
+        if not bit_depth:
+            if image.dtype == np.uint8:
+                return 8
+            raise JPEGXLError(
+                "JPEG XL integer precision is unavailable; refusing to infer bit depth from image brightness."
+            )
+        if bit_depth > np.iinfo(image.dtype).bits:
+            raise JPEGXLError("JPEG XL precision exceeds the decoded integer storage type.")
+        return bit_depth
+    return bit_depth or int(image.dtype.itemsize * 8)
+
+
+def _validate_app_metadata(value: dict[str, Any]) -> dict[str, Any]:
+    if not value:
+        return {}
+    expected = {
+        "schema_version",
+        "color_space",
+        "transfer_function",
+        "bit_depth",
+        "reference_white_nits",
+    }
+    if set(value) != expected:
+        raise JPEGXLError("JPEG XL HDR Finisher marker has an invalid schema.")
+    if value.get("schema_version") != _APP_METADATA_VERSION:
+        raise JPEGXLError("JPEG XL HDR Finisher marker uses an unsupported schema version.")
+    if value.get("color_space") != "BT.2020" or value.get("transfer_function") not in {"PQ", "HLG"}:
+        raise JPEGXLError("JPEG XL HDR Finisher marker has an unsupported color interpretation.")
+    if type(value.get("bit_depth")) is not int or value["bit_depth"] not in {8, 10, 12, 16}:
+        raise JPEGXLError("JPEG XL HDR Finisher marker has an invalid bit depth.")
+    reference_white = value.get("reference_white_nits")
+    if not isinstance(reference_white, (int, float)) or isinstance(reference_white, bool):
+        raise JPEGXLError("JPEG XL HDR Finisher marker has an invalid reference white.")
+    if not math.isfinite(float(reference_white)) or not 0 < float(reference_white) <= 10000:
+        raise JPEGXLError("JPEG XL HDR Finisher marker has an invalid reference white.")
+    return value
 
 
 def _box(kind: bytes, payload: bytes) -> bytes:

@@ -176,6 +176,7 @@ class SessionRenderCache:
         long_edge: int,
         is_current: Callable[[], bool] | None = None,
         local_adjustments: list[LocalAdjustment] | None = None,
+        _record_diagnostics: bool = True,
     ) -> np.ndarray:
         edge = max(256, int(long_edge))
         signature = adjustment_signature(adjustments) + local_adjustment_signature(local_adjustments)
@@ -185,7 +186,8 @@ class SessionRenderCache:
             with self._lock:
                 cached = self._frames.get(key)
                 if cached is not None:
-                    self._hits += 1
+                    if _record_diagnostics:
+                        self._hits += 1
                     self._frames.move_to_end(key)
                     return cached
                 if is_current is not None and not is_current():
@@ -195,7 +197,8 @@ class SessionRenderCache:
                 if flight is None:
                     flight = Event()
                     self._inflight[flight_key] = flight
-                    self._misses += 1
+                    if _record_diagnostics:
+                        self._misses += 1
                     source, sdr_reference = self._proxies_locked(edge)
                     break
                 self._singleflight_waits += 1
@@ -272,6 +275,7 @@ class SessionRenderCache:
                 edge,
                 is_current=is_current,
                 local_adjustments=local_adjustments,
+                _record_diagnostics=False,
             )
             result = build_scope_from_processed(
                 processed,

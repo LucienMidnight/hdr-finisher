@@ -241,7 +241,7 @@
               <span id="chrome-proof-inline-status" class="status-text muted">Off</span>
             </div>
             <label class="proof-enable-row">
-              <span><strong>Show Chromium proof</strong><small>See the delivered image through your current browser's native HDR rendering pipeline</small></span>
+              <span><strong>Show Chromium proof</strong><small>Render the actual delivered file through this app's Chromium HDR pipeline</small></span>
               <input id="chrome-proof-toggle" type="checkbox" aria-label="Show Chromium proof">
             </label>
             <label class="proof-enable-row proof-watermark-row">
@@ -253,6 +253,7 @@
                 <select id="chrome-proof-format">
                   <option value="jpeg_ultrahdr">JPEG Ultra HDR</option>
                   <option value="avif_gain_map">AVIF + gain map</option>
+                  <option value="jpegxl_hdr">JPEG XL HDR</option>
                 </select>
               </label>
               <label>Target display peak
@@ -275,10 +276,11 @@
               </label>
             </div>
             <div id="proof-preview-switch" class="proof-preview-switch hidden" role="group" aria-label="Proof preview rendition">
-              <button type="button" class="active" data-proof-preview="hdr" aria-pressed="true">HDR adaptation</button>
+              <button type="button" class="active" data-proof-preview="delivered" aria-pressed="true">Browser delivery</button>
+              <button type="button" data-proof-preview="hdr" aria-pressed="false">Reference target</button>
               <button type="button" data-proof-preview="sdr" aria-pressed="false">SDR base</button>
             </div>
-            <p class="proof-explainer">The target reconstructs delivered gain-map bytes for that reference headroom. It is not a hard clip and never changes the grade or export.</p>
+            <p class="proof-explainer">Browser delivery renders the encoded artifact itself. Reference target reconstructs its gain-map bytes for the selected headroom; it is not a prediction of browser adaptation.</p>
             <p class="proof-explainer">Proofs refresh on demand. Grading changes mark the result stale without interrupting editing.</p>
             <button id="chrome-proof-refresh" class="button-primary rail-primary-action" type="button">Build proof</button>
             <button id="open-proof-external" class="button-secondary rail-primary-action" type="button">Open proof in browser</button>
@@ -294,7 +296,7 @@
               <img id="preview-overlay" alt="" aria-hidden="true" draggable="false">
               <canvas id="local-mask-overlay" class="local-mask-overlay" tabindex="0" aria-label="Local mask editor. Use bracket keys to select nodes, H to cycle node and handles, arrow keys to move, Enter to add, and Delete to remove."></canvas>
               <canvas id="straighten-grid-overlay" class="straighten-grid-overlay hidden" aria-hidden="true"></canvas>
-              <img id="chrome-proof-image" alt="Chromium fixed-headroom proof preview" draggable="false">
+              <img id="chrome-proof-image" alt="Chromium delivery proof preview" draggable="false">
               <span id="chrome-proof-watermark" aria-hidden="true">PROOF</span>
               <div id="crop-editor-overlay" class="crop-editor-overlay hidden" aria-hidden="true">
                 <div id="crop-box" class="crop-box" tabindex="0" aria-label="Crop frame. Drag to reposition; use handles to resize.">
@@ -331,9 +333,12 @@
               <button id="manual-interpretation" class="button-secondary" type="button">Set manually</button>
             </div>
           </div>
-          <div id="preview-status" class="preview-status hidden" aria-live="polite" role="status">
-            <span id="preview-status-copy"></span>
-            <progress id="preview-progress" class="preview-progress" aria-label="Preview progress"></progress>
+          <div id="preview-status" class="preview-status hidden" aria-live="polite">
+            <span id="preview-status-copy" role="status"></span>
+            <div class="preview-status-actions">
+              <progress id="preview-progress" class="preview-progress" aria-label="Preview progress"></progress>
+              <button id="cancel-import" class="button-secondary preview-cancel hidden" type="button">Cancel import</button>
+            </div>
           </div>
         </div>
       </section>

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 import warnings
 
 import numpy as np
@@ -251,6 +251,49 @@ def normalize_to_acescg(image: np.ndarray, source_color_space: str | None = None
         )
         return sanitize_array(converted)
     return sanitized
+
+
+def normalize_to_acescg_bounded(
+    image: np.ndarray,
+    source_color_space: str | None = None,
+    transfer_function: str | None = None,
+    *,
+    rows: int = 128,
+    cancelled: Callable[[], bool] | None = None,
+) -> np.ndarray:
+    """Normalize into a writable float32 buffer with strip-bounded temporaries."""
+    result = image.astype(np.float32, copy=False)
+    if not result.flags.writeable:
+        result = result.copy()
+    strip_rows = max(1, int(rows))
+    for start in range(0, result.shape[0], strip_rows):
+        if cancelled is not None and cancelled():
+            raise RuntimeError("Import cancelled")
+        stop = min(start + strip_rows, result.shape[0])
+        result[start:stop] = normalize_to_acescg(
+            result[start:stop], source_color_space, transfer_function
+        )
+    return result
+
+
+def transform_float32_bounded(
+    image: np.ndarray,
+    transform: Callable[[np.ndarray], np.ndarray],
+    *,
+    rows: int = 128,
+    cancelled: Callable[[], bool] | None = None,
+) -> np.ndarray:
+    """Apply a color transform in-place with memory independent of image height."""
+    result = image.astype(np.float32, copy=False)
+    if not result.flags.writeable:
+        result = result.copy()
+    strip_rows = max(1, int(rows))
+    for start in range(0, result.shape[0], strip_rows):
+        if cancelled is not None and cancelled():
+            raise RuntimeError("Import cancelled")
+        stop = min(start + strip_rows, result.shape[0])
+        result[start:stop] = transform(result[start:stop])
+    return result
 
 
 def compute_peak_stops(image: np.ndarray) -> float | None:

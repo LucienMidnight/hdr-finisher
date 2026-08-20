@@ -331,16 +331,26 @@ def test_overlay_ui_explains_reference_nit_zebras_and_has_a_false_color_key() ->
     assert 'id="overlay-threshold" type="range" min="10" max="4000" step="10" value="100"' in html
     assert "function renderFalseColorKey" in javascript
     assert 'if (path === "shared.overlay_threshold") return `${Math.round(numeric)} nit`;' in javascript
+    overlay_commit = javascript[javascript.index("function commitAdjustmentValue") : javascript.index("function syncControlsFromState")]
+    assert "markGlobalEditDirty();" in overlay_commit
+    assert 'if (path === "shared.overlay_mode") refreshOverlayAndScopesImmediately();' in overlay_commit
+    assert 'if (state.adjustments.shared.overlay_mode === "off") clearPreviewOverlay();' in javascript
 
 
 def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     assert "Export..." in html
     assert "Export file" not in html
     assert "JPEG XL HDR" in html
     assert "not in this build" not in html
     assert "Chromium Proof" in html
+    assert 'data-proof-preview="delivered"' in html
+    assert "Browser delivery" in html
+    assert "Reference target" in html
+    assert '<option value="jpegxl_hdr">JPEG XL HDR</option>' in html
+    assert '["avif_gain_map", "jpeg_ultrahdr", "jpegxl_hdr"]' in javascript
     assert 'id="chrome-proof-target"' in html
     assert 'id="jpeg-gain-map-quality"' in html
     assert 'id="jpeg-gain-map-scale"' in html
@@ -348,6 +358,7 @@ def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     assert 'class="export-directory-field"' in html
     assert 'id="directory-browser"' in html
     assert 'id="directory-browser-select"' in html
+    assert '{ role: "reload" }' in (DESKTOP / "main.js").read_text(encoding="utf-8")
     assert "/api/media-browser" in (FRONTEND / "app.js").read_text(encoding="utf-8")
     assert ".control-group-body" in css
     assert "border-top: 2px solid" in css
@@ -432,6 +443,9 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     assert ".preview-title-wrap:hover .preview-title-tooltip" in css
     assert 'id="preview-status-copy"' in html
     assert '<progress id="preview-progress"' in html
+    assert 'id="cancel-import"' in html
+    assert 'els.cancelImport?.addEventListener("click", cancelActiveImport);' in javascript
+    assert "Import cancelled. Current image kept." in javascript
     assert 'id="override-warning"' not in html
     assert 'id="apply-interpretation" class="button-primary"' in html
     assert "Source Interpretation" in html
@@ -459,11 +473,14 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
         "crop.svg",
         "eraser.svg",
         "eye.svg",
+        "folder.svg",
         "pencil.svg",
         "rotate-clockwise.svg",
         "square-half.svg",
     ):
         assert f'url("assets/icons/tabler/{icon}")' in css
+    assert '.directory-browser-entry.directory::before' in css
+    assert 'content: "▸"' not in css
     assert ".disclosure-trigger::before" in css
     assert '.disclosure-trigger[aria-expanded="true"]::before' in css
     assert "dockH: [240, 340]" in javascript
@@ -904,6 +921,29 @@ def test_frontend_assets_use_the_application_version_for_cache_busting() -> None
     assert html.count("__HDR_FINISHER_ASSET_VERSION__") == 5
     assert '/static/app.js?v=__HDR_FINISHER_ASSET_VERSION__' in html
     assert '/static/styles.css?v=__HDR_FINISHER_ASSET_VERSION__' in html
+
+
+def test_manual_interpretation_action_reveals_the_source_rail() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    reveal_rail = javascript[javascript.index("function revealSourceRail()") : javascript.index("function closeCompactSourceRail")]
+    open_manual = javascript[javascript.index("function openManualInterpretation()") : javascript.index("function renderInterpretationGate")]
+
+    assert "state.compactSourceOpen = true" in reveal_rail
+    assert "state.wideSourceCollapsed = false" in reveal_rail
+    assert "applyResponsiveWorkspaceState();" in reveal_rail
+    assert "revealSourceRail();" in open_manual
+    assert 'els.interpretationMode.value = "manual";' in open_manual
+    assert "els.interpretationColorSpace.focus();" in open_manual
+
+
+def test_export_action_remains_in_normal_scroll_flow() -> None:
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+
+    sheet_actions = css[css.index(".export-sheet .sheet-actions {") : css.index(".export-sheet .sheet-actions .button-primary")]
+    assert "position: sticky" not in sheet_actions
+    assert "bottom: 0" not in sheet_actions
+    assert "display: grid" in sheet_actions
 
 
 def test_modified_status_uses_compact_sentence_case_term() -> None:

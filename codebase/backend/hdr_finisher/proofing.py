@@ -10,7 +10,7 @@ import math
 from pathlib import Path
 import shutil
 from tempfile import mkdtemp
-from threading import RLock
+from threading import Lock, RLock
 from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
@@ -36,10 +36,16 @@ from .models import (
     ProofReconstructionRequest,
     ProofReconstructionResponse,
 )
+from .jpegxl import inspect_jpegxl
 from .preview import _encode_hdr_avif
 
 
-SUPPORTED_PROOF_FORMATS = {"jpeg_ultrahdr", "avif_gain_map"}
+PROOF_FORMAT_INFO = {
+    "jpeg_ultrahdr": (".jpg", "image/jpeg"),
+    "avif_gain_map": (".avif", "image/avif"),
+    "jpegxl_hdr": (".jxl", "image/jxl"),
+}
+SUPPORTED_PROOF_FORMATS = set(PROOF_FORMAT_INFO)
 MATRIX_HEADROOMS = (0.0, 1.0, 2.0, 3.0, 4.0)
 
 
@@ -152,6 +158,8 @@ class ProofArtifactStore:
         self._tiles: dict[str, ProofTile] = {}
         self._request_cache: dict[str, str] = {}
         self._target_cache: dict[str, ProofMatrixTile] = {}
+        self._endpoint_cache: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+        self._endpoint_locks = {}
         atexit.register(self.clear)
 
     def clear(self) -> None:
@@ -160,6 +168,8 @@ class ProofArtifactStore:
             self._tiles.clear()
             self._request_cache.clear()
             self._target_cache.clear()
+            self._endpoint_cache.clear()
+            self._endpoint_locks.clear()
         shutil.rmtree(self.root, ignore_errors=True)
 
     def create(
@@ -184,7 +194,7 @@ class ProofArtifactStore:
             sdr_reference_image=sdr_reference,
             adjustments=request.adjustments,
         )
-        suffix = ".jpg" if request.format == "jpeg_ultrahdr" else ".avif"
+        suffix, media_type = PROOF_FORMAT_INFO[request.format]
         # Proofs are internal cache artifacts, not user exports. Use a unique
         # staging target so concurrent/retried builds cannot collide, and allow
         # the exporter to replace that owned target if it created a partial file.
@@ -246,7 +256,7 @@ class ProofArtifactStore:
             artifact_id=artifact_id,
             format=request.format,
             path=final_path,
-            media_type="image/jpeg" if request.format == "jpeg_ultrahdr" else "image/avif",
+            media_type=media_type,
             sha256=digest,
             width=int(width),
             height=int(height),
@@ -401,11 +411,11 @@ class ProofArtifactStore:
 
     @staticmethod
     def _reconstruction_label(artifact: ProofArtifact) -> str:
-        return (
-            "Encoded AVIF gain map tone-mapped by libavif"
-            if artifact.format == "avif_gain_map"
-            else "Encoded JPEG endpoints reconstructed with ISO/Skia weighting"
-        )
+        if artifact.format == "avif_gain_map":
+            return "Encoded AVIF gain map tone-mapped by libavif"
+        if artifact.format == "jpegxl_hdr":
+            return "Direct JPEG XL HDR adapted from authored SDR/HDR reference endpoints"
+        return "Encoded JPEG endpoints reconstructed with ISO/Skia weighting"
 
     def _matrix_endpoints(self, artifact: ProofArtifact) -> tuple[np.ndarray, np.ndarray]:
         if artifact.format != "jpeg_ultrahdr":
@@ -413,46 +423,73 @@ class ProofArtifactStore:
         ultrahdr = resolve_binary("ultrahdr_app")
         if ultrahdr is None:
             return artifact.sdr_authored, artifact.hdr_authored
-        try:
-            from PIL import Image
+        with self._lock:
+            cached = self._endpoint_cache.get(artifact.artifact_id)
+            endpoint_lock = self._endpoint_locks.setdefault(artifact.artifact_id, Lock())
+        if cached is not None:
+            return cached
 
-            with Image.open(artifact.path) as image:
-                srgb = np.asarray(image.convert("RGB"), dtype=np.float32) / np.float32(255.0)
-            linear_srgb = np.where(
-                srgb <= 0.04045,
-                srgb / 12.92,
-                np.power((srgb + 0.055) / 1.055, 2.4),
-            )
-            base = linear_srgb_to_acescg(linear_srgb) * np.float32(0.18)
-            decoded_path = self.root / f"decoded-{artifact.artifact_id}.rgba-f16.raw"
-            if not decoded_path.exists():
-                _run_command(
-                    [
-                        str(ultrahdr),
-                        "-m",
-                        "1",
-                        "-j",
-                        str(artifact.path),
-                        "-o",
-                        "0",
-                        "-O",
-                        "4",
-                        "-z",
-                        str(decoded_path),
-                    ]
+        with endpoint_lock:
+            with self._lock:
+                cached = self._endpoint_cache.get(artifact.artifact_id)
+            if cached is not None:
+                return cached
+            try:
+                from PIL import Image
+
+                with Image.open(artifact.path) as image:
+                    srgb = np.asarray(image.convert("RGB"), dtype=np.float32) / np.float32(255.0)
+                linear_srgb = np.where(
+                    srgb <= 0.04045,
+                    srgb / 12.92,
+                    np.power((srgb + 0.055) / 1.055, 2.4),
                 )
-            decoded = np.fromfile(decoded_path, dtype="<f2").astype(np.float32)
-            decoded = decoded.reshape(artifact.height, artifact.width, 4)[..., :3]
-            # libultrahdr linear output uses 1.0 == 203 nits. HDR Finisher uses
-            # 0.18 == 100 nits, so convert back to the app's scene-linear scale.
-            decoded *= np.float32(203.0 * 0.18 / 100.0)
-            if artifact.jpeg_gain_map is None or artifact.jpeg_gain_map.use_base_color_space:
-                alternate = linear_srgb_to_acescg(decoded)
-            else:
-                alternate = linear_bt2020_to_acescg(decoded)
-            return np.clip(base, 0.0, None), np.clip(alternate, 0.0, None)
-        except (OSError, ValueError, RuntimeError):
-            return artifact.sdr_authored, artifact.hdr_authored
+                base = linear_srgb_to_acescg(linear_srgb) * np.float32(0.18)
+                decoded_path = self.root / f"decoded-{artifact.artifact_id}.rgba-f16.raw"
+                expected_bytes = artifact.height * artifact.width * 4 * np.dtype("<f2").itemsize
+                if decoded_path.exists() and decoded_path.stat().st_size != expected_bytes:
+                    decoded_path.unlink()
+                if not decoded_path.exists():
+                    staged_decoded = self.root / f".decoded-{artifact.artifact_id}-{uuid4().hex}.rgba-f16.raw"
+                    try:
+                        _run_command(
+                            [
+                                str(ultrahdr),
+                                "-m",
+                                "1",
+                                "-j",
+                                str(artifact.path),
+                                "-o",
+                                "0",
+                                "-O",
+                                "4",
+                                "-z",
+                                str(staged_decoded),
+                            ]
+                        )
+                        if not staged_decoded.exists() or staged_decoded.stat().st_size != expected_bytes:
+                            actual_bytes = staged_decoded.stat().st_size if staged_decoded.exists() else 0
+                            raise RuntimeError(
+                                f"libultrahdr returned {actual_bytes} decoded bytes; expected {expected_bytes}."
+                            )
+                        staged_decoded.replace(decoded_path)
+                    finally:
+                        staged_decoded.unlink(missing_ok=True)
+                decoded = np.fromfile(decoded_path, dtype="<f2").astype(np.float32)
+                decoded = decoded.reshape(artifact.height, artifact.width, 4)[..., :3]
+                # libultrahdr linear output uses 1.0 == 203 nits. HDR Finisher uses
+                # 0.18 == 100 nits, so convert back to the app's scene-linear scale.
+                decoded *= np.float32(203.0 * 0.18 / 100.0)
+                if artifact.jpeg_gain_map is None or artifact.jpeg_gain_map.use_base_color_space:
+                    alternate = linear_srgb_to_acescg(decoded)
+                else:
+                    alternate = linear_bt2020_to_acescg(decoded)
+                endpoints = np.clip(base, 0.0, None), np.clip(alternate, 0.0, None)
+                with self._lock:
+                    self._endpoint_cache[artifact.artifact_id] = endpoints
+                return endpoints
+            except (OSError, ValueError, RuntimeError):
+                return artifact.sdr_authored, artifact.hdr_authored
 
     def _encoded_matrix_tile(self, artifact: ProofArtifact, target: float, reconstructed: np.ndarray) -> bytes:
         if artifact.format == "avif_gain_map":
@@ -489,7 +526,7 @@ class ProofArtifactStore:
 
     @staticmethod
     def _response(artifact: ProofArtifact) -> ProofArtifactResponse:
-        suffix = ".jpg" if artifact.format == "jpeg_ultrahdr" else ".avif"
+        suffix, _media_type = PROOF_FORMAT_INFO[artifact.format]
         return ProofArtifactResponse(
             artifact_id=artifact.artifact_id,
             format=artifact.format,
@@ -567,6 +604,14 @@ def _inspect_artifact(path: Path, format_name: str) -> tuple[float, str]:
         gain = info.get("gain_map") or {}
         headroom = float(gain.get("alternate_headroom", 0.0))
         return headroom, "ISO 21496-1 AVIF gain map; SDR base; 10-bit gain map"
+
+    if format_name == "jpegxl_hdr":
+        info = inspect_jpegxl(path)
+        metadata = info.get("app_metadata") or {}
+        if metadata.get("color_space") != "BT.2020" or metadata.get("transfer_function") != "PQ":
+            raise ValueError("JPEG XL proof is missing its direct-HDR Rec.2020 PQ marker.")
+        bit_depth = int(metadata.get("bit_depth") or info.get("bits_per_sample") or 12)
+        return target_headroom_for_peak_nits(10000.0), f"Direct HDR JPEG XL; Rec.2020 PQ; {bit_depth}-bit"
 
     metadata = _inspect_jpeg_gain_map(path)
     headroom = math.log2(max(1.0, metadata.hdr_capacity_max))

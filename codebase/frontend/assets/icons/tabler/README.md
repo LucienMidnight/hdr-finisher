@@ -12,6 +12,7 @@ These SVGs are a vendored subset of [Tabler Icons](https://github.com/tabler/tab
 | UI action | Asset |
 |---|---|
 | Disclosure | `chevron-right.svg` |
+| Media-browser folder | `folder.svg` |
 | Brush mask | `brush.svg` |
 | Erase mask | `eraser.svg` |
 | Linear-gradient mask | `square-half.svg` |

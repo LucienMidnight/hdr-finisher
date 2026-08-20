@@ -119,7 +119,8 @@
     state.proofArtifact = null;
     state.proofReconstruction = null;
     state.proofSdrReconstruction = null;
-    state.proofPreview = "hdr";
+    state.proofDeliveryAvailable = true;
+    state.proofPreview = "delivered";
     state.proofDirty = true;
     artifactDirty = true;
     phase = "idle";
@@ -185,12 +186,18 @@
         parseProofResponse(reconstructionResponse, "Chromium proof reconstruction failed."),
         parseProofResponse(sdrResponse, "SDR proof endpoint failed."),
       ]);
-      await Promise.all([preloadImage(reconstruction.tile.url), preloadImage(sdrReconstruction.tile.url)]);
+      const [deliveryAvailable] = await Promise.all([
+        preloadImage(artifact.url).then(() => true, () => false),
+        preloadImage(reconstruction.tile.url),
+        preloadImage(sdrReconstruction.tile.url),
+      ]);
       if (generation !== requestGeneration) return;
 
       state.proofArtifact = artifact;
       state.proofReconstruction = reconstruction;
       state.proofSdrReconstruction = sdrReconstruction;
+      state.proofDeliveryAvailable = deliveryAvailable;
+      if (!deliveryAvailable && state.proofPreview === "delivered") state.proofPreview = "hdr";
       state.proofDirty = false;
       artifactDirty = false;
       phase = "idle";
@@ -240,15 +247,16 @@
   function syncProofPresentation() {
     const suspended = state.activeWorkflow !== "proof" || state.currentView !== "hdr" || state.comparePeekActive;
     const activeResult = state.proofPreview === "sdr" ? state.proofSdrReconstruction : state.proofReconstruction;
-    if (activeResult?.tile?.url && els.chromeProofImage.getAttribute("src") !== activeResult.tile.url) {
-      els.chromeProofImage.src = activeResult.tile.url;
+    const activeUrl = state.proofPreview === "delivered" ? state.proofArtifact?.url : activeResult?.tile?.url;
+    if (activeUrl && els.chromeProofImage.getAttribute("src") !== activeUrl) {
+      els.chromeProofImage.src = activeUrl;
     }
-    const canShow = Boolean(state.proofEnabled && !suspended && activeResult?.tile?.url);
+    const canShow = Boolean(state.proofEnabled && !suspended && activeUrl);
     els.chromeProofImage.style.display = canShow ? "block" : "none";
     els.chromeProofWatermark.style.display = canShow && state.proofWatermarkEnabled ? "flex" : "none";
     if (state.activeWorkflow === "proof" && state.proofEnabled && state.currentView === "hdr" && !state.comparePeekActive) {
       els.viewerBranchNote.textContent = canShow
-        ? `Chromium Proof · ${proofFormatLabel()} · ${proofTargetLabel()} · scopes: HDR.`
+        ? `Chromium Proof · ${proofFormatLabel()} · ${proofPreviewLabel()} · scopes: authored HDR.`
         : "Chromium Proof is not current · build or refresh it from the Proof settings rail.";
       els.scopeKindLabel.textContent = "HDR";
     } else {
@@ -294,6 +302,9 @@
     els.proofPreviewSwitch.classList.toggle("hidden", !state.proofReconstruction);
     els.proofPreviewButtons.forEach((button) => {
       const active = button.dataset.proofPreview === state.proofPreview;
+      button.disabled = button.dataset.proofPreview === "delivered"
+        && Boolean(state.proofArtifact)
+        && !state.proofDeliveryAvailable;
       button.classList.toggle("active", active);
       button.setAttribute("aria-pressed", String(active));
     });
@@ -316,10 +327,13 @@
       return `${proofFormatLabel()} · ${proofTargetLabel()}. Build the proof when you are ready to review.${fallback}`;
     }
     const result = state.proofReconstruction;
-    const details = [`${proofFormatLabel()} · ${result.target_label}`, `${result.resolved_headroom.toFixed(2)} stops`];
+    const details = [`${proofFormatLabel()} · ${proofPreviewLabel()}`];
+    if (state.proofPreview !== "hdr") details.push(`reference ${result.target_label}`);
+    details.push(`${result.resolved_headroom.toFixed(2)} stops`);
     if (result.display_label) details.push(result.display_label);
     if (result.capped_by_encoded_headroom) details.push(`capped by encoded ${result.encoded_headroom.toFixed(2)} stops`);
     if (result.display_can_represent === false) details.push("selected reference exceeds this display's reported headroom");
+    if (!state.proofDeliveryAvailable) details.push("Chromium cannot decode this delivery; showing the reference target");
     if (autoFallbackNotice) details.push("Auto unavailable; using the 1,000-nit default");
     if (reviewSuggestion) details.push(reviewSuggestion);
     return details.join(" · ");
@@ -394,7 +408,11 @@
 
   function reviewExportFormat(format) {
     if (format === "sdr_png") return;
-    const label = format === "avif_gain_map" ? "AVIF + gain map" : "JPEG Ultra HDR";
+    const label = {
+      avif_gain_map: "AVIF + gain map",
+      jpeg_ultrahdr: "JPEG Ultra HDR",
+      jpegxl_hdr: "JPEG XL HDR",
+    }[format] || "HDR delivery";
     if (state.proofFormat !== format) {
       state.proofFormat = format;
       artifactDirty = true;
@@ -407,7 +425,17 @@
   }
 
   function proofFormatLabel() {
-    return state.proofFormat === "avif_gain_map" ? "AVIF" : "JPEG Ultra HDR";
+    return {
+      avif_gain_map: "AVIF",
+      jpeg_ultrahdr: "JPEG Ultra HDR",
+      jpegxl_hdr: "JPEG XL HDR",
+    }[state.proofFormat] || "HDR delivery";
+  }
+
+  function proofPreviewLabel() {
+    if (state.proofPreview === "delivered") return "browser delivery";
+    if (state.proofPreview === "sdr") return "SDR base";
+    return `reference ${proofTargetLabel()}`;
   }
 
   function proofTargetLabel() {

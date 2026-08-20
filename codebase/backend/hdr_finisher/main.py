@@ -114,7 +114,7 @@ export_backends = build_export_backends(capabilities)
 proof_store = ProofArtifactStore()
 evidence_store = EvidenceStore()
 media_browser_store = MediaBrowserStore()
-import_jobs = ImportJobManager(store, media_browser_store, workers=2)
+import_jobs = ImportJobManager(store, media_browser_store, workers=1)
 atexit.register(import_jobs.close)
 external_proof_tokens: dict[str, tuple[str, float]] = {}
 SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
@@ -233,8 +233,14 @@ def create_desktop_session(request: DesktopSessionOpenRequest) -> SessionSummary
 def create_import_job(request: ImportJobRequest) -> dict[str, object]:
     try:
         source_path = desktop_path_grants.consume(request.grant, "source-open")
-        return import_jobs.start(source_path, request.raw_import_settings).payload()
-    except ValueError as exc:
+        if request.replace_session_id is not None:
+            current = store.get(request.replace_session_id)
+            if current.source_path.resolve() != source_path.resolve():
+                raise ValueError("RAW re-development must use the active session source.")
+        return import_jobs.start(
+            source_path, request.raw_import_settings, replace_session_id=request.replace_session_id
+        ).payload()
+    except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -260,9 +266,11 @@ def import_job_preview(job_id: str) -> FileResponse:
         job = import_jobs.get(job_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    if job.preview_path is None or not job.preview_path.is_file():
+    with job.state_lock:
+        preview_path = job.preview_path
+    if preview_path is None or not preview_path.is_file():
         raise HTTPException(status_code=404, detail="The import preview is not ready.")
-    return FileResponse(job.preview_path, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+    return FileResponse(preview_path, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 @app.post("/api/desktop/project/open", response_model=SessionSummary)

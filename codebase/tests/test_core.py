@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from hdr_finisher.adjustments import apply_adjustments
-from hdr_finisher.analysis import classify_hdr
+from hdr_finisher.analysis import _luma_peaks, classify_hdr
 from hdr_finisher.color import normalize_to_acescg, sanitize_array
 from hdr_finisher.exporters import _linear_to_bt2020_pq_yuv10, _linear_to_pq_rgb10, _linear_to_srgb8
 from hdr_finisher.loader import _apply_apple_hdr_gainmap, _compute_apple_headroom
@@ -28,6 +28,16 @@ def test_hdr_true_classification_when_values_exceed_one() -> None:
     image = np.ones((2, 2, 3), dtype=np.float32) * 2.0
     analysis = classify_hdr(image, {"color_space": "ACEScg"}, ".exr")
     assert analysis.classification == HDRClassification.HDR_TRUE
+
+
+def test_large_frame_analysis_keeps_exact_peak_with_bounded_robust_sample() -> None:
+    image = np.full((1500, 1500, 3), 0.18, dtype=np.float32)
+    image[1499, 1499] = 4.0
+
+    peak, robust_peak = _luma_peaks(image, maximum_quantile_samples=250_000, rows=64)
+
+    assert peak == pytest.approx(4.0, abs=1e-6)
+    assert robust_peak == pytest.approx(0.18, abs=1e-6)
 
 
 def test_hdr_headroom_classification_uses_strict_one_point_zero_boundary() -> None:

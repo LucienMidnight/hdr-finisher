@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   openProject: () => ipcRenderer.invoke("desktop:open-project"),
   relinkSource: () => ipcRenderer.invoke("desktop:relink-source"),
   saveProject: (options) => ipcRenderer.invoke("desktop:save-project", options),
+  confirmUnsavedTransition: (options) => ipcRenderer.invoke("desktop:confirm-unsaved-transition", options),
   chooseExportPath: (options) => ipcRenderer.invoke("desktop:choose-export-path", options),
   chooseExportDirectory: (initialPath) => ipcRenderer.invoke("desktop:choose-export-directory", initialPath),
   resolveDroppedFile: async (file) => {

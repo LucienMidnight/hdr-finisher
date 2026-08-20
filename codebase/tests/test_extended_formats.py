@@ -1,20 +1,25 @@
 from __future__ import annotations
 
+import json
+import sys
 import time
 from pathlib import Path
+from threading import Event
+from types import SimpleNamespace
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from hdr_finisher.capabilities import probe_capabilities
 from hdr_finisher.exporters import JPEGXLHDRExportBackend
 from hdr_finisher.import_jobs import ImportJobManager
-from hdr_finisher.jpegxl import decode_jpegxl, encode_hdr_jpegxl, inspect_jpegxl, validate_jpegxl
+from hdr_finisher.jpegxl import _box, decode_jpegxl, encode_hdr_jpegxl, inspect_jpegxl, validate_jpegxl
 from hdr_finisher.loader import load_image
-from hdr_finisher.media_browser import MediaBrowserStore
-from hdr_finisher.models import AdjustmentState, CapabilityInfo, CapabilityStatus, EditDocument, ExportSettings, RawImportSettings, SourceReference
+from hdr_finisher.media_browser import MediaBrowserError, MediaBrowserStore
+from hdr_finisher.models import AdjustmentState, CapabilityInfo, CapabilityStatus, EditCommand, EditDocument, ExportSettings, RawImportSettings, SourceInterpretationOverride, SourceReference
 from hdr_finisher.models import LensCorrectionSettings
-from hdr_finisher.raw_import import _remap_bilinear_strips, apply_lens_correction, list_lens_profiles
+from hdr_finisher.raw_import import RawImportError, _remap_bilinear_strips, apply_lens_correction, decode_raw, list_lens_profiles
 from hdr_finisher.sessions import SessionStore
 
 
@@ -35,11 +40,32 @@ def test_jpegxl_hdr_round_trip_carries_explicit_app_interpretation(tmp_path: Pat
     assert decoded.shape == image.shape
     assert metadata["jpegxl_direct_hdr"] is True
     assert metadata["needs_color_override"] is False
+    assert metadata["decoder_normalized_to_acescg"] is True
 
     loaded, descriptor, loader_metadata, _analysis, _sdr = load_image(path)
     assert loaded.shape == image.shape
     assert descriptor.source_color_space == "ACEScg"
     assert loader_metadata["jpegxl_app_metadata"]["color_space"] == "BT.2020"
+
+
+def test_jpegxl_decode_reads_the_container_once(tmp_path: Path, monkeypatch) -> None:
+    image = np.full((8, 12, 3), 0.18, dtype=np.float32)
+    path = tmp_path / "single-read.jxl"
+    path.write_bytes(encode_hdr_jpegxl(image, 100))
+    original_read_bytes = Path.read_bytes
+    reads = 0
+
+    def tracked_read_bytes(candidate: Path) -> bytes:
+        nonlocal reads
+        if candidate == path:
+            reads += 1
+        return original_read_bytes(candidate)
+
+    monkeypatch.setattr(Path, "read_bytes", tracked_read_bytes)
+
+    decode_jpegxl(path)
+
+    assert reads == 1
 
 
 def test_capabilities_report_imagecodecs_jpegxl() -> None:
@@ -58,6 +84,46 @@ def test_unmarked_third_party_jpegxl_requires_color_confirmation(tmp_path: Path)
     assert descriptor.color_space_confident is False
     assert metadata["needs_color_override"] is True
     assert analysis.needs_color_override is True
+
+
+def test_dark_twelve_bit_jpegxl_never_infers_precision_from_brightness(tmp_path: Path, monkeypatch) -> None:
+    import imagecodecs
+
+    source = np.full((8, 12, 3), 64, dtype=np.uint16)
+    marker = {
+        "schema_version": 1,
+        "color_space": "BT.2020",
+        "transfer_function": "PQ",
+        "bit_depth": 12,
+        "reference_white_nits": 100.0,
+    }
+    payload = bytes(imagecodecs.jpegxl_encode(source, bitspersample=12, usecontainer=True))
+    payload += _box(b"hfmd", json.dumps(marker, separators=(",", ":")).encode("utf-8"))
+    path = tmp_path / "dark-12-bit.jxl"
+    path.write_bytes(payload)
+    monkeypatch.setattr("hdr_finisher.jpegxl._probe_basic_info", lambda _payload: {})
+
+    decoded, _metadata = decode_jpegxl(path)
+
+    # PQ decoding is nonlinear, but resolving 64 as 8-bit would make this value
+    # hundreds of times brighter than the declared 12-bit signal.
+    expected_code = np.float32(64.0 / 4095.0)
+    from hdr_finisher.color import normalize_to_acescg
+
+    expected = normalize_to_acescg(np.full_like(source, expected_code, dtype=np.float32), "BT.2020", "PQ")
+    assert np.allclose(decoded, expected, rtol=1e-5, atol=1e-7)
+
+
+def test_unmarked_high_precision_jpegxl_rejects_ambiguous_precision(tmp_path: Path, monkeypatch) -> None:
+    import imagecodecs
+
+    source = np.full((8, 12, 3), 64, dtype=np.uint16)
+    path = tmp_path / "ambiguous.jxl"
+    path.write_bytes(imagecodecs.jpegxl_encode(source, bitspersample=12, usecontainer=True))
+    monkeypatch.setattr("hdr_finisher.jpegxl._probe_basic_info", lambda _payload: {})
+
+    with pytest.raises(RuntimeError, match="refusing to infer bit depth"):
+        decode_jpegxl(path)
 
 
 def test_jpegxl_export_backend_writes_validated_atomic_output(tmp_path: Path) -> None:
@@ -117,6 +183,66 @@ def test_bounded_bilinear_remapper_preserves_identity() -> None:
     assert np.array_equal(remapped, image)
 
 
+def test_raw_decoder_returns_canonical_acescg_without_second_loader_transform(
+    tmp_path: Path, monkeypatch
+) -> None:
+    developed = np.zeros((4, 6, 3), dtype=np.uint16)
+    developed[..., 0] = 8192
+    developed[..., 1] = 4096
+
+    class FakeRaw:
+        raw_pattern = np.array([[0, 1], [1, 2]], dtype=np.uint8)
+        camera_whitebalance = [2.0, 1.0, 1.5, 1.0]
+        daylight_whitebalance = [1.8, 1.0, 1.4, 1.0]
+        sizes = SimpleNamespace(width=6, height=4, raw_width=6, raw_height=4)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def postprocess(self, **_kwargs):
+            return developed.copy()
+
+    fake_rawpy = SimpleNamespace(
+        imread=lambda _path: FakeRaw(),
+        DemosaicAlgorithm=SimpleNamespace(AHD="AHD"),
+        ColorSpace=SimpleNamespace(ACES="ACES"),
+        HighlightMode=SimpleNamespace(Clip="Clip"),
+    )
+    monkeypatch.setitem(sys.modules, "rawpy", fake_rawpy)
+    monkeypatch.setattr("hdr_finisher.raw_import._read_raw_exif", lambda _path: {})
+    source = tmp_path / "synthetic.dng"
+    source.write_bytes(b"synthetic raw")
+
+    image, metadata = decode_raw(
+        source,
+        RawImportSettings(lens=LensCorrectionSettings(mode="off")),
+    )
+
+    assert image.shape == developed.shape
+    assert image.dtype == np.float32
+    assert metadata["decoder_normalized_to_acescg"] is True
+    assert metadata["color_space"] == "ACEScg"
+    assert np.all(np.isfinite(image))
+
+
+def test_bounded_bilinear_remapper_honors_import_cancellation() -> None:
+    image = np.zeros((8, 8, 3), dtype=np.float32)
+    y, x = np.mgrid[:8, :8]
+    coordinates = np.stack([x, y], axis=-1).astype(np.float32)
+
+    with pytest.raises(RawImportError, match="Import cancelled"):
+        _remap_bilinear_strips(
+            image,
+            coordinates,
+            chromatic=False,
+            rows=2,
+            cancelled=lambda: True,
+        )
+
+
 def test_manual_lensfun_profile_is_named_and_applied() -> None:
     profile = next(item for item in list_lens_profiles(limit=2000) if item.distortion)
     image = np.linspace(0.0, 1.0, 48 * 64 * 3, dtype=np.float32).reshape(48, 64, 3)
@@ -137,8 +263,27 @@ def test_manual_lensfun_profile_is_named_and_applied() -> None:
     assert metadata["profile"]["id"] == profile.id
 
 
+def test_lens_profile_catalog_has_unique_resolvable_camera_mount_ids() -> None:
+    profiles = list_lens_profiles(limit=1000)
+    ids = [profile.id for profile in profiles]
+    assert len(ids) == len(set(ids))
+    assert all(profile.camera_maker and profile.camera_model and profile.mount for profile in profiles)
+    assert all(len(profile_id.split("|")) == 5 for profile_id in ids)
+
+
+def test_auto_lens_correction_soft_falls_back_when_database_is_missing(monkeypatch) -> None:
+    image = np.ones((4, 6, 3), dtype=np.float32)
+    monkeypatch.setattr("hdr_finisher.raw_import._lens_database", lambda: None)
+
+    corrected, metadata = apply_lens_correction(image, LensCorrectionSettings(mode="auto"))
+
+    assert corrected is image
+    assert metadata["applied"] is False
+    assert "continued without lens correction" in metadata["reason"]
+
+
 def test_media_browser_persists_favorites_and_generates_thumbnail(tmp_path: Path) -> None:
-    media = tmp_path / "media"
+    media = tmp_path / "médïa space"
     media.mkdir()
     source = media / "sample.png"
     Image.new("RGB", (40, 20), (120, 80, 40)).save(source)
@@ -155,6 +300,76 @@ def test_media_browser_persists_favorites_and_generates_thumbnail(tmp_path: Path
     thumbnail = browser.thumbnail(str(source), 128)
     with Image.open(thumbnail) as image:
         assert image.size == (128, 128)
+
+
+def test_bitmap_thumbnail_uses_the_bounded_pillow_path(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "large.png"
+    Image.new("RGB", (2048, 1024), (120, 80, 40)).save(source)
+    browser = MediaBrowserStore(tmp_path / "app-data")
+
+    monkeypatch.setattr(
+        "hdr_finisher.loader.load_image",
+        lambda *_args, **_kwargs: pytest.fail("bitmap thumbnail invoked the authoritative loader"),
+    )
+
+    thumbnail = browser.thumbnail(str(source), 128)
+
+    with Image.open(thumbnail) as image:
+        assert image.size == (128, 128)
+
+
+def test_media_browser_uses_neutral_placeholder_for_unmarked_jpegxl(tmp_path: Path) -> None:
+    import imagecodecs
+
+    source = tmp_path / "unmarked.jxl"
+    pixels = np.zeros((16, 24, 3), dtype=np.uint16)
+    pixels[..., 0] = 2048
+    source.write_bytes(imagecodecs.jpegxl_encode(pixels, bitspersample=12, usecontainer=True))
+    browser = MediaBrowserStore(tmp_path / "app-data")
+
+    thumbnail = browser.thumbnail(str(source), 128)
+
+    with Image.open(thumbnail) as image:
+        array = np.asarray(image.convert("RGB"))
+    assert np.max(np.abs(array[..., 0].astype(int) - array[..., 1].astype(int))) <= 2
+    assert np.max(np.abs(array[..., 1].astype(int) - array[..., 2].astype(int))) <= 2
+
+
+def test_fast_staged_thumbnail_refuses_formats_that_require_full_decode(tmp_path: Path) -> None:
+    source = tmp_path / "large.tiff"
+    Image.new("RGB", (32, 16), (80, 120, 160)).save(source)
+    browser = MediaBrowserStore(tmp_path / "app-data")
+
+    with pytest.raises(MediaBrowserError, match="no cheap staged-preview"):
+        browser.thumbnail(str(source), 128, fast_only=True)
+
+
+def test_staged_tiff_import_decodes_authoritative_pixels_only_once(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "source.tiff"
+    Image.new("RGB", (64, 32), (80, 120, 160)).save(source)
+    sessions = SessionStore()
+    browser = MediaBrowserStore(tmp_path / "app-data")
+    manager = ImportJobManager(sessions, browser, workers=1)
+    original_thumbnail = browser.thumbnail
+    thumbnail_calls: list[bool] = []
+
+    def tracked_thumbnail(value, size=256, *, fast_only=False):
+        thumbnail_calls.append(fast_only)
+        return original_thumbnail(value, size, fast_only=fast_only)
+
+    monkeypatch.setattr(browser, "thumbnail", tracked_thumbnail)
+    try:
+        job = manager.start(source, RawImportSettings())
+        deadline = time.monotonic() + 5
+        while job.state not in {"ready", "error"} and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+        assert job.state == "ready", job.error
+        assert thumbnail_calls == [True]
+        assert job.preview_path is None
+        assert sessions.current() is not None
+    finally:
+        manager.close()
 
 
 def test_staged_import_job_exposes_preview_and_ready_session(tmp_path: Path) -> None:
@@ -174,3 +389,130 @@ def test_staged_import_job_exposes_preview_and_ready_session(tmp_path: Path) -> 
         assert job.payload()["elapsed_ms"] >= 0
     finally:
         manager.close()
+
+
+def test_avif_import_reports_preview_work_and_cancel_keeps_current_session(
+    tmp_path: Path, monkeypatch
+) -> None:
+    current_source = tmp_path / "current.png"
+    Image.new("RGB", (32, 16), (80, 120, 160)).save(current_source)
+    candidate = tmp_path / "candidate.avif"
+    candidate.write_bytes(b"synthetic-avif")
+    sessions = SessionStore()
+    current = sessions.create_session(current_source)
+    browser = MediaBrowserStore(tmp_path / "app-data")
+    manager = ImportJobManager(sessions, browser, workers=1)
+    preview_started = Event()
+    release_preview = Event()
+
+    def delayed_thumbnail(*_args, **_kwargs):
+        preview_started.set()
+        assert release_preview.wait(5)
+        return tmp_path / "preview.jpg"
+
+    monkeypatch.setattr(browser, "thumbnail", delayed_thumbnail)
+    try:
+        job = manager.start(candidate, RawImportSettings())
+        assert preview_started.wait(5)
+        assert job.phase == "previewing"
+        assert job.phase_label == "Decoding AVIF base preview"
+
+        manager.cancel(job.job_id)
+        release_preview.set()
+        deadline = time.monotonic() + 5
+        while job.state != "cancelled" and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+        assert job.state == "cancelled"
+        assert sessions.current() is not None
+        assert sessions.current().session_id == current.session_id
+    finally:
+        release_preview.set()
+        manager.close()
+
+
+def test_raw_redevelopment_preserves_edit_document_and_session_identity(tmp_path: Path) -> None:
+    source = tmp_path / "source.png"
+    Image.new("RGB", (64, 32), (80, 120, 160)).save(source)
+    sessions = SessionStore()
+    initial = sessions.create_session(source)
+    current = sessions.get(initial.session_id)
+    adjustments = current.adjustments.model_copy(deep=True)
+    adjustments.hdr.exposure = 2.0
+    sessions.apply_edit_commands(
+        initial.session_id,
+        [
+            EditCommand(
+                expected_revision=0,
+                command_type="set_global_adjustments",
+                payload={"adjustments": adjustments.model_dump(mode="json")},
+            )
+        ],
+    )
+    original_history = list(current.undo_history)
+
+    developed = sessions.prepare_session(
+        source,
+        raw_import_settings=RawImportSettings(lens=LensCorrectionSettings(mode="off")),
+    )
+    payload = sessions.redevelop_session(initial.session_id, developed)
+    reloaded = sessions.get(initial.session_id)
+
+    assert payload.session_id == initial.session_id
+    assert reloaded.adjustments.hdr.exposure == 2.0
+    assert reloaded.edit_revision == 2
+    assert reloaded.dirty is True
+    assert reloaded.undo_history == original_history
+    assert reloaded.raw_import_settings.lens.mode == "off"
+
+
+def test_latest_import_wins_even_when_previous_decode_is_in_flight(tmp_path: Path, monkeypatch) -> None:
+    first = tmp_path / "first.png"
+    second = tmp_path / "second.png"
+    Image.new("RGB", (64, 32), (255, 0, 0)).save(first)
+    Image.new("RGB", (64, 32), (0, 255, 0)).save(second)
+    sessions = SessionStore()
+    browser = MediaBrowserStore(tmp_path / "app-data")
+    manager = ImportJobManager(sessions, browser, workers=2)
+    decode_started = Event()
+    release_decode = Event()
+    original_prepare = sessions.prepare_session
+
+    def delayed_prepare(path, *args, **kwargs):
+        if path == first:
+            decode_started.set()
+            assert release_decode.wait(5)
+        return original_prepare(path, *args, **kwargs)
+
+    monkeypatch.setattr(sessions, "prepare_session", delayed_prepare)
+    try:
+        stale = manager.start(first, RawImportSettings())
+        assert decode_started.wait(5)
+        current = manager.start(second, RawImportSettings())
+        release_decode.set()
+        deadline = time.monotonic() + 5
+        while current.state not in {"ready", "error"} and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+        assert stale.state == "cancelled"
+        assert current.state == "ready", current.error
+        assert sessions.current() is not None
+        assert sessions.current().source_path == second
+        assert stale.session_id is None
+    finally:
+        release_decode.set()
+        manager.close()
+
+
+def test_replace_document_rejects_interpretation_without_reloading_pixels(tmp_path: Path) -> None:
+    source = tmp_path / "source.png"
+    Image.new("RGB", (16, 16), (80, 120, 160)).save(source)
+    sessions = SessionStore()
+    payload = sessions.create_session(source)
+    document = sessions.get(payload.session_id).edit_document().model_copy(deep=True)
+    document.interpretation_override = SourceInterpretationOverride(
+        color_space="BT.2020", transfer_function="LINEAR"
+    )
+
+    with pytest.raises(ValueError, match="interpretation endpoint"):
+        sessions.replace_edit_document(payload.session_id, document, expected_revision=0)

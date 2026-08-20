@@ -14,8 +14,11 @@ import numpy as np
 from .color import acescg_to_linear_srgb
 from .config import APP_DATA_DIR, EXPORTS_DIR
 from .desktop_security import SOURCE_EXTENSIONS
-from .jpegxl import decode_jpegxl
+from .preview import downsample_image
 from .raw_import import RAW_EXTENSIONS
+
+
+FAST_THUMBNAIL_EXTENSIONS = RAW_EXTENSIONS | {".avif", ".png", ".jpg", ".jpeg", ".bmp"}
 
 
 class MediaBrowserError(ValueError):
@@ -100,13 +103,18 @@ class MediaBrowserStore:
             self._write_favorites(values)
         return self.favorites()
 
-    def thumbnail(self, value: str, size: int = 256) -> Path:
+    def thumbnail(self, value: str, size: int = 256, *, fast_only: bool = False) -> Path:
         path = Path(value).expanduser().resolve(strict=True)
         if not path.is_file() or path.suffix.lower() not in SOURCE_EXTENSIONS:
             raise MediaBrowserError("Select a supported image file for a thumbnail.")
+        if fast_only and path.suffix.lower() not in FAST_THUMBNAIL_EXTENSIONS:
+            raise MediaBrowserError("This format has no cheap staged-preview path.")
         edge = max(64, min(int(size), 512))
         stat = path.stat()
-        key = hashlib.sha256(f"{path}\0{stat.st_size}\0{stat.st_mtime_ns}\0{edge}".encode()).hexdigest()
+        variant = "fast" if fast_only else "full"
+        key = hashlib.sha256(
+            f"{path}\0{stat.st_size}\0{stat.st_mtime_ns}\0{edge}\0{variant}".encode()
+        ).hexdigest()
         self.thumbnail_root.mkdir(parents=True, exist_ok=True)
         output = self.thumbnail_root / f"{key}.jpg"
         if output.is_file():
@@ -114,7 +122,7 @@ class MediaBrowserStore:
         with self.decode_slot():
             if output.is_file():
                 return output
-            image = _read_thumbnail_source(path)
+            image = _read_thumbnail_source(path, edge, fast_only=fast_only)
             _write_thumbnail(output, image, edge)
             self._prune_thumbnails(512)
         return output
@@ -179,7 +187,9 @@ class MediaBrowserStore:
                 pass
 
 
-def _read_thumbnail_source(path: Path) -> np.ndarray:
+def _read_thumbnail_source(
+    path: Path, edge: int = 256, *, fast_only: bool = False
+) -> np.ndarray:
     suffix = path.suffix.lower()
     if suffix in RAW_EXTENSIONS:
         try:
@@ -195,34 +205,60 @@ def _read_thumbnail_source(path: Path) -> np.ndarray:
                     return np.asarray(image.convert("RGB"))
             return np.asarray(thumb.data)
         except Exception:
-            pass
-    if suffix == ".jxl":
-        image, _metadata = decode_jpegxl(path)
-        return _acescg_thumbnail(image)
+            if fast_only:
+                return _neutral_thumbnail_placeholder()
+    if suffix in {".png", ".jpg", ".jpeg", ".bmp"}:
+        return _read_pillow_thumbnail(path, edge)
     if suffix == ".avif":
+        from .gainmap_decoders import GainMapDecodeError, decode_avif_preview
+
         try:
-            import imagecodecs
+            image = decode_avif_preview(path)
+        except GainMapDecodeError:
+            return _neutral_thumbnail_placeholder()
+        return _acescg_thumbnail(downsample_image(image, max(edge * 2, edge)))
+    from .loader import load_image
 
-            return np.asarray(imagecodecs.avif_decode(path.read_bytes()))
-        except Exception:
-            pass
-    try:
-        from PIL import Image, ImageOps
+    image, _descriptor, metadata, analysis, _sdr = load_image(path)
+    if metadata.get("needs_color_override") or analysis.needs_color_override:
+        return _neutral_thumbnail_placeholder()
+    return _acescg_thumbnail(downsample_image(image, max(edge * 2, edge)))
 
-        with Image.open(path) as source:
-            return np.asarray(ImageOps.exif_transpose(source).convert("RGB"))
-    except Exception:
-        from .loader import load_image
 
-        image, *_rest = load_image(path)
-        return _acescg_thumbnail(image)
+def _read_pillow_thumbnail(path: Path, edge: int) -> np.ndarray:
+    from io import BytesIO
+    from PIL import Image, ImageCms, ImageOps
+
+    with Image.open(path) as source:
+        oriented = ImageOps.exif_transpose(source)
+        icc_profile = source.info.get("icc_profile")
+        if icc_profile:
+            try:
+                oriented = ImageCms.profileToProfile(
+                    oriented,
+                    ImageCms.ImageCmsProfile(BytesIO(icc_profile)),
+                    ImageCms.createProfile("sRGB"),
+                    outputMode="RGB",
+                )
+            except Exception:
+                return _neutral_thumbnail_placeholder()
+        else:
+            oriented = oriented.convert("RGB")
+        oriented.thumbnail((max(64, edge), max(64, edge)), Image.Resampling.LANCZOS)
+        return np.asarray(oriented.convert("RGB"))
 
 
 def _acescg_thumbnail(image: np.ndarray) -> np.ndarray:
     linear = np.clip(acescg_to_linear_srgb(image[..., :3]), 0.0, None)
-    display = linear / (1.0 + linear)
+    display = linear / (1.0 + linear) if float(np.max(linear, initial=0.0)) > 1.0 else linear
     srgb = np.where(display <= 0.0031308, display * 12.92, 1.055 * np.power(display, 1.0 / 2.4) - 0.055)
     return np.clip(np.round(srgb * 255.0), 0, 255).astype(np.uint8)
+
+
+def _neutral_thumbnail_placeholder() -> np.ndarray:
+    y, x = np.indices((64, 64))
+    checker = np.where(((x // 8) + (y // 8)) % 2 == 0, 50, 64).astype(np.uint8)
+    return np.repeat(checker[..., None], 3, axis=2)
 
 
 def _write_thumbnail(path: Path, image: np.ndarray, edge: int) -> None:

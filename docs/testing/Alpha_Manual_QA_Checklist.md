@@ -8,7 +8,7 @@ Use this checklist after `tools\run_alpha_qa.ps1` and `tools\build_windows.ps1` 
 - Confirm the launcher and application work at the displayed `http://127.0.0.1:<port>` address in Edge or Brave.
 - Repeat with port 8000 occupied and confirm HDR Finisher selects another local port instead of failing.
 - Confirm `/health` returns `{"status":"ok"}`.
-- Confirm capabilities show AVIF gain-map export available, JPEG Ultra HDR available when the pinned encoder is bundled, and JPEG XL deferred.
+- Confirm capabilities show AVIF gain-map export available, JPEG Ultra HDR available when the pinned encoder is bundled, and JPEG XL import/export available only when the bundled imagecodecs/libjxl capability is present.
 - Import the bundled/sample HDR reference workflow and export AVIF + gain map.
 - Inspect the exported AVIF with `avifdec --info` and confirm gain map metadata is present.
 - Export `JPEG Ultra HDR (JPG + Gain Map)` and confirm the output uses the selected folder, filename, `.jpg` extension, base quality, gain-map quality, and gain-map resolution.
@@ -38,4 +38,4 @@ Use this checklist after `tools\run_alpha_qa.ps1` and `tools\build_windows.ps1` 
 - Open the `.jpg` with a legacy JPEG-only decoder and confirm it displays normally with no corruption or dependency on the gain map.
 - Upload the `.jpg` to a private/test Instagram post from a supported mobile workflow. Confirm Instagram preserves HDR on a supported HDR phone and presents the authored SDR fallback elsewhere.
 - Download the Instagram-served result when practical and re-probe it with `ultrahdr_app`; record whether gain-map metadata survived platform recompression.
-- Confirm `cjxl` / `djxl` remain capability-gated; JPEG XL is not part of this milestone.
+- Export a JPEG XL HDR test image, reopen it, and confirm the app's 12-bit Rec.2020/PQ marker is validated. Confirm an unmarked third-party file remains behind the source-interpretation gate.

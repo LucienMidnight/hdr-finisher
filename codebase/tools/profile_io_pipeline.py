@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import json
 from pathlib import Path
-import resource
 import statistics
 import sys
 from tempfile import TemporaryDirectory
@@ -20,11 +20,41 @@ from hdr_finisher.models import ExportSettings  # noqa: E402
 from hdr_finisher.sessions import SessionStore  # noqa: E402
 
 
-def _rss_mib() -> float:
-    value = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
-    if sys.platform == "darwin":
-        return value / (1024.0 * 1024.0)
-    return value / 1024.0
+def _rss_mib() -> float | None:
+    try:
+        import resource
+
+        value = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        if sys.platform == "darwin":
+            return value / (1024.0 * 1024.0)
+        return value / 1024.0
+    except ImportError:
+        pass
+    if sys.platform != "win32":
+        return None
+    try:
+        class ProcessMemoryCounters(ctypes.Structure):
+            _fields_ = [
+                ("cb", ctypes.c_ulong),
+                ("PageFaultCount", ctypes.c_ulong),
+                ("PeakWorkingSetSize", ctypes.c_size_t),
+                ("WorkingSetSize", ctypes.c_size_t),
+                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                ("PagefileUsage", ctypes.c_size_t),
+                ("PeakPagefileUsage", ctypes.c_size_t),
+            ]
+
+        counters = ProcessMemoryCounters()
+        counters.cb = ctypes.sizeof(counters)
+        process = ctypes.windll.kernel32.GetCurrentProcess()
+        if not ctypes.windll.psapi.GetProcessMemoryInfo(process, ctypes.byref(counters), counters.cb):
+            return None
+        return float(counters.PeakWorkingSetSize) / (1024.0 * 1024.0)
+    except (AttributeError, OSError):
+        return None
 
 
 def _summary(values: list[float]) -> dict[str, float | int]:
@@ -46,18 +76,23 @@ def profile_input(path: Path, repetitions: int, export_formats: list[str], outpu
         browser = MediaBrowserStore(Path(temporary_name))
         try:
             preview_started = perf_counter()
-            thumbnail = browser.thumbnail(str(path), 256)
+            thumbnail = browser.thumbnail(str(path), 256, fast_only=True)
             cold_preview_ms = (perf_counter() - preview_started) * 1000.0
             preview_started = perf_counter()
-            browser.thumbnail(str(path), 256)
+            browser.thumbnail(str(path), 256, fast_only=True)
             warm_preview_ms = (perf_counter() - preview_started) * 1000.0
             preview = {
+                "available": True,
                 "cold_ms": round(cold_preview_ms, 3),
                 "warm_cache_ms": round(warm_preview_ms, 3),
                 "cache_bytes": thumbnail.stat().st_size,
             }
         except Exception as exc:
-            preview = {"error": str(exc).strip() or exc.__class__.__name__}
+            preview = {
+                "available": False,
+                "decision_ms": round((perf_counter() - preview_started) * 1000.0, 3),
+                "reason": str(exc).strip() or exc.__class__.__name__,
+            }
     store = SessionStore()
     last_payload = None
     last_session = None
@@ -86,6 +121,7 @@ def profile_input(path: Path, repetitions: int, export_formats: list[str], outpu
         export_record["output_bytes"] = target.stat().st_size if result.accepted and target.is_file() else None
         exports[format_name] = export_record
     warm_loads = loads[1:]
+    rss_after = _rss_mib()
     return {
         "input": str(path.resolve()),
         "input_bytes": path.stat().st_size,
@@ -99,8 +135,13 @@ def profile_input(path: Path, repetitions: int, export_formats: list[str], outpu
         },
         "import_phases_ms": last_session.metadata.get("import_timings_ms", {}),
         "decoder_phases_ms": last_session.metadata.get("decode_timings_ms", {}),
-        "peak_rss_mib": round(_rss_mib(), 3),
-        "peak_rss_growth_mib": round(max(0.0, _rss_mib() - rss_before), 3),
+        "peak_rss_mib": round(rss_after, 3) if rss_after is not None else None,
+        "peak_rss_growth_mib": (
+            round(max(0.0, rss_after - rss_before), 3)
+            if rss_after is not None and rss_before is not None
+            else None
+        ),
+        "memory_sampling": "peak_rss" if rss_after is not None else "unsupported",
         "exports": exports,
     }
 
@@ -122,7 +163,7 @@ def main() -> None:
     export_root = args.output.parent / "exports"
     export_root.mkdir(parents=True, exist_ok=True)
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "reference_gate": {"target_preview_seconds": 10, "maximum_preview_seconds": 15},
         "repetitions": max(1, args.repetitions),
         "results": [

@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
+import hashlib
 from pathlib import Path
 from typing import Any, Callable
 
 import numpy as np
 
-from .color import aces2065_to_acescg
+from .color import aces2065_to_acescg, transform_float32_bounded
 from .models import LensCorrectionSettings, RawImportSettings
 
 
@@ -43,10 +44,13 @@ def decode_raw(
     settings: RawImportSettings,
     *,
     progress: Callable[[str, str], None] | None = None,
+    cancelled: Callable[[], bool] | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
+    _raise_if_cancelled(cancelled)
     if progress:
         progress("raw_metadata", "Reading camera and lens metadata")
     exif = _read_raw_exif(path)
+    _raise_if_cancelled(cancelled)
     try:
         import rawpy
     except ImportError as exc:
@@ -73,7 +77,10 @@ def decode_raw(
     except Exception as exc:
         raise RawImportError(f"LibRaw could not develop {path.suffix.upper()} input: {exc}") from exc
 
-    aces2065 = np.asarray(developed, dtype=np.float32) / np.float32(65535.0)
+    _raise_if_cancelled(cancelled)
+    aces2065 = np.asarray(developed).astype(np.float32)
+    aces2065 *= np.float32(1.0 / 65535.0)
+    del developed
     lens_metadata: dict[str, Any] = {}
     lens_settings = settings.lens
     if path.suffix.lower() == ".dng" and not is_mosaiced and lens_settings.mode == "auto":
@@ -94,10 +101,14 @@ def decode_raw(
             camera_maker=exif.get("camera_maker"),
             camera_model=exif.get("camera_model"),
             lens_name=exif.get("lens_name"),
+            cancelled=cancelled,
         )
+    _raise_if_cancelled(cancelled)
     if progress:
         progress("color_conversion", "Converting linear ACES2065-1 to ACEScg")
-    image = aces2065_to_acescg(aces2065)
+    image = transform_float32_bounded(
+        aces2065, aces2065_to_acescg, cancelled=cancelled
+    )
     metadata: dict[str, Any] = {
         "bit_depth": "16-bit LibRaw linear development",
         "color_space": "ACEScg",
@@ -118,38 +129,51 @@ def decode_raw(
         "raw_sizes": _sizes_payload(sizes),
         "raw_exif": exif,
         "lens_correction": lens_metadata or {"mode": lens_settings.mode, "applied": False},
+        "decoder_normalized_to_acescg": True,
     }
     return image, metadata
 
 
 def list_lens_profiles(query: str | None = None, limit: int = 250) -> list[LensProfileRecord]:
+    records = _lens_profile_catalog()
+    needle = (query or "").strip().casefold()
+    if needle:
+        records = tuple(
+            record for record in records
+            if needle in " ".join(
+                (record.camera_maker, record.camera_model, record.lens_maker, record.lens_model, record.mount or "")
+            ).casefold()
+        )
+    return list(records[: max(1, min(limit, 1000))])
+
+
+@lru_cache(maxsize=1)
+def _lens_profile_catalog() -> tuple[LensProfileRecord, ...]:
     database = _lens_database()
     if database is None:
-        return []
+        return ()
     cameras = list(getattr(database, "cameras", []) or [])
     lenses = list(getattr(database, "lenses", []) or [])
-    needle = (query or "").strip().casefold()
     camera_by_mount: dict[str, list[Any]] = {}
     for camera in cameras:
         mount = str(getattr(camera, "mount", "") or "")
         camera_by_mount.setdefault(mount, []).append(camera)
-    records: list[LensProfileRecord] = []
+    records: dict[str, LensProfileRecord] = {}
     for lens in lenses:
         mounts = list(getattr(lens, "mounts", []) or []) or [str(getattr(lens, "mount", "") or "")]
         compatible = [camera for mount in mounts for camera in camera_by_mount.get(str(mount), [])]
-        if not compatible:
-            compatible = [None]
         for camera in compatible:
-            record = _lens_record(camera, lens, mounts[0] if mounts else None)
-            haystack = " ".join(
-                (record.camera_maker, record.camera_model, record.lens_maker, record.lens_model, record.mount or "")
-            ).casefold()
-            if needle and needle not in haystack:
-                continue
-            records.append(record)
-            if len(records) >= max(1, min(limit, 1000)):
-                return records
-    return records
+            mount = str(getattr(camera, "mount", "") or "")
+            record = _lens_record(camera, lens, mount)
+            records.setdefault(record.id, record)
+    ordered = sorted(
+        records.values(),
+        key=lambda item: (
+            item.camera_maker.casefold(), item.camera_model.casefold(), (item.mount or "").casefold(),
+            item.lens_maker.casefold(), item.lens_model.casefold(),
+        ),
+    )
+    return tuple(ordered)
 
 
 def apply_lens_correction(
@@ -159,15 +183,42 @@ def apply_lens_correction(
     camera_maker: str | None = None,
     camera_model: str | None = None,
     lens_name: str | None = None,
+    cancelled: Callable[[], bool] | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
+    _raise_if_cancelled(cancelled)
     try:
         import lensfunpy
     except ImportError as exc:
+        if settings.mode == "auto":
+            return image, {
+                "mode": "auto",
+                "applied": False,
+                "reason": "Lensfun is unavailable; RAW development continued without lens correction.",
+            }
         raise RawImportError("Lens correction was requested, but lensfunpy is not installed.") from exc
 
     database = _lens_database()
     if database is None:
+        if settings.mode == "auto":
+            return image, {
+                "mode": "auto",
+                "applied": False,
+                "reason": "Lensfun's database is unavailable; RAW development continued without lens correction.",
+            }
         raise RawImportError("Lensfun's correction database is unavailable.")
+    database_identity = _lens_database_identity()
+    if (
+        settings.mode == "manual"
+        and settings.database_version
+        and settings.database_version != database_identity
+    ):
+        return image, {
+            "mode": "off",
+            "requested_mode": "manual",
+            "applied": False,
+            "warning": "The saved Lensfun database identity does not match; correction fell back to Off without substitution.",
+            "database_version": database_identity,
+        }
     profile = _resolve_lens_profile(
         database, settings, camera_maker=camera_maker, camera_model=camera_model, lens_name=lens_name
     )
@@ -206,13 +257,19 @@ def apply_lens_correction(
         corrected = np.ascontiguousarray(image, dtype=np.float32).copy()
         if settings.vignetting and aperture > 0:
             modifier.apply_color_modification(corrected)
+        _raise_if_cancelled(cancelled)
         coordinates = None
         if settings.chromatic_aberration:
             coordinates = modifier.apply_subpixel_geometry_distortion()
         elif settings.distortion:
             coordinates = modifier.apply_geometry_distortion()
         if coordinates is not None:
-            corrected = _remap_bilinear_strips(corrected, np.asarray(coordinates), chromatic=settings.chromatic_aberration)
+            corrected = _remap_bilinear_strips(
+                corrected,
+                np.asarray(coordinates),
+                chromatic=settings.chromatic_aberration,
+                cancelled=cancelled,
+            )
     except RawImportError:
         raise
     except Exception as exc:
@@ -227,7 +284,7 @@ def apply_lens_correction(
         "focal_length_mm": float(focal),
         "aperture": float(aperture) if aperture > 0 else None,
         "focus_distance_m": float(distance),
-        "database_version": getattr(lensfunpy, "__version__", None),
+        "database_version": database_identity,
     }
 
 
@@ -240,20 +297,35 @@ def _resolve_lens_profile(
     lens_name: str | None,
 ) -> tuple[Any, Any, LensProfileRecord] | None:
     if settings.mode == "manual" and settings.profile_id:
-        parts = settings.profile_id.split("|", 3)
-        if len(parts) != 4:
+        parts = settings.profile_id.split("|")
+        if len(parts) == 5:
+            camera_maker_value, camera_model_value, mount_value, lens_maker_value, lens_model_value = parts
+        elif len(parts) == 4:
+            camera_maker_value, camera_model_value, lens_maker_value, lens_model_value = parts
+            mount_value = None
+        else:
             return None
-        camera_maker_value, camera_model_value, lens_maker_value, lens_model_value = parts
-        cameras = database.find_cameras(camera_maker_value, camera_model_value)
+        cameras = [
+            camera for camera in database.find_cameras(camera_maker_value, camera_model_value)
+            if str(getattr(camera, "maker", "") or "") == camera_maker_value
+            and str(getattr(camera, "model", "") or "") == camera_model_value
+            and (mount_value is None or str(getattr(camera, "mount", "") or "") == mount_value)
+        ]
         if len(cameras) != 1:
             return None
         camera = cameras[0]
-        lenses = database.find_lenses(camera, lens_maker_value, lens_model_value)
-        lens = next((candidate for candidate in lenses if _profile_id(camera, candidate) == settings.profile_id), None)
-        if lens is None:
+        candidates = [
+            candidate for candidate in database.find_lenses(camera, lens_maker_value, lens_model_value)
+            if str(getattr(candidate, "maker", "") or "") == lens_maker_value
+            and str(getattr(candidate, "model", "") or "") == lens_model_value
+        ]
+        if len(candidates) != 1:
             return None
-        mount = (list(getattr(lens, "mounts", []) or []) or [getattr(camera, "mount", None)])[0]
+        lens = candidates[0]
+        mount = str(getattr(camera, "mount", "") or "")
         record = _lens_record(camera, lens, mount)
+        if mount_value is not None and record.id != settings.profile_id:
+            return None
         return camera, lens, record
     elif settings.mode == "auto" and camera_model and lens_name:
         cameras = database.find_cameras(camera_maker, camera_model, loose_search=True)
@@ -270,10 +342,18 @@ def _resolve_lens_profile(
         return None
 
 
-def _remap_bilinear_strips(image: np.ndarray, coordinates: np.ndarray, *, chromatic: bool, rows: int = 128) -> np.ndarray:
+def _remap_bilinear_strips(
+    image: np.ndarray,
+    coordinates: np.ndarray,
+    *,
+    chromatic: bool,
+    rows: int = 128,
+    cancelled: Callable[[], bool] | None = None,
+) -> np.ndarray:
     height, width, channels = image.shape
     output = np.empty_like(image)
     for start in range(0, height, rows):
+        _raise_if_cancelled(cancelled)
         end = min(height, start + rows)
         for channel in range(channels):
             if chromatic and coordinates.ndim == 4:
@@ -294,11 +374,16 @@ def _remap_bilinear_strips(image: np.ndarray, coordinates: np.ndarray, *, chroma
     return output
 
 
+def _raise_if_cancelled(cancelled: Callable[[], bool] | None) -> None:
+    if cancelled is not None and cancelled():
+        raise RawImportError("Import cancelled")
+
+
 def _lens_record(camera: Any, lens: Any, mount: str | None) -> LensProfileRecord:
     maker = str(getattr(camera, "maker", "") or "")
     model = str(getattr(camera, "model", "") or "")
     return LensProfileRecord(
-        id=_profile_id(camera, lens),
+        id=_profile_id(camera, lens, mount),
         camera_maker=maker,
         camera_model=model,
         lens_maker=str(getattr(lens, "maker", "") or ""),
@@ -311,9 +396,10 @@ def _lens_record(camera: Any, lens: Any, mount: str | None) -> LensProfileRecord
     )
 
 
-def _profile_id(camera: Any, lens: Any) -> str:
+def _profile_id(camera: Any, lens: Any, mount: str | None = None) -> str:
     parts = (
         getattr(camera, "maker", ""), getattr(camera, "model", ""),
+        mount if mount is not None else getattr(camera, "mount", ""),
         getattr(lens, "maker", ""), getattr(lens, "model", ""),
     )
     return "|".join(str(part or "").strip().replace("|", "/") for part in parts)
@@ -394,4 +480,23 @@ def _lens_database() -> Any | None:
 
         return lensfunpy.Database()
     except (ImportError, OSError, RuntimeError):
+        return None
+
+
+@lru_cache(maxsize=1)
+def _lens_database_identity() -> str | None:
+    try:
+        import lensfunpy
+
+        database_directory = Path(lensfunpy.__file__).resolve().parent / "db_files"
+        files = sorted(database_directory.glob("*.xml"))
+        if not files:
+            return None
+        digest = hashlib.sha256()
+        for path in files:
+            digest.update(path.name.encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(path.read_bytes())
+        return f"sha256:{digest.hexdigest()}"
+    except (ImportError, OSError):
         return None

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, wait
 from io import BytesIO
 import math
 from pathlib import Path
+from threading import Event
 
 import numpy as np
 import pytest
@@ -189,6 +191,87 @@ def test_jpeg_full_endpoint_uses_metadata_selected_decoded_gamut(
     assert mean_chromaticity_error < 0.01
 
 
+def test_jpeg_matrix_endpoints_publish_decode_atomically_for_concurrent_targets(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    store = ProofArtifactStore()
+    store.root = tmp_path
+    jpeg_path = tmp_path / "concurrent.jpg"
+    Image.new("RGB", (2, 2), (64, 96, 128)).save(jpeg_path, quality=95)
+    decoded = np.array(
+        [
+            [[0.9, 0.15, 0.05], [0.1, 0.7, 0.2]],
+            [[0.2, 0.3, 0.8], [0.6, 0.5, 0.1]],
+        ],
+        dtype=np.float32,
+    )
+    decoded_rgba = np.concatenate([decoded, np.ones((2, 2, 1), dtype=np.float32)], axis=2)
+    metadata = JPEGGainMapProofMetadata(
+        use_base_color_space=True,
+        base_gamut="sRGB / BT.709",
+        alternate_gamut="BT.2020",
+        reconstruction_gamut="sRGB / BT.709",
+        min_content_boost=1.0,
+        max_content_boost=8.0,
+        gamma=1.0,
+        hdr_capacity_min=1.0,
+        hdr_capacity_max=8.0,
+        offset_sdr=1e-7,
+        offset_hdr=1e-7,
+    )
+    artifact = ProofArtifact(
+        artifact_id="concurrent-decode",
+        format="jpeg_ultrahdr",
+        path=jpeg_path,
+        media_type="image/jpeg",
+        sha256="0" * 64,
+        width=2,
+        height=2,
+        quality=85,
+        metadata_summary="fixture",
+        encoded_headroom=3.0,
+        hdr_authored=np.zeros((2, 2, 3), dtype=np.float32),
+        sdr_authored=np.zeros((2, 2, 3), dtype=np.float32),
+        jpeg_gain_map=metadata,
+    )
+    decode_started = Event()
+    release_decode = Event()
+    final_path = tmp_path / "decoded-concurrent-decode.rgba-f16.raw"
+    decode_outputs: list[Path] = []
+
+    def fake_run(command: list[str]) -> None:
+        output = Path(command[command.index("-z") + 1])
+        decode_outputs.append(output)
+        assert output != final_path
+        output.write_bytes(bytes(decoded_rgba.astype("<f2").nbytes))
+        decode_started.set()
+        assert release_decode.wait(timeout=2)
+        decoded_rgba.astype("<f2").tofile(output)
+
+    monkeypatch.setattr(proofing_module, "resolve_binary", lambda _name: tmp_path / "ultrahdr_app.exe")
+    monkeypatch.setattr(proofing_module, "_run_command", fake_run)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(store._matrix_endpoints, artifact)
+        assert decode_started.wait(timeout=2)
+        second = executor.submit(store._matrix_endpoints, artifact)
+        try:
+            completed, _ = wait([second], timeout=0.1)
+            assert not completed
+        finally:
+            release_decode.set()
+        first_endpoints = first.result(timeout=2)
+        second_endpoints = second.result(timeout=2)
+
+    expected = linear_srgb_to_acescg(decoded * np.float32(203.0 * 0.18 / 100.0))
+    np.testing.assert_allclose(first_endpoints[1], np.clip(expected, 0, None), rtol=2e-3, atol=3e-4)
+    assert second_endpoints is first_endpoints
+    assert decode_outputs and len(decode_outputs) == 1
+    assert final_path.exists()
+    assert final_path.stat().st_size == decoded_rgba.astype("<f2").nbytes
+
+
 class _FakeBackend:
     def export(self, session: object, settings: object) -> ExportResponse:
         output = Path(getattr(settings, "output_path"))
@@ -234,6 +317,30 @@ def test_failed_proof_build_cleans_internal_staging_file_before_retry(monkeypatc
     response = store.create(session, request, backend)
     assert response.artifact_id
     assert list(tmp_path.glob("request-*")) == []
+
+
+def test_jpegxl_direct_hdr_is_available_as_a_proof_artifact(monkeypatch, tmp_path: Path) -> None:
+    store = ProofArtifactStore()
+    store.root = tmp_path
+    image = np.full((12, 16, 3), 0.18, dtype=np.float32)
+    session = type(
+        "Session",
+        (),
+        {"session_id": "proof-jpegxl", "render_cache": SessionRenderCache(image, None)},
+    )()
+    request = ProofArtifactRequest(adjustments=AdjustmentState(), format="jpegxl_hdr", long_edge=256)
+    monkeypatch.setattr(
+        proofing_module,
+        "_inspect_artifact",
+        lambda *_args: (math.log2(100.0), "Direct HDR JPEG XL; Rec.2020 PQ; 12-bit"),
+    )
+
+    response = store.create(session, request, _FakeBackend())
+
+    assert response.format == "jpegxl_hdr"
+    assert response.media_type == "image/jxl"
+    assert response.url.endswith(f"{response.artifact_id}.jxl")
+    assert store.artifact(response.artifact_id).path.suffix == ".jxl"
 
 
 def test_artifact_is_content_hashed_cached_and_matrix_is_stable(monkeypatch, tmp_path: Path) -> None:

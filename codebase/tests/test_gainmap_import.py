@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
+from threading import Event, Thread
+from time import perf_counter, sleep
 from types import SimpleNamespace
 
 import numpy as np
@@ -41,6 +44,94 @@ def test_plain_jpeg_still_uses_the_sdr_pillow_path(tmp_path: Path) -> None:
     assert metadata.get("jpeg_ultrahdr") is None
     assert sdr_reference is None
     assert image.shape == (8, 12, 3)
+
+
+def test_avif_preview_decodes_only_the_color_managed_primary_rendition(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    path = tmp_path / "preview.avif"
+    path.write_bytes(b"synthetic-avif")
+    decoded = np.zeros((4, 6, 3), dtype=np.uint8)
+    decoded[..., 0] = 128
+    calls = {"primary": 0}
+
+    monkeypatch.setattr(
+        gainmap_decoders,
+        "inspect_avif",
+        lambda _path: {
+            "gain_map_present": True,
+            "color_primaries": 1,
+            "transfer_char": 13,
+        },
+    )
+
+    def decode_primary(_payload: bytes) -> np.ndarray:
+        calls["primary"] += 1
+        return decoded
+
+    monkeypatch.setitem(sys.modules, "imagecodecs", SimpleNamespace(avif_decode=decode_primary))
+    monkeypatch.setattr(
+        gainmap_decoders,
+        "_decode_avif_gain_map",
+        lambda *_args, **_kwargs: pytest.fail("thumbnail preview reconstructed the gain map"),
+    )
+
+    preview = gainmap_decoders.decode_avif_preview(path)
+
+    assert calls["primary"] == 1
+    assert preview.shape == decoded.shape
+    assert preview.dtype == np.float32
+    assert np.all(np.isfinite(preview))
+
+
+def test_large_avif_color_conversion_is_strip_bounded_and_matches_full_frame(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rng = np.random.default_rng(42)
+    hdr_encoded = rng.random((513, 37, 3), dtype=np.float32)
+    sdr_encoded = rng.random((513, 37, 3), dtype=np.float32)
+    expected_hdr = gainmap_decoders.normalize_to_acescg(hdr_encoded.copy(), "BT.2020", "PQ")
+    expected_sdr = np.clip(
+        gainmap_decoders.acescg_to_linear_srgb(
+            gainmap_decoders.normalize_to_acescg(sdr_encoded.copy(), "BT.2020", "BT.709")
+        ),
+        0.0,
+        1.0,
+    )
+    original_normalize = gainmap_decoders.normalize_to_acescg
+    observed_rows: list[int] = []
+
+    def tracked_normalize(image, color_space, transfer):
+        observed_rows.append(image.shape[0])
+        return original_normalize(image, color_space, transfer)
+
+    monkeypatch.setattr(gainmap_decoders, "normalize_to_acescg", tracked_normalize)
+    actual_hdr = gainmap_decoders._normalize_to_acescg_in_strips(
+        hdr_encoded.copy(), "BT.2020", "PQ", rows=64
+    )
+    actual_sdr = gainmap_decoders._normalize_sdr_reference_in_strips(
+        sdr_encoded.copy(), "BT.2020", "BT.709", rows=64
+    )
+
+    assert max(observed_rows) <= 64
+    assert np.allclose(actual_hdr, expected_hdr, rtol=2e-5, atol=2e-6)
+    assert np.allclose(actual_sdr, expected_sdr, rtol=2e-5, atol=2e-6)
+
+
+def test_decoder_subprocess_can_be_cancelled_promptly() -> None:
+    cancelled = Event()
+    trigger = Thread(target=lambda: (sleep(0.1), cancelled.set()), daemon=True)
+    started = perf_counter()
+    trigger.start()
+
+    with pytest.raises(gainmap_decoders.GainMapDecodeError, match="Import cancelled"):
+        gainmap_decoders._run(
+            [sys.executable, "-c", "import time; time.sleep(10)"],
+            cancelled=cancelled.is_set,
+        )
+
+    trigger.join(timeout=1)
+    assert perf_counter() - started < 2.0
 
 
 def test_jpeg_embedded_image_marker_does_not_imply_a_gain_map(tmp_path: Path) -> None:
@@ -110,7 +201,7 @@ def test_avif_gainmap_accepts_bt709_transfer_on_sdr_base(
 
     commands: list[list[str]] = []
 
-    def fake_run(command: list[str]) -> SimpleNamespace:
+    def fake_run(command: list[str], **_kwargs) -> SimpleNamespace:
         commands.append(command)
         return SimpleNamespace(stdout="Base Headroom: 0.00\nAlternate Headroom: 2.30", stderr="")
 
@@ -121,10 +212,11 @@ def test_avif_gainmap_accepts_bt709_transfer_on_sdr_base(
         lambda _path: np.full((2, 3, 3), 0.25, dtype=np.float32),
     )
 
-    def fake_decode(_path: Path, _avifdec: Path, output: Path | None = None) -> np.ndarray:
-        return np.full((2, 3, 3), 0.5, dtype=np.float32)
-
-    monkeypatch.setattr(gainmap_decoders, "_decode_avif_pixels", fake_decode)
+    monkeypatch.setattr(
+        gainmap_decoders,
+        "_decode_avif_primary_pixels",
+        lambda _path: np.full((2, 3, 3), 0.5, dtype=np.float32),
+    )
 
     _hdr, linear_sdr, metadata = gainmap_decoders._decode_avif_gain_map(tmp_path / "lightroom.avif", info)
 

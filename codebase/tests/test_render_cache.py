@@ -21,6 +21,22 @@ def test_adjusted_proxy_is_downsampled_before_processing_and_reused() -> None:
     assert not first.flags.writeable
 
 
+def test_scope_request_counts_one_top_level_miss_then_one_hit() -> None:
+    image = np.full((64, 96, 3), 0.18, dtype=np.float32)
+    cache = SessionRenderCache(image, None)
+    adjustments = AdjustmentState()
+
+    cache.scope_result(adjustments, PreviewKind.HDR, 256, "histogram", 64, 64)
+    after_miss = cache.diagnostics()
+    cache.scope_result(adjustments, PreviewKind.HDR, 256, "histogram", 64, 64)
+    after_hit = cache.diagnostics()
+
+    assert after_miss["misses"] == 1
+    assert after_miss["hits"] == 0
+    assert after_hit["misses"] == 1
+    assert after_hit["hits"] == 1
+
+
 def test_overlay_only_changes_do_not_invalidate_adjusted_pixels() -> None:
     first = AdjustmentState()
     second = first.model_copy(deep=True)

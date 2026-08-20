@@ -43,6 +43,18 @@ def test_load_real_tiff_fixture_with_hdr_headroom() -> None:
     assert sdr_reference is None
 
 
+def test_tiff_import_reports_decode_conversion_and_analysis_phases() -> None:
+    phases: list[str] = []
+
+    load_image(
+        fixture_path("hdr_headroom.tiff"),
+        progress=lambda phase, _label: phases.append(phase),
+    )
+
+    assert phases.index("decoding_tiff") < phases.index("color_conversion")
+    assert phases.index("color_conversion") < phases.index("analysis")
+
+
 def test_tiff_planar_and_multipage_layouts_are_normalized_to_first_hwc_image() -> None:
     planar = np.stack([np.full((4, 6), channel, dtype=np.float32) for channel in (1, 2, 3)])
     normalized_planar = _normalize_tiff_layout(planar, "SYX")

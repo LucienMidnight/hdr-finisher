@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
@@ -8,13 +8,16 @@ from .color import compute_peak_stops, detect_transfer_function
 from .models import HDRAnalysis, HDRClassification, SourceLatitude
 
 
-def classify_hdr(image: np.ndarray, metadata: dict[str, Any], suffix: str) -> HDRAnalysis:
+def classify_hdr(
+    image: np.ndarray,
+    metadata: dict[str, Any],
+    suffix: str,
+    *,
+    cancelled: Callable[[], bool] | None = None,
+) -> HDRAnalysis:
     peak = float(np.max(image)) if image.size else 0.0
     if image.size and image.ndim >= 3 and image.shape[-1] >= 3:
-        luma = np.tensordot(image[..., :3], np.array([0.2722287, 0.6740818, 0.0536895], dtype=np.float32), axes=([-1], [0]))
-        positive_luma = np.clip(luma, 0.0, None)
-        peak_luma = float(np.max(positive_luma))
-        robust_peak_luma = float(np.quantile(positive_luma, 0.9999))
+        peak_luma, robust_peak_luma = _luma_peaks(image, cancelled=cancelled)
     else:
         peak_luma = peak
         robust_peak_luma = peak
@@ -69,3 +72,38 @@ def classify_hdr(image: np.ndarray, metadata: dict[str, Any], suffix: str) -> HD
         needs_color_override=needs_override,
         badge_message=badge,
     )
+
+
+def _luma_peaks(
+    image: np.ndarray,
+    *,
+    maximum_quantile_samples: int = 2_000_000,
+    rows: int = 256,
+    cancelled: Callable[[], bool] | None = None,
+) -> tuple[float, float]:
+    """Return exact peak luma and a bounded-memory robust percentile."""
+    coefficients = np.array([0.2722287, 0.6740818, 0.0536895], dtype=np.float32)
+    height, width = image.shape[:2]
+    pixels = height * width
+    if pixels <= maximum_quantile_samples:
+        luma = np.tensordot(image[..., :3], coefficients, axes=([-1], [0]))
+        np.maximum(luma, np.float32(0.0), out=luma)
+        return float(np.max(luma)), float(np.quantile(luma, 0.9999))
+
+    stride = max(1, int(np.ceil(np.sqrt(pixels / maximum_quantile_samples))))
+    sample = image[::stride, ::stride, :3]
+    sample_luma = np.tensordot(sample, coefficients, axes=([-1], [0]))
+    np.maximum(sample_luma, np.float32(0.0), out=sample_luma)
+    robust_peak = float(np.quantile(sample_luma, 0.9999))
+
+    exact_peak = 0.0
+    strip_rows = max(1, int(rows))
+    for start in range(0, height, strip_rows):
+        if cancelled is not None and cancelled():
+            raise RuntimeError("Import cancelled")
+        stop = min(start + strip_rows, height)
+        strip_luma = np.tensordot(
+            image[start:stop, :, :3], coefficients, axes=([-1], [0])
+        )
+        exact_peak = max(exact_peak, float(np.max(strip_luma, initial=0.0)))
+    return exact_peak, robust_peak

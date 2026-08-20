@@ -959,6 +959,7 @@ class DesktopSessionOpenRequest(BaseModel):
 class ImportJobRequest(BaseModel):
     grant: str
     raw_import_settings: RawImportSettings = Field(default_factory=RawImportSettings)
+    replace_session_id: str | None = None
 
 
 class DesktopProjectOpenRequest(BaseModel):

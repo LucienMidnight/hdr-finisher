@@ -1,6 +1,6 @@
 # Known Limitations and Support Status
 
-This page prevents implemented, validated, expected, and planned behavior from being conflated. Status reflects the repository on **August 9, 2026**.
+This page prevents implemented, validated, expected, and planned behavior from being conflated. Status reflects the repository on **August 20, 2026**.
 
 ## Platform matrix
 
@@ -28,17 +28,17 @@ This page prevents implemented, validated, expected, and planned behavior from b
 
 ## Editing limitations
 
-HDR Finisher is global-only:
+HDR Finisher is a finishing editor, not a full compositor or RAW editor:
 
-- No RAW development
-- No masks, selections, brushes, gradients, or local adjustments
+- RAW/DNG development is a constrained convenience beta: as-shot white balance, AHD demosaic, and optional Lensfun correction only.
+- Local finishing masks support brush, gradient, path, luminance-range, and Boolean combinations; there is no pixel cloning or object-aware selection.
 - No layers or compositing
-- No crop, transform, lens correction, sharpening, denoise, or retouching
+- Crop/transform and Lensfun correction are available, but there is no denoise or full retouching toolset.
 - No batch queue or automation UI
-- No undo/history stack or saved project/session format
+- Undo/history and saved projects are available, but projects reference the original source rather than embedding its pixels.
 - No local presets/look library
 
-Ejecting or replacing the image discards unsaved adjustment state.
+Importing, opening a project, ejecting, and closing prompt to save or discard unsaved adjustment state.
 
 ## Preview limitations
 
@@ -65,7 +65,7 @@ Ejecting or replacing the image discards unsaved adjustment state.
 
 - JPEG Ultra HDR depends on a compatible libultrahdr build; availability is capability-gated.
 - AVIF gain maps depend on compatible libavif command-line tools.
-- JPEG XL is not implemented.
+- JPEG XL HDR is experimental and capability-gated. It is direct 12-bit Rec.2020/PQ and has no SDR fallback; third-party files with ambiguous precision or color signaling are rejected or require manual interpretation.
 - Gain-map browser/app support changes outside the project.
 - The app validates structural markers and decoder behavior, not formal certification against every clause of ISO 21496-1.
 - No built-in publishing client uploads directly to hosting or social platforms.
@@ -90,7 +90,7 @@ Ejecting or replacing the image discards unsaved adjustment state.
 ## Planned or explicitly deferred
 
 - Polished installers and macOS package/signing
-- JPEG XL
+- Wider JPEG XL interoperability and platform acceptance
 - Wider automatic source-space/OCIO integration
 - Broader physical browser/device acceptance matrix
 - Batch automation
