@@ -1,9 +1,9 @@
 # Experimental DNG Import and Large-File Safety Sprint
 
-**Status:** Implementation brief — experimental feature
+**Status:** Implemented on the exploration branch — experimental validation in progress
 **Prepared:** 2026-08-20  
 **Target branch:** `explore/linear-dng-large-import`  
-**Production code status:** Not yet modified  
+**Production code status:** Implemented on `explore/linear-dng-large-import`; compatibility sign-off remains evidence-gated
 **Related investigation:** [Linear DNG Import Feasibility — 2026-08-20](../testing/Linear_DNG_Import_Feasibility_2026-08-20.md)
 
 ## Executive outcome
@@ -38,12 +38,34 @@ The following private samples are machine-local validation inputs. Do not copy t
 
 Additional facts established by the probe:
 
-- The Alkeria file is approximately 1.78 GB, but a conservative import estimate is approximately 5.33 GiB and a full-resolution export can peak near 8.65 GiB.
+- The Alkeria file is approximately 1.78 GB. Its pre-implementation model estimated approximately 5.33 GiB for import and 8.65 GiB for full-resolution export; the measured JPEG XL export below shows that the export estimate was materially low for this extreme-width case.
 - The Lightroom HDR primary payload has been fully decoded with the installed `tifffile`/`imagecodecs` stack as a `(6000, 8000, 3)` float16 array.
 - The DxO full primary payload has also been decoded successfully.
 - The existing DxO JPEG is an edited render. It confirms content and geometry but is not a neutral color/tone reference.
 - Lightroom's Fast Load JPEG XL proxies are reduced derived images and must never cause a mosaiced primary to be classified as Linear DNG.
 - The current development environment uses rawpy 0.27.0 with LibRaw 0.22.1. Reconfirm bundled versions and codec flags in packaged Windows/macOS builds rather than assuming development-machine behavior.
+
+### Measured Alkeria full-resolution export result — Windows, 2026-08-20
+
+The implemented branch successfully imported and rendered the full 72,480 × 4,096 Alkeria line-scan image, then exported it as a single JPEG XL file. This is strong evidence for the large-file path and the bundled JPEG XL codec, but it is not colorimetric sign-off: the Alkeria producer/reference render is still unavailable.
+
+| Check | Result |
+|---|---|
+| Output | Single-file JPEG XL, 72,480 × 4,096 |
+| Encoded interpretation | 12-bit Rec.2020 PQ; application marker reports 100-nit reference white |
+| File size | 83,809,271 bytes (approximately 79.9 MiB) |
+| SHA-256 | `4F2EEEA09E2FA401980A182DD76DD33812ECCF150C74B32FBED4D437B4DD9CE0` |
+| Bundled codec under test | `imagecodecs` 2026.6.26 with libjxl 0.11.2 |
+| In-application validation | Passed a complete decode before the staged file was atomically published; decoded dimensions, finite samples, 12-bit range/precision, and the Rec.2020 PQ application marker were checked |
+| Independent local codec checks | `imagecodecs.jpegxl_check` returned true; a synthetic 1 × 72,480 encode/decode probe also passed, confirming this bundled libjxl accepts the source width |
+| Peak export-backend memory observed | Approximately 20.3 GiB working set and 20.8 GiB private bytes; monitoring began after processing started, so this is an observed peak rather than a guaranteed absolute peak |
+| Windows open test after HDR Finisher exited | Opened successfully through the Windows Photos/shell path; after more than one minute it stabilized near 19.0 GiB private bytes for Photos and approximately 20.2 GiB private bytes across Photos, Explorer, and `dllhost`, with approximately 37.1 GiB system RAM still available |
+
+The same source did not export through the other two attempted delivery formats. AVIF returned `Failed to encode image: Invalid argument`; this establishes failure in the tested encoder/build but does not by itself identify a standards-level maximum dimension. JPEG Ultra HDR rejected the image explicitly because its implementation limits dimensions to 8,192 × 8,192. These outcomes make direct JPEG XL the only verified single-file delivery path for this 72,480-pixel-wide sample in the current Windows build.
+
+One earlier Windows shell attempt, with concurrent Photos/Explorer codec activity, exhausted available RAM while Photos and `dllhost` held very large private allocations. The controlled retest above stabilized safely after HDR Finisher was closed. Treat shell thumbnail/preview generation as a separate high-memory consumer, warn users before opening giant outputs in another application, and do not infer low-memory interoperability from successful encoding alone.
+
+The user reports that other applications they tried could not open this output. Application names, versions, and failure modes were not captured, so this is useful qualitative product feedback rather than an independently verified compatibility comparison. Do not turn it into a general claim that HDR Finisher or JPEG XL supports more applications or files.
 
 ## Private local-media staging
 
@@ -384,7 +406,7 @@ An uncompressed memory-mapped source can reduce committed RAM, but acceptance sh
 - Keep import and export admission separate. A file may open successfully but still receive a warning or denial for an export requiring larger intermediates.
 - Report estimated required and safely available GiB, dimensions, and the limiting resource.
 
-The 2 GiB/15% reserve is a provisional product policy, not a measured truth. Capture Windows and macOS peak RSS during validation and adjust it before release.
+The 2 GiB/15% reserve is a provisional product policy, not a measured truth. The Alkeria JPEG XL run observed approximately 20.8 GiB of private memory, more than twice the original 8.65 GiB export estimate. Recalibrate the JPEG XL export model against this measurement, including the simultaneous source/render, PQ conversion, encoded payload, and validation-decode lifetimes; do not merely increase the fixed reserve. Capture repeat Windows measurements from process start and macOS peak RSS before release.
 
 ### Allocation and failure handling
 
@@ -538,6 +560,8 @@ Store the durable procedure/results in `docs/testing/`; put disposable previews 
 | Corrupt/truncated copy | Rejected safely | No crash, no session loss, no leaked handles/temp files |
 | Simulated low-memory environment | Rejected before decode | Required/available GiB message and current session retained |
 
+As of 2026-08-20, the Alkeria row has passed full-dimension import, bounded interactive use, single-file JPEG XL export, transactional decode validation, and a controlled Windows Photos open test. Export resource measurement is recorded above. Exact producer-reference color and geometry comparison remains pending, so the row is not yet complete and must not be described as color-validated Alkeria compatibility.
+
 ### Visual and numeric acceptance
 
 - Exact dimensions, crop, and orientation match the producer's neutral reference.
@@ -589,6 +613,8 @@ The sprint is complete only when:
 - Include standard OpcodeList3 `GainMap` because both supplied DJI single-frame DNGs require it in addition to WarpRectilinear; direct DJI acceptance cannot be correct with Warp alone.
 - Label the complete DNG import capability experimental because the available corpus cannot cover every camera, DNG version, producer, opcode variant, and software configuration.
 - Prefer an explicit capability rejection over a plausible-looking import that skipped mandatory metadata.
+- Treat direct JPEG XL as the currently verified single-file export for the 72,480-pixel-wide Alkeria sample. AVIF and JPEG Ultra HDR are not verified for this dimension in the current Windows build.
+- Consider bounded tiled export as a follow-up for dimension-limited formats. At an 8,192-pixel tile-width ceiling, this sample would require nine horizontal tiles (eight 8,192-pixel tiles and one 6,944-pixel remainder), plus deterministic naming and a reconstruction manifest. Tiling is not part of this sprint's completed compatibility envelope.
 
 ### User-provided validation dependencies
 
