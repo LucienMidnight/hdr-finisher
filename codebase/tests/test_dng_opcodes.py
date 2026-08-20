@@ -33,7 +33,7 @@ def _gain_parameters(gains: np.ndarray, *, planes: int = 3) -> bytes:
         1.0 / max(points_v - 1, 1), 1.0 / max(points_h - 1, 1),
         0.0, 0.0, map_planes,
     )
-    return header + gains.astype(">f8").tobytes()
+    return header + gains.astype(">f4").tobytes()
 
 
 def test_gain_map_parser_and_bilinear_plane_application() -> None:

@@ -113,6 +113,7 @@ def estimate_resources(
     strip_rows: int = 128,
     gpu_max_texture_dimension: int = DEFAULT_GPU_MAX_TEXTURE_DIMENSION,
     proxy_long_edge: int = DEFAULT_PROXY_LONG_EDGE,
+    full_float_intermediates: int = 1,
 ) -> ResourceEstimate:
     if min(width, height, samples, bytes_per_sample) <= 0:
         raise ValueError("Resource dimensions and sample sizes must be positive.")
@@ -121,7 +122,9 @@ def estimate_resources(
     acescg = pixels * 3 * 4
     scratch = min(width * max(samples, 3) * 4 * strip_rows * 3, 768 * 1024**2)
     fixed = 256 * 1024**2
-    import_peak = retained_session_bytes + decoded + acescg + scratch + fixed
+    if full_float_intermediates < 1:
+        raise ValueError("At least one full float32 working image is required.")
+    import_peak = retained_session_bytes + decoded + acescg * full_float_intermediates + scratch + fixed
     export_peak = retained_session_bytes + decoded + acescg * 2 + scratch + fixed
 
     reserve = None

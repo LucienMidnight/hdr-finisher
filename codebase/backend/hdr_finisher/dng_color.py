@@ -151,10 +151,24 @@ def convert_to_acescg(
     rows: int = 128,
     cancelled: Callable[[], bool] | None = None,
 ) -> tuple[np.ndarray, DngColorTransform]:
+    normalized = normalize_camera_samples(image, metadata, rows=rows, cancelled=cancelled)
+    transform = build_color_transform(metadata)
+    transform_normalized_to_acescg_in_place(
+        normalized, transform, metadata.baseline_exposure, rows=rows, cancelled=cancelled
+    )
+    return normalized, transform
+
+
+def normalize_camera_samples(
+    image: np.ndarray,
+    metadata: DngColorMetadata,
+    *,
+    rows: int = 128,
+    cancelled: Callable[[], bool] | None = None,
+) -> np.ndarray:
     source = np.asarray(image)
     if source.ndim != 3 or source.shape[2] != 3:
         raise DngColorError("DNG color conversion requires an H×W×3 image.")
-    transform = build_color_transform(metadata)
     black = _broadcast_level(metadata.black_level, 0.0, "BlackLevel")
     if metadata.white_level is None:
         if np.issubdtype(source.dtype, np.integer):
@@ -166,9 +180,7 @@ def convert_to_acescg(
     scale = white - black
     if np.any(scale <= 0) or not np.all(np.isfinite(scale)):
         raise DngColorError("WhiteLevel must be finite and greater than BlackLevel.")
-    exposure = np.float32(2.0 ** float(metadata.baseline_exposure))
     output = np.empty(source.shape, dtype=np.float32)
-    matrix = transform.camera_to_acescg.astype(np.float32)
     black32 = black.astype(np.float32)
     inverse_scale32 = (1.0 / scale).astype(np.float32)
     for start in range(0, source.shape[0], rows):
@@ -176,9 +188,28 @@ def convert_to_acescg(
             raise DngImportCancelled("Experimental DNG import cancelled")
         end = min(source.shape[0], start + rows)
         camera = np.asarray(source[start:end], dtype=np.float32)
-        camera = (camera - black32) * inverse_scale32
-        output[start:end] = (camera @ matrix.T) * exposure
-    return output, transform
+        output[start:end] = (camera - black32) * inverse_scale32
+    return output
+
+
+def transform_normalized_to_acescg_in_place(
+    image: np.ndarray,
+    transform: DngColorTransform,
+    baseline_exposure: float = 0.0,
+    *,
+    rows: int = 128,
+    cancelled: Callable[[], bool] | None = None,
+) -> np.ndarray:
+    if image.dtype != np.float32 or image.ndim != 3 or image.shape[2] != 3:
+        raise DngColorError("In-place DNG color conversion requires an H×W×3 float32 image.")
+    matrix = transform.camera_to_acescg.astype(np.float32)
+    exposure = np.float32(2.0 ** float(baseline_exposure))
+    for start in range(0, image.shape[0], rows):
+        if cancelled is not None and cancelled():
+            raise DngImportCancelled("Experimental DNG import cancelled")
+        end = min(image.shape[0], start + rows)
+        image[start:end] = (image[start:end] @ matrix.T) * exposure
+    return image
 
 
 def chromatic_adaptation_matrix(source_white: np.ndarray, destination_white: np.ndarray) -> np.ndarray:

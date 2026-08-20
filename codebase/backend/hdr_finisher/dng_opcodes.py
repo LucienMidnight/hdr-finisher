@@ -138,10 +138,11 @@ def parse_gain_map(parameters: bytes) -> GainMapParameters:
     count = points_v * points_h * map_planes
     if count > 16_777_216:
         raise DngOpcodeError("GainMap grid exceeds the supported safety limit")
-    expected = 76 + count * 8
+    # The grid samples are IEEE float32; spacing and origin above are float64.
+    expected = 76 + count * 4
     if len(parameters) != expected:
         raise DngOpcodeError(f"GainMap expected {expected} parameter bytes; found {len(parameters)}")
-    gains = np.frombuffer(parameters, dtype=">f8", count=count, offset=76).astype(np.float64)
+    gains = np.frombuffer(parameters, dtype=">f4", count=count, offset=76).astype(np.float64)
     if not np.all(np.isfinite(gains)) or np.any(gains < 0):
         raise DngOpcodeError("GainMap gains must be finite and non-negative")
     return GainMapParameters(
