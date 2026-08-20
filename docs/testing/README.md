@@ -28,6 +28,7 @@ Generated output must not be the only copy of a procedure or durable conclusion.
 - [Codebase Review, Scope Performance, and HDR Round-Trip Sprint](Codebase_Review_Cleanup_and_Round_Trip_Sprint.md) — clean-task implementation brief for evidence-led code cleanup, scope profiling, packaging review, and AVIF/JPEG Ultra HDR re-import investigation, with JPEG XL and DNG feasibility follow-up.
 - [macOS Desktop Validation](macOS_Desktop_Validation.md) — Apple Silicon package automation, native workflow checks, application lifecycle, and remaining signing/display gates.
 - [Compact Workspace Validation](Compact_Workspace_Validation.md) — responsive viewport matrix and packaged macOS/Windows checks for small displays.
+- [Experimental DNG Import Validation — 2026-08-20](Experimental_DNG_Import_Validation_2026-08-20.md) — private-corpus handling, decoder/opcode audit, full-resolution Windows measurements, exact compatibility envelope, and unresolved reference/platform gates.
 
 ## Automated entry points
 

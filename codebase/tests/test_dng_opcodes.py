@@ -58,6 +58,32 @@ def test_gain_map_preserves_negative_and_hdr_values() -> None:
     assert np.allclose(apply_gain_map(image, parsed), image * 2.0)
 
 
+def test_gain_map_honors_area_plane_and_pixel_pitch() -> None:
+    image = np.ones((5, 6, 3), dtype=np.float32)
+    gain_map = GainMapParameters(
+        AreaSpec(1, 1, 5, 6, 1, 1, 2, 2),
+        1,
+        1,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        1,
+        np.full((1, 1, 1), 2.0, dtype=np.float64),
+    )
+    result = apply_gain_map(image, gain_map)
+    expected = np.ones_like(image)
+    expected[1:5:2, 1:6:2, 1] = 2.0
+    assert np.array_equal(result, expected)
+
+
+def test_gain_map_parser_rejects_non_positive_spacing() -> None:
+    parameters = bytearray(_gain_parameters(np.ones((1, 1, 1)), planes=3))
+    struct.pack_into(">d", parameters, 40, 0.0)
+    with pytest.raises(DngOpcodeError, match="spacing must be positive"):
+        parse_gain_map(bytes(parameters))
+
+
 def test_warp_identity_and_clipped_border() -> None:
     image = np.arange(5 * 7 * 3, dtype=np.float32).reshape(5, 7, 3)
     identity = WarpRectilinearParameters(np.asarray([[1, 0, 0, 0, 0, 0]], dtype=np.float64), 0.5, 0.5)
@@ -68,6 +94,43 @@ def test_warp_identity_and_clipped_border() -> None:
     assert np.all(np.isfinite(result))
     assert result.shape == image.shape
     assert not np.allclose(result, image)
+
+
+def test_warp_uses_independent_coefficient_planes() -> None:
+    yy, xx = np.mgrid[:11, :13]
+    base = (xx + yy * 7).astype(np.float32)
+    image = np.stack((base, base, base), axis=-1)
+    coefficients = np.asarray(
+        [
+            [1, 0, 0, 0, 0, 0],
+            [1, 0.12, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0.015, -0.01],
+        ],
+        dtype=np.float64,
+    )
+    result = apply_warp_rectilinear(
+        image, WarpRectilinearParameters(coefficients, 0.5, 0.5)
+    )
+    assert np.allclose(result[..., 0], image[..., 0])
+    assert not np.allclose(result[..., 1], result[..., 0])
+    assert not np.allclose(result[..., 2], result[..., 1])
+
+
+def test_warp_cancellation_is_checked_between_bounded_row_chunks() -> None:
+    calls = 0
+
+    def cancelled() -> bool:
+        nonlocal calls
+        calls += 1
+        return calls > 1
+
+    image = np.ones((130, 12, 3), dtype=np.float32)
+    identity = WarpRectilinearParameters(
+        np.asarray([[1, 0, 0, 0, 0, 0]], dtype=np.float64), 0.5, 0.5
+    )
+    with pytest.raises(DngImportCancelled):
+        apply_warp_rectilinear(image, identity, rows=64, cancelled=cancelled)
+    assert calls == 2
 
 
 def test_warp_parser_accepts_real_target_shape_and_rejects_unknown_planes() -> None:
@@ -99,3 +162,10 @@ def test_opcode_parser_rejects_truncated_oversized_and_trailing_payloads() -> No
         parse_opcode_list(struct.pack(">IIIII", 1, 9, 0x01030000, 0, 99), "OpcodeList3")
     with pytest.raises(DngOpcodeError, match="trailing"):
         parse_opcode_list(struct.pack(">I", 0) + b"x", "OpcodeList3")
+
+
+def test_unsupported_mandatory_opcode_rejects_instead_of_being_ignored() -> None:
+    encoded = struct.pack(">I", 1) + struct.pack(">IIII", 1234, 0x01030000, 0, 0)
+    opcodes = parse_opcode_list(encoded, "OpcodeList3")
+    with pytest.raises(DngOpcodeError, match="Unsupported mandatory opcode"):
+        apply_opcode_list3(np.ones((2, 2, 3), np.float32), opcodes)

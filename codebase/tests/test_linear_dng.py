@@ -7,7 +7,7 @@ import pytest
 import tifffile
 from PIL import Image
 
-from hdr_finisher.linear_dng import DngRoute, decode_linear_dng, inspect_dng
+from hdr_finisher.linear_dng import DngRoute, crop_and_orient, decode_linear_dng, inspect_dng
 from hdr_finisher.dng_opcodes import DngImportCancelled
 from hdr_finisher.loader import LoaderError, load_image
 from hdr_finisher.resource_preflight import GIB, ResourceSnapshot
@@ -90,6 +90,18 @@ def test_inspection_does_not_decode_payload(monkeypatch: pytest.MonkeyPatch, tmp
 
     monkeypatch.setattr(tifffile.TiffPage, "asarray", forbidden)
     assert inspect_dng(path, resource_snapshot=RESOURCES).route is DngRoute.LINEAR_DNG
+
+
+def test_active_area_crop_precedes_orientation() -> None:
+    image = np.arange(5 * 6 * 3, dtype=np.float32).reshape(5, 6, 3)
+    metadata = {
+        "active_area": (1, 1, 5, 6),
+        "default_crop_origin": (1.0, 1.0),
+        "default_crop_size": (3.0, 2.0),
+        "orientation": 6,
+    }
+    cropped = image[2:4, 2:5]
+    assert np.array_equal(crop_and_orient(image, metadata), np.rot90(cropped, 3))
 
 
 def test_changed_file_fingerprint_rejects_before_decode(tmp_path: Path) -> None:

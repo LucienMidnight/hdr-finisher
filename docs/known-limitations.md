@@ -25,12 +25,13 @@ This page prevents implemented, validated, expected, and planned behavior from b
 - HLG decoding assumes a 1,000-nit system peak.
 - TIFF acceptance depends on supported layouts/compression/codecs; unusual channel organizations may fail.
 - Apple HDR HEIC support targets the implemented auxiliary-gain metadata path, not every vendor HEIF HDR scheme.
+- Experimental DNG Import supports a constrained metadata/layout/opcode envelope, not every valid DNG. Neutral producer-reference comparisons and macOS resource validation remain open; current successful decodes are not color/geometry/DJI compatibility sign-off.
 
 ## Editing limitations
 
 HDR Finisher is a finishing editor, not a full compositor or RAW editor:
 
-- RAW/DNG development is a constrained convenience beta: as-shot white balance, AHD demosaic, and optional Lensfun correction only.
+- RAW development is a constrained convenience beta. Experimental DNG Import adds metadata-driven LinearRaw decoding and audited OpcodeList3 GainMap/WarpRectilinear handling, but does not add denoise, sharpening, creative camera profiles, or a general RAW-development UI.
 - Local finishing masks support brush, gradient, path, luminance-range, and Boolean combinations; there is no pixel cloning or object-aware selection.
 - No layers or compositing
 - Crop/transform and Lensfun correction are available, but there is no denoise or full retouching toolset.

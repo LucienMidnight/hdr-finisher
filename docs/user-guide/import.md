@@ -23,7 +23,17 @@ See [Source preparation](../workflows/source-preparation.md) for application-spe
 - **Load test pattern:** creates a calibrated internal HDR pattern for learning the controls and checking the display path.
 - Drag and drop is supported in the viewer.
 
-Accepted extensions include EXR, TIFF, HDR, PFM, HEIC/HEIF, PNG, and JPEG. Acceptance only means the loader understands the container. PNG/JPEG sources are normally SDR unless they contain a separately supported HDR representation.
+Accepted extensions include EXR, TIFF, HDR, PFM, HEIC/HEIF, AVIF, JPEG XL, PNG, JPEG, DNG, and selected camera RAW formats. Acceptance only means the loader understands the container. PNG/JPEG sources are normally SDR unless they contain a separately supported HDR representation.
+
+## Experimental DNG Import
+
+DNG import is experimental and intentionally variant-gated. Before reading the full pixel payload, HDR Finisher selects the largest full-resolution primary, distinguishes a three-channel LinearRaw image from a CFA mosaic, checks required metadata/opcodes/codecs, and performs a conservative memory preflight. Reduced previews and Lightroom Fast Load proxies are never accepted as the primary.
+
+The tested implementation supports uint16 and float16/float32, contiguous three-channel LinearRaw primaries with DNG matrix color metadata, plus ordinary mosaiced DNGs handled by the existing rawpy/LibRaw path. It implements OpcodeList3 `GainMap` and `WarpRectilinear` at the post-demosaic camera-linear stage for the audited LibRaw 0.22.1 build. Unsupported mandatory operations, non-unit `DefaultScale`, unusual sample/layout variants, missing codecs, and unsafe allocations are rejected instead of ignored.
+
+The Metadata rail identifies the route, matrix path, required operations, and warnings. Automatic Lensfun correction is disabled when mandatory DNG corrections are applied, and an explicitly overlapping manual Lensfun request is rejected. Large CPU-safe sources use bounded preview proxies rather than one full-resolution GPU texture. Full-resolution export receives a separate memory preflight.
+
+This is not universal DNG or camera compatibility. The current local sample matrix proves structural routing and successful decode, but neutral producer renders are still required before color, shading, geometry, or DJI visual compatibility can be signed off. See the [Experimental DNG validation record](../testing/Experimental_DNG_Import_Validation_2026-08-20.md).
 
 ## What the application inspects
 

@@ -34,7 +34,7 @@ HDR Finisher is not a RAW developer or layer compositor. Its local-adjustment mo
 
 | Direction | Formats | Important note |
 |---|---|---|
-| Input | OpenEXR, TIFF, Radiance HDR, PFM, HEIC/HEIF, AVIF, JPEG XL, PNG, JPEG, DNG and selected camera RAW formats | An accepted file is not necessarily a valid HDR handoff. RAW/DNG development is a convenience beta and source primaries still matter. |
+| Input | OpenEXR, TIFF, Radiance HDR, PFM, HEIC/HEIF, AVIF, JPEG XL, PNG, JPEG, DNG and selected camera RAW formats | An accepted file is not necessarily a valid HDR handoff. DNG import is experimental, broader RAW development is a convenience beta, and source primaries still matter. |
 | Output | JPEG Ultra HDR | Backward-compatible SDR JPEG with an 8-bit gain map and Ultra HDR v1 plus ISO 21496-1 metadata. Requires a compatible `ultrahdr_app`. |
 | Output | AVIF with gain map | SDR base plus BT.2020/PQ alternate and a 10-bit gain map. Requires the bundled or discoverable AVIF tools. |
 | Output | SDR PNG | The authored SDR rendition without HDR data. |
@@ -57,7 +57,7 @@ See [Architecture](docs/technical/architecture.md), [Development guide](docs/tec
 - Windows x64 and macOS Apple Silicon technical-alpha packaging are available.
 - macOS native display telemetry, signing/notarization, and physical HDR acceptance remain open release-hardening work.
 - JPEG Ultra HDR and AVIF gain-map availability is capability-gated.
-- Batch processing, sampled content selectors, signed installers, and automatic updates are not implemented. JPEG XL HDR and convenience RAW/DNG import are capability-gated. Brush, gradient, luminance-range, and path local adjustments are available; sampled selectors remain build-gated pending IP review.
+- Batch processing, sampled content selectors, signed installers, and automatic updates are not implemented. JPEG XL HDR and Experimental DNG Import are capability-gated. Brush, gradient, luminance-range, and path local adjustments are available; sampled selectors remain build-gated pending IP review.
 
 ## License and third-party software
 
