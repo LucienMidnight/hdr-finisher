@@ -81,7 +81,7 @@ Importing, opening a project, ejecting, and closing prompt to save or discard un
 
 ## Packaging and operations
 
-- The Windows package is a technical alpha archive, not a signed installer.
+- The Windows setup and portable packages are unsigned technical previews; Windows may show an unrecognized-app warning.
 - There is no automatic updater.
 - Native encoder redistribution may vary by platform and license requirements.
 - The local API is not authenticated or hardened for network exposure.
@@ -89,7 +89,7 @@ Importing, opening a project, ejecting, and closing prompt to save or discard un
 
 ## Planned or explicitly deferred
 
-- Polished installers and macOS package/signing
+- Windows/macOS signing, notarization, and installer polish
 - Wider JPEG XL interoperability and platform acceptance
 - Wider automatic source-space/OCIO integration
 - Broader physical browser/device acceptance matrix

@@ -14,7 +14,14 @@ from PIL import Image
 from hdr_finisher.capabilities import probe_capabilities
 from hdr_finisher.exporters import JPEGXLHDRExportBackend
 from hdr_finisher.import_jobs import ImportJobManager
-from hdr_finisher.jpegxl import _box, decode_jpegxl, encode_hdr_jpegxl, inspect_jpegxl, validate_jpegxl
+from hdr_finisher.jpegxl import (
+    _box,
+    _parse_codestream_basic_info,
+    decode_jpegxl,
+    encode_hdr_jpegxl,
+    inspect_jpegxl,
+    validate_jpegxl,
+)
 from hdr_finisher.loader import load_image
 from hdr_finisher.media_browser import MediaBrowserError, MediaBrowserStore
 from hdr_finisher.models import AdjustmentState, CapabilityInfo, CapabilityStatus, EditCommand, EditDocument, ExportSettings, RawImportSettings, SourceInterpretationOverride, SourceReference
@@ -66,6 +73,29 @@ def test_jpegxl_decode_reads_the_container_once(tmp_path: Path, monkeypatch) -> 
     decode_jpegxl(path)
 
     assert reads == 1
+
+
+@pytest.mark.parametrize("bit_depth", [8, 10, 12, 16])
+def test_jpegxl_basic_info_fallback_reads_codestream_precision(bit_depth: int) -> None:
+    import imagecodecs
+
+    dtype = np.uint8 if bit_depth == 8 else np.uint16
+    source = np.zeros((18, 24, 3), dtype=dtype)
+    payload = bytes(
+        imagecodecs.jpegxl_encode(
+            source,
+            bitspersample=bit_depth,
+            lossless=True,
+            usecontainer=True,
+        )
+    )
+
+    info = _parse_codestream_basic_info(payload)
+
+    assert info["width"] == 24
+    assert info["height"] == 18
+    assert info["bits_per_sample"] == bit_depth
+    assert info["exponent_bits_per_sample"] == 0
 
 
 def test_capabilities_report_imagecodecs_jpegxl() -> None:

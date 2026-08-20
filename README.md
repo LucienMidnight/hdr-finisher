@@ -20,9 +20,9 @@ HDR Finisher is not a RAW developer or layer compositor. Its local-adjustment mo
 
 ## Start here
 
-- **Windows users:** download the latest `HDR-Finisher-v*-Windows-x64.zip` from
-  [GitHub Releases](https://github.com/LucienMidnight/hdr-finisher/releases), extract it, and double-click
-  **HDR Finisher.exe**. Do not open `frontend/launcher.html` directly.
+- **Windows users:** download `HDR-Finisher-Setup-<version>-x64.exe` from
+  [GitHub Releases](https://github.com/LucienMidnight/hdr-finisher/releases) and run the installer. A
+  `HDR-Finisher-Portable-<version>-x64.exe` build is also available when installation is not desired.
 - **Apple Silicon Mac users:** download the macOS arm64 DMG, drag **HDR Finisher** to Applications, and open it. Unsigned technical-preview builds require the one-time Finder **Open** confirmation described in [Install and run](docs/getting-started/install-and-run.md).
 - [Five-minute quick start](docs/getting-started/quick-start.md)
 - [Install and run](docs/getting-started/install-and-run.md)
@@ -57,7 +57,7 @@ See [Architecture](docs/technical/architecture.md), [Development guide](docs/tec
 - Windows x64 and macOS Apple Silicon technical-alpha packaging are available.
 - macOS native display telemetry, signing/notarization, and physical HDR acceptance remain open release-hardening work.
 - JPEG Ultra HDR and AVIF gain-map availability is capability-gated.
-- Batch processing, sampled content selectors, and polished installers are not implemented. JPEG XL HDR and convenience RAW/DNG import are capability-gated. Brush, gradient, luminance-range, and path local adjustments are available; sampled selectors remain build-gated pending IP review.
+- Batch processing, sampled content selectors, signed installers, and automatic updates are not implemented. JPEG XL HDR and convenience RAW/DNG import are capability-gated. Brush, gradient, luminance-range, and path local adjustments are available; sampled selectors remain build-gated pending IP review.
 
 ## License and third-party software
 

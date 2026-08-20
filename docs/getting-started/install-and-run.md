@@ -9,17 +9,17 @@ HDR Finisher is currently a technical alpha. Windows x64 and Apple Silicon macOS
 - An HDR-capable GPU/display chain for visual HDR review
 - Optional native encoders for AVIF gain maps and JPEG Ultra HDR
 
-The application works offline. It starts a local FastAPI server, displays the browser address in its launcher window, and opens a browser launcher page. Choose **Open HDR Finisher**, choose **Copy address** and paste it into another browser, or select and copy the displayed address manually. Keep the launcher window open while using the application. Images remain on the local machine unless you separately upload an export elsewhere.
+The application works offline. The native desktop shell starts a private local FastAPI sidecar and displays the editor in its own window. Keep the application open while you work. Images remain on the local machine unless you separately upload an export elsewhere.
 
 ## Run the Windows release
 
-1. Download the latest `HDR-Finisher-v*-Windows-x64.zip` from
+1. Download the latest `HDR-Finisher-Setup-<version>-x64.exe` from
    [GitHub Releases](https://github.com/LucienMidnight/hdr-finisher/releases).
-2. Extract the ZIP to a normal local folder.
-3. Double-click **HDR Finisher.exe**.
-4. Keep the HDR Finisher server window open while you work.
+2. Run the installer and choose the installation directory. The installer creates Start menu and desktop shortcuts.
+3. Open **HDR Finisher**. Because technical-preview builds are not yet code-signed, Windows may show an unrecognized-app warning; verify the SHA-256 manifest before continuing.
+4. If installation is not desired, download and run `HDR-Finisher-Portable-<version>-x64.exe` instead.
 
-The browser launcher opens automatically. If port 8000 is unavailable, HDR Finisher selects another local port and displays the address. Do not open `frontend/launcher.html` from the source tree; a directly opened HTML file has no application server behind it and will show a `file://` address.
+The installer and portable executable contain the Python processing backend and native encoder tools; Python and Node are not required on the destination PC.
 
 ## Run the macOS technical preview
 
@@ -88,15 +88,15 @@ On macOS, build the pinned static AVIF tools and `ultrahdr_app` with:
 ./tools/build_native_macos.sh
 ```
 
-## Windows technical-alpha package
+## Windows technical-preview package
 
 From `codebase/`:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_windows.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_desktop.ps1
 ```
 
-The PyInstaller folder-mode build is smoke-tested and written as a versioned ZIP plus SHA-256 checksum below `codebase/output/package/`. The ZIP contains **HDR Finisher.exe** at its root and is the artifact published to GitHub Releases. It is not currently code-signed.
+The build packages the private PyInstaller backend, then produces versioned NSIS setup and portable executables below `codebase/dist-electron/`. Run `npm --prefix desktop run test:packaged` before release and publish both executables with `SHA256SUMS-Windows.txt`. The artifacts are not currently code-signed.
 
 ## macOS technical-preview package
 

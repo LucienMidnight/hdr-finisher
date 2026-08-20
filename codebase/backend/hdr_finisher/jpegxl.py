@@ -302,7 +302,7 @@ class _BasicInfoPrefix(ctypes.Structure):
 def _probe_basic_info(payload: bytes) -> dict[str, Any]:
     library_path = _find_libjxl()
     if library_path is None:
-        return {}
+        return _parse_codestream_basic_info(payload)
     try:
         library = ctypes.CDLL(str(library_path))
         library.JxlDecoderCreate.argtypes = [ctypes.c_void_p]
@@ -349,6 +349,158 @@ def _probe_basic_info(payload: bytes) -> dict[str, Any]:
     except (AttributeError, OSError, ValueError):
         return {}
     return {}
+
+
+class _JXLBitReader:
+    """Read the JPEG XL codestream's least-significant-bit-first fields."""
+
+    def __init__(self, payload: bytes):
+        self.payload = payload
+        self.offset = 0
+
+    def read(self, count: int) -> int:
+        if count < 0 or self.offset + count > len(self.payload) * 8:
+            raise ValueError("Truncated JPEG XL codestream header.")
+        value = 0
+        for index in range(count):
+            bit_offset = self.offset + index
+            value |= ((self.payload[bit_offset // 8] >> (bit_offset % 8)) & 1) << index
+        self.offset += count
+        return value
+
+    def u32(self, constants: tuple[int, int, int, int], bits: tuple[int, int, int, int]) -> int:
+        choice = self.read(2)
+        return constants[choice] + (self.read(bits[choice]) if bits[choice] else 0)
+
+
+def _parse_codestream_basic_info(payload: bytes) -> dict[str, Any]:
+    """Parse the small, stable prefix needed when libjxl is statically linked.
+
+    Windows imagecodecs wheels embed libjxl inside ``_jpegxl.pyd`` and do not
+    export its C decoder API. The codestream header still carries dimensions
+    and sample precision, so read those fields directly rather than guessing
+    precision from decoded pixel brightness.
+    """
+
+    codestream = _first_codestream_box(payload)
+    if codestream is None:
+        return {}
+    try:
+        reader = _JXLBitReader(codestream)
+        if reader.read(16) != 0x0AFF:
+            return {}
+        width, height = _read_size_header(reader)
+        all_default = bool(reader.read(1))
+        if all_default:
+            bits_per_sample, exponent_bits = 8, 0
+        else:
+            if reader.read(1):
+                reader.read(3)  # orientation
+                if reader.read(1):
+                    _read_size_header(reader)  # intrinsic size
+                if reader.read(1):
+                    _read_preview_header(reader)
+                if reader.read(1):
+                    _read_animation_header(reader)
+            bits_per_sample, exponent_bits = _read_bit_depth(reader)
+        return {
+            "width": width,
+            "height": height,
+            "bits_per_sample": bits_per_sample,
+            "exponent_bits_per_sample": exponent_bits,
+        }
+    except (ValueError, OverflowError):
+        return {}
+
+
+def _first_codestream_box(payload: bytes) -> bytes | None:
+    if payload.startswith(b"\xff\x0a"):
+        return payload
+    signature = b"\x00\x00\x00\x0cJXL \r\n\x87\n"
+    if not payload.startswith(signature):
+        return None
+    offset = len(signature)
+    while offset + 8 <= len(payload):
+        size, kind = struct.unpack_from(">I4s", payload, offset)
+        header = 8
+        if size == 1:
+            if offset + 16 > len(payload):
+                return None
+            size = int(struct.unpack_from(">Q", payload, offset + 8)[0])
+            header = 16
+        elif size == 0:
+            size = len(payload) - offset
+        if size < header or offset + size > len(payload):
+            return None
+        body = payload[offset + header : offset + size]
+        if kind == b"jxlc":
+            return body
+        if kind == b"jxlp" and len(body) >= 4:
+            # The basic header is carried by the first partial codestream box.
+            index = struct.unpack_from(">I", body, 0)[0] & 0x7FFFFFFF
+            if index == 0:
+                return body[4:]
+        offset += size
+    return None
+
+
+def _read_size_header(reader: _JXLBitReader) -> tuple[int, int]:
+    if reader.read(1):
+        height = (reader.read(5) + 1) << 3
+        ratio = reader.read(3)
+        width = _width_from_ratio(height, ratio)
+        if not width:
+            width = (reader.read(5) + 1) << 3
+    else:
+        height = 1 + reader.u32((0, 0, 0, 0), (9, 13, 18, 30))
+        ratio = reader.read(3)
+        width = _width_from_ratio(height, ratio)
+        if not width:
+            width = 1 + reader.u32((0, 0, 0, 0), (9, 13, 18, 30))
+    return width, height
+
+
+def _width_from_ratio(height: int, ratio: int) -> int:
+    ratios = {
+        1: (1, 1),
+        2: (12, 10),
+        3: (4, 3),
+        4: (3, 2),
+        5: (16, 9),
+        6: (5, 4),
+        7: (2, 1),
+    }
+    if ratio not in ratios:
+        return 0
+    numerator, denominator = ratios[ratio]
+    return height * numerator // denominator
+
+
+def _read_bit_depth(reader: _JXLBitReader) -> tuple[int, int]:
+    if reader.read(1):
+        depth = reader.u32((32, 16, 24, 1), (0, 0, 0, 6))
+        return depth, reader.read(4) + 1
+    return reader.u32((8, 10, 12, 1), (0, 0, 0, 6)), 0
+
+
+def _read_preview_header(reader: _JXLBitReader) -> None:
+    if reader.read(1):
+        height = reader.u32((16, 32, 1, 33), (0, 0, 5, 9)) << 3
+        ratio = reader.read(3)
+        if not _width_from_ratio(height, ratio):
+            reader.u32((16, 32, 1, 33), (0, 0, 5, 9))
+    else:
+        height = reader.u32((1, 65, 321, 1345), (6, 8, 10, 12))
+        ratio = reader.read(3)
+        if not _width_from_ratio(height, ratio):
+            reader.u32((1, 65, 321, 1345), (6, 8, 10, 12))
+
+
+def _read_animation_header(reader: _JXLBitReader) -> None:
+    reader.u32((100, 1000, 1, 1), (0, 0, 10, 30))
+    reader.u32((1, 1001, 1, 1), (0, 0, 8, 10))
+    reader.u32((0, 0, 0, 0), (0, 3, 16, 32))
+    reader.read(1)
 
 
 def _find_libjxl() -> Path | None:

@@ -1,6 +1,5 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
-const os = require("node:os");
 const path = require("node:path");
 const { _electron: electron } = require("playwright");
 const electronExecutable = require("electron");
@@ -18,7 +17,7 @@ async function main() {
   fs.mkdirSync(outputDirectory, { recursive: true });
   const projectPath = path.join(outputDirectory, "electron-smoke.hdrfinisher");
   const exportPath = path.join(outputDirectory, "electron-smoke.png");
-  const userDataPath = fs.mkdtempSync(path.join(os.tmpdir(), "hdr-finisher-smoke-"));
+  const userDataPath = fs.mkdtempSync(path.join(outputDirectory, "user-data-"));
   fs.rmSync(projectPath, { force: true });
   fs.rmSync(exportPath, { force: true });
 
@@ -27,7 +26,10 @@ async function main() {
     : path.join(codebase, "dist-electron", "win-unpacked", "HDR Finisher.exe");
   const packagedExecutable = process.env.HDR_FINISHER_PACKAGED_EXECUTABLE || defaultPackagedExecutable;
   const executablePath = packaged ? packagedExecutable : electronExecutable;
-  const launchArgs = packaged ? [] : ["."];
+  // The smoke runner may execute inside a nested Windows/Linux sandbox where
+  // Chromium's own process sandbox cannot initialize. This switch is confined
+  // to test launches and is never applied by the packaged application itself.
+  const launchArgs = packaged ? ["--no-sandbox"] : ["--no-sandbox", "."];
   const electronApp = await electron.launch({
     executablePath,
     args: launchArgs,
@@ -51,7 +53,17 @@ async function main() {
     assert.ok(compactLayout.gradeWidth >= 300);
     assert.equal(compactLayout.dockCollapsed, false);
     assert.equal(await window.title(), "HDR Finisher");
-    assert.equal(await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getTitle()), "Untitled — HDR Finisher");
+    const initialNativeTitle = await electronApp.evaluate(async ({ BrowserWindow }) => {
+      const deadline = Date.now() + 30000;
+      let title = "";
+      while (Date.now() < deadline) {
+        title = BrowserWindow.getAllWindows()[0]?.getTitle() || "";
+        if (title === "Untitled — HDR Finisher") break;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      return title;
+    });
+    assert.equal(initialNativeTitle, "Untitled — HDR Finisher");
     assert.equal(await window.evaluate(() => typeof window.require), "undefined");
     const environment = await window.evaluate(() => window.hdrFinisherDesktop.environment());
     assert.equal(environment.apiVersion, 1);

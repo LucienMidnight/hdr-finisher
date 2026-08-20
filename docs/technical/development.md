@@ -85,13 +85,13 @@ Use `-Headed` for visible inspection. Browser automation cannot prove HDR lumina
 
 ## Packaging
 
-The current package workflow is Windows PyInstaller folder mode:
+The current Windows package workflow builds the Python sidecar and Electron setup/portable artifacts:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_windows.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_desktop.ps1
 ```
 
-It removes the previous generated package directory, smoke-tests the packaged server, and leaves only a versioned ZIP plus SHA-256 checksum below `codebase/output/package/`. The extracted ZIP presents **HDR Finisher.exe** as the single user entry point.
+It writes `HDR-Finisher-Setup-<version>-x64.exe`, `HDR-Finisher-Portable-<version>-x64.exe`, and the unpacked smoke-test target below `codebase/dist-electron/`. Run `npm --prefix desktop run test:packaged` and generate the release checksum manifest after building.
 
 On Apple Silicon macOS:
 
