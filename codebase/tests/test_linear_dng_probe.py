@@ -11,7 +11,14 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tools.linear_dng_probe import GIB, ResourceSnapshot, _rational_array, estimate_memory, qualify_page
+from tools.linear_dng_probe import (
+    GIB,
+    ResourceSnapshot,
+    _rational_array,
+    _select_primary_page,
+    estimate_memory,
+    qualify_page,
+)
 
 
 @dataclass
@@ -28,6 +35,7 @@ class FakePage:
         self.compression = 1
         self.imagewidth = 6000
         self.imagelength = 4000
+        self.subfiletype = 0
         values = {
             "ColorMatrix1": (1, 1) * 9,
             "ForwardMatrix1": (1, 1) * 9,
@@ -105,3 +113,33 @@ def test_rational_array_decodes_dng_numerator_denominator_pairs() -> None:
     result = _rational_array((1, 2, 3, 4, 5, 2), 3)
 
     assert np.allclose(result, [0.5, 0.75, 2.5])
+
+
+def test_raw_subifd_can_inherit_color_metadata_from_root_ifd() -> None:
+    root = FakePage(tags={"Software": "DxO PhotoLab"})
+    child = FakePage(tags={})
+    child.tags = {"WhiteLevel": FakeTag((65535, 65535, 65535))}
+
+    reasons, _notes, metadata = qualify_page(child, decoder_available=True, metadata_page=root)
+
+    assert reasons == []
+    assert metadata["Software"] == "DxO PhotoLab"
+    assert metadata["ColorMatrix1"] is not None
+
+
+def test_reduced_linear_fast_load_data_does_not_override_primary_mosaic() -> None:
+    primary = FakePage(photometric=32803, samples=1)
+    primary.imagewidth = 8000
+    primary.imagelength = 5320
+    reduced_linear = FakePage()
+    reduced_linear.imagewidth = 1988
+    reduced_linear.imagelength = 1326
+    reduced_linear.subfiletype = 1
+    tif = SimpleNamespace(
+        series=[
+            SimpleNamespace(pages=[primary]),
+            SimpleNamespace(pages=[reduced_linear]),
+        ]
+    )
+
+    assert _select_primary_page(tif) is primary
