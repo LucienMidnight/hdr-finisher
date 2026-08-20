@@ -1992,7 +1992,7 @@ input[type="range"] {
 .media-browser-layout {
   display: grid;
   grid-template-columns: 180px minmax(300px, 1fr) 260px;
-  min-height: 300px;
+  height: clamp(300px, 58vh, 520px);
   margin: 0 18px;
   border: 1px solid var(--hairline);
   border-radius: var(--radius);
@@ -2001,18 +2001,25 @@ input[type="range"] {
 }
 
 .media-browser-layout .directory-browser-list {
-  min-height: 300px;
-  max-height: min(520px, 58vh);
+  min-height: 0;
+  max-height: none;
+  height: 100%;
   margin: 0;
   border: 0;
   border-inline: 1px solid var(--hairline);
   border-radius: 0;
+  scrollbar-gutter: stable;
 }
 
 .media-browser-sidebar,
 .media-browser-preview {
   padding: 12px;
   min-width: 0;
+}
+
+.media-browser-sidebar {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .media-browser-sidebar strong {

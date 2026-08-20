@@ -480,6 +480,10 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     ):
         assert f'url("assets/icons/tabler/{icon}")' in css
     assert '.directory-browser-entry.directory::before' in css
+    assert 'height: clamp(300px, 58vh, 520px);' in css
+    assert 'scrollbar-gutter: stable;' in css
+    assert '.media-browser-sidebar {' in css
+    assert 'overflow-y: auto;' in css
     assert 'content: "▸"' not in css
     assert ".disclosure-trigger::before" in css
     assert '.disclosure-trigger[aria-expanded="true"]::before' in css
