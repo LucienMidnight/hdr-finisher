@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import numpy as np
@@ -108,7 +109,8 @@ def test_changed_file_fingerprint_rejects_before_decode(tmp_path: Path) -> None:
     path = tmp_path / "linear.dng"
     _write_linear(path, np.zeros((2, 3, 3), np.uint16))
     inspection = inspect_dng(path, resource_snapshot=RESOURCES)
-    path.touch()
+    stat = path.stat()
+    os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 2_000_000_000))
     with pytest.raises(Exception, match="changed after inspection"):
         decode_linear_dng(path, inspection)
 
