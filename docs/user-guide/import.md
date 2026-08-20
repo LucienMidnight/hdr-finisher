@@ -33,7 +33,7 @@ The tested implementation supports uint16 and float16/float32, contiguous three-
 
 The Metadata rail identifies the route, matrix path, required operations, and warnings. Automatic Lensfun correction is disabled when mandatory DNG corrections are applied, and an explicitly overlapping manual Lensfun request is rejected. Large CPU-safe sources use bounded preview proxies rather than one full-resolution GPU texture. Full-resolution export receives a separate memory preflight.
 
-This is not universal DNG or camera compatibility. The current local sample matrix proves structural routing and successful decode, but neutral producer renders are still required before color, shading, geometry, or DJI visual compatibility can be signed off. See the [Experimental DNG validation record](../testing/Experimental_DNG_Import_Validation_2026-08-20.md).
+This is not universal DNG or camera compatibility. The current local sample matrix proves structural routing and successful decode; producer-reference comparisons and macOS resource validation must finish before color, shading, geometry, or DJI visual compatibility can be signed off. See the [Experimental DNG validation record](../testing/Experimental_DNG_Import_Validation_2026-08-20.md).
 
 ## What the application inspects
 

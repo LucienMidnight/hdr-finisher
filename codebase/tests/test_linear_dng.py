@@ -105,6 +105,18 @@ def test_active_area_crop_precedes_orientation() -> None:
     assert np.array_equal(crop_and_orient(image, metadata), np.rot90(cropped, 3))
 
 
+def test_untouched_hdr_merge_xmp_crop_follows_orientation() -> None:
+    image = np.arange(6 * 8 * 3, dtype=np.float32).reshape(6, 8, 3)
+    metadata = {
+        "active_area": (0, 0, 6, 8),
+        "default_crop_origin": (0.0, 0.0),
+        "default_crop_size": (8.0, 6.0),
+        "orientation": 1,
+        "xmp_merge_crop": (0.125, 1.0 / 6.0, 0.875, 5.0 / 6.0),
+    }
+    assert np.array_equal(crop_and_orient(image, metadata), image[1:5, 1:7])
+
+
 def test_changed_file_fingerprint_rejects_before_decode(tmp_path: Path) -> None:
     path = tmp_path / "linear.dng"
     _write_linear(path, np.zeros((2, 3, 3), np.uint16))
@@ -122,6 +134,7 @@ def test_real_local_corpus_routes_when_present() -> None:
     expected = {
         "2018-05-26-11-35-40_NECTA0000_fbcb8f8f1d37db8bf93c0d46fb748355c01b7f8b.dng": DngRoute.LINEAR_DNG,
         "DSC06885_DxO.dng": DngRoute.LINEAR_DNG,
+        "DSC06885_DxO-neutral.dng": DngRoute.LINEAR_DNG,
         "lightroom-classic-DNG-test-1.dng": DngRoute.MOSAICED_RAW_DNG,
         "DSC01204_ACR_Linear.dng": DngRoute.LINEAR_DNG,
         "DJI_0071-2-HDR.dng": DngRoute.LINEAR_DNG,

@@ -4,7 +4,7 @@
 
 The constrained importer is implemented and automated/structural validation passes on Windows. Every supplied DNG is classified from metadata before payload decode; accepted LinearRaw primaries decode to scene-linear float32 ACEScg, and mosaiced primaries remain on rawpy/LibRaw. The giant Alkeria source uses a bounded preview plan. Import failures are transactional and export admission is independent.
 
-This record does **not** sign off color, geometry, shading, or DJI compatibility. The required neutral producer-reference renders were not supplied, and macOS resource-policy validation has not run. These are release/definition-of-done blockers, not permission to infer correctness from plausible images or the edited DxO JPEG.
+This record does **not yet** sign off color, geometry, shading, or DJI compatibility. Matched DxO, ACR, Lightroom HDR, and both DJI single-frame producer references have now been supplied and preserved in the ignored corpus, but their quantitative comparisons are still in progress. An Alkeria producer render is unavailable and macOS resource-policy validation has not run. These are release/definition-of-done gates, not permission to infer correctness from plausible images.
 
 ## Private corpus controls
 
@@ -48,7 +48,7 @@ The covered contracts include metadata-only inspection, root-preview/SubIFD inhe
 Final full backend suite on the completed tree:
 
 ```text
-560 passed, 1 skipped, 2 warnings in 25.55 s
+561 passed, 1 skipped, 2 warnings in 22.79 s
 ```
 
 The warnings are existing Starlette/httpx and naive-UTC deprecations, not DNG failures. The optional real-corpus route test ran because the ignored local corpus was present.
@@ -62,10 +62,10 @@ Measurements use the ignored copies. Times are wall clock for the decoder functi
 | Alkeria line-scan | LinearRaw; ForwardMatrix; no opcode | 72,480 × 4,096 RGB float32 | 6.57 s | 5.17 GiB | Decode passed; full GPU texture denied; proxy plan 4,096 × 231; producer visual reference absent |
 | DxO PhotoLab DNG | full SubIFD LinearRaw; ColorMatrix-only; no opcode | 7,952 × 5,304 RGB float32 | 1.11 s | 0.72 GiB | Full primary selected; decode passed; edited JPEG is geometry/content context only, not a neutral oracle |
 | Lightroom ordinary export | CFA primary despite reduced LinearRaw proxies; WarpRectilinear | 5,304 × 7,952 RGB float32 after crop/orientation | 64.39 s | 1.03 GiB | Decode passed; Fast Load proxy never selected; Warp recorded once; neutral reference absent |
-| ACR Linear DNG | LinearRaw; ForwardMatrix; WarpRectilinear | 5,304 × 7,952 RGB float32 after crop/orientation | 63.50 s | 1.03 GiB | Corrected SDK-semantics warp completed; neutral ACR geometry/color reference absent |
-| Lightroom HDR merge | float16 JPEG XL LinearRaw; ColorMatrix-only; no opcode | 8,000 × 6,000 RGB float32 | 1.41 s | 0.82 GiB | Decode passed; no GainMap/Warp reapplied; neutral Lightroom render absent |
-| DJI_0071.DNG | mosaiced rawpy; GainMap then WarpRectilinear; DNG color | 8,000 × 6,000 RGB float32 | 78.65 s | 1.68 GiB | Both operations recorded once; decoder-neutralization audit passed; visual reference absent |
-| DJI_0072.DNG | same guarded route | 8,000 × 6,000 RGB float32 | 78.26 s | 1.68 GiB | Both operations recorded once; decoder-neutralization audit passed; visual reference absent |
+| ACR Linear DNG | LinearRaw; ForwardMatrix; WarpRectilinear | 5,304 × 7,952 RGB float32 after crop/orientation | 63.50 s | 1.03 GiB | Corrected SDK-semantics warp completed; full-resolution ACR reference now available; comparison pending |
+| Lightroom HDR merge | float16 JPEG XL LinearRaw; ColorMatrix-only; no opcode; merge XMP crop | 7,916 × 5,937 RGB float32 | 1.41 s | 0.82 GiB | Decode passed; no GainMap/Warp reapplied; now matches the untouched post-merge reference dimensions |
+| DJI_0071.DNG | mosaiced rawpy; GainMap then WarpRectilinear; DNG color | 8,000 × 6,000 RGB float32 | 78.65 s | 1.68 GiB | Both operations recorded once; decoder-neutralization audit passed; float32 Linear Rec.2020 reference available; comparison pending |
+| DJI_0072.DNG | same guarded route | 8,000 × 6,000 RGB float32 | 78.26 s | 1.68 GiB | Both operations recorded once; decoder-neutralization audit passed; float32 Linear Rec.2020 reference available; comparison pending |
 
 The corrected reference bicubic warp is intentionally slower than the discarded early bilinear prototype. Cancellation is checked every 64 warp rows and every 128 gain/color rows. A real DJI decode cancelled 15.52 seconds after start with 0.52 seconds of latency after the 15-second request deadline. A native tifffile/imagecodecs or LibRaw call cannot be interrupted until that call returns; this limitation must remain visible in release notes.
 
@@ -86,7 +86,7 @@ Decode selected files and optionally write an ignored JSON report:
   --output output/linear-dng/audit/report.json
 ```
 
-For visual sign-off, obtain neutral/default full-resolution 16-bit TIFF renders for DxO, ACR, Lightroom HDR, DJI_0071, and DJI_0072 with application/version/settings recorded, plus an Alkeria producer reference if available. Compare crop, corners, straight-line geometry, channel registration, shading uniformity, sampled neutral patches, and scene-linear exposure after separating creative tone curves. Do not use the edited DxO JPEG as the color/tone oracle.
+The ignored corpus now contains matched DxO DNG/TIFF output, an ACR 16-bit ProPhoto reference, and float32 Linear Rec.2020 Lightroom references for the HDR merge and both DJI frames, with settings evidence. Compare crop, corners, straight-line geometry, channel registration, shading uniformity, sampled neutral patches, and scene-linear exposure after separating creative tone curves. Do not use the edited DxO JPEG as the color/tone oracle. Obtain an Alkeria producer reference if its software can generate one.
 
 ## Exact compatibility envelope
 
@@ -108,6 +108,6 @@ Rejected or unclaimed:
 
 ## Open gates
 
-1. Supply the neutral producer references listed above. Without them, visual correctness cannot be signed off.
+1. Complete and document quantitative comparisons against the newly supplied producer references. Until then, visual correctness remains unsigned.
 2. Run the resource accept/reject and peak-working-set matrix on macOS; record hardware, OS, Python/codec versions, and cancellation behavior.
 3. Consider optimizing the SDK-equivalent bicubic warp without changing its numeric contract; current 48 MP runs take roughly one minute or more on this Windows machine.

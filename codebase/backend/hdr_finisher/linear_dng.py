@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
+import xml.etree.ElementTree as ET
 
 import numpy as np
 
@@ -132,6 +133,9 @@ def inspect_dng(
             ]
             rejection = _opcode_rejection(required)
             metadata = _resolve_metadata(page, root, dtype, samples, width, height)
+            metadata["xmp_merge_crop"] = _merge_xmp_crop(page, root)
+            if metadata["xmp_merge_crop"] is not None:
+                warnings.append("Applied the untouched HDR merge crop stored in DNG XMP metadata.")
             metadata.update(
                 {
                     "photometric": photometric,
@@ -313,6 +317,7 @@ def decode_linear_dng(
             "estimated_profile_temperature": transform.estimated_temperature,
             "profile_weight1": transform.profile_weight1,
             "opcode_operations": list(applied),
+            "merge_xmp_crop": inspection.metadata.get("xmp_merge_crop"),
             "warnings": list(inspection.warnings),
             "resource_estimate": _resource_payload(estimate),
         },
@@ -476,7 +481,59 @@ def crop_and_orient(image: np.ndarray, metadata: dict[str, Any]) -> np.ndarray:
     }
     if orientation not in operations:
         raise LinearDngError(f"Unsupported TIFF Orientation {orientation}.")
-    return operations[orientation](result)
+    result = operations[orientation](result)
+    merge_crop = metadata.get("xmp_merge_crop")
+    if merge_crop is not None:
+        left, top, right, bottom = np.asarray(merge_crop, dtype=np.float64)
+        height, width = result.shape[:2]
+        crop_left = int(np.rint(left * width))
+        crop_top = int(np.rint(top * height))
+        crop_width = int(np.rint((right - left) * width))
+        crop_height = int(np.rint((bottom - top) * height))
+        crop_right = crop_left + crop_width
+        crop_bottom = crop_top + crop_height
+        if (
+            crop_width < 1
+            or crop_height < 1
+            or crop_left < 0
+            or crop_top < 0
+            or crop_right > width
+            or crop_bottom > height
+        ):
+            raise LinearDngError("Merge-generated XMP crop exceeds the oriented DNG image.")
+        result = result[crop_top:crop_bottom, crop_left:crop_right]
+    return result
+
+
+def _merge_xmp_crop(page: Any, root: Any) -> tuple[float, float, float, float] | None:
+    tag = _tag(page, root, "XMP")
+    if tag is None:
+        return None
+    payload = bytes(tag.value)
+    if len(payload) > 2 * 1024**2:
+        raise LinearDngError("DNG XMP metadata exceeds the 2 MiB safety limit.")
+    try:
+        document = ET.fromstring(payload)
+    except ET.ParseError as exc:
+        raise LinearDngError(f"DNG XMP metadata is malformed: {exc}") from exc
+    values = {
+        key.rsplit("}", 1)[-1]: value
+        for element in document.iter()
+        for key, value in element.attrib.items()
+    }
+    if values.get("IsMergedHDR", "").lower() != "true" or values.get("HasCrop", "").lower() != "true":
+        return None
+    try:
+        angle = float(values.get("CropAngle", "0"))
+        crop = tuple(float(values[name]) for name in ("CropLeft", "CropTop", "CropRight", "CropBottom"))
+    except (KeyError, ValueError) as exc:
+        raise LinearDngError("Merge-generated XMP crop metadata is incomplete or invalid.") from exc
+    left, top, right, bottom = crop
+    if abs(angle) > 1e-9:
+        raise LinearDngError("Rotated merge-generated XMP crops are not supported experimentally.")
+    if not all(np.isfinite(crop)) or not (0.0 <= left < right <= 1.0 and 0.0 <= top < bottom <= 1.0):
+        raise LinearDngError("Merge-generated XMP crop coordinates are outside normalized image bounds.")
+    return crop
 
 
 def _verify_fingerprint(path: Path, page: Any, expected: DngFingerprint) -> None:

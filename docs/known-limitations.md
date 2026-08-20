@@ -25,7 +25,7 @@ This page prevents implemented, validated, expected, and planned behavior from b
 - HLG decoding assumes a 1,000-nit system peak.
 - TIFF acceptance depends on supported layouts/compression/codecs; unusual channel organizations may fail.
 - Apple HDR HEIC support targets the implemented auxiliary-gain metadata path, not every vendor HEIF HDR scheme.
-- Experimental DNG Import supports a constrained metadata/layout/opcode envelope, not every valid DNG. Neutral producer-reference comparisons and macOS resource validation remain open; current successful decodes are not color/geometry/DJI compatibility sign-off.
+- Experimental DNG Import supports a constrained metadata/layout/opcode envelope, not every valid DNG. Producer-reference comparisons are in progress and macOS resource validation remains open; current successful decodes are not yet color/geometry/DJI compatibility sign-off.
 
 ## Editing limitations
 
