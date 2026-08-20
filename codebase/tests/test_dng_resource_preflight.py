@@ -37,6 +37,19 @@ def test_retained_session_and_export_are_accounted_separately() -> None:
     assert with_session.conservative_export_peak_bytes > with_session.conservative_import_peak_bytes
 
 
+def test_export_only_failure_has_distinct_actionable_error() -> None:
+    estimate = estimate_resources(
+        width=8_000,
+        height=6_000,
+        samples=3,
+        bytes_per_sample=2,
+        resources=ResourceSnapshot(16 * GIB, 4 * GIB, "test"),
+    )
+    assert estimate.import_decision is ResourceDecision.PASS
+    assert estimate.export_decision is ResourceDecision.REJECT
+    assert "choose a smaller export size" in (estimate.export_error(8_000, 6_000) or "")
+
+
 def test_unknown_resources_only_allow_ordinary_sized_inputs() -> None:
     unknown = ResourceSnapshot(None, None, "unavailable")
     small = estimate_resources(

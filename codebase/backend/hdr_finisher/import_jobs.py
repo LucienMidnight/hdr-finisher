@@ -123,7 +123,10 @@ class ImportJobManager:
                 return
             with job.state_lock:
                 job.state = "preview_ready" if job.preview_path is not None else "developing"
-            if suffix in {".dng", ".arw", ".cr2", ".cr3", ".nef", ".nrw", ".raf", ".rw2", ".orf", ".ori", ".pef", ".srw"}:
+            if suffix == ".dng":
+                label = "Experimental DNG Import: inspecting metadata and required operations"
+                phase = "inspecting_dng"
+            elif suffix in {".arw", ".cr2", ".cr3", ".nef", ".nrw", ".raf", ".rw2", ".orf", ".ori", ".pef", ".srw"}:
                 label = "Developing RAW image"
                 phase = "developing_raw"
             elif suffix == ".avif":

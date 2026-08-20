@@ -14,6 +14,7 @@ from hdr_finisher.loader import LoaderError
 from hdr_finisher.exporters import ExportOverwriteRequired
 from hdr_finisher.main import _matches_approved_export_target, app, store
 from hdr_finisher.models import ExportResponse, ExportTargetIdentity, HDRAnalysis, HDRClassification, MetadataPayload, SessionPayload, SourceImageDescriptor
+from hdr_finisher.resource_preflight import GIB, ResourceSnapshot
 
 
 client = TestClient(app)
@@ -663,6 +664,29 @@ def test_export_endpoint_reports_backend_preflight_rejection(monkeypatch) -> Non
     assert response.status_code == 501
     assert response.json()["accepted"] is False
     assert "capability is unavailable" in response.json()["message"]
+
+
+def test_experimental_dng_export_resource_rejection_does_not_run_backend(monkeypatch) -> None:
+    upload = client.post("/api/session", files={"file": ("fixture.png", make_png_bytes(), "image/png")})
+    session_id = upload.json()["session"]["session_id"]
+    session = store.get(session_id)
+    session.metadata["experimental_dng_import"] = True
+
+    class ForbiddenBackend:
+        name = "test"
+
+        def export(self, session, settings):
+            raise AssertionError("backend ran after failed resource preflight")
+
+    monkeypatch.setattr("hdr_finisher.main.export_backends", {"test": ForbiddenBackend()})
+    monkeypatch.setattr(
+        "hdr_finisher.resource_preflight.detect_memory_resources",
+        lambda: ResourceSnapshot(16 * GIB, 1 * GIB, "test"),
+    )
+    response = client.post(f"/api/session/{session_id}/export", json={"format": "test"})
+    assert response.status_code == 507
+    assert response.json()["accepted"] is False
+    assert "document remains open" in response.json()["message"]
 
 
 def test_export_directory_endpoint_returns_selected_folder(monkeypatch) -> None:

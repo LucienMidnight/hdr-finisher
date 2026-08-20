@@ -118,7 +118,7 @@ def _probe_capabilities_cached() -> dict[str, CapabilityInfo]:
         "jpegxl_import": _jpegxl_status("JPEG XL import"),
         "jpegxl_export": _jpegxl_status("JPEG XL HDR export"),
         "jpegxl_encoder": _jpegxl_status("JPEG XL HDR export"),
-        "dng_import": _module_status("DNG import", "rawpy"),
+        "dng_import": _module_status("Experimental DNG Import", "tifffile"),
         "raw_import": _module_status("RAW import", "rawpy"),
         "lens_correction": _module_status("Lensfun corrections", "lensfunpy"),
     }

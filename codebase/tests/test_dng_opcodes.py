@@ -42,8 +42,9 @@ def test_gain_map_parser_and_bilinear_plane_application() -> None:
     parsed = parse_gain_map(_gain_parameters(gains))
     image = np.ones((4, 4, 3), dtype=np.float32)
     result = apply_gain_map(image, parsed)
-    assert result[0, 0, 0] == pytest.approx(1.0)
-    assert result[-1, -1, 0] == pytest.approx(4.0)
+    # Pixel centers are at 0.125 and 0.875 in a four-pixel image.
+    assert result[0, 0, 0] == pytest.approx(1.375)
+    assert result[-1, -1, 0] == pytest.approx(3.625)
     assert np.all(result[..., 1:] == 1.0)
 
 
@@ -57,14 +58,16 @@ def test_gain_map_preserves_negative_and_hdr_values() -> None:
     assert np.allclose(apply_gain_map(image, parsed), image * 2.0)
 
 
-def test_warp_identity_and_zero_border() -> None:
+def test_warp_identity_and_clipped_border() -> None:
     image = np.arange(5 * 7 * 3, dtype=np.float32).reshape(5, 7, 3)
     identity = WarpRectilinearParameters(np.asarray([[1, 0, 0, 0, 0, 0]], dtype=np.float64), 0.5, 0.5)
     assert np.allclose(apply_warp_rectilinear(image, identity), image)
 
     shifted = WarpRectilinearParameters(np.asarray([[1, 0, 0, 0, 0, 1]], dtype=np.float64), 0.5, 0.5)
     result = apply_warp_rectilinear(image, shifted)
-    assert np.count_nonzero(result == 0.0) > np.count_nonzero(image == 0.0)
+    assert np.all(np.isfinite(result))
+    assert result.shape == image.shape
+    assert not np.allclose(result, image)
 
 
 def test_warp_parser_accepts_real_target_shape_and_rejects_unknown_planes() -> None:

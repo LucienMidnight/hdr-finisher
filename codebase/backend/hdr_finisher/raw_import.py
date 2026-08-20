@@ -4,18 +4,26 @@ from dataclasses import dataclass
 from functools import lru_cache
 import hashlib
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import numpy as np
 
 from .color import aces2065_to_acescg, transform_float32_bounded
 from .models import LensCorrectionSettings, RawImportSettings
 
+if TYPE_CHECKING:
+    from .linear_dng import LinearDngInspection
+
 
 RAW_EXTENSIONS = {
     ".dng", ".arw", ".cr2", ".cr3", ".nef", ".nrw", ".raf",
     ".rw2", ".orf", ".ori", ".pef", ".srw",
 }
+
+# Parameter-neutralization audits on both supplied DJI sources proved that
+# this decoder build ignores OpcodeList3 in both the raw buffer and developed
+# output. New LibRaw versions must be audited before mandatory operations run.
+VERIFIED_LIBRAW_IGNORES_OPCODE_LIST3 = {(0, 22, 1)}
 
 
 class RawImportError(RuntimeError):
@@ -45,12 +53,21 @@ def decode_raw(
     *,
     progress: Callable[[str, str], None] | None = None,
     cancelled: Callable[[], bool] | None = None,
+    dng_inspection: LinearDngInspection | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
     _raise_if_cancelled(cancelled)
     if progress:
         progress("raw_metadata", "Reading camera and lens metadata")
     exif = _read_raw_exif(path)
     _raise_if_cancelled(cancelled)
+    opcode_plan = bool(dng_inspection and dng_inspection.required_opcodes)
+    if opcode_plan and settings.lens.mode == "manual" and (
+        settings.lens.distortion or settings.lens.chromatic_aberration or settings.lens.vignetting
+    ):
+        raise RawImportError(
+            "Manual Lensfun correction cannot be combined with mandatory DNG GainMap/WarpRectilinear; "
+            "disable Lensfun to avoid applying equivalent corrections twice."
+        )
     try:
         import rawpy
     except ImportError as exc:
@@ -65,25 +82,89 @@ def decode_raw(
             camera_white_balance = _float_list(getattr(raw, "camera_whitebalance", None))
             daylight_white_balance = _float_list(getattr(raw, "daylight_whitebalance", None))
             sizes = getattr(raw, "sizes", None)
-            developed = raw.postprocess(
-                demosaic_algorithm=rawpy.DemosaicAlgorithm.AHD,
-                use_camera_wb=True,
-                no_auto_bright=True,
-                output_color=rawpy.ColorSpace.ACES,
-                gamma=(1.0, 1.0),
-                output_bps=16,
-                highlight_mode=rawpy.HighlightMode.Clip,
-            )
+            if opcode_plan:
+                version = tuple(int(item) for item in rawpy.libraw_version)
+                if version not in VERIFIED_LIBRAW_IGNORES_OPCODE_LIST3:
+                    raise RawImportError(
+                        "This mosaiced Experimental DNG requires mandatory OpcodeList3 corrections, "
+                        f"but bundled LibRaw {'.'.join(map(str, version))} has not been audited for exactly-once behavior."
+                    )
+                developed = raw.postprocess(
+                    demosaic_algorithm=rawpy.DemosaicAlgorithm.AHD,
+                    use_camera_wb=False,
+                    user_wb=[1.0, 1.0, 1.0, 1.0],
+                    user_flip=0,
+                    no_auto_bright=True,
+                    output_color=rawpy.ColorSpace.raw,
+                    gamma=(1.0, 1.0),
+                    output_bps=16,
+                    highlight_mode=rawpy.HighlightMode.Clip,
+                )
+            else:
+                developed = raw.postprocess(
+                    demosaic_algorithm=rawpy.DemosaicAlgorithm.AHD,
+                    use_camera_wb=True,
+                    no_auto_bright=True,
+                    output_color=rawpy.ColorSpace.ACES,
+                    gamma=(1.0, 1.0),
+                    output_bps=16,
+                    highlight_mode=rawpy.HighlightMode.Clip,
+                )
+    except RawImportError:
+        raise
     except Exception as exc:
         raise RawImportError(f"LibRaw could not develop {path.suffix.upper()} input: {exc}") from exc
 
     _raise_if_cancelled(cancelled)
-    aces2065 = np.asarray(developed).astype(np.float32)
-    aces2065 *= np.float32(1.0 / 65535.0)
-    del developed
+    opcode_audit: dict[str, Any] | None = None
+    if opcode_plan:
+        from .dng_color import build_color_transform, transform_normalized_to_acescg_in_place
+        from .dng_opcodes import apply_opcode_list3
+        from .linear_dng import color_metadata_from_mapping, crop_and_orient
+
+        camera_linear = np.asarray(developed).astype(np.float32)
+        camera_linear *= np.float32(1.0 / 65535.0)
+        del developed
+        if progress:
+            progress("dng_opcodes", "Experimental DNG Import: applying mandatory DNG operations")
+        camera_linear, opcode_diagnostics = apply_opcode_list3(
+            camera_linear,
+            sorted(
+                (*dng_inspection.required_opcodes, *dng_inspection.optional_opcodes),
+                key=lambda opcode: opcode.index,
+            ),
+            cancelled=cancelled,
+        )
+        color_metadata = color_metadata_from_mapping(dng_inspection.metadata)
+        transform = build_color_transform(color_metadata)
+        transform_normalized_to_acescg_in_place(
+            camera_linear, transform, color_metadata.baseline_exposure, cancelled=cancelled
+        )
+        image = np.ascontiguousarray(
+            crop_and_orient(camera_linear, dng_inspection.metadata), dtype=np.float32
+        )
+        opcode_audit = {
+            "rawpy_version": str(getattr(rawpy, "__version__", "unknown")),
+            "libraw_version": ".".join(map(str, rawpy.libraw_version)),
+            "decoder_behavior": "verified_ignores_opcode_list3",
+            "application_stage": "camera_linear_after_demosaic_before_dng_color_transform",
+            "operations": list(opcode_diagnostics),
+        }
+    else:
+        aces2065 = np.asarray(developed).astype(np.float32)
+        aces2065 *= np.float32(1.0 / 65535.0)
+        del developed
     lens_metadata: dict[str, Any] = {}
     lens_settings = settings.lens
-    if path.suffix.lower() == ".dng" and not is_mosaiced and lens_settings.mode == "auto":
+    if opcode_plan and lens_settings.mode == "auto":
+        lens_settings = lens_settings.model_copy(update={"mode": "off"})
+        lens_metadata = {
+            "mode": "off",
+            "requested_mode": "auto",
+            "applied": False,
+            "reason": "Automatic Lensfun correction was disabled because mandatory DNG corrections were applied.",
+        }
+    elif path.suffix.lower() == ".dng" and not is_mosaiced and lens_settings.mode == "auto":
         lens_settings = lens_settings.model_copy(update={"mode": "off"})
     lens_settings = lens_settings.model_copy(
         update={
@@ -104,11 +185,12 @@ def decode_raw(
             cancelled=cancelled,
         )
     _raise_if_cancelled(cancelled)
-    if progress:
-        progress("color_conversion", "Converting linear ACES2065-1 to ACEScg")
-    image = transform_float32_bounded(
-        aces2065, aces2065_to_acescg, cancelled=cancelled
-    )
+    if not opcode_plan:
+        if progress:
+            progress("color_conversion", "Converting linear ACES2065-1 to ACEScg")
+        image = transform_float32_bounded(
+            aces2065, aces2065_to_acescg, cancelled=cancelled
+        )
     metadata: dict[str, Any] = {
         "bit_depth": "16-bit LibRaw linear development",
         "color_space": "ACEScg",
@@ -131,6 +213,18 @@ def decode_raw(
         "lens_correction": lens_metadata or {"mode": lens_settings.mode, "applied": False},
         "decoder_normalized_to_acescg": True,
     }
+    if opcode_audit is not None:
+        metadata.update(
+            {
+                "experimental_dng_import": True,
+                "experimental_dng_label": "Experimental DNG Import",
+                "dng_route": "mosaiced_raw_dng",
+                "dng_color_path": "camera_linear_after_libraw_demosaic",
+                "dng_operations": " → ".join(item["name"] for item in opcode_audit["operations"]),
+                "dng_warnings": "Automatic Lensfun disabled to prevent duplicate correction.",
+                "dng_opcode_audit": opcode_audit,
+            }
+        )
     return image, metadata
 
 

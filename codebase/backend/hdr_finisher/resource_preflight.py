@@ -57,6 +57,21 @@ class ResourceEstimate:
             f"{(self.safely_available_bytes or 0) / GIB:.2f} GiB is safely available."
         )
 
+    def export_error(self, width: int, height: int) -> str | None:
+        if self.export_decision is ResourceDecision.PASS:
+            return None
+        if self.export_decision is ResourceDecision.UNKNOWN:
+            return (
+                "System memory could not be measured. Full-resolution export safety cannot be "
+                f"confirmed for this {width:,} × {height:,} Experimental DNG session."
+            )
+        return (
+            f"Exporting this {width:,} × {height:,} Experimental DNG session is estimated to "
+            f"require {self.conservative_export_peak_bytes / GIB:.2f} GiB of additional memory; "
+            f"only {(self.safely_available_bytes or 0) / GIB:.2f} GiB is safely available. "
+            "The document remains open; choose a smaller export size or free memory."
+        )
+
 
 def detect_memory_resources() -> ResourceSnapshot:
     try:
@@ -125,7 +140,8 @@ def estimate_resources(
     if full_float_intermediates < 1:
         raise ValueError("At least one full float32 working image is required.")
     import_peak = retained_session_bytes + decoded + acescg * full_float_intermediates + scratch + fixed
-    export_peak = retained_session_bytes + decoded + acescg * 2 + scratch + fixed
+    export_codec_staging = max(decoded, acescg // 2)
+    export_peak = retained_session_bytes + decoded + acescg * 2 + export_codec_staging + scratch + fixed
 
     reserve = None
     safely_available = None

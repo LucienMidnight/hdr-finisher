@@ -2252,6 +2252,15 @@ function renderMetadata(session) {
     ["Camera", session.metadata.camera_model || "n/a"],
     ["Lens", session.metadata.lens || "n/a"],
   ];
+  if (session.metadata.extra?.experimental_dng_import === "True") {
+    entries.push(
+      ["DNG status", session.metadata.extra.experimental_dng_label || "Experimental DNG Import"],
+      ["DNG route", session.metadata.extra.dng_route || "unknown"],
+      ["DNG color path", session.metadata.extra.dng_color_path || "unknown"],
+      ["DNG operations", session.metadata.extra.dng_operations || "none"],
+      ["DNG warnings", session.metadata.extra.dng_warnings || "none"],
+    );
+  }
   els.metadataList.innerHTML = "";
   for (const [key, value] of entries) {
     const dt = document.createElement("dt");

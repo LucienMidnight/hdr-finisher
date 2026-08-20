@@ -148,9 +148,24 @@ def inspect_dng(
             is_mosaic = samples == 1 and (photometric == CFA or _tag(page, root, "CFAPattern") is not None)
             is_linear = photometric == LINEAR_RAW and samples == 3
             if is_mosaic:
+                estimate = None
+                if required:
+                    estimate = estimate_resources(
+                        width=width,
+                        height=height,
+                        samples=3,
+                        bytes_per_sample=2,
+                        resources=resource_snapshot or detect_memory_resources(),
+                        retained_session_bytes=retained_session_bytes,
+                        gpu_max_texture_dimension=gpu_max_texture_dimension,
+                        full_float_intermediates=2,
+                    )
+                    if rejection is None and estimate.import_decision is not ResourceDecision.PASS:
+                        rejection = DngRejection(
+                            "unsafe_resources", estimate.import_error(width, height) or "DNG resource preflight failed."
+                        )
                 route = DngRoute.MOSAICED_RAW_DNG if rejection is None else DngRoute.UNSUPPORTED_DNG
                 color_path = None
-                estimate = None
             elif is_linear:
                 rejection = rejection or _linear_layout_rejection(page, dtype, metadata)
                 color_path = "forward_matrix" if metadata.get("forward_matrix1") is not None else "color_matrix_only"
@@ -234,7 +249,7 @@ def decode_linear_dng(
             decoded = _normalize_layout(decoded, getattr(tif.series[inspection.primary_series_index], "axes", None))
             _raise_if_cancelled(cancelled)
 
-            color_metadata = _color_metadata(inspection.metadata)
+            color_metadata = color_metadata_from_mapping(inspection.metadata)
             if progress:
                 progress("dng_normalize", "Experimental DNG Import: normalizing camera-linear samples")
             working = normalize_camera_samples(decoded, color_metadata, cancelled=cancelled)
@@ -245,7 +260,10 @@ def decode_linear_dng(
                     progress("dng_opcodes", "Experimental DNG Import: applying mandatory DNG operations")
                 working, applied = apply_opcode_list3(
                     working,
-                    (*inspection.required_opcodes, *inspection.optional_opcodes),
+                    sorted(
+                        (*inspection.required_opcodes, *inspection.optional_opcodes),
+                        key=lambda opcode: opcode.index,
+                    ),
                     cancelled=cancelled,
                 )
             transform = build_color_transform(color_metadata)
@@ -254,7 +272,7 @@ def decode_linear_dng(
             transform_normalized_to_acescg_in_place(
                 working, transform, color_metadata.baseline_exposure, cancelled=cancelled
             )
-            working = _crop_and_orient(working, inspection.metadata)
+            working = crop_and_orient(working, inspection.metadata)
             image = np.ascontiguousarray(working, dtype=np.float32)
     except (MemoryError, OSError) as exc:
         raise LinearDngError(
@@ -276,6 +294,10 @@ def decode_linear_dng(
         "raw_mosaiced": False,
         "experimental_dng_import": True,
         "experimental_dng_label": "Experimental DNG Import",
+        "dng_route": inspection.route.value,
+        "dng_color_path": transform.color_path,
+        "dng_operations": " → ".join(item["name"] for item in applied) or "none",
+        "dng_warnings": " | ".join(inspection.warnings) or "none",
         "dng_diagnostics": {
             "route": inspection.route.value,
             "producer": inspection.metadata.get("producer"),
@@ -378,7 +400,7 @@ def _linear_layout_rejection(page: Any, dtype: np.dtype, metadata: dict[str, Any
         if metadata.get(name) is None:
             return DngRejection("missing_color_metadata", f"Required DNG color metadata {name} is absent.")
     try:
-        build_color_transform(_color_metadata(metadata))
+        build_color_transform(color_metadata_from_mapping(metadata))
     except DngColorError as exc:
         return DngRejection("invalid_color_metadata", str(exc))
     return None
@@ -411,7 +433,7 @@ def _resolve_metadata(page: Any, root: Any, dtype: np.dtype, samples: int, width
     }
 
 
-def _color_metadata(metadata: dict[str, Any]) -> DngColorMetadata:
+def color_metadata_from_mapping(metadata: dict[str, Any]) -> DngColorMetadata:
     return DngColorMetadata(
         color_matrix1=metadata.get("color_matrix1"),
         color_matrix2=metadata.get("color_matrix2"),
@@ -429,7 +451,7 @@ def _color_metadata(metadata: dict[str, Any]) -> DngColorMetadata:
     )
 
 
-def _crop_and_orient(image: np.ndarray, metadata: dict[str, Any]) -> np.ndarray:
+def crop_and_orient(image: np.ndarray, metadata: dict[str, Any]) -> np.ndarray:
     active = np.asarray(metadata["active_area"], dtype=int)
     top, left, bottom, right = active
     origin = np.rint(metadata["default_crop_origin"]).astype(int)

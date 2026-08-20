@@ -38,6 +38,7 @@ from .models import (
     EditDocument,
     EditStateResponse,
     ExportSettings,
+    ExportResponse,
     ExportTargetIdentity,
     FavoritePathRequest,
     GeometryMapRequest,
@@ -816,6 +817,35 @@ def export(session_id: str, settings: ExportSettings):
     backend = export_backends.get(settings.format)
     if backend is None:
         raise HTTPException(status_code=400, detail=f"Unsupported export format: {settings.format}")
+    if session.metadata.get("experimental_dng_import"):
+        from .resource_preflight import detect_memory_resources, estimate_resources
+
+        height, width = session.image.shape[:2]
+        finishing = settings.output_finishing
+        if finishing.resize_mode == "long_edge" and finishing.long_edge:
+            scale = min(1.0, float(finishing.long_edge) / max(width, height))
+            width, height = max(1, round(width * scale)), max(1, round(height * scale))
+        elif finishing.resize_mode == "fit" and finishing.width and finishing.height:
+            scale = min(1.0, finishing.width / width, finishing.height / height)
+            width, height = max(1, round(width * scale)), max(1, round(height * scale))
+        estimate = estimate_resources(
+            width=width,
+            height=height,
+            samples=3,
+            bytes_per_sample=4,
+            resources=detect_memory_resources(),
+        )
+        error = estimate.export_error(width, height)
+        if error is not None:
+            return JSONResponse(
+                status_code=507,
+                content=ExportResponse(
+                    accepted=False,
+                    backend=getattr(backend, "name", settings.format),
+                    message=error,
+                    output_path=settings.output_path,
+                ).model_dump(),
+            )
     if desktop_authoring_secret:
         try:
             if not settings.path_grant:

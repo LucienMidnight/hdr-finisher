@@ -180,6 +180,7 @@ class SessionStore:
                 raw_import_settings=resolved_raw_settings,
                 progress=progress,
                 cancelled=cancelled,
+                retained_session_bytes=self._retained_session_bytes(),
             )
             lens_result = metadata.get("lens_correction") or {}
             if (
@@ -267,6 +268,15 @@ class SessionStore:
     def current(self) -> LoadedSession | None:
         with self._lock:
             return self._current
+
+    def _retained_session_bytes(self) -> int:
+        current = self.current()
+        if current is None:
+            return 0
+        total = int(current.image.nbytes)
+        if current.sdr_reference_image is not None:
+            total += int(current.sdr_reference_image.nbytes)
+        return total
 
     def clear(self) -> None:
         with self._lock:
@@ -484,6 +494,7 @@ class SessionStore:
                     "transfer_function": override.transfer_function,
                 },
                 raw_import_settings=session.raw_import_settings,
+                retained_session_bytes=self._retained_session_bytes(),
             )
             source.filename = original_filename
             session.image = image

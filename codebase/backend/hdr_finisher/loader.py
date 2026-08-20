@@ -19,6 +19,8 @@ from .models import SourceImageDescriptor
 from .models import RawImportSettings
 from .jpegxl import JPEGXLError, decode_jpegxl
 from .raw_import import RAW_EXTENSIONS, RawImportError, decode_raw
+from .linear_dng import DngRoute, LinearDngError, decode_linear_dng, inspect_dng
+from .dng_opcodes import DngImportCancelled, DngOpcodeError
 
 
 EXR_COLOR_INTEROP_SPACES = {
@@ -52,6 +54,7 @@ def load_image(
     raw_import_settings: RawImportSettings | None = None,
     progress: Callable[[str, str], None] | None = None,
     cancelled: Callable[[], bool] | None = None,
+    retained_session_bytes: int = 0,
 ) -> tuple[np.ndarray, SourceImageDescriptor, dict[str, Any], Any, np.ndarray | None]:
     suffix = path.suffix.lower()
     total_started = perf_counter()
@@ -95,6 +98,23 @@ def load_image(
             if progress:
                 progress("decoding_jpegxl", "Decoding full-resolution JPEG XL")
             image, metadata = decode_jpegxl(path, cancelled=cancelled)
+        elif suffix == ".dng":
+            inspection = inspect_dng(path, retained_session_bytes=retained_session_bytes)
+            if inspection.route is DngRoute.LINEAR_DNG:
+                image, metadata = decode_linear_dng(
+                    path, inspection, progress=progress, cancelled=cancelled
+                )
+            elif inspection.route is DngRoute.MOSAICED_RAW_DNG:
+                image, metadata = decode_raw(
+                    path,
+                    raw_import_settings or RawImportSettings(),
+                    progress=progress,
+                    cancelled=cancelled,
+                    dng_inspection=inspection,
+                )
+            else:
+                detail = inspection.rejection.message if inspection.rejection else "Unsupported DNG topology."
+                raise LoaderError(detail)
         elif suffix in RAW_EXTENSIONS:
             image, metadata = decode_raw(
                 path,
@@ -109,8 +129,14 @@ def load_image(
         raise
     except GainMapDecodeError as exc:
         raise LoaderError(str(exc)) from exc
-    except (JPEGXLError, RawImportError) as exc:
+    except (JPEGXLError, RawImportError, LinearDngError, DngOpcodeError, DngImportCancelled) as exc:
         raise LoaderError(str(exc)) from exc
+    except MemoryError as exc:
+        if suffix == ".dng":
+            raise LoaderError(
+                "Experimental DNG import ran out of memory. The open document was not changed."
+            ) from exc
+        raise LoaderError("Image import ran out of memory. The open document was not changed.") from exc
     except Exception as exc:
         detail = str(exc).strip() or exc.__class__.__name__
         label = "TIFF" if suffix in {".tif", ".tiff"} else suffix.removeprefix(".").upper() or "image"

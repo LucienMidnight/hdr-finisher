@@ -5,9 +5,13 @@ from pathlib import Path
 import numpy as np
 import pytest
 import tifffile
+from PIL import Image
 
 from hdr_finisher.linear_dng import DngRoute, decode_linear_dng, inspect_dng
+from hdr_finisher.dng_opcodes import DngImportCancelled
+from hdr_finisher.loader import LoaderError, load_image
 from hdr_finisher.resource_preflight import GIB, ResourceSnapshot
+from hdr_finisher.sessions import SessionStore
 
 
 RESOURCES = ResourceSnapshot(64 * GIB, 48 * GIB, "test")
@@ -113,3 +117,101 @@ def test_real_local_corpus_routes_when_present() -> None:
     for path in root.rglob("*.[dD][nN][gG]"):
         inspection = inspect_dng(path, resource_snapshot=RESOURCES)
         assert inspection.route is expected[path.name], (path, inspection.rejection)
+
+
+def test_loader_routes_linear_dng_before_generic_raw_decoder(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    path = tmp_path / "linear.dng"
+    _write_linear(path, np.zeros((2, 3, 3), np.uint16))
+    monkeypatch.setattr(
+        "hdr_finisher.loader.decode_raw",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("generic RAW route used")),
+    )
+    image, descriptor, metadata, _analysis, _sdr = load_image(path)
+    assert image.shape == (2, 3, 3)
+    assert descriptor.source_color_space == "ACEScg"
+    assert metadata["experimental_dng_import"] is True
+
+
+def test_loader_preserves_mosaiced_route_and_passes_inspection_plan(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    path = tmp_path / "mosaic.dng"
+    with tifffile.TiffWriter(path) as tif:
+        tif.write(
+            np.zeros((8, 12), np.uint16),
+            photometric=32803,
+            extratags=[
+                (50706, "B", 4, b"\x01\x04\x00\x00", False),
+                (33422, "B", 4, b"\x00\x01\x01\x02", False),
+            ],
+        )
+    captured: dict[str, object] = {}
+
+    def fake_raw(_path: Path, _settings: object, **kwargs: object) -> tuple[np.ndarray, dict[str, object]]:
+        captured.update(kwargs)
+        return np.full((8, 12, 3), 0.18, np.float32), {
+            "bit_depth": "test",
+            "color_space": "ACEScg",
+            "transfer_function": "LINEAR",
+            "decoder_normalized_to_acescg": True,
+            "raw_mosaiced": True,
+        }
+
+    monkeypatch.setattr("hdr_finisher.loader.decode_raw", fake_raw)
+    load_image(path)
+    assert captured["dng_inspection"].route is DngRoute.MOSAICED_RAW_DNG
+
+
+def test_failed_dng_candidate_does_not_replace_active_session(tmp_path: Path) -> None:
+    source = tmp_path / "current.png"
+    Image.new("RGB", (4, 3), (32, 64, 96)).save(source)
+    store = SessionStore()
+    active = store.prepare_session(source)
+    store.activate_session(active)
+    invalid = tmp_path / "invalid.dng"
+    tifffile.imwrite(invalid, np.zeros((2, 2), np.uint8))
+    with pytest.raises(LoaderError, match="DNGVersion"):
+        store.prepare_session(invalid)
+    assert store.current() is active
+
+
+def test_dng_memory_failure_is_clear_and_transactional(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    source = tmp_path / "current.png"
+    Image.new("RGB", (4, 3), (32, 64, 96)).save(source)
+    candidate = tmp_path / "candidate.dng"
+    _write_linear(candidate, np.zeros((2, 3, 3), np.uint16))
+    store = SessionStore()
+    active = store.prepare_session(source)
+    store.activate_session(active)
+    monkeypatch.setattr(
+        "hdr_finisher.loader.decode_linear_dng",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(MemoryError()),
+    )
+    with pytest.raises(LoaderError, match="ran out of memory.*not changed"):
+        store.prepare_session(candidate)
+    assert store.current() is active
+
+
+def test_dng_cancellation_is_transactional(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    source = tmp_path / "current.png"
+    Image.new("RGB", (4, 3), (32, 64, 96)).save(source)
+    candidate = tmp_path / "candidate.dng"
+    _write_linear(candidate, np.zeros((2, 3, 3), np.uint16))
+    store = SessionStore()
+    active = store.prepare_session(source)
+    store.activate_session(active)
+    monkeypatch.setattr(
+        "hdr_finisher.loader.decode_linear_dng",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            DngImportCancelled("Experimental DNG import cancelled")
+        ),
+    )
+    with pytest.raises(LoaderError, match="cancelled"):
+        store.prepare_session(candidate)
+    assert store.current() is active
