@@ -1,6 +1,6 @@
-# Linear DNG Import and Large-File Safety Sprint
+# Experimental DNG Import and Large-File Safety Sprint
 
-**Status:** Implementation brief  
+**Status:** Implementation brief — experimental feature
 **Prepared:** 2026-08-20  
 **Target branch:** `explore/linear-dng-large-import`  
 **Production code status:** Not yet modified  
@@ -8,11 +8,11 @@
 
 ## Executive outcome
 
-Implement a constrained, metadata-driven Linear DNG importer that can open the verified Alkeria line-scan, DxO PhotoLab Linear DNG, and Lightroom Classic HDR Merge families without disrupting the existing mosaiced camera-RAW path.
+Implement a constrained, metadata-driven **Experimental DNG Import** feature that can open the verified Alkeria line-scan, DxO PhotoLab Linear DNG, Adobe Camera Raw Linear DNG, and Lightroom Classic HDR Merge families without disrupting the existing mosaiced camera-RAW path. Extend DNG opcode handling far enough to apply standard `GainMap` and `WarpRectilinear` operations for the supplied DJI single-frame mosaiced DNGs as an experimental convenience path.
 
 The importer must inspect and qualify the file before allocating its full pixel payload, convert accepted input into HDR Finisher's scene-linear float32 ACEScg working representation, preserve negative and greater-than-one values, and fail transactionally with clear resource or capability errors. Producer names are diagnostic information, not an allowlist.
 
-This is intentionally not a promise to import every DNG. Unsupported mandatory opcodes, unimplemented image-shaping metadata, unsupported compression, unsafe resource requirements, and malformed topology must be rejected before expensive decode whenever possible.
+This is intentionally not a promise to import every DNG, camera, or producer configuration. The UI and diagnostics must label the feature **Experimental DNG Import**. Unsupported mandatory opcodes, unimplemented image-shaping metadata, unsupported compression, unsafe resource requirements, and malformed topology must be rejected before expensive decode whenever possible. “Experimental” permits a deliberately narrow compatibility envelope; it does not permit silent omission of mandatory corrections or knowingly incorrect pixels.
 
 ## Why this sprint exists
 
@@ -32,9 +32,9 @@ The following private samples are machine-local validation inputs. Do not copy t
 | `D:\Photos\HDR Test Images\2018-05-26-11-35-40_NECTA0000_fbcb8f8f1d37db8bf93c0d46fb748355c01b7f8b.dng` | Alkeria line-scan; DNG 1.4; 72,480 × 4,096; RGB uint16; uncompressed; `LinearRaw`; `ColorMatrix1` and `ForwardMatrix1`; no opcodes | Target for initial support; visual parity still needs a producer reference |
 | `D:\Photos\2026\20260725\DSC06885_DxO.dng` | DxO PhotoLab 9.10; root preview plus full 7,952 × 5,304 RGB uint16 `LinearRaw` SubIFD; lossless JPEG; dual ColorMatrix; no ForwardMatrix; no opcodes | Target for initial support through the ColorMatrix-only path |
 | `D:\Photos\Lightroom Classic HDR\lightroom-classic-DNG-test-1.dng` | Ordinary Lightroom DNG export; full primary is 8,000 × 5,320 one-channel CFA mosaic; reduced LinearRaw JPEG XL Fast Load proxies also exist | Must bypass the Linear DNG route and continue through the existing mosaiced RAW importer |
-| `D:\Photos\Lightroom Classic HDR\DSC01204_ACR_Linear.dng` | ACR 18.3 explicit Linear DNG; full 8,000 × 5,320 RGB uint16 primary; lossless JPEG; full matrix metadata; mandatory `WarpRectilinear` opcode | Reject clearly in the initial sprint unless geometric opcode support is deliberately added |
+| `D:\Photos\Lightroom Classic HDR\DSC01204_ACR_Linear.dng` | ACR 18.3 explicit Linear DNG; full 8,000 × 5,320 RGB uint16 primary; lossless JPEG; full matrix metadata; mandatory `WarpRectilinear` opcode | Target for initial experimental support after WarpRectilinear implementation and reference validation |
 | `D:\Photos\HDR Test Images\DJI Samples\DJI_0071-2-HDR.dng` | Genuine Lightroom Classic 15.5 HDR Merge; DNG 1.7; 8,000 × 6,000 RGB float16 primary; JPEG XL DNG compression; dual ColorMatrix; no ForwardMatrix; no opcodes | Target for initial support through the ColorMatrix-only path |
-| `D:\Photos\HDR Test Images\DJI Samples\DJI_0071.DNG` and `DJI_0072.DNG` | Original DJI mosaiced source frames; contain mandatory GainMap and WarpRectilinear operations | Existing RAW path remains responsible; the Lightroom merge has already consumed/baked these operations |
+| `D:\Photos\HDR Test Images\DJI Samples\DJI_0071.DNG` and `DJI_0072.DNG` | Original DJI mosaiced source frames; contain mandatory OpcodeList3 `GainMap` and `WarpRectilinear` operations | Initial experimental direct-RAW target. Existing rawpy demosaic remains responsible, but acceptance requires proof that both mandatory operations are applied exactly once and in the correct DNG stage/order |
 
 Additional facts established by the probe:
 
@@ -43,6 +43,7 @@ Additional facts established by the probe:
 - The DxO full primary payload has also been decoded successfully.
 - The existing DxO JPEG is an edited render. It confirms content and geometry but is not a neutral color/tone reference.
 - Lightroom's Fast Load JPEG XL proxies are reduced derived images and must never cause a mosaiced primary to be classified as Linear DNG.
+- The current development environment uses rawpy 0.27.0 with LibRaw 0.22.1. Reconfirm bundled versions and codec flags in packaged Windows/macOS builds rather than assuming development-machine behavior.
 
 ## Private local-media staging
 
@@ -95,6 +96,20 @@ Recommended internal outcomes:
 - `unsupported_dng`
 - `invalid_dng`
 
+### Broad mosaiced-DNG compatibility goal
+
+The convenience goal is that **most ordinary mosaiced DNG camera files that LibRaw can develop should continue to open without special producer code**. In this document, “mosaiced DNG” means a CFA camera RAW that still needs demosaicing; it is distinct from a demosaiced/Linear DNG.
+
+Use this acceptance ladder:
+
+1. A standards-conformant mosaiced primary with no mandatory unsupported pixel operations routes directly through the existing rawpy/LibRaw development path.
+2. A mosaiced primary requiring only verified decoder operations and/or the implemented standard GainMap and WarpRectilinear variants is accepted, with every operation recorded and applied exactly once.
+3. Unsupported optional operations may be skipped only when the DNG flags permit it, with a diagnostic warning.
+4. An unknown or unsupported mandatory operation produces a specific experimental-capability rejection rather than a damaged but plausible image.
+5. A LibRaw decode failure retains its useful decoder detail and does not get misreported as a Linear DNG failure.
+
+This design should maximize practical compatibility while remaining producer-agnostic. “Most” is a compatibility objective measured against the available multi-camera corpus, not a universal promise. Add any group-contributed files only to the ignored local corpus and record anonymized structural outcomes in the durable validation log.
+
 ### User-visible success
 
 An accepted Linear DNG opens as a normal HDR Finisher session with:
@@ -106,6 +121,8 @@ An accepted Linear DNG opens as a normal HDR Finisher session with:
 - producer, DNG version, dimensions, compression, source sample type, selected IFD/series, color path, and skipped optional metadata recorded for diagnostics;
 - no attempt to upload the full source as a GPU texture when it exceeds adapter limits.
 
+The import surface, progress UI, source diagnostics, and format-support documentation must display **Experimental DNG Import** (or an equally explicit experimental badge). The message should explain that the importer is tested against a limited sample matrix and may reject valid but untested DNG variants rather than guessing.
+
 ### User-visible failure
 
 Failures must say what is unsupported or unsafe and leave the current document unchanged. Avoid generic messages such as “could not decode DNG” when the inspector knows the reason.
@@ -113,7 +130,7 @@ Failures must say what is unsupported or unsafe and leave the current document u
 Examples:
 
 - `This DNG's primary image is mosaiced camera RAW; it will be opened by the camera RAW importer.` This is a route decision, not an error.
-- `This Linear DNG requires WarpRectilinear (OpcodeList3, opcode 1), which this version cannot apply.`
+- `This Experimental DNG requires an unsupported mandatory opcode: FixBadPixelsList (OpcodeList1, opcode 5). No correction was skipped.`
 - `This Linear DNG uses unsupported compression 34892.`
 - `Opening this 72,480 × 4,096 Linear DNG is estimated to require 5.3 GiB of additional memory; only 3.8 GiB is safely available.`
 - `The full image exceeds this GPU's maximum texture dimensions. HDR Finisher can use a bounded preview proxy, but full-resolution GPU processing is unavailable.`
@@ -132,6 +149,10 @@ Examples:
 - Normalize supported black/white levels, white balance, exposure baseline, and camera color into ACEScg.
 - Implement both ForwardMatrix-present and ColorMatrix-only color paths.
 - Parse all opcode lists safely; skip only opcodes marked optional; reject any mandatory unimplemented opcode by name, ID, list, and flags.
+- Implement and validate standard OpcodeList3 `GainMap` (opcode 9) and `WarpRectilinear` (opcode 1), including their operation order, crop/coordinate semantics, per-plane behavior, bounded-memory resampling, progress, cancellation, and diagnostic records.
+- Inspect mosaiced DNGs before rawpy development and verify whether LibRaw has already consumed each required DNG opcode. Apply a correction exactly once; never assume decoder behavior from the producer name.
+- Support the supplied DJI single-frame DNGs only after both mandatory GainMap and WarpRectilinear operations are proven correct. Warp alone is insufficient for these files.
+- Preserve broad rawpy/LibRaw passthrough for mosaiced DNGs that do not need unsupported mandatory operations; do not make Linear DNG qualification a new barrier for ordinary camera DNGs.
 - Inspect system resources before decode, bound working allocations, report progress, support cancellation, and translate allocation failures.
 - Keep import transactional and preserve the existing session on rejection, cancellation, or failure.
 - Use bounded preview proxies and enforce GPU texture-size limits independently from CPU RAM limits.
@@ -142,8 +163,8 @@ Examples:
 
 - Demosaicing or replacing the existing mosaiced RAW importer.
 - A producer allowlist or producer-specific UI switches.
-- Mandatory `WarpRectilinear` implementation, unless the product decision at the end of this brief changes.
-- Mandatory GainMap/ProfileGainTableMap application.
+- Mandatory opcodes other than the explicitly implemented standard `GainMap` and `WarpRectilinear` operations.
+- ProfileGainTableMap/ProfileGainTableMap2 and other profile gain-table variants; these are distinct from OpcodeList3 `GainMap` and remain unsupported until separately implemented.
 - Importing reduced Fast Load data in place of a full primary.
 - Claiming Lightroom Panorama or DxO PureRAW compatibility without representative samples.
 - Matching Adobe or DxO's creative rendering recipe, profile look, denoising, sharpening, or local edits.
@@ -200,6 +221,16 @@ Do not retain live `TiffFile`, page, or file-map objects in the inspection resul
 
 Keep color-matrix math pure and independently testable. It should accept decoded samples plus resolved DNG metadata and return float32 ACEScg. Matrix construction, illuminant interpolation, white-point adaptation, and normalization should have deterministic unit tests based on the DNG specification and known numeric vectors.
 
+### `backend/hdr_finisher/dng_opcodes.py`
+
+Implement bounded parsing and application of supported DNG opcodes independently from TIFF topology and UI code. The module must expose an explicit stage/order contract and reusable operations for both decoded Linear DNG pixels and the mosaiced-DNG development path.
+
+For `GainMap`, implement the DNG-specified sampled gain field, active rectangle, row/column pitch, plane targeting, map spacing/origin, interpolation, and out-of-domain behavior. Apply gains in the specified camera/image stage before any color transform that would make per-channel gains non-equivalent.
+
+For `WarpRectilinear`, implement the DNG-specified coefficient sets, optical center, per-plane/channel semantics, coordinate system, inverse mapping, interpolation filter, border behavior, and interaction with ActiveArea/default crop/orientation. Process in bounded row/tile chunks, check cancellation, and avoid a second unnecessary full-resolution source copy.
+
+Do not assume rawpy/LibRaw ignores or applies these operations. Add a decoder-capability/behavior probe and reference comparison. If the existing `rawpy.postprocess()` API cannot expose pixels at the DNG-required stage, the clean task must document the limitation and choose a correct integration (for example, a verified LibRaw behavior or a camera-linear intermediate) rather than applying a mathematically non-commutative correction after ACES conversion.
+
 ### `backend/hdr_finisher/resource_preflight.py`
 
 If existing resource utilities cannot own this cleanly, isolate:
@@ -235,7 +266,7 @@ The current `SessionManager.prepare_session()`/`activate_session()` split is alr
 4. Prefer full-resolution candidates with `NewSubfileType = 0`.
 5. Select the largest credible primary by active/full pixel area. Never select reduced-resolution, preview, transparency-mask, thumbnail, or Fast Load series merely because it is LinearRaw.
 6. Determine photometric interpretation, channel count, CFA tags, sample format, bit depth, planar configuration, compression, dimensions, crop, orientation, and required metadata.
-7. Classify one-channel CFA primaries as `MOSAICED_RAW_DNG` even if reduced LinearRaw proxies exist.
+7. Classify one-channel CFA primaries as `MOSAICED_RAW_DNG` even if reduced LinearRaw proxies exist, while retaining their parsed mandatory-opcode plan for the RAW development route.
 8. Require a three-channel LinearRaw primary for the new route. Reject ambiguous or contradictory topology.
 9. Parse all opcode-list payloads with bounds checks before making an acceptance decision.
 10. Compute import/export resource estimates before accessing the full payload.
@@ -312,16 +343,22 @@ Inventory profile hue/saturation maps, look tables, tone curves, and default-ren
 
 Record intentional omissions in metadata so a future diagnostic report can explain why HDR Finisher differs from a producer's rendered JPEG/TIFF.
 
-## Opcode policy
+## Opcode policy and implemented operations
 
 Parse `OpcodeList1`, `OpcodeList2`, and `OpcodeList3` using their big-endian binary definitions and validate list counts, payload sizes, IDs, versions, and flags.
 
 - An opcode with the optional flag may be skipped, but its list, ID/name, version, and flags must be recorded.
-- A mandatory opcode may be skipped only after its effect has been implemented and validated elsewhere in the pipeline.
+- A mandatory opcode may be marked consumed only when the application or a verified decoder has applied its effect exactly once at the required stage.
 - Any mandatory unknown or unimplemented opcode causes early rejection.
-- ProfileGainTableMap/ProfileGainTableMap2 and comparable gain-table metadata are rejected until implemented and validated.
+- ProfileGainTableMap/ProfileGainTableMap2 and comparable profile gain-table metadata are rejected until separately implemented and validated.
 
-Recommended initial decision: defer `WarpRectilinear`. Neither the target DxO file nor the genuine Lightroom HDR Merge requires it. Deferral keeps geometric resampling, per-channel warp semantics, border policy, and crop interaction out of the first color-and-memory sprint. The ACR-created explicit Linear DNG remains a useful negative test with a precise rejection message.
+The initial experimental compatibility envelope implements standard OpcodeList3 `GainMap` and `WarpRectilinear`:
+
+- `WarpRectilinear` is required by the ACR explicit Linear sample and by each supplied DJI source DNG.
+- `GainMap` is also mandatory in each supplied DJI source DNG. Implementing Warp alone would still require rejecting direct DJI import.
+- The genuine Lightroom HDR Merge contains neither opcode because Lightroom appears to have baked the source corrections into the merged pixels. It must not receive those source corrections again.
+- Any unsupported coefficient/layout variant must reject explicitly even though the opcode ID itself is known.
+- Tests must prove operation ordering and exactly-once application, especially across rawpy/LibRaw and HDR Finisher's existing optional Lensfun correction. Do not stack DNG WarpRectilinear and Lensfun distortion correction automatically; define precedence and expose diagnostics.
 
 ## Large-file and resource safety
 
@@ -407,7 +444,19 @@ CPU acceptance does not imply one-texture GPU compatibility.
 
 **Exit:** Numeric vector tests pass for both paths, single/dual illuminants, defaults, white balance, negative values, super-whites, malformed/singular matrices, and float/int samples.
 
-### LDNG-4 — Bounded decoder and loader routing
+### LDNG-4 — GainMap and WarpRectilinear engine
+
+- Implement strict parameter parsing and validation for the supplied standard opcode variants.
+- Implement spec-backed GainMap interpolation/application at the correct image stage.
+- Implement spec-backed inverse WarpRectilinear resampling in bounded chunks.
+- Define crop, active-area, orientation, mask, channel/plane, border, and interpolation behavior.
+- Audit rawpy/LibRaw behavior with the supplied DJI files and ensure each correction is applied exactly once.
+- Define precedence with the existing Lensfun path; never compound equivalent automatic corrections silently.
+- Add progress, cancellation, allocation estimates, and opcode-specific diagnostics.
+
+**Exit:** Synthetic numeric/geometry fixtures pass; the ACR Linear sample matches a producer geometry reference; both DJI source DNGs have GainMap and WarpRectilinear applied exactly once at the correct stages. If the current decoder cannot expose or perform the required stage correctly, that is a sprint blocker requiring a correct integration—not grounds to mark the sprint complete with a silent omission.
+
+### LDNG-5 — Bounded decoder and loader routing
 
 - Decode supported primary series using `tifffile`/`imagecodecs` capability checks.
 - Convert in chunks where possible and avoid redundant full-frame copies.
@@ -416,9 +465,9 @@ CPU acceptance does not imply one-texture GPU compatibility.
 - Mark output as already normalized to ACEScg.
 - Add progress, cancellation, and specific error translation.
 
-**Exit:** Accepted synthetic Linear DNGs open; synthetic mosaiced DNGs route to the existing RAW decoder; unsupported files fail before payload decode.
+**Exit:** Accepted synthetic Linear DNGs open; synthetic mosaiced DNGs route to the existing RAW decoder with their opcode plan preserved; unsupported files fail before payload decode.
 
-### LDNG-5 — Transactional session and export safety
+### LDNG-6 — Transactional session and export safety
 
 - Verify candidate-session preparation retains the old session until success.
 - Account for the retained session in resource estimates.
@@ -427,12 +476,13 @@ CPU acceptance does not imply one-texture GPU compatibility.
 
 **Exit:** Rejection, cancellation, decoder failure, and simulated OOM leave the active document and edits unchanged and leak no owned temporary artifacts.
 
-### LDNG-6 — Real-file validation and release documentation
+### LDNG-7 — Real-file validation and experimental release documentation
 
 - Run the private sample matrix below.
 - Capture peak RSS, wall time, cancellation latency, GPU/proxy behavior, and export estimates on Windows; repeat resource policy checks on macOS.
 - Compare against neutral producer references.
 - Update format-support UI/help and the testing index.
+- Label all DNG import paths experimental and state the tested compatibility matrix without implying universal camera/software support.
 
 **Exit:** All initial targets pass structure, geometry, color, stability, and resource gates; deferred files fail with the intended message; full automated suite remains green.
 
@@ -460,11 +510,16 @@ Required coverage:
 - BaselineExposure numeric behavior;
 - valid optional opcode skip and diagnostic record;
 - mandatory known, mandatory unknown, truncated, oversized, and wrong-endian opcode payloads;
+- GainMap numeric interpolation, plane selection, active rectangle, pitch, map boundary, malformed dimensions, operation order, and HDR-value preservation;
+- WarpRectilinear identity, radial-only and tangential terms, optical center, per-plane coefficients, inverse mapping, interpolation, borders, crop/orientation order, cancellation, and giant-dimension chunking;
+- exactly-once opcode behavior when a decoder reports/produces corrected pixels;
+- DNG opcode versus Lensfun precedence, with no silent double correction;
 - resource accept/reject boundaries, unknown resources, retained session, and export-only failure;
 - mocked `MemoryError`, native allocation failure, cancellation, and cleanup;
 - no full payload read during inspection/rejection;
 - no activation of a failed candidate session;
 - existing mosaiced RAW DNG behavior remains covered.
+- a representative producer-neutral mosaiced-DNG matrix confirms that ordinary LibRaw-supported files without unsupported mandatory operations still open through the convenience path.
 
 Run the targeted tests during development and the full suite before handoff. At the start of this sprint, the branch baseline is **521 passed, 1 skipped**, with two pre-existing warnings.
 
@@ -477,8 +532,9 @@ Store the durable procedure/results in `docs/testing/`; put disposable previews 
 | Alkeria line-scan | Accepted Linear DNG | 72,480 × 4,096 primary, correct orientation/color, bounded proxy, no giant GPU texture, measured import/export peaks, cancel/replace behavior |
 | DxO Linear DNG | Accepted Linear DNG | Select full SubIFD rather than root preview; 7,952 × 5,304; ColorMatrix-only path; neutral render comparison |
 | Lightroom ordinary DNG export | Existing mosaiced RAW path | Never select Fast Load proxy as primary; no regression in rawpy behavior |
-| ACR explicit Linear DNG | Named early rejection in initial scope | Identify mandatory WarpRectilinear and its opcode list; do not decode full payload |
+| ACR explicit Linear DNG | Accepted experimental Linear DNG | Apply WarpRectilinear; verify crop, border, channel registration, detail retention, and geometry against a neutral ACR render |
 | Lightroom HDR Merge | Accepted Linear DNG | 8,000 × 6,000 float16 JPEG XL primary; masks ignored safely; ColorMatrix-only path; HDR values and neutral render comparison |
+| DJI `DJI_0071.DNG` and `DJI_0072.DNG` separately | Accepted experimental mosaiced DNG, contingent on correct decoder-stage integration | Preserve existing demosaic behavior; apply mandatory GainMap and WarpRectilinear exactly once; do not double-apply Lensfun; compare geometry, shading, color, corners, and crop to neutral Adobe/DJI references |
 | Corrupt/truncated copy | Rejected safely | No crash, no session loss, no leaked handles/temp files |
 | Simulated low-memory environment | Rejected before decode | Required/available GiB message and current session retained |
 
@@ -497,6 +553,7 @@ Neutral producer references are a validation dependency:
 
 - DxO: make a full-size neutral/default render with edits disabled, preferably 16-bit TIFF; a maximum-quality JPEG can be secondary evidence.
 - Lightroom HDR: make a full-size neutral/default 16-bit TIFF and record all Develop/export settings.
+- DJI single-frame: make neutral/default 16-bit TIFF references from `DJI_0071.DNG` and `DJI_0072.DNG`, with automatic lens corrections enabled as prescribed by the DNG, and record the application/version/settings.
 - Alkeria: obtain a producer/reference render if one is available.
 
 Implementation can begin without these files, but visual correctness cannot be signed off without them.
@@ -506,10 +563,13 @@ Implementation can begin without these files, but visual correctness cannot be s
 The sprint is complete only when:
 
 - target Linear DNGs qualify by structure/capability rather than producer name;
-- the Alkeria, DxO, and Lightroom HDR target families import through the intended paths;
+- the Alkeria, DxO, ACR Linear, and Lightroom HDR target families import through the intended paths;
+- the supplied DJI single-frame DNGs pass reference-backed GainMap/WarpRectilinear validation; inability to access the correct decoder stage blocks completion rather than permitting a mandatory correction to be omitted;
 - ordinary mosaiced DNGs retain existing behavior;
+- the available multi-camera mosaiced-DNG corpus demonstrates broad LibRaw passthrough without producer allowlisting;
 - both matrix color paths are specification-backed and numerically tested;
 - unsupported mandatory operations reject before expensive decode with precise messages;
+- supported GainMap and WarpRectilinear variants are applied exactly once, in order, with bounded memory and reference-backed geometry/shading evidence;
 - predicted and measured memory behavior is documented and the safety policy adjusted if needed;
 - giant sources use bounded previews and respect GPU dimension limits;
 - import and export resource checks are distinct;
@@ -519,16 +579,16 @@ The sprint is complete only when:
 - the full automated suite passes;
 - manual Windows validation passes and macOS resource-policy behavior is documented;
 - remaining producer/sample limitations are stated without overclaiming compatibility.
+- UI/help/diagnostics identify DNG import as experimental and list the tested sample families.
 
 ## Product decisions and dependencies
 
-### One decision requested
+### Decisions recorded
 
-**Should `WarpRectilinear` be included in this initial sprint?**
-
-Recommendation: **No; defer it to a follow-up.** It is not required by the verified DxO or Lightroom HDR targets, and the line-scan file has no opcodes. Adding it now introduces geometric resampling, per-channel warp, border, crop, quality, and performance work before the core color and memory paths are proven. With this default, the ACR explicit Linear DNG is rejected clearly, not silently mishandled.
-
-If no contrary decision is recorded, the clean implementation task should use the recommended deferral.
+- Include standard `WarpRectilinear` in the initial sprint.
+- Include standard OpcodeList3 `GainMap` because both supplied DJI single-frame DNGs require it in addition to WarpRectilinear; direct DJI acceptance cannot be correct with Warp alone.
+- Label the complete DNG import capability experimental because the available corpus cannot cover every camera, DNG version, producer, opcode variant, and software configuration.
+- Prefer an explicit capability rejection over a plausible-looking import that skipped mandatory metadata.
 
 ### User-provided validation dependencies
 
@@ -542,12 +602,13 @@ The neutral DxO and Lightroom HDR renders described above are needed before fina
 - CPU-safe import with bounded GPU previews instead of requiring one full-size texture.
 - No compatibility claim for Lightroom Panorama or DxO PureRAW until samples exist.
 - No creative-look matching; implement the DNG baseline scene-linear transform.
+- Standard GainMap/WarpRectilinear support is variant-gated; “known opcode ID” is not universal compatibility.
 
 ## Clean-task kickoff prompt
 
 Use this in a clean task:
 
-> Work on branch `explore/linear-dng-large-import`. Read `docs/product/Linear_DNG_Import_Sprint_PRD.md`, `docs/testing/Linear_DNG_Import_Feasibility_2026-08-20.md`, `AGENTS.md`, and `docs/testing/README.md` completely before editing. Implement the initial Linear DNG import sprint in staged, reviewable commits. Preserve all unrelated and untracked user files. First copy (never move) the private samples and references identified by the sprint into `codebase/local-test-media/inputs/linear-dng/`, create a local-only role/hash manifest there, and prove with `git check-ignore` and `git status` that no private media can be committed. Use those copies for all manual/local validation and make their absence a clean test skip. Treat `WarpRectilinear` as deferred unless I explicitly say otherwise. Start production work by validating the contracts and DNG 1.7.1 color equations, then implement the metadata-only classifier, resource preflight, both color paths, bounded decoder, loader routing, transactional error handling, and tests. Do not commit private/large source images, do not accept reduced Fast Load proxies as primaries, and do not claim visual sign-off without neutral producer references. Run targeted tests throughout and the full suite before handoff; update the durable validation log with evidence and remaining limitations.
+> Work on branch `explore/linear-dng-large-import`. Read `docs/product/Linear_DNG_Import_Sprint_PRD.md`, `docs/testing/Linear_DNG_Import_Feasibility_2026-08-20.md`, `AGENTS.md`, and `docs/testing/README.md` completely before editing. Implement the Experimental DNG Import sprint in staged, reviewable commits. Preserve all unrelated and untracked user files. First copy (never move) the private samples and references identified by the sprint into `codebase/local-test-media/inputs/linear-dng/`, create a local-only role/hash manifest there, and prove with `git check-ignore` and `git status` that no private media can be committed. Use those copies for all manual/local validation and make their absence a clean test skip. Implement standard OpcodeList3 GainMap and WarpRectilinear in the initial scope; audit rawpy/LibRaw behavior and apply each mandatory correction exactly once at the DNG-required stage. Remember that the supplied DJI single-frame DNGs require both operations, while the Lightroom HDR merge has already baked them and must receive neither. Start production work by validating the contracts and DNG 1.7.1 color/opcode equations, then implement the metadata-only classifier, resource preflight, both color paths, bounded opcode engine and decoder, loader/RAW routing, transactional error handling, experimental UI labeling, and tests. Do not commit private/large source images, do not accept reduced Fast Load proxies as primaries, and do not claim visual sign-off without neutral producer references. Run targeted tests throughout and the full suite before handoff; update the durable validation log with evidence and remaining limitations.
 
 ## Existing exploration assets
 
