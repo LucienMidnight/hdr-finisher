@@ -1712,6 +1712,8 @@
     fn hdrPeakFit(input: vec3f) -> vec3f {
       if (p[74] != 1.0) { return input; }
       let y = max(lumaAces(input), 0.0);
+      let channelPeak = max(max(input.r, input.g), input.b);
+      let signal = select(y, max(channelPeak, 0.0), p[110] > 0.5);
       let start = max(p[53], 0.000001);
       let targetLevel = max(p[73], start + 0.0018);
       let peakLevel = max(p[75], targetLevel);
@@ -1727,25 +1729,18 @@
         effectiveStartStop = (targetStop - requiredRatio * peakStop) / (1.0 - requiredRatio);
       }
       let effectiveStart = exp2(effectiveStartStop);
-      if (y <= effectiveStart) { return input; }
-      let u = clamp((log2(y) - effectiveStartStop) / max(peakStop - effectiveStartStop, 0.000001), 0.0, 1.0);
+      if (signal <= effectiveStart) { return input; }
+      let u = clamp((log2(signal) - effectiveStartStop) / max(peakStop - effectiveStartStop, 0.000001), 0.0, 1.0);
       let w = clamp(u + curveBias * u * (1.0 - u), 0.0, 1.0);
       let stopSpan = targetStop - effectiveStartStop;
       let m0 = (peakStop - effectiveStartStop) / max(stopSpan * (1.0 + curveBias), 0.000001);
       let m1 = p[76] * (peakStop - effectiveStartStop) / max(stopSpan * (1.0 - curveBias), 0.000001);
       let mapped = w * (1.0 - w) * (1.0 - w) * m0 + w * w * (3.0 - 2.0 * w) + w * w * (w - 1.0) * m1;
       let targetValue = exp2(effectiveStartStop + stopSpan * mapped);
-      let mappedRgb = input * (targetValue / max(y, 0.00000001));
+      let mappedRgb = input * (targetValue / max(signal, 0.00000001));
       if (p[110] < 0.5) { return mappedRgb; }
       let progress = u * u * (3.0 - 2.0 * u);
-      let pathScale = 1.0 - progress;
-      let maximumChroma = max(mappedRgb.r, max(mappedRgb.g, mappedRgb.b)) - targetValue;
-      var channelScale = 1.0;
-      if (maximumChroma > 0.00000001) {
-        channelScale = clamp((targetLevel - targetValue) / maximumChroma, 0.0, 1.0);
-      }
-      let chromaScale = min(pathScale, channelScale);
-      return vec3f(targetValue) + (mappedRgb - vec3f(targetValue)) * chromaScale;
+      return vec3f(targetValue) + (mappedRgb - vec3f(targetValue)) * (1.0 - progress);
     }
     fn hdrPrimaries(input: vec3f) -> vec3f {
       if (p[5] == 0.0 && p[6] == 0.0 && p[7] == 0.0) { return input; }

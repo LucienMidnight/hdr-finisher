@@ -133,6 +133,12 @@ def inspect_dng(
             ]
             rejection = _opcode_rejection(required)
             metadata = _resolve_metadata(page, root, dtype, samples, width, height)
+            metadata["sdr_preview_series_index"] = _select_full_resolution_rendered_preview(
+                tif,
+                primary_series_index=series_index,
+                width=width,
+                height=height,
+            )
             metadata["xmp_merge_crop"] = _merge_xmp_crop(page, root)
             if metadata["xmp_merge_crop"] is not None:
                 warnings.append("Applied the untouched HDR merge crop stored in DNG XMP metadata.")
@@ -174,6 +180,10 @@ def inspect_dng(
                 rejection = rejection or _linear_layout_rejection(page, dtype, metadata)
                 color_path = "forward_matrix" if metadata.get("forward_matrix1") is not None else "color_matrix_only"
                 full_intermediates = 2 if required or int(metadata["orientation"]) != 1 else 1
+                if metadata["sdr_preview_series_index"] is not None:
+                    # Conservatively cover the retained half-float SDR
+                    # reference plus its transient integer decode.
+                    full_intermediates += 1
                 estimate = estimate_resources(
                     width=width,
                     height=height,
@@ -244,6 +254,16 @@ def decode_linear_dng(
         with tifffile.TiffFile(path) as tif:
             page = tif.series[inspection.primary_series_index].pages[0]
             _verify_fingerprint(path, page, inspection.fingerprint)
+            sdr_reference = None
+            preview_series_index = inspection.metadata.get("sdr_preview_series_index")
+            if preview_series_index is not None:
+                if progress:
+                    progress("dng_sdr_preview", "Experimental DNG Import: decoding embedded SDR rendition")
+                preview_series = tif.series[int(preview_series_index)]
+                preview = _normalize_layout(preview_series.asarray(), getattr(preview_series, "axes", None))
+                preview = crop_and_orient(preview, inspection.metadata)
+                sdr_reference = _decode_srgb_reference(preview, cancelled=cancelled)
+                del preview
             if progress:
                 progress("dng_decode", "Experimental DNG Import: decoding full-resolution primary")
             if bool(page.is_memmappable):
@@ -274,10 +294,20 @@ def decode_linear_dng(
             if progress:
                 progress("dng_color", "Experimental DNG Import: converting scene-linear pixels to ACEScg")
             transform_normalized_to_acescg_in_place(
-                working, transform, color_metadata.baseline_exposure, cancelled=cancelled
+                working,
+                transform,
+                color_metadata.baseline_exposure,
+                highlight_recovery_limit=(
+                    None
+                    if any(item["name"] == "GainMap" for item in applied)
+                    else color_metadata.linear_response_limit
+                ),
+                cancelled=cancelled,
             )
             working = crop_and_orient(working, inspection.metadata)
             image = np.ascontiguousarray(working, dtype=np.float32)
+            if sdr_reference is not None and sdr_reference.shape != image.shape:
+                sdr_reference = None
     except (MemoryError, OSError) as exc:
         raise LinearDngError(
             "Experimental DNG import ran out of memory or storage while decoding. The open document was not changed."
@@ -291,6 +321,7 @@ def decode_linear_dng(
     metadata: dict[str, Any] = {
         "bit_depth": inspection.dtype,
         "color_space": "ACEScg",
+        "source_color_space_label": "Camera native (embedded DNG profile)",
         "transfer_function": "LINEAR",
         "decoder_normalized_to_acescg": True,
         "dng_input": True,
@@ -300,6 +331,12 @@ def decode_linear_dng(
         "experimental_dng_label": "Experimental DNG Import",
         "dng_route": inspection.route.value,
         "dng_color_path": transform.color_path,
+        "dng_highlight_color_recovery": (
+            "skipped_after_gain_map"
+            if any(item["name"] == "GainMap" for item in applied)
+            else "spatial_camera_neutral_reconstruction_near_linear_response_limit"
+        ),
+        "dng_sdr_rendition": "embedded_full_resolution" if sdr_reference is not None else "generated",
         "dng_operations": " → ".join(item["name"] for item in applied) or "none",
         "dng_warnings": " | ".join(inspection.warnings) or "none",
         "dng_diagnostics": {
@@ -314,6 +351,12 @@ def decode_linear_dng(
             "primary_series_index": inspection.primary_series_index,
             "primary_page_offset": inspection.fingerprint.primary_offset,
             "color_path": transform.color_path,
+            "linear_response_limit": color_metadata.linear_response_limit,
+            "highlight_color_recovery": (
+                "skipped_after_gain_map"
+                if any(item["name"] == "GainMap" for item in applied)
+                else "spatial_camera_neutral_reconstruction_near_linear_response_limit"
+            ),
             "estimated_profile_temperature": transform.estimated_temperature,
             "profile_weight1": transform.profile_weight1,
             "opcode_operations": list(applied),
@@ -322,6 +365,8 @@ def decode_linear_dng(
             "resource_estimate": _resource_payload(estimate),
         },
     }
+    if sdr_reference is not None:
+        metadata["sdr_reference_image"] = sdr_reference
     return image, metadata
 
 
@@ -336,6 +381,56 @@ def _select_primary(tif: Any) -> tuple[int, Any]:
     if not candidates:
         raise LinearDngError("DNG contains no full-resolution NewSubfileType=0 primary image.")
     return max(candidates, key=lambda item: int(item[1].imagewidth) * int(item[1].imagelength))
+
+
+def _select_full_resolution_rendered_preview(
+    tif: Any,
+    *,
+    primary_series_index: int,
+    width: int,
+    height: int,
+) -> int | None:
+    """Return a full-size rendered RGB preview, never a thumbnail/proxy."""
+    candidates: list[int] = []
+    for index, series in enumerate(tif.series):
+        if index == primary_series_index or not len(series.pages):
+            continue
+        page = series.pages[0]
+        if int(page.imagewidth) != width or int(page.imagelength) != height:
+            continue
+        if int(getattr(page, "samplesperpixel", 0) or 0) < 3:
+            continue
+        if int(getattr(page, "photometric", 0) or 0) not in {2, 6}:
+            continue
+        if not (int(getattr(page, "subfiletype", 0) or 0) & 1):
+            continue
+        candidates.append(index)
+    return candidates[0] if candidates else None
+
+
+def _decode_srgb_reference(
+    image: np.ndarray,
+    *,
+    rows: int = 128,
+    cancelled: Callable[[], bool] | None = None,
+) -> np.ndarray:
+    """Decode an embedded rendered preview to compact display-linear sRGB."""
+    source = np.asarray(image)
+    if source.ndim != 3 or source.shape[2] < 3 or source.dtype.kind not in {"u", "f"}:
+        raise LinearDngError("Embedded DNG SDR rendition has an unsupported pixel layout.")
+    scale = float(np.iinfo(source.dtype).max) if source.dtype.kind == "u" else 1.0
+    output = np.empty((*source.shape[:2], 3), dtype=np.float16)
+    for start in range(0, source.shape[0], rows):
+        _raise_if_cancelled(cancelled)
+        end = min(source.shape[0], start + rows)
+        encoded = np.asarray(source[start:end, :, :3], dtype=np.float32) / np.float32(scale)
+        linear = np.where(
+            encoded <= np.float32(0.04045),
+            encoded / np.float32(12.92),
+            np.power((encoded + np.float32(0.055)) / np.float32(1.055), np.float32(2.4)),
+        )
+        output[start:end] = np.clip(linear, 0.0, 1.0).astype(np.float16)
+    return output
 
 
 def _read_opcodes(page: Any, root: Any) -> tuple[DngOpcode, ...]:
@@ -428,6 +523,7 @@ def _resolve_metadata(page: Any, root: Any, dtype: np.dtype, samples: int, width
             page, root, "WhiteLevel", samples, default=integer_white if dtype.kind == "u" else 1.0
         ),
         "baseline_exposure": _scalar_rational_tag(page, root, "BaselineExposure", 0.0),
+        "linear_response_limit": _scalar_rational_tag(page, root, "LinearResponseLimit", 1.0),
         "calibration_illuminant1": _int_tag(page, root, "CalibrationIlluminant1"),
         "calibration_illuminant2": _int_tag(page, root, "CalibrationIlluminant2"),
         "active_area": _integer_array_tag(page, root, "ActiveArea", [0, 0, height, width]),
@@ -450,6 +546,7 @@ def color_metadata_from_mapping(metadata: dict[str, Any]) -> DngColorMetadata:
         as_shot_neutral=metadata.get("as_shot_neutral"),
         black_level=metadata.get("black_level"),
         white_level=metadata.get("white_level"),
+        linear_response_limit=float(metadata.get("linear_response_limit", 1.0)),
         baseline_exposure=float(metadata.get("baseline_exposure", 0.0)),
         calibration_illuminant1=int(metadata.get("calibration_illuminant1") or 0),
         calibration_illuminant2=metadata.get("calibration_illuminant2"),

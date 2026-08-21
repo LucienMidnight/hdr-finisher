@@ -64,6 +64,38 @@ def test_root_preview_full_primary_subifd_is_selected_and_decoded(tmp_path: Path
     assert metadata["experimental_dng_label"] == "Experimental DNG Import"
 
 
+def test_full_resolution_rendered_preview_becomes_compact_sdr_reference(tmp_path: Path) -> None:
+    path = tmp_path / "linear-with-rendered-preview.dng"
+    color_matrix = tuple(value for item in np.eye(3, dtype=int).reshape(-1) for value in (int(item), 1))
+    neutral = (96422, 100000, 1, 1, 82521, 100000)
+    extra = [
+        (50706, "B", 4, b"\x01\x04\x00\x00", False),
+        (50721, "2i", 9, color_matrix, False),
+        (50964, "2i", 9, color_matrix, False),
+        (50778, "H", 1, 23, False),
+        (50728, "2I", 3, neutral, False),
+    ]
+    rendered = np.full((2, 3, 3), 128, dtype=np.uint8)
+    with tifffile.TiffWriter(path) as tif:
+        tif.write(
+            np.zeros((2, 3, 3), dtype=np.uint16),
+            photometric=34892,
+            planarconfig="contig",
+            metadata={"axes": "YXS"},
+            extratags=extra,
+        )
+        tif.write(rendered, photometric="rgb", subfiletype=1, metadata={"axes": "YXS"})
+
+    inspection = inspect_dng(path, resource_snapshot=RESOURCES)
+    assert inspection.metadata["sdr_preview_series_index"] == 1
+    _image, metadata = decode_linear_dng(path, inspection)
+    reference = metadata["sdr_reference_image"]
+    assert reference.dtype == np.float16
+    assert reference.shape == rendered.shape
+    assert float(reference[0, 0, 0]) == pytest.approx(0.21586, abs=3e-4)
+    assert metadata["dng_sdr_rendition"] == "embedded_full_resolution"
+
+
 def test_mosaiced_primary_wins_over_reduced_linear_proxy(tmp_path: Path) -> None:
     path = tmp_path / "mosaic.dng"
     with tifffile.TiffWriter(path) as tif:
@@ -157,8 +189,10 @@ def test_loader_routes_linear_dng_before_generic_raw_decoder(
     )
     image, descriptor, metadata, _analysis, _sdr = load_image(path)
     assert image.shape == (2, 3, 3)
-    assert descriptor.source_color_space == "ACEScg"
+    assert descriptor.source_color_space == "Camera native (embedded DNG profile)"
+    assert descriptor.working_space == "ACEScg"
     assert metadata["experimental_dng_import"] is True
+    assert metadata["dng_highlight_color_recovery"] == "spatial_camera_neutral_reconstruction_near_linear_response_limit"
 
 
 def test_loader_preserves_mosaiced_route_and_passes_inspection_plan(

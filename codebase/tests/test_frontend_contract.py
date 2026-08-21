@@ -95,7 +95,7 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert 'data-path="hdr.highlight_compression_mode"' in html
     assert 'data-path="hdr.highlight_compression_peak_detail"' in html
     assert 'data-path="hdr.highlight_compression_color_handling"' in html
-    assert "AgX-style path to white" in html
+    assert "Compress channels toward white" in html
     assert 'id="highlight-compression-graph"' in html
     assert "Advanced highlight controls" in html
     assert "RGB Primaries" in html
@@ -578,7 +578,8 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_fixed_hdr_curve_domain(
     assert 'branch.highlight_compression_color_handling === "path_to_white"' in shader
     assert "fn hdrPeakFit(input: vec3f) -> vec3f" in shader
     assert "fn hdrSoftCeiling(input: vec3f) -> vec3f" in shader
-    assert "let chromaScale = min(pathScale, channelScale)" in shader
+    assert "let signal = select(y, max(channelPeak, 0.0), p[110] > 0.5)" in shader
+    assert "(mappedRgb - vec3f(targetValue)) * (1.0 - progress)" in shader
     assert "let requiredRatio = clamp(" in shader
     assert "let targetValue = exp2(effectiveStartStop + stopSpan * mapped)" in shader
     assert 'entryPoint: "baseFragmentMain"' in shader
@@ -778,6 +779,14 @@ def test_manual_source_interpretation_status_contract() -> None:
     assert "Manual source interpretation applied: ${colorSpace} primaries + ${transfer} transfer." in javascript
     assert "els.sourceSettingsNote.textContent = sourceInterpretationStatus(session);" in javascript
     assert "if (session.source.interpretation_mode === \"manual\") return sourceInterpretationStatus(session);" in javascript
+
+
+def test_developed_dng_distinguishes_source_profile_from_working_space() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    assert 'if (isDevelopedDngSession(session)) return "auto";' in javascript
+    assert "Camera-native LinearRaw developed through the embedded DNG profile into the ACEScg working space." in javascript
+    assert 'return "Auto: camera-native DNG profile → ACEScg working";' in javascript
+    assert "els.interpretationMode.disabled = developedDng;" in javascript
 
 
 def test_phase_one_local_influence_and_latest_generation_contract() -> None:

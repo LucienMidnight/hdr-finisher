@@ -61,6 +61,7 @@ class DngColorMetadata:
     analog_balance: np.ndarray | None = None
     black_level: np.ndarray | None = None
     white_level: np.ndarray | None = None
+    linear_response_limit: float = 1.0
     baseline_exposure: float = 0.0
 
 
@@ -68,6 +69,7 @@ class DngColorMetadata:
 class DngColorTransform:
     camera_to_xyz_d50: np.ndarray
     camera_to_acescg: np.ndarray
+    camera_neutral: np.ndarray
     color_path: str
     profile_weight1: float
     estimated_temperature: float
@@ -135,9 +137,14 @@ def build_color_transform(metadata: DngColorMetadata) -> DngColorTransform:
     if not np.all(np.isfinite(camera_to_xyz)):
         raise DngColorError("DNG camera-to-XYZ transform is non-finite.")
     camera_to_acescg = XYZ_D50_TO_ACESCG @ camera_to_xyz
+    camera_neutral = np.linalg.solve(camera_to_acescg, np.ones(3, dtype=np.float64))
+    if not np.all(np.isfinite(camera_neutral)) or np.any(camera_neutral <= 0.0):
+        raise DngColorError("DNG color transform produced an invalid camera-neutral vector.")
+    camera_neutral /= np.max(camera_neutral)
     return DngColorTransform(
         camera_to_xyz_d50=camera_to_xyz,
         camera_to_acescg=camera_to_acescg,
+        camera_neutral=camera_neutral,
         color_path=color_path,
         profile_weight1=weight1,
         estimated_temperature=temperature,
@@ -197,19 +204,149 @@ def transform_normalized_to_acescg_in_place(
     transform: DngColorTransform,
     baseline_exposure: float = 0.0,
     *,
+    highlight_recovery_limit: float | None = None,
     rows: int = 128,
     cancelled: Callable[[], bool] | None = None,
 ) -> np.ndarray:
     if image.dtype != np.float32 or image.ndim != 3 or image.shape[2] != 3:
         raise DngColorError("In-place DNG color conversion requires an H×W×3 float32 image.")
     matrix = transform.camera_to_acescg.astype(np.float32)
+    camera_neutral = transform.camera_neutral.astype(np.float32)
     exposure = np.float32(2.0 ** float(baseline_exposure))
+    recovery_limit = _validated_response_limit(highlight_recovery_limit)
+    recovery_support = (
+        _build_clipped_highlight_support(image, recovery_limit, cancelled=cancelled)
+        if recovery_limit is not None
+        else None
+    )
     for start in range(0, image.shape[0], rows):
         if cancelled is not None and cancelled():
             raise DngImportCancelled("Experimental DNG import cancelled")
         end = min(image.shape[0], start + rows)
-        image[start:end] = (image[start:end] @ matrix.T) * exposure
+        camera = image[start:end]
+        recovery_weight = None
+        if recovery_limit is not None and recovery_support is not None:
+            # DNG linear-reference channels clip independently at 1.0. Once a
+            # channel reaches that limit its chroma is no longer trustworthy,
+            # and a camera matrix can turn the missing ratio into vivid false
+            # color. The bright, sub-clip fringe around a clipped defocused
+            # light can carry the same unsupported color ratio, so recover it
+            # only when it lies near a confirmed clipped core and feather the
+            # correction by signal level. This avoids drawing a colored ring
+            # around the neutralized core without touching unrelated saturated
+            # subjects elsewhere in the frame.
+            signal = np.max(camera, axis=-1)
+            support, support_block = recovery_support
+            local_support = _sample_recovery_support(
+                support,
+                support_block,
+                start=start,
+                end=end,
+                width=image.shape[1],
+            )
+            onset = recovery_limit * 0.35
+            recovery_weight = np.clip((signal - onset) / max(recovery_limit - onset, 1e-6), 0.0, 1.0)
+            recovery_weight *= recovery_weight * (3.0 - 2.0 * recovery_weight)
+            np.sqrt(recovery_weight, out=recovery_weight)
+            recovery_weight *= local_support
+            margin = max(1.0 / 1024.0, recovery_limit * 0.005)
+            recovery_weight = np.where(signal >= recovery_limit - margin, 1.0, recovery_weight)
+
+        converted = (camera @ matrix.T) * exposure
+        if recovery_weight is not None and np.any(recovery_weight > 0.0):
+            # A clipped neutral's surviving channels provide lower bounds on
+            # its original exposure. Reconstruct the least camera-neutral
+            # signal consistent with those bounds, allowing the missing
+            # channel to extend above the encoding limit, then convert it
+            # normally. Unlike neutralizing at fixed AP1 luminance, this keeps
+            # the highlight's intensity gradient available to later exposure
+            # and Peak Fit controls.
+            neutral_scale = np.max(camera / camera_neutral, axis=-1)
+            reconstructed_camera = neutral_scale[..., None] * camera_neutral
+            reconstructed = (reconstructed_camera @ matrix.T) * exposure
+            converted += (reconstructed - converted) * recovery_weight[..., None]
+        camera[:] = converted
     return image
+
+
+def _build_clipped_highlight_support(
+    image: np.ndarray,
+    recovery_limit: float,
+    *,
+    cancelled: Callable[[], bool] | None = None,
+) -> tuple[np.ndarray, int] | None:
+    """Build a compact spatial support mask around confirmed clipped cores.
+
+    The mask is reduced before dilation so a photographic-scale feather does
+    not require another full-resolution image-sized allocation. Signal level
+    supplies the final smooth feather; this mask only answers whether a pixel
+    is spatially associated with a real clipped highlight.
+    """
+    height, width = image.shape[:2]
+    radius = int(np.clip(round(min(height, width) * 0.025), 8, 192))
+    block = max(1, min(8, radius // 12))
+    reduced_height = (height + block - 1) // block
+    reduced_width = (width + block - 1) // block
+    core = np.zeros((reduced_height, reduced_width), dtype=bool)
+    margin = max(1.0 / 1024.0, recovery_limit * 0.005)
+    core_onset = max(0.0, recovery_limit - margin)
+    column_starts = np.arange(0, width, block, dtype=np.intp)
+    for reduced_row, start in enumerate(range(0, height, block)):
+        if cancelled is not None and cancelled():
+            raise DngImportCancelled("Experimental DNG import cancelled")
+        end = min(height, start + block)
+        band_signal = np.max(image[start:end], axis=(0, 2))
+        core[reduced_row] = np.maximum.reduceat(band_signal, column_starts) >= core_onset
+    if not np.any(core):
+        return None
+
+    radius_blocks = max(1, int(np.ceil(radius / block)))
+    support = core.astype(np.float32)
+    decay = np.float32(1.0 / (radius_blocks + 1.0))
+    for _ in range(radius_blocks):
+        padded = np.pad(support, 1, mode="constant", constant_values=False)
+        expanded = np.maximum.reduce(
+            tuple(
+                padded[row_offset : row_offset + reduced_height, column_offset : column_offset + reduced_width]
+                for row_offset in range(3)
+                for column_offset in range(3)
+            )
+        )
+        support = np.maximum(support, expanded - decay)
+    return support, block
+
+
+def _sample_recovery_support(
+    support: np.ndarray,
+    block: int,
+    *,
+    start: int,
+    end: int,
+    width: int,
+) -> np.ndarray:
+    """Bilinearly sample the reduced spatial confidence without hard strips."""
+    row_positions = (np.arange(start, end, dtype=np.float32) + 0.5) / block - 0.5
+    column_positions = (np.arange(width, dtype=np.float32) + 0.5) / block - 0.5
+    row0 = np.clip(np.floor(row_positions).astype(np.intp), 0, support.shape[0] - 1)
+    column0 = np.clip(np.floor(column_positions).astype(np.intp), 0, support.shape[1] - 1)
+    row1 = np.minimum(row0 + 1, support.shape[0] - 1)
+    column1 = np.minimum(column0 + 1, support.shape[1] - 1)
+    row_fraction = np.clip(row_positions - row0, 0.0, 1.0).astype(np.float32)
+    column_fraction = np.clip(column_positions - column0, 0.0, 1.0).astype(np.float32)
+    top = support[row0[:, None], column0[None, :]] * (1.0 - column_fraction)
+    top += support[row0[:, None], column1[None, :]] * column_fraction
+    bottom = support[row1[:, None], column0[None, :]] * (1.0 - column_fraction)
+    bottom += support[row1[:, None], column1[None, :]] * column_fraction
+    return top * (1.0 - row_fraction[:, None]) + bottom * row_fraction[:, None]
+
+
+def _validated_response_limit(value: float | None) -> float | None:
+    if value is None:
+        return None
+    result = float(value)
+    if not np.isfinite(result) or result <= 0.0 or result > 1.0:
+        raise DngColorError("LinearResponseLimit must be finite and in the range (0, 1].")
+    return result
 
 
 def chromatic_adaptation_matrix(source_white: np.ndarray, destination_white: np.ndarray) -> np.ndarray:

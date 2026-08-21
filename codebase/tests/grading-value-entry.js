@@ -91,7 +91,7 @@ async function editValue(locator, value, { keyboardOnly = false } = {}) {
     if (highlightColorState !== "path_to_white") {
       throw new Error(`Expected path-to-white highlight handling, received ${highlightColorState}.`);
     }
-    await page.waitForFunction(() => document.querySelector("#highlight-compression-summary")?.textContent.includes("fade toward white"));
+    await page.waitForFunction(() => document.querySelector("#highlight-compression-summary")?.textContent.includes("RGB channels are grouped"));
 
     const exposure = page.locator('[data-value-path="hdr.exposure"]');
     await editValue(exposure, 6, { keyboardOnly: true });

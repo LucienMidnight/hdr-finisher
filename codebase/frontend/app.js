@@ -5084,7 +5084,7 @@ function normalizeHighlightCompressionControls(changedPath) {
   for (const path of ["hdr.highlight_compression_start_nits", "hdr.highlight_compression_target_nits"]) {
     syncRangeControlFromState(path);
   }
-  if (changedPath.endsWith("peak_measurement") || changedPath.endsWith("manual_peak_nits")) {
+  if (changedPath.endsWith("peak_measurement") || changedPath.endsWith("manual_peak_nits") || changedPath.endsWith("color_handling")) {
     syncHighlightCompressionSourcePeak();
   }
 }
@@ -5097,9 +5097,12 @@ function syncHighlightCompressionSourcePeak() {
     return;
   }
   const analysis = state.session?.analysis;
+  const groupedChannels = hdr.highlight_compression_color_handling === "path_to_white";
   const linear = hdr.highlight_compression_peak_measurement === "robust"
-    ? (analysis?.robust_peak_luma_linear ?? analysis?.peak_luma_linear ?? analysis?.peak_linear)
-    : (analysis?.peak_luma_linear ?? analysis?.peak_linear);
+    ? (groupedChannels
+      ? (analysis?.robust_peak_linear ?? analysis?.peak_linear)
+      : (analysis?.robust_peak_luma_linear ?? analysis?.peak_luma_linear ?? analysis?.peak_linear))
+    : (groupedChannels ? analysis?.peak_linear : (analysis?.peak_luma_linear ?? analysis?.peak_linear));
   if (Number.isFinite(Number(linear))) {
     hdr.highlight_compression_source_peak_nits = Math.max(1, Number(linear) * 100 / 0.18);
   }
@@ -5229,9 +5232,9 @@ function renderHighlightCompressionControls() {
     const effective = 2 ** info.effectiveStartStop;
     const adjusted = effective < Number(hdr.highlight_compression_start_nits) * 0.99;
     const colorNote = hdr.highlight_compression_color_handling === "path_to_white"
-      ? "; saturated highlights fade toward white"
+      ? "; RGB channels are grouped and converge toward white"
       : "; color ratios are preserved";
-    els.highlightCompressionSummary.textContent = `Peak Fit maps the ${Math.round(info.peak)}-nit peak after Tone controls to ${Math.round(info.target)} nit${adjusted ? `; smoothness widens the shoulder to ${Math.round(effective)} nit` : ""}${colorNote}.`;
+    els.highlightCompressionSummary.textContent = `Peak Fit anchors the measured full-resolution ${Math.round(info.peak)}-nit peak at ${Math.round(info.target)} nit inside Highlights${adjusted ? `; the curve fit widens the shoulder to ${Math.round(effective)} nit` : ""}${colorNote}. Preview scopes can read lower after downsampling.`;
   }
 }
 
@@ -6592,6 +6595,7 @@ async function safeJson(response) {
 }
 
 function defaultInterpretationValue(session) {
+  if (isDevelopedDngSession(session)) return "auto";
   const transfer = (session.source.transfer_function || "").toLowerCase();
   const colorSpace = (session.source.source_color_space || "").toLowerCase();
   if (colorSpace.includes("2020")) return "linear_bt2020";
@@ -6601,16 +6605,20 @@ function defaultInterpretationValue(session) {
 }
 
 function syncInterpretationControls(session) {
+  const developedDng = isDevelopedDngSession(session);
   const mode = session.source.interpretation_mode === "manual" ? "manual" : "auto";
   els.interpretationMode.value = mode;
   els.interpretationColorSpace.value = defaultInterpretationValue(session);
-  els.interpretationTransfer.value = defaultTransferValue(session);
+  els.interpretationTransfer.value = developedDng ? "auto" : defaultTransferValue(session);
   const needsReview = session.analysis.needs_color_override && mode !== "manual";
   els.sourceSettingsNote.textContent = sourceInterpretationStatus(session);
   els.sourceSettingsNote.classList.toggle("warning", needsReview);
 }
 
 function sourceInterpretationStatus(session) {
+  if (isDevelopedDngSession(session)) {
+    return "Camera-native LinearRaw developed through the embedded DNG profile into the ACEScg working space.";
+  }
   if (session.source.interpretation_mode === "manual") {
     const colorSpace = session.source.source_color_space || "unknown";
     const transfer = session.source.transfer_function || "unknown";
@@ -6627,9 +6635,20 @@ function renderSourceSettingsVisibility() {
 }
 
 function renderSourceSettingsControls() {
-  const manual = els.interpretationMode.value === "manual";
+  const developedDng = isDevelopedDngSession(state.session);
+  const manual = els.interpretationMode.value === "manual" && !developedDng;
+  els.interpretationMode.disabled = developedDng;
   els.interpretationColorSpace.disabled = !manual;
   els.interpretationTransfer.disabled = !manual;
+  els.applyInterpretationButton.disabled = developedDng;
+  els.resetInterpretationButton.disabled = developedDng;
+}
+
+function isDevelopedDngSession(session) {
+  return Boolean(
+    session?.metadata?.extra?.dng_input &&
+      session?.metadata?.extra?.decoder_normalized_to_acescg,
+  );
 }
 
 function isRawSession(session) {
@@ -6789,6 +6808,7 @@ function overrideMessage(session) {
 }
 
 function interpretationSummary(session) {
+  if (isDevelopedDngSession(session)) return "Auto: camera-native DNG profile → ACEScg working";
   const mode = session.source.interpretation_mode === "manual" ? "Manual" : "Auto";
   const colorSpace = session.source.source_color_space || "unknown primaries";
   const transfer = session.source.transfer_function || "unknown transfer";

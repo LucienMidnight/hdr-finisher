@@ -23,7 +23,7 @@ This index maps user-facing areas to their current state model, implementation, 
 | Tone bypass/reset | `hdr.tone_section_enabled` | `_apply_hdr_adjustments` | [HDR grade](user-guide/grade-hdr.md#tone) |
 | Exposure | `hdr.exposure` | `_apply_hdr_base_adjustments` | [HDR grade](user-guide/grade-hdr.md#exposure) |
 | Highlights bypass/reset | `hdr.highlight_section_enabled` | `_apply_hdr_adjustments` | [HDR grade](user-guide/grade-hdr.md#highlights) |
-| Highlight Compression | `hdr.highlight_compression_mode`, `highlight_compression_start_nits`, `highlight_compression_target_nits`, `highlight_compression_softness`, `highlight_compression_peak_*`, `highlight_compression_bias`, `highlight_compression_color_handling` | `_compress_scene_highlights`, `_tone_adjusted_source_peak_nits` | [HDR grade](user-guide/grade-hdr.md#highlight-compression) |
+| Highlight Compression | `hdr.highlight_compression_mode`, `highlight_compression_start_nits`, `highlight_compression_target_nits`, `highlight_compression_softness`, `highlight_compression_peak_*`, `highlight_compression_bias`, `highlight_compression_color_handling` | `_compress_scene_highlights`, `_tone_adjusted_source_peak_nits`, `hdrPeakFit`, `hdrSoftCeiling` | [HDR grade](user-guide/grade-hdr.md#highlight-compression); [technical reference](technical/highlight-compression.md) |
 | Contrast/Pivot | `hdr.contrast`, `contrast_pivot` | `_apply_luminance_section_controls` | [HDR grade](user-guide/grade-hdr.md#contrast-and-pivot) |
 | Shadow / Black | `hdr.shadow_lift` | `_apply_hdr_base_adjustments` | [HDR grade](user-guide/grade-hdr.md#shadow--black) |
 | Exposure Bands | `hdr.tone_equalizer_*` | `_apply_hdr_tone_equalizer`, monotonic mapping helpers | [HDR grade](user-guide/grade-hdr.md#exposure-bands) |

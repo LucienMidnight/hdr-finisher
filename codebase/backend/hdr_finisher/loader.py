@@ -153,6 +153,9 @@ def load_image(
     if image.shape[2] > 3:
         image = image[..., :3]
 
+    if metadata.get("raw_input"):
+        metadata["recommended_exposure_ev"] = _recommended_raw_exposure_ev(image)
+
     overrides = overrides or {}
     for key in ("color_space", "transfer_function"):
         if overrides.get(key):
@@ -188,7 +191,7 @@ def load_image(
         height=int(normalized.shape[0]),
         channels=int(normalized.shape[2]),
         dtype=str(normalized.dtype),
-        source_color_space=metadata.get("color_space"),
+        source_color_space=metadata.get("source_color_space_label", metadata.get("color_space")),
         transfer_function=metadata.get("transfer_function"),
         interpretation_mode="manual" if metadata.get("user_override") else "auto",
         color_space_confident=not bool(metadata.get("needs_color_override")),
@@ -205,6 +208,28 @@ def load_image(
         "total": round((perf_counter() - total_started) * 1000.0, 3),
     }
     return normalized, descriptor, metadata, analysis, sdr_reference_image
+
+
+def _recommended_raw_exposure_ev(image: np.ndarray) -> float:
+    """Return a bounded photographic starting exposure without altering RAW pixels."""
+    if image.ndim != 3 or image.shape[2] < 3 or image.size == 0:
+        return 0.0
+    height, width = image.shape[:2]
+    stride = max(1, int(np.ceil(np.sqrt((height * width) / 1_000_000))))
+    sample = np.asarray(image[::stride, ::stride, :3], dtype=np.float32)
+    luma = sample @ np.asarray([0.2722287, 0.6740818, 0.0536895], dtype=np.float32)
+    luma = luma[np.isfinite(luma) & (luma > 1e-6)]
+    if luma.size < 16:
+        return 0.0
+    median, upper = np.quantile(luma, [0.5, 0.9])
+    if median <= 0.0 or upper <= 0.0:
+        return 0.0
+    # A typical photographic render places a scene's median near 10% display
+    # linear and its broad highlights near 32%. Combining both anchors avoids
+    # letting a small specular peak or a large dark border drive exposure.
+    median_ev = np.log2(0.10 / median)
+    upper_ev = np.log2(0.32 / upper)
+    return round(float(np.clip((median_ev + upper_ev) * 0.5, -2.0, 4.0)), 3)
 
 
 def _load_with_pillow(path: Path) -> tuple[np.ndarray, dict[str, Any]]:

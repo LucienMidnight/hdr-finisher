@@ -132,7 +132,7 @@ The HDR branch remains linear ACEScg. Current order:
 
 HDR luma coefficients are ACEScg-derived: `0.2722287 R + 0.6740818 G + 0.0536895 B`.
 
-Peak Fit predicts the measured source peak after the independently bypassable Tone section, then anchors the Highlights-stage luminance to Target Peak. Preserve color scales RGB together. The optional AgX-inspired path-to-white reduces chroma through the shoulder and constrains individual ACEScg channels to the target. Later creative sections are deliberately not peak constrained.
+Peak Fit predicts the measured source peak after the independently bypassable Tone section. Preserve color measures and anchors ACEScg luminance while retaining RGB ratios. Compress channels toward white measures the brightest RGB channel, groups all channels into the shoulder, and converges the endpoint to neutral white at Target Peak. Later creative sections are deliberately not peak constrained. See [Highlight Compression Technical Reference](../technical/highlight-compression.md) for the curve and CPU/GPU contract.
 
 ## SDR adjustment branch
 

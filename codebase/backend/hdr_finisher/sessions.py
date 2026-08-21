@@ -79,12 +79,27 @@ class LoadedSession:
     def __post_init__(self) -> None:
         self.source_fingerprint_sha256 = _sha256_file(self.source_path)
         self.source_byte_size = self.source_path.stat().st_size
+        recommended_exposure = float(self.metadata.get("recommended_exposure_ev", 0.0) or 0.0)
+        if self.metadata.get("raw_input") and abs(recommended_exposure) >= 0.001:
+            self.adjustments.hdr.exposure = recommended_exposure
+            if self.sdr_reference_image is None:
+                self.adjustments.sdr.exposure = recommended_exposure
+            self.metadata["default_exposure_applied"] = {
+                "hdr_ev": recommended_exposure,
+                "sdr_ev": 0.0 if self.sdr_reference_image is not None else recommended_exposure,
+                "method": "bounded_median_and_p90",
+            }
         self.render_cache = SessionRenderCache(self.image, self.sdr_reference_image)
         self._sync_highlight_source_peaks()
 
     def _sync_highlight_source_peaks(self) -> None:
         hdr = self.adjustments.hdr
-        measured = self.analysis.peak_luma_linear
+        grouped_channels = hdr.highlight_compression_color_handling == "path_to_white"
+        robust = hdr.highlight_compression_peak_measurement == "robust"
+        if grouped_channels:
+            measured = self.analysis.robust_peak_linear if robust else self.analysis.peak_linear
+        else:
+            measured = self.analysis.robust_peak_luma_linear if robust else self.analysis.peak_luma_linear
         if measured is None:
             measured = self.analysis.peak_linear
         source_peak_nits = max(1.0, float(measured) * 100.0 / 0.18)

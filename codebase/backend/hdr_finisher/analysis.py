@@ -18,9 +18,11 @@ def classify_hdr(
     peak = float(np.max(image)) if image.size else 0.0
     if image.size and image.ndim >= 3 and image.shape[-1] >= 3:
         peak_luma, robust_peak_luma = _luma_peaks(image, cancelled=cancelled)
+        robust_peak = _robust_channel_peak(image)
     else:
         peak_luma = peak
         robust_peak_luma = peak
+        robust_peak = peak
     transfer = detect_transfer_function(metadata, suffix)
     linear_hint = transfer == "LINEAR"
     encoded_hint = transfer in {"PQ", "HLG"}
@@ -65,6 +67,7 @@ def classify_hdr(
     return HDRAnalysis(
         classification=classification,
         peak_linear=peak,
+        robust_peak_linear=robust_peak,
         peak_luma_linear=peak_luma,
         robust_peak_luma_linear=robust_peak_luma,
         peak_stops_above_diffuse_white=compute_peak_stops(image),
@@ -107,3 +110,18 @@ def _luma_peaks(
         )
         exact_peak = max(exact_peak, float(np.max(strip_luma, initial=0.0)))
     return exact_peak, robust_peak
+
+
+def _robust_channel_peak(
+    image: np.ndarray,
+    *,
+    maximum_quantile_samples: int = 2_000_000,
+) -> float:
+    """Return a bounded-memory robust peak of the brightest RGB channel."""
+    height, width = image.shape[:2]
+    pixels = height * width
+    stride = max(1, int(np.ceil(np.sqrt(pixels / maximum_quantile_samples))))
+    sample = image[::stride, ::stride, :3]
+    channel_peak = np.max(sample, axis=-1)
+    np.maximum(channel_peak, np.float32(0.0), out=channel_peak)
+    return float(np.quantile(channel_peak, 0.9999))

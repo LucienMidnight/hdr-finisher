@@ -40,20 +40,24 @@ Highlights is a separate, independently bypassable section after Tone. Both comp
 
 ### Highlight Compression
 
-Use **Peak Fit** for most HDR work. It measures the source highlight peak, constructs a smooth curve in stops, and maps that peak exactly to **Target Peak**. Unlike a nearly flat ceiling, its **Highlight Detail** control can retain a positive slope at the brightest end, which helps rounded reflections and emissive objects keep visible shape.
+Use **Peak Fit** for most HDR work. It measures the full-resolution source highlight peak, constructs a smooth curve in stops, and anchors that peak exactly at **Target Peak** inside the Highlights section. Unlike a nearly flat ceiling, its **Highlight Detail** control can retain a positive slope at the brightest end, which helps rounded reflections and emissive objects keep visible shape.
 
 - **Start** protects tones below the shoulder. When an extreme source peak, low target, and high detail cannot all fit above Start without reversing the curve, Peak Fit automatically widens the shoulder below the requested value. The transfer graph shows the actual curve and its caption reports the effective start.
 - **Target Peak** is the brightest intended luminance after the Highlights section and the upper anchor of Peak Fit.
-- **Highlight Detail** is the local stop contrast retained at the source peak. Start around 35%. Lower it when the peak still feels too sharp; raise it when the brightest forms look flat.
+- **Highlight Detail** is the local stop contrast retained at the source peak. Its default is 35%, which keeps shape in bright fixtures and reflections. Lower it when the peak still feels too sharp or when you want more near-peak samples gathered close to Target Peak. At 0%, the endpoint tangent is flat and peak regions can look more plateaued.
 - **Soft Ceiling** is the former asymptotic compressor. Its **Softness** control is useful when you do not want a measured peak anchor, but extreme inputs can bunch together near the ceiling.
 
 The compact graph plots input nits horizontally and output nits vertically. The dashed diagonal means no compression; the cyan curve shows the active mapping. In **Advanced highlight controls**, choose the absolute maximum, a robust measurement that ignores isolated pixels, or a manual source peak. **Compression Bias** redistributes contrast through the shoulder without moving its endpoints.
 
-**Highlight Color** controls what happens to saturated highlights. **Preserve color** is the default: it scales RGB together, preserving hue and channel ratios while anchoring ACEScg luminance. Because Target Peak is a luminance target, a saturated red, green, or blue channel can legitimately extend above it. **AgX-style path to white** gradually reduces chroma through the shoulder and caps every ACEScg channel at Target Peak, so extreme colored lights approach neutral white instead. This borrows the useful highlight trajectory from AgX, but is not a full AgX display transform.
+**Highlight Color** controls both which peak enters the compressor and what happens to saturated highlights. **Preserve color** is the default: it measures ACEScg luminance and scales RGB together, preserving hue and channel ratios. A saturated red, green, or blue channel can therefore extend above Target Peak. **Compress channels toward white** instead measures the brightest RGB channel, groups all three channels into Peak Fit, and gradually makes extreme colored lights approach neutral white. This catches saturated highlights whose luminance is below Start but whose brightest channel exceeds Target Peak.
 
-Peak measurement is based on ACEScg luminance rather than the brightest individual RGB channel. Manual Source Peak is specified before Tone controls. Peak Fit runs after Exposure, Shadow / Black, and Contrast, so its graph and endpoint account for all three and Contrast can no longer pull its anchor away from Target Peak.
+Peak measurement uses ACEScg luminance for Preserve color and the brightest individual RGB channel for Compress channels toward white. Manual Source Peak is specified before Tone controls and follows the same meaning. Peak Fit runs after Exposure, Shadow / Black, and Contrast, so its graph and endpoint account for all three.
+
+The implementation contract and CPU/GPU parameter mapping are documented in [Highlight Compression Technical Reference](../technical/highlight-compression.md).
 
 Target Peak is local to the Highlights section, not a permanent clamp on the finished image. Exposure Bands, Color, Lift/Gamma/Gain, Curves, and Film Look remain creative stages after it and can move the final waveform peak. Recheck the scope after using those sections.
+
+The source peak is measured at full resolution, but Standard preview scopes analyze a downsampled rendition. If the exact brightest sample is filtered away, the preview can read below Target Peak even though Peak Fit's full-resolution endpoint is correct. This is especially visible with nonzero Highlight Detail because nearby samples deliberately retain contrast below the endpoint. Use High-res Preview or a full-resolution export for the authoritative peak check.
 
 ## Exposure Bands
 

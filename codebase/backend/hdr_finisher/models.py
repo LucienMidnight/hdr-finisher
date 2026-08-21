@@ -90,6 +90,7 @@ class SourceLatitude(str, Enum):
 class HDRAnalysis(BaseModel):
     classification: HDRClassification
     peak_linear: float
+    robust_peak_linear: float | None = None
     peak_luma_linear: float | None = None
     robust_peak_luma_linear: float | None = None
     peak_stops_above_diffuse_white: float | None = None

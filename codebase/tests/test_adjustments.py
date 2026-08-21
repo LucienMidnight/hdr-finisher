@@ -539,7 +539,7 @@ def test_highlights_section_bypass_is_independent_from_tone() -> None:
 
 def test_peak_fit_path_to_white_caps_saturated_peak_channels() -> None:
     image = np.array([[[0.0, 0.0, 3.0], [50.0, 5.0, 2.0]]], dtype=np.float32)
-    source_peak_nits = float(np.dot(image[0, 1], [0.2722287, 0.6740818, 0.0536895]) * 100.0 / 0.18)
+    source_peak_nits = float(image.max() * 100.0 / 0.18)
     preserved = _compress_scene_highlights(
         image,
         400.0,
@@ -558,8 +558,8 @@ def test_peak_fit_path_to_white_caps_saturated_peak_channels() -> None:
     )
 
     assert preserved.max() > 1.8
+    assert neutralized[0, 0].max() <= 1.8 + 2e-5
     assert neutralized[0, 1].max() <= 1.8 + 2e-5
-    np.testing.assert_array_equal(neutralized[0, 0], image[0, 0])
     np.testing.assert_allclose(neutralized[0, 1], [1.8, 1.8, 1.8], rtol=3e-5, atol=3e-5)
 
 

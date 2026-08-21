@@ -11,6 +11,7 @@ from hdr_finisher.dng_color import (
     build_color_transform,
     convert_to_acescg,
     reciprocal_temperature_weight,
+    transform_normalized_to_acescg_in_place,
 )
 from hdr_finisher.dng_opcodes import DngImportCancelled
 
@@ -75,6 +76,66 @@ def test_float_values_remain_unclipped_and_float32() -> None:
     assert result.dtype == np.float32
     assert np.min(result) < 0.0
     assert np.max(result) > 1.0
+
+
+def test_clipped_highlight_recovery_feathers_local_fringe_and_protects_distant_color() -> None:
+    transform = build_color_transform(_forward_metadata())
+    source = np.zeros((40, 40, 3), dtype=np.float32)
+    source[20, 20] = [1.0, 0.55, 0.2]
+    source[20, 21:25] = [0.9, 0.55, 0.2]
+    source[0, 0] = [0.9, 0.55, 0.2]
+    baseline = source.copy()
+    transform_normalized_to_acescg_in_place(baseline, transform)
+
+    recovered = source.copy()
+    transform_normalized_to_acescg_in_place(
+        recovered,
+        transform,
+        highlight_recovery_limit=1.0,
+    )
+
+    neutral_scale = np.max(source[20, 20] / transform.camera_neutral)
+    expected_core = (transform.camera_neutral * neutral_scale) @ transform.camera_to_acescg.T
+    assert np.allclose(recovered[20, 20], expected_core, atol=1e-6)
+    assert np.allclose(recovered[20, 20], recovered[20, 20, 0], atol=1e-6)
+    baseline_fringe_chroma = np.ptp(baseline[20, 22])
+    recovered_fringe_chroma = np.ptp(recovered[20, 22])
+    assert recovered_fringe_chroma < baseline_fringe_chroma * 0.25
+    assert np.mean(recovered[20, 22]) > np.mean(baseline[20, 22])
+    assert np.allclose(recovered[0, 0], baseline[0, 0])
+
+
+def test_clipped_highlight_recovery_has_continuous_spatial_falloff_and_exposure_scaling() -> None:
+    transform = build_color_transform(_forward_metadata())
+    source = np.zeros((64, 64, 3), dtype=np.float32)
+    source[32, 32] = [1.0, 0.55, 0.2]
+    source[32, 33:43] = [0.8, 0.45, 0.2]
+
+    recovered = source.copy()
+    transform_normalized_to_acescg_in_place(recovered, transform, highlight_recovery_limit=1.0)
+    darker = source.copy()
+    transform_normalized_to_acescg_in_place(
+        darker,
+        transform,
+        baseline_exposure=-1.0,
+        highlight_recovery_limit=1.0,
+    )
+
+    chroma = np.ptp(recovered[32, 33:43], axis=-1)
+    assert np.all(np.diff(chroma) >= -1e-6)
+    assert len(np.unique(np.round(chroma, 5))) >= 8
+    assert float(np.max(np.diff(chroma))) < float(np.ptp(recovered[32, 42])) * 0.25
+    np.testing.assert_allclose(darker, recovered * 0.5, rtol=2e-6, atol=2e-7)
+
+
+def test_invalid_linear_response_limit_rejects() -> None:
+    transform = build_color_transform(_forward_metadata())
+    with pytest.raises(DngColorError, match="LinearResponseLimit"):
+        transform_normalized_to_acescg_in_place(
+            np.ones((1, 1, 3), dtype=np.float32),
+            transform,
+            highlight_recovery_limit=1.01,
+        )
 
 
 def test_dual_illuminant_uses_reciprocal_temperature_interpolation() -> None:

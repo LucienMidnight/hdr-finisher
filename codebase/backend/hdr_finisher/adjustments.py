@@ -594,6 +594,12 @@ def _compress_scene_highlights(
     result = image.astype(np.float32, copy=False)
     luma = _acescg_luma(result)
     positive_luma = np.clip(luma, 0.0, None)
+    grouped_channels = mode == "peak_fit" and color_handling == "path_to_white"
+    compression_signal = (
+        np.max(np.clip(result, 0.0, None), axis=-1)
+        if grouped_channels
+        else positive_luma
+    )
     start = np.float32(max(start_nits, 1.0) * 0.18 / 100.0)
     target = np.float32(max(target_nits, start_nits + 1.0) * 0.18 / 100.0)
     if mode == "peak_fit":
@@ -614,7 +620,7 @@ def _compress_scene_highlights(
         if requested_ratio < required_ratio:
             effective_start_stop = (target_stop - required_ratio * peak_stop) / (1.0 - required_ratio)
         effective_start = np.float32(2.0 ** effective_start_stop)
-        input_stop = np.log2(np.maximum(positive_luma, effective_start))
+        input_stop = np.log2(np.maximum(compression_signal, effective_start))
         u = np.clip((input_stop - effective_start_stop) / max(peak_stop - effective_start_stop, 1e-6), 0.0, 1.0)
         w = np.clip(u + curve_bias * u * (1.0 - u), 0.0, 1.0)
         stop_span = target_stop - effective_start_stop
@@ -626,29 +632,23 @@ def _compress_scene_highlights(
         mapped_normalized = h10 * normalized_start_slope + h01 + h11 * normalized_end_slope
         mapped_stop = effective_start_stop + stop_span * mapped_normalized
         target_luma = np.where(
-            positive_luma > effective_start,
+            compression_signal > effective_start,
             np.exp2(mapped_stop).astype(np.float32),
-            positive_luma,
+            compression_signal,
         )
-        ratio = np.where(positive_luma > 1e-8, target_luma / np.maximum(positive_luma, 1e-8), 1.0).astype(np.float32)
-        mapped = np.where(positive_luma[..., None] > effective_start, result * ratio[..., None], result)
-        if color_handling == "path_to_white":
-            # AgX-inspired, but deliberately simpler: progressively reduce
-            # chroma through the Peak Fit shoulder and guarantee that no ACEScg
-            # channel exceeds Target Peak. Luminance and the tone curve remain
-            # unchanged; only the highlight color trajectory differs.
+        ratio = np.where(
+            compression_signal > 1e-8,
+            target_luma / np.maximum(compression_signal, 1e-8),
+            1.0,
+        ).astype(np.float32)
+        mapped = np.where(compression_signal[..., None] > effective_start, result * ratio[..., None], result)
+        if grouped_channels:
+            # Qualify and anchor on the brightest RGB channel, then converge the
+            # grouped channels toward white through the Peak Fit shoulder.
             neutral = target_luma[..., None]
             progress = u * u * (np.float32(3.0) - np.float32(2.0) * u)
-            path_scale = np.float32(1.0) - progress
-            maximum_chroma = np.max(mapped, axis=-1) - target_luma
-            channel_scale = np.where(
-                maximum_chroma > 1e-8,
-                np.clip((target - target_luma) / np.maximum(maximum_chroma, 1e-8), 0.0, 1.0),
-                1.0,
-            ).astype(np.float32)
-            chroma_scale = np.minimum(path_scale, channel_scale)
-            color_mapped = neutral + (mapped - neutral) * chroma_scale[..., None]
-            mapped = np.where(positive_luma[..., None] > effective_start, color_mapped, mapped)
+            color_mapped = neutral + (mapped - neutral) * (np.float32(1.0) - progress[..., None])
+            mapped = np.where(compression_signal[..., None] > effective_start, color_mapped, mapped)
         return mapped.astype(np.float32, copy=False)
 
     span = np.float32(target - start)
