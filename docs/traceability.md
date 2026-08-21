@@ -59,6 +59,9 @@ This index maps user-facing areas to their current state model, implementation, 
 | JPEG Ultra HDR export | `ExportSettings` JPEG fields | `JPEGUltraHDRExportBackend` | [Export](user-guide/export.md#jpeg-ultra-hdr) |
 | AVIF gain map export | `ExportSettings.quality` | `AVIFGainMapExportBackend` | [Export](user-guide/export.md#avif--gain-map) |
 | SDR PNG export | `ExportSettings` | `SDRPNGExportBackend` | [Export](user-guide/export.md#png-sdr) |
+| SDR JPEG export | `ExportSettings.quality`, `jpeg_chroma_subsampling` | `SDRJPEGExportBackend` | [Export](user-guide/export.md#jpeg-sdr) |
+| SDR JPEG XL export | `ExportSettings.quality` | `SDRJPEGXLExportBackend`, `jpegxl.py` | [Export](user-guide/export.md#jpeg-xl-sdr) |
+| JPEG XL HDR export | `ExportSettings.quality`, `jpegxl_precision` | `JPEGXLHDRExportBackend`, `jpegxl.py` | [Export](user-guide/export.md#jpeg-xl-hdr) |
 | Hosting verification | CLI/local report | `hosting_probe.py`, `verify_hosted_gainmap.py` | [Export](user-guide/export.md#validate-publication) |
 
 ## Tests by behavior

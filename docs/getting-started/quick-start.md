@@ -61,7 +61,8 @@ Choose:
 
 - **JPEG Ultra HDR** for broad JPEG fallback behavior and compatible HDR viewers.
 - **AVIF + gain map** for high compression efficiency and validated Chromium delivery.
-- **PNG (SDR)** for a standalone fallback or comparison file.
+- **JPEG (SDR)** for a compact standalone rendition or very wide line-scan delivery.
+- **PNG (SDR)** for a lossless standalone fallback or comparison file.
 
 After export, open the result in its intended browser or service. Moving the same browser window between HDR and SDR displays is a useful fallback check. Hosting services may recompress the file and remove its gain map, so validate the delivered URL when publication matters.
 

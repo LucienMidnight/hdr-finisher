@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -19,8 +20,10 @@ from hdr_finisher.jpegxl import (
     _parse_codestream_basic_info,
     decode_jpegxl,
     encode_hdr_jpegxl,
+    encode_sdr_jpegxl,
     inspect_jpegxl,
     validate_jpegxl,
+    validate_sdr_jpegxl,
 )
 from hdr_finisher.loader import load_image
 from hdr_finisher.media_browser import MediaBrowserError, MediaBrowserStore
@@ -42,10 +45,12 @@ def test_jpegxl_hdr_round_trip_carries_explicit_app_interpretation(tmp_path: Pat
     info = inspect_jpegxl(path)
     assert info["bits_per_sample"] == 12
     assert info["app_metadata"]["transfer_function"] == "PQ"
+    assert info["app_metadata"]["sample_type"] == "integer"
 
     decoded, metadata = decode_jpegxl(path)
     assert decoded.shape == image.shape
     assert metadata["jpegxl_direct_hdr"] is True
+    assert metadata["sample_type"] == "integer"
     assert metadata["needs_color_override"] is False
     assert metadata["decoder_normalized_to_acescg"] is True
 
@@ -53,6 +58,77 @@ def test_jpegxl_hdr_round_trip_carries_explicit_app_interpretation(tmp_path: Pat
     assert loaded.shape == image.shape
     assert descriptor.source_color_space == "ACEScg"
     assert loader_metadata["jpegxl_app_metadata"]["color_space"] == "BT.2020"
+
+
+@pytest.mark.parametrize(
+    ("precision", "bit_depth", "sample_type", "decoded_dtype"),
+    [
+        ("uint10", 10, "integer", np.dtype(np.uint16)),
+        ("uint12", 12, "integer", np.dtype(np.uint16)),
+        ("uint16", 16, "integer", np.dtype(np.uint16)),
+        ("float16", 16, "float", np.dtype(np.float16)),
+        ("float32", 32, "float", np.dtype(np.float32)),
+    ],
+)
+def test_jpegxl_export_preserves_selected_precision(
+    tmp_path: Path,
+    precision: str,
+    bit_depth: int,
+    sample_type: str,
+    decoded_dtype: np.dtype,
+) -> None:
+    import imagecodecs
+
+    image = np.linspace(0.0, 2.0, 18 * 24 * 3, dtype=np.float32).reshape(18, 24, 3)
+    payload = encode_hdr_jpegxl(image, 100, precision)
+    validation = validate_jpegxl(payload, image.shape[:2], precision)
+    path = tmp_path / f"{precision}.jxl"
+    path.write_bytes(payload)
+
+    info = inspect_jpegxl(path)
+    raw = np.asarray(imagecodecs.jpegxl_decode(payload))
+
+    assert f"{bit_depth}-bit {sample_type}" in validation
+    assert info["bits_per_sample"] == bit_depth
+    assert info["exponent_bits_per_sample"] > 0 if sample_type == "float" else info["exponent_bits_per_sample"] == 0
+    assert info["app_metadata"]["bit_depth"] == bit_depth
+    assert info["app_metadata"]["sample_type"] == sample_type
+    assert raw.dtype == decoded_dtype
+
+    decoded, metadata = decode_jpegxl(path)
+    assert decoded.shape == image.shape
+    assert metadata["bit_depth"] == str(bit_depth)
+    assert metadata["sample_type"] == sample_type
+
+
+def test_jpegxl_rejects_unoffered_eight_bit_precision() -> None:
+    image = np.full((4, 6, 3), 0.18, dtype=np.float32)
+    with pytest.raises(RuntimeError, match="Unsupported JPEG XL precision"):
+        encode_hdr_jpegxl(image, 100, "uint8")
+
+
+def test_sdr_jpegxl_round_trip_is_explicit_eight_bit_srgb(tmp_path: Path) -> None:
+    import imagecodecs
+
+    image = np.linspace(0.0, 1.0, 18 * 24 * 3, dtype=np.float32).reshape(18, 24, 3)
+    payload = encode_sdr_jpegxl(image, 100)
+    assert validate_sdr_jpegxl(payload, image.shape[:2]).startswith("Validated")
+    path = tmp_path / "sdr-round-trip.jxl"
+    path.write_bytes(payload)
+
+    info = inspect_jpegxl(path)
+    raw = np.asarray(imagecodecs.jpegxl_decode(payload))
+    decoded, metadata = decode_jpegxl(path)
+
+    assert info["bits_per_sample"] == 8
+    assert info["app_metadata"]["color_space"] == "sRGB"
+    assert info["app_metadata"]["transfer_function"] == "sRGB"
+    assert raw.dtype == np.uint8
+    assert decoded.shape == image.shape
+    assert metadata["bit_depth"] == "8"
+    assert metadata["sample_type"] == "integer"
+    assert metadata["jpegxl_direct_hdr"] is False
+    assert metadata["needs_color_override"] is False
 
 
 def test_jpegxl_decode_reads_the_container_once(tmp_path: Path, monkeypatch) -> None:
@@ -166,12 +242,22 @@ def test_jpegxl_export_backend_writes_validated_atomic_output(tmp_path: Path) ->
     output = tmp_path / "finished.jxl"
     result = JPEGXLHDRExportBackend(
         CapabilityInfo(name="JPEG XL", status=CapabilityStatus.AVAILABLE, detail="test")
-    ).export(session, ExportSettings(format="jpegxl_hdr", quality=100, output_path=str(output)))
+    ).export(
+        session,
+        ExportSettings(
+            format="jpegxl_hdr",
+            quality=100,
+            jpegxl_precision="float16",
+            output_path=str(output),
+        ),
+    )
     assert result.accepted, result.message
     assert output.is_file()
     decoded, metadata = decode_jpegxl(output)
     assert decoded.shape == image.shape
     assert metadata["jpegxl_direct_hdr"] is True
+    assert metadata["bit_depth"] == "16"
+    assert metadata["sample_type"] == "float"
 
 
 def test_v1_project_document_migrates_raw_settings() -> None:
@@ -330,6 +416,47 @@ def test_media_browser_persists_favorites_and_generates_thumbnail(tmp_path: Path
     thumbnail = browser.thumbnail(str(source), 128)
     with Image.open(thumbnail) as image:
         assert image.size == (128, 128)
+
+
+def test_media_browser_exposes_mounted_volume_roots_before_places(tmp_path: Path, monkeypatch) -> None:
+    roots = [tmp_path / "C-drive", tmp_path / "D-drive"]
+    for root in roots:
+        root.mkdir()
+    monkeypatch.setattr("hdr_finisher.media_browser._connected_roots", lambda: roots)
+    browser = MediaBrowserStore(tmp_path / "app-data")
+
+    listing = browser.list_directory(str(roots[0]), "source")
+
+    assert listing["drives"] == [
+        {"name": root.drive or str(root), "path": str(root), "available": True} for root in roots
+    ]
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows drive-letter behavior")
+def test_connected_roots_excludes_assigned_non_volume_drive_letters(monkeypatch) -> None:
+    from hdr_finisher import media_browser
+
+    letters = "CDEGH"
+    mask = sum(1 << (ord(letter) - ord("A")) for letter in letters)
+    monkeypatch.setattr(media_browser, "_logical_drive_mask", lambda: mask)
+    monkeypatch.setattr(
+        media_browser,
+        "_is_volume_backed_windows_drive",
+        lambda root: root[0] in {"C", "D", "E"},
+    )
+
+    assert media_browser._connected_roots() == [Path("C:\\"), Path("D:\\"), Path("E:\\")]
+
+
+def test_windows_device_target_filter_rejects_cloud_volume_mounts() -> None:
+    from hdr_finisher.media_browser import _is_local_windows_device_target
+
+    assert _is_local_windows_device_target(3, r"\Device\HarddiskVolume3") is True
+    assert _is_local_windows_device_target(2, r"\Device\HarddiskVolume7") is True
+    assert _is_local_windows_device_target(5, r"\Device\CdRom0") is True
+    assert _is_local_windows_device_target(3, r"\Device\Volume{cloud-drive-guid}") is False
+    assert _is_local_windows_device_target(3, r"\Device\WinFsp.Drive") is False
+    assert _is_local_windows_device_target(4, r"\Device\LanmanRedirector\server\share") is False
 
 
 def test_bitmap_thumbnail_uses_the_bounded_pillow_path(tmp_path: Path, monkeypatch) -> None:

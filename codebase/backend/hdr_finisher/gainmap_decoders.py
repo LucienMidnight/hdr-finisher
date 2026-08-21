@@ -329,7 +329,7 @@ def _decode_avif_gain_map(
         phase_started = perf_counter()
         base_is_sdr = float(gain["base_headroom"]) <= float(gain["alternate_headroom"])
         if base_is_sdr and abs(float(gain["base_headroom"]) - sdr_headroom) <= 1e-6:
-            encoded_sdr = _decode_avif_primary_pixels(path)
+            encoded_sdr = _decode_avif_primary_pixels(path, bit_depth=int(info.get("bit_depth", 8)))
             sdr_color = _cicp_color_space(info.get("color_primaries"))
             sdr_transfer = _cicp_transfer(info.get("transfer_char"))
             exact_sdr_base = True
@@ -430,7 +430,7 @@ def _decode_avif_pixels(
         return _decode_png_pixels(png_path)
 
 
-def _decode_avif_primary_pixels(path: Path) -> np.ndarray:
+def _decode_avif_primary_pixels(path: Path, *, bit_depth: int = 8) -> np.ndarray:
     """Decode the primary AVIF item directly, retaining its integer precision."""
     try:
         import imagecodecs
@@ -445,7 +445,16 @@ def _decode_avif_primary_pixels(path: Path) -> np.ndarray:
     if array.ndim != 3 or array.shape[2] < 3:
         raise GainMapDecodeError(f"AVIF base decode returned an unsupported pixel layout {array.shape}.")
     if np.issubdtype(array.dtype, np.integer):
-        maximum = np.float32(np.iinfo(array.dtype).max)
+        storage_bits = int(np.iinfo(array.dtype).bits)
+        if bit_depth < 1 or bit_depth > storage_bits:
+            raise GainMapDecodeError(
+                f"AVIF declares an invalid {bit_depth}-bit primary in {storage_bits}-bit storage."
+            )
+        maximum = np.float32((1 << bit_depth) - 1)
+        if int(array.max(initial=0)) > int(maximum):
+            raise GainMapDecodeError(
+                f"AVIF primary samples exceed the declared {bit_depth}-bit range."
+            )
         array = array.astype(np.float32)
         array *= np.float32(1.0) / maximum
     else:

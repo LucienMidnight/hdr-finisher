@@ -64,7 +64,7 @@ Open the local address in Chrome, Edge, or Brave. Current physical HDR and deliv
 
 ## Encoder capabilities
 
-The UI reports encoder availability. Missing an encoder does not prevent import, grading, scopes, SDR PNG export, or whichever gain-map backend remains available.
+The UI reports encoder availability. Missing an HDR encoder does not prevent import, grading, scopes, SDR JPEG/PNG export, or whichever gain-map backend remains available.
 
 ### JPEG Ultra HDR
 

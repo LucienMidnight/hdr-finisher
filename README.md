@@ -14,7 +14,7 @@ available as a convenience path, but remains intentionally smaller than a dedica
 3. Grade the HDR rendition.
 4. Create and inspect the SDR fallback.
 5. Proof how the gain map adapts to different displays.
-6. Export JPEG Ultra HDR, AVIF with a gain map, or SDR PNG.
+6. Export JPEG Ultra HDR, AVIF with a gain map, or an SDR JPEG/PNG/JPEG XL.
 
 HDR Finisher is not a RAW developer or layer compositor. Its local-adjustment mode is intended for finishing masks and selective grades, not pixel-cloning or full retouching.
 
@@ -37,8 +37,10 @@ HDR Finisher is not a RAW developer or layer compositor. Its local-adjustment mo
 | Input | OpenEXR, TIFF, Radiance HDR, PFM, HEIC/HEIF, AVIF, JPEG XL, PNG, JPEG, DNG and selected camera RAW formats | An accepted file is not necessarily a valid HDR handoff. DNG import is experimental, broader RAW development is a convenience beta, and source primaries still matter. |
 | Output | JPEG Ultra HDR | Backward-compatible SDR JPEG with an 8-bit gain map and Ultra HDR v1 plus ISO 21496-1 metadata. Requires a compatible `ultrahdr_app`. |
 | Output | AVIF with gain map | SDR base plus BT.2020/PQ alternate and a 10-bit gain map. Requires the bundled or discoverable AVIF tools. |
+| Output | SDR JPEG | The authored SDR rendition as a compact 8-bit JPEG. The bundled encoder supports dimensions up to 65,500 pixels. |
 | Output | SDR PNG | The authored SDR rendition without HDR data. |
-| Output | JPEG XL HDR | Direct 12-bit Rec.2020/PQ HDR without an SDR fallback. Viewer support varies. |
+| Output | JPEG XL SDR | The authored SDR rendition as 8-bit sRGB JPEG XL with no HDR or gain map. Viewer support varies. |
+| Output | JPEG XL HDR | Direct Rec.2020/PQ HDR with 10-, 12-, or 16-bit integer and 16- or 32-bit floating-point precision. The default is 12-bit integer; there is no SDR fallback. Viewer support varies. |
 
 ## Color pipeline in one paragraph
 

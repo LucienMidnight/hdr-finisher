@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import ctypes
 import json
 import os
 from contextlib import contextmanager
@@ -52,10 +53,22 @@ class MediaBrowserStore:
             "mode": mode,
             "current": str(current),
             "parent": None if current.parent == current else str(current.parent),
+            "drives": self.drives(),
             "places": self.places(),
             "favorites": self.favorites(),
             "entries": entries,
         }
+
+    def drives(self) -> list[dict[str, Any]]:
+        drives = []
+        for path in _connected_roots():
+            label = path.drive or str(path)
+            try:
+                available = path.is_dir()
+            except OSError:
+                available = False
+            drives.append({"name": label, "path": str(path), "available": available})
+        return drives
 
     def places(self) -> list[dict[str, Any]]:
         home = Path.home()
@@ -185,6 +198,84 @@ class MediaBrowserStore:
                 stale.unlink()
             except OSError:
                 pass
+
+
+def _connected_roots() -> list[Path]:
+    if os.name != "nt":
+        return [Path("/")]
+    mask = _logical_drive_mask()
+    roots = [
+        Path(root)
+        for index in range(26)
+        if mask & (1 << index)
+        and _is_volume_backed_windows_drive(root := f"{chr(ord('A') + index)}:\\")
+    ]
+    if roots:
+        return roots
+    anchor = Path.home().anchor
+    return [Path(anchor)] if anchor else []
+
+
+def _logical_drive_mask() -> int:
+    try:
+        return int(ctypes.windll.kernel32.GetLogicalDrives())
+    except (AttributeError, OSError, ValueError):
+        return 0
+
+
+def _is_volume_backed_windows_drive(root: str) -> bool:
+    """Keep the Drives rail aligned with Windows' local-volume presentation.
+
+    GetLogicalDrives also reports assigned virtual and mapped drive letters.
+    Require a real volume GUID and a local/removable media type so cloud drives,
+    network mappings, and Shell namespaces do not masquerade as local volumes.
+    """
+
+    try:
+        kernel32 = ctypes.windll.kernel32
+        get_drive_type = kernel32.GetDriveTypeW
+        get_drive_type.argtypes = [ctypes.c_wchar_p]
+        get_drive_type.restype = ctypes.c_uint
+        drive_type = int(get_drive_type(root))
+        if drive_type not in {2, 3, 5, 6}:  # removable, fixed, optical, RAM disk
+            return False
+        if not _is_local_windows_device_target(drive_type, _windows_drive_device_target(root)):
+            return False
+        volume_name = ctypes.create_unicode_buffer(1024)
+        get_volume_name = kernel32.GetVolumeNameForVolumeMountPointW
+        get_volume_name.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint]
+        get_volume_name.restype = ctypes.c_int
+        return bool(get_volume_name(root, volume_name, len(volume_name)))
+    except (AttributeError, OSError, TypeError, ValueError):
+        return False
+
+
+def _windows_drive_device_target(root: str) -> str:
+    """Return the NT device behind a drive letter.
+
+    Cloud filesystem clients can report DRIVE_FIXED and a volume GUID even when
+    their drive letter is not backed by local media. QueryDosDevice exposes the
+    distinction that the higher-level volume APIs hide.
+    """
+
+    kernel32 = ctypes.windll.kernel32
+    query_device = kernel32.QueryDosDeviceW
+    query_device.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint]
+    query_device.restype = ctypes.c_uint
+    target = ctypes.create_unicode_buffer(4096)
+    drive_name = root.rstrip("\\")
+    return target.value if query_device(drive_name, target, len(target)) else ""
+
+
+def _is_local_windows_device_target(drive_type: int, target: str) -> bool:
+    normalized = target.casefold()
+    allowed_prefixes = {
+        2: (r"\device\harddiskvolume",),
+        3: (r"\device\harddiskvolume",),
+        5: (r"\device\cdrom",),
+        6: (r"\device\ramdisk", r"\device\harddiskvolume"),
+    }
+    return bool(normalized) and normalized.startswith(allowed_prefixes.get(drive_type, ()))
 
 
 def _read_thumbnail_source(

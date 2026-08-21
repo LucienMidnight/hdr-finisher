@@ -218,7 +218,7 @@ def test_avif_gainmap_accepts_bt709_transfer_on_sdr_base(
     monkeypatch.setattr(
         gainmap_decoders,
         "_decode_avif_primary_pixels",
-        lambda _path: np.full((2, 3, 3), 0.5, dtype=np.float32),
+        lambda _path, **_kwargs: np.full((2, 3, 3), 0.5, dtype=np.float32),
     )
 
     _hdr, linear_sdr, metadata = gainmap_decoders._decode_avif_gain_map(tmp_path / "lightroom.avif", info)

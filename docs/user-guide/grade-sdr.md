@@ -1,6 +1,6 @@
 # Author the SDR Fallback
 
-The SDR branch is a full creative rendition, not a preview convenience. It becomes the primary/base image in gain-map exports and is what ordinary JPEG readers, unsupported browsers, many social services, and all SDR PNG exports display.
+The SDR branch is a full creative rendition, not a preview convenience. It becomes the primary/base image in gain-map exports and is what ordinary JPEG readers, unsupported browsers, many social services, and standalone SDR JPEG/PNG exports display.
 
 Every numeric readout can also be typed directly, including controlled values beyond normal slider travel. See [Grading Controls Reference](grading-controls-reference.md) for keyboard behavior, plain-language control descriptions, and all slider and direct-entry limits.
 
@@ -113,7 +113,7 @@ The final result is clipped to the normalized SDR range.
 - Are blacks intentional on an ordinary SDR display?
 - Did gamut compression alter saturated colors?
 - Does the SDR version remain recognizably the same creative work as HDR?
-- Does the standalone SDR PNG match the fallback decoded from the gain-map file closely enough for delivery?
+- Does a standalone SDR JPEG or PNG match the fallback decoded from the gain-map file closely enough for delivery?
 
 ## Watch out for
 
