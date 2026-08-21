@@ -171,8 +171,8 @@ async function main() {
       dialog.showSaveDialog = async () => ({ canceled: false, filePath: selectedPath });
     }, exportPath);
     await window.evaluate(async () => {
-      const choice = document.querySelector('input[name="export-format-choice"][value="sdr_png"]');
-      choice.checked = true;
+      const choice = document.querySelector("#export-format");
+      choice.value = "sdr_png";
       choice.dispatchEvent(new Event("change", { bubbles: true }));
       await exportCurrentSession();
     });
