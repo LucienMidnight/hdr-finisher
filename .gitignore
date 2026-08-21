@@ -15,6 +15,9 @@ env/
 .DS_Store
 Thumbs.db
 
+# Local Codex repository instructions
+AGENTS.md
+
 # Build / runtime outputs
 codebase/exports/
 codebase/_tmp_avif_test/
