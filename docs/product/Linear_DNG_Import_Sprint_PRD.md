@@ -1,8 +1,8 @@
 # Experimental DNG Import and Large-File Safety Sprint
 
 **Status:** Implemented on the exploration branch — experimental validation in progress
-**Prepared:** 2026-08-20  
-**Target branch:** `explore/linear-dng-large-import`  
+**Prepared:** 2026-08-20<br>
+**Target branch:** `explore/linear-dng-large-import`
 **Production code status:** Implemented on `explore/linear-dng-large-import`; compatibility sign-off remains evidence-gated
 **Related investigation:** [Linear DNG Import Feasibility — 2026-08-20](../testing/Linear_DNG_Import_Feasibility_2026-08-20.md)
 
