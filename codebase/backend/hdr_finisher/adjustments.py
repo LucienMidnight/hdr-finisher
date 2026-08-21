@@ -12,6 +12,7 @@ TONE_EQUALIZER_MAX_EV = 6
 TONE_EQUALIZER_BAND_COUNT = TONE_EQUALIZER_MAX_EV - TONE_EQUALIZER_MIN_EV + 1
 TONE_EQUALIZER_MAX_ADJUSTMENT_EV = 2.0
 _TONE_EQUALIZER_MIN_TARGET_STEP = np.float32(1e-3)
+SDR_DISPLAY_REFERENCE_WHITE = np.float32(100.0 / 203.0)
 
 
 def apply_adjustments(
@@ -716,10 +717,14 @@ def _retone_map_sdr_reference(
 
     luma = _linear_luma(result)
     bounded_luma = np.clip(luma, 1e-7, 1.0 - 1e-7)
-    middle_gray = np.float32(0.18)
-    middle_log_odds = np.log(middle_gray / (1.0 - middle_gray))
-    reference_log_odds = np.log(bounded_luma / (1.0 - bounded_luma))
-    scene_luma = middle_gray * np.exp(np.clip((reference_log_odds - middle_log_odds) / 1.1, -32.0, 32.0))
+    scene_middle_gray = np.float32(0.18)
+    reference_log_odds = np.log(
+        SDR_DISPLAY_REFERENCE_WHITE / (np.float32(1.0) - SDR_DISPLAY_REFERENCE_WHITE)
+    )
+    encoded_log_odds = np.log(bounded_luma / (1.0 - bounded_luma))
+    scene_luma = scene_middle_gray * np.exp(
+        np.clip((encoded_log_odds - reference_log_odds) / 1.1, -32.0, 32.0)
+    )
     scene_luma = np.where(luma > 0.0, scene_luma, 0.0).astype(np.float32)
     mapped_luma = _map_sdr_luma(scene_luma, tone_mapper, tone_contrast, tone_skew)
     ratio = np.where(luma > 1e-8, mapped_luma / np.maximum(luma, 1e-8), 0.0).astype(np.float32)
@@ -740,19 +745,21 @@ def _map_sdr_luma(
         mapped_luma = (luma * (a * luma + b)) / (luma * (c * luma + d) + e)
         mapped_luma /= a / c
     else:
-        # This filmic sigmoid always passes through middle gray. Curve contrast
-        # sets its overall steepness; skew varies the shadow and highlight
-        # steepness independently while blending smoothly around middle gray.
-        middle_gray = np.float32(0.18)
+        # Scene 0.18 is the app's 100-nit diffuse-white anchor. Map it to the
+        # matching fraction of the 203-nit display canvas, then preserve that
+        # anchor while contrast and skew shape the surrounding response.
+        scene_middle_gray = np.float32(0.18)
         base_power = np.float32(1.1 * np.clip(tone_contrast, 0.5, 1.5))
         skew = np.float32(np.clip(tone_skew, -1.0, 1.0))
         shadow_power = base_power * np.exp2(np.float32(-0.75) * skew)
         highlight_power = base_power * np.exp2(np.float32(0.75) * skew)
-        log_exposure = np.log(np.maximum(luma, 1e-8) / middle_gray)
+        log_exposure = np.log(np.maximum(luma, 1e-8) / scene_middle_gray)
         highlight_blend = _smoothstep(-0.5, 0.5, log_exposure)
         local_power = shadow_power * (1.0 - highlight_blend) + highlight_power * highlight_blend
-        middle_log_odds = np.log(middle_gray / (1.0 - middle_gray))
-        log_odds = middle_log_odds + local_power * log_exposure
+        reference_log_odds = np.log(
+            SDR_DISPLAY_REFERENCE_WHITE / (np.float32(1.0) - SDR_DISPLAY_REFERENCE_WHITE)
+        )
+        log_odds = reference_log_odds + local_power * log_exposure
         mapped_luma = 1.0 / (1.0 + np.exp(-np.clip(log_odds, -32.0, 32.0)))
         mapped_luma = np.where(luma > 0.0, mapped_luma, 0.0)
     return np.clip(mapped_luma, 0.0, 1.0).astype(np.float32)

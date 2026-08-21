@@ -154,12 +154,7 @@ def load_image(
         image = image[..., :3]
 
     if metadata.get("raw_input"):
-        recommended_exposure = _recommended_raw_exposure_ev(image)
-        metadata["recommended_exposure_ev"] = recommended_exposure
-        if metadata.get("raw_mosaiced"):
-            metadata["recommended_sdr_exposure_ev"] = _recommended_mosaiced_raw_sdr_exposure_ev(
-                image, recommended_exposure
-            )
+        metadata["recommended_exposure_ev"] = _recommended_raw_exposure_ev(image)
 
     overrides = overrides or {}
     for key in ("color_space", "transfer_function"):
@@ -188,6 +183,14 @@ def load_image(
             metadata.get("transfer_function"),
             cancelled=cancelled,
         )
+    linear_reference = (overrides or {}).get("linear_reference") or "scene_0_18"
+    if linear_reference == "diffuse_white_1_0":
+        if str(metadata.get("transfer_function") or "").upper() != "LINEAR":
+            raise LoaderError("The 1.0 diffuse-white reference is only valid for linear sources.")
+        normalized *= np.float32(0.18)
+        metadata["linear_reference_note"] = (
+            "Source 1.0 diffuse white normalized to HDR Finisher scene-linear 0.18 diffuse white."
+        )
     normalize_ms = (perf_counter() - normalize_started) * 1000.0
     descriptor = SourceImageDescriptor(
         filename=path.name,
@@ -198,6 +201,7 @@ def load_image(
         dtype=str(normalized.dtype),
         source_color_space=metadata.get("source_color_space_label", metadata.get("color_space")),
         transfer_function=metadata.get("transfer_function"),
+        linear_reference=linear_reference,
         interpretation_mode="manual" if metadata.get("user_override") else "auto",
         color_space_confident=not bool(metadata.get("needs_color_override")),
     )
@@ -235,35 +239,6 @@ def _recommended_raw_exposure_ev(image: np.ndarray) -> float:
     median_ev = np.log2(0.10 / median)
     upper_ev = np.log2(0.32 / upper)
     return round(float(np.clip((median_ev + upper_ev) * 0.5, -2.0, 4.0)), 3)
-
-
-def _recommended_mosaiced_raw_sdr_exposure_ev(
-    image: np.ndarray, conservative_exposure_ev: float
-) -> float:
-    """Return a display-oriented SDR start without baking exposure into RAW pixels.
-
-    The shared RAW recommendation protects scene-linear highlight headroom, which
-    is appropriate for HDR but can leave SDR midtones several stops too dark.
-    SDR already has a filmic highlight roll-off, so meter its starting point from
-    the median and let that rendition compress the upper range independently.
-    A 0.45 scene-linear target renders near 0.38 display-linear through the
-    neutral filmic curve, matching a photographic display midpoint rather than
-    leaving the median at encoded middle gray.
-    """
-    if image.ndim != 3 or image.shape[2] < 3 or image.size == 0:
-        return float(conservative_exposure_ev)
-    height, width = image.shape[:2]
-    stride = max(1, int(np.ceil(np.sqrt((height * width) / 1_000_000))))
-    sample = np.asarray(image[::stride, ::stride, :3], dtype=np.float32)
-    luma = sample @ np.asarray([0.2722287, 0.6740818, 0.0536895], dtype=np.float32)
-    luma = luma[np.isfinite(luma) & (luma > 1e-6)]
-    if luma.size < 16:
-        return float(conservative_exposure_ev)
-    median = float(np.median(luma))
-    if median <= 0.0:
-        return float(conservative_exposure_ev)
-    display_midtone_ev = float(np.log2(0.45 / median))
-    return round(float(np.clip(max(0.0, conservative_exposure_ev, display_midtone_ev), 0.0, 5.0)), 3)
 
 
 def _load_with_pillow(path: Path) -> tuple[np.ndarray, dict[str, Any]]:

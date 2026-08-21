@@ -833,14 +833,14 @@ def test_sdr_tone_mapping_preserves_wide_exr_highlight_ordering() -> None:
     assert np.all(np.diff(output_levels) > 0.0)
 
 
-def test_default_sdr_render_holds_scene_middle_gray() -> None:
+def test_default_sdr_render_maps_scene_diffuse_white_to_display_reference_white() -> None:
     image = np.full((2, 2, 3), 0.18, dtype=np.float32)
     output = _apply_sdr_adjustments(
         image,
         AdjustmentState(sdr=SDRAdjustments(highlight_recovery=0.0)),
     )
 
-    assert np.allclose(output, 0.18, atol=0.005)
+    assert np.allclose(output, 100.0 / 203.0, atol=0.005)
 
 
 def test_filmic_curve_contrast_changes_steepness_around_middle_gray() -> None:

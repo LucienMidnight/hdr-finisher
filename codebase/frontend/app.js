@@ -783,6 +783,7 @@ const els = {
   interpretationMode: document.getElementById("interpretation-mode"),
   interpretationColorSpace: document.getElementById("interpretation-color-space"),
   interpretationTransfer: document.getElementById("interpretation-transfer"),
+  interpretationLinearReference: document.getElementById("interpretation-linear-reference"),
   sourceSettingsNote: document.getElementById("source-settings-note"),
   applyInterpretationButton: document.getElementById("apply-interpretation"),
   resetInterpretationButton: document.getElementById("reset-interpretation"),
@@ -1906,6 +1907,7 @@ function bindEvents() {
   els.interpretationMode.addEventListener("change", () => {
     renderSourceSettingsControls();
   });
+  els.interpretationTransfer.addEventListener("change", () => renderSourceSettingsControls());
   els.scopeMode.addEventListener("change", async () => {
     state.scopeMode = els.scopeMode.value;
     await refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
@@ -2351,6 +2353,7 @@ async function ejectCurrentSession() {
   els.interpretationMode.value = "auto";
   els.interpretationColorSpace.value = "auto";
   els.interpretationTransfer.value = "auto";
+  els.interpretationLinearReference.value = "scene_0_18";
   state.sourceSettingsOpen = true;
   state.metadataOpen = true;
   els.exportStatus.textContent = "Choose a format and destination.";
@@ -4069,6 +4072,7 @@ async function resetInterpretationToAuto() {
   els.interpretationMode.value = "auto";
   els.interpretationColorSpace.value = "auto";
   els.interpretationTransfer.value = "auto";
+  els.interpretationLinearReference.value = "scene_0_18";
   renderSourceSettingsControls();
   await applyInterpretationOverride();
 }
@@ -6610,6 +6614,7 @@ function syncInterpretationControls(session) {
   els.interpretationMode.value = mode;
   els.interpretationColorSpace.value = defaultInterpretationValue(session);
   els.interpretationTransfer.value = developedDng ? "auto" : defaultTransferValue(session);
+  els.interpretationLinearReference.value = session.source.linear_reference || "scene_0_18";
   const needsReview = session.analysis.needs_color_override && mode !== "manual";
   els.sourceSettingsNote.textContent = sourceInterpretationStatus(session);
   els.sourceSettingsNote.classList.toggle("warning", needsReview);
@@ -6622,7 +6627,10 @@ function sourceInterpretationStatus(session) {
   if (session.source.interpretation_mode === "manual") {
     const colorSpace = session.source.source_color_space || "unknown";
     const transfer = session.source.transfer_function || "unknown";
-    return `Manual source interpretation applied: ${colorSpace} primaries + ${transfer} transfer.`;
+    const reference = session.source.linear_reference === "diffuse_white_1_0"
+      ? "1.0 diffuse white normalized to 0.18"
+      : "0.18 scene-linear diffuse white";
+    return `Manual source interpretation applied: ${colorSpace} primaries + ${transfer} transfer + ${reference}.`;
   }
   return session.analysis.needs_color_override
     ? "Auto detection found an ambiguous source interpretation."
@@ -6640,6 +6648,7 @@ function renderSourceSettingsControls() {
   els.interpretationMode.disabled = developedDng;
   els.interpretationColorSpace.disabled = !manual;
   els.interpretationTransfer.disabled = !manual;
+  els.interpretationLinearReference.disabled = !manual || els.interpretationTransfer.value !== "linear";
   els.applyInterpretationButton.disabled = developedDng;
   els.resetInterpretationButton.disabled = developedDng;
 }
@@ -6773,10 +6782,14 @@ function defaultTransferValue(session) {
 }
 
 function interpretationPayload() {
-  if (els.interpretationMode.value !== "manual") return { color_space: null, transfer_function: null };
+  if (els.interpretationMode.value !== "manual") return { color_space: null, transfer_function: null, linear_reference: null };
   const mapped = interpretationPayloadFromColorSpace(els.interpretationColorSpace.value);
   const transfer = interpretationTransferPayload(els.interpretationTransfer.value, mapped.transfer_function);
-  return { color_space: mapped.color_space, transfer_function: transfer };
+  return {
+    color_space: mapped.color_space,
+    transfer_function: transfer,
+    linear_reference: transfer === "LINEAR" ? els.interpretationLinearReference.value : null,
+  };
 }
 
 function interpretationPayloadFromColorSpace(value) {

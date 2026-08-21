@@ -102,7 +102,7 @@ These controls use the same ranges in each branch, but HDR works in the scene-re
 
 | Control | Purpose in plain English | How it works | Normal slider range | Direct-entry range |
 |---|---|---|---|---|
-| Curve Contrast | Makes the Filmic base rendition softer or punchier. | Changes the sigmoid power while keeping middle gray anchored. | 0.5 to 1.5 | **0.5 to 1.5**; this is a firm shape domain |
+| Curve Contrast | Makes the Filmic base rendition softer or punchier. | Changes the sigmoid power while keeping the 100-nit diffuse-white mapping anchored. | 0.5 to 1.5 | **0.5 to 1.5**; this is a firm shape domain |
 | Contrast Skew | Shifts Filmic separation toward shadows or highlights. | Changes shadow and highlight sigmoid powers in opposite directions. | -1 to +1 | **-1 to +1**; this is a firm shape domain |
 | Exposure | Makes the whole SDR fallback brighter or darker. | Multiplies light by `2^EV` before or around display mapping, depending on source type. | Narrow -2 to +2 EV; Medium -3 to +3 EV; Wide -4 to +4 EV | **-8 to +8 EV** |
 | Highlight Recovery | Recovers bright-end separation in the SDR rendition. | Adds a monotonic shoulder anchored around middle gray. | Narrow 0 to 1; Medium 0 to 1.5; Wide 0 to 2 | **0 to 4** |

@@ -21,7 +21,7 @@ Start with:
 
 ### Filmic
 
-The neutral default. It maps scene luminance through a sigmoid anchored at middle gray. It provides a gentle shadow and highlight shoulder while keeping `0.18` at the same normalized SDR value.
+The neutral default. It maps scene luminance through a sigmoid anchored at the app's diffuse-white reference. It provides a gentle shadow and highlight shoulder while mapping scene-linear `0.18` (100 nits) to `100/203` display-linear so the neutral SDR and HDR previews share the same reference-white intent.
 
 - **Curve Contrast** changes the overall sigmoid steepness.
 - **Contrast Skew** changes shadow and highlight steepness independently. Move left for more emphasis in darker tones and gentler highlights; move right to open shadows and give brighter tones more snap.

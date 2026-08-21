@@ -321,7 +321,7 @@ def test_variable_point_curves_are_supported() -> None:
 
 
 def test_sdr_lift_gamma_gain_controls_target_luminance_sections() -> None:
-    image = np.array([[[0.08, 0.08, 0.08], [0.5, 0.5, 0.5], [0.9, 0.9, 0.9]]], dtype=np.float32)
+    image = np.array([[[0.01, 0.01, 0.01], [0.5, 0.5, 0.5], [0.9, 0.9, 0.9]]], dtype=np.float32)
     lifted = apply_adjustments(image, AdjustmentState.model_validate({"sdr": {"lift": 0.15}}), PreviewKind.SDR)
     gained = apply_adjustments(image, AdjustmentState.model_validate({"sdr": {"gain": 0.15}}), PreviewKind.SDR)
     baseline = apply_adjustments(image, AdjustmentState(), PreviewKind.SDR)

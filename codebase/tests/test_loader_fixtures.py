@@ -257,6 +257,26 @@ def test_manual_bt2020_override_applies_to_linear_exr_fixture() -> None:
     assert sdr_reference is None
 
 
+def test_manual_diffuse_white_one_override_normalizes_linear_exr_scale() -> None:
+    path = fixture_path("linear_unconfirmed.exr")
+    baseline, *_ = load_image(
+        path,
+        overrides={"color_space": "BT.2020", "transfer_function": "LINEAR"},
+    )
+    normalized, source, metadata, *_ = load_image(
+        path,
+        overrides={
+            "color_space": "BT.2020",
+            "transfer_function": "LINEAR",
+            "linear_reference": "diffuse_white_1_0",
+        },
+    )
+
+    np.testing.assert_allclose(normalized, baseline * np.float32(0.18), rtol=1e-6, atol=1e-7)
+    assert source.linear_reference == "diffuse_white_1_0"
+    assert "normalized" in metadata["linear_reference_note"]
+
+
 def test_transfer_only_override_does_not_confirm_unknown_exr_primaries() -> None:
     _image, source, metadata, analysis, _sdr_reference = load_image(
         fixture_path("linear_unconfirmed.exr"),

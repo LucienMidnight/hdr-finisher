@@ -79,25 +79,19 @@ class LoadedSession:
     def __post_init__(self) -> None:
         self.source_fingerprint_sha256 = _sha256_file(self.source_path)
         self.source_byte_size = self.source_path.stat().st_size
+        if self.sdr_reference_image is not None:
+            # A gain-map file's SDR base is already an authored display
+            # rendition, so it must start without another highlight shoulder.
+            self.adjustments.sdr.highlight_recovery = 0.0
         recommended_exposure = float(self.metadata.get("recommended_exposure_ev", 0.0) or 0.0)
-        recommended_sdr_exposure = float(
-            self.metadata.get("recommended_sdr_exposure_ev", recommended_exposure) or 0.0
-        )
-        if self.metadata.get("raw_input") and (
-            abs(recommended_exposure) >= 0.001 or abs(recommended_sdr_exposure) >= 0.001
-        ):
-            if abs(recommended_exposure) >= 0.001:
-                self.adjustments.hdr.exposure = recommended_exposure
+        if self.metadata.get("raw_input") and abs(recommended_exposure) >= 0.001:
+            self.adjustments.hdr.exposure = recommended_exposure
             if self.sdr_reference_image is None:
-                self.adjustments.sdr.exposure = recommended_sdr_exposure
+                self.adjustments.sdr.exposure = recommended_exposure
             self.metadata["default_exposure_applied"] = {
                 "hdr_ev": recommended_exposure,
-                "sdr_ev": 0.0 if self.sdr_reference_image is not None else recommended_sdr_exposure,
-                "method": (
-                    "bounded_hdr_median_and_p90_plus_sdr_display_midtones"
-                    if "recommended_sdr_exposure_ev" in self.metadata
-                    else "bounded_median_and_p90"
-                ),
+                "sdr_ev": 0.0 if self.sdr_reference_image is not None else recommended_exposure,
+                "method": "bounded_median_and_p90",
             }
         self.render_cache = SessionRenderCache(self.image, self.sdr_reference_image)
         self._sync_highlight_source_peaks()
@@ -201,6 +195,7 @@ class SessionStore:
                 overrides={
                     "color_space": resolved_override.color_space,
                     "transfer_function": resolved_override.transfer_function,
+                    "linear_reference": resolved_override.linear_reference,
                 },
                 raw_import_settings=resolved_raw_settings,
                 progress=progress,
@@ -517,6 +512,7 @@ class SessionStore:
                 overrides={
                     "color_space": override.color_space,
                     "transfer_function": override.transfer_function,
+                    "linear_reference": override.linear_reference,
                 },
                 raw_import_settings=session.raw_import_settings,
                 retained_session_bytes=self._retained_session_bytes(),

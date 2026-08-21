@@ -21,11 +21,14 @@ from hdr_finisher.test_pattern import build_hdr_test_pattern
 
 
 def _session(image: np.ndarray, sdr_reference: np.ndarray | None = None) -> SimpleNamespace:
+    adjustments = AdjustmentState()
+    if sdr_reference is not None:
+        adjustments.sdr.highlight_recovery = 0.0
     return SimpleNamespace(
         session_id="gainmap-import",
         image=image,
         sdr_reference_image=sdr_reference,
-        adjustments=AdjustmentState(),
+        adjustments=adjustments,
     )
 
 

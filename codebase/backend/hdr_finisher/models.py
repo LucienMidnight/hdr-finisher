@@ -66,6 +66,7 @@ class SourceImageDescriptor(BaseModel):
     working_space: str = "ACEScg"
     source_color_space: str | None = None
     transfer_function: str | None = None
+    linear_reference: Literal["scene_0_18", "diffuse_white_1_0"] = "scene_0_18"
     interpretation_mode: str = "auto"
     color_space_confident: bool = True
 
@@ -812,6 +813,7 @@ class SessionSummary(BaseModel):
 class SourceInterpretationOverride(BaseModel):
     color_space: str | None = None
     transfer_function: str | None = None
+    linear_reference: Literal["scene_0_18", "diffuse_white_1_0"] | None = None
 
 
 class PreviewRequest(BaseModel):

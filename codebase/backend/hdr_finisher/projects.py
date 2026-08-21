@@ -92,7 +92,11 @@ def open_project(store: SessionStore, path: Path, source_path: Path | None = Non
         raw_import_settings=document.source.raw_import_settings,
     )
     session = store.get(payload.session_id)
-    if document.interpretation_override.color_space or document.interpretation_override.transfer_function:
+    if (
+        document.interpretation_override.color_space
+        or document.interpretation_override.transfer_function
+        or document.interpretation_override.linear_reference
+    ):
         session = store.update_source_interpretation(payload.session_id, document.interpretation_override)
     session.adjustments = document.global_adjustments
     session.local_adjustments = document.local_adjustments

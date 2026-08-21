@@ -23,9 +23,9 @@ If an upstream application uses another working space, convert the document/expo
 6. Perform the desired editing without Tone Mapping Persona and without converting to RGB/16 or RGB/8.
 7. In 32-bit Preview, enable HDR, set preview exposure to 0 and gamma to 1, use the ICC display transform, and leave peak clipping off.
 8. Export **OpenEXR 32-bit linear**, single layer, ZIP compression, native dimensions, and profile-from-name enabled.
-9. Import into HDR Finisher and manually select **Display P3 Linear** if prompted.
+9. Import into HDR Finisher and manually select **Display P3 Linear**, **Linear**, and **1.0 = diffuse white (Affinity)** if prompted. The last setting converts Affinity's linear-RGB reference-white scale into HDR Finisher's `0.18 = 100 nits` scene-linear convention without moving either Exposure slider.
 
-Build 4646 did not write EXR chromaticities in this path, so Review is expected. Affinity’s linear Display P3 coordinates and HDR Finisher’s **Display P3 Linear** interpretation match.
+Build 4646 did not write EXR chromaticities, reference-white metadata, or an Affinity/Serif exporter identifier in this path, so HDR Finisher cannot detect the Affinity convention automatically and Review is expected. Affinity’s linear Display P3 coordinates and HDR Finisher’s **Display P3 Linear** interpretation match, while the explicit Affinity linear-reference choice supplies the otherwise missing signal scale.
 
 ### Why not 32-bit TIFF?
 

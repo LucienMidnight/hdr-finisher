@@ -156,7 +156,7 @@ The display-linear sRGB reference is the neutral base. Non-neutral Base Renditio
 
 - **Reinhard:** `x / (1 + x)`
 - **ACES:** compact rational approximation using coefficients `2.51, 0.03, 2.43, 0.59, 0.14`, normalized by its asymptote
-- **Filmic:** a log-exposure sigmoid passing through `0.18`, with separate shadow/highlight powers derived from Contrast and Skew
+- **Filmic:** a log-exposure sigmoid mapping scene-linear `0.18` (100-nit diffuse white) to `100/203` display-linear, with separate shadow/highlight powers derived from Contrast and Skew
 
 These are application operators. The “ACES” choice is not a complete ACES RRT/ODT and should not be documented as one.
 

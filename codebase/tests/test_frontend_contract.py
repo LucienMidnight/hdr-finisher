@@ -565,6 +565,7 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_fixed_hdr_curve_domain(
     assert "toneMap(sceneColor(rgb))" in shader
     assert "sdrPrimaries(sdrContrast(highlightRecovery(toneMap(sceneColor(rgb)))))" in shader
     assert "retoneMapSdrReference(rgb)" in shader
+    assert "let displayReferenceWhite = 100.0 / 203.0" in shader
     assert "if (value <= 0.18) { return 0.5 * pow(value / 0.18, 1.0 / log(100.0)); }" in shader
     assert "if (value <= 0.5) { return 0.18 * pow(2.0 * value, log(100.0)); }" in shader
     assert "log2(value / 0.18) / log2(100.0)" in shader
@@ -773,10 +774,13 @@ def test_export_format_dropdown_does_not_claim_a_provisional_or_alternative_rank
 
 
 def test_manual_source_interpretation_status_contract() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
     assert 'session.source.interpretation_mode === "manual"' in javascript
-    assert "Manual source interpretation applied: ${colorSpace} primaries + ${transfer} transfer." in javascript
+    assert "Manual source interpretation applied: ${colorSpace} primaries + ${transfer} transfer + ${reference}." in javascript
+    assert 'id="interpretation-linear-reference"' in html
+    assert 'value="diffuse_white_1_0">1.0 = diffuse white (Affinity)' in html
     assert "els.sourceSettingsNote.textContent = sourceInterpretationStatus(session);" in javascript
     assert "if (session.source.interpretation_mode === \"manual\") return sourceInterpretationStatus(session);" in javascript
 

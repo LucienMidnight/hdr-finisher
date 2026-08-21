@@ -53,7 +53,7 @@
           <span>RAW &amp; Lens Development</span>
         </button>
         <div id="raw-settings-panel" class="disclosure-content hidden">
-          <p class="helper">Convenience development uses as-shot white balance, AHD demosaic, linear ACES output, and no destructive LibRaw auto brightening or sharpening. Mosaiced RAW receives separate non-destructive HDR and photographic SDR starting exposures.</p>
+          <p class="helper">Convenience development uses as-shot white balance, AHD demosaic, linear ACES output, and no destructive LibRaw auto brightening or sharpening. The metered starting exposure remains an editable Tone adjustment and is not baked into decoded pixels.</p>
           <label>Lens correction
             <select id="lens-mode">
               <option value="off">Off</option>
@@ -107,6 +107,12 @@
               <option value="pq">PQ</option>
               <option value="hlg">HLG</option>
               <option value="srgb">sRGB</option>
+            </select>
+          </label>
+          <label>Linear Reference
+            <select id="interpretation-linear-reference">
+              <option value="scene_0_18">0.18 = diffuse white (scene-linear)</option>
+              <option value="diffuse_white_1_0">1.0 = diffuse white (Affinity)</option>
             </select>
           </label>
           <p id="source-settings-note" class="helper">Use Manual only when metadata is missing or you know the source pipeline.</p>

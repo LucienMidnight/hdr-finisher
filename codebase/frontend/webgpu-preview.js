@@ -1869,10 +1869,12 @@
         let basePower = 1.1 * clamp(p[13], 0.5, 1.5);
         let shadowPower = basePower * exp2(-0.75 * clamp(p[14], -1.0, 1.0));
         let highlightPower = basePower * exp2(0.75 * clamp(p[14], -1.0, 1.0));
-        let logExposure = log(max(y, 0.00000001) / 0.18);
+        let sceneMiddleGray = 0.18;
+        let displayReferenceWhite = 100.0 / 203.0;
+        let logExposure = log(max(y, 0.00000001) / sceneMiddleGray);
         let localPower = mix(shadowPower, highlightPower, smoothRange(-0.5, 0.5, logExposure));
-        let middleOdds = log(0.18 / 0.82);
-        mapped = select(0.0, 1.0 / (1.0 + exp(-clamp(middleOdds + localPower * logExposure, -32.0, 32.0))), y > 0.0);
+        let referenceOdds = log(displayReferenceWhite / (1.0 - displayReferenceWhite));
+        mapped = select(0.0, 1.0 / (1.0 + exp(-clamp(referenceOdds + localPower * logExposure, -32.0, 32.0))), y > 0.0);
       }
       return clamp(mapped, 0.0, 1.0);
     }
@@ -1888,10 +1890,11 @@
       if (p[12] < 0.5 && abs(p[13] - 1.0) < 0.000001 && abs(p[14]) < 0.000001) { return rgb; }
       let y = lumaSrgb(rgb);
       let boundedY = clamp(y, 0.0000001, 0.9999999);
-      let middleGray = 0.18;
-      let middleOdds = log(middleGray / (1.0 - middleGray));
-      let referenceOdds = log(boundedY / (1.0 - boundedY));
-      let sceneY = select(0.0, middleGray * exp(clamp((referenceOdds - middleOdds) / 1.1, -32.0, 32.0)), y > 0.0);
+      let sceneMiddleGray = 0.18;
+      let displayReferenceWhite = 100.0 / 203.0;
+      let displayReferenceOdds = log(displayReferenceWhite / (1.0 - displayReferenceWhite));
+      let encodedOdds = log(boundedY / (1.0 - boundedY));
+      let sceneY = select(0.0, sceneMiddleGray * exp(clamp((encodedOdds - displayReferenceOdds) / 1.1, -32.0, 32.0)), y > 0.0);
       let mapped = toneCurveLuma(sceneY);
       return clamp(select(vec3f(0.0), rgb * (mapped / max(y, 0.00000001)), y > 0.00000001), vec3f(0.0), vec3f(1.0));
     }

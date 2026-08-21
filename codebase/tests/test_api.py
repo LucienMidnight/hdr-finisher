@@ -550,23 +550,29 @@ def test_real_exr_interpretation_override_and_auto_reset_preserve_review_state()
 
     manual = client.post(
         f"/api/session/{session_id}/interpretation",
-        json={"color_space": "BT.2020", "transfer_function": "LINEAR"},
+        json={
+            "color_space": "BT.2020",
+            "transfer_function": "LINEAR",
+            "linear_reference": "diffuse_white_1_0",
+        },
     )
     assert manual.status_code == 200
     manual_session = manual.json()["session"]
     assert manual_session["source"]["filename"] == "linear_unconfirmed.exr"
     assert manual_session["source"]["interpretation_mode"] == "manual"
     assert manual_session["source"]["color_space_confident"] is True
+    assert manual_session["source"]["linear_reference"] == "diffuse_white_1_0"
     assert manual_session["analysis"]["classification"] == "HDR_LINEAR_UNCONFIRMED"
     assert manual_session["analysis"]["needs_color_override"] is True
 
     automatic = client.post(
         f"/api/session/{session_id}/interpretation",
-        json={"color_space": None, "transfer_function": None},
+        json={"color_space": None, "transfer_function": None, "linear_reference": None},
     )
     assert automatic.status_code == 200
     automatic_session = automatic.json()["session"]
     assert automatic_session["source"]["interpretation_mode"] == "auto"
+    assert automatic_session["source"]["linear_reference"] == "scene_0_18"
     assert automatic_session["source"]["color_space_confident"] is False
     assert automatic_session["analysis"]["needs_color_override"] is True
 
