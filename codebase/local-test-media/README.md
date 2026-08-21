@@ -2,7 +2,7 @@
 
 Put private or large source images used for hands-on testing in `inputs/`. Everything in this directory except this README is ignored by Git.
 
-Typical contents include personal HEIC captures, full-resolution EXRs, TIFF handoffs, and other media that is unsuitable as a small deterministic automated fixture. Generated exports and reports belong in `../output/`, while reusable procedures and findings belong in `../../docs/testing/`.
+Typical contents include personal HEIC captures, full-resolution EXRs, TIFF handoffs, and other media that is unsuitable as a small deterministic automated fixture. Generated exports and reports belong in `../output/`; keep reusable procedures and findings in local maintainer QA notes.
 
 Create the local input directory when needed:
 

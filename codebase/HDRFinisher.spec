@@ -12,7 +12,6 @@ datas = [
     ("../README.md", "."),
     ("../LICENSE", "."),
     ("../THIRD_PARTY_NOTICES.md", "."),
-    ("../docs/testing/Alpha_Manual_QA_Checklist.md", "docs"),
 ]
 
 imagecodecs_datas, imagecodecs_binaries, imagecodecs_hiddenimports = collect_all("imagecodecs")

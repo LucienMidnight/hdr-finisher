@@ -19,10 +19,9 @@ ai/
     user-guide/             Application behavior
     concepts/               HDR, formats, and color assumptions
     setup/                  OS/display guidance
-    testing/                Durable validation procedures and records
 ```
 
-Read `AGENTS.md` and [Testing and Validation](../testing/README.md) before relocating tests or evidence.
+Keep automated tests under `codebase/tests/`, private test media under `codebase/local-test-media/`, and generated evidence under `codebase/output/`.
 
 ## Environment
 
@@ -49,7 +48,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\run_alpha_qa.ps1
 
 The full alpha harness adds JavaScript syntax checks, capability reporting, real sample exports when encoders are present, metadata inspection, and browser layout/preview checks.
 
-Use [Automated Testing Index](../testing/Automated_Testing_Index.md) for requirement coverage and [Alpha Manual QA Checklist](../testing/Alpha_Manual_QA_Checklist.md) for physical display checks.
+Run the relevant suites under `codebase/tests/` for contributor-level verification. Physical HDR display checks remain a separate maintainer validation step.
 
 ## Change discipline for color work
 
@@ -69,7 +68,6 @@ Do not use screenshots alone to approve color math. Conversely, numerical equali
 - Small deterministic machine fixtures: `codebase/tests/fixtures/`
 - Private photographs/large EXRs: `codebase/local-test-media/inputs/`
 - Generated screenshots, exports, and reports: `codebase/output/`
-- Durable procedures and conclusions: `docs/testing/`
 
 Generated output is disposable and must not be the only copy of a conclusion.
 

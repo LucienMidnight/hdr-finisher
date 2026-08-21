@@ -116,7 +116,7 @@ The build produces an Apple Silicon `.app`, `.dmg`, `.zip`, and SHA-256 manifest
 4. Check the capability status in Export.
 5. On an HDR display, confirm the operating system and browser report HDR capability in the Technical panel.
 
-For contributor-level verification, use the [testing index](../testing/README.md).
+For contributor-level verification, run the relevant suites under `codebase/tests/`.
 
 ## Security and privacy boundary
 

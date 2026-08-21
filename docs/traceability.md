@@ -80,7 +80,7 @@ This index maps user-facing areas to their current state model, implementation, 
 | Hosting survival inspection | `test_hosting_probe.py` |
 | Folder picker behavior | `test_folder_picker.py` |
 
-Use [Automated Testing Index](testing/Automated_Testing_Index.md) for the maintained requirement-level inventory.
+Requirement-level coverage is maintained alongside the automated suites under `codebase/tests/`.
 
 ## Source of truth
 
@@ -88,7 +88,7 @@ When entries disagree, resolve them in this order:
 
 1. Active backend/frontend behavior and tests
 2. Reproducible generated evidence
-3. Durable validation records in `docs/testing/`
+3. Maintainer validation records
 4. This user manual
 5. Product requirements and design history
 6. Backup copies

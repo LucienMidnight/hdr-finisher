@@ -52,7 +52,7 @@ HDR Finisher uses Python 3.12+, FastAPI, NumPy, colour-science, Pillow, OpenEXR,
 
 To run the desktop shell from source, install the dependencies in `codebase/desktop` with `npm install`, then run `npm start`. Build Windows x64 artifacts with `codebase/tools/build_desktop.ps1`; build native Apple Silicon `.app`, `.dmg`, and `.zip` artifacts with `codebase/tools/build_desktop_macos.sh`. Both workflows package the Python sidecar first and write Electron artifacts to `codebase/dist-electron`.
 
-See [Architecture](docs/technical/architecture.md), [Development guide](docs/technical/development.md), and [Testing and validation](docs/testing/README.md).
+See [Architecture](docs/technical/architecture.md) and the [Development guide](docs/technical/development.md).
 
 ## Project status
 

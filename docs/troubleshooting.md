@@ -133,7 +133,7 @@ For JPEG Ultra HDR:
 - Raise Gain-map Quality.
 - Check whether the issue exists before hosting.
 - Inspect the original HDR and SDR alignment.
-- Use the JPEG Ultra HDR reliability procedure in `docs/testing/`.
+- Repeat the JPEG Ultra HDR reliability checks with a known-good source and decoder.
 
 ## Browse does not open a folder picker on macOS/Linux
 

@@ -7,7 +7,6 @@
 **Implementation commits:** `99e2395` (Phases 0/1), `fc929e6` (Phase 2)  
 **Related plan:** [Interactive Preview, Instant Scopes, and Image Pipeline Performance Sprint](Interactive_Preview_and_Scopes_Performance_Sprint_PRD.md)  
 **Related product requirements:** [HDR Finisher PRD v1.2](HDR_Finisher_PRD_v1.2.md)  
-**Validation records:** [Phase 0/1 validation](../testing/GPU_Local_Adjustments_Phase_0_1_Validation_2026-08-14.md), [Phase 2 validation](../testing/GPU_Local_Adjustments_Phase_2_Validation_2026-08-14.md), [Phase 3 validation](../testing/GPU_Local_Adjustments_Phase_3_Validation_2026-08-14.md), [Phase 4/5 validation](../testing/GPU_Local_Adjustments_Phase_4_5_Validation_2026-08-15.md)
 
 ## 1. Sprint outcome
 
@@ -538,7 +537,7 @@ npm.cmd run test:gpu-local-adjustments -- --url http://127.0.0.1:8765 --phase ph
 npm.cmd run test:gpu-local-adjustments -- --url http://127.0.0.1:8765 --phase phase3-final
 ```
 
-Generated JSON belongs under ignored `codebase/output/performance/`. Durable results belong in dated documents under `docs/testing/`.
+Generated JSON belongs under ignored `codebase/output/performance/`. Durable results belong in local maintainer QA notes.
 
 ## 13. Out of scope
 
@@ -598,4 +597,4 @@ As of this update, Phases 0–5 are implemented and validated for the automated 
 | Performance and scope parity harnesses | `codebase/tests/performance/gpu-local-adjustments.js`, `codebase/tests/gpu-scope-parity.js` |
 | GPU/CPU canvas parity | `codebase/tools/playwright_gpu_parity.js` |
 | Browser behavior regressions | `codebase/tests/luma-mask-interaction.js`, `local-adjustments-interaction.js`, `brush-mask-interaction.js`, `gradient-mask-interaction.js` |
-| Durable phase results | `docs/testing/GPU_Local_Adjustments_Phase_0_1_Validation_2026-08-14.md`, `GPU_Local_Adjustments_Phase_2_Validation_2026-08-14.md`, `GPU_Local_Adjustments_Phase_3_Validation_2026-08-14.md` |
+| Durable phase results | Retained in local maintainer QA notes |

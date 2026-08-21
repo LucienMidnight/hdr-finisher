@@ -2,7 +2,7 @@
 
 Run from ``codebase`` with the project virtual environment. Generated AVIFs and
 the JSON report belong under ignored ``output/``; durable conclusions belong in
-``docs/testing`` and the export documentation.
+local maintainer QA notes and the export documentation.
 """
 
 from __future__ import annotations

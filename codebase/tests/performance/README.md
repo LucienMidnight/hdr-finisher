@@ -31,5 +31,4 @@ node tools/playwright_gpu_parity.js test-pattern output/performance/gpu-local-ph
 ```
 
 Generated JSON is written below `output/performance/`. Durable conclusions and
-the exact percentile method belong in the dated validation record under
-`docs/testing/`.
+the exact percentile method belong in local maintainer QA notes.

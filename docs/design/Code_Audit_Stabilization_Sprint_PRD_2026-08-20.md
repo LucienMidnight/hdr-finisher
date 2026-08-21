@@ -1,8 +1,7 @@
 # Code Audit Stabilization Sprint PRD
 
 **Status:** Approved; code implementation completed on August 20, 2026. Physical-device and full-corpus
-exit gates remain pending. The validation record is maintained in
-[Extended Formats and Media Browser Validation](../testing/Extended_Formats_and_Media_Browser.md).
+exit gates remain pending. The supporting validation record is maintained in local QA notes.
 
 **Date:** August 20, 2026
 **Audit branch:** `codex/jpeg-xl-raw-browser` at `fdf6633`

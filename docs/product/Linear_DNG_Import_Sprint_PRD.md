@@ -4,7 +4,6 @@
 **Prepared:** 2026-08-20<br>
 **Target branch:** `explore/linear-dng-large-import`
 **Production code status:** Implemented on `explore/linear-dng-large-import`; compatibility sign-off remains evidence-gated
-**Related investigation:** [Linear DNG Import Feasibility — 2026-08-20](../testing/Linear_DNG_Import_Feasibility_2026-08-20.md)
 
 ## Executive outcome
 
@@ -547,7 +546,7 @@ Run the targeted tests during development and the full suite before handoff. At 
 
 ## Manual validation matrix
 
-Store the durable procedure/results in `docs/testing/`; put disposable previews and measurements in `codebase/output/linear-dng/`.
+Store durable procedures and results in local maintainer QA notes; put disposable previews and measurements in `codebase/output/linear-dng/`.
 
 | Input | Expected route/result | Required checks |
 |---|---|---|
@@ -634,13 +633,13 @@ The neutral DxO and Lightroom HDR renders described above are needed before fina
 
 Use this in a clean task:
 
-> Work on branch `explore/linear-dng-large-import`. Read `docs/product/Linear_DNG_Import_Sprint_PRD.md`, `docs/testing/Linear_DNG_Import_Feasibility_2026-08-20.md`, `AGENTS.md`, and `docs/testing/README.md` completely before editing. Implement the Experimental DNG Import sprint in staged, reviewable commits. Preserve all unrelated and untracked user files. First copy (never move) the private samples and references identified by the sprint into `codebase/local-test-media/inputs/linear-dng/`, create a local-only role/hash manifest there, and prove with `git check-ignore` and `git status` that no private media can be committed. Use those copies for all manual/local validation and make their absence a clean test skip. Implement standard OpcodeList3 GainMap and WarpRectilinear in the initial scope; audit rawpy/LibRaw behavior and apply each mandatory correction exactly once at the DNG-required stage. Remember that the supplied DJI single-frame DNGs require both operations, while the Lightroom HDR merge has already baked them and must receive neither. Start production work by validating the contracts and DNG 1.7.1 color/opcode equations, then implement the metadata-only classifier, resource preflight, both color paths, bounded opcode engine and decoder, loader/RAW routing, transactional error handling, experimental UI labeling, and tests. Do not commit private/large source images, do not accept reduced Fast Load proxies as primaries, and do not claim visual sign-off without neutral producer references. Run targeted tests throughout and the full suite before handoff; update the durable validation log with evidence and remaining limitations.
+> Work on branch `explore/linear-dng-large-import`. Read `docs/product/Linear_DNG_Import_Sprint_PRD.md` completely before editing. Implement the Experimental DNG Import sprint in staged, reviewable commits. Preserve all unrelated and untracked user files. First copy (never move) the private samples and references identified by the sprint into `codebase/local-test-media/inputs/linear-dng/`, create a local-only role/hash manifest there, and prove with `git check-ignore` and `git status` that no private media can be committed. Use those copies for all manual/local validation and make their absence a clean test skip. Implement standard OpcodeList3 GainMap and WarpRectilinear in the initial scope; audit rawpy/LibRaw behavior and apply each mandatory correction exactly once at the DNG-required stage. Remember that the supplied DJI single-frame DNGs require both operations, while the Lightroom HDR merge has already baked them and must receive neither. Start production work by validating the contracts and DNG 1.7.1 color/opcode equations, then implement the metadata-only classifier, resource preflight, both color paths, bounded opcode engine and decoder, loader/RAW routing, transactional error handling, experimental UI labeling, and tests. Do not commit private/large source images, do not accept reduced Fast Load proxies as primaries, and do not claim visual sign-off without neutral producer references. Run targeted tests throughout and the full suite before handoff; record evidence and remaining limitations in local maintainer QA notes.
 
 ## Existing exploration assets
 
 - Feasibility probe: `codebase/tools/linear_dng_probe.py`
 - Probe tests: `codebase/tests/test_linear_dng_probe.py`
-- Findings: `docs/testing/Linear_DNG_Import_Feasibility_2026-08-20.md`
+- Findings: retained in local maintainer QA notes
 - Diagnostic preview, not a color reference: `codebase/output/linear-dng/dji-0071-2-hdr-preview.png`
 - Existing integration points: `codebase/backend/hdr_finisher/loader.py`, `raw_import.py`, and `sessions.py`
 

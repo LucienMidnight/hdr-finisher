@@ -37,7 +37,7 @@ Affinity’s default linear wsRGB is not a supported manual source space in HDR 
 
 ## Adobe Lightroom Classic (HDR Output)
 
-**Status: Recipes A and B hands-on tested and validated; Recipe B has one critical export setting.** Lightroom Classic 13/14’s HDR Output feature (`Develop > Basics > HDR`) is real scene-referred HDR editing, not a preview trick. Official background: [Edit and Export in HDR — Lightroom Classic](https://helpx.adobe.com/lightroom-classic/desktop/process-and-develop-photos/hdr-output.html). Findings below are from a real round trip on 2026-08-17; full detail in [Source Export Validation Log](../testing/Source_Export_Validation_Log.md).
+**Status: Recipes A and B hands-on tested and validated; Recipe B has one critical export setting.** Lightroom Classic 13/14’s HDR Output feature (`Develop > Basics > HDR`) is real scene-referred HDR editing, not a preview trick. Official background: [Edit and Export in HDR — Lightroom Classic](https://helpx.adobe.com/lightroom-classic/desktop/process-and-develop-photos/hdr-output.html). Findings below are from a real round trip on 2026-08-17.
 
 **Important — the "Maximize Compatibility" checkbox behaves oppositely for the two recipes below.** For AVIF, Adobe's own docs say it's required to get the gain map written at all. For TIFF, hands-on testing found the opposite: with it checked, Lightroom silently normalizes/clamps its internal HDR data into a bounded `[0,1]` range before writing the file, discarding real headroom; unchecked, the TIFF carries genuine unbounded scene-linear data. Same checkbox, opposite correct setting per format — get this wrong and Recipe B silently produces an SDR-bounded file that still claims to be 32-bit float HDR.
 
@@ -134,7 +134,7 @@ If you want to use PhotoLab’s denoise/optics correction as a pre-pass ahead of
 
 ### A note on the experimental linear DNG path
 
-PhotoLab’s **linear DNG** export can now enter HDR Finisher's experimental DNG/RAW convenience path, but this is not yet a validated PhotoLab HDR workflow. No tone curve should mean the samples retain scene-linear headroom, but real PhotoLab exports still need inspection for populated color matrices, illuminant, as-shot neutral, black/white levels, baseline exposure, and unexpected display rendering. Keep Lensfun Off when PhotoLab already applied optics corrections, and compare against a known float/HDR reference before trusting the result. The older [DNG research questions](../testing/Codebase_Review_Cleanup_and_Round_Trip_Sprint.md#55-dng-research-questions) remain the acceptance checklist rather than a claim that all DNG variants are supported.
+PhotoLab’s **linear DNG** export can now enter HDR Finisher's experimental DNG/RAW convenience path, but this is not yet a validated PhotoLab HDR workflow. No tone curve should mean the samples retain scene-linear headroom, but real PhotoLab exports still need inspection for populated color matrices, illuminant, as-shot neutral, black/white levels, baseline exposure, and unexpected display rendering. Keep Lensfun Off when PhotoLab already applied optics corrections, and compare against a known float/HDR reference before trusting the result. These checks remain acceptance criteria rather than a claim that all DNG variants are supported.
 
 ## Other applications
 
@@ -161,4 +161,4 @@ Do not promote an untested recipe to “validated” based only on a visually pl
 - [ ] No accidental premultiplication/channel ambiguity
 - [ ] HDR Finisher interpretation matches the export exactly
 
-Durable validation observations belong in [Source Export Validation Log](../testing/Source_Export_Validation_Log.md).
+Keep durable validation observations in local maintainer QA notes.

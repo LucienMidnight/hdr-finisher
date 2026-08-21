@@ -40,8 +40,7 @@ Documentation reflects the active implementation as of **August 12, 2026**. Brow
 
 1. [Architecture](technical/architecture.md)
 2. [Development guide](technical/development.md)
-3. [Testing and validation](testing/README.md)
-4. [Documentation maintenance](contributing/documentation.md)
+3. [Documentation maintenance](contributing/documentation.md)
 
 ## User manual
 
@@ -75,7 +74,6 @@ Documentation reflects the active implementation as of **August 12, 2026**. Brow
 - [Product requirements](product/HDR_Finisher_PRD_v1.2.md) — historical intent and planning, not the user manual
 - [Interactive preview and scopes performance sprint](product/Interactive_Preview_and_Scopes_Performance_Sprint_PRD.md) — implementation plan, performance budgets, and acceptance gates
 - [Design work](design/README.md)
-- [Testing and validation](testing/README.md)
 
 ## How to read status language
 

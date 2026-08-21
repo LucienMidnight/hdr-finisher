@@ -18,6 +18,7 @@ Thumbs.db
 # Local Codex repository instructions
 AGENTS.md
 design-qa.md
+docs/testing/
 
 # Build / runtime outputs
 codebase/exports/
