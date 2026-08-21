@@ -913,6 +913,16 @@ class ExportSettings(BaseModel):
     quality: int = Field(default=85, ge=1, le=100)
     jpeg_gain_map_quality: int = Field(default=100, ge=1, le=100)
     jpeg_gain_map_scale: Literal["full", "half"] = "full"
+    jpeg_chroma_subsampling: Literal["420", "422", "444"] = "420"
+    avif_bit_depth: Literal[8, 10, 12] = 10
+    avif_chroma_subsampling: Literal["420", "422", "444"] = "420"
+    avif_gain_map_chroma_subsampling: Literal["400", "420", "422", "444"] = "444"
+    avif_gain_map_quality: int | None = Field(default=None, ge=1, le=100)
+    avif_gain_map_scale: Literal["full", "half"] = "full"
+    sdr_png_bit_depth: Literal[8, 16] = 8
+    jpegxl_precision: Literal["uint10", "uint12", "uint16", "float16", "float32"] = "uint12"
+    dithering: Literal["auto", "off", "subtle"] = "auto"
+    metadata_policy: Literal["none", "copyright", "all_except_location", "all_including_location"] = "none"
     output_path: str | None = None
     path_grant: str | None = None
     overwrite: bool = False
@@ -978,6 +988,14 @@ class ProofArtifactRequest(BaseModel):
     quality: int = Field(default=90, ge=1, le=100)
     jpeg_gain_map_quality: int = Field(default=100, ge=1, le=100)
     jpeg_gain_map_scale: Literal["full", "half"] = "full"
+    jpeg_chroma_subsampling: Literal["420", "422", "444"] = "420"
+    avif_bit_depth: Literal[8, 10, 12] = 10
+    avif_chroma_subsampling: Literal["420", "422", "444"] = "420"
+    avif_gain_map_chroma_subsampling: Literal["400", "420", "422", "444"] = "444"
+    avif_gain_map_quality: int | None = Field(default=None, ge=1, le=100)
+    avif_gain_map_scale: Literal["full", "half"] = "full"
+    jpegxl_precision: Literal["uint10", "uint12", "uint16", "float16", "float32"] = "uint12"
+    dithering: Literal["auto", "off", "subtle"] = "auto"
     long_edge: int = Field(default=1200, ge=256, le=1600)
     output_finishing: OutputFinishingSettings = Field(default_factory=OutputFinishingSettings)
 

@@ -165,6 +165,14 @@
             quality: Number(els.exportQuality.value) || 85,
             jpeg_gain_map_quality: Number(els.jpegGainMapQuality.value) || 100,
             jpeg_gain_map_scale: els.jpegGainMapScale.value || "full",
+            jpeg_chroma_subsampling: els.jpegUltrahdrChromaSubsampling.value || "420",
+            avif_bit_depth: Number(els.avifBitDepth.value) || 10,
+            avif_chroma_subsampling: els.avifChromaSubsampling.value || "420",
+            avif_gain_map_chroma_subsampling: els.avifGainMapChromaSubsampling.value || "444",
+            avif_gain_map_quality: Number(els.avifGainMapQuality.value) || Number(els.exportQuality.value) || 85,
+            avif_gain_map_scale: els.avifGainMapScale.value || "full",
+            jpegxl_precision: els.jpegxlPrecision.value || "uint12",
+            dithering: els.exportDithering.disabled ? "off" : els.exportDithering.value || "auto",
             long_edge: Math.min(1200, state.session.preview?.long_edge || 1200),
           }),
         });
@@ -407,7 +415,7 @@
   }
 
   function reviewExportFormat(format) {
-    if (format === "sdr_png") return;
+    if (["sdr_jpeg", "sdr_png", "sdr_jpegxl"].includes(format)) return;
     const label = {
       avif_gain_map: "AVIF + gain map",
       jpeg_ultrahdr: "JPEG Ultra HDR",

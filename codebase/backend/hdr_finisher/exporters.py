@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 import subprocess
+import zlib
 
 import numpy as np
 
@@ -16,7 +17,13 @@ from .color import acescg_to_linear_bt2020
 from .config import EXPORTS_DIR, SAMPLES_DIR
 from .finishing import apply_output_finishing
 from .models import AdjustmentState, CapabilityInfo, CapabilityStatus, ExportResponse, ExportSettings, PreviewKind
-from .jpegxl import JPEGXLError, encode_hdr_jpegxl, validate_jpegxl
+from .jpegxl import (
+    JPEGXLError,
+    encode_hdr_jpegxl,
+    encode_sdr_jpegxl,
+    validate_jpegxl,
+    validate_sdr_jpegxl,
+)
 from .test_pattern import build_hdr_test_pattern
 
 
@@ -91,12 +98,100 @@ class SDRPNGExportBackend(ExportBackend):
         _require_overwrite_permission(Path(output_path), settings)
         finishing_adjustments = _finishing_adjustments_for_export(session)
         image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
-        _write_sdr_png(Path(output_path), image)
+        _write_sdr_png(
+            Path(output_path),
+            image,
+            bit_depth=settings.sdr_png_bit_depth,
+            dithering=settings.dithering,
+            exif_payload=_source_exif_payload(session, settings.metadata_policy),
+        )
         return ExportResponse(
             accepted=True,
             backend=self.name,
             message=f"SDR PNG exported to {output_path}",
             output_path=output_path,
+        )
+
+
+class SDRJPEGExportBackend(ExportBackend):
+    name = "sdr_jpeg"
+
+    def export(self, session: object, settings: ExportSettings) -> ExportResponse:
+        if self.capability.status != CapabilityStatus.AVAILABLE:
+            return ExportResponse(accepted=False, backend=self.name, message=self.capability.detail)
+
+        output_path = _resolve_output_path(getattr(session, "session_id", "session"), settings, ".jpg")
+        _require_overwrite_permission(Path(output_path), settings)
+        finishing_adjustments = _finishing_adjustments_for_export(session)
+        image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
+        try:
+            _write_sdr_jpeg(
+                Path(output_path),
+                image,
+                quality=settings.quality,
+                chroma_subsampling=settings.jpeg_chroma_subsampling,
+                dithering=settings.dithering,
+                exif_payload=_source_exif_payload(session, settings.metadata_policy),
+            )
+        except (ExportProcessError, OSError, ValueError) as exc:
+            return ExportResponse(
+                accepted=False,
+                backend=self.name,
+                message=f"SDR JPEG export failed: {exc}",
+                output_path=output_path,
+            )
+        return ExportResponse(
+            accepted=True,
+            backend=self.name,
+            message=f"SDR JPEG exported to {output_path}",
+            output_path=output_path,
+        )
+
+
+class SDRJPEGXLExportBackend(ExportBackend):
+    """Encode the authored SDR branch as conventional 8-bit sRGB JPEG XL."""
+
+    name = "sdr_jpegxl"
+
+    def export(self, session: object, settings: ExportSettings) -> ExportResponse:
+        if self.capability.status != CapabilityStatus.AVAILABLE:
+            return ExportResponse(accepted=False, backend=self.name, message=self.capability.detail)
+        output_path = Path(_resolve_output_path(getattr(session, "session_id", "session"), settings, ".jxl"))
+        _require_overwrite_permission(output_path, settings)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        finishing_adjustments = _finishing_adjustments_for_export(session)
+        sdr_image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
+        staged_output: Path | None = None
+        try:
+            payload = encode_sdr_jpegxl(
+                sdr_image,
+                int(settings.quality),
+                dithering=settings.dithering,
+                exif_payload=_source_exif_payload(session, settings.metadata_policy),
+            )
+            validation = validate_sdr_jpegxl(payload, sdr_image.shape[:2])
+            with NamedTemporaryFile(
+                prefix=f".{output_path.stem}.", suffix=".sdr.tmp.jxl", dir=output_path.parent, delete=False
+            ) as staged_file:
+                staged_output = Path(staged_file.name)
+                staged_file.write(payload)
+                staged_file.flush()
+                os.fsync(staged_file.fileno())
+            os.replace(staged_output, output_path)
+            staged_output = None
+        except (JPEGXLError, OSError, ValueError) as exc:
+            _remove_incomplete_output(staged_output)
+            return ExportResponse(
+                accepted=False,
+                backend=self.name,
+                message=f"JPEG XL SDR export failed: {exc}",
+                output_path=str(output_path),
+            )
+        return ExportResponse(
+            accepted=True,
+            backend=self.name,
+            message=f"JPEG XL SDR exported to {output_path}. {validation}",
+            output_path=str(output_path),
         )
 
 
@@ -132,21 +227,31 @@ class AVIFGainMapExportBackend(ExportBackend):
                 staged_output = Path(staged_file.name)
             with TemporaryDirectory(prefix="hdr_finisher_export_") as temp_dir_name:
                 temp_dir = Path(temp_dir_name)
-                base_path = temp_dir / "base.png"
+                base_y4m_path = temp_dir / "base_sdr.y4m"
                 hdr_y4m_path = temp_dir / "alternate_hdr.y4m"
                 hdr_avif_path = temp_dir / "alternate_hdr.avif"
 
-                _write_sdr_png(base_path, sdr_image)
-                _write_hdr_y4m(hdr_y4m_path, hdr_image)
+                _write_sdr_y4m(
+                    base_y4m_path,
+                    sdr_image,
+                    bit_depth=settings.avif_bit_depth,
+                    chroma_subsampling=settings.avif_chroma_subsampling,
+                    dithering=settings.dithering,
+                )
+                _write_hdr_y4m(
+                    hdr_y4m_path,
+                    hdr_image,
+                    bit_depth=settings.avif_bit_depth,
+                    # Gain-map computation needs an unreduced HDR reference.
+                    # The selected chroma still controls the delivered base and
+                    # final primary item below.
+                    chroma_subsampling="444",
+                )
                 _run_command(
                     [
                         str(avifenc),
                         "--cicp",
                         "9/16/9",
-                        "-d",
-                        "10",
-                        "-y",
-                        "444",
                         "-q",
                         str(int(settings.quality)),
                         str(hdr_y4m_path),
@@ -157,24 +262,37 @@ class AVIFGainMapExportBackend(ExportBackend):
                     [
                         str(gainmaputil),
                         "combine",
-                        str(base_path),
+                        str(base_y4m_path),
                         str(hdr_avif_path),
                         str(staged_output),
                         "--cicp-base",
-                        "1/13/0",
+                        "1/13/1",
                         "--cicp-alternate",
                         "9/16/9",
                         "--depth-gain-map",
                         "10",
+                        "--yuv-gain-map",
+                        settings.avif_gain_map_chroma_subsampling,
                         "--qgain-map",
-                        str(int(settings.quality)),
+                        str(int(settings.avif_gain_map_quality or settings.quality)),
+                        "--downscaling",
+                        "1" if settings.avif_gain_map_scale == "full" else "2",
                         "--max-headroom",
                         "0",
                         "-q",
                         str(int(settings.quality)),
+                        "-d",
+                        str(settings.avif_bit_depth),
+                        "-y",
+                        settings.avif_chroma_subsampling,
                     ]
                 )
-            validation = _validate_avif_output(staged_output)
+            validation = _validate_avif_output(
+                staged_output,
+                expected_bit_depth=settings.avif_bit_depth,
+                expected_chroma=settings.avif_chroma_subsampling,
+                expected_gain_map_chroma=settings.avif_gain_map_chroma_subsampling,
+            )
             os.replace(staged_output, output_path)
             staged_output = None
         except (ExportProcessError, OSError, ValueError) as exc:
@@ -230,13 +348,26 @@ class JPEGUltraHDRExportBackend(ExportBackend):
                 temp_dir = Path(temp_dir_name)
                 hdr_raw_path = temp_dir / "hdr_bt2020_linear_rgba_f16.raw"
                 sdr_raw_path = temp_dir / "sdr_srgb_rgba8888.raw"
+                sdr_jpeg_path = temp_dir / "sdr_primary.jpg"
+                exif_payload = _source_exif_payload(session, settings.metadata_policy)
+                exif_path = _write_temporary_exif(temp_dir, exif_payload)
                 _write_hdr_linear_rgba_f16(hdr_raw_path, hdr_image)
-                _write_sdr_rgba8888(sdr_raw_path, sdr_image)
+                _write_sdr_rgba8888(sdr_raw_path, sdr_image, dithering=settings.dithering)
+                _write_sdr_jpeg(
+                    sdr_jpeg_path,
+                    sdr_image,
+                    quality=int(settings.quality),
+                    chroma_subsampling=settings.jpeg_chroma_subsampling,
+                    dithering=settings.dithering,
+                    exif_payload=exif_payload,
+                )
                 command = _build_ultrahdr_encode_command(
                     ultrahdr_app,
                     hdr_raw_path,
                     sdr_raw_path,
                     staged_output,
+                    sdr_jpeg_path=sdr_jpeg_path,
+                    exif_path=exif_path,
                     width=int(hdr_image.shape[1]),
                     height=int(hdr_image.shape[0]),
                     quality=int(settings.quality),
@@ -267,7 +398,7 @@ class JPEGUltraHDRExportBackend(ExportBackend):
 
 
 class JPEGXLHDRExportBackend(ExportBackend):
-    """Encode a direct-HDR 12-bit Rec.2020 PQ JPEG XL container."""
+    """Encode direct-HDR Rec.2020 PQ JPEG XL at the selected precision."""
 
     name = "jpegxl_hdr"
 
@@ -281,8 +412,15 @@ class JPEGXLHDRExportBackend(ExportBackend):
         hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
         staged_output: Path | None = None
         try:
-            payload = encode_hdr_jpegxl(hdr_image, int(settings.quality))
-            validation = validate_jpegxl(payload, hdr_image.shape[:2])
+            payload = encode_hdr_jpegxl(
+                hdr_image,
+                int(settings.quality),
+                settings.jpegxl_precision,
+                exif_payload=_source_exif_payload(session, settings.metadata_policy),
+            )
+            validation = validate_jpegxl(
+                payload, hdr_image.shape[:2], settings.jpegxl_precision
+            )
             with NamedTemporaryFile(
                 prefix=f".{output_path.stem}.", suffix=".tmp.jxl", dir=output_path.parent, delete=False
             ) as staged_file:
@@ -330,25 +468,98 @@ def _require_overwrite_permission(output_path: Path, settings: ExportSettings) -
         raise ExportOverwriteRequired(output_path)
 
 
-def _write_sdr_png(path: Path, image: np.ndarray) -> None:
+def _write_sdr_png(
+    path: Path,
+    image: np.ndarray,
+    *,
+    bit_depth: int = 8,
+    dithering: str = "off",
+    exif_payload: bytes | None = None,
+) -> None:
+    if bit_depth == 8:
+        try:
+            from PIL import Image
+        except ImportError as exc:
+            raise ExportProcessError("Pillow is required to write SDR export intermediates.") from exc
+        save_options = {"format": "PNG"}
+        if exif_payload:
+            save_options["exif"] = exif_payload
+        Image.fromarray(_linear_to_srgb8(image, dither=dithering)).save(path, **save_options)
+        return
+    if bit_depth != 16:
+        raise ValueError(f"Unsupported SDR PNG bit depth: {bit_depth}")
+    try:
+        import imagecodecs
+
+        payload = bytes(imagecodecs.png_encode(_linear_to_srgb16(image)))
+    except Exception as exc:
+        raise ExportProcessError(f"The 16-bit SDR PNG encoder failed: {exc}") from exc
+    if exif_payload:
+        payload = _png_with_exif(payload, exif_payload)
+    path.write_bytes(payload)
+
+
+def _write_sdr_jpeg(
+    path: Path,
+    image: np.ndarray,
+    *,
+    quality: int,
+    chroma_subsampling: str = "420",
+    dithering: str = "off",
+    exif_payload: bytes | None = None,
+) -> None:
     try:
         from PIL import Image
     except ImportError as exc:
-        raise ExportProcessError("Pillow is required to write SDR export intermediates.") from exc
+        raise ExportProcessError("Pillow is required to write SDR exports.") from exc
 
-    image_8bit = _linear_to_srgb8(image)
-    Image.fromarray(image_8bit).save(path, format="PNG")
+    height, width = image.shape[:2]
+    # Pillow's bundled libjpeg-turbo deliberately reserves a small margin below
+    # JPEG's 16-bit SOF limit (65,535), and reports JPEG_MAX_DIMENSION as 65,500.
+    max_dimension = 65_500
+    if width > max_dimension or height > max_dimension:
+        raise ExportProcessError(
+            f"SDR JPEG supports dimensions up to {max_dimension:,} pixels with the bundled encoder; "
+            f"the finished image is {width:,} x {height:,}. Resize the export or use SDR PNG."
+        )
+
+    image_8bit = _linear_to_srgb8(image[..., :3], dither=dithering)
+    subsampling_values = {"420": 2, "422": 1, "444": 0}
+    try:
+        pillow_subsampling = subsampling_values[chroma_subsampling]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported JPEG chroma subsampling: {chroma_subsampling}") from exc
+    try:
+        save_options = {
+            "format": "JPEG",
+            "quality": int(quality),
+            "subsampling": pillow_subsampling,
+        }
+        if exif_payload:
+            save_options["exif"] = exif_payload
+        Image.fromarray(image_8bit).save(path, **save_options)
+    except OSError as exc:
+        raise ExportProcessError(f"The SDR JPEG encoder could not write {width:,} x {height:,} pixels: {exc}") from exc
 
 
-def _linear_to_srgb8(image: np.ndarray, *, dither: bool = False) -> np.ndarray:
+def _linear_to_srgb8(image: np.ndarray, *, dither: bool | str = False) -> np.ndarray:
     clipped = np.clip(image.astype(np.float32, copy=False), 0.0, 1.0)
     srgb = np.where(clipped <= 0.0031308, clipped * 12.92, 1.055 * np.power(clipped, 1.0 / 2.4) - 0.055)
-    if dither:
-        _dither_srgb_in_place(srgb)
+    dither_mode = "auto" if dither is True else "off" if dither is False else str(dither)
+    if dither_mode != "off":
+        _dither_srgb_in_place(srgb, amplitude_lsb=0.5 if dither_mode == "subtle" else 1.0)
     return np.clip(np.round(srgb * 255.0), 0.0, 255.0).astype(np.uint8)
 
 
-def _dither_srgb_in_place(srgb: np.ndarray, *, chunk_rows: int = 256) -> None:
+def _linear_to_srgb16(image: np.ndarray) -> np.ndarray:
+    clipped = np.clip(image.astype(np.float32, copy=False), 0.0, 1.0)
+    srgb = np.where(clipped <= 0.0031308, clipped * 12.92, 1.055 * np.power(clipped, 1.0 / 2.4) - 0.055)
+    return np.clip(np.round(srgb * 65535.0), 0.0, 65535.0).astype(np.uint16)
+
+
+def _dither_srgb_in_place(
+    srgb: np.ndarray, *, amplitude_lsb: float = 1.0, chunk_rows: int = 256
+) -> None:
     """Apply decorrelated, repeatable one-LSB RGB dither with bounded scratch memory."""
     height, width, channel_count = srgb.shape
     x = np.arange(width, dtype=np.uint32)[None, :]
@@ -361,15 +572,78 @@ def _dither_srgb_in_place(srgb: np.ndarray, *, chunk_rows: int = 256) -> None:
             value ^= value >> np.uint32(16)
             value *= np.uint32(0x7FEB352D)
             value ^= value >> np.uint32(15)
-            noise = ((value & np.uint32(0xFFFF)).astype(np.float32) / np.float32(65535.0) - 0.5) * (2.0 / 255.0)
+            noise = (
+                ((value & np.uint32(0xFFFF)).astype(np.float32) / np.float32(65535.0) - 0.5)
+                * np.float32((2.0 * amplitude_lsb) / 255.0)
+            )
             srgb[row_start:row_end, :, channel] += noise
 
 
-def _write_sdr_rgba8888(path: Path, image: np.ndarray) -> None:
+def _source_exif_payload(session: object, policy: str) -> bytes | None:
+    """Return privacy-filtered source EXIF without touching required codec signaling."""
+
+    if policy == "none":
+        return None
+    try:
+        from PIL import Image
+
+        source_path = Path(getattr(session, "source_path"))
+        with Image.open(source_path) as source:
+            source_exif = source.getexif()
+        if policy == "copyright":
+            filtered = Image.Exif()
+            for tag in (315, 33432):  # Artist, Copyright
+                if source_exif.get(tag):
+                    filtered[tag] = source_exif[tag]
+        else:
+            filtered = Image.Exif()
+            filtered.load(source_exif.tobytes())
+            # Pixels have already been normalized to display orientation; carrying
+            # the source orientation would rotate the finished export a second time.
+            for tag in (256, 257, 273, 274, 279):
+                filtered.pop(tag, None)
+            if policy == "all_except_location":
+                filtered.pop(34853, None)  # GPSInfo IFD
+        payload = filtered.tobytes()
+        return payload if len(filtered) else None
+    except (AttributeError, OSError, TypeError, ValueError):
+        return None
+
+
+def _write_temporary_exif(directory: Path, payload: bytes | None) -> Path | None:
+    if not payload:
+        return None
+    path = directory / "source.exif"
+    path.write_bytes(payload)
+    return path
+
+
+def _png_with_exif(payload: bytes, exif_payload: bytes) -> bytes:
+    signature = b"\x89PNG\r\n\x1a\n"
+    if not payload.startswith(signature):
+        raise ExportProcessError("The 16-bit PNG encoder returned an invalid stream.")
+    tiff_payload = exif_payload[6:] if exif_payload.startswith(b"Exif\x00\x00") else exif_payload
+    chunk_type = b"eXIf"
+    chunk = (
+        len(tiff_payload).to_bytes(4, "big")
+        + chunk_type
+        + tiff_payload
+        + (zlib.crc32(chunk_type + tiff_payload) & 0xFFFFFFFF).to_bytes(4, "big")
+    )
+    offset = len(signature)
+    while offset + 12 <= len(payload):
+        length = int.from_bytes(payload[offset : offset + 4], "big")
+        if payload[offset + 4 : offset + 8] == b"IEND":
+            return payload[:offset] + chunk + payload[offset:]
+        offset += 12 + length
+    raise ExportProcessError("The 16-bit PNG stream is missing its IEND chunk.")
+
+
+def _write_sdr_rgba8888(path: Path, image: np.ndarray, *, dithering: str = "auto") -> None:
     # Ultra HDR has an 8-bit JPEG base and an 8-bit gain map. A small,
     # deterministic signal-domain dither prevents long quantization plateaus
     # in smooth gradients before libultrahdr derives and compresses the map.
-    rgb = _linear_to_srgb8(image[..., :3], dither=True)
+    rgb = _linear_to_srgb8(image[..., :3], dither=dithering)
     alpha = np.full((*rgb.shape[:2], 1), 255, dtype=np.uint8)
     rgba = np.concatenate([rgb, alpha], axis=-1)
     path.write_bytes(rgba.tobytes(order="C"))
@@ -411,6 +685,8 @@ def _build_ultrahdr_encode_command(
     sdr_raw_path: Path,
     output_path: Path,
     *,
+    sdr_jpeg_path: Path | None = None,
+    exif_path: Path | None = None,
     width: int,
     height: int,
     quality: int,
@@ -426,7 +702,7 @@ def _build_ultrahdr_encode_command(
         raise ValueError("Ultra HDR gain-map quality must be between 1 and 100.")
     if gain_map_scale not in {"full", "half"}:
         raise ValueError("Ultra HDR gain-map scale must be 'full' or 'half'.")
-    return [
+    command = [
         str(ultrahdr_app),
         "-m",
         "0",
@@ -462,9 +738,13 @@ def _build_ultrahdr_encode_command(
         "1",
         "-L",
         _format_cli_float(float(np.clip(target_peak_nits, 203.0, 10000.0))),
-        "-z",
-        str(output_path),
     ]
+    if sdr_jpeg_path is not None:
+        command.extend(["-i", str(sdr_jpeg_path)])
+    if exif_path is not None:
+        command.extend(["-x", str(exif_path)])
+    command.extend(["-z", str(output_path)])
+    return command
 
 
 @dataclass(frozen=True)
@@ -532,29 +812,105 @@ def _remove_incomplete_output(path: Path | None) -> None:
         pass
 
 
-def _write_hdr_y4m(path: Path, image: np.ndarray) -> None:
-    yuv10 = _linear_to_bt2020_pq_yuv10(image)
-    height, width = yuv10.shape[:2]
-    header = f"YUV4MPEG2 W{width} H{height} F1:1 Ip A1:1 C444p10 XYSCSS=444P10\n".encode("ascii")
+def _write_sdr_y4m(
+    path: Path,
+    image: np.ndarray,
+    *,
+    bit_depth: int,
+    chroma_subsampling: str,
+    dithering: str = "off",
+) -> None:
+    if bit_depth not in {8, 10, 12}:
+        raise ValueError(f"Unsupported AVIF bit depth: {bit_depth}")
+    clipped = np.clip(image.astype(np.float32, copy=False), 0.0, 1.0)
+    srgb = np.where(clipped <= 0.0031308, clipped * 12.92, 1.055 * np.power(clipped, 1.0 / 2.4) - 0.055)
+    if bit_depth == 8 and dithering != "off":
+        _dither_srgb_in_place(srgb, amplitude_lsb=0.5 if dithering == "subtle" else 1.0)
+
+    r, g, b = srgb[..., 0], srgb[..., 1], srgb[..., 2]
+    y = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    cb = (b - y) / 1.8556
+    cr = (r - y) / 1.5748
+    scale = float(1 << max(0, bit_depth - 8))
+    y_code = np.clip(np.round(16.0 * scale + y * 219.0 * scale), 16.0 * scale, 235.0 * scale)
+    cb_code = np.clip(np.round(128.0 * scale + cb * 224.0 * scale), 16.0 * scale, 240.0 * scale)
+    cr_code = np.clip(np.round(128.0 * scale + cr * 224.0 * scale), 16.0 * scale, 240.0 * scale)
+    dtype = np.uint8 if bit_depth == 8 else np.uint16
+    yuv = np.stack([y_code, cb_code, cr_code], axis=-1).astype(dtype)
+    _write_y4m_planes(path, yuv, bit_depth=bit_depth, chroma_subsampling=chroma_subsampling)
+
+
+def _write_hdr_y4m(
+    path: Path,
+    image: np.ndarray,
+    *,
+    bit_depth: int = 10,
+    chroma_subsampling: str = "444",
+) -> None:
+    if bit_depth not in {8, 10, 12}:
+        raise ValueError(f"Unsupported AVIF bit depth: {bit_depth}")
+    if chroma_subsampling not in {"420", "422", "444"}:
+        raise ValueError(f"Unsupported AVIF chroma subsampling: {chroma_subsampling}")
+    yuv = _linear_to_bt2020_pq_yuv(image, bit_depth)
+    _write_y4m_planes(path, yuv, bit_depth=bit_depth, chroma_subsampling=chroma_subsampling)
+
+
+def _write_y4m_planes(
+    path: Path,
+    yuv: np.ndarray,
+    *,
+    bit_depth: int,
+    chroma_subsampling: str,
+) -> None:
+    height, width = yuv.shape[:2]
+    chroma_name = (
+        {"420": "420jpeg", "422": "422", "444": "444"}[chroma_subsampling]
+        if bit_depth == 8
+        else f"{chroma_subsampling}p{bit_depth}"
+    )
+    xyscss = chroma_name.upper() if bit_depth == 8 else f"{chroma_subsampling.upper()}P{bit_depth}"
+    header = (
+        f"YUV4MPEG2 W{width} H{height} F1:1 Ip A1:1 C{chroma_name} "
+        f"XYSCSS={xyscss}\n"
+    ).encode("ascii")
     frame_header = b"FRAME\n"
 
     with path.open("wb") as handle:
         handle.write(header)
         handle.write(frame_header)
-        for plane_index in range(3):
-            handle.write(yuv10[..., plane_index].astype("<u2", copy=False).tobytes())
+        planes = [yuv[..., 0]]
+        if chroma_subsampling == "444":
+            planes.extend([yuv[..., 1], yuv[..., 2]])
+        elif chroma_subsampling == "422":
+            planes.extend([_downsample_plane(yuv[..., 1], 1, 2), _downsample_plane(yuv[..., 2], 1, 2)])
+        else:
+            planes.extend([_downsample_plane(yuv[..., 1], 2, 2), _downsample_plane(yuv[..., 2], 2, 2)])
+        dtype = np.uint8 if bit_depth == 8 else np.dtype("<u2")
+        for plane in planes:
+            handle.write(plane.astype(dtype, copy=False).tobytes())
 
 
 def _linear_to_pq_rgb10(image: np.ndarray) -> np.ndarray:
+    return _linear_to_pq_rgb(image, 10)
+
+
+def _linear_to_pq_rgb(image: np.ndarray, bit_depth: int) -> np.ndarray:
     linear = np.clip(image.astype(np.float32, copy=False), 0.0, None)
     nits = np.clip((linear / 0.18) * 100.0, 0.0, 10000.0)
     pq = _pq_oetf(nits / 10000.0)
-    return np.clip(np.round(pq * 1023.0), 0.0, 1023.0).astype(np.uint16)
+    maximum = float((1 << bit_depth) - 1)
+    dtype = np.uint8 if bit_depth == 8 else np.uint16
+    return np.clip(np.round(pq * maximum), 0.0, maximum).astype(dtype)
 
 
 def _linear_to_bt2020_pq_yuv10(image: np.ndarray) -> np.ndarray:
+    return _linear_to_bt2020_pq_yuv(image, 10)
+
+
+def _linear_to_bt2020_pq_yuv(image: np.ndarray, bit_depth: int) -> np.ndarray:
     linear_bt2020 = _acescg_to_bt2020_linear(image)
-    pq_rgb = _linear_to_pq_rgb10(linear_bt2020).astype(np.float32) / 1023.0
+    maximum = float((1 << bit_depth) - 1)
+    pq_rgb = _linear_to_pq_rgb(linear_bt2020, bit_depth).astype(np.float32) / maximum
 
     r = pq_rgb[..., 0]
     g = pq_rgb[..., 1]
@@ -568,10 +924,25 @@ def _linear_to_bt2020_pq_yuv10(image: np.ndarray) -> np.ndarray:
     cb = (b - y) / (2.0 * (1.0 - kb))
     cr = (r - y) / (2.0 * (1.0 - kr))
 
-    y_code = np.clip(np.round(64.0 + (y * 876.0)), 64.0, 940.0)
-    cb_code = np.clip(np.round(512.0 + (cb * 896.0)), 64.0, 960.0)
-    cr_code = np.clip(np.round(512.0 + (cr * 896.0)), 64.0, 960.0)
-    return np.stack([y_code, cb_code, cr_code], axis=-1).astype(np.uint16)
+    scale = float(1 << max(0, bit_depth - 8))
+    y_min, y_span, y_max = 16.0 * scale, 219.0 * scale, 235.0 * scale
+    c_min, c_span, c_mid, c_max = 16.0 * scale, 224.0 * scale, 128.0 * scale, 240.0 * scale
+    y_code = np.clip(np.round(y_min + y * y_span), y_min, y_max)
+    cb_code = np.clip(np.round(c_mid + cb * c_span), c_min, c_max)
+    cr_code = np.clip(np.round(c_mid + cr * c_span), c_min, c_max)
+    dtype = np.uint8 if bit_depth == 8 else np.uint16
+    return np.stack([y_code, cb_code, cr_code], axis=-1).astype(dtype)
+
+
+def _downsample_plane(plane: np.ndarray, vertical: int, horizontal: int) -> np.ndarray:
+    height, width = plane.shape
+    padded_height = ((height + vertical - 1) // vertical) * vertical
+    padded_width = ((width + horizontal - 1) // horizontal) * horizontal
+    padded = np.pad(plane, ((0, padded_height - height), (0, padded_width - width)), mode="edge")
+    return np.round(
+        padded.reshape(padded_height // vertical, vertical, padded_width // horizontal, horizontal)
+        .mean(axis=(1, 3))
+    ).astype(plane.dtype)
 
 
 def _pq_oetf(normalized_luminance: np.ndarray) -> np.ndarray:
@@ -603,7 +974,13 @@ def _run_command(command: list[str]) -> subprocess.CompletedProcess[str]:
     return result
 
 
-def _validate_avif_output(path: Path) -> str | None:
+def _validate_avif_output(
+    path: Path,
+    *,
+    expected_bit_depth: int | None = None,
+    expected_chroma: str | None = None,
+    expected_gain_map_chroma: str | None = None,
+) -> str | None:
     avifdec = resolve_binary("avifdec")
     if avifdec is None:
         return None
@@ -617,9 +994,15 @@ def _validate_avif_output(path: Path) -> str | None:
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip() or "avifdec could not decode the result."
         raise ExportProcessError(f"AVIF validation failed: {detail}")
-    if "Gain map" in result.stdout:
-        return "Validated with avifdec."
-    raise ExportProcessError("AVIF validation did not find an embedded gain map.")
+    if "Gain map" not in result.stdout or "Gain map       : Absent" in result.stdout:
+        raise ExportProcessError("AVIF validation did not find an embedded gain map.")
+    if expected_bit_depth is not None and f"Bit Depth      : {expected_bit_depth}" not in result.stdout:
+        raise ExportProcessError("AVIF validation did not preserve the selected primary bit depth.")
+    if expected_chroma is not None and f"Format         : YUV{expected_chroma}" not in result.stdout:
+        raise ExportProcessError("AVIF validation did not preserve the selected chroma subsampling.")
+    if expected_gain_map_chroma is not None and f"YUV{expected_gain_map_chroma}" not in result.stdout:
+        raise ExportProcessError("AVIF validation did not preserve the selected gain-map chroma subsampling.")
+    return "Validated with avifdec."
 
 
 def export_sample_hdr_reference(output_path: Path | None = None) -> ExportResponse:
@@ -646,5 +1029,7 @@ def build_export_backends(capabilities: dict[str, CapabilityInfo]) -> dict[str, 
         "avif_gain_map": AVIFGainMapExportBackend(capabilities["avif_gain_map_encoder"]),
         "jpeg_ultrahdr": JPEGUltraHDRExportBackend(capabilities["ultrahdr_encoder"]),
         "jpegxl_hdr": JPEGXLHDRExportBackend(capabilities["jpegxl_export"]),
+        "sdr_jpegxl": SDRJPEGXLExportBackend(capabilities["jpegxl_export"]),
+        "sdr_jpeg": SDRJPEGExportBackend(capabilities["pillow"]),
         "sdr_png": SDRPNGExportBackend(capabilities["pillow"]),
     }

@@ -91,8 +91,22 @@ Formats produced by HDR Finisher are priority import candidates. AVIF gain-map a
 |---|---|---|
 | AVIF + ISO 21496-1 Gain Map | **Primary** | Best quality-to-file-size ratio for web at 4K; ~95% browser support as of mid-2025 |
 | JPEG Ultra HDR (JPG + Gain Map) | **Secondary** | Legacy JPEG-safe SDR fallback plus HDR gain map; HDR rendering support varies by browser, OS, and platform recompression |
-| SDR JPEG / PNG | **Utility** | Tone-mapped fallback for legacy contexts; 8-bit |
-| JPEG XL + Gain Map | **Stretch Goal** | Excellent format; Chrome support expected mid-2026 |
+| SDR JPEG / PNG | **Utility** | Tone-mapped fallback for legacy contexts. JPEG is fixed at 8-bit; PNG defaults to 8-bit with a 16-bit advanced interchange option. |
+| JPEG XL HDR | **Experimental** | Direct Rec.2020/PQ HDR with high-bit-depth and floating-point capability. Browser delivery still requires an explicit fallback strategy. |
+
+### Export Settings Direction
+
+- Keep the normal export surface format-aware and web-correct by default. Put niche codec controls behind an **Advanced** disclosure instead of presenting one global set of settings.
+- Keep export color handling automatic: SDR outputs use sRGB, while HDR delivery uses Rec.2020/PQ. Show the resolved color encoding in the export summary rather than offering an arbitrary color-space selector.
+- AVIF + gain map defaults to a **10-bit 4:2:0 primary with a separate 10-bit 4:4:4 gain map**. It exposes 8-/10-/12-bit primary precision, 4:2:0/4:2:2/4:4:4 primary chroma, and 4:2:0/4:2:2/4:4:4 gain-map chroma. Encoder-supported 4:0:0 is deliberately omitted from the UI because the August 21 delivery-pattern validation found unacceptable saturated chromatic-highlight error. The 4:2:0 gain map also increased colored-edge error without reducing this test file, so Web Default remains 4:4:4 and Web Optimized uses 4:2:2.
+- JPEG Ultra HDR and SDR JPEG default to **4:2:0** and expose **4:2:2** and **4:4:4** primary JPEG chroma for specialist cases.
+- SDR PNG defaults to **8-bit** and exposes **16-bit** for high-precision interchange. Its lossless encoder does not present a quality control.
+- JPEG XL HDR defaults to **12-bit integer PQ** and exposes **10-bit integer**, **16-bit integer**, **16-bit float**, and **32-bit float** alternatives. The backend preserves the selected representation through encode/decode validation instead of quantizing every selection through a 12-bit buffer. **8-bit** is reserved for a future SDR JPEG XL mode and is not offered for HDR delivery.
+- Dithering is exposed as **Auto / Off / Subtle** only where final 8-bit quantization makes it useful. For higher-bit-depth and floating-point outputs, the control is disabled and visibly greyed out with a short explanation.
+- Source metadata export options are **None**, **Copyright only** (Web Default where the encoder supports source metadata), **All except location**, and **All including location**. Required color and HDR/gain-map metadata is technical format metadata and must never be removed by the source-metadata choice.
+- Retain the current Original / Long edge / Fit resolution controls and prevent-enlargement behavior.
+- The Export panel provides immutable, format-aware **Web Default**, **Web Optimized**, and **Maximum Fidelity** presets. Format changes apply the same preset tier to every applicable control; a manual encoding, metadata, dithering, sharpening, or resolution change switches the menu to explicit **Custom**. Each submenu marks its current format's Web Default choice with `· Web Default`.
+- **V2 — User-saved export presets:** allow users to save, name, update, and delete Custom configurations while retaining the three immutable built-ins. Saved presets should use a versioned schema and ignore or migrate settings that no longer apply after a backend change.
 
 ---
 
@@ -306,7 +320,7 @@ The AVIF path uses a **10-bit logarithmic gain map**. JPEG Ultra HDR uses libult
   4. Route to `avifgainmaputil` (AVIF) or `cjxl` (JXL) via subprocess
   5. Return output file path to frontend for download prompt
 - Maintain JPEG Ultra HDR export through the current verified `ultrahdr_app` CLI and validate both metadata representations before publishing the staged file
-- Implement SDR JPEG/PNG fallback export
+- Maintain SDR JPEG/PNG fallback export, including very-wide JPEG validation
 - Quality/compression controls for each format
 
 ### Phase 6 â€” Packaging & Distribution
@@ -400,7 +414,7 @@ The repository is no longer at the original vertical-slice stage. It now provide
 - Export filename and save-path controls in the UI
 - Real AVIF + ISO 21496-1 gain-map export via bundled Windows binaries
 - Real JPEG Ultra HDR export with Ultra HDR v1 XMP and ISO 21496-1 metadata; JPEG is the provisional delivery default
-- SDR PNG export
+- SDR JPEG and PNG export
 - Three proofing views: **Authoring**, **Delivery Matrix**, and **Live Browser Check**
 - Fixed-headroom reconstruction at +0 through +4 stops and full encoded headroom, with numerical peak/clipping data and above-display-headroom warnings
 - Live delivery proxies generated by the production JPEG/AVIF exporters and served through immutable content-hashed URLs
@@ -507,7 +521,7 @@ The portable technical-alpha milestone has been reached locally: the zipped Wind
 
 The Windows release should prioritize:
 - Windows first
-- AVIF + gain-map export, JPEG Ultra HDR export, SDR PNG export, and the existing import / preview / adjustment workflow
+- AVIF + gain-map export, JPEG Ultra HDR export, SDR JPEG/PNG export, and the existing import / preview / adjustment workflow
 - Bundled sample media or a one-command sample generation path
 - Clear capability reporting and actionable errors for bundled export backends
 - Automatic browser launch, reliable single-instance / port handling, clean shutdown, and user-writable runtime directories

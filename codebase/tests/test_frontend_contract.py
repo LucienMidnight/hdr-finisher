@@ -344,6 +344,9 @@ def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     assert "Export..." in html
     assert "Export file" not in html
     assert "JPEG XL HDR" in html
+    assert 'id="export-format"' in html
+    assert 'id="export-preset"' in html
+    assert "JPEG XL (SDR)" in html
     assert "not in this build" not in html
     assert "Chromium Proof" in html
     assert 'data-proof-preview="delivered"' in html
@@ -354,15 +357,63 @@ def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     assert 'id="chrome-proof-target"' in html
     assert 'id="jpeg-gain-map-quality"' in html
     assert 'id="jpeg-gain-map-scale"' in html
+    assert 'id="jpegxl-precision"' in html
+    assert 'id="avif-bit-depth"' in html
+    assert 'id="avif-chroma-subsampling"' in html
+    assert 'id="avif-gain-map-chroma-subsampling"' in html
+    assert 'id="avif-gain-map-quality"' in html
+    assert 'id="avif-gain-map-scale"' in html
+    assert 'id="jpeg-ultrahdr-chroma-subsampling"' in html
+    assert 'id="sdr-png-bit-depth"' in html
+    assert 'id="export-dithering"' in html
+    assert 'id="export-metadata-policy"' in html
+    assert '<option value="uint12" selected>12-bit integer</option>' in html
+    assert '<option value="float32">32-bit float</option>' in html
+    assert '<option value="422">4:2:2</option>' in html
+    assert '<option value="444" selected>4:4:4</option>' in html
+    assert "Full color resolution" not in html
+    assert "Reduced color resolution" not in html
+    assert "Small color detail" not in html
+    assert "More color detail" not in html
+    assert "High-precision interchange" not in html
+    assert 'id="export-format-note" class="helper visually-hidden"' in html
+    assert 'id="avif-gain-map-chroma-note" class="helper visually-hidden"' in html
+    assert "const exportOptionTooltips =" in javascript
+    assert "option.title = descriptions[option.value]" in javascript
+    assert 'value="uint8"' not in html
+    assert "jpegxl_precision: els.jpegxlPrecision.value" in javascript
+    assert "avif_bit_depth: Number(els.avifBitDepth.value)" in javascript
+    assert "avif_chroma_subsampling: els.avifChromaSubsampling.value" in javascript
+    assert "avif_gain_map_chroma_subsampling: els.avifGainMapChromaSubsampling.value" in javascript
+    assert "const exportPresetMappings" in javascript
+    assert 'web_default: { quality: 85' in javascript
+    assert 'maximum_fidelity: { quality: 100' in javascript
+    assert "function markExportPresetCustom()" in javascript
+    assert " · Web Default`" in javascript
+    assert "sdr_png_bit_depth: Number(els.sdrPngBitDepth.value)" in javascript
+    assert "document.documentElement.style.setProperty(\"--grade-w\"" in javascript
+    assert "els.appShell.style.setProperty(cssVar" not in javascript
+    assert 'sdr_jpegxl: "jpegxl_export"' in javascript
+    assert 'jpegUltrahdrChromaSubsampling' in javascript
+    assert 'jpegChromaSubsampling' in javascript
     assert 'class="export-filename-field"' in html
     assert 'class="export-directory-field"' in html
     assert 'id="directory-browser"' in html
     assert 'id="directory-browser-select"' in html
+    assert '<strong>Drives</strong><ul id="directory-browser-drives"></ul>' in html
+    assert "renderMediaBrowserNavigation(payload.drives || [], payload.places || [], payload.favorites || []);" in javascript
+    assert 'class="status-text muted hidden" id="experimental-dng-note"' in html
+    assert "function isDngImportCandidate(candidate)" in javascript
+    assert "renderExperimentalDngNote(file);" in javascript
+    assert "renderExperimentalDngNote(entry);" in javascript
+    assert "renderExperimentalDngNote(selection);" in javascript
     assert '{ role: "reload" }' in (DESKTOP / "main.js").read_text(encoding="utf-8")
     assert "/api/media-browser" in (FRONTEND / "app.js").read_text(encoding="utf-8")
     assert ".control-group-body" in css
     assert "border-top: 2px solid" in css
     assert ".jpeg-advanced-settings" in css
+    assert ".export-section-title" in css
+    assert 'id="jpeg-advanced-settings" class="jpeg-advanced-settings">' in html
     assert '"quality jpeg"' in css
     assert '"filename folder"' in css
 
@@ -706,13 +757,16 @@ def test_preview_viewport_keeps_a_stable_aspect_across_interactive_and_settled_t
     assert "const referenceAspect = renderedAspect;" not in zoom_geometry
 
 
-def test_export_format_cards_do_not_claim_a_provisional_or_alternative_ranking() -> None:
+def test_export_format_dropdown_does_not_claim_a_provisional_or_alternative_ranking() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
     assert "Mainstream alternative" not in html
     assert "Provisional default" not in html
-    assert 'data-capability-for="avif_gain_map_encoder"' in html
-    assert 'data-capability-for="ultrahdr_encoder"' in html
+    assert '<option value="avif_gain_map">AVIF + gain map</option>' in html
+    assert '<option value="jpeg_ultrahdr" selected>JPEG Ultra HDR</option>' in html
+    assert 'avif_gain_map: "avif_gain_map_encoder"' in javascript
+    assert 'jpeg_ultrahdr: "ultrahdr_encoder"' in javascript
 
 
 def test_manual_source_interpretation_status_contract() -> None:

@@ -204,6 +204,14 @@ class ProofArtifactStore:
             quality=request.quality,
             jpeg_gain_map_quality=request.jpeg_gain_map_quality,
             jpeg_gain_map_scale=request.jpeg_gain_map_scale,
+            jpeg_chroma_subsampling=request.jpeg_chroma_subsampling,
+            avif_bit_depth=request.avif_bit_depth,
+            avif_chroma_subsampling=request.avif_chroma_subsampling,
+            avif_gain_map_chroma_subsampling=request.avif_gain_map_chroma_subsampling,
+            avif_gain_map_quality=request.avif_gain_map_quality,
+            avif_gain_map_scale=request.avif_gain_map_scale,
+            jpegxl_precision=request.jpegxl_precision,
+            dithering=request.dithering,
             output_path=str(staged),
             overwrite=True,
             output_finishing=request.output_finishing,
@@ -611,7 +619,8 @@ def _inspect_artifact(path: Path, format_name: str) -> tuple[float, str]:
         if metadata.get("color_space") != "BT.2020" or metadata.get("transfer_function") != "PQ":
             raise ValueError("JPEG XL proof is missing its direct-HDR Rec.2020 PQ marker.")
         bit_depth = int(metadata.get("bit_depth") or info.get("bits_per_sample") or 12)
-        return target_headroom_for_peak_nits(10000.0), f"Direct HDR JPEG XL; Rec.2020 PQ; {bit_depth}-bit"
+        sample_type = str(metadata.get("sample_type") or "integer")
+        return target_headroom_for_peak_nits(10000.0), f"Direct HDR JPEG XL; Rec.2020 PQ; {bit_depth}-bit {sample_type}"
 
     metadata = _inspect_jpeg_gain_map(path)
     headroom = math.log2(max(1.0, metadata.hdr_capacity_max))

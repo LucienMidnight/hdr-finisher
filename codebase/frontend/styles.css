@@ -230,6 +230,18 @@ h2 {
   display: none !important;
 }
 
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
 .muted {
   color: var(--muted);
 }
@@ -1757,7 +1769,7 @@ input[type="range"] {
 }
 
 .sheet-header,
-.format-cards,
+.export-choice-section,
 .unavailable-format,
 .export-settings,
 .preflight-panel,
@@ -1765,6 +1777,23 @@ input[type="range"] {
 .export-result,
 .sheet-actions {
   margin-inline: 18px;
+}
+
+.export-choice-section {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+}
+
+.export-section-title {
+  margin: 0;
+  color: var(--group-title-color);
+  font-family: var(--group-title-font-family);
+  font-size: var(--group-title-font-size);
+  font-weight: var(--group-title-font-weight);
+  letter-spacing: var(--group-title-letter-spacing);
+  line-height: 1.2;
+  text-transform: var(--group-title-text-transform);
 }
 
 .sheet-header {
@@ -1869,7 +1898,10 @@ input[type="range"] {
 .export-settings {
   display: grid;
   grid-template-areas:
+    "encoding encoding"
     "quality jpeg"
+    "finishing finishing"
+    "destination destination"
     "filename folder";
   grid-template-columns: minmax(260px, 0.85fr) minmax(430px, 1.35fr);
   gap: 14px;
@@ -1877,16 +1909,18 @@ input[type="range"] {
   align-items: end;
 }
 
+.export-encoding-title { grid-area: encoding; }
+.export-destination-title { grid-area: destination; margin-top: 2px; }
+.output-finishing-settings { grid-area: finishing; }
+
 .export-quality-row {
   grid-area: quality;
 }
 
 .jpeg-advanced-settings {
   grid-area: jpeg;
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(150px, 0.7fr);
-  gap: 10px;
-  padding: 9px 10px;
+  display: block;
+  padding: 0;
   border: 1px solid var(--hairline);
   border-radius: var(--radius);
   background: var(--app);
@@ -1900,8 +1934,100 @@ input[type="range"] {
   min-width: 0;
 }
 
+.jpeg-advanced-settings > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+  padding: 8px 10px;
+  color: var(--body);
+  cursor: pointer;
+  font-family: var(--group-title-font-family);
+  font-size: 11px;
+  font-weight: var(--group-title-font-weight);
+  letter-spacing: .08em;
+  list-style: none;
+  text-transform: var(--group-title-text-transform);
+}
+
+.jpeg-advanced-settings > summary::-webkit-details-marker { display: none; }
+
+.jpeg-advanced-settings > summary::after {
+  content: "›";
+  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1;
+  transition: transform 120ms ease;
+}
+
+.jpeg-advanced-settings[open] > summary::after { transform: rotate(90deg); }
+
+.jpeg-advanced-settings > summary:hover,
+.jpeg-advanced-settings > summary:focus-visible {
+  color: var(--text);
+  background: var(--raised);
+  outline: none;
+}
+
+.advanced-settings-body {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(150px, .7fr);
+  gap: 10px;
+  padding: 0 10px 10px;
+}
+
+.jpeg-ultrahdr-settings {
+  display: contents;
+}
+
+.jpeg-ultrahdr-settings.hidden,
+.avif-settings.hidden,
+.sdr-jpeg-settings.hidden,
+.jpegxl-settings.hidden,
+.sdr-png-settings.hidden {
+  display: none;
+}
+
+.avif-settings,
+.jpeg-ultrahdr-settings {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.sdr-jpeg-settings,
+.jpegxl-settings,
+.sdr-png-settings,
+#export-dithering-field,
+.advanced-settings-body > label:has(#export-metadata-policy),
+.export-resolved-encoding {
+  grid-column: 1 / -1;
+}
+
+.jpegxl-settings .helper {
+  display: block;
+  margin-top: 6px;
+}
+
 .jpeg-advanced-settings label {
   min-width: 0;
+}
+
+.disabled-setting {
+  opacity: .5;
+}
+
+.disabled-setting select {
+  cursor: not-allowed;
+}
+
+.export-resolved-encoding {
+  margin: 0;
+  padding-top: 7px;
+  border-top: 1px solid var(--hairline);
 }
 
 .export-filename-field {
@@ -4280,7 +4406,14 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 .percent-input { display: flex; align-items: center; gap: 4px; }
 .control-disabled { opacity: .45; }
 .output-finishing-settings { display: grid; gap: 10px; margin: 12px 0; padding: 12px; border: 1px solid var(--hairline); }
-.output-finishing-settings legend { color: var(--body); font-size: 11px; font-weight: 600; }
+.output-finishing-settings legend {
+  color: var(--group-title-color);
+  font-family: var(--group-title-font-family);
+  font-size: var(--group-title-font-size);
+  font-weight: var(--group-title-font-weight);
+  letter-spacing: var(--group-title-letter-spacing);
+  text-transform: var(--group-title-text-transform);
+}
 .checkbox-row { display: flex !important; align-items: center; gap: 8px; }
 
 .crop-editor-overlay { position: absolute; inset: 0; z-index: 16; background: #0008; pointer-events: auto; overflow: visible; }
@@ -4873,7 +5006,7 @@ body[data-workflow="export"] #export-sheet {
 }
 
 .export-sheet .sheet-header,
-.export-sheet .format-cards,
+.export-sheet .export-choice-section,
 .export-sheet .export-settings,
 .export-sheet .preflight-panel,
 .export-sheet .export-status,
@@ -4887,28 +5020,15 @@ body[data-workflow="export"] #export-sheet {
   padding: 14px;
 }
 
-.export-sheet .format-cards {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 7px;
-  margin-top: 12px;
-}
-
-.export-sheet .format-card {
-  gap: 5px;
-  padding: 10px;
-}
-
-.export-sheet .format-card > span:not(.format-card-top),
-.export-sheet .format-card small {
-  display: none;
-}
-
 .export-sheet .export-settings,
 .export-sheet .export-settings:has(.jpeg-advanced-settings.hidden) {
   display: grid;
   grid-template-areas:
+    "encoding"
     "quality"
     "jpeg"
+    "finishing"
+    "destination"
     "filename"
     "folder";
   grid-template-columns: minmax(0, 1fr);
@@ -4917,6 +5037,12 @@ body[data-workflow="export"] #export-sheet {
 }
 
 .export-sheet .jpeg-advanced-settings {
+  display: block;
+}
+
+.export-sheet .advanced-settings-body,
+.export-sheet .avif-settings,
+.export-sheet .jpeg-ultrahdr-settings {
   grid-template-columns: minmax(0, 1fr);
 }
 

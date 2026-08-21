@@ -273,7 +273,11 @@ def test_jpeg_matrix_endpoints_publish_decode_atomically_for_concurrent_targets(
 
 
 class _FakeBackend:
+    def __init__(self) -> None:
+        self.last_settings = None
+
     def export(self, session: object, settings: object) -> ExportResponse:
+        self.last_settings = settings
         output = Path(getattr(settings, "output_path"))
         assert getattr(settings, "overwrite") is True
         output.write_bytes(b"encoded-proof-artifact")
@@ -328,16 +332,23 @@ def test_jpegxl_direct_hdr_is_available_as_a_proof_artifact(monkeypatch, tmp_pat
         (),
         {"session_id": "proof-jpegxl", "render_cache": SessionRenderCache(image, None)},
     )()
-    request = ProofArtifactRequest(adjustments=AdjustmentState(), format="jpegxl_hdr", long_edge=256)
+    request = ProofArtifactRequest(
+        adjustments=AdjustmentState(),
+        format="jpegxl_hdr",
+        jpegxl_precision="float32",
+        long_edge=256,
+    )
     monkeypatch.setattr(
         proofing_module,
         "_inspect_artifact",
         lambda *_args: (math.log2(100.0), "Direct HDR JPEG XL; Rec.2020 PQ; 12-bit"),
     )
 
-    response = store.create(session, request, _FakeBackend())
+    backend = _FakeBackend()
+    response = store.create(session, request, backend)
 
     assert response.format == "jpegxl_hdr"
+    assert backend.last_settings.jpegxl_precision == "float32"
     assert response.media_type == "image/jxl"
     assert response.url.endswith(f"{response.artifact_id}.jxl")
     assert store.artifact(response.artifact_id).path.suffix == ".jxl"
@@ -514,4 +525,57 @@ def test_real_proof_artifact_and_matrix_endpoints(
     assert reconstruction["target_label"] == "1000 nits"
     assert reconstruction["resolved_headroom"] <= reconstruction["encoded_headroom"]
     assert client.get(reconstruction["tile"]["url"]).status_code == 200
+    session_store.clear()
+
+
+@pytest.mark.parametrize(("bit_depth", "chroma"), [(8, "420"), (10, "422"), (12, "444")])
+def test_real_avif_proof_honors_primary_precision_and_chroma(bit_depth: int, chroma: str) -> None:
+    if capabilities["avif_gain_map_encoder"].status != CapabilityStatus.AVAILABLE:
+        pytest.skip(capabilities["avif_gain_map_encoder"].detail)
+    fixture = Path(__file__).resolve().parent / "fixtures" / "hdr_headroom.tiff"
+    upload = client.post("/api/session", files={"file": (fixture.name, fixture.read_bytes(), "image/tiff")})
+    assert upload.status_code == 200
+    session = upload.json()["session"]
+
+    response = client.post(
+        f"/api/session/{session['session_id']}/proof/artifact",
+        json={
+            "adjustments": session["adjustments"],
+            "format": "avif_gain_map",
+            "quality": 88,
+            "long_edge": 256,
+            "avif_bit_depth": bit_depth,
+            "avif_chroma_subsampling": chroma,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["url"].endswith(".avif")
+    session_store.clear()
+
+
+@pytest.mark.parametrize("gain_map_chroma", ["444", "422", "420", "400"])
+def test_real_avif_proof_honors_gain_map_chroma(gain_map_chroma: str) -> None:
+    if capabilities["avif_gain_map_encoder"].status != CapabilityStatus.AVAILABLE:
+        pytest.skip(capabilities["avif_gain_map_encoder"].detail)
+    fixture = Path(__file__).resolve().parent / "fixtures" / "hdr_headroom.tiff"
+    upload = client.post("/api/session", files={"file": (fixture.name, fixture.read_bytes(), "image/tiff")})
+    assert upload.status_code == 200
+    session = upload.json()["session"]
+
+    response = client.post(
+        f"/api/session/{session['session_id']}/proof/artifact",
+        json={
+            "adjustments": session["adjustments"],
+            "format": "avif_gain_map",
+            "quality": 88,
+            "long_edge": 256,
+            "avif_bit_depth": 10,
+            "avif_chroma_subsampling": "444",
+            "avif_gain_map_chroma_subsampling": gain_map_chroma,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["url"].endswith(".avif")
     session_store.clear()

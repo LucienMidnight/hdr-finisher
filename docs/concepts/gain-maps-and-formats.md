@@ -64,7 +64,7 @@ Risks:
 
 ## AVIF with gain map
 
-HDR Finisher combines an SDR base and a 10-bit BT.2020/PQ alternate into an AVIF gain-map file, with a 10-bit gain map.
+HDR Finisher combines an SDR base and a BT.2020/PQ alternate into an AVIF gain-map file, with a separate 10-bit gain map. Primary-image and gain-map chroma are independently selectable. The built-in Web Default keeps the primary at 4:2:0 but the gain map at 4:4:4 because test-pattern measurements found no size benefit and materially worse colored-edge error from a 4:2:0 gain map. Encoder-supported monochrome gain maps are not exposed because they cannot preserve per-channel gain in saturated highlights.
 
 Strengths:
 
@@ -81,6 +81,10 @@ Risks:
 ## SDR PNG
 
 SDR PNG is not adaptive HDR. It is a lossless-container, 8-bit sRGB export of the authored base. It is useful as a fallback, diagnostic reference, or separate delivery.
+
+## SDR JPEG
+
+SDR JPEG is not adaptive HDR. It is a conventional 8-bit sRGB export of the authored base, encoded with adjustable quality and selectable 4:2:0, 4:2:2, or 4:4:4 chroma sampling. It is useful for compact standalone delivery and line-scan images up to the bundled encoder's 65,500-pixel per-axis limit.
 
 ## Resolution and edge behavior
 

@@ -18,7 +18,14 @@ class JPEGXLError(RuntimeError):
 
 
 _APP_BOX_TYPE = b"hfmd"
-_APP_METADATA_VERSION = 1
+_APP_METADATA_VERSION = 2
+_JPEGXL_PRECISIONS: dict[str, tuple[int, str, Any]] = {
+    "uint10": (10, "integer", np.uint16),
+    "uint12": (12, "integer", np.uint16),
+    "uint16": (16, "integer", np.uint16),
+    "float16": (16, "float", np.float16),
+    "float32": (32, "float", np.float32),
+}
 
 
 def jpegxl_available() -> bool:
@@ -73,6 +80,7 @@ def decode_jpegxl(
     decoded = decoded[..., :3]
 
     bit_depth = _resolve_bit_depth(decoded, info)
+    sample_type = _resolve_sample_type(decoded, info)
     if np.issubdtype(decoded.dtype, np.integer):
         if np.issubdtype(decoded.dtype, np.signedinteger) and np.any(decoded < 0):
             raise JPEGXLError("JPEG XL returned negative integer samples.")
@@ -104,6 +112,7 @@ def decode_jpegxl(
 
     metadata = {
         "bit_depth": str(bit_depth),
+        "sample_type": sample_type,
         "color_space": metadata_color,
         "transfer_function": metadata_transfer,
         "jpegxl_input": True,
@@ -123,18 +132,32 @@ def _raise_if_cancelled(cancelled: Callable[[], bool] | None) -> None:
         raise JPEGXLError("Import cancelled")
 
 
-def encode_hdr_jpegxl(image: np.ndarray, quality: int) -> bytes:
+def encode_hdr_jpegxl(
+    image: np.ndarray,
+    quality: int,
+    precision: str = "uint12",
+    *,
+    exif_payload: bytes | None = None,
+) -> bytes:
     try:
         import imagecodecs
     except ImportError as exc:
         raise JPEGXLError("JPEG XL export requires the bundled imagecodecs/libjxl encoder.") from exc
     if not 1 <= int(quality) <= 100:
         raise JPEGXLError("JPEG XL quality must be between 1 and 100.")
+    try:
+        bit_depth, sample_type, storage_type = _JPEGXL_PRECISIONS[precision]
+    except KeyError as exc:
+        raise JPEGXLError(f"Unsupported JPEG XL precision: {precision}") from exc
 
     linear_bt2020 = np.clip(acescg_to_linear_bt2020(image[..., :3]), 0.0, None)
     luminance_nits = np.clip(linear_bt2020 * np.float32(100.0 / 0.18), 0.0, 10000.0)
     pq = _pq_oetf(luminance_nits)
-    encoded = np.clip(np.round(pq * np.float32(4095.0)), 0.0, 4095.0).astype(np.uint16)
+    if sample_type == "integer":
+        maximum = float((1 << bit_depth) - 1)
+        encoded = np.clip(np.round(pq * np.float32(maximum)), 0.0, maximum).astype(storage_type)
+    else:
+        encoded = pq.astype(storage_type)
     distance = max(0.0, (100.0 - float(quality)) / 25.0)
     try:
         payload = imagecodecs.jpegxl_encode(
@@ -142,7 +165,7 @@ def encode_hdr_jpegxl(image: np.ndarray, quality: int) -> bytes:
             effort=7,
             distance=distance,
             lossless=quality == 100,
-            bitspersample=12,
+            bitspersample=bit_depth,
             primaries=imagecodecs.JPEGXL.PRIMARIES.BT2100,
             transfer=imagecodecs.JPEGXL.TRANSFER_FUNCTION.PQ,
             usecontainer=True,
@@ -153,13 +176,71 @@ def encode_hdr_jpegxl(image: np.ndarray, quality: int) -> bytes:
         "schema_version": _APP_METADATA_VERSION,
         "color_space": "BT.2020",
         "transfer_function": "PQ",
-        "bit_depth": 12,
+        "bit_depth": bit_depth,
+        "sample_type": sample_type,
         "reference_white_nits": 100.0,
     }
-    return bytes(payload) + _box(_APP_BOX_TYPE, json.dumps(marker, separators=(",", ":")).encode("utf-8"))
+    result = bytes(payload) + _box(_APP_BOX_TYPE, json.dumps(marker, separators=(",", ":")).encode("utf-8"))
+    return result + (_jpegxl_exif_box(exif_payload) if exif_payload else b"")
 
 
-def validate_jpegxl(payload: bytes, expected_shape: tuple[int, int]) -> str:
+def encode_sdr_jpegxl(
+    image: np.ndarray,
+    quality: int,
+    *,
+    dithering: str = "off",
+    exif_payload: bytes | None = None,
+) -> bytes:
+    """Encode the authored display-linear sRGB branch as conventional 8-bit JXL."""
+
+    try:
+        import imagecodecs
+    except ImportError as exc:
+        raise JPEGXLError("JPEG XL export requires the bundled imagecodecs/libjxl encoder.") from exc
+    if not 1 <= int(quality) <= 100:
+        raise JPEGXLError("JPEG XL quality must be between 1 and 100.")
+
+    srgb = _srgb_oetf(np.clip(image[..., :3], 0.0, 1.0))
+    if dithering != "off":
+        _dither_srgb_in_place(srgb, amplitude_lsb=0.5 if dithering == "subtle" else 1.0)
+    encoded = np.clip(
+        np.round(srgb * np.float32(255.0)),
+        0.0,
+        255.0,
+    ).astype(np.uint8)
+    distance = max(0.0, (100.0 - float(quality)) / 25.0)
+    try:
+        payload = imagecodecs.jpegxl_encode(
+            encoded,
+            effort=7,
+            distance=distance,
+            lossless=quality == 100,
+            bitspersample=8,
+            primaries=imagecodecs.JPEGXL.PRIMARIES.SRGB,
+            transfer=imagecodecs.JPEGXL.TRANSFER_FUNCTION.SRGB,
+            usecontainer=True,
+        )
+    except Exception as exc:
+        raise JPEGXLError(f"JPEG XL encoding failed: {exc}") from exc
+    marker = {
+        "schema_version": _APP_METADATA_VERSION,
+        "color_space": "sRGB",
+        "transfer_function": "sRGB",
+        "bit_depth": 8,
+        "sample_type": "integer",
+        "reference_white_nits": 100.0,
+    }
+    result = bytes(payload) + _box(_APP_BOX_TYPE, json.dumps(marker, separators=(",", ":")).encode("utf-8"))
+    return result + (_jpegxl_exif_box(exif_payload) if exif_payload else b"")
+
+
+def validate_jpegxl(
+    payload: bytes, expected_shape: tuple[int, int], precision: str = "uint12"
+) -> str:
+    try:
+        bit_depth, sample_type, _storage_type = _JPEGXL_PRECISIONS[precision]
+    except KeyError as exc:
+        raise JPEGXLError(f"Unsupported JPEG XL precision: {precision}") from exc
     try:
         import imagecodecs
 
@@ -175,14 +256,64 @@ def validate_jpegxl(payload: bytes, expected_shape: tuple[int, int]) -> str:
     metadata = _validate_app_metadata(_read_app_metadata_box(payload))
     if metadata.get("color_space") != "BT.2020" or metadata.get("transfer_function") != "PQ":
         raise JPEGXLError("JPEG XL output is missing its Rec.2020 PQ interpretation marker.")
-    if metadata.get("bit_depth") != 12:
-        raise JPEGXLError("JPEG XL output marker does not declare 12-bit samples.")
-    if not np.issubdtype(decoded.dtype, np.integer) or int(np.max(decoded, initial=0)) > 4095:
-        raise JPEGXLError("JPEG XL output did not decode to valid 12-bit integer samples.")
+    if metadata.get("bit_depth") != bit_depth or metadata.get("sample_type") != sample_type:
+        raise JPEGXLError("JPEG XL output marker does not match the selected precision.")
+    if sample_type == "integer":
+        maximum = (1 << bit_depth) - 1
+        if not np.issubdtype(decoded.dtype, np.integer):
+            raise JPEGXLError(f"JPEG XL output did not decode to {bit_depth}-bit integer samples.")
+        if np.issubdtype(decoded.dtype, np.signedinteger) and np.any(decoded < 0):
+            raise JPEGXLError("JPEG XL output decoded to negative integer samples.")
+        if int(np.max(decoded, initial=0)) > maximum:
+            raise JPEGXLError(f"JPEG XL output exceeds its declared {bit_depth}-bit range.")
+    elif not np.issubdtype(decoded.dtype, np.floating) or decoded.dtype.itemsize * 8 != bit_depth:
+        raise JPEGXLError(f"JPEG XL output did not decode to {bit_depth}-bit floating-point samples.")
     basic_info = _probe_basic_info(payload)
-    if basic_info.get("bits_per_sample") not in {None, 12}:
-        raise JPEGXLError("JPEG XL codestream precision does not match its 12-bit marker.")
-    return "Validated by decoding the 12-bit Rec.2020 PQ result."
+    if basic_info.get("bits_per_sample") not in {None, bit_depth}:
+        raise JPEGXLError("JPEG XL codestream precision does not match its marker.")
+    exponent_bits = basic_info.get("exponent_bits_per_sample")
+    if exponent_bits is not None:
+        stream_sample_type = "float" if int(exponent_bits) > 0 else "integer"
+        if stream_sample_type != sample_type:
+            raise JPEGXLError("JPEG XL codestream sample type does not match its marker.")
+    return f"Validated by decoding the {bit_depth}-bit {sample_type} Rec.2020 PQ result."
+
+
+def validate_sdr_jpegxl(payload: bytes, expected_shape: tuple[int, int]) -> str:
+    try:
+        import imagecodecs
+
+        decoded = np.asarray(imagecodecs.jpegxl_decode(payload))
+    except Exception as exc:
+        raise JPEGXLError(f"JPEG XL validation decode failed: {exc}") from exc
+    if decoded.shape[:2] != expected_shape:
+        raise JPEGXLError(
+            f"JPEG XL validation returned {decoded.shape[:2]}; expected {expected_shape}."
+        )
+    if not np.all(np.isfinite(decoded)):
+        raise JPEGXLError("JPEG XL validation returned non-finite samples.")
+    metadata = _validate_app_metadata(_read_app_metadata_box(payload))
+    expected_marker = {
+        "color_space": "sRGB",
+        "transfer_function": "sRGB",
+        "bit_depth": 8,
+        "sample_type": "integer",
+    }
+    if any(metadata.get(key) != value for key, value in expected_marker.items()):
+        raise JPEGXLError("JPEG XL SDR output is missing its 8-bit sRGB interpretation marker.")
+    if not np.issubdtype(decoded.dtype, np.integer) or decoded.dtype.itemsize != 1:
+        raise JPEGXLError("JPEG XL SDR output did not decode to 8-bit integer samples.")
+    if np.issubdtype(decoded.dtype, np.signedinteger) and np.any(decoded < 0):
+        raise JPEGXLError("JPEG XL SDR output decoded to negative integer samples.")
+    if int(np.max(decoded, initial=0)) > 255:
+        raise JPEGXLError("JPEG XL SDR output exceeds its declared 8-bit range.")
+    basic_info = _probe_basic_info(payload)
+    if basic_info.get("bits_per_sample") not in {None, 8}:
+        raise JPEGXLError("JPEG XL SDR codestream precision does not match its marker.")
+    exponent_bits = basic_info.get("exponent_bits_per_sample")
+    if exponent_bits not in {None, 0}:
+        raise JPEGXLError("JPEG XL SDR codestream is not integer encoded.")
+    return "Validated by decoding the 8-bit sRGB SDR result."
 
 
 def _pq_oetf(luminance_nits: np.ndarray) -> np.ndarray:
@@ -194,6 +325,41 @@ def _pq_oetf(luminance_nits: np.ndarray) -> np.ndarray:
     normalized = np.clip(luminance_nits.astype(np.float32, copy=False) / np.float32(10000.0), 0.0, 1.0)
     powered = np.power(normalized, m1)
     return np.power((c1 + c2 * powered) / (np.float32(1.0) + c3 * powered), m2).astype(np.float32)
+
+
+def _srgb_oetf(linear: np.ndarray) -> np.ndarray:
+    linear = linear.astype(np.float32, copy=False)
+    return np.where(
+        linear <= np.float32(0.0031308),
+        linear * np.float32(12.92),
+        np.float32(1.055) * np.power(linear, np.float32(1.0 / 2.4)) - np.float32(0.055),
+    ).astype(np.float32)
+
+
+def _dither_srgb_in_place(
+    srgb: np.ndarray, *, amplitude_lsb: float, chunk_rows: int = 256
+) -> None:
+    height, width, channel_count = srgb.shape
+    x = np.arange(width, dtype=np.uint32)[None, :]
+    for row_start in range(0, height, chunk_rows):
+        row_end = min(height, row_start + chunk_rows)
+        y = np.arange(row_start, row_end, dtype=np.uint32)[:, None]
+        for channel in range(channel_count):
+            seed = np.uint32(((channel + 1) * 0x9E3779B9) & 0xFFFFFFFF)
+            value = x * np.uint32(0x1F123BB5) ^ y * np.uint32(0x5F356495) ^ seed
+            value ^= value >> np.uint32(16)
+            value *= np.uint32(0x7FEB352D)
+            value ^= value >> np.uint32(15)
+            noise = (
+                ((value & np.uint32(0xFFFF)).astype(np.float32) / np.float32(65535.0) - 0.5)
+                * np.float32((2.0 * amplitude_lsb) / 255.0)
+            )
+            srgb[row_start:row_end, :, channel] += noise
+
+
+def _jpegxl_exif_box(exif_payload: bytes) -> bytes:
+    tiff_payload = exif_payload[6:] if exif_payload.startswith(b"Exif\x00\x00") else exif_payload
+    return _box(b"Exif", b"\x00\x00\x00\x00" + tiff_payload)
 
 
 def _resolve_bit_depth(image: np.ndarray, info: dict[str, Any]) -> int:
@@ -222,30 +388,70 @@ def _resolve_bit_depth(image: np.ndarray, info: dict[str, Any]) -> int:
     return bit_depth or int(image.dtype.itemsize * 8)
 
 
+def _resolve_sample_type(image: np.ndarray, info: dict[str, Any]) -> str:
+    marker = (info.get("app_metadata") or {}).get("sample_type")
+    exponent_bits = info.get("exponent_bits_per_sample")
+    probed = None if exponent_bits is None else ("float" if int(exponent_bits) > 0 else "integer")
+    decoded = "integer" if np.issubdtype(image.dtype, np.integer) else "float"
+    declared = marker or probed or decoded
+    if marker is not None and probed is not None and marker != probed:
+        raise JPEGXLError("JPEG XL sample type conflicts with its HDR Finisher marker.")
+    if declared != decoded:
+        raise JPEGXLError("JPEG XL declared sample type conflicts with its decoded pixels.")
+    return str(declared)
+
+
 def _validate_app_metadata(value: dict[str, Any]) -> dict[str, Any]:
     if not value:
         return {}
-    expected = {
+    common = {
         "schema_version",
         "color_space",
         "transfer_function",
         "bit_depth",
         "reference_white_nits",
     }
-    if set(value) != expected:
-        raise JPEGXLError("JPEG XL HDR Finisher marker has an invalid schema.")
-    if value.get("schema_version") != _APP_METADATA_VERSION:
+    schema_version = value.get("schema_version")
+    if schema_version == 1:
+        if set(value) != common:
+            raise JPEGXLError("JPEG XL HDR Finisher marker has an invalid schema.")
+        allowed_bit_depths = {8, 10, 12, 16}
+        normalized = dict(value)
+        normalized["sample_type"] = "integer"
+    elif schema_version == _APP_METADATA_VERSION:
+        if set(value) != common | {"sample_type"}:
+            raise JPEGXLError("JPEG XL HDR Finisher marker has an invalid schema.")
+        interpretation = (value.get("color_space"), value.get("transfer_function"))
+        if interpretation == ("sRGB", "sRGB"):
+            allowed_precisions = {(8, "integer")}
+        elif interpretation[0] == "BT.2020" and interpretation[1] in {"PQ", "HLG"}:
+            allowed_precisions = {
+                (10, "integer"),
+                (12, "integer"),
+                (16, "integer"),
+                (16, "float"),
+                (32, "float"),
+            }
+        else:
+            raise JPEGXLError("JPEG XL HDR Finisher marker has an unsupported color interpretation.")
+        if (value.get("bit_depth"), value.get("sample_type")) not in allowed_precisions:
+            raise JPEGXLError("JPEG XL HDR Finisher marker has an invalid precision.")
+        allowed_bit_depths = {8, 10, 12, 16, 32}
+        normalized = value
+    else:
         raise JPEGXLError("JPEG XL HDR Finisher marker uses an unsupported schema version.")
-    if value.get("color_space") != "BT.2020" or value.get("transfer_function") not in {"PQ", "HLG"}:
+    if schema_version == 1 and (
+        value.get("color_space") != "BT.2020" or value.get("transfer_function") not in {"PQ", "HLG"}
+    ):
         raise JPEGXLError("JPEG XL HDR Finisher marker has an unsupported color interpretation.")
-    if type(value.get("bit_depth")) is not int or value["bit_depth"] not in {8, 10, 12, 16}:
+    if type(value.get("bit_depth")) is not int or value["bit_depth"] not in allowed_bit_depths:
         raise JPEGXLError("JPEG XL HDR Finisher marker has an invalid bit depth.")
     reference_white = value.get("reference_white_nits")
     if not isinstance(reference_white, (int, float)) or isinstance(reference_white, bool):
         raise JPEGXLError("JPEG XL HDR Finisher marker has an invalid reference white.")
     if not math.isfinite(float(reference_white)) or not 0 < float(reference_white) <= 10000:
         raise JPEGXLError("JPEG XL HDR Finisher marker has an invalid reference white.")
-    return value
+    return normalized
 
 
 def _box(kind: bytes, payload: bytes) -> bytes:

@@ -448,7 +448,7 @@
           <button id="eject-button" class="button-secondary" type="button">Eject current image</button>
           <button id="test-pattern-button" class="button-secondary" type="button">Load test pattern</button>
         </div>
-        <p class="status-text muted" id="experimental-dng-note"><strong>Experimental DNG Import:</strong> metadata-qualified support is limited to tested DNG variants. Valid but untested files may be rejected rather than decoded with missing corrections.</p>
+        <p class="status-text muted hidden" id="experimental-dng-note"><strong>Experimental DNG Import:</strong> metadata-qualified support is limited to tested DNG variants. Valid but untested files may be rejected rather than decoded with missing corrections.</p>
       </section>
       <section id="grade-workflow-panel" class="workflow-rail-panel" data-workflow-panel="grade" aria-label="Grade settings">
       <div class="grade-header">
@@ -1086,54 +1086,92 @@
       <span class="capability-chip" id="capability-summary">Checking encoders…</span>
     </div>
 
-    <input id="export-format" type="hidden" value="jpeg_ultrahdr">
-    <div class="format-cards" role="radiogroup" aria-label="Export format">
-      <label class="format-card" data-format-card="avif_gain_map">
-        <input type="radio" name="export-format-choice" value="avif_gain_map">
-        <span class="format-card-top"><span data-capability-for="avif_gain_map_encoder">Checking…</span></span>
-        <strong>AVIF + gain map</strong>
-        <span>Best quality per byte for the web. HDR in current Chromium browsers; your SDR version appears everywhere else.</span>
-        <small>ISO 21496-1 · 10-bit logarithmic gain map</small>
-      </label>
-      <label class="format-card selected" data-format-card="jpeg_ultrahdr">
-        <input type="radio" name="export-format-choice" value="jpeg_ultrahdr" checked>
-        <span class="format-card-top"><span data-capability-for="ultrahdr_encoder">Checking…</span></span>
-        <strong>JPEG Ultra HDR</strong>
-        <span>Opens as a normal JPEG anywhere. HDR appears in supported viewers; recompression may remove it.</span>
-        <small>Ultra HDR v1 XMP + ISO 21496-1 · 8-bit gain map</small>
-      </label>
-      <label class="format-card" data-format-card="jpegxl_hdr">
-        <input type="radio" name="export-format-choice" value="jpegxl_hdr">
-        <span class="format-card-top"><span data-capability-for="jpegxl_export">Checking…</span></span>
-        <strong>JPEG XL HDR</strong>
-        <span>Direct 12-bit HDR for compatible editors and viewers. Unlike the gain-map formats, it has no SDR fallback.</span>
-        <small>Rec.2020 PQ · direct HDR</small>
-      </label>
-      <label class="format-card" data-format-card="sdr_png">
-        <input type="radio" name="export-format-choice" value="sdr_png">
-        <span class="format-card-top"><span>SDR only</span><span data-capability-for="pillow">Checking…</span></span>
-        <strong>PNG (SDR)</strong>
-        <span>Your SDR fallback on its own, with no HDR data. Useful for legacy contexts and rendition checks.</span>
-        <small>8-bit sRGB · no gain map</small>
-      </label>
-    </div>
+    <section class="export-choice-section" aria-labelledby="export-format-title">
+      <h2 id="export-format-title" class="export-section-title">Format</h2>
+      <select id="export-format" aria-labelledby="export-format-title" aria-describedby="export-format-note">
+        <option value="avif_gain_map">AVIF + gain map</option>
+        <option value="jpeg_ultrahdr" selected>JPEG Ultra HDR</option>
+        <option value="jpegxl_hdr">JPEG XL HDR</option>
+        <option value="sdr_jpegxl">JPEG XL (SDR)</option>
+        <option value="sdr_png">PNG (SDR)</option>
+        <option value="sdr_jpeg">JPEG (SDR)</option>
+      </select>
+      <small id="export-format-note" class="helper visually-hidden" aria-live="polite"></small>
+    </section>
+    <section class="export-choice-section" aria-labelledby="export-preset-title">
+      <h2 id="export-preset-title" class="export-section-title">Preset</h2>
+      <select id="export-preset" aria-labelledby="export-preset-title" aria-describedby="export-preset-note" title="Manual encoding changes switch the preset to Custom.">
+        <option value="web_default" selected>Web Default</option>
+        <option value="web_optimized">Web Optimized</option>
+        <option value="maximum_fidelity">Maximum Fidelity</option>
+        <option value="custom" hidden>Custom</option>
+      </select>
+      <small id="export-preset-note" class="helper visually-hidden">Manual encoding changes switch the preset to Custom.</small>
+    </section>
 
     <div class="export-settings">
+      <h2 class="export-section-title export-encoding-title">Encoding</h2>
       <div class="control-row export-quality-row">
         <div class="control-heading"><label for="export-quality">Quality</label><output id="export-quality-value">85</output></div>
         <input id="export-quality" type="range" min="1" max="100" value="85">
       </div>
-      <div id="jpeg-advanced-settings" class="jpeg-advanced-settings">
-        <div class="control-row">
-          <div class="control-heading"><label for="jpeg-gain-map-quality">Gain-map Quality</label><output id="jpeg-gain-map-quality-value">100</output></div>
-          <input id="jpeg-gain-map-quality" type="range" min="1" max="100" value="100">
+      <details id="jpeg-advanced-settings" class="jpeg-advanced-settings">
+        <summary>Advanced export settings</summary>
+        <div class="advanced-settings-body">
+        <div id="avif-settings" class="avif-settings hidden">
+          <label>Bit Depth
+            <select id="avif-bit-depth"><option value="8">8-bit</option><option value="10" selected>10-bit</option><option value="12">12-bit</option></select>
+          </label>
+          <label>Chroma Subsampling
+            <select id="avif-chroma-subsampling"><option value="420" selected>4:2:0</option><option value="422">4:2:2</option><option value="444">4:4:4</option></select>
+          </label>
+          <label>Gain-map Chroma
+            <select id="avif-gain-map-chroma-subsampling" aria-describedby="avif-gain-map-chroma-note"><option value="420">4:2:0</option><option value="422">4:2:2</option><option value="444" selected>4:4:4</option></select>
+          </label>
+          <div class="control-row">
+            <div class="control-heading"><label for="avif-gain-map-quality">Gain-map Quality</label><output id="avif-gain-map-quality-value">85</output></div>
+            <input id="avif-gain-map-quality" type="range" min="1" max="100" value="85">
+          </div>
+          <label>Gain-map Resolution
+            <select id="avif-gain-map-scale"><option value="full" selected>Full</option><option value="half">Half</option></select>
+          </label>
+          <small id="avif-gain-map-chroma-note" class="helper visually-hidden">Gain-map chroma is independent of primary-image chroma. Monochrome is encoder-supported but omitted because it damages chromatic highlights.</small>
         </div>
-        <label>Gain-map Resolution
-          <select id="jpeg-gain-map-scale"><option value="full" selected>Full</option><option value="half">Half</option></select>
+        <div id="jpeg-ultrahdr-settings" class="jpeg-ultrahdr-settings">
+          <div class="control-row">
+            <div class="control-heading"><label for="jpeg-gain-map-quality">Gain-map Quality</label><output id="jpeg-gain-map-quality-value">100</output></div>
+            <input id="jpeg-gain-map-quality" type="range" min="1" max="100" value="100">
+          </div>
+          <label>Gain-map Resolution
+            <select id="jpeg-gain-map-scale"><option value="full" selected>Full</option><option value="half">Half</option></select>
+          </label>
+          <label>Primary JPEG Chroma
+            <select id="jpeg-ultrahdr-chroma-subsampling"><option value="420" selected>4:2:0</option><option value="422">4:2:2</option><option value="444">4:4:4</option></select>
+          </label>
+        </div>
+        <label id="sdr-jpeg-settings" class="sdr-jpeg-settings hidden">Chroma Subsampling
+          <select id="jpeg-chroma-subsampling"><option value="420" selected>4:2:0</option><option value="422">4:2:2</option><option value="444">4:4:4</option></select>
         </label>
-      </div>
+        <label id="jpegxl-settings" class="jpegxl-settings hidden">Precision
+          <select id="jpegxl-precision" aria-describedby="jpegxl-precision-note"><option value="uint10">10-bit integer</option><option value="uint12" selected>12-bit integer</option><option value="uint16">16-bit integer</option><option value="float16">16-bit float</option><option value="float32">32-bit float</option></select>
+          <small id="jpegxl-precision-note" class="helper visually-hidden">12-bit integer is the balanced HDR default. Float modes are intended for specialist interchange.</small>
+        </label>
+        <label id="sdr-png-settings" class="sdr-png-settings hidden">Bit Depth
+          <select id="sdr-png-bit-depth"><option value="8" selected>8-bit</option><option value="16">16-bit</option></select>
+        </label>
+        <label id="export-dithering-field">Dithering
+          <select id="export-dithering" aria-describedby="export-dithering-note"><option value="auto" selected>Auto</option><option value="off">Off</option><option value="subtle">Subtle</option></select>
+          <small class="helper visually-hidden" id="export-dithering-note">Auto applies deterministic signal-domain dithering when the selected output is quantized to 8 bits.</small>
+        </label>
+        <label id="export-metadata-policy-field">Source Metadata
+          <select id="export-metadata-policy" aria-describedby="export-metadata-policy-note"><option value="none" selected>None</option><option value="copyright">Copyright only</option><option value="all_except_location">All except location</option><option value="all_including_location">All including location</option></select>
+          <small class="helper visually-hidden" id="export-metadata-policy-note">Color, HDR, and gain-map signaling is always retained. “All including location” may expose GPS coordinates.</small>
+        </label>
+        <p class="helper export-resolved-encoding" id="export-resolved-encoding"></p>
+        </div>
+      </details>
       <fieldset class="output-finishing-settings">
-        <legend>Output Size &amp; Sharpening</legend>
+        <legend class="export-section-title">Output Size &amp; Sharpening</legend>
         <label>Resize
           <select id="export-resize-mode"><option value="original">Original cropped size</option><option value="long_edge">Long edge</option><option value="fit">Fit within dimensions</option></select>
         </label>
@@ -1141,10 +1179,11 @@
         <div id="export-fit-row" class="control-pair hidden"><label>Width <input id="export-width" type="number" min="1" max="100000" step="1" value="2048"></label><label>Height <input id="export-height" type="number" min="1" max="100000" step="1" value="2048"></label></div>
         <label class="checkbox-row"><input id="export-prevent-enlargement" type="checkbox" checked> Prevent enlargement</label>
         <label>Output Sharpening
-          <select id="export-sharpening"><option value="off">Off</option><option value="subtle">Subtle</option><option value="standard">Standard</option><option value="strong">Strong</option></select>
+          <select id="export-sharpening" aria-describedby="export-sharpening-note"><option value="off">Off</option><option value="subtle">Subtle</option><option value="standard">Standard</option><option value="strong">Strong</option></select>
         </label>
-        <p class="helper">Edge-aware multiscale sharpening is applied after final resize and before final-resolution grain. Inspect the exported file at 100%.</p>
+        <p id="export-sharpening-note" class="helper visually-hidden">Edge-aware multiscale sharpening is applied after final resize and before final-resolution grain. Inspect the exported file at 100%.</p>
       </fieldset>
+      <h2 class="export-section-title export-destination-title">Destination</h2>
       <label class="export-filename-field">Filename
         <input id="export-filename" type="text" value="hdr_finisher_export">
       </label>
@@ -1157,7 +1196,7 @@
     </div>
 
     <section class="preflight-panel">
-      <p class="section-kicker">Pre-flight</p>
+      <h2 class="export-section-title">Pre-flight</h2>
       <ul id="export-preflight" class="preflight-list">
         <li data-preflight="source">Source interpretation</li>
         <li data-preflight="hdr">HDR branch ready</li>
@@ -1195,7 +1234,8 @@
     </div>
     <div id="directory-browser-status" class="directory-browser-status" aria-live="polite">Loading folders…</div>
     <div class="media-browser-layout">
-      <nav class="media-browser-sidebar" aria-label="Favorite and system folders">
+      <nav class="media-browser-sidebar" aria-label="Drives, favorite, and system folders">
+        <strong>Drives</strong><ul id="directory-browser-drives"></ul>
         <strong>Places</strong><ul id="directory-browser-places"></ul>
         <strong>Favorites</strong><ul id="directory-browser-favorites"></ul>
       </nav>

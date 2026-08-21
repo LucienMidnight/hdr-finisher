@@ -35,6 +35,7 @@ async function main() {
       control.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await page.locator('[data-workflow-tab="export"]').click();
+    await page.locator("#jpeg-advanced-settings > summary").click();
     await page.locator("#export-directory").fill(outputDirectory);
     await page.locator("#export-directory-browse").click();
     await page.locator("#directory-browser").waitFor({ state: "visible" });
@@ -44,12 +45,17 @@ async function main() {
 
     const exports = [];
     for (const testCase of [
+      { format: "sdr_jpeg", extension: ".jpg" },
       { format: "sdr_png", extension: ".png" },
+      { format: "sdr_jpegxl", extension: ".jxl" },
       { format: "jpeg_ultrahdr", extension: ".jpg" },
     ]) {
       const filename = `edge-${testCase.format}-${runId}`;
       const expectedOutput = path.join(outputDirectory, `${filename}${testCase.extension}`);
-      await page.locator(`[data-format-card="${testCase.format}"]`).click();
+      await page.locator("#export-format").selectOption(testCase.format);
+      if (testCase.format === "sdr_jpeg") {
+        await page.locator("#jpeg-chroma-subsampling").selectOption("422");
+      }
       await page.locator("#export-filename").fill(filename);
       const exportResponsePromise = page.waitForResponse((response) => response.url().includes("/export") && response.request().method() === "POST", { timeout: 120000 });
       await page.locator("#export-confirm-button").click();
@@ -61,6 +67,7 @@ async function main() {
         status: response.status(),
         payload,
         displayedPath: await page.locator("#export-result-path").textContent(),
+        chromaSubsampling: testCase.format === "sdr_jpeg" ? await page.locator("#jpeg-chroma-subsampling").inputValue() : null,
         outputExists: fs.existsSync(expectedOutput),
         outputBytes: fs.existsSync(expectedOutput) ? fs.statSync(expectedOutput).size : 0,
       });
@@ -72,7 +79,9 @@ async function main() {
       exports,
       browserErrors,
     };
-    if (exports.some((entry) => entry.status !== 200 || !entry.payload.accepted || !entry.outputExists || entry.outputBytes === 0) || browserErrors.length) {
+    if (exports.some((entry) => entry.status !== 200 || !entry.payload.accepted || !entry.outputExists || entry.outputBytes === 0)
+      || exports.find((entry) => entry.format === "sdr_jpeg")?.chromaSubsampling !== "422"
+      || browserErrors.length) {
       throw new Error(`Export/file-browser regression failed: ${JSON.stringify(result)}`);
     }
     console.log(JSON.stringify(result));

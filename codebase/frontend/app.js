@@ -769,6 +769,7 @@ const els = {
   importButton: document.getElementById("import-button"),
   testPatternButton: document.getElementById("test-pattern-button"),
   emptyImportButton: document.getElementById("empty-import-button"),
+  experimentalDngNote: document.getElementById("experimental-dng-note"),
   ejectButton: document.getElementById("eject-button"),
   badge: document.getElementById("badge"),
   sourceRailExpand: document.getElementById("source-rail-expand"),
@@ -939,6 +940,7 @@ const els = {
   directoryBrowserPin: document.getElementById("directory-browser-pin"),
   directoryBrowserStatus: document.getElementById("directory-browser-status"),
   directoryBrowserList: document.getElementById("directory-browser-list"),
+  directoryBrowserDrives: document.getElementById("directory-browser-drives"),
   directoryBrowserPlaces: document.getElementById("directory-browser-places"),
   directoryBrowserFavorites: document.getElementById("directory-browser-favorites"),
   directoryBrowserPreview: document.getElementById("directory-browser-preview"),
@@ -948,9 +950,28 @@ const els = {
   directoryBrowserCancel: document.getElementById("directory-browser-cancel"),
   directoryBrowserSelect: document.getElementById("directory-browser-select"),
   exportFormat: document.getElementById("export-format"),
+  exportQualityRow: document.querySelector(".export-quality-row"),
   exportQuality: document.getElementById("export-quality"),
   exportQualityValue: document.getElementById("export-quality-value"),
   jpegAdvancedSettings: document.getElementById("jpeg-advanced-settings"),
+  avifSettings: document.getElementById("avif-settings"),
+  avifBitDepth: document.getElementById("avif-bit-depth"),
+  avifChromaSubsampling: document.getElementById("avif-chroma-subsampling"),
+  jpegUltrahdrSettings: document.getElementById("jpeg-ultrahdr-settings"),
+  jpegUltrahdrChromaSubsampling: document.getElementById("jpeg-ultrahdr-chroma-subsampling"),
+  sdrJpegSettings: document.getElementById("sdr-jpeg-settings"),
+  jpegChromaSubsampling: document.getElementById("jpeg-chroma-subsampling"),
+  jpegxlSettings: document.getElementById("jpegxl-settings"),
+  jpegxlPrecision: document.getElementById("jpegxl-precision"),
+  sdrPngSettings: document.getElementById("sdr-png-settings"),
+  sdrPngBitDepth: document.getElementById("sdr-png-bit-depth"),
+  exportDitheringField: document.getElementById("export-dithering-field"),
+  exportDithering: document.getElementById("export-dithering"),
+  exportDitheringNote: document.getElementById("export-dithering-note"),
+  exportMetadataPolicyField: document.getElementById("export-metadata-policy-field"),
+  exportMetadataPolicy: document.getElementById("export-metadata-policy"),
+  exportMetadataPolicyNote: document.getElementById("export-metadata-policy-note"),
+  exportResolvedEncoding: document.getElementById("export-resolved-encoding"),
   jpegGainMapQuality: document.getElementById("jpeg-gain-map-quality"),
   jpegGainMapQualityValue: document.getElementById("jpeg-gain-map-quality-value"),
   jpegGainMapScale: document.getElementById("jpeg-gain-map-scale"),
@@ -959,8 +980,12 @@ const els = {
   copyExportPath: document.getElementById("copy-export-path"),
   revealExportPath: document.getElementById("reveal-export-path"),
   openExportPath: document.getElementById("open-export-path"),
-  exportFormatChoices: [...document.querySelectorAll('input[name="export-format-choice"]')],
-  formatCards: [...document.querySelectorAll("[data-format-card]")],
+  exportPreset: document.getElementById("export-preset"),
+  exportFormatNote: document.getElementById("export-format-note"),
+  avifGainMapChromaSubsampling: document.getElementById("avif-gain-map-chroma-subsampling"),
+  avifGainMapQuality: document.getElementById("avif-gain-map-quality"),
+  avifGainMapQualityValue: document.getElementById("avif-gain-map-quality-value"),
+  avifGainMapScale: document.getElementById("avif-gain-map-scale"),
   preflightItems: [...document.querySelectorAll("[data-preflight]")],
   exportProofStatus: document.getElementById("export-proof-status"),
   reviewChromeProof: document.getElementById("review-chrome-proof"),
@@ -1089,7 +1114,120 @@ const capabilityForFormat = {
   avif_gain_map: "avif_gain_map_encoder",
   jpeg_ultrahdr: "ultrahdr_encoder",
   jpegxl_hdr: "jpegxl_export",
+  sdr_jpegxl: "jpegxl_export",
+  sdr_jpeg: "pillow",
   sdr_png: "pillow",
+};
+
+const exportPresetMappings = {
+  avif_gain_map: {
+    web_default: { quality: 85, avifBitDepth: "10", avifChromaSubsampling: "420", avifGainMapChromaSubsampling: "444", avifGainMapQuality: 85, avifGainMapScale: "full", exportDithering: "off", exportMetadataPolicy: "none" },
+    web_optimized: { quality: 75, avifBitDepth: "10", avifChromaSubsampling: "420", avifGainMapChromaSubsampling: "422", avifGainMapQuality: 70, avifGainMapScale: "half", exportDithering: "off", exportMetadataPolicy: "none" },
+    maximum_fidelity: { quality: 100, avifBitDepth: "12", avifChromaSubsampling: "444", avifGainMapChromaSubsampling: "444", avifGainMapQuality: 100, avifGainMapScale: "full", exportDithering: "off", exportMetadataPolicy: "none" },
+  },
+  jpeg_ultrahdr: {
+    web_default: { quality: 85, jpegGainMapQuality: 90, jpegGainMapScale: "full", jpegUltrahdrChromaSubsampling: "420", exportDithering: "auto", exportMetadataPolicy: "copyright" },
+    web_optimized: { quality: 75, jpegGainMapQuality: 80, jpegGainMapScale: "half", jpegUltrahdrChromaSubsampling: "420", exportDithering: "auto", exportMetadataPolicy: "none" },
+    maximum_fidelity: { quality: 100, jpegGainMapQuality: 100, jpegGainMapScale: "full", jpegUltrahdrChromaSubsampling: "444", exportDithering: "off", exportMetadataPolicy: "all_except_location" },
+  },
+  jpegxl_hdr: {
+    web_default: { quality: 90, jpegxlPrecision: "uint12", exportDithering: "off", exportMetadataPolicy: "copyright" },
+    web_optimized: { quality: 80, jpegxlPrecision: "uint10", exportDithering: "off", exportMetadataPolicy: "none" },
+    maximum_fidelity: { quality: 100, jpegxlPrecision: "uint16", exportDithering: "off", exportMetadataPolicy: "all_except_location" },
+  },
+  sdr_jpegxl: {
+    web_default: { quality: 90, exportDithering: "auto", exportMetadataPolicy: "copyright" },
+    web_optimized: { quality: 80, exportDithering: "auto", exportMetadataPolicy: "none" },
+    maximum_fidelity: { quality: 100, exportDithering: "subtle", exportMetadataPolicy: "all_except_location" },
+  },
+  sdr_png: {
+    web_default: { quality: 100, sdrPngBitDepth: "8", exportDithering: "auto", exportMetadataPolicy: "copyright" },
+    web_optimized: { quality: 100, sdrPngBitDepth: "8", exportDithering: "auto", exportMetadataPolicy: "none" },
+    maximum_fidelity: { quality: 100, sdrPngBitDepth: "16", exportDithering: "off", exportMetadataPolicy: "all_except_location" },
+  },
+  sdr_jpeg: {
+    web_default: { quality: 85, jpegChromaSubsampling: "420", exportDithering: "auto", exportMetadataPolicy: "copyright" },
+    web_optimized: { quality: 75, jpegChromaSubsampling: "420", exportDithering: "auto", exportMetadataPolicy: "none" },
+    maximum_fidelity: { quality: 100, jpegChromaSubsampling: "444", exportDithering: "subtle", exportMetadataPolicy: "all_except_location" },
+  },
+};
+
+const exportFormatNotes = {
+  avif_gain_map: "Efficient adaptive HDR for current Chromium browsers, with an SDR base for other decoders.",
+  jpeg_ultrahdr: "Broad JPEG fallback with HDR in compatible viewers; recompression can remove the gain map.",
+  jpegxl_hdr: "Direct Rec.2020 PQ HDR for specialist workflows; no SDR fallback and limited browser support.",
+  sdr_jpegxl: "Compact SDR for JPEG XL-aware workflows; browser support remains uneven.",
+  sdr_png: "Lossless SDR delivery with 8-bit web and 16-bit fidelity choices.",
+  sdr_jpeg: "Conventional compact SDR JPEG, including very wide images up to 65,500 pixels.",
+};
+
+const exportOptionTooltips = {
+  avifBitDepth: {
+    8: "Smallest AVIF primary image; lower gradient precision.",
+    10: "Balanced AVIF precision for HDR publishing.",
+    12: "Highest available AVIF primary-image precision.",
+  },
+  avifChromaSubsampling: {
+    420: "Smallest primary image; suitable for most photographic content.",
+    422: "Retains more horizontal color detail.",
+    444: "Retains full color resolution for fine colored edges and text.",
+  },
+  avifGainMapChromaSubsampling: {
+    420: "Lowest gain-map color resolution; colored-edge errors were measurable in testing.",
+    422: "Reduced gain-map color resolution used by Web Optimized.",
+    444: "Full gain-map color resolution; safest for saturated highlights and colored edges.",
+  },
+  avifGainMapScale: {
+    full: "Stores the gain map at full image resolution.",
+    half: "Stores a half-resolution gain map to reduce delivery size.",
+  },
+  jpegGainMapScale: {
+    full: "Stores the gain map at full image resolution.",
+    half: "Stores a half-resolution gain map to reduce delivery size.",
+  },
+  jpegUltrahdrChromaSubsampling: {
+    420: "Smallest primary JPEG; suitable for most photographic content.",
+    422: "Retains more horizontal color detail.",
+    444: "Retains full color resolution for fine colored edges and text.",
+  },
+  jpegChromaSubsampling: {
+    420: "Smallest JPEG; suitable for most photographic content.",
+    422: "Retains more horizontal color detail.",
+    444: "Retains full color resolution for fine colored edges and text.",
+  },
+  jpegxlPrecision: {
+    uint10: "Compact integer HDR precision.",
+    uint12: "Balanced integer HDR precision.",
+    uint16: "Highest practical integer precision.",
+    float16: "Specialist half-float interchange.",
+    float32: "Specialist full-float interchange with the largest files.",
+  },
+  sdrPngBitDepth: {
+    8: "Standard web-compatible PNG precision.",
+    16: "High-precision PNG interchange.",
+  },
+  exportDithering: {
+    auto: "Applies deterministic signal-domain dither when exporting 8-bit output.",
+    off: "Disables export dithering.",
+    subtle: "Applies subtle signal-domain dither.",
+  },
+  exportMetadataPolicy: {
+    none: "Removes optional source metadata while retaining required color and HDR signaling.",
+    copyright: "Preserves copyright metadata only.",
+    all_except_location: "Preserves source metadata except location information.",
+    all_including_location: "Preserves all supported source metadata, including possible GPS coordinates.",
+  },
+  exportResizeMode: {
+    original: "Exports the original cropped dimensions.",
+    long_edge: "Resizes by the image's longest edge.",
+    fit: "Fits the image within specified width and height limits.",
+  },
+  exportSharpening: {
+    off: "No output sharpening.",
+    subtle: "Light edge-aware sharpening after resize.",
+    standard: "Moderate edge-aware sharpening after resize.",
+    strong: "Strong edge-aware sharpening after resize.",
+  },
 };
 
 boot();
@@ -1103,6 +1241,7 @@ async function boot() {
   activateWorkflowTab("import", { focus: false });
   await initializeDesktopBridge();
   bindEvents();
+  applyExportPreset(els.exportFormat.value, "web_default", { invalidate: false });
   await initializeGpuPreview();
   await loadCapabilities().catch(() => {
     els.capabilitySummary.textContent = "Encoder status unavailable";
@@ -1324,9 +1463,11 @@ function initializeLayoutState() {
 }
 
 function applyLayoutState() {
-  els.appShell.style.setProperty("--rail-w", `${state.layout.railW}px`);
-  els.appShell.style.setProperty("--grade-w", `${state.layout.gradeW}px`);
-  els.appShell.style.setProperty("--dock-h", `${state.layout.dockH}px`);
+  // Proof and export rails are fixed siblings of .app-shell. Keep layout
+  // variables on the shared root so those panels track the same splitter.
+  document.documentElement.style.setProperty("--rail-w", `${state.layout.railW}px`);
+  document.documentElement.style.setProperty("--grade-w", `${state.layout.gradeW}px`);
+  document.documentElement.style.setProperty("--dock-h", `${state.layout.dockH}px`);
   state.dockCollapsed = !state.layout.dockOpen;
   state.activeDockTab = state.layout.dockTab;
   els.analysisDock.classList.toggle("collapsed", state.dockCollapsed);
@@ -1384,7 +1525,7 @@ function initSplitter({ element, stateKey, cssVar, axis, direction }) {
     frame = requestAnimationFrame(() => {
       frame = null;
       state.layout[stateKey] = pendingValue;
-      els.appShell.style.setProperty(cssVar, `${pendingValue}px`);
+      document.documentElement.style.setProperty(cssVar, `${pendingValue}px`);
       element.setAttribute("aria-valuenow", String(Math.round(pendingValue)));
     });
   };
@@ -1394,7 +1535,7 @@ function initSplitter({ element, stateKey, cssVar, axis, direction }) {
       cancelAnimationFrame(frame);
       frame = null;
       state.layout[stateKey] = pendingValue;
-      els.appShell.style.setProperty(cssVar, `${pendingValue}px`);
+      document.documentElement.style.setProperty(cssVar, `${pendingValue}px`);
     }
     element.classList.remove("dragging");
     document.documentElement.removeAttribute("data-resizing");
@@ -2014,25 +2155,55 @@ function bindEvents() {
   els.dockTabs.forEach((button) => {
     button.addEventListener("click", () => activateDockTab(button.dataset.dockTab));
   });
-  els.exportFormatChoices.forEach((choice) => {
-    choice.addEventListener("change", () => {
-      if (!choice.checked) return;
-      els.exportFormat.value = choice.value;
-      renderFormatCards();
-      renderExportPreflight();
-      renderWorkflowContext();
-    });
+  els.exportFormat.addEventListener("change", () => {
+    const requestedPreset = els.exportPreset.value === "custom" ? "web_default" : els.exportPreset.value;
+    applyExportPreset(els.exportFormat.value, requestedPreset);
+    renderExportPreflight();
+    renderWorkflowContext();
+  });
+  els.exportPreset.addEventListener("change", () => {
+    if (els.exportPreset.value === "custom") return;
+    applyExportPreset(els.exportFormat.value, els.exportPreset.value);
   });
   els.exportQuality.addEventListener("input", () => {
     els.exportQualityValue.textContent = els.exportQuality.value;
+    markExportPresetCustom();
     window.HDRProofing?.invalidate("settings");
   });
   els.jpegGainMapQuality.addEventListener("input", () => {
     els.jpegGainMapQualityValue.textContent = els.jpegGainMapQuality.value;
+    markExportPresetCustom();
     window.HDRProofing?.invalidate("settings");
   });
-  els.jpegGainMapScale.addEventListener("change", () => window.HDRProofing?.invalidate("settings"));
-  els.exportResizeMode?.addEventListener("change", renderOutputFinishingControls);
+  els.avifGainMapQuality.addEventListener("input", () => {
+    els.avifGainMapQualityValue.textContent = els.avifGainMapQuality.value;
+    markExportPresetCustom();
+    window.HDRProofing?.invalidate("settings");
+  });
+  [
+    els.avifBitDepth,
+    els.avifChromaSubsampling,
+    els.avifGainMapChromaSubsampling,
+    els.avifGainMapScale,
+    els.jpegUltrahdrChromaSubsampling,
+    els.jpegGainMapScale,
+    els.jpegChromaSubsampling,
+    els.jpegxlPrecision,
+    els.sdrPngBitDepth,
+    els.exportDithering,
+    els.exportMetadataPolicy,
+  ].forEach((control) => control?.addEventListener("change", () => {
+    markExportPresetCustom();
+    renderFormatCards();
+    window.HDRProofing?.invalidate("settings");
+  }));
+  els.exportResizeMode?.addEventListener("change", () => {
+    markExportPresetCustom();
+    renderOutputFinishingControls();
+  });
+  [els.exportLongEdge, els.exportWidth, els.exportHeight].forEach((control) => control?.addEventListener("change", markExportPresetCustom));
+  els.exportPreventEnlargement?.addEventListener("change", markExportPresetCustom);
+  els.exportSharpening?.addEventListener("change", markExportPresetCustom);
 
   bindCompareControl();
   bindKeyboardShortcuts();
@@ -2080,6 +2251,7 @@ function bindRangeResetControls() {
 }
 
 async function uploadFile(file) {
+  renderExperimentalDngNote(file);
   const formData = new FormData();
   formData.append("file", file);
   els.badge.textContent = "Loading image and building session...";
@@ -2150,6 +2322,7 @@ async function ejectCurrentSession() {
   if (!await confirmUnsavedTransition("eject the current image")) return;
   await fetch("/api/session/current", { method: "DELETE" }).catch(() => null);
   state.session = null;
+  renderExperimentalDngNote();
   els.rawSettingsSection?.classList.add("hidden");
   if (els.rawSettingsPanel) delete els.rawSettingsPanel.dataset.initialized;
   state.adjustments = defaultAdjustments();
@@ -2213,6 +2386,7 @@ async function ejectCurrentSession() {
 
 function renderSession() {
   const session = state.session;
+  renderExperimentalDngNote(session);
   renderSourceFilename(session.source.filename);
   clearPreviewOverlay();
   els.badge.textContent = session.analysis.badge_message;
@@ -2440,6 +2614,8 @@ function renderWorkflowContext() {
     avif_gain_map: "AVIF + gain map",
     jpeg_ultrahdr: "JPEG Ultra HDR",
     jpegxl_hdr: "JPEG XL HDR",
+    sdr_jpegxl: "JPEG XL (SDR)",
+    sdr_jpeg: "JPEG (SDR)",
     sdr_png: "PNG (SDR)",
   }[els.exportFormat?.value] || "Not selected";
   const proofStatus = !state.proofReconstruction
@@ -3540,7 +3716,9 @@ function sanitizeFilename(value) {
 }
 
 function exportExtensionForFormat(format) {
+  if (format === "sdr_jpeg") return ".jpg";
   if (format === "sdr_png") return ".png";
+  if (format === "sdr_jpegxl") return ".jxl";
   if (format === "jpeg_ultrahdr") return ".jpg";
   if (format === "jpegxl_hdr") return ".jxl";
   return ".avif";
@@ -3577,7 +3755,7 @@ async function exportCurrentSession() {
       suggestedName: `${sanitizeFilename(els.exportFilename.value || "hdr_finisher_export")}${extension}`,
       directory: (els.exportDirectory.value || "").trim(),
       extension,
-      formatName: els.exportFormat.value === "avif_gain_map" ? "AVIF gain map" : els.exportFormat.value === "sdr_png" ? "PNG image" : els.exportFormat.value === "jpegxl_hdr" ? "JPEG XL HDR" : "JPEG Ultra HDR",
+      formatName: els.exportFormat.value === "avif_gain_map" ? "AVIF gain map" : els.exportFormat.value === "sdr_jpeg" ? "JPEG image" : els.exportFormat.value === "sdr_png" ? "PNG image" : els.exportFormat.value === "sdr_jpegxl" ? "JPEG XL SDR" : els.exportFormat.value === "jpegxl_hdr" ? "JPEG XL HDR" : "JPEG Ultra HDR",
     });
     if (!selection) {
       els.exportStatus.textContent = "Export cancelled.";
@@ -3688,7 +3866,7 @@ async function loadMediaDirectory(path) {
     els.directoryBrowserUp.disabled = !payload.parent;
     els.directoryBrowserSelect.disabled = mode === "source";
     delete els.directoryBrowser.dataset.selectedPath;
-    renderMediaBrowserNavigation(payload.places || [], payload.favorites || []);
+    renderMediaBrowserNavigation(payload.drives || [], payload.places || [], payload.favorites || []);
     const entries = Array.isArray(payload.entries) ? payload.entries : [];
     if (!entries.length) {
       const empty = document.createElement("li");
@@ -3744,7 +3922,7 @@ async function loadMediaDirectory(path) {
   }
 }
 
-function renderMediaBrowserNavigation(places, favorites) {
+function renderMediaBrowserNavigation(drives, places, favorites) {
   const render = (container, entries, removable) => {
     container.replaceChildren();
     for (const entry of entries) {
@@ -3771,6 +3949,7 @@ function renderMediaBrowserNavigation(places, favorites) {
       container.append(item);
     }
   };
+  render(els.directoryBrowserDrives, drives, false);
   render(els.directoryBrowserPlaces, places, false);
   render(els.directoryBrowserFavorites, favorites, true);
 }
@@ -3782,6 +3961,7 @@ function selectMediaBrowserEntry(button) {
 
 function previewMediaBrowserFile(entry, button) {
   const generation = ++state.mediaPreviewGeneration;
+  renderExperimentalDngNote(entry);
   els.directoryBrowser.dataset.selectedPath = entry.path;
   els.directoryBrowserSelect.disabled = false;
   selectMediaBrowserEntry(button);
@@ -6275,6 +6455,18 @@ function requestSessionExport(outputPath, overwrite, pathGrant = null, overwrite
       quality: Number(els.exportQuality.value),
       jpeg_gain_map_quality: Number(els.jpegGainMapQuality.value),
       jpeg_gain_map_scale: els.jpegGainMapScale.value,
+      jpeg_chroma_subsampling: els.exportFormat.value === "jpeg_ultrahdr"
+        ? els.jpegUltrahdrChromaSubsampling.value
+        : els.jpegChromaSubsampling.value,
+      avif_bit_depth: Number(els.avifBitDepth.value),
+      avif_chroma_subsampling: els.avifChromaSubsampling.value,
+      avif_gain_map_chroma_subsampling: els.avifGainMapChromaSubsampling.value,
+      avif_gain_map_quality: Number(els.avifGainMapQuality.value),
+      avif_gain_map_scale: els.avifGainMapScale.value,
+      sdr_png_bit_depth: Number(els.sdrPngBitDepth.value),
+      jpegxl_precision: els.jpegxlPrecision.value,
+      dithering: els.exportDithering.value,
+      metadata_policy: els.exportMetadataPolicy.disabled ? "none" : els.exportMetadataPolicy.value,
       output_path: outputPath,
       path_grant: pathGrant,
       overwrite,
@@ -6449,6 +6641,17 @@ function renderSourceSettingsControls() {
 
 function isRawSession(session) {
   return Boolean(session && [".dng", ".arw", ".cr2", ".cr3", ".nef", ".nrw", ".raf", ".rw2", ".orf", ".ori", ".pef", ".srw"].includes(session.source.suffix));
+}
+
+function isDngImportCandidate(candidate) {
+  if (!candidate) return false;
+  const source = candidate.source || candidate;
+  const value = source.suffix || source.path || source.name || source.filename || source.format || "";
+  return String(value).toLowerCase().replace(/^dng$/, ".dng").endsWith(".dng");
+}
+
+function renderExperimentalDngNote(candidate = null) {
+  els.experimentalDngNote?.classList.toggle("hidden", !isDngImportCandidate(candidate));
 }
 
 function renderRawImportControls(session) {
@@ -7623,39 +7826,156 @@ function renderCapabilities() {
     element.title = capability?.detail || "Capability status unavailable.";
   });
 
-  els.formatCards.forEach((card) => {
-    const format = card.dataset.formatCard;
-    const capability = state.capabilities[capabilityForFormat[format]];
+  [...els.exportFormat.options].forEach((option) => {
+    const capability = state.capabilities[capabilityForFormat[option.value]];
     const availableForExport = capability?.status === "available";
-    card.classList.toggle("unavailable", !availableForExport);
-    const radio = card.querySelector("input");
-    radio.disabled = !availableForExport;
-    card.title = availableForExport ? "" : capability?.detail || "This export path is unavailable.";
-    card.querySelector(".format-capability-detail")?.remove();
-    if (!availableForExport) {
-      const detail = document.createElement("span");
-      detail.className = "format-capability-detail";
-      detail.textContent = capability?.detail || "Required encoder is not installed.";
-      card.append(detail);
-    }
+    option.disabled = !availableForExport;
+    option.title = availableForExport
+      ? exportFormatNotes[option.value] || ""
+      : capability?.detail || "This export path is unavailable.";
   });
 
-  const selected = els.exportFormatChoices.find((choice) => choice.checked && !choice.disabled);
-  if (!selected) {
-    const fallback = els.exportFormatChoices.find((choice) => !choice.disabled);
+  if (els.exportFormat.selectedOptions[0]?.disabled) {
+    const fallback = [...els.exportFormat.options].find((option) => !option.disabled);
     if (fallback) {
-      fallback.checked = true;
       els.exportFormat.value = fallback.value;
+      applyExportPreset(fallback.value, "web_default", { invalidate: false });
     }
   }
+  renderFormatCards();
   window.HDRProofing?.render();
 }
 
-function renderFormatCards() {
-  els.formatCards.forEach((card) => {
-    card.classList.toggle("selected", card.dataset.formatCard === els.exportFormat.value);
+function markExportPresetCustom() {
+  const option = els.exportPreset.querySelector('option[value="custom"]');
+  option.hidden = false;
+  els.exportPreset.value = "custom";
+}
+
+function applyExportPreset(format, presetName, { invalidate = true } = {}) {
+  const mapping = exportPresetMappings[format]?.[presetName];
+  if (!mapping) return;
+  const controls = { quality: els.exportQuality, ...els };
+  Object.entries(mapping).forEach(([key, value]) => {
+    const control = controls[key];
+    if (!control) return;
+    if (control.type === "checkbox") control.checked = Boolean(value);
+    else control.value = String(value);
   });
-  els.jpegAdvancedSettings.classList.toggle("hidden", els.exportFormat.value !== "jpeg_ultrahdr");
+  els.exportResizeMode.value = "original";
+  els.exportPreventEnlargement.checked = true;
+  els.exportSharpening.value = "off";
+  els.exportPreset.value = presetName;
+  els.exportPreset.querySelector('option[value="custom"]').hidden = true;
+  els.exportQualityValue.textContent = els.exportQuality.value;
+  els.jpegGainMapQualityValue.textContent = els.jpegGainMapQuality.value;
+  els.avifGainMapQualityValue.textContent = els.avifGainMapQuality.value;
+  renderOutputFinishingControls();
+  renderFormatCards();
+  if (invalidate) window.HDRProofing?.invalidate("settings");
+}
+
+function annotateWebDefaultOptions(format) {
+  document.querySelectorAll("#export-sheet select option").forEach((option) => {
+    if (option.closest("#export-preset, #export-format")) return;
+    if (!option.dataset.baseLabel) {
+      option.dataset.baseLabel = option.textContent
+        .replace(/ · (Recommended|Web recommended|Web Default|Web \/ privacy default)$/i, "");
+    }
+    option.textContent = option.dataset.baseLabel;
+  });
+  const webDefault = {
+    ...exportPresetMappings[format]?.web_default,
+    exportResizeMode: "original",
+    exportSharpening: "off",
+  };
+  const controls = { quality: els.exportQuality, ...els };
+  Object.entries(webDefault).forEach(([key, value]) => {
+    const control = controls[key];
+    if (!(control instanceof HTMLSelectElement)) return;
+    const option = [...control.options].find((candidate) => candidate.value === String(value));
+    if (option) option.textContent = `${option.dataset.baseLabel || option.textContent} · Web Default`;
+  });
+}
+
+function applyExportOptionTooltips() {
+  Object.entries(exportOptionTooltips).forEach(([key, descriptions]) => {
+    const control = els[key];
+    if (!(control instanceof HTMLSelectElement)) return;
+    [...control.options].forEach((option) => {
+      option.title = descriptions[option.value] || "";
+    });
+    control.title = descriptions[control.value] || "";
+  });
+  [...els.exportPreset.options].forEach((option) => {
+    option.title = ({
+      web_default: "Balanced recommended publishing settings.",
+      web_optimized: "Smaller files while retaining acceptable publishing quality.",
+      maximum_fidelity: "Highest practical precision and color fidelity.",
+      custom: "One or more controls differ from the selected built-in preset.",
+    })[option.value] || "";
+  });
+  els.exportFormat.title = els.exportFormat.selectedOptions[0]?.title || "";
+  els.exportPreset.title = els.exportPreset.selectedOptions[0]?.title || "";
+}
+
+function renderFormatCards() {
+  const format = els.exportFormat.value;
+  const capability = state.capabilities[capabilityForFormat[format]];
+  els.exportFormatNote.textContent = capability?.status === "available"
+    ? exportFormatNotes[format]
+    : capability?.detail || exportFormatNotes[format];
+  els.exportFormat.title = els.exportFormatNote.textContent;
+  els.jpegAdvancedSettings.classList.remove("hidden");
+  els.avifSettings.classList.toggle("hidden", format !== "avif_gain_map");
+  els.jpegUltrahdrSettings.classList.toggle("hidden", format !== "jpeg_ultrahdr");
+  els.sdrJpegSettings.classList.toggle("hidden", format !== "sdr_jpeg");
+  els.jpegxlSettings.classList.toggle("hidden", format !== "jpegxl_hdr");
+  els.sdrPngSettings.classList.toggle("hidden", format !== "sdr_png");
+
+  const qualityApplicable = format !== "sdr_png";
+  els.exportQuality.disabled = !qualityApplicable;
+  els.exportQualityRow.classList.toggle("disabled-setting", !qualityApplicable);
+  els.exportQualityRow.title = qualityApplicable ? "" : "PNG compression is lossless; the Quality setting does not apply.";
+
+  const sourceMetadataApplicable = format !== "avif_gain_map";
+  els.exportMetadataPolicy.disabled = !sourceMetadataApplicable;
+  els.exportMetadataPolicyField.classList.toggle("disabled-setting", !sourceMetadataApplicable);
+  els.exportMetadataPolicyNote.textContent = sourceMetadataApplicable
+    ? "Color, HDR, and gain-map signaling is always retained. ‘All including location’ may expose GPS coordinates."
+    : "Source metadata is unavailable in the current AVIF gain-map combiner; required color and gain-map signaling is still retained.";
+  els.exportMetadataPolicy.title = els.exportMetadataPolicyNote.textContent;
+
+  const selectedBitDepth = format === "avif_gain_map"
+    ? Number(els.avifBitDepth.value)
+    : format === "sdr_png" ? Number(els.sdrPngBitDepth.value)
+    : format === "jpegxl_hdr" ? Number(String(els.jpegxlPrecision.value).match(/\d+/)?.[0] || 12)
+    : 8;
+  const ditherApplicable = selectedBitDepth === 8 && format !== "jpegxl_hdr";
+  els.exportDithering.disabled = !ditherApplicable;
+  els.exportDitheringField.classList.toggle("disabled-setting", !ditherApplicable);
+  els.exportDitheringNote.textContent = ditherApplicable
+    ? "Auto applies deterministic signal-domain dithering when the selected output is quantized to 8 bits."
+    : `Dithering is disabled because this ${selectedBitDepth}-bit output does not benefit from 8-bit quantization dither.`;
+  els.exportDithering.title = els.exportDitheringNote.textContent;
+
+  const encodingSummary = {
+    avif_gain_map: `${els.avifBitDepth.value}-bit sRGB base · ${formatChroma(els.avifChromaSubsampling.value)} primary · 10-bit ${formatChroma(els.avifGainMapChromaSubsampling.value)} gain map · ${els.avifGainMapScale.value} resolution · Rec.2020 PQ alternate`,
+    jpeg_ultrahdr: `8-bit sRGB JPEG · ${formatChroma(els.jpegUltrahdrChromaSubsampling.value)} · 8-bit gain map`,
+    jpegxl_hdr: `${els.jpegxlPrecision.options[els.jpegxlPrecision.selectedIndex]?.textContent || "12-bit integer"} · Rec.2020 PQ`,
+    sdr_jpegxl: "8-bit sRGB JPEG XL · no gain map",
+    sdr_png: `${els.sdrPngBitDepth.value}-bit sRGB PNG`,
+    sdr_jpeg: `8-bit sRGB JPEG · ${formatChroma(els.jpegChromaSubsampling.value)}`,
+  }[format];
+  els.exportResolvedEncoding.textContent = `Resolved encoding: ${encodingSummary || "automatic"}`;
+  annotateWebDefaultOptions(format);
+  applyExportOptionTooltips();
+  if (!sourceMetadataApplicable) els.exportMetadataPolicy.title = els.exportMetadataPolicyNote.textContent;
+  if (!ditherApplicable) els.exportDithering.title = els.exportDitheringNote.textContent;
+}
+
+function formatChroma(value) {
+  return ({ 420: "4:2:0", 422: "4:2:2", 444: "4:4:4" })[value] || value;
 }
 
 function renderExportPreflight() {
@@ -7682,7 +8002,7 @@ function renderProofPreflight() {
   const proofApplicable = ["avif_gain_map", "jpeg_ultrahdr", "jpegxl_hdr"].includes(els.exportFormat.value);
   els.reviewChromeProof.classList.toggle("hidden", !proofApplicable || !state.session);
   if (!proofApplicable) {
-    els.exportProofStatus.textContent = "Chromium HDR proof not applicable to SDR PNG";
+    els.exportProofStatus.textContent = "Chromium HDR proof not applicable to SDR export";
     return;
   }
   const proofFormatNames = { avif_gain_map: "AVIF", jpeg_ultrahdr: "JPEG Ultra HDR", jpegxl_hdr: "JPEG XL HDR" };
@@ -10874,6 +11194,7 @@ async function openDesktopSelection(selection) {
     await openProjectFromPath(selection);
     return;
   }
+  renderExperimentalDngNote(selection);
   if (!await confirmUnsavedTransition("import another source")) return;
   await openStagedDesktopSource(selection);
 }

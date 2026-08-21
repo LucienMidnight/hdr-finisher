@@ -405,6 +405,14 @@ def test_export_quality_slider_bounds_are_enforced() -> None:
         ExportSettings(quality=101)
 
 
+def test_jpegxl_precision_defaults_to_twelve_bit_and_excludes_eight_bit() -> None:
+    assert ExportSettings().jpegxl_precision == "uint12"
+    for precision in ("uint10", "uint12", "uint16", "float16", "float32"):
+        assert ExportSettings(jpegxl_precision=precision).jpegxl_precision == precision
+    with pytest.raises(ValueError):
+        ExportSettings(jpegxl_precision="uint8")
+
+
 def test_hdr_scope_reports_reference_nits_and_stats() -> None:
     image = np.ones((8, 8, 3), dtype=np.float32) * 1.8
     scope = build_scope(image, AdjustmentState(), PreviewKind.HDR)
