@@ -24,7 +24,7 @@ All built-ins use original cropped dimensions, prevent enlargement, and leave ou
 
 | Format | Web Default | Web Optimized | Maximum Fidelity |
 |---|---|---|---|
-| AVIF + gain map | Q85; 10-bit 4:2:0 primary; 10-bit 4:4:4 gain map Q85/full; metadata unavailable | Q75; 10-bit 4:2:0 primary; 10-bit 4:2:2 gain map Q70/half | Q100; 12-bit 4:4:4 primary; 10-bit 4:4:4 gain map Q100/full |
+| AVIF + gain map | Q85; 10-bit 4:2:0 primary; 10-bit 4:4:4 gain map Q85/half; metadata unavailable | Q75; 10-bit 4:2:0 primary; 10-bit 4:4:4 gain map Q70/half | Q100; 12-bit 4:4:4 primary; 10-bit 4:4:4 gain map Q100/full |
 | JPEG Ultra HDR | Primary Q85 4:2:0; gain map Q90/full; Auto dither; copyright | Primary Q75 4:2:0; gain map Q80/half; Auto; no source metadata | Primary/gain Q100; 4:4:4; full; dither off; all except location |
 | JPEG XL HDR | Q90; 12-bit integer; copyright | Q80; 10-bit integer; no source metadata | Q100; 16-bit integer; all except location |
 | JPEG XL (SDR) | Q90; Auto dither; copyright | Q80; Auto; no source metadata | Q100; Subtle dither; all except location |
@@ -61,12 +61,12 @@ The export uses:
 
 - sRGB SDR base signaling
 - A BT.2020/PQ alternate image at the selected precision
-- A separate 10-bit logarithmic gain map with selectable 4:2:0, 4:2:2, or 4:4:4 chroma
+- A separate 10-bit 4:4:4 logarithmic gain map
 - ISO 21496-1-compatible gain-map metadata via the AVIF tooling
 
-The primary **Quality** control is separate from **Gain-map Quality** and **Gain-map Resolution**. **Bit Depth** offers 8-bit, 10-bit, and 12-bit primary output. Primary **Chroma Subsampling** and **Gain-map Chroma** are independent. HDR Finisher validates the selected primary depth/chroma and the gain-map chroma before moving the staged file into place.
+The primary **Quality** control is separate from **Gain-map Quality** and **Gain-map Resolution**. **Bit Depth** offers 8-bit, 10-bit, and 12-bit primary output. Primary **Chroma Subsampling** remains selectable, while gain-map chroma is fixed at 4:4:4. HDR Finisher validates the selected primary depth/chroma and the fixed gain-map chroma before moving the staged file into place.
 
-The built-in delivery pattern showed that a 4:2:0 gain map raised colored-edge MAE by about 70% versus 4:4:4 and did not reduce file size in that sample. A monochrome gain map was about 14% smaller but produced severe saturated chromatic-highlight errors. Therefore Web Default retains 4:4:4; Web Optimized uses 4:2:2 plus lower quality/half resolution; 4:0:0 is not exposed. Bundled libavif and Edge 151 decoded all tested chroma modes, but headless decode does not replace physical HDR-display review. See [AVIF Gain-map Chroma Validation](../testing/AVIF_Gain_Map_Chroma_Validation_2026-08-21.md).
+The built-in delivery pattern showed that a 4:2:0 gain map raised colored-edge MAE by about 70% versus 4:4:4 and did not reduce file size in that sample. A monochrome gain map was about 14% smaller but produced severe saturated chromatic-highlight errors. The DxO photographic corpus then showed that half-resolution 4:4:4 cut total size by a median 52.8% versus full-resolution 4:4:4, while further chroma subsampling saved almost nothing. Gain-map chroma is therefore fixed at 4:4:4: Web Default and Web Optimized use half resolution, and Maximum Fidelity uses full resolution. Bundled libavif and Edge 151 decoded every tested mode, but headless decode does not replace physical HDR-display review. See [AVIF Gain-map Chroma Validation](../testing/AVIF_Gain_Map_Chroma_Validation_2026-08-21.md).
 
 The current AVIF gain-map combiner cannot preserve arbitrary source EXIF, so Source Metadata is disabled for this format. Required color and gain-map signaling is always written.
 

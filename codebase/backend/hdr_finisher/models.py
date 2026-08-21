@@ -918,7 +918,7 @@ class ExportSettings(BaseModel):
     avif_chroma_subsampling: Literal["420", "422", "444"] = "420"
     avif_gain_map_chroma_subsampling: Literal["400", "420", "422", "444"] = "444"
     avif_gain_map_quality: int | None = Field(default=None, ge=1, le=100)
-    avif_gain_map_scale: Literal["full", "half"] = "full"
+    avif_gain_map_scale: Literal["full", "half"] = "half"
     sdr_png_bit_depth: Literal[8, 16] = 8
     jpegxl_precision: Literal["uint10", "uint12", "uint16", "float16", "float32"] = "uint12"
     dithering: Literal["auto", "off", "subtle"] = "auto"
@@ -993,7 +993,7 @@ class ProofArtifactRequest(BaseModel):
     avif_chroma_subsampling: Literal["420", "422", "444"] = "420"
     avif_gain_map_chroma_subsampling: Literal["400", "420", "422", "444"] = "444"
     avif_gain_map_quality: int | None = Field(default=None, ge=1, le=100)
-    avif_gain_map_scale: Literal["full", "half"] = "full"
+    avif_gain_map_scale: Literal["full", "half"] = "half"
     jpegxl_precision: Literal["uint10", "uint12", "uint16", "float16", "float32"] = "uint12"
     dithering: Literal["auto", "off", "subtle"] = "auto"
     long_edge: int = Field(default=1200, ge=256, le=1600)

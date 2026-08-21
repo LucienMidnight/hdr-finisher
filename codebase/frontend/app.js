@@ -982,7 +982,6 @@ const els = {
   openExportPath: document.getElementById("open-export-path"),
   exportPreset: document.getElementById("export-preset"),
   exportFormatNote: document.getElementById("export-format-note"),
-  avifGainMapChromaSubsampling: document.getElementById("avif-gain-map-chroma-subsampling"),
   avifGainMapQuality: document.getElementById("avif-gain-map-quality"),
   avifGainMapQualityValue: document.getElementById("avif-gain-map-quality-value"),
   avifGainMapScale: document.getElementById("avif-gain-map-scale"),
@@ -1121,9 +1120,9 @@ const capabilityForFormat = {
 
 const exportPresetMappings = {
   avif_gain_map: {
-    web_default: { quality: 85, avifBitDepth: "10", avifChromaSubsampling: "420", avifGainMapChromaSubsampling: "444", avifGainMapQuality: 85, avifGainMapScale: "full", exportDithering: "off", exportMetadataPolicy: "none" },
-    web_optimized: { quality: 75, avifBitDepth: "10", avifChromaSubsampling: "420", avifGainMapChromaSubsampling: "422", avifGainMapQuality: 70, avifGainMapScale: "half", exportDithering: "off", exportMetadataPolicy: "none" },
-    maximum_fidelity: { quality: 100, avifBitDepth: "12", avifChromaSubsampling: "444", avifGainMapChromaSubsampling: "444", avifGainMapQuality: 100, avifGainMapScale: "full", exportDithering: "off", exportMetadataPolicy: "none" },
+    web_default: { quality: 85, avifBitDepth: "10", avifChromaSubsampling: "420", avifGainMapQuality: 85, avifGainMapScale: "half", exportDithering: "off", exportMetadataPolicy: "none" },
+    web_optimized: { quality: 75, avifBitDepth: "10", avifChromaSubsampling: "420", avifGainMapQuality: 70, avifGainMapScale: "half", exportDithering: "off", exportMetadataPolicy: "none" },
+    maximum_fidelity: { quality: 100, avifBitDepth: "12", avifChromaSubsampling: "444", avifGainMapQuality: 100, avifGainMapScale: "full", exportDithering: "off", exportMetadataPolicy: "none" },
   },
   jpeg_ultrahdr: {
     web_default: { quality: 85, jpegGainMapQuality: 90, jpegGainMapScale: "full", jpegUltrahdrChromaSubsampling: "420", exportDithering: "auto", exportMetadataPolicy: "copyright" },
@@ -1171,11 +1170,6 @@ const exportOptionTooltips = {
     420: "Smallest primary image; suitable for most photographic content.",
     422: "Retains more horizontal color detail.",
     444: "Retains full color resolution for fine colored edges and text.",
-  },
-  avifGainMapChromaSubsampling: {
-    420: "Lowest gain-map color resolution; colored-edge errors were measurable in testing.",
-    422: "Reduced gain-map color resolution used by Web Optimized.",
-    444: "Full gain-map color resolution; safest for saturated highlights and colored edges.",
   },
   avifGainMapScale: {
     full: "Stores the gain map at full image resolution.",
@@ -2183,7 +2177,6 @@ function bindEvents() {
   [
     els.avifBitDepth,
     els.avifChromaSubsampling,
-    els.avifGainMapChromaSubsampling,
     els.avifGainMapScale,
     els.jpegUltrahdrChromaSubsampling,
     els.jpegGainMapScale,
@@ -6460,7 +6453,7 @@ function requestSessionExport(outputPath, overwrite, pathGrant = null, overwrite
         : els.jpegChromaSubsampling.value,
       avif_bit_depth: Number(els.avifBitDepth.value),
       avif_chroma_subsampling: els.avifChromaSubsampling.value,
-      avif_gain_map_chroma_subsampling: els.avifGainMapChromaSubsampling.value,
+      avif_gain_map_chroma_subsampling: "444",
       avif_gain_map_quality: Number(els.avifGainMapQuality.value),
       avif_gain_map_scale: els.avifGainMapScale.value,
       sdr_png_bit_depth: Number(els.sdrPngBitDepth.value),
@@ -7960,7 +7953,7 @@ function renderFormatCards() {
   els.exportDithering.title = els.exportDitheringNote.textContent;
 
   const encodingSummary = {
-    avif_gain_map: `${els.avifBitDepth.value}-bit sRGB base · ${formatChroma(els.avifChromaSubsampling.value)} primary · 10-bit ${formatChroma(els.avifGainMapChromaSubsampling.value)} gain map · ${els.avifGainMapScale.value} resolution · Rec.2020 PQ alternate`,
+    avif_gain_map: `${els.avifBitDepth.value}-bit sRGB base · ${formatChroma(els.avifChromaSubsampling.value)} primary · 10-bit 4:4:4 gain map · ${els.avifGainMapScale.value} resolution · Rec.2020 PQ alternate`,
     jpeg_ultrahdr: `8-bit sRGB JPEG · ${formatChroma(els.jpegUltrahdrChromaSubsampling.value)} · 8-bit gain map`,
     jpegxl_hdr: `${els.jpegxlPrecision.options[els.jpegxlPrecision.selectedIndex]?.textContent || "12-bit integer"} · Rec.2020 PQ`,
     sdr_jpegxl: "8-bit sRGB JPEG XL · no gain map",

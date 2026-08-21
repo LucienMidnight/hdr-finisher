@@ -5,7 +5,11 @@ const { chromium } = require("playwright");
 const directory = path.resolve(process.argv[2] || path.join("output", "avif-gainmap-chroma"));
 
 async function main() {
-  const files = fs.readdirSync(directory).filter((name) => name.endsWith(".avif")).sort();
+  const files = fs
+    .readdirSync(directory, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".avif"))
+    .map((entry) => path.relative(directory, path.join(entry.parentPath, entry.name)))
+    .sort();
   if (!files.length) throw new Error(`No AVIF files found in ${directory}`);
   const browser = await chromium.launch({ headless: true, channel: "msedge" });
   const page = await browser.newPage();

@@ -360,7 +360,7 @@ def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     assert 'id="jpegxl-precision"' in html
     assert 'id="avif-bit-depth"' in html
     assert 'id="avif-chroma-subsampling"' in html
-    assert 'id="avif-gain-map-chroma-subsampling"' in html
+    assert 'id="avif-gain-map-chroma-subsampling"' not in html
     assert 'id="avif-gain-map-quality"' in html
     assert 'id="avif-gain-map-scale"' in html
     assert 'id="jpeg-ultrahdr-chroma-subsampling"' in html
@@ -370,21 +370,23 @@ def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     assert '<option value="uint12" selected>12-bit integer</option>' in html
     assert '<option value="float32">32-bit float</option>' in html
     assert '<option value="422">4:2:2</option>' in html
-    assert '<option value="444" selected>4:4:4</option>' in html
+    assert '<option value="444">4:4:4</option>' in html
     assert "Full color resolution" not in html
     assert "Reduced color resolution" not in html
     assert "Small color detail" not in html
     assert "More color detail" not in html
     assert "High-precision interchange" not in html
     assert 'id="export-format-note" class="helper visually-hidden"' in html
-    assert 'id="avif-gain-map-chroma-note" class="helper visually-hidden"' in html
+    assert 'id="avif-gain-map-chroma-note"' not in html
     assert "const exportOptionTooltips =" in javascript
     assert "option.title = descriptions[option.value]" in javascript
     assert 'value="uint8"' not in html
     assert "jpegxl_precision: els.jpegxlPrecision.value" in javascript
     assert "avif_bit_depth: Number(els.avifBitDepth.value)" in javascript
     assert "avif_chroma_subsampling: els.avifChromaSubsampling.value" in javascript
-    assert "avif_gain_map_chroma_subsampling: els.avifGainMapChromaSubsampling.value" in javascript
+    assert 'avif_gain_map_chroma_subsampling: "444"' in javascript
+    assert "avifGainMapChromaSubsampling" not in javascript
+    assert 'avifGainMapScale: "half"' in javascript
     assert "const exportPresetMappings" in javascript
     assert 'web_default: { quality: 85' in javascript
     assert 'maximum_fidelity: { quality: 100' in javascript

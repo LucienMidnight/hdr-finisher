@@ -1125,17 +1125,13 @@
           <label>Chroma Subsampling
             <select id="avif-chroma-subsampling"><option value="420" selected>4:2:0</option><option value="422">4:2:2</option><option value="444">4:4:4</option></select>
           </label>
-          <label>Gain-map Chroma
-            <select id="avif-gain-map-chroma-subsampling" aria-describedby="avif-gain-map-chroma-note"><option value="420">4:2:0</option><option value="422">4:2:2</option><option value="444" selected>4:4:4</option></select>
-          </label>
           <div class="control-row">
             <div class="control-heading"><label for="avif-gain-map-quality">Gain-map Quality</label><output id="avif-gain-map-quality-value">85</output></div>
             <input id="avif-gain-map-quality" type="range" min="1" max="100" value="85">
           </div>
           <label>Gain-map Resolution
-            <select id="avif-gain-map-scale"><option value="full" selected>Full</option><option value="half">Half</option></select>
+            <select id="avif-gain-map-scale"><option value="half" selected>Half</option><option value="full">Full</option></select>
           </label>
-          <small id="avif-gain-map-chroma-note" class="helper visually-hidden">Gain-map chroma is independent of primary-image chroma. Monochrome is encoder-supported but omitted because it damages chromatic highlights.</small>
         </div>
         <div id="jpeg-ultrahdr-settings" class="jpeg-ultrahdr-settings">
           <div class="control-row">

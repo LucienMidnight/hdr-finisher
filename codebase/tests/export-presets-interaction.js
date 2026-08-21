@@ -5,9 +5,9 @@ const baseUrl = urlIndex >= 0 ? process.argv[urlIndex + 1] : process.env.HDR_FIN
 
 const expected = {
   avif_gain_map: {
-    web_default: ["85", "10", "420", "444", "85", "full"],
-    web_optimized: ["75", "10", "420", "422", "70", "half"],
-    maximum_fidelity: ["100", "12", "444", "444", "100", "full"],
+    web_default: ["85", "10", "420", "85", "half"],
+    web_optimized: ["75", "10", "420", "70", "half"],
+    maximum_fidelity: ["100", "12", "444", "100", "full"],
   },
   jpeg_ultrahdr: {
     web_default: ["85", "90", "full", "420", "copyright"],
@@ -38,7 +38,7 @@ const expected = {
 
 async function valuesFor(page, format) {
   const selectors = {
-    avif_gain_map: ["#export-quality", "#avif-bit-depth", "#avif-chroma-subsampling", "#avif-gain-map-chroma-subsampling", "#avif-gain-map-quality", "#avif-gain-map-scale"],
+    avif_gain_map: ["#export-quality", "#avif-bit-depth", "#avif-chroma-subsampling", "#avif-gain-map-quality", "#avif-gain-map-scale"],
     jpeg_ultrahdr: ["#export-quality", "#jpeg-gain-map-quality", "#jpeg-gain-map-scale", "#jpeg-ultrahdr-chroma-subsampling", "#export-metadata-policy"],
     jpegxl_hdr: ["#export-quality", "#jpegxl-precision", "#export-metadata-policy"],
     sdr_jpegxl: ["#export-quality", "#export-dithering", "#export-metadata-policy"],
@@ -55,6 +55,7 @@ async function main() {
   page.on("pageerror", (error) => errors.push(error.message));
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
+    if (await page.locator("#avif-gain-map-chroma-subsampling").count()) throw new Error("Gain-map chroma must not be exposed in the export UI.");
     await page.locator("#test-pattern-button").click();
     await page.waitForFunction(() => document.getElementById("session-name")?.textContent !== "No active image", null, { timeout: 120000 });
     await page.locator('[data-workflow-tab="export"]').click();
@@ -65,6 +66,9 @@ async function main() {
 
     for (const [format, presets] of Object.entries(expected)) {
       await page.locator("#export-format").selectOption(format);
+      if (format === "avif_gain_map" && !(await page.locator('#avif-gain-map-scale option[value="half"]').textContent()).endsWith("· Web Default")) {
+        throw new Error("Half-resolution gain map is missing its Web Default label.");
+      }
       for (const [preset, values] of Object.entries(presets)) {
         await page.locator("#export-preset").selectOption(preset);
         const actual = await valuesFor(page, format);
