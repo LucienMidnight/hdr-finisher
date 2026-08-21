@@ -43,8 +43,7 @@ codebase/bin/ultrahdr_app
 
 # Local test media and personal captures
 IMG_4109.HEIC
-codebase/local-test-media/*
-!codebase/local-test-media/README.md
+codebase/local-test-media/
 
 # Large working assets not intended for git by default
 *.exr
