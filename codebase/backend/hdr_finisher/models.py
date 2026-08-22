@@ -354,6 +354,7 @@ class SDRAdjustments(BaseModel):
 
     base_section_enabled: bool = True
     tone_section_enabled: bool = True
+    tone_equalizer_section_enabled: bool = True
     color_section_enabled: bool = True
     primaries_section_enabled: bool = True
     curves_section_enabled: bool = True
@@ -368,6 +369,13 @@ class SDRAdjustments(BaseModel):
     tone_contrast: float = Field(default=1.0, ge=0.5, le=1.5)
     tone_skew: float = Field(default=0.0, ge=-1.0, le=1.0)
     shadow: float = Field(default=0.0, ge=-2.0, le=2.0)
+    tone_equalizer_nodes: list[ToneEqualizerNode] = Field(
+        default_factory=_default_tone_equalizer_nodes,
+        min_length=2,
+        max_length=16,
+    )
+    tone_equalizer_influence_radius: float = Field(default=1.5, ge=0.25, le=12.0)
+    tone_equalizer_smoothing: float = Field(default=0.5, ge=0.0, le=1.0)
     lift: float = Field(default=0.0, ge=-1.0, le=1.0)
     gamma: float = Field(default=0.0, ge=-2.0, le=2.0)
     gain: float = Field(default=0.0, ge=-1.0, le=1.0)
@@ -396,6 +404,24 @@ class SDRAdjustments(BaseModel):
     red_curve: list[list[float]] = Field(default_factory=_default_curve_points)
     green_curve: list[list[float]] = Field(default_factory=_default_curve_points)
     blue_curve: list[list[float]] = Field(default_factory=_default_curve_points)
+
+    @model_validator(mode="after")
+    def normalize_tone_equalizer_nodes(self) -> "SDRAdjustments":
+        nodes = sorted(self.tone_equalizer_nodes, key=lambda node: node.input_ev)
+        normalized: list[ToneEqualizerNode] = []
+        for index, node in enumerate(nodes):
+            input_ev = node.input_ev
+            if index == 0:
+                input_ev = -6.0
+            elif index == len(nodes) - 1:
+                input_ev = 6.0
+            else:
+                minimum = normalized[-1].input_ev + 0.1
+                maximum = 6.0 - 0.1 * (len(nodes) - index - 1)
+                input_ev = min(max(input_ev, minimum), maximum)
+            normalized.append(ToneEqualizerNode(input_ev=input_ev, adjustment_ev=node.adjustment_ev))
+        self.tone_equalizer_nodes = normalized
+        return self
 
 
 class SharedAdjustments(BaseModel):

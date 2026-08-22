@@ -54,6 +54,7 @@
 
       <section class="source-summary">
         <div id="badge" class="badge neutral">No file loaded.</div>
+        <p class="status-text muted experimental-dng-note hidden" id="experimental-dng-note">DNG import is experimental. Some incompatible DNG files may be rejected.</p>
       </section>
 
       <section id="raw-settings-section" class="disclosure-panel hidden">
@@ -468,7 +469,6 @@
           <button id="eject-button" class="button-secondary" type="button">Eject current image</button>
           <button id="test-pattern-button" class="button-secondary" type="button">Load test pattern</button>
         </div>
-        <p class="status-text muted hidden" id="experimental-dng-note"><strong>Experimental DNG Import:</strong> metadata-qualified support is limited to tested DNG variants. Valid but untested files may be rejected rather than decoded with missing corrections.</p>
       </section>
       <section id="grade-workflow-panel" class="workflow-rail-panel" data-workflow-panel="grade" aria-label="Grade settings">
       <div class="grade-header">
@@ -831,7 +831,7 @@
               </span>
               <select id="tone-mapper" data-path="sdr.tone_mapper">
                 <option value="filmic">Filmic</option>
-                <option value="aces">ACES</option>
+                <option value="aces">ACES-style</option>
                 <option value="reinhard">Reinhard</option>
               </select>
             </div>
@@ -885,6 +885,33 @@
             <div class="control-row" data-control-path="sdr.shadow">
               <div class="control-heading"><label for="sdr-shadow">Shadow</label><output data-value-path="sdr.shadow">0.00</output></div>
               <input id="sdr-shadow" type="range" min="-1" max="1" step="0.01" value="0" data-path="sdr.shadow">
+            </div>
+          </div>
+        </section>
+
+        <section class="control-group collapsed" data-group="sdr-equalizer">
+          <div class="control-group-header">
+            <button class="group-toggle" type="button" aria-expanded="false">Exposure Bands <span data-modified-count="sdr-equalizer">Default</span></button>
+            <button class="section-bypass text-button" type="button" data-section-path="sdr.tone_equalizer_section_enabled" aria-pressed="true" aria-label="Toggle SDR Exposure Bands preview">&#9673;</button>
+            <button class="group-reset text-button" type="button" data-reset-group="sdr-equalizer">Reset</button>
+          </div>
+          <div class="control-group-body">
+            <div class="film-look-actions">
+              <button id="sdr-match-hdr-bands" class="button-secondary" type="button">Match HDR bands</button>
+              <span>Copies once; SDR remains independent.</span>
+            </div>
+            <p class="helper">Adjust the tone-mapped SDR image by brightness. Bands are relative to 18% display-linear gray; values above 100% are clipped by the SDR output.</p>
+            <canvas id="sdr-tone-equalizer-editor" width="320" height="220" tabindex="0" aria-label="SDR exposure bands editor. Left-click the curve to add a band, right-click an interior band to remove it, or drag a band to adjust it."></canvas>
+            <div class="curve-actions tone-equalizer-actions">
+              <button id="sdr-tone-equalizer-add" type="button" class="text-button">Add Band</button>
+              <button id="sdr-tone-equalizer-remove" type="button" class="text-button">Remove Band</button>
+              <span id="sdr-tone-equalizer-radius" class="helper">Influence 1.50 EV</span>
+              <button id="sdr-tone-equalizer-radius-down" type="button" class="text-button" aria-label="Decrease SDR Exposure Band influence">&minus;</button>
+              <button id="sdr-tone-equalizer-radius-up" type="button" class="text-button" aria-label="Increase SDR Exposure Band influence">+</button>
+            </div>
+            <div class="control-row tone-equalizer-selected-row">
+              <div class="control-heading"><span id="sdr-tone-equalizer-band-label">+0 EV · 18%</span><output id="sdr-tone-equalizer-band-output">+0.00 EV</output></div>
+              <input id="sdr-tone-equalizer-band-value" type="range" min="-2" max="2" step="0.05" value="0" aria-label="Selected SDR Exposure Band adjustment">
             </div>
           </div>
         </section>

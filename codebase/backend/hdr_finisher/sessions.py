@@ -102,7 +102,7 @@ class LoadedSession:
             self.metadata["default_exposure_applied"] = {
                 "hdr_ev": recommended_exposure,
                 "sdr_ev": 0.0 if self.sdr_reference_image is not None else recommended_exposure,
-                "method": "bounded_median_and_p90",
+                "method": "bounded_median_and_p90_minus_1_5_ev",
             }
         self.render_cache = SessionRenderCache(self.image, self.sdr_reference_image, color_context=self.color_context)
         self._sync_highlight_source_peaks()

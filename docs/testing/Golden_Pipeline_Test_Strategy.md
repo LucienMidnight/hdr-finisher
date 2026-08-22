@@ -10,7 +10,7 @@ The Golden Pipeline is a thin integration layer over existing unit, contract, ex
 
 | Journey | Golden assertions | Existing coverage reused or consolidated |
 |---|---|---|
-| Synthetic neutral chart | v3/203 default, exact 2.03 reference switch, absolute threshold movement, generated-SDR invariance, fixed/project analysis anchors, scope agreement, cache source reuse | model/project/API, adjustments, scopes, overlay, render-cache, proofing, frontend-contract tests |
+| Synthetic neutral chart | v3/203 default, exact 2.03 reference switch, absolute threshold movement, generated-SDR invariance, common normalized SDR tonal anchoring across Filmic/Reinhard/ACES-style, white-preserving monotonic SDR highlight recovery across those mappers, effective monotonic SDR Exposure Bands on an authored SDR ramp, fixed/project analysis anchors, scope agreement, cache source reuse | model/project/API, adjustments, scopes, overlay, render-cache, proofing, frontend-contract tests |
 | Representative real photograph | deterministic representative recipe, measured peak/order, HDR and SDR visual diagnostics, preview/export parity | fixture import, CPU/WebGPU parity, preview/scopes, performance profiling; requires the approved licensed release fixture |
 | Authored gain-map round trip | authored SDR preservation, gain metadata, independent reconstruction, proof/export/re-import agreement, two-generation drift | Ultra HDR, AVIF gain-map, JPEG XL, decoder, proofing, metadata and exporter integration tests |
 

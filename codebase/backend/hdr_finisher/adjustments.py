@@ -14,6 +14,16 @@ TONE_EQUALIZER_BAND_COUNT = TONE_EQUALIZER_MAX_EV - TONE_EQUALIZER_MIN_EV + 1
 TONE_EQUALIZER_MAX_ADJUSTMENT_EV = 2.0
 _TONE_EQUALIZER_MIN_TARGET_STEP = np.float32(1e-3)
 SDR_DISPLAY_REFERENCE_WHITE = np.float32(100.0 / 203.0)
+SDR_SCENE_MIDDLE_GRAY = np.float32(0.18)
+# Keep every selectable SDR rendering curve on the same exposure convention:
+# scene-linear 0.18 maps to the app's 100-nit reference white. The Reinhard
+# scale has a closed-form solution; the ACES-style fit scale solves the same
+# anchor for the rational curve below.
+SDR_REINHARD_INPUT_SCALE = np.float32(
+    SDR_DISPLAY_REFERENCE_WHITE
+    / (SDR_SCENE_MIDDLE_GRAY * (np.float32(1.0) - SDR_DISPLAY_REFERENCE_WHITE))
+)
+SDR_ACES_FIT_INPUT_SCALE = np.float32(2.0294105241641414)
 
 
 def apply_adjustments(
@@ -247,6 +257,9 @@ def _apply_sdr_adjustments(
     result = _tone_map_sdr(result, tone_mapper, tone_contrast, tone_skew)
     if sdr.tone_section_enabled:
         result = _apply_sdr_highlight_recovery(result, sdr.highlight_recovery)
+    if sdr.tone_equalizer_section_enabled:
+        result = _apply_sdr_tone_equalizer(result, sdr)
+    if sdr.tone_section_enabled:
         result = _apply_luminance_section_controls(
             result, sdr, PreviewKind.SDR, apply_primaries=False, apply_contrast=True
         )
@@ -303,6 +316,9 @@ def _apply_sdr_adjustments_to_reference(
         )
     if sdr.tone_section_enabled:
         result = _apply_sdr_highlight_recovery(result, sdr.highlight_recovery)
+    if sdr.tone_equalizer_section_enabled:
+        result = _apply_sdr_tone_equalizer(result, sdr)
+    if sdr.tone_section_enabled:
         result = _apply_luminance_section_controls(
             result, sdr, PreviewKind.SDR, apply_primaries=False, apply_contrast=True
         )
@@ -474,6 +490,27 @@ def _apply_hdr_tone_equalizer(image: np.ndarray, hdr_adjustments: object) -> np.
     return np.where(positive_luma[..., None] > 1e-8, result * ratio[..., None], result)
 
 
+def _apply_sdr_tone_equalizer(image: np.ndarray, sdr_adjustments: object) -> np.ndarray:
+    """Apply independent display-linear exposure bands to the SDR rendition."""
+    node_ev, corrections = _tone_equalizer_nodes(sdr_adjustments)
+    if not np.any(corrections):
+        return image
+
+    result = image.astype(np.float32, copy=True)
+    luma = _linear_luma(result)
+    positive_luma = np.clip(luma, 0.0, None)
+    input_ev = np.log2(np.maximum(positive_luma, 1e-8) / np.float32(0.18))
+    target_ev = _sample_tone_equalizer_target_ev(
+        input_ev,
+        node_ev,
+        corrections,
+        float(getattr(sdr_adjustments, "tone_equalizer_smoothing", 0.5)),
+    )
+    target_luma = np.float32(0.18) * np.exp2(np.clip(target_ev, -32.0, 32.0))
+    ratio = np.where(positive_luma > 1e-8, target_luma / np.maximum(positive_luma, 1e-8), 1.0).astype(np.float32)
+    return np.where(positive_luma[..., None] > 1e-8, result * ratio[..., None], result)
+
+
 def _primary_zone_masks(stops: np.ndarray, branch_adjustments: object) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     lift_pivot = float(getattr(branch_adjustments, "lift_pivot", -2.0))
     lift_range = max(float(getattr(branch_adjustments, "lift_range", 4.0)), 0.5)
@@ -569,14 +606,22 @@ def _sample_tone_equalizer_target_ev(
 
 
 def _apply_sdr_highlight_recovery(image: np.ndarray, strength: float) -> np.ndarray:
-    """Add a monotonic display shoulder while holding scene mid-gray stable."""
+    """Redistribute SDR highlights without imposing a sub-white ceiling."""
     if strength <= 0.0:
         return image
     result = np.clip(image.astype(np.float32, copy=False), 0.0, None)
     luma = _linear_luma(result)
-    amount = np.float32(0.4 * strength)
-    pivot = np.float32(0.18)
-    target_luma = luma * (1.0 + amount * pivot) / (1.0 + amount * luma)
+    pivot = SDR_DISPLAY_REFERENCE_WHITE
+    span = np.float32(1.0) - pivot
+    position = np.clip((luma - pivot) / span, 0.0, 1.0).astype(np.float32)
+    # This endpoint-preserving Hermite shoulder is identity at reference white
+    # and display white. Its derivative stays positive across the supported
+    # 0..4 range, so exposure continues to reveal ordered highlight detail
+    # instead of accumulating pixels at a strength-dependent gray ceiling.
+    amount = np.float32(2.5 * (1.0 - np.exp(-0.5 * np.clip(strength, 0.0, 4.0))))
+    recovered_position = position - amount * position * position * (np.float32(1.0) - position)
+    recovered_luma = pivot + span * recovered_position
+    target_luma = np.where(luma > pivot, recovered_luma, luma)
     ratio = np.where(luma > 1e-8, target_luma / np.maximum(luma, 1e-8), 0.0).astype(np.float32)
     return result * ratio[..., None]
 
@@ -722,7 +767,7 @@ def _retone_map_sdr_reference(
 
     luma = _linear_luma(result)
     bounded_luma = np.clip(luma, 1e-7, 1.0 - 1e-7)
-    scene_middle_gray = np.float32(0.18)
+    scene_middle_gray = SDR_SCENE_MIDDLE_GRAY
     reference_log_odds = np.log(
         SDR_DISPLAY_REFERENCE_WHITE / (np.float32(1.0) - SDR_DISPLAY_REFERENCE_WHITE)
     )
@@ -744,16 +789,20 @@ def _map_sdr_luma(
 ) -> np.ndarray:
     """Map non-negative scene luminance into the normalized SDR range."""
     if tone_mapper == ToneMapper.REINHARD:
-        mapped_luma = luma / (1.0 + luma)
+        scaled_luma = luma * SDR_REINHARD_INPUT_SCALE
+        mapped_luma = scaled_luma / (1.0 + scaled_luma)
     elif tone_mapper == ToneMapper.ACES:
         a, b, c, d, e = 2.51, 0.03, 2.43, 0.59, 0.14
-        mapped_luma = (luma * (a * luma + b)) / (luma * (c * luma + d) + e)
+        scaled_luma = luma * SDR_ACES_FIT_INPUT_SCALE
+        mapped_luma = (scaled_luma * (a * scaled_luma + b)) / (
+            scaled_luma * (c * scaled_luma + d) + e
+        )
         mapped_luma /= a / c
     else:
         # Scene 0.18 is the app's 100-nit diffuse-white anchor. Map it to the
         # matching fraction of the 203-nit display canvas, then preserve that
         # anchor while contrast and skew shape the surrounding response.
-        scene_middle_gray = np.float32(0.18)
+        scene_middle_gray = SDR_SCENE_MIDDLE_GRAY
         base_power = np.float32(1.1 * np.clip(tone_contrast, 0.5, 1.5))
         skew = np.float32(np.clip(tone_skew, -1.0, 1.0))
         shadow_power = base_power * np.exp2(np.float32(-0.75) * skew)

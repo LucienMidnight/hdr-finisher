@@ -75,7 +75,7 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert 'id="tone-equalizer-add"' in html
     assert 'id="tone-equalizer-remove"' in html
     assert 'id="tone-equalizer-radius"' in html
-    assert html.count("data-section-path=") == 13
+    assert html.count("data-section-path=") == 14
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
     assert "--bypass-icon-shape:" in css
     assert "--bypass-icon-visible: var(--accent)" in css
@@ -203,10 +203,10 @@ def test_equalizer_interactions_include_non_scrolling_wheel_and_keyboard_alterna
 
     assert "Left-click the curve to add a band" in html
     assert "right-click an interior band to remove it" in html
-    assert "toneEqualizerNodeIndexAtPointer(event.clientX, event.clientY, rect)" in equalizer_binding
-    assert "toneEqualizerCurveHitAtPointer(event.clientX, event.clientY, rect)" in equalizer_binding
+    assert "toneEqualizerNodeIndexAtPointer(event.clientX, event.clientY, rect, lane)" in equalizer_binding
+    assert "toneEqualizerCurveHitAtPointer(event.clientX, event.clientY, rect, lane)" in equalizer_binding
     assert 'canvas.addEventListener("contextmenu"' in equalizer_binding
-    assert "removeToneEqualizerNode(bandIndex)" in equalizer_binding
+    assert "removeToneEqualizerNode(bandIndex, lane)" in equalizer_binding
     assert 'canvas.addEventListener("wheel"' in javascript
     assert "event.preventDefault();" in javascript
     assert "{ passive: false }" in javascript
@@ -226,7 +226,7 @@ def test_redundant_enable_controls_are_removed_and_equalizer_schedules_live_scop
     assert "Enable equalizer" not in html
     assert "Enable curves" not in html
     assert "queueGpuDraft(\"hdr\");" not in javascript[javascript.index("function updateToneEqualizerFromPointer"):javascript.index("function toneEqualizerBandLimits")]
-    assert javascript.count('debouncePreview("hdr");') >= 2
+    assert javascript.count("debouncePreview(lane);") >= 5
 
 
 def test_equalizer_chart_drag_syncs_the_selected_band_range_visual() -> None:
@@ -236,8 +236,8 @@ def test_equalizer_chart_drag_syncs_the_selected_band_range_visual() -> None:
         javascript.index("function drawToneEqualizerEditor")
     ]
 
-    assert "els.toneEqualizerBandValue.value = String(value);" in sync_controls
-    assert "updateRangeVisual(els.toneEqualizerBandValue);" in sync_controls
+    assert "ui.bandValue.value = String(value);" in sync_controls
+    assert "updateRangeVisual(ui.bandValue);" in sync_controls
 
 
 def test_curve_drag_uses_live_preview_scheduler_and_three_point_default_shape() -> None:
@@ -299,6 +299,19 @@ def test_hdr_curve_graph_uses_tokenized_exposure_band_styling() -> None:
     assert "compactCurveNitLabel" in javascript
     assert javascript.count("drawGraphHomeCue") >= 3
     assert "drawGraphHomeCue(ctx, x, y, radius, node.adjustment_ev)" in javascript
+
+
+def test_sdr_exposure_bands_are_independent_and_offer_one_shot_hdr_match() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    assert 'data-group="sdr-equalizer"' in html
+    assert 'data-section-path="sdr.tone_equalizer_section_enabled"' in html
+    assert 'id="sdr-tone-equalizer-editor"' in html
+    assert 'id="sdr-match-hdr-bands"' in html
+    assert "Copies once; SDR remains independent." in html
+    assert 'state.adjustments.sdr.tone_equalizer_nodes = currentToneEqualizerNodes("hdr")' in javascript
+    assert 'state.adjustments[lane].tone_equalizer_nodes = normalizeToneEqualizerNodes(nodes)' in javascript
 
 
 def test_curve_panel_reset_is_visible_when_curves_are_modified() -> None:
@@ -404,7 +417,9 @@ def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     assert 'id="directory-browser-select"' in html
     assert '<strong>Drives</strong><ul id="directory-browser-drives"></ul>' in html
     assert "renderMediaBrowserNavigation(payload.drives || [], payload.places || [], payload.favorites || []);" in javascript
-    assert 'class="status-text muted hidden" id="experimental-dng-note"' in html
+    source_summary = html.split('<section class="source-summary">', 1)[1].split("</section>", 1)[0]
+    assert source_summary.index('id="badge"') < source_summary.index('id="experimental-dng-note"')
+    assert "DNG import is experimental. Some incompatible DNG files may be rejected." in source_summary
     assert "function isDngImportCandidate(candidate)" in javascript
     assert "renderExperimentalDngNote(file);" in javascript
     assert "renderExperimentalDngNote(entry);" in javascript
@@ -557,13 +572,14 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     assert "source-overlay-open" in css
 
 
-def test_webgpu_pipeline_preserves_cpu_section_order_and_fixed_hdr_curve_domain() -> None:
+def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_bands() -> None:
     shader = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
     assert "const PARAM_COUNT = 140" in shader
-    assert "hdrPrimaries(hdrToneEqualizer(sceneColor(hdrPeakFit(hdrSoftCeiling(hdrContrast(hdrBase(source)))))))" in shader
-    assert "sdrReferenceColor(sdrContrast(highlightRecovery(rgb)))" in shader
+    assert "hdrPrimaries(toneEqualizer(sceneColor(hdrPeakFit(hdrSoftCeiling(hdrContrast(hdrBase(source)))))))" in shader
+    assert "sdrReferenceColor(sdrContrast(toneEqualizer(highlightRecovery(rgb))))" in shader
     assert "toneMap(sceneColor(rgb))" in shader
-    assert "sdrPrimaries(sdrContrast(highlightRecovery(toneMap(sceneColor(rgb)))))" in shader
+    assert "sdrPrimaries(sdrContrast(toneEqualizer(highlightRecovery(toneMap(sceneColor(rgb))))))" in shader
+    assert "let y = max(select(lumaSrgb(input), lumaAces(input), p[0] > 0.5), 0.0)" in shader
     assert "retoneMapSdrReference(rgb)" in shader
     assert "let displayReferenceWhite = 100.0 / 203.0" in shader
     assert "if (value <= 0.18) { return 0.5 * pow(value / 0.18, 1.0 / log(100.0)); }" in shader

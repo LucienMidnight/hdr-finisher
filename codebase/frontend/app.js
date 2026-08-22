@@ -377,6 +377,7 @@ const state = {
     sdr: {
       base_section_enabled: true,
       tone_section_enabled: true,
+      tone_equalizer_section_enabled: true,
       color_section_enabled: true,
       primaries_section_enabled: true,
       curves_section_enabled: true,
@@ -385,6 +386,9 @@ const state = {
       tone_contrast: 1,
       tone_skew: 0,
       shadow: 0,
+      tone_equalizer_nodes: defaultToneEqualizerNodes(),
+      tone_equalizer_influence_radius: 1.5,
+      tone_equalizer_smoothing: 0.5,
       lift: 0,
       gamma: 0,
       gain: 0,
@@ -701,6 +705,7 @@ const defaultAdjustments = () => ({
   sdr: {
     base_section_enabled: true,
     tone_section_enabled: true,
+    tone_equalizer_section_enabled: true,
     color_section_enabled: true,
     primaries_section_enabled: true,
     curves_section_enabled: true,
@@ -715,6 +720,9 @@ const defaultAdjustments = () => ({
     tone_contrast: 1,
     tone_skew: 0,
     shadow: 0,
+    tone_equalizer_nodes: defaultToneEqualizerNodes(),
+    tone_equalizer_influence_radius: 1.5,
+    tone_equalizer_smoothing: 0.5,
     lift: 0,
     gamma: 0,
     gain: 0,
@@ -823,6 +831,16 @@ const els = {
   toneEqualizerRadiusDown: document.getElementById("tone-equalizer-radius-down"),
   toneEqualizerRadiusUp: document.getElementById("tone-equalizer-radius-up"),
   toneEqualizerRadius: document.getElementById("tone-equalizer-radius"),
+  sdrToneEqualizerEditor: document.getElementById("sdr-tone-equalizer-editor"),
+  sdrToneEqualizerBandValue: document.getElementById("sdr-tone-equalizer-band-value"),
+  sdrToneEqualizerBandLabel: document.getElementById("sdr-tone-equalizer-band-label"),
+  sdrToneEqualizerBandOutput: document.getElementById("sdr-tone-equalizer-band-output"),
+  sdrToneEqualizerAdd: document.getElementById("sdr-tone-equalizer-add"),
+  sdrToneEqualizerRemove: document.getElementById("sdr-tone-equalizer-remove"),
+  sdrToneEqualizerRadiusDown: document.getElementById("sdr-tone-equalizer-radius-down"),
+  sdrToneEqualizerRadiusUp: document.getElementById("sdr-tone-equalizer-radius-up"),
+  sdrToneEqualizerRadius: document.getElementById("sdr-tone-equalizer-radius"),
+  sdrMatchHdrBands: document.getElementById("sdr-match-hdr-bands"),
   curveStatus: document.getElementById("curve-status"),
   overlayPresetNote: document.getElementById("overlay-preset-note"),
   falseColorKey: document.getElementById("false-color-key"),
@@ -1068,6 +1086,7 @@ const controlGroups = {
   "hdr-zones": ["hdr.lift", "hdr.lift_range", "hdr.lift_pivot", "hdr.gamma", "hdr.gamma_range", "hdr.gamma_pivot", "hdr.gain", "hdr.gain_range", "hdr.gain_pivot"],
   "sdr-base": ["sdr.tone_mapper", "sdr.tone_contrast", "sdr.tone_skew"],
   "sdr-tone": ["sdr.exposure", "sdr.highlight_recovery", "sdr.contrast", "sdr.contrast_pivot", "sdr.shadow"],
+  "sdr-equalizer": ["sdr.tone_equalizer_nodes", "sdr.tone_equalizer_influence_radius", "sdr.tone_equalizer_smoothing"],
   "sdr-color": ["sdr.white_balance_kelvin", "sdr.tint", "sdr.saturation", "sdr.vibrance", "sdr.red_hue", "sdr.red_purity", "sdr.green_hue", "sdr.green_purity", "sdr.blue_hue", "sdr.blue_purity", "sdr.tint_hue", "sdr.tint_purity"],
   "sdr-zones": ["sdr.lift", "sdr.lift_range", "sdr.lift_pivot", "sdr.gamma", "sdr.gamma_range", "sdr.gamma_pivot", "sdr.gain", "sdr.gain_range", "sdr.gain_pivot"],
 };
@@ -1091,6 +1110,7 @@ const sectionPathForGroup = {
   "hdr-zones": "hdr.primaries_section_enabled",
   "sdr-base": "sdr.base_section_enabled",
   "sdr-tone": "sdr.tone_section_enabled",
+  "sdr-equalizer": "sdr.tone_equalizer_section_enabled",
   "sdr-color": "sdr.color_section_enabled",
   "sdr-zones": "sdr.primaries_section_enabled",
 };
@@ -1616,33 +1636,36 @@ function enhanceEditableGradeValues() {
     });
   });
 
-  bindEditableValue(els.toneEqualizerBandOutput, {
-    getValue: () => currentToneEqualizerNodes()[state.selectedToneEqualizerBand]?.adjustment_ev ?? 0,
-    normalize: (text) => normalizeManualNumber(text, {
-      min: toneEqualizerBandLimits(state.selectedToneEqualizerBand)[0],
-      max: toneEqualizerBandLimits(state.selectedToneEqualizerBand)[1],
-      decimals: 2,
-    }),
-    commit: ({ value }) => setToneEqualizerBand(state.selectedToneEqualizerBand, value),
-    label: () => "Selected Exposure Band adjustment",
-    range: () => {
-      const [minimum, maximum] = toneEqualizerBandLimits(state.selectedToneEqualizerBand);
-      return `${formatSignedEv(minimum, 2)} to ${formatSignedEv(maximum, 2)}`;
-    },
-  });
+  for (const lane of ["hdr", "sdr"]) {
+    const ui = toneEqualizerUi(lane);
+    bindEditableValue(ui.bandOutput, {
+      getValue: () => currentToneEqualizerNodes(lane)[state.selectedToneEqualizerBand]?.adjustment_ev ?? 0,
+      normalize: (text) => normalizeManualNumber(text, {
+        min: toneEqualizerBandLimits(state.selectedToneEqualizerBand, currentToneEqualizerNodes(lane))[0],
+        max: toneEqualizerBandLimits(state.selectedToneEqualizerBand, currentToneEqualizerNodes(lane))[1],
+        decimals: 2,
+      }),
+      commit: ({ value }) => setToneEqualizerBand(state.selectedToneEqualizerBand, value, lane),
+      label: () => `Selected ${lane.toUpperCase()} Exposure Band adjustment`,
+      range: () => {
+        const [minimum, maximum] = toneEqualizerBandLimits(state.selectedToneEqualizerBand, currentToneEqualizerNodes(lane));
+        return `${formatSignedEv(minimum, 2)} to ${formatSignedEv(maximum, 2)}`;
+      },
+    });
 
-  bindEditableValue(els.toneEqualizerRadius, {
-    getValue: () => state.adjustments.hdr.tone_equalizer_influence_radius,
-    normalize: (text) => normalizeManualNumber(text, { min: 0.25, max: 12, decimals: 2 }),
-    commit: ({ value }) => {
-      state.adjustments.hdr.tone_equalizer_influence_radius = value;
-      syncToneEqualizerControls();
-      drawToneEqualizerEditor();
-      renderControlState();
-    },
-    label: () => "Exposure Band influence",
-    range: () => "0.25 EV to 12.00 EV",
-  });
+    bindEditableValue(ui.radius, {
+      getValue: () => state.adjustments[lane].tone_equalizer_influence_radius,
+      normalize: (text) => normalizeManualNumber(text, { min: 0.25, max: 12, decimals: 2 }),
+      commit: ({ value }) => {
+        state.adjustments[lane].tone_equalizer_influence_radius = value;
+        syncToneEqualizerControls(lane);
+        drawToneEqualizerEditor(lane);
+        renderControlState();
+      },
+      label: () => `${lane.toUpperCase()} Exposure Band influence`,
+      range: () => "0.25 EV to 12.00 EV",
+    });
+  }
 }
 
 function bindEditableValue(element, { getValue, normalize, commit, label, range }) {
@@ -3353,12 +3376,14 @@ function observeGraphEditorSizes() {
   const redraw = (canvas) => {
     if (canvas.clientWidth < 2 || canvas.clientHeight < 2) return;
     if (canvas === els.curveEditor) drawCurveEditor();
-    if (canvas === els.toneEqualizerEditor) drawToneEqualizerEditor();
+    if (canvas === els.toneEqualizerEditor) drawToneEqualizerEditor("hdr");
+    if (canvas === els.sdrToneEqualizerEditor) drawToneEqualizerEditor("sdr");
   };
   if (!window.ResizeObserver) {
     window.addEventListener("resize", () => {
       redraw(els.curveEditor);
       redraw(els.toneEqualizerEditor);
+      redraw(els.sdrToneEqualizerEditor);
     });
     return;
   }
@@ -3367,6 +3392,7 @@ function observeGraphEditorSizes() {
   });
   graphEditorResizeObserver.observe(els.curveEditor);
   graphEditorResizeObserver.observe(els.toneEqualizerEditor);
+  graphEditorResizeObserver.observe(els.sdrToneEqualizerEditor);
 }
 
 function drawScopeGrid(ctx, scope, isWaveform, plotLeft, plotTop, plotWidth, plotHeight, canvasHeight) {
@@ -5070,7 +5096,7 @@ function commitAdjustmentValue(path, value, { manual = false } = {}) {
     drawCurveEditor();
     renderLocalAdjustments();
   }
-  if (path.startsWith("hdr.tone_equalizer_")) drawToneEqualizerEditor();
+  if (resolvedPath.includes(".tone_equalizer_")) drawToneEqualizerEditor(resolvedPath.startsWith("sdr.") ? "sdr" : "hdr");
   syncRangeControlFromState(path);
   updateControlReadouts();
   renderControlState();
@@ -5310,8 +5336,10 @@ function renderSessionChrome() {
   els.viewButtons.forEach((button) => {
     button.disabled = !hasSession;
   });
-  els.toneEqualizerEditor.setAttribute("aria-disabled", String(!hasSession));
-  els.toneEqualizerEditor.tabIndex = hasSession ? 0 : -1;
+  [els.toneEqualizerEditor, els.sdrToneEqualizerEditor].forEach((editor) => {
+    editor.setAttribute("aria-disabled", String(!hasSession));
+    editor.tabIndex = hasSession ? 0 : -1;
+  });
   [els.zoomOut, els.zoomIn, els.zoomSlider, els.zoomReadout, els.zoomFit, els.zoomActual].forEach((control) => {
     control.disabled = !hasSession;
   });
@@ -5326,18 +5354,25 @@ function renderCurveChannelTabs() {
 }
 
 function bindToneEqualizerEditor() {
-  const canvas = els.toneEqualizerEditor;
+  bindToneEqualizerEditorForLane("hdr");
+  bindToneEqualizerEditorForLane("sdr");
+  els.sdrMatchHdrBands?.addEventListener("click", matchHdrBandsToSdr);
+}
+
+function bindToneEqualizerEditorForLane(lane) {
+  const ui = toneEqualizerUi(lane);
+  const canvas = ui.editor;
   const beginDrag = (clientX, clientY, bandIndex) => {
     if (!state.session) return;
     state.previewScheduler?.beginInteraction();
     const rect = canvas.getBoundingClientRect();
     state.activeToneEqualizerBand = bandIndex;
     state.selectedToneEqualizerBand = state.activeToneEqualizerBand;
-    const startingNodes = currentToneEqualizerNodes();
-    drawToneEqualizerEditor();
+    const startingNodes = currentToneEqualizerNodes(lane);
+    drawToneEqualizerEditor(lane);
     const move = (event) => {
       event.preventDefault();
-      updateToneEqualizerFromPointer(event.clientX, event.clientY, rect, startingNodes);
+      updateToneEqualizerFromPointer(event.clientX, event.clientY, rect, startingNodes, lane);
     };
     const stop = () => {
       window.removeEventListener("pointermove", move);
@@ -5356,82 +5391,82 @@ function bindToneEqualizerEditor() {
     if (event.button !== 0 || !state.session) return;
     event.preventDefault();
     const rect = canvas.getBoundingClientRect();
-    const bandIndex = toneEqualizerNodeIndexAtPointer(event.clientX, event.clientY, rect);
+    const bandIndex = toneEqualizerNodeIndexAtPointer(event.clientX, event.clientY, rect, lane);
     if (bandIndex !== null) {
       beginDrag(event.clientX, event.clientY, bandIndex);
       return;
     }
-    const curveHit = toneEqualizerCurveHitAtPointer(event.clientX, event.clientY, rect);
-    if (curveHit) addToneEqualizerNode(curveHit.inputEv);
+    const curveHit = toneEqualizerCurveHitAtPointer(event.clientX, event.clientY, rect, lane);
+    if (curveHit) addToneEqualizerNode(curveHit.inputEv, lane);
   });
   canvas.addEventListener("contextmenu", (event) => {
     event.preventDefault();
     if (!state.session) return;
-    const bandIndex = toneEqualizerNodeIndexAtPointer(event.clientX, event.clientY, canvas.getBoundingClientRect());
+    const bandIndex = toneEqualizerNodeIndexAtPointer(event.clientX, event.clientY, canvas.getBoundingClientRect(), lane);
     if (bandIndex === null) return;
     state.selectedToneEqualizerBand = bandIndex;
-    removeToneEqualizerNode(bandIndex);
+    removeToneEqualizerNode(bandIndex, lane);
   });
   canvas.addEventListener("wheel", (event) => {
     event.preventDefault();
     if (!state.session) return;
-    changeToneEqualizerRadius(event.deltaY < 0 ? 0.25 : -0.25);
+    changeToneEqualizerRadius(event.deltaY < 0 ? 0.25 : -0.25, lane);
   }, { passive: false });
   canvas.addEventListener("keydown", (event) => {
     if (!state.session) return;
     const index = state.selectedToneEqualizerBand;
     if (event.key === "[" || event.key === "]") {
       event.preventDefault();
-      changeToneEqualizerRadius(event.key === "]" ? 0.25 : -0.25);
+      changeToneEqualizerRadius(event.key === "]" ? 0.25 : -0.25, lane);
       return;
     }
     if ((event.ctrlKey || event.metaKey) && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
       event.preventDefault();
-      moveToneEqualizerNodeHorizontally(index, event.key === "ArrowRight" ? 0.1 : -0.1);
+      moveToneEqualizerNodeHorizontally(index, event.key === "ArrowRight" ? 0.1 : -0.1, lane);
       return;
     }
     if (event.key === "Delete") {
       event.preventDefault();
-      removeToneEqualizerNode();
+      removeToneEqualizerNode(null, lane);
       return;
     }
     if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "Home" || event.key === "End") {
       event.preventDefault();
-      const nodes = currentToneEqualizerNodes();
+      const nodes = currentToneEqualizerNodes(lane);
       if (event.key === "ArrowLeft") state.selectedToneEqualizerBand = Math.max(0, index - 1);
       if (event.key === "ArrowRight") state.selectedToneEqualizerBand = Math.min(nodes.length - 1, index + 1);
       if (event.key === "Home") state.selectedToneEqualizerBand = 0;
       if (event.key === "End") state.selectedToneEqualizerBand = nodes.length - 1;
-      syncToneEqualizerControls();
-      drawToneEqualizerEditor();
+      syncToneEqualizerControls(lane);
+      drawToneEqualizerEditor(lane);
       return;
     }
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
     event.preventDefault();
     const step = event.shiftKey ? 0.25 : 0.05;
     const direction = event.key === "ArrowUp" ? 1 : -1;
-    setToneEqualizerBand(index, currentToneEqualizerNodes()[index].adjustment_ev + direction * step);
+    setToneEqualizerBand(index, currentToneEqualizerNodes(lane)[index].adjustment_ev + direction * step, lane);
     renderControlState();
   });
 
-  els.toneEqualizerBandValue.addEventListener("input", () => {
+  ui.bandValue.addEventListener("input", () => {
     if (!state.session) return;
-    setToneEqualizerBand(state.selectedToneEqualizerBand, Number(els.toneEqualizerBandValue.value));
+    setToneEqualizerBand(state.selectedToneEqualizerBand, Number(ui.bandValue.value), lane);
   });
-  els.toneEqualizerBandValue.addEventListener("pointerdown", () => state.previewScheduler?.beginInteraction());
+  ui.bandValue.addEventListener("pointerdown", () => state.previewScheduler?.beginInteraction());
   ["pointerup", "pointercancel"].forEach((eventName) => {
-    els.toneEqualizerBandValue.addEventListener(eventName, () => state.previewScheduler?.endInteraction());
+    ui.bandValue.addEventListener(eventName, () => state.previewScheduler?.endInteraction());
   });
-  els.toneEqualizerBandValue.addEventListener("change", () => {
+  ui.bandValue.addEventListener("change", () => {
     renderControlState();
   });
-  els.toneEqualizerAdd.addEventListener("click", () => addToneEqualizerNode());
-  els.toneEqualizerRemove.addEventListener("click", () => removeToneEqualizerNode());
-  els.toneEqualizerRadiusDown.addEventListener("click", () => changeToneEqualizerRadius(-0.25));
-  els.toneEqualizerRadiusUp.addEventListener("click", () => changeToneEqualizerRadius(0.25));
+  ui.add.addEventListener("click", () => addToneEqualizerNode(null, lane));
+  ui.remove.addEventListener("click", () => removeToneEqualizerNode(null, lane));
+  ui.radiusDown.addEventListener("click", () => changeToneEqualizerRadius(-0.25, lane));
+  ui.radiusUp.addEventListener("click", () => changeToneEqualizerRadius(0.25, lane));
 }
 
-function updateToneEqualizerFromPointer(clientX, clientY, rect, startingNodes) {
+function updateToneEqualizerFromPointer(clientX, clientY, rect, startingNodes, lane = state.currentView) {
   const layout = toneEqualizerEditorLayout();
   const paddingTop = layout.top / Math.max(rect.height, 1);
   const paddingBottom = layout.bottom / Math.max(rect.height, 1);
@@ -5441,7 +5476,7 @@ function updateToneEqualizerFromPointer(clientX, clientY, rect, startingNodes) {
   const index = state.activeToneEqualizerBand ?? state.selectedToneEqualizerBand;
   const nodes = startingNodes.map((node) => ({ ...node }));
   const selected = nodes[index];
-  const radius = Number(state.adjustments.hdr.tone_equalizer_influence_radius || 1.5);
+  const radius = Number(state.adjustments[lane].tone_equalizer_influence_radius || 1.5);
   const delta = value - selected.adjustment_ev;
   nodes.forEach((node, nodeIndex) => {
     const distance = Math.abs(node.input_ev - selected.input_ev);
@@ -5456,11 +5491,11 @@ function updateToneEqualizerFromPointer(clientX, clientY, rect, startingNodes) {
       );
     }
   });
-  state.adjustments.hdr.tone_equalizer_nodes = normalizeToneEqualizerNodes(nodes);
+  state.adjustments[lane].tone_equalizer_nodes = normalizeToneEqualizerNodes(nodes);
   syncControlsFromState();
-  drawToneEqualizerEditor();
-  invalidatePreview("hdr");
-  debouncePreview("hdr");
+  drawToneEqualizerEditor(lane);
+  invalidatePreview(lane);
+  debouncePreview(lane);
 }
 
 function toneEqualizerPointerPosition(clientX, clientY, rect) {
@@ -5470,8 +5505,8 @@ function toneEqualizerPointerPosition(clientX, clientY, rect) {
   };
 }
 
-function toneEqualizerCanvasPosition(inputEv, adjustmentEv) {
-  const canvas = els.toneEqualizerEditor;
+function toneEqualizerCanvasPosition(inputEv, adjustmentEv, lane = state.currentView) {
+  const canvas = toneEqualizerUi(lane).editor;
   const { width, height } = canvasLogicalSize(canvas);
   const { left, right, top, bottom } = toneEqualizerEditorLayout();
   return {
@@ -5480,12 +5515,12 @@ function toneEqualizerCanvasPosition(inputEv, adjustmentEv) {
   };
 }
 
-function toneEqualizerNodeIndexAtPointer(clientX, clientY, rect) {
+function toneEqualizerNodeIndexAtPointer(clientX, clientY, rect, lane = state.currentView) {
   const pointer = toneEqualizerPointerPosition(clientX, clientY, rect);
   let nearestIndex = null;
   let nearestDistance = 10 ** 2;
-  currentToneEqualizerNodes().forEach((node, index) => {
-    const position = toneEqualizerCanvasPosition(node.input_ev, node.adjustment_ev);
+  currentToneEqualizerNodes(lane).forEach((node, index) => {
+    const position = toneEqualizerCanvasPosition(node.input_ev, node.adjustment_ev, lane);
     const distance = ((position.x - pointer.x) ** 2) + ((position.y - pointer.y) ** 2);
     if (distance < nearestDistance) {
       nearestDistance = distance;
@@ -5495,29 +5530,29 @@ function toneEqualizerNodeIndexAtPointer(clientX, clientY, rect) {
   return nearestIndex;
 }
 
-function toneEqualizerCurveHitAtPointer(clientX, clientY, rect) {
+function toneEqualizerCurveHitAtPointer(clientX, clientY, rect, lane = state.currentView) {
   const pointer = toneEqualizerPointerPosition(clientX, clientY, rect);
   const inputEv = toneEqualizerEvFromPointer(clientX, rect);
   const adjustmentEv = sampleToneEqualizerAdjustment(
     inputEv,
-    currentToneEqualizerNodes(),
-    Number(state.adjustments.hdr.tone_equalizer_smoothing || 0.5),
+    currentToneEqualizerNodes(lane),
+    Number(state.adjustments[lane].tone_equalizer_smoothing || 0.5),
   );
-  const curvePosition = toneEqualizerCanvasPosition(inputEv, adjustmentEv);
+  const curvePosition = toneEqualizerCanvasPosition(inputEv, adjustmentEv, lane);
   return Math.abs(curvePosition.y - pointer.y) <= 8 ? { inputEv, adjustmentEv } : null;
 }
 
-function setToneEqualizerBand(index, requestedValue) {
-  const nodes = currentToneEqualizerNodes();
+function setToneEqualizerBand(index, requestedValue, lane = state.currentView) {
+  const nodes = currentToneEqualizerNodes(lane);
   const [minimum, maximum] = toneEqualizerBandLimits(index, nodes);
   const rounded = Math.round(clamp(Number(requestedValue) || 0, minimum, maximum) * 100) / 100;
   nodes[index].adjustment_ev = clamp(rounded, Math.ceil(minimum * 100) / 100, Math.floor(maximum * 100) / 100);
-  state.adjustments.hdr.tone_equalizer_nodes = normalizeToneEqualizerNodes(nodes);
+  state.adjustments[lane].tone_equalizer_nodes = normalizeToneEqualizerNodes(nodes);
   state.selectedToneEqualizerBand = index;
   syncControlsFromState();
-  drawToneEqualizerEditor();
-  invalidatePreview("hdr");
-  debouncePreview("hdr");
+  drawToneEqualizerEditor(lane);
+  invalidatePreview(lane);
+  debouncePreview(lane);
 }
 
 function toneEqualizerBandLimits(index, nodes = currentToneEqualizerNodes()) {
@@ -5535,39 +5570,42 @@ function toneEqualizerBandLimits(index, nodes = currentToneEqualizerNodes()) {
   return [minimum, Math.max(minimum, maximum)];
 }
 
-function syncToneEqualizerControls() {
-  const nodes = currentToneEqualizerNodes();
+function syncToneEqualizerControls(lane = state.currentView) {
+  const ui = toneEqualizerUi(lane);
+  const nodes = currentToneEqualizerNodes(lane);
   const index = clamp(state.selectedToneEqualizerBand ?? 2, 0, nodes.length - 1);
   state.selectedToneEqualizerBand = index;
   const inputEv = nodes[index].input_ev;
   const value = nodes[index].adjustment_ev;
   const [minimum, maximum] = toneEqualizerBandLimits(index, nodes);
-  els.toneEqualizerBandValue.setAttribute("aria-valuemin", String(Math.ceil(minimum * 100) / 100));
-  els.toneEqualizerBandValue.setAttribute("aria-valuemax", String(Math.floor(maximum * 100) / 100));
-  els.toneEqualizerBandValue.value = String(value);
-  updateRangeVisual(els.toneEqualizerBandValue);
-  els.toneEqualizerBandLabel.textContent = `${formatSignedEv(inputEv, 0)} · ${formatToneBandNits(100 * (2 ** inputEv))}`;
-  if (els.toneEqualizerBandOutput.dataset.editing !== "true") {
-    els.toneEqualizerBandOutput.textContent = formatSignedEv(value, 2);
+  ui.bandValue.setAttribute("aria-valuemin", String(Math.ceil(minimum * 100) / 100));
+  ui.bandValue.setAttribute("aria-valuemax", String(Math.floor(maximum * 100) / 100));
+  ui.bandValue.value = String(value);
+  updateRangeVisual(ui.bandValue);
+  ui.bandLabel.textContent = lane === "hdr"
+    ? `${formatSignedEv(inputEv, 0)} · ${formatToneBandNits(100 * (2 ** inputEv))}`
+    : `${formatSignedEv(inputEv, 0)} · ${formatSdrBandLevel(0.18 * (2 ** inputEv))}`;
+  if (ui.bandOutput.dataset.editing !== "true") {
+    ui.bandOutput.textContent = formatSignedEv(value, 2);
   }
-  if (els.toneEqualizerRadius.dataset.editing !== "true") {
-    els.toneEqualizerRadius.textContent = `Influence ${Number(state.adjustments.hdr.tone_equalizer_influence_radius || 1.5).toFixed(2)} EV`;
+  if (ui.radius.dataset.editing !== "true") {
+    ui.radius.textContent = `Influence ${Number(state.adjustments[lane].tone_equalizer_influence_radius || 1.5).toFixed(2)} EV`;
   }
-  els.toneEqualizerRemove.disabled = nodes.length <= TONE_EQUALIZER_MIN_NODE_COUNT || index === 0 || index === nodes.length - 1;
-  els.toneEqualizerAdd.disabled = nodes.length >= TONE_EQUALIZER_MAX_NODE_COUNT;
+  ui.remove.disabled = nodes.length <= TONE_EQUALIZER_MIN_NODE_COUNT || index === 0 || index === nodes.length - 1;
+  ui.add.disabled = nodes.length >= TONE_EQUALIZER_MAX_NODE_COUNT;
 }
 
-function drawToneEqualizerEditor() {
-  const canvas = els.toneEqualizerEditor;
+function drawToneEqualizerEditor(lane = state.currentView) {
+  const canvas = toneEqualizerUi(lane).editor;
   const surface = resizeCanvasSurface(canvas);
   if (!surface) return;
   const { ctx, width, height } = surface;
   const { left, right, top, bottom } = toneEqualizerEditorLayout();
   const graphWidth = width - left - right;
   const graphHeight = height - top - bottom;
-  const nodes = currentToneEqualizerNodes();
-  const smoothing = clamp(Number(state.adjustments.hdr?.tone_equalizer_smoothing ?? 0.5), 0, 1);
-  const enabled = state.adjustments.hdr?.tone_equalizer_section_enabled !== false;
+  const nodes = currentToneEqualizerNodes(lane);
+  const smoothing = clamp(Number(state.adjustments[lane]?.tone_equalizer_smoothing ?? 0.5), 0, 1);
+  const enabled = state.adjustments[lane]?.tone_equalizer_section_enabled !== false;
   const xForEv = (inputEv) => left + ((inputEv - TONE_EQUALIZER_MIN_EV) / (toneEqualizerPqMaxEv() - TONE_EQUALIZER_MIN_EV)) * graphWidth;
   const yForAdjustment = (value) => top + ((TONE_EQUALIZER_MAX_ADJUSTMENT_EV - value) / (TONE_EQUALIZER_MAX_ADJUSTMENT_EV * 2)) * graphHeight;
 
@@ -5602,7 +5640,8 @@ function drawToneEqualizerEditor() {
       ctx.fillText(formatSignedEv(inputEv, 0), x, height - bottom + 7);
     }
   }
-  const pqX = xForEv(toneEqualizerPqMaxEv());
+  const outputBoundaryEv = lane === "hdr" ? toneEqualizerPqMaxEv() : Math.log2(1 / 0.18);
+  const pqX = xForEv(outputBoundaryEv);
   ctx.setLineDash([3, 3]);
   ctx.strokeStyle = uiToken("--equalizer-pq");
   ctx.beginPath();
@@ -5612,7 +5651,7 @@ function drawToneEqualizerEditor() {
   ctx.setLineDash([]);
   ctx.fillStyle = uiToken("--attention");
   ctx.textAlign = "right";
-  ctx.fillText("10K", pqX, 3);
+  ctx.fillText(lane === "hdr" ? "10K" : "100%", pqX, 3);
 
   ctx.strokeStyle = enabled ? uiToken("--equalizer-curve") : uiToken("--equalizer-disabled");
   ctx.lineWidth = uiNumberToken("--equalizer-line-width", 2.25);
@@ -5629,7 +5668,7 @@ function drawToneEqualizerEditor() {
 
   const selectedNode = nodes[state.selectedToneEqualizerBand];
   if (selectedNode) {
-    const radius = Number(state.adjustments.hdr?.tone_equalizer_influence_radius || 1.5);
+    const radius = Number(state.adjustments[lane]?.tone_equalizer_influence_radius || 1.5);
     const start = xForEv(Math.max(TONE_EQUALIZER_MIN_EV, selectedNode.input_ev - radius));
     const end = xForEv(Math.min(TONE_EQUALIZER_MAX_EV, selectedNode.input_ev + radius));
     ctx.fillStyle = uiToken("--equalizer-influence-wash");
@@ -5653,7 +5692,7 @@ function drawToneEqualizerEditor() {
     ctx.fill();
     drawGraphHomeCue(ctx, x, y, radius, node.adjustment_ev);
   });
-  syncToneEqualizerControls();
+  syncToneEqualizerControls(lane);
 }
 
 function sampleToneEqualizerAdjustment(inputEv, values, smoothing) {
@@ -5700,8 +5739,33 @@ function normalizeToneEqualizerNodes(values) {
   return nodes;
 }
 
-function currentToneEqualizerNodes() {
-  return normalizeToneEqualizerNodes(state.adjustments.hdr?.tone_equalizer_nodes).map((node) => ({ ...node }));
+function toneEqualizerUi(lane = state.currentView) {
+  if (lane === "sdr") return {
+    editor: els.sdrToneEqualizerEditor,
+    bandValue: els.sdrToneEqualizerBandValue,
+    bandLabel: els.sdrToneEqualizerBandLabel,
+    bandOutput: els.sdrToneEqualizerBandOutput,
+    add: els.sdrToneEqualizerAdd,
+    remove: els.sdrToneEqualizerRemove,
+    radiusDown: els.sdrToneEqualizerRadiusDown,
+    radiusUp: els.sdrToneEqualizerRadiusUp,
+    radius: els.sdrToneEqualizerRadius,
+  };
+  return {
+    editor: els.toneEqualizerEditor,
+    bandValue: els.toneEqualizerBandValue,
+    bandLabel: els.toneEqualizerBandLabel,
+    bandOutput: els.toneEqualizerBandOutput,
+    add: els.toneEqualizerAdd,
+    remove: els.toneEqualizerRemove,
+    radiusDown: els.toneEqualizerRadiusDown,
+    radiusUp: els.toneEqualizerRadiusUp,
+    radius: els.toneEqualizerRadius,
+  };
+}
+
+function currentToneEqualizerNodes(lane = state.currentView) {
+  return normalizeToneEqualizerNodes(state.adjustments[lane]?.tone_equalizer_nodes).map((node) => ({ ...node }));
 }
 
 function toneEqualizerEvFromPointer(clientX, rect) {
@@ -5713,8 +5777,8 @@ function toneEqualizerEvFromPointer(clientX, rect) {
   return TONE_EQUALIZER_MIN_EV + graphX * (toneEqualizerPqMaxEv() - TONE_EQUALIZER_MIN_EV);
 }
 
-function addToneEqualizerNode(preferredEv = null) {
-  const nodes = currentToneEqualizerNodes();
+function addToneEqualizerNode(preferredEv = null, lane = state.currentView) {
+  const nodes = currentToneEqualizerNodes(lane);
   if (nodes.length >= TONE_EQUALIZER_MAX_NODE_COUNT) return;
   let inputEv = preferredEv;
   if (inputEv == null) {
@@ -5728,46 +5792,46 @@ function addToneEqualizerNode(preferredEv = null) {
   }
   inputEv = clamp(inputEv, -5.9, 5.9);
   if (nodes.some((node) => Math.abs(node.input_ev - inputEv) < 0.1)) return;
-  const adjustmentEv = sampleToneEqualizerAdjustment(inputEv, nodes, Number(state.adjustments.hdr.tone_equalizer_smoothing || 0.5));
+  const adjustmentEv = sampleToneEqualizerAdjustment(inputEv, nodes, Number(state.adjustments[lane].tone_equalizer_smoothing || 0.5));
   nodes.push({ input_ev: inputEv, adjustment_ev: adjustmentEv });
   nodes.sort((left, right) => left.input_ev - right.input_ev);
   state.selectedToneEqualizerBand = nodes.findIndex((node) => node.input_ev === inputEv);
-  state.adjustments.hdr.tone_equalizer_nodes = normalizeToneEqualizerNodes(nodes);
-  drawToneEqualizerEditor();
+  state.adjustments[lane].tone_equalizer_nodes = normalizeToneEqualizerNodes(nodes);
+  drawToneEqualizerEditor(lane);
   renderControlState();
-  invalidatePreview("hdr");
-  debouncePreview("hdr");
+  invalidatePreview(lane);
+  debouncePreview(lane);
 }
 
-function removeToneEqualizerNode(requestedIndex = null) {
-  const nodes = currentToneEqualizerNodes();
+function removeToneEqualizerNode(requestedIndex = null, lane = state.currentView) {
+  const nodes = currentToneEqualizerNodes(lane);
   const index = requestedIndex ?? state.selectedToneEqualizerBand;
   if (nodes.length <= TONE_EQUALIZER_MIN_NODE_COUNT || index <= 0 || index >= nodes.length - 1) return;
   nodes.splice(index, 1);
   state.selectedToneEqualizerBand = Math.min(index, nodes.length - 2);
-  state.adjustments.hdr.tone_equalizer_nodes = normalizeToneEqualizerNodes(nodes);
-  drawToneEqualizerEditor();
+  state.adjustments[lane].tone_equalizer_nodes = normalizeToneEqualizerNodes(nodes);
+  drawToneEqualizerEditor(lane);
   renderControlState();
-  invalidatePreview("hdr");
-  debouncePreview("hdr");
+  invalidatePreview(lane);
+  debouncePreview(lane);
 }
 
-function changeToneEqualizerRadius(delta) {
-  const current = Number(state.adjustments.hdr.tone_equalizer_influence_radius || 1.5);
-  state.adjustments.hdr.tone_equalizer_influence_radius = clamp(Math.round((current + delta) * 4) / 4, 0.25, 12);
-  syncToneEqualizerControls();
-  drawToneEqualizerEditor();
+function changeToneEqualizerRadius(delta, lane = state.currentView) {
+  const current = Number(state.adjustments[lane].tone_equalizer_influence_radius || 1.5);
+  state.adjustments[lane].tone_equalizer_influence_radius = clamp(Math.round((current + delta) * 4) / 4, 0.25, 12);
+  syncToneEqualizerControls(lane);
+  drawToneEqualizerEditor(lane);
   renderControlState();
 }
 
-function moveToneEqualizerNodeHorizontally(index, delta) {
-  const nodes = currentToneEqualizerNodes();
+function moveToneEqualizerNodeHorizontally(index, delta, lane = state.currentView) {
+  const nodes = currentToneEqualizerNodes(lane);
   if (index <= 0 || index >= nodes.length - 1) return;
   nodes[index].input_ev = clamp(nodes[index].input_ev + delta, nodes[index - 1].input_ev + 0.1, nodes[index + 1].input_ev - 0.1);
-  state.adjustments.hdr.tone_equalizer_nodes = normalizeToneEqualizerNodes(nodes);
-  drawToneEqualizerEditor();
-  invalidatePreview("hdr");
-  debouncePreview("hdr");
+  state.adjustments[lane].tone_equalizer_nodes = normalizeToneEqualizerNodes(nodes);
+  drawToneEqualizerEditor(lane);
+  invalidatePreview(lane);
+  debouncePreview(lane);
 }
 
 function formatSignedEv(value, digits) {
@@ -7001,6 +7065,7 @@ function renderLaneChrome() {
   els.colorGradingSdrActions?.classList.toggle("hidden", lane !== "sdr");
   els.vignetteSdrActions?.classList.toggle("hidden", lane !== "sdr");
   syncControlsFromState();
+  drawToneEqualizerEditor(lane);
   window.HDRProofing?.syncLane();
   renderCompareStatus();
   updateControlReadouts();
@@ -7758,7 +7823,7 @@ function resetControlGroup(group) {
   const sectionPath = sectionPathForGroup[group];
   if (sectionPath) setValueByPath(state.adjustments, sectionPath, true);
   syncControlsFromState();
-  if (group === "hdr-equalizer") drawToneEqualizerEditor();
+  if (group.endsWith("-equalizer")) drawToneEqualizerEditor(group.startsWith("sdr-") ? "sdr" : "hdr");
   if (group === "geometry") {
     invalidatePreview("hdr"); invalidatePreview("sdr");
   } else invalidatePreview(group.startsWith("sdr-") ? "sdr" : "hdr");
@@ -9741,6 +9806,23 @@ function isLuminanceSamplingInitialized(leaf) {
   // by up to one step.
   const visibleDefault = Math.abs(start - visibleMin) <= 0.011 && Math.abs(end - visibleMax) <= 0.011;
   return !schemaDefault && !visibleDefault;
+}
+
+function formatSdrBandLevel(value) {
+  return `${Math.round(value * 100)}%`;
+}
+
+function matchHdrBandsToSdr() {
+  if (!state.session) return;
+  state.adjustments.sdr.tone_equalizer_nodes = currentToneEqualizerNodes("hdr");
+  state.adjustments.sdr.tone_equalizer_influence_radius = state.adjustments.hdr.tone_equalizer_influence_radius;
+  state.adjustments.sdr.tone_equalizer_smoothing = state.adjustments.hdr.tone_equalizer_smoothing;
+  state.adjustments.sdr.tone_equalizer_section_enabled = true;
+  syncToneEqualizerControls("sdr");
+  drawToneEqualizerEditor("sdr");
+  renderControlState();
+  invalidatePreview("sdr");
+  debouncePreview("sdr");
 }
 
 function appendLuminanceSamplePoint(gesture, point) {

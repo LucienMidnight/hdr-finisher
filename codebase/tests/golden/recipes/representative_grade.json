@@ -13,7 +13,19 @@
       "highlight_compression_softness": 35,
       "saturation": 0.08
     },
-    "sdr": {"exposure": -0.1, "highlight_recovery": 0.75, "saturation": 0.04},
+    "sdr": {
+      "exposure": -0.1,
+      "highlight_recovery": 0.75,
+      "saturation": 0.04,
+      "tone_equalizer_smoothing": 0.75,
+      "tone_equalizer_nodes": [
+        {"input_ev": -6, "adjustment_ev": 0.2},
+        {"input_ev": -3, "adjustment_ev": 0.1},
+        {"input_ev": 0, "adjustment_ev": 0.0},
+        {"input_ev": 3, "adjustment_ev": -0.1},
+        {"input_ev": 6, "adjustment_ev": -0.2}
+      ]
+    },
     "shared": {"geometry": {"crop": {"x": 0.025, "y": 0.025, "width": 0.95, "height": 0.95}}}
   },
   "output_finishing": {"resize_mode": "long_edge", "long_edge": 1600, "prevent_enlargement": true, "sharpening": "standard"},

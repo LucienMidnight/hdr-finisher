@@ -249,7 +249,13 @@ def _recommended_raw_exposure_ev(image: np.ndarray) -> float:
     # letting a small specular peak or a large dark border drive exposure.
     median_ev = np.log2(0.10 / median)
     upper_ev = np.log2(0.32 / upper)
-    return round(float(np.clip((median_ev + upper_ev) * 0.5, -2.0, 4.0)), 3)
+    metered_exposure_ev = float(np.clip((median_ev + upper_ev) * 0.5, -2.0, 4.0))
+    # Camera RAW starts that need a lift were consistently too hot in both
+    # renditions. Reduce only that automatic lift by up to 1.5 EV so sources
+    # the meter already holds or darkens are not pushed down unnecessarily.
+    if metered_exposure_ev > 0.0:
+        metered_exposure_ev = max(0.0, metered_exposure_ev - 1.5)
+    return round(metered_exposure_ev, 3)
 
 
 def _load_with_pillow(path: Path) -> tuple[np.ndarray, dict[str, Any]]:

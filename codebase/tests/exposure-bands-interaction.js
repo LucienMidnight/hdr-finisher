@@ -35,6 +35,10 @@ function graphPosition(box, inputEv, adjustmentEv = 0) {
 
     const box = await editor.boundingBox();
     if (!box) throw new Error("Exposure Bands editor was not visible.");
+    await page.waitForFunction(() => {
+      const canvas = document.querySelector("#tone-equalizer-editor");
+      return canvas.width >= Math.floor(canvas.clientWidth * window.devicePixelRatio);
+    });
     const highResolution = await editor.evaluate((canvas) => canvas.width >= Math.floor(canvas.clientWidth * window.devicePixelRatio));
     if (!highResolution) throw new Error("Exposure Bands backing resolution did not match its displayed size and device pixel ratio.");
     const newBand = graphPosition(box, -1.5);
@@ -55,8 +59,32 @@ function graphPosition(box, inputEv, adjustmentEv = 0) {
     await page.mouse.up();
     if (await nodeCount() !== 5) throw new Error("Dragging an Exposure Band should adjust it without changing the band count.");
 
+    const hdrBandsBeforeMatch = await page.evaluate(
+      () => JSON.stringify(window.HDRFinisherPerformance.authoringState().adjustments.hdr.tone_equalizer_nodes),
+    );
+    await page.click('[data-kind="sdr"]');
+    await page.locator('[data-group="sdr-equalizer"] .group-toggle').click();
+    const sdrEditor = page.locator("#sdr-tone-equalizer-editor");
+    if (!await sdrEditor.boundingBox()) throw new Error("SDR Exposure Bands editor was not visible.");
+    await page.click("#sdr-match-hdr-bands");
+    const matched = await page.evaluate(() => {
+      const { hdr, sdr } = window.HDRFinisherPerformance.authoringState().adjustments;
+      return JSON.stringify(hdr.tone_equalizer_nodes) === JSON.stringify(sdr.tone_equalizer_nodes)
+        && hdr.tone_equalizer_influence_radius === sdr.tone_equalizer_influence_radius
+        && hdr.tone_equalizer_smoothing === sdr.tone_equalizer_smoothing;
+    });
+    if (!matched) throw new Error("Match HDR bands did not make a one-shot copy into SDR.");
+
+    await page.locator("#sdr-tone-equalizer-band-value").fill("0.2");
+    const independent = await page.evaluate((hdrBefore) => {
+      const { hdr, sdr } = window.HDRFinisherPerformance.authoringState().adjustments;
+      return JSON.stringify(hdr.tone_equalizer_nodes) === hdrBefore
+        && JSON.stringify(sdr.tone_equalizer_nodes) !== hdrBefore;
+    }, hdrBandsBeforeMatch);
+    if (!independent) throw new Error("SDR Exposure Bands did not remain independent after matching HDR.");
+
     if (pageErrors.length) throw new Error(`Browser errors: ${pageErrors.join(" | ")}`);
-    console.log("Exposure Bands direct add/remove browser test passed.");
+    console.log("HDR/SDR Exposure Bands and one-shot match browser test passed.");
   } finally {
     await browser.close();
   }

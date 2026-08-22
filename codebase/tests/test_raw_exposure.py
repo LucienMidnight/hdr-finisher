@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from hdr_finisher.analysis import classify_hdr
-from hdr_finisher.loader import load_image
+from hdr_finisher.loader import _recommended_raw_exposure_ev, load_image
 from hdr_finisher.models import SourceImageDescriptor
 from hdr_finisher.sessions import LoadedSession
 
@@ -45,8 +45,20 @@ def test_loaded_raw_session_applies_shared_editable_starting_exposure(tmp_path: 
     assert session.metadata["default_exposure_applied"] == {
         "hdr_ev": 1.25,
         "sdr_ev": 1.25,
-        "method": "bounded_median_and_p90",
+        "method": "bounded_median_and_p90_minus_1_5_ev",
     }
+
+
+def test_raw_meter_does_not_darken_a_source_that_does_not_need_an_automatic_lift() -> None:
+    image = np.full((20, 20, 3), 0.18, dtype=np.float32)
+
+    assert _recommended_raw_exposure_ev(image) == pytest.approx(-0.009)
+
+
+def test_raw_meter_shifts_its_brightening_limit_down_by_one_and_a_half_stops() -> None:
+    image = np.full((20, 20, 3), 1e-5, dtype=np.float32)
+
+    assert _recommended_raw_exposure_ev(image) == pytest.approx(2.5)
 
 
 def test_loaded_authored_sdr_reference_starts_without_extra_highlight_recovery(tmp_path: Path) -> None:

@@ -8,7 +8,7 @@ from hdr_finisher.analysis import _luma_peaks, _robust_channel_peak, classify_hd
 from hdr_finisher.color import normalize_to_acescg, sanitize_array
 from hdr_finisher.exporters import _linear_to_bt2020_pq_yuv10, _linear_to_pq_rgb10, _linear_to_srgb8
 from hdr_finisher.loader import _apply_apple_hdr_gainmap, _compute_apple_headroom
-from hdr_finisher.models import AdjustmentState, ExportSettings, HDRAdjustments, HDRClassification, PreviewKind
+from hdr_finisher.models import AdjustmentState, ExportSettings, HDRAdjustments, HDRClassification, PreviewKind, SDRAdjustments
 from hdr_finisher.overlay import build_overlay_rgba
 from hdr_finisher.preview import downsample_image
 from hdr_finisher.models import ScopeMode
@@ -196,10 +196,13 @@ def test_sdr_curves_apply_only_to_sdr_branch() -> None:
     )
 
     sdr_output = apply_adjustments(image, adjustments, PreviewKind.SDR)
+    baseline_sdr_adjustments = adjustments.model_copy(deep=True)
+    baseline_sdr_adjustments.sdr.luma_curve = SDRAdjustments().luma_curve
+    baseline_sdr = apply_adjustments(image, baseline_sdr_adjustments, PreviewKind.SDR)
     hdr_output = apply_adjustments(image, adjustments, PreviewKind.HDR)
     baseline_hdr = apply_adjustments(image, AdjustmentState(), PreviewKind.HDR)
 
-    assert sdr_output.mean() < 0.5
+    assert float(np.max(np.abs(sdr_output - baseline_sdr))) > 0.02
     assert np.allclose(hdr_output, baseline_hdr)
 
 

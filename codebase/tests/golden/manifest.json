@@ -4,6 +4,31 @@
   "authoring_anchor": 0.18,
   "reference_white_presets_nits": [203, 100],
   "default_reference_white_nits": 203,
+  "sdr_highlight_recovery": {
+    "strength": 0.6,
+    "display_reference_white": 0.49261084,
+    "minimum_recovered_peak": 0.9,
+    "monotonic_tolerance": 0.000001,
+    "tone_mappers": ["filmic", "reinhard", "aces"]
+  },
+  "sdr_tone_mappers": {
+    "scene_middle_gray": 0.18,
+    "display_reference_white": 0.49261084,
+    "anchor_tolerance": 0.0001,
+    "monotonic_tolerance": 0.000001,
+    "tone_mappers": ["filmic", "reinhard", "aces"]
+  },
+  "sdr_exposure_bands": {
+    "nodes": [
+      {"input_ev": -6, "adjustment_ev": 0.4},
+      {"input_ev": -3, "adjustment_ev": 0.2},
+      {"input_ev": 0, "adjustment_ev": 0.0},
+      {"input_ev": 3, "adjustment_ev": -0.2},
+      {"input_ev": 6, "adjustment_ev": -0.4}
+    ],
+    "smoothing": 0.75,
+    "monotonic_tolerance": 0.000001
+  },
   "journeys": {
     "synthetic_numerical_reference": {
       "fixture": "tests/fixtures/hdr_headroom.tiff",

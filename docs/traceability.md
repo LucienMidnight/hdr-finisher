@@ -42,6 +42,7 @@ This index maps user-facing areas to their current state model, implementation, 
 | Curve Contrast/Skew | `sdr.tone_contrast`, `tone_skew` | `_map_sdr_luma` Filmic path | [SDR grade](user-guide/grade-sdr.md#filmic) |
 | Exposure/Shadow | `sdr.exposure`, `sdr.shadow` | SDR branch entry processing | [SDR grade](user-guide/grade-sdr.md#tone) |
 | Highlight Recovery | `sdr.highlight_recovery` | `_apply_sdr_highlight_recovery` | [SDR grade](user-guide/grade-sdr.md#highlight-recovery) |
+| Exposure Bands / Match HDR bands | `sdr.tone_equalizer_*` | `_apply_sdr_tone_equalizer`; frontend one-shot copy | [SDR grade](user-guide/grade-sdr.md#exposure-bands) |
 | Contrast/Pivot | `sdr.contrast`, `contrast_pivot` | `_apply_luminance_section_controls` | [SDR grade](user-guide/grade-sdr.md#contrast-and-pivot) |
 | Match HDR colors / Reset | HDR and SDR color/primary fields | Frontend one-shot slider copy/reset | [SDR grade](user-guide/grade-sdr.md#match-hdr-colors) |
 | Independent color | SDR color/primary fields | `_apply_hdr_color` via SDR conversion path | [SDR grade](user-guide/grade-sdr.md#match-hdr-colors) |

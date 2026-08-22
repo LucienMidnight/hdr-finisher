@@ -1280,13 +1280,13 @@
     params[16] = hdrSurface ? 1 : 0;
     // The transport limit is absolute; scene-linear scale follows the project.
     params[17] = 10000 * 0.18 / projectReferenceWhite;
-    params[18] = lane === "hdr" && branch.tone_equalizer_section_enabled !== false && !toneEqualizerNeutral(branch) ? 1 : 0;
-    params[19] = lane === "hdr" ? Math.min(1, Math.max(0, branch.tone_equalizer_smoothing ?? 0.5)) : 0;
+    params[18] = branch.tone_equalizer_section_enabled !== false && !toneEqualizerNeutral(branch) ? 1 : 0;
+    params[19] = Math.min(1, Math.max(0, branch.tone_equalizer_smoothing ?? 0.5));
     const toneNodes = normalizedToneEqualizerNodes(branch.tone_equalizer_nodes);
-    params[20] = lane === "hdr" ? toneNodes.length : 0;
+    params[20] = toneNodes.length;
     toneNodes.forEach((node, index) => {
-      params[21 + index] = lane === "hdr" ? node.input_ev : 0;
-      params[37 + index] = lane === "hdr" ? node.adjustment_ev : 0;
+      params[21 + index] = node.input_ev;
+      params[37 + index] = node.adjustment_ev;
     });
     params[53] = lane === "hdr" ? ((branch.highlight_compression_start_nits ?? 400) * 0.18 / projectReferenceWhite) : 0;
     params[54] = branch.lift_pivot ?? -2;
@@ -1772,9 +1772,9 @@
       if (previous <= 0.0 || following <= 0.0) { return 0.0; }
       return 2.0 * previous * following / (previous + following);
     }
-    fn hdrToneEqualizer(input: vec3f) -> vec3f {
+    fn toneEqualizer(input: vec3f) -> vec3f {
       if (p[18] < 0.5) { return input; }
-      let y = max(lumaAces(input), 0.0);
+      let y = max(select(lumaSrgb(input), lumaAces(input), p[0] > 0.5), 0.0);
       if (y <= 0.00000001) { return input; }
       let inputEv = log2(max(y, 0.00000001) / 0.18);
       var targetEv = inputEv;
@@ -1857,16 +1857,23 @@
       if (p[3] <= 0.0) { return input; }
       let rgb = max(input, vec3f(0.0));
       let y = lumaSrgb(rgb);
-      let amount = 0.4 * p[3];
-      let targetValue = y * (1.0 + amount * 0.18) / (1.0 + amount * y);
+      let pivot = 100.0 / 203.0;
+      let span = 1.0 - pivot;
+      let position = clamp((y - pivot) / span, 0.0, 1.0);
+      let amount = 2.5 * (1.0 - exp(-0.5 * clamp(p[3], 0.0, 4.0)));
+      let recoveredPosition = position - amount * position * position * (1.0 - position);
+      let recoveredValue = pivot + span * recoveredPosition;
+      let targetValue = select(y, recoveredValue, y > pivot);
       return select(vec3f(0.0), rgb * (targetValue / max(y, 0.00000001)), y > 0.00000001);
     }
     fn toneCurveLuma(y: f32) -> f32 {
       var mapped = 0.0;
       if (p[12] > 1.5) {
-        mapped = y / (1.0 + y);
+        let scaledY = y * 5.393743257820929;
+        mapped = scaledY / (1.0 + scaledY);
       } else if (p[12] > 0.5) {
-        mapped = ((y * (2.51 * y + 0.03)) / (y * (2.43 * y + 0.59) + 0.14)) / (2.51 / 2.43);
+        let scaledY = y * 2.0294105241641414;
+        mapped = ((scaledY * (2.51 * scaledY + 0.03)) / (scaledY * (2.43 * scaledY + 0.59) + 0.14)) / (2.51 / 2.43);
       } else {
         let basePower = 1.1 * clamp(p[13], 0.5, 1.5);
         let shadowPower = basePower * exp2(-0.75 * clamp(p[14], -1.0, 1.0));
@@ -1909,7 +1916,7 @@
       return compressSrgbGamut(acescgToSrgb(sceneColor(srgbToAcescg(input))));
     }
     fn renderHdrBase(source: vec3f) -> vec3f {
-      return max(applyColorGrading(applyCurves(hdrPrimaries(hdrToneEqualizer(sceneColor(hdrPeakFit(hdrSoftCeiling(hdrContrast(hdrBase(source))))))), true), true), vec3f(0.0));
+      return max(applyColorGrading(applyCurves(hdrPrimaries(toneEqualizer(sceneColor(hdrPeakFit(hdrSoftCeiling(hdrContrast(hdrBase(source))))))), true), true), vec3f(0.0));
     }
     fn displayHdr(rgb: vec3f) -> vec3f {
       if (p[16] > 0.5) {
@@ -1933,14 +1940,14 @@
           rgb = max(rgb + vec3f(p[4] * 0.08 * mask), vec3f(0.0));
         }
         if (p[60] > 0.5) { rgb = retoneMapSdrReference(rgb); }
-        rgb = applyColorGrading(applyCurves(sdrPrimaries(sdrReferenceColor(sdrContrast(highlightRecovery(rgb)))), false), false);
+        rgb = applyColorGrading(applyCurves(sdrPrimaries(sdrReferenceColor(sdrContrast(toneEqualizer(highlightRecovery(rgb))))), false), false);
       } else {
         rgb = max(source * exp2(p[2]), vec3f(0.0));
         if (p[4] != 0.0) {
           let mask = 1.0 - smoothRange(0.0, 0.5, lumaAces(rgb));
           rgb = max(rgb + vec3f(p[4] * 0.08 * mask), vec3f(0.0));
         }
-        rgb = applyColorGrading(applyCurves(sdrPrimaries(sdrContrast(highlightRecovery(toneMap(sceneColor(rgb))))), false), false);
+        rgb = applyColorGrading(applyCurves(sdrPrimaries(sdrContrast(toneEqualizer(highlightRecovery(toneMap(sceneColor(rgb)))))), false), false);
       }
       return clamp(rgb, vec3f(0.0), vec3f(1.0));
     }

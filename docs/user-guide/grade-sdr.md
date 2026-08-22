@@ -13,9 +13,10 @@ Start with:
 1. Filmic Base Rendition at neutral settings.
 2. Exposure and Highlight Recovery.
 3. Contrast/Pivot and Shadow.
-4. Match HDR colors, then refine the SDR color controls if needed.
-5. Lift/Gamma/Gain or Curves only when needed.
-6. Use **Match HDR film look** as a starting point, then refine for the SDR rendition.
+4. Exposure Bands for brightness-specific corrections.
+5. Match HDR colors, then refine the SDR color controls if needed.
+6. Lift/Gamma/Gain or Curves only when needed.
+7. Use **Match HDR film look** as a starting point, then refine for the SDR rendition.
 
 ## Base Rendition
 
@@ -26,13 +27,15 @@ The neutral default. It maps scene luminance through a sigmoid anchored at scene
 - **Curve Contrast** changes the overall sigmoid steepness.
 - **Contrast Skew** changes shadow and highlight steepness independently. Move left for more emphasis in darker tones and gentler highlights; move right to open shadows and give brighter tones more snap.
 
-### ACES
+### ACES-style
 
 Uses a compact ACES-inspired rational curve. It has a stronger characteristic shoulder/toe than the neutral Filmic implementation. It is a look choice, not a full ACES Output Transform.
 
 ### Reinhard
 
-Uses `x / (1 + x)` luminance compression. It is predictable and strongly compressive, useful for very large ranges but often flatter than Filmic.
+Uses scaled `x / (1 + x)` luminance compression. It is predictable and strongly compressive, useful for very large ranges but often flatter than Filmic.
+
+All three defaults share the same normalized SDR tonal anchor: scene-linear `0.18` maps to approximately `0.493` (`100/203`) in display-linear SDR. This fixed curve placement preserves the established generated-fallback appearance and leaves room for brighter source values to roll toward SDR white. It is not a physical 100-nit reference-white conversion and does not change when the project's HDR Reference White switches between 100 and 203 nits. Switching Base Rendition therefore changes the curve shape without imposing a hidden exposure offset.
 
 For Apple HDR HEIC sources with an authored SDR reference, neutral Filmic is an identity. When Base Rendition changes, HDR Finisher approximately inverts its neutral filmic relationship and applies the new selected mapping. This avoids remapping an already tone-mapped SDR image twice at default settings.
 
@@ -55,6 +58,12 @@ Operate in the display-linear SDR domain. Pivot identifies the normalized value 
 ### Shadow
 
 Adds or removes low-end brightness with a mask that fades toward midtones. Small values are normally sufficient.
+
+## Exposure Bands
+
+SDR Exposure Bands reshape the tone-mapped, display-linear fallback by brightness while preserving RGB ratios. The graph is centered on 18% display-linear gray and marks the 100% SDR boundary. Positive adjustments above that boundary can clip at final SDR output, so confirm the result in the SDR histogram or waveform.
+
+**Match HDR bands** is a one-shot starting point. It copies the HDR nodes, adjustments, influence, and smoothing into SDR, then leaves the two renditions independent. Because the SDR bands operate after tone mapping while HDR bands operate on scene-linear HDR, copied values preserve the authored curve shape but are not expected to produce pixel-identical tonal placement.
 
 ## Match HDR colors
 
@@ -89,20 +98,22 @@ For a scene-linear source without an authored SDR reference:
 1. SDR exposure and shadow
 2. Independent SDR color grade (optionally initialized from HDR with Match HDR colors)
 3. Selected tone map into display-linear sRGB
-4. Highlight Recovery and contrast
-5. Lift/Gamma/Gain
-6. Curves
-7. Film Response/Color Density, Halation, Bloom, Image Structure, then Grain
+4. Highlight Recovery
+5. Exposure Bands
+6. Contrast and Lift/Gamma/Gain
+7. Curves
+8. Film Response/Color Density, Halation, Bloom, Image Structure, then Grain
 
 For an authored SDR reference such as supported Apple HDR HEIC:
 
 1. Begin with the authored display-linear sRGB rendition
 2. Exposure and shadow
 3. Optional Base Rendition re-tone-map
-4. Highlight Recovery and contrast
-5. SDR color grade through ACEScg and back to sRGB
-6. Lift/Gamma/Gain and Curves
-7. Film Response/Color Density, Halation, Bloom, Image Structure, then Grain
+4. Highlight Recovery
+5. Exposure Bands
+6. Contrast, then SDR color grade through ACEScg and back to sRGB
+7. Lift/Gamma/Gain and Curves
+8. Film Response/Color Density, Halation, Bloom, Image Structure, then Grain
 
 The final result is clipped to the normalized SDR range.
 
@@ -120,5 +131,6 @@ The final result is clipped to the normalized SDR range.
 - Treating the fallback as an automatic tone-map by-product
 - Using extreme Highlight Recovery until the image looks flat
 - Expecting Match HDR colors to remain linked after the one-shot copy
+- Expecting Match HDR bands to produce identical HDR and SDR tonal placement
 - Expecting exact color identity between wide-gamut HDR and sRGB SDR
 - Correcting a wrong source interpretation independently in each branch

@@ -11,6 +11,7 @@ from hdr_finisher.adjustments import (
     _apply_curve_set,
     _apply_saturation_vibrance,
     _apply_sdr_adjustments,
+    _apply_sdr_tone_equalizer,
     _curve_domain_decode,
     _curve_domain_encode,
     _compress_scene_highlights,
@@ -341,11 +342,16 @@ def test_explicit_thirteen_node_equalizer_preserves_positions() -> None:
     assert [node.input_ev for node in authored.tone_equalizer_nodes] == list(range(-6, 7))
     assert [node.adjustment_ev for node in authored.tone_equalizer_nodes] == bands
 
+    sdr_authored = SDRAdjustments(tone_equalizer_nodes=_tone_nodes(bands))
+    assert [node.input_ev for node in sdr_authored.tone_equalizer_nodes] == list(range(-6, 7))
+    assert [node.adjustment_ev for node in sdr_authored.tone_equalizer_nodes] == bands
 
+
+@pytest.mark.parametrize("model", [HDRAdjustments, SDRAdjustments])
 @pytest.mark.parametrize("count", [1, 17])
-def test_tone_equalizer_rejects_node_counts_outside_limits(count: int) -> None:
+def test_tone_equalizer_rejects_node_counts_outside_limits(model, count: int) -> None:
     with pytest.raises(ValueError):
-        HDRAdjustments.model_validate(
+        model.model_validate(
             {"tone_equalizer_nodes": [{"input_ev": -6 + index * 0.5, "adjustment_ev": 0} for index in range(count)]}
         )
 
@@ -414,6 +420,36 @@ def test_hdr_tone_equalizer_is_hue_preserving() -> None:
     channel_gain = output[0, 0] / image[0, 0]
 
     np.testing.assert_allclose(channel_gain, np.repeat(channel_gain[0], 3), rtol=1e-6, atol=1e-6)
+
+
+def test_sdr_tone_equalizer_is_independent_monotonic_and_hue_preserving() -> None:
+    levels = np.geomspace(0.18 * (2.0**-6), 1.0, 512, dtype=np.float32)
+    image = np.stack((levels * 0.7, levels * 0.9, levels), axis=-1)[None, ...]
+    bands = [0.0] * 13
+    bands[3:7] = [0.6, 0.8, 0.5, 0.2]
+    sdr = SDRAdjustments(tone_equalizer_nodes=_tone_nodes(bands), tone_equalizer_smoothing=0.8)
+
+    output = _apply_sdr_tone_equalizer(image, sdr)
+    luma = output[0] @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+
+    assert np.all(np.isfinite(output))
+    assert np.all(np.diff(luma) >= -1e-6)
+    np.testing.assert_allclose(output[0, 128] / image[0, 128], np.repeat(output[0, 128, 0] / image[0, 128, 0], 3), rtol=1e-5)
+    assert not np.array_equal(sdr.tone_equalizer_nodes, HDRAdjustments().tone_equalizer_nodes)
+
+
+def test_sdr_tone_equalizer_bypass_is_identity_for_authored_sdr_reference() -> None:
+    reference = np.linspace(0.01, 0.95, 48, dtype=np.float32).reshape(1, 16, 3)
+    nodes = _tone_nodes([0.4] * 13)
+    enabled = AdjustmentState(sdr=SDRAdjustments(tone_equalizer_nodes=nodes, highlight_recovery=0.0))
+    bypassed = enabled.model_copy(deep=True)
+    bypassed.sdr.tone_equalizer_section_enabled = False
+
+    enabled_output = apply_adjustments(reference, enabled, PreviewKind.SDR, sdr_reference_image=reference)
+    bypassed_output = apply_adjustments(reference, bypassed, PreviewKind.SDR, sdr_reference_image=reference)
+
+    assert not np.array_equal(enabled_output, bypassed_output)
+    assert np.all(np.isfinite(enabled_output))
 
 
 def test_plus_six_tone_equalizer_band_controls_values_through_pq_ceiling() -> None:
@@ -843,6 +879,36 @@ def test_default_sdr_render_maps_scene_diffuse_white_to_display_reference_white(
     assert np.allclose(output, 100.0 / 203.0, atol=0.005)
 
 
+@pytest.mark.parametrize("tone_mapper", ["filmic", "aces", "reinhard"])
+def test_sdr_tone_mapper_defaults_share_reference_white_anchor(tone_mapper: str) -> None:
+    image = np.full((2, 2, 3), 0.18, dtype=np.float32)
+    output = _apply_sdr_adjustments(
+        image,
+        AdjustmentState(
+            sdr=SDRAdjustments(tone_mapper=tone_mapper, highlight_recovery=0.0)
+        ),
+    )
+
+    assert np.allclose(output, 100.0 / 203.0, atol=0.005)
+
+
+@pytest.mark.parametrize("tone_mapper", ["filmic", "aces", "reinhard"])
+def test_sdr_tone_mapper_defaults_are_monotonic_and_retain_headroom(tone_mapper: str) -> None:
+    levels = np.geomspace(0.001, 1000.0, 512, dtype=np.float32)
+    image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
+    output = _apply_sdr_adjustments(
+        image,
+        AdjustmentState(
+            sdr=SDRAdjustments(tone_mapper=tone_mapper, highlight_recovery=0.0)
+        ),
+    )[0, :, 0]
+
+    assert np.all(np.isfinite(output))
+    assert np.all(np.diff(output) >= -1e-6)
+    assert output[np.searchsorted(levels, 0.18)] < 1.0
+    assert output[-1] <= 1.0
+
+
 def test_filmic_curve_contrast_changes_steepness_around_middle_gray() -> None:
     levels = np.array([0.04, 0.18, 1.0], dtype=np.float32)
     image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
@@ -895,13 +961,13 @@ def test_sdr_highlight_recovery_is_visible_and_targets_highlights() -> None:
     baseline_levels = baseline[0, :, 0]
     recovered_levels = recovered[0, :, 0]
 
-    assert baseline_levels[-1] - recovered_levels[-1] > 0.1
-    assert recovered_levels[0] / baseline_levels[0] > recovered_levels[-1] / baseline_levels[-1]
+    assert recovered_levels[0] == pytest.approx(baseline_levels[0], abs=1e-6)
+    assert baseline_levels[-1] - recovered_levels[-1] > 0.02
     assert np.all(np.diff(recovered_levels) > 0.0)
 
 
 def test_sdr_reference_highlight_recovery_holds_mid_gray_and_recovers_white() -> None:
-    levels = np.array([0.05, 0.18, 0.5, 1.0], dtype=np.float32)
+    levels = np.array([0.05, 0.18, 0.75, 1.0], dtype=np.float32)
     reference = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
     scene = np.ones_like(reference)
     baseline = apply_adjustments(
@@ -918,7 +984,8 @@ def test_sdr_reference_highlight_recovery_holds_mid_gray_and_recovers_white() ->
     )
 
     assert abs(float(recovered[0, 1, 0]) - float(baseline[0, 1, 0])) < 1e-6
-    assert float(baseline[0, -1, 0] - recovered[0, -1, 0]) > 0.15
+    assert float(baseline[0, -2, 0] - recovered[0, -2, 0]) > 0.02
+    assert recovered[0, -1, 0] == pytest.approx(1.0, abs=1e-6)
     assert np.all(np.diff(recovered[0, :, 0]) > 0.0)
 
 

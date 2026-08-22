@@ -143,10 +143,11 @@ Peak Fit predicts the measured source peak after the independently bypassable To
 3. Tone-map ACEScg luma
 4. Convert to display-linear sRGB with CAT02
 5. Compress to the sRGB cube toward display luma
-6. Highlight Recovery and contrast
-7. Lift/Gamma/Gain
-8. SDR-domain curves
-9. Film Response/Color Density, Halation, Bloom, Image Structure, and Grain
+6. Highlight Recovery
+7. Monotonic display-linear SDR Exposure Bands
+8. Contrast and Lift/Gamma/Gain
+9. SDR-domain curves
+10. Film Response/Color Density, Halation, Bloom, Image Structure, and Grain
 
 ### From an authored SDR HEIC reference
 
@@ -154,11 +155,13 @@ The display-linear sRGB reference is the neutral base. Non-neutral Base Renditio
 
 ### Tone-map formulas
 
-- **Reinhard:** `x / (1 + x)`
-- **ACES:** compact rational approximation using coefficients `2.51, 0.03, 2.43, 0.59, 0.14`, normalized by its asymptote
-- **Filmic:** a log-exposure sigmoid anchored at scene-linear `0.18`, with separate shadow/highlight powers derived from Contrast and Skew; changing only project reference white does not rescale the generated SDR result
+- **Reinhard:** scaled `x / (1 + x)`; the input scale holds scene-linear `0.18` at the shared normalized SDR tonal anchor
+- **ACES-style:** compact rational approximation using coefficients `2.51, 0.03, 2.43, 0.59, 0.14`, normalized by its asymptote and input-scaled to the same tonal anchor
+- **Filmic:** a log-exposure sigmoid centered on scene-linear `0.18`, with separate shadow/highlight powers derived from Contrast and Skew
 
-These are application operators. The “ACES” choice is not a complete ACES RRT/ODT and should not be documented as one.
+These are application operators. The “ACES-style” choice is not a complete ACES Output Transform and should not be documented as one.
+
+For all three curves, scene-linear `0.18` maps to approximately `0.493` (`100/203`) in display-linear SDR. This is a fixed creative placement inherited from the established generated fallback: it reserves normalized SDR range for rolling brighter source values toward `1.0`. It is not a declaration that the SDR branch has a physical 100-nit reference white, and it is not derived from the active project HDR Reference White. Consequently, changing only the project setting between 100 and 203 nits does not rescale generated SDR pixels.
 
 ## Curves
 
