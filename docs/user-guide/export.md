@@ -55,6 +55,13 @@ direct-HDR JPEG XL is unaffected. Ratios beyond the guardrail are normally
 created by division through a color channel too close to zero to use the SDR
 JPEG's precision effectively.
 
+JPEG Ultra HDR export also applies a conservative edge-guided denoise pass only
+to the logarithmic gain map before its final compression. The unchanged SDR
+primary supplies the edge guide, so ordinary JPEG display and base-image texture
+are preserved while pixel-scale HDR/SDR ratio noise is prevented from becoming
+coarse multiplicative texture in gain-map viewers. This is automatic and does
+not denoise either authored rendition.
+
 ### Controls
 
 - **Quality:** primary JPEG quality.
@@ -86,6 +93,10 @@ The bundled libavif range calculation already removes the outer 0.1% of ratio
 outliers independently for each channel before quantizing the 10-bit gain map.
 HDR Finisher therefore does not apply the JPEG-specific four-stop guardrail to
 AVIF.
+
+Spatial AVIF gain-map denoising is not currently enabled. It is roadmap work
+that requires separate 10-bit AVIF, edge/highlight, file-size, and physical
+browser validation rather than assuming the JPEG result transfers unchanged.
 
 The built-in delivery pattern showed that a 4:2:0 gain map raised colored-edge MAE by about 70% versus 4:4:4 and did not reduce file size in that sample. A monochrome gain map was about 14% smaller but produced severe saturated chromatic-highlight errors. The DxO photographic corpus then showed that half-resolution 4:4:4 cut total size by a median 52.8% versus full-resolution 4:4:4, while further chroma subsampling saved almost nothing. Gain-map chroma is therefore fixed at 4:4:4: Web Default and Web Optimized use half resolution, and Maximum Fidelity uses full resolution. Bundled libavif and Edge 151 decoded every tested mode, but headless decode does not replace physical HDR-display review.
 

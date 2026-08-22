@@ -18,9 +18,11 @@ from hdr_finisher.exporters import (
     ExportProcessError,
     JPEGUltraHDRExportBackend,
     _build_ultrahdr_encode_command,
+    _denoised_ultrahdr_gain_map_jpeg,
     _inspect_ultrahdr_markers,
     _linear_to_srgb8,
     _run_command,
+    _ultrahdr_metadata_config,
     _ultrahdr_content_boost_bounds,
     _validate_ultrahdr_output,
 )
@@ -146,6 +148,23 @@ def test_ultrahdr_content_boost_bounds_preserve_high_peak_headroom() -> None:
     assert high_peak_maximum == pytest.approx(5000.0 / 203.0)
 
 
+def test_ultrahdr_repackage_metadata_preserves_tiny_offsets() -> None:
+    config = _ultrahdr_metadata_config(
+        """Ultra HDR Image: Yes
+        --maxContentBoost 16
+        --minContentBoost 0.0625
+        --gamma 1
+        --offsetSdr 1e-07
+        --offsetHdr 1e-07
+        --hdrCapacityMin 1
+        --hdrCapacityMax 4.98743
+        --useBaseColorSpace 1
+        """
+    )
+    assert "--offsetSdr 1e-07" in config
+    assert "--offsetHdr 1e-07" in config
+
+
 @pytest.mark.parametrize("quality", [0, 101])
 def test_ultrahdr_command_rejects_out_of_range_quality(tmp_path: Path, quality: int) -> None:
     with pytest.raises(ValueError, match="quality"):
@@ -183,6 +202,11 @@ def test_export_uses_independent_hdr_and_sdr_branches_and_forces_jpg(monkeypatch
     monkeypatch.setattr(exporter_module, "resolve_binary", lambda _name: binary)
     monkeypatch.setattr(exporter_module, "apply_adjustments", fake_adjustments)
     monkeypatch.setattr(exporter_module, "_run_command", fake_run)
+    def fake_denoise(source: Path, output: Path, _binary: Path, *, gain_map_quality: int) -> None:
+        observed["final_gain_map_quality"] = gain_map_quality
+        output.write_bytes(source.read_bytes())
+
+    monkeypatch.setattr(exporter_module, "_denoise_ultrahdr_gain_map", fake_denoise)
     monkeypatch.setattr(exporter_module, "_validate_ultrahdr_output", lambda *_args: "validated")
 
     requested = tmp_path / "custom-name.jpeg"
@@ -197,6 +221,7 @@ def test_export_uses_independent_hdr_and_sdr_branches_and_forces_jpg(monkeypatch
     command = observed["command"]
     assert command[command.index("-q") + 1] == "73"
     assert command[command.index("-Q") + 1] == "100"
+    assert observed["final_gain_map_quality"] == 100
     assert command[command.index("-s") + 1] == "1"
 
 
@@ -212,6 +237,11 @@ def test_ultrahdr_export_honors_explicit_half_resolution_gain_map(monkeypatch, t
 
     monkeypatch.setattr(exporter_module, "resolve_binary", lambda _name: binary)
     monkeypatch.setattr(exporter_module, "_run_command", fake_run)
+    def fake_denoise(source: Path, output: Path, _binary: Path, *, gain_map_quality: int) -> None:
+        observed["final_gain_map_quality"] = [str(gain_map_quality)]
+        output.write_bytes(source.read_bytes())
+
+    monkeypatch.setattr(exporter_module, "_denoise_ultrahdr_gain_map", fake_denoise)
     monkeypatch.setattr(exporter_module, "_validate_ultrahdr_output", lambda *_args: "validated")
     result = JPEGUltraHDRExportBackend(_available_capability()).export(
         _session(),
@@ -224,8 +254,40 @@ def test_ultrahdr_export_honors_explicit_half_resolution_gain_map(monkeypatch, t
         ),
     )
     assert result.accepted
-    assert observed["command"][observed["command"].index("-Q") + 1] == "93"
+    assert observed["command"][observed["command"].index("-Q") + 1] == "100"
+    assert observed["final_gain_map_quality"] == ["93"]
     assert observed["command"][observed["command"].index("-s") + 1] == "2"
+
+
+def test_ultrahdr_gain_map_denoise_reduces_smooth_region_noise_and_preserves_edges() -> None:
+    width, height = 96, 64
+    primary = np.zeros((height, width, 3), dtype=np.uint8)
+    primary[:, width // 2 :] = 220
+    random = np.random.default_rng(42)
+    gain = np.empty((height, width, 3), dtype=np.float32)
+    gain[:, : width // 2] = 70
+    gain[:, width // 2 :] = 185
+    gain += random.normal(0.0, 12.0, gain.shape)
+
+    primary_buffer = io.BytesIO()
+    Image.fromarray(primary).save(primary_buffer, format="JPEG", quality=100, subsampling=0)
+    gain_buffer = io.BytesIO()
+    Image.fromarray(np.clip(np.round(gain), 0, 255).astype(np.uint8)).save(
+        gain_buffer, format="JPEG", quality=100, subsampling=0
+    )
+    denoised = _denoised_ultrahdr_gain_map_jpeg(
+        primary_buffer.getvalue(), gain_buffer.getvalue(), quality=100, stripe_rows=17
+    )
+    before = np.asarray(Image.open(io.BytesIO(gain_buffer.getvalue())).convert("RGB"), dtype=np.float32)
+    after = np.asarray(Image.open(io.BytesIO(denoised)).convert("RGB"), dtype=np.float32)
+
+    left = np.s_[:, 8 : width // 2 - 8, :]
+    right = np.s_[:, width // 2 + 8 : width - 8, :]
+    assert float(after[left].std()) < float(before[left].std()) * 0.65
+    assert float(after[right].std()) < float(before[right].std()) * 0.65
+    before_edge = float(before[:, width // 2 + 2].mean() - before[:, width // 2 - 3].mean())
+    after_edge = float(after[:, width // 2 + 2].mean() - after[:, width // 2 - 3].mean())
+    assert after_edge > before_edge * 0.9
 
 
 def test_encoder_failure_cleans_staged_file_and_preserves_existing_output(monkeypatch, tmp_path: Path) -> None:

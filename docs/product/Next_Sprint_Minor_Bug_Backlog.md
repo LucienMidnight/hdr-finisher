@@ -2,7 +2,7 @@
 
 **Started:** August 17, 2026
 **Updated:** August 22, 2026
-**Status:** MINOR-01 through MINOR-07 and MINOR-09 resolved in code; MINOR-08 investigated and shelved; MINOR-09 physical browser acceptance pending
+**Status:** MINOR-01 through MINOR-07 and MINOR-09 resolved and user-verified; MINOR-08 investigated and shelved
 **Target:** Next implementation sprint
 
 ## Bugs
@@ -19,14 +19,14 @@
 | MINOR-06 | Resolved / user-verified | Strengthened narrow Gain Range response with a smooth width-dependent mask exponent in matching CPU and WebGPU paths, preserving a useful peak effect without hard transitions. |
 | MINOR-07 | Resolved / user-verified | Newly inserted curve points now enter the existing pointer-captured drag lifecycle immediately, so creation and positioning work as one gesture. |
 | MINOR-08 | Shelved / no reproducible defect | Matched JPEG Ultra HDR and AVIF exports from the reported Display P3 Linear EXR were functionally equivalent in independent reconstruction and user-observed browser rendering. Slight dark-region variation remained within expected codec/adaptive-rendering differences; no encoding or test change was justified. |
-| MINOR-09 | Implemented / visual acceptance pending | Constrained JPEG Ultra HDR's 8-bit content-boost range to four stops around unity, expanding for higher authored peaks, after a real export used a pathological 21.6-stop map and showed Safari patching. AVIF already trims range outliers; JPEG XL has no gain map. |
+| MINOR-09 | Resolved / user-verified | Constrained JPEG Ultra HDR's 8-bit content-boost range and added default SDR-guided spatial denoising of only the generated map. The matched Web Optimized export improved slightly in Chrome and massively in Safari while preserving identical SDR pixels and reducing size. AVIF spatial denoising remains an evidence-gated roadmap item; JPEG XL has no gain map. |
 
 Validation also resolved defects discovered while testing this set: the Affinity portrait EXR no longer inherits a stale landscape fit ratio; the WebGPU HDR shader compiles after the narrow-gain change; native Electron clipboard copying is used for source and export paths; and imported EXR scope statistics remain tied to the correct HDR/SDR lane after manual Display P3 Linear interpretation. Focused Python, frontend-contract, desktop, browser-interaction, and live Windows HDR checks passed.
 
 ### MINOR-09 — JPEG Ultra HDR extreme gain range causes browser noise
 
 **Priority:** Minor / delivery fidelity
-**Status:** Implemented August 22, 2026; physical Safari/Chrome acceptance pending
+**Status:** Resolved and user-verified August 22, 2026
 **Area:** JPEG Ultra HDR export
 **Reported fixture:** `DSC01286.hdrfinisher` / Sony `DSC01286.ARW`
 
@@ -44,8 +44,12 @@ JPEG Ultra HDR now sends libultrahdr a minimum content boost of `0.0625x` and a
 maximum of `16x`, increasing the maximum when required to contain the measured
 HDR peak. This preserves four stops of intentional darker/brighter per-channel
 separation and retains a three-channel gain map. It does not modify the rendered
-HDR or SDR branches. AVIF remains on libavif's existing per-channel 0.1% outlier
-trimming and 10-bit map; JPEG XL remains direct PQ.
+HDR or SDR branches. Before final gain-map JPEG compression, HDR Finisher also
+applies a conservative guided filter to the logarithmic map, using the untouched
+SDR primary as its edge guide. Processing is striped for bounded full-resolution
+memory. AVIF remains on libavif's existing per-channel 0.1% outlier trimming and
+10-bit map; spatial AVIF map denoising is recorded in the PRD roadmap for separate
+testing. JPEG XL remains direct PQ.
 
 **Validation**
 
@@ -54,9 +58,13 @@ trimming and 10-bit map; JPEG XL remains direct PQ.
   and successful HDR reconstruction.
 - The matched project export reports `GainMapMin=-4`, `GainMapMax=4`, and
   `HDRCapacityMax=2.3183`, with both Ultra HDR v1 and ISO 21496-1 metadata.
-- The full-resolution quality-100 candidate is 31 MB versus 9.3 MB before the
-  range constraint; Web Default/Optimized preset size and physical Safari and
-  Chrome appearance remain explicit acceptance checks.
+- Disabling authored grain did not change the Safari artifact. A full-resolution
+  gain map made it finer, proving map sampling contributed but did not remove it.
+- A matched half-resolution guided-filter candidate retained identical SDR base
+  pixels, improved slightly in Chrome and massively in Safari, and measured about
+  3.6 MB versus about 3.8 MB for the unfiltered Web Optimized export.
+- Automated coverage verifies smooth-area noise suppression, edge retention,
+  metadata preservation, native reconstruction, and bounded-memory processing.
 
 ### MINOR-01 — Manual source primaries are reported as auto-detected
 

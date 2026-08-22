@@ -45,7 +45,7 @@ flowchart LR
 | `render_cache.py` | Byte-budgeted processed/proxy/scope caches, single-flight work, RGBA16F/RGBA32F transport |
 | `scopes.py` | Vectorized histograms/waveforms, peak/clipping data, reference-nit statistics |
 | `overlay.py` | False-color and zebra images |
-| `exporters.py` | SDR JPEG/PNG, AVIF gain map, JPEG Ultra HDR, staging and validation |
+| `exporters.py` | SDR JPEG/PNG, AVIF gain map, JPEG Ultra HDR, bounded SDR-guided JPEG gain-map denoising, staging and validation |
 | `proofing.py` | Encoded proof artifacts, gain-map reconstruction, evidence records |
 | `display_probe.py` | Read-only Windows QueryDisplayConfig/DXGI telemetry |
 | `capabilities.py` / `binaries.py` | Optional library and encoder discovery |

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from io import BytesIO
 import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
@@ -17,6 +18,7 @@ from .color import acescg_to_linear_bt2020
 from .color_context import RenderColorContext, scene_linear_to_nits
 from .config import EXPORTS_DIR, SAMPLES_DIR
 from .finishing import apply_output_finishing
+from .gainmap_decoders import parse_jpeg_gain_map_probe
 from .models import AdjustmentState, CapabilityInfo, CapabilityStatus, ExportResponse, ExportSettings, PreviewKind
 from .jpegxl import (
     JPEGXLError,
@@ -36,6 +38,15 @@ SDR_WHITE_NITS = 203.0
 # rendition; the positive bound expands further when the authored HDR peak
 # requires it.
 ULTRAHDR_CHROMATIC_LATITUDE_STOPS = 4.0
+# A small guided filter removes pixel-scale HDR/SDR ratio noise before Safari
+# and other viewers multiply it back into the SDR primary. The encoded SDR
+# remains untouched, and the SDR image itself guides the filter so real edges
+# are retained. These defaults were visually accepted on the DSC01286 Sony RAW
+# fixture in both Safari and Chrome.
+ULTRAHDR_GAIN_MAP_DENOISE_RADIUS = 2
+ULTRAHDR_GAIN_MAP_DENOISE_EPSILON = 0.0025
+ULTRAHDR_GAIN_MAP_DENOISE_AMOUNT = 0.75
+ULTRAHDR_GAIN_MAP_DENOISE_STRIPE_ROWS = 256
 
 
 class ExportBackend(ABC):
@@ -363,6 +374,7 @@ class JPEGUltraHDRExportBackend(ExportBackend):
                 hdr_raw_path = temp_dir / "hdr_bt2020_linear_rgba_f16.raw"
                 sdr_raw_path = temp_dir / "sdr_srgb_rgba8888.raw"
                 sdr_jpeg_path = temp_dir / "sdr_primary.jpg"
+                unfiltered_path = temp_dir / "unfiltered_ultrahdr.jpg"
                 exif_payload = _source_exif_payload(session, settings.metadata_policy)
                 exif_path = _write_temporary_exif(temp_dir, exif_payload)
                 _write_hdr_linear_rgba_f16(hdr_raw_path, hdr_image, getattr(session, "hdr_reference_white_nits", 203))
@@ -379,17 +391,25 @@ class JPEGUltraHDRExportBackend(ExportBackend):
                     ultrahdr_app,
                     hdr_raw_path,
                     sdr_raw_path,
-                    staged_output,
+                    unfiltered_path,
                     sdr_jpeg_path=sdr_jpeg_path,
                     exif_path=exif_path,
                     width=int(hdr_image.shape[1]),
                     height=int(hdr_image.shape[0]),
                     quality=int(settings.quality),
-                    gain_map_quality=int(settings.jpeg_gain_map_quality),
+                    # The intermediate is decoded for the default denoise pass;
+                    # defer the user's requested compression to the final map.
+                    gain_map_quality=100,
                     gain_map_scale=settings.jpeg_gain_map_scale,
                     target_peak_nits=_target_hdr_peak_nits(hdr_image, getattr(session, "hdr_reference_white_nits", 203)),
                 )
                 _run_command(command)
+                _denoise_ultrahdr_gain_map(
+                    unfiltered_path,
+                    staged_output,
+                    ultrahdr_app,
+                    gain_map_quality=int(settings.jpeg_gain_map_quality),
+                )
 
             validation = _validate_ultrahdr_output(staged_output, ultrahdr_app)
             os.replace(staged_output, output_path)
@@ -709,6 +729,184 @@ def _ultrahdr_content_boost_bounds(target_peak_nits: float) -> tuple[float, floa
 
 def _format_cli_float(value: float) -> str:
     return f"{value:.6f}".rstrip("0").rstrip(".")
+
+
+def _format_metadata_float(value: float) -> str:
+    """Retain small gain-map offsets as well as ordinary boost values."""
+    return f"{value:.9g}"
+
+
+def _split_ultrahdr_jpegs(payload: bytes) -> tuple[bytes, bytes]:
+    """Return the primary and embedded gain-map JPEG codestreams."""
+    primary_end = payload.find(b"\xff\xd9")
+    if primary_end < 0:
+        raise ExportProcessError("The intermediate Ultra HDR primary is missing its JPEG end marker.")
+    primary_end += 2
+    gain_start = payload.find(b"\xff\xd8", primary_end)
+    gain_end = payload.find(b"\xff\xd9", gain_start)
+    if gain_start < 0 or gain_end < 0:
+        raise ExportProcessError("The intermediate Ultra HDR file has no embedded gain-map JPEG.")
+    return payload[:primary_end], payload[gain_start : gain_end + 2]
+
+
+def _box_blur_float(values: np.ndarray, radius: int) -> np.ndarray:
+    """Small float box blur without adding a SciPy/OpenCV runtime dependency."""
+    window = radius * 2 + 1
+    horizontal_padding = np.pad(values, ((0, 0), (radius, radius)), mode="edge")
+    horizontal_sum = np.pad(
+        np.cumsum(horizontal_padding, axis=1, dtype=np.float32),
+        ((0, 0), (1, 0)),
+        mode="constant",
+    )
+    horizontal = (horizontal_sum[:, window:] - horizontal_sum[:, :-window]) / np.float32(window)
+    vertical_padding = np.pad(horizontal, ((radius, radius), (0, 0)), mode="edge")
+    vertical_sum = np.pad(
+        np.cumsum(vertical_padding, axis=0, dtype=np.float32),
+        ((1, 0), (0, 0)),
+        mode="constant",
+    )
+    return (vertical_sum[window:] - vertical_sum[:-window]) / np.float32(window)
+
+
+def _guided_filter_gain_map_region(
+    guide: np.ndarray,
+    gain: np.ndarray,
+    *,
+    radius: int,
+    epsilon: float,
+    amount: float,
+) -> np.ndarray:
+    mean_guide = _box_blur_float(guide, radius)
+    variance_guide = _box_blur_float(guide * guide, radius) - mean_guide * mean_guide
+    filtered = np.empty_like(gain)
+    for channel in range(3):
+        source = gain[..., channel]
+        mean_source = _box_blur_float(source, radius)
+        covariance = _box_blur_float(guide * source, radius) - mean_guide * mean_source
+        coefficient = covariance / (variance_guide + np.float32(epsilon))
+        intercept = mean_source - coefficient * mean_guide
+        filtered[..., channel] = (
+            _box_blur_float(coefficient, radius) * guide + _box_blur_float(intercept, radius)
+        )
+    return gain + np.float32(amount) * (filtered - gain)
+
+
+def _denoised_ultrahdr_gain_map_jpeg(
+    primary_jpeg: bytes,
+    gain_map_jpeg: bytes,
+    *,
+    quality: int,
+    radius: int = ULTRAHDR_GAIN_MAP_DENOISE_RADIUS,
+    epsilon: float = ULTRAHDR_GAIN_MAP_DENOISE_EPSILON,
+    amount: float = ULTRAHDR_GAIN_MAP_DENOISE_AMOUNT,
+    stripe_rows: int = ULTRAHDR_GAIN_MAP_DENOISE_STRIPE_ROWS,
+) -> bytes:
+    """Denoise log-gain samples, guided by the unchanged SDR primary."""
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise ExportProcessError("Pillow is required for Ultra HDR gain-map denoising.") from exc
+    if not 1 <= quality <= 100:
+        raise ValueError("Ultra HDR gain-map quality must be between 1 and 100.")
+    if radius < 1 or stripe_rows < 1:
+        raise ValueError("Ultra HDR gain-map denoise radius and stripe height must be positive.")
+
+    try:
+        with Image.open(BytesIO(gain_map_jpeg)) as encoded_gain:
+            gain = encoded_gain.convert("RGB")
+        with Image.open(BytesIO(primary_jpeg)) as encoded_primary:
+            guide = encoded_primary.convert("L").resize(gain.size, Image.Resampling.LANCZOS)
+    except OSError as exc:
+        raise ExportProcessError(f"Could not decode the intermediate Ultra HDR gain map: {exc}") from exc
+
+    result = Image.new("RGB", gain.size)
+    width, height = gain.size
+    # A guided filter contains two radius-wide box-filter stages. Keeping that
+    # much overlap makes stripe boundaries numerically equivalent to a single
+    # full-frame pass while bounding scratch memory on large RAW exports.
+    halo = radius * 2
+    for row_start in range(0, height, stripe_rows):
+        row_end = min(height, row_start + stripe_rows)
+        crop_start = max(0, row_start - halo)
+        crop_end = min(height, row_end + halo)
+        box = (0, crop_start, width, crop_end)
+        gain_region = np.asarray(gain.crop(box), dtype=np.float32) / np.float32(255.0)
+        guide_region = np.asarray(guide.crop(box), dtype=np.float32) / np.float32(255.0)
+        filtered = _guided_filter_gain_map_region(
+            guide_region,
+            gain_region,
+            radius=radius,
+            epsilon=epsilon,
+            amount=amount,
+        )
+        core_start = row_start - crop_start
+        core_end = core_start + (row_end - row_start)
+        encoded = np.clip(
+            np.round(filtered[core_start:core_end] * np.float32(255.0)), 0, 255
+        ).astype(np.uint8)
+        result.paste(Image.fromarray(encoded), (0, row_start))
+
+    buffer = BytesIO()
+    # Multi-channel Ultra HDR maps must retain full chroma resolution.
+    result.save(buffer, format="JPEG", quality=int(quality), subsampling=0)
+    return buffer.getvalue()
+
+
+def _ultrahdr_metadata_config(probe_text: str) -> str:
+    metadata = parse_jpeg_gain_map_probe(probe_text)
+    return "\n".join(
+        [
+            f"--maxContentBoost {_format_metadata_float(metadata.max_content_boost)}",
+            f"--minContentBoost {_format_metadata_float(metadata.min_content_boost)}",
+            f"--gamma {_format_metadata_float(metadata.gamma)}",
+            f"--offsetSdr {_format_metadata_float(metadata.offset_sdr)}",
+            f"--offsetHdr {_format_metadata_float(metadata.offset_hdr)}",
+            f"--hdrCapacityMin {_format_metadata_float(metadata.hdr_capacity_min)}",
+            f"--hdrCapacityMax {_format_metadata_float(metadata.hdr_capacity_max)}",
+            f"--useBaseColorSpace {1 if metadata.use_base_color_space else 0}",
+            "",
+        ]
+    )
+
+
+def _denoise_ultrahdr_gain_map(
+    source_path: Path,
+    output_path: Path,
+    ultrahdr_app: Path,
+    *,
+    gain_map_quality: int,
+) -> None:
+    """Filter only the generated map, then repackage the untouched SDR JPEG."""
+    primary_jpeg, gain_map_jpeg = _split_ultrahdr_jpegs(source_path.read_bytes())
+    denoised_gain_map = _denoised_ultrahdr_gain_map_jpeg(
+        primary_jpeg, gain_map_jpeg, quality=gain_map_quality
+    )
+    probe = _run_command([str(ultrahdr_app), "-m", "1", "-j", str(source_path), "-P"])
+    metadata_config = _ultrahdr_metadata_config(f"{probe.stdout}\n{probe.stderr}")
+
+    with TemporaryDirectory(prefix="hdr_finisher_ultrahdr_denoise_") as temp_dir_name:
+        temp_dir = Path(temp_dir_name)
+        primary_path = temp_dir / "sdr_primary.jpg"
+        gain_map_path = temp_dir / "gain_map_denoised.jpg"
+        metadata_path = temp_dir / "gain_map_metadata.cfg"
+        primary_path.write_bytes(primary_jpeg)
+        gain_map_path.write_bytes(denoised_gain_map)
+        metadata_path.write_text(metadata_config, encoding="utf-8")
+        _run_command(
+            [
+                str(ultrahdr_app),
+                "-m",
+                "0",
+                "-i",
+                str(primary_path),
+                "-g",
+                str(gain_map_path),
+                "-f",
+                str(metadata_path),
+                "-z",
+                str(output_path),
+            ]
+        )
 
 
 def _build_ultrahdr_encode_command(
