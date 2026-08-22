@@ -46,11 +46,26 @@ The export contains:
 
 HDR Finisher validates that the output contains both metadata schemes and decodes with libultrahdr before accepting it.
 
+Because the embedded JPEG gain map has only 8 bits, export automatically limits
+its content-boost range to four stops below and above unity (`0.0625x` to
+`16x`). The positive limit expands when necessary to include an authored peak
+above four stops. This happens only at the delivery-encoding boundary: the HDR
+and SDR grades are not modified, three-channel gain remains enabled, and
+direct-HDR JPEG XL is unaffected. Ratios beyond the guardrail are normally
+created by division through a color channel too close to zero to use the SDR
+JPEG's precision effectively.
+
 ### Controls
 
 - **Quality:** primary JPEG quality.
 - **Gain-map Quality:** compression quality for the embedded gain map. Keep high for gradients, fine bright edges, and colored highlights.
 - **Gain-map Resolution:** Full preserves maximum spatial fidelity; Half reduces size but can soften or halo gain transitions.
+
+A tighter useful range can increase gain-map entropy and therefore file size,
+especially at quality 100 and full resolution. Use **Web Default** for normal
+publishing, **Web Optimized** when delivery size matters, and reserve **Maximum
+Fidelity** for cases where the larger file has been tested through the intended
+service and viewer.
 
 JPEG recompression, metadata stripping, or image transformation can remove HDR while leaving the SDR image apparently valid. Treat social and hosting services as active processors until proven otherwise.
 
@@ -66,6 +81,11 @@ The export uses:
 - ISO 21496-1-compatible gain-map metadata via the AVIF tooling
 
 The primary **Quality** control is separate from **Gain-map Quality** and **Gain-map Resolution**. **Bit Depth** offers 8-bit, 10-bit, and 12-bit primary output. Primary **Chroma Subsampling** remains selectable, while gain-map chroma is fixed at 4:4:4. HDR Finisher validates the selected primary depth/chroma and the fixed gain-map chroma before moving the staged file into place.
+
+The bundled libavif range calculation already removes the outer 0.1% of ratio
+outliers independently for each channel before quantizing the 10-bit gain map.
+HDR Finisher therefore does not apply the JPEG-specific four-stop guardrail to
+AVIF.
 
 The built-in delivery pattern showed that a 4:2:0 gain map raised colored-edge MAE by about 70% versus 4:4:4 and did not reduce file size in that sample. A monochrome gain map was about 14% smaller but produced severe saturated chromatic-highlight errors. The DxO photographic corpus then showed that half-resolution 4:4:4 cut total size by a median 52.8% versus full-resolution 4:4:4, while further chroma subsampling saved almost nothing. Gain-map chroma is therefore fixed at 4:4:4: Web Default and Web Optimized use half resolution, and Maximum Fidelity uses full resolution. Bundled libavif and Edge 151 decoded every tested mode, but headless decode does not replace physical HDR-display review.
 

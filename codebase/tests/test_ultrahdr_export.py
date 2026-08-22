@@ -11,6 +11,7 @@ import pytest
 import hdr_finisher.binaries as binaries
 import hdr_finisher.capabilities as capability_module
 import hdr_finisher.exporters as exporter_module
+from hdr_finisher.gainmap_decoders import parse_jpeg_gain_map_probe
 from hdr_finisher.exporters import (
     AVIFGainMapExportBackend,
     ExportOverwriteRequired,
@@ -20,6 +21,7 @@ from hdr_finisher.exporters import (
     _inspect_ultrahdr_markers,
     _linear_to_srgb8,
     _run_command,
+    _ultrahdr_content_boost_bounds,
     _validate_ultrahdr_output,
 )
 from hdr_finisher.models import AdjustmentState, CapabilityInfo, CapabilityStatus, ExportSettings, PreviewKind
@@ -129,8 +131,19 @@ def test_ultrahdr_command_uses_current_raw_intent_cli_and_quality(tmp_path: Path
     assert command[command.index("-q") + 1] == "87"
     assert command[command.index("-Q") + 1] == "100"
     assert command[command.index("-s") + 1] == "1"
+    assert command[command.index("-k") + 1] == "0.0625"
+    assert command[command.index("-K") + 1] == "16"
     assert command[command.index("-L") + 1] == "1250.5"
     assert command[command.index("-z") + 1].endswith("finished.jpg")
+
+
+def test_ultrahdr_content_boost_bounds_preserve_high_peak_headroom() -> None:
+    minimum, ordinary_maximum = _ultrahdr_content_boost_bounds(1000.0)
+    _, high_peak_maximum = _ultrahdr_content_boost_bounds(5000.0)
+
+    assert minimum == pytest.approx(1.0 / 16.0)
+    assert ordinary_maximum == pytest.approx(16.0)
+    assert high_peak_maximum == pytest.approx(5000.0 / 203.0)
 
 
 @pytest.mark.parametrize("quality", [0, 101])
@@ -399,6 +412,11 @@ def test_real_ultrahdr_export_and_decode_when_encoder_is_available(tmp_path: Pat
     )
     assert result.accepted, result.message
     assert output.read_bytes()[:2] == b"\xff\xd8"
+
+    probe = _run_command([str(binary), "-m", "1", "-j", str(output), "-P"])
+    metadata = parse_jpeg_gain_map_probe(f"{probe.stdout}\n{probe.stderr}")
+    assert metadata.min_content_boost >= (1.0 / 16.0) - 1e-6
+    assert metadata.max_content_boost <= max(16.0, metadata.hdr_capacity_max) + 1e-4
 
     with Image.open(output) as legacy:
         legacy_rgb = np.asarray(legacy.convert("RGB"), dtype=np.float32) / 255.0

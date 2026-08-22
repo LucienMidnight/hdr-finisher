@@ -62,9 +62,20 @@ Risks:
 - The 8-bit gain map is sensitive to quality and spatial downsampling
 - Application/browser support remains version-dependent
 
+At export, HDR Finisher constrains the JPEG gain-map boost range to four stops
+of per-channel latitude below and above unity, expanding the upper bound when
+needed to include the authored HDR peak. This delivery-only guardrail prevents
+near-zero color-channel ratios from exhausting the 8-bit map's precision while
+retaining intentional HDR/SDR color separation.
+
 ## AVIF with gain map
 
 HDR Finisher combines an SDR base and a BT.2020/PQ alternate into an AVIF gain-map file, with a separate 10-bit gain map. Primary-image and gain-map chroma are independently selectable. The built-in Web Default keeps the primary at 4:2:0 but the gain map at 4:4:4 because test-pattern measurements found no size benefit and materially worse colored-edge error from a 4:2:0 gain map. Encoder-supported monochrome gain maps are not exposed because they cannot preserve per-channel gain in saturated highlights.
+
+The bundled AVIF encoder already discards the outer 0.1% of ratio outliers when
+choosing each channel's gain range. Its 10-bit map therefore receives an
+automatic range optimization without altering the rendered HDR or SDR endpoint
+images.
 
 Strengths:
 

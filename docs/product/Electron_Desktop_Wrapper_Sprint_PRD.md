@@ -429,6 +429,18 @@ Instagram on iOS recognized both the JPEG Ultra HDR and AVIF gain-map files as H
 
 Keep this open as an interoperability investigation rather than classifying it as a confirmed encoder failure. Repeat the workflow while recording the iPhone model, iOS version, HDR viewing setting, transfer action used at each boundary, destination application, reported bit depth/profile, and whether the presentation survives an application relaunch. Compare file size and hash before upload, after desktop Drive download, after iPhone download when accessible, and after Photos-to-Files export. Add iCloud Drive or AirDrop as a control path. Inspect the Photos-exported file for container layout, gain-map dimensions, Ultra HDR v1/ISO metadata, color profile, and reconstruction parameters. Compare the same sky region at matched scale in the original SDR base, local Chromium HDR reconstruction, iPhone Photos, and Files/Preview; capture screenshots only as presentation evidence because screenshots may introduce their own tone mapping or quantization. Then test gain-map quality/resolution, an even-dimension export, and a less-extreme gain range if Apple behavior remains inconsistent.
 
+August 22 follow-up: Safari 26.5.2 on macOS 26.5.2 does decode the local JPEG
+gain map, but a cropped Sony RAW export showed patchy noise that appeared milder
+in Chrome. Its gain metadata spanned `-14.3` to `+7.29454` stops while capacity
+was only `+2.3183` stops. The delivery encoder now recommends a `-4` to `+4`
+stop content range, expanding the upper bound for brighter authored peaks. A
+matched source-checkout export at `4571 x 5714` validates `GainMapMin=-4`,
+`GainMapMax=4`, `HDRCapacityMax=2.3183`, Ultra HDR v1, and ISO 21496-1. It is
+retained as the physical Safari/Chrome acceptance candidate; visual acceptance
+is not inferred from metadata validation alone. At full resolution and gain-map
+quality 100 the candidate grew from 9.3 MB to 31 MB, so subsequent publishing
+tests must compare both artifact suppression and preset-appropriate file size.
+
 Treat these observations and subsequent device/service tests as inputs to a future **recommended export settings by use case** guide. Recommendations must identify the intended destination and fallback requirement—for example Apple Photos delivery, Instagram/social publishing, Chromium/web delivery, Android gallery compatibility, archival/master exchange, or maximum legacy JPEG reach—and should include format, gain-map quality/resolution, color/profile expectations, known transfer paths, verified applications/OS versions, ingest/editor recognition, published-result behavior, visible failure modes, and the preferred fallback. Do not present a format as universally compatible based on one successful decoder or device.
 
 ## 13. Source references

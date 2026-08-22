@@ -28,6 +28,16 @@ from .jpegxl import (
 from .test_pattern import build_hdr_test_pattern
 
 
+SDR_WHITE_NITS = 203.0
+# JPEG Ultra HDR stores its gain map in eight bits. Leave enough latitude for
+# independently authored SDR/HDR color differences while preventing near-zero
+# channel ratios from consuming libultrahdr's entire -14.3..15.6 stop range.
+# A 16x difference in either direction is already generous for a publishing
+# rendition; the positive bound expands further when the authored HDR peak
+# requires it.
+ULTRAHDR_CHROMATIC_LATITUDE_STOPS = 4.0
+
+
 class ExportBackend(ABC):
     name: str
 
@@ -680,6 +690,23 @@ def _target_hdr_peak_nits(image: np.ndarray, reference_white_nits: int = 203) ->
     return float(np.clip(peak_nits, 203.0, 10000.0))
 
 
+def _ultrahdr_content_boost_bounds(target_peak_nits: float) -> tuple[float, float]:
+    """Bound an 8-bit publishing gain map without limiting authored HDR headroom.
+
+    Separate SDR/HDR grades can legitimately differ in color as well as luma,
+    so the map retains four stops of per-channel latitude around unity. The
+    upper bound grows to include the full authored peak when it exceeds that
+    latitude. Ratios outside this range predominantly come from division by a
+    channel value below the useful precision of the 8-bit SDR base; encoding
+    them reduces precision everywhere else and produces visible patching.
+    """
+    if not np.isfinite(target_peak_nits):
+        raise ValueError("Ultra HDR target peak must be finite.")
+    target_boost = float(np.clip(target_peak_nits, SDR_WHITE_NITS, 10000.0) / SDR_WHITE_NITS)
+    latitude_boost = float(2.0**ULTRAHDR_CHROMATIC_LATITUDE_STOPS)
+    return 1.0 / latitude_boost, max(latitude_boost, target_boost)
+
+
 def _format_cli_float(value: float) -> str:
     return f"{value:.6f}".rstrip("0").rstrip(".")
 
@@ -707,6 +734,7 @@ def _build_ultrahdr_encode_command(
         raise ValueError("Ultra HDR gain-map quality must be between 1 and 100.")
     if gain_map_scale not in {"full", "half"}:
         raise ValueError("Ultra HDR gain-map scale must be 'full' or 'half'.")
+    min_content_boost, max_content_boost = _ultrahdr_content_boost_bounds(target_peak_nits)
     command = [
         str(ultrahdr_app),
         "-m",
@@ -739,6 +767,10 @@ def _build_ultrahdr_encode_command(
         "1",
         "-G",
         "1.0",
+        "-k",
+        _format_cli_float(min_content_boost),
+        "-K",
+        _format_cli_float(max_content_boost),
         "-D",
         "1",
         "-L",

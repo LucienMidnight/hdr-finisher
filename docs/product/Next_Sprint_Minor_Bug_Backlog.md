@@ -1,8 +1,8 @@
 # Next Sprint Minor-Bug Backlog
 
 **Started:** August 17, 2026
-**Updated:** August 19, 2026
-**Status:** MINOR-01 through MINOR-07 resolved; MINOR-08 investigated and shelved with no reproducible defect
+**Updated:** August 22, 2026
+**Status:** MINOR-01 through MINOR-07 and MINOR-09 resolved in code; MINOR-08 investigated and shelved; MINOR-09 physical browser acceptance pending
 **Target:** Next implementation sprint
 
 ## Bugs
@@ -19,8 +19,44 @@
 | MINOR-06 | Resolved / user-verified | Strengthened narrow Gain Range response with a smooth width-dependent mask exponent in matching CPU and WebGPU paths, preserving a useful peak effect without hard transitions. |
 | MINOR-07 | Resolved / user-verified | Newly inserted curve points now enter the existing pointer-captured drag lifecycle immediately, so creation and positioning work as one gesture. |
 | MINOR-08 | Shelved / no reproducible defect | Matched JPEG Ultra HDR and AVIF exports from the reported Display P3 Linear EXR were functionally equivalent in independent reconstruction and user-observed browser rendering. Slight dark-region variation remained within expected codec/adaptive-rendering differences; no encoding or test change was justified. |
+| MINOR-09 | Implemented / visual acceptance pending | Constrained JPEG Ultra HDR's 8-bit content-boost range to four stops around unity, expanding for higher authored peaks, after a real export used a pathological 21.6-stop map and showed Safari patching. AVIF already trims range outliers; JPEG XL has no gain map. |
 
 Validation also resolved defects discovered while testing this set: the Affinity portrait EXR no longer inherits a stale landscape fit ratio; the WebGPU HDR shader compiles after the narrow-gain change; native Electron clipboard copying is used for source and export paths; and imported EXR scope statistics remain tied to the correct HDR/SDR lane after manual Display P3 Linear interpretation. Focused Python, frontend-contract, desktop, browser-interaction, and live Windows HDR checks passed.
+
+### MINOR-09 — JPEG Ultra HDR extreme gain range causes browser noise
+
+**Priority:** Minor / delivery fidelity
+**Status:** Implemented August 22, 2026; physical Safari/Chrome acceptance pending
+**Area:** JPEG Ultra HDR export
+**Reported fixture:** `DSC01286.hdrfinisher` / Sony `DSC01286.ARW`
+
+**Finding**
+
+The original `4571 x 5714` export was a valid Ultra HDR JPEG, but its 8-bit map
+covered `-14.3` to `+7.29454` stops while its authored HDR capacity was only
+`+2.3183` stops. Safari 26.5.2 showed patchy noise and Chrome showed milder
+noise. The full gain range allowed near-zero per-channel ratios to reduce
+precision across the useful map.
+
+**Resolution**
+
+JPEG Ultra HDR now sends libultrahdr a minimum content boost of `0.0625x` and a
+maximum of `16x`, increasing the maximum when required to contain the measured
+HDR peak. This preserves four stops of intentional darker/brighter per-channel
+separation and retains a three-channel gain map. It does not modify the rendered
+HDR or SDR branches. AVIF remains on libavif's existing per-channel 0.1% outlier
+trimming and 10-bit map; JPEG XL remains direct PQ.
+
+**Validation**
+
+- Unit coverage verifies normal and greater-than-four-stop peak bounds.
+- A real libultrahdr encode/probe/decode test verifies emitted range metadata
+  and successful HDR reconstruction.
+- The matched project export reports `GainMapMin=-4`, `GainMapMax=4`, and
+  `HDRCapacityMax=2.3183`, with both Ultra HDR v1 and ISO 21496-1 metadata.
+- The full-resolution quality-100 candidate is 31 MB versus 9.3 MB before the
+  range constraint; Web Default/Optimized preset size and physical Safari and
+  Chrome appearance remain explicit acceptance checks.
 
 ### MINOR-01 — Manual source primaries are reported as auto-detected
 
