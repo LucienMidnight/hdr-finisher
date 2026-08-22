@@ -1,6 +1,6 @@
 {
   "name": "hdr-finisher-desktop",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "private": true,
   "description": "Electron desktop shell for HDR Finisher",
   "author": "HDR Finisher contributors",

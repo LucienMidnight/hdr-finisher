@@ -1736,7 +1736,8 @@ input[type="range"] {
   cursor: crosshair;
 }
 
-#tone-equalizer-editor {
+#tone-equalizer-editor,
+#sdr-tone-equalizer-editor {
   display: block;
   width: 100%;
   height: auto;

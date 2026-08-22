@@ -65,7 +65,39 @@ function graphPosition(box, inputEv, adjustmentEv = 0) {
     await page.click('[data-kind="sdr"]');
     await page.locator('[data-group="sdr-equalizer"] .group-toggle').click();
     const sdrEditor = page.locator("#sdr-tone-equalizer-editor");
-    if (!await sdrEditor.boundingBox()) throw new Error("SDR Exposure Bands editor was not visible.");
+    const sdrBox = await sdrEditor.boundingBox();
+    if (!sdrBox) throw new Error("SDR Exposure Bands editor was not visible.");
+    const editorGeometry = await page.evaluate(() => {
+      const snapshot = (canvas) => {
+        const style = getComputedStyle(canvas);
+        const body = canvas.closest(".control-group-body");
+        const bodyStyle = getComputedStyle(body);
+        return {
+          width: canvas.getBoundingClientRect().width,
+          bodyWidth: body.getBoundingClientRect().width
+            - Number.parseFloat(bodyStyle.paddingLeft)
+            - Number.parseFloat(bodyStyle.paddingRight),
+          display: style.display,
+          aspectRatio: style.aspectRatio,
+          backgroundColor: style.backgroundColor,
+          borderTopWidth: style.borderTopWidth,
+          cursor: style.cursor,
+          touchAction: style.touchAction,
+        };
+      };
+      return {
+        hdr: snapshot(document.querySelector("#tone-equalizer-editor")),
+        sdr: snapshot(document.querySelector("#sdr-tone-equalizer-editor")),
+      };
+    });
+    if (Math.abs(editorGeometry.sdr.width - editorGeometry.sdr.bodyWidth) > 1) {
+      throw new Error(`SDR Exposure Bands editor overflowed its control body: ${JSON.stringify(editorGeometry)}`);
+    }
+    for (const property of ["display", "aspectRatio", "backgroundColor", "borderTopWidth", "cursor", "touchAction"]) {
+      if (editorGeometry.sdr[property] !== editorGeometry.hdr[property]) {
+        throw new Error(`HDR/SDR Exposure Bands editor styling differs for ${property}: ${JSON.stringify(editorGeometry)}`);
+      }
+    }
     await page.click("#sdr-match-hdr-bands");
     const matched = await page.evaluate(() => {
       const { hdr, sdr } = window.HDRFinisherPerformance.authoringState().adjustments;
