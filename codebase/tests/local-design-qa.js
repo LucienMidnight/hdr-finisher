@@ -67,8 +67,13 @@ function assert(condition, message) {
 
     const removeButton = page.locator("#local-delete");
     const initialSurfaceHeight = (await stackSurface.boundingBox()).height;
+    await page.locator('[data-local-tool="brush"]').click();
     for (let index = 4; index < 8; index += 1) {
+      const createResponse = page.waitForResponse((response) =>
+        response.url().includes("/edit-commands") && response.request().method() === "POST" && response.status() === 200,
+      );
       await page.locator("#local-add-adjustment").click();
+      await createResponse;
       await page.waitForFunction((count) => document.querySelectorAll("#local-adjustment-list > li").length === count, index + 1);
     }
     const scrollMetrics = await stackSurface.evaluate((node) => ({ clientHeight: node.clientHeight, scrollHeight: node.scrollHeight, overflowY: getComputedStyle(node).overflowY }));
@@ -206,8 +211,9 @@ function assert(condition, message) {
     const groupStyle = await page.locator(".control-group").nth(2).evaluate((node) => ({
       divider: getComputedStyle(node).borderTopWidth,
       dividerColor: getComputedStyle(node).borderTopColor,
-      chevronSize: getComputedStyle(node.querySelector(".group-toggle"), "::before").fontSize,
-      chevronWeight: Number(getComputedStyle(node.querySelector(".group-toggle"), "::before").fontWeight),
+      chevronWidth: getComputedStyle(node.querySelector(".group-toggle"), "::before").width,
+      chevronHeight: getComputedStyle(node.querySelector(".group-toggle"), "::before").height,
+      chevronMask: getComputedStyle(node.querySelector(".group-toggle"), "::before").webkitMaskImage,
     }));
     const expandedBorder = await page.locator("#local-adjustments-group").evaluate((node) => ({
       top: getComputedStyle(node).borderTopWidth,
@@ -220,7 +226,7 @@ function assert(condition, message) {
     assert(groupStyle.divider === "1px", "Internal top-level control group separators are not 1 px.");
     assert(expandedBorder.top === "3px" && expandedBorder.bottom === "3px" && expandedBorder.left === "0px" && expandedBorder.right === "0px", `Expanded panel boundaries should be 3 px at top/bottom with open sides: ${JSON.stringify(expandedBorder)}`);
     assert(expandedBorder.internal === "1px" && expandedBorder.color !== groupStyle.dividerColor, "External and internal panel borders are not visually differentiated.");
-    assert(groupStyle.chevronSize === "18px" && groupStyle.chevronWeight >= 600, "Disclosure chevrons are not using the restrained semibold treatment.");
+    assert(groupStyle.chevronWidth === "18px" && groupStyle.chevronHeight === "18px" && groupStyle.chevronMask !== "none", "Disclosure chevrons are not using the 18 px masked icon treatment.");
     const geometryGroup = page.locator('.control-group[data-group="geometry"]');
     if (await geometryGroup.locator(".group-toggle").getAttribute("aria-expanded") === "false") {
       await geometryGroup.locator(".group-toggle").click();

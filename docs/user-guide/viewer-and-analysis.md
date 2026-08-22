@@ -44,7 +44,7 @@ The histogram counts processed values by brightness/channel. It answers question
 - Are highlights accumulating at the delivery ceiling?
 - Does a color channel extend farther than the others?
 
-For HDR, the x-axis is expressed in reference nits based on the app’s 100-nit diffuse-white convention. For SDR, it is normalized to the display range.
+For HDR, the x-axis is expressed in reference nits using the active 203- or 100-nit project setting. The scope retains fixed 100- and 203-nit guides and identifies the active reference. For SDR, it is normalized to the display range.
 
 A histogram does not show where pixels occur in the image. A small but important specular highlight may be almost invisible in the count.
 

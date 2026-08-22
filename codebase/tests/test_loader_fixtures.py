@@ -33,13 +33,16 @@ def test_load_real_png_fixture() -> None:
 def test_load_real_tiff_fixture_with_hdr_headroom() -> None:
     image, source, metadata, analysis, sdr_reference = load_image(fixture_path("hdr_headroom.tiff"))
     assert source.suffix == ".tiff"
-    assert image.shape == (14, 20, 3)
+    assert image.shape == (40, 70, 3)
     assert metadata["bit_depth"] == "float32"
     assert analysis.classification == HDRClassification.HDR_TRUE
     assert analysis.peak_linear > 1.0
     assert source.source_color_space is None
     assert source.color_space_confident is False
     np.testing.assert_allclose(image, tifffile.imread(fixture_path("hdr_headroom.tiff")))
+    expected_patch_nits = np.array([0.0, 0.1, 100.0, 203.0, 406.0, 1000.0, 12000.0])
+    measured_patch_nits = image[5, 5::10, 1].astype(np.float64) / 0.18 * 203.0
+    np.testing.assert_allclose(measured_patch_nits, expected_patch_nits, rtol=5e-6, atol=1e-4)
     assert sdr_reference is None
 
 

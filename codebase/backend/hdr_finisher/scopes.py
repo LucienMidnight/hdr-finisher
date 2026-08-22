@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from .adjustments import apply_adjustments
+from .color_context import RenderColorContext, scene_linear_to_nits
 from .models import (
     AdjustmentState,
     HistogramChannel,
@@ -44,13 +45,15 @@ def build_scope(
     waveform_columns: int = 512,
     sdr_reference_image: np.ndarray | None = None,
     max_nits: int = 4000,
+    color_context: RenderColorContext | None = None,
 ) -> ScopeResponse:
-    processed = apply_adjustments(image, adjustments, kind, sdr_reference_image=sdr_reference_image)
+    context = color_context or RenderColorContext()
+    processed = apply_adjustments(image, adjustments, kind, sdr_reference_image=sdr_reference_image, color_context=context)
     if mode == ScopeMode.WAVEFORM:
-        return _build_waveform(processed, kind, bins=bins or 256, columns=waveform_columns, max_nits=max_nits)
+        return _build_waveform(processed, kind, bins=bins or 256, columns=waveform_columns, max_nits=max_nits, color_context=context)
     if mode == ScopeMode.VECTORSCOPE:
-        return _build_vectorscope(processed, kind, bins=bins or 128)
-    return _build_histogram(processed, kind, bins=bins or 256, max_nits=max_nits)
+        return _build_vectorscope(processed, kind, bins=bins or 128, color_context=context)
+    return _build_histogram(processed, kind, bins=bins or 256, max_nits=max_nits, color_context=context)
 
 
 def build_scope_from_processed(
@@ -60,29 +63,31 @@ def build_scope_from_processed(
     bins: int | None = None,
     waveform_columns: int = 512,
     max_nits: int = 4000,
+    color_context: RenderColorContext | None = None,
 ) -> ScopeResponse:
+    context = color_context or RenderColorContext()
     if mode == ScopeMode.WAVEFORM:
-        return _build_waveform(processed, kind, bins=bins or 256, columns=waveform_columns, max_nits=max_nits)
+        return _build_waveform(processed, kind, bins=bins or 256, columns=waveform_columns, max_nits=max_nits, color_context=context)
     if mode == ScopeMode.VECTORSCOPE:
-        return _build_vectorscope(processed, kind, bins=bins or 128)
-    return _build_histogram(processed, kind, bins=bins or 256, max_nits=max_nits)
+        return _build_vectorscope(processed, kind, bins=bins or 128, color_context=context)
+    return _build_histogram(processed, kind, bins=bins or 256, max_nits=max_nits, color_context=context)
 
 
-def _build_histogram(processed: np.ndarray, kind: PreviewKind, bins: int, max_nits: int) -> ScopeResponse:
+def _build_histogram(processed: np.ndarray, kind: PreviewKind, bins: int, max_nits: int, color_context: RenderColorContext) -> ScopeResponse:
     if kind == PreviewKind.HDR:
-        return _build_hdr_histogram(processed, bins=bins, max_nits=max_nits)
+        return _build_hdr_histogram(processed, bins=bins, max_nits=max_nits, color_context=color_context)
     return _build_sdr_histogram(processed, bins=bins)
 
 
-def _build_hdr_histogram(processed: np.ndarray, bins: int, max_nits: int) -> ScopeResponse:
+def _build_hdr_histogram(processed: np.ndarray, bins: int, max_nits: int, color_context: RenderColorContext) -> ScopeResponse:
     ceiling = _hdr_scope_ceiling(max_nits)
     clipped = np.clip(processed.astype(np.float32, copy=False), 0.0, None)
-    luminance_nits = _rgb_to_reference_nits(clipped)
+    luminance_nits = _rgb_to_reference_nits(clipped, color_context)
     edges = _hdr_edges(bins, ceiling)
 
     channels = []
     for idx, name in enumerate(("R", "G", "B")):
-        channel_nits = _channel_to_reference_nits(clipped[..., idx])
+        channel_nits = _channel_to_reference_nits(clipped[..., idx], color_context)
         hist, _ = np.histogram(np.clip(channel_nits, 1.0, ceiling), bins=edges)
         channels.append(HistogramChannel(name=name, bins=hist.astype(int).tolist()))
     luma_hist, _ = np.histogram(np.clip(luminance_nits, 1.0, ceiling), bins=edges)
@@ -93,7 +98,7 @@ def _build_hdr_histogram(processed: np.ndarray, bins: int, max_nits: int) -> Sco
         scope_type="reference_nits_histogram",
         x_axis="reference_nits_log10",
         bin_edges=[float(edge) for edge in edges.tolist()],
-        guides=[guide for guide in HDR_GUIDES if guide.value <= ceiling],
+        guides=_hdr_guides(ceiling, color_context),
         stats=_hdr_stats(luminance_nits),
         channels=channels,
         normalization_peak=_normalization_peak(channels),
@@ -127,15 +132,15 @@ def _build_sdr_histogram(processed: np.ndarray, bins: int) -> ScopeResponse:
     )
 
 
-def _build_waveform(processed: np.ndarray, kind: PreviewKind, bins: int, columns: int, max_nits: int) -> ScopeResponse:
+def _build_waveform(processed: np.ndarray, kind: PreviewKind, bins: int, columns: int, max_nits: int, color_context: RenderColorContext) -> ScopeResponse:
     clipped = np.clip(processed.astype(np.float32, copy=False), 0.0, None if kind == PreviewKind.HDR else 1.0)
     if kind == PreviewKind.HDR:
         ceiling = _hdr_scope_ceiling(max_nits)
         edges = _hdr_edges(bins, ceiling)
         channels = []
-        luminance_nits = _rgb_to_reference_nits(clipped)
+        luminance_nits = _rgb_to_reference_nits(clipped, color_context)
         for idx, name in enumerate(("R", "G", "B")):
-            channel_nits = _channel_to_reference_nits(clipped[..., idx])
+            channel_nits = _channel_to_reference_nits(clipped[..., idx], color_context)
             grid = _waveform_grid(np.clip(channel_nits, 1.0, ceiling), edges, columns)
             channels.append(HistogramChannel(name=name, bins=[], grid=grid))
         channels.append(HistogramChannel(name="Y", bins=[], grid=_waveform_grid(np.clip(luminance_nits, 1.0, ceiling), edges, columns)))
@@ -144,7 +149,7 @@ def _build_waveform(processed: np.ndarray, kind: PreviewKind, bins: int, columns
             scope_type="reference_nits_waveform",
             x_axis="reference_nits_log10",
             bin_edges=[float(edge) for edge in edges.tolist()],
-            guides=[guide for guide in HDR_GUIDES if guide.value <= ceiling],
+            guides=_hdr_guides(ceiling, color_context),
             stats=_hdr_stats(luminance_nits),
             channels=channels,
             normalization_peak=_normalization_peak(channels),
@@ -187,7 +192,7 @@ def _waveform_grid(values: np.ndarray, edges: np.ndarray, columns: int) -> list[
     return grid.reshape(bin_count, output_columns).astype(np.int32, copy=False).tolist()
 
 
-def _build_vectorscope(processed: np.ndarray, kind: PreviewKind, bins: int) -> ScopeResponse:
+def _build_vectorscope(processed: np.ndarray, kind: PreviewKind, bins: int, color_context: RenderColorContext) -> ScopeResponse:
     rgb = np.clip(processed[..., :3].astype(np.float32, copy=False), 0.0, None if kind == PreviewKind.HDR else 1.0)
     kr, kg, kb = (0.2722287, 0.6740818, 0.0536895) if kind == PreviewKind.HDR else (0.2126, 0.7152, 0.0722)
     luma = kr * rgb[..., 0] + kg * rgb[..., 1] + kb * rgb[..., 2]
@@ -196,7 +201,7 @@ def _build_vectorscope(processed: np.ndarray, kind: PreviewKind, bins: int) -> S
     x = np.minimum((u * bins).astype(np.int32), bins - 1)
     y = np.minimum((v * bins).astype(np.int32), bins - 1)
     grid = np.bincount((y * bins + x).reshape(-1), minlength=bins * bins).reshape(bins, bins)
-    display_luma = (luma / 0.18) * 100.0 if kind == PreviewKind.HDR else np.clip(luma, 0.0, 1.0)
+    display_luma = scene_linear_to_nits(luma, color_context.hdr_reference_white_nits) if kind == PreviewKind.HDR else np.clip(luma, 0.0, 1.0)
     return ScopeResponse(
         preview_kind=kind,
         scope_type="vectorscope",
@@ -259,13 +264,26 @@ def _sdr_stats(luma: np.ndarray) -> list[ScopeStat]:
     ]
 
 
-def _rgb_to_reference_nits(image: np.ndarray) -> np.ndarray:
+def _rgb_to_reference_nits(
+    image: np.ndarray, color_context: RenderColorContext | None = None
+) -> np.ndarray:
+    color_context = color_context or RenderColorContext()
     luminance = 0.2722287 * image[..., 0] + 0.6740818 * image[..., 1] + 0.0536895 * image[..., 2]
-    return np.clip((luminance / 0.18) * 100.0, 0.0, None)
+    return np.clip(scene_linear_to_nits(luminance, color_context.hdr_reference_white_nits), 0.0, None)
 
 
-def _channel_to_reference_nits(channel: np.ndarray) -> np.ndarray:
-    return np.clip((channel.astype(np.float32, copy=False) / 0.18) * 100.0, 0.0, None)
+def _channel_to_reference_nits(channel: np.ndarray, color_context: RenderColorContext) -> np.ndarray:
+    return np.clip(scene_linear_to_nits(channel.astype(np.float32, copy=False), color_context.hdr_reference_white_nits), 0.0, None)
+
+
+def _hdr_guides(ceiling: int, color_context: RenderColorContext) -> list[ScopeGuide]:
+    active = color_context.hdr_reference_white_nits
+    guides: list[ScopeGuide] = []
+    for guide in HDR_GUIDES:
+        if guide.value <= ceiling:
+            label = f"{int(guide.value)} · active reference" if guide.value == active else guide.label
+            guides.append(ScopeGuide(value=guide.value, label=label))
+    return guides
 
 
 def _format_nits(value: float) -> str:

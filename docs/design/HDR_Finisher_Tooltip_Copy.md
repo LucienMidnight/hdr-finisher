@@ -10,7 +10,7 @@ Trigger delay: 2 seconds on title hover. The same tooltip appears when its title
 |---|---|---|
 | `scope.reference_nits_histogram.hdr` | Reference Nit Histogram | HDR histogram plots reference luminance from left to right on a logarithmic nit scale. Density is log-scaled to retain fine tonal detail. |
 | `scope.histogram.sdr` | SDR Histogram | SDR histogram plots display-safe values from black to white. Density is log-scaled so small tonal populations remain visible. |
-| `scope.reference_waveform.hdr` | HDR Reference Waveform | HDR waveform plots horizontal image position against reference nits. Reference nits use the app's internal model: 0.18 scene-linear equals 100 nits. |
+| `scope.reference_waveform.hdr` | HDR Reference Waveform | HDR waveform plots horizontal image position against reference nits. Scene-linear 0.18 maps to the project's selected 203- or 100-nit HDR Reference White. |
 | `scope.waveform.sdr` | SDR Waveform | SDR waveform plots horizontal image position against normalized tone-mapped output. |
 | `scope.vectorscope` | HDR / SDR Vectorscope | Vectorscope plots chroma direction and saturation from the same current authored preview. Density is log-scaled. |
 

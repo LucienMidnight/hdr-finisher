@@ -5,7 +5,9 @@ from enum import Enum
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from .color_context import validate_reference_white
 
 
 class HDRClassification(str, Enum):
@@ -69,6 +71,21 @@ class SourceImageDescriptor(BaseModel):
     linear_reference: Literal["scene_0_18", "diffuse_white_1_0"] = "scene_0_18"
     interpretation_mode: str = "auto"
     color_space_confident: bool = True
+
+
+class SourceLuminanceDescriptor(BaseModel):
+    """Persistent source facts and explicitly recorded import assumptions."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    luminance_semantics: Literal["absolute", "reference_relative", "display_relative", "scene_relative"]
+    transfer_function: Literal["PQ", "HLG", "linear", "SDR", "unknown"]
+    source_reference_white_nits: float | None = Field(default=None, gt=0.0, le=10000.0, allow_inf_nan=False)
+    source_peak_nits: float | None = Field(default=None, gt=0.0, le=10000.0, allow_inf_nan=False)
+    hlg_reference: Literal["display_referred", "scene_referred", "unknown"] = "unknown"
+    hlg_nominal_peak_nits: float | None = Field(default=None, gt=0.0, le=10000.0, allow_inf_nan=False)
+    sdr_rendition: Literal["authored", "generated", "none"] = "none"
+    assumptions: list[str] = Field(default_factory=list)
 
 
 class MetadataPayload(BaseModel):
@@ -311,35 +328,6 @@ class HDRAdjustments(BaseModel):
     green_curve: list[list[float]] = Field(default_factory=_default_curve_points)
     blue_curve: list[list[float]] = Field(default_factory=_default_curve_points)
 
-    @model_validator(mode="before")
-    @classmethod
-    def migrate_legacy_hdr_controls(cls, value: Any) -> Any:
-        if not isinstance(value, dict):
-            return value
-        migrated = dict(value)
-        if "highlight_compression_mode" not in migrated:
-            migrated["highlight_compression_mode"] = (
-                "soft_ceiling" if float(migrated.get("highlight_compression_softness", 0.0) or 0.0) > 0.0 else "off"
-            )
-        if "highlight_compression_softness" not in migrated and "highlight_rolloff" in migrated:
-            # The replacement control must be opt-in. Reusing a saved rolloff
-            # strength here would alter an imported preview before the user has
-            # touched Highlight Compression in the current UI.
-            migrated["highlight_compression_softness"] = 0.0
-        if "highlight_compression_start_nits" not in migrated and "highlight_rolloff_start_nits" in migrated:
-            migrated["highlight_compression_start_nits"] = migrated["highlight_rolloff_start_nits"]
-        migrated.pop("highlight_rolloff", None)
-        migrated.pop("highlight_rolloff_start_nits", None)
-        if "tone_equalizer_nodes" not in migrated:
-            bands = migrated.get("tone_equalizer_bands")
-            if isinstance(bands, list) and len(bands) == 13:
-                migrated["tone_equalizer_nodes"] = [
-                    {"input_ev": float(index - 6), "adjustment_ev": float(adjustment)}
-                    for index, adjustment in enumerate(bands)
-                ]
-                migrated.pop("tone_equalizer_bands", None)
-        return migrated
-
     @model_validator(mode="after")
     def normalize_tone_equalizer_nodes(self) -> "HDRAdjustments":
         if self.highlight_compression_target_nits <= self.highlight_compression_start_nits:
@@ -414,7 +402,8 @@ class SharedAdjustments(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     overlay_mode: OverlayMode = OverlayMode.OFF
-    overlay_preset: str = "web_1000_100"
+    false_color_band_anchor: Literal["project", "100_nits", "203_nits"] = "project"
+    false_color_ceiling_nits: Literal[100, 1000, 4000] = 1000
     overlay_opacity: float = 0.72
     overlay_threshold: float = Field(default=100.0, ge=1.0, le=10000.0)
     film_grain_seed: int = Field(default=271828, ge=0, le=2_147_483_647)
@@ -732,12 +721,14 @@ class SourceReference(BaseModel):
     durable_path: str | None = None
     byte_size: int | None = Field(default=None, ge=0)
     raw_import_settings: RawImportSettings = Field(default_factory=RawImportSettings)
+    luminance: SourceLuminanceDescriptor
 
 
 class EditDocument(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[2] = 2
+    schema_version: Literal[3] = 3
+    hdr_reference_white_nits: Literal[100, 203]
     source: SourceReference
     interpretation_override: "SourceInterpretationOverride" = Field(default_factory=lambda: SourceInterpretationOverride())
     global_adjustments: AdjustmentState = Field(default_factory=AdjustmentState)
@@ -745,15 +736,17 @@ class EditDocument(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def migrate_v1_document(cls, value: Any) -> Any:
-        if not isinstance(value, dict) or value.get("schema_version", 1) != 1:
-            return value
-        migrated = dict(value)
-        migrated["schema_version"] = 2
-        source = dict(migrated.get("source") or {})
-        source.setdefault("raw_import_settings", RawImportSettings().model_dump(mode="json"))
-        migrated["source"] = source
-        return migrated
+    def reject_prototype_documents(cls, value: Any) -> Any:
+        if isinstance(value, dict) and value.get("schema_version") in {1, 2}:
+            raise ValueError(
+                "Unsupported prototype project schema v1/v2. HDR Finisher v3 projects must be created again; migration is not supported."
+            )
+        return value
+
+    @field_validator("hdr_reference_white_nits", mode="before")
+    @classmethod
+    def validate_hdr_reference_white(cls, value: object) -> int:
+        return validate_reference_white(value)
 
 
 class EditCommand(BaseModel):
@@ -762,6 +755,7 @@ class EditCommand(BaseModel):
     expected_revision: int = Field(ge=0)
     command_type: Literal[
         "replace_document",
+        "set_hdr_reference_white",
         "set_global_adjustments",
         "create_local",
         "update_local",

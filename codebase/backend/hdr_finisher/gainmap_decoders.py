@@ -159,9 +159,10 @@ def decode_ultrahdr_jpeg(
             )
         decoded = decoded.astype(np.float32).reshape(raw_height, raw_width, 4)[..., :3]
 
-    # libultrahdr's linear output uses 1.0 == 203 nits. Convert to HDR
-    # Finisher's invariant 0.18 == 100 nits before the gamut transform.
-    decoded *= np.float32(203.0 * 0.18 / 100.0)
+    # libultrahdr's linear output uses 1.0 == 203 nits. Normalize once into
+    # the shared 203-nit decoder scale; the loader then converts that decoded
+    # scale to the selected project context without reapplying codec semantics.
+    decoded *= np.float32(0.18)
     if progress:
         progress("color_conversion", "Converting JPEG Ultra HDR to the working space")
     transform = linear_srgb_to_acescg if gain.use_base_color_space else linear_bt2020_to_acescg
@@ -179,7 +180,8 @@ def decode_ultrahdr_jpeg(
         "jpeg_ultrahdr": True,
         "gain_map_applied": True,
         "sdr_base_preserved": True,
-        "reference_white_nits": 100.0,
+        "reference_white_nits": None,
+        "decoder_reference_white_nits": 203.0,
         "hdr_capacity_stops": float(math.log2(max(gain.hdr_capacity_max, 1.0))),
         "gain_map_metadata": gain.model_dump(mode="json"),
         "orientation": orientation,
@@ -391,7 +393,8 @@ def _decode_avif_gain_map(
         "avif_gain_map": True,
         "gain_map_applied": True,
         "sdr_base_preserved": exact_sdr_base,
-        "reference_white_nits": 100.0,
+        "reference_white_nits": None,
+        "decoder_reference_white_nits": 203.0,
         "hdr_capacity_stops": hdr_headroom,
         "hdr_capacity_ratio": float(2.0**hdr_headroom),
         "source_cicp": _cicp_payload(info),

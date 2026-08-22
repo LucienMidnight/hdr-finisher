@@ -63,7 +63,7 @@ async function editValue(locator, value, { keyboardOnly = false } = {}) {
     }
 
     await modeSelect.selectOption("peak_fit");
-    await page.waitForFunction(() => document.querySelector("#highlight-compression-summary")?.textContent.includes("Peak Fit maps"));
+    await page.waitForFunction(() => document.querySelector("#highlight-compression-summary")?.textContent.includes("Peak Fit anchors"));
     const highlightSection = page.locator('[data-group="hdr-highlights"]');
     if (await highlightSection.count() !== 1) {
       throw new Error("Highlight Compression should be its own main control section.");

@@ -45,7 +45,7 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
       highQuality: false,
       scopeZoom: "4000",
       compareLayout: "single",
-      sourceCollapsed: false,
+      sourceCollapsed: true,
       sourceSettingsExpanded: "false",
       metadataExpanded: "false",
       proofFormat: "jpeg_ultrahdr",

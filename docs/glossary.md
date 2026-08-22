@@ -30,7 +30,7 @@ CIE x,y coordinates defining RGB primaries and a white point. OpenEXR can store 
 
 ## Diffuse white
 
-The reference brightness of an ordinary reflecting white surface, distinct from a light source or specular highlight. HDR Finisher anchors diffuse white at 100 nits and internal linear `0.18`.
+The project brightness assigned to an ordinary reflecting white surface, distinct from source diffuse-white metadata, a light source, or a specular highlight. HDR Finisher maps internal linear `0.18` to the selected HDR Reference White: 203 nits by default or 100 nits in the controlled preset.
 
 ## Display P3
 
@@ -110,7 +110,7 @@ A reduced-resolution image used for interactive preview/analysis. HDR Finisherâ€
 
 ## Reference white
 
-A defined white level used to anchor a workflow. HDR Finisher uses 100-nit diffuse white internally. Some delivery systems/libraries use a 203-nit SDR-reference convention, which requires an interface conversion.
+A defined white level used to anchor a workflow. HDR Finisher v3 projects select 203 nits by default or the intentional 100-nit preset. Codec interface conventions, including libultrahdr's 203-nit linear scale, are converted separately and exactly once.
 
 ## SDR
 

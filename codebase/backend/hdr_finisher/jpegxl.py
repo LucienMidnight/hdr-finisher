@@ -11,6 +11,7 @@ from typing import Any, Callable
 import numpy as np
 
 from .color import acescg_to_linear_bt2020, normalize_to_acescg_bounded
+from .color_context import scene_linear_to_nits, validate_reference_white
 
 
 class JPEGXLError(RuntimeError):
@@ -18,7 +19,7 @@ class JPEGXLError(RuntimeError):
 
 
 _APP_BOX_TYPE = b"hfmd"
-_APP_METADATA_VERSION = 2
+_APP_METADATA_VERSION = 3
 _JPEGXL_PRECISIONS: dict[str, tuple[int, str, Any]] = {
     "uint10": (10, "integer", np.uint16),
     "uint12": (12, "integer", np.uint16),
@@ -122,8 +123,10 @@ def decode_jpegxl(
     }
     if app_metadata:
         metadata["jpegxl_app_metadata"] = app_metadata
+        metadata["source_reference_white_nits"] = app_metadata.get("reference_white_nits")
     if confident:
         metadata["decoder_normalized_to_acescg"] = True
+        metadata["decoder_reference_white_nits"] = 203.0
     return np.asarray(image, dtype=np.float32), metadata
 
 
@@ -138,20 +141,21 @@ def encode_hdr_jpegxl(
     precision: str = "uint12",
     *,
     exif_payload: bytes | None = None,
+    reference_white_nits: int = 203,
 ) -> bytes:
+    if precision not in _JPEGXL_PRECISIONS:
+        raise JPEGXLError(f"Unsupported JPEG XL precision: {precision}")
     try:
         import imagecodecs
     except ImportError as exc:
         raise JPEGXLError("JPEG XL export requires the bundled imagecodecs/libjxl encoder.") from exc
     if not 1 <= int(quality) <= 100:
         raise JPEGXLError("JPEG XL quality must be between 1 and 100.")
-    try:
-        bit_depth, sample_type, storage_type = _JPEGXL_PRECISIONS[precision]
-    except KeyError as exc:
-        raise JPEGXLError(f"Unsupported JPEG XL precision: {precision}") from exc
+    bit_depth, sample_type, storage_type = _JPEGXL_PRECISIONS[precision]
 
     linear_bt2020 = np.clip(acescg_to_linear_bt2020(image[..., :3]), 0.0, None)
-    luminance_nits = np.clip(linear_bt2020 * np.float32(100.0 / 0.18), 0.0, 10000.0)
+    reference_white_nits = validate_reference_white(reference_white_nits)
+    luminance_nits = np.clip(scene_linear_to_nits(linear_bt2020, reference_white_nits), 0.0, 10000.0)
     pq = _pq_oetf(luminance_nits)
     if sample_type == "integer":
         maximum = float((1 << bit_depth) - 1)
@@ -178,7 +182,7 @@ def encode_hdr_jpegxl(
         "transfer_function": "PQ",
         "bit_depth": bit_depth,
         "sample_type": sample_type,
-        "reference_white_nits": 100.0,
+        "reference_white_nits": float(reference_white_nits),
     }
     result = bytes(payload) + _box(_APP_BOX_TYPE, json.dumps(marker, separators=(",", ":")).encode("utf-8"))
     return result + (_jpegxl_exif_box(exif_payload) if exif_payload else b"")
@@ -412,13 +416,9 @@ def _validate_app_metadata(value: dict[str, Any]) -> dict[str, Any]:
         "reference_white_nits",
     }
     schema_version = value.get("schema_version")
-    if schema_version == 1:
-        if set(value) != common:
-            raise JPEGXLError("JPEG XL HDR Finisher marker has an invalid schema.")
-        allowed_bit_depths = {8, 10, 12, 16}
-        normalized = dict(value)
-        normalized["sample_type"] = "integer"
-    elif schema_version == _APP_METADATA_VERSION:
+    if schema_version in {1, 2}:
+        raise JPEGXLError("JPEG XL HDR Finisher prototype marker v1/v2 is unsupported; re-export with v3.")
+    if schema_version == _APP_METADATA_VERSION:
         if set(value) != common | {"sample_type"}:
             raise JPEGXLError("JPEG XL HDR Finisher marker has an invalid schema.")
         interpretation = (value.get("color_space"), value.get("transfer_function"))
@@ -440,10 +440,6 @@ def _validate_app_metadata(value: dict[str, Any]) -> dict[str, Any]:
         normalized = value
     else:
         raise JPEGXLError("JPEG XL HDR Finisher marker uses an unsupported schema version.")
-    if schema_version == 1 and (
-        value.get("color_space") != "BT.2020" or value.get("transfer_function") not in {"PQ", "HLG"}
-    ):
-        raise JPEGXLError("JPEG XL HDR Finisher marker has an unsupported color interpretation.")
     if type(value.get("bit_depth")) is not int or value["bit_depth"] not in allowed_bit_depths:
         raise JPEGXLError("JPEG XL HDR Finisher marker has an invalid bit depth.")
     reference_white = value.get("reference_white_nits")

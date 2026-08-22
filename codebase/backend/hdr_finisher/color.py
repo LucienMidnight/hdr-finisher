@@ -217,7 +217,7 @@ def detect_color_space(metadata: dict[str, Any], suffix: str) -> str | None:
     return "sRGB"
 
 
-def normalize_to_acescg(image: np.ndarray, source_color_space: str | None = None, transfer_function: str | None = None) -> np.ndarray:
+def normalize_to_acescg(image: np.ndarray, source_color_space: str | None = None, transfer_function: str | None = None, reference_white_nits: int = 203) -> np.ndarray:
     sanitized = sanitize_array(image)
     transfer = _canonical_transfer_function(transfer_function)
 
@@ -230,9 +230,9 @@ def normalize_to_acescg(image: np.ndarray, source_color_space: str | None = None
     colourspace = _canonical_colourspace(source_color_space, transfer)
 
     if transfer == "PQ":
-        return _pq_bt2020_to_acescg(sanitized)
+        return _pq_bt2020_to_acescg(sanitized, reference_white_nits)
     if transfer == "HLG":
-        return _hlg_bt2020_to_acescg(sanitized)
+        return _hlg_bt2020_to_acescg(sanitized, reference_white_nits)
     if transfer == "BT.709":
         sanitized = sanitize_array(oetf_inverse_BT709(np.clip(sanitized, 0.0, 1.0)))
         transfer = "LINEAR"
@@ -257,6 +257,7 @@ def normalize_to_acescg_bounded(
     image: np.ndarray,
     source_color_space: str | None = None,
     transfer_function: str | None = None,
+    reference_white_nits: int = 203,
     *,
     rows: int = 128,
     cancelled: Callable[[], bool] | None = None,
@@ -271,7 +272,7 @@ def normalize_to_acescg_bounded(
             raise RuntimeError("Import cancelled")
         stop = min(start + strip_rows, result.shape[0])
         result[start:stop] = normalize_to_acescg(
-            result[start:stop], source_color_space, transfer_function
+            result[start:stop], source_color_space, transfer_function, reference_white_nits
         )
     return result
 
@@ -346,10 +347,11 @@ def _canonical_colourspace(value: str | None, transfer: str | None) -> str:
     return SRGB_COLOURSPACE
 
 
-def _pq_bt2020_to_acescg(image: np.ndarray) -> np.ndarray:
+def _pq_bt2020_to_acescg(image: np.ndarray, reference_white_nits: int = 203) -> np.ndarray:
     encoded = np.clip(image.astype(np.float32, copy=False), 0.0, 1.0)
     luminance_nits = eotf_ST2084(encoded)
-    linear_bt2020 = (luminance_nits / 100.0) * 0.18
+    from .color_context import nits_to_scene_linear
+    linear_bt2020 = nits_to_scene_linear(luminance_nits, reference_white_nits)
     converted = RGB_to_RGB(
         linear_bt2020,
         BT2020_COLOURSPACE,
@@ -359,10 +361,11 @@ def _pq_bt2020_to_acescg(image: np.ndarray) -> np.ndarray:
     return sanitize_array(converted)
 
 
-def _hlg_bt2020_to_acescg(image: np.ndarray) -> np.ndarray:
+def _hlg_bt2020_to_acescg(image: np.ndarray, reference_white_nits: int = 203, nominal_peak_nits: float = 1000.0) -> np.ndarray:
     encoded = np.clip(image.astype(np.float32, copy=False), 0.0, 1.0)
-    luminance_nits = eotf_BT2100_HLG(encoded, L_B=0, L_W=1000)
-    linear_bt2020 = (luminance_nits / 100.0) * 0.18
+    luminance_nits = eotf_BT2100_HLG(encoded, L_B=0, L_W=nominal_peak_nits)
+    from .color_context import nits_to_scene_linear
+    linear_bt2020 = nits_to_scene_linear(luminance_nits, reference_white_nits)
     converted = RGB_to_RGB(
         linear_bt2020,
         BT2020_COLOURSPACE,

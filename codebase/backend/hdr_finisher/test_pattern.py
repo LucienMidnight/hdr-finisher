@@ -34,22 +34,22 @@ def build_hdr_test_pattern(width: int = 1024, height: int = 576) -> np.ndarray:
     return np.clip(image.astype(np.float32), 0.0, None)
 
 
-def build_delivery_proof_pattern(width: int = 1280, height: int = 720) -> np.ndarray:
+def build_delivery_proof_pattern(width: int = 1280, height: int = 720, reference_white_nits: int = 203) -> np.ndarray:
     """Synthetic neutral, chromatic, gradient, and highlight targets.
 
-    Values use HDR Finisher's 0.18 == 100-nit convention and are deliberately
-    stable so browser observations can be compared across evidence records.
+    The neutral patches are exact absolute-nit oracles in the selected project
+    context and are deliberately stable across evidence records.
     """
     image = np.full((height, width, 3), 0.018, dtype=np.float32)
     margin = max(8, width // 80)
     patch_gap = max(4, width // 160)
     top_h = height // 3
-    stops = np.array([0.0, 1.0, 2.0, 3.0, 4.0], dtype=np.float32)
-    patch_w = (width - 2 * margin - 4 * patch_gap) // 5
-    for index, stop in enumerate(stops):
+    patch_nits = np.array([0.0, 0.1, 100.0, 203.0, 406.0, 1000.0, 12000.0], dtype=np.float32)
+    patch_w = (width - 2 * margin - (len(patch_nits) - 1) * patch_gap) // len(patch_nits)
+    for index, nits in enumerate(patch_nits):
         x0 = margin + index * (patch_w + patch_gap)
         x1 = x0 + patch_w
-        value = np.float32(0.18 * (2.0 ** float(stop)))
+        value = np.float32(float(nits) * 0.18 / float(reference_white_nits))
         image[margin:top_h, x0:x1] = value
 
     colors = np.array(

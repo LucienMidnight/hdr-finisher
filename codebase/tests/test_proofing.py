@@ -79,9 +79,9 @@ def test_endpoint_reconstruction_preserves_base_and_alternate() -> None:
 
 @pytest.mark.parametrize(
     ("peak_nits", "expected_headroom"),
-    [(400, 2.0), (600, math.log2(6)), (1000, math.log2(10)), (2000, math.log2(20)), (4000, math.log2(40))],
+    [(400, math.log2(400 / 203)), (600, math.log2(600 / 203)), (1000, math.log2(1000 / 203)), (2000, math.log2(2000 / 203)), (4000, math.log2(4000 / 203))],
 )
-def test_chrome_proof_nit_presets_use_100_nit_reference_white(peak_nits: float, expected_headroom: float) -> None:
+def test_chrome_proof_nit_presets_use_project_reference_white(peak_nits: float, expected_headroom: float) -> None:
     assert target_headroom_for_peak_nits(peak_nits) == pytest.approx(expected_headroom)
 
 
@@ -175,13 +175,14 @@ def test_jpeg_full_endpoint_uses_metadata_selected_decoded_gamut(
         quality=85,
         metadata_summary="fixture",
         encoded_headroom=3.0,
+        reference_white_nits=203,
         hdr_authored=np.zeros((1, 2, 3), dtype=np.float32),
         sdr_authored=np.zeros((1, 2, 3), dtype=np.float32),
         jpeg_gain_map=metadata,
     )
     monkeypatch.setattr(proofing_module, "resolve_binary", lambda _name: tmp_path / "ultrahdr_app.exe")
     _, endpoint = store._matrix_endpoints(artifact)
-    scaled = decoded * np.float32(203.0 * 0.18 / 100.0)
+    scaled = decoded * np.float32(0.18)
     expected = linear_srgb_to_acescg(scaled) if use_base_color_space else linear_bt2020_to_acescg(scaled)
     np.testing.assert_allclose(endpoint, np.clip(expected, 0, None), rtol=2e-3, atol=3e-4)
 
@@ -231,6 +232,7 @@ def test_jpeg_matrix_endpoints_publish_decode_atomically_for_concurrent_targets(
         quality=85,
         metadata_summary="fixture",
         encoded_headroom=3.0,
+        reference_white_nits=203,
         hdr_authored=np.zeros((2, 2, 3), dtype=np.float32),
         sdr_authored=np.zeros((2, 2, 3), dtype=np.float32),
         jpeg_gain_map=metadata,
@@ -264,7 +266,7 @@ def test_jpeg_matrix_endpoints_publish_decode_atomically_for_concurrent_targets(
         first_endpoints = first.result(timeout=2)
         second_endpoints = second.result(timeout=2)
 
-    expected = linear_srgb_to_acescg(decoded * np.float32(203.0 * 0.18 / 100.0))
+    expected = linear_srgb_to_acescg(decoded * np.float32(0.18))
     np.testing.assert_allclose(first_endpoints[1], np.clip(expected, 0, None), rtol=2e-3, atol=3e-4)
     assert second_endpoints is first_endpoints
     assert decode_outputs and len(decode_outputs) == 1
@@ -411,7 +413,7 @@ def test_artifact_is_content_hashed_cached_and_matrix_is_stable(monkeypatch, tmp
     assert len(matrix.tiles) == 5
     assert matrix.tiles[0].above_display_headroom is False
     assert matrix.tiles[-1].above_display_headroom is True
-    assert fixed.resolved_headroom == pytest.approx(2.0)
+    assert fixed.resolved_headroom == pytest.approx(math.log2(400 / 203), abs=5e-5)
     assert fixed.tile.id == matrix.tiles[2].id
     assert fixed_again.cache_id == fixed.cache_id
     assert fixed_again.tile.id == fixed.tile.id

@@ -5,16 +5,9 @@ from io import BytesIO
 import numpy as np
 
 from .adjustments import apply_adjustments
+from .color_context import RenderColorContext, scene_linear_to_nits
 from .models import AdjustmentState, OverlayMode, PreviewKind
 from .preview import downsample_image
-
-
-FALSE_COLOR_PRESETS: dict[str, dict[str, float]] = {
-    "web_1000_100": {"reference_white_nits": 100.0, "peak_nits": 1000.0},
-    "bt2408_1000_203": {"reference_white_nits": 203.0, "peak_nits": 1000.0},
-    "bt2408_4000_203": {"reference_white_nits": 203.0, "peak_nits": 4000.0},
-    "sdr_100": {"reference_white_nits": 100.0, "peak_nits": 100.0},
-}
 
 
 def render_overlay_bytes(
@@ -23,13 +16,15 @@ def render_overlay_bytes(
     kind: PreviewKind,
     long_edge: int,
     sdr_reference_image: np.ndarray | None = None,
+    color_context: RenderColorContext | None = None,
 ) -> tuple[bytes, str]:
+    context = color_context or RenderColorContext()
     if adjustments.shared.overlay_mode == OverlayMode.OFF:
         return b"", "image/png"
 
-    processed = apply_adjustments(image, adjustments, kind, sdr_reference_image=sdr_reference_image)
+    processed = apply_adjustments(image, adjustments, kind, sdr_reference_image=sdr_reference_image, color_context=context)
     downsampled = downsample_image(processed, long_edge)
-    overlay = build_overlay_rgba(downsampled, adjustments, kind)
+    overlay = build_overlay_rgba(downsampled, adjustments, kind, color_context=context)
     return _encode_overlay_png(overlay), "image/png"
 
 
@@ -37,30 +32,33 @@ def encode_processed_overlay_bytes(
     processed: np.ndarray,
     adjustments: AdjustmentState,
     kind: PreviewKind,
+    color_context: RenderColorContext | None = None,
 ) -> tuple[bytes, str]:
     if adjustments.shared.overlay_mode == OverlayMode.OFF:
         return b"", "image/png"
-    return _encode_overlay_png(build_overlay_rgba(processed, adjustments, kind)), "image/png"
+    return _encode_overlay_png(build_overlay_rgba(processed, adjustments, kind, color_context=color_context)), "image/png"
 
 
-def build_overlay_rgba(image: np.ndarray, adjustments: AdjustmentState, kind: PreviewKind) -> np.ndarray:
+def build_overlay_rgba(image: np.ndarray, adjustments: AdjustmentState, kind: PreviewKind, *, color_context: RenderColorContext | None = None) -> np.ndarray:
+    context = color_context or RenderColorContext()
     mode = adjustments.shared.overlay_mode
     opacity = np.clip(np.float32(adjustments.shared.overlay_opacity), 0.0, 1.0)
 
     if mode == OverlayMode.FALSE_COLOR:
-        return _false_color_overlay(image, adjustments, opacity, kind)
+        return _false_color_overlay(image, adjustments, opacity, kind, context)
     if mode == OverlayMode.ZEBRA:
         threshold_nits = np.float32(max(adjustments.shared.overlay_threshold, 1.0))
-        return _zebra_overlay(image, opacity, threshold_nits, kind)
+        return _zebra_overlay(image, opacity, threshold_nits, kind, context)
     height, width = image.shape[:2]
     return np.zeros((height, width, 4), dtype=np.uint8)
 
 
-def _false_color_overlay(image: np.ndarray, adjustments: AdjustmentState, opacity: np.float32, kind: PreviewKind) -> np.ndarray:
-    preset = FALSE_COLOR_PRESETS.get(adjustments.shared.overlay_preset, FALSE_COLOR_PRESETS["web_1000_100"])
-    reference_white = np.float32(preset["reference_white_nits"])
-    peak_nits = np.float32(preset["peak_nits"])
-    luminance_nits = _luminance_nits(image, kind)
+def _false_color_overlay(image: np.ndarray, adjustments: AdjustmentState, opacity: np.float32, kind: PreviewKind, color_context: RenderColorContext) -> np.ndarray:
+    anchor = adjustments.shared.false_color_band_anchor
+    reference_white = np.float32(color_context.hdr_reference_white_nits if anchor == "project" else (100 if anchor == "100_nits" else 203))
+    peak_nits = np.float32(adjustments.shared.false_color_ceiling_nits)
+    analysis_context = color_context if anchor == "project" else RenderColorContext(int(reference_white))
+    luminance_nits = _luminance_nits(image, kind, analysis_context)
 
     highlight_start = max(reference_white, min(reference_white * 2.0, peak_nits * 0.5))
     bands = np.array(
@@ -90,8 +88,8 @@ def _false_color_overlay(image: np.ndarray, adjustments: AdjustmentState, opacit
     return _stack_rgba(palette, alpha)
 
 
-def _zebra_overlay(image: np.ndarray, opacity: np.float32, threshold_nits: np.float32, kind: PreviewKind) -> np.ndarray:
-    metric_nits = _luminance_nits(image, kind)
+def _zebra_overlay(image: np.ndarray, opacity: np.float32, threshold_nits: np.float32, kind: PreviewKind, color_context: RenderColorContext) -> np.ndarray:
+    metric_nits = _luminance_nits(image, kind, color_context)
     hot = metric_nits >= threshold_nits
     if not np.any(hot):
         height, width = image.shape[:2]
@@ -117,13 +115,16 @@ def _luminance(image: np.ndarray, kind: PreviewKind) -> np.ndarray:
     return np.clip(luminance, 0.0, 1.0)
 
 
-def _luminance_nits(image: np.ndarray, kind: PreviewKind = PreviewKind.HDR) -> np.ndarray:
+def _luminance_nits(image: np.ndarray, kind: PreviewKind = PreviewKind.HDR, color_context: RenderColorContext | None = None) -> np.ndarray:
     image = np.clip(image.astype(np.float32, copy=False), 0.0, None)
     if kind == PreviewKind.HDR:
         luminance = 0.2722287 * image[..., 0] + 0.6740818 * image[..., 1] + 0.0536895 * image[..., 2]
     else:
         luminance = 0.2126 * image[..., 0] + 0.7152 * image[..., 1] + 0.0722 * image[..., 2]
-    return (luminance / 0.18) * 100.0
+    if kind == PreviewKind.SDR:
+        return luminance * 100.0
+    context = color_context or RenderColorContext()
+    return scene_linear_to_nits(luminance, context.hdr_reference_white_nits)
 
 
 def _stack_rgba(rgb: np.ndarray, alpha: np.ndarray) -> np.ndarray:

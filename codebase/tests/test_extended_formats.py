@@ -197,11 +197,12 @@ def test_dark_twelve_bit_jpegxl_never_infers_precision_from_brightness(tmp_path:
 
     source = np.full((8, 12, 3), 64, dtype=np.uint16)
     marker = {
-        "schema_version": 1,
+        "schema_version": 3,
         "color_space": "BT.2020",
         "transfer_function": "PQ",
         "bit_depth": 12,
-        "reference_white_nits": 100.0,
+        "sample_type": "integer",
+        "reference_white_nits": 203.0,
     }
     payload = bytes(imagecodecs.jpegxl_encode(source, bitspersample=12, usecontainer=True))
     payload += _box(b"hfmd", json.dumps(marker, separators=(",", ":")).encode("utf-8"))
@@ -260,21 +261,21 @@ def test_jpegxl_export_backend_writes_validated_atomic_output(tmp_path: Path) ->
     assert metadata["sample_type"] == "float"
 
 
-def test_v1_project_document_migrates_raw_settings() -> None:
-    document = EditDocument.model_validate(
-        {
-            "schema_version": 1,
-            "source": {"filename": "legacy.exr"},
-        }
-    )
-    assert document.schema_version == 2
-    assert document.source.raw_import_settings == RawImportSettings()
+def test_v1_project_document_is_rejected_without_migration() -> None:
+    with pytest.raises(ValueError, match="Unsupported prototype project schema"):
+        EditDocument.model_validate(
+            {
+                "schema_version": 1,
+                "source": {"filename": "prototype.exr"},
+            }
+        )
 
 
 def test_source_reference_serializes_manual_lens_selection() -> None:
     source = SourceReference.model_validate(
         {
             "filename": "camera.nef",
+            "luminance": {"luminance_semantics": "scene_relative", "transfer_function": "linear"},
             "raw_import_settings": {
                 "lens": {
                     "mode": "manual",

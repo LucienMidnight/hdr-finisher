@@ -11,6 +11,7 @@ from .adjustments import apply_adjustments
 from .binaries import resolve_binary
 from .subprocess_utils import hidden_window_options
 from .color import acescg_to_linear_bt2020, acescg_to_linear_srgb
+from .color_context import DEFAULT_HDR_REFERENCE_WHITE_NITS, scene_linear_to_nits
 from .config import MAX_PREVIEW_LONG_EDGE, PREVIEW_IMAGE_FORMAT
 from .models import AdjustmentState, PreviewKind
 
@@ -21,11 +22,12 @@ def render_preview_bytes(
     kind: PreviewKind,
     long_edge: int = MAX_PREVIEW_LONG_EDGE,
     sdr_reference_image: np.ndarray | None = None,
+    reference_white_nits: int = DEFAULT_HDR_REFERENCE_WHITE_NITS,
 ) -> tuple[bytes, str]:
     processed = apply_adjustments(image, adjustments, kind, sdr_reference_image=sdr_reference_image)
     downsampled = downsample_image(processed, long_edge)
     if kind == PreviewKind.HDR:
-        return _encode_hdr_avif(downsampled), "image/avif"
+        return _encode_hdr_avif(downsampled, reference_white_nits), "image/avif"
     return _encode_png_sdr(downsampled), "image/png"
 
 
@@ -34,11 +36,12 @@ def encode_processed_preview_bytes(
     kind: PreviewKind,
     *,
     hdr_display: bool = True,
+    reference_white_nits: int = DEFAULT_HDR_REFERENCE_WHITE_NITS,
 ) -> tuple[bytes, str]:
     if kind == PreviewKind.HDR:
         if not hdr_display:
             return _encode_png_sdr(_hdr_to_sdr_display(processed)), "image/png"
-        return _encode_hdr_avif(processed), "image/avif"
+        return _encode_hdr_avif(processed, reference_white_nits), "image/avif"
     return _encode_png_sdr(processed), "image/png"
 
 
@@ -124,7 +127,7 @@ def _encode_png_sdr(image: np.ndarray) -> bytes:
     return buffer.getvalue()
 
 
-def _encode_hdr_avif(image: np.ndarray) -> bytes:
+def _encode_hdr_avif(image: np.ndarray, reference_white_nits: int = DEFAULT_HDR_REFERENCE_WHITE_NITS) -> bytes:
     avifenc = resolve_binary("avifenc")
     if avifenc is None:
         raise RuntimeError("avifenc is required for HDR AVIF preview rendering.")
@@ -134,7 +137,7 @@ def _encode_hdr_avif(image: np.ndarray) -> bytes:
             temp_dir = Path(temp_dir_name)
             y4m_path = temp_dir / "preview_hdr.y4m"
             avif_path = temp_dir / "preview_hdr.avif"
-            _write_hdr_y4m(y4m_path, image)
+            _write_hdr_y4m(y4m_path, image, reference_white_nits)
             result = subprocess.run(
                 [
                     str(avifenc),
@@ -164,8 +167,8 @@ def _encode_hdr_avif(image: np.ndarray) -> bytes:
         raise RuntimeError("Failed to encode HDR AVIF preview.") from exc
 
 
-def _write_hdr_y4m(path: Path, image: np.ndarray) -> None:
-    yuv10 = _linear_to_bt2020_pq_yuv10(image)
+def _write_hdr_y4m(path: Path, image: np.ndarray, reference_white_nits: int = DEFAULT_HDR_REFERENCE_WHITE_NITS) -> None:
+    yuv10 = _linear_to_bt2020_pq_yuv10(image, reference_white_nits)
     height, width = yuv10.shape[:2]
     header = f"YUV4MPEG2 W{width} H{height} F1:1 Ip A1:1 C444p10 XYSCSS=444P10\n".encode("ascii")
     frame_header = b"FRAME\n"
@@ -177,9 +180,9 @@ def _write_hdr_y4m(path: Path, image: np.ndarray) -> None:
             handle.write(yuv10[..., plane_index].astype("<u2", copy=False).tobytes())
 
 
-def _linear_to_bt2020_pq_yuv10(image: np.ndarray) -> np.ndarray:
+def _linear_to_bt2020_pq_yuv10(image: np.ndarray, reference_white_nits: int = DEFAULT_HDR_REFERENCE_WHITE_NITS) -> np.ndarray:
     linear_bt2020 = acescg_to_linear_bt2020(image)
-    pq_rgb = _linear_to_pq_rgb10(linear_bt2020).astype(np.float32) / 1023.0
+    pq_rgb = _linear_to_pq_rgb10(linear_bt2020, reference_white_nits).astype(np.float32) / 1023.0
 
     r = pq_rgb[..., 0]
     g = pq_rgb[..., 1]
@@ -199,9 +202,9 @@ def _linear_to_bt2020_pq_yuv10(image: np.ndarray) -> np.ndarray:
     return np.stack([y_code, cb_code, cr_code], axis=-1).astype(np.uint16)
 
 
-def _linear_to_pq_rgb10(image: np.ndarray) -> np.ndarray:
+def _linear_to_pq_rgb10(image: np.ndarray, reference_white_nits: int = DEFAULT_HDR_REFERENCE_WHITE_NITS) -> np.ndarray:
     linear = np.clip(image.astype(np.float32, copy=False), 0.0, None)
-    nits = np.clip((linear / 0.18) * 100.0, 0.0, 10000.0)
+    nits = np.clip(scene_linear_to_nits(linear, reference_white_nits), 0.0, 10000.0)
     pq = _pq_oetf(nits / 10000.0)
     return np.clip(np.round(pq * 1023.0), 0.0, 1023.0).astype(np.uint16)
 

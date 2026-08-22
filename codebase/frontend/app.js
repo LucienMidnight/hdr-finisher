@@ -160,7 +160,7 @@ Object.assign(MANUAL_VALUE_RULES, {
 
 const TONE_EQUALIZER_MIN_EV = -6;
 const TONE_EQUALIZER_MAX_EV = 6;
-const TONE_EQUALIZER_PQ_MAX_EV = Math.log2(10000 / 100);
+const toneEqualizerPqMaxEv = () => Math.log2(10000 / projectReferenceWhiteNits());
 const TONE_EQUALIZER_MAX_ADJUSTMENT_EV = 2;
 const TONE_EQUALIZER_MIN_TARGET_STEP = 0.001;
 const TONE_EQUALIZER_MIN_NODE_COUNT = 2;
@@ -416,7 +416,8 @@ const state = {
     },
     shared: {
       overlay_mode: "off",
-      overlay_preset: "web_1000_100",
+      false_color_band_anchor: "project",
+      false_color_ceiling_nits: 1000,
       overlay_opacity: 0.72,
       overlay_threshold: 100,
     },
@@ -745,7 +746,8 @@ const defaultAdjustments = () => ({
   },
   shared: {
     overlay_mode: "off",
-    overlay_preset: "web_1000_100",
+    false_color_band_anchor: "project",
+    false_color_ceiling_nits: 1000,
     overlay_opacity: 0.72,
     overlay_threshold: 100,
     film_grain_seed: 271828,
@@ -757,6 +759,7 @@ const defaultAdjustments = () => ({
 state.adjustments = defaultAdjustments();
 
 const els = {
+  hdrReferenceWhite: document.getElementById("hdr-reference-white"),
   projectOpen: document.getElementById("project-open"),
   projectSave: document.getElementById("project-save"),
   fileInput: document.getElementById("file-input"),
@@ -973,6 +976,7 @@ const els = {
   exportMetadataPolicy: document.getElementById("export-metadata-policy"),
   exportMetadataPolicyNote: document.getElementById("export-metadata-policy-note"),
   exportResolvedEncoding: document.getElementById("export-resolved-encoding"),
+  exportReferenceWhite: document.getElementById("export-reference-white"),
   jpegGainMapQuality: document.getElementById("jpeg-gain-map-quality"),
   jpegGainMapQualityValue: document.getElementById("jpeg-gain-map-quality-value"),
   jpegGainMapScale: document.getElementById("jpeg-gain-map-scale"),
@@ -1055,13 +1059,6 @@ const els = {
   exportSharpening: document.getElementById("export-sharpening"),
 };
 
-const overlayPresetNotes = {
-  web_1000_100: "Built for web-HDR finishing with 100 nit diffuse white and a 1000 nit highlight ceiling. Best default for AVIF gain-map work and common consumer HDR displays.",
-  bt2408_1000_203: "Uses the ITU-R BT.2408 style 203 nit HDR reference white with a 1000 nit peak target. Useful when you want false color to align with PQ/HLG reference-white practice.",
-  bt2408_4000_203: "Keeps the 203 nit BT.2408 reference white but stretches warning bands toward a 4000 nit mastering ceiling. Good for checking very bright highlight intent.",
-  sdr_100: "Treats 100 nits as both white and ceiling. Handy when judging the SDR fallback or when you want the overlay to behave like an SDR exposure aid.",
-};
-
 const controlGroups = {
   geometry: ["shared.geometry"],
   "hdr-tone": ["hdr.exposure", "hdr.contrast", "hdr.contrast_pivot", "hdr.shadow_lift"],
@@ -1073,13 +1070,6 @@ const controlGroups = {
   "sdr-tone": ["sdr.exposure", "sdr.highlight_recovery", "sdr.contrast", "sdr.contrast_pivot", "sdr.shadow"],
   "sdr-color": ["sdr.white_balance_kelvin", "sdr.tint", "sdr.saturation", "sdr.vibrance", "sdr.red_hue", "sdr.red_purity", "sdr.green_hue", "sdr.green_purity", "sdr.blue_hue", "sdr.blue_purity", "sdr.tint_hue", "sdr.tint_purity"],
   "sdr-zones": ["sdr.lift", "sdr.lift_range", "sdr.lift_pivot", "sdr.gamma", "sdr.gamma_range", "sdr.gamma_pivot", "sdr.gain", "sdr.gain_range", "sdr.gain_pivot"],
-};
-
-const overlayPresetLevels = {
-  web_1000_100: { referenceWhite: 100, peak: 1000 },
-  bt2408_1000_203: { referenceWhite: 203, peak: 1000 },
-  bt2408_4000_203: { referenceWhite: 203, peak: 4000 },
-  sdr_100: { referenceWhite: 100, peak: 100 },
 };
 
 const falseColorPaletteTokens = [
@@ -1879,6 +1869,21 @@ function bindEvents() {
   bindLocalAdjustmentEvents();
   els.projectOpen?.addEventListener("click", openProjectFromPath);
   els.projectSave?.addEventListener("click", saveProjectToPath);
+  els.hdrReferenceWhite?.addEventListener("change", async () => {
+    const requested = Number(els.hdrReferenceWhite.value);
+    const previous = projectReferenceWhiteNits();
+    if (![100, 203].includes(requested) || requested === previous) return;
+    els.hdrReferenceWhite.disabled = true;
+    const applied = await queueEditCommand("set_hdr_reference_white", { hdr_reference_white_nits: requested });
+    if (!applied) els.hdrReferenceWhite.value = String(previous);
+    else {
+      state.gpuPreview?.resetSession(state.session?.session_id || null);
+      state.gpuPreparedLane = { hdr: false, sdr: false };
+      renderSession();
+      await settlePreview(state.currentView);
+    }
+    els.hdrReferenceWhite.disabled = !state.session;
+  });
   els.sourceSettingsToggle.addEventListener("click", () => {
     state.sourceSettingsOpen = !state.sourceSettingsOpen;
     renderSourceSettingsVisibility();
@@ -2322,6 +2327,8 @@ async function ejectCurrentSession() {
   if (els.rawSettingsPanel) delete els.rawSettingsPanel.dataset.initialized;
   state.adjustments = defaultAdjustments();
   state.editDocument = null;
+  els.hdrReferenceWhite.value = "203";
+  els.hdrReferenceWhite.disabled = true;
   state.editRevision = 0;
   state.documentDirty = false;
   state.selectedLocalId = null;
@@ -2382,6 +2389,8 @@ async function ejectCurrentSession() {
 
 function renderSession() {
   const session = state.session;
+  els.hdrReferenceWhite.value = String(projectReferenceWhiteNits());
+  els.hdrReferenceWhite.disabled = false;
   renderExperimentalDngNote(session);
   renderSourceFilename(session.source.filename);
   clearPreviewOverlay();
@@ -2451,19 +2460,21 @@ function renderReadouts() {
 }
 
 function renderOverlayPresetNote() {
-  const preset = state.adjustments.shared.overlay_preset || "web_1000_100";
-  els.overlayPresetNote.textContent = overlayPresetNotes[preset] || overlayPresetNotes.web_1000_100;
+  const levels = falseColorLevels();
+  const anchorSource = state.adjustments.shared.false_color_band_anchor || "project";
+  const anchorLabel = anchorSource === "project" ? "project HDR reference white" : `fixed ${levels.referenceWhite} nit`;
+  els.overlayPresetNote.textContent = `Bands anchor to ${anchorLabel}; the independent warning ceiling is ${levels.peak.toLocaleString()} nit.`;
   const mode = state.adjustments.shared.overlay_mode || "off";
   const label = mode === "false_color" ? "False color" : mode === "zebra" ? "Zebra" : "Off";
   els.overlayToggle.textContent = `Overlays: ${label}`;
-  renderFalseColorKey(preset, mode);
+  renderFalseColorKey(mode);
   els.falseColorLegend.classList.toggle("hidden", mode !== "false_color" || !state.session);
 }
 
-function renderFalseColorKey(preset, mode) {
+function renderFalseColorKey(mode) {
   if (!els.falseColorKey) return;
   els.falseColorKey.classList.toggle("hidden", mode !== "false_color");
-  const items = falseColorBandsForPreset(preset)
+  const items = falseColorBands()
     .map(({ lower, upper, paletteIndex }) => {
       const item = document.createElement("span");
       item.className = "false-color-key-item";
@@ -2482,8 +2493,20 @@ function renderFalseColorKey(preset, mode) {
   els.falseColorKey.replaceChildren(...items);
 }
 
-function falseColorBandsForPreset(preset) {
-  const levels = overlayPresetLevels[preset] || overlayPresetLevels.web_1000_100;
+function projectReferenceWhiteNits() {
+  return Number(state.editDocument?.hdr_reference_white_nits) === 100 ? 100 : 203;
+}
+
+function falseColorLevels() {
+  const anchor = state.adjustments.shared.false_color_band_anchor || "project";
+  const referenceWhite = anchor === "100_nits" ? 100 : anchor === "203_nits" ? 203 : projectReferenceWhiteNits();
+  const requestedPeak = Number(state.adjustments.shared.false_color_ceiling_nits);
+  const peak = [100, 1000, 4000].includes(requestedPeak) ? requestedPeak : 1000;
+  return { referenceWhite, peak };
+}
+
+function falseColorBands() {
+  const levels = falseColorLevels();
   const highlightStart = Math.max(levels.referenceWhite, Math.min(levels.referenceWhite * 2, levels.peak * 0.5));
   const boundaries = [
     levels.referenceWhite * 0.1,
@@ -2557,11 +2580,11 @@ const LUMA_RANGE_MAX_NITS = 10000;
 const LUMA_TONAL_RAMP_EV = 0.75;
 
 function referenceNitsToEv(value) {
-  return Math.log2(clamp(Number(value), LUMA_RANGE_MIN_NITS, LUMA_RANGE_MAX_NITS) / 100);
+  return Math.log2(clamp(Number(value), LUMA_RANGE_MIN_NITS, LUMA_RANGE_MAX_NITS) / projectReferenceWhiteNits());
 }
 
 function evToReferenceNits(value) {
-  return 100 * (2 ** Number(value));
+  return projectReferenceWhiteNits() * (2 ** Number(value));
 }
 
 function lumaBandLabel(lower, upper) {
@@ -2650,6 +2673,7 @@ function sourceInterpretationEntries() {
     ];
   }
 
+  const luminance = state.editDocument?.source?.luminance || {};
   return [
     ["Format", state.session.source.suffix],
     ["Source Space", state.session.source.source_color_space || "unknown"],
@@ -2660,6 +2684,9 @@ function sourceInterpretationEntries() {
     ["Signal", state.session.analysis.classification],
     ["Latitude", state.session.analysis.source_latitude],
     ["Source Depth", state.session.metadata.bit_depth || "unknown"],
+    ["Source diffuse white", luminance.source_diffuse_white_nits ? `${luminance.source_diffuse_white_nits} nit` : "not declared"],
+    ["Source peak", luminance.source_peak_nits ? `${luminance.source_peak_nits} nit` : "measured separately"],
+    ["Project reference white", `${projectReferenceWhiteNits()} nit`],
   ];
 }
 
@@ -3238,7 +3265,7 @@ function drawHistogram(scope) {
     ? "Vectorscope plots chroma direction and saturation from the same current authored preview. Density is log-scaled."
     : scope.preview_kind === "hdr"
     ? scope.scope_type.includes("waveform")
-      ? "HDR waveform plots horizontal image position against reference nits. Reference nits use the app's internal model: 0.18 scene-linear equals 100 nits."
+      ? `HDR waveform plots horizontal image position against reference nits. In this project, 0.18 scene-linear equals ${projectReferenceWhiteNits()} nits.`
       : "HDR histogram plots reference luminance from left to right on a logarithmic nit scale. Density is log-scaled to retain fine tonal detail."
     : scope.scope_type.includes("waveform")
       ? "SDR waveform plots horizontal image position against normalized tone-mapped output."
@@ -4096,7 +4123,7 @@ function getValueByPath(target, path) {
 
 function bindCropEditor() {
   els.cropToolToggle?.addEventListener("click", async () => {
-    if (state.rotateDraftGeometry) closeRotateMode(false);
+    if (state.rotateDraftGeometry) closeRotateMode(true);
     if (state.geometryTool === "crop") {
       closeCropMode(true);
       return;
@@ -4221,6 +4248,8 @@ function closeCropMode(commit) {
   renderGeometryToolState();
   renderLocalAdjustments();
   if (commit && draft) {
+    state.zoomReferenceFrame = null;
+    state.gpuPreparedLane = { hdr: false, sdr: false };
     invalidatePreview("hdr");
     invalidatePreview("sdr");
     debouncePreview(state.currentView);
@@ -4518,6 +4547,8 @@ function closeRotateMode(commit) {
   renderGeometryToolState();
   renderControlState();
   if (commit && !valuesEqual(original, state.adjustments.shared.geometry)) {
+    state.zoomReferenceFrame = null;
+    state.gpuPreparedLane = { hdr: false, sdr: false };
     invalidatePreview("hdr");
     invalidatePreview("sdr");
     debouncePreview(state.currentView);
@@ -4679,6 +4710,7 @@ function presentScopePayload(payload, { generation, tier, lane, mode, source, me
 
 function buildGpuScopePayload(analysis, { lane, mode, tier, generation, bins, columns, maxNits }) {
   const hdr = lane === "hdr";
+  const referenceWhite = projectReferenceWhiteNits();
   const ceiling = maxNits === 1000 ? 1000 : maxNits === 10000 ? 10000 : 4000;
   const channelNames = ["R", "G", "B", "Y"];
   if (mode === "vectorscope") return buildGpuVectorscopePayload(analysis, { lane, tier, generation, bins });
@@ -4699,7 +4731,7 @@ function buildGpuScopePayload(analysis, { lane, mode, tier, generation, bins, co
     const b = Math.max(0, analysis.pixels[offset + 2]);
     const luma = hdr ? 0.2722287 * r + 0.6740818 * g + 0.0536895 * b : 0.2126 * r + 0.7152 * g + 0.0722 * b;
     const values = hdr
-      ? [r, g, b, luma].map((value) => value / 0.18 * 100)
+      ? [r, g, b, luma].map((value) => value / 0.18 * referenceWhite)
       : [r, g, b, luma].map((value) => clamp(value, 0, 1));
     lumaValues[pixel] = values[3];
     peak = Math.max(peak, values[3]);
@@ -4743,7 +4775,8 @@ function buildGpuScopePayload(analysis, { lane, mode, tier, generation, bins, co
       : [],
   }));
   const populationPeak = Math.max(1, ...counts.map((channel) => channel.reduce((maximum, value) => Math.max(maximum, value), 0)));
-  const hdrGuides = [[1, "1 nit"], [10, "10"], [25, "25"], [50, "50"], [100, "100 white"], [203, "203 BT.2408"], [400, "400"], [600, "600"], [1000, "1000 peak"], [2000, "2000"], [4000, "4000"], [10000, "10000 PQ peak"]];
+  const hdrGuides = [[1, "1 nit"], [10, "10"], [25, "25"], [50, "50"], [100, "100 controlled white"], [203, "203 standard white"], [400, "400"], [600, "600"], [1000, "1000"], [2000, "2000"], [4000, "4000"], [10000, "10000 PQ limit"]]
+    .map(([value, label]) => [value, value === referenceWhite ? `${label} · active` : label]);
   return {
     preview_kind: lane,
     scope_type: hdr ? `reference_nits_${mode}` : `normalized_${mode}`,
@@ -4762,6 +4795,7 @@ function buildGpuScopePayload(analysis, { lane, mode, tier, generation, bins, co
 
 function buildGpuVectorscopePayload(analysis, { lane, tier, generation, bins }) {
   const hdr = lane === "hdr";
+  const referenceWhite = projectReferenceWhiteNits();
   const grid = Array.from({ length: bins }, () => new Int32Array(bins));
   let peak = 0;
   for (let pixel = 0; pixel < analysis.width * analysis.height; pixel += 1) {
@@ -4771,7 +4805,7 @@ function buildGpuVectorscopePayload(analysis, { lane, tier, generation, bins }) 
     const b = Math.max(0, analysis.pixels[offset + 2]);
     const [kr, kg, kb] = hdr ? [0.2722287, 0.6740818, 0.0536895] : [0.2126, 0.7152, 0.0722];
     const y = kr * r + kg * g + kb * b;
-    peak = Math.max(peak, hdr ? y / 0.18 * 100 : y);
+    peak = Math.max(peak, hdr ? y / 0.18 * referenceWhite : y);
     const u = clamp(0.5 + 0.5 * (b - y) / (2 * (1 - kb)), 0, 1);
     const v = clamp(0.5 + 0.5 * (r - y) / (2 * (1 - kr)), 0, 1);
     grid[Math.min(bins - 1, Math.floor(v * bins))][Math.min(bins - 1, Math.floor(u * bins))] += 1;
@@ -5031,7 +5065,7 @@ function commitAdjustmentValue(path, value, { manual = false } = {}) {
   const resolvedPath = resolveAdjustmentPath(path);
   if (resolvedPath.endsWith(".film_look.reference_model") && value !== "custom") applyFilmLookPreset(value);
   if (resolvedPath.startsWith("hdr.highlight_compression_")) normalizeHighlightCompressionControls(resolvedPath);
-  if (path === "shared.overlay_preset") {
+  if (path === "shared.false_color_band_anchor" || path === "shared.false_color_ceiling_nits") {
     renderOverlayPresetNote();
     drawCurveEditor();
     renderLocalAdjustments();
@@ -5108,13 +5142,14 @@ function syncHighlightCompressionSourcePeak() {
       : (analysis?.robust_peak_luma_linear ?? analysis?.peak_luma_linear ?? analysis?.peak_linear))
     : (groupedChannels ? analysis?.peak_linear : (analysis?.peak_luma_linear ?? analysis?.peak_linear));
   if (Number.isFinite(Number(linear))) {
-    hdr.highlight_compression_source_peak_nits = Math.max(1, Number(linear) * 100 / 0.18);
+    hdr.highlight_compression_source_peak_nits = Math.max(1, Number(linear) * projectReferenceWhiteNits() / 0.18);
   }
 }
 
 function toneAdjustedHighlightPeakNits(hdr) {
-  let peakLinear = Math.max(1, Number(hdr.highlight_compression_source_peak_nits) || 1000) * 0.18 / 100;
-  if (hdr.tone_section_enabled === false) return Math.max(1, peakLinear * 100 / 0.18);
+  const referenceWhite = projectReferenceWhiteNits();
+  let peakLinear = Math.max(1, Number(hdr.highlight_compression_source_peak_nits) || 1000) * 0.18 / referenceWhite;
+  if (hdr.tone_section_enabled === false) return Math.max(1, peakLinear * referenceWhite / 0.18);
   peakLinear *= 2 ** (Number(hdr.exposure) || 0);
   const shadowLift = Number(hdr.shadow_lift) || 0;
   if (shadowLift !== 0) {
@@ -5127,7 +5162,7 @@ function toneAdjustedHighlightPeakNits(hdr) {
     const stops = Math.log2(Math.max(peakLinear, 0.00000001) / pivot);
     peakLinear = pivot * (2 ** clamp(stops * (2 ** contrast), -32, 32));
   }
-  return Math.max(1, peakLinear * 100 / 0.18);
+  return Math.max(1, peakLinear * referenceWhite / 0.18);
 }
 
 function peakFitCurveInfo(hdr) {
@@ -5440,7 +5475,7 @@ function toneEqualizerCanvasPosition(inputEv, adjustmentEv) {
   const { width, height } = canvasLogicalSize(canvas);
   const { left, right, top, bottom } = toneEqualizerEditorLayout();
   return {
-    x: left + ((inputEv - TONE_EQUALIZER_MIN_EV) / (TONE_EQUALIZER_PQ_MAX_EV - TONE_EQUALIZER_MIN_EV)) * (width - left - right),
+    x: left + ((inputEv - TONE_EQUALIZER_MIN_EV) / (toneEqualizerPqMaxEv() - TONE_EQUALIZER_MIN_EV)) * (width - left - right),
     y: top + ((TONE_EQUALIZER_MAX_ADJUSTMENT_EV - adjustmentEv) / (TONE_EQUALIZER_MAX_ADJUSTMENT_EV * 2)) * (height - top - bottom),
   };
 }
@@ -5533,7 +5568,7 @@ function drawToneEqualizerEditor() {
   const nodes = currentToneEqualizerNodes();
   const smoothing = clamp(Number(state.adjustments.hdr?.tone_equalizer_smoothing ?? 0.5), 0, 1);
   const enabled = state.adjustments.hdr?.tone_equalizer_section_enabled !== false;
-  const xForEv = (inputEv) => left + ((inputEv - TONE_EQUALIZER_MIN_EV) / (TONE_EQUALIZER_PQ_MAX_EV - TONE_EQUALIZER_MIN_EV)) * graphWidth;
+  const xForEv = (inputEv) => left + ((inputEv - TONE_EQUALIZER_MIN_EV) / (toneEqualizerPqMaxEv() - TONE_EQUALIZER_MIN_EV)) * graphWidth;
   const yForAdjustment = (value) => top + ((TONE_EQUALIZER_MAX_ADJUSTMENT_EV - value) / (TONE_EQUALIZER_MAX_ADJUSTMENT_EV * 2)) * graphHeight;
 
   ctx.clearRect(0, 0, width, height);
@@ -5567,7 +5602,7 @@ function drawToneEqualizerEditor() {
       ctx.fillText(formatSignedEv(inputEv, 0), x, height - bottom + 7);
     }
   }
-  const pqX = xForEv(TONE_EQUALIZER_PQ_MAX_EV);
+  const pqX = xForEv(toneEqualizerPqMaxEv());
   ctx.setLineDash([3, 3]);
   ctx.strokeStyle = uiToken("--equalizer-pq");
   ctx.beginPath();
@@ -5583,7 +5618,7 @@ function drawToneEqualizerEditor() {
   ctx.lineWidth = uiNumberToken("--equalizer-line-width", 2.25);
   ctx.beginPath();
   for (let sample = 0; sample < 180; sample += 1) {
-    const inputEv = TONE_EQUALIZER_MIN_EV + (sample / 179) * (TONE_EQUALIZER_PQ_MAX_EV - TONE_EQUALIZER_MIN_EV);
+    const inputEv = TONE_EQUALIZER_MIN_EV + (sample / 179) * (toneEqualizerPqMaxEv() - TONE_EQUALIZER_MIN_EV);
     const adjustment = sampleToneEqualizerAdjustment(inputEv, nodes, smoothing);
     const x = xForEv(inputEv);
     const y = yForAdjustment(adjustment);
@@ -5675,7 +5710,7 @@ function toneEqualizerEvFromPointer(clientX, rect) {
   const paddingRight = layout.right / Math.max(rect.width, 1);
   const normalizedX = clamp((clientX - rect.left) / rect.width, paddingLeft, 1 - paddingRight);
   const graphX = (normalizedX - paddingLeft) / Math.max(1 - paddingLeft - paddingRight, 1e-6);
-  return TONE_EQUALIZER_MIN_EV + graphX * (TONE_EQUALIZER_PQ_MAX_EV - TONE_EQUALIZER_MIN_EV);
+  return TONE_EQUALIZER_MIN_EV + graphX * (toneEqualizerPqMaxEv() - TONE_EQUALIZER_MIN_EV);
 }
 
 function addToneEqualizerNode(preferredEv = null) {
@@ -6007,8 +6042,7 @@ function drawCurveExposureBands(ctx, layout, width, height) {
   const plotBottom = height - layout.bottom;
   const plotWidth = plotRight - plotLeft;
   const plotHeight = plotBottom - plotTop;
-  const preset = state.adjustments.shared.overlay_preset || "web_1000_100";
-  const bands = falseColorBandsForPreset(preset);
+  const bands = falseColorBands();
 
   ctx.save();
   ctx.globalAlpha = uiNumberToken("--curve-band-opacity", 0.1);
@@ -6020,7 +6054,7 @@ function drawCurveExposureBands(ctx, layout, width, height) {
   });
   ctx.restore();
 
-  const levels = overlayPresetLevels[preset] || overlayPresetLevels.web_1000_100;
+  const levels = falseColorLevels();
   const labelValues = [...new Set([
     0,
     ...bands.flatMap(({ lower, upper }) => [lower, upper]),
@@ -6058,9 +6092,8 @@ function drawCurveExposureBands(ctx, layout, width, height) {
 }
 
 function curveExposureGradient(ctx, plotLeft, plotRight) {
-  const preset = state.adjustments.shared.overlay_preset || "web_1000_100";
   const gradient = ctx.createLinearGradient(plotLeft, 0, plotRight, 0);
-  falseColorBandsForPreset(preset).forEach(({ lower, upper, paletteIndex }) => {
+  falseColorBands().forEach(({ lower, upper, paletteIndex }) => {
     const start = curveDomainPositionForNits(lower ?? 0);
     const end = curveDomainPositionForNits(upper ?? 10000);
     gradient.addColorStop(start, exposureBandColor(paletteIndex));
@@ -6071,8 +6104,7 @@ function curveExposureGradient(ctx, plotLeft, plotRight) {
 
 function curveExposureColorAt(normalized) {
   const nits = curveDomainNitsForPosition(normalized);
-  const preset = state.adjustments.shared.overlay_preset || "web_1000_100";
-  const band = falseColorBandsForPreset(preset).find(({ upper }) => upper === null || nits < upper);
+  const band = falseColorBands().find(({ upper }) => upper === null || nits < upper);
   return exposureBandColor(band?.paletteIndex ?? falseColorPaletteTokens.length - 1);
 }
 
@@ -6384,6 +6416,7 @@ async function renderGpuDraft(
       localSnapshot,
       state.editRevision,
       maskOverlay,
+      projectReferenceWhiteNits(),
     );
     if (!result || serial !== state.gpuRenderSerial || (!allowInactive && lane !== state.currentView)) return false;
     state.gpuPreparedLane[lane] = true;
@@ -7214,6 +7247,8 @@ async function renderComparisonPreview(lane, { force = false } = {}) {
         settledProxyLongEdge(),
         state.compareWithoutLocals ? [] : localAdjustments(),
         state.editRevision,
+        null,
+        projectReferenceWhiteNits(),
       );
       if (result && lane !== state.currentView && generation === state.previewGeneration[lane]) {
         state.gpuPreparedLane[lane] = true;
@@ -7994,6 +8029,7 @@ function renderFormatCards() {
     sdr_jpeg: `8-bit sRGB JPEG · ${formatChroma(els.jpegChromaSubsampling.value)}`,
   }[format];
   els.exportResolvedEncoding.textContent = `Resolved encoding: ${encodingSummary || "automatic"}`;
+  els.exportReferenceWhite.textContent = `HDR reference white: ${projectReferenceWhiteNits()} nits`;
   annotateWebDefaultOptions(format);
   applyExportOptionTooltips();
   if (!sourceMetadataApplicable) els.exportMetadataPolicy.title = els.exportMetadataPolicyNote.textContent;
@@ -8925,8 +8961,7 @@ function createLuminanceRangeControl(local, leaf) {
   presetGrid.className = "luma-preset-grid";
   presetGrid.setAttribute("role", "group");
   presetGrid.setAttribute("aria-label", "False-color luminance ranges");
-  const preset = state.adjustments.shared.overlay_preset || "web_1000_100";
-  const bands = falseColorBandsForPreset(preset);
+  const bands = falseColorBands();
 
   const rangeHeading = document.createElement("div");
   rangeHeading.className = "luma-range-heading luma-nit-range-heading";
@@ -8978,7 +9013,7 @@ function createLuminanceRangeControl(local, leaf) {
   });
   const scale = document.createElement("div");
   scale.className = "luma-range-scale luma-nit-range-scale";
-  scale.innerHTML = "<span>0.1 nit</span><span>100 nit</span><span>10,000 nit</span>";
+  scale.innerHTML = `<span>0.1 nit</span><span>${projectReferenceWhiteNits()} nit · 0 EV</span><span>10,000 nit</span>`;
 
   const refineHeading = document.createElement("div");
   refineHeading.className = "luma-range-heading luma-refine-range-heading";
@@ -9116,8 +9151,8 @@ function setLuminanceReferenceRange(leaf, startEv, endEv, { preserveRefinement =
 function setLuminanceRefinedRange(leaf, startEv, endEv) {
   const referenceStart = leaf.reference_start_ev !== null && leaf.reference_start_ev !== undefined && Number.isFinite(Number(leaf.reference_start_ev)) ? Number(leaf.reference_start_ev) : -24;
   const referenceEnd = leaf.reference_end_ev !== null && leaf.reference_end_ev !== undefined && Number.isFinite(Number(leaf.reference_end_ev)) ? Number(leaf.reference_end_ev) : 24;
-  const start = Number(clamp(startEv, referenceStart, referenceEnd - 0.01).toFixed(4));
-  const end = Number(clamp(endEv, start + 0.01, referenceEnd).toFixed(4));
+  const start = clamp(Number(clamp(startEv, referenceStart, referenceEnd - 0.01).toFixed(4)), referenceStart, referenceEnd - 0.01);
+  const end = clamp(Number(clamp(endEv, start + 0.01, referenceEnd).toFixed(4)), start + 0.01, referenceEnd);
   leaf.full_start_ev = start;
   leaf.full_end_ev = end;
   leaf.fade_in_start_ev = Number(clamp(start - LUMA_TONAL_RAMP_EV, -24, start).toFixed(4));
@@ -9694,9 +9729,18 @@ const initializedLuminanceSampleLeaves = new WeakSet();
 
 function isLuminanceSamplingInitialized(leaf) {
   if (initializedLuminanceSampleLeaves.has(leaf)) return true;
-  const fields = ["full_start_ev", "full_end_ev"];
-  const defaults = [-8, 6];
-  return fields.some((field, index) => Math.abs(Number(leaf[field]) - defaults[index]) > 0.001);
+  const start = Number(leaf.full_start_ev);
+  const end = Number(leaf.full_end_ev);
+  const visibleMin = referenceNitsToEv(LUMA_RANGE_MIN_NITS);
+  const visibleMax = referenceNitsToEv(LUMA_RANGE_MAX_NITS);
+  const defaultStart = clamp(-8, visibleMin, visibleMax - 0.01);
+  const defaultEnd = clamp(6, defaultStart + 0.01, visibleMax);
+  const schemaDefault = Math.abs(start - defaultStart) <= 0.011 && Math.abs(end - defaultEnd) <= 0.011;
+  // Range inputs quantize against a 0.01 EV step whose origin is the dynamic
+  // minimum, so their full-span endpoint can differ from the analytical value
+  // by up to one step.
+  const visibleDefault = Math.abs(start - visibleMin) <= 0.011 && Math.abs(end - visibleMax) <= 0.011;
+  return !schemaDefault && !visibleDefault;
 }
 
 function appendLuminanceSamplePoint(gesture, point) {
@@ -9708,6 +9752,11 @@ function appendLuminanceSamplePoint(gesture, point) {
 async function finishLuminanceSampleGesture(gesture) {
   const local = selectedLocal();
   if (!state.session || !local || local.id !== gesture.localId || !gesture.points.length) return;
+  // An asynchronous preview/edit refresh can replace the selected local while
+  // a pointer gesture is active. Always mutate the leaf that will actually be
+  // serialized, rather than the pointerdown snapshot retained by the gesture.
+  const leaf = firstMaskLeaf(local.mask, "luminance_range");
+  if (!leaf) return;
   try {
     const response = await fetch(`/api/session/${state.session.session_id}/local-luminance-sample`, {
       method: "POST",
@@ -9720,7 +9769,7 @@ async function finishLuminanceSampleGesture(gesture) {
     });
     const sample = await safeJson(response);
     if (!response.ok) throw new Error(sample.detail || "Luminance sampling failed.");
-    if (!applyLuminanceSample(gesture.leaf, sample, gesture.remove)) return;
+    if (!applyLuminanceSample(leaf, sample, gesture.remove)) return;
     scheduleSpatialMaskPreview(local);
     renderMaskTreeEditor(local);
     syncRangeVisuals(els.localEditor);
@@ -9756,9 +9805,10 @@ function applyLuminanceSample(leaf, sample, remove = false) {
   }
   fullStart = Number(clamp(fullStart, -23.75, 23.75).toFixed(2));
   fullEnd = Number(clamp(fullEnd, fullStart + 0.25, 24).toFixed(2));
-  leaf.reference_start_ev = fullStart;
-  leaf.reference_end_ev = fullEnd;
-  setLuminanceRefinedRange(leaf, fullStart, fullEnd);
+  // Normalize both reference and refined bounds through the same four-decimal
+  // path. Otherwise an unrounded sampled reference can sit microscopically
+  // inside its rounded refined edge and fail the persisted schema invariant.
+  setLuminanceReferenceRange(leaf, fullStart, fullEnd, { preserveRefinement: false });
   initializedLuminanceSampleLeaves.add(leaf);
   return true;
 }

@@ -23,6 +23,14 @@
       </nav>
 
       <div class="top-actions">
+        <label class="reference-white-control" for="hdr-reference-white">
+          <span>HDR reference white</span>
+          <select id="hdr-reference-white" aria-describedby="hdr-reference-white-note" disabled>
+            <option value="203" selected>203 nit · Standard</option>
+            <option value="100">100 nit · Controlled workflow</option>
+          </select>
+        </label>
+        <span id="hdr-reference-white-note" class="visually-hidden">Sets the project scene-linear reference. It does not set the export peak, display peak, proof target, or Windows SDR white.</span>
         <button id="project-open" class="text-button" type="button">Open project</button>
         <button id="project-save" class="text-button" type="button" disabled>Save project</button>
         <span class="window-control-reserve" aria-hidden="true"></span>
@@ -215,15 +223,21 @@
                 <option value="zebra">Zebra</option>
               </select>
             </label>
-            <label>False Color Target
-              <select id="overlay-preset" data-path="shared.overlay_preset">
-                <option value="web_1000_100">Web HDR · 1000 nit peak / 100 nit white</option>
-                <option value="bt2408_1000_203">BT.2408 · 1000 nit peak / 203 nit white</option>
-                <option value="bt2408_4000_203">BT.2408 · 4000 nit peak / 203 nit white</option>
-                <option value="sdr_100">SDR · 100 nit white</option>
+            <label>False Color Band Anchor
+              <select id="false-color-band-anchor" data-path="shared.false_color_band_anchor">
+                <option value="project">Project HDR reference white</option>
+                <option value="100_nits">Fixed 100 nit</option>
+                <option value="203_nits">Fixed 203 nit</option>
               </select>
             </label>
-            <p id="overlay-preset-note" class="helper">False color preset notes will appear here.</p>
+            <label>False Color Ceiling
+              <select id="false-color-ceiling" data-path="shared.false_color_ceiling_nits">
+                <option value="100">100 nit</option>
+                <option value="1000" selected>1,000 nit</option>
+                <option value="4000">4,000 nit</option>
+              </select>
+            </label>
+            <p id="overlay-preset-note" class="helper">Band anchor and warning ceiling are independent analysis controls.</p>
             <div id="false-color-key" class="false-color-key" aria-label="False color key"></div>
             <div class="control-row compact-control">
               <div class="control-heading">
@@ -1170,6 +1184,7 @@
           <small class="helper visually-hidden" id="export-metadata-policy-note">Color, HDR, and gain-map signaling is always retained. “All including location” may expose GPS coordinates.</small>
         </label>
         <p class="helper export-resolved-encoding" id="export-resolved-encoding"></p>
+        <p class="helper export-resolved-encoding" id="export-reference-white"></p>
         </div>
       </details>
       <fieldset class="output-finishing-settings">

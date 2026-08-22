@@ -15,12 +15,15 @@ from hdr_finisher.adjustments import (
     _curve_domain_encode,
     _compress_scene_highlights,
     _primary_zone_masks,
-    _rolloff_scene_highlights,
     apply_adjustments,
 )
 from hdr_finisher.analysis import classify_hdr
 from hdr_finisher.color import rgb_primaries_adjustment_matrix
-from hdr_finisher.models import AdjustmentState, HDRAdjustments, PreviewKind, SDRAdjustments, SharedAdjustments, SourceLatitude
+from hdr_finisher.models import AdjustmentState, HDRAdjustments, PreviewKind, SDRAdjustments, SharedAdjustments, SourceLatitude, ToneEqualizerNode
+
+
+def _tone_nodes(values: list[float]) -> list[ToneEqualizerNode]:
+    return [ToneEqualizerNode(input_ev=index - 6, adjustment_ev=value) for index, value in enumerate(values)]
 
 
 @pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
@@ -200,7 +203,7 @@ def test_hdr_curves_preserve_high_values() -> None:
 
 def test_tiny_hdr_contrast_change_does_not_clamp_wide_exr_values() -> None:
     image = np.array([[[10.0, 50.0, 1000.0]]], dtype=np.float32)
-    state = AdjustmentState(hdr=HDRAdjustments(highlight_rolloff=0.0, contrast=0.005))
+    state = AdjustmentState(hdr=HDRAdjustments(contrast=0.005))
 
     output = _apply_hdr_adjustments(image, state)
 
@@ -210,7 +213,7 @@ def test_tiny_hdr_contrast_change_does_not_clamp_wide_exr_values() -> None:
 
 def test_identity_hdr_curves_preserve_values_above_curve_editor_range() -> None:
     image = np.array([[[10.0, 50.0, 1000.0]]], dtype=np.float32)
-    state = AdjustmentState(hdr=HDRAdjustments(highlight_rolloff=0.0))
+    state = AdjustmentState(hdr=HDRAdjustments())
 
     output = _apply_hdr_adjustments(image, state)
 
@@ -261,7 +264,6 @@ def test_neutral_hdr_tone_equalizer_is_identity() -> None:
     image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
     state = AdjustmentState(
         hdr=HDRAdjustments(
-            highlight_rolloff=0.0,
         )
     )
 
@@ -331,13 +333,13 @@ def test_direct_entry_safety_caps_reject_out_of_range_api_values(model, values) 
         model.model_validate(values)
 
 
-def test_legacy_thirteen_band_equalizer_migrates_to_positioned_nodes() -> None:
+def test_explicit_thirteen_node_equalizer_preserves_positions() -> None:
     bands = [round((index - 6) / 12, 4) for index in range(13)]
-    migrated = HDRAdjustments.model_validate({"tone_equalizer_bands": bands})
+    authored = HDRAdjustments(tone_equalizer_nodes=_tone_nodes(bands))
 
-    assert len(migrated.tone_equalizer_nodes) == 13
-    assert [node.input_ev for node in migrated.tone_equalizer_nodes] == list(range(-6, 7))
-    assert [node.adjustment_ev for node in migrated.tone_equalizer_nodes] == bands
+    assert len(authored.tone_equalizer_nodes) == 13
+    assert [node.input_ev for node in authored.tone_equalizer_nodes] == list(range(-6, 7))
+    assert [node.adjustment_ev for node in authored.tone_equalizer_nodes] == bands
 
 
 @pytest.mark.parametrize("count", [1, 17])
@@ -371,8 +373,7 @@ def test_hdr_tone_equalizer_can_lift_lower_bands_while_protecting_highlights() -
     bands[4] = 0.75  # -2 EV, returning smoothly to neutral by -1 EV
     state = AdjustmentState(
         hdr=HDRAdjustments(
-            highlight_rolloff=0.0,
-            tone_equalizer_bands=bands,
+            tone_equalizer_nodes=_tone_nodes(bands),
             tone_equalizer_smoothing=0.75,
         )
     )
@@ -389,8 +390,7 @@ def test_hdr_tone_equalizer_preserves_luminance_order_for_aggressive_api_state()
     image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
     state = AdjustmentState(
         hdr=HDRAdjustments(
-            highlight_rolloff=0.0,
-            tone_equalizer_bands=[2.0, -2.0, 2.0, -2.0, 2.0, -2.0, 2.0, -2.0, 2.0, -2.0, 2.0, -2.0, 2.0],
+            tone_equalizer_nodes=_tone_nodes([2.0, -2.0, 2.0, -2.0, 2.0, -2.0, 2.0, -2.0, 2.0, -2.0, 2.0, -2.0, 2.0]),
             tone_equalizer_smoothing=1.0,
         )
     )
@@ -406,8 +406,7 @@ def test_hdr_tone_equalizer_is_hue_preserving() -> None:
     bands = [0.5] * 13
     state = AdjustmentState(
         hdr=HDRAdjustments(
-            highlight_rolloff=0.0,
-            tone_equalizer_bands=bands,
+            tone_equalizer_nodes=_tone_nodes(bands),
         )
     )
 
@@ -425,8 +424,7 @@ def test_plus_six_tone_equalizer_band_controls_values_through_pq_ceiling() -> No
     bands[-1] = 0.5
     state = AdjustmentState(
         hdr=HDRAdjustments(
-            highlight_rolloff=0.0,
-            tone_equalizer_bands=bands,
+            tone_equalizer_nodes=_tone_nodes(bands),
         )
     )
 
@@ -435,7 +433,7 @@ def test_plus_six_tone_equalizer_band_controls_values_through_pq_ceiling() -> No
     np.testing.assert_allclose(output / levels, np.sqrt(2.0), rtol=1e-5, atol=1e-5)
 
 
-def test_hdr_highlight_rolloff_preserves_wide_exr_latitude_and_ordering() -> None:
+def test_hdr_default_highlight_path_preserves_wide_exr_latitude_and_ordering() -> None:
     levels = np.array([1.0, 2.0, 10.0, 50.0, 1000.0], dtype=np.float32)
     image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
 
@@ -445,11 +443,11 @@ def test_hdr_highlight_rolloff_preserves_wide_exr_latitude_and_ordering() -> Non
     assert np.all(np.diff(output[0, :, 0]) > 0.0)
 
 
-def test_hdr_rolloff_is_identity_at_zero_and_below_start() -> None:
-    levels = np.array([0.05, 0.18, 0.71, 0.72, 2.0, 18.0], dtype=np.float32)
+def test_hdr_compression_is_identity_when_off_and_below_start() -> None:
+    levels = np.array([50, 203, 399, 400, 600, 1000], dtype=np.float32) * np.float32(0.18 / 203.0)
     image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
-    np.testing.assert_array_equal(_rolloff_scene_highlights(image, 0.0, 400.0), image)
-    rolled = _rolloff_scene_highlights(image, 1.0, 400.0)
+    np.testing.assert_array_equal(_compress_scene_highlights(image, 400.0, 1000.0, 0.0), image)
+    rolled = _compress_scene_highlights(image, 400.0, 1000.0, 50.0)
     np.testing.assert_allclose(rolled[0, :4], image[0, :4], rtol=1e-6, atol=1e-7)
     assert np.all(np.diff(rolled[0, :, 0]) > 0.0)
     assert rolled[0, -1, 0] < image[0, -1, 0]
@@ -461,20 +459,21 @@ def test_highlight_compression_is_neutral_when_softness_is_off() -> None:
 
 
 def test_highlight_compression_preserves_start_and_approaches_target_monotonically() -> None:
-    levels = np.array([0.18, 0.72, 1.0, 1.8, 18.0, 1800.0], dtype=np.float32)
+    levels = np.array([203, 400, 500, 1000, 10000, 1000000], dtype=np.float32) * np.float32(0.18 / 203.0)
     image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
     compressed = _compress_scene_highlights(image, 400.0, 1000.0, 60.0)[0, :, 0]
 
     np.testing.assert_allclose(compressed[:2], levels[:2], rtol=1e-6, atol=1e-7)
     assert np.all(np.diff(compressed) >= -1e-6)
-    assert compressed[-1] <= 1.8
-    assert compressed[-1] > 1.79
+    target_linear = 1000.0 * 0.18 / 203.0
+    assert compressed[-1] <= target_linear + 1e-6
+    assert compressed[-1] > target_linear * 0.99
 
 
 def test_peak_fit_anchors_extreme_peak_and_preserves_positive_highlight_slope() -> None:
     source_peak_nits = 21676.7
     levels_nits = np.geomspace(10.0, source_peak_nits, 512).astype(np.float32)
-    levels = levels_nits * np.float32(0.18 / 100.0)
+    levels = levels_nits * np.float32(0.18 / 203.0)
     image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
     compressed = _compress_scene_highlights(
         image,
@@ -486,7 +485,7 @@ def test_peak_fit_anchors_extreme_peak_and_preserves_positive_highlight_slope() 
         peak_detail=35.0,
         bias=0.0,
     )[0, :, 0]
-    compressed_nits = compressed * np.float32(100.0 / 0.18)
+    compressed_nits = compressed * np.float32(203.0 / 0.18)
 
     np.testing.assert_allclose(compressed_nits[-1], 1000.0, rtol=2e-5)
     assert np.all(np.diff(compressed_nits) > 0.0)
@@ -495,7 +494,7 @@ def test_peak_fit_anchors_extreme_peak_and_preserves_positive_highlight_slope() 
 
 def test_peak_fit_anchor_is_applied_after_other_tone_controls() -> None:
     source_peak_nits = 17333.0
-    source_peak = np.float32(source_peak_nits * 0.18 / 100.0)
+    source_peak = np.float32(source_peak_nits * 0.18 / 203.0)
     image = np.full((1, 1, 3), source_peak, dtype=np.float32)
     state = AdjustmentState(
         hdr=HDRAdjustments(
@@ -511,14 +510,14 @@ def test_peak_fit_anchor_is_applied_after_other_tone_controls() -> None:
     )
 
     output = _apply_hdr_adjustments(image, state)
-    output_nits = output[0, 0, 0] * np.float32(100.0 / 0.18)
+    output_nits = output[0, 0, 0] * np.float32(203.0 / 0.18)
 
     np.testing.assert_allclose(output_nits, 1000.0, rtol=3e-5)
 
 
 def test_highlights_section_bypass_is_independent_from_tone() -> None:
     source_peak_nits = 4000.0
-    image = np.full((1, 1, 3), source_peak_nits * 0.18 / 100.0, dtype=np.float32)
+    image = np.full((1, 1, 3), source_peak_nits * 0.18 / 203.0, dtype=np.float32)
     active = AdjustmentState(
         hdr=HDRAdjustments(
             exposure=-1.0,
@@ -533,13 +532,13 @@ def test_highlights_section_bypass_is_independent_from_tone() -> None:
     active_output = _apply_hdr_adjustments(image, active)
     bypassed_output = _apply_hdr_adjustments(image, bypassed)
 
-    np.testing.assert_allclose(active_output[0, 0, 0] * 100.0 / 0.18, 1000.0, rtol=3e-5)
-    np.testing.assert_allclose(bypassed_output[0, 0, 0] * 100.0 / 0.18, 2000.0, rtol=3e-5)
+    np.testing.assert_allclose(active_output[0, 0, 0] * 203.0 / 0.18, 1000.0, rtol=3e-5)
+    np.testing.assert_allclose(bypassed_output[0, 0, 0] * 203.0 / 0.18, 2000.0, rtol=3e-5)
 
 
 def test_peak_fit_path_to_white_caps_saturated_peak_channels() -> None:
     image = np.array([[[0.0, 0.0, 3.0], [50.0, 5.0, 2.0]]], dtype=np.float32)
-    source_peak_nits = float(image.max() * 100.0 / 0.18)
+    source_peak_nits = float(image.max() * 203.0 / 0.18)
     preserved = _compress_scene_highlights(
         image,
         400.0,
@@ -557,22 +556,21 @@ def test_peak_fit_path_to_white_caps_saturated_peak_channels() -> None:
         color_handling="path_to_white",
     )
 
-    assert preserved.max() > 1.8
-    assert neutralized[0, 0].max() <= 1.8 + 2e-5
-    assert neutralized[0, 1].max() <= 1.8 + 2e-5
-    np.testing.assert_allclose(neutralized[0, 1], [1.8, 1.8, 1.8], rtol=3e-5, atol=3e-5)
+    target_linear = 1000.0 * 0.18 / 203.0
+    assert preserved.max() > target_linear
+    assert neutralized[0, 0].max() <= target_linear + 2e-5
+    assert neutralized[0, 1].max() <= target_linear + 2e-5
+    np.testing.assert_allclose(neutralized[0, 1], [target_linear] * 3, rtol=3e-5, atol=3e-5)
 
 
-def test_saved_softness_without_mode_migrates_to_soft_ceiling() -> None:
-    migrated = HDRAdjustments(highlight_compression_softness=60.0)
-    assert migrated.highlight_compression_mode == "soft_ceiling"
+def test_softness_without_mode_does_not_activate_compression() -> None:
+    authored = HDRAdjustments(highlight_compression_softness=60.0)
+    assert authored.highlight_compression_mode == "off"
 
 
-def test_legacy_rolloff_payload_migrates_without_activating_highlight_compression() -> None:
-    migrated = HDRAdjustments(highlight_rolloff=0.5, highlight_rolloff_start_nits=500.0)
-    assert migrated.highlight_compression_softness == 0.0
-    assert migrated.highlight_compression_start_nits == 500.0
-    assert "highlight_rolloff" not in migrated.model_dump()
+def test_removed_rolloff_payload_is_rejected_without_migration() -> None:
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+        HDRAdjustments(highlight_rolloff=0.5, highlight_rolloff_start_nits=500.0)
 
 
 def test_highlight_compression_start_and_target_are_neutral_until_softness_changes() -> None:
@@ -640,12 +638,14 @@ def test_hdr_section_bypass_retains_settings_but_removes_render_effect() -> None
     bypassed = AdjustmentState(
         hdr=HDRAdjustments(
             tone_section_enabled=False,
+            highlight_section_enabled=False,
             tone_equalizer_section_enabled=False,
             color_section_enabled=False,
             primaries_section_enabled=False,
             curves_section_enabled=False,
             exposure=2,
-            highlight_rolloff=2,
+            highlight_compression_mode="soft_ceiling",
+            highlight_compression_softness=100,
             shadow_lift=0.4,
             tone_equalizer_nodes=[
                 {"input_ev": -6, "adjustment_ev": 1},
@@ -751,10 +751,10 @@ def test_sdr_color_section_bypass_is_independent_of_hdr_color() -> None:
     )
 
 
-def test_single_hdr_highlight_rolloff_step_is_gradual() -> None:
+def test_single_hdr_highlight_compression_step_is_gradual() -> None:
     image = np.ones((1, 1, 3), dtype=np.float32) * 1000.0
-    baseline = _apply_hdr_adjustments(image, AdjustmentState(hdr=HDRAdjustments(highlight_rolloff=0.25)))
-    stepped = _apply_hdr_adjustments(image, AdjustmentState(hdr=HDRAdjustments(highlight_rolloff=0.30)))
+    baseline = _apply_hdr_adjustments(image, AdjustmentState(hdr=HDRAdjustments(highlight_compression_mode="soft_ceiling", highlight_compression_softness=25)))
+    stepped = _apply_hdr_adjustments(image, AdjustmentState(hdr=HDRAdjustments(highlight_compression_mode="soft_ceiling", highlight_compression_softness=30)))
 
     assert stepped[0, 0, 0] / baseline[0, 0, 0] > 0.9
 

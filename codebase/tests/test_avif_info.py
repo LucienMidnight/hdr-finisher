@@ -60,7 +60,7 @@ def test_sample_avif_contains_expected_gain_map_metadata() -> None:
 @pytest.mark.skipif(resolve_binary("avifenc") is None or resolve_binary("avifdec") is None, reason="AVIF tools are not available")
 def test_hdr_preview_avif_is_pq_bt2020_without_gain_map(tmp_path: Path) -> None:
     image = build_hdr_test_pattern(width=96, height=54)
-    adjustments = AdjustmentState(hdr=HDRAdjustments(highlight_rolloff=0))
+    adjustments = AdjustmentState(hdr=HDRAdjustments())
     body, media_type = render_preview_bytes(image, adjustments, PreviewKind.HDR, long_edge=96)
     assert media_type == "image/avif"
     preview_path = tmp_path / "preview.avif"

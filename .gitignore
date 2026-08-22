@@ -18,7 +18,10 @@ Thumbs.db
 # Local Codex repository instructions
 AGENTS.md
 design-qa.md
-docs/testing/
+docs/testing/*
+!docs/testing/Exporter_Capability_Table.md
+!docs/testing/Golden_Pipeline_Test_Strategy.md
+!docs/testing/HDR_Reference_White_203_Release_Qualification_2026-08-22.md
 
 # Build / runtime outputs
 codebase/exports/

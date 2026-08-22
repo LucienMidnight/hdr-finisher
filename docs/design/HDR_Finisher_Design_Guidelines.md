@@ -235,7 +235,7 @@ HDR exposure-band colors are shared by the False Color key and the curve graph. 
 - HDR point selection uses the exposure-band fill plus the selected ring. SDR point selection uses `--curve-selected`; SDR endpoints use `--curve-endpoint`, and other SDR points use `--curve-neutral`.
 - A displaced point carries the shared return-to-home cue on the side facing the identity line: below a point that is above identity, and above a point that is below identity.
 - HDR nit labels include the `0` endpoint, every visible exposure-band boundary, and the `10K` PQ endpoint. Labels may use two rows and must be collision-checked; do not hide the low-end labels to solve overlap.
-- The HDR horizontal domain must match processing: the 100-nit diffuse-white anchor is at 50%, the shadow half uses the production shadow-power mapping, and the upper half is logarithmic through 10,000 nits.
+- The HDR horizontal domain must match processing: the active project reference-white anchor (203 nits by default, or the controlled 100-nit workflow) is at 50%, the shadow half uses the production shadow-power mapping, and the upper half is logarithmic through 10,000 nits.
 
 Exposure Bands follows the same direct-manipulation principle with distinct mouse buttons:
 
@@ -247,13 +247,13 @@ Exposure Bands follows the same direct-manipulation principle with distinct mous
 
 ### Exposure Bands graph component tokens
 
-Exposure Bands is a stop-based equalizer centered on the 100-nit diffuse-white reference. Its canvas must use the equalizer tokens in `codebase/frontend/styles.css`.
+Exposure Bands is a stop-based equalizer centered on the active project reference white. Its canvas must use the equalizer tokens in `codebase/frontend/styles.css`.
 
 | Element | Token | Current value | Rule |
 |---|---|---:|---|
 | Minor grid | `--equalizer-grid` | `#ffffff14` | One-pixel EV grid |
 | Zero-adjustment grid | `--equalizer-grid-strong` | `#ece9df42` | Stronger horizontal home line at 0 EV adjustment |
-| Diffuse-white guide | `--equalizer-zero` | `#6e9fb552` | Vertical input guide at 0 EV / 100 nit |
+| Reference-white guide | `--equalizer-zero` | `#6e9fb552` | Vertical input guide at 0 EV / active project reference white |
 | PQ-limit guide | `--equalizer-pq` | `#d9b672a6` | Dashed vertical guide at 10,000 nits |
 | Zero-axis label | `--equalizer-axis` | `#9fbcca` | Emphasizes the 0 EV input label |
 | Active curve | `--equalizer-curve` | `#edf0f1` | Enabled equalizer curve stroke |
@@ -265,7 +265,7 @@ Exposure Bands is a stop-based equalizer centered on the 100-nit diffuse-white r
 | Default point radius | `--equalizer-node-radius` | `4` | Unselected band point |
 | Selected point radius | `--equalizer-selected-radius` | `5.5` | Selected band point |
 
-- Input brightness is labeled primarily in EV because band spacing, horizontal movement, and influence radius are stop-based. The selected-band readout pairs EV with nits, for example `0 EV · 100 nit`; the graph also labels the 10K PQ boundary.
+- Input brightness is labeled primarily in EV because band spacing, horizontal movement, and influence radius are stop-based. The selected-band readout pairs EV with nits, for example `0 EV · 203 nit` in a default project; the graph also labels the 10K PQ boundary.
 - The horizontal input domain runs from -6 EV through the 10,000-nit PQ boundary. The vertical adjustment domain runs from -2 EV to +2 EV with 0 EV as home.
 - Positive adjustments place a point above home and show the shared cue beneath it. Negative adjustments place a point below home and show the cue above it. Neutral points show no cue.
 - The selected influence wash communicates reach only; it must not obscure the curve, grid, points, or return-to-home cues.

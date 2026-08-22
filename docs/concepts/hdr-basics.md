@@ -8,23 +8,22 @@ HDR images can describe a wider difference between ordinary surfaces and bright 
 
 Diffuse white represents an ordinary bright reflecting surface. HDR reserves values above it for light, reflections, and unusually bright surfaces.
 
-HDR Finisher uses 100 nits as diffuse white in its authoring convention. That does not mean every white object must be exactly 100 nits; it is the reference around which the tools and scopes are organized.
+HDR Finisher maps ordinary project white to 203 nits by default. A separate 100-nit preset is available only for intentional controlled workflows. That does not mean every white object must equal the reference; it is the point around which project tools and scopes are organized.
 
 ### 2. A stop is a doubling of light
 
 | Stops above diffuse white | Reference luminance |
 |---:|---:|
-| 0 | 100 nits |
-| 1 | 200 nits |
-| 2 | 400 nits |
-| 3 | 800 nits |
-| 3.32 | about 1,000 nits |
-| 4 | 1,600 nits |
-| 5 | 3,200 nits |
-| 6 | 6,400 nits |
-| 6.64 | about 10,000 nits |
+| 0 | 203 nits |
+| 1 | 406 nits |
+| 2 | 812 nits |
+| 2.30 | about 1,000 nits |
+| 3 | 1,624 nits |
+| 4 | 3,248 nits |
+| 5 | 6,496 nits |
+| 5.62 | about 10,000 nits |
 
-Thinking in stops makes HDR less mysterious: the difference between 100 and 400 nits is two stops, not “300 brightness units.”
+Thinking in stops makes HDR less mysterious: the difference between 203 and 812 nits is two stops. In the controlled 100-nit preset, the familiar 100/200/400 sequence applies instead.
 
 ### 3. The display decides how much of the range it can show
 
@@ -95,7 +94,7 @@ An excellent HDR rendition with a poor SDR fallback is an incomplete delivery.
 ## Common misconceptions
 
 - **“My monitor says HDR, so it shows the file accurately.”** HDR signal acceptance does not guarantee peak output, contrast, gamut, or accurate tone tracking.
-- **“Anything above 100 nits should be clipped on a 100-nit display.”** A viewer can tone-map or apply only part of a gain map.
+- **“Anything above the selected reference white should be clipped.”** A viewer can tone-map or apply only part of a gain map.
 - **“A 10,000-nit PQ container means the image should peak at 10,000 nits.”** It only defines the available encoding range.
 - **“More nits always means better HDR.”** Black level, sustained brightness, local contrast, gamut, and accuracy also matter.
 - **“Scopes replace an HDR monitor.”** Scopes measure the signal; they cannot show the physical display result.

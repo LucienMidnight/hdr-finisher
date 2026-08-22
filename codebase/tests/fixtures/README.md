@@ -5,7 +5,7 @@ Fixtures in this directory must be deterministic, small enough to commit, and di
 Current checked-in fixtures:
 
 - `sdr_gradient.png`: small SDR bitmap for the Pillow loader path
-- `hdr_headroom.tiff`: float TIFF with values above 1.0 for true HDR classification
+- `hdr_headroom.tiff`: deterministic rw203-v1 float chart with exact black, near-black, 100/203/406/1000/over-range nit patches, saturated colors, and a log gradient
 - `linear_unconfirmed.exr`: scene-linear EXR with no values above 1.0 for the unconfirmed HDR path
 - `blender_linear_rec2020.exr`: 8 x 8 Blender 5.2 OpenEXR carrying `colorInteropID: lin_rec2020_scene`
 

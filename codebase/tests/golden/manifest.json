@@ -1,0 +1,40 @@
+{
+  "contract_version": "rw203-v1",
+  "schema_version": 3,
+  "authoring_anchor": 0.18,
+  "reference_white_presets_nits": [203, 100],
+  "default_reference_white_nits": 203,
+  "journeys": {
+    "synthetic_numerical_reference": {
+      "fixture": "tests/fixtures/hdr_headroom.tiff",
+      "recipes": ["neutral", "representative_grade"],
+      "required_tiers": ["pr", "nightly", "release"],
+      "patches_nits": [0, 0.1, 100, 203, 406, 1000, 12000]
+    },
+    "representative_real_photograph": {
+      "fixture": "tests/fixtures/representative_scene_linear.exr",
+      "recipes": ["neutral", "representative_grade"],
+      "required_tiers": ["nightly", "release"],
+      "required_fixture": false,
+      "external_qualification_reason": "A redistribution-approved RAW/DNG or scene-linear EXR has not been committed."
+    },
+    "authored_gain_map_photograph": {
+      "fixture": "samples/hdr_reference.avif",
+      "recipes": ["neutral", "representative_grade"],
+      "required_tiers": ["nightly", "release"],
+      "required_fixture": true
+    }
+  },
+  "exporters": ["jpeg_ultrahdr", "avif_gain_map", "jpegxl_hdr"],
+  "tolerances": {
+    "analytical_relative": 0.00005,
+    "analytical_absolute_nits": 0.02,
+    "reference_scale_ratio": {"expected": 2.03, "absolute": 0.00005},
+    "cpu_webgpu_max_linear": 0.002,
+    "jpeg_ultrahdr": {"median_relative_luminance": 0.03, "p99_relative_luminance": 0.08, "minimum_psnr_db": 32.0, "two_generation_extra_drift": 0.04},
+    "avif_gain_map": {"median_relative_luminance": 0.025, "p99_relative_luminance": 0.06, "minimum_psnr_db": 34.0, "two_generation_extra_drift": 0.03},
+    "jpegxl_hdr": {"median_relative_luminance": 0.01, "p99_relative_luminance": 0.025, "minimum_psnr_db": 40.0, "two_generation_extra_drift": 0.015},
+    "authored_sdr_base": {"mode": "pixel_preserved_before_user_sdr_edits"},
+    "performance": {"warm_runs": 5, "statistic": "median", "release_failure_policy": "pinned-machine approved envelope only"}
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "captured_at": "2026-08-22",
+  "purpose": "Diagnostic before-state only; not a correctness oracle for rw203-v1.",
+  "schema_version": 2,
+  "implicit_reference_white_nits": 100,
+  "backend_collection": {"tests": 598},
+  "backend_result": {"passed": 572, "failed": 24, "skipped": 2},
+  "known_environment_failures": {
+    "imagecodecs_missing": 21,
+    "lensfunpy_missing": 1,
+    "avif_high_bit_decode_requires_imagecodecs": 2,
+    "private_linear_dng_decoder_missing": 1
+  },
+  "capabilities": {
+    "jpeg_ultrahdr": "available/libultrahdr-1.4.0",
+    "avif_gain_map": "available/libavif-tools-1.4.1",
+    "jpegxl": "unavailable-system-python-imagecodecs-missing",
+    "electron": "43.4.0"
+  },
+  "expected_anchor_mapping": {"scene_linear": 0.18, "nits": 100},
+  "expected_canvas_scale": 0.4926108374
+}

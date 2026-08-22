@@ -1,0 +1,28 @@
+{
+  "recipe_version": 1,
+  "name": "representative_grade",
+  "random_seed": 271828,
+  "global_adjustments": {
+    "hdr": {
+      "exposure": 0.35,
+      "white_balance_kelvin": 6100,
+      "tint": 0.04,
+      "highlight_compression_start_nits": 400,
+      "highlight_compression_target_nits": 1000,
+      "highlight_compression_mode": "soft_ceiling",
+      "highlight_compression_softness": 35,
+      "saturation": 0.08
+    },
+    "sdr": {"exposure": -0.1, "highlight_recovery": 0.75, "saturation": 0.04},
+    "shared": {"geometry": {"crop": {"x": 0.025, "y": 0.025, "width": 0.95, "height": 0.95}}}
+  },
+  "output_finishing": {"resize_mode": "long_edge", "long_edge": 1600, "prevent_enlargement": true, "sharpening": "standard"},
+  "local_adjustments": [
+    {
+      "name": "Specular control",
+      "mask": {"operator": "leaf", "leaf": {"type": "luminance_range", "fade_in_start_ev": 1.0, "full_start_ev": 2.0, "full_end_ev": 8.0, "fade_out_end_ev": 10.0}},
+      "hdr_grade": {"exposure": -0.2},
+      "sdr_grade": {"exposure": -0.1}
+    }
+  ]
+}

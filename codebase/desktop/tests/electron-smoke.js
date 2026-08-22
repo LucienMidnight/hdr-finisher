@@ -84,6 +84,19 @@ async function main() {
       }
     }
 
+    const referenceWhiteContract = await window.evaluate(() => ({
+      selected: document.querySelector("#hdr-reference-white")?.value,
+      bandAnchor: document.querySelector("#false-color-band-anchor")?.value,
+      ceiling: document.querySelector("#false-color-ceiling")?.value,
+      preflight: document.querySelector("#export-reference-white")?.textContent,
+    }));
+    assert.deepEqual(referenceWhiteContract, {
+      selected: "203",
+      bandAnchor: "project",
+      ceiling: "1000",
+      preflight: "HDR reference white: 203 nits",
+    });
+
     await window.locator("#file-input").setInputFiles(sourcePath);
     await window.waitForFunction(() => document.querySelector("#session-name")?.textContent.includes("sdr_gradient.png"));
     checkpoint("uploaded source ready");
@@ -165,6 +178,12 @@ async function main() {
     await window.waitForFunction(() => document.querySelector("#badge")?.textContent.includes("Project saved"));
     checkpoint("project saved");
     assert.equal(fs.existsSync(projectPath), true);
+    const savedProject = await window.evaluate(() => state.editDocument);
+    assert.equal(savedProject.schema_version, 3);
+    assert.equal(savedProject.hdr_reference_white_nits, 203);
+    assert.equal(savedProject.global_adjustments.shared.false_color_band_anchor, "project");
+    assert.equal(savedProject.global_adjustments.shared.false_color_ceiling_nits, 1000);
+    assert.equal(Object.hasOwn(savedProject.global_adjustments.shared, "overlay_preset"), false);
     assert.match(await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getTitle()), /electron-smoke\.hdrfinisher/);
 
     await electronApp.evaluate(({ dialog }, selectedPath) => {

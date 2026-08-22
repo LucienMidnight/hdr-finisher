@@ -72,7 +72,7 @@ a time-based reassurance; it is never used to disguise an unknown or stale phase
 ## 4. Pixel and color invariants
 
 - The authoritative HDR working image is H×W×3 `float32`, linear ACEScg.
-- The application convention is `0.18 == 100 nits`.
+- The v3 project convention is `0.18 == hdr_reference_white_nits`, with 203 nits default and an explicit 100-nit controlled preset. Absolute PQ is decoded to nits before project normalization; HLG and gain-map contracts remain format-specific.
 - An SDR reference, when available, is H×W×3 `float32`, linear sRGB in `[0, 1]`.
 - A decoder that already returns canonical ACEScg declares
   `decoder_normalized_to_acescg: true`. The generic loader then adopts that array without a second

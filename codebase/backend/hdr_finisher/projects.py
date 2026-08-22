@@ -69,6 +69,13 @@ def open_project(store: SessionStore, path: Path, source_path: Path | None = Non
             if PROJECT_STATE_NAME not in names or PROJECT_MANIFEST_NAME not in names:
                 raise ProjectError("The project container is missing required entries.")
             manifest = json.loads(archive.read(PROJECT_MANIFEST_NAME))
+            schema_version = manifest.get("schema_version")
+            if schema_version in {1, 2}:
+                raise ProjectError(
+                    f"Unsupported prototype project schema v{schema_version}. Migration is not supported; create a new v3 project."
+                )
+            if schema_version != 3:
+                raise ProjectError(f"Unsupported HDR Finisher project schema {schema_version!r}.")
             if manifest.get("contains_source_pixels") is not False:
                 raise ProjectError("Invalid project manifest.")
             document = EditDocument.model_validate_json(archive.read(PROJECT_STATE_NAME))
@@ -90,6 +97,7 @@ def open_project(store: SessionStore, path: Path, source_path: Path | None = Non
         original_filename=document.source.filename,
         owns_source_path=False,
         raw_import_settings=document.source.raw_import_settings,
+        hdr_reference_white_nits=document.hdr_reference_white_nits,
     )
     session = store.get(payload.session_id)
     if (
@@ -101,6 +109,10 @@ def open_project(store: SessionStore, path: Path, source_path: Path | None = Non
     session.adjustments = document.global_adjustments
     session.local_adjustments = document.local_adjustments
     session.interpretation_override = document.interpretation_override
+    session.hdr_reference_white_nits = document.hdr_reference_white_nits
+    session.color_context = session.color_context.__class__(document.hdr_reference_white_nits)
+    session.source_luminance = document.source.luminance
+    session.render_cache.set_color_context(session.color_context)
     session.durable_source_path = resolved_source
     session.edit_revision = 0
     session.dirty = False

@@ -95,7 +95,7 @@ def test_vectorized_waveform_matches_column_histogram_reference() -> None:
 
 def test_scope_prioritizes_tiny_highlight_peak_and_normalization() -> None:
     image = np.full((32, 32, 3), 0.018, dtype=np.float32)
-    image[3, 5] = 7.2  # 4,000 reference nits on the neutral axis.
+    image[3, 5] = np.float32(4000.0 * 0.18 / 203.0)
     scope = build_scope(image, AdjustmentState(), PreviewKind.HDR)
 
     assert scope.peak_value == pytest.approx(4000.0, rel=1e-4)

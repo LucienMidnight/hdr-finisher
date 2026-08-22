@@ -55,6 +55,7 @@ def load_image(
     progress: Callable[[str, str], None] | None = None,
     cancelled: Callable[[], bool] | None = None,
     retained_session_bytes: int = 0,
+    hdr_reference_white_nits: int = 203,
 ) -> tuple[np.ndarray, SourceImageDescriptor, dict[str, Any], Any, np.ndarray | None]:
     suffix = path.suffix.lower()
     total_started = perf_counter()
@@ -181,8 +182,18 @@ def load_image(
             image,
             metadata.get("color_space"),
             metadata.get("transfer_function"),
+            hdr_reference_white_nits,
             cancelled=cancelled,
         )
+    if metadata.get("decoder_normalized_to_acescg") and not metadata.get("user_override"):
+        decoded_reference = metadata.get("decoder_reference_white_nits", metadata.get("reference_white_nits"))
+        if decoded_reference is not None and float(decoded_reference) != float(hdr_reference_white_nits):
+            normalized = normalized * np.float32(float(decoded_reference) / float(hdr_reference_white_nits))
+            metadata["project_normalization"] = {
+                "source_reference_white_nits": float(decoded_reference),
+                "project_reference_white_nits": int(hdr_reference_white_nits),
+                "preserves_absolute_luminance": True,
+            }
     linear_reference = (overrides or {}).get("linear_reference") or "scene_0_18"
     if linear_reference == "diffuse_white_1_0":
         if str(metadata.get("transfer_function") or "").upper() != "LINEAR":

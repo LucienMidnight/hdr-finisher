@@ -26,7 +26,7 @@ Use it for global placement, not to solve only one bright region.
 
 ### Contrast and Pivot
 
-Contrast expands or compresses tonal separation around Pivot. The HDR pivot is a scene-linear value; its neutral default is near `0.18`, the app’s 100-nit diffuse-white anchor.
+Contrast expands or compresses tonal separation around Pivot. The HDR pivot is a scene-linear value; its neutral default is near `0.18`, which maps to the active project HDR Reference White. New projects use 203 nits. See [HDR Reference White](hdr-reference-white.md).
 
 Changing contrast can also change apparent saturation and highlight placement. Recheck the scope after using it.
 
@@ -61,7 +61,7 @@ The source peak is measured at full resolution, but Standard preview scopes anal
 
 ## Exposure Bands
 
-The equalizer maps input scene brightness from -6 to +6 EV around diffuse white. `0 EV` equals 100 nits; +1 EV is 200 nits, +2 EV is 400 nits, and so on.
+The equalizer maps input scene brightness from -6 to +6 EV around project reference white. `0 EV` equals the selected 203- or 100-nit reference; each positive EV doubles that value.
 
 - Add or remove interior bands.
 - Move a band horizontally to target a different input brightness.
@@ -115,8 +115,8 @@ Curves are independent for HDR and SDR. Enable them and select Luma, Red, Green,
 
 The HDR curve domain places diffuse white at the midpoint:
 
-- Below 100 nits, the domain is linear relative to the `0.18` anchor.
-- Above 100 nits, it is logarithmic through the 10,000-nit PQ range.
+- Below the active project reference white, the domain is linear relative to the `0.18` anchor.
+- Above the active project reference white, it is logarithmic through the 10,000-nit PQ range.
 
 That makes the upper half useful for HDR stops rather than spending most of the graph on a small numerical interval. Curves use monotone cubic interpolation between 2–16 control points; endpoint x positions are fixed.
 

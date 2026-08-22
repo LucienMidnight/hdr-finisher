@@ -55,9 +55,16 @@ function assert(condition, message) {
         await toggle.click();
         assert(await toggle.getAttribute("aria-expanded") === "true", `${toggleId} did not expand at ${width}px.`);
         assert(await panel.isVisible(), `${panelId} did not become visible at ${width}px.`);
-        await page.waitForTimeout(160);
-        const transform = await toggle.evaluate((element) => getComputedStyle(element, "::before").transform);
-        assert(transform !== "none" && !transform.includes("1, 0, 0, 1"), `${toggleId} chevron did not rotate at ${width}px.`);
+        await page.waitForFunction((id) => {
+          const element = document.querySelector(`#${id}`);
+          const transform = element ? getComputedStyle(element, "::before").transform : "none";
+          return transform !== "none" && !transform.includes("1, 0, 0, 1");
+        }, toggleId);
+        const chevron = await toggle.evaluate((element) => {
+          const style = getComputedStyle(element, "::before");
+          return { transform: style.transform, mask: style.webkitMaskImage, width: style.width };
+        });
+        assert(chevron.transform !== "none" && !chevron.transform.includes("1, 0, 0, 1"), `${toggleId} chevron did not rotate at ${width}px: ${JSON.stringify(chevron)}`);
         await toggle.click();
         assert(await toggle.getAttribute("aria-expanded") === "false", `${toggleId} did not collapse at ${width}px.`);
         assert(await panel.isHidden(), `${panelId} did not become hidden at ${width}px.`);

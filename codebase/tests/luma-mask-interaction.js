@@ -76,22 +76,34 @@ async function redOverlayPixels(locator) {
       assert(await redOverlayPixels(overlay) > 100, "The authoritative luma mask was not painted into the viewport overlay.");
     }
 
-    const previewBox = await page.locator("#preview-canvas").boundingBox();
+    const previewBox = await overlay.boundingBox();
     assert(previewBox && previewBox.width > 100 && previewBox.height > 100, "The preview is unavailable for luma sampling.");
+    assert(await page.evaluate(() => !isLuminanceSamplingInitialized(firstMaskLeaf(selectedLocal().mask, "luminance_range"))), "A new luma mask was marked sampled before the first picker gesture.");
     const sampleResponse = page.waitForResponse((response) =>
       response.url().endsWith("/local-luminance-sample") && response.request().method() === "POST" && response.status() === 200,
     );
     const sampleCommit = page.waitForResponse((response) =>
-      response.url().includes("/edit-commands") && response.request().method() === "POST" && response.status() === 200,
+      response.url().includes("/edit-commands")
+        && response.request().method() === "POST"
+        && response.request().postDataJSON()?.commands?.some((command) => command.payload?.local?.mask?.leaf?.full_end_ev < 0),
     );
     // The former large range gizmo occupied this upper strip. It must now be
     // ordinary picker space rather than intercepting the gesture as a handle.
-    await page.mouse.click(previewBox.x + previewBox.width * 0.28, previewBox.y + previewBox.height * 0.14);
+    await overlay.click({ position: { x: previewBox.width * 0.28, y: previewBox.height * 0.14 } });
     const sampled = await (await sampleResponse).json();
-    await sampleCommit;
+    const sampleCommitResponse = await sampleCommit;
+    assert(sampleCommitResponse.status() === 200, `Luma sample commit failed: ${await sampleCommitResponse.text()}`);
+    const committedSampleLeaf = sampleCommitResponse.request().postDataJSON().commands[0].payload.local.mask.leaf;
+    assert(committedSampleLeaf.full_end_ev < 0, `Luma sample did not narrow the serialized range: ${JSON.stringify(committedSampleLeaf)}`);
+    await page.waitForFunction((sampleHigh) => {
+      const inputs = document.querySelectorAll(".luma-reference-range input");
+      return inputs.length === 2 && Number(inputs[1].value) <= sampleHigh + 0.02;
+    }, sampled.high_ev);
     const innerAfterAdd = await page.locator(".luma-reference-range input").evaluateAll((inputs) => [Number(inputs[0].value), Number(inputs[1].value)]);
+    const referenceWhite = await page.evaluate(() => state.editDocument.hdr_reference_white_nits);
+    const expectedSampleLow = Math.max(sampled.low_ev, Math.log2(0.1 / referenceWhite));
     assert(
-      Math.abs(innerAfterAdd[0] - sampled.low_ev) < 0.011 && Math.abs(innerAfterAdd[1] - sampled.high_ev) < 0.011,
+      Math.abs(innerAfterAdd[0] - expectedSampleLow) < 0.011 && Math.abs(innerAfterAdd[1] - sampled.high_ev) < 0.011,
       `First picker sample did not replace the initial bounds: ${JSON.stringify({ sampled, innerAfterAdd })}`,
     );
 
@@ -102,7 +114,7 @@ async function redOverlayPixels(locator) {
       response.url().includes("/edit-commands") && response.request().method() === "POST" && response.status() === 200,
     );
     await page.keyboard.down("Alt");
-    await page.mouse.click(previewBox.x + previewBox.width * 0.28, previewBox.y + previewBox.height * 0.14);
+    await overlay.click({ position: { x: previewBox.width * 0.28, y: previewBox.height * 0.14 } });
     await page.keyboard.up("Alt");
     await removeResponse;
     await removeCommit;
@@ -122,8 +134,9 @@ async function redOverlayPixels(locator) {
     await page.waitForTimeout(150);
     assert(await secondBand.getAttribute("aria-pressed") === "true", "Clicking a false-color band did not select it.");
     const presetBounds = await page.locator(".luma-reference-range input").evaluateAll((inputs) => [Number(inputs[0].value), Number(inputs[1].value)]);
-    assert(Math.abs(presetBounds[0] - Math.log2(10 / 100)) < 0.02, `The preset lower bound is wrong: ${presetBounds[0]}`);
-    assert(Math.abs(presetBounds[1] - Math.log2(25 / 100)) < 0.02, `The preset upper bound is wrong: ${presetBounds[1]}`);
+    const presetBand = await page.evaluate(() => falseColorBands()[1]);
+    assert(Math.abs(presetBounds[0] - Math.log2(presetBand.lower / referenceWhite)) < 0.02, `The preset lower bound is wrong: ${presetBounds[0]}`);
+    assert(Math.abs(presetBounds[1] - Math.log2(presetBand.upper / referenceWhite)) < 0.02, `The preset upper bound is wrong: ${presetBounds[1]}`);
     const initialRefinement = await page.locator(".luma-refine-range input").evaluateAll((inputs) => [Number(inputs[0].value), Number(inputs[1].value)]);
     assert(initialRefinement[0] === 0 && initialRefinement[1] === 1, `A quick range did not reset refinement: ${JSON.stringify(initialRefinement)}`);
 

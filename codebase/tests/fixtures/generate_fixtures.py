@@ -29,18 +29,16 @@ def build_png_fixture() -> None:
 
 
 def build_hdr_tiff_fixture() -> None:
-    width, height = 20, 14
-    x = np.linspace(0.05, 3.5, width, dtype=np.float32)
-    y = np.linspace(0.2, 1.8, height, dtype=np.float32)
-    xx, yy = np.meshgrid(x, y)
-    rgb = np.stack(
-        [
-            xx,
-            yy,
-            np.sqrt(xx * yy),
-        ],
-        axis=-1,
-    ).astype(np.float32)
+    width, height = 70, 40
+    rgb = np.zeros((height, width, 3), dtype=np.float32)
+    patch_nits = np.array([0.0, 0.1, 100.0, 203.0, 406.0, 1000.0, 12000.0], dtype=np.float32)
+    for index, nits in enumerate(patch_nits):
+        rgb[:14, index * 10:(index + 1) * 10] = np.float32(nits * 0.18 / 203.0)
+    colors = np.array([[1.4, 0.02, 0.02], [0.02, 1.4, 0.02], [0.02, 0.02, 1.4], [2.0, 0.4, 1.6]], dtype=np.float32)
+    for index, color in enumerate(colors):
+        rgb[15:27, index * 17:(index + 1) * 17] = color
+    gradient = np.geomspace(0.00001, 12000.0 * 0.18 / 203.0, width, dtype=np.float32)
+    rgb[28:] = gradient[None, :, None]
     tifffile.imwrite(FIXTURES_DIR / "hdr_headroom.tiff", rgb)
 
 

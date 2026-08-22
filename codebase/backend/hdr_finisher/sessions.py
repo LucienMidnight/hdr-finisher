@@ -11,6 +11,7 @@ from uuid import uuid4
 import numpy as np
 
 from .capabilities import probe_capabilities
+from .color_context import DEFAULT_HDR_REFERENCE_WHITE_NITS, RenderColorContext, scene_linear_to_nits
 from .loader import load_image
 from .metadata import extract_metadata
 from .models import (
@@ -25,10 +26,12 @@ from .models import (
     RawImportSettings,
     SessionPayload,
     SourceImageDescriptor,
+    SourceLuminanceDescriptor,
     SourceInterpretationOverride,
     SourceReference,
 )
 from .render_cache import SessionRenderCache
+from .source_luminance import describe_source_luminance
 
 
 class RevisionConflictError(RuntimeError):
@@ -58,6 +61,8 @@ class LoadedSession:
     source: SourceImageDescriptor
     analysis: HDRAnalysis
     metadata: dict
+    hdr_reference_white_nits: int = DEFAULT_HDR_REFERENCE_WHITE_NITS
+    source_luminance: SourceLuminanceDescriptor | None = None
     owns_source_path: bool = False
     durable_source_path: Path | None = None
     adjustments: AdjustmentState = field(default_factory=AdjustmentState)
@@ -77,6 +82,12 @@ class LoadedSession:
     render_cache: SessionRenderCache = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
+        self.color_context = RenderColorContext(self.hdr_reference_white_nits)
+        self.hdr_reference_white_nits = self.color_context.hdr_reference_white_nits
+        if self.source_luminance is None:
+            self.source_luminance = describe_source_luminance(
+                self.source, self.metadata, has_authored_sdr=self.sdr_reference_image is not None
+            )
         self.source_fingerprint_sha256 = _sha256_file(self.source_path)
         self.source_byte_size = self.source_path.stat().st_size
         if self.sdr_reference_image is not None:
@@ -93,7 +104,7 @@ class LoadedSession:
                 "sdr_ev": 0.0 if self.sdr_reference_image is not None else recommended_exposure,
                 "method": "bounded_median_and_p90",
             }
-        self.render_cache = SessionRenderCache(self.image, self.sdr_reference_image)
+        self.render_cache = SessionRenderCache(self.image, self.sdr_reference_image, color_context=self.color_context)
         self._sync_highlight_source_peaks()
 
     def _sync_highlight_source_peaks(self) -> None:
@@ -106,7 +117,7 @@ class LoadedSession:
             measured = self.analysis.robust_peak_luma_linear if robust else self.analysis.peak_luma_linear
         if measured is None:
             measured = self.analysis.peak_linear
-        source_peak_nits = max(1.0, float(measured) * 100.0 / 0.18)
+        source_peak_nits = max(1.0, float(scene_linear_to_nits(float(measured), self.hdr_reference_white_nits)))
         hdr.highlight_compression_source_peak_nits = source_peak_nits
 
     def source_reference(self) -> SourceReference:
@@ -119,10 +130,12 @@ class LoadedSession:
             durable_path=str(durable.resolve()) if durable is not None else None,
             byte_size=self.source_byte_size,
             raw_import_settings=self.raw_import_settings,
+            luminance=self.source_luminance,
         )
 
     def edit_document(self) -> EditDocument:
         return EditDocument(
+            hdr_reference_white_nits=self.hdr_reference_white_nits,
             source=self.source_reference(),
             interpretation_override=self.interpretation_override,
             global_adjustments=self.adjustments,
@@ -167,6 +180,7 @@ class SessionStore:
         owns_source_path: bool = False,
         raw_import_settings: RawImportSettings | None = None,
         progress: Callable[[str, str], None] | None = None,
+        hdr_reference_white_nits: int = DEFAULT_HDR_REFERENCE_WHITE_NITS,
     ) -> SessionPayload:
         session = self.prepare_session(
             source_path,
@@ -174,6 +188,7 @@ class SessionStore:
             owns_source_path=owns_source_path,
             raw_import_settings=raw_import_settings,
             progress=progress,
+            hdr_reference_white_nits=hdr_reference_white_nits,
         )
         return self.activate_session(session)
 
@@ -186,6 +201,7 @@ class SessionStore:
         interpretation_override: SourceInterpretationOverride | None = None,
         progress: Callable[[str, str], None] | None = None,
         cancelled: Callable[[], bool] | None = None,
+        hdr_reference_white_nits: int = DEFAULT_HDR_REFERENCE_WHITE_NITS,
     ) -> LoadedSession:
         try:
             resolved_raw_settings = raw_import_settings or RawImportSettings()
@@ -201,6 +217,7 @@ class SessionStore:
                 progress=progress,
                 cancelled=cancelled,
                 retained_session_bytes=self._retained_session_bytes(),
+                hdr_reference_white_nits=hdr_reference_white_nits,
             )
             lens_result = metadata.get("lens_correction") or {}
             if (
@@ -242,6 +259,7 @@ class SessionStore:
                 source=source,
                 analysis=analysis,
                 metadata=metadata,
+                hdr_reference_white_nits=hdr_reference_white_nits,
                 owns_source_path=owns_source_path,
                 interpretation_override=resolved_override,
                 raw_import_settings=resolved_raw_settings,
@@ -275,6 +293,9 @@ class SessionStore:
             developed.adjustments = current.adjustments
             developed.local_adjustments = current.local_adjustments
             developed.interpretation_override = current.interpretation_override
+            developed.hdr_reference_white_nits = current.hdr_reference_white_nits
+            developed.color_context = current.color_context
+            developed.source_luminance = current.source_luminance
             developed.edit_revision = current.edit_revision + 1
             developed.dirty = True
             developed.undo_history = current.undo_history
@@ -336,6 +357,8 @@ class SessionStore:
                 session.adjustments.model_copy(deep=True),
                 [item.model_copy(deep=True) for item in session.local_adjustments],
                 session.interpretation_override.model_copy(deep=True),
+                session.hdr_reference_white_nits,
+                session.color_context,
                 session.edit_revision,
                 session.dirty,
                 list(session.undo_history),
@@ -352,12 +375,15 @@ class SessionStore:
                     session.adjustments,
                     session.local_adjustments,
                     session.interpretation_override,
+                    session.hdr_reference_white_nits,
+                    session.color_context,
                     session.edit_revision,
                     session.dirty,
                     session.undo_history,
                     session.redo_history,
                     session.history_bytes,
                 ) = original
+                session.render_cache.set_color_context(session.color_context)
                 session.render_cache.clear_adjusted()
                 raise
             return session.edit_state()
@@ -403,11 +429,28 @@ class SessionStore:
                 )
             session.adjustments = document.global_adjustments
             session.local_adjustments = document.local_adjustments
+            session.hdr_reference_white_nits = document.hdr_reference_white_nits
+            session.color_context = RenderColorContext(document.hdr_reference_white_nits)
+            session.render_cache.set_color_context(session.color_context)
             session.render_cache.clear_adjusted()
             return EditCommand(
                 expected_revision=current_revision,
                 command_type="replace_document",
                 payload={"document": previous.model_dump(mode="json")},
+            )
+
+        if command_type == "set_hdr_reference_white":
+            previous = session.hdr_reference_white_nits
+            context = RenderColorContext(payload.get("hdr_reference_white_nits"))
+            session.hdr_reference_white_nits = context.hdr_reference_white_nits
+            session.color_context = context
+            session.render_cache.set_color_context(context)
+            if session.adjustments.hdr.highlight_compression_peak_measurement != "manual":
+                session._sync_highlight_source_peaks()
+            return EditCommand(
+                expected_revision=current_revision,
+                command_type="set_hdr_reference_white",
+                payload={"hdr_reference_white_nits": previous},
             )
 
         if command_type == "set_global_adjustments":
@@ -516,12 +559,16 @@ class SessionStore:
                 },
                 raw_import_settings=session.raw_import_settings,
                 retained_session_bytes=self._retained_session_bytes(),
+                hdr_reference_white_nits=session.hdr_reference_white_nits,
             )
             source.filename = original_filename
             session.image = image
             session.sdr_reference_image = sdr_reference_image
             session.source = source
             session.metadata = metadata
+            session.source_luminance = describe_source_luminance(
+                source, metadata, has_authored_sdr=sdr_reference_image is not None
+            )
             session.analysis = analysis
             session.interpretation_override = override
             if session.adjustments.hdr.highlight_compression_peak_measurement != "manual":

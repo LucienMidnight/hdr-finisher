@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from .color import acescg_to_linear_srgb, linear_srgb_to_acescg, rgb_primaries_adjustment_matrix
+from .color_context import RenderColorContext, nits_to_scene_linear, scene_linear_to_nits
 from .finishing import apply_geometry
 from .models import AdjustmentState, LocalAdjustment, PreviewKind, ToneMapper
 
@@ -24,7 +25,9 @@ def apply_adjustments(
     include_grain: bool = True,
     local_adjustments: list[LocalAdjustment] | None = None,
     compiled_local_masks: dict[str, np.ndarray] | None = None,
+    color_context: RenderColorContext | None = None,
 ) -> np.ndarray:
+    color_context = color_context or RenderColorContext()
     geometry = adjustments.shared.geometry
     fixed_source = apply_geometry(image, geometry)
     if local_adjustments and compiled_local_masks is None:
@@ -43,6 +46,7 @@ def apply_adjustments(
             local_adjustments=local_adjustments,
             fixed_source=fixed_source,
             compiled_local_masks=compiled_local_masks,
+            color_context=color_context,
         )
     if sdr_reference_image is not None:
         reference = apply_geometry(sdr_reference_image, geometry)
@@ -72,7 +76,9 @@ def _apply_hdr_adjustments(
     local_adjustments: list[LocalAdjustment] | None = None,
     fixed_source: np.ndarray | None = None,
     compiled_local_masks: dict[str, np.ndarray] | None = None,
+    color_context: RenderColorContext | None = None,
 ) -> np.ndarray:
+    color_context = color_context or RenderColorContext()
     hdr = adjustments.hdr
     result = image.astype(np.float32, copy=True)
     if hdr.tone_section_enabled:
@@ -88,10 +94,11 @@ def _apply_hdr_adjustments(
                 hdr.highlight_compression_target_nits,
                 hdr.highlight_compression_softness,
                 mode="peak_fit",
-                source_peak_nits=_tone_adjusted_source_peak_nits(hdr, tone_enabled=hdr.tone_section_enabled),
+                source_peak_nits=_tone_adjusted_source_peak_nits(hdr, tone_enabled=hdr.tone_section_enabled, color_context=color_context),
                 peak_detail=hdr.highlight_compression_peak_detail,
                 bias=hdr.highlight_compression_bias,
                 color_handling=hdr.highlight_compression_color_handling,
+                reference_white_nits=color_context.hdr_reference_white_nits,
             )
         elif hdr.highlight_compression_mode == "soft_ceiling":
             result = _compress_scene_highlights(
@@ -100,6 +107,7 @@ def _apply_hdr_adjustments(
                 hdr.highlight_compression_target_nits,
                 hdr.highlight_compression_softness,
                 mode="soft_ceiling",
+                reference_white_nits=color_context.hdr_reference_white_nits,
             )
     if hdr.color_section_enabled:
         result = _apply_hdr_color(result, hdr)
@@ -196,12 +204,13 @@ def _apply_hdr_base_adjustments(image: np.ndarray, adjustments: AdjustmentState)
     return result
 
 
-def _tone_adjusted_source_peak_nits(hdr: object, *, tone_enabled: bool = True) -> float:
+def _tone_adjusted_source_peak_nits(hdr: object, *, tone_enabled: bool = True, color_context: RenderColorContext | None = None) -> float:
     """Predict the measured source peak after controls preceding Peak Fit."""
     peak = max(float(getattr(hdr, "highlight_compression_source_peak_nits", 1000.0)), 1.0)
     if not tone_enabled:
         return peak
-    peak_linear = peak * 0.18 / 100.0 * (2.0 ** float(getattr(hdr, "exposure", 0.0)))
+    context = color_context or RenderColorContext()
+    peak_linear = float(nits_to_scene_linear(peak, context.hdr_reference_white_nits)) * (2.0 ** float(getattr(hdr, "exposure", 0.0)))
     shadow_lift = float(getattr(hdr, "shadow_lift", 0.0))
     if shadow_lift != 0.0:
         lift_factor = float(np.clip(shadow_lift * (1.0 - np.clip(peak_linear, 0.0, 1.0)), None, 1.0))
@@ -211,7 +220,7 @@ def _tone_adjusted_source_peak_nits(hdr: object, *, tone_enabled: bool = True) -
         pivot = max(float(getattr(hdr, "contrast_pivot", 0.1845)), 1e-6)
         stops = np.log2(max(peak_linear, 1e-8) / pivot)
         peak_linear = pivot * float(np.exp2(np.clip(stops * (2.0 ** contrast), -32.0, 32.0)))
-    return max(1.0, peak_linear * 100.0 / 0.18)
+    return max(1.0, float(scene_linear_to_nits(peak_linear, context.hdr_reference_white_nits)))
 
 
 def _apply_sdr_adjustments(
@@ -572,11 +581,6 @@ def _apply_sdr_highlight_recovery(image: np.ndarray, strength: float) -> np.ndar
     return result * ratio[..., None]
 
 
-def _rolloff_scene_highlights(image: np.ndarray, strength: float, start_nits: float = 400.0) -> np.ndarray:
-    """Compatibility wrapper for the former 0..2 highlight-rolloff control."""
-    return _compress_scene_highlights(image, start_nits, 1000.0, max(0.0, strength) * 50.0)
-
-
 def _compress_scene_highlights(
     image: np.ndarray,
     start_nits: float = 400.0,
@@ -588,6 +592,7 @@ def _compress_scene_highlights(
     peak_detail: float = 35.0,
     bias: float = 0.0,
     color_handling: str = "preserve_color",
+    reference_white_nits: int = 203,
 ) -> np.ndarray:
     """Compress luminance above ``start_nits`` smoothly toward ``target_nits``."""
     if mode == "off" or (mode == "soft_ceiling" and softness <= 0.0):
@@ -601,10 +606,10 @@ def _compress_scene_highlights(
         if grouped_channels
         else positive_luma
     )
-    start = np.float32(max(start_nits, 1.0) * 0.18 / 100.0)
-    target = np.float32(max(target_nits, start_nits + 1.0) * 0.18 / 100.0)
+    start = np.float32(nits_to_scene_linear(max(start_nits, 1.0), reference_white_nits))
+    target = np.float32(nits_to_scene_linear(max(target_nits, start_nits + 1.0), reference_white_nits))
     if mode == "peak_fit":
-        peak = np.float32(max(source_peak_nits, target_nits) * 0.18 / 100.0)
+        peak = np.float32(nits_to_scene_linear(max(source_peak_nits, target_nits), reference_white_nits))
         if peak <= target:
             return image
         start_stop = float(np.log2(start))

@@ -368,6 +368,19 @@ output {
   min-width: 0;
 }
 
+.reference-white-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.reference-white-control select {
+  max-width: 190px;
+}
+
 .pipeline-chip,
 .capability-chip {
   padding: 6px 8px;

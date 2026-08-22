@@ -22,6 +22,7 @@ Apple’s current general requirements are described in [Play HDR video on Mac](
 4. Disable automatic brightness during a controlled session when the selected mode permits it.
 5. Use a stable physical brightness or reference-mode setting.
 6. Keep the browser window fully on the selected HDR display.
+7. Connect external displays to power and use a cable/adapter, resolution, refresh rate, and manufacturer HDR/Auto mode that preserve the macOS **High Dynamic Range** switch.
 
 True Tone intentionally adapts color to ambient light, while Night Shift makes the display warmer. Both are valuable viewing features but make a fixed D65-oriented judgment impossible. Apple documents them in [Use True Tone on Mac](https://support.apple.com/en-ae/102147) and [Use Night Shift on your Mac](https://support.apple.com/en-gb/102191).
 
@@ -49,6 +50,8 @@ The repository’s automated proofing and physical evidence are Chromium-focused
 - Compare the exported file on both HDR and SDR displays or devices.
 
 The deterministic Chrome Proof remains useful on macOS, but **Auto** cannot use native macOS display telemetry. Select a fixed target such as 400, 500, 600, or 1,000 nits based on the display’s credible capability.
+
+macOS does not expose the same user-facing SDR-white slider as Windows. Do not infer project reference white from display brightness, an XDR preset, EDR headroom, or an external monitor setting. New projects still default to 203 nits independently.
 
 ## Current macOS gaps
 

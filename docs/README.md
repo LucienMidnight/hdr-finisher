@@ -2,7 +2,7 @@
 
 This manual is organized by what you are trying to do. You do not need to understand color science before using HDR Finisher, but the technical detail is available when a source, display, or delivery pipeline needs closer control.
 
-Documentation reflects the active implementation as of **August 12, 2026**. Browser, operating-system, and display behavior can change; dated platform guidance links to first-party sources.
+Documentation reflects the active implementation as of **August 22, 2026**. Browser, operating-system, and display behavior can change; dated platform guidance links to first-party sources.
 
 ## Choose a path
 
@@ -46,6 +46,8 @@ Documentation reflects the active implementation as of **August 12, 2026**. Brow
 
 - [Install and run](getting-started/install-and-run.md)
 - [Import and metadata](user-guide/import.md)
+- [Projects and schema](user-guide/projects.md)
+- [HDR Reference White](user-guide/hdr-reference-white.md)
 - [Viewer, scopes, and overlays](user-guide/viewer-and-analysis.md)
 - [HDR grading](user-guide/grade-hdr.md)
 - [SDR fallback grading](user-guide/grade-sdr.md)

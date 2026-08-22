@@ -18,11 +18,11 @@ Peak Fit is the normal mastering control when the user needs a defined endpoint.
 
 ## Units and reference white
 
-The app defines scene-linear ACEScg `0.18` as 100 nits. Conversion is:
+The app defines scene-linear ACEScg `0.18` as the selected project HDR Reference White (`R`, 203 nits by default or 100 nits in the controlled workflow). Conversion is:
 
 ```text
-linear = nits * 0.18 / 100
-nits   = linear * 100 / 0.18
+linear = nits * 0.18 / R
+nits   = linear * R / 0.18
 ```
 
 Start, Target Peak, and measured/manual source peaks use this convention. Curve construction happens in `log2(linear)` space.
@@ -151,7 +151,7 @@ Private photographs remain manual corpus material under `codebase/local-test-med
 ## Compatibility rules
 
 - Do not rename the serialized `path_to_white` enum without a project migration.
-- Do not change the `0.18 = 100 nits` convention locally.
+- Do not introduce a local reference-white conversion; use the shared render color context.
 - Do not turn Target Peak into a final-pipeline hard clamp; later creative stages remain independent.
 - Do not use display-referred gamut clipping as a substitute for scene-linear highlight compression.
 - Update this document whenever measurement, curve construction, stage order, GPU parameters, or endpoint guarantees change.

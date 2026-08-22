@@ -28,6 +28,11 @@ function stableScope(scope) {
       bias.dispatchEvent(new Event("input", { bubbles: true }));
       bias.dispatchEvent(new Event("change", { bubbles: true }));
     });
+    await page.waitForTimeout(500);
+    await page.evaluate(async () => {
+      await settlePreview("hdr");
+      await refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane: "hdr" });
+    });
     await page.waitForFunction(() => !state.globalEditDirty && !state.globalEditSyncPending && els.scopeFreshness.textContent === "Settled");
     const before = await page.evaluate(() => ({
       adjustments: JSON.parse(JSON.stringify(state.adjustments.hdr)),
@@ -42,6 +47,8 @@ function stableScope(scope) {
     await page.evaluate(async () => {
       await switchLane("sdr");
       await switchLane("hdr");
+      await settlePreview("hdr");
+      await refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane: "hdr" });
     });
     await page.waitForFunction(() => els.scopeFreshness.textContent === "Settled" && state.currentView === "hdr");
     const after = await page.evaluate(() => ({

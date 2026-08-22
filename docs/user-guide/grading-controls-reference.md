@@ -20,7 +20,7 @@ The sliders intentionally cover the useful everyday range. Some slider ranges be
 | Compression Bias | Moves compression pressure earlier or later without moving the endpoints. | Re-parameterizes the monotonic shoulder while preserving its endpoint anchors and requested peak slope. Negative and positive settings redistribute contrast in opposite directions. | -100 to +100 | **-100 to +100** |
 | Highlight Color | Chooses whether Peak Fit measures luminance or groups the brightest RGB channel into compression. | Preserve color anchors ACEScg luminance and retains channel ratios, so one channel can exceed Target Peak. Compress channels toward white measures the brightest channel, groups RGB into the shoulder, and neutralizes the endpoint at Target Peak. | Preserve color; Compress channels toward white | Same choices |
 | Contrast | Separates or compresses tones around Pivot. | Scales scene-referred stop distance from Pivot; positive values spread stops apart. | Narrow -0.5 to +0.5; Medium -0.75 to +0.75; Wide -1 to +1 | **-2 to +2** |
-| Pivot | Chooses the brightness that Contrast works around. | Uses a scene-linear ACEScg value; 0.18 is the 100-nit diffuse-white anchor. | 0.02 to 0.5, 0.75, or 1 depending on latitude | **0.0001 to 18**; 18 corresponds to the 10,000-nit reference level |
+| Pivot | Chooses the brightness that Contrast works around. | Uses a scene-linear ACEScg value; `0.18` is the active project reference-white anchor. | 0.02 to 0.5, 0.75, or 1 depending on latitude | **0.0001 to 18**; the displayed nit value depends on project reference white |
 | Shadow / Black | Seats blacks or reveals dark detail without moving highlights as much. | Applies a luma-weighted multiplier strongest near black and fading toward brighter values. | Narrow -0.2 to +0.2; Medium -0.3 to +0.3; Wide -0.5 to +0.5 | **-1 to +1** |
 
 Start and Target Peak are kept at least 1 nit apart. If a typed edit would cross them, HDR Finisher moves the other value just enough to retain a valid shoulder.
@@ -33,7 +33,7 @@ Start and Target Peak are kept at least 1 nit apart. If a typed edit would cross
 | Influence | Changes how much neighboring bands move during an edit. | Sets the smooth proportional editing radius around the selected node; it does not blur the rendered image. | `-` and `+` buttons, 0.25-EV steps | **0.25 to 12 EV** |
 | Curve Smoothing | Makes transitions between bands straighter or rounder. | Blends piecewise-linear interpolation with a monotonic cubic curve. | 0 to 1 | **0 to 1** |
 
-The graph covers -6 to +6 EV around the 100-nit diffuse-white reference. Its vertical ±2 EV limit is intentionally firm because a wider range would make the graph harder to read and greatly increase the chance of flattening adjacent tone populations.
+The graph covers -6 to +6 EV around the active project reference white. Its vertical ±2 EV limit is intentionally firm because a wider range would make the graph harder to read and greatly increase the chance of flattening adjacent tone populations.
 
 ## Color controls in HDR and SDR
 
@@ -102,7 +102,7 @@ These controls use the same ranges in each branch, but HDR works in the scene-re
 
 | Control | Purpose in plain English | How it works | Normal slider range | Direct-entry range |
 |---|---|---|---|---|
-| Curve Contrast | Makes the Filmic base rendition softer or punchier. | Changes the sigmoid power while keeping the 100-nit diffuse-white mapping anchored. | 0.5 to 1.5 | **0.5 to 1.5**; this is a firm shape domain |
+| Curve Contrast | Makes the Filmic base rendition softer or punchier. | Changes sigmoid power while keeping the generated SDR `0.18` anchor stable. | 0.5 to 1.5 | **0.5 to 1.5**; this is a firm shape domain |
 | Contrast Skew | Shifts Filmic separation toward shadows or highlights. | Changes shadow and highlight sigmoid powers in opposite directions. | -1 to +1 | **-1 to +1**; this is a firm shape domain |
 | Exposure | Makes the whole SDR fallback brighter or darker. | Multiplies light by `2^EV` before or around display mapping, depending on source type. | Narrow -2 to +2 EV; Medium -3 to +3 EV; Wide -4 to +4 EV | **-8 to +8 EV** |
 | Highlight Recovery | Recovers bright-end separation in the SDR rendition. | Adds a monotonic shoulder anchored around middle gray. | Narrow 0 to 1; Medium 0 to 1.5; Wide 0 to 2 | **0 to 4** |

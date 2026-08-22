@@ -153,8 +153,8 @@
       this.scopeResources.clear();
     }
 
-    async render(sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null) {
-      return this.renderTo(this.canvas, sessionId, lane, adjustments, curveSampler, longEdge, localAdjustments, editRevision, maskOverlay);
+    async render(sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203) {
+      return this.renderTo(this.canvas, sessionId, lane, adjustments, curveSampler, longEdge, localAdjustments, editRevision, maskOverlay, referenceWhiteNits);
     }
 
     setInstrumentationEnabled(enabled = true) {
@@ -182,7 +182,7 @@
       };
     }
 
-    async renderTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null) {
+    async renderTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203) {
       if (!this.available || !sessionId) return false;
       const renderStartedAt = performance.now();
       if (this.sessionId !== sessionId) this.resetSession(sessionId);
@@ -211,7 +211,7 @@
       if (!context) throw new Error("The comparison WebGPU canvas context is unavailable");
       const surface = this.configureSurface(canvas, context, lane === "hdr");
       const pipelines = this.pipelineFor(surface.format);
-      const params = buildParams(lane, adjustments, proxy.workingSpace, surface.hdr);
+      const params = buildParams(lane, adjustments, proxy.workingSpace, surface.hdr, referenceWhiteNits);
       const overlayIndex = maskOverlay?.localId
         ? activeLocals.findIndex((local) => local.id === maskOverlay.localId)
         : -1;
@@ -1230,8 +1230,8 @@
     return !Array.isArray(nodes) || nodes.every((node) => Math.abs(Number(node?.adjustment_ev) || 0) < 0.000001);
   }
 
-  function toneAdjustedHighlightPeakLinear(branch, toneEnabled) {
-    let peak = Math.max(1, Number(branch.highlight_compression_source_peak_nits) || 1000) * 0.18 / 100;
+  function toneAdjustedHighlightPeakLinear(branch, toneEnabled, referenceWhiteNits) {
+    let peak = Math.max(1, Number(branch.highlight_compression_source_peak_nits) || 1000) * 0.18 / referenceWhiteNits;
     if (!toneEnabled) return peak;
     peak *= Math.pow(2, Number(branch.exposure) || 0);
     const shadowLift = Number(branch.shadow_lift) || 0;
@@ -1248,8 +1248,9 @@
     return Math.max(0.0018, peak);
   }
 
-  function buildParams(lane, adjustments, workingSpace, hdrSurface) {
+  function buildParams(lane, adjustments, workingSpace, hdrSurface, referenceWhiteNits = 203) {
     const params = new Float32Array(PARAM_COUNT);
+    const projectReferenceWhite = Number(referenceWhiteNits) === 100 ? 100 : 203;
     const branch = adjustments[lane];
     const colorSource = branch;
     params[0] = lane === "hdr" ? 1 : 0;
@@ -1277,9 +1278,8 @@
     params[14] = baseEnabled ? branch.tone_skew || 0 : 0;
     params[15] = branch.curves_section_enabled !== false && !curveSetNeutral(branch) ? 1 : 0;
     params[16] = hdrSurface ? 1 : 0;
-    // The PQ preview/export transport tops out at 10,000 nits while the app's
-    // scene-linear 0.18 reference maps to 100 nits.
-    params[17] = 18;
+    // The transport limit is absolute; scene-linear scale follows the project.
+    params[17] = 10000 * 0.18 / projectReferenceWhite;
     params[18] = lane === "hdr" && branch.tone_equalizer_section_enabled !== false && !toneEqualizerNeutral(branch) ? 1 : 0;
     params[19] = lane === "hdr" ? Math.min(1, Math.max(0, branch.tone_equalizer_smoothing ?? 0.5)) : 0;
     const toneNodes = normalizedToneEqualizerNodes(branch.tone_equalizer_nodes);
@@ -1288,7 +1288,7 @@
       params[21 + index] = lane === "hdr" ? node.input_ev : 0;
       params[37 + index] = lane === "hdr" ? node.adjustment_ev : 0;
     });
-    params[53] = lane === "hdr" ? ((branch.highlight_compression_start_nits ?? 400) * 0.18 / 100) : 0;
+    params[53] = lane === "hdr" ? ((branch.highlight_compression_start_nits ?? 400) * 0.18 / projectReferenceWhite) : 0;
     params[54] = branch.lift_pivot ?? -2;
     params[55] = branch.lift_range ?? 4;
     params[56] = branch.gamma_pivot ?? 0;
@@ -1301,9 +1301,11 @@
     params[70] = colorActive ? colorSource.saturation || 0 : 0;
     params[71] = colorActive ? colorSource.vibrance || 0 : 0;
     params[72] = colorActive ? 1 : 0;
-    params[73] = lane === "hdr" ? ((branch.highlight_compression_target_nits ?? 1000) * 0.18 / 100) : 0;
+    params[73] = lane === "hdr" ? ((branch.highlight_compression_target_nits ?? 1000) * 0.18 / projectReferenceWhite) : 0;
     params[74] = highlightEnabled ? (branch.highlight_compression_mode === "peak_fit" ? 1 : branch.highlight_compression_mode === "soft_ceiling" ? 2 : 0) : 0;
-    params[75] = lane === "hdr" ? toneAdjustedHighlightPeakLinear(branch, toneEnabled) : 0;
+    params[75] = lane === "hdr" ? toneAdjustedHighlightPeakLinear(branch, toneEnabled, projectReferenceWhite) : 0;
+    params[138] = projectReferenceWhite;
+    params[139] = 203;
     params[76] = lane === "hdr" ? Math.min(1, Math.max(0, (branch.highlight_compression_peak_detail ?? 35) / 100)) : 0;
     params[77] = lane === "hdr" ? Math.min(1, Math.max(-1, (branch.highlight_compression_bias ?? 0) / 100)) * 0.6 : 0;
     const film = branch.film_look || {};
@@ -1911,12 +1913,13 @@
     }
     fn displayHdr(rgb: vec3f) -> vec3f {
       if (p[16] > 0.5) {
-        // Extended canvas values are relative to nominal display white. Keep the
-        // app's 0.18 scene-linear reference near 100 nits on a 203-nit canvas.
+        // Chromium currently treats extended canvas values relative to its
+        // 203-nit canvas convention. This is a qualified runtime convention,
+        // not a universal WebGPU physical-nit guarantee.
         // Clamp in BT.2020 before converting to P3, exactly as the PQ encoder
         // does, so exposed highlights do not change at the settled handoff.
         let transportRgb = clamp(acescgToBt2020(rgb), vec3f(0.0), vec3f(p[17]));
-        return bt2020ToP3(transportRgb) * (100.0 / 203.0) / 0.18;
+        return bt2020ToP3(transportRgb) * (p[138] / p[139]) / 0.18;
       }
       let display = max(acescgToSrgb(rgb), vec3f(0.0));
       return display / (vec3f(1.0) + display);

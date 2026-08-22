@@ -4,7 +4,7 @@ This path gets a prepared HDR source to a gain-map export. It assumes the applic
 
 ## 1. Prepare the display
 
-On an HDR display, enable HDR in the operating system and use an accurate HDR monitor mode. Turn off Night Light/Night Shift, True Tone, content-adaptive brightness, vivid color, and dynamic contrast while judging color. See [Windows](../setup/windows.md), [macOS](../setup/macos.md), and [monitor setup](../setup/monitors.md).
+On an HDR display, enable HDR in the operating system and use an accurate HDR monitor mode. Turn off Night Light/Night Shift, True Tone, content-adaptive brightness, vivid color, and dynamic contrast while judging color. New projects use a 203-nit HDR Reference White; use the [reference-white guide](../user-guide/hdr-reference-white.md) before deliberately selecting 100 nits. See [Windows](../setup/windows.md), [macOS](../setup/macos.md), and [monitor setup](../setup/monitors.md).
 
 On an SDR display, continue normally, but use the scopes for HDR placement and understand that you cannot visually certify peak highlights. You can still author the SDR rendition accurately.
 
@@ -32,7 +32,7 @@ A safe order is:
 4. **Temperature, Tint, Saturation, and Vibrance** for broad color work.
 5. **Lift, Gamma, Gain** or **Curves** for targeted finishing.
 
-Use the HDR waveform or histogram. The app defines 100 nits as diffuse white and labels the HDR scope in reference nits.
+Use the HDR waveform or histogram. The app labels the active project reference and retains fixed 100- and 203-nit guides; these are signal measurements, not a claim about emitted monitor luminance.
 
 ## 4. Author the SDR fallback
 

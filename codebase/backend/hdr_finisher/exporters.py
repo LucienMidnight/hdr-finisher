@@ -14,6 +14,7 @@ from .adjustments import apply_adjustments, apply_final_grain
 from .binaries import resolve_binary
 from .subprocess_utils import hidden_window_options
 from .color import acescg_to_linear_bt2020
+from .color_context import RenderColorContext, scene_linear_to_nits
 from .config import EXPORTS_DIR, SAMPLES_DIR
 from .finishing import apply_output_finishing
 from .models import AdjustmentState, CapabilityInfo, CapabilityStatus, ExportResponse, ExportSettings, PreviewKind
@@ -55,6 +56,7 @@ def _finishing_adjustments_for_export(session: object) -> AdjustmentState:
 def _render_export_branch(
     session: object, settings: ExportSettings, kind: PreviewKind, adjustments: AdjustmentState
 ) -> np.ndarray:
+    color_context = getattr(session, "color_context", RenderColorContext(getattr(session, "hdr_reference_white_nits", 203)))
     image = apply_adjustments(
         getattr(session, "image"),
         adjustments,
@@ -62,6 +64,7 @@ def _render_export_branch(
         sdr_reference_image=getattr(session, "sdr_reference_image", None),
         include_grain=False,
         local_adjustments=getattr(session, "local_adjustments", None),
+        color_context=color_context,
     )
     image = apply_output_finishing(image, settings.output_finishing, kind)
     return apply_final_grain(image, adjustments, kind)
@@ -246,6 +249,7 @@ class AVIFGainMapExportBackend(ExportBackend):
                     # The selected chroma still controls the delivered base and
                     # final primary item below.
                     chroma_subsampling="444",
+                    reference_white_nits=getattr(session, "hdr_reference_white_nits", 203),
                 )
                 _run_command(
                     [
@@ -351,7 +355,7 @@ class JPEGUltraHDRExportBackend(ExportBackend):
                 sdr_jpeg_path = temp_dir / "sdr_primary.jpg"
                 exif_payload = _source_exif_payload(session, settings.metadata_policy)
                 exif_path = _write_temporary_exif(temp_dir, exif_payload)
-                _write_hdr_linear_rgba_f16(hdr_raw_path, hdr_image)
+                _write_hdr_linear_rgba_f16(hdr_raw_path, hdr_image, getattr(session, "hdr_reference_white_nits", 203))
                 _write_sdr_rgba8888(sdr_raw_path, sdr_image, dithering=settings.dithering)
                 _write_sdr_jpeg(
                     sdr_jpeg_path,
@@ -373,7 +377,7 @@ class JPEGUltraHDRExportBackend(ExportBackend):
                     quality=int(settings.quality),
                     gain_map_quality=int(settings.jpeg_gain_map_quality),
                     gain_map_scale=settings.jpeg_gain_map_scale,
-                    target_peak_nits=_target_hdr_peak_nits(hdr_image),
+                    target_peak_nits=_target_hdr_peak_nits(hdr_image, getattr(session, "hdr_reference_white_nits", 203)),
                 )
                 _run_command(command)
 
@@ -417,6 +421,7 @@ class JPEGXLHDRExportBackend(ExportBackend):
                 int(settings.quality),
                 settings.jpegxl_precision,
                 exif_payload=_source_exif_payload(session, settings.metadata_policy),
+                reference_white_nits=getattr(session, "hdr_reference_white_nits", 203),
             )
             validation = validate_jpegxl(
                 payload, hdr_image.shape[:2], settings.jpegxl_precision
@@ -649,11 +654,11 @@ def _write_sdr_rgba8888(path: Path, image: np.ndarray, *, dithering: str = "auto
     path.write_bytes(rgba.tobytes(order="C"))
 
 
-def _write_hdr_linear_rgba_f16(path: Path, image: np.ndarray) -> None:
+def _write_hdr_linear_rgba_f16(path: Path, image: np.ndarray, reference_white_nits: int = 203) -> None:
     linear_bt2020 = _acescg_to_bt2020_linear(image[..., :3])
-    # HDR Finisher defines 0.18 as 100 nits. libultrahdr's linear input defines 1.0 as
-    # its 203-nit SDR reference white, so preserve absolute luminance with this scale.
-    linear_bt2020 *= np.float32((100.0 / 0.18) / 203.0)
+    # libultrahdr's linear API defines 1.0 as 203 nits. Convert once from
+    # project scene-linear placement into that codec-interface convention.
+    linear_bt2020 = scene_linear_to_nits(linear_bt2020, reference_white_nits) / np.float32(203.0)
     linear_bt2020 = np.nan_to_num(linear_bt2020, nan=0.0, posinf=10000.0 / 203.0, neginf=0.0)
     linear_bt2020 = np.clip(linear_bt2020, 0.0, 10000.0 / 203.0)
     alpha = np.ones((*linear_bt2020.shape[:2], 1), dtype=np.float32)
@@ -668,10 +673,10 @@ def _acescg_to_bt2020_linear(image: np.ndarray) -> np.ndarray:
         raise ExportProcessError("colour-science is required for JPEG Ultra HDR color conversion.") from exc
 
 
-def _target_hdr_peak_nits(image: np.ndarray) -> float:
+def _target_hdr_peak_nits(image: np.ndarray, reference_white_nits: int = 203) -> float:
     bt2020 = np.clip(_acescg_to_bt2020_linear(image[..., :3]), 0.0, None)
     luma = 0.2627 * bt2020[..., 0] + 0.6780 * bt2020[..., 1] + 0.0593 * bt2020[..., 2]
-    peak_nits = float(np.max(luma, initial=0.0)) * (100.0 / 0.18)
+    peak_nits = float(scene_linear_to_nits(float(np.max(luma, initial=0.0)), reference_white_nits))
     return float(np.clip(peak_nits, 203.0, 10000.0))
 
 
@@ -846,12 +851,13 @@ def _write_hdr_y4m(
     *,
     bit_depth: int = 10,
     chroma_subsampling: str = "444",
+    reference_white_nits: int = 203,
 ) -> None:
     if bit_depth not in {8, 10, 12}:
         raise ValueError(f"Unsupported AVIF bit depth: {bit_depth}")
     if chroma_subsampling not in {"420", "422", "444"}:
         raise ValueError(f"Unsupported AVIF chroma subsampling: {chroma_subsampling}")
-    yuv = _linear_to_bt2020_pq_yuv(image, bit_depth)
+    yuv = _linear_to_bt2020_pq_yuv(image, bit_depth, reference_white_nits)
     _write_y4m_planes(path, yuv, bit_depth=bit_depth, chroma_subsampling=chroma_subsampling)
 
 
@@ -890,27 +896,27 @@ def _write_y4m_planes(
             handle.write(plane.astype(dtype, copy=False).tobytes())
 
 
-def _linear_to_pq_rgb10(image: np.ndarray) -> np.ndarray:
-    return _linear_to_pq_rgb(image, 10)
+def _linear_to_pq_rgb10(image: np.ndarray, reference_white_nits: int = 203) -> np.ndarray:
+    return _linear_to_pq_rgb(image, 10, reference_white_nits)
 
 
-def _linear_to_pq_rgb(image: np.ndarray, bit_depth: int) -> np.ndarray:
+def _linear_to_pq_rgb(image: np.ndarray, bit_depth: int, reference_white_nits: int = 203) -> np.ndarray:
     linear = np.clip(image.astype(np.float32, copy=False), 0.0, None)
-    nits = np.clip((linear / 0.18) * 100.0, 0.0, 10000.0)
+    nits = np.clip(scene_linear_to_nits(linear, reference_white_nits), 0.0, 10000.0)
     pq = _pq_oetf(nits / 10000.0)
     maximum = float((1 << bit_depth) - 1)
     dtype = np.uint8 if bit_depth == 8 else np.uint16
     return np.clip(np.round(pq * maximum), 0.0, maximum).astype(dtype)
 
 
-def _linear_to_bt2020_pq_yuv10(image: np.ndarray) -> np.ndarray:
-    return _linear_to_bt2020_pq_yuv(image, 10)
+def _linear_to_bt2020_pq_yuv10(image: np.ndarray, reference_white_nits: int = 203) -> np.ndarray:
+    return _linear_to_bt2020_pq_yuv(image, 10, reference_white_nits)
 
 
-def _linear_to_bt2020_pq_yuv(image: np.ndarray, bit_depth: int) -> np.ndarray:
+def _linear_to_bt2020_pq_yuv(image: np.ndarray, bit_depth: int, reference_white_nits: int = 203) -> np.ndarray:
     linear_bt2020 = _acescg_to_bt2020_linear(image)
     maximum = float((1 << bit_depth) - 1)
-    pq_rgb = _linear_to_pq_rgb(linear_bt2020, bit_depth).astype(np.float32) / maximum
+    pq_rgb = _linear_to_pq_rgb(linear_bt2020, bit_depth, reference_white_nits).astype(np.float32) / maximum
 
     r = pq_rgb[..., 0]
     g = pq_rgb[..., 1]

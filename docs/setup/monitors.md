@@ -4,6 +4,8 @@ An HDR file and an HDR monitor are not enough by themselves. The operating syste
 
 The goal is not to make every display look identical. It is to understand what your display can verify and use scopes and proofing for everything it cannot.
 
+Project HDR Reference White, source diffuse white, export/mastering peak, measured content peak, proof target, display peak, and operating-system SDR white are separate quantities. A 203-nit project does not claim the monitor emits 203 nits unless the complete presentation chain has been qualified or measured.
+
 ## First classify the display
 
 Marketing terms are not measurements. Look for a credible peak-brightness specification, sustained brightness, black level, color-gamut coverage, bit depth, and local-dimming or emissive-panel behavior.

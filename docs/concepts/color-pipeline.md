@@ -22,7 +22,7 @@ file bytes
 | Internal RGB space | ACEScg / AP1 primaries, D60 white |
 | Internal numeric type | NumPy float32 RGB |
 | Internal transfer | Linear |
-| Diffuse-white anchor | ACEScg linear `0.18` = 100 nits |
+| Project HDR Reference White | ACEScg linear `0.18` = selected 203 nits (default) or 100 nits |
 | HDR delivery gamut | BT.2020 |
 | HDR delivery transfer | PQ / ST 2084 |
 | PQ ceiling | 10,000 nits |
@@ -30,11 +30,11 @@ file bytes
 | Chromatic adaptation | CAT02 in colour-science RGB conversions |
 | Negative final values | Clipped/sanitized to zero |
 
-The `0.18 = 100 nits` relationship is an application authoring convention. It is used consistently in PQ conversion, scopes, rolloff placement, proofing, and peak calculations.
+`0.18` is the project-linear reference point. Its absolute placement is selected per v3 project and is used consistently in PQ conversion, scopes, absolute grading controls, proofing, and exporters.
 
 ```text
-reference nits = linear ACEScg-relative value / 0.18 * 100
-linear value   = reference nits / 100 * 0.18
+reference nits = linear ACEScg-relative value / 0.18 * project_reference_white_nits
+linear value   = reference nits / project_reference_white_nits * 0.18
 ```
 
 ## Source interpretation
@@ -71,14 +71,14 @@ If sRGB or Display P3 is selected with sRGB transfer, the sRGB CCTF is decoded b
 PQ values are clamped to 0–1 and decoded with ST 2084 to absolute nits:
 
 ```text
-BT.2020 PQ -> ST 2084 EOTF -> nits
-linear BT.2020 = nits / 100 * 0.18
+BT.2020 PQ -> ST 2084 EOTF -> absolute nits
+linear BT.2020 = nits / project_reference_white_nits * 0.18
 linear BT.2020 -> ACEScg (CAT02)
 ```
 
 ### HLG input
 
-HLG values are decoded with colour-science’s BT.2100 HLG EOTF using `L_B = 0` and `L_W = 1000` nits, then scaled and converted like PQ.
+HLG values are decoded with colour-science’s BT.2100 HLG EOTF using `L_B = 0` and `L_W = 1000` nits, then normalized through the active project reference and converted like PQ.
 
 This 1,000-nit system assumption must be documented whenever HLG input behavior is discussed. It is not inferred from source mastering metadata.
 
@@ -156,7 +156,7 @@ The display-linear sRGB reference is the neutral base. Non-neutral Base Renditio
 
 - **Reinhard:** `x / (1 + x)`
 - **ACES:** compact rational approximation using coefficients `2.51, 0.03, 2.43, 0.59, 0.14`, normalized by its asymptote
-- **Filmic:** a log-exposure sigmoid mapping scene-linear `0.18` (100-nit diffuse white) to `100/203` display-linear, with separate shadow/highlight powers derived from Contrast and Skew
+- **Filmic:** a log-exposure sigmoid anchored at scene-linear `0.18`, with separate shadow/highlight powers derived from Contrast and Skew; changing only project reference white does not rescale the generated SDR result
 
 These are application operators. The “ACES” choice is not a complete ACES RRT/ODT and should not be documented as one.
 
@@ -181,7 +181,7 @@ The CPU renderer and two-pass WebGPU renderer use the same operation order and p
 
 Scopes call the same adjustment pipeline on a processed proxy/cache.
 
-- HDR reference nits use `linear / 0.18 * 100`.
+- HDR reference nits use `linear / 0.18 * project_reference_white_nits`.
 - HDR luma statistics use ACEScg coefficients.
 - SDR luma uses Rec.709/sRGB coefficients `0.2126, 0.7152, 0.0722`.
 - False color and zebras are diagnostic overlays rendered separately; they do not enter export.
@@ -193,7 +193,7 @@ Scopes describe encoded/processed image values, not photons emitted by the monit
 The HDR image is converted from ACEScg to linear BT.2020 with CAT02, clipped to the non-negative PQ range, mapped to nits using the core convention, and ST 2084 encoded:
 
 ```text
-nits = clamp(linear BT.2020 / 0.18 * 100, 0, 10000)
+nits = clamp(linear BT.2020 / 0.18 * project_reference_white_nits, 0, 10000)
 PQ   = ST2084_OETF(nits / 10000)
 ```
 
@@ -206,7 +206,7 @@ The SDR base is tagged `1/13/0` (BT.709 primaries / sRGB transfer / RGB identity
 libultrahdr accepts a linear BT.2020 half-float HDR input whose `1.0` represents its 203-nit SDR reference. HDR Finisher rescales while preserving absolute intent:
 
 ```text
-libultrahdr linear = ACEScg-to-BT.2020 linear * (100 / 0.18) / 203
+libultrahdr linear = ACEScg-to-BT.2020 linear * (project_reference_white_nits / 0.18) / 203
 ```
 
 Values are clipped to `10000 / 203`. The SDR input is sRGB RGBA8888. The target HDR peak is computed from BT.2020 luma and clipped to the encoder-supported 203–10,000-nit range.
@@ -224,7 +224,8 @@ The public [Ultra HDR specification](https://developer.android.com/media/platfor
 - No spectral processing or appearance model
 - No preservation of negative scene values
 - Simple luma-oriented SDR gamut compression
-- HLG fixed at a 1,000-nit decoding assumption
+- HLG import fixed at an explicit 1,000-nit decoding assumption; HLG export/proofing is not implemented
+- Chromium's current 203-nit extended-canvas convention is qualified runtime behavior, not a universal WebGPU physical-nit guarantee
 - No automatic source-space support beyond the named interpretations
 - No mastering-display metadata authoring UI
 - Browser/display tone mapping is outside the authoritative export renderer

@@ -8,6 +8,7 @@ from typing import Any, Callable
 import numpy as np
 
 from .adjustments import apply_adjustments
+from .color_context import RenderColorContext
 from .finishing import apply_geometry, geometry_coordinate_map
 from .local_adjustments import (
     compile_geometry_fixed_mask,
@@ -26,7 +27,7 @@ class StaleRender(RuntimeError):
 def adjustment_signature(adjustments: AdjustmentState) -> str:
     payload = adjustments.model_dump(mode="json")
     shared = payload.get("shared", {})
-    for key in ("overlay_mode", "overlay_preset", "overlay_opacity", "overlay_threshold"):
+    for key in ("overlay_mode", "false_color_band_anchor", "false_color_ceiling_nits", "overlay_opacity", "overlay_threshold"):
         shared.pop(key, None)
     return AdjustmentState.model_validate(payload).model_dump_json()
 
@@ -41,6 +42,7 @@ def local_adjustment_signature(local_adjustments: list[LocalAdjustment] | None) 
 class SessionRenderCache:
     image: np.ndarray
     sdr_reference_image: np.ndarray | None
+    color_context: RenderColorContext = field(default_factory=RenderColorContext)
     max_frames: int = 6
     max_cache_bytes: int = 192 * 1024 * 1024
     max_proxy_levels: int = 2
@@ -57,6 +59,15 @@ class SessionRenderCache:
     _evictions: int = field(default=0, init=False, repr=False)
     _singleflight_waits: int = field(default=0, init=False, repr=False)
     _stale_cancellations: int = field(default=0, init=False, repr=False)
+
+    def set_color_context(self, context: RenderColorContext) -> None:
+        with self._lock:
+            if context == self.color_context:
+                return
+            self.color_context = context
+            self._frames.clear()
+            self._scopes.clear()
+            self._cancel_inflight_locked()
 
     def replace_source(self, image: np.ndarray, sdr_reference_image: np.ndarray | None) -> None:
         with self._lock:
@@ -179,7 +190,7 @@ class SessionRenderCache:
         _record_diagnostics: bool = True,
     ) -> np.ndarray:
         edge = max(256, int(long_edge))
-        signature = adjustment_signature(adjustments) + local_adjustment_signature(local_adjustments)
+        signature = adjustment_signature(adjustments) + local_adjustment_signature(local_adjustments) + repr(self.color_context.cache_key)
         key = (kind.value, edge, signature)
         flight_key = ("frame", *key)
         while True:
@@ -213,6 +224,7 @@ class SessionRenderCache:
                 sdr_reference_image=sdr_reference,
                 local_adjustments=local_adjustments,
                 compiled_local_masks=compiled_masks,
+                color_context=self.color_context,
             )
             if is_current is not None and not is_current():
                 with self._lock:
@@ -243,7 +255,7 @@ class SessionRenderCache:
     ) -> Any:
         """Return a cached, single-flight scope payload for the adjusted proxy."""
         edge = max(256, int(long_edge))
-        signature = adjustment_signature(adjustments) + local_adjustment_signature(local_adjustments)
+        signature = adjustment_signature(adjustments) + local_adjustment_signature(local_adjustments) + repr(self.color_context.cache_key)
         key = (kind.value, edge, signature, mode, int(bins), int(columns), int(max_nits))
         flight_key = ("scope", *key)
         while True:
@@ -284,6 +296,7 @@ class SessionRenderCache:
                 bins=bins,
                 waveform_columns=columns,
                 max_nits=max_nits,
+                color_context=self.color_context,
             )
             if is_current is not None and not is_current():
                 with self._lock:

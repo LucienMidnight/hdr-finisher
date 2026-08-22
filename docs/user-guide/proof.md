@@ -43,7 +43,7 @@ After the proof is built, use **HDR adaptation** to inspect the reconstruction a
 | Full encoded range | Applies the gain map to the content’s encoded maximum, independent of a smaller display target. |
 | Custom | Tests a known or hypothetical peak from 100 to 10,000 nits. |
 
-The selected peak is interpreted against HDR Finisher’s 100-nit diffuse-white reference. For example, a 400-nit target is two stops of nominal headroom.
+The selected proof peak is interpreted against the active project's HDR Reference White. A 1,000-nit target is about 2.30 stops above 203 nits or 3.32 stops above 100 nits. Proof target, display peak, content peak, export peak, and reference white remain independent.
 
 ## Not a hard clip
 

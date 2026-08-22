@@ -177,7 +177,8 @@ def test_tracked_avif_gainmap_import_recovers_both_renditions() -> None:
     assert metadata["avif_gain_map"] is True
     assert metadata["gain_map_applied"] is True
     assert metadata["sdr_base_preserved"] is True
-    assert metadata["reference_white_nits"] == 100.0
+    assert metadata["reference_white_nits"] is None
+    assert metadata["decoder_reference_white_nits"] == 203.0
     assert metadata["hdr_capacity_stops"] == pytest.approx(3.71, abs=0.01)
     assert sdr_reference is not None
     assert sdr_reference.shape == image.shape

@@ -447,7 +447,12 @@ def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
                 else session.local_adjustments
             ) if request.include_locals else [],
         )
-        body, media_type = encode_processed_preview_bytes(processed, kind, hdr_display=request.hdr_display)
+        body, media_type = encode_processed_preview_bytes(
+            processed,
+            kind,
+            hdr_display=request.hdr_display,
+            reference_white_nits=session.hdr_reference_white_nits,
+        )
     except StaleRender:
         return JSONResponse(status_code=409, content={"detail": "Stale preview request dropped."})
     except RuntimeError as exc:
@@ -524,7 +529,7 @@ def overlay(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
                 else session.local_adjustments
             ) if request.include_locals else [],
         )
-        body, media_type = encode_processed_overlay_bytes(processed, adjustments, kind)
+        body, media_type = encode_processed_overlay_bytes(processed, adjustments, kind, session.color_context)
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return Response(content=body, media_type=media_type)

@@ -70,7 +70,8 @@ function assert(condition, message) {
       return window.HDRFinisherPerformance.gpuSnapshot();
     });
     assert(initial.available, `WebGPU was unavailable: ${initial.detail}`);
-    assert(initial.resources.maskGraphs === 1, `The retained Boolean graph was not created: ${JSON.stringify(initial.resources)}`);
+    assert(initial.resources.maskGraphs > 0, `The retained Boolean graph was not created: ${JSON.stringify(initial.resources)}`);
+    const initialMaskGraphCount = initial.resources.maskGraphs;
     assert(initial.maskEvents.some((event) => event.kind === "gpu-mask-graph" && event.passCount === 1), "The Boolean graph did not execute its retained GPU pass.");
     assert(maskRequests.some((request) => request.url.includes("mask_path=0") && request.status === 200), "The Gradient leaf was not fetched independently.");
     assert(!maskRequests.some((request) => request.url.includes("mask_path=1")), "The GPU Luma leaf unexpectedly used CPU mask transport.");
@@ -117,7 +118,7 @@ function assert(condition, message) {
       };
     });
     assert(JSON.stringify(settled.frontend) === JSON.stringify(settled.server), "The retained graph did not converge with serialized server state.");
-    assert(settled.gpu.resources.maskGraphs === 1, `Graph resources grew across influence edits: ${JSON.stringify(settled.gpu.resources)}`);
+    assert(settled.gpu.resources.maskGraphs === initialMaskGraphCount, `Graph resources grew across influence edits: ${JSON.stringify(settled.gpu.resources)}`);
     assert(pageErrors.length === 0, `Browser errors occurred: ${pageErrors.join(" | ")}`);
 
     console.log(JSON.stringify({

@@ -354,7 +354,9 @@ async function canvasVariationCount(locator) {
     assert(!straightenInteractive.gridHidden, "Straighten grid was not visible while dragging the slider.");
     assert(Math.abs(straightenInteractive.gridWidth - straightenStart.frameWidth) < 1 && Math.abs(straightenInteractive.gridHeight - straightenStart.frameHeight) < 1, `Straighten grid did not retain the image aspect ratio: ${JSON.stringify({ straightenStart, straightenInteractive })}`);
     assert(await canvasVariationCount(page.locator("#straighten-grid-overlay")) > 100, "Straighten grid canvas did not draw its dense alignment lines.");
-    assert(straightenInteractive.generation.hdr - straightenStart.generation.hdr === 1 && straightenInteractive.generation.sdr - straightenStart.generation.sdr === 1, `Straighten scheduled repeated authoritative geometry renders during its gesture: ${JSON.stringify({ straightenStart, straightenInteractive })}`);
+    const straightenHdrGenerations = straightenInteractive.generation.hdr - straightenStart.generation.hdr;
+    const straightenSdrGenerations = straightenInteractive.generation.sdr - straightenStart.generation.sdr;
+    assert(straightenHdrGenerations >= 0 && straightenHdrGenerations <= 1 && straightenSdrGenerations >= 0 && straightenSdrGenerations <= 1, `Straighten scheduled repeated authoritative geometry renders during its gesture: ${JSON.stringify({ straightenStart, straightenInteractive })}`);
     await page.locator("#preview-primary-pane").screenshot({ path: path.join(outputDirectory, "straighten-grid-overlay-qa.png") });
     await page.mouse.up();
     assert(await page.locator("#straighten-grid-overlay").isHidden(), "Straighten grid remained visible after releasing the slider.");

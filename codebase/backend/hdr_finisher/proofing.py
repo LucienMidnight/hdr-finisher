@@ -20,6 +20,7 @@ import numpy as np
 from .avif_info import inspect_avif
 from .binaries import resolve_binary
 from .color import acescg_to_linear_bt2020, linear_bt2020_to_acescg, linear_srgb_to_acescg
+from .color_context import RenderColorContext, nits_to_scene_linear, scene_linear_to_nits
 from .config import APP_DATA_DIR, APP_VERSION
 from .exporters import ExportBackend, _finishing_adjustments_for_export, _render_export_branch, _run_command
 from .gainmap_decoders import parse_jpeg_gain_map_probe
@@ -61,6 +62,7 @@ class ProofArtifact:
     quality: int
     metadata_summary: str
     encoded_headroom: float
+    reference_white_nits: int
     hdr_authored: np.ndarray
     sdr_authored: np.ndarray
     jpeg_gain_map: JPEGGainMapProofMetadata | None = None
@@ -180,7 +182,8 @@ class ProofArtifactStore:
     ) -> ProofArtifactResponse:
         if request.format not in SUPPORTED_PROOF_FORMATS:
             raise ValueError(f"Unsupported proof format: {request.format}")
-        signature = self._request_signature(getattr(session, "session_id"), request)
+        context = getattr(session, "color_context", RenderColorContext(getattr(session, "hdr_reference_white_nits", 203)))
+        signature = self._request_signature(getattr(session, "session_id"), request, context)
         with self._lock:
             cached_id = self._request_cache.get(signature)
             cached = self._artifacts.get(cached_id or "")
@@ -193,6 +196,8 @@ class ProofArtifactStore:
             image=source,
             sdr_reference_image=sdr_reference,
             adjustments=request.adjustments,
+            hdr_reference_white_nits=context.hdr_reference_white_nits,
+            color_context=context,
         )
         suffix, media_type = PROOF_FORMAT_INFO[request.format]
         # Proofs are internal cache artifacts, not user exports. Use a unique
@@ -252,7 +257,7 @@ class ProofArtifactStore:
             0.0,
             None,
         )
-        encoded_headroom, metadata_summary = _inspect_artifact(final_path, request.format)
+        encoded_headroom, metadata_summary = _inspect_artifact(final_path, request.format, context.hdr_reference_white_nits)
         jpeg_gain_map = None
         if request.format == "jpeg_ultrahdr":
             try:
@@ -271,6 +276,7 @@ class ProofArtifactStore:
             quality=request.quality,
             metadata_summary=metadata_summary,
             encoded_headroom=encoded_headroom,
+            reference_white_nits=context.hdr_reference_white_nits,
             hdr_authored=np.ascontiguousarray(hdr_authored, dtype=np.float32),
             sdr_authored=np.ascontiguousarray(sdr_matrix_endpoint, dtype=np.float32),
             jpeg_gain_map=jpeg_gain_map,
@@ -333,7 +339,7 @@ class ProofArtifactStore:
             target_label = f"Auto · {display.get('name') or 'current display'}"
         elif request.target.mode == "fixed":
             requested_peak_nits = float(request.target.peak_nits or 1000.0)
-            requested_headroom = target_headroom_for_peak_nits(requested_peak_nits)
+            requested_headroom = target_headroom_for_peak_nits(requested_peak_nits, artifact.reference_white_nits)
             target_label = f"{requested_peak_nits:g} nits"
         else:
             requested_headroom = max(0.0, artifact.encoded_headroom)
@@ -353,7 +359,7 @@ class ProofArtifactStore:
             requested_headroom=round(requested_headroom, 4),
             resolved_headroom=round(resolved_headroom, 4),
             requested_peak_nits=round(requested_peak_nits, 1) if requested_peak_nits is not None else None,
-            resolved_reference_peak_nits=round(100.0 * (2.0 ** resolved_headroom), 1),
+            resolved_reference_peak_nits=round(artifact.reference_white_nits * (2.0 ** resolved_headroom), 1),
             encoded_headroom=round(encoded_headroom, 4),
             capped_by_encoded_headroom=capped,
             display_id=str(display.get("id")) if display else None,
@@ -396,7 +402,7 @@ class ProofArtifactStore:
                 tile_path.write_bytes(tile_bytes)
             with self._lock:
                 self._tiles[tile_id] = ProofTile(tile_id=tile_id, path=tile_path, media_type="image/avif")
-            peak_nits, clipped = _image_stats(reconstructed, resolved_target)
+            peak_nits, clipped = _image_stats(reconstructed, resolved_target, artifact.reference_white_nits)
             cached = ProofMatrixTile(
                 id=tile_id,
                 label=label,
@@ -485,9 +491,9 @@ class ProofArtifactStore:
                         staged_decoded.unlink(missing_ok=True)
                 decoded = np.fromfile(decoded_path, dtype="<f2").astype(np.float32)
                 decoded = decoded.reshape(artifact.height, artifact.width, 4)[..., :3]
-                # libultrahdr linear output uses 1.0 == 203 nits. HDR Finisher uses
-                # 0.18 == 100 nits, so convert back to the app's scene-linear scale.
-                decoded *= np.float32(203.0 * 0.18 / 100.0)
+                # libultrahdr linear output uses 1.0 == 203 nits. Convert once
+                # into the proof artifact's project scene-linear scale.
+                decoded = nits_to_scene_linear(decoded * np.float32(203.0), artifact.reference_white_nits)
                 if artifact.jpeg_gain_map is None or artifact.jpeg_gain_map.use_base_color_space:
                     alternate = linear_srgb_to_acescg(decoded)
                 else:
@@ -528,8 +534,8 @@ class ProofArtifactStore:
         return _encode_hdr_avif(reconstructed)
 
     @staticmethod
-    def _request_signature(session_id: str, request: ProofArtifactRequest) -> str:
-        payload = f"{APP_VERSION}|{session_id}|{request.model_dump_json()}".encode("utf-8")
+    def _request_signature(session_id: str, request: ProofArtifactRequest, color_context: RenderColorContext) -> str:
+        payload = f"{APP_VERSION}|{session_id}|{color_context.cache_key}|{request.model_dump_json()}".encode("utf-8")
         return hashlib.sha256(payload).hexdigest()[:24]
 
     @staticmethod
@@ -560,8 +566,8 @@ def _select_proof_display(displays: list[dict[str, Any]], display_id: str | None
     return next((display for display in displays if bool(display.get("primary"))), None) or (displays[0] if displays else None)
 
 
-def target_headroom_for_peak_nits(peak_nits: float) -> float:
-    return max(0.0, math.log2(float(peak_nits) / 100.0))
+def target_headroom_for_peak_nits(peak_nits: float, reference_white_nits: int = 203) -> float:
+    return max(0.0, math.log2(float(peak_nits) / float(reference_white_nits)))
 
 
 def _optional_float(value: object) -> float | None:
@@ -606,7 +612,7 @@ class EvidenceStore:
             return []
 
 
-def _inspect_artifact(path: Path, format_name: str) -> tuple[float, str]:
+def _inspect_artifact(path: Path, format_name: str, reference_white_nits: int = 203) -> tuple[float, str]:
     if format_name == "avif_gain_map":
         info = inspect_avif(path)
         gain = info.get("gain_map") or {}
@@ -620,7 +626,7 @@ def _inspect_artifact(path: Path, format_name: str) -> tuple[float, str]:
             raise ValueError("JPEG XL proof is missing its direct-HDR Rec.2020 PQ marker.")
         bit_depth = int(metadata.get("bit_depth") or info.get("bits_per_sample") or 12)
         sample_type = str(metadata.get("sample_type") or "integer")
-        return target_headroom_for_peak_nits(10000.0), f"Direct HDR JPEG XL; Rec.2020 PQ; {bit_depth}-bit {sample_type}"
+        return target_headroom_for_peak_nits(10000.0, reference_white_nits), f"Direct HDR JPEG XL; Rec.2020 PQ; {bit_depth}-bit {sample_type}"
 
     metadata = _inspect_jpeg_gain_map(path)
     headroom = math.log2(max(1.0, metadata.hdr_capacity_max))
@@ -653,11 +659,11 @@ def _default_jpeg_gain_map_metadata(encoded_headroom: float) -> JPEGGainMapProof
     )
 
 
-def _image_stats(image: np.ndarray, target_headroom: float) -> tuple[float, float]:
+def _image_stats(image: np.ndarray, target_headroom: float, reference_white_nits: int = 203) -> tuple[float, float]:
     bt2020 = np.clip(acescg_to_linear_bt2020(image[..., :3]), 0.0, None)
     luma = 0.2627 * bt2020[..., 0] + 0.6780 * bt2020[..., 1] + 0.0593 * bt2020[..., 2]
-    nits = luma * np.float32(100.0 / 0.18)
+    nits = scene_linear_to_nits(luma, reference_white_nits)
     peak = float(np.max(nits, initial=0.0))
-    ceiling = 100.0 * (2.0 ** max(target_headroom, 0.0))
+    ceiling = float(reference_white_nits) * (2.0 ** max(target_headroom, 0.0))
     clipped = float(np.count_nonzero(nits > ceiling) / max(nits.size, 1) * 100.0)
     return peak, clipped

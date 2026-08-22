@@ -146,7 +146,8 @@ def test_normalize_pq_bt2020_to_acescg_creates_hdr_headroom() -> None:
     image = np.ones((1, 1, 3), dtype=np.float32) * 0.75
     normalized = normalize_to_acescg(image, "BT.2020", "PQ")
     assert normalized.dtype == np.float32
-    assert normalized[0, 0, 0] > 1.0
+    # PQ is absolute: 0.75 is about 983 nits, normalized against 203-nit white.
+    assert normalized[0, 0, 0] == pytest.approx(0.872, abs=0.002)
 
 
 def test_normalize_acescg_linear_is_passthrough() -> None:
@@ -179,7 +180,7 @@ def test_sdr_curves_apply_only_to_sdr_branch() -> None:
     image = np.ones((1, 1, 3), dtype=np.float32) * 0.5
     adjustments = AdjustmentState.model_validate(
         {
-            "hdr": {"exposure": 0, "highlight_rolloff": 0.25, "shadow_lift": 0, "white_balance_kelvin": 6500, "tint": 0},
+            "hdr": {"exposure": 0, "highlight_compression_mode": "off", "shadow_lift": 0, "white_balance_kelvin": 6500, "tint": 0},
             "sdr": {
                 "exposure": 0,
                 "highlight_recovery": 0.25,
@@ -208,7 +209,7 @@ def test_hdr_curves_can_bias_individual_channels() -> None:
         {
             "hdr": {
                 "exposure": 0,
-                "highlight_rolloff": 0.25,
+                "highlight_compression_mode": "off",
                 "shadow_lift": 0,
                 "white_balance_kelvin": 6500,
                 "tint": 0,
@@ -247,7 +248,8 @@ def test_all_hdr_lane_controls_are_isolated_from_manual_sdr_fallback() -> None:
         {
             "hdr": {
                 "exposure": 1.5,
-                "highlight_rolloff": 1.5,
+                "highlight_compression_mode": "soft_ceiling",
+                "highlight_compression_softness": 75,
                 "shadow_lift": 0.4,
                 "lift": 0.2,
                 "gamma": -0.3,
@@ -274,7 +276,8 @@ def test_all_hdr_lane_controls_are_isolated_from_manual_embedded_sdr_reference()
         {
             "hdr": {
                 "exposure": -2.0,
-                "highlight_rolloff": 2.0,
+                "highlight_compression_mode": "soft_ceiling",
+                "highlight_compression_softness": 100,
                 "shadow_lift": -0.5,
                 "lift": -0.4,
                 "gamma": 0.6,
@@ -356,7 +359,7 @@ def test_false_color_overlay_returns_rgba_pixels() -> None:
 
 
 def test_zebra_overlay_is_transparent_below_threshold() -> None:
-    image = np.ones((4, 4, 3), dtype=np.float32) * 0.2
+    image = np.ones((4, 4, 3), dtype=np.float32) * 0.17
     adjustments = AdjustmentState.model_validate(
         {
             "shared": {
@@ -436,16 +439,16 @@ def test_hdr_scope_reports_reference_nits_and_stats() -> None:
 
 def test_hdr_scope_zoom_defaults_to_4000_nits_and_can_cover_full_pq_range() -> None:
     levels_nits = np.array([4000.0, 6000.0, 10000.0], dtype=np.float32)
-    levels = levels_nits * np.float32(0.18 / 100.0)
+    levels = levels_nits * np.float32(0.18 / 203.0)
     image = np.repeat(levels.reshape(1, 3, 1), 3, axis=2)
     default_scope = build_scope(
         image,
-        AdjustmentState(hdr=HDRAdjustments(highlight_rolloff=0)),
+        AdjustmentState(hdr=HDRAdjustments()),
         PreviewKind.HDR,
     )
     scope = build_scope(
         image,
-        AdjustmentState(hdr=HDRAdjustments(highlight_rolloff=0)),
+        AdjustmentState(hdr=HDRAdjustments()),
         PreviewKind.HDR,
         max_nits=10000,
     )
@@ -461,12 +464,12 @@ def test_hdr_scope_zoom_defaults_to_4000_nits_and_can_cover_full_pq_range() -> N
 
 def test_hdr_scope_can_zoom_to_1000_nits() -> None:
     levels_nits = np.array([100.0, 203.0, 1000.0, 4000.0], dtype=np.float32)
-    levels = levels_nits * np.float32(0.18 / 100.0)
+    levels = levels_nits * np.float32(0.18 / 203.0)
     image = np.repeat(levels.reshape(1, 4, 1), 3, axis=2)
 
     scope = build_scope(
         image,
-        AdjustmentState(hdr=HDRAdjustments(highlight_rolloff=0)),
+        AdjustmentState(hdr=HDRAdjustments()),
         PreviewKind.HDR,
         max_nits=1000,
     )
@@ -479,38 +482,35 @@ def test_hdr_scope_can_zoom_to_1000_nits() -> None:
 def test_reference_nits_anchor_matches_prd_values() -> None:
     image = np.array([[[0.18, 0.18, 0.18], [1.8, 1.8, 1.8]]], dtype=np.float32)
     nits = _rgb_to_reference_nits(image)
-    assert np.allclose(nits[0, 0], 100.0)
-    assert np.allclose(nits[0, 1], 1000.0)
+    assert np.allclose(nits[0, 0], 203.0)
+    assert np.allclose(nits[0, 1], 2030.0)
 
 
 def test_reference_nits_uses_acescg_ap1_luminance_coefficients() -> None:
     image = np.array([[[0.18, 0.0, 0.0]]], dtype=np.float32)
     nits = _rgb_to_reference_nits(image)
-    assert nits[0, 0] == pytest.approx(0.2722287 * 100.0, rel=1e-6)
+    assert nits[0, 0] == pytest.approx(0.2722287 * 203.0, rel=1e-6)
 
 
 def test_hdr_scope_threshold_percentages_for_known_luminance() -> None:
-    image = np.zeros((2, 2, 3), dtype=np.float32)
-    image[0, 0, :] = 0.18
-    image[0, 1, :] = 0.3654
-    image[1, 0, :] = 1.8
-    image[1, 1, :] = 0.09
-    adjustments = AdjustmentState(hdr=HDRAdjustments(highlight_rolloff=0))
+    levels_nits = np.array([50.0, 150.0, 500.0, 2000.0], dtype=np.float32)
+    image = np.repeat((levels_nits * np.float32(0.18 / 203.0)).reshape(2, 2, 1), 3, axis=2)
+    adjustments = AdjustmentState(hdr=HDRAdjustments())
     scope = build_scope(image, adjustments, PreviewKind.HDR)
     stats = {stat.label: stat.value for stat in scope.stats}
-    assert stats["Peak"] == "1000.0 nit"
-    assert stats["% > 100"] == "50.00%"
-    assert stats["% > 203"] == "25.00%"
-    assert stats["% > 1000"] == "0.00%"
+    assert stats["Peak"] == "2000 nit"
+    assert stats["% > 100"] == "75.00%"
+    assert stats["% > 203"] == "50.00%"
+    assert stats["% > 1000"] == "25.00%"
 
 
 def test_hdr_scope_thresholds_exclude_values_exactly_on_each_guide() -> None:
     guide_nits = np.array([100.0, 203.0, 1000.0], dtype=np.float32)
-    levels = guide_nits * np.float32(0.18 / 100.0)
+    levels = guide_nits * np.float32(0.18 / 203.0)
     image = np.repeat(levels.reshape(1, 3, 1), 3, axis=2)
     scope = build_scope(
         image,
-        AdjustmentState(hdr=HDRAdjustments(highlight_rolloff=0)),
+        AdjustmentState(hdr=HDRAdjustments()),
         PreviewKind.HDR,
     )
     stats = {stat.label: stat.value for stat in scope.stats}
@@ -544,7 +544,7 @@ def test_hdr_waveform_reports_density_grid() -> None:
 def test_hdr_waveform_places_bright_columns_higher_than_dark_columns() -> None:
     image = np.ones((8, 8, 3), dtype=np.float32) * 0.18
     image[:, 4:, :] = 1.8
-    adjustments = AdjustmentState(hdr=HDRAdjustments(highlight_rolloff=0))
+    adjustments = AdjustmentState(hdr=HDRAdjustments())
     scope = build_scope(image, adjustments, PreviewKind.HDR, ScopeMode.WAVEFORM, bins=16, waveform_columns=8)
     y_grid = np.array(next(channel.grid for channel in scope.channels if channel.name == "Y"))
     first_half_row = int(np.argmax(y_grid[:, :4].sum(axis=1)))
@@ -556,7 +556,7 @@ def test_waveform_aggregates_every_source_pixel_into_horizontal_strips() -> None
     image = np.ones((12, 100, 3), dtype=np.float32) * 0.18
     scope = build_scope(
         image,
-        AdjustmentState(hdr=HDRAdjustments(highlight_rolloff=0)),
+        AdjustmentState(hdr=HDRAdjustments()),
         PreviewKind.HDR,
         ScopeMode.WAVEFORM,
         bins=16,
@@ -585,4 +585,4 @@ def test_sdr_source_has_predictable_internal_hdr_scope_anchor() -> None:
     scope = build_scope(image, AdjustmentState(), PreviewKind.HDR)
     stats = {stat.label: stat.value for stat in scope.stats}
     assert analysis.classification == HDRClassification.SDR_ONLY
-    assert stats["Peak"] == "100.0 nit"
+    assert stats["Peak"] == "203.0 nit"

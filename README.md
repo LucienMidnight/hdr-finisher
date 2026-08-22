@@ -44,7 +44,7 @@ HDR Finisher is not a RAW developer or layer compositor. Its local-adjustment mo
 
 ## Color pipeline in one paragraph
 
-Sources are normalized to a float32, scene-linear ACEScg working image when their encoding is known. HDR Finisher defines linear ACEScg `0.18` as 100-nit diffuse white. The HDR rendition remains scene-linear through grading and is encoded as BT.2020/PQ for preview and export. The SDR rendition is independently tone-mapped and rendered to sRGB. Gain-map exports store the SDR result plus enough information to reconstruct an adaptive HDR result. Read the [color-pipeline specification](docs/concepts/color-pipeline.md) before integrating a new source or exporter.
+Sources are normalized to a float32, scene-linear ACEScg working image when their encoding is known. Project linear `0.18` maps to the selected HDR Reference White: 203 nits for new projects, or 100 nits for an intentional controlled workflow. The HDR rendition remains scene-linear through grading and is encoded as BT.2020/PQ for preview and export. The SDR rendition is independently tone-mapped and rendered to sRGB. Gain-map exports store the SDR result plus enough information to reconstruct an adaptive HDR result. Read the [color-pipeline specification](docs/concepts/color-pipeline.md) before integrating a new source or exporter.
 
 ## Development
 

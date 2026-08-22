@@ -11,6 +11,7 @@ Before exporting, confirm:
 - **SDR fallback reviewed:** the base image works on its own.
 - **Encoder available:** the selected backend reports available.
 - **Chrome proof reviewed:** the proof matches the selected format and is not stale.
+- **HDR reference white:** preflight reports the selected 203- or 100-nit project value. This is independent of measured content peak, mastering/export peak, proof target, false-color ceiling, display peak, and Windows SDR white.
 
 Preflight cannot determine whether the image is artistically good or whether a future website will preserve the bytes.
 
@@ -117,9 +118,11 @@ Full-resolution HDR and SDR rendering, gain-map encoding, and validation can tak
 
 ### HDR
 
-The working ACEScg image is converted to linear BT.2020. The application maps `0.18` to 100 nits and encodes PQ up to 10,000 nits for AVIF and preview transport.
+The working ACEScg image is converted to linear BT.2020. The application maps `0.18` to the active project's HDR Reference White and encodes PQ up to 10,000 nits for AVIF gain-map alternate, HDR JPEG XL, and preview transport. JPEG Ultra HDR receives the same absolute intent through its codec-specific interface scale.
 
-For libultrahdr’s linear HDR input, the same absolute intent is rescaled because libultrahdr defines linear `1.0` as 203 nits. This is an encoder-interface conversion, not a change to the authoring reference.
+For libultrahdr’s linear HDR input, the same absolute intent is rescaled because libultrahdr defines linear `1.0` as 203 nits. This conversion occurs exactly once and is a codec-interface convention, not a project setting or a portable canvas rule.
+
+HLG still-image output and proofing are not implemented. HLG import uses its documented system-luminance assumptions, but selecting an HLG source never enables HLG export.
 
 ### SDR
 
