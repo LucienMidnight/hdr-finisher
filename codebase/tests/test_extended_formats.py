@@ -315,6 +315,8 @@ def test_raw_decoder_returns_canonical_acescg_without_second_loader_transform(
         camera_whitebalance = [2.0, 1.0, 1.5, 1.0]
         daylight_whitebalance = [1.8, 1.0, 1.4, 1.0]
         sizes = SimpleNamespace(width=6, height=4, raw_width=6, raw_height=4)
+        lens = SimpleNamespace(make="SIGMA", model="35mm F2 DG DN | C")
+        other = SimpleNamespace(focal_length=35.0, aperture=4.0, iso_speed=800.0, shutter_speed=0.004)
 
         def __enter__(self):
             return self
@@ -332,7 +334,10 @@ def test_raw_decoder_returns_canonical_acescg_without_second_loader_transform(
         HighlightMode=SimpleNamespace(Clip="Clip"),
     )
     monkeypatch.setitem(sys.modules, "rawpy", fake_rawpy)
-    monkeypatch.setattr("hdr_finisher.raw_import._read_raw_exif", lambda _path: {})
+    monkeypatch.setattr(
+        "hdr_finisher.raw_import._read_raw_exif",
+        lambda _path: {"camera_maker": "SONY", "camera_model": "ILCE-7RM3", "iso": "640"},
+    )
     source = tmp_path / "synthetic.dng"
     source.write_bytes(b"synthetic raw")
 
@@ -345,6 +350,12 @@ def test_raw_decoder_returns_canonical_acescg_without_second_loader_transform(
     assert image.dtype == np.float32
     assert metadata["decoder_normalized_to_acescg"] is True
     assert metadata["color_space"] == "ACEScg"
+    assert metadata["camera_maker"] == "SONY"
+    assert metadata["camera_model"] == "ILCE-7RM3"
+    assert metadata["lens_maker"] == "SIGMA"
+    assert metadata["lens"] == "35mm F2 DG DN | C"
+    assert metadata["iso"] == "640"
+    assert metadata["shutter_speed"] == 0.004
     assert np.all(np.isfinite(image))
 
 

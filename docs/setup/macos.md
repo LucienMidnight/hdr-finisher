@@ -14,6 +14,31 @@ Guidance verified against Apple documentation on **August 9, 2026**.
 
 Apple’s current general requirements are described in [Play HDR video on Mac](https://support.apple.com/en-ie/102205) and [connect external displays](https://support.apple.com/guide/mac-help/connect-an-external-display-mchl7c7ebe08/26/mac/26).
 
+## Build and RAW metadata validation
+
+Create `codebase/.venv` with Python 3.12 or newer, install `codebase/requirements-dev.txt`, and build from `codebase/`:
+
+```bash
+./tools/build_desktop_macos.sh
+```
+
+The normal build includes `exifread`, `rawpy`/LibRaw, `lensfunpy`, and the Lensfun database in the private PyInstaller backend. Do not use `--skip-native-tools` for a release candidate; that option intentionally creates a capability-limited package without rebuilding the native HDR encoders. The finished Apple Silicon `.app`, `.dmg`, `.zip`, and `SHA256SUMS-macOS.txt` are written below `codebase/dist-electron/`.
+
+Before distributing a build, import representative RAW files from more than one manufacturer. Include at least one Sony file and files from other available systems such as Canon, Nikon, Fujifilm, Panasonic, OM System/Olympus, Pentax/Ricoh, Leica, or a supported phone/drone DNG. Expand **Metadata** in the left panel and verify that every row is present:
+
+- Camera make
+- Camera model
+- Lens make
+- Lens model
+- ISO
+- Shutter
+- Focal length
+- Aperture
+
+The backend reads normalized EXIF first and supplements missing values from LibRaw. A row may correctly show `n/a` when the file does not contain the value or the decoder cannot expose it, but a missing value must not hide the row. Maker-specific EXIF names must be normalized into these fields rather than handled as Sony-only special cases.
+
+For lens correction, keep the Lensfun camera and lens database bundled and test **Off**, **Auto**, and **Manual**. **Auto** should apply a correction only when the camera maker/model and lens maker/model produce one unambiguous Lensfun match. If the database is missing, the metadata is incomplete, or several lenses match, RAW development should continue without an automatic correction and report the reason; it must not guess from focal length or a partial model name. Do not stack Lensfun distortion correction on top of equivalent mandatory DNG geometry correction.
+
 ## Recommended viewing baseline
 
 1. Open **System Settings > Displays** and select the display.

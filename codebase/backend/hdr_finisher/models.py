@@ -89,10 +89,14 @@ class SourceLuminanceDescriptor(BaseModel):
 
 
 class MetadataPayload(BaseModel):
+    camera_maker: str | None = None
     camera_model: str | None = None
+    lens_maker: str | None = None
     lens: str | None = None
     iso: str | None = None
     shutter_speed: str | None = None
+    focal_length_mm: str | None = None
+    aperture: str | None = None
     bit_depth: str | None = None
     color_space: str | None = None
     transfer_function: str | None = None

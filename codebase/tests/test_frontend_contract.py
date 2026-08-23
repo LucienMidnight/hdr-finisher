@@ -65,6 +65,23 @@ def test_file_picker_advertises_avif_round_trip_input() -> None:
     assert 'accept=".exr,.tif,.tiff,.hdr,.pfm,.heic,.heif,.avif,.jxl,.png,.jpg,.jpeg,.dng,.arw,.cr2,.cr3,.nef,.nrw,.raf,.rw2,.orf,.ori,.pef,.srw"' in markup
 
 
+def test_left_metadata_panel_renders_complete_camera_and_lens_identity() -> None:
+    script = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    for label in (
+        "Camera make",
+        "Camera model",
+        "Lens make",
+        "Lens model",
+        "ISO",
+        "Shutter",
+        "Focal length",
+        "Aperture",
+    ):
+        assert f'["{label}",' in script
+    assert "formatFocalLength(session.metadata.focal_length_mm)" in script
+    assert "formatAperture(session.metadata.aperture)" in script
+
+
 def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -> None:
     response = TestClient(app).get("/")
     assert response.status_code == 200

@@ -2771,6 +2771,22 @@ function renderSession() {
   window.HDRProofing?.reset();
 }
 
+function formatFocalLength(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return "n/a";
+  if (/mm\b/i.test(text)) return text;
+  const numeric = Number(text);
+  return `${Number.isFinite(numeric) ? numeric : text} mm`;
+}
+
+function formatAperture(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return "n/a";
+  if (/^f\s*\//i.test(text)) return text;
+  const numeric = Number(text);
+  return `f/${Number.isFinite(numeric) ? numeric : text}`;
+}
+
 function renderMetadata(session) {
   const entries = [
     ["Size", `${session.source.width} x ${session.source.height}`],
@@ -2781,8 +2797,14 @@ function renderMetadata(session) {
     ["Interpretation", session.source.interpretation_mode || "auto"],
     ["Confidence", session.source.color_space_confident ? "confirmed" : "review"],
     ["Bit depth", session.metadata.bit_depth || "unknown"],
-    ["Camera", session.metadata.camera_model || "n/a"],
-    ["Lens", session.metadata.lens || "n/a"],
+    ["Camera make", session.metadata.camera_maker || "n/a"],
+    ["Camera model", session.metadata.camera_model || "n/a"],
+    ["Lens make", session.metadata.lens_maker || "n/a"],
+    ["Lens model", session.metadata.lens || "n/a"],
+    ["ISO", session.metadata.iso || "n/a"],
+    ["Shutter", session.metadata.shutter_speed || "n/a"],
+    ["Focal length", formatFocalLength(session.metadata.focal_length_mm)],
+    ["Aperture", formatAperture(session.metadata.aperture)],
   ];
   if (session.metadata.extra?.experimental_dng_import === "True") {
     entries.push(

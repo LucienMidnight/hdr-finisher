@@ -77,6 +77,7 @@ def decode_raw(
         if progress:
             progress("developing_raw", "Developing RAW with as-shot white balance and AHD demosaic")
         with rawpy.imread(str(path)) as raw:
+            exif = _merge_missing_metadata(exif, _read_libraw_metadata(raw))
             raw_pattern = getattr(raw, "raw_pattern", None)
             is_mosaiced = raw_pattern is not None
             camera_white_balance = _float_list(getattr(raw, "camera_whitebalance", None))
@@ -181,7 +182,8 @@ def decode_raw(
             lens_settings,
             camera_maker=exif.get("camera_maker"),
             camera_model=exif.get("camera_model"),
-            lens_name=exif.get("lens_name"),
+            lens_maker=exif.get("lens_maker"),
+            lens_name=exif.get("lens_model") or exif.get("lens_name"),
             cancelled=cancelled,
         )
     _raise_if_cancelled(cancelled)
@@ -213,6 +215,22 @@ def decode_raw(
         "lens_correction": lens_metadata or {"mode": lens_settings.mode, "applied": False},
         "decoder_normalized_to_acescg": True,
     }
+    metadata.update(
+        {
+            key: value
+            for key, value in {
+                "camera_maker": exif.get("camera_maker"),
+                "camera_model": exif.get("camera_model"),
+                "lens_maker": exif.get("lens_maker"),
+                "lens": exif.get("lens_model") or exif.get("lens_name"),
+                "iso": exif.get("iso"),
+                "shutter_speed": exif.get("shutter_speed"),
+                "focal_length_mm": exif.get("focal_length_mm"),
+                "aperture": exif.get("aperture"),
+            }.items()
+            if value not in (None, "")
+        }
+    )
     if opcode_audit is not None:
         metadata.update(
             {
@@ -276,6 +294,7 @@ def apply_lens_correction(
     *,
     camera_maker: str | None = None,
     camera_model: str | None = None,
+    lens_maker: str | None = None,
     lens_name: str | None = None,
     cancelled: Callable[[], bool] | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
@@ -314,7 +333,12 @@ def apply_lens_correction(
             "database_version": database_identity,
         }
     profile = _resolve_lens_profile(
-        database, settings, camera_maker=camera_maker, camera_model=camera_model, lens_name=lens_name
+        database,
+        settings,
+        camera_maker=camera_maker,
+        camera_model=camera_model,
+        lens_maker=lens_maker,
+        lens_name=lens_name,
     )
     if profile is None:
         if settings.mode == "auto":
@@ -388,6 +412,7 @@ def _resolve_lens_profile(
     *,
     camera_maker: str | None,
     camera_model: str | None,
+    lens_maker: str | None,
     lens_name: str | None,
 ) -> tuple[Any, Any, LensProfileRecord] | None:
     if settings.mode == "manual" and settings.profile_id:
@@ -422,11 +447,11 @@ def _resolve_lens_profile(
             return None
         return camera, lens, record
     elif settings.mode == "auto" and camera_model and lens_name:
-        cameras = database.find_cameras(camera_maker, camera_model, loose_search=True)
+        cameras = database.find_cameras(camera_maker, camera_model)
         if len(cameras) != 1:
             return None
         camera = cameras[0]
-        lenses = database.find_lenses(camera, lens=lens_name, loose_search=True)
+        lenses = database.find_lenses(camera, maker=lens_maker, lens=lens_name)
         if len(lenses) != 1:
             return None
         lens = lenses[0]
@@ -529,7 +554,7 @@ def _read_raw_exif(path: Path) -> dict[str, Any]:
         import exifread
 
         with path.open("rb") as handle:
-            tags = exifread.process_file(handle, details=False)
+            tags = exifread.process_file(handle, details=False, extract_thumbnail=False)
     except Exception:
         return {}
 
@@ -558,13 +583,61 @@ def _read_raw_exif(path: Path) -> dict[str, Any]:
         for key, value in {
             "camera_maker": text("Image Make"),
             "camera_model": text("Image Model"),
-            "lens_name": text("EXIF LensModel", "Image LensModel", "MakerNote LensType"),
+            "lens_maker": text("EXIF LensMake", "Image LensMake", "MakerNote LensMake"),
+            "lens_model": text("EXIF LensModel", "Image LensModel", "MakerNote LensModel", "MakerNote LensType"),
+            "iso": text(
+                "EXIF PhotographicSensitivity",
+                "EXIF ISOSpeedRatings",
+                "EXIF RecommendedExposureIndex",
+            ),
+            "shutter_speed": text("EXIF ExposureTime", "Image ExposureTime"),
             "focal_length_mm": number("EXIF FocalLength"),
             "aperture": number("EXIF FNumber"),
             "focus_distance_m": number("EXIF SubjectDistance"),
         }.items()
         if value is not None
     }
+
+
+def _read_libraw_metadata(raw: Any) -> dict[str, Any]:
+    """Return vendor-aware LibRaw metadata without replacing exact EXIF identity."""
+    lens = getattr(raw, "lens", None)
+    other = getattr(raw, "other", None)
+    return {
+        key: value
+        for key, value in {
+            "lens_maker": _clean_metadata_text(getattr(lens, "make", None)),
+            "lens_model": _clean_metadata_text(getattr(lens, "model", None)),
+            "focal_length_mm": _positive_float(getattr(other, "focal_length", None)),
+            "aperture": _positive_float(getattr(other, "aperture", None)),
+            "iso": _positive_float(getattr(other, "iso_speed", None)),
+            "shutter_speed": _positive_float(getattr(other, "shutter_speed", None)),
+        }.items()
+        if value is not None
+    }
+
+
+def _merge_missing_metadata(primary: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(primary)
+    for key, value in fallback.items():
+        if merged.get(key) in (None, ""):
+            merged[key] = value
+    return merged
+
+
+def _clean_metadata_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip().strip("\x00")
+    return text or None
+
+
+def _positive_float(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
 
 
 @lru_cache(maxsize=1)
