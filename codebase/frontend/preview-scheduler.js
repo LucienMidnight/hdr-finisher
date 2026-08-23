@@ -12,7 +12,11 @@
       this.generations = { image: 0, scope: 0, refinement: 0, inactive: 0 };
       this.current = null;
       this.frame = null;
+      this.frameInFlight = false;
+      this.framePending = false;
       this.scopeTimer = null;
+      this.scopeInFlight = false;
+      this.scopePending = null;
       this.settleTimer = null;
       this.refinementTimer = null;
       this.idleHandle = null;
@@ -22,6 +26,8 @@
         inputCount: 0,
         frameCount: 0,
         staleResults: 0,
+        coalescedFrames: 0,
+        coalescedScopes: 0,
         queueDelayMs: [],
         renderMs: [],
         scopeMs: [],
@@ -81,6 +87,9 @@
       this.generations.refinement += 1;
       if (this.frame !== null) cancelAnimationFrame(this.frame);
       this.frame = null;
+      this.framePending = false;
+      if (this.scopePending) this.scopePending.resolve(false);
+      this.scopePending = null;
       window.clearTimeout(this.scopeTimer);
       window.clearTimeout(this.settleTimer);
       this.scopeTimer = null;
@@ -97,15 +106,29 @@
     }
 
     requestFrame(task) {
+      if (this.frameInFlight) {
+        this.framePending = true;
+        this.metrics.coalescedFrames += 1;
+        return;
+      }
       if (this.frame !== null) return;
       this.frame = requestAnimationFrame(async () => {
         this.frame = null;
         const current = this.current;
         if (!current) return;
         const started = performance.now();
-        this.metrics.queueDelayMs.push(started - current.inputAt);
-        await this.measure("renderMs", () => this.callbacks.onFrame?.(current));
-        this.metrics.frameCount += 1;
+        this.recordMetric("queueDelayMs", started - current.inputAt);
+        this.frameInFlight = true;
+        try {
+          await this.measure("renderMs", () => this.callbacks.onFrame?.(current));
+          this.metrics.frameCount += 1;
+        } finally {
+          this.frameInFlight = false;
+          if (this.framePending) {
+            this.framePending = false;
+            if (this.current) this.requestFrame(this.current);
+          }
+        }
       });
     }
 
@@ -116,7 +139,7 @@
       this.scopeTimer = window.setTimeout(async () => {
         if (this.current !== task) return;
         this.lastScopeStartedAt = performance.now();
-        await this.measure("scopeMs", () => this.callbacks.onScope?.({ ...task, tier: "interactive" }));
+        await this.runScope({ task, tier: "interactive" });
       }, delay);
     }
 
@@ -127,9 +150,9 @@
         const started = performance.now();
         await Promise.all([
           this.callbacks.onSettle?.({ ...task, tier: "settled" }),
-          this.measure("scopeMs", () => this.callbacks.onScope?.({ ...task, tier: "settled" })),
+          this.runScope({ task, tier: "settled" }),
         ]);
-        this.metrics.settleMs.push(performance.now() - started);
+        this.recordMetric("settleMs", performance.now() - started);
         this.armRefinement(task);
       }, this.timings.settleMs);
     }
@@ -141,7 +164,7 @@
         if (this.current !== task || this.interacting) return;
         await Promise.all([
           this.callbacks.onRefine?.({ ...task, tier: "refinement" }),
-          this.measure("scopeMs", () => this.callbacks.onScope?.({ ...task, tier: "refinement" })),
+          this.runScope({ task, tier: "refinement" }),
         ]);
       }, this.timings.refinementMs);
     }
@@ -162,8 +185,48 @@
       try {
         return await callback?.();
       } finally {
-        this.metrics[bucket].push(performance.now() - started);
+        this.recordMetric(bucket, performance.now() - started);
       }
+    }
+
+    runScope(scopeRequest) {
+      return new Promise((resolve, reject) => {
+        const request = { ...scopeRequest, resolve, reject };
+        if (this.scopeInFlight) {
+          if (this.scopePending) this.scopePending.resolve(false);
+          this.scopePending = request;
+          this.metrics.coalescedScopes += 1;
+          return;
+        }
+        this.executeScope(request);
+      });
+    }
+
+    async executeScope(request) {
+      this.scopeInFlight = true;
+      try {
+        const result = await this.measure("scopeMs", () => this.callbacks.onScope?.({
+          ...request.task,
+          tier: request.tier,
+        }));
+        request.resolve(result);
+      } catch (error) {
+        request.reject(error);
+      } finally {
+        this.scopeInFlight = false;
+        const pending = this.scopePending;
+        this.scopePending = null;
+        if (pending) {
+          if (this.current === pending.task) this.executeScope(pending);
+          else pending.resolve(false);
+        }
+      }
+    }
+
+    recordMetric(bucket, value) {
+      const values = this.metrics[bucket];
+      values.push(value);
+      if (values.length > 240) values.shift();
     }
   }
 

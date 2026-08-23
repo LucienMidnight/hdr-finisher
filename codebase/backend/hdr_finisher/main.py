@@ -604,6 +604,7 @@ def scopes(
     columns: int = Query(default=512, ge=64, le=1024),
     long_edge: int = Query(default=960, ge=256, le=2000),
     max_nits: ScopeMaxNits = Query(default=ScopeMaxNits.NITS_4000),
+    channels: str = Query(default="all", pattern="^(all|rgb|luma)$"),
     edit_revision: int | None = Query(default=None, ge=0),
 ):
     try:
@@ -622,6 +623,7 @@ def scopes(
         columns,
         int(max_nits.value),
         local_adjustments=session.local_adjustments,
+        channel_names=("R", "G", "B") if channels == "rgb" else (("Y",) if channels == "luma" else None),
     )
 
 
@@ -635,6 +637,7 @@ def scopes_for_adjustments(
     columns: int = Query(default=512, ge=64, le=1024),
     long_edge: int = Query(default=960, ge=256, le=2000),
     max_nits: ScopeMaxNits = Query(default=ScopeMaxNits.NITS_4000),
+    channels: str = Query(default="all", pattern="^(all|rgb|luma)$"),
 ):
     try:
         session, adjustments = _resolve_edit_request(session_id, request.adjustments, request.edit_revision)
@@ -658,6 +661,13 @@ def scopes_for_adjustments(
                 if request.local_adjustments is not None
                 else session.local_adjustments
             ) if request.include_locals else [],
+            channel_names=("R", "G", "B") if channels == "rgb" else (("Y",) if channels == "luma" else None),
+            scope_region=(
+                request.scope_region.x,
+                request.scope_region.y,
+                request.scope_region.width,
+                request.scope_region.height,
+            ) if request.scope_region is not None else None,
         )
     except StaleRender:
         return JSONResponse(status_code=409, content={"detail": "Stale scope request dropped."})

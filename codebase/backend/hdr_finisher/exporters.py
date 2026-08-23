@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 import subprocess
+from time import perf_counter
 import zlib
 
 import numpy as np
@@ -243,22 +244,24 @@ class AVIFGainMapExportBackend(ExportBackend):
         if self.capability.status != CapabilityStatus.AVAILABLE:
             return ExportResponse(accepted=False, backend=self.name, message=self.capability.detail)
 
-        avifenc = resolve_binary("avifenc")
         gainmaputil = resolve_binary("avifgainmaputil")
-        if avifenc is None or gainmaputil is None:
+        if gainmaputil is None:
             return ExportResponse(
                 accepted=False,
                 backend=self.name,
-                message="AVIF gain map export requires avifenc and avifgainmaputil.",
+                message="AVIF gain map export requires avifgainmaputil.",
             )
 
         output_path = Path(_resolve_output_path(getattr(session, "session_id", "session"), settings, ".avif"))
         _require_overwrite_permission(output_path, settings)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
+        timings_ms: dict[str, float] = {}
         finishing_adjustments = _finishing_adjustments_for_export(session)
+        phase_started = perf_counter()
         hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
         sdr_image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
+        timings_ms["render_renditions"] = round((perf_counter() - phase_started) * 1000.0, 3)
 
         staged_output: Path | None = None
         try:
@@ -270,8 +273,8 @@ class AVIFGainMapExportBackend(ExportBackend):
                 temp_dir = Path(temp_dir_name)
                 base_y4m_path = temp_dir / "base_sdr.y4m"
                 hdr_y4m_path = temp_dir / "alternate_hdr.y4m"
-                hdr_avif_path = temp_dir / "alternate_hdr.avif"
 
+                phase_started = perf_counter()
                 _write_sdr_y4m(
                     base_y4m_path,
                     sdr_image,
@@ -289,23 +292,18 @@ class AVIFGainMapExportBackend(ExportBackend):
                     chroma_subsampling="444",
                     reference_white_nits=getattr(session, "hdr_reference_white_nits", 203),
                 )
-                _run_command(
-                    [
-                        str(avifenc),
-                        "--cicp",
-                        "9/16/9",
-                        "-q",
-                        str(int(settings.quality)),
-                        str(hdr_y4m_path),
-                        str(hdr_avif_path),
-                    ]
-                )
+                timings_ms["prepare_y4m"] = round((perf_counter() - phase_started) * 1000.0, 3)
+                phase_started = perf_counter()
                 _run_command(
                     [
                         str(gainmaputil),
                         "combine",
                         str(base_y4m_path),
-                        str(hdr_avif_path),
+                        # avifgainmaputil accepts Y4M directly. Passing the
+                        # authored HDR rendition avoids a redundant lossy AVIF
+                        # encode followed by an immediate decode inside the
+                        # combiner, while preserving its full 4:4:4 reference.
+                        str(hdr_y4m_path),
                         str(staged_output),
                         "--cicp-base",
                         "1/13/1",
@@ -329,22 +327,37 @@ class AVIFGainMapExportBackend(ExportBackend):
                         settings.avif_chroma_subsampling,
                     ]
                 )
+                timings_ms["encode"] = round((perf_counter() - phase_started) * 1000.0, 3)
+            phase_started = perf_counter()
             validation = _validate_avif_output(
                 staged_output,
                 expected_bit_depth=settings.avif_bit_depth,
                 expected_chroma=settings.avif_chroma_subsampling,
                 expected_gain_map_chroma=settings.avif_gain_map_chroma_subsampling,
             )
+            timings_ms["validate"] = round((perf_counter() - phase_started) * 1000.0, 3)
             os.replace(staged_output, output_path)
             staged_output = None
         except (ExportProcessError, OSError, ValueError) as exc:
             _remove_incomplete_output(staged_output)
-            return ExportResponse(accepted=False, backend=self.name, message=str(exc), output_path=str(output_path))
+            return ExportResponse(
+                accepted=False,
+                backend=self.name,
+                message=str(exc),
+                output_path=str(output_path),
+                timings_ms=timings_ms,
+            )
 
         message = f"AVIF gain map export finished at {output_path}"
         if validation:
             message = f"{message}. {validation}"
-        return ExportResponse(accepted=True, backend=self.name, message=message, output_path=str(output_path))
+        return ExportResponse(
+            accepted=True,
+            backend=self.name,
+            message=message,
+            output_path=str(output_path),
+            timings_ms=timings_ms,
+        )
 
 
 class JPEGUltraHDRExportBackend(ExportBackend):

@@ -5,14 +5,14 @@ import pytest
 
 from hdr_finisher.adjustments import apply_adjustments
 from hdr_finisher.analysis import _luma_peaks, _robust_channel_peak, classify_hdr
-from hdr_finisher.color import normalize_to_acescg, sanitize_array
+from hdr_finisher.color import linear_bt2020_to_acescg, normalize_to_acescg, sanitize_array
 from hdr_finisher.exporters import _linear_to_bt2020_pq_yuv10, _linear_to_pq_rgb10, _linear_to_srgb8
 from hdr_finisher.loader import _apply_apple_hdr_gainmap, _compute_apple_headroom
 from hdr_finisher.models import AdjustmentState, ExportSettings, HDRAdjustments, HDRClassification, PreviewKind, SDRAdjustments
 from hdr_finisher.overlay import build_overlay_rgba
 from hdr_finisher.preview import downsample_image
 from hdr_finisher.models import ScopeMode
-from hdr_finisher.scopes import _rgb_to_reference_nits, build_scope
+from hdr_finisher.scopes import _rgb_to_reference_nits, build_scope, build_scope_from_processed
 
 
 def test_sanitize_array_replaces_invalid_values() -> None:
@@ -582,6 +582,56 @@ def test_vectorscope_aggregates_every_pixel_into_compact_chroma_grid() -> None:
     assert grid.shape == (32, 32)
     assert int(grid.sum()) == image.shape[0] * image.shape[1]
     assert np.count_nonzero(grid) >= 2
+
+
+def _vectorscope_target_cell(kr: float, kb: float, channel: str, bins: int) -> tuple[int, int]:
+    signal = {
+        "R": np.array([1.0, 0.0, 0.0]),
+        "G": np.array([0.0, 1.0, 0.0]),
+        "B": np.array([0.0, 0.0, 1.0]),
+    }[channel]
+    y = kr * signal[0] + (1.0 - kr - kb) * signal[1] + kb * signal[2]
+    u = np.clip(0.5 + (signal[2] - y) / (2.0 * (1.0 - kb)), 0.0, 1.0)
+    v = np.clip(0.5 + (signal[0] - y) / (2.0 * (1.0 - kr)), 0.0, 1.0)
+    return min(bins - 1, int(v * bins)), min(bins - 1, int(u * bins))
+
+
+def test_sdr_vectorscope_places_encoded_primaries_on_standard_rec709_targets() -> None:
+    bins = 256
+    image = np.array([[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]], dtype=np.float32)
+    scope = build_scope_from_processed(image, PreviewKind.SDR, ScopeMode.VECTORSCOPE, bins=bins)
+    grid = np.asarray(scope.channels[0].grid)
+
+    for channel in ("R", "G", "B"):
+        row, column = _vectorscope_target_cell(0.2126, 0.0722, channel, bins)
+        assert grid[row, column] == 1
+
+
+def test_hdr_vectorscope_uses_pq_rec2020_signal_and_standard_primary_targets() -> None:
+    bins = 256
+    # One scene-linear unit is project reference white / 0.18. This value maps
+    # to 10,000 nits and therefore PQ code value 1.0.
+    pq_peak_linear = np.float32(10000.0 * 0.18 / 203.0)
+    linear_bt2020 = np.eye(3, dtype=np.float32)[None, ...] * pq_peak_linear
+    acescg = linear_bt2020_to_acescg(linear_bt2020)
+    scope = build_scope_from_processed(acescg, PreviewKind.HDR, ScopeMode.VECTORSCOPE, bins=bins)
+    grid = np.asarray(scope.channels[0].grid)
+
+    for channel in ("R", "G", "B"):
+        row, column = _vectorscope_target_cell(0.2627, 0.0593, channel, bins)
+        assert grid[row, column] == 1
+
+
+def test_hdr_vectorscope_compands_ordinary_scene_linear_exr_chroma_out_of_center() -> None:
+    bins = 256
+    linear_bt2020 = np.array([[[0.18, 0.0, 0.0]]], dtype=np.float32)
+    acescg = linear_bt2020_to_acescg(linear_bt2020)
+    scope = build_scope_from_processed(acescg, PreviewKind.HDR, ScopeMode.VECTORSCOPE, bins=bins)
+    grid = np.asarray(scope.channels[0].grid)
+    row, column = np.argwhere(grid > 0)[0]
+
+    assert row / (bins - 1) > 0.75
+    assert column / (bins - 1) < 0.45
 
 
 def test_sdr_source_has_predictable_internal_hdr_scope_anchor() -> None:

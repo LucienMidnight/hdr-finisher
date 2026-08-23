@@ -4,9 +4,11 @@ from io import BytesIO
 
 import numpy as np
 from PIL import Image
+import pytest
+from pydantic import ValidationError
 
 from hdr_finisher.color import acescg_to_linear_srgb
-from hdr_finisher.models import AdjustmentState, PreviewKind, PreviewRequest
+from hdr_finisher.models import AdjustmentState, PreviewKind, PreviewRequest, ScopeRegion
 from hdr_finisher.preview import encode_processed_preview_bytes
 
 
@@ -14,6 +16,15 @@ def test_preview_request_defaults_to_hdr_transport_for_existing_clients() -> Non
     request = PreviewRequest(adjustments=AdjustmentState())
 
     assert request.hdr_display is True
+
+
+def test_scope_region_is_optional_and_must_stay_inside_the_normalized_frame() -> None:
+    request = PreviewRequest(scope_region=ScopeRegion(x=0.2, y=0.3, width=0.4, height=0.5))
+
+    assert request.scope_region is not None
+    assert request.scope_region.model_dump() == {"x": 0.2, "y": 0.3, "width": 0.4, "height": 0.5}
+    with pytest.raises(ValidationError, match="must stay within"):
+        ScopeRegion(x=0.8, y=0.2, width=0.3, height=0.4)
 
 
 def test_hdr_sdr_display_preview_matches_webgpu_fallback_math() -> None:

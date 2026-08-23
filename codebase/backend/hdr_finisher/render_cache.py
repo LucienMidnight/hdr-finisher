@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from dataclasses import dataclass, field
+import json
 from threading import Event, RLock
 from typing import Any, Callable
 
@@ -29,13 +30,32 @@ def adjustment_signature(adjustments: AdjustmentState) -> str:
     shared = payload.get("shared", {})
     for key in ("overlay_mode", "false_color_band_anchor", "false_color_ceiling_nits", "overlay_opacity", "overlay_threshold"):
         shared.pop(key, None)
-    return AdjustmentState.model_validate(payload).model_dump_json()
+    # The model is already validated. Revalidating this large nested payload on
+    # every slider event adds pure scheduling latency and cannot normalize it
+    # further; compact JSON preserves the model field order used by cache keys.
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
 def local_adjustment_signature(local_adjustments: list[LocalAdjustment] | None) -> str:
     if not local_adjustments:
         return "[]"
     return "[" + ",".join(item.model_dump_json() for item in local_adjustments) + "]"
+
+
+def scope_region_view(
+    image: np.ndarray,
+    region: tuple[float, float, float, float] | None,
+) -> np.ndarray:
+    """Return a normalized post-geometry ROI without copying scope pixels."""
+    if region is None:
+        return image
+    height, width = image.shape[:2]
+    x, y, region_width, region_height = region
+    x0 = min(width - 1, max(0, int(np.floor(x * width))))
+    y0 = min(height - 1, max(0, int(np.floor(y * height))))
+    x1 = min(width, max(x0 + 1, int(np.ceil((x + region_width) * width))))
+    y1 = min(height, max(y0 + 1, int(np.ceil((y + region_height) * height))))
+    return image[y0:y1, x0:x1]
 
 
 @dataclass
@@ -50,7 +70,7 @@ class SessionRenderCache:
     _source_proxies: OrderedDict[int, np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
     _sdr_proxies: OrderedDict[int, np.ndarray | None] = field(default_factory=OrderedDict, init=False, repr=False)
     _frames: OrderedDict[tuple[str, int, str], np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
-    _scopes: OrderedDict[tuple[str, int, str, str, int, int, int], Any] = field(default_factory=OrderedDict, init=False, repr=False)
+    _scopes: OrderedDict[tuple[object, ...], Any] = field(default_factory=OrderedDict, init=False, repr=False)
     _masks: OrderedDict[tuple[int, str, str, str], np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
     _geometry_maps: OrderedDict[tuple[int, str], tuple[tuple[float, ...], tuple[float, ...], int, int]] = field(default_factory=OrderedDict, init=False, repr=False)
     _inflight: dict[tuple[object, ...], Event] = field(default_factory=dict, init=False, repr=False)
@@ -263,11 +283,15 @@ class SessionRenderCache:
         max_nits: int = 4000,
         is_current: Callable[[], bool] | None = None,
         local_adjustments: list[LocalAdjustment] | None = None,
+        channel_names: tuple[str, ...] | None = None,
+        scope_region: tuple[float, float, float, float] | None = None,
     ) -> Any:
         """Return a cached, single-flight scope payload for the adjusted proxy."""
         edge = max(256, int(long_edge))
         signature = adjustment_signature(adjustments) + local_adjustment_signature(local_adjustments) + repr(self.color_context.cache_key)
-        key = (kind.value, edge, signature, mode, int(bins), int(columns), int(max_nits))
+        requested_channels = tuple(channel_names or ("R", "G", "B", "Y"))
+        region_key = tuple(round(float(value), 6) for value in scope_region) if scope_region is not None else None
+        key = (kind.value, edge, signature, mode, int(bins), int(columns), int(max_nits), requested_channels, region_key)
         flight_key = ("scope", *key)
         while True:
             with self._lock:
@@ -300,6 +324,7 @@ class SessionRenderCache:
                 local_adjustments=local_adjustments,
                 _record_diagnostics=False,
             )
+            processed = scope_region_view(processed, region_key)
             result = build_scope_from_processed(
                 processed,
                 kind,
@@ -308,6 +333,7 @@ class SessionRenderCache:
                 waveform_columns=columns,
                 max_nits=max_nits,
                 color_context=self.color_context,
+                channel_names=requested_channels,
             )
             if is_current is not None and not is_current():
                 with self._lock:
@@ -442,7 +468,9 @@ def encode_rgba32f_proxy(image: np.ndarray) -> tuple[bytes, int]:
     row_bytes = width * 4 * np.dtype(np.float32).itemsize
     padded_row_bytes = ((row_bytes + 255) // 256) * 256
     row_floats = padded_row_bytes // np.dtype(np.float32).itemsize
-    packed = np.zeros((height, row_floats), dtype="<f4")
+    packed = np.empty((height, row_floats), dtype="<f4")
+    if row_floats > width * 4:
+        packed[:, width * 4 :] = 0
     rgba = packed[:, : width * 4].reshape(height, width, 4)
     rgba[..., :3] = image[..., :3]
     rgba[..., 3] = 1.0
@@ -452,8 +480,15 @@ def encode_rgba32f_proxy(image: np.ndarray) -> tuple[bytes, int]:
 def encode_rgba_proxy(image: np.ndarray, prefer_half: bool = True) -> tuple[bytes, int, str]:
     """Pack an aligned float proxy, using half float when its finite range is safe."""
     source = image.astype(np.float32, copy=False)
-    finite = bool(np.all(np.isfinite(source)))
-    safe_half = finite and (source.size == 0 or float(np.max(np.abs(source))) <= float(np.finfo(np.float16).max))
+    if source.size:
+        # Scalar reductions avoid the two full-frame temporary arrays created
+        # by isfinite(source) and abs(source) on every new GPU proxy level.
+        minimum = float(np.min(source))
+        maximum = float(np.max(source))
+        half_limit = float(np.finfo(np.float16).max)
+        safe_half = bool(np.isfinite(minimum) and np.isfinite(maximum) and minimum >= -half_limit and maximum <= half_limit)
+    else:
+        safe_half = True
     if not prefer_half or not safe_half:
         body, bytes_per_row = encode_rgba32f_proxy(source)
         return body, bytes_per_row, "rgba32float"
@@ -462,7 +497,9 @@ def encode_rgba_proxy(image: np.ndarray, prefer_half: bool = True) -> tuple[byte
     row_bytes = width * 4 * np.dtype(np.float16).itemsize
     padded_row_bytes = ((row_bytes + 255) // 256) * 256
     row_values = padded_row_bytes // np.dtype(np.float16).itemsize
-    packed = np.zeros((height, row_values), dtype="<f2")
+    packed = np.empty((height, row_values), dtype="<f2")
+    if row_values > width * 4:
+        packed[:, width * 4 :] = 0
     rgba = packed[:, : width * 4].reshape(height, width, 4)
     rgba[..., :3] = source[..., :3]
     rgba[..., 3] = np.float16(1.0)

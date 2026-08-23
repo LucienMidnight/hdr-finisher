@@ -1,6 +1,12 @@
 const { chromium } = require("playwright");
 
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
+const requestedModes = (process.env.HDR_SCOPE_MODES || "histogram,waveform,vectorscope")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+const skipSdr = process.env.HDR_SKIP_SDR === "1";
+const sdrNeutralOnly = process.env.HDR_SDR_NEUTRAL_ONLY === "1";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -15,9 +21,9 @@ function assert(condition, message) {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
     await page.getByRole("button", { name: "Load test pattern" }).click();
     await page.waitForFunction(() => state.session?.session_id && state.gpuPreview?.available && els.previewCanvas.style.display !== "none", null, { timeout: 30000 });
-    const result = await page.evaluate(async () => {
+    const result = await page.evaluate(async (scopeModes) => {
       const comparisons = {};
-      for (const mode of ["histogram", "waveform", "vectorscope"]) {
+      for (const mode of scopeModes) {
         state.scopeMode = mode;
         els.scopeMode.value = mode;
         let presented = false;
@@ -29,7 +35,7 @@ function assert(condition, message) {
         const gpu = JSON.parse(JSON.stringify(state.lastScope));
         const bins = mode === "vectorscope" ? 128 : mode === "waveform" ? waveformRequestResolution("settled").bins : 256;
         const columns = mode === "vectorscope" ? 128 : mode === "waveform" ? waveformRequestResolution("settled").columns : 256;
-        const response = await fetch(`/api/session/${state.session.session_id}/scopes?kind=${state.currentView}&mode=${mode}&long_edge=${settledProxyLongEdge()}&max_nits=${state.scopeMaxNits}&bins=${bins}&columns=${columns}`, {
+        const response = await fetch(`/api/session/${state.session.session_id}/scopes?kind=${state.currentView}&mode=${mode}&long_edge=${settledProxyLongEdge()}&max_nits=${state.scopeMaxNits}&bins=${bins}&columns=${columns}&channels=rgb`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ edit_revision: state.editRevision, include_locals: true, generation: 1, tier: "settled" }),
@@ -38,7 +44,7 @@ function assert(condition, message) {
         comparisons[mode] = { gpu, cpu: await response.json() };
       }
       return comparisons;
-    });
+    }, requestedModes);
 
     const report = {};
     for (const [mode, pair] of Object.entries(result)) {
@@ -70,20 +76,28 @@ function assert(condition, message) {
       assert(distributionError <= 0.025, `${mode} GPU distribution differs from CPU by ${distributionError.toFixed(4)}.`);
     }
 
-    const sdrBands = await page.evaluate(async () => {
+    if (skipSdr) {
+      if (pageErrors.length) throw new Error(`Browser errors: ${pageErrors.join(" | ")}`);
+      console.log(JSON.stringify({ browser: await browser.version(), report, pageErrors }, null, 2));
+      return;
+    }
+
+    const sdrBands = await page.evaluate(async (neutralOnly) => {
       if (await syncGlobalEditState() === false) throw new Error("Pending HDR state did not synchronize before SDR parity.");
       state.currentView = "sdr";
       renderLaneChrome();
-      state.adjustments.sdr.tone_equalizer_nodes = [
-        { input_ev: -6, adjustment_ev: 0.35 },
-        { input_ev: -3, adjustment_ev: 0.2 },
-        { input_ev: 0, adjustment_ev: 0 },
-        { input_ev: 3, adjustment_ev: -0.15 },
-        { input_ev: 6, adjustment_ev: -0.3 },
-      ];
-      state.adjustments.sdr.tone_equalizer_smoothing = 0.75;
-      invalidatePreview("sdr");
-      if (await syncGlobalEditState() === false) throw new Error(`SDR Exposure Bands state did not synchronize: ${els.badge.textContent}`);
+      if (!neutralOnly) {
+        state.adjustments.sdr.tone_equalizer_nodes = [
+          { input_ev: -6, adjustment_ev: 0.35 },
+          { input_ev: -3, adjustment_ev: 0.2 },
+          { input_ev: 0, adjustment_ev: 0 },
+          { input_ev: 3, adjustment_ev: -0.15 },
+          { input_ev: 6, adjustment_ev: -0.3 },
+        ];
+        state.adjustments.sdr.tone_equalizer_smoothing = 0.75;
+        invalidatePreview("sdr");
+        if (await syncGlobalEditState() === false) throw new Error(`SDR Exposure Bands state did not synchronize: ${els.badge.textContent}`);
+      }
       if (!await renderGpuDraft("sdr", { longEdge: settledProxyLongEdge() })) {
         throw new Error("SDR Exposure Bands GPU draft did not render.");
       }
@@ -96,14 +110,14 @@ function assert(condition, message) {
       }
       if (!presented) throw new Error("GPU SDR Exposure Bands histogram was not presented.");
       const gpu = JSON.parse(JSON.stringify(state.lastScope));
-      const response = await fetch(`/api/session/${state.session.session_id}/scopes?kind=sdr&mode=histogram&long_edge=${settledProxyLongEdge()}&max_nits=${state.scopeMaxNits}&bins=256&columns=256`, {
+      const response = await fetch(`/api/session/${state.session.session_id}/scopes?kind=sdr&mode=histogram&long_edge=${settledProxyLongEdge()}&max_nits=${state.scopeMaxNits}&bins=256&columns=256&channels=rgb`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ edit_revision: state.editRevision, include_locals: true, generation: 1, tier: "settled" }),
       });
       if (!response.ok) throw new Error(`CPU SDR Exposure Bands scope failed with HTTP ${response.status}`);
       return { gpu, cpu: await response.json() };
-    });
+    }, sdrNeutralOnly);
     const sdrPeakRelative = Math.abs(sdrBands.gpu.peak_value - sdrBands.cpu.peak_value) / Math.max(1e-6, sdrBands.cpu.peak_value);
     const sdrDistributionError = Math.max(...sdrBands.gpu.channels.map((channel, index) => {
       const leftTotal = channel.bins.reduce((sum, value) => sum + value, 0) || 1;
@@ -111,9 +125,20 @@ function assert(condition, message) {
       const rightTotal = right.reduce((sum, value) => sum + value, 0) || 1;
       return channel.bins.reduce((sum, value, bin) => sum + Math.abs(value / leftTotal - right[bin] / rightTotal), 0) / channel.bins.length;
     }));
-    report.sdrExposureBands = { peakRelative: sdrPeakRelative, distributionError: sdrDistributionError };
-    assert(sdrPeakRelative <= 0.03, `SDR Exposure Bands GPU peak differs from CPU by ${(sdrPeakRelative * 100).toFixed(2)}%.`);
+    report.sdrExposureBands = {
+      peakRelative: sdrPeakRelative,
+      distributionError: sdrDistributionError,
+      gpuPeak: sdrBands.gpu.peak_value,
+      cpuPeak: sdrBands.cpu.peak_value,
+    };
+    assert(sdrPeakRelative <= 0.03, `SDR Exposure Bands GPU peak differs from CPU by ${(sdrPeakRelative * 100).toFixed(2)}% (GPU ${sdrBands.gpu.peak_value}, CPU ${sdrBands.cpu.peak_value}).`);
     assert(sdrDistributionError <= 0.025, `SDR Exposure Bands GPU distribution differs from CPU by ${sdrDistributionError.toFixed(4)}.`);
+
+    if (sdrNeutralOnly) {
+      if (pageErrors.length) throw new Error(`Browser errors: ${pageErrors.join(" | ")}`);
+      console.log(JSON.stringify({ browser: await browser.version(), report, pageErrors }, null, 2));
+      return;
+    }
 
     const sdrToneMappers = await page.evaluate(async () => {
       const comparisons = {};
@@ -134,7 +159,7 @@ function assert(condition, message) {
         }
         if (!presented) throw new Error(`${mapper} GPU histogram was not presented.`);
         const gpu = JSON.parse(JSON.stringify(state.lastScope));
-        const response = await fetch(`/api/session/${state.session.session_id}/scopes?kind=sdr&mode=histogram&long_edge=${settledProxyLongEdge()}&max_nits=${state.scopeMaxNits}&bins=256&columns=256`, {
+        const response = await fetch(`/api/session/${state.session.session_id}/scopes?kind=sdr&mode=histogram&long_edge=${settledProxyLongEdge()}&max_nits=${state.scopeMaxNits}&bins=256&columns=256&channels=rgb`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ edit_revision: state.editRevision, include_locals: true, generation: 1, tier: "settled" }),

@@ -128,8 +128,11 @@ def test_panel_titles_and_scope_description_follow_shared_design_contract() -> N
     assert 'class="preview-metadata-panel"' not in html
     assert html.count('<h1 class="panel-title">Control Panel</h1>') == 4
     assert '<h1 class="panel-title dock-panel-title">Scopes</h1>' in html
-    assert 'id="scope-title" tabindex="0" aria-describedby="scope-note"' in html
-    assert 'id="scope-note" class="title-tooltip" role="tooltip"' in html
+    assert 'id="scope-title" class="visually-hidden"' in html
+    assert 'class="scope-header-controls field-inline"' in html
+    assert '<option value="technical">Technical</option>' in html
+    assert 'class="dock-tabs"' not in html
+    assert 'id="scope-note" class="visually-hidden"' in html
     assert 'id="histogram" width="720" height="220" aria-label="Image scope" aria-describedby="scope-note"' in html
     assert "compactScopeGuideLabel(scope, guide)" in app
     assert "RW means active HDR reference white" in app
@@ -149,6 +152,7 @@ def test_default_shortcuts_are_conservative_and_warn_about_macos_system_bindings
 
     assert '"edit.redo": "Mod+Shift+Z"' in app
     assert '"file.exportStandard": "Mod+E"' in app
+    assert '"view.scopeRegion": "Shift+R"' in app
     assert '"view.analysis": "S"' not in app
     assert '"file.export": "X"' not in app
     assert '["Mod+Shift+3", "a full-screen screenshot"]' in app
@@ -272,7 +276,7 @@ def test_curve_drag_uses_live_preview_scheduler_and_three_point_default_shape() 
     assert "return index === 0 || index === pointCount - 1 ? 0.18 : 0.35" in curve_binding
     assert "const verticalStep = step * Math.min(1, curveVerticalAdjustmentScale(index, curve.length) / 0.35)" in curve_binding
     assert "return [[0, 0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1, 1]]" in javascript
-    assert 'if (tier === "interactive") return Math.min(384, interactiveProxyLongEdge())' in javascript
+    assert 'return Math.min(profile.interactiveEdge, interactiveProxyLongEdge())' in javascript
 
 
 def test_curve_canvas_left_clicks_add_or_select_and_right_click_removes() -> None:
@@ -989,7 +993,7 @@ def test_viewer_exposes_icon_comparison_layouts_with_active_lane_scopes() -> Non
     assert 'id="comparison-image"' in html
     assert 'id="compare-button"' in html and "A/B" not in html
     assert 'id="compare-status"' not in html
-    assert html.count('class="viewer-tool-divider"') == 3
+    assert html.count('class="viewer-tool-divider"') == 4
     assert 'class="zoom-presets" role="group" aria-label="Zoom presets"' in html
     assert 'state.compareLayout = "single"' in javascript
     assert 'els.compareStatus' not in javascript
@@ -1166,14 +1170,71 @@ def test_adjustment_group_presets_are_scoped_persistent_and_available_in_headers
     assert 'deleteGradingPreset: (presetId)' in preload
 
 
-def test_waveform_resolution_policy_reduces_payload_without_coarse_refresh_columns() -> None:
+def test_waveform_detail_profiles_raise_default_quality_with_performance_fallback() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
 
     assert "waveformRequestResolution(tier)" in javascript
+    assert 'const DEFAULT_SCOPE_QUALITY = "detailed"' in javascript
+    assert 'id="scope-detail"' in html
+    assert '<option value="performance">Performance</option>' in html
+    assert '<option value="detailed" selected>Detailed</option>' in html
+    assert '<option value="reference">Reference</option>' in html
     assert "columns: Math.round(clamp(width / 2, 320, 384))" in javascript
     assert 'bins: tier === "interactive" ? 64 : tier === "refinement" ? 160 : 128' in javascript
-    assert 'if (tier === "interactive") return Math.min(requestedLongEdge, 512)' in javascript
-    assert 'if (tier === "refinement") return Math.min(requestedLongEdge, 960)' in javascript
-    assert "return Math.min(requestedLongEdge, 768)" in javascript
-    assert "smoothedWaveformPopulation(row, columnIndex)" in javascript
-    assert "return (left + 2 * center + right) * 0.25" in javascript
+    assert 'clamp(width * 0.75, 512, 768)' in javascript
+    assert 'bins: tier === "interactive" ? 96 : 256' in javascript
+    assert 'clamp(width, 768, 1024)' in javascript
+    assert 'bins: tier === "interactive" ? 128 : 384' in javascript
+    assert '&channels=${requestedChannels}' in javascript
+    assert "smoothedWaveformPopulation(row, columnIndex, horizontalSpread)" in javascript
+    assert "performance: { densityGain: 1.35, horizontalSpread: 1" in javascript
+    assert "detailed: { densityGain: 1.9, horizontalSpread: 2" in javascript
+    assert "reference: { densityGain: 2.15, horizontalSpread: 3" in javascript
+    assert "1: { weights: [1, 2, 1], total: 4 }" in javascript
+    assert "2: { weights: [1, 4, 6, 4, 1], total: 16 }" in javascript
+    assert "3: { weights: [1, 6, 15, 20, 15, 6, 1], total: 64 }" in javascript
+    assert "1 - Math.exp(-densityGain * Math.pow(density, 0.72))" in javascript
+
+
+def test_vectorscope_uses_display_signal_targets_in_cpu_and_gpu_paths() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    scopes = (ROOT / "backend" / "hdr_finisher" / "scopes.py").read_text(encoding="utf-8")
+
+    assert "acescg_to_linear_bt2020(working_rgb)" in scopes
+    assert "signal_rgb = _scope_pq_oetf(normalized_nits)" in scopes
+    assert "signal_rgb = _scope_srgb_oetf(linear_srgb)" in scopes
+    assert "0.5 + (signal_rgb[..., 2] - signal_luma)" in scopes
+    assert "0.5 + 0.5 * (signal_rgb" not in scopes
+    assert "vectorscopeTransferLut(hdr, referenceWhite)" in javascript
+    assert "1.0260187082 * workingR - 0.0221655448 * workingG" in javascript
+    assert "const [kr, kg, kb] = hdr ? [0.2627, 0.6780, 0.0593]" in javascript
+    assert "0.5 + (b - y) / (2 * (1 - kb))" in javascript
+    assert "0.5 + 0.5 * (b - y)" not in javascript
+    assert "const normalizationPeak = robustScopePopulationPeak(grid)" in javascript
+    assert "function renderScopeControlAvailability()" in javascript
+    assert 'els.scopeChannelMode?.classList.toggle("hidden", technical || vectorscope)' in javascript
+    assert 'const rangeRelevant = !technical && !vectorscope && state.currentView === "hdr"' in javascript
+
+
+def test_scope_region_is_an_optional_remappable_post_geometry_scope_tool() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    shell = (FRONTEND / "application-shell.js").read_text(encoding="utf-8")
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+
+    assert 'id="scope-region-toggle"' in html
+    assert 'aria-label="Toggle Scope Region (Shift+R)"' in html
+    assert 'class="scope-region-icon-frame"' in html
+    assert 'id="scope-region-overlay" class="scope-region-overlay hidden"' in html
+    assert html.count('data-scope-region-handle=') == 5
+    assert 'id="scope-region-badge"' in html
+    assert '"view.scopeRegion": "Shift+R"' in shell
+    assert 'id: "view.scopeRegion"' in javascript
+    assert "scope_region: scopeRegion" in javascript
+    assert "function scopeAnalysisBounds" in javascript
+    assert "function beginScopeRegionDrag" in javascript
+    assert "function handleScopeRegionKeydown" in javascript
+    assert "var(--curve-selected-ring)" in css
+    assert "var(--curve-selected)" in css
+    assert "var(--accent)" in css

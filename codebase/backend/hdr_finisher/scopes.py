@@ -3,7 +3,8 @@ from __future__ import annotations
 import numpy as np
 
 from .adjustments import apply_adjustments
-from .color_context import RenderColorContext, scene_linear_to_nits
+from .color import acescg_to_linear_bt2020
+from .color_context import RenderColorContext, nits_to_scene_linear, scene_linear_to_nits
 from .models import (
     AdjustmentState,
     HistogramChannel,
@@ -35,6 +36,12 @@ SDR_GUIDES = [
     ScopeGuide(value=1.0, label="100%"),
 ]
 
+SDR_SIGNAL_GUIDES = [
+    ScopeGuide(value=0.18, label="18% signal"),
+    ScopeGuide(value=0.5, label="50% signal"),
+    ScopeGuide(value=1.0, label="100% signal"),
+]
+
 
 def build_scope(
     image: np.ndarray,
@@ -46,14 +53,15 @@ def build_scope(
     sdr_reference_image: np.ndarray | None = None,
     max_nits: int = 4000,
     color_context: RenderColorContext | None = None,
+    channel_names: tuple[str, ...] | None = None,
 ) -> ScopeResponse:
     context = color_context or RenderColorContext()
     processed = apply_adjustments(image, adjustments, kind, sdr_reference_image=sdr_reference_image, color_context=context)
     if mode == ScopeMode.WAVEFORM:
-        return _build_waveform(processed, kind, bins=bins or 256, columns=waveform_columns, max_nits=max_nits, color_context=context)
+        return _build_waveform(processed, kind, bins=bins or 256, columns=waveform_columns, max_nits=max_nits, color_context=context, channel_names=channel_names)
     if mode == ScopeMode.VECTORSCOPE:
         return _build_vectorscope(processed, kind, bins=bins or 128, color_context=context)
-    return _build_histogram(processed, kind, bins=bins or 256, max_nits=max_nits, color_context=context)
+    return _build_histogram(processed, kind, bins=bins or 256, max_nits=max_nits, color_context=context, channel_names=channel_names)
 
 
 def build_scope_from_processed(
@@ -64,34 +72,63 @@ def build_scope_from_processed(
     waveform_columns: int = 512,
     max_nits: int = 4000,
     color_context: RenderColorContext | None = None,
+    channel_names: tuple[str, ...] | None = None,
 ) -> ScopeResponse:
     context = color_context or RenderColorContext()
     if mode == ScopeMode.WAVEFORM:
-        return _build_waveform(processed, kind, bins=bins or 256, columns=waveform_columns, max_nits=max_nits, color_context=context)
+        return _build_waveform(processed, kind, bins=bins or 256, columns=waveform_columns, max_nits=max_nits, color_context=context, channel_names=channel_names)
     if mode == ScopeMode.VECTORSCOPE:
         return _build_vectorscope(processed, kind, bins=bins or 128, color_context=context)
-    return _build_histogram(processed, kind, bins=bins or 256, max_nits=max_nits, color_context=context)
+    return _build_histogram(processed, kind, bins=bins or 256, max_nits=max_nits, color_context=context, channel_names=channel_names)
 
 
-def _build_histogram(processed: np.ndarray, kind: PreviewKind, bins: int, max_nits: int, color_context: RenderColorContext) -> ScopeResponse:
+def _build_histogram(
+    processed: np.ndarray,
+    kind: PreviewKind,
+    bins: int,
+    max_nits: int,
+    color_context: RenderColorContext,
+    channel_names: tuple[str, ...] | None = None,
+) -> ScopeResponse:
     if kind == PreviewKind.HDR:
-        return _build_hdr_histogram(processed, bins=bins, max_nits=max_nits, color_context=color_context)
-    return _build_sdr_histogram(processed, bins=bins)
+        return _build_hdr_histogram(processed, bins=bins, max_nits=max_nits, color_context=color_context, channel_names=channel_names)
+    return _build_sdr_histogram(processed, bins=bins, channel_names=channel_names)
 
 
-def _build_hdr_histogram(processed: np.ndarray, bins: int, max_nits: int, color_context: RenderColorContext) -> ScopeResponse:
+def _build_hdr_histogram(
+    processed: np.ndarray,
+    bins: int,
+    max_nits: int,
+    color_context: RenderColorContext,
+    channel_names: tuple[str, ...] | None = None,
+) -> ScopeResponse:
     ceiling = _hdr_scope_ceiling(max_nits)
-    clipped = np.clip(processed.astype(np.float32, copy=False), 0.0, None)
-    luminance_nits = _rgb_to_reference_nits(clipped, color_context)
+    selected = set(channel_names or ("R", "G", "B", "Y"))
+    # HDR grades are ACEScg scene-linear. RGB traces represent the actual
+    # BT.2020 transport primaries, while Y remains linear-light luminance.
+    transport = np.clip(acescg_to_linear_bt2020(processed.astype(np.float32, copy=False)), 0.0, None)
+    transport_luma = (
+        np.float32(0.2627) * transport[..., 0]
+        + np.float32(0.6780) * transport[..., 1]
+        + np.float32(0.0593) * transport[..., 2]
+    )
+    luminance_nits = np.clip(
+        scene_linear_to_nits(transport_luma, color_context.hdr_reference_white_nits),
+        0.0,
+        None,
+    )
     edges = _hdr_edges(bins, ceiling)
 
     channels = []
     for idx, name in enumerate(("R", "G", "B")):
-        channel_nits = _channel_to_reference_nits(clipped[..., idx], color_context)
+        if name not in selected:
+            continue
+        channel_nits = _channel_to_reference_nits(transport[..., idx], color_context)
         hist, _ = np.histogram(np.clip(channel_nits, 1.0, ceiling), bins=edges)
         channels.append(HistogramChannel(name=name, bins=hist.astype(int).tolist()))
-    luma_hist, _ = np.histogram(np.clip(luminance_nits, 1.0, ceiling), bins=edges)
-    channels.append(HistogramChannel(name="Y", bins=luma_hist.astype(int).tolist()))
+    if "Y" in selected:
+        luma_hist, _ = np.histogram(np.clip(luminance_nits, 1.0, ceiling), bins=edges)
+        channels.append(HistogramChannel(name="Y", bins=luma_hist.astype(int).tolist()))
 
     return ScopeResponse(
         preview_kind=PreviewKind.HDR,
@@ -103,47 +140,94 @@ def _build_hdr_histogram(processed: np.ndarray, bins: int, max_nits: int, color_
         channels=channels,
         normalization_peak=_normalization_peak(channels),
         peak_value=float(np.max(luminance_nits)),
-        clipped=bool(np.any(luminance_nits >= 10000.0)),
+        clipped=bool(np.any(transport >= nits_to_scene_linear(10000.0, color_context.hdr_reference_white_nits))),
     )
 
 
-def _build_sdr_histogram(processed: np.ndarray, bins: int) -> ScopeResponse:
-    clipped = np.clip(processed.astype(np.float32, copy=False), 0.0, 1.0)
+def _build_sdr_histogram(
+    processed: np.ndarray,
+    bins: int,
+    channel_names: tuple[str, ...] | None = None,
+) -> ScopeResponse:
+    selected = set(channel_names or ("R", "G", "B", "Y"))
+    linear = processed.astype(np.float32, copy=False)
+    # The authored SDR frame is linear sRGB, but its displayed/exported signal
+    # is nonlinear. Analyze the same signal users see instead of overweighting
+    # linear-light shadows.
+    signal = _linear_srgb_to_signal(np.clip(linear, 0.0, 1.0))
     edges = np.linspace(0.0, 1.0, bins + 1, dtype=np.float32)
     channels = []
     for idx, name in enumerate(("R", "G", "B")):
-        hist, _ = np.histogram(clipped[..., idx], bins=edges)
+        if name not in selected:
+            continue
+        hist, _ = np.histogram(signal[..., idx], bins=edges)
         channels.append(HistogramChannel(name=name, bins=hist.astype(int).tolist()))
 
-    luma = 0.2126 * clipped[..., 0] + 0.7152 * clipped[..., 1] + 0.0722 * clipped[..., 2]
-    luma_hist, _ = np.histogram(luma, bins=edges)
-    channels.append(HistogramChannel(name="Y", bins=luma_hist.astype(int).tolist()))
+    luma = 0.2126 * signal[..., 0] + 0.7152 * signal[..., 1] + 0.0722 * signal[..., 2]
+    if "Y" in selected:
+        luma_hist, _ = np.histogram(luma, bins=edges)
+        channels.append(HistogramChannel(name="Y", bins=luma_hist.astype(int).tolist()))
     return ScopeResponse(
         preview_kind=PreviewKind.SDR,
         scope_type="normalized_histogram",
         x_axis="normalized",
         bin_edges=[float(edge) for edge in edges.tolist()],
-        guides=SDR_GUIDES,
+        guides=SDR_SIGNAL_GUIDES,
         stats=_sdr_stats(luma),
         channels=channels,
         normalization_peak=_normalization_peak(channels),
         peak_value=float(np.max(luma)),
-        clipped=bool(np.any(luma >= 1.0)),
+        clipped=bool(np.any(linear[..., :3] >= 1.0)),
     )
 
 
-def _build_waveform(processed: np.ndarray, kind: PreviewKind, bins: int, columns: int, max_nits: int, color_context: RenderColorContext) -> ScopeResponse:
+def _linear_srgb_to_signal(image: np.ndarray) -> np.ndarray:
+    source = np.clip(image.astype(np.float32, copy=False), 0.0, 1.0)
+    return np.where(
+        source <= np.float32(0.0031308),
+        source * np.float32(12.92),
+        np.float32(1.055) * np.power(source, np.float32(1.0 / 2.4)) - np.float32(0.055),
+    ).astype(np.float32, copy=False)
+
+
+def _build_waveform(
+    processed: np.ndarray,
+    kind: PreviewKind,
+    bins: int,
+    columns: int,
+    max_nits: int,
+    color_context: RenderColorContext,
+    channel_names: tuple[str, ...] | None = None,
+) -> ScopeResponse:
+    selected = set(channel_names or ("R", "G", "B", "Y"))
     clipped = np.clip(processed.astype(np.float32, copy=False), 0.0, None if kind == PreviewKind.HDR else 1.0)
     if kind == PreviewKind.HDR:
         ceiling = _hdr_scope_ceiling(max_nits)
         edges = _hdr_edges(bins, ceiling)
         channels = []
-        luminance_nits = _rgb_to_reference_nits(clipped, color_context)
+        # HDR grading is ACEScg scene-linear, but the delivered HDR transport
+        # and monitor primaries are Rec.2020. Luma is invariant across the
+        # linear transform; RGB parade channels are not. Plot the transport
+        # primaries so saturated EXR colors land on the channels viewers see.
+        waveform_rgb = np.clip(acescg_to_linear_bt2020(clipped[..., :3]), 0.0, None)
+        transport_luma = (
+            np.float32(0.2627) * waveform_rgb[..., 0]
+            + np.float32(0.6780) * waveform_rgb[..., 1]
+            + np.float32(0.0593) * waveform_rgb[..., 2]
+        )
+        luminance_nits = np.clip(
+            scene_linear_to_nits(transport_luma, color_context.hdr_reference_white_nits), 0.0, None
+        )
+        channel_clipped = False
         for idx, name in enumerate(("R", "G", "B")):
-            channel_nits = _channel_to_reference_nits(clipped[..., idx], color_context)
+            channel_nits = _channel_to_reference_nits(waveform_rgb[..., idx], color_context)
+            channel_clipped = channel_clipped or bool(np.any(channel_nits >= 10000.0))
+            if name not in selected:
+                continue
             grid = _waveform_grid(np.clip(channel_nits, 1.0, ceiling), edges, columns)
             channels.append(HistogramChannel(name=name, bins=[], grid=grid))
-        channels.append(HistogramChannel(name="Y", bins=[], grid=_waveform_grid(np.clip(luminance_nits, 1.0, ceiling), edges, columns)))
+        if "Y" in selected:
+            channels.append(HistogramChannel(name="Y", bins=[], grid=_waveform_grid(np.clip(luminance_nits, 1.0, ceiling), edges, columns)))
         return ScopeResponse(
             preview_kind=PreviewKind.HDR,
             scope_type="reference_nits_waveform",
@@ -154,27 +238,36 @@ def _build_waveform(processed: np.ndarray, kind: PreviewKind, bins: int, columns
             channels=channels,
             normalization_peak=_normalization_peak(channels),
             peak_value=float(np.max(luminance_nits)),
-            clipped=bool(np.any(luminance_nits >= 10000.0)),
+            clipped=channel_clipped,
         )
 
     edges = np.linspace(0.0, 1.0, bins + 1, dtype=np.float32)
     channels = []
-    luma = 0.2126 * clipped[..., 0] + 0.7152 * clipped[..., 1] + 0.0722 * clipped[..., 2]
+    # Conventional SDR waveform monitors operate on the encoded Rec.709/sRGB
+    # output signal, not the internal linear-light render buffer. This also
+    # keeps waveform/parade positions consistent with the SDR histogram.
+    signal = _linear_srgb_to_signal(clipped[..., :3])
+    luma = 0.2126 * signal[..., 0] + 0.7152 * signal[..., 1] + 0.0722 * signal[..., 2]
     for idx, name in enumerate(("R", "G", "B")):
-        grid = _waveform_grid(clipped[..., idx], edges, columns)
+        if name not in selected:
+            continue
+        grid = _waveform_grid(signal[..., idx], edges, columns)
         channels.append(HistogramChannel(name=name, bins=[], grid=grid))
-    channels.append(HistogramChannel(name="Y", bins=[], grid=_waveform_grid(luma, edges, columns)))
+    if "Y" in selected:
+        channels.append(HistogramChannel(name="Y", bins=[], grid=_waveform_grid(luma, edges, columns)))
     return ScopeResponse(
         preview_kind=PreviewKind.SDR,
         scope_type="normalized_waveform",
         x_axis="normalized",
         bin_edges=[float(edge) for edge in edges.tolist()],
-        guides=SDR_GUIDES,
+        guides=SDR_SIGNAL_GUIDES,
         stats=_sdr_stats(luma),
         channels=channels,
         normalization_peak=_normalization_peak(channels),
         peak_value=float(np.max(luma)),
-        clipped=bool(np.any(luma >= 1.0)),
+        # A legal luma value can still contain a clipped RGB primary (pure red
+        # at 1.0 is the common case), which a parade must flag.
+        clipped=bool(np.any(clipped[..., :3] >= 1.0)),
     )
 
 
@@ -193,15 +286,34 @@ def _waveform_grid(values: np.ndarray, edges: np.ndarray, columns: int) -> list[
 
 
 def _build_vectorscope(processed: np.ndarray, kind: PreviewKind, bins: int, color_context: RenderColorContext) -> ScopeResponse:
-    rgb = np.clip(processed[..., :3].astype(np.float32, copy=False), 0.0, None if kind == PreviewKind.HDR else 1.0)
-    kr, kg, kb = (0.2722287, 0.6740818, 0.0536895) if kind == PreviewKind.HDR else (0.2126, 0.7152, 0.0722)
-    luma = kr * rgb[..., 0] + kg * rgb[..., 1] + kb * rgb[..., 2]
-    u = np.clip(0.5 + 0.5 * (rgb[..., 2] - luma) / max(2.0 * (1.0 - kb), 1e-6), 0.0, 1.0)
-    v = np.clip(0.5 + 0.5 * (rgb[..., 0] - luma) / max(2.0 * (1.0 - kr), 1e-6), 0.0, 1.0)
+    working_rgb = processed[..., :3].astype(np.float32, copy=False)
+    if kind == PreviewKind.HDR:
+        # The grading buffer is ACEScg scene-linear, while a conventional HDR
+        # vectorscope measures nonlinear Rec.2020 video signal. Analyze the
+        # same PQ domain an HDR monitor receives; doing this in scene-linear
+        # space collapses ordinary EXR chroma around the center.
+        linear_bt2020 = np.clip(acescg_to_linear_bt2020(working_rgb), 0.0, None)
+        normalized_nits = np.clip(
+            scene_linear_to_nits(linear_bt2020, color_context.hdr_reference_white_nits) / np.float32(10000.0),
+            0.0,
+            1.0,
+        )
+        signal_rgb = _scope_pq_oetf(normalized_nits)
+        kr, kg, kb = (0.2627, 0.6780, 0.0593)
+        display_luma = _rgb_to_reference_nits(np.clip(working_rgb, 0.0, None), color_context)
+    else:
+        linear_srgb = np.clip(working_rgb, 0.0, 1.0)
+        signal_rgb = _scope_srgb_oetf(linear_srgb)
+        kr, kg, kb = (0.2126, 0.7152, 0.0722)
+        display_luma = kr * linear_srgb[..., 0] + kg * linear_srgb[..., 1] + kb * linear_srgb[..., 2]
+    signal_luma = kr * signal_rgb[..., 0] + kg * signal_rgb[..., 1] + kb * signal_rgb[..., 2]
+    # Standard full-range Y'CbCr coordinates. The previous extra 0.5 factor
+    # halved every chroma excursion, including calibrated primary targets.
+    u = np.clip(0.5 + (signal_rgb[..., 2] - signal_luma) / max(2.0 * (1.0 - kb), 1e-6), 0.0, 1.0)
+    v = np.clip(0.5 + (signal_rgb[..., 0] - signal_luma) / max(2.0 * (1.0 - kr), 1e-6), 0.0, 1.0)
     x = np.minimum((u * bins).astype(np.int32), bins - 1)
     y = np.minimum((v * bins).astype(np.int32), bins - 1)
     grid = np.bincount((y * bins + x).reshape(-1), minlength=bins * bins).reshape(bins, bins)
-    display_luma = scene_linear_to_nits(luma, color_context.hdr_reference_white_nits) if kind == PreviewKind.HDR else np.clip(luma, 0.0, 1.0)
     return ScopeResponse(
         preview_kind=kind,
         scope_type="vectorscope",
@@ -214,6 +326,25 @@ def _build_vectorscope(processed: np.ndarray, kind: PreviewKind, bins: int, colo
         peak_value=float(np.max(display_luma)),
         clipped=bool(np.any(display_luma >= (10000.0 if kind == PreviewKind.HDR else 1.0))),
     )
+
+
+def _scope_pq_oetf(normalized_luminance: np.ndarray) -> np.ndarray:
+    m1 = np.float32(2610.0 / 16384.0)
+    m2 = np.float32(2523.0 / 32.0)
+    c1 = np.float32(3424.0 / 4096.0)
+    c2 = np.float32(2413.0 / 128.0)
+    c3 = np.float32(2392.0 / 128.0)
+    lm1 = np.power(np.clip(normalized_luminance, 0.0, 1.0), m1)
+    return np.power((c1 + c2 * lm1) / (np.float32(1.0) + c3 * lm1), m2).astype(np.float32, copy=False)
+
+
+def _scope_srgb_oetf(linear: np.ndarray) -> np.ndarray:
+    clipped = np.clip(linear, 0.0, 1.0)
+    return np.where(
+        clipped <= np.float32(0.0031308),
+        clipped * np.float32(12.92),
+        np.float32(1.055) * np.power(clipped, np.float32(1.0 / 2.4)) - np.float32(0.055),
+    ).astype(np.float32, copy=False)
 
 
 def _normalization_peak(channels: list[HistogramChannel]) -> int:

@@ -22,6 +22,7 @@
     "file.exportStandard": "Mod+E",
     "edit.undo": "Mod+Z",
     "edit.redo": "Mod+Shift+Z",
+    "view.scopeRegion": "Shift+R",
   };
   const MACOS_RESERVED_SHORTCUTS = new Map([
     ["Mod+Shift+3", "a full-screen screenshot"],

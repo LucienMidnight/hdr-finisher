@@ -4,7 +4,7 @@ import numpy as np
 
 from hdr_finisher.finishing import apply_geometry
 from hdr_finisher.models import AdjustmentState, GeometryAdjustments, LocalAdjustment, MaskExpression, MaskLeaf, OverlayMode, PreviewKind
-from hdr_finisher.render_cache import SessionRenderCache, adjustment_signature, encode_rgba32f_proxy
+from hdr_finisher.render_cache import SessionRenderCache, adjustment_signature, encode_rgba32f_proxy, encode_rgba_proxy, scope_region_view
 
 
 def test_adjusted_proxy_is_downsampled_before_processing_and_reused() -> None:
@@ -37,6 +37,25 @@ def test_scope_request_counts_one_top_level_miss_then_one_hit() -> None:
     assert after_hit["hits"] == 1
 
 
+def test_scope_region_is_a_post_geometry_view_and_has_an_independent_cache_key() -> None:
+    image = np.arange(8 * 12 * 3, dtype=np.float32).reshape(8, 12, 3)
+    region = (0.25, 0.25, 0.5, 0.5)
+    view = scope_region_view(image, region)
+
+    assert view.shape == (4, 6, 3)
+    assert np.shares_memory(view, image)
+    np.testing.assert_array_equal(view, image[2:6, 3:9])
+
+    cache = SessionRenderCache(np.full((64, 96, 3), 0.18, dtype=np.float32), None)
+    adjustments = AdjustmentState()
+    full = cache.scope_result(adjustments, PreviewKind.HDR, 256, "histogram", 64, 64)
+    cropped = cache.scope_result(adjustments, PreviewKind.HDR, 256, "histogram", 64, 64, scope_region=region)
+    diagnostics = cache.diagnostics()
+
+    assert diagnostics["misses"] == 2
+    assert sum(full.channels[0].bins) > sum(cropped.channels[0].bins)
+
+
 def test_overlay_only_changes_do_not_invalidate_adjusted_pixels() -> None:
     first = AdjustmentState()
     second = first.model_copy(deep=True)
@@ -54,6 +73,21 @@ def test_webgpu_proxy_rows_are_aligned_rgba32f() -> None:
     assert bytes_per_row == 256
     assert len(body) == 256
     np.testing.assert_allclose(packed[0, :8], [0.25, 0.5, 1.0, 1.0, 2.0, 3.0, 4.0, 1.0])
+
+
+def test_webgpu_half_proxy_initializes_padding_and_rejects_nonfinite_values() -> None:
+    image = np.arange(18, dtype=np.float32).reshape(2, 3, 3)
+
+    body, bytes_per_row, pixel_format = encode_rgba_proxy(image)
+    packed = np.frombuffer(body, dtype="<f2").reshape(2, bytes_per_row // 2)
+
+    assert pixel_format == "rgba16float"
+    assert np.all(packed[:, 12:] == 0)
+
+    nonfinite = image.copy()
+    nonfinite[0, 0, 0] = np.nan
+    _body, _bytes_per_row, fallback_format = encode_rgba_proxy(nonfinite)
+    assert fallback_format == "rgba32float"
 
 
 def test_webgpu_source_proxy_applies_committed_geometry_before_grading() -> None:

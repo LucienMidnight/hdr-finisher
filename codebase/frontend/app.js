@@ -191,6 +191,17 @@ const PREVIEW_RESOLUTION_OPTIONS = new Set(["1024", "2048", "4096", "full"]);
 const DEFAULT_PREVIEW_RESOLUTION = "1024";
 const FULL_PREVIEW_GPU_BYTES_PER_PIXEL = 64;
 const FULL_PREVIEW_GPU_BUDGET_BYTES = 1536 * 1024 * 1024;
+const DEFAULT_SCOPE_QUALITY = "detailed";
+const SCOPE_QUALITY_PROFILES = {
+  performance: { densityGain: 1.35, horizontalSpread: 1, interactiveEdge: 384, settledEdge: 768, refinementEdge: 960 },
+  detailed: { densityGain: 1.9, horizontalSpread: 2, interactiveEdge: 512, settledEdge: 960, refinementEdge: 1200 },
+  reference: { densityGain: 2.15, horizontalSpread: 3, interactiveEdge: 640, settledEdge: 1200, refinementEdge: 1600 },
+};
+const WAVEFORM_HORIZONTAL_KERNELS = {
+  1: { weights: [1, 2, 1], total: 4 },
+  2: { weights: [1, 4, 6, 4, 1], total: 16 },
+  3: { weights: [1, 6, 15, 20, 15, 6, 1], total: 64 },
+};
 const LEGACY_UI_PREFERENCE_KEYS = new Set([
   "hdr-finisher:high-quality-preview:v1",
   "hdr-finisher:scope-zoom:v1",
@@ -200,6 +211,7 @@ const LEGACY_UI_PREFERENCE_KEYS = new Set([
 ]);
 const COMPARE_LAYOUTS = new Set(["single", "split-vertical", "split-horizontal", "side-horizontal", "side-vertical"]);
 const waveformCanvasCache = new WeakMap();
+const vectorscopeTransferLutCache = new Map();
 const localBrushMaskCanvasCache = new Map();
 const localBrushGestureCanvasCache = new WeakMap();
 const localTintedMaskCanvasCache = new WeakMap();
@@ -253,6 +265,12 @@ const state = {
   scopeMode: "histogram",
   scopeChannelMode: "composite",
   scopeMaxNits: 4000,
+  scopeQuality: DEFAULT_SCOPE_QUALITY,
+  scopeRegionEnabled: false,
+  scopeRegion: null,
+  scopeRegionDrag: null,
+  scopeRegionRefreshTimer: 0,
+  scopeRegionSessionId: null,
   sourceSettingsOpen: false,
   rawSettingsOpen: false,
   activeImportJobId: null,
@@ -1057,12 +1075,17 @@ const els = {
   overlayPopover: document.getElementById("overlay-popover"),
   viewerOptionsToggle: document.getElementById("viewer-options-toggle"),
   viewerOptionsPopover: document.getElementById("viewer-options-popover"),
+  scopeRegionToggle: document.getElementById("scope-region-toggle"),
+  scopeRegionOverlay: document.getElementById("scope-region-overlay"),
+  scopeRegionBox: document.getElementById("scope-region-box"),
   scopeTitle: document.getElementById("scope-title"),
   scopeNote: document.getElementById("scope-note"),
   scopeKindLabel: document.getElementById("scope-kind-label"),
+  scopeRegionBadge: document.getElementById("scope-region-badge"),
   scopeFreshness: document.getElementById("scope-freshness"),
   scopeMode: document.getElementById("scope-mode"),
   scopeChannelMode: document.getElementById("scope-channel-mode"),
+  scopeDetail: document.getElementById("scope-detail"),
   scopeZoom: document.getElementById("scope-zoom"),
   scopeStats: document.getElementById("scope-stats"),
   histogram: document.getElementById("histogram"),
@@ -1486,9 +1509,11 @@ function initializePreviewPreferences() {
   state.fullPreviewApprovalKey = "";
   state.previewResolutionNotice = "";
   state.scopeMaxNits = 4000;
+  state.scopeQuality = DEFAULT_SCOPE_QUALITY;
   state.compareLayout = "single";
   if (els.previewResolution) els.previewResolution.value = state.previewResolution;
   if (els.scopeZoom) els.scopeZoom.value = String(state.scopeMaxNits);
+  if (els.scopeDetail) els.scopeDetail.value = state.scopeQuality;
 }
 
 function initializePreviewScheduler() {
@@ -1674,7 +1699,9 @@ function applyLayoutState() {
   const technical = state.activeDockTab === "technical";
   els.scopeView.classList.toggle("hidden", technical);
   els.technicalView.classList.toggle("hidden", !technical);
-  if (!technical) {
+  if (technical) {
+    els.scopeMode.value = "technical";
+  } else {
     state.scopeMode = state.activeDockTab === "vectorscope"
       ? "vectorscope"
       : state.activeDockTab === "waveform" || state.activeDockTab === "parade" ? "waveform" : "histogram";
@@ -1682,7 +1709,22 @@ function applyLayoutState() {
     els.scopeMode.value = state.scopeMode;
     els.scopeChannelMode.value = state.scopeChannelMode;
   }
+  [els.scopeChannelMode, els.scopeDetail, els.scopeZoom].forEach((control) => { if (control) control.disabled = technical; });
+  renderScopeControlAvailability();
   updateSplitterAria();
+}
+
+function renderScopeControlAvailability() {
+  const technical = state.scopeMode === "technical" || state.activeDockTab === "technical";
+  const vectorscope = state.scopeMode === "vectorscope";
+  // Channel selection and nit range do not alter a standards-based
+  // vectorscope. Hide them instead of leaving controls that appear to work.
+  els.scopeChannelMode?.classList.toggle("hidden", technical || vectorscope);
+  if (els.scopeChannelMode) els.scopeChannelMode.disabled = technical || vectorscope;
+  const rangeRelevant = !technical && !vectorscope && state.currentView === "hdr";
+  els.scopeZoom?.closest(".scope-zoom-control")?.classList.toggle("hidden", !rangeRelevant);
+  if (els.scopeZoom) els.scopeZoom.disabled = !rangeRelevant;
+  if (els.scopeDetail) els.scopeDetail.disabled = technical;
 }
 
 function updateSplitterAria() {
@@ -2180,8 +2222,7 @@ function bindEvents() {
   });
   els.interpretationTransfer.addEventListener("change", () => renderSourceSettingsControls());
   els.scopeMode.addEventListener("change", async () => {
-    state.scopeMode = els.scopeMode.value;
-    await refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
+    await activateDockTab(els.scopeMode.value);
   });
   els.scopeChannelMode.addEventListener("change", async () => {
     state.scopeChannelMode = els.scopeChannelMode.value;
@@ -2209,6 +2250,16 @@ function bindEvents() {
     }
     applyPreviewResolution(requested);
   });
+  els.scopeDetail?.addEventListener("change", async () => {
+    state.scopeQuality = SCOPE_QUALITY_PROFILES[els.scopeDetail.value] ? els.scopeDetail.value : DEFAULT_SCOPE_QUALITY;
+    await refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
+  });
+  els.scopeRegionToggle?.addEventListener("click", () => toggleScopeRegion());
+  els.scopeRegionOverlay?.addEventListener("pointerdown", beginScopeRegionDrag);
+  els.scopeRegionOverlay?.addEventListener("pointermove", moveScopeRegionDrag);
+  els.scopeRegionOverlay?.addEventListener("pointerup", endScopeRegionDrag);
+  els.scopeRegionOverlay?.addEventListener("pointercancel", endScopeRegionDrag);
+  els.scopeRegionBox?.addEventListener("keydown", handleScopeRegionKeydown);
 
   ["dragenter", "dragover"].forEach((eventName) => {
     document.addEventListener(eventName, (event) => {
@@ -2889,6 +2940,7 @@ function applicationCommands() {
     { id: "view.zoomOut", label: "Zoom out", category: "Viewer", repeatable: true, execute: () => stepZoom(-1) },
     { id: "view.analysis", label: "Toggle analysis panel", category: "Viewer", execute: () => toggleAnalysisDock() },
     { id: "view.overlay", label: "Cycle overlay mode", category: "Viewer", execute: () => cycleOverlayMode() },
+    { id: "view.scopeRegion", label: "Toggle Scope Region", category: "Viewer", execute: () => toggleScopeRegion() },
     { id: "view.hdr", label: "Show HDR rendition", category: "Viewer", execute: () => switchLane("hdr") },
     { id: "view.sdr", label: "Show SDR rendition", category: "Viewer", execute: () => switchLane("sdr") },
     {
@@ -3201,9 +3253,10 @@ function refinementProxyLongEdge() {
 function scopeLongEdge(tier) {
   // Interactive scopes favor visible motion; the settled pass restores the
   // denser authoring result immediately after the drag ends.
-  if (tier === "interactive") return Math.min(384, interactiveProxyLongEdge());
-  if (tier === "refinement") return Math.min(1600, refinementProxyLongEdge());
-  return Math.min(1200, settledProxyLongEdge());
+  const profile = scopeQualityProfile();
+  if (tier === "interactive") return Math.min(profile.interactiveEdge, interactiveProxyLongEdge());
+  if (tier === "refinement") return Math.min(profile.refinementEdge, refinementProxyLongEdge());
+  return Math.min(profile.settledEdge, settledProxyLongEdge());
 }
 
 function debounceOverlayAndScopes() {
@@ -3489,15 +3542,18 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
   const mode = state.scopeMode;
   const resolution = mode === "waveform"
     ? waveformRequestResolution(tier)
-    : mode === "vectorscope" ? { bins: tier === "interactive" ? 96 : 128, columns: tier === "interactive" ? 96 : 128 }
+    : mode === "vectorscope" ? vectorscopeRequestResolution(tier)
       : { bins: 256, columns: 256 };
   const effectiveLongEdge = mode === "waveform" ? waveformScopeLongEdge(tier, longEdge) : longEdge;
   const includeLocals = !state.compareWithoutLocals;
+  const scopeRegion = activeScopeRegion();
 
   const request = {
     sessionId: state.session.session_id,
     lane,
     mode,
+    quality: state.scopeQuality,
+    channelMode: state.scopeChannelMode,
     tier,
     generation: requestGeneration,
     longEdge: effectiveLongEdge,
@@ -3508,6 +3564,7 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
     localAdjustments: state.localPreviewDirty && includeLocals
       ? JSON.parse(JSON.stringify(localAdjustments()))
       : null,
+    scopeRegion,
     resolve: null,
     controller: null,
   };
@@ -3534,12 +3591,15 @@ function gpuScopeEligible(lane) {
 }
 
 async function runGpuScopeRequest(request) {
-  const { lane, mode, tier, generation, resolution, maxNits } = request;
+  const { lane, mode, tier, generation, resolution, maxNits, scopeRegion } = request;
   markScopeUpdating();
-  const sampleWidth = tier === "interactive"
-    ? Math.max(64, Math.min(192, resolution.columns))
-    : Math.max(256, Math.min(384, resolution.columns));
-  const sampleHeight = tier === "interactive" ? 128 : 256;
+  const widthLimit = tier === "interactive"
+    ? state.scopeQuality === "performance" ? 192 : state.scopeQuality === "reference" ? 384 : 320
+    : state.scopeQuality === "performance" ? 384 : state.scopeQuality === "reference" ? 768 : 640;
+  const sampleWidth = Math.max(64, Math.min(widthLimit, resolution.columns));
+  const sampleHeight = tier === "interactive"
+    ? state.scopeQuality === "performance" ? 128 : state.scopeQuality === "reference" ? 256 : 192
+    : state.scopeQuality === "performance" ? 256 : state.scopeQuality === "reference" ? 512 : 384;
   const analysis = await state.gpuPreview.analyzeScope(els.previewCanvas, {
     width: sampleWidth,
     height: sampleHeight,
@@ -3562,6 +3622,7 @@ async function runGpuScopeRequest(request) {
     bins: resolution.bins,
     columns: resolution.columns,
     maxNits,
+    scopeRegion,
   });
   presentScopePayload(payload, { generation, tier, lane, mode, source: "gpu", metric: analysis.metric });
   return true;
@@ -3584,7 +3645,10 @@ function enqueueScopeRequest(request) {
 }
 
 function scopeRequestKey(request) {
-  return `${request.sessionId}:${request.lane}:${request.mode}:${request.maxNits}`;
+  const region = request.scopeRegion
+    ? [request.scopeRegion.x, request.scopeRegion.y, request.scopeRegion.width, request.scopeRegion.height].map((value) => value.toFixed(5)).join(",")
+    : "full";
+  return `${request.sessionId}:${request.lane}:${request.mode}:${request.quality}:${request.maxNits}:${region}`;
 }
 
 function markScopeUpdating() {
@@ -3604,8 +3668,9 @@ async function runScopeRequest(request) {
   let applied = false;
 
   try {
-    const { sessionId, lane, mode, tier, generation, longEdge, resolution, maxNits, edit_revision, include_locals, localAdjustments: requestLocals } = request;
-    const resolutionQuery = `&bins=${resolution.bins}&columns=${resolution.columns}`;
+    const { sessionId, lane, mode, tier, generation, longEdge, resolution, maxNits, edit_revision, include_locals, localAdjustments: requestLocals, channelMode, scopeRegion } = request;
+    const requestedChannels = channelMode === "luma" ? "luma" : "rgb";
+    const resolutionQuery = `&bins=${resolution.bins}&columns=${resolution.columns}&channels=${requestedChannels}`;
     const requestScope = (revision) => fetch(`/api/session/${sessionId}/scopes?kind=${lane}&mode=${mode}&long_edge=${longEdge}&max_nits=${maxNits}${resolutionQuery}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -3616,6 +3681,7 @@ async function runScopeRequest(request) {
         long_edge: longEdge,
         generation,
         tier,
+        scope_region: scopeRegion,
       }),
       signal: controller.signal,
     });
@@ -3668,21 +3734,46 @@ async function runScopeRequest(request) {
 
 function waveformRequestResolution(tier) {
   const width = Math.max(1, els.histogram.clientWidth);
+  if (state.scopeQuality === "performance") {
+    return {
+      columns: Math.round(clamp(width / 2, 320, 384)),
+      bins: tier === "interactive" ? 64 : tier === "refinement" ? 160 : 128,
+    };
+  }
+  if (state.scopeQuality === "reference") {
+    return {
+      columns: Math.round(tier === "interactive" ? clamp(width * 0.7, 512, 640) : clamp(width, 768, 1024)),
+      bins: tier === "interactive" ? 128 : 384,
+    };
+  }
   return {
-    // Keep horizontal resolution nearly constant across refresh tiers. The old
-    // 192-column interactive grid expanded each bucket into a conspicuous bar
-    // before the denser settled result replaced it.
-    columns: Math.round(clamp(width / 2, 320, 384)),
-    // Vertical density dominates waveform payload and JSON parsing cost, while
-    // contributing much less to perceived positional detail than columns do.
-    bins: tier === "interactive" ? 64 : tier === "refinement" ? 160 : 128,
+    columns: Math.round(tier === "interactive" ? clamp(width * 0.55, 384, 512) : clamp(width * 0.75, 512, 768)),
+    bins: tier === "interactive" ? 96 : 256,
   };
 }
 
 function waveformScopeLongEdge(tier, requestedLongEdge) {
-  if (tier === "interactive") return Math.min(requestedLongEdge, 512);
-  if (tier === "refinement") return Math.min(requestedLongEdge, 960);
-  return Math.min(requestedLongEdge, 768);
+  const profile = scopeQualityProfile();
+  if (tier === "interactive") return Math.min(requestedLongEdge, profile.interactiveEdge);
+  if (tier === "refinement") return Math.min(requestedLongEdge, profile.refinementEdge);
+  return Math.min(requestedLongEdge, profile.settledEdge);
+}
+
+function vectorscopeRequestResolution(tier) {
+  if (state.scopeQuality === "performance") {
+    const bins = tier === "interactive" ? 96 : 128;
+    return { bins, columns: bins };
+  }
+  if (state.scopeQuality === "reference") {
+    const bins = tier === "interactive" ? 192 : 384;
+    return { bins, columns: bins };
+  }
+  const bins = tier === "interactive" ? 128 : 256;
+  return { bins, columns: bins };
+}
+
+function scopeQualityProfile() {
+  return SCOPE_QUALITY_PROFILES[state.scopeQuality] || SCOPE_QUALITY_PROFILES[DEFAULT_SCOPE_QUALITY];
 }
 
 function drawHistogram(scope) {
@@ -3709,10 +3800,10 @@ function drawHistogram(scope) {
     : scope.preview_kind === "hdr"
     ? scope.scope_type.includes("waveform")
       ? `HDR waveform plots horizontal image position against reference nits. In this project, 0.18 scene-linear equals ${projectReferenceWhiteNits()} nits. RW marks the active project reference white.`
-      : "HDR histogram plots reference luminance from left to right on a logarithmic nit scale. Density is log-scaled to retain fine tonal detail. RW marks the active project reference white."
+      : "HDR histogram plots BT.2020 transport RGB and luminance in reference nits on a logarithmic scale. Density is log-scaled to retain fine tonal detail. RW marks the active project reference white."
     : scope.scope_type.includes("waveform")
-      ? "SDR waveform plots horizontal image position against normalized tone-mapped output."
-      : "SDR histogram plots display-safe values from black to white. Density is log-scaled so small tonal populations remain visible.";
+      ? "SDR waveform plots horizontal image position against the nonlinear Rec.709/sRGB output signal. Guides and percentages are signal levels, not scene-linear values."
+      : "SDR histogram plots sRGB/Rec.709 signal values from black to white. Density is log-scaled so small tonal populations remain visible.";
   canvas.title = scopeGuideTooltip(scope);
   renderKeyValueList(els.scopeStats, (scope.stats || []).map((item) => [item.label, item.value]));
 
@@ -4059,7 +4150,10 @@ function waveformDensityCanvas(channel, color, peak) {
   const rowCount = grid.length;
   const columnCount = grid[0]?.length || 0;
   if (!rowCount || !columnCount) return null;
-  const cacheKey = `${color.r},${color.g},${color.b}:${peak}:${rowCount}x${columnCount}:h3`;
+  const profile = scopeQualityProfile();
+  const densityGain = profile.densityGain;
+  const horizontalSpread = profile.horizontalSpread;
+  const cacheKey = `${color.r},${color.g},${color.b}:${peak}:${rowCount}x${columnCount}:h5:${densityGain}:${horizontalSpread}`;
   const cached = waveformCanvasCache.get(channel);
   if (cached?.key === cacheKey) return cached.canvas;
   const surface = document.createElement("canvas");
@@ -4069,14 +4163,18 @@ function waveformDensityCanvas(channel, color, peak) {
   const pixels = surfaceContext.createImageData(columnCount, rowCount);
   grid.forEach((row, rowIndex) => {
     row.forEach((_value, columnIndex) => {
-      const value = smoothedWaveformPopulation(row, columnIndex);
+      const value = smoothedWaveformPopulation(row, columnIndex, horizontalSpread);
       if (value <= 0) return;
       const density = Math.min(1, value / Math.max(1, peak));
       const offset = (((rowCount - 1 - rowIndex) * columnCount) + columnIndex) * 4;
       pixels.data[offset] = color.r;
       pixels.data[offset + 1] = color.g;
       pixels.data[offset + 2] = color.b;
-      pixels.data[offset + 3] = Math.round(0.62 * Math.pow(density, 0.7) * 255);
+      // Exponential exposure gives sparse traces useful lift without flattening
+      // dense areas into one opaque slab. Each detail profile calibrates gain
+      // with its sample count so changing quality does not make the scope dimmer.
+      const opacity = 1 - Math.exp(-densityGain * Math.pow(density, 0.72));
+      pixels.data[offset + 3] = Math.round(opacity * 255);
     });
   });
   surfaceContext.putImageData(pixels, 0, 0);
@@ -4084,11 +4182,15 @@ function waveformDensityCanvas(channel, color, peak) {
   return surface;
 }
 
-function smoothedWaveformPopulation(row, columnIndex) {
-  const center = Number(row[columnIndex]) || 0;
-  const left = columnIndex > 0 ? Number(row[columnIndex - 1]) || 0 : center;
-  const right = columnIndex + 1 < row.length ? Number(row[columnIndex + 1]) || 0 : center;
-  return (left + 2 * center + right) * 0.25;
+function smoothedWaveformPopulation(row, columnIndex, spread = 1) {
+  const kernel = WAVEFORM_HORIZONTAL_KERNELS[spread] || WAVEFORM_HORIZONTAL_KERNELS[1];
+  const radius = Math.floor(kernel.weights.length / 2);
+  let weightedPopulation = 0;
+  for (let offset = 0; offset < kernel.weights.length; offset += 1) {
+    const sampleIndex = Math.max(0, Math.min(row.length - 1, columnIndex + offset - radius));
+    weightedPopulation += (Number(row[sampleIndex]) || 0) * kernel.weights[offset];
+  }
+  return weightedPopulation / kernel.total;
 }
 
 function drawHistogramParade(ctx, channels, palette, plotLeft, plotTop, plotWidth, plotHeight) {
@@ -4151,9 +4253,172 @@ function hexToRgb(value) {
   };
 }
 
+function activeScopeRegion() {
+  if (!state.scopeRegionEnabled || !state.scopeRegion || state.scopeRegionSessionId !== state.session?.session_id) return null;
+  return { ...state.scopeRegion };
+}
+
+function toggleScopeRegion(force = null) {
+  if (!state.session) return false;
+  if (state.scopeRegionSessionId !== state.session.session_id) {
+    state.scopeRegion = null;
+    state.scopeRegionSessionId = state.session.session_id;
+  }
+  state.scopeRegionEnabled = force === null ? !state.scopeRegionEnabled : Boolean(force);
+  renderScopeRegionOverlay();
+  void refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
+  if (state.scopeRegionEnabled && state.scopeRegion) els.scopeRegionBox?.focus({ preventScroll: true });
+  return true;
+}
+
+function clearScopeRegion() {
+  state.scopeRegion = null;
+  state.scopeRegionDrag = null;
+  renderScopeRegionOverlay();
+  void refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
+}
+
+function renderScopeRegionOverlay() {
+  if (!els.scopeRegionToggle || !els.scopeRegionOverlay || !els.scopeRegionBox) return;
+  const available = Boolean(state.session && previewIsVisible());
+  if (state.scopeRegionSessionId && state.scopeRegionSessionId !== state.session?.session_id) {
+    state.scopeRegionEnabled = false;
+    state.scopeRegion = null;
+    state.scopeRegionSessionId = null;
+  }
+  els.scopeRegionToggle.disabled = !available;
+  els.scopeRegionToggle.classList.toggle("active", state.scopeRegionEnabled);
+  els.scopeRegionToggle.setAttribute("aria-pressed", String(state.scopeRegionEnabled));
+  const shown = available && state.scopeRegionEnabled;
+  els.scopeRegionOverlay.classList.toggle("hidden", !shown);
+  els.scopeRegionOverlay.setAttribute("aria-hidden", String(!shown));
+  const region = activeScopeRegion();
+  els.scopeRegionBox.classList.toggle("hidden", !region);
+  if (region) {
+    Object.assign(els.scopeRegionBox.style, {
+      left: `${region.x * 100}%`,
+      top: `${region.y * 100}%`,
+      width: `${region.width * 100}%`,
+      height: `${region.height * 100}%`,
+    });
+  }
+  const coverage = region ? region.width * region.height * 100 : 100;
+  els.scopeRegionBadge?.classList.toggle("hidden", !region);
+  if (els.scopeRegionBadge) {
+    els.scopeRegionBadge.textContent = region ? `Region · ${coverage < 1 ? coverage.toFixed(1) : Math.round(coverage)}%` : "Region";
+  }
+}
+
+function scopeRegionPoint(event) {
+  const rect = els.scopeRegionOverlay.getBoundingClientRect();
+  return {
+    x: clamp((event.clientX - rect.left) / Math.max(1, rect.width), 0, 1),
+    y: clamp((event.clientY - rect.top) / Math.max(1, rect.height), 0, 1),
+    rect,
+  };
+}
+
+function beginScopeRegionDrag(event) {
+  if (!state.scopeRegionEnabled || event.button !== 0) return;
+  event.preventDefault();
+  const point = scopeRegionPoint(event);
+  const handle = event.target.closest("[data-scope-region-handle]")?.dataset.scopeRegionHandle
+    || (event.target.closest("#scope-region-box") ? "move" : "draw");
+  state.scopeRegionDrag = {
+    handle,
+    pointerId: event.pointerId,
+    start: { x: point.x, y: point.y },
+    region: state.scopeRegion ? { ...state.scopeRegion } : null,
+    rect: point.rect,
+  };
+  if (handle === "draw") {
+    state.scopeRegion = { x: point.x, y: point.y, width: 0.001, height: 0.001 };
+  }
+  els.scopeRegionOverlay.setPointerCapture?.(event.pointerId);
+  renderScopeRegionOverlay();
+}
+
+function moveScopeRegionDrag(event) {
+  const drag = state.scopeRegionDrag;
+  if (!drag || drag.pointerId !== event.pointerId) return;
+  event.preventDefault();
+  const point = scopeRegionPoint(event);
+  const minWidth = Math.max(0.01, 12 / Math.max(1, drag.rect.width));
+  const minHeight = Math.max(0.01, 12 / Math.max(1, drag.rect.height));
+  let next;
+  if (drag.handle === "draw") {
+    next = {
+      x: Math.min(drag.start.x, point.x),
+      y: Math.min(drag.start.y, point.y),
+      width: Math.max(minWidth, Math.abs(point.x - drag.start.x)),
+      height: Math.max(minHeight, Math.abs(point.y - drag.start.y)),
+    };
+    next.x = Math.min(next.x, 1 - next.width);
+    next.y = Math.min(next.y, 1 - next.height);
+  } else if (drag.handle === "move" && drag.region) {
+    next = {
+      ...drag.region,
+      x: clamp(drag.region.x + point.x - drag.start.x, 0, 1 - drag.region.width),
+      y: clamp(drag.region.y + point.y - drag.start.y, 0, 1 - drag.region.height),
+    };
+  } else if (drag.region) {
+    const left = drag.region.x;
+    const top = drag.region.y;
+    const right = left + drag.region.width;
+    const bottom = top + drag.region.height;
+    const west = drag.handle.includes("w");
+    const north = drag.handle.includes("n");
+    const nextLeft = west ? clamp(point.x, 0, right - minWidth) : left;
+    const nextRight = west ? right : clamp(point.x, left + minWidth, 1);
+    const nextTop = north ? clamp(point.y, 0, bottom - minHeight) : top;
+    const nextBottom = north ? bottom : clamp(point.y, top + minHeight, 1);
+    next = { x: nextLeft, y: nextTop, width: nextRight - nextLeft, height: nextBottom - nextTop };
+  }
+  if (!next) return;
+  state.scopeRegion = next;
+  renderScopeRegionOverlay();
+  scheduleScopeRegionRefresh();
+}
+
+function scheduleScopeRegionRefresh() {
+  if (state.scopeRegionRefreshTimer) return;
+  state.scopeRegionRefreshTimer = window.setTimeout(() => {
+    state.scopeRegionRefreshTimer = 0;
+    void refreshScopes(scopeLongEdge("interactive"), { tier: "interactive" });
+  }, 80);
+}
+
+function endScopeRegionDrag(event) {
+  const drag = state.scopeRegionDrag;
+  if (!drag || drag.pointerId !== event.pointerId) return;
+  event.preventDefault();
+  state.scopeRegionDrag = null;
+  if (els.scopeRegionOverlay.hasPointerCapture?.(event.pointerId)) els.scopeRegionOverlay.releasePointerCapture(event.pointerId);
+  window.clearTimeout(state.scopeRegionRefreshTimer);
+  state.scopeRegionRefreshTimer = 0;
+  if (state.scopeRegion && (state.scopeRegion.width < 0.01 || state.scopeRegion.height < 0.01)) state.scopeRegion = null;
+  renderScopeRegionOverlay();
+  void refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
+  els.scopeRegionBox?.focus({ preventScroll: true });
+}
+
+function handleScopeRegionKeydown(event) {
+  if (event.key === "Delete" || event.key === "Backspace") {
+    event.preventDefault();
+    clearScopeRegion();
+  } else if (event.key === "Escape") {
+    event.preventDefault();
+    toggleScopeRegion(false);
+    els.scopeRegionToggle?.focus();
+  }
+}
+
 function syncOverlayPlacement() {
   const preview = activePreviewElement();
-  if (!previewIsVisible()) return;
+  if (!previewIsVisible()) {
+    renderScopeRegionOverlay();
+    return;
+  }
   const paneRect = els.previewPrimaryPane.getBoundingClientRect();
   const imageRect = state.straightenPreviewFrameRect || preview.getBoundingClientRect();
   if (!imageRect.width || !imageRect.height) return;
@@ -4166,6 +4431,10 @@ function syncOverlayPlacement() {
   if (els.cropEditorOverlay) Object.assign(els.cropEditorOverlay.style, {
     left: `${imageRect.left - paneRect.left}px`, top: `${imageRect.top - paneRect.top}px`, width: `${imageRect.width}px`, height: `${imageRect.height}px`, right: "auto", bottom: "auto",
   });
+  if (els.scopeRegionOverlay) Object.assign(els.scopeRegionOverlay.style, {
+    left: `${imageRect.left - paneRect.left}px`, top: `${imageRect.top - paneRect.top}px`, width: `${imageRect.width}px`, height: `${imageRect.height}px`, right: "auto", bottom: "auto",
+  });
+  renderScopeRegionOverlay();
   renderVignetteCenter();
   // The local-mask canvas spans the zoomable preview stage. Its bitmap must be
   // rebuilt whenever that stage changes size; otherwise CSS stretches the old
@@ -5629,47 +5898,76 @@ function presentScopePayload(payload, { generation, tier, lane, mode, source, me
   }));
 }
 
-function buildGpuScopePayload(analysis, { lane, mode, tier, generation, bins, columns, maxNits }) {
+function hdrWaveformRec2020(r, g, b) {
+  return [
+    Math.max(0, 1.0260187082 * r - 0.0221655448 * g - 0.0038531634 * b),
+    Math.max(0, -0.0017230808 * r + 1.0023190716 * g - 0.0005959908 * b),
+    Math.max(0, -0.0051099278 * r - 0.0216355504 * g + 1.0267454781 * b),
+  ];
+}
+
+function linearSrgbToScopeSignal(value) {
+  const linear = clamp(value, 0, 1);
+  return linear <= 0.0031308 ? 12.92 * linear : 1.055 * linear ** (1 / 2.4) - 0.055;
+}
+
+function buildGpuScopePayload(analysis, { lane, mode, tier, generation, bins, columns, maxNits, scopeRegion = null }) {
   const hdr = lane === "hdr";
   const referenceWhite = projectReferenceWhiteNits();
   const ceiling = maxNits === 1000 ? 1000 : maxNits === 10000 ? 10000 : 4000;
-  const channelNames = ["R", "G", "B", "Y"];
-  if (mode === "vectorscope") return buildGpuVectorscopePayload(analysis, { lane, tier, generation, bins });
+  const channelEntries = state.scopeChannelMode === "luma"
+    ? [[3, "Y"]]
+    : [[0, "R"], [1, "G"], [2, "B"]];
+  if (mode === "vectorscope") return buildGpuVectorscopePayload(analysis, { lane, tier, generation, bins, scopeRegion });
   const binEdges = hdr
     ? Array.from({ length: bins + 1 }, (_, index) => 10 ** (Math.log10(ceiling) * index / bins))
     : Array.from({ length: bins + 1 }, (_, index) => index / bins);
-  const counts = channelNames.map(() => new Int32Array(mode === "waveform" ? bins * columns : bins));
-  const lumaValues = new Float32Array(analysis.width * analysis.height);
+  const counts = channelEntries.map(() => new Int32Array(mode === "waveform" ? bins * columns : bins));
+  const bounds = scopeAnalysisBounds(analysis, scopeRegion);
+  const lumaValues = new Float32Array(bounds.width * bounds.height);
   let peak = 0;
   let clipped = false;
   let above100 = 0;
   let above203 = 0;
   let above1000 = 0;
-  for (let pixel = 0; pixel < lumaValues.length; pixel += 1) {
-    const offset = pixel * 3;
-    const r = Math.max(0, analysis.pixels[offset]);
-    const g = Math.max(0, analysis.pixels[offset + 1]);
-    const b = Math.max(0, analysis.pixels[offset + 2]);
-    const luma = hdr ? 0.2722287 * r + 0.6740818 * g + 0.0536895 * b : 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    const values = hdr
-      ? [r, g, b, luma].map((value) => value / 0.18 * referenceWhite)
-      : [r, g, b, luma].map((value) => clamp(value, 0, 1));
-    lumaValues[pixel] = values[3];
-    peak = Math.max(peak, values[3]);
-    clipped ||= values[3] >= (hdr ? 10000 : 1);
-    if (hdr) {
-      above100 += values[3] > 100 ? 1 : 0;
-      above203 += values[3] > 203 ? 1 : 0;
-      above1000 += values[3] > 1000 ? 1 : 0;
+  let regionPixel = 0;
+  for (let sourceY = bounds.y0; sourceY < bounds.y1; sourceY += 1) {
+    for (let sourceX = bounds.x0; sourceX < bounds.x1; sourceX += 1) {
+      const pixel = sourceY * analysis.width + sourceX;
+      const offset = pixel * 3;
+      const r = Math.max(0, analysis.pixels[offset]);
+      const g = Math.max(0, analysis.pixels[offset + 1]);
+      const b = Math.max(0, analysis.pixels[offset + 2]);
+      const scopeRgb = hdr
+        ? hdrWaveformRec2020(r, g, b)
+        : [linearSrgbToScopeSignal(r), linearSrgbToScopeSignal(g), linearSrgbToScopeSignal(b)];
+      const luma = hdr
+        ? 0.2627 * scopeRgb[0] + 0.6780 * scopeRgb[1] + 0.0593 * scopeRgb[2]
+        : 0.2126 * scopeRgb[0] + 0.7152 * scopeRgb[1] + 0.0722 * scopeRgb[2];
+      const scopeLuma = luma;
+      const values = hdr
+        ? [...scopeRgb, scopeLuma].map((value) => value / 0.18 * referenceWhite)
+        : [...scopeRgb, scopeLuma].map((value) => clamp(value, 0, 1));
+      lumaValues[regionPixel] = values[3];
+      regionPixel += 1;
+      peak = Math.max(peak, values[3]);
+      clipped ||= hdr
+        ? values[0] >= 10000 || values[1] >= 10000 || values[2] >= 10000
+        : r >= 1 || g >= 1 || b >= 1;
+      if (hdr) {
+        above100 += values[3] > 100 ? 1 : 0;
+        above203 += values[3] > 203 ? 1 : 0;
+        above1000 += values[3] > 1000 ? 1 : 0;
+      }
+      const column = Math.min(columns - 1, Math.floor((sourceX - bounds.x0) / bounds.width * columns));
+      channelEntries.forEach(([valueIndex], channel) => {
+        const value = values[valueIndex];
+        const bin = hdr
+          ? Math.min(bins - 1, Math.max(0, Math.floor(Math.log10(clamp(value, 1, ceiling)) / Math.log10(ceiling) * bins)))
+          : Math.min(bins - 1, Math.max(0, Math.floor(value * bins)));
+        counts[channel][mode === "waveform" ? bin * columns + column : bin] += 1;
+      });
     }
-    const sourceX = pixel % analysis.width;
-    const column = Math.min(columns - 1, Math.floor(sourceX / analysis.width * columns));
-    values.forEach((value, channel) => {
-      const bin = hdr
-        ? Math.min(bins - 1, Math.max(0, Math.floor(Math.log10(clamp(value, 1, ceiling)) / Math.log10(ceiling) * bins)))
-        : Math.min(bins - 1, Math.max(0, Math.floor(value * bins)));
-      counts[channel][mode === "waveform" ? bin * columns + column : bin] += 1;
-    });
   }
   const sortedLuma = Array.from(lumaValues).sort((left, right) => left - right);
   const percentile = (amount) => sortedLuma[Math.min(sortedLuma.length - 1, Math.round((sortedLuma.length - 1) * amount))] || 0;
@@ -5688,14 +5986,14 @@ function buildGpuScopePayload(analysis, { lane, mode, tier, generation, bins, co
     { label: "P95", value: percentile(0.95).toFixed(3) },
     { label: "Median", value: percentile(0.5).toFixed(3) },
   ];
-  const channels = channelNames.map((name, index) => ({
+  const channels = channelEntries.map(([, name], index) => ({
     name,
     bins: mode === "waveform" ? [] : Array.from(counts[index]),
     grid: mode === "waveform"
       ? Array.from({ length: bins }, (_, row) => Array.from(counts[index].subarray(row * columns, (row + 1) * columns)))
       : [],
   }));
-  const populationPeak = Math.max(1, ...counts.map((channel) => channel.reduce((maximum, value) => Math.max(maximum, value), 0)));
+  const populationPeak = robustScopePopulationPeak(counts, mode === "histogram" ? 0.985 : 0.995);
   const hdrGuides = [[1, "1 nit"], [10, "10"], [25, "25"], [50, "50"], [100, "100 controlled white"], [203, "203 standard white"], [400, "400"], [600, "600"], [1000, "1000"], [2000, "2000"], [4000, "4000"], [10000, "10000 PQ limit"]]
     .map(([value, label]) => [value, value === referenceWhite ? `${label} · active` : label]);
   return {
@@ -5708,30 +6006,63 @@ function buildGpuScopePayload(analysis, { lane, mode, tier, generation, bins, co
     clipped,
     x_axis: hdr ? "reference_nits_log10" : "normalized",
     bin_edges: binEdges,
-    guides: hdr ? hdrGuides.filter(([value]) => value <= ceiling).map(([value, label]) => ({ value, label })) : [{ value: 0.18, label: "18%" }, { value: 0.5, label: "50%" }, { value: 1, label: "100%" }],
+    guides: hdr ? hdrGuides.filter(([value]) => value <= ceiling).map(([value, label]) => ({ value, label })) : [{ value: 0.18, label: mode === "histogram" ? "18% signal" : "18%" }, { value: 0.5, label: mode === "histogram" ? "50% signal" : "50%" }, { value: 1, label: mode === "histogram" ? "100% signal" : "100%" }],
     stats,
     channels,
   };
 }
 
-function buildGpuVectorscopePayload(analysis, { lane, tier, generation, bins }) {
+function robustScopePopulationPeak(counts, percentile = 0.995) {
+  const positive = [];
+  counts.forEach((channel) => channel.forEach((value) => {
+    if (value > 0) positive.push(value);
+  }));
+  if (!positive.length) return 1;
+  positive.sort((left, right) => left - right);
+  return Math.max(1, positive[Math.floor((positive.length - 1) * percentile)]);
+}
+
+function scopeAnalysisBounds(analysis, region = null) {
+  if (!region) return { x0: 0, y0: 0, x1: analysis.width, y1: analysis.height, width: analysis.width, height: analysis.height };
+  const x0 = Math.min(analysis.width - 1, Math.max(0, Math.floor(region.x * analysis.width)));
+  const y0 = Math.min(analysis.height - 1, Math.max(0, Math.floor(region.y * analysis.height)));
+  const x1 = Math.min(analysis.width, Math.max(x0 + 1, Math.ceil((region.x + region.width) * analysis.width)));
+  const y1 = Math.min(analysis.height, Math.max(y0 + 1, Math.ceil((region.y + region.height) * analysis.height)));
+  return { x0, y0, x1, y1, width: x1 - x0, height: y1 - y0 };
+}
+
+function buildGpuVectorscopePayload(analysis, { lane, tier, generation, bins, scopeRegion = null }) {
   const hdr = lane === "hdr";
   const referenceWhite = projectReferenceWhiteNits();
+  const transfer = vectorscopeTransferLut(hdr, referenceWhite);
   const grid = Array.from({ length: bins }, () => new Int32Array(bins));
   let peak = 0;
-  for (let pixel = 0; pixel < analysis.width * analysis.height; pixel += 1) {
-    const offset = pixel * 3;
-    const r = Math.max(0, analysis.pixels[offset]);
-    const g = Math.max(0, analysis.pixels[offset + 1]);
-    const b = Math.max(0, analysis.pixels[offset + 2]);
-    const [kr, kg, kb] = hdr ? [0.2722287, 0.6740818, 0.0536895] : [0.2126, 0.7152, 0.0722];
-    const y = kr * r + kg * g + kb * b;
-    peak = Math.max(peak, hdr ? y / 0.18 * referenceWhite : y);
-    const u = clamp(0.5 + 0.5 * (b - y) / (2 * (1 - kb)), 0, 1);
-    const v = clamp(0.5 + 0.5 * (r - y) / (2 * (1 - kr)), 0, 1);
-    grid[Math.min(bins - 1, Math.floor(v * bins))][Math.min(bins - 1, Math.floor(u * bins))] += 1;
+  const bounds = scopeAnalysisBounds(analysis, scopeRegion);
+  for (let sourceY = bounds.y0; sourceY < bounds.y1; sourceY += 1) {
+    for (let sourceX = bounds.x0; sourceX < bounds.x1; sourceX += 1) {
+      const pixel = sourceY * analysis.width + sourceX;
+      const offset = pixel * 3;
+      const workingR = Math.max(0, analysis.pixels[offset]);
+      const workingG = Math.max(0, analysis.pixels[offset + 1]);
+      const workingB = Math.max(0, analysis.pixels[offset + 2]);
+      const sceneY = hdr
+        ? 0.2722287 * workingR + 0.6740818 * workingG + 0.0536895 * workingB
+        : 0.2126 * workingR + 0.7152 * workingG + 0.0722 * workingB;
+      peak = Math.max(peak, hdr ? sceneY / 0.18 * referenceWhite : sceneY);
+      const linearR = hdr ? Math.max(0, 1.0260187082 * workingR - 0.0221655448 * workingG - 0.0038531634 * workingB) : workingR;
+      const linearG = hdr ? Math.max(0, -0.0017230808 * workingR + 1.0023190716 * workingG - 0.0005959908 * workingB) : workingG;
+      const linearB = hdr ? Math.max(0, -0.0051099278 * workingR - 0.0216355504 * workingG + 1.0267454781 * workingB) : workingB;
+      const r = sampleVectorscopeTransfer(transfer, linearR);
+      const g = sampleVectorscopeTransfer(transfer, linearG);
+      const b = sampleVectorscopeTransfer(transfer, linearB);
+      const [kr, kg, kb] = hdr ? [0.2627, 0.6780, 0.0593] : [0.2126, 0.7152, 0.0722];
+      const y = kr * r + kg * g + kb * b;
+      const u = clamp(0.5 + (b - y) / (2 * (1 - kb)), 0, 1);
+      const v = clamp(0.5 + (r - y) / (2 * (1 - kr)), 0, 1);
+      grid[Math.min(bins - 1, Math.floor(v * bins))][Math.min(bins - 1, Math.floor(u * bins))] += 1;
+    }
   }
-  const normalizationPeak = Math.max(1, ...grid.map((row) => row.reduce((maximum, value) => Math.max(maximum, value), 0)));
+  const normalizationPeak = robustScopePopulationPeak(grid);
   return {
     preview_kind: lane,
     scope_type: "vectorscope",
@@ -5746,6 +6077,40 @@ function buildGpuVectorscopePayload(analysis, { lane, tier, generation, bins }) 
     stats: [{ label: "Peak", value: hdr ? `${peak.toFixed(1)} nit` : peak.toFixed(3) }],
     channels: [{ name: "Y", bins: [], grid: grid.map((row) => Array.from(row)) }],
   };
+}
+
+function vectorscopeTransferLut(hdr, referenceWhite) {
+  const key = `${hdr ? "pq" : "srgb"}:${hdr ? referenceWhite : 1}`;
+  const cached = vectorscopeTransferLutCache.get(key);
+  if (cached) return cached;
+  const size = 4096;
+  const maximumLinear = hdr ? 10000 * 0.18 / Math.max(1, referenceWhite) : 1;
+  const values = new Float32Array(size);
+  for (let index = 0; index < size; index += 1) {
+    const linear = maximumLinear * index / (size - 1);
+    if (hdr) {
+      const m1 = 2610 / 16384;
+      const m2 = 2523 / 32;
+      const c1 = 3424 / 4096;
+      const c2 = 2413 / 128;
+      const c3 = 2392 / 128;
+      const lm1 = Math.pow(linear / maximumLinear, m1);
+      values[index] = Math.pow((c1 + c2 * lm1) / (1 + c3 * lm1), m2);
+    } else {
+      values[index] = linear <= 0.0031308 ? 12.92 * linear : 1.055 * Math.pow(linear, 1 / 2.4) - 0.055;
+    }
+  }
+  const result = { values, maximumLinear };
+  vectorscopeTransferLutCache.set(key, result);
+  return result;
+}
+
+function sampleVectorscopeTransfer(transfer, linear) {
+  const position = clamp(linear / transfer.maximumLinear, 0, 1) * (transfer.values.length - 1);
+  const lower = Math.floor(position);
+  const upper = Math.min(transfer.values.length - 1, lower + 1);
+  const mix = position - lower;
+  return transfer.values[lower] + (transfer.values[upper] - transfer.values[lower]) * mix;
 }
 
 function beginCropDrag(event) {
@@ -7986,6 +8351,7 @@ function renderLaneChrome() {
   els.lanePanels.forEach((panel) => panel.classList.toggle("hidden", panel.dataset.lanePanel !== lane));
   els.viewerBranchNote.textContent = branchCopy[lane];
   els.scopeKindLabel.textContent = lane.toUpperCase();
+  renderScopeControlAvailability();
   state.previewInfo = state.previewInfoByLane[lane];
   els.filmLookSdrActions?.classList.toggle("hidden", lane !== "sdr");
   els.colorGradingSdrActions?.classList.toggle("hidden", lane !== "sdr");
@@ -8519,12 +8885,15 @@ async function activateDockTab(tab) {
   const technical = tab === "technical";
   els.scopeView.classList.toggle("hidden", technical);
   els.technicalView.classList.toggle("hidden", !technical);
+  els.scopeMode.value = technical ? "technical" : tab === "parade" ? "waveform" : tab;
+  [els.scopeChannelMode, els.scopeDetail, els.scopeZoom].forEach((control) => { if (control) control.disabled = technical; });
   scheduleLayoutSettled();
   if (technical) return;
   state.scopeMode = tab === "vectorscope" ? "vectorscope" : tab === "waveform" || tab === "parade" ? "waveform" : "histogram";
-  state.scopeChannelMode = tab === "parade" ? "parade" : "composite";
+  if (tab === "parade") state.scopeChannelMode = "parade";
   els.scopeMode.value = state.scopeMode;
   els.scopeChannelMode.value = state.scopeChannelMode;
+  renderScopeControlAvailability();
   await refreshScopes();
 }
 

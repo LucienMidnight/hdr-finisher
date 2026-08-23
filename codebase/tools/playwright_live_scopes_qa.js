@@ -53,7 +53,8 @@ async function auditSustainedDrag(page, mode) {
       if (!holdingHandle) return;
       observations.push({
         generation: body.generation,
-        adjustments: body.adjustments.hdr.tone_equalizer_nodes.map((node) => Number(node.adjustment_ev)),
+        adjustments: body.adjustments?.hdr?.tone_equalizer_nodes?.map((node) => Number(node.adjustment_ev))
+          ?? [body.edit_revision, body.generation],
         payload: JSON.stringify(payload.channels.map((channel) => channel.bins.length ? channel.bins : channel.grid)),
         peakValue: payload.peak_value,
         canvas: await page.locator("#histogram").evaluate((element) => element.toDataURL()),
@@ -114,7 +115,7 @@ async function auditSustainedCurveDrag(page, mode, screenshotPath) {
       observations.push({
         elapsedMs: Date.now() - startedAt,
         generation: body.generation,
-        curve: body.adjustments.hdr.luma_curve,
+        curve: body.adjustments?.hdr?.luma_curve ?? [body.edit_revision, body.generation],
         payload: JSON.stringify(payload.channels.map((channel) => channel.bins.length ? channel.bins : channel.grid)),
         canvas: await page.locator("#histogram").evaluate((element) => element.toDataURL()),
         freshness: await page.locator("#scope-freshness").textContent(),
@@ -184,6 +185,10 @@ async function main() {
       if (message.type() === "error") errors.push(message.text());
     });
     await page.goto(url, { waitUntil: "networkidle", timeout: 30000 });
+    // This audit verifies cancellation, response ordering, and the backend
+    // scope payload itself. Force that path even on machines where WebGPU is
+    // available; GPU parity is covered by playwright_gpu_parity.js.
+    await page.evaluate(() => { gpuScopeEligible = () => false; });
     await page.locator("#file-input").setInputFiles(input);
     await page.waitForFunction(() => document.getElementById("session-name")?.textContent !== "No active image", null, { timeout: 30000 });
     if (await page.locator("#interpretation-gate").isVisible()) await page.locator("#accept-interpretation").click();
@@ -196,7 +201,7 @@ async function main() {
     const histogramCurve = await auditSustainedCurveDrag(page, "histogram", path.join(outputDir, "curve-histogram.png"));
     await page.locator("#curve-reset").evaluate((button) => button.click());
     await waitForSettledScope(page);
-    await page.locator('[data-dock-tab="waveform"]').click();
+    await page.locator("#scope-mode").selectOption("waveform");
     await page.waitForFunction(() => document.getElementById("scope-title")?.textContent?.includes("Waveform"), null, { timeout: 15000 });
     await waitForSettledScope(page);
     const waveform = await auditSustainedDrag(page, "waveform");

@@ -349,7 +349,7 @@ def test_encoder_failure_cleans_staged_file_and_preserves_existing_output(monkey
 
 def test_avif_export_applies_quality_to_gain_map_and_replaces_atomically(monkeypatch, tmp_path: Path) -> None:
     binaries_by_name = {}
-    for name in ("avifenc", "avifgainmaputil"):
+    for name in ("avifgainmaputil",):
         binary = tmp_path / f"{name}.exe"
         binary.write_bytes(b"test")
         binaries_by_name[name] = binary
@@ -359,10 +359,7 @@ def test_avif_export_applies_quality_to_gain_map_and_replaces_atomically(monkeyp
 
     def fake_run(command: list[str]):
         commands.append(command)
-        if command[1] == "combine":
-            Path(command[4]).write_bytes(b"complete-gain-map-avif")
-        else:
-            Path(command[-1]).write_bytes(b"alternate-avif")
+        Path(command[4]).write_bytes(b"complete-gain-map-avif")
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr(exporter_module, "resolve_binary", lambda name: binaries_by_name.get(name))
@@ -389,6 +386,8 @@ def test_avif_export_applies_quality_to_gain_map_and_replaces_atomically(monkeyp
     assert result.accepted is True
     assert output.read_bytes() == b"complete-gain-map-avif"
     combine = next(command for command in commands if command[1] == "combine")
+    assert len(commands) == 1
+    assert Path(combine[3]).name == "alternate_hdr.y4m"
     assert combine[combine.index("--qgain-map") + 1] == "83"
     assert combine[combine.index("--depth-gain-map") + 1] == "10"
     assert combine[combine.index("--yuv-gain-map") + 1] == "420"
@@ -407,11 +406,8 @@ def test_avif_failure_preserves_existing_output_and_removes_partial_stage(monkey
     output.write_bytes(b"previous-good-export")
 
     def failing_run(command: list[str]):
-        if command[1] == "combine":
-            Path(command[4]).write_bytes(b"partial")
-            raise ExportProcessError("gain map encoder exploded")
-        Path(command[-1]).write_bytes(b"alternate-avif")
-        return subprocess.CompletedProcess(command, 0, "", "")
+        Path(command[4]).write_bytes(b"partial")
+        raise ExportProcessError("gain map encoder exploded")
 
     monkeypatch.setattr(exporter_module, "resolve_binary", lambda _name: binary)
     monkeypatch.setattr(exporter_module, "_write_sdr_y4m", lambda path, _image, **_kwargs: path.write_bytes(b"base"))

@@ -22,10 +22,12 @@
       this.paramBuffer = null;
       this.curveBuffer = null;
       this.curveSampleCache = new Map();
+      this.lastCurveSamples = null;
       this.surfaceKeys = new WeakMap();
       this.intermediates = new Map();
       this.localMasks = new Map();
       this.localParamBuffers = new Map();
+      this.localParamValues = new Map();
       this.scopeSources = new WeakMap();
       this.scopeResources = new Map();
       this.bindGroupLayout = null;
@@ -141,7 +143,9 @@
       this.localMasks.clear();
       for (const buffer of this.localParamBuffers.values()) buffer.destroy();
       this.localParamBuffers.clear();
+      this.localParamValues.clear();
       this.curveSampleCache.clear();
+      this.lastCurveSamples = null;
       this.scopeSources = new WeakMap();
       for (const pool of this.scopeResources.values()) {
         for (const resource of pool) {
@@ -226,7 +230,10 @@
       const curves = buildCurves(lane, adjustments, curveSampler, this.curveSampleCache);
       this.ensureStorageBuffers(params.byteLength, curves.byteLength);
       this.device.queue.writeBuffer(this.paramBuffer, 0, params);
-      this.device.queue.writeBuffer(this.curveBuffer, 0, curves);
+      if (curves !== this.lastCurveSamples) {
+        this.device.queue.writeBuffer(this.curveBuffer, 0, curves);
+        this.lastCurveSamples = curves;
+      }
       const intermediate = this.ensureIntermediate(canvas, proxy.width, proxy.height);
       const makeBindGroup = (sourceView, spatialView, parameterBuffer = this.paramBuffer, overlayView = spatialView) => this.device.createBindGroup({
           layout: this.bindGroupLayout,
@@ -1114,7 +1121,11 @@
         buffer = this.createStorageBuffer(values);
         this.localParamBuffers.set(key, buffer);
       }
-      this.device.queue.writeBuffer(buffer, 0, values);
+      const previous = this.localParamValues.get(key);
+      if (!previous || !floatArraysEqual(previous, values)) {
+        this.device.queue.writeBuffer(buffer, 0, values);
+        this.localParamValues.set(key, values);
+      }
       return buffer;
     }
   }
@@ -1126,6 +1137,14 @@
     if (exponent === 0) return sign * fraction * 5.960464477539063e-8;
     if (exponent === 31) return fraction ? Number.NaN : sign * Number.POSITIVE_INFINITY;
     return sign * (1 + fraction / 1024) * 2 ** (exponent - 15);
+  }
+
+  function floatArraysEqual(left, right) {
+    if (left.length !== right.length) return false;
+    for (let index = 0; index < left.length; index += 1) {
+      if (left[index] !== right[index]) return false;
+    }
+    return true;
   }
 
   const IDENTITY_3X3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
@@ -1387,9 +1406,15 @@
 
   function buildCurves(lane, adjustments, curveSampler, sampleCache) {
     const branch = adjustments[lane];
+    const names = ["luma_curve", "red_curve", "green_curve", "blue_curve"];
+    const signatures = names.map((name) => JSON.stringify(branch[name]));
+    const packedKey = `${lane}:packed`;
+    const packedSignature = signatures.join("|");
+    const packedCached = sampleCache.get(packedKey);
+    if (packedCached?.signature === packedSignature) return packedCached.samples;
     const packed = new Float32Array(CURVE_SAMPLES * 4);
-    ["luma_curve", "red_curve", "green_curve", "blue_curve"].forEach((name, channel) => {
-      const signature = JSON.stringify(branch[name]);
+    names.forEach((name, channel) => {
+      const signature = signatures[channel];
       const cacheKey = `${lane}:${name}`;
       let cached = sampleCache.get(cacheKey);
       if (!cached || cached.signature !== signature) {
@@ -1402,6 +1427,7 @@
         packed[channel * CURVE_SAMPLES + index] = Array.isArray(sample) ? sample[1] : sample;
       }
     });
+    sampleCache.set(packedKey, { signature: packedSignature, samples: packed });
     return packed;
   }
 

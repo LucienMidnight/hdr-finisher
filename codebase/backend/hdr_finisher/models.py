@@ -836,6 +836,23 @@ class SourceInterpretationOverride(BaseModel):
     linear_reference: Literal["scene_0_18", "diffuse_white_1_0"] | None = None
 
 
+class ScopeRegion(BaseModel):
+    """Normalized post-geometry rectangle used only for scope analysis."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    x: float = Field(ge=0.0, le=1.0, allow_inf_nan=False)
+    y: float = Field(ge=0.0, le=1.0, allow_inf_nan=False)
+    width: float = Field(gt=0.0, le=1.0, allow_inf_nan=False)
+    height: float = Field(gt=0.0, le=1.0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def validate_extents(self) -> "ScopeRegion":
+        if self.x + self.width > 1.000001 or self.y + self.height > 1.000001:
+            raise ValueError("Scope region must stay within the post-geometry frame.")
+        return self
+
+
 class PreviewRequest(BaseModel):
     adjustments: AdjustmentState | None = None
     transient_adjustments: bool = False
@@ -847,6 +864,7 @@ class PreviewRequest(BaseModel):
     hdr_display: bool = True
     include_locals: bool = True
     local_adjustments: list[LocalAdjustment] | None = None
+    scope_region: ScopeRegion | None = None
 
 
 class LocalMaskPreviewRequest(BaseModel):

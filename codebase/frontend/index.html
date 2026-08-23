@@ -189,6 +189,17 @@
               </button>
             </div>
             <span class="viewer-tool-divider" aria-hidden="true">|</span>
+            <button id="scope-region-toggle" class="tool-button scope-region-toggle" type="button" aria-label="Toggle Scope Region (Shift+R)" aria-pressed="false" title="Scope Region · draw a box to limit scopes · Shift+R">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect class="scope-region-icon-frame" x="5" y="5" width="14" height="14" rx="1"/>
+                <rect class="scope-region-icon-node" x="3.5" y="3.5" width="3" height="3" rx=".45"/>
+                <rect class="scope-region-icon-node" x="17.5" y="3.5" width="3" height="3" rx=".45"/>
+                <rect class="scope-region-icon-node" x="17.5" y="17.5" width="3" height="3" rx=".45"/>
+                <rect class="scope-region-icon-node" x="3.5" y="17.5" width="3" height="3" rx=".45"/>
+                <path class="scope-region-icon-move" d="M12 8.25v7.5M8.25 12h7.5M12 8.25l-1.15 1.15M12 8.25l1.15 1.15M12 15.75l-1.15-1.15M12 15.75l1.15-1.15M8.25 12l1.15-1.15M8.25 12l1.15 1.15M15.75 12l-1.15-1.15M15.75 12l-1.15 1.15"/>
+              </svg>
+            </button>
+            <span class="viewer-tool-divider" aria-hidden="true">|</span>
             <div class="zoom-control" role="group" aria-label="Image zoom">
               <button id="zoom-out" class="zoom-step" type="button" aria-label="Zoom out" title="Zoom out">&minus;</button>
               <input id="zoom-readout" class="zoom-value" type="text" value="100%" inputmode="decimal" aria-label="Zoom percentage" title="Enter a zoom percentage">
@@ -328,6 +339,17 @@
               <canvas id="straighten-grid-overlay" class="straighten-grid-overlay hidden" aria-hidden="true"></canvas>
               <img id="chrome-proof-image" alt="Chromium delivery proof preview" draggable="false">
               <span id="chrome-proof-watermark" aria-hidden="true">PROOF</span>
+              <div id="scope-region-overlay" class="scope-region-overlay hidden" aria-hidden="true">
+                <div id="scope-region-box" class="scope-region-box" tabindex="0" aria-label="Scope Region. Drag inside to move; drag a corner to resize; Delete clears the region.">
+                  <button class="scope-region-move" type="button" data-scope-region-handle="move" tabindex="-1" aria-hidden="true">
+                    <svg viewBox="0 0 20 20"><path d="M10 2.5v15M2.5 10h15M10 2.5 8 4.5M10 2.5l2 2M10 17.5l-2-2M10 17.5l2-2M2.5 10l2-2M2.5 10l2 2M17.5 10l-2-2M17.5 10l-2 2"/></svg>
+                  </button>
+                  <span class="scope-region-handle nw" data-scope-region-handle="nw"></span>
+                  <span class="scope-region-handle ne" data-scope-region-handle="ne"></span>
+                  <span class="scope-region-handle se" data-scope-region-handle="se"></span>
+                  <span class="scope-region-handle sw" data-scope-region-handle="sw"></span>
+                </div>
+              </div>
               <div id="crop-editor-overlay" class="crop-editor-overlay hidden" aria-hidden="true">
                 <div id="crop-box" class="crop-box" tabindex="0" aria-label="Crop frame. Drag to reposition; use handles to resize.">
                   <canvas id="crop-guide-canvas" aria-hidden="true"></canvas>
@@ -388,52 +410,53 @@
       <section id="analysis-dock" class="analysis-dock panel" aria-label="Analysis">
         <div class="dock-bar">
           <h1 class="panel-title dock-panel-title">Scopes</h1>
-          <div class="dock-tabs" role="tablist" aria-label="Analysis views">
-            <button class="dock-tab" type="button" data-dock-tab="waveform" role="tab">Waveform</button>
-            <button class="dock-tab active" type="button" data-dock-tab="histogram" role="tab">Histogram</button>
-            <button class="dock-tab" type="button" data-dock-tab="parade" role="tab">Parade</button>
-            <button class="dock-tab" type="button" data-dock-tab="vectorscope" role="tab">Vectorscope</button>
-            <button class="dock-tab" type="button" data-dock-tab="technical" role="tab">Technical</button>
+          <div class="scope-header-controls field-inline">
+            <select id="scope-mode" class="scope-mode-select" aria-label="Scope mode">
+              <option value="histogram">Histogram</option>
+              <option value="waveform">Waveform</option>
+              <option value="vectorscope">Vectorscope</option>
+              <option value="technical">Technical</option>
+            </select>
+            <select id="scope-channel-mode" class="scope-mode-select" aria-label="Scope channels">
+              <option value="composite">Composite</option>
+              <option value="luma">Luma</option>
+              <option value="parade">RGB Parade</option>
+            </select>
+            <label class="scope-detail-control" for="scope-detail">
+              <span>Detail</span>
+              <select id="scope-detail" class="scope-mode-select" title="Balances scope resolution and responsiveness. Detailed is recommended; Reference is intended for faster systems.">
+                <option value="performance">Performance</option>
+                <option value="detailed" selected>Detailed</option>
+                <option value="reference">Reference</option>
+              </select>
+            </label>
+            <label class="scope-zoom-control" for="scope-zoom">
+              <span>Scope zoom</span>
+              <select id="scope-zoom" class="scope-mode-select">
+                <option value="1000">1K nits</option>
+                <option value="4000">4K nits</option>
+                <option value="10000">10K nits</option>
+              </select>
+            </label>
           </div>
           <div class="dock-status">
-            <span id="scope-kind-label" class="scope-readout">HDR</span>
-            <span id="scope-freshness" class="scope-readout" role="status" aria-live="polite">Waiting</span>
-            <span id="dock-summary">Full-resolution processing stats</span>
             <button id="dock-collapse" class="text-button" type="button" aria-expanded="true">Collapse</button>
           </div>
         </div>
 
         <div id="scope-view" class="dock-content scope-layout">
           <div class="scope-visual">
-            <div class="scope-heading">
-              <div class="scope-title-wrap">
-                <h2 id="scope-title" tabindex="0" aria-describedby="scope-note">Histogram</h2>
-                <p id="scope-note" class="title-tooltip" role="tooltip">Reference scopes will appear after a preview is rendered.</p>
-              </div>
-              <div class="field-inline">
-                <select id="scope-mode" class="scope-mode-select" aria-label="Scope mode">
-                  <option value="histogram">Histogram</option>
-                  <option value="waveform">Waveform</option>
-                  <option value="vectorscope">Vectorscope</option>
-                </select>
-                <select id="scope-channel-mode" class="scope-mode-select" aria-label="Scope channels">
-                  <option value="composite">Composite</option>
-                  <option value="luma">Luma</option>
-                  <option value="parade">RGB Parade</option>
-                </select>
-                <label class="scope-zoom-control" for="scope-zoom">
-                  <span>Scope zoom</span>
-                  <select id="scope-zoom" class="scope-mode-select">
-                    <option value="1000">1K nits</option>
-                    <option value="4000">4K nits</option>
-                    <option value="10000">10K nits</option>
-                  </select>
-                </label>
-              </div>
-            </div>
+            <h2 id="scope-title" class="visually-hidden">Histogram</h2>
+            <p id="scope-note" class="visually-hidden">Reference scopes will appear after a preview is rendered.</p>
             <canvas id="histogram" width="720" height="220" aria-label="Image scope" aria-describedby="scope-note"></canvas>
           </div>
           <div class="scope-readings">
+            <div class="scope-reading-status" aria-label="Scope status">
+              <span id="scope-kind-label" class="scope-readout">HDR</span>
+              <span id="scope-region-badge" class="scope-readout scope-region-badge hidden">Region</span>
+              <span id="scope-freshness" class="scope-readout" role="status" aria-live="polite">Waiting</span>
+            </div>
+            <span id="dock-summary" class="visually-hidden">Full-resolution processing stats</span>
             <dl id="scope-stats" class="metadata-list scope-stats"></dl>
           </div>
         </div>

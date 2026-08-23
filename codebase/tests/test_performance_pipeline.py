@@ -14,7 +14,7 @@ from hdr_finisher.color import (
     linear_bt2020_to_acescg,
     linear_srgb_to_acescg,
 )
-from hdr_finisher.models import AdjustmentState, PreviewKind
+from hdr_finisher.models import AdjustmentState, PreviewKind, ScopeMode
 from hdr_finisher.render_cache import SessionRenderCache, encode_rgba_proxy
 from hdr_finisher.scopes import _waveform_grid, build_scope
 
@@ -107,6 +107,43 @@ def test_scope_prioritizes_tiny_highlight_peak_and_normalization() -> None:
     assert scope.peak_value == pytest.approx(4000.0, rel=1e-4)
     assert scope.normalization_peak >= 1
     assert scope.clipped is False
+
+
+def test_waveform_can_omit_unused_channels_without_changing_selected_grids() -> None:
+    rng = np.random.default_rng(17)
+    image = rng.random((48, 72, 3), dtype=np.float32)
+    complete = build_scope(
+        image,
+        AdjustmentState(),
+        PreviewKind.HDR,
+        mode=ScopeMode.WAVEFORM,
+        bins=64,
+        waveform_columns=48,
+    )
+    rgb = build_scope(
+        image,
+        AdjustmentState(),
+        PreviewKind.HDR,
+        mode=ScopeMode.WAVEFORM,
+        bins=64,
+        waveform_columns=48,
+        channel_names=("R", "G", "B"),
+    )
+    luma = build_scope(
+        image,
+        AdjustmentState(),
+        PreviewKind.HDR,
+        mode=ScopeMode.WAVEFORM,
+        bins=64,
+        waveform_columns=48,
+        channel_names=("Y",),
+    )
+
+    assert [channel.name for channel in rgb.channels] == ["R", "G", "B"]
+    assert [channel.name for channel in luma.channels] == ["Y"]
+    assert [channel.grid for channel in rgb.channels] == [channel.grid for channel in complete.channels[:3]]
+    assert luma.channels[0].grid == complete.channels[3].grid
+    assert len(rgb.model_dump_json()) < len(complete.model_dump_json())
 
 
 def test_fixed_float32_display_p3_transform_matches_reference() -> None:

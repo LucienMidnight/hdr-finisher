@@ -104,7 +104,10 @@ def _probe_capabilities_cached() -> dict[str, CapabilityInfo]:
         "exifread": _module_status("exifread", "exifread"),
         "rawpy": _module_status("rawpy / LibRaw", "rawpy"),
         "lensfunpy": _module_status("Lensfun corrections", "lensfunpy"),
-        "avif_gain_map_encoder": _composite_status("avif gain map export", ["avifgainmaputil", "avifenc"]),
+        # avifgainmaputil accepts the authored SDR/HDR Y4M renditions directly
+        # and owns the final AVIF encode; a separate avifenc binary is only
+        # needed by the standalone direct-HDR preview path.
+        "avif_gain_map_encoder": _binary_status("avif gain map export", "avifgainmaputil"),
         "avif_encoder": _binary_status("avifenc", "avifenc"),
         "avif_decoder": _binary_status("avifdec", "avifdec"),
         "avif_gain_map_tool": _binary_status("avifgainmaputil", "avifgainmaputil"),
