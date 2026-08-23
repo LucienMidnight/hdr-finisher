@@ -21,7 +21,7 @@ from .desktop_security import DesktopPathGrants, secret_matches
 from .exporters import ExportOverwriteRequired, build_export_backends
 from .folder_picker import pick_directory
 from .loader import LoaderError
-from .media_browser import MediaBrowserError, MediaBrowserStore
+from .media_browser import MediaBrowserError, MediaBrowserInterpretationRequired, MediaBrowserStore
 from .import_jobs import ImportJobManager
 from .raw_import import list_lens_profiles
 from .models import (
@@ -1091,9 +1091,19 @@ def media_browser(path: str | None = Query(default=None), mode: str = Query(defa
 def media_browser_thumbnail(path: str = Query(), size: int = Query(default=256, ge=64, le=512)) -> FileResponse:
     try:
         thumbnail = media_browser_store.thumbnail(path, size)
+    except MediaBrowserInterpretationRequired as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "interpretation_required",
+                "message": str(exc),
+                "reason": exc.reason,
+                "profile_name": exc.profile_name,
+            },
+        ) from exc
     except (MediaBrowserError, OSError, RuntimeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return FileResponse(thumbnail, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=31536000, immutable"})
+    return FileResponse(thumbnail, media_type="image/jpeg", headers={"Cache-Control": "private, no-cache"})
 
 
 @app.get("/api/media-browser/favorites")

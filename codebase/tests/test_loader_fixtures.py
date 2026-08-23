@@ -7,7 +7,7 @@ from PIL import Image, ImageCms
 
 from conftest import fixture_path
 
-from hdr_finisher.color import linear_bt2020_to_acescg
+from hdr_finisher.color import detect_transfer_function, linear_bt2020_to_acescg
 from hdr_finisher.loader import (
     LoaderError,
     _classify_icc_profile_name,
@@ -183,6 +183,13 @@ def test_load_float_tiff_with_deflate_predictor(tmp_path) -> None:
 
 def test_darktable_linear_rec2020_profile_name_is_recognized() -> None:
     assert _classify_icc_profile_name("Linear Rec2020 RGB - darktable") == "BT.2020"
+
+
+def test_photoshop_linear_p3_profile_name_is_recognized_without_stale_pq_transfer() -> None:
+    profile_name = "P3D65 PQ Display Full 12-16-0-1 (Linear RGB Profile)"
+
+    assert _classify_icc_profile_name(profile_name) == "Display P3"
+    assert detect_transfer_function({"icc_profile_name": profile_name}, ".tif") == "LINEAR"
 
 
 def test_loader_wraps_unexpected_decoder_errors(monkeypatch, tmp_path) -> None:

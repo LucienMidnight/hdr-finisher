@@ -11,6 +11,7 @@ from conftest import make_png_bytes
 from fastapi.testclient import TestClient
 
 from hdr_finisher.loader import LoaderError
+from hdr_finisher.media_browser import MediaBrowserInterpretationRequired
 from hdr_finisher.exporters import ExportOverwriteRequired
 from hdr_finisher.main import _matches_approved_export_target, app, store
 from hdr_finisher.models import ExportResponse, ExportTargetIdentity, HDRAnalysis, HDRClassification, MetadataPayload, SessionPayload, SourceImageDescriptor
@@ -18,6 +19,29 @@ from hdr_finisher.resource_preflight import GIB, ResourceSnapshot
 
 
 client = TestClient(app)
+
+
+def test_media_browser_thumbnail_reports_structured_interpretation_requirement(monkeypatch) -> None:
+    from hdr_finisher import main as main_module
+
+    def require_interpretation(_path, _size):
+        raise MediaBrowserInterpretationRequired(
+            "The embedded ICC profile does not identify supported color primaries.",
+            reason="unrecognized_color_primaries",
+            profile_name="Unknown Studio RGB",
+        )
+
+    monkeypatch.setattr(main_module.media_browser_store, "thumbnail", require_interpretation)
+
+    response = client.get("/api/media-browser/thumbnail", params={"path": "/mock/ambiguous.tif", "size": 128})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "code": "interpretation_required",
+        "message": "The embedded ICC profile does not identify supported color primaries.",
+        "reason": "unrecognized_color_primaries",
+        "profile_name": "Unknown Studio RGB",
+    }
 
 
 def test_windows_native_overwrite_identity_ignores_cross_runtime_device_id(tmp_path: Path) -> None:

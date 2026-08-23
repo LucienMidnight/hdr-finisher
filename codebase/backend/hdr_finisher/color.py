@@ -190,6 +190,12 @@ def sanitize_array(image: np.ndarray) -> np.ndarray:
 
 
 def detect_transfer_function(metadata: dict[str, Any], suffix: str) -> str | None:
+    profile_name = str(metadata.get("icc_profile_name") or "").strip().lower()
+    # Photoshop retains the display-profile name when converting a PQ document
+    # to 32-bit linear light, then appends this explicit qualifier. Honor the
+    # resulting encoding instead of re-detecting the stale "PQ" substring.
+    if "linear rgb profile" in profile_name:
+        return "LINEAR"
     text = " ".join(str(value).lower() for value in metadata.values() if value is not None)
     if "pq" in text or "smpte2084" in text:
         return "PQ"

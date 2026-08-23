@@ -54,8 +54,8 @@ def test_avif_preview_decodes_only_the_color_managed_primary_rendition(
 ) -> None:
     path = tmp_path / "preview.avif"
     path.write_bytes(b"synthetic-avif")
-    decoded = np.zeros((4, 6, 3), dtype=np.uint8)
-    decoded[..., 0] = 128
+    decoded = np.zeros((4, 6, 3), dtype=np.uint16)
+    decoded[..., 0] = 512
     calls = {"primary": 0}
 
     monkeypatch.setattr(
@@ -63,6 +63,7 @@ def test_avif_preview_decodes_only_the_color_managed_primary_rendition(
         "inspect_avif",
         lambda _path: {
             "gain_map_present": True,
+            "bit_depth": 10,
             "color_primaries": 1,
             "transfer_char": 13,
         },

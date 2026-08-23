@@ -383,7 +383,7 @@ def _classify_icc_profile_name(profile_name: str) -> str:
         return "ACEScg"
     if "2020" in text:
         return "BT.2020"
-    if "display p3" in text:
+    if "display p3" in text or "p3d65" in text:
         return "Display P3"
     if "srgb" in text or "rec.709" in text or "bt.709" in text:
         return "sRGB"

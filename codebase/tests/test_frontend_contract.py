@@ -429,6 +429,16 @@ def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     assert "beginMediaBrowserColumnResize" in javascript
     assert 'aria-label="Resize preview panel"' in html
     assert "beginMediaBrowserPreviewResize" in javascript
+    assert 'els.directoryBrowserPreview.removeAttribute("src")' in javascript
+    assert "const request = new AbortController()" in javascript
+    assert "state.mediaPreviewRequest !== request" in javascript
+    assert "entry.thumbnail_key || \"\"" in javascript
+    assert "Loading preview…" in javascript
+    assert 'detail?.code === "interpretation_required"' in javascript
+    assert 'dataset.previewState = "interpretation-required"' in javascript
+    assert 'data-preview-state="interpretation-required"' in css
+    assert "Preview withheld to avoid misleading color" in javascript
+    assert "private, no-cache" in (ROOT / "backend" / "hdr_finisher" / "main.py").read_text(encoding="utf-8")
     assert 'fetch("/api/media-browser/recents"' in javascript
     assert "await recordSuccessfulMediaImport(selection.path)" in javascript
     assert 'id="directory-browser-kicker"' not in html

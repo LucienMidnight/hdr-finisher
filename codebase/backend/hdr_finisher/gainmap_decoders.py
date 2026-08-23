@@ -271,7 +271,7 @@ def decode_avif_preview(path: Path) -> np.ndarray:
             "a color-safe preview cannot be generated."
         )
 
-    encoded = _decode_avif_primary_pixels(path)
+    encoded = _decode_avif_primary_pixels(path, bit_depth=int(info.get("bit_depth", 8)))
     return normalize_to_acescg_bounded(encoded, color_space, transfer).astype(np.float32)
 
 

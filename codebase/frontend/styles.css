@@ -2349,6 +2349,19 @@ input[type="range"] {
   display: none;
 }
 
+.media-browser-preview-image-frame[data-preview-state="interpretation-required"]:has(img[hidden]) {
+  display: flex;
+}
+
+.media-browser-preview-image-frame[data-preview-state="interpretation-required"]::after {
+  content: "";
+  width: 64px;
+  height: 64px;
+  background-color: #323232;
+  background-image: conic-gradient(#404040 25%, #323232 0 50%, #404040 0 75%, #323232 0);
+  background-size: 16px 16px;
+}
+
 .media-browser-preview img {
   display: block;
   width: auto;

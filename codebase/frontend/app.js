@@ -254,6 +254,8 @@ const state = {
   importGeneration: 0,
   mediaBrowserGeneration: 0,
   mediaPreviewGeneration: 0,
+  mediaPreviewRequest: null,
+  mediaPreviewObjectUrl: null,
   mediaBrowserEntries: [],
   mediaBrowserSortKey: "name",
   mediaBrowserSortDirection: "ascending",
@@ -976,6 +978,7 @@ const els = {
   directoryBrowserPinned: document.getElementById("directory-browser-pinned"),
   directoryBrowserLocations: document.getElementById("directory-browser-locations"),
   directoryBrowserPreview: document.getElementById("directory-browser-preview"),
+  directoryBrowserPreviewFrame: document.querySelector(".media-browser-preview-image-frame"),
   directoryBrowserPreviewPane: document.querySelector(".media-browser-preview"),
   directoryBrowserPreviewResizer: document.querySelector(".media-browser-preview-resizer"),
   directoryBrowserSelection: document.getElementById("directory-browser-selection"),
@@ -4165,6 +4168,8 @@ function renderMediaBrowserEntries(entries, mode) {
     if (entry.kind === "directory") {
       button.addEventListener("dblclick", () => loadMediaDirectory(entry.path));
       button.addEventListener("click", () => {
+        state.mediaPreviewGeneration += 1;
+        clearMediaBrowserPreview();
         if (mode === "export_directory") {
           els.directoryBrowser.dataset.selectedPath = entry.path;
           els.directoryBrowserSelect.disabled = false;
@@ -4195,7 +4200,7 @@ function renderMediaBrowserEntries(entries, mode) {
 async function loadMediaDirectory(path) {
   const generation = ++state.mediaBrowserGeneration;
   state.mediaPreviewGeneration += 1;
-  els.directoryBrowserPreview.hidden = true;
+  clearMediaBrowserPreview();
   els.directoryBrowserStatus.textContent = "Loading folders…";
   els.directoryBrowserList.replaceChildren();
   els.directoryBrowserGo.disabled = true;
@@ -4316,23 +4321,83 @@ function handleMediaBrowserListKeydown(event) {
   }
 }
 
-function previewMediaBrowserFile(entry, button) {
+function clearMediaBrowserPreview() {
+  state.mediaPreviewRequest?.abort?.();
+  state.mediaPreviewRequest = null;
+  if (state.mediaPreviewObjectUrl) URL.revokeObjectURL(state.mediaPreviewObjectUrl);
+  state.mediaPreviewObjectUrl = null;
+  els.directoryBrowserPreview.onload = null;
+  els.directoryBrowserPreview.onerror = null;
+  els.directoryBrowserPreview.removeAttribute("src");
+  els.directoryBrowserPreview.hidden = true;
+  els.directoryBrowserPreviewFrame.removeAttribute("data-preview-state");
+  els.directoryBrowserPreviewFrame.removeAttribute("role");
+  els.directoryBrowserPreviewFrame.removeAttribute("aria-label");
+}
+
+async function previewMediaBrowserFile(entry, button) {
   const generation = ++state.mediaPreviewGeneration;
   renderExperimentalDngNote(entry);
   els.directoryBrowser.dataset.selectedPath = entry.path;
   els.directoryBrowserSelect.disabled = false;
   selectMediaBrowserEntry(button);
-  els.directoryBrowserPreview.src = `/api/media-browser/thumbnail?path=${encodeURIComponent(entry.path)}&size=512`;
-  els.directoryBrowserPreview.alt = `Preview of ${entry.name}`;
-  els.directoryBrowserPreview.hidden = false;
-  els.directoryBrowserPreview.onerror = () => {
-    if (generation !== state.mediaPreviewGeneration) return;
-    els.directoryBrowserPreview.hidden = true;
-    els.directoryBrowserPreviewNote.textContent = "Preview unavailable; the source remains unopened.";
-  };
+  clearMediaBrowserPreview();
   els.directoryBrowserSelection.textContent = entry.name;
   const hdrPossible = window.matchMedia?.("(dynamic-range: high)")?.matches && ["avif", "jxl", "exr", "dng"].includes(entry.format);
-  els.directoryBrowserPreviewNote.textContent = `${String(entry.format || "image").toUpperCase()} · ${hdrPossible ? "HDR selected preview follows after opening" : "SDR browser thumbnail"}`;
+  const readyNote = `${String(entry.format || "image").toUpperCase()} · ${hdrPossible ? "HDR selected preview follows after opening" : "SDR browser thumbnail"}`;
+  els.directoryBrowserPreviewNote.textContent = `${String(entry.format || "image").toUpperCase()} · Loading preview…`;
+
+  const params = new URLSearchParams({
+    path: entry.path,
+    size: "512",
+    key: entry.thumbnail_key || "",
+    version: "natural-aspect-v4",
+  });
+  const previewUrl = `/api/media-browser/thumbnail?${params}`;
+  const request = new AbortController();
+  state.mediaPreviewRequest = request;
+  const failPreview = () => {
+    if (generation !== state.mediaPreviewGeneration || state.mediaPreviewRequest !== request) return;
+    clearMediaBrowserPreview();
+    els.directoryBrowserPreviewNote.textContent = "Preview unavailable; you can still open the source.";
+  };
+  try {
+    const response = await fetch(previewUrl, { signal: request.signal });
+    if (generation !== state.mediaPreviewGeneration || state.mediaPreviewRequest !== request) return;
+    if (response.status === 409) {
+      const payload = await safeJson(response);
+      const detail = payload?.detail;
+      if (detail?.code === "interpretation_required") {
+        const profile = detail.profile_name ? ` Embedded profile: “${detail.profile_name}”.` : "";
+        clearMediaBrowserPreview();
+        els.directoryBrowserPreviewFrame.dataset.previewState = "interpretation-required";
+        els.directoryBrowserPreviewFrame.setAttribute("role", "img");
+        els.directoryBrowserPreviewFrame.setAttribute("aria-label", "Preview withheld because color interpretation is required");
+        els.directoryBrowserPreviewNote.textContent = `Color interpretation required. ${detail.message}${profile} Preview withheld to avoid misleading color; open the image to review its interpretation.`;
+        return;
+      }
+    }
+    if (!response.ok) throw new Error(`Thumbnail request failed with status ${response.status}.`);
+    const blob = await response.blob();
+    if (generation !== state.mediaPreviewGeneration || state.mediaPreviewRequest !== request) return;
+    const objectUrl = URL.createObjectURL(blob);
+    state.mediaPreviewObjectUrl = objectUrl;
+    els.directoryBrowserPreview.onload = () => {
+      if (generation !== state.mediaPreviewGeneration || state.mediaPreviewRequest !== request) return;
+      els.directoryBrowserPreview.onload = null;
+      els.directoryBrowserPreview.onerror = null;
+      els.directoryBrowserPreview.hidden = false;
+      els.directoryBrowserPreviewNote.textContent = readyNote;
+      state.mediaPreviewRequest = null;
+    };
+    els.directoryBrowserPreview.onerror = failPreview;
+    els.directoryBrowserPreview.src = objectUrl;
+    els.directoryBrowserPreview.alt = `Preview of ${entry.name}`;
+  } catch (error) {
+    if (error?.name === "AbortError") return;
+    console.error(error);
+    failPreview();
+  }
 }
 
 async function pinCurrentMediaFolder() {

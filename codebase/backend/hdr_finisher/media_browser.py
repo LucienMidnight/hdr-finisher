@@ -21,10 +21,24 @@ from .raw_import import RAW_EXTENSIONS
 
 
 FAST_THUMBNAIL_EXTENSIONS = RAW_EXTENSIONS | {".avif", ".png", ".jpg", ".jpeg", ".bmp"}
+THUMBNAIL_CACHE_VERSION = "natural-aspect-v4"
 
 
 class MediaBrowserError(ValueError):
     pass
+
+
+class MediaBrowserInterpretationRequired(MediaBrowserError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason: str = "ambiguous_color_interpretation",
+        profile_name: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.reason = reason
+        self.profile_name = profile_name
 
 
 class MediaBrowserStore:
@@ -171,7 +185,7 @@ class MediaBrowserStore:
         stat = path.stat()
         variant = "fast" if fast_only else "full"
         key = hashlib.sha256(
-            f"natural-aspect-v2\0{path}\0{stat.st_size}\0{stat.st_mtime_ns}\0{edge}\0{variant}".encode()
+            f"{THUMBNAIL_CACHE_VERSION}\0{path}\0{stat.st_size}\0{stat.st_mtime_ns}\0{edge}\0{variant}".encode()
         ).hexdigest()
         self.thumbnail_root.mkdir(parents=True, exist_ok=True)
         output = self.thumbnail_root / f"{key}.jpg"
@@ -368,18 +382,15 @@ def _read_thumbnail_source(
     if suffix in {".png", ".jpg", ".jpeg", ".bmp"}:
         return _read_pillow_thumbnail(path, edge)
     if suffix == ".avif":
-        from .gainmap_decoders import GainMapDecodeError, decode_avif_preview
+        from .gainmap_decoders import decode_avif_preview
 
-        try:
-            image = decode_avif_preview(path)
-        except GainMapDecodeError:
-            return _neutral_thumbnail_placeholder()
+        image = decode_avif_preview(path)
         return _acescg_thumbnail(downsample_image(image, max(edge * 2, edge)))
     from .loader import load_image
 
     image, _descriptor, metadata, analysis, _sdr = load_image(path)
     if metadata.get("needs_color_override") or analysis.needs_color_override:
-        return _neutral_thumbnail_placeholder()
+        raise _interpretation_required(metadata, analysis.badge_message)
     return _acescg_thumbnail(downsample_image(image, max(edge * 2, edge)))
 
 
@@ -417,6 +428,37 @@ def _neutral_thumbnail_placeholder() -> np.ndarray:
     y, x = np.indices((64, 64))
     checker = np.where(((x // 8) + (y // 8)) % 2 == 0, 50, 64).astype(np.uint8)
     return np.repeat(checker[..., None], 3, axis=2)
+
+
+def _interpretation_required(
+    metadata: dict[str, Any], analysis_message: str | None = None
+) -> MediaBrowserInterpretationRequired:
+    profile_name = str(metadata.get("icc_profile_name") or "").strip() or None
+    color_space = str(metadata.get("color_space") or "").strip().lower()
+    transfer = str(metadata.get("transfer_function") or "").strip().lower()
+    if profile_name and color_space in {"", "unknown", "none"}:
+        return MediaBrowserInterpretationRequired(
+            "The embedded ICC profile does not identify supported color primaries.",
+            reason="unrecognized_color_primaries",
+            profile_name=profile_name,
+        )
+    if color_space in {"", "unknown", "none"}:
+        return MediaBrowserInterpretationRequired(
+            "Color primaries are missing or not recognized.",
+            reason="unknown_color_primaries",
+            profile_name=profile_name,
+        )
+    if transfer in {"", "unknown", "none"}:
+        return MediaBrowserInterpretationRequired(
+            "The source transfer function is missing or not recognized.",
+            reason="unknown_transfer_function",
+            profile_name=profile_name,
+        )
+    return MediaBrowserInterpretationRequired(
+        analysis_message or "The embedded color metadata requires review.",
+        reason="source_interpretation_review",
+        profile_name=profile_name,
+    )
 
 
 def _apply_libraw_orientation(image: np.ndarray, flip: int) -> np.ndarray:

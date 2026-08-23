@@ -14,6 +14,7 @@
     "test:mask-graph": "node tests/mask-graph-interaction.js",
     "test:device-loss": "node tests/device-loss-fallback.js",
     "test:export-browser": "node tests/export-file-browser-interaction.js",
+    "test:media-browser-preview": "node tests/media-browser-preview-interaction.js",
     "test:export-presets": "node tests/export-presets-interaction.js",
     "test:local-design": "node tests/local-design-qa.js",
     "test:startup-state": "node tests/startup-state.js",

@@ -26,7 +26,7 @@ from hdr_finisher.jpegxl import (
     validate_sdr_jpegxl,
 )
 from hdr_finisher.loader import load_image
-from hdr_finisher.media_browser import MediaBrowserError, MediaBrowserStore, _apply_libraw_orientation
+from hdr_finisher.media_browser import MediaBrowserError, MediaBrowserInterpretationRequired, MediaBrowserStore, _apply_libraw_orientation
 from hdr_finisher.models import AdjustmentState, CapabilityInfo, CapabilityStatus, EditCommand, EditDocument, ExportSettings, RawImportSettings, SourceInterpretationOverride, SourceReference
 from hdr_finisher.models import LensCorrectionSettings
 from hdr_finisher.raw_import import RawImportError, _remap_bilinear_strips, apply_lens_correction, decode_raw, list_lens_profiles
@@ -537,7 +537,7 @@ def test_bitmap_thumbnail_uses_the_bounded_pillow_path(tmp_path: Path, monkeypat
         assert image.size == (128, 64)
 
 
-def test_media_browser_uses_neutral_placeholder_for_unmarked_jpegxl(tmp_path: Path) -> None:
+def test_media_browser_requires_interpretation_for_unmarked_jpegxl_without_caching_placeholder(tmp_path: Path) -> None:
     import imagecodecs
 
     source = tmp_path / "unmarked.jxl"
@@ -546,12 +546,29 @@ def test_media_browser_uses_neutral_placeholder_for_unmarked_jpegxl(tmp_path: Pa
     source.write_bytes(imagecodecs.jpegxl_encode(pixels, bitspersample=12, usecontainer=True))
     browser = MediaBrowserStore(tmp_path / "app-data")
 
-    thumbnail = browser.thumbnail(str(source), 128)
+    with pytest.raises(MediaBrowserInterpretationRequired) as raised:
+        browser.thumbnail(str(source), 128)
 
-    with Image.open(thumbnail) as image:
-        array = np.asarray(image.convert("RGB"))
-    assert np.max(np.abs(array[..., 0].astype(int) - array[..., 1].astype(int))) <= 2
-    assert np.max(np.abs(array[..., 1].astype(int) - array[..., 2].astype(int))) <= 2
+    assert raised.value.reason == "unknown_color_primaries"
+    assert not list(browser.thumbnail_root.glob("*.jpg"))
+
+
+def test_media_browser_does_not_cache_avif_decode_failures(tmp_path: Path, monkeypatch) -> None:
+    from hdr_finisher.gainmap_decoders import GainMapDecodeError
+
+    source = tmp_path / "broken-preview.avif"
+    source.write_bytes(b"synthetic-avif")
+    browser = MediaBrowserStore(tmp_path / "app-data")
+
+    def fail_preview(_path: Path) -> np.ndarray:
+        raise GainMapDecodeError("preview decode failed")
+
+    monkeypatch.setattr("hdr_finisher.gainmap_decoders.decode_avif_preview", fail_preview)
+
+    with pytest.raises(GainMapDecodeError, match="preview decode failed"):
+        browser.thumbnail(str(source), 128)
+
+    assert not list(browser.thumbnail_root.glob("*.jpg"))
 
 
 def test_fast_staged_thumbnail_refuses_formats_that_require_full_decode(tmp_path: Path) -> None:
