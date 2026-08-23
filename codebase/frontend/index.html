@@ -61,38 +61,6 @@
         <p class="status-text muted experimental-dng-note hidden" id="experimental-dng-note">DNG import is experimental. Some incompatible DNG files may be rejected.</p>
       </section>
 
-      <section id="raw-settings-section" class="disclosure-panel hidden">
-        <button id="raw-settings-toggle" class="disclosure-trigger" type="button" aria-expanded="false" aria-controls="raw-settings-panel">
-          <span>RAW &amp; Lens Development</span>
-        </button>
-        <div id="raw-settings-panel" class="disclosure-content hidden">
-          <p class="helper">Convenience development uses as-shot white balance, AHD demosaic, linear ACES output, and no destructive LibRaw auto brightening or sharpening. The metered starting exposure remains an editable Tone adjustment and is not baked into decoded pixels.</p>
-          <label>Lens correction
-            <select id="lens-mode">
-              <option value="off">Off</option>
-              <option value="auto">Auto · editable</option>
-              <option value="manual">Manual profile</option>
-            </select>
-          </label>
-          <div id="manual-lens-controls" class="hidden">
-            <label>Find profile <input id="lens-profile-search" type="search" placeholder="Camera or lens model"></label>
-            <label>Lensfun profile <select id="lens-profile"><option value="">Search profiles…</option></select></label>
-          </div>
-          <div class="checkbox-stack">
-            <label class="checkbox-row"><input id="lens-distortion" type="checkbox" checked> Distortion</label>
-            <label class="checkbox-row"><input id="lens-ca" type="checkbox" checked> Lateral chromatic aberration</label>
-            <label class="checkbox-row"><input id="lens-vignetting" type="checkbox" checked> Vignetting</label>
-          </div>
-          <div class="control-pair">
-            <label>Focal length <input id="lens-focal" type="number" min="0.1" max="2000" step="0.1" placeholder="from metadata"></label>
-            <label>Aperture <input id="lens-aperture" type="number" min="0.1" max="128" step="0.1" placeholder="from metadata"></label>
-          </div>
-          <label>Focus distance (m) <input id="lens-distance" type="number" min="0.01" max="1000000" step="0.1" placeholder="from metadata"></label>
-          <p id="lens-settings-note" class="helper">Auto applies only one exact profile match. Off and Manual are always available.</p>
-          <button id="apply-raw-settings" class="button-primary" type="button">Re-develop source</button>
-        </div>
-      </section>
-
       <section class="disclosure-panel">
         <button id="source-settings-toggle" class="disclosure-trigger" type="button" aria-expanded="false" aria-controls="source-settings-panel">
           <span>Source Interpretation</span>
@@ -509,6 +477,38 @@
         </div>
         <span id="grade-modified-summary" class="status-text muted">Default</span>
       </div>
+
+      <section id="raw-settings-section" class="disclosure-panel raw-development-group hidden">
+        <button id="raw-settings-toggle" class="disclosure-trigger" type="button" aria-expanded="false" aria-controls="raw-settings-panel">
+          <span>RAW DEVELOPMENT</span>
+        </button>
+        <div id="raw-settings-panel" class="disclosure-content hidden">
+          <p class="helper">Convenience development uses as-shot white balance, AHD demosaic, linear ACES output, and no destructive LibRaw auto brightening or sharpening. The metered starting exposure remains an editable Tone adjustment and is not baked into decoded pixels.</p>
+          <label>Lens correction
+            <select id="lens-mode">
+              <option value="off">Off</option>
+              <option value="auto">Auto · editable</option>
+              <option value="manual">Manual profile</option>
+            </select>
+          </label>
+          <div id="manual-lens-controls" class="hidden">
+            <label>Find profile <input id="lens-profile-search" type="search" placeholder="Camera or lens model"></label>
+            <label>Lensfun profile <select id="lens-profile"><option value="">Search profiles…</option></select></label>
+          </div>
+          <div class="checkbox-stack">
+            <label class="checkbox-row"><input id="lens-distortion" type="checkbox" checked> Distortion</label>
+            <label class="checkbox-row"><input id="lens-ca" type="checkbox" checked> Lateral chromatic aberration</label>
+            <label class="checkbox-row"><input id="lens-vignetting" type="checkbox" checked> Vignetting</label>
+          </div>
+          <div class="control-pair">
+            <label>Focal length <input id="lens-focal" type="number" min="0.1" max="2000" step="0.1" placeholder="from metadata"></label>
+            <label>Aperture <input id="lens-aperture" type="number" min="0.1" max="128" step="0.1" placeholder="from metadata"></label>
+          </div>
+          <label>Focus distance (m) <input id="lens-distance" type="number" min="0.01" max="1000000" step="0.1" placeholder="from metadata"></label>
+          <p id="lens-settings-note" class="helper">Auto applies only one exact profile match. Off and Manual are always available.</p>
+          <button id="apply-raw-settings" class="button-primary" type="button">Re-develop source</button>
+        </div>
+      </section>
 
       <section class="control-group collapsed local-adjustments-group" id="local-adjustments-group" data-group="local-adjustments">
         <div class="control-group-header">

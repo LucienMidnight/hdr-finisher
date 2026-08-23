@@ -6430,6 +6430,10 @@ body[data-workflow="grade"] .import-workflow-panel { display: none; }
 
 .disclosure-content { padding: 4px 0 14px; }
 
+.raw-development-group {
+  padding-inline: 16px;
+}
+
 .viewer-lane {
   font-size: 11px;
   letter-spacing: .05em;

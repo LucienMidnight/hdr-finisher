@@ -586,6 +586,23 @@ The packaging track now produces an Apple Silicon macOS `.app`, `.dmg`, and `.zi
 - **Project browser and interface cleanup:** Open Project and Save Project/Save As use the in-app file browser with `.hdrfinisher` filtering, configured default locations, filename entry, and explicit replacement confirmation; an already-known project path still saves immediately. The release also shortens scope labels, prevents scope-guide overlap, aligns neutral RGB-primary purity handles, reserves stable Preset/Reset/Bypass header columns, removes redundant modal eyebrows and the top-bar reference-white control, and centers dialog close icons.
 - **Format-selection documentation:** Quick Start, Gain Maps and Output Formats, and Export now explain the intended use and principal costs of JPEG Ultra HDR, AVIF gain maps, direct-HDR and SDR JPEG XL, SDR PNG, and SDR JPEG. The guidance distinguishes Ultra HDR's 8-bit JPEG components from its reconstructed HDR result, records libavif's practical 268,435,456-pixel and 32,768-pixel-axis safety defaults, and positions direct-PQ JPEG XL as high-bit-depth preservation/large-image interchange with no authored SDR fallback and uneven browser/viewer support.
 
+### RAW Development and Corrections Direction (2026-08-23)
+
+HDR Finisher's constrained RAW path is a beginning-of-workflow operation rather than source metadata. The Grade Control Panel therefore places a **RAW DEVELOPMENT** disclosure first, above Local Adjustments. The current implementation keeps the existing as-shot white balance, AHD demosaic, linear ACES output, Lensfun profile selection, separate distortion/lateral-chromatic-aberration/vignetting choices, optical metadata overrides, and explicit **Re-develop source** action. This UI relocation does not change decoded pixels, saved project data, or re-development semantics.
+
+The settled product contract is:
+
+- **RAW DEVELOPMENT** remains present at the top of the Grade Control Panel and is disabled with a concise RAW-only explanation for non-RAW sources. Until that disabled-state follow-up lands, the current slice retains the prior RAW-only visibility gate.
+- RAW development remains deterministic and source-scoped. Re-development must preserve the active session identity, global adjustments, ordered local adjustments, project association, undo/history contract, and reference-white state.
+- Add conservative sensor-aware denoise to RAW development before pursuing a broader finishing denoiser. The first implementation should expose understandable strength presets backed by LibRaw/rawpy's supported pre-demosaic noise-reduction path, persist the choice with `RawImportSettings`, record the applied method in source metadata, and require explicit re-development. It must not imply parity with specialized neural RAW denoisers.
+- Add a separate always-visible **CORRECTIONS** group immediately below RAW DEVELOPMENT. Corrections are shared source-preparation edits and apply equally to RAW-derived images, EXR/TIFF renders, and other supported decoded sources.
+- The first manual correction is profile-free barrel/pincushion distortion with an explicit neutral value and safe scale/crop behavior. It must be applied before crop, local adjustments, grading, scopes, proofing, and export, with identical CPU and WebGPU results.
+- Manual distortion is a nonlinear spatial transform. Implementation must replace or extend the editor's current affine-only geometry-coordinate assumption so local masks, crop guides, sampling, overlays, and preview gizmos remain registered when correction values change. Preview caches and full-resolution export must use the same correction signature and resampling convention.
+- Profile-driven Lensfun correction stays in RAW DEVELOPMENT because it is part of source re-development. Profile-free distortion stays in CORRECTIONS because it must remain editable for both RAW and rendered inputs. The UI must make this distinction clear and prevent accidental double correction.
+- Later Corrections candidates are rendered-image luminance/color denoise, manual chromatic-aberration controls, dehaze, and input/detail sharpening. Each requires scene-linear/HDR-safe math, preview/export parity, conservative defaults, and representative real-image validation before becoming a committed control.
+
+This direction is intentionally narrower than a general RAW editor: it aims to let ordinary RAW photographs complete the HDR Finisher pipeline while retaining the product's single-image, deterministic finishing scope.
+
 ### Current UI Testing Notes
 
 #### Photographer media browser contract (v0.7.2)

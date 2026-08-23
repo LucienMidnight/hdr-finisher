@@ -13,6 +13,20 @@ FRONTEND = ROOT / "frontend"
 DESKTOP = ROOT / "desktop"
 
 
+def test_raw_development_is_first_grade_control_group() -> None:
+    markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+
+    grade_start = markup.index('id="grade-workflow-panel"')
+    raw_start = markup.index('id="raw-settings-section"')
+    local_start = markup.index('id="local-adjustments-group"')
+    assert grade_start < raw_start < local_start
+    assert "RAW &amp; Lens Development" not in markup
+    assert "<span>RAW DEVELOPMENT</span>" in markup
+    assert 'class="disclosure-panel raw-development-group hidden"' in markup
+    assert ".raw-development-group" in css
+
+
 def test_brand_assets_and_fonts_are_bundled_locally() -> None:
     markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
     launcher = (FRONTEND / "launcher.html").read_text(encoding="utf-8")

@@ -133,15 +133,16 @@ async function main() {
     const controlChecks = await page.locator('input[type="range"][data-path]').evaluateAll((controls, expected) => {
       return controls.map((control) => {
         const path = control.dataset.path;
-        const actualStep = Number(control.step);
+        const actualStep = Number(control.dataset.instrumentStep || control.step);
         const min = Number(control.min);
         const value = Number(control.value);
-        const step = Number(control.step);
-        const aligned = Math.abs(((value - min) / step) - Math.round((value - min) / step)) < 1e-6;
+        const fineStep = Number(control.step);
+        const aligned = Math.abs(((value - min) / fineStep) - Math.round((value - min) / fineStep)) < 1e-6;
         return {
           path,
           expectedStep: expected[path],
           actualStep,
+          fineStep,
           aligned,
           ok: (expected[path] === undefined || expected[path] === actualStep) && aligned,
         };

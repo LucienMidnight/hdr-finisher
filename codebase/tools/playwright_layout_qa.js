@@ -57,7 +57,7 @@ async function compactViewportCheck(browser, url, viewport, screenshotBase) {
       };
       const viewer = box(".viewer-panel");
       const dockBar = document.querySelector(".dock-bar");
-      const scopeHeading = document.querySelector(".scope-heading");
+      const scopeHeading = document.querySelector(".dock-panel-title");
       const directControls = ["#compare-button", "#zoom-readout", "#zoom-fit", "#zoom-actual", "#viewer-options-toggle"].map(box);
       return {
         compact: document.querySelector(".app-shell")?.classList.contains("compact-workspace"),
@@ -178,14 +178,14 @@ async function main() {
 
     await page.reload({ waitUntil: "networkidle" });
     const fresh = await shellMetrics(page);
-    await page.locator('[data-dock-tab="technical"]').click();
+    await page.locator("#scope-mode").selectOption("technical");
     await page.reload({ waitUntil: "networkidle" });
     const tabReset = await page.evaluate(() => ({
-      activeTab: document.querySelector(".dock-tab.active")?.dataset.dockTab,
+      activeTab: document.getElementById("scope-mode")?.value,
       technicalVisible: !document.getElementById("technical-view")?.classList.contains("hidden"),
       storedPreferences: Object.keys(localStorage).filter((key) => key.startsWith("hdr-finisher")),
     }));
-    await page.locator('[data-dock-tab="histogram"]').click();
+    await page.locator("#scope-mode").selectOption("histogram");
     await page.locator("#source-splitter").dblclick();
     await page.locator("#grade-splitter").dblclick();
     await page.locator("#dock-splitter").dblclick();
