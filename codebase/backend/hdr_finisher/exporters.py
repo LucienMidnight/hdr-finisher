@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from io import BytesIO
 import os
@@ -377,14 +378,16 @@ class JPEGUltraHDRExportBackend(ExportBackend):
                 unfiltered_path = temp_dir / "unfiltered_ultrahdr.jpg"
                 exif_payload = _source_exif_payload(session, settings.metadata_policy)
                 exif_path = _write_temporary_exif(temp_dir, exif_payload)
-                _write_hdr_linear_rgba_f16(hdr_raw_path, hdr_image, getattr(session, "hdr_reference_white_nits", 203))
-                _write_sdr_rgba8888(sdr_raw_path, sdr_image, dithering=settings.dithering)
-                _write_sdr_jpeg(
+                reference_white_nits = getattr(session, "hdr_reference_white_nits", 203)
+                hdr_rgba, target_peak_nits = _prepare_hdr_linear_rgba_f16(hdr_image, reference_white_nits)
+                hdr_raw_path.write_bytes(hdr_rgba.tobytes(order="C"))
+                sdr_rgb = _linear_to_srgb8(sdr_image[..., :3], dither=settings.dithering)
+                _write_sdr_rgba8888_pixels(sdr_raw_path, sdr_rgb)
+                _write_sdr_jpeg_pixels(
                     sdr_jpeg_path,
-                    sdr_image,
+                    sdr_rgb,
                     quality=int(settings.quality),
                     chroma_subsampling=settings.jpeg_chroma_subsampling,
-                    dithering=settings.dithering,
                     exif_payload=exif_payload,
                 )
                 command = _build_ultrahdr_encode_command(
@@ -401,7 +404,7 @@ class JPEGUltraHDRExportBackend(ExportBackend):
                     # defer the user's requested compression to the final map.
                     gain_map_quality=100,
                     gain_map_scale=settings.jpeg_gain_map_scale,
-                    target_peak_nits=_target_hdr_peak_nits(hdr_image, getattr(session, "hdr_reference_white_nits", 203)),
+                    target_peak_nits=target_peak_nits,
                 )
                 _run_command(command)
                 _denoise_ultrahdr_gain_map(
@@ -543,12 +546,31 @@ def _write_sdr_jpeg(
     dithering: str = "off",
     exif_payload: bytes | None = None,
 ) -> None:
+    image_8bit = _linear_to_srgb8(image[..., :3], dither=dithering)
+    _write_sdr_jpeg_pixels(
+        path,
+        image_8bit,
+        quality=quality,
+        chroma_subsampling=chroma_subsampling,
+        exif_payload=exif_payload,
+    )
+
+
+def _write_sdr_jpeg_pixels(
+    path: Path,
+    image_8bit: np.ndarray,
+    *,
+    quality: int,
+    chroma_subsampling: str = "420",
+    exif_payload: bytes | None = None,
+) -> None:
+    """Write already-quantized sRGB pixels without repeating transfer encoding."""
     try:
         from PIL import Image
     except ImportError as exc:
         raise ExportProcessError("Pillow is required to write SDR exports.") from exc
 
-    height, width = image.shape[:2]
+    height, width = image_8bit.shape[:2]
     # Pillow's bundled libjpeg-turbo deliberately reserves a small margin below
     # JPEG's 16-bit SOF limit (65,535), and reports JPEG_MAX_DIMENSION as 65,500.
     max_dimension = 65_500
@@ -557,8 +579,6 @@ def _write_sdr_jpeg(
             f"SDR JPEG supports dimensions up to {max_dimension:,} pixels with the bundled encoder; "
             f"the finished image is {width:,} x {height:,}. Resize the export or use SDR PNG."
         )
-
-    image_8bit = _linear_to_srgb8(image[..., :3], dither=dithering)
     subsampling_values = {"420": 2, "422": 1, "444": 0}
     try:
         pillow_subsampling = subsampling_values[chroma_subsampling]
@@ -679,13 +699,27 @@ def _write_sdr_rgba8888(path: Path, image: np.ndarray, *, dithering: str = "auto
     # deterministic signal-domain dither prevents long quantization plateaus
     # in smooth gradients before libultrahdr derives and compresses the map.
     rgb = _linear_to_srgb8(image[..., :3], dither=dithering)
+    _write_sdr_rgba8888_pixels(path, rgb)
+
+
+def _write_sdr_rgba8888_pixels(path: Path, rgb: np.ndarray) -> None:
+    """Write already-quantized sRGB pixels as libultrahdr's RGBA intent."""
     alpha = np.full((*rgb.shape[:2], 1), 255, dtype=np.uint8)
     rgba = np.concatenate([rgb, alpha], axis=-1)
     path.write_bytes(rgba.tobytes(order="C"))
 
 
 def _write_hdr_linear_rgba_f16(path: Path, image: np.ndarray, reference_white_nits: int = 203) -> None:
+    rgba, _target_peak_nits = _prepare_hdr_linear_rgba_f16(image, reference_white_nits)
+    path.write_bytes(rgba.tobytes(order="C"))
+
+
+def _prepare_hdr_linear_rgba_f16(
+    image: np.ndarray, reference_white_nits: int = 203
+) -> tuple[np.ndarray, float]:
+    """Prepare libultrahdr's HDR intent and measure its peak in one gamut pass."""
     linear_bt2020 = _acescg_to_bt2020_linear(image[..., :3])
+    target_peak_nits = _target_hdr_peak_nits_from_bt2020(linear_bt2020, reference_white_nits)
     # libultrahdr's linear API defines 1.0 as 203 nits. Convert once from
     # project scene-linear placement into that codec-interface convention.
     linear_bt2020 = scene_linear_to_nits(linear_bt2020, reference_white_nits) / np.float32(203.0)
@@ -693,7 +727,7 @@ def _write_hdr_linear_rgba_f16(path: Path, image: np.ndarray, reference_white_ni
     linear_bt2020 = np.clip(linear_bt2020, 0.0, 10000.0 / 203.0)
     alpha = np.ones((*linear_bt2020.shape[:2], 1), dtype=np.float32)
     rgba = np.concatenate([linear_bt2020, alpha], axis=-1).astype("<f2")
-    path.write_bytes(rgba.tobytes(order="C"))
+    return rgba, target_peak_nits
 
 
 def _acescg_to_bt2020_linear(image: np.ndarray) -> np.ndarray:
@@ -705,6 +739,11 @@ def _acescg_to_bt2020_linear(image: np.ndarray) -> np.ndarray:
 
 def _target_hdr_peak_nits(image: np.ndarray, reference_white_nits: int = 203) -> float:
     bt2020 = np.clip(_acescg_to_bt2020_linear(image[..., :3]), 0.0, None)
+    return _target_hdr_peak_nits_from_bt2020(bt2020, reference_white_nits)
+
+
+def _target_hdr_peak_nits_from_bt2020(bt2020: np.ndarray, reference_white_nits: int = 203) -> float:
+    bt2020 = np.clip(bt2020, 0.0, None)
     luma = 0.2627 * bt2020[..., 0] + 0.6780 * bt2020[..., 1] + 0.0593 * bt2020[..., 2]
     peak_nits = float(scene_linear_to_nits(float(np.max(luma, initial=0.0)), reference_white_nits))
     return float(np.clip(peak_nits, 203.0, 10000.0))
@@ -778,16 +817,19 @@ def _guided_filter_gain_map_region(
 ) -> np.ndarray:
     mean_guide = _box_blur_float(guide, radius)
     variance_guide = _box_blur_float(guide * guide, radius) - mean_guide * mean_guide
-    filtered = np.empty_like(gain)
-    for channel in range(3):
+    def filter_channel(channel: int) -> np.ndarray:
         source = gain[..., channel]
         mean_source = _box_blur_float(source, radius)
         covariance = _box_blur_float(guide * source, radius) - mean_guide * mean_source
         coefficient = covariance / (variance_guide + np.float32(epsilon))
         intercept = mean_source - coefficient * mean_guide
-        filtered[..., channel] = (
-            _box_blur_float(coefficient, radius) * guide + _box_blur_float(intercept, radius)
-        )
+        return _box_blur_float(coefficient, radius) * guide + _box_blur_float(intercept, radius)
+
+    # The channels are mathematically independent. NumPy releases the GIL for
+    # the cumulative sums, so processing them together shortens this CPU-bound
+    # post-pass without changing a single per-channel operation or coefficient.
+    with ThreadPoolExecutor(max_workers=3, thread_name_prefix="ultrahdr-gain-map") as pool:
+        filtered = np.stack(list(pool.map(filter_channel, range(3))), axis=-1)
     return gain + np.float32(amount) * (filtered - gain)
 
 

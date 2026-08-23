@@ -1265,7 +1265,6 @@
   <dialog id="directory-browser" class="directory-browser" aria-labelledby="directory-browser-title">
     <div class="directory-browser-header">
       <div>
-        <p id="directory-browser-kicker" class="section-kicker">Media browser</p>
         <h2 id="directory-browser-title">Choose a source image</h2>
       </div>
       <button id="directory-browser-close" class="text-button" type="button" aria-label="Close folder browser">Close</button>
@@ -1278,14 +1277,37 @@
     </div>
     <div id="directory-browser-status" class="directory-browser-status" aria-live="polite">Loading folders…</div>
     <div class="media-browser-layout">
-      <nav class="media-browser-sidebar" aria-label="Drives, favorite, and system folders">
-        <strong>Drives</strong><ul id="directory-browser-drives"></ul>
-        <strong>Places</strong><ul id="directory-browser-places"></ul>
-        <strong>Favorites</strong><ul id="directory-browser-favorites"></ul>
+      <nav class="media-browser-sidebar" aria-label="Recent, pinned, and system locations">
+        <strong>Recent</strong><ul id="directory-browser-recents"></ul>
+        <strong>Pinned</strong><ul id="directory-browser-pinned"></ul>
+        <strong>Locations</strong><ul id="directory-browser-locations"></ul>
       </nav>
-      <ul id="directory-browser-list" class="directory-browser-list" aria-label="Folders and supported images"></ul>
+      <div class="media-browser-table">
+        <div class="media-browser-list-header" role="row">
+          <span role="columnheader" aria-sort="ascending">
+            <button type="button" data-media-browser-sort="name">Name</button>
+            <span class="media-browser-column-resizer" role="separator" aria-orientation="vertical" aria-label="Resize Name column" tabindex="0" data-media-browser-resize="name"></span>
+          </span>
+          <span role="columnheader" aria-sort="none">
+            <button type="button" data-media-browser-sort="size">Size</button>
+            <span class="media-browser-column-resizer" role="separator" aria-orientation="vertical" aria-label="Resize Size column" tabindex="0" data-media-browser-resize="size"></span>
+          </span>
+          <span role="columnheader" aria-sort="none">
+            <button type="button" data-media-browser-sort="kind">Kind</button>
+            <span class="media-browser-column-resizer" role="separator" aria-orientation="vertical" aria-label="Resize Kind column" tabindex="0" data-media-browser-resize="kind"></span>
+          </span>
+          <span role="columnheader" aria-sort="none">
+            <button type="button" data-media-browser-sort="date">Date Added</button>
+            <span class="media-browser-column-resizer" role="separator" aria-orientation="vertical" aria-label="Resize Date Added column" tabindex="0" data-media-browser-resize="date"></span>
+          </span>
+        </div>
+        <ul id="directory-browser-list" class="directory-browser-list" aria-label="Folders and supported images"></ul>
+      </div>
+      <div class="media-browser-preview-resizer" role="separator" aria-orientation="vertical" aria-label="Resize preview panel" tabindex="0"></div>
       <aside class="media-browser-preview" aria-label="Selected image preview">
-        <img id="directory-browser-preview" alt="" hidden>
+        <div class="media-browser-preview-image-frame">
+          <img id="directory-browser-preview" alt="" hidden>
+        </div>
         <strong id="directory-browser-selection">No image selected</strong>
         <span id="directory-browser-preview-note">Select a supported image to preview it.</span>
       </aside>

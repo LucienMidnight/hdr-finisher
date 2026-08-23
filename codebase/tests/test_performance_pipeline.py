@@ -8,6 +8,12 @@ import pytest
 
 import hdr_finisher.render_cache as render_cache_module
 from hdr_finisher.loader import _display_p3_to_linear_srgb
+from hdr_finisher.color import (
+    acescg_to_linear_bt2020,
+    acescg_to_linear_srgb,
+    linear_bt2020_to_acescg,
+    linear_srgb_to_acescg,
+)
 from hdr_finisher.models import AdjustmentState, PreviewKind
 from hdr_finisher.render_cache import SessionRenderCache, encode_rgba_proxy
 from hdr_finisher.scopes import _waveform_grid, build_scope
@@ -120,3 +126,32 @@ def test_fixed_float32_display_p3_transform_matches_reference() -> None:
 
     actual = _display_p3_to_linear_srgb(encoded)
     np.testing.assert_allclose(actual, expected, rtol=4e-3, atol=2.5e-4)
+
+
+@pytest.mark.parametrize(
+    ("transform", "source_name", "target_name"),
+    [
+        (acescg_to_linear_srgb, "ACEScg", "sRGB"),
+        (acescg_to_linear_bt2020, "ACEScg", "ITU-R BT.2020"),
+        (linear_srgb_to_acescg, "sRGB", "ACEScg"),
+        (linear_bt2020_to_acescg, "ITU-R BT.2020", "ACEScg"),
+    ],
+)
+def test_cached_linear_colour_transform_is_float32_identical_to_colour_science(
+    transform, source_name: str, target_name: str
+) -> None:
+    colour = pytest.importorskip("colour")
+    image = np.random.default_rng(19).random((37, 53, 3), dtype=np.float32) * np.float32(8.0)
+    expected = np.asarray(
+        colour.models.RGB_to_RGB(
+            image,
+            colour.RGB_COLOURSPACES[source_name],
+            colour.RGB_COLOURSPACES[target_name],
+            chromatic_adaptation_transform="CAT02",
+        ),
+        dtype=np.float32,
+    )
+
+    actual = transform(image)
+
+    np.testing.assert_array_equal(actual, expected)

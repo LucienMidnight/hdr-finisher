@@ -18,7 +18,9 @@ from hdr_finisher.exporters import (
     ExportProcessError,
     JPEGUltraHDRExportBackend,
     _build_ultrahdr_encode_command,
+    _box_blur_float,
     _denoised_ultrahdr_gain_map_jpeg,
+    _guided_filter_gain_map_region,
     _inspect_ultrahdr_markers,
     _linear_to_srgb8,
     _run_command,
@@ -288,6 +290,38 @@ def test_ultrahdr_gain_map_denoise_reduces_smooth_region_noise_and_preserves_edg
     before_edge = float(before[:, width // 2 + 2].mean() - before[:, width // 2 - 3].mean())
     after_edge = float(after[:, width // 2 + 2].mean() - after[:, width // 2 - 3].mean())
     assert after_edge > before_edge * 0.9
+
+
+def test_parallel_gain_map_channels_match_serial_filter_exactly() -> None:
+    random = np.random.default_rng(31)
+    guide = random.random((41, 57), dtype=np.float32)
+    gain = random.random((41, 57, 3), dtype=np.float32)
+    radius = 2
+    epsilon = 0.0025
+    amount = 0.75
+    mean_guide = _box_blur_float(guide, radius)
+    variance_guide = _box_blur_float(guide * guide, radius) - mean_guide * mean_guide
+    expected = np.empty_like(gain)
+    for channel in range(3):
+        source = gain[..., channel]
+        mean_source = _box_blur_float(source, radius)
+        covariance = _box_blur_float(guide * source, radius) - mean_guide * mean_source
+        coefficient = covariance / (variance_guide + np.float32(epsilon))
+        intercept = mean_source - coefficient * mean_guide
+        expected[..., channel] = (
+            _box_blur_float(coefficient, radius) * guide + _box_blur_float(intercept, radius)
+        )
+    expected = gain + np.float32(amount) * (expected - gain)
+
+    actual = _guided_filter_gain_map_region(
+        guide,
+        gain,
+        radius=radius,
+        epsilon=epsilon,
+        amount=amount,
+    )
+
+    np.testing.assert_array_equal(actual, expected)
 
 
 def test_encoder_failure_cleans_staged_file_and_preserves_existing_output(monkeypatch, tmp_path: Path) -> None:

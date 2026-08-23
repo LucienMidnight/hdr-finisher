@@ -254,6 +254,13 @@ const state = {
   importGeneration: 0,
   mediaBrowserGeneration: 0,
   mediaPreviewGeneration: 0,
+  mediaBrowserEntries: [],
+  mediaBrowserSortKey: "name",
+  mediaBrowserSortDirection: "ascending",
+  mediaBrowserColumnWidths: null,
+  mediaBrowserColumnResize: null,
+  mediaBrowserPreviewWidth: null,
+  mediaBrowserPreviewResize: null,
   lensProfileGeneration: 0,
   importInProgress: false,
   metadataOpen: false,
@@ -955,17 +962,22 @@ const els = {
   exportDirectoryBrowse: document.getElementById("export-directory-browse"),
   directoryBrowser: document.getElementById("directory-browser"),
   directoryBrowserPath: document.getElementById("directory-browser-path"),
-  directoryBrowserKicker: document.getElementById("directory-browser-kicker"),
   directoryBrowserTitle: document.getElementById("directory-browser-title"),
   directoryBrowserGo: document.getElementById("directory-browser-go"),
   directoryBrowserUp: document.getElementById("directory-browser-up"),
   directoryBrowserPin: document.getElementById("directory-browser-pin"),
   directoryBrowserStatus: document.getElementById("directory-browser-status"),
+  directoryBrowserLayout: document.querySelector(".media-browser-layout"),
+  directoryBrowserTable: document.querySelector(".media-browser-table"),
   directoryBrowserList: document.getElementById("directory-browser-list"),
-  directoryBrowserDrives: document.getElementById("directory-browser-drives"),
-  directoryBrowserPlaces: document.getElementById("directory-browser-places"),
-  directoryBrowserFavorites: document.getElementById("directory-browser-favorites"),
+  directoryBrowserSortButtons: [...document.querySelectorAll("[data-media-browser-sort]")],
+  directoryBrowserColumnResizers: [...document.querySelectorAll("[data-media-browser-resize]")],
+  directoryBrowserRecents: document.getElementById("directory-browser-recents"),
+  directoryBrowserPinned: document.getElementById("directory-browser-pinned"),
+  directoryBrowserLocations: document.getElementById("directory-browser-locations"),
   directoryBrowserPreview: document.getElementById("directory-browser-preview"),
+  directoryBrowserPreviewPane: document.querySelector(".media-browser-preview"),
+  directoryBrowserPreviewResizer: document.querySelector(".media-browser-preview-resizer"),
   directoryBrowserSelection: document.getElementById("directory-browser-selection"),
   directoryBrowserPreviewNote: document.getElementById("directory-browser-preview-note"),
   directoryBrowserClose: document.getElementById("directory-browser-close"),
@@ -2076,6 +2088,24 @@ function bindEvents() {
   els.directoryBrowserGo.addEventListener("click", () => loadMediaDirectory(els.directoryBrowserPath.value));
   els.directoryBrowserUp.addEventListener("click", () => loadMediaDirectory(els.directoryBrowser.dataset.parent));
   els.directoryBrowserPin.addEventListener("click", pinCurrentMediaFolder);
+  els.directoryBrowserList.addEventListener("keydown", handleMediaBrowserListKeydown);
+  els.directoryBrowserSortButtons.forEach((button) => {
+    button.addEventListener("click", () => sortMediaBrowserBy(button.dataset.mediaBrowserSort));
+  });
+  els.directoryBrowserColumnResizers.forEach((resizer) => {
+    resizer.addEventListener("pointerdown", beginMediaBrowserColumnResize);
+    resizer.addEventListener("pointermove", continueMediaBrowserColumnResize);
+    resizer.addEventListener("pointerup", endMediaBrowserColumnResize);
+    resizer.addEventListener("pointercancel", endMediaBrowserColumnResize);
+    resizer.addEventListener("lostpointercapture", endMediaBrowserColumnResize);
+    resizer.addEventListener("keydown", handleMediaBrowserColumnResizeKeydown);
+  });
+  els.directoryBrowserPreviewResizer.addEventListener("pointerdown", beginMediaBrowserPreviewResize);
+  els.directoryBrowserPreviewResizer.addEventListener("pointermove", continueMediaBrowserPreviewResize);
+  els.directoryBrowserPreviewResizer.addEventListener("pointerup", endMediaBrowserPreviewResize);
+  els.directoryBrowserPreviewResizer.addEventListener("pointercancel", endMediaBrowserPreviewResize);
+  els.directoryBrowserPreviewResizer.addEventListener("lostpointercapture", endMediaBrowserPreviewResize);
+  els.directoryBrowserPreviewResizer.addEventListener("keydown", handleMediaBrowserPreviewResizeKeydown);
   els.directoryBrowserPath.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") return;
     event.preventDefault();
@@ -3846,7 +3876,11 @@ async function exportCurrentSession() {
       els.exportStatus.textContent = responseErrorMessage(payload, "Export failed.");
       return;
     }
-    els.exportStatus.textContent = payload.message || "Export request finished.";
+    const exportMessage = payload.message || "Export request finished.";
+    const totalExportMs = Number(payload.timings_ms?.total);
+    els.exportStatus.textContent = Number.isFinite(totalExportMs)
+      ? `${exportMessage} Completed in ${(totalExportMs / 1000).toFixed(1)}s.`
+      : exportMessage;
     if (payload.output_path) {
       const parsed = splitOutputPath(payload.output_path);
       els.exportFilename.value = parsed.filename;
@@ -3872,7 +3906,6 @@ async function chooseExportDirectory() {
 async function openMediaBrowser(mode, path = "") {
   els.directoryBrowser.dataset.mode = mode;
   delete els.directoryBrowser.dataset.selectedPath;
-  els.directoryBrowserKicker.textContent = mode === "source" ? "Import source" : "Export destination";
   els.directoryBrowserTitle.textContent = mode === "source" ? "Choose a source image" : "Choose save folder";
   els.directoryBrowserSelect.textContent = mode === "source" ? "Open image" : "Select this folder";
   els.directoryBrowserPreview.hidden = true;
@@ -3887,6 +3920,276 @@ async function openMediaBrowser(mode, path = "") {
 async function loadExportDirectory(path) {
   els.directoryBrowser.dataset.mode = "export_directory";
   return loadMediaDirectory(path);
+}
+
+function formatMediaBrowserSize(bytes) {
+  const value = Number(bytes);
+  if (!Number.isFinite(value) || value < 0) return "--";
+  if (value < 1000) return `${value} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let scaled = value;
+  let unit = "B";
+  for (const candidate of units) {
+    scaled /= 1000;
+    unit = candidate;
+    if (scaled < 1000) break;
+  }
+  return `${scaled >= 100 ? scaled.toFixed(0) : scaled >= 10 ? scaled.toFixed(1) : scaled.toFixed(2)} ${unit}`;
+}
+
+function formatMediaBrowserDate(milliseconds) {
+  const value = Number(milliseconds);
+  if (!Number.isFinite(value)) return "--";
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function mediaBrowserCell(className, value) {
+  const cell = document.createElement("span");
+  cell.className = className;
+  cell.textContent = value;
+  cell.title = value;
+  return cell;
+}
+
+const MEDIA_BROWSER_COLUMN_MINIMUMS = Object.freeze({ name: 120, size: 62, kind: 90, date: 120 });
+const MEDIA_BROWSER_COLUMN_MAXIMUM = 640;
+
+function sortedMediaBrowserEntries(entries) {
+  const key = state.mediaBrowserSortKey;
+  const direction = state.mediaBrowserSortDirection === "descending" ? -1 : 1;
+  const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+  const valueFor = (entry) => {
+    if (key === "size") return Number(entry.size ?? -1);
+    if (key === "date") return Number(entry.date_added_ms ?? -1);
+    if (key === "kind") return entry.kind_label || (entry.kind === "directory" ? "Folder" : "File");
+    return entry.name || "";
+  };
+  return entries.map((entry, index) => ({ entry, index })).sort((left, right) => {
+    if (left.entry.kind !== right.entry.kind) return left.entry.kind === "directory" ? -1 : 1;
+    const leftValue = valueFor(left.entry);
+    const rightValue = valueFor(right.entry);
+    const comparison = typeof leftValue === "number"
+      ? leftValue - rightValue
+      : collator.compare(String(leftValue), String(rightValue));
+    if (comparison) return comparison * direction;
+    const nameComparison = collator.compare(left.entry.name || "", right.entry.name || "");
+    return nameComparison || left.index - right.index;
+  }).map(({ entry }) => entry);
+}
+
+function updateMediaBrowserSortHeaders() {
+  for (const button of els.directoryBrowserSortButtons) {
+    const active = button.dataset.mediaBrowserSort === state.mediaBrowserSortKey;
+    const direction = active ? state.mediaBrowserSortDirection : "none";
+    button.parentElement.setAttribute("aria-sort", direction);
+    button.setAttribute(
+      "aria-label",
+      active
+        ? `Sort by ${button.textContent}, currently ${direction}`
+        : `Sort by ${button.textContent}`,
+    );
+  }
+}
+
+function sortMediaBrowserBy(key) {
+  if (!MEDIA_BROWSER_COLUMN_MINIMUMS[key]) return;
+  if (state.mediaBrowserSortKey === key) {
+    state.mediaBrowserSortDirection = state.mediaBrowserSortDirection === "ascending" ? "descending" : "ascending";
+  } else {
+    state.mediaBrowserSortKey = key;
+    state.mediaBrowserSortDirection = key === "date" ? "descending" : "ascending";
+  }
+  updateMediaBrowserSortHeaders();
+  renderMediaBrowserEntries(state.mediaBrowserEntries, els.directoryBrowser.dataset.mode || "source");
+}
+
+function captureMediaBrowserColumnWidths() {
+  if (state.mediaBrowserColumnWidths) return;
+  state.mediaBrowserColumnWidths = Object.fromEntries(els.directoryBrowserSortButtons.map((button) => [
+    button.dataset.mediaBrowserSort,
+    Math.round(button.parentElement.getBoundingClientRect().width),
+  ]));
+  applyMediaBrowserColumnWidths();
+}
+
+function applyMediaBrowserColumnWidths() {
+  if (!state.mediaBrowserColumnWidths) return;
+  let trackWidth = 0;
+  for (const [column, width] of Object.entries(state.mediaBrowserColumnWidths)) {
+    const clamped = Math.max(MEDIA_BROWSER_COLUMN_MINIMUMS[column], Math.min(MEDIA_BROWSER_COLUMN_MAXIMUM, width));
+    state.mediaBrowserColumnWidths[column] = clamped;
+    els.directoryBrowserTable.style.setProperty(`--media-browser-${column}-column`, `${clamped}px`);
+    trackWidth += clamped;
+    const resizer = els.directoryBrowserColumnResizers.find((item) => item.dataset.mediaBrowserResize === column);
+    resizer?.setAttribute("aria-valuemin", String(MEDIA_BROWSER_COLUMN_MINIMUMS[column]));
+    resizer?.setAttribute("aria-valuemax", String(MEDIA_BROWSER_COLUMN_MAXIMUM));
+    resizer?.setAttribute("aria-valuenow", String(clamped));
+  }
+  els.directoryBrowserTable.style.setProperty("--media-browser-grid-width", `${trackWidth + 68}px`);
+}
+
+function setMediaBrowserColumnWidth(column, width) {
+  captureMediaBrowserColumnWidths();
+  state.mediaBrowserColumnWidths[column] = width;
+  applyMediaBrowserColumnWidths();
+}
+
+function beginMediaBrowserColumnResize(event) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  captureMediaBrowserColumnWidths();
+  const column = event.currentTarget.dataset.mediaBrowserResize;
+  state.mediaBrowserColumnResize = {
+    column,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startWidth: state.mediaBrowserColumnWidths[column],
+    handle: event.currentTarget,
+  };
+  event.currentTarget.classList.add("resizing");
+  event.currentTarget.setPointerCapture(event.pointerId);
+}
+
+function continueMediaBrowserColumnResize(event) {
+  const resize = state.mediaBrowserColumnResize;
+  if (!resize || resize.pointerId !== event.pointerId || resize.handle !== event.currentTarget) return;
+  event.preventDefault();
+  setMediaBrowserColumnWidth(resize.column, resize.startWidth + event.clientX - resize.startX);
+}
+
+function endMediaBrowserColumnResize(event) {
+  const resize = state.mediaBrowserColumnResize;
+  if (!resize || resize.handle !== event.currentTarget) return;
+  resize.handle.classList.remove("resizing");
+  state.mediaBrowserColumnResize = null;
+}
+
+function handleMediaBrowserColumnResizeKeydown(event) {
+  if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+  event.preventDefault();
+  captureMediaBrowserColumnWidths();
+  const column = event.currentTarget.dataset.mediaBrowserResize;
+  const amount = event.shiftKey ? 32 : 12;
+  setMediaBrowserColumnWidth(column, state.mediaBrowserColumnWidths[column] + (event.key === "ArrowRight" ? amount : -amount));
+}
+
+function mediaBrowserPreviewWidthLimits() {
+  const layoutWidth = els.directoryBrowserLayout.getBoundingClientRect().width;
+  const sidebarWidth = els.directoryBrowserLayout.querySelector(".media-browser-sidebar")?.getBoundingClientRect().width || 180;
+  return {
+    minimum: 220,
+    maximum: Math.max(220, Math.min(720, layoutWidth - sidebarWidth - 328)),
+  };
+}
+
+function setMediaBrowserPreviewWidth(width) {
+  const limits = mediaBrowserPreviewWidthLimits();
+  const clamped = Math.round(Math.max(limits.minimum, Math.min(limits.maximum, width)));
+  state.mediaBrowserPreviewWidth = clamped;
+  els.directoryBrowserLayout.style.setProperty("--media-browser-preview-width", `${clamped}px`);
+  els.directoryBrowserPreviewResizer.setAttribute("aria-valuemin", String(limits.minimum));
+  els.directoryBrowserPreviewResizer.setAttribute("aria-valuemax", String(Math.round(limits.maximum)));
+  els.directoryBrowserPreviewResizer.setAttribute("aria-valuenow", String(clamped));
+}
+
+function captureMediaBrowserPreviewWidth() {
+  if (state.mediaBrowserPreviewWidth === null) {
+    setMediaBrowserPreviewWidth(els.directoryBrowserPreviewPane.getBoundingClientRect().width);
+  }
+}
+
+function beginMediaBrowserPreviewResize(event) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  captureMediaBrowserPreviewWidth();
+  state.mediaBrowserPreviewResize = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startWidth: state.mediaBrowserPreviewWidth,
+  };
+  event.currentTarget.classList.add("resizing");
+  event.currentTarget.setPointerCapture(event.pointerId);
+}
+
+function continueMediaBrowserPreviewResize(event) {
+  const resize = state.mediaBrowserPreviewResize;
+  if (!resize || resize.pointerId !== event.pointerId) return;
+  event.preventDefault();
+  setMediaBrowserPreviewWidth(resize.startWidth + resize.startX - event.clientX);
+}
+
+function endMediaBrowserPreviewResize(event) {
+  if (!state.mediaBrowserPreviewResize) return;
+  event.currentTarget.classList.remove("resizing");
+  state.mediaBrowserPreviewResize = null;
+}
+
+function handleMediaBrowserPreviewResizeKeydown(event) {
+  if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+  event.preventDefault();
+  captureMediaBrowserPreviewWidth();
+  const amount = event.shiftKey ? 48 : 24;
+  setMediaBrowserPreviewWidth(state.mediaBrowserPreviewWidth + (event.key === "ArrowLeft" ? amount : -amount));
+}
+
+function renderMediaBrowserEntries(entries, mode) {
+  const selectedPath = els.directoryBrowser.dataset.selectedPath || "";
+  els.directoryBrowserList.replaceChildren();
+  if (!entries.length) {
+    const empty = document.createElement("li");
+    empty.className = "directory-browser-empty";
+    empty.textContent = "This folder is empty.";
+    els.directoryBrowserList.append(empty);
+    return;
+  }
+  sortedMediaBrowserEntries(entries).forEach((entry) => {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `directory-browser-entry ${entry.kind}`;
+    button.mediaBrowserEntry = entry;
+    button.title = entry.path;
+    if (entry.path === selectedPath) button.classList.add("selected");
+    button.append(
+      mediaBrowserCell("directory-browser-entry-name", entry.name),
+      mediaBrowserCell("directory-browser-entry-size", entry.kind === "directory" ? "--" : formatMediaBrowserSize(entry.size)),
+      mediaBrowserCell("directory-browser-entry-kind", entry.kind_label || (entry.kind === "directory" ? "Folder" : "File")),
+      mediaBrowserCell("directory-browser-entry-date", formatMediaBrowserDate(entry.date_added_ms)),
+    );
+    if (entry.kind === "directory") {
+      button.addEventListener("dblclick", () => loadMediaDirectory(entry.path));
+      button.addEventListener("click", () => {
+        if (mode === "export_directory") {
+          els.directoryBrowser.dataset.selectedPath = entry.path;
+          els.directoryBrowserSelect.disabled = false;
+        } else {
+          delete els.directoryBrowser.dataset.selectedPath;
+          els.directoryBrowserSelect.disabled = true;
+        }
+        els.directoryBrowserSelection.textContent = entry.name;
+        els.directoryBrowserPreviewNote.textContent = "Double-click to open this folder.";
+        selectMediaBrowserEntry(button);
+      });
+    } else if (mode === "source" && entry.supported) {
+      button.classList.add("supported");
+      button.addEventListener("click", () => previewMediaBrowserFile(entry, button));
+      button.addEventListener("dblclick", async () => {
+        previewMediaBrowserFile(entry, button);
+        await confirmMediaBrowserSelection();
+      });
+    } else {
+      button.disabled = true;
+      button.setAttribute("aria-label", `${entry.name}, file`);
+    }
+    item.append(button);
+    els.directoryBrowserList.append(item);
+  });
 }
 
 async function loadMediaDirectory(path) {
@@ -3915,50 +4218,16 @@ async function loadMediaDirectory(path) {
     els.directoryBrowserUp.disabled = !payload.parent;
     els.directoryBrowserSelect.disabled = mode === "source";
     delete els.directoryBrowser.dataset.selectedPath;
-    renderMediaBrowserNavigation(payload.drives || [], payload.places || [], payload.favorites || []);
+    renderMediaBrowserNavigation(
+      payload.recents || [],
+      payload.pinned || [],
+      payload.locations || [],
+      payload.drives || [],
+    );
     const entries = Array.isArray(payload.entries) ? payload.entries : [];
-    if (!entries.length) {
-      const empty = document.createElement("li");
-      empty.className = "directory-browser-empty";
-      empty.textContent = "This folder is empty.";
-      els.directoryBrowserList.append(empty);
-    } else {
-      entries.forEach((entry) => {
-        const item = document.createElement("li");
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = `directory-browser-entry ${entry.kind}`;
-        button.textContent = entry.name;
-        button.title = entry.path;
-        if (entry.kind === "directory") {
-          button.addEventListener("dblclick", () => loadMediaDirectory(entry.path));
-          button.addEventListener("click", () => {
-            if (mode === "export_directory") {
-              els.directoryBrowser.dataset.selectedPath = entry.path;
-              els.directoryBrowserSelect.disabled = false;
-            } else {
-              delete els.directoryBrowser.dataset.selectedPath;
-              els.directoryBrowserSelect.disabled = true;
-            }
-            els.directoryBrowserSelection.textContent = entry.name;
-            els.directoryBrowserPreviewNote.textContent = "Double-click to open this folder.";
-            selectMediaBrowserEntry(button);
-          });
-        } else if (mode === "source" && entry.supported) {
-          button.classList.add("supported");
-          button.addEventListener("click", () => previewMediaBrowserFile(entry, button));
-          button.addEventListener("dblclick", async () => {
-            previewMediaBrowserFile(entry, button);
-            await confirmMediaBrowserSelection();
-          });
-        } else {
-          button.disabled = true;
-          button.setAttribute("aria-label", `${entry.name}, file`);
-        }
-        item.append(button);
-        els.directoryBrowserList.append(item);
-      });
-    }
+    state.mediaBrowserEntries = entries;
+    updateMediaBrowserSortHeaders();
+    renderMediaBrowserEntries(entries, mode);
     const folderCount = entries.filter((entry) => entry.kind === "directory").length;
     const fileCount = entries.length - folderCount;
     els.directoryBrowserStatus.textContent = `${folderCount} folder${folderCount === 1 ? "" : "s"}, ${fileCount} file${fileCount === 1 ? "" : "s"}`;
@@ -3971,7 +4240,7 @@ async function loadMediaDirectory(path) {
   }
 }
 
-function renderMediaBrowserNavigation(drives, places, favorites) {
+function renderMediaBrowserNavigation(recents, pinned, locations, drives) {
   const render = (container, entries, removable) => {
     container.replaceChildren();
     for (const entry of entries) {
@@ -3983,14 +4252,14 @@ function renderMediaBrowserNavigation(drives, places, favorites) {
       button.addEventListener("click", () => loadMediaDirectory(entry.path));
       item.append(button);
       if (removable) {
-        button.title = entry.available ? "Open favorite" : "This favorite is currently unavailable";
+        button.title = entry.available ? "Open pinned folder" : "This pinned folder is currently unavailable";
         const remove = document.createElement("button");
         remove.type = "button";
-        remove.className = "media-browser-favorite-remove";
+        remove.className = "media-browser-pinned-remove";
         remove.textContent = "Remove";
-        remove.setAttribute("aria-label", `Remove ${entry.name} from favorites`);
+        remove.setAttribute("aria-label", `Remove ${entry.name} from pinned folders`);
         remove.addEventListener("click", async () => {
-          await fetch(`/api/media-browser/favorites?path=${encodeURIComponent(entry.path)}`, { method: "DELETE" });
+          await fetch(`/api/media-browser/pinned?path=${encodeURIComponent(entry.path)}`, { method: "DELETE" });
           await loadMediaDirectory(els.directoryBrowserPath.value);
         });
         item.append(remove);
@@ -3998,14 +4267,53 @@ function renderMediaBrowserNavigation(drives, places, favorites) {
       container.append(item);
     }
   };
-  render(els.directoryBrowserDrives, drives, false);
-  render(els.directoryBrowserPlaces, places, false);
-  render(els.directoryBrowserFavorites, favorites, true);
+  const seenLocations = new Set();
+  const allLocations = [...locations, ...drives].filter((entry) => {
+    if (seenLocations.has(entry.path)) return false;
+    seenLocations.add(entry.path);
+    return true;
+  });
+  render(els.directoryBrowserRecents, recents, false);
+  render(els.directoryBrowserPinned, pinned, true);
+  render(els.directoryBrowserLocations, allLocations, false);
 }
 
 function selectMediaBrowserEntry(button) {
   els.directoryBrowserList.querySelectorAll(".selected").forEach((entry) => entry.classList.remove("selected"));
   button.classList.add("selected");
+}
+
+function handleMediaBrowserListKeydown(event) {
+  const current = event.target.closest(".directory-browser-entry:not(:disabled)");
+  if (!current) return;
+  if (["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
+    const entries = Array.from(els.directoryBrowserList.querySelectorAll(".directory-browser-entry:not(:disabled)"));
+    const currentIndex = entries.indexOf(current);
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? entries.length - 1
+        : Math.max(0, Math.min(entries.length - 1, currentIndex + (event.key === "ArrowDown" ? 1 : -1)));
+    const next = entries[nextIndex];
+    if (!next) return;
+    event.preventDefault();
+    next.focus({ preventScroll: true });
+    next.scrollIntoView({ block: "nearest" });
+    next.click();
+    return;
+  }
+  const entry = current.mediaBrowserEntry;
+  if (event.key === "ArrowLeft" && els.directoryBrowser.dataset.parent) {
+    event.preventDefault();
+    loadMediaDirectory(els.directoryBrowser.dataset.parent);
+  } else if ((event.key === "ArrowRight" || event.key === "Enter") && entry?.kind === "directory") {
+    event.preventDefault();
+    loadMediaDirectory(entry.path);
+  } else if (event.key === "Enter" && entry?.supported) {
+    event.preventDefault();
+    previewMediaBrowserFile(entry, current);
+    confirmMediaBrowserSelection();
+  }
 }
 
 function previewMediaBrowserFile(entry, button) {
@@ -4030,7 +4338,7 @@ function previewMediaBrowserFile(entry, button) {
 async function pinCurrentMediaFolder() {
   const path = els.directoryBrowserPath.value.trim();
   if (!path) return;
-  const response = await fetch("/api/media-browser/favorites", {
+  const response = await fetch("/api/media-browser/pinned", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path }),
@@ -4041,6 +4349,20 @@ async function pinCurrentMediaFolder() {
     return;
   }
   await loadMediaDirectory(path);
+}
+
+async function recordSuccessfulMediaImport(path) {
+  if (!path) return;
+  try {
+    const response = await fetch("/api/media-browser/recents", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    });
+    if (!response.ok) console.warn("The imported folder could not be added to Recents.");
+  } catch (error) {
+    console.warn("The imported folder could not be added to Recents.", error);
+  }
 }
 
 function closeExportDirectoryBrowser() {
@@ -11414,6 +11736,7 @@ async function openStagedDesktopSource(selection) {
       }
       const retainedProjectPath = selection.replaceSessionId ? state.projectPath : "";
       await activateDesktopSession(payload.session, retainedProjectPath);
+      if (!selection.replaceSessionId) await recordSuccessfulMediaImport(selection.path);
       return;
     }
     if (job.state === "error" || job.state === "cancelled") {

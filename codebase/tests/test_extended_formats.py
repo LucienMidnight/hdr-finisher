@@ -26,7 +26,7 @@ from hdr_finisher.jpegxl import (
     validate_sdr_jpegxl,
 )
 from hdr_finisher.loader import load_image
-from hdr_finisher.media_browser import MediaBrowserError, MediaBrowserStore
+from hdr_finisher.media_browser import MediaBrowserError, MediaBrowserStore, _apply_libraw_orientation
 from hdr_finisher.models import AdjustmentState, CapabilityInfo, CapabilityStatus, EditCommand, EditDocument, ExportSettings, RawImportSettings, SourceInterpretationOverride, SourceReference
 from hdr_finisher.models import LensCorrectionSettings
 from hdr_finisher.raw_import import RawImportError, _remap_bilinear_strips, apply_lens_correction, decode_raw, list_lens_profiles
@@ -399,7 +399,7 @@ def test_auto_lens_correction_soft_falls_back_when_database_is_missing(monkeypat
     assert "continued without lens correction" in metadata["reason"]
 
 
-def test_media_browser_persists_favorites_and_generates_thumbnail(tmp_path: Path) -> None:
+def test_media_browser_persists_pins_recents_and_generates_thumbnail(tmp_path: Path) -> None:
     media = tmp_path / "médïa space"
     media.mkdir()
     source = media / "sample.png"
@@ -410,16 +410,22 @@ def test_media_browser_persists_favorites_and_generates_thumbnail(tmp_path: Path
     entry = next(item for item in listing["entries"] if item["name"] == source.name)
     assert entry["supported"] is True
     assert entry["thumbnail_key"]
+    assert entry["kind_label"] == "PNG image"
+    assert isinstance(entry["date_added_ms"], int)
 
-    favorites = browser.add_favorite(str(media))
-    assert favorites[0]["available"] is True
-    assert MediaBrowserStore(tmp_path / "app-data").favorites()[0]["path"] == str(media.resolve())
+    pinned = browser.add_pin(str(media))
+    assert pinned[0]["available"] is True
+    restored = MediaBrowserStore(tmp_path / "app-data")
+    assert restored.pinned()[0]["path"] == str(media.resolve())
+    assert restored.recents() == []
+    browser.record_import(str(source))
+    assert restored.recents()[0]["path"] == str(media.resolve())
     thumbnail = browser.thumbnail(str(source), 128)
     with Image.open(thumbnail) as image:
-        assert image.size == (128, 128)
+        assert image.size == (40, 20)
 
 
-def test_media_browser_exposes_mounted_volume_roots_before_places(tmp_path: Path, monkeypatch) -> None:
+def test_media_browser_exposes_named_mounted_volume_roots(tmp_path: Path, monkeypatch) -> None:
     roots = [tmp_path / "C-drive", tmp_path / "D-drive"]
     for root in roots:
         root.mkdir()
@@ -429,8 +435,63 @@ def test_media_browser_exposes_mounted_volume_roots_before_places(tmp_path: Path
     listing = browser.list_directory(str(roots[0]), "source")
 
     assert listing["drives"] == [
-        {"name": root.drive or str(root), "path": str(root), "available": True} for root in roots
+        {"name": root.name, "path": str(root), "available": True} for root in roots
     ]
+
+
+def test_media_browser_keeps_only_three_recent_locations_in_mru_order(tmp_path: Path) -> None:
+    app_data = tmp_path / "app-data"
+    folders = [tmp_path / f"folder-{index}" for index in range(4)]
+    sources = []
+    for index, folder in enumerate(folders):
+        folder.mkdir()
+        source = folder / f"source-{index}.png"
+        Image.new("RGB", (4, 4)).save(source)
+        sources.append(source)
+    browser = MediaBrowserStore(app_data)
+
+    for folder in folders:
+        browser.list_directory(str(folder), "source")
+    assert browser.recents() == []
+    for source in sources:
+        browser.record_import(str(source))
+    browser.record_import(str(sources[1]))
+
+    assert [item["path"] for item in MediaBrowserStore(app_data).recents()] == [
+        str(folders[1].resolve()),
+        str(folders[3].resolve()),
+        str(folders[2].resolve()),
+    ]
+
+
+def test_media_browser_migrates_legacy_favorites_to_pinned(tmp_path: Path) -> None:
+    app_data = tmp_path / "app-data"
+    folder = tmp_path / "legacy-pin"
+    app_data.mkdir()
+    folder.mkdir()
+    (app_data / "favorite-folders.json").write_text(f'["{folder}"]', encoding="utf-8")
+    browser = MediaBrowserStore(app_data)
+
+    assert browser.pinned()[0]["path"] == str(folder)
+    browser.add_pin(str(tmp_path))
+    assert (app_data / "pinned-folders.json").is_file()
+
+
+@pytest.mark.parametrize(
+    ("flip", "expected"),
+    [
+        (0, np.array([[1, 2, 3], [4, 5, 6]], dtype=np.uint8)),
+        (3, np.array([[6, 5, 4], [3, 2, 1]], dtype=np.uint8)),
+        (5, np.array([[3, 6], [2, 5], [1, 4]], dtype=np.uint8)),
+        (6, np.array([[4, 1], [5, 2], [6, 3]], dtype=np.uint8)),
+    ],
+)
+def test_raw_thumbnail_orientation_uses_libraw_flip(flip: int, expected: np.ndarray) -> None:
+    source = np.repeat(np.array([[1, 2, 3], [4, 5, 6]], dtype=np.uint8)[..., None], 3, axis=2)
+
+    actual = _apply_libraw_orientation(source, flip)
+
+    np.testing.assert_array_equal(actual[..., 0], expected)
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows drive-letter behavior")
@@ -473,7 +534,7 @@ def test_bitmap_thumbnail_uses_the_bounded_pillow_path(tmp_path: Path, monkeypat
     thumbnail = browser.thumbnail(str(source), 128)
 
     with Image.open(thumbnail) as image:
-        assert image.size == (128, 128)
+        assert image.size == (128, 64)
 
 
 def test_media_browser_uses_neutral_placeholder_for_unmarked_jpegxl(tmp_path: Path) -> None:

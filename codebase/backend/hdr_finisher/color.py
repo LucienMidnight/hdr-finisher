@@ -20,7 +20,13 @@ with warnings.catch_warnings():
         module=r"colour\.utilities\.verbose",
     )
     from colour import RGB_COLOURSPACES
-    from colour.models import RGB_to_RGB, eotf_BT2100_HLG, eotf_ST2084, oetf_inverse_BT709
+    from colour.models import (
+        RGB_to_RGB,
+        eotf_BT2100_HLG,
+        eotf_ST2084,
+        matrix_RGB_to_RGB,
+        oetf_inverse_BT709,
+    )
 
 
 ACESCG_COLOURSPACE = "ACEScg"
@@ -28,6 +34,38 @@ SRGB_COLOURSPACE = "sRGB"
 BT2020_COLOURSPACE = "ITU-R BT.2020"
 DISPLAY_P3_COLOURSPACE = "Display P3"
 ACES2065_COLOURSPACE = "ACES2065-1"
+
+
+def _fixed_linear_rgb_matrix(
+    source_name: str,
+    target_name: str,
+    chromatic_adaptation_transform: str | None,
+) -> np.ndarray:
+    """Build the same row-vector matrix used by colour-science's RGB_to_RGB.
+
+    The four transforms below are fixed linear conversions. Caching their
+    matrices avoids the generic domain/range and axis-normalization work on
+    every full-resolution preview and export while retaining the exact
+    colour-science transform coefficients.
+    """
+    column_matrix = matrix_RGB_to_RGB(
+        RGB_COLOURSPACES[source_name],
+        RGB_COLOURSPACES[target_name],
+        chromatic_adaptation_transform,
+    )
+    return np.asarray(column_matrix.T, dtype=np.float64)
+
+
+_ACESCG_TO_LINEAR_SRGB = _fixed_linear_rgb_matrix(ACESCG_COLOURSPACE, SRGB_COLOURSPACE, "CAT02")
+_ACESCG_TO_LINEAR_BT2020 = _fixed_linear_rgb_matrix(ACESCG_COLOURSPACE, BT2020_COLOURSPACE, "CAT02")
+_LINEAR_SRGB_TO_ACESCG = _fixed_linear_rgb_matrix(SRGB_COLOURSPACE, ACESCG_COLOURSPACE, "CAT02")
+_LINEAR_BT2020_TO_ACESCG = _fixed_linear_rgb_matrix(BT2020_COLOURSPACE, ACESCG_COLOURSPACE, "CAT02")
+_ACES2065_TO_ACESCG = _fixed_linear_rgb_matrix(ACES2065_COLOURSPACE, ACESCG_COLOURSPACE, None)
+
+
+def _apply_fixed_linear_rgb_matrix(image: np.ndarray, matrix: np.ndarray) -> np.ndarray:
+    source = image.astype(np.float32, copy=False)
+    return np.asarray(np.matmul(source, matrix), dtype=np.float32)
 
 
 def rgb_primaries_adjustment_matrix(
@@ -127,53 +165,23 @@ def _rgb_to_xyz_matrix(primaries: np.ndarray, white: np.ndarray) -> np.ndarray:
 
 
 def acescg_to_linear_srgb(image: np.ndarray) -> np.ndarray:
-    converted = RGB_to_RGB(
-        image.astype(np.float32, copy=False),
-        RGB_COLOURSPACES[ACESCG_COLOURSPACE],
-        RGB_COLOURSPACES[SRGB_COLOURSPACE],
-        chromatic_adaptation_transform="CAT02",
-    )
-    return np.asarray(converted, dtype=np.float32)
+    return _apply_fixed_linear_rgb_matrix(image, _ACESCG_TO_LINEAR_SRGB)
 
 
 def acescg_to_linear_bt2020(image: np.ndarray) -> np.ndarray:
-    converted = RGB_to_RGB(
-        image.astype(np.float32, copy=False),
-        RGB_COLOURSPACES[ACESCG_COLOURSPACE],
-        RGB_COLOURSPACES[BT2020_COLOURSPACE],
-        chromatic_adaptation_transform="CAT02",
-    )
-    return np.asarray(converted, dtype=np.float32)
+    return _apply_fixed_linear_rgb_matrix(image, _ACESCG_TO_LINEAR_BT2020)
 
 
 def linear_srgb_to_acescg(image: np.ndarray) -> np.ndarray:
-    converted = RGB_to_RGB(
-        image.astype(np.float32, copy=False),
-        RGB_COLOURSPACES[SRGB_COLOURSPACE],
-        RGB_COLOURSPACES[ACESCG_COLOURSPACE],
-        chromatic_adaptation_transform="CAT02",
-    )
-    return np.asarray(converted, dtype=np.float32)
+    return _apply_fixed_linear_rgb_matrix(image, _LINEAR_SRGB_TO_ACESCG)
 
 
 def linear_bt2020_to_acescg(image: np.ndarray) -> np.ndarray:
-    converted = RGB_to_RGB(
-        image.astype(np.float32, copy=False),
-        RGB_COLOURSPACES[BT2020_COLOURSPACE],
-        RGB_COLOURSPACES[ACESCG_COLOURSPACE],
-        chromatic_adaptation_transform="CAT02",
-    )
-    return np.asarray(converted, dtype=np.float32)
+    return _apply_fixed_linear_rgb_matrix(image, _LINEAR_BT2020_TO_ACESCG)
 
 
 def aces2065_to_acescg(image: np.ndarray) -> np.ndarray:
-    converted = RGB_to_RGB(
-        image.astype(np.float32, copy=False),
-        RGB_COLOURSPACES[ACES2065_COLOURSPACE],
-        RGB_COLOURSPACES[ACESCG_COLOURSPACE],
-        chromatic_adaptation_transform=None,
-    )
-    return sanitize_array(np.asarray(converted, dtype=np.float32))
+    return sanitize_array(_apply_fixed_linear_rgb_matrix(image, _ACES2065_TO_ACESCG))
 
 
 def sanitize_array(image: np.ndarray) -> np.ndarray:

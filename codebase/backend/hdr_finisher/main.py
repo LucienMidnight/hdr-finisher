@@ -1098,20 +1098,46 @@ def media_browser_thumbnail(path: str = Query(), size: int = Query(default=256, 
 
 @app.get("/api/media-browser/favorites")
 def media_browser_favorites() -> dict[str, object]:
-    return {"favorites": media_browser_store.favorites()}
+    return {"favorites": media_browser_store.pinned()}
 
 
 @app.post("/api/media-browser/favorites")
 def add_media_browser_favorite(request: FavoritePathRequest) -> dict[str, object]:
     try:
-        return {"favorites": media_browser_store.add_favorite(request.path)}
+        return {"favorites": media_browser_store.add_pin(request.path)}
     except MediaBrowserError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.delete("/api/media-browser/favorites")
 def remove_media_browser_favorite(path: str = Query()) -> dict[str, object]:
-    return {"favorites": media_browser_store.remove_favorite(path)}
+    return {"favorites": media_browser_store.remove_pin(path)}
+
+
+@app.get("/api/media-browser/pinned")
+def media_browser_pinned() -> dict[str, object]:
+    return {"pinned": media_browser_store.pinned()}
+
+
+@app.post("/api/media-browser/pinned")
+def add_media_browser_pin(request: FavoritePathRequest) -> dict[str, object]:
+    try:
+        return {"pinned": media_browser_store.add_pin(request.path)}
+    except MediaBrowserError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/api/media-browser/pinned")
+def remove_media_browser_pin(path: str = Query()) -> dict[str, object]:
+    return {"pinned": media_browser_store.remove_pin(path)}
+
+
+@app.post("/api/media-browser/recents")
+def record_media_browser_import(request: FavoritePathRequest) -> dict[str, object]:
+    try:
+        return {"recents": media_browser_store.record_import(request.path)}
+    except MediaBrowserError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/lens-profiles")

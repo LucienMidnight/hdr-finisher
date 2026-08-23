@@ -415,8 +415,23 @@ def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     assert 'class="export-directory-field"' in html
     assert 'id="directory-browser"' in html
     assert 'id="directory-browser-select"' in html
-    assert '<strong>Drives</strong><ul id="directory-browser-drives"></ul>' in html
-    assert "renderMediaBrowserNavigation(payload.drives || [], payload.places || [], payload.favorites || []);" in javascript
+    assert '<strong>Recent</strong><ul id="directory-browser-recents"></ul>' in html
+    assert '<strong>Pinned</strong><ul id="directory-browser-pinned"></ul>' in html
+    assert '<strong>Locations</strong><ul id="directory-browser-locations"></ul>' in html
+    assert "payload.recents || []" in javascript
+    assert "payload.pinned || []" in javascript
+    assert "payload.locations || []" in javascript
+    assert "handleMediaBrowserListKeydown" in javascript
+    for key, column in (("name", "Name"), ("size", "Size"), ("kind", "Kind"), ("date", "Date Added")):
+        assert f'data-media-browser-sort="{key}">{column}</button>' in html
+        assert f'data-media-browser-resize="{key}"' in html
+    assert "sortMediaBrowserBy" in javascript
+    assert "beginMediaBrowserColumnResize" in javascript
+    assert 'aria-label="Resize preview panel"' in html
+    assert "beginMediaBrowserPreviewResize" in javascript
+    assert 'fetch("/api/media-browser/recents"' in javascript
+    assert "await recordSuccessfulMediaImport(selection.path)" in javascript
+    assert 'id="directory-browser-kicker"' not in html
     source_summary = html.split('<section class="source-summary">', 1)[1].split("</section>", 1)[0]
     assert source_summary.index('id="badge"') < source_summary.index('id="experimental-dng-note"')
     assert "DNG import is experimental. Some incompatible DNG files may be rejected." in source_summary
@@ -547,7 +562,10 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
         "square-half.svg",
     ):
         assert f'url("assets/icons/tabler/{icon}")' in css
-    assert '.directory-browser-entry.directory::before' in css
+    assert '.directory-browser-entry .directory-browser-entry-name::before' in css
+    assert ".media-browser-list-header" in css
+    assert ".media-browser-preview-image-frame" in css
+    assert "aspect-ratio: 1;" not in css.split(".media-browser-preview img", 1)[1].split("}", 1)[0]
     assert 'height: clamp(300px, 58vh, 520px);' in css
     assert 'scrollbar-gutter: stable;' in css
     assert '.media-browser-sidebar {' in css

@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 APP_NAME = "HDR Finisher"
-APP_VERSION = "0.7.1"
+APP_VERSION = "0.7.2"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
