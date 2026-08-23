@@ -92,7 +92,7 @@ Native SDR-white and DXGI luminance telemetry is Windows-only. Even on Windows, 
 
 - Choose a fixed target from a credible display specification or calibration.
 - Verify the selected display.
-- Check Windows SDR content brightness.
+- On an external HDR display, set Windows **SDR content brightness** to position **30 or 31** and confirm that HDR Finisher reports approximately **200–204 nits**. Position 25 is approximately 180 nits. See [Windows Settings for HDR Finisher](setup/windows.md) for the Chromium impact and the built-in-display exception.
 - Avoid using an implausible reported maximum as mastering truth.
 
 ## JPEG Ultra HDR is unavailable

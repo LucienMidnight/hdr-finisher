@@ -78,6 +78,19 @@ def test_webgpu_source_proxy_applies_committed_geometry_before_grading() -> None
     assert geometry_signature == adjustments.shared.geometry.model_dump_json()
 
 
+def test_geometry_cannot_expand_cpu_or_gpu_preview_past_both_dimension_caps() -> None:
+    image = np.full((180, 420, 3), 0.18, dtype=np.float32)
+    adjustments = AdjustmentState()
+    adjustments.shared.geometry = GeometryAdjustments(straighten_angle=25)
+    cache = SessionRenderCache(image, None)
+
+    proxy, _working_space, _signature = cache.geometry_source_proxy(PreviewKind.HDR, 256, adjustments)
+    frame = cache.adjusted_frame(adjustments, PreviewKind.HDR, 256)
+
+    assert proxy.shape[0] <= 256 and proxy.shape[1] <= 256
+    assert frame.shape[0] <= 256 and frame.shape[1] <= 256
+
+
 def test_simple_mask_opacity_reuses_the_spatial_mask_cache() -> None:
     image = np.full((256, 256, 3), 0.18, dtype=np.float32)
     adjustments = AdjustmentState()

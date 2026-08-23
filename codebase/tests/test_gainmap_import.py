@@ -244,9 +244,11 @@ def test_direct_pq_avif_import_does_not_double_decode(tmp_path: Path) -> None:
     path.write_bytes(body)
 
     decoded, _descriptor, metadata, analysis, sdr_reference = load_image(path)
+    decoded_100, *_ = load_image(path, hdr_reference_white_nits=100)
 
     assert metadata["avif_direct_hdr"] is True
     assert metadata["gain_map_applied"] is False
+    assert metadata["decoder_reference_white_nits"] == 203.0
     assert analysis.classification == HDRClassification.HDR_TRUE
     assert sdr_reference is None
     source_luma = _luma(apply_adjustments(source, AdjustmentState(), PreviewKind.HDR))
@@ -254,6 +256,7 @@ def test_direct_pq_avif_import_does_not_double_decode(tmp_path: Path) -> None:
     assert float(np.percentile(decoded_luma, 99)) == pytest.approx(
         float(np.percentile(source_luma, 99)), rel=0.08
     )
+    np.testing.assert_allclose(decoded_100, decoded * np.float32(2.03), rtol=1e-5, atol=1e-6)
 
 
 @pytest.mark.parametrize("format_name", ["avif_gain_map", "jpeg_ultrahdr"])

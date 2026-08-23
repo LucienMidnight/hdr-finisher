@@ -702,10 +702,12 @@
       const pending = (async () => {
         const response = await fetch(`/api/session/${sessionId}/proxy/${lane}?long_edge=${longEdge}&format=rgba16f&edit_revision=${editRevision}&geometry_signature=${encodeURIComponent(geometrySignature)}`);
         if (!response.ok) {
-          const error = new Error(response.status === 409
+          const payload = await response.json().catch(() => null);
+          const error = new Error(payload?.detail || (response.status === 409
             ? "WebGPU geometry proxy is waiting for the committed edit"
-            : "WebGPU proxy could not be loaded");
-          error.recoverable = response.status === 409;
+            : "WebGPU proxy could not be loaded"));
+          error.recoverable = response.status === 409 || response.status === 507;
+          error.previewCapacity = response.status === 507;
           error.status = response.status;
           throw error;
         }

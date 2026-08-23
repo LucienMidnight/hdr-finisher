@@ -1,4 +1,5 @@
 const desktop = window.hdrFinisherDesktop || null;
+const FINE_ADJUSTMENT_SCALE = 0.1;
 
 const latitudePresets = {
   WIDE: {
@@ -186,6 +187,10 @@ const LAYOUT_LIMITS = {
 };
 const LAYOUT_SETTLE_DELAY = 120;
 const COMPACT_WORKSPACE_QUERY = "(max-width: 1499px)";
+const PREVIEW_RESOLUTION_OPTIONS = new Set(["1024", "2048", "4096", "full"]);
+const DEFAULT_PREVIEW_RESOLUTION = "1024";
+const FULL_PREVIEW_GPU_BYTES_PER_PIXEL = 64;
+const FULL_PREVIEW_GPU_BUDGET_BYTES = 1536 * 1024 * 1024;
 const LEGACY_UI_PREFERENCE_KEYS = new Set([
   "hdr-finisher:high-quality-preview:v1",
   "hdr-finisher:scope-zoom:v1",
@@ -252,6 +257,8 @@ const state = {
   rawSettingsOpen: false,
   activeImportJobId: null,
   importGeneration: 0,
+  projectOpenGeneration: 0,
+  projectOpenController: null,
   mediaBrowserGeneration: 0,
   mediaPreviewGeneration: 0,
   mediaPreviewRequest: null,
@@ -275,7 +282,10 @@ const state = {
   dockCollapsed: false,
   lastScope: null,
   scopeGeneration: 0,
-  highQualityPreview: false,
+  previewResolution: DEFAULT_PREVIEW_RESOLUTION,
+  previewResolutionGeneration: 0,
+  fullPreviewApprovalKey: "",
+  previewResolutionNotice: "",
   renderingMode: "auto",
   appPreferences: null,
   acceptedPresentation: null,
@@ -639,6 +649,105 @@ function gpuPreviewEligible() {
     && Boolean(state.gpuPreview?.available);
 }
 
+function normalizedPreviewResolution(value = state.previewResolution) {
+  const normalized = String(value || "");
+  return PREVIEW_RESOLUTION_OPTIONS.has(normalized) ? normalized : DEFAULT_PREVIEW_RESOLUTION;
+}
+
+function previewResolutionLabel(value = state.previewResolution) {
+  const normalized = normalizedPreviewResolution(value);
+  if (normalized === "full") return "Full";
+  return `${Math.round(Number(normalized) / 1024)}K`;
+}
+
+function previewTargetLongEdge(value = state.previewResolution) {
+  const normalized = normalizedPreviewResolution(value);
+  const sourceEdge = Math.max(Number(state.session?.source?.width) || 0, Number(state.session?.source?.height) || 0);
+  const requested = normalized === "full" ? sourceEdge || 4096 : Number(normalized);
+  return Math.max(256, Math.min(sourceEdge || requested, requested));
+}
+
+function previewNeedsRefinement() {
+  return previewTargetLongEdge() > settledProxyLongEdge();
+}
+
+function fullPreviewApprovalKey() {
+  if (!state.session) return "";
+  const { width, height } = state.session.source;
+  const gpuLimit = state.gpuPreview?.device?.limits?.maxTextureDimension2D || "cpu";
+  return `${state.session.session_id}:${width}x${height}:${state.renderingMode}:${gpuLimit}`;
+}
+
+function gpuFullPreviewSafety(width, height) {
+  if (!gpuPreviewEligible()) return { allowed: true, reason: "" };
+  const maxTextureDimension = Number(state.gpuPreview?.device?.limits?.maxTextureDimension2D) || 8192;
+  if (width > maxTextureDimension || height > maxTextureDimension) {
+    return {
+      allowed: false,
+      reason: `Full preview needs a ${width} × ${height} texture, but this GPU supports at most ${maxTextureDimension} pixels in either dimension.`,
+    };
+  }
+  const estimatedBytes = width * height * FULL_PREVIEW_GPU_BYTES_PER_PIXEL;
+  if (estimatedBytes > FULL_PREVIEW_GPU_BUDGET_BYTES) {
+    return {
+      allowed: false,
+      reason: `Full preview would reserve about ${(estimatedBytes / (1024 ** 3)).toFixed(2)} GiB of GPU working memory, above the ${(FULL_PREVIEW_GPU_BUDGET_BYTES / (1024 ** 3)).toFixed(2)} GiB safety limit.`,
+    };
+  }
+  return { allowed: true, reason: "" };
+}
+
+async function fullPreviewSafety() {
+  if (!state.session) return { allowed: true, key: "", reason: "" };
+  const key = fullPreviewApprovalKey();
+  if (state.fullPreviewApprovalKey === key) return { allowed: true, key, reason: "" };
+  const requested = Math.max(256, Number(state.session.source.width) || 0, Number(state.session.source.height) || 0);
+  try {
+    const response = await fetch(`/api/session/${state.session.session_id}/preview-preflight?max_dimension=${requested}`);
+    const payload = await safeJson(response);
+    if (!response.ok || !payload?.allowed) {
+      return { allowed: false, key, reason: payload?.reason || "Available system memory could not safely support a Full preview." };
+    }
+    const gpuSafety = gpuFullPreviewSafety(Number(payload.width), Number(payload.height));
+    return gpuSafety.allowed ? { allowed: true, key, reason: "" } : { ...gpuSafety, key };
+  } catch {
+    return { allowed: false, key, reason: "Full-preview memory safety could not be verified." };
+  }
+}
+
+function applyPreviewResolution(value, { reason = "", schedule = true } = {}) {
+  state.previewResolution = normalizedPreviewResolution(value);
+  state.previewResolutionNotice = reason ? "Full blocked · using 4K" : "";
+  state.fullPreviewApprovalKey = state.previewResolution === "full" ? state.fullPreviewApprovalKey : "";
+  if (els.previewResolution) {
+    els.previewResolution.value = state.previewResolution;
+    els.previewResolution.title = reason || "Sets the maximum preview width and height. Higher settings use more memory; export quality is unchanged.";
+  }
+  state.gpuPreview?.resetSession(state.session?.session_id || null);
+  state.gpuPreparedLane = { hdr: false, sdr: false };
+  if (state.session) {
+    invalidatePreview(state.currentView, { markDirty: false });
+    if (previewNeedsRefinement()) markRefining();
+    if (schedule) debouncePreview(state.currentView);
+  }
+  if (reason && els.previewQualityStatus) els.previewQualityStatus.textContent = state.previewResolutionNotice;
+  renderReadouts();
+}
+
+async function ensureFullPreviewSafe() {
+  if (state.previewResolution !== "full") return true;
+  const generation = state.previewResolutionGeneration;
+  const sessionId = state.session?.session_id;
+  const safety = await fullPreviewSafety();
+  if (generation !== state.previewResolutionGeneration || sessionId !== state.session?.session_id || state.previewResolution !== "full") return false;
+  if (!safety.allowed) {
+    applyPreviewResolution("4096", { reason: safety.reason });
+    return false;
+  }
+  state.fullPreviewApprovalKey = safety.key;
+  return true;
+}
+
 function acceptPresentation(lane, tier, width, height, transport, fallbackReason = "") {
   const longEdge = Math.max(Number(width) || 0, Number(height) || 0);
   state.acceptedPresentation = {
@@ -652,11 +761,10 @@ function acceptPresentation(lane, tier, width, height, transport, fallbackReason
     transport,
     fallbackReason,
   };
-  const sourceEdge = Math.max(Number(state.session?.source?.width) || 0, Number(state.session?.source?.height) || 0);
-  const label = tier === "refinement"
-    ? `${sourceEdge && longEdge >= sourceEdge ? "Source-limited" : "High-res"} · ${longEdge}px`
-    : `${fallbackReason ? "Fallback" : "Standard"}${longEdge ? ` · ${longEdge}px` : ""}`;
-  if (els.previewQualityStatus) els.previewQualityStatus.textContent = label;
+  const targetLabel = previewResolutionLabel();
+  const dimensions = width && height ? `${Number(width)} × ${Number(height)}` : longEdge ? `${longEdge}px max` : "";
+  const label = `${fallbackReason ? "Fallback · " : ""}${targetLabel}${dimensions ? ` · ${dimensions}` : ""}`;
+  if (els.previewQualityStatus) els.previewQualityStatus.textContent = state.previewResolutionNotice || label;
   renderReadouts();
 }
 
@@ -964,7 +1072,7 @@ const els = {
   dockTabs: [...document.querySelectorAll("[data-dock-tab]")],
   scopeView: document.getElementById("scope-view"),
   technicalView: document.getElementById("technical-view"),
-  highQualityPreview: document.getElementById("high-quality-preview"),
+  previewResolution: document.getElementById("preview-resolution"),
   previewQualityStatus: document.getElementById("preview-quality-status"),
   exportSheet: document.getElementById("export-sheet"),
   exportConfirmButton: document.getElementById("export-confirm-button"),
@@ -1373,17 +1481,20 @@ function initializeLocalOverlayColor() {
 }
 
 function initializePreviewPreferences() {
-  state.highQualityPreview = false;
+  state.previewResolution = DEFAULT_PREVIEW_RESOLUTION;
+  state.previewResolutionGeneration = 0;
+  state.fullPreviewApprovalKey = "";
+  state.previewResolutionNotice = "";
   state.scopeMaxNits = 4000;
   state.compareLayout = "single";
-  if (els.highQualityPreview) els.highQualityPreview.checked = state.highQualityPreview;
+  if (els.previewResolution) els.previewResolution.value = state.previewResolution;
   if (els.scopeZoom) els.scopeZoom.value = String(state.scopeMaxNits);
 }
 
 function initializePreviewScheduler() {
   if (!window.HDRPreviewScheduler) return;
   state.previewScheduler = new window.HDRPreviewScheduler({
-    highQuality: () => state.highQualityPreview,
+    highQuality: () => previewNeedsRefinement(),
     onFrame: (task) => state.localMaskDraftDirty
       ? false
       : renderGpuDraft(task.lane, { longEdge: interactiveProxyLongEdge() }),
@@ -1401,11 +1512,13 @@ function initializePreviewScheduler() {
     gpuSnapshot: () => state.gpuPreview?.diagnosticsSnapshot?.() || null,
     enableGpuInstrumentation: (enabled = true) => state.gpuPreview?.setInstrumentationEnabled?.(enabled),
     sessionId: () => state.session?.session_id || null,
-    previewMode: () => state.highQualityPreview ? "high-quality" : state.gpuPreview?.available ? "fast" : "cpu-fallback",
+    previewMode: () => `${previewResolutionLabel().toLowerCase()}-${state.gpuPreview?.available ? "gpu" : "cpu"}`,
     authoringState: () => ({
       sessionId: state.session?.session_id || null,
       lane: state.currentView,
       adjustments: JSON.parse(JSON.stringify(state.adjustments)),
+      previewResolution: normalizedPreviewResolution(),
+      previewMaxDimension: previewTargetLongEdge(),
       longEdge: settledProxyLongEdge(),
     }),
   };
@@ -1678,6 +1791,34 @@ function enhanceRangeControls() {
   document.querySelectorAll('input[type="range"]').forEach(enhanceRangeControl);
 }
 
+function pointerAdjustmentScale(event) {
+  if (event?.altKey) return FINE_ADJUSTMENT_SCALE;
+  return event?.shiftKey ? FINE_ADJUSTMENT_SCALE : 1;
+}
+
+function fineRangeStep(step) {
+  return Math.round(Number(step) * FINE_ADJUSTMENT_SCALE * 1e12) / 1e12;
+}
+
+function createPrecisionPointerDelta(event) {
+  let previousX = event.clientX;
+  let previousY = event.clientY;
+  let deltaX = 0;
+  let deltaY = 0;
+  let minimumScale = pointerAdjustmentScale(event);
+  return {
+    update(nextEvent) {
+      const scale = pointerAdjustmentScale(nextEvent);
+      minimumScale = Math.min(minimumScale, scale);
+      deltaX += (nextEvent.clientX - previousX) * scale;
+      deltaY += (nextEvent.clientY - previousY) * scale;
+      previousX = nextEvent.clientX;
+      previousY = nextEvent.clientY;
+      return { x: deltaX, y: deltaY, minimumScale };
+    },
+  };
+}
+
 function enhanceRangeControl(control) {
   if (!control || control.closest(".range-shell")) return;
   const shell = document.createElement("span");
@@ -1692,7 +1833,15 @@ function enhanceRangeControl(control) {
   for (let index = 0; index < 9; index += 1) ticks.append(document.createElement("i"));
   control.before(shell);
   shell.append(track, fill, ticks, control);
+  const declaredStep = Number(control.step);
+  if (Number.isFinite(declaredStep) && declaredStep > 0) {
+    control.dataset.instrumentStep = String(declaredStep);
+    control.step = String(fineRangeStep(declaredStep));
+  }
   updateRangeVisual(control);
+  control.title = [control.title, "Hold Shift while dragging or using arrow keys for 10× finer adjustment."]
+    .filter(Boolean)
+    .join(" ");
   control.addEventListener("input", () => updateRangeVisual(control));
   bindInstrumentRangePointer(control, shell);
 }
@@ -1875,6 +2024,21 @@ function syncRangeVisuals(root = document) {
 }
 
 function bindInstrumentRangePointer(control, shell) {
+  control.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const minimum = Number(control.min);
+    const maximum = Number(control.max);
+    const ordinaryStep = Number(control.dataset.instrumentStep) || Number(control.step) || (maximum - minimum) / 100;
+    const direction = ["ArrowRight", "ArrowUp"].includes(event.key) ? 1 : -1;
+    const precision = pointerAdjustmentScale(event);
+    const next = clamp(Number(control.value) + direction * ordinaryStep * precision, minimum, maximum);
+    control.value = String(next);
+    control.dispatchEvent(new Event("input", { bubbles: true }));
+    control.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+
   control.addEventListener("pointerdown", (event) => {
     if (event.button !== 0 || control.disabled) return;
     event.preventDefault();
@@ -1883,33 +2047,36 @@ function bindInstrumentRangePointer(control, shell) {
     const rect = control.getBoundingClientRect();
     const minimum = Number(control.min);
     const maximum = Number(control.max);
-    const step = Number(control.step) || (maximum - minimum) / 100;
+    const step = Number(control.dataset.instrumentStep) || Number(control.step) || (maximum - minimum) / 100;
     const startX = event.clientX;
     const startValue = Number(control.value);
-    const precision = event.altKey ? 0.05 : event.shiftKey ? 0.2 : 1;
+    const initialScale = pointerAdjustmentScale(event);
+    const pointerDelta = createPrecisionPointerDelta(event);
+    const directValue = minimum + clamp((startX - rect.left) / Math.max(rect.width, 1), 0, 1) * (maximum - minimum);
+    const baseValue = initialScale < 1 ? startValue : directValue;
     shell.classList.add("dragging");
     control.setPointerCapture(pointerId);
 
-    const quantize = (requested) => {
+    const quantize = (requested, precision = 1) => {
       const clamped = clamp(requested, minimum, maximum);
-      const steps = Math.round((clamped - minimum) / step);
-      return clamp(minimum + steps * step, minimum, maximum);
+      const quantum = step * Math.min(1, precision);
+      const steps = Math.round((clamped - minimum) / quantum);
+      return clamp(minimum + steps * quantum, minimum, maximum);
     };
-    const setFromPointer = (clientX) => {
-      const requested = precision < 1
-        ? startValue + ((clientX - startX) / Math.max(rect.width, 1)) * (maximum - minimum) * precision
-        : minimum + clamp((clientX - rect.left) / Math.max(rect.width, 1), 0, 1) * (maximum - minimum);
-      const next = quantize(requested);
+    const setValue = (requested, precision) => {
+      const next = quantize(requested, precision);
       if (Number(control.value) === next) return;
       control.value = String(next);
       control.dispatchEvent(new Event("input", { bubbles: true }));
     };
 
-    setFromPointer(event.clientX);
+    setValue(baseValue, initialScale);
     const move = (moveEvent) => {
       if (moveEvent.pointerId !== pointerId) return;
       moveEvent.preventDefault();
-      setFromPointer(moveEvent.clientX);
+      const delta = pointerDelta.update(moveEvent);
+      const requested = baseValue + (delta.x / Math.max(rect.width, 1)) * (maximum - minimum);
+      setValue(requested, delta.minimumScale);
     };
     const stop = (stopEvent) => {
       if (stopEvent.pointerId !== pointerId) return;
@@ -2025,16 +2192,22 @@ function bindEvents() {
     state.scopeMaxNits = [1000, 4000, 10000].includes(requestedMaxNits) ? requestedMaxNits : 4000;
     await refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
   });
-  els.highQualityPreview?.addEventListener("change", () => {
-    state.highQualityPreview = els.highQualityPreview.checked;
-    state.gpuPreview?.resetSession(state.session?.session_id || null);
-    state.gpuPreparedLane = { hdr: false, sdr: false };
-    if (state.session) {
-      invalidatePreview(state.currentView, { markDirty: false });
-      if (state.highQualityPreview) markRefining();
-      debouncePreview(state.currentView);
+  els.previewResolution?.addEventListener("change", async () => {
+    const requested = normalizedPreviewResolution(els.previewResolution.value);
+    const generation = ++state.previewResolutionGeneration;
+    state.previewResolution = requested;
+    state.fullPreviewApprovalKey = "";
+    if (requested === "full" && state.session) {
+      if (els.previewQualityStatus) els.previewQualityStatus.textContent = "Checking Full…";
+      const safety = await fullPreviewSafety();
+      if (generation !== state.previewResolutionGeneration || requested !== state.previewResolution) return;
+      if (!safety.allowed) {
+        applyPreviewResolution("4096", { reason: safety.reason });
+        return;
+      }
+      state.fullPreviewApprovalKey = safety.key;
     }
-    renderReadouts();
+    applyPreviewResolution(requested);
   });
 
   ["dragenter", "dragover"].forEach((eventName) => {
@@ -2427,6 +2600,7 @@ async function uploadFile(file) {
     ]);
     hidePreviewMessage();
     prepareInactivePreview();
+    if (previewNeedsRefinement()) debouncePreview("hdr");
     return true;
   } catch (error) {
     console.error(error);
@@ -2662,12 +2836,13 @@ async function initializeDesktopBridge() {
   els.revealExportPath?.classList.toggle("hidden", !desktop);
   els.openExportPath?.classList.toggle("hidden", !desktop);
   if (!desktop) return;
+  desktop.onMenuCommand(({ command, payload }) => handleDesktopCommand(command, payload));
+  desktop.onOpenRequest((selection) => openDesktopSelection(selection));
+  await desktop.rendererReady();
   state.desktopEnvironment = await desktop.environment();
   state.renderingMode = ["auto", "gpu", "cpu"].includes(state.desktopEnvironment.renderingMode)
     ? state.desktopEnvironment.renderingMode
     : "auto";
-  desktop.onMenuCommand(({ command, payload }) => handleDesktopCommand(command, payload));
-  desktop.onOpenRequest((selection) => openDesktopSelection(selection));
 }
 
 async function handleDesktopCommand(command, payload = null) {
@@ -2743,8 +2918,8 @@ function adjustControlFromShortcut(path, direction, event) {
   if (direction === "reset") {
     control.value = control.dataset.defaultValue ?? control.defaultValue;
   } else {
-    const baseStep = Number(control.step) || ((Number(control.max) - Number(control.min)) / 100) || 1;
-    const multiplier = event?.shiftKey ? 10 : event?.altKey ? 0.1 : 1;
+    const baseStep = Number(control.dataset.instrumentStep) || Number(control.step) || ((Number(control.max) - Number(control.min)) / 100) || 1;
+    const multiplier = event?.shiftKey || event?.altKey ? 0.1 : 1;
     const delta = baseStep * multiplier * (direction === "increase" ? 1 : -1);
     const value = clamp(Number(control.value) + delta, Number(control.min), Number(control.max));
     control.value = String(Math.round(value * 1e8) / 1e8);
@@ -2803,7 +2978,7 @@ async function requestSourceImport() {
     els.fileInput.click();
     return;
   }
-  const currentSourceDirectory = sourcePathForClipboard()?.replace(/[\\/][^\\/]+$/, "") || "";
+  const currentSourceDirectory = splitOutputPath(sourcePathForClipboard()).directory;
   await openMediaBrowser("source", currentSourceDirectory || state.appPreferences?.folders?.fileImport || "");
 }
 
@@ -2829,7 +3004,7 @@ function previewOutputEntries() {
   return [
     ["View", state.currentView.toUpperCase()],
     ["Rendering", state.renderingMode === "cpu" ? "CPU Compatibility" : state.renderingMode === "gpu" ? "GPU Preferred" : "Auto"],
-    ["Preview Mode", state.acceptedPresentation?.tier === "refinement" ? "High-res presented" : state.highQualityPreview ? "High-res requested" : "Standard"],
+    ["Preview Target", `${previewResolutionLabel()} · max ${previewTargetLongEdge()} × ${previewTargetLongEdge()}`],
     ["Presented", state.acceptedPresentation?.longEdge ? `${state.acceptedPresentation.longEdge}px · ${state.acceptedPresentation.transport}` : "Waiting"],
     ["Scope", els.scopeFreshness?.textContent || "Waiting"],
     ["Transport", state.previewInfo.transport],
@@ -2940,7 +3115,8 @@ function applyLatitudePresets(latitude) {
     if (control) {
       control.min = min;
       control.max = max;
-      control.step = step;
+      control.dataset.instrumentStep = String(step);
+      control.step = String(fineRangeStep(step));
       syncRangeControlFromState(path, control);
     }
   });
@@ -2988,17 +3164,19 @@ async function settlePreview(lane = state.currentView, task = {}) {
 }
 
 async function refinePreview(lane, task = {}) {
-  if (!state.session || !state.highQualityPreview || lane !== state.currentView) return;
+  if (!state.session || !previewNeedsRefinement() || lane !== state.currentView) return;
   if (task.applicationGeneration !== undefined && task.applicationGeneration !== state.previewGeneration[lane]) return;
+  if (!await ensureFullPreviewSafe()) return;
   const generation = state.previewGeneration[lane];
   const signature = geometrySignature();
+  const targetLongEdge = refinementProxyLongEdge();
   markRefining();
   const rendered = gpuPreviewEligible()
-    ? await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge(), tier: "refinement" })
+    ? await renderGpuDraft(lane, { longEdge: targetLongEdge, tier: "refinement" })
     : false;
-  if (rendered || !state.highQualityPreview || lane !== state.currentView) return;
-  await renderPreviewForLane(lane, true, refinementProxyLongEdge(), { showProgress: false });
-  if (generation !== state.previewGeneration[lane] || signature !== geometrySignature() || !state.highQualityPreview) return;
+  if (rendered || !previewNeedsRefinement() || lane !== state.currentView || targetLongEdge !== refinementProxyLongEdge()) return;
+  await renderPreviewForLane(lane, true, targetLongEdge, { showProgress: false });
+  if (generation !== state.previewGeneration[lane] || signature !== geometrySignature() || !previewNeedsRefinement()) return;
 }
 
 function displayedLongEdge() {
@@ -3013,11 +3191,11 @@ function interactiveProxyLongEdge() {
 }
 
 function settledProxyLongEdge() {
-  return Math.round(clamp(displayedLongEdge(), 768, state.highQualityPreview ? 1200 : 1200));
+  return Math.round(Math.min(previewTargetLongEdge(), clamp(displayedLongEdge(), 768, 1024)));
 }
 
 function refinementProxyLongEdge() {
-  return Math.round(clamp(displayedLongEdge() * 1.5, 1600, 2000));
+  return Math.round(previewTargetLongEdge());
 }
 
 function scopeLongEdge(tier) {
@@ -3058,6 +3236,7 @@ async function renderPreviewForLane(
   { showProgress = true, progressSteps = [12, 76, 92], raw = !state.gpuPreview?.available } = {},
 ) {
   if (!state.session) return false;
+  const sessionId = state.session.session_id;
   if (await syncGlobalEditState() === false) return false;
   if (raw) return renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showProgress });
   const cached = state.previewCache[lane];
@@ -3093,13 +3272,23 @@ async function renderPreviewForLane(
     return null;
   });
   if (!response || response.aborted) return;
+  const requestIsCurrent = () => controller === state.previewControllers[lane]
+    && state.session?.session_id === sessionId
+    && generation === state.previewGeneration[lane]
+    && signature === geometrySignature();
   if (response.status === 409) {
-    if (displayWhenReady && showProgress) setPreviewMessage("A newer adjustment replaced this render.", progressSteps[0]);
+    if (displayWhenReady && showProgress && requestIsCurrent()) setPreviewMessage("A newer adjustment replaced this render.", progressSteps[0]);
     return false;
   }
   if (!response.ok) {
     const payload = await safeJson(response);
-    if (displayWhenReady) {
+    if (response.status === 507 && state.previewResolution === "full" && requestIsCurrent()) {
+      applyPreviewResolution("4096", {
+        reason: payload?.detail || "Available memory changed while the Full preview was rendering.",
+      });
+      return false;
+    }
+    if (displayWhenReady && requestIsCurrent()) {
       setPreviewError(payload?.detail || "Preview failed to render.");
       clearPreviewImage();
       clearPreviewOverlay();
@@ -3112,7 +3301,7 @@ async function renderPreviewForLane(
   const width = Number(response.headers.get("X-Image-Width"));
   const height = Number(response.headers.get("X-Image-Height"));
   const blob = await response.blob();
-  if (generation !== state.previewGeneration[lane] || signature !== geometrySignature()) return false;
+  if (!requestIsCurrent()) return false;
   const url = URL.createObjectURL(blob);
   const previous = state.previewCache[lane];
   if (previous?.url) URL.revokeObjectURL(previous.url);
@@ -3122,9 +3311,10 @@ async function renderPreviewForLane(
     const keptGpuSurface = shouldKeepHdrGpuSurface(lane)
       && await renderGpuDraft(lane)
       && state.gpuSurfaceHdr;
+    if (!requestIsCurrent()) return false;
     if (!keptGpuSurface) {
       state.previewInfoByLane[lane] = previewInfo;
-      await applyPreviewUrl(url);
+      if (!await applyPreviewUrl(url, requestIsCurrent)) return false;
       state.previewInfo = previewInfo;
       acceptPresentation(lane, longEdge >= refinementProxyLongEdge() ? "refinement" : "settled", width, height, previewInfo.transport, gpuPreviewEligible() ? "" : "CPU/backend");
       els.scopeKindLabel.textContent = lane.toUpperCase();
@@ -3166,7 +3356,15 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
     return null;
   });
   if (!response || response.status === 409 || controller !== state.previewControllers[lane]) return false;
-  if (!response.ok) return false;
+  if (!response.ok) {
+    const payload = await safeJson(response);
+    if (response.status === 507 && state.previewResolution === "full" && controller === state.previewControllers[lane]) {
+      applyPreviewResolution("4096", {
+        reason: payload?.detail || "Available memory changed while the Full preview was rendering.",
+      });
+    }
+    return false;
+  }
   const width = Number(response.headers.get("X-Image-Width"));
   const height = Number(response.headers.get("X-Image-Height"));
   const rawGeneration = Number(response.headers.get("X-Generation"));
@@ -3235,23 +3433,34 @@ function applyRawComparisonPreview(frame) {
 async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 1600) {
   await syncGlobalEditState();
   if (!state.session) return;
+  state.overlayAbortController?.abort();
+  state.overlayAbortController = null;
   if (state.adjustments.shared.overlay_mode === "off") {
     clearPreviewOverlay();
     return;
   }
-  if (state.overlayAbortController) state.overlayAbortController.abort();
-  state.overlayAbortController = new AbortController();
-  const response = await fetch(`/api/session/${state.session.session_id}/overlay/${state.currentView}`, {
+  const controller = new AbortController();
+  state.overlayAbortController = controller;
+  const sessionId = state.session.session_id;
+  const lane = state.currentView;
+  const revision = state.editRevision;
+  const response = await fetch(`/api/session/${sessionId}/overlay/${lane}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ edit_revision: state.editRevision, include_locals: !state.compareWithoutLocals, long_edge: longEdge }),
-    signal: state.overlayAbortController.signal,
+    signal: controller.signal,
   }).catch((error) => {
     if (error.name === "AbortError") return { aborted: true };
     console.error(error);
     return null;
   });
   if (!response || response.aborted) return;
+  const requestIsCurrent = () => controller === state.overlayAbortController
+    && state.session?.session_id === sessionId
+    && state.currentView === lane
+    && state.editRevision === revision
+    && state.adjustments.shared.overlay_mode !== "off";
+  if (!requestIsCurrent()) return;
   if (response.status === 204) {
     clearPreviewOverlay();
     return;
@@ -3262,8 +3471,9 @@ async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 16
   }
 
   const blob = await response.blob();
+  if (!requestIsCurrent()) return;
   const url = URL.createObjectURL(blob);
-  await applyOverlayUrl(url);
+  await applyOverlayUrl(url, requestIsCurrent);
 }
 
 function refreshScopes(longEdge = 960, { tier = "settled", generation = null, lane = state.currentView } = {}) {
@@ -4002,9 +4212,12 @@ function splitOutputPath(path) {
   const separator = normalized.includes("\\") && !normalized.includes("/") ? "\\" : "/";
   const parts = normalized.split(/[/\\]/);
   const filename = parts.pop() || "";
+  let directory = parts.join(separator);
+  if (/^[A-Za-z]:[\\/]/.test(normalized) && /^[A-Za-z]:$/.test(directory)) directory += separator;
+  else if (normalized.startsWith("/") && !directory) directory = "/";
   return {
     filename: filename.replace(/\.[^.]+$/, ""),
-    directory: parts.join(separator),
+    directory,
   };
 }
 
@@ -4747,7 +4960,11 @@ async function confirmMediaBrowserSelection() {
 }
 
 function sanitizeProjectFilename(value) {
-  const base = String(value || "Untitled").trim().replace(/[<>:"/\\|?*\x00-\x1F]/g, "_") || "Untitled";
+  const base = (String(value || "Untitled").trim().replace(/[<>:"/\\|?*\x00-\x1F]/g, "_") || "Untitled").replace(/[. ]+$/, "");
+  const stem = base.replace(/\.hdrfinisher$/i, "").split(".", 1)[0];
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(stem)) {
+    throw new Error(`“${stem}” is a reserved Windows filename. Choose another project name.`);
+  }
   return base.toLowerCase().endsWith(".hdrfinisher") ? base : `${base}.hdrfinisher`;
 }
 
@@ -4789,6 +5006,7 @@ async function applyInterpretationOverride() {
     ]);
     hidePreviewMessage();
     prepareInactivePreview();
+    if (previewNeedsRefinement()) debouncePreview(state.currentView);
   } catch (error) {
     console.error(error);
     els.badge.textContent = "Interpretation override could not reach the local HDR Finisher server.";
@@ -6038,22 +6256,36 @@ function bindToneEqualizerEditor() {
 function bindToneEqualizerEditorForLane(lane) {
   const ui = toneEqualizerUi(lane);
   const canvas = ui.editor;
-  const beginDrag = (clientX, clientY, bandIndex) => {
+  const beginDrag = (startEvent, bandIndex) => {
     if (!state.session) return;
+    const { clientX, clientY, pointerId } = startEvent;
     state.previewScheduler?.beginInteraction();
     const rect = canvas.getBoundingClientRect();
     state.activeToneEqualizerBand = bandIndex;
     state.selectedToneEqualizerBand = state.activeToneEqualizerBand;
-    const startingNodes = currentToneEqualizerNodes(lane);
+    const startingNodes = currentToneEqualizerNodes(lane).map((node) => ({ ...node }));
+    const pointerDelta = createPrecisionPointerDelta(startEvent);
     drawToneEqualizerEditor(lane);
+    let stopped = false;
+    if (pointerId !== null && canvas.setPointerCapture) {
+      try { canvas.setPointerCapture(pointerId); } catch {}
+    }
     const move = (event) => {
+      if (pointerId !== null && event.pointerId !== pointerId) return;
       event.preventDefault();
-      updateToneEqualizerFromPointer(event.clientX, event.clientY, rect, startingNodes, lane);
+      const delta = pointerDelta.update(event);
+      updateToneEqualizerFromPointer(clientX + delta.x, clientY + delta.y, rect, startingNodes, lane);
     };
-    const stop = () => {
+    const stop = (event) => {
+      if (stopped || (pointerId !== null && event?.pointerId !== undefined && event.pointerId !== pointerId)) return;
+      stopped = true;
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", stop);
       window.removeEventListener("pointercancel", stop);
+      canvas.removeEventListener("lostpointercapture", stop);
+      if (pointerId !== null && canvas.hasPointerCapture?.(pointerId)) {
+        try { canvas.releasePointerCapture(pointerId); } catch {}
+      }
       state.activeToneEqualizerBand = null;
       renderControlState();
       state.previewScheduler?.endInteraction();
@@ -6061,6 +6293,7 @@ function bindToneEqualizerEditorForLane(lane) {
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", stop);
     window.addEventListener("pointercancel", stop);
+    canvas.addEventListener("lostpointercapture", stop);
   };
 
   canvas.addEventListener("pointerdown", (event) => {
@@ -6069,11 +6302,14 @@ function bindToneEqualizerEditorForLane(lane) {
     const rect = canvas.getBoundingClientRect();
     const bandIndex = toneEqualizerNodeIndexAtPointer(event.clientX, event.clientY, rect, lane);
     if (bandIndex !== null) {
-      beginDrag(event.clientX, event.clientY, bandIndex);
+      beginDrag(event, bandIndex);
       return;
     }
     const curveHit = toneEqualizerCurveHitAtPointer(event.clientX, event.clientY, rect, lane);
-    if (curveHit) addToneEqualizerNode(curveHit.inputEv, lane);
+    if (!curveHit) return;
+    const insertedIndex = addToneEqualizerNode(curveHit.inputEv, lane);
+    if (insertedIndex === null) return;
+    beginDrag(event, insertedIndex);
   });
   canvas.addEventListener("contextmenu", (event) => {
     event.preventDefault();
@@ -6119,7 +6355,7 @@ function bindToneEqualizerEditorForLane(lane) {
     }
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
     event.preventDefault();
-    const step = event.shiftKey ? 0.25 : 0.05;
+    const step = event.shiftKey ? 0.01 : 0.05;
     const direction = event.key === "ArrowUp" ? 1 : -1;
     setToneEqualizerBand(index, currentToneEqualizerNodes(lane)[index].adjustment_ev + direction * step, lane);
     renderControlState();
@@ -6455,7 +6691,7 @@ function toneEqualizerEvFromPointer(clientX, rect) {
 
 function addToneEqualizerNode(preferredEv = null, lane = state.currentView) {
   const nodes = currentToneEqualizerNodes(lane);
-  if (nodes.length >= TONE_EQUALIZER_MAX_NODE_COUNT) return;
+  if (nodes.length >= TONE_EQUALIZER_MAX_NODE_COUNT) return null;
   let inputEv = preferredEv;
   if (inputEv == null) {
     let widest = -1;
@@ -6467,7 +6703,7 @@ function addToneEqualizerNode(preferredEv = null, lane = state.currentView) {
     inputEv = (nodes[insertion - 1].input_ev + nodes[insertion].input_ev) / 2;
   }
   inputEv = clamp(inputEv, -5.9, 5.9);
-  if (nodes.some((node) => Math.abs(node.input_ev - inputEv) < 0.1)) return;
+  if (nodes.some((node) => Math.abs(node.input_ev - inputEv) < 0.1)) return null;
   const adjustmentEv = sampleToneEqualizerAdjustment(inputEv, nodes, Number(state.adjustments[lane].tone_equalizer_smoothing || 0.5));
   nodes.push({ input_ev: inputEv, adjustment_ev: adjustmentEv });
   nodes.sort((left, right) => left.input_ev - right.input_ev);
@@ -6477,6 +6713,7 @@ function addToneEqualizerNode(preferredEv = null, lane = state.currentView) {
   renderControlState();
   invalidatePreview(lane);
   debouncePreview(lane);
+  return state.selectedToneEqualizerBand;
 }
 
 function removeToneEqualizerNode(requestedIndex = null, lane = state.currentView) {
@@ -6523,8 +6760,9 @@ function formatToneBandNits(value) {
 
 function bindCurveEditor() {
   const canvas = els.curveEditor;
-  const beginDrag = (clientX, clientY, pointIndex, pointerId = null) => {
+  const beginDrag = (startEvent, pointIndex) => {
     if (!state.session) return;
+    const { clientX, clientY, pointerId } = startEvent;
     state.previewScheduler?.beginInteraction();
     state.activeCurvePoint = pointIndex;
     state.selectedCurvePoint = state.activeCurvePoint;
@@ -6533,6 +6771,7 @@ function bindCurveEditor() {
       clientY,
       point: [...currentCurveValues()[state.activeCurvePoint]],
     };
+    const pointerDelta = createPrecisionPointerDelta(startEvent);
     let dragged = false;
     drawCurveEditor();
     let stopped = false;
@@ -6544,7 +6783,8 @@ function bindCurveEditor() {
       event.preventDefault();
       dragged ||= Math.hypot(event.clientX - clientX, event.clientY - clientY) >= 3;
       if (!dragged) return;
-      updateCurveFromPointer(event.clientX, event.clientY, dragOrigin);
+      const delta = pointerDelta.update(event);
+      updateCurveFromPointer(clientX + delta.x, clientY + delta.y, dragOrigin);
     };
     const stop = (event) => {
       if (stopped || (pointerId !== null && event?.pointerId !== undefined && event.pointerId !== pointerId)) return;
@@ -6576,14 +6816,14 @@ function bindCurveEditor() {
     const rect = canvas.getBoundingClientRect();
     const pointIndex = curvePointIndexAtPointer(event.clientX, event.clientY, rect);
     if (pointIndex !== null) {
-      beginDrag(event.clientX, event.clientY, pointIndex, event.pointerId);
+      beginDrag(event, pointIndex);
       return;
     }
     const curveHit = curveHitAtPointer(event.clientX, event.clientY, rect);
     if (!curveHit) return;
     const insertedIndex = addCurvePoint(curveHit.x);
     if (insertedIndex === null) return;
-    beginDrag(event.clientX, event.clientY, insertedIndex, event.pointerId);
+    beginDrag(event, insertedIndex);
   });
   canvas.addEventListener("contextmenu", (event) => {
     event.preventDefault();
@@ -6609,7 +6849,7 @@ function bindCurveEditor() {
     } else if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
       event.preventDefault();
       const point = [...curve[index]];
-      const step = event.shiftKey ? 0.05 : 0.01;
+      const step = event.shiftKey ? 0.001 : 0.01;
       const verticalStep = step * Math.min(1, curveVerticalAdjustmentScale(index, curve.length) / 0.35);
       if (event.key === "ArrowLeft" && !isLockedCurveEndpoint(index)) {
         point[0] = clamp(point[0] - step, curve[index - 1][0] + 0.02, curve[index + 1][0] - 0.02);
@@ -7083,20 +7323,20 @@ function monotoneCurveValues(points, sampleX) {
   });
 }
 
-async function applyPreviewUrl(url) {
+async function applyPreviewUrl(url, isCurrent = () => true) {
   try {
     await new Promise((resolve, reject) => {
-      els.previewImage.onload = () => resolve();
-      els.previewImage.onerror = () => reject(new Error("Image element could not load preview data."));
-      els.previewImage.src = url;
+      const decoder = new Image();
+      decoder.onload = () => resolve();
+      decoder.onerror = () => reject(new Error("Image element could not load preview data."));
+      decoder.src = url;
     });
   } catch (error) {
-    setPreviewError(error.message || "Preview image failed to decode.");
-    return;
-  } finally {
-    els.previewImage.onload = null;
-    els.previewImage.onerror = null;
+    if (isCurrent()) setPreviewError(error.message || "Preview image failed to decode.");
+    return false;
   }
+  if (!isCurrent()) return false;
+  els.previewImage.src = url;
 
   if (state.rotateDraftPreviewUrl && state.rotateDraftPreviewUrl !== url) {
     URL.revokeObjectURL(state.rotateDraftPreviewUrl);
@@ -7111,6 +7351,7 @@ async function applyPreviewUrl(url) {
   syncOverlayPlacement();
   updateZoomReadout();
   hidePreviewMessage();
+  return true;
 }
 
 async function applyComparisonUrl(url) {
@@ -7204,6 +7445,10 @@ async function renderGpuDraft(
       });
       return true;
   } catch (error) {
+    if (error?.previewCapacity && state.previewResolution === "full") {
+      applyPreviewResolution("4096", { reason: error.message || "Full preview exceeded the current memory safety limit." });
+      return false;
+    }
     if (error?.recoverable) {
       console.debug("WebGPU authoring render deferred until geometry commit.", error);
       return false;
@@ -7258,27 +7503,31 @@ function requestSessionExport(outputPath, overwrite, pathGrant = null, overwrite
   });
 }
 
-async function applyOverlayUrl(url) {
+async function applyOverlayUrl(url, isCurrent = () => true) {
   const previousUrl = els.previewOverlay.dataset.objectUrl;
   try {
     await new Promise((resolve, reject) => {
-      els.previewOverlay.onload = () => resolve();
-      els.previewOverlay.onerror = () => reject(new Error("Overlay image failed to decode."));
-      els.previewOverlay.src = url;
+      const decoder = new Image();
+      decoder.onload = () => resolve();
+      decoder.onerror = () => reject(new Error("Overlay image failed to decode."));
+      decoder.src = url;
     });
   } catch {
     URL.revokeObjectURL(url);
-    clearPreviewOverlay();
-    return;
-  } finally {
-    els.previewOverlay.onload = null;
-    els.previewOverlay.onerror = null;
+    if (isCurrent()) clearPreviewOverlay();
+    return false;
+  }
+  if (!isCurrent()) {
+    URL.revokeObjectURL(url);
+    return false;
   }
 
   if (previousUrl) URL.revokeObjectURL(previousUrl);
+  els.previewOverlay.src = url;
   els.previewOverlay.dataset.objectUrl = url;
   els.previewOverlay.style.display = "block";
   syncOverlayPlacement();
+  return true;
 }
 
 function clearPreviewImage() {
@@ -7720,6 +7969,7 @@ async function switchLane(lane) {
     await renderComparisonPreview(other, { force: true });
   }
   prepareInactivePreview();
+  if (previewNeedsRefinement()) debouncePreview(lane);
 }
 
 function renderLaneChrome() {
@@ -7776,6 +8026,8 @@ function clearPreviewCache() {
   state.pendingScopeRequest?.resolve(false);
   state.scopeRequestInFlight = null;
   state.pendingScopeRequest = null;
+  state.overlayAbortController?.abort();
+  state.overlayAbortController = null;
   for (const lane of ["hdr", "sdr"]) {
     state.previewControllers[lane]?.abort();
     state.previewControllers[lane] = null;
@@ -12202,6 +12454,7 @@ async function openStagedDesktopSource(selection) {
     if (job.state === "ready" && job.session_id) {
       const sessionResponse = await fetch(`/api/session/${job.session_id}`);
       const payload = await safeJson(sessionResponse);
+      if (generation !== state.importGeneration || state.activeImportJobId !== job.job_id) return;
       state.activeImportJobId = null;
       state.importInProgress = false;
       setImportCancelVisible(false);
@@ -12289,33 +12542,55 @@ async function activateDesktopSession(session, projectPath) {
   ]);
   hidePreviewMessage();
   prepareInactivePreview();
+  if (previewNeedsRefinement()) debouncePreview("hdr");
   syncDesktopDocumentState();
+}
+
+function documentTransitionToken() {
+  return [
+    state.session?.session_id || "",
+    state.editRevision,
+    state.globalEditGeneration,
+    state.documentDirty ? "dirty" : "clean",
+  ].join(":");
 }
 
 async function openProjectFromPath(desktopSelection = null) {
   if (!await confirmUnsavedTransition("open another project")) return;
+  const confirmedDocument = documentTransitionToken();
   if (desktop) {
     const selection = desktopSelection || await chooseProjectPath(
       "project_open",
       state.appPreferences?.folders?.projectImport || "",
     );
     if (!selection) return;
+    if (documentTransitionToken() !== confirmedDocument && !await confirmUnsavedTransition("open another project")) return;
+    const openGeneration = ++state.projectOpenGeneration;
+    state.projectOpenController?.abort();
+    const controller = new AbortController();
+    state.projectOpenController = controller;
     let response = await fetch("/api/desktop/project/open", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ project_grant: selection.grant }),
-    });
+      signal: controller.signal,
+    }).catch((error) => error.name === "AbortError" ? null : Promise.reject(error));
+    if (!response || openGeneration !== state.projectOpenGeneration) return;
     let payload = await safeJson(response);
+    if (openGeneration !== state.projectOpenGeneration) return;
     if (!response.ok) {
       const source = await desktop.relinkSource();
-      if (!source) return;
+      if (!source || openGeneration !== state.projectOpenGeneration) return;
       response = await fetch("/api/desktop/project/open", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ project_grant: selection.grant, source_grant: source.grant }),
-      });
+        signal: controller.signal,
+      }).catch((error) => error.name === "AbortError" ? null : Promise.reject(error));
+      if (!response || openGeneration !== state.projectOpenGeneration) return;
       payload = await safeJson(response);
     }
+    if (openGeneration !== state.projectOpenGeneration) return;
     if (!response.ok || !payload?.session) {
       window.alert(responseErrorMessage(payload, "The project could not be opened."));
       return;
@@ -12360,6 +12635,7 @@ async function openProjectFromPath(desktopSelection = null) {
   renderLocalAdjustments();
   await refreshPreview();
   await refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
+  if (previewNeedsRefinement()) debouncePreview("hdr");
 }
 
 async function saveProjectToPath({ saveAs = false } = {}) {

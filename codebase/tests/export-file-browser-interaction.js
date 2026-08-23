@@ -21,6 +21,17 @@ async function main() {
 
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
+    const rootPaths = await page.evaluate(() => ({
+      windows: splitOutputPath("D:\\root-project.hdrfinisher").directory,
+      posix: splitOutputPath("/root-project.hdrfinisher").directory,
+    }));
+    if (rootPaths.windows !== "D:\\" || rootPaths.posix !== "/") {
+      throw new Error(`Drive-root path split regressed: ${JSON.stringify(rootPaths)}`);
+    }
+    const reservedNameRejected = await page.evaluate(() => {
+      try { sanitizeProjectFilename("CON"); return false; } catch { return true; }
+    });
+    if (!reservedNameRejected) throw new Error("Windows reserved project filenames were not rejected.");
 
     const chooserPromise = page.waitForEvent("filechooser");
     await page.locator("#import-button").click();

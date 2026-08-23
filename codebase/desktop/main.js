@@ -5,10 +5,13 @@ const fs = require("node:fs");
 const path = require("node:path");
 const readline = require("node:readline");
 const {
+  allowedDocumentationUrl,
+  allowedProjectUrl,
   allowedProofUrl,
   isExportPath,
   isProjectPath,
   isSourcePath,
+  pathKey,
   safeSuggestedName,
 } = require("./lib/validation");
 const { backendCommand: resolveBackendCommand } = require("./lib/runtime");
@@ -45,6 +48,7 @@ let renderingMode = "auto";
 let applicationPreferences = null;
 let updateCheckCache = null;
 let pendingOpenPaths = [];
+let rendererReady = false;
 const knownProjectPaths = new Set();
 const grantedExportPaths = new Set();
 
@@ -259,7 +263,7 @@ async function checkForUpdates({ force = false } = {}) {
     const latestVersion = String(release.tag_name || "").replace(/^v/i, "");
     const releaseUrl = typeof release.html_url === "string" ? release.html_url : "";
     const parsedReleaseUrl = new URL(releaseUrl);
-    if (parsedReleaseUrl.protocol !== "https:" || parsedReleaseUrl.hostname !== "github.com" || !parsedReleaseUrl.pathname.toLowerCase().startsWith("/lucienmidnight/hdr-finisher/")) {
+    if (!allowedProjectUrl(parsedReleaseUrl.toString())) {
       throw new Error("Unexpected release URL.");
     }
     const result = {
@@ -354,13 +358,23 @@ async function startBackend() {
   backend = { authoringSecret, controlSecret, child, log, logPath, url };
   child.once("exit", (code) => {
     if (!shuttingDown && mainWindow && !mainWindow.isDestroyed()) {
+      const dirty = documentState.dirty;
       dialog.showMessageBox(mainWindow, {
         type: "error",
         title: "HDR Finisher backend stopped",
         message: "The image-processing backend stopped unexpectedly.",
-        detail: `Exit code: ${code ?? "unknown"}\n\nLog: ${logPath}`,
-        buttons: ["Quit"],
-      }).finally(() => beginShutdown());
+        detail: `${dirty ? "Unsaved edits are still visible; keep this window open while recording any values you need.\n\n" : ""}Exit code: ${code ?? "unknown"}\n\nLog: ${logPath}`,
+        buttons: dirty ? ["Keep Window Open", "Open Logs", "Quit Without Saving"] : ["Open Logs", "Quit"],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      }).then(async ({ response }) => {
+        if ((dirty && response === 1) || (!dirty && response === 0)) {
+          shell.showItemInFolder(logPath);
+          return;
+        }
+        if ((dirty && response === 2) || (!dirty && response === 1)) await beginShutdown();
+      }).catch(() => {});
     }
   });
 }
@@ -436,6 +450,11 @@ function registerIpc() {
     packaged: app.isPackaged,
     renderingMode,
   }));
+  handle("desktop:renderer-ready", async () => {
+    rendererReady = true;
+    await dispatchPendingOpenPaths();
+    return true;
+  });
   handle("desktop:get-preferences", () => applicationPreferences);
   handle("desktop:get-default-preset-directory", () => defaultPresetDirectory());
   handle("desktop:list-grading-presets", (groupId) => listGradingPresets(groupId));
@@ -467,10 +486,15 @@ function registerIpc() {
   handle("desktop:check-for-updates", (options) => checkForUpdates(options));
   handle("desktop:open-project-website", async (url) => {
     const target = new URL(String(url || "https://github.com/LucienMidnight/hdr-finisher"));
-    if (target.protocol !== "https:" || target.hostname !== "github.com" || !target.pathname.toLowerCase().startsWith("/lucienmidnight/hdr-finisher")) {
+    if (!allowedProjectUrl(target.toString())) {
       throw new Error("Only the HDR Finisher GitHub project can be opened.");
     }
     await shell.openExternal(target.toString());
+    return true;
+  });
+  handle("desktop:open-documentation", async (url) => {
+    if (!allowedDocumentationUrl(url)) throw new Error("Only trusted HDR Finisher documentation links can be opened.");
+    await shell.openExternal(url);
     return true;
   });
   handle("desktop:set-rendering-mode", (mode) => setRenderingMode(mode));
@@ -495,14 +519,16 @@ function registerIpc() {
     if (!isProjectPath(resolved)) throw new Error("Select an HDR Finisher project file.");
     const exists = fs.existsSync(resolved);
     if (intent === "project-open" && !exists) throw new Error("Select an existing HDR Finisher project.");
-    knownProjectPaths.add(resolved);
-    return { ...(await grantPath(resolved, intent)), exists };
+    const selection = await grantPath(resolved, intent);
+    knownProjectPaths.add(pathKey(selection.path || resolved));
+    return { ...selection, exists };
   });
   handle("desktop:open-project", async () => {
     const result = await dialog.showOpenDialog(mainWindow, { title: "Open project", defaultPath: directoryPreference("projectImport", "documents"), properties: ["openFile"], filters: PROJECT_FILTERS });
     if (result.canceled) return null;
-    knownProjectPaths.add(path.resolve(result.filePaths[0]));
-    return grantPath(result.filePaths[0], "project-open");
+    const selection = await grantPath(result.filePaths[0], "project-open");
+    knownProjectPaths.add(pathKey(selection.path || result.filePaths[0]));
+    return selection;
   });
   handle("desktop:relink-source", async () => {
     const result = await dialog.showOpenDialog(mainWindow, { title: "Relink original source", properties: ["openFile"], filters: SOURCE_FILTERS });
@@ -510,7 +536,7 @@ function registerIpc() {
   });
   handle("desktop:save-project", async (options = {}) => {
     const saveAs = Boolean(options.saveAs);
-    if (!saveAs && documentState.path && knownProjectPaths.has(path.resolve(documentState.path))) {
+    if (!saveAs && documentState.path && knownProjectPaths.has(pathKey(documentState.path))) {
       return grantPath(documentState.path, "project-save");
     }
     const suggested = safeSuggestedName(options.suggestedName, "Untitled.hdrfinisher");
@@ -521,8 +547,9 @@ function registerIpc() {
     });
     if (result.canceled || !result.filePath) return null;
     const projectPath = isProjectPath(result.filePath) ? result.filePath : `${result.filePath}.hdrfinisher`;
-    knownProjectPaths.add(path.resolve(projectPath));
-    return grantPath(projectPath, "project-save");
+    const selection = await grantPath(projectPath, "project-save");
+    knownProjectPaths.add(pathKey(selection.path || projectPath));
+    return selection;
   });
   handle("desktop:confirm-unsaved-transition", async (options = {}) => {
     if (!documentState.dirty) return "discard";
@@ -559,8 +586,8 @@ function registerIpc() {
     });
     if (result.canceled || !result.filePath || !isExportPath(result.filePath)) return null;
     const resolved = path.resolve(result.filePath);
-    grantedExportPaths.add(resolved);
     const selection = await grantPath(resolved, "export-file");
+    grantedExportPaths.add(pathKey(selection.path || resolved));
     // A returned native Windows or macOS Save dialog has already obtained
     // overwrite approval when this target exists. Bind that approval to the
     // exact file identity so a later replacement still requires a fresh
@@ -573,8 +600,9 @@ function registerIpc() {
     const results = [];
     for (const filePath of paths) {
       if (isProjectPath(filePath)) {
-        knownProjectPaths.add(path.resolve(filePath));
-        results.push({ kind: "project", ...(await grantPath(filePath, "project-open")) });
+        const selection = await grantPath(filePath, "project-open");
+        knownProjectPaths.add(pathKey(selection.path || filePath));
+        results.push({ kind: "project", ...selection });
       } else if (isSourcePath(filePath)) {
         results.push({ kind: "source", ...(await grantPath(filePath, "source-open")) });
       }
@@ -583,13 +611,13 @@ function registerIpc() {
   });
   handle("desktop:reveal-path", async (filePath) => {
     const resolved = path.resolve(String(filePath || ""));
-    if (!grantedExportPaths.has(resolved)) throw new Error("Only exports created in this run can be revealed.");
+    if (!grantedExportPaths.has(pathKey(resolved))) throw new Error("Only exports created in this run can be revealed.");
     shell.showItemInFolder(resolved);
     return true;
   });
   handle("desktop:open-path", async (filePath) => {
     const resolved = path.resolve(String(filePath || ""));
-    if (!grantedExportPaths.has(resolved)) throw new Error("Only exports created in this run can be opened.");
+    if (!grantedExportPaths.has(pathKey(resolved))) throw new Error("Only exports created in this run can be opened.");
     return shell.openPath(resolved);
   });
   handle("desktop:open-proof", async (url) => {
@@ -599,7 +627,7 @@ function registerIpc() {
   });
   handle("desktop:set-document-state", (next = {}) => {
     const nextPath = typeof next.path === "string" ? next.path : "";
-    if (nextPath && !knownProjectPaths.has(path.resolve(nextPath))) throw new Error("Unknown project path.");
+    if (nextPath && !knownProjectPaths.has(pathKey(nextPath))) throw new Error("Unknown project path.");
     documentState = {
       path: nextPath,
       dirty: Boolean(next.dirty),
@@ -681,8 +709,6 @@ function buildMenu() {
     {
       label: "View",
       submenu: [
-        { role: "reload" },
-        { type: "separator" },
         { role: "resetZoom" },
         { role: "zoomIn" },
         { role: "zoomOut" },
@@ -743,6 +769,7 @@ function saveWindowBounds() {
 
 async function createWindow() {
   forceClose = false;
+  rendererReady = false;
   const bounds = restoredBounds();
   mainWindow = new BrowserWindow({
     ...bounds,
@@ -769,6 +796,19 @@ async function createWindow() {
     event.preventDefault();
     requestClose();
   });
+  mainWindow.on("query-session-end", (event) => {
+    saveWindowBounds();
+    if (!documentState.dirty) return;
+    event.preventDefault();
+    dialog.showMessageBox(mainWindow, {
+      type: "warning",
+      title: "Save changes before signing out",
+      message: `HDR Finisher prevented Windows from closing ${documentState.displayName}.`,
+      detail: "Save or discard the document, then retry shutdown, restart, or sign out.",
+      buttons: ["OK"],
+      noLink: true,
+    }).catch(() => {});
+  });
   mainWindow.on("closed", () => {
     mainWindow = null;
     if (!shuttingDown) forceClose = false;
@@ -776,7 +816,6 @@ async function createWindow() {
   mainWindow.once("ready-to-show", () => mainWindow.show());
   await mainWindow.loadURL(backend.url);
   updateWindowDocumentState();
-  await dispatchPendingOpenPaths();
 }
 
 async function dispatchPendingOpenPaths() {
@@ -785,10 +824,10 @@ async function dispatchPendingOpenPaths() {
   pendingOpenPaths = [];
   for (const filePath of paths) {
     if (!isProjectPath(filePath)) continue;
-    knownProjectPaths.add(path.resolve(filePath));
-    app.addRecentDocument(path.resolve(filePath));
     try {
       const selection = await grantPath(filePath, "project-open");
+      knownProjectPaths.add(pathKey(selection.path || filePath));
+      app.addRecentDocument(selection.path || path.resolve(filePath));
       mainWindow.webContents.send("desktop:open-request", { kind: "project", ...selection });
     } catch (error) {
       await dialog.showMessageBox(mainWindow, { type: "error", message: "The project could not be opened.", detail: error.message, buttons: ["OK"] });
@@ -848,14 +887,14 @@ if (!gotLock) {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
-      dispatchPendingOpenPaths();
+      if (rendererReady) dispatchPendingOpenPaths();
     }
   });
   app.on("open-file", (event, filePath) => {
     event.preventDefault();
     if (!isProjectPath(filePath)) return;
     pendingOpenPaths.push(filePath);
-    if (mainWindow) dispatchPendingOpenPaths();
+    if (mainWindow && rendererReady) dispatchPendingOpenPaths();
   });
   app.on("before-quit", (event) => {
     if (shuttingDown) return;

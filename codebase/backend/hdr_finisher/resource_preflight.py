@@ -10,6 +10,11 @@ GIB = 1024**3
 UNKNOWN_RESOURCE_LARGE_THRESHOLD = 1 * GIB
 DEFAULT_GPU_MAX_TEXTURE_DIMENSION = 16_384
 DEFAULT_PROXY_LONG_EDGE = 4_096
+FULL_PREVIEW_BASELINE_DIMENSION = 4_096
+FULL_PREVIEW_MAX_DIMENSION = 16_384
+FULL_PREVIEW_MAX_PIXELS = 26_000_000
+FULL_PREVIEW_BYTES_PER_PIXEL = 80
+FULL_PREVIEW_FIXED_OVERHEAD_BYTES = 256 * 1024**2
 
 
 class ResourceDecision(str, Enum):
@@ -73,6 +78,18 @@ class ResourceEstimate:
         )
 
 
+@dataclass(frozen=True)
+class PreviewResourceEstimate:
+    requested_max_dimension: int
+    width: int
+    height: int
+    pixel_count: int
+    estimated_peak_bytes: int
+    safely_available_bytes: int | None
+    allowed: bool
+    reason: str
+
+
 def detect_memory_resources() -> ResourceSnapshot:
     try:
         import psutil
@@ -115,6 +132,64 @@ def detect_memory_resources() -> ResourceSnapshot:
         )
     except (AttributeError, OSError, TypeError, ValueError):
         return ResourceSnapshot(None, None, "unavailable")
+
+
+def estimate_preview_resources(
+    *,
+    width: int,
+    height: int,
+    max_dimension: int,
+    resources: ResourceSnapshot,
+) -> PreviewResourceEstimate:
+    if min(width, height, max_dimension) <= 0:
+        raise ValueError("Preview dimensions must be positive.")
+    requested = int(max_dimension)
+    scale = min(1.0, requested / max(width, height))
+    preview_width = max(1, int(round(width * scale)))
+    preview_height = max(1, int(round(height * scale)))
+    pixels = preview_width * preview_height
+    estimated = FULL_PREVIEW_FIXED_OVERHEAD_BYTES + pixels * FULL_PREVIEW_BYTES_PER_PIXEL
+
+    reserve = None
+    safely_available = None
+    if resources.total_ram_bytes is not None and resources.available_ram_bytes is not None:
+        reserve = max(2 * GIB, int(resources.total_ram_bytes * 0.15))
+        safely_available = max(0, resources.available_ram_bytes - reserve)
+
+    reason = ""
+    allowed = True
+    if max(preview_width, preview_height) > FULL_PREVIEW_MAX_DIMENSION:
+        allowed = False
+        reason = (
+            f"Full preview would be {preview_width:,} × {preview_height:,}, above the "
+            f"{FULL_PREVIEW_MAX_DIMENSION:,}-pixel safety limit in either dimension."
+        )
+    elif pixels > FULL_PREVIEW_MAX_PIXELS:
+        allowed = False
+        reason = (
+            f"Full preview would contain {pixels / 1_000_000:.1f} megapixels, above the "
+            f"{FULL_PREVIEW_MAX_PIXELS / 1_000_000:.0f}-megapixel working-memory limit."
+        )
+    elif max(preview_width, preview_height) > FULL_PREVIEW_BASELINE_DIMENSION and safely_available is None:
+        allowed = False
+        reason = "System memory could not be measured, so Full preview safety cannot be confirmed."
+    elif max(preview_width, preview_height) > FULL_PREVIEW_BASELINE_DIMENSION and estimated > (safely_available or 0):
+        allowed = False
+        reason = (
+            f"Full preview is estimated to need {estimated / GIB:.2f} GiB of working memory; "
+            f"only {(safely_available or 0) / GIB:.2f} GiB is safely available."
+        )
+
+    return PreviewResourceEstimate(
+        requested_max_dimension=requested,
+        width=preview_width,
+        height=preview_height,
+        pixel_count=pixels,
+        estimated_peak_bytes=estimated,
+        safely_available_bytes=safely_available,
+        allowed=allowed,
+        reason=reason,
+    )
 
 
 def estimate_resources(

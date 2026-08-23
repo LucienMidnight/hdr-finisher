@@ -175,6 +175,15 @@ def test_real_png_upload_preview_and_scopes() -> None:
     assert int(proxy.headers["x-image-width"]) <= 512
     assert int(proxy.headers["x-bytes-per-row"]) % 256 == 0
 
+    preview_preflight = client.get(
+        f"/api/session/{session_id}/preview-preflight",
+        params={"max_dimension": 4096},
+    )
+    assert preview_preflight.status_code == 200
+    assert preview_preflight.json()["allowed"] is True
+    assert preview_preflight.json()["width"] <= 4096
+    assert preview_preflight.json()["height"] <= 4096
+
     half_proxy = client.get(f"/api/session/{session_id}/proxy/hdr?long_edge=512&format=rgba16f")
     assert half_proxy.headers["x-pixel-format"] == "rgba16float"
     assert len(half_proxy.content) <= len(proxy.content)
@@ -642,6 +651,31 @@ def test_export_endpoint_returns_backend_payload(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["backend"] == "avif_gain_map"
     assert response.json()["output_path"].endswith(".avif")
+
+
+def test_desktop_export_grant_rejects_format_suffix_escape(monkeypatch, tmp_path: Path) -> None:
+    from hdr_finisher import main as main_module
+
+    upload = client.post("/api/session", files={"file": ("fixture.png", make_png_bytes(), "image/png")})
+    session_id = upload.json()["session"]["session_id"]
+    selected = tmp_path / "selected.jpg"
+    grant, _ = main_module.desktop_path_grants.issue(str(selected), "export-file")
+
+    class ForbiddenBackend:
+        def export(self, _session, _settings):
+            pytest.fail("backend ran after the desktop grant suffix changed")
+
+    monkeypatch.setattr(main_module, "desktop_authoring_secret", "test-secret")
+    monkeypatch.setattr(main_module, "export_backends", {"avif_gain_map": ForbiddenBackend()})
+    response = client.post(
+        f"/api/session/{session_id}/export",
+        headers={"X-HDR-Finisher-Token": "test-secret"},
+        json={"format": "avif_gain_map", "output_path": str(selected), "path_grant": grant},
+    )
+
+    assert response.status_code == 400
+    assert "must end in .avif" in response.json()["detail"]
+    assert not (tmp_path / "selected.avif").exists()
 
 
 def test_export_endpoint_rejects_unknown_format_before_backend_dispatch() -> None:

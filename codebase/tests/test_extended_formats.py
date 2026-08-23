@@ -129,6 +129,9 @@ def test_sdr_jpegxl_round_trip_is_explicit_eight_bit_srgb(tmp_path: Path) -> Non
     assert metadata["sample_type"] == "integer"
     assert metadata["jpegxl_direct_hdr"] is False
     assert metadata["needs_color_override"] is False
+    loaded_203, *_ = load_image(path, hdr_reference_white_nits=203)
+    loaded_100, *_ = load_image(path, hdr_reference_white_nits=100)
+    np.testing.assert_allclose(loaded_100, loaded_203, rtol=1e-6, atol=1e-6)
 
 
 def test_jpegxl_decode_reads_the_container_once(tmp_path: Path, monkeypatch) -> None:
@@ -485,12 +488,29 @@ def test_media_browser_migrates_legacy_favorites_to_pinned(tmp_path: Path) -> No
     folder = tmp_path / "legacy-pin"
     app_data.mkdir()
     folder.mkdir()
-    (app_data / "favorite-folders.json").write_text(f'["{folder}"]', encoding="utf-8")
+    (app_data / "favorite-folders.json").write_text(json.dumps([str(folder)]), encoding="utf-8")
     browser = MediaBrowserStore(app_data)
 
     assert browser.pinned()[0]["path"] == str(folder)
     browser.add_pin(str(tmp_path))
     assert (app_data / "pinned-folders.json").is_file()
+
+
+def test_media_browser_uses_redirected_platform_user_folders(tmp_path: Path, monkeypatch) -> None:
+    from hdr_finisher import media_browser
+
+    folders = {name: tmp_path / f"redirected-{name}" for name in ["pictures", "downloads", "desktop", "documents"]}
+    for folder in folders.values():
+        folder.mkdir()
+    monkeypatch.setattr(media_browser, "_user_folder", folders.__getitem__)
+    browser = MediaBrowserStore(tmp_path / "app-data")
+
+    listing = browser.list_directory(str(tmp_path), "source")
+
+    locations = {item["name"].lower(): item["path"] for item in listing["locations"]}
+    assert all(locations[name] == str(path) for name, path in folders.items())
+    assert browser._default_directory("source") == folders["pictures"]
+    assert browser._default_directory("project_open") == folders["documents"]
 
 
 @pytest.mark.parametrize(
@@ -716,6 +736,34 @@ def test_raw_redevelopment_preserves_edit_document_and_session_identity(tmp_path
     assert reloaded.dirty is True
     assert reloaded.undo_history == original_history
     assert reloaded.raw_import_settings.lens.mode == "off"
+
+
+def test_import_job_redevelopment_preserves_project_reference_white(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "source.png"
+    Image.new("RGB", (32, 16), (80, 120, 160)).save(source)
+    sessions = SessionStore()
+    initial = sessions.create_session(source, hdr_reference_white_nits=100)
+    browser = MediaBrowserStore(tmp_path / "app-data")
+    manager = ImportJobManager(sessions, browser, workers=1)
+    original_prepare = sessions.prepare_session
+    observed_reference: list[int] = []
+
+    def tracked_prepare(path, *args, **kwargs):
+        observed_reference.append(kwargs.get("hdr_reference_white_nits"))
+        return original_prepare(path, *args, **kwargs)
+
+    monkeypatch.setattr(sessions, "prepare_session", tracked_prepare)
+    try:
+        job = manager.start(source, RawImportSettings(), replace_session_id=initial.session_id)
+        deadline = time.monotonic() + 5
+        while job.state not in {"ready", "error"} and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+        assert job.state == "ready", job.error
+        assert observed_reference == [100]
+        assert sessions.get(initial.session_id).hdr_reference_white_nits == 100
+    finally:
+        manager.close()
 
 
 def test_latest_import_wins_even_when_previous_decode_is_in_flight(tmp_path: Path, monkeypatch) -> None:

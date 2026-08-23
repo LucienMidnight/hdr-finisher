@@ -836,7 +836,7 @@ body[data-active-lane="sdr"] .lane-dot {
   color: var(--text);
 }
 
-.toolbar-preview-toggle {
+.toolbar-preview-resolution {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -850,15 +850,20 @@ body[data-active-lane="sdr"] .lane-dot {
   white-space: nowrap;
 }
 
-.toolbar-preview-toggle input {
-  width: 14px;
-  height: 14px;
+.toolbar-preview-resolution select {
+  width: 62px;
+  min-width: 62px;
+  height: 24px;
   margin: 0;
-  accent-color: var(--accent);
+  padding: 2px 20px 2px 6px;
+  border: 1px solid var(--hairline);
+  background-color: var(--input);
+  color: var(--body);
   cursor: pointer;
+  font: 500 9px/1 var(--mono);
 }
 
-.toolbar-preview-toggle::after {
+.toolbar-preview-resolution::after {
   content: attr(data-tooltip);
   position: absolute;
   z-index: 50;
@@ -886,8 +891,8 @@ body[data-active-lane="sdr"] .lane-dot {
   transition: opacity 120ms ease, transform 120ms ease;
 }
 
-.toolbar-preview-toggle:hover::after,
-.toolbar-preview-toggle:focus-within::after {
+.toolbar-preview-resolution:hover::after,
+.toolbar-preview-resolution:focus-within::after {
   opacity: 1;
   transform: translateY(0);
 }
@@ -2975,7 +2980,7 @@ body[data-active-lane="sdr"] .grade-rail {
     padding-inline: 5px;
   }
 
-  .toolbar-preview-toggle {
+  .toolbar-preview-resolution {
     gap: 4px;
     padding-inline: 3px;
   }

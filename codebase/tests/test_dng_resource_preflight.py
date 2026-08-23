@@ -4,6 +4,7 @@ from hdr_finisher.resource_preflight import (
     GIB,
     ResourceDecision,
     ResourceSnapshot,
+    estimate_preview_resources,
     estimate_resources,
 )
 
@@ -74,3 +75,45 @@ def test_gpu_dimension_gate_builds_bounded_proxy_without_rejecting_cpu() -> None
     assert estimate.import_decision is ResourceDecision.PASS
     assert estimate.full_frame_gpu_compatible is False
     assert max(estimate.proxy_width, estimate.proxy_height) == 4_096
+
+
+def test_4k_preview_is_hard_capped_in_both_dimensions_without_memory_probe() -> None:
+    estimate = estimate_preview_resources(
+        width=6_000,
+        height=8_000,
+        max_dimension=4_096,
+        resources=ResourceSnapshot(None, None, "unavailable"),
+    )
+    assert estimate.allowed is True
+    assert (estimate.width, estimate.height) == (3_072, 4_096)
+    assert estimate.width <= 4_096 and estimate.height <= 4_096
+
+
+def test_full_preview_allows_common_24mp_source_with_safe_memory() -> None:
+    estimate = estimate_preview_resources(
+        width=6_000,
+        height=4_000,
+        max_dimension=6_000,
+        resources=ResourceSnapshot(32 * GIB, 20 * GIB, "test"),
+    )
+    assert estimate.allowed is True
+    assert (estimate.width, estimate.height) == (6_000, 4_000)
+
+
+def test_full_preview_rejects_unsafe_memory_or_excessive_pixel_count() -> None:
+    low_memory = estimate_preview_resources(
+        width=6_000,
+        height=4_000,
+        max_dimension=6_000,
+        resources=ResourceSnapshot(8 * GIB, 3 * GIB, "test"),
+    )
+    oversized = estimate_preview_resources(
+        width=8_000,
+        height=6_000,
+        max_dimension=8_000,
+        resources=ResourceSnapshot(64 * GIB, 48 * GIB, "test"),
+    )
+    assert low_memory.allowed is False
+    assert "working memory" in low_memory.reason
+    assert oversized.allowed is False
+    assert "megapixels" in oversized.reason

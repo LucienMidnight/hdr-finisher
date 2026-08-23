@@ -1,12 +1,33 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  allowedDocumentationUrl,
+  allowedProjectUrl,
   allowedProofUrl,
   isExportPath,
   isProjectPath,
   isSourcePath,
+  pathKey,
   safeSuggestedName,
 } = require("../lib/validation");
+
+test("Windows path keys are case-insensitive without changing POSIX identity", () => {
+  assert.equal(pathKey("C:\\Mixed\\Project.hdrfinisher", "win32"), pathKey("c:\\mixed\\project.HDRFINISHER", "win32"));
+  assert.notEqual(pathKey("/Mixed/Project.hdrfinisher", "linux"), pathKey("/mixed/project.hdrfinisher", "linux"));
+});
+
+test("project website allowlist rejects sibling repository prefixes", () => {
+  assert.equal(allowedProjectUrl("https://github.com/LucienMidnight/hdr-finisher"), true);
+  assert.equal(allowedProjectUrl("https://github.com/LucienMidnight/hdr-finisher/releases/tag/v0.7.3"), true);
+  assert.equal(allowedProjectUrl("https://github.com/LucienMidnight/hdr-finisher-malicious"), false);
+});
+
+test("documentation allowlist permits bundled help sources but rejects arbitrary sites", () => {
+  assert.equal(allowedDocumentationUrl("https://www.itu.int/rec/R-REC-BT.2100"), true);
+  assert.equal(allowedDocumentationUrl("https://support.microsoft.com/en-us/windows/example"), true);
+  assert.equal(allowedDocumentationUrl("https://example.com/fake-help"), false);
+  assert.equal(allowedDocumentationUrl("http://www.itu.int/rec/R-REC-BT.2100"), false);
+});
 const { backendCommand, backendExecutableName, sourcePythonPath } = require("../lib/runtime");
 
 test("desktop path types are restricted to supported extensions", () => {

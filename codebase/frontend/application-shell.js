@@ -175,10 +175,14 @@
   function normalizeKey(event) {
     const aliases = { " ": "Space", Escape: "Esc", ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left", ArrowRight: "Right" };
     let key = aliases[event.key] || event.key;
+    if (event.shiftKey && /^Digit[0-9]$/.test(event.code || "")) key = event.code.slice(5);
     if (!key || ["Control", "Meta", "Shift", "Alt"].includes(key)) return "";
     if (key.length === 1) key = key.toUpperCase();
     const parts = [];
-    if (event.ctrlKey || event.metaKey) parts.push("Mod");
+    const mac = isMacPlatform();
+    if (mac ? event.metaKey : event.ctrlKey) parts.push("Mod");
+    if (mac && event.ctrlKey) parts.push("Ctrl");
+    if (!mac && event.metaKey) parts.push("Meta");
     if (event.shiftKey && key !== "Shift") parts.push("Shift");
     if (event.altKey && key !== "Alt") parts.push("Alt");
     parts.push(key);
@@ -190,6 +194,8 @@
     const mac = isMacPlatform();
     return value.split("+").map((part) => {
       if (part === "Mod") return mac ? "⌘" : "Ctrl";
+      if (part === "Ctrl") return mac ? "⌃" : "Ctrl";
+      if (part === "Meta") return mac ? "Meta" : "Win";
       if (part === "Shift") return mac ? "⇧" : "Shift";
       if (part === "Alt") return mac ? "⌥" : "Alt";
       return part;
@@ -223,6 +229,11 @@
 
   function handleShortcutKeydown(event) {
     if (shell.recordingAction || event.isComposing) return;
+    if (
+      event.target instanceof HTMLInputElement
+      && event.target.type === "range"
+      && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)
+    ) return;
     const action = findActionForEvent(event);
     if (!action || (isTypingTarget(event.target) && !action.global)) return;
     if (event.repeat && !action.repeatable) return;
@@ -238,6 +249,11 @@
     shell.heldActions.delete(event.code || event.key);
     event.preventDefault();
     action.execute(event, "keyup");
+  }
+
+  function releaseHeldActions() {
+    for (const action of new Set(shell.heldActions.values())) action.execute({}, "keyup");
+    shell.heldActions.clear();
   }
 
   function openDialog(dialog, focusTarget) {
@@ -677,7 +693,11 @@
       const docLink = event.target.closest("[data-help-document]");
       if (docLink) { event.preventDefault(); loadDocument(docLink.dataset.helpDocument); return; }
       const external = event.target.closest('a[target="_blank"]');
-      if (external?.href.startsWith(PROJECT_URL)) { event.preventDefault(); openProjectWebsite(external.href); }
+      if (external && shell.desktop?.openDocumentation) {
+        event.preventDefault();
+        if (external.href.startsWith(PROJECT_URL)) openProjectWebsite(external.href);
+        else shell.desktop.openDocumentation(external.href).catch((error) => window.alert(error?.message || "That documentation link could not be opened."));
+      }
     });
     byId("settings-check-updates").addEventListener("click", () => checkForUpdates({ force: true, manual: true }));
     byId("update-notice-open").addEventListener("click", () => openProjectWebsite(byId("update-notice").dataset.url));
@@ -688,6 +708,10 @@
     });
     window.addEventListener("keydown", handleShortcutKeydown, true);
     window.addEventListener("keyup", handleShortcutKeyup, true);
+    window.addEventListener("blur", releaseHeldActions);
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) releaseHeldActions();
+    });
   }
 
   async function init(options = {}) {

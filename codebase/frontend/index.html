@@ -205,13 +205,18 @@
             <div id="viewer-options-popover" class="viewer-secondary-tools" role="group" aria-label="Viewer options">
               <button id="overlay-toggle" class="tool-button" type="button" aria-expanded="false" aria-controls="overlay-popover">Overlays: Off</button>
               <label
-                class="toolbar-preview-toggle"
-                for="high-quality-preview"
-                data-tooltip="Uses more GPU memory for a larger preview. Export quality is unchanged."
-                title="Uses more GPU memory for a larger preview. Export quality is unchanged."
+                class="toolbar-preview-resolution"
+                for="preview-resolution"
+                data-tooltip="Sets the maximum preview width and height. Higher settings use more memory; export quality is unchanged."
+                title="Sets the maximum preview width and height. Higher settings use more memory; export quality is unchanged."
               >
-                <span>High-res Preview</span>
-                <input id="high-quality-preview" type="checkbox">
+                <span>Preview</span>
+                <select id="preview-resolution" aria-label="Preview resolution">
+                  <option value="1024">1K</option>
+                  <option value="2048">2K</option>
+                  <option value="4096">4K</option>
+                  <option value="full">Full</option>
+                </select>
               </label>
               <span id="preview-quality-status" class="preview-quality-status" aria-live="polite">Standard</span>
             </div>
@@ -726,7 +731,7 @@
           </div>
           <div class="control-group-body">
             <p class="helper">Adjust exposure by scene brightness. 0 EV is the app's 100-nit diffuse-white reference; the dashed edge marks the 10,000-nit PQ limit.</p>
-            <canvas id="tone-equalizer-editor" width="320" height="220" tabindex="0" aria-label="HDR exposure bands editor. Left-click the curve to add a band, right-click an interior band to remove it, or drag a band to adjust it. Use left and right arrows to select a band, up and down arrows to adjust exposure, brackets to change influence, and Delete to remove an interior band."></canvas>
+            <canvas id="tone-equalizer-editor" width="320" height="220" tabindex="0" aria-label="HDR exposure bands editor. Left-click the curve to add a band and keep holding to drag the new band immediately; right-click an interior band to remove it, or drag an existing band to adjust it. Use left and right arrows to select a band, up and down arrows to adjust exposure, brackets to change influence, and Delete to remove an interior band."></canvas>
             <div class="curve-actions tone-equalizer-actions">
               <button id="tone-equalizer-add" type="button" class="text-button">Add Band</button>
               <button id="tone-equalizer-remove" type="button" class="text-button">Remove Band</button>
@@ -905,7 +910,7 @@
               <span>Copies once; SDR remains independent.</span>
             </div>
             <p class="helper">Adjust the tone-mapped SDR image by brightness. Bands are relative to 18% display-linear gray; values above 100% are clipped by the SDR output.</p>
-            <canvas id="sdr-tone-equalizer-editor" width="320" height="220" tabindex="0" aria-label="SDR exposure bands editor. Left-click the curve to add a band, right-click an interior band to remove it, or drag a band to adjust it."></canvas>
+            <canvas id="sdr-tone-equalizer-editor" width="320" height="220" tabindex="0" aria-label="SDR exposure bands editor. Left-click the curve to add a band and keep holding to drag the new band immediately; right-click an interior band to remove it, or drag an existing band to adjust it."></canvas>
             <div class="curve-actions tone-equalizer-actions">
               <button id="sdr-tone-equalizer-add" type="button" class="text-button">Add Band</button>
               <button id="sdr-tone-equalizer-remove" type="button" class="text-button">Remove Band</button>
@@ -1005,7 +1010,7 @@
               <button id="curve-remove" type="button" class="text-button">Remove</button>
             </div>
           </div>
-          <canvas id="curve-editor" width="320" height="220" tabindex="0" aria-label="RGB curve editor. Left-click the curve to add a point, right-click an interior point to remove it, or drag a point to adjust it."></canvas>
+          <canvas id="curve-editor" width="320" height="220" tabindex="0" aria-label="RGB curve editor. Left-click the curve to add a point and keep holding to drag the new point immediately; right-click an interior point to remove it, or drag an existing point to adjust it."></canvas>
           <p id="curve-status" class="helper">Curves apply only to the active branch.</p>
         </div>
       </section>
@@ -1302,7 +1307,7 @@
           <img id="directory-browser-preview" alt="" hidden>
         </div>
         <strong id="directory-browser-selection">No image selected</strong>
-        <span id="directory-browser-preview-note">Select a supported image to preview it.</span>
+        <span id="directory-browser-preview-note" role="status" aria-live="polite">Select a supported image to preview it.</span>
       </aside>
     </div>
     <div class="directory-browser-actions">
@@ -1353,7 +1358,7 @@
         </section>
         <section data-settings-panel="shortcuts" hidden>
           <div class="settings-section-heading"><div><h3>Keyboard shortcuts</h3><p class="helper">Only standard application commands are assigned by default. Select a shortcut, then press a key combination. Backspace clears it; Escape cancels recording.</p></div><button id="shortcuts-reset-all" class="button-secondary" type="button">Reset all</button></div>
-          <div class="shortcut-hardware-note"><strong>Control wheels and Stream Decks</strong><span>Any slider can be assigned Increase, Decrease, and Reset actions. Holding a key repeats; Shift makes an adjustment 10× larger and Alt/Option makes it 10× finer.</span></div>
+          <div class="shortcut-hardware-note"><span>Any slider can be assigned Increase, Decrease, and Reset actions. Holding a key repeats; Shift or Alt/Option makes an adjustment 10× finer.</span></div>
           <div class="shortcut-toolbar">
             <input id="shortcut-search" type="search" placeholder="Search commands and controls" aria-label="Search shortcuts">
             <select id="shortcut-preset" aria-label="Shortcut preset"><option value="">Shortcut presets…</option></select>

@@ -123,13 +123,25 @@ class SDRPNGExportBackend(ExportBackend):
         _require_overwrite_permission(Path(output_path), settings)
         finishing_adjustments = _finishing_adjustments_for_export(session)
         image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
-        _write_sdr_png(
-            Path(output_path),
-            image,
-            bit_depth=settings.sdr_png_bit_depth,
-            dithering=settings.dithering,
-            exif_payload=_source_exif_payload(session, settings.metadata_policy),
-        )
+        try:
+            _write_sdr_atomic(
+                Path(output_path),
+                ".png",
+                lambda staged: _write_sdr_png(
+                    staged,
+                    image,
+                    bit_depth=settings.sdr_png_bit_depth,
+                    dithering=settings.dithering,
+                    exif_payload=_source_exif_payload(session, settings.metadata_policy),
+                ),
+            )
+        except (ExportProcessError, OSError, ValueError) as exc:
+            return ExportResponse(
+                accepted=False,
+                backend=self.name,
+                message=f"SDR PNG export failed: {exc}",
+                output_path=output_path,
+            )
         return ExportResponse(
             accepted=True,
             backend=self.name,
@@ -150,13 +162,17 @@ class SDRJPEGExportBackend(ExportBackend):
         finishing_adjustments = _finishing_adjustments_for_export(session)
         image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
         try:
-            _write_sdr_jpeg(
+            _write_sdr_atomic(
                 Path(output_path),
-                image,
-                quality=settings.quality,
-                chroma_subsampling=settings.jpeg_chroma_subsampling,
-                dithering=settings.dithering,
-                exif_payload=_source_exif_payload(session, settings.metadata_policy),
+                ".jpg",
+                lambda staged: _write_sdr_jpeg(
+                    staged,
+                    image,
+                    quality=settings.quality,
+                    chroma_subsampling=settings.jpeg_chroma_subsampling,
+                    dithering=settings.dithering,
+                    exif_payload=_source_exif_payload(session, settings.metadata_policy),
+                ),
             )
         except (ExportProcessError, OSError, ValueError) as exc:
             return ExportResponse(
@@ -504,6 +520,28 @@ def _resolve_output_path(session_id: str, settings: ExportSettings, suffix: str)
 def _require_overwrite_permission(output_path: Path, settings: ExportSettings) -> None:
     if output_path.exists() and not settings.overwrite:
         raise ExportOverwriteRequired(output_path)
+
+
+def _write_sdr_atomic(output_path: Path, suffix: str, writer) -> None:
+    """Write a Pillow/imagecodecs SDR file without exposing partial output."""
+
+    staged_output: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            prefix=f".{output_path.stem}.", suffix=f".sdr.tmp{suffix}", dir=output_path.parent, delete=False
+        ) as staged_file:
+            staged_output = Path(staged_file.name)
+        writer(staged_output)
+        from PIL import Image
+
+        with Image.open(staged_output) as decoded:
+            decoded.verify()
+        with staged_output.open("ab") as staged_file:
+            os.fsync(staged_file.fileno())
+        os.replace(staged_output, output_path)
+        staged_output = None
+    finally:
+        _remove_incomplete_output(staged_output)
 
 
 def _write_sdr_png(

@@ -286,11 +286,25 @@ def test_curve_canvas_left_clicks_add_or_select_and_right_click_removes() -> Non
     assert 'if (!dragged && event.type !== "pointercancel") removeCurvePoint(pointIndex);' not in curve_binding
     assert "const curveHit = curveHitAtPointer(event.clientX, event.clientY, rect);" in curve_binding
     assert "const insertedIndex = addCurvePoint(curveHit.x);" in curve_binding
-    assert "beginDrag(event.clientX, event.clientY, insertedIndex, event.pointerId);" in curve_binding
+    assert "beginDrag(event, insertedIndex);" in curve_binding
+    assert "const pointerDelta = createPrecisionPointerDelta(startEvent);" in curve_binding
     assert 'canvas.addEventListener("lostpointercapture", stop);' in curve_binding
     assert 'canvas.addEventListener("contextmenu"' in curve_binding
     assert "removeCurvePoint(pointIndex);" in curve_binding
     assert "const layout = curveEditorLayout();" in javascript
+
+
+def test_shift_fine_adjustment_is_shared_by_ranges_and_graphs() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    assert "const FINE_ADJUSTMENT_SCALE = 0.1" in javascript
+    assert 'control.dataset.instrumentStep = String(declaredStep)' in javascript
+    assert '"Hold Shift while dragging or using arrow keys for 10× finer adjustment."' in javascript
+    assert javascript.count("createPrecisionPointerDelta(startEvent)") >= 2
+    assert "Control wheels and Stream Decks" not in html
+    assert "Any slider can be assigned Increase, Decrease, and Reset actions." in html
+    assert "Shift or Alt/Option makes an adjustment 10× finer." in html
 
 
 def test_hdr_curve_graph_uses_tokenized_exposure_band_styling() -> None:
@@ -477,7 +491,8 @@ def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     assert "renderExperimentalDngNote(file);" in javascript
     assert "renderExperimentalDngNote(entry);" in javascript
     assert "renderExperimentalDngNote(selection);" in javascript
-    assert '{ role: "reload" }' in (DESKTOP / "main.js").read_text(encoding="utf-8")
+    assert '{ role: "reload" }' not in (DESKTOP / "main.js").read_text(encoding="utf-8")
+    assert 'mainWindow.on("query-session-end"' in (DESKTOP / "main.js").read_text(encoding="utf-8")
     assert "/api/media-browser" in (FRONTEND / "app.js").read_text(encoding="utf-8")
     assert ".control-group-body" in css
     assert "border-top: 2px solid" in css
@@ -751,16 +766,20 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
 
-    assert 'id="high-quality-preview" type="checkbox"' in html
-    assert "High-res Preview" in html
-    assert "Uses more GPU memory for a larger preview. Export quality is unchanged." in html
-    assert html.index('id="overlay-toggle"') < html.index('id="high-quality-preview"') < html.index('id="overlay-popover"')
-    assert ".toolbar-preview-toggle::after" in css
+    assert 'id="preview-resolution" aria-label="Preview resolution"' in html
+    for value, label in [("1024", "1K"), ("2048", "2K"), ("4096", "4K"), ("full", "Full")]:
+        assert f'<option value="{value}">{label}</option>' in html
+    assert "Sets the maximum preview width and height." in html
+    assert html.index('id="overlay-toggle"') < html.index('id="preview-resolution"') < html.index('id="overlay-popover"')
+    assert ".toolbar-preview-resolution::after" in css
     assert "overflow-wrap: anywhere;" in css
     assert "white-space: normal;" in css
     assert 'id="scope-freshness"' in html and 'aria-live="polite"' in html
     assert '/static/preview-scheduler.js' in html
-    assert "state.highQualityPreview = false" in javascript
+    assert 'const DEFAULT_PREVIEW_RESOLUTION = "1024"' in javascript
+    assert "function previewTargetLongEdge" in javascript
+    assert "function fullPreviewSafety" in javascript
+    assert "FULL_PREVIEW_GPU_BUDGET_BYTES" in javascript
     assert "preview-raw" in javascript
     assert 'tier: "interactive"' in scheduler
     assert "requestAnimationFrame" in scheduler
@@ -795,8 +814,8 @@ def test_electron_preview_correctness_contract() -> None:
     assert "geometrySignature" not in gpu_eligibility
     assert "cached.geometrySignature === geometrySignature()" in javascript
     assert "state.comparisonRenderedGeometry === signature" in javascript
-    assert 'renderGpuDraft(lane, { longEdge: refinementProxyLongEdge(), tier: "refinement" })' in javascript
-    assert 'renderPreviewForLane(lane, true, refinementProxyLongEdge(), { showProgress: false })' in javascript
+    assert 'renderGpuDraft(lane, { longEdge: targetLongEdge, tier: "refinement" })' in javascript
+    assert 'renderPreviewForLane(lane, true, targetLongEdge, { showProgress: false })' in javascript
     assert "function closeRotateMode(commit)" in javascript
     assert "function useHdrSafeGeometryDraft()" in javascript
     assert 'transient_adjustments: true' in javascript

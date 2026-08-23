@@ -243,6 +243,8 @@ def decode_avif(
         "decode_timings_ms": {"inspect": round(inspect_ms, 3)},
         "decoder_normalized_to_acescg": True,
     }
+    if transfer in {"PQ", "HLG"}:
+        metadata["decoder_reference_white_nits"] = 203.0
     return hdr.astype(np.float32), None, metadata
 
 

@@ -105,7 +105,8 @@ class SessionRenderCache:
         proxy, working_space = self.source_proxy(kind, long_edge)
         geometry = adjustments.shared.geometry
         signature = geometry.model_dump_json()
-        return apply_geometry(proxy, geometry), working_space, signature
+        fixed = apply_geometry(proxy, geometry)
+        return downsample_image(fixed, max(256, int(long_edge))), working_space, signature
 
     def source_pair(self, long_edge: int) -> tuple[np.ndarray, np.ndarray | None]:
         """Return the matched source and authored-SDR proxy inputs used by exporters."""
@@ -126,6 +127,12 @@ class SessionRenderCache:
                 return cached
         source, _sdr_reference = self._proxies(edge)
         result = geometry_coordinate_map(source.shape[1], source.shape[0], geometry)
+        output_to_source, source_to_output, output_width, output_height = result
+        if max(output_width, output_height) > edge:
+            scale = edge / max(output_width, output_height)
+            output_width = max(1, int(round(output_width * scale)))
+            output_height = max(1, int(round(output_height * scale)))
+            result = output_to_source, source_to_output, output_width, output_height
         with self._lock:
             self._geometry_maps[key] = result
             self._geometry_maps.move_to_end(key)
@@ -151,11 +158,14 @@ class SessionRenderCache:
         assert masks is not None
         mask = masks[local_adjustment.id]
         if spatial_only or mask_influence_opacity(local_adjustment.mask) >= 1.0:
-            return mask
+            return downsample_image(mask, edge)
         # The compatibility/influence endpoint remains byte-identical to the
         # authoritative evaluator. Interactive GPU clients request spatial_only
         # and keep the reusable base texture resident instead.
-        return compile_geometry_fixed_mask(source, local_adjustment.mask, adjustments.shared.geometry)
+        return downsample_image(
+            compile_geometry_fixed_mask(source, local_adjustment.mask, adjustments.shared.geometry),
+            edge,
+        )
 
     def compiled_mask_draft(
         self,
@@ -166,7 +176,7 @@ class SessionRenderCache:
         """Compile an uncommitted mask with the exact settled-render pipeline."""
         edge = max(256, int(long_edge))
         source, _sdr_reference = self._proxies(edge)
-        return compile_geometry_fixed_mask(source, expression, adjustments.shared.geometry)
+        return downsample_image(compile_geometry_fixed_mask(source, expression, adjustments.shared.geometry), edge)
 
     def sample_luminance(
         self,
@@ -177,7 +187,7 @@ class SessionRenderCache:
         """Sample the same fixed ACEScg source used by content masks."""
         edge = max(256, int(long_edge))
         source, _sdr_reference = self._proxies(edge)
-        fixed_source = apply_geometry(source, adjustments.shared.geometry)
+        fixed_source = downsample_image(apply_geometry(source, adjustments.shared.geometry), edge)
         return sample_luminance_evs(fixed_source, points)
 
     def adjusted_frame(
@@ -226,6 +236,7 @@ class SessionRenderCache:
                 compiled_local_masks=compiled_masks,
                 color_context=self.color_context,
             )
+            processed = downsample_image(processed, edge)
             if is_current is not None and not is_current():
                 with self._lock:
                     self._stale_cancellations += 1

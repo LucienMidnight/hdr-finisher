@@ -51,7 +51,7 @@ class ImportJobManager:
     def __init__(self, sessions: SessionStore, browser: MediaBrowserStore, workers: int = 1) -> None:
         self.sessions = sessions
         self.browser = browser
-        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="hdr-import")
+        self._executor = ThreadPoolExecutor(max_workers=max(1, int(workers)), thread_name_prefix="hdr-import")
         self._lock = RLock()
         self._jobs: dict[str, ImportJob] = {}
         self._active_job_id: str | None = None
@@ -140,8 +140,11 @@ class ImportJobManager:
                 phase = "decoding"
             self._set_phase(job, "developing", phase, label)
             interpretation_override = SourceInterpretationOverride()
+            prepare_options: dict[str, object] = {}
             if job.replace_session_id is not None:
-                interpretation_override = self.sessions.get(job.replace_session_id).interpretation_override.model_copy(deep=True)
+                current_session = self.sessions.get(job.replace_session_id)
+                interpretation_override = current_session.interpretation_override.model_copy(deep=True)
+                prepare_options["hdr_reference_white_nits"] = current_session.hdr_reference_white_nits
             with self.browser.decode_slot():
                 session = self.sessions.prepare_session(
                     job.path,
@@ -149,6 +152,7 @@ class ImportJobManager:
                     owns_source_path=False,
                     raw_import_settings=job.raw_import_settings,
                     interpretation_override=interpretation_override,
+                    **prepare_options,
                     progress=lambda phase, label: self._set_progress_if_current(job, phase, label),
                     cancelled=job.cancel_event.is_set,
                 )

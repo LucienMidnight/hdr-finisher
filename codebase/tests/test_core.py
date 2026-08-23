@@ -73,10 +73,12 @@ def test_sdr_adjustments_return_display_safe_range() -> None:
     assert output.max() <= 1.0
 
 
-def test_preview_downsample_obeys_long_edge_cap() -> None:
-    image = np.zeros((200, 400, 3), dtype=np.float32)
+@pytest.mark.parametrize("shape", [(200, 400), (400, 200), (400, 400)])
+def test_preview_downsample_hard_caps_both_dimensions(shape: tuple[int, int]) -> None:
+    image = np.zeros((*shape, 3), dtype=np.float32)
     result = downsample_image(image, 100)
     assert max(result.shape[:2]) == 100
+    assert result.shape[0] <= 100 and result.shape[1] <= 100
 
 
 def test_preview_downsample_filters_high_frequency_detail_without_losing_hdr_range() -> None:

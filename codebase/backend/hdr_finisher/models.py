@@ -843,7 +843,7 @@ class PreviewRequest(BaseModel):
     request_id: str | None = None
     generation: int | None = Field(default=None, ge=0)
     tier: Literal["interactive", "settled", "refinement"] = "settled"
-    long_edge: int | None = Field(default=None, ge=256, le=2000)
+    long_edge: int | None = Field(default=None, ge=256, le=16384)
     hdr_display: bool = True
     include_locals: bool = True
     local_adjustments: list[LocalAdjustment] | None = None
@@ -857,7 +857,7 @@ class LocalMaskPreviewRequest(BaseModel):
     mask: MaskExpression
     adjustments: AdjustmentState | None = None
     edit_revision: int | None = Field(default=None, ge=0)
-    long_edge: int = Field(default=1600, ge=256, le=2000)
+    long_edge: int = Field(default=1600, ge=256, le=16384)
 
 
 class GeometryMapRequest(BaseModel):
@@ -865,7 +865,7 @@ class GeometryMapRequest(BaseModel):
 
     adjustments: AdjustmentState | None = None
     edit_revision: int | None = Field(default=None, ge=0)
-    long_edge: int = Field(default=1600, ge=256, le=2000)
+    long_edge: int = Field(default=1600, ge=256, le=16384)
 
 
 class GeometryMapResponse(BaseModel):
@@ -883,7 +883,7 @@ class LocalLuminanceSampleRequest(BaseModel):
 
     points: list[MaskPoint] = Field(min_length=1, max_length=512)
     edit_revision: int | None = Field(default=None, ge=0)
-    long_edge: int = Field(default=1600, ge=256, le=2000)
+    long_edge: int = Field(default=1600, ge=256, le=16384)
 
 
 class LocalLuminanceSampleResponse(BaseModel):

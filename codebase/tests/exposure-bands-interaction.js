@@ -42,17 +42,32 @@ function graphPosition(box, inputEv, adjustmentEv = 0) {
     const highResolution = await editor.evaluate((canvas) => canvas.width >= Math.floor(canvas.clientWidth * window.devicePixelRatio));
     if (!highResolution) throw new Error("Exposure Bands backing resolution did not match its displayed size and device pixel ratio.");
     const newBand = graphPosition(box, -1.5);
-    await editor.click({ position: newBand });
-    if (await nodeCount() !== 6) throw new Error("Left-clicking the Exposure Bands curve did not add a band.");
+    await page.mouse.move(box.x + newBand.x, box.y + newBand.y);
+    await page.mouse.down();
+    await page.mouse.move(box.x + newBand.x + 12, box.y + newBand.y - 16, { steps: 3 });
+    await page.mouse.up();
+    if (await nodeCount() !== 6) throw new Error("Pressing the Exposure Bands curve did not add a band.");
+    const createdBand = await page.evaluate(() => {
+      const nodes = window.HDRFinisherPerformance.authoringState().adjustments.hdr.tone_equalizer_nodes;
+      return nodes.find(({ input_ev }) => input_ev > -1.5 && input_ev < 0);
+    });
+    if (!createdBand || createdBand.adjustment_ev <= 0) {
+      throw new Error(`A newly created Exposure Band did not follow the original drag: ${JSON.stringify(createdBand)}`);
+    }
 
-    await editor.click({ button: "right", position: newBand });
+    await editor.click({ button: "right", position: graphPosition(box, createdBand.input_ev, createdBand.adjustment_ev) });
     if (await nodeCount() !== 5) throw new Error("Right-clicking the new Exposure Band did not remove it.");
 
     const endpoint = graphPosition(box, -6);
     await editor.click({ button: "right", position: endpoint });
     if (await nodeCount() !== 5) throw new Error("A fixed endpoint band should not be removable.");
 
-    const middle = graphPosition(box, 0);
+    const middleBand = await page.evaluate(() => {
+      const nodes = window.HDRFinisherPerformance.authoringState().adjustments.hdr.tone_equalizer_nodes;
+      return nodes.find(({ input_ev }) => Math.abs(input_ev) < 0.001);
+    });
+    if (!middleBand) throw new Error("The default 0 EV Exposure Band was missing.");
+    const middle = graphPosition(box, middleBand.input_ev, middleBand.adjustment_ev);
     await page.mouse.move(box.x + middle.x, box.y + middle.y);
     await page.mouse.down();
     await page.mouse.move(box.x + middle.x + 8, box.y + middle.y - 10, { steps: 3 });

@@ -95,6 +95,8 @@ async function main() {
     assert.equal(fs.existsSync(path.join(defaultPresetDirectory, "Keyboard Shortcuts")), true);
     assert.equal(fs.existsSync(path.join(defaultPresetDirectory, "Grading")), true);
     await window.locator('[data-settings-tab="shortcuts"]').click();
+    assert.equal(await window.locator(".shortcut-hardware-note strong").count(), 0);
+    assert.match(await window.locator(".shortcut-hardware-note").textContent(), /Shift or Alt\/Option makes an adjustment 10× finer/);
     const analysisShortcut = window.locator(".shortcut-row").filter({ hasText: "Toggle analysis panel" }).first();
     assert.equal(await analysisShortcut.locator(".shortcut-record").textContent(), "Not assigned");
     const screenshotShortcutPrevented = await window.evaluate(() => {
@@ -121,6 +123,20 @@ async function main() {
       await window.keyboard.press(modifier);
       assert.equal(await window.locator("#directory-browser").getAttribute("open"), null, `${modifier} alone must not open Import`);
     }
+    const shortcutModifierContract = await window.evaluate((platform) => {
+      const dispatch = (options) => {
+        const event = new KeyboardEvent("keydown", { key: ",", code: "Comma", bubbles: true, cancelable: true, ...options });
+        window.dispatchEvent(event);
+        return event.defaultPrevented;
+      };
+      return platform === "darwin"
+        ? { primary: dispatch({ metaKey: true }), nonPrimary: dispatch({ ctrlKey: true }) }
+        : { primary: dispatch({ ctrlKey: true }), nonPrimary: dispatch({ metaKey: true }) };
+    }, environment.platform);
+    assert.equal(shortcutModifierContract.primary, true, "the platform primary modifier should activate Mod shortcuts");
+    assert.equal(shortcutModifierContract.nonPrimary, false, "the non-primary OS modifier must not impersonate Mod");
+    await window.locator("#settings-dialog").waitFor({ state: "visible" });
+    await window.locator("#settings-close").click();
 
     await window.locator("#help-open").click();
     await window.locator("#help-document h1").waitFor({ state: "visible" });
@@ -230,6 +246,12 @@ async function main() {
       (previous) => Math.abs(Number(document.querySelector("#hdr-exposure")?.value) - (Number(previous) + 0.05)) < 1e-8,
       exposureBeforeShortcut,
     );
+    await window.keyboard.press("Shift+i");
+    const exposureAfterShortcuts = Number(exposureBeforeShortcut) + 0.055;
+    await window.waitForFunction(
+      (expected) => Math.abs(Number(document.querySelector("#hdr-exposure")?.value) - expected) < 1e-8,
+      exposureAfterShortcuts,
+    );
     assert.equal(await window.locator("#grade-modified-summary").textContent(), "");
     assert.equal(await window.locator('[data-modified-count="hdr-tone"]').textContent(), "");
     assert.ok((await window.locator('[data-group="hdr-tone"]').getAttribute("class")).includes("modified"));
@@ -243,7 +265,7 @@ async function main() {
     assert.equal(await savedToneRow.getByRole("button", { name: "Delete" }).isVisible(), true);
     const savedTonePresets = await window.evaluate(() => window.hdrFinisherDesktop.listGradingPresets("hdr-tone"));
     assert.equal(savedTonePresets.length, 1);
-    assert.equal(savedTonePresets[0].values["hdr.exposure"], Number(exposureBeforeShortcut) + 0.05);
+    assert.equal(savedTonePresets[0].values["hdr.exposure"], exposureAfterShortcuts);
     await window.locator("#group-preset-close").click();
     await window.evaluate(() => {
       commitAdjustmentValue("hdr.exposure", 1.25);
@@ -251,7 +273,7 @@ async function main() {
     });
     await window.locator('[data-group="hdr-tone"] .group-preset').click();
     await window.locator(".group-preset-row").filter({ hasText: "Smoke Tone Match" }).getByRole("button", { name: "Apply" }).click();
-    assert.equal(Number(await window.locator("#hdr-exposure").inputValue()), Number(exposureBeforeShortcut) + 0.05);
+    assert.equal(Number(await window.locator("#hdr-exposure").inputValue()), exposureAfterShortcuts);
     assert.equal(Number(await window.locator("#hdr-saturation").inputValue()), 0.4, "a Tone preset must not alter Color controls");
     assert.equal(await window.locator("#film-reference-model").count(), 0);
     await window.locator('[data-group="film-look"] .group-preset').click();

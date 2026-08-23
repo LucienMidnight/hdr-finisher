@@ -35,8 +35,14 @@ function curvePointPosition(box, x, y) {
 
     const box = await curve.boundingBox();
     if (!box) throw new Error("Curve editor was not visible.");
-    const highResolution = await curve.evaluate((canvas) => canvas.width >= Math.floor(canvas.clientWidth * window.devicePixelRatio));
-    if (!highResolution) throw new Error("Curve editor backing resolution did not match its displayed size and device pixel ratio.");
+    await page.waitForFunction(
+      () => {
+        const canvas = document.querySelector("#curve-editor");
+        return canvas && canvas.width >= Math.floor(canvas.clientWidth * window.devicePixelRatio);
+      },
+      null,
+      { timeout: 2000 },
+    );
     const addedPoint = curvePointPosition(box, 0.375, 0.375);
     await page.mouse.move(box.x + addedPoint.x, box.y + addedPoint.y);
     await page.mouse.down();

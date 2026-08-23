@@ -10,6 +10,7 @@ function subscribe(channel, callback) {
 contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   apiVersion: 1,
   environment: () => ipcRenderer.invoke("desktop:environment"),
+  rendererReady: () => ipcRenderer.invoke("desktop:renderer-ready"),
   getPreferences: () => ipcRenderer.invoke("desktop:get-preferences"),
   getDefaultPresetDirectory: () => ipcRenderer.invoke("desktop:get-default-preset-directory"),
   listGradingPresets: (groupId) => ipcRenderer.invoke("desktop:list-grading-presets", groupId),
@@ -20,6 +21,7 @@ contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   revealPreferenceDirectory: (key) => ipcRenderer.invoke("desktop:reveal-preference-directory", key),
   checkForUpdates: (options) => ipcRenderer.invoke("desktop:check-for-updates", options),
   openProjectWebsite: (url) => ipcRenderer.invoke("desktop:open-project-website", url),
+  openDocumentation: (url) => ipcRenderer.invoke("desktop:open-documentation", url),
   setRenderingMode: (mode) => ipcRenderer.invoke("desktop:set-rendering-mode", mode),
   writeClipboardText: (value) => ipcRenderer.invoke("desktop:write-clipboard-text", value),
   openSource: () => ipcRenderer.invoke("desktop:open-source"),

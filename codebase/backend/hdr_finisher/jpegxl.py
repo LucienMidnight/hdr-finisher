@@ -126,7 +126,8 @@ def decode_jpegxl(
         metadata["source_reference_white_nits"] = app_metadata.get("reference_white_nits")
     if confident:
         metadata["decoder_normalized_to_acescg"] = True
-        metadata["decoder_reference_white_nits"] = 203.0
+        if transfer in {"PQ", "HLG"}:
+            metadata["decoder_reference_white_nits"] = 203.0
     return np.asarray(image, dtype=np.float32), metadata
 
 

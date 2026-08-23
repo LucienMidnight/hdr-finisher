@@ -5,6 +5,7 @@ import ctypes
 import json
 import os
 import sys
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from threading import BoundedSemaphore, RLock
@@ -22,6 +23,22 @@ from .raw_import import RAW_EXTENSIONS
 
 FAST_THUMBNAIL_EXTENSIONS = RAW_EXTENSIONS | {".avif", ".png", ".jpg", ".jpeg", ".bmp"}
 THUMBNAIL_CACHE_VERSION = "natural-aspect-v4"
+
+WINDOWS_KNOWN_FOLDER_IDS = {
+    "desktop": "B4BFCC3A-DB2C-424C-B029-7FE99A87C641",
+    "documents": "FDD39AD0-238F-46AF-ADB4-6C85480369C7",
+    "downloads": "374DE290-123F-4565-9164-39C4925E467B",
+    "pictures": "33E28130-4E1E-4676-835A-98395C3BC3BB",
+}
+
+
+class _GUID(ctypes.Structure):
+    _fields_ = [
+        ("Data1", ctypes.c_ulong),
+        ("Data2", ctypes.c_ushort),
+        ("Data3", ctypes.c_ushort),
+        ("Data4", ctypes.c_ubyte * 8),
+    ]
 
 
 class MediaBrowserError(ValueError):
@@ -91,10 +108,10 @@ class MediaBrowserStore:
     def locations(self) -> list[dict[str, Any]]:
         home = Path.home()
         candidates = [
-            ("Pictures", home / "Pictures"),
-            ("Downloads", home / "Downloads"),
-            ("Desktop", home / "Desktop"),
-            ("Documents", home / "Documents"),
+            ("Pictures", _user_folder("pictures")),
+            ("Downloads", _user_folder("downloads")),
+            ("Desktop", _user_folder("desktop")),
+            ("Documents", _user_folder("documents")),
             ("Home", home),
             ("Exports", EXPORTS_DIR),
         ]
@@ -210,9 +227,9 @@ class MediaBrowserStore:
             EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
             return EXPORTS_DIR
         if mode in {"project_open", "project_save"}:
-            documents = Path.home() / "Documents"
+            documents = _user_folder("documents")
             return documents if documents.is_dir() else Path.home()
-        pictures = Path.home() / "Pictures"
+        pictures = _user_folder("pictures")
         return pictures if pictures.is_dir() else Path.home()
 
     @staticmethod
@@ -270,12 +287,19 @@ class MediaBrowserStore:
         os.replace(temporary, path)
 
     def _prune_thumbnails(self, maximum: int) -> None:
-        files = sorted(self.thumbnail_root.glob("*.jpg"), key=lambda item: item.stat().st_mtime_ns, reverse=True)
-        for stale in files[maximum:]:
-            try:
-                stale.unlink()
-            except OSError:
-                pass
+        with self._lock:
+            files: list[tuple[int, Path]] = []
+            for item in self.thumbnail_root.glob("*.jpg"):
+                try:
+                    files.append((item.stat().st_mtime_ns, item))
+                except OSError:
+                    continue
+            files.sort(key=lambda entry: entry[0], reverse=True)
+            for _modified, stale in files[maximum:]:
+                try:
+                    stale.unlink()
+                except OSError:
+                    pass
 
 
 def _connected_roots() -> list[Path]:
@@ -296,6 +320,38 @@ def _connected_roots() -> list[Path]:
         return roots
     anchor = Path.home().anchor
     return [Path(anchor)] if anchor else []
+
+
+def _user_folder(name: str) -> Path:
+    if os.name == "nt":
+        known = _windows_known_folder_path(name)
+        if known is not None:
+            return known
+    return Path.home() / name.capitalize()
+
+
+def _windows_known_folder_path(name: str) -> Path | None:
+    folder_id = WINDOWS_KNOWN_FOLDER_IDS.get(name)
+    if folder_id is None:
+        return None
+    allocation = ctypes.c_void_p()
+    try:
+        guid = _GUID.from_buffer_copy(uuid.UUID(folder_id).bytes_le)
+        get_known_folder = ctypes.windll.shell32.SHGetKnownFolderPath
+        get_known_folder.argtypes = [ctypes.POINTER(_GUID), ctypes.c_uint32, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+        get_known_folder.restype = ctypes.c_long
+        result = int(get_known_folder(ctypes.byref(guid), 0, None, ctypes.byref(allocation)))
+        if result != 0 or not allocation.value:
+            return None
+        return Path(ctypes.wstring_at(allocation.value))
+    except (AttributeError, OSError, TypeError, ValueError):
+        return None
+    finally:
+        if allocation.value:
+            try:
+                ctypes.windll.ole32.CoTaskMemFree(allocation)
+            except (AttributeError, OSError):
+                pass
 
 
 def _logical_drive_mask() -> int:

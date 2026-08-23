@@ -70,6 +70,11 @@ from .render_cache import StaleRender, encode_rgba_proxy
 from .display_probe import probe_displays
 from .proofing import EvidenceStore, ProofArtifactStore
 from .projects import ProjectError, open_project, save_project
+from .resource_preflight import (
+    FULL_PREVIEW_BASELINE_DIMENSION,
+    detect_memory_resources,
+    estimate_preview_resources,
+)
 from .scopes import build_scope_from_processed
 from .sessions import EditCommandError, RevisionConflictError, SessionStore
 from .test_pattern import build_delivery_proof_pattern
@@ -79,6 +84,41 @@ app = FastAPI(title=APP_NAME, version=APP_VERSION)
 desktop_authoring_secret = os.environ.get("HDR_FINISHER_DESKTOP_SECRET")
 desktop_control_secret = os.environ.get("HDR_FINISHER_DESKTOP_CONTROL_SECRET")
 desktop_path_grants = DesktopPathGrants()
+_EXPORT_SUFFIXES = {
+    "avif_gain_map": ".avif",
+    "jpeg_ultrahdr": ".jpg",
+    "jpegxl_hdr": ".jxl",
+    "sdr_jpeg": ".jpg",
+    "sdr_png": ".png",
+    "sdr_jpegxl": ".jxl",
+}
+
+
+def _preview_resource_payload(session, max_dimension: int) -> dict[str, object]:
+    estimate = estimate_preview_resources(
+        width=int(session.source.width),
+        height=int(session.source.height),
+        max_dimension=int(max_dimension),
+        resources=detect_memory_resources(),
+    )
+    return {
+        "allowed": estimate.allowed,
+        "reason": estimate.reason,
+        "requested_max_dimension": estimate.requested_max_dimension,
+        "width": estimate.width,
+        "height": estimate.height,
+        "pixel_count": estimate.pixel_count,
+        "estimated_peak_bytes": estimate.estimated_peak_bytes,
+        "safely_available_bytes": estimate.safely_available_bytes,
+    }
+
+
+def _guard_preview_resources(session, max_dimension: int) -> None:
+    if int(max_dimension) <= FULL_PREVIEW_BASELINE_DIMENSION:
+        return
+    payload = _preview_resource_payload(session, max_dimension)
+    if not payload["allowed"]:
+        raise HTTPException(status_code=507, detail=payload["reason"])
 
 
 @app.middleware("http")
@@ -436,12 +476,14 @@ def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
 
+    preview_long_edge = request.long_edge or session.preview.long_edge
+    _guard_preview_resources(session, preview_long_edge)
     token = store.next_preview_token(session_id, kind)
     try:
         processed = session.render_cache.adjusted_frame(
             adjustments,
             kind,
-            request.long_edge or session.preview.long_edge,
+            preview_long_edge,
             is_current=lambda: session.preview_tokens[kind] == token,
             local_adjustments=(
                 request.local_adjustments
@@ -465,6 +507,18 @@ def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
     return Response(content=body, media_type=media_type)
 
 
+@app.get("/api/session/{session_id}/preview-preflight")
+def preview_preflight(
+    session_id: str,
+    max_dimension: int = Query(ge=256, le=100_000),
+) -> dict[str, object]:
+    try:
+        session = store.get(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _preview_resource_payload(session, max_dimension)
+
+
 @app.post("/api/session/{session_id}/preview-raw/{kind}")
 def preview_raw(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Response:
     """Render ordinary CPU fallback grading directly into a browser canvas."""
@@ -475,12 +529,14 @@ def preview_raw(session_id: str, kind: PreviewKind, request: PreviewRequest) -> 
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
 
+    preview_long_edge = request.long_edge or (768 if kind == PreviewKind.SDR else 960)
+    _guard_preview_resources(session, preview_long_edge)
     token = store.next_preview_token(session_id, kind)
     try:
         processed = session.render_cache.adjusted_frame(
             adjustments,
             kind,
-            request.long_edge or (768 if kind == PreviewKind.SDR else 960),
+            preview_long_edge,
             is_current=lambda: session.preview_tokens[kind] == token,
             local_adjustments=(
                 request.local_adjustments
@@ -520,11 +576,13 @@ def overlay(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
     if adjustments.shared.overlay_mode == "off":
         return Response(status_code=204)
 
+    preview_long_edge = request.long_edge or session.preview.long_edge
+    _guard_preview_resources(session, preview_long_edge)
     try:
         processed = session.render_cache.adjusted_frame(
             adjustments,
             kind,
-            request.long_edge or session.preview.long_edge,
+            preview_long_edge,
             local_adjustments=(
                 request.local_adjustments
                 if request.local_adjustments is not None
@@ -612,7 +670,7 @@ def scopes_for_adjustments(
 def webgpu_proxy(
     session_id: str,
     kind: PreviewKind,
-    long_edge: int = Query(default=1600, ge=256, le=2000),
+    long_edge: int = Query(default=1600, ge=256, le=16384),
     format: str = Query(default="rgba16f", pattern="^(rgba16f|rgba32f)$"),
     edit_revision: int | None = Query(default=None, ge=0),
     geometry_signature: str | None = Query(default=None),
@@ -624,6 +682,7 @@ def webgpu_proxy(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
+    _guard_preview_resources(session, long_edge)
     proxy, working_space, authoritative_geometry_signature = session.render_cache.geometry_source_proxy(
         kind,
         long_edge,
@@ -661,7 +720,7 @@ def webgpu_proxy(
 def local_mask_proxy(
     session_id: str,
     local_id: str,
-    long_edge: int = Query(default=1600, ge=256, le=2000),
+    long_edge: int = Query(default=1600, ge=256, le=16384),
     edit_revision: int | None = Query(default=None, ge=0),
     spatial_only: bool = Query(default=False),
     mask_path: str | None = Query(default=None, pattern=r"^\d+(?:\.\d+)*$"),
@@ -676,6 +735,7 @@ def local_mask_proxy(
         raise HTTPException(status_code=404, detail=f"Local adjustment '{local_id}' was not found.") from exc
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
+    _guard_preview_resources(session, long_edge)
     selected_mask = _mask_expression_at_path(local.mask, mask_path)
     mask_source = local.model_copy(
         update={
@@ -725,6 +785,7 @@ def local_mask_preview_proxy(
         raise HTTPException(status_code=404, detail=f"Local adjustment '{local_id}' was not found.") from exc
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
+    _guard_preview_resources(session, request.long_edge)
     started = perf_counter()
     mask = session.render_cache.compiled_mask_draft(
         request.adjustments or session.adjustments,
@@ -760,6 +821,7 @@ def geometry_map(session_id: str, request: GeometryMapRequest) -> GeometryMapRes
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
+    _guard_preview_resources(session, request.long_edge)
     adjustments = request.adjustments or session.adjustments
     output_to_source, source_to_output, width, height = session.render_cache.geometry_map(
         adjustments,
@@ -789,6 +851,7 @@ def local_luminance_sample(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
+    _guard_preview_resources(session, request.long_edge)
     low, high, center, count = session.render_cache.sample_luminance(
         session.adjustments,
         request.points,
@@ -860,6 +923,11 @@ def export(session_id: str, settings: ExportSettings):
             granted_path = desktop_path_grants.resolve(settings.path_grant, "export-file")
             if settings.output_path and Path(settings.output_path).expanduser().resolve(strict=False) != granted_path:
                 raise ValueError("The export filename does not match the desktop selection.")
+            expected_suffix = _EXPORT_SUFFIXES.get(settings.format)
+            if expected_suffix is not None and granted_path.suffix.lower() != expected_suffix:
+                raise ValueError(
+                    f"The selected filename must end in {expected_suffix} for {settings.format} export."
+                )
             settings = settings.model_copy(update={"output_path": str(granted_path)})
             if settings.overwrite and settings.overwrite_target is not None and granted_path.exists():
                 if not _matches_approved_export_target(granted_path, settings.overwrite_target):
