@@ -263,6 +263,7 @@ const state = {
   mediaBrowserColumnResize: null,
   mediaBrowserPreviewWidth: null,
   mediaBrowserPreviewResize: null,
+  mediaBrowserResolver: null,
   lensProfileGeneration: 0,
   importInProgress: false,
   metadataOpen: false,
@@ -276,6 +277,7 @@ const state = {
   scopeGeneration: 0,
   highQualityPreview: false,
   renderingMode: "auto",
+  appPreferences: null,
   acceptedPresentation: null,
   previewScheduler: null,
   gpuPreparedLane: { hdr: false, sdr: false },
@@ -312,6 +314,7 @@ const state = {
   straightenPreviewFrameRect: null,
   vignettePickCenter: false,
   vignetteCenterGesture: null,
+  groupPresetContext: null,
   previewCache: { hdr: null, sdr: null },
   previewControllers: { hdr: null, sdr: null },
   previewInfoByLane: {
@@ -528,6 +531,13 @@ const FILM_LOOK_PRESETS = {
   "35mm_balanced": { print_strength: 52, print_contrast: 10, print_toe: 7, print_shoulder: 14, color_density: 16, grain_amount: 34, grain_size: 50, grain_softness: 34, grain_chroma: 20, grain_shadow_response: 90, grain_midtone_response: 104, grain_highlight_response: 120, film_resolution: 92, halation_amount: 11, halation_sensitivity: 74, halation_radius: 0.24, halation_hue_offset: 0, halation_saturation: 80, bloom_amount: 8, bloom_sensitivity: 78, bloom_radius: 0.5, bloom_highlight_detail: 80, image_softness: 7, microcontrast: -5 },
   "35mm_fast": { print_strength: 55, print_contrast: 8, print_toe: 9, print_shoulder: 16, color_density: 18, grain_amount: 48, grain_size: 68, grain_softness: 28, grain_chroma: 28, grain_shadow_response: 96, grain_midtone_response: 110, grain_highlight_response: 126, film_resolution: 86, halation_amount: 14, halation_sensitivity: 68, halation_radius: 0.3, halation_hue_offset: 3, halation_saturation: 84, bloom_amount: 10, bloom_sensitivity: 72, bloom_radius: 0.62, bloom_highlight_detail: 74, image_softness: 10, microcontrast: -7 },
   "16mm_fine": { print_strength: 50, print_contrast: 6, print_toe: 8, print_shoulder: 15, color_density: 15, grain_amount: 54, grain_size: 78, grain_softness: 32, grain_chroma: 24, grain_shadow_response: 100, grain_midtone_response: 112, grain_highlight_response: 128, film_resolution: 80, halation_amount: 13, halation_sensitivity: 70, halation_radius: 0.34, halation_hue_offset: 2, halation_saturation: 82, bloom_amount: 9, bloom_sensitivity: 74, bloom_radius: 0.58, bloom_highlight_detail: 76, image_softness: 13, microcontrast: -9 },
+};
+const FILM_LOOK_PRESET_LABELS = {
+  large_format_fine: "Large Format Fine",
+  "35mm_fine": "35mm Fine",
+  "35mm_balanced": "35mm Balanced",
+  "35mm_fast": "35mm Fast",
+  "16mm_fine": "16mm Fine",
 };
 
 const defaultColorGrading = () => ({
@@ -986,6 +996,8 @@ const els = {
   directoryBrowserClose: document.getElementById("directory-browser-close"),
   directoryBrowserCancel: document.getElementById("directory-browser-cancel"),
   directoryBrowserSelect: document.getElementById("directory-browser-select"),
+  directoryBrowserFilenameRow: document.getElementById("directory-browser-filename-row"),
+  directoryBrowserFilename: document.getElementById("directory-browser-filename"),
   exportFormat: document.getElementById("export-format"),
   exportQualityRow: document.querySelector(".export-quality-row"),
   exportQuality: document.getElementById("export-quality"),
@@ -1032,6 +1044,14 @@ const els = {
   lanePanels: [...document.querySelectorAll("[data-lane-panel]")],
   groupToggles: [...document.querySelectorAll(".group-toggle")],
   groupResets: [...document.querySelectorAll("[data-reset-group]")],
+  groupPresetDialog: document.getElementById("group-preset-dialog"),
+  groupPresetTitle: document.getElementById("group-preset-title"),
+  groupPresetContext: document.getElementById("group-preset-context"),
+  groupPresetList: document.getElementById("group-preset-list"),
+  groupPresetName: document.getElementById("group-preset-name"),
+  groupPresetSave: document.getElementById("group-preset-save"),
+  groupPresetStatus: document.getElementById("group-preset-status"),
+  groupPresetClose: document.getElementById("group-preset-close"),
   sdrMatchHdrColors: document.getElementById("sdr-match-hdr-colors"),
   sdrResetColors: document.getElementById("sdr-reset-colors"),
   filmLookReset: document.getElementById("film-look-reset"),
@@ -1129,6 +1149,44 @@ const sectionPathForGroup = {
   "sdr-color": "sdr.color_section_enabled",
   "sdr-zones": "sdr.primaries_section_enabled",
 };
+
+const GROUP_PRESET_LABELS = {
+  tone: "Tone",
+  highlights: "Highlight Compression",
+  equalizer: "Exposure Bands",
+  color: "Color",
+  zones: "Lift, Gamma, Gain",
+  base: "Base Rendition",
+  curves: "Curves",
+  "color-grading": "Color Grading",
+  "film-look": "Film Look",
+  vignette: "Vignette",
+};
+
+function groupPresetPaths(groupId) {
+  if (controlGroups[groupId]) return [...controlGroups[groupId]];
+  const separator = groupId.indexOf("-");
+  const lane = groupId.slice(0, separator);
+  const group = groupId.slice(separator + 1);
+  if (!["hdr", "sdr"].includes(lane)) return [];
+  if (group === "curves") return ["luma_curve", "red_curve", "green_curve", "blue_curve"].map((key) => `${lane}.${key}`);
+  if (["color-grading", "film-look", "vignette"].includes(group)) return [`${lane}.${group.replaceAll("-", "_")}`];
+  return [];
+}
+
+function groupPresetContextForElement(groupElement) {
+  const rawGroup = groupElement?.dataset.group || "";
+  if (["geometry", "local-adjustments"].includes(rawGroup)) return null;
+  const groupId = ["curves", "color-grading", "film-look", "vignette"].includes(rawGroup)
+    ? `${state.currentView}-${rawGroup}`
+    : rawGroup;
+  const paths = groupPresetPaths(groupId);
+  if (!paths.length) return null;
+  const separator = groupId.indexOf("-");
+  const lane = groupId.slice(0, separator);
+  const group = groupId.slice(separator + 1);
+  return { groupId, lane, group, label: GROUP_PRESET_LABELS[group] || group, paths };
+}
 
 const branchCopy = {
   hdr: "Displays the active HDR grade or SDR fallback with current adjustments applied. Switch renditions in the Control Panel or use the layout buttons to view them side-by-side.",
@@ -1260,6 +1318,8 @@ async function boot() {
   initializePreviewScheduler();
   activateWorkflowTab("import", { focus: false });
   await initializeDesktopBridge();
+  await initializeApplicationShell();
+  initializeGroupPresetControls();
   bindEvents();
   applyExportPreset(els.exportFormat.value, "web_default", { invalidate: false });
   await initializeGpuPreview();
@@ -1905,9 +1965,10 @@ function bindEvents() {
   els.emptyImportButton.addEventListener("click", requestSourceImport);
   els.sourceRailExpand.addEventListener("click", toggleSourceRail);
   bindLocalAdjustmentEvents();
-  els.projectOpen?.addEventListener("click", openProjectFromPath);
-  els.projectSave?.addEventListener("click", saveProjectToPath);
+  els.projectOpen?.addEventListener("click", () => openProjectFromPath());
+  els.projectSave?.addEventListener("click", () => saveProjectToPath());
   els.hdrReferenceWhite?.addEventListener("change", async () => {
+    if (!state.session) return;
     const requested = Number(els.hdrReferenceWhite.value);
     const previous = projectReferenceWhiteNits();
     if (![100, 203].includes(requested) || requested === previous) return;
@@ -1920,7 +1981,7 @@ function bindEvents() {
       renderSession();
       await settlePreview(state.currentView);
     }
-    els.hdrReferenceWhite.disabled = !state.session;
+    els.hdrReferenceWhite.disabled = false;
   });
   els.sourceSettingsToggle.addEventListener("click", () => {
     state.sourceSettingsOpen = !state.sourceSettingsOpen;
@@ -2114,6 +2175,12 @@ function bindEvents() {
     event.preventDefault();
     loadMediaDirectory(els.directoryBrowserPath.value);
   });
+  els.directoryBrowserFilename.addEventListener("input", updateProjectSaveBrowserAction);
+  els.directoryBrowserFilename.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    confirmMediaBrowserSelection();
+  });
   [els.directoryBrowserClose, els.directoryBrowserCancel].forEach((button) => {
     button.addEventListener("click", closeExportDirectoryBrowser);
   });
@@ -2262,7 +2329,6 @@ function bindEvents() {
   els.exportSharpening?.addEventListener("change", markExportPresetCustom);
 
   bindCompareControl();
-  bindKeyboardShortcuts();
   window.addEventListener("hdrfinisher:webgpulost", (event) => {
     state.displayInfo.gpu = event.detail?.message || "WebGPU device lost; using CPU fallback";
     state.gpuSurfaceHdr = false;
@@ -2288,6 +2354,11 @@ async function loadCapabilities() {
 }
 
 async function loadDefaultExportDirectory() {
+  if (state.appPreferences?.folders?.fileSave) {
+    state.defaultExportDirectory = state.appPreferences.folders.fileSave;
+    if (!els.exportDirectory.value.trim()) els.exportDirectory.value = state.defaultExportDirectory;
+    return;
+  }
   const response = await fetch("/api/export-directory/default");
   const payload = await safeJson(response);
   if (!response.ok || !payload?.directory) return;
@@ -2338,6 +2409,7 @@ async function uploadFile(file) {
     state.selectedLocalId = null;
     state.projectPath = "";
     state.currentView = "hdr";
+    await applyNewSessionPreferences();
     activateWorkflowTab("grade", { focus: false });
     state.interpretationGateDismissed = false;
     clearPreviewCache();
@@ -2383,8 +2455,8 @@ async function ejectCurrentSession() {
   if (els.rawSettingsPanel) delete els.rawSettingsPanel.dataset.initialized;
   state.adjustments = defaultAdjustments();
   state.editDocument = null;
-  els.hdrReferenceWhite.value = "203";
-  els.hdrReferenceWhite.disabled = true;
+  els.hdrReferenceWhite.value = String(state.appPreferences?.defaultReferenceWhiteNits || 203);
+  els.hdrReferenceWhite.disabled = false;
   state.editRevision = 0;
   state.documentDirty = false;
   state.selectedLocalId = null;
@@ -2606,7 +2678,110 @@ async function handleDesktopCommand(command, payload = null) {
   if (command === "export") return openExportSheet();
   if (command === "undo") return queueEditCommand("undo");
   if (command === "redo") return queueEditCommand("redo");
-  if (command === "rendering-mode") return applyRenderingMode(payload?.mode);
+  if (command === "rendering-mode") {
+    if (window.HDRApplicationShell) {
+      window.HDRApplicationShell.setRenderingModePreference(payload?.mode);
+      return true;
+    }
+    return applyRenderingMode(payload?.mode);
+  }
+  if (command === "settings") return window.HDRApplicationShell?.openSettings();
+  if (command === "help") return window.HDRApplicationShell?.openHelp();
+  if (command === "check-updates") {
+    window.HDRApplicationShell?.openSettings("updates");
+    return window.HDRApplicationShell?.checkForUpdates({ force: true, manual: true });
+  }
+}
+
+function applicationCommands() {
+  return [
+    { id: "app.settings", label: "Open Settings", category: "Application", global: true, execute: () => window.HDRApplicationShell?.openSettings() },
+    { id: "app.help", label: "Open Help", category: "Application", global: true, execute: () => window.HDRApplicationShell?.openHelp() },
+    { id: "file.import", label: "Import source", category: "File", execute: () => requestSourceImport() },
+    { id: "file.importQuick", label: "Import source (quick key)", category: "File", execute: () => requestSourceImport() },
+    { id: "project.open", label: "Open project", category: "File", execute: () => openProjectFromPath() },
+    { id: "project.save", label: "Save project", category: "File", execute: () => saveProjectToPath({ saveAs: false }) },
+    { id: "project.saveAs", label: "Save project as", category: "File", execute: () => saveProjectToPath({ saveAs: true }) },
+    { id: "file.export", label: "Open Export", category: "File", execute: () => openExportSheet() },
+    { id: "file.exportStandard", label: "Open Export (standard)", category: "File", execute: () => openExportSheet() },
+    { id: "edit.undo", label: "Undo", category: "Edit", execute: () => queueEditCommand("undo") },
+    { id: "edit.redo", label: "Redo", category: "Edit", execute: () => queueEditCommand("redo") },
+    { id: "edit.redoAlternate", label: "Redo (alternate)", category: "Edit", execute: () => queueEditCommand("redo") },
+    { id: "view.compareHold", label: "Hold to compare HDR / SDR", category: "Viewer", hold: true, execute: (_event, phase) => phase === "keyup" ? endCompareHold() : beginCompareHold() },
+    { id: "view.zoomFit", label: "Zoom to fit", category: "Viewer", execute: () => setZoomMode("fit") },
+    { id: "view.zoomActual", label: "Zoom to 100%", category: "Viewer", execute: () => setZoomMode("actual") },
+    { id: "view.zoomIn", label: "Zoom in", category: "Viewer", repeatable: true, execute: () => stepZoom(1) },
+    { id: "view.zoomOut", label: "Zoom out", category: "Viewer", repeatable: true, execute: () => stepZoom(-1) },
+    { id: "view.analysis", label: "Toggle analysis panel", category: "Viewer", execute: () => toggleAnalysisDock() },
+    { id: "view.overlay", label: "Cycle overlay mode", category: "Viewer", execute: () => cycleOverlayMode() },
+    { id: "view.hdr", label: "Show HDR rendition", category: "Viewer", execute: () => switchLane("hdr") },
+    { id: "view.sdr", label: "Show SDR rendition", category: "Viewer", execute: () => switchLane("sdr") },
+    {
+      id: "crop.cycleGuide",
+      label: "Cycle crop guide",
+      category: "Crop",
+      execute: () => {
+        if (!state.cropMode) return;
+        const guides = ["none", "thirds", "golden", "grid", "x", "diagonals"];
+        state.cropGuide = guides[(guides.indexOf(state.cropGuide) + 1) % guides.length];
+        renderCropOptions();
+      },
+    },
+    ...["import", "grade", "proof", "export"].map((workflow) => ({
+      id: `workflow.${workflow}`,
+      label: `Open ${workflow[0].toUpperCase()}${workflow.slice(1)} workspace`,
+      category: "Workflow",
+      execute: () => activateWorkflowTab(workflow, { focus: true }),
+    })),
+  ];
+}
+
+function adjustControlFromShortcut(path, direction, event) {
+  const control = [...document.querySelectorAll('input[type="range"][data-path]')]
+    .find((candidate) => candidate.dataset.path === path && !candidate.disabled);
+  if (!control) return false;
+  if (direction === "reset") {
+    control.value = control.dataset.defaultValue ?? control.defaultValue;
+  } else {
+    const baseStep = Number(control.step) || ((Number(control.max) - Number(control.min)) / 100) || 1;
+    const multiplier = event?.shiftKey ? 10 : event?.altKey ? 0.1 : 1;
+    const delta = baseStep * multiplier * (direction === "increase" ? 1 : -1);
+    const value = clamp(Number(control.value) + delta, Number(control.min), Number(control.max));
+    control.value = String(Math.round(value * 1e8) / 1e8);
+  }
+  control.dispatchEvent(new Event("input", { bubbles: true }));
+  control.dispatchEvent(new Event("change", { bubbles: true }));
+  return true;
+}
+
+async function initializeApplicationShell() {
+  if (!window.HDRApplicationShell) return;
+  state.appPreferences = await window.HDRApplicationShell.init({
+    desktop,
+    commands: applicationCommands(),
+    adjustControl: adjustControlFromShortcut,
+    onPreferencesChanged: (preferences, options = {}) => {
+      const oldDirectory = state.appPreferences?.folders?.fileSave || "";
+      state.appPreferences = preferences;
+      if (preferences.folders.fileSave) {
+        state.defaultExportDirectory = preferences.folders.fileSave;
+        if (!els.exportDirectory.value.trim() || els.exportDirectory.value === oldDirectory) els.exportDirectory.value = preferences.folders.fileSave;
+      } else if (oldDirectory) {
+        state.defaultExportDirectory = "";
+        if (els.exportDirectory.value === oldDirectory) els.exportDirectory.value = "";
+        void loadDefaultExportDirectory();
+      }
+      if (!state.session) els.hdrReferenceWhite.value = String(preferences.defaultReferenceWhiteNits);
+      if (options.initial) state.renderingMode = preferences.renderingMode;
+      else if (preferences.renderingMode !== state.renderingMode) void applyRenderingMode(preferences.renderingMode);
+    },
+  });
+}
+
+async function applyNewSessionPreferences() {
+  const requested = Number(state.appPreferences?.defaultReferenceWhiteNits) === 100 ? 100 : 203;
+  if (!state.session || projectReferenceWhiteNits() === requested) return true;
+  return queueEditCommand("set_hdr_reference_white", { hdr_reference_white_nits: requested }, null, { refreshPreview: false });
 }
 
 async function applyRenderingMode(mode) {
@@ -2628,7 +2803,8 @@ async function requestSourceImport() {
     els.fileInput.click();
     return;
   }
-  await openMediaBrowser("source", sourcePathForClipboard()?.replace(/[\\/][^\\/]+$/, "") || "");
+  const currentSourceDirectory = sourcePathForClipboard()?.replace(/[\\/][^\\/]+$/, "") || "";
+  await openMediaBrowser("source", currentSourceDirectory || state.appPreferences?.folders?.fileImport || "");
 }
 
 const LUMA_RANGE_MIN_NITS = 0.1;
@@ -3310,6 +3486,7 @@ function drawHistogram(scope) {
   if (!scope?.channels?.length) {
     els.scopeTitle.textContent = "Histogram";
     els.scopeNote.textContent = "Reference scopes will appear here after a preview is rendered.";
+    canvas.removeAttribute("title");
     els.scopeStats.innerHTML = "";
     state.lastScope = null;
     renderDockSummary();
@@ -3321,11 +3498,12 @@ function drawHistogram(scope) {
     ? "Vectorscope plots chroma direction and saturation from the same current authored preview. Density is log-scaled."
     : scope.preview_kind === "hdr"
     ? scope.scope_type.includes("waveform")
-      ? `HDR waveform plots horizontal image position against reference nits. In this project, 0.18 scene-linear equals ${projectReferenceWhiteNits()} nits.`
-      : "HDR histogram plots reference luminance from left to right on a logarithmic nit scale. Density is log-scaled to retain fine tonal detail."
+      ? `HDR waveform plots horizontal image position against reference nits. In this project, 0.18 scene-linear equals ${projectReferenceWhiteNits()} nits. RW marks the active project reference white.`
+      : "HDR histogram plots reference luminance from left to right on a logarithmic nit scale. Density is log-scaled to retain fine tonal detail. RW marks the active project reference white."
     : scope.scope_type.includes("waveform")
       ? "SDR waveform plots horizontal image position against normalized tone-mapped output."
       : "SDR histogram plots display-safe values from black to white. Density is log-scaled so small tonal populations remain visible.";
+  canvas.title = scopeGuideTooltip(scope);
   renderKeyValueList(els.scopeStats, (scope.stats || []).map((item) => [item.label, item.value]));
 
   if (scope.scope_type === "vectorscope") {
@@ -3454,7 +3632,7 @@ function drawScopeGrid(ctx, scope, isWaveform, plotLeft, plotTop, plotWidth, plo
       ctx.stroke();
       if (showLabel) {
         ctx.textAlign = "right";
-        ctx.fillText(waveformGuideLabel(scope, guide), plotLeft - 7, clamp(y, plotTop + 6, plotTop + plotHeight - 6));
+        ctx.fillText(compactScopeGuideLabel(scope, guide), plotLeft - 7, clamp(y, plotTop + 6, plotTop + plotHeight - 6));
       }
     } else {
       const x = plotLeft + normalized * plotWidth;
@@ -3464,7 +3642,7 @@ function drawScopeGrid(ctx, scope, isWaveform, plotLeft, plotTop, plotWidth, plo
       ctx.stroke();
       if (showLabel) {
         ctx.textAlign = normalized <= 0.02 ? "left" : normalized >= 0.98 ? "right" : "center";
-        ctx.fillText(guide.label, x, canvasHeight - 7);
+        ctx.fillText(compactScopeGuideLabel(scope, guide), x, canvasHeight - 7);
       }
     }
   });
@@ -3481,18 +3659,31 @@ function scopeGuidesForDisplay(scope) {
   return new Set([0.18, 0.5, 1]);
 }
 
-function waveformGuideLabel(scope, guide) {
+function compactScopeGuideLabel(scope, guide) {
   if (scope.preview_kind !== "hdr") return guide.label;
-  const labels = {
-    1: "1 nit",
-    10: "10",
-    100: "100 white",
-    203: "203",
-    1000: "1K peak",
-    4000: "4K peak",
-    10000: "10K PQ",
-  };
-  return labels[Number(guide.value)] || guide.label;
+  const value = Number(guide.value);
+  const compactValue = value >= 1000
+    ? `${Number((value / 1000).toFixed(value % 1000 === 0 ? 0 : 1))}k`
+    : String(Number(value.toFixed(value < 10 ? 1 : 0)));
+  return /\bactive\b/i.test(guide.label) ? `RW ${compactValue}` : compactValue;
+}
+
+function scopeGuideTooltip(scope) {
+  if (scope?.scope_type === "vectorscope") {
+    return "Chroma direction and saturation. Distance from center indicates saturation.";
+  }
+  const labeledGuides = scopeGuidesForDisplay(scope);
+  const guides = (scope?.guides || []).filter((guide) => labeledGuides.has(Number(guide.value)));
+  if (!guides.length) return "";
+  const descriptions = guides.map((guide) => {
+    const shortLabel = compactScopeGuideLabel(scope, guide);
+    if (scope.preview_kind !== "hdr") return `${shortLabel} output`;
+    if (/\bactive\b/i.test(guide.label)) return `${shortLabel}: active HDR reference white`;
+    const detail = String(guide.label || "").replace(/^\s*[\d.]+\s*/, "").trim();
+    if (detail === "nit") return `${shortLabel}: 1 nit`;
+    return detail ? `${shortLabel}: ${detail}` : `${shortLabel}: ${Number(guide.value)} nits`;
+  });
+  return `Scope guides — ${descriptions.join("; ")}. RW means active HDR reference white.`;
 }
 
 function guidePosition(scope, value) {
@@ -3906,18 +4097,67 @@ async function chooseExportDirectory() {
   await openMediaBrowser("export_directory", els.exportDirectory.value);
 }
 
-async function openMediaBrowser(mode, path = "") {
+async function openMediaBrowser(mode, path = "", options = {}) {
   els.directoryBrowser.dataset.mode = mode;
   delete els.directoryBrowser.dataset.selectedPath;
-  els.directoryBrowserTitle.textContent = mode === "source" ? "Choose a source image" : "Choose save folder";
-  els.directoryBrowserSelect.textContent = mode === "source" ? "Open image" : "Select this folder";
+  const projectMode = mode === "project_open" || mode === "project_save";
+  els.directoryBrowserTitle.textContent = mode === "source"
+    ? "Choose a source image"
+    : mode === "project_open"
+      ? "Open Project"
+      : mode === "project_save"
+        ? "Save Project"
+        : "Choose save folder";
+  els.directoryBrowserSelect.textContent = mode === "source"
+    ? "Open image"
+    : mode === "project_open"
+      ? "Open Project"
+      : mode === "project_save"
+        ? "Save Project"
+        : "Select this folder";
+  els.directoryBrowserFilenameRow.hidden = mode !== "project_save";
+  els.directoryBrowserFilename.value = mode === "project_save" ? String(options.suggestedName || "Untitled.hdrfinisher") : "";
+  els.directoryBrowserList.setAttribute("aria-label", projectMode ? "Folders and HDR Finisher projects" : "Folders and supported images");
   els.directoryBrowserPreview.hidden = true;
-  els.directoryBrowserSelection.textContent = mode === "source" ? "No image selected" : "Folder selection";
+  els.directoryBrowserSelection.textContent = mode === "source"
+    ? "No image selected"
+    : mode === "project_open"
+      ? "No project selected"
+      : mode === "project_save"
+        ? "Project destination"
+        : "Folder selection";
   els.directoryBrowserPreviewNote.textContent = mode === "source"
     ? "Select a supported image to preview it."
+    : mode === "project_open"
+      ? "Select an HDR Finisher project to open."
+      : mode === "project_save"
+        ? "Choose a folder and enter the project file name below."
     : "Files remain visible so you can confirm the destination.";
   if (!els.directoryBrowser.open) els.directoryBrowser.showModal();
   await loadMediaDirectory(path);
+}
+
+async function chooseProjectPath(mode, path, suggestedName = "") {
+  if (!desktop?.grantProjectPath) return null;
+  if (state.mediaBrowserResolver) state.mediaBrowserResolver(null);
+  return new Promise((resolve) => {
+    state.mediaBrowserResolver = resolve;
+    openMediaBrowser(mode, path, { suggestedName }).catch((error) => {
+      console.error(error);
+      settleMediaBrowserSelection(null);
+    });
+  });
+}
+
+function settleMediaBrowserSelection(selection) {
+  const resolve = state.mediaBrowserResolver;
+  state.mediaBrowserResolver = null;
+  resolve?.(selection);
+}
+
+function updateProjectSaveBrowserAction() {
+  if (els.directoryBrowser.dataset.mode !== "project_save") return;
+  els.directoryBrowserSelect.disabled = !els.directoryBrowserFilename.value.trim();
 }
 
 async function loadExportDirectory(path) {
@@ -4175,7 +4415,7 @@ function renderMediaBrowserEntries(entries, mode) {
           els.directoryBrowserSelect.disabled = false;
         } else {
           delete els.directoryBrowser.dataset.selectedPath;
-          els.directoryBrowserSelect.disabled = true;
+          els.directoryBrowserSelect.disabled = mode === "project_save" ? !els.directoryBrowserFilename.value.trim() : true;
         }
         els.directoryBrowserSelection.textContent = entry.name;
         els.directoryBrowserPreviewNote.textContent = "Double-click to open this folder.";
@@ -4186,6 +4426,24 @@ function renderMediaBrowserEntries(entries, mode) {
       button.addEventListener("click", () => previewMediaBrowserFile(entry, button));
       button.addEventListener("dblclick", async () => {
         previewMediaBrowserFile(entry, button);
+        await confirmMediaBrowserSelection();
+      });
+    } else if (["project_open", "project_save"].includes(mode) && entry.supported) {
+      button.classList.add("supported");
+      button.addEventListener("click", () => {
+        state.mediaPreviewGeneration += 1;
+        clearMediaBrowserPreview();
+        els.directoryBrowser.dataset.selectedPath = entry.path;
+        selectMediaBrowserEntry(button);
+        els.directoryBrowserSelection.textContent = entry.name;
+        els.directoryBrowserPreviewNote.textContent = mode === "project_open"
+          ? "HDR Finisher project selected."
+          : "Saving will replace this project after confirmation.";
+        if (mode === "project_save") els.directoryBrowserFilename.value = entry.name;
+        els.directoryBrowserSelect.disabled = false;
+      });
+      button.addEventListener("dblclick", async () => {
+        button.click();
         await confirmMediaBrowserSelection();
       });
     } else {
@@ -4221,7 +4479,8 @@ async function loadMediaDirectory(path) {
     els.directoryBrowserPath.value = payload.current;
     els.directoryBrowser.dataset.parent = payload.parent || "";
     els.directoryBrowserUp.disabled = !payload.parent;
-    els.directoryBrowserSelect.disabled = mode === "source";
+    els.directoryBrowserSelect.disabled = mode === "source" || mode === "project_open";
+    if (mode === "project_save") updateProjectSaveBrowserAction();
     delete els.directoryBrowser.dataset.selectedPath;
     renderMediaBrowserNavigation(
       payload.recents || [],
@@ -4316,7 +4575,8 @@ function handleMediaBrowserListKeydown(event) {
     loadMediaDirectory(entry.path);
   } else if (event.key === "Enter" && entry?.supported) {
     event.preventDefault();
-    previewMediaBrowserFile(entry, current);
+    if (els.directoryBrowser.dataset.mode === "source") previewMediaBrowserFile(entry, current);
+    else current.click();
     confirmMediaBrowserSelection();
   }
 }
@@ -4432,6 +4692,7 @@ async function recordSuccessfulMediaImport(path) {
 
 function closeExportDirectoryBrowser() {
   if (els.directoryBrowser.open) els.directoryBrowser.close();
+  settleMediaBrowserSelection(null);
 }
 
 async function confirmMediaBrowserSelection() {
@@ -4447,6 +4708,30 @@ async function confirmMediaBrowserSelection() {
     closeExportDirectoryBrowser();
     return;
   }
+  if (mode === "project_open" || mode === "project_save") {
+    try {
+      const requestedPath = mode === "project_open"
+        ? els.directoryBrowser.dataset.selectedPath
+        : joinExportPath(els.directoryBrowserPath.value.trim(), sanitizeProjectFilename(els.directoryBrowserFilename.value));
+      if (!requestedPath) return;
+      const selection = await desktop.grantProjectPath(requestedPath, mode === "project_open" ? "project-open" : "project-save");
+      if (mode === "project_save" && selection.exists) {
+        const approved = window.confirm(`Replace the existing project?\n\n${selection.path}\n\nThis cannot be undone.`);
+        if (!approved) {
+          els.directoryBrowserStatus.textContent = "The existing project was left unchanged.";
+          return;
+        }
+        selection.grant = (await desktop.grantProjectPath(selection.path, "project-save")).grant;
+      }
+      const resolve = state.mediaBrowserResolver;
+      state.mediaBrowserResolver = null;
+      if (els.directoryBrowser.open) els.directoryBrowser.close();
+      resolve?.(selection);
+    } catch (error) {
+      els.directoryBrowserStatus.textContent = error?.message || `Could not ${mode === "project_open" ? "open" : "save"} that project.`;
+    }
+    return;
+  }
   if (!desktop) {
     closeExportDirectoryBrowser();
     els.fileInput.click();
@@ -4459,6 +4744,11 @@ async function confirmMediaBrowserSelection() {
   } catch (error) {
     els.directoryBrowserStatus.textContent = error?.message || "Could not open that source image.";
   }
+}
+
+function sanitizeProjectFilename(value) {
+  const base = String(value || "Untitled").trim().replace(/[<>:"/\\|?*\x00-\x1F]/g, "_") || "Untitled";
+  return base.toLowerCase().endsWith(".hdrfinisher") ? base : `${base}.hdrfinisher`;
 }
 
 async function applyInterpretationOverride() {
@@ -5476,7 +5766,6 @@ function commitAdjustmentValue(path, value, { manual = false } = {}) {
   if (manual) state.previewScheduler?.beginInteraction();
   setValueByPath(state.adjustments, path, value);
   const resolvedPath = resolveAdjustmentPath(path);
-  if (resolvedPath.endsWith(".film_look.reference_model") && value !== "custom") applyFilmLookPreset(value);
   if (resolvedPath.startsWith("hdr.highlight_compression_")) normalizeHighlightCompressionControls(resolvedPath);
   if (path === "shared.false_color_band_anchor" || path === "shared.false_color_ceiling_nits") {
     renderOverlayPresetNote();
@@ -7740,64 +8029,6 @@ async function renderComparisonPreview(lane, { force = false } = {}) {
   return true;
 }
 
-function bindKeyboardShortcuts() {
-  window.addEventListener("keydown", (event) => {
-    if (event.repeat || isTypingTarget(event.target)) return;
-    const key = event.key.toLowerCase();
-    const commandKey = event.ctrlKey || event.metaKey;
-    if (commandKey && key === "s") {
-      event.preventDefault();
-      saveProjectToPath({ saveAs: event.shiftKey });
-    } else if (commandKey && key === "o") {
-      event.preventDefault();
-      if (event.shiftKey) openProjectFromPath();
-      else requestSourceImport();
-    } else if (commandKey && key === "z") {
-      event.preventDefault();
-      queueEditCommand(event.shiftKey ? "redo" : "undo");
-    } else if ((event.ctrlKey || event.metaKey) && key === "y") {
-      event.preventDefault();
-      queueEditCommand("redo");
-    } else if (key === "v") {
-      event.preventDefault();
-      beginCompareHold();
-    } else if (key === "f") {
-      event.preventDefault();
-      setZoomMode("fit");
-    } else if (key === "a") {
-      event.preventDefault();
-      setZoomMode("actual");
-    } else if (key === "s") {
-      event.preventDefault();
-      toggleAnalysisDock();
-    } else if (key === "c") {
-      event.preventDefault();
-      cycleOverlayMode();
-    } else if (key === "o" && state.cropMode) {
-      event.preventDefault();
-      const guides = ["none", "thirds", "golden", "grid", "x", "diagonals"];
-      state.cropGuide = guides[(guides.indexOf(state.cropGuide) + 1) % guides.length];
-      renderCropOptions();
-    } else if (key === "d") {
-      event.preventDefault();
-      requestSourceImport();
-    } else if (key === "x") {
-      event.preventDefault();
-      openExportSheet();
-    }
-  });
-  window.addEventListener("keyup", (event) => {
-    if (event.key.toLowerCase() === "v" && !isTypingTarget(event.target)) {
-      event.preventDefault();
-      endCompareHold();
-    }
-  });
-}
-
-function isTypingTarget(target) {
-  return target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement;
-}
-
 function setZoomMode(mode) {
   if (mode === "actual") {
     setCustomZoom(100);
@@ -8137,7 +8368,7 @@ function renderControlState() {
   for (const [group, paths] of Object.entries(controlGroups)) {
     const count = paths.filter((path) => isPathModified(path, defaults)).length;
     const output = document.querySelector(`[data-modified-count="${group}"]`);
-    if (output) output.textContent = count ? `${count} Mod` : "";
+    if (output) output.textContent = "";
     output?.closest(".control-group")?.classList.toggle("modified", count > 0);
   }
   const geometryReset = els.groupResets.find((button) => button.dataset.resetGroup === "geometry");
@@ -8155,21 +8386,18 @@ function renderControlState() {
     button?.classList.toggle("modified", modified);
   }
   const currentLaneDefaults = defaults[state.currentView];
-  const modifiedCount = Object.keys(currentLaneDefaults)
-    .filter((key) => !key.endsWith("_section_enabled") && key !== "highlight_compression_source_peak_nits")
-    .filter((key) => !valuesEqual(state.adjustments[state.currentView]?.[key], currentLaneDefaults[key])).length;
-  els.gradeModifiedSummary.textContent = modifiedCount ? `${modifiedCount} Mod` : "";
+  els.gradeModifiedSummary.textContent = "";
   const curvesModified = laneCurvesModified(state.currentView, defaults);
-  els.curveGroupState.textContent = curvesModified ? "Mod" : "";
+  els.curveGroupState.textContent = "";
   els.curveReset.closest(".control-group")?.classList.toggle("modified", curvesModified);
   const filmModified = !valuesEqual(state.adjustments[state.currentView]?.film_look, currentLaneDefaults.film_look);
-  if (els.filmLookState) els.filmLookState.textContent = filmModified ? "Mod" : "";
+  if (els.filmLookState) els.filmLookState.textContent = "";
   els.filmLookReset?.closest(".control-group")?.classList.toggle("modified", filmModified);
   const gradingModified = !valuesEqual(state.adjustments[state.currentView]?.color_grading, currentLaneDefaults.color_grading);
-  if (els.colorGradingState) els.colorGradingState.textContent = gradingModified ? "Mod" : "";
+  if (els.colorGradingState) els.colorGradingState.textContent = "";
   els.colorGradingReset?.closest(".control-group")?.classList.toggle("modified", gradingModified);
   const vignetteModified = !valuesEqual(state.adjustments[state.currentView]?.vignette, currentLaneDefaults.vignette);
-  if (els.vignetteState) els.vignetteState.textContent = vignetteModified ? "Mod" : "";
+  if (els.vignetteState) els.vignetteState.textContent = "";
   els.vignetteReset?.closest(".control-group")?.classList.toggle("modified", vignetteModified);
   els.sectionBypasses.forEach((button) => {
     const path = resolveAdjustmentPath(button.dataset.sectionPath);
@@ -8188,6 +8416,195 @@ function isPathModified(path, defaults = defaultAdjustments()) {
 function valuesEqual(left, right) {
   if ((left && typeof left === "object") || (right && typeof right === "object")) return JSON.stringify(left) === JSON.stringify(right);
   return left === right;
+}
+
+function initializeGroupPresetControls() {
+  document.querySelectorAll(".control-group[data-group]").forEach((groupElement) => {
+    if (!groupPresetContextForElement(groupElement)) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "group-preset text-button";
+    button.textContent = "Preset";
+    button.setAttribute("aria-haspopup", "dialog");
+    button.addEventListener("click", () => openGroupPresetDialog(groupElement));
+    const header = groupElement.querySelector(":scope > .control-group-header");
+    const reset = header?.querySelector(".group-reset");
+    if (header) header.insertBefore(button, reset || header.querySelector(".section-bypass"));
+  });
+  els.groupPresetClose?.addEventListener("click", closeGroupPresetDialog);
+  els.groupPresetDialog?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeGroupPresetDialog();
+  });
+  els.groupPresetSave?.addEventListener("click", saveCurrentGroupPreset);
+  els.groupPresetName?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void saveCurrentGroupPreset();
+    }
+  });
+}
+
+async function openGroupPresetDialog(groupElement) {
+  const context = groupPresetContextForElement(groupElement);
+  if (!context) return;
+  state.groupPresetContext = context;
+  els.groupPresetTitle.textContent = `${context.label} Presets`;
+  els.groupPresetContext.textContent = context.group === "film-look"
+    ? `${context.lane.toUpperCase()} Film Look · built-ins are editable starting points; Reset returns Neutral.`
+    : `${context.lane.toUpperCase()} ${context.label} · presets affect only this adjustment group.`;
+  els.groupPresetName.value = "";
+  els.groupPresetStatus.textContent = "";
+  if (!els.groupPresetDialog.open) els.groupPresetDialog.showModal();
+  await renderGroupPresetList();
+  els.groupPresetName.focus();
+}
+
+function closeGroupPresetDialog() {
+  if (els.groupPresetDialog?.open) els.groupPresetDialog.close();
+  state.groupPresetContext = null;
+}
+
+async function listSavedGroupPresets(groupId) {
+  return window.HDRApplicationShell?.listGradingPresets(groupId) || [];
+}
+
+async function persistGroupPreset(preset) {
+  return window.HDRApplicationShell?.saveGradingPreset(preset);
+}
+
+async function removeGroupPreset(preset) {
+  return window.HDRApplicationShell?.deleteGradingPreset(preset);
+}
+
+function builtInGroupPresets(context) {
+  if (context?.group !== "film-look") return [];
+  const path = `${context.lane}.film_look`;
+  return Object.entries(FILM_LOOK_PRESET_LABELS).map(([referenceModel, name]) => ({
+    id: `built-in:${referenceModel}`,
+    groupId: context.groupId,
+    name,
+    builtIn: true,
+    values: {
+      [path]: { ...defaultFilmLook(), ...JSON.parse(JSON.stringify(FILM_LOOK_PRESETS[referenceModel])), reference_model: referenceModel },
+    },
+  }));
+}
+
+function appendGroupPresetSubheading(label) {
+  const heading = document.createElement("div");
+  heading.className = "group-preset-subheading";
+  heading.textContent = label;
+  els.groupPresetList.append(heading);
+}
+
+function appendGroupPresetRow(preset) {
+  const row = document.createElement("div");
+  row.className = `group-preset-row${preset.builtIn ? " built-in" : ""}`;
+  const name = document.createElement("div");
+  name.className = "group-preset-name";
+  const strong = document.createElement("strong");
+  strong.textContent = preset.name;
+  name.append(strong);
+  if (preset.builtIn) {
+    const kind = document.createElement("small");
+    kind.textContent = "Built-in";
+    name.append(kind);
+  }
+  const apply = document.createElement("button");
+  apply.type = "button";
+  apply.className = "button-secondary";
+  apply.textContent = "Apply";
+  apply.addEventListener("click", () => applyGroupPreset(preset));
+  row.append(name, apply);
+  if (!preset.builtIn) {
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "text-button";
+    remove.textContent = "Delete";
+    remove.addEventListener("click", async () => {
+      if (!window.confirm(`Delete the “${preset.name}” preset?`)) return;
+      await removeGroupPreset(preset);
+      await renderGroupPresetList();
+    });
+    row.append(remove);
+  }
+  els.groupPresetList.append(row);
+}
+
+async function renderGroupPresetList() {
+  const context = state.groupPresetContext;
+  if (!context) return;
+  els.groupPresetList.replaceChildren();
+  const loading = document.createElement("p");
+  loading.className = "group-preset-empty";
+  loading.textContent = "Loading presets…";
+  els.groupPresetList.append(loading);
+  try {
+    const presets = await listSavedGroupPresets(context.groupId);
+    const builtIns = builtInGroupPresets(context);
+    if (state.groupPresetContext !== context) return;
+    els.groupPresetList.replaceChildren();
+    if (builtIns.length) {
+      appendGroupPresetSubheading("Built-in models");
+      builtIns.forEach(appendGroupPresetRow);
+    }
+    if (presets.length) {
+      appendGroupPresetSubheading("Saved presets");
+      presets.forEach(appendGroupPresetRow);
+    } else if (!builtIns.length) {
+      const empty = document.createElement("p");
+      empty.className = "group-preset-empty";
+      empty.textContent = "No presets saved for this group yet.";
+      els.groupPresetList.append(empty);
+    }
+  } catch (error) {
+    els.groupPresetList.replaceChildren();
+    const failure = document.createElement("p");
+    failure.className = "group-preset-empty";
+    failure.textContent = error?.message || "Presets could not be loaded.";
+    els.groupPresetList.append(failure);
+  }
+}
+
+async function saveCurrentGroupPreset() {
+  const context = state.groupPresetContext;
+  if (!context) return;
+  const name = els.groupPresetName.value.trim().replace(/\s+/g, " ");
+  if (!name) {
+    els.groupPresetStatus.textContent = "Enter a preset name.";
+    els.groupPresetName.focus();
+    return;
+  }
+  if (builtInGroupPresets(context).some((preset) => preset.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+    els.groupPresetStatus.textContent = "That name belongs to a built-in preset. Choose another name.";
+    return;
+  }
+  const existing = await listSavedGroupPresets(context.groupId);
+  if (existing.some((preset) => preset.name.toLocaleLowerCase() === name.toLocaleLowerCase())
+    && !window.confirm(`Replace the existing “${name}” preset?`)) return;
+  const values = Object.fromEntries(context.paths.map((path) => [path, JSON.parse(JSON.stringify(getValueByPath(state.adjustments, path)))]));
+  await persistGroupPreset({ groupId: context.groupId, name, values });
+  els.groupPresetName.value = "";
+  els.groupPresetStatus.textContent = `Saved “${name}”.`;
+  await renderGroupPresetList();
+}
+
+function applyGroupPreset(preset) {
+  const context = state.groupPresetContext;
+  if (!context || preset.groupId !== context.groupId || !preset.values || typeof preset.values !== "object") return;
+  context.paths.forEach((path) => {
+    if (Object.hasOwn(preset.values, path)) setValueByPath(state.adjustments, path, JSON.parse(JSON.stringify(preset.values[path])));
+  });
+  syncControlsFromState();
+  syncCurveControlsFromState();
+  drawCurveEditor();
+  drawToneEqualizerEditor(context.lane);
+  renderControlState();
+  renderVignetteCenter();
+  invalidatePreview(context.lane);
+  debouncePreview(context.lane);
+  closeGroupPresetDialog();
 }
 
 function laneCurvesModified(lane, defaults = defaultAdjustments()) {
@@ -8235,13 +8652,6 @@ function matchHdrColorsToSdr() {
 
 function resetSdrColorSliders() {
   setSdrColorSliders(defaultAdjustments().sdr);
-}
-
-function applyFilmLookPreset(referenceModel) {
-  const preset = FILM_LOOK_PRESETS[referenceModel];
-  if (!preset) return;
-  Object.assign(state.adjustments[state.currentView].film_look, preset, { reference_model: referenceModel });
-  syncControlsFromState();
 }
 
 function resetFilmLook() {
@@ -11861,6 +12271,7 @@ async function activateDesktopSession(session, projectPath) {
   state.selectedLocalId = state.editDocument.local_adjustments[0]?.id || null;
   state.projectPath = projectPath || "";
   state.currentView = "hdr";
+  if (!projectPath) await applyNewSessionPreferences();
   state.interpretationGateDismissed = false;
   clearPreviewCache();
   state.gpuPreview?.resetSession(session.session_id);
@@ -11884,7 +12295,10 @@ async function activateDesktopSession(session, projectPath) {
 async function openProjectFromPath(desktopSelection = null) {
   if (!await confirmUnsavedTransition("open another project")) return;
   if (desktop) {
-    const selection = desktopSelection || await desktop.openProject();
+    const selection = desktopSelection || await chooseProjectPath(
+      "project_open",
+      state.appPreferences?.folders?.projectImport || "",
+    );
     if (!selection) return;
     let response = await fetch("/api/desktop/project/open", {
       method: "POST",
@@ -11903,7 +12317,7 @@ async function openProjectFromPath(desktopSelection = null) {
       payload = await safeJson(response);
     }
     if (!response.ok || !payload?.session) {
-      window.alert(payload?.detail || "The project could not be opened.");
+      window.alert(responseErrorMessage(payload, "The project could not be opened."));
       return;
     }
     await activateDesktopSession(payload.session, selection.path);
@@ -11928,7 +12342,7 @@ async function openProjectFromPath(desktopSelection = null) {
   }
   const payload = await safeJson(response);
   if (!response.ok || !payload?.session) {
-    window.alert(payload?.detail || "The project could not be opened.");
+    window.alert(responseErrorMessage(payload, "The project could not be opened."));
     return;
   }
   state.session = payload.session;
@@ -11955,7 +12369,20 @@ async function saveProjectToPath({ saveAs = false } = {}) {
   if (globalsApplied === false) return false;
   if (desktop) {
     const suggestedName = `${state.session.source.filename.replace(/\.[^.]+$/, "")}.hdrfinisher`;
-    const selection = await desktop.saveProject({ saveAs, suggestedName });
+    let selection = null;
+    if (!saveAs && state.projectPath) {
+      selection = await desktop.grantProjectPath(state.projectPath, "project-save");
+    } else {
+      const existing = splitOutputPath(state.projectPath);
+      const initialDirectory = state.projectPath
+        ? existing.directory
+        : state.appPreferences?.folders?.projectSave || "";
+      selection = await chooseProjectPath(
+        "project_save",
+        initialDirectory,
+        state.projectPath ? `${existing.filename}.hdrfinisher` : suggestedName,
+      );
+    }
     if (!selection) return false;
     const response = await fetch(`/api/desktop/session/${state.session.session_id}/project/save`, {
       method: "POST",
@@ -11964,7 +12391,7 @@ async function saveProjectToPath({ saveAs = false } = {}) {
     });
     const payload = await safeJson(response);
     if (!response.ok) {
-      window.alert(payload?.detail || "The project could not be saved.");
+      window.alert(responseErrorMessage(payload, "The project could not be saved."));
       return false;
     }
     state.projectPath = payload.path;
@@ -11990,7 +12417,7 @@ async function saveProjectToPath({ saveAs = false } = {}) {
   });
   const payload = await safeJson(response);
   if (!response.ok) {
-    window.alert(payload?.detail || "The project could not be saved.");
+    window.alert(responseErrorMessage(payload, "The project could not be saved."));
     return false;
   }
   state.projectPath = payload.path;

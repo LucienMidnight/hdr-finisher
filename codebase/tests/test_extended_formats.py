@@ -425,6 +425,22 @@ def test_media_browser_persists_pins_recents_and_generates_thumbnail(tmp_path: P
         assert image.size == (40, 20)
 
 
+def test_media_browser_project_modes_only_enable_project_files(tmp_path: Path) -> None:
+    folder = tmp_path / "projects"
+    folder.mkdir()
+    project = folder / "grade.hdrfinisher"
+    project.write_bytes(b"project")
+    image = folder / "source.png"
+    Image.new("RGB", (4, 4)).save(image)
+    browser = MediaBrowserStore(tmp_path / "app-data")
+
+    for mode in ["project_open", "project_save"]:
+        entries = {entry["name"]: entry for entry in browser.list_directory(str(folder), mode)["entries"]}
+        assert entries[project.name]["supported"] is True
+        assert entries[project.name]["kind_label"] == "HDR Finisher Project"
+        assert entries[image.name]["supported"] is False
+
+
 def test_media_browser_exposes_named_mounted_volume_roots(tmp_path: Path, monkeypatch) -> None:
     roots = [tmp_path / "C-drive", tmp_path / "D-drive"]
     for root in roots:

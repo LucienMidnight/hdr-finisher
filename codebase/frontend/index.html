@@ -23,19 +23,23 @@
       </nav>
 
       <div class="top-actions">
-        <label class="reference-white-control" for="hdr-reference-white">
-          <span>HDR reference white</span>
-          <select id="hdr-reference-white" aria-describedby="hdr-reference-white-note" disabled>
-            <option value="203" selected>203 nit · Standard</option>
-            <option value="100">100 nit · Controlled workflow</option>
-          </select>
-        </label>
-        <span id="hdr-reference-white-note" class="visually-hidden">Sets the project scene-linear reference. It does not set the export peak, display peak, proof target, or Windows SDR white.</span>
         <button id="project-open" class="text-button" type="button">Open project</button>
         <button id="project-save" class="text-button" type="button" disabled>Save project</button>
+        <button id="settings-open" class="top-icon-button" type="button" aria-label="Open settings" title="Settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/><path d="m19.4 15 .1.1 1.4 2.4-2.4 2.4-2.4-1.4-.1-.1a8.4 8.4 0 0 1-1.5.9V22h-5v-2.7a8.4 8.4 0 0 1-1.5-.9l-.1.1-2.4 1.4-2.4-2.4 1.4-2.4.1-.1a8.4 8.4 0 0 1-.9-1.5H2v-3h2.7a8.4 8.4 0 0 1 .9-1.5l-.1-.1-1.4-2.4 2.4-2.4 2.4 1.4.1.1a8.4 8.4 0 0 1 1.5-.9V2h3v2.7a8.4 8.4 0 0 1 1.5.9l.1-.1 2.4-1.4 2.4 2.4-1.4 2.4-.1.1c.4.5.7 1 .9 1.5H22v3h-2.7a8.4 8.4 0 0 1-.9 1.5Z"/></svg>
+        </button>
+        <button id="help-open" class="top-icon-button" type="button" aria-label="Open help" title="Help">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.8 9.3a2.4 2.4 0 0 1 4.6 1c0 1.8-2.4 2.1-2.4 3.8M12 17.5v.1"/></svg>
+        </button>
         <span class="window-control-reserve" aria-hidden="true"></span>
       </div>
     </header>
+
+    <aside id="update-notice" class="update-notice hidden" aria-live="polite">
+      <span><strong id="update-notice-title">A new HDR Finisher release is available.</strong> <span id="update-notice-detail"></span></span>
+      <button id="update-notice-open" class="button-secondary" type="button">View release</button>
+      <button id="update-notice-dismiss" class="text-button" type="button" aria-label="Dismiss update notice">Dismiss</button>
+    </aside>
 
     <aside class="source-rail panel" aria-label="Metadata">
       <div class="rail-title-row">
@@ -422,7 +426,7 @@
                 </label>
               </div>
             </div>
-            <canvas id="histogram" width="720" height="220" aria-label="Image scope"></canvas>
+            <canvas id="histogram" width="720" height="220" aria-label="Image scope" aria-describedby="scope-note"></canvas>
           </div>
           <div class="scope-readings">
             <dl id="scope-stats" class="metadata-list scope-stats"></dl>
@@ -771,11 +775,11 @@
             <p class="control-subsection-label">RGB Primaries</p>
             <p class="helper rgb-primaries-helper">Scene-linear ACEScg primary shaping. Hue rotates each primary; Purity moves it toward or beyond the working gamut edge. Grays remain neutral unless Tint Purity is raised.</p>
             <div class="control-row primary-red-hue" data-control-path="hdr.red_hue"><div class="control-heading"><label for="hdr-red-hue">Red Hue</label><output data-value-path="hdr.red_hue">0.0°</output></div><input id="hdr-red-hue" type="range" min="-30" max="30" step="0.1" value="0" data-path="hdr.red_hue"></div>
-            <div class="control-row primary-red-purity" data-control-path="hdr.red_purity"><div class="control-heading"><label for="hdr-red-purity">Red Purity</label><output data-value-path="hdr.red_purity">0%</output></div><input id="hdr-red-purity" type="range" min="-95" max="100" step="0.5" value="0" data-path="hdr.red_purity"></div>
+            <div class="control-row primary-red-purity" data-control-path="hdr.red_purity"><div class="control-heading"><label for="hdr-red-purity">Red Purity</label><output data-value-path="hdr.red_purity">0%</output></div><input id="hdr-red-purity" type="range" min="-95" max="95" step="0.5" value="0" data-path="hdr.red_purity"></div>
             <div class="control-row primary-green-hue" data-control-path="hdr.green_hue"><div class="control-heading"><label for="hdr-green-hue">Green Hue</label><output data-value-path="hdr.green_hue">0.0°</output></div><input id="hdr-green-hue" type="range" min="-30" max="30" step="0.1" value="0" data-path="hdr.green_hue"></div>
-            <div class="control-row primary-green-purity" data-control-path="hdr.green_purity"><div class="control-heading"><label for="hdr-green-purity">Green Purity</label><output data-value-path="hdr.green_purity">0%</output></div><input id="hdr-green-purity" type="range" min="-95" max="100" step="0.5" value="0" data-path="hdr.green_purity"></div>
+            <div class="control-row primary-green-purity" data-control-path="hdr.green_purity"><div class="control-heading"><label for="hdr-green-purity">Green Purity</label><output data-value-path="hdr.green_purity">0%</output></div><input id="hdr-green-purity" type="range" min="-95" max="95" step="0.5" value="0" data-path="hdr.green_purity"></div>
             <div class="control-row primary-blue-hue" data-control-path="hdr.blue_hue"><div class="control-heading"><label for="hdr-blue-hue">Blue Hue</label><output data-value-path="hdr.blue_hue">0.0°</output></div><input id="hdr-blue-hue" type="range" min="-30" max="30" step="0.1" value="0" data-path="hdr.blue_hue"></div>
-            <div class="control-row primary-blue-purity" data-control-path="hdr.blue_purity"><div class="control-heading"><label for="hdr-blue-purity">Blue Purity</label><output data-value-path="hdr.blue_purity">0%</output></div><input id="hdr-blue-purity" type="range" min="-95" max="100" step="0.5" value="0" data-path="hdr.blue_purity"></div>
+            <div class="control-row primary-blue-purity" data-control-path="hdr.blue_purity"><div class="control-heading"><label for="hdr-blue-purity">Blue Purity</label><output data-value-path="hdr.blue_purity">0%</output></div><input id="hdr-blue-purity" type="range" min="-95" max="95" step="0.5" value="0" data-path="hdr.blue_purity"></div>
             <div class="control-row primary-tint-hue" data-control-path="hdr.tint_hue"><div class="control-heading"><label for="hdr-tint-hue">Tint Hue</label><output data-value-path="hdr.tint_hue">0.0°</output></div><input id="hdr-tint-hue" type="range" min="-180" max="180" step="0.5" value="0" data-path="hdr.tint_hue"></div>
             <div class="control-row primary-tint-purity" data-control-path="hdr.tint_purity"><div class="control-heading"><label for="hdr-tint-purity">Tint Purity</label><output data-value-path="hdr.tint_purity">0%</output></div><input id="hdr-tint-purity" type="range" min="0" max="20" step="0.5" value="0" data-path="hdr.tint_purity"></div>
           </div>
@@ -936,11 +940,11 @@
               <p class="control-subsection-label">RGB Primaries</p>
               <p class="helper rgb-primaries-helper">Independent scene-linear primary shaping for the SDR fallback.</p>
               <div class="control-row primary-red-hue" data-control-path="sdr.red_hue"><div class="control-heading"><label for="sdr-red-hue">Red Hue</label><output data-value-path="sdr.red_hue">0.0°</output></div><input id="sdr-red-hue" type="range" min="-30" max="30" step="0.1" value="0" data-path="sdr.red_hue"></div>
-              <div class="control-row primary-red-purity" data-control-path="sdr.red_purity"><div class="control-heading"><label for="sdr-red-purity">Red Purity</label><output data-value-path="sdr.red_purity">0%</output></div><input id="sdr-red-purity" type="range" min="-95" max="100" step="0.5" value="0" data-path="sdr.red_purity"></div>
+              <div class="control-row primary-red-purity" data-control-path="sdr.red_purity"><div class="control-heading"><label for="sdr-red-purity">Red Purity</label><output data-value-path="sdr.red_purity">0%</output></div><input id="sdr-red-purity" type="range" min="-95" max="95" step="0.5" value="0" data-path="sdr.red_purity"></div>
               <div class="control-row primary-green-hue" data-control-path="sdr.green_hue"><div class="control-heading"><label for="sdr-green-hue">Green Hue</label><output data-value-path="sdr.green_hue">0.0°</output></div><input id="sdr-green-hue" type="range" min="-30" max="30" step="0.1" value="0" data-path="sdr.green_hue"></div>
-              <div class="control-row primary-green-purity" data-control-path="sdr.green_purity"><div class="control-heading"><label for="sdr-green-purity">Green Purity</label><output data-value-path="sdr.green_purity">0%</output></div><input id="sdr-green-purity" type="range" min="-95" max="100" step="0.5" value="0" data-path="sdr.green_purity"></div>
+              <div class="control-row primary-green-purity" data-control-path="sdr.green_purity"><div class="control-heading"><label for="sdr-green-purity">Green Purity</label><output data-value-path="sdr.green_purity">0%</output></div><input id="sdr-green-purity" type="range" min="-95" max="95" step="0.5" value="0" data-path="sdr.green_purity"></div>
               <div class="control-row primary-blue-hue" data-control-path="sdr.blue_hue"><div class="control-heading"><label for="sdr-blue-hue">Blue Hue</label><output data-value-path="sdr.blue_hue">0.0°</output></div><input id="sdr-blue-hue" type="range" min="-30" max="30" step="0.1" value="0" data-path="sdr.blue_hue"></div>
-              <div class="control-row primary-blue-purity" data-control-path="sdr.blue_purity"><div class="control-heading"><label for="sdr-blue-purity">Blue Purity</label><output data-value-path="sdr.blue_purity">0%</output></div><input id="sdr-blue-purity" type="range" min="-95" max="100" step="0.5" value="0" data-path="sdr.blue_purity"></div>
+              <div class="control-row primary-blue-purity" data-control-path="sdr.blue_purity"><div class="control-heading"><label for="sdr-blue-purity">Blue Purity</label><output data-value-path="sdr.blue_purity">0%</output></div><input id="sdr-blue-purity" type="range" min="-95" max="95" step="0.5" value="0" data-path="sdr.blue_purity"></div>
               <div class="control-row primary-tint-hue" data-control-path="sdr.tint_hue"><div class="control-heading"><label for="sdr-tint-hue">Tint Hue</label><output data-value-path="sdr.tint_hue">0.0°</output></div><input id="sdr-tint-hue" type="range" min="-180" max="180" step="0.5" value="0" data-path="sdr.tint_hue"></div>
               <div class="control-row primary-tint-purity" data-control-path="sdr.tint_purity"><div class="control-heading"><label for="sdr-tint-purity">Tint Purity</label><output data-value-path="sdr.tint_purity">0%</output></div><input id="sdr-tint-purity" type="range" min="0" max="20" step="0.5" value="0" data-path="sdr.tint_purity"></div>
             </div>
@@ -1034,17 +1038,6 @@
             <button id="film-look-match-hdr" class="button-secondary" type="button">Match HDR film look</button>
             <span>Copies the HDR look once; SDR remains independently editable.</span>
           </div>
-          <label class="film-reference-field" for="film-reference-model">Reference Model
-            <select id="film-reference-model" data-path="current.film_look.reference_model" title="Generic behavior informed by published VISION3 sensitometry, granularity, and MTF data; not an exact stock emulation.">
-              <option value="custom">Custom / Neutral</option>
-              <option value="large_format_fine">Large Format Fine</option>
-              <option value="35mm_fine">35mm Fine</option>
-              <option value="35mm_balanced">35mm Balanced</option>
-              <option value="35mm_fast">35mm Fast</option>
-              <option value="16mm_fine">16mm Fine</option>
-            </select>
-          </label>
-          <p class="helper film-reference-note">Reference models populate editable cinema-response controls. They are generic finishing models, not named-stock emulations.</p>
           <div class="control-row" data-control-path="current.film_look.look_strength"><div class="control-heading"><label for="film-look-strength">Look Strength</label><output data-value-path="current.film_look.look_strength">100%</output></div><input id="film-look-strength" type="range" min="0" max="100" step="1" value="100" data-path="current.film_look.look_strength"></div>
 
           <div class="film-module-header"><strong>Film Response</strong><span>Cinema Print</span></div>
@@ -1313,13 +1306,115 @@
       </aside>
     </div>
     <div class="directory-browser-actions">
+      <label id="directory-browser-filename-row" class="directory-browser-filename" hidden>File name
+        <input id="directory-browser-filename" type="text" autocomplete="off" spellcheck="false" aria-label="Project file name">
+      </label>
       <button id="directory-browser-cancel" class="button-secondary" type="button">Cancel</button>
       <button id="directory-browser-select" class="button-primary" type="button" disabled>Open image</button>
     </div>
   </dialog>
 
+  <dialog id="settings-dialog" class="application-dialog settings-dialog" aria-labelledby="settings-dialog-title">
+    <div class="application-dialog-header">
+      <div><h2 id="settings-dialog-title">Settings</h2></div>
+      <button id="settings-close" class="top-icon-button" type="button" aria-label="Close settings" title="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div class="settings-layout">
+      <nav class="settings-nav" aria-label="Settings sections">
+        <button type="button" class="active" data-settings-tab="general" aria-selected="true">General</button>
+        <button type="button" data-settings-tab="locations" aria-selected="false">Locations</button>
+        <button type="button" data-settings-tab="shortcuts" aria-selected="false">Shortcuts</button>
+        <button type="button" data-settings-tab="updates" aria-selected="false">Updates</button>
+      </nav>
+      <div class="settings-content">
+        <section data-settings-panel="general">
+          <h3>General</h3>
+          <p class="helper">Application defaults apply to new source sessions. Saved projects retain their own project settings.</p>
+          <label class="settings-field">HDR reference white
+            <select id="hdr-reference-white" aria-describedby="hdr-reference-white-note">
+              <option value="203">203 nit · Standard</option>
+              <option value="100">100 nit · Controlled workflow</option>
+            </select>
+          </label>
+          <p id="hdr-reference-white-note" class="helper">Updates the active project when one is open and becomes the default for new sources. It does not set export peak, display peak, proof target, or Windows SDR white.</p>
+          <label class="settings-field">Rendering mode
+            <select id="settings-rendering-mode">
+              <option value="auto">Auto · Recommended</option>
+              <option value="gpu">GPU preferred</option>
+              <option value="cpu">CPU compatibility</option>
+            </select>
+          </label>
+          <p class="helper">Auto uses WebGPU when available and falls back safely. CPU compatibility keeps preview rendering on the backend; export quality is unchanged.</p>
+        </section>
+        <section data-settings-panel="locations" hidden>
+          <h3>Default locations</h3>
+          <p class="helper">These folders become the starting location for native dialogs. Clear a folder to use its default. The HDRF preset library contains separate Keyboard Shortcuts and Grading folders and can be revealed in Finder or Explorer.</p>
+          <div id="settings-folder-list" class="settings-folder-list"></div>
+        </section>
+        <section data-settings-panel="shortcuts" hidden>
+          <div class="settings-section-heading"><div><h3>Keyboard shortcuts</h3><p class="helper">Only standard application commands are assigned by default. Select a shortcut, then press a key combination. Backspace clears it; Escape cancels recording.</p></div><button id="shortcuts-reset-all" class="button-secondary" type="button">Reset all</button></div>
+          <div class="shortcut-hardware-note"><strong>Control wheels and Stream Decks</strong><span>Any slider can be assigned Increase, Decrease, and Reset actions. Holding a key repeats; Shift makes an adjustment 10× larger and Alt/Option makes it 10× finer.</span></div>
+          <div class="shortcut-toolbar">
+            <input id="shortcut-search" type="search" placeholder="Search commands and controls" aria-label="Search shortcuts">
+            <select id="shortcut-preset" aria-label="Shortcut preset"><option value="">Shortcut presets…</option></select>
+            <button id="shortcut-load-preset" class="button-secondary" type="button">Load</button>
+            <button id="shortcut-save-preset" class="button-secondary" type="button">Save preset</button>
+          </div>
+          <div class="shortcut-list-header" aria-hidden="true"><span>Command</span><span>Shortcut</span><span></span></div>
+          <div id="shortcut-list" class="shortcut-list"></div>
+        </section>
+        <section data-settings-panel="updates" hidden>
+          <h3>Application updates</h3>
+          <label class="checkbox-row settings-update-toggle"><input id="settings-auto-updates" type="checkbox" checked> Check GitHub for new releases when HDR Finisher starts</label>
+          <p class="helper">Only the installed version is compared. Updates are never downloaded or installed automatically.</p>
+          <div class="settings-update-row"><button id="settings-check-updates" class="button-secondary" type="button">Check now</button><span id="settings-update-status" aria-live="polite">Not checked yet.</span></div>
+        </section>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="help-dialog" class="application-dialog help-dialog" aria-labelledby="help-dialog-title">
+    <div class="application-dialog-header help-header">
+      <div><h2 id="help-dialog-title">HDR Finisher Help</h2></div>
+      <label class="help-search"><span class="visually-hidden">Search documentation</span><input id="help-search" type="search" placeholder="Search documentation"></label>
+      <button id="help-github" class="button-secondary" type="button">Feedback &amp; bugs on GitHub</button>
+      <button id="help-close" class="top-icon-button" type="button" aria-label="Close help" title="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div class="help-layout">
+      <nav id="help-navigation" class="help-navigation" aria-label="Documentation topics"></nav>
+      <article id="help-document" class="help-document" tabindex="0"><p>Loading documentation…</p></article>
+    </div>
+  </dialog>
+
+  <dialog id="group-preset-dialog" class="application-dialog group-preset-dialog" aria-labelledby="group-preset-title">
+    <div class="application-dialog-header">
+      <div>
+        <h2 id="group-preset-title">Adjustment Presets</h2>
+        <p id="group-preset-context" class="helper">Presets affect only this adjustment group.</p>
+      </div>
+      <button id="group-preset-close" class="top-icon-button" type="button" aria-label="Close presets" title="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div class="group-preset-content">
+      <section aria-labelledby="group-preset-saved-title">
+        <h3 id="group-preset-saved-title">Presets</h3>
+        <div id="group-preset-list" class="group-preset-list"></div>
+      </section>
+      <section class="group-preset-save" aria-labelledby="group-preset-save-title">
+        <h3 id="group-preset-save-title">Save current settings</h3>
+        <p class="helper">Only values from the selected group and rendition are stored.</p>
+        <div class="group-preset-save-row">
+          <label class="visually-hidden" for="group-preset-name">Preset name</label>
+          <input id="group-preset-name" type="text" maxlength="80" placeholder="Preset name" autocomplete="off">
+          <button id="group-preset-save" class="button-primary" type="button">Save current</button>
+        </div>
+        <p id="group-preset-status" class="helper" role="status" aria-live="polite"></p>
+      </section>
+    </div>
+  </dialog>
+
   <script src="/static/webgpu-preview.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/preview-scheduler.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+  <script src="/static/application-shell.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/app.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/proofing-ui.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
 </body>

@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 APP_NAME = "HDR Finisher"
-APP_VERSION = "0.7.2"
+APP_VERSION = "0.7.3"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -25,6 +25,7 @@ def _runtime_root() -> Path:
 RESOURCE_ROOT = _resource_root()
 RUNTIME_ROOT = _runtime_root()
 FRONTEND_DIR = RESOURCE_ROOT / "frontend"
+DOCS_DIR = RESOURCE_ROOT / "docs" if (RESOURCE_ROOT / "docs").is_dir() else PROJECT_ROOT.parent / "docs"
 BIN_DIR = RESOURCE_ROOT / "bin"
 SAMPLES_DIR = RESOURCE_ROOT / "samples"
 APP_DATA_DIR = Path(

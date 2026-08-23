@@ -106,11 +106,15 @@ AVIF gain-map support is not universal. An unsupported decoder may show the SDR 
 
 ## JPEG XL HDR
 
-**Best for:** direct-HDR interchange with compatible editors, archives, or specialist pipelines. JPEG XL has no embedded SDR fallback, so it is not the default choice for ordinary web publishing.
+**Best for:** preservation of high-bit-depth HDR images, direct-HDR interchange with a known compatible editor or archive, and extremely large images beyond the bundled AVIF tooling's practical limits. JPEG XL has no embedded SDR fallback, so it is not the default choice for ordinary web publishing.
 
 HDR Finisher writes Rec.2020/PQ and preserves the selected sample representation through a decode-and-inspect validation pass. **12-bit integer** is the recommended default. The Precision menu also offers **10-bit integer**, **16-bit integer**, **16-bit float**, and **32-bit float** for workflows that specifically require them. The two float modes retain floating-point PQ code values; they do not change the automatic Rec.2020/PQ color handling. An 8-bit JPEG XL mode is intentionally not offered.
 
 Choose 10-bit when compatibility or size matters most, 16-bit integer for unusually quantization-sensitive integer interchange, and float only when the receiving pipeline explicitly benefits from it. Higher precision does not make a lossy quality setting lossless and can increase file size and compatibility risk.
+
+The bundled libavif tooling uses default safety limits of **268,435,456 total pixels** and **32,768 pixels on either axis**. These are practical library defaults rather than AVIF's theoretical format ceiling. JPEG XL is useful when a finished image exceeds either limit, provided the receiving software has been tested with that file.
+
+Because this is direct PQ HDR, an SDR device receives no authored SDR base to display. Presentation depends on the viewer's tone mapping and can look wrong or fail entirely in software without suitable HDR JPEG XL support. Safari supports JPEG XL from version 17, but the current Chromium/Electron runtime does not; browser and general-viewer compatibility therefore remains uneven.
 
 ## PNG (SDR)
 
@@ -123,7 +127,7 @@ Writes the authored SDR rendition as an sRGB PNG with no HDR or gain map. **8-bi
 
 ## JPEG (SDR)
 
-Writes the same authored SDR rendition as a conventional 8-bit sRGB JPEG with no HDR or gain map. The Quality control sets JPEG compression quality. Chroma Subsampling offers **4:2:0** (default, smallest, suitable for most photographs), **4:2:2** (more horizontal color detail), and **4:4:4** (full color resolution for fine colored edges and text). This is the compact SDR option for ordinary delivery and very wide line-scan images.
+Writes the same authored SDR rendition as a conventional 8-bit sRGB JPEG with no HDR or gain map. The Quality control sets JPEG compression quality. Chroma Subsampling offers **4:2:0** (default, smallest, suitable for most photographs), **4:2:2** (more horizontal color detail), and **4:4:4** (full color resolution for fine colored edges and text). This is the compact, broadly compatible SDR option for ordinary delivery.
 
 The JPEG bitstream can represent dimensions up to 65,535 pixels, but the bundled Pillow/libjpeg-turbo encoder uses a safety limit of **65,500 pixels** on either axis. If the finished crop exceeds that limit, resize it to 65,500 pixels or use SDR PNG.
 
@@ -188,10 +192,10 @@ The report compares hashes, MIME type, caching headers, format signatures, gain-
 |---|---|
 | Legacy JPEG compatibility matters most | JPEG Ultra HDR |
 | Efficient Chromium-focused web delivery | AVIF + gain map |
-| Compact or very wide SDR delivery | JPEG (SDR) |
+| Compact, broadly compatible SDR delivery | JPEG (SDR) |
 | SDR delivery to a JPEG XL-aware workflow | JPEG XL (SDR) |
 | Lossless explicit SDR fallback | PNG (SDR) |
-| Specialist direct-HDR interchange | JPEG XL HDR (12-bit integer by default) |
+| High-bit-depth HDR preservation, very large images, or specialist direct-HDR interchange | JPEG XL HDR (12-bit integer by default) |
 | A platform/service with unknown gain-map support | Export and test both JPEG Ultra HDR and an explicit SDR alternative |
 
 ## Watch out for

@@ -124,7 +124,7 @@ Use Luma first for tonal shape. RGB channel curves alter color balance and can c
 
 ## Film Look
 
-Film Look is the final creative layer after Curves. Its reference models—Large Format Fine, 35mm Fine, 35mm Balanced, 35mm Fast, and 16mm Fine—populate every control, but remain editable. They are generic cinema-finishing models informed by published motion-picture film behavior, not claims of exact stock matching.
+Film Look is the final creative layer after Curves. Open its **Preset** browser to apply the built-in Large Format Fine, 35mm Fine, 35mm Balanced, 35mm Fast, or 16mm Fine model. Each model populates the Film Look controls as an editable starting point. Built-ins cannot be deleted; **Reset** returns the group to the Neutral defaults. They are generic cinema-finishing models informed by published motion-picture film behavior, not claims of exact stock matching.
 
 - **Cinema Print** shapes contrast, toe, shoulder, and subtractive color density in a perceptual scene-aware domain. It preserves HDR headroom rather than imposing a literal print-film white level.
 - **Halation** adds warm edge scatter around branch-relative highlights. Sensitivity selects analogous highlight populations in HDR and SDR; **View qualification map** is a preview diagnostic and is never baked into an export.

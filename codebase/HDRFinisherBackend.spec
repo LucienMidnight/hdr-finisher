@@ -12,6 +12,14 @@ datas = [
     ("../README.md", "."),
     ("../LICENSE", "."),
     ("../THIRD_PARTY_NOTICES.md", "."),
+    ("../docs/getting-started", "docs/getting-started"),
+    ("../docs/setup", "docs/setup"),
+    ("../docs/user-guide", "docs/user-guide"),
+    ("../docs/concepts", "docs/concepts"),
+    ("../docs/workflows", "docs/workflows"),
+    ("../docs/troubleshooting.md", "docs"),
+    ("../docs/known-limitations.md", "docs"),
+    ("../docs/glossary.md", "docs"),
 ]
 
 imagecodecs_datas, imagecodecs_binaries, imagecodecs_hiddenimports = collect_all("imagecodecs")

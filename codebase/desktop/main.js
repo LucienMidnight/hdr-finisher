@@ -20,6 +20,12 @@ const SOURCE_FILTERS = [
   { name: "All files", extensions: ["*"] },
 ];
 const PROJECT_FILTERS = [{ name: "HDR Finisher Project", extensions: ["hdrfinisher"] }];
+const GRADING_PRESET_GROUPS = new Set([
+  "hdr-tone", "hdr-highlights", "hdr-equalizer", "hdr-color", "hdr-zones",
+  "sdr-base", "sdr-tone", "sdr-equalizer", "sdr-color", "sdr-zones",
+  "hdr-curves", "sdr-curves", "hdr-color-grading", "sdr-color-grading",
+  "hdr-film-look", "sdr-film-look", "hdr-vignette", "sdr-vignette",
+]);
 
 if (process.env.HDR_FINISHER_USER_DATA_DIR) {
   app.setPath("userData", path.resolve(process.env.HDR_FINISHER_USER_DATA_DIR));
@@ -36,28 +42,239 @@ let shuttingDown = false;
 let quitRequested = false;
 let documentState = { path: "", dirty: false, displayName: "Untitled" };
 let renderingMode = "auto";
+let applicationPreferences = null;
+let updateCheckCache = null;
 let pendingOpenPaths = [];
 const knownProjectPaths = new Set();
 const grantedExportPaths = new Set();
 
-function renderingPreferencePath() {
-  return path.join(app.getPath("userData"), "rendering-preferences.json");
+const DEFAULT_APPLICATION_PREFERENCES = Object.freeze({
+  schemaVersion: 1,
+  defaultReferenceWhiteNits: 203,
+  renderingMode: "auto",
+  folders: { projectSave: "", projectImport: "", fileSave: "", fileImport: "", presetSave: "" },
+  shortcuts: {},
+  shortcutPresets: {},
+  updates: { checkAutomatically: true, dismissedVersion: "" },
+});
+
+function applicationPreferencesPath() {
+  return path.join(app.getPath("userData"), "application-preferences.json");
 }
 
-function loadRenderingPreference() {
+function updateCheckCachePath() {
+  return path.join(app.getPath("userData"), "update-check-cache.json");
+}
+
+function cleanFolderPreferences(value) {
+  return Object.fromEntries(["projectSave", "projectImport", "fileSave", "fileImport", "presetSave"].map((key) => {
+    const candidate = typeof value?.[key] === "string" ? value[key] : "";
+    return [key, candidate.length <= 4096 ? candidate : ""];
+  }));
+}
+
+function cleanShortcutMap(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter(([action, shortcut]) => (
+    typeof action === "string" && action.length <= 240 && typeof shortcut === "string" && shortcut.length <= 100
+  )).slice(0, 1000));
+}
+
+function sanitizeApplicationPreferences(value = {}) {
+  const presets = value.shortcutPresets && typeof value.shortcutPresets === "object" && !Array.isArray(value.shortcutPresets)
+    ? Object.fromEntries(Object.entries(value.shortcutPresets).filter(([name, shortcuts]) => (
+      typeof name === "string" && name.trim() && name.length <= 80 && shortcuts && typeof shortcuts === "object"
+    )).slice(0, 50).map(([name, shortcuts]) => [name, cleanShortcutMap(shortcuts)]))
+    : {};
+  return {
+    schemaVersion: 1,
+    defaultReferenceWhiteNits: Number(value.defaultReferenceWhiteNits) === 100 ? 100 : 203,
+    renderingMode: ["auto", "gpu", "cpu"].includes(value.renderingMode) ? value.renderingMode : "auto",
+    folders: cleanFolderPreferences(value.folders),
+    shortcuts: cleanShortcutMap(value.shortcuts),
+    shortcutPresets: presets,
+    updates: {
+      checkAutomatically: value.updates?.checkAutomatically !== false,
+      dismissedVersion: typeof value.updates?.dismissedVersion === "string" && value.updates.dismissedVersion.length <= 40
+        ? value.updates.dismissedVersion
+        : "",
+    },
+  };
+}
+
+function persistApplicationPreferences() {
+  fs.mkdirSync(app.getPath("userData"), { recursive: true });
+  const destination = applicationPreferencesPath();
+  const temporary = `${destination}.tmp`;
+  fs.writeFileSync(temporary, JSON.stringify(applicationPreferences, null, 2));
+  fs.renameSync(temporary, destination);
+}
+
+function loadApplicationPreferences() {
   try {
-    const value = JSON.parse(fs.readFileSync(renderingPreferencePath(), "utf8"));
-    if (["auto", "gpu", "cpu"].includes(value.renderingMode)) renderingMode = value.renderingMode;
-  } catch {}
+    applicationPreferences = sanitizeApplicationPreferences(JSON.parse(fs.readFileSync(applicationPreferencesPath(), "utf8")));
+  } catch {
+    applicationPreferences = sanitizeApplicationPreferences(DEFAULT_APPLICATION_PREFERENCES);
+    try {
+      const legacy = JSON.parse(fs.readFileSync(path.join(app.getPath("userData"), "rendering-preferences.json"), "utf8"));
+      if (["auto", "gpu", "cpu"].includes(legacy.renderingMode)) applicationPreferences.renderingMode = legacy.renderingMode;
+    } catch {}
+  }
+  renderingMode = applicationPreferences.renderingMode;
 }
 
 function setRenderingMode(mode) {
   if (!["auto", "gpu", "cpu"].includes(mode)) return false;
   renderingMode = mode;
-  fs.writeFileSync(renderingPreferencePath(), JSON.stringify({ renderingMode }));
+  applicationPreferences.renderingMode = mode;
+  persistApplicationPreferences();
   buildMenu();
   sendCommand("rendering-mode", { mode });
   return true;
+}
+
+function directoryPreference(key, fallbackName) {
+  return applicationPreferences?.folders?.[key] || app.getPath(fallbackName);
+}
+
+function ensurePresetLibrary(directory) {
+  fs.mkdirSync(directory, { recursive: true });
+  fs.mkdirSync(path.join(directory, "Keyboard Shortcuts"), { recursive: true });
+  fs.mkdirSync(path.join(directory, "Grading"), { recursive: true });
+  return directory;
+}
+
+function defaultPresetDirectory() {
+  const candidates = [];
+  if (process.env.PORTABLE_EXECUTABLE_DIR) candidates.push(path.join(path.resolve(process.env.PORTABLE_EXECUTABLE_DIR), "HDR Finisher Presets"));
+  if (app.isPackaged && process.platform !== "darwin") candidates.push(path.join(path.dirname(app.getPath("exe")), "HDR Finisher Presets"));
+  for (const candidate of candidates) {
+    try {
+      fs.accessSync(path.dirname(candidate), fs.constants.W_OK);
+      ensurePresetLibrary(candidate);
+      fs.accessSync(candidate, fs.constants.W_OK);
+      return candidate;
+    } catch {}
+  }
+  return ensurePresetLibrary(path.join(app.getPath("userData"), "HDR Finisher Presets"));
+}
+
+function gradingPresetDirectory() {
+  const library = ensurePresetLibrary(applicationPreferences?.folders?.presetSave || defaultPresetDirectory());
+  return path.join(library, "Grading");
+}
+
+function cleanGradingPresetPayload(value) {
+  const groupId = typeof value?.groupId === "string" ? value.groupId : "";
+  const name = typeof value?.name === "string" ? value.name.trim().replace(/\s+/g, " ") : "";
+  if (!GRADING_PRESET_GROUPS.has(groupId)) throw new Error("Unknown grading preset group.");
+  if (!name || name.length > 80) throw new Error("Preset names must contain 1 to 80 characters.");
+  if (!value.values || typeof value.values !== "object" || Array.isArray(value.values)) throw new Error("Invalid grading preset values.");
+  const values = JSON.parse(JSON.stringify(value.values));
+  if (JSON.stringify(values).length > 200000) throw new Error("The grading preset is too large.");
+  return { groupId, name, values };
+}
+
+function gradingPresetFilename(groupId, name) {
+  const slug = name.normalize("NFKD").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "preset";
+  const identity = crypto.createHash("sha256").update(`${groupId}\0${name.toLocaleLowerCase("en-US")}`).digest("hex").slice(0, 12);
+  return `${groupId}--${slug}--${identity}.hdrf-grade.json`;
+}
+
+function listGradingPresets(groupId) {
+  if (!GRADING_PRESET_GROUPS.has(groupId)) throw new Error("Unknown grading preset group.");
+  const directory = gradingPresetDirectory();
+  return fs.readdirSync(directory).filter((filename) => filename.endsWith(".hdrf-grade.json")).slice(0, 500).flatMap((filename) => {
+    try {
+      const source = fs.readFileSync(path.join(directory, filename), "utf8");
+      if (source.length > 200000) return [];
+      const preset = cleanGradingPresetPayload(JSON.parse(source));
+      if (preset.groupId !== groupId) return [];
+      return [{ id: filename, ...preset }];
+    } catch {
+      return [];
+    }
+  }).sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function saveGradingPreset(value) {
+  const preset = cleanGradingPresetPayload(value);
+  const directory = gradingPresetDirectory();
+  const filename = gradingPresetFilename(preset.groupId, preset.name);
+  const destination = path.join(directory, filename);
+  const temporary = `${destination}.tmp`;
+  fs.writeFileSync(temporary, JSON.stringify({ schemaVersion: 1, ...preset }, null, 2));
+  fs.renameSync(temporary, destination);
+  return { id: filename, ...preset };
+}
+
+function deleteGradingPreset(presetId) {
+  if (typeof presetId !== "string" || path.basename(presetId) !== presetId || !presetId.endsWith(".hdrf-grade.json")) {
+    throw new Error("Invalid grading preset.");
+  }
+  fs.rmSync(path.join(gradingPresetDirectory(), presetId), { force: true });
+  return true;
+}
+
+function semverParts(version) {
+  const match = String(version || "").trim().replace(/^v/i, "").match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
+  return match ? match.slice(1).map(Number) : null;
+}
+
+function isNewerVersion(candidate, current) {
+  const next = semverParts(candidate);
+  const installed = semverParts(current);
+  if (!next || !installed) return false;
+  for (let index = 0; index < 3; index += 1) {
+    if (next[index] !== installed[index]) return next[index] > installed[index];
+  }
+  return false;
+}
+
+async function checkForUpdates({ force = false } = {}) {
+  const now = Date.now();
+  if (!updateCheckCache) {
+    try {
+      const cached = JSON.parse(fs.readFileSync(updateCheckCachePath(), "utf8"));
+      if (Number.isFinite(cached.checkedAt) && cached.result && typeof cached.result === "object") updateCheckCache = cached;
+    } catch {}
+  }
+  if (!force && updateCheckCache && now - updateCheckCache.checkedAt < 24 * 60 * 60 * 1000) return updateCheckCache.result;
+  const cacheResult = (result) => {
+    updateCheckCache = { checkedAt: now, result };
+    try { fs.writeFileSync(updateCheckCachePath(), JSON.stringify(updateCheckCache)); } catch {}
+    return result;
+  };
+  try {
+    const response = await fetch("https://api.github.com/repos/LucienMidnight/hdr-finisher/releases/latest", {
+      headers: {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2026-03-10",
+        "User-Agent": `HDR-Finisher/${app.getVersion()}`,
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!response.ok) throw new Error(`GitHub returned HTTP ${response.status}.`);
+    const release = await response.json();
+    const latestVersion = String(release.tag_name || "").replace(/^v/i, "");
+    const releaseUrl = typeof release.html_url === "string" ? release.html_url : "";
+    const parsedReleaseUrl = new URL(releaseUrl);
+    if (parsedReleaseUrl.protocol !== "https:" || parsedReleaseUrl.hostname !== "github.com" || !parsedReleaseUrl.pathname.toLowerCase().startsWith("/lucienmidnight/hdr-finisher/")) {
+      throw new Error("Unexpected release URL.");
+    }
+    const result = {
+      status: isNewerVersion(latestVersion, app.getVersion()) ? "available" : "current",
+      currentVersion: app.getVersion(),
+      latestVersion,
+      releaseName: typeof release.name === "string" ? release.name.slice(0, 160) : "",
+      releaseUrl,
+      checkedAt: new Date(now).toISOString(),
+    };
+    return cacheResult(result);
+  } catch (error) {
+    const result = { status: "unavailable", currentVersion: app.getVersion(), message: error?.message || "Update check failed.", checkedAt: new Date(now).toISOString() };
+    return cacheResult(result);
+  }
 }
 
 function randomSecret() {
@@ -219,6 +436,43 @@ function registerIpc() {
     packaged: app.isPackaged,
     renderingMode,
   }));
+  handle("desktop:get-preferences", () => applicationPreferences);
+  handle("desktop:get-default-preset-directory", () => defaultPresetDirectory());
+  handle("desktop:list-grading-presets", (groupId) => listGradingPresets(groupId));
+  handle("desktop:save-grading-preset", (preset) => saveGradingPreset(preset));
+  handle("desktop:delete-grading-preset", (presetId) => deleteGradingPreset(presetId));
+  handle("desktop:set-preferences", (value) => {
+    applicationPreferences = sanitizeApplicationPreferences(value);
+    renderingMode = applicationPreferences.renderingMode;
+    persistApplicationPreferences();
+    buildMenu();
+    return applicationPreferences;
+  });
+  handle("desktop:choose-preference-directory", async (key) => {
+    if (!["projectSave", "projectImport", "fileSave", "fileImport", "presetSave"].includes(key)) throw new Error("Unknown folder preference.");
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: "Choose default folder",
+      defaultPath: applicationPreferences.folders[key] || (key === "presetSave" ? defaultPresetDirectory() : app.getPath(key.startsWith("project") ? "documents" : "pictures")),
+      properties: ["openDirectory", "createDirectory"],
+    });
+    if (result.canceled) return null;
+    return key === "presetSave" ? ensurePresetLibrary(result.filePaths[0]) : result.filePaths[0];
+  });
+  handle("desktop:reveal-preference-directory", (key) => {
+    if (key !== "presetSave") throw new Error("Only the preset library can be revealed from settings.");
+    const directory = ensurePresetLibrary(applicationPreferences.folders.presetSave || defaultPresetDirectory());
+    shell.showItemInFolder(directory);
+    return directory;
+  });
+  handle("desktop:check-for-updates", (options) => checkForUpdates(options));
+  handle("desktop:open-project-website", async (url) => {
+    const target = new URL(String(url || "https://github.com/LucienMidnight/hdr-finisher"));
+    if (target.protocol !== "https:" || target.hostname !== "github.com" || !target.pathname.toLowerCase().startsWith("/lucienmidnight/hdr-finisher")) {
+      throw new Error("Only the HDR Finisher GitHub project can be opened.");
+    }
+    await shell.openExternal(target.toString());
+    return true;
+  });
   handle("desktop:set-rendering-mode", (mode) => setRenderingMode(mode));
   handle("desktop:write-clipboard-text", (value) => {
     if (typeof value !== "string" || value.length > 32768) throw new Error("Invalid clipboard text.");
@@ -226,7 +480,7 @@ function registerIpc() {
     return true;
   });
   handle("desktop:open-source", async () => {
-    const result = await dialog.showOpenDialog(mainWindow, { title: "Import source image", properties: ["openFile"], filters: SOURCE_FILTERS });
+    const result = await dialog.showOpenDialog(mainWindow, { title: "Import source image", defaultPath: directoryPreference("fileImport", "pictures"), properties: ["openFile"], filters: SOURCE_FILTERS });
     return result.canceled ? null : grantPath(result.filePaths[0], "source-open");
   });
   handle("desktop:grant-source-path", async (filePath) => {
@@ -234,8 +488,18 @@ function registerIpc() {
     if (!isSourcePath(resolved)) throw new Error("Select a supported source image.");
     return grantPath(resolved, "source-open");
   });
+  handle("desktop:grant-project-path", async (filePath, intent) => {
+    if (!["project-open", "project-save"].includes(intent)) throw new Error("Unknown project path intent.");
+    let resolved = path.resolve(String(filePath || ""));
+    if (intent === "project-save" && !isProjectPath(resolved)) resolved = `${resolved}.hdrfinisher`;
+    if (!isProjectPath(resolved)) throw new Error("Select an HDR Finisher project file.");
+    const exists = fs.existsSync(resolved);
+    if (intent === "project-open" && !exists) throw new Error("Select an existing HDR Finisher project.");
+    knownProjectPaths.add(resolved);
+    return { ...(await grantPath(resolved, intent)), exists };
+  });
   handle("desktop:open-project", async () => {
-    const result = await dialog.showOpenDialog(mainWindow, { title: "Open project", properties: ["openFile"], filters: PROJECT_FILTERS });
+    const result = await dialog.showOpenDialog(mainWindow, { title: "Open project", defaultPath: directoryPreference("projectImport", "documents"), properties: ["openFile"], filters: PROJECT_FILTERS });
     if (result.canceled) return null;
     knownProjectPaths.add(path.resolve(result.filePaths[0]));
     return grantPath(result.filePaths[0], "project-open");
@@ -252,7 +516,7 @@ function registerIpc() {
     const suggested = safeSuggestedName(options.suggestedName, "Untitled.hdrfinisher");
     const result = await dialog.showSaveDialog(mainWindow, {
       title: saveAs ? "Save Project As" : "Save Project",
-      defaultPath: documentState.path || path.join(app.getPath("documents"), suggested),
+      defaultPath: documentState.path || path.join(directoryPreference("projectSave", "documents"), suggested),
       filters: PROJECT_FILTERS,
     });
     if (result.canceled || !result.filePath) return null;
@@ -280,7 +544,7 @@ function registerIpc() {
   handle("desktop:choose-export-directory", async (initialPath) => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: "Choose export folder",
-      defaultPath: typeof initialPath === "string" && initialPath ? initialPath : app.getPath("pictures"),
+      defaultPath: typeof initialPath === "string" && initialPath ? initialPath : directoryPreference("fileSave", "pictures"),
       properties: ["openDirectory", "createDirectory"],
     });
     return result.canceled ? null : result.filePaths[0];
@@ -290,7 +554,7 @@ function registerIpc() {
     const suggested = safeSuggestedName(options.suggestedName, `hdr_finisher_export.${extension}`);
     const result = await dialog.showSaveDialog(mainWindow, {
       title: "Export finished image",
-      defaultPath: path.join(typeof options.directory === "string" && options.directory ? options.directory : app.getPath("pictures"), suggested),
+      defaultPath: path.join(typeof options.directory === "string" && options.directory ? options.directory : directoryPreference("fileSave", "pictures"), suggested),
       filters: [{ name: typeof options.formatName === "string" ? options.formatName : "Finished image", extensions: [extension] }],
     });
     if (result.canceled || !result.filePath || !isExportPath(result.filePath)) return null;
@@ -383,13 +647,13 @@ function buildMenu() {
     {
       label: "File",
       submenu: [
-        { label: "Import Source…", accelerator: "CmdOrCtrl+O", click: () => sendCommand("open-source") },
-        { label: "Open Project…", accelerator: "CmdOrCtrl+Shift+O", click: () => sendCommand("open-project") },
+        { label: "Import Source…", click: () => sendCommand("open-source") },
+        { label: "Open Project…", click: () => sendCommand("open-project") },
         { type: "separator" },
-        { label: "Save", accelerator: "CmdOrCtrl+S", enabled: hasDocument, click: () => sendCommand("save") },
-        { label: "Save As…", accelerator: "CmdOrCtrl+Shift+S", enabled: hasDocument, click: () => sendCommand("save-as") },
+        { label: "Save", enabled: hasDocument, click: () => sendCommand("save") },
+        { label: "Save As…", enabled: hasDocument, click: () => sendCommand("save-as") },
         { type: "separator" },
-        { label: "Export…", accelerator: "CmdOrCtrl+E", enabled: hasDocument, click: () => sendCommand("export") },
+        { label: "Export…", enabled: hasDocument, click: () => sendCommand("export") },
         { type: "separator" },
         process.platform === "darwin" ? { role: "close" } : { role: "quit" },
       ],
@@ -397,8 +661,10 @@ function buildMenu() {
     {
       label: "Edit",
       submenu: [
-        { label: "Undo", accelerator: "CmdOrCtrl+Z", enabled: hasDocument, click: () => sendCommand("undo") },
-        { label: "Redo", accelerator: "CmdOrCtrl+Shift+Z", enabled: hasDocument, click: () => sendCommand("redo") },
+        { label: "Undo", enabled: hasDocument, click: () => sendCommand("undo") },
+        { label: "Redo", enabled: hasDocument, click: () => sendCommand("redo") },
+        { type: "separator" },
+        { label: "Settings…", click: () => sendCommand("settings") },
         { type: "separator" },
         {
           label: "Rendering Mode",
@@ -428,6 +694,9 @@ function buildMenu() {
     {
       label: "Help",
       submenu: [
+        { label: "HDR Finisher Help", click: () => sendCommand("help") },
+        { label: "Check for Updates…", click: () => sendCommand("check-updates") },
+        { type: "separator" },
         { label: "Open Logs", click: () => shell.showItemInFolder(backend.logPath) },
         { label: "About HDR Finisher", click: () => dialog.showMessageBox(mainWindow, { title: "HDR Finisher", message: `HDR Finisher ${app.getVersion()}`, detail: "Offline HDR finishing and gain-map export.", buttons: ["OK"] }) },
       ],
@@ -603,7 +872,7 @@ if (!gotLock) {
   });
   app.whenReady().then(async () => {
     app.setAppUserModelId(APP_ID);
-    loadRenderingPreference();
+    loadApplicationPreferences();
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
     try {
       await startBackend();

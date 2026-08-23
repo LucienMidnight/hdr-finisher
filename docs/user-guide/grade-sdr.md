@@ -87,7 +87,7 @@ SDR Curves work from 0 to 1 rather than the HDR logarithmic upper range. Luma ch
 
 ## Match HDR film look
 
-When SDR is active, **Match HDR film look** makes a one-time copy of the HDR reference model, all continuous Film Look values, and the Halation, Bloom, Image Structure, and Grain enabled states. It deliberately preserves the SDR Film Look section's top-level bypass state. After the copy, every SDR value remains independent; later HDR changes are not linked.
+When SDR is active, **Match HDR film look** makes a one-time copy of the HDR Film Look preset identity, all continuous Film Look values, and the Halation, Bloom, Image Structure, and Grain enabled states. It deliberately preserves the SDR Film Look section's top-level bypass state. After the copy, every SDR value remains independent; later HDR changes are not linked. SDR also has its own Film Look preset browser; built-in models cannot be deleted, while user-created presets can be removed there.
 
 Sensitivity is branch-relative, so a copied Halation or Bloom value qualifies an analogous bright population rather than reusing an HDR nit threshold. Both branches sample the same seeded grain field to keep gain-map reconstruction from mixing unrelated noise patterns.
 

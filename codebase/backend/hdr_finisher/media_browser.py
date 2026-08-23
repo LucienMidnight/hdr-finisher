@@ -52,8 +52,8 @@ class MediaBrowserStore:
         self._decode_slots = BoundedSemaphore(2)
 
     def list_directory(self, path: str | None, mode: str) -> dict[str, Any]:
-        if mode not in {"source", "export_directory"}:
-            raise MediaBrowserError("Browser mode must be source or export_directory.")
+        if mode not in {"source", "export_directory", "project_open", "project_save"}:
+            raise MediaBrowserError("Unsupported file-browser mode.")
         requested = Path(path).expanduser() if path else self._default_directory(mode)
         try:
             current = requested.resolve(strict=True)
@@ -62,7 +62,7 @@ class MediaBrowserStore:
         if not current.is_dir():
             raise MediaBrowserError(f"Not a folder: {current}")
         try:
-            entries = [self._entry(child) for child in current.iterdir()]
+            entries = [self._entry(child, mode) for child in current.iterdir()]
         except OSError as exc:
             raise MediaBrowserError(f"Could not read folder: {current}") from exc
         entries.sort(key=lambda item: (item["kind"] != "directory", str(item["name"]).casefold()))
@@ -209,11 +209,14 @@ class MediaBrowserStore:
         if mode == "export_directory":
             EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
             return EXPORTS_DIR
+        if mode in {"project_open", "project_save"}:
+            documents = Path.home() / "Documents"
+            return documents if documents.is_dir() else Path.home()
         pictures = Path.home() / "Pictures"
         return pictures if pictures.is_dir() else Path.home()
 
     @staticmethod
-    def _entry(path: Path) -> dict[str, Any]:
+    def _entry(path: Path, mode: str) -> dict[str, Any]:
         try:
             stat = path.stat()
         except OSError:
@@ -226,11 +229,12 @@ class MediaBrowserStore:
             if birthtime is not None
             else int(stat.st_ctime_ns // 1_000_000) if stat is not None else None
         )
+        supported = suffix == ".hdrfinisher" if mode in {"project_open", "project_save"} else suffix in SOURCE_EXTENSIONS
         return {
             "name": path.name,
             "path": str(path.resolve(strict=False)),
             "kind": kind,
-            "supported": kind == "directory" or suffix in SOURCE_EXTENSIONS,
+            "supported": kind == "directory" or supported,
             "format": suffix.removeprefix(".") or None,
             "kind_label": _kind_label(kind, suffix),
             "size": int(stat.st_size) if stat is not None and kind == "file" else None,
@@ -499,6 +503,7 @@ def _kind_label(kind: str, suffix: str) -> str:
         ".png": "PNG image",
         ".tif": "TIFF image",
         ".tiff": "TIFF image",
+        ".hdrfinisher": "HDR Finisher Project",
         ".xmp": "XMP sidecar",
     }
     return labels.get(suffix, f"{suffix.removeprefix('.').upper()} file" if suffix else "File")

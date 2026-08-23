@@ -53,14 +53,22 @@ Strengths:
 
 - Ordinary JPEG fallback behavior
 - Familiar extension and broad legacy decoding
-- Good fit for photography workflows
+- One file carries both the authored SDR base and adaptive HDR reconstruction
 
 Risks:
 
 - Recompression often strips the gain map
 - Metadata can be removed while leaving a valid SDR JPEG
-- The 8-bit gain map is sensitive to quality and spatial downsampling
+- Both the SDR base and logarithmic gain map are stored as 8-bit JPEG data, so gradients and large gain ranges are more sensitive to quantization and compression than the 10-bit AVIF gain-map path
 - Application/browser support remains version-dependent
+
+“8-bit” describes the two JPEG-coded components, not the final display buffer.
+A compatible viewer reconstructs HDR from the 8-bit SDR base, the 8-bit gain
+map, and floating-point gain metadata. An incompatible viewer simply opens the
+ordinary SDR JPEG. This backward-compatible model is the format's major
+advantage. Google's [libultrahdr reference
+implementation](https://github.com/google/libultrahdr) documents the same SDR
+base plus gain-map behavior.
 
 At export, HDR Finisher constrains the JPEG gain-map boost range to four stops
 of per-channel latitude below and above unity, expanding the upper bound when
@@ -76,7 +84,7 @@ texture when a browser reconstructs HDR. Neither authored endpoint is denoised.
 
 ## AVIF with gain map
 
-HDR Finisher combines an SDR base and a BT.2020/PQ alternate into an AVIF gain-map file, with a separate 10-bit gain map. Primary-image and gain-map chroma are independently selectable. The built-in Web Default keeps the primary at 4:2:0 but the gain map at 4:4:4 because test-pattern measurements found no size benefit and materially worse colored-edge error from a 4:2:0 gain map. Encoder-supported monochrome gain maps are not exposed because they cannot preserve per-channel gain in saturated highlights.
+HDR Finisher combines an SDR base and a BT.2020/PQ alternate into an AVIF gain-map file, with a separate 10-bit gain map. Primary-image chroma is selectable; gain-map chroma is fixed at 4:4:4. The built-in Web Default keeps the primary at 4:2:0 because test-pattern measurements found no useful size benefit and materially worse colored-edge error from a 4:2:0 gain map. Encoder-supported monochrome gain maps are not exposed because they cannot preserve per-channel gain in saturated highlights.
 
 The bundled AVIF encoder already discards the outer 0.1% of ratio outliers when
 choosing each channel's gain range. Its 10-bit map therefore receives an
@@ -99,13 +107,70 @@ Risks:
 - Servers may send the wrong MIME type or transform the file
 - A decoder may ignore the gain map or fail rather than display the base
 
+AVIF itself can theoretically code images up to 65,536 pixels on an axis, but
+that number is not a useful promise of application compatibility. The bundled
+libavif tooling uses practical safety defaults of **268,435,456 total pixels**
+(`16,384 × 16,384`) and **32,768 pixels on either axis** to avoid memory and
+integer-overflow failures. JPEG XL can therefore be a useful alternative for
+images beyond those practical AVIF limits. These are libavif defaults, not a
+universal AVIF-format ceiling; see the official [libavif limit
+definitions](https://github.com/AOMediaCodec/libavif/blob/main/include/avif/avif.h)
+and [AVIF specification](https://github.com/AOMediaCodec/av1-avif/blob/main/index.bs).
+
+## JPEG XL HDR
+
+JPEG XL HDR stores the graded Rec.2020/PQ image directly rather than packaging
+an SDR base plus gain map. It is a strong choice for preserving high-bit-depth
+HDR images, exchanging them with a known compatible editor, or retaining very
+large images that exceed the bundled AVIF tooling's practical limits. HDR
+Finisher offers 10- and 12-bit integer, 16-bit integer, 16-bit float, and 32-bit
+float output. The JPEG XL reference implementation describes native HDR support
+through full-precision computation and explicit color/transfer signaling in its
+[format overview](https://github.com/libjxl/libjxl/blob/main/doc/xl_overview.md).
+
+Strengths:
+
+- Direct high-bit-depth HDR without an 8-bit base-image bottleneck
+- Lossy or lossless high-fidelity preservation and interchange
+- Better fit than the bundled AVIF route for extremely large pixel dimensions
+- Explicit Rec.2020/PQ signaling in HDR Finisher exports
+
+Risks:
+
+- No embedded authored SDR fallback or gain map
+- An SDR device depends on the viewer to tone-map the PQ image; unsupported or simplistic viewers may fail to open it or present it poorly
+- Browser and general-viewer support remains uneven, so it is not a safe universal web-delivery format
+- Higher precision can increase file size and does not make a lossy quality setting lossless
+
+Safari added JPEG XL in version 17, but WebKit still recommends providing a
+fallback for browsers without support. The current Chromium/Electron runtime
+used by HDR Finisher does not natively decode JPEG XL. WebKit's 2026 JPEG XL
+work is still described as an interoperability investigation, which supports
+calling browser delivery *uneven* rather than *unsupported everywhere*. See
+[Safari 17's JPEG XL notes](https://webkit.org/blog/14445/webkit-features-in-safari-17-0/)
+and [Interop 2026](https://webkit.org/blog/17818/announcing-interop-2026/).
+
 ## SDR PNG
 
-SDR PNG is not adaptive HDR. It is a lossless-container, 8-bit sRGB export of the authored base. It is useful as a fallback, diagnostic reference, or separate delivery.
+SDR PNG is not adaptive HDR. It is a lossless sRGB export of the authored base,
+available in 8 or 16 bits per channel. It is useful as a broadly readable SDR
+fallback, diagnostic reference, or higher-precision interchange file. Its main
+cost is file size, especially at 16 bits.
 
 ## SDR JPEG
 
-SDR JPEG is not adaptive HDR. It is a conventional 8-bit sRGB export of the authored base, encoded with adjustable quality and selectable 4:2:0, 4:2:2, or 4:4:4 chroma sampling. It is useful for compact standalone delivery and line-scan images up to the bundled encoder's 65,500-pixel per-axis limit.
+SDR JPEG is not adaptive HDR. It is a conventional 8-bit sRGB export of the
+authored base, encoded with adjustable quality and selectable 4:2:0, 4:2:2, or
+4:4:4 chroma sampling. It is the smallest and most broadly compatible option
+for ordinary standalone SDR delivery, but it is lossy and carries no HDR data.
+
+## JPEG XL SDR
+
+JPEG XL SDR stores only the authored 8-bit sRGB rendition. It can provide good
+compression for a JPEG XL-aware editor or archive, but it has neither an HDR
+rendition nor a gain map. Because browser, service, and viewer support is still
+uneven, it should be chosen only when the receiving workflow is known to accept
+JPEG XL.
 
 ## Resolution and edge behavior
 

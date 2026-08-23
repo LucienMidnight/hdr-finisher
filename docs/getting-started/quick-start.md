@@ -59,10 +59,12 @@ Open **Export** and review preflight:
 
 Choose:
 
-- **JPEG Ultra HDR** for broad JPEG fallback behavior and compatible HDR viewers.
-- **AVIF + gain map** for high compression efficiency and validated Chromium delivery.
-- **JPEG (SDR)** for a compact standalone rendition or very wide line-scan delivery.
-- **PNG (SDR)** for a lossless standalone fallback or comparison file.
+- **JPEG Ultra HDR** when ordinary JPEG compatibility is the priority. Legacy software sees the authored SDR image, while compatible HDR viewers apply the gain map. Its base and gain map are both 8-bit JPEG data, so it is more vulnerable to compression artifacts and banding than the higher-precision AVIF path; the reconstructed HDR result is not simply an “8-bit HDR image.”
+- **AVIF + gain map** for the best balance of compression efficiency, gain-map precision, and the currently validated Chromium delivery path. HDR Finisher supports an 8-, 10-, or 12-bit primary plus a 10-bit gain map, but AVIF gain-map decoding and metadata survival are less universal than ordinary JPEG.
+- **JPEG XL HDR** for preserving a direct, high-bit-depth HDR rendition or for exceptionally large images. It supports 10- and 12-bit integer, 16-bit integer/float, and 32-bit float output in HDR Finisher, but it has no gain map or authored SDR fallback. Non-HDR presentation therefore depends on the receiving viewer's tone mapping, and browser/viewer support remains uneven.
+- **JPEG (SDR)** for the smallest, most broadly compatible standalone SDR rendition. It is 8-bit and lossy, with no HDR data.
+- **PNG (SDR)** for a lossless standalone SDR fallback, comparison file, or higher-precision 16-bit interchange. Files are usually much larger than JPEG.
+- **JPEG XL (SDR)** for compact SDR interchange when the receiving application explicitly supports JPEG XL. It carries no HDR rendition and is not a dependable general-web fallback.
 
 After export, open the result in its intended browser or service. Moving the same browser window between HDR and SDR displays is a useful fallback check. Hosting services may recompress the file and remove its gain map, so validate the delivered URL when publication matters.
 

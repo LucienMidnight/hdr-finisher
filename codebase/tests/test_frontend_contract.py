@@ -119,6 +119,7 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
 def test_panel_titles_and_scope_description_follow_shared_design_contract() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    app = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
     assert '<h1 class="panel-title">Metadata</h1>' in html
     assert 'id="preview-window-title" class="panel-title" tabindex="0" aria-describedby="viewer-branch-note"' in html
@@ -129,6 +130,9 @@ def test_panel_titles_and_scope_description_follow_shared_design_contract() -> N
     assert '<h1 class="panel-title dock-panel-title">Scopes</h1>' in html
     assert 'id="scope-title" tabindex="0" aria-describedby="scope-note"' in html
     assert 'id="scope-note" class="title-tooltip" role="tooltip"' in html
+    assert 'id="histogram" width="720" height="220" aria-label="Image scope" aria-describedby="scope-note"' in html
+    assert "compactScopeGuideLabel(scope, guide)" in app
+    assert "RW means active HDR reference white" in app
     assert "--panel-title-font-family:" in css
     assert "--panel-title-font-size:" in css
     assert "--group-title-font-family: var(--sans)" in css
@@ -137,6 +141,22 @@ def test_panel_titles_and_scope_description_follow_shared_design_contract() -> N
     assert ".disclosure-trigger > span:first-child" in css
     assert "transition-delay: 2s" in css
     assert "justify-content: flex-start" in css
+
+
+def test_default_shortcuts_are_conservative_and_warn_about_macos_system_bindings() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    app = (FRONTEND / "application-shell.js").read_text(encoding="utf-8")
+
+    assert '"edit.redo": "Mod+Shift+Z"' in app
+    assert '"file.exportStandard": "Mod+E"' in app
+    assert '"view.analysis": "S"' not in app
+    assert '"file.export": "X"' not in app
+    assert '["Mod+Shift+3", "a full-screen screenshot"]' in app
+    assert '["Mod+Shift+4", "a selection screenshot"]' in app
+    assert '["Mod+Shift+5", "Screenshot and screen recording options"]' in app
+    assert "is normally used by macOS" in app
+    assert "if (!exact) return undefined;" in app
+    assert "Only standard application commands are assigned by default." in html
 
 
 def test_rendition_descriptions_are_delayed_title_tooltips() -> None:
@@ -415,6 +435,7 @@ def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     assert 'class="export-directory-field"' in html
     assert 'id="directory-browser"' in html
     assert 'id="directory-browser-select"' in html
+    assert 'id="directory-browser-filename"' in html
     assert '<strong>Recent</strong><ul id="directory-browser-recents"></ul>' in html
     assert '<strong>Pinned</strong><ul id="directory-browser-pinned"></ul>' in html
     assert '<strong>Locations</strong><ul id="directory-browser-locations"></ul>' in html
@@ -441,6 +462,13 @@ def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     assert "private, no-cache" in (ROOT / "backend" / "hdr_finisher" / "main.py").read_text(encoding="utf-8")
     assert 'fetch("/api/media-browser/recents"' in javascript
     assert "await recordSuccessfulMediaImport(selection.path)" in javascript
+    assert 'await chooseProjectPath(\n      "project_open"' in javascript
+    assert 'await chooseProjectPath(\n        "project_save"' in javascript
+    assert 'desktop.grantProjectPath(requestedPath' in javascript
+    assert 'mode === "project_save" && selection.exists' in javascript
+    assert 'addEventListener("click", () => openProjectFromPath())' in javascript
+    assert 'window.alert(responseErrorMessage(payload, "The project could not be opened."))' in javascript
+    assert 'grantProjectPath: (filePath, intent)' in (DESKTOP / "preload.js").read_text(encoding="utf-8")
     assert 'id="directory-browser-kicker"' not in html
     source_summary = html.split('<section class="source-summary">', 1)[1].split("</section>", 1)[0]
     assert source_summary.index('id="badge"') < source_summary.index('id="experimental-dng-note"')
@@ -691,8 +719,11 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
     assert html.index('data-group="film-look"') > html.index('data-group="curves"')
+    assert 'id="film-reference-model"' not in html
     for label in ["Large Format Fine", "35mm Fine", "35mm Balanced", "35mm Fast", "16mm Fine"]:
-        assert label in html
+        assert label in javascript
+    assert "builtInGroupPresets" in javascript
+    assert "if (!preset.builtIn)" in javascript
     for path in [
         "print_strength", "color_density", "grain_amount", "grain_shadow_response",
         "grain_midtone_response", "grain_highlight_response", "halation_amount",
@@ -703,6 +734,14 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     assert "state.adjustments.sdr.film_look = JSON.parse(JSON.stringify(state.adjustments.hdr.film_look))" in javascript
     assert "const topLevelEnabled = state.adjustments.sdr.film_look_section_enabled" in javascript
     assert "film_grain_seed: 271828" in javascript
+
+
+def test_rgb_primary_purity_slider_zeroes_align_with_hue_centers() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+
+    for lane in ["hdr", "sdr"]:
+        for primary in ["red", "green", "blue"]:
+            assert f'id="{lane}-{primary}-purity" type="range" min="-95" max="95"' in html
 
 
 def test_interactive_preview_scheduler_and_quality_preference_contract() -> None:
@@ -1035,7 +1074,7 @@ def test_local_mask_authoring_uses_bidirectional_authoritative_geometry_mapping(
 def test_frontend_assets_use_the_application_version_for_cache_busting() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
 
-    assert html.count("__HDR_FINISHER_ASSET_VERSION__") == 5
+    assert html.count("__HDR_FINISHER_ASSET_VERSION__") == 6
     assert '/static/app.js?v=__HDR_FINISHER_ASSET_VERSION__' in html
     assert '/static/styles.css?v=__HDR_FINISHER_ASSET_VERSION__' in html
 
@@ -1063,15 +1102,49 @@ def test_export_action_remains_in_normal_scroll_flow() -> None:
     assert "display: grid" in sheet_actions
 
 
-def test_modified_status_uses_compact_sentence_case_term() -> None:
+def test_modified_status_uses_only_the_group_dot_without_text_counts() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
 
-    assert "`${count} Mod`" in javascript
-    assert 'curvesModified ? "Mod" : ""' in javascript
-    assert "`${count} modified`" not in javascript
+    assert "`${count} Mod`" not in javascript
+    assert 'curvesModified ? "Mod" : ""' not in javascript
+    assert 'els.gradeModifiedSummary.textContent = ""' in javascript
+    assert 'output.textContent = ""' in javascript
     assert ".group-toggle span {" in css
-    assert "text-transform: none;" in css
+    assert ".control-group.modified .group-toggle span::after" in css
+
+
+def test_adjustment_group_presets_are_scoped_persistent_and_available_in_headers() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    main = (DESKTOP / "main.js").read_text(encoding="utf-8")
+    preload = (DESKTOP / "preload.js").read_text(encoding="utf-8")
+
+    assert 'id="group-preset-dialog"' in html
+    assert 'id="group-preset-list"' in html
+    assert 'id="group-preset-name"' in html
+    assert 'id="film-reference-model"' not in html
+    assert 'button.textContent = "Preset"' in javascript
+    assert "function groupPresetPaths(groupId)" in javascript
+    assert "function builtInGroupPresets(context)" in javascript
+    assert 'kind.textContent = "Built-in"' in javascript
+    assert "if (!preset.builtIn)" in javascript
+    assert '"35mm_fast": "35mm Fast"' in javascript
+    assert "function applyFilmLookPreset" not in javascript
+    assert "context.paths.forEach((path)" in javascript
+    assert "sectionPathForGroup" not in javascript[javascript.index("function applyGroupPreset"):javascript.index("function laneCurvesModified")]
+    assert ".group-preset { order: 2;" in css
+    assert ".control-group-header:has(.group-preset) {" in css
+    assert "grid-template-columns: minmax(0, 1fr) 54px 44px 26px;" in css
+    assert ".group-preset { grid-column: 2;" in css
+    assert ".group-reset { grid-column: 3;" in css
+    assert ".section-bypass { grid-column: 4;" in css
+    assert 'path.join(library, "Grading")' in main
+    assert 'schemaVersion: 1, ...preset' in main
+    assert 'listGradingPresets: (groupId)' in preload
+    assert 'saveGradingPreset: (preset)' in preload
+    assert 'deleteGradingPreset: (presetId)' in preload
 
 
 def test_waveform_resolution_policy_reduces_payload_without_coarse_refresh_columns() -> None:

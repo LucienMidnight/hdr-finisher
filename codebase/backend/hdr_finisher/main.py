@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .capabilities import probe_capabilities
-from .config import APP_NAME, APP_VERSION, DEFAULT_HOST, DEFAULT_PORT, EXPORTS_DIR, FRONTEND_DIR, SAMPLES_DIR
+from .config import APP_NAME, APP_VERSION, DEFAULT_HOST, DEFAULT_PORT, DOCS_DIR, EXPORTS_DIR, FRONTEND_DIR, SAMPLES_DIR
 from .desktop_security import DesktopPathGrants, secret_matches
 from .exporters import ExportOverwriteRequired, build_export_backends
 from .folder_picker import pick_directory
@@ -121,6 +121,8 @@ external_proof_tokens: dict[str, tuple[str, float]] = {}
 SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
+if DOCS_DIR.is_dir():
+    app.mount("/docs", StaticFiles(directory=str(DOCS_DIR)), name="docs")
 app.mount("/samples", StaticFiles(directory=str(SAMPLES_DIR)), name="samples")
 
 
