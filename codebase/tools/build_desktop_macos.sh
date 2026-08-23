@@ -66,5 +66,9 @@ fi
 CSC_IDENTITY_AUTO_DISCOVERY="${CSC_IDENTITY_AUTO_DISCOVERY:-false}" npm run dist:mac -- "--$electron_arch" --publish never
 
 cd "$codebase_dir/dist-electron"
-shasum -a 256 HDR-Finisher-*-macOS-*.dmg HDR-Finisher-*-macOS-*.zip > SHA256SUMS-macOS.txt
+package_version="$(node -p "require('$desktop_dir/package.json').version")"
+shasum -a 256 \
+  "HDR-Finisher-${package_version}-macOS-${electron_arch}.dmg" \
+  "HDR-Finisher-${package_version}-macOS-${electron_arch}.zip" \
+  > SHA256SUMS-macOS.txt
 echo "macOS package complete: $codebase_dir/dist-electron"
