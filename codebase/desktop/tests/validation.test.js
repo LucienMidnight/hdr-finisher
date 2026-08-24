@@ -29,6 +29,19 @@ test("documentation allowlist permits bundled help sources but rejects arbitrary
   assert.equal(allowedDocumentationUrl("http://www.itu.int/rec/R-REC-BT.2100"), false);
 });
 const { backendCommand, backendExecutableName, sourcePythonPath } = require("../lib/runtime");
+const { UPDATE_CACHE_MAX_AGE_MS, cachedUpdateResult } = require("../lib/updates");
+
+test("update cache is discarded after an application upgrade", () => {
+  const now = Date.now();
+  const cache = {
+    checkedAt: now - 1000,
+    result: { status: "available", currentVersion: "0.7.3", latestVersion: "0.7.4" },
+  };
+
+  assert.equal(cachedUpdateResult(cache, "0.7.3", now), cache.result);
+  assert.equal(cachedUpdateResult(cache, "0.7.4", now), null);
+  assert.equal(cachedUpdateResult({ ...cache, checkedAt: now - UPDATE_CACHE_MAX_AGE_MS }, "0.7.3", now), null);
+});
 
 test("desktop path types are restricted to supported extensions", () => {
   assert.equal(isSourcePath("C:\\Images\\scene.EXR"), true);

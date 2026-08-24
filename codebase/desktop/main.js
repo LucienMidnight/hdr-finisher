@@ -15,6 +15,7 @@ const {
   safeSuggestedName,
 } = require("./lib/validation");
 const { backendCommand: resolveBackendCommand } = require("./lib/runtime");
+const { cachedUpdateResult } = require("./lib/updates");
 const { DEFAULT_WINDOW_BOUNDS, clampWindowBounds } = require("./lib/window-bounds");
 
 const APP_ID = "org.hdrfinisher.app";
@@ -237,13 +238,15 @@ function isNewerVersion(candidate, current) {
 
 async function checkForUpdates({ force = false } = {}) {
   const now = Date.now();
+  const currentVersion = app.getVersion();
   if (!updateCheckCache) {
     try {
       const cached = JSON.parse(fs.readFileSync(updateCheckCachePath(), "utf8"));
       if (Number.isFinite(cached.checkedAt) && cached.result && typeof cached.result === "object") updateCheckCache = cached;
     } catch {}
   }
-  if (!force && updateCheckCache && now - updateCheckCache.checkedAt < 24 * 60 * 60 * 1000) return updateCheckCache.result;
+  const cachedResult = cachedUpdateResult(updateCheckCache, currentVersion, now);
+  if (!force && cachedResult) return cachedResult;
   const cacheResult = (result) => {
     updateCheckCache = { checkedAt: now, result };
     try { fs.writeFileSync(updateCheckCachePath(), JSON.stringify(updateCheckCache)); } catch {}
@@ -254,7 +257,7 @@ async function checkForUpdates({ force = false } = {}) {
       headers: {
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2026-03-10",
-        "User-Agent": `HDR-Finisher/${app.getVersion()}`,
+        "User-Agent": `HDR-Finisher/${currentVersion}`,
       },
       signal: AbortSignal.timeout(8000),
     });
@@ -267,8 +270,8 @@ async function checkForUpdates({ force = false } = {}) {
       throw new Error("Unexpected release URL.");
     }
     const result = {
-      status: isNewerVersion(latestVersion, app.getVersion()) ? "available" : "current",
-      currentVersion: app.getVersion(),
+      status: isNewerVersion(latestVersion, currentVersion) ? "available" : "current",
+      currentVersion,
       latestVersion,
       releaseName: typeof release.name === "string" ? release.name.slice(0, 160) : "",
       releaseUrl,
@@ -276,7 +279,7 @@ async function checkForUpdates({ force = false } = {}) {
     };
     return cacheResult(result);
   } catch (error) {
-    const result = { status: "unavailable", currentVersion: app.getVersion(), message: error?.message || "Update check failed.", checkedAt: new Date(now).toISOString() };
+    const result = { status: "unavailable", currentVersion, message: error?.message || "Update check failed.", checkedAt: new Date(now).toISOString() };
     return cacheResult(result);
   }
 }

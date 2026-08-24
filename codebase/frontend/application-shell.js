@@ -624,6 +624,9 @@
         }
       } else if (result.status === "current") {
         status.textContent = `HDR Finisher ${result.currentVersion} is up to date.`;
+        byId("update-notice").classList.add("hidden");
+        delete byId("update-notice").dataset.version;
+        delete byId("update-notice").dataset.url;
       } else {
         status.textContent = "Could not check for updates. Check your connection and try again.";
       }
