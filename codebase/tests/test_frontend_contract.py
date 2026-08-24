@@ -680,7 +680,7 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
 
 def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_bands() -> None:
     shader = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
-    assert "const PARAM_COUNT = 140" in shader
+    assert "const PARAM_COUNT = 144" in shader
     assert "hdrPrimaries(toneEqualizer(sceneColor(hdrPeakFit(hdrSoftCeiling(hdrContrast(hdrBase(source)))))))" in shader
     assert "sdrReferenceColor(sdrContrast(toneEqualizer(highlightRecovery(rgb))))" in shader
     assert "toneMap(sceneColor(rgb))" in shader
@@ -802,8 +802,10 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
 
     assert 'id="preview-resolution" aria-label="Preview resolution"' in html
-    for value, label in [("1024", "1K"), ("2048", "2K"), ("4096", "4K"), ("full", "Full")]:
+    for value, label in [("1024", "1K"), ("2048", "2K"), ("4096", "4K")]:
         assert f'<option value="{value}">{label}</option>' in html
+    preview_selector = html.split('id="preview-resolution"', 1)[1].split("</select>", 1)[0]
+    assert 'value="full"' not in preview_selector
     assert "Sets the maximum preview width and height." in html
     assert html.index('id="overlay-toggle"') < html.index('id="preview-resolution"') < html.index('id="overlay-popover"')
     assert ".toolbar-preview-resolution::after" in css
@@ -813,8 +815,8 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     assert '/static/preview-scheduler.js' in html
     assert 'const DEFAULT_PREVIEW_RESOLUTION = "1024"' in javascript
     assert "function previewTargetLongEdge" in javascript
-    assert "function fullPreviewSafety" in javascript
-    assert "FULL_PREVIEW_GPU_BUDGET_BYTES" in javascript
+    assert 'new Set(["1024", "2048", "4096"])' in javascript
+    assert "function fullPreviewSafety" not in javascript
     assert "preview-raw" in javascript
     assert 'tier: "interactive"' in scheduler
     assert "requestAnimationFrame" in scheduler
@@ -922,12 +924,37 @@ def test_manual_source_interpretation_status_contract() -> None:
     assert "if (session.source.interpretation_mode === \"manual\") return sourceInterpretationStatus(session);" in javascript
 
 
-def test_developed_dng_distinguishes_source_profile_from_working_space() -> None:
+def test_developed_camera_raw_distinguishes_source_profile_from_working_space() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
-    assert 'if (isDevelopedDngSession(session)) return "auto";' in javascript
-    assert "Camera-native LinearRaw developed through the embedded DNG profile into the ACEScg working space." in javascript
-    assert 'return "Auto: camera-native DNG profile → ACEScg working";' in javascript
-    assert "els.interpretationMode.disabled = developedDng;" in javascript
+    assert 'if (isDevelopedRawSession(session)) return "auto";' in javascript
+    assert "Camera-native RAW developed through its camera profile into the ACEScg working space." in javascript
+    assert 'return "Auto: camera-native RAW profile → ACEScg working";' in javascript
+    assert "els.interpretationMode.disabled = developedRaw;" in javascript
+
+
+def test_desktop_source_open_handoffs_surface_failures() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    bridge_handler = javascript[
+        javascript.index("desktop.onOpenRequest((selection)"):
+        javascript.index("await desktop.rendererReady();")
+    ]
+    assert "openDesktopSelection(selection).catch((error)" in bridge_handler
+    assert 'showUploadError(error?.message || "Could not open that source image.");' in bridge_handler
+
+    browser_handler = javascript[
+        javascript.index("async function confirmMediaBrowserSelection()"):
+        javascript.index("function sanitizeProjectFilename")
+    ]
+    assert "await openDesktopSelection({ kind: \"source\", ...selection });" in browser_handler
+    assert 'showUploadError(error?.message || "Could not open that source image.");' in browser_handler
+
+
+def test_project_open_shows_immediate_loading_feedback() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    assert "setIndeterminatePreviewMessage(`Opening project" in javascript
+    assert "els.projectOpen.disabled = true;" in javascript
 
 
 def test_phase_one_local_influence_and_latest_generation_contract() -> None:

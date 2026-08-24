@@ -67,6 +67,23 @@ def test_linear_unconfirmed_when_linear_metadata_has_no_headroom() -> None:
     assert analysis.needs_color_override is True
 
 
+def test_developed_camera_raw_does_not_request_color_override_when_peak_is_below_one() -> None:
+    image = np.ones((2, 2, 3), dtype=np.float32) * 0.9
+    analysis = classify_hdr(
+        image,
+        {
+            "transfer_function": "LINEAR",
+            "raw_input": True,
+            "decoder_normalized_to_acescg": True,
+        },
+        ".arw",
+    )
+
+    assert analysis.classification == HDRClassification.HDR_LINEAR_UNCONFIRMED
+    assert analysis.needs_color_override is False
+    assert "Camera RAW developed to scene-linear ACEScg" in analysis.badge_message
+
+
 def test_sdr_adjustments_return_display_safe_range() -> None:
     image = np.ones((4, 4, 3), dtype=np.float32) * 3.0
     output = apply_adjustments(image, AdjustmentState(), PreviewKind.SDR)

@@ -187,10 +187,8 @@ const LAYOUT_LIMITS = {
 };
 const LAYOUT_SETTLE_DELAY = 120;
 const COMPACT_WORKSPACE_QUERY = "(max-width: 1499px)";
-const PREVIEW_RESOLUTION_OPTIONS = new Set(["1024", "2048", "4096", "full"]);
+const PREVIEW_RESOLUTION_OPTIONS = new Set(["1024", "2048", "4096"]);
 const DEFAULT_PREVIEW_RESOLUTION = "1024";
-const FULL_PREVIEW_GPU_BYTES_PER_PIXEL = 64;
-const FULL_PREVIEW_GPU_BUDGET_BYTES = 1536 * 1024 * 1024;
 const DEFAULT_SCOPE_QUALITY = "detailed";
 const SCOPE_QUALITY_PROFILES = {
   performance: { densityGain: 1.35, horizontalSpread: 1, interactiveEdge: 384, settledEdge: 768, refinementEdge: 960 },
@@ -301,9 +299,6 @@ const state = {
   lastScope: null,
   scopeGeneration: 0,
   previewResolution: DEFAULT_PREVIEW_RESOLUTION,
-  previewResolutionGeneration: 0,
-  fullPreviewApprovalKey: "",
-  previewResolutionNotice: "",
   renderingMode: "auto",
   appPreferences: null,
   acceptedPresentation: null,
@@ -674,14 +669,13 @@ function normalizedPreviewResolution(value = state.previewResolution) {
 
 function previewResolutionLabel(value = state.previewResolution) {
   const normalized = normalizedPreviewResolution(value);
-  if (normalized === "full") return "Full";
   return `${Math.round(Number(normalized) / 1024)}K`;
 }
 
 function previewTargetLongEdge(value = state.previewResolution) {
   const normalized = normalizedPreviewResolution(value);
   const sourceEdge = Math.max(Number(state.session?.source?.width) || 0, Number(state.session?.source?.height) || 0);
-  const requested = normalized === "full" ? sourceEdge || 4096 : Number(normalized);
+  const requested = Number(normalized);
   return Math.max(256, Math.min(sourceEdge || requested, requested));
 }
 
@@ -689,57 +683,11 @@ function previewNeedsRefinement() {
   return previewTargetLongEdge() > settledProxyLongEdge();
 }
 
-function fullPreviewApprovalKey() {
-  if (!state.session) return "";
-  const { width, height } = state.session.source;
-  const gpuLimit = state.gpuPreview?.device?.limits?.maxTextureDimension2D || "cpu";
-  return `${state.session.session_id}:${width}x${height}:${state.renderingMode}:${gpuLimit}`;
-}
-
-function gpuFullPreviewSafety(width, height) {
-  if (!gpuPreviewEligible()) return { allowed: true, reason: "" };
-  const maxTextureDimension = Number(state.gpuPreview?.device?.limits?.maxTextureDimension2D) || 8192;
-  if (width > maxTextureDimension || height > maxTextureDimension) {
-    return {
-      allowed: false,
-      reason: `Full preview needs a ${width} × ${height} texture, but this GPU supports at most ${maxTextureDimension} pixels in either dimension.`,
-    };
-  }
-  const estimatedBytes = width * height * FULL_PREVIEW_GPU_BYTES_PER_PIXEL;
-  if (estimatedBytes > FULL_PREVIEW_GPU_BUDGET_BYTES) {
-    return {
-      allowed: false,
-      reason: `Full preview would reserve about ${(estimatedBytes / (1024 ** 3)).toFixed(2)} GiB of GPU working memory, above the ${(FULL_PREVIEW_GPU_BUDGET_BYTES / (1024 ** 3)).toFixed(2)} GiB safety limit.`,
-    };
-  }
-  return { allowed: true, reason: "" };
-}
-
-async function fullPreviewSafety() {
-  if (!state.session) return { allowed: true, key: "", reason: "" };
-  const key = fullPreviewApprovalKey();
-  if (state.fullPreviewApprovalKey === key) return { allowed: true, key, reason: "" };
-  const requested = Math.max(256, Number(state.session.source.width) || 0, Number(state.session.source.height) || 0);
-  try {
-    const response = await fetch(`/api/session/${state.session.session_id}/preview-preflight?max_dimension=${requested}`);
-    const payload = await safeJson(response);
-    if (!response.ok || !payload?.allowed) {
-      return { allowed: false, key, reason: payload?.reason || "Available system memory could not safely support a Full preview." };
-    }
-    const gpuSafety = gpuFullPreviewSafety(Number(payload.width), Number(payload.height));
-    return gpuSafety.allowed ? { allowed: true, key, reason: "" } : { ...gpuSafety, key };
-  } catch {
-    return { allowed: false, key, reason: "Full-preview memory safety could not be verified." };
-  }
-}
-
-function applyPreviewResolution(value, { reason = "", schedule = true } = {}) {
+function applyPreviewResolution(value, { schedule = true } = {}) {
   state.previewResolution = normalizedPreviewResolution(value);
-  state.previewResolutionNotice = reason ? "Full blocked · using 4K" : "";
-  state.fullPreviewApprovalKey = state.previewResolution === "full" ? state.fullPreviewApprovalKey : "";
   if (els.previewResolution) {
     els.previewResolution.value = state.previewResolution;
-    els.previewResolution.title = reason || "Sets the maximum preview width and height. Higher settings use more memory; export quality is unchanged.";
+    els.previewResolution.title = "Sets the maximum preview width and height. Higher settings use more memory; export quality is unchanged.";
   }
   state.gpuPreview?.resetSession(state.session?.session_id || null);
   state.gpuPreparedLane = { hdr: false, sdr: false };
@@ -748,22 +696,7 @@ function applyPreviewResolution(value, { reason = "", schedule = true } = {}) {
     if (previewNeedsRefinement()) markRefining();
     if (schedule) debouncePreview(state.currentView);
   }
-  if (reason && els.previewQualityStatus) els.previewQualityStatus.textContent = state.previewResolutionNotice;
   renderReadouts();
-}
-
-async function ensureFullPreviewSafe() {
-  if (state.previewResolution !== "full") return true;
-  const generation = state.previewResolutionGeneration;
-  const sessionId = state.session?.session_id;
-  const safety = await fullPreviewSafety();
-  if (generation !== state.previewResolutionGeneration || sessionId !== state.session?.session_id || state.previewResolution !== "full") return false;
-  if (!safety.allowed) {
-    applyPreviewResolution("4096", { reason: safety.reason });
-    return false;
-  }
-  state.fullPreviewApprovalKey = safety.key;
-  return true;
 }
 
 function acceptPresentation(lane, tier, width, height, transport, fallbackReason = "") {
@@ -782,7 +715,7 @@ function acceptPresentation(lane, tier, width, height, transport, fallbackReason
   const targetLabel = previewResolutionLabel();
   const dimensions = width && height ? `${Number(width)} × ${Number(height)}` : longEdge ? `${longEdge}px max` : "";
   const label = `${fallbackReason ? "Fallback · " : ""}${targetLabel}${dimensions ? ` · ${dimensions}` : ""}`;
-  if (els.previewQualityStatus) els.previewQualityStatus.textContent = state.previewResolutionNotice || label;
+  if (els.previewQualityStatus) els.previewQualityStatus.textContent = label;
   renderReadouts();
 }
 
@@ -1505,9 +1438,6 @@ function initializeLocalOverlayColor() {
 
 function initializePreviewPreferences() {
   state.previewResolution = DEFAULT_PREVIEW_RESOLUTION;
-  state.previewResolutionGeneration = 0;
-  state.fullPreviewApprovalKey = "";
-  state.previewResolutionNotice = "";
   state.scopeMaxNits = 4000;
   state.scopeQuality = DEFAULT_SCOPE_QUALITY;
   state.compareLayout = "single";
@@ -2233,21 +2163,8 @@ function bindEvents() {
     state.scopeMaxNits = [1000, 4000, 10000].includes(requestedMaxNits) ? requestedMaxNits : 4000;
     await refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
   });
-  els.previewResolution?.addEventListener("change", async () => {
+  els.previewResolution?.addEventListener("change", () => {
     const requested = normalizedPreviewResolution(els.previewResolution.value);
-    const generation = ++state.previewResolutionGeneration;
-    state.previewResolution = requested;
-    state.fullPreviewApprovalKey = "";
-    if (requested === "full" && state.session) {
-      if (els.previewQualityStatus) els.previewQualityStatus.textContent = "Checking Full…";
-      const safety = await fullPreviewSafety();
-      if (generation !== state.previewResolutionGeneration || requested !== state.previewResolution) return;
-      if (!safety.allowed) {
-        applyPreviewResolution("4096", { reason: safety.reason });
-        return;
-      }
-      state.fullPreviewApprovalKey = safety.key;
-    }
     applyPreviewResolution(requested);
   });
   els.scopeDetail?.addEventListener("change", async () => {
@@ -2424,6 +2341,7 @@ function bindEvents() {
   els.groupToggles.forEach((button) => {
     button.addEventListener("click", () => {
       const group = button.closest(".control-group");
+      if (!group) return;
       const collapsed = group.classList.toggle("collapsed");
       button.setAttribute("aria-expanded", String(!collapsed));
       if (group === els.localAdjustmentGroup) setGradeMode(collapsed ? "global" : "local");
@@ -2910,7 +2828,12 @@ async function initializeDesktopBridge() {
   els.openExportPath?.classList.toggle("hidden", !desktop);
   if (!desktop) return;
   desktop.onMenuCommand(({ command, payload }) => handleDesktopCommand(command, payload));
-  desktop.onOpenRequest((selection) => openDesktopSelection(selection));
+  desktop.onOpenRequest((selection) => {
+    void openDesktopSelection(selection).catch((error) => {
+      console.error(error);
+      showUploadError(error?.message || "Could not open that source image.");
+    });
+  });
   await desktop.rendererReady();
   state.desktopEnvironment = await desktop.environment();
   state.renderingMode = ["auto", "gpu", "cpu"].includes(state.desktopEnvironment.renderingMode)
@@ -3240,7 +3163,6 @@ async function settlePreview(lane = state.currentView, task = {}) {
 async function refinePreview(lane, task = {}) {
   if (!state.session || !previewNeedsRefinement() || lane !== state.currentView) return;
   if (task.applicationGeneration !== undefined && task.applicationGeneration !== state.previewGeneration[lane]) return;
-  if (!await ensureFullPreviewSafe()) return;
   const generation = state.previewGeneration[lane];
   const signature = geometrySignature();
   const targetLongEdge = refinementProxyLongEdge();
@@ -3357,12 +3279,6 @@ async function renderPreviewForLane(
   }
   if (!response.ok) {
     const payload = await safeJson(response);
-    if (response.status === 507 && state.previewResolution === "full" && requestIsCurrent()) {
-      applyPreviewResolution("4096", {
-        reason: payload?.detail || "Available memory changed while the Full preview was rendering.",
-      });
-      return false;
-    }
     if (displayWhenReady && requestIsCurrent()) {
       setPreviewError(payload?.detail || "Preview failed to render.");
       clearPreviewImage();
@@ -3432,12 +3348,6 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
   });
   if (!response || response.status === 409 || controller !== state.previewControllers[lane]) return false;
   if (!response.ok) {
-    const payload = await safeJson(response);
-    if (response.status === 507 && state.previewResolution === "full" && controller === state.previewControllers[lane]) {
-      applyPreviewResolution("4096", {
-        reason: payload?.detail || "Available memory changed while the Full preview was rendering.",
-      });
-    }
     return false;
   }
   const width = Number(response.headers.get("X-Image-Width"));
@@ -5241,12 +5151,19 @@ async function confirmMediaBrowserSelection() {
     els.fileInput.click();
     return;
   }
+  let selection;
   try {
-    const selection = await desktop.grantSourcePath(selected);
-    closeExportDirectoryBrowser();
-    await openDesktopSelection({ kind: "source", ...selection });
+    selection = await desktop.grantSourcePath(selected);
   } catch (error) {
     els.directoryBrowserStatus.textContent = error?.message || "Could not open that source image.";
+    return;
+  }
+  closeExportDirectoryBrowser();
+  try {
+    await openDesktopSelection({ kind: "source", ...selection });
+  } catch (error) {
+    console.error(error);
+    showUploadError(error?.message || "Could not open that source image.");
   }
 }
 
@@ -7832,10 +7749,6 @@ async function renderGpuDraft(
       });
       return true;
   } catch (error) {
-    if (error?.previewCapacity && state.previewResolution === "full") {
-      applyPreviewResolution("4096", { reason: error.message || "Full preview exceeded the current memory safety limit." });
-      return false;
-    }
     if (error?.recoverable) {
       console.debug("WebGPU authoring render deferred until geometry commit.", error);
       return false;
@@ -8008,7 +7921,7 @@ async function safeJson(response) {
 }
 
 function defaultInterpretationValue(session) {
-  if (isDevelopedDngSession(session)) return "auto";
+  if (isDevelopedRawSession(session)) return "auto";
   const transfer = (session.source.transfer_function || "").toLowerCase();
   const colorSpace = (session.source.source_color_space || "").toLowerCase();
   if (colorSpace.includes("2020")) return "linear_bt2020";
@@ -8018,11 +7931,11 @@ function defaultInterpretationValue(session) {
 }
 
 function syncInterpretationControls(session) {
-  const developedDng = isDevelopedDngSession(session);
+  const developedRaw = isDevelopedRawSession(session);
   const mode = session.source.interpretation_mode === "manual" ? "manual" : "auto";
   els.interpretationMode.value = mode;
   els.interpretationColorSpace.value = defaultInterpretationValue(session);
-  els.interpretationTransfer.value = developedDng ? "auto" : defaultTransferValue(session);
+  els.interpretationTransfer.value = developedRaw ? "auto" : defaultTransferValue(session);
   els.interpretationLinearReference.value = session.source.linear_reference || "scene_0_18";
   const needsReview = session.analysis.needs_color_override && mode !== "manual";
   els.sourceSettingsNote.textContent = sourceInterpretationStatus(session);
@@ -8030,8 +7943,8 @@ function syncInterpretationControls(session) {
 }
 
 function sourceInterpretationStatus(session) {
-  if (isDevelopedDngSession(session)) {
-    return "Camera-native LinearRaw developed through the embedded DNG profile into the ACEScg working space.";
+  if (isDevelopedRawSession(session)) {
+    return "Camera-native RAW developed through its camera profile into the ACEScg working space.";
   }
   if (session.source.interpretation_mode === "manual") {
     const colorSpace = session.source.source_color_space || "unknown";
@@ -8052,19 +7965,19 @@ function renderSourceSettingsVisibility() {
 }
 
 function renderSourceSettingsControls() {
-  const developedDng = isDevelopedDngSession(state.session);
-  const manual = els.interpretationMode.value === "manual" && !developedDng;
-  els.interpretationMode.disabled = developedDng;
+  const developedRaw = isDevelopedRawSession(state.session);
+  const manual = els.interpretationMode.value === "manual" && !developedRaw;
+  els.interpretationMode.disabled = developedRaw;
   els.interpretationColorSpace.disabled = !manual;
   els.interpretationTransfer.disabled = !manual;
   els.interpretationLinearReference.disabled = !manual || els.interpretationTransfer.value !== "linear";
-  els.applyInterpretationButton.disabled = developedDng;
-  els.resetInterpretationButton.disabled = developedDng;
+  els.applyInterpretationButton.disabled = developedRaw;
+  els.resetInterpretationButton.disabled = developedRaw;
 }
 
-function isDevelopedDngSession(session) {
+function isDevelopedRawSession(session) {
   return Boolean(
-    session?.metadata?.extra?.dng_input &&
+    session?.metadata?.extra?.raw_input &&
       session?.metadata?.extra?.decoder_normalized_to_acescg,
   );
 }
@@ -8230,7 +8143,7 @@ function overrideMessage(session) {
 }
 
 function interpretationSummary(session) {
-  if (isDevelopedDngSession(session)) return "Auto: camera-native DNG profile → ACEScg working";
+  if (isDevelopedRawSession(session)) return "Auto: camera-native RAW profile → ACEScg working";
   const mode = session.source.interpretation_mode === "manual" ? "Manual" : "Auto";
   const colorSpace = session.source.source_color_space || "unknown primaries";
   const transfer = session.source.transfer_function || "unknown transfer";
@@ -12960,34 +12873,45 @@ async function openProjectFromPath(desktopSelection = null) {
     state.projectOpenController?.abort();
     const controller = new AbortController();
     state.projectOpenController = controller;
-    let response = await fetch("/api/desktop/project/open", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ project_grant: selection.grant }),
-      signal: controller.signal,
-    }).catch((error) => error.name === "AbortError" ? null : Promise.reject(error));
-    if (!response || openGeneration !== state.projectOpenGeneration) return;
-    let payload = await safeJson(response);
-    if (openGeneration !== state.projectOpenGeneration) return;
-    if (!response.ok) {
-      const source = await desktop.relinkSource();
-      if (!source || openGeneration !== state.projectOpenGeneration) return;
-      response = await fetch("/api/desktop/project/open", {
+    let projectActivated = false;
+    els.projectOpen.disabled = true;
+    setIndeterminatePreviewMessage(`Opening project · ${selection.path?.split(/[\\/]/).pop() || "loading source"}`);
+    try {
+      let response = await fetch("/api/desktop/project/open", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project_grant: selection.grant, source_grant: source.grant }),
+        body: JSON.stringify({ project_grant: selection.grant }),
         signal: controller.signal,
       }).catch((error) => error.name === "AbortError" ? null : Promise.reject(error));
       if (!response || openGeneration !== state.projectOpenGeneration) return;
-      payload = await safeJson(response);
-    }
-    if (openGeneration !== state.projectOpenGeneration) return;
-    if (!response.ok || !payload?.session) {
-      window.alert(responseErrorMessage(payload, "The project could not be opened."));
+      let payload = await safeJson(response);
+      if (openGeneration !== state.projectOpenGeneration) return;
+      if (!response.ok) {
+        const source = await desktop.relinkSource();
+        if (!source || openGeneration !== state.projectOpenGeneration) return;
+        response = await fetch("/api/desktop/project/open", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project_grant: selection.grant, source_grant: source.grant }),
+          signal: controller.signal,
+        }).catch((error) => error.name === "AbortError" ? null : Promise.reject(error));
+        if (!response || openGeneration !== state.projectOpenGeneration) return;
+        payload = await safeJson(response);
+      }
+      if (openGeneration !== state.projectOpenGeneration) return;
+      if (!response.ok || !payload?.session) {
+        window.alert(responseErrorMessage(payload, "The project could not be opened."));
+        return;
+      }
+      await activateDesktopSession(payload.session, selection.path);
+      projectActivated = true;
       return;
+    } finally {
+      if (openGeneration === state.projectOpenGeneration) {
+        els.projectOpen.disabled = false;
+        if (!projectActivated) hidePreviewMessage();
+      }
     }
-    await activateDesktopSession(payload.session, selection.path);
-    return;
   }
   const path = window.prompt("Path to a .hdrfinisher project", state.projectPath || "");
   if (!path) return;

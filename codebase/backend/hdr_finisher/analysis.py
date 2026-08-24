@@ -27,6 +27,9 @@ def classify_hdr(
     linear_hint = transfer == "LINEAR"
     encoded_hint = transfer in {"PQ", "HLG"}
     needs_override = bool(metadata.get("needs_color_override"))
+    developed_camera_raw = bool(
+        metadata.get("raw_input") and metadata.get("decoder_normalized_to_acescg")
+    )
     heif_aux_types = metadata.get("heif_aux_types") or []
     gainmap_applied = bool(metadata.get("apple_hdr_gainmap_applied"))
 
@@ -51,6 +54,14 @@ def classify_hdr(
     elif encoded_hint:
         classification = HDRClassification.HDR_ENCODED
         badge = f"HDR encoded input detected via {transfer} metadata, peak linear value {peak:.3f}."
+        latitude = SourceLatitude.WIDE
+    elif linear_hint and developed_camera_raw:
+        classification = HDRClassification.HDR_LINEAR_UNCONFIRMED
+        badge = (
+            "Camera RAW developed to scene-linear ACEScg. "
+            f"Current source peak is {peak:.3f}; no color interpretation override is required."
+        )
+        needs_override = False
         latitude = SourceLatitude.WIDE
     elif linear_hint:
         classification = HDRClassification.HDR_LINEAR_UNCONFIRMED
