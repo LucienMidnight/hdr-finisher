@@ -5,6 +5,7 @@ import pytest
 
 from hdr_finisher.denoise_reference import (
     ACESCG_LUMINANCE,
+    ANALYSIS_PRESETS,
     ALGORITHM_VERSION,
     ResolveControls,
     analyze_denoise,
@@ -72,6 +73,37 @@ def test_compact_decimated_cache_is_deterministic_and_versioned() -> None:
         for left, right in zip(left_level.coherent_detail, right_level.coherent_detail, strict=True):
             assert np.array_equal(left, right)
     assert np.array_equal(resolve_denoise(source, first), resolve_denoise(source, second))
+
+
+def test_wavelet_method_presets_cover_fine_mixed_and_coarse_scales() -> None:
+    source, _ = _noisy_scene(height=96, width=128)
+    expected_levels = {"photo_fine": 2, "photo_mixed": 3, "render_fine": 2, "render_coarse": 4}
+
+    for name, level_count in expected_levels.items():
+        analysis = analyze_denoise(source, ANALYSIS_PRESETS[name])
+        assert len(analysis.levels) == level_count
+        assert np.isfinite(resolve_denoise(source, analysis)).all()
+
+
+def test_photo_mixed_maximum_strength_preserves_coarse_photographic_structure() -> None:
+    # This is a pure third-level Haar structure: alternating four-pixel-wide
+    # neutral bands. Treating the coarse level like fine noise removes almost
+    # all of it and presents as visible 8x8 tiling in smooth photographed skin.
+    x = np.arange(128)
+    bands = np.where((x // 4) % 2 == 0, 0.012, -0.012).astype(np.float32)
+    source = np.full((96, 128, 3), 0.5, dtype=np.float32)
+    source += bands[None, :, None]
+    analysis = analyze_denoise(source, ANALYSIS_PRESETS["photo_mixed"])
+
+    resolved = resolve_denoise(
+        source,
+        analysis,
+        ResolveControls(amount=1.0, luminance=1.0, color_noise=1.0, detail_recovery=0.0),
+    )
+
+    source_contrast = float(np.std(source[..., 0]))
+    resolved_contrast = float(np.std(resolved[..., 0]))
+    assert resolved_contrast >= source_contrast * 0.65
 
 
 def test_cached_residual_reduces_noise_without_erasing_photo_boundary() -> None:

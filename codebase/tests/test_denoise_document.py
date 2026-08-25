@@ -49,3 +49,18 @@ def test_denoise_settings_are_versioned_undoable_and_project_persistent(tmp_path
     assert reopened.denoise.schema_version == 1
     assert reopened.denoise.hdr.enabled is True
     assert reopened.denoise.hdr.controls.amount == 0.73
+
+
+def test_denoise_analysis_accepts_planned_wavelet_methods_and_custom_scales() -> None:
+    for preset, levels in (
+        ("photo_fine", 2),
+        ("photo_mixed", 3),
+        ("render_fine", 2),
+        ("render_coarse", 4),
+        ("custom", 1),
+    ):
+        settings = DenoiseDocumentSettings.model_validate({
+            "hdr": {"analysis": {"preset": preset, "levels": levels}},
+        })
+        assert settings.hdr.analysis.preset == preset
+        assert settings.hdr.analysis.levels == levels

@@ -129,6 +129,7 @@ async function main() {
   const longEdge = Number(argument("--long-edge", "1024"));
   const repetitions = Number(argument("--repetitions", "24"));
   const gradeRepetitions = Number(argument("--grade-repetitions", "12"));
+  const methodLevels = Number(argument("--method-levels", "2"));
   const importTimeout = Number(argument("--import-timeout", "120000"));
   const outputPath = path.resolve(argument("--output", path.join(codebase, "output", "performance", "denoise-selector-seam.json")));
   const defaultPackagedExecutable = path.join(codebase, "dist-electron", "win-unpacked", "HDR Finisher.exe");
@@ -293,6 +294,18 @@ async function main() {
       assert.equal(restored.resolveCalls, beforeGrade.resolveCalls);
       assert.equal(restored.selectedSource, "resolved");
 
+      await window.locator("#denoise-method").selectOption("render_coarse");
+      await window.waitForFunction(() => document.getElementById("denoise-status")?.textContent.startsWith("Analysis settings changed."));
+      assert.equal(await window.locator("#denoise-method-note").textContent(), "Four-scale cleanup for larger Monte Carlo noise; inspect edges and texture carefully.");
+      assert.equal(await window.locator("#denoise-custom-settings").isHidden(), true);
+      const methodDirty = await window.evaluate(() => window.HDRFinisherPerformance.gpuSnapshot().denoise);
+      assert.equal(methodDirty.analysisCalls, restored.analysisCalls);
+      await window.locator("#denoise-recalculate").click();
+      await window.waitForFunction(() => document.getElementById("denoise-status")?.textContent === "Denoise cache ready.", null, { timeout: 30000 });
+      const methodReady = await window.evaluate(() => window.HDRFinisherPerformance.gpuSnapshot());
+      assert.equal(methodReady.denoise.analysisCalls, restored.analysisCalls + 1);
+      assert.equal(methodReady.resources.denoiseTextures, 16);
+
       await window.locator('.denoise-group > .control-group-header > [data-reset-group="denoise"]').click();
       await window.waitForFunction(() => document.getElementById("denoise-status")?.textContent.startsWith("Analysis settings changed."));
       const resetVisuals = await window.locator('.denoise-group input[type="range"]').evaluateAll((controls) => controls.map((control) => {
@@ -304,8 +317,8 @@ async function main() {
       }));
       assert.ok(resetVisuals.every(({ expected, rendered }) => Math.abs(expected - rendered) < 0.001), `Denoise reset detached a slider fill: ${JSON.stringify(resetVisuals)}`);
       const afterReset = await window.evaluate(() => window.HDRFinisherPerformance.gpuSnapshot().denoise);
-      assert.equal(afterReset.analysisCalls, restored.analysisCalls);
-      assert.equal(afterReset.resolveCalls, restored.resolveCalls);
+      assert.equal(afterReset.analysisCalls, methodReady.denoise.analysisCalls);
+      assert.equal(afterReset.resolveCalls, methodReady.denoise.resolveCalls);
 
       await window.locator('.denoise-group > .control-group-header > .group-preset').click();
       await window.waitForFunction(() => document.getElementById("group-preset-dialog")?.open
@@ -313,11 +326,11 @@ async function main() {
       await window.locator(".group-preset-row.built-in button").first().click();
       await window.waitForFunction(() => document.getElementById("denoise-status")?.textContent.startsWith("Analysis settings changed."));
       const dirty = await window.evaluate(() => window.HDRFinisherPerformance.gpuSnapshot().denoise);
-      assert.equal(dirty.analysisCalls, 1);
+      assert.equal(dirty.analysisCalls, methodReady.denoise.analysisCalls);
       await window.locator("#denoise-recalculate").click();
       await window.waitForFunction(() => document.getElementById("denoise-status")?.textContent === "Denoise cache ready.", null, { timeout: 30000 });
       const recalculated = await window.evaluate(() => window.HDRFinisherPerformance.gpuSnapshot());
-      assert.equal(recalculated.denoise.analysisCalls, 2);
+      assert.equal(recalculated.denoise.analysisCalls, methodReady.denoise.analysisCalls + 1);
       assert.equal(recalculated.denoise.cacheReady, true);
 
       await window.locator('[data-kind="sdr"]').click();
@@ -369,7 +382,7 @@ async function main() {
 
     if (phase2) {
       const before = await window.evaluate(viewportState);
-      const analysisElapsedMs = await window.evaluate(async (edge) => {
+      const analysisElapsedMs = await window.evaluate(async ({ edge, levels }) => {
         const presented = new Promise((resolve, reject) => {
           const timeout = setTimeout(() => reject(new Error("Timed out waiting for wavelet analysis presentation")), 30000);
           window.addEventListener("hdrfinisher:preview-presented", (event) => {
@@ -378,10 +391,15 @@ async function main() {
           }, { once: true });
         });
         const started = performance.now();
-        if (!await window.HDRFinisherPerformance.analyzeDenoiseWavelet({}, edge)) throw new Error("Wavelet analysis failed");
+        if (!await window.HDRFinisherPerformance.analyzeDenoiseWavelet({
+          levels,
+          noiseThreshold: levels >= 4 ? 4 : 3,
+          lumaSigma: levels >= 4 ? 0.065 : 0.035,
+          chromaSigma: levels >= 4 ? 0.065 : 0.035,
+        }, edge)) throw new Error("Wavelet analysis failed");
         await presented;
         return performance.now() - started;
-      }, longEdge);
+      }, { edge: longEdge, levels: methodLevels });
       assertStableViewport(before, await window.evaluate(viewportState), "wavelet analysis");
       const resolveMs = [];
       for (let index = 0; index < repetitions; index += 1) {
@@ -436,6 +454,7 @@ async function main() {
         phase: 2,
         sourcePath,
         longEdge,
+        methodLevels,
         renderedWidth: before.canvasWidth,
         renderedHeight: before.canvasHeight,
         hardware: finalSnapshot.adapter,

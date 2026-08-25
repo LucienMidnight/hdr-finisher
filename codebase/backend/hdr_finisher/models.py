@@ -767,8 +767,8 @@ class DenoiseAnalysisSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     algorithm_version: Literal["compact-haar-residual-v1"] = "compact-haar-residual-v1"
-    preset: Literal["photo_fine"] = "photo_fine"
-    levels: Literal[2] = 2
+    preset: Literal["photo_fine", "photo_mixed", "render_fine", "render_coarse", "custom"] = "photo_fine"
+    levels: int = Field(default=2, ge=1, le=4)
     noise_threshold: float = Field(default=3.0, gt=0.0, le=16.0)
     luma_sigma: float = Field(default=0.035, gt=0.0, le=2.0)
     chroma_sigma: float = Field(default=0.035, gt=0.0, le=2.0)

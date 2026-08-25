@@ -696,7 +696,10 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
 
 def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_bands() -> None:
     shader = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
-    assert "const PARAM_COUNT = 144" in shader
+    # The packed parameter layout currently occupies indices 0..139. Keep the
+    # contract aligned with the actual highest shader index so stale padding
+    # does not masquerade as a pipeline-order regression.
+    assert "const PARAM_COUNT = 140" in shader
     assert "hdrPrimaries(toneEqualizer(sceneColor(hdrPeakFit(hdrSoftCeiling(hdrContrast(hdrBase(source)))))))" in shader
     assert "sdrReferenceColor(sdrContrast(toneEqualizer(highlightRecovery(rgb))))" in shader
     assert "toneMap(sceneColor(rgb))" in shader
@@ -1344,14 +1347,17 @@ def test_denoise_phase_two_keeps_analysis_structural_and_resolve_reconstruction_
     assert 'recordStage("denoise-resolve"' in preview
     assert 'recordStage("denoise-analysis", { state: "error"' in preview
     assert 'recordStage("denoise-resolve", { state: "error"' in preview
-    assert "if (!cacheInstalled) for (const item of evidenceAllocated) item.texture.destroy();" in preview
+    assert "if (!cacheInstalled) {" in preview
+    assert "for (const item of evidenceAllocated) item.texture.destroy();" in preview
+    assert "for (const item of resolveScratch) item.texture.destroy();" in preview
+    assert "for (const buffer of resolveParamBuffers) buffer.destroy();" in preview
     assert "if (candidateIsNew) candidate.texture.destroy();" in preview
     assert "longEdge = retainedOriginal.longEdge;" in preview
     assert "analyzeDenoiseWavelet" in app_script
     assert "resolveDenoiseWavelet" in app_script
 
 
-def test_denoise_phase_three_reuses_standard_group_chrome_presets_and_four_live_controls() -> None:
+def test_denoise_phase_three_exposes_locked_wavelet_methods_and_four_live_controls() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     app_script = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
@@ -1362,13 +1368,21 @@ def test_denoise_phase_three_reuses_standard_group_chrome_presets_and_four_live_
     assert 'data-reset-group="denoise"' in html
     assert 'id="denoise-enabled"' not in html
     assert 'id="denoise-ab"' not in html
-    assert 'id="denoise-preset"' not in html
+    assert 'id="denoise-method"' in html
+    for method in ("photo_fine", "photo_mixed", "render_fine", "render_coarse", "custom"):
+        assert f'value="{method}"' in html
+    assert 'id="denoise-levels"' in html
+    assert 'id="denoise-threshold"' in html
+    assert 'id="denoise-luma-sigma"' in html
+    assert 'id="denoise-chroma-sigma"' in html
     assert 'id="denoise-state"' not in html
     assert html.index('id="raw-settings-section"') < html.index('data-group="denoise"') < html.index('id="local-adjustments-group"')
     assert "defaultDenoiseDocument" in app_script
     assert 'id: "built-in:photo_fine"' in app_script
     assert 'group === "denoise"' in app_script
     assert 'queueEditCommand("set_denoise_settings"' in app_script
+    assert "updateDenoiseAnalysisPreset" in app_script
+    assert "updateCustomDenoiseAnalysis" in app_script
     assert "state.gpuPreview.resolveDenoiseProxy" in app_script
     assert "state.gpuPreview.analyzeDenoiseProxy" in app_script
     assert "updateRangeVisual(input)" in app_script

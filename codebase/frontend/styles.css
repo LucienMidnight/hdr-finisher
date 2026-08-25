@@ -1651,6 +1651,19 @@ body[data-active-lane="sdr"] .grade-rail {
   color: var(--muted);
 }
 
+.denoise-custom-settings {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--raised) 55%, transparent);
+}
+
+.denoise-custom-settings[hidden] {
+  display: none;
+}
+
 .help-tip {
   position: relative;
   display: inline-grid;

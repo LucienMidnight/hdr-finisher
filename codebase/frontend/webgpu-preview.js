@@ -2,6 +2,10 @@
   const PARAM_COUNT = 140;
   const CURVE_SAMPLES = 1024;
   const DENOISE_ALGORITHM_VERSION = "compact-haar-residual-v1";
+  // Preserve progressively more structure at medium/coarse Haar scales. Full
+  // strength at all levels makes a three-level resolve visibly tile into 8x8
+  // blocks when Amount and Luminance approach 100%.
+  const DENOISE_LEVEL_WEIGHTS = Object.freeze([1.0, 0.55, 0.25, 0.1]);
   const DENOISE_SHADER_SOURCE = `
 struct AnalysisParams { sigmaThreshold: vec4f, };
 @group(0) @binding(0) var analysisSource: texture_2d<f32>;
@@ -116,9 +120,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
   let sx1 = select(1.0, -1.0, (q0.x & 1) == 1);
   let sy1 = select(1.0, -1.0, (q0.y & 1) == 1);
   let weights = directParams.weights;
-  var residual = sx1 * weightedDetailWith(textureLoad(directH1, q1, 0), weights);
-  residual += sy1 * weightedDetailWith(textureLoad(directV1, q1, 0), weights);
-  residual += sx1 * sy1 * weightedDetailWith(textureLoad(directD1, q1, 0), weights);
+  var residual = ${DENOISE_LEVEL_WEIGHTS[1]} * sx1 * weightedDetailWith(textureLoad(directH1, q1, 0), weights);
+  residual += ${DENOISE_LEVEL_WEIGHTS[1]} * sy1 * weightedDetailWith(textureLoad(directV1, q1, 0), weights);
+  residual += ${DENOISE_LEVEL_WEIGHTS[1]} * sx1 * sy1 * weightedDetailWith(textureLoad(directD1, q1, 0), weights);
   residual += sx0 * weightedDetailWith(textureLoad(directH0, q0, 0), weights);
   residual += sy0 * weightedDetailWith(textureLoad(directV0, q0, 0), weights);
   residual += sx0 * sy0 * weightedDetailWith(textureLoad(directD0, q0, 0), weights);
@@ -664,7 +668,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         chromaStrength: 1.25,
         ...preset,
       };
-      if (settings.levels !== 2) throw new Error("Phase 2 supports only the approved two-level preset.");
+      if (!Number.isInteger(settings.levels) || settings.levels < 1 || settings.levels > 4) {
+        throw new Error("Wavelet analysis supports one through four decimated scales.");
+      }
       const startedAt = performance.now();
       this.denoiseCounters.analysisCalls += 1;
       this.recordStage("denoise-analysis", { state: "started", generation, longEdge });
@@ -672,6 +678,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const transient = [];
       const evidenceAllocated = [];
       const paramBuffers = [];
+      const resolveScratch = [];
+      const resolveParamBuffers = [];
       let cacheInstalled = false;
       let input = original;
       try {
@@ -717,8 +725,20 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           this.recordStage("denoise-analysis", { state: "stale", generation });
           return false;
         }
+        for (let index = 1; index < levels.length; index += 1) {
+          resolveScratch.push(this.createDenoiseTexture(
+            levels[index].sourceWidth,
+            levels[index].sourceHeight,
+            `denoise-resolve-scratch-${index}`,
+          ));
+        }
+        for (let index = 0; index < Math.max(1, levels.length); index += 1) {
+          resolveParamBuffers.push(this.device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }));
+        }
         const previous = this.denoiseSourceSelector;
-        const byteSize = levels.reduce((sum, level) => sum + level.evidence.reduce((value, item) => value + item.byteSize, 0), 0);
+        const evidenceByteSize = levels.reduce((sum, level) => sum + level.evidence.reduce((value, item) => value + item.byteSize, 0), 0);
+        const scratchByteSize = resolveScratch.reduce((sum, item) => sum + item.byteSize, 0);
+        const byteSize = evidenceByteSize + scratchByteSize;
         const cache = {
           algorithmVersion: DENOISE_ALGORITHM_VERSION,
           settings,
@@ -727,8 +747,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
             sourceHeight: level.sourceHeight,
             evidence: level.evidence,
           })),
+          resolveScratch,
+          resolveParamBuffers,
           byteSize,
-          textureCount: levels.length * 3,
+          textureCount: levels.length * 3 + resolveScratch.length,
         };
         this.denoiseSourceSelector = {
           identity: original.identity,
@@ -750,7 +772,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       } finally {
         for (const item of transient) item.texture.destroy();
         for (const buffer of paramBuffers) buffer.destroy();
-        if (!cacheInstalled) for (const item of evidenceAllocated) item.texture.destroy();
+        if (!cacheInstalled) {
+          for (const item of evidenceAllocated) item.texture.destroy();
+          for (const item of resolveScratch) item.texture.destroy();
+          for (const buffer of resolveParamBuffers) buffer.destroy();
+        }
       }
       return this.resolveDenoiseProxy({ amount: 0.5, luminance: 0.5, colorNoise: 0.5, detailRecovery: 0.5 });
     }
@@ -768,34 +794,73 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       });
       const pipelines = await this.ensureDenoisePipelines();
       const levels = selector.cache.levels;
-      if (levels.length !== 2) throw new Error("The direct resolver requires the approved two-level cache.");
       const candidateIsNew = !selector.resolved;
       const candidate = selector.resolved || this.createDenoiseTexture(selector.original.width, selector.original.height, "denoise-resolved");
-      const params = this.device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
       try {
-        this.device.queue.writeBuffer(params, 0, new Float32Array([...weights, 0, 1, 0, 0]));
-        const fine = levels[0].evidence;
-        const medium = levels[1].evidence;
-        const bindGroup = this.device.createBindGroup({
-          layout: pipelines.resolveTwoLevel.getBindGroupLayout(2),
-          entries: [
-            { binding: 0, resource: fine[0].texture.createView() },
-            { binding: 1, resource: fine[1].texture.createView() },
-            { binding: 2, resource: fine[2].texture.createView() },
-            { binding: 3, resource: medium[0].texture.createView() },
-            { binding: 4, resource: medium[1].texture.createView() },
-            { binding: 5, resource: medium[2].texture.createView() },
-            { binding: 6, resource: selector.original.texture.createView() },
-            { binding: 7, resource: candidate.texture.createView() },
-            { binding: 8, resource: { buffer: params } },
-          ],
-        });
         const encoder = this.device.createCommandEncoder();
-        const pass = encoder.beginComputePass();
-        pass.setPipeline(pipelines.resolveTwoLevel);
-        pass.setBindGroup(2, bindGroup);
-        pass.dispatchWorkgroups(Math.ceil(candidate.width / 8), Math.ceil(candidate.height / 8));
-        pass.end();
+        if (levels.length === 2) {
+          const params = selector.cache.resolveParamBuffers[0];
+          this.device.queue.writeBuffer(params, 0, new Float32Array([...weights, 0, 1, 0, 0]));
+          const fine = levels[0].evidence;
+          const medium = levels[1].evidence;
+          const bindGroup = this.device.createBindGroup({
+            layout: pipelines.resolveTwoLevel.getBindGroupLayout(2),
+            entries: [
+              { binding: 0, resource: fine[0].texture.createView() },
+              { binding: 1, resource: fine[1].texture.createView() },
+              { binding: 2, resource: fine[2].texture.createView() },
+              { binding: 3, resource: medium[0].texture.createView() },
+              { binding: 4, resource: medium[1].texture.createView() },
+              { binding: 5, resource: medium[2].texture.createView() },
+              { binding: 6, resource: selector.original.texture.createView() },
+              { binding: 7, resource: candidate.texture.createView() },
+              { binding: 8, resource: { buffer: params } },
+            ],
+          });
+          const pass = encoder.beginComputePass();
+          pass.setPipeline(pipelines.resolveTwoLevel);
+          pass.setBindGroup(2, bindGroup);
+          pass.dispatchWorkgroups(Math.ceil(candidate.width / 8), Math.ceil(candidate.height / 8));
+          pass.end();
+        } else {
+          let reconstructedLow = null;
+          for (let index = levels.length - 1; index >= 0; index -= 1) {
+            const level = levels[index];
+            const finalPass = index === 0;
+            const output = finalPass ? candidate : selector.cache.resolveScratch[index - 1];
+            const params = selector.cache.resolveParamBuffers[index];
+            const levelWeight = DENOISE_LEVEL_WEIGHTS[Math.min(index, DENOISE_LEVEL_WEIGHTS.length - 1)];
+            this.device.queue.writeBuffer(params, 0, new Float32Array([
+              weights[0] * levelWeight,
+              weights[1],
+              weights[2],
+              weights[3],
+              reconstructedLow ? 1 : 0,
+              finalPass ? 1 : 0,
+              0,
+              0,
+            ]));
+            const dummyLow = reconstructedLow || level.evidence[0];
+            const bindGroup = this.device.createBindGroup({
+              layout: pipelines.resolve.getBindGroupLayout(1),
+              entries: [
+                { binding: 0, resource: dummyLow.texture.createView() },
+                { binding: 1, resource: level.evidence[0].texture.createView() },
+                { binding: 2, resource: level.evidence[1].texture.createView() },
+                { binding: 3, resource: level.evidence[2].texture.createView() },
+                { binding: 4, resource: selector.original.texture.createView() },
+                { binding: 5, resource: output.texture.createView() },
+                { binding: 6, resource: { buffer: params } },
+              ],
+            });
+            const pass = encoder.beginComputePass();
+            pass.setPipeline(pipelines.resolve);
+            pass.setBindGroup(1, bindGroup);
+            pass.dispatchWorkgroups(Math.ceil(output.width / 8), Math.ceil(output.height / 8));
+            pass.end();
+            reconstructedLow = output;
+          }
+        }
         this.device.queue.submit([encoder.finish()]);
         await this.device.queue.onSubmittedWorkDone();
         if (generation !== this.denoiseSelectorGeneration || selector !== this.denoiseSourceSelector) {
@@ -825,8 +890,6 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         if (candidateIsNew) candidate.texture.destroy();
         this.recordStage("denoise-resolve", { state: "error", generation, durationMs: performance.now() - startedAt });
         throw error;
-      } finally {
-        params.destroy();
       }
     }
 
@@ -975,6 +1038,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       for (const level of selector.cache?.levels || []) {
         for (const item of level.evidence || []) item.texture?.destroy();
       }
+      for (const item of selector.cache?.resolveScratch || []) item.texture?.destroy();
+      for (const buffer of selector.cache?.resolveParamBuffers || []) buffer.destroy();
     }
 
     async analyzeScope(canvas, { width = 256, height = 128, generation = 0, tier = "interactive" } = {}) {

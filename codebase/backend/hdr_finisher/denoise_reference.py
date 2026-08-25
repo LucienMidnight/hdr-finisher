@@ -7,6 +7,11 @@ import numpy as np
 
 ALGORITHM_VERSION = "compact-haar-residual-v1"
 ACESCG_LUMINANCE = np.asarray((0.2722287, 0.6740818, 0.0536895), dtype=np.float32)
+# Decimated Haar levels cover progressively larger image structures. Applying
+# the full live strength at every level turns a three-level resolve into an
+# 8x8 block average at aggressive settings. Keep fine-noise removal strong but
+# taper medium/coarse evidence so larger photographic structure remains.
+DENOISE_LEVEL_WEIGHTS = np.asarray((1.0, 0.55, 0.25, 0.1), dtype=np.float32)
 
 
 @dataclass(frozen=True)
@@ -20,6 +25,20 @@ class AnalysisPreset:
     chroma_sigma: float = 0.035
     luma_strength: float = 1.0
     chroma_strength: float = 1.25
+
+
+ANALYSIS_PRESETS: dict[str, AnalysisPreset] = {
+    "photo_fine": AnalysisPreset(),
+    "photo_mixed": AnalysisPreset(
+        name="Photo / Mixed", levels=3, noise_threshold=3.4, luma_sigma=0.05, chroma_sigma=0.07
+    ),
+    "render_fine": AnalysisPreset(
+        name="Render / Fine", levels=2, noise_threshold=3.6, luma_sigma=0.025, chroma_sigma=0.025
+    ),
+    "render_coarse": AnalysisPreset(
+        name="Render / Coarse", levels=4, noise_threshold=4.0, luma_sigma=0.065, chroma_sigma=0.065
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -152,14 +171,16 @@ def resolve_denoise(
 
     last = analysis.levels[-1].removable[0]
     residual = np.zeros((last.shape[0], last.shape[1], 3), dtype=np.float32)
-    for level in reversed(analysis.levels):
+    for level_index in range(len(analysis.levels) - 1, -1, -1):
+        level = analysis.levels[level_index]
+        level_weight = DENOISE_LEVEL_WEIGHTS[min(level_index, len(DENOISE_LEVEL_WEIGHTS) - 1)]
         weighted_details: list[np.ndarray] = []
         for components, coherent in zip(level.removable, level.coherent_detail, strict=True):
             detail_scale = np.float32(1.0) - np.float32(detail_recovery) * coherent
             weighted = np.empty_like(components)
             weighted[..., 0] = components[..., 0] * np.float32(luminance) * detail_scale
             weighted[..., 1:] = components[..., 1:] * np.float32(color_noise) * detail_scale[..., None]
-            weighted_details.append(_components_to_rgb(weighted) * np.float32(amount))
+            weighted_details.append(_components_to_rgb(weighted) * np.float32(amount) * level_weight)
         residual = _haar_inverse(residual, tuple(weighted_details), level.source_shape)
 
     result = source.copy()

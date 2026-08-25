@@ -516,6 +516,23 @@
           <button id="denoise-bypass" class="section-bypass text-button bypassed" type="button" aria-pressed="false" aria-label="Toggle Denoise preview">&#9673;</button>
         </div>
         <div class="control-group-body">
+          <div class="control-row select-control">
+            <label for="denoise-method">Wavelet method</label>
+            <select id="denoise-method">
+              <option value="photo_fine" selected>Photo / Fine</option>
+              <option value="photo_mixed">Photo / Mixed</option>
+              <option value="render_fine">Render / Fine</option>
+              <option value="render_coarse">Render / Coarse</option>
+              <option value="custom">Custom</option>
+            </select>
+            <p id="denoise-method-note" class="helper">Two-scale cleanup for fine photographic noise.</p>
+          </div>
+          <div id="denoise-custom-settings" class="denoise-custom-settings" hidden>
+            <div class="control-row select-control"><label for="denoise-levels">Wavelet scales</label><select id="denoise-levels"><option value="1">1 · Finest</option><option value="2" selected>2 · Fine</option><option value="3">3 · Mixed</option><option value="4">4 · Coarse</option></select></div>
+            <div class="control-row"><div class="control-heading"><label for="denoise-threshold">Noise threshold</label><output id="denoise-threshold-value">3.0</output></div><input id="denoise-threshold" type="range" min="1" max="8" step="0.1" value="3"></div>
+            <div class="control-row"><div class="control-heading"><label for="denoise-luma-sigma">Luma noise level</label><output id="denoise-luma-sigma-value">0.035</output></div><input id="denoise-luma-sigma" type="range" min="0.005" max="0.15" step="0.005" value="0.035"></div>
+            <div class="control-row"><div class="control-heading"><label for="denoise-chroma-sigma">Color noise level</label><output id="denoise-chroma-sigma-value">0.035</output></div><input id="denoise-chroma-sigma" type="range" min="0.005" max="0.2" step="0.005" value="0.035"></div>
+          </div>
           <div class="control-row"><div class="control-heading"><label for="denoise-amount">Amount</label><output id="denoise-amount-value">50%</output></div><input id="denoise-amount" type="range" min="0" max="1" step="0.01" value="0.5"></div>
           <div class="control-row"><div class="control-heading"><label for="denoise-luminance">Luminance</label><output id="denoise-luminance-value">50%</output></div><input id="denoise-luminance" type="range" min="0" max="1" step="0.01" value="0.5"></div>
           <div class="control-row"><div class="control-heading"><label for="denoise-color">Color Noise</label><output id="denoise-color-value">50%</output></div><input id="denoise-color" type="range" min="0" max="1" step="0.01" value="0.5"></div>

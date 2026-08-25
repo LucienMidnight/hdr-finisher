@@ -226,6 +226,14 @@ const defaultDenoiseDocument = () => ({
   sdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0.5 }, analysis: { algorithm_version: "compact-haar-residual-v1", preset: "photo_fine", levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035 } },
 });
 
+const DENOISE_ANALYSIS_PRESETS = Object.freeze({
+  photo_fine: Object.freeze({ levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035, note: "Two-scale cleanup for fine photographic noise." }),
+  photo_mixed: Object.freeze({ levels: 3, noise_threshold: 3.4, luma_sigma: 0.05, chroma_sigma: 0.07, note: "Three-scale cleanup for mixed luma noise and larger color structure." }),
+  render_fine: Object.freeze({ levels: 2, noise_threshold: 3.6, luma_sigma: 0.025, chroma_sigma: 0.025, note: "Two-scale cleanup tuned for fine, channel-balanced render noise." }),
+  render_coarse: Object.freeze({ levels: 4, noise_threshold: 4, luma_sigma: 0.065, chroma_sigma: 0.065, note: "Four-scale cleanup for larger Monte Carlo noise; inspect edges and texture carefully." }),
+  custom: Object.freeze({ note: "Custom scale count, threshold, and scene-linear luma/color noise levels." }),
+});
+
 const state = {
   session: null,
   capabilities: {},
@@ -880,6 +888,16 @@ state.adjustments = defaultAdjustments();
 
 const els = {
   denoiseBypass: document.getElementById("denoise-bypass"),
+  denoiseMethod: document.getElementById("denoise-method"),
+  denoiseMethodNote: document.getElementById("denoise-method-note"),
+  denoiseCustomSettings: document.getElementById("denoise-custom-settings"),
+  denoiseLevels: document.getElementById("denoise-levels"),
+  denoiseThreshold: document.getElementById("denoise-threshold"),
+  denoiseLumaSigma: document.getElementById("denoise-luma-sigma"),
+  denoiseChromaSigma: document.getElementById("denoise-chroma-sigma"),
+  denoiseThresholdValue: document.getElementById("denoise-threshold-value"),
+  denoiseLumaSigmaValue: document.getElementById("denoise-luma-sigma-value"),
+  denoiseChromaSigmaValue: document.getElementById("denoise-chroma-sigma-value"),
   denoiseAmount: document.getElementById("denoise-amount"),
   denoiseLuminance: document.getElementById("denoise-luminance"),
   denoiseColor: document.getElementById("denoise-color"),
@@ -2365,6 +2383,17 @@ function bindEvents() {
     });
   });
   els.denoiseBypass?.addEventListener("click", () => setDenoiseEnabled(!state.denoise[state.currentView].enabled));
+  els.denoiseMethod?.addEventListener("change", () => updateDenoiseAnalysisPreset(els.denoiseMethod.value));
+  els.denoiseLevels?.addEventListener("change", () => updateCustomDenoiseAnalysis("levels", Number(els.denoiseLevels.value)));
+  const denoiseAnalysisSliders = [
+    [els.denoiseThreshold, "noise_threshold"],
+    [els.denoiseLumaSigma, "luma_sigma"],
+    [els.denoiseChromaSigma, "chroma_sigma"],
+  ];
+  for (const [control, key] of denoiseAnalysisSliders) {
+    control?.addEventListener("input", () => updateCustomDenoiseAnalysis(key, Number(control.value), false));
+    control?.addEventListener("change", () => updateCustomDenoiseAnalysis(key, Number(control.value), true));
+  }
   const denoiseSliders = [
     [els.denoiseAmount, "amount"],
     [els.denoiseLuminance, "luminance"],
@@ -7216,6 +7245,25 @@ function renderDenoiseControls() {
   els.denoiseBypass.setAttribute("aria-pressed", String(enabled));
   group?.classList.toggle("bypassed", !enabled);
   group?.classList.toggle("modified", modified);
+  const analysis = settings.analysis;
+  const analysisEnabled = enabled && !["preparing", "recalculating"].includes(runtime.status);
+  els.denoiseMethod.value = analysis.preset;
+  els.denoiseMethod.disabled = !analysisEnabled;
+  els.denoiseMethodNote.textContent = DENOISE_ANALYSIS_PRESETS[analysis.preset]?.note || DENOISE_ANALYSIS_PRESETS.custom.note;
+  els.denoiseCustomSettings.hidden = analysis.preset !== "custom";
+  els.denoiseLevels.value = String(analysis.levels);
+  els.denoiseLevels.disabled = !analysisEnabled;
+  const analysisControls = [
+    [els.denoiseThreshold, els.denoiseThresholdValue, analysis.noise_threshold, 1],
+    [els.denoiseLumaSigma, els.denoiseLumaSigmaValue, analysis.luma_sigma, 3],
+    [els.denoiseChromaSigma, els.denoiseChromaSigmaValue, analysis.chroma_sigma, 3],
+  ];
+  for (const [input, output, value, digits] of analysisControls) {
+    input.value = String(value);
+    input.disabled = !analysisEnabled;
+    output.textContent = Number(value).toFixed(digits);
+    updateRangeVisual(input);
+  }
   const controls = [
     [els.denoiseAmount, els.denoiseAmountValue, settings.controls.amount],
     [els.denoiseLuminance, els.denoiseLuminanceValue, settings.controls.luminance],
@@ -7239,6 +7287,35 @@ function renderDenoiseControls() {
     recalculating: "Recalculating; the previous valid result remains interactive.",
     error: "Denoise could not be prepared. The original pipeline remains available.",
   }[runtime.status] || "");
+}
+
+function markDenoiseAnalysisDirty() {
+  const lane = state.currentView;
+  const runtime = state.denoiseRuntime[lane];
+  runtime.dirty = true;
+  runtime.error = "";
+  runtime.status = state.denoise[lane].enabled ? "dirty" : "off";
+  renderDenoiseControls();
+}
+
+function updateDenoiseAnalysisPreset(presetName) {
+  const preset = DENOISE_ANALYSIS_PRESETS[presetName];
+  if (!preset) return;
+  const analysis = state.denoise[state.currentView].analysis;
+  analysis.preset = presetName;
+  if (presetName !== "custom") {
+    for (const key of ["levels", "noise_threshold", "luma_sigma", "chroma_sigma"]) analysis[key] = preset[key];
+  }
+  markDenoiseAnalysisDirty();
+  void persistDenoiseSettings();
+}
+
+function updateCustomDenoiseAnalysis(key, value, persist = true) {
+  const analysis = state.denoise[state.currentView].analysis;
+  analysis.preset = "custom";
+  analysis[key] = key === "levels" ? clamp(Math.round(value), 1, 4) : value;
+  markDenoiseAnalysisDirty();
+  if (persist) void persistDenoiseSettings();
 }
 
 async function persistDenoiseSettings() {
@@ -7293,7 +7370,7 @@ async function recalculateDenoise() {
       refinementProxyLongEdge(),
       state.editRevision,
       {
-        name: "Photo / Fine",
+        name: settings.analysis.preset,
         levels: analysis.levels,
         noiseThreshold: analysis.noise_threshold,
         lumaSigma: analysis.luma_sigma,

@@ -2,7 +2,7 @@
 
 This manual is organized by what you are trying to do. You do not need to understand color science before using HDR Finisher, but the technical detail is available when a source, display, or delivery pipeline needs closer control.
 
-Documentation reflects the active implementation as of **August 23, 2026**. Browser, operating-system, and display behavior can change; dated platform guidance links to first-party sources.
+Pages carry their own verification dates where implementation freshness matters. The current image path was reviewed on **August 25, 2026** in the [image-processing pipeline technical contract](technical/image-processing-pipeline.md). Browser, operating-system, and display behavior can change; dated platform guidance links to first-party sources.
 
 ## Choose a path
 
@@ -34,13 +34,15 @@ Documentation reflects the active implementation as of **August 23, 2026**. Brow
 2. [Gain maps and output formats](concepts/gain-maps-and-formats.md)
 3. [System and monitor setup](setup/monitors.md)
 4. [Architecture and data flow](technical/architecture.md)
-5. [Implementation traceability](traceability.md)
+5. [Image-processing pipeline technical contract](technical/image-processing-pipeline.md)
+6. [Implementation traceability](traceability.md)
 
 ### I am developing HDR Finisher
 
 1. [Architecture](technical/architecture.md)
-2. [Development guide](technical/development.md)
-3. [Documentation maintenance](contributing/documentation.md)
+2. [Image-processing pipeline technical contract](technical/image-processing-pipeline.md)
+3. [Development guide](technical/development.md)
+4. [Documentation maintenance](contributing/documentation.md)
 
 ## User manual
 
