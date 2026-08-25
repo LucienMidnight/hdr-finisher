@@ -4,6 +4,7 @@ import copy
 
 import numpy as np
 import pytest
+from pydantic import ValidationError
 
 from hdr_finisher.adjustments import (
     _apply_hdr_adjustments,
@@ -14,13 +15,15 @@ from hdr_finisher.adjustments import (
     _apply_sdr_tone_equalizer,
     _curve_domain_decode,
     _curve_domain_encode,
+    _grain_pitch_pixels,
+    _grain_value_noise,
     _compress_scene_highlights,
     _primary_zone_masks,
     apply_adjustments,
 )
 from hdr_finisher.analysis import classify_hdr
 from hdr_finisher.color import rgb_primaries_adjustment_matrix
-from hdr_finisher.models import AdjustmentState, HDRAdjustments, PreviewKind, SDRAdjustments, SharedAdjustments, SourceLatitude, ToneEqualizerNode
+from hdr_finisher.models import AdjustmentState, FilmLookAdjustments, HDRAdjustments, PreviewKind, SDRAdjustments, SharedAdjustments, SourceLatitude, ToneEqualizerNode
 
 
 def _tone_nodes(values: list[float]) -> list[ToneEqualizerNode]:
@@ -56,6 +59,52 @@ def test_film_grain_is_deterministic_and_seeded_from_shared_adjustments() -> Non
     changed_seed.shared.film_grain_seed += 1
     third = apply_adjustments(image, changed_seed, PreviewKind.HDR)
     assert not np.array_equal(first, third)
+
+
+def test_physical_grain_pitch_grows_as_film_format_shrinks() -> None:
+    look = AdjustmentState().hdr.film_look
+    look.grain_size = 50
+    pitches = []
+    for film_format in ("65mm", "35mm", "16mm", "super8"):
+        look.grain_film_format = film_format
+        pitches.append(_grain_pitch_pixels(3840, 2160, look))
+
+    assert pitches == sorted(pitches)
+    assert pitches[0] < 2.0
+    assert pitches[-1] > 9.0
+
+
+def test_horizontal_linescan_anchors_grain_to_cross_scan_dimension() -> None:
+    look = AdjustmentState().hdr.film_look
+    look.grain_film_format = "35mm"
+    look.grain_capture_geometry = "horizontal_strip"
+    look.grain_size = 50
+
+    strip_pitch = _grain_pitch_pixels(64_000, 4_000, look)
+    expected = (4_000 / 24.0) * 0.018
+    assert strip_pitch == pytest.approx(expected)
+
+    look.grain_capture_geometry = "frame"
+    assert _grain_pitch_pixels(64_000, 4_000, look) > strip_pitch * 10
+
+
+def test_physical_grain_value_noise_has_spatial_correlation() -> None:
+    yy, xx = np.indices((256, 256), dtype=np.float32)
+    noise = _grain_value_noise(xx / np.float32(6.0), yy / np.float32(6.0), 271828, 0.0)
+    horizontal_correlation = np.corrcoef(noise[:, :-1].ravel(), noise[:, 1:].ravel())[0, 1]
+    vertical_correlation = np.corrcoef(noise[:-1, :].ravel(), noise[1:, :].ravel())[0, 1]
+
+    assert horizontal_correlation > 0.9
+    assert vertical_correlation > 0.9
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("grain_custom_width_mm", 0), ("grain_custom_height_mm", 501), ("grain_custom_width_mm", float("nan"))],
+)
+def test_custom_film_gate_dimensions_are_bounded_and_finite(field: str, value: float) -> None:
+    with pytest.raises(ValidationError):
+        FilmLookAdjustments(**{field: value})
 
 
 def test_film_response_preserves_hdr_headroom_without_print_ceiling() -> None:

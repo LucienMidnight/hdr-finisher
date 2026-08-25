@@ -1143,6 +1143,14 @@
 
           <div class="film-module-header"><strong>Grain</strong><label class="film-module-toggle"><input type="checkbox" checked data-path="current.film_look.grain_enabled"> Enabled</label></div>
           <div class="control-pair">
+            <label class="select-control">Film Format<select id="film-grain-format" data-path="current.film_look.grain_film_format"><option value="65mm">65mm</option><option value="35mm" selected>35mm</option><option value="super35">Super 35</option><option value="super16">Super 16</option><option value="16mm">16mm</option><option value="super8">Super 8</option><option value="custom">Custom</option></select></label>
+            <label class="select-control">Capture Geometry<select id="film-grain-geometry" data-path="current.film_look.grain_capture_geometry"><option value="frame" selected>Frame</option><option value="horizontal_strip">Horizontal strip</option><option value="vertical_strip">Vertical strip</option></select></label>
+          </div>
+          <div class="control-pair" data-film-grain-custom hidden>
+            <label class="numeric-control">Physical Width (mm)<input id="film-grain-custom-width" type="number" min="1" max="500" step="0.1" value="36" data-path="current.film_look.grain_custom_width_mm"></label>
+            <label class="numeric-control">Physical Height (mm)<input id="film-grain-custom-height" type="number" min="1" max="500" step="0.1" value="24" data-path="current.film_look.grain_custom_height_mm"></label>
+          </div>
+          <div class="control-pair">
             <div class="control-row" data-control-path="current.film_look.grain_amount"><div class="control-heading"><label for="film-grain-amount">Amount</label><output data-value-path="current.film_look.grain_amount">0%</output></div><input id="film-grain-amount" type="range" min="0" max="100" step="1" value="0" data-path="current.film_look.grain_amount"></div>
             <div class="control-row" data-control-path="current.film_look.grain_size"><div class="control-heading"><label for="film-grain-size">Size</label><output data-value-path="current.film_look.grain_size">50%</output></div><input id="film-grain-size" type="range" min="0" max="100" step="1" value="50" data-path="current.film_look.grain_size"></div>
           </div>
@@ -1156,7 +1164,7 @@
             <div class="control-row" data-control-path="current.film_look.grain_midtone_response"><div class="control-heading"><label for="film-grain-mid">Midtone Response</label><output data-value-path="current.film_look.grain_midtone_response">100%</output></div><input id="film-grain-mid" type="range" min="0" max="150" step="1" value="100" data-path="current.film_look.grain_midtone_response"></div>
             <div class="control-row" data-control-path="current.film_look.grain_highlight_response"><div class="control-heading"><label for="film-grain-highlight">Highlight Response</label><output data-value-path="current.film_look.grain_highlight_response">100%</output></div><input id="film-grain-highlight" type="range" min="0" max="150" step="1" value="100" data-path="current.film_look.grain_highlight_response"></div>
           </div>
-          <p class="helper">Grain is sampled from one shared deterministic field in HDR and SDR and is always processed last.</p>
+          <p class="helper">Film format controls physical enlargement. Strip modes anchor the cross-scan dimension for stitched and linescan images. Grain uses one shared deterministic HDR/SDR field and is processed last.</p>
         </div>
       </section>
 

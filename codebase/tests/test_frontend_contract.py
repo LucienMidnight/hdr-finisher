@@ -696,10 +696,10 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
 
 def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_bands() -> None:
     shader = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
-    # The packed parameter layout currently occupies indices 0..139. Keep the
+    # The packed parameter layout currently occupies indices 0..143. Keep the
     # contract aligned with the actual highest shader index so stale padding
     # does not masquerade as a pipeline-order regression.
-    assert "const PARAM_COUNT = 140" in shader
+    assert "const PARAM_COUNT = 144" in shader
     assert "hdrPrimaries(toneEqualizer(sceneColor(hdrPeakFit(hdrSoftCeiling(hdrContrast(hdrBase(source)))))))" in shader
     assert "sdrReferenceColor(sdrContrast(toneEqualizer(highlightRecovery(rgb))))" in shader
     assert "toneMap(sceneColor(rgb))" in shader
@@ -796,9 +796,12 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     for path in [
         "print_strength", "color_density", "grain_amount", "grain_shadow_response",
         "grain_midtone_response", "grain_highlight_response", "halation_amount",
-        "bloom_amount", "image_softness", "microcontrast",
+        "bloom_amount", "image_softness", "microcontrast", "grain_film_format",
+        "grain_capture_geometry", "grain_custom_width_mm", "grain_custom_height_mm",
     ]:
         assert f'data-path="current.film_look.{path}"' in html
+    assert "grainValueNoise" in (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    assert 'data-film-grain-custom hidden' in html
     assert 'id="film-look-match-hdr"' in html
     assert "state.adjustments.sdr.film_look = JSON.parse(JSON.stringify(state.adjustments.hdr.film_look))" in javascript
     assert "const topLevelEnabled = state.adjustments.sdr.film_look_section_enabled" in javascript

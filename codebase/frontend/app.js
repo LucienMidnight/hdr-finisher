@@ -548,6 +548,10 @@ const defaultFilmLook = () => ({
   grain_size: 50,
   grain_softness: 25,
   grain_chroma: 0,
+  grain_film_format: "35mm",
+  grain_capture_geometry: "frame",
+  grain_custom_width_mm: 36,
+  grain_custom_height_mm: 24,
   grain_shadow_response: 100,
   grain_midtone_response: 100,
   grain_highlight_response: 100,
@@ -570,11 +574,11 @@ const defaultFilmLook = () => ({
 });
 
 const FILM_LOOK_PRESETS = {
-  large_format_fine: { print_strength: 44, print_contrast: 7, print_toe: 4, print_shoulder: 10, color_density: 10, grain_amount: 16, grain_size: 22, grain_softness: 48, grain_chroma: 12, grain_shadow_response: 82, grain_midtone_response: 100, grain_highlight_response: 112, film_resolution: 98, halation_amount: 7, halation_sensitivity: 82, halation_radius: 0.16, halation_hue_offset: 0, halation_saturation: 70, bloom_amount: 5, bloom_sensitivity: 86, bloom_radius: 0.34, bloom_highlight_detail: 88, image_softness: 3, microcontrast: -3 },
-  "35mm_fine": { print_strength: 48, print_contrast: 9, print_toe: 6, print_shoulder: 12, color_density: 13, grain_amount: 24, grain_size: 35, grain_softness: 40, grain_chroma: 16, grain_shadow_response: 86, grain_midtone_response: 100, grain_highlight_response: 116, film_resolution: 95, halation_amount: 9, halation_sensitivity: 78, halation_radius: 0.2, halation_hue_offset: 0, halation_saturation: 76, bloom_amount: 6, bloom_sensitivity: 82, bloom_radius: 0.42, bloom_highlight_detail: 84, image_softness: 5, microcontrast: -4 },
-  "35mm_balanced": { print_strength: 52, print_contrast: 10, print_toe: 7, print_shoulder: 14, color_density: 16, grain_amount: 34, grain_size: 50, grain_softness: 34, grain_chroma: 20, grain_shadow_response: 90, grain_midtone_response: 104, grain_highlight_response: 120, film_resolution: 92, halation_amount: 11, halation_sensitivity: 74, halation_radius: 0.24, halation_hue_offset: 0, halation_saturation: 80, bloom_amount: 8, bloom_sensitivity: 78, bloom_radius: 0.5, bloom_highlight_detail: 80, image_softness: 7, microcontrast: -5 },
-  "35mm_fast": { print_strength: 55, print_contrast: 8, print_toe: 9, print_shoulder: 16, color_density: 18, grain_amount: 48, grain_size: 68, grain_softness: 28, grain_chroma: 28, grain_shadow_response: 96, grain_midtone_response: 110, grain_highlight_response: 126, film_resolution: 86, halation_amount: 14, halation_sensitivity: 68, halation_radius: 0.3, halation_hue_offset: 3, halation_saturation: 84, bloom_amount: 10, bloom_sensitivity: 72, bloom_radius: 0.62, bloom_highlight_detail: 74, image_softness: 10, microcontrast: -7 },
-  "16mm_fine": { print_strength: 50, print_contrast: 6, print_toe: 8, print_shoulder: 15, color_density: 15, grain_amount: 54, grain_size: 78, grain_softness: 32, grain_chroma: 24, grain_shadow_response: 100, grain_midtone_response: 112, grain_highlight_response: 128, film_resolution: 80, halation_amount: 13, halation_sensitivity: 70, halation_radius: 0.34, halation_hue_offset: 2, halation_saturation: 82, bloom_amount: 9, bloom_sensitivity: 74, bloom_radius: 0.58, bloom_highlight_detail: 76, image_softness: 13, microcontrast: -9 },
+  large_format_fine: { print_strength: 44, print_contrast: 7, print_toe: 4, print_shoulder: 10, color_density: 10, grain_amount: 16, grain_size: 22, grain_softness: 48, grain_chroma: 12, grain_film_format: "65mm", grain_shadow_response: 82, grain_midtone_response: 100, grain_highlight_response: 112, film_resolution: 98, halation_amount: 7, halation_sensitivity: 82, halation_radius: 0.16, halation_hue_offset: 0, halation_saturation: 70, bloom_amount: 5, bloom_sensitivity: 86, bloom_radius: 0.34, bloom_highlight_detail: 88, image_softness: 3, microcontrast: -3 },
+  "35mm_fine": { print_strength: 48, print_contrast: 9, print_toe: 6, print_shoulder: 12, color_density: 13, grain_amount: 24, grain_size: 35, grain_softness: 40, grain_chroma: 16, grain_film_format: "35mm", grain_shadow_response: 86, grain_midtone_response: 100, grain_highlight_response: 116, film_resolution: 95, halation_amount: 9, halation_sensitivity: 78, halation_radius: 0.2, halation_hue_offset: 0, halation_saturation: 76, bloom_amount: 6, bloom_sensitivity: 82, bloom_radius: 0.42, bloom_highlight_detail: 84, image_softness: 5, microcontrast: -4 },
+  "35mm_balanced": { print_strength: 52, print_contrast: 10, print_toe: 7, print_shoulder: 14, color_density: 16, grain_amount: 34, grain_size: 50, grain_softness: 34, grain_chroma: 20, grain_film_format: "35mm", grain_shadow_response: 90, grain_midtone_response: 104, grain_highlight_response: 120, film_resolution: 92, halation_amount: 11, halation_sensitivity: 74, halation_radius: 0.24, halation_hue_offset: 0, halation_saturation: 80, bloom_amount: 8, bloom_sensitivity: 78, bloom_radius: 0.5, bloom_highlight_detail: 80, image_softness: 7, microcontrast: -5 },
+  "35mm_fast": { print_strength: 55, print_contrast: 8, print_toe: 9, print_shoulder: 16, color_density: 18, grain_amount: 48, grain_size: 68, grain_softness: 28, grain_chroma: 28, grain_film_format: "35mm", grain_shadow_response: 96, grain_midtone_response: 110, grain_highlight_response: 126, film_resolution: 86, halation_amount: 14, halation_sensitivity: 68, halation_radius: 0.3, halation_hue_offset: 3, halation_saturation: 84, bloom_amount: 10, bloom_sensitivity: 72, bloom_radius: 0.62, bloom_highlight_detail: 74, image_softness: 10, microcontrast: -7 },
+  "16mm_fine": { print_strength: 50, print_contrast: 6, print_toe: 8, print_shoulder: 15, color_density: 15, grain_amount: 54, grain_size: 78, grain_softness: 32, grain_chroma: 24, grain_film_format: "16mm", grain_shadow_response: 100, grain_midtone_response: 112, grain_highlight_response: 128, film_resolution: 80, halation_amount: 13, halation_sensitivity: 70, halation_radius: 0.34, halation_hue_offset: 2, halation_saturation: 82, bloom_amount: 9, bloom_sensitivity: 74, bloom_radius: 0.58, bloom_highlight_detail: 76, image_softness: 13, microcontrast: -9 },
 };
 const FILM_LOOK_PRESET_LABELS = {
   large_format_fine: "Large Format Fine",
@@ -9342,6 +9346,8 @@ function renderGeometryResetState(defaults = defaultAdjustments()) {
 
 function renderControlState() {
   const defaults = defaultAdjustments();
+  const filmLook = state.adjustments[state.currentView]?.film_look;
+  document.querySelector("[data-film-grain-custom]")?.toggleAttribute("hidden", filmLook?.grain_film_format !== "custom");
   const filmicEnabled = state.adjustments.sdr?.tone_mapper === "filmic";
   document.querySelectorAll("[data-filmic-control]").forEach((row) => {
     row.classList.toggle("control-disabled", !filmicEnabled);

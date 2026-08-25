@@ -1,5 +1,5 @@
 (function () {
-  const PARAM_COUNT = 140;
+  const PARAM_COUNT = 144;
   const CURVE_SAMPLES = 1024;
   const DENOISE_ALGORITHM_VERSION = "compact-haar-residual-v1";
   // Preserve progressively more structure at medium/coarse Haar scales. Full
@@ -2036,6 +2036,21 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     params[107] = (film.grain_highlight_response ?? 100) / 100;
     params[108] = (film.film_resolution ?? 100) / 100;
     params[109] = adjustments.shared?.film_grain_seed ?? 271828;
+    const grainGates = {
+      "65mm": [52.63, 23.01],
+      "35mm": [36, 24],
+      super35: [24.89, 18.66],
+      super16: [12.52, 7.41],
+      "16mm": [10.26, 7.49],
+      super8: [5.79, 4.01],
+    };
+    const gate = film.grain_film_format === "custom"
+      ? [Math.min(500, Math.max(1, Number(film.grain_custom_width_mm) || 36)), Math.min(500, Math.max(1, Number(film.grain_custom_height_mm) || 24))]
+      : (grainGates[film.grain_film_format] || grainGates["35mm"]);
+    params[140] = gate[0];
+    params[141] = gate[1];
+    params[142] = film.grain_capture_geometry === "horizontal_strip" ? 1
+      : film.grain_capture_geometry === "vertical_strip" ? 2 : 0;
     params[110] = lane === "hdr" && branch.highlight_compression_color_handling === "path_to_white" ? 1 : 0;
     const grading = branch.color_grading || {};
     params[111] = branch.color_grading_section_enabled !== false ? 1 : 0;
@@ -2754,6 +2769,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     fn grainHash(coordinate: vec2f, salt: f32) -> f32 {
       return fract(sin(dot(coordinate, vec2f(12.9898, 78.233)) + p[109] * 0.001 + salt) * 43758.5453) * 2.0 - 1.0;
     }
+    fn grainValueNoise(coordinate: vec2f, salt: f32) -> f32 {
+      let cell = floor(coordinate);
+      let local = fract(coordinate);
+      let blend = local * local * (vec2f(3.0) - 2.0 * local);
+      let top = mix(grainHash(cell, salt), grainHash(cell + vec2f(1.0, 0.0), salt), blend.x);
+      let bottom = mix(grainHash(cell + vec2f(0.0, 1.0), salt), grainHash(cell + vec2f(1.0, 1.0), salt), blend.x);
+      return mix(top, bottom, blend.y);
+    }
     fn applyFilmLook(coordinate: vec2i) -> vec3f {
       var rgb = sampleFilm(coordinate);
       if (p[78] < 0.5 || p[79] <= 0.0) { return applyVignette(rgb, coordinate); }
@@ -2790,18 +2813,23 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       rgb = applyVignette(rgb, coordinate);
       if (p[100] > 0.5 && p[101] > 0.0) {
         let dimensions = vec2f(textureDimensions(sourceTexture));
-        let pitch = max(1.0, length(dimensions) / 2400.0 * (0.85 + 1.8 * p[102] + 1.2 * p[103]));
+        var pixelsPerMm = max(dimensions.x / p[140], dimensions.y / p[141]);
+        if (p[142] > 0.5 && p[142] < 1.5) { pixelsPerMm = dimensions.y / p[141]; }
+        if (p[142] > 1.5) { pixelsPerMm = dimensions.x / p[140]; }
+        let physicalPitch = pixelsPerMm * (6.0 + 24.0 * p[102]) / 1000.0;
+        let pitch = max(1.0, physicalPitch);
+        let pixelCoverage = min(1.0, physicalPitch);
         let grainCoordinate = vec2f(coordinate) / pitch;
-        let mono = mix(grainHash(grainCoordinate, 0.0), grainHash(grainCoordinate * 0.53, 17.0), p[103] * 0.55);
+        let mono = mix(grainValueNoise(grainCoordinate, 0.0), grainValueNoise(grainCoordinate * 0.53, 17.0), p[103] * 0.55);
         let signal = clamp(filmSignalFromLuma(max(filmLuma(rgb), 0.0)), 0.0, 1.0);
         let shadowWeight = pow(1.0 - signal, 2.0);
         let highlightWeight = pow(signal, 2.0);
         let midWeight = max(0.0, 1.0 - shadowWeight - highlightWeight);
         let response = shadowWeight * p[105] + midWeight * p[106] + highlightWeight * p[107];
-        let amount = 0.18 * p[101] * p[79] * response;
+        let amount = 0.18 * p[101] * p[79] * response * pixelCoverage;
         rgb *= exp2(vec3f(mono * amount));
         if (p[104] > 0.0) {
-          let chroma = vec3f(grainHash(grainCoordinate, 31.0), grainHash(grainCoordinate, 59.0), grainHash(grainCoordinate, 83.0));
+          let chroma = vec3f(grainValueNoise(grainCoordinate, 31.0), grainValueNoise(grainCoordinate, 59.0), grainValueNoise(grainCoordinate, 83.0));
           let chromaHighlightGuard = 1.0 - 0.8 * smoothRange(0.88, 1.0, signal);
           rgb *= exp2(chroma * amount * p[104] * chromaHighlightGuard * 0.45);
         }

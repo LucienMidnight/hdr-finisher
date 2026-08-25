@@ -1642,13 +1642,19 @@ body[data-active-lane="sdr"] .grade-rail {
   width: auto;
 }
 
-.select-control {
+.select-control,
+.numeric-control {
   display: grid;
   gap: 6px;
 }
 
-.select-control label {
+.select-control label,
+.numeric-control label {
   color: var(--muted);
+}
+
+[data-film-grain-custom][hidden] {
+  display: none;
 }
 
 .denoise-custom-settings {

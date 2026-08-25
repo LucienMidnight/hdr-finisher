@@ -160,6 +160,12 @@ class FilmLookAdjustments(BaseModel):
     grain_size: float = Field(default=50.0, ge=0.0, le=100.0)
     grain_softness: float = Field(default=25.0, ge=0.0, le=100.0)
     grain_chroma: float = Field(default=0.0, ge=0.0, le=100.0)
+    grain_film_format: Literal[
+        "65mm", "35mm", "super35", "super16", "16mm", "super8", "custom"
+    ] = "35mm"
+    grain_capture_geometry: Literal["frame", "horizontal_strip", "vertical_strip"] = "frame"
+    grain_custom_width_mm: float = Field(default=36.0, ge=1.0, le=500.0)
+    grain_custom_height_mm: float = Field(default=24.0, ge=1.0, le=500.0)
     grain_shadow_response: float = Field(default=100.0, ge=0.0, le=150.0)
     grain_midtone_response: float = Field(default=100.0, ge=0.0, le=150.0)
     grain_highlight_response: float = Field(default=100.0, ge=0.0, le=150.0)

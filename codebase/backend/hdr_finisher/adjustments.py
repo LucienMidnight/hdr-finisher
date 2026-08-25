@@ -24,6 +24,14 @@ SDR_REINHARD_INPUT_SCALE = np.float32(
     / (SDR_SCENE_MIDDLE_GRAY * (np.float32(1.0) - SDR_DISPLAY_REFERENCE_WHITE))
 )
 SDR_ACES_FIT_INPUT_SCALE = np.float32(2.0294105241641414)
+FILM_GRAIN_GATE_DIMENSIONS_MM: dict[str, tuple[float, float]] = {
+    "65mm": (52.63, 23.01),
+    "35mm": (36.0, 24.0),
+    "super35": (24.89, 18.66),
+    "super16": (12.52, 7.41),
+    "16mm": (10.26, 7.49),
+    "super8": (5.79, 4.01),
+}
 
 
 def apply_adjustments(
@@ -1178,16 +1186,13 @@ def _apply_density_grain(
 ) -> np.ndarray:
     height, width = image.shape[:2]
     yy, xx = np.indices((height, width), dtype=np.float32)
-    diagonal = np.float32(np.hypot(height, width))
-    pitch = np.maximum(
-        np.float32(1.0),
-        diagonal / np.float32(2400.0)
-        * np.float32(0.85 + 1.8 * look.grain_size / 100.0 + 1.2 * look.grain_softness / 100.0),
-    )
+    physical_pitch = np.float32(_grain_pitch_pixels(width, height, look))
+    pitch = np.maximum(np.float32(1.0), physical_pitch)
+    pixel_coverage = np.minimum(np.float32(1.0), physical_pitch)
     grain_x = xx / pitch
     grain_y = yy / pitch
-    monochrome = _grain_hash(grain_x, grain_y, seed, 0.0)
-    softer = _grain_hash(grain_x * np.float32(0.53), grain_y * np.float32(0.53), seed, 17.0)
+    monochrome = _grain_value_noise(grain_x, grain_y, seed, 0.0)
+    softer = _grain_value_noise(grain_x * np.float32(0.53), grain_y * np.float32(0.53), seed, 17.0)
     monochrome = monochrome + (softer - monochrome) * np.float32(0.55 * look.grain_softness / 100.0)
 
     signal = np.clip(_film_encode_luma(np.maximum(_film_luma(image, kind), 0.0), kind), 0.0, 1.0)
@@ -1199,14 +1204,14 @@ def _apply_density_grain(
         + midtone_weight * np.float32(look.grain_midtone_response / 100.0)
         + highlight_weight * np.float32(look.grain_highlight_response / 100.0)
     )
-    amount = np.float32(0.18 * look.grain_amount / 100.0) * master
+    amount = np.float32(0.18 * look.grain_amount / 100.0) * master * pixel_coverage
     density_noise = monochrome * response * amount
     result = np.maximum(image, 0.0) * np.exp2(density_noise[..., None])
 
     chroma_mix = np.float32(look.grain_chroma / 100.0)
     if chroma_mix > 0.0:
         channel_noise = np.stack(
-            [_grain_hash(grain_x, grain_y, seed, salt) for salt in (31.0, 59.0, 83.0)], axis=-1
+            [_grain_value_noise(grain_x, grain_y, seed, salt) for salt in (31.0, 59.0, 83.0)], axis=-1
         )
         # Dye-cloud color variation becomes objectionable pinhole color at the
         # display boundary.  Film grain remains present there, but converges to
@@ -1221,6 +1226,43 @@ def _apply_density_grain(
             * np.float32(0.45)
         )
     return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
+
+
+def _grain_pitch_pixels(width: int, height: int, look: object) -> float:
+    """Return the physical grain correlation pitch at this render resolution."""
+    if look.grain_film_format == "custom":
+        gate_width = float(look.grain_custom_width_mm)
+        gate_height = float(look.grain_custom_height_mm)
+    else:
+        gate_width, gate_height = FILM_GRAIN_GATE_DIMENSIONS_MM.get(
+            look.grain_film_format, FILM_GRAIN_GATE_DIMENSIONS_MM["35mm"]
+        )
+    geometry = look.grain_capture_geometry
+    if geometry == "horizontal_strip":
+        pixels_per_mm = float(height) / gate_height
+    elif geometry == "vertical_strip":
+        pixels_per_mm = float(width) / gate_width
+    else:
+        pixels_per_mm = max(float(width) / gate_width, float(height) / gate_height)
+    grain_diameter_mm = (6.0 + 24.0 * float(look.grain_size) / 100.0) / 1000.0
+    return pixels_per_mm * grain_diameter_mm
+
+
+def _grain_value_noise(x: np.ndarray, y: np.ndarray, seed: int, salt: float) -> np.ndarray:
+    """Bilinearly interpolate seeded lattice values into correlated grain clouds."""
+    x0 = np.floor(x).astype(np.float32)
+    y0 = np.floor(y).astype(np.float32)
+    tx = (x - x0).astype(np.float32)
+    ty = (y - y0).astype(np.float32)
+    tx = tx * tx * (np.float32(3.0) - np.float32(2.0) * tx)
+    ty = ty * ty * (np.float32(3.0) - np.float32(2.0) * ty)
+    top_left = _grain_hash(x0, y0, seed, salt)
+    top = top_left + (_grain_hash(x0 + np.float32(1.0), y0, seed, salt) - top_left) * tx
+    bottom_left = _grain_hash(x0, y0 + np.float32(1.0), seed, salt)
+    bottom = bottom_left + (
+        _grain_hash(x0 + np.float32(1.0), y0 + np.float32(1.0), seed, salt) - bottom_left
+    ) * tx
+    return (top + (bottom - top) * ty).astype(np.float32)
 
 
 def _grain_hash(x: np.ndarray, y: np.ndarray, seed: int, salt: float) -> np.ndarray:
