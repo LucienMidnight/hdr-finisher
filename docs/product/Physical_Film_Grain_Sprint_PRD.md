@@ -115,6 +115,7 @@ Optional chroma grain continues to use separately salted fields and converges to
 
 ## Deferred work
 
+- Reinvestigate occasional isolated red hot pixels visible in imported files. Treat this initially as an import-pipeline defect rather than generated film grain: capture reproducible source fixtures and trace raw decode/demosaic, bad-pixel handling, highlight reconstruction, working-space conversion, denoise, and preview/export parity before choosing a correction stage. Confirm that any eventual repair removes true sensor/decoder outliers without suppressing legitimate small saturated highlights or the intentional chroma component of film grain. Initial regression fixture: `D:\Photos\2018\Craig and Tracy TW Visit 2018\P2150593.ORF`, which shows one isolated red spot on the shirt near the bottom-left of the frame.
 - Named stock measurements and calibrated development/scan profiles.
 - More sophisticated silver-halide clumping, dye-cloud coupling, and exposure-dependent grain morphology.
 - Automatic capture-geometry inference from metadata.
