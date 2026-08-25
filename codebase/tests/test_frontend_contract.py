@@ -25,6 +25,22 @@ def test_raw_development_is_first_grade_control_group() -> None:
     assert "<span>RAW DEVELOPMENT</span>" in markup
     assert 'class="disclosure-panel raw-development-group hidden"' in markup
     assert ".raw-development-group" in css
+    assert "--control-group-header-h: 38px" in css
+    assert ".raw-development-group .disclosure-trigger" in css
+    assert ".source-rail > .disclosure-panel" in css
+
+
+def test_staged_import_waits_for_natural_aspect_before_display() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    staged_preview = javascript[
+        javascript.index("function showStagedImportPreview"):
+        javascript.index("async function cancelActiveImport")
+    ]
+
+    assert 'image.style.display = "none";' in staged_preview
+    assert "image.naturalWidth" in staged_preview
+    assert "image.naturalHeight" in staged_preview
+    assert staged_preview.index("image.naturalWidth") < staged_preview.index('image.style.display = "block";')
 
 
 def test_brand_assets_and_fonts_are_bundled_locally() -> None:

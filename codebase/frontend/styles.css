@@ -137,6 +137,8 @@
   --splitter-size: 7px;
   --top-h: 48px;
   --control-row-h: 38px;
+  --control-group-header-h: 38px;
+  --control-panel-header-gap: 0px;
   --instrument-control-row-min-h: 36px;
   --instrument-control-heading-min-h: 16px;
   --instrument-control-heading-gap: 8px;
@@ -6085,15 +6087,30 @@ body[data-workflow="export"] #export-sheet {
   inset: auto;
   display: inline-flex !important;
   width: auto;
-  min-width: 34px;
-  min-height: 24px;
-  padding: 2px 5px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 4px;
   border: 0;
   background: transparent;
   color: var(--quiet);
   writing-mode: initial;
   white-space: nowrap;
+  place-items: center;
 }
+
+.source-rail-expand::before {
+  content: "";
+  display: block;
+  width: 18px;
+  height: 18px;
+  background-color: currentColor;
+  -webkit-mask: var(--group-chevron-shape) center / 18px no-repeat;
+  mask: var(--group-chevron-shape) center / 18px no-repeat;
+  transform: rotate(180deg);
+  transition: transform var(--group-chevron-transition), color 120ms ease;
+}
+
+.source-rail-expand[aria-expanded="false"]::before { transform: rotate(0deg); }
 
 .app-shell.source-collapsed {
   grid-template-columns: 44px 0 minmax(0, 1fr) var(--splitter-size) var(--grade-w);
@@ -6128,8 +6145,6 @@ body[data-workflow="export"] #export-sheet {
   border: 1px solid var(--hairline);
   background: #111416;
   color: var(--muted);
-  font-size: 9px;
-  letter-spacing: .02em;
   writing-mode: horizontal-tb;
 }
 
@@ -6164,6 +6179,10 @@ body[data-workflow="grade"] .import-workflow-panel { display: none; }
   min-height: 54px;
   padding: 0 16px;
   border-bottom: 1px solid var(--hairline);
+}
+
+.grade-header {
+  margin-bottom: var(--control-panel-header-gap);
 }
 
 .lane-switch {
@@ -6205,7 +6224,7 @@ body[data-workflow="grade"] .import-workflow-panel { display: none; }
 }
 
 .control-group-header {
-  min-height: 38px;
+  min-height: var(--control-group-header-h);
   padding: 0 10px 0 14px;
   background: transparent;
 }
@@ -6226,7 +6245,7 @@ body[data-workflow="grade"] .import-workflow-panel { display: none; }
 
 .group-toggle {
   order: 1;
-  min-height: 38px;
+  min-height: var(--control-group-header-h);
   padding: 0;
   font-family: var(--sans);
   font-size: 10.5px;
@@ -6431,7 +6450,17 @@ body[data-workflow="grade"] .import-workflow-panel { display: none; }
 .disclosure-content { padding: 4px 0 14px; }
 
 .raw-development-group {
-  padding-inline: 16px;
+  padding: 0;
+}
+
+.raw-development-group .disclosure-trigger {
+  min-height: var(--control-group-header-h);
+  padding: 0 14px;
+  align-items: center;
+}
+
+.raw-development-group .disclosure-content {
+  padding: 4px 16px 16px;
 }
 
 .viewer-lane {
@@ -6612,9 +6641,9 @@ body {
   grid-template-rows: 38px minmax(0, 1fr);
 }
 
-.source-file-identity,
-.source-summary,
-.disclosure-panel {
+.source-rail > .source-file-identity,
+.source-rail > .source-summary,
+.source-rail > .disclosure-panel {
   padding-block: 14px;
   border-bottom: 1px solid var(--hairline);
 }
@@ -7339,6 +7368,14 @@ body {
 
 .compact-workspace #dock-summary {
   display: none;
+}
+
+/* Retired hover-to-expand rules must not move the Metadata title when an
+   unfocused Windows app receives pointer hover. */
+.source-rail:hover .rail-title-row,
+.source-rail:focus-within .rail-title-row,
+.source-rail.pinned-open .rail-title-row {
+  padding-left: 16px;
 }
 
 .compact-workspace .dock-bar {

@@ -296,6 +296,9 @@ async function canvasVariationCount(locator) {
     assert(cropDraftState.committed === geometryBeforeCropDraft, "Selecting a crop ratio changed committed preview geometry before Apply.");
     assert(cropDraftState.draft.ratio_mode === "16:9", "Crop ratio was not stored in the side-panel draft.");
     assert(Math.abs(cropDraftState.preview.width - previewRectBeforeCropDraft.width) < 0.5 && Math.abs(cropDraftState.preview.height - previewRectBeforeCropDraft.height) < 0.5, "Selecting a crop ratio resized the preview image before Apply.");
+    const geometryReset = geometryGroup.locator('[data-reset-group="geometry"]');
+    assert(await geometryReset.isVisible(), "Crop & Rotate reset was hidden while draft geometry was modified.");
+    assert(!await geometryReset.isDisabled(), "Crop & Rotate reset was disabled while draft geometry was modified.");
     await page.locator("#crop-guide").selectOption("x");
     await page.waitForTimeout(50);
     assert(await canvasVariationCount(page.locator("#crop-guide-canvas")) > 2, "X-pattern crop guide did not render.");
@@ -309,8 +312,27 @@ async function canvasVariationCount(locator) {
 
     await page.locator("#crop-tool-toggle").click();
     await page.locator("#crop-ratio").selectOption("4:3");
+    const previewRectBeforeCropApply = await page.evaluate(() => {
+      const rect = activePreviewElement().getBoundingClientRect();
+      return { width: rect.width, height: rect.height };
+    });
     await page.locator("#crop-done").click();
     assert(await page.evaluate(() => state.adjustments.shared.geometry.ratio_mode) === "4:3", "Apply crop did not commit the selected aspect ratio.");
+    const cropHandoff = await page.evaluate(() => {
+      const rect = activePreviewElement().getBoundingClientRect();
+      return {
+        pending: state.geometryPresentationPending,
+        width: rect.width,
+        height: rect.height,
+      };
+    });
+    if (cropHandoff.pending) {
+      assert(
+        Math.abs(cropHandoff.width - previewRectBeforeCropApply.width) < 0.5
+          && Math.abs(cropHandoff.height - previewRectBeforeCropApply.height) < 0.5,
+        `Applying crop changed viewer zoom before the cropped preview was presented: ${JSON.stringify({ before: previewRectBeforeCropApply, during: cropHandoff })}`,
+      );
+    }
     await page.waitForFunction(() => {
       const preview = activePreviewElement();
       const bitmapWidth = preview instanceof HTMLCanvasElement ? preview.width : preview.naturalWidth;
@@ -324,6 +346,7 @@ async function canvasVariationCount(locator) {
       const bitmapHeight = preview instanceof HTMLCanvasElement ? preview.height : preview.naturalHeight;
       return { bitmap: bitmapWidth / bitmapHeight, displayed: rect.width / rect.height };
     });
+    assert(await page.evaluate(() => !state.geometryPresentationPending), "Crop preview handoff remained pending after the cropped frame was presented.");
     assert(Math.abs(appliedCropRatios.displayed - appliedCropRatios.bitmap) < 0.01, `Applied crop was stretched in the viewer: ${JSON.stringify(appliedCropRatios)}`);
 
     await page.locator("#rotate-tool-toggle").click();

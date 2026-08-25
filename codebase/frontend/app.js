@@ -306,6 +306,7 @@ const state = {
   zoomMode: "fit",
   zoomPercent: 100,
   zoomReferenceFrame: null,
+  geometryPresentationPending: false,
   activeDockTab: "histogram",
   dockCollapsed: false,
   lastScope: null,
@@ -729,6 +730,22 @@ function acceptPresentation(lane, tier, width, height, transport, fallbackReason
     transport,
     fallbackReason,
   };
+  if (lane === state.currentView && width && height) {
+    const sessionId = state.session?.session_id || null;
+    state.zoomReferenceFrame = {
+      sessionId,
+      geometrySignature: geometrySignature(),
+      // Proxy resolution can change between interactive, settled, and refined
+      // presentations. Preserve the session's display scale while accepting
+      // the authoritative aspect ratio of the newly presented geometry.
+      longEdge: state.zoomReferenceFrame?.sessionId === sessionId
+        ? state.zoomReferenceFrame.longEdge
+        : longEdge,
+      aspect: Number(width) / Number(height),
+    };
+    state.geometryPresentationPending = false;
+    applyZoomGeometry();
+  }
   const targetLabel = previewResolutionLabel();
   const dimensions = width && height ? `${Number(width)} × ${Number(height)}` : longEdge ? `${longEdge}px max` : "";
   const label = `${fallbackReason ? "Fallback · " : ""}${targetLabel}${dimensions ? ` · ${dimensions}` : ""}`;
@@ -1661,7 +1678,7 @@ function applyResponsiveWorkspaceState() {
   els.appShell.classList.toggle("source-overlay-open", state.compactWorkspace && state.compactSourceOpen);
   els.sourceRailExpand.setAttribute("aria-expanded", String(!collapsed));
   els.sourceRailExpand.setAttribute("aria-label", collapsed ? "Expand source metadata" : "Collapse source metadata");
-  els.sourceRailExpand.textContent = collapsed ? "Show" : "Hide";
+  els.sourceRailExpand.title = collapsed ? "Expand metadata" : "Collapse metadata";
   els.viewerOptionsPopover.classList.toggle("open", state.compactWorkspace && state.viewerOptionsOpen);
   els.viewerOptionsToggle.setAttribute("aria-expanded", String(state.compactWorkspace && state.viewerOptionsOpen));
 }
@@ -5398,6 +5415,7 @@ function bindCropEditor() {
     state.cropDraftGeometry.crop = { x: 0, y: 0, width: 1, height: 1 };
     constrainCropToRatio();
     renderCropFrame();
+    renderGeometryResetState();
   });
   els.cropGuide?.addEventListener("change", () => {
     state.cropGuide = els.cropGuide.value;
@@ -5421,6 +5439,7 @@ function bindCropEditor() {
     [ratio.width, ratio.height] = [ratio.height, ratio.width];
     renderCropOptions();
     constrainCropToRatio();
+    renderGeometryResetState();
   });
   els.cropBox?.addEventListener("pointerdown", beginCropDrag);
   window.addEventListener("pointermove", moveCropDrag);
@@ -5491,12 +5510,15 @@ function closeCropMode(commit) {
       };
     }
     state.adjustments.shared.geometry = JSON.parse(JSON.stringify(draft));
+    // Keep the mounted, pre-crop frame at its current display geometry until a
+    // frame for the committed crop is actually presented. Recomputing zoom in
+    // this gap uses stale bitmap dimensions and produces a brief zoom jump.
+    state.geometryPresentationPending = true;
   }
   syncControlsFromState();
   renderGeometryToolState();
   renderLocalAdjustments();
   if (commit && draft) {
-    state.zoomReferenceFrame = null;
     state.gpuPreparedLane = { hdr: false, sdr: false };
     invalidatePreview("hdr");
     invalidatePreview("sdr");
@@ -5641,6 +5663,7 @@ function rotateGeometry(delta) {
   geometry.crop = { x: 0, y: 0, width: 1, height: 1 };
   syncControlsFromState();
   renderRotateDraftTransform();
+  renderGeometryResetState();
   if (!state.rotateDraftGeometry) {
     invalidatePreview("hdr");
     invalidatePreview("sdr");
@@ -5847,6 +5870,7 @@ function updateCropDraftControl(path, value) {
   }
   renderCropOptions();
   constrainCropToRatio();
+  renderGeometryResetState();
 }
 
 function cropAspectRatio() {
@@ -6199,6 +6223,7 @@ function moveCropDrag(event) {
   if (!state.cropDraftGeometry) return;
   state.cropDraftGeometry.crop = next;
   renderCropFrame();
+  renderGeometryResetState();
 }
 
 function endCropDrag() { state.cropDrag = null; }
@@ -8133,6 +8158,8 @@ async function applyOverlayUrl(url, isCurrent = () => true) {
 function clearPreviewImage() {
   if (state.rotateDraftPreviewUrl) URL.revokeObjectURL(state.rotateDraftPreviewUrl);
   state.rotateDraftPreviewUrl = null;
+  els.previewImage.onload = null;
+  els.previewImage.onerror = null;
   els.previewImage.removeAttribute("src");
   els.previewImage.style.display = "none";
   els.previewCanvas.style.display = "none";
@@ -8656,6 +8683,7 @@ function clearPreviewCache() {
   // let the previous session's fitted aspect survive until the new GPU canvas
   // has presented its first frame.
   state.zoomReferenceFrame = null;
+  state.geometryPresentationPending = false;
   state.scopeGeneration = 0;
   els.scopeFreshness.textContent = "Waiting";
   els.scopeFreshness.classList.remove("updating");
@@ -8944,6 +8972,11 @@ function applyZoomGeometry() {
     updateZoomReadout();
     return;
   }
+  if (state.geometryPresentationPending) {
+    updateZoomReadout();
+    syncOverlayPlacement();
+    return;
+  }
 
   // Geometry can change the rendered frame's dimensions. Size the viewer from
   // the current bitmap, not the original source, or a crop is stretched back
@@ -9217,6 +9250,19 @@ function formatControlValue(path, value) {
   return numeric.toFixed(2);
 }
 
+function renderGeometryResetState(defaults = defaultAdjustments()) {
+  const geometryReset = els.groupResets.find((button) => button.dataset.resetGroup === "geometry");
+  if (!geometryReset) return;
+  const hasDraft = Boolean(state.cropDraftGeometry || state.rotateDraftGeometry);
+  const displayedGeometry = state.cropDraftGeometry || state.adjustments.shared.geometry;
+  const geometryModified = !valuesEqual(displayedGeometry, defaults.shared.geometry)
+    || Boolean(state.rotateDraftGeometry && !valuesEqual(state.adjustments.shared.geometry, defaults.shared.geometry));
+  geometryReset.closest(".control-group")?.classList.toggle("modified", geometryModified);
+  geometryReset.disabled = !hasDraft && !geometryModified;
+  geometryReset.title = "Reset all crop and rotation geometry";
+  geometryReset.setAttribute("aria-label", "Reset all crop and rotation geometry");
+}
+
 function renderControlState() {
   const defaults = defaultAdjustments();
   const filmicEnabled = state.adjustments.sdr?.tone_mapper === "filmic";
@@ -9236,13 +9282,7 @@ function renderControlState() {
     if (output) output.textContent = "";
     output?.closest(".control-group")?.classList.toggle("modified", count > 0);
   }
-  const geometryReset = els.groupResets.find((button) => button.dataset.resetGroup === "geometry");
-  if (geometryReset) {
-    const hasDraft = Boolean(state.cropDraftGeometry || state.rotateDraftGeometry);
-    geometryReset.disabled = !hasDraft && valuesEqual(state.adjustments.shared.geometry, defaults.shared.geometry);
-    geometryReset.title = "Reset all crop and rotation geometry";
-    geometryReset.setAttribute("aria-label", "Reset all crop and rotation geometry");
-  }
+  renderGeometryResetState(defaults);
   for (const lane of ["hdr", "sdr"]) {
     const keys = Object.keys(defaults[lane]).filter((key) => !key.endsWith("_curve") && !key.endsWith("_section_enabled") && key !== "highlight_compression_source_peak_nits");
     const modified = keys.some((key) => !valuesEqual(state.adjustments[lane]?.[key], defaults[lane][key]))
@@ -13100,9 +13140,7 @@ async function openStagedDesktopSource(selection) {
     setIndeterminatePreviewMessage(`${label}${reassurance} · ${elapsed.toFixed(1)}s elapsed`);
     if (job.preview_available && !previewShown && !state.session) {
       previewShown = true;
-      els.previewCanvas.style.display = "none";
-      els.previewImage.src = `${job.preview_url}?v=${Date.now()}`;
-      els.previewImage.style.display = "block";
+      showStagedImportPreview(`${job.preview_url}?v=${Date.now()}`, generation, job.job_id);
     }
     if (job.state === "ready" && job.session_id) {
       const sessionResponse = await fetch(`/api/session/${job.session_id}`);
@@ -13139,6 +13177,35 @@ async function openStagedDesktopSource(selection) {
       return;
     }
   }
+}
+
+function showStagedImportPreview(url, generation, jobId) {
+  const image = els.previewImage;
+  els.previewCanvas.style.display = "none";
+  image.style.display = "none";
+  image.style.width = "";
+  image.style.height = "";
+  els.emptyState.style.display = "none";
+  image.onload = () => {
+    image.onload = null;
+    image.onerror = null;
+    if (generation !== state.importGeneration || state.activeImportJobId !== jobId) return;
+    const naturalWidth = Math.max(1, image.naturalWidth);
+    const naturalHeight = Math.max(1, image.naturalHeight);
+    const frameWidth = Math.max(1, els.dropzone.clientWidth);
+    const frameHeight = Math.max(1, els.dropzone.clientHeight);
+    const scale = Math.min(frameWidth / naturalWidth, frameHeight / naturalHeight);
+    image.style.width = `${naturalWidth * scale}px`;
+    image.style.height = `${naturalHeight * scale}px`;
+    els.previewStage.style.width = `${frameWidth}px`;
+    els.previewStage.style.height = `${frameHeight}px`;
+    image.style.display = "block";
+  };
+  image.onerror = () => {
+    image.onload = null;
+    image.onerror = null;
+  };
+  image.src = url;
 }
 
 async function cancelActiveImport() {

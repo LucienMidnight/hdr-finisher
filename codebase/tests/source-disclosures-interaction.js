@@ -21,10 +21,12 @@ function assert(condition, message) {
           text: element.textContent,
           writingMode: getComputedStyle(element).writingMode,
           rect: element.getBoundingClientRect().toJSON(),
+          chevron: getComputedStyle(element, "::before").transform,
         }));
-        assert(collapsedLayout.text === "Show", `Collapsed source action has the wrong label: ${JSON.stringify(collapsedLayout)}`);
+        assert(collapsedLayout.text.trim() === "", `Collapsed source action should be icon-only: ${JSON.stringify(collapsedLayout)}`);
         assert(collapsedLayout.writingMode === "horizontal-tb", `Collapsed Show action is vertical: ${JSON.stringify(collapsedLayout)}`);
         assert(collapsedLayout.rect.height <= 32, `Collapsed Show action is misplaced or oversized: ${JSON.stringify(collapsedLayout)}`);
+        assert(collapsedLayout.chevron !== "none", `Collapsed source chevron is missing: ${JSON.stringify(collapsedLayout)}`);
         await showButton.click();
       }
       const railState = await rail.evaluate((element) => ({
@@ -42,7 +44,13 @@ function assert(condition, message) {
       });
       assert(titleLayout.text === "Metadata", `Metadata title changed unexpectedly: ${JSON.stringify(titleLayout)}`);
       assert(titleLayout.title.width >= 70, `Metadata title is squeezed: ${JSON.stringify(titleLayout)}`);
-      assert(titleLayout.title.right + 4 <= titleLayout.action.left, `Metadata title overlaps Hide: ${JSON.stringify(titleLayout)}`);
+      assert(titleLayout.title.right + 4 <= titleLayout.action.left, `Metadata title overlaps its collapse arrow: ${JSON.stringify(titleLayout)}`);
+      await page.mouse.move(width - 4, 4);
+      const titleLeftBeforeHover = await page.locator(".rail-title-row .panel-title").evaluate((title) => title.getBoundingClientRect().left);
+      const railBox = await rail.boundingBox();
+      await page.mouse.move(railBox.x + Math.min(20, railBox.width / 2), railBox.y + 20);
+      const titleLeftAfterHover = await page.locator(".rail-title-row .panel-title").evaluate((title) => title.getBoundingClientRect().left);
+      assert(Math.abs(titleLeftAfterHover - titleLeftBeforeHover) < 0.5, `Metadata title shifted on hover at ${width}px: ${JSON.stringify({ titleLeftBeforeHover, titleLeftAfterHover })}`);
       for (const [toggleId, panelId] of [["source-settings-toggle", "source-settings-panel"], ["metadata-toggle", "metadata-panel"]]) {
         const toggle = page.locator(`#${toggleId}`);
         const panel = page.locator(`#${panelId}`);

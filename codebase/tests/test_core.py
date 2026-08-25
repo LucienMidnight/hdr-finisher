@@ -5,7 +5,7 @@ import pytest
 
 from hdr_finisher.adjustments import apply_adjustments
 from hdr_finisher.analysis import _luma_peaks, _robust_channel_peak, classify_hdr
-from hdr_finisher.color import linear_bt2020_to_acescg, normalize_to_acescg, sanitize_array
+from hdr_finisher.color import detect_transfer_function, linear_bt2020_to_acescg, normalize_to_acescg, sanitize_array
 from hdr_finisher.exporters import _linear_to_bt2020_pq_yuv10, _linear_to_pq_rgb10, _linear_to_srgb8
 from hdr_finisher.loader import _apply_apple_hdr_gainmap, _compute_apple_headroom
 from hdr_finisher.models import AdjustmentState, ExportSettings, HDRAdjustments, HDRClassification, PreviewKind, SDRAdjustments
@@ -27,6 +27,38 @@ def test_sanitize_array_replaces_invalid_values() -> None:
 def test_hdr_true_classification_when_values_exceed_one() -> None:
     image = np.ones((2, 2, 3), dtype=np.float32) * 2.0
     analysis = classify_hdr(image, {"color_space": "ACEScg"}, ".exr")
+    assert analysis.classification == HDRClassification.HDR_TRUE
+
+
+def test_binary_jpeg_metadata_cannot_false_detect_pq_transfer() -> None:
+    metadata = {
+        "exif": b"opaque-jpeg-metadata-with-pq-by-chance",
+        "icc_profile": b"another-pq-byte-sequence",
+        "color_space": "sRGB",
+        "bit_depth": "uint8",
+    }
+
+    assert detect_transfer_function(metadata, ".jpg") is None
+
+
+def test_textual_transfer_metadata_still_detects_pq() -> None:
+    assert detect_transfer_function({"transfer_description": "SMPTE2084 PQ"}, ".tif") == "PQ"
+
+
+def test_baseline_jpeg_matrix_excursion_is_not_hdr_headroom() -> None:
+    image = np.ones((2, 2, 3), dtype=np.float32) * 1.0001
+
+    analysis = classify_hdr(image, {"color_space": "sRGB"}, ".jpg")
+
+    assert analysis.classification == HDRClassification.SDR_ONLY
+    assert "JPEG as SDR" in analysis.badge_message
+
+
+def test_ultrahdr_jpeg_gain_map_remains_true_hdr() -> None:
+    image = np.ones((2, 2, 3), dtype=np.float32) * 2.0
+
+    analysis = classify_hdr(image, {"gain_map_applied": True}, ".jpg")
+
     assert analysis.classification == HDRClassification.HDR_TRUE
 
 

@@ -120,6 +120,15 @@ Control Panel group headings and Metadata disclosure headings share one typograp
 | Letter spacing | `--group-title-letter-spacing` | `0.06em` |
 | Color | `--group-title-color` | `var(--text)` |
 | Text transform | `--group-title-text-transform` | `uppercase` |
+| Header height | `--control-group-header-h` | `38px` |
+| Gap below Control Panel heading | `--control-panel-header-gap` | `0px` |
+
+Every top-level Control Panel disclosure, including RAW DEVELOPMENT, uses the
+same header-height token and horizontal rhythm as the grading groups. Source
+rail disclosures may use their denser metadata spacing, but that spacing must
+be scoped to `.source-rail` and must never leak into the Control Panel.
+The first disclosure sits flush beneath the Control Panel heading divider;
+do not add an unowned top margin that makes the first row appear taller.
 
 ## Typography and copy
 
@@ -299,6 +308,7 @@ Use the runtime tokens and existing component rhythm as the baseline:
 - Grade rail: 320 px default.
 - Analysis dock: 252 px default.
 - Control row: 38 px.
+- Control-group and RAW DEVELOPMENT disclosure header: 38 px via `--control-group-header-h`.
 - Corner radius: 3 px.
 - Hairlines separate dense regions. Expanded top-level panels use the documented 3 px external top and bottom boundaries with open side edges; internal panel boundaries and collapsed-group separators remain 1 px. Avoid nested heavy borders.
 - Keep hit targets comfortably larger than their visible glyphs.

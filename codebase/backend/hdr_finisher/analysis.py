@@ -31,7 +31,9 @@ def classify_hdr(
         metadata.get("raw_input") and metadata.get("decoder_normalized_to_acescg")
     )
     heif_aux_types = metadata.get("heif_aux_types") or []
-    gainmap_applied = bool(metadata.get("apple_hdr_gainmap_applied"))
+    gainmap_applied = bool(
+        metadata.get("apple_hdr_gainmap_applied") or metadata.get("gain_map_applied")
+    )
 
     if gainmap_applied and peak > 1.0:
         classification = HDRClassification.HDR_TRUE
@@ -45,6 +47,14 @@ def classify_hdr(
         )
         needs_override = True
         latitude = SourceLatitude.NARROW
+    elif suffix in {".jpg", ".jpeg"} and not encoded_hint:
+        # Baseline JPEG samples are display-referred SDR. Converting saturated
+        # sRGB colors to ACEScg can create tiny matrix excursions above 1.0;
+        # those are gamut math, not HDR headroom. Ultra HDR JPEGs take the
+        # explicit gain-map branch above.
+        classification = HDRClassification.SDR_ONLY
+        badge = "No HDR gain map or transfer metadata detected. Treating this JPEG as SDR."
+        latitude = SourceLatitude.MEDIUM
     elif peak > 1.0:
         classification = HDRClassification.HDR_TRUE
         badge = f"True HDR detected, peak {compute_peak_stops(image):.2f} stops above diffuse white."

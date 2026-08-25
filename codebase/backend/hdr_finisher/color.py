@@ -196,7 +196,10 @@ def detect_transfer_function(metadata: dict[str, Any], suffix: str) -> str | Non
     # resulting encoding instead of re-detecting the stale "PQ" substring.
     if "linear rgb profile" in profile_name:
         return "LINEAR"
-    text = " ".join(str(value).lower() for value in metadata.values() if value is not None)
+    # Pillow exposes EXIF/ICC payloads alongside descriptive metadata. Never
+    # search opaque bytes for acronyms: arbitrary binary data can contain "pq"
+    # and turn an ordinary SDR JPEG into a false PQ source.
+    text = _searchable_metadata_text(metadata)
     if "pq" in text or "smpte2084" in text:
         return "PQ"
     if "hlg" in text or "arib-std-b67" in text:
@@ -217,7 +220,7 @@ def detect_color_space(metadata: dict[str, Any], suffix: str) -> str | None:
     if chromaticities_name:
         return str(chromaticities_name)
 
-    text = " ".join(str(value).lower() for value in metadata.values() if value is not None)
+    text = _searchable_metadata_text(metadata)
     if "acescg" in text:
         return "ACEScg"
     if "rec.2020" in text or "bt.2020" in text or "bt2020" in text:
@@ -229,6 +232,14 @@ def detect_color_space(metadata: dict[str, Any], suffix: str) -> str | None:
     if suffix == ".exr" or metadata.get("needs_color_override"):
         return None
     return "sRGB"
+
+
+def _searchable_metadata_text(metadata: dict[str, Any]) -> str:
+    return " ".join(
+        value.lower()
+        for value in metadata.values()
+        if isinstance(value, str) and value.strip()
+    )
 
 
 def normalize_to_acescg(image: np.ndarray, source_color_space: str | None = None, transfer_function: str | None = None, reference_white_nits: int = 203) -> np.ndarray:
