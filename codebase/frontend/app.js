@@ -220,6 +220,12 @@ const geometryCoordinateMapRequests = new Map();
 let localMaskOverlayFrame = 0;
 let pathMarchingAntFrame = 0;
 
+const defaultDenoiseDocument = () => ({
+  schema_version: 1,
+  hdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0.5 }, analysis: { algorithm_version: "compact-haar-residual-v1", preset: "photo_fine", levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035 } },
+  sdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0.5 }, analysis: { algorithm_version: "compact-haar-residual-v1", preset: "photo_fine", levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035 } },
+});
+
 const state = {
   session: null,
   capabilities: {},
@@ -260,6 +266,12 @@ const state = {
   globalEditGeneration: 0,
   globalEditSyncPending: null,
   documentDirty: false,
+  denoise: defaultDenoiseDocument(),
+  denoiseDocumentSessionId: null,
+  denoiseRuntime: {
+    hdr: { status: "off", dirty: false, generation: 0, showOriginal: false, error: "" },
+    sdr: { status: "off", dirty: false, generation: 0, showOriginal: false, error: "" },
+  },
   scopeMode: "histogram",
   scopeChannelMode: "composite",
   scopeMaxNits: 4000,
@@ -690,6 +702,11 @@ function applyPreviewResolution(value, { schedule = true } = {}) {
     els.previewResolution.title = "Sets the maximum preview width and height. Higher settings use more memory; export quality is unchanged.";
   }
   state.gpuPreview?.resetSession(state.session?.session_id || null);
+  if (state.denoise?.[state.currentView]?.enabled) {
+    state.denoiseRuntime[state.currentView].status = "dirty";
+    state.denoiseRuntime[state.currentView].dirty = true;
+    if (schedule) window.setTimeout(() => recalculateDenoise(), 300);
+  }
   state.gpuPreparedLane = { hdr: false, sdr: false };
   if (state.session) {
     invalidatePreview(state.currentView, { markDirty: false });
@@ -845,6 +862,18 @@ const defaultAdjustments = () => ({
 state.adjustments = defaultAdjustments();
 
 const els = {
+  denoiseBypass: document.getElementById("denoise-bypass"),
+  denoiseAmount: document.getElementById("denoise-amount"),
+  denoiseLuminance: document.getElementById("denoise-luminance"),
+  denoiseColor: document.getElementById("denoise-color"),
+  denoiseDetail: document.getElementById("denoise-detail"),
+  denoiseAmountValue: document.getElementById("denoise-amount-value"),
+  denoiseLuminanceValue: document.getElementById("denoise-luminance-value"),
+  denoiseColorValue: document.getElementById("denoise-color-value"),
+  denoiseDetailValue: document.getElementById("denoise-detail-value"),
+  denoiseRecalculate: document.getElementById("denoise-recalculate"),
+  denoiseState: document.getElementById("denoise-state"),
+  denoiseStatus: document.getElementById("denoise-status"),
   hdrReferenceWhite: document.getElementById("hdr-reference-white"),
   projectOpen: document.getElementById("project-open"),
   projectSave: document.getElementById("project-save"),
@@ -1225,6 +1254,7 @@ const GROUP_PRESET_LABELS = {
   "color-grading": "Color Grading",
   "film-look": "Film Look",
   vignette: "Vignette",
+  denoise: "Denoise",
 };
 
 function groupPresetPaths(groupId) {
@@ -1233,6 +1263,7 @@ function groupPresetPaths(groupId) {
   const lane = groupId.slice(0, separator);
   const group = groupId.slice(separator + 1);
   if (!["hdr", "sdr"].includes(lane)) return [];
+  if (group === "denoise") return [`denoise.${lane}.controls`, `denoise.${lane}.analysis`];
   if (group === "curves") return ["luma_curve", "red_curve", "green_curve", "blue_curve"].map((key) => `${lane}.${key}`);
   if (["color-grading", "film-look", "vignette"].includes(group)) return [`${lane}.${group.replaceAll("-", "_")}`];
   return [];
@@ -1241,7 +1272,7 @@ function groupPresetPaths(groupId) {
 function groupPresetContextForElement(groupElement) {
   const rawGroup = groupElement?.dataset.group || "";
   if (["geometry", "local-adjustments"].includes(rawGroup)) return null;
-  const groupId = ["curves", "color-grading", "film-look", "vignette"].includes(rawGroup)
+  const groupId = ["curves", "color-grading", "film-look", "vignette", "denoise"].includes(rawGroup)
     ? `${state.currentView}-${rawGroup}`
     : rawGroup;
   const paths = groupPresetPaths(groupId);
@@ -1250,6 +1281,15 @@ function groupPresetContextForElement(groupElement) {
   const lane = groupId.slice(0, separator);
   const group = groupId.slice(separator + 1);
   return { groupId, lane, group, label: GROUP_PRESET_LABELS[group] || group, paths };
+}
+
+function groupPresetPathValue(context, path) {
+  return context.group === "denoise" ? getValueByPath(state, path) : getValueByPath(state.adjustments, path);
+}
+
+function setGroupPresetPathValue(context, path, value) {
+  if (context.group === "denoise") setValueByPath(state, path, value);
+  else setValueByPath(state.adjustments, path, value);
 }
 
 const branchCopy = {
@@ -1466,6 +1506,64 @@ function initializePreviewScheduler() {
     snapshot: () => state.previewScheduler.snapshot(),
     gpuSnapshot: () => state.gpuPreview?.diagnosticsSnapshot?.() || null,
     enableGpuInstrumentation: (enabled = true) => state.gpuPreview?.setInstrumentationEnabled?.(enabled),
+    renderGpuTier: (longEdge) => renderGpuDraft(state.currentView, {
+      longEdge: Number(longEdge),
+      tier: "settled",
+    }),
+    prepareDenoiseSelectorSeam: (variant = "resolved-a", longEdge = settledProxyLongEdge()) => (
+      state.gpuPreview?.prepareDenoiseSelectorSeam?.(
+        state.session?.session_id,
+        state.currentView,
+        JSON.parse(JSON.stringify(state.adjustments)),
+        Number(longEdge),
+        state.editRevision,
+        variant,
+      ) || Promise.resolve(false)
+    ),
+    analyzeDenoiseWavelet: async (preset = {}, longEdge = settledProxyLongEdge()) => {
+      const ready = await state.gpuPreview?.analyzeDenoiseProxy?.(
+        state.session?.session_id,
+        state.currentView,
+        JSON.parse(JSON.stringify(state.adjustments)),
+        Number(longEdge),
+        state.editRevision,
+        preset,
+      );
+      if (!ready) return false;
+      return renderGpuDraft(state.currentView, { longEdge: Number(longEdge), tier: "settled" });
+    },
+    resolveDenoiseWavelet: async (controls = {}, longEdge = settledProxyLongEdge()) => {
+      const ready = await state.gpuPreview?.resolveDenoiseProxy?.(controls);
+      if (!ready) return false;
+      return renderGpuDraft(state.currentView, { longEdge: Number(longEdge), tier: "settled" });
+    },
+    selectDenoiseSelectorSeam: async (enabled, longEdge = settledProxyLongEdge()) => {
+      if (!state.gpuPreview?.selectDenoiseSelectorSource?.(enabled)) return false;
+      return renderGpuDraft(state.currentView, { longEdge: Number(longEdge), tier: "settled" });
+    },
+    sampleDenoiseSelectorSeam: async () => {
+      const analysis = await state.gpuPreview?.analyzeScope?.(els.previewCanvas, {
+        width: 16,
+        height: 16,
+        generation: 0,
+        tier: "selector-test",
+      });
+      if (!analysis?.pixels?.length) return null;
+      let sum = 0;
+      let weighted = 0;
+      for (let index = 0; index < analysis.pixels.length; index += 1) {
+        const value = analysis.pixels[index];
+        sum += value;
+        weighted += value * ((index % 97) + 1);
+      }
+      return { mean: sum / analysis.pixels.length, fingerprint: weighted };
+    },
+    readDenoiseSelectorPixel: () => state.gpuPreview?.readDenoiseSelectorPixel?.() || Promise.resolve(null),
+    readDenoiseResolvedRegion: (width = 16, height = 16) => (
+      state.gpuPreview?.readDenoiseResolvedRegion?.(width, height) || Promise.resolve(null)
+    ),
+    disposeDenoiseSelectorSeam: () => state.gpuPreview?.disposeDenoiseSelectorSeam?.(),
+    evictDenoiseCache: () => state.gpuPreview?.evictDenoiseCache?.(),
     sessionId: () => state.session?.session_id || null,
     previewMode: () => `${previewResolutionLabel().toLowerCase()}-${state.gpuPreview?.available ? "gpu" : "cpu"}`,
     authoringState: () => ({
@@ -2249,6 +2347,24 @@ function bindEvents() {
       commitAdjustmentValue(control.dataset.path, value);
     });
   });
+  els.denoiseBypass?.addEventListener("click", () => setDenoiseEnabled(!state.denoise[state.currentView].enabled));
+  const denoiseSliders = [
+    [els.denoiseAmount, "amount"],
+    [els.denoiseLuminance, "luminance"],
+    [els.denoiseColor, "color_noise"],
+    [els.denoiseDetail, "detail_recovery"],
+  ];
+  for (const [control, key] of denoiseSliders) {
+    control?.addEventListener("pointerdown", () => state.previewScheduler?.beginInteraction());
+    control?.addEventListener("input", () => updateLiveDenoiseControl(key, Number(control.value)));
+    for (const eventName of ["pointerup", "pointercancel", "change"]) {
+      control?.addEventListener(eventName, () => {
+        state.previewScheduler?.endInteraction();
+        if (eventName === "change") void persistDenoiseSettings();
+      });
+    }
+  }
+  els.denoiseRecalculate?.addEventListener("click", () => recalculateDenoise());
   bindRangeResetControls();
 
   els.curveChannelButtons.forEach((button) => {
@@ -2546,6 +2662,7 @@ async function uploadFile(file) {
     setPreviewMessage("Source decoded. Preparing preview...", 28);
     state.adjustments = payload.session.adjustments;
     state.editDocument = payload.session.edit_document;
+    loadDenoiseDocument(state.editDocument);
     state.editRevision = payload.session.edit_revision || 0;
     state.documentDirty = Boolean(payload.session.dirty);
     state.selectedLocalId = null;
@@ -2598,6 +2715,7 @@ async function ejectCurrentSession() {
   if (els.rawSettingsPanel) delete els.rawSettingsPanel.dataset.initialized;
   state.adjustments = defaultAdjustments();
   state.editDocument = null;
+  loadDenoiseDocument(null);
   els.hdrReferenceWhite.value = String(state.appPreferences?.defaultReferenceWhiteNits || 203);
   els.hdrReferenceWhite.disabled = false;
   state.editRevision = 0;
@@ -5198,6 +5316,7 @@ async function applyInterpretationOverride() {
     setPreviewMessage("Interpretation applied. Preparing preview...", 28);
     state.adjustments = payload.session.adjustments;
     state.editDocument = payload.session.edit_document;
+    loadDenoiseDocument(state.editDocument);
     state.editRevision = payload.session.edit_revision || 0;
     state.documentDirty = Boolean(payload.session.dirty);
     state.interpretationGateDismissed = false;
@@ -7020,6 +7139,179 @@ function addToneEqualizerNode(preferredEv = null, lane = state.currentView) {
   return state.selectedToneEqualizerBand;
 }
 
+function loadDenoiseDocument(document) {
+  const fallback = defaultDenoiseDocument();
+  const source = document?.denoise || fallback;
+  const next = {
+    schema_version: 1,
+    hdr: {
+      ...fallback.hdr,
+      ...(source.hdr || {}),
+      controls: { ...fallback.hdr.controls, ...(source.hdr?.controls || {}) },
+      analysis: { ...fallback.hdr.analysis, ...(source.hdr?.analysis || {}) },
+    },
+    sdr: {
+      ...fallback.sdr,
+      ...(source.sdr || {}),
+      controls: { ...fallback.sdr.controls, ...(source.sdr?.controls || {}) },
+      analysis: { ...fallback.sdr.analysis, ...(source.sdr?.analysis || {}) },
+    },
+  };
+  const sessionId = state.session?.session_id || null;
+  const sameSession = state.denoiseDocumentSessionId === sessionId;
+  const unchanged = JSON.stringify(next) === JSON.stringify(state.denoise);
+  state.denoise = next;
+  state.denoiseDocumentSessionId = sessionId;
+  if (sameSession && unchanged) {
+    renderDenoiseControls();
+    return;
+  }
+  for (const lane of ["hdr", "sdr"]) {
+    state.denoiseRuntime[lane] = {
+      status: state.denoise[lane].enabled ? "dirty" : "off",
+      dirty: Boolean(state.denoise[lane].enabled),
+      generation: (state.denoiseRuntime[lane]?.generation || 0) + 1,
+      showOriginal: false,
+      error: "",
+    };
+  }
+  renderDenoiseControls();
+}
+
+function renderDenoiseControls() {
+  if (!els.denoiseBypass) return;
+  const lane = state.currentView;
+  const settings = state.denoise[lane];
+  const runtime = state.denoiseRuntime[lane];
+  const enabled = Boolean(settings.enabled);
+  const group = els.denoiseBypass.closest(".control-group");
+  const defaults = defaultDenoiseDocument()[lane];
+  const modified = !valuesEqual(settings.controls, defaults.controls) || !valuesEqual(settings.analysis, defaults.analysis);
+  els.denoiseBypass.classList.toggle("bypassed", !enabled);
+  els.denoiseBypass.setAttribute("aria-pressed", String(enabled));
+  group?.classList.toggle("bypassed", !enabled);
+  group?.classList.toggle("modified", modified);
+  const controls = [
+    [els.denoiseAmount, els.denoiseAmountValue, settings.controls.amount],
+    [els.denoiseLuminance, els.denoiseLuminanceValue, settings.controls.luminance],
+    [els.denoiseColor, els.denoiseColorValue, settings.controls.color_noise],
+    [els.denoiseDetail, els.denoiseDetailValue, settings.controls.detail_recovery],
+  ];
+  for (const [input, output, value] of controls) {
+    input.value = String(value);
+    output.textContent = `${Math.round(value * 100)}%`;
+    input.disabled = !enabled || !["ready", "dirty"].includes(runtime.status);
+    updateRangeVisual(input);
+  }
+  els.denoiseRecalculate.disabled = !enabled || ["preparing", "recalculating"].includes(runtime.status);
+  const labels = { off: "Off", preparing: "Preparing", ready: "Ready", dirty: "Dirty", recalculating: "Recalculating", error: "Error" };
+  if (els.denoiseState) els.denoiseState.textContent = labels[runtime.status] || runtime.status;
+  els.denoiseStatus.textContent = runtime.error || ({
+    off: "Denoise is off.",
+    preparing: "Preparing the denoise cache; the original remains interactive.",
+    ready: "Denoise cache ready.",
+    dirty: "Analysis settings changed. The previous valid result remains visible until recalculated.",
+    recalculating: "Recalculating; the previous valid result remains interactive.",
+    error: "Denoise could not be prepared. The original pipeline remains available.",
+  }[runtime.status] || "");
+}
+
+async function persistDenoiseSettings() {
+  if (!state.session) return false;
+  return queueEditCommand("set_denoise_settings", { denoise: JSON.parse(JSON.stringify(state.denoise)) }, null, { refreshPreview: false });
+}
+
+async function setDenoiseEnabled(enabled) {
+  const lane = state.currentView;
+  state.denoise[lane].enabled = Boolean(enabled);
+  const runtime = state.denoiseRuntime[lane];
+  runtime.error = "";
+  if (!enabled) {
+    runtime.status = "off";
+    runtime.showOriginal = true;
+    state.gpuPreview?.selectDenoiseSelectorSource?.(false);
+    await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
+    renderDenoiseControls();
+    void persistDenoiseSettings();
+    return;
+  }
+  void persistDenoiseSettings();
+  const denoise = state.gpuPreview?.diagnosticsSnapshot?.().denoise;
+  const expectedIdentity = `${state.session?.session_id}:${lane}:${refinementProxyLongEdge()}:${JSON.stringify(state.adjustments.shared?.geometry || {})}`;
+  if (!runtime.dirty && denoise?.cacheReady && denoise.identity === expectedIdentity) {
+    state.gpuPreview.selectDenoiseSelectorSource(true);
+    runtime.status = "ready";
+    runtime.showOriginal = false;
+    await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
+    debounceOverlayAndScopes();
+    renderDenoiseControls();
+    return;
+  }
+  await recalculateDenoise();
+}
+
+async function recalculateDenoise() {
+  const lane = state.currentView;
+  const settings = state.denoise[lane];
+  if (!state.session || !settings.enabled || !state.gpuPreview?.available) return false;
+  const runtime = state.denoiseRuntime[lane];
+  const generation = ++runtime.generation;
+  runtime.status = state.gpuPreview.diagnosticsSnapshot().denoise.cacheReady ? "recalculating" : "preparing";
+  runtime.error = "";
+  renderDenoiseControls();
+  try {
+    const analysis = settings.analysis;
+    const ready = await state.gpuPreview.analyzeDenoiseProxy(
+      state.session.session_id,
+      lane,
+      JSON.parse(JSON.stringify(state.adjustments)),
+      refinementProxyLongEdge(),
+      state.editRevision,
+      {
+        name: "Photo / Fine",
+        levels: analysis.levels,
+        noiseThreshold: analysis.noise_threshold,
+        lumaSigma: analysis.luma_sigma,
+        chromaSigma: analysis.chroma_sigma,
+      },
+    );
+    if (generation !== runtime.generation) return false;
+    if (!ready) throw new Error("The denoise analysis was replaced before completion.");
+    runtime.status = "ready";
+    runtime.dirty = false;
+    runtime.showOriginal = false;
+    await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
+    debounceOverlayAndScopes();
+    renderDenoiseControls();
+    return true;
+  } catch (error) {
+    if (generation !== runtime.generation) return false;
+    runtime.status = "error";
+    runtime.error = error?.message || "Denoise analysis failed.";
+    renderDenoiseControls();
+    return false;
+  }
+}
+
+async function updateLiveDenoiseControl(key, value) {
+  const lane = state.currentView;
+  const settings = state.denoise[lane];
+  const runtime = state.denoiseRuntime[lane];
+  settings.controls[key] = clamp(value, 0, 1);
+  renderDenoiseControls();
+  if (!settings.enabled || runtime.status !== "ready" || runtime.showOriginal) return;
+  const controls = settings.controls;
+  const ready = await state.gpuPreview.resolveDenoiseProxy({
+    amount: controls.amount,
+    luminance: controls.luminance,
+    colorNoise: controls.color_noise,
+    detailRecovery: controls.detail_recovery,
+  });
+  if (!ready || lane !== state.currentView) return;
+  await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
+  debounceOverlayAndScopes();
+}
+
 function removeToneEqualizerNode(requestedIndex = null, lane = state.currentView) {
   const nodes = currentToneEqualizerNodes(lane);
   const index = requestedIndex ?? state.selectedToneEqualizerBand;
@@ -7729,6 +8021,14 @@ async function renderGpuDraft(
       const submittedAt = performance.now();
       requestAnimationFrame((presentedAt) => {
         if (serial !== state.gpuRenderSerial || (!allowInactive && lane !== state.currentView)) return;
+        state.gpuPreview?.recordPresentation?.({
+          serial,
+          lane,
+          longEdge,
+          submittedAt,
+          presentedAt,
+          submitToPresentMs: presentedAt - submittedAt,
+        });
         window.dispatchEvent(new CustomEvent("hdrfinisher:preview-presented", {
           detail: { serial, lane, longEdge, submittedAt, presentedAt },
         }));
@@ -8261,6 +8561,14 @@ async function switchLane(lane) {
   })();
   await previewTask;
   if (switchGeneration !== state.laneSwitchGeneration || lane !== state.currentView) return;
+  const denoiseIdentity = state.gpuPreview?.diagnosticsSnapshot?.().denoise?.identity || "";
+  if (state.denoise[lane].enabled && !denoiseIdentity.includes(`:${lane}:`)) {
+    state.denoiseRuntime[lane].status = "dirty";
+    await recalculateDenoise();
+    if (switchGeneration !== state.laneSwitchGeneration || lane !== state.currentView) return;
+  } else if (!state.denoise[lane].enabled && denoiseIdentity && !denoiseIdentity.includes(`:${lane}:`)) {
+    state.gpuPreview?.evictDenoiseCache?.();
+  }
   // GPU scopes read the presented canvas. Wait until this lane has replaced
   // the previous lane's canvas before sampling it.
   await Promise.all([refreshOverlay(), refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane })]);
@@ -8288,6 +8596,7 @@ function renderLaneChrome() {
   els.scopeKindLabel.textContent = lane.toUpperCase();
   renderScopeControlAvailability();
   state.previewInfo = state.previewInfoByLane[lane];
+  renderDenoiseControls();
   els.filmLookSdrActions?.classList.toggle("hidden", lane !== "sdr");
   els.colorGradingSdrActions?.classList.toggle("hidden", lane !== "sdr");
   els.vignetteSdrActions?.classList.toggle("hidden", lane !== "sdr");
@@ -9008,7 +9317,9 @@ async function openGroupPresetDialog(groupElement) {
   els.groupPresetTitle.textContent = `${context.label} Presets`;
   els.groupPresetContext.textContent = context.group === "film-look"
     ? `${context.lane.toUpperCase()} Film Look · built-ins are editable starting points; Reset returns Neutral.`
-    : `${context.lane.toUpperCase()} ${context.label} · presets affect only this adjustment group.`;
+    : context.group === "denoise"
+      ? `${context.lane.toUpperCase()} Denoise · presets update cached-analysis settings and live controls; use Recalculate Denoise to rebuild analysis.`
+      : `${context.lane.toUpperCase()} ${context.label} · presets affect only this adjustment group.`;
   els.groupPresetName.value = "";
   els.groupPresetStatus.textContent = "";
   if (!els.groupPresetDialog.open) els.groupPresetDialog.showModal();
@@ -9034,6 +9345,19 @@ async function removeGroupPreset(preset) {
 }
 
 function builtInGroupPresets(context) {
+  if (context?.group === "denoise") {
+    const defaults = defaultDenoiseDocument()[context.lane];
+    return [{
+      id: "built-in:photo_fine",
+      groupId: context.groupId,
+      name: "Photo / Fine",
+      builtIn: true,
+      values: {
+        [`denoise.${context.lane}.controls`]: JSON.parse(JSON.stringify(defaults.controls)),
+        [`denoise.${context.lane}.analysis`]: JSON.parse(JSON.stringify(defaults.analysis)),
+      },
+    }];
+  }
   if (context?.group !== "film-look") return [];
   const path = `${context.lane}.film_look`;
   return Object.entries(FILM_LOOK_PRESET_LABELS).map(([referenceModel, name]) => ({
@@ -9139,7 +9463,7 @@ async function saveCurrentGroupPreset() {
   const existing = await listSavedGroupPresets(context.groupId);
   if (existing.some((preset) => preset.name.toLocaleLowerCase() === name.toLocaleLowerCase())
     && !window.confirm(`Replace the existing “${name}” preset?`)) return;
-  const values = Object.fromEntries(context.paths.map((path) => [path, JSON.parse(JSON.stringify(getValueByPath(state.adjustments, path)))]));
+  const values = Object.fromEntries(context.paths.map((path) => [path, JSON.parse(JSON.stringify(groupPresetPathValue(context, path)))]));
   await persistGroupPreset({ groupId: context.groupId, name, values });
   els.groupPresetName.value = "";
   els.groupPresetStatus.textContent = `Saved “${name}”.`;
@@ -9150,8 +9474,18 @@ function applyGroupPreset(preset) {
   const context = state.groupPresetContext;
   if (!context || preset.groupId !== context.groupId || !preset.values || typeof preset.values !== "object") return;
   context.paths.forEach((path) => {
-    if (Object.hasOwn(preset.values, path)) setValueByPath(state.adjustments, path, JSON.parse(JSON.stringify(preset.values[path])));
+    if (Object.hasOwn(preset.values, path)) setGroupPresetPathValue(context, path, JSON.parse(JSON.stringify(preset.values[path])));
   });
+  if (context.group === "denoise") {
+    const runtime = state.denoiseRuntime[context.lane];
+    runtime.dirty = true;
+    runtime.status = state.denoise[context.lane].enabled ? "dirty" : "off";
+    runtime.showOriginal = !state.denoise[context.lane].enabled;
+    renderDenoiseControls();
+    void persistDenoiseSettings();
+    closeGroupPresetDialog();
+    return;
+  }
   syncControlsFromState();
   syncCurveControlsFromState();
   drawCurveEditor();
@@ -9169,6 +9503,19 @@ function laneCurvesModified(lane, defaults = defaultAdjustments()) {
 }
 
 function resetControlGroup(group) {
+  if (group === "denoise") {
+    const lane = state.currentView;
+    const defaults = defaultDenoiseDocument()[lane];
+    state.denoise[lane].controls = JSON.parse(JSON.stringify(defaults.controls));
+    state.denoise[lane].analysis = JSON.parse(JSON.stringify(defaults.analysis));
+    const runtime = state.denoiseRuntime[lane];
+    runtime.dirty = true;
+    runtime.status = state.denoise[lane].enabled ? "dirty" : "off";
+    runtime.showOriginal = !state.denoise[lane].enabled;
+    renderDenoiseControls();
+    void persistDenoiseSettings();
+    return;
+  }
   const paths = controlGroups[group] || [];
   if (!paths.length) return;
   const defaults = defaultAdjustments();
@@ -10854,6 +11201,7 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
     const optimisticAdjustments = preserveNewerGlobalEdit ? state.adjustments : null;
     state.editRevision = result.revision;
     state.editDocument = result.document;
+    if (commandType === "replace_document") loadDenoiseDocument(state.editDocument);
     if (optimisticLocals) state.editDocument.local_adjustments = optimisticLocals;
     if (optimisticAdjustments) state.editDocument.global_adjustments = optimisticAdjustments;
     state.documentDirty = preserveNewerGlobalEdit || Boolean(result.dirty);
@@ -10905,6 +11253,7 @@ async function refreshEditState({ preserveLocalDraft = false } = {}) {
   if (!response.ok) return;
   state.editRevision = result.revision;
   state.editDocument = result.document;
+  loadDenoiseDocument(state.editDocument);
   if (optimisticLocals) state.editDocument.local_adjustments = optimisticLocals;
   state.documentDirty = Boolean(result.dirty);
   state.adjustments = result.document.global_adjustments;
@@ -12823,6 +13172,7 @@ async function activateDesktopSession(session, projectPath) {
   if (els.rawSettingsPanel) delete els.rawSettingsPanel.dataset.initialized;
   state.adjustments = session.adjustments;
   state.editDocument = session.edit_document;
+  loadDenoiseDocument(state.editDocument);
   state.editRevision = session.edit_revision || 0;
   state.documentDirty = Boolean(session.dirty);
   state.selectedLocalId = state.editDocument.local_adjustments[0]?.id || null;
@@ -12844,6 +13194,7 @@ async function activateDesktopSession(session, projectPath) {
     refreshOverlay(),
     refreshScopes(scopeLongEdge("settled"), { tier: "settled" }),
   ]);
+  if (state.denoise.hdr.enabled) await recalculateDenoise();
   hidePreviewMessage();
   prepareInactivePreview();
   if (previewNeedsRefinement()) debouncePreview("hdr");
@@ -12938,6 +13289,7 @@ async function openProjectFromPath(desktopSelection = null) {
   state.session = payload.session;
   state.adjustments = payload.session.adjustments;
   state.editDocument = payload.session.edit_document;
+  loadDenoiseDocument(state.editDocument);
   state.editRevision = payload.session.edit_revision || 0;
   state.documentDirty = Boolean(payload.session.dirty);
   state.selectedLocalId = state.editDocument.local_adjustments[0]?.id || null;
@@ -12987,6 +13339,7 @@ async function saveProjectToPath({ saveAs = false } = {}) {
     }
     state.projectPath = payload.path;
     state.editDocument = payload.document;
+    loadDenoiseDocument(state.editDocument);
     state.documentDirty = false;
     syncCopySourcePathButton();
     syncDesktopDocumentState();
@@ -13013,6 +13366,7 @@ async function saveProjectToPath({ saveAs = false } = {}) {
   }
   state.projectPath = payload.path;
   state.editDocument = payload.document;
+  loadDenoiseDocument(state.editDocument);
   state.documentDirty = false;
   syncCopySourcePathButton();
   els.badge.textContent = `Project saved · revision ${payload.revision}`;

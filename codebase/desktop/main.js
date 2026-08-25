@@ -29,6 +29,7 @@ const GRADING_PRESET_GROUPS = new Set([
   "sdr-base", "sdr-tone", "sdr-equalizer", "sdr-color", "sdr-zones",
   "hdr-curves", "sdr-curves", "hdr-color-grading", "sdr-color-grading",
   "hdr-film-look", "sdr-film-look", "hdr-vignette", "sdr-vignette",
+  "hdr-denoise", "sdr-denoise",
 ]);
 
 if (process.env.HDR_FINISHER_USER_DATA_DIR) {

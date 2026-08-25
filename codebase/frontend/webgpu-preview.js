@@ -1,6 +1,130 @@
 (function () {
   const PARAM_COUNT = 140;
   const CURVE_SAMPLES = 1024;
+  const DENOISE_ALGORITHM_VERSION = "compact-haar-residual-v1";
+  const DENOISE_SHADER_SOURCE = `
+struct AnalysisParams { sigmaThreshold: vec4f, };
+@group(0) @binding(0) var analysisSource: texture_2d<f32>;
+@group(0) @binding(1) var analysisLow: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(2) var analysisH: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(3) var analysisV: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(4) var analysisD: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(5) var<uniform> analysisParams: AnalysisParams;
+
+fn loadClamped(source: texture_2d<f32>, p: vec2i) -> vec3f {
+  let size = vec2i(textureDimensions(source));
+  return textureLoad(source, clamp(p, vec2i(0), size - vec2i(1)), 0).rgb;
+}
+fn components(rgb: vec3f) -> vec3f {
+  let y = dot(rgb, vec3f(0.2722287, 0.6740818, 0.0536895));
+  return vec3f(y, rgb.r - y, rgb.b - y);
+}
+fn magnitude(c: vec3f, sigma: vec3f) -> f32 {
+  let scaled = c / sigma;
+  return sqrt(scaled.x * scaled.x + dot(scaled.yz, scaled.yz));
+}
+fn evidence(c: vec3f, mag: f32, total: f32) -> vec4f {
+  let ratio = mag / analysisParams.sigmaThreshold.w;
+  let confidence = 1.0 / (1.0 + ratio * ratio * ratio * ratio);
+  let directional = clamp((mag / max(total, 1e-6) - 0.5) / 0.4, 0.0, 1.0);
+  let threshold = clamp(4.0 * confidence * (1.0 - confidence), 0.0, 1.0);
+  return vec4f(c * confidence, max(directional, threshold));
+}
+@compute @workgroup_size(8, 8)
+fn analyzeMain(@builtin(global_invocation_id) id: vec3u) {
+  let outSize = textureDimensions(analysisLow);
+  if (id.x >= outSize.x || id.y >= outSize.y) { return; }
+  let p = vec2i(id.xy) * 2;
+  let a = loadClamped(analysisSource, p);
+  let b = loadClamped(analysisSource, p + vec2i(1, 0));
+  let c = loadClamped(analysisSource, p + vec2i(0, 1));
+  let d = loadClamped(analysisSource, p + vec2i(1, 1));
+  let h = components((a - b + c - d) * 0.25);
+  let v = components((a + b - c - d) * 0.25);
+  let diagonal = components((a - b - c + d) * 0.25);
+  let sigma = analysisParams.sigmaThreshold.xyz;
+  let mh = magnitude(h, sigma);
+  let mv = magnitude(v, sigma);
+  let md = magnitude(diagonal, sigma);
+  let total = mh + mv + md;
+  textureStore(analysisLow, vec2i(id.xy), vec4f((a + b + c + d) * 0.25, 1.0));
+  textureStore(analysisH, vec2i(id.xy), evidence(h, mh, total));
+  textureStore(analysisV, vec2i(id.xy), evidence(v, mv, total));
+  textureStore(analysisD, vec2i(id.xy), evidence(diagonal, md, total));
+}
+
+struct ResolveParams { weights: vec4f, flags: vec4f, };
+@group(1) @binding(0) var resolveLow: texture_2d<f32>;
+@group(1) @binding(1) var resolveH: texture_2d<f32>;
+@group(1) @binding(2) var resolveV: texture_2d<f32>;
+@group(1) @binding(3) var resolveD: texture_2d<f32>;
+@group(1) @binding(4) var resolveOriginal: texture_2d<f32>;
+@group(1) @binding(5) var resolveOutput: texture_storage_2d<rgba16float, write>;
+@group(1) @binding(6) var<uniform> resolveParams: ResolveParams;
+
+fn componentRgb(value: vec3f) -> vec3f {
+  let red = value.x + value.y;
+  let blue = value.x + value.z;
+  let green = (value.x - 0.2722287 * red - 0.0536895 * blue) / 0.6740818;
+  return vec3f(red, green, blue);
+}
+fn weightedDetailWith(packed: vec4f, weights: vec4f) -> vec3f {
+  let recovery = 1.0 - weights.w * packed.w;
+  let c = packed.xyz * vec3f(weights.y, weights.z, weights.z) * recovery;
+  return componentRgb(c) * weights.x;
+}
+fn weightedDetail(packed: vec4f) -> vec3f {
+  return weightedDetailWith(packed, resolveParams.weights);
+}
+@compute @workgroup_size(8, 8)
+fn resolveMain(@builtin(global_invocation_id) id: vec3u) {
+  let outSize = textureDimensions(resolveOutput);
+  if (id.x >= outSize.x || id.y >= outSize.y) { return; }
+  let p = vec2i(id.xy);
+  let q = p / 2;
+  let sx = select(1.0, -1.0, (p.x & 1) == 1);
+  let sy = select(1.0, -1.0, (p.y & 1) == 1);
+  var residual = vec3f(0.0);
+  if (resolveParams.flags.x > 0.5) { residual = textureLoad(resolveLow, q, 0).rgb; }
+  residual += sx * weightedDetail(textureLoad(resolveH, q, 0));
+  residual += sy * weightedDetail(textureLoad(resolveV, q, 0));
+  residual += sx * sy * weightedDetail(textureLoad(resolveD, q, 0));
+  var rgb = residual;
+  if (resolveParams.flags.y > 0.5) { rgb = textureLoad(resolveOriginal, p, 0).rgb - residual; }
+  textureStore(resolveOutput, p, vec4f(rgb, 1.0));
+}
+
+@group(2) @binding(0) var directH0: texture_2d<f32>;
+@group(2) @binding(1) var directV0: texture_2d<f32>;
+@group(2) @binding(2) var directD0: texture_2d<f32>;
+@group(2) @binding(3) var directH1: texture_2d<f32>;
+@group(2) @binding(4) var directV1: texture_2d<f32>;
+@group(2) @binding(5) var directD1: texture_2d<f32>;
+@group(2) @binding(6) var directOriginal: texture_2d<f32>;
+@group(2) @binding(7) var directOutput: texture_storage_2d<rgba16float, write>;
+@group(2) @binding(8) var<uniform> directParams: ResolveParams;
+
+@compute @workgroup_size(8, 8)
+fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
+  let outSize = textureDimensions(directOutput);
+  if (id.x >= outSize.x || id.y >= outSize.y) { return; }
+  let p = vec2i(id.xy);
+  let q0 = p / 2;
+  let q1 = q0 / 2;
+  let sx0 = select(1.0, -1.0, (p.x & 1) == 1);
+  let sy0 = select(1.0, -1.0, (p.y & 1) == 1);
+  let sx1 = select(1.0, -1.0, (q0.x & 1) == 1);
+  let sy1 = select(1.0, -1.0, (q0.y & 1) == 1);
+  let weights = directParams.weights;
+  var residual = sx1 * weightedDetailWith(textureLoad(directH1, q1, 0), weights);
+  residual += sy1 * weightedDetailWith(textureLoad(directV1, q1, 0), weights);
+  residual += sx1 * sy1 * weightedDetailWith(textureLoad(directD1, q1, 0), weights);
+  residual += sx0 * weightedDetailWith(textureLoad(directH0, q0, 0), weights);
+  residual += sy0 * weightedDetailWith(textureLoad(directV0, q0, 0), weights);
+  residual += sx0 * sy0 * weightedDetailWith(textureLoad(directD0, q0, 0), weights);
+  let rgb = textureLoad(directOriginal, p, 0).rgb - residual;
+  textureStore(directOutput, p, vec4f(rgb, 1.0));
+}`;
 
   class HDRWebGPUPreview {
     constructor(canvas) {
@@ -36,7 +160,14 @@
       this.maskPipelineLayout = null;
       this.maskPipelines = null;
       this.instrumentationEnabled = false;
-      this.performanceMetrics = { renders: [], scopes: [] };
+      this.performanceMetrics = { renders: [], scopes: [], maskEvents: [], stages: [], allocations: [], presentations: [] };
+      // Phase 0 denoise seam. This remains null until the explicit selector
+      // benchmark asks for it, so the established never-used path owns no
+      // denoise resources and performs no denoise dispatches.
+      this.denoiseSourceSelector = null;
+      this.denoiseSelectorGeneration = 0;
+      this.denoiseCounters = this.emptyDenoiseCounters();
+      this.denoisePipelines = null;
       this.adapterInfo = null;
     }
 
@@ -123,6 +254,7 @@
     }
 
     resetSession(sessionId = null) {
+      this.disposeDenoiseSelectorSeam();
       this.sessionId = sessionId;
       this.renderSerials = new WeakMap();
       for (const proxy of this.proxies.values()) proxy.texture?.destroy();
@@ -163,7 +295,44 @@
 
     setInstrumentationEnabled(enabled = true) {
       this.instrumentationEnabled = Boolean(enabled);
-      if (enabled) this.performanceMetrics = { renders: [], maskEvents: [], scopes: [] };
+      if (enabled) {
+        this.performanceMetrics = {
+          renders: [], scopes: [], maskEvents: [], stages: [], allocations: [], presentations: [],
+        };
+      }
+    }
+
+    emptyDenoiseCounters() {
+      return {
+        analysisCalls: 0,
+        resolveCalls: 0,
+        allocations: 0,
+        allocatedBytes: 0,
+        atomicSwaps: 0,
+        toggles: 0,
+      };
+    }
+
+    recordStage(stage, detail = {}) {
+      if (!this.instrumentationEnabled) return;
+      const entries = this.performanceMetrics.stages;
+      entries.push({ stage, at: performance.now(), ...detail });
+      if (entries.length > 720) entries.shift();
+    }
+
+    recordAllocation(kind, bytes, detail = {}) {
+      if (!this.instrumentationEnabled) return;
+      const entries = this.performanceMetrics.allocations;
+      entries.push({ kind, bytes, at: performance.now(), ...detail });
+      if (entries.length > 480) entries.shift();
+    }
+
+    recordPresentation(detail = {}) {
+      if (!this.instrumentationEnabled) return;
+      const entries = this.performanceMetrics.presentations;
+      entries.push({ at: performance.now(), ...detail });
+      if (entries.length > 240) entries.shift();
+      this.recordStage("presentation", detail);
     }
 
     diagnosticsSnapshot() {
@@ -174,14 +343,40 @@
         renders: this.performanceMetrics.renders.map((entry) => ({ ...entry })),
         scopes: (this.performanceMetrics.scopes || []).map((entry) => ({ ...entry })),
         maskEvents: (this.performanceMetrics.maskEvents || []).map((entry) => ({ ...entry })),
+        stages: (this.performanceMetrics.stages || []).map((entry) => ({ ...entry })),
+        allocations: (this.performanceMetrics.allocations || []).map((entry) => ({ ...entry })),
+        presentations: (this.performanceMetrics.presentations || []).map((entry) => ({ ...entry })),
+        denoise: {
+          ...this.denoiseCounters,
+          selectorCreated: Boolean(this.denoiseSourceSelector),
+          selectedSource: this.denoiseSourceSelector?.selected || "original",
+          identity: this.denoiseSourceSelector?.identity || null,
+          resolvedResident: Boolean(this.denoiseSourceSelector?.resolved),
+          cacheReady: Boolean(this.denoiseSourceSelector?.cache),
+          algorithmVersion: this.denoiseSourceSelector?.cache?.algorithmVersion || null,
+        },
         resources: {
           proxies: this.proxies.size,
+          proxyBytes: [...this.proxies.values()].reduce((sum, entry) => sum + (entry.byteSize || 0), 0),
           sceneLuminanceTextures: this.sceneLuminance.size,
           localMasks: this.localMasks.size,
           localMaskBytes: [...this.localMasks.values()].reduce((sum, entry) => sum + entry.byteSize, 0),
           maskGraphs: [...this.localMasks.values()].filter((entry) => entry.kind === "gpu-mask-graph").length,
           scopePools: this.scopeResources.size,
           scopeBuffers: [...this.scopeResources.values()].reduce((sum, pool) => sum + pool.length, 0),
+          scopeBytes: [...this.scopeResources.values()].reduce(
+            (sum, pool) => sum + pool.reduce((poolSum, resource) => poolSum + (resource.byteSize || 0), 0),
+            0,
+          ),
+          gradingIntermediateBytes: [...this.intermediates.values()].reduce((sum, entry) => {
+            const spatialWidth = Math.max(1, Math.ceil(entry.width / 4));
+            const spatialHeight = Math.max(1, Math.ceil(entry.height / 4));
+            return sum + entry.width * entry.height * 8 * 3 + spatialWidth * spatialHeight * 8 * 2;
+          }, 0),
+          denoiseTextures: (this.denoiseSourceSelector?.resolved ? 1 : 0)
+            + (this.denoiseSourceSelector?.cache?.textureCount || 0),
+          denoiseBytes: (this.denoiseSourceSelector?.resolved?.byteSize || 0)
+            + (this.denoiseSourceSelector?.cache?.byteSize || 0),
         },
       };
     }
@@ -193,9 +388,17 @@
       const serial = (this.renderSerials.get(canvas) || 0) + 1;
       this.renderSerials.set(canvas, serial);
       const geometrySignature = JSON.stringify(adjustments.shared?.geometry || {});
+      const retainedOriginal = this.denoiseSourceSelector?.original;
+      if (retainedOriginal
+        && retainedOriginal.sessionId === sessionId
+        && retainedOriginal.lane === lane
+        && retainedOriginal.geometrySignature === geometrySignature) {
+        longEdge = retainedOriginal.longEdge;
+      }
       const proxy = await this.loadProxy(sessionId, lane, longEdge, geometrySignature, editRevision);
       const proxyReadyAt = performance.now();
       if (serial !== this.renderSerials.get(canvas) || !proxy) return false;
+      const sourceProxy = this.selectedDenoiseSource(proxy);
       const activeLocals = localAdjustments.filter((local) => local.enabled !== false && local.opacity > 0 && local[`${lane}_grade`]?.enabled !== false);
       if (!activeLocals.every((local) => gpuLocalSupported(local[`${lane}_grade`]))) return false;
       const masks = await Promise.all(activeLocals.map((local) => this.loadLocalMask(
@@ -246,7 +449,7 @@
             { binding: 5, resource: overlayView },
           ],
       });
-      const baseBindGroup = makeBindGroup(proxy.texture.createView(), intermediate.spatialATexture.createView());
+      const baseBindGroup = makeBindGroup(sourceProxy.texture.createView(), intermediate.spatialATexture.createView());
       const extractBindGroup = makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialBTexture.createView());
       const horizontalBindGroup = makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialATexture.createView());
       const verticalBindGroup = makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialBTexture.createView());
@@ -365,6 +568,13 @@
       }
       this.device.queue.submit([encoder.finish()]);
       const submittedAt = performance.now();
+      this.recordStage("grading", {
+        serial,
+        lane,
+        longEdge,
+        source: sourceProxy === proxy ? "original" : "resolved",
+        durationMs: submittedAt - masksReadyAt,
+      });
       this.scopeSources.set(canvas, {
         serial,
         lane,
@@ -401,6 +611,370 @@
         gpuTiming?.readBuffer.destroy();
       }
       return { width: proxy.width, height: proxy.height, hdr: surface.hdr, proxyFormat: proxy.pixelFormat };
+    }
+
+    selectedDenoiseSource(originalProxy) {
+      const selector = this.denoiseSourceSelector;
+      if (!selector || selector.identity !== originalProxy.identity) {
+        return originalProxy;
+      }
+      if (selector.selected === "resolved" && selector.resolved) return selector.resolved;
+      return selector.original;
+    }
+
+    async ensureDenoisePipelines() {
+      if (this.denoisePipelines) return this.denoisePipelines;
+      const module = this.device.createShaderModule({ code: DENOISE_SHADER_SOURCE });
+      const compilation = await module.getCompilationInfo();
+      const errors = compilation.messages.filter((message) => message.type === "error");
+      if (errors.length) throw new Error(errors.map((message) => message.message).join("; "));
+      const [analysis, resolve, resolveTwoLevel] = await Promise.all([
+        this.device.createComputePipelineAsync({ layout: "auto", compute: { module, entryPoint: "analyzeMain" } }),
+        this.device.createComputePipelineAsync({ layout: "auto", compute: { module, entryPoint: "resolveMain" } }),
+        this.device.createComputePipelineAsync({ layout: "auto", compute: { module, entryPoint: "resolveTwoLevelMain" } }),
+      ]);
+      this.denoisePipelines = { analysis, resolve, resolveTwoLevel };
+      return this.denoisePipelines;
+    }
+
+    createDenoiseTexture(width, height, label) {
+      const texture = this.device.createTexture({
+        label,
+        size: { width, height },
+        format: "rgba16float",
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC,
+      });
+      return { texture, width, height, byteSize: width * height * 8 };
+    }
+
+    async analyzeDenoiseProxy(sessionId, lane, adjustments, longEdge, editRevision = 0, preset = {}) {
+      if (!this.available || !sessionId) return false;
+      const geometrySignature = JSON.stringify(adjustments?.shared?.geometry || {});
+      const original = await this.loadProxy(sessionId, lane, longEdge, geometrySignature, editRevision);
+      if (!original) return false;
+      const generation = ++this.denoiseSelectorGeneration;
+      const pipelines = await this.ensureDenoisePipelines();
+      const settings = {
+        name: "Photo / Fine",
+        levels: 2,
+        noiseThreshold: 3.0,
+        lumaSigma: 0.035,
+        chromaSigma: 0.035,
+        lumaStrength: 1.0,
+        chromaStrength: 1.25,
+        ...preset,
+      };
+      if (settings.levels !== 2) throw new Error("Phase 2 supports only the approved two-level preset.");
+      const startedAt = performance.now();
+      this.denoiseCounters.analysisCalls += 1;
+      this.recordStage("denoise-analysis", { state: "started", generation, longEdge });
+      const levels = [];
+      const transient = [];
+      const evidenceAllocated = [];
+      const paramBuffers = [];
+      let cacheInstalled = false;
+      let input = original;
+      try {
+        const encoder = this.device.createCommandEncoder();
+        for (let index = 0; index < settings.levels; index += 1) {
+          const width = Math.ceil(input.width / 2);
+          const height = Math.ceil(input.height / 2);
+          const low = this.createDenoiseTexture(width, height, `denoise-low-${index}`);
+          const evidence = ["h", "v", "d"].map((axis) => this.createDenoiseTexture(width, height, `denoise-${axis}-${index}`));
+          transient.push(low);
+          evidenceAllocated.push(...evidence);
+          const params = this.device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+          paramBuffers.push(params);
+          const scale = 0.5 ** (index + 1);
+          this.device.queue.writeBuffer(params, 0, new Float32Array([
+            settings.lumaSigma * scale * settings.lumaStrength,
+            settings.chromaSigma * scale * settings.chromaStrength,
+            settings.chromaSigma * scale * settings.chromaStrength,
+            settings.noiseThreshold,
+          ]));
+          const bindGroup = this.device.createBindGroup({
+            layout: pipelines.analysis.getBindGroupLayout(0),
+            entries: [
+              { binding: 0, resource: input.texture.createView() },
+              { binding: 1, resource: low.texture.createView() },
+              { binding: 2, resource: evidence[0].texture.createView() },
+              { binding: 3, resource: evidence[1].texture.createView() },
+              { binding: 4, resource: evidence[2].texture.createView() },
+              { binding: 5, resource: { buffer: params } },
+            ],
+          });
+          const pass = encoder.beginComputePass();
+          pass.setPipeline(pipelines.analysis);
+          pass.setBindGroup(0, bindGroup);
+          pass.dispatchWorkgroups(Math.ceil(width / 8), Math.ceil(height / 8));
+          pass.end();
+          levels.push({ sourceWidth: input.width, sourceHeight: input.height, low, evidence, params });
+          input = low;
+        }
+        this.device.queue.submit([encoder.finish()]);
+        await this.device.queue.onSubmittedWorkDone();
+        if (generation !== this.denoiseSelectorGeneration || this.sessionId !== sessionId) {
+          this.recordStage("denoise-analysis", { state: "stale", generation });
+          return false;
+        }
+        const previous = this.denoiseSourceSelector;
+        const byteSize = levels.reduce((sum, level) => sum + level.evidence.reduce((value, item) => value + item.byteSize, 0), 0);
+        const cache = {
+          algorithmVersion: DENOISE_ALGORITHM_VERSION,
+          settings,
+          levels: levels.map((level) => ({
+            sourceWidth: level.sourceWidth,
+            sourceHeight: level.sourceHeight,
+            evidence: level.evidence,
+          })),
+          byteSize,
+          textureCount: levels.length * 3,
+        };
+        this.denoiseSourceSelector = {
+          identity: original.identity,
+          original,
+          resolved: null,
+          selected: previous?.identity === original.identity ? previous.selected : "original",
+          cache,
+          generation,
+        };
+        cacheInstalled = true;
+        this.destroyDenoiseSelector(previous);
+        this.denoiseCounters.allocations += cache.textureCount;
+        this.denoiseCounters.allocatedBytes += byteSize;
+        this.recordAllocation("denoise-wavelet-cache", byteSize, { textures: cache.textureCount, longEdge });
+        this.recordStage("denoise-analysis", { state: "ready", generation, durationMs: performance.now() - startedAt });
+      } catch (error) {
+        this.recordStage("denoise-analysis", { state: "error", generation, durationMs: performance.now() - startedAt });
+        throw error;
+      } finally {
+        for (const item of transient) item.texture.destroy();
+        for (const buffer of paramBuffers) buffer.destroy();
+        if (!cacheInstalled) for (const item of evidenceAllocated) item.texture.destroy();
+      }
+      return this.resolveDenoiseProxy({ amount: 0.5, luminance: 0.5, colorNoise: 0.5, detailRecovery: 0.5 });
+    }
+
+    async resolveDenoiseProxy(controls = {}) {
+      const selector = this.denoiseSourceSelector;
+      if (!selector?.cache || !selector.original) return false;
+      const generation = ++this.denoiseSelectorGeneration;
+      const startedAt = performance.now();
+      this.denoiseCounters.resolveCalls += 1;
+      const weights = ["amount", "luminance", "colorNoise", "detailRecovery"].map((name) => {
+        const value = Number(controls[name] ?? 0.5);
+        if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error(`${name} must be between 0 and 1`);
+        return value;
+      });
+      const pipelines = await this.ensureDenoisePipelines();
+      const levels = selector.cache.levels;
+      if (levels.length !== 2) throw new Error("The direct resolver requires the approved two-level cache.");
+      const candidateIsNew = !selector.resolved;
+      const candidate = selector.resolved || this.createDenoiseTexture(selector.original.width, selector.original.height, "denoise-resolved");
+      const params = this.device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+      try {
+        this.device.queue.writeBuffer(params, 0, new Float32Array([...weights, 0, 1, 0, 0]));
+        const fine = levels[0].evidence;
+        const medium = levels[1].evidence;
+        const bindGroup = this.device.createBindGroup({
+          layout: pipelines.resolveTwoLevel.getBindGroupLayout(2),
+          entries: [
+            { binding: 0, resource: fine[0].texture.createView() },
+            { binding: 1, resource: fine[1].texture.createView() },
+            { binding: 2, resource: fine[2].texture.createView() },
+            { binding: 3, resource: medium[0].texture.createView() },
+            { binding: 4, resource: medium[1].texture.createView() },
+            { binding: 5, resource: medium[2].texture.createView() },
+            { binding: 6, resource: selector.original.texture.createView() },
+            { binding: 7, resource: candidate.texture.createView() },
+            { binding: 8, resource: { buffer: params } },
+          ],
+        });
+        const encoder = this.device.createCommandEncoder();
+        const pass = encoder.beginComputePass();
+        pass.setPipeline(pipelines.resolveTwoLevel);
+        pass.setBindGroup(2, bindGroup);
+        pass.dispatchWorkgroups(Math.ceil(candidate.width / 8), Math.ceil(candidate.height / 8));
+        pass.end();
+        this.device.queue.submit([encoder.finish()]);
+        await this.device.queue.onSubmittedWorkDone();
+        if (generation !== this.denoiseSelectorGeneration || selector !== this.denoiseSourceSelector) {
+          if (candidateIsNew) candidate.texture.destroy();
+          this.recordStage("denoise-resolve", { state: "stale", generation });
+          return false;
+        }
+        if (candidateIsNew) {
+          selector.resolved = {
+            ...candidate,
+            workingSpace: selector.original.workingSpace,
+            pixelFormat: "rgba16float",
+            geometrySignature: selector.original.geometrySignature,
+            identity: selector.original.identity,
+          };
+        }
+        selector.selected = "resolved";
+        this.denoiseCounters.atomicSwaps += 1;
+        if (candidateIsNew) {
+          this.denoiseCounters.allocations += 1;
+          this.denoiseCounters.allocatedBytes += candidate.byteSize;
+          this.recordAllocation("denoise-resolved", candidate.byteSize, { generation });
+        }
+        this.recordStage("denoise-resolve", { state: "ready", generation, durationMs: performance.now() - startedAt });
+        return true;
+      } catch (error) {
+        if (candidateIsNew) candidate.texture.destroy();
+        this.recordStage("denoise-resolve", { state: "error", generation, durationMs: performance.now() - startedAt });
+        throw error;
+      } finally {
+        params.destroy();
+      }
+    }
+
+    async prepareDenoiseSelectorSeam(sessionId, lane, adjustments, longEdge, editRevision = 0, variant = "resolved-a") {
+      if (!this.available || !sessionId) return false;
+      const geometrySignature = JSON.stringify(adjustments?.shared?.geometry || {});
+      const original = await this.loadProxy(sessionId, lane, longEdge, geometrySignature, editRevision);
+      if (!original) return false;
+      const generation = ++this.denoiseSelectorGeneration;
+      const startedAt = performance.now();
+      const texture = this.device.createTexture({
+        size: { width: original.width, height: original.height },
+        format: "rgba16float",
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+      });
+      const byteSize = original.width * original.height * 8;
+      this.denoiseCounters.allocations += 1;
+      this.denoiseCounters.allocatedBytes += byteSize;
+      this.recordAllocation("denoise-selector-fixture", byteSize, { width: original.width, height: original.height, variant });
+      const colors = {
+        "resolved-a": { r: 0, g: 0, b: 0, a: 1 },
+        "resolved-b": { r: 4, g: 4, b: 4, a: 1 },
+      };
+      const encoder = this.device.createCommandEncoder();
+      const pass = encoder.beginRenderPass({
+        colorAttachments: [{
+          view: texture.createView(),
+          clearValue: colors[variant] || colors["resolved-a"],
+          loadOp: "clear",
+          storeOp: "store",
+        }],
+      });
+      pass.end();
+      this.device.queue.submit([encoder.finish()]);
+      await this.device.queue.onSubmittedWorkDone();
+      if (generation !== this.denoiseSelectorGeneration || this.sessionId !== sessionId) {
+        texture.destroy();
+        this.recordStage("selector-stale-candidate", { generation, variant });
+        return false;
+      }
+      const previous = this.denoiseSourceSelector;
+      this.denoiseSourceSelector = {
+        identity: original.identity,
+        original,
+        resolved: {
+          texture,
+          width: original.width,
+          height: original.height,
+          workingSpace: original.workingSpace,
+          pixelFormat: "rgba16float",
+          geometrySignature: original.geometrySignature,
+          identity: original.identity,
+          byteSize,
+        },
+        selected: previous?.identity === original.identity ? previous.selected : "original",
+        variant,
+        generation,
+      };
+      this.destroyDenoiseSelector(previous);
+      this.denoiseCounters.atomicSwaps += 1;
+      this.recordStage("selector-atomic-swap", { generation, variant, durationMs: performance.now() - startedAt });
+      return true;
+    }
+
+    selectDenoiseSelectorSource(enabled) {
+      if (!this.denoiseSourceSelector) return false;
+      this.denoiseSourceSelector.selected = enabled ? "resolved" : "original";
+      this.denoiseCounters.toggles += 1;
+      this.recordStage("selector-toggle", { source: this.denoiseSourceSelector.selected });
+      return true;
+    }
+
+    async readDenoiseSelectorPixel() {
+      const resolved = this.denoiseSourceSelector?.resolved;
+      if (!resolved) return null;
+      const buffer = this.device.createBuffer({
+        size: 256,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+      });
+      const encoder = this.device.createCommandEncoder();
+      encoder.copyTextureToBuffer(
+        { texture: resolved.texture },
+        { buffer, bytesPerRow: 256, rowsPerImage: 1 },
+        { width: 1, height: 1 },
+      );
+      this.device.queue.submit([encoder.finish()]);
+      try {
+        await buffer.mapAsync(GPUMapMode.READ);
+        const values = new Uint16Array(buffer.getMappedRange());
+        return [halfToFloat(values[0]), halfToFloat(values[1]), halfToFloat(values[2]), halfToFloat(values[3])];
+      } finally {
+        if (buffer.mapState === "mapped") buffer.unmap();
+        buffer.destroy();
+      }
+    }
+
+    async readDenoiseResolvedRegion(width = 16, height = 16) {
+      const resolved = this.denoiseSourceSelector?.resolved;
+      if (!resolved) return null;
+      const copyWidth = Math.min(Math.max(1, Number(width) || 1), resolved.width);
+      const copyHeight = Math.min(Math.max(1, Number(height) || 1), resolved.height);
+      const bytesPerRow = Math.ceil((copyWidth * 8) / 256) * 256;
+      const buffer = this.device.createBuffer({
+        size: bytesPerRow * copyHeight,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+      });
+      const encoder = this.device.createCommandEncoder();
+      encoder.copyTextureToBuffer(
+        { texture: resolved.texture },
+        { buffer, bytesPerRow, rowsPerImage: copyHeight },
+        { width: copyWidth, height: copyHeight },
+      );
+      this.device.queue.submit([encoder.finish()]);
+      try {
+        await buffer.mapAsync(GPUMapMode.READ);
+        const source = new Uint16Array(buffer.getMappedRange());
+        const stride = bytesPerRow / 2;
+        const values = [];
+        for (let y = 0; y < copyHeight; y += 1) {
+          for (let x = 0; x < copyWidth * 4; x += 1) values.push(halfToFloat(source[y * stride + x]));
+        }
+        return { width: copyWidth, height: copyHeight, values };
+      } finally {
+        if (buffer.mapState === "mapped") buffer.unmap();
+        buffer.destroy();
+      }
+    }
+
+    disposeDenoiseSelectorSeam() {
+      this.denoiseSelectorGeneration += 1;
+      this.destroyDenoiseSelector(this.denoiseSourceSelector);
+      this.denoiseSourceSelector = null;
+      this.denoiseCounters = this.emptyDenoiseCounters();
+    }
+
+    evictDenoiseCache() {
+      this.denoiseSelectorGeneration += 1;
+      this.destroyDenoiseSelector(this.denoiseSourceSelector);
+      this.denoiseSourceSelector = null;
+      this.recordStage("denoise-cache-evicted", {});
+    }
+
+    destroyDenoiseSelector(selector) {
+      if (!selector) return;
+      selector.resolved?.texture?.destroy();
+      for (const level of selector.cache?.levels || []) {
+        for (const item of level.evidence || []) item.texture?.destroy();
+      }
     }
 
     async analyzeScope(canvas, { width = 256, height = 128, generation = 0, tier = "interactive" } = {}) {
@@ -481,6 +1055,7 @@
         if (this.instrumentationEnabled) {
           this.performanceMetrics.scopes.push(metric);
           if (this.performanceMetrics.scopes.length > 240) this.performanceMetrics.scopes.shift();
+          this.recordStage("scopes", { ...metric });
         }
         return { pixels, width, height, lane: source.lane, sourceSerial: source.serial, metric };
       } catch {
@@ -505,6 +1080,7 @@
       const resource = {
         busy: false,
         bytesPerRow,
+        byteSize: width * height * 8 + bytesPerRow * height + PARAM_COUNT * 4,
         texture: this.device.createTexture({
           size: { width, height },
           format: "rgba16float",
@@ -520,6 +1096,7 @@
         }),
       };
       pool.push(resource);
+      this.recordAllocation("scope", width * height * 8 + bytesPerRow * height + PARAM_COUNT * 4, { width, height });
       return resource;
     }
 
@@ -666,6 +1243,11 @@
         height,
       };
       this.intermediates.set(canvas, intermediate);
+      this.recordAllocation(
+        "grading-intermediates",
+        width * height * 8 * 3 + spatialWidth * spatialHeight * 8 * 2,
+        { width, height, spatialWidth, spatialHeight },
+      );
       return intermediate;
     }
 
@@ -704,9 +1286,13 @@
 
     async loadProxy(sessionId, lane, longEdge, geometrySignature = "{}", editRevision = 0) {
       const key = `${sessionId}:${lane}:${longEdge}:${geometrySignature}`;
-      if (this.proxies.has(key)) return this.proxies.get(key);
+      if (this.proxies.has(key)) {
+        this.recordStage("proxy-request", { lane, longEdge, cacheHit: true });
+        return this.proxies.get(key);
+      }
       if (this.proxyInflight.has(key)) return this.proxyInflight.get(key);
       const pending = (async () => {
+        const startedAt = performance.now();
         const response = await fetch(`/api/session/${sessionId}/proxy/${lane}?long_edge=${longEdge}&format=rgba16f&edit_revision=${editRevision}&geometry_signature=${encodeURIComponent(geometrySignature)}`);
         if (!response.ok) {
           const payload = await response.json().catch(() => null);
@@ -741,8 +1327,30 @@
           { offset: 0, bytesPerRow, rowsPerImage: height },
           { width, height },
         );
-        const proxy = { texture, width, height, workingSpace, pixelFormat, geometrySignature, bindGroups: new Map() };
+        const byteSize = width * height * (pixelFormat === "rgba16float" ? 8 : 16);
+        const proxy = {
+          texture,
+          width,
+          height,
+          sessionId,
+          lane,
+          longEdge,
+          workingSpace,
+          pixelFormat,
+          geometrySignature,
+          identity: key,
+          byteSize,
+          bindGroups: new Map(),
+        };
         this.proxies.set(key, proxy);
+        this.recordAllocation("source-proxy", byteSize, { width, height, lane, longEdge, pixelFormat });
+        this.recordStage("proxy-request", {
+          lane,
+          longEdge,
+          cacheHit: false,
+          durationMs: performance.now() - startedAt,
+          bytes: data.byteLength,
+        });
         this.trimProxyLevels(sessionId, lane);
         return proxy;
       })();

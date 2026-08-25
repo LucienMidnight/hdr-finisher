@@ -16,6 +16,7 @@ from .loader import load_image
 from .metadata import extract_metadata
 from .models import (
     AdjustmentState,
+    DenoiseDocumentSettings,
     EditCommand,
     EditDocument,
     EditStateResponse,
@@ -67,6 +68,7 @@ class LoadedSession:
     durable_source_path: Path | None = None
     adjustments: AdjustmentState = field(default_factory=AdjustmentState)
     local_adjustments: list[LocalAdjustment] = field(default_factory=list)
+    denoise: DenoiseDocumentSettings = field(default_factory=DenoiseDocumentSettings)
     interpretation_override: SourceInterpretationOverride = field(default_factory=SourceInterpretationOverride)
     raw_import_settings: RawImportSettings = field(default_factory=RawImportSettings)
     edit_revision: int = 0
@@ -140,6 +142,7 @@ class LoadedSession:
             interpretation_override=self.interpretation_override,
             global_adjustments=self.adjustments,
             local_adjustments=self.local_adjustments,
+            denoise=self.denoise,
         )
 
     def edit_state(self) -> EditStateResponse:
@@ -292,6 +295,7 @@ class SessionStore:
             developed.durable_source_path = current.durable_source_path
             developed.adjustments = current.adjustments
             developed.local_adjustments = current.local_adjustments
+            developed.denoise = current.denoise
             developed.interpretation_override = current.interpretation_override
             developed.hdr_reference_white_nits = current.hdr_reference_white_nits
             developed.color_context = current.color_context
@@ -356,6 +360,7 @@ class SessionStore:
             original = (
                 session.adjustments.model_copy(deep=True),
                 [item.model_copy(deep=True) for item in session.local_adjustments],
+                session.denoise.model_copy(deep=True),
                 session.interpretation_override.model_copy(deep=True),
                 session.hdr_reference_white_nits,
                 session.color_context,
@@ -374,6 +379,7 @@ class SessionStore:
                 (
                     session.adjustments,
                     session.local_adjustments,
+                    session.denoise,
                     session.interpretation_override,
                     session.hdr_reference_white_nits,
                     session.color_context,
@@ -429,6 +435,7 @@ class SessionStore:
                 )
             session.adjustments = document.global_adjustments
             session.local_adjustments = document.local_adjustments
+            session.denoise = document.denoise
             session.hdr_reference_white_nits = document.hdr_reference_white_nits
             session.color_context = RenderColorContext(document.hdr_reference_white_nits)
             session.render_cache.set_color_context(session.color_context)
@@ -461,6 +468,15 @@ class SessionStore:
                 expected_revision=current_revision,
                 command_type="set_global_adjustments",
                 payload={"adjustments": previous.model_dump(mode="json")},
+            )
+
+        if command_type == "set_denoise_settings":
+            previous = session.denoise
+            session.denoise = DenoiseDocumentSettings.model_validate(payload.get("denoise"))
+            return EditCommand(
+                expected_revision=current_revision,
+                command_type="set_denoise_settings",
+                payload={"denoise": previous.model_dump(mode="json")},
             )
 
         if command_type == "create_local":

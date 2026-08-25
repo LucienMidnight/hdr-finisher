@@ -754,6 +754,42 @@ class SourceReference(BaseModel):
     luminance: SourceLuminanceDescriptor
 
 
+class DenoiseLiveControls(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount: float = Field(default=0.5, ge=0.0, le=1.0)
+    luminance: float = Field(default=0.5, ge=0.0, le=1.0)
+    color_noise: float = Field(default=0.5, ge=0.0, le=1.0)
+    detail_recovery: float = Field(default=0.5, ge=0.0, le=1.0)
+
+
+class DenoiseAnalysisSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    algorithm_version: Literal["compact-haar-residual-v1"] = "compact-haar-residual-v1"
+    preset: Literal["photo_fine"] = "photo_fine"
+    levels: Literal[2] = 2
+    noise_threshold: float = Field(default=3.0, gt=0.0, le=16.0)
+    luma_sigma: float = Field(default=0.035, gt=0.0, le=2.0)
+    chroma_sigma: float = Field(default=0.035, gt=0.0, le=2.0)
+
+
+class DenoiseLaneSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    controls: DenoiseLiveControls = Field(default_factory=DenoiseLiveControls)
+    analysis: DenoiseAnalysisSettings = Field(default_factory=DenoiseAnalysisSettings)
+
+
+class DenoiseDocumentSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = 1
+    hdr: DenoiseLaneSettings = Field(default_factory=DenoiseLaneSettings)
+    sdr: DenoiseLaneSettings = Field(default_factory=DenoiseLaneSettings)
+
+
 class EditDocument(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -763,6 +799,7 @@ class EditDocument(BaseModel):
     interpretation_override: "SourceInterpretationOverride" = Field(default_factory=lambda: SourceInterpretationOverride())
     global_adjustments: AdjustmentState = Field(default_factory=AdjustmentState)
     local_adjustments: list[LocalAdjustment] = Field(default_factory=list, max_length=256)
+    denoise: DenoiseDocumentSettings = Field(default_factory=DenoiseDocumentSettings)
 
     @model_validator(mode="before")
     @classmethod
@@ -787,6 +824,7 @@ class EditCommand(BaseModel):
         "replace_document",
         "set_hdr_reference_white",
         "set_global_adjustments",
+        "set_denoise_settings",
         "create_local",
         "update_local",
         "delete_local",

@@ -720,6 +720,7 @@ def test_raw_redevelopment_preserves_edit_document_and_session_identity(tmp_path
     sessions = SessionStore()
     initial = sessions.create_session(source)
     current = sessions.get(initial.session_id)
+    current.denoise.hdr.enabled = True
     adjustments = current.adjustments.model_copy(deep=True)
     adjustments.hdr.exposure = 2.0
     sessions.apply_edit_commands(
@@ -743,6 +744,7 @@ def test_raw_redevelopment_preserves_edit_document_and_session_identity(tmp_path
 
     assert payload.session_id == initial.session_id
     assert reloaded.adjustments.hdr.exposure == 2.0
+    assert reloaded.denoise.hdr.enabled is True
     assert reloaded.edit_revision == 2
     assert reloaded.dirty is True
     assert reloaded.undo_history == original_history

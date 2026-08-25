@@ -1222,6 +1222,7 @@ def test_adjustment_group_presets_are_scoped_persistent_and_available_in_headers
     assert ".group-reset { grid-column: 3;" in css
     assert ".section-bypass { grid-column: 4;" in css
     assert 'path.join(library, "Grading")' in main
+    assert '"hdr-denoise", "sdr-denoise"' in main
     assert 'schemaVersion: 1, ...preset' in main
     assert 'listGradingPresets: (groupId)' in preload
     assert 'saveGradingPreset: (preset)' in preload
@@ -1296,3 +1297,65 @@ def test_scope_region_is_an_optional_remappable_post_geometry_scope_tool() -> No
     assert "var(--curve-selected-ring)" in css
     assert "var(--curve-selected)" in css
     assert "var(--accent)" in css
+
+
+def test_denoise_phase_zero_selector_remains_lazy_and_outside_the_base_shader() -> None:
+    preview = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    app_script = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    assert "this.denoiseSourceSelector = null;" in preview
+    assert "this.denoiseCounters = this.emptyDenoiseCounters();" in preview
+    assert 'const sourceProxy = this.selectedDenoiseSource(proxy);' in preview
+    assert "makeBindGroup(sourceProxy.texture.createView()" in preview
+    assert "denoiseEnabled" not in preview
+    assert 'analysisCalls: 0' in preview
+    assert 'resolveCalls: 0' in preview
+    assert 'denoiseTextures: (this.denoiseSourceSelector?.resolved ? 1 : 0)' in preview
+    assert "prepareDenoiseSelectorSeam" in app_script
+    assert "selectDenoiseSelectorSeam" in app_script
+
+
+def test_denoise_phase_two_keeps_analysis_structural_and_resolve_reconstruction_only() -> None:
+    preview = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    app_script = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    assert 'DENOISE_ALGORITHM_VERSION = "compact-haar-residual-v1"' in preview
+    assert "analyzeDenoiseProxy(" in preview
+    assert "resolveDenoiseProxy(controls = {})" in preview
+    assert 'const weights = ["amount", "luminance", "colorNoise", "detailRecovery"]' in preview
+    assert "settings.lumaSigma * scale" in preview
+    assert 'recordStage("denoise-analysis"' in preview
+    assert 'recordStage("denoise-resolve"' in preview
+    assert 'recordStage("denoise-analysis", { state: "error"' in preview
+    assert 'recordStage("denoise-resolve", { state: "error"' in preview
+    assert "if (!cacheInstalled) for (const item of evidenceAllocated) item.texture.destroy();" in preview
+    assert "if (candidateIsNew) candidate.texture.destroy();" in preview
+    assert "longEdge = retainedOriginal.longEdge;" in preview
+    assert "analyzeDenoiseWavelet" in app_script
+    assert "resolveDenoiseWavelet" in app_script
+
+
+def test_denoise_phase_three_reuses_standard_group_chrome_presets_and_four_live_controls() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    app_script = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    for control_id in ("denoise-amount", "denoise-luminance", "denoise-color", "denoise-detail"):
+        assert f'id="{control_id}" type="range"' in html
+    assert 'id="denoise-recalculate" class="button-secondary"' in html
+    assert 'id="denoise-bypass" class="section-bypass text-button bypassed"' in html
+    assert 'data-reset-group="denoise"' in html
+    assert 'id="denoise-enabled"' not in html
+    assert 'id="denoise-ab"' not in html
+    assert 'id="denoise-preset"' not in html
+    assert 'id="denoise-state"' not in html
+    assert html.index('id="raw-settings-section"') < html.index('data-group="denoise"') < html.index('id="local-adjustments-group"')
+    assert "defaultDenoiseDocument" in app_script
+    assert 'id: "built-in:photo_fine"' in app_script
+    assert 'group === "denoise"' in app_script
+    assert 'queueEditCommand("set_denoise_settings"' in app_script
+    assert "state.gpuPreview.resolveDenoiseProxy" in app_script
+    assert "state.gpuPreview.analyzeDenoiseProxy" in app_script
+    assert "updateRangeVisual(input)" in app_script
+    assert "refinementProxyLongEdge()," in app_script
+    assert "denoiseDocumentSessionId" in app_script
+    assert "evictDenoiseCache" in app_script

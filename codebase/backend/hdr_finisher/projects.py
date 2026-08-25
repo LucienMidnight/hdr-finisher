@@ -108,6 +108,7 @@ def open_project(store: SessionStore, path: Path, source_path: Path | None = Non
         session = store.update_source_interpretation(payload.session_id, document.interpretation_override)
     session.adjustments = document.global_adjustments
     session.local_adjustments = document.local_adjustments
+    session.denoise = document.denoise
     session.interpretation_override = document.interpretation_override
     session.hdr_reference_white_nits = document.hdr_reference_white_nits
     session.color_context = session.color_context.__class__(document.hdr_reference_white_nits)
