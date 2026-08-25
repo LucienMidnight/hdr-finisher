@@ -1,5 +1,7 @@
 # Physical Film Grain Sprint
 
+> Follow-on planning for the wider module is recorded in [Film Look Improvement Sprint](Film_Look_Improvement_Sprint_PRD.md).
+
 ## Outcome
 
 Replace the current image-diagonal-scaled hash noise with deterministic, physically scaled film grain. Users choose a familiar film format; the renderer maps an emulsion-scale grain field into that physical frame and samples the same field in interactive proxies and final-resolution exports.
