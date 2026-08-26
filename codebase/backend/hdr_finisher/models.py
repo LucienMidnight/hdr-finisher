@@ -154,6 +154,11 @@ class FilmLookAdjustments(BaseModel):
     print_toe: float = Field(default=0.0, ge=-100.0, le=100.0)
     print_shoulder: float = Field(default=0.0, ge=-100.0, le=100.0)
     color_density: float = Field(default=0.0, ge=-100.0, le=100.0)
+    red_response: float = Field(default=0.0, ge=-100.0, le=100.0)
+    green_response: float = Field(default=0.0, ge=-100.0, le=100.0)
+    blue_response: float = Field(default=0.0, ge=-100.0, le=100.0)
+    highlight_desaturation: float = Field(default=0.0, ge=0.0, le=100.0)
+    shadow_desaturation: float = Field(default=0.0, ge=0.0, le=100.0)
 
     grain_enabled: bool = True
     grain_amount: float = Field(default=0.0, ge=0.0, le=100.0)

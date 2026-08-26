@@ -706,10 +706,10 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
 
 def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_bands() -> None:
     shader = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
-    # The packed parameter layout currently occupies indices 0..143. Keep the
+    # The packed parameter layout currently occupies indices 0..147. Keep the
     # contract aligned with the actual highest shader index so stale padding
     # does not masquerade as a pipeline-order regression.
-    assert "const PARAM_COUNT = 144" in shader
+    assert "const PARAM_COUNT = 148" in shader
     assert "hdrPrimaries(toneEqualizer(sceneColor(hdrPeakFit(hdrSoftCeiling(hdrContrast(hdrBase(source)))))))" in shader
     assert "sdrReferenceColor(sdrContrast(toneEqualizer(highlightRecovery(rgb))))" in shader
     assert "toneMap(sceneColor(rgb))" in shader
@@ -808,6 +808,8 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
         "grain_midtone_response", "grain_highlight_response", "halation_amount",
         "bloom_amount", "image_softness", "microcontrast", "grain_film_format",
         "grain_capture_geometry", "grain_custom_width_mm", "grain_custom_height_mm",
+        "red_response", "green_response", "blue_response",
+        "highlight_desaturation", "shadow_desaturation",
     ]:
         assert f'data-path="current.film_look.{path}"' in html
     assert "grainValueNoise" in (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
@@ -837,6 +839,11 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     assert "let canonicalTintSrgb = mix(vec3f(warmY), warm" in shader
     assert "select(canonicalTintSrgb, srgbToAcescg(canonicalTintSrgb), p[0] > 0.5)" in shader
     assert "let tint = mix(vec3f(warmY), warm" not in shader
+    assert "let toeKnee = 0.18 * log(1.0 + exp((0.45 - mapped) / 0.18))" in shader
+    assert "let shoulderKnee = 0.18 * log(1.0 + exp((mapped - 0.55) / 0.18))" in shader
+    assert "let channelResponse = vec3f(p[143], p[144], p[145]) * p[79]" in shader
+    assert "let highlightGuard = 1.0 - 0.65 * smoothRange(0.88, 1.12, responseSignal)" in shader
+    assert "shadowWeight * p[147] + highlightWeight * p[146]" in shader
     assert 'data-film-grain-custom hidden' in html
     assert 'id="film-look-match-hdr"' in html
     assert "state.adjustments.sdr.film_look = JSON.parse(JSON.stringify(state.adjustments.hdr.film_look))" in javascript

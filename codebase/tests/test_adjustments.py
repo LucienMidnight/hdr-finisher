@@ -11,6 +11,7 @@ import hdr_finisher.adjustments as adjustments_module
 from hdr_finisher.adjustments import (
     _apply_hdr_adjustments,
     _apply_hdr_color,
+    _apply_film_response,
     _apply_curve_set,
     _apply_saturation_vibrance,
     _apply_sdr_adjustments,
@@ -276,6 +277,90 @@ def test_film_response_preserves_hdr_headroom_without_print_ceiling() -> None:
     assert np.all(np.isfinite(output))
     assert float(output[0, -1, 0]) > 1.0
     assert np.all(np.diff(output[0, :, 0]) > 0.0)
+
+
+@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
+@pytest.mark.parametrize(
+    ("contrast", "toe", "shoulder"),
+    [(100.0, 100.0, 100.0), (-100.0, -100.0, -100.0)],
+)
+def test_extreme_film_response_curve_is_smooth_bounded_and_monotonic(
+    kind: PreviewKind, contrast: float, toe: float, shoulder: float
+) -> None:
+    levels = (
+        np.geomspace(1e-6, 32.0, 512, dtype=np.float32)
+        if kind == PreviewKind.HDR
+        else np.linspace(0.0, 1.0, 512, dtype=np.float32)
+    )
+    image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
+    look = FilmLookAdjustments(
+        print_strength=100,
+        print_contrast=contrast,
+        print_toe=toe,
+        print_shoulder=shoulder,
+    )
+
+    output = _apply_film_response(image, look, kind, np.float32(1.0))[0, :, 0]
+
+    assert np.all(np.isfinite(output))
+    assert float(np.min(output)) >= 0.0
+    assert np.all(np.diff(output) >= -2e-6)
+    if kind == PreviewKind.HDR:
+        assert float(output[-1]) > 1.0
+    else:
+        assert float(output[-1]) <= 1.0
+
+
+def test_channel_response_is_exposure_dependent_bounded_and_affects_luminance() -> None:
+    levels = np.array([0.002, 0.18, 1.8, 18.0], dtype=np.float32)
+    image = levels.reshape(1, -1, 1) * np.array([1.0, 0.55, 0.25], dtype=np.float32)
+    look = FilmLookAdjustments(red_response=100)
+
+    output = _apply_film_response(image, look, PreviewKind.HDR, np.float32(1.0))
+    red_gain = output[0, :, 0] / image[0, :, 0]
+    input_luma = np.einsum("...c,c->...", image, np.array([0.2722287, 0.6740818, 0.0536895]))
+    output_luma = np.einsum("...c,c->...", output, np.array([0.2722287, 0.6740818, 0.0536895]))
+
+    assert float(red_gain[1]) > float(red_gain[0])
+    assert float(red_gain[2]) > float(red_gain[-1])
+    assert float(np.max(red_gain)) < 1.3
+    assert not np.allclose(input_luma, output_luma)
+
+
+def test_tonal_desaturation_targets_shadows_and_highlights_smoothly() -> None:
+    levels = np.array([0.005, 0.18, 0.95], dtype=np.float32)
+    image = levels.reshape(1, -1, 1) * np.array([1.0, 0.6, 0.2], dtype=np.float32)
+    look = FilmLookAdjustments(highlight_desaturation=100, shadow_desaturation=100)
+
+    output = _apply_film_response(image, look, PreviewKind.SDR, np.float32(1.0))
+    output_luma = np.einsum("...c,c->...", output, np.array([0.2126, 0.7152, 0.0722]))
+    output_chroma = (np.max(output, axis=-1) - np.min(output, axis=-1)) / np.maximum(output_luma, 1e-6)
+
+    assert float(output_chroma[0, 0]) < float(output_chroma[0, 1])
+    assert float(output_chroma[0, 2]) < float(output_chroma[0, 1])
+    assert np.all(np.isfinite(output))
+
+
+def test_color_density_is_not_a_conventional_luma_preserving_saturation() -> None:
+    image = np.array([[[0.8, 0.2, 0.05]]], dtype=np.float32)
+    look = FilmLookAdjustments(color_density=100)
+
+    dense = _apply_film_response(image, look, PreviewKind.HDR, np.float32(1.0))
+    saturated = _apply_saturation_vibrance(image, 1.0, 0.0)
+    weights = np.array([0.2722287, 0.6740818, 0.0536895], dtype=np.float32)
+
+    assert float(np.dot(dense[0, 0], weights)) < float(np.dot(image[0, 0], weights))
+    assert float(np.dot(saturated[0, 0], weights)) == pytest.approx(float(np.dot(image[0, 0], weights)))
+
+
+def test_legacy_film_look_payload_receives_neutral_sprint_b_defaults() -> None:
+    look = FilmLookAdjustments.model_validate({"print_strength": 42})
+
+    assert look.red_response == 0
+    assert look.green_response == 0
+    assert look.blue_response == 0
+    assert look.highlight_desaturation == 0
+    assert look.shadow_desaturation == 0
 
 
 @pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])

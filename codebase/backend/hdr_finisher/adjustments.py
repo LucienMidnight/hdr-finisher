@@ -908,7 +908,18 @@ def _apply_film_look(
     if strength <= 0.0:
         return image
 
-    response_active = look.print_strength != 0.0 or look.color_density != 0.0
+    response_active = any(
+        float(getattr(look, field, 0.0)) != 0.0
+        for field in (
+            "print_strength",
+            "color_density",
+            "red_response",
+            "green_response",
+            "blue_response",
+            "highlight_desaturation",
+            "shadow_desaturation",
+        )
+    )
     halation_active = look.halation_enabled and look.halation_amount > 0.0
     halation_map_active = look.halation_enabled and look.halation_view_map
     bloom_active = look.bloom_enabled and look.bloom_amount > 0.0
@@ -1056,7 +1067,23 @@ def _apply_film_response(image: np.ndarray, look: object, kind: PreviewKind, mas
     """
     print_mix = np.float32(look.print_strength / 100.0) * master
     density = np.float32(look.color_density / 100.0) * master
-    if print_mix == 0.0 and density == 0.0:
+    channel_response = np.array(
+        [
+            getattr(look, "red_response", 0.0),
+            getattr(look, "green_response", 0.0),
+            getattr(look, "blue_response", 0.0),
+        ],
+        dtype=np.float32,
+    ) * (master / np.float32(100.0))
+    highlight_desaturation = np.float32(getattr(look, "highlight_desaturation", 0.0) / 100.0) * master
+    shadow_desaturation = np.float32(getattr(look, "shadow_desaturation", 0.0) / 100.0) * master
+    if (
+        print_mix == 0.0
+        and density == 0.0
+        and not np.any(channel_response)
+        and highlight_desaturation == 0.0
+        and shadow_desaturation == 0.0
+    ):
         return image
 
     source_luma = np.maximum(_film_luma(image, kind), 0.0)
@@ -1070,8 +1097,17 @@ def _apply_film_response(image: np.ndarray, look: object, kind: PreviewKind, mas
         toe = np.float32(look.print_toe / 100.0)
         shoulder = np.float32(look.print_shoulder / 100.0)
         mapped = np.float32(0.5) + (signal - np.float32(0.5)) * np.float32(2.0**(0.55 * contrast))
-        mapped -= toe * np.float32(0.10) * (np.float32(1.0) - _smoothstep(0.08, 0.58, signal))
-        mapped -= shoulder * np.float32(0.10) * _smoothstep(0.42, 0.98, signal)
+        # Softplus knees retain a positive derivative at every legal setting.
+        # Unlike additive masks, they cannot introduce a hard join or reverse
+        # tone order around the toe and shoulder boundaries.
+        toe_knee = np.float32(0.18) * np.logaddexp(
+            np.float32(0.0), (np.float32(0.45) - mapped) / np.float32(0.18)
+        )
+        shoulder_knee = np.float32(0.18) * np.logaddexp(
+            np.float32(0.0), (mapped - np.float32(0.55)) / np.float32(0.18)
+        )
+        mapped -= np.float32(0.28) * (toe * toe_knee + shoulder * shoulder_knee)
+        mapped = np.maximum(mapped, np.float32(0.0))
         if kind == PreviewKind.SDR:
             mapped = np.clip(mapped, 0.0, 1.0)
         target_luma = _film_decode_luma(mapped, kind)
@@ -1080,6 +1116,24 @@ def _apply_film_response(image: np.ndarray, look: object, kind: PreviewKind, mas
     gain = np.ones_like(source_luma, dtype=np.float32)
     np.divide(target_luma, source_luma, out=gain, where=source_luma > 1e-7)
     result = image * gain[..., None]
+
+    if np.any(channel_response):
+        response_luma = np.maximum(_film_luma(result, kind), 0.0)
+        response_signal = _film_encode_luma(response_luma, kind)
+        neutral = response_luma[..., None]
+        maximum = np.max(result, axis=-1, keepdims=True)
+        minimum = np.min(result, axis=-1, keepdims=True)
+        relative = np.clip((maximum - minimum) / np.maximum(np.abs(neutral), 1e-5), 0.0, 2.0)[..., 0]
+        exposure_weight = np.float32(0.20) + np.float32(0.80) * _smoothstep(0.08, 0.88, response_signal)
+        saturation_guard = np.float32(1.0) - np.float32(0.35) * _smoothstep(0.60, 1.40, relative)
+        highlight_guard = np.float32(1.0) - np.float32(0.65) * _smoothstep(0.88, 1.12, response_signal)
+        response_ev = (
+            channel_response.reshape(1, 1, 3)
+            * np.float32(0.35)
+            * (exposure_weight * saturation_guard * highlight_guard)[..., None]
+        )
+        result *= np.exp2(response_ev)
+
     if density != 0.0:
         # Positive density increases subtractive dye separation while slightly
         # lowering highly saturated colors, unlike a simple saturation control.
@@ -1091,6 +1145,19 @@ def _apply_film_response(image: np.ndarray, look: object, kind: PreviewKind, mas
         chroma_scale = np.float32(2.0 ** (0.45 * float(density)))
         result = neutral + chroma * chroma_scale
         result *= np.maximum(np.float32(0.75), np.float32(1.0) - density * np.float32(0.045) * relative)
+
+    if highlight_desaturation > 0.0 or shadow_desaturation > 0.0:
+        response_luma = np.maximum(_film_luma(result, kind), 0.0)
+        response_signal = _film_encode_luma(response_luma, kind)
+        shadow_weight = np.float32(1.0) - _smoothstep(0.08, 0.46, response_signal)
+        highlight_weight = _smoothstep(0.62, 1.0, response_signal)
+        desaturation = np.clip(
+            shadow_weight * shadow_desaturation + highlight_weight * highlight_desaturation,
+            0.0,
+            1.0,
+        )
+        neutral = response_luma[..., None]
+        result = neutral + (result - neutral) * (np.float32(1.0) - desaturation[..., None])
     return result.astype(np.float32)
 
 

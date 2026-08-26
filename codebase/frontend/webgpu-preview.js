@@ -1,5 +1,5 @@
 (function () {
-  const PARAM_COUNT = 144;
+  const PARAM_COUNT = 148;
   const CURVE_SAMPLES = 1024;
   const DENOISE_ALGORITHM_VERSION = "compact-haar-residual-v1";
   // Preserve progressively more structure at medium/coarse Haar scales. Full
@@ -2042,6 +2042,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     params[82] = (film.print_toe || 0) / 100;
     params[83] = (film.print_shoulder || 0) / 100;
     params[84] = (film.color_density || 0) / 100;
+    params[143] = (film.red_response || 0) / 100;
+    params[144] = (film.green_response || 0) / 100;
+    params[145] = (film.blue_response || 0) / 100;
+    params[146] = (film.highlight_desaturation || 0) / 100;
+    params[147] = (film.shadow_desaturation || 0) / 100;
     params[85] = film.halation_enabled !== false && ((film.halation_amount || 0) > 0 || film.halation_view_map) ? 1 : 0;
     params[86] = (film.halation_amount || 0) / 100;
     params[87] = (film.halation_sensitivity ?? 75) / 100;
@@ -2717,11 +2722,24 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       if (p[80] > 0.0 && sourceY > 0.0000001) {
         let signal = filmSignalFromLuma(sourceY);
         var mapped = 0.5 + (signal - 0.5) * exp2(0.55 * p[81]);
-        mapped -= p[82] * 0.10 * (1.0 - smoothRange(0.08, 0.58, signal));
-        mapped -= p[83] * 0.10 * smoothRange(0.42, 0.98, signal);
+        let toeKnee = 0.18 * log(1.0 + exp((0.45 - mapped) / 0.18));
+        let shoulderKnee = 0.18 * log(1.0 + exp((mapped - 0.55) / 0.18));
+        mapped = max(mapped - 0.28 * (p[82] * toeKnee + p[83] * shoulderKnee), 0.0);
         if (p[0] < 0.5) { mapped = clamp(mapped, 0.0, 1.0); }
         let targetY = mix(sourceY, filmLumaFromSignal(mapped), p[80] * p[79]);
         rgb *= targetY / sourceY;
+      }
+      let channelResponse = vec3f(p[143], p[144], p[145]) * p[79];
+      if (any(abs(channelResponse) > vec3f(0.000001))) {
+        let responseY = max(filmLuma(rgb), 0.0);
+        let responseSignal = filmSignalFromLuma(responseY);
+        let maximum = max(rgb.r, max(rgb.g, rgb.b));
+        let minimum = min(rgb.r, min(rgb.g, rgb.b));
+        let relative = clamp((maximum - minimum) / max(abs(responseY), 0.00001), 0.0, 2.0);
+        let exposureWeight = 0.20 + 0.80 * smoothRange(0.08, 0.88, responseSignal);
+        let saturationGuard = 1.0 - 0.35 * smoothRange(0.60, 1.40, relative);
+        let highlightGuard = 1.0 - 0.65 * smoothRange(0.88, 1.12, responseSignal);
+        rgb *= exp2(channelResponse * (0.35 * exposureWeight * saturationGuard * highlightGuard));
       }
       if (p[84] != 0.0) {
         let y = filmLuma(rgb);
@@ -2732,6 +2750,18 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         let density = p[84] * p[79];
         rgb = neutral + (rgb - neutral) * exp2(0.45 * density);
         rgb *= max(0.75, 1.0 - density * 0.045 * relative);
+      }
+      if (p[146] > 0.0 || p[147] > 0.0) {
+        let responseY = max(filmLuma(rgb), 0.0);
+        let responseSignal = filmSignalFromLuma(responseY);
+        let shadowWeight = 1.0 - smoothRange(0.08, 0.46, responseSignal);
+        let highlightWeight = smoothRange(0.62, 1.0, responseSignal);
+        let desaturation = clamp(
+          (shadowWeight * p[147] + highlightWeight * p[146]) * p[79],
+          0.0,
+          1.0
+        );
+        rgb = vec3f(responseY) + (rgb - vec3f(responseY)) * (1.0 - desaturation);
       }
       return max(rgb, vec3f(0.0));
     }
