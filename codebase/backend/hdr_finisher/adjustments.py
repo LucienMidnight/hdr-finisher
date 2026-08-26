@@ -933,17 +933,22 @@ def _apply_film_look(
 
     result = image.astype(np.float32, copy=True)
     result = _apply_film_response(result, look, kind, strength)
+    # WebGPU retains the completed response frame as the source for all Film
+    # Look spatial kernels. Keep the CPU path on the same stage boundary: the
+    # effects are composited in order below, while every blur is derived from
+    # this immutable response frame rather than an already blurred result.
+    spatial_source = result
 
     if halation_active or halation_map_active:
         result, halation_map = _apply_halation(result, look, kind, strength)
         if look.halation_view_map:
             return halation_map
     if bloom_active:
-        result = _apply_bloom(result, look, kind, strength)
+        result = _apply_bloom(result, look, kind, strength, spatial_source=spatial_source)
     if structure_active:
-        result = _apply_image_structure(result, look, kind, strength)
+        result = _apply_image_structure(result, look, kind, strength, spatial_source=spatial_source)
     if resolution_active:
-        result = _apply_film_resolution(result, look, strength)
+        result = _apply_film_resolution(result, look, strength, spatial_source=spatial_source)
     if look.grain_enabled:
         if include_grain and look.grain_amount > 0.0 and strength > 0.0:
             result = _apply_density_grain(result, look, kind, adjustments.shared.film_grain_seed, strength)
@@ -1149,19 +1154,51 @@ def _box_blur(image: np.ndarray, radius: int) -> np.ndarray:
 
 
 def _diffusion_blur(image: np.ndarray, radius: int) -> np.ndarray:
-    """Approximate a smooth optical point-spread function in linear light.
-
-    Three small box passes approach a Gaussian while retaining the cumulative-
-    sum performance of the previous blur.  A single large box creates visible
-    square shoulders around diagonal and point highlights.
-    """
+    """Apply the separable nine-tap optical kernel used by WebGPU preview."""
     if radius <= 0:
         return image
-    pass_radius = max(1, int(round(radius * 0.58)))
-    result = image
-    for _ in range(3):
-        result = _box_blur(result, pass_radius)
-    return result
+    offsets = np.linspace(-float(radius), float(radius), 9, dtype=np.float32)
+    normalized = offsets / np.float32(max(radius, 1))
+    weights = np.exp(np.float32(-4.5) * normalized * normalized).astype(np.float32)
+    weights /= np.sum(weights, dtype=np.float32)
+    return _weighted_blur_axis(_weighted_blur_axis(image, offsets, weights, 1), offsets, weights, 0)
+
+
+def _weighted_blur_axis(
+    image: np.ndarray, offsets: np.ndarray, weights: np.ndarray, axis: int
+) -> np.ndarray:
+    """Sample a clamped axis with linear interpolation, matching the GPU sampler."""
+    length = image.shape[axis]
+    coordinate = np.arange(length, dtype=np.float32)
+    result = np.zeros_like(image, dtype=np.float32)
+    index_shape = [1] * image.ndim
+    index_shape[axis] = length
+    for offset, weight in zip(offsets, weights, strict=True):
+        position = np.clip(coordinate + offset, 0.0, float(length - 1))
+        low = np.floor(position).astype(np.intp)
+        high = np.minimum(low + 1, length - 1)
+        fraction = (position - low).reshape(index_shape)
+        sample = np.take(image, low, axis=axis) * (np.float32(1.0) - fraction)
+        sample += np.take(image, high, axis=axis) * fraction
+        result += sample * weight
+    return result.astype(np.float32)
+
+
+def _film_detail_blur(image: np.ndarray, radius: int) -> np.ndarray:
+    """Apply the capped nine-sample detail kernel used by WebGPU preview."""
+    if radius <= 0:
+        return image
+    half_radius = max(1, radius // 2)
+    result = image.astype(np.float32, copy=True) * np.float32(4.0)
+    for y_offset, x_offset in (
+        (0, radius), (0, -radius), (radius, 0), (-radius, 0),
+        (half_radius, half_radius), (-half_radius, half_radius),
+        (half_radius, -half_radius), (-half_radius, -half_radius),
+    ):
+        y_indices = np.clip(np.arange(image.shape[0]) + y_offset, 0, image.shape[0] - 1)
+        x_indices = np.clip(np.arange(image.shape[1]) + x_offset, 0, image.shape[1] - 1)
+        result += image[np.ix_(y_indices, x_indices)]
+    return (result / np.float32(12.0)).astype(np.float32)
 
 
 def _highlight_mask(image: np.ndarray, kind: PreviewKind, sensitivity: float) -> np.ndarray:
@@ -1197,9 +1234,19 @@ def _apply_halation(
     return (image + halo * amount).astype(np.float32), halation_map
 
 
-def _apply_bloom(image: np.ndarray, look: object, kind: PreviewKind, master: np.float32) -> np.ndarray:
-    mask = _highlight_mask(image, kind, look.bloom_sensitivity)
-    source = np.maximum(image, 0.0) * mask[..., None]
+def _apply_bloom(
+    image: np.ndarray,
+    look: object,
+    kind: PreviewKind,
+    master: np.float32,
+    *,
+    spatial_source: np.ndarray | None = None,
+) -> np.ndarray:
+    blur_input = image if spatial_source is None else spatial_source
+    mask = _highlight_mask(blur_input, kind, look.bloom_sensitivity)
+    source = np.maximum(blur_input, 0.0) * mask[..., None]
+    current_mask = _highlight_mask(image, kind, look.bloom_sensitivity)
+    current_qualified = np.maximum(image, 0.0) * current_mask[..., None]
     # Bloom is an optical finish measured against the rendered output, not the
     # film gate. Changing Film Format must therefore leave its spread unchanged.
     radius = max(1, _radius_pixels(image, look.bloom_radius))
@@ -1212,28 +1259,43 @@ def _apply_bloom(image: np.ndarray, look: object, kind: PreviewKind, master: np.
     # Highlight Detail crossfades only the diffusion component, so 100% keeps
     # the source edge intact while still allowing ordinary optical bloom.
     additive = blurred * (np.float32(0.22) * amount)
-    diffusion = (blurred - source) * ((np.float32(1.0) - detail) * np.float32(0.35) * amount)
+    diffusion = (blurred - current_qualified) * ((np.float32(1.0) - detail) * np.float32(0.35) * amount)
     return np.maximum(image + additive + diffusion, 0.0).astype(np.float32)
 
 
-def _apply_image_structure(image: np.ndarray, look: object, kind: PreviewKind, master: np.float32) -> np.ndarray:
+def _apply_image_structure(
+    image: np.ndarray,
+    look: object,
+    kind: PreviewKind,
+    master: np.float32,
+    *,
+    spatial_source: np.ndarray | None = None,
+) -> np.ndarray:
     softness = np.float32(look.image_softness / 100.0) * master
     microcontrast = np.float32(look.microcontrast / 100.0) * master
     if softness == 0.0 and microcontrast == 0.0:
         return image
     radius = max(1, _radius_pixels(image, 0.06, maximum=24))
-    low_pass = _box_blur(image, radius)
+    source = image if spatial_source is None else spatial_source
+    low_pass = _film_detail_blur(source, radius)
     result = image + (low_pass - image) * softness * np.float32(0.65)
     result += (image - low_pass) * microcontrast * np.float32(0.5)
     return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
 
 
-def _apply_film_resolution(image: np.ndarray, look: object, master: np.float32) -> np.ndarray:
+def _apply_film_resolution(
+    image: np.ndarray,
+    look: object,
+    master: np.float32,
+    *,
+    spatial_source: np.ndarray | None = None,
+) -> np.ndarray:
     loss = np.float32((100.0 - look.film_resolution) / 100.0) * master
     if loss <= 0.0:
         return image
     radius = max(1, _film_radius_pixels(image, look, 0.04 + 0.08 * float(loss), maximum=32))
-    return (image + (_box_blur(image, radius) - image) * loss * np.float32(0.7)).astype(np.float32)
+    source = image if spatial_source is None else spatial_source
+    return (image + (_film_detail_blur(source, radius) - image) * loss * np.float32(0.7)).astype(np.float32)
 
 
 def _apply_density_grain(

@@ -828,9 +828,12 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     assert "if (p[97] > 0.5 && (abs(p[98]) > 0.000001 || abs(p[99]) > 0.000001))" in shader
     assert "fn filmPixelsPerMm(dimensions: vec2f) -> f32" in shader
     assert "filmPixelsPerMm(dimensions) * halationRadiusMm" in shader
-    assert "filmPhysicalBlur(coordinate, 0.04 + 0.08 * resolutionLoss)" in shader
+    assert "filmPhysicalBlur(coordinate, 0.04 + 0.08 * resolutionLoss, 32)" in shader
     assert "length(dimensions) * max(p[95], 0.0) / 100.0" in shader
     assert "length(dimensions) * max(p[88], 0.0) / 100.0" not in shader
+    assert "clamp(length(dimensions) * max(p[95], 0.0) / 100.0, 0.25, 64.0)" in shader
+    assert "clamp(filmPixelsPerMm(dimensions) * halationRadiusMm, 0.25, 64.0)" in shader
+    assert "filmBlur(coordinate, 0.06, 24)" in shader
     assert 'data-film-grain-custom hidden' in html
     assert 'id="film-look-match-hdr"' in html
     assert "state.adjustments.sdr.film_look = JSON.parse(JSON.stringify(state.adjustments.hdr.film_look))" in javascript

@@ -19,8 +19,11 @@ from hdr_finisher.adjustments import (
     _curve_domain_encode,
     _film_pixels_per_mm,
     _film_radius_pixels,
+    _diffusion_blur,
+    _film_detail_blur,
     _grain_pitch_pixels,
     _grain_value_noise,
+    _radius_pixels,
     _compress_scene_highlights,
     _primary_zone_masks,
     apply_adjustments,
@@ -143,6 +146,85 @@ def test_bloom_spread_is_output_relative_and_independent_of_film_format() -> Non
     small_format = apply_adjustments(image, state, PreviewKind.HDR)
 
     np.testing.assert_array_equal(large_format, small_format)
+
+
+@pytest.mark.parametrize(
+    ("width", "height", "geometry"),
+    [
+        pytest.param(1_600, 1_200, "frame", id="ordinary-frame"),
+        pytest.param(4_000, 1_000, "frame", id="panorama"),
+        pytest.param(64_000, 4_000, "horizontal_strip", id="extreme-line-scan"),
+    ],
+)
+def test_cpu_and_quarter_resolution_webgpu_spatial_radii_match(
+    width: int, height: int, geometry: str
+) -> None:
+    """Compare CPU radii with the effective full-res extent of WebGPU's 1/4 buffer."""
+    look = AdjustmentState().hdr.film_look
+    look.grain_film_format = "35mm"
+    look.grain_capture_geometry = geometry
+    image = np.empty((height, width, 0), dtype=np.float32)
+    spatial_width = int(np.ceil(width / 4))
+    spatial_height = int(np.ceil(height / 4))
+
+    cpu_bloom = _radius_pixels(image, 1.0)
+    gpu_bloom = np.clip(np.hypot(spatial_width, spatial_height) * 0.01, 0.25, 64.0) * 4.0
+    assert gpu_bloom == pytest.approx(cpu_bloom, abs=2.0)
+
+    cpu_halation = _film_radius_pixels(image, look, 0.2)
+    gpu_halation = np.clip(
+        _film_pixels_per_mm(spatial_width, spatial_height, look) * 43.2666153 * 0.002,
+        0.25,
+        64.0,
+    ) * 4.0
+    assert gpu_halation == pytest.approx(cpu_halation, abs=2.0)
+
+
+def test_cpu_spatial_kernels_match_webgpu_normalization_and_edge_policy() -> None:
+    impulse = np.zeros((41, 41, 3), dtype=np.float32)
+    impulse[20, 20] = 1.0
+
+    diffusion = _diffusion_blur(impulse, 8)
+    detail = _film_detail_blur(impulse, 8)
+
+    assert diffusion[20, 20, 0] == pytest.approx(float(np.max(diffusion[..., 0])))
+    np.testing.assert_allclose(diffusion[:, :, 0], diffusion[::-1, ::-1, 0], atol=1e-7)
+    np.testing.assert_allclose(detail[:, :, 0], detail[::-1, ::-1, 0], atol=1e-7)
+    assert float(np.sum(diffusion[..., 0])) == pytest.approx(1.0, abs=1e-6)
+    assert float(np.sum(detail[..., 0])) == pytest.approx(1.0, abs=1e-6)
+
+
+def test_cpu_film_spatial_stages_reuse_the_response_frame(monkeypatch: pytest.MonkeyPatch) -> None:
+    image = np.full((8, 10, 3), 0.18, dtype=np.float32)
+    state = AdjustmentState()
+    look = state.hdr.film_look
+    look.halation_amount = 20
+    look.bloom_amount = 20
+    look.image_softness = 10
+    look.film_resolution = 90
+    look.grain_enabled = False
+    response_frame = np.full_like(image, 0.25)
+    seen_sources: list[np.ndarray] = []
+
+    monkeypatch.setattr(adjustments_module, "_apply_film_response", lambda *_args: response_frame)
+    monkeypatch.setattr(
+        adjustments_module,
+        "_apply_halation",
+        lambda current, *_args: (current + np.float32(0.01), np.zeros_like(current)),
+    )
+
+    def record_source(current: np.ndarray, *_args: object, spatial_source: np.ndarray, **_kwargs: object) -> np.ndarray:
+        seen_sources.append(spatial_source)
+        return current + np.float32(0.01)
+
+    monkeypatch.setattr(adjustments_module, "_apply_bloom", record_source)
+    monkeypatch.setattr(adjustments_module, "_apply_image_structure", record_source)
+    monkeypatch.setattr(adjustments_module, "_apply_film_resolution", record_source)
+
+    adjustments_module._apply_film_look(image, state, PreviewKind.HDR)
+
+    assert len(seen_sources) == 3
+    assert all(source is response_frame for source in seen_sources)
 
 
 def test_physical_grain_value_noise_has_spatial_correlation() -> None:
