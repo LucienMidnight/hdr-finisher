@@ -338,7 +338,6 @@ const state = {
   compareHoldTimer: null,
   compareHeld: false,
   comparePeekActive: false,
-  filmLookBeforeLane: null,
   compareLayout: "single",
   comparisonRenderedLane: null,
   comparisonRenderedGeneration: null,
@@ -1226,7 +1225,6 @@ const els = {
   sdrResetColors: document.getElementById("sdr-reset-colors"),
   filmLookReset: document.getElementById("film-look-reset"),
   filmLookMatchHdr: document.getElementById("film-look-match-hdr"),
-  filmLookBefore: document.getElementById("film-look-before"),
   filmLookSdrActions: document.getElementById("film-look-sdr-actions"),
   filmLookState: document.getElementById("film-look-state"),
   sectionBypasses: [...document.querySelectorAll("[data-section-path]")],
@@ -2560,7 +2558,6 @@ function bindEvents() {
   els.sdrResetColors.addEventListener("click", resetSdrColorSliders);
   els.filmLookReset?.addEventListener("click", resetFilmLook);
   els.filmLookMatchHdr?.addEventListener("click", matchHdrFilmLookToSdr);
-  bindFilmLookBeforeControl();
   els.colorGradingReset?.addEventListener("click", () => resetLaneObject("color_grading", defaultColorGrading()));
   els.colorGradingMatchHdr?.addEventListener("click", () => matchLaneObject("color_grading"));
   els.vignetteReset?.addEventListener("click", () => resetLaneObject("vignette", defaultVignette()));
@@ -3087,7 +3084,6 @@ function applicationCommands() {
     { id: "edit.redo", label: "Redo", category: "Edit", execute: () => queueEditCommand("redo") },
     { id: "edit.redoAlternate", label: "Redo (alternate)", category: "Edit", execute: () => queueEditCommand("redo") },
     { id: "view.compareHold", label: "Hold to compare HDR / SDR", category: "Viewer", hold: true, execute: (_event, phase) => phase === "keyup" ? endCompareHold() : beginCompareHold() },
-    { id: "view.filmLookBefore", label: "Hold to preview without Film Look", category: "Viewer", hold: true, execute: (_event, phase) => phase === "keyup" ? endFilmLookBefore() : beginFilmLookBefore() },
     { id: "view.zoomFit", label: "Zoom to fit", category: "Viewer", execute: () => setZoomMode("fit") },
     { id: "view.zoomActual", label: "Zoom to 100%", category: "Viewer", execute: () => setZoomMode("actual") },
     { id: "view.zoomIn", label: "Zoom in", category: "Viewer", repeatable: true, execute: () => stepZoom(1) },
@@ -8142,7 +8138,6 @@ async function renderGpuDraft(
   if (state.globalEditDirty && state.acceptedPresentation?.geometrySignature !== geometrySignature()) return false;
   const serial = ++state.gpuRenderSerial;
   const adjustmentsSnapshot = JSON.parse(JSON.stringify(state.adjustments));
-  if (state.filmLookBeforeLane === lane) adjustmentsSnapshot[lane].film_look_section_enabled = false;
   const localSnapshot = state.compareWithoutLocals
     ? []
     : JSON.parse(JSON.stringify(localAdjustments()));
@@ -8162,7 +8157,6 @@ async function renderGpuDraft(
     if (!result || serial !== state.gpuRenderSerial || (!allowInactive && lane !== state.currentView)) return false;
     state.gpuPreparedLane[lane] = true;
     state.gpuSurfaceHdr = Boolean(result.hdr);
-    renderFilmLookBeforeState();
     if (state.rotateDraftPreviewUrl) {
       URL.revokeObjectURL(state.rotateDraftPreviewUrl);
       state.rotateDraftPreviewUrl = null;
@@ -8814,7 +8808,6 @@ function clearPreviewCache() {
     state.previewGeneration[lane] = 0;
   }
   state.comparePeekActive = false;
-  state.filmLookBeforeLane = null;
   state.comparisonRenderedLane = null;
   state.comparisonRenderedGeneration = null;
   state.comparisonRenderedGeometry = null;
@@ -8968,60 +8961,6 @@ async function restoreActiveLane() {
   await refreshOverlay();
 }
 
-function filmLookBeforeAvailable() {
-  return Boolean(state.session
-    && state.compareLayout === "single"
-    && gpuPreviewEligible()
-    && state.gpuPreparedLane[state.currentView]);
-}
-
-function renderFilmLookBeforeState() {
-  if (!els.filmLookBefore) return;
-  const active = state.filmLookBeforeLane === state.currentView;
-  els.filmLookBefore.disabled = !filmLookBeforeAvailable() && !active;
-  els.filmLookBefore.classList.toggle("active", active);
-  els.filmLookBefore.setAttribute("aria-pressed", String(active));
-  els.filmLookBefore.textContent = active ? "Before" : "Hold for Before";
-}
-
-function beginFilmLookBefore() {
-  if (state.filmLookBeforeLane || !filmLookBeforeAvailable()) return;
-  state.filmLookBeforeLane = state.currentView;
-  renderFilmLookBeforeState();
-  void renderGpuDraft(state.currentView, { longEdge: residentAuthoringLongEdge() || settledProxyLongEdge() });
-}
-
-function endFilmLookBefore() {
-  const lane = state.filmLookBeforeLane;
-  if (!lane) return;
-  state.filmLookBeforeLane = null;
-  renderFilmLookBeforeState();
-  if (lane === state.currentView) void renderGpuDraft(lane, { longEdge: residentAuthoringLongEdge() || settledProxyLongEdge() });
-}
-
-function bindFilmLookBeforeControl() {
-  if (!els.filmLookBefore) return;
-  els.filmLookBefore.addEventListener("pointerdown", (event) => {
-    event.preventDefault();
-    els.filmLookBefore.setPointerCapture?.(event.pointerId);
-    beginFilmLookBefore();
-  });
-  ["pointerup", "pointercancel", "lostpointercapture"].forEach((eventName) => {
-    els.filmLookBefore.addEventListener(eventName, endFilmLookBefore);
-  });
-  els.filmLookBefore.addEventListener("keydown", (event) => {
-    if (![" ", "Enter"].includes(event.key) || event.repeat) return;
-    event.preventDefault();
-    beginFilmLookBefore();
-  });
-  els.filmLookBefore.addEventListener("keyup", (event) => {
-    if (![" ", "Enter"].includes(event.key)) return;
-    event.preventDefault();
-    endFilmLookBefore();
-  });
-  els.filmLookBefore.addEventListener("blur", endFilmLookBefore);
-}
-
 async function setCompareLayout(layout) {
   if (!COMPARE_LAYOUTS.has(layout)) return;
   state.compareLayout = layout;
@@ -9045,7 +8984,6 @@ function renderCompareLayout() {
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", String(active));
   });
-  renderFilmLookBeforeState();
   if (layout === "single") clearComparisonPreview({ keepRenderedState: true });
   applyZoomGeometry();
   syncOverlayPlacement();
@@ -9497,7 +9435,6 @@ function renderControlState() {
   const filmModified = !valuesEqual(state.adjustments[state.currentView]?.film_look, currentLaneDefaults.film_look);
   if (els.filmLookState) els.filmLookState.textContent = "";
   els.filmLookReset?.closest(".control-group")?.classList.toggle("modified", filmModified);
-  renderFilmLookBeforeState();
   const gradingModified = !valuesEqual(state.adjustments[state.currentView]?.color_grading, currentLaneDefaults.color_grading);
   if (els.colorGradingState) els.colorGradingState.textContent = "";
   els.colorGradingReset?.closest(".control-group")?.classList.toggle("modified", gradingModified);

@@ -5118,12 +5118,6 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 }
 
 .film-look-actions .button-secondary { justify-self: start; }
-.film-look-compare-actions { border-color: rgba(49, 205, 218, 0.28); }
-.film-look-compare-actions .button-secondary.active {
-  border-color: var(--accent);
-  background: rgba(49, 205, 218, 0.16);
-  color: var(--accent);
-}
 
 .film-module-header {
   display: flex;

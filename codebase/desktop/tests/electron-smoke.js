@@ -288,7 +288,6 @@ async function main() {
     assert.equal(appliedFilmModel.print_strength, 42);
     assert.equal(appliedFilmModel.grain_amount, 14);
     assert.deepEqual(Object.keys(appliedFilmModel).sort(), Object.keys(await window.evaluate(() => defaultFilmLook())).sort());
-    assert.equal(await window.locator("#film-look-before").count(), 1);
 
     await window.evaluate(() => { saveProjectToPath({ saveAs: true }); });
     await window.locator("#directory-browser").waitFor({ state: "visible" });

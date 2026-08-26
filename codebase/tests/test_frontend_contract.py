@@ -1293,11 +1293,7 @@ def test_adjustment_group_presets_are_scoped_persistent_and_available_in_headers
     assert 'name: "High-Speed Texture"' in javascript
     assert "return FILM_LOOK_PRESETS.map((preset)" in javascript
     assert "recipeVersion: preset.recipeVersion" in javascript
-    assert 'id="film-look-before"' in html
-    assert "function beginFilmLookBefore()" in javascript
-    assert "function endFilmLookBefore()" in javascript
-    assert "adjustmentsSnapshot[lane].film_look_section_enabled = false" in javascript
-    assert '"view.filmLookBefore": "Shift+B"' in (FRONTEND / "application-shell.js").read_text(encoding="utf-8")
+    assert 'data-section-path="current.film_look_section_enabled"' in html
     assert "function applyFilmLookPreset" not in javascript
     assert "context.paths.forEach((path)" in javascript
     assert "sectionPathForGroup" not in javascript[javascript.index("function applyGroupPreset"):javascript.index("function laneCurvesModified")]

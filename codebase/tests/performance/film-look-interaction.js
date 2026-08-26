@@ -31,38 +31,6 @@ async function measureControl(window, selector, action) {
   }, { selector, action });
 }
 
-async function measureFilmLookBefore(window) {
-  return window.evaluate(async () => {
-    const originalAdjustments = JSON.stringify(state.adjustments);
-    const originalDirty = state.documentDirty;
-    const events = [];
-    const waitForPresentation = () => new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error("Timed out waiting for Film Look comparison preview.")), 5000);
-      window.addEventListener("hdrfinisher:preview-presented", (event) => {
-        clearTimeout(timeout);
-        events.push(event.detail);
-        resolve();
-      }, { once: true });
-    });
-    let presentation = waitForPresentation();
-    const startedAt = performance.now();
-    beginFilmLookBefore();
-    await presentation;
-    const beforePresentedMs = performance.now() - startedAt;
-    presentation = waitForPresentation();
-    endFilmLookBefore();
-    await presentation;
-    return {
-      beforePresentedMs,
-      roundTripMs: performance.now() - startedAt,
-      events,
-      restored: state.filmLookBeforeLane === null,
-      adjustmentsUnchanged: JSON.stringify(state.adjustments) === originalAdjustments,
-      dirtyUnchanged: state.documentDirty === originalDirty,
-    };
-  });
-}
-
 async function main() {
   const sourcePath = path.resolve(argument("--input", path.join(__dirname, "..", "fixtures", "hdr_headroom.tiff")));
   const longEdge = Number(argument("--long-edge", "4096"));
@@ -139,12 +107,6 @@ async function main() {
     requests.length = 0;
 
     const before = await window.evaluate(() => window.HDRFinisherPerformance.gpuSnapshot());
-    const filmLookBefore = await measureFilmLookBefore(window);
-    assert.equal(filmLookBefore.restored, true);
-    assert.equal(filmLookBefore.adjustmentsUnchanged, true);
-    assert.equal(filmLookBefore.dirtyUnchanged, true);
-    assert.equal(requests.length, 0);
-    const afterFilmLookBefore = await window.evaluate(() => window.HDRFinisherPerformance.gpuSnapshot());
     const bypass = await measureControl(window, '[data-section-path="current.film_look_section_enabled"]', { type: "click" });
     const afterBypass = await window.evaluate(() => window.HDRFinisherPerformance.gpuSnapshot());
     const slider = await measureControl(window, "#film-print-contrast", { type: "input", value: 12 });
@@ -152,12 +114,10 @@ async function main() {
     const result = {
       sourcePath,
       longEdge,
-      filmLookBefore,
       bypass,
       slider,
       requests,
-      allocationsAfterFilmLookBefore: afterFilmLookBefore.allocations.slice(before.allocations.length),
-      allocationsAfterBypass: afterBypass.allocations.slice(afterFilmLookBefore.allocations.length),
+      allocationsAfterBypass: afterBypass.allocations.slice(before.allocations.length),
       allocationsAfterSlider: afterSlider.allocations.slice(afterBypass.allocations.length),
       renders: afterSlider.renders,
       resources: afterSlider.resources,

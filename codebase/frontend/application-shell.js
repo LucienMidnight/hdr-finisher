@@ -23,7 +23,6 @@
     "edit.undo": "Mod+Z",
     "edit.redo": "Mod+Shift+Z",
     "view.scopeRegion": "Shift+R",
-    "view.filmLookBefore": "Shift+B",
   };
   const MACOS_RESERVED_SHORTCUTS = new Map([
     ["Mod+Shift+3", "a full-screen screenshot"],
