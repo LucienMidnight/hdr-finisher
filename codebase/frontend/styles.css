@@ -4876,6 +4876,7 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 .group-preset-name { display: grid; min-width: 0; gap: 1px; }
 .group-preset-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .group-preset-name small { color: var(--accent); font: 9px var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+.group-preset-name span { color: var(--muted); font-size: 10px; line-height: 1.35; }
 .group-preset-subheading { margin: 9px 0 1px; color: var(--quiet); font: 9px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
 .group-preset-subheading:first-child { margin-top: 0; }
 .group-preset-save { border-top: 1px solid var(--hairline); background: #121618; }
@@ -5117,6 +5118,12 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 }
 
 .film-look-actions .button-secondary { justify-self: start; }
+.film-look-compare-actions { border-color: rgba(49, 205, 218, 0.28); }
+.film-look-compare-actions .button-secondary.active {
+  border-color: var(--accent);
+  background: rgba(49, 205, 218, 0.16);
+  color: var(--accent);
+}
 
 .film-module-header {
   display: flex;

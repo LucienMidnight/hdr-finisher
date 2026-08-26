@@ -265,6 +265,7 @@ async function main() {
     assert.equal(await savedToneRow.getByRole("button", { name: "Delete" }).isVisible(), true);
     const savedTonePresets = await window.evaluate(() => window.hdrFinisherDesktop.listGradingPresets("hdr-tone"));
     assert.equal(savedTonePresets.length, 1);
+    assert.equal(savedTonePresets[0].recipeVersion, 1);
     assert.equal(savedTonePresets[0].values["hdr.exposure"], exposureAfterShortcuts);
     await window.locator("#group-preset-close").click();
     await window.evaluate(() => {
@@ -277,13 +278,17 @@ async function main() {
     assert.equal(Number(await window.locator("#hdr-saturation").inputValue()), 0.4, "a Tone preset must not alter Color controls");
     assert.equal(await window.locator("#film-reference-model").count(), 0);
     await window.locator('[data-group="film-look"] .group-preset').click();
-    assert.equal(await window.locator(".group-preset-row.built-in").count(), 5);
+    assert.equal(await window.locator(".group-preset-row.built-in").count(), 4);
     assert.equal(await window.locator(".group-preset-row.built-in").getByRole("button", { name: "Delete" }).count(), 0);
-    await window.locator(".group-preset-row.built-in").filter({ hasText: "35mm Fine" }).getByRole("button", { name: "Apply" }).click();
+    const cleanCinemaRow = window.locator(".group-preset-row.built-in").filter({ hasText: "Clean Cinema" });
+    assert.match(await cleanCinemaRow.textContent(), /Fine texture, restrained density/);
+    await cleanCinemaRow.getByRole("button", { name: "Apply" }).click();
     const appliedFilmModel = await window.evaluate(() => state.adjustments.hdr.film_look);
-    assert.equal(appliedFilmModel.reference_model, "35mm_fine");
-    assert.equal(appliedFilmModel.print_strength, 48);
-    assert.equal(appliedFilmModel.grain_amount, 24);
+    assert.equal(appliedFilmModel.reference_model, "custom");
+    assert.equal(appliedFilmModel.print_strength, 42);
+    assert.equal(appliedFilmModel.grain_amount, 14);
+    assert.deepEqual(Object.keys(appliedFilmModel).sort(), Object.keys(await window.evaluate(() => defaultFilmLook())).sort());
+    assert.equal(await window.locator("#film-look-before").count(), 1);
 
     await window.evaluate(() => { saveProjectToPath({ saveAs: true }); });
     await window.locator("#directory-browser").waitFor({ state: "visible" });

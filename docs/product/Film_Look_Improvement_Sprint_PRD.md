@@ -2,7 +2,7 @@
 
 ## Status and handoff
 
-- **Status:** Sprints A, B, and C complete and validated.
+- **Status:** Sprints A, B, C, and D complete and validated.
 - **Branch at planning time:** `feature/denoising`
 - **Physical grain implementation:** `367f350 feat: add physically scaled film grain`
 - **Imported red-hot-pixel investigation note:** `9c173a1 docs: note imported red hot pixel investigation`
@@ -22,7 +22,11 @@ This document records the agreed direction for a later implementation thread. Th
 - **Sprint C grain decision:** The existing physically scaled, deterministic grain and its independent shadow, midtone, and highlight responses already satisfy the current reference behavior. No speculative tonal change was made without contrary reference-test evidence.
 - **Sprint C validation:** 238 focused adjustment/frontend-contract tests passed; the full bundled backend suite passed with 734 tests and 1 skip; all 11 Electron shell tests passed; and real WebGPU rendering/interaction passed on `P2150622.ORF` at a 1024-pixel long edge without new cached-interaction allocations.
 - **Sprint C visibility follow-up:** Manual HDR/SDR testing found that the initial one-pixel halation boundary detector became too weak on smooth high-resolution photographic transitions. Extraction now samples at a capped fraction of the physically scaled halation extent, uses a gentler relative-edge knee, and provides a clearly visible but still boundary-localized 100% endpoint. CPU measurement on `P2150622.ORF` increased the 99.9th-percentile maximum-setting contribution from approximately `0.011` to `0.081`; real WebGPU rendering and cached interaction remained healthy.
-- **Next stage:** Sprint D, presets and reference matching.
+- **Sprint D:** Completed on the working branch. Film Look now ships four deliberately distinct, rights-safe character recipes: Clean Cinema, Soft Color Negative, Dense Print, and High-Speed Texture. Every built-in is materialized from the complete Film Look schema, carries an explicit recipe version, applies as an editable starting point, and returns cleanly to Neutral through Reset. Saved grading presets also retain a recipe version while existing unversioned files load as version 1.
+- **Sprint D comparison workflow:** Film Look includes a press-and-hold cached Before preview, also available on `Shift+B`, which transiently disables Film Look only in the resident WebGPU render snapshot. It does not mutate adjustments, mark the document dirty, allocate new cached interaction resources, or make backend requests. The existing persistent section bypass and HDR/SDR split and side-by-side viewer modes remain available for longer comparisons.
+- **Sprint D contact-sheet decision:** Preset thumbnails/contact sheets were considered and deferred. Four descriptive live recipes plus instant Before comparison provide a more trustworthy judgement on the user's image without introducing stale or non-representative thumbnails.
+- **Sprint D validation:** 60 focused frontend-contract tests passed; the full bundled backend suite passed with 735 tests and 1 skip; the 11-step Electron shell smoke suite passed; and the exact `P2150622.ORF` 4K WebGPU interaction test presented Before in approximately 1.8 ms and completed the Before/After round trip in approximately 8.5 ms with no new allocations, adjustment mutation, or document-dirty change.
+- **Next stage:** Sprint complete; conduct broader subjective reference-set review before adding further controls or presets.
 
 ## Outcome
 
@@ -163,12 +167,12 @@ The implementation may use a canonical scene-linear RGB or XYZ representation, b
 
 ### Sprint D — Presets and reference matching
 
-- Store presets as versioned, complete parameter recipes.
-- Use descriptive, non-stock names that communicate visible character.
-- Build a small deliberately distinct preset set rather than a large LUT-pack-style catalog.
-- Add fast before/after, bypass, split-view, or reference-side-by-side workflows.
-- Consider preset thumbnails or a contact-sheet preview.
-- Ensure presets are editable through understandable controls and return cleanly to neutral.
+- [x] Store presets as versioned, complete parameter recipes.
+- [x] Use descriptive, non-stock names that communicate visible character.
+- [x] Build a small deliberately distinct preset set rather than a large LUT-pack-style catalog.
+- [x] Add fast before/after, bypass, split-view, or reference-side-by-side workflows.
+- [x] Consider preset thumbnails or a contact-sheet preview.
+- [x] Ensure presets are editable through understandable controls and return cleanly to neutral.
 
 Automatic reference matching is not required for the initial version. Trustworthy comparison tools and predictable controls take priority.
 

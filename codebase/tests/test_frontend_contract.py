@@ -799,7 +799,7 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
 
     assert html.index('data-group="film-look"') > html.index('data-group="curves"')
     assert 'id="film-reference-model"' not in html
-    for label in ["Large Format Fine", "35mm Fine", "35mm Balanced", "35mm Fast", "16mm Fine"]:
+    for label in ["Clean Cinema", "Soft Color Negative", "Dense Print", "High-Speed Texture"]:
         assert label in javascript
     assert "builtInGroupPresets" in javascript
     assert "if (!preset.builtIn)" in javascript
@@ -1285,7 +1285,19 @@ def test_adjustment_group_presets_are_scoped_persistent_and_available_in_headers
     assert "function builtInGroupPresets(context)" in javascript
     assert 'kind.textContent = "Built-in"' in javascript
     assert "if (!preset.builtIn)" in javascript
-    assert '"35mm_fast": "35mm Fast"' in javascript
+    assert "const FILM_LOOK_PRESET_RECIPE_VERSION = 1" in javascript
+    assert "function completeFilmLookRecipe(values)" in javascript
+    assert 'name: "Clean Cinema"' in javascript
+    assert 'name: "Soft Color Negative"' in javascript
+    assert 'name: "Dense Print"' in javascript
+    assert 'name: "High-Speed Texture"' in javascript
+    assert "return FILM_LOOK_PRESETS.map((preset)" in javascript
+    assert "recipeVersion: preset.recipeVersion" in javascript
+    assert 'id="film-look-before"' in html
+    assert "function beginFilmLookBefore()" in javascript
+    assert "function endFilmLookBefore()" in javascript
+    assert "adjustmentsSnapshot[lane].film_look_section_enabled = false" in javascript
+    assert '"view.filmLookBefore": "Shift+B"' in (FRONTEND / "application-shell.js").read_text(encoding="utf-8")
     assert "function applyFilmLookPreset" not in javascript
     assert "context.paths.forEach((path)" in javascript
     assert "sectionPathForGroup" not in javascript[javascript.index("function applyGroupPreset"):javascript.index("function laneCurvesModified")]
@@ -1298,6 +1310,7 @@ def test_adjustment_group_presets_are_scoped_persistent_and_available_in_headers
     assert 'path.join(library, "Grading")' in main
     assert '"hdr-denoise", "sdr-denoise"' in main
     assert 'schemaVersion: 1, ...preset' in main
+    assert "return { groupId, name, recipeVersion, values }" in main
     assert 'listGradingPresets: (groupId)' in preload
     assert 'saveGradingPreset: (preset)' in preload
     assert 'deleteGradingPreset: (presetId)' in preload

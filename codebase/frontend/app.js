@@ -338,6 +338,7 @@ const state = {
   compareHoldTimer: null,
   compareHeld: false,
   comparePeekActive: false,
+  filmLookBeforeLane: null,
   compareLayout: "single",
   comparisonRenderedLane: null,
   comparisonRenderedGeneration: null,
@@ -583,20 +584,47 @@ const defaultFilmLook = () => ({
   microcontrast: 0,
 });
 
-const FILM_LOOK_PRESETS = {
-  large_format_fine: { print_strength: 44, print_contrast: 7, print_toe: 4, print_shoulder: 10, color_density: 10, red_response: 3, green_response: 0, blue_response: -2, highlight_desaturation: 12, shadow_desaturation: 6, grain_amount: 16, grain_size: 22, grain_softness: 48, grain_chroma: 12, grain_film_format: "65mm", grain_shadow_response: 82, grain_midtone_response: 100, grain_highlight_response: 112, film_resolution: 98, halation_amount: 7, halation_sensitivity: 82, halation_radius: 0.16, halation_hue_offset: 0, halation_saturation: 70, bloom_amount: 5, bloom_sensitivity: 86, bloom_radius: 0.34, bloom_highlight_detail: 88, image_softness: 3, microcontrast: -3 },
-  "35mm_fine": { print_strength: 48, print_contrast: 9, print_toe: 6, print_shoulder: 12, color_density: 13, red_response: 5, green_response: 0, blue_response: -3, highlight_desaturation: 18, shadow_desaturation: 8, grain_amount: 24, grain_size: 35, grain_softness: 40, grain_chroma: 16, grain_film_format: "35mm", grain_shadow_response: 86, grain_midtone_response: 100, grain_highlight_response: 116, film_resolution: 95, halation_amount: 9, halation_sensitivity: 78, halation_radius: 0.2, halation_hue_offset: 0, halation_saturation: 76, bloom_amount: 6, bloom_sensitivity: 82, bloom_radius: 0.42, bloom_highlight_detail: 84, image_softness: 5, microcontrast: -4 },
-  "35mm_balanced": { print_strength: 52, print_contrast: 10, print_toe: 7, print_shoulder: 14, color_density: 16, red_response: 6, green_response: -1, blue_response: -4, highlight_desaturation: 22, shadow_desaturation: 10, grain_amount: 34, grain_size: 50, grain_softness: 34, grain_chroma: 20, grain_film_format: "35mm", grain_shadow_response: 90, grain_midtone_response: 104, grain_highlight_response: 120, film_resolution: 92, halation_amount: 11, halation_sensitivity: 74, halation_radius: 0.24, halation_hue_offset: 0, halation_saturation: 80, bloom_amount: 8, bloom_sensitivity: 78, bloom_radius: 0.5, bloom_highlight_detail: 80, image_softness: 7, microcontrast: -5 },
-  "35mm_fast": { print_strength: 55, print_contrast: 8, print_toe: 9, print_shoulder: 16, color_density: 18, red_response: 8, green_response: -2, blue_response: -6, highlight_desaturation: 28, shadow_desaturation: 14, grain_amount: 48, grain_size: 68, grain_softness: 28, grain_chroma: 28, grain_film_format: "35mm", grain_shadow_response: 96, grain_midtone_response: 110, grain_highlight_response: 126, film_resolution: 86, halation_amount: 14, halation_sensitivity: 68, halation_radius: 0.3, halation_hue_offset: 3, halation_saturation: 84, bloom_amount: 10, bloom_sensitivity: 72, bloom_radius: 0.62, bloom_highlight_detail: 74, image_softness: 10, microcontrast: -7 },
-  "16mm_fine": { print_strength: 50, print_contrast: 6, print_toe: 8, print_shoulder: 15, color_density: 15, red_response: 7, green_response: -2, blue_response: -5, highlight_desaturation: 25, shadow_desaturation: 18, grain_amount: 54, grain_size: 78, grain_softness: 32, grain_chroma: 24, grain_film_format: "16mm", grain_shadow_response: 100, grain_midtone_response: 112, grain_highlight_response: 128, film_resolution: 80, halation_amount: 13, halation_sensitivity: 70, halation_radius: 0.34, halation_hue_offset: 2, halation_saturation: 82, bloom_amount: 9, bloom_sensitivity: 74, bloom_radius: 0.58, bloom_highlight_detail: 76, image_softness: 13, microcontrast: -9 },
-};
-const FILM_LOOK_PRESET_LABELS = {
-  large_format_fine: "Large Format Fine",
-  "35mm_fine": "35mm Fine",
-  "35mm_balanced": "35mm Balanced",
-  "35mm_fast": "35mm Fast",
-  "16mm_fine": "16mm Fine",
-};
+const FILM_LOOK_PRESET_RECIPE_VERSION = 1;
+
+function completeFilmLookRecipe(values) {
+  return Object.freeze({
+    ...defaultFilmLook(),
+    ...values,
+    reference_model: "custom",
+    halation_view_map: false,
+  });
+}
+
+const FILM_LOOK_PRESETS = Object.freeze([
+  Object.freeze({
+    id: "clean-cinema",
+    name: "Clean Cinema",
+    description: "Fine texture, restrained density, and a clean highlight finish.",
+    recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
+    recipe: completeFilmLookRecipe({ print_strength: 42, print_contrast: 6, print_toe: 3, print_shoulder: 10, color_density: 9, red_response: 3, blue_response: -2, highlight_desaturation: 12, shadow_desaturation: 5, grain_amount: 14, grain_size: 22, grain_softness: 50, grain_chroma: 10, grain_film_format: "65mm", grain_shadow_response: 82, grain_highlight_response: 110, film_resolution: 98, halation_amount: 6, halation_sensitivity: 84, halation_radius: 0.16, halation_saturation: 68, bloom_amount: 4, bloom_sensitivity: 88, bloom_radius: 0.32, bloom_highlight_detail: 90, image_softness: 2, microcontrast: -2 }),
+  }),
+  Object.freeze({
+    id: "soft-color-negative",
+    name: "Soft Color Negative",
+    description: "Gentle shoulders, soft color separation, and quiet portrait texture.",
+    recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
+    recipe: completeFilmLookRecipe({ print_strength: 48, print_contrast: -2, print_toe: 7, print_shoulder: 22, color_density: 12, red_response: 5, green_response: -1, blue_response: -4, highlight_desaturation: 28, shadow_desaturation: 9, grain_amount: 22, grain_size: 38, grain_softness: 52, grain_chroma: 13, grain_film_format: "35mm", grain_shadow_response: 88, grain_midtone_response: 98, grain_highlight_response: 112, film_resolution: 94, halation_amount: 9, halation_sensitivity: 78, halation_radius: 0.24, halation_saturation: 74, bloom_amount: 9, bloom_sensitivity: 76, bloom_radius: 0.62, bloom_highlight_detail: 78, image_softness: 8, microcontrast: -7 }),
+  }),
+  Object.freeze({
+    id: "dense-print",
+    name: "Dense Print",
+    description: "Deeper color, firmer print contrast, and a richer projected finish.",
+    recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
+    recipe: completeFilmLookRecipe({ print_strength: 62, print_contrast: 18, print_toe: 12, print_shoulder: 15, color_density: 26, red_response: 7, green_response: -2, blue_response: -6, highlight_desaturation: 20, shadow_desaturation: 12, grain_amount: 30, grain_size: 46, grain_softness: 34, grain_chroma: 18, grain_film_format: "35mm", grain_shadow_response: 92, grain_midtone_response: 104, grain_highlight_response: 118, film_resolution: 90, halation_amount: 13, halation_sensitivity: 72, halation_radius: 0.28, halation_hue_offset: 2, halation_saturation: 82, bloom_amount: 8, bloom_sensitivity: 78, bloom_radius: 0.5, bloom_highlight_detail: 80, image_softness: 6, microcontrast: -3 }),
+  }),
+  Object.freeze({
+    id: "high-speed-texture",
+    name: "High-Speed Texture",
+    description: "Coarse responsive grain, open glow, and softened fine detail for low-light character.",
+    recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
+    recipe: completeFilmLookRecipe({ print_strength: 54, print_contrast: 7, print_toe: 10, print_shoulder: 18, color_density: 17, red_response: 8, green_response: -3, blue_response: -7, highlight_desaturation: 30, shadow_desaturation: 17, grain_amount: 56, grain_size: 76, grain_softness: 29, grain_chroma: 27, grain_film_format: "16mm", grain_shadow_response: 100, grain_midtone_response: 114, grain_highlight_response: 130, film_resolution: 80, halation_amount: 16, halation_sensitivity: 66, halation_radius: 0.36, halation_hue_offset: 3, halation_saturation: 86, bloom_amount: 12, bloom_sensitivity: 70, bloom_radius: 0.7, bloom_highlight_detail: 70, image_softness: 13, microcontrast: -9 }),
+  }),
+]);
 
 const defaultColorGrading = () => ({
   shadows: { hue: 0, saturation: 0, luminance_ev: 0 },
@@ -1198,6 +1226,7 @@ const els = {
   sdrResetColors: document.getElementById("sdr-reset-colors"),
   filmLookReset: document.getElementById("film-look-reset"),
   filmLookMatchHdr: document.getElementById("film-look-match-hdr"),
+  filmLookBefore: document.getElementById("film-look-before"),
   filmLookSdrActions: document.getElementById("film-look-sdr-actions"),
   filmLookState: document.getElementById("film-look-state"),
   sectionBypasses: [...document.querySelectorAll("[data-section-path]")],
@@ -2531,6 +2560,7 @@ function bindEvents() {
   els.sdrResetColors.addEventListener("click", resetSdrColorSliders);
   els.filmLookReset?.addEventListener("click", resetFilmLook);
   els.filmLookMatchHdr?.addEventListener("click", matchHdrFilmLookToSdr);
+  bindFilmLookBeforeControl();
   els.colorGradingReset?.addEventListener("click", () => resetLaneObject("color_grading", defaultColorGrading()));
   els.colorGradingMatchHdr?.addEventListener("click", () => matchLaneObject("color_grading"));
   els.vignetteReset?.addEventListener("click", () => resetLaneObject("vignette", defaultVignette()));
@@ -3057,6 +3087,7 @@ function applicationCommands() {
     { id: "edit.redo", label: "Redo", category: "Edit", execute: () => queueEditCommand("redo") },
     { id: "edit.redoAlternate", label: "Redo (alternate)", category: "Edit", execute: () => queueEditCommand("redo") },
     { id: "view.compareHold", label: "Hold to compare HDR / SDR", category: "Viewer", hold: true, execute: (_event, phase) => phase === "keyup" ? endCompareHold() : beginCompareHold() },
+    { id: "view.filmLookBefore", label: "Hold to preview without Film Look", category: "Viewer", hold: true, execute: (_event, phase) => phase === "keyup" ? endFilmLookBefore() : beginFilmLookBefore() },
     { id: "view.zoomFit", label: "Zoom to fit", category: "Viewer", execute: () => setZoomMode("fit") },
     { id: "view.zoomActual", label: "Zoom to 100%", category: "Viewer", execute: () => setZoomMode("actual") },
     { id: "view.zoomIn", label: "Zoom in", category: "Viewer", repeatable: true, execute: () => stepZoom(1) },
@@ -8111,6 +8142,7 @@ async function renderGpuDraft(
   if (state.globalEditDirty && state.acceptedPresentation?.geometrySignature !== geometrySignature()) return false;
   const serial = ++state.gpuRenderSerial;
   const adjustmentsSnapshot = JSON.parse(JSON.stringify(state.adjustments));
+  if (state.filmLookBeforeLane === lane) adjustmentsSnapshot[lane].film_look_section_enabled = false;
   const localSnapshot = state.compareWithoutLocals
     ? []
     : JSON.parse(JSON.stringify(localAdjustments()));
@@ -8130,6 +8162,7 @@ async function renderGpuDraft(
     if (!result || serial !== state.gpuRenderSerial || (!allowInactive && lane !== state.currentView)) return false;
     state.gpuPreparedLane[lane] = true;
     state.gpuSurfaceHdr = Boolean(result.hdr);
+    renderFilmLookBeforeState();
     if (state.rotateDraftPreviewUrl) {
       URL.revokeObjectURL(state.rotateDraftPreviewUrl);
       state.rotateDraftPreviewUrl = null;
@@ -8781,6 +8814,7 @@ function clearPreviewCache() {
     state.previewGeneration[lane] = 0;
   }
   state.comparePeekActive = false;
+  state.filmLookBeforeLane = null;
   state.comparisonRenderedLane = null;
   state.comparisonRenderedGeneration = null;
   state.comparisonRenderedGeometry = null;
@@ -8934,6 +8968,60 @@ async function restoreActiveLane() {
   await refreshOverlay();
 }
 
+function filmLookBeforeAvailable() {
+  return Boolean(state.session
+    && state.compareLayout === "single"
+    && gpuPreviewEligible()
+    && state.gpuPreparedLane[state.currentView]);
+}
+
+function renderFilmLookBeforeState() {
+  if (!els.filmLookBefore) return;
+  const active = state.filmLookBeforeLane === state.currentView;
+  els.filmLookBefore.disabled = !filmLookBeforeAvailable() && !active;
+  els.filmLookBefore.classList.toggle("active", active);
+  els.filmLookBefore.setAttribute("aria-pressed", String(active));
+  els.filmLookBefore.textContent = active ? "Before" : "Hold for Before";
+}
+
+function beginFilmLookBefore() {
+  if (state.filmLookBeforeLane || !filmLookBeforeAvailable()) return;
+  state.filmLookBeforeLane = state.currentView;
+  renderFilmLookBeforeState();
+  void renderGpuDraft(state.currentView, { longEdge: residentAuthoringLongEdge() || settledProxyLongEdge() });
+}
+
+function endFilmLookBefore() {
+  const lane = state.filmLookBeforeLane;
+  if (!lane) return;
+  state.filmLookBeforeLane = null;
+  renderFilmLookBeforeState();
+  if (lane === state.currentView) void renderGpuDraft(lane, { longEdge: residentAuthoringLongEdge() || settledProxyLongEdge() });
+}
+
+function bindFilmLookBeforeControl() {
+  if (!els.filmLookBefore) return;
+  els.filmLookBefore.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    els.filmLookBefore.setPointerCapture?.(event.pointerId);
+    beginFilmLookBefore();
+  });
+  ["pointerup", "pointercancel", "lostpointercapture"].forEach((eventName) => {
+    els.filmLookBefore.addEventListener(eventName, endFilmLookBefore);
+  });
+  els.filmLookBefore.addEventListener("keydown", (event) => {
+    if (![" ", "Enter"].includes(event.key) || event.repeat) return;
+    event.preventDefault();
+    beginFilmLookBefore();
+  });
+  els.filmLookBefore.addEventListener("keyup", (event) => {
+    if (![" ", "Enter"].includes(event.key)) return;
+    event.preventDefault();
+    endFilmLookBefore();
+  });
+  els.filmLookBefore.addEventListener("blur", endFilmLookBefore);
+}
+
 async function setCompareLayout(layout) {
   if (!COMPARE_LAYOUTS.has(layout)) return;
   state.compareLayout = layout;
@@ -8957,6 +9045,7 @@ function renderCompareLayout() {
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", String(active));
   });
+  renderFilmLookBeforeState();
   if (layout === "single") clearComparisonPreview({ keepRenderedState: true });
   applyZoomGeometry();
   syncOverlayPlacement();
@@ -9408,6 +9497,7 @@ function renderControlState() {
   const filmModified = !valuesEqual(state.adjustments[state.currentView]?.film_look, currentLaneDefaults.film_look);
   if (els.filmLookState) els.filmLookState.textContent = "";
   els.filmLookReset?.closest(".control-group")?.classList.toggle("modified", filmModified);
+  renderFilmLookBeforeState();
   const gradingModified = !valuesEqual(state.adjustments[state.currentView]?.color_grading, currentLaneDefaults.color_grading);
   if (els.colorGradingState) els.colorGradingState.textContent = "";
   els.colorGradingReset?.closest(".control-group")?.classList.toggle("modified", gradingModified);
@@ -9510,13 +9600,15 @@ function builtInGroupPresets(context) {
   }
   if (context?.group !== "film-look") return [];
   const path = `${context.lane}.film_look`;
-  return Object.entries(FILM_LOOK_PRESET_LABELS).map(([referenceModel, name]) => ({
-    id: `built-in:${referenceModel}`,
+  return FILM_LOOK_PRESETS.map((preset) => ({
+    id: `built-in:${preset.id}`,
     groupId: context.groupId,
-    name,
+    name: preset.name,
+    description: preset.description,
+    recipeVersion: preset.recipeVersion,
     builtIn: true,
     values: {
-      [path]: { ...defaultFilmLook(), ...JSON.parse(JSON.stringify(FILM_LOOK_PRESETS[referenceModel])), reference_model: referenceModel },
+      [path]: JSON.parse(JSON.stringify(preset.recipe)),
     },
   }));
 }
@@ -9536,6 +9628,11 @@ function appendGroupPresetRow(preset) {
   const strong = document.createElement("strong");
   strong.textContent = preset.name;
   name.append(strong);
+  if (preset.description) {
+    const description = document.createElement("span");
+    description.textContent = preset.description;
+    name.append(description);
+  }
   if (preset.builtIn) {
     const kind = document.createElement("small");
     kind.textContent = "Built-in";
@@ -9576,7 +9673,7 @@ async function renderGroupPresetList() {
     if (state.groupPresetContext !== context) return;
     els.groupPresetList.replaceChildren();
     if (builtIns.length) {
-      appendGroupPresetSubheading("Built-in models");
+      appendGroupPresetSubheading("Built-in character recipes");
       builtIns.forEach(appendGroupPresetRow);
     }
     if (presets.length) {
@@ -9614,7 +9711,7 @@ async function saveCurrentGroupPreset() {
   if (existing.some((preset) => preset.name.toLocaleLowerCase() === name.toLocaleLowerCase())
     && !window.confirm(`Replace the existing “${name}” preset?`)) return;
   const values = Object.fromEntries(context.paths.map((path) => [path, JSON.parse(JSON.stringify(groupPresetPathValue(context, path)))]));
-  await persistGroupPreset({ groupId: context.groupId, name, values });
+  await persistGroupPreset({ groupId: context.groupId, name, recipeVersion: 1, values });
   els.groupPresetName.value = "";
   els.groupPresetStatus.textContent = `Saved “${name}”.`;
   await renderGroupPresetList();

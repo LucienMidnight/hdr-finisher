@@ -178,7 +178,8 @@ function cleanGradingPresetPayload(value) {
   if (!value.values || typeof value.values !== "object" || Array.isArray(value.values)) throw new Error("Invalid grading preset values.");
   const values = JSON.parse(JSON.stringify(value.values));
   if (JSON.stringify(values).length > 200000) throw new Error("The grading preset is too large.");
-  return { groupId, name, values };
+  const recipeVersion = Number.isInteger(value?.recipeVersion) && value.recipeVersion > 0 ? value.recipeVersion : 1;
+  return { groupId, name, recipeVersion, values };
 }
 
 function gradingPresetFilename(groupId, name) {
