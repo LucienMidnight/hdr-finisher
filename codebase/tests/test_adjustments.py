@@ -23,13 +23,14 @@ from hdr_finisher.adjustments import (
     _film_detail_blur,
     _grain_pitch_pixels,
     _grain_value_noise,
+    _halation_tint,
     _radius_pixels,
     _compress_scene_highlights,
     _primary_zone_masks,
     apply_adjustments,
 )
 from hdr_finisher.analysis import classify_hdr
-from hdr_finisher.color import rgb_primaries_adjustment_matrix
+from hdr_finisher.color import acescg_to_linear_srgb, rgb_primaries_adjustment_matrix
 from hdr_finisher.models import AdjustmentState, FilmLookAdjustments, HDRAdjustments, PreviewKind, SDRAdjustments, SharedAdjustments, SourceLatitude, ToneEqualizerNode
 
 
@@ -146,6 +147,20 @@ def test_bloom_spread_is_output_relative_and_independent_of_film_format() -> Non
     small_format = apply_adjustments(image, state, PreviewKind.HDR)
 
     np.testing.assert_array_equal(large_format, small_format)
+
+
+@pytest.mark.parametrize(("hue_offset", "saturation"), [(-100, 100), (0, 75), (100, 35), (0, 0)])
+def test_halation_tint_has_one_chromaticity_across_hdr_and_sdr(
+    hue_offset: float, saturation: float
+) -> None:
+    sdr_tint = _halation_tint(hue_offset, saturation, PreviewKind.SDR)
+    hdr_tint = _halation_tint(hue_offset, saturation, PreviewKind.HDR)
+    hdr_as_srgb = acescg_to_linear_srgb(hdr_tint.reshape(1, 1, 3))[0, 0]
+
+    # The fixed colour-science CAT02 matrices are float32 at render time; the
+    # round trip remains far below a visible chromaticity difference.
+    np.testing.assert_allclose(hdr_as_srgb, sdr_tint, rtol=2e-4, atol=4e-5)
+    assert np.all(np.isfinite(hdr_tint))
 
 
 @pytest.mark.parametrize(

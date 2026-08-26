@@ -2709,6 +2709,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return select(srgbDecode(clamp(value, 0.0, 1.0)), curveDecodeChannel(value), p[0] > 0.5);
     }
     fn filmResponse(input: vec3f) -> vec3f {
+      // HDR enters as scene-linear ACEScg; SDR enters as scene-linear sRGB.
+      // The response signal is encoded and decoded within that same branch.
       if (p[78] < 0.5 || p[79] <= 0.0) { return input; }
       let sourceY = max(filmLuma(input), 0.0);
       var rgb = input;
@@ -2843,7 +2845,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         let angle = radians(12.0 + 45.0 * p[89]);
         let warm = vec3f(1.0, 0.34 + 0.18 * sin(angle), 0.07 + 0.10 * max(cos(angle), 0.0));
         let warmY = lumaSrgb(warm);
-        let tint = mix(vec3f(warmY), warm, clamp(p[90], 0.0, 1.0));
+        let canonicalTintSrgb = mix(vec3f(warmY), warm, clamp(p[90], 0.0, 1.0));
+        let tint = select(canonicalTintSrgb, srgbToAcescg(canonicalTintSrgb), p[0] > 0.5);
         if (p[91] > 0.5) { return vec3f(clamp(filmSignalFromLuma(haloY), 0.0, 1.0)); }
         rgb += haloY * tint * (0.28 * p[86] * p[79]);
       }

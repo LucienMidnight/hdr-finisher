@@ -2,7 +2,7 @@
 
 ## Status and handoff
 
-- **Status:** In progress; Sprint A1-A5 implemented and validated.
+- **Status:** Sprint A complete; A1-A6 implemented and validated.
 - **Branch at planning time:** `feature/denoising`
 - **Physical grain implementation:** `367f350 feat: add physically scaled film grain`
 - **Imported red-hot-pixel investigation note:** `9c173a1 docs: note imported red hot pixel investigation`
@@ -14,8 +14,9 @@ This document records the agreed direction for a later implementation thread. Th
 
 - **A1-A3:** Completed in `9eb3f60`, including the cached 4K interaction fix discovered during validation.
 - **A4:** Completed in `bcb087a`. Grain, halation, and Film Resolution now share Film Format and capture-geometry scaling; bloom remains explicitly output-relative.
-- **A5:** Completed on the working branch. CPU/export and WebGPU now share spatial kernel weights, radius caps, clamped-edge behavior, and an explicit response-frame source for ordered Film Look compositing. Parity fixtures cover ordinary, panoramic, and 64k-class horizontal-strip geometry.
-- **Next stage:** A6, canonical color semantics.
+- **A5:** Completed in `e3d046d`. CPU/export and WebGPU now share spatial kernel weights, radius caps, clamped-edge behavior, and an explicit response-frame source for ordered Film Look compositing. Parity fixtures cover ordinary, panoramic, and 64k-class horizontal-strip geometry.
+- **A6:** Completed on the working branch. Film Response is explicitly defined in each branch's scene-linear working RGB, while halation tint is authored once in canonical linear sRGB and converted to ACEScg for HDR in both CPU/export and WebGPU preview.
+- **Next stage:** Sprint B, perceptual tone and color response.
 
 ## Outcome
 

@@ -1047,6 +1047,13 @@ def _film_decode_luma(signal: np.ndarray, kind: PreviewKind) -> np.ndarray:
 
 
 def _apply_film_response(image: np.ndarray, look: object, kind: PreviewKind, master: np.float32) -> np.ndarray:
+    """Apply Film Response in the branch's scene-linear working RGB.
+
+    HDR is ACEScg and SDR is linear sRGB. Tone shaping is authored through a
+    perceptual luma signal, then decoded back to the same scene-linear branch;
+    density changes operate in that branch without reinterpreting RGB values as
+    coordinates from the other working space.
+    """
     print_mix = np.float32(look.print_strength / 100.0) * master
     density = np.float32(look.color_density / 100.0) * master
     if print_mix == 0.0 and density == 0.0:
@@ -1207,14 +1214,18 @@ def _highlight_mask(image: np.ndarray, kind: PreviewKind, sensitivity: float) ->
     return _smoothstep(float(threshold), float(threshold + 0.16), signal).astype(np.float32)
 
 
-def _halation_tint(hue_offset: float, saturation: float) -> np.ndarray:
+def _halation_tint(hue_offset: float, saturation: float, kind: PreviewKind) -> np.ndarray:
+    """Return one canonical linear-sRGB tint in the branch working space."""
     angle = np.deg2rad(np.float32(12.0 + 0.45 * hue_offset))
     warm = np.array(
         [1.0, 0.34 + 0.18 * np.sin(angle), 0.07 + 0.10 * np.maximum(np.cos(angle), 0.0)],
         dtype=np.float32,
     )
     neutral = np.full(3, np.dot(warm, np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)), dtype=np.float32)
-    return neutral + (warm - neutral) * np.float32(np.clip(saturation / 100.0, 0.0, 1.0))
+    canonical_srgb = neutral + (warm - neutral) * np.float32(np.clip(saturation / 100.0, 0.0, 1.0))
+    if kind == PreviewKind.HDR:
+        return linear_srgb_to_acescg(canonical_srgb.reshape(1, 1, 3))[0, 0]
+    return canonical_srgb
 
 
 def _apply_halation(
@@ -1225,7 +1236,7 @@ def _apply_halation(
     radius = _film_radius_pixels(image, look, look.halation_radius)
     blurred = _diffusion_blur(source, max(1, radius))
     edge_scatter = np.maximum(blurred - source * np.float32(0.35), 0.0)
-    tint = _halation_tint(look.halation_hue_offset, look.halation_saturation)
+    tint = _halation_tint(look.halation_hue_offset, look.halation_saturation, kind)
     halo_luma = _film_luma(edge_scatter, kind)
     halo = halo_luma[..., None] * tint
     map_signal = _film_encode_luma(np.maximum(halo_luma, 0.0), kind)

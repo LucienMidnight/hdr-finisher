@@ -834,6 +834,9 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     assert "clamp(length(dimensions) * max(p[95], 0.0) / 100.0, 0.25, 64.0)" in shader
     assert "clamp(filmPixelsPerMm(dimensions) * halationRadiusMm, 0.25, 64.0)" in shader
     assert "filmBlur(coordinate, 0.06, 24)" in shader
+    assert "let canonicalTintSrgb = mix(vec3f(warmY), warm" in shader
+    assert "select(canonicalTintSrgb, srgbToAcescg(canonicalTintSrgb), p[0] > 0.5)" in shader
+    assert "let tint = mix(vec3f(warmY), warm" not in shader
     assert 'data-film-grain-custom hidden' in html
     assert 'id="film-look-match-hdr"' in html
     assert "state.adjustments.sdr.film_look = JSON.parse(JSON.stringify(state.adjustments.hdr.film_look))" in javascript
