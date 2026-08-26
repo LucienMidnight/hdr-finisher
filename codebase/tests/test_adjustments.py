@@ -6,6 +6,8 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
+import hdr_finisher.adjustments as adjustments_module
+
 from hdr_finisher.adjustments import (
     _apply_hdr_adjustments,
     _apply_hdr_color,
@@ -122,6 +124,72 @@ def test_film_response_preserves_hdr_headroom_without_print_ceiling() -> None:
     assert np.all(np.isfinite(output))
     assert float(output[0, -1, 0]) > 1.0
     assert np.all(np.diff(output[0, :, 0]) > 0.0)
+
+
+@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
+def test_film_response_look_strength_is_a_single_linear_blend(kind: PreviewKind) -> None:
+    image = np.array(
+        [[[0.02, 0.03, 0.04], [0.18, 0.24, 0.12], [0.72, 0.58, 0.40]]],
+        dtype=np.float32,
+    )
+    if kind == PreviewKind.HDR:
+        image *= np.float32(4.0)
+    state = AdjustmentState()
+    look = getattr(state, kind.value).film_look
+    look.print_strength = 80
+    look.print_contrast = 45
+    look.print_toe = 35
+    look.print_shoulder = 55
+
+    look.look_strength = 0
+    bypass = apply_adjustments(image, state, kind)
+    look.look_strength = 100
+    authored = apply_adjustments(image, state, kind)
+    look.look_strength = 50
+    midpoint = apply_adjustments(image, state, kind)
+
+    np.testing.assert_allclose(midpoint, bypass + (authored - bypass) * 0.5, rtol=2e-6, atol=2e-6)
+
+
+@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
+def test_film_resolution_remains_active_when_grain_is_disabled(kind: PreviewKind) -> None:
+    image = np.zeros((41, 41, 3), dtype=np.float32)
+    image[20, 20] = 1.0
+    state = AdjustmentState()
+    look = getattr(state, kind.value).film_look
+    look.film_resolution = 0
+    look.grain_amount = 0
+
+    look.grain_enabled = True
+    grain_enabled = apply_adjustments(image, state, kind)
+    look.grain_enabled = False
+    grain_disabled = apply_adjustments(image, state, kind)
+
+    np.testing.assert_array_equal(grain_disabled, grain_enabled)
+    assert float(grain_disabled[20, 20, 0]) < float(apply_adjustments(image, AdjustmentState(), kind)[20, 20, 0])
+
+
+@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
+def test_inactive_film_spatial_stages_do_not_blur(monkeypatch: pytest.MonkeyPatch, kind: PreviewKind) -> None:
+    image = np.full((24, 32, 3), 0.18, dtype=np.float32)
+    state = AdjustmentState()
+    look = getattr(state, kind.value).film_look
+    look.halation_enabled = True
+    look.halation_amount = 0
+    look.bloom_enabled = True
+    look.bloom_amount = 0
+    look.image_structure_enabled = True
+    look.image_softness = 0
+    look.microcontrast = 0
+    look.film_resolution = 100
+
+    def unexpected_blur(*_args: object, **_kwargs: object) -> np.ndarray:
+        raise AssertionError("An inactive Film Look stage attempted spatial blur work")
+
+    monkeypatch.setattr(adjustments_module, "_box_blur", unexpected_blur)
+    monkeypatch.setattr(adjustments_module, "_diffusion_blur", unexpected_blur)
+
+    apply_adjustments(image, state, kind)
 
 
 def test_halation_and_bloom_are_spatial_and_grain_remains_last() -> None:

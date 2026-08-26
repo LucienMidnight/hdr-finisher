@@ -326,6 +326,16 @@ def test_curve_drag_uses_live_preview_scheduler_and_three_point_default_shape() 
     assert 'return Math.min(profile.interactiveEdge, interactiveProxyLongEdge())' in javascript
 
 
+def test_resident_high_resolution_preview_is_not_downgraded_for_cached_edits() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    resident = javascript[javascript.index("function residentAuthoringLongEdge()") : javascript.index("function scopeLongEdge(tier)")]
+    assert 'accepted?.transport !== "WebGPU"' in resident
+    assert "accepted.geometrySignature !== geometrySignature()" in resident
+    assert "accepted.longEdge !== target" in resident
+    assert resident.count("const resident = residentAuthoringLongEdge();") == 2
+    assert resident.count("if (resident) return resident;") == 2
+
+
 def test_curve_canvas_left_clicks_add_or_select_and_right_click_removes() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
@@ -801,6 +811,21 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     ]:
         assert f'data-path="current.film_look.{path}"' in html
     assert "grainValueNoise" in (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    shader = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    assert "exp2(0.55 * p[81] * p[79])" not in shader
+    assert "mapped -= p[82] * p[79]" not in shader
+    assert "mapped -= p[83] * p[79]" not in shader
+    assert "if (p[108] < 1.0)" in shader
+    assert "if (p[100] > 0.5 && p[108] < 1.0)" not in shader
+    assert "ensureIntermediate(canvas, proxy.width, proxy.height, spatialActive)" in shader
+    assert "spatialATexture: spatialActive ? createSpatialTexture() : null" in shader
+    assert "current?.width === width && current?.height === height && current.spatialActive === spatialActive" not in shader
+    assert "if (spatialActive && (!current.spatialATexture || !current.spatialBTexture))" in shader
+    assert '"grading-spatial-intermediates"' in shader
+    assert "const fallbackSpatialView = sourceProxy.texture.createView();" in shader
+    assert "const fallbackSpatialView = intermediate.filmTexture.createView();" not in shader
+    assert "let structureBlur = filmBlur(coordinate, 0.06);\n      if (p[97] > 0.5)" not in shader
+    assert "if (p[97] > 0.5 && (abs(p[98]) > 0.000001 || abs(p[99]) > 0.000001))" in shader
     assert 'data-film-grain-custom hidden' in html
     assert 'id="film-look-match-hdr"' in html
     assert "state.adjustments.sdr.film_look = JSON.parse(JSON.stringify(state.adjustments.hdr.film_look))" in javascript

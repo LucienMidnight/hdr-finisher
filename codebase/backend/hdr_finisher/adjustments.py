@@ -904,34 +904,46 @@ def _apply_film_look(
     branch = adjustments.hdr if kind == PreviewKind.HDR else adjustments.sdr
     look = branch.film_look
     strength = np.float32(look.look_strength / 100.0)
+    if strength <= 0.0:
+        return image
+
+    response_active = look.print_strength != 0.0 or look.color_density != 0.0
+    halation_active = look.halation_enabled and look.halation_amount > 0.0
+    halation_map_active = look.halation_enabled and look.halation_view_map
+    bloom_active = look.bloom_enabled and look.bloom_amount > 0.0
+    structure_active = look.image_structure_enabled and (
+        look.image_softness != 0.0 or look.microcontrast != 0.0
+    )
+    resolution_active = look.film_resolution < 100.0
+    grain_active = include_grain and look.grain_enabled and look.grain_amount > 0.0
     active = any(
         (
-            look.print_strength,
-            look.color_density,
-            look.halation_amount if look.halation_enabled else 0.0,
-            look.bloom_amount if look.bloom_enabled else 0.0,
-            look.image_softness if look.image_structure_enabled else 0.0,
-            look.microcontrast if look.image_structure_enabled else 0.0,
-            100.0 - look.film_resolution if look.grain_enabled else 0.0,
-            look.grain_amount if look.grain_enabled else 0.0,
+            response_active,
+            halation_active,
+            halation_map_active,
+            bloom_active,
+            structure_active,
+            resolution_active,
+            grain_active,
         )
     )
-    if not active and not (look.halation_enabled and look.halation_view_map):
+    if not active:
         return image
 
     result = image.astype(np.float32, copy=True)
     result = _apply_film_response(result, look, kind, strength)
 
-    if look.halation_enabled:
+    if halation_active or halation_map_active:
         result, halation_map = _apply_halation(result, look, kind, strength)
         if look.halation_view_map:
             return halation_map
-    if look.bloom_enabled and look.bloom_amount > 0.0 and strength > 0.0:
+    if bloom_active:
         result = _apply_bloom(result, look, kind, strength)
-    if look.image_structure_enabled:
+    if structure_active:
         result = _apply_image_structure(result, look, kind, strength)
-    if look.grain_enabled:
+    if resolution_active:
         result = _apply_film_resolution(result, look, strength)
+    if look.grain_enabled:
         if include_grain and look.grain_amount > 0.0 and strength > 0.0:
             result = _apply_density_grain(result, look, kind, adjustments.shared.film_grain_seed, strength)
     return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
@@ -1038,9 +1050,12 @@ def _apply_film_response(image: np.ndarray, look: object, kind: PreviewKind, mas
     target_luma = source_luma
     if print_mix > 0.0:
         signal = _film_encode_luma(source_luma, kind)
-        contrast = np.float32(look.print_contrast / 100.0) * master
-        toe = np.float32(look.print_toe / 100.0) * master
-        shoulder = np.float32(look.print_shoulder / 100.0) * master
+        # Author the response curve at its requested values, then use master
+        # only for the final response blend. Scaling both made intermediate
+        # Look Strength values behave approximately strength-squared.
+        contrast = np.float32(look.print_contrast / 100.0)
+        toe = np.float32(look.print_toe / 100.0)
+        shoulder = np.float32(look.print_shoulder / 100.0)
         mapped = np.float32(0.5) + (signal - np.float32(0.5)) * np.float32(2.0**(0.55 * contrast))
         mapped -= toe * np.float32(0.10) * (np.float32(1.0) - _smoothstep(0.08, 0.58, signal))
         mapped -= shoulder * np.float32(0.10) * _smoothstep(0.42, 0.98, signal)

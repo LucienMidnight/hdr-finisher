@@ -3350,11 +3350,27 @@ function displayedLongEdge() {
   return Math.max(paneWidth, paneHeight) * Math.max(1, window.devicePixelRatio || 1);
 }
 
+function residentAuthoringLongEdge() {
+  const accepted = state.acceptedPresentation;
+  const target = previewTargetLongEdge();
+  if (!gpuPreviewEligible()
+    || accepted?.transport !== "WebGPU"
+    || accepted.lane !== state.currentView
+    || accepted.geometrySignature !== geometrySignature()
+    || accepted.longEdge !== target
+    || els.previewCanvas.style.display === "none") return null;
+  return target;
+}
+
 function interactiveProxyLongEdge() {
+  const resident = residentAuthoringLongEdge();
+  if (resident) return resident;
   return Math.round(clamp(displayedLongEdge(), 512, 1024));
 }
 
 function settledProxyLongEdge() {
+  const resident = residentAuthoringLongEdge();
+  if (resident) return resident;
   return Math.round(Math.min(previewTargetLongEdge(), clamp(displayedLongEdge(), 768, 1024)));
 }
 

@@ -375,7 +375,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           gradingIntermediateBytes: [...this.intermediates.values()].reduce((sum, entry) => {
             const spatialWidth = Math.max(1, Math.ceil(entry.width / 4));
             const spatialHeight = Math.max(1, Math.ceil(entry.height / 4));
-            return sum + entry.width * entry.height * 8 * 3 + spatialWidth * spatialHeight * 8 * 2;
+            const spatialBytes = entry.spatialATexture && entry.spatialBTexture
+              ? spatialWidth * spatialHeight * 8 * 2
+              : 0;
+            return sum + entry.width * entry.height * 8 * 3 + spatialBytes;
           }, 0),
           denoiseTextures: (this.denoiseSourceSelector?.resolved ? 1 : 0)
             + (this.denoiseSourceSelector?.cache?.textureCount || 0),
@@ -441,7 +444,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         this.device.queue.writeBuffer(this.curveBuffer, 0, curves);
         this.lastCurveSamples = curves;
       }
-      const intermediate = this.ensureIntermediate(canvas, proxy.width, proxy.height);
+      const spatialActive = params[78] > 0.5 && params[79] > 0
+        && (params[85] > 0.5 || (params[92] > 0.5 && params[93] > 0));
+      const intermediate = this.ensureIntermediate(canvas, proxy.width, proxy.height, spatialActive);
       const makeBindGroup = (sourceView, spatialView, parameterBuffer = this.paramBuffer, overlayView = spatialView) => this.device.createBindGroup({
           layout: this.bindGroupLayout,
           entries: [
@@ -453,15 +458,27 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
             { binding: 5, resource: overlayView },
           ],
       });
-      const baseBindGroup = makeBindGroup(sourceProxy.texture.createView(), intermediate.spatialATexture.createView());
-      const extractBindGroup = makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialBTexture.createView());
-      const horizontalBindGroup = makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialATexture.createView());
-      const verticalBindGroup = makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialBTexture.createView());
+      // When spatial effects are inactive, use the immutable proxy as the
+      // required placeholder binding. Binding filmTexture here would make the
+      // response pass sample from the same texture it renders into, which is
+      // invalid in WebGPU even when the inactive shader branch never samples it.
+      const fallbackSpatialView = sourceProxy.texture.createView();
+      const spatialAView = intermediate.spatialATexture?.createView() || fallbackSpatialView;
+      const baseBindGroup = makeBindGroup(sourceProxy.texture.createView(), spatialAView);
+      const extractBindGroup = spatialActive
+        ? makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialBTexture.createView())
+        : null;
+      const horizontalBindGroup = spatialActive
+        ? makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialATexture.createView())
+        : null;
+      const verticalBindGroup = spatialActive
+        ? makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialBTexture.createView())
+        : null;
       const compositeBindGroup = makeBindGroup(
         intermediate.filmTexture.createView(),
-        intermediate.spatialATexture.createView(),
+        spatialAView,
         this.paramBuffer,
-        overlayMask?.texture?.createView() || intermediate.spatialATexture.createView(),
+        overlayMask?.texture?.createView() || spatialAView,
       );
       const encoder = this.device.createCommandEncoder();
       const gpuTiming = this.instrumentationEnabled && this.device.features.has("timestamp-query")
@@ -500,7 +517,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         localPass.end();
         localSource = target;
       }
-      const responseBindGroup = makeBindGroup(localSource.createView(), intermediate.spatialATexture.createView());
+      const responseBindGroup = makeBindGroup(localSource.createView(), spatialAView);
       const responsePass = encoder.beginRenderPass({
         colorAttachments: [{
           view: intermediate.filmTexture.createView(),
@@ -513,8 +530,6 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       responsePass.setBindGroup(0, responseBindGroup);
       responsePass.draw(3);
       responsePass.end();
-      const spatialActive = params[78] > 0.5 && params[79] > 0
-        && (params[85] > 0.5 || (params[92] > 0.5 && params[93] > 0));
       if (spatialActive) {
         const extractPass = encoder.beginRenderPass({
           colorAttachments: [{
@@ -585,7 +600,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         width: proxy.width,
         height: proxy.height,
         filmTexture: intermediate.filmTexture,
-        spatialTexture: intermediate.spatialATexture,
+        spatialTexture: intermediate.spatialATexture || intermediate.filmTexture,
         params: new Float32Array(params),
       });
       if (this.instrumentationEnabled) {
@@ -1278,9 +1293,31 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return pipelines;
     }
 
-    ensureIntermediate(canvas, width, height) {
+    ensureIntermediate(canvas, width, height, spatialActive = false) {
       const current = this.intermediates.get(canvas);
-      if (current?.width === width && current?.height === height) return current;
+      const spatialWidth = Math.max(1, Math.ceil(width / 4));
+      const spatialHeight = Math.max(1, Math.ceil(height / 4));
+      const createSpatialTexture = () => this.device.createTexture({
+        size: { width: spatialWidth, height: spatialHeight },
+        format: "rgba16float",
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      });
+      if (current?.width === width && current?.height === height) {
+        if (spatialActive && (!current.spatialATexture || !current.spatialBTexture)) {
+          current.spatialATexture = createSpatialTexture();
+          current.spatialBTexture = createSpatialTexture();
+          this.recordAllocation(
+            "grading-spatial-intermediates",
+            spatialWidth * spatialHeight * 8 * 2,
+            { width, height, spatialWidth, spatialHeight },
+          );
+        }
+        // Retain spatial textures after first use. Bypass toggles and non-spatial
+        // slider edits can then reuse every 4K intermediate instead of destroying
+        // and reallocating the full render set.
+        current.spatialActive = spatialActive;
+        return current;
+      }
       current?.baseTexture?.destroy();
       current?.filmTexture?.destroy();
       current?.spatialATexture?.destroy();
@@ -1291,27 +1328,21 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         format: "rgba16float",
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
       });
-      const spatialWidth = Math.max(1, Math.ceil(width / 4));
-      const spatialHeight = Math.max(1, Math.ceil(height / 4));
-      const createSpatialTexture = () => this.device.createTexture({
-        size: { width: spatialWidth, height: spatialHeight },
-        format: "rgba16float",
-        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-      });
       const intermediate = {
         baseTexture: createTexture(),
         filmTexture: createTexture(),
         localTexture: createTexture(),
-        spatialATexture: createSpatialTexture(),
-        spatialBTexture: createSpatialTexture(),
+        spatialATexture: spatialActive ? createSpatialTexture() : null,
+        spatialBTexture: spatialActive ? createSpatialTexture() : null,
+        spatialActive,
         width,
         height,
       };
       this.intermediates.set(canvas, intermediate);
       this.recordAllocation(
         "grading-intermediates",
-        width * height * 8 * 3 + spatialWidth * spatialHeight * 8 * 2,
-        { width, height, spatialWidth, spatialHeight },
+        width * height * 8 * 3 + (spatialActive ? spatialWidth * spatialHeight * 8 * 2 : 0),
+        { width, height, spatialWidth: spatialActive ? spatialWidth : 0, spatialHeight: spatialActive ? spatialHeight : 0 },
       );
       return intermediate;
     }
@@ -2683,9 +2714,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       var rgb = input;
       if (p[80] > 0.0 && sourceY > 0.0000001) {
         let signal = filmSignalFromLuma(sourceY);
-        var mapped = 0.5 + (signal - 0.5) * exp2(0.55 * p[81] * p[79]);
-        mapped -= p[82] * p[79] * 0.10 * (1.0 - smoothRange(0.08, 0.58, signal));
-        mapped -= p[83] * p[79] * 0.10 * smoothRange(0.42, 0.98, signal);
+        var mapped = 0.5 + (signal - 0.5) * exp2(0.55 * p[81]);
+        mapped -= p[82] * 0.10 * (1.0 - smoothRange(0.08, 0.58, signal));
+        mapped -= p[83] * 0.10 * smoothRange(0.42, 0.98, signal);
         if (p[0] < 0.5) { mapped = clamp(mapped, 0.0, 1.0); }
         let targetY = mix(sourceY, filmLumaFromSignal(mapped), p[80] * p[79]);
         rgb *= targetY / sourceY;
@@ -2781,7 +2812,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       var rgb = sampleFilm(coordinate);
       if (p[78] < 0.5 || p[79] <= 0.0) { return applyVignette(rgb, coordinate); }
       let dimensions = vec2f(textureDimensions(sourceTexture));
-      let spatial = sampleSpatial((vec2f(coordinate) + vec2f(0.5)) / dimensions);
+      var spatial = vec4f(0.0);
+      if (p[85] > 0.5 || (p[92] > 0.5 && p[93] > 0.0)) {
+        spatial = sampleSpatial((vec2f(coordinate) + vec2f(0.5)) / dimensions);
+      }
       if (p[85] > 0.5) {
         let qualified = rgb * filmHighlightMask(rgb, p[87]);
         let haloY = max(spatial.a - max(filmLuma(qualified), 0.0) * 0.35, 0.0);
@@ -2799,14 +2833,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         let diffusion = (spatial.rgb - qualified) * ((1.0 - p[96]) * 0.35 * amount);
         rgb = max(rgb + additive + diffusion, vec3f(0.0));
       }
-      let structureBlur = filmBlur(coordinate, 0.06);
-      if (p[97] > 0.5) {
+      if (p[97] > 0.5 && (abs(p[98]) > 0.000001 || abs(p[99]) > 0.000001)) {
+        let structureBlur = filmBlur(coordinate, 0.06);
         let structureSource = rgb;
         rgb = structureSource
           + (structureBlur - structureSource) * p[98] * p[79] * 0.65
           + (structureSource - structureBlur) * p[99] * p[79] * 0.5;
       }
-      if (p[100] > 0.5 && p[108] < 1.0) {
+      if (p[108] < 1.0) {
         let resolutionLoss = (1.0 - p[108]) * p[79];
         rgb += (filmBlur(coordinate, 0.04 + 0.08 * resolutionLoss) - rgb) * resolutionLoss * 0.7;
       }
