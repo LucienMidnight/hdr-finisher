@@ -2047,14 +2047,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     params[145] = (film.blue_response || 0) / 100;
     params[146] = (film.highlight_desaturation || 0) / 100;
     params[147] = (film.shadow_desaturation || 0) / 100;
-    params[85] = film.halation_enabled !== false && ((film.halation_amount || 0) > 0 || film.halation_view_map) ? 1 : 0;
+    params[85] = film.halation_enabled !== false && ((((film.halation_amount || 0) > 0) && (film.halation_radius || 0) > 0) || film.halation_view_map) ? 1 : 0;
     params[86] = (film.halation_amount || 0) / 100;
     params[87] = (film.halation_sensitivity ?? 75) / 100;
     params[88] = film.halation_radius ?? 0.2;
     params[89] = (film.halation_hue_offset || 0) / 100;
     params[90] = (film.halation_saturation ?? 75) / 100;
     params[91] = film.halation_view_map ? 1 : 0;
-    params[92] = film.bloom_enabled !== false ? 1 : 0;
+    params[92] = film.bloom_enabled !== false && (film.bloom_radius || 0) > 0 ? 1 : 0;
     params[93] = (film.bloom_amount || 0) / 100;
     params[94] = (film.bloom_sensitivity ?? 80) / 100;
     params[95] = film.bloom_radius ?? 0.5;
@@ -2815,12 +2815,28 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return rgb * filmHighlightMask(rgb, sensitivity);
     }
 
+    fn qualifiedLuma(coordinate: vec2i, sensitivity: f32) -> f32 {
+      let rgb = sampleFilm(coordinate);
+      return max(filmLuma(rgb), 0.0) * filmHighlightMask(rgb, sensitivity);
+    }
+    fn halationEdgeSource(coordinate: vec2i, sensitivity: f32) -> f32 {
+      let center = qualifiedLuma(coordinate, sensitivity);
+      let neighbourMean = (
+        qualifiedLuma(coordinate + vec2i(1, 0), sensitivity)
+        + qualifiedLuma(coordinate + vec2i(-1, 0), sensitivity)
+        + qualifiedLuma(coordinate + vec2i(0, 1), sensitivity)
+        + qualifiedLuma(coordinate + vec2i(0, -1), sensitivity)
+      ) * 0.25;
+      let relativeEdge = max(center - neighbourMean, 0.0) / (center + 0.02);
+      return center * smoothRange(0.015, 0.18, relativeEdge);
+    }
+
     fn packedQualifiedSample(coordinate: vec2f) -> vec4f {
-      let rgb = sampleFilm(vec2i(coordinate));
+      let pixel = vec2i(coordinate);
+      let rgb = sampleFilm(pixel);
       let bloomMask = filmHighlightMask(rgb, p[94]);
-      let halationMask = filmHighlightMask(rgb, p[87]);
-      let bloom = rgb * bloomMask * select(0.0, 1.0, p[92] > 0.5 && p[93] > 0.0);
-      let halation = max(filmLuma(rgb), 0.0) * halationMask * select(0.0, 1.0, p[85] > 0.5);
+      let bloom = rgb * bloomMask * bloomMask * select(0.0, 1.0, p[92] > 0.5 && p[93] > 0.0);
+      let halation = halationEdgeSource(pixel, p[87]) * select(0.0, 1.0, p[85] > 0.5);
       return vec4f(bloom, halation);
     }
     fn sampleSpatial(uv: vec2f) -> vec4f {
@@ -2870,8 +2886,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         spatial = sampleSpatial((vec2f(coordinate) + vec2f(0.5)) / dimensions);
       }
       if (p[85] > 0.5) {
-        let qualified = rgb * filmHighlightMask(rgb, p[87]);
-        let haloY = max(spatial.a - max(filmLuma(qualified), 0.0) * 0.35, 0.0);
+        let edgeSource = halationEdgeSource(coordinate, p[87]);
+        let haloY = max(spatial.a - edgeSource * 0.15, 0.0);
         let angle = radians(12.0 + 45.0 * p[89]);
         let warm = vec3f(1.0, 0.34 + 0.18 * sin(angle), 0.07 + 0.10 * max(cos(angle), 0.0));
         let warmY = lumaSrgb(warm);
@@ -2881,7 +2897,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         rgb += haloY * tint * (0.28 * p[86] * p[79]);
       }
       if (p[92] > 0.5 && p[93] > 0.0) {
-        let qualified = rgb * filmHighlightMask(rgb, p[94]);
+        let bloomMask = filmHighlightMask(rgb, p[94]);
+        let qualified = rgb * bloomMask * bloomMask;
         let amount = p[93] * p[79];
         let additive = spatial.rgb * (0.22 * amount);
         let diffusion = (spatial.rgb - qualified) * ((1.0 - p[96]) * 0.35 * amount);
@@ -2896,7 +2913,13 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       }
       if (p[108] < 1.0) {
         let resolutionLoss = (1.0 - p[108]) * p[79];
-        rgb += (filmPhysicalBlur(coordinate, 0.04 + 0.08 * resolutionLoss, 32) - rgb) * resolutionLoss * 0.7;
+        let resolutionSource = sampleFilm(coordinate);
+        let resolutionBlur = filmPhysicalBlur(coordinate, 0.04 + 0.08 * resolutionLoss, 32);
+        let fineDetail = resolutionSource - resolutionBlur;
+        let relativeDetail = max(abs(fineDetail.r), max(abs(fineDetail.g), abs(fineDetail.b)))
+          / (max(abs(resolutionSource.r), max(abs(resolutionSource.g), abs(resolutionSource.b))) + 0.02);
+        let edgeProtection = smoothRange(0.025, 0.20, relativeDetail);
+        rgb -= fineDetail * resolutionLoss * 0.85 * (1.0 - edgeProtection);
       }
       rgb = applyVignette(rgb, coordinate);
       if (p[100] > 0.5 && p[101] > 0.0) {

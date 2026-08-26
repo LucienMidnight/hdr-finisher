@@ -2,7 +2,7 @@
 
 ## Status and handoff
 
-- **Status:** Sprints A and B complete and validated.
+- **Status:** Sprints A, B, and C complete and validated.
 - **Branch at planning time:** `feature/denoising`
 - **Physical grain implementation:** `367f350 feat: add physically scaled film grain`
 - **Imported red-hot-pixel investigation note:** `9c173a1 docs: note imported red hot pixel investigation`
@@ -18,7 +18,10 @@ This document records the agreed direction for a later implementation thread. Th
 - **A6:** Completed in `fe023e3`. Film Response is explicitly defined in each branch's scene-linear working RGB, while halation tint is authored once in canonical linear sRGB and converted to ACEScg for HDR in both CPU/export and WebGPU preview.
 - **Sprint B:** Completed on the working branch. Film Response now uses smooth monotonic toe and shoulder knees; adds bounded, exposure-dependent Red, Green, and Blue Response; adds smooth highlight and shadow desaturation; protects saturated colors and HDR peaks; and retains Color Density's subtractive luminance behavior rather than duplicating ordinary saturation. CPU/export and WebGPU use the same equations and updated descriptive presets include the new controls.
 - **Tonal Character decision:** No additional macro was added. The existing Tone Contrast plus explicit Print Contrast, Toe, Shoulder, Density, channel-response, and desaturation controls cover the intended jobs without introducing a second ambiguous global contrast control.
-- **Next stage:** Sprint C, spatial character.
+- **Sprint C:** Completed on the working branch. Halation now extracts relative bright-side exposed boundaries before its physically scaled scatter, preventing uniform highlight interiors from becoming a generic warm glow. Amount, Film Format-aware Physical Extent, and tint remain independent controls with clearer units. Bloom uses a squared soft-knee highlight qualification while retaining an explicitly output-relative Optical Spread and independent core diffusion. Film Resolution now attenuates low-contrast fine detail with strong-edge protection instead of blending toward an ordinary blur. CPU/export and WebGPU share the new equations and zero-radius spatial stages are inactive.
+- **Sprint C grain decision:** The existing physically scaled, deterministic grain and its independent shadow, midtone, and highlight responses already satisfy the current reference behavior. No speculative tonal change was made without contrary reference-test evidence.
+- **Sprint C validation:** 237 focused adjustment/frontend-contract tests passed; the full bundled backend suite passed with 734 tests and 1 skip; all 11 Electron shell tests passed; and real WebGPU rendering/interaction passed on `P2150622.ORF` at a 1024-pixel long edge without new cached-interaction allocations.
+- **Next stage:** Sprint D, presets and reference matching.
 
 ## Outcome
 
@@ -151,11 +154,11 @@ The implementation may use a canonical scene-linear RGB or XYZ representation, b
 
 ### Sprint C — Spatial character
 
-- Refine halation extraction so it follows strong exposed boundaries rather than producing a generic warm glow.
-- Separate halation amount, physical extent, and tint.
-- Refine bloom threshold and spread as an optical finishing effect.
-- Make Film Resolution reduce digital microcontrast without reading as an ordinary blur.
-- Preserve the physically scaled grain model and refine its tonal interaction only where reference testing demonstrates a need.
+- [x] Refine halation extraction so it follows strong exposed boundaries rather than producing a generic warm glow.
+- [x] Separate halation amount, physical extent, and tint.
+- [x] Refine bloom threshold and spread as an optical finishing effect.
+- [x] Make Film Resolution reduce digital microcontrast without reading as an ordinary blur.
+- [x] Preserve the physically scaled grain model and refine its tonal interaction only where reference testing demonstrates a need.
 
 ### Sprint D — Presets and reference matching
 

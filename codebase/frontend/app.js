@@ -9336,7 +9336,8 @@ function formatControlValue(path, value) {
   if (path.endsWith("_purity") || path.endsWith(".saturation") || path.endsWith(".vibrance")) return `${numeric > 0 ? "+" : ""}${Math.round(path.endsWith("_purity") ? numeric : numeric * 100)}%`;
   if (path.endsWith(".exposure")) return `${numeric.toFixed(2)} EV`;
   if (path.endsWith("_nits")) return `${Math.round(numeric)} nit`;
-  if (path.includes("film_look") && path.endsWith("_radius")) return `${numeric.toFixed(2)}% diag`;
+  if (path.endsWith("film_look.halation_radius")) return `${numeric.toFixed(2)}% 35mm gate`;
+  if (path.endsWith("film_look.bloom_radius")) return `${numeric.toFixed(2)}% output diag`;
   if (path.includes("film_look")) {
     const signed = /(contrast|toe|shoulder|density|microcontrast|hue_offset)$/.test(path);
     return `${signed && numeric > 0 ? "+" : ""}${Math.round(numeric)}%`;

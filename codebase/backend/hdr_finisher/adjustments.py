@@ -920,9 +920,11 @@ def _apply_film_look(
             "shadow_desaturation",
         )
     )
-    halation_active = look.halation_enabled and look.halation_amount > 0.0
+    halation_active = (
+        look.halation_enabled and look.halation_amount > 0.0 and look.halation_radius > 0.0
+    )
     halation_map_active = look.halation_enabled and look.halation_view_map
-    bloom_active = look.bloom_enabled and look.bloom_amount > 0.0
+    bloom_active = look.bloom_enabled and look.bloom_amount > 0.0 and look.bloom_radius > 0.0
     structure_active = look.image_structure_enabled and (
         look.image_softness != 0.0 or look.microcontrast != 0.0
     )
@@ -1281,6 +1283,34 @@ def _highlight_mask(image: np.ndarray, kind: PreviewKind, sensitivity: float) ->
     return _smoothstep(float(threshold), float(threshold + 0.16), signal).astype(np.float32)
 
 
+def _halation_edge_source(image: np.ndarray, kind: PreviewKind, sensitivity: float) -> np.ndarray:
+    """Extract bright-side exposed boundaries instead of whole highlight areas.
+
+    Real anti-halation failure is driven most visibly where a strongly exposed
+    region meets a darker neighbour.  A relative, one-pixel cross gradient
+    keeps broad uniform highlights from becoming a generic warm bloom and is
+    resolution-independent before the physically scaled scatter blur.
+    """
+    qualified = np.maximum(_film_luma(image, kind), 0.0) * _highlight_mask(image, kind, sensitivity)
+    padded = np.pad(qualified, ((1, 1), (1, 1)), mode="edge")
+    neighbour_mean = (
+        padded[1:-1, :-2]
+        + padded[1:-1, 2:]
+        + padded[:-2, 1:-1]
+        + padded[2:, 1:-1]
+    ) * np.float32(0.25)
+    bright_edge = np.maximum(qualified - neighbour_mean, 0.0)
+    relative_edge = bright_edge / (qualified + np.float32(0.02))
+    edge_gate = _smoothstep(0.015, 0.18, relative_edge)
+    return (qualified * edge_gate).astype(np.float32)
+
+
+def _bloom_source(image: np.ndarray, kind: PreviewKind, sensitivity: float) -> np.ndarray:
+    """Return a soft-knee optical bloom source with subdued threshold chatter."""
+    mask = _highlight_mask(image, kind, sensitivity)
+    return (np.maximum(image, 0.0) * (mask * mask)[..., None]).astype(np.float32)
+
+
 def _halation_tint(hue_offset: float, saturation: float, kind: PreviewKind) -> np.ndarray:
     """Return one canonical linear-sRGB tint in the branch working space."""
     angle = np.deg2rad(np.float32(12.0 + 0.45 * hue_offset))
@@ -1298,15 +1328,13 @@ def _halation_tint(hue_offset: float, saturation: float, kind: PreviewKind) -> n
 def _apply_halation(
     image: np.ndarray, look: object, kind: PreviewKind, master: np.float32
 ) -> tuple[np.ndarray, np.ndarray]:
-    mask = _highlight_mask(image, kind, look.halation_sensitivity)
-    source = np.maximum(image, 0.0) * mask[..., None]
+    source = _halation_edge_source(image, kind, look.halation_sensitivity)
     radius = _film_radius_pixels(image, look, look.halation_radius)
     blurred = _diffusion_blur(source, max(1, radius))
-    edge_scatter = np.maximum(blurred - source * np.float32(0.35), 0.0)
+    edge_scatter = np.maximum(blurred - source * np.float32(0.15), 0.0)
     tint = _halation_tint(look.halation_hue_offset, look.halation_saturation, kind)
-    halo_luma = _film_luma(edge_scatter, kind)
-    halo = halo_luma[..., None] * tint
-    map_signal = _film_encode_luma(np.maximum(halo_luma, 0.0), kind)
+    halo = edge_scatter[..., None] * tint
+    map_signal = _film_encode_luma(np.maximum(edge_scatter, 0.0), kind)
     halation_map = np.repeat(np.clip(map_signal, 0.0, 1.0)[..., None], 3, axis=-1).astype(np.float32)
     amount = np.float32(0.28 * look.halation_amount / 100.0) * master
     return (image + halo * amount).astype(np.float32), halation_map
@@ -1321,10 +1349,8 @@ def _apply_bloom(
     spatial_source: np.ndarray | None = None,
 ) -> np.ndarray:
     blur_input = image if spatial_source is None else spatial_source
-    mask = _highlight_mask(blur_input, kind, look.bloom_sensitivity)
-    source = np.maximum(blur_input, 0.0) * mask[..., None]
-    current_mask = _highlight_mask(image, kind, look.bloom_sensitivity)
-    current_qualified = np.maximum(image, 0.0) * current_mask[..., None]
+    source = _bloom_source(blur_input, kind, look.bloom_sensitivity)
+    current_qualified = _bloom_source(image, kind, look.bloom_sensitivity)
     # Bloom is an optical finish measured against the rendered output, not the
     # film gate. Changing Film Format must therefore leave its spread unchanged.
     radius = max(1, _radius_pixels(image, look.bloom_radius))
@@ -1373,7 +1399,16 @@ def _apply_film_resolution(
         return image
     radius = max(1, _film_radius_pixels(image, look, 0.04 + 0.08 * float(loss), maximum=32))
     source = image if spatial_source is None else spatial_source
-    return (image + (_film_detail_blur(source, radius) - image) * loss * np.float32(0.7)).astype(np.float32)
+    low_pass = _film_detail_blur(source, radius)
+    fine_detail = source - low_pass
+    relative_detail = np.max(np.abs(fine_detail), axis=-1) / (
+        np.max(np.abs(source), axis=-1) + np.float32(0.02)
+    )
+    edge_protection = _smoothstep(0.025, 0.20, relative_detail)
+    attenuation = loss * np.float32(0.85) * (np.float32(1.0) - edge_protection)
+    # Attenuate low-contrast high frequencies while retaining decisive edges;
+    # this reads as finite film MTF rather than a conventional Gaussian blur.
+    return (image - fine_detail * attenuation[..., None]).astype(np.float32)
 
 
 def _apply_density_grain(

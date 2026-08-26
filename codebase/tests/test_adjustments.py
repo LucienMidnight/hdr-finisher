@@ -390,8 +390,8 @@ def test_film_response_look_strength_is_a_single_linear_blend(kind: PreviewKind)
 
 @pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
 def test_film_resolution_remains_active_when_grain_is_disabled(kind: PreviewKind) -> None:
-    image = np.zeros((41, 41, 3), dtype=np.float32)
-    image[20, 20] = 1.0
+    checker = (np.indices((41, 41)).sum(axis=0) % 2).astype(np.float32)
+    image = np.repeat((0.18 + checker * 0.012)[..., None], 3, axis=-1)
     state = AdjustmentState()
     look = getattr(state, kind.value).film_look
     look.film_resolution = 0
@@ -403,7 +403,9 @@ def test_film_resolution_remains_active_when_grain_is_disabled(kind: PreviewKind
     grain_disabled = apply_adjustments(image, state, kind)
 
     np.testing.assert_array_equal(grain_disabled, grain_enabled)
-    assert float(grain_disabled[20, 20, 0]) < float(apply_adjustments(image, AdjustmentState(), kind)[20, 20, 0])
+    neutral = apply_adjustments(image, AdjustmentState(), kind)
+    assert not np.array_equal(grain_disabled, neutral)
+    assert float(np.std(grain_disabled)) < float(np.std(neutral))
 
 
 @pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
@@ -443,6 +445,77 @@ def test_halation_and_bloom_are_spatial_and_grain_remains_last() -> None:
 
     assert float(np.max(output[18:23, 18:23])) > 0.0
     assert float(np.std(output[10:31, 10:31])) > 0.0
+
+
+@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
+def test_halation_extracts_exposed_boundaries_not_uniform_highlights(kind: PreviewKind) -> None:
+    image = np.zeros((81, 81, 3), dtype=np.float32)
+    image[20:61, 20:61] = 4.0 if kind == PreviewKind.HDR else 1.0
+
+    source = adjustments_module._halation_edge_source(image, kind, 100)
+
+    assert float(source[20, 40]) > 0.0
+    assert float(source[40, 40]) == pytest.approx(0.0, abs=1e-7)
+    uniform = np.full_like(image, image[20, 40, 0])
+    assert float(np.max(adjustments_module._halation_edge_source(uniform, kind, 100))) == pytest.approx(0.0)
+
+
+def test_halation_extent_changes_spread_without_changing_edge_qualification() -> None:
+    image = np.zeros((121, 121, 3), dtype=np.float32)
+    image[50:71, 50:71] = 8.0
+    state = AdjustmentState()
+    look = state.hdr.film_look
+    look.halation_amount = 100
+    look.halation_sensitivity = 100
+    look.halation_radius = 0.2
+    qualification_small = adjustments_module._halation_edge_source(image, PreviewKind.HDR, look.halation_sensitivity)
+    small, small_map = adjustments_module._apply_halation(image, look, PreviewKind.HDR, np.float32(1.0))
+    look.halation_radius = 2.0
+    qualification_large = adjustments_module._halation_edge_source(image, PreviewKind.HDR, look.halation_sensitivity)
+    large, large_map = adjustments_module._apply_halation(image, look, PreviewKind.HDR, np.float32(1.0))
+
+    assert float(large[60, 47, 0]) > float(small[60, 47, 0])
+    np.testing.assert_array_equal(qualification_small, qualification_large)
+    assert float(np.sum(large_map)) > float(np.sum(small_map))
+
+
+def test_bloom_sensitivity_and_spread_have_distinct_effects() -> None:
+    image = np.zeros((121, 121, 3), dtype=np.float32)
+    image[58:63, 58:63] = 0.75
+    state = AdjustmentState()
+    look = state.hdr.film_look
+    look.halation_enabled = False
+    look.bloom_amount = 100
+    look.bloom_highlight_detail = 100
+    look.bloom_radius = 0.5
+    look.bloom_sensitivity = 10
+    selective = apply_adjustments(image, state, PreviewKind.HDR)
+    look.bloom_sensitivity = 100
+    sensitive = apply_adjustments(image, state, PreviewKind.HDR)
+    assert float(np.sum(sensitive - image)) > float(np.sum(selective - image))
+
+    look.bloom_radius = 4.0
+    spread = apply_adjustments(image, state, PreviewKind.HDR)
+    assert float(spread[60, 66, 0]) > float(sensitive[60, 66, 0])
+
+
+def test_film_resolution_attenuates_microcontrast_but_protects_hard_edges() -> None:
+    checker = (np.indices((81, 81)).sum(axis=0) % 2).astype(np.float32)
+    texture = np.repeat((0.5 + checker * 0.02)[..., None], 3, axis=-1)
+    edge = np.zeros((81, 81, 3), dtype=np.float32)
+    edge[:, :41] = 1.0
+    look = AdjustmentState().hdr.film_look
+    look.film_resolution = 0
+
+    texture_result = adjustments_module._apply_film_resolution(
+        texture, look, np.float32(1.0)
+    )
+    edge_result = adjustments_module._apply_film_resolution(
+        edge, look, np.float32(1.0)
+    )
+
+    assert float(np.std(texture_result)) < float(np.std(texture)) * 0.7
+    assert float(edge_result[40, 40, 0] - edge_result[40, 41, 0]) > 0.95
 
 
 def test_bloom_highlight_detail_controls_real_core_diffusion() -> None:
