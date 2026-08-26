@@ -815,7 +815,8 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     assert "grainValueNoise" in (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
     shader = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
     assert "halationEdgeSource" in shader
-    assert "center * smoothRange(0.015, 0.18, relativeEdge)" in shader
+    assert "center * smoothRange(0.004, 0.12, relativeEdge)" in shader
+    assert "let edgeRadius = clamp(halationRadius / 4, 1, 16)" in shader
     assert "rgb * bloomMask * bloomMask" in shader
     assert "let edgeProtection = smoothRange(0.025, 0.20, relativeDetail)" in shader
     assert "Physical Extent" in html

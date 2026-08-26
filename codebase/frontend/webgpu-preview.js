@@ -2819,16 +2819,16 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       let rgb = sampleFilm(coordinate);
       return max(filmLuma(rgb), 0.0) * filmHighlightMask(rgb, sensitivity);
     }
-    fn halationEdgeSource(coordinate: vec2i, sensitivity: f32) -> f32 {
+    fn halationEdgeSource(coordinate: vec2i, sensitivity: f32, edgeRadius: i32) -> f32 {
       let center = qualifiedLuma(coordinate, sensitivity);
       let neighbourMean = (
-        qualifiedLuma(coordinate + vec2i(1, 0), sensitivity)
-        + qualifiedLuma(coordinate + vec2i(-1, 0), sensitivity)
-        + qualifiedLuma(coordinate + vec2i(0, 1), sensitivity)
-        + qualifiedLuma(coordinate + vec2i(0, -1), sensitivity)
+        qualifiedLuma(coordinate + vec2i(edgeRadius, 0), sensitivity)
+        + qualifiedLuma(coordinate + vec2i(-edgeRadius, 0), sensitivity)
+        + qualifiedLuma(coordinate + vec2i(0, edgeRadius), sensitivity)
+        + qualifiedLuma(coordinate + vec2i(0, -edgeRadius), sensitivity)
       ) * 0.25;
       let relativeEdge = max(center - neighbourMean, 0.0) / (center + 0.02);
-      return center * smoothRange(0.015, 0.18, relativeEdge);
+      return center * smoothRange(0.004, 0.12, relativeEdge);
     }
 
     fn packedQualifiedSample(coordinate: vec2f) -> vec4f {
@@ -2836,7 +2836,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       let rgb = sampleFilm(pixel);
       let bloomMask = filmHighlightMask(rgb, p[94]);
       let bloom = rgb * bloomMask * bloomMask * select(0.0, 1.0, p[92] > 0.5 && p[93] > 0.0);
-      let halation = halationEdgeSource(pixel, p[87]) * select(0.0, 1.0, p[85] > 0.5);
+      let halationRadius = filmPhysicalOffset(p[88], 256);
+      let edgeRadius = clamp(halationRadius / 4, 1, 16);
+      let halation = halationEdgeSource(pixel, p[87], edgeRadius) * select(0.0, 1.0, p[85] > 0.5);
       return vec4f(bloom, halation);
     }
     fn sampleSpatial(uv: vec2f) -> vec4f {
@@ -2886,7 +2888,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         spatial = sampleSpatial((vec2f(coordinate) + vec2f(0.5)) / dimensions);
       }
       if (p[85] > 0.5) {
-        let edgeSource = halationEdgeSource(coordinate, p[87]);
+        let halationRadius = filmPhysicalOffset(p[88], 256);
+        let edgeRadius = clamp(halationRadius / 4, 1, 16);
+        let edgeSource = halationEdgeSource(coordinate, p[87], edgeRadius);
         let haloY = max(spatial.a - edgeSource * 0.15, 0.0);
         let angle = radians(12.0 + 45.0 * p[89]);
         let warm = vec3f(1.0, 0.34 + 0.18 * sin(angle), 0.07 + 0.10 * max(cos(angle), 0.0));
@@ -2894,7 +2898,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         let canonicalTintSrgb = mix(vec3f(warmY), warm, clamp(p[90], 0.0, 1.0));
         let tint = select(canonicalTintSrgb, srgbToAcescg(canonicalTintSrgb), p[0] > 0.5);
         if (p[91] > 0.5) { return vec3f(clamp(filmSignalFromLuma(haloY), 0.0, 1.0)); }
-        rgb += haloY * tint * (0.28 * p[86] * p[79]);
+        rgb += haloY * tint * (0.42 * p[86] * p[79]);
       }
       if (p[92] > 0.5 && p[93] > 0.0) {
         let bloomMask = filmHighlightMask(rgb, p[94]);

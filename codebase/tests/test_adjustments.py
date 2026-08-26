@@ -460,6 +460,17 @@ def test_halation_extracts_exposed_boundaries_not_uniform_highlights(kind: Previ
     assert float(np.max(adjustments_module._halation_edge_source(uniform, kind, 100))) == pytest.approx(0.0)
 
 
+def test_halation_uses_physical_edge_scale_for_smooth_high_resolution_transitions() -> None:
+    ramp = np.linspace(0.0, 1.2, 321, dtype=np.float32)
+    image = np.repeat(np.repeat(ramp[None, :, None], 41, axis=0), 3, axis=2)
+
+    pixel_edge = adjustments_module._halation_edge_source(image, PreviewKind.HDR, 75, edge_radius=1)
+    physical_edge = adjustments_module._halation_edge_source(image, PreviewKind.HDR, 75, edge_radius=8)
+
+    assert float(np.sum(physical_edge)) > float(np.sum(pixel_edge)) * 4.0
+    assert float(np.max(physical_edge[:, :80])) == pytest.approx(0.0, abs=1e-7)
+
+
 def test_halation_extent_changes_spread_without_changing_edge_qualification() -> None:
     image = np.zeros((121, 121, 3), dtype=np.float32)
     image[50:71, 50:71] = 8.0

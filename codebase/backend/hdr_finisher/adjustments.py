@@ -1283,25 +1283,29 @@ def _highlight_mask(image: np.ndarray, kind: PreviewKind, sensitivity: float) ->
     return _smoothstep(float(threshold), float(threshold + 0.16), signal).astype(np.float32)
 
 
-def _halation_edge_source(image: np.ndarray, kind: PreviewKind, sensitivity: float) -> np.ndarray:
+def _halation_edge_source(
+    image: np.ndarray, kind: PreviewKind, sensitivity: float, edge_radius: int = 1
+) -> np.ndarray:
     """Extract bright-side exposed boundaries instead of whole highlight areas.
 
     Real anti-halation failure is driven most visibly where a strongly exposed
     region meets a darker neighbour.  A relative, one-pixel cross gradient
     keeps broad uniform highlights from becoming a generic warm bloom and is
-    resolution-independent before the physically scaled scatter blur.
+    sampled at a fraction of the authored physical extent, so smooth 4K edges
+    qualify as reliably as the same edge in a smaller preview.
     """
     qualified = np.maximum(_film_luma(image, kind), 0.0) * _highlight_mask(image, kind, sensitivity)
-    padded = np.pad(qualified, ((1, 1), (1, 1)), mode="edge")
+    edge_radius = max(1, min(int(edge_radius), 16))
+    padded = np.pad(qualified, ((edge_radius, edge_radius), (edge_radius, edge_radius)), mode="edge")
     neighbour_mean = (
-        padded[1:-1, :-2]
-        + padded[1:-1, 2:]
-        + padded[:-2, 1:-1]
-        + padded[2:, 1:-1]
+        padded[edge_radius:-edge_radius, :-2 * edge_radius]
+        + padded[edge_radius:-edge_radius, 2 * edge_radius:]
+        + padded[:-2 * edge_radius, edge_radius:-edge_radius]
+        + padded[2 * edge_radius:, edge_radius:-edge_radius]
     ) * np.float32(0.25)
     bright_edge = np.maximum(qualified - neighbour_mean, 0.0)
     relative_edge = bright_edge / (qualified + np.float32(0.02))
-    edge_gate = _smoothstep(0.015, 0.18, relative_edge)
+    edge_gate = _smoothstep(0.004, 0.12, relative_edge)
     return (qualified * edge_gate).astype(np.float32)
 
 
@@ -1328,15 +1332,17 @@ def _halation_tint(hue_offset: float, saturation: float, kind: PreviewKind) -> n
 def _apply_halation(
     image: np.ndarray, look: object, kind: PreviewKind, master: np.float32
 ) -> tuple[np.ndarray, np.ndarray]:
-    source = _halation_edge_source(image, kind, look.halation_sensitivity)
     radius = _film_radius_pixels(image, look, look.halation_radius)
+    source = _halation_edge_source(
+        image, kind, look.halation_sensitivity, edge_radius=max(1, radius // 4)
+    )
     blurred = _diffusion_blur(source, max(1, radius))
     edge_scatter = np.maximum(blurred - source * np.float32(0.15), 0.0)
     tint = _halation_tint(look.halation_hue_offset, look.halation_saturation, kind)
     halo = edge_scatter[..., None] * tint
     map_signal = _film_encode_luma(np.maximum(edge_scatter, 0.0), kind)
     halation_map = np.repeat(np.clip(map_signal, 0.0, 1.0)[..., None], 3, axis=-1).astype(np.float32)
-    amount = np.float32(0.28 * look.halation_amount / 100.0) * master
+    amount = np.float32(0.42 * look.halation_amount / 100.0) * master
     return (image + halo * amount).astype(np.float32), halation_map
 
 
