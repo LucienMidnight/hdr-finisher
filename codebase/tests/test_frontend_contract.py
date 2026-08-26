@@ -853,6 +853,8 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     assert "let channelResponse = vec3f(p[143], p[144], p[145]) * p[79]" in shader
     assert "let highlightGuard = 1.0 - 0.65 * smoothRange(0.88, 1.12, responseSignal)" in shader
     assert "shadowWeight * p[147] + highlightWeight * p[146]" in shader
+    assert "smoothRange(0.50, 0.82, responseSignal)" in shader
+    assert "smoothRange(0.62, 1.0, responseSignal)" in shader
     assert 'data-film-grain-custom hidden' in html
     assert 'id="film-look-match-hdr"' in html
     assert "state.adjustments.sdr.film_look = JSON.parse(JSON.stringify(state.adjustments.hdr.film_look))" in javascript
@@ -928,9 +930,11 @@ def test_electron_preview_correctness_contract() -> None:
     assert 'renderGpuDraft(lane, { longEdge: targetLongEdge, tier: "refinement" })' in javascript
     assert 'renderPreviewForLane(lane, true, targetLongEdge, { showProgress: false })' in javascript
     assert "function closeRotateMode(commit)" in javascript
-    assert "function useHdrSafeGeometryDraft()" in javascript
-    assert 'transient_adjustments: true' in javascript
-    assert 'blob.type.startsWith("image/avif")' in javascript
+    assert "function requestRotateGeometryDraft(signature)" not in javascript
+    assert "if (state.rotateDraftGeometry) closeRotateMode(false);" in javascript
+    assert 'els.rotateApply?.addEventListener("click", () => closeRotateMode(true))' in javascript
+    close_rotate = javascript[javascript.index("function closeRotateMode(commit)"):javascript.index("function renderCropOptions()")]
+    assert 'invalidatePreview("hdr")' in close_rotate and 'invalidatePreview("sdr")' in close_rotate
     assert "state.globalEditDirty && state.acceptedPresentation?.geometrySignature !== geometrySignature()" in javascript
     assert "if (error?.recoverable)" in javascript
     clear_straighten = javascript[

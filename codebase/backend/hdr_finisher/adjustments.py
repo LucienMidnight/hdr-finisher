@@ -33,6 +33,10 @@ FILM_GRAIN_GATE_DIMENSIONS_MM: dict[str, tuple[float, float]] = {
     "super8": (5.79, 4.01),
 }
 FILM_SPATIAL_REFERENCE_DIAGONAL_MM = float(np.hypot(36.0, 24.0))
+HDR_FILM_HIGHLIGHT_DESATURATION_START = np.float32(0.50)
+HDR_FILM_HIGHLIGHT_DESATURATION_END = np.float32(0.82)
+SDR_FILM_HIGHLIGHT_DESATURATION_START = np.float32(0.62)
+SDR_FILM_HIGHLIGHT_DESATURATION_END = np.float32(1.0)
 
 
 def apply_adjustments(
@@ -1059,6 +1063,28 @@ def _film_decode_luma(signal: np.ndarray, kind: PreviewKind) -> np.ndarray:
     return _srgb_decode(np.clip(signal, 0.0, 1.0))
 
 
+def _film_highlight_desaturation_weight(response_signal: np.ndarray, kind: PreviewKind) -> np.ndarray:
+    """Return a display-relevant highlight mask for the current lane.
+
+    The HDR curve places reference white at 0.5. The former shared 0.62..1.0
+    range did not begin until roughly 600 nits and was only about five percent
+    active at 1,000 nits, leaving most of the adjustment beyond common display
+    headroom. HDR now rolls in above reference white and becomes strong across
+    the visible 400..2,000-nit range. SDR retains its existing response.
+    """
+    if kind == PreviewKind.HDR:
+        return _smoothstep(
+            float(HDR_FILM_HIGHLIGHT_DESATURATION_START),
+            float(HDR_FILM_HIGHLIGHT_DESATURATION_END),
+            response_signal,
+        )
+    return _smoothstep(
+        float(SDR_FILM_HIGHLIGHT_DESATURATION_START),
+        float(SDR_FILM_HIGHLIGHT_DESATURATION_END),
+        response_signal,
+    )
+
+
 def _apply_film_response(image: np.ndarray, look: object, kind: PreviewKind, master: np.float32) -> np.ndarray:
     """Apply Film Response in the branch's scene-linear working RGB.
 
@@ -1152,7 +1178,7 @@ def _apply_film_response(image: np.ndarray, look: object, kind: PreviewKind, mas
         response_luma = np.maximum(_film_luma(result, kind), 0.0)
         response_signal = _film_encode_luma(response_luma, kind)
         shadow_weight = np.float32(1.0) - _smoothstep(0.08, 0.46, response_signal)
-        highlight_weight = _smoothstep(0.62, 1.0, response_signal)
+        highlight_weight = _film_highlight_desaturation_weight(response_signal, kind)
         desaturation = np.clip(
             shadow_weight * shadow_desaturation + highlight_weight * highlight_desaturation,
             0.0,

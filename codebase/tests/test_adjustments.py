@@ -341,6 +341,32 @@ def test_tonal_desaturation_targets_shadows_and_highlights_smoothly() -> None:
     assert np.all(np.isfinite(output))
 
 
+def test_hdr_highlight_desaturation_reaches_display_visible_highlights() -> None:
+    # Normalize the test hue so each scale value is its exact ACEScg luma.
+    hue = np.array([1.0, 0.45, 0.12], dtype=np.float32)
+    hue /= np.dot(hue, np.array([0.2722287, 0.6740818, 0.0536895], dtype=np.float32))
+    nits = np.array([100.0, 203.0, 400.0, 1000.0, 2000.0, 4000.0], dtype=np.float32)
+    levels = nits / np.float32(203.0) * np.float32(0.18)
+    image = levels.reshape(1, -1, 1) * hue
+    look = FilmLookAdjustments(highlight_desaturation=100)
+
+    output = _apply_film_response(image, look, PreviewKind.HDR, np.float32(1.0))
+    weights = np.array([0.2722287, 0.6740818, 0.0536895], dtype=np.float32)
+    output_luma = np.einsum("...c,c->...", output, weights)
+    input_chroma = (np.max(image, axis=-1) - np.min(image, axis=-1)) / levels.reshape(1, -1)
+    output_chroma = (np.max(output, axis=-1) - np.min(output, axis=-1)) / output_luma
+    retained_chroma = output_chroma / input_chroma
+
+    assert float(retained_chroma[0, 0]) > 0.99
+    assert float(retained_chroma[0, 1]) > 0.99
+    assert float(retained_chroma[0, 2]) < 0.90
+    assert float(retained_chroma[0, 3]) < 0.50
+    assert float(retained_chroma[0, 4]) < 0.20
+    assert float(retained_chroma[0, 5]) < 0.01
+    assert np.all(np.diff(retained_chroma[0]) <= 1e-6)
+    assert np.all(np.isfinite(output))
+
+
 def test_color_density_is_not_a_conventional_luma_preserving_saturation() -> None:
     image = np.array([[[0.8, 0.2, 0.05]]], dtype=np.float32)
     look = FilmLookAdjustments(color_density=100)

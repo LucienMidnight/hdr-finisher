@@ -4,6 +4,45 @@ const path = require("node:path");
 const { _electron: electron } = require("playwright");
 const electronExecutable = require("electron");
 
+async function presentedPreviewSnapshot(page) {
+  await page.waitForFunction(() => [els.chromeProofImage, els.previewCanvas, els.previewImage].some((element) => {
+    const rect = element.getBoundingClientRect();
+    return getComputedStyle(element).display !== "none" && rect.width > 2 && rect.height > 2;
+  }), null, { timeout: 30000 });
+  return page.evaluate(() => {
+    const element = [els.chromeProofImage, els.previewCanvas, els.previewImage].find((candidate) => {
+      const rect = candidate.getBoundingClientRect();
+      return getComputedStyle(candidate).display !== "none" && rect.width > 2 && rect.height > 2;
+    });
+    const rect = element.getBoundingClientRect();
+    const sourceWidth = element instanceof HTMLCanvasElement ? element.width : element.naturalWidth;
+    const sourceHeight = element instanceof HTMLCanvasElement ? element.height : element.naturalHeight;
+    const canvas = document.createElement("canvas");
+    canvas.width = sourceWidth;
+    canvas.height = sourceHeight;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    context.drawImage(element, 0, 0, sourceWidth, sourceHeight);
+    const sample = (x, y) => Array.from(context.getImageData(
+      Math.round((sourceWidth - 1) * x), Math.round((sourceHeight - 1) * y), 1, 1,
+    ).data.slice(0, 3));
+    return {
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+      corners: [sample(.08, .08), sample(.92, .08), sample(.92, .92), sample(.08, .92)],
+    };
+  });
+}
+
+function assertPresentedLike(actual, expected, label, colorTolerance = 35) {
+  const dimensionTolerance = Math.max(3, Math.max(expected.width, expected.height) * .02);
+  assert.ok(Math.abs(actual.width - expected.width) <= dimensionTolerance, `${label} width changed: ${JSON.stringify({ actual, expected })}`);
+  assert.ok(Math.abs(actual.height - expected.height) <= dimensionTolerance, `${label} height changed: ${JSON.stringify({ actual, expected })}`);
+  actual.corners.forEach((color, index) => {
+    const distance = Math.max(...color.map((channel, channelIndex) => Math.abs(channel - expected.corners[index][channelIndex])));
+    assert.ok(distance <= colorTolerance, `${label} corner ${index} changed orientation/color: ${JSON.stringify({ actual, expected, distance })}`);
+  });
+}
+
 async function main() {
   const checkpoint = (label) => process.stdout.write(`[electron-smoke] ${label}\n`);
   const desktopDirectory = path.resolve(__dirname, "..");
@@ -172,13 +211,17 @@ async function main() {
     });
 
     await window.locator("#file-input").setInputFiles(sourcePath);
+    await window.evaluate(({ base64, name }) => {
+      const binary = atob(base64);
+      const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      window.__electronSmokeSourceFile = new File([bytes], name, { type: "image/png" });
+    }, { base64: fs.readFileSync(sourcePath).toString("base64"), name: path.basename(sourcePath) });
     await window.waitForFunction(() => document.querySelector("#session-name")?.textContent.includes("sdr_gradient.png"));
     checkpoint("uploaded source ready");
     const initialSessionId = await window.evaluate(() => state.session.session_id);
     await window.evaluate(() => {
-      const file = document.querySelector("#file-input").files[0];
       const transfer = new DataTransfer();
-      transfer.items.add(file);
+      transfer.items.add(window.__electronSmokeSourceFile);
       document.querySelector(".rail-title-row").dispatchEvent(new DragEvent("drop", {
         bubbles: true,
         cancelable: true,
@@ -187,8 +230,178 @@ async function main() {
     });
     await window.waitForFunction((previousId) => state.session?.session_id !== previousId, initialSessionId);
     checkpoint("filesystem drop ready");
-    await window.evaluate(() => ejectCurrentSession());
-    await window.waitForFunction(() => !state.session);
+
+    // Geometry assertions need a clean edit-command queue. The preceding
+    // upload/drop coverage intentionally replaces an active session and is a
+    // separate desktop-import contract.
+    await window.reload({ waitUntil: "domcontentloaded" });
+    await window.waitForSelector("#empty-import-button", { state: "visible", timeout: 30000 });
+    await window.locator("#file-input").setInputFiles(sourcePath);
+    await window.waitForFunction(() => document.querySelector("#session-name")?.textContent.includes("sdr_gradient.png"));
+    const beforeRotation = await presentedPreviewSnapshot(window);
+    checkpoint("rotation baseline captured");
+    const rotationBaselineState = await window.evaluate(() => ({
+      src: activePreviewElement() instanceof HTMLImageElement ? activePreviewElement().currentSrc : "canvas",
+      generation: { ...state.previewGeneration },
+    }));
+    await window.evaluate(() => {
+      els.rotateToolToggle.click();
+      els.rotateRight.click();
+    });
+    await window.waitForTimeout(250);
+    const duringRotation = await window.evaluate(() => {
+      const preview = activePreviewElement();
+      const rect = preview.getBoundingClientRect();
+      return {
+        rotation: state.adjustments.shared.geometry.rotation,
+        transform: preview.style.getPropertyValue("--interactive-rotate-angle"),
+        src: preview instanceof HTMLImageElement ? preview.currentSrc : "canvas",
+        generation: { ...state.previewGeneration },
+        width: rect.width,
+        height: rect.height,
+        draftOpen: Boolean(state.rotateDraftGeometry),
+      };
+    });
+    checkpoint("rotation draft captured");
+    assert.ok(
+      Math.abs((duringRotation.width / duringRotation.height) - (beforeRotation.height / beforeRotation.width)) < .02,
+      `Interactive clockwise rotation did not swap the presented aspect: ${JSON.stringify({ beforeRotation, duringRotation })}`,
+    );
+    assert.equal(duringRotation.rotation, 90);
+    assert.equal(duringRotation.transform, "90deg");
+    assert.equal(duringRotation.src, rotationBaselineState.src, "Rotate must not replace the preview while its draft is open");
+    assert.deepEqual(duringRotation.generation, rotationBaselineState.generation, "Rotate must not schedule a settled preview before Apply");
+    assert.equal(duringRotation.draftOpen, true);
+    const rotateToCropCancel = await window.evaluate(() => {
+      els.cropToolToggle.click();
+      return {
+        rotation: state.adjustments.shared.geometry.rotation,
+        transform: activePreviewElement().style.getPropertyValue("--interactive-rotate-angle"),
+        rotateDraftOpen: Boolean(state.rotateDraftGeometry),
+        cropMode: state.cropMode,
+        geometryTool: state.geometryTool,
+      };
+    });
+    assert.deepEqual(rotateToCropCancel, {
+      rotation: 0,
+      transform: "",
+      rotateDraftOpen: false,
+      cropMode: true,
+      geometryTool: "crop",
+    }, "Leaving Rotate for Crop must cancel the draft");
+    const cancelledRotation = await presentedPreviewSnapshot(window);
+    assertPresentedLike(cancelledRotation, beforeRotation, "Cancelled Rotate -> Crop frame");
+    checkpoint("rotate to crop cancellation ready");
+
+    await window.evaluate(() => {
+      closeCropMode(false);
+      els.rotateToolToggle.click();
+      els.rotateRight.click();
+      els.rotateApply.click();
+    });
+    const appliedRotation = await window.evaluate(() => ({
+      rotation: state.adjustments.shared.geometry.rotation,
+      transform: activePreviewElement().style.getPropertyValue("--interactive-rotate-angle"),
+      draftOpen: Boolean(state.rotateDraftGeometry),
+      handoff: state.geometryTransformHandoffSignature,
+    }));
+    assert.equal(appliedRotation.rotation, 90);
+    assert.equal(appliedRotation.transform, "90deg", "Apply must retain the visual draft until the committed frame presents");
+    assert.equal(appliedRotation.draftOpen, false);
+    assert.ok(appliedRotation.handoff, "Apply must track the committed preview handoff");
+    await window.waitForFunction(() => state.geometryTransformHandoffSignature === null, null, { timeout: 30000 });
+    const settledRotationPixels = await presentedPreviewSnapshot(window);
+    checkpoint("rotation settled captured");
+    const expectedClockwise = {
+      width: settledRotationPixels.width,
+      height: settledRotationPixels.height,
+      corners: [beforeRotation.corners[3], beforeRotation.corners[0], beforeRotation.corners[1], beforeRotation.corners[2]],
+    };
+    assertPresentedLike(settledRotationPixels, expectedClockwise, "Applied clockwise rotation", 100);
+    checkpoint("rotation apply ready");
+
+    // Use a clean renderer/session for the slider case. The first case ends
+    // deliberately inside Crop so its settled pixels can be observed without
+    // a later UI action becoming part of the handoff assertion.
+    await window.reload({ waitUntil: "domcontentloaded" });
+    await window.waitForSelector("#empty-import-button", { state: "visible", timeout: 30000 });
+    await window.locator("#file-input").setInputFiles(sourcePath);
+    await window.waitForFunction(() => document.querySelector("#session-name")?.textContent.includes("sdr_gradient.png"));
+
+    const straightenBaseline = await window.evaluate(() => ({
+      src: activePreviewElement() instanceof HTMLImageElement ? activePreviewElement().currentSrc : "canvas",
+      generation: { ...state.previewGeneration },
+    }));
+    await window.evaluate(() => {
+      els.rotateToolToggle.click();
+      beginStraightenGesture();
+      updateStraightenInteractive(11.7);
+      updateStraightenInteractive(18.4);
+    });
+    await window.waitForTimeout(250);
+    const straightenDuring = await window.evaluate(() => ({
+      angle: state.adjustments.shared.geometry.straighten_angle,
+      transform: activePreviewElement().style.getPropertyValue("--interactive-straighten-angle"),
+      src: activePreviewElement() instanceof HTMLImageElement ? activePreviewElement().currentSrc : "canvas",
+      generation: { ...state.previewGeneration },
+      gestureActive: state.straightenGestureActive,
+      draftOpen: Boolean(state.rotateDraftGeometry),
+    }));
+    checkpoint("straighten draft captured");
+    assert.equal(straightenDuring.angle, 18.4);
+    assert.equal(straightenDuring.transform, "-18.4deg");
+    assert.equal(straightenDuring.src, straightenBaseline.src, "Pausing the held slider must not replace the preview");
+    assert.deepEqual(straightenDuring.generation, straightenBaseline.generation, "The slider must not schedule a preview before Apply");
+    assert.equal(straightenDuring.gestureActive, true);
+    assert.equal(straightenDuring.draftOpen, true);
+    await window.evaluate(() => finishStraightenGesture());
+    await window.waitForTimeout(250);
+    const straightenReleased = await window.evaluate(() => ({
+      angle: state.adjustments.shared.geometry.straighten_angle,
+      transform: activePreviewElement().style.getPropertyValue("--interactive-straighten-angle"),
+      src: activePreviewElement() instanceof HTMLImageElement ? activePreviewElement().currentSrc : "canvas",
+      generation: { ...state.previewGeneration },
+      draftOpen: Boolean(state.rotateDraftGeometry),
+    }));
+    assert.deepEqual(straightenReleased, {
+      angle: 18.4,
+      transform: "-18.4deg",
+      src: straightenBaseline.src,
+      generation: straightenBaseline.generation,
+      draftOpen: true,
+    }, "Releasing the slider must leave the unchanged visual draft open");
+    const straightenToCropCancel = await window.evaluate(() => {
+      els.cropToolToggle.click();
+      return {
+        angle: state.adjustments.shared.geometry.straighten_angle,
+        transform: activePreviewElement().style.getPropertyValue("--interactive-straighten-angle"),
+        cropMode: state.cropMode,
+        draftOpen: Boolean(state.rotateDraftGeometry),
+      };
+    });
+    assert.deepEqual(straightenToCropCancel, { angle: 0, transform: "", cropMode: true, draftOpen: false });
+    await window.evaluate(() => {
+      closeCropMode(false);
+      els.rotateToolToggle.click();
+      beginStraightenGesture();
+      updateStraightenInteractive(18.4);
+      finishStraightenGesture();
+      els.rotateApply.click();
+    });
+    const straightenApplied = await window.evaluate(() => ({
+      angle: state.adjustments.shared.geometry.straighten_angle,
+      transform: activePreviewElement().style.getPropertyValue("--interactive-straighten-angle"),
+      draftOpen: Boolean(state.rotateDraftGeometry),
+      handoff: state.geometryTransformHandoffSignature,
+    }));
+    assert.equal(straightenApplied.angle, 18.4);
+    assert.equal(straightenApplied.transform, "-18.4deg");
+    assert.equal(straightenApplied.draftOpen, false);
+    assert.ok(straightenApplied.handoff, "Straighten must commit only when Apply is pressed");
+    await window.waitForFunction(() => state.geometryTransformHandoffSignature === null, null, { timeout: 30000 });
+    checkpoint("straighten slider cancellation ready");
+    await window.reload({ waitUntil: "domcontentloaded" });
+    await window.waitForSelector("#empty-import-button", { state: "visible", timeout: 30000 });
 
     await window.locator("#file-input").setInputFiles(pathlessDropPath);
     await window.evaluate(async () => {

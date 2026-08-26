@@ -320,6 +320,7 @@ const state = {
   zoomPercent: 100,
   zoomReferenceFrame: null,
   geometryPresentationPending: false,
+  geometryTransformHandoffSignature: null,
   activeDockTab: "histogram",
   dockCollapsed: false,
   lastScope: null,
@@ -344,15 +345,8 @@ const state = {
   comparisonRenderedGeometry: null,
   previewGeneration: { hdr: 0, sdr: 0 },
   cropMode: false,
-  cropOpening: false,
   cropDraftGeometry: null,
   rotateDraftGeometry: null,
-  rotateDraftPreviewController: null,
-  rotateDraftPreviewSerial: 0,
-  rotateDraftPreviewTimer: null,
-  rotateDraftPresentedSignature: null,
-  rotateDraftPresentedGeometry: null,
-  rotateDraftPreviewUrl: null,
   cropEditBaseCrop: null,
   cropGuide: "none",
   cropGridDensity: 8,
@@ -780,6 +774,11 @@ function acceptPresentation(lane, tier, width, height, transport, fallbackReason
     fallbackReason,
   };
   if (lane === state.currentView && width && height) {
+    if (state.geometryTransformHandoffSignature === geometrySignature()) {
+      state.geometryTransformHandoffSignature = null;
+      clearRotateDraftTransformProperties();
+      clearInteractiveStraightenPreview();
+    }
     const sessionId = state.session?.session_id || null;
     state.zoomReferenceFrame = {
       sessionId,
@@ -5474,7 +5473,7 @@ function getValueByPath(target, path) {
 
 function bindCropEditor() {
   els.cropToolToggle?.addEventListener("click", async () => {
-    if (state.rotateDraftGeometry) closeRotateMode(true);
+    if (state.rotateDraftGeometry) closeRotateMode(false);
     if (state.geometryTool === "crop") {
       closeCropMode(true);
       return;
@@ -5538,21 +5537,7 @@ function bindCropEditor() {
   renderGeometryToolState();
 }
 
-async function openCropMode() {
-  if (!state.session || state.cropMode || state.cropOpening) return;
-  state.cropOpening = true;
-  try {
-    // Straightening changes the largest valid source rectangle. Do not author
-    // crop coordinates against the pre-straighten bitmap while that geometry
-    // is still settling, or the same normalized frame targets a different
-    // aspect ratio when applied by the backend.
-    if (state.straightenPreviewBaseAngle !== null || state.globalEditDirty || state.globalEditSyncPending) {
-      if (await syncGlobalEditState() === false) return;
-      await renderPreviewForLane(state.currentView, true, settledProxyLongEdge(), { showProgress: false });
-    }
-  } finally {
-    state.cropOpening = false;
-  }
+function openCropMode() {
   if (!state.session || state.cropMode) return;
   state.geometryTool = "crop";
   state.cropMode = true;
@@ -5730,6 +5715,10 @@ function hideStraightenGrid() {
 
 function clearInteractiveStraightenPreview() {
   if (state.straightenGestureActive || state.straightenPreviewBaseAngle === null) return;
+  // A committed rotation can still be represented by a transform on the old
+  // bitmap while its authoritative frame is rendering. Clearing straighten
+  // here would partially dismantle that atomic geometry handoff.
+  if (state.geometryTransformHandoffSignature) return;
   if (state.rotateDraftGeometry) {
     renderRotateDraftTransform();
     return;
@@ -5769,14 +5758,11 @@ function renderRotateDraftTransform() {
   if (!state.rotateDraftGeometry) return;
   const original = state.rotateDraftGeometry;
   const current = state.adjustments.shared.geometry;
-  const visualBase = state.rotateDraftPresentedGeometry || original;
+  const visualBase = original;
   const delta = ((Number(current.rotation) || 0) - (Number(visualBase.rotation) || 0) + 360) % 360;
   const flipX = Boolean(current.flip_horizontal) === Boolean(visualBase.flip_horizontal) ? 1 : -1;
   const flipY = Boolean(current.flip_vertical) === Boolean(visualBase.flip_vertical) ? 1 : -1;
   const straightenDelta = (Number(current.straighten_angle) || 0) - (Number(visualBase.straighten_angle) || 0);
-  if (useHdrSafeGeometryDraft()) {
-    if (!valuesEqual(original, current)) queueHdrGeometryDraft();
-  }
   [els.previewImage, els.previewCanvas, els.chromeProofImage].forEach((preview) => {
     preview?.style.setProperty("--interactive-rotate-angle", `${delta}deg`);
     preview?.style.setProperty("--interactive-flip-x", String(flipX));
@@ -5786,6 +5772,10 @@ function renderRotateDraftTransform() {
     if (preview) preview.style.clipPath = "";
   });
   applySourceOverlayGeometryTransform(original, current);
+  // Fit the transformed bounds, not the pre-rotation bitmap bounds. Without
+  // this recalculation a landscape draft rotated to portrait can be clipped or
+  // shown at a different scale from the authoritative settled frame.
+  applyZoomGeometry();
 }
 
 function applySourceOverlayGeometryTransform(original, current) {
@@ -5803,10 +5793,6 @@ function applySourceOverlayGeometryTransform(original, current) {
   });
 }
 
-function useHdrSafeGeometryDraft() {
-  return state.currentView === "hdr" && mediaQueryMatch("(dynamic-range: high)");
-}
-
 function clearRotateDraftTransformProperties() {
   [els.previewImage, els.previewCanvas, els.previewOverlay, els.localMaskOverlay, els.chromeProofImage].forEach((preview) => {
     preview?.style.removeProperty("--interactive-rotate-angle");
@@ -5818,100 +5804,34 @@ function clearRotateDraftTransformProperties() {
   });
 }
 
-function queueHdrGeometryDraft() {
-  window.clearTimeout(state.rotateDraftPreviewTimer);
-  const signature = geometrySignature();
-  if (state.rotateDraftPresentedSignature === signature) return;
-  state.rotateDraftPreviewTimer = window.setTimeout(() => {
-    void renderHdrGeometryDraft(signature).catch((error) => {
-      console.warn("HDR geometry draft render failed; keeping the committed HDR frame.", error);
-    });
-  }, 80);
-}
-
-async function renderHdrGeometryDraft(signature) {
-  if (!state.rotateDraftGeometry || signature !== geometrySignature() || !useHdrSafeGeometryDraft()) return false;
-  state.rotateDraftPreviewController?.abort();
-  const controller = new AbortController();
-  state.rotateDraftPreviewController = controller;
-  const serial = ++state.rotateDraftPreviewSerial;
-  const response = await fetch(`/api/session/${state.session.session_id}/preview/hdr`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      adjustments: JSON.parse(JSON.stringify(state.adjustments)),
-      transient_adjustments: true,
-      edit_revision: state.editRevision,
-      include_locals: !state.compareWithoutLocals,
-      local_adjustments: state.compareWithoutLocals ? [] : JSON.parse(JSON.stringify(localAdjustments())),
-      long_edge: settledProxyLongEdge(),
-      hdr_display: true,
-    }),
-    signal: controller.signal,
-  }).catch((error) => error.name === "AbortError" ? null : Promise.reject(error));
-  if (!response || !response.ok || serial !== state.rotateDraftPreviewSerial
-    || !state.rotateDraftGeometry || signature !== geometrySignature()) return false;
-  const blob = await response.blob();
-  if (!blob.type.startsWith("image/avif")) return false;
-  const url = URL.createObjectURL(blob);
-  try {
-    await new Promise((resolve, reject) => {
-      els.previewImage.onload = resolve;
-      els.previewImage.onerror = () => reject(new Error("HDR geometry draft could not be decoded."));
-      els.previewImage.src = url;
-    });
-  } finally {
-    els.previewImage.onload = null;
-    els.previewImage.onerror = null;
-  }
-  if (serial !== state.rotateDraftPreviewSerial || !state.rotateDraftGeometry || signature !== geometrySignature()) {
-    URL.revokeObjectURL(url);
-    return false;
-  }
-  if (state.rotateDraftPreviewUrl) URL.revokeObjectURL(state.rotateDraftPreviewUrl);
-  state.rotateDraftPreviewUrl = url;
-  state.rotateDraftPresentedSignature = signature;
-  state.rotateDraftPresentedGeometry = JSON.parse(JSON.stringify(state.adjustments.shared.geometry));
-  clearRotateDraftTransformProperties();
-  applySourceOverlayGeometryTransform(state.rotateDraftGeometry, state.adjustments.shared.geometry);
-  els.previewCanvas.style.display = "none";
-  els.previewImage.style.display = "block";
-  els.emptyState.style.display = "none";
-  setZoomMode(state.zoomMode);
-  syncOverlayPlacement();
-  const local = selectedLocal();
-  if (local) scheduleAuthoritativeLocalMaskDraft(local);
-  updateZoomReadout();
-  return true;
-}
-
 function closeRotateMode(commit) {
   if (!state.rotateDraftGeometry) return;
   const original = state.rotateDraftGeometry;
-  const presentedDraft = Boolean(state.rotateDraftPresentedSignature);
+  const changed = !valuesEqual(original, state.adjustments.shared.geometry);
   state.rotateDraftGeometry = null;
   state.geometryTool = null;
-  window.clearTimeout(state.rotateDraftPreviewTimer);
-  state.rotateDraftPreviewTimer = null;
-  state.rotateDraftPreviewController?.abort();
-  state.rotateDraftPreviewController = null;
-  state.rotateDraftPresentedSignature = null;
-  state.rotateDraftPresentedGeometry = null;
   if (!commit) state.adjustments.shared.geometry = original;
-  clearRotateDraftTransformProperties();
-  clearInteractiveStraightenPreview();
+  // If the current bitmap is still the pre-rotation frame, keep its draft
+  // transform in place until the matching authoritative frame presents. This
+  // prevents Rotate -> Crop from visibly undoing and then redoing rotation
+  // while Crop waits for the committed geometry render.
+  if (commit && changed) {
+    state.geometryTransformHandoffSignature = geometrySignature();
+  } else {
+    state.geometryTransformHandoffSignature = null;
+    clearRotateDraftTransformProperties();
+    clearInteractiveStraightenPreview();
+    applyZoomGeometry();
+  }
   syncControlsFromState();
   renderGeometryToolState();
   renderControlState();
-  if (commit && !valuesEqual(original, state.adjustments.shared.geometry)) {
+  if (commit && changed) {
     state.zoomReferenceFrame = null;
     state.gpuPreparedLane = { hdr: false, sdr: false };
     invalidatePreview("hdr");
     invalidatePreview("sdr");
     debouncePreview(state.currentView);
-  } else if (!commit && presentedDraft) {
-    void renderGpuDraft(state.currentView, { longEdge: settledProxyLongEdge() })
-      .then((rendered) => rendered || showCachedPreview(state.currentView));
   }
 }
 
@@ -8093,11 +8013,6 @@ async function applyPreviewUrl(url, isCurrent = () => true) {
   if (!isCurrent()) return false;
   els.previewImage.src = url;
 
-  if (state.rotateDraftPreviewUrl && state.rotateDraftPreviewUrl !== url) {
-    URL.revokeObjectURL(state.rotateDraftPreviewUrl);
-    state.rotateDraftPreviewUrl = null;
-  }
-
   els.previewCanvas.style.display = "none";
   els.previewImage.style.display = "block";
   els.emptyState.style.display = "none";
@@ -8157,10 +8072,6 @@ async function renderGpuDraft(
     if (!result || serial !== state.gpuRenderSerial || (!allowInactive && lane !== state.currentView)) return false;
     state.gpuPreparedLane[lane] = true;
     state.gpuSurfaceHdr = Boolean(result.hdr);
-    if (state.rotateDraftPreviewUrl) {
-      URL.revokeObjectURL(state.rotateDraftPreviewUrl);
-      state.rotateDraftPreviewUrl = null;
-    }
     els.previewImage.style.display = "none";
     els.previewCanvas.style.display = "block";
     els.emptyState.style.display = "none";
@@ -8290,8 +8201,6 @@ async function applyOverlayUrl(url, isCurrent = () => true) {
 }
 
 function clearPreviewImage() {
-  if (state.rotateDraftPreviewUrl) URL.revokeObjectURL(state.rotateDraftPreviewUrl);
-  state.rotateDraftPreviewUrl = null;
   els.previewImage.onload = null;
   els.previewImage.onerror = null;
   els.previewImage.removeAttribute("src");
@@ -8786,12 +8695,8 @@ function markGlobalEditDirty() {
 }
 
 function clearPreviewCache() {
-  window.clearTimeout(state.rotateDraftPreviewTimer);
-  state.rotateDraftPreviewTimer = null;
-  state.rotateDraftPreviewController?.abort();
-  state.rotateDraftPreviewController = null;
-  state.rotateDraftPresentedSignature = null;
-  state.rotateDraftPresentedGeometry = null;
+  state.geometryTransformHandoffSignature = null;
+  clearRotateDraftTransformProperties();
   state.previewScheduler?.cancel();
   state.scopeRequestInFlight?.controller?.abort();
   state.pendingScopeRequest?.resolve(false);
@@ -9120,12 +9025,17 @@ function applyZoomGeometry() {
   const renderedFrameWidth = Math.max(1, renderedWidth || state.session.source.width);
   const renderedFrameHeight = Math.max(1, renderedHeight || state.session.source.height);
   const renderedAspect = renderedFrameWidth / renderedFrameHeight;
+  const interactiveRotateAngle = Number.parseFloat(
+    preview.style.getPropertyValue("--interactive-rotate-angle"),
+  ) || 0;
+  const interactiveQuarterTurns = Math.round(Math.abs(interactiveRotateAngle) / 90) % 4;
+  const interactiveRotationSwapsAxes = interactiveQuarterTurns % 2 === 1;
   const sessionId = state.session?.session_id || null;
   const geometrySignature = JSON.stringify(state.adjustments?.shared?.geometry || {});
   const previewFrameReady = preview instanceof HTMLCanvasElement
     ? Boolean(state.gpuPreparedLane[state.currentView])
     : Boolean(preview.complete && preview.naturalWidth > 0);
-  if (previewFrameReady && (
+  if (previewFrameReady && !interactiveRotationSwapsAxes && (
     !state.zoomReferenceFrame
     || state.zoomReferenceFrame.sessionId !== sessionId
     || state.zoomReferenceFrame.geometrySignature !== geometrySignature
@@ -9162,13 +9072,17 @@ function applyZoomGeometry() {
   const frameHeight = Math.max(1, els.dropzone.clientHeight);
   const paneWidth = state.compareLayout === "side-horizontal" ? frameWidth / 2 : frameWidth;
   const paneHeight = state.compareLayout === "side-vertical" ? frameHeight / 2 : frameHeight;
-  const fitPercent = Math.min(paneWidth / sourceWidth, paneHeight / sourceHeight) * 100;
+  const fitSourceWidth = interactiveRotationSwapsAxes ? sourceHeight : sourceWidth;
+  const fitSourceHeight = interactiveRotationSwapsAxes ? sourceWidth : sourceHeight;
+  const fitPercent = Math.min(paneWidth / fitSourceWidth, paneHeight / fitSourceHeight) * 100;
   const percent = state.zoomMode === "fit" ? fitPercent : state.zoomPercent;
   const displayWidth = Math.max(1, sourceWidth * percent / 100);
   const displayHeight = Math.max(1, sourceHeight * percent / 100);
+  const visualDisplayWidth = interactiveRotationSwapsAxes ? displayHeight : displayWidth;
+  const visualDisplayHeight = interactiveRotationSwapsAxes ? displayWidth : displayHeight;
 
-  const stageContentWidth = state.compareLayout === "side-horizontal" ? displayWidth * 2 : displayWidth;
-  const stageContentHeight = state.compareLayout === "side-vertical" ? displayHeight * 2 : displayHeight;
+  const stageContentWidth = state.compareLayout === "side-horizontal" ? visualDisplayWidth * 2 : visualDisplayWidth;
+  const stageContentHeight = state.compareLayout === "side-vertical" ? visualDisplayHeight * 2 : visualDisplayHeight;
   els.previewStage.style.width = `${Math.max(frameWidth, stageContentWidth)}px`;
   els.previewStage.style.height = `${Math.max(frameHeight, stageContentHeight)}px`;
   els.previewImage.style.width = `${displayWidth}px`;
@@ -9791,6 +9705,7 @@ function renderOutputFinishingControls() {
 function activateWorkflowTab(workflow, { focus = false } = {}) {
   const next = ["import", "grade", "proof", "export"].includes(workflow) ? workflow : "import";
   if (next !== "import" && !state.session) return;
+  if (next !== "grade" && state.rotateDraftGeometry) closeRotateMode(false);
   if (next !== "grade" && state.cropMode) closeCropMode(true);
   state.activeWorkflow = next;
   document.body.dataset.workflow = next;
@@ -11390,6 +11305,12 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
     if (optimisticAdjustments) state.editDocument.global_adjustments = optimisticAdjustments;
     state.documentDirty = preserveNewerGlobalEdit || Boolean(result.dirty);
     state.adjustments = optimisticAdjustments || result.document.global_adjustments;
+    if (state.geometryTransformHandoffSignature
+      && state.geometryTransformHandoffSignature !== geometrySignature()) {
+      state.geometryTransformHandoffSignature = null;
+      clearRotateDraftTransformProperties();
+      clearInteractiveStraightenPreview();
+    }
     renderLocalAdjustments();
     if (refreshPreview) {
       invalidatePreview("hdr", { local: true });

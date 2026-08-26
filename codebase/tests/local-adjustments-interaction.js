@@ -41,7 +41,10 @@ async function canvasVariationCount(locator) {
 (async () => {
   const outputDirectory = path.resolve(__dirname, "../output/local-adjustments");
   fs.mkdirSync(outputDirectory, { recursive: true });
-  const browser = await chromium.launch({ headless: true, channel: "msedge" });
+  const browser = await chromium.launch({
+    headless: true,
+    channel: process.env.HDR_FINISHER_BROWSER_CHANNEL || "msedge",
+  });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const pageErrors = [];
   const requestFailures = [];
@@ -355,8 +358,15 @@ async function canvasVariationCount(locator) {
     const straightenBox = await straighten.boundingBox();
     assert(straightenBox, "Straighten slider is unavailable.");
     const straightenStart = await page.evaluate(() => {
-      const rect = activePreviewElement().getBoundingClientRect();
-      return { generation: { ...state.previewGeneration }, frameWidth: rect.width, frameHeight: rect.height };
+      const preview = activePreviewElement();
+      const rect = preview.getBoundingClientRect();
+      return {
+        angle: state.adjustments.shared.geometry.straighten_angle,
+        generation: { ...state.previewGeneration },
+        frameWidth: rect.width,
+        frameHeight: rect.height,
+        src: preview instanceof HTMLImageElement ? preview.currentSrc : "canvas",
+      };
     });
     await page.mouse.move(straightenBox.x + straightenBox.width / 2, straightenBox.y + straightenBox.height / 2);
     await page.mouse.down();
@@ -379,61 +389,51 @@ async function canvasVariationCount(locator) {
     assert(await canvasVariationCount(page.locator("#straighten-grid-overlay")) > 100, "Straighten grid canvas did not draw its dense alignment lines.");
     const straightenHdrGenerations = straightenInteractive.generation.hdr - straightenStart.generation.hdr;
     const straightenSdrGenerations = straightenInteractive.generation.sdr - straightenStart.generation.sdr;
-    assert(straightenHdrGenerations >= 0 && straightenHdrGenerations <= 1 && straightenSdrGenerations >= 0 && straightenSdrGenerations <= 1, `Straighten scheduled repeated authoritative geometry renders during its gesture: ${JSON.stringify({ straightenStart, straightenInteractive })}`);
+    assert(straightenHdrGenerations === 0 && straightenSdrGenerations === 0, `Straighten scheduled an authoritative render before Apply: ${JSON.stringify({ straightenStart, straightenInteractive })}`);
     await page.locator("#preview-primary-pane").screenshot({ path: path.join(outputDirectory, "straighten-grid-overlay-qa.png") });
     await page.mouse.up();
     assert(await page.locator("#straighten-grid-overlay").isHidden(), "Straighten grid remained visible after releasing the slider.");
-    const releasedStraightenAngle = await page.evaluate(() => state.adjustments.shared.geometry.straighten_angle);
-    await page.locator("#crop-tool-toggle").click();
-    await page.locator("#crop-ratio").selectOption("1:1");
-    await page.locator("#crop-done").click();
-    await page.waitForFunction(() => state.straightenPreviewBaseAngle === null, null, { timeout: 30000 }).catch(async (error) => {
-      const diagnostics = await page.evaluate(() => ({
-        straightenGestureActive: state.straightenGestureActive,
-        straightenPreviewBaseAngle: state.straightenPreviewBaseAngle,
-        globalEditDirty: state.globalEditDirty,
-        globalEditGeneration: state.globalEditGeneration,
-        hasGlobalEditSyncPending: Boolean(state.globalEditSyncPending),
-        editRevision: state.editRevision,
-        previewGeneration: { ...state.previewGeneration },
-        geometry: JSON.parse(JSON.stringify(state.adjustments.shared.geometry)),
-        previewStatus: els.previewStatus?.textContent,
-        scheduler: state.previewScheduler?.snapshot(),
-      }));
-      throw new Error(`${error.message} Diagnostics: ${JSON.stringify(diagnostics)}`);
-    });
-    assert(await page.evaluate(() => !activePreviewElement().style.getPropertyValue("--interactive-straighten-angle")), "Straighten's temporary transform remained after the authoritative preview settled.");
-    await page.waitForFunction(() => {
+    await page.waitForTimeout(250);
+    const releasedStraighten = await page.evaluate(() => {
       const preview = activePreviewElement();
-      const width = preview instanceof HTMLCanvasElement ? preview.width : preview.naturalWidth;
-      const height = preview instanceof HTMLCanvasElement ? preview.height : preview.naturalHeight;
-      return height > 0 && Math.abs(width / height - 1) < 0.01;
-    }, null, { timeout: 30000 }).catch(async (error) => {
-      const diagnostics = await page.evaluate(() => {
-        const preview = activePreviewElement();
-        const width = preview instanceof HTMLCanvasElement ? preview.width : preview.naturalWidth;
-        const height = preview instanceof HTMLCanvasElement ? preview.height : preview.naturalHeight;
-        return {
-          bitmap: { width, height },
-          globalEditDirty: state.globalEditDirty,
-          globalEditGeneration: state.globalEditGeneration,
-          hasGlobalEditSyncPending: Boolean(state.globalEditSyncPending),
-          editRevision: state.editRevision,
-          previewGeneration: { ...state.previewGeneration },
-          geometry: JSON.parse(JSON.stringify(state.adjustments.shared.geometry)),
-          previewStatus: els.previewStatus?.textContent,
-          scheduler: state.previewScheduler?.snapshot(),
-        };
-      });
-      throw new Error(`${error.message} Diagnostics: ${JSON.stringify(diagnostics)}`);
+      return {
+        angle: state.adjustments.shared.geometry.straighten_angle,
+        transform: preview.style.getPropertyValue("--interactive-straighten-angle"),
+        src: preview instanceof HTMLImageElement ? preview.currentSrc : "canvas",
+        generation: { ...state.previewGeneration },
+        draftOpen: Boolean(state.rotateDraftGeometry),
+      };
     });
-    const straightenCropCommit = await page.evaluate(() => ({
+    assert(Math.abs(releasedStraighten.angle - straightenInteractive.angle) < 0.01, `Straighten changed after pointer release: ${JSON.stringify({ straightenInteractive, releasedStraighten })}`);
+    assert(releasedStraighten.transform === straightenInteractive.transform, `Straighten replaced its visual draft after pointer release: ${JSON.stringify({ straightenInteractive, releasedStraighten })}`);
+    assert(releasedStraighten.src === straightenStart.src, `Straighten replaced the preview source before Apply: ${JSON.stringify({ straightenStart, releasedStraighten })}`);
+    assert(JSON.stringify(releasedStraighten.generation) === JSON.stringify(straightenStart.generation), `Straighten generated a preview before Apply: ${JSON.stringify({ straightenStart, releasedStraighten })}`);
+    assert(releasedStraighten.draftOpen, "Straighten closed its transaction on pointer release.");
+    await page.locator("#crop-tool-toggle").click();
+    const straightenCropCancel = await page.evaluate(() => ({
       angle: state.adjustments.shared.geometry.straighten_angle,
-      slider: Number(els.cropStraighten.value),
-      ratio: state.adjustments.shared.geometry.ratio_mode,
+      transform: activePreviewElement().style.getPropertyValue("--interactive-straighten-angle"),
+      cropMode: state.cropMode,
+      draftOpen: Boolean(state.rotateDraftGeometry),
     }));
-    assert(Math.abs(straightenCropCommit.angle - releasedStraightenAngle) < 0.01 && Math.abs(straightenCropCommit.slider - releasedStraightenAngle) < 0.01, `A stale geometry commit replaced the released Straighten angle: ${JSON.stringify({ releasedStraightenAngle, straightenCropCommit })}`);
-    assert(straightenCropCommit.ratio === "1:1", `Crop applied before Straighten settled was lost: ${JSON.stringify(straightenCropCommit)}`);
+    assert(Math.abs(straightenCropCancel.angle - straightenStart.angle) < 0.01, `Opening Crop applied rather than cancelled Straighten: ${JSON.stringify({ straightenStart, straightenCropCancel })}`);
+    assert(straightenCropCancel.transform === "" && straightenCropCancel.cropMode && !straightenCropCancel.draftOpen, `Rotate-to-Crop did not cleanly cancel: ${JSON.stringify(straightenCropCancel)}`);
+
+    await page.locator("#crop-cancel").click();
+    await page.locator("#rotate-tool-toggle").click();
+    await page.evaluate((angle) => {
+      beginStraightenGesture();
+      updateStraightenInteractive(angle);
+      finishStraightenGesture();
+      els.rotateApply.click();
+    }, releasedStraighten.angle);
+    await page.waitForFunction(() => state.geometryTransformHandoffSignature === null, null, { timeout: 30000 });
+    const appliedStraighten = await page.evaluate(() => ({
+      angle: state.adjustments.shared.geometry.straighten_angle,
+      transform: activePreviewElement().style.getPropertyValue("--interactive-straighten-angle"),
+      draftOpen: Boolean(state.rotateDraftGeometry),
+    }));
+    assert(Math.abs(appliedStraighten.angle - releasedStraighten.angle) < 0.01 && appliedStraighten.transform === "" && !appliedStraighten.draftOpen, `Apply rotation did not commit Straighten cleanly: ${JSON.stringify({ releasedStraighten, appliedStraighten })}`);
 
     const vignetteGroup = page.locator(".vignette-group");
     if (await vignetteGroup.evaluate((element) => element.classList.contains("collapsed"))) {

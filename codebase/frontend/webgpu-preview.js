@@ -2755,7 +2755,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         let responseY = max(filmLuma(rgb), 0.0);
         let responseSignal = filmSignalFromLuma(responseY);
         let shadowWeight = 1.0 - smoothRange(0.08, 0.46, responseSignal);
-        let highlightWeight = smoothRange(0.62, 1.0, responseSignal);
+        // HDR reference white is 0.5 in the curve domain. Roll highlight
+        // desaturation through display-visible HDR instead of reserving most
+        // of the effect for extreme specular values above common headroom.
+        let highlightWeight = select(
+          smoothRange(0.62, 1.0, responseSignal),
+          smoothRange(0.50, 0.82, responseSignal),
+          p[0] > 0.5
+        );
         let desaturation = clamp(
           (shadowWeight * p[147] + highlightWeight * p[146]) * p[79],
           0.0,
