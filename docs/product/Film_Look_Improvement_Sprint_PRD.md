@@ -2,13 +2,19 @@
 
 ## Status and handoff
 
-- **Status:** Planned; no implementation from this document has started.
+- **Status:** In progress; Sprint A1-A4 implemented and validated.
 - **Branch at planning time:** `feature/denoising`
 - **Physical grain implementation:** `367f350 feat: add physically scaled film grain`
 - **Imported red-hot-pixel investigation note:** `9c173a1 docs: note imported red hot pixel investigation`
 - **Related completed sprint:** [Physical Film Grain Sprint](Physical_Film_Grain_Sprint_PRD.md)
 
 This document records the agreed direction for a later implementation thread. The next thread should verify the branch and working tree before changing code, then execute the work in the order below.
+
+### Implementation progress
+
+- **A1-A3:** Completed in `9eb3f60`, including the cached 4K interaction fix discovered during validation.
+- **A4:** Completed on the working branch. Grain, halation, and Film Resolution now share Film Format and capture-geometry scaling; bloom remains explicitly output-relative.
+- **Next stage:** A5, CPU/WebGPU spatial parity.
 
 ## Outcome
 

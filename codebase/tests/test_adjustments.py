@@ -17,6 +17,8 @@ from hdr_finisher.adjustments import (
     _apply_sdr_tone_equalizer,
     _curve_domain_decode,
     _curve_domain_encode,
+    _film_pixels_per_mm,
+    _film_radius_pixels,
     _grain_pitch_pixels,
     _grain_value_noise,
     _compress_scene_highlights,
@@ -88,6 +90,59 @@ def test_horizontal_linescan_anchors_grain_to_cross_scan_dimension() -> None:
 
     look.grain_capture_geometry = "frame"
     assert _grain_pitch_pixels(64_000, 4_000, look) > strip_pitch * 10
+
+
+def test_film_plane_radius_grows_as_film_format_shrinks() -> None:
+    image = np.empty((2160, 3840, 0), dtype=np.float32)
+    look = AdjustmentState().hdr.film_look
+    radii = []
+    for film_format in ("65mm", "35mm", "16mm", "super8"):
+        look.grain_film_format = film_format
+        radii.append(_film_radius_pixels(image, look, 0.2))
+
+    assert radii == sorted(radii)
+    assert radii[0] < radii[-1]
+
+
+def test_horizontal_strip_anchors_all_film_plane_units_to_cross_scan_dimension() -> None:
+    look = AdjustmentState().hdr.film_look
+    look.grain_film_format = "35mm"
+    look.grain_capture_geometry = "horizontal_strip"
+    look.grain_size = 50
+    short_strip = np.empty((4_000, 8_000, 0), dtype=np.float32)
+    long_strip = np.empty((4_000, 64_000, 0), dtype=np.float32)
+
+    assert _film_pixels_per_mm(8_000, 4_000, look) == pytest.approx(4_000 / 24.0)
+    assert _grain_pitch_pixels(8_000, 4_000, look) == pytest.approx(_grain_pitch_pixels(64_000, 4_000, look))
+    assert _film_radius_pixels(short_strip, look, 2.0) == _film_radius_pixels(long_strip, look, 2.0)
+
+
+def test_vertical_strip_and_custom_gate_anchor_film_plane_units_consistently() -> None:
+    look = AdjustmentState().hdr.film_look
+    look.grain_film_format = "custom"
+    look.grain_custom_width_mm = 48
+    look.grain_custom_height_mm = 12
+    look.grain_capture_geometry = "vertical_strip"
+
+    assert _film_pixels_per_mm(4_800, 8_000, look) == pytest.approx(100.0)
+    assert _film_pixels_per_mm(4_800, 64_000, look) == pytest.approx(100.0)
+
+
+def test_bloom_spread_is_output_relative_and_independent_of_film_format() -> None:
+    image = np.zeros((81, 121, 3), dtype=np.float32)
+    image[38:43, 58:63] = 8.0
+    state = AdjustmentState()
+    look = state.hdr.film_look
+    look.halation_enabled = False
+    look.bloom_amount = 70
+    look.bloom_radius = 3
+
+    look.grain_film_format = "65mm"
+    large_format = apply_adjustments(image, state, PreviewKind.HDR)
+    look.grain_film_format = "super8"
+    small_format = apply_adjustments(image, state, PreviewKind.HDR)
+
+    np.testing.assert_array_equal(large_format, small_format)
 
 
 def test_physical_grain_value_noise_has_spatial_correlation() -> None:

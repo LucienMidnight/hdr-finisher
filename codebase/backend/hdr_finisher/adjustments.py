@@ -32,6 +32,7 @@ FILM_GRAIN_GATE_DIMENSIONS_MM: dict[str, tuple[float, float]] = {
     "16mm": (10.26, 7.49),
     "super8": (5.79, 4.01),
 }
+FILM_SPATIAL_REFERENCE_DIAGONAL_MM = float(np.hypot(36.0, 24.0))
 
 
 def apply_adjustments(
@@ -1082,8 +1083,45 @@ def _apply_film_response(image: np.ndarray, look: object, kind: PreviewKind, mas
 
 
 def _radius_pixels(image: np.ndarray, percent_diagonal: float, maximum: int = 256) -> int:
+    """Return an output-relative radius for optical/display-space effects.
+
+    Bloom and image-structure diffusion intentionally use rendered-frame units;
+    they describe the finished optical image rather than a film-plane distance.
+    """
     diagonal = float(np.hypot(image.shape[0], image.shape[1]))
     return int(np.clip(round(diagonal * max(0.0, percent_diagonal) / 100.0), 0, maximum))
+
+
+def _film_gate_dimensions_mm(look: object) -> tuple[float, float]:
+    if look.grain_film_format == "custom":
+        return float(look.grain_custom_width_mm), float(look.grain_custom_height_mm)
+    return FILM_GRAIN_GATE_DIMENSIONS_MM.get(
+        look.grain_film_format, FILM_GRAIN_GATE_DIMENSIONS_MM["35mm"]
+    )
+
+
+def _film_pixels_per_mm(width: int, height: int, look: object) -> float:
+    """Map film-plane millimetres to pixels using the selected capture geometry.
+
+    Strip captures anchor their scale to the cross-scan dimension, so a stitched
+    panorama or line scan does not acquire an enormous effect radius merely
+    because its scanned axis is unusually long.
+    """
+    gate_width, gate_height = _film_gate_dimensions_mm(look)
+    geometry = look.grain_capture_geometry
+    if geometry == "horizontal_strip":
+        return float(height) / gate_height
+    if geometry == "vertical_strip":
+        return float(width) / gate_width
+    return max(float(width) / gate_width, float(height) / gate_height)
+
+
+def _film_radius_pixels(
+    image: np.ndarray, look: object, percent_35mm_diagonal: float, maximum: int = 256
+) -> int:
+    """Return a film-plane radius calibrated to the legacy 35mm control scale."""
+    radius_mm = FILM_SPATIAL_REFERENCE_DIAGONAL_MM * max(0.0, percent_35mm_diagonal) / 100.0
+    return int(np.clip(round(_film_pixels_per_mm(image.shape[1], image.shape[0], look) * radius_mm), 0, maximum))
 
 
 def _box_blur_axis(image: np.ndarray, radius: int, axis: int) -> np.ndarray:
@@ -1147,7 +1185,7 @@ def _apply_halation(
 ) -> tuple[np.ndarray, np.ndarray]:
     mask = _highlight_mask(image, kind, look.halation_sensitivity)
     source = np.maximum(image, 0.0) * mask[..., None]
-    radius = _radius_pixels(image, look.halation_radius)
+    radius = _film_radius_pixels(image, look, look.halation_radius)
     blurred = _diffusion_blur(source, max(1, radius))
     edge_scatter = np.maximum(blurred - source * np.float32(0.35), 0.0)
     tint = _halation_tint(look.halation_hue_offset, look.halation_saturation)
@@ -1162,6 +1200,8 @@ def _apply_halation(
 def _apply_bloom(image: np.ndarray, look: object, kind: PreviewKind, master: np.float32) -> np.ndarray:
     mask = _highlight_mask(image, kind, look.bloom_sensitivity)
     source = np.maximum(image, 0.0) * mask[..., None]
+    # Bloom is an optical finish measured against the rendered output, not the
+    # film gate. Changing Film Format must therefore leave its spread unchanged.
     radius = max(1, _radius_pixels(image, look.bloom_radius))
     blurred = _diffusion_blur(source, radius)
     detail = np.float32(np.clip(look.bloom_highlight_detail / 100.0, 0.0, 1.0))
@@ -1192,7 +1232,7 @@ def _apply_film_resolution(image: np.ndarray, look: object, master: np.float32) 
     loss = np.float32((100.0 - look.film_resolution) / 100.0) * master
     if loss <= 0.0:
         return image
-    radius = max(1, _radius_pixels(image, 0.04 + 0.08 * float(loss), maximum=32))
+    radius = max(1, _film_radius_pixels(image, look, 0.04 + 0.08 * float(loss), maximum=32))
     return (image + (_box_blur(image, radius) - image) * loss * np.float32(0.7)).astype(np.float32)
 
 
@@ -1245,22 +1285,8 @@ def _apply_density_grain(
 
 def _grain_pitch_pixels(width: int, height: int, look: object) -> float:
     """Return the physical grain correlation pitch at this render resolution."""
-    if look.grain_film_format == "custom":
-        gate_width = float(look.grain_custom_width_mm)
-        gate_height = float(look.grain_custom_height_mm)
-    else:
-        gate_width, gate_height = FILM_GRAIN_GATE_DIMENSIONS_MM.get(
-            look.grain_film_format, FILM_GRAIN_GATE_DIMENSIONS_MM["35mm"]
-        )
-    geometry = look.grain_capture_geometry
-    if geometry == "horizontal_strip":
-        pixels_per_mm = float(height) / gate_height
-    elif geometry == "vertical_strip":
-        pixels_per_mm = float(width) / gate_width
-    else:
-        pixels_per_mm = max(float(width) / gate_width, float(height) / gate_height)
     grain_diameter_mm = (6.0 + 24.0 * float(look.grain_size) / 100.0) / 1000.0
-    return pixels_per_mm * grain_diameter_mm
+    return _film_pixels_per_mm(width, height, look) * grain_diameter_mm
 
 
 def _grain_value_noise(x: np.ndarray, y: np.ndarray, seed: int, salt: float) -> np.ndarray:

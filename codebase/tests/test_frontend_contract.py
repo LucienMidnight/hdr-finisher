@@ -826,6 +826,11 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     assert "const fallbackSpatialView = intermediate.filmTexture.createView();" not in shader
     assert "let structureBlur = filmBlur(coordinate, 0.06);\n      if (p[97] > 0.5)" not in shader
     assert "if (p[97] > 0.5 && (abs(p[98]) > 0.000001 || abs(p[99]) > 0.000001))" in shader
+    assert "fn filmPixelsPerMm(dimensions: vec2f) -> f32" in shader
+    assert "filmPixelsPerMm(dimensions) * halationRadiusMm" in shader
+    assert "filmPhysicalBlur(coordinate, 0.04 + 0.08 * resolutionLoss)" in shader
+    assert "length(dimensions) * max(p[95], 0.0) / 100.0" in shader
+    assert "length(dimensions) * max(p[88], 0.0) / 100.0" not in shader
     assert 'data-film-grain-custom hidden' in html
     assert 'id="film-look-match-hdr"' in html
     assert "state.adjustments.sdr.film_look = JSON.parse(JSON.stringify(state.adjustments.hdr.film_look))" in javascript

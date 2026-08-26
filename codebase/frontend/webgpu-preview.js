@@ -2067,7 +2067,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     params[107] = (film.grain_highlight_response ?? 100) / 100;
     params[108] = (film.film_resolution ?? 100) / 100;
     params[109] = adjustments.shared?.film_grain_seed ?? 271828;
-    const grainGates = {
+    const filmGates = {
       "65mm": [52.63, 23.01],
       "35mm": [36, 24],
       super35: [24.89, 18.66],
@@ -2077,7 +2077,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     };
     const gate = film.grain_film_format === "custom"
       ? [Math.min(500, Math.max(1, Number(film.grain_custom_width_mm) || 36)), Math.min(500, Math.max(1, Number(film.grain_custom_height_mm) || 24))]
-      : (grainGates[film.grain_film_format] || grainGates["35mm"]);
+      : (filmGates[film.grain_film_format] || filmGates["35mm"]);
     params[140] = gate[0];
     params[141] = gate[1];
     params[142] = film.grain_capture_geometry === "horizontal_strip" ? 1
@@ -2740,12 +2740,22 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     fn sampleFilm(coordinate: vec2i) -> vec3f {
       return textureLoad(sourceTexture, boundedCoordinate(coordinate), 0).rgb;
     }
-    fn spatialOffset(percentDiagonal: f32) -> i32 {
+    fn outputRelativeOffset(percentDiagonal: f32) -> i32 {
       let dimensions = vec2f(textureDimensions(sourceTexture));
       return max(1, i32(round(length(dimensions) * max(percentDiagonal, 0.0) / 100.0)));
     }
-    fn filmBlur(coordinate: vec2i, percentDiagonal: f32) -> vec3f {
-      let radius = spatialOffset(percentDiagonal);
+    fn filmPixelsPerMm(dimensions: vec2f) -> f32 {
+      var pixelsPerMm = max(dimensions.x / p[140], dimensions.y / p[141]);
+      if (p[142] > 0.5 && p[142] < 1.5) { pixelsPerMm = dimensions.y / p[141]; }
+      if (p[142] > 1.5) { pixelsPerMm = dimensions.x / p[140]; }
+      return pixelsPerMm;
+    }
+    fn filmPhysicalOffset(percent35mmDiagonal: f32) -> i32 {
+      let dimensions = vec2f(textureDimensions(sourceTexture));
+      let radiusMm = 43.2666153 * max(percent35mmDiagonal, 0.0) / 100.0;
+      return max(1, i32(round(filmPixelsPerMm(dimensions) * radiusMm)));
+    }
+    fn blurAtRadius(coordinate: vec2i, radius: i32) -> vec3f {
       let halfRadius = max(1, radius / 2);
       var total = sampleFilm(coordinate) * 4.0;
       total += sampleFilm(coordinate + vec2i(radius, 0));
@@ -2757,6 +2767,12 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       total += sampleFilm(coordinate + vec2i(halfRadius, -halfRadius));
       total += sampleFilm(coordinate + vec2i(-halfRadius, -halfRadius));
       return total / 12.0;
+    }
+    fn filmBlur(coordinate: vec2i, percentDiagonal: f32) -> vec3f {
+      return blurAtRadius(coordinate, outputRelativeOffset(percentDiagonal));
+    }
+    fn filmPhysicalBlur(coordinate: vec2i, percent35mmDiagonal: f32) -> vec3f {
+      return blurAtRadius(coordinate, filmPhysicalOffset(percent35mmDiagonal));
     }
     fn filmHighlightMask(rgb: vec3f, sensitivity: f32) -> f32 {
       let threshold = 0.92 - 0.50 * clamp(sensitivity, 0.0, 1.0);
@@ -2781,8 +2797,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     fn spatialBlur(direction: vec2f, coordinate: vec2f) -> vec4f {
       let dimensions = vec2f(textureDimensions(spatialTexture));
       let uv = coordinate / dimensions;
+      // Bloom is an output-relative optical finish. Halation is a film-plane
+      // distance and shares Film Format/capture geometry with grain and MTF.
       let bloomRadius = max(0.5, length(dimensions) * max(p[95], 0.0) / 100.0);
-      let halationRadius = max(0.5, length(dimensions) * max(p[88], 0.0) / 100.0);
+      let halationRadiusMm = 43.2666153 * max(p[88], 0.0) / 100.0;
+      let halationRadius = max(0.5, filmPixelsPerMm(dimensions) * halationRadiusMm);
       var bloomTotal = vec3f(0.0);
       var halationTotal = 0.0;
       var weightTotal = 0.0;
@@ -2842,14 +2861,12 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       }
       if (p[108] < 1.0) {
         let resolutionLoss = (1.0 - p[108]) * p[79];
-        rgb += (filmBlur(coordinate, 0.04 + 0.08 * resolutionLoss) - rgb) * resolutionLoss * 0.7;
+        rgb += (filmPhysicalBlur(coordinate, 0.04 + 0.08 * resolutionLoss) - rgb) * resolutionLoss * 0.7;
       }
       rgb = applyVignette(rgb, coordinate);
       if (p[100] > 0.5 && p[101] > 0.0) {
         let dimensions = vec2f(textureDimensions(sourceTexture));
-        var pixelsPerMm = max(dimensions.x / p[140], dimensions.y / p[141]);
-        if (p[142] > 0.5 && p[142] < 1.5) { pixelsPerMm = dimensions.y / p[141]; }
-        if (p[142] > 1.5) { pixelsPerMm = dimensions.x / p[140]; }
+        let pixelsPerMm = filmPixelsPerMm(dimensions);
         let physicalPitch = pixelsPerMm * (6.0 + 24.0 * p[102]) / 1000.0;
         let pitch = max(1.0, physicalPitch);
         let pixelCoverage = min(1.0, physicalPitch);
