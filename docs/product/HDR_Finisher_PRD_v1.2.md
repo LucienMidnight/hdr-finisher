@@ -818,6 +818,7 @@ Validation at commit `dcb00c7` completed with `84 passed` for `tests/test_local_
 
 Work on Gradient, Luma, Path, or a future mask type must preserve these cross-tool invariants:
 
+- **Path feather/softness QA follow-up (recorded 2026-08-27):** the current additive outer-feather behavior and adjustable falloff are accepted provisionally, but should be deliberately stress-tested in a future polish pass. Try to break them with extreme Feather and Softness combinations, tightly concave and self-overlapping outer guides, rapid slider scrubbing, node edits during preview settlement, undo/save/reopen, 4K sources, and high zoom. Watch specifically for halos under strong exposure changes, discontinuities or hotspots where feather regions merge, stale or disappearing overlays, long uncommunicated processing, and disagreement between the red overview mask and the applied grade.
 - The red overlay and applied local grade consume the same normalized mask for the same edit revision.
 - Interactive, pointer-release, and settled authoritative states do not flash backward to an older mask.
 - Exact-mask replacements are visually atomic: retain the latest valid exact raster when a tool has no current client-side raster, and never expose a transparent handoff frame.

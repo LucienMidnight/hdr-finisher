@@ -270,6 +270,9 @@ const state = {
   localMaskDraftController: null,
   localMaskDraftGeneration: 0,
   localMaskDraftPending: null,
+  pathMaskProgressTimer: 0,
+  pathMaskProgressTarget: null,
+  pathMaskProgressStartedAt: 0,
   localPreviewDirty: false,
   localMaskCommitDepth: 0,
   localMaskCommitRefreshPending: false,
@@ -1045,6 +1048,8 @@ const els = {
   comparisonImage: document.getElementById("comparison-image"),
   previewOverlay: document.getElementById("preview-overlay"),
   localMaskOverlay: document.getElementById("local-mask-overlay"),
+  pathMaskProgress: document.getElementById("path-mask-progress"),
+  pathMaskProgressCopy: document.getElementById("path-mask-progress-copy"),
   straightenGridOverlay: document.getElementById("straighten-grid-overlay"),
   gradeModeGlobal: document.getElementById("grade-mode-global"),
   gradeModeLocal: document.getElementById("grade-mode-local"),
@@ -2595,6 +2600,10 @@ function bindEvents() {
     }
   });
   els.dropzone.addEventListener("wheel", handleViewerWheel, { passive: false });
+  els.dropzone.addEventListener("scroll", () => {
+    syncLocalMaskOverlayViewport();
+    queueLocalMaskOverlayRender();
+  }, { passive: true });
   els.overlayToggle.addEventListener("click", toggleOverlayPopover);
   els.overlayClose.addEventListener("click", closeOverlayPopover);
   els.viewerOptionsToggle.addEventListener("click", toggleViewerOptions);
@@ -4588,9 +4597,7 @@ function syncOverlayPlacement() {
   });
   renderScopeRegionOverlay();
   renderVignetteCenter();
-  // The local-mask canvas spans the zoomable preview stage. Its bitmap must be
-  // rebuilt whenever that stage changes size; otherwise CSS stretches the old
-  // bitmap and the mask/gizmo drifts until some unrelated edit redraws it.
+  syncLocalMaskOverlayViewport();
   queueLocalMaskOverlayRender();
 }
 
@@ -5924,6 +5931,41 @@ function cropAuthoringFrameAspect() {
   }
   const baseCrop = state.cropEditBaseCrop || geometry.crop || { width: 1, height: 1 };
   return Math.max(0.01, (width * baseCrop.width) / Math.max(1e-6, height * baseCrop.height));
+}
+
+function sourcePixelFrameDimensions(geometry = state.adjustments?.shared?.geometry) {
+  const source = state.session?.source;
+  if (!source?.width || !source?.height || !geometry) return null;
+  let width = Number(source.width);
+  let height = Number(source.height);
+  if ([90, 270].includes(Number(geometry.rotation) || 0)) [width, height] = [height, width];
+  const angle = Math.abs(Number(geometry.straighten_angle) || 0) * Math.PI / 180;
+  const sine = Math.abs(Math.sin(angle));
+  const cosine = Math.abs(Math.cos(angle));
+  if (sine >= 1e-9) {
+    const widthIsLonger = width >= height;
+    const sideLong = widthIsLonger ? width : height;
+    const sideShort = widthIsLonger ? height : width;
+    let safeWidth;
+    let safeHeight;
+    if (sideShort <= 2 * sine * cosine * sideLong || Math.abs(sine - cosine) < 1e-9) {
+      const halfShort = 0.5 * sideShort;
+      safeWidth = widthIsLonger ? halfShort / sine : halfShort / cosine;
+      safeHeight = widthIsLonger ? halfShort / cosine : halfShort / sine;
+    } else {
+      const cosineDouble = cosine * cosine - sine * sine;
+      safeWidth = (width * cosine - height * sine) / cosineDouble;
+      safeHeight = (height * cosine - width * sine) / cosineDouble;
+    }
+    width = Math.max(1, Math.floor(Math.abs(safeWidth)) - 4);
+    height = Math.max(1, Math.floor(Math.abs(safeHeight)) - 4);
+  }
+  const crop = geometry.crop || { x: 0, y: 0, width: 1, height: 1 };
+  const left = clamp(Math.round(Number(crop.x || 0) * width), 0, Math.max(0, width - 1));
+  const top = clamp(Math.round(Number(crop.y || 0) * height), 0, Math.max(0, height - 1));
+  const right = clamp(Math.round((Number(crop.x || 0) + Number(crop.width || 1)) * width), left + 1, width);
+  const bottom = clamp(Math.round((Number(crop.y || 0) + Number(crop.height || 1)) * height), top + 1, height);
+  return { width: right - left, height: bottom - top };
 }
 
 function constrainCropToRatio() {
@@ -9066,8 +9108,20 @@ function applyZoomGeometry() {
     && Number.isFinite(state.zoomReferenceFrame.aspect)
     ? state.zoomReferenceFrame.aspect
     : renderedAspect;
-  const sourceWidth = referenceAspect >= 1 ? referenceLongEdge : referenceLongEdge * referenceAspect;
-  const sourceHeight = referenceAspect >= 1 ? referenceLongEdge / referenceAspect : referenceLongEdge;
+  const interactiveGeometryTransformActive = [
+    "--interactive-rotate-angle",
+    "--interactive-straighten-angle",
+    "--interactive-flip-x",
+    "--interactive-flip-y",
+  ].some((property) => preview.style.getPropertyValue(property));
+  const sourceFrame = interactiveGeometryTransformActive ? null : sourcePixelFrameDimensions();
+  // Actual-size zoom is defined in source/output pixels, not in pixels of the
+  // first preview proxy that happened to arrive. Keep the proxy reference only
+  // while an old bitmap is being transformed interactively during crop/rotate.
+  const sourceWidth = sourceFrame?.width
+    || (referenceAspect >= 1 ? referenceLongEdge : referenceLongEdge * referenceAspect);
+  const sourceHeight = sourceFrame?.height
+    || (referenceAspect >= 1 ? referenceLongEdge / referenceAspect : referenceLongEdge);
   const frameWidth = Math.max(1, els.dropzone.clientWidth);
   const frameHeight = Math.max(1, els.dropzone.clientHeight);
   const paneWidth = state.compareLayout === "side-horizontal" ? frameWidth / 2 : frameWidth;
@@ -10043,8 +10097,10 @@ function newMaskLeaf(type) {
     type: "path",
     nodes: [],
     feather: 0.02,
+    feather_softness: 0,
     feather_mode: "outer_boundary",
     feather_nodes: [],
+    mask_opacity: 1,
   };
 }
 
@@ -10581,6 +10637,7 @@ function scheduleSpatialMaskPreview(local) {
     return;
   }
   state.localMaskDraftDirty = true;
+  if (local?.mask?.leaf?.type === "path") beginPathMaskProgress(local);
   scheduleAuthoritativeLocalMaskDraft(local);
   scheduleLocalPreview({ spatialMaskChanged: true });
 }
@@ -10739,6 +10796,28 @@ function renderPathControls(local, leaf) {
   }
 
   panel.append(createPathFeatherControl(local, leaf));
+  appendLocalMaskSlider(panel, leaf, {
+    name: "feather_softness",
+    label: "Softness",
+    min: 0,
+    max: 100,
+    step: 1,
+    value: Number(leaf.feather_softness || 0) * 100,
+    defaultValue: 0,
+    display: (value) => `${Math.round(value)}%`,
+    store: (value) => value / 100,
+  }, { authoritativePreview: true });
+  appendLocalMaskSlider(panel, leaf, {
+    name: "mask_opacity",
+    label: "Opacity",
+    min: 0,
+    max: 100,
+    step: 1,
+    value: Number(leaf.mask_opacity ?? 1) * 100,
+    defaultValue: 100,
+    display: (value) => `${Math.round(value)}%`,
+    store: (value) => value / 100,
+  });
   const actions = document.createElement("div");
   actions.className = "path-feather-actions";
   const reset = document.createElement("button");
@@ -10770,6 +10849,17 @@ function createPathFeatherControl(local, leaf) {
   const input = document.createElement("input");
   Object.assign(input, { type: "range", min: "0", max: "100", step: "1", value: String(Number(leaf.feather || 0) * 200) });
   input.dataset.defaultValue = "4";
+  const status = document.createElement("span");
+  status.className = "path-feather-status";
+  status.setAttribute("aria-live", "polite");
+  const updateStatus = (message = "") => {
+    const outer = flattenPathNodes(leaf.feather_nodes || []);
+    const merging = outer.length >= 3 && !simplePathPolygon(outer);
+    status.textContent = message || (merging ? "Feather regions are merging." : "");
+    status.classList.toggle("merging", merging && !message);
+    status.classList.toggle("blocking", Boolean(message));
+  };
+  updateStatus();
   input.addEventListener("input", () => {
     const previous = Number(leaf.feather || 0);
     const next = Number(input.value) / 200;
@@ -10778,6 +10868,7 @@ function createPathFeatherControl(local, leaf) {
       if (!validFeatherGeometry(leaf.nodes, proposed)) {
         input.value = String(previous * 200);
         state.pathInvalidGesture = true;
+        updateStatus("Feather stopped because the guide crossed inside the Path.");
         queueLocalMaskOverlayRender();
         return;
       }
@@ -10786,12 +10877,13 @@ function createPathFeatherControl(local, leaf) {
     leaf.feather = next;
     output.textContent = `${Math.round(Number(input.value))}%`;
     state.pathInvalidGesture = false;
+    updateStatus();
     scheduleSpatialMaskPreview(local);
     queueLocalMaskOverlayRender();
   });
   input.addEventListener("change", () => commitSelectedLocal());
   bindLocalPreviewInteraction(input);
-  label.append(heading, output, input);
+  label.append(heading, output, input, status);
   return label;
 }
 
@@ -11249,7 +11341,7 @@ async function commitSelectedLocal({ refreshPreview = true } = {}) {
     // intermediate mask between strokes.
     const committed = await queueEditCommand("update_local", { local: JSON.parse(JSON.stringify(local)) }, local.id, { refreshPreview: false });
     if (committed) {
-      window.cancelAnimationFrame(state.localMaskDraftTimer);
+      window.clearTimeout(state.localMaskDraftTimer);
       state.localMaskDraftTimer = 0;
       // Let an in-flight draft finish quietly. The generation bump below makes
       // its response ineligible, while avoiding a browser-level request failure
@@ -11898,7 +11990,10 @@ function validFeatherGeometry(innerNodes, outerNodes) {
   if (!innerNodes?.length || !outerNodes?.length) return false;
   const inner = flattenPathNodes(innerNodes);
   const outer = flattenPathNodes(outerNodes);
-  return simplePathPolygon(inner) && simplePathPolygon(outer) && inner.every((point) => pointInsidePathPolygon(point, outer));
+  if (!simplePathPolygon(inner)) return false;
+  // Self-overlap in the outer guide is an additive merge, not invalid Path
+  // geometry. A simple guide must still contain the complete inner Path.
+  return !simplePathPolygon(outer) || inner.every((point) => pointInsidePathPolygon(point, outer));
 }
 
 function validPathGeometry(leaf, nodes) {
@@ -12217,20 +12312,98 @@ function handlePathCanvasKeydown(event) {
   commitSelectedLocal();
 }
 
+function syncLocalMaskOverlayViewport() {
+  const canvas = els.localMaskOverlay;
+  const pane = els.previewPrimaryPane;
+  const viewport = els.dropzone;
+  if (!canvas || !pane || !viewport) return;
+  // During a crop/rotate handoff the overlay intentionally transforms with the
+  // old bitmap. Keep its full-pane box until the authoritative frame arrives.
+  if (["--interactive-rotate-angle", "--interactive-straighten-angle", "--interactive-flip-x", "--interactive-flip-y"]
+    .some((property) => canvas.style.getPropertyValue(property))) {
+    Object.assign(canvas.style, { inset: "0", width: "100%", height: "100%" });
+    return;
+  }
+  const paneRect = pane.getBoundingClientRect();
+  const viewportRect = viewport.getBoundingClientRect();
+  const left = Math.max(0, viewportRect.left - paneRect.left);
+  const top = Math.max(0, viewportRect.top - paneRect.top);
+  const right = Math.min(paneRect.width, viewportRect.right - paneRect.left);
+  const bottom = Math.min(paneRect.height, viewportRect.bottom - paneRect.top);
+  Object.assign(canvas.style, {
+    inset: "auto",
+    left: `${left}px`,
+    top: `${top}px`,
+    right: "auto",
+    bottom: "auto",
+    width: `${Math.max(1, right - left)}px`,
+    height: `${Math.max(1, bottom - top)}px`,
+  });
+}
+
+function beginPathMaskProgress(local) {
+  if (!local || local.mask?.leaf?.type !== "path") return;
+  state.pathMaskProgressTarget = {
+    localId: local.id,
+    maskSignature: JSON.stringify(local.mask),
+    spatialSignature: localMaskSpatialSignature(local.mask),
+  };
+  if (state.pathMaskProgressTimer || !els.pathMaskProgress?.classList.contains("hidden")) return;
+  state.pathMaskProgressStartedAt = performance.now();
+  state.pathMaskProgressTimer = window.setTimeout(() => {
+    state.pathMaskProgressTimer = 0;
+    if (!state.pathMaskProgressTarget) return;
+    els.pathMaskProgressCopy.textContent = "Updating feather…";
+    els.pathMaskProgress.classList.remove("hidden", "error");
+  }, 400);
+}
+
+function finishPathMaskProgress(localId, signature, spatialOnly = false) {
+  const target = state.pathMaskProgressTarget;
+  if (!target || target.localId !== localId) return;
+  if (signature !== (spatialOnly ? target.spatialSignature : target.maskSignature)) return;
+  window.clearTimeout(state.pathMaskProgressTimer);
+  state.pathMaskProgressTimer = 0;
+  state.pathMaskProgressTarget = null;
+  els.pathMaskProgress?.classList.add("hidden");
+  if (window.HDRFinisherPerformance) {
+    window.HDRFinisherPerformance.pathMaskLatencyMs = performance.now() - state.pathMaskProgressStartedAt;
+  }
+}
+
+function cancelPathMaskProgress() {
+  window.clearTimeout(state.pathMaskProgressTimer);
+  state.pathMaskProgressTimer = 0;
+  state.pathMaskProgressTarget = null;
+  els.pathMaskProgress?.classList.add("hidden");
+  els.pathMaskProgress?.classList.remove("error");
+}
+
+function failPathMaskProgress(localId) {
+  if (state.pathMaskProgressTarget?.localId !== localId) return;
+  window.clearTimeout(state.pathMaskProgressTimer);
+  state.pathMaskProgressTimer = 0;
+  els.pathMaskProgressCopy.textContent = "Feather preview could not be updated.";
+  els.pathMaskProgress.classList.remove("hidden");
+  els.pathMaskProgress.classList.add("error");
+}
+
 function renderLocalMaskOverlay() {
   const canvas = els.localMaskOverlay;
   if (!canvas) return;
   const local = selectedLocal();
+  if (state.pathMaskProgressTarget && state.pathMaskProgressTarget.localId !== local?.id) {
+    cancelPathMaskProgress();
+  }
   const active = state.gradeMode === "local" && Boolean(local) && local.enabled !== false;
   canvas.classList.toggle("editing", active);
-  const rect = els.previewPrimaryPane?.getBoundingClientRect();
+  syncLocalMaskOverlayViewport();
+  const rect = canvas.getBoundingClientRect();
   if (!rect?.width || !rect?.height) return;
   const deviceRatio = window.devicePixelRatio || 1;
-  const bitmapLongEdge = Math.max(512, Math.min(1600, settledProxyLongEdge()));
-  // The canvas element follows the zoomed image for pointer geometry, but its
-  // bitmap does not need to grow to multi-thousand-pixel zoom dimensions. Keep
-  // it at mask-proxy resolution and let CSS scale it with the preview.
-  const ratio = Math.min(deviceRatio, bitmapLongEdge / Math.max(rect.width, rect.height));
+  // The canvas covers only the visible viewer intersection, so it can render at
+  // device resolution without allocating a 30k-wide bitmap at extreme zoom.
+  const ratio = deviceRatio;
   const bitmapWidth = Math.max(1, Math.round(rect.width * ratio));
   const bitmapHeight = Math.max(1, Math.round(rect.height * ratio));
   if (canvas.width !== bitmapWidth) canvas.width = bitmapWidth;
@@ -12258,6 +12431,8 @@ function renderLocalMaskOverlay() {
   const authoritative = local.mask?.operator === "leaf"
     ? localAuthoritativeMaskCache.get(local.id)
     : null;
+  const authoritativeCurrent = Boolean(authoritative
+    && authoritative.signature === (authoritative.spatialOnly ? spatialSignature : maskSignature));
   const needsAuthoritativeOverlay = ["linear_gradient", "luminance_range"].includes(local.mask?.leaf?.type);
   const drawOptions = {
     localId: local.id,
@@ -12274,6 +12449,7 @@ function renderLocalMaskOverlay() {
     )
       ? authoritative
       : null,
+    authoritativeCurrent,
     exactMaskPending: state.localMaskDraftDirty,
     gpuLumaOverlay: gpuLumaMaskPreviewActive(local),
   };
@@ -12341,7 +12517,18 @@ function drawMaskExpression(context, expression, x, y, options = {}) {
   } else if (leaf.type === "brush") {
     const gesture = state.localPointerGesture;
     const activeStroke = gesture?.type === "brush" && gesture.leaf === leaf ? gesture.stroke : null;
-    if (renderMask && state.localShowMask) drawBrushMaskOverlay(context, leaf, null, x, y, expression.inverted, options);
+    // Authoritative mask rasters are already in post-geometry output space,
+    // while the client fallback is rebuilt from source-anchored stroke points.
+    // Draw only the former in the untransformed mask phase. The latter must
+    // share the source-to-output transform used by the cursor, active stroke,
+    // and Path gizmos or a crop/rotate makes settled paint jump away from the
+    // pointer until the authoritative mask request completes.
+    if (renderMask && state.localShowMask && options.authoritative) {
+      drawBrushMaskOverlay(context, leaf, null, x, y, expression.inverted, options);
+    }
+    if (renderGizmo && state.localShowMask && !options.authoritative) {
+      drawBrushMaskOverlay(context, leaf, null, x, y, expression.inverted, options);
+    }
     if (renderGizmo && state.localShowMask && activeStroke) drawActiveBrushStrokeOverlay(context, activeStroke, x, y);
     const cursor = state.localBrushCursor || activeStroke?.points?.at(-1);
     if (renderGizmo && cursor) drawBrushGizmo(context, cursor, brushSettings(leaf), x, y);
@@ -12354,10 +12541,11 @@ function drawMaskExpression(context, expression, x, y, options = {}) {
       drawLuminanceSamplingGesture(context, samplingGesture, x, y);
     }
   } else if (leaf.type === "path") {
-    if (renderMask && state.localShowMask && options.authoritative) {
-      drawAuthoritativeMaskOverlay(context, options.authoritative.canvas, x, y, options.authoritative.spatialOnly ? leaf.mask_opacity : 1);
+    const currentAuthoritative = options.authoritativeCurrent ? options.authoritative : null;
+    if (renderMask && state.localShowMask && currentAuthoritative) {
+      drawAuthoritativeMaskOverlay(context, currentAuthoritative.canvas, x, y, currentAuthoritative.spatialOnly ? leaf.mask_opacity : 1);
     }
-    if (renderGizmo) drawPathMaskGizmo(context, leaf, x, y, { drawFill: !options.authoritative });
+    if (renderGizmo) drawPathMaskGizmo(context, leaf, x, y, { drawFill: !currentAuthoritative });
   }
   context.restore();
 }
@@ -12481,6 +12669,7 @@ async function queueAuthoritativeLocalMask(local) {
       }
       canvas.getContext("2d").putImageData(new ImageData(pixels, width, height), 0, 0);
       localAuthoritativeMaskCache.set(local.id, { key, signature, canvas, spatialOnly: true });
+      finishPathMaskProgress(local.id, signature, true);
       while (localAuthoritativeMaskCache.size > 8) {
         localAuthoritativeMaskCache.delete(localAuthoritativeMaskCache.keys().next().value);
       }
@@ -12504,17 +12693,18 @@ function scheduleAuthoritativeLocalMaskDraft(local) {
     mask: JSON.parse(signature),
     signature,
     revision: state.editRevision,
-    longEdge: settledProxyLongEdge(),
+    longEdge: local.mask.leaf?.type === "path"
+      ? Math.min(1600, settledProxyLongEdge())
+      : settledProxyLongEdge(),
     adjustments: JSON.parse(JSON.stringify(state.adjustments)),
     geometrySignature: geometrySignature(),
     generation: ++state.localMaskDraftGeneration,
   };
   if (state.localMaskDraftController) {
-    state.localMaskDraftController.abort();
     return;
   }
-  if (state.localMaskDraftTimer) return;
-  state.localMaskDraftTimer = window.requestAnimationFrame(flushAuthoritativeLocalMaskDraft);
+  window.clearTimeout(state.localMaskDraftTimer);
+  state.localMaskDraftTimer = window.setTimeout(flushAuthoritativeLocalMaskDraft, 90);
 }
 
 function flushAuthoritativeLocalMaskDraft() {
@@ -12595,12 +12785,16 @@ async function loadAuthoritativeLocalMaskDraft(
     const width = Number(response.headers.get("X-Image-Width"));
     const height = Number(response.headers.get("X-Image-Height"));
     const alpha = new Uint8Array(await response.arrayBuffer());
+    const selected = selectedLocal();
+    const currentPathMatch = selected?.mask?.leaf?.type === "path"
+      && localId === selected.id
+      && signature === JSON.stringify(selected.mask)
+      && requestedGeometrySignature === geometrySignature();
     if (
-      generation !== state.localMaskDraftGeneration
-      || revision !== state.editRevision
+      (!currentPathMatch && (generation !== state.localMaskDraftGeneration || revision !== state.editRevision))
       || requestedGeometrySignature !== geometrySignature()
       || localId !== state.selectedLocalId
-      || signature !== JSON.stringify(selectedLocal()?.mask)
+      || signature !== JSON.stringify(selected?.mask)
     ) {
       state.previewScheduler?.recordStaleResult();
       return;
@@ -12612,6 +12806,7 @@ async function loadAuthoritativeLocalMaskDraft(
       canvas,
       spatialOnly: false,
     });
+    finishPathMaskProgress(localId, signature, false);
     trimAuthoritativeLocalMaskCache();
     if (state.rotateDraftGeometry && requestedGeometrySignature === geometrySignature()) {
       [els.previewOverlay, els.localMaskOverlay].forEach((overlay) => {
@@ -12637,11 +12832,14 @@ async function loadAuthoritativeLocalMaskDraft(
       }));
     });
   } catch (error) {
-    if (error?.name !== "AbortError") console.warn("Authoritative local mask draft could not be loaded.", error);
+    if (error?.name !== "AbortError") {
+      console.warn("Authoritative local mask draft could not be loaded.", error);
+      failPathMaskProgress(localId);
+    }
   } finally {
     if (state.localMaskDraftController === controller) state.localMaskDraftController = null;
     if (state.localMaskDraftPending && state.localMaskDraftDirty && !state.localMaskDraftTimer) {
-      state.localMaskDraftTimer = window.requestAnimationFrame(flushAuthoritativeLocalMaskDraft);
+      state.localMaskDraftTimer = window.setTimeout(flushAuthoritativeLocalMaskDraft, 90);
     }
   }
 }
@@ -12917,11 +13115,8 @@ function drawSelectedPathHandles(context, node, nodeIndex, x, y) {
     context.beginPath();
     context.moveTo(x(node.x), y(node.y));
     context.lineTo(hx, hy);
-    context.strokeStyle = "rgba(0, 0, 0, .9)";
-    context.lineWidth = 5;
-    context.stroke();
     context.strokeStyle = uiToken("--accent");
-    context.lineWidth = 2;
+    context.lineWidth = 1.25;
     context.stroke();
     context.beginPath();
     context.arc(hx, hy, 6, 0, Math.PI * 2);
@@ -12951,10 +13146,19 @@ function drawPathMaskGizmo(context, leaf, x, y, { drawFill = true } = {}) {
   const innerPath = () => tracePathBoundary(context, inner, x, y, closed);
   if (drawFill && closed && state.localShowMask) {
     innerPath();
-    context.fillStyle = overlayColorWithAlpha(0.22);
+    context.fillStyle = overlayColorWithAlpha(0.22 * clamp(Number(leaf.mask_opacity ?? 1), 0, 1));
     context.fill();
   }
-  if (inner.length) drawLocalGizmoStroke(context, innerPath, 2.5, state.pathInvalidGesture ? uiToken("--blocking") : uiToken("--accent"));
+  if (inner.length) {
+    context.save();
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.strokeStyle = state.pathInvalidGesture ? uiToken("--blocking") : uiToken("--accent");
+    context.lineWidth = 1.25;
+    innerPath();
+    context.stroke();
+    context.restore();
+  }
   if (draft && inner.length && state.localPathCursor) {
     context.save();
     context.beginPath();
@@ -12972,12 +13176,9 @@ function drawPathMaskGizmo(context, leaf, x, y, { drawFill = true } = {}) {
     const outerPath = () => tracePathBoundary(context, outer, x, y, true);
     context.lineCap = "round";
     context.lineJoin = "round";
-    context.strokeStyle = "rgba(0, 0, 0, .9)";
-    context.lineWidth = 5;
-    outerPath(); context.stroke();
-    context.strokeStyle = state.pathInvalidGesture ? uiToken("--blocking") : uiToken("--text");
-    context.lineWidth = 2;
-    context.setLineDash([7, 6]);
+    context.strokeStyle = state.pathInvalidGesture ? "rgba(255, 92, 92, .55)" : "rgba(174, 184, 187, .4)";
+    context.lineWidth = 1.25;
+    context.setLineDash([5, 5]);
     context.lineDashOffset = reducedPathMotion ? 0 : -performance.now() / 70;
     outerPath(); context.stroke();
     context.restore();

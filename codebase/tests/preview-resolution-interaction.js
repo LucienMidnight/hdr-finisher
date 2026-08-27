@@ -19,11 +19,32 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
 
     await page.click("#test-pattern-button");
     await page.waitForFunction(() => document.body.dataset.workflow === "grade");
+    await page.click("#zoom-actual");
+    const actualSize = await page.evaluate(() => {
+      const preview = activePreviewElement();
+      const source = state.session.source;
+      return {
+        cssWidth: Number.parseFloat(preview.style.width),
+        cssHeight: Number.parseFloat(preview.style.height),
+        sourceWidth: source.width,
+        sourceHeight: source.height,
+      };
+    });
+    if (Math.abs(actualSize.cssWidth - actualSize.sourceWidth) > 1 || Math.abs(actualSize.cssHeight - actualSize.sourceHeight) > 1) {
+      throw new Error(`100% zoom was not one source pixel per CSS pixel: ${JSON.stringify(actualSize)}`);
+    }
     await selector.selectOption("4096");
     await page.waitForFunction(() => window.HDRFinisherPerformance.authoringState().previewResolution === "4096");
     const fourK = await page.evaluate(() => window.HDRFinisherPerformance.authoringState());
     if (fourK.previewMaxDimension > 4096) {
       throw new Error(`4K preview target exceeded its hard dimension cap: ${JSON.stringify(fourK)}`);
+    }
+    const afterResolutionChange = await page.evaluate(() => ({
+      width: Number.parseFloat(activePreviewElement().style.width),
+      height: Number.parseFloat(activePreviewElement().style.height),
+    }));
+    if (Math.abs(afterResolutionChange.width - actualSize.sourceWidth) > 1 || Math.abs(afterResolutionChange.height - actualSize.sourceHeight) > 1) {
+      throw new Error(`Preview resolution changed 100% viewer geometry: ${JSON.stringify(afterResolutionChange)}`);
     }
 
     if (pageErrors.length) throw new Error(`Browser errors: ${pageErrors.join(" | ")}`);

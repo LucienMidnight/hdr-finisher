@@ -227,6 +227,37 @@ def test_outer_boundary_path_feather_is_solid_inside_and_falls_to_zero_at_outer_
     assert mask[0, 4] == pytest.approx(0.0, abs=1e-5)
 
 
+def test_path_softness_adds_a_long_tail_without_changing_the_core_or_guide() -> None:
+    base = MaskLeaf(
+        type="path",
+        nodes=_path_nodes(),
+        feather=0.1,
+        feather_mode="outer_boundary",
+        feather_nodes=_feather_nodes(),
+    )
+    soft = base.model_copy(update={"feather_softness": 1.0})
+    x = np.asarray([[0.25, 0.24, 0.21, 0.16, 0.149]], dtype=np.float32)
+    y = np.full_like(x, 0.5)
+    reference = np.full((1, x.shape[1], 3), 0.18, dtype=np.float32)
+
+    compact_mask = evaluate_mask(_leaf(base), reference, x, y)
+    soft_mask = evaluate_mask(_leaf(soft), reference, x, y)
+
+    assert soft_mask[0, 0] == pytest.approx(1.0)
+    assert soft_mask[0, 1] < compact_mask[0, 1]
+    assert soft_mask[0, 2] < compact_mask[0, 2]
+    assert soft_mask[0, 3] > compact_mask[0, 3]
+    assert soft_mask[0, 3] > 0.04
+    assert soft_mask[0, 4] == pytest.approx(0.0, abs=1e-5)
+
+
+def test_path_softness_round_trips_and_is_bounded() -> None:
+    original = MaskLeaf(type="path", nodes=_path_nodes(), feather_softness=0.72)
+    assert MaskLeaf.model_validate_json(original.model_dump_json()).feather_softness == pytest.approx(0.72)
+    with pytest.raises(ValueError):
+        MaskLeaf(type="path", nodes=_path_nodes(), feather_softness=1.01)
+
+
 def test_uniform_outer_path_feather_uses_the_short_image_edge_as_its_distance_unit() -> None:
     leaf = MaskLeaf(type="path", nodes=_path_nodes(), feather=0.1, feather_mode="outer_boundary")
     # On a 2:1 image, a 0.1 short-edge feather spans 0.05 normalized X or
@@ -249,7 +280,7 @@ def test_legacy_symmetric_path_feather_keeps_its_existing_boundary_semantics() -
     assert mask[0, 1] < 0.5 < mask[0, 2]
 
 
-def test_path_model_rejects_crossing_and_non_containing_feather_boundaries() -> None:
+def test_path_model_allows_additive_feather_overlap_but_rejects_non_containing_simple_boundaries() -> None:
     with pytest.raises(ValueError, match="cannot self-intersect"):
         MaskLeaf(
             type="path",
@@ -266,6 +297,44 @@ def test_path_model_rejects_crossing_and_non_containing_feather_boundaries() -> 
             feather_mode="outer_boundary",
             feather_nodes=_feather_nodes(0.3, 0.3, 0.7, 0.7),
         )
+    crossing_outer = [
+        FeatherPathNode(x=0.1, y=0.1),
+        FeatherPathNode(x=0.9, y=0.9),
+        FeatherPathNode(x=0.9, y=0.1),
+        FeatherPathNode(x=0.1, y=0.9),
+    ]
+    leaf = MaskLeaf(
+        type="path",
+        nodes=_path_nodes(),
+        feather=0.2,
+        feather_mode="outer_boundary",
+        feather_nodes=crossing_outer,
+    )
+    assert leaf.feather_nodes == crossing_outer
+
+
+def test_overlapping_outer_path_feather_bands_merge_without_hotspots() -> None:
+    leaf = MaskLeaf(
+        type="path",
+        nodes=[
+            PathNode(x=0.25, y=0.15),
+            PathNode(x=0.75, y=0.15),
+            PathNode(x=0.55, y=0.48),
+            PathNode(x=0.75, y=0.85),
+            PathNode(x=0.25, y=0.85),
+            PathNode(x=0.45, y=0.48),
+        ],
+        feather=0.35,
+        feather_mode="outer_boundary",
+    )
+    axis = np.linspace(0.0, 1.0, 257, dtype=np.float32)
+    x, y = np.meshgrid(axis, axis)
+    reference = np.full((257, 257, 3), 0.18, dtype=np.float32)
+    mask = evaluate_mask(_leaf(leaf), reference, x, y)
+    assert np.isfinite(mask).all()
+    assert float(np.min(mask)) >= 0.0
+    assert float(np.max(mask)) <= 1.0
+    assert mask[123, 128] > 0.0
 
 
 def test_outer_boundary_path_payload_round_trips_all_vector_state() -> None:

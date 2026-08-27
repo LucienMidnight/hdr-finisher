@@ -1044,8 +1044,10 @@ def test_phase_one_local_influence_and_latest_generation_contract() -> None:
     assert "scheduleLocalPreview();" in javascript
     assert "bindLocalPreviewInteraction(input);" in javascript
     assert "active.controller?.abort();" in javascript
-    assert "window.requestAnimationFrame(flushAuthoritativeLocalMaskDraft)" in javascript
-    assert "signature !== JSON.stringify(selectedLocal()?.mask)" in javascript
+    assert "window.setTimeout(flushAuthoritativeLocalMaskDraft, 90)" in javascript
+    assert "Math.min(1600, settledProxyLongEdge())" in javascript
+    assert "signature !== JSON.stringify(selected?.mask)" in javascript
+    assert "currentPathMatch" in javascript
     assert "local_adjustments: requestLocals" in javascript
     assert "local_adjustments: state.localPreviewDirty" in javascript
     assert 'conflict?.detail === "Stale scope request dropped."' in javascript
@@ -1201,6 +1203,7 @@ def test_path_mask_exposes_draft_bezier_and_independent_feather_contract() -> No
     assert 'id="local-mask-overlay" class="local-mask-overlay" tabindex="0"' in html
     for contract in [
         'feather_mode: "outer_boundary"',
+        "feather_softness: 0",
         'feather_nodes: []',
         "function finishLocalPathDraft()",
         "function splitPathSegment(nodes, segmentIndex, t = 0.5)",
@@ -1215,6 +1218,7 @@ def test_path_mask_exposes_draft_bezier_and_independent_feather_contract() -> No
     assert '.path-edit-mode' in css
     assert '.path-node-mode' in css
     assert 'matchMedia("(prefers-reduced-motion: reduce)")' in javascript
+    assert 'name: "feather_softness"' in javascript
 
 
 def test_local_mask_authoring_uses_bidirectional_authoritative_geometry_mapping() -> None:

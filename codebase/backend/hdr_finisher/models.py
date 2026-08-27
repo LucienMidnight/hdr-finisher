@@ -614,6 +614,7 @@ class MaskLeaf(BaseModel):
     fade_out_end_ev: float = Field(default=10.0, ge=-24.0, le=24.0)
     nodes: list[PathNode] = Field(default_factory=list, max_length=16384)
     feather: float = Field(default=0.0, ge=0.0, le=0.5)
+    feather_softness: float = Field(default=0.0, ge=0.0, le=1.0)
     feather_mode: Literal["symmetric", "outer_boundary"] = "symmetric"
     feather_nodes: list[FeatherPathNode] = Field(default_factory=list, max_length=16384)
     sample: MaskPoint | None = None
@@ -639,9 +640,14 @@ class MaskLeaf(BaseModel):
                 raise ValueError("path masks cannot self-intersect")
             if self.feather_nodes:
                 outer = _flatten_validation_path(self.feather_nodes)
-                if not _validation_path_is_simple(outer):
-                    raise ValueError("editable feather boundaries cannot self-intersect")
-                if self.feather > 1e-8 and not all(_validation_polygon_contains(point, outer) for point in inner):
+                # A folded outer guide is valid for additive feathering: each
+                # local band contributes coverage and overlaps merge by max.
+                # Preserve the containment guard for ordinary simple guides.
+                if (
+                    self.feather > 1e-8
+                    and _validation_path_is_simple(outer)
+                    and not all(_validation_polygon_contains(point, outer) for point in inner)
+                ):
                     raise ValueError("editable feather boundaries must contain the complete path")
         if self.type == "sampled_point" and self.sample is None:
             raise ValueError("sampled_point masks require a sample point")

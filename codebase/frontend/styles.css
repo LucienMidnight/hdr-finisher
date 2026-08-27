@@ -1303,6 +1303,26 @@ body[data-active-lane="sdr"] .lane-dot {
   font-size: 10px;
 }
 
+.path-mask-progress {
+  z-index: 30;
+  pointer-events: none;
+}
+
+.path-feather-status {
+  grid-column: 1 / -1;
+  min-height: 1.2em;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.path-feather-status.merging {
+  color: var(--attention);
+}
+
+.path-feather-status.blocking {
+  color: var(--blocking);
+}
+
 .preview-status.error {
   border-color: var(--blocking);
   color: var(--error-text);

@@ -141,6 +141,57 @@ async function overlayMaskAlphaAt(page, x, y) {
     assert(await page.locator("#local-invert").isDisabled(), "Painted-mask invert should be disabled before the first stroke.");
     assert(await page.locator("#local-show-mask").getAttribute("aria-pressed") === "true", "A new brush should show its overlay by default.");
     assert(await page.locator(".local-mask-expression-row").count() === 0, "The redundant mask-expression strip is still visible.");
+
+    // A client-side fallback raster is built from source-anchored strokes.
+    // Under non-neutral geometry it must follow the same source-to-output map
+    // as the brush cursor instead of appearing at the raw source coordinate.
+    const transformedFallbackCenter = await page.evaluate(() => {
+      const local = selectedLocal();
+      const leaf = JSON.parse(JSON.stringify(local.mask.leaf));
+      leaf.strokes = [{
+        radius: 0.025,
+        hardness: 1,
+        flow: 1,
+        opacity: 1,
+        erase: false,
+        points: [{ x: 0.625, y: 0.5, pressure: 1 }],
+      }];
+      const canvas = document.createElement("canvas");
+      canvas.width = 200;
+      canvas.height = 100;
+      const context = canvas.getContext("2d");
+      const previousCursor = state.localBrushCursor;
+      state.localBrushCursor = null;
+      context.save();
+      applySourceGeometryCanvasTransform(
+        context,
+        { left: 0, top: 0, width: 200, height: 100 },
+        { left: 0, top: 0, width: 200, height: 100 },
+        [2, 0, -0.5, 0, 1, 0],
+      );
+      drawMaskExpression(context, { operator: "leaf", inverted: false, leaf }, (value) => value * 200, (value) => value * 100, {
+        renderPhase: "gizmo",
+        localId: "geometry-fallback-regression",
+        spatialSignature: "geometry-fallback-regression",
+        authoritative: null,
+      });
+      context.restore();
+      state.localBrushCursor = previousCursor;
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      let weightedX = 0;
+      let weight = 0;
+      for (let index = 0; index < pixels.length; index += 4) {
+        const alpha = pixels[index + 3];
+        if (alpha <= 8 || pixels[index] <= pixels[index + 1] * 1.5) continue;
+        weightedX += (index / 4 % canvas.width) * alpha;
+        weight += alpha;
+      }
+      return weight ? weightedX / weight : null;
+    });
+    assert(
+      transformedFallbackCenter !== null && Math.abs(transformedFallbackCenter - 150) < 4,
+      `The source-anchored brush fallback did not follow display geometry (${transformedFallbackCenter}).`,
+    );
     const adjustmentMenuButton = page.getByRole("button", { name: "More actions for Local Adjustment 1" });
     assert(await adjustmentMenuButton.getAttribute("aria-haspopup") === "menu", "The adjustment ellipsis is not an accessible menu button.");
     await adjustmentMenuButton.click();

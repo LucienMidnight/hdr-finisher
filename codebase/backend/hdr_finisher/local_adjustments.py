@@ -763,20 +763,123 @@ def _path_mask(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray, pixel_aspect: float
         feather = np.clip(edge_distance / max(leaf.feather, 1e-6), 0.0, 1.0)
         return np.where(inside, 0.5 + 0.5 * feather, 0.5 - 0.5 * feather).astype(np.float32)
 
-    if leaf.feather_nodes:
-        outer = _flatten_path_nodes(leaf.feather_nodes)
-    elif leaf.feather > 0.0:
-        outer = _offset_polygon(nodes, leaf.feather, pixel_aspect)
-    else:
+    if not leaf.feather_nodes and leaf.feather <= 0.0:
         return inside.astype(np.float32)
+    outer = _flatten_path_nodes(leaf.feather_nodes) if leaf.feather_nodes else None
+    transition = _additive_outer_path_feather(
+        x,
+        y,
+        nodes,
+        outer,
+        float(leaf.feather),
+        float(leaf.feather_softness),
+        pixel_aspect,
+    )
+    return np.where(inside, 1.0, transition).astype(np.float32)
 
-    outer_inside = _points_inside_polygon(x, y, outer)
-    inner_distance = _distance_to_polygon(x, y, nodes, pixel_aspect)
-    outer_distance = _distance_to_polygon(x, y, outer, pixel_aspect)
-    denominator = np.maximum(inner_distance + outer_distance, np.float32(1e-6))
-    transition = np.clip(outer_distance / denominator, 0.0, 1.0)
-    transition = transition * transition * (3.0 - 2.0 * transition)
-    return np.where(inside, 1.0, np.where(outer_inside, transition, 0.0)).astype(np.float32)
+
+def _resample_closed_path(vertices: list[tuple[float, float]], count: int) -> list[tuple[float, float]]:
+    if not vertices or count <= 0:
+        return []
+    points = np.asarray(vertices, dtype=np.float64)
+    following = np.roll(points, -1, axis=0)
+    lengths = np.linalg.norm(following - points, axis=1)
+    perimeter = float(np.sum(lengths))
+    if perimeter <= 1e-12:
+        return [tuple(map(float, points[0]))] * count
+    cumulative = np.concatenate(([0.0], np.cumsum(lengths)))
+    samples: list[tuple[float, float]] = []
+    for distance in np.linspace(0.0, perimeter, count, endpoint=False):
+        index = min(int(np.searchsorted(cumulative, distance, side="right") - 1), len(points) - 1)
+        fraction = (distance - cumulative[index]) / max(float(lengths[index]), 1e-12)
+        point = points[index] + (following[index] - points[index]) * fraction
+        samples.append((float(point[0]), float(point[1])))
+    return samples
+
+
+def _additive_outer_path_feather(
+    x: np.ndarray,
+    y: np.ndarray,
+    inner: list[tuple[float, float]],
+    outer: list[tuple[float, float]] | None,
+    uniform_width: float,
+    softness: float,
+    pixel_aspect: float,
+) -> np.ndarray:
+    """Merge local outward feather bands with an adjustable falloff profile."""
+    if len(inner) < 3:
+        return np.zeros(x.shape, dtype=np.float32)
+    aspect = max(float(pixel_aspect), 1e-6)
+    scale_x = np.float32(max(aspect, 1.0))
+    scale_y = np.float32(max(1.0 / aspect, 1.0))
+    inner_points = np.asarray([(px * scale_x, py * scale_y) for px, py in inner], dtype=np.float32)
+    outer_points = None
+    if outer:
+        sampled = outer if len(outer) == len(inner) else _resample_closed_path(outer, len(inner))
+        outer_points = np.asarray([(px * scale_x, py * scale_y) for px, py in sampled], dtype=np.float32)
+    signed_area = np.sum(
+        inner_points[:, 0] * np.roll(inner_points[:, 1], -1)
+        - np.roll(inner_points[:, 0], -1) * inner_points[:, 1]
+    )
+    orientation = np.float32(1.0 if signed_area >= 0.0 else -1.0)
+    coverage = np.zeros(x.shape, dtype=np.float32)
+    for index, first in enumerate(inner_points):
+        second = inner_points[(index + 1) % len(inner_points)]
+        dx = np.float32(second[0] - first[0])
+        dy = np.float32(second[1] - first[1])
+        length = max(float(math.hypot(float(dx), float(dy))), 1e-8)
+        denominator = max(float(dx * dx + dy * dy), 1e-12)
+        if outer_points is None:
+            width_first = width_second = max(uniform_width, 1e-6)
+        else:
+            normal_x = orientation * dy / np.float32(length)
+            normal_y = orientation * -dx / np.float32(length)
+            outer_first = outer_points[index]
+            outer_second = outer_points[(index + 1) % len(outer_points)]
+            width_first = max(float((outer_first[0] - first[0]) * normal_x + (outer_first[1] - first[1]) * normal_y), 1e-6)
+            width_second = max(float((outer_second[0] - second[0]) * normal_x + (outer_second[1] - second[1]) * normal_y), 1e-6)
+        source_first = inner[index]
+        source_second = inner[(index + 1) % len(inner)]
+        rows, columns = _brush_shape_roi(
+            x,
+            y,
+            source_first[0],
+            source_first[1],
+            source_second[0],
+            source_second[1],
+            max(width_first, width_second),
+        )
+        region_x = x[rows, columns] * scale_x
+        region_y = y[rows, columns] * scale_y
+        projection = np.clip(((region_x - first[0]) * dx + (region_y - first[1]) * dy) / denominator, 0.0, 1.0)
+        closest_x = first[0] + projection * dx
+        closest_y = first[1] + projection * dy
+        distance = np.sqrt((region_x - closest_x) ** 2 + (region_y - closest_y) ** 2)
+        width = np.float32(width_first) + projection * np.float32(width_second - width_first)
+        normalized_distance = distance / np.maximum(width, np.float32(1e-6))
+        active = normalized_distance <= 1.0
+        compact = np.clip(1.0 - normalized_distance, 0.0, 1.0)
+        compact = compact * compact * (3.0 - 2.0 * compact)
+        # The soft profile is nearly linear through the broad transition, with
+        # short quadratic eases at both ends.  That lowers peak falloff slope
+        # by roughly a quarter versus smoothstep while still meeting the Path
+        # and editable outer guide with no visible seam.
+        ease = np.float32(0.1)
+        maximum_slope = np.float32(1.0) / (np.float32(1.0) - ease)
+        soft = np.where(
+            normalized_distance < ease,
+            np.float32(1.0) - maximum_slope * normalized_distance * normalized_distance / (np.float32(2.0) * ease),
+            np.where(
+                normalized_distance > np.float32(1.0) - ease,
+                maximum_slope * (np.float32(1.0) - normalized_distance) ** 2 / (np.float32(2.0) * ease),
+                np.float32(1.0) - maximum_slope * (normalized_distance - ease / np.float32(2.0)),
+            ),
+        )
+        soft = np.where(active, np.clip(soft, 0.0, 1.0), 0.0)
+        profile_mix = np.float32(np.clip(softness, 0.0, 1.0))
+        contribution = compact + profile_mix * (soft - compact)
+        coverage[rows, columns] = np.maximum(coverage[rows, columns], contribution.astype(np.float32))
+    return coverage.astype(np.float32)
 
 
 def _points_inside_polygon(

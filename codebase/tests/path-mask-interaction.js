@@ -178,25 +178,85 @@ async function clickNormalized(page, box, x, y, options = {}) {
     assert(resetMatches, "Reset did not rebuild an equal-offset feather boundary.");
 
     // Rapid slider input must converge on the last geometry and presented mask.
+    if (await page.locator("#local-show-mask").getAttribute("aria-pressed") !== "true") {
+      await page.locator("#local-show-mask").click();
+    }
+    let draftRequestCount = 0;
+    const delayedDraft = async (route) => {
+      draftRequestCount += 1;
+      await new Promise((resolve) => setTimeout(resolve, 550));
+      await route.continue();
+    };
+    await page.route("**/local-mask/*/preview", delayedDraft);
+    await slider.evaluate((input) => {
+      for (const value of [18, 7, 10]) {
+        input.value = String(value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    });
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const liveFillAlpha = await page.evaluate(() => {
+      const canvas = document.querySelector("#local-mask-overlay");
+      const canvasRect = canvas.getBoundingClientRect();
+      const imageRect = activePreviewElement().getBoundingClientRect();
+      const clientX = imageRect.left + imageRect.width * .5;
+      const clientY = imageRect.top + imageRect.height * .5;
+      const pixelX = Math.max(0, Math.min(canvas.width - 1, Math.round((clientX - canvasRect.left) * canvas.width / canvasRect.width)));
+      const pixelY = Math.max(0, Math.min(canvas.height - 1, Math.round((clientY - canvasRect.top) * canvas.height / canvasRect.height)));
+      return canvas.getContext("2d").getImageData(pixelX, pixelY, 1, 1).data[3];
+    });
+    assert(liveFillAlpha > 0, "Path overlay disappeared while a newer Feather mask was pending.");
+    await page.locator("#path-mask-progress").waitFor({ state: "visible", timeout: 1500 });
+    assert((await page.locator("#path-mask-progress-copy").textContent()).includes("Updating feather"), "Slow Path work did not explain its loading state.");
     const latestPreviewPresented = page.evaluate(() => new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error("Timed out waiting for the latest path preview.")), 5000);
+      const timeout = setTimeout(() => reject(new Error("Timed out waiting for the latest path preview.")), 15000);
       window.addEventListener("hdrfinisher:preview-presented", (event) => {
         clearTimeout(timeout);
         resolve(event.detail);
       }, { once: true });
     }));
     response = page.waitForResponse((item) => item.url().includes("/edit-commands") && item.request().method() === "POST");
-    await slider.evaluate((input) => {
-      for (const value of [18, 7, 10]) {
-        input.value = String(value);
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-      }
-      input.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await slider.evaluate((input) => input.dispatchEvent(new Event("change", { bubbles: true })));
     assert((await response).ok(), "Rapid Feather inputs did not commit.");
     await latestPreviewPresented;
+    await page.locator("#path-mask-progress").waitFor({ state: "hidden", timeout: 5000 });
+    await page.unroute("**/local-mask/*/preview", delayedDraft);
+    assert(draftRequestCount <= 1, `Rapid Feather input launched ${draftRequestCount} draft mask jobs instead of only the latest value.`);
     current = await pathState(page);
     assert(Math.abs(current.leaf.feather - .05) < 1e-8 && Number(await slider.inputValue()) === 10, "Rapid Feather inputs did not converge on the final value.");
+
+    const softness = page.locator('[data-local-mask-param="feather_softness"]');
+    assert(await softness.count() === 1, "Path Softness control was not rendered below Feather.");
+    response = page.waitForResponse((item) => item.url().includes("/edit-commands") && item.request().method() === "POST");
+    await softness.evaluate((input) => {
+      input.value = "80";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    assert((await response).ok(), "Path Softness did not commit.");
+    assert(Math.abs((await pathState(page)).leaf.feather_softness - .8) < 1e-8, "Path Softness did not persist on the mask leaf.");
+
+    const opacity = page.locator('[data-local-mask-param="mask_opacity"]');
+    assert(await opacity.count() === 1, "Path Opacity control was not rendered below Feather.");
+    response = page.waitForResponse((item) => item.url().includes("/edit-commands") && item.request().method() === "POST");
+    await opacity.evaluate((input) => {
+      input.value = "40";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    assert((await response).ok(), "Path Opacity did not commit.");
+    assert(Math.abs((await pathState(page)).leaf.mask_opacity - .4) < 1e-8, "Path Opacity did not persist on the mask leaf.");
+
+    const overlayResolution = await page.evaluate(() => {
+      setCustomZoom(800);
+      renderLocalMaskOverlay();
+      const canvas = document.querySelector("#local-mask-overlay");
+      const rect = canvas.getBoundingClientRect();
+      return { bitmapWidth: canvas.width, cssWidth: rect.width, deviceRatio: window.devicePixelRatio };
+    });
+    assert(overlayResolution.bitmapWidth >= overlayResolution.cssWidth * overlayResolution.deviceRatio - 2,
+      `Zoomed Path overlay bitmap was undersampled: ${JSON.stringify(overlayResolution)}`);
+    await page.locator("#zoom-fit").click();
 
     // Keyboard equivalents: select, smooth, target-cycle, nudge, split, and remove.
     await overlay.focus();
