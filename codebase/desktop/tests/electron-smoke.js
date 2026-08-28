@@ -100,18 +100,136 @@ async function main() {
     assert.equal(compactLayout.sourceCollapsed, true);
     assert.ok(compactLayout.gradeWidth >= 300);
     assert.equal(compactLayout.dockCollapsed, false);
+    await window.locator("#source-rail-expand").click();
+    const compactMetadataOverlay = await window.evaluate(() => {
+      const source = document.querySelector(".source-rail")?.getBoundingClientRect();
+      const viewer = document.querySelector(".viewer-panel")?.getBoundingClientRect();
+      const grade = document.querySelector(".grade-rail")?.getBoundingClientRect();
+      const chrome = document.querySelector(".window-chrome")?.getBoundingClientRect();
+      const toolbar = document.querySelector(".top-bar")?.getBoundingClientRect();
+      return {
+        sourceTop: source?.top,
+        sourceBottom: source?.bottom,
+        viewerTop: viewer?.top,
+        gradeTop: grade?.top,
+        expectedTop: (chrome?.height || 0) + (toolbar?.height || 0),
+        viewportBottom: window.innerHeight,
+      };
+    });
+    assert.ok(Math.abs(compactMetadataOverlay.sourceTop - compactMetadataOverlay.expectedTop) <= 0.5,
+      `Compact Metadata overlay covered the Electron app toolbar: ${JSON.stringify(compactMetadataOverlay)}`);
+    assert.ok(Math.abs(compactMetadataOverlay.sourceTop - compactMetadataOverlay.viewerTop) <= 0.5,
+      `Compact Metadata overlay did not align with the viewer: ${JSON.stringify(compactMetadataOverlay)}`);
+    assert.ok(Math.abs(compactMetadataOverlay.sourceTop - compactMetadataOverlay.gradeTop) <= 0.5,
+      `Compact Metadata overlay did not align with the Control Panel: ${JSON.stringify(compactMetadataOverlay)}`);
+    assert.ok(Math.abs(compactMetadataOverlay.sourceBottom - compactMetadataOverlay.viewportBottom) <= 0.5,
+      `Compact Metadata overlay escaped the window bottom: ${JSON.stringify(compactMetadataOverlay)}`);
+    await window.screenshot({ path: path.join(outputDirectory, "metadata-overlay-compact.png") });
+    await window.keyboard.press("Escape");
     assert.equal(await window.title(), "HDR Finisher");
     const initialNativeTitle = await electronApp.evaluate(async ({ BrowserWindow }) => {
       const deadline = Date.now() + 30000;
       let title = "";
       while (Date.now() < deadline) {
         title = BrowserWindow.getAllWindows()[0]?.getTitle() || "";
-        if (title === "Untitled — HDR Finisher") break;
+        if (title === "HDR Finisher") break;
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
       return title;
     });
-    assert.equal(initialNativeTitle, "Untitled — HDR Finisher");
+    assert.equal(initialNativeTitle, "HDR Finisher");
+    assert.equal(await window.locator(".window-chrome").isVisible(), true);
+    const headerGeometry = await window.evaluate(() => ({
+      heights: [".rail-title-row", ".viewer-bar", ".grade-header"].map((selector) => document.querySelector(selector)?.getBoundingClientRect().height),
+      sourceCollapsed: document.querySelector(".source-rail")?.classList.contains("collapsed"),
+      productNameHeight: document.querySelector(".product-name")?.getBoundingClientRect().height,
+      productMarkHeight: document.querySelector(".product-mark")?.getBoundingClientRect().height,
+    }));
+    assert.deepEqual(headerGeometry.heights.slice(1), [54, 54]);
+    if (!headerGeometry.sourceCollapsed) assert.equal(headerGeometry.heights[0], 54);
+    assert.equal(headerGeometry.productNameHeight, headerGeometry.productMarkHeight);
+    for (const [toggle, popover, screenshotName] of [
+      ["#overlay-toggle", "#overlay-popover", "viewer-overlays-anchored.png"],
+      ["#preview-toggle", "#preview-popover", "viewer-preview-anchored.png"],
+    ]) {
+      await window.locator(toggle).click();
+      const anchorGeometry = await window.evaluate(([toggleSelector, popoverSelector]) => {
+        const button = document.querySelector(toggleSelector)?.getBoundingClientRect();
+        const panel = document.querySelector(popoverSelector)?.getBoundingClientRect();
+        return {
+          gap: panel?.top - button?.bottom,
+          rightError: Math.abs(panel?.right - button?.right),
+        };
+      }, [toggle, popover]);
+      assert.ok(Math.abs(anchorGeometry.gap - 6) <= 0.5, `Viewer popover was detached from its button: ${JSON.stringify(anchorGeometry)}`);
+      assert.ok(anchorGeometry.rightError <= 0.5, `Viewer popover did not align to its button: ${JSON.stringify(anchorGeometry)}`);
+      await window.screenshot({ path: path.join(outputDirectory, screenshotName) });
+      await window.keyboard.press("Escape");
+    }
+    assert.equal(await window.locator(".top-actions").count(), 0);
+    for (const [width, height] of [[1280, 720], [1366, 768], [1440, 900], [1600, 900], [1920, 1080]]) {
+      await electronApp.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setSize(...size), [width, height]);
+      await window.waitForTimeout(80);
+      const layout = await window.evaluate(() => {
+        const rect = (selector) => document.querySelector(selector)?.getBoundingClientRect();
+        const source = document.querySelector(".source-rail");
+        const sourceHeader = rect(".source-rail .rail-title-row");
+        const sourceCollapse = rect("#source-rail-expand");
+        const viewer = rect(".viewer-panel");
+        const viewerBar = rect(".viewer-bar");
+        const viewerLane = rect(".viewer-lane");
+        const viewerTools = rect(".viewer-tools");
+        return {
+          viewport: [window.innerWidth, window.innerHeight],
+          overflow: document.documentElement.scrollWidth - window.innerWidth,
+          chromeHeight: rect(".window-chrome")?.height,
+          centerHeaderHeight: rect(".viewer-bar")?.height,
+          centerWidth: viewer?.width,
+          viewerToolbarFits: Boolean(viewerBar && viewerTools
+            && viewerTools.left >= viewerBar.left
+            && viewerTools.right <= viewerBar.right
+            && document.querySelector(".viewer-tools").scrollWidth <= document.querySelector(".viewer-tools").clientWidth),
+          viewerToolbarSingleRow: Boolean(viewerBar && viewerLane && viewerTools
+            && Math.abs(viewerBar.height - 54) <= 0.5
+            && viewerLane.width > 0
+            && Math.abs((viewerTools.top + viewerTools.height / 2) - (viewerLane.top + viewerLane.height / 2)) <= 0.5),
+          viewerToolbarCentered: Boolean(viewerBar && viewerLane && viewerTools
+            && Math.abs((viewerTools.left + viewerTools.width / 2) - (viewerLane.right + (viewerBar.right - viewerLane.right) / 2)) <= 0.75),
+          persistentViewerMenus: ["#overlay-toggle", "#preview-toggle"].every((selector) => {
+            const control = rect(selector);
+            return control && control.width > 0 && control.left >= viewerBar.left && control.right <= viewerBar.right;
+          }),
+          metadataCollapseCentered: Boolean(sourceHeader && sourceCollapse
+            && Math.abs((sourceCollapse.top + sourceCollapse.height / 2) - (sourceHeader.top + sourceHeader.height / 2)) <= 0.5
+            && (source?.classList.contains("collapsed")
+              ? Math.abs((sourceCollapse.left + sourceCollapse.width / 2) - (sourceHeader.left + sourceHeader.width / 2)) <= 0.5
+              : Math.abs(sourceHeader.right - sourceCollapse.right - 12) <= 0.5)),
+          rightHeaderHeight: rect(".grade-header")?.height,
+          leftHeaderHeight: source?.classList.contains("collapsed") ? null : rect(".rail-title-row")?.height,
+          gradeBottom: rect(".grade-rail")?.bottom,
+        };
+      });
+      assert.ok(layout.overflow <= 0, `Electron shell overflowed at ${width}x${height}: ${JSON.stringify(layout)}`);
+      assert.equal(layout.chromeHeight, 30, `Custom chrome height changed at ${width}x${height}`);
+      assert.equal(layout.viewerToolbarFits, true, `Viewer toolbar escaped beneath the Control Panel at ${width}x${height}: ${JSON.stringify(layout)}`);
+      assert.equal(layout.viewerToolbarSingleRow, true, `Viewer toolbar changed rows at ${width}x${height}: ${JSON.stringify(layout)}`);
+      assert.equal(layout.viewerToolbarCentered, true, `Viewer toolbar was not centered in the available header space at ${width}x${height}: ${JSON.stringify(layout)}`);
+      assert.equal(layout.persistentViewerMenus, true, `Overlays or Preview disappeared at ${width}x${height}: ${JSON.stringify(layout)}`);
+      assert.equal(layout.metadataCollapseCentered, true, `Metadata collapse control was not centered at ${width}x${height}: ${JSON.stringify(layout)}`);
+      assert.equal(layout.centerHeaderHeight, 54, `Center header height changed at ${width}x${height}`);
+      assert.equal(layout.rightHeaderHeight, 54, `Right header height changed at ${width}x${height}`);
+      if (layout.leftHeaderHeight !== null) assert.equal(layout.leftHeaderHeight, 54, `Left header height changed at ${width}x${height}`);
+      assert.ok(Math.abs(layout.gradeBottom - layout.viewport[1]) <= 1, `Right rail left a bottom shape/gap at ${width}x${height}: ${JSON.stringify(layout)}`);
+    }
+    await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1800, 900));
+    await window.waitForFunction(() => !document.querySelector(".app-shell")?.classList.contains("compact-workspace"));
+    await window.screenshot({ path: path.join(outputDirectory, "custom-shell-full.png") });
+    await window.screenshot({ path: path.join(outputDirectory, "custom-shell-top.png"), clip: { x: 0, y: 0, width: 1800, height: 138 } });
+    await window.getByRole("button", { name: "File", exact: true }).click();
+    await window.screenshot({ path: path.join(outputDirectory, "custom-shell-file-menu.png"), clip: { x: 0, y: 0, width: 520, height: 360 } });
+    await window.keyboard.press("Escape");
+    await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1100, 720));
+    await window.waitForFunction(() => document.querySelector(".app-shell")?.classList.contains("compact-workspace"));
     assert.equal(await window.evaluate(() => typeof window.require), "undefined");
     const environment = await window.evaluate(() => window.hdrFinisherDesktop.environment());
     assert.equal(environment.apiVersion, 1);
@@ -120,6 +238,7 @@ async function main() {
     assert.match(frontendSource, /Windows shell integrations and catalog applications/);
     assert.doesNotMatch(frontendSource, /That dropped file type is not supported by HDR Finisher/);
 
+    await window.getByRole("button", { name: "File", exact: true }).click();
     await window.locator("#settings-open").click();
     await window.locator("#settings-dialog").waitFor({ state: "visible" });
     assert.equal(await window.locator(".top-actions #hdr-reference-white").count(), 0);
@@ -135,7 +254,7 @@ async function main() {
     assert.equal(fs.existsSync(path.join(defaultPresetDirectory, "Grading")), true);
     await window.locator('[data-settings-tab="shortcuts"]').click();
     assert.equal(await window.locator(".shortcut-hardware-note strong").count(), 0);
-    assert.match(await window.locator(".shortcut-hardware-note").textContent(), /Shift or Alt\/Option makes an adjustment 10× finer/);
+    assert.match(await window.locator(".shortcut-hardware-note").textContent(), /Ctrl.*10× finer.*Shift.*snap/i);
     const analysisShortcut = window.locator(".shortcut-row").filter({ hasText: "Toggle analysis panel" }).first();
     assert.equal(await analysisShortcut.locator(".shortcut-record").textContent(), "Not assigned");
     const screenshotShortcutPrevented = await window.evaluate(() => {
@@ -177,6 +296,7 @@ async function main() {
     await window.locator("#settings-dialog").waitFor({ state: "visible" });
     await window.locator("#settings-close").click();
 
+    await window.getByRole("button", { name: "Help", exact: true }).click();
     await window.locator("#help-open").click();
     await window.locator("#help-document h1").waitFor({ state: "visible" });
     assert.equal(await window.locator("#help-document h1").textContent(), "Five-Minute Quick Start");
@@ -459,7 +579,7 @@ async function main() {
       (previous) => Math.abs(Number(document.querySelector("#hdr-exposure")?.value) - (Number(previous) + 0.05)) < 1e-8,
       exposureBeforeShortcut,
     );
-    await window.keyboard.press("Shift+i");
+    await window.keyboard.press("Control+i");
     const exposureAfterShortcuts = Number(exposureBeforeShortcut) + 0.055;
     await window.waitForFunction(
       (expected) => Math.abs(Number(document.querySelector("#hdr-exposure")?.value) - expected) < 1e-8,
@@ -519,7 +639,8 @@ async function main() {
     assert.equal(savedProject.global_adjustments.shared.false_color_band_anchor, "project");
     assert.equal(savedProject.global_adjustments.shared.false_color_ceiling_nits, 1000);
     assert.equal(Object.hasOwn(savedProject.global_adjustments.shared, "overlay_preset"), false);
-    assert.match(await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getTitle()), /electron-smoke\.hdrfinisher/);
+    assert.equal(await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getTitle()), "HDR Finisher");
+    await window.getByRole("button", { name: "File", exact: true }).click();
     await window.locator("#project-open").click();
     await window.locator("#directory-browser").waitFor({ state: "visible" });
     assert.equal(await window.locator("#directory-browser").getAttribute("data-mode"), "project_open");

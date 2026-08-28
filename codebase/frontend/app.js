@@ -515,7 +515,6 @@ const state = {
   compactWorkspace: false,
   compactSourceOpen: false,
   wideSourceCollapsed: false,
-  viewerOptionsOpen: false,
   proofEnabled: false,
   proofArtifact: null,
   proofReconstruction: null,
@@ -761,6 +760,7 @@ function applyPreviewResolution(value, { schedule = true } = {}) {
     if (schedule) debouncePreview(state.currentView);
   }
   renderReadouts();
+  renderCurrentPreviewSize();
 }
 
 function acceptPresentation(lane, tier, width, height, transport, fallbackReason = "") {
@@ -801,11 +801,13 @@ function acceptPresentation(lane, tier, width, height, transport, fallbackReason
   const dimensions = width && height ? `${Number(width)} × ${Number(height)}` : longEdge ? `${longEdge}px max` : "";
   const label = `${fallbackReason ? "Fallback · " : ""}${targetLabel}${dimensions ? ` · ${dimensions}` : ""}`;
   if (els.previewQualityStatus) els.previewQualityStatus.textContent = label;
+  renderCurrentPreviewSize();
   renderReadouts();
 }
 
 function markRefining() {
   if (els.previewQualityStatus) els.previewQualityStatus.textContent = "Refining…";
+  renderCurrentPreviewSize({ refining: true });
 }
 
 const defaultAdjustments = () => ({
@@ -1115,8 +1117,9 @@ const els = {
   overlayToggle: document.getElementById("overlay-toggle"),
   overlayClose: document.getElementById("overlay-close"),
   overlayPopover: document.getElementById("overlay-popover"),
-  viewerOptionsToggle: document.getElementById("viewer-options-toggle"),
-  viewerOptionsPopover: document.getElementById("viewer-options-popover"),
+  previewToggle: document.getElementById("preview-toggle"),
+  previewClose: document.getElementById("preview-close"),
+  previewPopover: document.getElementById("preview-popover"),
   scopeRegionToggle: document.getElementById("scope-region-toggle"),
   scopeRegionOverlay: document.getElementById("scope-region-overlay"),
   scopeRegionBox: document.getElementById("scope-region-box"),
@@ -1725,8 +1728,8 @@ function initializeSourceRailState() {
   media?.addEventListener?.("change", (event) => {
     state.compactWorkspace = event.matches;
     state.compactSourceOpen = false;
-    state.viewerOptionsOpen = false;
     closeOverlayPopover({ restoreFocus: false });
+    closePreviewPopover({ restoreFocus: false });
     applyResponsiveWorkspaceState();
     scheduleLayoutSettled();
   });
@@ -1742,8 +1745,6 @@ function applyResponsiveWorkspaceState() {
   els.sourceRailExpand.setAttribute("aria-expanded", String(!collapsed));
   els.sourceRailExpand.setAttribute("aria-label", collapsed ? "Expand source metadata" : "Collapse source metadata");
   els.sourceRailExpand.title = collapsed ? "Expand metadata" : "Collapse metadata";
-  els.viewerOptionsPopover.classList.toggle("open", state.compactWorkspace && state.viewerOptionsOpen);
-  els.viewerOptionsToggle.setAttribute("aria-expanded", String(state.compactWorkspace && state.viewerOptionsOpen));
 }
 
 function toggleSourceRail() {
@@ -1770,19 +1771,6 @@ function closeCompactSourceRail({ restoreFocus = false } = {}) {
   if (restoreFocus) els.sourceRailExpand.focus();
 }
 
-function toggleViewerOptions() {
-  if (!state.compactWorkspace) return;
-  state.viewerOptionsOpen = !state.viewerOptionsOpen;
-  applyResponsiveWorkspaceState();
-}
-
-function closeViewerOptions({ restoreFocus = false } = {}) {
-  if (!state.viewerOptionsOpen) return;
-  state.viewerOptionsOpen = false;
-  applyResponsiveWorkspaceState();
-  if (restoreFocus) els.viewerOptionsToggle.focus();
-}
-
 function initializeLayoutState() {
   state.layout = { ...LAYOUT_DEFAULTS };
   applyLayoutState();
@@ -1797,8 +1785,7 @@ function applyLayoutState() {
   state.dockCollapsed = !state.layout.dockOpen;
   state.activeDockTab = state.layout.dockTab;
   els.analysisDock.classList.toggle("collapsed", state.dockCollapsed);
-  els.dockCollapse.textContent = state.dockCollapsed ? "Open" : "Collapse";
-  els.dockCollapse.setAttribute("aria-expanded", String(!state.dockCollapsed));
+  renderDockCollapseControl();
   els.dockTabs.forEach((button) => {
     const active = button.dataset.dockTab === state.activeDockTab;
     button.classList.toggle("active", active);
@@ -1942,8 +1929,7 @@ function enhanceRangeControls() {
 }
 
 function pointerAdjustmentScale(event) {
-  if (event?.altKey) return FINE_ADJUSTMENT_SCALE;
-  return event?.shiftKey ? FINE_ADJUSTMENT_SCALE : 1;
+  return event?.ctrlKey ? FINE_ADJUSTMENT_SCALE : 1;
 }
 
 function fineRangeStep(step) {
@@ -1977,19 +1963,15 @@ function enhanceRangeControl(control) {
   track.className = "slider-track";
   const fill = document.createElement("span");
   fill.className = "slider-fill";
-  const ticks = document.createElement("span");
-  ticks.className = "slider-ticks";
-  ticks.setAttribute("aria-hidden", "true");
-  for (let index = 0; index < 9; index += 1) ticks.append(document.createElement("i"));
   control.before(shell);
-  shell.append(track, fill, ticks, control);
+  shell.append(track, fill, control);
   const declaredStep = Number(control.step);
   if (Number.isFinite(declaredStep) && declaredStep > 0) {
     control.dataset.instrumentStep = String(declaredStep);
     control.step = String(fineRangeStep(declaredStep));
   }
   updateRangeVisual(control);
-  control.title = [control.title, "Hold Shift while dragging or using arrow keys for 10× finer adjustment."]
+  control.title = [control.title, "Hold Ctrl for 10× finer adjustment. Hold Shift to snap to semantic landing positions."]
     .filter(Boolean)
     .join(" ");
   control.addEventListener("input", () => updateRangeVisual(control));
@@ -2165,8 +2147,13 @@ function updateRangeVisual(control) {
   const percent = maximum > minimum ? clamp((value - minimum) / (maximum - minimum), 0, 1) * 100 : 0;
   const shell = control.closest(".range-shell");
   if (!shell) return;
+  const bipolar = minimum < 0 && maximum > 0;
+  const fillOriginValue = bipolar ? rangeControlHome(control, minimum, maximum) : minimum;
+  const fillOrigin = maximum > minimum ? clamp((fillOriginValue - minimum) / (maximum - minimum), 0, 1) * 100 : 0;
   shell.style.setProperty("--pos", `${percent}%`);
-  shell.style.setProperty("--fill-w", `${percent}%`);
+  shell.style.setProperty("--fill-start", `${Math.min(percent, fillOrigin)}%`);
+  shell.style.setProperty("--fill-w", `${Math.abs(percent - fillOrigin)}%`);
+  shell.dataset.bipolar = String(bipolar);
 }
 
 function syncRangeVisuals(root = document) {
@@ -2182,8 +2169,9 @@ function bindInstrumentRangePointer(control, shell) {
     const maximum = Number(control.max);
     const ordinaryStep = Number(control.dataset.instrumentStep) || Number(control.step) || (maximum - minimum) / 100;
     const direction = ["ArrowRight", "ArrowUp"].includes(event.key) ? 1 : -1;
-    const precision = pointerAdjustmentScale(event);
-    const next = clamp(Number(control.value) + direction * ordinaryStep * precision, minimum, maximum);
+    const next = event.shiftKey
+      ? adjacentRangeSnap(control, Number(control.value), direction)
+      : clamp(Number(control.value) + direction * ordinaryStep * pointerAdjustmentScale(event), minimum, maximum);
     control.value = String(next);
     control.dispatchEvent(new Event("input", { bubbles: true }));
     control.dispatchEvent(new Event("change", { bubbles: true }));
@@ -2200,10 +2188,10 @@ function bindInstrumentRangePointer(control, shell) {
     const step = Number(control.dataset.instrumentStep) || Number(control.step) || (maximum - minimum) / 100;
     const startX = event.clientX;
     const startValue = Number(control.value);
-    const initialScale = pointerAdjustmentScale(event);
-    const pointerDelta = createPrecisionPointerDelta(event);
     const directValue = minimum + clamp((startX - rect.left) / Math.max(rect.width, 1), 0, 1) * (maximum - minimum);
-    const baseValue = initialScale < 1 ? startValue : directValue;
+    let mode = event.shiftKey ? "snap" : event.ctrlKey ? "fine" : "ordinary";
+    let previousX = startX;
+    let requestedValue = mode === "fine" ? startValue : directValue;
     shell.classList.add("dragging");
     control.setPointerCapture(pointerId);
 
@@ -2213,20 +2201,31 @@ function bindInstrumentRangePointer(control, shell) {
       const steps = Math.round((clamped - minimum) / quantum);
       return clamp(minimum + steps * quantum, minimum, maximum);
     };
-    const setValue = (requested, precision) => {
-      const next = quantize(requested, precision);
+    const setValue = (requested, activeMode) => {
+      const next = activeMode === "snap"
+        ? nearestRangeSnap(control, requested)
+        : quantize(requested, activeMode === "fine" ? FINE_ADJUSTMENT_SCALE : 1);
       if (Number(control.value) === next) return;
       control.value = String(next);
       control.dispatchEvent(new Event("input", { bubbles: true }));
     };
 
-    setValue(baseValue, initialScale);
+    setValue(requestedValue, mode);
     const move = (moveEvent) => {
       if (moveEvent.pointerId !== pointerId) return;
       moveEvent.preventDefault();
-      const delta = pointerDelta.update(moveEvent);
-      const requested = baseValue + (delta.x / Math.max(rect.width, 1)) * (maximum - minimum);
-      setValue(requested, delta.minimumScale);
+      const nextMode = moveEvent.shiftKey ? "snap" : moveEvent.ctrlKey ? "fine" : "ordinary";
+      if (nextMode !== mode) {
+        requestedValue = Number(control.value);
+        previousX = moveEvent.clientX;
+        mode = nextMode;
+        if (mode === "snap") setValue(requestedValue, mode);
+        return;
+      }
+      const scale = mode === "fine" ? FINE_ADJUSTMENT_SCALE : 1;
+      requestedValue += ((moveEvent.clientX - previousX) / Math.max(rect.width, 1)) * (maximum - minimum) * scale;
+      previousX = moveEvent.clientX;
+      setValue(requestedValue, mode);
     };
     const stop = (stopEvent) => {
       if (stopEvent.pointerId !== pointerId) return;
@@ -2259,6 +2258,25 @@ function bindEvents() {
       next?.focus();
       if (next) activateWorkflowTab(next.dataset.workflowTab, { focus: false });
     });
+  });
+  document.querySelectorAll(".lane-switch, .local-lane-switch, .proof-preview-switch").forEach((segment) => {
+    const buttons = [...segment.querySelectorAll("button")];
+    buttons.forEach((button) => button.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+      const enabled = buttons.filter((candidate) => !candidate.disabled && !candidate.hidden);
+      if (!enabled.length) return;
+      event.preventDefault();
+      const current = Math.max(0, enabled.indexOf(button));
+      let next;
+      if (event.key === "Home") next = enabled[0];
+      else if (event.key === "End") next = enabled.at(-1);
+      else {
+        const direction = ["ArrowRight", "ArrowDown"].includes(event.key) ? 1 : -1;
+        next = enabled[(current + direction + enabled.length) % enabled.length];
+      }
+      next?.focus();
+      next?.click();
+    }));
   });
   els.fileInput.addEventListener("change", async (event) => {
     const [file] = event.target.files;
@@ -2606,10 +2624,12 @@ function bindEvents() {
   }, { passive: true });
   els.overlayToggle.addEventListener("click", toggleOverlayPopover);
   els.overlayClose.addEventListener("click", closeOverlayPopover);
-  els.viewerOptionsToggle.addEventListener("click", toggleViewerOptions);
+  els.previewToggle.addEventListener("click", togglePreviewPopover);
+  els.previewClose.addEventListener("click", closePreviewPopover);
   document.addEventListener("pointerdown", (event) => {
     if (state.compactSourceOpen && !event.target.closest(".source-rail")) closeCompactSourceRail();
-    if (state.viewerOptionsOpen && !event.target.closest("#viewer-options-popover, #viewer-options-toggle, #overlay-popover")) closeViewerOptions();
+    if (!els.overlayPopover.classList.contains("hidden") && !event.target.closest("#overlay-popover, #overlay-toggle")) closeOverlayPopover({ restoreFocus: false });
+    if (!els.previewPopover.classList.contains("hidden") && !event.target.closest("#preview-popover, #preview-toggle")) closePreviewPopover({ restoreFocus: false });
   });
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
@@ -2618,9 +2638,9 @@ function bindEvents() {
       closeOverlayPopover();
       return;
     }
-    if (state.viewerOptionsOpen) {
+    if (!els.previewPopover.classList.contains("hidden")) {
       event.preventDefault();
-      closeViewerOptions({ restoreFocus: true });
+      closePreviewPopover({ restoreFocus: true });
       return;
     }
     if (state.compactSourceOpen) {
@@ -2921,6 +2941,7 @@ function formatAperture(value) {
 function renderMetadata(session) {
   const entries = [
     ["Size", `${session.source.width} x ${session.source.height}`],
+    ["Current Preview Size", currentPreviewSizeLabel()],
     ["Format", session.source.suffix],
     ["Working space", session.source.working_space],
     ["Source space", session.source.source_color_space || "unknown"],
@@ -2952,8 +2973,22 @@ function renderMetadata(session) {
     dt.textContent = key;
     const dd = document.createElement("dd");
     dd.textContent = value;
+    if (key === "Current Preview Size") dd.id = "metadata-current-preview-size";
     els.metadataList.append(dt, dd);
   }
+}
+
+function currentPreviewSizeLabel({ refining = false } = {}) {
+  const target = previewResolutionLabel();
+  if (refining) return `${target} · Refining…`;
+  const presentation = state.acceptedPresentation;
+  if (!presentation?.width || !presentation?.height || presentation.lane !== state.currentView) return `${target} · Waiting`;
+  return `${target} · ${presentation.width} × ${presentation.height}`;
+}
+
+function renderCurrentPreviewSize(options) {
+  const value = document.getElementById("metadata-current-preview-size");
+  if (value) value.textContent = currentPreviewSizeLabel(options);
 }
 
 function renderReadouts() {
@@ -2971,8 +3006,11 @@ function renderOverlayPresetNote() {
   const anchorLabel = anchorSource === "project" ? "project HDR reference white" : `fixed ${levels.referenceWhite} nit`;
   els.overlayPresetNote.textContent = `Bands anchor to ${anchorLabel}; the independent warning ceiling is ${levels.peak.toLocaleString()} nit.`;
   const mode = state.adjustments.shared.overlay_mode || "off";
-  const label = mode === "false_color" ? "False color" : mode === "zebra" ? "Zebra" : "Off";
-  els.overlayToggle.textContent = `Overlays: ${label}`;
+  const active = mode === "false_color" || mode === "zebra";
+  els.overlayToggle.textContent = "Overlays";
+  els.overlayToggle.classList.toggle("overlay-enabled", active);
+  els.overlayToggle.setAttribute("aria-pressed", String(active));
+  els.overlayToggle.setAttribute("aria-label", active ? `Overlays on: ${mode === "false_color" ? "False Color" : "Zebra"}` : "Overlays off");
   renderFalseColorKey(mode);
   els.falseColorLegend.classList.toggle("hidden", mode !== "false_color" || !state.session);
 }
@@ -3039,6 +3077,9 @@ function formatReferenceNits(value) {
 async function initializeDesktopBridge() {
   els.revealExportPath?.classList.toggle("hidden", !desktop);
   els.openExportPath?.classList.toggle("hidden", !desktop);
+  document.addEventListener("hdr:desktop-command", (event) => {
+    void handleDesktopCommand(event.detail?.command, event.detail?.payload);
+  });
   if (!desktop) return;
   desktop.onMenuCommand(({ command, payload }) => handleDesktopCommand(command, payload));
   desktop.onOpenRequest((selection) => {
@@ -3129,7 +3170,7 @@ function adjustControlFromShortcut(path, direction, event) {
     control.value = control.dataset.defaultValue ?? control.defaultValue;
   } else {
     const baseStep = Number(control.dataset.instrumentStep) || Number(control.step) || ((Number(control.max) - Number(control.min)) / 100) || 1;
-    const multiplier = event?.shiftKey || event?.altKey ? 0.1 : 1;
+    const multiplier = event?.ctrlKey ? FINE_ADJUSTMENT_SCALE : 1;
     const delta = baseStep * multiplier * (direction === "increase" ? 1 : -1);
     const value = clamp(Number(control.value) + delta, Number(control.min), Number(control.max));
     control.value = String(Math.round(value * 1e8) / 1e8);
@@ -3988,7 +4029,7 @@ function drawHistogram(scope) {
   const plotWidth = Math.max(1, width - plotLeft - plotRight);
   const plotHeight = Math.max(1, height - plotTop - plotBottom);
 
-  ctx.font = '11px "IBM Plex Mono", "Cascadia Mono", Consolas';
+  ctx.font = '11px "Space Mono", "Cascadia Mono", Consolas';
   ctx.textBaseline = "middle";
   drawScopeGrid(ctx, scope, isWaveform, plotLeft, plotTop, plotWidth, plotHeight, height);
   drawZoneScopeOverlay(ctx, scope, isWaveform, plotLeft, plotTop, plotWidth, plotHeight);
@@ -4599,6 +4640,82 @@ function syncOverlayPlacement() {
   renderVignetteCenter();
   syncLocalMaskOverlayViewport();
   queueLocalMaskOverlayRender();
+}
+
+function rangeControlHome(control, minimum, maximum) {
+  const declared = Number(control.dataset.defaultValue ?? control.defaultValue);
+  if (Number.isFinite(declared)) return clamp(declared, minimum, maximum);
+  return minimum < 0 && maximum > 0 ? 0 : minimum + (maximum - minimum) / 2;
+}
+
+function rangeSnapProfile(control) {
+  const minimum = Number(control.min);
+  const maximum = Number(control.max);
+  if (!Number.isFinite(minimum) || !Number.isFinite(maximum) || maximum <= minimum) return [];
+  const home = rangeControlHome(control, minimum, maximum);
+  const identity = `${control.id || ""} ${control.dataset.path || ""} ${control.dataset.localGrade || ""} ${control.dataset.localMaskParam || ""}`.toLowerCase();
+  const row = control.closest(".control-row");
+  const heading = row?.querySelector("label")?.textContent?.toLowerCase() || "";
+  const output = row?.querySelector("output")?.textContent || "";
+  let authored = [];
+  let usesDefaultLinearProfile = false;
+
+  if (identity.includes("kelvin") || heading.includes("temperature")) {
+    authored = [1000, 2000, 2500, 3200, 4300, 5600, 6500, 7500, 10000, 12000, 25000];
+  } else if (identity.includes("nit") || /\bnit\b/i.test(output)) {
+    authored = [0, 100, 203, 400, 600, 1000, 2000, 4000, 10000, 100000];
+  } else if (identity.includes("angle") || heading.includes("degree") || output.includes("°")) {
+    authored = [-180, -90, -45, -30, -15, 0, 15, 30, 45, 90, 180];
+  } else if (output.includes("%") || ["opacity", "strength", "saturation", "vibrance"].some((term) => identity.includes(term) || heading.includes(term))) {
+    authored = [minimum, minimum + (maximum - minimum) * 0.25, home, minimum + (maximum - minimum) * 0.75, maximum];
+    usesDefaultLinearProfile = true;
+  } else if (identity.includes("exposure") || /\bev\b/i.test(output)) {
+    for (let value = Math.ceil(minimum); value <= Math.floor(maximum); value += 1) authored.push(value);
+    // Narrow EV ranges still need the standard five useful landing positions.
+    // Keep authored whole stops when the range supports them, then supplement
+    // short ranges with quartiles rather than collapsing to min/home/max.
+    if (new Set([...authored, minimum, home, maximum]).size < 5) {
+      usesDefaultLinearProfile = true;
+      authored.push(
+        minimum + (maximum - minimum) * 0.25,
+        minimum + (maximum - minimum) * 0.75,
+      );
+    }
+  } else {
+    usesDefaultLinearProfile = true;
+    authored = [minimum, minimum + (maximum - minimum) * 0.25, home, minimum + (maximum - minimum) * 0.75, maximum];
+  }
+
+  authored.push(minimum, home, maximum);
+  if (minimum < 0 && maximum > 0) authored.push(0);
+  let legal = authored
+    .filter((value) => Number.isFinite(value) && value >= minimum && value <= maximum)
+    .map((value) => Math.round(value * 1e8) / 1e8)
+    .sort((a, b) => a - b);
+  legal = legal.filter((value, index) => index === 0 || Math.abs(value - legal[index - 1]) > 1e-8);
+  if (usesDefaultLinearProfile && legal.length < 5) {
+    for (const fraction of [0.5, 0.125, 0.375, 0.625, 0.875]) {
+      const candidate = Math.round((minimum + (maximum - minimum) * fraction) * 1e8) / 1e8;
+      if (!legal.some((value) => Math.abs(value - candidate) <= 1e-8)) legal.push(candidate);
+      if (legal.length >= 5) break;
+    }
+    legal.sort((a, b) => a - b);
+  }
+  return legal;
+}
+
+function nearestRangeSnap(control, requested) {
+  const profile = rangeSnapProfile(control);
+  return profile.reduce((nearest, value) => (
+    Math.abs(value - requested) < Math.abs(nearest - requested) ? value : nearest
+  ), profile[0] ?? requested);
+}
+
+function adjacentRangeSnap(control, current, direction) {
+  const profile = rangeSnapProfile(control);
+  const epsilon = Math.max(1, Math.abs(current)) * 1e-8;
+  if (direction > 0) return profile.find((value) => value > current + epsilon) ?? profile.at(-1) ?? current;
+  return [...profile].reverse().find((value) => value < current - epsilon) ?? profile[0] ?? current;
 }
 
 function seedExportFieldsFromSession() {
@@ -5462,7 +5579,7 @@ async function resetInterpretationToAuto() {
 }
 
 function badgeClass(classification) {
-  if (classification === "HDR_TRUE") return "badge good";
+  if (classification === "HDR_TRUE") return "badge good hdr-true";
   if (classification === "HDR_ENCODED" || classification === "HDR_LINEAR_UNCONFIRMED") return "badge warn";
   return "badge bad";
 }
@@ -5770,6 +5887,12 @@ function renderRotateDraftTransform() {
   const flipX = Boolean(current.flip_horizontal) === Boolean(visualBase.flip_horizontal) ? 1 : -1;
   const flipY = Boolean(current.flip_vertical) === Boolean(visualBase.flip_vertical) ? 1 : -1;
   const straightenDelta = (Number(current.straighten_angle) || 0) - (Number(visualBase.straighten_angle) || 0);
+  const neutralDraft = delta === 0 && flipX === 1 && flipY === 1 && Math.abs(straightenDelta) < 1e-9;
+  if (neutralDraft && !state.geometryTransformHandoffSignature) {
+    clearRotateDraftTransformProperties();
+    applyZoomGeometry();
+    return;
+  }
   [els.previewImage, els.previewCanvas, els.chromeProofImage].forEach((preview) => {
     preview?.style.setProperty("--interactive-rotate-angle", `${delta}deg`);
     preview?.style.setProperty("--interactive-flip-x", String(flipX));
@@ -6679,7 +6802,7 @@ function renderHighlightCompressionControls() {
   context.stroke();
   context.lineWidth = 1;
   if (mode === "off") {
-    els.highlightCompressionSummary.textContent = "Compression is off. The cyan identity line leaves highlights unchanged.";
+    els.highlightCompressionSummary.textContent = "Compression is off. The ultraviolet identity line leaves highlights unchanged.";
   } else if (mode === "soft_ceiling") {
     els.highlightCompressionSummary.textContent = `Soft Ceiling approaches ${Math.round(hdr.highlight_compression_target_nits)} nit without a hard peak anchor.`;
   } else {
@@ -6851,7 +6974,7 @@ function bindToneEqualizerEditorForLane(lane) {
     }
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
     event.preventDefault();
-    const step = event.shiftKey ? 0.01 : 0.05;
+    const step = event.ctrlKey ? 0.01 : 0.05;
     const direction = event.key === "ArrowUp" ? 1 : -1;
     setToneEqualizerBand(index, currentToneEqualizerNodes(lane)[index].adjustment_ev + direction * step, lane);
     renderControlState();
@@ -6986,8 +7109,12 @@ function syncToneEqualizerControls(lane = state.currentView) {
   const inputEv = nodes[index].input_ev;
   const value = nodes[index].adjustment_ev;
   const [minimum, maximum] = toneEqualizerBandLimits(index, nodes);
-  ui.bandValue.setAttribute("aria-valuemin", String(Math.ceil(minimum * 100) / 100));
-  ui.bandValue.setAttribute("aria-valuemax", String(Math.floor(maximum * 100) / 100));
+  const legalMinimum = Math.ceil(minimum * 100) / 100;
+  const legalMaximum = Math.floor(maximum * 100) / 100;
+  ui.bandValue.min = String(legalMinimum);
+  ui.bandValue.max = String(Math.max(legalMinimum, legalMaximum));
+  ui.bandValue.setAttribute("aria-valuemin", ui.bandValue.min);
+  ui.bandValue.setAttribute("aria-valuemax", ui.bandValue.max);
   ui.bandValue.value = String(value);
   updateRangeVisual(ui.bandValue);
   ui.bandLabel.textContent = lane === "hdr"
@@ -7020,7 +7147,7 @@ function drawToneEqualizerEditor(lane = state.currentView) {
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = uiToken("--app");
   ctx.fillRect(0, 0, width, height);
-  ctx.font = '9px "IBM Plex Mono", "Cascadia Mono", monospace';
+  ctx.font = '9px "Space Mono", "Cascadia Mono", monospace';
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
   for (let adjustment = -2; adjustment <= 2; adjustment += 1) {
@@ -7566,7 +7693,7 @@ function bindCurveEditor() {
     } else if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
       event.preventDefault();
       const point = [...curve[index]];
-      const step = event.shiftKey ? 0.001 : 0.01;
+      const step = event.ctrlKey ? 0.001 : 0.01;
       const verticalStep = step * Math.min(1, curveVerticalAdjustmentScale(index, curve.length) / 0.35);
       if (event.key === "ArrowLeft" && !isLockedCurveEndpoint(index)) {
         point[0] = clamp(point[0] - step, curve[index - 1][0] + 0.02, curve[index + 1][0] - 0.02);
@@ -7759,7 +7886,7 @@ function drawCurveExposureBands(ctx, layout, width, height) {
   ].filter((value) => value !== null && value >= 0 && value <= 10000))].sort((a, b) => a - b);
 
   ctx.save();
-  ctx.font = '9px "IBM Plex Mono", "Cascadia Mono", Consolas';
+  ctx.font = '9px "Space Mono", "Cascadia Mono", Consolas';
   ctx.textBaseline = "top";
   const lastLabelRight = [-Infinity, -Infinity];
   labelValues.forEach((nits) => {
@@ -8702,6 +8829,7 @@ function renderLaneChrome() {
     const active = button.dataset.kind === lane;
     button.classList.toggle("active", active);
     button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
   });
   els.lanePanels.forEach((panel) => panel.classList.toggle("hidden", panel.dataset.lanePanel !== lane));
   els.viewerBranchNote.textContent = branchCopy[lane];
@@ -9218,6 +9346,7 @@ function sliderToZoomPercent(value) {
 }
 
 function toggleOverlayPopover() {
+  closePreviewPopover({ restoreFocus: false });
   const open = els.overlayPopover.classList.toggle("hidden") === false;
   els.overlayToggle.setAttribute("aria-expanded", String(open));
 }
@@ -9226,6 +9355,18 @@ function closeOverlayPopover({ restoreFocus = true } = {}) {
   els.overlayPopover.classList.add("hidden");
   els.overlayToggle.setAttribute("aria-expanded", "false");
   if (restoreFocus) els.overlayToggle.focus();
+}
+
+function togglePreviewPopover() {
+  closeOverlayPopover({ restoreFocus: false });
+  const open = els.previewPopover.classList.toggle("hidden") === false;
+  els.previewToggle.setAttribute("aria-expanded", String(open));
+}
+
+function closePreviewPopover({ restoreFocus = true } = {}) {
+  els.previewPopover.classList.add("hidden");
+  els.previewToggle.setAttribute("aria-expanded", "false");
+  if (restoreFocus) els.previewToggle.focus();
 }
 
 function cycleOverlayMode() {
@@ -9243,9 +9384,16 @@ function toggleAnalysisDock() {
   state.dockCollapsed = !state.dockCollapsed;
   state.layout.dockOpen = !state.dockCollapsed;
   els.analysisDock.classList.toggle("collapsed", state.dockCollapsed);
-  els.dockCollapse.textContent = state.dockCollapsed ? "Open" : "Collapse";
-  els.dockCollapse.setAttribute("aria-expanded", String(!state.dockCollapsed));
+  renderDockCollapseControl();
   scheduleLayoutSettled();
+}
+
+function renderDockCollapseControl() {
+  const expanded = !state.dockCollapsed;
+  const action = expanded ? "Collapse" : "Expand";
+  els.dockCollapse.setAttribute("aria-expanded", String(expanded));
+  els.dockCollapse.setAttribute("aria-label", `${action} Scopes panel`);
+  els.dockCollapse.title = `${action} Scopes`;
 }
 
 async function activateDockTab(tab) {
@@ -9254,8 +9402,7 @@ async function activateDockTab(tab) {
   state.layout.dockOpen = true;
   state.layout.dockTab = tab;
   els.analysisDock.classList.remove("collapsed");
-  els.dockCollapse.textContent = "Collapse";
-  els.dockCollapse.setAttribute("aria-expanded", "true");
+  renderDockCollapseControl();
   els.dockTabs.forEach((button) => {
     const active = button.dataset.dockTab === tab;
     button.classList.toggle("active", active);
@@ -10320,6 +10467,7 @@ function bindLocalAdjustmentEvents() {
     if (!local) return;
     local.opacity = Number(els.localOpacity.value);
     els.localOpacityValue.textContent = `${Math.round(local.opacity * 100)}%`;
+    els.localOpacity.closest(".control-row")?.classList.toggle("modified", Math.abs(local.opacity - 1) > 1e-8);
     scheduleLocalPreview();
   });
   els.localOpacity?.addEventListener("change", () => commitSelectedLocal({ refreshPreview: false }));
@@ -10522,6 +10670,7 @@ function renderLocalAdjustments() {
   if (local) {
     els.localOpacity.value = String(local.opacity);
     els.localOpacityValue.textContent = `${Math.round(local.opacity * 100)}%`;
+    els.localOpacity.closest(".control-row")?.classList.toggle("modified", Math.abs(Number(local.opacity) - 1) > 1e-8);
     const brushLeaf = firstMaskLeaf(local.mask, "brush");
     els.localInvert.setAttribute("aria-pressed", String(Boolean(local.mask.inverted)));
     els.localInvert.textContent = local.mask.inverted ? "Restore mask" : "Invert mask";
@@ -10531,6 +10680,7 @@ function renderLocalAdjustments() {
       const active = button.dataset.localLane === state.currentView;
       button.classList.toggle("active", active);
       button.setAttribute("aria-selected", String(active));
+      button.tabIndex = active ? 0 : -1;
     });
     const grade = local[`${state.currentView}_grade`];
     els.localGradeControls.forEach((control) => {
@@ -10563,9 +10713,9 @@ function localMaskTypeLabel(type) {
 }
 
 function updateLocalGradeOutput(name, value) {
+  const control = els.localGradeControls.find((candidate) => candidate.dataset.localGrade === name);
   let output = els.localGradeOutputs.find((candidate) => candidate.dataset.localGradeOutput === name);
   if (!output) {
-    const control = els.localGradeControls.find((candidate) => candidate.dataset.localGrade === name);
     const heading = control?.closest(".control-row")?.querySelector(".control-heading");
     if (!heading) return;
     output = document.createElement("output");
@@ -10576,6 +10726,11 @@ function updateLocalGradeOutput(name, value) {
   if (name === "exposure") output.textContent = `${value.toFixed(2)} EV`;
   else if (name === "white_balance_kelvin") output.textContent = `${Math.round(value)} K`;
   else output.textContent = Math.abs(value) < 0.005 ? "0" : value.toFixed(2);
+  const defaultValue = Number(control?.dataset.defaultValue ?? control?.defaultValue);
+  control?.closest(".control-row")?.classList.toggle(
+    "modified",
+    Number.isFinite(defaultValue) && Math.abs(value - defaultValue) > 1e-8,
+  );
 }
 
 function syncLocalMaskOverlayControl() {

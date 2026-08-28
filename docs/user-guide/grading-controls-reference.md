@@ -2,6 +2,8 @@
 
 Every numeric readout in the HDR and SDR Control Panels can be edited directly. Double-click the value, type a number, and press **Enter**. You can also focus a value with the keyboard and press **Enter** or **F2**. Press **Escape** to cancel; clicking elsewhere commits the value.
 
+For on-screen sliders, hold **Ctrl** for approximately 10× finer pointer or arrow-key movement. Hold **Shift** to use the authored landing positions; the rails intentionally show no tick marks. Shift takes precedence when both modifiers are held. Curves and Exposure Bands use Ctrl for fine graph movement without Shift snapping. Exposure Bands keeps **Ctrl/Command+Left/Right** for moving the selected band horizontally. See [Application settings and shortcuts](application-settings-and-shortcuts.md#slider-and-graph-modifiers) for the full modifier contract.
+
 Units are optional. For example, `100`, `100 nit`, and `100 nits` all set a nit control to 100. Saturation and Vibrance are entered as the percentage shown in the interface, so typing `125` means +125%. If an entry exceeds its safety limit, HDR Finisher uses the nearest allowed value. When a typed value lies beyond normal slider travel, the value remains exact while the slider rests at its nearest end and uses the warning color.
 
 The sliders intentionally cover the useful everyday range. Some slider ranges become narrower for sources classified as Medium or Narrow latitude, which makes fine adjustments easier. Direct entry provides controlled extra room without making the slider less precise.

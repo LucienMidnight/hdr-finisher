@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#0a0b0c}
+  body{font-family:"IBM Plex Sans","Segoe UI",sans-serif;color:#e8ecee;-webkit-font-smoothing:antialiased}
+  a{color:#4fb3c9;text-decoration:none}
+  a:hover{color:#7fd3e4}
+  canvas{display:block}
+  button{font-family:inherit}
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:#23282b;border-radius:9px;border:2px solid #0e1012}
+  ::-webkit-scrollbar-thumb:hover{background:#31383c}
+  @keyframes fadein{from{opacity:0}to{opacity:1}}
+</style>
+</helmet>
+
+<div style="height:100vh;display:grid;grid-template-rows:54px 1fr;background:#0a0b0c;overflow:hidden">
+
+  <header style="display:grid;grid-template-columns:minmax(220px,1fr) auto minmax(220px,1fr);align-items:center;gap:16px;padding:0 14px 0 16px;background:#0e1012;border-bottom:1px solid #1e2225">
+    <div style="display:flex;align-items:center;gap:11px;min-width:0">
+      <span style="width:26px;height:26px;border-radius:5px;background:linear-gradient(160deg,#1c4b58,#123039);border:1px solid #2b5b68;display:grid;place-items:center;font-family:'IBM Plex Mono',monospace;font-size:10.5px;font-weight:500;color:#7fd3e4;flex:none">HF</span>
+      <div style="min-width:0">
+        <p style="margin:0;font-size:12.5px;font-weight:500;color:#e8ecee;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ fileName }}</p>
+        <p style="margin:1px 0 0;font-family:'IBM Plex Mono',monospace;font-size:10px;color:#6b7379;letter-spacing:.04em">{{ fileSub }}</p>
+      </div>
+    </div>
+
+    <nav style="display:flex;align-items:stretch;gap:2px;height:54px" aria-label="Workflow">
+      <sc-for list="{{ stages }}" as="s" hint-placeholder-count="4">
+        <button type="button" data-id="{{ s.id }}" onClick="{{ goStage }}" title="{{ s.hint }}" style="position:relative;display:flex;align-items:center;gap:9px;padding:0 20px;background:none;border:0;border-bottom:2px solid;cursor:pointer;transition:color .12s,border-color .12s" style-hover="color:#e8ecee" data-active="{{ s.active }}" data-borderc="{{ s.border }}">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.08em;color:{{ s.numColor }}">{{ s.num }}</span>
+          <span style="font-size:12.5px;font-weight:500;letter-spacing:.03em;color:{{ s.labelColor }}">{{ s.label }}</span>
+        </button>
+      </sc-for>
+    </nav>
+
+    <div style="display:flex;align-items:center;justify-content:flex-end;gap:10px">
+      <span style="display:flex;align-items:center;gap:7px;padding:5px 10px;border:1px solid #22282b;border-radius:3px;background:#111416">
+        <span style="width:5px;height:5px;border-radius:50%;background:#4fb3c9"></span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:#8b9399;letter-spacing:.03em">{{ encoderChip }}</span>
+      </span>
+      <button type="button" onClick="{{ openSettings }}" aria-label="Settings" title="Settings" style="width:30px;height:30px;display:grid;place-items:center;background:#111416;border:1px solid #22282b;border-radius:3px;cursor:pointer;color:#8b9399" style-hover="color:#e8ecee;border-color:#394247">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3.2"></circle><path d="M19.4 15a1.6 1.6 0 0 0 .32 1.77l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.6 1.6 0 0 0-1.77-.32 1.6 1.6 0 0 0-1 1.47V21a2 2 0 1 1-4 0v-.11a1.6 1.6 0 0 0-1.05-1.46 1.6 1.6 0 0 0-1.77.32l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.6 1.6 0 0 0 .32-1.77 1.6 1.6 0 0 0-1.47-1H3a2 2 0 1 1 0-4h.11a1.6 1.6 0 0 0 1.46-1.05 1.6 1.6 0 0 0-.32-1.77l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.6 1.6 0 0 0 1.77.32H9a1.6 1.6 0 0 0 1-1.47V3a2 2 0 1 1 4 0v.11a1.6 1.6 0 0 0 1 1.47 1.6 1.6 0 0 0 1.77-.32l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.6 1.6 0 0 0-.32 1.77V9a1.6 1.6 0 0 0 1.47 1H21a2 2 0 1 1 0 4h-.11a1.6 1.6 0 0 0-1.49 1z"></path></svg>
+      </button>
+    </div>
+  </header>
+
+  <div style="display:grid;grid-template-columns:284px 1fr 348px;min-height:0;background:#0a0b0c">
+
+    <aside style="display:flex;flex-direction:column;min-height:0;background:#0e1012;border-right:1px solid #1e2225">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;padding:15px 16px 12px">
+        <h1 style="margin:0;font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#e8ecee">Source</h1>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:{{ sourceStateColor }};letter-spacing:.04em">{{ sourceState }}</span>
+      </div>
+
+      <div style="flex:1;min-height:0;overflow-y:auto;padding:0 16px 16px">
+        <div style="padding:12px 13px;border:1px solid #1d3a41;border-left:2px solid #4fb3c9;border-radius:3px;background:#0f1719">
+          <div style="display:flex;align-items:center;gap:7px">
+            <span style="width:6px;height:6px;border-radius:50%;background:#4fb3c9"></span>
+            <span style="font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#9fe0ee">True HDR detected</span>
+          </div>
+          <p style="margin:8px 0 0;font-family:'IBM Plex Mono',monospace;font-size:19px;font-weight:500;color:#e8ecee;letter-spacing:-.01em">+9.76 <span style="font-size:11px;color:#6b7379">stops</span></p>
+          <p style="margin:3px 0 10px;font-size:11px;color:#8b9399">above diffuse white · 100 nit reference</p>
+          <div style="position:relative;height:4px;border-radius:2px;background:#161b1d;overflow:hidden">
+            <div style="position:absolute;inset:0 26% 0 0;background:linear-gradient(90deg,#2a6b7a,#4fb3c9)"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:5px;font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:#5d666b"><span>0</span><span>+6.64 PQ</span><span>+13</span></div>
+        </div>
+
+        <p style="margin:20px 0 8px;font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#5d666b">Interpretation</p>
+        <dl style="margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 12px;align-items:baseline">
+          <sc-for list="{{ interpRows }}" as="r" hint-placeholder-count="3">
+            <dt style="margin:0;font-size:11.5px;color:#8b9399">{{ r.k }}</dt>
+            <dd style="margin:0;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#d2d8db">{{ r.v }}</dd>
+          </sc-for>
+        </dl>
+        <button type="button" onClick="{{ goImport }}" style="margin-top:10px;padding:0;background:none;border:0;border-bottom:1px solid #2b5b68;font-size:11px;color:#4fb3c9;cursor:pointer" style-hover="color:#7fd3e4;border-color:#4fb3c9">Override in Import</button>
+
+        <p style="margin:22px 0 8px;font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#5d666b">File</p>
+        <dl style="margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 12px;align-items:baseline">
+          <sc-for list="{{ fileRows }}" as="r" hint-placeholder-count="5">
+            <dt style="margin:0;font-size:11.5px;color:#8b9399">{{ r.k }}</dt>
+            <dd style="margin:0;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#d2d8db">{{ r.v }}</dd>
+          </sc-for>
+        </dl>
+
+        <p style="margin:22px 0 8px;font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#5d666b">Pipeline</p>
+        <div style="display:flex;flex-wrap:wrap;gap:5px">
+          <sc-for list="{{ pipelineChips }}" as="c" hint-placeholder-count="3">
+            <span style="padding:3px 8px;border:1px solid #22282b;border-radius:2px;background:#111416;font-family:'IBM Plex Mono',monospace;font-size:10px;color:#8b9399;letter-spacing:.03em">{{ c }}</span>
+          </sc-for>
+        </div>
+      </div>
+
+      <p style="margin:0;padding:12px 16px;border-top:1px solid #1a1e21;font-size:10.5px;line-height:1.5;color:#5d666b">Global finishing only. No layers, masks, RAW processing, or local adjustments.</p>
+    </aside>
+
+    <main style="display:grid;grid-template-rows:1fr auto;min-width:0;min-height:0">
+      <section style="display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden;background:#111315;border-bottom:1px solid #1e2225">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 14px;min-height:40px;flex-wrap:wrap;min-width:0;border-bottom:1px solid #1a1e21;background:#0e1012">
+          <div style="display:flex;align-items:center;gap:8px;min-width:0;flex-shrink:1">
+            <span style="width:6px;height:6px;border-radius:50%;background:{{ laneDot }}"></span>
+            <span style="font-size:11.5px;font-weight:500;letter-spacing:.05em;text-transform:uppercase;color:#d2d8db">{{ viewLabel }}</span>
+          </div>
+          <div style="display:flex;align-items:center;flex-wrap:wrap;justify-content:flex-end;gap:6px;min-width:0">
+            <button type="button" onClick="{{ toggleView }}" title="Tap V to switch branches" style="height:24px;padding:0 10px;background:#15191b;border:1px solid #262c30;border-radius:3px;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:#b8c0c5;cursor:pointer" style-hover="border-color:#394247;color:#e8ecee">A / B</button>
+            <div style="display:flex;align-items:center;height:24px;border:1px solid #262c30;border-radius:3px;background:#15191b;overflow:hidden">
+              <button type="button" data-d="-1" onClick="{{ zoomStep }}" aria-label="Zoom out" style="width:24px;height:22px;background:none;border:0;color:#8b9399;cursor:pointer;font-size:13px" style-hover="color:#e8ecee">−</button>
+              <span style="width:46px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:#e8ecee">{{ zoomLabel }}</span>
+              <button type="button" data-d="1" onClick="{{ zoomStep }}" aria-label="Zoom in" style="width:24px;height:22px;background:none;border:0;color:#8b9399;cursor:pointer;font-size:13px" style-hover="color:#e8ecee">+</button>
+              <button type="button" onClick="{{ zoomFit }}" style="height:22px;padding:0 9px;background:none;border:0;border-left:1px solid #262c30;font-size:10.5px;color:#8b9399;cursor:pointer" style-hover="color:#e8ecee">Fit</button>
+            </div>
+            <button type="button" onClick="{{ toggleOverlay }}" style="height:24px;padding:0 10px;background:{{ overlayBg }};border:1px solid {{ overlayBorder }};border-radius:3px;font-size:10.5px;color:{{ overlayColor }};cursor:pointer">Overlays · {{ overlayLabel }}</button>
+          </div>
+        </div>
+
+        <div style="position:relative;flex:1;min-height:0;overflow:hidden;display:grid;grid-template-rows:minmax(0,1fr);grid-template-columns:minmax(0,1fr);place-items:center;padding:22px;background:#0b0c0d;background-image:radial-gradient(circle at 50% 40%,#141719 0%,#0b0c0d 70%)">
+          <img src="assets/preview-render.png" alt="Graded HDR preview" draggable="false" style="max-width:100%;max-height:100%;width:{{ imgW }};box-shadow:0 0 0 1px #23282b,0 18px 60px -20px #000;object-fit:contain" />
+          <sc-if value="{{ overlayOn }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;left:22px;bottom:22px;display:flex;align-items:center;gap:9px;padding:6px 10px;border:1px solid #4a3517;border-radius:3px;background:#1a1408e8">
+              <span style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#f0b25a">False color</span>
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:#b8a37e">Web HDR · 1000 nit / 100 nit</span>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:0 14px;height:28px;gap:14px;min-width:0;border-top:1px solid #1a1e21;background:#0e1012;font-family:'IBM Plex Mono',monospace;font-size:10px;color:#6b7379">
+          <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ probeReadout }}</span>
+          <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ branchNote }}</span>
+        </div>
+      </section>
+
+      <section style="height:236px;display:flex;flex-direction:column;min-width:0;overflow:hidden;background:#0e1012">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:4px 12px;padding:0 14px;min-height:36px;flex-wrap:wrap;min-width:0;border-bottom:1px solid #1a1e21">
+          <div style="display:flex;flex-wrap:wrap;gap:2px;min-width:0">
+            <sc-for list="{{ dockTabs }}" as="t" hint-placeholder-count="4">
+              <button type="button" data-id="{{ t.id }}" onClick="{{ setDock }}" style="height:35px;padding:0 12px;background:none;border:0;border-bottom:2px solid {{ t.border }};font-size:11px;font-weight:500;letter-spacing:.07em;text-transform:uppercase;color:{{ t.color }};cursor:pointer">{{ t.label }}</button>
+            </sc-for>
+          </div>
+          <div style="display:flex;align-items:center;flex-wrap:wrap;justify-content:flex-end;gap:6px 14px;min-width:0;font-family:'IBM Plex Mono',monospace;font-size:10px;color:#6b7379">
+            <span style="padding:2px 7px;border:1px solid #1d3a41;border-radius:2px;color:#7fd3e4">{{ scopeSource }}</span>
+            <span>{{ scopeSummary }}</span>
+          </div>
+        </div>
+        <div style="flex:1;min-height:0;display:grid;grid-template-columns:1fr 208px">
+          <div style="position:relative;min-width:0;padding:10px 6px 8px 12px">
+            <canvas id="scope-canvas" width="1500" height="380" style="width:100%;height:100%"></canvas>
+          </div>
+          <div style="border-left:1px solid #1a1e21;padding:11px 14px;overflow-y:auto">
+            <p style="margin:0 0 9px;font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#5d666b">{{ scopeStatsTitle }}</p>
+            <dl style="margin:0;display:grid;grid-template-columns:auto 1fr;gap:5px 10px;align-items:baseline">
+              <sc-for list="{{ scopeStats }}" as="r" hint-placeholder-count="7">
+                <dt style="margin:0;font-size:11px;color:#8b9399">{{ r.k }}</dt>
+                <dd style="margin:0;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:{{ r.color }}">{{ r.v }}</dd>
+              </sc-for>
+            </dl>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <aside style="display:flex;flex-direction:column;min-height:0;background:#0e1012;border-left:1px solid #1e2225">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 16px 12px">
+        <div>
+          <h1 style="margin:0;font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#e8ecee">{{ stageTitle }}</h1>
+          <p style="margin:3px 0 0;font-size:11px;color:#8b9399">{{ stageSub }}</p>
+        </div>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:{{ stageMetaColor }};white-space:nowrap">{{ stageMeta }}</span>
+      </div>
+
+      <div style="flex:1;min-height:0;overflow-y:auto">
+
+        <sc-if value="{{ isGrade }}" hint-placeholder-val="{{ true }}">
+          <div style="padding:0 16px 4px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px;padding:2px;border:1px solid #22282b;border-radius:3px;background:#111416">
+              <sc-for list="{{ lanes }}" as="l" hint-placeholder-count="2">
+                <button type="button" data-id="{{ l.id }}" onClick="{{ setLane }}" style="display:flex;align-items:center;justify-content:center;gap:7px;height:28px;background:{{ l.bg }};border:0;border-radius:2px;font-size:11.5px;font-weight:500;color:{{ l.color }};cursor:pointer">
+                  <span>{{ l.label }}</span>
+                  <span style="width:5px;height:5px;border-radius:50%;background:{{ l.dot }}"></span>
+                </button>
+              </sc-for>
+            </div>
+            <p style="margin:9px 0 4px;font-size:11px;line-height:1.5;color:#8b9399">{{ laneNote }}</p>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ hasGroups }}" hint-placeholder-val="{{ true }}">
+          <div>
+            <sc-for list="{{ groups }}" as="g" hint-placeholder-count="4">
+              <section style="border-top:1px solid #1a1e21">
+                <div style="display:flex;align-items:center;gap:8px;padding:0 12px 0 14px;height:38px;background:{{ g.headBg }}">
+                  <button type="button" data-id="{{ g.id }}" onClick="{{ toggleGroup }}" style="flex:1;display:flex;align-items:center;gap:9px;height:38px;padding:0;background:none;border:0;cursor:pointer;text-align:left">
+                    <span style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:#5d666b;transform:{{ g.caret }};display:inline-block">▶</span>
+                    <span style="font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:{{ g.titleColor }}">{{ g.title }}</span>
+                    <span style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:{{ g.badgeColor }};letter-spacing:.04em">{{ g.badge }}</span>
+                  </button>
+                  <sc-if value="{{ g.showReset }}" hint-placeholder-val="{{ false }}">
+                    <button type="button" data-id="{{ g.id }}" onClick="{{ resetGroup }}" style="padding:2px 6px;background:none;border:0;font-size:10.5px;color:#6b7379;cursor:pointer" style-hover="color:#e8ecee">Reset</button>
+                  </sc-if>
+                  <button type="button" data-id="{{ g.id }}" onClick="{{ toggleEnable }}" title="Bypass this group" aria-pressed="{{ g.enabled }}" style="width:26px;height:26px;display:grid;place-items:center;background:none;border:0;border-radius:3px;cursor:pointer;color:{{ g.eyeColor }}" style-hover="background:#171c1f">
+                    <sc-if value="{{ g.enabled }}" hint-placeholder-val="{{ true }}">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2 12s3.6-6.4 10-6.4S22 12 22 12s-3.6 6.4-10 6.4S2 12 2 12z"></path><circle cx="12" cy="12" r="2.7"></circle></svg>
+                    </sc-if>
+                    <sc-if value="{{ g.bypassed }}" hint-placeholder-val="{{ false }}">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4.5 8.2C2.9 9.8 2 12 2 12s3.6 6.4 10 6.4c1.5 0 2.8-.35 4-.9"></path><path d="M9.6 6c.77-.16 1.57-.25 2.4-.25 6.4 0 10 6.25 10 6.25s-1.1 2-3 3.6"></path><path d="M3 3l18 18"></path></svg>
+                    </sc-if>
+                  </button>
+                </div>
+
+                <sc-if value="{{ g.open }}" hint-placeholder-val="{{ true }}">
+                  <div style="padding:2px 16px 16px;opacity:{{ g.bodyOpacity }}">
+                    <sc-if value="{{ g.note }}" hint-placeholder-val="{{ false }}">
+                      <p style="margin:2px 0 10px;font-size:11px;line-height:1.55;color:#7d858a">{{ g.note }}</p>
+                    </sc-if>
+
+                    <sc-if value="{{ g.isBands }}" hint-placeholder-val="{{ false }}">
+                      <div>
+                        <canvas id="bands-canvas" width="600" height="380" onPointerDown="{{ bandsDown }}" style="width:100%;height:190px;border:1px solid #1e2225;border-radius:3px;background:#0a0c0d;cursor:crosshair;touch-action:none"></canvas>
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:9px">
+                          <span style="font-size:11px;color:#8b9399">Selected band <strong style="font-family:'IBM Plex Mono',monospace;font-weight:500;color:#f0b25a">{{ bandLabel }}</strong></span>
+                          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#f0b25a">{{ bandValue }}</span>
+                        </div>
+                      </div>
+                    </sc-if>
+
+                    <sc-if value="{{ g.isCurves }}" hint-placeholder-val="{{ false }}">
+                      <div>
+                        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;padding:2px;margin-bottom:9px;border:1px solid #22282b;border-radius:3px;background:#111416">
+                          <sc-for list="{{ curveChannels }}" as="c" hint-placeholder-count="4">
+                            <button type="button" data-id="{{ c.id }}" onClick="{{ setCurveChannel }}" style="height:24px;background:{{ c.bg }};border:0;border-radius:2px;font-size:11px;color:{{ c.color }};cursor:pointer">{{ c.label }}</button>
+                          </sc-for>
+                        </div>
+                        <canvas id="curve-canvas" width="600" height="440" style="width:100%;height:200px;border:1px solid #1e2225;border-radius:3px;background:#0a0c0d"></canvas>
+                      </div>
+                    </sc-if>
+
+                    <sc-for list="{{ g.controls }}" as="c" hint-placeholder-count="4">
+                      <div data-p="{{ c.p }}" onPointerDown="{{ ctlDown }}" onDoubleClick="{{ ctlReset }}" style="padding:6px 0;cursor:ew-resize;user-select:none;touch-action:none">
+                        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px">
+                          <span style="font-size:11.5px;color:#b8c0c5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.label }}</span>
+                          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:{{ c.valueColor }};white-space:nowrap">{{ c.display }}</span>
+                        </div>
+                        <div style="position:relative;height:14px;margin-top:5px">
+                          <div style="position:absolute;top:6px;left:0;right:0;height:2px;border-radius:1px;background:#1c2124"></div>
+                          <div style="position:absolute;top:6px;height:2px;border-radius:1px;background:{{ c.fillColor }};left:{{ c.fillLeft }};width:{{ c.fillWidth }}"></div>
+                          <div style="position:absolute;top:0;width:2px;height:14px;border-radius:1px;background:#e8ecee;left:{{ c.pos }}"></div>
+                        </div>
+                      </div>
+                    </sc-for>
+
+                    <sc-for list="{{ g.selects }}" as="s" hint-placeholder-count="0">
+                      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0">
+                        <span style="font-size:11.5px;color:#b8c0c5">{{ s.label }}</span>
+                        <span style="padding:4px 9px;border:1px solid #262c30;border-radius:3px;background:#15191b;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:#d2d8db">{{ s.value }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+              </section>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isImport }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:4px 16px 18px">
+            <div style="display:grid;place-items:center;gap:8px;padding:26px 16px;border:1px dashed #2b5b68;border-radius:4px;background:#0f1719;text-align:center">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4fb3c9" stroke-width="1.5"><path d="M12 16V4"></path><path d="M7.5 8.5 12 4l4.5 4.5"></path><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"></path></svg>
+              <p style="margin:0;font-size:12px;color:#d2d8db">Drop an HDR source, or <span style="color:#4fb3c9">browse</span></p>
+              <p style="margin:0;font-family:'IBM Plex Mono',monospace;font-size:10px;color:#6b7379">EXR · TIFF · HDR · PFM · HEIC · PNG</p>
+            </div>
+
+            <p style="margin:20px 0 10px;font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#5d666b">Classification</p>
+            <div style="display:flex;align-items:center;gap:9px;padding:10px 12px;border:1px solid #1d3a41;border-radius:3px;background:#0f1719">
+              <span style="width:6px;height:6px;border-radius:50%;background:#4fb3c9"></span>
+              <span style="font-size:11.5px;color:#9fe0ee">True HDR · peak 9.76 stops above diffuse white</span>
+            </div>
+
+            <p style="margin:22px 0 10px;font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#5d666b">Interpretation</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px;padding:2px;margin-bottom:10px;border:1px solid #22282b;border-radius:3px;background:#111416">
+              <sc-for list="{{ interpModes }}" as="m" hint-placeholder-count="2">
+                <button type="button" data-id="{{ m.id }}" onClick="{{ setInterpMode }}" style="height:27px;background:{{ m.bg }};border:0;border-radius:2px;font-size:11.5px;color:{{ m.color }};cursor:pointer">{{ m.label }}</button>
+              </sc-for>
+            </div>
+            <div style="display:grid;gap:8px">
+              <sc-for list="{{ interpFields }}" as="f" hint-placeholder-count="2">
+                <label style="display:grid;gap:5px">
+                  <span style="font-size:11px;color:#8b9399">{{ f.label }}</span>
+                  <span style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;border:1px solid #262c30;border-radius:3px;background:#15191b;font-family:'IBM Plex Mono',monospace;font-size:11px;color:{{ f.color }}">{{ f.value }}<span style="color:#5d666b">▾</span></span>
+                </label>
+              </sc-for>
+            </div>
+            <p style="margin:10px 0 0;font-size:11px;line-height:1.55;color:#7d858a">Auto detection read BT.2020 primaries and a linear transfer from the EXR chromaticities. Override only when metadata is missing or known wrong.</p>
+
+            <button type="button" onClick="{{ goGrade }}" style="width:100%;height:34px;margin-top:18px;background:#1c4b58;border:1px solid #2b5b68;border-radius:3px;font-size:12px;font-weight:500;color:#bfeaf4;cursor:pointer" style-hover="background:#235d6d">Confirm source · continue to Grade</button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isProof }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:4px 16px 18px">
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px;padding:2px;border:1px solid #22282b;border-radius:3px;background:#111416">
+              <sc-for list="{{ proofViews }}" as="v" hint-placeholder-count="3">
+                <button type="button" data-id="{{ v.id }}" onClick="{{ setProofView }}" style="height:27px;background:{{ v.bg }};border:0;border-radius:2px;font-size:11px;color:{{ v.color }};cursor:pointer">{{ v.label }}</button>
+              </sc-for>
+            </div>
+            <p style="margin:9px 0 0;font-size:11px;line-height:1.55;color:#8b9399">{{ proofNote }}</p>
+
+            <p style="margin:20px 0 10px;font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#5d666b">Delivery</p>
+            <div style="display:grid;gap:8px">
+              <sc-for list="{{ proofFields }}" as="f" hint-placeholder-count="3">
+                <label style="display:grid;gap:5px">
+                  <span style="font-size:11px;color:#8b9399">{{ f.label }}</span>
+                  <span style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;border:1px solid #262c30;border-radius:3px;background:#15191b;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#d2d8db">{{ f.value }}<span style="color:#5d666b">▾</span></span>
+                </label>
+              </sc-for>
+            </div>
+
+            <p style="margin:22px 0 10px;font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#5d666b">Reconstruction</p>
+            <dl style="margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 12px;align-items:baseline">
+              <sc-for list="{{ proofStats }}" as="r" hint-placeholder-count="4">
+                <dt style="margin:0;font-size:11.5px;color:#8b9399">{{ r.k }}</dt>
+                <dd style="margin:0;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:11px;color:{{ r.color }}">{{ r.v }}</dd>
+              </sc-for>
+            </dl>
+
+            <div style="display:flex;align-items:flex-start;gap:9px;margin-top:16px;padding:10px 12px;border:1px solid #4a3517;border-left:2px solid #e8963c;border-radius:3px;background:#150f06">
+              <span style="font-size:11px;line-height:1.55;color:#e0c496">Grading changed since this proof was built. The result below is stale.</span>
+            </div>
+
+            <button type="button" style="width:100%;height:34px;margin-top:14px;background:#1c4b58;border:1px solid #2b5b68;border-radius:3px;font-size:12px;font-weight:500;color:#bfeaf4;cursor:pointer" style-hover="background:#235d6d">Rebuild proof</button>
+            <p style="margin:10px 0 0;font-size:10.5px;line-height:1.55;color:#6b7379">The target reconstructs delivered gain-map bytes at that reference headroom. It never changes the grade or the export.</p>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isExport }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:4px 16px 18px">
+            <div style="display:grid;gap:6px">
+              <sc-for list="{{ formats }}" as="f" hint-placeholder-count="3">
+                <button type="button" data-id="{{ f.id }}" onClick="{{ setFormat }}" style="display:grid;gap:5px;padding:11px 12px;border:1px solid {{ f.border }};border-left:2px solid {{ f.accent }};border-radius:3px;background:{{ f.bg }};text-align:left;cursor:pointer">
+                  <span style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                    <span style="font-size:12.5px;font-weight:500;color:{{ f.titleColor }}">{{ f.title }}</span>
+                    <span style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:{{ f.tagColor }}">{{ f.tag }}</span>
+                  </span>
+                  <span style="font-size:11px;line-height:1.5;color:#8b9399">{{ f.desc }}</span>
+                  <span style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:#5d666b">{{ f.spec }}</span>
+                </button>
+              </sc-for>
+            </div>
+
+            <p style="margin:20px 0 6px;font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#5d666b">Encoding</p>
+            <sc-for list="{{ exportControls }}" as="c" hint-placeholder-count="2">
+              <div data-p="{{ c.p }}" onPointerDown="{{ ctlDown }}" onDoubleClick="{{ ctlReset }}" style="padding:6px 0;cursor:ew-resize;user-select:none;touch-action:none">
+                <div style="display:flex;align-items:baseline;justify-content:space-between">
+                  <span style="font-size:11.5px;color:#b8c0c5">{{ c.label }}</span>
+                  <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:{{ c.valueColor }}">{{ c.display }}</span>
+                </div>
+                <div style="position:relative;height:14px;margin-top:5px">
+                  <div style="position:absolute;top:6px;left:0;right:0;height:2px;border-radius:1px;background:#1c2124"></div>
+                  <div style="position:absolute;top:6px;height:2px;border-radius:1px;background:{{ c.fillColor }};left:{{ c.fillLeft }};width:{{ c.fillWidth }}"></div>
+                  <div style="position:absolute;top:0;width:2px;height:14px;border-radius:1px;background:#e8ecee;left:{{ c.pos }}"></div>
+                </div>
+              </div>
+            </sc-for>
+
+            <p style="margin:18px 0 8px;font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#5d666b">Destination</p>
+            <div style="display:grid;gap:8px">
+              <label style="display:grid;gap:5px">
+                <span style="font-size:11px;color:#8b9399">Filename</span>
+                <span style="padding:7px 10px;border:1px solid #262c30;border-radius:3px;background:#15191b;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#d2d8db">hdr_finisher_export.jpg</span>
+              </label>
+              <label style="display:grid;gap:5px">
+                <span style="font-size:11px;color:#8b9399">Folder</span>
+                <span style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 10px;border:1px solid #262c30;border-radius:3px;background:#15191b;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#d2d8db">D:\HDR\deliver<span style="color:#4fb3c9">Browse</span></span>
+              </label>
+            </div>
+
+            <p style="margin:20px 0 8px;font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#5d666b">Pre-flight</p>
+            <ul style="margin:0;padding:0;list-style:none;display:grid;gap:7px">
+              <sc-for list="{{ preflight }}" as="p" hint-placeholder-count="5">
+                <li style="display:flex;align-items:center;gap:9px">
+                  <span style="width:5px;height:5px;border-radius:50%;background:{{ p.color }};flex:none"></span>
+                  <span style="flex:1;font-size:11.5px;color:#b8c0c5">{{ p.label }}</span>
+                  <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:{{ p.color }}">{{ p.state }}</span>
+                </li>
+              </sc-for>
+            </ul>
+
+            <button type="button" style="width:100%;height:36px;margin-top:18px;background:#e8963c;border:0;border-radius:3px;font-size:12.5px;font-weight:600;letter-spacing:.03em;color:#160e04;cursor:pointer" style-hover="background:#f0a854">Export image</button>
+            <p style="margin:9px 0 0;text-align:center;font-size:10.5px;color:#6b7379">Validate HDR output in Chromium, Brave, or Edge.</p>
+          </div>
+        </sc-if>
+      </div>
+    </aside>
+  </div>
+
+  <sc-if value="{{ settingsOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeSettings }}" style="position:fixed;inset:0;background:#050607d9;display:grid;place-items:center;z-index:40;animation:fadein .12s ease">
+      <div onClick="{{ stop }}" style="width:640px;max-width:92vw;max-height:80vh;display:grid;grid-template-rows:auto 1fr;border:1px solid #2a3034;border-radius:5px;background:#111315;box-shadow:0 30px 90px -20px #000">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #1e2225">
+          <h2 style="margin:0;font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#e8ecee">Settings</h2>
+          <button type="button" onClick="{{ closeSettings }}" style="width:26px;height:26px;background:none;border:0;color:#8b9399;font-size:15px;cursor:pointer" style-hover="color:#e8ecee">✕</button>
+        </div>
+        <div style="display:grid;grid-template-columns:172px 1fr;min-height:0">
+          <nav style="border-right:1px solid #1e2225;padding:10px 8px">
+            <sc-for list="{{ settingsTabs }}" as="t" hint-placeholder-count="4">
+              <button type="button" data-id="{{ t.id }}" onClick="{{ setSettingsTab }}" style="display:block;width:100%;padding:8px 10px;margin-bottom:2px;background:{{ t.bg }};border:0;border-radius:3px;text-align:left;font-size:12px;color:{{ t.color }};cursor:pointer">{{ t.label }}</button>
+            </sc-for>
+          </nav>
+          <div style="padding:16px 18px;overflow-y:auto">
+            <p style="margin:0 0 4px;font-size:12.5px;font-weight:600;color:#e8ecee">{{ settingsTitle }}</p>
+            <p style="margin:0 0 16px;font-size:11.5px;line-height:1.55;color:#8b9399">{{ settingsSub }}</p>
+            <div style="display:grid;gap:2px">
+              <sc-for list="{{ settingsRows }}" as="r" hint-placeholder-count="4">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;padding:11px 0;border-bottom:1px solid #191d20">
+                  <span style="display:grid;gap:2px">
+                    <span style="font-size:12px;color:#d2d8db">{{ r.label }}</span>
+                    <span style="font-size:11px;color:#6b7379">{{ r.help }}</span>
+                  </span>
+                  <span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;padding:4px 9px;border:1px solid {{ r.border }};border-radius:3px;color:{{ r.color }};white-space:nowrap">{{ r.value }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1600,&quot;height&quot;:1000}}">
+class Component extends DCLogic {
+  static DEFS = {
+    "hdr.exposure": { label: "Exposure", min: -4, max: 4, def: 0, fmt: "ev", g: "tone" },
+    "hdr.rolloff": { label: "Highlight Rolloff", min: 0, max: 2, def: 0, fmt: "n2", g: "tone" },
+    "hdr.rolloff_start": { label: "Rolloff Start", min: 100, max: 4000, def: 400, fmt: "nit", g: "tone" },
+    "hdr.contrast": { label: "Contrast", min: -1, max: 1, def: 0, fmt: "n3", g: "tone" },
+    "hdr.pivot": { label: "Contrast Pivot", min: 0.02, max: 1, def: 0.1845, fmt: "n4", g: "tone" },
+    "hdr.shadow": { label: "Shadow / Black", min: -0.5, max: 0.5, def: 0, fmt: "n3", g: "tone" },
+    "hdr.bands_smoothing": { label: "Curve smoothing", min: 0, max: 1, def: 0.5, fmt: "n2", g: "bands" },
+    "hdr.bands_influence": { label: "Band influence", min: 0.5, max: 4, def: 1.5, fmt: "evp", g: "bands" },
+    "hdr.wb": { label: "Temperature", min: 2000, max: 12000, def: 6500, fmt: "k", g: "color" },
+    "hdr.tint": { label: "Green / Magenta", min: -1, max: 1, def: 0, fmt: "n2", g: "color" },
+    "hdr.saturation": { label: "Saturation", min: -1, max: 1, def: 0, fmt: "pct", g: "color" },
+    "hdr.vibrance": { label: "Vibrance", min: -1, max: 1, def: 0, fmt: "pct", g: "color" },
+    "hdr.lift": { label: "Lift", min: -0.5, max: 0.5, def: 0, fmt: "n3", g: "zones" },
+    "hdr.gamma": { label: "Gamma", min: -1, max: 1, def: 0, fmt: "n3", g: "zones" },
+    "hdr.gain": { label: "Gain", min: -0.5, max: 0.5, def: 0, fmt: "n3", g: "zones" },
+    "sdr.tone_contrast": { label: "Curve Contrast", min: 0.5, max: 1.5, def: 1, fmt: "n2", g: "base" },
+    "sdr.tone_skew": { label: "Contrast Skew", min: -1, max: 1, def: 0, fmt: "n2", g: "base" },
+    "sdr.exposure": { label: "Exposure", min: -4, max: 4, def: 0, fmt: "ev", g: "stone" },
+    "sdr.recovery": { label: "Highlight Recovery", min: 0, max: 2, def: 0.6, fmt: "n2", g: "stone" },
+    "sdr.contrast": { label: "Contrast", min: -1, max: 1, def: 0, fmt: "n3", g: "stone" },
+    "sdr.shadow": { label: "Shadow", min: -1, max: 1, def: 0, fmt: "n2", g: "stone" },
+    "sdr.saturation": { label: "Saturation", min: -1, max: 1, def: 0, fmt: "pct", g: "scolor" },
+    "sdr.vibrance": { label: "Vibrance", min: -1, max: 1, def: 0, fmt: "pct", g: "scolor" },
+    "exp.quality": { label: "Quality", min: 1, max: 100, def: 85, fmt: "int", g: "exp" },
+    "exp.gain_quality": { label: "Gain-map Quality", min: 1, max: 100, def: 100, fmt: "int", g: "exp" }
+  };
+
+  static GROUPS = {
+    hdr: [
+      { id: "tone", title: "Tone" },
+      { id: "bands", title: "Exposure Bands", isBands: true, note: "Exposure by scene brightness. 0 EV is the 100-nit diffuse-white reference; the shaded edge marks the 10,000-nit PQ limit." },
+      { id: "color", title: "Color" },
+      { id: "curves", title: "Curves", isCurves: true, closed: true },
+      { id: "zones", title: "Lift, Gamma, Gain", closed: true, note: "Legacy compatibility controls, superseded by Exposure Bands." }
+    ],
+    sdr: [
+      { id: "base", title: "Base Rendition", selects: [{ label: "Tone Mapper", value: "Filmic" }], note: "What viewers without gain-map support will see." },
+      { id: "stone", title: "Tone" },
+      { id: "scolor", title: "Color", selects: [{ label: "Follow HDR color", value: "On" }] },
+      { id: "curves", title: "Curves", isCurves: true, closed: true }
+    ]
+  };
+
+  state = {
+    stage: "grade",
+    lane: "hdr",
+    vals: {},
+    open: {},
+    off: {},
+    dock: "waveform",
+    view: "hdr",
+    overlay: false,
+    zoom: 0.31,
+    fit: true,
+    curveChannel: "luma",
+    interpMode: "auto",
+    proofView: "live",
+    format: "jpeg",
+    settings: false,
+    settingsTab: "patterns",
+    bands: [0, 0, 0, 0, 0, 0, 0, 0, -0.35, -0.9, -1.45, -1.8, -2],
+    selBand: 12
+  };
+
+  componentDidMount() {
+    const vals = {};
+    for (const k in Component.DEFS) vals[k] = Component.DEFS[k].def;
+    vals["hdr.exposure"] = -1.65;
+    vals["hdr.rolloff"] = 0.32;
+    vals["hdr.wb"] = 6150;
+    const open = {};
+    for (const lane in Component.GROUPS) for (const g of Component.GROUPS[lane]) open[g.id] = !g.closed;
+    this.setState({ vals, open });
+    this._img = new Image();
+    this._img.onload = () => this.computeScopes();
+    this._img.src = "assets/preview-render.png";
+    this._onMove = (e) => this.drag(e);
+    this._onUp = () => { this._active = null; };
+    window.addEventListener("pointermove", this._onMove);
+    window.addEventListener("pointerup", this._onUp);
+    requestAnimationFrame(() => this.draw());
+  }
+  componentWillUnmount() {
+    window.removeEventListener("pointermove", this._onMove);
+    window.removeEventListener("pointerup", this._onUp);
+  }
+  componentDidUpdate() { this.draw(); }
+
+  computeScopes() {
+    const W = 300, H = 200;
+    const c = document.createElement("canvas"); c.width = W; c.height = H;
+    const g = c.getContext("2d", { willReadFrequently: true });
+    g.drawImage(this._img, 0, 0, W, H);
+    const d = g.getImageData(0, 0, W, H).data;
+    const hist = [new Float32Array(256), new Float32Array(256), new Float32Array(256)];
+    const cols = [];
+    for (let x = 0; x < W; x++) cols.push([new Float32Array(64), new Float32Array(64), new Float32Array(64)]);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4;
+      for (let ch = 0; ch < 3; ch++) {
+        const v = d[i + ch];
+        hist[ch][v]++;
+        cols[x][ch][Math.min(63, v >> 2)]++;
+      }
+    }
+    this._scopes = { hist, cols, W, H };
+    this.draw();
+  }
+
+  draw() {
+    this.drawScope();
+    this.drawBands();
+    this.drawCurve();
+  }
+
+  drawScope() {
+    const cv = document.getElementById("scope-canvas");
+    if (!cv || !this._scopes) return;
+    const g = cv.getContext("2d");
+    const W = cv.width, H = cv.height;
+    g.clearRect(0, 0, W, H);
+    g.fillStyle = "#0a0c0d"; g.fillRect(0, 0, W, H);
+    const pad = { l: 62, r: 8, t: 12, b: 22 };
+    const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
+    g.strokeStyle = "#191e21"; g.lineWidth = 1;
+    for (let i = 0; i <= 8; i++) {
+      const x = pad.l + (iw * i) / 8;
+      g.beginPath(); g.moveTo(x, pad.t); g.lineTo(x, pad.t + ih); g.stroke();
+    }
+    const rows = ["4K peak", "1K peak", "203", "100 white", "10", "1 nit"];
+    g.font = "16px 'IBM Plex Mono', monospace"; g.textAlign = "right"; g.textBaseline = "middle";
+    rows.forEach((r, i) => {
+      const y = pad.t + (ih * i) / (rows.length - 1);
+      g.strokeStyle = r === "100 white" ? "#2b5b68" : "#191e21";
+      g.beginPath(); g.moveTo(pad.l, y); g.lineTo(pad.l + iw, y); g.stroke();
+      g.fillStyle = r === "100 white" ? "#4fb3c9" : "#4d5559";
+      g.fillText(r, pad.l - 8, y);
+    });
+    const tab = this.state.dock;
+    const S = this._scopes;
+    const chColors = ["rgba(255,91,97,", "rgba(85,229,121,", "rgba(77,156,255,"];
+    if (tab === "technical") {
+      g.textAlign = "left"; g.fillStyle = "#5d666b"; g.font = "17px 'IBM Plex Mono', monospace";
+      const lines = [
+        "transport      PQ AVIF · 1920 px proxy · q88",
+        "display probe  HDR on · 1499 nit · 10 bit · SDR white 240",
+        "interpretation BT.2020 primaries · linear transfer · auto",
+        "working space  ACEScg · 0.18 = 100 nit",
+        "preview cadence 90 ms trailing"
+      ];
+      lines.forEach((l, i) => g.fillText(l, pad.l + 6, pad.t + 26 + i * 30));
+      return;
+    }
+    if (tab === "histogram") {
+      g.globalCompositeOperation = "lighter";
+      for (let ch = 0; ch < 3; ch++) {
+        const h = S.hist[ch];
+        let max = 0; for (let i = 1; i < 255; i++) max = Math.max(max, h[i]);
+        g.beginPath(); g.moveTo(pad.l, pad.t + ih);
+        for (let i = 0; i < 256; i++) {
+          const x = pad.l + (iw * i) / 255;
+          const y = pad.t + ih - (ih * Math.min(1, h[i] / max));
+          g.lineTo(x, y);
+        }
+        g.lineTo(pad.l + iw, pad.t + ih); g.closePath();
+        g.fillStyle = chColors[ch] + "0.32)"; g.fill();
+        g.strokeStyle = chColors[ch] + "0.85)"; g.lineWidth = 1.6; g.stroke();
+      }
+      g.globalCompositeOperation = "source-over";
+      return;
+    }
+    const parade = tab === "parade";
+    const lanes = parade ? 3 : 1;
+    g.globalCompositeOperation = "lighter";
+    for (let lane = 0; lane < lanes; lane++) {
+      const lw = parade ? (iw - 16) / 3 : iw;
+      const lx = pad.l + lane * (lw + 8);
+      for (let x = 0; x < S.W; x++) {
+        const px = lx + (lw * x) / S.W;
+        for (let ch = parade ? lane : 0; ch < (parade ? lane + 1 : 3); ch++) {
+          const col = S.cols[x][ch];
+          for (let b = 0; b < 64; b++) {
+            const n = col[b];
+            if (!n) continue;
+            const y = pad.t + ih - (ih * b) / 63;
+            g.fillStyle = chColors[ch] + Math.min(0.5, n / 26) + ")";
+            g.fillRect(px, y, Math.max(1.4, lw / S.W), 2.2);
+          }
+        }
+      }
+    }
+    g.globalCompositeOperation = "source-over";
+  }
+
+  bandCurve(i) {
+    const b = this.state.bands;
+    const s = this.state.vals["hdr.bands_smoothing"] ?? 0.5;
+    let sum = 0, w = 0;
+    for (let j = 0; j < b.length; j++) {
+      const d = Math.abs(i - j) / (0.6 + s * 2.2);
+      const k = Math.exp(-d * d);
+      sum += b[j] * k; w += k;
+    }
+    return sum / w;
+  }
+
+  drawBands() {
+    const cv = document.getElementById("bands-canvas");
+    if (!cv) return;
+    const g = cv.getContext("2d");
+    const W = cv.width, H = cv.height;
+    g.clearRect(0, 0, W, H);
+    const pad = { l: 46, r: 14, t: 16, b: 34 };
+    const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
+    const X = (i) => pad.l + (iw * i) / 12;
+    const Y = (ev) => pad.t + ih * ((2 - ev) / 4);
+    const pqX = pad.l + iw * (12 - 0.36 * (12 / 12)) / 12;
+    g.fillStyle = "rgba(232,150,60,0.09)";
+    g.fillRect(X(10.7), pad.t, iw - (X(10.7) - pad.l), ih);
+    g.strokeStyle = "#161b1e"; g.lineWidth = 1;
+    for (let i = 0; i <= 12; i += 2) { g.beginPath(); g.moveTo(X(i), pad.t); g.lineTo(X(i), pad.t + ih); g.stroke(); }
+    for (let ev = -2; ev <= 2; ev++) {
+      const y = Y(ev);
+      g.strokeStyle = ev === 0 ? "#2b5b68" : "#161b1e";
+      g.beginPath(); g.moveTo(pad.l, y); g.lineTo(pad.l + iw, y); g.stroke();
+      g.fillStyle = ev === 0 ? "#4fb3c9" : "#4d5559";
+      g.font = "15px 'IBM Plex Mono', monospace"; g.textAlign = "right"; g.textBaseline = "middle";
+      g.fillText((ev > 0 ? "+" : "") + ev + " EV", pad.l - 7, y);
+    }
+    g.setLineDash([5, 5]); g.strokeStyle = "rgba(232,150,60,0.7)";
+    g.beginPath(); g.moveTo(pqX, pad.t); g.lineTo(pqX, pad.t + ih); g.stroke(); g.setLineDash([]);
+    g.fillStyle = "#e8963c"; g.font = "14px 'IBM Plex Mono', monospace"; g.textAlign = "right";
+    g.fillText("10K", pqX - 4, pad.t + 10);
+    g.font = "14px 'IBM Plex Mono', monospace"; g.textAlign = "center"; g.fillStyle = "#4d5559";
+    for (let i = 0; i <= 12; i += 2) g.fillText((i - 6 > 0 ? "+" : "") + (i - 6) + " EV", X(i), pad.t + ih + 18);
+    g.beginPath();
+    for (let t = 0; t <= 120; t++) {
+      const i = (t / 120) * 12;
+      const x = X(i), y = Y(this.bandCurve(i));
+      t === 0 ? g.moveTo(x, y) : g.lineTo(x, y);
+    }
+    g.strokeStyle = "#e6eaec"; g.lineWidth = 2.6; g.stroke();
+    for (let i = 0; i < 13; i++) {
+      if (i % 2 !== 0 && i !== this.state.selBand) continue;
+      const sel = i === this.state.selBand;
+      g.beginPath(); g.arc(X(i), Y(this.state.bands[i]), sel ? 8 : 6, 0, Math.PI * 2);
+      g.fillStyle = sel ? "#e8963c" : "#e6eaec"; g.fill();
+      if (sel) { g.strokeStyle = "#150f06"; g.lineWidth = 2; g.stroke(); }
+    }
+  }
+
+  drawCurve() {
+    const cv = document.getElementById("curve-canvas");
+    if (!cv) return;
+    const g = cv.getContext("2d");
+    const W = cv.width, H = cv.height, p = 16;
+    g.clearRect(0, 0, W, H);
+    g.strokeStyle = "#161b1e"; g.lineWidth = 1;
+    for (let i = 1; i < 4; i++) {
+      g.beginPath(); g.moveTo(p + ((W - 2 * p) * i) / 4, p); g.lineTo(p + ((W - 2 * p) * i) / 4, H - p); g.stroke();
+      g.beginPath(); g.moveTo(p, p + ((H - 2 * p) * i) / 4); g.lineTo(W - p, p + ((H - 2 * p) * i) / 4); g.stroke();
+    }
+    const colors = { luma: "#e6eaec", red: "#ff8585", green: "#7fe6a8", blue: "#7db8ff" };
+    g.strokeStyle = "#2a3034"; g.setLineDash([4, 4]);
+    g.beginPath(); g.moveTo(p, H - p); g.lineTo(W - p, p); g.stroke(); g.setLineDash([]);
+    g.beginPath();
+    for (let t = 0; t <= 60; t++) {
+      const u = t / 60;
+      const v = u + 0.06 * Math.sin(u * Math.PI * 2) * (this.state.curveChannel === "luma" ? 1 : 0.5);
+      const x = p + (W - 2 * p) * u, y = H - p - (H - 2 * p) * Math.max(0, Math.min(1, v));
+      t === 0 ? g.moveTo(x, y) : g.lineTo(x, y);
+    }
+    g.strokeStyle = colors[this.state.curveChannel]; g.lineWidth = 2.4; g.stroke();
+    [[0, 0], [0.5, 0.5], [1, 1]].forEach(([u, v]) => {
+      g.beginPath(); g.arc(p + (W - 2 * p) * u, H - p - (H - 2 * p) * v, 5, 0, Math.PI * 2);
+      g.fillStyle = "#0a0c0d"; g.fill();
+      g.strokeStyle = colors[this.state.curveChannel]; g.lineWidth = 2; g.stroke();
+    });
+  }
+
+  fmt(v, kind) {
+    switch (kind) {
+      case "ev": return (v >= 0 ? "+" : "") + v.toFixed(2) + " EV";
+      case "evp": return v.toFixed(2) + " EV";
+      case "nit": return Math.round(v) + " nit";
+      case "k": return Math.round(v / 10) * 10 + " K";
+      case "pct": return Math.round(v * 100) + "%";
+      case "int": return String(Math.round(v));
+      case "n2": return v.toFixed(2);
+      case "n4": return v.toFixed(4);
+      default: return v.toFixed(3);
+    }
+  }
+
+  ctl(p) {
+    const d = Component.DEFS[p];
+    const v = this.state.vals[p] ?? d.def;
+    const span = d.max - d.min;
+    const pct = ((v - d.min) / span) * 100;
+    const org = ((d.def - d.min) / span) * 100;
+    const mod = Math.abs(v - d.def) > 1e-9;
+    return {
+      p, label: d.label, display: this.fmt(v, d.fmt),
+      pos: "calc(" + pct + "% - 1px)",
+      fillLeft: Math.min(pct, org) + "%",
+      fillWidth: Math.abs(pct - org) + "%",
+      fillColor: mod ? "#4fb3c9" : "#394247",
+      valueColor: mod ? "#7fd3e4" : "#8b9399"
+    };
+  }
+
+  groupMod(id) {
+    let n = 0;
+    for (const p in Component.DEFS) {
+      const d = Component.DEFS[p];
+      if (d.g !== id) continue;
+      if (Math.abs((this.state.vals[p] ?? d.def) - d.def) > 1e-9) n++;
+    }
+    if (id === "bands") n += this.state.bands.filter((b) => Math.abs(b) > 1e-9).length;
+    return n;
+  }
+
+  drag(e) {
+    if (!this._active) return;
+    const { p, rect } = this._active;
+    const d = Component.DEFS[p];
+    const u = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    let v = d.min + u * (d.max - d.min);
+    if (e.shiftKey) v = (this.state.vals[p] + v) / 2;
+    this.setState((s) => ({ vals: { ...s.vals, [p]: v } }));
+  }
+
+  renderVals() {
+    const st = this.state;
+    const stageDefs = [
+      { id: "import", label: "Import", num: "01", hint: "Source, classification, interpretation" },
+      { id: "grade", label: "Grade", num: "02", hint: "HDR and SDR finishing" },
+      { id: "proof", label: "Proof", num: "03", hint: "Delivery reconstruction" },
+      { id: "export", label: "Export", num: "04", hint: "Encode and deliver" }
+    ];
+    const stages = stageDefs.map((s) => {
+      const active = s.id === st.stage;
+      return {
+        ...s, active,
+        border: active ? "#4fb3c9" : "transparent",
+        numColor: active ? "#4fb3c9" : "#454d52",
+        labelColor: active ? "#e8ecee" : "#8b9399"
+      };
+    });
+
+    const laneGroups = Component.GROUPS[st.lane].map((g) => {
+      const n = this.groupMod(g.id);
+      const enabled = !st.off[g.id];
+      return {
+        id: g.id, title: g.title, note: g.note || "", isBands: !!g.isBands, isCurves: !!g.isCurves,
+        open: !!st.open[g.id], enabled, bypassed: !enabled,
+        caret: st.open[g.id] ? "rotate(90deg)" : "rotate(0deg)",
+        headBg: st.open[g.id] ? "#111416" : "transparent",
+        titleColor: enabled ? "#d2d8db" : "#5d666b",
+        badge: !enabled ? "BYPASSED" : n ? n + " MOD" : "",
+        badgeColor: !enabled ? "#e8963c" : "#4fb3c9",
+        showReset: n > 0 && enabled,
+        eyeColor: enabled ? "#7fd3e4" : "#5d666b",
+        bodyOpacity: enabled ? 1 : 0.35,
+        controls: Object.keys(Component.DEFS).filter((p) => Component.DEFS[p].g === g.id).map((p) => this.ctl(p)),
+        selects: g.selects || []
+      };
+    });
+
+    const seg = (id, cur) => ({
+      bg: id === cur ? "#1c4b58" : "transparent",
+      color: id === cur ? "#bfeaf4" : "#8b9399"
+    });
+
+    const dockDefs = [
+      { id: "waveform", label: "Waveform" }, { id: "histogram", label: "Histogram" },
+      { id: "parade", label: "Parade" }, { id: "technical", label: "Technical" }
+    ];
+
+    const stageCopy = {
+      import: ["Import", "Source and interpretation", "Confirmed", "#4fb3c9"],
+      grade: ["Grade", "HDR and SDR finishing", this.groupMod("tone") + this.groupMod("bands") + this.groupMod("color") + this.groupMod("zones") + " modified", "#8b9399"],
+      proof: ["Proof", "Delivery reconstruction", "Stale", "#e8963c"],
+      export: ["Export", "Encode and deliver", "Ready", "#4fb3c9"]
+    }[st.stage];
+
+    const settingsCopy = {
+      patterns: ["Test patterns", "Generate synthetic targets for headroom and gain-map verification.", [
+        { label: "Headroom step wedge", help: "Neutral patches, 0 to +6.64 EV", value: "Generate", color: "#4fb3c9", border: "#2b5b68" },
+        { label: "Saturated primary chart", help: "BT.2020 corners at three headrooms", value: "Generate", color: "#4fb3c9", border: "#2b5b68" },
+        { label: "Dark-to-HDR gradient", help: "Banding and quantization check", value: "Generate", color: "#4fb3c9", border: "#2b5b68" },
+        { label: "Pattern bit depth", help: "Float TIFF is the delivery target format", value: "32-bit float", color: "#d2d8db", border: "#262c30" }
+      ]],
+      debug: ["Debug", "Diagnostics for preview transport and encoder calls.", [
+        { label: "Log encoder subprocess", help: "Writes full CLI invocations to the run log", value: "On", color: "#4fb3c9", border: "#2b5b68" },
+        { label: "Show preview timing", help: "Overlays request and decode latency", value: "Off", color: "#8b9399", border: "#262c30" },
+        { label: "Keep temp artifacts", help: "Retains intermediate TIFF and gain-map files", value: "Off", color: "#8b9399", border: "#262c30" },
+        { label: "Open run log folder", help: "output/logs", value: "Reveal", color: "#4fb3c9", border: "#2b5b68" }
+      ]],
+      experimental: ["Experimental", "Unstable paths. Not covered by the release gate.", [
+        { label: "WebGPU draft preview", help: "Local GPU approximation between backend renders", value: "On", color: "#e8963c", border: "#4a3517" },
+        { label: "JPEG XL export", help: "cjxl is not wired yet", value: "Unavailable", color: "#5d666b", border: "#262c30" },
+        { label: "16-bit float gain maps", help: "Deferred to v2", value: "Off", color: "#8b9399", border: "#262c30" }
+      ]],
+      prefs: ["Preferences", "Application behaviour and defaults.", [
+        { label: "Default export format", help: "Applied to new sessions", value: "JPEG Ultra HDR", color: "#d2d8db", border: "#262c30" },
+        { label: "Preview cadence", help: "Trailing debounce on control drag", value: "90 ms", color: "#d2d8db", border: "#262c30" },
+        { label: "Restore last layout", help: "Rail widths and dock height", value: "On", color: "#4fb3c9", border: "#2b5b68" },
+        { label: "Encoder binaries", help: "avifgainmaputil · ultrahdr_app · cjxl", value: "2 of 3", color: "#e8963c", border: "#4a3517" }
+      ]]
+    }[st.settingsTab];
+
+    const bandEv = st.selBand - 6;
+    const nits = Math.round(100 * Math.pow(2, bandEv));
+    const zoomLabel = st.fit ? "Fit" : Math.round(st.zoom * 100) + "%";
+
+    return {
+      stages, goStage: (e) => this.setState({ stage: e.currentTarget.dataset.id }),
+      goImport: () => this.setState({ stage: "import" }),
+      goGrade: () => this.setState({ stage: "grade" }),
+      fileName: "Blender_5.2_TestScene_LinearRec2020_high.exr",
+      fileSub: "2160 × 2160 · ACEScg · single image",
+      encoderChip: "2 of 3 encoders ready",
+      openSettings: () => this.setState({ settings: true }),
+      closeSettings: () => this.setState({ settings: false }),
+      stop: (e) => e.stopPropagation(),
+      settingsOpen: st.settings,
+      settingsTabs: [
+        { id: "patterns", label: "Test patterns" }, { id: "debug", label: "Debug" },
+        { id: "experimental", label: "Experimental" }, { id: "prefs", label: "Preferences" }
+      ].map((t) => ({ ...t, ...seg(t.id, st.settingsTab) })),
+      setSettingsTab: (e) => this.setState({ settingsTab: e.currentTarget.dataset.id }),
+      settingsTitle: settingsCopy[0], settingsSub: settingsCopy[1], settingsRows: settingsCopy[2],
+
+      sourceState: "Confirmed", sourceStateColor: "#4fb3c9",
+      interpRows: [
+        { k: "Primaries", v: "BT.2020" }, { k: "Transfer", v: "Linear" },
+        { k: "Detection", v: st.interpMode === "auto" ? "Auto" : "Manual" }
+      ],
+      fileRows: [
+        { k: "Format", v: ".exr" }, { k: "Bit depth", v: "32-bit float" },
+        { k: "Dimensions", v: "2160 × 2160" }, { k: "Size", v: "84.2 MB" },
+        { k: "Peak linear", v: "13.59" }
+      ],
+      pipelineChips: ["ACEScg", "Local", "Single image"],
+
+      viewLabel: st.view === "hdr" ? "HDR grade" : "SDR fallback",
+      laneDot: st.view === "hdr" ? "#4fb3c9" : "#8b9399",
+      toggleView: () => this.setState({ view: st.view === "hdr" ? "sdr" : "hdr" }),
+      zoomLabel, imgW: st.fit ? "auto" : Math.round(st.zoom * 100) + "%",
+      zoomStep: (e) => this.setState({ fit: false, zoom: Math.max(0.05, Math.min(4, st.zoom + 0.1 * Number(e.currentTarget.dataset.d))) }),
+      zoomFit: () => this.setState({ fit: true }),
+      overlayOn: st.overlay,
+      overlayLabel: st.overlay ? "False color" : "Off",
+      overlayBg: st.overlay ? "#1a1408" : "#15191b",
+      overlayBorder: st.overlay ? "#4a3517" : "#262c30",
+      overlayColor: st.overlay ? "#f0b25a" : "#8b9399",
+      toggleOverlay: () => this.setState({ overlay: !st.overlay }),
+      probeReadout: "x 1973 · y 1150 · 2.41 · 0.88 · 0.44 · 604 nit",
+      branchNote: st.view === "hdr" ? "Graded HDR rendition · exported as the PQ image" : "SDR base baked into the gain map",
+
+      dockTabs: dockDefs.map((t) => ({
+        ...t,
+        border: t.id === st.dock ? "#4fb3c9" : "transparent",
+        color: t.id === st.dock ? "#e8ecee" : "#6b7379"
+      })),
+      setDock: (e) => this.setState({ dock: e.currentTarget.dataset.id }),
+      scopeSource: st.view === "hdr" ? "HDR" : "SDR",
+      scopeSummary: "peak 2086 nit · % > 1000  4.35%",
+      scopeStatsTitle: st.dock === "technical" ? "Session" : "Reference nits",
+      scopeStats: st.dock === "technical"
+        ? [{ k: "Session", v: "a7f2c1", color: "#d2d8db" }, { k: "Proxy", v: "1920 px", color: "#d2d8db" }, { k: "Cadence", v: "90 ms", color: "#d2d8db" }, { k: "Encoders", v: "2 of 3", color: "#e8963c" }]
+        : [
+          { k: "Peak", v: "2086 nit", color: "#e8963c" }, { k: "P99", v: "2015 nit", color: "#d2d8db" },
+          { k: "P95", v: "705.0 nit", color: "#d2d8db" }, { k: "Median", v: "34.46 nit", color: "#d2d8db" },
+          { k: "% > 100", v: "31.16%", color: "#d2d8db" }, { k: "% > 203", v: "9.19%", color: "#d2d8db" },
+          { k: "% > 1000", v: "4.35%", color: "#7fd3e4" }
+        ],
+
+      stageTitle: stageCopy[0], stageSub: stageCopy[1], stageMeta: stageCopy[2], stageMetaColor: stageCopy[3],
+      isGrade: st.stage === "grade", isImport: st.stage === "import",
+      isProof: st.stage === "proof", isExport: st.stage === "export",
+      hasGroups: st.stage === "grade",
+      lanes: [{ id: "hdr", label: "HDR grade" }, { id: "sdr", label: "SDR fallback" }].map((l) => ({
+        ...l, ...seg(l.id, st.lane),
+        dot: l.id === st.lane ? "#4fb3c9" : "#394247"
+      })),
+      setLane: (e) => this.setState({ lane: e.currentTarget.dataset.id }),
+      laneNote: st.lane === "hdr"
+        ? "Graded HDR rendition. Exported as the PQ HDR image."
+        : "Independent base image baked into the gain map. HDR controls never touch it.",
+      groups: laneGroups,
+      toggleGroup: (e) => { const id = e.currentTarget.dataset.id; this.setState((s) => ({ open: { ...s.open, [id]: !s.open[id] } })); },
+      toggleEnable: (e) => { const id = e.currentTarget.dataset.id; this.setState((s) => ({ off: { ...s.off, [id]: !s.off[id] } })); },
+      resetGroup: (e) => {
+        const id = e.currentTarget.dataset.id;
+        this.setState((s) => {
+          const vals = { ...s.vals };
+          for (const p in Component.DEFS) if (Component.DEFS[p].g === id) vals[p] = Component.DEFS[p].def;
+          return { vals, bands: id === "bands" ? s.bands.map(() => 0) : s.bands };
+        });
+      },
+      ctlDown: (e) => {
+        const p = e.currentTarget.dataset.p;
+        const track = e.currentTarget.lastElementChild;
+        this._active = { p, rect: track.getBoundingClientRect() };
+        this.drag(e);
+      },
+      ctlReset: (e) => {
+        const p = e.currentTarget.dataset.p;
+        this.setState((s) => ({ vals: { ...s.vals, [p]: Component.DEFS[p].def } }));
+      },
+      bandsDown: (e) => {
+        const cv = e.currentTarget;
+        const r = cv.getBoundingClientRect();
+        const u = (e.clientX - r.left) / r.width;
+        const i = Math.max(0, Math.min(12, Math.round(((u * 600 - 46) / (600 - 60)) * 12)));
+        const ev = Math.max(-2, Math.min(2, 2 - ((e.clientY - r.top) / r.height * 380 - 16) / (380 - 50) * 4));
+        this.setState((s) => { const b = [...s.bands]; b[i] = ev; return { bands: b, selBand: i }; });
+      },
+      bandLabel: (bandEv > 0 ? "+" : "") + bandEv + " EV · " + (nits >= 1000 ? (nits / 1000).toFixed(1) + "k" : nits) + " nit",
+      bandValue: (st.bands[st.selBand] >= 0 ? "+" : "") + st.bands[st.selBand].toFixed(2) + " EV",
+      curveChannels: [{ id: "luma", label: "Luma" }, { id: "red", label: "R" }, { id: "green", label: "G" }, { id: "blue", label: "B" }]
+        .map((c) => ({ ...c, ...seg(c.id, st.curveChannel) })),
+      setCurveChannel: (e) => this.setState({ curveChannel: e.currentTarget.dataset.id }),
+
+      interpModes: [{ id: "auto", label: "Auto detect" }, { id: "manual", label: "Manual" }].map((m) => ({ ...m, ...seg(m.id, st.interpMode) })),
+      setInterpMode: (e) => this.setState({ interpMode: e.currentTarget.dataset.id }),
+      interpFields: [
+        { label: "Color primaries", value: "BT.2020", color: st.interpMode === "auto" ? "#8b9399" : "#d2d8db" },
+        { label: "Transfer function", value: "Linear", color: st.interpMode === "auto" ? "#8b9399" : "#d2d8db" }
+      ],
+
+      proofViews: [{ id: "authoring", label: "Authoring" }, { id: "matrix", label: "Matrix" }, { id: "live", label: "Live" }]
+        .map((v) => ({ ...v, ...seg(v.id, st.proofView) })),
+      setProofView: (e) => this.setState({ proofView: e.currentTarget.dataset.id }),
+      proofNote: {
+        authoring: "The authored fixed-reference canvas. Not a delivery prediction.",
+        matrix: "Fixed-headroom reconstruction from encoded bytes. Authoritative for what the file contains.",
+        live: "This browser, monitor and OS rendering the real exported proxy. Authoritative only for this machine."
+      }[st.proofView],
+      proofFields: [
+        { label: "Delivery format", value: "JPEG Ultra HDR" },
+        { label: "Target display peak", value: "1,000 nits" },
+        { label: "Active display", value: "DELL U3223QE · HDR on" }
+      ],
+      proofStats: [
+        { k: "Base headroom", v: "0.00", color: "#d2d8db" },
+        { k: "Alternate", v: "5.26035", color: "#d2d8db" },
+        { k: "Above display", v: "1.9%", color: "#e8963c" },
+        { k: "Gain map", v: "10-bit log", color: "#d2d8db" }
+      ],
+
+      formats: [
+        { id: "jpeg", title: "JPEG Ultra HDR", tag: "Default", desc: "Opens as a normal JPEG anywhere. HDR in supported viewers; recompression may remove it.", spec: "Ultra HDR v1 XMP + ISO 21496-1 · 8-bit gain map" },
+        { id: "avif", title: "AVIF + gain map", tag: "Best quality", desc: "Best quality per byte. HDR in current Chromium browsers; SDR everywhere else.", spec: "ISO 21496-1 · 10-bit logarithmic gain map" },
+        { id: "png", title: "PNG (SDR)", tag: "Fallback only", desc: "The SDR base on its own, with no HDR data.", spec: "8-bit sRGB · no gain map" }
+      ].map((f) => {
+        const on = f.id === st.format;
+        return {
+          ...f, border: on ? "#1d3a41" : "#1e2225", accent: on ? "#4fb3c9" : "#1e2225",
+          bg: on ? "#0f1719" : "#111315", titleColor: on ? "#e8ecee" : "#b8c0c5",
+          tagColor: on ? "#4fb3c9" : "#5d666b"
+        };
+      }),
+      setFormat: (e) => this.setState({ format: e.currentTarget.dataset.id }),
+      exportControls: [this.ctl("exp.quality"), this.ctl("exp.gain_quality")],
+      preflight: [
+        { label: "Source interpretation", state: "Confirmed", color: "#4fb3c9" },
+        { label: "HDR branch", state: "Ready", color: "#4fb3c9" },
+        { label: "SDR fallback reviewed", state: "Ready", color: "#4fb3c9" },
+        { label: "Encoder available", state: "ultrahdr_app", color: "#4fb3c9" },
+        { label: "Proof reviewed", state: "Stale", color: "#e8963c" }
+      ]
+    };
+  }
+}
+
+</script>
+</body>
+</html>

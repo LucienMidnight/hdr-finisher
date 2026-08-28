@@ -1,0 +1,762 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HDR Finisher</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="top-bar" aria-label="Application controls">
+      <div class="product-lockup">
+        <span class="product-mark" aria-hidden="true">HF</span>
+        <div>
+          <p class="eyebrow">HDR Finisher</p>
+          <p class="top-file-name" id="session-name">No active image</p>
+        </div>
+      </div>
+
+      <nav class="workflow-tabs" aria-label="Workflow stages">
+        <button class="workflow-tab active" type="button" data-workflow-tab="grade" aria-selected="true">Grade</button>
+        <button class="workflow-tab" type="button" data-workflow-tab="proof" aria-selected="false">Proof</button>
+        <button class="workflow-tab" type="button" data-workflow-tab="export" aria-selected="false">Export</button>
+      </nav>
+
+      <div class="top-file-meta" id="file-summary">Import one HDR-capable source to begin</div>
+
+      <div class="top-actions">
+        <input id="file-input" type="file" accept=".exr,.tif,.tiff,.hdr,.pfm,.heic,.heif,.png,.jpg,.jpeg" hidden>
+        <button id="import-button" class="button-secondary" type="button">Import</button>
+        <button id="test-pattern-button" class="button-secondary" type="button">Test pattern</button>
+        <button id="eject-button" class="button-secondary" type="button">Eject</button>
+        <span class="pipeline-chip">ACEScg · Local · Single image</span>
+        <span class="capability-chip" id="capability-summary">Checking encoders…</span>
+      </div>
+    </header>
+
+    <aside class="source-rail panel" aria-label="Source">
+      <button id="source-rail-expand" class="source-rail-expand" type="button" aria-expanded="false">Source</button>
+      <div class="rail-title-row">
+        <div>
+          <p class="section-kicker">Input</p>
+          <h1>Source</h1>
+        </div>
+        <span class="status-text muted" id="source-confidence">Waiting</span>
+      </div>
+
+      <section class="source-summary">
+        <div id="badge" class="badge neutral">No file loaded.</div>
+        <div id="override-warning" class="attention-item hidden">
+          <div>
+            <p class="attention-label">Attention</p>
+            <p id="override-message">Confirm how this source should be interpreted before export.</p>
+          </div>
+          <button id="attention-fix" class="text-button" type="button">Fix</button>
+        </div>
+      </section>
+
+      <section class="disclosure-panel">
+        <button id="source-settings-toggle" class="disclosure-trigger" type="button" aria-expanded="false" aria-controls="source-settings-panel">
+          <span>Interpretation</span>
+          <span id="interpretation-summary">Auto detect</span>
+        </button>
+        <div id="source-settings-panel" class="disclosure-content hidden">
+          <label>Mode
+            <select id="interpretation-mode">
+              <option value="auto">Auto Detect</option>
+              <option value="manual">Manual Override</option>
+            </select>
+          </label>
+          <label>Color Primaries
+            <select id="interpretation-color-space">
+              <option value="auto">Auto</option>
+              <option value="linear_srgb">Scene-Linear sRGB / Rec.709</option>
+              <option value="linear_bt2020">Scene-Linear Rec.2020</option>
+              <option value="linear_acescg">ACEScg Linear</option>
+              <option value="linear_p3">Display P3 Linear</option>
+            </select>
+          </label>
+          <label>Transfer Function
+            <select id="interpretation-transfer">
+              <option value="auto">Auto</option>
+              <option value="linear">Linear</option>
+              <option value="pq">PQ</option>
+              <option value="hlg">HLG</option>
+              <option value="srgb">sRGB</option>
+            </select>
+          </label>
+          <p id="source-settings-note" class="helper">Use Manual only when metadata is missing or you know the source pipeline.</p>
+          <div class="button-row">
+            <button id="apply-interpretation" class="button-secondary" type="button">Apply</button>
+            <button id="reset-interpretation" class="text-button" type="button">Reset to auto</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="disclosure-panel">
+        <button id="metadata-toggle" class="disclosure-trigger" type="button" aria-expanded="false" aria-controls="metadata-panel">
+          <span>Metadata</span>
+          <span>Details</span>
+        </button>
+        <div id="metadata-panel" class="disclosure-content hidden">
+          <dl id="metadata-list" class="metadata-list"></dl>
+        </div>
+      </section>
+
+      <section class="workflow-context">
+        <p class="section-kicker">Workflow</p>
+        <dl id="workflow-context-list" class="metadata-list"></dl>
+      </section>
+
+      <p class="scope-boundary">Global finishing only. No layers, masks, RAW processing, or local adjustments.</p>
+    </aside>
+
+    <div
+      id="source-splitter"
+      class="splitter splitter-vertical source-splitter"
+      role="separator"
+      tabindex="0"
+      aria-label="Resize source rail"
+      aria-orientation="vertical"
+      aria-valuemin="200"
+      aria-valuemax="380"
+      aria-valuenow="268"
+    ></div>
+
+    <main class="workspace-main">
+      <section class="viewer-panel panel" aria-label="Viewer">
+        <div class="viewer-bar">
+          <div class="viewer-lane">
+            <span class="lane-dot" aria-hidden="true"></span>
+            <span id="viewer-lane-label">HDR Grade</span>
+          </div>
+          <div class="viewer-tools">
+            <button id="compare-button" class="tool-button" type="button" title="Tap V to switch. Hold V to peek at the other branch.">A/B · V</button>
+            <span id="compare-status" class="tool-status">Preparing SDR…</span>
+            <div class="zoom-control" role="group" aria-label="Image zoom">
+              <button id="zoom-out" class="zoom-step" type="button" aria-label="Zoom out" title="Zoom out">&minus;</button>
+              <input id="zoom-readout" class="zoom-value" type="text" value="Fit" inputmode="decimal" aria-label="Zoom percentage" title="Enter a zoom percentage">
+              <input id="zoom-slider" class="zoom-slider" type="range" min="0" max="100" step="0.1" value="0" aria-label="Zoom level" data-no-double-reset>
+              <button id="zoom-in" class="zoom-step" type="button" aria-label="Zoom in" title="Zoom in">+</button>
+              <button id="zoom-fit" class="tool-button active" type="button" title="Fit image in viewer (F)">Fit</button>
+              <button id="zoom-actual" class="tool-button" type="button" title="Show one image pixel per screen pixel (A)">100%</button>
+            </div>
+            <button id="overlay-toggle" class="tool-button" type="button" aria-expanded="false" aria-controls="overlay-popover">Overlays: Off</button>
+          </div>
+          <div id="overlay-popover" class="overlay-popover hidden">
+            <div class="popover-heading">
+              <span>Overlays</span>
+              <button id="overlay-close" class="text-button" type="button">Close</button>
+            </div>
+            <label>Mode
+              <select id="overlay-mode" data-path="shared.overlay_mode">
+                <option value="off">Off</option>
+                <option value="false_color">False Color</option>
+                <option value="zebra">Zebra</option>
+              </select>
+            </label>
+            <label>False Color Target
+              <select id="overlay-preset" data-path="shared.overlay_preset">
+                <option value="web_1000_100">Web HDR · 1000 nit peak / 100 nit white</option>
+                <option value="bt2408_1000_203">BT.2408 · 1000 nit peak / 203 nit white</option>
+                <option value="bt2408_4000_203">BT.2408 · 4000 nit peak / 203 nit white</option>
+                <option value="sdr_100">SDR · 100 nit white</option>
+              </select>
+            </label>
+            <p id="overlay-preset-note" class="helper">False color preset notes will appear here.</p>
+            <div class="control-row compact-control">
+              <div class="control-heading">
+                <label for="overlay-opacity">Opacity</label>
+                <output data-value-path="shared.overlay_opacity">72%</output>
+              </div>
+              <input id="overlay-opacity" type="range" min="0.1" max="1" step="0.01" value="0.72" data-path="shared.overlay_opacity">
+            </div>
+            <div class="control-row compact-control">
+              <div class="control-heading">
+                <label for="overlay-threshold">Zebra Threshold</label>
+                <output data-value-path="shared.overlay_threshold">100 nit</output>
+              </div>
+              <input id="overlay-threshold" type="range" min="0.1" max="4" step="0.05" value="1" data-path="shared.overlay_threshold">
+            </div>
+          </div>
+          <aside id="proof-workflow-panel" class="workflow-side-panel proof-rail panel" data-workflow-panel="proof" aria-label="Chrome Proof settings">
+            <div class="workflow-rail-header">
+              <div><p class="section-kicker">Browser review</p><h1>Chrome Proof</h1></div>
+              <span id="chrome-proof-inline-status" class="status-text muted">Off</span>
+            </div>
+            <label class="proof-enable-row">
+              <span><strong>Show Chrome proof</strong><small>Preview delivered gain-map behavior</small></span>
+              <input id="chrome-proof-toggle" type="checkbox" aria-label="Show Chrome proof">
+            </label>
+            <div class="proof-settings-grid">
+              <label>Delivery format
+                <select id="chrome-proof-format">
+                  <option value="jpeg_ultrahdr">JPEG Ultra HDR</option>
+                  <option value="avif_gain_map">AVIF + gain map</option>
+                </select>
+              </label>
+              <label>Target display peak
+                <select id="chrome-proof-target">
+                  <option value="auto">Auto · current display</option>
+                  <option value="400">400 nits</option>
+                  <option value="600">600 nits</option>
+                  <option value="1000">1,000 nits</option>
+                  <option value="2000">2,000 nits</option>
+                  <option value="4000">4,000 nits</option>
+                  <option value="full">Full encoded range</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
+              <label id="chrome-proof-custom-field" class="hidden">Custom peak
+                <span class="proof-nits-input"><input id="chrome-proof-custom-nits" type="number" min="100" max="10000" step="50" value="1000"><span>nits</span></span>
+              </label>
+              <label>Active display
+                <select id="chrome-proof-display"><option value="">Detecting…</option></select>
+              </label>
+            </div>
+            <div id="chrome-proof-status" class="chrome-proof-status" aria-live="polite">Import an image to begin proofing.</div>
+            <p class="proof-explainer">The target reconstructs delivered gain-map bytes for that reference headroom. It is not a hard clip and never changes the grade or export.</p>
+            <p class="proof-explainer">Proofs refresh on demand. Grading changes mark the result stale without interrupting editing.</p>
+            <button id="chrome-proof-refresh" class="button-primary rail-primary-action" type="button">Build proof</button>
+          </aside>
+        </div>
+
+        <div class="viewport-frame" id="dropzone">
+          <div id="preview-stage" class="preview-stage">
+            <canvas id="preview-canvas" aria-label="WebGPU draft preview"></canvas>
+            <img id="preview-image" alt="Current HDR Finisher preview" draggable="false">
+            <img id="preview-overlay" alt="" aria-hidden="true" draggable="false">
+            <img id="chrome-proof-image" alt="Chrome fixed-headroom proof preview" draggable="false">
+          </div>
+          <div id="empty-state" class="empty-state">
+            <p class="empty-state-title">Drop an HDR image anywhere in the viewer</p>
+            <p class="empty-state-copy">EXR, TIFF, Radiance HDR, PFM, HEIC, JPEG, or PNG</p>
+            <button id="empty-import-button" class="button-secondary" type="button">Choose image</button>
+          </div>
+          <div id="false-color-legend" class="overlay-legend hidden">
+            <span>False color</span>
+            <span>Black · diffuse white · highlight ceiling</span>
+          </div>
+          <div id="interpretation-gate" class="interpretation-gate hidden" role="alert">
+            <div>
+              <p class="attention-label">Source interpretation needs review</p>
+              <p id="interpretation-gate-copy">We found ambiguous source metadata. Confirm the assumption before judging color or export.</p>
+            </div>
+            <div class="button-row">
+              <button id="accept-interpretation" class="button-secondary" type="button">Use assumption</button>
+              <button id="manual-interpretation" class="button-secondary" type="button">Set manually</button>
+            </div>
+          </div>
+          <div id="preview-status" class="preview-status hidden" aria-live="polite"></div>
+        </div>
+
+        <div class="probe-strip">
+          <span id="probe-readout">Move over the image for pixel values</span>
+          <span id="viewer-branch-note">Graded HDR rendition. Exported as the PQ HDR image.</span>
+        </div>
+      </section>
+
+      <div
+        id="dock-splitter"
+        class="splitter splitter-horizontal dock-splitter"
+        role="separator"
+        tabindex="0"
+        aria-label="Resize analysis dock"
+        aria-orientation="horizontal"
+        aria-valuemin="96"
+        aria-valuemax="340"
+        aria-valuenow="208"
+      ></div>
+
+      <section id="analysis-dock" class="analysis-dock panel" aria-label="Analysis">
+        <div class="dock-bar">
+          <div class="dock-tabs" role="tablist" aria-label="Analysis views">
+            <button class="dock-tab" type="button" data-dock-tab="waveform" role="tab">Waveform</button>
+            <button class="dock-tab active" type="button" data-dock-tab="histogram" role="tab">Histogram</button>
+            <button class="dock-tab" type="button" data-dock-tab="parade" role="tab">Parade</button>
+            <button class="dock-tab" type="button" data-dock-tab="technical" role="tab">Technical</button>
+          </div>
+          <div class="dock-status">
+            <span id="scope-kind-label" class="scope-readout">HDR</span>
+            <span id="dock-summary">Full-resolution processing stats</span>
+            <button id="dock-collapse" class="text-button" type="button" aria-expanded="true">Collapse</button>
+          </div>
+        </div>
+
+        <div id="scope-view" class="dock-content scope-layout">
+          <div class="scope-visual">
+            <div class="scope-heading">
+              <div>
+                <p class="section-kicker">Scopes</p>
+                <h2 id="scope-title">Histogram</h2>
+              </div>
+              <div class="field-inline">
+                <select id="scope-mode" class="scope-mode-select" aria-label="Scope mode">
+                  <option value="histogram">Histogram</option>
+                  <option value="waveform">Waveform</option>
+                </select>
+                <select id="scope-channel-mode" class="scope-mode-select" aria-label="Scope channels">
+                  <option value="composite">Composite</option>
+                  <option value="luma">Luma</option>
+                  <option value="parade">RGB Parade</option>
+                </select>
+              </div>
+            </div>
+            <canvas id="histogram" width="720" height="220" aria-label="Image scope"></canvas>
+          </div>
+          <div class="scope-readings">
+            <p id="scope-note" class="helper">Reference scopes will appear after a preview is rendered.</p>
+            <dl id="scope-stats" class="metadata-list scope-stats"></dl>
+          </div>
+        </div>
+
+        <div id="technical-view" class="dock-content technical-layout hidden">
+          <div class="readout-block">
+            <p class="section-kicker">Output</p>
+            <dl id="preview-output-list" class="readout-list"></dl>
+          </div>
+          <div class="readout-block">
+            <p class="section-kicker">Display probe</p>
+            <dl id="display-info-list" class="readout-list"></dl>
+          </div>
+          <div class="readout-block">
+            <p class="section-kicker">Interpretation</p>
+            <dl id="source-preview-list" class="readout-list"></dl>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div
+      id="grade-splitter"
+      class="splitter splitter-vertical grade-splitter"
+      role="separator"
+      tabindex="0"
+      aria-label="Resize grade rail"
+      aria-orientation="vertical"
+      aria-valuemin="280"
+      aria-valuemax="420"
+      aria-valuenow="320"
+    ></div>
+
+    <aside class="grade-rail panel" aria-label="Workflow settings">
+      <section id="grade-workflow-panel" class="workflow-rail-panel" data-workflow-panel="grade" aria-label="Grade settings">
+      <div class="grade-header">
+        <div>
+          <p class="section-kicker">Adjustments</p>
+          <h1>Grade</h1>
+        </div>
+        <span id="grade-modified-summary" class="status-text muted">Default</span>
+      </div>
+
+      <div class="lane-switch" role="group" aria-label="Active rendition">
+        <button id="view-hdr" class="active" data-kind="hdr" type="button">
+          <span>HDR Grade</span><span class="modified-indicator" aria-hidden="true"></span>
+        </button>
+        <button id="view-sdr" data-kind="sdr" type="button">
+          <span>SDR Fallback</span><span class="modified-indicator" aria-hidden="true"></span>
+        </button>
+      </div>
+      <p id="lane-note" class="lane-note">Graded HDR rendition. Exported as the PQ HDR image.</p>
+
+      <div class="lane-panel" data-lane-panel="hdr">
+        <section class="control-group" data-group="hdr-tone">
+          <div class="control-group-header">
+            <button class="group-toggle" type="button" aria-expanded="true">Tone <span data-modified-count="hdr-tone">Default</span></button>
+            <button class="section-bypass text-button" type="button" data-section-path="hdr.tone_section_enabled" aria-pressed="true" aria-label="Toggle Tone preview">&#9673;</button>
+            <button class="group-reset text-button" type="button" data-reset-group="hdr-tone">Reset</button>
+          </div>
+          <div class="control-group-body">
+            <div class="control-row" data-control-path="hdr.exposure">
+              <div class="control-heading"><label for="hdr-exposure">Exposure</label><output data-value-path="hdr.exposure">0.00 EV</output></div>
+              <input id="hdr-exposure" type="range" min="-4" max="4" step="0.05" value="0" data-path="hdr.exposure">
+            </div>
+            <div class="control-row featured-control" data-control-path="hdr.highlight_rolloff">
+              <div class="control-heading"><label for="hdr-rolloff">Highlight Rolloff</label><output data-value-path="hdr.highlight_rolloff">0.00</output></div>
+              <input id="hdr-rolloff" type="range" min="0" max="2" step="0.01" value="0" data-path="hdr.highlight_rolloff">
+            </div>
+            <div class="control-row" data-control-path="hdr.highlight_rolloff_start_nits">
+              <div class="control-heading"><label for="hdr-rolloff-start">Rolloff Start</label><output data-value-path="hdr.highlight_rolloff_start_nits">400 nit</output></div>
+              <input id="hdr-rolloff-start" type="range" min="100" max="4000" step="25" value="400" data-path="hdr.highlight_rolloff_start_nits">
+            </div>
+            <div class="control-pair">
+              <div class="control-row" data-control-path="hdr.contrast">
+                <div class="control-heading"><label for="hdr-contrast">Contrast</label><output data-value-path="hdr.contrast">0.000</output></div>
+                <input id="hdr-contrast" type="range" min="-1" max="1" step="0.001" value="0" data-path="hdr.contrast">
+              </div>
+              <div class="control-row" data-control-path="hdr.contrast_pivot">
+                <div class="control-heading"><label for="hdr-pivot">Pivot</label><output data-value-path="hdr.contrast_pivot">0.1845</output></div>
+                <input id="hdr-pivot" type="range" min="0.02" max="1" step="0.0005" value="0.1845" data-path="hdr.contrast_pivot">
+              </div>
+            </div>
+            <div class="control-row" data-control-path="hdr.shadow_lift">
+              <div class="control-heading"><label for="hdr-shadow">Shadow / Black</label><output data-value-path="hdr.shadow_lift">0.000</output></div>
+              <input id="hdr-shadow" type="range" min="-0.5" max="0.5" step="0.005" value="0" data-path="hdr.shadow_lift">
+            </div>
+          </div>
+        </section>
+
+        <section class="control-group" data-group="hdr-equalizer">
+          <div class="control-group-header">
+            <button class="group-toggle" type="button" aria-expanded="true">Tone Equalizer <span data-modified-count="hdr-equalizer">Default</span></button>
+            <button class="section-bypass text-button" type="button" data-section-path="hdr.tone_equalizer_section_enabled" aria-pressed="true" aria-label="Toggle Tone Equalizer preview">&#9673;</button>
+            <button class="group-reset text-button" type="button" data-reset-group="hdr-equalizer">Reset</button>
+          </div>
+          <div class="control-group-body">
+            <label class="toggle-row" data-control-path="hdr.tone_equalizer_enabled">
+              <span>Enable equalizer</span>
+              <input id="tone-equalizer-enabled" type="checkbox" data-path="hdr.tone_equalizer_enabled">
+            </label>
+            <p class="helper">Adjust exposure by scene brightness. 0 EV is the app's 100-nit diffuse-white reference; the dashed edge marks the 10,000-nit PQ limit.</p>
+            <canvas id="tone-equalizer-editor" width="320" height="220" tabindex="0" aria-label="HDR tone equalizer. Use left and right arrows to select a band, up and down arrows to adjust exposure, brackets to change influence, and Delete to remove an interior band."></canvas>
+            <div class="curve-actions tone-equalizer-actions">
+              <button id="tone-equalizer-add" type="button" class="text-button">Add Band</button>
+              <button id="tone-equalizer-remove" type="button" class="text-button">Remove Band</button>
+              <span id="tone-equalizer-radius" class="helper">Influence 1.50 EV</span>
+              <button id="tone-equalizer-radius-down" type="button" class="text-button" aria-label="Decrease proportional influence radius">-</button>
+              <button id="tone-equalizer-radius-up" type="button" class="text-button" aria-label="Increase proportional influence radius">+</button>
+            </div>
+            <div class="tone-equalizer-selected">
+              <div class="control-heading">
+                <label for="tone-equalizer-band-value">Selected band <strong id="tone-equalizer-band-label">0 EV · 100 nit</strong></label>
+                <output id="tone-equalizer-band-output">+0.00 EV</output>
+              </div>
+              <input id="tone-equalizer-band-value" type="range" min="-2" max="2" step="0.05" value="0">
+            </div>
+            <div class="control-row" data-control-path="hdr.tone_equalizer_smoothing">
+              <div class="control-heading"><label for="tone-equalizer-smoothing">Curve smoothing</label><output data-value-path="hdr.tone_equalizer_smoothing">0.50</output></div>
+              <input id="tone-equalizer-smoothing" type="range" min="0" max="1" step="0.01" value="0.5" data-path="hdr.tone_equalizer_smoothing">
+            </div>
+          </div>
+        </section>
+
+        <section class="control-group" data-group="hdr-color">
+          <div class="control-group-header">
+            <button class="group-toggle" type="button" aria-expanded="true">Color <span data-modified-count="hdr-color">Default</span></button>
+            <button class="section-bypass text-button" type="button" data-section-path="hdr.color_section_enabled" aria-pressed="true" aria-label="Toggle Color preview">&#9673;</button>
+            <button class="group-reset text-button" type="button" data-reset-group="hdr-color">Reset</button>
+          </div>
+          <div class="control-group-body">
+            <div class="control-row" data-control-path="hdr.white_balance_kelvin">
+              <div class="control-heading"><label for="hdr-wb">Temperature</label><output data-value-path="hdr.white_balance_kelvin">6500 K</output></div>
+              <input id="hdr-wb" type="range" min="2000" max="12000" step="50" value="6500" data-path="hdr.white_balance_kelvin">
+            </div>
+            <div class="control-row" data-control-path="hdr.tint">
+              <div class="control-heading"><label for="hdr-tint">Green / Magenta Tint</label><output data-value-path="hdr.tint">0.00</output></div>
+              <input id="hdr-tint" type="range" min="-1" max="1" step="0.01" value="0" data-path="hdr.tint">
+            </div>
+            <p class="control-subsection-label">Colorfulness</p>
+            <div class="control-row" data-control-path="hdr.saturation">
+              <div class="control-heading"><label for="hdr-saturation">Saturation</label><output data-value-path="hdr.saturation">0%</output></div>
+              <input id="hdr-saturation" type="range" min="-1" max="1" step="0.01" value="0" data-path="hdr.saturation">
+            </div>
+            <div class="control-row" data-control-path="hdr.vibrance">
+              <div class="control-heading"><label for="hdr-vibrance">Vibrance <span class="help-tip" tabindex="0" data-tip="Targets lower-chroma colors more strongly and protects colors that are already saturated.">?</span></label><output data-value-path="hdr.vibrance">0%</output></div>
+              <input id="hdr-vibrance" type="range" min="-1" max="1" step="0.01" value="0" data-path="hdr.vibrance">
+            </div>
+            <p class="control-subsection-label">RGB Primaries</p>
+            <p class="helper rgb-primaries-helper">Scene-linear ACEScg primary shaping. Hue rotates each primary; Purity moves it toward or beyond the working gamut edge. Grays remain neutral unless Tint Purity is raised.</p>
+            <div class="control-row primary-red-hue" data-control-path="hdr.red_hue"><div class="control-heading"><label for="hdr-red-hue">Red Hue</label><output data-value-path="hdr.red_hue">0.0°</output></div><input id="hdr-red-hue" type="range" min="-30" max="30" step="0.1" value="0" data-path="hdr.red_hue"></div>
+            <div class="control-row primary-red-purity" data-control-path="hdr.red_purity"><div class="control-heading"><label for="hdr-red-purity">Red Purity</label><output data-value-path="hdr.red_purity">0%</output></div><input id="hdr-red-purity" type="range" min="-95" max="100" step="0.5" value="0" data-path="hdr.red_purity"></div>
+            <div class="control-row primary-green-hue" data-control-path="hdr.green_hue"><div class="control-heading"><label for="hdr-green-hue">Green Hue</label><output data-value-path="hdr.green_hue">0.0°</output></div><input id="hdr-green-hue" type="range" min="-30" max="30" step="0.1" value="0" data-path="hdr.green_hue"></div>
+            <div class="control-row primary-green-purity" data-control-path="hdr.green_purity"><div class="control-heading"><label for="hdr-green-purity">Green Purity</label><output data-value-path="hdr.green_purity">0%</output></div><input id="hdr-green-purity" type="range" min="-95" max="100" step="0.5" value="0" data-path="hdr.green_purity"></div>
+            <div class="control-row primary-blue-hue" data-control-path="hdr.blue_hue"><div class="control-heading"><label for="hdr-blue-hue">Blue Hue</label><output data-value-path="hdr.blue_hue">0.0°</output></div><input id="hdr-blue-hue" type="range" min="-30" max="30" step="0.1" value="0" data-path="hdr.blue_hue"></div>
+            <div class="control-row primary-blue-purity" data-control-path="hdr.blue_purity"><div class="control-heading"><label for="hdr-blue-purity">Blue Purity</label><output data-value-path="hdr.blue_purity">0%</output></div><input id="hdr-blue-purity" type="range" min="-95" max="100" step="0.5" value="0" data-path="hdr.blue_purity"></div>
+            <div class="control-row primary-tint-hue" data-control-path="hdr.tint_hue"><div class="control-heading"><label for="hdr-tint-hue">Tint Hue</label><output data-value-path="hdr.tint_hue">0.0°</output></div><input id="hdr-tint-hue" type="range" min="-180" max="180" step="0.5" value="0" data-path="hdr.tint_hue"></div>
+            <div class="control-row primary-tint-purity" data-control-path="hdr.tint_purity"><div class="control-heading"><label for="hdr-tint-purity">Tint Purity</label><output data-value-path="hdr.tint_purity">0%</output></div><input id="hdr-tint-purity" type="range" min="0" max="20" step="0.5" value="0" data-path="hdr.tint_purity"></div>
+          </div>
+        </section>
+
+        <section class="control-group collapsed" data-group="hdr-zones">
+          <div class="control-group-header">
+            <button class="group-toggle" type="button" aria-expanded="false">Lift, Gamma, Gain <span data-modified-count="hdr-zones">Default</span></button>
+            <button class="section-bypass text-button" type="button" data-section-path="hdr.primaries_section_enabled" aria-pressed="true" aria-label="Toggle Lift, Gamma, Gain preview">&#9673;</button>
+            <button class="group-reset text-button" type="button" data-reset-group="hdr-zones">Reset</button>
+          </div>
+          <div class="control-group-body">
+            <p class="helper">Range controls how wide a luminance zone is; Pivot moves that zone through the scene range. Hover or focus a zone to reveal its scope influence.</p>
+            <div class="control-row" data-control-path="hdr.lift">
+              <div class="control-heading"><label for="hdr-lift">Lift</label><output data-value-path="hdr.lift">0.000</output></div>
+              <input id="hdr-lift" type="range" min="-0.5" max="0.5" step="0.005" value="0" data-path="hdr.lift">
+            </div>
+            <div class="control-pair zone-targeting" data-zone-hover="lift" tabindex="0">
+              <div class="control-row" data-control-path="hdr.lift_range"><div class="control-heading"><label for="hdr-lift-range">Lift Range</label><output data-value-path="hdr.lift_range">4.00 EV</output></div><input id="hdr-lift-range" type="range" min="0.5" max="12" step="0.25" value="4" data-path="hdr.lift_range"></div>
+              <div class="control-row" data-control-path="hdr.lift_pivot"><div class="control-heading"><label for="hdr-lift-pivot">Lift Pivot</label><output data-value-path="hdr.lift_pivot">-2.00 EV</output></div><input id="hdr-lift-pivot" type="range" min="-8" max="8" step="0.25" value="-2" data-path="hdr.lift_pivot"></div>
+            </div>
+            <div class="control-row" data-control-path="hdr.gamma">
+              <div class="control-heading"><label for="hdr-gamma">Gamma</label><output data-value-path="hdr.gamma">0.000</output></div>
+              <input id="hdr-gamma" type="range" min="-1" max="1" step="0.005" value="0" data-path="hdr.gamma">
+            </div>
+            <div class="control-pair zone-targeting" data-zone-hover="gamma" tabindex="0">
+              <div class="control-row" data-control-path="hdr.gamma_range"><div class="control-heading"><label for="hdr-gamma-range">Gamma Range</label><output data-value-path="hdr.gamma_range">4.25 EV</output></div><input id="hdr-gamma-range" type="range" min="0.5" max="12" step="0.25" value="4.25" data-path="hdr.gamma_range"></div>
+              <div class="control-row" data-control-path="hdr.gamma_pivot"><div class="control-heading"><label for="hdr-gamma-pivot">Gamma Pivot</label><output data-value-path="hdr.gamma_pivot">0.00 EV</output></div><input id="hdr-gamma-pivot" type="range" min="-8" max="8" step="0.25" value="0" data-path="hdr.gamma_pivot"></div>
+            </div>
+            <div class="control-row" data-control-path="hdr.gain">
+              <div class="control-heading"><label for="hdr-gain">Gain</label><output data-value-path="hdr.gain">0.000</output></div>
+              <input id="hdr-gain" type="range" min="-0.5" max="0.5" step="0.005" value="0" data-path="hdr.gain">
+            </div>
+            <div class="control-pair zone-targeting" data-zone-hover="gain" tabindex="0">
+              <div class="control-row" data-control-path="hdr.gain_range"><div class="control-heading"><label for="hdr-gain-range">Gain Range</label><output data-value-path="hdr.gain_range">4.00 EV</output></div><input id="hdr-gain-range" type="range" min="0.5" max="12" step="0.25" value="4" data-path="hdr.gain_range"></div>
+              <div class="control-row" data-control-path="hdr.gain_pivot"><div class="control-heading"><label for="hdr-gain-pivot">Gain Pivot</label><output data-value-path="hdr.gain_pivot">2.00 EV</output></div><input id="hdr-gain-pivot" type="range" min="-8" max="8" step="0.25" value="2" data-path="hdr.gain_pivot"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="lane-panel hidden" data-lane-panel="sdr">
+        <section class="control-group" data-group="sdr-base">
+          <div class="control-group-header">
+            <button class="group-toggle" type="button" aria-expanded="true">Base rendition <span data-modified-count="sdr-base">Default</span></button>
+            <button class="section-bypass text-button" type="button" data-section-path="sdr.base_section_enabled" aria-pressed="true" aria-label="Toggle Base rendition preview">&#9673;</button>
+            <button class="group-reset text-button" type="button" data-reset-group="sdr-base">Reset</button>
+          </div>
+          <div class="control-group-body">
+            <div class="select-control">
+              <span class="label-with-help"><label for="tone-mapper">Tone Mapper</label>
+                <button class="help-tip" type="button" aria-label="About tone mappers" data-tooltip="Chooses how the photograph's full brightness range is shaped for SDR. Filmic is the neutral starting point.">?</button>
+              </span>
+              <select id="tone-mapper" data-path="sdr.tone_mapper">
+                <option value="filmic">Filmic</option>
+                <option value="aces">ACES</option>
+                <option value="reinhard">Reinhard</option>
+              </select>
+            </div>
+            <div class="control-row" data-control-path="sdr.tone_contrast" data-filmic-control>
+              <div class="control-heading">
+                <span class="label-with-help"><label for="sdr-tone-contrast">Curve Contrast</label>
+                  <button class="help-tip" type="button" aria-label="About curve contrast" data-tooltip="Sets how strongly tones separate around the midtones. Lower is softer and holds more range; higher gives deeper shadows and brighter highlights.">?</button>
+                </span>
+                <output data-value-path="sdr.tone_contrast">1.00</output>
+              </div>
+              <input id="sdr-tone-contrast" type="range" min="0.5" max="1.5" step="0.01" value="1" data-path="sdr.tone_contrast">
+            </div>
+            <div class="control-row" data-control-path="sdr.tone_skew" data-filmic-control>
+              <div class="control-heading">
+                <span class="label-with-help"><label for="sdr-tone-skew">Contrast Skew</label>
+                  <button class="help-tip" type="button" aria-label="About contrast skew" data-tooltip="Moves tonal separation toward one end of the photograph. Left emphasizes darker tones and keeps highlights gentler; right opens shadows and gives brighter areas more snap.">?</button>
+                </span>
+                <output data-value-path="sdr.tone_skew">0.00</output>
+              </div>
+              <input id="sdr-tone-skew" type="range" min="-1" max="1" step="0.01" value="0" data-path="sdr.tone_skew">
+            </div>
+            <p class="helper">What viewers or devices without HDR gain-map support will see.</p>
+          </div>
+        </section>
+
+        <section class="control-group" data-group="sdr-tone">
+          <div class="control-group-header">
+            <button class="group-toggle" type="button" aria-expanded="true">Tone <span data-modified-count="sdr-tone">Default</span></button>
+            <button class="section-bypass text-button" type="button" data-section-path="sdr.tone_section_enabled" aria-pressed="true" aria-label="Toggle SDR Tone preview">&#9673;</button>
+            <button class="group-reset text-button" type="button" data-reset-group="sdr-tone">Reset</button>
+          </div>
+          <div class="control-group-body">
+            <div class="control-row" data-control-path="sdr.exposure">
+              <div class="control-heading"><label for="sdr-exposure">Exposure</label><output data-value-path="sdr.exposure">0.00 EV</output></div>
+              <input id="sdr-exposure" type="range" min="-4" max="4" step="0.05" value="0" data-path="sdr.exposure">
+            </div>
+            <div class="control-row featured-control" data-control-path="sdr.highlight_recovery">
+              <div class="control-heading"><label for="sdr-recovery">Highlight Recovery</label><output data-value-path="sdr.highlight_recovery">0.60</output></div>
+              <input id="sdr-recovery" type="range" min="0" max="2" step="0.01" value="0.6" data-path="sdr.highlight_recovery">
+            </div>
+            <div class="control-pair">
+              <div class="control-row" data-control-path="sdr.contrast">
+                <div class="control-heading"><label for="sdr-contrast">Contrast</label><output data-value-path="sdr.contrast">0.000</output></div>
+                <input id="sdr-contrast" type="range" min="-1" max="1" step="0.001" value="0" data-path="sdr.contrast">
+              </div>
+              <div class="control-row" data-control-path="sdr.contrast_pivot">
+                <div class="control-heading"><label for="sdr-pivot">Pivot</label><output data-value-path="sdr.contrast_pivot">0.500</output></div>
+                <input id="sdr-pivot" type="range" min="0.02" max="0.98" step="0.005" value="0.5" data-path="sdr.contrast_pivot">
+              </div>
+            </div>
+            <div class="control-row" data-control-path="sdr.shadow">
+              <div class="control-heading"><label for="sdr-shadow">Shadow</label><output data-value-path="sdr.shadow">0.00</output></div>
+              <input id="sdr-shadow" type="range" min="-1" max="1" step="0.01" value="0" data-path="sdr.shadow">
+            </div>
+          </div>
+        </section>
+
+        <section class="control-group" data-group="sdr-color">
+          <div class="control-group-header">
+            <button class="group-toggle" type="button" aria-expanded="true">Color <span data-modified-count="sdr-color">Following HDR</span></button>
+            <button class="section-bypass text-button" type="button" data-section-path="sdr.color_section_enabled" aria-pressed="true" aria-label="Toggle SDR Color preview">&#9673;</button>
+            <button class="group-reset text-button" type="button" data-reset-group="sdr-color">Reset</button>
+          </div>
+          <div class="control-group-body">
+            <label class="toggle-row sdr-color-match-toggle" data-control-path="sdr.match_hdr_color">
+              <span>Follow HDR Color <small>Perceptual match</small></span>
+              <input id="sdr-match-hdr-color" type="checkbox" data-path="sdr.match_hdr_color" checked>
+            </label>
+            <p class="helper sdr-color-link-note">Uses the live HDR color grade through the SDR gamut conversion. Turn this off to make an independent SDR color adjustment.</p>
+            <div data-sdr-manual-color>
+              <div class="control-row" data-control-path="sdr.white_balance_kelvin"><div class="control-heading"><label for="sdr-wb">Temperature</label><output data-value-path="sdr.white_balance_kelvin">6500 K</output></div><input id="sdr-wb" type="range" min="2000" max="12000" step="50" value="6500" data-path="sdr.white_balance_kelvin"></div>
+              <div class="control-row" data-control-path="sdr.tint"><div class="control-heading"><label for="sdr-tint">Green / Magenta Tint</label><output data-value-path="sdr.tint">0.00</output></div><input id="sdr-tint" type="range" min="-1" max="1" step="0.01" value="0" data-path="sdr.tint"></div>
+              <p class="control-subsection-label">Colorfulness</p>
+              <div class="control-row" data-control-path="sdr.saturation"><div class="control-heading"><label for="sdr-saturation">Saturation</label><output data-value-path="sdr.saturation">0%</output></div><input id="sdr-saturation" type="range" min="-1" max="1" step="0.01" value="0" data-path="sdr.saturation"></div>
+              <div class="control-row" data-control-path="sdr.vibrance"><div class="control-heading"><label for="sdr-vibrance">Vibrance <span class="help-tip" tabindex="0" data-tip="Targets lower-chroma colors more strongly and protects colors that are already saturated.">?</span></label><output data-value-path="sdr.vibrance">0%</output></div><input id="sdr-vibrance" type="range" min="-1" max="1" step="0.01" value="0" data-path="sdr.vibrance"></div>
+              <p class="control-subsection-label">RGB Primaries</p>
+              <p class="helper rgb-primaries-helper">Independent scene-linear primary shaping for the SDR fallback.</p>
+              <div class="control-row primary-red-hue" data-control-path="sdr.red_hue"><div class="control-heading"><label for="sdr-red-hue">Red Hue</label><output data-value-path="sdr.red_hue">0.0°</output></div><input id="sdr-red-hue" type="range" min="-30" max="30" step="0.1" value="0" data-path="sdr.red_hue"></div>
+              <div class="control-row primary-red-purity" data-control-path="sdr.red_purity"><div class="control-heading"><label for="sdr-red-purity">Red Purity</label><output data-value-path="sdr.red_purity">0%</output></div><input id="sdr-red-purity" type="range" min="-95" max="100" step="0.5" value="0" data-path="sdr.red_purity"></div>
+              <div class="control-row primary-green-hue" data-control-path="sdr.green_hue"><div class="control-heading"><label for="sdr-green-hue">Green Hue</label><output data-value-path="sdr.green_hue">0.0°</output></div><input id="sdr-green-hue" type="range" min="-30" max="30" step="0.1" value="0" data-path="sdr.green_hue"></div>
+              <div class="control-row primary-green-purity" data-control-path="sdr.green_purity"><div class="control-heading"><label for="sdr-green-purity">Green Purity</label><output data-value-path="sdr.green_purity">0%</output></div><input id="sdr-green-purity" type="range" min="-95" max="100" step="0.5" value="0" data-path="sdr.green_purity"></div>
+              <div class="control-row primary-blue-hue" data-control-path="sdr.blue_hue"><div class="control-heading"><label for="sdr-blue-hue">Blue Hue</label><output data-value-path="sdr.blue_hue">0.0°</output></div><input id="sdr-blue-hue" type="range" min="-30" max="30" step="0.1" value="0" data-path="sdr.blue_hue"></div>
+              <div class="control-row primary-blue-purity" data-control-path="sdr.blue_purity"><div class="control-heading"><label for="sdr-blue-purity">Blue Purity</label><output data-value-path="sdr.blue_purity">0%</output></div><input id="sdr-blue-purity" type="range" min="-95" max="100" step="0.5" value="0" data-path="sdr.blue_purity"></div>
+              <div class="control-row primary-tint-hue" data-control-path="sdr.tint_hue"><div class="control-heading"><label for="sdr-tint-hue">Tint Hue</label><output data-value-path="sdr.tint_hue">0.0°</output></div><input id="sdr-tint-hue" type="range" min="-180" max="180" step="0.5" value="0" data-path="sdr.tint_hue"></div>
+              <div class="control-row primary-tint-purity" data-control-path="sdr.tint_purity"><div class="control-heading"><label for="sdr-tint-purity">Tint Purity</label><output data-value-path="sdr.tint_purity">0%</output></div><input id="sdr-tint-purity" type="range" min="0" max="20" step="0.5" value="0" data-path="sdr.tint_purity"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="control-group collapsed" data-group="sdr-zones">
+          <div class="control-group-header">
+            <button class="group-toggle" type="button" aria-expanded="false">Lift, Gamma, Gain <span data-modified-count="sdr-zones">Default</span></button>
+            <button class="section-bypass text-button" type="button" data-section-path="sdr.primaries_section_enabled" aria-pressed="true" aria-label="Toggle SDR Lift, Gamma, Gain preview">&#9673;</button>
+            <button class="group-reset text-button" type="button" data-reset-group="sdr-zones">Reset</button>
+          </div>
+          <div class="control-group-body">
+            <div class="control-row" data-control-path="sdr.lift">
+              <div class="control-heading"><label for="sdr-lift">Lift</label><output data-value-path="sdr.lift">0.000</output></div>
+              <input id="sdr-lift" type="range" min="-0.5" max="0.5" step="0.002" value="0" data-path="sdr.lift">
+            </div>
+            <div class="control-pair zone-targeting" data-zone-hover="lift" tabindex="0">
+              <div class="control-row" data-control-path="sdr.lift_range"><div class="control-heading"><label for="sdr-lift-range">Lift Range</label><output data-value-path="sdr.lift_range">4.00 EV</output></div><input id="sdr-lift-range" type="range" min="0.5" max="12" step="0.25" value="4" data-path="sdr.lift_range"></div>
+              <div class="control-row" data-control-path="sdr.lift_pivot"><div class="control-heading"><label for="sdr-lift-pivot">Lift Pivot</label><output data-value-path="sdr.lift_pivot">-2.00 EV</output></div><input id="sdr-lift-pivot" type="range" min="-8" max="8" step="0.25" value="-2" data-path="sdr.lift_pivot"></div>
+            </div>
+            <div class="control-row" data-control-path="sdr.gamma">
+              <div class="control-heading"><label for="sdr-gamma">Gamma</label><output data-value-path="sdr.gamma">0.000</output></div>
+              <input id="sdr-gamma" type="range" min="-1" max="1" step="0.005" value="0" data-path="sdr.gamma">
+            </div>
+            <div class="control-pair zone-targeting" data-zone-hover="gamma" tabindex="0">
+              <div class="control-row" data-control-path="sdr.gamma_range"><div class="control-heading"><label for="sdr-gamma-range">Gamma Range</label><output data-value-path="sdr.gamma_range">4.25 EV</output></div><input id="sdr-gamma-range" type="range" min="0.5" max="12" step="0.25" value="4.25" data-path="sdr.gamma_range"></div>
+              <div class="control-row" data-control-path="sdr.gamma_pivot"><div class="control-heading"><label for="sdr-gamma-pivot">Gamma Pivot</label><output data-value-path="sdr.gamma_pivot">0.00 EV</output></div><input id="sdr-gamma-pivot" type="range" min="-8" max="8" step="0.25" value="0" data-path="sdr.gamma_pivot"></div>
+            </div>
+            <div class="control-row" data-control-path="sdr.gain">
+              <div class="control-heading"><label for="sdr-gain">Gain</label><output data-value-path="sdr.gain">0.000</output></div>
+              <input id="sdr-gain" type="range" min="-0.5" max="0.5" step="0.005" value="0" data-path="sdr.gain">
+            </div>
+            <div class="control-pair zone-targeting" data-zone-hover="gain" tabindex="0">
+              <div class="control-row" data-control-path="sdr.gain_range"><div class="control-heading"><label for="sdr-gain-range">Gain Range</label><output data-value-path="sdr.gain_range">4.00 EV</output></div><input id="sdr-gain-range" type="range" min="0.5" max="12" step="0.25" value="4" data-path="sdr.gain_range"></div>
+              <div class="control-row" data-control-path="sdr.gain_pivot"><div class="control-heading"><label for="sdr-gain-pivot">Gain Pivot</label><output data-value-path="sdr.gain_pivot">2.00 EV</output></div><input id="sdr-gain-pivot" type="range" min="-8" max="8" step="0.25" value="2" data-path="sdr.gain_pivot"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <section class="control-group collapsed" data-group="curves">
+        <div class="control-group-header">
+          <button class="group-toggle" type="button" aria-expanded="false">Curves <span id="curve-group-state">Default</span></button>
+          <button class="section-bypass text-button" type="button" data-section-path="current.curves_section_enabled" aria-pressed="true" aria-label="Toggle Curves preview">&#9673;</button>
+          <button id="curve-reset" class="group-reset text-button" type="button">Reset</button>
+        </div>
+        <div class="control-group-body">
+          <label class="toggle-row">
+            <span>Enable curves</span>
+            <input id="curves-enabled" type="checkbox">
+          </label>
+          <div class="curve-toolbar">
+            <div class="channel-tabs">
+              <button type="button" class="curve-channel active" data-curve-channel="luma">Luma</button>
+              <button type="button" class="curve-channel" data-curve-channel="red">Red</button>
+              <button type="button" class="curve-channel" data-curve-channel="green">Green</button>
+              <button type="button" class="curve-channel" data-curve-channel="blue">Blue</button>
+            </div>
+            <div class="curve-actions">
+              <button id="curve-add" type="button" class="text-button">Add point</button>
+              <button id="curve-remove" type="button" class="text-button">Remove</button>
+            </div>
+          </div>
+          <canvas id="curve-editor" width="320" height="220" tabindex="0" aria-label="RGB curve editor"></canvas>
+          <p id="curve-status" class="helper">Curves apply only to the active branch.</p>
+        </div>
+      </section>
+      </section>
+    </aside>
+  </div>
+
+  <aside id="export-sheet" class="export-sheet workflow-side-panel panel" data-workflow-panel="export" aria-label="Export settings">
+    <div class="sheet-header">
+      <div>
+        <p class="section-kicker">Delivery</p>
+        <h1>Export finished image</h1>
+      </div>
+    </div>
+
+    <input id="export-format" type="hidden" value="jpeg_ultrahdr">
+    <div class="format-cards" role="radiogroup" aria-label="Export format">
+      <label class="format-card" data-format-card="avif_gain_map">
+        <input type="radio" name="export-format-choice" value="avif_gain_map">
+        <span class="format-card-top"><span>Mainstream alternative</span><span data-capability-for="avif_gain_map_encoder">Checking…</span></span>
+        <strong>AVIF + gain map</strong>
+        <span>Best quality per byte for the web. HDR in current Chromium browsers; your SDR version appears everywhere else.</span>
+        <small>ISO 21496-1 · 10-bit logarithmic gain map</small>
+      </label>
+      <label class="format-card selected" data-format-card="jpeg_ultrahdr">
+        <input type="radio" name="export-format-choice" value="jpeg_ultrahdr" checked>
+        <span class="format-card-top"><span>Provisional default</span><span data-capability-for="ultrahdr_encoder">Checking…</span></span>
+        <strong>JPEG Ultra HDR</strong>
+        <span>Opens as a normal JPEG anywhere. HDR appears in supported viewers; recompression may remove it.</span>
+        <small>Ultra HDR v1 XMP + ISO 21496-1 · 8-bit gain map</small>
+      </label>
+      <label class="format-card" data-format-card="sdr_png">
+        <input type="radio" name="export-format-choice" value="sdr_png">
+        <span class="format-card-top"><span>SDR only</span><span data-capability-for="pillow">Checking…</span></span>
+        <strong>PNG (SDR)</strong>
+        <span>Your SDR fallback on its own, with no HDR data. Useful for legacy contexts and rendition checks.</span>
+        <small>8-bit sRGB · no gain map</small>
+      </label>
+    </div>
+
+    <div class="export-settings">
+      <div class="control-row export-quality-row">
+        <div class="control-heading"><label for="export-quality">Quality</label><output id="export-quality-value">85</output></div>
+        <input id="export-quality" type="range" min="1" max="100" value="85">
+      </div>
+      <div id="jpeg-advanced-settings" class="jpeg-advanced-settings">
+        <div class="control-row">
+          <div class="control-heading"><label for="jpeg-gain-map-quality">Gain-map Quality</label><output id="jpeg-gain-map-quality-value">100</output></div>
+          <input id="jpeg-gain-map-quality" type="range" min="1" max="100" value="100">
+        </div>
+        <label>Gain-map Resolution
+          <select id="jpeg-gain-map-scale"><option value="full" selected>Full</option><option value="half">Half</option></select>
+        </label>
+      </div>
+      <label class="export-filename-field">Filename
+        <input id="export-filename" type="text" value="hdr_finisher_export">
+      </label>
+      <label class="export-directory-field">Save Folder
+        <span class="directory-picker-row">
+          <input id="export-directory" type="text" value="">
+          <button id="export-directory-browse" class="button-secondary" type="button">Browse</button>
+        </span>
+      </label>
+    </div>
+
+    <section class="preflight-panel">
+      <p class="section-kicker">Pre-flight</p>
+      <ul id="export-preflight" class="preflight-list">
+        <li data-preflight="source">Source interpretation</li>
+        <li data-preflight="hdr">HDR branch ready</li>
+        <li data-preflight="sdr">SDR fallback reviewed</li>
+        <li data-preflight="encoder">Encoder available</li>
+        <li data-preflight="proof" class="proof-preflight-row"><span id="export-proof-status">Chrome proof has not been reviewed</span><button id="review-chrome-proof" class="text-button" type="button">Review Chrome Proof</button></li>
+      </ul>
+    </section>
+
+    <div id="export-status" class="export-status" aria-live="polite">Choose a format and destination.</div>
+    <div id="export-result" class="export-result hidden">
+      <span id="export-result-path"></span>
+      <button id="copy-export-path" class="text-button" type="button">Copy path</button>
+    </div>
+    <div class="sheet-actions">
+      <p>Validate HDR output in current Chromium, Brave, or Edge.</p>
+      <button id="export-confirm-button" class="button-primary" type="button">Export...</button>
+    </div>
+  </aside>
+
+  <script src="/static/webgpu-preview.js"></script>
+  <script src="/static/app.js"></script>
+  <script src="/static/proofing-ui.js"></script>
+</body>
+</html>

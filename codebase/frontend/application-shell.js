@@ -208,13 +208,13 @@
     if (!exact) return undefined;
     let action = shell.commands.find((candidate) => shortcutFor(candidate.id) === exact);
     if (action) return action;
-    if (event.shiftKey || event.altKey) {
+    if (event.ctrlKey) {
       const physicalKey = /^Key[A-Z]$/.test(event.code) ? event.code.slice(3)
         : /^Digit[0-9]$/.test(event.code) ? event.code.slice(5)
           : event.key;
       const relaxed = normalizeKey({
         key: physicalKey,
-        ctrlKey: event.ctrlKey,
+        ctrlKey: false,
         metaKey: event.metaKey,
         shiftKey: false,
         altKey: false,

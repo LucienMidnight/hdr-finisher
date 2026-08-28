@@ -460,6 +460,36 @@ function registerIpc() {
     await dispatchPendingOpenPaths();
     return true;
   });
+  handle("desktop:get-window-state", () => ({
+    maximized: Boolean(mainWindow?.isMaximized()),
+    fullscreen: Boolean(mainWindow?.isFullScreen()),
+  }));
+  handle("desktop:perform-window-action", (action) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return false;
+    if (action === "minimize") mainWindow.minimize();
+    else if (action === "toggle-maximize") mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize();
+    else if (action === "fullscreen") mainWindow.setFullScreen(!mainWindow.isFullScreen());
+    else if (action === "close") mainWindow.close();
+    else throw new Error("Unknown window action.");
+    return true;
+  });
+  handle("desktop:perform-native-edit", (action) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return false;
+    const method = { cut: "cut", copy: "copy", paste: "paste", "select-all": "selectAll" }[action];
+    if (!method) throw new Error("Unknown edit action.");
+    mainWindow.webContents[method]();
+    return true;
+  });
+  handle("desktop:perform-shell-action", async (action) => {
+    if (action !== "about") throw new Error("Unknown shell action.");
+    await dialog.showMessageBox(mainWindow, {
+      title: "HDR Finisher",
+      message: `HDR Finisher ${app.getVersion()}`,
+      detail: "Offline HDR finishing and gain-map export.",
+      buttons: ["OK"],
+    });
+    return true;
+  });
   handle("desktop:get-preferences", () => applicationPreferences);
   handle("desktop:get-default-preset-directory", () => defaultPresetDirectory());
   handle("desktop:list-grading-presets", (groupId) => listGradingPresets(groupId));
@@ -662,7 +692,7 @@ function registerIpc() {
 function updateWindowDocumentState() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const marker = documentState.dirty ? " *" : "";
-  mainWindow.setTitle(`${documentState.displayName}${marker} — HDR Finisher`);
+  mainWindow.setTitle(`HDR Finisher${marker}`);
   if (process.platform === "darwin") {
     mainWindow.setDocumentEdited(documentState.dirty);
     mainWindow.setRepresentedFilename(documentState.path || "");
@@ -674,7 +704,19 @@ function sendCommand(command, payload = null) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("desktop:menu-command", { command, payload });
 }
 
+function sendWindowState() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send("desktop:window-state", {
+    maximized: mainWindow.isMaximized(),
+    fullscreen: mainWindow.isFullScreen(),
+  });
+}
+
 function buildMenu() {
+  if (process.platform !== "darwin") {
+    Menu.setApplicationMenu(null);
+    return;
+  }
   const hasDocument = Boolean(documentState.displayName && documentState.displayName !== "Untitled");
   const template = [
     {
@@ -781,6 +823,9 @@ async function createWindow() {
     minWidth: 1100,
     minHeight: 720,
     show: false,
+    frame: false,
+    autoHideMenuBar: true,
+    roundedCorners: false,
     backgroundColor: "#101415",
     title: "HDR Finisher",
     webPreferences: {
@@ -792,6 +837,7 @@ async function createWindow() {
     },
   });
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  mainWindow.setMenuBarVisibility(false);
   mainWindow.webContents.on("will-navigate", (event, url) => {
     if (new URL(url).origin !== new URL(backend.url).origin) event.preventDefault();
   });
@@ -818,6 +864,9 @@ async function createWindow() {
     mainWindow = null;
     if (!shuttingDown) forceClose = false;
   });
+  for (const eventName of ["maximize", "unmaximize", "enter-full-screen", "leave-full-screen"]) {
+    mainWindow.on(eventName, sendWindowState);
+  }
   mainWindow.once("ready-to-show", () => mainWindow.show());
   await mainWindow.loadURL(backend.url);
   updateWindowDocumentState();

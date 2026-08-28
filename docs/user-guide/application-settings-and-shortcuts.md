@@ -1,6 +1,6 @@
 # Application settings and shortcuts
 
-Open **Settings** with the gear button in the top bar or the assigned **Open Settings** shortcut. These preferences belong to HDR Finisher itself rather than to one saved project.
+In the desktop app, open **Settings** from **File > Settings** or use the assigned **Open Settings** shortcut. These preferences belong to HDR Finisher itself rather than to one saved project.
 
 ## General defaults
 
@@ -43,12 +43,21 @@ Named presets capture the currently resolved shortcut map. Use **Save preset** t
 Every continuous slider exposed by the editor receives three assignable actions: **Increase**, **Decrease**, and **Reset**. These actions use the control's own step size and limits, so they behave like operating the on-screen slider.
 
 - Hold an assigned key to repeat an increase or decrease.
-- Add **Shift** while operating it for a step ten times larger.
-- Add **Alt** or **Option** for a step ten times finer.
+- Hold **Ctrl** while operating an assigned Increase or Decrease command for a step ten times finer. On macOS this remains the Control key, not Command.
 - Map a wheel's clockwise and counter-clockwise events to the paired Increase and Decrease shortcuts.
 - Map a Stream Deck button to Reset when a quick neutral return is useful.
 
 The shortcut acts on the named HDR, SDR, or shared control. Actions labeled **Active rendition controls** follow whichever HDR or SDR rendition is currently selected.
+
+## Slider and graph modifiers
+
+- Hold **Ctrl** while dragging a slider or pressing its arrow keys for approximately 10× finer adjustment. You can press or release Ctrl during a drag without making the value jump.
+- Hold **Shift** while dragging a slider to land on its authored semantic positions. **Shift+Arrow** moves to the next landing position. The rail stays visually empty; the landing profile still includes the control's home value and uses meaningful EV, percentage, Kelvin, degree, nit, or dynamic-range anchors where applicable.
+- When Ctrl and Shift are held together on a slider, snapping takes precedence.
+- Curves and Exposure Bands use **Ctrl** for fine graph movement. Shift does not snap graph points.
+- In Exposure Bands, **Ctrl/Command+Left/Right** keeps its established meaning: move the selected band horizontally. **Ctrl+Up/Down** and Ctrl-drag provide fine adjustment.
+
+Home/End, direct numeric entry, and double-click reset keep their existing behavior. Alt/Option is not a precision modifier.
 
 ## Updates
 

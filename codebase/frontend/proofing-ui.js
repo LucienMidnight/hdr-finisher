@@ -315,6 +315,7 @@
         && !state.proofDeliveryAvailable;
       button.classList.toggle("active", active);
       button.setAttribute("aria-pressed", String(active));
+      button.tabIndex = active ? 0 : -1;
     });
     syncProofPresentation();
     renderExportPreflight();

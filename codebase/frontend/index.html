@@ -8,11 +8,74 @@
   <link rel="stylesheet" href="/static/styles.css?v=__HDR_FINISHER_ASSET_VERSION__">
 </head>
 <body>
+  <header class="window-chrome" aria-label="Application menu">
+    <nav class="window-menu-bar" aria-label="Application menus">
+      <div class="window-menu">
+        <button class="window-menu-trigger" type="button" aria-expanded="false" aria-haspopup="menu">File</button>
+        <div class="window-menu-popover" role="menu" hidden>
+          <button type="button" role="menuitem" data-desktop-command="open-source">Import Source…</button>
+          <span data-window-menu-slot="project-open"></span>
+          <span class="window-menu-separator" role="separator"></span>
+          <span data-window-menu-slot="project-save"></span>
+          <button type="button" role="menuitem" data-desktop-command="save-as">Save Project As…</button>
+          <button type="button" role="menuitem" data-desktop-command="export">Export…</button>
+          <span class="window-menu-separator" role="separator"></span>
+          <span data-window-menu-slot="settings-open"></span>
+          <span class="window-menu-separator" role="separator"></span>
+          <button type="button" role="menuitem" data-window-action="close">Exit</button>
+        </div>
+      </div>
+      <div class="window-menu">
+        <button class="window-menu-trigger" type="button" aria-expanded="false" aria-haspopup="menu">Edit</button>
+        <div class="window-menu-popover" role="menu" hidden>
+          <button type="button" role="menuitem" data-desktop-command="undo">Undo</button>
+          <button type="button" role="menuitem" data-desktop-command="redo">Redo</button>
+          <span class="window-menu-separator" role="separator"></span>
+          <button type="button" role="menuitem" data-native-edit="cut">Cut</button>
+          <button type="button" role="menuitem" data-native-edit="copy">Copy</button>
+          <button type="button" role="menuitem" data-native-edit="paste">Paste</button>
+          <button type="button" role="menuitem" data-native-edit="select-all">Select All</button>
+        </div>
+      </div>
+      <div class="window-menu">
+        <button class="window-menu-trigger" type="button" aria-expanded="false" aria-haspopup="menu">View</button>
+        <div class="window-menu-popover" role="menu" hidden>
+          <button type="button" role="menuitem" data-view-action="reset-zoom">Actual Size</button>
+          <button type="button" role="menuitem" data-view-action="zoom-in">Zoom In</button>
+          <button type="button" role="menuitem" data-view-action="zoom-out">Zoom Out</button>
+          <span class="window-menu-separator" role="separator"></span>
+          <button type="button" role="menuitem" data-window-action="fullscreen">Toggle Full Screen</button>
+        </div>
+      </div>
+      <div class="window-menu">
+        <button class="window-menu-trigger" type="button" aria-expanded="false" aria-haspopup="menu">Window</button>
+        <div class="window-menu-popover" role="menu" hidden>
+          <button type="button" role="menuitem" data-window-action="minimize">Minimize</button>
+          <button type="button" role="menuitem" data-window-action="toggle-maximize">Maximize / Restore</button>
+        </div>
+      </div>
+      <div class="window-menu">
+        <button class="window-menu-trigger" type="button" aria-expanded="false" aria-haspopup="menu">Help</button>
+        <div class="window-menu-popover" role="menu" hidden>
+          <span data-window-menu-slot="help-open"></span>
+          <button type="button" role="menuitem" data-desktop-command="check-updates">Check for Updates…</button>
+          <span class="window-menu-separator" role="separator"></span>
+          <button type="button" role="menuitem" data-shell-action="about">About HDR Finisher</button>
+        </div>
+      </div>
+    </nav>
+    <div class="window-drag-region" aria-hidden="true"></div>
+    <div class="window-controls" aria-label="Window controls">
+      <button class="window-control" type="button" data-window-action="minimize" aria-label="Minimize" title="Minimize"><img src="/static/assets/icons/tabler/minus.svg" alt=""></button>
+      <button class="window-control" type="button" data-window-action="toggle-maximize" aria-label="Maximize" title="Maximize"><img src="/static/assets/icons/tabler/square.svg" alt=""></button>
+      <button class="window-control window-control-close" type="button" data-window-action="close" aria-label="Close" title="Close"><img src="/static/assets/icons/tabler/x.svg" alt=""></button>
+    </div>
+  </header>
   <div class="app-shell">
     <header class="top-bar" aria-label="Application controls">
       <div class="product-lockup">
         <img class="product-mark" src="/static/assets/brand/hdr-finisher-favicon-small.svg" alt="" width="26" height="26">
-        <p class="product-name">HDR Finisher</p>
+        <p class="product-name">HDR FINISHER</p>
       </div>
 
       <nav class="workflow-tabs" aria-label="Workflow stages">
@@ -25,14 +88,10 @@
       <div class="top-actions">
         <button id="project-open" class="text-button" type="button">Open project</button>
         <button id="project-save" class="text-button" type="button" disabled>Save project</button>
-        <button id="settings-open" class="top-icon-button" type="button" aria-label="Open settings" title="Settings">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/><path d="m19.4 15 .1.1 1.4 2.4-2.4 2.4-2.4-1.4-.1-.1a8.4 8.4 0 0 1-1.5.9V22h-5v-2.7a8.4 8.4 0 0 1-1.5-.9l-.1.1-2.4 1.4-2.4-2.4 1.4-2.4.1-.1a8.4 8.4 0 0 1-.9-1.5H2v-3h2.7a8.4 8.4 0 0 1 .9-1.5l-.1-.1-1.4-2.4 2.4-2.4 2.4 1.4.1.1a8.4 8.4 0 0 1 1.5-.9V2h3v2.7a8.4 8.4 0 0 1 1.5.9l.1-.1 2.4-1.4 2.4 2.4-1.4 2.4-.1.1c.4.5.7 1 .9 1.5H22v3h-2.7a8.4 8.4 0 0 1-.9 1.5Z"/></svg>
-        </button>
-        <button id="help-open" class="top-icon-button" type="button" aria-label="Open help" title="Help">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.8 9.3a2.4 2.4 0 0 1 4.6 1c0 1.8-2.4 2.1-2.4 3.8M12 17.5v.1"/></svg>
-        </button>
-        <span class="window-control-reserve" aria-hidden="true"></span>
+        <button id="settings-open" class="text-button" type="button" aria-label="Open settings" title="Settings">Settings</button>
+        <button id="help-open" class="text-button" type="button" aria-label="Open help" title="Help">Help</button>
       </div>
+
     </header>
 
     <aside id="update-notice" class="update-notice hidden" aria-live="polite">
@@ -44,7 +103,7 @@
     <aside class="source-rail panel" aria-label="Metadata">
       <div class="rail-title-row">
         <h1 class="panel-title">Metadata</h1>
-        <button id="source-rail-expand" class="source-rail-expand text-button" type="button" aria-expanded="true" aria-label="Collapse source metadata" title="Collapse metadata"></button>
+        <button id="source-rail-expand" class="source-rail-expand panel-collapse-button" type="button" aria-expanded="true" aria-label="Collapse source metadata" title="Collapse metadata"></button>
       </div>
 
       <div class="source-file-identity">
@@ -132,7 +191,6 @@
       <section class="viewer-panel panel" aria-label="Viewer">
         <div class="viewer-bar">
           <div class="viewer-lane">
-            <span class="lane-dot" aria-hidden="true"></span>
             <span class="preview-title-wrap">
               <span id="preview-window-title" class="panel-title" tabindex="0" aria-describedby="viewer-branch-note">Preview Window</span>
               <span id="viewer-branch-note" class="title-tooltip preview-title-tooltip" role="tooltip">Displays the active HDR grade or SDR fallback with current adjustments applied. Switch renditions in the Control Panel or use the layout buttons to view them side-by-side.</span>
@@ -180,24 +238,8 @@
               <button id="zoom-actual" class="tool-button" type="button" title="Show one image pixel per screen pixel (A)">100%</button>
             </div>
             <span class="viewer-tool-divider" aria-hidden="true">|</span>
-            <button id="viewer-options-toggle" class="tool-button viewer-options-toggle" type="button" aria-expanded="false" aria-controls="viewer-options-popover" aria-haspopup="true">Viewer options</button>
-            <div id="viewer-options-popover" class="viewer-secondary-tools" role="group" aria-label="Viewer options">
-              <button id="overlay-toggle" class="tool-button" type="button" aria-expanded="false" aria-controls="overlay-popover">Overlays: Off</button>
-              <label
-                class="toolbar-preview-resolution"
-                for="preview-resolution"
-                data-tooltip="Sets the maximum preview width and height. Higher settings use more memory; export quality is unchanged."
-                title="Sets the maximum preview width and height. Higher settings use more memory; export quality is unchanged."
-              >
-                <span>Preview</span>
-                <select id="preview-resolution" aria-label="Preview resolution">
-                  <option value="1024">1K</option>
-                  <option value="2048">2K</option>
-                  <option value="4096">4K</option>
-                </select>
-              </label>
-              <span id="preview-quality-status" class="preview-quality-status" aria-live="polite">Standard</span>
-            </div>
+            <button id="overlay-toggle" class="tool-button viewer-menu-toggle" type="button" aria-expanded="false" aria-controls="overlay-popover" aria-haspopup="dialog" aria-pressed="false">Overlays</button>
+            <button id="preview-toggle" class="tool-button viewer-menu-toggle" type="button" aria-expanded="false" aria-controls="preview-popover" aria-haspopup="dialog">Preview</button>
           </div>
           <div id="overlay-popover" class="overlay-popover hidden">
             <div class="popover-heading">
@@ -242,6 +284,24 @@
               <input id="overlay-threshold" type="range" min="10" max="4000" step="10" value="100" data-path="shared.overlay_threshold">
               <p class="helper overlay-control-note">Highlights pixels at or above this reference-nit level.</p>
             </div>
+          </div>
+          <div id="preview-popover" class="overlay-popover preview-popover hidden">
+            <div class="popover-heading">
+              <span>Preview</span>
+              <button id="preview-close" class="text-button" type="button">Close</button>
+            </div>
+            <label for="preview-resolution">Maximum preview size
+              <select id="preview-resolution" aria-label="Preview resolution" title="Sets the maximum preview width and height. Higher settings use more memory; export quality is unchanged.">
+                <option value="1024">1K</option>
+                <option value="2048">2K</option>
+                <option value="4096">4K</option>
+              </select>
+            </label>
+            <div class="preview-popover-status">
+              <span>Current preview size</span>
+              <strong id="preview-quality-status" aria-live="polite">Standard</strong>
+            </div>
+            <p class="helper">Higher settings use more memory. Export quality is unchanged.</p>
           </div>
           <aside id="proof-workflow-panel" class="workflow-side-panel proof-rail panel" data-workflow-panel="proof" aria-label="Chromium Proof settings">
             <div class="workflow-rail-header">
@@ -411,7 +471,7 @@
             </label>
           </div>
           <div class="dock-status">
-            <button id="dock-collapse" class="text-button" type="button" aria-expanded="true">Collapse</button>
+            <button id="dock-collapse" class="panel-collapse-button panel-collapse-button--vertical" type="button" aria-expanded="true" aria-label="Collapse Scopes panel" title="Collapse Scopes"></button>
           </div>
         </div>
 
@@ -605,22 +665,27 @@
             <div class="local-grade-controls">
               <section class="local-grade-section" data-local-grade-section="light" aria-labelledby="local-light-heading">
                 <div class="local-mask-subpanel-heading">
-                  <strong id="local-light-heading">Light Controls</strong>
-                  <span>Local grade</span>
+                  <strong id="local-light-heading">Light · Local</strong>
+                  <span>Independent controls</span>
                 </div>
-                <div class="control-row instrument-slider-control"><div class="control-heading"><label for="local-exposure">Exposure</label><output id="local-exposure-value" data-local-grade-output="exposure">0.00 EV</output></div><input id="local-exposure" data-local-grade="exposure" type="range" min="-8" max="8" step="0.05" value="0"></div>
-                <div class="local-four-way">
-                  <div class="control-row instrument-slider-control"><div class="control-heading"><label>Highlights</label><output data-local-grade-output="highlights">0</output></div><input data-local-grade="highlights" type="range" min="-2" max="2" step="0.02" value="0"></div>
-                  <div class="control-row instrument-slider-control"><div class="control-heading"><label>Midtones</label><output data-local-grade-output="midtones">0</output></div><input data-local-grade="midtones" type="range" min="-2" max="2" step="0.02" value="0"></div>
-                  <div class="control-row instrument-slider-control"><div class="control-heading"><label>Shadows</label><output data-local-grade-output="shadows">0</output></div><input data-local-grade="shadows" type="range" min="-2" max="2" step="0.02" value="0"></div>
-                  <div class="control-row instrument-slider-control"><div class="control-heading"><label>Blacks</label><output data-local-grade-output="blacks">0</output></div><input data-local-grade="blacks" type="range" min="-2" max="2" step="0.02" value="0"></div>
+                <div class="slider-group-tile local-light-tile" data-slider-relationship="distribution">
+                  <div class="control-row instrument-slider-control slider-group-parent"><div class="control-heading"><label for="local-exposure">Exposure</label><output id="local-exposure-value" data-local-grade-output="exposure">0.00 EV</output></div><input id="local-exposure" data-local-grade="exposure" type="range" min="-8" max="8" step="0.05" value="0"></div>
+                  <div class="slider-group-relationship">Tone distribution</div>
+                  <div class="compact-subrails">
+                    <div class="local-four-way">
+                      <div class="control-row instrument-slider-control compact-subrail"><div class="control-heading"><label>Highlights</label><output data-local-grade-output="highlights">0</output></div><input data-local-grade="highlights" type="range" min="-2" max="2" step="0.02" value="0"></div>
+                      <div class="control-row instrument-slider-control compact-subrail"><div class="control-heading"><label>Midtones</label><output data-local-grade-output="midtones">0</output></div><input data-local-grade="midtones" type="range" min="-2" max="2" step="0.02" value="0"></div>
+                      <div class="control-row instrument-slider-control compact-subrail"><div class="control-heading"><label>Shadows</label><output data-local-grade-output="shadows">0</output></div><input data-local-grade="shadows" type="range" min="-2" max="2" step="0.02" value="0"></div>
+                      <div class="control-row instrument-slider-control compact-subrail"><div class="control-heading"><label>Blacks</label><output data-local-grade-output="blacks">0</output></div><input data-local-grade="blacks" type="range" min="-2" max="2" step="0.02" value="0"></div>
+                    </div>
+                    <div class="control-row instrument-slider-control compact-subrail"><div class="control-heading"><label>Contrast</label><output data-local-grade-output="contrast">0</output></div><input data-local-grade="contrast" type="range" min="-2" max="2" step="0.02" value="0"></div>
+                  </div>
                 </div>
-                <div class="control-row instrument-slider-control"><div class="control-heading"><label>Contrast</label><output data-local-grade-output="contrast">0</output></div><input data-local-grade="contrast" type="range" min="-2" max="2" step="0.02" value="0"></div>
               </section>
               <section class="local-grade-section" data-local-grade-section="color" aria-labelledby="local-color-heading">
                 <div class="local-mask-subpanel-heading">
-                  <strong id="local-color-heading">Color Controls</strong>
-                  <span>Local grade</span>
+                  <strong id="local-color-heading">Color · Local</strong>
+                  <span>Independent controls</span>
                 </div>
                 <div class="control-row instrument-slider-control"><div class="control-heading"><label>Temperature</label><output data-local-grade-output="white_balance_kelvin">6500 K</output></div><input data-local-grade="white_balance_kelvin" type="range" min="1000" max="25000" step="50" value="6500"></div>
                 <div class="control-row instrument-slider-control"><div class="control-heading"><label>Tint</label><output data-local-grade-output="tint">0</output></div><input data-local-grade="tint" type="range" min="-2" max="2" step="0.02" value="0"></div>
@@ -792,7 +857,7 @@
           </div>
           <div class="control-group-body">
             <p class="helper">Adjust exposure by scene brightness. 0 EV is the app's 100-nit diffuse-white reference; the dashed edge marks the 10,000-nit PQ limit.</p>
-            <canvas id="tone-equalizer-editor" width="320" height="220" tabindex="0" aria-label="HDR exposure bands editor. Left-click the curve to add a band and keep holding to drag the new band immediately; right-click an interior band to remove it, or drag an existing band to adjust it. Use left and right arrows to select a band, up and down arrows to adjust exposure, brackets to change influence, and Delete to remove an interior band."></canvas>
+            <canvas id="tone-equalizer-editor" width="320" height="220" tabindex="0" aria-label="HDR exposure bands editor. Left-click the curve to add a band and keep holding to drag the new band immediately; right-click an interior band to remove it, or drag an existing band to adjust it. Use left and right arrows to select a band, up and down arrows to adjust exposure, brackets to change influence, and Delete to remove an interior band. Hold Ctrl for fine movement; Ctrl or Command plus Left or Right moves the selected band horizontally. Shift keeps ordinary movement."></canvas>
             <div class="curve-actions tone-equalizer-actions">
               <button id="tone-equalizer-add" type="button" class="text-button">Add Band</button>
               <button id="tone-equalizer-remove" type="button" class="text-button">Remove Band</button>
@@ -859,29 +924,38 @@
           </div>
           <div class="control-group-body">
             <p class="helper">Range controls how wide a luminance zone is; Pivot moves that zone through the scene range. Hover or focus a zone to reveal its scope influence.</p>
-            <div class="control-row" data-control-path="hdr.lift">
+            <div class="slider-group-tile" data-slider-relationship="targeting">
+            <div class="control-row slider-group-parent" data-control-path="hdr.lift">
               <div class="control-heading"><label for="hdr-lift">Lift</label><output data-value-path="hdr.lift">0.000</output></div>
               <input id="hdr-lift" type="range" min="-0.5" max="0.5" step="0.005" value="0" data-path="hdr.lift">
             </div>
-            <div class="control-pair zone-targeting" data-zone-hover="lift" tabindex="0">
-              <div class="control-row" data-control-path="hdr.lift_range"><div class="control-heading"><label for="hdr-lift-range">Lift Range</label><output data-value-path="hdr.lift_range">4.00 EV</output></div><input id="hdr-lift-range" type="range" min="0.5" max="12" step="0.25" value="4" data-path="hdr.lift_range"></div>
-              <div class="control-row" data-control-path="hdr.lift_pivot"><div class="control-heading"><label for="hdr-lift-pivot">Lift Pivot</label><output data-value-path="hdr.lift_pivot">-2.00 EV</output></div><input id="hdr-lift-pivot" type="range" min="-8" max="8" step="0.25" value="-2" data-path="hdr.lift_pivot"></div>
+            <div class="slider-group-relationship">Targeting</div>
+            <div class="control-pair zone-targeting compact-subrails" data-zone-hover="lift" tabindex="0">
+              <div class="control-row compact-subrail" data-control-path="hdr.lift_range"><div class="control-heading"><label for="hdr-lift-range">Range</label><output data-value-path="hdr.lift_range">4.00 EV</output></div><input id="hdr-lift-range" type="range" min="0.5" max="12" step="0.25" value="4" data-path="hdr.lift_range"></div>
+              <div class="control-row compact-subrail" data-control-path="hdr.lift_pivot"><div class="control-heading"><label for="hdr-lift-pivot">Pivot</label><output data-value-path="hdr.lift_pivot">-2.00 EV</output></div><input id="hdr-lift-pivot" type="range" min="-8" max="8" step="0.25" value="-2" data-path="hdr.lift_pivot"></div>
             </div>
-            <div class="control-row" data-control-path="hdr.gamma">
+            </div>
+            <div class="slider-group-tile" data-slider-relationship="targeting">
+            <div class="control-row slider-group-parent" data-control-path="hdr.gamma">
               <div class="control-heading"><label for="hdr-gamma">Gamma</label><output data-value-path="hdr.gamma">0.000</output></div>
               <input id="hdr-gamma" type="range" min="-1" max="1" step="0.005" value="0" data-path="hdr.gamma">
             </div>
-            <div class="control-pair zone-targeting" data-zone-hover="gamma" tabindex="0">
-              <div class="control-row" data-control-path="hdr.gamma_range"><div class="control-heading"><label for="hdr-gamma-range">Gamma Range</label><output data-value-path="hdr.gamma_range">4.25 EV</output></div><input id="hdr-gamma-range" type="range" min="0.5" max="12" step="0.25" value="4.25" data-path="hdr.gamma_range"></div>
-              <div class="control-row" data-control-path="hdr.gamma_pivot"><div class="control-heading"><label for="hdr-gamma-pivot">Gamma Pivot</label><output data-value-path="hdr.gamma_pivot">0.00 EV</output></div><input id="hdr-gamma-pivot" type="range" min="-8" max="8" step="0.25" value="0" data-path="hdr.gamma_pivot"></div>
+            <div class="slider-group-relationship">Targeting</div>
+            <div class="control-pair zone-targeting compact-subrails" data-zone-hover="gamma" tabindex="0">
+              <div class="control-row compact-subrail" data-control-path="hdr.gamma_range"><div class="control-heading"><label for="hdr-gamma-range">Range</label><output data-value-path="hdr.gamma_range">4.25 EV</output></div><input id="hdr-gamma-range" type="range" min="0.5" max="12" step="0.25" value="4.25" data-path="hdr.gamma_range"></div>
+              <div class="control-row compact-subrail" data-control-path="hdr.gamma_pivot"><div class="control-heading"><label for="hdr-gamma-pivot">Pivot</label><output data-value-path="hdr.gamma_pivot">0.00 EV</output></div><input id="hdr-gamma-pivot" type="range" min="-8" max="8" step="0.25" value="0" data-path="hdr.gamma_pivot"></div>
             </div>
-            <div class="control-row" data-control-path="hdr.gain">
+            </div>
+            <div class="slider-group-tile" data-slider-relationship="targeting">
+            <div class="control-row slider-group-parent" data-control-path="hdr.gain">
               <div class="control-heading"><label for="hdr-gain">Gain</label><output data-value-path="hdr.gain">0.000</output></div>
               <input id="hdr-gain" type="range" min="-0.5" max="0.5" step="0.005" value="0" data-path="hdr.gain">
             </div>
-            <div class="control-pair zone-targeting" data-zone-hover="gain" tabindex="0">
-              <div class="control-row" data-control-path="hdr.gain_range"><div class="control-heading"><label for="hdr-gain-range">Gain Range</label><output data-value-path="hdr.gain_range">4.00 EV</output></div><input id="hdr-gain-range" type="range" min="0.5" max="12" step="0.25" value="4" data-path="hdr.gain_range"></div>
-              <div class="control-row" data-control-path="hdr.gain_pivot"><div class="control-heading"><label for="hdr-gain-pivot">Gain Pivot</label><output data-value-path="hdr.gain_pivot">2.00 EV</output></div><input id="hdr-gain-pivot" type="range" min="-8" max="8" step="0.25" value="2" data-path="hdr.gain_pivot"></div>
+            <div class="slider-group-relationship">Targeting</div>
+            <div class="control-pair zone-targeting compact-subrails" data-zone-hover="gain" tabindex="0">
+              <div class="control-row compact-subrail" data-control-path="hdr.gain_range"><div class="control-heading"><label for="hdr-gain-range">Range</label><output data-value-path="hdr.gain_range">4.00 EV</output></div><input id="hdr-gain-range" type="range" min="0.5" max="12" step="0.25" value="4" data-path="hdr.gain_range"></div>
+              <div class="control-row compact-subrail" data-control-path="hdr.gain_pivot"><div class="control-heading"><label for="hdr-gain-pivot">Pivot</label><output data-value-path="hdr.gain_pivot">2.00 EV</output></div><input id="hdr-gain-pivot" type="range" min="-8" max="8" step="0.25" value="2" data-path="hdr.gain_pivot"></div>
+            </div>
             </div>
           </div>
         </section>
@@ -971,7 +1045,7 @@
               <span>Copies once; SDR remains independent.</span>
             </div>
             <p class="helper">Adjust the tone-mapped SDR image by brightness. Bands are relative to 18% display-linear gray; values above 100% are clipped by the SDR output.</p>
-            <canvas id="sdr-tone-equalizer-editor" width="320" height="220" tabindex="0" aria-label="SDR exposure bands editor. Left-click the curve to add a band and keep holding to drag the new band immediately; right-click an interior band to remove it, or drag an existing band to adjust it."></canvas>
+            <canvas id="sdr-tone-equalizer-editor" width="320" height="220" tabindex="0" aria-label="SDR exposure bands editor. Left-click the curve to add a band and keep holding to drag the new band immediately; right-click an interior band to remove it, or drag an existing band to adjust it. Hold Ctrl for fine movement; Ctrl or Command plus Left or Right moves the selected band horizontally. Shift keeps ordinary movement."></canvas>
             <div class="curve-actions tone-equalizer-actions">
               <button id="sdr-tone-equalizer-add" type="button" class="text-button">Add Band</button>
               <button id="sdr-tone-equalizer-remove" type="button" class="text-button">Remove Band</button>
@@ -1024,29 +1098,38 @@
             <button class="group-reset text-button" type="button" data-reset-group="sdr-zones">Reset</button>
           </div>
           <div class="control-group-body">
-            <div class="control-row" data-control-path="sdr.lift">
+            <div class="slider-group-tile" data-slider-relationship="targeting">
+            <div class="control-row slider-group-parent" data-control-path="sdr.lift">
               <div class="control-heading"><label for="sdr-lift">Lift</label><output data-value-path="sdr.lift">0.000</output></div>
               <input id="sdr-lift" type="range" min="-0.5" max="0.5" step="0.002" value="0" data-path="sdr.lift">
             </div>
-            <div class="control-pair zone-targeting" data-zone-hover="lift" tabindex="0">
-              <div class="control-row" data-control-path="sdr.lift_range"><div class="control-heading"><label for="sdr-lift-range">Lift Range</label><output data-value-path="sdr.lift_range">4.00 EV</output></div><input id="sdr-lift-range" type="range" min="0.5" max="12" step="0.25" value="4" data-path="sdr.lift_range"></div>
-              <div class="control-row" data-control-path="sdr.lift_pivot"><div class="control-heading"><label for="sdr-lift-pivot">Lift Pivot</label><output data-value-path="sdr.lift_pivot">-2.00 EV</output></div><input id="sdr-lift-pivot" type="range" min="-8" max="8" step="0.25" value="-2" data-path="sdr.lift_pivot"></div>
+            <div class="slider-group-relationship">Targeting</div>
+            <div class="control-pair zone-targeting compact-subrails" data-zone-hover="lift" tabindex="0">
+              <div class="control-row compact-subrail" data-control-path="sdr.lift_range"><div class="control-heading"><label for="sdr-lift-range">Range</label><output data-value-path="sdr.lift_range">4.00 EV</output></div><input id="sdr-lift-range" type="range" min="0.5" max="12" step="0.25" value="4" data-path="sdr.lift_range"></div>
+              <div class="control-row compact-subrail" data-control-path="sdr.lift_pivot"><div class="control-heading"><label for="sdr-lift-pivot">Pivot</label><output data-value-path="sdr.lift_pivot">-2.00 EV</output></div><input id="sdr-lift-pivot" type="range" min="-8" max="8" step="0.25" value="-2" data-path="sdr.lift_pivot"></div>
             </div>
-            <div class="control-row" data-control-path="sdr.gamma">
+            </div>
+            <div class="slider-group-tile" data-slider-relationship="targeting">
+            <div class="control-row slider-group-parent" data-control-path="sdr.gamma">
               <div class="control-heading"><label for="sdr-gamma">Gamma</label><output data-value-path="sdr.gamma">0.000</output></div>
               <input id="sdr-gamma" type="range" min="-1" max="1" step="0.005" value="0" data-path="sdr.gamma">
             </div>
-            <div class="control-pair zone-targeting" data-zone-hover="gamma" tabindex="0">
-              <div class="control-row" data-control-path="sdr.gamma_range"><div class="control-heading"><label for="sdr-gamma-range">Gamma Range</label><output data-value-path="sdr.gamma_range">4.25 EV</output></div><input id="sdr-gamma-range" type="range" min="0.5" max="12" step="0.25" value="4.25" data-path="sdr.gamma_range"></div>
-              <div class="control-row" data-control-path="sdr.gamma_pivot"><div class="control-heading"><label for="sdr-gamma-pivot">Gamma Pivot</label><output data-value-path="sdr.gamma_pivot">0.00 EV</output></div><input id="sdr-gamma-pivot" type="range" min="-8" max="8" step="0.25" value="0" data-path="sdr.gamma_pivot"></div>
+            <div class="slider-group-relationship">Targeting</div>
+            <div class="control-pair zone-targeting compact-subrails" data-zone-hover="gamma" tabindex="0">
+              <div class="control-row compact-subrail" data-control-path="sdr.gamma_range"><div class="control-heading"><label for="sdr-gamma-range">Range</label><output data-value-path="sdr.gamma_range">4.25 EV</output></div><input id="sdr-gamma-range" type="range" min="0.5" max="12" step="0.25" value="4.25" data-path="sdr.gamma_range"></div>
+              <div class="control-row compact-subrail" data-control-path="sdr.gamma_pivot"><div class="control-heading"><label for="sdr-gamma-pivot">Pivot</label><output data-value-path="sdr.gamma_pivot">0.00 EV</output></div><input id="sdr-gamma-pivot" type="range" min="-8" max="8" step="0.25" value="0" data-path="sdr.gamma_pivot"></div>
             </div>
-            <div class="control-row" data-control-path="sdr.gain">
+            </div>
+            <div class="slider-group-tile" data-slider-relationship="targeting">
+            <div class="control-row slider-group-parent" data-control-path="sdr.gain">
               <div class="control-heading"><label for="sdr-gain">Gain</label><output data-value-path="sdr.gain">0.000</output></div>
               <input id="sdr-gain" type="range" min="-0.5" max="0.5" step="0.005" value="0" data-path="sdr.gain">
             </div>
-            <div class="control-pair zone-targeting" data-zone-hover="gain" tabindex="0">
-              <div class="control-row" data-control-path="sdr.gain_range"><div class="control-heading"><label for="sdr-gain-range">Gain Range</label><output data-value-path="sdr.gain_range">4.00 EV</output></div><input id="sdr-gain-range" type="range" min="0.5" max="12" step="0.25" value="4" data-path="sdr.gain_range"></div>
-              <div class="control-row" data-control-path="sdr.gain_pivot"><div class="control-heading"><label for="sdr-gain-pivot">Gain Pivot</label><output data-value-path="sdr.gain_pivot">2.00 EV</output></div><input id="sdr-gain-pivot" type="range" min="-8" max="8" step="0.25" value="2" data-path="sdr.gain_pivot"></div>
+            <div class="slider-group-relationship">Targeting</div>
+            <div class="control-pair zone-targeting compact-subrails" data-zone-hover="gain" tabindex="0">
+              <div class="control-row compact-subrail" data-control-path="sdr.gain_range"><div class="control-heading"><label for="sdr-gain-range">Range</label><output data-value-path="sdr.gain_range">4.00 EV</output></div><input id="sdr-gain-range" type="range" min="0.5" max="12" step="0.25" value="4" data-path="sdr.gain_range"></div>
+              <div class="control-row compact-subrail" data-control-path="sdr.gain_pivot"><div class="control-heading"><label for="sdr-gain-pivot">Pivot</label><output data-value-path="sdr.gain_pivot">2.00 EV</output></div><input id="sdr-gain-pivot" type="range" min="-8" max="8" step="0.25" value="2" data-path="sdr.gain_pivot"></div>
+            </div>
             </div>
           </div>
         </section>
@@ -1071,7 +1154,7 @@
               <button id="curve-remove" type="button" class="text-button">Remove</button>
             </div>
           </div>
-          <canvas id="curve-editor" width="320" height="220" tabindex="0" aria-label="RGB curve editor. Left-click the curve to add a point and keep holding to drag the new point immediately; right-click an interior point to remove it, or drag an existing point to adjust it."></canvas>
+          <canvas id="curve-editor" width="320" height="220" tabindex="0" aria-label="RGB curve editor. Left-click the curve to add a point and keep holding to drag the new point immediately; right-click an interior point to remove it, or drag an existing point to adjust it. Hold Ctrl for fine movement; Shift keeps ordinary movement."></canvas>
           <p id="curve-status" class="helper">Curves apply only to the active branch.</p>
         </div>
       </section>
@@ -1437,7 +1520,7 @@
         </section>
         <section data-settings-panel="shortcuts" hidden>
           <div class="settings-section-heading"><div><h3>Keyboard shortcuts</h3><p class="helper">Only standard application commands are assigned by default. Select a shortcut, then press a key combination. Backspace clears it; Escape cancels recording.</p></div><button id="shortcuts-reset-all" class="button-secondary" type="button">Reset all</button></div>
-          <div class="shortcut-hardware-note"><span>Any slider can be assigned Increase, Decrease, and Reset actions. Holding a key repeats; Shift or Alt/Option makes an adjustment 10× finer.</span></div>
+          <div class="shortcut-hardware-note"><span>Any slider can be assigned Increase, Decrease, and Reset actions. Holding a key repeats; Ctrl makes adjustment 10× finer. On range sliders, Shift snaps to authored semantic landing positions.</span></div>
           <div class="shortcut-toolbar">
             <input id="shortcut-search" type="search" placeholder="Search commands and controls" aria-label="Search shortcuts">
             <select id="shortcut-preset" aria-label="Shortcut preset"><option value="">Shortcut presets…</option></select>
@@ -1498,6 +1581,7 @@
 
   <script src="/static/webgpu-preview.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/preview-scheduler.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+  <script src="/static/desktop-chrome.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/application-shell.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/app.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/proofing-ui.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>

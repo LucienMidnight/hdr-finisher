@@ -45,6 +45,11 @@ contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   openProofExternally: (url) => ipcRenderer.invoke("desktop:open-proof", url),
   setDocumentState: (state) => ipcRenderer.invoke("desktop:set-document-state", state),
   setOperationProgress: (progress) => ipcRenderer.send("desktop:set-operation-progress", progress),
+  performWindowAction: (action) => ipcRenderer.invoke("desktop:perform-window-action", action),
+  getWindowState: () => ipcRenderer.invoke("desktop:get-window-state"),
+  performNativeEdit: (action) => ipcRenderer.invoke("desktop:perform-native-edit", action),
+  performShellAction: (action) => ipcRenderer.invoke("desktop:perform-shell-action", action),
   onMenuCommand: (callback) => subscribe("desktop:menu-command", callback),
+  onWindowStateChanged: (callback) => subscribe("desktop:window-state", callback),
   onOpenRequest: (callback) => subscribe("desktop:open-request", callback),
 }));

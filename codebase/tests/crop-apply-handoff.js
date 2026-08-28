@@ -28,6 +28,30 @@ function assert(condition, message) {
     if (await geometryGroup.evaluate((element) => element.classList.contains("collapsed"))) {
       await geometryGroup.locator(".group-toggle").click();
     }
+    const beforeNeutralRotate = await page.evaluate(() => {
+      const preview = activePreviewElement();
+      const rect = preview.getBoundingClientRect();
+      return { width: rect.width, height: rect.height, zoom: state.zoomPercent };
+    });
+    await page.locator("#rotate-tool-toggle").click();
+    const afterNeutralRotate = await page.evaluate(() => {
+      const preview = activePreviewElement();
+      const rect = preview.getBoundingClientRect();
+      return {
+        width: rect.width,
+        height: rect.height,
+        zoom: state.zoomPercent,
+        transform: preview.style.getPropertyValue("--interactive-rotate-angle"),
+      };
+    });
+    assert(afterNeutralRotate.transform === "", `Opening Rotate installed a neutral transform: ${JSON.stringify(afterNeutralRotate)}`);
+    assert(
+      Math.abs(afterNeutralRotate.width - beforeNeutralRotate.width) < 0.5
+        && Math.abs(afterNeutralRotate.height - beforeNeutralRotate.height) < 0.5
+        && Math.abs(afterNeutralRotate.zoom - beforeNeutralRotate.zoom) < 0.01,
+      `Opening Rotate changed viewer zoom: ${JSON.stringify({ beforeNeutralRotate, afterNeutralRotate })}`,
+    );
+    await page.locator("#rotate-cancel").click();
     await page.locator("#crop-tool-toggle").click();
     await page.locator("#crop-ratio").selectOption("4:3");
     const before = await page.evaluate(() => {

@@ -27,6 +27,14 @@ These strings predate the title-tooltip policy. They are recorded here for centr
 | `sdr.curve_contrast` | Curve Contrast help | Sets how strongly tones separate around the midtones. Lower is softer and holds more range; higher gives deeper shadows and brighter highlights. |
 | `sdr.contrast_skew` | Contrast Skew help | Moves tonal separation toward one end of the photograph. Left emphasizes darker tones and keeps highlights gentler; right opens shadows and gives brighter areas more snap. |
 
+## Shared control interaction copy
+
+| ID | Trigger | Copy-ready tooltip text |
+|---|---|---|
+| `controls.instrument_slider` | Any grading range slider | Ctrl makes adjustment 10× finer. Shift snaps to the authored semantic positions. Double-click the value to enter an exact number. |
+| `controls.curve_editor` | Curves editor | Ctrl makes pointer and arrow-key movement 10× finer. Shift keeps ordinary graph movement. |
+| `controls.exposure_bands` | Exposure Bands editor | Ctrl makes drag and Up/Down adjustment 10× finer. Ctrl/Command+Left/Right moves the selected band across input brightness. |
+
 ## Source identity tooltip
 
 Trigger delay: 2 seconds on hover, and available on keyboard focus, only when the file name exceeds its two-line display limit.

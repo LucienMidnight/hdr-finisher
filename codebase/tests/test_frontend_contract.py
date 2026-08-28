@@ -60,13 +60,13 @@ def test_brand_assets_and_fonts_are_bundled_locally() -> None:
     required_assets = [
         FRONTEND / "assets" / "brand" / "hdr-finisher-favicon-small.svg",
         FRONTEND / "assets" / "brand" / "hdr-finisher-app-icon.svg",
-        FRONTEND / "assets" / "fonts" / "ibm-plex-sans" / "IBMPlexSans-Variable.ttf",
-        FRONTEND / "assets" / "fonts" / "ibm-plex-sans" / "OFL.txt",
-        FRONTEND / "assets" / "fonts" / "ibm-plex-mono" / "IBMPlexMono-Regular.ttf",
-        FRONTEND / "assets" / "fonts" / "ibm-plex-mono" / "IBMPlexMono-Medium.ttf",
-        FRONTEND / "assets" / "fonts" / "ibm-plex-mono" / "IBMPlexMono-SemiBold.ttf",
-        FRONTEND / "assets" / "fonts" / "ibm-plex-mono" / "IBMPlexMono-Bold.ttf",
-        FRONTEND / "assets" / "fonts" / "ibm-plex-mono" / "OFL.txt",
+        FRONTEND / "assets" / "fonts" / "source-sans-3" / "SourceSans3-Variable.ttf",
+        FRONTEND / "assets" / "fonts" / "source-sans-3" / "OFL.txt",
+        FRONTEND / "assets" / "fonts" / "gabarito" / "Gabarito-Variable.ttf",
+        FRONTEND / "assets" / "fonts" / "gabarito" / "OFL.txt",
+        FRONTEND / "assets" / "fonts" / "space-mono" / "SpaceMono-Regular.ttf",
+        FRONTEND / "assets" / "fonts" / "space-mono" / "SpaceMono-Bold.ttf",
+        FRONTEND / "assets" / "fonts" / "space-mono" / "OFL.txt",
         DESKTOP / "assets" / "icon.svg",
         DESKTOP / "assets" / "icon.png",
     ]
@@ -75,17 +75,25 @@ def test_brand_assets_and_fonts_are_bundled_locally() -> None:
     client = TestClient(app)
     for asset_url in (
         favicon_url,
-        "/static/assets/fonts/ibm-plex-sans/IBMPlexSans-Variable.ttf",
-        "/static/assets/fonts/ibm-plex-mono/IBMPlexMono-Bold.ttf",
+        "/static/assets/fonts/source-sans-3/SourceSans3-Variable.ttf",
+        "/static/assets/fonts/gabarito/Gabarito-Variable.ttf",
+        "/static/assets/fonts/space-mono/SpaceMono-Bold.ttf",
     ):
         response = client.get(asset_url)
         assert response.status_code == 200
         assert response.content
 
-    assert css.count('font-family: "IBM Plex Sans";') >= 1
-    assert css.count('font-family: "IBM Plex Mono";') == 4
-    for weight in (400, 500, 600, 700):
-        assert f"font-weight: {weight};" in css
+    assert css.count('font-family: "Source Sans 3";') == 1
+    assert css.count('font-family: "Gabarito";') == 1
+    assert css.count('font-family: "Space Mono";') == 2
+    assert '--font-body: "Source Sans 3"' in css
+    assert '--font-display: "Gabarito"' in css
+    assert '--font-technical: "Space Mono"' in css
+    assert 'font-family: "Source Sans 3";' in launcher
+    assert 'font-family: "Space Mono";' in launcher
+    assert "/static/assets/fonts/source-sans-3/SourceSans3-Variable.ttf" in launcher
+    assert "/static/assets/fonts/space-mono/SpaceMono-Regular.ttf" in launcher
+    assert "IBM Plex" not in launcher
     assert "Inter" not in launcher
     assert '"icon": "assets/icon.png"' in desktop_package
 
@@ -185,7 +193,7 @@ def test_panel_titles_and_scope_description_follow_shared_design_contract() -> N
     assert "RW means active HDR reference white" in app
     assert "--panel-title-font-family:" in css
     assert "--panel-title-font-size:" in css
-    assert "--group-title-font-family: var(--sans)" in css
+    assert "--group-title-font-family: var(--display)" in css
     assert "--group-title-font-size: 12px" in css
     assert "--group-title-font-weight: 600" in css
     assert ".disclosure-trigger > span:first-child" in css
@@ -355,17 +363,84 @@ def test_curve_canvas_left_clicks_add_or_select_and_right_click_removes() -> Non
     assert "const layout = curveEditorLayout();" in javascript
 
 
-def test_shift_fine_adjustment_is_shared_by_ranges_and_graphs() -> None:
-    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+def test_ctrl_fine_adjustment_and_shift_semantic_snapping_are_shared() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    shell = (FRONTEND / "application-shell.js").read_text(encoding="utf-8")
 
     assert "const FINE_ADJUSTMENT_SCALE = 0.1" in javascript
     assert 'control.dataset.instrumentStep = String(declaredStep)' in javascript
-    assert '"Hold Shift while dragging or using arrow keys for 10× finer adjustment."' in javascript
+    assert '"Hold Ctrl for 10× finer adjustment. Hold Shift to snap to semantic landing positions."' in javascript
     assert javascript.count("createPrecisionPointerDelta(startEvent)") >= 2
-    assert "Control wheels and Stream Decks" not in html
-    assert "Any slider can be assigned Increase, Decrease, and Reset actions." in html
-    assert "Shift or Alt/Option makes an adjustment 10× finer." in html
+    assert "function rangeSnapProfile(control)" in javascript
+    assert "adjacentRangeSnap(control, Number(control.value), direction)" in javascript
+    assert 'event.shiftKey ? "snap" : event.ctrlKey ? "fine" : "ordinary"' in javascript
+    assert 'const step = event.ctrlKey ? 0.001 : 0.01' in javascript
+    assert 'const step = event.ctrlKey ? 0.01 : 0.05' in javascript
+    assert '(event.ctrlKey || event.metaKey) && (event.key === "ArrowLeft" || event.key === "ArrowRight")' in javascript
+    assert 'ui.bandValue.min = String(legalMinimum)' in javascript
+    assert 'ui.bandValue.max = String(Math.max(legalMinimum, legalMaximum))' in javascript
+    assert 'className = "slider-ticks"' not in javascript
+    assert "function renderRangeSnapTicks" not in javascript
+    assert "function rangeSnapProfile(control)" in javascript
+    assert 'shell.style.setProperty("--fill-start"' in javascript
+    assert "event?.altKey" not in javascript[javascript.index("function pointerAdjustmentScale"):javascript.index("function fineRangeStep")]
+    assert "if (event.ctrlKey)" in shell
+    assert "ctrlKey: false" in shell
+
+
+def test_refined_slider_surfaces_full_bleed_sections_and_product_lockup() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    assert '<p class="product-name">HDR FINISHER</p>' in html
+    product_block = css[css.rindex(".product-name {"):]
+    assert "font-family: var(--font-display);" in product_block
+    assert "text-transform: uppercase;" in product_block
+
+    final_refinement = css[css.index("/* UI refinement sprint: shared instrument components and panel hierarchy. */"):]
+    body_block = final_refinement[
+        final_refinement.index(".control-group:not(.collapsed) > .control-group-body {"):
+        final_refinement.index(".control-group:not(.collapsed) > .control-group-body > #curve-editor")
+    ]
+    assert "margin: 0;" in body_block
+    assert "border: 0;" in body_block
+    assert "border-radius: 0;" in body_block
+    assert "box-shadow: none;" in body_block
+
+    assert "--instrument-slider-channel-shadow: inset" in css
+    assert "--instrument-slider-channel-background: linear-gradient(180deg" in css
+    assert "--instrument-slider-thumb-focus-shadow:" in css
+    assert "--segment-channel-background: linear-gradient(180deg" in css
+    assert "--segment-selected-background: linear-gradient(180deg" in css
+    assert "--segment-selected-shadow: inset" in css
+    assert "--color-rail-spectrum: linear-gradient(90deg" in css
+    assert ".button-primary {\n  appearance: none;\n  border: 0;\n  background: linear-gradient(180deg" in final_refinement
+    assert ".button-secondary,\n.tool-button {\n  border-color: transparent;\n  background: linear-gradient(180deg" in final_refinement
+    assert '.control-row[data-control-path$=".white_balance_kelvin"]' in css
+    assert '.control-row[data-control-path$=".tint"]' in css
+    assert "--instrument-slider-tick-top" not in css
+    assert "input[type=\"range\"]:focus-visible {\n  outline: 0;" in final_refinement
+    assert ".zoom-slider:disabled {\n  opacity: 1;" in final_refinement
+    toggle_block = final_refinement[
+        final_refinement.index('.checkbox-row > input[type="checkbox"],'):
+        final_refinement.index('.checkbox-row > input[type="checkbox"]:checked,')
+    ]
+    checked_toggle_block = final_refinement[
+        final_refinement.index('.checkbox-row > input[type="checkbox"]:checked,'):
+        final_refinement.index("/* Five genuine Tabler tools")
+    ]
+    assert "border: 0;" in toggle_block
+    assert "border: 0;" in checked_toggle_block
+    assert "background-color: var(--accent);" in checked_toggle_block
+    assert 'input[type="checkbox"]::before' in final_refinement
+    assert "z-index: 1;" in final_refinement
+    assert '.compact-subrail input[type="range"]::-webkit-slider-runnable-track' in final_refinement
+    assert "height: var(--instrument-compact-slider-track-h);" in final_refinement
+    product_mark_block = css[css.rindex(".product-mark {"):css.index(".workflow-tabs {", css.rindex(".product-mark {"))]
+    assert "border: 1px solid #fff;" in product_mark_block
+    assert 'className = "slider-ticks"' not in javascript
+    assert "function renderRangeSnapTicks" not in javascript
 
 
 def test_hdr_curve_graph_uses_tokenized_exposure_band_styling() -> None:
@@ -594,6 +669,14 @@ def test_linear_workflow_uses_tab_specific_rails_and_reports_export_readiness() 
     assert 'id="live-browser-view"' not in html
     assert "Global finishing only" not in html
     assert 'id="source-rail-expand"' in html
+    assert 'class="source-rail-expand panel-collapse-button"' in html
+    assert 'id="dock-collapse" class="panel-collapse-button panel-collapse-button--vertical"' in html
+    assert '>Collapse</button>' not in html
+    assert "--panel-collapse-button-background: linear-gradient" in css
+    assert "--panel-collapse-button-shadow:" in css
+    assert ".panel-collapse-button--vertical::before { transform: rotate(90deg); }" in css
+    assert '.panel-collapse-button--vertical[aria-expanded="false"]::before { transform: rotate(-90deg); }' in css
+    assert 'els.dockCollapse.setAttribute("aria-label", `${action} Scopes panel`);' in javascript
     assert 'class="source-file-identity"' in html
     assert 'class="source-file-label">File Name</p>' in html
     assert 'id="session-name-tooltip"' in html
@@ -660,6 +743,11 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     assert "sourceSettingsOpen: false" in javascript
     assert "metadataOpen: false" in javascript
     assert '--group-chevron-shape: url("assets/icons/tabler/chevron-right.svg")' in css
+    assert "--group-index-font-size: 11px" in css
+    assert "--group-disclosure-leading: 38px" in css
+    assert ".control-group-header > .group-toggle" in css
+    assert "margin-left: calc(var(--group-index-left) - var(--group-disclosure-leading))" in css
+    assert "pointer-events: none" in css.split(".control-group-header::before", 1)[1].split("}", 1)[0]
     assert "Segoe Fluent Icons" not in css
     for icon in (
         "arrow-down.svg",
@@ -697,9 +785,14 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     assert "min-width: 0" in css
     assert "height: 100vh" in css
     assert 'const COMPACT_WORKSPACE_QUERY = "(max-width: 1499px)"' in javascript
-    assert 'id="viewer-options-toggle"' in html
-    assert 'aria-controls="viewer-options-popover"' in html
-    assert 'aria-haspopup="true">Viewer options</button>' in html
+    assert 'id="overlay-toggle"' in html
+    assert 'aria-controls="overlay-popover"' in html
+    assert '>Overlays</button>' in html
+    assert 'id="preview-toggle"' in html
+    assert 'aria-controls="preview-popover"' in html
+    assert '>Preview</button>' in html
+    assert 'id="preview-resolution"' in html
+    assert '["Current Preview Size", currentPreviewSizeLabel()]' in javascript
     assert "compact-workspace" in css
     assert "source-overlay-open" in css
 
@@ -883,7 +976,7 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     preview_selector = html.split('id="preview-resolution"', 1)[1].split("</select>", 1)[0]
     assert 'value="full"' not in preview_selector
     assert "Sets the maximum preview width and height." in html
-    assert html.index('id="overlay-toggle"') < html.index('id="preview-resolution"') < html.index('id="overlay-popover"')
+    assert html.index('id="overlay-toggle"') < html.index('id="overlay-popover"') < html.index('id="preview-resolution"')
     assert ".toolbar-preview-resolution::after" in css
     assert "overflow-wrap: anywhere;" in css
     assert "white-space: normal;" in css
@@ -1237,8 +1330,9 @@ def test_local_mask_authoring_uses_bidirectional_authoritative_geometry_mapping(
 def test_frontend_assets_use_the_application_version_for_cache_busting() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
 
-    assert html.count("__HDR_FINISHER_ASSET_VERSION__") == 6
+    assert html.count("__HDR_FINISHER_ASSET_VERSION__") == 7
     assert '/static/app.js?v=__HDR_FINISHER_ASSET_VERSION__' in html
+    assert '/static/desktop-chrome.js?v=__HDR_FINISHER_ASSET_VERSION__' in html
     assert '/static/styles.css?v=__HDR_FINISHER_ASSET_VERSION__' in html
 
 

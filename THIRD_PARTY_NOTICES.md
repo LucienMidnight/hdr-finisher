@@ -48,7 +48,9 @@ UI mapping, and complete license text are retained in
 `codebase/frontend/assets/icons/tabler/` and must remain present in source and packaged distributions
 that include those icons.
 
-HDR Finisher bundles IBM Plex Sans and IBM Plex Mono font software. IBM Plex is Copyright © 2017
-IBM Corp. with Reserved Font Name "Plex" and is distributed under the SIL Open Font License,
-Version 1.1. The complete license text is retained beside each bundled family under
-`codebase/frontend/assets/fonts/` and must remain present in source and packaged distributions.
+HDR Finisher bundles Source Sans 3, Gabarito, and Space Mono font software. Source Sans 3 is
+Copyright 2010–2020 Adobe, Gabarito is Copyright 2023 The Gabarito Project Authors, and Space Mono
+is Copyright 2016 The Space Mono Project Authors. Each family is distributed under the SIL Open
+Font License, Version 1.1. The complete family-specific license text is retained beside each bundled
+family under `codebase/frontend/assets/fonts/` and must remain present in source and packaged
+distributions.

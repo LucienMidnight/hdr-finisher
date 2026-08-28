@@ -49,6 +49,7 @@ async function redOverlayPixels(locator) {
     const lumaCreated = await createResponse;
     const createdLeaf = lumaCreated.request().postDataJSON().commands[0].payload.local.mask.leaf;
     assert(!("luma_sampling_initialized" in createdLeaf), "Luma creation leaked client-only sampling state into the API payload.");
+    await page.waitForFunction(() => document.querySelectorAll(".local-adjustment-item").length === 2);
     assert(await page.locator(".local-adjustment-item").count() === 2, "Clicking Luma after another mask did not create a new adjustment.");
     if (process.env.HDR_FINISHER_CREATION_ONLY === "1") {
       console.log(JSON.stringify({ adjustmentCount: 2, lumaType: createdLeaf.type, backwardCompatiblePayload: true }));

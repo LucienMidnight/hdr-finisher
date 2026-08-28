@@ -71,6 +71,28 @@ function curvePointPosition(box, x, y) {
     await page.mouse.up();
     if (await pointCount() !== 5) throw new Error("Dragging a point should adjust it without removing it.");
 
+    await curve.focus();
+    const beforeCtrlNudge = await page.evaluate(() => {
+      const curveValues = window.HDRFinisherPerformance.authoringState().adjustments.hdr.luma_curve;
+      return curveValues.reduce((nearest, point) => Math.abs(point[0] - 0.5) < Math.abs(nearest[0] - 0.5) ? point : nearest)[1];
+    });
+    await page.keyboard.press("Control+ArrowUp");
+    const afterCtrlNudge = await page.evaluate(() => {
+      const curveValues = window.HDRFinisherPerformance.authoringState().adjustments.hdr.luma_curve;
+      return curveValues.reduce((nearest, point) => Math.abs(point[0] - 0.5) < Math.abs(nearest[0] - 0.5) ? point : nearest)[1];
+    });
+    if (!(afterCtrlNudge > beforeCtrlNudge && afterCtrlNudge - beforeCtrlNudge <= 0.0011)) {
+      throw new Error(`Ctrl curve keyboard nudge was not fine: before=${beforeCtrlNudge}, after=${afterCtrlNudge}.`);
+    }
+    await page.keyboard.press("Shift+ArrowUp");
+    const afterShiftNudge = await page.evaluate(() => {
+      const curveValues = window.HDRFinisherPerformance.authoringState().adjustments.hdr.luma_curve;
+      return curveValues.reduce((nearest, point) => Math.abs(point[0] - 0.5) < Math.abs(nearest[0] - 0.5) ? point : nearest)[1];
+    });
+    if (!(afterShiftNudge - afterCtrlNudge > 0.009 && afterShiftNudge - afterCtrlNudge < 0.011)) {
+      throw new Error(`Shift should retain ordinary curve movement: ctrl=${afterCtrlNudge}, shift=${afterShiftNudge}.`);
+    }
+
     if (pageErrors.length) throw new Error(`Browser errors: ${pageErrors.join(" | ")}`);
     console.log("Curve editor interaction browser test passed.");
   } finally {

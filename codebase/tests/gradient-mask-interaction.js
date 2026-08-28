@@ -25,6 +25,10 @@ async function gradientZoomAlignment(page) {
     const lightHandleAt = (point) => {
       const centerX = Math.round((previewRect.left + point.x * previewRect.width - canvasRect.left) * scaleX);
       const centerY = Math.round((previewRect.top + point.y * previewRect.height - canvasRect.top) * scaleY);
+      // At high zoom, a source-anchored handle can be correctly positioned
+      // outside the clipped overlay viewport. Only inspect handles whose
+      // expected centers are actually present in the bounded backing store.
+      if (centerX < 0 || centerY < 0 || centerX >= canvas.width || centerY >= canvas.height) return true;
       const radius = Math.max(3, Math.ceil(3 * Math.max(scaleX, scaleY)));
       for (let y = centerY - radius; y <= centerY + radius; y += 1) {
         for (let x = centerX - radius; x <= centerX + radius; x += 1) {
@@ -43,6 +47,10 @@ async function gradientZoomAlignment(page) {
         && canvas.width <= paneRect.width * devicePixelRatio + 1
         && canvas.height <= paneRect.height * devicePixelRatio + 1
         && Math.max(canvas.width, canvas.height) <= 1600,
+      startVisible: previewRect.left + leaf.start.x * previewRect.width >= canvasRect.left
+        && previewRect.left + leaf.start.x * previewRect.width < canvasRect.right,
+      endVisible: previewRect.left + leaf.end.x * previewRect.width >= canvasRect.left
+        && previewRect.left + leaf.end.x * previewRect.width < canvasRect.right,
       startAligned: lightHandleAt(leaf.start),
       endAligned: lightHandleAt(leaf.end),
     };

@@ -2,7 +2,7 @@ const { chromium } = require("playwright");
 
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
 const minEv = -6;
-const pqMaxEv = Math.log2(10000 / 100);
+let pqMaxEv = Math.log2(10000 / 100);
 
 function graphPosition(box, inputEv, adjustmentEv = 0) {
   const left = 34;
@@ -25,6 +25,7 @@ function graphPosition(box, inputEv, adjustmentEv = 0) {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
     await page.click("#test-pattern-button");
     await page.waitForFunction(() => document.body.dataset.workflow === "grade");
+    pqMaxEv = await page.evaluate(() => toneEqualizerPqMaxEv());
     await page.locator('[data-group="hdr-equalizer"] .group-toggle').click();
 
     const editor = page.locator("#tone-equalizer-editor");
@@ -67,12 +68,77 @@ function graphPosition(box, inputEv, adjustmentEv = 0) {
       return nodes.find(({ input_ev }) => Math.abs(input_ev) < 0.001);
     });
     if (!middleBand) throw new Error("The default 0 EV Exposure Band was missing.");
-    const middle = graphPosition(box, middleBand.input_ev, middleBand.adjustment_ev);
-    await page.mouse.move(box.x + middle.x, box.y + middle.y);
+    const currentBox = await editor.boundingBox();
+    if (!currentBox) throw new Error("Exposure Bands editor disappeared before the drag check.");
+    const middle = graphPosition(currentBox, middleBand.input_ev, middleBand.adjustment_ev);
+    await page.mouse.move(currentBox.x + middle.x, currentBox.y + middle.y);
     await page.mouse.down();
-    await page.mouse.move(box.x + middle.x + 8, box.y + middle.y - 10, { steps: 3 });
+    await page.mouse.move(currentBox.x + middle.x + 8, currentBox.y + middle.y - 10, { steps: 3 });
     await page.mouse.up();
-    if (await nodeCount() !== 5) throw new Error("Dragging an Exposure Band should adjust it without changing the band count.");
+    if (await nodeCount() !== 5) {
+      const dragState = await page.evaluate(() => window.HDRFinisherPerformance.authoringState().adjustments.hdr.tone_equalizer_nodes);
+      throw new Error(`Dragging an Exposure Band should adjust it without changing the band count: ${JSON.stringify({ currentBox, middleBand, middle, dragState })}`);
+    }
+
+    await editor.focus();
+    const selectedBeforeKeyboard = await page.evaluate(() => {
+      const nodes = window.HDRFinisherPerformance.authoringState().adjustments.hdr.tone_equalizer_nodes;
+      return nodes.reduce((nearest, node) => Math.abs(node.input_ev) < Math.abs(nearest.input_ev) ? node : nearest);
+    });
+    await page.keyboard.press("Control+ArrowLeft");
+    const afterControlLeft = await page.evaluate(() => {
+      const nodes = window.HDRFinisherPerformance.authoringState().adjustments.hdr.tone_equalizer_nodes;
+      return nodes.reduce((nearest, node) => Math.abs(node.input_ev) < Math.abs(nearest.input_ev) ? node : nearest);
+    });
+    if (Math.abs(afterControlLeft.input_ev - (selectedBeforeKeyboard.input_ev - 0.1)) > 0.001) {
+      throw new Error(`Ctrl+Left no longer used the established horizontal Exposure Band exception: ${JSON.stringify(afterControlLeft)}.`);
+    }
+    await page.keyboard.press("Meta+ArrowRight");
+    const afterCommandRight = await page.evaluate(() => {
+      const nodes = window.HDRFinisherPerformance.authoringState().adjustments.hdr.tone_equalizer_nodes;
+      return nodes.reduce((nearest, node) => Math.abs(node.input_ev) < Math.abs(nearest.input_ev) ? node : nearest);
+    });
+    if (Math.abs(afterCommandRight.input_ev - selectedBeforeKeyboard.input_ev) > 0.001) {
+      throw new Error(`Command+Right no longer used the established horizontal Exposure Band exception: ${JSON.stringify(afterCommandRight)}.`);
+    }
+    await page.keyboard.press("Control+ArrowUp");
+    const afterControlUp = await page.evaluate(() => {
+      const nodes = window.HDRFinisherPerformance.authoringState().adjustments.hdr.tone_equalizer_nodes;
+      return nodes.reduce((nearest, node) => Math.abs(node.input_ev) < Math.abs(nearest.input_ev) ? node : nearest);
+    });
+    const expectedFineAdjustment = Math.round((afterCommandRight.adjustment_ev + 0.01) * 100) / 100;
+    if (Math.abs(afterControlUp.adjustment_ev - expectedFineAdjustment) > 0.001) {
+      throw new Error(`Ctrl+Up did not use the fine Exposure Band adjustment: before=${JSON.stringify(afterCommandRight)}, after=${JSON.stringify(afterControlUp)}.`);
+    }
+    await page.keyboard.press("Shift+ArrowUp");
+    const afterShiftUp = await page.evaluate(() => {
+      const nodes = window.HDRFinisherPerformance.authoringState().adjustments.hdr.tone_equalizer_nodes;
+      return nodes.reduce((nearest, node) => Math.abs(node.input_ev) < Math.abs(nearest.input_ev) ? node : nearest);
+    });
+    const expectedOrdinaryAdjustment = Math.round((afterControlUp.adjustment_ev + 0.05) * 100) / 100;
+    if (Math.abs(afterShiftUp.adjustment_ev - expectedOrdinaryAdjustment) > 0.001) {
+      throw new Error(`Shift should retain ordinary Exposure Band graph movement: ctrl=${JSON.stringify(afterControlUp)}, shift=${JSON.stringify(afterShiftUp)}.`);
+    }
+    const selectedBandSlider = page.locator("#tone-equalizer-band-value");
+    const dynamicRange = {
+      min: Number(await selectedBandSlider.getAttribute("min")),
+      max: Number(await selectedBandSlider.getAttribute("max")),
+    };
+    await selectedBandSlider.focus();
+    await page.keyboard.press("Shift+ArrowUp");
+    const snappedBandState = await page.evaluate(() => {
+      const nodes = window.HDRFinisherPerformance.authoringState().adjustments.hdr.tone_equalizer_nodes;
+      return {
+        value: Number(document.querySelector("#tone-equalizer-band-value").value),
+        targets: nodes.map((node) => node.input_ev + node.adjustment_ev),
+      };
+    });
+    if (snappedBandState.value < dynamicRange.min - 0.001 || snappedBandState.value > dynamicRange.max + 0.001) {
+      throw new Error(`Snapped Exposure Band escaped its dynamic slider bounds: bounds=${JSON.stringify(dynamicRange)}, state=${JSON.stringify(snappedBandState)}.`);
+    }
+    if (snappedBandState.targets.some((target, index, targets) => index > 0 && target <= targets[index - 1])) {
+      throw new Error(`Snapped Exposure Band violated monotonic output constraints: ${JSON.stringify(snappedBandState.targets)}.`);
+    }
 
     const hdrBandsBeforeMatch = await page.evaluate(
       () => JSON.stringify(window.HDRFinisherPerformance.authoringState().adjustments.hdr.tone_equalizer_nodes),

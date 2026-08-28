@@ -20,6 +20,13 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
     await page.click("#test-pattern-button");
     await page.waitForFunction(() => document.body.dataset.workflow === "grade");
     await page.click("#zoom-actual");
+    await page.waitForFunction(() => {
+      const preview = activePreviewElement();
+      const source = state.session?.source;
+      if (!preview || !source || state.zoomMode !== "custom" || state.geometryPresentationPending) return false;
+      return Math.abs(Number.parseFloat(preview.style.width) - source.width) <= 1
+        && Math.abs(Number.parseFloat(preview.style.height) - source.height) <= 1;
+    });
     const actualSize = await page.evaluate(() => {
       const preview = activePreviewElement();
       const source = state.session.source;

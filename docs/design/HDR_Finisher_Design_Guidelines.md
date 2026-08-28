@@ -48,7 +48,7 @@ Keep source facts separate from grade decisions, grade decisions separate from v
 
 - Use a right-pointing caret for collapsed groups and rotate it 90 degrees when expanded.
 - Use the shared Fluent disclosure chevron at 18 px with semibold visual weight. Do not substitute a small text caret; the glyph should remain clearly visible without dominating its label inside the 38 px header target.
-- Bound every expanded top-level panel at the top and bottom with the 3 px neutral `--panel-border-external` token; leave its left and right edges open. Separate collapsed groups and regions inside an expanded panel with the 1 px blue-grey `--panel-border-internal` token. External and internal boundaries must not share color or weight.
+- Expanded top-level bodies run full bleed across the Control Panel. Use the shared 1 px hairline/ultraviolet open-section cue and internal separators; do not wrap expanded bodies in rounded tiles or heavy neutral bands. Reserve the raised bordered tile for honest parent/sub-control groups.
 - The whole labeled header is the disclosure target; Reset and bypass remain separate targets.
 - New grade groups start collapsed unless a documented workflow requirement says otherwise.
 - A group body opens directly below its header and must not shift unrelated controls horizontally.
@@ -62,7 +62,7 @@ Use the sentence-case abbreviation `Mod` everywhere. Do not introduce synonyms s
 - Countable groups display `<number> Mod`, for example `1 Mod` or `4 Mod`.
 - Aggregate groups such as Curves and Film Look display `Mod` when a useful item count is unavailable.
 - Uppercase presentation may come from CSS, but source copy remains normal case.
-- A small teal dot may reinforce modified state, but color or the dot alone must not carry the meaning.
+- A small ultraviolet dot may reinforce modified state, but color or the dot alone must not carry the meaning.
 - Untouched group headers omit status copy. Reset is shown only for a modified group.
 - Reset returns only the named scope to canonical defaults and immediately clears its modified state.
 - Bypassed and modified are independent states: bypass keeps the authored values.
@@ -73,26 +73,31 @@ Runtime tokens in `frontend/styles.css` are authoritative. Use semantic tokens r
 
 | Role | Token | Current value | Use |
 |---|---|---:|---|
-| Viewer | `--viewer` | `#0b0c0d` | Image surround |
-| App | `--app` | `#101214` | Primary chrome |
-| Panel | `--panel` | `#171a1c` | Rails and panels |
-| Raised | `--raised` | `#1f2325` | Elevated controls |
-| Hairline | `--hairline` | `#26292c` | Quiet separators |
-| External panel border | `--panel-border-external` | `#566168` | 3 px top and bottom boundaries on an expanded top-level panel; no left/right rule |
-| Internal panel border | `--panel-border-internal` | `#344750` | Soft blue-grey 1 px separators inside panels and between collapsed groups |
-| Text | `--text` | `#edf0f1` | Primary labels |
-| Muted | `--muted` | `#9fa7ac` | Secondary information |
-| Accent | `--accent` | `#6e9fb5` | Active and modified state |
+| Viewer / chassis | `--viewer`, `--hf-chassis` | `#07080a` | Image surround and deepest window ground |
+| App | `--app` | `#0b0d0f` | Ground between regions |
+| Panel | `--panel`, `--hf-panel` | `#101315` | Rails, headers, and collapsed rows |
+| Raised | `--raised`, `--hf-raised` | `#171b1e` | Open wells, grouped tiles, and selected-control surfaces |
+| Input | `--input` | `#12171a` | Neutral interactive beds |
+| Channel | `--deep`, `--hf-channel` | `#06080a` | Slider and segment recess floor |
+| Hairline | `--hairline` | `rgba(255, 255, 255, 0.07)` | Quiet separators and inset rings |
+| Border | `--border` | `#252a2e` | Visible raised-surface boundary |
+| Text | `--text`, `--hf-ink-1` | `#f2f4f3` | Values and primary titles |
+| Body | `--body` | `#c3c8cb` | Control labels and ordinary copy |
+| Muted | `--muted`, `--hf-ink-2` | `#8d9299` | Secondary information |
+| Quiet | `--quiet` | `#5f6870` | Nonessential metadata after contrast validation |
+| Accent | `--accent`, `--hf-accent` | `#9b7bff` | Focus, live fill, active tool, and selected state |
+| Accent strong / low | `--accent-strong`, `--accent-low` | `#b49cff`, `#6e4bff` | Bright crown and lower edge of small active treatments |
+| Accent bed | `--accent-bed` | `#211a3b` | Tinted seat beneath selected tools and rows |
 | Bypass icon artwork | `--bypass-icon-shape` | Eyebrow arc over outlined circular eye | Shared, replaceable visibility glyph for global groups and local adjustments |
 | Bypass icon size | `--bypass-icon-size` | `20px` | Shared icon dimensions |
-| Visible adjustment | `--bypass-icon-visible` | `var(--accent)` | Teal eye indicates the adjustment is included in the rendition |
+| Visible adjustment | `--bypass-icon-visible` | `var(--accent)` | Ultraviolet eye indicates the adjustment is included in the rendition |
 | Bypassed adjustment | `--bypass-icon-hidden` | `var(--quiet)` | Neutral gray eye with a diagonal strike indicates the adjustment is bypassed |
 | Bypass strike width | `--bypass-icon-strike-width` | `1.5px` | Diagonal eye-off mark weight |
 | Ready | `--ready` | `#8cbf9a` | Successful readiness |
-| Attention | `--attention` | `#d9b672` | Warnings requiring review |
+| Headroom / attention | `--headroom`, `--attention` | `#ffb020` | HDR headroom and warnings requiring review |
 | Blocking | `--blocking` | `#d4796b` | Errors and blocking state |
 
-Reserve saturated RGB colors for channel-specific scopes and curve channels. Do not reuse error red, ready green, or attention amber as decorative accents.
+Electric ultraviolet is the only ordinary active accent and stays spatially small: fills, focus, a selected tool, an index/hairline, or a tinted selected bed. It must not wash broad panels. Reserve saturated RGB colors for channel-specific scopes and curve channels. Do not reuse error red, ready green, HDR amber, or exposure-band colors as decorative accents.
 
 ### Panel title component tokens
 
@@ -100,7 +105,7 @@ Metadata, Preview Window, Control Panel, and Scopes use the shared `.panel-title
 
 | Role | Token | Current value |
 |---|---|---:|
-| Font family | `--panel-title-font-family` | `var(--sans)` |
+| Font family | `--panel-title-font-family` | `var(--display)` |
 | Font size | `--panel-title-font-size` | `13px` |
 | Font weight | `--panel-title-font-weight` | `600` |
 | Letter spacing | `--panel-title-letter-spacing` | `0.06em` |
@@ -114,7 +119,7 @@ Control Panel group headings and Metadata disclosure headings share one typograp
 
 | Role | Token | Current value |
 |---|---|---:|
-| Font family | `--group-title-font-family` | `var(--sans)` |
+| Font family | `--group-title-font-family` | `var(--display)` |
 | Font size | `--group-title-font-size` | `12px` |
 | Font weight | `--group-title-font-weight` | `600` |
 | Letter spacing | `--group-title-letter-spacing` | `0.06em` |
@@ -132,11 +137,15 @@ do not add an unowned top margin that makes the first row appear taller.
 
 ## Typography and copy
 
-- Use IBM Plex Sans, with the Segoe UI fallbacks already defined by `--sans`.
-- Use IBM Plex Mono, with the existing fallbacks, for numeric and technical readouts.
+- Bundle all application fonts locally; no interface may depend on a network font service.
+- Use Source Sans 3 through `--font-body` / `--sans` for sentence-case control names, body copy, buttons, menus, and explanations.
+- Use Gabarito through `--font-display` / `--display` for all-caps panel titles, top-level section titles, and short all-caps group headings only.
+- Use Space Mono through `--font-technical` / `--mono` for numbers, signed values, units, symbols, section indices, status chips, dimensions, and other compact technical labels.
+- Use tabular numerals for aligned values where supported. Do not set explanatory sentences in Space Mono or ordinary body copy in Gabarito.
 - Keep control names short and concrete. Prefer `Target Peak` to a sentence-length label.
 - Use sentence case in source markup. CSS may uppercase compact instrument labels.
 - Use `HDR` and `SDR` consistently; do not alternate with unexplained substitutes.
+- The 26px bundled product mark in the top lockup carries a crisp 1px white perimeter border; preserve the real logo asset inside it.
 - Include units in displayed values: `nit`, `EV`, `%`, or `K` as appropriate.
 - Tooltips explain consequences and tradeoffs, not merely restate the label.
 - Avoid internal implementation terms in user-facing copy.
@@ -146,18 +155,21 @@ do not add an unowned top margin that makes the first row appear taller.
 - Neutral values use neutral styling; modified values use the accent fill and stronger readout color.
 - Sliders retain native keyboard semantics and expose a directly editable numeric readout.
 - Double-clicking a value enables exact entry; Reset restores the documented default.
-- Bypass controls use the shared tokenized eye component and preserve their settings. The unstruck teal eye means visible/enabled; a neutral gray eye with a diagonal strike means bypassed. Local-adjustment eyes live in each adjustment row immediately before its overflow menu.
+- Bypass controls use the shared tokenized eye component and preserve their settings. The unstruck ultraviolet eye means visible/enabled; a neutral gray eye with a diagonal strike means bypassed. Local-adjustment eyes live in each adjustment row immediately before its overflow menu.
 - Disabled controls remain legible enough to explain the pipeline but cannot appear active.
 - Interactive preview feedback should begin promptly; settled scopes and refinements may follow.
 - Preview-only controls must say when they do not affect export quality.
-- Global and local adjustments use the shared `.instrument-slider-control` component. The first row holds the sentence-case control name at left and its numerical value at right; the marked slider occupies the complete second row below it.
-- Instrument-slider labels use medium-weight IBM Plex Sans and values use semibold IBM Plex Mono. Every slider in a section uses the full available row width; local controls must not revert to a side-by-side label / track / value layout.
-- Tracks, fills, ticks, labels, values, and bar thumbs must not change shape or weight between global grading, local Light and Color controls, Brush Controls, Gradient Controls, and Adjustment Opacity.
+- Global and local adjustments use the shared `.instrument-slider-control` component. The first row holds the sentence-case control name at left and its numerical value at right; the uninterrupted slider occupies the complete second row below it.
+- Standard instrument-slider labels use Source Sans 3 and values use Space Mono. Every ordinary slider in a section uses the full available row width.
+- Compact side-by-side label / rail / value rows are permitted only inside `.slider-group-tile .compact-subrails` or another explicitly documented dense component. They must never appear as ordinary peer sliders.
+- Tracks, fills, labels, values, and bar thumbs must not change shape or weight between global grading, local Light and Color controls, Brush Controls, Gradient Controls, and Adjustment Opacity.
+- Rails are borderless recessed channels. A dark-to-light vertical face plus a black upper inset and restrained bright lower lip produces the chamfer and internal depth; these are continuous surface treatments, not tick, home, center, or grid marks. Semantic landing positions remain behavioral metadata and are not drawn inside the channel.
+- Color-bearing rails—Kelvin temperature, green/magenta tint, and RGB primary hue/purity—retain their full semantic horizontal spectrum. Kelvin runs cool blue at the left through neutral to warm amber at the right; tint runs magenta at the left through neutral to green at the right. A translucent vertical chamfer layer and the shared inset shadow provide depth without obscuring or replacing that spectrum; ordinary value fills do not cover these rails.
+- Slider handles are fully opaque, borderless polished-neutral bars. Pointer hover does not change their dimensions. Keyboard focus and active drag use a restrained neutral handle glow; ultraviolet outlines must not appear on the handle or rail.
 - Double-clicking any adjustment slider resets it to its declared default and immediately commits the change. This applies to static and dynamically generated controls; utility sliders such as zoom may opt out explicitly when reset would conflict with their interaction model.
 - Brush Mask Controls apply after stroke composition in this order: Shift Edge, Feather, then Opacity. Shift Edge is a signed control (negative contracts, positive expands). Feather performs a float32, aspect-ratio-aware Gaussian smoothing of the shifted mask so both the overlay and the applied grade share a continuous edge at every preview resolution.
 - Brush Control Feather uses a monotonic perceptual response curve with fine control at low values and full falloff at 100%. Overlapping samples within one stroke use maximum falloff coverage rather than accumulating alpha, so increasing Feather must never harden the rendered edge.
-- The Gradient mask tool uses the Fluent `GripperBarHorizontal` glyph (`E76F`) so its icon reads as graduated horizontal bands, not stacked windows or duplicated layers.
-- The Luma mask tool temporarily uses the Fluent `Equalizer` glyph (`E9E9`) as a placeholder for the four-handle luminance-range illustration. Replace it with the final supplied icon asset when available; do not return to a stopwatch or timer metaphor.
+- The Gradient mask tool uses the bundled Tabler `square-half` asset, and Luma uses the bundled Tabler `brightness-half` asset. These are real local SVG assets from the same licensed icon family as Brush, Erase, and Path; do not replace them with font glyphs, placeholders, improvised SVGs, emoji, or text-only buttons.
 
 ### Instrument slider and rendition-tab component tokens
 
@@ -169,16 +181,52 @@ These layout tokens are authoritative in `frontend/styles.css` and are shared by
 | Heading minimum height | `--instrument-control-heading-min-h` | `16px` |
 | Heading label/value gap | `--instrument-control-heading-gap` | `8px` |
 | Heading-to-slider gap | `--instrument-control-stack-gap` | `2px` |
-| Slider interaction height | `--instrument-slider-hit-h` | `20px` |
-| Track top inset | `--instrument-slider-track-top` | `8px` |
-| Track height | `--instrument-slider-track-h` | `2px` |
-| Neutral / hover thumb width | `--instrument-slider-thumb-w`, `--instrument-slider-thumb-hover-w` | `2px`, `3px` |
-| Thumb height | `--instrument-slider-thumb-h` | `14px` |
-| Tick top inset | `--instrument-slider-tick-top` | `7px` |
+| Slider interaction height | `--instrument-slider-hit-h` | `28px` |
+| Track top inset | `--instrument-slider-track-top` | `7.5px` |
+| Track height | `--instrument-slider-track-h` | `13px` |
+| Neutral / hover thumb width | `--instrument-slider-thumb-w`, `--instrument-slider-thumb-hover-w` | `9px`, `9px` |
+| Thumb height | `--instrument-slider-thumb-h` | `21px` |
+| Chamfered channel face | `--instrument-slider-channel-background` | Dark-to-light vertical neutral gradient |
+| Recessed channel shadow | `--instrument-slider-channel-shadow` | Tokenized inset shadow |
+| Neutral handle focus | `--instrument-slider-thumb-focus-shadow` | Tokenized neutral glow |
+| Compact interaction height | `--instrument-compact-slider-hit-h` | `28px` |
+| Compact track height | `--instrument-compact-slider-track-h` | `7px` |
+| Compact thumb | `--instrument-compact-slider-thumb-w`, `--instrument-compact-slider-thumb-h` | `7px`, `15px` |
 | Rendition-tab boundary | `--instrument-tab-rule-w`, `--instrument-tab-rule-color` | `1px`, `--hairline` |
 | Local-control inset | `--local-control-inset` | `12px` |
 
 The HDR/SDR rendition switch and its content boundary form one tab component. The boundary spans the full content surface, sits directly under the tabs, and is covered by the selected tab's bottom edge. It must not be inset, detached, or duplicated by the first control section.
+
+### Parent and subordinate slider tiles
+
+- One raised tile and inset ring form the grouping boundary. The full-size parent appears first, followed by a divider, an honest relationship label, and compact child rails.
+- Use `Targeting` when independently stored Range/Pivot controls define the parent's zone. Use `Tone distribution` for the independent Local Light tone controls. Use `Applies to` only when the parent actually changes or distributes into its children.
+- Child rows use aligned fixed label and value columns around the compact rail. Default child values remain muted; modified values use primary ink plus structural modified state.
+- Visual hierarchy never invents data coupling. Child edits remain isolated unless the product model explicitly defines a coupled operation. Parent, child, and whole-group reset meanings remain distinct.
+
+### Toggle and segmented controls
+
+- Native checkboxes rendered as switches use a 46×24px borderless neutral recessed pill when off and a solid ultraviolet pill when on. Both tracks inherit the slider rail's dark upper inset, light lower chamfer, and recessed channel shadow. One 24px circular handle matches the track's maximum height, uses a soft continuous neutral-gray spherical gradient, and renders as a separate positioned surface above the rail's inset-shadow layer. Its structural position distinguishes state. Stacked rows retain breathing room, and the entire labeled row remains clickable with native semantics.
+- HDR/SDR and equivalent mutually exclusive choices use one recessed outer channel with a dark vertical gradient and internal shadow. The selected item is a neutral raised inner plate with its own vertical gradient, lit top edge, soft drop shadow, and ultraviolet text/icon—not a flat solid accent block.
+- Primary and neutral secondary actions use matching vertical material gradients and a soft lower drop shadow. Primary actions stay ultraviolet with a true zero-width border and no white inset edge; secondary actions stay neutral.
+- Arrow navigation, visible focus, disabled behavior, and `aria-selected` or `aria-pressed` remain appropriate to the semantic role.
+- Metadata and Scopes use the shared tokenized 28px `.panel-collapse-button`: a neutral vertical gradient, lit top edge, soft lower shadow, and the real bundled chevron asset. Metadata points left while open and right while collapsed. Scopes points down while open and up while collapsed; accessible names describe the action rather than duplicating visible text.
+
+### Slider and graph modifiers
+
+- Ctrl provides approximately 10× finer movement for slider drags, slider arrows, assigned continuous-control commands, Curves, and Exposure Bands. On macOS this means the Control key, not Command.
+- Shift activates semantic snapping for range sliders only. Shift+Arrow chooses the next legal landing position; Shift+drag chooses the nearest one. Ctrl+Shift follows Shift snapping.
+- Shift landing positions come from one centralized profile and are intentionally not drawn in the rail. The default has five unique positions including home; explicit EV, percentage, Kelvin, degree, nit, and dynamic/asymmetric profiles include only legal values.
+- Bipolar fills originate at the declared home/zero; unipolar fills originate at the floor. Home remains represented by the handle and fill origin rather than a tick.
+- Curves and Exposure Bands keep ordinary Shift graph movement. Exposure Bands preserves Ctrl/Command+Left/Right for horizontal band movement while Ctrl+Up/Down and Ctrl-drag provide precision.
+- Alt/Option is not a precision alias. Home/End, direct entry, double-click reset, preview scheduling, and commit boundaries retain their existing meanings.
+
+## Control Panel chassis and local hierarchy
+
+- One continuous chassis contains the fixed Control Panel header and numbered disclosure stack. Section indices use Space Mono at 11 px, sit close to the 18 px chevron, and remain outside accessibility naming when the title already names the group. The disclosure button extends beneath the painted index so clicking either the index or chevron activates the same accessible toggle.
+- Multiple top-level disclosures may remain open. An open section uses an ultraviolet index/hairline and one raised, full-bleed content surface with square open edges; it must not become an inset rounded card. Disclosure and keyboard semantics remain unchanged.
+- Local Adjustments orders its content as Masks, adjustment instances, selected context, then grading controls. Brush, Erase, Gradient, Luma, and Path retain the real bundled Tabler assets, visible labels, accessible names, and `aria-pressed` state.
+- Selected tools use the accent bed plus outline/hairline; selected adjustment rows use a tinted bed and thin structural marker instead of a broad solid accent block.
 
 ## Curves and graphical editors
 
@@ -262,7 +310,7 @@ Exposure Bands is a stop-based equalizer centered on the active project referenc
 |---|---|---:|---|
 | Minor grid | `--equalizer-grid` | `#ffffff14` | One-pixel EV grid |
 | Zero-adjustment grid | `--equalizer-grid-strong` | `#ece9df42` | Stronger horizontal home line at 0 EV adjustment |
-| Reference-white guide | `--equalizer-zero` | `#6e9fb552` | Vertical input guide at 0 EV / active project reference white |
+| Reference-white guide | `--equalizer-zero` | `#9b7bff52` | Vertical input guide at 0 EV / active project reference white |
 | PQ-limit guide | `--equalizer-pq` | `#d9b672a6` | Dashed vertical guide at 10,000 nits |
 | Zero-axis label | `--equalizer-axis` | `#9fbcca` | Emphasizes the 0 EV input label |
 | Active curve | `--equalizer-curve` | `#edf0f1` | Enabled equalizer curve stroke |
