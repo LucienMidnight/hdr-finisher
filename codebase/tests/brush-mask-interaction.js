@@ -295,6 +295,59 @@ async function overlayMaskAlphaAt(page, x, y) {
 
     const maskShiftEdge = panels.nth(1).locator(".local-brush-control", { hasText: "Shift Edge" }).locator('input[type="range"]');
     const maskFeather = panels.nth(1).locator(".local-brush-control", { hasText: "Feather" }).locator('input[type="range"]');
+
+    // Regression: an exact 40% mask feather must produce a real intermediate
+    // mask, not disappear while the neighboring 39% and 41% values work.
+    await maskShiftEdge.evaluate((input) => {
+      input.value = "50";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const featherBoundarySamples = [];
+    let feather40CommitState = null;
+    for (const feather of [39, 40, 41]) {
+      await maskFeather.evaluate((input, next) => {
+        input.value = String(next);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      }, feather);
+      await page.waitForFunction(() => {
+        const local = selectedLocal();
+        return local && localAuthoritativeMaskCache.get(local.id)?.signature === JSON.stringify(local.mask);
+      });
+      featherBoundarySamples.push(await authoritativeMaskAlphaQuality(page));
+      if (feather === 40) {
+        const feather40CommitResponse = page.waitForResponse((response) =>
+          response.url().includes("/edit-commands") && response.request().method() === "POST",
+        );
+        await maskFeather.evaluate((input) => input.dispatchEvent(new Event("change", { bubbles: true })));
+        assert((await feather40CommitResponse).ok(), "Committing the exact 40% mask feather failed.");
+        feather40CommitState = await page.evaluate(async () => {
+          const local = selectedLocal();
+          const response = await fetch(`/api/session/${state.session.session_id}/edit-state`);
+          const server = await response.json();
+          const persisted = server.document.local_adjustments.find((item) => item.id === local.id);
+          return {
+            frontend: local.mask.leaf.mask_feather,
+            server: persisted?.mask?.leaf?.mask_feather,
+          };
+        });
+        assert(
+          Math.abs(feather40CommitState.frontend - 0.02) < 1e-9
+          && Math.abs(feather40CommitState.server - 0.02) < 1e-9,
+          `Exact 40% mask feather did not persist as 0.02: ${JSON.stringify(feather40CommitState)}`,
+        );
+        await page.locator("#local-mask-tree-summary").screenshot({
+          path: path.resolve(__dirname, "../output/brush-qa/feather-40-implementation.png"),
+        });
+      }
+    }
+    assert(
+      featherBoundarySamples.every((sample, index) => index === 0 || (
+        sample.visiblePixels > featherBoundarySamples[index - 1].visiblePixels
+        && sample.alphaSum > featherBoundarySamples[index - 1].alphaSum
+      )),
+      `Mask feather is not progressive across 39%, 40%, and 41%: ${JSON.stringify(featherBoundarySamples)}`,
+    );
+
     const shiftedDraftResponse = page.waitForResponse((response) =>
       response.url().includes("/local-mask/") && response.url().endsWith("/preview") && response.request().method() === "POST",
     );
@@ -699,7 +752,7 @@ async function overlayMaskAlphaAt(page, x, y) {
     assert(await page.locator("#local-adjustment-list li").count() === 1, "The minus button did not remove the selected adjustment.");
 
     if (pageErrors.length) throw new Error(`Browser errors: ${pageErrors.join(" | ")}`);
-    console.log(JSON.stringify({ brushLabels, maskLabels, empty, tipPreview, tipRects, painted, expanded, feathered, authoritativeMask, maskMatrix, beforeErase, beforeEraseCenter, duringEraseCenterOverlay, eraseReleaseAlphaSamples, settledErase, settledEraseCenter, eraseDuration, rapidEraseBefore, rapidEraseAfter, rapidEraseState, prematureAdjustedPreviews, bypassState, bypassedOverlay, inverted, hidden }));
+    console.log(JSON.stringify({ brushLabels, maskLabels, empty, tipPreview, tipRects, painted, featherBoundarySamples, feather40CommitState, expanded, feathered, authoritativeMask, maskMatrix, beforeErase, beforeEraseCenter, duringEraseCenterOverlay, eraseReleaseAlphaSamples, settledErase, settledEraseCenter, eraseDuration, rapidEraseBefore, rapidEraseAfter, rapidEraseState, prematureAdjustedPreviews, bypassState, bypassedOverlay, inverted, hidden }));
   } finally {
     await browser.close();
   }

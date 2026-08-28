@@ -226,13 +226,35 @@ function assert(condition, message) {
       },
     });
 
-    for (const tool of ["luminance_range", "path"]) {
-      await page.locator(`[data-local-tool="${tool}"]`).click();
-      await page.waitForTimeout(100);
-    }
+    await page.locator('[data-local-tool="luminance_range"]').click();
+    await page.waitForFunction(() => document.querySelectorAll("#local-adjustment-list > li").length === 3);
+    const lumaLabelTypography = await page.locator(".luma-range-control").evaluate((control) => ({
+      heading: getComputedStyle(control.querySelector(".luma-range-heading")).fontSize,
+      headingOutput: getComputedStyle(control.querySelector(".luma-range-heading output")).fontSize,
+      preset: getComputedStyle(control.querySelector(".luma-preset-button")).fontSize,
+      endpoint: getComputedStyle(control.querySelector(".luma-nit-range-values output")).fontSize,
+      scale: getComputedStyle(control.querySelector(".luma-range-scale")).fontSize,
+    }));
+    assert(
+      JSON.stringify(lumaLabelTypography) === JSON.stringify({
+        heading: "10.5px",
+        headingOutput: "10px",
+        preset: "9.5px",
+        endpoint: "10px",
+        scale: "9px",
+      }),
+      `Luma selector labels did not keep their increased type sizes: ${JSON.stringify(lumaLabelTypography)}`,
+    );
+    await page.locator(".local-mask-subpanel").first().screenshot({ path: path.join(outputDir, "luma-selector-implementation.png") });
+
+    await page.locator('[data-local-tool="path"]').click();
+    await page.waitForFunction(() => document.querySelectorAll("#local-adjustment-list > li").length === 4);
     await page.locator("#local-adjustment-list button[data-local-id]").first().click();
+    await page.evaluate(() => window.scrollTo(0, 0));
 
     const removeButton = page.locator("#local-delete");
+    const removeRailY = async () => (await removeButton.boundingBox()).y
+      + await page.locator(".grade-rail").evaluate((rail) => rail.scrollTop);
     const initialSurfaceHeight = (await stackSurface.boundingBox()).height;
     await page.locator('[data-local-tool="brush"]').click();
     for (let index = 4; index < 8; index += 1) {
@@ -245,12 +267,12 @@ function assert(condition, message) {
     }
     const scrollMetrics = await stackSurface.evaluate((node) => ({ clientHeight: node.clientHeight, scrollHeight: node.scrollHeight, overflowY: getComputedStyle(node).overflowY }));
     assert(scrollMetrics.scrollHeight > scrollMetrics.clientHeight && scrollMetrics.overflowY === "scroll", "The adjustment list does not use an internal scrollbar.");
-    const fixedRemoveY = (await removeButton.boundingBox()).y;
+    const fixedRemoveY = await removeRailY();
     for (let targetCount = 7; targetCount >= 4; targetCount -= 1) {
       await removeButton.click();
       await page.waitForFunction((count) => document.querySelectorAll("#local-adjustment-list > li").length === count, targetCount);
       const surfaceHeight = (await stackSurface.boundingBox()).height;
-      const removeY = (await removeButton.boundingBox()).y;
+      const removeY = await removeRailY();
       assert(Math.abs(surfaceHeight - initialSurfaceHeight) < 1, "The adjustment viewport changed height while removing items.");
       assert(Math.abs(removeY - fixedRemoveY) < 1, "The minus button moved while removing items.");
     }
@@ -379,14 +401,40 @@ function assert(condition, message) {
       const shell = control.closest(".range-shell");
       const track = shell.querySelector(".slider-track");
       const trackStyle = getComputedStyle(track);
+      const controlBox = control.getBoundingClientRect();
+      const trackBox = track.getBoundingClientRect();
+      const rules = [...document.styleSheets].flatMap((sheet) => {
+        try { return [...sheet.cssRules]; } catch { return []; }
+      });
+      const nativeTrackRule = rules.find((rule) => rule.selectorText?.includes('.instrument-slider-control > .range-shell input[type="range"]::-webkit-slider-runnable-track'));
+      const nativeThumbRule = rules.filter((rule) => rule.selectorText === 'input[type="range"]::-webkit-slider-thumb').at(-1);
       return {
         trackBorder: trackStyle.borderTopWidth,
         trackBackground: trackStyle.backgroundImage,
         trackShadow: trackStyle.boxShadow,
+        trackCenterDelta: Math.abs((trackBox.top + trackBox.height / 2) - (controlBox.top + controlBox.height / 2)),
+        nativeTrack: nativeTrackRule ? {
+          height: nativeTrackRule.style.height,
+          background: nativeTrackRule.style.background,
+          shadow: nativeTrackRule.style.boxShadow,
+        } : null,
+        nativeThumb: nativeThumbRule ? {
+          height: nativeThumbRule.style.height,
+          marginTop: nativeThumbRule.style.marginTop,
+        } : null,
         controlOutline: getComputedStyle(control).outlineStyle,
       };
     });
     assert(sliderSurface.trackBorder === "0px" && sliderSurface.trackBackground.includes("linear-gradient") && sliderSurface.trackShadow.match(/inset/g)?.length >= 2, `Instrument rail is not a borderless chamfered recess: ${JSON.stringify(sliderSurface)}`);
+    assert(
+      sliderSurface.trackCenterDelta < 0.01
+      && sliderSurface.nativeTrack?.height === "var(--instrument-slider-track-h)"
+      && sliderSurface.nativeTrack?.background === "transparent"
+      && sliderSurface.nativeTrack?.shadow === "none"
+      && sliderSurface.nativeThumb?.height === "var(--instrument-slider-thumb-h)"
+      && sliderSurface.nativeThumb?.marginTop === "calc((var(--instrument-slider-track-h) - var(--instrument-slider-thumb-h)) / 2)",
+      `Native range geometry is drawing through the rail or shifting the thumb off center: ${JSON.stringify(sliderSurface)}`,
+    );
     assert(sliderSurface.controlOutline === "none", `Instrument slider retains a colored input outline: ${JSON.stringify(sliderSurface)}`);
 
     const segmentSurface = await page.locator(".lane-switch").first().evaluate((rail) => {
@@ -643,11 +691,12 @@ function assert(condition, message) {
     await comparison.screenshot({ path: path.join(outputDir, "comparison.png"), fullPage: true });
     await comparison.close();
 
+    await page.evaluate(() => window.scrollTo(0, 0));
     for (let targetCount = 3; targetCount >= 0; targetCount -= 1) {
       await removeButton.click();
       await page.waitForFunction((count) => document.querySelectorAll("#local-adjustment-list > li").length === count, targetCount);
-      const removeY = (await removeButton.boundingBox()).y;
-      assert(Math.abs(removeY - fixedRemoveY) < 1, "The minus button moved as the stack approached its empty state.");
+      const removeY = await removeRailY();
+      assert(Math.abs(removeY - fixedRemoveY) < 1, `The minus button moved as the stack approached its empty state: ${JSON.stringify({ targetCount, fixedRemoveY, removeY, delta: removeY - fixedRemoveY })}`);
     }
     assert(await removeButton.isDisabled(), "The static minus button should disable when the list is empty.");
     assert(!(await page.locator("#local-add-adjustment").isDisabled()), "The static plus button should remain available when the list is empty.");

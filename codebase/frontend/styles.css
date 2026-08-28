@@ -3766,12 +3766,12 @@ input[type="text"] {
 
 .luma-range-heading {
   color: #c8d2d4;
-  font: 10px/1.2 var(--sans, sans-serif);
+  font: 10.5px/1.25 var(--sans, sans-serif);
 }
 
 .luma-range-heading output {
   color: #7edce2;
-  font: 9px/1.2 var(--mono, monospace);
+  font: 10px/1.25 var(--mono, monospace);
 }
 
 .luma-preset-grid {
@@ -3788,14 +3788,14 @@ input[type="text"] {
   display: grid;
   grid-template-columns: 12px minmax(0, 1fr);
   min-width: 0;
-  min-height: 25px;
+  min-height: 27px;
   padding: 4px 5px;
   border: 1px solid transparent;
   border-radius: 3px;
   gap: 6px;
   align-items: center;
   color: var(--muted);
-  font: 8px/1.2 var(--mono, monospace);
+  font: 9.5px/1.25 var(--mono, monospace);
   text-align: left;
   background: transparent;
 }
@@ -3907,7 +3907,7 @@ input[type="text"] {
 .luma-nit-range-values output {
   min-width: 0;
   color: #82dce2;
-  font: 9px/1.2 var(--mono, monospace);
+  font: 10px/1.25 var(--mono, monospace);
 }
 
 .luma-nit-range-values output:last-child {
@@ -3916,7 +3916,7 @@ input[type="text"] {
 
 .luma-range-scale {
   color: #768387;
-  font: 8px/1.2 var(--mono, monospace);
+  font: 9px/1.25 var(--mono, monospace);
 }
 
 .local-brush-actions {
@@ -4588,13 +4588,6 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 
 .local-brush-control input {
   min-width: 0;
-}
-
-.local-brush-control input[type="range"]::-webkit-slider-runnable-track,
-.local-grade-controls input[type="range"]::-webkit-slider-runnable-track,
-.local-adjustment-opacity input[type="range"]::-webkit-slider-runnable-track {
-  height: 1px;
-  background: #3a4649;
 }
 
 .local-brush-actions {
@@ -7574,6 +7567,11 @@ body {
   min-height: var(--instrument-slider-hit-h);
 }
 
+.control-row > .range-shell input[type="range"],
+.instrument-slider-control > .range-shell input[type="range"] {
+  height: var(--instrument-slider-hit-h);
+}
+
 .control-row > .range-shell .slider-track,
 .instrument-slider-control > .range-shell .slider-track {
   top: calc((var(--instrument-slider-hit-h) - var(--instrument-slider-track-h)) / 2);
@@ -7594,6 +7592,17 @@ body {
   border-radius: var(--radius-pill);
   background: linear-gradient(180deg, var(--accent-strong), var(--accent-low));
   box-shadow: 0 0 7px color-mix(in srgb, var(--accent) 25%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+/* Keep the transparent native rail geometrically identical to the visible rail.
+   Local controls previously inherited a one-pixel native track, which drew a
+   line through the machined rail and shifted the browser thumb off center. */
+.control-row > .range-shell input[type="range"]::-webkit-slider-runnable-track,
+.instrument-slider-control > .range-shell input[type="range"]::-webkit-slider-runnable-track {
+  height: var(--instrument-slider-track-h);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .control-row:not(.modified) > .range-shell .slider-fill {
