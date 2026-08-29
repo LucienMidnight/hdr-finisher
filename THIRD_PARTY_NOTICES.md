@@ -1,5 +1,10 @@
 # Third-party notices
 
+HDR Finisher's SDR gamut clipping adapts Bjorn Ottosson's analytic OKLab/sRGB
+gamut-intersection reference implementation, Copyright (c) 2021 Bjorn Ottosson,
+distributed under the MIT License. The source and license are available at
+https://bottosson.github.io/posts/gamutclipping/ .
+
 HDR Finisher uses Christoph Gohlke's
 [`imagecodecs`](https://github.com/cgohlke/imagecodecs) library through `tifffile` to decode TIFF
 compression and prediction schemes, including floating-point predictors. Imagecodecs is distributed

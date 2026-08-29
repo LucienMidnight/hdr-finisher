@@ -2459,14 +2459,211 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         0.0028217873 * rgb.r - 0.0195984945 * rgb.g + 1.0167767073 * rgb.b
       );
     }
+    const SDR_GAMUT_ALPHA: f32 = 5.0;
+    const SDR_GAMUT_HIGHLIGHT_START: f32 = 0.85;
+    const SDR_GAMUT_HIGHLIGHT_ALPHA: f32 = 0.05;
+    const SDR_GAMUT_LOW_SAT_HIGHLIGHT_START: f32 = 0.70;
+    const SDR_GAMUT_SATURATION_LOW: f32 = 0.08;
+    const SDR_GAMUT_SATURATION_HIGH: f32 = 0.20;
+    const GAMUT_CHROMA_EPS: f32 = 0.00001;
+    const GAMUT_MATH_EPS: f32 = 0.000001;
+    const GAMUT_RESIDUE_EPS: f32 = 0.00002;
+    const GAMUT_NEUTRAL_RGB_EPS: f32 = 0.001;
+
+    struct GamutCusp {
+      lightness: f32,
+      chroma: f32,
+    }
+    fn gamutFinite(value: f32) -> bool {
+      return value == value && abs(value) < 3.402823e+38;
+    }
+    fn gamutSignedCbrt(value: f32) -> f32 {
+      return sign(value) * pow(abs(value), 1.0 / 3.0);
+    }
+    fn linearSrgbToOklab(input: vec3f) -> vec3f {
+      let ell = 0.4122214708 * input.r + 0.5363325363 * input.g + 0.0514459929 * input.b;
+      let em = 0.2119034982 * input.r + 0.6806995451 * input.g + 0.1073969566 * input.b;
+      let ess = 0.0883024619 * input.r + 0.2817188376 * input.g + 0.6299787005 * input.b;
+      let ellRoot = gamutSignedCbrt(ell);
+      let emRoot = gamutSignedCbrt(em);
+      let essRoot = gamutSignedCbrt(ess);
+      return vec3f(
+        0.2104542553 * ellRoot + 0.7936177850 * emRoot - 0.0040720468 * essRoot,
+        1.9779984951 * ellRoot - 2.4285922050 * emRoot + 0.4505937099 * essRoot,
+        0.0259040371 * ellRoot + 0.7827717662 * emRoot - 0.8086757660 * essRoot
+      );
+    }
+    fn oklabToLinearSrgb(input: vec3f) -> vec3f {
+      let ellRoot = input.x + 0.3963377774 * input.y + 0.2158037573 * input.z;
+      let emRoot = input.x - 0.1055613458 * input.y - 0.0638541728 * input.z;
+      let essRoot = input.x - 0.0894841775 * input.y - 1.2914855480 * input.z;
+      let ell = ellRoot * ellRoot * ellRoot;
+      let em = emRoot * emRoot * emRoot;
+      let ess = essRoot * essRoot * essRoot;
+      return vec3f(
+        4.0767416621 * ell - 3.3077115913 * em + 0.2309699292 * ess,
+       -1.2684380046 * ell + 2.6097574011 * em - 0.3413193965 * ess,
+       -0.0041960863 * ell - 0.7034186147 * em + 1.7076147010 * ess
+      );
+    }
+    fn gamutMaxSaturation(aa: f32, bb: f32) -> f32 {
+      var k0: f32;
+      var k1: f32;
+      var k2: f32;
+      var k3: f32;
+      var k4: f32;
+      var weights: vec3f;
+      if (-1.88170328 * aa - 0.80936493 * bb > 1.0) {
+        k0 = 1.19086277; k1 = 1.76576728; k2 = 0.59662641; k3 = 0.75515197; k4 = 0.56771245;
+        weights = vec3f(4.0767416621, -3.3077115913, 0.2309699292);
+      } else if (1.81444104 * aa - 1.19445276 * bb > 1.0) {
+        k0 = 0.73956515; k1 = -0.45954404; k2 = 0.08285427; k3 = 0.12541070; k4 = 0.14503204;
+        weights = vec3f(-1.2684380046, 2.6097574011, -0.3413193965);
+      } else {
+        k0 = 1.35733652; k1 = -0.00915799; k2 = -1.15130210; k3 = -0.50559606; k4 = 0.00692167;
+        weights = vec3f(-0.0041960863, -0.7034186147, 1.7076147010);
+      }
+      var saturation = k0 + k1 * aa + k2 * bb + k3 * aa * aa + k4 * aa * bb;
+      let k = vec3f(
+        0.3963377774 * aa + 0.2158037573 * bb,
+       -0.1055613458 * aa - 0.0638541728 * bb,
+       -0.0894841775 * aa - 1.2914855480 * bb
+      );
+      for (var iteration = 0; iteration < 2; iteration++) {
+        let roots = vec3f(1.0) + saturation * k;
+        let cubed = roots * roots * roots;
+        let first = 3.0 * k * roots * roots;
+        let second = 6.0 * k * k * roots;
+        let function = dot(weights, cubed);
+        let derivative = dot(weights, first);
+        let derivative2 = dot(weights, second);
+        let denominator = derivative * derivative - 0.5 * function * derivative2;
+        let candidate = saturation - function * derivative / select(1.0, denominator, abs(denominator) > GAMUT_MATH_EPS);
+        if (abs(denominator) > GAMUT_MATH_EPS && gamutFinite(candidate) && candidate > GAMUT_MATH_EPS) {
+          saturation = candidate;
+        }
+      }
+      return saturation;
+    }
+    fn gamutCusp(aa: f32, bb: f32) -> GamutCusp {
+      let saturation = gamutMaxSaturation(aa, bb);
+      let atMaximum = oklabToLinearSrgb(vec3f(1.0, saturation * aa, saturation * bb));
+      let maximum = max(max(atMaximum.r, atMaximum.g), max(atMaximum.b, GAMUT_MATH_EPS));
+      let lightness = gamutSignedCbrt(1.0 / maximum);
+      return GamutCusp(lightness, lightness * saturation);
+    }
+    fn gamutHalleyDelta(function: f32, derivative: f32, second: f32) -> f32 {
+      let denominator = derivative * derivative - 0.5 * function * second;
+      if (abs(denominator) <= GAMUT_MATH_EPS) { return 1e20; }
+      let reciprocal = derivative / denominator;
+      let delta = -function * reciprocal;
+      if (!gamutFinite(reciprocal) || !gamutFinite(delta) || reciprocal < 0.0) { return 1e20; }
+      return delta;
+    }
+    fn gamutIntersection(aa: f32, bb: f32, lightness: f32, chroma: f32, focus: f32, cusp: GamutCusp) -> f32 {
+      let lower = (lightness - focus) * cusp.chroma - (cusp.lightness - focus) * chroma <= 0.0;
+      var parameter: f32;
+      if (lower) {
+        let denominator = chroma * cusp.lightness + cusp.chroma * (focus - lightness);
+        parameter = cusp.chroma * focus / select(1.0, denominator, abs(denominator) > GAMUT_MATH_EPS);
+      } else {
+        let denominator = chroma * (cusp.lightness - 1.0) + cusp.chroma * (focus - lightness);
+        parameter = cusp.chroma * (focus - 1.0) / select(1.0, denominator, abs(denominator) > GAMUT_MATH_EPS);
+      }
+      parameter = clamp(parameter, 0.0, 1.0);
+      let deltaLightness = lightness - focus;
+      let k = vec3f(
+        0.3963377774 * aa + 0.2158037573 * bb,
+       -0.1055613458 * aa - 0.0638541728 * bb,
+       -0.0894841775 * aa - 1.2914855480 * bb
+      );
+      let rootsDelta = vec3f(deltaLightness) + chroma * k;
+      if (!lower) {
+        for (var iteration = 0; iteration < 2; iteration++) {
+          let currentLightness = focus * (1.0 - parameter) + parameter * lightness;
+          let currentChroma = parameter * chroma;
+          let roots = vec3f(currentLightness) + currentChroma * k;
+          let cubed = roots * roots * roots;
+          let first = 3.0 * rootsDelta * roots * roots;
+          let second = 6.0 * rootsDelta * rootsDelta * roots;
+          let rgb = vec3f(
+            4.0767416621 * cubed.x - 3.3077115913 * cubed.y + 0.2309699292 * cubed.z - 1.0,
+           -1.2684380046 * cubed.x + 2.6097574011 * cubed.y - 0.3413193965 * cubed.z - 1.0,
+           -0.0041960863 * cubed.x - 0.7034186147 * cubed.y + 1.7076147010 * cubed.z - 1.0
+          );
+          let rgbFirst = vec3f(
+            4.0767416621 * first.x - 3.3077115913 * first.y + 0.2309699292 * first.z,
+           -1.2684380046 * first.x + 2.6097574011 * first.y - 0.3413193965 * first.z,
+           -0.0041960863 * first.x - 0.7034186147 * first.y + 1.7076147010 * first.z
+          );
+          let rgbSecond = vec3f(
+            4.0767416621 * second.x - 3.3077115913 * second.y + 0.2309699292 * second.z,
+           -1.2684380046 * second.x + 2.6097574011 * second.y - 0.3413193965 * second.z,
+           -0.0041960863 * second.x - 0.7034186147 * second.y + 1.7076147010 * second.z
+          );
+          let step = min(
+            gamutHalleyDelta(rgb.r, rgbFirst.r, rgbSecond.r),
+            min(gamutHalleyDelta(rgb.g, rgbFirst.g, rgbSecond.g), gamutHalleyDelta(rgb.b, rgbFirst.b, rgbSecond.b))
+          );
+          let candidate = parameter + step;
+          if (gamutFinite(candidate) && candidate >= 0.0 && candidate <= 1.0) { parameter = candidate; }
+        }
+      }
+      return parameter;
+    }
     fn compressSrgbGamut(input: vec3f) -> vec3f {
-      let y = clamp(lumaSrgb(input), 0.0, 1.0);
-      let minimum = min(input.r, min(input.g, input.b));
-      let maximum = max(input.r, max(input.g, input.b));
-      var scale = 1.0;
-      if (minimum < 0.0) { scale = min(scale, y / max(y - minimum, 0.00000001)); }
-      if (maximum > 1.0) { scale = min(scale, (1.0 - y) / max(maximum - y, 0.00000001)); }
-      return clamp(vec3f(y) + (input - vec3f(y)) * clamp(scale, 0.0, 1.0), vec3f(0.0), vec3f(1.0));
+      if (all(input >= vec3f(0.0)) && all(input <= vec3f(1.0))) { return input; }
+      if (all(input >= vec3f(-(GAMUT_RESIDUE_EPS + GAMUT_MATH_EPS)))
+          && all(input <= vec3f(1.0 + GAMUT_RESIDUE_EPS + GAMUT_MATH_EPS))) {
+        return clamp(input, vec3f(0.0), vec3f(1.0));
+      }
+      if (max(input.r, max(input.g, input.b)) - min(input.r, min(input.g, input.b)) < GAMUT_NEUTRAL_RGB_EPS) {
+        return clamp(input, vec3f(0.0), vec3f(1.0));
+      }
+      let lab = linearSrgbToOklab(input);
+      let lightness = lab.x;
+      let chroma = length(lab.yz);
+      if (chroma < GAMUT_CHROMA_EPS) { return clamp(input, vec3f(0.0), vec3f(1.0)); }
+      let direction = lab.yz / chroma;
+      let cusp = gamutCusp(direction.x, direction.y);
+      let delta = lightness - cusp.lightness;
+      let k = max(2.0 * select(cusp.lightness, 1.0 - cusp.lightness, delta > 0.0), GAMUT_MATH_EPS);
+      let perceptualSaturation = chroma / max(abs(lightness), GAMUT_MATH_EPS);
+      let saturationT = clamp(
+        (perceptualSaturation - SDR_GAMUT_SATURATION_LOW)
+          / (SDR_GAMUT_SATURATION_HIGH - SDR_GAMUT_SATURATION_LOW),
+        0.0,
+        1.0
+      );
+      let saturationWeight = saturationT * saturationT * (3.0 - 2.0 * saturationT);
+      let highlightStart = mix(
+        SDR_GAMUT_LOW_SAT_HIGHLIGHT_START,
+        SDR_GAMUT_HIGHLIGHT_START,
+        saturationWeight
+      );
+      let highlightT = clamp(
+        (lightness - highlightStart) / (1.0 - highlightStart),
+        0.0,
+        1.0
+      );
+      let highlightWeight = select(0.0, highlightT * highlightT * (3.0 - 2.0 * highlightT), delta > 0.0);
+      let strength = mix(SDR_GAMUT_ALPHA, SDR_GAMUT_HIGHLIGHT_ALPHA, highlightWeight);
+      let e1 = 0.5 * k + abs(delta) + strength * chroma / k;
+      let adaptiveFocus = cusp.lightness + 0.5 * sign(delta) * (e1 - sqrt(max(e1 * e1 - 2.0 * k * abs(delta), 0.0)));
+      let neutralAxisWeight = highlightWeight * (1.0 - saturationWeight);
+      let focus = mix(adaptiveFocus, lightness, neutralAxisWeight);
+      let parameter = gamutIntersection(direction.x, direction.y, lightness, chroma, focus, cusp);
+      let clippedLightness = focus * (1.0 - parameter) + parameter * lightness;
+      let clippedChroma = parameter * chroma;
+      let mapped = oklabToLinearSrgb(vec3f(clippedLightness, clippedChroma * direction.x, clippedChroma * direction.y));
+      return clamp(mapped, vec3f(0.0), vec3f(1.0));
+    }
+    @group(0) @binding(10) var<storage, read> gamutParityInputs: array<vec4f>;
+    @group(0) @binding(11) var<storage, read_write> gamutParityOutputs: array<vec4f>;
+    @compute @workgroup_size(64)
+    fn gamutParityMain(@builtin(global_invocation_id) id: vec3u) {
+      if (id.x >= arrayLength(&gamutParityInputs)) { return; }
+      gamutParityOutputs[id.x] = vec4f(compressSrgbGamut(gamutParityInputs[id.x].rgb), 1.0);
     }
     fn whiteBalance(input: vec3f) -> vec3f {
       let offset = (p[10] - 6500.0) / 6500.0;

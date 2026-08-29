@@ -7,6 +7,7 @@ from .color_context import RenderColorContext, nits_to_scene_linear, scene_linea
 from .finishing import apply_geometry
 from .models import AdjustmentState, LocalAdjustment, LocalGrade, PreviewKind, SdrMatchState, ToneMapper
 from .detail import apply_detail
+from .sdr_gamut import compress_to_srgb_gamut
 
 
 TONE_EQUALIZER_MIN_EV = -6
@@ -963,27 +964,8 @@ def _map_sdr_luma(
 
 
 def _compress_to_srgb_gamut(image: np.ndarray) -> np.ndarray:
-    """Reduce out-of-gamut chroma toward display luma without changing hue."""
-    rgb = image.astype(np.float32, copy=False)
-    luma = np.clip(_linear_luma(rgb), 0.0, 1.0)
-    minimum = np.min(rgb, axis=-1)
-    maximum = np.max(rgb, axis=-1)
-    scale = np.ones_like(luma, dtype=np.float32)
-
-    below_black = minimum < 0.0
-    scale = np.where(
-        below_black,
-        np.minimum(scale, luma / np.maximum(luma - minimum, 1e-8)),
-        scale,
-    )
-    above_white = maximum > 1.0
-    scale = np.where(
-        above_white,
-        np.minimum(scale, (1.0 - luma) / np.maximum(maximum - luma, 1e-8)),
-        scale,
-    )
-    compressed = luma[..., None] + (rgb - luma[..., None]) * np.clip(scale[..., None], 0.0, 1.0)
-    return np.clip(compressed, 0.0, 1.0)
+    """Map out-of-gamut linear sRGB with the shared perceptual clipper."""
+    return compress_to_srgb_gamut(image)
 
 
 def _linear_luma(image: np.ndarray) -> np.ndarray:

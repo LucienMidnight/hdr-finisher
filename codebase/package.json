@@ -28,6 +28,7 @@
     "test:gpu-local-adjustments": "node tests/performance/gpu-local-adjustments.js",
     "test:many-local-layers": "node tests/performance/many-local-layers.js",
     "test:gpu-scopes": "node tests/gpu-scope-parity.js",
+    "test:sdr-gamut-gpu": "node tests/sdr-gamut-gpu-parity.js",
     "test:webgpu-shader": "node tests/webgpu-shader-compilation.js"
   },
   "devDependencies": {
