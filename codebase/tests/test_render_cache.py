@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from hdr_finisher.finishing import apply_geometry
-from hdr_finisher.models import AdjustmentState, GeometryAdjustments, LocalAdjustment, MaskExpression, MaskLeaf, OverlayMode, PreviewKind
+from hdr_finisher.models import AdjustmentState, GeometryAdjustments, LocalAdjustment, MaskExpression, MaskLeaf, OverlayMode, PreviewKind, SDRMatchRevertState, SdrMatchState
 from hdr_finisher.render_cache import SessionRenderCache, adjustment_signature, encode_rgba32f_proxy, encode_rgba_proxy, scope_region_view
 
 
@@ -19,6 +19,33 @@ def test_adjusted_proxy_is_downsampled_before_processing_and_reused() -> None:
     assert first.shape == (400, 600, 3)
     assert second is first
     assert not first.flags.writeable
+
+
+def test_matched_sdr_base_survives_independent_sdr_trim_cache_clears() -> None:
+    image = np.full((64, 96, 3), 0.18, dtype=np.float32)
+    adjustments = AdjustmentState()
+    adjustments.sdr.base_section_enabled = False
+    match = SdrMatchState(
+        active=True,
+        grain_source="captured_hdr",
+        captured_hdr_adjustments=adjustments.hdr.model_copy(deep=True),
+        captured_shared_adjustments=adjustments.shared.model_copy(deep=True),
+        captured_reference_white_nits=203,
+        captured_source_fingerprint_sha256="0" * 64,
+        automatic_highlight_boundary_ratio=0.8,
+        signature="cache-test",
+        revert_state=SDRMatchRevertState(sdr_adjustments=adjustments.sdr.model_copy(deep=True)),
+    )
+    cache = SessionRenderCache(image, None)
+
+    first = cache.adjusted_frame(adjustments, PreviewKind.SDR, 256, sdr_match=match)
+    cache.clear_adjusted()
+    trimmed = adjustments.model_copy(deep=True)
+    trimmed.sdr.exposure = 0.25
+    second = cache.adjusted_frame(trimmed, PreviewKind.SDR, 256, sdr_match=match)
+
+    assert cache.diagnostics()["matched_sdr_base_entries"] == 1
+    assert not np.array_equal(first, second)
 
 
 def test_scope_request_counts_one_top_level_miss_then_one_hit() -> None:

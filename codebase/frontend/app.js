@@ -239,6 +239,21 @@ const DENOISE_ANALYSIS_PRESETS = Object.freeze({
   custom: Object.freeze({ note: "Custom scale count, threshold, and scene-linear luma/color noise levels." }),
 });
 
+const SDR_MATCH_GRAIN_FIELDS = Object.freeze([
+  "grain_enabled",
+  "grain_amount",
+  "grain_size",
+  "grain_softness",
+  "grain_chroma",
+  "grain_film_format",
+  "grain_capture_geometry",
+  "grain_custom_width_mm",
+  "grain_custom_height_mm",
+  "grain_shadow_response",
+  "grain_midtone_response",
+  "grain_highlight_response",
+]);
+
 const state = {
   session: null,
   capabilities: {},
@@ -281,6 +296,9 @@ const state = {
   globalEditDirty: false,
   globalEditGeneration: 0,
   globalEditSyncPending: null,
+  globalEditHistoryGroup: null,
+  globalEditHistorySequence: 0,
+  sdrMatchGrainOverridePending: false,
   documentDirty: false,
   denoise: defaultDenoiseDocument(),
   denoiseDocumentSessionId: null,
@@ -715,9 +733,14 @@ async function ensureGeometryCoordinateMap() {
   return request;
 }
 
-function gpuPreviewEligible() {
+function gpuPreviewEligible(lane = state.currentView) {
+  const unsupportedDetail = localAdjustments().some((local) => [local[`${lane}_grade`]?.detail].some((detail) =>
+    detail && (Number(detail.texture_amount) || Number(detail.clarity_amount) || Number(detail.sharpen_amount))
+  ));
   return state.renderingMode !== "cpu"
-    && Boolean(state.gpuPreview?.available);
+    && Boolean(state.gpuPreview?.available)
+    && !unsupportedDetail
+    && !(lane === "sdr" && state.editDocument?.sdr_match?.active);
 }
 
 function normalizedPreviewResolution(value = state.previewResolution) {
@@ -818,12 +841,14 @@ const defaultAdjustments = () => ({
     color_section_enabled: true,
     primaries_section_enabled: true,
     curves_section_enabled: true,
+    detail_section_enabled: true,
     film_look_section_enabled: true,
     color_grading_section_enabled: true,
     vignette_section_enabled: true,
     film_look: defaultFilmLook(),
     color_grading: defaultColorGrading(),
     vignette: defaultVignette(),
+    detail: { texture_amount: 0, clarity_amount: 0, clarity_radius_percent: 0.75, sharpen_amount: 0, sharpen_radius_px: 0.8, sharpen_threshold: 10 },
     exposure: 0,
     highlight_compression_start_nits: 400,
     highlight_compression_target_nits: 1000,
@@ -874,12 +899,14 @@ const defaultAdjustments = () => ({
     color_section_enabled: true,
     primaries_section_enabled: true,
     curves_section_enabled: true,
+    detail_section_enabled: true,
     film_look_section_enabled: true,
     color_grading_section_enabled: true,
     vignette_section_enabled: true,
     film_look: defaultFilmLook(),
     color_grading: defaultColorGrading(),
     vignette: defaultVignette(),
+    detail: { texture_amount: 0, clarity_amount: 0, clarity_radius_percent: 0.75, sharpen_amount: 0, sharpen_radius_px: 0.8, sharpen_threshold: 10 },
     exposure: 0,
     highlight_recovery: 0.6,
     tone_contrast: 1,
@@ -1028,6 +1055,16 @@ const els = {
   sdrToneEqualizerRadiusUp: document.getElementById("sdr-tone-equalizer-radius-up"),
   sdrToneEqualizerRadius: document.getElementById("sdr-tone-equalizer-radius"),
   sdrMatchHdrBands: document.getElementById("sdr-match-hdr-bands"),
+  sdrMatchEntireActions: document.getElementById("sdr-match-entire-actions"),
+  sdrMatchEntire: document.getElementById("sdr-match-entire"),
+  sdrMatchRevert: document.getElementById("sdr-match-revert"),
+  sdrMatchEntireStatus: document.getElementById("sdr-match-entire-status"),
+  sdrMatchBoundaryRow: document.getElementById("sdr-match-boundary-row"),
+  sdrMatchBoundary: document.getElementById("sdr-match-boundary"),
+  sdrMatchBoundaryValue: document.getElementById("sdr-match-boundary-value"),
+  sdrMatchBoundaryAuto: document.getElementById("sdr-match-boundary-auto"),
+  detailSdrActions: document.getElementById("detail-sdr-actions"),
+  detailMatchHdr: document.getElementById("detail-match-hdr"),
   curveStatus: document.getElementById("curve-status"),
   overlayPresetNote: document.getElementById("overlay-preset-note"),
   falseColorKey: document.getElementById("false-color-key"),
@@ -1295,11 +1332,13 @@ const controlGroups = {
   "hdr-equalizer": ["hdr.tone_equalizer_nodes", "hdr.tone_equalizer_influence_radius", "hdr.tone_equalizer_smoothing"],
   "hdr-color": ["hdr.white_balance_kelvin", "hdr.tint", "hdr.saturation", "hdr.vibrance", "hdr.red_hue", "hdr.red_purity", "hdr.green_hue", "hdr.green_purity", "hdr.blue_hue", "hdr.blue_purity", "hdr.tint_hue", "hdr.tint_purity"],
   "hdr-zones": ["hdr.lift", "hdr.lift_range", "hdr.lift_pivot", "hdr.gamma", "hdr.gamma_range", "hdr.gamma_pivot", "hdr.gain", "hdr.gain_range", "hdr.gain_pivot"],
+  "hdr-detail": ["hdr.detail"],
   "sdr-base": ["sdr.tone_mapper", "sdr.tone_contrast", "sdr.tone_skew"],
   "sdr-tone": ["sdr.exposure", "sdr.highlight_recovery", "sdr.contrast", "sdr.contrast_pivot", "sdr.shadow"],
   "sdr-equalizer": ["sdr.tone_equalizer_nodes", "sdr.tone_equalizer_influence_radius", "sdr.tone_equalizer_smoothing"],
   "sdr-color": ["sdr.white_balance_kelvin", "sdr.tint", "sdr.saturation", "sdr.vibrance", "sdr.red_hue", "sdr.red_purity", "sdr.green_hue", "sdr.green_purity", "sdr.blue_hue", "sdr.blue_purity", "sdr.tint_hue", "sdr.tint_purity"],
   "sdr-zones": ["sdr.lift", "sdr.lift_range", "sdr.lift_pivot", "sdr.gamma", "sdr.gamma_range", "sdr.gamma_pivot", "sdr.gain", "sdr.gain_range", "sdr.gain_pivot"],
+  "sdr-detail": ["sdr.detail"],
 };
 
 const falseColorPaletteTokens = [
@@ -1324,6 +1363,8 @@ const sectionPathForGroup = {
   "sdr-equalizer": "sdr.tone_equalizer_section_enabled",
   "sdr-color": "sdr.color_section_enabled",
   "sdr-zones": "sdr.primaries_section_enabled",
+  "hdr-detail": "hdr.detail_section_enabled",
+  "sdr-detail": "sdr.detail_section_enabled",
 };
 
 const GROUP_PRESET_LABELS = {
@@ -1335,6 +1376,7 @@ const GROUP_PRESET_LABELS = {
   base: "Base Rendition",
   curves: "Curves",
   "color-grading": "Color Grading",
+  detail: "Detail",
   "film-look": "Film Look",
   vignette: "Vignette",
   denoise: "Denoise",
@@ -1348,14 +1390,14 @@ function groupPresetPaths(groupId) {
   if (!["hdr", "sdr"].includes(lane)) return [];
   if (group === "denoise") return [`denoise.${lane}.controls`, `denoise.${lane}.analysis`];
   if (group === "curves") return ["luma_curve", "red_curve", "green_curve", "blue_curve"].map((key) => `${lane}.${key}`);
-  if (["color-grading", "film-look", "vignette"].includes(group)) return [`${lane}.${group.replaceAll("-", "_")}`];
+  if (["color-grading", "detail", "film-look", "vignette"].includes(group)) return [`${lane}.${group.replaceAll("-", "_")}`];
   return [];
 }
 
 function groupPresetContextForElement(groupElement) {
   const rawGroup = groupElement?.dataset.group || "";
   if (["geometry", "local-adjustments"].includes(rawGroup)) return null;
-  const groupId = ["curves", "color-grading", "film-look", "vignette", "denoise"].includes(rawGroup)
+  const groupId = ["curves", "color-grading", "detail", "film-look", "vignette", "denoise"].includes(rawGroup)
     ? `${state.currentView}-${rawGroup}`
     : rawGroup;
   const paths = groupPresetPaths(groupId);
@@ -2426,9 +2468,28 @@ function bindEvents() {
   });
 
   els.controls.forEach((control) => {
-    control.addEventListener("pointerdown", () => state.previewScheduler?.beginInteraction());
+    control.addEventListener("pointerdown", () => {
+      beginGlobalEditGesture(control);
+      state.previewScheduler?.beginInteraction();
+    });
     ["pointerup", "pointercancel", "change"].forEach((eventName) => {
-      control.addEventListener(eventName, () => state.previewScheduler?.endInteraction());
+      control.addEventListener(eventName, () => {
+        if (eventName === "change" && control.dataset.historyKeyboardActive === "true") return;
+        state.previewScheduler?.endInteraction();
+        endGlobalEditGesture(control);
+      });
+    });
+    control.addEventListener("keydown", (event) => {
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"].includes(event.key)) {
+        control.dataset.historyKeyboardActive = "true";
+        beginGlobalEditGesture(control);
+        state.previewScheduler?.beginInteraction();
+      }
+    }, true);
+    control.addEventListener("keyup", () => {
+      delete control.dataset.historyKeyboardActive;
+      state.previewScheduler?.endInteraction();
+      endGlobalEditGesture(control);
     });
     control.addEventListener("input", () => {
       const value = control.type === "range" || control.type === "number"
@@ -2574,9 +2635,22 @@ function bindEvents() {
     });
   });
   els.groupResets.forEach((button) => {
-    button.addEventListener("click", () => resetControlGroup(button.dataset.resetGroup));
+    button.addEventListener("click", () => resetControlGroup(
+      button.dataset.resetGroup === "detail" ? `${state.currentView}-detail` : button.dataset.resetGroup
+    ));
   });
   els.sdrMatchHdrColors.addEventListener("click", matchHdrColorsToSdr);
+  els.sdrMatchEntire?.addEventListener("click", () => setSdrMatch(
+    state.editDocument?.sdr_match?.active ? "rematch" : "match"
+  ));
+  els.sdrMatchRevert?.addEventListener("click", () => setSdrMatch("revert"));
+  els.sdrMatchBoundary?.addEventListener("input", () => {
+    const ratio = Number(els.sdrMatchBoundary.value);
+    els.sdrMatchBoundaryValue.textContent = `${Math.round(ratio * projectReferenceWhiteNits())} nit`;
+  });
+  els.sdrMatchBoundary?.addEventListener("change", () => commitSdrMatchBoundary(Number(els.sdrMatchBoundary.value)));
+  els.sdrMatchBoundaryAuto?.addEventListener("click", () => commitSdrMatchBoundary(null));
+  els.detailMatchHdr?.addEventListener("click", () => matchLaneObject("detail"));
   els.sdrResetColors.addEventListener("click", resetSdrColorSliders);
   els.filmLookReset?.addEventListener("click", resetFilmLook);
   els.filmLookMatchHdr?.addEventListener("click", matchHdrFilmLookToSdr);
@@ -3129,9 +3203,10 @@ function applicationCommands() {
     { id: "project.saveAs", label: "Save project as", category: "File", execute: () => saveProjectToPath({ saveAs: true }) },
     { id: "file.export", label: "Open Export", category: "File", execute: () => openExportSheet() },
     { id: "file.exportStandard", label: "Open Export (standard)", category: "File", execute: () => openExportSheet() },
-    { id: "edit.undo", label: "Undo", category: "Edit", execute: () => queueEditCommand("undo") },
-    { id: "edit.redo", label: "Redo", category: "Edit", execute: () => queueEditCommand("redo") },
-    { id: "edit.redoAlternate", label: "Redo (alternate)", category: "Edit", execute: () => queueEditCommand("redo") },
+    { id: "edit.undo", label: "Undo", category: "Edit", global: true, execute: () => queueEditCommand("undo") },
+    { id: "edit.redo", label: "Redo", category: "Edit", global: true, execute: () => queueEditCommand("redo") },
+    { id: "edit.redoAlternate", label: "Redo (alternate)", category: "Edit", global: true, execute: () => queueEditCommand("redo") },
+    { id: "edit.redoRequested", label: "Redo (Ctrl+R)", category: "Edit", global: true, execute: () => queueEditCommand("redo") },
     { id: "view.compareHold", label: "Hold to compare HDR / SDR", category: "Viewer", hold: true, execute: (_event, phase) => phase === "keyup" ? endCompareHold() : beginCompareHold() },
     { id: "view.zoomFit", label: "Zoom to fit", category: "Viewer", execute: () => setZoomMode("fit") },
     { id: "view.zoomActual", label: "Zoom to 100%", category: "Viewer", execute: () => setZoomMode("actual") },
@@ -3400,7 +3475,7 @@ async function settlePreview(lane = state.currentView, task = {}) {
   const display = lane === state.currentView;
   const longEdge = settledProxyLongEdge();
   if (display) {
-    if (gpuPreviewEligible()) {
+    if (gpuPreviewEligible(lane)) {
       const rendered = await renderGpuDraft(lane, { longEdge });
       if (rendered) await refreshOverlay(longEdge);
       else await renderPreviewForLane(lane, true, longEdge, { showProgress: false });
@@ -3421,7 +3496,7 @@ async function refinePreview(lane, task = {}) {
   const signature = geometrySignature();
   const targetLongEdge = refinementProxyLongEdge();
   markRefining();
-  const rendered = gpuPreviewEligible()
+  const rendered = gpuPreviewEligible(lane)
     ? await renderGpuDraft(lane, { longEdge: targetLongEdge, tier: "refinement" })
     : false;
   if (rendered || !previewNeedsRefinement() || lane !== state.currentView || targetLongEdge !== refinementProxyLongEdge()) return;
@@ -3439,7 +3514,7 @@ function displayedLongEdge() {
 function residentAuthoringLongEdge() {
   const accepted = state.acceptedPresentation;
   const target = previewTargetLongEdge();
-  if (!gpuPreviewEligible()
+  if (!gpuPreviewEligible(state.currentView)
     || accepted?.transport !== "WebGPU"
     || accepted.lane !== state.currentView
     || accepted.geometrySignature !== geometrySignature()
@@ -3577,7 +3652,7 @@ async function renderPreviewForLane(
       state.previewInfoByLane[lane] = previewInfo;
       if (!await applyPreviewUrl(url, requestIsCurrent)) return false;
       state.previewInfo = previewInfo;
-      acceptPresentation(lane, longEdge >= refinementProxyLongEdge() ? "refinement" : "settled", width, height, previewInfo.transport, gpuPreviewEligible() ? "" : "CPU/backend");
+      acceptPresentation(lane, longEdge >= refinementProxyLongEdge() ? "refinement" : "settled", width, height, previewInfo.transport, gpuPreviewEligible(lane) ? "" : "CPU/backend");
       els.scopeKindLabel.textContent = lane.toUpperCase();
       renderReadouts();
     }
@@ -6056,6 +6131,20 @@ function cropAuthoringFrameAspect() {
   return Math.max(0.01, (width * baseCrop.width) / Math.max(1e-6, height * baseCrop.height));
 }
 
+function projectOpenNeedsSourceRelink(payload) {
+  return payload?.detail?.code === "source_relink_required";
+}
+
+function beginProjectOpenStatus(label) {
+  const startedAt = performance.now();
+  const update = () => {
+    const elapsed = Math.max(0, (performance.now() - startedAt) / 1000);
+    setIndeterminatePreviewMessage(`Opening project · ${label} · ${elapsed.toFixed(1)}s elapsed`);
+  };
+  update();
+  return window.setInterval(update, 250);
+}
+
 function sourcePixelFrameDimensions(geometry = state.adjustments?.shared?.geometry) {
   const source = state.session?.source;
   if (!source?.width || !source?.height || !geometry) return null;
@@ -6599,10 +6688,28 @@ function resolveAdjustmentPath(path) {
   return path?.startsWith("current.") ? `${state.currentView}.${path.slice("current.".length)}` : path;
 }
 
+function prepareSdrMatchGrainOverride() {
+  const match = state.editDocument?.sdr_match;
+  if (!match?.active || match.grain_source !== "captured_hdr") return false;
+  const captured = match.captured_hdr_adjustments?.film_look;
+  const target = state.adjustments?.sdr?.film_look;
+  if (!captured || !target) return false;
+  SDR_MATCH_GRAIN_FIELDS.forEach((field) => {
+    target[field] = JSON.parse(JSON.stringify(captured[field]));
+  });
+  match.grain_source = "sdr_override";
+  state.sdrMatchGrainOverridePending = true;
+  return true;
+}
+
 function commitAdjustmentValue(path, value, { manual = false } = {}) {
   if (manual) state.previewScheduler?.beginInteraction();
-  setValueByPath(state.adjustments, path, value);
   const resolvedPath = resolveAdjustmentPath(path);
+  const grainField = resolvedPath.startsWith("sdr.film_look.")
+    ? resolvedPath.slice("sdr.film_look.".length)
+    : null;
+  if (grainField && SDR_MATCH_GRAIN_FIELDS.includes(grainField)) prepareSdrMatchGrainOverride();
+  setValueByPath(state.adjustments, path, value);
   if (resolvedPath.startsWith("hdr.highlight_compression_")) normalizeHighlightCompressionControls(resolvedPath);
   if (path === "shared.false_color_band_anchor" || path === "shared.false_color_ceiling_nits") {
     renderOverlayPresetNote();
@@ -8216,7 +8323,7 @@ async function renderGpuDraft(
   lane = state.currentView,
   { hideStatus = true, longEdge = settledProxyLongEdge(), allowInactive = false, tier = "settled" } = {},
 ) {
-  if (!gpuPreviewEligible()) return false;
+  if (!gpuPreviewEligible(lane)) return false;
   if (!state.session || (!allowInactive && lane !== state.currentView)) return false;
   if (state.comparePeekActive && !allowInactive) return false;
   if (state.globalEditDirty && state.acceptedPresentation?.geometrySignature !== geometrySignature()) return false;
@@ -8237,6 +8344,7 @@ async function renderGpuDraft(
       state.editRevision,
       maskOverlay,
       projectReferenceWhiteNits(),
+      { width: state.session.source.width, height: state.session.source.height },
     );
     if (!result || serial !== state.gpuRenderSerial || (!allowInactive && lane !== state.currentView)) return false;
     state.gpuPreparedLane[lane] = true;
@@ -8791,7 +8899,7 @@ async function switchLane(lane) {
   drawCurveEditor();
   renderReadouts();
   const previewTask = (async () => {
-    const rendered = gpuPreviewEligible()
+    const rendered = gpuPreviewEligible(lane)
       ? await renderGpuDraft(lane, { longEdge: settledProxyLongEdge() })
       : false;
     if (rendered) return true;
@@ -8840,6 +8948,31 @@ function renderLaneChrome() {
   els.filmLookSdrActions?.classList.toggle("hidden", lane !== "sdr");
   els.colorGradingSdrActions?.classList.toggle("hidden", lane !== "sdr");
   els.vignetteSdrActions?.classList.toggle("hidden", lane !== "sdr");
+  els.detailSdrActions?.classList.toggle("hidden", lane !== "sdr");
+  const match = state.editDocument?.sdr_match;
+  els.sdrMatchEntireActions?.classList.toggle("hidden", lane !== "sdr");
+  if (els.sdrMatchEntire) {
+    els.sdrMatchEntire.textContent = match?.active ? "Rematch entire HDR grade" : "Match entire HDR grade";
+    els.sdrMatchEntire.disabled = !state.session;
+  }
+  els.sdrMatchRevert?.classList.toggle("hidden", !match?.active);
+  els.sdrMatchBoundaryRow?.classList.toggle("hidden", !match?.active);
+  if (match?.active && els.sdrMatchBoundary) {
+    const selectedBoundary = match.manual_highlight_boundary_ratio ?? match.automatic_highlight_boundary_ratio;
+    els.sdrMatchBoundary.value = String(selectedBoundary);
+    els.sdrMatchBoundaryValue.textContent = match.manual_highlight_boundary_ratio == null
+      ? `Auto · ${Math.round(Number(selectedBoundary) * projectReferenceWhiteNits())} nit`
+      : `${Math.round(Number(selectedBoundary) * projectReferenceWhiteNits())} nit`;
+    updateRangeVisual(els.sdrMatchBoundary);
+  }
+  if (els.sdrMatchEntireStatus) {
+    const boundary = match?.manual_highlight_boundary_ratio ?? match?.automatic_highlight_boundary_ratio;
+    els.sdrMatchEntireStatus.textContent = !match?.active
+      ? ""
+      : match.stale
+        ? "HDR changed — Rematch available"
+        : `Matched snapshot · highlight boundary ${Math.round(Number(boundary) * projectReferenceWhiteNits())} nit`;
+  }
   syncControlsFromState();
   drawToneEqualizerEditor(lane);
   window.HDRProofing?.syncLane();
@@ -8862,6 +8995,25 @@ function markGlobalEditDirty() {
   state.globalEditGeneration += 1;
   state.documentDirty = true;
   renderExportPreflight();
+}
+
+function beginGlobalEditGesture(control) {
+  if (!state.session || control?.dataset.historyGestureActive === "true") return;
+  if (control) control.dataset.historyGestureActive = "true";
+  state.globalEditHistorySequence += 1;
+  state.globalEditHistoryGroup = `slider-${state.globalEditHistorySequence}`;
+}
+
+function endGlobalEditGesture(control) {
+  if (control?.dataset.historyGestureActive !== "true") return;
+  delete control.dataset.historyGestureActive;
+  const group = state.globalEditHistoryGroup;
+  // Flush the final optimistic value while the group is still attached. Any
+  // settled syncs emitted during this drag and this final sync collapse into
+  // one backend HistoryEntry.
+  void syncGlobalEditState().finally(() => {
+    if (state.globalEditHistoryGroup === group) state.globalEditHistoryGroup = null;
+  });
 }
 
 function clearPreviewCache() {
@@ -8904,7 +9056,7 @@ function clearPreviewCache() {
 function cacheReady(lane) {
   const cached = state.previewCache[lane];
   return Boolean(
-    (gpuPreviewEligible() && state.gpuPreparedLane[lane])
+    (gpuPreviewEligible(lane) && state.gpuPreparedLane[lane])
     || (cached?.generation === state.previewGeneration[lane]
       && cached.geometrySignature === geometrySignature()
       && (cached.url || cached.raw)),
@@ -8913,7 +9065,7 @@ function cacheReady(lane) {
 
 async function showCachedPreview(lane) {
   const cached = state.previewCache[lane];
-  if (gpuPreviewEligible() && state.gpuPreparedLane[lane] && await renderGpuDraft(lane, { allowInactive: lane !== state.currentView })) return true;
+  if (gpuPreviewEligible(lane) && state.gpuPreparedLane[lane] && await renderGpuDraft(lane, { allowInactive: lane !== state.currentView })) return true;
   if (!cached || cached.generation !== state.previewGeneration[lane] || cached.geometrySignature !== geometrySignature()) return false;
   if (cached.raw) applyRawPreview(cached);
   else if (cached.url) {
@@ -9076,7 +9228,7 @@ async function renderComparisonPreview(lane, { force = false } = {}) {
   if (!force && alreadyRendered) return true;
 
   els.previewSecondaryPane.dataset.lane = lane;
-  if (gpuPreviewEligible()) {
+  if (gpuPreviewEligible(lane)) {
     try {
       const result = await state.gpuPreview.renderTo(
         els.comparisonCanvas,
@@ -9089,6 +9241,7 @@ async function renderComparisonPreview(lane, { force = false } = {}) {
         state.editRevision,
         null,
         projectReferenceWhiteNits(),
+        { width: state.session.source.width, height: state.session.source.height },
       );
       if (result && lane !== state.currentView && generation === state.previewGeneration[lane]) {
         state.gpuPreparedLane[lane] = true;
@@ -9151,7 +9304,7 @@ function shouldKeepHdrGpuSurface(lane) {
 
 function setCustomZoom(percent, anchor = null) {
   const nextPercent = clamp(Number(percent) || 100, MIN_ZOOM_PERCENT, MAX_ZOOM_PERCENT);
-  const preview = activePreviewElement();
+  const preview = anchor?.previewElement || activePreviewElement();
   const imageVisible = previewIsVisible();
   const oldRect = imageVisible ? preview.getBoundingClientRect() : null;
   const anchorX = anchor?.clientX ?? (els.dropzone.getBoundingClientRect().left + els.dropzone.clientWidth / 2);
@@ -9324,9 +9477,18 @@ function stepZoom(direction) {
 }
 
 function handleViewerWheel(event) {
-  if (!previewIsVisible()) return;
-  const imageRect = activePreviewElement().getBoundingClientRect();
-  if (event.clientX < imageRect.left || event.clientX > imageRect.right || event.clientY < imageRect.top || event.clientY > imageRect.bottom) return;
+  const candidates = [activePreviewElement()];
+  if (state.compareLayout !== "single") {
+    if (els.comparisonCanvas.style.display !== "none") candidates.push(els.comparisonCanvas);
+    if (els.comparisonImage.style.display !== "none") candidates.push(els.comparisonImage);
+  }
+  const preview = candidates.find((candidate) => {
+    if (!candidate) return false;
+    const rect = candidate.getBoundingClientRect();
+    return event.clientX >= rect.left && event.clientX <= rect.right
+      && event.clientY >= rect.top && event.clientY <= rect.bottom;
+  });
+  if (!preview) return;
   event.preventDefault();
   const delta = event.deltaMode === WheelEvent.DOM_DELTA_LINE
     ? event.deltaY * 16
@@ -9334,7 +9496,7 @@ function handleViewerWheel(event) {
       ? event.deltaY * els.dropzone.clientHeight
       : event.deltaY;
   const nextPercent = (state.zoomPercent || 100) * Math.exp(-delta * 0.0022);
-  setCustomZoom(nextPercent, { clientX: event.clientX, clientY: event.clientY });
+  setCustomZoom(nextPercent, { clientX: event.clientX, clientY: event.clientY, previewElement: preview });
 }
 
 function zoomPercentToSlider(percent) {
@@ -9474,6 +9636,9 @@ function formatControlValue(path, value) {
     return `${numeric > 0 && path.endsWith("balance") ? "+" : ""}${Math.round(numeric)}${path.endsWith("balance") ? "" : "%"}`;
   }
   if (path.endsWith("white_balance_kelvin")) return `${Math.round(numeric)} K`;
+  if (path.endsWith("clarity_radius_percent")) return `${numeric.toFixed(2)}%`;
+  if (path.endsWith("sharpen_radius_px")) return `${numeric.toFixed(2)} px`;
+  if (path.includes(".detail.")) return `${numeric > 0 && !path.endsWith("sharpen_threshold") ? "+" : ""}${Math.round(numeric)}`;
   if (path.endsWith("_hue")) return `${numeric > 0 ? "+" : ""}${numeric.toFixed(1)}°`;
   if (path.endsWith("_purity") || path.endsWith(".saturation") || path.endsWith(".vibrance")) return `${numeric > 0 ? "+" : ""}${Math.round(path.endsWith("_purity") ? numeric : numeric * 100)}%`;
   if (path.endsWith(".exposure")) return `${numeric.toFixed(2)} EV`;
@@ -9553,6 +9718,8 @@ function renderControlState() {
   const gradingModified = !valuesEqual(state.adjustments[state.currentView]?.color_grading, currentLaneDefaults.color_grading);
   if (els.colorGradingState) els.colorGradingState.textContent = "";
   els.colorGradingReset?.closest(".control-group")?.classList.toggle("modified", gradingModified);
+  const detailModified = !valuesEqual(state.adjustments[state.currentView]?.detail, currentLaneDefaults.detail);
+  document.querySelector(".detail-group")?.classList.toggle("modified", detailModified);
   const vignetteModified = !valuesEqual(state.adjustments[state.currentView]?.vignette, currentLaneDefaults.vignette);
   if (els.vignetteState) els.vignetteState.textContent = "";
   els.vignetteReset?.closest(".control-group")?.classList.toggle("modified", vignetteModified);
@@ -9772,6 +9939,7 @@ async function saveCurrentGroupPreset() {
 function applyGroupPreset(preset) {
   const context = state.groupPresetContext;
   if (!context || preset.groupId !== context.groupId || !preset.values || typeof preset.values !== "object") return;
+  if (context.lane === "sdr" && context.group === "film-look") prepareSdrMatchGrainOverride();
   context.paths.forEach((path) => {
     if (Object.hasOwn(preset.values, path)) setGroupPresetPathValue(context, path, JSON.parse(JSON.stringify(preset.values[path])));
   });
@@ -9858,6 +10026,7 @@ function resetSdrColorSliders() {
 
 function resetFilmLook() {
   const lane = state.currentView;
+  if (lane === "sdr") prepareSdrMatchGrainOverride();
   state.adjustments[lane].film_look = defaultFilmLook();
   state.adjustments[lane].film_look_section_enabled = true;
   syncControlsFromState();
@@ -9868,6 +10037,7 @@ function resetFilmLook() {
 
 function matchHdrFilmLookToSdr() {
   if (!state.session) return;
+  prepareSdrMatchGrainOverride();
   const topLevelEnabled = state.adjustments.sdr.film_look_section_enabled;
   state.adjustments.sdr.film_look = JSON.parse(JSON.stringify(state.adjustments.hdr.film_look));
   state.adjustments.sdr.film_look_section_enabled = topLevelEnabled;
@@ -10193,6 +10363,7 @@ function defaultLocalGrade() {
     green_curve: defaultCurvePoints(),
     blue_curve: defaultCurvePoints(),
     color_grading: defaultColorGrading(),
+    detail: { texture_amount: 0, clarity_amount: 0, clarity_radius_percent: 0.75, sharpen_amount: 0, sharpen_radius_px: 0.8, sharpen_threshold: 10 },
   };
 }
 
@@ -10476,7 +10647,7 @@ function bindLocalAdjustmentEvents() {
     control.addEventListener("input", () => {
       const local = selectedLocal();
       if (!local) return;
-      local[`${state.currentView}_grade`][control.dataset.localGrade] = Number(control.value);
+      setValueByPath(local[`${state.currentView}_grade`], control.dataset.localGrade, Number(control.value));
       updateLocalGradeOutput(control.dataset.localGrade, Number(control.value));
       hideLocalMaskOverlayForGradePreview();
       scheduleLocalPreview();
@@ -10684,7 +10855,7 @@ function renderLocalAdjustments() {
     });
     const grade = local[`${state.currentView}_grade`];
     els.localGradeControls.forEach((control) => {
-      control.value = String(grade[control.dataset.localGrade]);
+      control.value = String(getValueByPath(grade, control.dataset.localGrade));
       updateLocalGradeOutput(control.dataset.localGrade, Number(control.value));
     });
     renderMaskTreeEditor(local);
@@ -10725,6 +10896,8 @@ function updateLocalGradeOutput(name, value) {
   }
   if (name === "exposure") output.textContent = `${value.toFixed(2)} EV`;
   else if (name === "white_balance_kelvin") output.textContent = `${Math.round(value)} K`;
+  else if (name.endsWith("clarity_radius_percent")) output.textContent = `${value.toFixed(2)}%`;
+  else if (name.endsWith("sharpen_radius_px")) output.textContent = `${value.toFixed(2)} px`;
   else output.textContent = Math.abs(value) < 0.005 ? "0" : value.toFixed(2);
   const defaultValue = Number(control?.dataset.defaultValue ?? control?.defaultValue);
   control?.closest(".control-row")?.classList.toggle(
@@ -11519,16 +11692,96 @@ async function commitSelectedLocal({ refreshPreview = true } = {}) {
   }
 }
 
-function queueEditCommand(commandType, payload = {}, targetId = null, { refreshPreview = true, globalEditGeneration = null } = {}) {
+async function setSdrMatch(action) {
+  if (!state.session) return false;
+  if (await syncGlobalEditState() === false) return false;
+  const authored = state.editDocument?.source?.luminance?.sdr_rendition === "authored";
+  let consent = false;
+  if (action === "match" && authored) {
+    consent = window.confirm(
+      "This source contains an authored SDR rendition. Match will replace it as the working SDR base. You can Revert afterward. Continue?"
+    );
+    if (!consent) return false;
+  }
+  const verb = action === "revert" ? "Reverting SDR match" : action === "rematch" ? "Rematching HDR grade" : "Matching HDR grade";
+  setIndeterminatePreviewMessage(`${verb} · analyzing settled HDR proxy`);
+  if (els.sdrMatchEntire) els.sdrMatchEntire.disabled = true;
+  if (els.sdrMatchRevert) els.sdrMatchRevert.disabled = true;
+  try {
+    const response = await fetch(`/api/session/${state.session.session_id}/sdr-match`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        expected_revision: state.editRevision,
+        action,
+        authored_sdr_override_consent: consent,
+      }),
+    });
+    const result = await safeJson(response);
+    if (response.status === 409) {
+      await refreshEditState();
+      throw new Error(result?.detail?.message || "The grade changed while Match was analyzing it. Try again.");
+    }
+    if (!response.ok) throw new Error(responseErrorMessage(result, "SDR Match failed."));
+    state.editRevision = result.revision;
+    state.editDocument = result.document;
+    state.adjustments = result.document.global_adjustments;
+    state.documentDirty = Boolean(result.dirty);
+    state.sdrMatchGrainOverridePending = false;
+    // Match only changes the SDR rendition. Preserve the already-presented HDR
+    // lane, especially in side-by-side mode, instead of blanking both panes.
+    state.previewControllers.sdr?.abort();
+    state.previewControllers.sdr = null;
+    if (state.previewCache.sdr?.url) URL.revokeObjectURL(state.previewCache.sdr.url);
+    state.previewCache.sdr = null;
+    state.gpuPreparedLane.sdr = false;
+    invalidatePreview("sdr", { markDirty: false });
+    renderLaneChrome();
+    renderLocalAdjustments();
+    await refreshPreview({ progressSteps: [20, 60, 90] });
+    await refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane: "sdr" });
+    if (state.compareLayout !== "single") {
+      const other = state.currentView === "hdr" ? "sdr" : "hdr";
+      await renderComparisonPreview(other, { force: true });
+    }
+    syncDesktopDocumentState();
+    return true;
+  } catch (error) {
+    console.error(error);
+    els.badge.textContent = error.message;
+    els.badge.className = "badge bad";
+    return false;
+  } finally {
+    hidePreviewMessage();
+    renderLaneChrome();
+    if (els.sdrMatchRevert) els.sdrMatchRevert.disabled = false;
+  }
+}
+
+async function commitSdrMatchBoundary(value) {
+  const match = state.editDocument?.sdr_match;
+  if (!match?.active) return false;
+  match.manual_highlight_boundary_ratio = value;
+  const applied = await queueEditCommand("set_sdr_match", {
+    match_state: JSON.parse(JSON.stringify(match)),
+    global_adjustments: JSON.parse(JSON.stringify(state.adjustments)),
+    local_adjustments: JSON.parse(JSON.stringify(state.editDocument.local_adjustments || [])),
+    authored_sdr_override_consent: true,
+  });
+  if (applied) renderLaneChrome();
+  return applied;
+}
+
+function queueEditCommand(commandType, payload = {}, targetId = null, { refreshPreview = true, globalEditGeneration = null, historyGroup = null } = {}) {
   if (commandType !== "set_global_adjustments" && state.globalEditDirty) {
-    return syncGlobalEditState().then(() => queueEditCommand(commandType, payload, targetId, { refreshPreview, globalEditGeneration }));
+    return syncGlobalEditState().then(() => queueEditCommand(commandType, payload, targetId, { refreshPreview, globalEditGeneration, historyGroup }));
   }
   state.editCommandQueue = (state.editCommandQueue || Promise.resolve()).then(async () => {
     if (!state.session) return false;
     const response = await fetch(`/api/session/${state.session.session_id}/edit-commands`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ commands: [{ expected_revision: state.editRevision, command_type: commandType, target_id: targetId, payload }] }),
+      body: JSON.stringify({ commands: [{ expected_revision: state.editRevision, command_type: commandType, target_id: targetId, history_group: historyGroup, payload }] }),
     });
     const result = await safeJson(response);
     if (response.status === 409) {
@@ -11559,6 +11812,23 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
       clearInteractiveStraightenPreview();
     }
     renderLocalAdjustments();
+    if (commandType === "undo" || commandType === "redo") {
+      // History responses replace the complete serialized edit document. Keep
+      // the visible controls in the same transaction as the state and preview;
+      // otherwise the pixels move while sliders retain their pre-history values.
+      loadDenoiseDocument(state.editDocument);
+      if (!localAdjustments().some((local) => local.id === state.selectedLocalId)) {
+        state.selectedLocalId = localAdjustments()[0]?.id || null;
+        renderLocalAdjustments();
+      }
+      els.hdrReferenceWhite.value = String(projectReferenceWhiteNits());
+      renderLaneChrome();
+      syncCurveControlsFromState();
+      drawCurveEditor();
+      drawToneEqualizerEditor(state.currentView);
+      renderOverlayPresetNote();
+      renderExportPreflight();
+    }
     if (refreshPreview) {
       invalidatePreview("hdr", { local: true });
       invalidatePreview("sdr", { local: true });
@@ -11585,11 +11855,23 @@ async function syncGlobalEditState() {
   }
   state.globalEditDirty = false;
   const generation = state.globalEditGeneration;
+  const historyGroup = state.globalEditHistoryGroup;
   const adjustments = JSON.parse(JSON.stringify(state.adjustments));
-  const pending = queueEditCommand("set_global_adjustments", { adjustments }, null, { globalEditGeneration: generation });
+  const matchOverride = state.sdrMatchGrainOverridePending;
+  const commandType = matchOverride ? "set_sdr_match" : "set_global_adjustments";
+  const payload = matchOverride
+    ? {
+        match_state: JSON.parse(JSON.stringify(state.editDocument.sdr_match)),
+        global_adjustments: adjustments,
+        local_adjustments: JSON.parse(JSON.stringify(state.editDocument.local_adjustments || [])),
+        authored_sdr_override_consent: true,
+      }
+    : { adjustments };
+  const pending = queueEditCommand(commandType, payload, null, { globalEditGeneration: generation, historyGroup });
   state.globalEditSyncPending = pending;
   const applied = await pending;
   if (state.globalEditSyncPending === pending) state.globalEditSyncPending = null;
+  if (applied && matchOverride) state.sdrMatchGrainOverridePending = false;
   if (!applied) state.globalEditDirty = true;
   if (!applied) return false;
   return state.globalEditDirty || state.globalEditSyncPending ? syncGlobalEditState() : true;
@@ -11605,6 +11887,7 @@ async function refreshEditState({ preserveLocalDraft = false } = {}) {
   if (!response.ok) return;
   state.editRevision = result.revision;
   state.editDocument = result.document;
+  state.sdrMatchGrainOverridePending = false;
   loadDenoiseDocument(state.editDocument);
   if (optimisticLocals) state.editDocument.local_adjustments = optimisticLocals;
   state.documentDirty = Boolean(result.dirty);
@@ -13714,7 +13997,8 @@ async function openProjectFromPath(desktopSelection = null) {
     state.projectOpenController = controller;
     let projectActivated = false;
     els.projectOpen.disabled = true;
-    setIndeterminatePreviewMessage(`Opening project · ${selection.path?.split(/[\\/]/).pop() || "loading source"}`);
+    const statusTimer = beginProjectOpenStatus(selection.path?.split(/[\\/]/).pop() || "loading source");
+    await new Promise((resolve) => window.requestAnimationFrame(resolve));
     try {
       let response = await fetch("/api/desktop/project/open", {
         method: "POST",
@@ -13725,7 +14009,7 @@ async function openProjectFromPath(desktopSelection = null) {
       if (!response || openGeneration !== state.projectOpenGeneration) return;
       let payload = await safeJson(response);
       if (openGeneration !== state.projectOpenGeneration) return;
-      if (!response.ok) {
+      if (!response.ok && projectOpenNeedsSourceRelink(payload)) {
         const source = await desktop.relinkSource();
         if (!source || openGeneration !== state.projectOpenGeneration) return;
         response = await fetch("/api/desktop/project/open", {
@@ -13747,6 +14031,7 @@ async function openProjectFromPath(desktopSelection = null) {
       return;
     } finally {
       if (openGeneration === state.projectOpenGeneration) {
+        window.clearInterval(statusTimer);
         els.projectOpen.disabled = false;
         if (!projectActivated) hidePreviewMessage();
       }
@@ -13754,43 +14039,35 @@ async function openProjectFromPath(desktopSelection = null) {
   }
   const path = window.prompt("Path to a .hdrfinisher project", state.projectPath || "");
   if (!path) return;
+  const statusTimer = beginProjectOpenStatus(path.split(/[\\/]/).pop() || "loading source");
+  await new Promise((resolve) => window.requestAnimationFrame(resolve));
   let sourcePath = null;
-  let response = await fetch("/api/project/open", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path }),
-  });
-  if (!response.ok) {
-    sourcePath = window.prompt("The saved source is unavailable or changed. Select the matching original source path.", "");
-    if (!sourcePath) return;
-    response = await fetch("/api/project/open", {
+  try {
+    let response = await fetch("/api/project/open", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path, source_path: sourcePath }),
+      body: JSON.stringify({ path }),
     });
+    let payload = await safeJson(response);
+    if (!response.ok && projectOpenNeedsSourceRelink(payload)) {
+      sourcePath = window.prompt("The saved source is unavailable or changed. Select the matching original source path.", "");
+      if (!sourcePath) return;
+      response = await fetch("/api/project/open", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, source_path: sourcePath }),
+      });
+      payload = await safeJson(response);
+    }
+    if (!response.ok || !payload?.session) {
+      window.alert(responseErrorMessage(payload, "The project could not be opened."));
+      return;
+    }
+    await activateDesktopSession(payload.session, path);
+  } finally {
+    window.clearInterval(statusTimer);
+    hidePreviewMessage();
   }
-  const payload = await safeJson(response);
-  if (!response.ok || !payload?.session) {
-    window.alert(responseErrorMessage(payload, "The project could not be opened."));
-    return;
-  }
-  state.session = payload.session;
-  state.adjustments = payload.session.adjustments;
-  state.editDocument = payload.session.edit_document;
-  loadDenoiseDocument(state.editDocument);
-  state.editRevision = payload.session.edit_revision || 0;
-  state.documentDirty = Boolean(payload.session.dirty);
-  state.selectedLocalId = state.editDocument.local_adjustments[0]?.id || null;
-  state.projectPath = path;
-  state.currentView = "hdr";
-  clearPreviewCache();
-  state.gpuPreview?.resetSession(payload.session.session_id);
-  activateWorkflowTab("grade", { focus: false });
-  renderSession();
-  renderLocalAdjustments();
-  await refreshPreview();
-  await refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
-  if (previewNeedsRefinement()) debouncePreview("hdr");
 }
 
 async function saveProjectToPath({ saveAs = false } = {}) {

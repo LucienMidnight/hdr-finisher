@@ -39,6 +39,10 @@ The HDR global order relevant to this module is:
 
 Peak Fit predicts the measured source peak after the preceding Tone controls. Later stages can raise the finished waveform above Target Peak; users must recheck the final scope after changing them.
 
+[HDR-to-SDR Match](sdr-match.md) does not replace or bypass Peak Fit or Soft Ceiling. Highlight Compression remains an early creative operation inside the captured HDR grade; the Match knee runs later against the fully rendered, already-compressed HDR result, so the two shoulders intentionally stack: Peak Fit shapes HDR highlight relationships first, and Match compresses only the remaining HDR headroom into SDR.
+
+The automatic Match percentile is measured after Highlight Compression and the rest of the captured HDR recipe. Peak Fit can therefore lower that percentile, move the automatic Match knee upward, and produce a gentler SDR shoulder; users should expect the Peak Fit-shaped relationships to remain, with additional compression only where highlights still extend beyond the Match boundary.
+
 ## Measurement signals
 
 Highlight Color selects both the compression signal and the color trajectory. This is essential: channel grouping must happen before shoulder qualification, not only after a luminance curve has already decided whether to run.

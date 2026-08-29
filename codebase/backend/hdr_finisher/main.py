@@ -61,6 +61,7 @@ from .models import (
     ProjectSaveRequest,
     ScopeMode,
     ScopeMaxNits,
+    SdrMatchActionRequest,
     SessionSummary,
     SourceInterpretationOverride,
 )
@@ -69,7 +70,7 @@ from .preview import encode_processed_preview_bytes, encode_processed_rgba8
 from .render_cache import StaleRender, encode_rgba_proxy
 from .display_probe import probe_displays
 from .proofing import EvidenceStore, ProofArtifactStore
-from .projects import ProjectError, open_project, save_project
+from .projects import ProjectError, ProjectSourceRelinkRequired, open_project, save_project
 from .resource_preflight import (
     FULL_PREVIEW_BASELINE_DIMENSION,
     detect_memory_resources,
@@ -325,6 +326,11 @@ def open_desktop_project(request: DesktopProjectOpenRequest) -> SessionSummary:
             if request.source_grant else None
         )
         session = open_project(store, project_path, source_path)
+    except ProjectSourceRelinkRequired as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "source_relink_required", "message": str(exc)},
+        ) from exc
     except (ValueError, ProjectError, LoaderError, OSError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return SessionSummary(session=session.to_payload())
@@ -432,6 +438,23 @@ def post_edit_commands(session_id: str, batch: EditCommandBatch) -> EditStateRes
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.post("/api/session/{session_id}/sdr-match", response_model=EditStateResponse)
+def post_sdr_match(session_id: str, request: SdrMatchActionRequest) -> EditStateResponse:
+    try:
+        return store.apply_sdr_match_action(
+            session_id,
+            expected_revision=request.expected_revision,
+            action=request.action,
+            authored_sdr_override_consent=request.authored_sdr_override_consent,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RevisionConflictError as exc:
+        raise _revision_conflict(exc) from exc
+    except (EditCommandError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/session/{session_id}/project/save", response_model=ProjectResponse)
 def save_project_file(session_id: str, request: ProjectSaveRequest) -> ProjectResponse:
     try:
@@ -455,6 +478,11 @@ def open_project_file(request: ProjectOpenRequest) -> SessionSummary:
             Path(request.path),
             Path(request.source_path) if request.source_path else None,
         )
+    except ProjectSourceRelinkRequired as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "source_relink_required", "message": str(exc)},
+        ) from exc
     except (ProjectError, LoaderError, OSError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return SessionSummary(session=session.to_payload())
@@ -490,6 +518,7 @@ def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
                 if request.local_adjustments is not None
                 else session.local_adjustments
             ) if request.include_locals else [],
+            sdr_match=session.sdr_match,
         )
         body, media_type = encode_processed_preview_bytes(
             processed,
@@ -543,6 +572,7 @@ def preview_raw(session_id: str, kind: PreviewKind, request: PreviewRequest) -> 
                 if request.local_adjustments is not None
                 else session.local_adjustments
             ) if request.include_locals else [],
+            sdr_match=session.sdr_match,
         )
         body = encode_processed_rgba8(processed, kind)
     except StaleRender:
@@ -588,6 +618,7 @@ def overlay(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
                 if request.local_adjustments is not None
                 else session.local_adjustments
             ) if request.include_locals else [],
+            sdr_match=session.sdr_match,
         )
         body, media_type = encode_processed_overlay_bytes(processed, adjustments, kind, session.color_context)
     except RuntimeError as exc:
@@ -624,6 +655,7 @@ def scopes(
         int(max_nits.value),
         local_adjustments=session.local_adjustments,
         channel_names=("R", "G", "B") if channels == "rgb" else (("Y",) if channels == "luma" else None),
+        sdr_match=session.sdr_match,
     )
 
 
@@ -668,6 +700,7 @@ def scopes_for_adjustments(
                 request.scope_region.width,
                 request.scope_region.height,
             ) if request.scope_region is not None else None,
+            sdr_match=session.sdr_match,
         )
     except StaleRender:
         return JSONResponse(status_code=409, content={"detail": "Stale scope request dropped."})

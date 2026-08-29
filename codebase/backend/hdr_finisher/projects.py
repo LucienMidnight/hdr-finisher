@@ -19,6 +19,12 @@ class ProjectError(ValueError):
     pass
 
 
+class ProjectSourceRelinkRequired(ProjectError):
+    """The project is valid, but its original source must be selected again."""
+
+    pass
+
+
 def save_project(session: LoadedSession, path: Path, source_path: Path | None = None) -> ProjectResponse:
     destination = _project_path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -70,11 +76,11 @@ def open_project(store: SessionStore, path: Path, source_path: Path | None = Non
                 raise ProjectError("The project container is missing required entries.")
             manifest = json.loads(archive.read(PROJECT_MANIFEST_NAME))
             schema_version = manifest.get("schema_version")
-            if schema_version in {1, 2}:
+            if schema_version in {1, 2, 3}:
                 raise ProjectError(
-                    f"Unsupported prototype project schema v{schema_version}. Migration is not supported; create a new v3 project."
+                    f"Unsupported project schema v{schema_version}. Migration is not supported; create a new v4 project."
                 )
-            if schema_version != 3:
+            if schema_version != 4:
                 raise ProjectError(f"Unsupported HDR Finisher project schema {schema_version!r}.")
             if manifest.get("contains_source_pixels") is not False:
                 raise ProjectError("Invalid project manifest.")
@@ -86,11 +92,11 @@ def open_project(store: SessionStore, path: Path, source_path: Path | None = Non
     if candidate is None and document.source.durable_path:
         candidate = Path(document.source.durable_path)
     if candidate is None or not candidate.expanduser().is_file():
-        raise ProjectError("The project source is missing. Select the original source to relink it.")
+        raise ProjectSourceRelinkRequired("The project source is missing. Select the original source to relink it.")
     resolved_source = candidate.expanduser().resolve()
     fingerprint = _sha256_file(resolved_source)
     if document.source.fingerprint_sha256 and fingerprint != document.source.fingerprint_sha256:
-        raise ProjectError("The selected source fingerprint does not match this project.")
+        raise ProjectSourceRelinkRequired("The selected source fingerprint does not match this project.")
 
     payload = store.create_session(
         resolved_source,
@@ -109,6 +115,7 @@ def open_project(store: SessionStore, path: Path, source_path: Path | None = Non
     session.adjustments = document.global_adjustments
     session.local_adjustments = document.local_adjustments
     session.denoise = document.denoise
+    session.sdr_match = document.sdr_match
     session.interpretation_override = document.interpretation_override
     session.hdr_reference_white_nits = document.hdr_reference_white_nits
     session.color_context = session.color_context.__class__(document.hdr_reference_white_nits)

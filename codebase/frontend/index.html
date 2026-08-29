@@ -692,6 +692,14 @@
                 <div class="control-row instrument-slider-control"><div class="control-heading"><label>Saturation</label><output data-local-grade-output="saturation">0</output></div><input data-local-grade="saturation" type="range" min="-1" max="3" step="0.02" value="0"></div>
                 <div class="control-row instrument-slider-control"><div class="control-heading"><label>Vibrance</label><output data-local-grade-output="vibrance">0</output></div><input data-local-grade="vibrance" type="range" min="-1" max="3" step="0.02" value="0"></div>
               </section>
+              <section class="local-grade-section" data-local-grade-section="detail" aria-labelledby="local-detail-heading">
+                <div class="local-mask-subpanel-heading"><strong id="local-detail-heading">Detail · Local</strong><span>Runs last in this grade</span></div>
+                <div class="control-row instrument-slider-control"><div class="control-heading"><label>Texture</label><output data-local-grade-output="detail.texture_amount">0</output></div><input data-local-grade="detail.texture_amount" type="range" min="-100" max="100" step="1" value="0"></div>
+                <div class="control-row instrument-slider-control"><div class="control-heading"><label>Clarity</label><output data-local-grade-output="detail.clarity_amount">0</output></div><input data-local-grade="detail.clarity_amount" type="range" min="-100" max="100" step="1" value="0"></div>
+                <div class="control-row instrument-slider-control"><div class="control-heading"><label>Clarity Radius</label><output data-local-grade-output="detail.clarity_radius_percent">0.75%</output></div><input data-local-grade="detail.clarity_radius_percent" type="range" min="0.2" max="3" step="0.05" value="0.75"></div>
+                <div class="control-row instrument-slider-control"><div class="control-heading"><label>Sharpen</label><output data-local-grade-output="detail.sharpen_amount">0</output></div><input data-local-grade="detail.sharpen_amount" type="range" min="0" max="200" step="1" value="0"></div>
+                <div class="control-pair"><div class="control-row instrument-slider-control"><div class="control-heading"><label>Radius</label><output data-local-grade-output="detail.sharpen_radius_px">0.80 px</output></div><input data-local-grade="detail.sharpen_radius_px" type="range" min="0.3" max="3" step="0.05" value="0.8"></div><div class="control-row instrument-slider-control"><div class="control-heading"><label>Threshold</label><output data-local-grade-output="detail.sharpen_threshold">10</output></div><input data-local-grade="detail.sharpen_threshold" type="range" min="0" max="100" step="1" value="10"></div></div>
+              </section>
             </div>
             <div class="control-row instrument-slider-control local-adjustment-opacity">
               <div class="control-heading"><label for="local-opacity">Adjustment opacity</label><output id="local-opacity-value">100%</output></div>
@@ -754,6 +762,18 @@
           <span id="sdr-controls-label">SDR Controls</span><span class="modified-indicator" aria-hidden="true"></span>
           <span id="sdr-controls-tooltip" class="title-tooltip lane-title-tooltip" role="tooltip">Independent fallback baked into the gain map. This is what viewers without HDR gain-map support will see. Double-click any value to type it.</span>
         </button>
+      </div>
+
+      <div id="sdr-match-entire-actions" class="sdr-match-entire-actions hidden" aria-live="polite">
+        <button id="sdr-match-entire" class="button-primary" type="button">Match entire HDR grade</button>
+        <button id="sdr-match-revert" class="text-button hidden" type="button">Revert match</button>
+        <span id="sdr-match-entire-status" class="helper"></span>
+        <div id="sdr-match-boundary-row" class="sdr-match-boundary-row hidden">
+          <label for="sdr-match-boundary">Highlight boundary</label>
+          <input id="sdr-match-boundary" type="range" min="0.5" max="0.95" step="0.01" value="0.9">
+          <output id="sdr-match-boundary-value">Auto</output>
+          <button id="sdr-match-boundary-auto" class="text-button" type="button">Auto</button>
+        </div>
       </div>
 
       <div class="lane-panel" data-lane-panel="hdr">
@@ -1173,6 +1193,29 @@
             <fieldset class="grading-wheel" data-wheel="highlights"><legend>Highlights</legend><div class="color-wheel-pad" tabindex="0" role="slider" aria-label="Highlight hue and saturation"><span class="color-wheel-puck"></span></div><div class="wheel-fields"><label>Hue <input type="number" min="0" max="360" step="1" value="0" data-path="current.color_grading.highlights.hue"></label><label>Saturation <input type="number" min="0" max="100" step="1" value="0" data-path="current.color_grading.highlights.saturation"></label></div><div class="control-row"><div class="control-heading"><label>Luminance</label><output data-value-path="current.color_grading.highlights.luminance_ev">0.00 EV</output></div><input type="range" min="-1" max="1" step="0.01" value="0" data-path="current.color_grading.highlights.luminance_ev"></div></fieldset>
           </div>
           <div class="control-pair"><div class="control-row" data-control-path="current.color_grading.blending"><div class="control-heading"><label>Blending</label><output data-value-path="current.color_grading.blending">50%</output></div><input type="range" min="0" max="100" step="1" value="50" data-path="current.color_grading.blending"></div><div class="control-row" data-control-path="current.color_grading.balance"><div class="control-heading"><label>Balance</label><output data-value-path="current.color_grading.balance">0</output></div><input type="range" min="-100" max="100" step="1" value="0" data-path="current.color_grading.balance"></div></div>
+        </div>
+      </section>
+
+      <section class="control-group collapsed detail-group" data-group="detail">
+        <div class="control-group-header">
+          <button class="group-toggle" type="button" aria-expanded="false">Detail</button>
+          <button class="section-bypass text-button" type="button" data-section-path="current.detail_section_enabled" aria-pressed="true" aria-label="Toggle Detail preview">&#9673;</button>
+          <button class="group-reset text-button" type="button" data-reset-group="detail">Reset</button>
+        </div>
+        <div class="control-group-body">
+          <div id="detail-sdr-actions" class="film-look-actions hidden"><button id="detail-match-hdr" class="button-secondary" type="button">Match HDR detail</button><span>Copies once; SDR remains independent.</span></div>
+          <p class="helper">Corrective, scale-selective detail. Unlike Film Look Microcontrast, these controls select fine texture, mid-scale clarity, and qualified edges independently.</p>
+          <div class="control-row" data-control-path="current.detail.texture_amount"><div class="control-heading"><label for="detail-texture">Texture</label><output data-value-path="current.detail.texture_amount">0</output></div><input id="detail-texture" type="range" min="-100" max="100" step="1" value="0" data-path="current.detail.texture_amount"></div>
+          <div class="control-row" data-control-path="current.detail.clarity_amount"><div class="control-heading"><label for="detail-clarity">Clarity</label><output data-value-path="current.detail.clarity_amount">0</output></div><input id="detail-clarity" type="range" min="-100" max="100" step="1" value="0" data-path="current.detail.clarity_amount"></div>
+          <div class="control-row" data-control-path="current.detail.clarity_radius_percent"><div class="control-heading"><label for="detail-clarity-radius">Clarity Radius</label><output data-value-path="current.detail.clarity_radius_percent">0.75%</output></div><input id="detail-clarity-radius" type="range" min="0.2" max="3" step="0.05" value="0.75" data-path="current.detail.clarity_radius_percent"></div>
+          <div class="slider-group-tile" data-slider-relationship="targeting">
+            <div class="control-row slider-group-parent" data-control-path="current.detail.sharpen_amount"><div class="control-heading"><label for="detail-sharpen">Sharpen</label><output data-value-path="current.detail.sharpen_amount">0</output></div><input id="detail-sharpen" type="range" min="0" max="200" step="1" value="0" data-path="current.detail.sharpen_amount"></div>
+            <div class="slider-group-relationship">Targeting</div>
+            <div class="control-pair zone-targeting compact-subrails" tabindex="0">
+              <div class="control-row compact-subrail" data-control-path="current.detail.sharpen_radius_px"><div class="control-heading"><label for="detail-sharpen-radius">Radius</label><output data-value-path="current.detail.sharpen_radius_px">0.80 px</output></div><input id="detail-sharpen-radius" type="range" min="0.3" max="3" step="0.05" value="0.8" data-path="current.detail.sharpen_radius_px"></div>
+              <div class="control-row compact-subrail" data-control-path="current.detail.sharpen_threshold"><div class="control-heading"><label for="detail-sharpen-threshold">Threshold</label><output data-value-path="current.detail.sharpen_threshold">10</output></div><input id="detail-sharpen-threshold" type="range" min="0" max="100" step="1" value="10" data-path="current.detail.sharpen_threshold"></div>
+            </div>
+          </div>
         </div>
       </section>
 

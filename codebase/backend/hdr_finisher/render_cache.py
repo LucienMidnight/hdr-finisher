@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 import numpy as np
 
-from .adjustments import apply_adjustments
+from .adjustments import apply_adjustments, render_matched_sdr_base
 from .color_context import RenderColorContext
 from .finishing import apply_geometry, geometry_coordinate_map
 from .local_adjustments import (
@@ -17,7 +17,7 @@ from .local_adjustments import (
     sample_luminance_evs,
     spatial_mask_signature,
 )
-from .models import AdjustmentState, LocalAdjustment, MaskExpression, MaskPoint, PreviewKind
+from .models import AdjustmentState, LocalAdjustment, MaskExpression, MaskPoint, PreviewKind, SdrMatchState
 from .preview import downsample_image
 
 
@@ -70,6 +70,7 @@ class SessionRenderCache:
     _source_proxies: OrderedDict[int, np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
     _sdr_proxies: OrderedDict[int, np.ndarray | None] = field(default_factory=OrderedDict, init=False, repr=False)
     _frames: OrderedDict[tuple[str, int, str], np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
+    _matched_sdr_bases: OrderedDict[tuple[int, str], np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
     _scopes: OrderedDict[tuple[object, ...], Any] = field(default_factory=OrderedDict, init=False, repr=False)
     _masks: OrderedDict[tuple[int, str, str, str], np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
     _geometry_maps: OrderedDict[tuple[int, str], tuple[tuple[float, ...], tuple[float, ...], int, int]] = field(default_factory=OrderedDict, init=False, repr=False)
@@ -86,6 +87,7 @@ class SessionRenderCache:
                 return
             self.color_context = context
             self._frames.clear()
+            self._matched_sdr_bases.clear()
             self._scopes.clear()
             self._cancel_inflight_locked()
 
@@ -96,6 +98,7 @@ class SessionRenderCache:
             self._source_proxies.clear()
             self._sdr_proxies.clear()
             self._frames.clear()
+            self._matched_sdr_bases.clear()
             self._scopes.clear()
             self._masks.clear()
             self._geometry_maps.clear()
@@ -218,9 +221,11 @@ class SessionRenderCache:
         is_current: Callable[[], bool] | None = None,
         local_adjustments: list[LocalAdjustment] | None = None,
         _record_diagnostics: bool = True,
+        sdr_match: SdrMatchState | None = None,
     ) -> np.ndarray:
         edge = max(256, int(long_edge))
-        signature = adjustment_signature(adjustments) + local_adjustment_signature(local_adjustments) + repr(self.color_context.cache_key)
+        match_signature = sdr_match.model_dump_json() if sdr_match is not None else "inactive"
+        signature = adjustment_signature(adjustments) + local_adjustment_signature(local_adjustments) + match_signature + repr(self.color_context.cache_key)
         key = (kind.value, edge, signature)
         flight_key = ("frame", *key)
         while True:
@@ -247,6 +252,40 @@ class SessionRenderCache:
 
         try:
             compiled_masks = self._compiled_masks(source, adjustments, local_adjustments, edge)
+            matched_sdr_base = None
+            if kind == PreviewKind.SDR and sdr_match is not None and sdr_match.active:
+                base_signature = json.dumps(
+                    {
+                        "hdr": sdr_match.captured_hdr_adjustments.model_dump(mode="json") if sdr_match.captured_hdr_adjustments else None,
+                        "shared": sdr_match.captured_shared_adjustments.model_dump(mode="json") if sdr_match.captured_shared_adjustments else None,
+                        "locals": [item.model_dump(mode="json") for item in sdr_match.captured_locals],
+                        "reference": sdr_match.captured_reference_white_nits,
+                        "automatic_boundary": sdr_match.automatic_highlight_boundary_ratio,
+                        "manual_boundary": sdr_match.manual_highlight_boundary_ratio,
+                        "geometry": adjustments.shared.geometry.model_dump(mode="json"),
+                    },
+                    separators=(",", ":"),
+                )
+                base_key = (edge, base_signature)
+                with self._lock:
+                    matched_sdr_base = self._matched_sdr_bases.get(base_key)
+                    if matched_sdr_base is not None:
+                        self._matched_sdr_bases.move_to_end(base_key)
+                if matched_sdr_base is None:
+                    matched_sdr_base = render_matched_sdr_base(
+                        source,
+                        adjustments,
+                        sdr_match,
+                        color_context=self.color_context,
+                        source_pixel_scale=min(1.0, edge / max(self.image.shape[:2])),
+                    )
+                    matched_sdr_base.setflags(write=False)
+                    with self._lock:
+                        self._matched_sdr_bases[base_key] = matched_sdr_base
+                        self._matched_sdr_bases.move_to_end(base_key)
+                        while len(self._matched_sdr_bases) > 2:
+                            self._matched_sdr_bases.popitem(last=False)
+                            self._evictions += 1
             processed = apply_adjustments(
                 source,
                 adjustments,
@@ -255,6 +294,9 @@ class SessionRenderCache:
                 local_adjustments=local_adjustments,
                 compiled_local_masks=compiled_masks,
                 color_context=self.color_context,
+                source_pixel_scale=min(1.0, edge / max(self.image.shape[:2])),
+                sdr_match=sdr_match,
+                matched_sdr_base=matched_sdr_base,
             )
             processed = downsample_image(processed, edge)
             if is_current is not None and not is_current():
@@ -285,10 +327,12 @@ class SessionRenderCache:
         local_adjustments: list[LocalAdjustment] | None = None,
         channel_names: tuple[str, ...] | None = None,
         scope_region: tuple[float, float, float, float] | None = None,
+        sdr_match: SdrMatchState | None = None,
     ) -> Any:
         """Return a cached, single-flight scope payload for the adjusted proxy."""
         edge = max(256, int(long_edge))
-        signature = adjustment_signature(adjustments) + local_adjustment_signature(local_adjustments) + repr(self.color_context.cache_key)
+        match_signature = sdr_match.model_dump_json() if sdr_match is not None else "inactive"
+        signature = adjustment_signature(adjustments) + local_adjustment_signature(local_adjustments) + match_signature + repr(self.color_context.cache_key)
         requested_channels = tuple(channel_names or ("R", "G", "B", "Y"))
         region_key = tuple(round(float(value), 6) for value in scope_region) if scope_region is not None else None
         key = (kind.value, edge, signature, mode, int(bins), int(columns), int(max_nits), requested_channels, region_key)
@@ -323,6 +367,7 @@ class SessionRenderCache:
                 is_current=is_current,
                 local_adjustments=local_adjustments,
                 _record_diagnostics=False,
+                sdr_match=sdr_match,
             )
             processed = scope_region_view(processed, region_key)
             result = build_scope_from_processed(
@@ -356,18 +401,21 @@ class SessionRenderCache:
             source_bytes = int(self.image.nbytes) + int(self.sdr_reference_image.nbytes if self.sdr_reference_image is not None else 0)
             proxy_bytes = self._proxy_bytes_locked()
             frame_bytes = sum(int(frame.nbytes) for frame in self._frames.values())
+            matched_base_bytes = sum(int(frame.nbytes) for frame in self._matched_sdr_bases.values())
             scope_bytes = sum(len(scope.model_dump_json().encode("utf-8")) for scope in self._scopes.values())
             mask_bytes = sum(int(mask.nbytes) for mask in self._masks.values())
             return {
                 "source_bytes": source_bytes,
                 "proxy_bytes": proxy_bytes,
                 "frame_bytes": frame_bytes,
+                "matched_sdr_base_bytes": matched_base_bytes,
+                "matched_sdr_base_entries": len(self._matched_sdr_bases),
                 "scope_bytes": scope_bytes,
                 "local_mask_bytes": mask_bytes,
                 "local_mask_entries": len(self._masks),
                 "local_mask_budget_bytes": 160 * 1024 * 1024 if any(key[0] > 1600 for key in self._masks) else 96 * 1024 * 1024,
-                "managed_bytes": source_bytes + proxy_bytes + frame_bytes + scope_bytes + mask_bytes,
-                "entries": len(self._source_proxies) + len(self._frames) + len(self._scopes) + len(self._masks),
+                "managed_bytes": source_bytes + proxy_bytes + frame_bytes + matched_base_bytes + scope_bytes + mask_bytes,
+                "entries": len(self._source_proxies) + len(self._frames) + len(self._matched_sdr_bases) + len(self._scopes) + len(self._masks),
                 "hits": self._hits,
                 "misses": self._misses,
                 "evictions": self._evictions,
@@ -450,7 +498,11 @@ class SessionRenderCache:
 
     def _evict_locked(self) -> None:
         def cached_bytes() -> int:
-            return self._proxy_bytes_locked() + sum(int(frame.nbytes) for frame in self._frames.values())
+            return (
+                self._proxy_bytes_locked()
+                + sum(int(frame.nbytes) for frame in self._frames.values())
+                + sum(int(frame.nbytes) for frame in self._matched_sdr_bases.values())
+            )
 
         while self._frames and (len(self._frames) > self.max_frames or cached_bytes() > self.max_cache_bytes):
             self._frames.popitem(last=False)

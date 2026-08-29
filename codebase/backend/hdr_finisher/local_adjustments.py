@@ -8,6 +8,7 @@ import numpy as np
 from .color import acescg_to_linear_srgb, linear_srgb_to_acescg
 from .finishing import apply_geometry
 from .models import GeometryAdjustments, LocalAdjustment, LocalGrade, MaskExpression, MaskLeaf, MaskPoint, PreviewKind
+from .detail import apply_detail, detail_is_neutral
 
 
 ACESCG_LUMA = np.array([0.2722287, 0.6740818, 0.0536895], dtype=np.float32)
@@ -34,6 +35,10 @@ def apply_local_stack(
 
     result = image.astype(np.float32, copy=True)
     height, width = result.shape[:2]
+    if any(not detail_is_neutral((item.hdr_grade if kind == PreviewKind.HDR else item.sdr_grade).detail) for item in active):
+        # Detail needs neighboring pixels. Processing the full frame preserves
+        # continuous halos across what would otherwise be local-stack tiles.
+        tile_size = max(height, width)
     runtime_masks = compiled_masks
     for local in active:
         if not _mask_needs_full_frame_evaluation(local.mask):
@@ -1055,4 +1060,5 @@ def _apply_local_grade(image: np.ndarray, grade: LocalGrade, kind: PreviewKind) 
         result = _apply_saturation_vibrance(result, grade.saturation, grade.vibrance)
     result = _apply_curve_set(result, grade, kind)
     result = _apply_color_grading(result, grade.color_grading, kind)
+    result = apply_detail(result, grade.detail, kind)
     return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)

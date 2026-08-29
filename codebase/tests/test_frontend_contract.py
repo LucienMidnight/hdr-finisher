@@ -130,7 +130,7 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert 'id="tone-equalizer-add"' in html
     assert 'id="tone-equalizer-remove"' in html
     assert 'id="tone-equalizer-radius"' in html
-    assert html.count("data-section-path=") == 14
+    assert html.count("data-section-path=") == 15
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
     assert "--bypass-icon-shape:" in css
     assert "--bypass-icon-visible: var(--accent)" in css
@@ -216,6 +216,19 @@ def test_default_shortcuts_are_conservative_and_warn_about_macos_system_bindings
     assert "is normally used by macOS" in app
     assert "if (!exact) return undefined;" in app
     assert "Only standard application commands are assigned by default." in html
+
+
+def test_undo_redo_repaint_controls_from_the_restored_document() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    queue = javascript[
+        javascript.index("function queueEditCommand("):
+        javascript.index("async function syncGlobalEditState()")
+    ]
+
+    assert 'commandType === "undo" || commandType === "redo"' in queue
+    assert "loadDenoiseDocument(state.editDocument)" in queue
+    assert "renderLaneChrome()" in queue
+    assert "drawCurveEditor()" in queue
 
 
 def test_rendition_descriptions_are_delayed_title_tooltips() -> None:
@@ -799,10 +812,13 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
 
 def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_bands() -> None:
     shader = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
-    # The packed parameter layout currently occupies indices 0..147. Keep the
+    # The packed parameter layout currently occupies indices 0..151. Keep the
     # contract aligned with the actual highest shader index so stale padding
     # does not masquerade as a pipeline-order regression.
-    assert "const PARAM_COUNT = 148" in shader
+    assert "const PARAM_COUNT = 156" in shader
+    assert "detailHorizontalFragmentMain" in shader
+    assert "detailVerticalFragmentMain" in shader
+    assert "detailCompositeFragmentMain" in shader
     assert "hdrPrimaries(toneEqualizer(sceneColor(hdrPeakFit(hdrSoftCeiling(hdrContrast(hdrBase(source)))))))" in shader
     assert "sdrReferenceColor(sdrContrast(toneEqualizer(highlightRecovery(rgb))))" in shader
     assert "toneMap(sceneColor(rgb))" in shader
@@ -921,7 +937,7 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     assert "mapped -= p[83] * p[79]" not in shader
     assert "if (p[108] < 1.0)" in shader
     assert "if (p[100] > 0.5 && p[108] < 1.0)" not in shader
-    assert "ensureIntermediate(canvas, proxy.width, proxy.height, spatialActive)" in shader
+    assert "ensureIntermediate(canvas, proxy.width, proxy.height, spatialActive, detailActive)" in shader
     assert "spatialATexture: spatialActive ? createSpatialTexture() : null" in shader
     assert "current?.width === width && current?.height === height && current.spatialActive === spatialActive" not in shader
     assert "if (spatialActive && (!current.spatialATexture || !current.spatialBTexture))" in shader
@@ -1011,9 +1027,9 @@ def test_electron_preview_correctness_contract() -> None:
     assert 'const nativeOverwriteApproved = process.platform === "win32" || process.platform === "darwin"' in main
     assert "Boolean(nativeOverwrite)" in javascript
     assert 'id="rotate-apply"' in html and 'id="rotate-cancel"' in html
-    assert "function gpuPreviewEligible()" in javascript
+    assert "function gpuPreviewEligible(lane = state.currentView)" in javascript
     gpu_eligibility = javascript[
-        javascript.index("function gpuPreviewEligible()"):
+        javascript.index("function gpuPreviewEligible(lane = state.currentView)"):
         javascript.index("function acceptPresentation")
     ]
     assert "defaultGeometry" not in gpu_eligibility
@@ -1439,6 +1455,21 @@ def test_waveform_detail_profiles_raise_default_quality_with_performance_fallbac
     assert "2: { weights: [1, 4, 6, 4, 1], total: 16 }" in javascript
     assert "3: { weights: [1, 6, 15, 20, 15, 6, 1], total: 64 }" in javascript
     assert "1 - Math.exp(-densityGain * Math.pow(density, 0.72))" in javascript
+
+
+def test_detail_uses_numbered_module_header_and_sharpen_targeting_hierarchy() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+
+    assert '>Detail <span id="detail-state">Default</span>' not in html
+    assert '>Detail</button>' in html
+    assert '.control-group[data-group="detail"] > .control-group-header::before { content: "12"; }' in css
+    assert '.control-group[data-group="film-look"] > .control-group-header::before { content: "13"; }' in css
+    assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "14"; }' in css
+    assert 'data-control-path="current.detail.sharpen_amount"' in html
+    assert '<div class="slider-group-relationship">Targeting</div>' in html
+    assert 'class="control-row compact-subrail" data-control-path="current.detail.sharpen_radius_px"' in html
+    assert 'class="control-row compact-subrail" data-control-path="current.detail.sharpen_threshold"' in html
 
 
 def test_vectorscope_uses_display_signal_targets_in_cpu_and_gpu_paths() -> None:

@@ -30,7 +30,7 @@ file bytes
 | Chromatic adaptation | CAT02 in colour-science RGB conversions |
 | Negative final values | Clipped/sanitized to zero |
 
-`0.18` is the project-linear reference point. Its absolute placement is selected per v3 project and is used consistently in PQ conversion, scopes, absolute grading controls, proofing, and exporters.
+`0.18` is the project-linear reference point. Its absolute placement is selected per v4 project and is used consistently in PQ conversion, scopes, absolute grading controls, proofing, and exporters.
 
 ```text
 reference nits = linear ACEScg-relative value / 0.18 * project_reference_white_nits

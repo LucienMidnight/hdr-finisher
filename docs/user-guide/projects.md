@@ -1,6 +1,8 @@
 # Projects and Compatibility
 
-New projects use edit-document schema v3 and default to a 203-nit HDR Reference White. A project stores its selected reference white, source-luminance description, and independent false-color band-anchor and ceiling settings.
+New projects use edit-document schema v4 and default to a 203-nit HDR Reference White. A project stores its selected reference white, source-luminance description, independent false-color band-anchor and ceiling settings, neutral Detail controls, and inactive SDR Match state.
+
+Schemas v1 through v3 are rejected. Project migration is not supported; create a new v4 project from the original source.
 
 This pre-release change intentionally rejects prototype schema v1 and v2 projects. There is no migration, legacy fallback, or compatibility mode: create a new project and re-import the source. The error identifies the unsupported schema instead of silently reinterpreting old pixels.
 

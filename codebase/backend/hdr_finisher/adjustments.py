@@ -5,7 +5,8 @@ import numpy as np
 from .color import acescg_to_linear_srgb, linear_srgb_to_acescg, rgb_primaries_adjustment_matrix
 from .color_context import RenderColorContext, nits_to_scene_linear, scene_linear_to_nits
 from .finishing import apply_geometry
-from .models import AdjustmentState, LocalAdjustment, PreviewKind, ToneMapper
+from .models import AdjustmentState, LocalAdjustment, LocalGrade, PreviewKind, SdrMatchState, ToneMapper
+from .detail import apply_detail
 
 
 TONE_EQUALIZER_MIN_EV = -6
@@ -49,8 +50,22 @@ def apply_adjustments(
     local_adjustments: list[LocalAdjustment] | None = None,
     compiled_local_masks: dict[str, np.ndarray] | None = None,
     color_context: RenderColorContext | None = None,
+    source_pixel_scale: float = 1.0,
+    sdr_match: SdrMatchState | None = None,
+    matched_sdr_base: np.ndarray | None = None,
 ) -> np.ndarray:
     color_context = color_context or RenderColorContext()
+    if kind == PreviewKind.SDR and sdr_match is not None and sdr_match.active:
+        return _apply_matched_sdr(
+            image,
+            adjustments,
+            sdr_match,
+            include_grain=include_grain,
+            local_adjustments=local_adjustments,
+            color_context=color_context,
+            source_pixel_scale=source_pixel_scale,
+            matched_sdr_base=matched_sdr_base,
+        )
     geometry = adjustments.shared.geometry
     fixed_source = apply_geometry(image, geometry)
     if local_adjustments and compiled_local_masks is None:
@@ -70,6 +85,7 @@ def apply_adjustments(
             fixed_source=fixed_source,
             compiled_local_masks=compiled_local_masks,
             color_context=color_context,
+            source_pixel_scale=source_pixel_scale,
         )
     if sdr_reference_image is not None:
         reference = apply_geometry(sdr_reference_image, geometry)
@@ -80,6 +96,7 @@ def apply_adjustments(
             local_adjustments=local_adjustments,
             fixed_source=fixed_source,
             compiled_local_masks=compiled_local_masks,
+            source_pixel_scale=source_pixel_scale,
         )
     return _apply_sdr_adjustments(
         fixed_source,
@@ -88,7 +105,111 @@ def apply_adjustments(
         local_adjustments=local_adjustments,
         fixed_source=fixed_source,
         compiled_local_masks=compiled_local_masks,
+        source_pixel_scale=source_pixel_scale,
     )
+
+
+def _apply_matched_sdr(
+    image: np.ndarray,
+    adjustments: AdjustmentState,
+    match: SdrMatchState,
+    *,
+    include_grain: bool,
+    local_adjustments: list[LocalAdjustment] | None,
+    color_context: RenderColorContext,
+    source_pixel_scale: float,
+    matched_sdr_base: np.ndarray | None = None,
+) -> np.ndarray:
+    """Render the captured HDR recipe, map its remaining headroom, then apply SDR trims."""
+    base = matched_sdr_base
+    if base is None:
+        base = render_matched_sdr_base(
+            image,
+            adjustments,
+            match,
+            color_context=color_context,
+            source_pixel_scale=source_pixel_scale,
+        )
+    fixed_source = apply_geometry(image, adjustments.shared.geometry)
+    result = _apply_sdr_adjustments_to_reference(
+        base,
+        adjustments,
+        include_grain=False,
+        local_adjustments=local_adjustments,
+        fixed_source=fixed_source,
+        compiled_local_masks=None,
+        source_pixel_scale=source_pixel_scale,
+    )
+    if not include_grain:
+        return np.clip(result, 0.0, 1.0)
+    return apply_matched_final_grain(result, adjustments, match)
+
+
+def render_matched_sdr_base(
+    image: np.ndarray,
+    adjustments: AdjustmentState,
+    match: SdrMatchState,
+    *,
+    color_context: RenderColorContext,
+    source_pixel_scale: float,
+) -> np.ndarray:
+    """Render only the captured HDR snapshot and its HDR-to-SDR shoulder."""
+    assert match.captured_hdr_adjustments is not None
+    assert match.captured_shared_adjustments is not None
+    captured = adjustments.model_copy(deep=True)
+    captured.hdr = match.captured_hdr_adjustments.model_copy(deep=True)
+    captured.shared = match.captured_shared_adjustments.model_copy(deep=True)
+    # Shared geometry intentionally stays live after the snapshot.
+    captured.shared.geometry = adjustments.shared.geometry.model_copy(deep=True)
+    captured_locals = [
+        LocalAdjustment(
+            id=item.id,
+            name=item.name,
+            enabled=item.enabled,
+            opacity=item.opacity,
+            mask=item.mask,
+            hdr_grade=item.hdr_grade,
+            sdr_grade=LocalGrade(),
+        )
+        for item in match.captured_locals
+    ]
+    hdr_result = apply_adjustments(
+        image,
+        captured,
+        PreviewKind.HDR,
+        include_grain=False,
+        local_adjustments=captured_locals,
+        color_context=RenderColorContext(match.captured_reference_white_nits or color_context.hdr_reference_white_nits),
+        source_pixel_scale=source_pixel_scale,
+        sdr_match=None,
+    )
+    luma = np.maximum(_acescg_luma(hdr_result), 1e-8)
+    normalized = luma / np.float32(0.18)
+    knee = np.float32(match.manual_highlight_boundary_ratio or match.automatic_highlight_boundary_ratio or 0.9)
+    mapped = np.where(
+        normalized <= knee,
+        normalized,
+        np.float32(1.0) - (np.float32(1.0) - knee)
+        * np.exp(-(normalized - knee) / max(np.float32(1.0) - knee, np.float32(1e-6))),
+    )
+    # The match curve is expressed relative to HDR diffuse white, while the
+    # established SDR reference pipeline represents that same 100-nit anchor
+    # at 100/203 display-linear. Without this scale, reference white becomes
+    # code value 1.0 and the matched rendition is about a stop too hot.
+    mapped_acescg = hdr_result * (mapped * SDR_DISPLAY_REFERENCE_WHITE / luma)[..., None]
+    return _compress_to_srgb_gamut(acescg_to_linear_srgb(mapped_acescg))
+
+
+def apply_matched_final_grain(
+    image: np.ndarray, adjustments: AdjustmentState, match: SdrMatchState
+) -> np.ndarray:
+    if match.grain_source == "captured_hdr" and match.captured_hdr_adjustments and match.captured_shared_adjustments:
+        grain_adjustments = adjustments.model_copy(deep=True)
+        grain_adjustments.sdr.film_look = match.captured_hdr_adjustments.film_look.model_copy(deep=True)
+        grain_adjustments.sdr.film_look_section_enabled = match.captured_hdr_adjustments.film_look_section_enabled
+        grain_adjustments.shared.film_grain_seed = match.captured_shared_adjustments.film_grain_seed
+        return apply_final_grain(image, grain_adjustments, PreviewKind.SDR)
+    return apply_final_grain(image, adjustments, PreviewKind.SDR)
 
 
 def _apply_hdr_adjustments(
@@ -100,6 +221,7 @@ def _apply_hdr_adjustments(
     fixed_source: np.ndarray | None = None,
     compiled_local_masks: dict[str, np.ndarray] | None = None,
     color_context: RenderColorContext | None = None,
+    source_pixel_scale: float = 1.0,
 ) -> np.ndarray:
     color_context = color_context or RenderColorContext()
     hdr = adjustments.hdr
@@ -144,6 +266,8 @@ def _apply_hdr_adjustments(
         result = _apply_curves(result, adjustments, PreviewKind.HDR)
     if hdr.color_grading_section_enabled:
         result = _apply_color_grading(result, hdr.color_grading, PreviewKind.HDR)
+    if hdr.detail_section_enabled:
+        result = apply_detail(result, hdr.detail, PreviewKind.HDR, source_pixel_scale=source_pixel_scale)
     if local_adjustments:
         from .local_adjustments import apply_local_stack
 
@@ -254,6 +378,7 @@ def _apply_sdr_adjustments(
     local_adjustments: list[LocalAdjustment] | None = None,
     fixed_source: np.ndarray | None = None,
     compiled_local_masks: dict[str, np.ndarray] | None = None,
+    source_pixel_scale: float = 1.0,
 ) -> np.ndarray:
     sdr = adjustments.sdr
     result = image.astype(np.float32, copy=True)
@@ -284,6 +409,8 @@ def _apply_sdr_adjustments(
         result = _apply_curves(result, adjustments, PreviewKind.SDR)
     if sdr.color_grading_section_enabled:
         result = _apply_color_grading(result, sdr.color_grading, PreviewKind.SDR)
+    if sdr.detail_section_enabled:
+        result = apply_detail(result, sdr.detail, PreviewKind.SDR, source_pixel_scale=source_pixel_scale)
     if local_adjustments:
         from .local_adjustments import apply_local_stack
 
@@ -312,6 +439,7 @@ def _apply_sdr_adjustments_to_reference(
     local_adjustments: list[LocalAdjustment] | None = None,
     fixed_source: np.ndarray | None = None,
     compiled_local_masks: dict[str, np.ndarray] | None = None,
+    source_pixel_scale: float = 1.0,
 ) -> np.ndarray:
     sdr = adjustments.sdr
     result = np.clip(image.astype(np.float32, copy=True), 0.0, 1.0)
@@ -347,6 +475,8 @@ def _apply_sdr_adjustments_to_reference(
         result = _apply_curves(result, adjustments, PreviewKind.SDR)
     if sdr.color_grading_section_enabled:
         result = _apply_color_grading(result, sdr.color_grading, PreviewKind.SDR)
+    if sdr.detail_section_enabled:
+        result = apply_detail(result, sdr.detail, PreviewKind.SDR, source_pixel_scale=source_pixel_scale)
     if local_adjustments:
         from .local_adjustments import apply_local_stack
 

@@ -1,5 +1,5 @@
 (function () {
-  const PARAM_COUNT = 148;
+  const PARAM_COUNT = 156;
   const CURVE_SAMPLES = 1024;
   const DENOISE_ALGORITHM_VERSION = "compact-haar-residual-v1";
   // Preserve progressively more structure at medium/coarse Haar scales. Full
@@ -273,6 +273,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         intermediate.spatialATexture?.destroy();
         intermediate.spatialBTexture?.destroy();
         intermediate.localTexture?.destroy();
+        intermediate.detailATexture?.destroy();
+        intermediate.detailBTexture?.destroy();
       }
       this.intermediates.clear();
       for (const mask of this.localMasks.values()) this.destroyLocalMaskEntry(mask);
@@ -293,8 +295,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.scopeResources.clear();
     }
 
-    async render(sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203) {
-      return this.renderTo(this.canvas, sessionId, lane, adjustments, curveSampler, longEdge, localAdjustments, editRevision, maskOverlay, referenceWhiteNits);
+    async render(sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203, sourceSize = null) {
+      return this.renderTo(this.canvas, sessionId, lane, adjustments, curveSampler, longEdge, localAdjustments, editRevision, maskOverlay, referenceWhiteNits, sourceSize);
     }
 
     setInstrumentationEnabled(enabled = true) {
@@ -378,7 +380,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
             const spatialBytes = entry.spatialATexture && entry.spatialBTexture
               ? spatialWidth * spatialHeight * 8 * 2
               : 0;
-            return sum + entry.width * entry.height * 8 * 3 + spatialBytes;
+            const detailBytes = entry.detailATexture && entry.detailBTexture
+              ? entry.width * entry.height * 8 * 2
+              : 0;
+            return sum + entry.width * entry.height * 8 * 3 + spatialBytes + detailBytes;
           }, 0),
           denoiseTextures: (this.denoiseSourceSelector?.resolved ? 1 : 0)
             + (this.denoiseSourceSelector?.cache?.textureCount || 0),
@@ -388,7 +393,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       };
     }
 
-    async renderTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203) {
+    async renderTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203, sourceSize = null) {
       if (!this.available || !sessionId) return false;
       const renderStartedAt = performance.now();
       if (this.sessionId !== sessionId) this.resetSession(sessionId);
@@ -425,7 +430,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       if (!context) throw new Error("The comparison WebGPU canvas context is unavailable");
       const surface = this.configureSurface(canvas, context, lane === "hdr");
       const pipelines = this.pipelineFor(surface.format);
-      const params = buildParams(lane, adjustments, proxy.workingSpace, surface.hdr, referenceWhiteNits);
+      const sourceLongEdge = Math.max(Number(sourceSize?.width) || proxy.width, Number(sourceSize?.height) || proxy.height);
+      const sourcePixelScale = Math.min(1, Math.max(proxy.width, proxy.height) / Math.max(1, sourceLongEdge));
+      const params = buildParams(lane, adjustments, proxy.workingSpace, surface.hdr, referenceWhiteNits, sourcePixelScale);
       const overlayIndex = maskOverlay?.localId
         ? activeLocals.findIndex((local) => local.id === maskOverlay.localId)
         : -1;
@@ -446,7 +453,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       }
       const spatialActive = params[78] > 0.5 && params[79] > 0
         && (params[85] > 0.5 || (params[92] > 0.5 && params[93] > 0));
-      const intermediate = this.ensureIntermediate(canvas, proxy.width, proxy.height, spatialActive);
+      const detailActive = params[148] > 0.5
+        && (Math.abs(params[149]) > 0.000001 || Math.abs(params[150]) > 0.000001 || params[152] > 0.000001);
+      const intermediate = this.ensureIntermediate(canvas, proxy.width, proxy.height, spatialActive, detailActive);
       const makeBindGroup = (sourceView, spatialView, parameterBuffer = this.paramBuffer, overlayView = spatialView) => this.device.createBindGroup({
           layout: this.bindGroupLayout,
           entries: [
@@ -465,6 +474,19 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const fallbackSpatialView = sourceProxy.texture.createView();
       const spatialAView = intermediate.spatialATexture?.createView() || fallbackSpatialView;
       const baseBindGroup = makeBindGroup(sourceProxy.texture.createView(), spatialAView);
+      // Detail blur samples the filterable spatial binding so fractional radii
+      // move continuously instead of jumping between integer texels. Each pass
+      // binds its immutable input to both sampled slots; neither aliases that
+      // pass's render attachment.
+      const detailHorizontalBindGroup = detailActive
+        ? makeBindGroup(intermediate.baseTexture.createView(), intermediate.baseTexture.createView())
+        : null;
+      const detailVerticalBindGroup = detailActive
+        ? makeBindGroup(intermediate.detailATexture.createView(), intermediate.detailATexture.createView())
+        : null;
+      const detailCompositeBindGroup = detailActive
+        ? makeBindGroup(intermediate.baseTexture.createView(), intermediate.detailBTexture.createView())
+        : null;
       const extractBindGroup = spatialActive
         ? makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialBTexture.createView())
         : null;
@@ -498,9 +520,50 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       basePass.draw(3);
       basePass.end();
       let localSource = intermediate.baseTexture;
+      if (detailActive) {
+        const detailHorizontalPass = encoder.beginRenderPass({
+          colorAttachments: [{
+            view: intermediate.detailATexture.createView(),
+            clearValue: { r: 0, g: 0, b: 0, a: 0 },
+            loadOp: "clear",
+            storeOp: "store",
+          }],
+        });
+        detailHorizontalPass.setPipeline(pipelines.detailHorizontal);
+        detailHorizontalPass.setBindGroup(0, detailHorizontalBindGroup);
+        detailHorizontalPass.draw(3);
+        detailHorizontalPass.end();
+
+        const detailVerticalPass = encoder.beginRenderPass({
+          colorAttachments: [{
+            view: intermediate.detailBTexture.createView(),
+            clearValue: { r: 0, g: 0, b: 0, a: 0 },
+            loadOp: "clear",
+            storeOp: "store",
+          }],
+        });
+        detailVerticalPass.setPipeline(pipelines.detailVertical);
+        detailVerticalPass.setBindGroup(0, detailVerticalBindGroup);
+        detailVerticalPass.draw(3);
+        detailVerticalPass.end();
+
+        const detailCompositePass = encoder.beginRenderPass({
+          colorAttachments: [{
+            view: intermediate.localTexture.createView(),
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            loadOp: "clear",
+            storeOp: "store",
+          }],
+        });
+        detailCompositePass.setPipeline(pipelines.detailComposite);
+        detailCompositePass.setBindGroup(0, detailCompositeBindGroup);
+        detailCompositePass.draw(3);
+        detailCompositePass.end();
+        localSource = intermediate.localTexture;
+      }
       for (let index = 0; index < activeLocals.length; index += 1) {
         const local = activeLocals[index];
-        const target = index % 2 === 0 ? intermediate.localTexture : intermediate.baseTexture;
+        const target = localSource === intermediate.baseTexture ? intermediate.localTexture : intermediate.baseTexture;
         const localBuffer = this.localParamBuffer(local, lane);
         const localBindGroup = makeBindGroup(localSource.createView(), masks[index].texture.createView(), localBuffer);
         const localPass = encoder.beginRenderPass({
@@ -1264,6 +1327,24 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         fragment: { module: this.module, entryPoint: "localAdjustmentFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
+      const detailHorizontal = this.device.createRenderPipeline({
+        layout: this.pipelineLayout,
+        vertex: { module: this.module, entryPoint: "vertexMain" },
+        fragment: { module: this.module, entryPoint: "detailHorizontalFragmentMain", targets: [{ format: "rgba16float" }] },
+        primitive: { topology: "triangle-list" },
+      });
+      const detailVertical = this.device.createRenderPipeline({
+        layout: this.pipelineLayout,
+        vertex: { module: this.module, entryPoint: "vertexMain" },
+        fragment: { module: this.module, entryPoint: "detailVerticalFragmentMain", targets: [{ format: "rgba16float" }] },
+        primitive: { topology: "triangle-list" },
+      });
+      const detailComposite = this.device.createRenderPipeline({
+        layout: this.pipelineLayout,
+        vertex: { module: this.module, entryPoint: "vertexMain" },
+        fragment: { module: this.module, entryPoint: "detailCompositeFragmentMain", targets: [{ format: "rgba16float" }] },
+        primitive: { topology: "triangle-list" },
+      });
       const extract = this.device.createRenderPipeline({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
@@ -1288,17 +1369,22 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         fragment: { module: this.module, entryPoint: "fragmentMain", targets: [{ format }] },
         primitive: { topology: "triangle-list" },
       });
-      const pipelines = { base, local, response, extract, blurHorizontal, blurVertical, composite };
+      const pipelines = { base, local, detailHorizontal, detailVertical, detailComposite, response, extract, blurHorizontal, blurVertical, composite };
       this.pipelines.set(format, pipelines);
       return pipelines;
     }
 
-    ensureIntermediate(canvas, width, height, spatialActive = false) {
+    ensureIntermediate(canvas, width, height, spatialActive = false, detailActive = false) {
       const current = this.intermediates.get(canvas);
       const spatialWidth = Math.max(1, Math.ceil(width / 4));
       const spatialHeight = Math.max(1, Math.ceil(height / 4));
       const createSpatialTexture = () => this.device.createTexture({
         size: { width: spatialWidth, height: spatialHeight },
+        format: "rgba16float",
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      });
+      const createTexture = () => this.device.createTexture({
+        size: { width, height },
         format: "rgba16float",
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
       });
@@ -1312,6 +1398,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
             { width, height, spatialWidth, spatialHeight },
           );
         }
+        if (detailActive && (!current.detailATexture || !current.detailBTexture)) {
+          current.detailATexture = createTexture();
+          current.detailBTexture = createTexture();
+          this.recordAllocation("grading-detail-intermediates", width * height * 8 * 2, { width, height });
+        }
         // Retain spatial textures after first use. Bypass toggles and non-spatial
         // slider edits can then reuse every 4K intermediate instead of destroying
         // and reallocating the full render set.
@@ -1323,15 +1414,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       current?.spatialATexture?.destroy();
       current?.spatialBTexture?.destroy();
       current?.localTexture?.destroy();
-      const createTexture = () => this.device.createTexture({
-        size: { width, height },
-        format: "rgba16float",
-        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-      });
+      current?.detailATexture?.destroy();
+      current?.detailBTexture?.destroy();
       const intermediate = {
         baseTexture: createTexture(),
         filmTexture: createTexture(),
         localTexture: createTexture(),
+        detailATexture: detailActive ? createTexture() : null,
+        detailBTexture: detailActive ? createTexture() : null,
         spatialATexture: spatialActive ? createSpatialTexture() : null,
         spatialBTexture: spatialActive ? createSpatialTexture() : null,
         spatialActive,
@@ -1341,7 +1431,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.intermediates.set(canvas, intermediate);
       this.recordAllocation(
         "grading-intermediates",
-        width * height * 8 * 3 + (spatialActive ? spatialWidth * spatialHeight * 8 * 2 : 0),
+        width * height * 8 * (3 + (detailActive ? 2 : 0)) + (spatialActive ? spatialWidth * spatialHeight * 8 * 2 : 0),
         { width, height, spatialWidth: spatialActive ? spatialWidth : 0, spatialHeight: spatialActive ? spatialHeight : 0 },
       );
       return intermediate;
@@ -1973,7 +2063,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     return Math.max(0.0018, peak);
   }
 
-  function buildParams(lane, adjustments, workingSpace, hdrSurface, referenceWhiteNits = 203) {
+  function buildParams(lane, adjustments, workingSpace, hdrSurface, referenceWhiteNits = 203, sourcePixelScale = 1) {
     const params = new Float32Array(PARAM_COUNT);
     const projectReferenceWhite = Number(referenceWhiteNits) === 100 ? 100 : 203;
     const branch = adjustments[lane];
@@ -2107,6 +2197,15 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     params[128] = (vignette.highlight_protection || 0) / 100;
     params[129] = vignette.center_x ?? 0.5;
     params[130] = vignette.center_y ?? 0.5;
+    const detail = branch.detail || {};
+    params[148] = branch.detail_section_enabled !== false ? 1 : 0;
+    params[149] = (Number(detail.texture_amount) || 0) / 100;
+    params[150] = (Number(detail.clarity_amount) || 0) / 125;
+    params[151] = Math.min(3, Math.max(0.2, Number(detail.clarity_radius_percent) || 0.75));
+    params[152] = Math.max(0, Number(detail.sharpen_amount) || 0) / 100;
+    params[153] = Math.min(3, Math.max(0.3, Number(detail.sharpen_radius_px) || 0.8));
+    params[154] = Math.min(1, Math.max(0, Number(detail.sharpen_threshold) || 0) / 100) * 0.50;
+    params[155] = Math.min(1, Math.max(0.05, Number(sourcePixelScale) || 1));
     return params;
   }
 
@@ -3007,6 +3106,137 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         rgb = acescgToSrgb(localSaturation(aces));
       }
       return max(rgb, vec3f(0.0));
+    }
+
+    fn detailLogLuma(rgb: vec3f) -> f32 {
+      let y = select(lumaSrgb(rgb), lumaAces(rgb), p[0] > 0.5);
+      return log2(max(y, 0.0000001));
+    }
+
+    fn detailRadii() -> vec4f {
+      let dimensions = vec2f(textureDimensions(sourceTexture));
+      let diagonal = length(dimensions);
+      return vec4f(
+        max(0.35, diagonal * 0.0003),
+        max(0.70, diagonal * 0.0012),
+        max(0.50, diagonal * p[151] / 100.0),
+        max(0.30, p[153] * p[155])
+      );
+    }
+
+    fn detailHorizontalBlur(coordinate: vec2f, radius: f32, halfSamples: i32, enabled: bool) -> f32 {
+      let dimensions = vec2f(textureDimensions(spatialTexture));
+      let centerUv = (coordinate + vec2f(0.5)) / dimensions;
+      let center = detailLogLuma(textureSampleLevel(spatialTexture, spatialSampler, centerUv, 0.0).rgb);
+      if (!enabled) { return center; }
+      var total = 0.0;
+      var weightTotal = 0.0;
+      for (var index: i32 = -8; index <= 8; index = index + 1) {
+        if (abs(index) <= halfSamples) {
+          let distance = 2.0 * f32(index) / f32(halfSamples);
+          let weight = exp(-0.5 * distance * distance);
+          let sampleUv = (coordinate + vec2f(distance * radius, 0.0) + vec2f(0.5)) / dimensions;
+          total += detailLogLuma(textureSampleLevel(spatialTexture, spatialSampler, sampleUv, 0.0).rgb) * weight;
+          weightTotal += weight;
+        }
+      }
+      return total / weightTotal;
+    }
+
+    fn detailVerticalBlur(coordinate: vec2f, radius: f32, channel: u32, halfSamples: i32, enabled: bool) -> f32 {
+      let dimensions = vec2f(textureDimensions(spatialTexture));
+      let centerUv = (coordinate + vec2f(0.5)) / dimensions;
+      let center = textureSampleLevel(spatialTexture, spatialSampler, centerUv, 0.0)[channel];
+      if (!enabled) { return center; }
+      var total = 0.0;
+      var weightTotal = 0.0;
+      for (var index: i32 = -8; index <= 8; index = index + 1) {
+        if (abs(index) <= halfSamples) {
+          let distance = 2.0 * f32(index) / f32(halfSamples);
+          let weight = exp(-0.5 * distance * distance);
+          let sampleUv = (coordinate + vec2f(0.0, distance * radius) + vec2f(0.5)) / dimensions;
+          total += textureSampleLevel(spatialTexture, spatialSampler, sampleUv, 0.0)[channel] * weight;
+          weightTotal += weight;
+        }
+      }
+      return total / weightTotal;
+    }
+
+    fn detailLocalExtrema(coordinate: vec2i) -> vec2f {
+      let dimensions = vec2i(textureDimensions(sourceTexture));
+      var minimum = 1000000.0;
+      var maximum = -1000000.0;
+      for (var y: i32 = -1; y <= 1; y = y + 1) {
+        for (var x: i32 = -1; x <= 1; x = x + 1) {
+          let sampleCoordinate = clamp(coordinate + vec2i(x, y), vec2i(0), dimensions - vec2i(1));
+          let value = detailLogLuma(textureLoad(sourceTexture, sampleCoordinate, 0).rgb);
+          minimum = min(minimum, value);
+          maximum = max(maximum, value);
+        }
+      }
+      return vec2f(minimum, maximum);
+    }
+
+    @fragment fn detailHorizontalFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let dimensions = textureDimensions(sourceTexture);
+      let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
+      let radii = detailRadii();
+      let textureActive = abs(p[149]) > 0.000001;
+      let clarityActive = abs(p[150]) > 0.000001;
+      let sharpenActive = p[152] > 0.000001;
+      return vec4f(
+        detailHorizontalBlur(vec2f(coordinate), radii.x, 2, textureActive),
+        detailHorizontalBlur(vec2f(coordinate), radii.y, 2, textureActive),
+        detailHorizontalBlur(vec2f(coordinate), radii.z, 8, clarityActive),
+        detailHorizontalBlur(vec2f(coordinate), radii.w, 3, sharpenActive)
+      );
+    }
+
+    @fragment fn detailVerticalFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let dimensions = textureDimensions(sourceTexture);
+      let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
+      let radii = detailRadii();
+      let textureActive = abs(p[149]) > 0.000001;
+      let clarityActive = abs(p[150]) > 0.000001;
+      let sharpenActive = p[152] > 0.000001;
+      return vec4f(
+        detailVerticalBlur(vec2f(coordinate), radii.x, 0u, 2, textureActive),
+        detailVerticalBlur(vec2f(coordinate), radii.y, 1u, 2, textureActive),
+        detailVerticalBlur(vec2f(coordinate), radii.z, 2u, 8, clarityActive),
+        detailVerticalBlur(vec2f(coordinate), radii.w, 3u, 3, sharpenActive)
+      );
+    }
+
+    @fragment fn detailCompositeFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let dimensions = textureDimensions(sourceTexture);
+      let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
+      let source = textureLoad(sourceTexture, coordinate, 0).rgb;
+      let uv = (vec2f(coordinate) + vec2f(0.5)) / vec2f(dimensions);
+      let blurred = textureSampleLevel(spatialTexture, spatialSampler, uv, 0.0);
+      let sourceY = max(select(lumaSrgb(source), lumaAces(source), p[0] > 0.5), 0.0000001);
+      let logY = log2(sourceY);
+      var adjusted = logY;
+      if (abs(p[149]) > 0.000001) {
+        adjusted += (blurred.x - blurred.y) * p[149];
+      }
+      if (abs(p[150]) > 0.000001) {
+        let band = logY - blurred.z;
+        let edgeWeight = exp(-(band / 0.75) * (band / 0.75));
+        adjusted += band * edgeWeight * p[150];
+      }
+      if (p[152] > 0.000001) {
+        let edge = logY - blurred.w;
+        let qualification = select(smoothRange(p[154], p[154] + 0.04, abs(edge)), 1.0, p[154] <= 0.000001);
+        let qualified = edge * qualification;
+        let extrema = detailLocalExtrema(coordinate);
+        let allowance = 0.12 * (extrema.y - extrema.x);
+        adjusted = clamp(adjusted + qualified * p[152], extrema.x - allowance, extrema.y + allowance);
+      }
+      let delta = clamp(adjusted - logY, -16.0, 16.0);
+      if (abs(delta) <= 0.0000001) { return vec4f(source, 1.0); }
+      var result = source * exp2(delta);
+      result = select(clamp(result, vec3f(0.0), vec3f(1.0)), max(result, vec3f(0.0)), p[0] > 0.5);
+      return vec4f(result, 1.0);
     }
 
     @fragment fn baseFragmentMain(input: VertexOut) -> @location(0) vec4f {

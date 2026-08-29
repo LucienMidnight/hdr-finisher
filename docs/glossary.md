@@ -110,7 +110,7 @@ A reduced-resolution image used for interactive preview/analysis. HDR Finisherâ€
 
 ## Reference white
 
-A defined white level used to anchor a workflow. HDR Finisher v3 projects select 203 nits by default or the intentional 100-nit preset. Codec interface conventions, including libultrahdr's 203-nit linear scale, are converted separately and exactly once.
+A defined white level used to anchor a workflow. HDR Finisher v4 projects select 203 nits by default or the intentional 100-nit preset. Codec interface conventions, including libultrahdr's 203-nit linear scale, are converted separately and exactly once.
 
 ## SDR
 

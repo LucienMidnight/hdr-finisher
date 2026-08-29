@@ -281,6 +281,19 @@ class OutputFinishingSettings(BaseModel):
         return self
 
 
+class DetailAdjustments(BaseModel):
+    """Neutral-by-default detail controls for global and local grades."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    texture_amount: float = Field(default=0.0, ge=-100.0, le=100.0)
+    clarity_amount: float = Field(default=0.0, ge=-100.0, le=100.0)
+    clarity_radius_percent: float = Field(default=0.75, ge=0.2, le=3.0)
+    sharpen_amount: float = Field(default=0.0, ge=0.0, le=200.0)
+    sharpen_radius_px: float = Field(default=0.8, ge=0.3, le=3.0)
+    sharpen_threshold: float = Field(default=10.0, ge=0.0, le=100.0)
+
+
 class HDRAdjustments(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -290,12 +303,14 @@ class HDRAdjustments(BaseModel):
     color_section_enabled: bool = True
     primaries_section_enabled: bool = True
     curves_section_enabled: bool = True
+    detail_section_enabled: bool = True
     film_look_section_enabled: bool = True
     color_grading_section_enabled: bool = True
     vignette_section_enabled: bool = True
     film_look: FilmLookAdjustments = Field(default_factory=FilmLookAdjustments)
     color_grading: ColorGradingAdjustments = Field(default_factory=ColorGradingAdjustments)
     vignette: VignetteAdjustments = Field(default_factory=VignetteAdjustments)
+    detail: DetailAdjustments = Field(default_factory=DetailAdjustments)
     exposure: float = Field(default=0.0, ge=-8.0, le=8.0)
     highlight_compression_start_nits: float = Field(default=400.0, ge=1.0, le=9999.0)
     highlight_compression_target_nits: float = Field(default=1000.0, ge=2.0, le=10000.0)
@@ -373,12 +388,14 @@ class SDRAdjustments(BaseModel):
     color_section_enabled: bool = True
     primaries_section_enabled: bool = True
     curves_section_enabled: bool = True
+    detail_section_enabled: bool = True
     film_look_section_enabled: bool = True
     color_grading_section_enabled: bool = True
     vignette_section_enabled: bool = True
     film_look: FilmLookAdjustments = Field(default_factory=FilmLookAdjustments)
     color_grading: ColorGradingAdjustments = Field(default_factory=ColorGradingAdjustments)
     vignette: VignetteAdjustments = Field(default_factory=VignetteAdjustments)
+    detail: DetailAdjustments = Field(default_factory=DetailAdjustments)
     exposure: float = Field(default=0.0, ge=-8.0, le=8.0)
     highlight_recovery: float = Field(default=0.6, ge=0.0, le=4.0)
     tone_contrast: float = Field(default=1.0, ge=0.5, le=1.5)
@@ -720,6 +737,7 @@ class LocalGrade(BaseModel):
     green_curve: list[list[float]] = Field(default_factory=_default_curve_points)
     blue_curve: list[list[float]] = Field(default_factory=_default_curve_points)
     color_grading: ColorGradingAdjustments = Field(default_factory=ColorGradingAdjustments)
+    detail: DetailAdjustments = Field(default_factory=DetailAdjustments)
 
 
 class LocalAdjustment(BaseModel):
@@ -732,6 +750,90 @@ class LocalAdjustment(BaseModel):
     mask: MaskExpression = Field(default_factory=_default_local_mask)
     hdr_grade: LocalGrade = Field(default_factory=LocalGrade)
     sdr_grade: LocalGrade = Field(default_factory=LocalGrade)
+
+
+class CapturedHDRLocalAdjustment(BaseModel):
+    """The ordered HDR side of a local adjustment captured by SDR Match."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1, max_length=120)
+    enabled: bool
+    opacity: float = Field(ge=0.0, le=1.0)
+    mask: MaskExpression
+    hdr_grade: LocalGrade
+
+
+class SDRLocalGradeSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=128)
+    sdr_grade: LocalGrade
+
+
+class SDRMatchRevertState(BaseModel):
+    """Independent SDR state retained by the first successful Match."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    sdr_adjustments: SDRAdjustments
+    local_grades: list[SDRLocalGradeSnapshot] = Field(default_factory=list, max_length=256)
+    authored_sdr_base_active: bool = False
+
+
+class SdrMatchState(BaseModel):
+    """Recipe snapshot and match-only state for the generated SDR rendition."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    active: bool = False
+    stale: bool = False
+    grain_source: Literal["captured_hdr", "sdr_override"] | None = None
+    algorithm_version: Literal["hdr-to-sdr-match-v1"] = "hdr-to-sdr-match-v1"
+    captured_hdr_adjustments: HDRAdjustments | None = None
+    captured_shared_adjustments: SharedAdjustments | None = None
+    captured_locals: list[CapturedHDRLocalAdjustment] = Field(default_factory=list, max_length=256)
+    captured_reference_white_nits: Literal[100, 203] | None = None
+    captured_source_fingerprint_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    automatic_highlight_boundary_ratio: float | None = Field(default=None, ge=0.60, le=0.90)
+    manual_highlight_boundary_ratio: float | None = Field(default=None, ge=0.50, le=0.95)
+    signature: str | None = Field(default=None, min_length=1, max_length=256)
+    revert_state: SDRMatchRevertState | None = None
+
+    @model_validator(mode="after")
+    def validate_active_state(self) -> "SdrMatchState":
+        if not self.active:
+            if self.grain_source is not None:
+                raise ValueError("inactive SDR Match state cannot select a grain source")
+            dormant_values = (
+                self.captured_hdr_adjustments,
+                self.captured_shared_adjustments,
+                self.captured_reference_white_nits,
+                self.captured_source_fingerprint_sha256,
+                self.automatic_highlight_boundary_ratio,
+                self.manual_highlight_boundary_ratio,
+                self.signature,
+                self.revert_state,
+            )
+            if self.captured_locals or any(value is not None for value in dormant_values):
+                raise ValueError("inactive SDR Match state cannot retain a captured recipe or Revert state")
+            return self
+        if self.grain_source is None:
+            raise ValueError("active SDR Match state requires a grain source")
+        required = {
+            "captured_hdr_adjustments": self.captured_hdr_adjustments,
+            "captured_shared_adjustments": self.captured_shared_adjustments,
+            "captured_reference_white_nits": self.captured_reference_white_nits,
+            "captured_source_fingerprint_sha256": self.captured_source_fingerprint_sha256,
+            "automatic_highlight_boundary_ratio": self.automatic_highlight_boundary_ratio,
+            "signature": self.signature,
+            "revert_state": self.revert_state,
+        }
+        missing = [name for name, value in required.items() if value is None]
+        if missing:
+            raise ValueError(f"active SDR Match state is missing: {', '.join(missing)}")
+        return self
 
 
 class LensCorrectionSettings(BaseModel):
@@ -810,20 +912,21 @@ class DenoiseDocumentSettings(BaseModel):
 class EditDocument(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[3] = 3
+    schema_version: Literal[4] = 4
     hdr_reference_white_nits: Literal[100, 203]
     source: SourceReference
     interpretation_override: "SourceInterpretationOverride" = Field(default_factory=lambda: SourceInterpretationOverride())
     global_adjustments: AdjustmentState = Field(default_factory=AdjustmentState)
     local_adjustments: list[LocalAdjustment] = Field(default_factory=list, max_length=256)
     denoise: DenoiseDocumentSettings = Field(default_factory=DenoiseDocumentSettings)
+    sdr_match: SdrMatchState = Field(default_factory=SdrMatchState)
 
     @model_validator(mode="before")
     @classmethod
-    def reject_prototype_documents(cls, value: Any) -> Any:
-        if isinstance(value, dict) and value.get("schema_version") in {1, 2}:
+    def reject_legacy_documents(cls, value: Any) -> Any:
+        if isinstance(value, dict) and value.get("schema_version") in {1, 2, 3}:
             raise ValueError(
-                "Unsupported prototype project schema v1/v2. HDR Finisher v3 projects must be created again; migration is not supported."
+                "Unsupported project schema v1/v2/v3. HDR Finisher v4 projects must be created again; migration is not supported."
             )
         return value
 
@@ -846,15 +949,25 @@ class EditCommand(BaseModel):
         "update_local",
         "delete_local",
         "reorder_locals",
+        "set_sdr_match",
         "undo",
         "redo",
     ]
     target_id: str | None = None
+    history_group: str | None = Field(default=None, min_length=1, max_length=128)
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
 class EditCommandBatch(BaseModel):
     commands: list[EditCommand] = Field(min_length=1, max_length=100)
+
+
+class SdrMatchActionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int = Field(ge=0)
+    action: Literal["match", "rematch", "revert"]
+    authored_sdr_override_consent: bool = False
 
 
 class EditStateResponse(BaseModel):

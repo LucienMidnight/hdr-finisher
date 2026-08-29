@@ -13,7 +13,7 @@ import zlib
 
 import numpy as np
 
-from .adjustments import apply_adjustments, apply_final_grain
+from .adjustments import apply_adjustments, apply_final_grain, apply_matched_final_grain
 from .binaries import resolve_binary
 from .subprocess_utils import hidden_window_options
 from .color import acescg_to_linear_bt2020
@@ -88,8 +88,11 @@ def _render_export_branch(
         include_grain=False,
         local_adjustments=getattr(session, "local_adjustments", None),
         color_context=color_context,
+        sdr_match=getattr(session, "sdr_match", None),
     )
     image = apply_output_finishing(image, settings.output_finishing, kind)
+    if kind == PreviewKind.SDR and getattr(getattr(session, "sdr_match", None), "active", False):
+        return apply_matched_final_grain(image, adjustments, getattr(session, "sdr_match"))
     return apply_final_grain(image, adjustments, kind)
 
 

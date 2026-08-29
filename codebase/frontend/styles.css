@@ -3769,6 +3769,42 @@ input[type="text"] {
   font: 10.5px/1.25 var(--sans, sans-serif);
 }
 
+.sdr-match-entire-actions {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 10px 12px 12px;
+  border-bottom: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--panel) 92%, var(--accent) 8%);
+  text-align: center;
+}
+
+.sdr-match-entire-actions.hidden {
+  display: none;
+}
+
+.sdr-match-entire-actions .button-primary {
+  width: min(260px, 100%);
+}
+
+.sdr-match-entire-actions .helper {
+  margin: 0;
+  color: var(--muted);
+}
+
+.sdr-match-boundary-row {
+  display: grid;
+  grid-template-columns: auto minmax(100px, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  font-size: 12px;
+}
+
+.sdr-match-boundary-row.hidden {
+  display: none;
+}
+
 .luma-range-heading output {
   color: #7edce2;
   font: 10px/1.25 var(--mono, monospace);
@@ -7492,8 +7528,9 @@ body {
 .control-group[data-group="sdr-zones"] > .control-group-header::before { content: "09"; }
 .control-group[data-group="curves"] > .control-group-header::before { content: "10"; }
 .control-group[data-group="color-grading"] > .control-group-header::before { content: "11"; }
-.control-group[data-group="film-look"] > .control-group-header::before { content: "12"; }
-.control-group[data-group="vignette"] > .control-group-header::before { content: "13"; }
+.control-group[data-group="detail"] > .control-group-header::before { content: "12"; }
+.control-group[data-group="film-look"] > .control-group-header::before { content: "13"; }
+.control-group[data-group="vignette"] > .control-group-header::before { content: "14"; }
 
 .control-group:not(.collapsed) > .control-group-header::before {
   color: var(--accent-strong);

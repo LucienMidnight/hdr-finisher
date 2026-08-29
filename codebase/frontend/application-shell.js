@@ -132,6 +132,7 @@
   function defaultShortcutFor(actionId) {
     if (actionId === "app.help") return isMacPlatform() ? "Mod+Shift+?" : "F1";
     if (actionId === "edit.redoAlternate") return isMacPlatform() ? "" : "Mod+Y";
+    if (actionId === "edit.redoRequested") return isMacPlatform() ? "" : "Mod+R";
     return COMMON_DEFAULT_SHORTCUTS[actionId] || "";
   }
 

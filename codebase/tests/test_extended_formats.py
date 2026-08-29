@@ -265,7 +265,7 @@ def test_jpegxl_export_backend_writes_validated_atomic_output(tmp_path: Path) ->
 
 
 def test_v1_project_document_is_rejected_without_migration() -> None:
-    with pytest.raises(ValueError, match="Unsupported prototype project schema"):
+    with pytest.raises(ValueError, match="Unsupported project schema v1/v2/v3"):
         EditDocument.model_validate(
             {
                 "schema_version": 1,
