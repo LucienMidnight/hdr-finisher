@@ -6100,6 +6100,12 @@ function closeRotateMode(commit) {
   // while Crop waits for the committed geometry render.
   if (commit && changed) {
     state.geometryTransformHandoffSignature = geometrySignature();
+    // The mounted bitmap still represents the geometry from before this
+    // transaction. Keep both its CSS size and visual transform atomic until a
+    // frame for the committed geometry is actually accepted. This also stops
+    // an unrelated adjustment made during the handoff from exposing the old
+    // pre-rotation bitmap.
+    state.geometryPresentationPending = true;
   } else {
     state.geometryTransformHandoffSignature = null;
     clearRotateDraftTransformProperties();
@@ -6110,7 +6116,6 @@ function closeRotateMode(commit) {
   renderGeometryToolState();
   renderControlState();
   if (commit && changed) {
-    state.zoomReferenceFrame = null;
     state.gpuPreparedLane = { hdr: false, sdr: false };
     invalidatePreview("hdr");
     invalidatePreview("sdr");
@@ -9522,16 +9527,16 @@ function applyZoomGeometry() {
     && Number.isFinite(state.zoomReferenceFrame.aspect)
     ? state.zoomReferenceFrame.aspect
     : renderedAspect;
-  const interactiveGeometryTransformActive = [
-    "--interactive-rotate-angle",
-    "--interactive-straighten-angle",
-    "--interactive-flip-x",
-    "--interactive-flip-y",
-  ].some((property) => preview.style.getPropertyValue(property));
-  const sourceFrame = interactiveGeometryTransformActive ? null : sourcePixelFrameDimensions();
-  // Actual-size zoom is defined in source/output pixels, not in pixels of the
-  // first preview proxy that happened to arrive. Keep the proxy reference only
-  // while an old bitmap is being transformed interactively during crop/rotate.
+  // Actual-size and custom zoom are defined in source/output pixels, including
+  // while Rotate is transforming the previously committed bitmap. Falling
+  // back to the smaller proxy frame during a draft makes the image zoom out;
+  // accepting the authoritative frame then jumps back to source size. Use the
+  // transaction's original geometry because that is the bitmap currently
+  // receiving the CSS transform. A committed handoff returns above while its
+  // old bitmap is still mounted.
+  const sourceFrame = sourcePixelFrameDimensions(
+    state.rotateDraftGeometry || state.adjustments?.shared?.geometry,
+  );
   const sourceWidth = sourceFrame?.width
     || (referenceAspect >= 1 ? referenceLongEdge : referenceLongEdge * referenceAspect);
   const sourceHeight = sourceFrame?.height

@@ -103,8 +103,33 @@ function assert(condition, message) {
     // proxy is still in flight. The old frame must remain transformed until a
     // proxy for the combined geometry is ready, and the stale rotation-only
     // render must never resize or paint the shared canvas.
+    await page.locator("#zoom-actual").click();
+    const actualBeforeRotation = await page.evaluate(() => {
+      const preview = activePreviewElement();
+      const rect = preview.getBoundingClientRect();
+      return { width: rect.width, height: rect.height, cssWidth: parseFloat(preview.style.width), cssHeight: parseFloat(preview.style.height), zoom: state.zoomPercent };
+    });
     await page.locator("#rotate-tool-toggle").click();
     await page.locator("#rotate-right").click();
+    const rotationDraft = await page.evaluate(() => {
+      const preview = activePreviewElement();
+      const rect = preview.getBoundingClientRect();
+      return {
+        width: rect.width,
+        height: rect.height,
+        cssWidth: parseFloat(preview.style.width),
+        cssHeight: parseFloat(preview.style.height),
+        zoom: state.zoomPercent,
+        transform: preview.style.getPropertyValue("--interactive-rotate-angle"),
+      };
+    });
+    assert(
+      rotationDraft.transform === "90deg"
+        && Math.abs(rotationDraft.width - actualBeforeRotation.height) < 0.5
+        && Math.abs(rotationDraft.height - actualBeforeRotation.width) < 0.5
+        && Math.abs(rotationDraft.zoom - actualBeforeRotation.zoom) < 0.01,
+      `Rotate changed the 100% source-pixel scale: ${JSON.stringify({ before: actualBeforeRotation, draft: rotationDraft })}`,
+    );
     delayGeometryPreview = true;
     await page.locator("#rotate-apply").click();
     const rotationHandoff = await page.evaluate(() => {
@@ -113,11 +138,22 @@ function assert(condition, message) {
       return {
         width: rect.width,
         height: rect.height,
+        cssWidth: parseFloat(preview.style.width),
+        cssHeight: parseFloat(preview.style.height),
+        zoom: state.zoomPercent,
+        pending: state.geometryPresentationPending,
         transform: preview.style.getPropertyValue("--interactive-rotate-angle"),
         handoff: state.geometryTransformHandoffSignature,
       };
     });
     assert(rotationHandoff.transform === "90deg" && rotationHandoff.handoff, `Rotation did not enter its atomic preview handoff: ${JSON.stringify(rotationHandoff)}`);
+    assert(rotationHandoff.pending, `Rotation Apply did not hold viewer geometry for its committed frame: ${JSON.stringify(rotationHandoff)}`);
+    assert(
+      Math.abs(rotationHandoff.width - rotationDraft.width) < 0.5
+        && Math.abs(rotationHandoff.height - rotationDraft.height) < 0.5
+        && Math.abs(rotationHandoff.zoom - rotationDraft.zoom) < 0.01,
+      `Rotation Apply changed zoom during preview handoff: ${JSON.stringify({ draft: rotationDraft, handoff: rotationHandoff })}`,
+    );
 
     await page.locator("#crop-tool-toggle").click();
     await page.locator("#crop-ratio").selectOption("4:3");
@@ -153,6 +189,11 @@ function assert(condition, message) {
       return {
         displayedAspect: rect.width / rect.height,
         bitmapAspect: width / height,
+        width: rect.width,
+        height: rect.height,
+        cssWidth: parseFloat(preview.style.width),
+        cssHeight: parseFloat(preview.style.height),
+        zoom: state.zoomPercent,
         transform: preview.style.getPropertyValue("--interactive-rotate-angle"),
         acceptedGeometry: state.acceptedPresentation?.geometrySignature,
         currentGeometry: geometrySignature(),
@@ -160,6 +201,37 @@ function assert(condition, message) {
     });
     assert(Math.abs(after.displayedAspect - after.bitmapAspect) < 0.01, `Final crop preview aspect is incorrect: ${JSON.stringify(after)}`);
     assert(after.transform === "" && after.acceptedGeometry === after.currentGeometry, `Combined rotation and crop did not settle atomically: ${JSON.stringify(after)}`);
+
+    // A later grading render must keep using the committed rotation/crop proxy,
+    // never the resident frame from before the rotate transaction.
+    delayGeometryPreview = false;
+    const settledGeneration = await page.evaluate(() => state.acceptedPresentation.generation);
+    await page.evaluate(() => commitAdjustmentValue("hdr.exposure", 0.25));
+    await page.waitForFunction((generation) => (
+      state.acceptedPresentation?.generation > generation
+        && state.acceptedPresentation.geometrySignature === geometrySignature()
+        && !state.geometryPresentationPending
+    ), settledGeneration, { timeout: 30000 });
+    const afterGrade = await page.evaluate(() => {
+      const preview = activePreviewElement();
+      const rect = preview.getBoundingClientRect();
+      const width = preview instanceof HTMLCanvasElement ? preview.width : preview.naturalWidth;
+      const height = preview instanceof HTMLCanvasElement ? preview.height : preview.naturalHeight;
+      return {
+        rotation: state.adjustments.shared.geometry.rotation,
+        bitmapAspect: width / height,
+        displayedAspect: rect.width / rect.height,
+        acceptedGeometry: state.acceptedPresentation?.geometrySignature,
+        currentGeometry: geometrySignature(),
+      };
+    });
+    assert(
+      afterGrade.rotation === 90
+        && Math.abs(afterGrade.bitmapAspect - 4 / 3) < 0.01
+        && Math.abs(afterGrade.displayedAspect - afterGrade.bitmapAspect) < 0.01
+        && afterGrade.acceptedGeometry === afterGrade.currentGeometry,
+      `A later adjustment restored the pre-rotation preview: ${JSON.stringify(afterGrade)}`,
+    );
     console.log("Crop apply preview handoff passed.");
   } finally {
     await browser.close();
