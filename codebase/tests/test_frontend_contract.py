@@ -29,7 +29,6 @@ def test_raw_development_is_first_grade_control_group() -> None:
     assert ".raw-development-group .disclosure-trigger" in css
     assert ".source-rail > .disclosure-panel" in css
 
-
 def test_staged_import_waits_for_natural_aspect_before_display() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     staged_preview = javascript[
@@ -141,8 +140,9 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert "Highlight Compression" in html
     assert 'data-group="hdr-highlights"' in html
     assert 'data-section-path="hdr.highlight_section_enabled"' in html
-    assert html.index('data-group="hdr-highlights"') > html.index('data-group="hdr-tone"')
-    assert html.index('data-group="hdr-highlights"') < html.index('data-group="hdr-equalizer"')
+    assert '"hdr-tone", "hdr-equalizer", "hdr-zones", "hdr-highlights", "curves", "hdr-color"' in script
+    assert '"sdr-base", "sdr-tone", "sdr-equalizer", "sdr-zones", "curves", "sdr-color"' in script
+    assert "colorGrading.after(localAdjustmentsGroup)" in script
     assert "Target Peak" in html
     assert 'data-path="hdr.highlight_compression_start_nits"' in html
     assert 'data-path="hdr.highlight_compression_target_nits"' in html
@@ -1030,8 +1030,21 @@ def test_electron_preview_correctness_contract() -> None:
     assert "function gpuPreviewEligible(lane = state.currentView)" in javascript
     gpu_eligibility = javascript[
         javascript.index("function gpuPreviewEligible(lane = state.currentView)"):
-        javascript.index("function acceptPresentation")
+        javascript.index("function gpuPreviewSourceOptions")
     ]
+    assert "sdr_match" not in gpu_eligibility
+    assert "function gpuPreviewSourceOptions" in javascript
+    assert "gpuPreviewSourceOptions(lane)" in javascript
+    sdr_match_action = javascript[
+        javascript.index("async function setSdrMatch(action)"):
+        javascript.index("async function commitSdrMatchBoundary")
+    ]
+    assert 'state.currentView === "sdr"\n      ? refinementProxyLongEdge()' in sdr_match_action
+    assert 'longEdge: previewLongEdge' in sdr_match_action
+    assert 'tier: previewTier' in sdr_match_action
+    assert 'renderPreviewForLane("sdr", state.currentView === "sdr", previewLongEdge' in sdr_match_action
+    assert "sourceOptions?.identity" in (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    assert "sourceOptions?.inheritedGrain" in (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
     assert "defaultGeometry" not in gpu_eligibility
     assert "geometrySignature" not in gpu_eligibility
     assert "cached.geometrySignature === geometrySignature()" in javascript
@@ -1045,6 +1058,13 @@ def test_electron_preview_correctness_contract() -> None:
     close_rotate = javascript[javascript.index("function closeRotateMode(commit)"):javascript.index("function renderCropOptions()")]
     assert 'invalidatePreview("hdr")' in close_rotate and 'invalidatePreview("sdr")' in close_rotate
     assert "state.globalEditDirty && state.acceptedPresentation?.geometrySignature !== geometrySignature()" in javascript
+    close_crop = javascript[javascript.index("function closeCropMode(commit)"):javascript.index("function renderGeometryToolState()")]
+    assert "state.geometryTransformHandoffSignature = geometrySignature();" in close_crop
+    gpu_draft = javascript[javascript.index("async function renderGpuDraft("):javascript.index("function gpuLumaMaskOverlayOptions")]
+    assert "requestedGeometrySignature === geometrySignature()" in gpu_draft
+    assert "isCurrent: () => serial === state.gpuRenderSerial" in gpu_draft
+    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    assert "sourceOptions?.isCurrent?.() === false" in webgpu
     assert "if (error?.recoverable)" in javascript
     clear_straighten = javascript[
         javascript.index("function clearInteractiveStraightenPreview()"):
@@ -1053,6 +1073,21 @@ def test_electron_preview_correctness_contract() -> None:
     assert "if (state.rotateDraftGeometry)" in clear_straighten
     assert "renderRotateDraftTransform();" in clear_straighten
     assert 'preview?.style.setProperty("--interactive-straighten-angle", `${-straightenDelta}deg`)' in javascript
+    rotate_draft = javascript[
+        javascript.index("function renderRotateDraftTransform("):
+        javascript.index("function applySourceOverlayGeometryTransform")
+    ]
+    assert "function renderRotateDraftTransform({ reflow = false } = {})" in rotate_draft
+    assert "if (reflow) applyZoomGeometry();" in rotate_draft
+    assert "renderRotateDraftTransform({ reflow: true });" in javascript
+    assert 'const transactionOwnedControl = control.dataset.path === "shared.geometry.straighten_angle";' in javascript
+    assert "if (!state.session || state.rotateDraftGeometry) return false;" in javascript
+    begin_straighten = javascript[
+        javascript.index("function beginStraightenGesture("):
+        javascript.index("function updateStraightenInteractive(")
+    ]
+    assert "state.previewScheduler?.cancel();" in begin_straighten
+    assert "window.clearTimeout(state.settleTimer);" in begin_straighten
     assert 'label: "Rendering Mode"' in main
     assert all(label in main for label in ("Auto (Recommended)", "GPU Preferred", "CPU Compatibility"))
     assert "const activeBackend = backend;" in main
@@ -1550,6 +1585,10 @@ def test_denoise_phase_two_keeps_analysis_structural_and_resolve_reconstruction_
     assert "for (const buffer of resolveParamBuffers) buffer.destroy();" in preview
     assert "if (candidateIsNew) candidate.texture.destroy();" in preview
     assert "longEdge = retainedOriginal.longEdge;" in preview
+    assert "retainedOriginal.sourceIdentity === sourceIdentity" in preview
+    assert "cancelDenoiseProcessing({ selectOriginal = true } = {})" in preview
+    assert "runtime.generation += 1;" in app_script
+    assert 'const sourceIdentity = gpuPreviewSourceOptions(lane)?.identity || "source";' in app_script
     assert "analyzeDenoiseWavelet" in app_script
     assert "resolveDenoiseWavelet" in app_script
 

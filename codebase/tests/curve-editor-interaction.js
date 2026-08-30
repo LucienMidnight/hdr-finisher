@@ -23,6 +23,37 @@ function curvePointPosition(box, x, y) {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
     await page.click("#test-pattern-button");
     await page.waitForFunction(() => document.body.dataset.workflow === "grade");
+
+    const controlOrder = async (lane) => page.evaluate((activeLane) => (
+      [...document.querySelector(`[data-lane-panel="${activeLane}"]`).children]
+        .map((element) => element.dataset.group)
+        .filter(Boolean)
+    ), lane);
+    const expectedHdrOrder = ["denoise", "hdr-tone", "hdr-equalizer", "hdr-zones", "hdr-highlights", "curves", "hdr-color"];
+    const hdrOrder = await controlOrder("hdr");
+    if (JSON.stringify(hdrOrder) !== JSON.stringify(expectedHdrOrder)) {
+      throw new Error(`Unexpected HDR control order: ${JSON.stringify(hdrOrder)}`);
+    }
+    const localPlacement = await page.evaluate(() => {
+      const grading = document.querySelector('[data-group="color-grading"]');
+      return grading?.nextElementSibling?.dataset.group;
+    });
+    if (localPlacement !== "local-adjustments") {
+      throw new Error(`Local Adjustments did not follow Color Grading: ${localPlacement}`);
+    }
+
+    await page.click("#view-sdr");
+    await page.waitForFunction(() => document.body.dataset.activeLane === "sdr");
+    const expectedSdrOrder = ["denoise", "sdr-base", "sdr-tone", "sdr-equalizer", "sdr-zones", "curves", "sdr-color"];
+    const sdrOrder = await controlOrder("sdr");
+    if (JSON.stringify(sdrOrder) !== JSON.stringify(expectedSdrOrder)) {
+      throw new Error(`Unexpected SDR control order: ${JSON.stringify(sdrOrder)}`);
+    }
+    await page.click("#view-hdr");
+    await page.waitForFunction(() => document.body.dataset.activeLane === "hdr");
+
+    const gpuAvailable = await page.evaluate(() => Boolean(window.HDRFinisherPerformance.gpuSnapshot()?.available));
+    if (gpuAvailable) await page.evaluate(() => window.HDRFinisherPerformance.enableGpuInstrumentation(true));
     await page.locator('[data-group="curves"] .group-toggle').click();
 
     const curve = page.locator("#curve-editor");
@@ -93,8 +124,22 @@ function curvePointPosition(box, x, y) {
       throw new Error(`Shift should retain ordinary curve movement: ctrl=${afterCtrlNudge}, shift=${afterShiftNudge}.`);
     }
 
+    if (gpuAvailable) {
+      await page.waitForFunction(() => window.HDRFinisherPerformance.gpuSnapshot().renders.length > 0);
+      const gpu = await page.evaluate(async () => {
+        await state.gpuPreview.device.queue.onSubmittedWorkDone();
+        return window.HDRFinisherPerformance.gpuSnapshot();
+      });
+      if (!gpu.renders.some((render) => render.lane === "hdr")) {
+        throw new Error(`Curve edits did not render through WebGPU: ${JSON.stringify(gpu.renders)}`);
+      }
+      if (!gpu.stages.some((stage) => stage.stage === "grading")) {
+        throw new Error("Curve edits did not submit a GPU grading pass.");
+      }
+    }
+
     if (pageErrors.length) throw new Error(`Browser errors: ${pageErrors.join(" | ")}`);
-    console.log("Curve editor interaction browser test passed.");
+    console.log(`Curve editor interaction browser test passed (WebGPU ${gpuAvailable ? "verified" : "unavailable in headless Chrome"}).`);
   } finally {
     await browser.close();
   }

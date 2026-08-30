@@ -246,6 +246,31 @@ def test_real_png_upload_preview_and_scopes() -> None:
     assert diagnostics.json()["render_cache"]["managed_bytes"] > 0
 
 
+def test_active_sdr_match_is_exposed_as_a_linear_srgb_webgpu_source() -> None:
+    upload = client.post(
+        "/api/session",
+        files={"file": ("matched-proxy.png", make_png_bytes(), "image/png")},
+    )
+    assert upload.status_code == 200
+    session_id = upload.json()["session"]["session_id"]
+    session = store.get(session_id)
+
+    matched = store.apply_sdr_match_action(
+        session_id,
+        expected_revision=session.edit_revision,
+        action="match",
+        authored_sdr_override_consent=True,
+    )
+    proxy = client.get(
+        f"/api/session/{session_id}/proxy/sdr",
+        params={"long_edge": 512, "edit_revision": matched.revision},
+    )
+
+    assert proxy.status_code == 200
+    assert proxy.headers["x-working-space"] == "linear-srgb"
+    assert store.get(session_id).render_cache.diagnostics()["matched_sdr_base_entries"] == 1
+
+
 def test_interactive_scopes_use_uncommitted_local_adjustments() -> None:
     upload = client.post("/api/session", files={"file": ("scope-local.png", make_png_bytes(), "image/png")})
     assert upload.status_code == 200

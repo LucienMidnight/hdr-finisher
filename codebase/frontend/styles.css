@@ -7513,21 +7513,21 @@ body {
   padding-left: calc(var(--group-disclosure-leading) - var(--group-index-left));
 }
 
-.control-group[data-group="denoise"] > .control-group-header::before { content: "02"; }
-.control-group[data-group="local-adjustments"] > .control-group-header::before { content: "03"; }
-.control-group[data-group="geometry"] > .control-group-header::before { content: "04"; }
+.control-group[data-group="geometry"] > .control-group-header::before { content: "02"; }
+.control-group[data-group="denoise"] > .control-group-header::before { content: "03"; }
 .control-group[data-group="hdr-tone"] > .control-group-header::before,
-.control-group[data-group="sdr-base"] > .control-group-header::before { content: "05"; }
-.control-group[data-group="hdr-highlights"] > .control-group-header::before,
-.control-group[data-group="sdr-tone"] > .control-group-header::before { content: "06"; }
+.control-group[data-group="sdr-base"] > .control-group-header::before { content: "04"; }
 .control-group[data-group="hdr-equalizer"] > .control-group-header::before,
-.control-group[data-group="sdr-equalizer"] > .control-group-header::before { content: "07"; }
-.control-group[data-group="hdr-color"] > .control-group-header::before,
-.control-group[data-group="sdr-color"] > .control-group-header::before { content: "08"; }
+.control-group[data-group="sdr-tone"] > .control-group-header::before { content: "05"; }
 .control-group[data-group="hdr-zones"] > .control-group-header::before,
-.control-group[data-group="sdr-zones"] > .control-group-header::before { content: "09"; }
-.control-group[data-group="curves"] > .control-group-header::before { content: "10"; }
-.control-group[data-group="color-grading"] > .control-group-header::before { content: "11"; }
+.control-group[data-group="sdr-equalizer"] > .control-group-header::before { content: "06"; }
+.control-group[data-group="hdr-highlights"] > .control-group-header::before,
+.control-group[data-group="sdr-zones"] > .control-group-header::before { content: "07"; }
+.control-group[data-group="curves"] > .control-group-header::before { content: "08"; }
+.control-group[data-group="hdr-color"] > .control-group-header::before,
+.control-group[data-group="sdr-color"] > .control-group-header::before { content: "09"; }
+.control-group[data-group="color-grading"] > .control-group-header::before { content: "10"; }
+.control-group[data-group="local-adjustments"] > .control-group-header::before { content: "11"; }
 .control-group[data-group="detail"] > .control-group-header::before { content: "12"; }
 .control-group[data-group="film-look"] > .control-group-header::before { content: "13"; }
 .control-group[data-group="vignette"] > .control-group-header::before { content: "14"; }

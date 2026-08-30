@@ -48,6 +48,38 @@ def test_matched_sdr_base_survives_independent_sdr_trim_cache_clears() -> None:
     assert not np.array_equal(first, second)
 
 
+def test_matched_sdr_base_is_the_stable_webgpu_source_across_sdr_trims() -> None:
+    image = np.linspace(0.02, 1.2, 64 * 96 * 3, dtype=np.float32).reshape(64, 96, 3)
+    adjustments = AdjustmentState()
+    adjustments.sdr.base_section_enabled = False
+    match = SdrMatchState(
+        active=True,
+        grain_source="captured_hdr",
+        captured_hdr_adjustments=adjustments.hdr.model_copy(deep=True),
+        captured_shared_adjustments=adjustments.shared.model_copy(deep=True),
+        captured_reference_white_nits=203,
+        captured_source_fingerprint_sha256="1" * 64,
+        automatic_highlight_boundary_ratio=0.8,
+        signature="gpu-source-test",
+        revert_state=SDRMatchRevertState(sdr_adjustments=adjustments.sdr.model_copy(deep=True)),
+    )
+    cache = SessionRenderCache(image, None)
+
+    first, first_space, first_geometry = cache.geometry_source_proxy(
+        PreviewKind.SDR, 256, adjustments, match
+    )
+    trimmed = adjustments.model_copy(deep=True)
+    trimmed.sdr.exposure = 0.75
+    second, second_space, second_geometry = cache.geometry_source_proxy(
+        PreviewKind.SDR, 256, trimmed, match
+    )
+
+    assert first is second
+    assert first_space == second_space == "linear-srgb"
+    assert first_geometry == second_geometry == adjustments.shared.geometry.model_dump_json()
+    assert cache.diagnostics()["matched_sdr_base_entries"] == 1
+
+
 def test_scope_request_counts_one_top_level_miss_then_one_hit() -> None:
     image = np.full((64, 96, 3), 0.18, dtype=np.float32)
     cache = SessionRenderCache(image, None)

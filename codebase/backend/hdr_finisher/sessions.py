@@ -77,6 +77,7 @@ def _sdr_grain_recipe(adjustments: AdjustmentState) -> tuple[object, ...]:
 def _hdr_match_signature(
     adjustments: AdjustmentState,
     local_adjustments: list[LocalAdjustment],
+    denoise: DenoiseDocumentSettings,
     reference_white_nits: int,
     source_fingerprint: str,
 ) -> str:
@@ -90,6 +91,7 @@ def _hdr_match_signature(
         shared.pop(field_name, None)
     payload = {
         "hdr": adjustments.hdr.model_dump(mode="json"),
+        "hdr_denoise": denoise.hdr.model_dump(mode="json"),
         "shared": shared,
         "locals": [
             {
@@ -115,6 +117,7 @@ def _refresh_sdr_match_staleness(session: "LoadedSession") -> None:
     session.sdr_match.stale = session.sdr_match.signature != _hdr_match_signature(
         session.adjustments,
         session.local_adjustments,
+        session.denoise,
         session.hdr_reference_white_nits,
         session.source_fingerprint_sha256,
     )
@@ -487,6 +490,7 @@ class SessionStore:
                 raise RevisionConflictError(expected_revision, session.edit_revision)
             current_adjustments = session.adjustments.model_copy(deep=True)
             current_locals = [item.model_copy(deep=True) for item in session.local_adjustments]
+            current_denoise = session.denoise.model_copy(deep=True)
             current_match = session.sdr_match.model_copy(deep=True)
             reference_white = session.hdr_reference_white_nits
             fingerprint = session.source_fingerprint_sha256
@@ -497,6 +501,8 @@ class SessionStore:
                 raise EditCommandError("There is no active SDR Match to revert.")
             target_adjustments = current_adjustments.model_copy(deep=True)
             target_adjustments.sdr = current_match.revert_state.sdr_adjustments.model_copy(deep=True)
+            target_denoise = current_denoise.model_copy(deep=True)
+            target_denoise.sdr = current_match.revert_state.sdr_denoise.model_copy(deep=True)
             saved = {item.id: item.sdr_grade for item in current_match.revert_state.local_grades}
             target_locals = [
                 item.model_copy(update={"sdr_grade": saved.get(item.id, LocalGrade()).model_copy(deep=True)}, deep=True)
@@ -523,7 +529,7 @@ class SessionStore:
                 for item in current_locals
             ]
             signature = _hdr_match_signature(
-                current_adjustments, current_locals, reference_white, fingerprint
+                current_adjustments, current_locals, current_denoise, reference_white, fingerprint
             )
             source, _ = session.render_cache.source_pair(768)
             captured_adjustments = current_adjustments.model_copy(deep=True)
@@ -558,10 +564,12 @@ class SessionStore:
                 revert_state = current_match.revert_state
                 target_adjustments = current_adjustments.model_copy(deep=True)
                 target_locals = current_locals
+                target_denoise = current_denoise.model_copy(deep=True)
                 grain_source = current_match.grain_source
             else:
                 revert_state = SDRMatchRevertState(
                     sdr_adjustments=current_adjustments.sdr.model_copy(deep=True),
+                    sdr_denoise=current_denoise.sdr.model_copy(deep=True),
                     local_grades=[
                         SDRLocalGradeSnapshot(id=item.id, sdr_grade=item.sdr_grade.model_copy(deep=True))
                         for item in current_locals
@@ -573,7 +581,12 @@ class SessionStore:
                 target_locals = [
                     item.model_copy(update={"sdr_grade": LocalGrade()}, deep=True) for item in current_locals
                 ]
+                target_denoise = current_denoise.model_copy(deep=True)
                 grain_source = "captured_hdr"
+            # Denoise remains rendition-specific because an authored SDR base
+            # can have different noise than the HDR source. Match/Rematch is
+            # the explicit operation that copies the current HDR recipe once.
+            target_denoise.sdr = current_denoise.hdr.model_copy(deep=True)
             target_match = SdrMatchState(
                 active=True,
                 stale=False,
@@ -598,6 +611,7 @@ class SessionStore:
                 "match_state": target_match.model_dump(mode="json"),
                 "global_adjustments": target_adjustments.model_dump(mode="json"),
                 "local_adjustments": [item.model_dump(mode="json") for item in target_locals],
+                "denoise": target_denoise.model_dump(mode="json"),
                 "authored_sdr_override_consent": authored_sdr_override_consent,
             },
         )
@@ -735,6 +749,7 @@ class SessionStore:
             previous_match = session.sdr_match.model_copy(deep=True)
             previous_adjustments = session.adjustments.model_copy(deep=True)
             previous_locals = [item.model_copy(deep=True) for item in session.local_adjustments]
+            previous_denoise = session.denoise.model_copy(deep=True)
             match_state = SdrMatchState.model_validate(payload.get("match_state"))
             adjustments = AdjustmentState.model_validate(payload.get("global_adjustments"))
             raw_locals = payload.get("local_adjustments")
@@ -743,6 +758,9 @@ class SessionStore:
             if len(raw_locals) > 256:
                 raise EditCommandError("A project may contain at most 256 local adjustments.")
             local_adjustments = [LocalAdjustment.model_validate(item) for item in raw_locals]
+            denoise = DenoiseDocumentSettings.model_validate(
+                payload.get("denoise", session.denoise.model_dump(mode="json"))
+            )
             local_ids = [item.id for item in local_adjustments]
             if len(local_ids) != len(set(local_ids)):
                 raise EditCommandError("Local adjustment UUIDs must be unique.")
@@ -759,6 +777,7 @@ class SessionStore:
             session.sdr_match = match_state
             session.adjustments = adjustments
             session.local_adjustments = local_adjustments
+            session.denoise = denoise
             session.render_cache.clear_adjusted()
             return EditCommand(
                 expected_revision=current_revision,
@@ -767,6 +786,7 @@ class SessionStore:
                     "match_state": previous_match.model_dump(mode="json"),
                     "global_adjustments": previous_adjustments.model_dump(mode="json"),
                     "local_adjustments": [item.model_dump(mode="json") for item in previous_locals],
+                    "denoise": previous_denoise.model_dump(mode="json"),
                     "authored_sdr_override_consent": True,
                 },
             )

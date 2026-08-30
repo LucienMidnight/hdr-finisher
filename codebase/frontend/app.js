@@ -739,8 +739,24 @@ function gpuPreviewEligible(lane = state.currentView) {
   ));
   return state.renderingMode !== "cpu"
     && Boolean(state.gpuPreview?.available)
-    && !unsupportedDetail
-    && !(lane === "sdr" && state.editDocument?.sdr_match?.active);
+    && !unsupportedDetail;
+}
+
+function gpuPreviewSourceOptions(lane = state.currentView) {
+  const match = state.editDocument?.sdr_match;
+  if (lane !== "sdr" || !match?.active) return null;
+  const boundary = match.manual_highlight_boundary_ratio ?? match.automatic_highlight_boundary_ratio;
+  const inheritedGrain = match.grain_source === "captured_hdr"
+    ? {
+        filmLook: match.captured_hdr_adjustments?.film_look || null,
+        filmLookSectionEnabled: match.captured_hdr_adjustments?.film_look_section_enabled !== false,
+        filmGrainSeed: match.captured_shared_adjustments?.film_grain_seed,
+      }
+    : null;
+  return {
+    identity: [match.algorithm_version, match.signature, match.captured_reference_white_nits, boundary].join(":"),
+    inheritedGrain,
+  };
 }
 
 function normalizedPreviewResolution(value = state.previewResolution) {
@@ -2468,18 +2484,22 @@ function bindEvents() {
   });
 
   els.controls.forEach((control) => {
+    const transactionOwnedControl = control.dataset.path === "shared.geometry.straighten_angle";
     control.addEventListener("pointerdown", () => {
+      if (transactionOwnedControl) return;
       beginGlobalEditGesture(control);
       state.previewScheduler?.beginInteraction();
     });
     ["pointerup", "pointercancel", "change"].forEach((eventName) => {
       control.addEventListener(eventName, () => {
+        if (transactionOwnedControl) return;
         if (eventName === "change" && control.dataset.historyKeyboardActive === "true") return;
         state.previewScheduler?.endInteraction();
         endGlobalEditGesture(control);
       });
     });
     control.addEventListener("keydown", (event) => {
+      if (transactionOwnedControl) return;
       if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"].includes(event.key)) {
         control.dataset.historyKeyboardActive = "true";
         beginGlobalEditGesture(control);
@@ -2487,6 +2507,7 @@ function bindEvents() {
       }
     }, true);
     control.addEventListener("keyup", () => {
+      if (transactionOwnedControl) return;
       delete control.dataset.historyKeyboardActive;
       state.previewScheduler?.endInteraction();
       endGlobalEditGesture(control);
@@ -3470,7 +3491,10 @@ function queueGpuDraft(lane = state.currentView) {
 }
 
 async function settlePreview(lane = state.currentView, task = {}) {
-  if (!state.session) return;
+  // Rotate/Straighten is an explicit Apply/Cancel transaction. A scheduler
+  // task left resident by an earlier grading gesture must never settle the
+  // transient geometry on slider release.
+  if (!state.session || state.rotateDraftGeometry) return false;
   await syncGlobalEditState();
   const display = lane === state.currentView;
   const longEdge = settledProxyLongEdge();
@@ -5780,6 +5804,13 @@ function closeCropMode(commit) {
       };
     }
     state.adjustments.shared.geometry = JSON.parse(JSON.stringify(draft));
+    // Crop can be committed while a preceding rotation is still represented
+    // by a CSS transform on the old bitmap. Carry that atomic handoff forward
+    // to the combined rotation + crop signature; otherwise edit-state sync
+    // clears the transform before the matching geometry proxy is ready.
+    if (state.geometryTransformHandoffSignature) {
+      state.geometryTransformHandoffSignature = geometrySignature();
+    }
     // Keep the mounted, pre-crop frame at its current display geometry until a
     // frame for the committed crop is actually presented. Recomputing zoom in
     // this gap uses stale bitmap dimensions and produces a brief zoom jump.
@@ -5815,6 +5846,15 @@ function beginStraightenGesture(event = null) {
     state.straightenPreviewBaseAngle = Number(state.adjustments.shared.geometry.straighten_angle) || 0;
   }
   showStraightenGrid();
+  if (state.rotateDraftGeometry) {
+    // The scheduler deliberately retains its last task so ordinary controls
+    // can request another settled pass on pointer-up. Straighten is owned by
+    // the rotate transaction, so discard that resident task before it can be
+    // re-armed with unapplied geometry.
+    state.previewScheduler?.cancel();
+    window.clearTimeout(state.settleTimer);
+    state.settleTimer = null;
+  }
   // Make any older authoritative geometry response stale without scheduling a
   // replacement until this gesture finishes.
   if (!state.rotateDraftGeometry) {
@@ -5936,7 +5976,7 @@ function rotateGeometry(delta) {
   geometry.rotation = (geometry.rotation + delta + 360) % 360;
   geometry.crop = { x: 0, y: 0, width: 1, height: 1 };
   syncControlsFromState();
-  renderRotateDraftTransform();
+  renderRotateDraftTransform({ reflow: true });
   renderGeometryResetState();
   if (!state.rotateDraftGeometry) {
     invalidatePreview("hdr");
@@ -5953,7 +5993,7 @@ function updateRotateDraft(key) {
   renderControlState();
 }
 
-function renderRotateDraftTransform() {
+function renderRotateDraftTransform({ reflow = false } = {}) {
   if (!state.rotateDraftGeometry) return;
   const original = state.rotateDraftGeometry;
   const current = state.adjustments.shared.geometry;
@@ -5965,7 +6005,7 @@ function renderRotateDraftTransform() {
   const neutralDraft = delta === 0 && flipX === 1 && flipY === 1 && Math.abs(straightenDelta) < 1e-9;
   if (neutralDraft && !state.geometryTransformHandoffSignature) {
     clearRotateDraftTransformProperties();
-    applyZoomGeometry();
+    if (reflow) applyZoomGeometry();
     return;
   }
   [els.previewImage, els.previewCanvas, els.chromeProofImage].forEach((preview) => {
@@ -5977,10 +6017,11 @@ function renderRotateDraftTransform() {
     if (preview) preview.style.clipPath = "";
   });
   applySourceOverlayGeometryTransform(original, current);
-  // Fit the transformed bounds, not the pre-rotation bitmap bounds. Without
-  // this recalculation a landscape draft rotated to portrait can be clipped or
-  // shown at a different scale from the authoritative settled frame.
-  applyZoomGeometry();
+  // Quarter-turn buttons change the draft's layout bounds and need a fit
+  // recalculation. Straighten and flip only move the already-sized bitmap; a
+  // recalculation on pointer release would size from the proxy rather than the
+  // source frame and make the image appear to zoom far out.
+  if (reflow) applyZoomGeometry();
 }
 
 function applySourceOverlayGeometryTransform(original, current) {
@@ -7573,7 +7614,9 @@ function updateCustomDenoiseAnalysis(key, value, persist = true) {
 
 async function persistDenoiseSettings() {
   if (!state.session) return false;
-  return queueEditCommand("set_denoise_settings", { denoise: JSON.parse(JSON.stringify(state.denoise)) }, null, { refreshPreview: false });
+  const applied = await queueEditCommand("set_denoise_settings", { denoise: JSON.parse(JSON.stringify(state.denoise)) }, null, { refreshPreview: false });
+  if (applied) renderLaneChrome();
+  return applied;
 }
 
 async function setDenoiseEnabled(enabled) {
@@ -7582,9 +7625,10 @@ async function setDenoiseEnabled(enabled) {
   const runtime = state.denoiseRuntime[lane];
   runtime.error = "";
   if (!enabled) {
+    runtime.generation += 1;
     runtime.status = "off";
     runtime.showOriginal = true;
-    state.gpuPreview?.selectDenoiseSelectorSource?.(false);
+    state.gpuPreview?.cancelDenoiseProcessing?.({ selectOriginal: true });
     await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
     renderDenoiseControls();
     void persistDenoiseSettings();
@@ -7592,7 +7636,8 @@ async function setDenoiseEnabled(enabled) {
   }
   void persistDenoiseSettings();
   const denoise = state.gpuPreview?.diagnosticsSnapshot?.().denoise;
-  const expectedIdentity = `${state.session?.session_id}:${lane}:${refinementProxyLongEdge()}:${JSON.stringify(state.adjustments.shared?.geometry || {})}`;
+  const sourceIdentity = gpuPreviewSourceOptions(lane)?.identity || "source";
+  const expectedIdentity = `${state.session?.session_id}:${lane}:${refinementProxyLongEdge()}:${JSON.stringify(state.adjustments.shared?.geometry || {})}:${sourceIdentity}`;
   if (!runtime.dirty && denoise?.cacheReady && denoise.identity === expectedIdentity) {
     state.gpuPreview.selectDenoiseSelectorSource(true);
     runtime.status = "ready";
@@ -7605,17 +7650,17 @@ async function setDenoiseEnabled(enabled) {
   await recalculateDenoise();
 }
 
-async function recalculateDenoise() {
-  const lane = state.currentView;
+async function recalculateDenoise(lane = state.currentView) {
   const settings = state.denoise[lane];
   if (!state.session || !settings.enabled || !state.gpuPreview?.available) return false;
   const runtime = state.denoiseRuntime[lane];
   const generation = ++runtime.generation;
   runtime.status = state.gpuPreview.diagnosticsSnapshot().denoise.cacheReady ? "recalculating" : "preparing";
   runtime.error = "";
-  renderDenoiseControls();
+  if (lane === state.currentView) renderDenoiseControls();
   try {
     const analysis = settings.analysis;
+    const sourceIdentity = gpuPreviewSourceOptions(lane)?.identity || "source";
     const ready = await state.gpuPreview.analyzeDenoiseProxy(
       state.session.session_id,
       lane,
@@ -7629,6 +7674,13 @@ async function recalculateDenoise() {
         lumaSigma: analysis.luma_sigma,
         chromaSigma: analysis.chroma_sigma,
       },
+      sourceIdentity,
+      {
+        amount: settings.controls.amount,
+        luminance: settings.controls.luminance,
+        colorNoise: settings.controls.color_noise,
+        detailRecovery: settings.controls.detail_recovery,
+      },
     );
     if (generation !== runtime.generation) return false;
     if (!ready) throw new Error("The denoise analysis was replaced before completion.");
@@ -7637,13 +7689,13 @@ async function recalculateDenoise() {
     runtime.showOriginal = false;
     await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
     debounceOverlayAndScopes();
-    renderDenoiseControls();
+    if (lane === state.currentView) renderDenoiseControls();
     return true;
   } catch (error) {
     if (generation !== runtime.generation) return false;
     runtime.status = "error";
     runtime.error = error?.message || "Denoise analysis failed.";
-    renderDenoiseControls();
+    if (lane === state.currentView) renderDenoiseControls();
     return false;
   }
 }
@@ -8328,14 +8380,32 @@ async function renderGpuDraft(
   if (state.comparePeekActive && !allowInactive) return false;
   if (state.globalEditDirty && state.acceptedPresentation?.geometrySignature !== geometrySignature()) return false;
   const serial = ++state.gpuRenderSerial;
+  const sessionId = state.session.session_id;
+  const generation = state.previewGeneration[lane];
+  const requestedGeometrySignature = geometrySignature();
   const adjustmentsSnapshot = JSON.parse(JSON.stringify(state.adjustments));
   const localSnapshot = state.compareWithoutLocals
     ? []
     : JSON.parse(JSON.stringify(localAdjustments()));
   const maskOverlay = gpuLumaMaskOverlayOptions();
+  const sourceOptions = {
+    ...(gpuPreviewSourceOptions(lane) || {}),
+    // WebGPU renders directly into the mounted canvas. Guard inside the
+    // renderer, before it resizes or submits to that canvas, because rejecting
+    // the result here after await would already be visibly too late.
+    isCurrent: () => serial === state.gpuRenderSerial
+      && state.session?.session_id === sessionId
+      // While a pointer gesture is active, presenting the most recently
+      // submitted tonal frame is preferable to dropping every GPU frame just
+      // because a newer curve sample is already queued. The render serial and
+      // geometry signature still prevent cross-lane or stale-geometry paints.
+      && (generation === state.previewGeneration[lane] || Boolean(state.previewScheduler?.interacting))
+      && requestedGeometrySignature === geometrySignature()
+      && (allowInactive || lane === state.currentView),
+  };
   try {
     const result = await state.gpuPreview.render(
-      state.session.session_id,
+      sessionId,
       lane,
       adjustmentsSnapshot,
       sampleCurvePoints,
@@ -8345,8 +8415,9 @@ async function renderGpuDraft(
       maskOverlay,
       projectReferenceWhiteNits(),
       { width: state.session.source.width, height: state.session.source.height },
+      sourceOptions,
     );
-    if (!result || serial !== state.gpuRenderSerial || (!allowInactive && lane !== state.currentView)) return false;
+    if (!result || !sourceOptions.isCurrent()) return false;
     state.gpuPreparedLane[lane] = true;
     state.gpuSurfaceHdr = Boolean(result.hdr);
     els.previewImage.style.display = "none";
@@ -8927,8 +8998,24 @@ async function switchLane(lane) {
   if (previewNeedsRefinement()) debouncePreview(lane);
 }
 
+function arrangeLaneControlGroups(lane) {
+  const panel = els.lanePanels.find((candidate) => candidate.dataset.lanePanel === lane);
+  if (!panel) return;
+  const groupOrder = lane === "hdr"
+    ? ["denoise", "hdr-tone", "hdr-equalizer", "hdr-zones", "hdr-highlights", "curves", "hdr-color"]
+    : ["denoise", "sdr-base", "sdr-tone", "sdr-equalizer", "sdr-zones", "curves", "sdr-color"];
+  for (const groupName of groupOrder) {
+    const group = document.querySelector(`.control-group[data-group="${groupName}"]`);
+    if (group) panel.append(group);
+  }
+  const colorGrading = document.querySelector('.control-group[data-group="color-grading"]');
+  const localAdjustmentsGroup = document.querySelector('.control-group[data-group="local-adjustments"]');
+  if (colorGrading && localAdjustmentsGroup) colorGrading.after(localAdjustmentsGroup);
+}
+
 function renderLaneChrome() {
   const lane = state.currentView;
+  arrangeLaneControlGroups(lane);
   document.body.dataset.activeLane = lane;
   els.previewStage.dataset.primaryLane = lane;
   els.previewPrimaryPane.dataset.lane = lane;
@@ -9098,12 +9185,14 @@ async function preloadInactiveLane(lane, generation) {
     return;
   }
   try {
+    const sourceIdentity = gpuPreviewSourceOptions(lane)?.identity || "source";
     await state.gpuPreview.loadProxy(
       state.session.session_id,
       lane,
       settledProxyLongEdge(),
       geometrySignature(),
       state.editRevision,
+      sourceIdentity,
     );
     if (generation !== state.previewGeneration[lane]) return;
     state.gpuPreparedLane[lane] = true;
@@ -9242,6 +9331,7 @@ async function renderComparisonPreview(lane, { force = false } = {}) {
         null,
         projectReferenceWhiteNits(),
         { width: state.session.source.width, height: state.session.source.height },
+        gpuPreviewSourceOptions(lane),
       );
       if (result && lane !== state.currentView && generation === state.previewGeneration[lane]) {
         state.gpuPreparedLane[lane] = true;
@@ -11726,6 +11816,7 @@ async function setSdrMatch(action) {
     state.editRevision = result.revision;
     state.editDocument = result.document;
     state.adjustments = result.document.global_adjustments;
+    loadDenoiseDocument(state.editDocument);
     state.documentDirty = Boolean(result.dirty);
     state.sdrMatchGrainOverridePending = false;
     // Match only changes the SDR rendition. Preserve the already-presented HDR
@@ -11738,7 +11829,25 @@ async function setSdrMatch(action) {
     invalidatePreview("sdr", { markDirty: false });
     renderLaneChrome();
     renderLocalAdjustments();
-    await refreshPreview({ progressSteps: [20, 60, 90] });
+    // A Match action is already a discrete, blocking operation. When SDR is
+    // visible, render the selected preview tier directly instead of presenting
+    // the bounded settled proxy and leaving 2K/4K to the idle refiner.
+    const previewLongEdge = state.currentView === "sdr"
+      ? refinementProxyLongEdge()
+      : settledProxyLongEdge();
+    const previewTier = previewLongEdge >= refinementProxyLongEdge() ? "refinement" : "settled";
+    if (state.denoise.sdr.enabled) await recalculateDenoise("sdr");
+    const gpuReady = await renderGpuDraft("sdr", {
+      hideStatus: false,
+      longEdge: previewLongEdge,
+      allowInactive: state.currentView !== "sdr",
+      tier: previewTier,
+    });
+    if (!gpuReady) {
+      await renderPreviewForLane("sdr", state.currentView === "sdr", previewLongEdge, {
+        progressSteps: [20, 60, 90],
+      });
+    }
     await refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane: "sdr" });
     if (state.compareLayout !== "single") {
       const other = state.currentView === "hdr" ? "sdr" : "hdr";

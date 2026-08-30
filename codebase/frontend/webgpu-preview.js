@@ -295,8 +295,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.scopeResources.clear();
     }
 
-    async render(sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203, sourceSize = null) {
-      return this.renderTo(this.canvas, sessionId, lane, adjustments, curveSampler, longEdge, localAdjustments, editRevision, maskOverlay, referenceWhiteNits, sourceSize);
+    async render(sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203, sourceSize = null, sourceOptions = null) {
+      return this.renderTo(this.canvas, sessionId, lane, adjustments, curveSampler, longEdge, localAdjustments, editRevision, maskOverlay, referenceWhiteNits, sourceSize, sourceOptions);
     }
 
     setInstrumentationEnabled(enabled = true) {
@@ -360,6 +360,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           resolvedResident: Boolean(this.denoiseSourceSelector?.resolved),
           cacheReady: Boolean(this.denoiseSourceSelector?.cache),
           algorithmVersion: this.denoiseSourceSelector?.cache?.algorithmVersion || null,
+          controls: this.denoiseSourceSelector?.controls
+            ? { ...this.denoiseSourceSelector.controls }
+            : null,
         },
         resources: {
           proxies: this.proxies.size,
@@ -393,23 +396,32 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       };
     }
 
-    async renderTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203, sourceSize = null) {
+    async renderTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203, sourceSize = null, sourceOptions = null) {
       if (!this.available || !sessionId) return false;
       const renderStartedAt = performance.now();
       if (this.sessionId !== sessionId) this.resetSession(sessionId);
       const serial = (this.renderSerials.get(canvas) || 0) + 1;
       this.renderSerials.set(canvas, serial);
       const geometrySignature = JSON.stringify(adjustments.shared?.geometry || {});
+      const sourceIdentity = sourceOptions?.identity || "source";
       const retainedOriginal = this.denoiseSourceSelector?.original;
       if (retainedOriginal
         && retainedOriginal.sessionId === sessionId
         && retainedOriginal.lane === lane
-        && retainedOriginal.geometrySignature === geometrySignature) {
+        && retainedOriginal.geometrySignature === geometrySignature
+        && retainedOriginal.sourceIdentity === sourceIdentity) {
         longEdge = retainedOriginal.longEdge;
       }
-      const proxy = await this.loadProxy(sessionId, lane, longEdge, geometrySignature, editRevision);
+      const proxy = await this.loadProxy(
+        sessionId,
+        lane,
+        longEdge,
+        geometrySignature,
+        editRevision,
+        sourceIdentity,
+      );
       const proxyReadyAt = performance.now();
-      if (serial !== this.renderSerials.get(canvas) || !proxy) return false;
+      if (serial !== this.renderSerials.get(canvas) || !proxy || sourceOptions?.isCurrent?.() === false) return false;
       const sourceProxy = this.selectedDenoiseSource(proxy);
       const activeLocals = localAdjustments.filter((local) => local.enabled !== false && local.opacity > 0 && local[`${lane}_grade`]?.enabled !== false);
       if (!activeLocals.every((local) => gpuLocalSupported(local[`${lane}_grade`]))) return false;
@@ -422,7 +434,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         () => serial === this.renderSerials.get(canvas),
       )));
       const masksReadyAt = performance.now();
-      if (serial !== this.renderSerials.get(canvas) || masks.some((mask) => !mask)) return false;
+      if (serial !== this.renderSerials.get(canvas)
+        || masks.some((mask) => !mask)
+        || sourceOptions?.isCurrent?.() === false) return false;
 
       if (canvas.width !== proxy.width) canvas.width = proxy.width;
       if (canvas.height !== proxy.height) canvas.height = proxy.height;
@@ -432,7 +446,15 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const pipelines = this.pipelineFor(surface.format);
       const sourceLongEdge = Math.max(Number(sourceSize?.width) || proxy.width, Number(sourceSize?.height) || proxy.height);
       const sourcePixelScale = Math.min(1, Math.max(proxy.width, proxy.height) / Math.max(1, sourceLongEdge));
-      const params = buildParams(lane, adjustments, proxy.workingSpace, surface.hdr, referenceWhiteNits, sourcePixelScale);
+      const params = buildParams(
+        lane,
+        adjustments,
+        proxy.workingSpace,
+        surface.hdr,
+        referenceWhiteNits,
+        sourcePixelScale,
+        sourceOptions?.inheritedGrain || null,
+      );
       const overlayIndex = maskOverlay?.localId
         ? activeLocals.findIndex((local) => local.id === maskOverlay.localId)
         : -1;
@@ -729,12 +751,13 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return { texture, width, height, byteSize: width * height * 8 };
     }
 
-    async analyzeDenoiseProxy(sessionId, lane, adjustments, longEdge, editRevision = 0, preset = {}) {
+    async analyzeDenoiseProxy(sessionId, lane, adjustments, longEdge, editRevision = 0, preset = {}, sourceIdentity = "source", controls = {}) {
       if (!this.available || !sessionId) return false;
-      const geometrySignature = JSON.stringify(adjustments?.shared?.geometry || {});
-      const original = await this.loadProxy(sessionId, lane, longEdge, geometrySignature, editRevision);
-      if (!original) return false;
       const generation = ++this.denoiseSelectorGeneration;
+      const geometrySignature = JSON.stringify(adjustments?.shared?.geometry || {});
+      const original = await this.loadProxy(sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity);
+      if (!original) return false;
+      if (generation !== this.denoiseSelectorGeneration || this.sessionId !== sessionId) return false;
       const pipelines = await this.ensureDenoisePipelines();
       const settings = {
         name: "Photo / Fine",
@@ -856,7 +879,12 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           for (const buffer of resolveParamBuffers) buffer.destroy();
         }
       }
-      return this.resolveDenoiseProxy({ amount: 0.5, luminance: 0.5, colorNoise: 0.5, detailRecovery: 0.5 });
+      return this.resolveDenoiseProxy({
+        amount: controls.amount ?? 0.5,
+        luminance: controls.luminance ?? 0.5,
+        colorNoise: controls.colorNoise ?? controls.color_noise ?? 0.5,
+        detailRecovery: controls.detailRecovery ?? controls.detail_recovery ?? 0.5,
+      });
     }
 
     async resolveDenoiseProxy(controls = {}) {
@@ -956,6 +984,12 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           };
         }
         selector.selected = "resolved";
+        selector.controls = {
+          amount: weights[0],
+          luminance: weights[1],
+          colorNoise: weights[2],
+          detailRecovery: weights[3],
+        };
         this.denoiseCounters.atomicSwaps += 1;
         if (candidateIsNew) {
           this.denoiseCounters.allocations += 1;
@@ -971,12 +1005,13 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       }
     }
 
-    async prepareDenoiseSelectorSeam(sessionId, lane, adjustments, longEdge, editRevision = 0, variant = "resolved-a") {
+    async prepareDenoiseSelectorSeam(sessionId, lane, adjustments, longEdge, editRevision = 0, variant = "resolved-a", sourceIdentity = "source") {
       if (!this.available || !sessionId) return false;
-      const geometrySignature = JSON.stringify(adjustments?.shared?.geometry || {});
-      const original = await this.loadProxy(sessionId, lane, longEdge, geometrySignature, editRevision);
-      if (!original) return false;
       const generation = ++this.denoiseSelectorGeneration;
+      const geometrySignature = JSON.stringify(adjustments?.shared?.geometry || {});
+      const original = await this.loadProxy(sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity);
+      if (!original) return false;
+      if (generation !== this.denoiseSelectorGeneration || this.sessionId !== sessionId) return false;
       const startedAt = performance.now();
       const texture = this.device.createTexture({
         size: { width: original.width, height: original.height },
@@ -1038,6 +1073,18 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.denoiseCounters.toggles += 1;
       this.recordStage("selector-toggle", { source: this.denoiseSourceSelector.selected });
       return true;
+    }
+
+    cancelDenoiseProcessing({ selectOriginal = true } = {}) {
+      const generation = ++this.denoiseSelectorGeneration;
+      if (selectOriginal && this.denoiseSourceSelector) {
+        this.denoiseSourceSelector.selected = "original";
+      }
+      this.recordStage("denoise-cancel", {
+        generation,
+        source: this.denoiseSourceSelector?.selected || "none",
+      });
+      return Boolean(this.denoiseSourceSelector);
     }
 
     async readDenoiseSelectorPixel() {
@@ -1470,8 +1517,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       });
     }
 
-    async loadProxy(sessionId, lane, longEdge, geometrySignature = "{}", editRevision = 0) {
-      const key = `${sessionId}:${lane}:${longEdge}:${geometrySignature}`;
+    async loadProxy(sessionId, lane, longEdge, geometrySignature = "{}", editRevision = 0, sourceIdentity = "source") {
+      const key = `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}`;
       if (this.proxies.has(key)) {
         this.recordStage("proxy-request", { lane, longEdge, cacheHit: true });
         return this.proxies.get(key);
@@ -1505,7 +1552,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         const texture = this.device.createTexture({
           size: { width, height },
           format: pixelFormat,
-          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC,
         });
         this.device.queue.writeTexture(
           { texture },
@@ -1524,6 +1571,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           workingSpace,
           pixelFormat,
           geometrySignature,
+          sourceIdentity,
           identity: key,
           byteSize,
           bindGroups: new Map(),
@@ -2063,7 +2111,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     return Math.max(0.0018, peak);
   }
 
-  function buildParams(lane, adjustments, workingSpace, hdrSurface, referenceWhiteNits = 203, sourcePixelScale = 1) {
+  function buildParams(lane, adjustments, workingSpace, hdrSurface, referenceWhiteNits = 203, sourcePixelScale = 1, inheritedGrain = null) {
     const params = new Float32Array(PARAM_COUNT);
     const projectReferenceWhite = Number(referenceWhiteNits) === 100 ? 100 : 203;
     const branch = adjustments[lane];
@@ -2152,16 +2200,20 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     params[97] = film.image_structure_enabled !== false ? 1 : 0;
     params[98] = (film.image_softness || 0) / 100;
     params[99] = (film.microcontrast || 0) / 100;
-    params[100] = film.grain_enabled !== false ? 1 : 0;
-    params[101] = (film.grain_amount || 0) / 100;
-    params[102] = (film.grain_size ?? 50) / 100;
-    params[103] = (film.grain_softness ?? 25) / 100;
-    params[104] = (film.grain_chroma || 0) / 100;
-    params[105] = (film.grain_shadow_response ?? 100) / 100;
-    params[106] = (film.grain_midtone_response ?? 100) / 100;
-    params[107] = (film.grain_highlight_response ?? 100) / 100;
+    const grain = inheritedGrain?.filmLook || film;
+    const grainSectionEnabled = inheritedGrain
+      ? inheritedGrain.filmLookSectionEnabled !== false
+      : filmEnabled;
+    params[100] = grain.grain_enabled !== false ? 1 : 0;
+    params[101] = (grain.grain_amount || 0) / 100;
+    params[102] = (grain.grain_size ?? 50) / 100;
+    params[103] = (grain.grain_softness ?? 25) / 100;
+    params[104] = (grain.grain_chroma || 0) / 100;
+    params[105] = (grain.grain_shadow_response ?? 100) / 100;
+    params[106] = (grain.grain_midtone_response ?? 100) / 100;
+    params[107] = (grain.grain_highlight_response ?? 100) / 100;
     params[108] = (film.film_resolution ?? 100) / 100;
-    params[109] = adjustments.shared?.film_grain_seed ?? 271828;
+    params[109] = inheritedGrain?.filmGrainSeed ?? adjustments.shared?.film_grain_seed ?? 271828;
     const filmGates = {
       "65mm": [52.63, 23.01],
       "35mm": [36, 24],
@@ -2170,13 +2222,15 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       "16mm": [10.26, 7.49],
       super8: [5.79, 4.01],
     };
-    const gate = film.grain_film_format === "custom"
-      ? [Math.min(500, Math.max(1, Number(film.grain_custom_width_mm) || 36)), Math.min(500, Math.max(1, Number(film.grain_custom_height_mm) || 24))]
-      : (filmGates[film.grain_film_format] || filmGates["35mm"]);
+    const gate = grain.grain_film_format === "custom"
+      ? [Math.min(500, Math.max(1, Number(grain.grain_custom_width_mm) || 36)), Math.min(500, Math.max(1, Number(grain.grain_custom_height_mm) || 24))]
+      : (filmGates[grain.grain_film_format] || filmGates["35mm"]);
     params[140] = gate[0];
     params[141] = gate[1];
-    params[142] = film.grain_capture_geometry === "horizontal_strip" ? 1
-      : film.grain_capture_geometry === "vertical_strip" ? 2 : 0;
+    params[142] = grain.grain_capture_geometry === "horizontal_strip" ? 1
+      : grain.grain_capture_geometry === "vertical_strip" ? 2 : 0;
+    params[153] = grainSectionEnabled ? 1 : 0;
+    params[154] = grainSectionEnabled ? (grain.look_strength ?? 100) / 100 : 0;
     params[110] = lane === "hdr" && branch.highlight_compression_color_handling === "path_to_white" ? 1 : 0;
     const grading = branch.color_grading || {};
     params[111] = branch.color_grading_section_enabled !== false ? 1 : 0;
@@ -3184,53 +3238,53 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     }
     fn applyFilmLook(coordinate: vec2i) -> vec3f {
       var rgb = sampleFilm(coordinate);
-      if (p[78] < 0.5 || p[79] <= 0.0) { return applyVignette(rgb, coordinate); }
       let dimensions = vec2f(textureDimensions(sourceTexture));
-      var spatial = vec4f(0.0);
-      if (p[85] > 0.5 || (p[92] > 0.5 && p[93] > 0.0)) {
-        spatial = sampleSpatial((vec2f(coordinate) + vec2f(0.5)) / dimensions);
-      }
-      if (p[85] > 0.5) {
-        let halationRadius = filmPhysicalOffset(p[88], 256);
-        let edgeRadius = clamp(halationRadius / 4, 1, 16);
-        let edgeSource = halationEdgeSource(coordinate, p[87], edgeRadius);
-        let haloY = max(spatial.a - edgeSource * 0.15, 0.0);
-        let angle = radians(12.0 + 45.0 * p[89]);
-        let warm = vec3f(1.0, 0.34 + 0.18 * sin(angle), 0.07 + 0.10 * max(cos(angle), 0.0));
-        let warmY = lumaSrgb(warm);
-        let canonicalTintSrgb = mix(vec3f(warmY), warm, clamp(p[90], 0.0, 1.0));
-        let tint = select(canonicalTintSrgb, srgbToAcescg(canonicalTintSrgb), p[0] > 0.5);
-        if (p[91] > 0.5) { return vec3f(clamp(filmSignalFromLuma(haloY), 0.0, 1.0)); }
-        rgb += haloY * tint * (0.42 * p[86] * p[79]);
-      }
-      if (p[92] > 0.5 && p[93] > 0.0) {
-        let bloomMask = filmHighlightMask(rgb, p[94]);
-        let qualified = rgb * bloomMask * bloomMask;
-        let amount = p[93] * p[79];
-        let additive = spatial.rgb * (0.22 * amount);
-        let diffusion = (spatial.rgb - qualified) * ((1.0 - p[96]) * 0.35 * amount);
-        rgb = max(rgb + additive + diffusion, vec3f(0.0));
-      }
-      if (p[97] > 0.5 && (abs(p[98]) > 0.000001 || abs(p[99]) > 0.000001)) {
-        let structureBlur = filmBlur(coordinate, 0.06, 24);
-        let structureSource = rgb;
-        rgb = structureSource
-          + (structureBlur - structureSource) * p[98] * p[79] * 0.65
-          + (structureSource - structureBlur) * p[99] * p[79] * 0.5;
-      }
-      if (p[108] < 1.0) {
-        let resolutionLoss = (1.0 - p[108]) * p[79];
-        let resolutionSource = sampleFilm(coordinate);
-        let resolutionBlur = filmPhysicalBlur(coordinate, 0.04 + 0.08 * resolutionLoss, 32);
-        let fineDetail = resolutionSource - resolutionBlur;
-        let relativeDetail = max(abs(fineDetail.r), max(abs(fineDetail.g), abs(fineDetail.b)))
-          / (max(abs(resolutionSource.r), max(abs(resolutionSource.g), abs(resolutionSource.b))) + 0.02);
-        let edgeProtection = smoothRange(0.025, 0.20, relativeDetail);
-        rgb -= fineDetail * resolutionLoss * 0.85 * (1.0 - edgeProtection);
+      if (p[78] >= 0.5 && p[79] > 0.0) {
+        var spatial = vec4f(0.0);
+        if (p[85] > 0.5 || (p[92] > 0.5 && p[93] > 0.0)) {
+          spatial = sampleSpatial((vec2f(coordinate) + vec2f(0.5)) / dimensions);
+        }
+        if (p[85] > 0.5) {
+          let halationRadius = filmPhysicalOffset(p[88], 256);
+          let edgeRadius = clamp(halationRadius / 4, 1, 16);
+          let edgeSource = halationEdgeSource(coordinate, p[87], edgeRadius);
+          let haloY = max(spatial.a - edgeSource * 0.15, 0.0);
+          let angle = radians(12.0 + 45.0 * p[89]);
+          let warm = vec3f(1.0, 0.34 + 0.18 * sin(angle), 0.07 + 0.10 * max(cos(angle), 0.0));
+          let warmY = lumaSrgb(warm);
+          let canonicalTintSrgb = mix(vec3f(warmY), warm, clamp(p[90], 0.0, 1.0));
+          let tint = select(canonicalTintSrgb, srgbToAcescg(canonicalTintSrgb), p[0] > 0.5);
+          if (p[91] > 0.5) { return vec3f(clamp(filmSignalFromLuma(haloY), 0.0, 1.0)); }
+          rgb += haloY * tint * (0.42 * p[86] * p[79]);
+        }
+        if (p[92] > 0.5 && p[93] > 0.0) {
+          let bloomMask = filmHighlightMask(rgb, p[94]);
+          let qualified = rgb * bloomMask * bloomMask;
+          let amount = p[93] * p[79];
+          let additive = spatial.rgb * (0.22 * amount);
+          let diffusion = (spatial.rgb - qualified) * ((1.0 - p[96]) * 0.35 * amount);
+          rgb = max(rgb + additive + diffusion, vec3f(0.0));
+        }
+        if (p[97] > 0.5 && (abs(p[98]) > 0.000001 || abs(p[99]) > 0.000001)) {
+          let structureBlur = filmBlur(coordinate, 0.06, 24);
+          let structureSource = rgb;
+          rgb = structureSource
+            + (structureBlur - structureSource) * p[98] * p[79] * 0.65
+            + (structureSource - structureBlur) * p[99] * p[79] * 0.5;
+        }
+        if (p[108] < 1.0) {
+          let resolutionLoss = (1.0 - p[108]) * p[79];
+          let resolutionSource = sampleFilm(coordinate);
+          let resolutionBlur = filmPhysicalBlur(coordinate, 0.04 + 0.08 * resolutionLoss, 32);
+          let fineDetail = resolutionSource - resolutionBlur;
+          let relativeDetail = max(abs(fineDetail.r), max(abs(fineDetail.g), abs(fineDetail.b)))
+            / (max(abs(resolutionSource.r), max(abs(resolutionSource.g), abs(resolutionSource.b))) + 0.02);
+          let edgeProtection = smoothRange(0.025, 0.20, relativeDetail);
+          rgb -= fineDetail * resolutionLoss * 0.85 * (1.0 - edgeProtection);
+        }
       }
       rgb = applyVignette(rgb, coordinate);
-      if (p[100] > 0.5 && p[101] > 0.0) {
-        let dimensions = vec2f(textureDimensions(sourceTexture));
+      if (p[153] > 0.5 && p[154] > 0.0 && p[100] > 0.5 && p[101] > 0.0) {
         let pixelsPerMm = filmPixelsPerMm(dimensions);
         let physicalPitch = pixelsPerMm * (6.0 + 24.0 * p[102]) / 1000.0;
         let pitch = max(1.0, physicalPitch);
@@ -3242,7 +3296,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         let highlightWeight = pow(signal, 2.0);
         let midWeight = max(0.0, 1.0 - shadowWeight - highlightWeight);
         let response = shadowWeight * p[105] + midWeight * p[106] + highlightWeight * p[107];
-        let amount = 0.18 * p[101] * p[79] * response * pixelCoverage;
+        let amount = 0.18 * p[101] * p[154] * response * pixelCoverage;
         rgb *= exp2(vec3f(mono * amount));
         if (p[104] > 0.0) {
           let chroma = vec3f(grainValueNoise(grainCoordinate, 31.0), grainValueNoise(grainCoordinate, 59.0), grainValueNoise(grainCoordinate, 83.0));

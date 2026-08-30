@@ -730,6 +730,7 @@ def webgpu_proxy(
         kind,
         long_edge,
         session.adjustments,
+        session.sdr_match,
     )
     if geometry_signature is not None:
         try:

@@ -44,6 +44,7 @@ def _active_match_state(store: SessionStore, session_id: str, *, grain_source: s
         signature="test-match-signature",
         revert_state=SDRMatchRevertState(
             sdr_adjustments=session.adjustments.sdr.model_copy(deep=True),
+            sdr_denoise=session.denoise.sdr.model_copy(deep=True),
             authored_sdr_base_active=session.sdr_reference_image is not None,
         ),
     )
@@ -377,6 +378,10 @@ def test_match_action_materializes_renders_marks_stale_and_reverts(tmp_path: Pat
     store, session_id = _store_with_source(tmp_path)
     session = store.get(session_id)
     session.adjustments.sdr.exposure = 0.65
+    session.denoise.hdr.enabled = True
+    session.denoise.hdr.controls.amount = 0.82
+    session.denoise.sdr.enabled = True
+    session.denoise.sdr.controls.amount = 0.17
 
     matched = store.apply_sdr_match_action(
         session_id, expected_revision=0, action="match"
@@ -387,6 +392,8 @@ def test_match_action_materializes_renders_marks_stale_and_reverts(tmp_path: Pat
     assert matched.document.global_adjustments.sdr.base_section_enabled is False
     assert matched.document.global_adjustments.sdr.highlight_recovery == 0.0
     assert matched.document.sdr_match.revert_state.sdr_adjustments.exposure == 0.65
+    assert matched.document.sdr_match.revert_state.sdr_denoise.controls.amount == 0.17
+    assert matched.document.denoise.sdr == matched.document.denoise.hdr
     assert len(session.undo_history) == 1
 
     rendered = session.render_cache.adjusted_frame(
@@ -414,15 +421,54 @@ def test_match_action_materializes_renders_marks_stale_and_reverts(tmp_path: Pat
     repeated = store.apply_edit_commands(session_id, [EditCommand(expected_revision=3, command_type="redo")])
     assert repeated.document.sdr_match.stale is True
 
+    session.denoise.hdr.controls.amount = 0.91
+
     rematched = store.apply_sdr_match_action(
         session_id, expected_revision=4, action="rematch"
     )
     assert rematched.document.sdr_match.stale is False
     assert rematched.document.sdr_match.revert_state.sdr_adjustments.exposure == 0.65
+    assert rematched.document.sdr_match.revert_state.sdr_denoise.controls.amount == 0.17
+    assert rematched.document.denoise.sdr.controls.amount == 0.91
 
     reverted = store.apply_sdr_match_action(
         session_id, expected_revision=5, action="revert"
     )
     assert reverted.document.sdr_match == SdrMatchState()
     assert reverted.document.global_adjustments.sdr.exposure == 0.65
+    assert reverted.document.denoise.sdr.enabled is True
+    assert reverted.document.denoise.sdr.controls.amount == 0.17
+    assert reverted.document.denoise.hdr.controls.amount == 0.91
     assert len(session.undo_history) == 4
+
+
+def test_hdr_denoise_change_marks_match_stale_and_rematch_copies_recipe(tmp_path: Path) -> None:
+    store, session_id = _store_with_source(tmp_path)
+    session = store.get(session_id)
+    session.denoise.hdr.enabled = True
+    session.denoise.hdr.controls.amount = 0.62
+    session.denoise.sdr.enabled = True
+    session.denoise.sdr.controls.amount = 0.24
+
+    matched = store.apply_sdr_match_action(session_id, expected_revision=0, action="match")
+    assert matched.document.denoise.sdr.controls.amount == 0.62
+    assert matched.document.sdr_match.revert_state.sdr_denoise.controls.amount == 0.24
+
+    changed = session.denoise.model_copy(deep=True)
+    changed.hdr.controls.amount = 0.88
+    changed.hdr.analysis.preset = "photo_mixed"
+    stale = store.apply_edit_commands(session_id, [EditCommand(
+        expected_revision=1,
+        command_type="set_denoise_settings",
+        payload={"denoise": changed.model_dump(mode="json")},
+    )])
+    assert stale.document.sdr_match.stale is True
+    assert stale.document.denoise.sdr.controls.amount == 0.62
+
+    rematched = store.apply_sdr_match_action(session_id, expected_revision=2, action="rematch")
+    assert rematched.document.sdr_match.stale is False
+    assert rematched.document.denoise.sdr == rematched.document.denoise.hdr
+    assert rematched.document.denoise.sdr.controls.amount == 0.88
+
+    reverted = store.apply_sdr_match_action(session_id, expected_revision=3, action="revert")
+    assert reverted.document.denoise.sdr.controls.amount == 0.24

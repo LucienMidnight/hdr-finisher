@@ -123,13 +123,62 @@ class SessionRenderCache:
         kind: PreviewKind,
         long_edge: int,
         adjustments: AdjustmentState,
+        sdr_match: SdrMatchState | None = None,
     ) -> tuple[np.ndarray, str, str]:
         """Return the authoritative geometry-fixed source for a GPU grade proxy."""
-        proxy, working_space = self.source_proxy(kind, long_edge)
+        edge = max(256, int(long_edge))
         geometry = adjustments.shared.geometry
         signature = geometry.model_dump_json()
+        if kind == PreviewKind.SDR and sdr_match is not None and sdr_match.active:
+            source, _sdr_reference = self._proxies(edge)
+            matched = self.matched_sdr_base(source, adjustments, sdr_match, edge)
+            return downsample_image(matched, edge), "linear-srgb", signature
+        proxy, working_space = self.source_proxy(kind, long_edge)
         fixed = apply_geometry(proxy, geometry)
-        return downsample_image(fixed, max(256, int(long_edge))), working_space, signature
+        return downsample_image(fixed, edge), working_space, signature
+
+    def matched_sdr_base(
+        self,
+        source: np.ndarray,
+        adjustments: AdjustmentState,
+        sdr_match: SdrMatchState,
+        long_edge: int,
+    ) -> np.ndarray:
+        """Return the cached HDR snapshot and shoulder used as the SDR grading source."""
+        edge = max(256, int(long_edge))
+        base_signature = json.dumps(
+            {
+                "hdr": sdr_match.captured_hdr_adjustments.model_dump(mode="json") if sdr_match.captured_hdr_adjustments else None,
+                "shared": sdr_match.captured_shared_adjustments.model_dump(mode="json") if sdr_match.captured_shared_adjustments else None,
+                "locals": [item.model_dump(mode="json") for item in sdr_match.captured_locals],
+                "reference": sdr_match.captured_reference_white_nits,
+                "automatic_boundary": sdr_match.automatic_highlight_boundary_ratio,
+                "manual_boundary": sdr_match.manual_highlight_boundary_ratio,
+                "geometry": adjustments.shared.geometry.model_dump(mode="json"),
+            },
+            separators=(",", ":"),
+        )
+        base_key = (edge, base_signature)
+        with self._lock:
+            matched = self._matched_sdr_bases.get(base_key)
+            if matched is not None:
+                self._matched_sdr_bases.move_to_end(base_key)
+                return matched
+        matched = render_matched_sdr_base(
+            source,
+            adjustments,
+            sdr_match,
+            color_context=self.color_context,
+            source_pixel_scale=min(1.0, edge / max(self.image.shape[:2])),
+        )
+        matched.setflags(write=False)
+        with self._lock:
+            self._matched_sdr_bases[base_key] = matched
+            self._matched_sdr_bases.move_to_end(base_key)
+            while len(self._matched_sdr_bases) > 2:
+                self._matched_sdr_bases.popitem(last=False)
+                self._evictions += 1
+        return matched
 
     def source_pair(self, long_edge: int) -> tuple[np.ndarray, np.ndarray | None]:
         """Return the matched source and authored-SDR proxy inputs used by exporters."""
@@ -254,38 +303,7 @@ class SessionRenderCache:
             compiled_masks = self._compiled_masks(source, adjustments, local_adjustments, edge)
             matched_sdr_base = None
             if kind == PreviewKind.SDR and sdr_match is not None and sdr_match.active:
-                base_signature = json.dumps(
-                    {
-                        "hdr": sdr_match.captured_hdr_adjustments.model_dump(mode="json") if sdr_match.captured_hdr_adjustments else None,
-                        "shared": sdr_match.captured_shared_adjustments.model_dump(mode="json") if sdr_match.captured_shared_adjustments else None,
-                        "locals": [item.model_dump(mode="json") for item in sdr_match.captured_locals],
-                        "reference": sdr_match.captured_reference_white_nits,
-                        "automatic_boundary": sdr_match.automatic_highlight_boundary_ratio,
-                        "manual_boundary": sdr_match.manual_highlight_boundary_ratio,
-                        "geometry": adjustments.shared.geometry.model_dump(mode="json"),
-                    },
-                    separators=(",", ":"),
-                )
-                base_key = (edge, base_signature)
-                with self._lock:
-                    matched_sdr_base = self._matched_sdr_bases.get(base_key)
-                    if matched_sdr_base is not None:
-                        self._matched_sdr_bases.move_to_end(base_key)
-                if matched_sdr_base is None:
-                    matched_sdr_base = render_matched_sdr_base(
-                        source,
-                        adjustments,
-                        sdr_match,
-                        color_context=self.color_context,
-                        source_pixel_scale=min(1.0, edge / max(self.image.shape[:2])),
-                    )
-                    matched_sdr_base.setflags(write=False)
-                    with self._lock:
-                        self._matched_sdr_bases[base_key] = matched_sdr_base
-                        self._matched_sdr_bases.move_to_end(base_key)
-                        while len(self._matched_sdr_bases) > 2:
-                            self._matched_sdr_bases.popitem(last=False)
-                            self._evictions += 1
+                matched_sdr_base = self.matched_sdr_base(source, adjustments, sdr_match, edge)
             processed = apply_adjustments(
                 source,
                 adjustments,

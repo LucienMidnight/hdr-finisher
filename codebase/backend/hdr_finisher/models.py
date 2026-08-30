@@ -772,12 +772,49 @@ class SDRLocalGradeSnapshot(BaseModel):
     sdr_grade: LocalGrade
 
 
+class DenoiseLiveControls(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount: float = Field(default=0.5, ge=0.0, le=1.0)
+    luminance: float = Field(default=0.5, ge=0.0, le=1.0)
+    color_noise: float = Field(default=0.5, ge=0.0, le=1.0)
+    detail_recovery: float = Field(default=0.5, ge=0.0, le=1.0)
+
+
+class DenoiseAnalysisSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    algorithm_version: Literal["compact-haar-residual-v1"] = "compact-haar-residual-v1"
+    preset: Literal["photo_fine", "photo_mixed", "render_fine", "render_coarse", "custom"] = "photo_fine"
+    levels: int = Field(default=2, ge=1, le=4)
+    noise_threshold: float = Field(default=3.0, gt=0.0, le=16.0)
+    luma_sigma: float = Field(default=0.035, gt=0.0, le=2.0)
+    chroma_sigma: float = Field(default=0.035, gt=0.0, le=2.0)
+
+
+class DenoiseLaneSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    controls: DenoiseLiveControls = Field(default_factory=DenoiseLiveControls)
+    analysis: DenoiseAnalysisSettings = Field(default_factory=DenoiseAnalysisSettings)
+
+
+class DenoiseDocumentSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = 1
+    hdr: DenoiseLaneSettings = Field(default_factory=DenoiseLaneSettings)
+    sdr: DenoiseLaneSettings = Field(default_factory=DenoiseLaneSettings)
+
+
 class SDRMatchRevertState(BaseModel):
     """Independent SDR state retained by the first successful Match."""
 
     model_config = ConfigDict(extra="forbid")
 
     sdr_adjustments: SDRAdjustments
+    sdr_denoise: DenoiseLaneSettings = Field(default_factory=DenoiseLaneSettings)
     local_grades: list[SDRLocalGradeSnapshot] = Field(default_factory=list, max_length=256)
     authored_sdr_base_active: bool = False
 
@@ -871,42 +908,6 @@ class SourceReference(BaseModel):
     byte_size: int | None = Field(default=None, ge=0)
     raw_import_settings: RawImportSettings = Field(default_factory=RawImportSettings)
     luminance: SourceLuminanceDescriptor
-
-
-class DenoiseLiveControls(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    amount: float = Field(default=0.5, ge=0.0, le=1.0)
-    luminance: float = Field(default=0.5, ge=0.0, le=1.0)
-    color_noise: float = Field(default=0.5, ge=0.0, le=1.0)
-    detail_recovery: float = Field(default=0.5, ge=0.0, le=1.0)
-
-
-class DenoiseAnalysisSettings(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    algorithm_version: Literal["compact-haar-residual-v1"] = "compact-haar-residual-v1"
-    preset: Literal["photo_fine", "photo_mixed", "render_fine", "render_coarse", "custom"] = "photo_fine"
-    levels: int = Field(default=2, ge=1, le=4)
-    noise_threshold: float = Field(default=3.0, gt=0.0, le=16.0)
-    luma_sigma: float = Field(default=0.035, gt=0.0, le=2.0)
-    chroma_sigma: float = Field(default=0.035, gt=0.0, le=2.0)
-
-
-class DenoiseLaneSettings(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    enabled: bool = False
-    controls: DenoiseLiveControls = Field(default_factory=DenoiseLiveControls)
-    analysis: DenoiseAnalysisSettings = Field(default_factory=DenoiseAnalysisSettings)
-
-
-class DenoiseDocumentSettings(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    schema_version: Literal[1] = 1
-    hdr: DenoiseLaneSettings = Field(default_factory=DenoiseLaneSettings)
-    sdr: DenoiseLaneSettings = Field(default_factory=DenoiseLaneSettings)
 
 
 class EditDocument(BaseModel):

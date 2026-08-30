@@ -365,6 +365,9 @@ async function canvasVariationCount(locator) {
         generation: { ...state.previewGeneration },
         frameWidth: rect.width,
         frameHeight: rect.height,
+        cssWidth: parseFloat(preview.style.width),
+        cssHeight: parseFloat(preview.style.height),
+        zoom: state.zoomPercent,
         src: preview instanceof HTMLImageElement ? preview.currentSrc : "canvas",
       };
     });
@@ -380,6 +383,9 @@ async function canvasVariationCount(locator) {
       gridHidden: els.straightenGridOverlay.classList.contains("hidden"),
       gridWidth: parseFloat(els.straightenGridOverlay.style.width),
       gridHeight: parseFloat(els.straightenGridOverlay.style.height),
+      cssWidth: parseFloat(activePreviewElement().style.width),
+      cssHeight: parseFloat(activePreviewElement().style.height),
+      zoom: state.zoomPercent,
     }));
     assert(Math.abs(straightenInteractive.angle) > 0.5 && straightenInteractive.transform.includes("deg"), `Straighten did not update the viewer immediately: ${JSON.stringify(straightenInteractive)}`);
     assert(Math.abs(parseFloat(straightenInteractive.transform) + straightenInteractive.angle) < 0.2, `Interactive Straighten rotated opposite to the authoritative geometry direction: ${JSON.stringify(straightenInteractive)}`);
@@ -402,12 +408,21 @@ async function canvasVariationCount(locator) {
         src: preview instanceof HTMLImageElement ? preview.currentSrc : "canvas",
         generation: { ...state.previewGeneration },
         draftOpen: Boolean(state.rotateDraftGeometry),
+        cssWidth: parseFloat(preview.style.width),
+        cssHeight: parseFloat(preview.style.height),
+        zoom: state.zoomPercent,
       };
     });
     assert(Math.abs(releasedStraighten.angle - straightenInteractive.angle) < 0.01, `Straighten changed after pointer release: ${JSON.stringify({ straightenInteractive, releasedStraighten })}`);
     assert(releasedStraighten.transform === straightenInteractive.transform, `Straighten replaced its visual draft after pointer release: ${JSON.stringify({ straightenInteractive, releasedStraighten })}`);
     assert(releasedStraighten.src === straightenStart.src, `Straighten replaced the preview source before Apply: ${JSON.stringify({ straightenStart, releasedStraighten })}`);
     assert(JSON.stringify(releasedStraighten.generation) === JSON.stringify(straightenStart.generation), `Straighten generated a preview before Apply: ${JSON.stringify({ straightenStart, releasedStraighten })}`);
+    assert(
+      Math.abs(releasedStraighten.cssWidth - straightenStart.cssWidth) < 0.5
+        && Math.abs(releasedStraighten.cssHeight - straightenStart.cssHeight) < 0.5
+        && Math.abs(releasedStraighten.zoom - straightenStart.zoom) < 0.01,
+      `Releasing Straighten changed the fitted viewer scale: ${JSON.stringify({ straightenStart, straightenInteractive, releasedStraighten })}`,
+    );
     assert(releasedStraighten.draftOpen, "Straighten closed its transaction on pointer release.");
     await page.locator("#crop-tool-toggle").click();
     const straightenCropCancel = await page.evaluate(() => ({
