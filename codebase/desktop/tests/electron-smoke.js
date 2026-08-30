@@ -634,7 +634,7 @@ async function main() {
     checkpoint("project saved");
     assert.equal(fs.existsSync(projectPath), true);
     const savedProject = await window.evaluate(() => state.editDocument);
-    assert.equal(savedProject.schema_version, 3);
+    assert.equal(savedProject.schema_version, 4);
     assert.equal(savedProject.hdr_reference_white_nits, 203);
     assert.equal(savedProject.global_adjustments.shared.false_color_band_anchor, "project");
     assert.equal(savedProject.global_adjustments.shared.false_color_ceiling_nits, 1000);
