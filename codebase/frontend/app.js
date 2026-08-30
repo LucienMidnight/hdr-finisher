@@ -511,6 +511,8 @@ const state = {
   overlayAbortController: null,
   scopeRequestInFlight: null,
   pendingScopeRequest: null,
+  gpuScopeRequestInFlight: null,
+  pendingGpuScopeRequest: null,
   refreshTimer: null,
   settleTimer: null,
   gpuRenderSerial: 0,
@@ -3871,7 +3873,7 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
   };
 
   if (gpuScopeEligible(lane)) {
-    return runGpuScopeRequest(request);
+    return enqueueGpuScopeRequest(request);
   }
 
   return new Promise((resolve) => {
@@ -3885,7 +3887,6 @@ function gpuScopeEligible(lane) {
     && lane === state.currentView
     && state.acceptedPresentation?.lane === lane
     && els.previewCanvas.style.display !== "none"
-    && valuesEqual(state.adjustments.shared?.geometry, defaultGeometry())
     && !state.comparePeekActive
     && state.activeWorkflow !== "proof"
   );
@@ -3911,7 +3912,11 @@ async function runGpuScopeRequest(request) {
   // the last valid scope visible and let the next scheduled generation win;
   // never fall back to an image-sized CPU request merely because the GPU is busy.
   if (!analysis) return false;
-  if (generation !== state.scopeGeneration || lane !== state.currentView || mode !== state.scopeMode) {
+  if (analysis.sessionId !== request.sessionId
+    || generation !== state.scopeGeneration
+    || lane !== state.currentView
+    || mode !== state.scopeMode
+    || request.sessionId !== state.session?.session_id) {
     state.previewScheduler?.recordStaleResult();
     return false;
   }
@@ -3927,6 +3932,38 @@ async function runGpuScopeRequest(request) {
   });
   presentScopePayload(payload, { generation, tier, lane, mode, source: "gpu", metric: analysis.metric });
   return true;
+}
+
+function enqueueGpuScopeRequest(request) {
+  return new Promise((resolve) => {
+    const queued = { ...request, resolve };
+    if (state.gpuScopeRequestInFlight) {
+      state.pendingGpuScopeRequest?.resolve(false);
+      state.pendingGpuScopeRequest = queued;
+      markScopeUpdating();
+      return;
+    }
+    void runQueuedGpuScopeRequest(queued);
+  });
+}
+
+async function runQueuedGpuScopeRequest(request) {
+  state.gpuScopeRequestInFlight = request;
+  let applied = false;
+  try {
+    applied = await runGpuScopeRequest(request);
+  } finally {
+    request.resolve(applied);
+    if (state.gpuScopeRequestInFlight !== request) return;
+    state.gpuScopeRequestInFlight = null;
+    const next = state.pendingGpuScopeRequest;
+    state.pendingGpuScopeRequest = null;
+    if (next) void runQueuedGpuScopeRequest(next);
+    else if (!state.scopeRequestInFlight) {
+      els.scopeFreshness.classList.remove("updating");
+      if (!applied) els.scopeFreshness.textContent = state.lastScope ? scopeFreshnessLabel(state.lastScope.tier) : "Waiting";
+    }
+  }
 }
 
 function enqueueScopeRequest(request) {
@@ -6352,7 +6389,9 @@ function buildGpuScopePayload(analysis, { lane, mode, tier, generation, bins, co
       });
     }
   }
-  const sortedLuma = Array.from(lumaValues).sort((left, right) => left - right);
+  // TypedArray#sort is numeric and in-place. Avoid boxing every sample into a
+  // second JavaScript array during frequent scope refreshes.
+  const sortedLuma = lumaValues.sort();
   const percentile = (amount) => sortedLuma[Math.min(sortedLuma.length - 1, Math.round((sortedLuma.length - 1) * amount))] || 0;
   const formatNits = (value) => value >= 1000 ? `${value.toFixed(0)} nit` : value >= 99.995 ? `${value.toFixed(1)} nit` : `${value.toFixed(2)} nit`;
   const sampleCount = Math.max(1, lumaValues.length);
@@ -9109,8 +9148,10 @@ function clearPreviewCache() {
   state.previewScheduler?.cancel();
   state.scopeRequestInFlight?.controller?.abort();
   state.pendingScopeRequest?.resolve(false);
+  state.pendingGpuScopeRequest?.resolve(false);
   state.scopeRequestInFlight = null;
   state.pendingScopeRequest = null;
+  state.pendingGpuScopeRequest = null;
   state.overlayAbortController?.abort();
   state.overlayAbortController = null;
   for (const lane of ["hdr", "sdr"]) {
@@ -9132,7 +9173,9 @@ function clearPreviewCache() {
   // has presented its first frame.
   state.zoomReferenceFrame = null;
   state.geometryPresentationPending = false;
-  state.scopeGeneration = 0;
+  // Keep this monotonic across source/session replacement so an old readback
+  // can never collide with the first generation of the new source.
+  state.scopeGeneration += 1;
   els.scopeFreshness.textContent = "Waiting";
   els.scopeFreshness.classList.remove("updating");
   clearPreviewImage();

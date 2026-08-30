@@ -931,8 +931,12 @@ class SessionStore:
 
     def is_preview_current(self, session_id: str, kind: PreviewKind, token: int) -> bool:
         with self._lock:
-            session = self.get(session_id)
-            return session.preview_tokens[kind] == token
+            session = self._current
+            return bool(
+                session is not None
+                and session.session_id == session_id
+                and session.preview_tokens[kind] == token
+            )
 
     def next_scope_token(self, session_id: str, kind: PreviewKind) -> int:
         with self._lock:
@@ -942,8 +946,12 @@ class SessionStore:
 
     def is_scope_current(self, session_id: str, kind: PreviewKind, token: int) -> bool:
         with self._lock:
-            session = self.get(session_id)
-            return session.scope_tokens[kind] == token
+            session = self._current
+            return bool(
+                session is not None
+                and session.session_id == session_id
+                and session.scope_tokens[kind] == token
+            )
 
 
 def _remove_owned_source(path: Path) -> None:

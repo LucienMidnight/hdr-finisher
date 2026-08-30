@@ -1,10 +1,89 @@
 from __future__ import annotations
 
+from threading import Event, Thread
+
 import numpy as np
 
+import hdr_finisher.render_cache as render_cache_module
 from hdr_finisher.finishing import apply_geometry
 from hdr_finisher.models import AdjustmentState, GeometryAdjustments, LocalAdjustment, MaskExpression, MaskLeaf, OverlayMode, PreviewKind, SDRMatchRevertState, SdrMatchState
 from hdr_finisher.render_cache import SessionRenderCache, adjustment_signature, encode_rgba32f_proxy, encode_rgba_proxy, scope_region_view
+
+
+def test_source_replacement_cannot_reinsert_an_obsolete_matched_sdr_base(monkeypatch) -> None:
+    old_source = np.full((32, 48, 3), 0.18, dtype=np.float32)
+    new_source = np.full((32, 48, 3), 0.72, dtype=np.float32)
+    cache = SessionRenderCache(old_source, None)
+    adjustments = AdjustmentState()
+    match = SdrMatchState(
+        active=True,
+        grain_source="captured_hdr",
+        captured_hdr_adjustments=adjustments.hdr.model_copy(deep=True),
+        captured_shared_adjustments=adjustments.shared.model_copy(deep=True),
+        captured_reference_white_nits=203,
+        captured_source_fingerprint_sha256="0" * 64,
+        automatic_highlight_boundary_ratio=0.8,
+        signature="source-race",
+        revert_state=SDRMatchRevertState(sdr_adjustments=adjustments.sdr.model_copy(deep=True)),
+    )
+    started = Event()
+    release = Event()
+
+    def delayed_match(source, *_args, **_kwargs):
+        started.set()
+        assert release.wait(2)
+        return source.copy()
+
+    monkeypatch.setattr(render_cache_module, "render_matched_sdr_base", delayed_match)
+    completed: list[np.ndarray] = []
+    worker = Thread(target=lambda: completed.append(cache.matched_sdr_base(old_source, adjustments, match, 256)))
+    worker.start()
+    assert started.wait(2)
+    cache.replace_source(new_source, None)
+    release.set()
+    worker.join(2)
+
+    current = cache.matched_sdr_base(new_source, adjustments, match, 256)
+
+    assert completed and np.all(completed[0] == np.float32(0.18))
+    assert np.all(current == np.float32(0.72))
+
+
+def test_invalidated_singleflight_worker_cannot_detach_its_replacement(monkeypatch) -> None:
+    image = np.full((32, 48, 3), 0.18, dtype=np.float32)
+    cache = SessionRenderCache(image, None)
+    adjustments = AdjustmentState()
+    starts = [Event(), Event()]
+    releases = [Event(), Event()]
+    call_count = 0
+
+    def delayed_adjustments(source, *_args, **_kwargs):
+        nonlocal call_count
+        index = call_count
+        call_count += 1
+        starts[index].set()
+        assert releases[index].wait(2)
+        return source.copy()
+
+    monkeypatch.setattr(render_cache_module, "apply_adjustments", delayed_adjustments)
+    first = Thread(target=lambda: cache.adjusted_frame(adjustments, PreviewKind.HDR, 256))
+    first.start()
+    assert starts[0].wait(2)
+    cache.clear_adjusted()
+    second = Thread(target=lambda: cache.adjusted_frame(adjustments, PreviewKind.HDR, 256))
+    second.start()
+    assert starts[1].wait(2)
+    with cache._lock:
+        replacement_flight = next(iter(cache._inflight.values()))
+
+    releases[0].set()
+    first.join(2)
+    with cache._lock:
+        assert next(iter(cache._inflight.values())) is replacement_flight
+
+    releases[1].set()
+    second.join(2)
+    assert call_count == 2
 
 
 def test_adjusted_proxy_is_downsampled_before_processing_and_reused() -> None:

@@ -148,10 +148,9 @@
       this.settleTimer = window.setTimeout(async () => {
         if (this.current !== task) return;
         const started = performance.now();
-        await Promise.all([
-          this.callbacks.onSettle?.({ ...task, tier: "settled" }),
-          this.runScope({ task, tier: "settled" }),
-        ]);
+        await this.callbacks.onSettle?.({ ...task, tier: "settled" });
+        if (this.current !== task) return;
+        await this.runScope({ task, tier: "settled" });
         this.recordMetric("settleMs", performance.now() - started);
         this.armRefinement(task);
       }, this.timings.settleMs);
@@ -162,10 +161,9 @@
       window.clearTimeout(this.refinementTimer);
       this.refinementTimer = window.setTimeout(async () => {
         if (this.current !== task || this.interacting) return;
-        await Promise.all([
-          this.callbacks.onRefine?.({ ...task, tier: "refinement" }),
-          this.runScope({ task, tier: "refinement" }),
-        ]);
+        await this.callbacks.onRefine?.({ ...task, tier: "refinement" });
+        if (this.current !== task || this.interacting) return;
+        await this.runScope({ task, tier: "refinement" });
       }, this.timings.refinementMs);
     }
 

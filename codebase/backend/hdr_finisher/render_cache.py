@@ -69,7 +69,7 @@ class SessionRenderCache:
     _lock: RLock = field(default_factory=RLock, init=False, repr=False)
     _source_proxies: OrderedDict[int, np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
     _sdr_proxies: OrderedDict[int, np.ndarray | None] = field(default_factory=OrderedDict, init=False, repr=False)
-    _frames: OrderedDict[tuple[str, int, str], np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
+    _frames: OrderedDict[tuple[int, str, int, str], np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
     _matched_sdr_bases: OrderedDict[tuple[int, str], np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
     _scopes: OrderedDict[tuple[object, ...], Any] = field(default_factory=OrderedDict, init=False, repr=False)
     _masks: OrderedDict[tuple[int, str, str, str], np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
@@ -80,12 +80,14 @@ class SessionRenderCache:
     _evictions: int = field(default=0, init=False, repr=False)
     _singleflight_waits: int = field(default=0, init=False, repr=False)
     _stale_cancellations: int = field(default=0, init=False, repr=False)
+    _source_epoch: int = field(default=0, init=False, repr=False)
 
     def set_color_context(self, context: RenderColorContext) -> None:
         with self._lock:
             if context == self.color_context:
                 return
             self.color_context = context
+            self._source_epoch += 1
             self._frames.clear()
             self._matched_sdr_bases.clear()
             self._scopes.clear()
@@ -95,6 +97,7 @@ class SessionRenderCache:
         with self._lock:
             self.image = image
             self.sdr_reference_image = sdr_reference_image
+            self._source_epoch += 1
             self._source_proxies.clear()
             self._sdr_proxies.clear()
             self._frames.clear()
@@ -164,20 +167,26 @@ class SessionRenderCache:
             if matched is not None:
                 self._matched_sdr_bases.move_to_end(base_key)
                 return matched
+            source_epoch = self._source_epoch
+            color_context = self.color_context
+            source_long_edge = max(self.image.shape[:2])
         matched = render_matched_sdr_base(
             source,
             adjustments,
             sdr_match,
-            color_context=self.color_context,
-            source_pixel_scale=min(1.0, edge / max(self.image.shape[:2])),
+            color_context=color_context,
+            source_pixel_scale=min(1.0, edge / source_long_edge),
         )
         matched.setflags(write=False)
         with self._lock:
-            self._matched_sdr_bases[base_key] = matched
-            self._matched_sdr_bases.move_to_end(base_key)
-            while len(self._matched_sdr_bases) > 2:
-                self._matched_sdr_bases.popitem(last=False)
-                self._evictions += 1
+            # Source replacement deliberately lets old callers finish, but an
+            # obsolete result must never repopulate the new source's cache.
+            if source_epoch == self._source_epoch:
+                self._matched_sdr_bases[base_key] = matched
+                self._matched_sdr_bases.move_to_end(base_key)
+                while len(self._matched_sdr_bases) > 2:
+                    self._matched_sdr_bases.popitem(last=False)
+                    self._evictions += 1
         return matched
 
     def source_pair(self, long_edge: int) -> tuple[np.ndarray, np.ndarray | None]:
@@ -273,9 +282,11 @@ class SessionRenderCache:
         sdr_match: SdrMatchState | None = None,
     ) -> np.ndarray:
         edge = max(256, int(long_edge))
+        with self._lock:
+            source_epoch = self._source_epoch
         match_signature = sdr_match.model_dump_json() if sdr_match is not None else "inactive"
         signature = adjustment_signature(adjustments) + local_adjustment_signature(local_adjustments) + match_signature + repr(self.color_context.cache_key)
-        key = (kind.value, edge, signature)
+        key = (source_epoch, kind.value, edge, signature)
         flight_key = ("frame", *key)
         while True:
             with self._lock:
@@ -327,9 +338,11 @@ class SessionRenderCache:
                 self._evict_locked()
         finally:
             with self._lock:
-                completed = self._inflight.pop(flight_key, None)
-                if completed is not None:
-                    completed.set()
+                # Invalidation may have removed this flight and a newer caller
+                # may already own the same key. Only detach our own event.
+                if self._inflight.get(flight_key) is flight:
+                    self._inflight.pop(flight_key, None)
+                flight.set()
         return processed
 
     def scope_result(
@@ -349,11 +362,13 @@ class SessionRenderCache:
     ) -> Any:
         """Return a cached, single-flight scope payload for the adjusted proxy."""
         edge = max(256, int(long_edge))
+        with self._lock:
+            source_epoch = self._source_epoch
         match_signature = sdr_match.model_dump_json() if sdr_match is not None else "inactive"
         signature = adjustment_signature(adjustments) + local_adjustment_signature(local_adjustments) + match_signature + repr(self.color_context.cache_key)
         requested_channels = tuple(channel_names or ("R", "G", "B", "Y"))
         region_key = tuple(round(float(value), 6) for value in scope_region) if scope_region is not None else None
-        key = (kind.value, edge, signature, mode, int(bins), int(columns), int(max_nits), requested_channels, region_key)
+        key = (source_epoch, kind.value, edge, signature, mode, int(bins), int(columns), int(max_nits), requested_channels, region_key)
         flight_key = ("scope", *key)
         while True:
             with self._lock:
@@ -387,6 +402,10 @@ class SessionRenderCache:
                 _record_diagnostics=False,
                 sdr_match=sdr_match,
             )
+            if is_current is not None and not is_current():
+                with self._lock:
+                    self._stale_cancellations += 1
+                raise StaleRender("A newer scope request replaced this one.")
             processed = scope_region_view(processed, region_key)
             result = build_scope_from_processed(
                 processed,
@@ -409,9 +428,9 @@ class SessionRenderCache:
                     self._evictions += 1
         finally:
             with self._lock:
-                completed = self._inflight.pop(flight_key, None)
-                if completed is not None:
-                    completed.set()
+                if self._inflight.get(flight_key) is flight:
+                    self._inflight.pop(flight_key, None)
+                flight.set()
         return result
 
     def diagnostics(self) -> dict[str, int]:

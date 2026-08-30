@@ -1,10 +1,10 @@
 # GPU Local Adjustments and Live Scopes Sprint
 
 **Date:** August 14, 2026  
-**Last updated:** August 15, 2026
-**Status:** Engineering complete through Phase 5; physical delivery validation remains
+**Last updated:** August 30, 2026
+**Status:** Engineering and installer hardening complete; physical delivery validation remains
 **Owner:** HDR Finisher engineering  
-**Implementation commits:** `99e2395` (Phases 0/1), `fc929e6` (Phase 2)  
+**Implementation commits:** `99e2395` (Phases 0/1), `fc929e6` (Phase 2), plus the August 30 release-hardening follow-up
 **Related plan:** [Interactive Preview, Instant Scopes, and Image Pipeline Performance Sprint](Interactive_Preview_and_Scopes_Performance_Sprint_PRD.md)  
 **Related product requirements:** [HDR Finisher PRD v1.2](HDR_Finisher_PRD_v1.2.md)  
 
@@ -33,7 +33,7 @@ Phases 0–5 have achieved the retained local-preview, GPU live-scope, generaliz
 - Destructive WebGPU device loss falls back to the raw RGBA8 CPU canvas and a reload restores WebGPU authoring.
 - A six-mode EXR/TIFF endurance matrix passed its enforced frame and scope budgets with no unexpected browser errors.
 
-The engineering sprint is complete. Physical HDR/SDR display and delivery-path validation remains a manual release sign-off, followed by installer work in its separate scope.
+The engineering sprint and Windows installer hardening are complete. Physical HDR/SDR display and delivery-path validation remains a manual release sign-off.
 
 ## 2. Implementation status and handoff
 
@@ -46,6 +46,7 @@ The engineering sprint is complete. Physical HDR/SDR display and delivery-path v
 | Phase 3 — GPU-backed live scopes | Complete | 25.8 ms isolated presentation p95; 18–19 Hz rapid-drag cadence; zero backend scope requests; image preview remained within budget | Phase 3 validation record |
 | Phase 4 — Generalize the mask graph | Complete | Retained mixed-leaf Boolean graph, shared leaf caches, exact influence semantics, and 16/32/64-layer resource gate pass | Phase 4/5 validation record |
 | Phase 5 — Hardening and release evidence | Complete for automated engineering scope | Device loss/fallback/reload, EXR/TIFF endurance, UI/proof/export regression, alpha QA, and 437-test suite pass | Phase 4/5 validation record |
+| August 30 release hardening | Complete | GPU resource lifetime, scope coalescing/order, session/source race protection, grain parameter isolation, geometry scope routing, and updated regression coverage | Section 9.5 |
 
 The working tree intentionally contains this uncommitted PRD update. Do not assume unrelated modified QA images or untracked design assets belong to this sprint.
 
@@ -83,7 +84,7 @@ The separable Feather implementation extends the renderer's existing full-screen
 
 #### Preserve exact CPU fallback boundaries
 
-Standalone, default-geometry Luma masks use the retained GPU path. Brush, Gradient, Boolean masks, non-default geometry, unsupported local-grade combinations, WebGPU-unavailable cases, and device loss continue through their existing CPU/fallback behavior. This bounded rollout preserves behavior while avoiding a risky mask-system rewrite.
+Supported Luma, Brush, Gradient, and Boolean mask graphs use the retained GPU path, including ordinary crop and rotation geometry. Unsupported local-grade combinations, proof/comparison modes that require the reference path, WebGPU-unavailable cases, and device loss continue through their existing CPU/fallback behavior. Export and differential validation remain CPU-authoritative.
 
 #### Treat generations as presentation ownership
 
@@ -91,7 +92,7 @@ Preview, mask, and scope results are accepted only when their generation, edit r
 
 #### Keep scope work behind image presentation
 
-Phase 3 renders a compact analysis texture from the same current GPU film/spatial textures as the visible preview. Two-buffer reusable pools provide asynchronous readback with backpressure; the last valid scope stays visible while busy, and generation checks reject obsolete results before presentation. The exact CPU scope path remains available for unsupported geometry, proof, comparison, and WebGPU fallback.
+Phase 3 renders a compact analysis texture from the same current GPU film/spatial textures as the visible preview. Two-buffer reusable pools provide asynchronous readback with backpressure; the last valid scope stays visible while busy, and generation checks reject obsolete results before presentation. Crop and rotation remain on this GPU scope path. The exact CPU scope path remains available for proof, comparison, unsupported operations, and WebGPU fallback.
 
 ## 4. Original baseline and reproduced Phase 0 baseline
 
@@ -192,7 +193,9 @@ The supported Luma path now behaves as this retained graph:
 | Source/session replacement | Destroy proxy, luminance, local-mask, intermediate, and parameter resources |
 | Proxy edge change | Select/create the matching proxy/luminance/mask level; stale levels are bounded |
 | Simple Brush/Gradient geometry | Existing spatial-mask path and cache identity apply |
-| Boolean expression or unsupported geometry | Exact CPU mask path remains authoritative |
+| Boolean expression | Recompose retained leaf masks on the GPU; influence-only edits avoid mask transport |
+| Crop or rotation geometry | Rebuild/select the matching transformed proxy; preview and scopes remain GPU-resident |
+| Unsupported operation | Exact CPU reference/fallback path remains authoritative |
 
 ### 6.2 Luma semantics
 
@@ -450,6 +453,22 @@ The invariants behind these fixes are:
 4. An exact-mask replacement is atomic from the user's perspective. When no current client raster exists, keep the most recent valid authoritative raster visible until the replacement is ready.
 5. Optimistic browser masks and authoritative CPU masks must implement the same stroke-order semantics and converge after every commit.
 
+### 9.5 August 30 pipeline and race hardening
+
+The release review concentrated on intermittent scope slowdowns and asynchronous ownership across the browser GPU pipeline and backend cache/session layers. The following corrections are part of the release contract:
+
+- GPU scope requests are coalesced to one active readback plus the newest pending request. Superseded pending work is discarded before encoding, while the last valid scope remains visible.
+- Interactive image presentation wins scheduling priority. Settled/refined scope work begins after the corresponding GPU frame is presented instead of competing with it in the same `Promise.all` batch.
+- Scope admission checks bind the source/session generation before readback, after mapping, and before presentation. A source replacement or newer edit cannot publish an obsolete scope.
+- Proxy, local-mask, denoise, intermediate, and scope GPU resources use generation ownership with deferred destruction. Replaced resources are not destroyed while submitted command buffers can still reference them.
+- Backend frame and scope cache identities include the source epoch. A stale matched-SDR worker cannot repopulate a cache after source replacement, and a single-flight worker removes only the synchronization event it owns.
+- Session replacement races return a normal stale-result rejection instead of surfacing `KeyError` from current-generation checks.
+- Scope luminance sorting is performed in place on the typed array, avoiding an avoidable boxed-array allocation and sort on every update.
+- Grain uses dedicated shader parameter slots rather than colliding with detail controls, so SDR Match no longer inherits unintended grain from detail adjustment state.
+- Ordinary crop and rotation continue through the GPU preview and GPU scope path; geometry alone is not a reason to fall back to backend scopes.
+
+Validation for this follow-up passed 108 focused backend/frontend contract tests. The complete deterministic run reached **766 passed, 2 skipped**; its remaining 23 failures require optional workstation assets or codecs (`imagecodecs`, the Lensfun database, and the private DNG decoder) and were unchanged by this work. Node syntax/scheduler checks, real-browser WebGPU shader compilation, GPU scope parity, and SDR Match GPU interaction also passed without page errors.
+
 ## 10. Delivery plan
 
 ### Phase 3 — GPU-backed live scopes — complete
@@ -497,7 +516,7 @@ The benchmark measures queue delay, GPU analysis/submission, map/readback time, 
 | Opacity changes do not regenerate/upload a mask | Implemented and measured: zero requests |
 | Luma-range invalidation affects base and downstream stages | Implemented and instrumented |
 | Feather reuses cached base | Implemented and instrumented |
-| Rapid input coalesces; obsolete generations never apply | Implemented, including reversal regression |
+| Rapid input coalesces; obsolete generations never apply | Implemented, including reversal regression and one-active/latest-pending GPU scope scheduling |
 | Interactive scopes continue during local drags | Implemented on the GPU path at 18–19 Hz under measured load |
 | Settled scopes replace interactive scopes only when current | Implemented with generation/lane/mode admission guards |
 | GPU/CPU Luma qualification and Feather parity | Implemented for four Feather levels plus broad parity suite |
@@ -505,7 +524,7 @@ The benchmark measures queue delay, GPU analysis/submission, map/readback time, 
 | Brush and Gradient regression | Passing, including non-square circular Brush settlement, erase/repaint ordering, stable proxy/zoom geometry, and frame-by-frame Gradient handoff continuity |
 | No-WebGPU fallback | Passing smoke matrix |
 | Device-loss recovery | Passing destructive-device test: raw RGBA8 fallback plus WebGPU restoration after reload |
-| Long-running resource reuse and no validation errors | Passing isolated six-mode EXR/TIFF endurance matrix; expected stale-request 409s classified separately |
+| Long-running resource reuse and no validation errors | Passing isolated six-mode EXR/TIFF endurance matrix; deferred destruction protects submitted GPU work and expected stale-request 409s are classified separately |
 | Export invariance | Automated proxy/cache invariant passing |
 | GPU-backed scope numerical parity | Passing for histogram, waveform, and vectorscope |
 | Many-local-layer scaling and batching | Passing at 16/32/64 locals with 33.31 MB worst mask residency and zero influence-edit mask requests |
@@ -565,7 +584,7 @@ This sprint does not require:
 | Edge/Playwright performance harness | Complete |
 | Before/after Phase 0/1, Phase 2, and Phase 3 reports | Complete |
 | General retained mask graph for Brush/Gradient/Boolean | Complete |
-| Final release hardening and documentation | Complete for automated engineering scope; physical delivery sign-off remains manual |
+| Final release hardening and documentation | Complete for automated engineering scope, including August 30 pipeline hardening and Windows installer refresh; physical delivery sign-off remains manual |
 
 ## 15. Definition of done
 
@@ -583,7 +602,7 @@ The sprint will be done when:
 - memory/resource stability and many-local-layer behavior are signed off;
 - final performance results and remaining limitations are recorded in the repository.
 
-As of this update, Phases 0–5 are implemented and validated for the automated engineering scope. Remaining release work is physical HDR/SDR and delivery-path validation, the known saturated-blue broad-parity follow-up, and the separately scoped installer.
+As of this update, Phases 0–5 and the August 30 pipeline hardening are implemented, validated for the automated engineering scope, and packaged in a refreshed Windows installer. Remaining release work is physical HDR/SDR and delivery-path validation plus the known saturated-blue broad-parity follow-up.
 
 ## 16. Implementation map for the next thread
 

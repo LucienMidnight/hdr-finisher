@@ -1,5 +1,5 @@
 (function () {
-  const PARAM_COUNT = 156;
+  const PARAM_COUNT = 158;
   const CURVE_SAMPLES = 1024;
   const DENOISE_ALGORITHM_VERSION = "compact-haar-residual-v1";
   // Preserve progressively more structure at medium/coarse Haar scales. Full
@@ -173,6 +173,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.denoiseCounters = this.emptyDenoiseCounters();
       this.denoisePipelines = null;
       this.adapterInfo = null;
+      this.resourceGeneration = 0;
+      this.activeRenderCount = 0;
+      this.activeScopeCount = 0;
+      this.deferredDestroy = [];
     }
 
     async initialize() {
@@ -258,26 +262,29 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     }
 
     resetSession(sessionId = null) {
+      this.resourceGeneration += 1;
       this.disposeDenoiseSelectorSeam();
       this.sessionId = sessionId;
       this.renderSerials = new WeakMap();
-      for (const proxy of this.proxies.values()) proxy.texture?.destroy();
+      for (const proxy of this.proxies.values()) this.destroyAfterActiveRenders(() => proxy.texture?.destroy());
       this.proxies.clear();
       this.proxyInflight.clear();
-      for (const scene of this.sceneLuminance.values()) scene.texture?.destroy();
+      for (const scene of this.sceneLuminance.values()) this.destroyAfterActiveRenders(() => scene.texture?.destroy());
       this.sceneLuminance.clear();
       this.sceneLuminanceInflight.clear();
       for (const intermediate of this.intermediates.values()) {
-        intermediate.baseTexture?.destroy();
-        intermediate.filmTexture?.destroy();
-        intermediate.spatialATexture?.destroy();
-        intermediate.spatialBTexture?.destroy();
-        intermediate.localTexture?.destroy();
-        intermediate.detailATexture?.destroy();
-        intermediate.detailBTexture?.destroy();
+        this.destroyAfterActiveRenders(() => {
+          intermediate.baseTexture?.destroy();
+          intermediate.filmTexture?.destroy();
+          intermediate.spatialATexture?.destroy();
+          intermediate.spatialBTexture?.destroy();
+          intermediate.localTexture?.destroy();
+          intermediate.detailATexture?.destroy();
+          intermediate.detailBTexture?.destroy();
+        });
       }
       this.intermediates.clear();
-      for (const mask of this.localMasks.values()) this.destroyLocalMaskEntry(mask);
+      for (const mask of this.localMasks.values()) this.destroyAfterActiveRenders(() => this.destroyLocalMaskEntry(mask));
       this.localMasks.clear();
       for (const buffer of this.localParamBuffers.values()) buffer.destroy();
       this.localParamBuffers.clear();
@@ -287,12 +294,30 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.scopeSources = new WeakMap();
       for (const pool of this.scopeResources.values()) {
         for (const resource of pool) {
-          resource.texture.destroy();
-          resource.readBuffer.destroy();
-          resource.paramBuffer.destroy();
+          this.destroyAfterActiveRenders(() => {
+            resource.texture.destroy();
+            resource.readBuffer.destroy();
+            resource.paramBuffer.destroy();
+          });
         }
       }
       this.scopeResources.clear();
+    }
+
+    destroyAfterActiveRenders(callback) {
+      if (this.activeRenderCount > 0 || this.activeScopeCount > 0) this.deferredDestroy.push(callback);
+      else callback();
+    }
+
+    flushDeferredDestroy() {
+      if (this.activeRenderCount > 0 || this.activeScopeCount > 0 || !this.deferredDestroy.length) return;
+      const callbacks = this.deferredDestroy.splice(0);
+      callbacks.forEach((callback) => callback());
+    }
+
+    finishActiveRender() {
+      this.activeRenderCount = Math.max(0, this.activeRenderCount - 1);
+      this.flushDeferredDestroy();
     }
 
     async render(sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203, sourceSize = null, sourceOptions = null) {
@@ -400,6 +425,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       if (!this.available || !sessionId) return false;
       const renderStartedAt = performance.now();
       if (this.sessionId !== sessionId) this.resetSession(sessionId);
+      const resourceGeneration = this.resourceGeneration;
+      this.activeRenderCount += 1;
+      try {
       const serial = (this.renderSerials.get(canvas) || 0) + 1;
       this.renderSerials.set(canvas, serial);
       const geometrySignature = JSON.stringify(adjustments.shared?.geometry || {});
@@ -421,7 +449,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         sourceIdentity,
       );
       const proxyReadyAt = performance.now();
-      if (serial !== this.renderSerials.get(canvas) || !proxy || sourceOptions?.isCurrent?.() === false) return false;
+      if (resourceGeneration !== this.resourceGeneration
+        || serial !== this.renderSerials.get(canvas)
+        || !proxy
+        || sourceOptions?.isCurrent?.() === false) return false;
       const sourceProxy = this.selectedDenoiseSource(proxy);
       const activeLocals = localAdjustments.filter((local) => local.enabled !== false && local.opacity > 0 && local[`${lane}_grade`]?.enabled !== false);
       if (!activeLocals.every((local) => gpuLocalSupported(local[`${lane}_grade`]))) return false;
@@ -434,7 +465,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         () => serial === this.renderSerials.get(canvas),
       )));
       const masksReadyAt = performance.now();
-      if (serial !== this.renderSerials.get(canvas)
+      if (resourceGeneration !== this.resourceGeneration
+        || serial !== this.renderSerials.get(canvas)
         || masks.some((mask) => !mask)
         || sourceOptions?.isCurrent?.() === false) return false;
 
@@ -687,6 +719,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         filmTexture: intermediate.filmTexture,
         spatialTexture: intermediate.spatialATexture || intermediate.filmTexture,
         params: new Float32Array(params),
+        sessionId,
       });
       if (this.instrumentationEnabled) {
         const metric = {
@@ -715,6 +748,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         gpuTiming?.readBuffer.destroy();
       }
       return { width: proxy.width, height: proxy.height, hdr: surface.hdr, proxyFormat: proxy.pixelFormat };
+      } finally {
+        this.finishActiveRender();
+      }
     }
 
     selectedDenoiseSource(originalProxy) {
@@ -1145,15 +1181,17 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
 
     disposeDenoiseSelectorSeam() {
       this.denoiseSelectorGeneration += 1;
-      this.destroyDenoiseSelector(this.denoiseSourceSelector);
+      const selector = this.denoiseSourceSelector;
       this.denoiseSourceSelector = null;
+      this.destroyAfterActiveRenders(() => this.destroyDenoiseSelector(selector));
       this.denoiseCounters = this.emptyDenoiseCounters();
     }
 
     evictDenoiseCache() {
       this.denoiseSelectorGeneration += 1;
-      this.destroyDenoiseSelector(this.denoiseSourceSelector);
+      const selector = this.denoiseSourceSelector;
       this.denoiseSourceSelector = null;
+      this.destroyAfterActiveRenders(() => this.destroyDenoiseSelector(selector));
       this.recordStage("denoise-cache-evicted", {});
     }
 
@@ -1175,6 +1213,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       if (!resource) return null;
       const startedAt = performance.now();
       resource.busy = true;
+      this.activeScopeCount += 1;
       const params = new Float32Array(source.params);
       params[136] = width;
       params[137] = height;
@@ -1213,6 +1252,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const submittedAt = performance.now();
       try {
         await resource.readBuffer.mapAsync(GPUMapMode.READ);
+        if (this.scopeSources.get(canvas) !== source) return null;
         const mappedAt = performance.now();
         const sourceBytes = new Uint16Array(resource.readBuffer.getMappedRange());
         const rowStride = resource.bytesPerRow / 2;
@@ -1247,12 +1287,22 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           if (this.performanceMetrics.scopes.length > 240) this.performanceMetrics.scopes.shift();
           this.recordStage("scopes", { ...metric });
         }
-        return { pixels, width, height, lane: source.lane, sourceSerial: source.serial, metric };
+        return {
+          pixels,
+          width,
+          height,
+          lane: source.lane,
+          sourceSerial: source.serial,
+          sessionId: source.sessionId,
+          metric,
+        };
       } catch {
         return null;
       } finally {
         if (resource.readBuffer.mapState === "mapped") resource.readBuffer.unmap();
         resource.busy = false;
+        this.activeScopeCount = Math.max(0, this.activeScopeCount - 1);
+        this.flushDeferredDestroy();
       }
     }
 
@@ -1504,7 +1554,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const keys = [...this.proxies.keys()].filter((key) => key.startsWith(prefix));
       while (keys.length > 2) {
         const key = keys.shift();
-        this.proxies.get(key)?.texture?.destroy();
+        const proxy = this.proxies.get(key);
+        this.destroyAfterActiveRenders(() => proxy?.texture?.destroy());
         this.proxies.delete(key);
       }
     }
@@ -1684,7 +1735,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const firstLeaf = firstResolvedMaskLeaf(resolved);
       const passCount = gpuMaskGraphPassCount(local.mask);
       if (!entry || entry.width !== firstLeaf.width || entry.height !== firstLeaf.height || entry.nodeTextures.length !== passCount) {
-        if (entry) this.destroyLocalMaskEntry(entry);
+        if (entry) this.destroyAfterActiveRenders(() => this.destroyLocalMaskEntry(entry));
         const nodeTextures = Array.from({ length: passCount }, () => this.createMaskTexture(firstLeaf.width, firstLeaf.height));
         entry = {
           kind: "gpu-mask-graph",
@@ -1779,7 +1830,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         const keys = [...this.sceneLuminance.keys()].filter((candidate) => candidate.startsWith(prefix));
         while (keys.length > 2) {
           const staleKey = keys.shift();
-          this.sceneLuminance.get(staleKey)?.texture?.destroy();
+          const stale = this.sceneLuminance.get(staleKey);
+          this.destroyAfterActiveRenders(() => stale?.texture?.destroy());
           this.sceneLuminance.delete(staleKey);
         }
         return { ...entry, created: true };
@@ -1935,13 +1987,15 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       let total = [...this.localMasks.values()].reduce((sum, entry) => sum + entry.byteSize, 0);
       while (this.localMasks.size && total > budget) {
         const [key, entry] = this.localMasks.entries().next().value;
-        this.destroyLocalMaskEntry(entry);
+        this.destroyAfterActiveRenders(() => this.destroyLocalMaskEntry(entry));
         this.localMasks.delete(key);
         total -= entry.byteSize;
       }
     }
 
     destroyLocalMaskEntry(entry) {
+      if (!entry || entry.destroyed) return;
+      entry.destroyed = true;
       const textures = new Set([
         entry.texture,
         entry.baseTexture,
@@ -2229,8 +2283,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     params[141] = gate[1];
     params[142] = grain.grain_capture_geometry === "horizontal_strip" ? 1
       : grain.grain_capture_geometry === "vertical_strip" ? 2 : 0;
-    params[153] = grainSectionEnabled ? 1 : 0;
-    params[154] = grainSectionEnabled ? (grain.look_strength ?? 100) / 100 : 0;
+    params[156] = grainSectionEnabled ? 1 : 0;
+    params[157] = grainSectionEnabled ? (grain.look_strength ?? 100) / 100 : 0;
     params[110] = lane === "hdr" && branch.highlight_compression_color_handling === "path_to_white" ? 1 : 0;
     const grading = branch.color_grading || {};
     params[111] = branch.color_grading_section_enabled !== false ? 1 : 0;
@@ -3284,7 +3338,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         }
       }
       rgb = applyVignette(rgb, coordinate);
-      if (p[153] > 0.5 && p[154] > 0.0 && p[100] > 0.5 && p[101] > 0.0) {
+      if (p[156] > 0.5 && p[157] > 0.0 && p[100] > 0.5 && p[101] > 0.0) {
         let pixelsPerMm = filmPixelsPerMm(dimensions);
         let physicalPitch = pixelsPerMm * (6.0 + 24.0 * p[102]) / 1000.0;
         let pitch = max(1.0, physicalPitch);
@@ -3296,7 +3350,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         let highlightWeight = pow(signal, 2.0);
         let midWeight = max(0.0, 1.0 - shadowWeight - highlightWeight);
         let response = shadowWeight * p[105] + midWeight * p[106] + highlightWeight * p[107];
-        let amount = 0.18 * p[101] * p[154] * response * pixelCoverage;
+        let amount = 0.18 * p[101] * p[157] * response * pixelCoverage;
         rgb *= exp2(vec3f(mono * amount));
         if (p[104] > 0.0) {
           let chroma = vec3f(grainValueNoise(grainCoordinate, 31.0), grainValueNoise(grainCoordinate, 59.0), grainValueNoise(grainCoordinate, 83.0));

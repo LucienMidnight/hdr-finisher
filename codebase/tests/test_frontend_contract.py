@@ -812,10 +812,15 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
 
 def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_bands() -> None:
     shader = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
-    # The packed parameter layout currently occupies indices 0..151. Keep the
+    # The packed parameter layout currently occupies indices 0..157. Keep the
     # contract aligned with the actual highest shader index so stale padding
     # does not masquerade as a pipeline-order regression.
-    assert "const PARAM_COUNT = 156" in shader
+    assert "const PARAM_COUNT = 158" in shader
+    assert "params[153] = Math.min(3, Math.max(0.3, Number(detail.sharpen_radius_px)" in shader
+    assert "params[154] = Math.min(1, Math.max(0, Number(detail.sharpen_threshold)" in shader
+    assert "params[156] = grainSectionEnabled ? 1 : 0" in shader
+    assert "params[157] = grainSectionEnabled ? (grain.look_strength ?? 100) / 100 : 0" in shader
+    assert "p[156] > 0.5 && p[157] > 0.0" in shader
     assert "detailHorizontalFragmentMain" in shader
     assert "detailVerticalFragmentMain" in shader
     assert "detailCompositeFragmentMain" in shader
@@ -1006,10 +1011,26 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     assert 'tier: "interactive"' in scheduler
     assert "requestAnimationFrame" in scheduler
     assert "cancelIdleWork" in scheduler
+    assert 'await this.callbacks.onSettle?.({ ...task, tier: "settled" });' in scheduler
+    assert 'await this.callbacks.onRefine?.({ ...task, tier: "refinement" });' in scheduler
+    assert "await Promise.all([" not in scheduler[scheduler.index("armSettle(task)"):scheduler.index("cancelIdleWork()")]
     assert "rgba16f" in webgpu and "X-Pixel-Format" in webgpu
     assert "this.paramBuffer" in webgpu and "this.curveBuffer" in webgpu
     assert "this.curveSampleCache" in webgpu
     assert "Settled WebGPU authoring preview" in javascript
+    gpu_scope_eligibility = javascript[
+        javascript.index("function gpuScopeEligible"):
+        javascript.index("async function runGpuScopeRequest")
+    ]
+    assert "defaultGeometry" not in gpu_scope_eligibility
+    assert "this.scopeSources.get(canvas) !== source" in webgpu
+    assert "analysis.sessionId !== request.sessionId" in javascript
+    assert "return enqueueGpuScopeRequest(request);" in javascript
+    assert "state.pendingGpuScopeRequest?.resolve(false);" in javascript
+    assert "const sortedLuma = lumaValues.sort();" in javascript
+    assert "Array.from(lumaValues).sort" not in javascript
+    assert "this.resourceGeneration" in webgpu
+    assert "this.destroyAfterActiveRenders" in webgpu
 
 
 def test_electron_preview_correctness_contract() -> None:
