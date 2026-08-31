@@ -75,26 +75,13 @@ modules:
         commit: ee74d1b53bd680748af14e737378de57e2a0a954
         dest: ext/libargparse
 
-  - name: libjpeg-turbo-static
-    buildsystem: cmake-ninja
-    config-opts:
-      - -DCMAKE_BUILD_TYPE=Release
-      - -DENABLE_SHARED=OFF
-      - -DENABLE_STATIC=ON
-      - -DWITH_SIMD=OFF
-      - -DWITH_TESTS=OFF
-      - -DWITH_TOOLS=OFF
-    sources:
-      - type: git
-        url: https://github.com/libjpeg-turbo/libjpeg-turbo.git
-        tag: 3.1.0
-        commit: 20ade4dea9589515a69793e447a6c6220b464535
-
   - name: libultrahdr-tools
     buildsystem: cmake-ninja
     config-opts:
       - -DCMAKE_BUILD_TYPE=Release
-      - -DBUILD_SHARED_LIBS=OFF
+      # Flatpak runtimes intentionally do not ship static glibc. Keep
+      # libultrahdr and its app dynamically linked inside the sandbox.
+      - -DBUILD_SHARED_LIBS=ON
       - -DUHDR_BUILD_DEPS=OFF
       - -DUHDR_BUILD_EXAMPLES=ON
       - -DUHDR_BUILD_TESTS=OFF
