@@ -217,7 +217,10 @@ jobs:
 
       - name: Build pinned Linux encoders
         working-directory: codebase
-        run: ./tools/build_native_linux.sh
+        # The application suite below exercises the resulting binaries. Skip the
+        # upstream projects' own test suites here because those can depend on the
+        # runner's ImageMagick build and are outside our release qualification.
+        run: ./tools/build_native_linux.sh --skip-tests
 
       - name: Run deterministic Linux tests
         working-directory: codebase
