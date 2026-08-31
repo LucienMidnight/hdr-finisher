@@ -13,7 +13,7 @@ HDR Finisher calls the Linux HDR viewer qualified only when all of these are tru
 
 The application rechecks the current display after window movement, resize, fullscreen changes, display hotplug, and display-metrics changes. If any condition fails, a persistent warning states that visible HDR brightness is an SDR simulation. Editing math, scopes, proof reconstruction, and exports are unchanged by this warning.
 
-Electron exposes the display label, output color space, color depth, component depth, and scale factor. It does not expose dependable peak luminance, so HDR Finisher does not derive peak nits from the color-space name or EDID. On Linux, choose a fixed/custom proof target. Automatic measured-headroom proofing remains Windows-only in 0.8.0.
+Electron exposes the display label, output color space, color depth, component depth, and scale factor. It does not expose dependable peak luminance, so HDR Finisher does not derive peak nits from the color-space name or EDID. On Linux, choose a fixed/custom proof target. Automatic measured-headroom proofing remains Windows-only in 0.8.x.
 
 ## Plasma configuration
 

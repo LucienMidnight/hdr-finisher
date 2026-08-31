@@ -31,7 +31,7 @@
   </categories>
   <content_rating type="oars-1.1"/>
   <releases>
-    <release version="0.8.0" date="2026-08-31">
+    <release version="0.8.1" date="2026-08-31">
       <description><p>Adds Linux x86_64 support for native Wayland HDR presentation, Debian packaging, and Flatpak.</p></description>
     </release>
     <release version="0.7.7" date="2026-08-22"/>

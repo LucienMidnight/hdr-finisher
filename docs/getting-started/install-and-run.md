@@ -35,7 +35,7 @@ The package contains its Python processing backend and native encoder tools; Pyt
 For the first-class Kubuntu/Ubuntu package:
 
 ```bash
-sudo apt install ./HDR-Finisher-0.8.0-Linux-x86_64.deb
+sudo apt install ./HDR-Finisher-0.8.1-Linux-x86_64.deb
 ```
 
 For a locally built Flatpak:

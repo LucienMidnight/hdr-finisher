@@ -215,6 +215,10 @@ jobs:
           test "$backend_version" = "$desktop_version"
           if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then test "v$backend_version" = "${GITHUB_REF_NAME}"; fi
 
+      - name: Build pinned Linux encoders
+        working-directory: codebase
+        run: ./tools/build_native_linux.sh
+
       - name: Run deterministic Linux tests
         working-directory: codebase
         run: |
@@ -223,7 +227,7 @@ jobs:
 
       - name: Build Debian package on conservative glibc baseline
         working-directory: codebase
-        run: HDR_FINISHER_PYTHON="$(command -v python)" ./tools/build_desktop_linux.sh
+        run: HDR_FINISHER_PYTHON="$(command -v python)" ./tools/build_desktop_linux.sh --skip-native-tools
 
       - name: Smoke-test packaged app with GPU disabled
         working-directory: codebase
@@ -232,7 +236,8 @@ jobs:
       - name: Verify package contents and every ELF
         working-directory: codebase
         run: |
-          ./tools/verify_linux_package.sh dist-electron/HDR-Finisher-0.8.0-Linux-x86_64.deb
+          package_version="$(node -p "require('./desktop/package.json').version")"
+          ./tools/verify_linux_package.sh "dist-electron/HDR-Finisher-${package_version}-Linux-x86_64.deb"
           (cd dist-electron && sha256sum -c SHA256SUMS-Linux.txt)
 
       - name: Upload Linux release candidate
@@ -269,16 +274,18 @@ jobs:
       - name: Build offline-source Flatpak
         working-directory: packaging/flatpak
         run: |
+          package_version="$(node -p "require('../../codebase/desktop/package.json').version")"
           flatpak-builder --user --force-clean --repo=repo build-dir io.github.LucienMidnight.hdr-finisher.yml
-          flatpak build-bundle repo HDR-Finisher-0.8.0-Linux-x86_64.flatpak io.github.LucienMidnight.hdr-finisher stable
-          sha256sum HDR-Finisher-0.8.0-Linux-x86_64.flatpak > SHA256SUMS-Flatpak.txt
+          flatpak build-bundle repo "HDR-Finisher-${package_version}-Linux-x86_64.flatpak" io.github.LucienMidnight.hdr-finisher stable
+          sha256sum "HDR-Finisher-${package_version}-Linux-x86_64.flatpak" > SHA256SUMS-Flatpak.txt
 
       - name: Install and smoke-test Flatpak sidecar
         working-directory: packaging/flatpak
         run: |
-          flatpak install --user -y HDR-Finisher-0.8.0-Linux-x86_64.flatpak
+          package_version="$(node -p "require('../../codebase/desktop/package.json').version")"
+          flatpak install --user -y "HDR-Finisher-${package_version}-Linux-x86_64.flatpak"
           sidecar="/app/hdr-finisher/resources/backend/HDR Finisher Backend"
-          flatpak run --user --env=HDR_FINISHER_DESKTOP_SECRET=ci --env=HDR_FINISHER_DESKTOP_CONTROL_SECRET=ci --command="$sidecar" io.github.LucienMidnight.hdr-finisher --desktop-sidecar --parent-pid 999999999 | grep '"backend_version":"0.8.0"'
+          flatpak run --user --env=HDR_FINISHER_DESKTOP_SECRET=ci --env=HDR_FINISHER_DESKTOP_CONTROL_SECRET=ci --command="$sidecar" io.github.LucienMidnight.hdr-finisher --desktop-sidecar --parent-pid 999999999 | grep "\"backend_version\":\"${package_version}\""
           set +e
           timeout 20 dbus-run-session -- xvfb-run -a flatpak run --user io.github.LucienMidnight.hdr-finisher --disable-gpu
           status=$?

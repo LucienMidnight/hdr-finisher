@@ -6,7 +6,7 @@ if [[ "$(uname -s)" != "Linux" ]]; then
   exit 1
 fi
 if [[ "$(uname -m)" != "x86_64" ]]; then
-  echo "HDR Finisher 0.8.0 supports Linux x86_64 only." >&2
+  echo "HDR Finisher 0.8.x supports Linux x86_64 only." >&2
   exit 1
 fi
 
