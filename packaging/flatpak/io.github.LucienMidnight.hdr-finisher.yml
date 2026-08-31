@@ -114,7 +114,7 @@ modules:
       - install -d 'source/codebase/dist/HDR Finisher Backend'
       - install -m755 source/packaging/flatpak/backend-wrapper.sh 'source/codebase/dist/HDR Finisher Backend/HDR Finisher Backend'
       - cd source/packaging/flatpak/npm && npm ci --offline
-      - cd source/codebase/desktop && ../../packaging/flatpak/npm/node_modules/.bin/electron-builder --dir --linux --x64 -c.executableName=hdr-finisher -c.npmRebuild=false --publish never
+      - cd source/codebase/desktop && ../../packaging/flatpak/npm/node_modules/.bin/electron-builder --dir --linux --x64 -c.executableName=hdr-finisher -c.npmRebuild=false -c.electronDist=../../../flatpak-node/cache/electron/electron-v43.4.0-linux-x64.zip --publish never
       - install -d /app/hdr-finisher
       - cp -a source/codebase/dist-electron/linux-unpacked/. /app/hdr-finisher/
       - install -d /app/hdr-finisher-runtime/bin
@@ -127,18 +127,27 @@ modules:
       - install -Dm644 source/packaging/flatpak/io.github.LucienMidnight.hdr-finisher.metainfo.xml /app/share/metainfo/io.github.LucienMidnight.hdr-finisher.metainfo.xml
       - install -Dm644 source/packaging/flatpak/io.github.LucienMidnight.hdr-finisher.xml /app/share/mime/packages/io.github.LucienMidnight.hdr-finisher.xml
       - install -Dm644 source/codebase/desktop/assets/icon.svg /app/share/icons/hicolor/scalable/apps/io.github.LucienMidnight.hdr-finisher.svg
-      - install -Dm644 source/codebase/desktop/assets/icon.png /app/share/icons/hicolor/1024x1024/apps/io.github.LucienMidnight.hdr-finisher.png
       - install -Dm644 source/LICENSE /app/share/licenses/io.github.LucienMidnight.hdr-finisher/LICENSE
       - install -Dm644 source/THIRD_PARTY_NOTICES.md /app/share/licenses/io.github.LucienMidnight.hdr-finisher/THIRD_PARTY_NOTICES.md
       - |
-        find /app/hdr-finisher /app/hdr-finisher-runtime -type f -exec sh -c '
-          file "$1" | grep -q ELF || exit 0
-          report="$(ldd "$1" 2>&1 || true)"
-          if echo "$report" | grep -q "not found"; then echo "$1 has a missing dependency" >&2; echo "$report" >&2; exit 1; fi
-          if echo "$report" | grep -Eiq "/home/|/usr/local/|linux-native-tools"; then echo "$1 contains a build-host dependency" >&2; exit 1; fi
-        ' sh {} \;
+        find /app/hdr-finisher /app/hdr-finisher-runtime -type f -print0 | xargs -0 -r sh -c '
+          for path do
+            file "$path" | grep -q ELF || continue
+            report="$(ldd "$path" 2>&1 || true)"
+            if echo "$report" | grep -q "not found"; then echo "$path has a missing dependency" >&2; echo "$report" >&2; exit 1; fi
+            if echo "$report" | grep -Eiq "/home/|/usr/local/|linux-native-tools"; then echo "$path contains a build-host dependency" >&2; exit 1; fi
+          done
+        ' sh
     sources:
       - type: dir
         path: ../..
         dest: source
+        skip:
+          - .flatpak-builder
+          - .flatpak-validation*
+          - codebase/.venv
+          - codebase/build
+          - codebase/dist
+          - codebase/dist-electron
+          - codebase/desktop/node_modules
       - generated-sources/node-sources.json

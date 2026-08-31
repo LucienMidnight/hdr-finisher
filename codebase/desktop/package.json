@@ -1,6 +1,6 @@
 {
   "name": "hdr-finisher-desktop",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "private": true,
   "description": "Electron desktop shell for HDR Finisher",
   "homepage": "https://github.com/LucienMidnight/hdr-finisher",
