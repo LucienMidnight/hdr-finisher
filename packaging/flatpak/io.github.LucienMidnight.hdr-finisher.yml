@@ -114,7 +114,7 @@ modules:
       - install -d 'source/codebase/dist/HDR Finisher Backend'
       - install -m755 source/packaging/flatpak/backend-wrapper.sh 'source/codebase/dist/HDR Finisher Backend/HDR Finisher Backend'
       - cd source/packaging/flatpak/npm && npm ci --offline
-      - cd source/codebase/desktop && ../../packaging/flatpak/npm/node_modules/.bin/electron-builder --dir --linux --x64 -c.executableName=hdr-finisher --publish never
+      - cd source/codebase/desktop && ../../packaging/flatpak/npm/node_modules/.bin/electron-builder --dir --linux --x64 -c.executableName=hdr-finisher -c.npmRebuild=false --publish never
       - install -d /app/hdr-finisher
       - cp -a source/codebase/dist-electron/linux-unpacked/. /app/hdr-finisher/
       - install -d /app/hdr-finisher-runtime/bin
