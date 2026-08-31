@@ -1,6 +1,6 @@
-# HDR Finisher 0.8.2
+# HDR Finisher 0.8.3
 
-HDR Finisher 0.8.2 adds Linux x86_64 desktop support with Kubuntu 26.04 LTS, Plasma 6.6, and native Wayland as the tier-one HDR environment. It supersedes the unpublished 0.8.0 and 0.8.1 release candidates. Linux CI now builds pinned native encoders before encoder-dependent application tests and leaves upstream codec-project qualification to those projects, avoiding a runner-specific ImageMagick comparison failure unrelated to HDR Finisher.
+HDR Finisher 0.8.3 adds Linux x86_64 desktop support with Kubuntu 26.04 LTS, Plasma 6.6, and native Wayland as the tier-one HDR environment. It supersedes the unpublished 0.8.0 through 0.8.2 release candidates. Linux CI builds pinned native encoders before encoder-dependent application tests, Flatpak builds its required static JPEG dependency from a pinned source, and the Windows packaged smoke test now waits for its first presented frame.
 
 - Adds a versioned Debian package and a sandboxed Flatpak/Flathub manifest.
 - Qualifies Linux HDR presentation only when native Wayland, browser-reported HDR, and an extended `rgba16float` WebGPU canvas are active.

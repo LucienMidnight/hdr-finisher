@@ -459,6 +459,10 @@ async function main() {
     await window.waitForSelector("#empty-import-button", { state: "visible", timeout: 30000 });
     await window.locator("#file-input").setInputFiles(sourcePath);
     await window.waitForFunction(() => document.querySelector("#session-name")?.textContent.includes("sdr_gradient.png"));
+    // Session metadata becomes visible before the first preview frame is
+    // necessarily presented on slower Windows runners. Capture a presented
+    // frame before comparing preview identity across the straighten gesture.
+    await presentedPreviewSnapshot(window);
 
     const straightenBaseline = await window.evaluate(() => ({
       src: activePreviewElement() instanceof HTMLImageElement ? activePreviewElement().currentSrc : "canvas",

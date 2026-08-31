@@ -1,6 +1,6 @@
 {
   "name": "hdr-finisher-flatpak-build-tools",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "private": true,
   "dependencies": {
     "electron": "43.4.0",
