@@ -192,11 +192,16 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           requiredFeatures: timestampQueries ? ["timestamp-query"] : [],
         });
         const info = this.adapter.info || {};
+        const adapterDescription = [info.vendor, info.architecture, info.device, info.description]
+          .filter(Boolean)
+          .join(" ");
         this.adapterInfo = {
           vendor: info.vendor || "unknown",
           architecture: info.architecture || "unknown",
           device: info.device || "unknown",
           description: info.description || "unknown",
+          fallback: Boolean(this.adapter.isFallbackAdapter)
+            || /swiftshader|llvmpipe|lavapipe|software rasterizer/i.test(adapterDescription),
           timestampQueries,
         };
         this.context = this.canvas.getContext("webgpu");
@@ -252,7 +257,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           window.dispatchEvent(new CustomEvent("hdrfinisher:webgpulost", { detail: { message: this.detail } }));
         });
         this.available = true;
-        this.detail = "WebGPU settled authoring renderer ready";
+        this.detail = this.adapterInfo.fallback
+          ? "WebGPU software adapter active; HDR presentation is not authoritative"
+          : `WebGPU settled authoring renderer ready (${this.adapterInfo.description})`;
         return true;
       } catch (error) {
         this.available = false;
@@ -302,6 +309,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         }
       }
       this.scopeResources.clear();
+    }
+
+    invalidateSurfaces() {
+      this.surfaceKeys = new WeakMap();
     }
 
     destroyAfterActiveRenders(callback) {

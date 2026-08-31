@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=HDR Finisher
+Comment=Finish HDR photographs and export gain-map images
+Exec=hdr-finisher %F
+Icon=io.github.LucienMidnight.hdr-finisher
+Terminal=false
+Categories=Graphics;Photography;
+MimeType=application/x-hdrfinisher-project;
+StartupNotify=true
+StartupWMClass=hdr-finisher

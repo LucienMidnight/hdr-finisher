@@ -101,6 +101,8 @@ npm --prefix desktop run test:packaged
 
 The macOS workflow builds pinned static encoder tools, the PyInstaller sidecar, and unsigned `.app`, `.dmg`, and `.zip` artifacts in `codebase/dist-electron/`. Use `--skip-native-tools` only when the four native tools already exist in `codebase/bin/`. Signing and notarization require an Apple Developer identity and are intentionally separate from the reproducible local technical-preview build.
 
+On Linux x86_64, `./tools/build_desktop_linux.sh` builds pinned native tools, runs their upstream tests, packages the Python 3.12 sidecar, runs Electron tests, and creates the `.deb` plus checksum manifest. Release `.deb` builds run on Ubuntu 22.04 for a conservative glibc baseline; physical HDR acceptance runs on Kubuntu 26.04/Plasma 6.6. The custom Flatpak manifest and offline source lists are under `packaging/flatpak/`.
+
 ## API changes
 
 The API is not versioned. When changing a Pydantic model or route:

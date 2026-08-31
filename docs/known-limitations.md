@@ -1,19 +1,19 @@
 # Known Limitations and Support Status
 
-This page prevents implemented, validated, expected, and planned behavior from being conflated. Status reflects the repository on **August 20, 2026**.
+This page prevents implemented, validated, expected, and planned behavior from being conflated. Status reflects the repository on **August 31, 2026**.
 
 ## Platform matrix
 
-| Capability | Windows | macOS |
-|---|---|---|
-| Run from source | Validated | Expected; dependency/browser validation incomplete |
-| Technical package | Validated PyInstaller folder build | Unavailable |
-| Signed installer | Unavailable | Unavailable |
-| Native export-folder picker | Validated Windows Forms | Implemented through Tk; not repository-validated |
-| Native HDR/SDR-white telemetry | Validated QueryDisplayConfig/DXGI | Unavailable |
-| Chromium UI automation | Validated | Not maintained |
-| Physical HDR browser checks | Maintained Windows evidence | Not maintained |
-| Auto proof target | Uses Windows telemetry when available | No native telemetry; use fixed target |
+| Capability | Windows | macOS | Linux x86_64 |
+|---|---|---|---|
+| Run from source | Validated | Expected; dependency/browser validation incomplete | Validated in Kubuntu SDR/degraded mode; physical HDR pending |
+| Technical package | Validated PyInstaller folder build | Implemented Apple Silicon package | `.deb` validated locally; Flatpak manifest/CI path implemented |
+| Signed/store distribution | Unavailable | Unavailable | Flathub submission pending physical qualification |
+| Native file picker | Implemented | Implemented | Implemented; Flatpak uses XDG portals |
+| Native display metadata | Validated QueryDisplayConfig/DXGI | Unavailable | Electron label/color-space/depth only; no peak nits |
+| Chromium UI automation | Validated | Not maintained | Implemented headless/X11 degradation path |
+| Physical HDR browser checks | Maintained Windows evidence | Not maintained | Required on Kubuntu 26.04; not yet recorded |
+| Auto proof target | Uses Windows telemetry when available | Use fixed target | Use fixed/custom target; exact headroom unavailable |
 
 ## Input limitations
 
@@ -51,6 +51,7 @@ Importing, opening a project, ejecting, and closing prompt to save or discard un
 - Browser/display tone mapping can differ from the authoring canvas.
 - Headless automated tests cannot certify emitted luminance.
 - Display telemetry is descriptive and may be inaccurate; it is not a meter.
+- Linux HDR presentation is qualified only on native Wayland when Chromium reports HDR and the extended `rgba16float` WebGPU canvas is active. X11/Xwayland, SDR output, and CPU/device-loss fallback are explicitly labeled as non-authoritative SDR simulation.
 
 ## Color limitations
 
@@ -83,9 +84,10 @@ Importing, opening a project, ejecting, and closing prompt to save or discard un
 ## Packaging and operations
 
 - The Windows setup and portable packages are unsigned technical previews; Windows may show an unrecognized-app warning.
-- There is no automatic updater.
+- Flatpak updates are store-managed; other desktop packages provide a GitHub release check rather than an in-place automatic updater.
+- Linux 0.8.0 is x86_64 only. AppImage and arm64 artifacts are not part of this milestone.
 - Native encoder redistribution may vary by platform and license requirements.
-- The local API is not authenticated or hardened for network exposure.
+- The desktop sidecar uses authenticated loopback requests and path grants, but it is not designed or hardened for network exposure.
 - There is no stable versioned external API guarantee.
 
 ## Planned or explicitly deferred

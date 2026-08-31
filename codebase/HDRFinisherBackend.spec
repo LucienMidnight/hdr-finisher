@@ -1,5 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from pathlib import Path
+import sys
+
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 
@@ -8,7 +11,6 @@ block_cipher = None
 datas = [
     ("frontend", "frontend"),
     ("samples", "samples"),
-    ("bin", "bin"),
     ("../README.md", "."),
     ("../LICENSE", "."),
     ("../THIRD_PARTY_NOTICES.md", "."),
@@ -20,6 +22,20 @@ datas = [
     ("../docs/troubleshooting.md", "docs"),
     ("../docs/known-limitations.md", "docs"),
     ("../docs/glossary.md", "docs"),
+]
+
+# Native tools are built per target. Keep licenses and documentation on every
+# platform, while including only the executable form for the current OS.
+native_tool_names = {"avifenc", "avifdec", "avifgainmaputil", "ultrahdr_app"}
+datas += [
+    (str(source), str(source.parent))
+    for source in Path("bin").rglob("*")
+    if source.is_file()
+    and (
+        source.stem not in native_tool_names
+        or (sys.platform == "win32" and source.suffix.lower() == ".exe")
+        or (sys.platform != "win32" and source.name in native_tool_names)
+    )
 ]
 
 imagecodecs_datas, imagecodecs_binaries, imagecodecs_hiddenimports = collect_all("imagecodecs")

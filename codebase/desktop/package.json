@@ -1,8 +1,10 @@
 {
   "name": "hdr-finisher-desktop",
-  "version": "0.7.7",
+  "version": "0.8.0",
   "private": true,
   "description": "Electron desktop shell for HDR Finisher",
+  "homepage": "https://github.com/LucienMidnight/hdr-finisher",
+  "desktopName": "hdr-finisher.desktop",
   "author": "HDR Finisher contributors",
   "license": "GPL-3.0-only",
   "main": "main.js",
@@ -13,8 +15,10 @@
     "test:packaged": "node tests/electron-smoke.js --packaged",
     "pack:dir": "electron-builder --dir --win --x64",
     "pack:dir:mac": "electron-builder --dir --mac",
+    "pack:dir:linux": "electron-builder --dir --linux --x64 -c.executableName=hdr-finisher",
     "dist:win": "electron-builder --win nsis portable --x64",
-    "dist:mac": "electron-builder --mac dmg zip"
+    "dist:mac": "electron-builder --mac dmg zip",
+    "dist:linux": "electron-builder --linux deb --x64 -c.executableName=hdr-finisher"
   },
   "devDependencies": {
     "electron": "43.4.0",
@@ -80,6 +84,31 @@
           "role": "Editor"
         }
       ]
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "syncDesktopName": true,
+      "category": "Graphics;Photography",
+      "maintainer": "HDR Finisher contributors",
+      "vendor": "HDR Finisher contributors",
+      "artifactName": "HDR-Finisher-${version}-Linux-x86_64.${ext}",
+      "target": [
+        "deb"
+      ],
+      "fileAssociations": [
+        {
+          "ext": "hdrfinisher",
+          "mimeType": "application/x-hdrfinisher-project",
+          "name": "HDR Finisher Project",
+          "description": "HDR Finisher editing project",
+          "role": "Editor"
+        }
+      ]
+    },
+    "deb": {
+      "packageName": "hdr-finisher",
+      "packageCategory": "graphics",
+      "priority": "optional"
     },
     "dmg": {
       "artifactName": "HDR-Finisher-${version}-macOS-${arch}.${ext}",

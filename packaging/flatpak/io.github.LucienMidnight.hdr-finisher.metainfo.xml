@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.LucienMidnight.hdr-finisher</id>
+  <name>HDR Finisher</name>
+  <summary>Finish HDR photographs and export gain-map images</summary>
+  <developer id="io.github.lucienmidnight">
+    <name>HDR Finisher contributors</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <description>
+    <p>HDR Finisher is an offline editor for grading HDR photographs, creating an SDR fallback, inspecting scopes, and exporting gain-map and HDR image formats.</p>
+    <p>On Linux, authoritative HDR presentation requires a native Wayland session, an HDR-enabled display, and an extended WebGPU surface. Editing, scopes, and exports remain available with a clearly marked SDR simulation when those requirements are not met.</p>
+  </description>
+  <launchable type="desktop-id">io.github.LucienMidnight.hdr-finisher.desktop</launchable>
+  <provides>
+    <mediatype>application/x-hdrfinisher-project</mediatype>
+  </provides>
+  <url type="homepage">https://github.com/LucienMidnight/hdr-finisher</url>
+  <url type="bugtracker">https://github.com/LucienMidnight/hdr-finisher/issues</url>
+  <url type="vcs-browser">https://github.com/LucienMidnight/hdr-finisher</url>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/LucienMidnight/hdr-finisher/v0.8.0/docs/design/HDR%20finisher%20UI%20redesign/assets/preview-render.png</image>
+      <caption>HDR and SDR finishing workspace</caption>
+    </screenshot>
+  </screenshots>
+  <categories>
+    <category>Graphics</category>
+    <category>Photography</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.8.0" date="2026-08-31">
+      <description><p>Adds Linux x86_64 support for native Wayland HDR presentation, Debian packaging, and Flatpak.</p></description>
+    </release>
+    <release version="0.7.7" date="2026-08-22"/>
+  </releases>
+</component>

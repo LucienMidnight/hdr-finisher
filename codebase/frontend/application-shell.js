@@ -49,6 +49,7 @@
       ["Install and run", "getting-started/install-and-run.md"],
       ["Windows setup", "setup/windows.md"],
       ["macOS setup", "setup/macos.md"],
+      ["Linux setup", "setup/linux.md"],
       ["Monitor setup", "setup/monitors.md"],
     ]],
     ["User guide", [
@@ -628,6 +629,9 @@
         byId("update-notice").classList.add("hidden");
         delete byId("update-notice").dataset.version;
         delete byId("update-notice").dataset.url;
+      } else if (result.status === "managed") {
+        status.textContent = result.message || "Updates are managed by your software center.";
+        byId("update-notice").classList.add("hidden");
       } else {
         status.textContent = "Could not check for updates. Check your connection and try again.";
       }

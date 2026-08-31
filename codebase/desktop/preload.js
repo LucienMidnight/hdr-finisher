@@ -8,7 +8,7 @@ function subscribe(channel, callback) {
 }
 
 contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
-  apiVersion: 1,
+  apiVersion: 2,
   environment: () => ipcRenderer.invoke("desktop:environment"),
   rendererReady: () => ipcRenderer.invoke("desktop:renderer-ready"),
   getPreferences: () => ipcRenderer.invoke("desktop:get-preferences"),
@@ -51,5 +51,6 @@ contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   performShellAction: (action) => ipcRenderer.invoke("desktop:perform-shell-action", action),
   onMenuCommand: (callback) => subscribe("desktop:menu-command", callback),
   onWindowStateChanged: (callback) => subscribe("desktop:window-state", callback),
+  onDisplayStateChanged: (callback) => subscribe("desktop:display-state", callback),
   onOpenRequest: (callback) => subscribe("desktop:open-request", callback),
 }));

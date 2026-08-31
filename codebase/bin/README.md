@@ -22,3 +22,14 @@ On Apple Silicon macOS, build static `avifenc`, `avifdec`, `avifgainmaputil`, an
 ```
 
 The script pins libavif and libultrahdr revisions, rejects Homebrew-linked output, runs native tests by default, and copies the required upstream notices into `bin/licenses/`.
+
+On Linux x86_64, build the same pinned command-line tools with:
+
+```bash
+./tools/build_native_linux.sh
+```
+
+The Linux build uses static codec dependencies where possible, runs the upstream test suites,
+rejects missing or unexpected build-host ELF dependencies, exercises each command-line tool,
+and installs the required notices into `bin/licenses/`. Run it on Ubuntu 22.04 when producing
+release binaries so the packaged tools retain the project's conservative glibc baseline.

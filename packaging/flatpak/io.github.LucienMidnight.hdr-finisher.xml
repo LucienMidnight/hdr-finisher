@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-hdrfinisher-project">
+    <comment>HDR Finisher project</comment>
+    <glob pattern="*.hdrfinisher"/>
+    <icon name="io.github.LucienMidnight.hdr-finisher"/>
+  </mime-type>
+</mime-info>

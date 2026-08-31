@@ -176,11 +176,133 @@ jobs:
             codebase/dist-electron/SHA256SUMS-macOS.txt
           if-no-files-found: error
 
+  build-linux:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            codebase/requirements.txt
+            codebase/requirements-dev.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: codebase/desktop/package-lock.json
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build nasm pkg-config file xvfb libgtk-3-0 libnss3 libxss1 libasound2 libgbm1
+          python -m pip install --upgrade pip
+          python -m pip install -r codebase/requirements-dev.txt
+          npm ci --prefix codebase/desktop
+
+      - name: Verify release version
+        working-directory: codebase
+        run: |
+          backend_version="$(python -c "import sys; sys.path.insert(0, 'backend'); from hdr_finisher.config import APP_VERSION; print(APP_VERSION)")"
+          desktop_version="$(node -p "require('./desktop/package.json').version")"
+          test "$backend_version" = "$desktop_version"
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then test "v$backend_version" = "${GITHUB_REF_NAME}"; fi
+
+      - name: Run deterministic Linux tests
+        working-directory: codebase
+        run: |
+          python -m pytest -q tests
+          npm --prefix desktop test
+
+      - name: Build Debian package on conservative glibc baseline
+        working-directory: codebase
+        run: HDR_FINISHER_PYTHON="$(command -v python)" ./tools/build_desktop_linux.sh
+
+      - name: Smoke-test packaged app with GPU disabled
+        working-directory: codebase
+        run: HDR_FINISHER_TEST_OZONE_PLATFORM=x11 xvfb-run -a npm --prefix desktop run test:packaged
+
+      - name: Verify package contents and every ELF
+        working-directory: codebase
+        run: |
+          ./tools/verify_linux_package.sh dist-electron/HDR-Finisher-0.8.0-Linux-x86_64.deb
+          (cd dist-electron && sha256sum -c SHA256SUMS-Linux.txt)
+
+      - name: Upload Linux release candidate
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-linux-x64
+          path: |
+            codebase/dist-electron/HDR-Finisher-*-Linux-x86_64.deb
+            codebase/dist-electron/SHA256SUMS-Linux.txt
+          if-no-files-found: error
+
+  build-flatpak:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install Flatpak tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder appstream-util desktop-file-utils libxml2-utils xvfb dbus-x11
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08 org.electronjs.Electron2.BaseApp//25.08 org.freedesktop.Sdk.Extension.node24//25.08
+
+      - name: Validate Flatpak metadata
+        working-directory: packaging/flatpak
+        run: |
+          appstreamcli validate --no-net io.github.LucienMidnight.hdr-finisher.metainfo.xml
+          desktop-file-validate io.github.LucienMidnight.hdr-finisher.desktop
+          xmllint --noout io.github.LucienMidnight.hdr-finisher.xml
+          flatpak-builder --show-manifest io.github.LucienMidnight.hdr-finisher.yml >/dev/null
+
+      - name: Build offline-source Flatpak
+        working-directory: packaging/flatpak
+        run: |
+          flatpak-builder --user --force-clean --repo=repo build-dir io.github.LucienMidnight.hdr-finisher.yml
+          flatpak build-bundle repo HDR-Finisher-0.8.0-Linux-x86_64.flatpak io.github.LucienMidnight.hdr-finisher stable
+          sha256sum HDR-Finisher-0.8.0-Linux-x86_64.flatpak > SHA256SUMS-Flatpak.txt
+
+      - name: Install and smoke-test Flatpak sidecar
+        working-directory: packaging/flatpak
+        run: |
+          flatpak install --user -y HDR-Finisher-0.8.0-Linux-x86_64.flatpak
+          sidecar="/app/hdr-finisher/resources/backend/HDR Finisher Backend"
+          flatpak run --user --env=HDR_FINISHER_DESKTOP_SECRET=ci --env=HDR_FINISHER_DESKTOP_CONTROL_SECRET=ci --command="$sidecar" io.github.LucienMidnight.hdr-finisher --desktop-sidecar --parent-pid 999999999 | grep '"backend_version":"0.8.0"'
+          set +e
+          timeout 20 dbus-run-session -- xvfb-run -a flatpak run --user io.github.LucienMidnight.hdr-finisher --disable-gpu
+          status=$?
+          set -e
+          test "$status" -eq 0 -o "$status" -eq 124
+
+      - name: Upload Flatpak release candidate
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-flatpak-x64
+          path: |
+            packaging/flatpak/HDR-Finisher-*-Linux-x86_64.flatpak
+            packaging/flatpak/SHA256SUMS-Flatpak.txt
+            packaging/flatpak/io.github.LucienMidnight.hdr-finisher.yml
+            packaging/flatpak/io.github.LucienMidnight.hdr-finisher.metainfo.xml
+          if-no-files-found: error
+
   publish:
     if: startsWith(github.ref, 'refs/tags/')
     needs:
       - build-windows
       - build-macos
+      - build-linux
+      - build-flatpak
     runs-on: ubuntu-latest
 
     steps:
@@ -209,5 +331,5 @@ jobs:
               --title "HDR Finisher $tag" \
               --latest \
               --generate-notes \
-              --notes "Unsigned desktop release. macOS users may need Finder's one-time Open flow; do not disable Gatekeeper globally. Verify downloads against the included SHA-256 checksum files."
+              --notes "Desktop release for Windows x64, macOS Apple Silicon, and Linux x86_64. Kubuntu 26.04 with native Wayland is the Linux HDR target; X11/Xwayland uses an explicit SDR simulation. macOS users may need Finder's one-time Open flow. Verify downloads against the included SHA-256 checksum files."
           fi

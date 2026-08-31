@@ -15,10 +15,11 @@ const {
   safeSuggestedName,
 } = require("./lib/validation");
 const { backendCommand: resolveBackendCommand } = require("./lib/runtime");
+const { distributionChannel, linuxSessionState, serializeDisplay, updatesManagedByStore } = require("./lib/display-state");
 const { cachedUpdateResult } = require("./lib/updates");
 const { DEFAULT_WINDOW_BOUNDS, clampWindowBounds } = require("./lib/window-bounds");
 
-const APP_ID = "org.hdrfinisher.app";
+const APP_ID = process.env.FLATPAK_ID || "org.hdrfinisher.app";
 const SOURCE_FILTERS = [
   { name: "HDR and camera images", extensions: ["exr", "tif", "tiff", "hdr", "pfm", "heic", "heif", "avif", "jxl", "png", "jpg", "jpeg", "dng", "arw", "cr2", "cr3", "nef", "nrw", "raf", "rw2", "orf", "ori", "pef", "srw"] },
   { name: "All files", extensions: ["*"] },
@@ -52,6 +53,7 @@ let applicationPreferences = null;
 let updateCheckCache = null;
 let pendingOpenPaths = [];
 let rendererReady = false;
+let displayChangeTimer = null;
 const knownProjectPaths = new Set();
 const grantedExportPaths = new Set();
 
@@ -242,6 +244,14 @@ function isNewerVersion(candidate, current) {
 async function checkForUpdates({ force = false } = {}) {
   const now = Date.now();
   const currentVersion = app.getVersion();
+  if (updatesManagedByStore()) {
+    return {
+      status: "managed",
+      currentVersion,
+      message: "Updates are managed by your Flatpak software center.",
+      checkedAt: new Date(now).toISOString(),
+    };
+  }
   if (!updateCheckCache) {
     try {
       const cached = JSON.parse(fs.readFileSync(updateCheckCachePath(), "utf8"));
@@ -442,20 +452,49 @@ function existingFileIdentity(filePath) {
   }
 }
 
+function currentDisplayState() {
+  if (!mainWindow || mainWindow.isDestroyed()) return null;
+  return serializeDisplay(screen.getDisplayMatching(mainWindow.getBounds()));
+}
+
+function desktopEnvironment() {
+  const sessionState = process.platform === "linux"
+    ? linuxSessionState({
+      ozonePlatform: app.commandLine.getSwitchValue("ozone-platform")
+        || app.commandLine.getSwitchValue("ozone-platform-hint"),
+    })
+    : { sessionType: process.platform, nativeWayland: false };
+  return {
+    apiVersion: 2,
+    platform: process.platform,
+    electronVersion: process.versions.electron,
+    appVersion: app.getVersion(),
+    packaged: app.isPackaged,
+    renderingMode,
+    distributionChannel: distributionChannel({ packaged: app.isPackaged }),
+    sessionType: sessionState.sessionType,
+    nativeWayland: sessionState.nativeWayland,
+    currentDisplay: currentDisplayState(),
+  };
+}
+
+function sendDisplayState() {
+  if (!rendererReady || !mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send("desktop:display-state", desktopEnvironment());
+}
+
+function scheduleDisplayState() {
+  clearTimeout(displayChangeTimer);
+  displayChangeTimer = setTimeout(sendDisplayState, 120);
+}
+
 function registerIpc() {
   const handle = (channel, callback) => ipcMain.handle(channel, async (event, ...args) => {
     validateSender(event);
     return callback(...args);
   });
 
-  handle("desktop:environment", () => ({
-    apiVersion: 1,
-    platform: process.platform,
-    electronVersion: process.versions.electron,
-    appVersion: app.getVersion(),
-    packaged: app.isPackaged,
-    renderingMode,
-  }));
+  handle("desktop:environment", () => desktopEnvironment());
   handle("desktop:renderer-ready", async () => {
     rendererReady = true;
     await dispatchPendingOpenPaths();
@@ -624,11 +663,11 @@ function registerIpc() {
     const resolved = path.resolve(result.filePath);
     const selection = await grantPath(resolved, "export-file");
     grantedExportPaths.add(pathKey(selection.path || resolved));
-    // A returned native Windows or macOS Save dialog has already obtained
+    // A returned native Save dialog (including the Linux XDG portal) has already obtained
     // overwrite approval when this target exists. Bind that approval to the
     // exact file identity so a later replacement still requires a fresh
     // confirmation.
-    const nativeOverwriteApproved = process.platform === "win32" || process.platform === "darwin";
+    const nativeOverwriteApproved = ["win32", "darwin", "linux"].includes(process.platform);
     return { ...selection, overwriteTarget: nativeOverwriteApproved ? existingFileIdentity(resolved) : null };
   });
   handle("desktop:resolve-dropped-files", async (paths) => {
@@ -862,11 +901,15 @@ async function createWindow() {
     }).catch(() => {});
   });
   mainWindow.on("closed", () => {
+    clearTimeout(displayChangeTimer);
     mainWindow = null;
     if (!shuttingDown) forceClose = false;
   });
   for (const eventName of ["maximize", "unmaximize", "enter-full-screen", "leave-full-screen"]) {
     mainWindow.on(eventName, sendWindowState);
+  }
+  for (const eventName of ["move", "resize", "enter-full-screen", "leave-full-screen"]) {
+    mainWindow.on(eventName, scheduleDisplayState);
   }
   mainWindow.once("ready-to-show", () => mainWindow.show());
   await mainWindow.loadURL(backend.url);
@@ -976,6 +1019,9 @@ if (!gotLock) {
         callback({ requestHeaders: details.requestHeaders });
       });
       registerIpc();
+      for (const eventName of ["display-added", "display-removed", "display-metrics-changed"]) {
+        screen.on(eventName, scheduleDisplayState);
+      }
       buildMenu();
       await createWindow();
     } catch (error) {

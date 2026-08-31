@@ -1,0 +1,142 @@
+app-id: io.github.LucienMidnight.hdr-finisher
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+base: org.electronjs.Electron2.BaseApp
+base-version: '25.08'
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.node24
+command: hdr-finisher
+branch: stable
+separate-locales: false
+
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --share=ipc
+  - --share=network
+
+modules:
+  - name: cpython-3.12
+    buildsystem: simple
+    build-options:
+      cflags: -O2 -fPIC
+      cxxflags: -O2 -fPIC
+    build-commands:
+      - ./configure --prefix=/app --enable-shared --with-ensurepip=install --with-lto
+      - make -j${FLATPAK_BUILDER_N_JOBS}
+      - make install
+      - ln -sf python3.12 /app/bin/python3
+      - ln -sf pip3.12 /app/bin/pip3
+    sources:
+      - type: archive
+        url: https://www.python.org/ftp/python/3.12.11/Python-3.12.11.tar.xz
+        sha256: c30bb24b7f1e9a19b11b55a546434f74e739bb4c271a3e3a80ff4380d49f7adb
+
+  - generated-sources/python-sources.json
+
+  - name: python3-lensfunpy
+    buildsystem: simple
+    build-commands:
+      - pip3 install --no-index --find-links=file://${PWD} --prefix=/app lensfunpy==1.18.0
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/04/8c/b7fca55a2751fdf57581b0d3b019fb44b8aaa9d990e2166c92a22dd0941e/lensfunpy-1.18.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+        sha256: f8975097cb3cfa645bcbfb64070a261c082a64c333f8cb96172ee6d7e349c419
+        only-arches:
+          - x86_64
+
+  - name: libavif-tools
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DBUILD_SHARED_LIBS=OFF
+      - -DAVIF_CODEC_AOM=SYSTEM
+      - -DAVIF_LIBYUV=OFF
+      - -DAVIF_LIBSHARPYUV=OFF
+      - -DAVIF_JPEG=SYSTEM
+      - -DAVIF_ZLIBPNG=SYSTEM
+      - -DAVIF_BUILD_APPS=ON
+      - -DAVIF_BUILD_TESTS=OFF
+    post-install:
+      - install -Dm644 LICENSE /app/share/licenses/io.github.LucienMidnight.hdr-finisher/libavif-LICENSE.txt
+      - install -Dm644 ext/libargparse/LICENSE.md /app/share/licenses/io.github.LucienMidnight.hdr-finisher/libargparse-LICENSE.md
+      - test -x /app/bin/avifenc
+      - test -x /app/bin/avifdec
+      - test -x /app/bin/avifgainmaputil
+    sources:
+      - type: git
+        url: https://github.com/AOMediaCodec/libavif.git
+        tag: v1.4.1
+        commit: 6543b22b5bc706c53f038a16fe515f921556d9b3
+      - type: git
+        url: https://github.com/kmurray/libargparse.git
+        commit: ee74d1b53bd680748af14e737378de57e2a0a954
+        dest: ext/libargparse
+
+  - name: libultrahdr-tools
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DBUILD_SHARED_LIBS=OFF
+      - -DUHDR_BUILD_DEPS=OFF
+      - -DUHDR_BUILD_EXAMPLES=ON
+      - -DUHDR_BUILD_TESTS=OFF
+      - -DUHDR_BUILD_BENCHMARK=OFF
+      - -DUHDR_BUILD_JAVA=OFF
+      - -DUHDR_ENABLE_GLES=OFF
+      - -DUHDR_ENABLE_INSTALL=ON
+      - -DUHDR_WRITE_XMP=ON
+      - -DUHDR_WRITE_ISO=ON
+    post-install:
+      - install -Dm644 LICENSE /app/share/licenses/io.github.LucienMidnight.hdr-finisher/libultrahdr-LICENSE.txt
+      - install -Dm644 LICENSE-APACHE /app/share/licenses/io.github.LucienMidnight.hdr-finisher/libultrahdr-LICENSE-APACHE.txt
+      - install -Dm644 LICENSE-MIT /app/share/licenses/io.github.LucienMidnight.hdr-finisher/libultrahdr-LICENSE-MIT.txt
+      - install -Dm644 adobe-hdr-gain-map-license/NOTICE /app/share/licenses/io.github.LucienMidnight.hdr-finisher/adobe-hdr-gain-map-NOTICE.txt
+      - test -x /app/bin/ultrahdr_app
+    sources:
+      - type: git
+        url: https://github.com/google/libultrahdr.git
+        commit: ad4a92eea0d2f39f18b5ecae3165fdd56c6a478b
+
+  - name: hdr-finisher
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/node24/bin
+      env:
+        XDG_CACHE_HOME: /run/build/hdr-finisher/flatpak-node/cache
+        npm_config_cache: /run/build/hdr-finisher/flatpak-node/npm-cache
+        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    build-commands:
+      - install -d 'source/codebase/dist/HDR Finisher Backend'
+      - install -m755 source/packaging/flatpak/backend-wrapper.sh 'source/codebase/dist/HDR Finisher Backend/HDR Finisher Backend'
+      - cd source/packaging/flatpak/npm && npm ci --offline
+      - cd source/codebase/desktop && ../../packaging/flatpak/npm/node_modules/.bin/electron-builder --dir --linux --x64 -c.executableName=hdr-finisher --publish never
+      - install -d /app/hdr-finisher
+      - cp -a source/codebase/dist-electron/linux-unpacked/. /app/hdr-finisher/
+      - install -d /app/hdr-finisher-runtime/bin
+      - cp -a source/codebase/backend source/codebase/frontend source/codebase/samples /app/hdr-finisher-runtime/
+      - cp -a source/docs /app/hdr-finisher-runtime/docs
+      - install -m644 source/codebase/run_app.py /app/hdr-finisher-runtime/run_app.py
+      - install -m755 /app/bin/avifenc /app/bin/avifdec /app/bin/avifgainmaputil /app/bin/ultrahdr_app /app/hdr-finisher-runtime/bin/
+      - install -Dm755 source/packaging/flatpak/hdr-finisher.sh /app/bin/hdr-finisher
+      - install -Dm644 source/packaging/flatpak/io.github.LucienMidnight.hdr-finisher.desktop /app/share/applications/io.github.LucienMidnight.hdr-finisher.desktop
+      - install -Dm644 source/packaging/flatpak/io.github.LucienMidnight.hdr-finisher.metainfo.xml /app/share/metainfo/io.github.LucienMidnight.hdr-finisher.metainfo.xml
+      - install -Dm644 source/packaging/flatpak/io.github.LucienMidnight.hdr-finisher.xml /app/share/mime/packages/io.github.LucienMidnight.hdr-finisher.xml
+      - install -Dm644 source/codebase/desktop/assets/icon.svg /app/share/icons/hicolor/scalable/apps/io.github.LucienMidnight.hdr-finisher.svg
+      - install -Dm644 source/codebase/desktop/assets/icon.png /app/share/icons/hicolor/1024x1024/apps/io.github.LucienMidnight.hdr-finisher.png
+      - install -Dm644 source/LICENSE /app/share/licenses/io.github.LucienMidnight.hdr-finisher/LICENSE
+      - install -Dm644 source/THIRD_PARTY_NOTICES.md /app/share/licenses/io.github.LucienMidnight.hdr-finisher/THIRD_PARTY_NOTICES.md
+      - |
+        find /app/hdr-finisher /app/hdr-finisher-runtime -type f -exec sh -c '
+          file "$1" | grep -q ELF || exit 0
+          report="$(ldd "$1" 2>&1 || true)"
+          if echo "$report" | grep -q "not found"; then echo "$1 has a missing dependency" >&2; echo "$report" >&2; exit 1; fi
+          if echo "$report" | grep -Eiq "/home/|/usr/local/|linux-native-tools"; then echo "$1 contains a build-host dependency" >&2; exit 1; fi
+        ' sh {} \;
+    sources:
+      - type: dir
+        path: ../..
+        dest: source
+      - generated-sources/node-sources.json

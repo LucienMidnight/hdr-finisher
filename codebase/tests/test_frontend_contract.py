@@ -1036,6 +1036,7 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
 def test_electron_preview_correctness_contract() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    webgpu_javascript = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
     main = (DESKTOP / "main.js").read_text(encoding="utf-8")
     preload = (DESKTOP / "preload.js").read_text(encoding="utf-8")
 
@@ -1045,10 +1046,12 @@ def test_electron_preview_correctness_contract() -> None:
     assert 'desktop.resolveDroppedFile(file)' in javascript
     assert "Windows shell integrations and catalog applications" in javascript
     assert "await uploadFile(file);" in javascript
-    assert 'const nativeOverwriteApproved = process.platform === "win32" || process.platform === "darwin"' in main
+    assert 'const nativeOverwriteApproved = ["win32", "darwin", "linux"].includes(process.platform)' in main
     assert "Boolean(nativeOverwrite)" in javascript
     assert 'id="rotate-apply"' in html and 'id="rotate-cancel"' in html
     assert "function gpuPreviewEligible(lane = state.currentView)" in javascript
+    assert "state.gpuPreview?.adapterInfo?.fallback" in javascript
+    assert "isFallbackAdapter" in webgpu_javascript
     gpu_eligibility = javascript[
         javascript.index("function gpuPreviewEligible(lane = state.currentView)"):
         javascript.index("function gpuPreviewSourceOptions")

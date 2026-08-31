@@ -71,13 +71,17 @@ async function main() {
 
   const defaultPackagedExecutable = process.platform === "darwin"
     ? path.join(codebase, "dist-electron", "mac-arm64", "HDR Finisher.app", "Contents", "MacOS", "HDR Finisher")
-    : path.join(codebase, "dist-electron", "win-unpacked", "HDR Finisher.exe");
+    : process.platform === "linux"
+      ? path.join(codebase, "dist-electron", "linux-unpacked", "hdr-finisher")
+      : path.join(codebase, "dist-electron", "win-unpacked", "HDR Finisher.exe");
   const packagedExecutable = process.env.HDR_FINISHER_PACKAGED_EXECUTABLE || defaultPackagedExecutable;
   const executablePath = packaged ? packagedExecutable : electronExecutable;
   // The smoke runner may execute inside a nested Windows/Linux sandbox where
   // Chromium's own process sandbox cannot initialize. This switch is confined
   // to test launches and is never applied by the packaged application itself.
   const launchArgs = packaged ? ["--no-sandbox"] : ["--no-sandbox", "."];
+  const testOzonePlatform = process.env.HDR_FINISHER_TEST_OZONE_PLATFORM;
+  if (["x11", "wayland"].includes(testOzonePlatform)) launchArgs.push(`--ozone-platform=${testOzonePlatform}`);
   const electronApp = await electron.launch({
     executablePath,
     args: launchArgs,
@@ -232,8 +236,16 @@ async function main() {
     await window.waitForFunction(() => document.querySelector(".app-shell")?.classList.contains("compact-workspace"));
     assert.equal(await window.evaluate(() => typeof window.require), "undefined");
     const environment = await window.evaluate(() => window.hdrFinisherDesktop.environment());
-    assert.equal(environment.apiVersion, 1);
+    assert.equal(environment.apiVersion, 2);
     assert.equal(environment.packaged, packaged);
+    assert.equal(typeof environment.sessionType, "string");
+    assert.ok(["development", "deb", "flatpak", "standalone"].includes(environment.distributionChannel));
+    assert.ok(environment.currentDisplay?.label);
+    if (environment.platform === "linux") {
+      if (testOzonePlatform === "x11") assert.equal(environment.nativeWayland, false);
+      assert.equal(await window.locator("#hdr-presentation-warning").isVisible(), true);
+      assert.match(await window.locator("#hdr-presentation-warning").textContent(), /Non-authoritative SDR preview/i);
+    }
     const frontendSource = await window.evaluate(() => fetch("/static/app.js").then((response) => response.text()));
     assert.match(frontendSource, /Windows shell integrations and catalog applications/);
     assert.doesNotMatch(frontendSource, /That dropped file type is not supported by HDR Finisher/);

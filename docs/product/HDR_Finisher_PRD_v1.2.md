@@ -549,6 +549,41 @@ Add a built-in **Spectral Gradient** to the test images users can choose to impo
   - delivery inspection confirmed an 8-bit sRGB base, 10-bit YUV444 logarithmic gain map, BT.2020/PQ alternate, base headroom `0.00`, and alternate headroom `5.26035`
   - the export folder picker failed during the live Windows test; direct destination-path entry worked and remains the temporary fallback
 
+### Linux v0.8.0 hands-on qualification — August 31, 2026
+
+HDR Finisher 0.8.0 was installed and exercised on an x86_64 workstation running Ubuntu 26.04.1 LTS with KDE Plasma in a native Wayland session. HDR was first enabled for the main display in **System Settings > Display & Monitor > Display Configuration**, and the application window was kept on the HDR-enabled Xiaomi Corporation Mi Monitor for the presentation check. The locally built Debian artifact was verified and installed with:
+
+```bash
+cd codebase/dist-electron
+sha256sum -c SHA256SUMS-Linux.txt
+sudo apt install ./HDR-Finisher-0.8.0-Linux-x86_64.deb
+```
+
+The SHA-256 check passed and the package installed as `hdr-finisher` 0.8.0. APT's `_apt` notice about reading the local package unsandboxed as root was non-fatal. The installed application launched from `hdr-finisher` without a separate Python or Node installation.
+
+After **Load test pattern** caused the first real preview surface to be configured, the Technical scope reported all application-level Linux HDR gates as passed:
+
+| Readout | Observed value |
+|---|---|
+| HDR Presentation | Qualified |
+| Session | Native Wayland |
+| Display | Xiaomi Corporation Mi Monitor |
+| Dynamic Range | high |
+| Color Gamut | P3 |
+| Component Depth | 10-bit |
+| Screen Depth | 30-bit output |
+| Presented / transport | 1024 px WebGPU / GPU texture |
+| Media / space | WebGPU canvas / Display P3 extended |
+| Preview representation | 16-bit float proxy |
+
+The test pattern was subjectively brighter and wider-ranging than an ordinary SDR presentation. That observation plus the qualified readout validates that this application build entered its intended extended WebGPU path on the named environment; it is not a photometric calibration or a measurement of emitted peak luminance. Chromium/Electron printed Wayland/Vulkan surface and Wayland color-manager diagnostics at startup, plus dynamic-uniform-buffer limit reductions. Those messages did not prevent the extended canvas from qualifying after content was presented and should not, by themselves, be treated as an HDR failure.
+
+The hands-on run exposed three Linux integration follow-ups:
+
+1. **Defer the Linux presentation warning until a presentation has actually been attempted.** On a fresh launch with no source, `gpuSurfaceHdr` is necessarily false because no canvas has been configured. The current capability renderer therefore displays **Non-authoritative SDR preview** over the empty import state, even though the same session becomes **Qualified** immediately after loading the test pattern. With no active session, the UI should remain neutral and may describe HDR status as waiting/not yet tested. Evaluate the warning only after a source import or test-pattern load has reached its first settled presentation attempt. Hide/reset it again after source ejection. If that attempt fails, or a previously qualified surface later fails because of monitor movement, HDR disablement, CPU fallback, or device loss, retain the persistent actionable warning. Add frontend and packaged-Electron coverage for empty launch, first qualified render, first failed render, source ejection, and qualified-to-degraded transitions.
+2. **Repair KDE/Wayland taskbar icon association.** The installed `.deb` placed a valid 1024 px `hdr-finisher.png` under the hicolor icon theme and installed `hdr-finisher.desktop`, but the running window appeared as a blank gray taskbar tile. The package currently uses Electron application ID `org.hdrfinisher.app` while the desktop-entry basename and `StartupWMClass` use `hdr-finisher`; this mismatch is the leading hypothesis, not yet a confirmed root cause. Align the Wayland application ID, desktop-entry identity, executable metadata, and installed icon name, then rebuild and test both application-menu and terminal launches. Acceptance requires the correct icon in the KDE launcher, running-task tile, task switcher, and window grouping after a clean install and desktop-cache refresh.
+3. **Promote mounted Linux storage into Import > Locations.** The browser currently returns only `/` as a connected root on non-Windows/non-macOS systems. The DAS was reachable by manually navigating through `/media`, but its mounted volume was not shown directly under **Locations**. The `.deb` should enumerate relevant user-accessible mounted filesystems rather than assuming all Linux storage is represented by `/`; cover common `/media/$USER`, `/run/media/$USER`, `/mnt`, and custom mount points without listing pseudo/system filesystems. Use stable labels, deduplicate paths, mark unavailable mounts honestly, refresh when the browser opens and after hot-plug changes, and allow a discovered volume or subfolder to be pinned. Flatpak behavior must retain the portal/no-broad-home security contract and surface external storage through an appropriate portal grant rather than silently broadening sandbox permissions. Add backend tests with synthetic mount tables plus hands-on `.deb` validation for DAS present at launch, attached after launch, detached while browsing, and reopened from Pinned/Recent.
+
 ### Current Blockers and Known Gaps
 - **Resolved August 17, 2026 — Lightroom Classic AVIF gain-map import.** CICP transfer-characteristic code 1 is now decoded as the distinct BT.709 inverse OETF rather than rejected or aliased to sRGB. The real 42 MP Lightroom Classic AVIF preserves its SDR base, imports as `HDR_TRUE`, retains its 2.30-stop encoded display headroom, and passes the packaged Windows drag/drop path.
 - **Resolved August 17, 2026 — Windows drag-and-drop ingestion.** File drops are accepted across the application surface. When Windows Explorer, Lightroom, or another shell/catalog integration supplies file bytes without an Electron filesystem path, HDR Finisher falls back to streaming the local file to its bundled backend instead of misreporting AVIF/TIF/TIFF as unsupported. Packaged regression coverage exercises path-backed drop, pathless TIFF drop, native Import, save, export, bundled capabilities, and clean shutdown; the real Lightroom AVIF also passes end to end.

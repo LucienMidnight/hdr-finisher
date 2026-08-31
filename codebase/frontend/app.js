@@ -521,6 +521,8 @@ const state = {
   gpuQueuedLane: null,
   gpuPreview: null,
   gpuSurfaceHdr: false,
+  gpuSurfaceHdrByLane: { hdr: false, sdr: false },
+  presentationCapability: null,
   previewInfo: {
     mediaType: "n/a",
     transport: "n/a",
@@ -1097,6 +1099,8 @@ const els = {
   sourcePreviewList: document.getElementById("source-preview-list"),
   sessionName: document.getElementById("session-name"),
   previewStage: document.getElementById("preview-stage"),
+  hdrPresentationWarning: document.getElementById("hdr-presentation-warning"),
+  hdrPresentationWarningCopy: document.getElementById("hdr-presentation-warning-copy"),
   previewPrimaryPane: document.getElementById("preview-primary-pane"),
   previewSecondaryPane: document.getElementById("preview-secondary-pane"),
   previewCanvas: document.getElementById("preview-canvas"),
@@ -2801,7 +2805,7 @@ function bindEvents() {
   bindCompareControl();
   window.addEventListener("hdrfinisher:webgpulost", (event) => {
     state.displayInfo.gpu = event.detail?.message || "WebGPU device lost; using CPU fallback";
-    state.gpuSurfaceHdr = false;
+    clearGpuSurfaceHdr();
     renderReadouts();
     if (state.session) settlePreview(state.currentView).catch(() => null);
   });
@@ -2809,9 +2813,12 @@ function bindEvents() {
     ["(dynamic-range: high)", "(color-gamut: p3)", "(color-gamut: rec2020)"].forEach((query) => {
       const media = window.matchMedia(query);
       media.addEventListener?.("change", () => {
-        state.displayInfo = buildDisplayProbe();
+        state.displayInfo = buildDisplayProbe(state.desktopEnvironment);
         state.displayInfo.gpu = state.gpuPreview?.detail || "Backend fallback";
+        clearGpuSurfaceHdr();
+        state.gpuPreview?.invalidateSurfaces?.();
         renderReadouts();
+        if (state.session) settlePreview(state.currentView).catch(() => null);
       });
     });
   }
@@ -3089,6 +3096,7 @@ function renderCurrentPreviewSize(options) {
 }
 
 function renderReadouts() {
+  renderPresentationCapability();
   renderKeyValueList(els.previewOutputList, previewOutputEntries());
   renderKeyValueList(els.displayInfoList, displayProbeEntries());
   renderKeyValueList(els.sourcePreviewList, sourceInterpretationEntries());
@@ -3185,8 +3193,18 @@ async function initializeDesktopBridge() {
       showUploadError(error?.message || "Could not open that source image.");
     });
   });
+  desktop.onDisplayStateChanged?.((environment) => {
+    state.desktopEnvironment = environment;
+    state.displayInfo = buildDisplayProbe(environment);
+    state.displayInfo.gpu = state.gpuPreview?.detail || "Backend fallback";
+    clearGpuSurfaceHdr();
+    state.gpuPreview?.invalidateSurfaces?.();
+    renderReadouts();
+    if (state.session) settlePreview(state.currentView).catch(() => null);
+  });
   await desktop.rendererReady();
   state.desktopEnvironment = await desktop.environment();
+  state.displayInfo = buildDisplayProbe(state.desktopEnvironment);
   state.renderingMode = ["auto", "gpu", "cpu"].includes(state.desktopEnvironment.renderingMode)
     ? state.desktopEnvironment.renderingMode
     : "auto";
@@ -3366,7 +3384,14 @@ function previewOutputEntries() {
 }
 
 function displayProbeEntries() {
+  const display = state.desktopEnvironment?.currentDisplay;
+  const presentation = state.presentationCapability || presentationCapabilityState();
   return [
+    ["HDR Presentation", presentation.qualified ? "Qualified" : "SDR simulation"],
+    ["Session", state.desktopEnvironment?.nativeWayland ? "Native Wayland" : state.desktopEnvironment?.sessionType || "Browser"],
+    ["Display", display?.label || "Current browser display"],
+    ["Output Space", display?.colorSpace || "unknown"],
+    ["Component Depth", display?.depthPerComponent ? `${display.depthPerComponent}-bit` : "unknown"],
     ["Dynamic Range", state.displayInfo.dynamicRange],
     ["Color Gamut", state.displayInfo.colorGamut],
     ["Pixel Ratio", state.displayInfo.pixelRatio],
@@ -3374,6 +3399,49 @@ function displayProbeEntries() {
     ["Browser", state.displayInfo.browser],
     ["GPU Preview", state.displayInfo.gpu || "Backend fallback"],
   ];
+}
+
+function setGpuSurfaceHdr(lane, active) {
+  if (lane === "hdr" || lane === "sdr") state.gpuSurfaceHdrByLane[lane] = Boolean(active);
+  state.gpuSurfaceHdr = Boolean(state.gpuSurfaceHdrByLane.hdr);
+}
+
+function clearGpuSurfaceHdr() {
+  state.gpuSurfaceHdrByLane = { hdr: false, sdr: false };
+  state.gpuSurfaceHdr = false;
+}
+
+function presentationCapabilityState() {
+  const environment = state.desktopEnvironment;
+  const onLinux = environment?.platform === "linux";
+  const reasons = [];
+  if (onLinux && !environment.nativeWayland) reasons.push("native Wayland is not active");
+  if (!mediaQueryMatch("(dynamic-range: high)")) reasons.push("the current display does not report high dynamic range");
+  if (!state.gpuPreview?.available || state.renderingMode === "cpu") reasons.push("WebGPU is unavailable or CPU preview is selected");
+  if (state.gpuPreview?.adapterInfo?.fallback) reasons.push("WebGPU is using a software fallback adapter");
+  if (!state.gpuSurfaceHdr) reasons.push("the extended rgba16float canvas is not active");
+  return {
+    qualified: Boolean((!onLinux || environment.nativeWayland) && reasons.length === 0),
+    reasons,
+    nativeWayland: Boolean(environment?.nativeWayland),
+    browserDynamicRange: mediaQueryMatch("(dynamic-range: high)"),
+    browserGamut: state.displayInfo.colorGamut,
+    extendedSurface: Boolean(state.gpuSurfaceHdr),
+    softwareFallback: Boolean(state.gpuPreview?.adapterInfo?.fallback),
+    display: environment?.currentDisplay || null,
+    exactHeadroomAvailable: false,
+  };
+}
+
+function renderPresentationCapability() {
+  state.presentationCapability = presentationCapabilityState();
+  if (!els.hdrPresentationWarning) return;
+  const show = state.desktopEnvironment?.platform === "linux" && !state.presentationCapability.qualified;
+  els.hdrPresentationWarning.classList.toggle("hidden", !show);
+  if (show) {
+    const reason = state.presentationCapability.reasons.join("; ");
+    els.hdrPresentationWarningCopy.textContent = `${reason}. Editing, scopes, and export remain accurate; visible HDR brightness is an SDR simulation.`;
+  }
 }
 
 function renderWorkflowContext() {
@@ -3675,6 +3743,7 @@ async function renderPreviewForLane(
       && state.gpuSurfaceHdr;
     if (!requestIsCurrent()) return false;
     if (!keptGpuSurface) {
+      setGpuSurfaceHdr(lane, false);
       state.previewInfoByLane[lane] = previewInfo;
       if (!await applyPreviewUrl(url, requestIsCurrent)) return false;
       state.previewInfo = previewInfo;
@@ -3758,7 +3827,7 @@ function applyRawPreview(frame) {
   els.previewImage.style.display = "none";
   canvas.style.display = "block";
   els.emptyState.style.display = "none";
-  state.gpuSurfaceHdr = false;
+  setGpuSurfaceHdr(state.currentView, false);
   state.previewInfo = state.previewInfoByLane[state.currentView];
   hidePreviewMessage();
   clearInteractiveStraightenPreview();
@@ -8463,7 +8532,7 @@ async function renderGpuDraft(
     );
     if (!result || !sourceOptions.isCurrent()) return false;
     state.gpuPreparedLane[lane] = true;
-    state.gpuSurfaceHdr = Boolean(result.hdr);
+    setGpuSurfaceHdr(lane, result.hdr);
     els.previewImage.style.display = "none";
     els.previewCanvas.style.display = "block";
     els.emptyState.style.display = "none";
@@ -8517,7 +8586,7 @@ async function renderGpuDraft(
     }
     console.warn("WebGPU authoring render failed; using raw CPU preview.", error);
     state.gpuPreview.available = false;
-    state.gpuSurfaceHdr = false;
+    setGpuSurfaceHdr(lane, false);
     state.gpuPreview.detail = error?.message || "WebGPU draft failed";
     state.displayInfo.gpu = state.gpuPreview.detail;
     renderReadouts();
@@ -8912,7 +8981,8 @@ function interpretationSummary(session) {
   return `${mode}: ${colorSpace} + ${transfer}`;
 }
 
-function buildDisplayProbe() {
+function buildDisplayProbe(environment = null) {
+  const display = environment?.currentDisplay;
   return {
     dynamicRange: mediaQueryMatch("(dynamic-range: high)") ? "high" : "standard/unknown",
     colorGamut: mediaQueryMatch("(color-gamut: rec2020)")
@@ -8923,7 +8993,7 @@ function buildDisplayProbe() {
           ? "srgb"
           : "unknown",
     pixelRatio: String(window.devicePixelRatio || 1),
-    screenDepth: `${window.screen?.colorDepth || "?"}-bit`,
+    screenDepth: display?.colorDepth ? `${display.colorDepth}-bit output` : `${window.screen?.colorDepth || "?"}-bit browser`,
     browser: navigator.userAgentData?.brands?.map((brand) => brand.brand).join(", ") || navigator.userAgent,
   };
 }
@@ -9171,7 +9241,7 @@ function clearPreviewCache() {
   state.comparisonRenderedLane = null;
   state.comparisonRenderedGeneration = null;
   state.comparisonRenderedGeometry = null;
-  state.gpuSurfaceHdr = false;
+  clearGpuSurfaceHdr();
   state.gpuPreparedLane = { hdr: false, sdr: false };
   // A replacement source can have a completely different orientation. Do not
   // let the previous session's fitted aspect survive until the new GPU canvas

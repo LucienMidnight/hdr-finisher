@@ -62,6 +62,7 @@ Pages carry their own verification dates where implementation freshness matters.
 
 - [Windows settings](setup/windows.md)
 - [macOS settings](setup/macos.md)
+- [Linux and Wayland settings](setup/linux.md)
 - [Monitors and viewing environment](setup/monitors.md)
 
 ## Concepts

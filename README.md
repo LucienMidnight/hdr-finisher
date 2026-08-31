@@ -2,7 +2,7 @@
 
 HDR Finisher is an offline finishing and export application for HDR photographs and rendered images. It accepts high-dynamic-range sources, lets you author separate HDR and SDR renditions, and exports adaptive gain-map images for the web.
 
-The project is an early technical alpha. Native Windows x64 and macOS Apple Silicon desktop packages are supported, while physical HDR validation remains primarily Windows/Chromium-focused. macOS native display telemetry and the complete Mac display/browser acceptance matrix are still pending. See [Known limitations](docs/known-limitations.md) before relying on it for delivery work.
+The project is an early technical alpha. Native Windows x64, macOS Apple Silicon, and Linux x86_64 desktop packages are supported. Kubuntu 26.04 LTS with Plasma 6.6 on native Wayland is the tier-one Linux HDR target; X11/Xwayland remains usable with an explicit non-authoritative SDR preview. Physical Linux HDR qualification is tracked separately from export correctness. See [Known limitations](docs/known-limitations.md) before relying on it for delivery work.
 
 ## What it is for
 
@@ -24,6 +24,7 @@ HDR Finisher is not a RAW developer or layer compositor. Its local-adjustment mo
   [GitHub Releases](https://github.com/LucienMidnight/hdr-finisher/releases) and run the installer. A
   `HDR-Finisher-Portable-<version>-x64.exe` build is also available when installation is not desired.
 - **Apple Silicon Mac users:** download the macOS arm64 DMG, drag **HDR Finisher** to Applications, and open it. Unsigned technical-preview builds require the one-time Finder **Open** confirmation described in [Install and run](docs/getting-started/install-and-run.md).
+- **Kubuntu/Ubuntu x86_64 users:** install the versioned `.deb`, or install the sandboxed Flatpak when available. Use a native Wayland session for HDR presentation; see [Linux setup](docs/setup/linux.md).
 - [Five-minute quick start](docs/getting-started/quick-start.md)
 - [Install and run](docs/getting-started/install-and-run.md)
 - [Prepare files from Affinity, darktable, Blender, or an iPhone](docs/workflows/source-preparation.md)
@@ -48,15 +49,16 @@ Sources are normalized to a float32, scene-linear ACEScg working image when thei
 
 ## Development
 
-HDR Finisher uses Python 3.12+, FastAPI, NumPy, colour-science, Pillow, OpenEXR, tifffile, a plain HTML/CSS/JavaScript interface, Electron for the Windows and macOS desktop shells, and optional native encoders. Processing and authoritative export rendering remain local.
+HDR Finisher uses Python 3.12+, FastAPI, NumPy, colour-science, Pillow, OpenEXR, tifffile, a plain HTML/CSS/JavaScript interface, Electron for the Windows, macOS, and Linux desktop shells, and optional native encoders. Processing and authoritative export rendering remain local.
 
-To run the desktop shell from source, install the dependencies in `codebase/desktop` with `npm install`, then run `npm start`. Build Windows x64 artifacts with `codebase/tools/build_desktop.ps1`; build native Apple Silicon `.app`, `.dmg`, and `.zip` artifacts with `codebase/tools/build_desktop_macos.sh`. Both workflows package the Python sidecar first and write Electron artifacts to `codebase/dist-electron`.
+To run the desktop shell from source, install the dependencies in `codebase/desktop` with `npm install`, then run `npm start`. Build Windows x64 artifacts with `codebase/tools/build_desktop.ps1`, Apple Silicon artifacts with `codebase/tools/build_desktop_macos.sh`, and the Linux x86_64 `.deb` with `codebase/tools/build_desktop_linux.sh`. Flatpak sources and metadata live under `packaging/flatpak/`.
 
 See [Architecture](docs/technical/architecture.md) and the [Development guide](docs/technical/development.md).
 
 ## Project status
 
-- Windows x64 and macOS Apple Silicon technical-alpha packaging are available.
+- Windows x64, macOS Apple Silicon, and Linux x86_64 technical-alpha packaging paths are available.
+- Linux HDR preview qualification requires native Wayland, browser-reported HDR, and an active extended WebGPU canvas; other modes are deliberately labeled as SDR simulation.
 - macOS native display telemetry, signing/notarization, and physical HDR acceptance remain open release-hardening work.
 - JPEG Ultra HDR and AVIF gain-map availability is capability-gated.
 - Batch processing, sampled content selectors, signed installers, and automatic updates are not implemented. JPEG XL HDR and Experimental DNG Import are capability-gated. Brush, gradient, luminance-range, and path local adjustments are available; sampled selectors remain build-gated pending IP review.
