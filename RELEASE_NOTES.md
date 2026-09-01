@@ -1,14 +1,14 @@
-# HDR Finisher 0.8.6
+# HDR Finisher 0.8.7
 
-HDR Finisher 0.8.6 adds Linux x86_64 desktop support with Kubuntu 26.04 LTS, Plasma 6.6, and native Wayland as the tier-one HDR environment. It supersedes the unpublished 0.8.0 through 0.8.5 release candidates. Linux CI builds pinned native encoders before encoder-dependent application tests, Flatpak links libultrahdr within its sandbox instead of requesting unavailable static glibc, Flatpak Electron assembly uses its staged offline toolchain and Electron archive directly without network access, and the Windows packaged smoke test waits for its first presented frame.
+HDR Finisher 0.8.7 makes **Match entire HDR grade** produce a normal, editable SDR starting point and removes visible Texture halos from thin wires and high-contrast edges. It includes the latest local `main` commit, `c791cb4` ("Materialize editable HDR-to-SDR matches"), plus the subsequent Texture correction.
 
-- Adds a versioned Debian package and a sandboxed Flatpak/Flathub manifest.
-- Qualifies Linux HDR presentation only when native Wayland, browser-reported HDR, and an extended `rgba16float` WebGPU canvas are active.
-- Keeps editing, scopes, proof reconstruction, and export available with a persistent non-authoritative SDR preview warning in degraded modes.
-- Reports the current Electron display label, color space, output/component depth, scale, session type, and distribution channel without inventing peak luminance.
-- Reconfigures the WebGPU surface when display state or browser HDR/gamut media queries change.
-- Adds pinned Linux builds for libavif tools and `ultrahdr_app`, ELF dependency checks, offline Flatpak dependency manifests, XDG portal-safe permissions, AppStream/MIME metadata, and Linux CI jobs.
+- Materializes HDR-to-SDR matching into ordinary SDR controls and ordered local adjustments instead of retaining a hidden captured rendering recipe.
+- Keeps the matched SDR result independently editable and records whether the conversion matched within tolerance or needs review.
+- Preserves deterministic edit history and existing project behavior around matching, conversion, and source-specific state.
+- Adds scale-aware edge protection to Texture in CPU preview/export and in global and masked-local WebGPU rendering.
+- Prevents the difference-of-blurs Texture band from drawing light or dark outlines around narrow, high-contrast structures while retaining low-amplitude surface texture.
+- Adds regression coverage for dark and bright one-pixel wires, surface-detail retention, WebGPU shader compilation, and global/local Detail rendering.
 
-Hands-on validation on August 31, 2026 passed the application's complete Linux HDR presentation gate on Ubuntu 26.04.1 LTS, KDE Plasma, native Wayland, and a 10-bit Xiaomi HDR display. The Technical panel reported **HDR Presentation: Qualified**, **Dynamic Range: high**, a Display P3 extended WebGPU canvas, GPU texture transport, and a 16-bit float preview proxy. This validates the application presentation path on the tested workstation; it is not a photometric calibration or measured peak-luminance certification. AMD Mesa and Intel Xe remain explicitly unqualified until corresponding hardware results are recorded.
+Release automation builds and verifies Windows x64 Setup and Portable executables, macOS Apple Silicon DMG and ZIP packages, Linux x86_64 Debian and Flatpak packages, and SHA-256 checksum manifests before publishing the GitHub release.
 
-Known Linux follow-ups do not block this technical-alpha release: the empty launch state can briefly report an SDR simulation before any preview surface has been attempted, KDE may show a blank taskbar tile because the Wayland application identity is not yet associated correctly with the installed icon, and mounted external storage is reachable through the filesystem browser but is not yet promoted automatically into **Locations**.
+This remains a technical-alpha release. Windows artifacts are not code-signed. macOS packages use the project's existing ad-hoc signature and are not notarized, so macOS users may need Finder's one-time **Open** flow. Linux HDR presentation is qualified for the documented Kubuntu 26.04 native-Wayland environment; X11/Xwayland uses an explicit SDR simulation.

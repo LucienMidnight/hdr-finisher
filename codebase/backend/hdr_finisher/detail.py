@@ -9,6 +9,7 @@ from .models import DetailAdjustments, PreviewKind
 
 _ACESCG_LUMA = np.array([0.2722287, 0.6740818, 0.0536895], dtype=np.float32)
 _SRGB_LUMA = np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+_TEXTURE_EDGE_THRESHOLD_EV = np.float32(0.20)
 
 
 def detail_is_neutral(detail: DetailAdjustments) -> bool:
@@ -38,10 +39,17 @@ def apply_detail(
     diagonal = math.hypot(image.shape[0], image.shape[1])
 
     if detail.texture_amount:
-        fine = _gaussian_blur(log_luma, max(0.35, diagonal * 0.0003))
-        coarse = _gaussian_blur(log_luma, max(0.70, diagonal * 0.0012))
+        fine_radius = max(0.35, diagonal * 0.0003)
+        coarse_radius = max(0.70, diagonal * 0.0012)
+        fine = _gaussian_blur(log_luma, fine_radius)
+        coarse = _gaussian_blur(log_luma, coarse_radius)
         band = fine - coarse
-        adjusted += band * np.float32(float(detail.texture_amount) / 100.0)
+        # A difference of blurs rings around narrow, high-contrast structure.
+        # Qualify the band with contrast measured across the coarse filter's
+        # support so wires and hard edges do not acquire light/dark outlines,
+        # while low-amplitude, non-coherent surface texture remains active.
+        edge_weight = _texture_edge_weight(log_luma, coarse, coarse_radius)
+        adjusted += band * edge_weight * np.float32(float(detail.texture_amount) / 100.0)
 
     if detail.clarity_amount:
         radius = max(0.5, diagonal * float(detail.clarity_radius_percent) / 100.0)
@@ -93,6 +101,39 @@ def _gaussian_blur(values: np.ndarray, sigma: float) -> np.ndarray:
         result = _box_blur_axis(result, radius, 1)
         result = _box_blur_axis(result, radius, 0)
     return result
+
+
+def _texture_edge_weight(log_luma: np.ndarray, coarse: np.ndarray, coarse_radius: float) -> np.ndarray:
+    guide = np.abs(log_luma - coarse).astype(np.float32)
+    shifted = np.empty_like(coarse, dtype=np.float32)
+    requested_reach = max(1, int(round(2.0 * coarse_radius)))
+
+    for axis in (1, 0):
+        reach = min(requested_reach, log_luma.shape[axis] - 1)
+        if reach <= 0:
+            continue
+        for direction in (-1, 1):
+            if axis == 1 and direction < 0:
+                shifted[:, reach:] = coarse[:, :-reach]
+                shifted[:, :reach] = coarse[:, :1]
+            elif axis == 1:
+                shifted[:, :-reach] = coarse[:, reach:]
+                shifted[:, -reach:] = coarse[:, -1:]
+            elif direction < 0:
+                shifted[reach:, :] = coarse[:-reach, :]
+                shifted[:reach, :] = coarse[:1, :]
+            else:
+                shifted[:-reach, :] = coarse[reach:, :]
+                shifted[-reach:, :] = coarse[-1:, :]
+            np.subtract(coarse, shifted, out=shifted)
+            np.abs(shifted, out=shifted)
+            np.maximum(guide, shifted, out=guide)
+
+    np.divide(guide, _TEXTURE_EDGE_THRESHOLD_EV, out=guide)
+    np.square(guide, out=guide)
+    np.negative(guide, out=guide)
+    np.exp(guide, out=guide)
+    return guide
 
 
 def _box_blur_axis(values: np.ndarray, radius: int, axis: int) -> np.ndarray:

@@ -70,3 +70,36 @@ def test_sharpen_preserves_flat_fields_exactly() -> None:
     )
 
     np.testing.assert_array_equal(result, image)
+
+
+def test_texture_does_not_halo_thin_high_contrast_wires() -> None:
+    height, width = 32, 2048
+    center = width // 2
+
+    for background, wire in ((0.5, 0.02), (0.05, 1.0)):
+        image = np.full((height, width, 3), background, dtype=np.float32)
+        image[:, center, :] = wire
+        result = apply_detail(
+            image,
+            DetailAdjustments(texture_amount=100.0),
+            PreviewKind.HDR,
+        )
+
+        neighboring_change = np.abs(np.delete(result - image, center, axis=1))
+        assert float(np.max(neighboring_change)) < 0.005
+
+
+def test_texture_edge_protection_retains_low_amplitude_surface_detail() -> None:
+    height, width = 64, 2048
+    y, x = np.mgrid[:height, :width].astype(np.float32)
+    luminance = np.float32(0.18) * np.exp2(0.08 * np.sin(x * 0.71) * np.cos(y * 0.43))
+    image = np.repeat(luminance[..., None], 3, axis=2).astype(np.float32)
+
+    result = apply_detail(
+        image,
+        DetailAdjustments(texture_amount=100.0),
+        PreviewKind.HDR,
+    )
+
+    assert _mean_change(image, result) > 0.001
+    assert float(np.std(result[..., 1])) > float(np.std(image[..., 1]))

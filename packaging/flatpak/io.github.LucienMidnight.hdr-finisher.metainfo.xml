@@ -31,6 +31,9 @@
   </categories>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.8.7" date="2026-09-01">
+      <description><p>Materializes HDR-to-SDR matching into editable controls and protects thin edges from Texture halos.</p></description>
+    </release>
     <release version="0.8.6" date="2026-08-31">
       <description><p>Adds Linux x86_64 support for native Wayland HDR presentation, Debian packaging, and Flatpak.</p></description>
     </release>

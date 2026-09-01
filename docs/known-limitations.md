@@ -85,7 +85,7 @@ Importing, opening a project, ejecting, and closing prompt to save or discard un
 
 - The Windows setup and portable packages are unsigned technical previews; Windows may show an unrecognized-app warning.
 - Flatpak updates are store-managed; other desktop packages provide a GitHub release check rather than an in-place automatic updater.
-- Linux 0.8.6 is x86_64 only. AppImage and arm64 artifacts are not part of this milestone.
+- Linux 0.8.7 is x86_64 only. AppImage and arm64 artifacts are not part of this milestone.
 - Native encoder redistribution may vary by platform and license requirements.
 - The desktop sidecar uses authenticated loopback requests and path grants, but it is not designed or hardened for network exposure.
 - There is no stable versioned external API guarantee.

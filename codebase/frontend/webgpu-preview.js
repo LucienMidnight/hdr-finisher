@@ -3824,6 +3824,27 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return total / weightTotal;
     }
 
+    fn detailTextureEdgeWeight(coordinate: vec2f, logY: f32, coarse: f32) -> f32 {
+      let dimensions = vec2f(textureDimensions(spatialTexture));
+      let coarseRadius = max(0.70, length(dimensions) * 0.0012);
+      let reach = max(1.0, 2.0 * coarseRadius);
+      let centerUv = (coordinate + vec2f(0.5)) / dimensions;
+      var guide = abs(logY - coarse);
+      guide = max(guide, abs(coarse - textureSampleLevel(
+        spatialTexture, spatialSampler, centerUv + vec2f(reach / dimensions.x, 0.0), 0.0
+      ).y));
+      guide = max(guide, abs(coarse - textureSampleLevel(
+        spatialTexture, spatialSampler, centerUv - vec2f(reach / dimensions.x, 0.0), 0.0
+      ).y));
+      guide = max(guide, abs(coarse - textureSampleLevel(
+        spatialTexture, spatialSampler, centerUv + vec2f(0.0, reach / dimensions.y), 0.0
+      ).y));
+      guide = max(guide, abs(coarse - textureSampleLevel(
+        spatialTexture, spatialSampler, centerUv - vec2f(0.0, reach / dimensions.y), 0.0
+      ).y));
+      return exp(-(guide / 0.20) * (guide / 0.20));
+    }
+
     fn detailLocalExtrema(coordinate: vec2i) -> vec2f {
       let dimensions = vec2i(textureDimensions(sourceTexture));
       var minimum = 1000000.0;
@@ -3879,7 +3900,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       let logY = log2(sourceY);
       var adjusted = logY;
       if (abs(p[149]) > 0.000001) {
-        adjusted += (blurred.x - blurred.y) * p[149];
+        let edgeWeight = detailTextureEdgeWeight(vec2f(coordinate), logY, blurred.y);
+        adjusted += (blurred.x - blurred.y) * edgeWeight * p[149];
       }
       if (abs(p[150]) > 0.000001) {
         let band = logY - blurred.z;
@@ -3952,7 +3974,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       let logY = log2(sourceY);
       var adjusted = logY;
       if (abs(p[14]) > 0.000001) {
-        adjusted += (blurred.x - blurred.y) * p[14];
+        let edgeWeight = detailTextureEdgeWeight(vec2f(coordinate), logY, blurred.y);
+        adjusted += (blurred.x - blurred.y) * edgeWeight * p[14];
       }
       if (abs(p[15]) > 0.000001) {
         let band = logY - blurred.z;
