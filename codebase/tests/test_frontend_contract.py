@@ -143,7 +143,8 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert '"hdr-tone", "hdr-equalizer", "hdr-zones", "hdr-highlights", "curves", "hdr-color"' in script
     assert '"sdr-base", "sdr-tone", "sdr-equalizer", "sdr-zones", "curves", "sdr-color"' in script
     assert "colorGrading.after(localAdjustmentsGroup)" in script
-    assert "Target Peak" in html
+    assert "Highlights-stage target" in html
+    assert "Later grading and Film Look controls may raise or lower the final scoped output." in html
     assert 'data-path="hdr.highlight_compression_start_nits"' in html
     assert 'data-path="hdr.highlight_compression_target_nits"' in html
     assert 'data-path="hdr.highlight_compression_softness"' in html
@@ -347,14 +348,54 @@ def test_curve_drag_uses_live_preview_scheduler_and_three_point_default_shape() 
     assert 'return Math.min(profile.interactiveEdge, interactiveProxyLongEdge())' in javascript
 
 
-def test_resident_high_resolution_preview_is_not_downgraded_for_cached_edits() -> None:
+def test_resident_high_resolution_preview_is_retained_for_settle_but_not_interaction() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     resident = javascript[javascript.index("function residentAuthoringLongEdge()") : javascript.index("function scopeLongEdge(tier)")]
     assert 'accepted?.transport !== "WebGPU"' in resident
     assert "accepted.geometrySignature !== geometrySignature()" in resident
     assert "accepted.longEdge !== target" in resident
-    assert resident.count("const resident = residentAuthoringLongEdge();") == 2
-    assert resident.count("if (resident) return resident;") == 2
+    interactive = resident[resident.index("function interactiveProxyLongEdge()") : resident.index("function globalDetailActive")]
+    settled = resident[resident.index("function settledProxyLongEdge()") : resident.index("function refinementProxyLongEdge")]
+    assert "residentAuthoringLongEdge" not in interactive
+    assert "clamp(displayedLongEdge(), 512, 1024)" in interactive
+    assert "const resident = residentAuthoringLongEdge();" in settled
+    assert "if (resident) return resident;" in settled
+
+
+def test_detail_interaction_backpressures_the_gpu_queue() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+
+    scheduler = javascript[javascript.index("function initializePreviewScheduler()") : javascript.index("function observeScopeSize()")]
+    assert 'tier: "interactive"' in scheduler
+    assert "const detailActive = gpuDetailGraphActive(task.lane);" in scheduler
+    assert "const detailInteraction = state.detailInteractionRestore?.lane === task.lane;" in scheduler
+    assert "if (detailInteraction && !state.previewScheduler?.interacting) return false;" in scheduler
+    assert "if (rendered && (detailActive || detailInteraction))" in scheduler
+    assert "waitForSubmittedWork" in scheduler
+    assert "state.detailInteractionRestore = { lane: task.lane, longEdge: residentLongEdge }" in scheduler
+    assert "async waitForSubmittedWork()" in webgpu
+    assert "await this.device.queue.onSubmittedWorkDone()" in webgpu
+
+    settle = javascript[javascript.index("async function settlePreview") : javascript.index("async function refinePreview")]
+    assert "const longEdge = detailRestore || settledProxyLongEdge();" in settle
+    assert "globalDetailActive(lane)" not in settle
+    assert 'const tier = longEdge >= refinementProxyLongEdge() ? "refinement" : "settled";' in settle
+
+    gesture = javascript[javascript.index("function beginGlobalDetailInteraction") : javascript.index("function settledProxyLongEdge")]
+    assert '/^(hdr|sdr)\\.detail\\./' in gesture
+    assert "state.detailInteractionRestore = null;" in gesture
+    assert "longEdge: residentAuthoringLongEdge()" in gesture
+
+    graph = javascript[javascript.index("function gpuDetailGraphActive") : javascript.index("function beginGlobalDetailInteraction")]
+    assert "globalDetailActive(lane)" in graph
+    assert "localAdjustments().some" in graph
+    assert "detail.texture_amount, detail.clarity_amount, detail.sharpen_amount" in graph
+
+    local_binding = javascript[javascript.index("function bindLocalPreviewInteraction") : javascript.index("function scheduleLocalPreview")]
+    assert "beginLocalDetailInteraction(control);" in local_binding
+    local_marker = javascript[javascript.index("function beginLocalDetailInteraction") : javascript.index("function brushOutputSpaceMapper")]
+    assert 'startsWith("detail.")' in local_marker
 
 
 def test_curve_canvas_left_clicks_add_or_select_and_right_click_removes() -> None:
@@ -824,6 +865,10 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     assert "detailHorizontalFragmentMain" in shader
     assert "detailVerticalFragmentMain" in shader
     assert "detailCompositeFragmentMain" in shader
+    assert "localDetailHorizontalFragmentMain" in shader
+    assert "localDetailVerticalFragmentMain" in shader
+    assert "localDetailCompositeFragmentMain" in shader
+    assert "localDetailMixFragmentMain" in shader
     assert "hdrPrimaries(toneEqualizer(sceneColor(hdrPeakFit(hdrSoftCeiling(hdrContrast(hdrBase(source)))))))" in shader
     assert "sdrReferenceColor(sdrContrast(toneEqualizer(highlightRecovery(rgb))))" in shader
     assert "toneMap(sceneColor(rgb))" in shader
@@ -942,7 +987,7 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     assert "mapped -= p[83] * p[79]" not in shader
     assert "if (p[108] < 1.0)" in shader
     assert "if (p[100] > 0.5 && p[108] < 1.0)" not in shader
-    assert "ensureIntermediate(canvas, proxy.width, proxy.height, spatialActive, detailActive)" in shader
+    assert "detailActive || localDetailActive" in shader
     assert "spatialATexture: spatialActive ? createSpatialTexture() : null" in shader
     assert "current?.width === width && current?.height === height && current.spatialActive === spatialActive" not in shader
     assert "if (spatialActive && (!current.spatialATexture || !current.spatialBTexture))" in shader
@@ -1025,12 +1070,23 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     assert "defaultGeometry" not in gpu_scope_eligibility
     assert "this.scopeSources.get(canvas) !== source" in webgpu
     assert "analysis.sessionId !== request.sessionId" in javascript
+    assert "analysis.sourceSerial !== accepted?.sourceSerial" in javascript
+    assert "analysis.applicationGeneration !== accepted?.generation" in javascript
+    assert 'state.acceptedPresentation?.transport === "WebGPU"' in javascript
+    assert "state.acceptedPresentation?.generation === state.previewGeneration[lane]" in javascript
     assert "return enqueueGpuScopeRequest(request);" in javascript
     assert "state.pendingGpuScopeRequest?.resolve(false);" in javascript
     assert "const sortedLuma = lumaValues.sort();" in javascript
     assert "Array.from(lumaValues).sort" not in javascript
     assert "this.resourceGeneration" in webgpu
     assert "this.destroyAfterActiveRenders" in webgpu
+    assert "settledScopeFragmentMain" in webgpu
+    assert "full-cell maximum" in webgpu
+    assert "cellPeaks" in webgpu
+    assert "peakReductionMain" in webgpu
+    assert "measureToneAdjustedPeak" in webgpu
+    assert 'sourceOptions?.tier !== "interactive"' in webgpu
+    assert "tier," in javascript[javascript.index("const sourceOptions = {"):javascript.index("try {", javascript.index("const sourceOptions = {"))]
 
 
 def test_electron_preview_correctness_contract() -> None:
@@ -1061,7 +1117,7 @@ def test_electron_preview_correctness_contract() -> None:
     assert "gpuPreviewSourceOptions(lane)" in javascript
     sdr_match_action = javascript[
         javascript.index("async function setSdrMatch(action)"):
-        javascript.index("async function commitSdrMatchBoundary")
+        javascript.index("function queueEditCommand")
     ]
     assert 'state.currentView === "sdr"\n      ? refinementProxyLongEdge()' in sdr_match_action
     assert 'longEdge: previewLongEdge' in sdr_match_action
@@ -1228,6 +1284,54 @@ def test_phase_one_local_influence_and_latest_generation_contract() -> None:
     assert "gpuMaskIdentity(expression)" in webgpu
     assert "p[1] * p[13]" in webgpu
     assert "spatial_only=true${pathQuery}" in webgpu
+    gpu_eligibility = javascript[
+        javascript.index("function gpuPreviewEligible(lane = state.currentView)"):
+        javascript.index("function gpuPreviewSourceOptions")
+    ]
+    assert "supportsLocalAdjustments" in gpu_eligibility
+    local_support = webgpu[
+        webgpu.index("function gpuLocalSupported"):
+        webgpu.index("function activeGpuLocals")
+    ]
+    assert "curveSetNeutral(grade)" in local_support
+    assert "detail.texture_amount" not in local_support
+    assert "grading.balance" in local_support and "grading.blending" in local_support
+    assert "grading.shadows, grading.midtones, grading.highlights" in local_support
+    render_to = webgpu[
+        webgpu.index("async renderTo(canvas"):
+        webgpu.index("selectedDenoiseSource(originalProxy)")
+    ]
+    assert render_to.index("const activeLocals = activeGpuLocals") < render_to.index("this.loadProxy(")
+
+
+def test_webgpu_local_detail_uses_ordered_gpu_chain_and_scaled_parameters() -> None:
+    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+
+    params = webgpu[webgpu.index("function buildLocalParams"):webgpu.index("function gpuMaskInfluenceOpacity")]
+    assert "new Float32Array(24)" in params
+    assert "values[14] = (Number(detail.texture_amount) || 0) / 100" in params
+    assert "values[15] = (Number(detail.clarity_amount) || 0) / 125" in params
+    assert "values[17] = Math.min(2, Math.max(0, (Number(detail.sharpen_amount) || 0) / 100))" in params
+    assert "(Number(detail.sharpen_threshold) || 0) / 100" in params
+    assert "values[20] = Math.min(1, Math.max(0.05, Number(sourcePixelScale) || 1))" in params
+
+    render = webgpu[webgpu.index("for (let index = 0; index < activeLocals.length"):webgpu.index("const responseBindGroup")]
+    ordered_tokens = [
+        "pipelines.localCandidate",
+        "pipelines.localDetailHorizontal",
+        "pipelines.localDetailVertical",
+        "pipelines.localDetailComposite",
+        "pipelines.localDetailMix",
+    ]
+    assert [render.index(token) for token in ordered_tokens] == sorted(render.index(token) for token in ordered_tokens)
+    assert "intermediate.detailATexture" in render and "intermediate.detailBTexture" in render
+    assert "masks[index].texture.createView()" in render
+    assert "intermediate.detailATexture.createView(),\n          )" in render
+
+    support = webgpu[webgpu.index("function gpuLocalSupported"):webgpu.index("function activeGpuLocals")]
+    assert "texture_amount" not in support
+    assert "clarity_amount" not in support
+    assert "sharpen_amount" not in support
 
 
 def test_export_waits_for_pending_edits_and_formats_structured_errors() -> None:

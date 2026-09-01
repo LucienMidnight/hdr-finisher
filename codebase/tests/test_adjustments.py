@@ -1063,6 +1063,62 @@ def test_peak_fit_path_to_white_caps_saturated_peak_channels() -> None:
     np.testing.assert_allclose(neutralized[0, 1], [target_linear] * 3, rtol=3e-5, atol=3e-5)
 
 
+@pytest.mark.parametrize(
+    ("peak_pixel", "contrast"),
+    [
+        ((10.0, 0.1, 0.1), 0.5),
+        ((0.1, 10.0, 0.1), 1.0),
+        ((0.1, 0.1, 10.0), 0.5),
+    ],
+)
+def test_peak_fit_path_to_white_measures_saturated_peak_after_tone(
+    peak_pixel: tuple[float, float, float], contrast: float
+) -> None:
+    image = np.asarray([[peak_pixel]], dtype=np.float32)
+    state = AdjustmentState(
+        hdr=HDRAdjustments(
+            exposure=0.7,
+            contrast=contrast,
+            contrast_pivot=0.1845,
+            highlight_compression_mode="peak_fit",
+            highlight_compression_start_nits=400.0,
+            highlight_compression_target_nits=1000.0,
+            # This source-domain readout is deliberately not sufficient to
+            # predict a saturated pixel after luma-driven contrast. Automatic
+            # modes must measure the actual pre-Highlights result instead.
+            highlight_compression_source_peak_nits=float(np.max(image) * 203.0 / 0.18),
+            highlight_compression_color_handling="path_to_white",
+        )
+    )
+
+    output = _apply_hdr_adjustments(image, state)
+    output_peak_nits = float(np.max(output) * 203.0 / 0.18)
+
+    assert output_peak_nits == pytest.approx(1000.0, rel=5e-5)
+
+
+def test_peak_fit_manual_measurement_uses_authored_manual_peak() -> None:
+    source_peak_nits = 2000.0
+    image = np.full((1, 1, 3), source_peak_nits * 0.18 / 203.0, dtype=np.float32)
+    state = AdjustmentState(
+        hdr=HDRAdjustments(
+            exposure=1.0,
+            highlight_compression_mode="peak_fit",
+            highlight_compression_start_nits=400.0,
+            highlight_compression_target_nits=1000.0,
+            highlight_compression_peak_measurement="manual",
+            highlight_compression_manual_peak_nits=source_peak_nits,
+            # Ensure backend rendering does not depend on a UI-side copy into
+            # this derived automatic-source readout.
+            highlight_compression_source_peak_nits=750.0,
+        )
+    )
+
+    output = _apply_hdr_adjustments(image, state)
+
+    assert float(output.max() * 203.0 / 0.18) == pytest.approx(1000.0, rel=5e-5)
+
+
 def test_softness_without_mode_does_not_activate_compression() -> None:
     authored = HDRAdjustments(highlight_compression_softness=60.0)
     assert authored.highlight_compression_mode == "off"

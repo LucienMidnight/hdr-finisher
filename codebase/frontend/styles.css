@@ -3825,19 +3825,6 @@ input[type="text"] {
   color: var(--muted);
 }
 
-.sdr-match-boundary-row {
-  display: grid;
-  grid-template-columns: auto minmax(100px, 1fr) auto auto;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  font-size: 12px;
-}
-
-.sdr-match-boundary-row.hidden {
-  display: none;
-}
-
 .luma-range-heading output {
   color: #7edce2;
   font: 10px/1.25 var(--mono, monospace);

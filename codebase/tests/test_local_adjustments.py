@@ -23,6 +23,7 @@ from hdr_finisher.local_adjustments import (
 from hdr_finisher.models import (
     AdjustmentState,
     BrushStroke,
+    DetailAdjustments,
     EditCommand,
     FeatherPathNode,
     GeometryAdjustments,
@@ -932,6 +933,37 @@ def test_tiled_local_stack_is_deterministic_across_tile_sizes() -> None:
     first = apply_local_stack(image, image, [local], PreviewKind.HDR, geometry, tile_size=8)
     second = apply_local_stack(image, image, [local], PreviewKind.HDR, geometry, tile_size=19)
     np.testing.assert_allclose(first, second, rtol=2e-6, atol=2e-6)
+
+
+def test_local_detail_receives_preview_source_pixel_scale(monkeypatch: pytest.MonkeyPatch) -> None:
+    image = np.full((17, 23, 3), 0.18, dtype=np.float32)
+    observed_scales: list[float] = []
+
+    def record_detail(
+        candidate: np.ndarray,
+        detail: DetailAdjustments,
+        kind: PreviewKind,
+        *,
+        source_pixel_scale: float = 1.0,
+    ) -> np.ndarray:
+        observed_scales.append(source_pixel_scale)
+        return candidate
+
+    monkeypatch.setattr(local_mask_module, "apply_detail", record_detail)
+    local = LocalAdjustment(
+        mask=_gradient(),
+        hdr_grade=LocalGrade(detail=DetailAdjustments(sharpen_amount=80.0, sharpen_radius_px=2.0)),
+    )
+    apply_local_stack(
+        image,
+        image,
+        [local],
+        PreviewKind.HDR,
+        GeometryAdjustments(),
+        source_pixel_scale=0.25,
+    )
+
+    assert observed_scales == [0.25]
 
 
 def test_preview_mask_quantization_stays_within_one_r8_step() -> None:

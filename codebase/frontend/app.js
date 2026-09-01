@@ -350,6 +350,7 @@ const state = {
   renderingMode: "auto",
   appPreferences: null,
   acceptedPresentation: null,
+  detailInteractionRestore: null,
   previewScheduler: null,
   gpuPreparedLane: { hdr: false, sdr: false },
   scopeZoneOverlay: null,
@@ -452,6 +453,7 @@ const state = {
     },
     sdr: {
       base_section_enabled: true,
+      use_authored_base: true,
       tone_section_enabled: true,
       tone_equalizer_section_enabled: true,
       color_section_enabled: true,
@@ -738,12 +740,9 @@ async function ensureGeometryCoordinateMap() {
 }
 
 function gpuPreviewEligible(lane = state.currentView) {
-  const unsupportedDetail = localAdjustments().some((local) => [local[`${lane}_grade`]?.detail].some((detail) =>
-    detail && (Number(detail.texture_amount) || Number(detail.clarity_amount) || Number(detail.sharpen_amount))
-  ));
   return state.renderingMode !== "cpu"
     && Boolean(state.gpuPreview?.available)
-    && !unsupportedDetail;
+    && state.gpuPreview.supportsLocalAdjustments(lane, state.compareWithoutLocals ? [] : localAdjustments());
 }
 
 function gpuPreviewSourceOptions(lane = state.currentView) {
@@ -806,17 +805,18 @@ function applyPreviewResolution(value, { schedule = true } = {}) {
   renderCurrentPreviewSize();
 }
 
-function acceptPresentation(lane, tier, width, height, transport, fallbackReason = "") {
+function acceptPresentation(lane, tier, width, height, transport, fallbackReason = "", sourceSerial = null, generation = state.previewGeneration[lane]) {
   const longEdge = Math.max(Number(width) || 0, Number(height) || 0);
   state.acceptedPresentation = {
     lane,
-    generation: state.previewGeneration[lane],
+    generation,
     geometrySignature: geometrySignature(),
     tier,
     width: Number(width) || null,
     height: Number(height) || null,
     longEdge,
     transport,
+    sourceSerial,
     fallbackReason,
   };
   if (lane === state.currentView && width && height) {
@@ -914,6 +914,7 @@ const defaultAdjustments = () => ({
   },
   sdr: {
     base_section_enabled: true,
+    use_authored_base: true,
     tone_section_enabled: true,
     tone_equalizer_section_enabled: true,
     color_section_enabled: true,
@@ -1079,10 +1080,6 @@ const els = {
   sdrMatchEntire: document.getElementById("sdr-match-entire"),
   sdrMatchRevert: document.getElementById("sdr-match-revert"),
   sdrMatchEntireStatus: document.getElementById("sdr-match-entire-status"),
-  sdrMatchBoundaryRow: document.getElementById("sdr-match-boundary-row"),
-  sdrMatchBoundary: document.getElementById("sdr-match-boundary"),
-  sdrMatchBoundaryValue: document.getElementById("sdr-match-boundary-value"),
-  sdrMatchBoundaryAuto: document.getElementById("sdr-match-boundary-auto"),
   detailSdrActions: document.getElementById("detail-sdr-actions"),
   detailMatchHdr: document.getElementById("detail-match-hdr"),
   curveStatus: document.getElementById("curve-status"),
@@ -1637,9 +1634,29 @@ function initializePreviewScheduler() {
   if (!window.HDRPreviewScheduler) return;
   state.previewScheduler = new window.HDRPreviewScheduler({
     highQuality: () => previewNeedsRefinement(),
-    onFrame: (task) => state.localMaskDraftDirty
-      ? false
-      : renderGpuDraft(task.lane, { longEdge: interactiveProxyLongEdge() }),
+    onFrame: async (task) => {
+      if (state.localMaskDraftDirty) return false;
+      const detailActive = gpuDetailGraphActive(task.lane);
+      const detailInteraction = state.detailInteractionRestore?.lane === task.lane;
+      // A queued interactive callback may become runnable only after pointerup
+      // because the preceding Detail graph was GPU-backpressured. The settled
+      // callback owns the final value at that point; submitting another low-res
+      // frame here could overwrite the restored refined frame.
+      if (detailInteraction && !state.previewScheduler?.interacting) return false;
+      const residentLongEdge = detailActive || detailInteraction ? residentAuthoringLongEdge() : null;
+      if (residentLongEdge) {
+        state.detailInteractionRestore = { lane: task.lane, longEdge: residentLongEdge };
+      }
+      const rendered = await renderGpuDraft(task.lane, {
+        longEdge: interactiveProxyLongEdge(),
+        tier: "interactive",
+      });
+      // Detail adds three full-frame filtering passes. Keep at most one such
+      // graph in the GPU queue so rapid slider input coalesces to the newest
+      // scheduler task instead of building latency behind obsolete frames.
+      if (rendered && (detailActive || detailInteraction)) await state.gpuPreview?.waitForSubmittedWork?.();
+      return rendered;
+    },
     onScope: (task) => refreshScopes(scopeLongEdge(task.tier), {
       tier: task.tier,
       generation: task.scopeGeneration,
@@ -2494,6 +2511,7 @@ function bindEvents() {
     control.addEventListener("pointerdown", () => {
       if (transactionOwnedControl) return;
       beginGlobalEditGesture(control);
+      beginGlobalDetailInteraction(control.dataset.path);
       state.previewScheduler?.beginInteraction();
     });
     ["pointerup", "pointercancel", "change"].forEach((eventName) => {
@@ -2509,6 +2527,7 @@ function bindEvents() {
       if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"].includes(event.key)) {
         control.dataset.historyKeyboardActive = "true";
         beginGlobalEditGesture(control);
+        beginGlobalDetailInteraction(control.dataset.path);
         state.previewScheduler?.beginInteraction();
       }
     }, true);
@@ -2668,15 +2687,9 @@ function bindEvents() {
   });
   els.sdrMatchHdrColors.addEventListener("click", matchHdrColorsToSdr);
   els.sdrMatchEntire?.addEventListener("click", () => setSdrMatch(
-    state.editDocument?.sdr_match?.active ? "rematch" : "match"
+    state.editDocument?.sdr_match?.active ? "convert" : "match"
   ));
   els.sdrMatchRevert?.addEventListener("click", () => setSdrMatch("revert"));
-  els.sdrMatchBoundary?.addEventListener("input", () => {
-    const ratio = Number(els.sdrMatchBoundary.value);
-    els.sdrMatchBoundaryValue.textContent = `${Math.round(ratio * projectReferenceWhiteNits())} nit`;
-  });
-  els.sdrMatchBoundary?.addEventListener("change", () => commitSdrMatchBoundary(Number(els.sdrMatchBoundary.value)));
-  els.sdrMatchBoundaryAuto?.addEventListener("click", () => commitSdrMatchBoundary(null));
   els.detailMatchHdr?.addEventListener("click", () => matchLaneObject("detail"));
   els.sdrResetColors.addEventListener("click", resetSdrColorSliders);
   els.filmLookReset?.addEventListener("click", resetFilmLook);
@@ -3567,10 +3580,16 @@ async function settlePreview(lane = state.currentView, task = {}) {
   if (!state.session || state.rotateDraftGeometry) return false;
   await syncGlobalEditState();
   const display = lane === state.currentView;
-  const longEdge = settledProxyLongEdge();
+  const detailRestore = state.detailInteractionRestore?.lane === lane
+    && state.detailInteractionRestore.longEdge === refinementProxyLongEdge()
+    ? state.detailInteractionRestore.longEdge
+    : null;
+  const longEdge = detailRestore || settledProxyLongEdge();
+  if (state.detailInteractionRestore?.lane === lane) state.detailInteractionRestore = null;
+  const tier = longEdge >= refinementProxyLongEdge() ? "refinement" : "settled";
   if (display) {
     if (gpuPreviewEligible(lane)) {
-      const rendered = await renderGpuDraft(lane, { longEdge });
+      const rendered = await renderGpuDraft(lane, { longEdge, tier });
       if (rendered) await refreshOverlay(longEdge);
       else await renderPreviewForLane(lane, true, longEdge, { showProgress: false });
     } else {
@@ -3618,9 +3637,49 @@ function residentAuthoringLongEdge() {
 }
 
 function interactiveProxyLongEdge() {
-  const resident = residentAuthoringLongEdge();
-  if (resident) return resident;
+  // Interaction is intentionally display-bounded even when a 2K/4K refined
+  // proxy is resident. The GPU proxy cache retains two levels per lane, so the
+  // refined source remains available for the post-gesture settle/refinement.
   return Math.round(clamp(displayedLongEdge(), 512, 1024));
+}
+
+function globalDetailActive(lane = state.currentView) {
+  const branch = state.adjustments?.[lane];
+  const detail = branch?.detail || {};
+  return Boolean(
+    branch?.detail_section_enabled !== false
+    && [detail.texture_amount, detail.clarity_amount, detail.sharpen_amount]
+      .some((value) => Math.abs(Number(value) || 0) > 0.000001)
+  );
+}
+
+function gpuDetailGraphActive(lane = state.currentView) {
+  if (globalDetailActive(lane)) return true;
+  return localAdjustments().some((local) => {
+    const grade = local?.[`${lane}_grade`];
+    const detail = grade?.detail || {};
+    return local?.enabled !== false
+      && Number(local?.opacity) > 0
+      && grade?.enabled !== false
+      && [detail.texture_amount, detail.clarity_amount, detail.sharpen_amount]
+        .some((value) => Math.abs(Number(value) || 0) > 0.000001);
+  });
+}
+
+function beginGlobalDetailInteraction(path) {
+  const resolvedPath = resolveAdjustmentPath(path);
+  if (!/^(hdr|sdr)\.detail\./.test(resolvedPath || "")) {
+    // A no-op Detail pointer gesture does not schedule a settle callback.
+    // Reset its marker when any other global gesture starts so unrelated
+    // controls never inherit Detail backpressure or refinement restoration.
+    state.detailInteractionRestore = null;
+    return;
+  }
+  const lane = resolvedPath.startsWith("sdr.") ? "sdr" : "hdr";
+  state.detailInteractionRestore = {
+    lane,
+    longEdge: residentAuthoringLongEdge(),
+  };
 }
 
 function settledProxyLongEdge() {
@@ -3944,6 +4003,17 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
   if (gpuScopeEligible(lane)) {
     return enqueueGpuScopeRequest(request);
   }
+  if (gpuPreviewEligible(lane)
+    && lane === state.currentView
+    && els.previewCanvas.style.display !== "none"
+    && !state.comparePeekActive
+    && state.activeWorkflow !== "proof") {
+    // The grading render owns source identity. Never analyze the previous
+    // WebGPU texture under a newer edit generation; retain the last valid scope
+    // with Updating until the matching preview has actually been presented.
+    markScopeUpdating();
+    return Promise.resolve(false);
+  }
 
   return new Promise((resolve) => {
     enqueueScopeRequest({ ...request, resolve });
@@ -3955,6 +4025,10 @@ function gpuScopeEligible(lane) {
     state.gpuPreview?.available
     && lane === state.currentView
     && state.acceptedPresentation?.lane === lane
+    && state.acceptedPresentation?.transport === "WebGPU"
+    && state.acceptedPresentation?.generation === state.previewGeneration[lane]
+    && state.acceptedPresentation?.geometrySignature === geometrySignature()
+    && Number.isInteger(state.acceptedPresentation?.sourceSerial)
     && els.previewCanvas.style.display !== "none"
     && !state.comparePeekActive
     && state.activeWorkflow !== "proof"
@@ -3981,7 +4055,12 @@ async function runGpuScopeRequest(request) {
   // the last valid scope visible and let the next scheduled generation win;
   // never fall back to an image-sized CPU request merely because the GPU is busy.
   if (!analysis) return false;
+  const accepted = state.acceptedPresentation;
   if (analysis.sessionId !== request.sessionId
+    || analysis.sourceSerial !== accepted?.sourceSerial
+    || analysis.applicationGeneration !== accepted?.generation
+    || accepted?.generation !== state.previewGeneration[lane]
+    || analysis.geometrySignature !== accepted?.geometrySignature
     || generation !== state.scopeGeneration
     || lane !== state.currentView
     || mode !== state.scopeMode
@@ -4028,7 +4107,7 @@ async function runQueuedGpuScopeRequest(request) {
     const next = state.pendingGpuScopeRequest;
     state.pendingGpuScopeRequest = null;
     if (next) void runQueuedGpuScopeRequest(next);
-    else if (!state.scopeRequestInFlight) {
+    else if (!state.scopeRequestInFlight && gpuScopeEligible(state.currentView)) {
       els.scopeFreshness.classList.remove("updating");
       if (!applied) els.scopeFreshness.textContent = state.lastScope ? scopeFreshnessLabel(state.lastScope.tier) : "Waiting";
     }
@@ -6445,6 +6524,9 @@ function buildGpuScopePayload(analysis, { lane, mode, tier, generation, bins, co
       lumaValues[regionPixel] = values[3];
       regionPixel += 1;
       peak = Math.max(peak, values[3]);
+      if (hdr && analysis.cellPeaks) {
+        peak = Math.max(peak, Math.max(0, analysis.cellPeaks[pixel]) / 0.18 * referenceWhite);
+      }
       clipped ||= hdr
         ? values[0] >= 10000 || values[1] >= 10000 || values[2] >= 10000
         : r >= 1 || g >= 1 || b >= 1;
@@ -6545,6 +6627,9 @@ function buildGpuVectorscopePayload(analysis, { lane, tier, generation, bins, sc
         ? 0.2722287 * workingR + 0.6740818 * workingG + 0.0536895 * workingB
         : 0.2126 * workingR + 0.7152 * workingG + 0.0722 * workingB;
       peak = Math.max(peak, hdr ? sceneY / 0.18 * referenceWhite : sceneY);
+      if (hdr && analysis.cellPeaks) {
+        peak = Math.max(peak, Math.max(0, analysis.cellPeaks[pixel]) / 0.18 * referenceWhite);
+      }
       const linearR = hdr ? Math.max(0, 1.0260187082 * workingR - 0.0221655448 * workingG - 0.0038531634 * workingB) : workingR;
       const linearG = hdr ? Math.max(0, -0.0017230808 * workingR + 1.0023190716 * workingG - 0.0005959908 * workingB) : workingG;
       const linearB = hdr ? Math.max(0, -0.0051099278 * workingR - 0.0216355504 * workingG + 1.0267454781 * workingB) : workingB;
@@ -6857,8 +6942,11 @@ function prepareSdrMatchGrainOverride() {
 }
 
 function commitAdjustmentValue(path, value, { manual = false } = {}) {
-  if (manual) state.previewScheduler?.beginInteraction();
   const resolvedPath = resolveAdjustmentPath(path);
+  if (manual) {
+    beginGlobalDetailInteraction(resolvedPath);
+    state.previewScheduler?.beginInteraction();
+  }
   const grainField = resolvedPath.startsWith("sdr.film_look.")
     ? resolvedPath.slice("sdr.film_look.".length)
     : null;
@@ -7073,7 +7161,7 @@ function renderHighlightCompressionControls() {
     const colorNote = hdr.highlight_compression_color_handling === "path_to_white"
       ? "; RGB channels are grouped and converge toward white"
       : "; color ratios are preserved";
-    els.highlightCompressionSummary.textContent = `Peak Fit anchors the measured full-resolution ${Math.round(info.peak)}-nit peak at ${Math.round(info.target)} nit inside Highlights${adjusted ? `; the curve fit widens the shoulder to ${Math.round(effective)} nit` : ""}${colorNote}. Preview scopes can read lower after downsampling.`;
+    els.highlightCompressionSummary.textContent = `Peak Fit anchors the measured source peak near ${Math.round(info.target)} nit at the Highlights stage${adjusted ? `; the curve fit widens the shoulder to ${Math.round(effective)} nit` : ""}${colorNote}. Later modules can change the final scoped peak.`;
   }
 }
 
@@ -8503,16 +8591,14 @@ async function renderGpuDraft(
   const maskOverlay = gpuLumaMaskOverlayOptions();
   const sourceOptions = {
     ...(gpuPreviewSourceOptions(lane) || {}),
+    tier,
+    applicationGeneration: generation,
     // WebGPU renders directly into the mounted canvas. Guard inside the
     // renderer, before it resizes or submits to that canvas, because rejecting
     // the result here after await would already be visibly too late.
     isCurrent: () => serial === state.gpuRenderSerial
       && state.session?.session_id === sessionId
-      // While a pointer gesture is active, presenting the most recently
-      // submitted tonal frame is preferable to dropping every GPU frame just
-      // because a newer curve sample is already queued. The render serial and
-      // geometry signature still prevent cross-lane or stale-geometry paints.
-      && (generation === state.previewGeneration[lane] || Boolean(state.previewScheduler?.interacting))
+      && generation === state.previewGeneration[lane]
       && requestedGeometrySignature === geometrySignature()
       && (allowInactive || lane === state.currentView),
   };
@@ -8545,7 +8631,16 @@ async function renderGpuDraft(
       notes: `Settled WebGPU authoring preview · ${longEdge}px proxy · export quality unchanged`,
     };
       state.previewInfoByLane[lane] = state.previewInfo;
-    acceptPresentation(lane, tier, result.width || longEdge, result.height || longEdge, "WebGPU");
+    acceptPresentation(
+      lane,
+      tier,
+      result.width || longEdge,
+      result.height || longEdge,
+      "WebGPU",
+      "",
+      result.sourceSerial,
+      generation,
+    );
     setZoomMode(state.zoomMode);
     renderReadouts();
       if (hideStatus) hidePreviewMessage();
@@ -8561,7 +8656,7 @@ async function renderGpuDraft(
           submitToPresentMs: presentedAt - submittedAt,
         });
         window.dispatchEvent(new CustomEvent("hdrfinisher:preview-presented", {
-          detail: { serial, lane, longEdge, submittedAt, presentedAt },
+          detail: { serial, sourceSerial: result.sourceSerial, generation, lane, longEdge, submittedAt, presentedAt },
         }));
         if (maskOverlay) {
           window.dispatchEvent(new CustomEvent("hdrfinisher:mask-presented", {
@@ -9153,26 +9248,20 @@ function renderLaneChrome() {
   const match = state.editDocument?.sdr_match;
   els.sdrMatchEntireActions?.classList.toggle("hidden", lane !== "sdr");
   if (els.sdrMatchEntire) {
-    els.sdrMatchEntire.textContent = match?.active ? "Rematch entire HDR grade" : "Match entire HDR grade";
+    els.sdrMatchEntire.textContent = match?.active ? "Convert legacy match" : "Match entire HDR grade";
     els.sdrMatchEntire.disabled = !state.session;
   }
   els.sdrMatchRevert?.classList.toggle("hidden", !match?.active);
-  els.sdrMatchBoundaryRow?.classList.toggle("hidden", !match?.active);
-  if (match?.active && els.sdrMatchBoundary) {
-    const selectedBoundary = match.manual_highlight_boundary_ratio ?? match.automatic_highlight_boundary_ratio;
-    els.sdrMatchBoundary.value = String(selectedBoundary);
-    els.sdrMatchBoundaryValue.textContent = match.manual_highlight_boundary_ratio == null
-      ? `Auto · ${Math.round(Number(selectedBoundary) * projectReferenceWhiteNits())} nit`
-      : `${Math.round(Number(selectedBoundary) * projectReferenceWhiteNits())} nit`;
-    updateRangeVisual(els.sdrMatchBoundary);
-  }
   if (els.sdrMatchEntireStatus) {
-    const boundary = match?.manual_highlight_boundary_ratio ?? match?.automatic_highlight_boundary_ratio;
-    els.sdrMatchEntireStatus.textContent = !match?.active
-      ? ""
-      : match.stale
-        ? "HDR changed — Rematch available"
-        : `Matched snapshot · highlight boundary ${Math.round(Number(boundary) * projectReferenceWhiteNits())} nit`;
+    els.sdrMatchEntireStatus.textContent = match?.active
+      ? match.stale
+        ? "Legacy HDR match active · captured HDR has changed"
+        : "Legacy HDR match active"
+      : match?.materialized_status === "needs_review"
+        ? "Match needs review · editable SDR controls populated"
+        : match?.materialized_status === "matched"
+          ? "Matched into editable SDR controls"
+          : "";
   }
   syncControlsFromState();
   drawToneEqualizerEditor(lane);
@@ -9219,6 +9308,7 @@ function endGlobalEditGesture(control) {
 
 function clearPreviewCache() {
   state.geometryTransformHandoffSignature = null;
+  state.detailInteractionRestore = null;
   clearRotateDraftTransformProperties();
   state.previewScheduler?.cancel();
   state.scopeRequestInFlight?.controller?.abort();
@@ -11134,12 +11224,16 @@ function hideLocalMaskOverlayForGradePreview() {
 function bindLocalPreviewInteraction(control) {
   if (!control || control.dataset.previewInteractionBound === "true") return;
   control.dataset.previewInteractionBound = "true";
-  control.addEventListener("pointerdown", () => state.previewScheduler?.beginInteraction());
+  control.addEventListener("pointerdown", () => {
+    beginLocalDetailInteraction(control);
+    state.previewScheduler?.beginInteraction();
+  });
   ["pointerup", "pointercancel", "change"].forEach((eventName) => {
     control.addEventListener(eventName, () => state.previewScheduler?.endInteraction());
   });
   control.addEventListener("keydown", (event) => {
     if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"].includes(event.key)) {
+      beginLocalDetailInteraction(control);
       state.previewScheduler?.beginInteraction();
     }
   });
@@ -11907,11 +12001,11 @@ async function setSdrMatch(action) {
   let consent = false;
   if (action === "match" && authored) {
     consent = window.confirm(
-      "This source contains an authored SDR rendition. Match will replace it as the working SDR base. You can Revert afterward. Continue?"
+      "This source contains an authored SDR rendition. Match will replace it with an editable generated SDR rendition. Undo restores the authored grade. Continue?"
     );
     if (!consent) return false;
   }
-  const verb = action === "revert" ? "Reverting SDR match" : action === "rematch" ? "Rematching HDR grade" : "Matching HDR grade";
+  const verb = action === "revert" ? "Reverting legacy SDR match" : action === "convert" ? "Converting legacy SDR match" : "Matching HDR grade";
   setIndeterminatePreviewMessage(`${verb} · analyzing settled HDR proxy`);
   if (els.sdrMatchEntire) els.sdrMatchEntire.disabled = true;
   if (els.sdrMatchRevert) els.sdrMatchRevert.disabled = true;
@@ -11983,20 +12077,6 @@ async function setSdrMatch(action) {
     renderLaneChrome();
     if (els.sdrMatchRevert) els.sdrMatchRevert.disabled = false;
   }
-}
-
-async function commitSdrMatchBoundary(value) {
-  const match = state.editDocument?.sdr_match;
-  if (!match?.active) return false;
-  match.manual_highlight_boundary_ratio = value;
-  const applied = await queueEditCommand("set_sdr_match", {
-    match_state: JSON.parse(JSON.stringify(match)),
-    global_adjustments: JSON.parse(JSON.stringify(state.adjustments)),
-    local_adjustments: JSON.parse(JSON.stringify(state.editDocument.local_adjustments || [])),
-    authored_sdr_override_consent: true,
-  });
-  if (applied) renderLaneChrome();
-  return applied;
 }
 
 function queueEditCommand(commandType, payload = {}, targetId = null, { refreshPreview = true, globalEditGeneration = null, historyGroup = null } = {}) {
@@ -13123,8 +13203,16 @@ function renderLocalMaskOverlay() {
   if (coordinateMap) {
     context.save();
     applySourceGeometryCanvasTransform(context, imageRect, rect, coordinateMap.sourceToOutput);
-    drawMaskExpression(context, local.mask, x, y, { ...drawOptions, renderPhase: "gizmo" });
+    drawMaskExpression(context, local.mask, x, y, { ...drawOptions, renderPhase: "gizmo", skipBrush: true });
     context.restore();
+    drawBrushExpressionOutputSpace(
+      context,
+      local.mask,
+      x,
+      y,
+      drawOptions,
+      brushOutputSpaceMapper(imageRect, coordinateMap.sourceToOutput),
+    );
   } else {
     void ensureGeometryCoordinateMap();
   }
@@ -13179,7 +13267,7 @@ function drawMaskExpression(context, expression, x, y, options = {}) {
       drawAuthoritativeMaskOverlay(context, options.authoritative.canvas, x, y, options.authoritative.spatialOnly ? leaf.mask_opacity : 1);
     }
     if (renderGizmo) drawLinearGradientGizmo(context, leaf, x, y);
-  } else if (leaf.type === "brush") {
+  } else if (leaf.type === "brush" && !options.skipBrush) {
     const gesture = state.localPointerGesture;
     const activeStroke = gesture?.type === "brush" && gesture.leaf === leaf ? gesture.stroke : null;
     // Authoritative mask rasters are already in post-geometry output space,
@@ -13213,6 +13301,69 @@ function drawMaskExpression(context, expression, x, y, options = {}) {
     if (renderGizmo) drawPathMaskGizmo(context, leaf, x, y, { drawFill: !currentAuthoritative });
   }
   context.restore();
+}
+
+function beginLocalDetailInteraction(control) {
+  if (!String(control?.dataset?.localGrade || "").startsWith("detail.")) {
+    state.detailInteractionRestore = null;
+    return;
+  }
+  state.detailInteractionRestore = {
+    lane: state.currentView,
+    longEdge: residentAuthoringLongEdge(),
+  };
+}
+
+function brushOutputSpaceMapper(imageRect, matrix) {
+  const width = Math.max(Number(imageRect?.width) || 0, 1);
+  const height = Math.max(Number(imageRect?.height) || 0, 1);
+  return {
+    signature: `${matrix.join(",")}:${(width / height).toFixed(8)}`,
+    point: (point) => affinePoint(matrix, point),
+    radius: (radius) => Math.hypot(
+      Number(matrix[0]) * Number(radius) * width,
+      Number(matrix[3]) * Number(radius) * height,
+    ) / width,
+    stroke: (stroke, points = stroke.points || []) => ({
+      ...stroke,
+      radius: Math.hypot(
+        Number(matrix[0]) * Number(stroke.radius) * width,
+        Number(matrix[3]) * Number(stroke.radius) * height,
+      ) / width,
+      points: points.map((point) => ({ ...affinePoint(matrix, point), pressure: point.pressure })),
+    }),
+  };
+}
+
+function drawBrushExpressionOutputSpace(context, expression, x, y, options, mapper) {
+  if (expression.operator !== "leaf") {
+    (expression.children || []).forEach((child) =>
+      drawBrushExpressionOutputSpace(context, child, x, y, options, mapper));
+    return;
+  }
+  const leaf = expression.leaf;
+  if (leaf?.type !== "brush") return;
+  const gesture = state.localPointerGesture;
+  const activeStroke = gesture?.type === "brush" && gesture.leaf === leaf ? gesture.stroke : null;
+  const transformedLeaf = {
+    ...leaf,
+    strokes: (leaf.strokes || []).map((stroke) => mapper.stroke(stroke)),
+  };
+  const outputOptions = {
+    ...options,
+    spatialSignature: `${options.spatialSignature}:${mapper.signature}`,
+  };
+  if (state.localShowMask && !options.authoritative) {
+    drawBrushMaskOverlay(context, transformedLeaf, null, x, y, expression.inverted, outputOptions);
+  }
+  if (state.localShowMask && activeStroke) {
+    drawActiveBrushStrokeOverlay(context, activeStroke, x, y, mapper);
+  }
+  const cursor = state.localBrushCursor || activeStroke?.points?.at(-1);
+  if (cursor) {
+    const settings = brushSettings(leaf);
+    drawBrushGizmo(context, mapper.point(cursor), { ...settings, radius: mapper.radius(settings.radius) }, x, y);
+  }
 }
 
 function drawBrushMaskOverlay(context, leaf, activeStroke, x, y, inverted = false, options = {}) {
@@ -13389,7 +13540,7 @@ function flushAuthoritativeLocalMaskDraft() {
   );
 }
 
-function drawActiveBrushStrokeOverlay(context, stroke, x, y) {
+function drawActiveBrushStrokeOverlay(context, stroke, x, y, mapper = null) {
   const left = x(0);
   const top = y(0);
   const displayWidth = Math.max(1, Math.round(x(1) - left));
@@ -13410,7 +13561,10 @@ function drawActiveBrushStrokeOverlay(context, stroke, x, y) {
   const firstNewPoint = Math.max(0, gesture.renderedPointCount - 1);
   const pendingPoints = stroke.points.slice(firstNewPoint);
   if (pendingPoints.length && (gesture.renderedPointCount === 0 || pendingPoints.length > 1)) {
-    drawBrushMaskStroke(gesture.canvas.getContext("2d"), { ...stroke, points: pendingPoints }, width, height);
+    const pendingStroke = mapper
+      ? mapper.stroke(stroke, pendingPoints)
+      : { ...stroke, points: pendingPoints };
+    drawBrushMaskStroke(gesture.canvas.getContext("2d"), pendingStroke, width, height);
     gesture.renderedPointCount = stroke.points.length;
     const tintedContext = gesture.tinted.getContext("2d");
     tintedContext.clearRect(0, 0, width, height);
@@ -13747,25 +13901,25 @@ function drawPathNode(context, node, index, x, y, selected, hovered, closeTarget
   const centerX = x(node.x);
   const centerY = y(node.y);
   const radius = selected ? 7 : 5;
-  context.save();
-  context.lineWidth = selected ? 2.5 : 2;
-  context.strokeStyle = closeTarget ? uiToken("--ready") : selected ? uiToken("--curve-selected-ring") : uiToken("--accent");
-  context.fillStyle = selected ? uiToken("--curve-selected") : uiToken("--raised");
-  context.shadowColor = "rgba(0, 0, 0, .95)";
-  context.shadowBlur = 3;
-  context.beginPath();
-  if (node.node_type === "sharp") context.rect(centerX - radius, centerY - radius, radius * 2, radius * 2);
-  else context.arc(centerX, centerY, radius, 0, Math.PI * 2);
-  context.fill();
-  context.stroke();
-  if (hovered) {
+  withScreenSpaceCanvas(context, centerX, centerY, (screenX, screenY) => {
+    context.lineWidth = selected ? 2.5 : 2;
+    context.strokeStyle = closeTarget ? uiToken("--ready") : selected ? uiToken("--curve-selected-ring") : uiToken("--accent");
+    context.fillStyle = selected ? uiToken("--curve-selected") : uiToken("--raised");
+    context.shadowColor = "rgba(0, 0, 0, .95)";
+    context.shadowBlur = 3;
     context.beginPath();
-    context.arc(centerX, centerY, radius + 4, 0, Math.PI * 2);
-    context.strokeStyle = uiToken("--text");
-    context.lineWidth = 1;
+    if (node.node_type === "sharp") context.rect(screenX - radius, screenY - radius, radius * 2, radius * 2);
+    else context.arc(screenX, screenY, radius, 0, Math.PI * 2);
+    context.fill();
     context.stroke();
-  }
-  context.restore();
+    if (hovered) {
+      context.beginPath();
+      context.arc(screenX, screenY, radius + 4, 0, Math.PI * 2);
+      context.strokeStyle = uiToken("--text");
+      context.lineWidth = 1;
+      context.stroke();
+    }
+  });
 }
 
 function drawSelectedPathHandles(context, node, nodeIndex, x, y) {
@@ -13783,20 +13937,22 @@ function drawSelectedPathHandles(context, node, nodeIndex, x, y) {
     context.strokeStyle = uiToken("--accent");
     context.lineWidth = 1.25;
     context.stroke();
-    context.beginPath();
-    context.arc(hx, hy, 6, 0, Math.PI * 2);
-    context.fillStyle = uiToken("--raised");
-    context.fill();
-    context.strokeStyle = uiToken("--text");
-    context.lineWidth = 2;
-    context.stroke();
-    if (state.hoveredPathTarget?.type === "handle" && state.hoveredPathTarget.index === nodeIndex && state.hoveredPathTarget.handle === handle) {
+    withScreenSpaceCanvas(context, hx, hy, (screenX, screenY) => {
       context.beginPath();
-      context.arc(hx, hy, 10, 0, Math.PI * 2);
-      context.strokeStyle = uiToken("--curve-selected");
+      context.arc(screenX, screenY, 6, 0, Math.PI * 2);
+      context.fillStyle = uiToken("--raised");
+      context.fill();
+      context.strokeStyle = uiToken("--text");
       context.lineWidth = 2;
       context.stroke();
-    }
+      if (state.hoveredPathTarget?.type === "handle" && state.hoveredPathTarget.index === nodeIndex && state.hoveredPathTarget.handle === handle) {
+        context.beginPath();
+        context.arc(screenX, screenY, 10, 0, Math.PI * 2);
+        context.strokeStyle = uiToken("--curve-selected");
+        context.lineWidth = 2;
+        context.stroke();
+      }
+    });
   }
   context.restore();
 }
@@ -13881,22 +14037,36 @@ function drawLocalGizmoStroke(context, path, width = 2, color = "rgba(238, 252, 
 }
 
 function drawLocalGizmoHandle(context, centerX, centerY, radius = 7) {
+  withScreenSpaceCanvas(context, centerX, centerY, (screenX, screenY) => {
+    context.beginPath();
+    context.arc(screenX, screenY, radius + 2, 0, Math.PI * 2);
+    context.fillStyle = "rgba(0, 0, 0, .88)";
+    context.fill();
+    context.beginPath();
+    context.arc(screenX, screenY, radius, 0, Math.PI * 2);
+    context.fillStyle = "#142226";
+    context.fill();
+    context.strokeStyle = "#74e5ee";
+    context.lineWidth = 2;
+    context.stroke();
+    context.beginPath();
+    context.arc(screenX, screenY, 2, 0, Math.PI * 2);
+    context.fillStyle = "#ffffff";
+    context.fill();
+  });
+}
+
+function withScreenSpaceCanvas(context, x, y, draw) {
+  const transform = context.getTransform();
+  const rect = context.canvas.getBoundingClientRect();
+  const ratio = rect.width > 0
+    ? Math.max(context.canvas.width / rect.width, 1e-6)
+    : Math.max(window.devicePixelRatio || 1, 1e-6);
+  const screenX = (transform.a * x + transform.c * y + transform.e) / ratio;
+  const screenY = (transform.b * x + transform.d * y + transform.f) / ratio;
   context.save();
-  context.beginPath();
-  context.arc(centerX, centerY, radius + 2, 0, Math.PI * 2);
-  context.fillStyle = "rgba(0, 0, 0, .88)";
-  context.fill();
-  context.beginPath();
-  context.arc(centerX, centerY, radius, 0, Math.PI * 2);
-  context.fillStyle = "#142226";
-  context.fill();
-  context.strokeStyle = "#74e5ee";
-  context.lineWidth = 2;
-  context.stroke();
-  context.beginPath();
-  context.arc(centerX, centerY, 2, 0, Math.PI * 2);
-  context.fillStyle = "#ffffff";
-  context.fill();
+  context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  draw(screenX, screenY);
   context.restore();
 }
 

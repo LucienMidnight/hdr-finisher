@@ -88,7 +88,7 @@ def apply_adjustments(
             color_context=color_context,
             source_pixel_scale=source_pixel_scale,
         )
-    if sdr_reference_image is not None:
+    if sdr_reference_image is not None and adjustments.sdr.use_authored_base:
         reference = apply_geometry(sdr_reference_image, geometry)
         return _apply_sdr_adjustments_to_reference(
             reference,
@@ -240,7 +240,12 @@ def _apply_hdr_adjustments(
                 hdr.highlight_compression_target_nits,
                 hdr.highlight_compression_softness,
                 mode="peak_fit",
-                source_peak_nits=_tone_adjusted_source_peak_nits(hdr, tone_enabled=hdr.tone_section_enabled, color_context=color_context),
+                source_peak_nits=_tone_adjusted_source_peak_nits(
+                    result,
+                    hdr,
+                    tone_enabled=hdr.tone_section_enabled,
+                    color_context=color_context,
+                ),
                 peak_detail=hdr.highlight_compression_peak_detail,
                 bias=hdr.highlight_compression_bias,
                 color_handling=hdr.highlight_compression_color_handling,
@@ -279,6 +284,7 @@ def _apply_hdr_adjustments(
             PreviewKind.HDR,
             adjustments.shared.geometry,
             compiled_masks=compiled_local_masks,
+            source_pixel_scale=source_pixel_scale,
         )
     if hdr.film_look_section_enabled:
         result = _apply_film_look(result, adjustments, PreviewKind.HDR, include_grain=False)
@@ -352,12 +358,48 @@ def _apply_hdr_base_adjustments(image: np.ndarray, adjustments: AdjustmentState)
     return result
 
 
-def _tone_adjusted_source_peak_nits(hdr: object, *, tone_enabled: bool = True, color_context: RenderColorContext | None = None) -> float:
-    """Predict the measured source peak after controls preceding Peak Fit."""
-    peak = max(float(getattr(hdr, "highlight_compression_source_peak_nits", 1000.0)), 1.0)
+def _tone_adjusted_source_peak_nits(
+    tone_adjusted_image: np.ndarray,
+    hdr: object,
+    *,
+    tone_enabled: bool = True,
+    color_context: RenderColorContext | None = None,
+) -> float:
+    """Measure the signal entering Peak Fit in its selected operating domain.
+
+    Automatic peak modes must measure the already tone-adjusted pixels.  A
+    scalar source peak cannot be transformed accurately for ``path_to_white``:
+    HDR contrast is driven by ACEScg luminance, while that mode anchors its
+    shoulder on the brightest RGB channel.  Saturated peak pixels therefore do
+    not receive the gain predicted by treating their maximum channel as luma.
+
+    Manual mode remains an authored source-domain estimate and is transformed
+    with the legacy scalar calculation, since no corresponding source pixel is
+    available for measurement.
+    """
+    context = color_context or RenderColorContext()
+    measurement = str(getattr(hdr, "highlight_compression_peak_measurement", "maximum"))
+    if measurement != "manual":
+        if str(getattr(hdr, "highlight_compression_color_handling", "preserve_color")) == "path_to_white":
+            signal = np.max(np.clip(tone_adjusted_image, 0.0, None), axis=-1)
+        else:
+            signal = np.clip(_acescg_luma(tone_adjusted_image), 0.0, None)
+        if signal.size:
+            measured = float(np.quantile(signal, 0.9999)) if measurement == "robust" else float(np.max(signal))
+            return max(1.0, float(scene_linear_to_nits(measured, context.hdr_reference_white_nits)))
+
+    peak = max(
+        float(
+            getattr(
+                hdr,
+                "highlight_compression_manual_peak_nits",
+                getattr(hdr, "highlight_compression_source_peak_nits", 1000.0),
+            )
+        ),
+        1.0,
+    )
     if not tone_enabled:
         return peak
-    context = color_context or RenderColorContext()
     peak_linear = float(nits_to_scene_linear(peak, context.hdr_reference_white_nits)) * (2.0 ** float(getattr(hdr, "exposure", 0.0)))
     shadow_lift = float(getattr(hdr, "shadow_lift", 0.0))
     if shadow_lift != 0.0:
@@ -422,6 +464,7 @@ def _apply_sdr_adjustments(
             PreviewKind.SDR,
             adjustments.shared.geometry,
             compiled_masks=compiled_local_masks,
+            source_pixel_scale=source_pixel_scale,
         )
     if sdr.film_look_section_enabled:
         result = _apply_film_look(result, adjustments, PreviewKind.SDR, include_grain=False)
@@ -488,6 +531,7 @@ def _apply_sdr_adjustments_to_reference(
             PreviewKind.SDR,
             adjustments.shared.geometry,
             compiled_masks=compiled_local_masks,
+            source_pixel_scale=source_pixel_scale,
         )
     if sdr.film_look_section_enabled:
         result = _apply_film_look(result, adjustments, PreviewKind.SDR, include_grain=False)

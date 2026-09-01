@@ -25,6 +25,7 @@ def apply_local_stack(
     *,
     tile_size: int = 512,
     compiled_masks: dict[str, np.ndarray] | None = None,
+    source_pixel_scale: float = 1.0,
 ) -> np.ndarray:
     """Apply ordered local corrections without allocating per-layer frames or masks."""
     active = [item for item in local_adjustments if item.enabled and item.opacity > 0.0]
@@ -77,7 +78,12 @@ def apply_local_stack(
                 influence = np.clip(mask * np.float32(local.opacity), 0.0, 1.0)
                 if not np.any(influence > 1e-6):
                     continue
-                candidate = _apply_local_grade(tile, grade, kind)
+                candidate = _apply_local_grade(
+                    tile,
+                    grade,
+                    kind,
+                    source_pixel_scale=source_pixel_scale,
+                )
                 tile[...] = tile + (candidate - tile) * influence[..., None]
     return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
 
@@ -1026,7 +1032,13 @@ def _acescg_to_xyz(image: np.ndarray) -> np.ndarray:
     return np.einsum("...c,dc->...d", image, matrix, optimize=True).astype(np.float32)
 
 
-def _apply_local_grade(image: np.ndarray, grade: LocalGrade, kind: PreviewKind) -> np.ndarray:
+def _apply_local_grade(
+    image: np.ndarray,
+    grade: LocalGrade,
+    kind: PreviewKind,
+    *,
+    source_pixel_scale: float = 1.0,
+) -> np.ndarray:
     from .adjustments import (
         _apply_color_grading,
         _apply_curve_set,
@@ -1060,5 +1072,5 @@ def _apply_local_grade(image: np.ndarray, grade: LocalGrade, kind: PreviewKind) 
         result = _apply_saturation_vibrance(result, grade.saturation, grade.vibrance)
     result = _apply_curve_set(result, grade, kind)
     result = _apply_color_grading(result, grade.color_grading, kind)
-    result = apply_detail(result, grade.detail, kind)
+    result = apply_detail(result, grade.detail, kind, source_pixel_scale=source_pixel_scale)
     return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)

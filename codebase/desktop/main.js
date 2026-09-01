@@ -19,6 +19,8 @@ const { distributionChannel, linuxSessionState, serializeDisplay, updatesManaged
 const { cachedUpdateResult } = require("./lib/updates");
 const { DEFAULT_WINDOW_BOUNDS, clampWindowBounds } = require("./lib/window-bounds");
 
+if (!app.isPackaged) app.setVersion(require("./package.json").version);
+
 const APP_ID = process.env.FLATPAK_ID || "org.hdrfinisher.app";
 const SOURCE_FILTERS = [
   { name: "HDR and camera images", extensions: ["exr", "tif", "tiff", "hdr", "pfm", "heic", "heif", "avif", "jxl", "png", "jpg", "jpeg", "dng", "arw", "cr2", "cr3", "nef", "nrw", "raf", "rw2", "orf", "ori", "pef", "srw"] },

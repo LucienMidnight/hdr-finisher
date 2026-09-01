@@ -9,8 +9,8 @@ from conftest import fixture_path
 
 from hdr_finisher.color import linear_bt2020_to_acescg
 from hdr_finisher.loader import load_image
-from hdr_finisher.models import PreviewKind, ScopeMode
-from hdr_finisher.scopes import _waveform_grid, build_scope_from_processed
+from hdr_finisher.models import AdjustmentState, HDRAdjustments, PreviewKind, ScopeMode, ToneEqualizerNode
+from hdr_finisher.scopes import _waveform_grid, build_scope, build_scope_from_processed
 
 
 def _channel(scope, name: str):
@@ -80,6 +80,48 @@ def test_sdr_waveform_is_output_signal_and_flags_primary_clipping() -> None:
     expected_signal = 1.055 * 0.18 ** (1.0 / 2.4) - 0.055
     assert scope.peak_value == pytest.approx(expected_signal, rel=1e-6)
     assert scope.clipped is True
+
+
+def test_hdr_scope_peak_hits_peak_fit_target_when_compression_is_final_tonal_operation() -> None:
+    source_peak_nits = 4000.0
+    image = np.full((4, 4, 3), source_peak_nits * 0.18 / 203.0, dtype=np.float32)
+    adjustments = AdjustmentState(
+        hdr=HDRAdjustments(
+            highlight_compression_mode="peak_fit",
+            highlight_compression_start_nits=400.0,
+            highlight_compression_target_nits=1000.0,
+            highlight_compression_source_peak_nits=source_peak_nits,
+        )
+    )
+
+    scope = build_scope(image, adjustments, PreviewKind.HDR)
+
+    assert scope.peak_value == pytest.approx(1000.0, rel=5e-5)
+
+
+def test_hdr_scope_reports_legitimate_re_expansion_after_peak_fit() -> None:
+    source_peak_nits = 4000.0
+    image = np.full((4, 4, 3), source_peak_nits * 0.18 / 203.0, dtype=np.float32)
+    adjustments = AdjustmentState(
+        hdr=HDRAdjustments(
+            highlight_compression_mode="peak_fit",
+            highlight_compression_start_nits=400.0,
+            highlight_compression_target_nits=1000.0,
+            highlight_compression_source_peak_nits=source_peak_nits,
+            tone_equalizer_nodes=[
+                ToneEqualizerNode(input_ev=float(input_ev), adjustment_ev=2.0)
+                for input_ev in range(-6, 7)
+            ],
+        )
+    )
+
+    scope = build_scope(image, adjustments, PreviewKind.HDR)
+
+    # Highlight Compression anchors the signal at its own stage. The Tone
+    # Equalizer is downstream and may intentionally lift that result; scopes
+    # must continue reporting the completed grade rather than the module target.
+    assert scope.peak_value == pytest.approx(4000.0, rel=8e-5)
+    assert scope.peak_value > adjustments.hdr.highlight_compression_target_nits
 
 
 def test_gpu_waveform_uses_the_same_acescg_to_rec2020_matrix() -> None:

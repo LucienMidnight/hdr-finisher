@@ -383,6 +383,7 @@ class SDRAdjustments(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     base_section_enabled: bool = True
+    use_authored_base: bool = True
     tone_section_enabled: bool = True
     tone_equalizer_section_enabled: bool = True
     color_section_enabled: bool = True
@@ -819,15 +820,26 @@ class SDRMatchRevertState(BaseModel):
     authored_sdr_base_active: bool = False
 
 
+class SDRMatchQualityMetrics(BaseModel):
+    """Diagnostics for a materialized match; never participates in rendering."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    median_luma_error: float = Field(ge=0.0, allow_inf_nan=False)
+    p95_luma_error: float = Field(ge=0.0, allow_inf_nan=False)
+    median_oklab_error: float = Field(ge=0.0, allow_inf_nan=False)
+    p95_oklab_error: float = Field(ge=0.0, allow_inf_nan=False)
+
+
 class SdrMatchState(BaseModel):
-    """Recipe snapshot and match-only state for the generated SDR rendition."""
+    """Legacy snapshot state plus non-rendering diagnostics for materialized matches."""
 
     model_config = ConfigDict(extra="forbid")
 
     active: bool = False
     stale: bool = False
     grain_source: Literal["captured_hdr", "sdr_override"] | None = None
-    algorithm_version: Literal["hdr-to-sdr-match-v1"] = "hdr-to-sdr-match-v1"
+    algorithm_version: Literal["hdr-to-sdr-match-v1", "hdr-to-sdr-materialized-v2"] = "hdr-to-sdr-match-v1"
     captured_hdr_adjustments: HDRAdjustments | None = None
     captured_shared_adjustments: SharedAdjustments | None = None
     captured_locals: list[CapturedHDRLocalAdjustment] = Field(default_factory=list, max_length=256)
@@ -837,6 +849,8 @@ class SdrMatchState(BaseModel):
     manual_highlight_boundary_ratio: float | None = Field(default=None, ge=0.50, le=0.95)
     signature: str | None = Field(default=None, min_length=1, max_length=256)
     revert_state: SDRMatchRevertState | None = None
+    materialized_status: Literal["matched", "needs_review"] | None = None
+    materialized_metrics: SDRMatchQualityMetrics | None = None
 
     @model_validator(mode="after")
     def validate_active_state(self) -> "SdrMatchState":
@@ -855,7 +869,15 @@ class SdrMatchState(BaseModel):
             )
             if self.captured_locals or any(value is not None for value in dormant_values):
                 raise ValueError("inactive SDR Match state cannot retain a captured recipe or Revert state")
+            if (self.materialized_status is None) != (self.materialized_metrics is None):
+                raise ValueError("materialized SDR Match status and metrics must be stored together")
+            if self.materialized_status is not None and self.algorithm_version != "hdr-to-sdr-materialized-v2":
+                raise ValueError("materialized SDR Match diagnostics require the v2 algorithm")
             return self
+        if self.algorithm_version != "hdr-to-sdr-match-v1":
+            raise ValueError("only legacy v1 SDR Match state may activate the hidden renderer")
+        if self.materialized_status is not None or self.materialized_metrics is not None:
+            raise ValueError("an active legacy SDR Match cannot contain materialization diagnostics")
         if self.grain_source is None:
             raise ValueError("active SDR Match state requires a grain source")
         required = {
@@ -967,7 +989,7 @@ class SdrMatchActionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     expected_revision: int = Field(ge=0)
-    action: Literal["match", "rematch", "revert"]
+    action: Literal["match", "convert", "revert"]
     authored_sdr_override_consent: bool = False
 
 

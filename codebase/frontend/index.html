@@ -771,14 +771,8 @@
 
       <div id="sdr-match-entire-actions" class="sdr-match-entire-actions hidden" aria-live="polite">
         <button id="sdr-match-entire" class="button-primary" type="button">Match entire HDR grade</button>
-        <button id="sdr-match-revert" class="text-button hidden" type="button">Revert match</button>
+        <button id="sdr-match-revert" class="text-button hidden" type="button">Revert legacy match</button>
         <span id="sdr-match-entire-status" class="helper"></span>
-        <div id="sdr-match-boundary-row" class="sdr-match-boundary-row hidden">
-          <label for="sdr-match-boundary">Highlight boundary</label>
-          <input id="sdr-match-boundary" type="range" min="0.5" max="0.95" step="0.01" value="0.9">
-          <output id="sdr-match-boundary-value">Auto</output>
-          <button id="sdr-match-boundary-auto" class="text-button" type="button">Auto</button>
-        </div>
       </div>
 
       <div class="lane-panel" data-lane-panel="hdr">
@@ -830,8 +824,9 @@
               <input id="hdr-compression-start" type="range" min="100" max="4000" step="25" value="400" data-path="hdr.highlight_compression_start_nits">
             </div>
             <div class="control-row" data-control-path="hdr.highlight_compression_target_nits">
-              <div class="control-heading"><label for="hdr-compression-target">Target Peak</label><output data-value-path="hdr.highlight_compression_target_nits">1000 nit</output></div>
+              <div class="control-heading"><label for="hdr-compression-target">Highlights-stage target</label><output data-value-path="hdr.highlight_compression_target_nits">1000 nit</output></div>
               <input id="hdr-compression-target" type="range" min="200" max="10000" step="25" value="1000" data-path="hdr.highlight_compression_target_nits">
+              <p class="helper">Sets the peak at this module. Later grading and Film Look controls may raise or lower the final scoped output.</p>
             </div>
             <div class="control-row featured-control" data-control-path="hdr.highlight_compression_softness">
               <div class="control-heading"><label for="hdr-compression-softness">Softness</label><output data-value-path="hdr.highlight_compression_softness">Off</output></div>

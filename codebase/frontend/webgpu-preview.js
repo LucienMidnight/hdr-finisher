@@ -1,6 +1,44 @@
 (function () {
   const PARAM_COUNT = 158;
   const CURVE_SAMPLES = 1024;
+  const PEAK_HISTOGRAM_BINS = 4096;
+  const PEAK_REDUCTION_SHADER_SOURCE = `
+@group(0) @binding(0) var peakSource: texture_2d<f32>;
+@group(0) @binding(1) var<storage, read> peakParams: array<f32>;
+@group(0) @binding(2) var<storage, read_write> peakResult: array<atomic<u32>>;
+
+fn peakLuma(rgb: vec3f) -> f32 {
+  return dot(rgb, vec3f(0.2722287, 0.6740818, 0.0536895));
+}
+fn peakTone(input: vec3f) -> vec3f {
+  var rgb = input * exp2(peakParams[2]);
+  if (peakParams[4] != 0.0) {
+    let lift = min(peakParams[4] * (1.0 - clamp(peakLuma(rgb), 0.0, 1.0)), 1.0);
+    rgb *= 1.0 + lift;
+  }
+  if (peakParams[8] != 0.0) {
+    let y = max(peakLuma(rgb), 0.0);
+    if (y > 0.00000001) {
+      let pivot = max(peakParams[9], 0.000001);
+      let stops = log2(max(y, 0.00000001) / pivot);
+      rgb *= pivot * exp2(clamp(stops * exp2(peakParams[8]), -32.0, 32.0)) / y;
+    }
+  }
+  return rgb;
+}
+
+@compute @workgroup_size(8, 8)
+fn peakReductionMain(@builtin(global_invocation_id) id: vec3u) {
+  let dimensions = textureDimensions(peakSource);
+  if (id.x >= dimensions.x || id.y >= dimensions.y) { return; }
+  let rgb = peakTone(textureLoad(peakSource, vec2i(id.xy), 0).rgb);
+  let channelPeak = max(max(rgb.r, rgb.g), rgb.b);
+  let signal = max(select(peakLuma(rgb), channelPeak, peakParams[110] > 0.5), 0.0);
+  atomicMax(&peakResult[0], bitcast<u32>(signal));
+  let stop = clamp(log2(max(signal, exp2(-32.0))), -32.0, 32.0);
+  let bin = min(${PEAK_HISTOGRAM_BINS - 1}u, u32(floor((stop + 32.0) * ${PEAK_HISTOGRAM_BINS}.0 / 64.0)));
+  atomicAdd(&peakResult[1u + bin], 1u);
+}`;
   const DENOISE_ALGORITHM_VERSION = "compact-haar-residual-v1";
   // Preserve progressively more structure at medium/coarse Haar scales. Full
   // strength at all levels makes a three-level resolve visibly tile into 8x8
@@ -158,6 +196,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.localParamValues = new Map();
       this.scopeSources = new WeakMap();
       this.scopeResources = new Map();
+      this.peakReductionPipeline = null;
+      this.peakReductionCache = new Map();
       this.bindGroupLayout = null;
       this.pipelineLayout = null;
       this.maskBindGroupLayout = null;
@@ -213,7 +253,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           this.maskModule.getCompilationInfo(),
         ]);
         const errors = [...compilation.messages, ...maskCompilation.messages].filter((message) => message.type === "error");
-        if (errors.length) throw new Error(errors.map((message) => message.message).join("; "));
+        if (errors.length) throw new Error(errors.map((message) => (
+          `${message.lineNum || "?"}:${message.linePos || "?"} ${message.message}`
+        )).join("; "));
         this.bindGroupLayout = this.device.createBindGroupLayout({
           entries: [
             { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "unfilterable-float" } },
@@ -235,6 +277,12 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           layout: this.pipelineLayout,
           vertex: { module: this.module, entryPoint: "vertexMain" },
           fragment: { module: this.module, entryPoint: "scopeFragmentMain", targets: [{ format: "rgba16float" }] },
+          primitive: { topology: "triangle-list" },
+        });
+        this.settledScopePipeline = this.device.createRenderPipeline({
+          layout: this.pipelineLayout,
+          vertex: { module: this.module, entryPoint: "vertexMain" },
+          fragment: { module: this.module, entryPoint: "settledScopeFragmentMain", targets: [{ format: "rgba16float" }] },
           primitive: { topology: "triangle-list" },
         });
         this.maskBindGroupLayout = this.device.createBindGroupLayout({
@@ -309,6 +357,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         }
       }
       this.scopeResources.clear();
+      this.peakReductionCache.clear();
     }
 
     invalidateSurfaces() {
@@ -335,12 +384,29 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return this.renderTo(this.canvas, sessionId, lane, adjustments, curveSampler, longEdge, localAdjustments, editRevision, maskOverlay, referenceWhiteNits, sourceSize, sourceOptions);
     }
 
+    supportsLocalAdjustments(lane, localAdjustments = []) {
+      return activeGpuLocals(lane, localAdjustments).every((local) =>
+        gpuLocalSupported(local[`${lane}_grade`]));
+    }
+
     setInstrumentationEnabled(enabled = true) {
       this.instrumentationEnabled = Boolean(enabled);
       if (enabled) {
         this.performanceMetrics = {
           renders: [], scopes: [], maskEvents: [], stages: [], allocations: [], presentations: [],
         };
+      }
+    }
+
+    async waitForSubmittedWork() {
+      if (!this.available || !this.device) return false;
+      try {
+        await this.device.queue.onSubmittedWorkDone();
+        return this.available;
+      } catch {
+        // Device-loss handling owns fallback and resource reset. Backpressure
+        // must not turn that asynchronous transition into an unhandled error.
+        return false;
       }
     }
 
@@ -434,6 +500,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
 
     async renderTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203, sourceSize = null, sourceOptions = null) {
       if (!this.available || !sessionId) return false;
+      const activeLocals = activeGpuLocals(lane, localAdjustments);
+      // Eligibility is deliberately checked before resetting a session or
+      // requesting a proxy. Unsupported local modules use the CPU renderer,
+      // and must not first pay for a WebGPU proxy that cannot be presented.
+      if (!activeLocals.every((local) => gpuLocalSupported(local[`${lane}_grade`]))) return false;
       const renderStartedAt = performance.now();
       if (this.sessionId !== sessionId) this.resetSession(sessionId);
       const resourceGeneration = this.resourceGeneration;
@@ -465,8 +536,6 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         || !proxy
         || sourceOptions?.isCurrent?.() === false) return false;
       const sourceProxy = this.selectedDenoiseSource(proxy);
-      const activeLocals = localAdjustments.filter((local) => local.enabled !== false && local.opacity > 0 && local[`${lane}_grade`]?.enabled !== false);
-      if (!activeLocals.every((local) => gpuLocalSupported(local[`${lane}_grade`]))) return false;
       const masks = await Promise.all(activeLocals.map((local) => this.loadLocalMask(
         sessionId,
         local,
@@ -498,6 +567,25 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         sourcePixelScale,
         sourceOptions?.inheritedGrain || null,
       );
+      if (lane === "hdr" && params[74] === 1) {
+        const measurement = adjustments.hdr?.highlight_compression_peak_measurement || "maximum";
+        if (measurement !== "manual") {
+          const peakKey = JSON.stringify([
+            sourceProxy.identity,
+            measurement,
+            params[2], params[4], params[8], params[9], params[110],
+          ]);
+          const cachedPeak = this.peakReductionCache.get(peakKey);
+          if (cachedPeak !== undefined) {
+            params[75] = cachedPeak;
+          } else if (sourceOptions?.tier !== "interactive") {
+            params[75] = await this.measureToneAdjustedPeak(sourceProxy, params, measurement, peakKey);
+            if (resourceGeneration !== this.resourceGeneration
+              || serial !== this.renderSerials.get(canvas)
+              || sourceOptions?.isCurrent?.() === false) return false;
+          }
+        }
+      }
       const overlayIndex = maskOverlay?.localId
         ? activeLocals.findIndex((local) => local.id === maskOverlay.localId)
         : -1;
@@ -520,7 +608,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         && (params[85] > 0.5 || (params[92] > 0.5 && params[93] > 0));
       const detailActive = params[148] > 0.5
         && (Math.abs(params[149]) > 0.000001 || Math.abs(params[150]) > 0.000001 || params[152] > 0.000001);
-      const intermediate = this.ensureIntermediate(canvas, proxy.width, proxy.height, spatialActive, detailActive);
+      const localDetailActive = activeLocals.some((local) => gpuLocalDetailActive(local[`${lane}_grade`]));
+      const intermediate = this.ensureIntermediate(
+        canvas,
+        proxy.width,
+        proxy.height,
+        spatialActive,
+        detailActive || localDetailActive,
+      );
       const makeBindGroup = (sourceView, spatialView, parameterBuffer = this.paramBuffer, overlayView = spatialView) => this.device.createBindGroup({
           layout: this.bindGroupLayout,
           entries: [
@@ -629,7 +724,96 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       for (let index = 0; index < activeLocals.length; index += 1) {
         const local = activeLocals[index];
         const target = localSource === intermediate.baseTexture ? intermediate.localTexture : intermediate.baseTexture;
-        const localBuffer = this.localParamBuffer(local, lane);
+        const localBuffer = this.localParamBuffer(local, lane, sourcePixelScale);
+        if (gpuLocalDetailActive(local[`${lane}_grade`])) {
+          // Preserve the pre-local source until the final mask mix. The normal
+          // ping-pong target holds the unmasked candidate, while the two Detail
+          // scratch textures are reused serially for every local adjustment.
+          const candidateBindGroup = makeBindGroup(localSource.createView(), localSource.createView(), localBuffer);
+          const candidatePass = encoder.beginRenderPass({
+            colorAttachments: [{
+              view: target.createView(),
+              clearValue: { r: 0, g: 0, b: 0, a: 1 },
+              loadOp: "clear",
+              storeOp: "store",
+            }],
+          });
+          candidatePass.setPipeline(pipelines.localCandidate);
+          candidatePass.setBindGroup(0, candidateBindGroup);
+          candidatePass.draw(3);
+          candidatePass.end();
+
+          const horizontalBindGroup = makeBindGroup(target.createView(), target.createView(), localBuffer);
+          const horizontalPass = encoder.beginRenderPass({
+            colorAttachments: [{
+              view: intermediate.detailATexture.createView(),
+              clearValue: { r: 0, g: 0, b: 0, a: 0 },
+              loadOp: "clear",
+              storeOp: "store",
+            }],
+          });
+          horizontalPass.setPipeline(pipelines.localDetailHorizontal);
+          horizontalPass.setBindGroup(0, horizontalBindGroup);
+          horizontalPass.draw(3);
+          horizontalPass.end();
+
+          const verticalBindGroup = makeBindGroup(
+            intermediate.detailATexture.createView(),
+            intermediate.detailATexture.createView(),
+            localBuffer,
+          );
+          const verticalPass = encoder.beginRenderPass({
+            colorAttachments: [{
+              view: intermediate.detailBTexture.createView(),
+              clearValue: { r: 0, g: 0, b: 0, a: 0 },
+              loadOp: "clear",
+              storeOp: "store",
+            }],
+          });
+          verticalPass.setPipeline(pipelines.localDetailVertical);
+          verticalPass.setBindGroup(0, verticalBindGroup);
+          verticalPass.draw(3);
+          verticalPass.end();
+
+          const detailCompositeBindGroup = makeBindGroup(
+            target.createView(),
+            intermediate.detailBTexture.createView(),
+            localBuffer,
+          );
+          const detailCompositePass = encoder.beginRenderPass({
+            colorAttachments: [{
+              view: intermediate.detailATexture.createView(),
+              clearValue: { r: 0, g: 0, b: 0, a: 1 },
+              loadOp: "clear",
+              storeOp: "store",
+            }],
+          });
+          detailCompositePass.setPipeline(pipelines.localDetailComposite);
+          detailCompositePass.setBindGroup(0, detailCompositeBindGroup);
+          detailCompositePass.draw(3);
+          detailCompositePass.end();
+
+          const mixBindGroup = makeBindGroup(
+            localSource.createView(),
+            masks[index].texture.createView(),
+            localBuffer,
+            intermediate.detailATexture.createView(),
+          );
+          const mixPass = encoder.beginRenderPass({
+            colorAttachments: [{
+              view: target.createView(),
+              clearValue: { r: 0, g: 0, b: 0, a: 1 },
+              loadOp: "clear",
+              storeOp: "store",
+            }],
+          });
+          mixPass.setPipeline(pipelines.localDetailMix);
+          mixPass.setBindGroup(0, mixBindGroup);
+          mixPass.draw(3);
+          mixPass.end();
+          localSource = target;
+          continue;
+        }
         const localBindGroup = makeBindGroup(localSource.createView(), masks[index].texture.createView(), localBuffer);
         const localPass = encoder.beginRenderPass({
           colorAttachments: [{
@@ -697,7 +881,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         verticalPass.end();
       }
       const pass = encoder.beginRenderPass({
-        ...(gpuTiming ? { timestampWrites: { querySet: gpuTiming.querySet, endingOfPassWriteIndex: 1 } } : {}),
+        ...(gpuTiming ? { timestampWrites: { querySet: gpuTiming.querySet, endOfPassWriteIndex: 1 } } : {}),
         colorAttachments: [{
           view: context.getCurrentTexture().createView(),
           clearValue: { r: 0, g: 0, b: 0, a: 1 },
@@ -724,6 +908,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       });
       this.scopeSources.set(canvas, {
         serial,
+        applicationGeneration: sourceOptions?.applicationGeneration ?? null,
+        geometrySignature,
         lane,
         width: proxy.width,
         height: proxy.height,
@@ -758,7 +944,13 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         gpuTiming?.resolveBuffer.destroy();
         gpuTiming?.readBuffer.destroy();
       }
-      return { width: proxy.width, height: proxy.height, hdr: surface.hdr, proxyFormat: proxy.pixelFormat };
+      return {
+        width: proxy.width,
+        height: proxy.height,
+        hdr: surface.hdr,
+        proxyFormat: proxy.pixelFormat,
+        sourceSerial: serial,
+      };
       } finally {
         this.finishActiveRender();
       }
@@ -1249,7 +1441,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           storeOp: "store",
         }],
       });
-      pass.setPipeline(this.scopePipeline);
+      pass.setPipeline(tier === "interactive" ? this.scopePipeline : this.settledScopePipeline);
       pass.setBindGroup(0, bindGroup);
       pass.draw(3);
       pass.end();
@@ -1268,13 +1460,16 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         const sourceBytes = new Uint16Array(resource.readBuffer.getMappedRange());
         const rowStride = resource.bytesPerRow / 2;
         const pixels = new Float32Array(width * height * 3);
+        const cellPeaks = new Float32Array(width * height);
         let targetIndex = 0;
+        let peakIndex = 0;
         for (let row = 0; row < height; row += 1) {
           let sourceIndex = row * rowStride;
           for (let column = 0; column < width; column += 1) {
             pixels[targetIndex++] = halfToFloat(sourceBytes[sourceIndex]);
             pixels[targetIndex++] = halfToFloat(sourceBytes[sourceIndex + 1]);
             pixels[targetIndex++] = halfToFloat(sourceBytes[sourceIndex + 2]);
+            cellPeaks[peakIndex++] = halfToFloat(sourceBytes[sourceIndex + 3]);
             sourceIndex += 4;
           }
         }
@@ -1284,6 +1479,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           tier,
           lane: source.lane,
           sourceSerial: source.serial,
+          applicationGeneration: source.applicationGeneration,
+          geometrySignature: source.geometrySignature,
           width,
           height,
           encodeMs: encodedAt - startedAt,
@@ -1300,10 +1497,13 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         }
         return {
           pixels,
+          cellPeaks,
           width,
           height,
           lane: source.lane,
           sourceSerial: source.serial,
+          applicationGeneration: source.applicationGeneration,
+          geometrySignature: source.geometrySignature,
           sessionId: source.sessionId,
           metric,
         };
@@ -1435,6 +1635,36 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         fragment: { module: this.module, entryPoint: "localAdjustmentFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
+      const localCandidate = this.device.createRenderPipeline({
+        layout: this.pipelineLayout,
+        vertex: { module: this.module, entryPoint: "vertexMain" },
+        fragment: { module: this.module, entryPoint: "localCandidateFragmentMain", targets: [{ format: "rgba16float" }] },
+        primitive: { topology: "triangle-list" },
+      });
+      const localDetailHorizontal = this.device.createRenderPipeline({
+        layout: this.pipelineLayout,
+        vertex: { module: this.module, entryPoint: "vertexMain" },
+        fragment: { module: this.module, entryPoint: "localDetailHorizontalFragmentMain", targets: [{ format: "rgba16float" }] },
+        primitive: { topology: "triangle-list" },
+      });
+      const localDetailVertical = this.device.createRenderPipeline({
+        layout: this.pipelineLayout,
+        vertex: { module: this.module, entryPoint: "vertexMain" },
+        fragment: { module: this.module, entryPoint: "localDetailVerticalFragmentMain", targets: [{ format: "rgba16float" }] },
+        primitive: { topology: "triangle-list" },
+      });
+      const localDetailComposite = this.device.createRenderPipeline({
+        layout: this.pipelineLayout,
+        vertex: { module: this.module, entryPoint: "vertexMain" },
+        fragment: { module: this.module, entryPoint: "localDetailCompositeFragmentMain", targets: [{ format: "rgba16float" }] },
+        primitive: { topology: "triangle-list" },
+      });
+      const localDetailMix = this.device.createRenderPipeline({
+        layout: this.pipelineLayout,
+        vertex: { module: this.module, entryPoint: "vertexMain" },
+        fragment: { module: this.module, entryPoint: "localDetailMixFragmentMain", targets: [{ format: "rgba16float" }] },
+        primitive: { topology: "triangle-list" },
+      });
       const detailHorizontal = this.device.createRenderPipeline({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
@@ -1477,7 +1707,23 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         fragment: { module: this.module, entryPoint: "fragmentMain", targets: [{ format }] },
         primitive: { topology: "triangle-list" },
       });
-      const pipelines = { base, local, detailHorizontal, detailVertical, detailComposite, response, extract, blurHorizontal, blurVertical, composite };
+      const pipelines = {
+        base,
+        local,
+        localCandidate,
+        localDetailHorizontal,
+        localDetailVertical,
+        localDetailComposite,
+        localDetailMix,
+        detailHorizontal,
+        detailVertical,
+        detailComposite,
+        response,
+        extract,
+        blurHorizontal,
+        blurVertical,
+        composite,
+      };
       this.pipelines.set(format, pipelines);
       return pipelines;
     }
@@ -1577,6 +1823,82 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         size,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
       });
+    }
+
+    async ensurePeakReductionPipeline() {
+      if (this.peakReductionPipeline) return this.peakReductionPipeline;
+      const module = this.device.createShaderModule({ code: PEAK_REDUCTION_SHADER_SOURCE });
+      const compilation = await module.getCompilationInfo();
+      const errors = compilation.messages.filter((message) => message.type === "error");
+      if (errors.length) throw new Error(errors.map((message) => message.message).join("; "));
+      this.peakReductionPipeline = await this.device.createComputePipelineAsync({
+        layout: "auto",
+        compute: { module, entryPoint: "peakReductionMain" },
+      });
+      return this.peakReductionPipeline;
+    }
+
+    async measureToneAdjustedPeak(sourceProxy, params, measurement, cacheKey) {
+      const cached = this.peakReductionCache.get(cacheKey);
+      if (cached !== undefined) return cached;
+      const pipeline = await this.ensurePeakReductionPipeline();
+      const valueCount = 1 + PEAK_HISTOGRAM_BINS;
+      const byteSize = valueCount * 4;
+      const resultBuffer = this.device.createBuffer({
+        size: byteSize,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
+      });
+      const readBuffer = this.device.createBuffer({
+        size: byteSize,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+      });
+      const parameterBuffer = this.createStorageBuffer(params);
+      this.device.queue.writeBuffer(resultBuffer, 0, new Uint32Array(valueCount));
+      this.device.queue.writeBuffer(parameterBuffer, 0, params);
+      const bindGroup = this.device.createBindGroup({
+        layout: pipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: sourceProxy.texture.createView() },
+          { binding: 1, resource: { buffer: parameterBuffer } },
+          { binding: 2, resource: { buffer: resultBuffer } },
+        ],
+      });
+      const encoder = this.device.createCommandEncoder();
+      const pass = encoder.beginComputePass();
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, bindGroup);
+      pass.dispatchWorkgroups(Math.ceil(sourceProxy.width / 8), Math.ceil(sourceProxy.height / 8));
+      pass.end();
+      encoder.copyBufferToBuffer(resultBuffer, 0, readBuffer, 0, byteSize);
+      this.device.queue.submit([encoder.finish()]);
+      try {
+        await readBuffer.mapAsync(GPUMapMode.READ);
+        const values = new Uint32Array(readBuffer.getMappedRange());
+        let peak = new Float32Array(new Uint32Array([values[0]]).buffer)[0];
+        if (measurement === "robust") {
+          const population = sourceProxy.width * sourceProxy.height;
+          const threshold = Math.max(1, Math.ceil(population * 0.9999));
+          let cumulative = 0;
+          for (let index = 0; index < PEAK_HISTOGRAM_BINS; index += 1) {
+            cumulative += values[index + 1];
+            if (cumulative >= threshold) {
+              // Use the upper edge so the robust anchor remains conservative
+              // rather than undershooting the selected percentile.
+              peak = 2 ** (-32 + (index + 1) * 64 / PEAK_HISTOGRAM_BINS);
+              break;
+            }
+          }
+        }
+        const measured = Math.max(0.0018, Number.isFinite(peak) ? peak : 0.0018);
+        this.peakReductionCache.set(cacheKey, measured);
+        while (this.peakReductionCache.size > 32) this.peakReductionCache.delete(this.peakReductionCache.keys().next().value);
+        return measured;
+      } finally {
+        if (readBuffer.mapState === "mapped") readBuffer.unmap();
+        resultBuffer.destroy();
+        readBuffer.destroy();
+        parameterBuffer.destroy();
+      }
     }
 
     async loadProxy(sessionId, lane, longEdge, geometrySignature = "{}", editRevision = 0, sourceIdentity = "source") {
@@ -2020,10 +2342,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       entry.verticalBuffer?.destroy();
     }
 
-    localParamBuffer(local, lane) {
+    localParamBuffer(local, lane, sourcePixelScale) {
       const key = `${local.id}:${lane}`;
       let buffer = this.localParamBuffers.get(key);
-      const values = buildLocalParams(local, lane);
+      const values = buildLocalParams(local, lane, sourcePixelScale);
       if (!buffer) {
         buffer = this.createStorageBuffer(values);
         this.localParamBuffers.set(key, buffer);
@@ -2159,7 +2481,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
   }
 
   function toneAdjustedHighlightPeakLinear(branch, toneEnabled, referenceWhiteNits) {
-    let peak = Math.max(1, Number(branch.highlight_compression_source_peak_nits) || 1000) * 0.18 / referenceWhiteNits;
+    const authoredPeak = branch.highlight_compression_peak_measurement === "manual"
+      ? branch.highlight_compression_manual_peak_nits
+      : branch.highlight_compression_source_peak_nits;
+    let peak = Math.max(1, Number(authoredPeak) || 1000) * 0.18 / referenceWhiteNits;
     if (!toneEnabled) return peak;
     peak *= Math.pow(2, Number(branch.exposure) || 0);
     const shadowLift = Number(branch.shadow_lift) || 0;
@@ -2381,9 +2706,23 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       !wheel || [wheel.hue, wheel.saturation, wheel.luminance_ev].every((value) => Math.abs(Number(value) || 0) < 0.000001));
   }
 
-  function buildLocalParams(local, lane) {
+  function activeGpuLocals(lane, localAdjustments) {
+    return (Array.isArray(localAdjustments) ? localAdjustments : []).filter((local) =>
+      local?.enabled !== false
+      && Number(local?.opacity) > 0
+      && local?.[`${lane}_grade`]?.enabled !== false);
+  }
+
+  function gpuLocalDetailActive(grade) {
+    const detail = grade?.detail || {};
+    return [detail.texture_amount, detail.clarity_amount, detail.sharpen_amount]
+      .some((value) => Math.abs(Number(value) || 0) > 0.000001);
+  }
+
+  function buildLocalParams(local, lane, sourcePixelScale = 1) {
     const grade = local[`${lane}_grade`];
-    const values = new Float32Array(16);
+    const detail = grade.detail || {};
+    const values = new Float32Array(24);
     values[0] = lane === "hdr" ? 1 : 0;
     values[1] = Number(local.opacity) || 0;
     values[2] = Number(grade.exposure) || 0;
@@ -2398,6 +2737,13 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     values[11] = Number(grade.saturation) || 0;
     values[12] = Number(grade.vibrance) || 0;
     values[13] = gpuMaskInfluenceOpacity(local.mask);
+    values[14] = (Number(detail.texture_amount) || 0) / 100;
+    values[15] = (Number(detail.clarity_amount) || 0) / 125;
+    values[16] = Math.min(3, Math.max(0.2, Number(detail.clarity_radius_percent) || 0.75));
+    values[17] = Math.min(2, Math.max(0, (Number(detail.sharpen_amount) || 0) / 100));
+    values[18] = Math.min(3, Math.max(0.3, Number(detail.sharpen_radius_px) || 0.8));
+    values[19] = Math.min(1, Math.max(0, (Number(detail.sharpen_threshold) || 0) / 100)) * 0.5;
+    values[20] = Math.min(1, Math.max(0.05, Number(sourcePixelScale) || 1));
     return values;
   }
 
@@ -3555,6 +3901,79 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return vec4f(result, 1.0);
     }
 
+    fn localDetailRadii() -> vec4f {
+      let dimensions = vec2f(textureDimensions(sourceTexture));
+      let diagonal = length(dimensions);
+      return vec4f(
+        max(0.35, diagonal * 0.0003),
+        max(0.70, diagonal * 0.0012),
+        max(0.50, diagonal * p[16] / 100.0),
+        max(0.30, p[18] * p[20])
+      );
+    }
+
+    @fragment fn localDetailHorizontalFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let dimensions = textureDimensions(sourceTexture);
+      let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
+      let radii = localDetailRadii();
+      let textureActive = abs(p[14]) > 0.000001;
+      let clarityActive = abs(p[15]) > 0.000001;
+      let sharpenActive = p[17] > 0.000001;
+      return vec4f(
+        detailHorizontalBlur(vec2f(coordinate), radii.x, 2, textureActive),
+        detailHorizontalBlur(vec2f(coordinate), radii.y, 2, textureActive),
+        detailHorizontalBlur(vec2f(coordinate), radii.z, 8, clarityActive),
+        detailHorizontalBlur(vec2f(coordinate), radii.w, 3, sharpenActive)
+      );
+    }
+
+    @fragment fn localDetailVerticalFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let dimensions = textureDimensions(sourceTexture);
+      let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
+      let radii = localDetailRadii();
+      let textureActive = abs(p[14]) > 0.000001;
+      let clarityActive = abs(p[15]) > 0.000001;
+      let sharpenActive = p[17] > 0.000001;
+      return vec4f(
+        detailVerticalBlur(vec2f(coordinate), radii.x, 0u, 2, textureActive),
+        detailVerticalBlur(vec2f(coordinate), radii.y, 1u, 2, textureActive),
+        detailVerticalBlur(vec2f(coordinate), radii.z, 2u, 8, clarityActive),
+        detailVerticalBlur(vec2f(coordinate), radii.w, 3u, 3, sharpenActive)
+      );
+    }
+
+    @fragment fn localDetailCompositeFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let dimensions = textureDimensions(sourceTexture);
+      let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
+      let source = textureLoad(sourceTexture, coordinate, 0).rgb;
+      let uv = (vec2f(coordinate) + vec2f(0.5)) / vec2f(dimensions);
+      let blurred = textureSampleLevel(spatialTexture, spatialSampler, uv, 0.0);
+      let sourceY = max(select(lumaSrgb(source), lumaAces(source), p[0] > 0.5), 0.0000001);
+      let logY = log2(sourceY);
+      var adjusted = logY;
+      if (abs(p[14]) > 0.000001) {
+        adjusted += (blurred.x - blurred.y) * p[14];
+      }
+      if (abs(p[15]) > 0.000001) {
+        let band = logY - blurred.z;
+        let edgeWeight = exp(-(band / 0.75) * (band / 0.75));
+        adjusted += band * edgeWeight * p[15];
+      }
+      if (p[17] > 0.000001) {
+        let edge = logY - blurred.w;
+        let qualification = select(smoothRange(p[19], p[19] + 0.04, abs(edge)), 1.0, p[19] <= 0.000001);
+        let qualified = edge * qualification;
+        let extrema = detailLocalExtrema(coordinate);
+        let allowance = 0.12 * (extrema.y - extrema.x);
+        adjusted = clamp(adjusted + qualified * p[17], extrema.x - allowance, extrema.y + allowance);
+      }
+      let delta = clamp(adjusted - logY, -16.0, 16.0);
+      if (abs(delta) <= 0.0000001) { return vec4f(source, 1.0); }
+      var result = source * exp2(delta);
+      result = select(clamp(result, vec3f(0.0), vec3f(1.0)), max(result, vec3f(0.0)), p[0] > 0.5);
+      return vec4f(result, 1.0);
+    }
+
     @fragment fn baseFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let dimensions = textureDimensions(sourceTexture);
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
@@ -3570,6 +3989,22 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       let uv = (vec2f(coordinate) + vec2f(0.5)) / vec2f(dimensions);
       let influence = clamp(textureSampleLevel(spatialTexture, spatialSampler, uv, 0.0).r * p[1] * p[13], 0.0, 1.0);
       return vec4f(mix(source, applyLocalGrade(source), influence), 1.0);
+    }
+
+    @fragment fn localCandidateFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let dimensions = textureDimensions(sourceTexture);
+      let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
+      return vec4f(applyLocalGrade(textureLoad(sourceTexture, coordinate, 0).rgb), 1.0);
+    }
+
+    @fragment fn localDetailMixFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let dimensions = textureDimensions(sourceTexture);
+      let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
+      let source = textureLoad(sourceTexture, coordinate, 0).rgb;
+      let uv = (vec2f(coordinate) + vec2f(0.5)) / vec2f(dimensions);
+      let influence = clamp(textureSampleLevel(spatialTexture, spatialSampler, uv, 0.0).r * p[1] * p[13], 0.0, 1.0);
+      let candidate = textureLoad(overlayMaskTexture, coordinate, 0).rgb;
+      return vec4f(mix(source, candidate, influence), 1.0);
     }
 
     @fragment fn filmResponseFragmentMain(input: VertexOut) -> @location(0) vec4f {
@@ -3600,14 +4035,59 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return spatialBlur(vec2f(0.0, 1.0), input.position.xy);
     }
 
+    fn scopeOutputAt(coordinate: vec2i) -> vec3f {
+      let filmOutput = applyFilmLook(coordinate);
+      return select(clamp(filmOutput, vec3f(0.0), vec3f(1.0)), max(filmOutput, vec3f(0.0)), p[0] > 0.5);
+    }
+    fn scopePeakSignal(rgb: vec3f) -> f32 {
+      return max(select(lumaSrgb(rgb), lumaAces(rgb), p[0] > 0.5), 0.0);
+    }
     @fragment fn scopeFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let targetDimensions = max(vec2f(p[136], p[137]), vec2f(1.0));
       let sourceDimensions = vec2f(textureDimensions(sourceTexture));
-      let uv = clamp(input.position.xy / targetDimensions, vec2f(0.0), vec2f(0.999999));
-      let coordinate = clamp(vec2i(uv * sourceDimensions), vec2i(0), vec2i(sourceDimensions) - vec2i(1));
-      let filmOutput = applyFilmLook(coordinate);
-      let output = select(clamp(filmOutput, vec3f(0.0), vec3f(1.0)), max(filmOutput, vec3f(0.0)), p[0] > 0.5);
-      return vec4f(output, 1.0);
+      let cellOrigin = floor(input.position.xy - vec2f(0.5));
+      let sourceStart = cellOrigin * sourceDimensions / targetDimensions;
+      let sourceSpan = sourceDimensions / targetDimensions;
+      var total = vec3f(0.0);
+      var peak = 0.0;
+      // Interactive scopes use bounded stratified coverage. They remain
+      // responsive while sampling the full cell footprint instead of one
+      // nearest texel, and the settled pass below replaces this estimate.
+      for (var sy: u32 = 0u; sy < 4u; sy = sy + 1u) {
+        for (var sx: u32 = 0u; sx < 4u; sx = sx + 1u) {
+          let samplePosition = sourceStart + (vec2f(f32(sx), f32(sy)) + vec2f(0.5)) * sourceSpan / 4.0;
+          let coordinate = clamp(vec2i(samplePosition), vec2i(0), vec2i(sourceDimensions) - vec2i(1));
+          let output = scopeOutputAt(coordinate);
+          total += output;
+          peak = max(peak, scopePeakSignal(output));
+        }
+      }
+      return vec4f(total / 16.0, peak);
+    }
+    @fragment fn settledScopeFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let targetDimensions = max(vec2u(u32(p[136]), u32(p[137])), vec2u(1u));
+      let sourceDimensions = textureDimensions(sourceTexture);
+      let cell = vec2u(input.position.xy - vec2f(0.5));
+      let start = vec2u(floor(vec2f(cell) * vec2f(sourceDimensions) / vec2f(targetDimensions)));
+      let end = min(
+        sourceDimensions,
+        max(start + vec2u(1u), vec2u(ceil(vec2f(cell + vec2u(1u)) * vec2f(sourceDimensions) / vec2f(targetDimensions))))
+      );
+      var total = vec3f(0.0);
+      var peak = 0.0;
+      var count = 0u;
+      // Settled/refined scopes cover every source texel assigned to this cell.
+      // RGB is area-averaged for distributions; alpha carries the conservative
+      // full-cell maximum so isolated speculars cannot disappear on resize.
+      for (var y = start.y; y < end.y; y = y + 1u) {
+        for (var x = start.x; x < end.x; x = x + 1u) {
+          let output = scopeOutputAt(vec2i(i32(x), i32(y)));
+          total += output;
+          peak = max(peak, scopePeakSignal(output));
+          count += 1u;
+        }
+      }
+      return vec4f(total / f32(max(count, 1u)), peak);
     }
 
     @fragment fn fragmentMain(input: VertexOut) -> @location(0) vec4f {

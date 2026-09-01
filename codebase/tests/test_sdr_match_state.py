@@ -21,6 +21,11 @@ from hdr_finisher.models import (
 )
 from hdr_finisher.projects import ProjectError, open_project, save_project
 from hdr_finisher.sessions import EditCommandError, RevisionConflictError, SessionStore
+from hdr_finisher.sdr_match import (
+    MATCH_SHOULDER_START,
+    automatic_sdr_match_luma,
+    build_sdr_match_target,
+)
 
 
 def _store_with_source(tmp_path: Path) -> tuple[SessionStore, str]:
@@ -179,28 +184,29 @@ def test_slider_history_group_undoes_one_complete_gesture(tmp_path: Path) -> Non
     assert redone.document.global_adjustments.hdr.exposure == 0.9
 
 
-def test_match_scales_hdr_shoulder_into_sdr_display_linear_range() -> None:
-    image = np.full((4, 6, 3), 0.18, dtype=np.float32)
-    adjustments = AdjustmentState()
-    adjustments.sdr.base_section_enabled = False
-    match = SdrMatchState(
-        active=True,
-        grain_source="captured_hdr",
-        captured_hdr_adjustments=adjustments.hdr.model_copy(deep=True),
-        captured_shared_adjustments=adjustments.shared.model_copy(deep=True),
-        captured_reference_white_nits=203,
-        captured_source_fingerprint_sha256="0" * 64,
-        automatic_highlight_boundary_ratio=0.8,
-        signature="reference-white-test",
-        revert_state=SDRMatchRevertState(sdr_adjustments=adjustments.sdr.model_copy(deep=True)),
-    )
+def test_match_target_preserves_body_and_rolls_only_top_sdr_headroom() -> None:
+    transition_scene = 0.18 * 0.90 / (100.0 / 203.0)
+    luma = np.array([0.0, 0.18, transition_scene - 1e-5, transition_scene, transition_scene + 1e-5, 0.72, 2.0])
+    image = np.repeat(luma[None, :, None], 3, axis=2).astype(np.float32)
+    target = build_sdr_match_target(image)
+    output = np.einsum("...c,c->...", target[0], np.array([0.2126, 0.7152, 0.0722], dtype=np.float32))
 
-    rendered = apply_adjustments(
-        image, adjustments, PreviewKind.SDR, include_grain=False, sdr_match=match
-    )
-    knee = 0.8
-    mapped_reference = 1.0 - (1.0 - knee) * np.exp(-(1.0 - knee) / (1.0 - knee))
-    np.testing.assert_allclose(rendered, mapped_reference * 100.0 / 203.0, atol=1e-4)
+    np.testing.assert_allclose(output[1], 100.0 / 203.0, atol=1e-4)
+    np.testing.assert_allclose(output[2], luma[2] / 0.18 * (100.0 / 203.0), atol=1e-4)
+    np.testing.assert_allclose(output[3], MATCH_SHOULDER_START, atol=2e-4)
+    assert np.all(np.diff(output) >= 0.0)
+    assert output[-1] <= 1.0
+    left_slope = (output[3] - output[2]) / 1e-5
+    right_slope = (output[4] - output[3]) / 1e-5
+    assert abs(left_slope - right_slope) / left_slope < 0.02
+
+
+@pytest.mark.parametrize("reference_white", (100, 203))
+def test_automatic_transition_tracks_project_reference_white(reference_white: int) -> None:
+    transition_nits = reference_white * 0.90 / (100.0 / 203.0)
+    transition_scene = 0.18 * transition_nits / reference_white
+    mapped = automatic_sdr_match_luma(np.array([transition_scene], dtype=np.float32))[0]
+    np.testing.assert_allclose(mapped, 0.90, atol=1e-6)
 
 
 def test_v4_project_persists_active_match_state(tmp_path: Path) -> None:
@@ -374,7 +380,7 @@ def test_match_snapshot_must_belong_to_loaded_source(tmp_path: Path) -> None:
     assert store.get(session_id).edit_revision == 0
 
 
-def test_match_action_materializes_renders_marks_stale_and_reverts(tmp_path: Path) -> None:
+def test_match_action_materializes_visible_controls_and_is_one_undo_step(tmp_path: Path) -> None:
     store, session_id = _store_with_source(tmp_path)
     session = store.get(session_id)
     session.adjustments.sdr.exposure = 0.65
@@ -387,12 +393,17 @@ def test_match_action_materializes_renders_marks_stale_and_reverts(tmp_path: Pat
         session_id, expected_revision=0, action="match"
     )
     assert matched.revision == 1
-    assert matched.document.sdr_match.active
-    assert matched.document.sdr_match.grain_source == "captured_hdr"
-    assert matched.document.global_adjustments.sdr.base_section_enabled is False
-    assert matched.document.global_adjustments.sdr.highlight_recovery == 0.0
-    assert matched.document.sdr_match.revert_state.sdr_adjustments.exposure == 0.65
-    assert matched.document.sdr_match.revert_state.sdr_denoise.controls.amount == 0.17
+    assert matched.document.sdr_match.active is False
+    assert matched.document.sdr_match.algorithm_version == "hdr-to-sdr-materialized-v2"
+    assert matched.document.sdr_match.materialized_status in {"matched", "needs_review"}
+    assert matched.document.global_adjustments.sdr.base_section_enabled is True
+    assert matched.document.global_adjustments.sdr.use_authored_base is False
+    assert 0.0 <= matched.document.global_adjustments.sdr.highlight_recovery <= 4.0
+    assert all(abs(x - y) < 1e-7 for x, y in matched.document.global_adjustments.sdr.luma_curve)
+    assert any(
+        abs(node.adjustment_ev) > 0.001
+        for node in matched.document.global_adjustments.sdr.tone_equalizer_nodes
+    )
     assert matched.document.denoise.sdr == matched.document.denoise.hdr
     assert len(session.undo_history) == 1
 
@@ -407,42 +418,16 @@ def test_match_action_materializes_renders_marks_stale_and_reverts(tmp_path: Pat
     assert float(rendered.min()) >= 0.0
     assert float(rendered.max()) <= 1.0
 
-    changed = session.adjustments.model_copy(deep=True)
-    changed.hdr.exposure = 0.5
-    stale = store.apply_edit_commands(session_id, [EditCommand(
-        expected_revision=1,
-        command_type="set_global_adjustments",
-        payload={"adjustments": changed.model_dump(mode="json")},
-    )])
-    assert stale.document.sdr_match.stale is True
-
-    restored = store.apply_edit_commands(session_id, [EditCommand(expected_revision=2, command_type="undo")])
-    assert restored.document.sdr_match.stale is False
-    repeated = store.apply_edit_commands(session_id, [EditCommand(expected_revision=3, command_type="redo")])
-    assert repeated.document.sdr_match.stale is True
-
-    session.denoise.hdr.controls.amount = 0.91
-
-    rematched = store.apply_sdr_match_action(
-        session_id, expected_revision=4, action="rematch"
-    )
-    assert rematched.document.sdr_match.stale is False
-    assert rematched.document.sdr_match.revert_state.sdr_adjustments.exposure == 0.65
-    assert rematched.document.sdr_match.revert_state.sdr_denoise.controls.amount == 0.17
-    assert rematched.document.denoise.sdr.controls.amount == 0.91
-
-    reverted = store.apply_sdr_match_action(
-        session_id, expected_revision=5, action="revert"
-    )
-    assert reverted.document.sdr_match == SdrMatchState()
-    assert reverted.document.global_adjustments.sdr.exposure == 0.65
-    assert reverted.document.denoise.sdr.enabled is True
-    assert reverted.document.denoise.sdr.controls.amount == 0.17
-    assert reverted.document.denoise.hdr.controls.amount == 0.91
-    assert len(session.undo_history) == 4
+    restored = store.apply_edit_commands(session_id, [EditCommand(expected_revision=1, command_type="undo")])
+    assert restored.document.sdr_match == SdrMatchState()
+    assert restored.document.global_adjustments.sdr.exposure == 0.65
+    assert restored.document.denoise.sdr.controls.amount == 0.17
+    repeated = store.apply_edit_commands(session_id, [EditCommand(expected_revision=2, command_type="redo")])
+    assert repeated.document.sdr_match.materialized_status in {"matched", "needs_review"}
+    assert repeated.document.denoise.sdr.controls.amount == 0.82
 
 
-def test_hdr_denoise_change_marks_match_stale_and_rematch_copies_recipe(tmp_path: Path) -> None:
+def test_repeated_materialized_match_recomputes_and_copies_current_hdr_denoise(tmp_path: Path) -> None:
     store, session_id = _store_with_source(tmp_path)
     session = store.get(session_id)
     session.denoise.hdr.enabled = True
@@ -452,23 +437,41 @@ def test_hdr_denoise_change_marks_match_stale_and_rematch_copies_recipe(tmp_path
 
     matched = store.apply_sdr_match_action(session_id, expected_revision=0, action="match")
     assert matched.document.denoise.sdr.controls.amount == 0.62
-    assert matched.document.sdr_match.revert_state.sdr_denoise.controls.amount == 0.24
 
     changed = session.denoise.model_copy(deep=True)
     changed.hdr.controls.amount = 0.88
     changed.hdr.analysis.preset = "photo_mixed"
-    stale = store.apply_edit_commands(session_id, [EditCommand(
+    changed_state = store.apply_edit_commands(session_id, [EditCommand(
         expected_revision=1,
         command_type="set_denoise_settings",
         payload={"denoise": changed.model_dump(mode="json")},
     )])
-    assert stale.document.sdr_match.stale is True
-    assert stale.document.denoise.sdr.controls.amount == 0.62
+    assert changed_state.document.sdr_match.active is False
+    assert changed_state.document.denoise.sdr.controls.amount == 0.62
 
-    rematched = store.apply_sdr_match_action(session_id, expected_revision=2, action="rematch")
-    assert rematched.document.sdr_match.stale is False
+    rematched = store.apply_sdr_match_action(session_id, expected_revision=2, action="match")
+    assert rematched.document.sdr_match.active is False
     assert rematched.document.denoise.sdr == rematched.document.denoise.hdr
     assert rematched.document.denoise.sdr.controls.amount == 0.88
 
-    reverted = store.apply_sdr_match_action(session_id, expected_revision=3, action="revert")
-    assert reverted.document.denoise.sdr.controls.amount == 0.24
+    undone = store.apply_edit_commands(session_id, [EditCommand(expected_revision=3, command_type="undo")])
+    assert undone.document.denoise.sdr.controls.amount == 0.62
+
+
+def test_legacy_match_conversion_clears_hidden_renderer_and_undo_restores_it(tmp_path: Path) -> None:
+    store, session_id = _store_with_source(tmp_path)
+    legacy = _active_match_state(store, session_id)
+    store.apply_edit_commands(
+        session_id,
+        [_match_command(store, session_id, expected_revision=0, state=legacy)],
+    )
+
+    converted = store.apply_sdr_match_action(session_id, expected_revision=1, action="convert")
+    assert converted.document.sdr_match.active is False
+    assert converted.document.sdr_match.algorithm_version == "hdr-to-sdr-materialized-v2"
+    assert converted.document.global_adjustments.sdr.base_section_enabled is True
+
+    restored = store.apply_edit_commands(
+        session_id, [EditCommand(expected_revision=2, command_type="undo")]
+    )
+    assert restored.document.sdr_match.model_dump() == legacy.model_dump()

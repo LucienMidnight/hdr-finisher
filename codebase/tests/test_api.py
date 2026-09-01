@@ -246,7 +246,7 @@ def test_real_png_upload_preview_and_scopes() -> None:
     assert diagnostics.json()["render_cache"]["managed_bytes"] > 0
 
 
-def test_active_sdr_match_is_exposed_as_a_linear_srgb_webgpu_source() -> None:
+def test_materialized_sdr_match_uses_the_ordinary_acescg_webgpu_source() -> None:
     upload = client.post(
         "/api/session",
         files={"file": ("matched-proxy.png", make_png_bytes(), "image/png")},
@@ -267,8 +267,9 @@ def test_active_sdr_match_is_exposed_as_a_linear_srgb_webgpu_source() -> None:
     )
 
     assert proxy.status_code == 200
-    assert proxy.headers["x-working-space"] == "linear-srgb"
-    assert store.get(session_id).render_cache.diagnostics()["matched_sdr_base_entries"] == 1
+    assert matched.document.sdr_match.active is False
+    assert proxy.headers["x-working-space"] == "acescg"
+    assert store.get(session_id).render_cache.diagnostics()["matched_sdr_base_entries"] == 0
 
 
 def test_interactive_scopes_use_uncommitted_local_adjustments() -> None:

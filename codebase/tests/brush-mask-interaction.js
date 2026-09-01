@@ -142,14 +142,16 @@ async function overlayMaskAlphaAt(page, x, y) {
     assert(await page.locator("#local-show-mask").getAttribute("aria-pressed") === "true", "A new brush should show its overlay by default.");
     assert(await page.locator(".local-mask-expression-row").count() === 0, "The redundant mask-expression strip is still visible.");
 
-    // A client-side fallback raster is built from source-anchored strokes.
-    // Under non-neutral geometry it must follow the same source-to-output map
-    // as the brush cursor instead of appearing at the raw source coordinate.
-    const transformedFallbackCenter = await page.evaluate(() => {
+    // A source-anchored brush must be converted into the output square-pixel
+    // metric before it is rasterized. A 3:2 landscape source rotated into a
+    // portrait output used to squeeze the fallback and cursor by 2.25:1.
+    const transformedFallback = await page.evaluate(() => {
       const local = selectedLocal();
       const leaf = JSON.parse(JSON.stringify(local.mask.leaf));
+      leaf.brush_radius = 0.05;
+      leaf.brush_hardness = 1;
       leaf.strokes = [{
-        radius: 0.025,
+        radius: 0.05,
         hardness: 1,
         flow: 1,
         opacity: 1,
@@ -158,39 +160,134 @@ async function overlayMaskAlphaAt(page, x, y) {
       }];
       const canvas = document.createElement("canvas");
       canvas.width = 200;
-      canvas.height = 100;
+      canvas.height = 300;
       const context = canvas.getContext("2d");
       const previousCursor = state.localBrushCursor;
       state.localBrushCursor = null;
-      context.save();
-      applySourceGeometryCanvasTransform(
+      drawBrushExpressionOutputSpace(
         context,
-        { left: 0, top: 0, width: 200, height: 100 },
-        { left: 0, top: 0, width: 200, height: 100 },
-        [2, 0, -0.5, 0, 1, 0],
-      );
-      drawMaskExpression(context, { operator: "leaf", inverted: false, leaf }, (value) => value * 200, (value) => value * 100, {
-        renderPhase: "gizmo",
+        { operator: "leaf", inverted: false, leaf },
+        (value) => value * 200,
+        (value) => value * 300,
+        {
         localId: "geometry-fallback-regression",
         spatialSignature: "geometry-fallback-regression",
         authoritative: null,
-      });
-      context.restore();
-      state.localBrushCursor = previousCursor;
+        },
+        brushOutputSpaceMapper(
+          { left: 0, top: 0, width: 200, height: 300 },
+          [0, -1, 1, 1, 0, 0],
+        ),
+      );
       const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
       let weightedX = 0;
+      let weightedY = 0;
       let weight = 0;
+      let minX = canvas.width;
+      let maxX = -1;
+      let minY = canvas.height;
+      let maxY = -1;
       for (let index = 0; index < pixels.length; index += 4) {
         const alpha = pixels[index + 3];
         if (alpha <= 8 || pixels[index] <= pixels[index + 1] * 1.5) continue;
-        weightedX += (index / 4 % canvas.width) * alpha;
+        const pixel = index / 4;
+        const pixelX = pixel % canvas.width;
+        const pixelY = Math.floor(pixel / canvas.width);
+        weightedX += pixelX * alpha;
+        weightedY += pixelY * alpha;
         weight += alpha;
+        minX = Math.min(minX, pixelX);
+        maxX = Math.max(maxX, pixelX);
+        minY = Math.min(minY, pixelY);
+        maxY = Math.max(maxY, pixelY);
       }
-      return weight ? weightedX / weight : null;
+      const cursorCanvas = document.createElement("canvas");
+      cursorCanvas.width = 200;
+      cursorCanvas.height = 300;
+      const cursorContext = cursorCanvas.getContext("2d");
+      state.localBrushCursor = { x: 0.625, y: 0.5 };
+      drawBrushExpressionOutputSpace(
+        cursorContext,
+        { operator: "leaf", inverted: false, leaf: { ...leaf, strokes: [] } },
+        (value) => value * 200,
+        (value) => value * 300,
+        { localId: "geometry-cursor-regression", spatialSignature: "geometry-cursor-regression", authoritative: null },
+        brushOutputSpaceMapper({ left: 0, top: 0, width: 200, height: 300 }, [0, -1, 1, 1, 0, 0]),
+      );
+      state.localBrushCursor = previousCursor;
+      const cursorPixels = cursorContext.getImageData(0, 0, cursorCanvas.width, cursorCanvas.height).data;
+      let cursorMinX = cursorCanvas.width;
+      let cursorMaxX = -1;
+      let cursorMinY = cursorCanvas.height;
+      let cursorMaxY = -1;
+      for (let index = 0; index < cursorPixels.length; index += 4) {
+        const r = cursorPixels[index];
+        const g = cursorPixels[index + 1];
+        const b = cursorPixels[index + 2];
+        const a = cursorPixels[index + 3];
+        if (a <= 8 || r < 180 || g < 180 || b < 180) continue;
+        const pixel = index / 4;
+        const pixelX = pixel % cursorCanvas.width;
+        const pixelY = Math.floor(pixel / cursorCanvas.width);
+        cursorMinX = Math.min(cursorMinX, pixelX);
+        cursorMaxX = Math.max(cursorMaxX, pixelX);
+        cursorMinY = Math.min(cursorMinY, pixelY);
+        cursorMaxY = Math.max(cursorMaxY, pixelY);
+      }
+      const handleCanvas = document.createElement("canvas");
+      handleCanvas.width = 200;
+      handleCanvas.height = 300;
+      const handleContext = handleCanvas.getContext("2d");
+      applySourceGeometryCanvasTransform(
+        handleContext,
+        { left: 0, top: 0, width: 200, height: 300 },
+        { left: 0, top: 0, width: 200, height: 300 },
+        [0, -1, 1, 1, 0, 0],
+      );
+      drawLocalGizmoHandle(handleContext, 0.625 * 200, 0.5 * 300, 7);
+      const handlePixels = handleContext.getImageData(0, 0, handleCanvas.width, handleCanvas.height).data;
+      let handleMinX = handleCanvas.width;
+      let handleMaxX = -1;
+      let handleMinY = handleCanvas.height;
+      let handleMaxY = -1;
+      for (let index = 0; index < handlePixels.length; index += 4) {
+        const r = handlePixels[index];
+        const g = handlePixels[index + 1];
+        const b = handlePixels[index + 2];
+        const a = handlePixels[index + 3];
+        if (a <= 8 || g < 140 || b < 140 || r > 180) continue;
+        const pixel = index / 4;
+        const pixelX = pixel % handleCanvas.width;
+        const pixelY = Math.floor(pixel / handleCanvas.width);
+        handleMinX = Math.min(handleMinX, pixelX);
+        handleMaxX = Math.max(handleMaxX, pixelX);
+        handleMinY = Math.min(handleMinY, pixelY);
+        handleMaxY = Math.max(handleMaxY, pixelY);
+      }
+      return weight ? {
+        center: [weightedX / weight, weightedY / weight],
+        extent: [maxX - minX + 1, maxY - minY + 1],
+        cursorExtent: [cursorMaxX - cursorMinX + 1, cursorMaxY - cursorMinY + 1],
+        handleExtent: [handleMaxX - handleMinX + 1, handleMaxY - handleMinY + 1],
+      } : null;
     });
     assert(
-      transformedFallbackCenter !== null && Math.abs(transformedFallbackCenter - 150) < 4,
-      `The source-anchored brush fallback did not follow display geometry (${transformedFallbackCenter}).`,
+      transformedFallback
+        && Math.abs(transformedFallback.center[0] - 100) < 2
+        && Math.abs(transformedFallback.center[1] - 187.5) < 2,
+      `The source-anchored brush fallback did not follow display geometry (${JSON.stringify(transformedFallback)}).`,
+    );
+    assert(
+      Math.abs(transformedFallback.extent[0] / transformedFallback.extent[1] - 1) < 0.08,
+      `The rotated brush fallback was squeezed instead of circular (${JSON.stringify(transformedFallback)}).`,
+    );
+    assert(
+      Math.abs(transformedFallback.cursorExtent[0] / transformedFallback.cursorExtent[1] - 1) < 0.08,
+      `The rotated brush cursor was squeezed instead of circular (${JSON.stringify(transformedFallback)}).`,
+    );
+    assert(
+      Math.abs(transformedFallback.handleExtent[0] / transformedFallback.handleExtent[1] - 1) < 0.08,
+      `The rotated fixed-size gizmo handle was squeezed (${JSON.stringify(transformedFallback)}).`,
     );
     const adjustmentMenuButton = page.getByRole("button", { name: "More actions for Local Adjustment 1" });
     assert(await adjustmentMenuButton.getAttribute("aria-haspopup") === "menu", "The adjustment ellipsis is not an accessible menu button.");

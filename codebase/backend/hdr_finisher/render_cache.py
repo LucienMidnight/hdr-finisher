@@ -136,7 +136,14 @@ class SessionRenderCache:
             source, _sdr_reference = self._proxies(edge)
             matched = self.matched_sdr_base(source, adjustments, sdr_match, edge)
             return downsample_image(matched, edge), "linear-srgb", signature
-        proxy, working_space = self.source_proxy(kind, long_edge)
+        source, sdr_reference = self._proxies(edge)
+        use_authored_sdr = (
+            kind == PreviewKind.SDR
+            and sdr_reference is not None
+            and adjustments.sdr.use_authored_base
+        )
+        proxy = sdr_reference if use_authored_sdr else source
+        working_space = "linear-srgb" if use_authored_sdr else "acescg"
         fixed = apply_geometry(proxy, geometry)
         return downsample_image(fixed, edge), working_space, signature
 

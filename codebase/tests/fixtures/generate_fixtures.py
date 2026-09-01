@@ -42,6 +42,36 @@ def build_hdr_tiff_fixture() -> None:
     tifffile.imwrite(FIXTURES_DIR / "hdr_headroom.tiff", rgb)
 
 
+def build_hdr_match_scene_fixture() -> None:
+    """Calibrated match chart with body texture and several highlight classes."""
+    width, height = 128, 80
+    yy, xx = np.mgrid[0:height, 0:width].astype(np.float32)
+    base = 0.035 + 0.13 * (xx / (width - 1))
+    texture = 1.0 + 0.10 * np.sin(xx * 0.55) * np.cos(yy * 0.43)
+    rgb = np.repeat((base * texture)[..., None], 3, axis=2).astype(np.float32)
+
+    # Skin-like and saturated body patches stay below the automatic shoulder.
+    rgb[8:30, 8:34] = np.array([0.32, 0.16, 0.10], dtype=np.float32)
+    rgb[8:30, 38:64] = np.array([0.16, 0.24, 0.42], dtype=np.float32)
+    rgb[34:52, 8:26] = np.array([0.32, 0.035, 0.025], dtype=np.float32)
+    rgb[34:52, 29:47] = np.array([0.025, 0.30, 0.045], dtype=np.float32)
+    rgb[34:52, 50:68] = np.array([0.025, 0.06, 0.36], dtype=np.float32)
+
+    # A broad window, lamp, emissive strip, and tiny speculars exercise the
+    # transition without allowing their energy to redefine ordinary contrast.
+    rgb[7:39, 78:112] = np.float32(600.0 * 0.18 / 203.0)
+    distance = np.sqrt((xx - 104.0) ** 2 + (yy - 56.0) ** 2)
+    lamp = np.clip(1.0 - distance / 12.0, 0.0, 1.0)
+    rgb += lamp[..., None] * np.array([3.2, 2.4, 1.4], dtype=np.float32)
+    rgb[57:61, 70:94] = np.array([1.8, 0.55, 0.12], dtype=np.float32)
+    for row, column, peak in ((12, 120, 4000.0), (45, 73, 1200.0), (68, 116, 8000.0)):
+        rgb[row:row + 2, column:column + 2] = np.float32(peak * 0.18 / 203.0)
+
+    ramp = np.geomspace(1e-5, 12000.0 * 0.18 / 203.0, width, dtype=np.float32)
+    rgb[-8:] = ramp[None, :, None]
+    tifffile.imwrite(FIXTURES_DIR / "hdr_match_scene.tiff", rgb.astype(np.float32))
+
+
 def build_linear_exr_fixture() -> None:
     width, height = 18, 12
     x = np.linspace(0.02, 0.9, width, dtype=np.float32)
@@ -93,6 +123,7 @@ def main() -> None:
         stale_pfm.unlink()
     build_png_fixture()
     build_hdr_tiff_fixture()
+    build_hdr_match_scene_fixture()
     stale_hdr = FIXTURES_DIR / "linear_unconfirmed.hdr"
     if stale_hdr.exists():
         stale_hdr.unlink()
