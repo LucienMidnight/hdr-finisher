@@ -256,8 +256,8 @@
   --segment-channel-background: linear-gradient(180deg, #e2e2e2, #ececec);
   --segment-selected-background: linear-gradient(180deg, #ffffff, #f5f5f5);
   --segment-selected-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 3px rgba(0, 0, 0, 0.15);
-  --instrument-slider-channel-background: linear-gradient(180deg, #cbcbcb 0%, #d4d4d4 38%, #e3e3e3 100%);
-  --instrument-slider-channel-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.16), inset 0 -1px 0 rgba(255, 255, 255, 0.8), 0 1px 0 rgba(0, 0, 0, 0.04);
+  --instrument-slider-channel-background: linear-gradient(180deg, #cbcbcb 0%, #d4d4d4 38%, #d9d9d9 100%);
+  --instrument-slider-channel-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.16), inset 0 -1px 0 rgba(0, 0, 0, 0.08), 0 1px 0 rgba(0, 0, 0, 0.04);
   --instrument-slider-thumb-shadow: 0 2px 4px rgba(0, 0, 0, 0.28), inset 0 -1px 1px rgba(0, 0, 0, 0.1);
   --instrument-slider-thumb-focus-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent), 0 0 8px color-mix(in srgb, var(--accent) 40%, transparent), 0 1px 2px rgba(0, 0, 0, 0.35);
   --instrument-slider-thumb-background: linear-gradient(180deg, #6b6b6b 0%, #58585a 18%, #3d4144 58%, #4a4e50 84%, #2c2f31 100%);
@@ -1869,6 +1869,14 @@ body[data-active-lane="sdr"] .grade-rail {
 .select-control label,
 .numeric-control label {
   color: var(--muted);
+}
+
+label.select-control {
+  color: var(--body);
+  font-family: var(--sans);
+  font-size: 10.5px;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 [data-film-grain-custom][hidden] {
@@ -5390,7 +5398,7 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
   border-top: 1px solid var(--hairline);
   color: var(--body);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: .1em;
   text-transform: uppercase;
 }
@@ -8206,7 +8214,7 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
 .panel-collapse-button--vertical::before { transform: rotate(90deg); }
 .panel-collapse-button--vertical[aria-expanded="false"]::before { transform: rotate(-90deg); }
 
-/* Native toggles retain checkbox semantics and a structural knob. */
+/* Native toggles retain checkbox semantics with a compact instrument-switch skin. */
 .checkbox-stack {
   display: grid;
   gap: 4px;
@@ -8221,18 +8229,25 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
   position: relative;
   flex: 0 0 auto;
   width: 46px;
-  height: 24px;
+  height: 20px;
   margin: 0;
-  border: 0;
+  border: 2px solid transparent;
   border-radius: var(--radius-pill);
   background-color: var(--hf-channel);
-  background-image: var(--instrument-slider-channel-background);
+  background-image:
+    var(--instrument-slider-channel-background),
+    linear-gradient(180deg, #4b5256 0%, #747c80 44%, #b9bfc0 78%, #e2e5e4 100%);
+  background-clip: padding-box, border-box;
+  background-origin: padding-box, border-box;
   background-position: center;
   background-repeat: no-repeat;
   background-size: 100% 100%;
-  box-shadow: var(--instrument-slider-channel-shadow);
+  box-shadow:
+    inset 0 2px 3px rgba(0, 0, 0, 0.78),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.22),
+    0 0 0 1px rgba(0, 0, 0, 0.38);
   cursor: pointer;
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+  transition: box-shadow 120ms ease, filter 120ms ease;
 }
 
 .checkbox-row > input[type="checkbox"]::before,
@@ -8242,16 +8257,20 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
 .gradient-luma-toggle > input[type="checkbox"]::before {
   content: "";
   position: absolute;
-  z-index: 1;
-  inset: 0 auto auto 0;
-  width: 24px;
-  height: 24px;
+  z-index: 2;
+  top: 50%;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  border: 0;
   border-radius: 50%;
-  background: radial-gradient(circle closest-side, #f8fafb 0%, #f0f2f3 30%, #dfe3e5 58%, #c3c9cc 78%, #a3abb0 94%, transparent 100%);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.48);
+  background: linear-gradient(180deg, #f8faf9 0%, #e4e7e6 38%, #c7cdcc 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 1px 2px rgba(0, 0, 0, 0.46);
   pointer-events: none;
-  transform: translateX(0);
-  transition: transform 120ms ease;
+  transform: translateY(-50%);
+  transition: transform 140ms cubic-bezier(.2, .75, .3, 1);
 }
 
 .checkbox-row > input[type="checkbox"]:checked,
@@ -8259,14 +8278,20 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
 .film-map-toggle > input[type="checkbox"]:checked,
 .proof-enable-row > input[type="checkbox"]:checked,
 .gradient-luma-toggle > input[type="checkbox"]:checked {
-  border: 0;
+  border-color: transparent;
   background-color: var(--accent);
   background-image:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.5) 0%, transparent 44%, rgba(255, 255, 255, 0.16) 100%),
-    linear-gradient(var(--accent), var(--accent));
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 58%, #080b0d) 0%, var(--accent) 55%, color-mix(in srgb, var(--accent) 68%, #e9e4ff) 100%),
+    linear-gradient(180deg, #4b5256 0%, #747c80 44%, #b9bfc0 78%, #e2e5e4 100%);
+  background-clip: padding-box, border-box;
+  background-origin: padding-box, border-box;
   background-position: center, center;
   background-size: 100% 100%, 100% 100%;
-  box-shadow: var(--instrument-slider-channel-shadow), 0 0 10px color-mix(in srgb, var(--accent) 28%, transparent);
+  box-shadow:
+    inset 0 2px 3px rgba(0, 0, 0, 0.68),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.24),
+    0 0 0 1px rgba(0, 0, 0, 0.38),
+    0 0 7px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .checkbox-row > input[type="checkbox"]:checked::before,
@@ -8274,7 +8299,16 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
 .film-map-toggle > input[type="checkbox"]:checked::before,
 .proof-enable-row > input[type="checkbox"]:checked::before,
 .gradient-luma-toggle > input[type="checkbox"]:checked::before {
-  transform: translateX(22px);
+  transform: translate(28px, -50%);
+}
+
+.checkbox-row > input[type="checkbox"]:focus-visible,
+.film-module-toggle > input[type="checkbox"]:focus-visible,
+.film-map-toggle > input[type="checkbox"]:focus-visible,
+.proof-enable-row > input[type="checkbox"]:focus-visible,
+.gradient-luma-toggle > input[type="checkbox"]:focus-visible {
+  outline: 0;
+  box-shadow: var(--instrument-slider-thumb-focus-shadow);
 }
 
 .local-lane-folder > .local-lane-switch button.active strong,

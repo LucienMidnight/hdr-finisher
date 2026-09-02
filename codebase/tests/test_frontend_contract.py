@@ -448,6 +448,8 @@ def test_refined_slider_surfaces_full_bleed_sections_and_product_lockup() -> Non
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
     assert '<p class="product-name">HDR FINISHER</p>' in html
+    assert "Cinema Print" not in html
+    assert "Exposure dependent" not in html
     product_block = css[css.rindex(".product-name {"):]
     assert "font-family: var(--font-display);" in product_block
     assert "text-transform: uppercase;" in product_block
@@ -464,6 +466,8 @@ def test_refined_slider_surfaces_full_bleed_sections_and_product_lockup() -> Non
 
     assert "--instrument-slider-channel-shadow: inset" in css
     assert "--instrument-slider-channel-background: linear-gradient(180deg" in css
+    assert "--instrument-slider-channel-background: linear-gradient(180deg, #cbcbcb 0%, #d4d4d4 38%, #d9d9d9 100%);" in css
+    assert "inset 0 -1px 0 rgba(0, 0, 0, 0.08)" in css
     assert "--instrument-slider-thumb-focus-shadow:" in css
     assert "--segment-channel-background: linear-gradient(180deg" in css
     assert "--segment-selected-background: linear-gradient(180deg" in css
@@ -484,11 +488,29 @@ def test_refined_slider_surfaces_full_bleed_sections_and_product_lockup() -> Non
         final_refinement.index('.checkbox-row > input[type="checkbox"]:checked,'):
         final_refinement.index("/* Five genuine Tabler tools")
     ]
-    assert "border: 0;" in toggle_block
-    assert "border: 0;" in checked_toggle_block
+    assert "border: 2px solid transparent;" in toggle_block
+    assert "border-color: transparent;" in checked_toggle_block
     assert "background-color: var(--accent);" in checked_toggle_block
     assert 'input[type="checkbox"]::before' in final_refinement
-    assert "z-index: 1;" in final_refinement
+    assert 'input[type="checkbox"]::after' not in final_refinement
+    toggle_knob_block = toggle_block[toggle_block.index('input[type="checkbox"]::before'):]
+    assert "width: 46px;" in toggle_block
+    assert "height: 20px;" in toggle_block
+    assert "top: 50%;" in toggle_knob_block
+    assert "left: 0;" in toggle_knob_block
+    assert "width: 16px;" in toggle_knob_block
+    assert "height: 16px;" in toggle_knob_block
+    assert "border: 0;" in toggle_knob_block
+    assert "background: linear-gradient(180deg" in toggle_knob_block
+    assert 'content: "ON";' not in checked_toggle_block
+    assert "transform: translate(28px, -50%);" in checked_toggle_block
+    film_module_header_block = css[css.index(".film-module-header {"):css.index(".film-module-header > span")]
+    assert "font-size: 10px;" in film_module_header_block
+    select_label_block = css[css.index("label.select-control {"):css.index("[data-film-grain-custom][hidden]")]
+    assert "font-family: var(--sans);" in select_label_block
+    assert "font-size: 10.5px;" in select_label_block
+    assert "letter-spacing: 0;" in select_label_block
+    assert "text-transform: none;" in select_label_block
     assert '.compact-subrail input[type="range"]::-webkit-slider-runnable-track' in final_refinement
     assert "height: var(--instrument-compact-slider-track-h);" in final_refinement
     product_mark_block = css[css.rindex(".product-mark {"):css.index(".workflow-tabs {", css.rindex(".product-mark {"))]
