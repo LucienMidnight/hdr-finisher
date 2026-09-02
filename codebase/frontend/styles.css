@@ -318,6 +318,15 @@
   --segment-channel-background: linear-gradient(180deg, #262626, #303030);
   --segment-selected-background: linear-gradient(180deg, #4a4a4a, #3a3a3a);
   --segment-selected-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 5px rgba(0, 0, 0, 0.4);
+  /* The default channel gradient/shadow are tuned near-black for the default
+     dark theme's near-black surround; against Studio Gray's lighter panels
+     that leaves the rail almost indistinguishable from its own surround, so
+     the inset shadow that is supposed to read as depth has no headroom to
+     show against. Lift the channel into this theme's own tonal range so the
+     recess (and the fill riding inside it) reads as contained by a visible
+     rail again. */
+  --instrument-slider-channel-background: linear-gradient(180deg, #202020 0%, #242424 38%, #2c2c2c 100%);
+  --instrument-slider-channel-shadow: inset 0 2.5px 3px rgba(0, 0, 0, 0.55), inset 0 -1.5px 0 rgba(255, 255, 255, 0.1), 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 * {
@@ -3452,6 +3461,14 @@ input[type="text"] {
 .group-toggle::before {
   content: "";
   display: inline-block;
+  /* .group-toggle is a flex row (chevron, label, badge) and every flex item
+     defaults to flex-shrink: 1. A long label that needs to wrap to 2-3 lines
+     still overflows the row's fixed width even in its narrowest state, so
+     the browser shrinks ALL items to compensate — including this fixed
+     18x18 chevron, squeezing it toward zero width until it renders invisible
+     and lets the label's text bleed left into where it used to sit. Pin the
+     chevron's size so only the label ever gives up width. */
+  flex: 0 0 auto;
   width: var(--group-chevron-width);
   height: var(--group-chevron-width);
   margin-right: var(--group-chevron-gap);
@@ -5232,9 +5249,11 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 .perspective-editor-overlay line { stroke: var(--accent-strong); stroke-width: 2; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 1px #000) drop-shadow(0 0 2px #000); }
 .perspective-guide-handle { position: absolute; width: 18px; height: 18px; padding: 0; border: 2px solid #111; border-radius: 50%; background: var(--accent-strong); box-shadow: 0 0 0 1px #fff; cursor: move; transform: translate(-50%, -50%); touch-action: none; }
 .perspective-guide-handle:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
-.perspective-tool-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 12px; }
+.perspective-tool-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 8px; }
 .perspective-tool-strip button { display: grid; min-height: 48px; grid-template-columns: auto 1fr; align-items: center; gap: 7px; padding: 7px; border: 1px solid var(--hairline); background: var(--raised); color: var(--text); }
 .perspective-tool-strip button.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--raised)); }
+.perspective-guide-apply { width: 100%; margin-bottom: 12px; }
+.perspective-guide-apply:disabled { opacity: .5; cursor: default; }
 .proof-preview-switch { display: inline-flex; align-items: center; gap: 2px; width: max-content; padding: 2px; border: 1px solid var(--hairline); border-radius: 7px; background: var(--panel); }
 .proof-preview-switch button { border: 0; border-radius: 5px; padding: 6px 10px; background: transparent; color: var(--muted); cursor: pointer; }
 .proof-preview-switch button.active { background: var(--raised); color: var(--text); box-shadow: inset 0 0 0 1px var(--hairline); }
@@ -7666,6 +7685,7 @@ body {
 .control-group-header::before {
   content: "--";
   position: absolute;
+  top: 50%;
   left: var(--group-index-left);
   width: var(--group-index-width);
   color: var(--quiet);
@@ -7675,6 +7695,7 @@ body {
   text-align: left;
   pointer-events: none;
   z-index: 1;
+  transform: translateY(-50%);
 }
 
 /* Extend the existing disclosure button beneath the painted index so the
@@ -7760,10 +7781,12 @@ body {
 .raw-development-group .disclosure-trigger::after {
   content: "01";
   position: absolute;
+  top: 50%;
   left: var(--group-index-left);
   color: var(--quiet);
   font: 700 var(--group-index-font-size)/1 var(--font-technical);
   font-variant-numeric: tabular-nums;
+  transform: translateY(-50%);
 }
 
 .raw-development-group .disclosure-trigger[aria-expanded="true"]::after {
@@ -7793,11 +7816,23 @@ body {
 
 .control-row > .range-shell .slider-fill,
 .instrument-slider-control > .range-shell .slider-fill {
-  top: calc((var(--instrument-slider-hit-h) - var(--instrument-slider-track-h)) / 2 + 2px);
-  left: var(--fill-start, 2px);
+  --fill-inset: 2px;
+  --fill-h-inset: 1px;
+  top: calc((var(--instrument-slider-hit-h) - var(--instrument-slider-track-h)) / 2 + var(--fill-inset));
+  /* --fill-start is a raw percentage from JS with no floor, so a fill that
+     starts at the rail's own minimum (0%) used to sit flush against the true
+     left edge of the shell instead of the inset every other side of the fill
+     respects (see the top/height/max-width insets around it) — it rode right
+     over the rail's rounded/chamfered start cap. Clamp it to a small inset so
+     the fill always sits inside the rail, matching the right edge's slack
+     from max-width below. Kept separate from --fill-inset (the vertical
+     inset) since the horizontal gap only needs to be enough to reveal the
+     rail's rounded cap, not match the 2px top/bottom reveal. --fill-h-inset
+     also lets the compact sub-rail (half the track height) use half of it. */
+  left: max(var(--fill-start, var(--fill-h-inset)), var(--fill-h-inset));
   width: var(--fill-w);
-  height: calc(var(--instrument-slider-track-h) - 4px);
-  max-width: calc(100% - 4px);
+  height: calc(var(--instrument-slider-track-h) - (var(--fill-inset) * 2));
+  max-width: calc(100% - (var(--fill-h-inset) * 2));
   border-radius: var(--radius-pill);
   background: linear-gradient(180deg, var(--accent-strong), var(--accent-low));
   box-shadow: 0 0 7px color-mix(in srgb, var(--accent) 25%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.35);
@@ -7830,11 +7865,11 @@ body {
 .primary-tint-hue { --color-rail-spectrum: linear-gradient(90deg, #53a7b1, #5368b5, #b84f9a, #e05273, #d3ad5b, #54a579, #53a7b1); }
 .primary-tint-purity { --color-rail-spectrum: linear-gradient(90deg, #718080, #c86d97); }
 .control-row[data-control-path$=".white_balance_kelvin"],
-.instrument-slider-control:has(> input[data-local-grade="white_balance_kelvin"]) {
+.instrument-slider-control:has(input[data-local-grade="white_balance_kelvin"]) {
   --color-rail-spectrum: linear-gradient(90deg, #526fbd 0%, #8db5df 27%, #e8edf0 50%, #efc781 73%, #cf7133 100%);
 }
 .control-row[data-control-path$=".tint"],
-.instrument-slider-control:has(> input[data-local-grade="tint"]) {
+.instrument-slider-control:has(input[data-local-grade="tint"]) {
   --color-rail-spectrum: linear-gradient(90deg, #c56398 0%, #91a39a 50%, #3f8f62 100%);
 }
 
@@ -7848,12 +7883,19 @@ body {
 .control-row.primary-tint-purity > .range-shell .slider-track,
 .control-row[data-control-path$=".white_balance_kelvin"] .slider-track,
 .control-row[data-control-path$=".tint"] .slider-track,
-.instrument-slider-control:has(> input[data-local-grade="white_balance_kelvin"]) .slider-track,
-.instrument-slider-control:has(> input[data-local-grade="tint"]) .slider-track {
+.instrument-slider-control:has(input[data-local-grade="white_balance_kelvin"]) .slider-track,
+.instrument-slider-control:has(input[data-local-grade="tint"]) .slider-track {
   background:
     linear-gradient(180deg, rgba(0, 0, 0, 0.5) 0%, transparent 44%, rgba(255, 255, 255, 0.16) 100%),
     var(--color-rail-spectrum);
-  box-shadow: var(--instrument-slider-channel-shadow);
+  /* --instrument-slider-channel-shadow is a directional (top-lit) inset tuned
+     to read against this theme's near-neutral rail color. A spectrum rail's
+     own hue varies end to end — the same shadow all but disappears against
+     whichever stop is already bright (e.g. the orange end of the Kelvin
+     ramp), which is why the chamfer looked like it was fading in and out.
+     Layer in a uniform inset keyline so both rounded caps stay legible no
+     matter how light the spectrum gets at that point. */
+  box-shadow: var(--instrument-slider-channel-shadow), inset 0 0 0 1px rgba(0, 0, 0, 0.45);
 }
 
 .control-row.primary-red-hue > .range-shell .slider-fill,
@@ -7866,8 +7908,30 @@ body {
 .control-row.primary-tint-purity > .range-shell .slider-fill,
 .control-row[data-control-path$=".white_balance_kelvin"] .slider-fill,
 .control-row[data-control-path$=".tint"] .slider-fill,
-.instrument-slider-control:has(> input[data-local-grade="white_balance_kelvin"]) .slider-fill,
-.instrument-slider-control:has(> input[data-local-grade="tint"]) .slider-fill {
+.instrument-slider-control:has(input[data-local-grade="white_balance_kelvin"]) .slider-fill,
+.instrument-slider-control:has(input[data-local-grade="tint"]) .slider-fill,
+/* The :not(.modified) muted-fill rule below (.control-row:not(.modified) >
+   .range-shell .slider-fill) is 4 classes deep and outranks every selector
+   above once a control sits at its default value — including the plain
+   .control-row[data-control-path$="…"] rows the global HDR/SDR Temperature
+   and Tint sliders actually use (only 3 classes deep). That let a
+   translucent gray wash sit over the spectrum at rest and vanish the moment
+   the row picked up .modified from a drag, which read as the rail
+   "changing" on interaction. Repeat every selector above with :not(.modified)
+   appended so each carries enough specificity to win in the unmodified
+   state too, regardless of which markup variant a given colored slider uses. */
+.control-row.primary-red-hue:not(.modified) > .range-shell .slider-fill,
+.control-row.primary-red-purity:not(.modified) > .range-shell .slider-fill,
+.control-row.primary-green-hue:not(.modified) > .range-shell .slider-fill,
+.control-row.primary-green-purity:not(.modified) > .range-shell .slider-fill,
+.control-row.primary-blue-hue:not(.modified) > .range-shell .slider-fill,
+.control-row.primary-blue-purity:not(.modified) > .range-shell .slider-fill,
+.control-row.primary-tint-hue:not(.modified) > .range-shell .slider-fill,
+.control-row.primary-tint-purity:not(.modified) > .range-shell .slider-fill,
+.control-row[data-control-path$=".white_balance_kelvin"]:not(.modified) .slider-fill,
+.control-row[data-control-path$=".tint"]:not(.modified) .slider-fill,
+.instrument-slider-control:has(input[data-local-grade="white_balance_kelvin"]):not(.modified) .slider-fill,
+.instrument-slider-control:has(input[data-local-grade="tint"]):not(.modified) .slider-fill {
   background: transparent;
   box-shadow: none;
   opacity: 1;
@@ -7998,6 +8062,9 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
 }
 
 .slider-group-tile .compact-subrail .slider-fill {
+  /* Half the standard rail's inset, matching this rail's half-height track. */
+  --fill-inset: 1px;
+  --fill-h-inset: 0.5px;
   top: calc((var(--instrument-slider-hit-h) - var(--instrument-compact-slider-track-h)) / 2 + 1px);
   height: calc(var(--instrument-compact-slider-track-h) - 2px);
 }
