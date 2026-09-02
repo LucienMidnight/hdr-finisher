@@ -73,6 +73,8 @@ def _finishing_adjustments_for_export(session: object) -> AdjustmentState:
     adjustments = getattr(session, "adjustments").model_copy(deep=True)
     adjustments.hdr.film_look.halation_view_map = False
     adjustments.sdr.film_look.halation_view_map = False
+    adjustments.hdr.film_look.grain_view_map = False
+    adjustments.sdr.film_look.grain_view_map = False
     return adjustments
 
 

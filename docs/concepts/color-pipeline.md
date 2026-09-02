@@ -178,7 +178,7 @@ Values beyond graph endpoints are extended with endpoint slopes before conversio
 
 Both branches carry the same nested `film_look` schema and a separate top-level bypass. Film Response works in a perceptual branch domain, so the HDR path retains values above diffuse white rather than applying an SDR print ceiling. Halation and Bloom qualify highlights relative to that branch. Spatial radii are stored as percentages of image diagonal.
 
-The CPU renderer and two-pass WebGPU renderer use the same operation order and parameter meanings. `shared.film_grain_seed` anchors the spatial grain field across HDR and SDR; branch-specific response controls may change its amplitude but not its phase. The Halation qualification map is a viewer diagnostic and export backends force it off on a deep copy of the adjustment state.
+The CPU renderer and two-pass WebGPU renderer use the same operation order and parameter meanings. `shared.film_grain_seed` anchors the spatial grain field across HDR and SDR; branch-specific response controls may change its amplitude but not its phase. The Halation qualification map and the grain map are viewer diagnostics and export backends force them off on a deep copy of the adjustment state.
 
 ## Scopes and overlays
 

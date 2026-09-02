@@ -209,6 +209,10 @@ def apply_matched_final_grain(
         grain_adjustments.sdr.film_look = match.captured_hdr_adjustments.film_look.model_copy(deep=True)
         grain_adjustments.sdr.film_look_section_enabled = match.captured_hdr_adjustments.film_look_section_enabled
         grain_adjustments.shared.film_grain_seed = match.captured_shared_adjustments.film_grain_seed
+        # The diagnostic maps are viewer-only, so they follow the SDR branch's
+        # own checkboxes rather than the captured HDR recipe.
+        grain_adjustments.sdr.film_look.grain_view_map = adjustments.sdr.film_look.grain_view_map
+        grain_adjustments.sdr.film_look.halation_view_map = adjustments.sdr.film_look.halation_view_map
         return apply_final_grain(image, grain_adjustments, PreviewKind.SDR)
     return apply_final_grain(image, adjustments, PreviewKind.SDR)
 
@@ -1089,7 +1093,9 @@ def _apply_film_look(
         look.image_softness != 0.0 or look.microcontrast != 0.0
     )
     resolution_active = look.film_resolution < 100.0
-    grain_active = include_grain and look.grain_enabled and look.grain_amount > 0.0
+    grain_active = include_grain and look.grain_enabled and (
+        look.grain_amount > 0.0 or look.grain_view_map
+    )
     active = any(
         (
             response_active,
@@ -1122,8 +1128,12 @@ def _apply_film_look(
         result = _apply_image_structure(result, look, kind, strength, spatial_source=spatial_source)
     if resolution_active:
         result = _apply_film_resolution(result, look, strength, spatial_source=spatial_source)
-    if look.grain_enabled:
-        if include_grain and look.grain_amount > 0.0 and strength > 0.0:
+    if include_grain and look.grain_enabled and strength > 0.0:
+        if look.grain_view_map:
+            return _apply_density_grain(
+                result, look, kind, adjustments.shared.film_grain_seed, strength, view_map=True
+            )
+        if look.grain_amount > 0.0:
             result = _apply_density_grain(result, look, kind, adjustments.shared.film_grain_seed, strength)
     return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
 
@@ -1135,7 +1145,17 @@ def apply_final_grain(image: np.ndarray, adjustments: AdjustmentState, kind: Pre
         return image
     look = branch.film_look
     strength = np.float32(look.look_strength / 100.0)
-    if not look.grain_enabled or look.grain_amount <= 0.0 or strength <= 0.0:
+    if not look.grain_enabled or strength <= 0.0:
+        return image
+    if look.halation_enabled and look.halation_view_map:
+        # The halation map replaces the picture upstream, on this path and in
+        # the WebGPU shader alike. Grain must not be sprinkled over it.
+        return image
+    if look.grain_view_map:
+        return _apply_density_grain(
+            image, look, kind, adjustments.shared.film_grain_seed, strength, view_map=True
+        )
+    if look.grain_amount <= 0.0:
         return image
     return _apply_density_grain(image, look, kind, adjustments.shared.film_grain_seed, strength)
 
@@ -1600,8 +1620,16 @@ def _apply_film_resolution(
 
 
 def _apply_density_grain(
-    image: np.ndarray, look: object, kind: PreviewKind, seed: int, master: np.float32
+    image: np.ndarray, look: object, kind: PreviewKind, seed: int, master: np.float32, *, view_map: bool = False
 ) -> np.ndarray:
+    """Modulate the frame by the film grain density field.
+
+    ``view_map`` substitutes a neutral mid-grey card for the picture after the
+    tonal response has been measured from it, so the viewer sees the grain
+    field alone at exactly the density it is contributing to a mid-grey
+    subject, still carrying the shadow/midtone/highlight qualification the
+    image drives.
+    """
     height, width = image.shape[:2]
     yy, xx = np.indices((height, width), dtype=np.float32)
     physical_pitch = np.float32(_grain_pitch_pixels(width, height, look))
@@ -1624,7 +1652,10 @@ def _apply_density_grain(
     )
     amount = np.float32(0.18 * look.grain_amount / 100.0) * master * pixel_coverage
     density_noise = monochrome * response * amount
-    result = np.maximum(image, 0.0) * np.exp2(density_noise[..., None])
+    base = image
+    if view_map:
+        base = np.full_like(image, _film_decode_luma(np.float32(0.5), kind))
+    result = np.maximum(base, 0.0) * np.exp2(density_noise[..., None])
 
     chroma_mix = np.float32(look.grain_chroma / 100.0)
     if chroma_mix > 0.0:

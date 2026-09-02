@@ -1,5 +1,5 @@
 (function () {
-  const PARAM_COUNT = 158;
+  const PARAM_COUNT = 159;
   const CURVE_SAMPLES = 1024;
   const PEAK_HISTOGRAM_BINS = 4096;
   const PEAK_REDUCTION_SHADER_SOURCE = `
@@ -2621,6 +2621,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       : grain.grain_capture_geometry === "vertical_strip" ? 2 : 0;
     params[156] = grainSectionEnabled ? 1 : 0;
     params[157] = grainSectionEnabled ? (grain.look_strength ?? 100) / 100 : 0;
+    // Viewer-only diagnostic: it follows this branch's checkbox even when the
+    // grain recipe itself is inherited from a captured HDR match.
+    params[158] = film.grain_view_map ? 1 : 0;
     params[110] = lane === "hdr" && branch.highlight_compression_color_handling === "path_to_white" ? 1 : 0;
     const grading = branch.color_grading || {};
     params[111] = branch.color_grading_section_enabled !== false ? 1 : 0;
@@ -3695,7 +3698,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         }
       }
       rgb = applyVignette(rgb, coordinate);
-      if (p[156] > 0.5 && p[157] > 0.0 && p[100] > 0.5 && p[101] > 0.0) {
+      if (p[156] > 0.5 && p[157] > 0.0 && p[100] > 0.5 && (p[101] > 0.0 || p[158] > 0.5)) {
         let pixelsPerMm = filmPixelsPerMm(dimensions);
         let physicalPitch = pixelsPerMm * (6.0 + 24.0 * p[102]) / 1000.0;
         let pitch = max(1.0, physicalPitch);
@@ -3708,6 +3711,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         let midWeight = max(0.0, 1.0 - shadowWeight - highlightWeight);
         let response = shadowWeight * p[105] + midWeight * p[106] + highlightWeight * p[107];
         let amount = 0.18 * p[101] * p[157] * response * pixelCoverage;
+        // The view map swaps the picture for a neutral mid-grey card once the
+        // tonal response has been read from it, isolating the grain field.
+        if (p[158] > 0.5) { rgb = vec3f(filmLumaFromSignal(0.5)); }
         rgb *= exp2(vec3f(mono * amount));
         if (p[104] > 0.0) {
           let chroma = vec3f(grainValueNoise(grainCoordinate, 31.0), grainValueNoise(grainCoordinate, 59.0), grainValueNoise(grainCoordinate, 83.0));

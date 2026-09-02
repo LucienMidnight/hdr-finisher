@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import copy
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 from pydantic import ValidationError
 
 import hdr_finisher.adjustments as adjustments_module
+import hdr_finisher.exporters as exporters
 
 from hdr_finisher.adjustments import (
     _apply_hdr_adjustments,
@@ -68,6 +70,96 @@ def test_film_grain_is_deterministic_and_seeded_from_shared_adjustments() -> Non
     changed_seed.shared.film_grain_seed += 1
     third = apply_adjustments(image, changed_seed, PreviewKind.HDR)
     assert not np.array_equal(first, third)
+
+
+@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
+def test_grain_view_map_isolates_the_grain_field_on_a_neutral_card(kind: PreviewKind) -> None:
+    rng = np.random.default_rng(4471)
+    image = rng.random((24, 32, 3), dtype=np.float32)
+    if kind == PreviewKind.HDR:
+        image *= np.float32(6.0)
+    state = AdjustmentState()
+    look = getattr(state, kind.value).film_look
+    look.grain_amount = 60
+    look.print_strength = 40
+    graded = apply_adjustments(image, state, kind)
+
+    look.grain_view_map = True
+    grain_map = apply_adjustments(image, state, kind)
+
+    # The picture is gone: every pixel is the lane's mid-grey card carrying only
+    # the grain density, so the map stays achromatic and centred on that grey.
+    neutral = float(adjustments_module._film_decode_luma(np.float32(0.5), kind))
+    np.testing.assert_allclose(grain_map[..., 0], grain_map[..., 1], rtol=0.0, atol=1e-6)
+    np.testing.assert_allclose(grain_map[..., 1], grain_map[..., 2], rtol=0.0, atol=1e-6)
+    assert float(np.mean(grain_map)) == pytest.approx(neutral, rel=0.05)
+    assert float(np.std(grain_map)) > 0.0
+    assert not np.array_equal(grain_map, graded)
+
+
+def test_grain_view_map_reports_the_tonal_response_qualification() -> None:
+    # A flat grey card would hide the response sliders, so the map keeps the
+    # qualification the picture drives: a dark half attenuated by a zeroed
+    # shadow response must carry visibly less grain than a mid-grey half.
+    image = np.concatenate(
+        [
+            np.full((64, 64, 3), 0.02, dtype=np.float32),
+            np.full((64, 64, 3), 0.18, dtype=np.float32),
+        ],
+        axis=1,
+    )
+    state = AdjustmentState()
+    look = state.hdr.film_look
+    look.grain_amount = 70
+    look.grain_size = 100
+    look.grain_shadow_response = 0
+    look.grain_midtone_response = 150
+    look.grain_view_map = True
+    grain_map = apply_adjustments(image, state, PreviewKind.HDR)
+
+    shadow_side = float(np.std(grain_map[:, :64]))
+    midtone_side = float(np.std(grain_map[:, 64:]))
+    assert 0.0 < shadow_side < midtone_side * 0.85
+
+    look.grain_shadow_response = 0
+    look.grain_midtone_response = 0
+    look.grain_highlight_response = 0
+    silent = apply_adjustments(image, state, PreviewKind.HDR)
+    assert float(np.std(silent)) == pytest.approx(0.0, abs=1e-7)
+
+
+def test_halation_view_map_keeps_precedence_over_the_grain_view_map() -> None:
+    rng = np.random.default_rng(77)
+    image = rng.random((24, 24, 3), dtype=np.float32) * np.float32(8.0)
+    state = AdjustmentState()
+    look = state.hdr.film_look
+    look.halation_amount = 40
+    look.halation_view_map = True
+    halation_only = apply_adjustments(image, state, PreviewKind.HDR)
+
+    look.grain_amount = 60
+    look.grain_view_map = True
+    np.testing.assert_array_equal(apply_adjustments(image, state, PreviewKind.HDR), halation_only)
+
+
+def test_grain_view_map_is_flat_without_grain_and_never_reaches_export() -> None:
+    image = np.full((16, 16, 3), 0.18, dtype=np.float32)
+    state = AdjustmentState()
+    state.hdr.film_look.grain_view_map = True
+    flat = apply_adjustments(image, state, PreviewKind.HDR)
+    assert float(np.std(flat)) == pytest.approx(0.0, abs=1e-7)
+
+    state.hdr.film_look.grain_amount = 40
+    stripped = exporters._finishing_adjustments_for_export(SimpleNamespace(adjustments=state))
+    assert stripped.hdr.film_look.grain_view_map is False
+    assert stripped.sdr.film_look.grain_view_map is False
+
+    delivered = state.model_copy(deep=True)
+    delivered.hdr.film_look.grain_view_map = False
+    np.testing.assert_array_equal(
+        apply_adjustments(image, stripped, PreviewKind.HDR),
+        apply_adjustments(image, delivered, PreviewKind.HDR),
+    )
 
 
 def test_physical_grain_pitch_grows_as_film_format_shrinks() -> None:

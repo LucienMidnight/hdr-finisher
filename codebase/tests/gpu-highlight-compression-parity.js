@@ -28,7 +28,7 @@ function assert(condition, message) {
         0.1, 0.1, 10, 1,
       ]);
       device.queue.writeTexture({ texture }, source, { bytesPerRow: 3 * 16 }, { width: 3, height: 1 });
-      const params = new Float32Array(158);
+      const params = new Float32Array(159);
       params[2] = 0.7;
       params[8] = 0.5;
       params[9] = 0.1845;

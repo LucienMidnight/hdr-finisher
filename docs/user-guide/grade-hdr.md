@@ -130,7 +130,7 @@ Film Look is the final creative layer after Curves. Open its **Preset** browser 
 - **Halation** adds warm edge scatter around branch-relative highlights. Sensitivity selects analogous highlight populations in HDR and SDR; **View qualification map** is a preview diagnostic and is never baked into an export.
 - **Bloom & Diffusion** creates a broader, mostly neutral highlight glow using a smooth linear-light diffusion filter. Highlight Detail separates optical bloom from core diffusion: at 100% the source edge stays intact beneath the added glow; lower values progressively move highlight energy outward and soften the bright core.
 - **Image Structure** softens brittle digital edges or adjusts microcontrast before grain.
-- **Grain** varies through shadows, midtones, and highlights. Film Resolution controls the pre-grain resolving character; grain is always the last operation.
+- **Grain** varies through shadows, midtones, and highlights. Film Resolution controls the pre-grain resolving character; grain is always the last operation. **View grain map** isolates the grain field on a neutral mid-grey card so size, softness, chroma, and the shadow/midtone/highlight response can be judged without the picture; like the Halation map it is a preview diagnostic and never reaches an export.
 
 Radius values are percentages of image diagonal, so their apparent scale remains consistent between proxy preview and full-resolution export. The HDR and SDR branches share a deterministic grain field while retaining independent grain strength and response.
 

@@ -175,6 +175,7 @@ class FilmLookAdjustments(BaseModel):
     grain_shadow_response: float = Field(default=100.0, ge=0.0, le=150.0)
     grain_midtone_response: float = Field(default=100.0, ge=0.0, le=150.0)
     grain_highlight_response: float = Field(default=100.0, ge=0.0, le=150.0)
+    grain_view_map: bool = False
     film_resolution: float = Field(default=100.0, ge=0.0, le=100.0)
 
     halation_enabled: bool = True

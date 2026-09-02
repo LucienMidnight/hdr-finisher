@@ -596,6 +596,7 @@ const defaultFilmLook = () => ({
   grain_shadow_response: 100,
   grain_midtone_response: 100,
   grain_highlight_response: 100,
+  grain_view_map: false,
   film_resolution: 100,
   halation_enabled: true,
   halation_amount: 0,
@@ -622,6 +623,7 @@ function completeFilmLookRecipe(values) {
     ...values,
     reference_model: "custom",
     halation_view_map: false,
+    grain_view_map: false,
   });
 }
 
@@ -7322,6 +7324,12 @@ function commitAdjustmentValue(path, value, { manual = false } = {}) {
     : null;
   if (grainField && SDR_MATCH_GRAIN_FIELDS.includes(grainField)) prepareSdrMatchGrainOverride();
   setValueByPath(state.adjustments, path, value);
+  // Only one film look diagnostic map can be on screen at a time.
+  if (value === true && /film_look\.(halation|grain)_view_map$/.test(resolvedPath)) {
+    const companion = resolvedPath.endsWith("halation_view_map") ? "grain_view_map" : "halation_view_map";
+    setValueByPath(state.adjustments, resolvedPath.replace(/[^.]+$/, companion), false);
+    syncControlsFromState();
+  }
   if (resolvedPath.startsWith("hdr.highlight_compression_")) normalizeHighlightCompressionControls(resolvedPath);
   if (path === "shared.false_color_band_anchor" || path === "shared.false_color_ceiling_nits") {
     renderOverlayPresetNote();

@@ -81,6 +81,7 @@ Film Look uses the same structure in each branch. Amount and sensitivity control
 | Grain Amount / Size / Softness / Chroma | Set density-grain strength, scale, clumping, and colored component. | 0–100% |
 | Shadow / Midtone / Highlight Response | Weight grain by local density instead of overlaying uniform noise. | 0–150% |
 | Film Resolution | Reduces pre-grain resolving character as the value moves below 100%. | 0–100% |
+| View grain map | Replaces the viewer with the grain field alone, painted on a neutral mid-grey card that still carries the tonal response the picture drives. It is suppressed during export, and the Halation map takes precedence if both are on. | Off/On |
 
 The deterministic grain seed lives in shared adjustment state. HDR and SDR can use different response values but sample the same spatial field.
 
