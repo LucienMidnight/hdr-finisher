@@ -893,7 +893,7 @@ def perspective_solve(session_id: str, request: PerspectiveSolveRequest) -> Pers
         session = store.get(session_id)
         _check_revision(session.edit_revision, request.edit_revision)
         source, _working_space = session.render_cache.source_proxy(PreviewKind.HDR, 512)
-        horizontal, vertical, straighten, residual = solve_perspective_guides(
+        horizontal, vertical, perspective_rotate, residual = solve_perspective_guides(
             source.shape[1],
             source.shape[0],
             request.adjustments.shared.geometry,
@@ -909,7 +909,7 @@ def perspective_solve(session_id: str, request: PerspectiveSolveRequest) -> Pers
     return PerspectiveSolveResponse(
         perspective_horizontal=horizontal,
         perspective_vertical=vertical,
-        straighten_angle=straighten,
+        perspective_rotate=perspective_rotate,
         residual_degrees=residual,
     )
 

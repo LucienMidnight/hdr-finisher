@@ -786,9 +786,11 @@
             <button id="perspective-vertical-tool" type="button" aria-pressed="false"><span aria-hidden="true">&#8597;</span><span>Vertical Guides</span></button>
             <button id="perspective-horizontal-tool" type="button" aria-pressed="false"><span aria-hidden="true">&#8596;</span><span>Horizontal Guides</span></button>
           </div>
+          <button id="perspective-guide-apply" class="button-secondary perspective-guide-apply" type="button" disabled>Apply Guides</button>
           <div class="control-row" data-control-path="shared.geometry.perspective_horizontal"><div class="control-heading"><label for="perspective-horizontal">Horizontal</label><output id="perspective-horizontal-value">0</output></div><input id="perspective-horizontal" type="range" min="-100" max="100" step="1" value="0"></div>
           <div class="control-row" data-control-path="shared.geometry.perspective_vertical"><div class="control-heading"><label for="perspective-vertical">Vertical</label><output id="perspective-vertical-value">0</output></div><input id="perspective-vertical" type="range" min="-100" max="100" step="1" value="0"></div>
-          <p class="helper">Place both guides along edges that should be parallel. Guided correction may also update Straighten.</p>
+          <div class="control-row" data-control-path="shared.geometry.perspective_rotate"><div class="control-heading"><label for="perspective-rotate">Rotate</label><output id="perspective-rotate-value">0.0&deg;</output></div><input id="perspective-rotate" type="range" min="-45" max="45" step="0.1" value="0"></div>
+          <p class="helper"><strong>Place both guides along edges that should be parallel.</strong></p>
           <p id="perspective-status" class="support-copy" aria-live="polite">Choose a guide tool or move a slider.</p>
           <div class="crop-editor-actions"><button id="perspective-cancel" class="button-secondary" type="button">Cancel</button><button id="perspective-apply" class="button-primary" type="button">Apply perspective</button></div>
         </div>

@@ -257,6 +257,7 @@ class GeometryAdjustments(BaseModel):
     straighten_angle: float = Field(default=0.0, ge=-45.0, le=45.0)
     perspective_horizontal: float = Field(default=0.0, ge=-100.0, le=100.0)
     perspective_vertical: float = Field(default=0.0, ge=-100.0, le=100.0)
+    perspective_rotate: float = Field(default=0.0, ge=-45.0, le=45.0)
     crop: CropRectangle = Field(default_factory=CropRectangle)
     ratio_mode: Literal[
         "free", "original", "1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "2:1", "custom"
@@ -1125,7 +1126,7 @@ class PerspectiveSolveRequest(BaseModel):
 class PerspectiveSolveResponse(BaseModel):
     perspective_horizontal: float = Field(ge=-100.0, le=100.0)
     perspective_vertical: float = Field(ge=-100.0, le=100.0)
-    straighten_angle: float = Field(ge=-45.0, le=45.0)
+    perspective_rotate: float = Field(ge=-45.0, le=45.0)
     residual_degrees: float = Field(ge=0.0)
 
 

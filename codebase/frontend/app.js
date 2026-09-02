@@ -379,6 +379,8 @@ const state = {
   perspectiveTool: null,
   perspectiveGuides: null,
   perspectiveGuidesTouched: { vertical: false, horizontal: false },
+  perspectiveGuidesDirty: false,
+  perspectiveResetPending: false,
   perspectiveGuideDrag: null,
   perspectivePreviewController: null,
   perspectivePreviewTimer: 0,
@@ -670,6 +672,7 @@ const defaultGeometry = () => ({
   straighten_angle: 0,
   perspective_horizontal: 0,
   perspective_vertical: 0,
+  perspective_rotate: 0,
   crop: { x: 0, y: 0, width: 1, height: 1 },
   ratio_mode: "free",
   custom_ratio: { width: 1, height: 1 },
@@ -692,6 +695,7 @@ function geometryTransformIsNeutral(geometry = state.adjustments.shared?.geometr
     && Math.abs(Number(geometry?.straighten_angle) || 0) < 1e-8
     && Math.abs(Number(geometry?.perspective_horizontal) || 0) < 1e-8
     && Math.abs(Number(geometry?.perspective_vertical) || 0) < 1e-8
+    && Math.abs(Number(geometry?.perspective_rotate) || 0) < 1e-8
     && Math.abs((Number(crop.x) || 0)) < 1e-8
     && Math.abs((Number(crop.y) || 0)) < 1e-8
     && Math.abs((Number(crop.width) || 1) - 1) < 1e-8
@@ -1341,10 +1345,13 @@ const els = {
   swapCustomRatio: document.getElementById("swap-custom-ratio"),
   perspectiveVerticalTool: document.getElementById("perspective-vertical-tool"),
   perspectiveHorizontalTool: document.getElementById("perspective-horizontal-tool"),
+  perspectiveGuideApply: document.getElementById("perspective-guide-apply"),
   perspectiveHorizontal: document.getElementById("perspective-horizontal"),
   perspectiveVertical: document.getElementById("perspective-vertical"),
+  perspectiveRotate: document.getElementById("perspective-rotate"),
   perspectiveHorizontalValue: document.getElementById("perspective-horizontal-value"),
   perspectiveVerticalValue: document.getElementById("perspective-vertical-value"),
+  perspectiveRotateValue: document.getElementById("perspective-rotate-value"),
   perspectiveStatus: document.getElementById("perspective-status"),
   perspectiveApply: document.getElementById("perspective-apply"),
   perspectiveCancel: document.getElementById("perspective-cancel"),
@@ -1372,8 +1379,18 @@ const els = {
 };
 
 const controlGroups = {
-  geometry: ["shared.geometry"],
-  perspective: ["shared.geometry.perspective_horizontal", "shared.geometry.perspective_vertical"],
+  // Perspective owns its own three fields and its own Reset; Crop & Rotate's
+  // Reset should only touch what it owns, not silently sweep up perspective too.
+  geometry: [
+    "shared.geometry.rotation",
+    "shared.geometry.flip_horizontal",
+    "shared.geometry.flip_vertical",
+    "shared.geometry.straighten_angle",
+    "shared.geometry.crop",
+    "shared.geometry.ratio_mode",
+    "shared.geometry.custom_ratio",
+  ],
+  perspective: ["shared.geometry.perspective_horizontal", "shared.geometry.perspective_vertical", "shared.geometry.perspective_rotate"],
   "hdr-tone": ["hdr.exposure", "hdr.contrast", "hdr.contrast_pivot", "hdr.shadow_lift"],
   "hdr-highlights": ["hdr.highlight_compression_mode", "hdr.highlight_compression_start_nits", "hdr.highlight_compression_target_nits", "hdr.highlight_compression_softness", "hdr.highlight_compression_peak_detail", "hdr.highlight_compression_peak_measurement", "hdr.highlight_compression_manual_peak_nits", "hdr.highlight_compression_bias", "hdr.highlight_compression_color_handling"],
   "hdr-equalizer": ["hdr.tone_equalizer_nodes", "hdr.tone_equalizer_influence_radius", "hdr.tone_equalizer_smoothing"],
@@ -5921,7 +5938,7 @@ function getValueByPath(target, path) {
 
 function bindCropEditor() {
   els.cropToolToggle?.addEventListener("click", async () => {
-    if (state.perspectiveMode) closePerspectiveMode(false);
+    abandonPerspectiveDraft();
     if (state.rotateDraftGeometry) closeRotateMode(false);
     if (state.geometryTool === "crop") {
       closeCropMode(true);
@@ -5932,7 +5949,7 @@ function bindCropEditor() {
     await openCropMode();
   });
   els.rotateToolToggle?.addEventListener("click", () => {
-    if (state.perspectiveMode) closePerspectiveMode(false);
+    abandonPerspectiveDraft();
     if (state.cropMode) closeCropMode(true);
     if (state.geometryTool === "rotate") {
       closeRotateMode(false);
@@ -6000,12 +6017,15 @@ function bindPerspectiveEditor() {
     const value = Number(control.value);
     openPerspectiveMode();
     state.adjustments.shared.geometry[key] = value;
+    state.perspectiveResetPending = false;
     renderPerspectiveControls();
     schedulePerspectiveDraftPreview();
   };
   els.perspectiveHorizontal?.addEventListener("input", () => sliderInput("perspective_horizontal", els.perspectiveHorizontal));
   els.perspectiveVertical?.addEventListener("input", () => sliderInput("perspective_vertical", els.perspectiveVertical));
-  els.perspectiveApply?.addEventListener("click", () => closePerspectiveMode(true));
+  els.perspectiveRotate?.addEventListener("input", () => sliderInput("perspective_rotate", els.perspectiveRotate));
+  els.perspectiveGuideApply?.addEventListener("click", () => void applyPerspectiveGuides());
+  els.perspectiveApply?.addEventListener("click", () => void commitPerspectiveMode());
   els.perspectiveCancel?.addEventListener("click", () => closePerspectiveMode(false));
   els.perspectiveGuideHandles?.addEventListener("pointerdown", beginPerspectiveGuideDrag);
   els.perspectiveGuideHandles?.addEventListener("keydown", movePerspectiveGuideWithKeyboard);
@@ -6036,6 +6056,8 @@ function openPerspectiveMode() {
   state.perspectiveDraftGeometry = JSON.parse(JSON.stringify(state.adjustments.shared.geometry));
   state.perspectiveGuides = defaultPerspectiveGuides();
   state.perspectiveGuidesTouched = { vertical: false, horizontal: false };
+  state.perspectiveGuidesDirty = false;
+  state.perspectiveResetPending = false;
   state.perspectiveTool = null;
   if (state.gradeMode === "local") setGradeMode("global");
   renderPerspectiveControls();
@@ -6053,6 +6075,8 @@ function closePerspectiveMode(commit) {
   state.perspectiveTool = null;
   state.perspectiveGuideDrag = null;
   state.perspectiveGuides = null;
+  state.perspectiveGuidesDirty = false;
+  state.perspectiveResetPending = false;
   state.perspectiveDraftGeometry = null;
   els.perspectiveEditorOverlay?.classList.add("hidden");
   els.perspectiveEditorOverlay?.setAttribute("aria-hidden", "true");
@@ -6077,19 +6101,42 @@ function closePerspectiveMode(commit) {
   }
 }
 
+// Used wherever navigating away (switching tools, lanes, or workflow tabs)
+// would otherwise silently discard an open Perspective draft. A pending Reset
+// is a deliberate, complete action -- discarding it via the same path as an
+// unrelated tool switch would resurrect the old values the user just cleared,
+// so commit it instead of throwing it away. A genuine in-progress edit (never
+// reset) keeps the prior discard-on-navigate behavior.
+function abandonPerspectiveDraft() {
+  if (!state.perspectiveMode) return;
+  closePerspectiveMode(state.perspectiveResetPending);
+}
+
 function renderPerspectiveControls() {
   const geometry = state.adjustments?.shared?.geometry || defaultGeometry();
   if (els.perspectiveHorizontal) els.perspectiveHorizontal.value = String(Math.round(Number(geometry.perspective_horizontal) || 0));
   if (els.perspectiveVertical) els.perspectiveVertical.value = String(Math.round(Number(geometry.perspective_vertical) || 0));
+  if (els.perspectiveRotate) els.perspectiveRotate.value = String(Number(geometry.perspective_rotate) || 0);
   if (els.perspectiveHorizontalValue) els.perspectiveHorizontalValue.textContent = `${Number(geometry.perspective_horizontal) > 0 ? "+" : ""}${Math.round(Number(geometry.perspective_horizontal) || 0)}`;
   if (els.perspectiveVerticalValue) els.perspectiveVerticalValue.textContent = `${Number(geometry.perspective_vertical) > 0 ? "+" : ""}${Math.round(Number(geometry.perspective_vertical) || 0)}`;
+  if (els.perspectiveRotateValue) els.perspectiveRotateValue.textContent = `${Number(geometry.perspective_rotate) > 0 ? "+" : ""}${(Number(geometry.perspective_rotate) || 0).toFixed(1)}°`;
+  // Setting .value directly (Reset, Cancel, a solved guide Apply) doesn't fire
+  // the "input" event that keeps the fill-bar CSS vars attached to the handle,
+  // so refresh them explicitly whenever we render from state.
+  [els.perspectiveHorizontal, els.perspectiveVertical, els.perspectiveRotate].forEach((control) => {
+    if (control) updateRangeVisual(control);
+  });
   for (const [orientation, button] of [["vertical", els.perspectiveVerticalTool], ["horizontal", els.perspectiveHorizontalTool]]) {
     const active = state.perspectiveMode && state.perspectiveTool === orientation;
     button?.classList.toggle("active", active);
     button?.setAttribute("aria-pressed", String(active));
   }
   if (els.perspectiveApply) els.perspectiveApply.disabled = !state.perspectiveMode;
-  if (els.perspectiveCancel) els.perspectiveCancel.disabled = !state.perspectiveMode;
+  // Once Reset has cleared the draft, Cancel has nothing of the user's to discard
+  // except the reset itself -- pressing it would silently bring back the old,
+  // just-rejected values, so keep it disabled until a new edit is made.
+  if (els.perspectiveCancel) els.perspectiveCancel.disabled = !state.perspectiveMode || state.perspectiveResetPending;
+  if (els.perspectiveGuideApply) els.perspectiveGuideApply.disabled = !state.perspectiveGuidesDirty;
 }
 
 function renderPerspectiveGuides() {
@@ -6162,8 +6209,7 @@ function endPerspectiveGuideDrag(event) {
   const drag = state.perspectiveGuideDrag;
   if (!drag || event.pointerId !== drag.pointerId) return;
   state.perspectiveGuideDrag = null;
-  state.perspectiveGuidesTouched[drag.orientation] = true;
-  void solvePerspectiveGuides();
+  markPerspectiveGuidesDirty(drag.orientation);
 }
 
 function movePerspectiveGuideWithKeyboard(event) {
@@ -6178,9 +6224,21 @@ function movePerspectiveGuideWithKeyboard(event) {
   const pixels = event.shiftKey ? 10 : 1;
   point.x = clamp(point.x + (event.key === "ArrowLeft" ? -pixels / rect.width : event.key === "ArrowRight" ? pixels / rect.width : 0), 0, 1);
   point.y = clamp(point.y + (event.key === "ArrowUp" ? -pixels / rect.height : event.key === "ArrowDown" ? pixels / rect.height : 0), 0, 1);
-  state.perspectiveGuidesTouched[orientation] = true;
   renderPerspectiveGuides();
-  void solvePerspectiveGuides();
+  markPerspectiveGuidesDirty(orientation);
+}
+
+function markPerspectiveGuidesDirty(orientation) {
+  state.perspectiveGuidesTouched[orientation] = true;
+  state.perspectiveGuidesDirty = true;
+  state.perspectiveResetPending = false;
+  if (els.perspectiveStatus) els.perspectiveStatus.textContent = "Guide placement changed. Click Apply Guides to solve the correction.";
+  renderPerspectiveControls();
+}
+
+async function applyPerspectiveGuides() {
+  if (!state.perspectiveGuidesDirty) return;
+  await solvePerspectiveGuides();
 }
 
 async function solvePerspectiveGuides() {
@@ -6203,10 +6261,16 @@ async function solvePerspectiveGuides() {
   const geometry = state.adjustments.shared.geometry;
   geometry.perspective_horizontal = solved.perspective_horizontal;
   geometry.perspective_vertical = solved.perspective_vertical;
-  geometry.straighten_angle = solved.straighten_angle;
+  geometry.perspective_rotate = solved.perspective_rotate;
+  state.perspectiveGuidesDirty = false;
   els.perspectiveStatus.textContent = `Guides aligned within ${Number(solved.residual_degrees).toFixed(2)}°.`;
   renderPerspectiveControls();
   schedulePerspectiveDraftPreview();
+}
+
+async function commitPerspectiveMode() {
+  if (state.perspectiveGuidesDirty) await applyPerspectiveGuides();
+  closePerspectiveMode(true);
 }
 
 function schedulePerspectiveDraftPreview() {
@@ -9464,7 +9528,7 @@ function renderInterpretationGate() {
 async function switchLane(lane) {
   if (!["hdr", "sdr"].includes(lane)) return;
   const switchGeneration = ++state.laneSwitchGeneration;
-  if (state.perspectiveMode) closePerspectiveMode(false);
+  abandonPerspectiveDraft();
   // A lane change is a presentation boundary. Commit the newest optimistic
   // global state before either lane renders so a round trip cannot replace a
   // settled draft with an older authoritative revision.
@@ -10277,17 +10341,26 @@ function formatControlValue(path, value) {
   return numeric.toFixed(2);
 }
 
+// Only the fields Crop & Rotate itself owns -- Perspective has its own
+// independent Reset and shouldn't be swept up by this one.
+function cropRotateGeometryModified(geometry, defaults) {
+  return controlGroups.geometry.some((path) => {
+    const key = path.split(".").pop();
+    return !valuesEqual(geometry?.[key], defaults[key]);
+  });
+}
+
 function renderGeometryResetState(defaults = defaultAdjustments()) {
   const geometryReset = els.groupResets.find((button) => button.dataset.resetGroup === "geometry");
   if (!geometryReset) return;
-  const hasDraft = Boolean(state.cropDraftGeometry || state.rotateDraftGeometry || state.perspectiveMode);
+  const hasDraft = Boolean(state.cropDraftGeometry || state.rotateDraftGeometry);
   const displayedGeometry = state.cropDraftGeometry || state.adjustments.shared.geometry;
-  const geometryModified = !valuesEqual(displayedGeometry, defaults.shared.geometry)
-    || Boolean(state.rotateDraftGeometry && !valuesEqual(state.adjustments.shared.geometry, defaults.shared.geometry));
+  const geometryModified = cropRotateGeometryModified(displayedGeometry, defaults.shared.geometry)
+    || Boolean(state.rotateDraftGeometry && cropRotateGeometryModified(state.adjustments.shared.geometry, defaults.shared.geometry));
   geometryReset.closest(".control-group")?.classList.toggle("modified", geometryModified);
   geometryReset.disabled = !hasDraft && !geometryModified;
-  geometryReset.title = "Reset all geometry";
-  geometryReset.setAttribute("aria-label", "Reset all geometry");
+  geometryReset.title = "Reset all Crop & Rotate values";
+  geometryReset.setAttribute("aria-label", "Reset all Crop & Rotate values");
 }
 
 function renderControlState() {
@@ -10600,21 +10673,35 @@ function resetControlGroup(group) {
   const defaults = defaultAdjustments();
   if (group === "perspective") {
     openPerspectiveMode();
+    // perspective_horizontal, perspective_vertical, and perspective_rotate are
+    // exclusively owned by this module, so Reset can zero all three outright.
+    // Straighten stays untouched: it belongs to Crop & Rotate.
     state.adjustments.shared.geometry.perspective_horizontal = defaults.shared.geometry.perspective_horizontal;
     state.adjustments.shared.geometry.perspective_vertical = defaults.shared.geometry.perspective_vertical;
-    if (els.perspectiveStatus) els.perspectiveStatus.textContent = "Perspective values reset. Apply or cancel this draft.";
+    state.adjustments.shared.geometry.perspective_rotate = defaults.shared.geometry.perspective_rotate;
+    state.perspectiveGuideDrag = null;
+    state.perspectiveGuides = defaultPerspectiveGuides();
+    state.perspectiveGuidesTouched = { vertical: false, horizontal: false };
+    state.perspectiveGuidesDirty = false;
+    // Cancel would otherwise silently discard this reset and bring back the
+    // old values -- disable it until the user makes a further edit.
+    state.perspectiveResetPending = true;
+    renderPerspectiveGuides();
+    if (els.perspectiveStatus) els.perspectiveStatus.textContent = "Perspective values reset. Apply this draft, or make a new adjustment.";
     renderPerspectiveControls();
     renderControlState();
     schedulePerspectiveDraftPreview();
     return;
   }
   if (group === "geometry") {
+    // Perspective is its own module with its own Reset now -- this one only
+    // touches what Crop & Rotate owns (rotation, flip, straighten, crop rect,
+    // aspect), and leaves an open Perspective draft alone entirely.
     const current = state.cropDraftGeometry || state.adjustments.shared.geometry;
-    if (valuesEqual(current, defaults.shared.geometry) && !state.rotateDraftGeometry) return;
-    if (!window.confirm("Reset all geometry, including perspective? This cannot be undone.")) return;
+    if (!cropRotateGeometryModified(current, defaults.shared.geometry) && !state.rotateDraftGeometry) return;
+    if (!window.confirm("Reset all Crop & Rotate values? This cannot be undone.")) return;
     if (state.cropMode) closeCropMode(false);
     if (state.rotateDraftGeometry) closeRotateMode(false);
-    if (state.perspectiveMode) closePerspectiveMode(false);
   }
   paths.forEach((path) => setValueByPath(state.adjustments, path, getValueByPath(defaults, path)));
   const sectionPath = sectionPathForGroup[group];
@@ -10699,7 +10786,7 @@ function renderOutputFinishingControls() {
 function activateWorkflowTab(workflow, { focus = false } = {}) {
   const next = ["import", "grade", "proof", "export"].includes(workflow) ? workflow : "import";
   if (next !== "import" && !state.session) return;
-  if (next !== "grade" && state.perspectiveMode) closePerspectiveMode(false);
+  if (next !== "grade") abandonPerspectiveDraft();
   if (next !== "grade" && state.rotateDraftGeometry) closeRotateMode(false);
   if (next !== "grade" && state.cropMode) closeCropMode(true);
   state.activeWorkflow = next;

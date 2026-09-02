@@ -242,8 +242,9 @@ def source_coordinate_grid(
     u = np.float32(crop.x) + u * np.float32(crop.width)
     v = np.float32(crop.y) + v * np.float32(crop.height)
 
-    if geometry.straighten_angle:
-        angle = math.radians(-float(geometry.straighten_angle))
+    total_roll = float(geometry.straighten_angle) + float(geometry.perspective_rotate)
+    if total_roll:
+        angle = math.radians(-total_roll)
         cosine = np.float32(math.cos(angle))
         sine = np.float32(math.sin(angle))
         centered_x = u - 0.5

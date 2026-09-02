@@ -15,6 +15,9 @@ This index maps user-facing areas to their current state model, implementation, 
 | High-quality preview | Browser-profile preference | scheduler/refinement and proxy selection in `app.js` | [Viewer](user-guide/viewer-and-analysis.md#preview-paths) |
 | False color/zebras | `SharedAdjustments.overlay_*` | `overlay.py`, overlay UI in `app.js` | [Viewer](user-guide/viewer-and-analysis.md) |
 | Technical panel | Session/display/preview payloads | `display_probe.py`, `app.js` | [Viewer](user-guide/viewer-and-analysis.md) |
+| Crop | `GeometryAdjustments.crop`, `.ratio_mode`, `.custom_ratio` | `apply_geometry` in `finishing.py`, crop editor in `app.js` | [Viewer](user-guide/viewer-and-analysis.md#crop-editor) |
+| Rotate/Flip/Straighten | `GeometryAdjustments.rotation`, `.flip_horizontal`, `.flip_vertical`, `.straighten_angle` | `apply_geometry`, `_rotate_to_valid_pixels` in `finishing.py`, Rotate draft in `app.js` | [Viewer](user-guide/viewer-and-analysis.md#rotate-and-straighten) |
+| Perspective (manual + guided) | `GeometryAdjustments.perspective_horizontal`, `.perspective_vertical`, `.perspective_rotate` | `apply_geometry`, `solve_perspective_guides`, `_warp_perspective_to_valid_pixels` in `finishing.py`, `/api/session/{id}/perspective-solve`, Perspective draft in `app.js` | [Viewer](user-guide/viewer-and-analysis.md#perspective-correction) |
 
 ## HDR grade
 

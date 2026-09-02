@@ -52,6 +52,7 @@ Importing, opening a project, ejecting, and closing prompt to save or discard un
 - Headless automated tests cannot certify emitted luminance.
 - Display telemetry is descriptive and may be inaccurate; it is not a meter.
 - Linux HDR presentation is qualified only on native Wayland when Chromium reports HDR and the extended `rgba16float` WebGPU canvas is active. X11/Xwayland, SDR output, and CPU/device-loss fallback are explicitly labeled as non-authoritative SDR simulation.
+- Crop, Rotate/Straighten, and Perspective are not GPU-accelerated. Each interactive change round-trips to a backend Python/Pillow warp, so dragging these controls feels less immediate than grading sliders, which run on WebGPU after one initial geometry proxy load.
 
 ## Color limitations
 

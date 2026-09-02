@@ -12,11 +12,17 @@ def apply_geometry(image: np.ndarray, geometry: GeometryAdjustments) -> np.ndarr
     """Apply the one shared, destructive geometry stage without inventing pixels."""
     crop = geometry.crop
     neutral_crop = crop.x == 0.0 and crop.y == 0.0 and crop.width == 1.0 and crop.height == 1.0
+    # Straighten (owned by Crop & Rotate) and perspective_rotate (owned by the
+    # guided Perspective correction) are two independently-authored rotations
+    # that compose into a single roll, the same way darktable and Lightroom
+    # keep their manual straighten and guided-upright rotation separate but
+    # apply them as one combined transform.
+    total_roll = geometry.straighten_angle + geometry.perspective_rotate
     if (
         geometry.rotation == 0
         and not geometry.flip_horizontal
         and not geometry.flip_vertical
-        and geometry.straighten_angle == 0.0
+        and total_roll == 0.0
         and geometry.perspective_horizontal == 0.0
         and geometry.perspective_vertical == 0.0
         and neutral_crop
@@ -34,12 +40,12 @@ def apply_geometry(image: np.ndarray, geometry: GeometryAdjustments) -> np.ndarr
     if geometry.perspective_horizontal or geometry.perspective_vertical:
         result = _warp_perspective_to_valid_pixels(
             result,
-            geometry.straighten_angle,
+            total_roll,
             geometry.perspective_horizontal,
             geometry.perspective_vertical,
         )
-    elif geometry.straighten_angle:
-        result = _rotate_to_valid_pixels(result, geometry.straighten_angle)
+    elif total_roll:
+        result = _rotate_to_valid_pixels(result, total_roll)
 
     height, width = result.shape[:2]
     left = int(np.clip(round(crop.x * width), 0, width - 1))
@@ -135,10 +141,11 @@ def solve_perspective_guides(
         variable_names.append("perspective_horizontal")
     if vertical_guides:
         variable_names.append("perspective_vertical")
-    variable_names.append("straighten_angle")
+    variable_names.append("perspective_rotate")
+    keystone_names = {"perspective_horizontal", "perspective_vertical"}
     values = np.array([float(getattr(geometry, name)) for name in variable_names], dtype=np.float64)
-    bounds = np.array([100.0 if name.startswith("perspective_") else 45.0 for name in variable_names])
-    steps = np.array([0.25 if name.startswith("perspective_") else 0.05 for name in variable_names])
+    bounds = np.array([100.0 if name in keystone_names else 45.0 for name in variable_names])
+    steps = np.array([0.25 if name in keystone_names else 0.05 for name in variable_names])
 
     def residuals(candidate_values: np.ndarray) -> np.ndarray:
         candidate = geometry.model_copy(deep=True)
@@ -192,7 +199,7 @@ def solve_perspective_guides(
     return (
         solved.get("perspective_horizontal", float(geometry.perspective_horizontal)),
         solved.get("perspective_vertical", float(geometry.perspective_vertical)),
-        solved["straighten_angle"],
+        solved["perspective_rotate"],
         maximum_residual,
     )
 

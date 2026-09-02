@@ -491,6 +491,7 @@ Add a built-in **Spectral Gradient** to the test images users can choose to impo
 - `POST /api/session/{id}/preview/hdr`
 - `POST /api/session/{id}/preview/sdr`
 - `POST /api/session/{id}/overlay`
+- `POST /api/session/{id}/perspective-solve`
 - `GET /api/session/{id}/scopes`
 - `GET /api/capabilities`
 - `POST /api/session/{id}/export`
@@ -783,6 +784,36 @@ The Crop and Rotate group owns one shared, destructive geometry stage for both t
 - `codebase/tests/test_advanced_finishing.py` must continue to prove that arbitrary-angle straightening returns finite valid pixels without padded corners and that shared geometry produces matching HDR/SDR dimensions.
 - Any change to transform order, safe-rectangle math, crop composition, preview generation, or viewport zoom must run both the focused geometry tests and the broader local-adjustments browser interaction test. Visual QA must include at least one portrait and one landscape image at a non-trivial angle.
 - **Windows package follow-up (recorded 2026-08-26):** carry this explicit Rotate transaction into the next rebuilt Windows package and run the same regression there before release. The installed Windows build must never replace or settle the preview before Apply, must cancel Rotate when Crop or another tool opens, and must commit only through **Apply rotation**. Confirm the packaged Windows app—not only the shared source frontend—passes cancellation, explicit application, undo/redo, and preview/export parity checks.
+
+### Perspective Correction: Guided Workflow and Straighten Separation (2026-09-02)
+
+Perspective is now a fully independent geometry module rather than a variant of Crop & Rotate. It owns three fields exclusively — `perspective_horizontal`, `perspective_vertical`, `perspective_rotate` — and no longer shares, borrows, or overwrites Crop & Rotate's `straighten_angle`. This section extends the Crop and Rotate Interaction Contract above; both describe the same shared geometry stage.
+
+#### User-visible behavior
+
+- The Perspective panel exposes three continuous sliders — **Horizontal**, **Vertical**, **Rotate** (`-45` through `+45` degrees) — plus **Vertical Guides** and **Horizontal Guides** tools for click-and-drag guided correction.
+- Guide placement is staged, not live. Dragging a guide handle only repositions it; nothing is solved or previewed until **Apply Guides** is pressed. Vertical and horizontal guides can be applied independently and in either order — because the solver always folds in whichever orientation(s) have previously been touched, applying vertical then later applying horizontal produces the same combined correction as applying both together in one pass.
+- **Reset** zeroes all three of Perspective's own fields and clears any staged, un-applied guide placement in one action, returning the module fully to its default state. It does not touch Crop & Rotate's Straighten, rotation, flips, or crop rectangle.
+- Symmetrically, Crop & Rotate's **Reset** only touches the fields it owns (rotation, flip H/V, Straighten, crop rectangle, aspect ratio/custom ratio) and leaves an open or already-committed Perspective correction untouched. Its confirmation prompt no longer mentions perspective.
+- Because Reset is a deliberate, complete action, **Cancel** disables immediately after Reset — pressing it would otherwise silently discard the reset and resurrect the previously committed values. Cancel re-enables the moment the user makes a further edit (moves a slider, or touches a guide). Implicit navigation away from an open Perspective draft (switching to the Crop or Rotate tool, changing HDR/SDR lane, leaving the Grade workflow tab) now commits a pending Reset instead of silently discarding it, matching what Cancel itself does.
+
+#### Implementation structure and invariants
+
+- Backend: `GeometryAdjustments.perspective_rotate` (`backend/hdr_finisher/models.py`) is `-45..45`, independent of `straighten_angle`. `apply_geometry` (`backend/hdr_finisher/finishing.py`) computes `total_roll = straighten_angle + perspective_rotate` once and threads that single combined value through the warp/rotate path. The two fields are mathematically equivalent single-axis rotations and compose by addition — verified byte-for-byte (`straighten=2, rotate=0` renders identically to `straighten=0, rotate=2`).
+- `solve_perspective_guides` now optimizes `perspective_rotate` as its free rotational variable instead of mutating `straighten_angle`. `PerspectiveSolveResponse` returns `perspective_rotate`, not `straighten_angle`, from `POST /api/session/{id}/perspective-solve`.
+- `local_adjustments.py::source_coordinate_grid` composes the same `straighten_angle + perspective_rotate` total when mapping local-adjustment mask coordinates back to source space, so masks stay aligned when guided correction introduces rotation.
+- Frontend (`frontend/app.js`): `state.perspectiveGuidesDirty` gates the **Apply Guides** button and gates whether a solve is requested at all — previously every guide-handle release triggered an immediate backend solve. `state.perspectiveResetPending` gates Cancel's enabled state and is cleared by any further edit. `abandonPerspectiveDraft()` is the single choke point every implicit-navigation exit now calls instead of unconditionally discarding an open draft.
+- `renderPerspectiveControls()` must call `updateRangeVisual()` on the Horizontal/Vertical/Rotate sliders after any programmatic `.value` assignment (Reset, Cancel, a solved guide Apply). Setting `.value` directly does not fire the `input` event the fill-bar CSS variables depend on; skipping this left the fill bar visually detached from the handle.
+- `controlGroups.geometry` enumerates Crop & Rotate's seven owned fields individually rather than pointing at the whole `shared.geometry` object, so its modified-badge, its Reset button's enabled state, and its Reset action itself never touch Perspective's fields.
+
+#### Regression requirements
+
+- `codebase/tests/perspective-interaction.js` covers: guide placement stays un-solved until Apply Guides is pressed; vertical-then-horizontal guide applies stack into one combined correction; Reset clears guide placement and the pending-Apply state and restores default perspective values while leaving Straighten alone; Cancel is disabled immediately after Reset and re-enables on the next edit; switching to Crop & Rotate's own Rotate tool after a Perspective Reset commits the reset rather than reverting to a previously-committed correction.
+- Any change to `apply_geometry`, `_perspective_inverse_matrix`, `_perspective_safe_rectangle`, or `solve_perspective_guides` must re-verify that `straighten_angle` and `perspective_rotate` still compose additively (equal combined rolls produce byte-identical renders) and that local-adjustment mask coordinates stay in sync with the same combined roll.
+
+#### Known follow-up
+
+- The perspective/geometry transform is not GPU-accelerated: every interactive slider tick round-trips to a server-side Python/Pillow warp (roughly 120-130ms per unique keystone value on a ~1024px interactive proxy), unlike grading sliders, which run on WebGPU after one initial geometry proxy load. Tracked as a deferred performance item in `docs/product/Interactive_Preview_and_Scopes_Performance_Sprint_PRD.md` section 12 (Post-sprint opportunities), with measured numbers and two candidate fixes.
 
 ### Local Adjustments Brush/Eraser Correctness and Performance Record (2026-08-14)
 

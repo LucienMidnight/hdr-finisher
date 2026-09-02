@@ -149,5 +149,6 @@ Full-resolution float32 RGB images are large, and HDR/SDR processing can create 
 - Leave High-quality preview off when GPU memory is constrained; export quality is unchanged.
 - Check `/api/session/{id}/diagnostics` when cache growth, evictions, or duplicate work is suspected.
 - Expect final export to take longer than the proxy preview.
+- Crop, Rotate/Straighten, and Perspective are not GPU-accelerated and feel less immediate than grading sliders while dragging — each change re-warps the proxy on the backend. This is expected; see [Known Limitations](known-limitations.md#preview-limitations).
 
 If reporting performance, include dimensions, file type, available RAM, GPU/browser, control state, and whether the delay is import, preview, scope, proof, or export.

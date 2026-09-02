@@ -36,6 +36,29 @@ Choose **Crop**, then open the crop editor to keep composition controls beside t
 
 Composition guides include rule of thirds, golden ratio, adjustable grid, X pattern, and diagonal method. Guides are preview aids only and do not appear in the exported image. **Apply** commits the geometry edit; **Cancel** restores the crop that was active when the editor opened.
 
+## Rotate and Straighten
+
+Choose **Rotate** to open a second geometry draft alongside Crop. **Rotate left 90°** and **Rotate right 90°** turn the frame in quarter steps; **Flip H** and **Flip V** mirror it. A quarter turn resets the crop rectangle to the full frame, because the crop you had belonged to the previous orientation.
+
+**Straighten** is a continuous -45° to +45° slider for leveling a tilted horizon or a verticals-lean angle. Drag it and the canvas rotates live behind a stationary alignment grid so you can judge the correction against a fixed reference.
+
+Nothing in the Rotate draft affects the image until you press **Apply rotation**. Pressing **Cancel**, opening Crop, switching to another tool, changing the HDR/SDR lane, or leaving the Grade tab all discard the draft and restore the geometry you had before you opened Rotate.
+
+**Reset** on the Crop & Rotate group returns rotation, flip, Straighten, the crop rectangle, and the aspect ratio to their defaults in one step. It does not touch Perspective — that module resets independently (see below).
+
+## Perspective correction
+
+Perspective fixes converging verticals or horizontals — for example, a building that leans inward toward the top of the frame — independently of Straighten. It lives in its own group below Crop & Rotate, with three sliders: **Horizontal**, **Vertical**, and **Rotate**.
+
+There are two ways to correct perspective:
+
+- **Manual sliders** — drag Horizontal and Vertical to counter the convergence directly. Rotate lets you dial in a small amount of roll as part of the same correction, separately from Crop & Rotate's own Straighten.
+- **Guided correction** — choose **Vertical Guides** or **Horizontal Guides**, then drag both guide handles onto an edge in the image that should be parallel (a doorframe, a wall, a horizon). Guide placement does not change the preview by itself. Press **Apply Guides** once both handles are positioned to solve and preview the correction. You can place vertical guides and apply them, then place horizontal guides and apply those separately — the two corrections combine rather than replacing each other. Solving may introduce a small Rotate value alongside Horizontal/Vertical; this stays inside the Perspective module and never overwrites Straighten.
+
+**Apply perspective** commits the module's current values — including any guide placement you haven't pressed Apply Guides on yet, which is solved first. **Cancel** discards everything back to whatever was committed before you opened the panel, and is disabled immediately after you press **Reset** (since pressing Cancel at that point would silently undo the reset); it re-enables the moment you make another adjustment.
+
+**Reset** zeroes Horizontal, Vertical, and Rotate and clears any guide placement you were mid-way through positioning. It leaves Straighten and every other Crop & Rotate setting untouched.
+
 ## Histogram
 
 The histogram counts processed values by brightness/channel. It answers questions such as:
@@ -118,3 +141,5 @@ Combine scopes with [Chrome Proof](proof.md) and physical delivery checks.
 - Using the wrong false-color reference white
 - Correcting a monitor-mode problem in the image grade
 - Assuming a clean scope guarantees an attractive or compatible result
+- Dragging Perspective guide handles and expecting the preview to update before pressing Apply Guides
+- Expecting Crop & Rotate's Reset to also clear a Perspective correction, or the reverse — the two reset independently
