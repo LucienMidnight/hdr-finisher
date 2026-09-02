@@ -489,6 +489,27 @@ def _load_hdr_like(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
     return image, metadata
 
 
+APPLE_HDR_GAINMAP_AUX_TYPES = (
+    "urn:com:apple:photo:2020:aux:hdrgainmap",
+)
+
+
+def _select_apple_gainmap_aux_type(aux: dict[str, Any]) -> str | None:
+    """Return the auxiliary image type holding the Apple HDR gain map.
+
+    Modern iPhone captures carry many auxiliary images -- semantic mattes, a
+    style delta map, a linear thumbnail -- alongside the gain map, so the
+    auxiliary set cannot be indexed positionally.
+    """
+    for known in APPLE_HDR_GAINMAP_AUX_TYPES:
+        if known in aux and aux[known]:
+            return known
+    for aux_type, ids in sorted(aux.items()):
+        if ids and "hdrgainmap" in aux_type.lower():
+            return aux_type
+    return None
+
+
 def _load_heif(
     path: Path, *, cancelled: Callable[[], bool] | None = None
 ) -> tuple[np.ndarray, dict[str, Any]]:
@@ -523,12 +544,23 @@ def _load_heif(
     if "metadata" in info:
         metadata["heif_metadata_blocks"] = len(info["metadata"])
 
-    if metadata.get("heif_aux_types") and metadata.get("apple_hdr_headroom") is not None:
-        aux_type = metadata["heif_aux_types"][0]
+    aux_type = _select_apple_gainmap_aux_type(info.get("aux") or {})
+    if aux_type is not None:
+        metadata["heif_gainmap_aux_type"] = aux_type
+    aux_array: np.ndarray | None = None
+    if aux_type is not None and metadata.get("apple_hdr_headroom") is not None:
         aux_id = info["aux"][aux_type][0]
-        aux_image = primary.get_aux_image(aux_id)
-        aux_array = np.asarray(aux_image).astype(np.float32)
-        aux_array *= np.float32(1.0 / 255.0)
+        try:
+            aux_image = primary.get_aux_image(aux_id)
+        except Exception as exc:  # pragma: no cover - depends on pillow-heif build
+            # Some pillow-heif builds refuse auxiliary images deeper than 8 bits.
+            # A gain map we cannot read is not a reason to reject the photo; fall
+            # back to the SDR base image and record why HDR was not reconstructed.
+            metadata["apple_hdr_gainmap_error"] = str(exc)
+        else:
+            aux_array = _normalize_integer_image(np.asarray(aux_image))
+
+    if aux_array is not None:
         base_array = _normalize_integer_image(array)
         base_linear_p3 = transform_float32_bounded(
             base_array, _srgb_eotf_float32, cancelled=cancelled
@@ -537,13 +569,12 @@ def _load_heif(
             base_linear_p3.copy(), _linear_display_p3_to_linear_srgb, cancelled=cancelled
         )
         resized_gainmap = np.asarray(
-            Image.fromarray((np.clip(aux_array, 0.0, 1.0) * 255.0).astype(np.uint8), mode="L").resize(
+            Image.fromarray(np.clip(aux_array, 0.0, 1.0), mode="F").resize(
                 (base_array.shape[1], base_array.shape[0]),
                 resample=Image.Resampling.LANCZOS,
             ),
             dtype=np.float32,
         )
-        resized_gainmap *= np.float32(1.0 / 255.0)
         array = _apply_apple_hdr_gainmap_linear_in_place(
             base_linear_p3,
             resized_gainmap,

@@ -34,17 +34,36 @@ def classify_hdr(
     gainmap_applied = bool(
         metadata.get("apple_hdr_gainmap_applied") or metadata.get("gain_map_applied")
     )
+    # Captures carry semantic mattes, style delta maps and linear thumbnails
+    # next to the gain map, so the presence of auxiliary images says nothing
+    # about HDR on its own.
+    heif_gainmap_present = any(
+        "hdrgainmap" in str(aux_type).lower() for aux_type in heif_aux_types
+    )
+    gainmap_error = metadata.get("apple_hdr_gainmap_error")
 
     if gainmap_applied and peak > 1.0:
         classification = HDRClassification.HDR_TRUE
         badge = f"Apple HDR gain map applied, peak {compute_peak_stops(image):.2f} stops above diffuse white."
         latitude = SourceLatitude.MEDIUM
-    elif suffix in {".heic", ".heif"} and heif_aux_types:
+    elif suffix in {".heic", ".heif"} and heif_gainmap_present and not gainmap_applied:
+        # A gain map is present but was not applied. Name the reason rather than
+        # implying the feature is missing.
         classification = HDRClassification.HDR_ENCODED
-        badge = (
-            "HEIC auxiliary image data detected. HDR content is likely present, "
-            "but auxiliary gain-map application is not implemented yet."
-        )
+        if gainmap_error:
+            badge = (
+                "HEIC gain map could not be decoded, so the SDR base image is shown. "
+                f"Decoder reported: {gainmap_error}"
+            )
+        elif metadata.get("apple_hdr_headroom") is None:
+            badge = (
+                "HEIC gain map found, but the Apple headroom metadata required to "
+                "apply it is missing. Showing the SDR base image."
+            )
+        else:
+            badge = (
+                "HEIC gain map found but not applied. Showing the SDR base image."
+            )
         needs_override = True
         latitude = SourceLatitude.NARROW
     elif suffix in {".jpg", ".jpeg"} and not encoded_hint:

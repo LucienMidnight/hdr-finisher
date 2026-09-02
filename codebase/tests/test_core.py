@@ -214,6 +214,67 @@ def test_heif_aux_metadata_flags_encoded_warning() -> None:
     assert analysis.needs_color_override is True
 
 
+APPLE_GAINMAP_AUX = "urn:com:apple:photo:2020:aux:hdrgainmap"
+
+
+def test_heic_without_a_gain_map_is_not_reported_as_probable_hdr() -> None:
+    # Semantic mattes and linear thumbnails ride along with ordinary SDR
+    # portraits, so auxiliary images alone must not imply HDR content.
+    image = np.ones((2, 2, 3), dtype=np.float32) * 0.5
+    analysis = classify_hdr(
+        image,
+        {
+            "heif_aux_types": [
+                "urn:com:apple:photo:2020:aux:semanticskymatte",
+                "tag:apple.com,2023:photo:aux:linearthumbnail",
+            ]
+        },
+        ".heic",
+    )
+    assert analysis.classification == HDRClassification.SDR_ONLY
+
+
+def test_undecodable_heic_gain_map_reports_the_decoder_reason() -> None:
+    image = np.ones((2, 2, 3), dtype=np.float32) * 0.5
+    analysis = classify_hdr(
+        image,
+        {
+            "heif_aux_types": [APPLE_GAINMAP_AUX],
+            "apple_hdr_headroom": 4.3,
+            "apple_hdr_gainmap_error": "Only 8-bit AUX images are currently supported.",
+        },
+        ".heic",
+    )
+    assert analysis.classification == HDRClassification.HDR_ENCODED
+    assert "Only 8-bit AUX images" in analysis.badge_message
+    assert "not implemented" not in analysis.badge_message
+
+
+def test_heic_gain_map_without_headroom_metadata_names_the_missing_metadata() -> None:
+    image = np.ones((2, 2, 3), dtype=np.float32) * 0.5
+    analysis = classify_hdr(image, {"heif_aux_types": [APPLE_GAINMAP_AUX]}, ".heic")
+    assert analysis.classification == HDRClassification.HDR_ENCODED
+    assert "headroom metadata" in analysis.badge_message
+
+
+def test_applied_gain_map_on_a_dark_frame_is_never_called_unimplemented() -> None:
+    # The HDR_TRUE branch requires a peak above 1.0, so a correctly processed
+    # dark capture falls past it and must not claim the gain map was skipped.
+    image = np.ones((2, 2, 3), dtype=np.float32) * 0.5
+    analysis = classify_hdr(
+        image,
+        {
+            "heif_aux_types": [APPLE_GAINMAP_AUX],
+            "apple_hdr_headroom": 4.3,
+            "apple_hdr_gainmap_applied": True,
+            "transfer_function": "LINEAR",
+        },
+        ".heic",
+    )
+    assert analysis.classification == HDRClassification.HDR_LINEAR_UNCONFIRMED
+    assert "not implemented" not in analysis.badge_message
+
+
 def test_compute_apple_headroom_returns_hdr_scale() -> None:
     headroom = _compute_apple_headroom(1.0, 0.3405120511)
     assert headroom > 4.0

@@ -14,7 +14,7 @@ import hdr_finisher.gainmap_decoders as gainmap_decoders
 from hdr_finisher.adjustments import apply_adjustments
 from hdr_finisher.capabilities import probe_capabilities
 from hdr_finisher.exporters import AVIFGainMapExportBackend, JPEGUltraHDRExportBackend
-from hdr_finisher.loader import LoaderError, load_image
+from hdr_finisher.loader import LoaderError, _select_apple_gainmap_aux_type, load_image
 from hdr_finisher.models import AdjustmentState, CapabilityStatus, ExportSettings, HDRClassification, PreviewKind
 from hdr_finisher.preview import render_preview_bytes
 from hdr_finisher.test_pattern import build_hdr_test_pattern
@@ -321,3 +321,20 @@ def test_production_export_reimports_hdr_and_authored_sdr(tmp_path: Path, format
     assert second_metadata["hdr_capacity_stops"] == pytest.approx(
         metadata["hdr_capacity_stops"], abs=0.35
     )
+
+
+def test_apple_gainmap_aux_selection_ignores_other_auxiliary_images() -> None:
+    # An iPhone capture carries mattes, a style delta map and a linear thumbnail
+    # alongside the gain map. Sorting the auxiliary types puts the 10-bit linear
+    # thumbnail first, which pillow-heif cannot decode, so positional selection
+    # rejects the whole photo.
+    aux = {
+        "tag:apple.com,2023:photo:aux:linearthumbnail": [63],
+        "tag:apple.com,2023:photo:aux:styledeltamap": [115],
+        "urn:com:apple:photo:2018:aux:portraiteffectsmatte": [118],
+        "urn:com:apple:photo:2020:aux:hdrgainmap": [62],
+        "urn:com:apple:photo:2020:aux:semanticskymatte": [64],
+    }
+    assert _select_apple_gainmap_aux_type(aux) == "urn:com:apple:photo:2020:aux:hdrgainmap"
+    assert _select_apple_gainmap_aux_type({"urn:com:apple:photo:2018:aux:depth": [10]}) is None
+    assert _select_apple_gainmap_aux_type({}) is None
