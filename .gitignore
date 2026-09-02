@@ -24,6 +24,7 @@ docs/testing/*
 !docs/testing/HDR_Reference_White_203_Release_Qualification_2026-08-22.md
 
 # Build / runtime outputs
+/output/
 codebase/exports/
 codebase/_tmp_avif_test/
 codebase/preview_probe.avif
