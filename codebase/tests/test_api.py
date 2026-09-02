@@ -470,10 +470,71 @@ def test_geometry_map_returns_bidirectional_source_anchored_editor_coordinates()
 
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload["output_to_source"]) == 6
-    assert len(payload["source_to_output"]) == 6
+    assert len(payload["output_to_source"]) == 9
+    assert len(payload["source_to_output"]) == 9
     assert payload["output_width"] > 0 and payload["output_height"] > 0
-    assert payload["source_to_output"] == pytest.approx([0.0, -1.0, 1.0, 1.0, 0.0, 0.0], abs=2e-6)
+    assert payload["source_to_output"] == pytest.approx(
+        [0.0, -1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+        abs=2e-6,
+    )
+
+
+def test_perspective_solve_accepts_guides_without_committing_session_state() -> None:
+    upload = client.post("/api/session", files={"file": ("perspective.png", make_png_bytes(), "image/png")})
+    assert upload.status_code == 200
+    session = upload.json()["session"]
+    response = client.post(
+        f'/api/session/{session["session_id"]}/perspective-solve',
+        json={
+            "adjustments": session["adjustments"],
+            "edit_revision": 0,
+            "vertical_guides": [
+                {"start": {"x": 0.28, "y": 0.12}, "end": {"x": 0.31, "y": 0.88}},
+                {"start": {"x": 0.72, "y": 0.12}, "end": {"x": 0.69, "y": 0.88}},
+            ],
+            "horizontal_guides": [],
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert -100 <= payload["perspective_vertical"] <= 100
+    assert payload["residual_degrees"] <= 0.25
+    assert store.current().adjustments.shared.geometry.perspective_vertical == 0.0
+
+
+def test_perspective_solve_rejects_degenerate_and_stale_requests() -> None:
+    upload = client.post("/api/session", files={"file": ("perspective-invalid.png", make_png_bytes(), "image/png")})
+    assert upload.status_code == 200
+    session = upload.json()["session"]
+    endpoint = f'/api/session/{session["session_id"]}/perspective-solve'
+    degenerate = client.post(
+        endpoint,
+        json={
+            "adjustments": session["adjustments"],
+            "edit_revision": 0,
+            "vertical_guides": [
+                {"start": {"x": 0.2, "y": 0.2}, "end": {"x": 0.201, "y": 0.201}},
+                {"start": {"x": 0.7, "y": 0.2}, "end": {"x": 0.7, "y": 0.8}},
+            ],
+            "horizontal_guides": [],
+        },
+    )
+    stale = client.post(
+        endpoint,
+        json={
+            "adjustments": session["adjustments"],
+            "edit_revision": 99,
+            "vertical_guides": [
+                {"start": {"x": 0.2, "y": 0.2}, "end": {"x": 0.25, "y": 0.8}},
+                {"start": {"x": 0.7, "y": 0.2}, "end": {"x": 0.65, "y": 0.8}},
+            ],
+            "horizontal_guides": [],
+        },
+    )
+
+    assert degenerate.status_code == 422
+    assert stale.status_code == 409
 
 
 def test_clearing_session_removes_owned_upload_temp_file() -> None:

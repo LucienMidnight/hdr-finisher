@@ -43,6 +43,8 @@ from .models import (
     FavoritePathRequest,
     GeometryMapRequest,
     GeometryMapResponse,
+    PerspectiveSolveRequest,
+    PerspectiveSolveResponse,
     ImportJobRequest,
     LocalLuminanceSampleRequest,
     LocalLuminanceSampleResponse,
@@ -68,6 +70,7 @@ from .models import (
 from .overlay import encode_processed_overlay_bytes
 from .preview import encode_processed_preview_bytes, encode_processed_rgba8
 from .render_cache import StaleRender, encode_rgba_proxy
+from .finishing import solve_perspective_guides
 from .display_probe import probe_displays
 from .proofing import EvidenceStore, ProofArtifactStore
 from .projects import ProjectError, ProjectSourceRelinkRequired, open_project, save_project
@@ -877,6 +880,37 @@ def geometry_map(session_id: str, request: GeometryMapRequest) -> GeometryMapRes
         source_to_output=list(source_to_output),
         output_width=width,
         output_height=height,
+    )
+
+
+@app.post(
+    "/api/session/{session_id}/perspective-solve",
+    response_model=PerspectiveSolveResponse,
+)
+def perspective_solve(session_id: str, request: PerspectiveSolveRequest) -> PerspectiveSolveResponse:
+    """Solve a manual guided correction without mutating session state."""
+    try:
+        session = store.get(session_id)
+        _check_revision(session.edit_revision, request.edit_revision)
+        source, _working_space = session.render_cache.source_proxy(PreviewKind.HDR, 512)
+        horizontal, vertical, straighten, residual = solve_perspective_guides(
+            source.shape[1],
+            source.shape[0],
+            request.adjustments.shared.geometry,
+            request.vertical_guides,
+            request.horizontal_guides,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RevisionConflictError as exc:
+        raise _revision_conflict(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return PerspectiveSolveResponse(
+        perspective_horizontal=horizontal,
+        perspective_vertical=vertical,
+        straighten_angle=straighten,
+        residual_degrees=residual,
     )
 
 

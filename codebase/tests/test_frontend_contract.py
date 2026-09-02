@@ -470,7 +470,7 @@ def test_refined_slider_surfaces_full_bleed_sections_and_product_lockup() -> Non
     assert "--segment-selected-shadow: inset" in css
     assert "--color-rail-spectrum: linear-gradient(90deg" in css
     assert ".button-primary {\n  appearance: none;\n  border: 0;\n  background: linear-gradient(180deg" in final_refinement
-    assert ".button-secondary,\n.tool-button {\n  border-color: transparent;\n  background: linear-gradient(180deg" in final_refinement
+    assert ".button-secondary,\n.tool-button {\n  border-color: transparent;\n  background: var(--panel-collapse-button-background);" in final_refinement
     assert '.control-row[data-control-path$=".white_balance_kelvin"]' in css
     assert '.control-row[data-control-path$=".tint"]' in css
     assert "--instrument-slider-tick-top" not in css
@@ -1161,7 +1161,7 @@ def test_electron_preview_correctness_contract() -> None:
     assert "if (reflow) applyZoomGeometry();" in rotate_draft
     assert "renderRotateDraftTransform({ reflow: true });" in javascript
     assert 'const transactionOwnedControl = control.dataset.path === "shared.geometry.straighten_angle";' in javascript
-    assert "if (!state.session || state.rotateDraftGeometry) return false;" in javascript
+    assert "if (!state.session || state.rotateDraftGeometry || state.perspectiveMode) return false;" in javascript
     begin_straighten = javascript[
         javascript.index("function beginStraightenGesture("):
         javascript.index("function updateStraightenInteractive(")
@@ -1497,13 +1497,32 @@ def test_local_mask_authoring_uses_bidirectional_authoritative_geometry_mapping(
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
     assert 'fetch(`/api/session/${state.session.session_id}/geometry-map`' in javascript
-    assert "affinePoint(coordinateMap.outputToSource, point)" in javascript
-    assert "affinePoint(coordinateMap.sourceToOutput, point)" in javascript
+    assert "projectivePoint(coordinateMap.outputToSource, point)" in javascript
+    assert "projectivePoint(coordinateMap.sourceToOutput, point)" in javascript
     assert "applySourceGeometryCanvasTransform(context, imageRect, rect, coordinateMap.sourceToOutput)" in javascript
+    assert "projectMaskExpressionToOutput(local.mask, coordinateMap.sourceToOutput)" in javascript
+    assert "const denominator = matrix[6] * point.x + matrix[7] * point.y + matrix[8]" in javascript
     assert 'if (state.gradeMode === "local") void ensureGeometryCoordinateMap();' in javascript
     assert 'renderPhase: "mask"' in javascript
     assert 'renderPhase: "gizmo"' in javascript
     assert 'gesture?.type === "luminance_sample"' in javascript
+
+
+def test_perspective_module_is_numbered_third_and_exposes_draft_guided_tools() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+
+    assert html.index('data-group="geometry"') < html.index('data-group="perspective"') < html.index('class="lane-folder-shell"')
+    assert 'id="perspective-vertical-tool"' in html
+    assert 'id="perspective-horizontal-tool"' in html
+    assert 'id="perspective-apply"' in html and 'id="perspective-cancel"' in html
+    assert '.control-group[data-group="perspective"] > .control-group-header::before { content: "03"; }' in css
+    assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "15"; }' in css
+    assert "function openPerspectiveMode()" in javascript
+    assert "function closePerspectiveMode(commit)" in javascript
+    assert 'transient_adjustments: true' in javascript
+    assert '/perspective-solve`' in javascript
 
 
 def test_frontend_assets_use_the_application_version_for_cache_busting() -> None:
@@ -1626,9 +1645,9 @@ def test_detail_uses_numbered_module_header_and_sharpen_targeting_hierarchy() ->
 
     assert '>Detail <span id="detail-state">Default</span>' not in html
     assert '>Detail</button>' in html
-    assert '.control-group[data-group="detail"] > .control-group-header::before { content: "12"; }' in css
-    assert '.control-group[data-group="film-look"] > .control-group-header::before { content: "13"; }' in css
-    assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "14"; }' in css
+    assert '.control-group[data-group="detail"] > .control-group-header::before { content: "13"; }' in css
+    assert '.control-group[data-group="film-look"] > .control-group-header::before { content: "14"; }' in css
+    assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "15"; }' in css
     assert 'data-control-path="current.detail.sharpen_amount"' in html
     assert '<div class="slider-group-relationship">Targeting</div>' in html
     assert 'class="control-row compact-subrail" data-control-path="current.detail.sharpen_radius_px"' in html

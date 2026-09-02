@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
+import math
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -254,6 +255,8 @@ class GeometryAdjustments(BaseModel):
     flip_horizontal: bool = False
     flip_vertical: bool = False
     straighten_angle: float = Field(default=0.0, ge=-45.0, le=45.0)
+    perspective_horizontal: float = Field(default=0.0, ge=-100.0, le=100.0)
+    perspective_vertical: float = Field(default=0.0, ge=-100.0, le=100.0)
     crop: CropRectangle = Field(default_factory=CropRectangle)
     ratio_mode: Literal[
         "free", "original", "1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "2:1", "custom"
@@ -1083,10 +1086,47 @@ class GeometryMapRequest(BaseModel):
 
 class GeometryMapResponse(BaseModel):
     geometry_signature: str
-    output_to_source: list[float] = Field(min_length=6, max_length=6)
-    source_to_output: list[float] = Field(min_length=6, max_length=6)
+    output_to_source: list[float] = Field(min_length=9, max_length=9)
+    source_to_output: list[float] = Field(min_length=9, max_length=9)
     output_width: int = Field(gt=0)
     output_height: int = Field(gt=0)
+
+
+class PerspectiveGuideLine(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    start: MaskPoint
+    end: MaskPoint
+
+    @model_validator(mode="after")
+    def validate_length(self) -> "PerspectiveGuideLine":
+        if math.hypot(self.end.x - self.start.x, self.end.y - self.start.y) < 0.05:
+            raise ValueError("perspective guide lines must span at least five percent of the image")
+        return self
+
+
+class PerspectiveSolveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    adjustments: AdjustmentState
+    vertical_guides: list[PerspectiveGuideLine] = Field(default_factory=list, max_length=2)
+    horizontal_guides: list[PerspectiveGuideLine] = Field(default_factory=list, max_length=2)
+    edit_revision: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_guide_pairs(self) -> "PerspectiveSolveRequest":
+        if len(self.vertical_guides) not in {0, 2} or len(self.horizontal_guides) not in {0, 2}:
+            raise ValueError("perspective solving requires exactly two guides for each selected orientation")
+        if not self.vertical_guides and not self.horizontal_guides:
+            raise ValueError("at least one perspective guide pair is required")
+        return self
+
+
+class PerspectiveSolveResponse(BaseModel):
+    perspective_horizontal: float = Field(ge=-100.0, le=100.0)
+    perspective_vertical: float = Field(ge=-100.0, le=100.0)
+    straighten_angle: float = Field(ge=-45.0, le=45.0)
+    residual_degrees: float = Field(ge=0.0)
 
 
 class LocalLuminanceSampleRequest(BaseModel):

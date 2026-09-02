@@ -1040,7 +1040,20 @@ def test_preview_cache_reuses_compiled_mask_when_only_grade_changes() -> None:
     assert second_diagnostics["local_mask_bytes"] == first_diagnostics["local_mask_bytes"]
 
 
-def test_straightened_local_mask_uses_the_exact_destructive_image_geometry() -> None:
+@pytest.mark.parametrize(
+    "geometry",
+    [
+        GeometryAdjustments(straighten_angle=17.0),
+        GeometryAdjustments(
+            rotation=90,
+            straighten_angle=-5.0,
+            perspective_horizontal=28.0,
+            perspective_vertical=-19.0,
+            crop={"x": 0.04, "y": 0.06, "width": 0.9, "height": 0.86},
+        ),
+    ],
+)
+def test_local_mask_uses_the_exact_destructive_image_geometry(geometry: GeometryAdjustments) -> None:
     image = np.full((79, 131, 3), 0.18, dtype=np.float32)
     local = LocalAdjustment(
         mask=_leaf(MaskLeaf(
@@ -1053,7 +1066,6 @@ def test_straightened_local_mask_uses_the_exact_destructive_image_geometry() -> 
         )),
         hdr_grade=LocalGrade(exposure=1.0),
     )
-    geometry = GeometryAdjustments(straighten_angle=17.0)
     adjustments = AdjustmentState()
     adjustments.shared.geometry = geometry
 

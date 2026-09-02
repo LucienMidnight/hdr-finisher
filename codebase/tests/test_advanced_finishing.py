@@ -5,8 +5,20 @@ import pytest
 from pydantic import ValidationError
 
 from hdr_finisher.adjustments import apply_adjustments
-from hdr_finisher.finishing import apply_geometry, apply_output_finishing, geometry_coordinate_map, resolve_output_dimensions
-from hdr_finisher.models import AdjustmentState, GeometryAdjustments, OutputFinishingSettings, PreviewKind
+from hdr_finisher.finishing import (
+    apply_geometry,
+    apply_output_finishing,
+    geometry_coordinate_map,
+    resolve_output_dimensions,
+    solve_perspective_guides,
+)
+from hdr_finisher.models import (
+    AdjustmentState,
+    GeometryAdjustments,
+    OutputFinishingSettings,
+    PerspectiveGuideLine,
+    PreviewKind,
+)
 
 
 def test_geometry_is_shared_and_rotation_crop_dimensions_align_between_lanes() -> None:
@@ -29,12 +41,44 @@ def test_straighten_returns_only_finite_valid_pixels_without_padding() -> None:
     np.testing.assert_allclose(output, 1.0, atol=1e-6)
 
 
+def test_neutral_perspective_preserves_the_exact_existing_geometry_path() -> None:
+    image = np.random.default_rng(7).random((47, 71, 3), dtype=np.float32) * np.float32(5.0)
+    neutral = apply_geometry(image, GeometryAdjustments())
+    explicit = apply_geometry(
+        image,
+        GeometryAdjustments(perspective_horizontal=0.0, perspective_vertical=0.0),
+    )
+    assert neutral is image
+    assert explicit is image
+
+
+@pytest.mark.parametrize(
+    ("horizontal", "vertical"),
+    [(100.0, 0.0), (-100.0, 0.0), (0.0, 100.0), (0.0, -100.0), (85.0, -70.0)],
+)
+def test_perspective_retains_hdr_headroom_and_never_introduces_padding(horizontal: float, vertical: float) -> None:
+    image = np.full((96, 144, 3), 4.0, dtype=np.float32)
+    output = apply_geometry(
+        image,
+        GeometryAdjustments(
+            straighten_angle=8.0,
+            perspective_horizontal=horizontal,
+            perspective_vertical=vertical,
+        ),
+    )
+    assert output.dtype == np.float32
+    assert output.size > 0
+    assert np.isfinite(output).all()
+    np.testing.assert_allclose(output, 4.0, atol=2e-5)
+
+
 @pytest.mark.parametrize(
     "geometry",
     [
         GeometryAdjustments(rotation=90),
         GeometryAdjustments(rotation=270, flip_horizontal=True),
         GeometryAdjustments(straighten_angle=17.0),
+        GeometryAdjustments(perspective_horizontal=38.0, perspective_vertical=-24.0),
         GeometryAdjustments(
             rotation=90,
             flip_vertical=True,
@@ -45,14 +89,18 @@ def test_straighten_returns_only_finite_valid_pixels_without_padding() -> None:
 )
 def test_geometry_coordinate_map_round_trips_source_and_display_points(geometry: GeometryAdjustments) -> None:
     output_to_source, source_to_output, width, height = geometry_coordinate_map(131, 79, geometry)
-    output_matrix = np.array([*output_to_source, 0.0, 0.0, 1.0], dtype=np.float64).reshape(3, 3)
-    source_matrix = np.array([*source_to_output, 0.0, 0.0, 1.0], dtype=np.float64).reshape(3, 3)
-    np.testing.assert_allclose(output_matrix @ source_matrix, np.eye(3), atol=2e-6)
+    output_matrix = np.asarray(output_to_source, dtype=np.float64).reshape(3, 3)
+    source_matrix = np.asarray(source_to_output, dtype=np.float64).reshape(3, 3)
+    product = output_matrix @ source_matrix
+    product /= product[2, 2]
+    np.testing.assert_allclose(product, np.eye(3), atol=2e-6)
     assert width > 0 and height > 0
 
     points = np.array([[0.23, 0.31, 1.0], [0.5, 0.5, 1.0], [0.78, 0.62, 1.0]]).T
     displayed = source_matrix @ points
+    displayed /= displayed[2]
     restored = output_matrix @ displayed
+    restored /= restored[2]
     np.testing.assert_allclose(restored, points, atol=2e-6)
 
 
@@ -62,9 +110,50 @@ def test_quarter_turn_coordinate_map_matches_clockwise_editor_semantics() -> Non
         79,
         GeometryAdjustments(rotation=90),
     )
-    source_matrix = np.array([*source_to_output, 0.0, 0.0, 1.0], dtype=np.float64).reshape(3, 3)
+    source_matrix = np.asarray(source_to_output, dtype=np.float64).reshape(3, 3)
     displayed = source_matrix @ np.array([0.23, 0.31, 1.0])
+    displayed /= displayed[2]
     np.testing.assert_allclose(displayed[:2], [0.69, 0.23], atol=2e-6)
+
+
+def test_vertical_guides_solve_to_supported_perspective_and_level() -> None:
+    guides = [
+        PerspectiveGuideLine(start={"x": 0.28, "y": 0.12}, end={"x": 0.31, "y": 0.88}),
+        PerspectiveGuideLine(start={"x": 0.72, "y": 0.12}, end={"x": 0.69, "y": 0.88}),
+    ]
+    horizontal, vertical, straighten, residual = solve_perspective_guides(
+        1200,
+        800,
+        GeometryAdjustments(),
+        guides,
+        [],
+    )
+    assert horizontal == 0.0
+    assert abs(vertical) > 1.0
+    assert abs(straighten) < 45.0
+    assert residual <= 0.25
+
+
+def test_combined_guides_jointly_solve_both_axes_and_straighten() -> None:
+    vertical_guides = [
+        PerspectiveGuideLine(start={"x": 0.28, "y": 0.12}, end={"x": 0.31, "y": 0.88}),
+        PerspectiveGuideLine(start={"x": 0.72, "y": 0.12}, end={"x": 0.69, "y": 0.88}),
+    ]
+    horizontal_guides = [
+        PerspectiveGuideLine(start={"x": 0.12, "y": 0.28}, end={"x": 0.88, "y": 0.31}),
+        PerspectiveGuideLine(start={"x": 0.12, "y": 0.72}, end={"x": 0.88, "y": 0.69}),
+    ]
+    horizontal, vertical, straighten, residual = solve_perspective_guides(
+        1200,
+        800,
+        GeometryAdjustments(),
+        vertical_guides,
+        horizontal_guides,
+    )
+    assert abs(horizontal) > 1.0
+    assert abs(vertical) > 1.0
+    assert abs(straighten) < 45.0
+    assert residual <= 0.25
 
 
 def test_invalid_crop_and_export_dimensions_are_rejected() -> None:
