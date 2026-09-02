@@ -240,6 +240,7 @@
             <span class="viewer-tool-divider" aria-hidden="true">|</span>
             <button id="overlay-toggle" class="tool-button viewer-menu-toggle" type="button" aria-expanded="false" aria-controls="overlay-popover" aria-haspopup="dialog" aria-pressed="false">Overlays</button>
             <button id="preview-toggle" class="tool-button viewer-menu-toggle" type="button" aria-expanded="false" aria-controls="preview-popover" aria-haspopup="dialog">Preview</button>
+            <button id="frame-toggle" class="tool-button viewer-menu-toggle" type="button" aria-expanded="false" aria-controls="frame-popover" aria-haspopup="dialog" title="Set the neutral surround behind the image, kept separate from the application theme.">Frame</button>
           </div>
           <div id="overlay-popover" class="overlay-popover hidden">
             <div class="popover-heading">
@@ -302,6 +303,20 @@
               <strong id="preview-quality-status" aria-live="polite">Standard</strong>
             </div>
             <p class="helper">Higher settings use more memory. Export quality is unchanged.</p>
+          </div>
+          <div id="frame-popover" class="overlay-popover frame-popover hidden">
+            <div class="popover-heading">
+              <span>Viewer Frame</span>
+              <button id="frame-close" class="text-button" type="button">Close</button>
+            </div>
+            <p class="helper">Sets the neutral surround behind the image only. Theme matches the current app theme; the other options stay fixed even if you switch themes.</p>
+            <div id="frame-preset-list" class="frame-preset-list" role="radiogroup" aria-label="Frame color"></div>
+            <label class="frame-custom-row">Custom
+              <span class="frame-custom-inputs">
+                <input id="frame-custom-swatch" type="color" value="#000000" aria-label="Pick a custom frame color">
+                <input id="frame-custom-hex" type="text" value="#000000" maxlength="7" spellcheck="false" autocapitalize="off" aria-label="Custom frame color hex value" placeholder="#000000">
+              </span>
+            </label>
           </div>
           <aside id="proof-workflow-panel" class="workflow-side-panel proof-rail panel" data-workflow-panel="proof" aria-label="Chromium Proof settings">
             <div class="workflow-rail-header">
@@ -382,6 +397,10 @@
                   <canvas id="crop-guide-canvas" aria-hidden="true"></canvas>
                   <span class="crop-handle nw" data-crop-handle="nw"></span><span class="crop-handle n" data-crop-handle="n"></span><span class="crop-handle ne" data-crop-handle="ne"></span><span class="crop-handle e" data-crop-handle="e"></span><span class="crop-handle se" data-crop-handle="se"></span><span class="crop-handle s" data-crop-handle="s"></span><span class="crop-handle sw" data-crop-handle="sw"></span><span class="crop-handle w" data-crop-handle="w"></span>
                 </div>
+              </div>
+              <div id="perspective-editor-overlay" class="perspective-editor-overlay hidden" aria-hidden="true">
+                <svg id="perspective-guide-svg" aria-hidden="true"></svg>
+                <div id="perspective-guide-handles"></div>
               </div>
               <button id="vignette-center-handle" class="vignette-center-handle hidden" type="button" aria-label="Vignette center. Arrow keys move by one percent; Shift plus arrow moves by five percent.">+</button>
             </div>
@@ -754,6 +773,24 @@
             <p class="helper">Straighten previews immediately while dragging and settles at full quality after release.</p>
             <div class="crop-editor-actions"><button id="rotate-cancel" class="button-secondary" type="button">Cancel</button><button id="rotate-apply" class="button-primary" type="button">Apply rotation</button></div>
           </div>
+        </div>
+      </section>
+
+      <section class="control-group collapsed" data-group="perspective">
+        <div class="control-group-header">
+          <button class="group-toggle" type="button" aria-expanded="false">Perspective <span data-modified-count="perspective">Default</span></button>
+          <button class="group-reset text-button" type="button" data-reset-group="perspective">Reset</button>
+        </div>
+        <div class="control-group-body perspective-options">
+          <div class="perspective-tool-strip" role="toolbar" aria-label="Guided perspective tools">
+            <button id="perspective-vertical-tool" type="button" aria-pressed="false"><span aria-hidden="true">&#8597;</span><span>Vertical Guides</span></button>
+            <button id="perspective-horizontal-tool" type="button" aria-pressed="false"><span aria-hidden="true">&#8596;</span><span>Horizontal Guides</span></button>
+          </div>
+          <div class="control-row" data-control-path="shared.geometry.perspective_horizontal"><div class="control-heading"><label for="perspective-horizontal">Horizontal</label><output id="perspective-horizontal-value">0</output></div><input id="perspective-horizontal" type="range" min="-100" max="100" step="1" value="0"></div>
+          <div class="control-row" data-control-path="shared.geometry.perspective_vertical"><div class="control-heading"><label for="perspective-vertical">Vertical</label><output id="perspective-vertical-value">0</output></div><input id="perspective-vertical" type="range" min="-100" max="100" step="1" value="0"></div>
+          <p class="helper">Place both guides along edges that should be parallel. Guided correction may also update Straighten.</p>
+          <p id="perspective-status" class="support-copy" aria-live="polite">Choose a guide tool or move a slider.</p>
+          <div class="crop-editor-actions"><button id="perspective-cancel" class="button-secondary" type="button">Cancel</button><button id="perspective-apply" class="button-primary" type="button">Apply perspective</button></div>
         </div>
       </section>
 
@@ -1532,6 +1569,7 @@
     <div class="settings-layout">
       <nav class="settings-nav" aria-label="Settings sections">
         <button type="button" class="active" data-settings-tab="general" aria-selected="true">General</button>
+        <button type="button" data-settings-tab="appearance" aria-selected="false">Appearance</button>
         <button type="button" data-settings-tab="locations" aria-selected="false">Locations</button>
         <button type="button" data-settings-tab="shortcuts" aria-selected="false">Shortcuts</button>
         <button type="button" data-settings-tab="updates" aria-selected="false">Updates</button>
@@ -1555,6 +1593,11 @@
             </select>
           </label>
           <p class="helper">Auto uses WebGPU when available and falls back safely. CPU compatibility keeps preview rendering on the backend; export quality is unchanged.</p>
+        </section>
+        <section data-settings-panel="appearance" hidden>
+          <h3>Appearance</h3>
+          <p class="helper">Themes restyle the workspace surround, panels, and text. The image viewer and color-critical instruments (scopes, curves, exposure bands) stay neutral in every theme so they never bias color judgment.</p>
+          <div id="theme-option-list" class="theme-option-list" role="radiogroup" aria-label="Application theme"></div>
         </section>
         <section data-settings-panel="locations" hidden>
           <h3>Default locations</h3>

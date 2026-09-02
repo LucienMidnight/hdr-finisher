@@ -374,6 +374,15 @@ const state = {
   cropGridDensity: 8,
   cropDrag: null,
   geometryTool: null,
+  perspectiveMode: false,
+  perspectiveDraftGeometry: null,
+  perspectiveTool: null,
+  perspectiveGuides: null,
+  perspectiveGuidesTouched: { vertical: false, horizontal: false },
+  perspectiveGuideDrag: null,
+  perspectivePreviewController: null,
+  perspectivePreviewTimer: 0,
+  perspectivePreviewUrl: null,
   straightenGestureActive: false,
   straightenPreviewBaseAngle: null,
   straightenPreviewFrameRect: null,
@@ -659,6 +668,8 @@ const defaultGeometry = () => ({
   flip_horizontal: false,
   flip_vertical: false,
   straighten_angle: 0,
+  perspective_horizontal: 0,
+  perspective_vertical: 0,
   crop: { x: 0, y: 0, width: 1, height: 1 },
   ratio_mode: "free",
   custom_ratio: { width: 1, height: 1 },
@@ -669,8 +680,8 @@ function geometrySignature() {
 }
 
 const IDENTITY_GEOMETRY_COORDINATE_MAP = Object.freeze({
-  outputToSource: Object.freeze([1, 0, 0, 0, 1, 0]),
-  sourceToOutput: Object.freeze([1, 0, 0, 0, 1, 0]),
+  outputToSource: Object.freeze([1, 0, 0, 0, 1, 0, 0, 0, 1]),
+  sourceToOutput: Object.freeze([1, 0, 0, 0, 1, 0, 0, 0, 1]),
 });
 
 function geometryTransformIsNeutral(geometry = state.adjustments.shared?.geometry) {
@@ -679,6 +690,8 @@ function geometryTransformIsNeutral(geometry = state.adjustments.shared?.geometr
     && !geometry?.flip_horizontal
     && !geometry?.flip_vertical
     && Math.abs(Number(geometry?.straighten_angle) || 0) < 1e-8
+    && Math.abs(Number(geometry?.perspective_horizontal) || 0) < 1e-8
+    && Math.abs(Number(geometry?.perspective_vertical) || 0) < 1e-8
     && Math.abs((Number(crop.x) || 0)) < 1e-8
     && Math.abs((Number(crop.y) || 0)) < 1e-8
     && Math.abs((Number(crop.width) || 1) - 1) < 1e-8
@@ -694,10 +707,12 @@ function currentGeometryCoordinateMap() {
   return geometryCoordinateMapCache.get(geometryCoordinateMapKey()) || null;
 }
 
-function affinePoint(matrix, point) {
+function projectivePoint(matrix, point) {
+  const denominator = matrix[6] * point.x + matrix[7] * point.y + matrix[8];
+  if (Math.abs(denominator) < 1e-10) return { x: Number.NaN, y: Number.NaN };
   return {
-    x: matrix[0] * point.x + matrix[1] * point.y + matrix[2],
-    y: matrix[3] * point.x + matrix[4] * point.y + matrix[5],
+    x: (matrix[0] * point.x + matrix[1] * point.y + matrix[2]) / denominator,
+    y: (matrix[3] * point.x + matrix[4] * point.y + matrix[5]) / denominator,
   };
 }
 
@@ -1109,6 +1124,9 @@ const els = {
   pathMaskProgress: document.getElementById("path-mask-progress"),
   pathMaskProgressCopy: document.getElementById("path-mask-progress-copy"),
   straightenGridOverlay: document.getElementById("straighten-grid-overlay"),
+  perspectiveEditorOverlay: document.getElementById("perspective-editor-overlay"),
+  perspectiveGuideSvg: document.getElementById("perspective-guide-svg"),
+  perspectiveGuideHandles: document.getElementById("perspective-guide-handles"),
   gradeModeGlobal: document.getElementById("grade-mode-global"),
   gradeModeLocal: document.getElementById("grade-mode-local"),
   localAdjustmentGroup: document.getElementById("local-adjustments-group"),
@@ -1321,6 +1339,15 @@ const els = {
   flipHorizontal: document.getElementById("flip-horizontal"),
   flipVertical: document.getElementById("flip-vertical"),
   swapCustomRatio: document.getElementById("swap-custom-ratio"),
+  perspectiveVerticalTool: document.getElementById("perspective-vertical-tool"),
+  perspectiveHorizontalTool: document.getElementById("perspective-horizontal-tool"),
+  perspectiveHorizontal: document.getElementById("perspective-horizontal"),
+  perspectiveVertical: document.getElementById("perspective-vertical"),
+  perspectiveHorizontalValue: document.getElementById("perspective-horizontal-value"),
+  perspectiveVerticalValue: document.getElementById("perspective-vertical-value"),
+  perspectiveStatus: document.getElementById("perspective-status"),
+  perspectiveApply: document.getElementById("perspective-apply"),
+  perspectiveCancel: document.getElementById("perspective-cancel"),
   colorGradingReset: document.getElementById("color-grading-reset"),
   colorGradingMatchHdr: document.getElementById("color-grading-match-hdr"),
   colorGradingSdrActions: document.getElementById("color-grading-sdr-actions"),
@@ -1346,6 +1373,7 @@ const els = {
 
 const controlGroups = {
   geometry: ["shared.geometry"],
+  perspective: ["shared.geometry.perspective_horizontal", "shared.geometry.perspective_vertical"],
   "hdr-tone": ["hdr.exposure", "hdr.contrast", "hdr.contrast_pivot", "hdr.shadow_lift"],
   "hdr-highlights": ["hdr.highlight_compression_mode", "hdr.highlight_compression_start_nits", "hdr.highlight_compression_target_nits", "hdr.highlight_compression_softness", "hdr.highlight_compression_peak_detail", "hdr.highlight_compression_peak_measurement", "hdr.highlight_compression_manual_peak_nits", "hdr.highlight_compression_bias", "hdr.highlight_compression_color_handling"],
   "hdr-equalizer": ["hdr.tone_equalizer_nodes", "hdr.tone_equalizer_influence_radius", "hdr.tone_equalizer_smoothing"],
@@ -1415,7 +1443,7 @@ function groupPresetPaths(groupId) {
 
 function groupPresetContextForElement(groupElement) {
   const rawGroup = groupElement?.dataset.group || "";
-  if (["geometry", "local-adjustments"].includes(rawGroup)) return null;
+  if (["geometry", "perspective", "local-adjustments"].includes(rawGroup)) return null;
   const groupId = ["curves", "color-grading", "detail", "film-look", "vignette", "denoise"].includes(rawGroup)
     ? `${state.currentView}-${rawGroup}`
     : rawGroup;
@@ -2700,6 +2728,7 @@ function bindEvents() {
   els.vignetteMatchHdr?.addEventListener("click", () => matchLaneObject("vignette"));
   bindColorWheels();
   bindCropEditor();
+  bindPerspectiveEditor();
   bindVignetteCenter();
   els.sectionBypasses.forEach((button) => {
     button.addEventListener("click", () => {
@@ -3317,7 +3346,18 @@ async function initializeApplicationShell() {
     adjustControl: adjustControlFromShortcut,
     onPreferencesChanged: (preferences, options = {}) => {
       const oldDirectory = state.appPreferences?.folders?.fileSave || "";
+      const themeChanged = !options.initial && preferences.theme !== state.appPreferences?.theme;
       state.appPreferences = preferences;
+      if (themeChanged) {
+        // CSS custom properties repaint immediately, but canvases (scopes,
+        // curve editor, tone equalizer) only redraw when explicitly told to —
+        // otherwise they keep showing colors sampled at the last draw call.
+        drawHistogram(state.lastScope || []);
+        if (els.curveEditor) drawCurveEditor();
+        if (els.toneEqualizerEditor) drawToneEqualizerEditor("hdr");
+        if (els.sdrToneEqualizerEditor) drawToneEqualizerEditor("sdr");
+        if (els.highlightCompressionGraph) renderHighlightCompressionControls();
+      }
       if (preferences.folders.fileSave) {
         state.defaultExportDirectory = preferences.folders.fileSave;
         if (!els.exportDirectory.value.trim() || els.exportDirectory.value === oldDirectory) els.exportDirectory.value = preferences.folders.fileSave;
@@ -3577,7 +3617,7 @@ async function settlePreview(lane = state.currentView, task = {}) {
   // Rotate/Straighten is an explicit Apply/Cancel transaction. A scheduler
   // task left resident by an earlier grading gesture must never settle the
   // transient geometry on slider release.
-  if (!state.session || state.rotateDraftGeometry) return false;
+  if (!state.session || state.rotateDraftGeometry || state.perspectiveMode) return false;
   await syncGlobalEditState();
   const display = lane === state.currentView;
   const detailRestore = state.detailInteractionRestore?.lane === lane
@@ -4348,7 +4388,7 @@ function drawVectorscope(ctx, scope, width, height) {
   const left = (width - size) / 2;
   const top = (height - size) / 2;
   ctx.save();
-  ctx.strokeStyle = "rgba(224,232,235,.18)";
+  ctx.strokeStyle = uiToken("--scope-guide-line-labeled");
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.arc(left + size / 2, top + size / 2, size / 2, 0, Math.PI * 2);
@@ -4396,7 +4436,7 @@ function observeGraphEditorSizes() {
 function drawScopeGrid(ctx, scope, isWaveform, plotLeft, plotTop, plotWidth, plotHeight, canvasHeight) {
   ctx.save();
   ctx.lineWidth = 1;
-  ctx.strokeStyle = "rgba(224, 232, 235, 0.08)";
+  ctx.strokeStyle = uiToken("--scope-grid-line");
   [0, 0.25, 0.5, 0.75, 1].forEach((position) => {
     const y = plotTop + plotHeight - position * plotHeight;
     ctx.beginPath();
@@ -4409,8 +4449,8 @@ function drawScopeGrid(ctx, scope, isWaveform, plotLeft, plotTop, plotWidth, plo
   (scope.guides || []).forEach((guide) => {
     const normalized = guidePosition(scope, guide.value);
     const showLabel = labeledGuides.has(Number(guide.value));
-    ctx.strokeStyle = showLabel ? "rgba(224, 232, 235, 0.17)" : "rgba(224, 232, 235, 0.08)";
-    ctx.fillStyle = "rgba(224, 232, 235, 0.62)";
+    ctx.strokeStyle = showLabel ? uiToken("--scope-guide-line-labeled") : uiToken("--scope-guide-line");
+    ctx.fillStyle = uiToken("--scope-guide-label");
     if (isWaveform) {
       const y = plotTop + plotHeight - normalized * plotHeight;
       ctx.beginPath();
@@ -4551,7 +4591,7 @@ function drawResolveHistogram(ctx, channels, palette, plotLeft, plotTop, plotWid
   }
   const peak = robustHistogramPeak(channels);
   ctx.save();
-  ctx.globalCompositeOperation = channels.length > 1 ? "lighter" : "source-over";
+  ctx.globalCompositeOperation = channels.length > 1 ? uiToken("--histogram-blend-mode") : "source-over";
   channels.forEach((channel) => {
     drawHistogramTrace(ctx, channel, palette[channel.name], peak, plotLeft, plotTop, plotWidth, plotHeight);
   });
@@ -4611,7 +4651,7 @@ function drawWaveform(ctx, scope, channels, palette, plotLeft, plotTop, plotWidt
   ctx.beginPath();
   ctx.rect(plotLeft, plotTop, plotWidth, plotHeight);
   ctx.clip();
-  ctx.globalCompositeOperation = channels.length > 1 ? "screen" : "source-over";
+  ctx.globalCompositeOperation = channels.length > 1 ? uiToken("--waveform-blend-mode") : "source-over";
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
   channels.forEach((channel) => {
@@ -5881,6 +5921,7 @@ function getValueByPath(target, path) {
 
 function bindCropEditor() {
   els.cropToolToggle?.addEventListener("click", async () => {
+    if (state.perspectiveMode) closePerspectiveMode(false);
     if (state.rotateDraftGeometry) closeRotateMode(false);
     if (state.geometryTool === "crop") {
       closeCropMode(true);
@@ -5891,6 +5932,7 @@ function bindCropEditor() {
     await openCropMode();
   });
   els.rotateToolToggle?.addEventListener("click", () => {
+    if (state.perspectiveMode) closePerspectiveMode(false);
     if (state.cropMode) closeCropMode(true);
     if (state.geometryTool === "rotate") {
       closeRotateMode(false);
@@ -5943,6 +5985,270 @@ function bindCropEditor() {
     els.cropStraighten?.addEventListener(eventName, finishStraightenGesture);
   });
   renderGeometryToolState();
+}
+
+function bindPerspectiveEditor() {
+  const activateTool = (orientation) => {
+    openPerspectiveMode();
+    state.perspectiveTool = state.perspectiveTool === orientation ? null : orientation;
+    renderPerspectiveControls();
+    renderPerspectiveGuides();
+  };
+  els.perspectiveVerticalTool?.addEventListener("click", () => activateTool("vertical"));
+  els.perspectiveHorizontalTool?.addEventListener("click", () => activateTool("horizontal"));
+  const sliderInput = (key, control) => {
+    const value = Number(control.value);
+    openPerspectiveMode();
+    state.adjustments.shared.geometry[key] = value;
+    renderPerspectiveControls();
+    schedulePerspectiveDraftPreview();
+  };
+  els.perspectiveHorizontal?.addEventListener("input", () => sliderInput("perspective_horizontal", els.perspectiveHorizontal));
+  els.perspectiveVertical?.addEventListener("input", () => sliderInput("perspective_vertical", els.perspectiveVertical));
+  els.perspectiveApply?.addEventListener("click", () => closePerspectiveMode(true));
+  els.perspectiveCancel?.addEventListener("click", () => closePerspectiveMode(false));
+  els.perspectiveGuideHandles?.addEventListener("pointerdown", beginPerspectiveGuideDrag);
+  els.perspectiveGuideHandles?.addEventListener("keydown", movePerspectiveGuideWithKeyboard);
+  window.addEventListener("pointermove", movePerspectiveGuideDrag);
+  window.addEventListener("pointerup", endPerspectiveGuideDrag);
+  window.addEventListener("resize", renderPerspectiveGuides);
+  renderPerspectiveControls();
+}
+
+function defaultPerspectiveGuides() {
+  return {
+    vertical: [
+      { start: { x: 1 / 3, y: 0.15 }, end: { x: 1 / 3, y: 0.85 } },
+      { start: { x: 2 / 3, y: 0.15 }, end: { x: 2 / 3, y: 0.85 } },
+    ],
+    horizontal: [
+      { start: { x: 0.15, y: 1 / 3 }, end: { x: 0.85, y: 1 / 3 } },
+      { start: { x: 0.15, y: 2 / 3 }, end: { x: 0.85, y: 2 / 3 } },
+    ],
+  };
+}
+
+function openPerspectiveMode() {
+  if (!state.session || state.perspectiveMode) return;
+  if (state.cropMode) closeCropMode(true);
+  if (state.rotateDraftGeometry) closeRotateMode(false);
+  state.perspectiveMode = true;
+  state.perspectiveDraftGeometry = JSON.parse(JSON.stringify(state.adjustments.shared.geometry));
+  state.perspectiveGuides = defaultPerspectiveGuides();
+  state.perspectiveGuidesTouched = { vertical: false, horizontal: false };
+  state.perspectiveTool = null;
+  if (state.gradeMode === "local") setGradeMode("global");
+  renderPerspectiveControls();
+}
+
+function closePerspectiveMode(commit) {
+  if (!state.perspectiveMode) return;
+  const original = state.perspectiveDraftGeometry;
+  const changed = original && !valuesEqual(original, state.adjustments.shared.geometry);
+  state.perspectivePreviewController?.abort();
+  state.perspectivePreviewController = null;
+  window.clearTimeout(state.perspectivePreviewTimer);
+  state.perspectivePreviewTimer = 0;
+  state.perspectiveMode = false;
+  state.perspectiveTool = null;
+  state.perspectiveGuideDrag = null;
+  state.perspectiveGuides = null;
+  state.perspectiveDraftGeometry = null;
+  els.perspectiveEditorOverlay?.classList.add("hidden");
+  els.perspectiveEditorOverlay?.setAttribute("aria-hidden", "true");
+  if (!commit && original) state.adjustments.shared.geometry = original;
+  if (state.perspectivePreviewUrl) {
+    URL.revokeObjectURL(state.perspectivePreviewUrl);
+    state.perspectivePreviewUrl = null;
+  }
+  renderPerspectiveControls();
+  renderControlState();
+  if (commit && changed) {
+    state.geometryTransformHandoffSignature = geometrySignature();
+    state.geometryPresentationPending = true;
+    state.gpuPreparedLane = { hdr: false, sdr: false };
+    invalidatePreview("hdr");
+    invalidatePreview("sdr");
+    debouncePreview(state.currentView);
+  } else {
+    void showCachedPreview(state.currentView).then((shown) => {
+      if (!shown) debouncePreview(state.currentView);
+    });
+  }
+}
+
+function renderPerspectiveControls() {
+  const geometry = state.adjustments?.shared?.geometry || defaultGeometry();
+  if (els.perspectiveHorizontal) els.perspectiveHorizontal.value = String(Math.round(Number(geometry.perspective_horizontal) || 0));
+  if (els.perspectiveVertical) els.perspectiveVertical.value = String(Math.round(Number(geometry.perspective_vertical) || 0));
+  if (els.perspectiveHorizontalValue) els.perspectiveHorizontalValue.textContent = `${Number(geometry.perspective_horizontal) > 0 ? "+" : ""}${Math.round(Number(geometry.perspective_horizontal) || 0)}`;
+  if (els.perspectiveVerticalValue) els.perspectiveVerticalValue.textContent = `${Number(geometry.perspective_vertical) > 0 ? "+" : ""}${Math.round(Number(geometry.perspective_vertical) || 0)}`;
+  for (const [orientation, button] of [["vertical", els.perspectiveVerticalTool], ["horizontal", els.perspectiveHorizontalTool]]) {
+    const active = state.perspectiveMode && state.perspectiveTool === orientation;
+    button?.classList.toggle("active", active);
+    button?.setAttribute("aria-pressed", String(active));
+  }
+  if (els.perspectiveApply) els.perspectiveApply.disabled = !state.perspectiveMode;
+  if (els.perspectiveCancel) els.perspectiveCancel.disabled = !state.perspectiveMode;
+}
+
+function renderPerspectiveGuides() {
+  const overlay = els.perspectiveEditorOverlay;
+  const svg = els.perspectiveGuideSvg;
+  const handles = els.perspectiveGuideHandles;
+  const preview = activePreviewElement();
+  const paneRect = els.previewPrimaryPane?.getBoundingClientRect();
+  const imageRect = preview?.getBoundingClientRect();
+  const orientation = state.perspectiveTool;
+  if (!overlay || !svg || !handles || !orientation || !state.perspectiveGuides || !paneRect || !imageRect?.width || !imageRect?.height) {
+    overlay?.classList.add("hidden");
+    overlay?.setAttribute("aria-hidden", "true");
+    return;
+  }
+  Object.assign(overlay.style, {
+    left: `${imageRect.left - paneRect.left}px`, top: `${imageRect.top - paneRect.top}px`,
+    width: `${imageRect.width}px`, height: `${imageRect.height}px`, right: "auto", bottom: "auto",
+  });
+  overlay.classList.remove("hidden");
+  overlay.setAttribute("aria-hidden", "false");
+  svg.replaceChildren();
+  handles.replaceChildren();
+  state.perspectiveGuides[orientation].forEach((guide, guideIndex) => {
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("x1", `${guide.start.x * 100}%`); line.setAttribute("y1", `${guide.start.y * 100}%`);
+    line.setAttribute("x2", `${guide.end.x * 100}%`); line.setAttribute("y2", `${guide.end.y * 100}%`);
+    svg.append(line);
+    for (const pointName of ["start", "end"]) {
+      const point = guide[pointName];
+      const handle = document.createElement("button");
+      handle.type = "button";
+      handle.className = "perspective-guide-handle";
+      handle.dataset.orientation = orientation;
+      handle.dataset.guideIndex = String(guideIndex);
+      handle.dataset.guidePoint = pointName;
+      handle.style.left = `${point.x * 100}%`;
+      handle.style.top = `${point.y * 100}%`;
+      handle.setAttribute("aria-label", `${orientation} guide ${guideIndex + 1} ${pointName}. Use arrow keys to move; Shift moves ten pixels.`);
+      handles.append(handle);
+    }
+  });
+}
+
+function beginPerspectiveGuideDrag(event) {
+  const handle = event.target.closest?.(".perspective-guide-handle");
+  if (!handle) return;
+  event.preventDefault();
+  handle.setPointerCapture?.(event.pointerId);
+  state.perspectiveGuideDrag = {
+    orientation: handle.dataset.orientation,
+    guideIndex: Number(handle.dataset.guideIndex),
+    pointName: handle.dataset.guidePoint,
+    pointerId: event.pointerId,
+  };
+}
+
+function movePerspectiveGuideDrag(event) {
+  const drag = state.perspectiveGuideDrag;
+  const rect = els.perspectiveEditorOverlay?.getBoundingClientRect();
+  if (!drag || event.pointerId !== drag.pointerId || !rect?.width || !rect?.height) return;
+  const point = state.perspectiveGuides?.[drag.orientation]?.[drag.guideIndex]?.[drag.pointName];
+  if (!point) return;
+  point.x = clamp((event.clientX - rect.left) / rect.width, 0, 1);
+  point.y = clamp((event.clientY - rect.top) / rect.height, 0, 1);
+  renderPerspectiveGuides();
+}
+
+function endPerspectiveGuideDrag(event) {
+  const drag = state.perspectiveGuideDrag;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  state.perspectiveGuideDrag = null;
+  state.perspectiveGuidesTouched[drag.orientation] = true;
+  void solvePerspectiveGuides();
+}
+
+function movePerspectiveGuideWithKeyboard(event) {
+  const handle = event.target.closest?.(".perspective-guide-handle");
+  if (!handle || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+  event.preventDefault();
+  const rect = els.perspectiveEditorOverlay?.getBoundingClientRect();
+  if (!rect?.width || !rect?.height) return;
+  const orientation = handle.dataset.orientation;
+  const point = state.perspectiveGuides?.[orientation]?.[Number(handle.dataset.guideIndex)]?.[handle.dataset.guidePoint];
+  if (!point) return;
+  const pixels = event.shiftKey ? 10 : 1;
+  point.x = clamp(point.x + (event.key === "ArrowLeft" ? -pixels / rect.width : event.key === "ArrowRight" ? pixels / rect.width : 0), 0, 1);
+  point.y = clamp(point.y + (event.key === "ArrowUp" ? -pixels / rect.height : event.key === "ArrowDown" ? pixels / rect.height : 0), 0, 1);
+  state.perspectiveGuidesTouched[orientation] = true;
+  renderPerspectiveGuides();
+  void solvePerspectiveGuides();
+}
+
+async function solvePerspectiveGuides() {
+  if (!state.session || !state.perspectiveMode) return;
+  const vertical = state.perspectiveGuidesTouched.vertical ? state.perspectiveGuides.vertical : [];
+  const horizontal = state.perspectiveGuidesTouched.horizontal ? state.perspectiveGuides.horizontal : [];
+  if (!vertical.length && !horizontal.length) return;
+  els.perspectiveStatus.textContent = "Solving guided correction…";
+  const response = await fetch(`/api/session/${state.session.session_id}/perspective-solve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ adjustments: state.adjustments, vertical_guides: vertical, horizontal_guides: horizontal, edit_revision: state.editRevision }),
+  }).catch(() => null);
+  if (!response?.ok) {
+    const payload = response ? await safeJson(response) : null;
+    els.perspectiveStatus.textContent = responseErrorMessage(payload, "The selected guides could not be solved.");
+    return;
+  }
+  const solved = await response.json();
+  const geometry = state.adjustments.shared.geometry;
+  geometry.perspective_horizontal = solved.perspective_horizontal;
+  geometry.perspective_vertical = solved.perspective_vertical;
+  geometry.straighten_angle = solved.straighten_angle;
+  els.perspectiveStatus.textContent = `Guides aligned within ${Number(solved.residual_degrees).toFixed(2)}°.`;
+  renderPerspectiveControls();
+  schedulePerspectiveDraftPreview();
+}
+
+function schedulePerspectiveDraftPreview() {
+  window.clearTimeout(state.perspectivePreviewTimer);
+  state.perspectivePreviewTimer = window.setTimeout(renderPerspectiveDraftPreview, 90);
+}
+
+async function renderPerspectiveDraftPreview() {
+  if (!state.session || !state.perspectiveMode) return;
+  state.perspectivePreviewController?.abort();
+  const controller = new AbortController();
+  state.perspectivePreviewController = controller;
+  const signature = JSON.stringify(state.adjustments.shared.geometry);
+  const response = await fetch(`/api/session/${state.session.session_id}/preview/${state.currentView}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      adjustments: state.adjustments,
+      transient_adjustments: true,
+      edit_revision: state.editRevision,
+      include_locals: !state.compareWithoutLocals,
+      local_adjustments: state.compareWithoutLocals ? [] : localAdjustments(),
+      long_edge: interactiveProxyLongEdge(),
+      hdr_display: mediaQueryMatch("(dynamic-range: high)"),
+      tier: "interactive",
+    }),
+    signal: controller.signal,
+  }).catch((error) => error.name === "AbortError" ? null : null);
+  if (!response || controller !== state.perspectivePreviewController || !state.perspectiveMode || signature !== JSON.stringify(state.adjustments.shared.geometry)) return;
+  if (!response.ok) {
+    const payload = await safeJson(response);
+    els.perspectiveStatus.textContent = responseErrorMessage(payload, "Perspective preview failed.");
+    return;
+  }
+  const url = URL.createObjectURL(await response.blob());
+  const previous = state.perspectivePreviewUrl;
+  state.perspectivePreviewUrl = url;
+  const applied = await applyPreviewUrl(url, () => state.perspectiveMode && controller === state.perspectivePreviewController && signature === JSON.stringify(state.adjustments.shared.geometry));
+  if (previous) URL.revokeObjectURL(previous);
+  if (!applied) return;
+  renderPerspectiveGuides();
+  renderControlState();
 }
 
 function openCropMode() {
@@ -6994,6 +7300,7 @@ function syncControlsFromState() {
   updateControlReadouts();
   syncToneEqualizerControls();
   renderCropOptions();
+  renderPerspectiveControls();
   renderColorWheels();
   renderVignetteCenter();
 }
@@ -9157,6 +9464,7 @@ function renderInterpretationGate() {
 async function switchLane(lane) {
   if (!["hdr", "sdr"].includes(lane)) return;
   const switchGeneration = ++state.laneSwitchGeneration;
+  if (state.perspectiveMode) closePerspectiveMode(false);
   // A lane change is a presentation boundary. Commit the newest optimistic
   // global state before either lane renders so a round trip cannot replace a
   // settled draft with an older authoritative revision.
@@ -9311,6 +9619,12 @@ function clearPreviewCache() {
   state.detailInteractionRestore = null;
   clearRotateDraftTransformProperties();
   state.previewScheduler?.cancel();
+  state.perspectivePreviewController?.abort();
+  state.perspectivePreviewController = null;
+  window.clearTimeout(state.perspectivePreviewTimer);
+  state.perspectivePreviewTimer = 0;
+  if (state.perspectivePreviewUrl) URL.revokeObjectURL(state.perspectivePreviewUrl);
+  state.perspectivePreviewUrl = null;
   state.scopeRequestInFlight?.controller?.abort();
   state.pendingScopeRequest?.resolve(false);
   state.pendingGpuScopeRequest?.resolve(false);
@@ -9966,14 +10280,14 @@ function formatControlValue(path, value) {
 function renderGeometryResetState(defaults = defaultAdjustments()) {
   const geometryReset = els.groupResets.find((button) => button.dataset.resetGroup === "geometry");
   if (!geometryReset) return;
-  const hasDraft = Boolean(state.cropDraftGeometry || state.rotateDraftGeometry);
+  const hasDraft = Boolean(state.cropDraftGeometry || state.rotateDraftGeometry || state.perspectiveMode);
   const displayedGeometry = state.cropDraftGeometry || state.adjustments.shared.geometry;
   const geometryModified = !valuesEqual(displayedGeometry, defaults.shared.geometry)
     || Boolean(state.rotateDraftGeometry && !valuesEqual(state.adjustments.shared.geometry, defaults.shared.geometry));
   geometryReset.closest(".control-group")?.classList.toggle("modified", geometryModified);
   geometryReset.disabled = !hasDraft && !geometryModified;
-  geometryReset.title = "Reset all crop and rotation geometry";
-  geometryReset.setAttribute("aria-label", "Reset all crop and rotation geometry");
+  geometryReset.title = "Reset all geometry";
+  geometryReset.setAttribute("aria-label", "Reset all geometry");
 }
 
 function renderControlState() {
@@ -10284,12 +10598,23 @@ function resetControlGroup(group) {
   const paths = controlGroups[group] || [];
   if (!paths.length) return;
   const defaults = defaultAdjustments();
+  if (group === "perspective") {
+    openPerspectiveMode();
+    state.adjustments.shared.geometry.perspective_horizontal = defaults.shared.geometry.perspective_horizontal;
+    state.adjustments.shared.geometry.perspective_vertical = defaults.shared.geometry.perspective_vertical;
+    if (els.perspectiveStatus) els.perspectiveStatus.textContent = "Perspective values reset. Apply or cancel this draft.";
+    renderPerspectiveControls();
+    renderControlState();
+    schedulePerspectiveDraftPreview();
+    return;
+  }
   if (group === "geometry") {
     const current = state.cropDraftGeometry || state.adjustments.shared.geometry;
     if (valuesEqual(current, defaults.shared.geometry) && !state.rotateDraftGeometry) return;
-    if (!window.confirm("Reset all crop and rotation geometry? This cannot be undone.")) return;
+    if (!window.confirm("Reset all geometry, including perspective? This cannot be undone.")) return;
     if (state.cropMode) closeCropMode(false);
     if (state.rotateDraftGeometry) closeRotateMode(false);
+    if (state.perspectiveMode) closePerspectiveMode(false);
   }
   paths.forEach((path) => setValueByPath(state.adjustments, path, getValueByPath(defaults, path)));
   const sectionPath = sectionPathForGroup[group];
@@ -10374,6 +10699,7 @@ function renderOutputFinishingControls() {
 function activateWorkflowTab(workflow, { focus = false } = {}) {
   const next = ["import", "grade", "proof", "export"].includes(workflow) ? workflow : "import";
   if (next !== "import" && !state.session) return;
+  if (next !== "grade" && state.perspectiveMode) closePerspectiveMode(false);
   if (next !== "grade" && state.rotateDraftGeometry) closeRotateMode(false);
   if (next !== "grade" && state.cropMode) closeCropMode(true);
   state.activeWorkflow = next;
@@ -12153,6 +12479,9 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
 
 async function syncGlobalEditState() {
   if (!state.session) return true;
+  // Perspective owns a transaction-local copy represented in the shared
+  // adjustment object for transient previews. Never persist it before Apply.
+  if (state.perspectiveMode) return true;
   if (!state.globalEditDirty) {
     const pending = state.globalEditSyncPending;
     if (!pending) return true;
@@ -12832,7 +13161,7 @@ function localPointerPoint(event, displayPoint = null) {
     void ensureGeometryCoordinateMap();
     return null;
   }
-  const source = affinePoint(coordinateMap.outputToSource, point);
+  const source = projectivePoint(coordinateMap.outputToSource, point);
   const pathLeaf = firstMaskLeaf(selectedLocal()?.mask, "path");
   const allowOutside = Boolean(pathLeaf && (state.localPathEditMode === "feather" || !state.localPathDraft));
   return {
@@ -12847,7 +13176,7 @@ function sourcePointToDisplay(point) {
     void ensureGeometryCoordinateMap();
     return null;
   }
-  return affinePoint(coordinateMap.sourceToOutput, point);
+  return projectivePoint(coordinateMap.sourceToOutput, point);
 }
 
 function pathTargetAtPointer(event, nodes, selectedIndex) {
@@ -13034,7 +13363,7 @@ function handlePathCanvasKeydown(event) {
   if (!displayTarget || !coordinateMap) return;
   const displayDx = event.key === "ArrowLeft" ? -pixels / rect.width : event.key === "ArrowRight" ? pixels / rect.width : 0;
   const displayDy = event.key === "ArrowUp" ? -pixels / rect.height : event.key === "ArrowDown" ? pixels / rect.height : 0;
-  const movedSource = affinePoint(coordinateMap.outputToSource, {
+  const movedSource = projectivePoint(coordinateMap.outputToSource, {
     x: displayTarget.x + displayDx,
     y: displayTarget.y + displayDy,
   });
@@ -13201,10 +13530,20 @@ function renderLocalMaskOverlay() {
   drawMaskExpression(context, local.mask, x, y, { ...drawOptions, renderPhase: "mask" });
   const coordinateMap = currentGeometryCoordinateMap();
   if (coordinateMap) {
-    context.save();
-    applySourceGeometryCanvasTransform(context, imageRect, rect, coordinateMap.sourceToOutput);
-    drawMaskExpression(context, local.mask, x, y, { ...drawOptions, renderPhase: "gizmo", skipBrush: true });
-    context.restore();
+    if (projectiveMatrixIsAffine(coordinateMap.sourceToOutput)) {
+      context.save();
+      applySourceGeometryCanvasTransform(context, imageRect, rect, coordinateMap.sourceToOutput);
+      drawMaskExpression(context, local.mask, x, y, { ...drawOptions, renderPhase: "gizmo", skipBrush: true });
+      context.restore();
+    } else {
+      drawMaskExpression(
+        context,
+        projectMaskExpressionToOutput(local.mask, coordinateMap.sourceToOutput),
+        x,
+        y,
+        { ...drawOptions, renderPhase: "gizmo", skipBrush: true },
+      );
+    }
     drawBrushExpressionOutputSpace(
       context,
       local.mask,
@@ -13219,17 +13558,58 @@ function renderLocalMaskOverlay() {
   if (!gpuLumaMaskPreviewActive(local)) void queueAuthoritativeLocalMask(local);
 }
 
+function projectiveMatrixIsAffine(matrix) {
+  return matrix?.length === 9
+    && Math.abs(Number(matrix[6])) < 1e-10
+    && Math.abs(Number(matrix[7])) < 1e-10
+    && Math.abs(Number(matrix[8])) > 1e-10;
+}
+
+function projectPathNodeToOutput(node, matrix) {
+  const projected = { ...node, ...projectivePoint(matrix, node) };
+  for (const prefix of ["in", "out"]) {
+    const source = { x: node?.[`${prefix}_x`], y: node?.[`${prefix}_y`] };
+    if (!Number.isFinite(Number(source.x)) || !Number.isFinite(Number(source.y))) continue;
+    const handle = projectivePoint(matrix, source);
+    projected[`${prefix}_x`] = handle.x;
+    projected[`${prefix}_y`] = handle.y;
+  }
+  return projected;
+}
+
+function projectMaskExpressionToOutput(expression, matrix) {
+  if (!expression) return expression;
+  if (expression.operator !== "leaf") {
+    return {
+      ...expression,
+      children: (expression.children || []).map((child) => projectMaskExpressionToOutput(child, matrix)),
+    };
+  }
+  const leaf = expression.leaf;
+  if (!leaf) return expression;
+  const projectedLeaf = { ...leaf };
+  if (leaf.type === "linear_gradient") {
+    projectedLeaf.start = projectivePoint(matrix, leaf.start);
+    projectedLeaf.end = projectivePoint(matrix, leaf.end);
+  } else if (leaf.type === "path") {
+    projectedLeaf.nodes = (leaf.nodes || []).map((node) => projectPathNodeToOutput(node, matrix));
+    projectedLeaf.feather_nodes = (leaf.feather_nodes || []).map((node) => projectPathNodeToOutput(node, matrix));
+  }
+  return { ...expression, leaf: projectedLeaf };
+}
+
 function applySourceGeometryCanvasTransform(context, imageRect, paneRect, matrix) {
   const width = Math.max(imageRect.width, 1);
   const height = Math.max(imageRect.height, 1);
   const offsetX = imageRect.left - paneRect.left;
   const offsetY = imageRect.top - paneRect.top;
-  const a = matrix[0];
-  const b = matrix[3] * height / width;
-  const c = matrix[1] * width / height;
-  const d = matrix[4];
-  const e = offsetX - a * offsetX - c * offsetY + matrix[2] * width;
-  const f = offsetY - b * offsetX - d * offsetY + matrix[5] * height;
+  const normalization = Number(matrix[8]) || 1;
+  const a = matrix[0] / normalization;
+  const b = matrix[3] / normalization * height / width;
+  const c = matrix[1] / normalization * width / height;
+  const d = matrix[4] / normalization;
+  const e = offsetX - a * offsetX - c * offsetY + matrix[2] / normalization * width;
+  const f = offsetY - b * offsetX - d * offsetY + matrix[5] / normalization * height;
   context.transform(a, b, c, d, e, f);
 }
 
@@ -13317,21 +13697,23 @@ function beginLocalDetailInteraction(control) {
 function brushOutputSpaceMapper(imageRect, matrix) {
   const width = Math.max(Number(imageRect?.width) || 0, 1);
   const height = Math.max(Number(imageRect?.height) || 0, 1);
+  const mappedRadius = (radius, point = { x: 0.5, y: 0.5 }) => {
+    const center = projectivePoint(matrix, point);
+    const edge = projectivePoint(matrix, { x: Number(point.x) + Number(radius), y: Number(point.y) });
+    return Math.hypot((edge.x - center.x) * width, (edge.y - center.y) * height) / width;
+  };
   return {
     signature: `${matrix.join(",")}:${(width / height).toFixed(8)}`,
-    point: (point) => affinePoint(matrix, point),
-    radius: (radius) => Math.hypot(
-      Number(matrix[0]) * Number(radius) * width,
-      Number(matrix[3]) * Number(radius) * height,
-    ) / width,
-    stroke: (stroke, points = stroke.points || []) => ({
-      ...stroke,
-      radius: Math.hypot(
-        Number(matrix[0]) * Number(stroke.radius) * width,
-        Number(matrix[3]) * Number(stroke.radius) * height,
-      ) / width,
-      points: points.map((point) => ({ ...affinePoint(matrix, point), pressure: point.pressure })),
-    }),
+    point: (point) => projectivePoint(matrix, point),
+    radius: mappedRadius,
+    stroke: (stroke, points = stroke.points || []) => {
+      const radiusPoint = points[Math.floor(points.length / 2)] || stroke.points?.[0] || { x: 0.5, y: 0.5 };
+      return {
+        ...stroke,
+        radius: mappedRadius(stroke.radius, radiusPoint),
+        points: points.map((point) => ({ ...projectivePoint(matrix, point), pressure: point.pressure })),
+      };
+    },
   };
 }
 
@@ -13362,7 +13744,7 @@ function drawBrushExpressionOutputSpace(context, expression, x, y, options, mapp
   const cursor = state.localBrushCursor || activeStroke?.points?.at(-1);
   if (cursor) {
     const settings = brushSettings(leaf);
-    drawBrushGizmo(context, mapper.point(cursor), { ...settings, radius: mapper.radius(settings.radius) }, x, y);
+    drawBrushGizmo(context, mapper.point(cursor), { ...settings, radius: mapper.radius(settings.radius, cursor) }, x, y);
   }
 }
 

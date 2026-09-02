@@ -7,6 +7,8 @@
     schemaVersion: 1,
     defaultReferenceWhiteNits: 203,
     renderingMode: "auto",
+    theme: "default-dark",
+    viewerFrame: { preset: "theme", customColor: "#000000" },
     folders: { projectSave: "", projectImport: "", fileSave: "", fileImport: "", presetSave: "" },
     shortcuts: {},
     shortcutPresets: {},
@@ -36,6 +38,44 @@
     ["Mod+Q", "quitting the active application"],
     ["Mod+W", "closing the active window"],
   ]);
+  const THEMES = [
+    {
+      id: "default-dark",
+      name: "Default Dark",
+      description: "Neutral near-black surround. The reference default for critical grading work.",
+      preview: "/static/assets/theme-previews/default-dark.png",
+    },
+    {
+      id: "default-light",
+      name: "Default Light",
+      description: "Neutral soft white surround for bright rooms. No hue is added to the chrome.",
+      preview: "/static/assets/theme-previews/default-light.png",
+    },
+    {
+      id: "studio-gray",
+      name: "Studio Gray",
+      description: "18% neutral gray surround with a softened accent, for a steady mid-toned room.",
+      preview: "/static/assets/theme-previews/studio-gray.png",
+    },
+  ];
+  const THEME_IDS = THEMES.map((theme) => theme.id);
+  const FRAME_PRESETS = [
+    { id: "theme", name: "Theme", color: "var(--viewer)" },
+    { id: "black", name: "Black", color: "#000000" },
+    { id: "white", name: "White", color: "#ffffff" },
+    { id: "gray18", name: "18% Gray", color: "#2e2e2e" },
+  ];
+  const FRAME_PRESET_IDS = FRAME_PRESETS.map((preset) => preset.id).concat("custom");
+  const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+  function resolveFrameColor(viewerFrame) {
+    if (viewerFrame.preset === "custom") return HEX_COLOR_PATTERN.test(viewerFrame.customColor) ? viewerFrame.customColor : "#000000";
+    return (FRAME_PRESETS.find((preset) => preset.id === viewerFrame.preset) || FRAME_PRESETS[0]).color;
+  }
+  try {
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    if (THEME_IDS.includes(stored.theme)) document.documentElement.dataset.theme = stored.theme;
+    if (stored.viewerFrame) document.documentElement.style.setProperty("--frame-color", resolveFrameColor(stored.viewerFrame));
+  } catch {}
   const FOLDER_FIELDS = [
     ["projectSave", "Project save"],
     ["projectImport", "Project import"],
@@ -101,6 +141,11 @@
     schemaVersion: 1,
     defaultReferenceWhiteNits: Number(value.defaultReferenceWhiteNits) === 100 ? 100 : 203,
     renderingMode: ["auto", "gpu", "cpu"].includes(value.renderingMode) ? value.renderingMode : "auto",
+    theme: THEME_IDS.includes(value.theme) ? value.theme : "default-dark",
+    viewerFrame: {
+      preset: FRAME_PRESET_IDS.includes(value.viewerFrame?.preset) ? value.viewerFrame.preset : "theme",
+      customColor: HEX_COLOR_PATTERN.test(value.viewerFrame?.customColor) ? value.viewerFrame.customColor.toLowerCase() : "#000000",
+    },
     folders: { ...DEFAULT_PREFERENCES.folders, ...(value.folders || {}) },
     shortcuts: value.shortcuts && typeof value.shortcuts === "object" ? value.shortcuts : {},
     shortcutPresets: value.shortcutPresets && typeof value.shortcutPresets === "object" ? value.shortcutPresets : {},
@@ -284,6 +329,110 @@
     document.querySelectorAll("[data-settings-panel]").forEach((panel) => { panel.hidden = panel.dataset.settingsPanel !== tab; });
   }
 
+  function applyTheme(themeId) {
+    document.documentElement.dataset.theme = THEME_IDS.includes(themeId) ? themeId : "default-dark";
+  }
+
+  function renderThemeOptions() {
+    const list = byId("theme-option-list");
+    if (!list) return;
+    list.replaceChildren();
+    for (const theme of THEMES) {
+      const active = shell.preferences.theme === theme.id;
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = "theme-option";
+      option.dataset.themeOption = theme.id;
+      option.setAttribute("role", "radio");
+      option.setAttribute("aria-checked", String(active));
+      option.classList.toggle("active", active);
+      const preview = document.createElement("img");
+      preview.className = "theme-option-preview";
+      preview.src = theme.preview;
+      preview.alt = `${theme.name} theme preview`;
+      preview.loading = "lazy";
+      const name = document.createElement("span");
+      name.className = "theme-option-name";
+      name.textContent = theme.name;
+      const description = document.createElement("span");
+      description.className = "theme-option-desc";
+      description.textContent = theme.description;
+      option.append(preview, name, description);
+      option.addEventListener("click", () => {
+        if (shell.preferences.theme === theme.id) return;
+        shell.preferences.theme = theme.id;
+        applyTheme(theme.id);
+        persistPreferences();
+        renderThemeOptions();
+      });
+      list.append(option);
+    }
+  }
+
+  function applyFrameColor() {
+    document.documentElement.style.setProperty("--frame-color", resolveFrameColor(shell.preferences.viewerFrame));
+  }
+
+  function renderFramePresets() {
+    const list = byId("frame-preset-list");
+    if (!list) return;
+    const { preset, customColor } = shell.preferences.viewerFrame;
+    list.replaceChildren();
+    for (const frame of FRAME_PRESETS) {
+      const active = preset === frame.id;
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = "frame-option";
+      option.setAttribute("role", "radio");
+      option.setAttribute("aria-checked", String(active));
+      option.classList.toggle("active", active);
+      const swatch = document.createElement("span");
+      swatch.className = "frame-option-swatch";
+      swatch.style.background = frame.color;
+      const name = document.createElement("span");
+      name.className = "frame-option-label";
+      name.textContent = frame.name;
+      option.append(swatch, name);
+      option.addEventListener("click", () => {
+        if (shell.preferences.viewerFrame.preset === frame.id) return;
+        shell.preferences.viewerFrame.preset = frame.id;
+        applyFrameColor();
+        persistPreferences();
+        // Update in place rather than rebuilding: rebuilding here would detach
+        // the very button this click is still bubbling from, and the
+        // document-level outside-click handler below would then treat this
+        // click as "outside" and close the popover immediately.
+        list.querySelectorAll(".frame-option").forEach((button) => {
+          const isActive = button === option;
+          button.classList.toggle("active", isActive);
+          button.setAttribute("aria-checked", String(isActive));
+        });
+      });
+      list.append(option);
+    }
+    byId("frame-custom-swatch").value = customColor;
+    byId("frame-custom-hex").value = customColor;
+  }
+
+  function setCustomFrameColor(hex) {
+    if (!HEX_COLOR_PATTERN.test(hex)) return;
+    shell.preferences.viewerFrame = { preset: "custom", customColor: hex.toLowerCase() };
+    applyFrameColor();
+    persistPreferences();
+    renderFramePresets();
+  }
+
+  function closeFramePopover({ restoreFocus = true } = {}) {
+    byId("frame-popover").classList.add("hidden");
+    byId("frame-toggle").setAttribute("aria-expanded", "false");
+    if (restoreFocus) byId("frame-toggle").focus();
+  }
+
+  function toggleFramePopover() {
+    const open = byId("frame-popover").classList.toggle("hidden") === false;
+    byId("frame-toggle").setAttribute("aria-expanded", String(open));
+  }
+
   function renderFolderSettings() {
     const list = byId("settings-folder-list");
     list.replaceChildren();
@@ -437,6 +586,7 @@
   function renderSettings() {
     byId("settings-rendering-mode").value = shell.preferences.renderingMode;
     byId("settings-auto-updates").checked = shell.preferences.updates.checkAutomatically;
+    renderThemeOptions();
     renderFolderSettings();
     renderPresetOptions();
     renderShortcutList();
@@ -708,6 +858,21 @@
         else shell.desktop.openDocumentation(external.href).catch((error) => window.alert(error?.message || "That documentation link could not be opened."));
       }
     });
+    byId("frame-toggle").addEventListener("click", toggleFramePopover);
+    byId("frame-close").addEventListener("click", () => closeFramePopover());
+    byId("frame-custom-swatch").addEventListener("input", (event) => setCustomFrameColor(event.target.value));
+    byId("frame-custom-hex").addEventListener("change", (event) => {
+      let value = event.target.value.trim();
+      if (value && !value.startsWith("#")) value = `#${value}`;
+      if (HEX_COLOR_PATTERN.test(value)) setCustomFrameColor(value);
+      else event.target.value = shell.preferences.viewerFrame.customColor;
+    });
+    document.addEventListener("click", (event) => {
+      if (!byId("frame-popover").classList.contains("hidden") && !event.target.closest("#frame-popover, #frame-toggle")) closeFramePopover({ restoreFocus: false });
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !byId("frame-popover").classList.contains("hidden")) closeFramePopover();
+    });
     byId("settings-check-updates").addEventListener("click", () => checkForUpdates({ force: true, manual: true }));
     byId("update-notice-open").addEventListener("click", () => openProjectWebsite(byId("update-notice").dataset.url));
     byId("update-notice-dismiss").addEventListener("click", () => {
@@ -728,6 +893,9 @@
     shell.onPreferencesChanged = options.onPreferencesChanged || (() => {});
     shell.adjustControl = options.adjustControl || (() => false);
     shell.preferences = await loadPreferences();
+    applyTheme(shell.preferences.theme);
+    applyFrameColor();
+    renderFramePresets();
     if (shell.desktop?.getDefaultPresetDirectory) {
       try { shell.defaultPresetDirectory = await shell.desktop.getDefaultPresetDirectory(); } catch {}
     }

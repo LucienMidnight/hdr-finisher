@@ -91,6 +91,12 @@
   --scope-green: #55e579;
   --scope-blue: #4d9cff;
   --scope-luma: #d8dddf;
+  --histogram-blend-mode: lighter;
+  --waveform-blend-mode: screen;
+  --scope-grid-line: rgba(224, 232, 235, 0.08);
+  --scope-guide-line: rgba(224, 232, 235, 0.08);
+  --scope-guide-line-labeled: rgba(224, 232, 235, 0.17);
+  --scope-guide-label: rgba(224, 232, 235, 0.62);
   --curve-red: #ff8585;
   --curve-green: #7fe6a8;
   --curve-blue: #7db8ff;
@@ -156,6 +162,9 @@
   --instrument-slider-channel-shadow: inset 0 2.5px 3px rgba(0, 0, 0, 0.98), inset 0 -1.5px 0 rgba(255, 255, 255, 0.11), 0 1px 0 rgba(255, 255, 255, 0.025);
   --instrument-slider-thumb-shadow: 0 2px 5px rgba(0, 0, 0, 0.6), inset 0 -1px 1px rgba(0, 0, 0, 0.12);
   --instrument-slider-thumb-focus-shadow: 0 0 0 2px rgba(235, 238, 237, 0.2), 0 0 8px rgba(235, 238, 237, 0.3), 0 1px 2px rgba(0, 0, 0, 0.92);
+  --instrument-slider-thumb-background: linear-gradient(180deg, #fdfdfd 0%, #e7ebed 18%, #b2b9be 58%, #d7dcdf 84%, #959da2 100%);
+  --instrument-slider-thumb-background-active: linear-gradient(180deg, #fff 0%, #f0f2f2 18%, #bec4c7 58%, #e0e4e5 84%, #a5acae 100%);
+  --window-control-icon-filter: brightness(0) invert(72%);
   --instrument-compact-slider-hit-h: 28px;
   --instrument-compact-slider-track-top: 10.5px;
   --instrument-compact-slider-track-h: 7px;
@@ -196,6 +205,119 @@
   --sans: var(--font-body);
   --display: var(--font-display);
   --mono: var(--font-technical);
+  --color-scheme: dark;
+  /*
+   * The viewer frame is the neutral mat directly behind image pixels. It is
+   * intentionally NOT part of the theme block below: it is set by the
+   * viewer's own Frame control (application-shell.js) and stays put across
+   * theme switches, same as a soft-proof toggle would. It defaults to
+   * tracking the theme (matching --viewer) until the user picks an explicit
+   * Black / White / 18% Gray / custom override.
+   */
+  --frame-color: var(--viewer);
+}
+
+/*
+ * Themes restyle the workspace surround: panels, rails, dialogs, text, the
+ * accent ramp, and now also the scopes/curve/equalizer instruments and the
+ * image viewer's default backdrop, all of which follow --viewer/--deep so
+ * they read as part of the same room rather than a fixed dark well. Only
+ * --frame-color (the image viewer's own override, set above) and every
+ * color-science drawing token (curve/scope line colors, exposure bands,
+ * ready/headroom/blocking) stay constant, since those encode data rather
+ * than chrome.
+ */
+:root[data-theme="default-light"] {
+  --viewer: #dcdcdc;
+  --deep: #d6d6d6;
+  --app: #eaeaea;
+  --panel: #f1f1f1;
+  --raised: #fafafa;
+  --input: #f5f5f5;
+  --hairline: rgba(0, 0, 0, 0.08);
+  --border: #d4d4d4;
+  --text: #1c1c1c;
+  --body: #3c3c3c;
+  --muted: #6b6b6b;
+  --quiet: #8f8f8f;
+  --accent: #70619e;
+  --accent-strong: #544977;
+  --accent-low: #473e65;
+  --accent-bed: #ccc8d7;
+  --on-accent: #f7f7f7;
+  --inverse: #f7f7f7;
+  --error-text: #9a2f22;
+  --tooltip: #fbfbfb;
+  --color-scheme: light;
+  --panel-collapse-button-background: linear-gradient(180deg, #ffffff, #eeeeee);
+  --panel-collapse-button-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 1px 3px rgba(0, 0, 0, 0.12);
+  --depth-channel: inset 0 2px 3px rgba(0, 0, 0, 0.1), inset 0 -1px 0 rgba(255, 255, 255, 0.6);
+  --depth-raised: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 4px 10px -4px rgba(0, 0, 0, 0.18);
+  --segment-channel-background: linear-gradient(180deg, #e2e2e2, #ececec);
+  --segment-selected-background: linear-gradient(180deg, #ffffff, #f5f5f5);
+  --segment-selected-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 3px rgba(0, 0, 0, 0.15);
+  --instrument-slider-channel-background: linear-gradient(180deg, #cbcbcb 0%, #d4d4d4 38%, #e3e3e3 100%);
+  --instrument-slider-channel-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.16), inset 0 -1px 0 rgba(255, 255, 255, 0.8), 0 1px 0 rgba(0, 0, 0, 0.04);
+  --instrument-slider-thumb-shadow: 0 2px 4px rgba(0, 0, 0, 0.28), inset 0 -1px 1px rgba(0, 0, 0, 0.1);
+  --instrument-slider-thumb-focus-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent), 0 0 8px color-mix(in srgb, var(--accent) 40%, transparent), 0 1px 2px rgba(0, 0, 0, 0.35);
+  --instrument-slider-thumb-background: linear-gradient(180deg, #6b6b6b 0%, #58585a 18%, #3d4144 58%, #4a4e50 84%, #2c2f31 100%);
+  --instrument-slider-thumb-background-active: linear-gradient(180deg, #7a7a7a 0%, #656567 18%, #474b4e 58%, #55595b 84%, #34373a 100%);
+  --window-control-icon-filter: brightness(0) invert(28%);
+  /* Curve/scope drawing colors were authored for a near-black instrument
+     surface; on the light viewer above they need dark ink instead. */
+  --scope-luma: #3a3a3a;
+  --curve-red: #c23b3b;
+  --curve-green: #2f8f5b;
+  --curve-blue: #2f6fb8;
+  --curve-neutral: #2c2c2c;
+  --curve-endpoint: #6b6b6b;
+  --curve-selected-ring: #2c2c2c;
+  --curve-grid: #00000014;
+  --curve-identity: #0000002e;
+  --curve-axis-label: #333333ad;
+  --curve-reference-line: #1f7c8c9e;
+  --equalizer-grid: #00000014;
+  --equalizer-grid-strong: #00000042;
+  --equalizer-axis: #4d6570;
+  --equalizer-curve: #2c2c2c;
+  --equalizer-node: #2c2c2c;
+  --equalizer-disabled: #9aa0a4;
+  --graph-home-cue-color: #2c2c2c;
+  /* "lighter"/"screen" canvas compositing assumes a near-black scope surface
+     and blows out to white on this light one; "multiply" is the correct
+     analog for combining channel densities on a light backdrop. */
+  --histogram-blend-mode: multiply;
+  --waveform-blend-mode: multiply;
+  --scope-grid-line: rgba(44, 44, 44, 0.1);
+  --scope-guide-line: rgba(44, 44, 44, 0.1);
+  --scope-guide-line-labeled: rgba(44, 44, 44, 0.22);
+  --scope-guide-label: rgba(44, 44, 44, 0.75);
+}
+
+:root[data-theme="studio-gray"] {
+  --viewer: #383838;
+  --deep: #303030;
+  --app: #2e2e2e;
+  --panel: #333333;
+  --raised: #3a3a3a;
+  --input: #353535;
+  --hairline: rgba(255, 255, 255, 0.09);
+  --border: #4d4d4d;
+  --text: #f2f2f2;
+  --body: #cfcfcf;
+  --muted: #a3a3a3;
+  --quiet: #7a7a7a;
+  --accent: #9e83f3;
+  --accent-strong: #b7a2f6;
+  --accent-low: #7456ef;
+  --tooltip: #3a3a3a;
+  --panel-collapse-button-background: linear-gradient(180deg, #454545, #333333);
+  --panel-collapse-button-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 2px 5px rgba(0, 0, 0, 0.35);
+  --depth-channel: inset 0 2.5px 3px rgba(0, 0, 0, 0.55), inset 0 -1.5px 0 rgba(255, 255, 255, 0.08);
+  --depth-raised: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 6px 16px -6px rgba(0, 0, 0, 0.7);
+  --segment-channel-background: linear-gradient(180deg, #262626, #303030);
+  --segment-selected-background: linear-gradient(180deg, #4a4a4a, #3a3a3a);
+  --segment-selected-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 5px rgba(0, 0, 0, 0.4);
 }
 
 * {
@@ -211,7 +333,7 @@ body {
   background: var(--app);
   font-family: var(--sans);
   font-size: 14px;
-  color-scheme: dark;
+  color-scheme: var(--color-scheme);
 }
 
 body {
@@ -845,7 +967,7 @@ body[data-active-lane="sdr"] .lane-dot {
   height: 24px;
   padding: 2px 5px;
   border: 1px solid var(--border);
-  background: var(--viewer);
+  background: var(--input);
   color: var(--body);
   font-family: var(--mono);
   font-size: 9px;
@@ -1004,7 +1126,7 @@ body[data-active-lane="sdr"] .lane-dot {
   padding: 9px;
   border: 1px solid var(--hairline);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--viewer) 64%, transparent);
+  background: color-mix(in srgb, var(--panel) 64%, transparent);
 }
 
 .false-color-key.hidden {
@@ -1039,7 +1161,7 @@ body[data-active-lane="sdr"] .lane-dot {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: var(--viewer);
+  background: var(--frame-color);
   transition: background-color 120ms ease, border-color 120ms ease;
 }
 
@@ -1312,7 +1434,7 @@ body[data-active-lane="sdr"] .lane-dot {
 
 .viewport-frame.zoom-custom {
   overflow: auto;
-  scrollbar-color: var(--border) var(--viewer);
+  scrollbar-color: var(--border) var(--frame-color);
 }
 
 #preview-overlay {
@@ -4882,7 +5004,7 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
   padding: 14px 10px;
   overflow-y: auto;
   border-right: 1px solid var(--hairline);
-  background: #121618;
+  background: var(--input);
 }
 
 .settings-nav button,
@@ -4913,7 +5035,23 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 .settings-folder-row input { min-width: 0; }
 .settings-folder-actions { display: flex; gap: 5px; align-items: center; }
 .settings-section-heading { display: flex; gap: 18px; align-items: flex-start; justify-content: space-between; }
-.shortcut-hardware-note { display: grid; margin: 15px 0; padding: 11px 13px; border-left: 3px solid var(--accent); gap: 3px; background: #1b2326; }
+.theme-option-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); margin-top: 18px; gap: 14px; }
+.theme-option {
+  display: grid;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--raised);
+  gap: 8px;
+  text-align: left;
+  cursor: pointer;
+}
+.theme-option:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.theme-option.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.theme-option-preview { display: block; width: 100%; aspect-ratio: 16 / 10; border: 1px solid var(--hairline); border-radius: var(--radius-1); background: var(--input); object-fit: cover; }
+.theme-option-name { color: var(--text); font-family: var(--display); font-size: 13px; font-weight: 600; }
+.theme-option-desc { color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+.shortcut-hardware-note { display: grid; margin: 15px 0; padding: 11px 13px; border-left: 3px solid var(--accent); gap: 3px; background: var(--raised); }
 .shortcut-hardware-note span { color: var(--muted); font-size: 12px; line-height: 1.45; }
 .shortcut-toolbar { display: grid; grid-template-columns: minmax(180px, 1fr) 180px auto auto; margin: 14px 0 10px; gap: 7px; }
 .shortcut-list-header,
@@ -4974,7 +5112,7 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 .group-preset-name span { color: var(--muted); font-size: 10px; line-height: 1.35; }
 .group-preset-subheading { margin: 9px 0 1px; color: var(--quiet); font: 9px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
 .group-preset-subheading:first-child { margin-top: 0; }
-.group-preset-save { border-top: 1px solid var(--hairline); background: #121618; }
+.group-preset-save { border-top: 1px solid var(--hairline); background: var(--input); }
 .group-preset-save-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; margin-top: 10px; gap: 7px; }
 .group-preset-save-row input { min-width: 0; }
 #group-preset-status { min-height: 17px; margin: 7px 0 0; }
@@ -5088,6 +5226,15 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 .crop-handle.nw { left: 0; top: 0; cursor: nwse-resize; }.crop-handle.n { left: 50%; top: 0; cursor: ns-resize; }.crop-handle.ne { left: 100%; top: 0; cursor: nesw-resize; }.crop-handle.e { left: 100%; top: 50%; cursor: ew-resize; }.crop-handle.se { left: 100%; top: 100%; cursor: nwse-resize; }.crop-handle.s { left: 50%; top: 100%; cursor: ns-resize; }.crop-handle.sw { left: 0; top: 100%; cursor: nesw-resize; }.crop-handle.w { left: 0; top: 50%; cursor: ew-resize; }
 .crop-editor-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding-top: 2px; }
 .crop-editor-actions button { min-width: 0; padding-inline: 5px; }
+.perspective-editor-overlay { position: absolute; inset: 0; z-index: 17; pointer-events: auto; touch-action: none; }
+.perspective-editor-overlay.hidden { display: none; }
+.perspective-editor-overlay svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.perspective-editor-overlay line { stroke: var(--accent-strong); stroke-width: 2; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 1px #000) drop-shadow(0 0 2px #000); }
+.perspective-guide-handle { position: absolute; width: 18px; height: 18px; padding: 0; border: 2px solid #111; border-radius: 50%; background: var(--accent-strong); box-shadow: 0 0 0 1px #fff; cursor: move; transform: translate(-50%, -50%); touch-action: none; }
+.perspective-guide-handle:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+.perspective-tool-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 12px; }
+.perspective-tool-strip button { display: grid; min-height: 48px; grid-template-columns: auto 1fr; align-items: center; gap: 7px; padding: 7px; border: 1px solid var(--hairline); background: var(--raised); color: var(--text); }
+.perspective-tool-strip button.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--raised)); }
 .proof-preview-switch { display: inline-flex; align-items: center; gap: 2px; width: max-content; padding: 2px; border: 1px solid var(--hairline); border-radius: 7px; background: var(--panel); }
 .proof-preview-switch button { border: 0; border-radius: 5px; padding: 6px 10px; background: transparent; color: var(--muted); cursor: pointer; }
 .proof-preview-switch button.active { background: var(--raised); color: var(--text); box-shadow: inset 0 0 0 1px var(--hairline); }
@@ -6205,7 +6352,7 @@ body[data-workflow="export"] #export-sheet {
 }
 
 .viewport-frame {
-  background: #0b0c0d;
+  background: var(--frame-color);
   background-image: none;
 }
 
@@ -6775,7 +6922,7 @@ body {
   max-width: none;
   padding: 18px 20px;
   border-color: color-mix(in srgb, var(--accent) 70%, var(--hairline));
-  background: #0d1518;
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
   box-shadow: 0 14px 44px #0009, inset 3px 0 0 var(--accent);
   color: var(--text);
   font-family: var(--sans);
@@ -6809,7 +6956,7 @@ body {
 
 .preview-progress::-webkit-progress-bar {
   border-radius: 999px;
-  background: #20282b;
+  background: var(--input);
 }
 
 .preview-progress::-webkit-progress-value {
@@ -6890,28 +7037,32 @@ body {
   justify-content: center;
   flex-direction: column;
   gap: 3px;
-  border: 1px solid #3a4649;
+  border: 1px solid var(--hairline);
   border-radius: 5px;
-  color: #c9d1d3;
+  color: var(--body);
   font-size: 10px;
-  background: #181f21;
+  background: var(--raised);
 }
 
 .geometry-tool-strip button.active {
-  border-color: #69c9cf;
-  color: #f2ffff;
-  background: linear-gradient(180deg, #31575a, #29474a);
-  box-shadow: inset 0 0 0 1px rgb(123 222 228 / 12%);
+  border-color: var(--accent);
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 14%, var(--raised));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 .geometry-tool-icon {
   display: inline-grid;
   width: 22px;
   height: 22px;
-  color: #edf3f4;
+  color: var(--body);
   font-size: 20px;
   font-style: normal;
   place-items: center;
+}
+
+.geometry-tool-strip button.active .geometry-tool-icon {
+  color: var(--accent-strong);
 }
 
 .geometry-tool-icon::before {
@@ -7534,23 +7685,24 @@ body {
 }
 
 .control-group[data-group="geometry"] > .control-group-header::before { content: "02"; }
-.control-group[data-group="denoise"] > .control-group-header::before { content: "03"; }
+.control-group[data-group="perspective"] > .control-group-header::before { content: "03"; }
+.control-group[data-group="denoise"] > .control-group-header::before { content: "04"; }
 .control-group[data-group="hdr-tone"] > .control-group-header::before,
-.control-group[data-group="sdr-base"] > .control-group-header::before { content: "04"; }
+.control-group[data-group="sdr-base"] > .control-group-header::before { content: "05"; }
 .control-group[data-group="hdr-equalizer"] > .control-group-header::before,
-.control-group[data-group="sdr-tone"] > .control-group-header::before { content: "05"; }
+.control-group[data-group="sdr-tone"] > .control-group-header::before { content: "06"; }
 .control-group[data-group="hdr-zones"] > .control-group-header::before,
-.control-group[data-group="sdr-equalizer"] > .control-group-header::before { content: "06"; }
+.control-group[data-group="sdr-equalizer"] > .control-group-header::before { content: "07"; }
 .control-group[data-group="hdr-highlights"] > .control-group-header::before,
-.control-group[data-group="sdr-zones"] > .control-group-header::before { content: "07"; }
-.control-group[data-group="curves"] > .control-group-header::before { content: "08"; }
+.control-group[data-group="sdr-zones"] > .control-group-header::before { content: "08"; }
+.control-group[data-group="curves"] > .control-group-header::before { content: "09"; }
 .control-group[data-group="hdr-color"] > .control-group-header::before,
-.control-group[data-group="sdr-color"] > .control-group-header::before { content: "09"; }
-.control-group[data-group="color-grading"] > .control-group-header::before { content: "10"; }
-.control-group[data-group="local-adjustments"] > .control-group-header::before { content: "11"; }
-.control-group[data-group="detail"] > .control-group-header::before { content: "12"; }
-.control-group[data-group="film-look"] > .control-group-header::before { content: "13"; }
-.control-group[data-group="vignette"] > .control-group-header::before { content: "14"; }
+.control-group[data-group="sdr-color"] > .control-group-header::before { content: "10"; }
+.control-group[data-group="color-grading"] > .control-group-header::before { content: "11"; }
+.control-group[data-group="local-adjustments"] > .control-group-header::before { content: "12"; }
+.control-group[data-group="detail"] > .control-group-header::before { content: "13"; }
+.control-group[data-group="film-look"] > .control-group-header::before { content: "14"; }
+.control-group[data-group="vignette"] > .control-group-header::before { content: "15"; }
 
 .control-group:not(.collapsed) > .control-group-header::before {
   color: var(--accent-strong);
@@ -7727,7 +7879,7 @@ input[type="range"]::-webkit-slider-thumb {
   margin-top: calc((var(--instrument-slider-track-h) - var(--instrument-slider-thumb-h)) / 2);
   border: 0;
   border-radius: var(--radius-1);
-  background: linear-gradient(180deg, #fdfdfd 0%, #e7ebed 18%, #b2b9be 58%, #d7dcdf 84%, #959da2 100%);
+  background: var(--instrument-slider-thumb-background);
   box-shadow: var(--instrument-slider-thumb-shadow);
   opacity: 1;
 }
@@ -7737,7 +7889,7 @@ input[type="range"]::-webkit-slider-thumb {
 .range-shell.dragging input[type="range"]::-webkit-slider-thumb {
   width: var(--instrument-slider-thumb-w);
   border: 0;
-  background: linear-gradient(180deg, #fff 0%, #f0f2f2 18%, #bec4c7 58%, #e0e4e5 84%, #a5acae 100%);
+  background: var(--instrument-slider-thumb-background-active);
 }
 
 input[type="range"]:focus-visible {
@@ -7932,8 +8084,8 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
 .button-secondary,
 .tool-button {
   border-color: transparent;
-  background: linear-gradient(180deg, #232a2e, #171b1e);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 2px 5px rgba(0, 0, 0, 0.38);
+  background: var(--panel-collapse-button-background);
+  box-shadow: var(--panel-collapse-button-shadow);
 }
 
 .button-primary:hover,
@@ -8174,7 +8326,7 @@ html.desktop-shell .window-chrome {
   min-height: var(--window-chrome-h);
   align-items: stretch;
   border-bottom: 1px solid var(--hairline);
-  background: linear-gradient(180deg, #1d2225, #171b1e);
+  background: var(--panel-collapse-button-background);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%);
   -webkit-app-region: drag;
   user-select: none;
@@ -8321,7 +8473,7 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
   width: 15px;
   height: 15px;
   opacity: .78;
-  filter: brightness(0) invert(72%);
+  filter: var(--window-control-icon-filter);
 }
 
 .window-control:hover {
@@ -8431,11 +8583,13 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
 
 #overlay-toggle { anchor-name: --overlay-button; }
 #preview-toggle { anchor-name: --preview-button; }
+#frame-toggle { anchor-name: --frame-button; }
 
 /* Keep each viewer popover visually attached to the control that opened it. */
 @supports (position-anchor: --overlay-button) {
   #overlay-popover,
-  #preview-popover {
+  #preview-popover,
+  #frame-popover {
     right: auto;
     transform: translateX(-100%);
   }
@@ -8451,6 +8605,68 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
     top: calc(anchor(bottom) + 6px);
     left: anchor(right);
   }
+
+  #frame-popover {
+    position-anchor: --frame-button;
+    top: calc(anchor(bottom) + 6px);
+    left: anchor(right);
+  }
+}
+
+.frame-preset-list {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.frame-option {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  padding: 6px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--raised);
+  cursor: pointer;
+}
+
+.frame-option:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.frame-option.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.frame-option-swatch { width: 100%; height: 26px; border: 1px solid var(--hairline); border-radius: var(--radius-1); }
+.frame-option-label { color: var(--body); font-size: 10.5px; }
+
+.frame-custom-row {
+  display: grid;
+  gap: 6px;
+  color: var(--body);
+  font-size: 12px;
+}
+
+.frame-custom-inputs {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 8px;
+}
+
+#frame-custom-swatch {
+  width: 36px;
+  height: 30px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--input);
+  cursor: pointer;
+}
+
+#frame-custom-hex {
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--input);
+  color: var(--text);
+  font-family: var(--mono);
+  text-transform: uppercase;
 }
 
 .viewer-menu-toggle.overlay-enabled,
