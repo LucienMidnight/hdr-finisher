@@ -9,6 +9,7 @@ function subscribe(channel, callback) {
 
 contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   apiVersion: 2,
+  platform: process.platform,
   environment: () => ipcRenderer.invoke("desktop:environment"),
   rendererReady: () => ipcRenderer.invoke("desktop:renderer-ready"),
   getPreferences: () => ipcRenderer.invoke("desktop:get-preferences"),

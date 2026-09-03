@@ -3,6 +3,9 @@
   document.documentElement.classList.toggle("desktop-shell", Boolean(desktop));
   if (!desktop) return;
 
+  const usesNativeApplicationMenu = desktop.platform === "darwin";
+  document.documentElement.classList.toggle("native-application-menu", usesNativeApplicationMenu);
+
   document.querySelectorAll("[data-window-menu-slot]").forEach((slot) => {
     const control = document.getElementById(slot.dataset.windowMenuSlot);
     if (!control) return;
@@ -15,6 +18,12 @@
     slot.replaceWith(control);
   });
   document.querySelector(".top-actions")?.remove();
+  const menuBar = document.querySelector(".window-menu-bar");
+  if (menuBar && usesNativeApplicationMenu) {
+    menuBar.hidden = true;
+    menuBar.setAttribute("aria-hidden", "true");
+    document.querySelector(".window-chrome")?.setAttribute("aria-label", "Window controls");
+  }
 
   const menus = [...document.querySelectorAll(".window-menu")];
   const closeMenus = ({ restoreFocus = false } = {}) => {
@@ -68,7 +77,7 @@
     if (event.key === "Escape") closeMenus({ restoreFocus: true });
   });
 
-  document.querySelector(".window-menu-bar")?.addEventListener("click", (event) => {
+  menuBar?.addEventListener("click", (event) => {
     const item = event.target.closest('[role="menuitem"]');
     if (!item || item.disabled) return;
     if (item.dataset.desktopCommand) {

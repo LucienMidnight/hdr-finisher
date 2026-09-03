@@ -1559,6 +1559,27 @@ def test_frontend_assets_use_the_application_version_for_cache_busting() -> None
     assert '/static/styles.css?v=__HDR_FINISHER_ASSET_VERSION__' in html
 
 
+def test_macos_uses_the_native_application_menu_without_renderer_duplicates() -> None:
+    preload = (DESKTOP / "preload.js").read_text(encoding="utf-8")
+    chrome = (FRONTEND / "desktop-chrome.js").read_text(encoding="utf-8")
+    main = (DESKTOP / "main.js").read_text(encoding="utf-8")
+    assert "platform: process.platform" in preload
+    assert 'desktop.platform === "darwin"' in chrome
+    assert "menuBar.hidden = true" in chrome
+    assert 'Menu.setApplicationMenu(Menu.buildFromTemplate(template))' in main
+    assert main.index("buildMenu();", main.index("mainWindow = new BrowserWindow")) < main.index("mainWindow.once(\"ready-to-show\"")
+
+
+def test_local_adjustment_rows_use_theme_tokens_for_readable_text_and_icons() -> None:
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    assert ".local-adjustment-list li + li {\n  border-top: 1px solid var(--local-stack-border);" in css
+    assert ".local-adjustment-copy small {\n  color: var(--body);" in css
+    assert ".local-adjustment-list .local-adjustment-menu-button {" in css
+    assert "color: var(--local-icon-color);" in css
+    select_rule = css.split(".local-adjustment-list .local-adjustment-select {", 2)[2].split("}", 1)[0]
+    assert "color: var(--local-button-text);" in select_rule
+
+
 def test_manual_interpretation_action_reveals_the_source_rail() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
 

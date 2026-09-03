@@ -30,6 +30,7 @@ test("documentation allowlist permits bundled help sources but rejects arbitrary
 });
 const { backendCommand, backendExecutableName, sourcePythonPath } = require("../lib/runtime");
 const { UPDATE_CACHE_MAX_AGE_MS, cachedUpdateResult } = require("../lib/updates");
+const { windowChromeOptions } = require("../lib/window-chrome");
 
 test("update cache is discarded after an application upgrade", () => {
   const now = Date.now();
@@ -41,6 +42,16 @@ test("update cache is discarded after an application upgrade", () => {
   assert.equal(cachedUpdateResult(cache, "0.7.3", now), cache.result);
   assert.equal(cachedUpdateResult(cache, "0.7.4", now), null);
   assert.equal(cachedUpdateResult({ ...cache, checkedAt: now - UPDATE_CACHE_MAX_AGE_MS }, "0.7.3", now), null);
+});
+
+test("desktop chrome preserves macOS zoom support", () => {
+  assert.deepEqual(windowChromeOptions("darwin"), {
+    frame: false,
+    autoHideMenuBar: true,
+    roundedCorners: true,
+  });
+  assert.equal(windowChromeOptions("win32").roundedCorners, false);
+  assert.equal(windowChromeOptions("linux").roundedCorners, false);
 });
 
 test("desktop path types are restricted to supported extensions", () => {

@@ -18,6 +18,7 @@ const { backendCommand: resolveBackendCommand } = require("./lib/runtime");
 const { distributionChannel, linuxSessionState, serializeDisplay, updatesManagedByStore } = require("./lib/display-state");
 const { cachedUpdateResult } = require("./lib/updates");
 const { DEFAULT_WINDOW_BOUNDS, clampWindowBounds } = require("./lib/window-bounds");
+const { windowChromeOptions } = require("./lib/window-chrome");
 
 if (!app.isPackaged) app.setVersion(require("./package.json").version);
 
@@ -865,9 +866,7 @@ async function createWindow() {
     minWidth: 1100,
     minHeight: 720,
     show: false,
-    frame: false,
-    autoHideMenuBar: true,
-    roundedCorners: false,
+    ...windowChromeOptions(),
     backgroundColor: "#101415",
     title: "HDR Finisher",
     webPreferences: {
@@ -878,6 +877,7 @@ async function createWindow() {
       webviewTag: false,
     },
   });
+  buildMenu();
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   mainWindow.setMenuBarVisibility(false);
   mainWindow.webContents.on("will-navigate", (event, url) => {
