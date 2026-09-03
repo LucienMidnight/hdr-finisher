@@ -141,7 +141,7 @@
   --graph-home-cue-width: 1;
   --graph-home-epsilon: 0.006;
   --rail-w: 268px;
-  --grade-w: 320px;
+  --grade-w: 340px;
   --dock-h: 252px;
   --splitter-size: 7px;
   --top-h: 48px;
@@ -495,7 +495,6 @@ label,
 .scope-readout,
 .status-text,
 .tool-status,
-.preflight-list,
 .unavailable-format,
 .metadata-list,
 .readout-list,
@@ -1966,6 +1965,56 @@ label.select-control {
   z-index: 50;
 }
 
+/* Help copy is rendered in a fixed body-level layer so scroll containers and
+   edge-aligned controls cannot clip it outside the application viewport. */
+.help-tip::after {
+  content: none !important;
+  display: none !important;
+}
+
+.bounded-help-tooltip {
+  position: fixed;
+  z-index: 500;
+  width: max-content;
+  max-width: min(260px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  margin: 0;
+  padding: 8px 9px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  opacity: 0;
+  background: var(--tooltip);
+  box-shadow: 0 8px 24px var(--shadow);
+  color: var(--body);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  text-align: left;
+  text-transform: none;
+  white-space: normal;
+  transform: translateY(-2px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.bounded-help-tooltip.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.bounded-help-tooltip[hidden] {
+  display: none;
+}
+
+label.tooltip-trigger,
+span.tooltip-trigger {
+  cursor: help;
+}
+
 .control-disabled {
   opacity: 0.42;
 }
@@ -2127,7 +2176,6 @@ input[type="range"] {
 .export-choice-section,
 .unavailable-format,
 .export-settings,
-.preflight-panel,
 .export-status,
 .export-result,
 .sheet-actions {
@@ -2825,40 +2873,6 @@ input[type="range"] {
   }
 }
 
-.preflight-panel {
-  margin-top: 16px;
-  padding: 12px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
-  background: var(--app);
-}
-
-.preflight-list {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
-  margin: 10px 0 0;
-  padding: 0;
-  color: var(--muted);
-  font-size: 10px;
-  list-style: none;
-}
-
-.preflight-list li {
-  padding-left: 10px;
-  border-left: 2px solid var(--quiet);
-}
-
-.preflight-list li.pass {
-  border-color: var(--ready);
-  color: var(--body);
-}
-
-.preflight-list li.warn {
-  border-color: var(--attention);
-  color: var(--attention);
-}
-
 .export-status,
 .export-result {
   margin-top: 12px;
@@ -3071,17 +3085,6 @@ input[type="range"] {
   .control-group-body {
     gap: 6px;
   }
-}
-
-.proof-preflight-row {
-  display: grid;
-  gap: 4px;
-}
-
-.proof-preflight-row .text-button {
-  justify-self: start;
-  padding: 0;
-  font-size: 9px;
 }
 
 /* Instrument shell ------------------------------------------------------- */
@@ -5785,7 +5788,7 @@ body[data-workflow="export"] .grade-rail {
   z-index: 20;
   display: none;
   width: var(--grade-w);
-  min-width: 300px;
+  min-width: 340px;
   max-width: 420px;
   overflow-y: auto;
   border-left: 1px solid var(--hairline);
@@ -5886,7 +5889,6 @@ body[data-workflow="export"] #export-sheet {
 .export-sheet .sheet-header,
 .export-sheet .export-choice-section,
 .export-sheet .export-settings,
-.export-sheet .preflight-panel,
 .export-sheet .export-status,
 .export-sheet .export-result,
 .export-sheet .sheet-actions {
@@ -5922,20 +5924,6 @@ body[data-workflow="export"] #export-sheet {
 .export-sheet .avif-settings,
 .export-sheet .jpeg-ultrahdr-settings {
   grid-template-columns: minmax(0, 1fr);
-}
-
-.export-sheet .preflight-panel {
-  margin-top: 14px;
-  padding: 10px;
-}
-
-.export-sheet .preflight-list {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.export-sheet .proof-preflight-row {
-  grid-column: 1 / -1;
 }
 
 .export-sheet .sheet-actions {
@@ -6045,12 +6033,6 @@ body[data-workflow="export"] #export-sheet {
   background: rgb(255 176 77 / 11%);
   color: #ffd18f;
   font-weight: 600;
-}
-
-.proof-explainer {
-  color: var(--muted);
-  font-size: 10px;
-  line-height: 1.5;
 }
 
 /* Retained internal matrix/evidence styling for developer-only diagnostics. */
@@ -6315,9 +6297,6 @@ body[data-workflow="export"] #export-sheet {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .preflight-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 /* Final cascade for the instrument shell. */
@@ -6594,6 +6573,15 @@ body[data-workflow="grade"] .import-workflow-panel { display: none; }
 
 .help-tip,
 .rgb-primaries-helper { display: none !important; }
+
+.highlight-compression-help {
+  display: inline-grid !important;
+  margin-right: auto;
+}
+
+.highlight-compression-help::after {
+  left: 0;
+}
 
 .workflow-side-panel {
   top: var(--top-h);
@@ -7797,9 +7785,9 @@ body {
 .control-group[data-group="perspective"] > .control-group-header::before { content: "04"; }
 .control-group[data-group="denoise"] > .control-group-header::before { content: "05"; }
 .control-group[data-group="hdr-tone"] > .control-group-header::before,
-.control-group[data-group="sdr-base"] > .control-group-header::before { content: "06"; }
+.control-group[data-group="sdr-tone"] > .control-group-header::before { content: "06"; }
 .control-group[data-group="hdr-equalizer"] > .control-group-header::before,
-.control-group[data-group="sdr-tone"] > .control-group-header::before { content: "07"; }
+.control-group[data-group="sdr-highlights"] > .control-group-header::before { content: "07"; }
 .control-group[data-group="hdr-zones"] > .control-group-header::before,
 .control-group[data-group="sdr-equalizer"] > .control-group-header::before { content: "08"; }
 .control-group[data-group="hdr-highlights"] > .control-group-header::before,

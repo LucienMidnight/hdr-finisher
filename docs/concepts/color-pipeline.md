@@ -116,7 +116,7 @@ The HDR branch remains linear ACEScg. Current order:
 1. Exposure (`2^EV`)
 2. Shadow/black adjustment
 3. Contrast about a linear pivot
-4. Highlights section: Soft Ceiling or Peak Fit, with optional ACEScg path to white
+4. Highlights section: Soft Ceiling or Peak Fit, with a linear BT.2020 smooth color rolloff by default
 5. White balance
 6. ACEScg primary/tint matrix
 7. Saturation and vibrance
@@ -132,7 +132,7 @@ The HDR branch remains linear ACEScg. Current order:
 
 HDR luma coefficients are ACEScg-derived: `0.2722287 R + 0.6740818 G + 0.0536895 B`.
 
-Peak Fit predicts the measured source peak after the independently bypassable Tone section. Preserve color measures and anchors ACEScg luminance while retaining RGB ratios. Compress channels toward white measures the brightest RGB channel, groups all channels into the shoulder, and converges the endpoint to neutral white at Target Peak. Later creative sections are deliberately not peak constrained. See [Highlight Compression Technical Reference](../technical/highlight-compression.md) for the curve and CPU/GPU contract.
+Peak Fit predicts the measured source peak after the independently bypassable Tone section. Smooth color rolloff measures the brightest linear BT.2020 channel and maps channels independently through one shoulder, reducing highlight chroma continuously without lifting weak channels. Preserve color anchors ACEScg luminance while retaining RGB ratios. Neutralize peak keeps the specialist grouped-channel path that converges the endpoint to neutral white. Later creative sections are deliberately not peak constrained. See [Highlight Compression Technical Reference](../technical/highlight-compression.md) for the curve and CPU/GPU contract.
 
 ## SDR adjustment branch
 
@@ -140,28 +140,23 @@ Peak Fit predicts the measured source peak after the independently bypassable To
 
 1. SDR exposure and shadow in ACEScg
 2. Independent SDR color in ACEScg, optionally initialized by copying the HDR color controls
-3. Tone-map ACEScg luma
+3. Apply fixed SDR placement (`0.18` scene-linear to `100/203` display-linear)
 4. Convert to display-linear sRGB with CAT02
-5. Compress to the sRGB cube toward display luma
-6. Highlight Recovery
-7. Monotonic display-linear SDR Exposure Bands
-8. Contrast and Lift/Gamma/Gain
-9. SDR-domain curves
-10. Film Response/Color Density, Halation, Bloom, Image Structure, and Grain
+5. Apply SDR Highlight Compression, then compress to the sRGB cube toward display luma
+6. Monotonic display-linear SDR Exposure Bands
+7. Contrast and Lift/Gamma/Gain
+8. SDR-domain curves
+9. Film Response/Color Density, Halation, Bloom, Image Structure, and Grain
 
 ### From an authored SDR HEIC reference
 
-The display-linear sRGB reference is the neutral base. Non-neutral Base Rendition approximately inverts the neutral filmic sigmoid to estimate scene luminance, then applies the chosen tone curve. Color changes temporarily convert to ACEScg and return to sRGB.
+The display-linear sRGB reference is the neutral base. Highlight Compression starts bypassed so import is pixel-neutral; when enabled it operates directly on that display-linear base. Color changes temporarily convert to ACEScg and return to sRGB.
 
-### Tone-map formulas
+### SDR placement and highlight curve
 
-- **Reinhard:** scaled `x / (1 + x)`; the input scale holds scene-linear `0.18` at the shared normalized SDR tonal anchor
-- **ACES-style:** compact rational approximation using coefficients `2.51, 0.03, 2.43, 0.59, 0.14`, normalized by its asymptote and input-scaled to the same tonal anchor
-- **Filmic:** a log-exposure sigmoid centered on scene-linear `0.18`, with separate shadow/highlight powers derived from Contrast and Skew
+Generated SDR multiplies the scene-linear signal so `0.18` maps to approximately `0.493` (`100/203`) before its shoulder. This is a fixed creative placement inherited from the established fallback. It is not a physical reference-white conversion and is independent of the active HDR Reference White.
 
-These are application operators. The “ACES-style” choice is not a complete ACES Output Transform and should not be documented as one.
-
-For all three curves, scene-linear `0.18` maps to approximately `0.493` (`100/203`) in display-linear SDR. This is a fixed creative placement inherited from the established generated fallback: it reserves normalized SDR range for rolling brighter source values toward `1.0`. It is not a declaration that the SDR branch has a physical 100-nit reference white, and it is not derived from the active project HDR Reference White. Consequently, changing only the project setting between 100 and 203 nits does not rescale generated SDR pixels.
+Peak Fit reuses the HDR stop-domain Hermite construction with an SDR-white endpoint of `1.0`. Smooth color rolloff operates per channel in linear sRGB; Preserve color uses sRGB luminance and one RGB ratio; Neutralize peak uses the maximum channel and converges the shoulder toward white. Soft Ceiling is luma-preserving and asymptotic. See the [Highlight Compression Technical Reference](../technical/highlight-compression.md).
 
 ## Curves
 

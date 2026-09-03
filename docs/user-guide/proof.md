@@ -63,7 +63,7 @@ Rebuild after:
 - Changing source interpretation
 - Moving to a materially different system/display configuration
 
-Export preflight records whether the selected proof has been reviewed and whether it matches the selected export format/target. It is guidance, not a forced creative gate.
+Proofing is optional and stays in the dedicated Proof workflow. Export does not warn about an unreviewed or stale proof; rebuild it whenever the delivery needs that additional confidence.
 
 ## Deterministic proof versus native browser rendering
 

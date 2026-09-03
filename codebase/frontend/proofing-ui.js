@@ -53,7 +53,6 @@
       renderProofUi();
     }));
     els.chromeProofImage.addEventListener("dragstart", (event) => event.preventDefault());
-    els.reviewChromeProof.addEventListener("click", () => reviewExportFormat(els.exportFormat.value));
     window.addEventListener("focus", refreshAutoProofOnFocus);
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") refreshAutoProofOnFocus();
@@ -111,7 +110,6 @@
     phase = state.proofReconstruction ? "stale" : "idle";
     errorMessage = "";
     renderProofUi();
-    renderExportPreflight();
   }
 
   function resetProof() {
@@ -318,7 +316,6 @@
       button.tabIndex = active ? 0 : -1;
     });
     syncProofPresentation();
-    renderExportPreflight();
     renderWorkflowContext();
   }
 

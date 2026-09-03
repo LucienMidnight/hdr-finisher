@@ -1,5 +1,5 @@
 (function () {
-  const PARAM_COUNT = 159;
+  const PARAM_COUNT = 160;
   const CURVE_SAMPLES = 1024;
   const PEAK_HISTOGRAM_BINS = 4096;
   const PEAK_REDUCTION_SHADER_SOURCE = `
@@ -9,6 +9,23 @@
 
 fn peakLuma(rgb: vec3f) -> f32 {
   return dot(rgb, vec3f(0.2722287, 0.6740818, 0.0536895));
+}
+fn peakSrgbLuma(rgb: vec3f) -> f32 {
+  return dot(rgb, vec3f(0.2126, 0.7152, 0.0722));
+}
+fn peakAcescgToSrgb(rgb: vec3f) -> vec3f {
+  return vec3f(
+     1.7050509927 * rgb.r - 0.6217921207 * rgb.g - 0.0832588720 * rgb.b,
+    -0.1302564175 * rgb.r + 1.1408047366 * rgb.g - 0.0105483191 * rgb.b,
+    -0.0240033568 * rgb.r - 0.1289689761 * rgb.g + 1.1529723329 * rgb.b
+  );
+}
+fn peakAcescgToBt2020(rgb: vec3f) -> vec3f {
+  return vec3f(
+    1.0260187082 * rgb.r - 0.0221655448 * rgb.g - 0.0038531634 * rgb.b,
+   -0.0017230808 * rgb.r + 1.0023190716 * rgb.g - 0.0005959908 * rgb.b,
+   -0.0051099278 * rgb.r - 0.0216355504 * rgb.g + 1.0267454781 * rgb.b
+  );
 }
 fn peakTone(input: vec3f) -> vec3f {
   var rgb = input * exp2(peakParams[2]);
@@ -26,14 +43,62 @@ fn peakTone(input: vec3f) -> vec3f {
   }
   return rgb;
 }
+fn peakSceneColor(input: vec3f) -> vec3f {
+  if (peakParams[72] < 0.5) { return input; }
+  let offset = (peakParams[10] - 6500.0) / 6500.0;
+  let balanced = input * vec3f(1.0 + offset * 0.15, 1.0 + peakParams[11] * 0.08, 1.0 - offset * 0.15);
+  let rgb = vec3f(
+    peakParams[61] * balanced.r + peakParams[62] * balanced.g + peakParams[63] * balanced.b,
+    peakParams[64] * balanced.r + peakParams[65] * balanced.g + peakParams[66] * balanced.b,
+    peakParams[67] * balanced.r + peakParams[68] * balanced.g + peakParams[69] * balanced.b
+  );
+  let y = peakLuma(rgb);
+  let neutral = vec3f(y);
+  let chroma = rgb - neutral;
+  let maximum = max(rgb.r, max(rgb.g, rgb.b));
+  let minimum = min(rgb.r, min(rgb.g, rgb.b));
+  let denominator = max(max(abs(maximum), abs(minimum)), max(abs(y), 0.000001));
+  let relativeChroma = clamp((maximum - minimum) / denominator, 0.0, 1.0);
+  let vibranceWeight = pow(1.0 - relativeChroma, 2.0);
+  return neutral + chroma * max(0.0, 1.0 + peakParams[71] * vibranceWeight) * max(0.0, 1.0 + peakParams[70]);
+}
+fn peakSdrInput(input: vec3f) -> vec3f {
+  var rgb = input * exp2(peakParams[2]);
+  if (peakParams[1] > 0.5) {
+    rgb = max(rgb, vec3f(0.0));
+    if (peakParams[4] != 0.0) {
+      let mask = 1.0 - smoothstep(0.0, 0.5, peakSrgbLuma(rgb));
+      rgb = max(rgb + vec3f(peakParams[4] * 0.08 * mask), vec3f(0.0));
+    }
+    return rgb;
+  }
+  rgb = max(rgb, vec3f(0.0));
+  if (peakParams[4] != 0.0) {
+    let mask = 1.0 - smoothstep(0.0, 0.5, peakLuma(rgb));
+    rgb = max(rgb + vec3f(peakParams[4] * 0.08 * mask), vec3f(0.0));
+  }
+  return peakAcescgToSrgb(peakSceneColor(rgb)) * ((100.0 / 203.0) / 0.18);
+}
 
 @compute @workgroup_size(8, 8)
 fn peakReductionMain(@builtin(global_invocation_id) id: vec3u) {
   let dimensions = textureDimensions(peakSource);
   if (id.x >= dimensions.x || id.y >= dimensions.y) { return; }
-  let rgb = peakTone(textureLoad(peakSource, vec2i(id.xy), 0).rgb);
+  let source = textureLoad(peakSource, vec2i(id.xy), 0).rgb;
+  let sdrV2 = peakParams[0] < 0.5 && peakParams[159] > 0.5;
+  let rgb = select(peakTone(source), peakSdrInput(source), sdrV2);
   let channelPeak = max(max(rgb.r, rgb.g), rgb.b);
-  let signal = max(select(peakLuma(rgb), channelPeak, peakParams[110] > 0.5), 0.0);
+  let transport = peakAcescgToBt2020(rgb);
+  let transportPeak = max(max(transport.r, transport.g), transport.b);
+  var signal = select(peakLuma(rgb), peakSrgbLuma(rgb), sdrV2);
+  if (sdrV2 && peakParams[110] > 0.5) {
+    signal = channelPeak;
+  } else if (peakParams[110] > 1.5) {
+    signal = transportPeak;
+  } else if (peakParams[110] > 0.5) {
+    signal = channelPeak;
+  }
+  signal = max(signal, 0.0);
   atomicMax(&peakResult[0], bitcast<u32>(signal));
   let stop = clamp(log2(max(signal, exp2(-32.0))), -32.0, 32.0);
   let bin = min(${PEAK_HISTOGRAM_BINS - 1}u, u32(floor((stop + 32.0) * ${PEAK_HISTOGRAM_BINS}.0 / 64.0)));
@@ -550,15 +615,13 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         || masks.some((mask) => !mask)
         || sourceOptions?.isCurrent?.() === false) return false;
 
-      if (canvas.width !== proxy.width) canvas.width = proxy.width;
-      if (canvas.height !== proxy.height) canvas.height = proxy.height;
       const context = canvas.getContext("webgpu");
       if (!context) throw new Error("The comparison WebGPU canvas context is unavailable");
-      const surface = this.configureSurface(canvas, context, lane === "hdr");
-      const pipelines = this.pipelineFor(surface.format);
+      let surface = this.configureSurface(canvas, context, lane === "hdr");
+      let pipelines = this.pipelineFor(surface.format);
       const sourceLongEdge = Math.max(Number(sourceSize?.width) || proxy.width, Number(sourceSize?.height) || proxy.height);
       const sourcePixelScale = Math.min(1, Math.max(proxy.width, proxy.height) / Math.max(1, sourceLongEdge));
-      const params = buildParams(
+      let params = buildParams(
         lane,
         adjustments,
         proxy.workingSpace,
@@ -567,13 +630,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         sourcePixelScale,
         sourceOptions?.inheritedGrain || null,
       );
-      if (lane === "hdr" && params[74] === 1) {
-        const measurement = adjustments.hdr?.highlight_compression_peak_measurement || "maximum";
+      if ((lane === "hdr" || params[159] > 0.5) && params[74] === 1) {
+        const measurement = adjustments[lane]?.highlight_compression_peak_measurement || "maximum";
         if (measurement !== "manual") {
           const peakKey = JSON.stringify([
-            sourceProxy.identity,
+            sourceProxy.identity, lane, params[1], params[159],
             measurement,
             params[2], params[4], params[8], params[9], params[110],
+            ...params.slice(10, 12), ...params.slice(61, 73),
           ]);
           const cachedPeak = this.peakReductionCache.get(peakKey);
           if (cachedPeak !== undefined) {
@@ -585,6 +649,29 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
               || sourceOptions?.isCurrent?.() === false) return false;
           }
         }
+      }
+      // Changing a visible canvas's backing size clears its presented frame.
+      // Keep the previous interactive image intact while settled/refinement
+      // work awaits highlight-peak analysis, then resize and submit the new
+      // frame in one synchronous presentation step. Otherwise the compositor
+      // can expose the cleared (black) canvas between pointerup and settle.
+      const measuredPeak = params[75];
+      if (canvas.width !== proxy.width) canvas.width = proxy.width;
+      if (canvas.height !== proxy.height) canvas.height = proxy.height;
+      const presentationSurface = this.configureSurface(canvas, context, lane === "hdr");
+      if (presentationSurface.format !== surface.format || presentationSurface.hdr !== surface.hdr) {
+        surface = presentationSurface;
+        pipelines = this.pipelineFor(surface.format);
+        params = buildParams(
+          lane,
+          adjustments,
+          proxy.workingSpace,
+          surface.hdr,
+          referenceWhiteNits,
+          sourcePixelScale,
+          sourceOptions?.inheritedGrain || null,
+        );
+        params[75] = measuredPeak;
       }
       const overlayIndex = maskOverlay?.localId
         ? activeLocals.findIndex((local) => local.id === maskOverlay.localId)
@@ -2517,13 +2604,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     params[0] = lane === "hdr" ? 1 : 0;
     params[1] = workingSpace === "linear-srgb" ? 1 : 0;
     const toneEnabled = branch.tone_section_enabled !== false;
-    const highlightEnabled = lane === "hdr" && branch.highlight_section_enabled !== false;
+    const sdrHighlightV2 = lane === "sdr" && branch.rendering_version !== "legacy_base_v1";
+    const highlightEnabled = (lane === "hdr" || sdrHighlightV2) && branch.highlight_section_enabled !== false;
     const primariesEnabled = branch.primaries_section_enabled !== false;
     const colorEnabled = branch.color_section_enabled !== false;
     const colorActive = colorEnabled && !colorSettingsNeutral(colorSource);
     const baseEnabled = lane !== "sdr" || branch.base_section_enabled !== false;
     params[2] = toneEnabled ? branch.exposure || 0 : 0;
-    params[3] = lane === "hdr"
+    params[3] = lane === "hdr" || sdrHighlightV2
       ? (highlightEnabled ? branch.highlight_compression_softness || 0 : 0)
       : (toneEnabled ? branch.highlight_recovery || 0 : 0);
     params[4] = toneEnabled ? (lane === "hdr" ? branch.shadow_lift || 0 : branch.shadow || 0) : 0;
@@ -2549,7 +2637,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       params[21 + index] = node.input_ev;
       params[37 + index] = node.adjustment_ev;
     });
-    params[53] = lane === "hdr" ? ((branch.highlight_compression_start_nits ?? 400) * 0.18 / projectReferenceWhite) : 0;
+    params[53] = lane === "hdr"
+      ? ((branch.highlight_compression_start_nits ?? 400) * 0.18 / projectReferenceWhite)
+      : sdrHighlightV2 ? (branch.highlight_compression_start_percent ?? 50) / 100 : 0;
     params[54] = branch.lift_pivot ?? -2;
     params[55] = branch.lift_range ?? 4;
     params[56] = branch.gamma_pivot ?? 0;
@@ -2562,13 +2652,17 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     params[70] = colorActive ? colorSource.saturation || 0 : 0;
     params[71] = colorActive ? colorSource.vibrance || 0 : 0;
     params[72] = colorActive ? 1 : 0;
-    params[73] = lane === "hdr" ? ((branch.highlight_compression_target_nits ?? 1000) * 0.18 / projectReferenceWhite) : 0;
+    params[73] = lane === "hdr" ? ((branch.highlight_compression_target_nits ?? 1000) * 0.18 / projectReferenceWhite) : sdrHighlightV2 ? 1 : 0;
     params[74] = highlightEnabled ? (branch.highlight_compression_mode === "peak_fit" ? 1 : branch.highlight_compression_mode === "soft_ceiling" ? 2 : 0) : 0;
-    params[75] = lane === "hdr" ? toneAdjustedHighlightPeakLinear(branch, toneEnabled, projectReferenceWhite) : 0;
+    params[75] = lane === "hdr"
+      ? toneAdjustedHighlightPeakLinear(branch, toneEnabled, projectReferenceWhite)
+      : sdrHighlightV2 ? Math.max(0.01, (branch.highlight_compression_peak_measurement === "manual"
+        ? branch.highlight_compression_manual_peak_percent ?? 100
+        : branch.highlight_compression_source_peak_percent ?? 100) / 100 * (toneEnabled ? Math.pow(2, branch.exposure || 0) : 1)) : 0;
     params[138] = projectReferenceWhite;
     params[139] = 203;
-    params[76] = lane === "hdr" ? Math.min(1, Math.max(0, (branch.highlight_compression_peak_detail ?? 35) / 100)) : 0;
-    params[77] = lane === "hdr" ? Math.min(1, Math.max(-1, (branch.highlight_compression_bias ?? 0) / 100)) * 0.6 : 0;
+    params[76] = lane === "hdr" || sdrHighlightV2 ? Math.min(1, Math.max(0, (branch.highlight_compression_peak_detail ?? 35) / 100)) : 0;
+    params[77] = lane === "hdr" || sdrHighlightV2 ? Math.min(1, Math.max(-1, (branch.highlight_compression_bias ?? 0) / 100)) * 0.6 : 0;
     const film = branch.film_look || {};
     const filmEnabled = branch.film_look_section_enabled !== false;
     params[78] = filmEnabled ? 1 : 0;
@@ -2632,7 +2726,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     // Viewer-only diagnostic: it follows this branch's checkbox even when the
     // grain recipe itself is inherited from a captured HDR match.
     params[158] = film.grain_view_map ? 1 : 0;
-    params[110] = lane === "hdr" && branch.highlight_compression_color_handling === "path_to_white" ? 1 : 0;
+    params[110] = lane !== "hdr" && !sdrHighlightV2 ? 0
+      : branch.highlight_compression_color_handling === "smooth_rolloff" ? 2
+      : branch.highlight_compression_color_handling === "path_to_white" ? 1 : 0;
     const grading = branch.color_grading || {};
     params[111] = branch.color_grading_section_enabled !== false ? 1 : 0;
     params[112] = 0.55 + 3.45 * (grading.blending ?? 50) / 100;
@@ -2661,6 +2757,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     params[153] = Math.min(3, Math.max(0.3, Number(detail.sharpen_radius_px) || 0.8));
     params[154] = Math.min(1, Math.max(0, Number(detail.sharpen_threshold) || 0) / 100) * 0.50;
     params[155] = Math.min(1, Math.max(0.05, Number(sourcePixelScale) || 1));
+    params[159] = sdrHighlightV2 ? 1 : 0;
     return params;
   }
 
@@ -2941,6 +3038,13 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         1.0260187082 * rgb.r - 0.0221655448 * rgb.g - 0.0038531634 * rgb.b,
        -0.0017230808 * rgb.r + 1.0023190716 * rgb.g - 0.0005959908 * rgb.b,
        -0.0051099278 * rgb.r - 0.0216355504 * rgb.g + 1.0267454781 * rgb.b
+      );
+    }
+    fn bt2020ToAcescg(rgb: vec3f) -> vec3f {
+      return vec3f(
+        0.9746957086 * rgb.r + 0.0216339017 * rgb.g + 0.0036703891 * rgb.b,
+        0.0016784991 * rgb.r + 0.9977360501 * rgb.g + 0.0005854508 * rgb.b,
+        0.0048862547 * rgb.r + 0.0211319326 * rgb.g + 0.9739818130 * rgb.b
       );
     }
     fn bt2020ToP3(rgb: vec3f) -> vec3f {
@@ -3250,11 +3354,34 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       }
       return input * (targetValue / max(y, 0.00000001));
     }
+    fn peakFitChannel(
+      channel: f32,
+      effectiveStart: f32,
+      effectiveStartStop: f32,
+      peakStop: f32,
+      curveBias: f32,
+      stopSpan: f32,
+      m0: f32,
+      m1: f32
+    ) -> f32 {
+      if (channel <= effectiveStart) { return channel; }
+      let u = clamp((log2(channel) - effectiveStartStop) / max(peakStop - effectiveStartStop, 0.000001), 0.0, 1.0);
+      let w = clamp(u + curveBias * u * (1.0 - u), 0.0, 1.0);
+      let mapped = w * (1.0 - w) * (1.0 - w) * m0 + w * w * (3.0 - 2.0 * w) + w * w * (w - 1.0) * m1;
+      return exp2(effectiveStartStop + stopSpan * mapped);
+    }
     fn hdrPeakFit(input: vec3f) -> vec3f {
       if (p[74] != 1.0) { return input; }
       let y = max(lumaAces(input), 0.0);
       let channelPeak = max(max(input.r, input.g), input.b);
-      let signal = select(y, max(channelPeak, 0.0), p[110] > 0.5);
+      let transport = acescgToBt2020(input);
+      let transportPeak = max(max(transport.r, transport.g), transport.b);
+      var signal = y;
+      if (p[110] > 1.5) {
+        signal = max(transportPeak, 0.0);
+      } else if (p[110] > 0.5) {
+        signal = max(channelPeak, 0.0);
+      }
       let start = max(p[53], 0.000001);
       let targetLevel = max(p[73], start + 0.0018);
       let peakLevel = max(p[75], targetLevel);
@@ -3276,6 +3403,74 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       let stopSpan = targetStop - effectiveStartStop;
       let m0 = (peakStop - effectiveStartStop) / max(stopSpan * (1.0 + curveBias), 0.000001);
       let m1 = p[76] * (peakStop - effectiveStartStop) / max(stopSpan * (1.0 - curveBias), 0.000001);
+      if (p[110] > 1.5) {
+        let mappedTransport = vec3f(
+          peakFitChannel(transport.r, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1),
+          peakFitChannel(transport.g, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1),
+          peakFitChannel(transport.b, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1)
+        );
+        return bt2020ToAcescg(mappedTransport);
+      }
+      let mapped = w * (1.0 - w) * (1.0 - w) * m0 + w * w * (3.0 - 2.0 * w) + w * w * (w - 1.0) * m1;
+      let targetValue = exp2(effectiveStartStop + stopSpan * mapped);
+      let mappedRgb = input * (targetValue / max(signal, 0.00000001));
+      if (p[110] < 0.5) { return mappedRgb; }
+      let progress = u * u * (3.0 - 2.0 * u);
+      return vec3f(targetValue) + (mappedRgb - vec3f(targetValue)) * (1.0 - progress);
+    }
+    fn sdrSoftCeiling(input: vec3f) -> vec3f {
+      if (p[74] != 2.0 || p[3] <= 0.0) { return input; }
+      let y = max(lumaSrgb(input), 0.0);
+      let start = max(p[53], 0.000001);
+      if (y <= start) { return input; }
+      let span = 1.0 - start;
+      let normalized = (y - start) / span;
+      let softness = clamp(p[3] / 100.0, 0.0, 1.0);
+      let exponent = exp2(5.0 * (1.0 - softness));
+      var compressed: f32;
+      if (normalized <= 1.0) {
+        compressed = normalized / pow(1.0 + pow(normalized, exponent), 1.0 / exponent);
+      } else {
+        compressed = 1.0 / pow(1.0 + pow(1.0 / normalized, exponent), 1.0 / exponent);
+      }
+      let position = clamp(p[3] / 10.0, 0.0, 1.0);
+      let activation = position * position * (3.0 - 2.0 * position);
+      let targetValue = start + mix(y - start, span * compressed, activation);
+      return input * (targetValue / max(y, 0.00000001));
+    }
+    fn sdrPeakFit(input: vec3f) -> vec3f {
+      if (p[74] != 1.0) { return input; }
+      let y = max(lumaSrgb(input), 0.0);
+      let channelPeak = max(max(input.r, input.g), input.b);
+      var signal = y;
+      if (p[110] > 0.5) { signal = max(channelPeak, 0.0); }
+      let start = max(p[53], 0.000001);
+      let peakLevel = max(p[75], 1.0);
+      if (peakLevel <= 1.0) { return input; }
+      let startStop = log2(start);
+      let peakStop = log2(peakLevel);
+      let curveBias = p[77];
+      let requestedRatio = -startStop / max(peakStop - startStop, 0.000001);
+      let requiredRatio = clamp((1.0 / (1.0 + curveBias) + p[76] / (1.0 - curveBias)) / 3.0, 0.001, 0.95);
+      var effectiveStartStop = startStop;
+      if (requestedRatio < requiredRatio) {
+        effectiveStartStop = (-requiredRatio * peakStop) / (1.0 - requiredRatio);
+      }
+      let effectiveStart = exp2(effectiveStartStop);
+      if (signal <= effectiveStart) { return input; }
+      let sourceSpan = max(peakStop - effectiveStartStop, 0.000001);
+      let stopSpan = -effectiveStartStop;
+      let m0 = sourceSpan / max(stopSpan * (1.0 + curveBias), 0.000001);
+      let m1 = p[76] * sourceSpan / max(stopSpan * (1.0 - curveBias), 0.000001);
+      if (p[110] > 1.5) {
+        return vec3f(
+          peakFitChannel(input.r, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1),
+          peakFitChannel(input.g, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1),
+          peakFitChannel(input.b, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1)
+        );
+      }
+      let u = clamp((log2(signal) - effectiveStartStop) / sourceSpan, 0.0, 1.0);
+      let w = clamp(u + curveBias * u * (1.0 - u), 0.0, 1.0);
       let mapped = w * (1.0 - w) * (1.0 - w) * m0 + w * w * (3.0 - 2.0 * w) + w * w * (w - 1.0) * m1;
       let targetValue = exp2(effectiveStartStop + stopSpan * mapped);
       let mappedRgb = input * (targetValue / max(signal, 0.00000001));
@@ -3473,20 +3668,37 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     fn renderSdrBase(source: vec3f) -> vec3f {
       var rgb: vec3f;
       if (p[1] > 0.5) {
-        rgb = clamp(source, vec3f(0.0), vec3f(1.0)) * exp2(p[2]);
+        rgb = select(clamp(source, vec3f(0.0), vec3f(1.0)), max(source, vec3f(0.0)), p[159] > 0.5) * exp2(p[2]);
         if (p[4] != 0.0) {
           let mask = 1.0 - smoothRange(0.0, 0.5, lumaSrgb(rgb));
           rgb = max(rgb + vec3f(p[4] * 0.08 * mask), vec3f(0.0));
         }
-        if (p[60] > 0.5) { rgb = retoneMapSdrReference(rgb); }
-        rgb = applyColorGrading(applyCurves(sdrPrimaries(sdrReferenceColor(sdrContrast(toneEqualizer(highlightRecovery(rgb))))), false), false);
+        if (p[159] > 0.5) {
+          rgb = sdrPeakFit(sdrSoftCeiling(rgb));
+          rgb = toneEqualizer(rgb);
+          rgb = sdrContrast(rgb);
+          rgb = sdrReferenceColor(rgb);
+          rgb = sdrPrimaries(rgb);
+          rgb = applyColorGrading(applyCurves(rgb, false), false);
+        } else {
+          if (p[60] > 0.5) { rgb = retoneMapSdrReference(rgb); }
+          rgb = applyColorGrading(applyCurves(sdrPrimaries(sdrReferenceColor(sdrContrast(toneEqualizer(highlightRecovery(rgb))))), false), false);
+        }
       } else {
         rgb = max(source * exp2(p[2]), vec3f(0.0));
         if (p[4] != 0.0) {
           let mask = 1.0 - smoothRange(0.0, 0.5, lumaAces(rgb));
           rgb = max(rgb + vec3f(p[4] * 0.08 * mask), vec3f(0.0));
         }
-        rgb = applyColorGrading(applyCurves(sdrPrimaries(sdrContrast(toneEqualizer(highlightRecovery(toneMap(sceneColor(rgb)))))), false), false);
+        if (p[159] > 0.5) {
+          rgb = compressSrgbGamut(sdrPeakFit(sdrSoftCeiling(acescgToSrgb(sceneColor(rgb)) * ((100.0 / 203.0) / 0.18))));
+          rgb = toneEqualizer(rgb);
+          rgb = sdrContrast(rgb);
+          rgb = sdrPrimaries(rgb);
+          rgb = applyColorGrading(applyCurves(rgb, false), false);
+        } else {
+          rgb = applyColorGrading(applyCurves(sdrPrimaries(sdrContrast(toneEqualizer(highlightRecovery(toneMap(sceneColor(rgb)))))), false), false);
+        }
       }
       return clamp(rgb, vec3f(0.0), vec3f(1.0));
     }

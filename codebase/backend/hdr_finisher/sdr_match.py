@@ -147,6 +147,56 @@ def materialize_sdr_match(
         # A color-only residual is occasionally needed for saturated gamut-edge
         # patches. Keep these curves sparse and strictly sloped; the luma curve
         # remains neutral, so Exposure stays responsive throughout the range.
+        original_curves = {
+            channel_name: getattr(result_adjustments.sdr, channel_name)
+            for channel_name in ("red_curve", "green_curve", "blue_curve")
+        }
+        jointly_fitted = {
+            channel_name: _fit_image_curve(candidate[..., channel_index], target[..., channel_index], body)
+            for channel_name, channel_index in (("red_curve", 0), ("green_curve", 1), ("blue_curve", 2))
+        }
+        for channel_name, curve in jointly_fitted.items():
+            setattr(result_adjustments.sdr, channel_name, curve)
+        joint_candidate = _render_candidate(source, result_adjustments, result_locals, source_pixel_scale)
+        joint_quality = _quality_metrics(target, joint_candidate, body)
+        if (
+            joint_quality.p95_oklab_error < quality.p95_oklab_error
+            and joint_quality.p95_luma_error <= max(0.05, quality.p95_luma_error)
+        ):
+            candidate = joint_candidate
+            quality = joint_quality
+        else:
+            for channel_name, curve in original_curves.items():
+                setattr(result_adjustments.sdr, channel_name, curve)
+        # A second small residual pass is materially better than making the
+        # first seven-point fit aggressive. Compose only while both perceptual
+        # error and the luma safety gate improve, retaining editable slope.
+        for _ in range(2):
+            previous_curves = {
+                channel_name: getattr(result_adjustments.sdr, channel_name)
+                for channel_name in ("red_curve", "green_curve", "blue_curve")
+            }
+            for channel_name, channel_index in (("red_curve", 0), ("green_curve", 1), ("blue_curve", 2)):
+                correction = _fit_image_curve(candidate[..., channel_index], target[..., channel_index], body)
+                setattr(
+                    result_adjustments.sdr,
+                    channel_name,
+                    _compose_curve(previous_curves[channel_name], correction),
+                )
+            residual_candidate = _render_candidate(
+                source, result_adjustments, result_locals, source_pixel_scale
+            )
+            residual_quality = _quality_metrics(target, residual_candidate, body)
+            if (
+                residual_quality.p95_oklab_error < quality.p95_oklab_error
+                and residual_quality.p95_luma_error <= max(0.05, quality.p95_luma_error)
+            ):
+                candidate = residual_candidate
+                quality = residual_quality
+            else:
+                for channel_name, curve in previous_curves.items():
+                    setattr(result_adjustments.sdr, channel_name, curve)
+                break
         for channel_name, channel_index in (("red_curve", 0), ("green_curve", 1), ("blue_curve", 2)):
             previous = getattr(result_adjustments.sdr, channel_name)
             setattr(result_adjustments.sdr, channel_name, _fit_image_curve(
@@ -193,8 +243,15 @@ def materialize_sdr_match(
 
 def _semantic_sdr_translation(adjustments: AdjustmentState, settled_hdr: np.ndarray) -> SDRAdjustments:
     hdr = adjustments.hdr
-    sdr = SDRAdjustments(highlight_recovery=0.0, use_authored_base=False)
-    sdr.base_section_enabled = True
+    sdr = SDRAdjustments(use_authored_base=False)
+    sdr.rendering_version = "highlight_v2"
+    sdr.highlight_section_enabled = True
+    sdr.highlight_compression_mode = "peak_fit"
+    sdr.highlight_compression_start_percent = 90.0
+    # Match is reproducing an already rendered HDR target, whose shoulder is
+    # luma-ratio preserving. Ordinary new SDR grades still default to Smooth
+    # Color Rolloff; the materialized recipe chooses the faithful target mode.
+    sdr.highlight_compression_color_handling = "preserve_color"
     sdr.tone_section_enabled = True
     sdr.tone_equalizer_section_enabled = True
     sdr.color_section_enabled = hdr.color_section_enabled
@@ -399,15 +456,15 @@ def _fit_neutral_tonal_response(
     best_loss = float("inf")
     exposure_center = float(np.clip(hdr_adjustments.hdr.exposure, -4.0, 4.0))
     for exposure in np.linspace(exposure_center - 2.0, exposure_center + 2.0, 9):
-        for contrast in np.linspace(0.65, 1.35, 5):
-            for skew in np.linspace(-0.75, 0.75, 5):
-                for recovery in (0.0, 0.75, 1.5, 2.5, 4.0):
+        for start_percent in (70.0, 80.0, 90.0, 95.0):
+            for detail in (0.0, 35.0, 70.0):
+                for bias in (-35.0, 0.0, 35.0):
                     trial = _tonal_analysis_copy(target_adjustments)
                     trial.sdr.tone_equalizer_section_enabled = False
                     trial.sdr.exposure = float(np.clip(exposure, -8.0, 8.0))
-                    trial.sdr.tone_contrast = float(contrast)
-                    trial.sdr.tone_skew = float(skew)
-                    trial.sdr.highlight_recovery = recovery
+                    trial.sdr.highlight_compression_start_percent = start_percent
+                    trial.sdr.highlight_compression_peak_detail = detail
+                    trial.sdr.highlight_compression_bias = bias
                     candidate = apply_adjustments(ramp, trial, PreviewKind.SDR, include_grain=False)
                     candidate_luma = np.maximum(_linear_luma(candidate)[0], 1e-6)
                     log_error = np.abs(np.log2(candidate_luma[body] / np.maximum(target_luma[body], 1e-6)))
@@ -417,16 +474,16 @@ def _fit_neutral_tonal_response(
                         best_loss = loss
                         best = (
                             trial.sdr.exposure,
-                            trial.sdr.tone_contrast,
-                            trial.sdr.tone_skew,
-                            recovery,
+                            start_percent,
+                            detail,
+                            bias,
                         )
     assert best is not None
     (
         target_adjustments.sdr.exposure,
-        target_adjustments.sdr.tone_contrast,
-        target_adjustments.sdr.tone_skew,
-        target_adjustments.sdr.highlight_recovery,
+        target_adjustments.sdr.highlight_compression_start_percent,
+        target_adjustments.sdr.highlight_compression_peak_detail,
+        target_adjustments.sdr.highlight_compression_bias,
     ) = best
     best_contrast = 0.0
     best_contrast_loss = float("inf")
@@ -529,11 +586,11 @@ def _fit_image_semantic_controls(
     best_vignette = authored_vignette
     if sdr.vignette_section_enabled and abs(authored_vignette) > 1e-6:
         trials = (
-            (-0.24, 0.0), (-0.16, 0.0), (-0.08, 0.0), (0.0, 0.0),
-            (-0.16, 0.5), (-0.08, 0.5),
+            (-0.32, 0.0), (-0.24, 0.0), (-0.16, 0.0), (-0.08, 0.0), (0.0, 0.0),
+            (-0.24, 0.5), (-0.16, 0.5), (-0.08, 0.5),
         )
     else:
-        trials = tuple((offset, 1.0) for offset in (-0.24, -0.16, -0.08, 0.08, 0.16, 0.24))
+        trials = tuple((offset, 1.0) for offset in (-0.40, -0.32, -0.24, -0.16, -0.08, 0.08, 0.16, 0.24, 0.32))
     for saturation_offset, vignette_scale in trials:
         sdr.saturation = float(np.clip(authored_saturation + saturation_offset, -1.0, 3.0))
         sdr.vignette.amount = float(np.clip(authored_vignette * vignette_scale, -100.0, 100.0))
@@ -739,12 +796,10 @@ def _pav(values: np.ndarray, weights: np.ndarray) -> np.ndarray:
 def _compose_curve(base: list[list[float]], correction: list[list[float]]) -> list[list[float]]:
     base_array = np.asarray(base, dtype=np.float32)
     correction_array = np.asarray(correction, dtype=np.float32)
-    sample_x = np.linspace(0.0, 1.0, 16, dtype=np.float32)
+    sample_x = np.array([0.0, 0.08, 0.20, 0.40, 0.65, 0.85, 1.0], dtype=np.float32)
     base_y = np.interp(sample_x, base_array[:, 0], base_array[:, 1]).astype(np.float32)
     output = np.interp(base_y, correction_array[:, 0], correction_array[:, 1]).astype(np.float32)
-    output = np.maximum.accumulate(np.clip(output, 0.0, 1.0))
-    output[0] = 0.0
-    output[-1] = 1.0
+    output = _constrain_editable_curve(sample_x, output)
     return [[float(xx), float(yy)] for xx, yy in zip(sample_x, output, strict=True)]
 
 
@@ -765,6 +820,11 @@ def _quality_metrics(
         body = np.asarray(body, dtype=bool)
         if body.shape != target_luma.shape:
             raise ValueError("SDR Match quality selection must match the rendered image geometry.")
+    # OKLab's cube-root toe makes minute linear values look numerically large:
+    # mapping 0.0002 to display black is roughly a 0.058 Lab distance despite
+    # being below the useful SDR grading floor. Keep the safety metric focused
+    # on visible body tones rather than letting sub-0.1% patches dominate P95.
+    body = body & (target_luma >= np.float32(0.0008))
     if not np.any(body):
         body = np.ones_like(target_luma, dtype=bool)
     luma_error = np.abs(candidate_luma - target_luma)[body]

@@ -4,7 +4,7 @@ from typing import Any, Callable
 
 import numpy as np
 
-from .color import compute_peak_stops, detect_transfer_function
+from .color import acescg_to_linear_bt2020, compute_peak_stops, detect_transfer_function
 from .models import HDRAnalysis, HDRClassification, SourceLatitude
 
 
@@ -19,10 +19,13 @@ def classify_hdr(
     if image.size and image.ndim >= 3 and image.shape[-1] >= 3:
         peak_luma, robust_peak_luma = _luma_peaks(image, cancelled=cancelled)
         robust_peak = _robust_channel_peak(image)
+        peak_bt2020, robust_peak_bt2020 = _bt2020_channel_peaks(image, cancelled=cancelled)
     else:
         peak_luma = peak
         robust_peak_luma = peak
         robust_peak = peak
+        peak_bt2020 = peak
+        robust_peak_bt2020 = peak
     transfer = detect_transfer_function(metadata, suffix)
     linear_hint = transfer == "LINEAR"
     encoded_hint = transfer in {"PQ", "HLG"}
@@ -110,6 +113,8 @@ def classify_hdr(
         robust_peak_linear=robust_peak,
         peak_luma_linear=peak_luma,
         robust_peak_luma_linear=robust_peak_luma,
+        peak_bt2020_linear=peak_bt2020,
+        robust_peak_bt2020_linear=robust_peak_bt2020,
         peak_stops_above_diffuse_white=compute_peak_stops(image),
         source_latitude=latitude,
         needs_color_override=needs_override,
@@ -165,3 +170,30 @@ def _robust_channel_peak(
     channel_peak = np.max(sample, axis=-1)
     np.maximum(channel_peak, np.float32(0.0), out=channel_peak)
     return float(np.quantile(channel_peak, 0.9999))
+
+
+def _bt2020_channel_peaks(
+    image: np.ndarray,
+    *,
+    maximum_quantile_samples: int = 2_000_000,
+    rows: int = 256,
+    cancelled: Callable[[], bool] | None = None,
+) -> tuple[float, float]:
+    """Return exact and robust brightest-channel peaks in linear BT.2020."""
+    height, width = image.shape[:2]
+    pixels = height * width
+    stride = max(1, int(np.ceil(np.sqrt(pixels / maximum_quantile_samples))))
+    sample = acescg_to_linear_bt2020(image[::stride, ::stride, :3])
+    sample_peak = np.max(sample, axis=-1)
+    np.maximum(sample_peak, np.float32(0.0), out=sample_peak)
+    robust_peak = float(np.quantile(sample_peak, 0.9999))
+
+    exact_peak = 0.0
+    strip_rows = max(1, int(rows))
+    for start in range(0, height, strip_rows):
+        if cancelled is not None and cancelled():
+            raise RuntimeError("Import cancelled")
+        stop = min(start + strip_rows, height)
+        strip = acescg_to_linear_bt2020(image[start:stop, :, :3])
+        exact_peak = max(exact_peak, float(np.max(strip, initial=0.0)))
+    return exact_peak, robust_peak

@@ -49,9 +49,9 @@ Use **Peak Fit** for most HDR work. It measures the full-resolution source highl
 
 The compact graph plots input nits horizontally and output nits vertically. The dashed diagonal means no compression; the cyan curve shows the active mapping. In **Advanced highlight controls**, choose the absolute maximum, a robust measurement that ignores isolated pixels, or a manual source peak. **Compression Bias** redistributes contrast through the shoulder without moving its endpoints.
 
-**Highlight Color** controls both which peak enters the compressor and what happens to saturated highlights. **Preserve color** is the default: it measures ACEScg luminance and scales RGB together, preserving hue and channel ratios. A saturated red, green, or blue channel can therefore extend above Target Peak. **Compress channels toward white** instead measures the brightest RGB channel, groups all three channels into Peak Fit, and gradually makes extreme colored lights approach neutral white. This catches saturated highlights whose luminance is below Start but whose brightest channel exceeds Target Peak.
+**Highlight Color** controls both which peak enters the compressor and what happens to saturated highlights. **Smooth color rolloff** is the default when compression is enabled: it measures the brightest linear BT.2020 channel and applies the same smooth Peak Fit shoulder independently to each channel. Dominant channels compress first, reducing harsh magenta/green/blue transitions and gradually approaching white without brightening weak channels. **Preserve color** measures ACEScg luminance and scales RGB together, retaining exact hue and channel ratios but allowing a saturated channel to extend above Target Peak. **Neutralize peak** retains the older grouped behavior and forces extreme colored highlights to converge to white at the endpoint.
 
-Peak measurement uses ACEScg luminance for Preserve color and the brightest individual RGB channel for Compress channels toward white. Manual Source Peak is specified before Tone controls and follows the same meaning. Peak Fit runs after Exposure, Shadow / Black, and Contrast, so its graph and endpoint account for all three.
+The Highlight Compression section starts bypassed, with Peak Fit and Smooth color rolloff preselected. Use the section bypass button as the single on/off control. Once enabled, automatic peak measurement follows the chosen color mode: BT.2020 maximum channel for Smooth color rolloff, ACEScg luminance for Preserve color, or ACEScg maximum channel for Neutralize peak. Manual Source Peak is specified before Tone controls and follows the same meaning. Peak Fit runs after Exposure, Shadow / Black, and Contrast, so its graph and endpoint account for all three.
 
 The implementation contract and CPU/GPU parameter mapping are documented in [Highlight Compression Technical Reference](../technical/highlight-compression.md).
 
@@ -139,7 +139,7 @@ Radius values are percentages of image diagonal, so their apparent scale remains
 The current HDR order is:
 
 1. Tone: exposure, shadow/black, and contrast
-2. Highlights: Soft Ceiling or Peak Fit, including optional highlight path to white
+2. Highlights: Soft Ceiling or Peak Fit, including smooth color rolloff or specialist color handling
 3. White balance, primary shaping, saturation, and vibrance
 4. Exposure Bands
 5. Lift/Gamma/Gain

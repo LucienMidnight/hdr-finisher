@@ -2,18 +2,20 @@
 
 Export writes the full-resolution HDR and SDR grades through a format-specific backend. Preview proxies do not reduce export resolution.
 
-## Preflight
+## Before exporting
 
-Before exporting, confirm:
+The Export page keeps the final action unavailable until a source session is ready, any required source interpretation has been accepted, and the selected encoder is available. It does not present a mandatory creative checklist or require Chromium Proof.
+
+Before exporting, consider confirming:
 
 - **Source interpretation:** primaries and transfer are confirmed or deliberately accepted.
 - **HDR branch ready:** highlights, color, and scope placement have been reviewed.
 - **SDR fallback reviewed:** the base image works on its own.
 - **Encoder available:** the selected backend reports available.
-- **Chrome proof reviewed:** the proof matches the selected format and is not stale.
-- **HDR reference white:** preflight reports the selected 203- or 100-nit project value. This is independent of measured content peak, mastering/export peak, proof target, false-color ceiling, display peak, and Windows SDR white.
+- **Chrome proof reviewed, when useful:** the optional proof matches the selected format and is not stale.
+- **HDR reference white:** the export settings report the selected 203- or 100-nit project value. This is independent of measured content peak, mastering/export peak, proof target, false-color ceiling, display peak, and Windows SDR white.
 
-Preflight cannot determine whether the image is artistically good or whether a future website will preserve the bytes.
+These checks cannot determine whether the image is artistically good or whether a future website will preserve the bytes.
 
 ## Format and preset menus
 

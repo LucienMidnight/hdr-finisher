@@ -396,9 +396,10 @@ def test_match_action_materializes_visible_controls_and_is_one_undo_step(tmp_pat
     assert matched.document.sdr_match.active is False
     assert matched.document.sdr_match.algorithm_version == "hdr-to-sdr-materialized-v2"
     assert matched.document.sdr_match.materialized_status in {"matched", "needs_review"}
-    assert matched.document.global_adjustments.sdr.base_section_enabled is True
+    assert matched.document.global_adjustments.sdr.rendering_version == "highlight_v2"
     assert matched.document.global_adjustments.sdr.use_authored_base is False
-    assert 0.0 <= matched.document.global_adjustments.sdr.highlight_recovery <= 4.0
+    assert matched.document.global_adjustments.sdr.highlight_section_enabled is True
+    assert matched.document.global_adjustments.sdr.highlight_compression_mode == "peak_fit"
     assert all(abs(x - y) < 1e-7 for x, y in matched.document.global_adjustments.sdr.luma_curve)
     assert any(
         abs(node.adjustment_ev) > 0.001

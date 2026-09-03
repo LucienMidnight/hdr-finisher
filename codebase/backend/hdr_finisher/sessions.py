@@ -12,6 +12,7 @@ import numpy as np
 
 from .capabilities import probe_capabilities
 from .color_context import DEFAULT_HDR_REFERENCE_WHITE_NITS, RenderColorContext, scene_linear_to_nits
+from .adjustments import SDR_SCENE_TO_DISPLAY_SCALE
 from .loader import load_image
 from .metadata import extract_metadata
 from .models import (
@@ -169,8 +170,9 @@ class LoadedSession:
         self.source_byte_size = self.source_path.stat().st_size
         if self.sdr_reference_image is not None:
             # A gain-map file's SDR base is already an authored display
-            # rendition, so it must start without another highlight shoulder.
+            # rendition, so it starts without another highlight compressor.
             self.adjustments.sdr.highlight_recovery = 0.0
+            self.adjustments.sdr.highlight_section_enabled = False
         recommended_exposure = float(self.metadata.get("recommended_exposure_ev", 0.0) or 0.0)
         if self.metadata.get("raw_input") and abs(recommended_exposure) >= 0.001:
             self.adjustments.hdr.exposure = recommended_exposure
@@ -186,9 +188,12 @@ class LoadedSession:
 
     def _sync_highlight_source_peaks(self) -> None:
         hdr = self.adjustments.hdr
-        grouped_channels = hdr.highlight_compression_color_handling == "path_to_white"
+        color_handling = hdr.highlight_compression_color_handling
+        grouped_channels = color_handling in {"smooth_rolloff", "path_to_white"}
         robust = hdr.highlight_compression_peak_measurement == "robust"
-        if grouped_channels:
+        if color_handling == "smooth_rolloff":
+            measured = self.analysis.robust_peak_bt2020_linear if robust else self.analysis.peak_bt2020_linear
+        elif grouped_channels:
             measured = self.analysis.robust_peak_linear if robust else self.analysis.peak_linear
         else:
             measured = self.analysis.robust_peak_luma_linear if robust else self.analysis.peak_luma_linear
@@ -196,6 +201,20 @@ class LoadedSession:
             measured = self.analysis.peak_linear
         source_peak_nits = max(1.0, float(scene_linear_to_nits(float(measured), self.hdr_reference_white_nits)))
         hdr.highlight_compression_source_peak_nits = source_peak_nits
+
+        sdr = self.adjustments.sdr
+        if self.sdr_reference_image is not None and sdr.use_authored_base:
+            sdr_measured = float(np.max(np.clip(self.sdr_reference_image, 0.0, None)))
+        else:
+            sdr_robust = sdr.highlight_compression_peak_measurement == "robust"
+            if sdr.highlight_compression_color_handling == "preserve_color":
+                sdr_measured = self.analysis.robust_peak_luma_linear if sdr_robust else self.analysis.peak_luma_linear
+            else:
+                sdr_measured = self.analysis.robust_peak_linear if sdr_robust else self.analysis.peak_linear
+            if sdr_measured is None:
+                sdr_measured = self.analysis.peak_linear
+            sdr_measured = float(sdr_measured) * float(SDR_SCENE_TO_DISPLAY_SCALE)
+        sdr.highlight_compression_source_peak_percent = max(1.0, sdr_measured * 100.0)
 
     def source_reference(self) -> SourceReference:
         durable = self.durable_source_path

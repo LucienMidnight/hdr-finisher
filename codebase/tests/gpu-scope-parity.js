@@ -143,6 +143,7 @@ function assert(condition, message) {
     const sdrToneMappers = await page.evaluate(async () => {
       const comparisons = {};
       const neutralBands = defaultAdjustments().sdr.tone_equalizer_nodes;
+      state.adjustments.sdr.rendering_version = "legacy_base_v1";
       state.adjustments.sdr.tone_equalizer_nodes = neutralBands;
       state.adjustments.sdr.highlight_recovery = 0;
       for (const mapper of ["filmic", "aces", "reinhard"]) {

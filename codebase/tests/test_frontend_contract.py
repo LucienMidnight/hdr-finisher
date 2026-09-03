@@ -48,6 +48,7 @@ def test_raw_highlight_reconstruction_is_a_versioned_module_stack_control() -> N
     assert 'value="opposed_color_v1"' in markup
     assert 'id="raw-highlight-threshold"' in markup
     assert 'class="control-group raw-highlight-group collapsed module-unavailable"' in markup
+    assert '>Highlight Reconstruction <span class="module-modified-marker" aria-hidden="true"></span></button>' in markup
     assert '.control-group[data-group="raw-highlights"] > .control-group-header::before { content: "02"; }' in css
     assert '.control-group[data-group="geometry"] > .control-group-header::before { content: "03"; }' in css
     assert '.control-group[data-group="denoise"] > .control-group-header::before { content: "05"; }' in css
@@ -55,6 +56,7 @@ def test_raw_highlight_reconstruction_is_a_versioned_module_stack_control() -> N
     assert 'rawHighlightGroup?.classList.toggle("hidden", !bridgeQualified)' not in script
     assert 'highlight_reconstruction: {' in script
     assert 'method: els.rawHighlightMethod?.value || "opposed_color_v1"' in script
+    assert 'els.rawHighlightGroup.classList.toggle("modified", modified)' in script
     assert "applyRawImportSettings" in script
 
 def test_staged_import_waits_for_natural_aspect_before_display() -> None:
@@ -171,7 +173,7 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert 'data-group="hdr-highlights"' in html
     assert 'data-section-path="hdr.highlight_section_enabled"' in html
     assert '"hdr-tone", "hdr-equalizer", "hdr-zones", "hdr-highlights", "curves", "hdr-color"' in script
-    assert '"sdr-base", "sdr-tone", "sdr-equalizer", "sdr-zones", "curves", "sdr-color"' in script
+    assert '"sdr-tone", "sdr-highlights", "sdr-equalizer", "sdr-zones", "curves", "sdr-color"' in script
     assert "colorGrading.after(localAdjustmentsGroup)" in script
     assert "Highlights-stage target" in html
     assert "Later grading and Film Look controls may raise or lower the final scoped output." in html
@@ -179,11 +181,26 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert 'data-path="hdr.highlight_compression_target_nits"' in html
     assert 'data-path="hdr.highlight_compression_softness"' in html
     assert 'data-path="hdr.highlight_compression_mode"' in html
+    mode_options = html.split('id="hdr-compression-mode"', 1)[1].split("</select>", 1)[0]
+    assert '<option value="off">Off</option>' not in mode_options
     assert 'data-path="hdr.highlight_compression_peak_detail"' in html
     assert 'data-path="hdr.highlight_compression_color_handling"' in html
-    assert "Compress channels toward white" in html
+    assert html.index('data-path="hdr.highlight_compression_color_handling"') < html.index('data-path="hdr.highlight_compression_peak_detail"')
+    assert "Smooth color rolloff" in html
+    assert "Neutralize peak" in html
     assert 'id="highlight-compression-graph"' in html
+    assert '<figcaption id="highlight-compression-summary">' not in html
+    assert 'id="highlight-compression-summary" class="tooltip-trigger"' in html
+    assert '<p class="helper">Sets the peak at this module.' not in html
     assert "Advanced highlight controls" in html
+    assert 'data-group="sdr-highlights"' in html
+    assert 'data-section-path="sdr.highlight_section_enabled"' in html
+    assert 'data-path="sdr.highlight_compression_start_percent"' in html
+    assert 'data-path="sdr.highlight_compression_color_handling"' in html
+    assert 'id="sdr-highlight-compression-graph"' in html
+    assert 'data-group="sdr-base"' not in html
+    assert 'data-path="sdr.highlight_recovery"' not in html
+    assert '>Tone Mapper<' not in html
     assert "RGB Primaries" in html
     assert 'data-path="hdr.saturation"' in html
     assert 'data-path="hdr.vibrance"' in html
@@ -194,9 +211,10 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert 'data-path="sdr.red_hue"' in html
     assert 'id="sdr-match-hdr-colors"' in html
     assert 'id="sdr-reset-colors"' in html
+    assert 'id="sdr-reset-colors" class="group-reset text-button" type="button" data-reset-group="sdr-color"' in html
     assert 'const COLOR_CONTROL_KEYS = controlGroups["hdr-color"]' in script
     assert "function matchHdrColorsToSdr()" in script
-    assert "function resetSdrColorSliders()" in script
+    assert "function resetSdrColorSliders()" not in script
     assert "/api/export-directory/default" in script
     assert "window.confirm" in script
     assert "overwrite," in script
@@ -277,6 +295,47 @@ def test_rendition_descriptions_are_delayed_title_tooltips() -> None:
     assert "transition-delay: 2s" in css
 
 
+def test_help_tooltips_are_portaled_and_clamped_to_the_visible_app_bounds() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+
+    assert "initializeBoundedTooltips();" in javascript
+    assert 'const selector = ".help-tip[data-tooltip], .help-tip[data-tip], .tooltip-trigger[data-tooltip], .group-toggle[data-tooltip], .disclosure-trigger[data-tooltip]"' in javascript
+    assert 'tooltip.className = "bounded-help-tooltip"' in javascript
+    assert "const visualViewport = window.visualViewport" in javascript
+    assert "viewport.width - margin * 2" in javascript
+    assert "viewport.height - margin - tooltipRect.height" in javascript
+    assert "const preferredTop = below <= maximumTop ? below : above" in javascript
+    assert "document.addEventListener(\"scroll\", position, true)" in javascript
+    assert ".help-tip::after" in css
+    assert "content: none !important" in css
+    assert ".bounded-help-tooltip" in css
+    assert "position: fixed" in css
+    assert "max-height: calc(100vh - 16px)" in css
+
+
+def test_explanatory_copy_uses_title_hover_without_persistent_helper_rows() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    assert 'class="disclosure-trigger" type="button" aria-expanded="false" aria-controls="raw-settings-panel" disabled data-tooltip=' in html
+    assert html.count('class="group-toggle" type="button" aria-expanded="false" data-tooltip=') >= 7
+    assert 'data-tooltip="Adjust exposure by scene brightness.' in html
+    assert 'data-tooltip="Adjust the tone-mapped SDR image by brightness.' in html
+    assert html.count('data-tooltip="Range controls how wide a luminance zone is;') == 2
+    assert 'data-tooltip="Corrective, scale-selective detail.' in html
+    assert 'data-tooltip="Controls physical enlargement for halation, resolution, and grain.' in html
+    assert 'data-tooltip="Strip modes anchor the cross-scan dimension' in html
+    assert 'id="denoise-method-note" class="tooltip-trigger"' in html
+    assert "els.denoiseMethodNote.dataset.tooltip =" in javascript
+    assert 'class="help-tip' not in html
+    assert 'id="raw-highlight-status"' not in html
+    assert "rawHighlightStatus:" not in javascript
+    assert 'id="curve-status"' not in html
+    assert "curveStatus:" not in javascript
+    assert "Curve edits affect only the" not in javascript
+
+
 def test_grade_readouts_support_bounded_direct_numeric_entry() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
@@ -292,7 +351,8 @@ def test_grade_readouts_support_bounded_direct_numeric_entry() -> None:
     assert '"hdr.highlight_compression_start_nits": { min: 1, max: 9999' in javascript
     assert '"hdr.highlight_compression_target_nits": { min: 2, max: 10000' in javascript
     assert '"hdr.exposure": { min: -8, max: 8' in javascript
-    assert '"sdr.highlight_recovery": { min: 0, max: 4' in javascript
+    assert '"sdr.highlight_compression_start_percent": { min: 1, max: 99' in javascript
+    assert '"sdr.highlight_compression_manual_peak_percent": { min: 1, max: 1000000' in javascript
     assert 'entryScale: 100' in javascript
     assert "Double-click any value to type it." in html
     assert ".editable-value[data-editing=\"true\"]" in css
@@ -304,7 +364,9 @@ def test_highlight_compression_softness_uses_half_percent_slider_steps() -> None
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
     assert 'id="hdr-compression-softness" type="range" min="0" max="100" step="0.5"' in html
+    assert 'id="sdr-compression-softness" type="range" min="0" max="100" step="0.5"' in html
     assert javascript.count('"hdr.highlight_compression_softness": [0, 100, 0.5]') == 3
+    assert javascript.count('"sdr.highlight_compression_softness": [0, 100, 0.5]') == 3
     assert '"hdr.highlight_compression_softness": { min: 0, max: 100, decimals: 1 }' in javascript
     assert 'numeric.toFixed(1)' in javascript
 
@@ -453,7 +515,7 @@ def test_ctrl_fine_adjustment_and_shift_semantic_snapping_are_shared() -> None:
 
     assert "const FINE_ADJUSTMENT_SCALE = 0.1" in javascript
     assert 'control.dataset.instrumentStep = String(declaredStep)' in javascript
-    assert '"Hold Ctrl for 10× finer adjustment. Hold Shift to snap to semantic landing positions."' in javascript
+    assert '"Hold Ctrl for 10× finer adjustment. Hold Shift to snap to semantic landing positions."' not in javascript
     assert javascript.count("createPrecisionPointerDelta(startEvent)") >= 2
     assert "function rangeSnapProfile(control)" in javascript
     assert "adjacentRangeSnap(control, Number(control.value), direction)" in javascript
@@ -642,7 +704,6 @@ def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     assert "Browser delivery" in html
     assert "Reference target" in html
     assert '<option value="jpegxl_hdr">JPEG XL HDR</option>' in html
-    assert '["avif_gain_map", "jpeg_ultrahdr", "jpegxl_hdr"]' in javascript
     assert 'id="chrome-proof-target"' in html
     assert 'id="jpeg-gain-map-quality"' in html
     assert 'id="jpeg-gain-map-scale"' in html
@@ -763,10 +824,16 @@ def test_linear_workflow_uses_tab_specific_rails_and_reports_export_readiness() 
     assert 'id="chrome-proof-watermark-toggle"' in html
     assert 'id="chrome-proof-watermark"' in html
     assert html.index('id="chrome-proof-refresh"') < html.index('id="chrome-proof-status"')
+    assert 'class="proof-explainer"' not in html
+    assert 'data-tooltip="Renders the actual delivered file through this app\'s Chromium HDR pipeline."' in html
+    assert 'data-tooltip="Proofs refresh on demand. Grading changes mark the result stale without interrupting editing."' in html
     assert 'id="chrome-proof-popover"' not in html
     assert 'id="chrome-proof-image"' in html
-    assert 'id="review-chrome-proof"' in html
-    assert 'data-preflight="proof"' in html
+    assert 'id="review-chrome-proof"' not in html
+    assert 'id="export-preflight"' not in html
+    assert 'data-preflight=' not in html
+    assert "function updateExportAvailability()" in javascript
+    assert "function renderExportPreflight()" not in javascript
     assert '<dialog id="export-sheet"' not in html
     assert 'id="export-sheet" class="export-sheet workflow-side-panel panel"' in html
     assert "Delivery Matrix" not in html
@@ -805,14 +872,38 @@ def test_linear_workflow_uses_tab_specific_rails_and_reports_export_readiness() 
     assert '.chrome-proof-status[data-state="stale"]' in css
     assert 'state.activeWorkflow !== "proof"' in proofing
     assert 'state.currentView !== "hdr"' in proofing
-    assert "renderProofPreflight" in javascript
-    assert "Chromium proof is stale" in javascript
-    assert "Proofed ${formatName}, not selected ${exportName}" in javascript
+    assert "renderProofPreflight" not in javascript
+    assert "Chromium proof is stale" not in javascript
+    assert "Proofed ${formatName}, not selected ${exportName}" not in javascript
 
 
 def test_grade_rail_keeps_a_readable_minimum_width() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
-    assert "gradeW: [300, 420]" in javascript
+    assert 'aria-valuemin="340"' in html
+    assert 'aria-valuenow="340"' in html
+    assert "--grade-w: 340px" in css
+    assert "min-width: 340px" in css
+    assert "gradeW: 340" in javascript
+    assert "gradeW: [340, 420]" in javascript
+
+
+def test_adjustable_module_headers_expose_consistent_modified_and_reset_affordances() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    groups = (
+        "raw-highlights", "denoise", "geometry", "perspective",
+        "hdr-tone", "hdr-highlights", "hdr-equalizer", "hdr-color", "hdr-zones",
+        "sdr-tone", "sdr-highlights", "sdr-equalizer", "sdr-color", "sdr-zones",
+        "curves", "color-grading", "detail", "film-look", "vignette",
+    )
+    for group in groups:
+        start = html.index(f'data-group="{group}"')
+        header_end = html.index('</div>', start)
+        header = html[start:header_end]
+        assert 'class="group-toggle"' in header, group
+        assert '<span' in header, group
+        assert 'class="group-reset text-button"' in header, group
 
 
 def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
@@ -905,15 +996,16 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
 
 def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_bands() -> None:
     shader = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
-    # The packed parameter layout currently occupies indices 0..158. Keep the
+    # The packed parameter layout currently occupies indices 0..159. Keep the
     # contract aligned with the actual highest shader index so stale padding
     # does not masquerade as a pipeline-order regression.
-    assert "const PARAM_COUNT = 159" in shader
+    assert "const PARAM_COUNT = 160" in shader
     assert "params[153] = Math.min(3, Math.max(0.3, Number(detail.sharpen_radius_px)" in shader
     assert "params[154] = Math.min(1, Math.max(0, Number(detail.sharpen_threshold)" in shader
     assert "params[156] = grainSectionEnabled ? 1 : 0" in shader
     assert "params[157] = grainSectionEnabled ? (grain.look_strength ?? 100) / 100 : 0" in shader
     assert "params[158] = film.grain_view_map ? 1 : 0" in shader
+    assert "params[159] = sdrHighlightV2 ? 1 : 0" in shader
     assert "p[156] > 0.5 && p[157] > 0.0" in shader
     assert "detailHorizontalFragmentMain" in shader
     assert "detailVerticalFragmentMain" in shader
@@ -939,10 +1031,16 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     assert "let target =" not in shader
     assert "let softness = clamp(p[3] / 100.0, 0.0, 1.0)" in shader
     assert 'branch.highlight_compression_mode === "peak_fit" ? 1' in shader
+    assert 'branch.highlight_compression_color_handling === "smooth_rolloff" ? 2' in shader
     assert 'branch.highlight_compression_color_handling === "path_to_white"' in shader
     assert "fn hdrPeakFit(input: vec3f) -> vec3f" in shader
+    assert "fn peakFitChannel(" in shader
     assert "fn hdrSoftCeiling(input: vec3f) -> vec3f" in shader
-    assert "let signal = select(y, max(channelPeak, 0.0), p[110] > 0.5)" in shader
+    assert "fn sdrPeakFit(input: vec3f) -> vec3f" in shader
+    assert "fn sdrSoftCeiling(input: vec3f) -> vec3f" in shader
+    assert "acescgToSrgb(sceneColor(rgb)) * ((100.0 / 203.0) / 0.18)" in shader
+    assert "let transport = acescgToBt2020(input)" in shader
+    assert "return bt2020ToAcescg(mappedTransport)" in shader
     assert "(mappedRgb - vec3f(targetValue)) * (1.0 - progress)" in shader
     assert "let requiredRatio = clamp(" in shader
     assert "let targetValue = exp2(effectiveStartStop + stopSpan * mapped)" in shader
@@ -1141,6 +1239,9 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     assert "peakReductionMain" in webgpu
     assert "measureToneAdjustedPeak" in webgpu
     assert 'sourceOptions?.tier !== "interactive"' in webgpu
+    render_to = webgpu[webgpu.index("async renderTo(canvas"):webgpu.index("async analyzeDenoiseProxy")]
+    assert render_to.index("await this.measureToneAdjustedPeak") < render_to.index("canvas.width = proxy.width")
+    assert render_to.index("canvas.height = proxy.height") < render_to.index("this.device.queue.submit")
     assert "tier," in javascript[javascript.index("const sourceOptions = {"):javascript.index("try {", javascript.index("const sourceOptions = {"))]
 
 
@@ -1752,8 +1853,7 @@ def test_detail_uses_numbered_module_header_and_sharpen_targeting_hierarchy() ->
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
 
-    assert '>Detail <span id="detail-state">Default</span>' not in html
-    assert '>Detail</button>' in html
+    assert '>Detail <span class="module-modified-marker" aria-hidden="true"></span></button>' in html
     assert '.control-group[data-group="detail"] > .control-group-header::before { content: "14"; }' in css
     assert '.control-group[data-group="film-look"] > .control-group-header::before { content: "15"; }' in css
     assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "16"; }' in css
@@ -1867,7 +1967,7 @@ def test_denoise_phase_three_exposes_locked_wavelet_methods_and_four_live_contro
     assert 'id="denoise-threshold"' in html
     assert 'id="denoise-luma-sigma"' in html
     assert 'id="denoise-chroma-sigma"' in html
-    assert 'id="denoise-state"' not in html
+    assert '>Denoise <span class="module-modified-marker" aria-hidden="true"></span></button>' in html
     assert html.index('id="raw-settings-section"') < html.index('data-group="denoise"') < html.index('id="local-adjustments-group"')
     assert "defaultDenoiseDocument" in app_script
     assert 'id: "built-in:photo_fine"' in app_script

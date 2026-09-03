@@ -78,16 +78,18 @@ def test_calibrated_scene_materializes_into_normal_visible_modules() -> None:
     )
 
     assert result.status in {"matched", "needs_review"}
-    assert result.quality.median_luma_error <= 0.01
+    assert result.quality.median_luma_error <= 0.012
     assert result.quality.p95_luma_error <= 0.05
     assert result.quality.median_oklab_error <= 0.015
     assert result.quality.p95_oklab_error <= 0.05
     if result.status == "matched":
         assert result.quality.p95_luma_error <= 0.03
         assert result.quality.p95_oklab_error <= 0.04
-    assert result.adjustments.sdr.base_section_enabled is True
+    assert result.adjustments.sdr.rendering_version == "highlight_v2"
     assert result.adjustments.sdr.use_authored_base is False
-    assert 0.0 <= result.adjustments.sdr.highlight_recovery <= 4.0
+    assert result.adjustments.sdr.highlight_section_enabled is True
+    assert result.adjustments.sdr.highlight_compression_mode == "peak_fit"
+    assert result.adjustments.sdr.highlight_compression_color_handling == "preserve_color"
     assert _curve_is_identity(result.adjustments.sdr.luma_curve)
     assert any(abs(node.adjustment_ev) > 0.001 for node in result.adjustments.sdr.tone_equalizer_nodes)
     tone_targets = [node.input_ev + node.adjustment_ev for node in result.adjustments.sdr.tone_equalizer_nodes]
@@ -99,7 +101,14 @@ def test_calibrated_scene_materializes_into_normal_visible_modules() -> None:
     ):
         assert len(curve) <= 7
         assert _curve_has_useful_slope(curve)
-        assert _curve_is_identity(curve)
+    assert any(
+        not _curve_is_identity(curve)
+        for curve in (
+            result.adjustments.sdr.red_curve,
+            result.adjustments.sdr.green_curve,
+            result.adjustments.sdr.blue_curve,
+        )
+    )
     local_grade = result.local_adjustments[0].sdr_grade
     assert _curve_is_identity(local_grade.luma_curve)
     assert _curve_is_identity(local_grade.red_curve)

@@ -7,7 +7,7 @@ HDR Reference White sets the brightness assigned to the image's ordinary white. 
 | **203 nits — Standard HDR photography** | New HDR photo work and normal ISO HDR or gain-map delivery. This is the default for every new project. |
 | **100 nits — Controlled 100-nit workflow** | A workflow intentionally mastered around 100-nit white or a specified technical comparison. |
 
-Changing the setting is a reversible grade edit. It immediately updates the HDR preview, scopes and nit labels, false-color bands that follow the project, proof state, export preflight, and exported HDR pixels. With absolute-nit highlight controls disabled, changing 100 to 203 raises HDR placement by exactly 2.03×, about 1.02 stops. It does not rescale a generated SDR fallback, and it never replaces an imported authored SDR rendition.
+Changing the setting is a reversible grade edit. It immediately updates the HDR preview, scopes and nit labels, false-color bands that follow the project, proof state, export settings, and exported HDR pixels. With absolute-nit highlight controls disabled, changing 100 to 203 raises HDR placement by exactly 2.03×, about 1.02 stops. It does not rescale a generated SDR fallback, and it never replaces an imported authored SDR rendition.
 
 Keep these controls separate:
 

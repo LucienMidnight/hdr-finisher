@@ -154,9 +154,9 @@ Generated SDR starts from the ACEScg HDR source:
 
 1. SDR exposure and shadow work in scene-linear ACEScg.
 2. Independent SDR scene color adjustments.
-3. Tone-map ACEScg luminance.
-4. Convert with CAT02 to display-linear sRGB and gamut-compress toward display luminance.
-5. Highlight Recovery.
+3. Apply the fixed SDR placement where scene-linear `0.18` maps to display-linear `100/203`.
+4. Convert with CAT02 to display-linear sRGB.
+5. Apply SDR Highlight Compression, then gamut-compress toward display luminance.
 6. display-linear tone equalizer / Exposure Bands.
 7. contrast.
 8. lift, gamma, gain.
@@ -168,7 +168,7 @@ Generated SDR starts from the ACEScg HDR source:
 14. seeded grain.
 15. clamp to `[0, 1]` display-linear sRGB.
 
-The conversion/tone-map boundary is important. Moving a scene-linear control after it changes both its numerical meaning and its visual behavior.
+The scene-to-display conversion boundary is important. Moving a scene-linear control after it changes both its numerical meaning and its visual behavior.
 
 ### 5.3 Authored SDR lane
 
@@ -176,8 +176,8 @@ When a source contains an authored SDR rendition, the branch begins from its ret
 
 1. apply geometry to the authored SDR source;
 2. exposure and shadow work;
-3. optionally re-tone-map when the authored-base controls request it;
-4. Highlight Recovery and tone equalizer;
+3. optionally apply SDR Highlight Compression (bypassed for newly imported authored bases);
+4. tone equalizer;
 5. contrast;
 6. temporarily convert sRGB to ACEScg for scene-color operations, then return and gamut-compress;
 7. lift/gamma/gain, curves, and global color grading;
@@ -187,7 +187,7 @@ When a source contains an authored SDR rendition, the branch begins from its ret
 11. grain;
 12. clamp to `[0, 1]`.
 
-Do not collapse this branch into generated SDR. The authored base is a distinct creative endpoint in a gain-map source.
+Do not collapse this branch into generated SDR. The authored base is a distinct creative endpoint in a gain-map source. Legacy v4 projects without an SDR rendering-version marker continue through the retired Base Rendition/Highlight Recovery renderer so reopening a project does not alter its pixels.
 
 ### 5.4 Local-layer internal order
 

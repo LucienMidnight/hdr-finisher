@@ -63,35 +63,37 @@ async function editValue(locator, value, { keyboardOnly = false } = {}) {
     }
 
     await modeSelect.selectOption("peak_fit");
-    await page.waitForFunction(() => document.querySelector("#highlight-compression-summary")?.textContent.includes("Peak Fit anchors"));
+    await page.waitForFunction(() => document.querySelector("#highlight-compression-summary")?.dataset.tooltip.includes("Peak Fit anchors"));
     const highlightSection = page.locator('[data-group="hdr-highlights"]');
     if (await highlightSection.count() !== 1) {
       throw new Error("Highlight Compression should be its own main control section.");
     }
     const highlightBypass = highlightSection.locator('[data-section-path="hdr.highlight_section_enabled"]');
-    await highlightBypass.click();
-    const bypassedHighlightState = await page.evaluate(() => window.HDRFinisherPerformance.authoringState().adjustments.hdr.highlight_section_enabled);
-    if (bypassedHighlightState !== false) {
-      throw new Error("Highlight Compression bypass should be independent from Tone.");
+    const initialHighlightState = await page.evaluate(() => window.HDRFinisherPerformance.authoringState().adjustments.hdr.highlight_section_enabled);
+    if (initialHighlightState !== false) {
+      throw new Error("Highlight Compression should begin bypassed with Peak Fit preselected.");
     }
     await highlightBypass.click();
+    const enabledHighlightState = await page.evaluate(() => window.HDRFinisherPerformance.authoringState().adjustments.hdr.highlight_section_enabled);
+    if (enabledHighlightState !== true) {
+      throw new Error("The section bypass should enable Highlight Compression independently from Tone.");
+    }
     if (await page.locator('[data-control-path="hdr.highlight_compression_peak_detail"]').isHidden()) {
       throw new Error("Peak Fit should expose Highlight Detail.");
     }
     if (!await page.locator('[data-control-path="hdr.highlight_compression_softness"]').isHidden()) {
       throw new Error("Peak Fit should hide the Soft Ceiling-only Softness control.");
     }
-    await page.locator(".highlight-compression-advanced > summary").click();
     const highlightColor = page.locator('[data-path="hdr.highlight_compression_color_handling"]');
-    if (await highlightColor.inputValue() !== "preserve_color") {
-      throw new Error("Peak Fit should default to preserving highlight color.");
+    if (await highlightColor.inputValue() !== "smooth_rolloff") {
+      throw new Error("Peak Fit should default to Smooth color rolloff.");
     }
     await highlightColor.selectOption("path_to_white");
     const highlightColorState = await page.evaluate(() => window.HDRFinisherPerformance.authoringState().adjustments.hdr.highlight_compression_color_handling);
     if (highlightColorState !== "path_to_white") {
       throw new Error(`Expected path-to-white highlight handling, received ${highlightColorState}.`);
     }
-    await page.waitForFunction(() => document.querySelector("#highlight-compression-summary")?.textContent.includes("RGB channels are grouped"));
+    await page.waitForFunction(() => document.querySelector("#highlight-compression-summary")?.dataset.tooltip.includes("RGB channels are grouped"));
 
     const exposure = page.locator('[data-value-path="hdr.exposure"]');
     await editValue(exposure, 6, { keyboardOnly: true });

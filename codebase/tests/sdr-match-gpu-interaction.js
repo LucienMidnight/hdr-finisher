@@ -97,8 +97,9 @@ function sameBuffer(left, right) {
         active: match.active,
         status: match.materialized_status,
         metrics: match.materialized_metrics,
-        baseEnabled: state.adjustments.sdr.base_section_enabled,
-        highlightRecovery: state.adjustments.sdr.highlight_recovery,
+        renderingVersion: state.adjustments.sdr.rendering_version,
+        highlightEnabled: state.adjustments.sdr.highlight_section_enabled,
+        highlightMode: state.adjustments.sdr.highlight_compression_mode,
         lumaPoints: luma.length,
         lumaNeutral: curveNeutral(luma),
         rgbCurvesUsable: globalRgbCurves.every((name) => {
@@ -128,7 +129,8 @@ function sameBuffer(left, right) {
       };
     });
     if (matched.active || !["matched", "needs_review"].includes(matched.status)
-      || !matched.baseEnabled || matched.highlightRecovery < 0 || matched.lumaPoints !== 5
+      || matched.renderingVersion !== "highlight_v2" || !matched.highlightEnabled
+      || matched.highlightMode !== "peak_fit" || matched.lumaPoints !== 5
       || !matched.lumaNeutral || !matched.rgbCurvesUsable || matched.localPoints !== 5
       || !matched.localCurvesNeutral || !matched.localTonalMaterialized || !matched.localMaskPreserved
       || !matched.denoiseCopied || !matched.grainCopied || matched.sourceOptions !== null

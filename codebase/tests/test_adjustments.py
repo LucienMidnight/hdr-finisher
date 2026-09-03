@@ -29,11 +29,17 @@ from hdr_finisher.adjustments import (
     _halation_tint,
     _radius_pixels,
     _compress_scene_highlights,
+    _compress_sdr_highlights,
     _primary_zone_masks,
     apply_adjustments,
 )
 from hdr_finisher.analysis import classify_hdr
-from hdr_finisher.color import acescg_to_linear_srgb, rgb_primaries_adjustment_matrix
+from hdr_finisher.color import (
+    acescg_to_linear_bt2020,
+    acescg_to_linear_srgb,
+    linear_bt2020_to_acescg,
+    rgb_primaries_adjustment_matrix,
+)
 from hdr_finisher.models import AdjustmentState, FilmLookAdjustments, HDRAdjustments, PreviewKind, SDRAdjustments, SharedAdjustments, SourceLatitude, ToneEqualizerNode
 
 
@@ -859,6 +865,8 @@ def test_direct_entry_headroom_is_accepted_by_adjustment_models() -> None:
     sdr = SDRAdjustments(
         exposure=-8,
         highlight_recovery=4,
+        highlight_compression_start_percent=99,
+        highlight_compression_manual_peak_percent=1_000_000,
         shadow=-2,
         contrast_pivot=0.999,
         white_balance_kelvin=1000,
@@ -870,6 +878,7 @@ def test_direct_entry_headroom_is_accepted_by_adjustment_models() -> None:
     assert hdr.highlight_compression_target_nits == 10000
     assert hdr.red_purity == 400
     assert sdr.highlight_recovery == 4
+    assert sdr.highlight_compression_manual_peak_percent == 1_000_000
     assert sdr.gamma_range == 24
 
 
@@ -881,6 +890,8 @@ def test_direct_entry_headroom_is_accepted_by_adjustment_models() -> None:
         (HDRAdjustments, {"white_balance_kelvin": 25001}),
         (HDRAdjustments, {"saturation": 3.01}),
         (SDRAdjustments, {"highlight_recovery": 4.01}),
+        (SDRAdjustments, {"highlight_compression_start_percent": 100}),
+        (SDRAdjustments, {"highlight_compression_manual_peak_percent": 1_000_001}),
         (SDRAdjustments, {"contrast_pivot": 1.0}),
         (SDRAdjustments, {"gamma_range": 24.01}),
     ],
@@ -1035,6 +1046,14 @@ def test_hdr_default_highlight_path_preserves_wide_exr_latitude_and_ordering() -
     assert np.all(np.diff(output[0, :, 0]) > 0.0)
 
 
+def test_highlight_compression_stays_off_but_smooth_rolloff_is_the_color_default() -> None:
+    defaults = HDRAdjustments()
+
+    assert defaults.highlight_section_enabled is False
+    assert defaults.highlight_compression_mode == "peak_fit"
+    assert defaults.highlight_compression_color_handling == "smooth_rolloff"
+
+
 def test_hdr_compression_is_identity_when_off_and_below_start() -> None:
     levels = np.array([50, 203, 399, 400, 600, 1000], dtype=np.float32) * np.float32(0.18 / 203.0)
     image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
@@ -1155,6 +1174,69 @@ def test_peak_fit_path_to_white_caps_saturated_peak_channels() -> None:
     np.testing.assert_allclose(neutralized[0, 1], [target_linear] * 3, rtol=3e-5, atol=3e-5)
 
 
+def test_peak_fit_smooth_rolloff_maps_rec2020_channels_without_lifting_weak_channels() -> None:
+    scale = np.float32(0.18 / 203.0)
+    transport_nits = np.array(
+        [
+            [20.0, 10.0, 5.0],
+            [1200.0, 500.0, 100.0],
+            [3000.0, 1600.0, 500.0],
+            [10000.0, 6000.0, 2000.0],
+        ],
+        dtype=np.float32,
+    )
+    transport = transport_nits.reshape(1, -1, 3) * scale
+    image = linear_bt2020_to_acescg(transport)
+    mapped = _compress_scene_highlights(
+        image,
+        400.0,
+        1000.0,
+        mode="peak_fit",
+        source_peak_nits=10000.0,
+        peak_detail=35.0,
+        color_handling="smooth_rolloff",
+    )
+    mapped_transport_nits = acescg_to_linear_bt2020(mapped)[0] / scale
+
+    np.testing.assert_array_equal(mapped[0, 0], image[0, 0])
+    assert np.all(mapped_transport_nits <= transport_nits + 0.02)
+    assert np.all(np.diff(mapped_transport_nits[:, 0]) > 0.0)
+    assert mapped_transport_nits[-1, 0] == pytest.approx(1000.0, rel=5e-5)
+    input_spread = np.ptp(transport_nits[-1]) / np.max(transport_nits[-1])
+    output_spread = np.ptp(mapped_transport_nits[-1]) / np.max(mapped_transport_nits[-1])
+    assert 0.0 < output_spread < input_spread
+
+
+@pytest.mark.parametrize(
+    "transport_peak",
+    [
+        (10.0, 0.1, 0.1),
+        (0.1, 10.0, 0.1),
+        (0.1, 0.1, 10.0),
+    ],
+)
+def test_peak_fit_smooth_rolloff_measures_rec2020_peak_after_tone(
+    transport_peak: tuple[float, float, float],
+) -> None:
+    image = linear_bt2020_to_acescg(np.asarray([[transport_peak]], dtype=np.float32))
+    state = AdjustmentState(
+        hdr=HDRAdjustments(
+            exposure=0.7,
+            contrast=0.5,
+            contrast_pivot=0.1845,
+            highlight_compression_mode="peak_fit",
+            highlight_compression_start_nits=400.0,
+            highlight_compression_target_nits=1000.0,
+            highlight_compression_color_handling="smooth_rolloff",
+        )
+    )
+
+    output_transport = acescg_to_linear_bt2020(_apply_hdr_adjustments(image, state))
+    output_peak_nits = float(np.max(output_transport) * 203.0 / 0.18)
+
+    assert output_peak_nits == pytest.approx(1000.0, rel=8e-5)
+
+
 @pytest.mark.parametrize(
     ("peak_pixel", "contrast"),
     [
@@ -1211,9 +1293,10 @@ def test_peak_fit_manual_measurement_uses_authored_manual_peak() -> None:
     assert float(output.max() * 203.0 / 0.18) == pytest.approx(1000.0, rel=5e-5)
 
 
-def test_softness_without_mode_does_not_activate_compression() -> None:
+def test_softness_without_section_enable_does_not_activate_compression() -> None:
     authored = HDRAdjustments(highlight_compression_softness=60.0)
-    assert authored.highlight_compression_mode == "off"
+    assert authored.highlight_section_enabled is False
+    assert authored.highlight_compression_mode == "peak_fit"
 
 
 def test_removed_rolloff_payload_is_rejected_without_migration() -> None:
@@ -1497,7 +1580,7 @@ def test_sdr_tone_mapper_defaults_share_reference_white_anchor(tone_mapper: str)
     output = _apply_sdr_adjustments(
         image,
         AdjustmentState(
-            sdr=SDRAdjustments(tone_mapper=tone_mapper, highlight_recovery=0.0)
+            sdr=SDRAdjustments(rendering_version="legacy_base_v1", tone_mapper=tone_mapper, highlight_recovery=0.0)
         ),
     )
 
@@ -1511,7 +1594,7 @@ def test_sdr_tone_mapper_defaults_are_monotonic_and_retain_headroom(tone_mapper:
     output = _apply_sdr_adjustments(
         image,
         AdjustmentState(
-            sdr=SDRAdjustments(tone_mapper=tone_mapper, highlight_recovery=0.0)
+            sdr=SDRAdjustments(rendering_version="legacy_base_v1", tone_mapper=tone_mapper, highlight_recovery=0.0)
         ),
     )[0, :, 0]
 
@@ -1526,11 +1609,11 @@ def test_filmic_curve_contrast_changes_steepness_around_middle_gray() -> None:
     image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
     soft = _apply_sdr_adjustments(
         image,
-        AdjustmentState(sdr=SDRAdjustments(tone_contrast=0.6, highlight_recovery=0.0)),
+        AdjustmentState(sdr=SDRAdjustments(rendering_version="legacy_base_v1", tone_contrast=0.6, highlight_recovery=0.0)),
     )[0, :, 0]
     strong = _apply_sdr_adjustments(
         image,
-        AdjustmentState(sdr=SDRAdjustments(tone_contrast=1.4, highlight_recovery=0.0)),
+        AdjustmentState(sdr=SDRAdjustments(rendering_version="legacy_base_v1", tone_contrast=1.4, highlight_recovery=0.0)),
     )[0, :, 0]
 
     assert strong[0] < soft[0]
@@ -1543,11 +1626,11 @@ def test_filmic_skew_moves_emphasis_between_shadows_and_highlights() -> None:
     image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
     toward_shadows = _apply_sdr_adjustments(
         image,
-        AdjustmentState(sdr=SDRAdjustments(tone_skew=-0.8, highlight_recovery=0.0)),
+        AdjustmentState(sdr=SDRAdjustments(rendering_version="legacy_base_v1", tone_skew=-0.8, highlight_recovery=0.0)),
     )[0, :, 0]
     toward_highlights = _apply_sdr_adjustments(
         image,
-        AdjustmentState(sdr=SDRAdjustments(tone_skew=0.8, highlight_recovery=0.0)),
+        AdjustmentState(sdr=SDRAdjustments(rendering_version="legacy_base_v1", tone_skew=0.8, highlight_recovery=0.0)),
     )[0, :, 0]
 
     assert toward_highlights[0] > toward_shadows[0]
@@ -1565,11 +1648,49 @@ def test_default_sdr_render_compresses_wide_gamut_colors_without_clipping_hue() 
     assert np.all(np.sum(output, axis=-1) > 0.0)
 
 
+def test_sdr_highlight_compression_defaults_to_peak_fit_and_smooth_color_rolloff() -> None:
+    sdr = SDRAdjustments()
+
+    assert sdr.rendering_version == "highlight_v2"
+    assert sdr.highlight_section_enabled is True
+    assert sdr.highlight_compression_mode == "peak_fit"
+    assert sdr.highlight_compression_start_percent == 50
+    assert sdr.highlight_compression_color_handling == "smooth_rolloff"
+
+
+def test_sdr_peak_fit_is_monotonic_and_anchors_source_peak_at_display_white() -> None:
+    levels = np.geomspace(0.01, 2.0, 256, dtype=np.float32)
+    image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
+    output = _compress_sdr_highlights(image, SDRAdjustments())[0, :, 0]
+
+    assert np.all(np.diff(output) > 0.0)
+    assert output[-1] == pytest.approx(1.0, abs=1e-6)
+    assert output[levels < 0.5][-1] == pytest.approx(levels[levels < 0.5][-1], abs=1e-6)
+
+
+def test_sdr_smooth_color_rolloff_reduces_peak_color_separation_without_lifting_weak_channel() -> None:
+    image = np.array([[[2.0, 0.9, 0.3]]], dtype=np.float32)
+    output = _compress_sdr_highlights(image, SDRAdjustments())[0, 0]
+
+    assert output[0] == pytest.approx(1.0, abs=1e-6)
+    assert output[2] == pytest.approx(image[0, 0, 2], abs=1e-6)
+    assert float(np.ptp(output)) < float(np.ptp(image[0, 0]) / np.max(image[0, 0]))
+
+
+def test_authored_sdr_highlight_bypass_is_identity_before_normal_sdr_output_clamp() -> None:
+    reference = np.array([[[0.05, 0.18, 0.75], [0.2, 0.5, 1.0]]], dtype=np.float32)
+    state = AdjustmentState(sdr=SDRAdjustments(highlight_section_enabled=False))
+
+    output = apply_adjustments(reference, state, PreviewKind.SDR, sdr_reference_image=reference)
+
+    np.testing.assert_array_equal(output, reference)
+
+
 def test_sdr_highlight_recovery_is_visible_and_targets_highlights() -> None:
     levels = np.array([0.18, 0.5, 1.0, 4.0], dtype=np.float32)
     image = np.repeat(levels.reshape(1, -1, 1), 3, axis=2)
-    baseline = _apply_sdr_adjustments(image, AdjustmentState(sdr=SDRAdjustments(highlight_recovery=0.0)))
-    recovered = _apply_sdr_adjustments(image, AdjustmentState(sdr=SDRAdjustments(highlight_recovery=1.0)))
+    baseline = _apply_sdr_adjustments(image, AdjustmentState(sdr=SDRAdjustments(rendering_version="legacy_base_v1", highlight_recovery=0.0)))
+    recovered = _apply_sdr_adjustments(image, AdjustmentState(sdr=SDRAdjustments(rendering_version="legacy_base_v1", highlight_recovery=1.0)))
     baseline_levels = baseline[0, :, 0]
     recovered_levels = recovered[0, :, 0]
 
@@ -1584,13 +1705,13 @@ def test_sdr_reference_highlight_recovery_holds_mid_gray_and_recovers_white() ->
     scene = np.ones_like(reference)
     baseline = apply_adjustments(
         scene,
-        AdjustmentState(sdr=SDRAdjustments(highlight_recovery=0.0)),
+        AdjustmentState(sdr=SDRAdjustments(rendering_version="legacy_base_v1", highlight_recovery=0.0)),
         PreviewKind.SDR,
         sdr_reference_image=reference,
     )
     recovered = apply_adjustments(
         scene,
-        AdjustmentState(sdr=SDRAdjustments(highlight_recovery=1.0)),
+        AdjustmentState(sdr=SDRAdjustments(rendering_version="legacy_base_v1", highlight_recovery=1.0)),
         PreviewKind.SDR,
         sdr_reference_image=reference,
     )
@@ -1618,14 +1739,14 @@ def test_sdr_reference_filmic_controls_change_the_render() -> None:
     scene = np.ones_like(reference)
     baseline = apply_adjustments(
         scene,
-        AdjustmentState(sdr=SDRAdjustments(highlight_recovery=0.0)),
+        AdjustmentState(sdr=SDRAdjustments(rendering_version="legacy_base_v1", highlight_recovery=0.0)),
         PreviewKind.SDR,
         sdr_reference_image=reference,
     )
 
     for state in (
-        AdjustmentState(sdr=SDRAdjustments(tone_contrast=1.4, highlight_recovery=0.0)),
-        AdjustmentState(sdr=SDRAdjustments(tone_skew=-0.8, highlight_recovery=0.0)),
+        AdjustmentState(sdr=SDRAdjustments(rendering_version="legacy_base_v1", tone_contrast=1.4, highlight_recovery=0.0)),
+        AdjustmentState(sdr=SDRAdjustments(rendering_version="legacy_base_v1", tone_skew=-0.8, highlight_recovery=0.0)),
     ):
         output = apply_adjustments(scene, state, PreviewKind.SDR, sdr_reference_image=reference)
         assert float(np.max(np.abs(output - baseline))) > 0.02
@@ -1639,7 +1760,7 @@ def test_sdr_reference_tone_mapper_selection_changes_the_render() -> None:
     outputs = {
         mapper: apply_adjustments(
             scene,
-            AdjustmentState(sdr=SDRAdjustments(tone_mapper=mapper, highlight_recovery=0.0)),
+            AdjustmentState(sdr=SDRAdjustments(rendering_version="legacy_base_v1", tone_mapper=mapper, highlight_recovery=0.0)),
             PreviewKind.SDR,
             sdr_reference_image=reference,
         )
@@ -1656,6 +1777,7 @@ def test_sdr_reference_base_rendition_bypass_disables_retone_mapping() -> None:
     scene = np.ones_like(reference)
     state = AdjustmentState(
         sdr=SDRAdjustments(
+            rendering_version="legacy_base_v1",
             base_section_enabled=False,
             tone_mapper="aces",
             tone_contrast=1.5,

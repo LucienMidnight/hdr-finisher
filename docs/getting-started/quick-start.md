@@ -38,7 +38,7 @@ Use the HDR waveform or histogram. The app labels the active project reference a
 
 Switch to **SDR Controls**. This image is what a legacy JPEG viewer, a non-HDR context, or a failed gain-map delivery will show.
 
-Start with **Filmic**. Adjust Base Rendition contrast/skew, Exposure, Highlight Recovery, and Shadow until the image works as an ordinary SDR photograph. Use **Match HDR colors** to copy the current HDR color settings into SDR, then refine the SDR color controls independently if needed.
+Adjust Exposure and Shadow until the subject reads naturally, then use **Highlight Compression** to shape the bright end. Peak Fit with Smooth color rolloff is the default starting point for a generated fallback: adjust Start and Highlight Detail when the shoulder needs more or less room. Use **Match HDR colors** to copy the current HDR color settings into SDR, then refine the SDR color controls independently if needed.
 
 Do not treat the SDR version as an unimportant thumbnail. In a gain-map file it is the base image and often the most widely viewed rendition.
 
@@ -50,12 +50,7 @@ Chrome Proof is a deterministic reconstruction of the encoded endpoints. It is n
 
 ## 6. Export
 
-Open **Export** and review preflight:
-
-- Source interpretation is accepted.
-- HDR and SDR branches have been reviewed.
-- The required encoder is available.
-- The selected proof is current.
+Open **Export**, choose the format and preset, then select the destination. Proofing is optional and remains available as a separate workflow when the delivery warrants it.
 
 Choose:
 

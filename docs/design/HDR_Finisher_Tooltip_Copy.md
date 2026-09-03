@@ -23,9 +23,8 @@ These strings predate the title-tooltip policy. They are recorded here for centr
 | `controls.hdr_rendition` | HDR Controls | Graded HDR rendition. Exported as the PQ HDR image. Double-click any value to type it. |
 | `controls.sdr_rendition` | SDR Controls | Independent fallback baked into the gain map. This is what viewers without HDR gain-map support will see. Double-click any value to type it. |
 | `preview.high_resolution` | High-res Preview | Uses more GPU memory for a larger preview. Export quality is unchanged. |
-| `sdr.tone_mapper` | Tone Mapper help | Chooses how the photograph's full brightness range is shaped for SDR. Filmic is the neutral starting point. |
-| `sdr.curve_contrast` | Curve Contrast help | Sets how strongly tones separate around the midtones. Lower is softer and holds more range; higher gives deeper shadows and brighter highlights. |
-| `sdr.contrast_skew` | Contrast Skew help | Moves tonal separation toward one end of the photograph. Left emphasizes darker tones and keeps highlights gentler; right opens shadows and gives brighter areas more snap. |
+| `sdr.highlight_compression.mode` | Mode help | Peak Fit anchors the measured source peak at display white while preserving a smooth highlight gradient. |
+| `sdr.highlight_compression.color` | Highlight Color help | Smooth color rolloff gently compresses each sRGB channel toward white. Preserve color keeps channel ratios intact. Neutralize peak groups channels so the brightest highlights converge to neutral white. |
 
 ## Shared control interaction copy
 

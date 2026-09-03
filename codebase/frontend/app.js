@@ -14,9 +14,9 @@ const latitudePresets = {
     "hdr.contrast": [-1, 1, 0.001],
     "hdr.contrast_pivot": [0.02, 1, 0.0005],
     "sdr.exposure": [-4, 4, 0.05],
-    "sdr.highlight_recovery": [0, 2, 0.01],
-    "sdr.tone_contrast": [0.5, 1.5, 0.01],
-    "sdr.tone_skew": [-1, 1, 0.01],
+    "sdr.highlight_compression_softness": [0, 100, 0.5],
+    "sdr.highlight_compression_peak_detail": [0, 100, 1],
+    "sdr.highlight_compression_bias": [-100, 100, 1],
     "sdr.shadow": [-1, 1, 0.01],
     "sdr.lift": [-0.5, 0.5, 0.002],
     "sdr.gamma": [-1, 1, 0.005],
@@ -36,9 +36,9 @@ const latitudePresets = {
     "hdr.contrast": [-0.75, 0.75, 0.001],
     "hdr.contrast_pivot": [0.02, 0.75, 0.0005],
     "sdr.exposure": [-3, 3, 0.05],
-    "sdr.highlight_recovery": [0, 1.5, 0.01],
-    "sdr.tone_contrast": [0.5, 1.5, 0.01],
-    "sdr.tone_skew": [-1, 1, 0.01],
+    "sdr.highlight_compression_softness": [0, 100, 0.5],
+    "sdr.highlight_compression_peak_detail": [0, 100, 1],
+    "sdr.highlight_compression_bias": [-100, 100, 1],
     "sdr.shadow": [-0.5, 0.5, 0.01],
     "sdr.lift": [-0.35, 0.35, 0.002],
     "sdr.gamma": [-0.75, 0.75, 0.005],
@@ -58,9 +58,9 @@ const latitudePresets = {
     "hdr.contrast": [-0.5, 0.5, 0.001],
     "hdr.contrast_pivot": [0.02, 0.5, 0.0005],
     "sdr.exposure": [-2, 2, 0.05],
-    "sdr.highlight_recovery": [0, 1, 0.01],
-    "sdr.tone_contrast": [0.5, 1.5, 0.01],
-    "sdr.tone_skew": [-1, 1, 0.01],
+    "sdr.highlight_compression_softness": [0, 100, 0.5],
+    "sdr.highlight_compression_peak_detail": [0, 100, 1],
+    "sdr.highlight_compression_bias": [-100, 100, 1],
     "sdr.shadow": [-0.3, 0.3, 0.01],
     "sdr.lift": [-0.25, 0.25, 0.002],
     "sdr.gamma": [-0.5, 0.5, 0.005],
@@ -85,10 +85,12 @@ const MANUAL_VALUE_RULES = {
   "hdr.contrast_pivot": { min: 0.0001, max: 18, decimals: 4 },
   "hdr.shadow_lift": { min: -1, max: 1, decimals: 3 },
   "hdr.tone_equalizer_smoothing": { min: 0, max: 1, decimals: 2 },
-  "sdr.tone_contrast": { min: 0.5, max: 1.5, decimals: 2 },
-  "sdr.tone_skew": { min: -1, max: 1, decimals: 2 },
   "sdr.exposure": { min: -8, max: 8, decimals: 2 },
-  "sdr.highlight_recovery": { min: 0, max: 4, decimals: 2 },
+  "sdr.highlight_compression_start_percent": { min: 1, max: 99, decimals: 0 },
+  "sdr.highlight_compression_softness": { min: 0, max: 100, decimals: 1 },
+  "sdr.highlight_compression_peak_detail": { min: 0, max: 100, decimals: 0 },
+  "sdr.highlight_compression_manual_peak_percent": { min: 1, max: 1000000, decimals: 0 },
+  "sdr.highlight_compression_bias": { min: -100, max: 100, decimals: 0 },
   "sdr.contrast": { min: -2, max: 2, decimals: 3 },
   "sdr.contrast_pivot": { min: 0.001, max: 0.999, decimals: 3 },
   "sdr.shadow": { min: -2, max: 2, decimals: 2 },
@@ -132,6 +134,12 @@ Object.assign(MANUAL_VALUE_RULES, {
   "current.vignette.roundness": { min: -100, max: 100, decimals: 0 },
   "current.vignette.feather": { min: 0, max: 100, decimals: 0 },
   "current.vignette.highlight_protection": { min: 0, max: 100, decimals: 0 },
+  "current.detail.texture_amount": { min: -100, max: 100, decimals: 0 },
+  "current.detail.clarity_amount": { min: -100, max: 100, decimals: 0 },
+  "current.detail.clarity_radius_percent": { min: 0.2, max: 3, decimals: 2 },
+  "current.detail.sharpen_amount": { min: 0, max: 100, decimals: 0 },
+  "current.detail.sharpen_radius_px": { min: 0.3, max: 3, decimals: 2 },
+  "current.detail.sharpen_threshold": { min: 0, max: 100, decimals: 0 },
   "current.film_look.look_strength": { min: 0, max: 100, decimals: 0 },
   "current.film_look.print_strength": { min: 0, max: 100, decimals: 0 },
   "current.film_look.print_contrast": { min: -100, max: 100, decimals: 0 },
@@ -184,10 +192,10 @@ const DARKTABLE_TINT_HUE_STOPS = [
 const MIN_ZOOM_PERCENT = 1;
 const MAX_ZOOM_PERCENT = 3200;
 const ZOOM_STEPS = [1, 2, 3, 4, 5, 6.25, 8.33, 12.5, 16.67, 25, 33.33, 50, 66.67, 100, 200, 300, 400, 500, 600, 800, 1200, 1600, 2400, 3200];
-const LAYOUT_DEFAULTS = { railW: 268, gradeW: 320, dockH: 252, dockOpen: true, dockTab: "histogram" };
+const LAYOUT_DEFAULTS = { railW: 268, gradeW: 340, dockH: 252, dockOpen: true, dockTab: "histogram" };
 const LAYOUT_LIMITS = {
   railW: [200, 380],
-  gradeW: [300, 420],
+  gradeW: [340, 420],
   dockH: [240, 340],
 };
 const LAYOUT_SETTLE_DELAY = 120;
@@ -426,7 +434,7 @@ const state = {
   adjustments: {
     hdr: {
       tone_section_enabled: true,
-      highlight_section_enabled: true,
+      highlight_section_enabled: false,
       tone_equalizer_section_enabled: true,
       color_section_enabled: true,
       primaries_section_enabled: true,
@@ -435,13 +443,13 @@ const state = {
       highlight_compression_start_nits: 400,
       highlight_compression_target_nits: 1000,
       highlight_compression_softness: 0,
-      highlight_compression_mode: "off",
+      highlight_compression_mode: "peak_fit",
       highlight_compression_peak_measurement: "maximum",
       highlight_compression_source_peak_nits: 1000,
       highlight_compression_manual_peak_nits: 1000,
       highlight_compression_peak_detail: 35,
       highlight_compression_bias: 0,
-      highlight_compression_color_handling: "preserve_color",
+      highlight_compression_color_handling: "smooth_rolloff",
       shadow_lift: 0,
       tone_equalizer_nodes: defaultToneEqualizerNodes(),
       tone_equalizer_influence_radius: 1.5,
@@ -475,15 +483,26 @@ const state = {
       blue_curve: defaultCurvePoints(),
     },
     sdr: {
+      rendering_version: "highlight_v2",
       base_section_enabled: true,
       use_authored_base: true,
       tone_section_enabled: true,
+      highlight_section_enabled: true,
       tone_equalizer_section_enabled: true,
       color_section_enabled: true,
       primaries_section_enabled: true,
       curves_section_enabled: true,
       exposure: 0,
       highlight_recovery: 0.6,
+      highlight_compression_start_percent: 50,
+      highlight_compression_softness: 0,
+      highlight_compression_mode: "peak_fit",
+      highlight_compression_peak_measurement: "maximum",
+      highlight_compression_source_peak_percent: 100,
+      highlight_compression_manual_peak_percent: 100,
+      highlight_compression_peak_detail: 35,
+      highlight_compression_bias: 0,
+      highlight_compression_color_handling: "smooth_rolloff",
       tone_contrast: 1,
       tone_skew: 0,
       shadow: 0,
@@ -889,7 +908,7 @@ function markRefining() {
 const defaultAdjustments = () => ({
   hdr: {
     tone_section_enabled: true,
-    highlight_section_enabled: true,
+    highlight_section_enabled: false,
     tone_equalizer_section_enabled: true,
     color_section_enabled: true,
     primaries_section_enabled: true,
@@ -906,13 +925,13 @@ const defaultAdjustments = () => ({
     highlight_compression_start_nits: 400,
     highlight_compression_target_nits: 1000,
     highlight_compression_softness: 0,
-    highlight_compression_mode: "off",
+    highlight_compression_mode: "peak_fit",
     highlight_compression_peak_measurement: "maximum",
     highlight_compression_source_peak_nits: 1000,
     highlight_compression_manual_peak_nits: 1000,
     highlight_compression_peak_detail: 35,
     highlight_compression_bias: 0,
-    highlight_compression_color_handling: "preserve_color",
+    highlight_compression_color_handling: "smooth_rolloff",
     shadow_lift: 0,
     tone_equalizer_nodes: defaultToneEqualizerNodes(),
     tone_equalizer_influence_radius: 1.5,
@@ -946,9 +965,11 @@ const defaultAdjustments = () => ({
     blue_curve: defaultCurvePoints(),
   },
   sdr: {
+    rendering_version: "highlight_v2",
     base_section_enabled: true,
     use_authored_base: true,
     tone_section_enabled: true,
+    highlight_section_enabled: true,
     tone_equalizer_section_enabled: true,
     color_section_enabled: true,
     primaries_section_enabled: true,
@@ -963,6 +984,15 @@ const defaultAdjustments = () => ({
     detail: { texture_amount: 0, clarity_amount: 0, clarity_radius_percent: 0.75, sharpen_amount: 0, sharpen_radius_px: 0.8, sharpen_threshold: 10 },
     exposure: 0,
     highlight_recovery: 0.6,
+    highlight_compression_start_percent: 50,
+    highlight_compression_softness: 0,
+    highlight_compression_mode: "peak_fit",
+    highlight_compression_peak_measurement: "maximum",
+    highlight_compression_source_peak_percent: 100,
+    highlight_compression_manual_peak_percent: 100,
+    highlight_compression_peak_detail: 35,
+    highlight_compression_bias: 0,
+    highlight_compression_color_handling: "smooth_rolloff",
     tone_contrast: 1,
     tone_skew: 0,
     shadow: 0,
@@ -1087,7 +1117,6 @@ const els = {
   rawHighlightMethod: document.getElementById("raw-highlight-method"),
   rawHighlightThreshold: document.getElementById("raw-highlight-threshold"),
   rawHighlightThresholdValue: document.getElementById("raw-highlight-threshold-value"),
-  rawHighlightStatus: document.getElementById("raw-highlight-status"),
   metadataToggle: document.getElementById("metadata-toggle"),
   metadataPanel: document.getElementById("metadata-panel"),
   interpretationGate: document.getElementById("interpretation-gate"),
@@ -1097,6 +1126,8 @@ const els = {
   curveEditor: document.getElementById("curve-editor"),
   toneEqualizerEditor: document.getElementById("tone-equalizer-editor"),
   highlightCompressionGraph: document.getElementById("highlight-compression-graph"),
+  sdrHighlightCompressionGraph: document.getElementById("sdr-highlight-compression-graph"),
+  sdrHighlightCompressionSummary: document.getElementById("sdr-highlight-compression-summary"),
   highlightCompressionSummary: document.getElementById("highlight-compression-summary"),
   toneEqualizerBandValue: document.getElementById("tone-equalizer-band-value"),
   toneEqualizerBandLabel: document.getElementById("tone-equalizer-band-label"),
@@ -1122,7 +1153,6 @@ const els = {
   sdrMatchEntireStatus: document.getElementById("sdr-match-entire-status"),
   detailSdrActions: document.getElementById("detail-sdr-actions"),
   detailMatchHdr: document.getElementById("detail-match-hdr"),
-  curveStatus: document.getElementById("curve-status"),
   overlayPresetNote: document.getElementById("overlay-preset-note"),
   falseColorKey: document.getElementById("false-color-key"),
   curveReset: document.getElementById("curve-reset"),
@@ -1310,9 +1340,6 @@ const els = {
   avifGainMapQuality: document.getElementById("avif-gain-map-quality"),
   avifGainMapQualityValue: document.getElementById("avif-gain-map-quality-value"),
   avifGainMapScale: document.getElementById("avif-gain-map-scale"),
-  preflightItems: [...document.querySelectorAll("[data-preflight]")],
-  exportProofStatus: document.getElementById("export-proof-status"),
-  reviewChromeProof: document.getElementById("review-chrome-proof"),
   viewButtons: [...document.querySelectorAll("[data-kind]")],
   controls: [...document.querySelectorAll("[data-path]")],
   valueOutputs: [...document.querySelectorAll("[data-value-path]")],
@@ -1328,7 +1355,6 @@ const els = {
   groupPresetStatus: document.getElementById("group-preset-status"),
   groupPresetClose: document.getElementById("group-preset-close"),
   sdrMatchHdrColors: document.getElementById("sdr-match-hdr-colors"),
-  sdrResetColors: document.getElementById("sdr-reset-colors"),
   filmLookReset: document.getElementById("film-look-reset"),
   filmLookMatchHdr: document.getElementById("film-look-match-hdr"),
   filmLookSdrActions: document.getElementById("film-look-sdr-actions"),
@@ -1418,8 +1444,8 @@ const controlGroups = {
   "hdr-color": ["hdr.white_balance_kelvin", "hdr.tint", "hdr.saturation", "hdr.vibrance", "hdr.red_hue", "hdr.red_purity", "hdr.green_hue", "hdr.green_purity", "hdr.blue_hue", "hdr.blue_purity", "hdr.tint_hue", "hdr.tint_purity"],
   "hdr-zones": ["hdr.lift", "hdr.lift_range", "hdr.lift_pivot", "hdr.gamma", "hdr.gamma_range", "hdr.gamma_pivot", "hdr.gain", "hdr.gain_range", "hdr.gain_pivot"],
   "hdr-detail": ["hdr.detail"],
-  "sdr-base": ["sdr.tone_mapper", "sdr.tone_contrast", "sdr.tone_skew"],
-  "sdr-tone": ["sdr.exposure", "sdr.highlight_recovery", "sdr.contrast", "sdr.contrast_pivot", "sdr.shadow"],
+  "sdr-tone": ["sdr.exposure", "sdr.contrast", "sdr.contrast_pivot", "sdr.shadow"],
+  "sdr-highlights": ["sdr.highlight_compression_mode", "sdr.highlight_compression_start_percent", "sdr.highlight_compression_softness", "sdr.highlight_compression_peak_detail", "sdr.highlight_compression_peak_measurement", "sdr.highlight_compression_manual_peak_percent", "sdr.highlight_compression_bias", "sdr.highlight_compression_color_handling"],
   "sdr-equalizer": ["sdr.tone_equalizer_nodes", "sdr.tone_equalizer_influence_radius", "sdr.tone_equalizer_smoothing"],
   "sdr-color": ["sdr.white_balance_kelvin", "sdr.tint", "sdr.saturation", "sdr.vibrance", "sdr.red_hue", "sdr.red_purity", "sdr.green_hue", "sdr.green_purity", "sdr.blue_hue", "sdr.blue_purity", "sdr.tint_hue", "sdr.tint_purity"],
   "sdr-zones": ["sdr.lift", "sdr.lift_range", "sdr.lift_pivot", "sdr.gamma", "sdr.gamma_range", "sdr.gamma_pivot", "sdr.gain", "sdr.gain_range", "sdr.gain_pivot"],
@@ -1443,8 +1469,8 @@ const sectionPathForGroup = {
   "hdr-equalizer": "hdr.tone_equalizer_section_enabled",
   "hdr-color": "hdr.color_section_enabled",
   "hdr-zones": "hdr.primaries_section_enabled",
-  "sdr-base": "sdr.base_section_enabled",
   "sdr-tone": "sdr.tone_section_enabled",
+  "sdr-highlights": "sdr.highlight_section_enabled",
   "sdr-equalizer": "sdr.tone_equalizer_section_enabled",
   "sdr-color": "sdr.color_section_enabled",
   "sdr-zones": "sdr.primaries_section_enabled",
@@ -1630,6 +1656,7 @@ async function boot() {
   initializePreviewPreferences();
   initializeInstrumentShell();
   initializePreviewScheduler();
+  initializeBoundedTooltips();
   activateWorkflowTab("import", { focus: false });
   await initializeDesktopBridge();
   await initializeApplicationShell();
@@ -1650,7 +1677,7 @@ async function boot() {
   renderCompareLayout();
   renderControlState();
   renderCapabilities();
-  renderExportPreflight();
+  updateExportAvailability();
   setGradeMode("global");
   renderLocalAdjustments();
   window.addEventListener("resize", () => {
@@ -2118,9 +2145,6 @@ function enhanceRangeControl(control) {
     control.step = String(fineRangeStep(declaredStep));
   }
   updateRangeVisual(control);
-  control.title = [control.title, "Hold Ctrl for 10× finer adjustment. Hold Shift to snap to semantic landing positions."]
-    .filter(Boolean)
-    .join(" ");
   control.addEventListener("input", () => updateRangeVisual(control));
   bindInstrumentRangePointer(control, shell);
 }
@@ -2128,11 +2152,13 @@ function enhanceRangeControl(control) {
 function enhanceEditableGradeValues() {
   els.valueOutputs.forEach((output) => {
     const path = output.dataset.valuePath;
-    const rule = MANUAL_VALUE_RULES[path];
+    const resolvedPath = resolveAdjustmentPath(path);
+    const rulePath = MANUAL_VALUE_RULES[path] ? path : resolvedPath;
+    const rule = MANUAL_VALUE_RULES[rulePath];
     if (!rule || !output.closest("#grade-workflow-panel")) return;
     bindEditableValue(output, {
       getValue: () => getValueByPath(state.adjustments, path),
-      normalize: (text) => normalizeManualControlValue(path, text),
+      normalize: (text) => normalizeManualControlValue(rulePath, text),
       commit: ({ value }) => commitAdjustmentValue(path, value, { manual: true }),
       label: () => `${output.closest(".control-heading")?.querySelector("label")?.textContent?.trim() || path} value`,
       range: () => manualRangeLabel(path, rule),
@@ -2487,8 +2513,9 @@ function bindEvents() {
   });
   els.rawHighlightMethod?.addEventListener("change", applyRawImportSettings);
   els.rawHighlightThreshold?.addEventListener("input", () => {
-    els.rawHighlightThresholdValue.textContent = Number(els.rawHighlightThreshold.value).toFixed(3);
-    updateRangeVisual(els.rawHighlightThreshold);
+    renderRawHighlightState({
+      enabled: els.rawHighlightBypass.getAttribute("aria-pressed") === "true",
+    });
   });
   els.rawHighlightThreshold?.addEventListener("change", applyRawImportSettings);
   els.rawHighlightReset?.addEventListener("click", async () => {
@@ -2504,7 +2531,7 @@ function bindEvents() {
   els.acceptInterpretation.addEventListener("click", () => {
     state.interpretationGateDismissed = true;
     renderInterpretationGate();
-    renderExportPreflight();
+    updateExportAvailability();
   });
   els.manualInterpretation.addEventListener("click", openManualInterpretation);
   els.interpretationMode.addEventListener("change", () => {
@@ -2774,7 +2801,6 @@ function bindEvents() {
   ));
   els.sdrMatchRevert?.addEventListener("click", () => setSdrMatch("revert"));
   els.detailMatchHdr?.addEventListener("click", () => matchLaneObject("detail"));
-  els.sdrResetColors.addEventListener("click", resetSdrColorSliders);
   els.filmLookReset?.addEventListener("click", resetFilmLook);
   els.filmLookMatchHdr?.addEventListener("click", matchHdrFilmLookToSdr);
   els.colorGradingReset?.addEventListener("click", () => resetLaneObject("color_grading", defaultColorGrading()));
@@ -2853,7 +2879,7 @@ function bindEvents() {
   els.exportFormat.addEventListener("change", () => {
     const requestedPreset = els.exportPreset.value === "custom" ? "web_default" : els.exportPreset.value;
     applyExportPreset(els.exportFormat.value, requestedPreset);
-    renderExportPreflight();
+    updateExportAvailability();
     renderWorkflowContext();
   });
   els.exportPreset.addEventListener("change", () => {
@@ -3089,7 +3115,7 @@ async function ejectCurrentSession() {
   renderInterpretationGate();
   renderLaneChrome();
   renderControlState();
-  renderExportPreflight();
+  updateExportAvailability();
 }
 
 function renderSession() {
@@ -3119,7 +3145,7 @@ function renderSession() {
   renderInterpretationGate();
   renderLaneChrome();
   renderControlState();
-  renderExportPreflight();
+  updateExportAvailability();
   window.HDRProofing?.reset();
 }
 
@@ -3204,8 +3230,6 @@ function renderReadouts() {
   renderKeyValueList(els.displayInfoList, displayProbeEntries());
   renderKeyValueList(els.sourcePreviewList, sourceInterpretationEntries());
   renderWorkflowContext();
-  const lane = currentCurveLane().toUpperCase();
-  els.curveStatus.textContent = `Curve edits affect only the ${lane} preview/export branch.`;
 }
 
 function renderOverlayPresetNote() {
@@ -3418,6 +3442,7 @@ async function initializeApplicationShell() {
         if (els.toneEqualizerEditor) drawToneEqualizerEditor("hdr");
         if (els.sdrToneEqualizerEditor) drawToneEqualizerEditor("sdr");
         if (els.highlightCompressionGraph) renderHighlightCompressionControls();
+        if (els.sdrHighlightCompressionGraph) renderSdrHighlightCompressionControls();
       }
       if (preferences.folders.fileSave) {
         state.defaultExportDirectory = preferences.folders.fileSave;
@@ -6854,7 +6879,7 @@ function presentScopePayload(payload, { generation, tier, lane, mode, source, me
   els.scopeFreshness.classList.remove("updating");
   drawHistogram(payload);
   renderDockSummary();
-  renderExportPreflight();
+  updateExportAvailability();
   const scopeFingerprint = payload.channels.reduce((total, channel, channelIndex) => {
     const channelWeight = channelIndex + 1;
     const binTotal = (channel.bins || []).reduce(
@@ -7373,6 +7398,7 @@ function commitAdjustmentValue(path, value, { manual = false } = {}) {
     syncControlsFromState();
   }
   if (resolvedPath.startsWith("hdr.highlight_compression_")) normalizeHighlightCompressionControls(resolvedPath);
+  if (resolvedPath.startsWith("sdr.highlight_compression_")) normalizeSdrHighlightCompressionControls(resolvedPath);
   if (path === "shared.false_color_band_anchor" || path === "shared.false_color_ceiling_nits") {
     renderOverlayPresetNote();
     drawCurveEditor();
@@ -7444,12 +7470,21 @@ function syncHighlightCompressionSourcePeak() {
     return;
   }
   const analysis = state.session?.analysis;
-  const groupedChannels = hdr.highlight_compression_color_handling === "path_to_white";
-  const linear = hdr.highlight_compression_peak_measurement === "robust"
-    ? (groupedChannels
+  const colorHandling = hdr.highlight_compression_color_handling || "smooth_rolloff";
+  let linear;
+  if (colorHandling === "smooth_rolloff") {
+    linear = hdr.highlight_compression_peak_measurement === "robust"
+      ? (analysis?.robust_peak_bt2020_linear ?? analysis?.peak_bt2020_linear ?? analysis?.robust_peak_linear ?? analysis?.peak_linear)
+      : (analysis?.peak_bt2020_linear ?? analysis?.peak_linear);
+  } else if (colorHandling === "path_to_white") {
+    linear = hdr.highlight_compression_peak_measurement === "robust"
       ? (analysis?.robust_peak_linear ?? analysis?.peak_linear)
-      : (analysis?.robust_peak_luma_linear ?? analysis?.peak_luma_linear ?? analysis?.peak_linear))
-    : (groupedChannels ? analysis?.peak_linear : (analysis?.peak_luma_linear ?? analysis?.peak_linear));
+      : analysis?.peak_linear;
+  } else {
+    linear = hdr.highlight_compression_peak_measurement === "robust"
+      ? (analysis?.robust_peak_luma_linear ?? analysis?.peak_luma_linear ?? analysis?.peak_linear)
+      : (analysis?.peak_luma_linear ?? analysis?.peak_linear);
+  }
   if (Number.isFinite(Number(linear))) {
     hdr.highlight_compression_source_peak_nits = Math.max(1, Number(linear) * projectReferenceWhiteNits() / 0.18);
   }
@@ -7492,7 +7527,7 @@ function peakFitCurveInfo(hdr) {
 }
 
 function mapHighlightNits(inputNits, hdr) {
-  const mode = hdr.highlight_compression_mode || "off";
+  const mode = hdr.highlight_compression_mode || "peak_fit";
   if (mode === "off") return inputNits;
   if (mode === "soft_ceiling") {
     const softness = Number(hdr.highlight_compression_softness) || 0;
@@ -7524,7 +7559,7 @@ function renderHighlightCompressionControls() {
   const hdr = state.adjustments.hdr;
   if (!hdr || !els.highlightCompressionGraph) return;
   syncHighlightCompressionSourcePeak();
-  const mode = hdr.highlight_compression_mode || "off";
+  const mode = hdr.highlight_compression_mode || "peak_fit";
   document.querySelector('[data-control-path="hdr.highlight_compression_softness"]')?.toggleAttribute("hidden", mode !== "soft_ceiling");
   document.querySelector('[data-control-path="hdr.highlight_compression_peak_detail"]')?.toggleAttribute("hidden", mode !== "peak_fit");
   document.querySelector('[data-control-path="hdr.highlight_compression_color_handling"]')?.toggleAttribute("hidden", mode !== "peak_fit");
@@ -7572,17 +7607,223 @@ function renderHighlightCompressionControls() {
   context.stroke();
   context.lineWidth = 1;
   if (mode === "off") {
-    els.highlightCompressionSummary.textContent = "Compression is off. The ultraviolet identity line leaves highlights unchanged.";
+    els.highlightCompressionSummary.dataset.tooltip = "Compression is off. The ultraviolet identity line leaves highlights unchanged.";
   } else if (mode === "soft_ceiling") {
-    els.highlightCompressionSummary.textContent = `Soft Ceiling approaches ${Math.round(hdr.highlight_compression_target_nits)} nit without a hard peak anchor.`;
+    els.highlightCompressionSummary.dataset.tooltip = `Soft Ceiling approaches ${Math.round(hdr.highlight_compression_target_nits)} nit without a hard peak anchor.`;
   } else {
     const info = peakFitCurveInfo(hdr);
     const effective = 2 ** info.effectiveStartStop;
     const adjusted = effective < Number(hdr.highlight_compression_start_nits) * 0.99;
     const colorNote = hdr.highlight_compression_color_handling === "path_to_white"
-      ? "; RGB channels are grouped and converge toward white"
-      : "; color ratios are preserved";
-    els.highlightCompressionSummary.textContent = `Peak Fit anchors the measured source peak near ${Math.round(info.target)} nit at the Highlights stage${adjusted ? `; the curve fit widens the shoulder to ${Math.round(effective)} nit` : ""}${colorNote}. Later modules can change the final scoped peak.`;
+      ? "; RGB channels are grouped and converge to neutral white"
+      : hdr.highlight_compression_color_handling === "preserve_color"
+        ? "; color ratios are preserved"
+        : "; Rec.2020 channels roll off smoothly toward white";
+    els.highlightCompressionSummary.dataset.tooltip = `Peak Fit anchors the measured source peak near ${Math.round(info.target)} nit at the Highlights stage${adjusted ? `; the curve fit widens the shoulder to ${Math.round(effective)} nit` : ""}${colorNote}. Later modules can change the final scoped peak.`;
+  }
+}
+
+function initializeBoundedTooltips() {
+  const selector = ".help-tip[data-tooltip], .help-tip[data-tip], .tooltip-trigger[data-tooltip], .group-toggle[data-tooltip], .disclosure-trigger[data-tooltip]";
+  if (!document.querySelector(selector)) return;
+  const tooltip = document.createElement("div");
+  tooltip.id = "bounded-help-tooltip";
+  tooltip.className = "bounded-help-tooltip";
+  tooltip.setAttribute("role", "tooltip");
+  tooltip.hidden = true;
+  document.body.append(tooltip);
+
+  let activeTrigger = null;
+  let pendingTrigger = null;
+  let showTimer = 0;
+
+  const tooltipText = (trigger) => trigger?.dataset.tooltip || trigger?.dataset.tip || "";
+  const hide = () => {
+    window.clearTimeout(showTimer);
+    showTimer = 0;
+    pendingTrigger = null;
+    activeTrigger = null;
+    tooltip.classList.remove("visible");
+    tooltip.hidden = true;
+  };
+  const position = () => {
+    if (!activeTrigger || tooltip.hidden || !activeTrigger.isConnected) return hide();
+    const visualViewport = window.visualViewport;
+    const viewport = {
+      left: visualViewport?.offsetLeft || 0,
+      top: visualViewport?.offsetTop || 0,
+      width: visualViewport?.width || window.innerWidth,
+      height: visualViewport?.height || window.innerHeight,
+    };
+    const margin = 8;
+    const gap = 7;
+    const triggerRect = activeTrigger.getBoundingClientRect();
+    tooltip.style.maxWidth = `${Math.max(80, viewport.width - margin * 2)}px`;
+    tooltip.style.left = "0px";
+    tooltip.style.top = "0px";
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const minimumLeft = viewport.left + margin;
+    const maximumLeft = viewport.left + viewport.width - margin - tooltipRect.width;
+    const left = clamp(
+      triggerRect.left + triggerRect.width / 2 - tooltipRect.width / 2,
+      minimumLeft,
+      Math.max(minimumLeft, maximumLeft),
+    );
+    const minimumTop = viewport.top + margin;
+    const maximumTop = viewport.top + viewport.height - margin - tooltipRect.height;
+    const below = triggerRect.bottom + gap;
+    const above = triggerRect.top - gap - tooltipRect.height;
+    const preferredTop = below <= maximumTop ? below : above;
+    const top = clamp(preferredTop, minimumTop, Math.max(minimumTop, maximumTop));
+    tooltip.style.left = `${Math.round(left)}px`;
+    tooltip.style.top = `${Math.round(top)}px`;
+  };
+  const show = (trigger) => {
+    const text = tooltipText(trigger);
+    if (!text || !trigger.isConnected) return hide();
+    activeTrigger = trigger;
+    pendingTrigger = null;
+    tooltip.textContent = text;
+    tooltip.hidden = false;
+    position();
+    tooltip.classList.add("visible");
+  };
+  const schedule = (trigger) => {
+    window.clearTimeout(showTimer);
+    if (activeTrigger === trigger) {
+      tooltip.textContent = tooltipText(trigger);
+      position();
+      return;
+    }
+    pendingTrigger = trigger;
+    showTimer = window.setTimeout(() => show(trigger), 600);
+  };
+  const triggerFromEvent = (event) => event.target instanceof Element
+    ? event.target.closest(selector)
+    : null;
+
+  document.addEventListener("pointerover", (event) => {
+    const trigger = triggerFromEvent(event);
+    if (trigger && !trigger.contains(event.relatedTarget)) schedule(trigger);
+  });
+  document.addEventListener("pointerout", (event) => {
+    const trigger = triggerFromEvent(event);
+    if (!trigger || trigger.contains(event.relatedTarget) || document.activeElement === trigger) return;
+    if (activeTrigger === trigger || pendingTrigger === trigger) hide();
+  });
+  document.addEventListener("focusin", (event) => {
+    const trigger = triggerFromEvent(event);
+    if (trigger) schedule(trigger);
+  });
+  document.addEventListener("focusout", (event) => {
+    const trigger = triggerFromEvent(event);
+    if (!trigger || trigger.matches(":hover")) return;
+    if (activeTrigger === trigger || pendingTrigger === trigger) hide();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && (activeTrigger || pendingTrigger)) hide();
+  });
+  document.addEventListener("scroll", position, true);
+  window.addEventListener("resize", position);
+  window.visualViewport?.addEventListener("resize", position);
+  window.visualViewport?.addEventListener("scroll", position);
+}
+
+function normalizeSdrHighlightCompressionControls(changedPath) {
+  const sdr = state.adjustments.sdr;
+  if (!sdr) return;
+  if (changedPath.endsWith("peak_measurement") || changedPath.endsWith("manual_peak_percent") || changedPath.endsWith("color_handling")) {
+    syncSdrHighlightCompressionSourcePeak();
+  }
+}
+
+function syncSdrHighlightCompressionSourcePeak() {
+  const sdr = state.adjustments.sdr;
+  if (!sdr) return;
+  if (sdr.highlight_compression_peak_measurement === "manual") {
+    sdr.highlight_compression_source_peak_percent = Number(sdr.highlight_compression_manual_peak_percent) || 100;
+    return;
+  }
+  const authored = state.editDocument?.source?.luminance?.sdr_rendition === "authored" && sdr.use_authored_base !== false;
+  const analysis = state.session?.analysis;
+  let linear = sdr.highlight_compression_peak_measurement === "robust"
+    ? (analysis?.robust_peak_linear ?? analysis?.peak_linear)
+    : analysis?.peak_linear;
+  let percent = authored ? 100 : Number(linear) * (100 / 203) / 0.18 * 100;
+  if (Number.isFinite(percent)) {
+    sdr.highlight_compression_source_peak_percent = Math.max(1, percent);
+  }
+}
+
+function sdrHighlightCurveAdapter(sdr) {
+  return {
+    tone_section_enabled: false,
+    highlight_compression_mode: sdr.highlight_compression_mode,
+    highlight_compression_start_nits: Number(sdr.highlight_compression_start_percent) || 50,
+    highlight_compression_target_nits: 100,
+    highlight_compression_softness: sdr.highlight_compression_softness,
+    highlight_compression_source_peak_nits: (Number(sdr.highlight_compression_source_peak_percent) || 100)
+      * (sdr.tone_section_enabled === false ? 1 : 2 ** (Number(sdr.exposure) || 0)),
+    highlight_compression_peak_detail: sdr.highlight_compression_peak_detail,
+    highlight_compression_bias: sdr.highlight_compression_bias,
+  };
+}
+
+function renderSdrHighlightCompressionControls() {
+  const sdr = state.adjustments.sdr;
+  const canvas = els.sdrHighlightCompressionGraph;
+  if (!sdr || !canvas) return;
+  syncSdrHighlightCompressionSourcePeak();
+  const mode = sdr.highlight_compression_mode || "peak_fit";
+  document.querySelector('[data-control-path="sdr.highlight_compression_softness"]')?.toggleAttribute("hidden", mode !== "soft_ceiling");
+  document.querySelector('[data-control-path="sdr.highlight_compression_peak_detail"]')?.toggleAttribute("hidden", mode !== "peak_fit");
+  document.querySelector('[data-control-path="sdr.highlight_compression_color_handling"]')?.toggleAttribute("hidden", mode !== "peak_fit");
+  document.querySelector('[data-control-path="sdr.highlight_compression_manual_peak_percent"]')?.toggleAttribute("hidden", sdr.highlight_compression_peak_measurement !== "manual");
+
+  const curve = sdrHighlightCurveAdapter(sdr);
+  const context = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  const pad = { left: 35, right: 9, top: 9, bottom: 24 };
+  const sourcePeak = Math.max(100, Number(curve.highlight_compression_source_peak_nits) || 100);
+  const maximum = Math.max(1000, sourcePeak * 1.25);
+  const minimum = 1;
+  const xFor = (value) => pad.left + (Math.log10(clamp(value, minimum, maximum)) - Math.log10(minimum)) / (Math.log10(maximum) - Math.log10(minimum)) * (width - pad.left - pad.right);
+  const yFor = (value) => height - pad.bottom - (Math.log10(clamp(value, minimum, maximum)) - Math.log10(minimum)) / (Math.log10(maximum) - Math.log10(minimum)) * (height - pad.top - pad.bottom);
+  context.clearRect(0, 0, width, height);
+  context.strokeStyle = "#343d41";
+  context.fillStyle = "#93a0a4";
+  context.font = "9px monospace";
+  for (const tick of [1, 10, 100, 1000, 10000, 100000]) {
+    if (tick > maximum) continue;
+    context.beginPath();
+    context.moveTo(xFor(tick), pad.top); context.lineTo(xFor(tick), height - pad.bottom);
+    context.moveTo(pad.left, yFor(tick)); context.lineTo(width - pad.right, yFor(tick)); context.stroke();
+    context.fillText(tick >= 1000 ? `${tick / 1000}k%` : `${tick}%`, xFor(tick) - 7, height - 8);
+  }
+  context.setLineDash([4, 3]);
+  context.strokeStyle = "#6d777b";
+  context.beginPath(); context.moveTo(xFor(minimum), yFor(minimum)); context.lineTo(xFor(maximum), yFor(maximum)); context.stroke();
+  context.setLineDash([]);
+  context.strokeStyle = "#68d7ed";
+  context.lineWidth = 2;
+  context.beginPath();
+  for (let index = 0; index <= 160; index += 1) {
+    const input = minimum * ((maximum / minimum) ** (index / 160));
+    const x = xFor(input);
+    const y = yFor(mapHighlightNits(input, curve));
+    if (index === 0) context.moveTo(x, y); else context.lineTo(x, y);
+  }
+  context.stroke(); context.lineWidth = 1;
+  if (els.sdrHighlightCompressionSummary) {
+    const colorNote = sdr.highlight_compression_color_handling === "path_to_white"
+      ? " Brightest highlights converge to neutral white."
+      : sdr.highlight_compression_color_handling === "preserve_color"
+        ? " Color ratios are preserved."
+        : " sRGB channels roll off independently for smooth color transitions.";
+    els.sdrHighlightCompressionSummary.dataset.tooltip = mode === "soft_ceiling"
+      ? "Soft Ceiling approaches display white without a measured peak anchor."
+      : `Peak Fit places the measured ${Math.round(sourcePeak)}% input peak at display white.${colorNote}`;
   }
 }
 
@@ -8168,7 +8409,7 @@ function renderDenoiseControls() {
   const analysisEnabled = enabled && !["preparing", "recalculating"].includes(runtime.status);
   els.denoiseMethod.value = analysis.preset;
   els.denoiseMethod.disabled = !analysisEnabled;
-  els.denoiseMethodNote.textContent = DENOISE_ANALYSIS_PRESETS[analysis.preset]?.note || DENOISE_ANALYSIS_PRESETS.custom.note;
+  els.denoiseMethodNote.dataset.tooltip = DENOISE_ANALYSIS_PRESETS[analysis.preset]?.note || DENOISE_ANALYSIS_PRESETS.custom.note;
   els.denoiseCustomSettings.hidden = analysis.preset !== "custom";
   els.denoiseLevels.value = String(analysis.levels);
   els.denoiseLevels.disabled = !analysisEnabled;
@@ -9370,9 +9611,6 @@ function renderRawImportControls(session) {
     state.rawSettingsOpen = false;
     els.rawSettingsPanel?.classList.add("hidden");
     els.rawSettingsToggle?.setAttribute("aria-expanded", "false");
-    if (els.rawHighlightStatus) {
-      els.rawHighlightStatus.textContent = "Available for supported mosaiced RAW sources.";
-    }
     return;
   }
   const settings = state.editDocument?.source?.raw_import_settings;
@@ -9392,7 +9630,7 @@ function renderRawImportControls(session) {
   const manual = els.lensMode.value === "manual";
   els.manualLensControls.classList.toggle("hidden", !manual);
   const applied = session.metadata.extra?.lens_correction;
-  els.lensSettingsNote.textContent = applied?.applied
+  els.lensSettingsNote.dataset.tooltip = applied?.applied
     ? `Applied ${applied.profile?.lens_maker || ""} ${applied.profile?.lens_model || "selected profile"}. Re-development is required after changing these controls.`
     : applied?.warning || applied?.reason || "Auto applies only one exact profile match. Off and Manual are always available.";
   if (manual && els.lensProfile.options.length <= 1) loadLensProfiles();
@@ -9403,12 +9641,7 @@ function renderRawImportControls(session) {
       els.rawHighlightThreshold.value = String(highlight.clipping_threshold ?? 1.0);
       els.rawHighlightGroup.dataset.sessionId = String(session.session_id);
     }
-    renderRawHighlightState({
-      enabled: highlight.enabled !== false,
-      diagnostics: session.metadata.extra?.raw_development?.highlight_reconstruction,
-    });
-  } else if (els.rawHighlightStatus) {
-    els.rawHighlightStatus.textContent = "Unavailable for this RAW sensor or color pipeline.";
+    renderRawHighlightState({ enabled: highlight.enabled !== false });
   }
 }
 
@@ -9427,26 +9660,18 @@ function setSourceModuleAvailability(module, available, unavailableReason) {
   module.querySelector(":scope > .disclosure-content")?.classList.add("hidden");
 }
 
-function renderRawHighlightState({ enabled, diagnostics = null }) {
+function renderRawHighlightState({ enabled }) {
   if (!els.rawHighlightGroup) return;
+  const modified = els.rawHighlightMethod.value !== "opposed_color_v1"
+    || Math.abs(Number(els.rawHighlightThreshold.value) - 1) > 1e-8;
   els.rawHighlightBypass.classList.toggle("bypassed", !enabled);
   els.rawHighlightBypass.setAttribute("aria-pressed", String(enabled));
   els.rawHighlightGroup.classList.toggle("bypassed", !enabled);
+  els.rawHighlightGroup.classList.toggle("modified", modified);
   els.rawHighlightMethod.disabled = !enabled;
   els.rawHighlightThreshold.disabled = !enabled;
   els.rawHighlightThresholdValue.textContent = Number(els.rawHighlightThreshold.value).toFixed(3);
   updateRangeVisual(els.rawHighlightThreshold);
-  const reconstructed = diagnostics?.reconstructed_photosites_per_rgb;
-  if (!enabled) {
-    els.rawHighlightStatus.textContent = "Highlight reconstruction is bypassed.";
-  } else if (Array.isArray(reconstructed)) {
-    const total = reconstructed.reduce((sum, value) => sum + Number(value || 0), 0);
-    els.rawHighlightStatus.textContent = total
-      ? `Opposed color repaired ${total.toLocaleString()} clipped photosites (R ${Number(reconstructed[0] || 0).toLocaleString()}, G ${Number(reconstructed[1] || 0).toLocaleString()}, B ${Number(reconstructed[2] || 0).toLocaleString()}).`
-      : "Opposed color found no photosites at or above the clipping threshold.";
-  } else {
-    els.rawHighlightStatus.textContent = "Opposed-color reconstruction is enabled.";
-  }
 }
 
 async function loadLensProfiles() {
@@ -9504,11 +9729,11 @@ async function applyRawImportSettings() {
   if (!desktop || !isRawSession(state.session)) return;
   const sourcePath = sourcePathForClipboard();
   if (!sourcePath) {
-    els.lensSettingsNote.textContent = "Save or relink the durable source before re-development.";
+    els.lensSettingsNote.dataset.tooltip = "Save or relink the durable source before re-development.";
     return;
   }
   if (els.lensMode.value === "manual" && !els.lensProfile.value) {
-    els.lensSettingsNote.textContent = "Choose a manual Lensfun profile or switch to Auto/Off.";
+    els.lensSettingsNote.dataset.tooltip = "Choose a manual Lensfun profile or switch to Auto/Off.";
     return;
   }
   const selection = await desktop.grantSourcePath(sourcePath);
@@ -9717,7 +9942,7 @@ function arrangeLaneControlGroups(lane) {
   if (!panel) return;
   const groupOrder = lane === "hdr"
     ? ["denoise", "hdr-tone", "hdr-equalizer", "hdr-zones", "hdr-highlights", "curves", "hdr-color"]
-    : ["denoise", "sdr-base", "sdr-tone", "sdr-equalizer", "sdr-zones", "curves", "sdr-color"];
+    : ["denoise", "sdr-tone", "sdr-highlights", "sdr-equalizer", "sdr-zones", "curves", "sdr-color"];
   for (const groupName of groupOrder) {
     const group = document.querySelector(`.control-group[data-group="${groupName}"]`);
     if (group) panel.append(group);
@@ -9781,7 +10006,7 @@ function invalidatePreview(lane, { local = false, markDirty = true } = {}) {
   state.previewGeneration[lane] += 1;
   window.HDRProofing?.invalidate(lane);
   renderCompareStatus();
-  renderExportPreflight();
+  updateExportAvailability();
 }
 
 function markGlobalEditDirty() {
@@ -9789,7 +10014,7 @@ function markGlobalEditDirty() {
   state.globalEditDirty = true;
   state.globalEditGeneration += 1;
   state.documentDirty = true;
-  renderExportPreflight();
+  updateExportAvailability();
 }
 
 function beginGlobalEditGesture(control) {
@@ -10452,6 +10677,7 @@ function formatControlValue(path, value) {
   if (path.endsWith("_purity") || path.endsWith(".saturation") || path.endsWith(".vibrance")) return `${numeric > 0 ? "+" : ""}${Math.round(path.endsWith("_purity") ? numeric : numeric * 100)}%`;
   if (path.endsWith(".exposure")) return `${numeric.toFixed(2)} EV`;
   if (path.endsWith("_nits")) return `${Math.round(numeric)} nit`;
+  if (path.endsWith("highlight_compression_start_percent") || path.endsWith("highlight_compression_manual_peak_percent")) return `${Math.round(numeric)}%`;
   if (path.endsWith("film_look.halation_radius")) return `${numeric.toFixed(2)}% 35mm gate`;
   if (path.endsWith("film_look.bloom_radius")) return `${numeric.toFixed(2)}% output diag`;
   if (path.includes("film_look")) {
@@ -10500,14 +10726,8 @@ function renderControlState() {
   const defaults = defaultAdjustments();
   const filmLook = state.adjustments[state.currentView]?.film_look;
   document.querySelector("[data-film-grain-custom]")?.toggleAttribute("hidden", filmLook?.grain_film_format !== "custom");
-  const filmicEnabled = state.adjustments.sdr?.tone_mapper === "filmic";
-  document.querySelectorAll("[data-filmic-control]").forEach((row) => {
-    row.classList.toggle("control-disabled", !filmicEnabled);
-    row.querySelectorAll("input").forEach((input) => {
-      input.disabled = !filmicEnabled;
-    });
-  });
   renderHighlightCompressionControls();
+  renderSdrHighlightCompressionControls();
   els.controlRows.forEach((row) => {
     row.classList.toggle("modified", isPathModified(row.dataset.controlPath, defaults));
   });
@@ -10519,7 +10739,7 @@ function renderControlState() {
   }
   renderGeometryResetState(defaults);
   for (const lane of ["hdr", "sdr"]) {
-    const keys = Object.keys(defaults[lane]).filter((key) => !key.endsWith("_curve") && !key.endsWith("_section_enabled") && key !== "highlight_compression_source_peak_nits");
+    const keys = Object.keys(defaults[lane]).filter((key) => !key.endsWith("_curve") && !key.endsWith("_section_enabled") && !["highlight_compression_source_peak_nits", "highlight_compression_source_peak_percent", "rendering_version", "base_section_enabled", "tone_mapper", "tone_contrast", "tone_skew", "highlight_recovery"].includes(key));
     const modified = keys.some((key) => !valuesEqual(state.adjustments[lane]?.[key], defaults[lane][key]))
       || laneCurvesModified(lane, defaults);
     const button = els.viewButtons.find((item) => item.dataset.kind === lane);
@@ -10863,10 +11083,6 @@ function matchHdrColorsToSdr() {
   setSdrColorSliders(state.adjustments.hdr);
 }
 
-function resetSdrColorSliders() {
-  setSdrColorSliders(defaultAdjustments().sdr);
-}
-
 function resetFilmLook() {
   const lane = state.currentView;
   if (lane === "sdr") prepareSdrMatchGrainOverride();
@@ -10943,7 +11159,7 @@ function prepareExportRail() {
   if (!els.exportDirectory.value.trim()) els.exportDirectory.value = state.defaultExportDirectory;
   renderCapabilities();
   renderFormatCards();
-  renderExportPreflight();
+  updateExportAvailability();
   els.exportStatus.textContent = "Choose a format and destination.";
 }
 
@@ -11119,58 +11335,12 @@ function formatChroma(value) {
   return ({ 420: "4:2:0", 422: "4:2:2", 444: "4:4:4" })[value] || value;
 }
 
-function renderExportPreflight() {
+function updateExportAvailability() {
   const needsOverride = Boolean(state.session?.analysis?.needs_color_override);
   const sourceReady = Boolean(state.session) && (!needsOverride || state.interpretationGateDismissed);
   const encoderKey = capabilityForFormat[els.exportFormat.value];
   const encoderReady = state.capabilities[encoderKey]?.status === "available";
-  setPreflight(
-    "source",
-    sourceReady,
-    sourceReady ? "Source interpretation confirmed" : "Source interpretation needs confirmation",
-  );
-  setPreflight("hdr", cacheReady("hdr"), cacheReady("hdr") ? "HDR branch ready" : "HDR preview preparing");
-  setPreflight("sdr", cacheReady("sdr"), cacheReady("sdr") ? "SDR fallback ready" : "SDR fallback preparing");
-  setPreflight("encoder", encoderReady, encoderReady ? "Encoder available" : "Encoder unavailable");
-  renderProofPreflight();
   els.exportConfirmButton.disabled = state.importInProgress || !state.session || !sourceReady || !encoderReady;
-}
-
-function renderProofPreflight() {
-  const row = els.preflightItems.find((element) => element.dataset.preflight === "proof");
-  if (!row || !els.exportProofStatus || !els.reviewChromeProof) return;
-  row.classList.remove("pass", "warn");
-  const proofApplicable = ["avif_gain_map", "jpeg_ultrahdr", "jpegxl_hdr"].includes(els.exportFormat.value);
-  els.reviewChromeProof.classList.toggle("hidden", !proofApplicable || !state.session);
-  if (!proofApplicable) {
-    els.exportProofStatus.textContent = "Chromium HDR proof not applicable to SDR export";
-    return;
-  }
-  const proofFormatNames = { avif_gain_map: "AVIF", jpeg_ultrahdr: "JPEG Ultra HDR", jpegxl_hdr: "JPEG XL HDR" };
-  const formatName = proofFormatNames[state.proofArtifact?.format] || "HDR delivery";
-  const targetName = state.proofReconstruction?.target_label || "selected target";
-  if (!state.proofArtifact || !state.proofReconstruction) {
-    els.exportProofStatus.textContent = "Chromium proof has not been reviewed";
-    row.classList.add("warn");
-  } else if (state.proofDirty) {
-    els.exportProofStatus.textContent = `Chromium proof is stale · ${formatName} · ${targetName}`;
-    row.classList.add("warn");
-  } else if (state.proofArtifact.format !== els.exportFormat.value) {
-    const exportName = proofFormatNames[els.exportFormat.value] || "HDR delivery";
-    els.exportProofStatus.textContent = `Proofed ${formatName}, not selected ${exportName}`;
-    row.classList.add("warn");
-  } else {
-    els.exportProofStatus.textContent = `Chromium proof reviewed · ${formatName} · ${targetName}`;
-    row.classList.add("pass");
-  }
-}
-
-function setPreflight(name, pass, label) {
-  const item = els.preflightItems.find((element) => element.dataset.preflight === name);
-  if (!item) return;
-  item.textContent = label;
-  item.classList.toggle("pass", pass);
-  item.classList.toggle("warn", !pass);
 }
 
 async function copyLastExportPath() {
@@ -12988,7 +13158,7 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
       drawCurveEditor();
       drawToneEqualizerEditor(state.currentView);
       renderOverlayPresetNote();
-      renderExportPreflight();
+      updateExportAvailability();
     }
     if (refreshPreview) {
       invalidatePreview("hdr", { local: true });
@@ -15328,7 +15498,7 @@ async function openStagedDesktopSource(selection) {
   if (generation !== state.importGeneration) return;
   els.badge.textContent = "Loading image and building session...";
   state.importInProgress = true;
-  renderExportPreflight();
+  updateExportAvailability();
   setIndeterminatePreviewMessage("Starting import · 0.0s elapsed");
   setImportCancelVisible(true);
   const response = await fetch("/api/import-jobs", {
@@ -15437,7 +15607,7 @@ async function cancelActiveImport() {
   state.importInProgress = false;
   if (els.cancelImport) els.cancelImport.disabled = true;
   setIndeterminatePreviewMessage("Cancelling import...");
-  renderExportPreflight();
+  updateExportAvailability();
   if (jobId) {
     await fetch(`/api/import-jobs/${jobId}`, { method: "DELETE" }).catch(() => null);
   }
@@ -15451,7 +15621,7 @@ function finishCancelledImport() {
   if (!state.session) clearPreviewImage();
   els.badge.textContent = state.session ? "Import cancelled. Current image kept." : "Import cancelled.";
   els.badge.className = "badge neutral";
-  renderExportPreflight();
+  updateExportAvailability();
 }
 
 async function activateDesktopSession(session, projectPath) {

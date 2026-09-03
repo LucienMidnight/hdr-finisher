@@ -296,7 +296,10 @@ async function main() {
 
       await window.locator("#denoise-method").selectOption("render_coarse");
       await window.waitForFunction(() => document.getElementById("denoise-status")?.textContent.startsWith("Analysis settings changed."));
-      assert.equal(await window.locator("#denoise-method-note").textContent(), "Four-scale cleanup for larger Monte Carlo noise; inspect edges and texture carefully.");
+      assert.equal(
+        await window.locator("#denoise-method-note").getAttribute("data-tooltip"),
+        "Four-scale cleanup for larger Monte Carlo noise; inspect edges and texture carefully.",
+      );
       assert.equal(await window.locator("#denoise-custom-settings").isHidden(), true);
       const methodDirty = await window.evaluate(() => window.HDRFinisherPerformance.gpuSnapshot().denoise);
       assert.equal(methodDirty.analysisCalls, restored.analysisCalls);

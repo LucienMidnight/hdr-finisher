@@ -116,6 +116,8 @@ class HDRAnalysis(BaseModel):
     robust_peak_linear: float | None = None
     peak_luma_linear: float | None = None
     robust_peak_luma_linear: float | None = None
+    peak_bt2020_linear: float | None = None
+    robust_peak_bt2020_linear: float | None = None
     peak_stops_above_diffuse_white: float | None = None
     source_latitude: SourceLatitude = SourceLatitude.MEDIUM
     needs_color_override: bool = False
@@ -302,8 +304,22 @@ class DetailAdjustments(BaseModel):
 class HDRAdjustments(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    @model_validator(mode="before")
+    @classmethod
+    def enable_an_explicit_highlight_mode(cls, value: object) -> object:
+        """Keep partial API payloads that explicitly choose a mode intuitive."""
+        if not isinstance(value, dict):
+            return value
+        if "highlight_compression_mode" not in value or "highlight_section_enabled" in value:
+            return value
+        if value.get("highlight_compression_mode") == "off":
+            return value
+        normalized = dict(value)
+        normalized["highlight_section_enabled"] = True
+        return normalized
+
     tone_section_enabled: bool = True
-    highlight_section_enabled: bool = True
+    highlight_section_enabled: bool = False
     tone_equalizer_section_enabled: bool = True
     color_section_enabled: bool = True
     primaries_section_enabled: bool = True
@@ -320,13 +336,15 @@ class HDRAdjustments(BaseModel):
     highlight_compression_start_nits: float = Field(default=400.0, ge=1.0, le=9999.0)
     highlight_compression_target_nits: float = Field(default=1000.0, ge=2.0, le=10000.0)
     highlight_compression_softness: float = Field(default=0.0, ge=0.0, le=100.0)
-    highlight_compression_mode: Literal["off", "peak_fit", "soft_ceiling"] = "off"
+    # ``off`` remains accepted for v4 project/API compatibility, but the UI
+    # uses highlight_section_enabled as the sole bypass control.
+    highlight_compression_mode: Literal["off", "peak_fit", "soft_ceiling"] = "peak_fit"
     highlight_compression_peak_measurement: Literal["maximum", "robust", "manual"] = "maximum"
     highlight_compression_source_peak_nits: float = Field(default=1000.0, ge=1.0, le=1_000_000.0)
     highlight_compression_manual_peak_nits: float = Field(default=1000.0, ge=1.0, le=1_000_000.0)
     highlight_compression_peak_detail: float = Field(default=35.0, ge=0.0, le=100.0)
     highlight_compression_bias: float = Field(default=0.0, ge=-100.0, le=100.0)
-    highlight_compression_color_handling: Literal["preserve_color", "path_to_white"] = "preserve_color"
+    highlight_compression_color_handling: Literal["smooth_rolloff", "preserve_color", "path_to_white"] = "smooth_rolloff"
     shadow_lift: float = Field(default=0.0, ge=-1.0, le=1.0)
     tone_equalizer_nodes: list[ToneEqualizerNode] = Field(
         default_factory=_default_tone_equalizer_nodes,
@@ -387,9 +405,14 @@ class HDRAdjustments(BaseModel):
 class SDRAdjustments(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    # Projects saved before the SDR highlight-compression pipeline retain their
+    # original base-rendition rendering. New edits use the neutral v2 placement
+    # plus an explicit, delivery-gamut highlight stage.
+    rendering_version: Literal["legacy_base_v1", "highlight_v2"] = "highlight_v2"
     base_section_enabled: bool = True
     use_authored_base: bool = True
     tone_section_enabled: bool = True
+    highlight_section_enabled: bool = True
     tone_equalizer_section_enabled: bool = True
     color_section_enabled: bool = True
     primaries_section_enabled: bool = True
@@ -404,6 +427,17 @@ class SDRAdjustments(BaseModel):
     detail: DetailAdjustments = Field(default_factory=DetailAdjustments)
     exposure: float = Field(default=0.0, ge=-8.0, le=8.0)
     highlight_recovery: float = Field(default=0.6, ge=0.0, le=4.0)
+    highlight_compression_start_percent: float = Field(default=50.0, ge=1.0, le=99.0)
+    highlight_compression_softness: float = Field(default=0.0, ge=0.0, le=100.0)
+    highlight_compression_mode: Literal["off", "peak_fit", "soft_ceiling"] = "peak_fit"
+    highlight_compression_peak_measurement: Literal["maximum", "robust", "manual"] = "maximum"
+    highlight_compression_source_peak_percent: float = Field(default=100.0, ge=1.0, le=1_000_000.0)
+    highlight_compression_manual_peak_percent: float = Field(default=100.0, ge=1.0, le=1_000_000.0)
+    highlight_compression_peak_detail: float = Field(default=35.0, ge=0.0, le=100.0)
+    highlight_compression_bias: float = Field(default=0.0, ge=-100.0, le=100.0)
+    highlight_compression_color_handling: Literal[
+        "smooth_rolloff", "preserve_color", "path_to_white"
+    ] = "smooth_rolloff"
     tone_contrast: float = Field(default=1.0, ge=0.5, le=1.5)
     tone_skew: float = Field(default=0.0, ge=-1.0, le=1.0)
     shadow: float = Field(default=0.0, ge=-2.0, le=2.0)

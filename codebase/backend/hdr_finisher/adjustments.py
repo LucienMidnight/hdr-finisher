@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from .color import acescg_to_linear_srgb, linear_srgb_to_acescg, rgb_primaries_adjustment_matrix
+from .color import (
+    acescg_to_linear_bt2020,
+    acescg_to_linear_srgb,
+    linear_bt2020_to_acescg,
+    linear_srgb_to_acescg,
+    rgb_primaries_adjustment_matrix,
+)
 from .color_context import RenderColorContext, nits_to_scene_linear, scene_linear_to_nits
 from .finishing import apply_geometry
 from .models import AdjustmentState, LocalAdjustment, LocalGrade, PreviewKind, SdrMatchState, ToneMapper
@@ -17,6 +23,7 @@ TONE_EQUALIZER_MAX_ADJUSTMENT_EV = 2.0
 _TONE_EQUALIZER_MIN_TARGET_STEP = np.float32(1e-3)
 SDR_DISPLAY_REFERENCE_WHITE = np.float32(100.0 / 203.0)
 SDR_SCENE_MIDDLE_GRAY = np.float32(0.18)
+SDR_SCENE_TO_DISPLAY_SCALE = np.float32(SDR_DISPLAY_REFERENCE_WHITE / SDR_SCENE_MIDDLE_GRAY)
 # Keep every selectable SDR rendering curve on the same exposure convention:
 # scene-linear 0.18 maps to the app's 100-nit reference white. The Reinhard
 # scale has a closed-form solution; the ACES-style fit scale solves the same
@@ -372,10 +379,11 @@ def _tone_adjusted_source_peak_nits(
     """Measure the signal entering Peak Fit in its selected operating domain.
 
     Automatic peak modes must measure the already tone-adjusted pixels.  A
-    scalar source peak cannot be transformed accurately for ``path_to_white``:
-    HDR contrast is driven by ACEScg luminance, while that mode anchors its
-    shoulder on the brightest RGB channel.  Saturated peak pixels therefore do
-    not receive the gain predicted by treating their maximum channel as luma.
+    scalar source peak cannot be transformed accurately for either channel-peak
+    mode: HDR contrast is driven by ACEScg luminance, while those modes anchor
+    their shoulders on the brightest ACEScg or BT.2020 channel. Saturated peak
+    pixels therefore do not receive the gain predicted by treating their
+    maximum channel as luma.
 
     Manual mode remains an authored source-domain estimate and is transformed
     with the legacy scalar calculation, since no corresponding source pixel is
@@ -384,7 +392,12 @@ def _tone_adjusted_source_peak_nits(
     context = color_context or RenderColorContext()
     measurement = str(getattr(hdr, "highlight_compression_peak_measurement", "maximum"))
     if measurement != "manual":
-        if str(getattr(hdr, "highlight_compression_color_handling", "preserve_color")) == "path_to_white":
+        color_handling = str(getattr(hdr, "highlight_compression_color_handling", "smooth_rolloff"))
+        if color_handling == "smooth_rolloff":
+            transport = acescg_to_linear_bt2020(tone_adjusted_image)
+            signal = np.max(transport, axis=-1)
+            np.maximum(signal, np.float32(0.0), out=signal)
+        elif color_handling == "path_to_white":
             signal = np.max(np.clip(tone_adjusted_image, 0.0, None), axis=-1)
         else:
             signal = np.clip(_acescg_luma(tone_adjusted_image), 0.0, None)
@@ -436,12 +449,21 @@ def _apply_sdr_adjustments(
         result = np.clip(result + sdr.shadow * 0.08 * shadow_mask[..., None], 0.0, None)
     if _sdr_color_is_enabled(adjustments):
         result = _apply_hdr_color(result, adjustments.sdr)
-    tone_mapper = sdr.tone_mapper if sdr.base_section_enabled else ToneMapper.FILMIC
-    tone_contrast = sdr.tone_contrast if sdr.base_section_enabled else 1.0
-    tone_skew = sdr.tone_skew if sdr.base_section_enabled else 0.0
-    result = _tone_map_sdr(result, tone_mapper, tone_contrast, tone_skew)
-    if sdr.tone_section_enabled:
-        result = _apply_sdr_highlight_recovery(result, sdr.highlight_recovery)
+    if sdr.rendering_version == "legacy_base_v1":
+        tone_mapper = sdr.tone_mapper if sdr.base_section_enabled else ToneMapper.FILMIC
+        tone_contrast = sdr.tone_contrast if sdr.base_section_enabled else 1.0
+        tone_skew = sdr.tone_skew if sdr.base_section_enabled else 0.0
+        result = _tone_map_sdr(result, tone_mapper, tone_contrast, tone_skew)
+        if sdr.tone_section_enabled:
+            result = _apply_sdr_highlight_recovery(result, sdr.highlight_recovery)
+    else:
+        # Neutral SDR placement: scene 0.18 is the 100-nit diffuse-white anchor
+        # on the normalized 203-nit SDR canvas. The explicit highlight stage is
+        # solely responsible for fitting the remaining scene headroom.
+        result = acescg_to_linear_srgb(result * SDR_SCENE_TO_DISPLAY_SCALE)
+        if sdr.highlight_section_enabled:
+            result = _compress_sdr_highlights(result, sdr)
+        result = _compress_to_srgb_gamut(result)
     if sdr.tone_equalizer_section_enabled:
         result = _apply_sdr_tone_equalizer(result, sdr)
     if sdr.tone_section_enabled:
@@ -490,21 +512,28 @@ def _apply_sdr_adjustments_to_reference(
     source_pixel_scale: float = 1.0,
 ) -> np.ndarray:
     sdr = adjustments.sdr
-    result = np.clip(image.astype(np.float32, copy=True), 0.0, 1.0)
+    result = image.astype(np.float32, copy=True)
+    if sdr.rendering_version == "legacy_base_v1":
+        result = np.clip(result, 0.0, 1.0)
+    else:
+        result = np.clip(result, 0.0, None)
     if sdr.tone_section_enabled:
         result *= np.float32(2.0 ** sdr.exposure)
     if sdr.tone_section_enabled and sdr.shadow != 0:
         shadow_mask = 1.0 - _smoothstep(0.0, 0.5, _linear_luma(result))
         result = np.clip(result + sdr.shadow * 0.08 * shadow_mask[..., None], 0.0, None)
-    if sdr.base_section_enabled:
-        result = _retone_map_sdr_reference(
-            result,
-            sdr.tone_mapper,
-            sdr.tone_contrast,
-            sdr.tone_skew,
-        )
-    if sdr.tone_section_enabled:
-        result = _apply_sdr_highlight_recovery(result, sdr.highlight_recovery)
+    if sdr.rendering_version == "legacy_base_v1":
+        if sdr.base_section_enabled:
+            result = _retone_map_sdr_reference(
+                result,
+                sdr.tone_mapper,
+                sdr.tone_contrast,
+                sdr.tone_skew,
+            )
+        if sdr.tone_section_enabled:
+            result = _apply_sdr_highlight_recovery(result, sdr.highlight_recovery)
+    elif sdr.highlight_section_enabled:
+        result = _compress_sdr_highlights(result, sdr)
     if sdr.tone_equalizer_section_enabled:
         result = _apply_sdr_tone_equalizer(result, sdr)
     if sdr.tone_section_enabled:
@@ -818,6 +847,137 @@ def _apply_sdr_highlight_recovery(image: np.ndarray, strength: float) -> np.ndar
     return result * ratio[..., None]
 
 
+def _compress_sdr_highlights(image: np.ndarray, sdr: object) -> np.ndarray:
+    """Fit display-linear sRGB highlights into the normalized SDR canvas.
+
+    Peak Fit uses the same stop-domain Hermite shoulder as HDR, but its target
+    is fixed at display white (1.0) and Smooth Color Rolloff operates directly
+    on the SDR delivery primaries. This prevents saturated channel crossings
+    from turning into abrupt magenta/green highlight boundaries.
+    """
+    mode = str(getattr(sdr, "highlight_compression_mode", "peak_fit"))
+    softness = float(getattr(sdr, "highlight_compression_softness", 0.0))
+    if mode == "off" or (mode == "soft_ceiling" and softness <= 0.0):
+        return image
+
+    result = image.astype(np.float32, copy=True)
+    start = np.float32(np.clip(float(getattr(sdr, "highlight_compression_start_percent", 50.0)) / 100.0, 0.01, 0.99))
+    target = np.float32(1.0)
+    luma = _linear_luma(result)
+    positive_luma = np.clip(luma, 0.0, None)
+
+    if mode == "peak_fit":
+        color_handling = str(getattr(sdr, "highlight_compression_color_handling", "smooth_rolloff"))
+        smooth_rolloff = color_handling == "smooth_rolloff"
+        grouped_channels = color_handling == "path_to_white"
+        compression_signal = (
+            np.max(np.clip(result, 0.0, None), axis=-1)
+            if smooth_rolloff or grouped_channels
+            else positive_luma
+        )
+        measurement = str(getattr(sdr, "highlight_compression_peak_measurement", "maximum"))
+        if measurement == "manual":
+            peak = np.float32(
+                max(float(getattr(sdr, "highlight_compression_manual_peak_percent", 100.0)) / 100.0, 0.01)
+            )
+            if bool(getattr(sdr, "tone_section_enabled", True)):
+                peak *= np.float32(2.0 ** float(getattr(sdr, "exposure", 0.0)))
+        elif compression_signal.size:
+            peak = np.float32(
+                np.quantile(compression_signal, 0.9999)
+                if measurement == "robust"
+                else np.max(compression_signal)
+            )
+        else:
+            peak = np.float32(
+                max(float(getattr(sdr, "highlight_compression_source_peak_percent", 100.0)) / 100.0, 0.01)
+            )
+        if peak <= target:
+            return image
+
+        start_stop = float(np.log2(start))
+        target_stop = 0.0
+        peak_stop = float(np.log2(peak))
+        detail = np.clip(float(getattr(sdr, "highlight_compression_peak_detail", 35.0)) / 100.0, 0.0, 1.0)
+        curve_bias = np.clip(float(getattr(sdr, "highlight_compression_bias", 0.0)) / 100.0, -1.0, 1.0) * 0.6
+        required_ratio = np.clip(
+            (1.0 / (1.0 + curve_bias) + detail / (1.0 - curve_bias)) / 3.0,
+            0.001,
+            0.95,
+        )
+        requested_ratio = (target_stop - start_stop) / max(peak_stop - start_stop, 1e-6)
+        effective_start_stop = start_stop
+        if requested_ratio < required_ratio:
+            effective_start_stop = (target_stop - required_ratio * peak_stop) / (1.0 - required_ratio)
+        effective_start = np.float32(2.0**effective_start_stop)
+        stop_span = target_stop - effective_start_stop
+        source_span = max(peak_stop - effective_start_stop, 1e-6)
+        normalized_start_slope = source_span / max(stop_span * (1.0 + curve_bias), 1e-6)
+        normalized_end_slope = detail * source_span / max(stop_span * (1.0 - curve_bias), 1e-6)
+
+        def map_signal(signal: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+            input_stop = np.log2(np.maximum(signal, effective_start))
+            u = np.clip((input_stop - effective_start_stop) / source_span, 0.0, 1.0)
+            w = np.clip(u + curve_bias * u * (1.0 - u), 0.0, 1.0)
+            mapped_normalized = w * (
+                normalized_start_slope
+                + w
+                * (
+                    -2.0 * normalized_start_slope
+                    + 3.0
+                    - normalized_end_slope
+                    + w * (normalized_start_slope - 2.0 + normalized_end_slope)
+                )
+            )
+            mapped = np.exp2(effective_start_stop + stop_span * mapped_normalized).astype(np.float32)
+            return np.where(signal > effective_start, mapped, signal), u
+
+        if smooth_rolloff:
+            for channel_index in range(3):
+                channel = result[..., channel_index]
+                mapped, _ = map_signal(channel)
+                result[..., channel_index] = np.where(channel > effective_start, mapped, channel)
+            return result
+
+        target_signal, progress = map_signal(compression_signal)
+        ratio = np.where(
+            compression_signal > 1e-8,
+            target_signal / np.maximum(compression_signal, 1e-8),
+            1.0,
+        ).astype(np.float32)
+        mapped = np.where(compression_signal[..., None] > effective_start, result * ratio[..., None], result)
+        if grouped_channels:
+            neutral = target_signal[..., None]
+            blend = progress * progress * (np.float32(3.0) - np.float32(2.0) * progress)
+            mapped = np.where(
+                compression_signal[..., None] > effective_start,
+                neutral + (mapped - neutral) * (np.float32(1.0) - blend[..., None]),
+                mapped,
+            )
+        return mapped.astype(np.float32, copy=False)
+
+    span = target - start
+    excess = np.maximum(positive_luma - start, 0.0)
+    normalized = excess / span
+    exponent = np.float32(2.0 ** (5.0 * (1.0 - np.clip(softness, 0.0, 100.0) / 100.0)))
+    compressed_normalized = np.zeros_like(normalized, dtype=np.float32)
+    lower = (normalized > 0.0) & (normalized <= 1.0)
+    upper = normalized > 1.0
+    with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+        compressed_normalized[lower] = normalized[lower] / np.power(
+            1.0 + np.power(normalized[lower], exponent), 1.0 / exponent
+        )
+        compressed_normalized[upper] = 1.0 / np.power(
+            1.0 + np.power(1.0 / normalized[upper], exponent), 1.0 / exponent
+        )
+    activation = np.float32(np.clip(softness / 10.0, 0.0, 1.0))
+    activation = activation * activation * (np.float32(3.0) - np.float32(2.0) * activation)
+    compressed_excess = excess + activation * (span * compressed_normalized - excess)
+    target_luma = np.where(positive_luma > start, start + compressed_excess, positive_luma)
+    ratio = np.where(positive_luma > 1e-8, target_luma / np.maximum(positive_luma, 1e-8), 1.0).astype(np.float32)
+    return np.where(positive_luma[..., None] > start, result * ratio[..., None], result)
+
+
 def _compress_scene_highlights(
     image: np.ndarray,
     start_nits: float = 400.0,
@@ -828,7 +988,7 @@ def _compress_scene_highlights(
     source_peak_nits: float = 1000.0,
     peak_detail: float = 35.0,
     bias: float = 0.0,
-    color_handling: str = "preserve_color",
+    color_handling: str = "smooth_rolloff",
     reference_white_nits: int = 203,
 ) -> np.ndarray:
     """Compress luminance above ``start_nits`` smoothly toward ``target_nits``."""
@@ -837,9 +997,13 @@ def _compress_scene_highlights(
     result = image.astype(np.float32, copy=False)
     luma = _acescg_luma(result)
     positive_luma = np.clip(luma, 0.0, None)
+    smooth_rolloff = mode == "peak_fit" and color_handling == "smooth_rolloff"
     grouped_channels = mode == "peak_fit" and color_handling == "path_to_white"
+    transport = acescg_to_linear_bt2020(result) if smooth_rolloff else None
     compression_signal = (
-        np.max(np.clip(result, 0.0, None), axis=-1)
+        np.maximum(np.max(transport, axis=-1), np.float32(0.0))
+        if smooth_rolloff
+        else np.max(np.clip(result, 0.0, None), axis=-1)
         if grouped_channels
         else positive_luma
     )
@@ -863,21 +1027,55 @@ def _compress_scene_highlights(
         if requested_ratio < required_ratio:
             effective_start_stop = (target_stop - required_ratio * peak_stop) / (1.0 - required_ratio)
         effective_start = np.float32(2.0 ** effective_start_stop)
-        input_stop = np.log2(np.maximum(compression_signal, effective_start))
-        u = np.clip((input_stop - effective_start_stop) / max(peak_stop - effective_start_stop, 1e-6), 0.0, 1.0)
-        w = np.clip(u + curve_bias * u * (1.0 - u), 0.0, 1.0)
         stop_span = target_stop - effective_start_stop
         normalized_start_slope = (peak_stop - effective_start_stop) / max(stop_span * (1.0 + curve_bias), 1e-6)
         normalized_end_slope = detail * (peak_stop - effective_start_stop) / max(stop_span * (1.0 - curve_bias), 1e-6)
+        if smooth_rolloff:
+            # Work on one BT.2020 channel at a time to avoid several
+            # full-resolution HxWx3 curve temporaries for large RAW exports.
+            for channel_index in range(3):
+                channel = transport[..., channel_index]
+                active = channel > effective_start
+                if not np.any(active):
+                    continue
+                u = np.maximum(channel, effective_start)
+                np.log2(u, out=u)
+                u -= np.float32(effective_start_stop)
+                u /= np.float32(max(peak_stop - effective_start_stop, 1e-6))
+                np.clip(u, 0.0, 1.0, out=u)
+                w = u + np.float32(curve_bias) * u * (np.float32(1.0) - u)
+                np.clip(w, 0.0, 1.0, out=w)
+                mapped = w * (
+                    np.float32(normalized_start_slope)
+                    + w
+                    * (
+                        np.float32(-2.0 * normalized_start_slope + 3.0 - normalized_end_slope)
+                        + w * np.float32(normalized_start_slope - 2.0 + normalized_end_slope)
+                    )
+                )
+                mapped *= np.float32(stop_span)
+                mapped += np.float32(effective_start_stop)
+                np.exp2(mapped, out=mapped)
+                channel[active] = mapped[active]
+            mapped_acescg = linear_bt2020_to_acescg(transport)
+            return np.where(
+                compression_signal[..., None] > effective_start,
+                mapped_acescg,
+                result,
+            ).astype(np.float32, copy=False)
+        curve_input = compression_signal
+        input_stop = np.log2(np.maximum(curve_input, effective_start))
+        u = np.clip((input_stop - effective_start_stop) / max(peak_stop - effective_start_stop, 1e-6), 0.0, 1.0)
+        w = np.clip(u + curve_bias * u * (1.0 - u), 0.0, 1.0)
         h10 = w * (1.0 - w) * (1.0 - w)
         h01 = w * w * (3.0 - 2.0 * w)
         h11 = w * w * (w - 1.0)
         mapped_normalized = h10 * normalized_start_slope + h01 + h11 * normalized_end_slope
         mapped_stop = effective_start_stop + stop_span * mapped_normalized
         target_luma = np.where(
-            compression_signal > effective_start,
+            curve_input > effective_start,
             np.exp2(mapped_stop).astype(np.float32),
-            compression_signal,
+            curve_input,
         )
         ratio = np.where(
             compression_signal > 1e-8,

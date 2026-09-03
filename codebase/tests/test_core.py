@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from hdr_finisher.adjustments import apply_adjustments
-from hdr_finisher.analysis import _luma_peaks, _robust_channel_peak, classify_hdr
+from hdr_finisher.analysis import _bt2020_channel_peaks, _luma_peaks, _robust_channel_peak, classify_hdr
 from hdr_finisher.color import detect_transfer_function, linear_bt2020_to_acescg, normalize_to_acescg, sanitize_array
 from hdr_finisher.exporters import _linear_to_bt2020_pq_yuv10, _linear_to_pq_rgb10, _linear_to_srgb8
 from hdr_finisher.loader import _apply_apple_hdr_gainmap, _compute_apple_headroom
@@ -80,6 +80,19 @@ def test_robust_channel_peak_ignores_isolated_saturated_channel() -> None:
 
     assert robust_peak == pytest.approx(0.18, abs=1e-6)
     assert classify_hdr(image, {}, ".exr").robust_peak_linear == pytest.approx(0.18, abs=1e-6)
+
+
+def test_bt2020_channel_peaks_use_the_transport_primaries() -> None:
+    transport = np.array([[[0.1, 0.2, 3.0], [0.5, 0.25, 0.125]]], dtype=np.float32)
+    image = linear_bt2020_to_acescg(transport)
+
+    peak, robust = _bt2020_channel_peaks(image)
+    analysis = classify_hdr(image, {}, ".exr")
+
+    assert peak == pytest.approx(3.0, rel=2e-6)
+    assert robust == pytest.approx(np.quantile([3.0, 0.5], 0.9999), rel=2e-6)
+    assert analysis.peak_bt2020_linear == pytest.approx(peak, rel=2e-6)
+    assert analysis.robust_peak_bt2020_linear == pytest.approx(robust, rel=2e-6)
 
 
 def test_hdr_headroom_classification_uses_strict_one_point_zero_boundary() -> None:

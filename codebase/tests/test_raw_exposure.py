@@ -89,6 +89,7 @@ def test_loaded_authored_sdr_reference_starts_without_extra_highlight_recovery(t
     )
 
     assert session.adjustments.sdr.highlight_recovery == 0.0
+    assert session.adjustments.sdr.highlight_section_enabled is False
 
 
 def test_loader_records_raw_recommendation_without_baking_an_sdr_override(

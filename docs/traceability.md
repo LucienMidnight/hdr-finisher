@@ -41,10 +41,9 @@ This index maps user-facing areas to their current state model, implementation, 
 
 | UI group/control | Model field(s) | Processing function/area | Manual |
 |---|---|---|---|
-| Base Rendition | `sdr.base_section_enabled`, `tone_mapper` | `_tone_map_sdr`, `_retone_map_sdr_reference` | [SDR grade](user-guide/grade-sdr.md#base-rendition) |
-| Curve Contrast/Skew | `sdr.tone_contrast`, `tone_skew` | `_map_sdr_luma` Filmic path | [SDR grade](user-guide/grade-sdr.md#filmic) |
 | Exposure/Shadow | `sdr.exposure`, `sdr.shadow` | SDR branch entry processing | [SDR grade](user-guide/grade-sdr.md#tone) |
-| Highlight Recovery | `sdr.highlight_recovery` | `_apply_sdr_highlight_recovery` | [SDR grade](user-guide/grade-sdr.md#highlight-recovery) |
+| Highlight Compression | `sdr.highlight_section_enabled`, `sdr.highlight_compression_*` | `_compress_sdr_highlights`; `sdrPeakFit` / `sdrSoftCeiling` | [SDR grade](user-guide/grade-sdr.md#highlight-compression) |
+| Legacy project rendering | `sdr.rendering_version`, retained Base/Recovery fields | `_tone_map_sdr`, `_retone_map_sdr_reference`, `_apply_sdr_highlight_recovery` | [SDR grade](user-guide/grade-sdr.md#highlight-compression) |
 | Exposure Bands / Match HDR bands | `sdr.tone_equalizer_*` | `_apply_sdr_tone_equalizer`; frontend one-shot copy | [SDR grade](user-guide/grade-sdr.md#exposure-bands) |
 | Contrast/Pivot | `sdr.contrast`, `contrast_pivot` | `_apply_luminance_section_controls` | [SDR grade](user-guide/grade-sdr.md#contrast-and-pivot) |
 | Match HDR colors / Reset | HDR and SDR color/primary fields | Frontend one-shot slider copy/reset | [SDR grade](user-guide/grade-sdr.md#match-hdr-colors) |

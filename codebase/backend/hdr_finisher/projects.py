@@ -86,6 +86,8 @@ def open_project(store: SessionStore, path: Path, source_path: Path | None = Non
                 raise ProjectError("Invalid project manifest.")
             state_payload = json.loads(archive.read(PROJECT_STATE_NAME))
             _preserve_legacy_raw_highlight_behavior(state_payload)
+            _migrate_legacy_highlight_off_mode(state_payload)
+            _preserve_legacy_sdr_rendering(state_payload)
             document = EditDocument.model_validate(state_payload)
     except (zipfile.BadZipFile, KeyError, json.JSONDecodeError) as exc:
         raise ProjectError("The project file is malformed or unreadable.") from exc
@@ -162,6 +164,33 @@ def _preserve_legacy_raw_highlight_behavior(state_payload: object) -> None:
             "clipping_threshold": 1.0,
         },
     )
+
+
+def _migrate_legacy_highlight_off_mode(state_payload: object) -> None:
+    """Move the removed UI Off mode to the section bypass without changing pixels."""
+    if not isinstance(state_payload, dict):
+        return
+    adjustments = state_payload.get("global_adjustments")
+    if not isinstance(adjustments, dict):
+        return
+    hdr = adjustments.get("hdr")
+    if not isinstance(hdr, dict) or hdr.get("highlight_compression_mode") != "off":
+        return
+    hdr["highlight_compression_mode"] = "peak_fit"
+    hdr["highlight_section_enabled"] = False
+
+
+def _preserve_legacy_sdr_rendering(state_payload: object) -> None:
+    """Keep v4 projects saved before SDR Highlight Compression pixel-identical."""
+    if not isinstance(state_payload, dict):
+        return
+    adjustments = state_payload.get("global_adjustments")
+    if not isinstance(adjustments, dict):
+        return
+    sdr = adjustments.get("sdr")
+    if not isinstance(sdr, dict):
+        return
+    sdr.setdefault("rendering_version", "legacy_base_v1")
 
 
 def _sha256_file(path: Path) -> str:

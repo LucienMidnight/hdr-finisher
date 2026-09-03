@@ -51,11 +51,11 @@ Determine where clipping occurs:
 
 - **Source:** upstream values are already clipped; HDR Finisher cannot recover them.
 - **HDR grade:** waveform/zebras show values compressed against 10,000 nits or an unintended control boundary.
-- **SDR fallback:** the SDR branch needs tone-map/Highlight Recovery adjustment.
+- **SDR fallback:** adjust SDR Exposure or enable/tune Highlight Compression; inspect Start and Highlight Detail before lowering the whole rendition.
 - **Monitor:** the panel or its tone mapper cannot reproduce the requested peak.
 - **Service:** recompression removed the gain map, leaving only SDR.
 
-Use Highlight Rolloff, Exposure Bands, or a lower exposure only after identifying the stage.
+Use Highlight Compression, Exposure Bands, or a lower exposure only after identifying the stage.
 
 ## HDR looks flat on a low-nit monitor
 
@@ -78,9 +78,9 @@ Wide-gamut ACEScg/BT.2020 colors must fit sRGB for the fallback. HDR Finisher co
 
 Exact color identity is not always possible; aim for a perceptual match.
 
-## Changing SDR Base Rendition does little or looks strange on HEIC
+## SDR Highlight Compression changes an authored HEIC unexpectedly
 
-Supported Apple HDR HEIC already contains an authored SDR rendition. Neutral Filmic intentionally preserves it. Other Base settings approximately re-tone-map that display image rather than returning to RAW scene data. Use moderate adjustments and prefer the original SDR if it is already strong.
+Supported Apple HDR HEIC already contains an authored SDR rendition, so Highlight Compression starts bypassed. Enabling it applies a new display-linear shoulder to that existing base rather than returning to RAW scene data. Compare with the section bypass, use moderate Start/Detail changes, and preserve the original rendition when it is already strong.
 
 ## Chrome Proof is stale
 

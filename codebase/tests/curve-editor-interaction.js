@@ -44,7 +44,7 @@ function curvePointPosition(box, x, y) {
 
     await page.click("#view-sdr");
     await page.waitForFunction(() => document.body.dataset.activeLane === "sdr");
-    const expectedSdrOrder = ["denoise", "sdr-base", "sdr-tone", "sdr-equalizer", "sdr-zones", "curves", "sdr-color"];
+    const expectedSdrOrder = ["denoise", "sdr-tone", "sdr-highlights", "sdr-equalizer", "sdr-zones", "curves", "sdr-color"];
     const sdrOrder = await controlOrder("sdr");
     if (JSON.stringify(sdrOrder) !== JSON.stringify(expectedSdrOrder)) {
       throw new Error(`Unexpected SDR control order: ${JSON.stringify(sdrOrder)}`);
