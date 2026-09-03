@@ -31,6 +31,9 @@
   </categories>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.8.8" date="2026-09-04">
+      <description><p>Fixes native macOS window controls and adds local mask sub-masks, new themes, guided perspective correction, camera-linear RAW import, and smooth highlight compression.</p></description>
+    </release>
     <release version="0.8.7" date="2026-09-01">
       <description><p>Materializes HDR-to-SDR matching into editable controls and protects thin edges from Texture halos.</p></description>
     </release>
