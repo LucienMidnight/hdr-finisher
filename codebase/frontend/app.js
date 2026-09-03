@@ -14207,7 +14207,9 @@ function renderLocalMaskOverlay() {
   const maskSignature = JSON.stringify(local.mask);
   const spatialSignature = localMaskSpatialSignature(local.mask);
   const authoritative = localAuthoritativeMaskCache.get(local.id);
+  const authoritativeGeometryCurrent = authoritative?.geometrySignature === geometrySignature();
   const authoritativeCurrent = Boolean(authoritative
+    && authoritativeGeometryCurrent
     && authoritative.signature === (authoritative.spatialOnly ? spatialSignature : maskSignature));
   const needsAuthoritativeOverlay = local.mask?.operator !== "leaf"
     || ["linear_gradient", "luminance_range"].includes(local.mask?.leaf?.type);
@@ -14219,7 +14221,7 @@ function renderLocalMaskOverlay() {
     // their most recent exact frame visible across both the draft and commit
     // handoffs, then replace it atomically when the current exact frame lands.
     // Brush masks can instead fall back to their current local stroke raster.
-    authoritative: authoritative && (
+    authoritative: authoritativeGeometryCurrent && (
       state.localMaskDraftDirty
       || needsAuthoritativeOverlay
       || authoritative.signature === (authoritative.spatialOnly ? spatialSignature : maskSignature)
@@ -14392,7 +14394,8 @@ function localComparisonMaskSlot(localId, childId, role) {
 }
 
 function localComparisonMaskEntry(local, childId, role) {
-  return localComparisonMaskCache.get(localComparisonMaskSlot(local.id, childId, role)) || null;
+  const entry = localComparisonMaskCache.get(localComparisonMaskSlot(local.id, childId, role)) || null;
+  return entry?.geometrySignature === geometrySignature() ? entry : null;
 }
 
 function queueLocalComparisonMask(local, childId, role, expression) {
@@ -14457,6 +14460,7 @@ async function loadLocalComparisonMask(local, childId, role, slot, pending) {
     localComparisonMaskCache.set(slot, {
       key: pending.key,
       signature: pending.signature,
+      geometrySignature: pending.requestedGeometrySignature,
       canvas: alphaMaskCanvas(alpha, width, height),
     });
     while (localComparisonMaskCache.size > 12) {
@@ -14753,9 +14757,10 @@ async function queueAuthoritativeLocalMask(local) {
   const key = `${state.session.session_id}:${local.id}:${longEdge}:${requestedGeometrySignature}:${signature}`;
   const cached = localAuthoritativeMaskCache.get(local.id);
   if (cached?.key === key || localAuthoritativeMaskRequests.has(key)) return;
-  const request = fetch(`/api/session/${state.session.session_id}/local-mask/${encodeURIComponent(local.id)}?long_edge=${longEdge}&edit_revision=${revision}&spatial_only=true`)
+  const request = fetch(`/api/session/${state.session.session_id}/local-mask/${encodeURIComponent(local.id)}?long_edge=${longEdge}&edit_revision=${revision}&geometry_signature=${encodeURIComponent(requestedGeometrySignature)}&spatial_only=true`)
     .then(async (response) => {
       if (!response.ok) return;
+      if (response.headers.get("X-Geometry-Signature") !== requestedGeometrySignature) return;
       const width = Number(response.headers.get("X-Image-Width"));
       const height = Number(response.headers.get("X-Image-Height"));
       const alpha = new Uint8Array(await response.arrayBuffer());
@@ -14771,7 +14776,13 @@ async function queueAuthoritativeLocalMask(local) {
         pixels[targetIndex + 3] = alpha[sourceIndex];
       }
       canvas.getContext("2d").putImageData(new ImageData(pixels, width, height), 0, 0);
-      localAuthoritativeMaskCache.set(local.id, { key, signature, canvas, spatialOnly: true });
+      localAuthoritativeMaskCache.set(local.id, {
+        key,
+        signature,
+        geometrySignature: requestedGeometrySignature,
+        canvas,
+        spatialOnly: true,
+      });
       finishPathMaskProgress(local.id, signature, true);
       while (localAuthoritativeMaskCache.size > 8) {
         localAuthoritativeMaskCache.delete(localAuthoritativeMaskCache.keys().next().value);
@@ -14913,6 +14924,7 @@ async function loadAuthoritativeLocalMaskDraft(
     localAuthoritativeMaskCache.set(localId, {
       key: `draft:${revision}:${longEdge}:${requestedGeometrySignature}:${signature}`,
       signature,
+      geometrySignature: requestedGeometrySignature,
       canvas,
       spatialOnly: false,
     });

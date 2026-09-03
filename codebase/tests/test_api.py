@@ -343,6 +343,32 @@ def test_local_mask_draft_matches_the_same_mask_after_commit() -> None:
     )
     assert created.status_code == 200
     committed_local = created.json()["document"]["local_adjustments"][0]
+    committed_geometry = created.json()["document"]["global_adjustments"]["shared"]["geometry"]
+    geometry_signature = json.dumps(committed_geometry, separators=(",", ":"))
+    signed_mask = client.get(
+        f"/api/session/{session_id}/local-mask/{committed_local['id']}",
+        params={
+            "long_edge": 256,
+            "edit_revision": created.json()["revision"],
+            "geometry_signature": geometry_signature,
+            "spatial_only": True,
+        },
+    )
+    assert signed_mask.status_code == 200
+    assert signed_mask.headers["x-geometry-signature"] == geometry_signature
+    stale_geometry = json.loads(geometry_signature)
+    stale_geometry["crop"] = {"x": 0.1, "y": 0.0, "width": 0.9, "height": 1.0}
+    stale_mask = client.get(
+        f"/api/session/{session_id}/local-mask/{committed_local['id']}",
+        params={
+            "long_edge": 256,
+            "edit_revision": created.json()["revision"],
+            "geometry_signature": json.dumps(stale_geometry, separators=(",", ":")),
+            "spatial_only": True,
+        },
+    )
+    assert stale_mask.status_code == 409
+    assert stale_mask.json()["detail"] == "Stale local mask geometry request dropped."
     draft_mask = committed_local["mask"]
     draft_mask["leaf"]["mask_shift_edge"] = 0.02
     draft_mask["leaf"]["mask_feather"] = 0.05

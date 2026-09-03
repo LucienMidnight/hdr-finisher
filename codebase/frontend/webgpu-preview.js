@@ -2087,8 +2087,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       }
       const pathQuery = maskPath ? `&mask_path=${encodeURIComponent(maskPath)}` : "";
       const startedAt = performance.now();
-      const response = await fetch(`/api/session/${sessionId}/local-mask/${encodeURIComponent(local.id)}?long_edge=${longEdge}&edit_revision=${editRevision}&spatial_only=true${pathQuery}`);
+      const response = await fetch(`/api/session/${sessionId}/local-mask/${encodeURIComponent(local.id)}?long_edge=${longEdge}&edit_revision=${editRevision}&geometry_signature=${encodeURIComponent(geometrySignature)}&spatial_only=true${pathQuery}`);
       if (!response.ok) return null;
+      if (response.headers.get("X-Geometry-Signature") !== geometrySignature) return null;
       const width = Number(response.headers.get("X-Image-Width"));
       const height = Number(response.headers.get("X-Image-Height"));
       const source = new Uint8Array(await response.arrayBuffer());

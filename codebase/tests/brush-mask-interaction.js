@@ -177,7 +177,7 @@ async function overlayMaskAlphaAt(page, x, y) {
         },
         brushOutputSpaceMapper(
           { left: 0, top: 0, width: 200, height: 300 },
-          [0, -1, 1, 1, 0, 0],
+          [0, -1, 1, 1, 0, 0, 0, 0, 1],
         ),
       );
       const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
@@ -213,7 +213,7 @@ async function overlayMaskAlphaAt(page, x, y) {
         (value) => value * 200,
         (value) => value * 300,
         { localId: "geometry-cursor-regression", spatialSignature: "geometry-cursor-regression", authoritative: null },
-        brushOutputSpaceMapper({ left: 0, top: 0, width: 200, height: 300 }, [0, -1, 1, 1, 0, 0]),
+        brushOutputSpaceMapper({ left: 0, top: 0, width: 200, height: 300 }, [0, -1, 1, 1, 0, 0, 0, 0, 1]),
       );
       state.localBrushCursor = previousCursor;
       const cursorPixels = cursorContext.getImageData(0, 0, cursorCanvas.width, cursorCanvas.height).data;
@@ -243,7 +243,7 @@ async function overlayMaskAlphaAt(page, x, y) {
         handleContext,
         { left: 0, top: 0, width: 200, height: 300 },
         { left: 0, top: 0, width: 200, height: 300 },
-        [0, -1, 1, 1, 0, 0],
+        [0, -1, 1, 1, 0, 0, 0, 0, 1],
       );
       drawLocalGizmoHandle(handleContext, 0.625 * 200, 0.5 * 300, 7);
       const handlePixels = handleContext.getImageData(0, 0, handleCanvas.width, handleCanvas.height).data;

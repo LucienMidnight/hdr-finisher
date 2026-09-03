@@ -769,6 +769,7 @@ def local_mask_proxy(
     local_id: str,
     long_edge: int = Query(default=1600, ge=256, le=16384),
     edit_revision: int | None = Query(default=None, ge=0),
+    geometry_signature: str | None = Query(default=None),
     spatial_only: bool = Query(default=False),
     mask_path: str | None = Query(default=None, pattern=r"^\d+(?:\.\d+)*$"),
 ) -> Response:
@@ -782,6 +783,14 @@ def local_mask_proxy(
         raise HTTPException(status_code=404, detail=f"Local adjustment '{local_id}' was not found.") from exc
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
+    if geometry_signature is not None:
+        try:
+            requested_geometry = json.loads(geometry_signature)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail="Invalid geometry signature.") from exc
+        authoritative_geometry = session.adjustments.shared.geometry.model_dump(mode="json")
+        if requested_geometry != authoritative_geometry:
+            raise HTTPException(status_code=409, detail="Stale local mask geometry request dropped.")
     _guard_preview_resources(session, long_edge)
     selected_mask = _mask_expression_at_path(local.mask, mask_path)
     mask_source = local.model_copy(
@@ -809,6 +818,7 @@ def local_mask_proxy(
             "X-Pixel-Format": "r8unorm",
             "X-Local-Adjustment": local.id,
             "X-Mask-Path": mask_path or "root",
+            "X-Geometry-Signature": geometry_signature or session.adjustments.shared.geometry.model_dump_json(),
             "X-CPU-Mask-Ms": f"{cpu_mask_ms:.3f}",
             "X-Mask-Content": "spatial" if spatial_only else "influence",
         },

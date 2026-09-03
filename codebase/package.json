@@ -10,6 +10,7 @@
     "test:exposure-bands": "node tests/exposure-bands-interaction.js",
     "test:local-adjustments": "node tests/local-adjustments-interaction.js",
     "test:crop-handoff": "node tests/crop-apply-handoff.js",
+    "test:local-crop-anchor": "node tests/local-crop-anchor-interaction.js",
     "test:perspective": "node tests/perspective-interaction.js",
     "test:brush-mask": "node tests/brush-mask-interaction.js",
     "test:gradient-mask": "node tests/gradient-mask-interaction.js",

@@ -1284,6 +1284,8 @@ def test_electron_preview_correctness_contract() -> None:
     assert "defaultGeometry" not in gpu_eligibility
     assert "geometrySignature" not in gpu_eligibility
     assert "cached.geometrySignature === geometrySignature()" in javascript
+    assert "authoritative?.geometrySignature === geometrySignature()" in javascript
+    assert "geometry_signature=${encodeURIComponent(requestedGeometrySignature)}" in javascript
     assert "state.comparisonRenderedGeometry === signature" in javascript
     assert 'renderGpuDraft(lane, { longEdge: targetLongEdge, tier: "refinement" })' in javascript
     assert 'renderPreviewForLane(lane, true, targetLongEdge, { showProgress: false })' in javascript
@@ -1534,6 +1536,8 @@ def test_phase_four_retained_boolean_mask_graph_contract() -> None:
     webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
 
     assert 'this.loadGpuMaskGraph(sessionId, local, longEdge, editRevision, geometrySignature, isCurrent)' in webgpu
+    assert "geometry_signature=${encodeURIComponent(geometrySignature)}" in webgpu
+    assert 'response.headers.get("X-Geometry-Signature") !== geometrySignature' in webgpu
     assert 'this.createMaskPipeline("maskCombineFragmentMain")' in webgpu
     assert 'mask_path=${encodeURIComponent(maskPath)}' in webgpu
     assert 'spatial_only=true${pathQuery}' in webgpu
