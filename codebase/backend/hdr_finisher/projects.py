@@ -84,7 +84,9 @@ def open_project(store: SessionStore, path: Path, source_path: Path | None = Non
                 raise ProjectError(f"Unsupported HDR Finisher project schema {schema_version!r}.")
             if manifest.get("contains_source_pixels") is not False:
                 raise ProjectError("Invalid project manifest.")
-            document = EditDocument.model_validate_json(archive.read(PROJECT_STATE_NAME))
+            state_payload = json.loads(archive.read(PROJECT_STATE_NAME))
+            _preserve_legacy_raw_highlight_behavior(state_payload)
+            document = EditDocument.model_validate(state_payload)
     except (zipfile.BadZipFile, KeyError, json.JSONDecodeError) as exc:
         raise ProjectError("The project file is malformed or unreadable.") from exc
 
@@ -134,6 +136,32 @@ def open_project(store: SessionStore, path: Path, source_path: Path | None = Non
 def _project_path(path: Path) -> Path:
     expanded = path.expanduser().resolve()
     return expanded if expanded.suffix.lower() == ".hdrfinisher" else expanded.with_suffix(".hdrfinisher")
+
+
+def _preserve_legacy_raw_highlight_behavior(state_payload: object) -> None:
+    """Keep v4 projects saved before this module visually unchanged.
+
+    New imports default to opposed-color reconstruction. A project whose saved
+    RAW recipe predates the field gets an explicit bypass so opening it never
+    silently changes pixels.
+    """
+    if not isinstance(state_payload, dict):
+        return
+    source = state_payload.get("source")
+    if not isinstance(source, dict):
+        return
+    settings = source.get("raw_import_settings")
+    if not isinstance(settings, dict):
+        settings = {}
+        source["raw_import_settings"] = settings
+    settings.setdefault(
+        "highlight_reconstruction",
+        {
+            "enabled": False,
+            "method": "opposed_color_v1",
+            "clipping_threshold": 1.0,
+        },
+    )
 
 
 def _sha256_file(path: Path) -> str:

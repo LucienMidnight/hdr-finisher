@@ -1,6 +1,6 @@
 # Import Pipeline Architecture
 
-**Last updated:** August 20, 2026
+**Last updated:** September 3, 2026
 **Scope:** Desktop source selection, staged preview, authoritative decode, working-space
 normalization, cancellation, activation, and import-performance invariants.
 
@@ -106,6 +106,38 @@ gain-map AVIF, the primary is typically the SDR base. The preview path never cal
 This structure reduced the measured 42 MP color-conversion stage from 61.9 seconds to 9.6 seconds
 and the exact SDR decode from roughly 14–18 seconds to about 2.2 seconds.
 
+### Camera-linear RAW bridge
+
+Ordinary mosaiced RGB/RGBG Bayer and X-Trans RAWs use LibRaw for unpacking and expose its writable
+visible mosaic to the versioned `opposed_color_v1` highlight module. When enabled, HDR Finisher
+temporarily black/white-normalizes CFA samples into float32, applies as-shot WB in that temporary
+domain, detects per-channel clipping at `0.987 * clipping_threshold * WB`, and reconstructs only
+clipped photosites from local opposing-color estimates plus a nearby unclipped chrominance residual.
+Only changed photosites are encoded back into LibRaw's native uint16 mosaic; untouched sub-clipped
+sensor codes remain byte-exact. This stage is NumPy-only, supports 2x2 Bayer/RGBG and 6x6 X-Trans,
+and runs before the existing AHD demosaic. The temporary reconstruction normalization is inverted
+before AHD; canonical camera-RGB normalization still occurs exactly once after the transport.
+
+LibRaw then performs AHD, orientation, and a 16-bit camera-RGB transport only. It receives unity WB,
+`no_auto_scale`, linear gamma, raw output color, and `HighlightMode.Clip`. HDR Finisher converts
+that transport to float32, divides once by the applicable camera-white-minus-black range, applies
+green-normalized as-shot WB, and converts camera RGB through XYZ/D65 and chromatic adaptation to
+ACEScg/D60 in cancellable row strips. Negative and greater-than-one working values are retained.
+Lensfun remains after development/color conversion and before session activation.
+
+The bridge is metadata capability-gated. Unsupported CFA/color models or invalid saturation, WB,
+or camera-matrix metadata use the named `legacy_libraw_aces_fallback_v1` path. Both selections are
+recorded in source metadata and shown in the Metadata panel; a fallback includes its reason.
+Experimental mosaiced-DNG opcodes and Linear DNG keep their separate existing routes.
+
+Highlight reconstruction is a source-development module rather than a grade. New RAW recipes enable
+`opposed_color_v1` at threshold `1.0`; the module-stack bypass eye is Off, and changing method or
+threshold re-develops the source transactionally. Projects saved before the field existed are loaded
+with an explicit bypass to preserve their historical pixels. Recipe method, algorithm version,
+thresholds, clipped/changed counts, chrominance samples, and transport overflow are inspectable in
+source metadata. Additional methods may be added under new stable identifiers without changing old
+projects.
+
 ## 6. Cancellation and ownership
 
 Cancellation has four layers:
@@ -179,7 +211,7 @@ post-change runs on the implementation workstation.
 | PNG, ordinary JPEG, BMP | Pillow applies orientation, converts a valid ICC profile to sRGB, and downsizes before float conversion | Pillow decode followed by shared strip-bounded normalization | Before/after in-process decode and during color/analysis strips |
 | JPEG Ultra HDR | ICC-aware SDR base through the same Pillow thumbnail path | Exact SDR base plus native gain-map reconstruction; bounded SDR EOTF and HDR gamut conversion; canonical output is not normalized twice | Native reconstruction subprocess is terminated; bounded phases also poll |
 | AVIF | CICP-aware primary/base rendition; gain map is never reconstructed | Exact SDR primary is decoded directly; HDR reconstruction is native; both renditions convert in reused strip-bounded buffers | Native subprocess termination plus strip polling |
-| RAW/DNG | Embedded LibRaw thumbnail; neutral fallback if none exists | One LibRaw development, optional strip-bounded Lensfun remap, strip-bounded AP0-to-AP1 conversion; canonical output is not normalized twice | Checks around LibRaw and Lensfun calls and within remap/color strips; a single in-process demosaic cannot be interrupted mid-call |
+| RAW/DNG | Embedded LibRaw thumbnail; neutral fallback if none exists | Qualifying ordinary Bayer/X-Trans RAW: LibRaw AHD unity-WB/no-auto-scale camera-RGB transport, then float32 white normalization, WB, camera-to-XYZ-to-ACEScg and optional Lensfun. Unsupported models use an explicit legacy LibRaw ACES fallback. Experimental opcode DNG and Linear DNG remain separate; canonical output is not normalized twice | Checks around LibRaw and Lensfun calls and within normalization/remap/color strips; a single in-process demosaic cannot be interrupted mid-call |
 | JPEG XL | None; authoritative decode begins immediately | Container bytes are read once for marker/basic-info inspection and decode; declared precision is retained; known color converts in strips; canonical output is not normalized twice | Checks before/after the in-process libjxl decode and during color strips |
 | TIFF | None; authoritative decode begins immediately | One tifffile decode and strip-bounded source conversion; large-frame analysis uses an exact strip peak plus bounded robust sample | Checks around decode and within color/analysis strips |
 | OpenEXR | None; authoritative decode begins immediately | Preallocates one RGB frame and fills channels sequentially instead of retaining three channel buffers plus a stacked frame; conversion and analysis are bounded | Checks between channel reads and within bounded phases |

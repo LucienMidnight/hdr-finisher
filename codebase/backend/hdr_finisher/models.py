@@ -918,6 +918,16 @@ class LensCorrectionSettings(BaseModel):
     focus_distance_m: float | None = Field(default=None, gt=0.0, le=1_000_000.0)
 
 
+class RawHighlightReconstructionSettings(BaseModel):
+    """Versioned pre-demosaic highlight reconstruction stored in the RAW recipe."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    method: Literal["opposed_color_v1"] = "opposed_color_v1"
+    clipping_threshold: float = Field(default=1.0, ge=0.5, le=1.5, allow_inf_nan=False)
+
+
 class RawImportSettings(BaseModel):
     """Small, deterministic RAW-development surface stored with the project."""
 
@@ -925,6 +935,9 @@ class RawImportSettings(BaseModel):
 
     white_balance: Literal["as_shot"] = "as_shot"
     demosaic: Literal["ahd"] = "ahd"
+    highlight_reconstruction: RawHighlightReconstructionSettings = Field(
+        default_factory=RawHighlightReconstructionSettings
+    )
     lens: LensCorrectionSettings = Field(default_factory=LensCorrectionSettings)
 
 

@@ -7792,25 +7792,26 @@ body {
   padding-left: calc(var(--group-disclosure-leading) - var(--group-index-left));
 }
 
-.control-group[data-group="geometry"] > .control-group-header::before { content: "02"; }
-.control-group[data-group="perspective"] > .control-group-header::before { content: "03"; }
-.control-group[data-group="denoise"] > .control-group-header::before { content: "04"; }
+.control-group[data-group="raw-highlights"] > .control-group-header::before { content: "02"; }
+.control-group[data-group="geometry"] > .control-group-header::before { content: "03"; }
+.control-group[data-group="perspective"] > .control-group-header::before { content: "04"; }
+.control-group[data-group="denoise"] > .control-group-header::before { content: "05"; }
 .control-group[data-group="hdr-tone"] > .control-group-header::before,
-.control-group[data-group="sdr-base"] > .control-group-header::before { content: "05"; }
+.control-group[data-group="sdr-base"] > .control-group-header::before { content: "06"; }
 .control-group[data-group="hdr-equalizer"] > .control-group-header::before,
-.control-group[data-group="sdr-tone"] > .control-group-header::before { content: "06"; }
+.control-group[data-group="sdr-tone"] > .control-group-header::before { content: "07"; }
 .control-group[data-group="hdr-zones"] > .control-group-header::before,
-.control-group[data-group="sdr-equalizer"] > .control-group-header::before { content: "07"; }
+.control-group[data-group="sdr-equalizer"] > .control-group-header::before { content: "08"; }
 .control-group[data-group="hdr-highlights"] > .control-group-header::before,
-.control-group[data-group="sdr-zones"] > .control-group-header::before { content: "08"; }
-.control-group[data-group="curves"] > .control-group-header::before { content: "09"; }
+.control-group[data-group="sdr-zones"] > .control-group-header::before { content: "09"; }
+.control-group[data-group="curves"] > .control-group-header::before { content: "10"; }
 .control-group[data-group="hdr-color"] > .control-group-header::before,
-.control-group[data-group="sdr-color"] > .control-group-header::before { content: "10"; }
-.control-group[data-group="color-grading"] > .control-group-header::before { content: "11"; }
-.control-group[data-group="local-adjustments"] > .control-group-header::before { content: "12"; }
-.control-group[data-group="detail"] > .control-group-header::before { content: "13"; }
-.control-group[data-group="film-look"] > .control-group-header::before { content: "14"; }
-.control-group[data-group="vignette"] > .control-group-header::before { content: "15"; }
+.control-group[data-group="sdr-color"] > .control-group-header::before { content: "11"; }
+.control-group[data-group="color-grading"] > .control-group-header::before { content: "12"; }
+.control-group[data-group="local-adjustments"] > .control-group-header::before { content: "13"; }
+.control-group[data-group="detail"] > .control-group-header::before { content: "14"; }
+.control-group[data-group="film-look"] > .control-group-header::before { content: "15"; }
+.control-group[data-group="vignette"] > .control-group-header::before { content: "16"; }
 
 .control-group:not(.collapsed) > .control-group-header::before {
   color: var(--accent-strong);
@@ -7878,6 +7879,28 @@ body {
 
 .raw-development-group .disclosure-trigger[aria-expanded="true"]::after {
   color: var(--accent-strong);
+}
+
+/* Source-dependent modules keep their permanent stack positions. An
+   unavailable row is visible for numbering/orientation but cannot open or
+   imply that its controls affect the active image. */
+.module-unavailable {
+  opacity: .42;
+  filter: grayscale(1);
+}
+
+.module-unavailable button,
+.module-unavailable input,
+.module-unavailable select,
+.module-unavailable textarea {
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.module-unavailable .control-group-header::before,
+.raw-development-group.module-unavailable .disclosure-trigger::after {
+  color: var(--quiet);
+  text-shadow: none;
 }
 
 /* Standard machined instrument slider. Interaction metadata owns positions. */

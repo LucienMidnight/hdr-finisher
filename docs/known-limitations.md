@@ -1,6 +1,6 @@
 # Known Limitations and Support Status
 
-This page prevents implemented, validated, expected, and planned behavior from being conflated. Status reflects the repository on **August 31, 2026**.
+This page prevents implemented, validated, expected, and planned behavior from being conflated. Status reflects the repository on **September 3, 2026**.
 
 ## Platform matrix
 
@@ -31,7 +31,7 @@ This page prevents implemented, validated, expected, and planned behavior from b
 
 HDR Finisher is a finishing editor, not a full compositor or RAW editor:
 
-- RAW development is a constrained convenience beta. Experimental DNG Import adds metadata-driven LinearRaw decoding and audited OpcodeList3 GainMap/WarpRectilinear handling, but does not add denoise, sharpening, creative camera profiles, or a general RAW-development UI.
+- RAW development is a constrained convenience beta. Ordinary supported Bayer and X-Trans RGB RAWs use a camera-linear float bridge with a versioned, bypassable NumPy opposed-color highlight reconstruction stage before AHD. The method repairs channel-clipped color from spatially supported opposing CFA channels but does not invent texture in fully clipped areas. Complicated colored lighting can retain pink/green boundaries, and heavily clipped X-Trans speculars can retain blue residuals that become visible only when HDR exposure is lowered; threshold changes require source re-development. Unsupported sensor/color metadata is identified in the Metadata panel as a legacy compatibility fallback. Experimental DNG Import adds metadata-driven LinearRaw decoding and audited OpcodeList3 GainMap/WarpRectilinear handling. These routes do not add segmentation/guided-laplacian reconstruction, hot-pixel repair, denoise, sharpening, creative camera profiles, or a general RAW-development UI.
 - Local finishing masks support brush, gradient, path, luminance-range, and Boolean combinations; there is no pixel cloning or object-aware selection.
 - No layers or compositing
 - Crop/transform and Lensfun correction are available, but there is no denoise or full retouching toolset.

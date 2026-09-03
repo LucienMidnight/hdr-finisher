@@ -309,11 +309,22 @@ def test_raw_decoder_returns_canonical_acescg_without_second_loader_transform(
     developed = np.zeros((4, 6, 3), dtype=np.uint16)
     developed[..., 0] = 8192
     developed[..., 1] = 4096
+    postprocess_calls = {}
 
     class FakeRaw:
         raw_pattern = np.array([[0, 1], [1, 2]], dtype=np.uint8)
+        raw_image_visible = np.zeros((4, 6), dtype=np.uint16)
+        num_colors = 3
+        color_desc = b"RGBG"
+        black_level_per_channel = [0, 0, 0, 0]
+        camera_white_level_per_channel = [65535, 65535, 65535, 65535]
+        white_level = 65535
         camera_whitebalance = [2.0, 1.0, 1.5, 1.0]
         daylight_whitebalance = [1.8, 1.0, 1.4, 1.0]
+        rgb_xyz_matrix = np.asarray(
+            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 0.0]],
+            dtype=np.float32,
+        )
         sizes = SimpleNamespace(width=6, height=4, raw_width=6, raw_height=4)
         lens = SimpleNamespace(make="SIGMA", model="35mm F2 DG DN | C")
         other = SimpleNamespace(focal_length=35.0, aperture=4.0, iso_speed=800.0, shutter_speed=0.004)
@@ -324,13 +335,16 @@ def test_raw_decoder_returns_canonical_acescg_without_second_loader_transform(
         def __exit__(self, *_args):
             return False
 
-        def postprocess(self, **_kwargs):
+        def postprocess(self, **kwargs):
+            postprocess_calls.update(kwargs)
             return developed.copy()
 
     fake_rawpy = SimpleNamespace(
+        __version__="0.27.0",
+        libraw_version=(0, 22, 1),
         imread=lambda _path: FakeRaw(),
         DemosaicAlgorithm=SimpleNamespace(AHD="AHD"),
-        ColorSpace=SimpleNamespace(ACES="ACES"),
+        ColorSpace=SimpleNamespace(ACES="ACES", raw="raw"),
         HighlightMode=SimpleNamespace(Clip="Clip"),
     )
     monkeypatch.setitem(sys.modules, "rawpy", fake_rawpy)
@@ -356,6 +370,12 @@ def test_raw_decoder_returns_canonical_acescg_without_second_loader_transform(
     assert metadata["lens"] == "35mm F2 DG DN | C"
     assert metadata["iso"] == "640"
     assert metadata["shutter_speed"] == 0.004
+    assert postprocess_calls["highlight_mode"] == "Clip"
+    assert postprocess_calls["no_auto_scale"] is True
+    assert postprocess_calls["output_color"] == "raw"
+    assert metadata["raw_development"]["pipeline"] == "camera_linear_float_bridge_opposed_v2"
+    assert metadata["raw_development"]["libraw_highlight_mode_requested"] == "clip"
+    assert metadata["raw_development"]["libraw_highlight_processing"] == "bypassed_by_no_auto_scale"
     assert np.all(np.isfinite(image))
 
 

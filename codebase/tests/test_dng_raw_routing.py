@@ -91,6 +91,8 @@ def test_mandatory_dng_operations_run_once_in_camera_linear_order_and_disable_au
     assert calls["output_color"] == "raw"
     assert calls["use_camera_wb"] is False
     assert calls["user_flip"] == 0
+    assert calls["highlight_mode"] == "Clip"
+    assert metadata["raw_development"]["highlight_mode"] == "clip"
     audit = metadata["dng_opcode_audit"]
     assert [item["name"] for item in audit["operations"]] == ["GainMap", "WarpRectilinear"]
     assert [item["status"] for item in audit["operations"]] == ["applied", "applied"]

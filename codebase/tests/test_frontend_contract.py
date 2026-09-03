@@ -16,6 +16,7 @@ DESKTOP = ROOT / "desktop"
 def test_raw_development_is_first_grade_control_group() -> None:
     markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    script = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
     grade_start = markup.index('id="grade-workflow-panel"')
     raw_start = markup.index('id="raw-settings-section"')
@@ -23,11 +24,38 @@ def test_raw_development_is_first_grade_control_group() -> None:
     assert grade_start < raw_start < local_start
     assert "RAW &amp; Lens Development" not in markup
     assert "<span>RAW DEVELOPMENT</span>" in markup
-    assert 'class="disclosure-panel raw-development-group hidden"' in markup
+    assert 'class="disclosure-panel raw-development-group module-unavailable"' in markup
+    assert 'id="raw-settings-toggle"' in markup and 'aria-controls="raw-settings-panel" disabled' in markup
     assert ".raw-development-group" in css
+    assert ".module-unavailable" in css
+    assert "setSourceModuleAvailability" in script
+    assert 'rawSettingsSection?.classList.toggle("hidden", !visible)' not in script
     assert "--control-group-header-h: 38px" in css
     assert ".raw-development-group .disclosure-trigger" in css
     assert ".source-rail > .disclosure-panel" in css
+
+
+def test_raw_highlight_reconstruction_is_a_versioned_module_stack_control() -> None:
+    markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    script = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+
+    raw_development = markup.index('id="raw-settings-section"')
+    highlights = markup.index('id="raw-highlight-group"')
+    denoise = markup.index('data-group="denoise"')
+    assert raw_development < highlights < denoise
+    assert 'id="raw-highlight-bypass"' in markup
+    assert 'value="opposed_color_v1"' in markup
+    assert 'id="raw-highlight-threshold"' in markup
+    assert 'class="control-group raw-highlight-group collapsed module-unavailable"' in markup
+    assert '.control-group[data-group="raw-highlights"] > .control-group-header::before { content: "02"; }' in css
+    assert '.control-group[data-group="geometry"] > .control-group-header::before { content: "03"; }' in css
+    assert '.control-group[data-group="denoise"] > .control-group-header::before { content: "05"; }' in css
+    assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "16"; }' in css
+    assert 'rawHighlightGroup?.classList.toggle("hidden", !bridgeQualified)' not in script
+    assert 'highlight_reconstruction: {' in script
+    assert 'method: els.rawHighlightMethod?.value || "opposed_color_v1"' in script
+    assert "applyRawImportSettings" in script
 
 def test_staged_import_waits_for_natural_aspect_before_display() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
@@ -117,6 +145,8 @@ def test_left_metadata_panel_renders_complete_camera_and_lens_identity() -> None
         assert f'["{label}",' in script
     assert "formatFocalLength(session.metadata.focal_length_mm)" in script
     assert "formatAperture(session.metadata.aperture)" in script
+    assert '["RAW pipeline", session.metadata.extra.raw_pipeline]' in script
+    assert '["RAW compatibility fallback", session.metadata.extra.raw_fallback_reason]' in script
 
 
 def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -> None:
@@ -1541,7 +1571,7 @@ def test_local_mask_authoring_uses_bidirectional_authoritative_geometry_mapping(
     assert 'gesture?.type === "luminance_sample"' in javascript
 
 
-def test_perspective_module_is_numbered_third_and_exposes_draft_guided_tools() -> None:
+def test_perspective_module_is_numbered_fourth_and_exposes_draft_guided_tools() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
@@ -1550,8 +1580,8 @@ def test_perspective_module_is_numbered_third_and_exposes_draft_guided_tools() -
     assert 'id="perspective-vertical-tool"' in html
     assert 'id="perspective-horizontal-tool"' in html
     assert 'id="perspective-apply"' in html and 'id="perspective-cancel"' in html
-    assert '.control-group[data-group="perspective"] > .control-group-header::before { content: "03"; }' in css
-    assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "15"; }' in css
+    assert '.control-group[data-group="perspective"] > .control-group-header::before { content: "04"; }' in css
+    assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "16"; }' in css
     assert "function openPerspectiveMode()" in javascript
     assert "function closePerspectiveMode(commit)" in javascript
     assert 'transient_adjustments: true' in javascript
@@ -1724,9 +1754,9 @@ def test_detail_uses_numbered_module_header_and_sharpen_targeting_hierarchy() ->
 
     assert '>Detail <span id="detail-state">Default</span>' not in html
     assert '>Detail</button>' in html
-    assert '.control-group[data-group="detail"] > .control-group-header::before { content: "13"; }' in css
-    assert '.control-group[data-group="film-look"] > .control-group-header::before { content: "14"; }' in css
-    assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "15"; }' in css
+    assert '.control-group[data-group="detail"] > .control-group-header::before { content: "14"; }' in css
+    assert '.control-group[data-group="film-look"] > .control-group-header::before { content: "15"; }' in css
+    assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "16"; }' in css
     assert 'data-control-path="current.detail.sharpen_amount"' in html
     assert '<div class="slider-group-relationship">Targeting</div>' in html
     assert 'class="control-row compact-subrail" data-control-path="current.detail.sharpen_radius_px"' in html

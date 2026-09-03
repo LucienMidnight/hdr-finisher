@@ -564,8 +564,8 @@
         <span id="grade-modified-summary" class="status-text muted">Default</span>
       </div>
 
-      <section id="raw-settings-section" class="disclosure-panel raw-development-group hidden">
-        <button id="raw-settings-toggle" class="disclosure-trigger" type="button" aria-expanded="false" aria-controls="raw-settings-panel">
+      <section id="raw-settings-section" class="disclosure-panel raw-development-group module-unavailable" aria-disabled="true">
+        <button id="raw-settings-toggle" class="disclosure-trigger" type="button" aria-expanded="false" aria-controls="raw-settings-panel" disabled>
           <span>RAW DEVELOPMENT</span>
         </button>
         <div id="raw-settings-panel" class="disclosure-content hidden">
@@ -593,6 +593,31 @@
           <label>Focus distance (m) <input id="lens-distance" type="number" min="0.01" max="1000000" step="0.1" placeholder="from metadata"></label>
           <p id="lens-settings-note" class="helper">Auto applies only one exact profile match. Off and Manual are always available.</p>
           <button id="apply-raw-settings" class="button-primary" type="button">Re-develop source</button>
+        </div>
+      </section>
+
+      <section class="control-group raw-highlight-group collapsed module-unavailable" id="raw-highlight-group" data-group="raw-highlights" aria-disabled="true">
+        <div class="control-group-header">
+          <button class="group-toggle" type="button" aria-expanded="false" disabled>Highlight Reconstruction</button>
+          <button id="raw-highlight-reset" class="group-reset text-button" type="button" disabled>Reset</button>
+          <button id="raw-highlight-bypass" class="section-bypass text-button" type="button" aria-pressed="true" aria-label="Toggle RAW highlight reconstruction" disabled>&#9673;</button>
+        </div>
+        <div class="control-group-body">
+          <p class="helper">Repairs clipped RAW color channels before AHD demosaic. Changing this module re-develops the source.</p>
+          <div class="control-row select-control">
+            <label for="raw-highlight-method">Method</label>
+            <select id="raw-highlight-method">
+              <option value="opposed_color_v1" selected>Opposed color</option>
+            </select>
+          </div>
+          <div class="control-row">
+            <div class="control-heading">
+              <label for="raw-highlight-threshold">Clipping threshold</label>
+              <output id="raw-highlight-threshold-value">1.000</output>
+            </div>
+            <input id="raw-highlight-threshold" type="range" min="0.5" max="1.5" step="0.001" value="1">
+          </div>
+          <p id="raw-highlight-status" class="support-copy" aria-live="polite">Opposed-color reconstruction is enabled.</p>
         </div>
       </section>
 

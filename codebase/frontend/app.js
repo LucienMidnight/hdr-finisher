@@ -1081,6 +1081,13 @@ const els = {
   lensDistance: document.getElementById("lens-distance"),
   lensSettingsNote: document.getElementById("lens-settings-note"),
   applyRawSettings: document.getElementById("apply-raw-settings"),
+  rawHighlightGroup: document.getElementById("raw-highlight-group"),
+  rawHighlightBypass: document.getElementById("raw-highlight-bypass"),
+  rawHighlightReset: document.getElementById("raw-highlight-reset"),
+  rawHighlightMethod: document.getElementById("raw-highlight-method"),
+  rawHighlightThreshold: document.getElementById("raw-highlight-threshold"),
+  rawHighlightThresholdValue: document.getElementById("raw-highlight-threshold-value"),
+  rawHighlightStatus: document.getElementById("raw-highlight-status"),
   metadataToggle: document.getElementById("metadata-toggle"),
   metadataPanel: document.getElementById("metadata-panel"),
   interpretationGate: document.getElementById("interpretation-gate"),
@@ -2473,6 +2480,23 @@ function bindEvents() {
     lensSearchTimer = window.setTimeout(loadLensProfiles, 250);
   });
   els.applyRawSettings?.addEventListener("click", applyRawImportSettings);
+  els.rawHighlightBypass?.addEventListener("click", async () => {
+    const enabled = els.rawHighlightBypass.getAttribute("aria-pressed") !== "true";
+    renderRawHighlightState({ enabled });
+    await applyRawImportSettings();
+  });
+  els.rawHighlightMethod?.addEventListener("change", applyRawImportSettings);
+  els.rawHighlightThreshold?.addEventListener("input", () => {
+    els.rawHighlightThresholdValue.textContent = Number(els.rawHighlightThreshold.value).toFixed(3);
+    updateRangeVisual(els.rawHighlightThreshold);
+  });
+  els.rawHighlightThreshold?.addEventListener("change", applyRawImportSettings);
+  els.rawHighlightReset?.addEventListener("click", async () => {
+    els.rawHighlightMethod.value = "opposed_color_v1";
+    els.rawHighlightThreshold.value = "1";
+    renderRawHighlightState({ enabled: true });
+    await applyRawImportSettings();
+  });
   els.metadataToggle.addEventListener("click", () => {
     state.metadataOpen = !state.metadataOpen;
     renderMetadataVisibility();
@@ -3003,7 +3027,7 @@ async function ejectCurrentSession() {
   await fetch("/api/session/current", { method: "DELETE" }).catch(() => null);
   state.session = null;
   renderExperimentalDngNote();
-  els.rawSettingsSection?.classList.add("hidden");
+  renderRawImportControls(null);
   if (els.rawSettingsPanel) delete els.rawSettingsPanel.dataset.initialized;
   state.adjustments = defaultAdjustments();
   state.editDocument = null;
@@ -3143,6 +3167,12 @@ function renderMetadata(session) {
       ["DNG operations", session.metadata.extra.dng_operations || "none"],
       ["DNG warnings", session.metadata.extra.dng_warnings || "none"],
     );
+  }
+  if (session.metadata.extra?.raw_pipeline) {
+    entries.push(["RAW pipeline", session.metadata.extra.raw_pipeline]);
+  }
+  if (session.metadata.extra?.raw_fallback_reason) {
+    entries.push(["RAW compatibility fallback", session.metadata.extra.raw_fallback_reason]);
   }
   els.metadataList.innerHTML = "";
   for (const [key, value] of entries) {
@@ -7583,7 +7613,10 @@ function renderSessionChrome() {
     if (control.matches("[data-local-tool], #grade-mode-local")) {
       control.disabled = false;
     } else {
-      control.disabled = !hasSession;
+      const unavailableModule = control.closest(".module-unavailable");
+      const bypassedRawHighlightControl = control.matches("#raw-highlight-method, #raw-highlight-threshold")
+        && els.rawHighlightBypass?.getAttribute("aria-pressed") !== "true";
+      control.disabled = !hasSession || Boolean(unavailableModule) || bypassedRawHighlightControl;
     }
   });
   els.viewButtons.forEach((button) => {
@@ -9316,8 +9349,32 @@ function renderExperimentalDngNote(candidate = null) {
 
 function renderRawImportControls(session) {
   const visible = isRawSession(session);
-  els.rawSettingsSection?.classList.toggle("hidden", !visible);
-  if (!visible) return;
+  const bridgeQualified = Boolean(
+    visible &&
+      session?.metadata?.extra?.raw_mosaiced !== false &&
+      String(session?.metadata?.extra?.raw_pipeline || "").startsWith("camera_linear_float_bridge"),
+  );
+  setSourceModuleAvailability(
+    els.rawSettingsSection,
+    visible,
+    "RAW Development is available only for RAW sources.",
+  );
+  setSourceModuleAvailability(
+    els.rawHighlightGroup,
+    bridgeQualified,
+    visible
+      ? "Highlight Reconstruction is unavailable for this RAW sensor or color pipeline."
+      : "Highlight Reconstruction is available only for supported mosaiced RAW sources.",
+  );
+  if (!visible) {
+    state.rawSettingsOpen = false;
+    els.rawSettingsPanel?.classList.add("hidden");
+    els.rawSettingsToggle?.setAttribute("aria-expanded", "false");
+    if (els.rawHighlightStatus) {
+      els.rawHighlightStatus.textContent = "Available for supported mosaiced RAW sources.";
+    }
+    return;
+  }
   const settings = state.editDocument?.source?.raw_import_settings;
   const lens = settings?.lens || {};
   if (!els.rawSettingsPanel.dataset.initialized) {
@@ -9339,6 +9396,57 @@ function renderRawImportControls(session) {
     ? `Applied ${applied.profile?.lens_maker || ""} ${applied.profile?.lens_model || "selected profile"}. Re-development is required after changing these controls.`
     : applied?.warning || applied?.reason || "Auto applies only one exact profile match. Off and Manual are always available.";
   if (manual && els.lensProfile.options.length <= 1) loadLensProfiles();
+  if (bridgeQualified) {
+    const highlight = settings?.highlight_reconstruction || {};
+    if (els.rawHighlightGroup.dataset.sessionId !== String(session.session_id)) {
+      els.rawHighlightMethod.value = highlight.method || "opposed_color_v1";
+      els.rawHighlightThreshold.value = String(highlight.clipping_threshold ?? 1.0);
+      els.rawHighlightGroup.dataset.sessionId = String(session.session_id);
+    }
+    renderRawHighlightState({
+      enabled: highlight.enabled !== false,
+      diagnostics: session.metadata.extra?.raw_development?.highlight_reconstruction,
+    });
+  } else if (els.rawHighlightStatus) {
+    els.rawHighlightStatus.textContent = "Unavailable for this RAW sensor or color pipeline.";
+  }
+}
+
+function setSourceModuleAvailability(module, available, unavailableReason) {
+  if (!module) return;
+  module.classList.toggle("module-unavailable", !available);
+  module.setAttribute("aria-disabled", String(!available));
+  module.title = available ? "" : unavailableReason;
+  module.querySelectorAll("button, input, select, textarea").forEach((control) => {
+    control.disabled = !available;
+  });
+  if (available) return;
+  const toggle = module.querySelector(".group-toggle, .disclosure-trigger");
+  toggle?.setAttribute("aria-expanded", "false");
+  if (module.classList.contains("control-group")) module.classList.add("collapsed");
+  module.querySelector(":scope > .disclosure-content")?.classList.add("hidden");
+}
+
+function renderRawHighlightState({ enabled, diagnostics = null }) {
+  if (!els.rawHighlightGroup) return;
+  els.rawHighlightBypass.classList.toggle("bypassed", !enabled);
+  els.rawHighlightBypass.setAttribute("aria-pressed", String(enabled));
+  els.rawHighlightGroup.classList.toggle("bypassed", !enabled);
+  els.rawHighlightMethod.disabled = !enabled;
+  els.rawHighlightThreshold.disabled = !enabled;
+  els.rawHighlightThresholdValue.textContent = Number(els.rawHighlightThreshold.value).toFixed(3);
+  updateRangeVisual(els.rawHighlightThreshold);
+  const reconstructed = diagnostics?.reconstructed_photosites_per_rgb;
+  if (!enabled) {
+    els.rawHighlightStatus.textContent = "Highlight reconstruction is bypassed.";
+  } else if (Array.isArray(reconstructed)) {
+    const total = reconstructed.reduce((sum, value) => sum + Number(value || 0), 0);
+    els.rawHighlightStatus.textContent = total
+      ? `Opposed color repaired ${total.toLocaleString()} clipped photosites (R ${Number(reconstructed[0] || 0).toLocaleString()}, G ${Number(reconstructed[1] || 0).toLocaleString()}, B ${Number(reconstructed[2] || 0).toLocaleString()}).`
+      : "Opposed color found no photosites at or above the clipping threshold.";
+  } else {
+    els.rawHighlightStatus.textContent = "Opposed-color reconstruction is enabled.";
+  }
 }
 
 async function loadLensProfiles() {
@@ -9373,6 +9481,11 @@ function rawImportSettingsPayload() {
   return {
     white_balance: "as_shot",
     demosaic: "ahd",
+    highlight_reconstruction: {
+      enabled: els.rawHighlightBypass?.getAttribute("aria-pressed") === "true",
+      method: els.rawHighlightMethod?.value || "opposed_color_v1",
+      clipping_threshold: Number(els.rawHighlightThreshold?.value || 1.0),
+    },
     lens: {
       mode: els.lensMode.value,
       profile_id: els.lensMode.value === "manual" ? els.lensProfile.value || null : null,

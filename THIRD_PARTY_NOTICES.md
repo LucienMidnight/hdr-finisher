@@ -23,6 +23,12 @@ correction uses [`lensfunpy`](https://github.com/letmaik/lensfunpy) and
 is CC BY-SA 3.0. Packages containing these components must retain their bundled license and database
 attribution files.
 
+HDR Finisher's NumPy opposed-color RAW highlight reconstruction adapts the algorithm and reference
+math from darktable's `src/iop/highlights.c`, `src/iop/hlreconstruct/opposed.c`, and
+`src/iop/hlreconstruct/segbased.c`, Copyright (C) 2010–2026 darktable developers. darktable is
+distributed under GNU GPL version 3 or later. HDR Finisher is GPL-3.0 and retains the algorithm
+name, versioned recipe identifier, implementation provenance, and this attribution.
+
 > This product includes DNG technology under license by Adobe.
 
 HDR Finisher can redistribute a locally or CI-built `ultrahdr_app` from Google's
