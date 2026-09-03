@@ -2046,7 +2046,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const layoutIdentity = gpuMaskGraphLayoutIdentity(local.mask);
       const key = `${sessionId}:${local.id}:${longEdge}:${geometrySignature}:gpu-mask-graph:${layoutIdentity}`;
       let entry = this.localMasks.get(key);
-      const influenceIdentity = JSON.stringify(local.mask);
+      const influenceIdentity = JSON.stringify(gpuMaskRenderPayload(local.mask));
       if (entry?.influenceIdentity === influenceIdentity) {
         this.localMasks.delete(key);
         this.localMasks.set(key, entry);
@@ -2058,12 +2058,20 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           const leafEntry = await this.loadMaskLeaf(sessionId, local, expression, path, longEdge, editRevision, geometrySignature, isCurrent);
           return leafEntry ? { expression, leafEntry, children: [] } : null;
         }
-        const children = await Promise.all(expression.children.map((child, index) =>
+        if (expression.enabled === false) {
+          const child = expression.children?.[0];
+          return child ? resolveNode(child, path ? `${path}.0` : "0") : null;
+        }
+        const activeChildren = expression.children
+          .map((child, index) => ({ child, index }))
+          .filter(({ child }) => child.enabled !== false);
+        const children = await Promise.all(activeChildren.map(({ child, index }) =>
           resolveNode(child, path ? `${path}.${index}` : String(index))));
         return children.some((child) => !child) ? null : { expression, children };
       };
       const resolved = await resolveNode(local.mask, "");
       if (!resolved || !isCurrent()) return null;
+      if (resolved.leafEntry) return resolved.leafEntry;
 
       const firstLeaf = firstResolvedMaskLeaf(resolved);
       const passCount = gpuMaskGraphPassCount(local.mask);
@@ -2756,11 +2764,20 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
   }
 
   function gpuMaskIdentity(expression) {
-    if (expression?.operator !== "leaf" || !expression.leaf) return JSON.stringify(expression);
+    if (expression?.operator !== "leaf" || !expression.leaf) return JSON.stringify(gpuMaskRenderPayload(expression));
     return JSON.stringify({
-      ...expression,
+      ...gpuMaskRenderPayload(expression),
       leaf: { ...expression.leaf, mask_opacity: 1 },
     });
+  }
+
+  function gpuMaskRenderPayload(expression) {
+    if (!expression) return expression;
+    const { id, children, ...payload } = expression;
+    return {
+      ...payload,
+      children: (children || []).map(gpuMaskRenderPayload),
+    };
   }
 
   function isGpuLumaMask(expression) {
@@ -2770,9 +2787,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
   }
 
   function gpuLumaBaseIdentity(expression) {
-    if (!isGpuLumaMask(expression)) return JSON.stringify(expression);
+    if (!isGpuLumaMask(expression)) return JSON.stringify(gpuMaskRenderPayload(expression));
     return JSON.stringify({
-      ...expression,
+      ...gpuMaskRenderPayload(expression),
       inverted: false,
       leaf: {
         ...expression.leaf,
@@ -2794,13 +2811,19 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
 
   function gpuMaskGraphLayoutIdentity(expression) {
     if (expression?.operator === "leaf") return `leaf:${expression.leaf?.type || "unknown"}`;
-    return `node(${(expression?.children || []).map(gpuMaskGraphLayoutIdentity).join(",")})`;
+    if (expression?.enabled === false) return gpuMaskGraphLayoutIdentity(expression?.children?.[0]);
+    const children = (expression?.children || []).filter((child) => child.enabled !== false);
+    return children.length === 1
+      ? gpuMaskGraphLayoutIdentity(children[0])
+      : `node(${children.map(gpuMaskGraphLayoutIdentity).join(",")})`;
   }
 
   function gpuMaskGraphPassCount(expression) {
     if (expression?.operator === "leaf") return 0;
-    return Math.max(0, (expression?.children || []).length - 1)
-      + (expression?.children || []).reduce((total, child) => total + gpuMaskGraphPassCount(child), 0);
+    if (expression?.enabled === false) return gpuMaskGraphPassCount(expression?.children?.[0]);
+    const children = (expression?.children || []).filter((child) => child.enabled !== false);
+    return Math.max(0, children.length - 1)
+      + children.reduce((total, child) => total + gpuMaskGraphPassCount(child), 0);
   }
 
   function firstResolvedMaskLeaf(node) {

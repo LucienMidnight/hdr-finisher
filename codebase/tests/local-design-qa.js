@@ -180,6 +180,7 @@ function assert(condition, message) {
     await page.locator("#grade-mode-local").click();
 
     await page.locator('[data-local-tool="brush"]').click();
+    await page.locator("#local-add-adjustment").click();
     await page.waitForFunction(() => document.querySelectorAll("#local-adjustment-list > li").length === 1);
 
     const stackSurface = page.locator(".local-stack-surface");
@@ -187,12 +188,16 @@ function assert(condition, message) {
       overflowY: getComputedStyle(node).overflowY,
       gutter: getComputedStyle(node).scrollbarGutter,
       webkitWidth: getComputedStyle(node, "::-webkit-scrollbar").width,
+      clientHeight: node.clientHeight,
+      scrollHeight: node.scrollHeight,
     }));
-    assert(singleBrushScrollbar.overflowY === "scroll", "The scrollbar is not persistent for a single brush adjustment.");
-    assert(singleBrushScrollbar.gutter.includes("stable"), "The scrollbar gutter is not stable.");
-    assert(singleBrushScrollbar.webkitWidth === "9px", "The persistent scrollbar width is not applied in Edge.");
+    assert(singleBrushScrollbar.overflowY === "auto", "The adjustment stack does not use content-aware overflow.");
+    assert(singleBrushScrollbar.gutter === "auto", "The adjustment stack reserves an unnecessary scrollbar gutter.");
+    assert(singleBrushScrollbar.clientHeight === singleBrushScrollbar.scrollHeight, "A single adjustment unnecessarily shows a scrollbar.");
+    assert(singleBrushScrollbar.webkitWidth === "9px", "The overflow scrollbar width is not applied in Edge.");
 
     await page.locator('[data-local-tool="linear_gradient"]').click();
+    await page.locator("#local-add-adjustment").click();
     await page.waitForFunction(() => document.querySelectorAll("#local-adjustment-list > li").length === 2);
     const gradientToggleSurface = await page.locator(".gradient-luma-toggle input").evaluate((control) => {
       const snapshot = () => {
@@ -227,6 +232,7 @@ function assert(condition, message) {
     });
 
     await page.locator('[data-local-tool="luminance_range"]').click();
+    await page.locator("#local-add-adjustment").click();
     await page.waitForFunction(() => document.querySelectorAll("#local-adjustment-list > li").length === 3);
     const lumaLabelTypography = await page.locator(".luma-range-control").evaluate((control) => ({
       heading: getComputedStyle(control.querySelector(".luma-range-heading")).fontSize,
@@ -248,16 +254,15 @@ function assert(condition, message) {
     await page.locator(".local-mask-subpanel").first().screenshot({ path: path.join(outputDir, "luma-selector-implementation.png") });
 
     await page.locator('[data-local-tool="path"]').click();
+    await page.locator("#local-add-adjustment").click();
     await page.waitForFunction(() => document.querySelectorAll("#local-adjustment-list > li").length === 4);
     await page.locator("#local-adjustment-list button[data-local-id]").first().click();
     await page.evaluate(() => window.scrollTo(0, 0));
 
     const removeButton = page.locator("#local-delete");
-    const removeRailY = async () => (await removeButton.boundingBox()).y
-      + await page.locator(".grade-rail").evaluate((rail) => rail.scrollTop);
     const initialSurfaceHeight = (await stackSurface.boundingBox()).height;
-    await page.locator('[data-local-tool="brush"]').click();
     for (let index = 4; index < 8; index += 1) {
+      await page.locator('[data-local-tool="brush"]').click();
       const createResponse = page.waitForResponse((response) =>
         response.url().includes("/edit-commands") && response.request().method() === "POST" && response.status() === 200,
       );
@@ -267,14 +272,14 @@ function assert(condition, message) {
     }
     const scrollMetrics = await stackSurface.evaluate((node) => ({ clientHeight: node.clientHeight, scrollHeight: node.scrollHeight, overflowY: getComputedStyle(node).overflowY }));
     assert(scrollMetrics.scrollHeight > scrollMetrics.clientHeight && scrollMetrics.overflowY === "scroll", "The adjustment list does not use an internal scrollbar.");
-    const fixedRemoveY = await removeRailY();
+    const cappedSurfaceHeight = (await stackSurface.boundingBox()).height;
+    assert(cappedSurfaceHeight > initialSurfaceHeight, "The adjustment viewport did not grow with its rows.");
     for (let targetCount = 7; targetCount >= 4; targetCount -= 1) {
       await removeButton.click();
       await page.waitForFunction((count) => document.querySelectorAll("#local-adjustment-list > li").length === count, targetCount);
       const surfaceHeight = (await stackSurface.boundingBox()).height;
-      const removeY = await removeRailY();
-      assert(Math.abs(surfaceHeight - initialSurfaceHeight) < 1, "The adjustment viewport changed height while removing items.");
-      assert(Math.abs(removeY - fixedRemoveY) < 1, "The minus button moved while removing items.");
+      assert(surfaceHeight <= cappedSurfaceHeight + 1, "The adjustment viewport exceeded its capped height while removing items.");
+      if (targetCount >= 5) assert(Math.abs(surfaceHeight - cappedSurfaceHeight) < 1, "The overflowing adjustment viewport did not retain its capped height.");
     }
     await page.locator("#local-adjustment-list button[data-local-id]").nth(1).click();
 
@@ -695,12 +700,10 @@ function assert(condition, message) {
     for (let targetCount = 3; targetCount >= 0; targetCount -= 1) {
       await removeButton.click();
       await page.waitForFunction((count) => document.querySelectorAll("#local-adjustment-list > li").length === count, targetCount);
-      const removeY = await removeRailY();
-      assert(Math.abs(removeY - fixedRemoveY) < 1, `The minus button moved as the stack approached its empty state: ${JSON.stringify({ targetCount, fixedRemoveY, removeY, delta: removeY - fixedRemoveY })}`);
     }
     assert(await removeButton.isDisabled(), "The static minus button should disable when the list is empty.");
     assert(!(await page.locator("#local-add-adjustment").isDisabled()), "The static plus button should remain available when the list is empty.");
-    assert(Math.abs((await stackSurface.boundingBox()).height - initialSurfaceHeight) < 1, "The empty adjustment viewport did not keep its fixed height.");
+    assert((await stackSurface.boundingBox()).height < initialSurfaceHeight, "The empty adjustment viewport did not shrink to its compact height.");
 
     assert(pageErrors.length === 0, `Page errors: ${pageErrors.join(" | ")}`);
     process.stdout.write(JSON.stringify({ implementationPath, comparisonPath: path.join(outputDir, "comparison.png") }));

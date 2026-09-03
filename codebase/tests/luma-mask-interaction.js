@@ -35,6 +35,7 @@ async function redOverlayPixels(locator) {
       response.url().includes("/edit-commands") && response.request().method() === "POST" && response.status() === 200,
     );
     await page.locator('[data-local-tool="brush"]').click();
+    await page.locator("#local-add-adjustment").click();
     await brushCreateResponse;
     assert(await page.locator(".local-adjustment-item").count() === 1, "Brush setup adjustment was not created.");
 
@@ -46,6 +47,7 @@ async function redOverlayPixels(locator) {
       /\/local-mask\/[^/]+\?/.test(response.url()) && response.request().method() === "GET" && response.status() === 200,
     );
     await page.locator('[data-local-tool="luminance_range"]').click();
+    await page.locator("#local-add-adjustment").click();
     const lumaCreated = await createResponse;
     const createdLeaf = lumaCreated.request().postDataJSON().commands[0].payload.local.mask.leaf;
     assert(!("luma_sampling_initialized" in createdLeaf), "Luma creation leaked client-only sampling state into the API payload.");

@@ -82,6 +82,7 @@ async function canvasVariationCount(locator) {
       const button = page.locator(`[data-local-tool="${tool}"]`);
       await button.click();
       assert(await button.getAttribute("aria-pressed") === "true", `${tool} did not expose immediate active state.`);
+      await page.locator("#local-add-adjustment").click();
       await page.waitForFunction((count) => document.querySelectorAll("#local-adjustment-list > li").length === count, index + 1);
       if (tool === "path") {
         const overlay = page.locator("#local-mask-overlay");

@@ -79,6 +79,7 @@ async function gradientZoomAlignment(page) {
 
     let editResponse = page.waitForResponse((response) => response.url().includes("/edit-commands") && response.request().method() === "POST");
     await page.locator('[data-local-tool="linear_gradient"]').click();
+    await page.locator("#local-add-adjustment").click();
     assert((await editResponse).ok(), "Creating the gradient failed.");
     await page.waitForFunction(() => {
       const local = selectedLocal();

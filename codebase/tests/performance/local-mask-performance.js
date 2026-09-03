@@ -30,6 +30,7 @@ function summarize(values) {
     await page.locator("#grade-mode-local").click();
     const created = page.waitForResponse((response) => response.url().includes("/edit-commands") && response.request().method() === "POST");
     await page.locator('[data-local-tool="brush"]').click();
+    await page.locator("#local-add-adjustment").click();
     await created;
 
     await page.evaluate(async () => {

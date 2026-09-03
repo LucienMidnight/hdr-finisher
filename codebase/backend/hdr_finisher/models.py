@@ -696,6 +696,8 @@ class MaskLeaf(BaseModel):
 class MaskExpression(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    id: str = Field(default_factory=lambda: str(uuid4()), min_length=1, max_length=128)
+    enabled: bool = True
     operator: Literal["leaf", "union", "intersect", "subtract"] = "leaf"
     leaf: MaskLeaf | None = None
     children: list["MaskExpression"] = Field(default_factory=list, max_length=64)

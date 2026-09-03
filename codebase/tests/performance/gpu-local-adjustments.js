@@ -179,6 +179,7 @@ async function rapidDrag(page, selector, values, intervalMs = 16) {
     await page.locator("#grade-mode-local").click();
     const created = page.waitForResponse((response) => response.url().includes("/edit-commands") && response.request().method() === "POST");
     await page.locator('[data-local-tool="luminance_range"]').click();
+    await page.locator("#local-add-adjustment").click();
     await created;
     await page.waitForFunction(() => selectedLocal()?.mask?.leaf?.type === "luminance_range");
     await page.evaluate(async () => {

@@ -37,6 +37,7 @@ async function clickNormalized(page, box, x, y, options = {}) {
     await page.locator("#grade-workflow-panel").waitFor({ state: "visible", timeout: 30000 });
     await page.locator("#grade-mode-local").click();
     await page.locator('[data-local-tool="path"]').click();
+    await page.locator("#local-add-adjustment").click();
     const overlay = page.locator("#local-mask-overlay");
     const box = await page.locator("#preview-canvas").boundingBox();
     assert(box, "Path overlay is unavailable.");
@@ -278,6 +279,7 @@ async function clickNormalized(page, box, x, y, options = {}) {
 
     const completedLocals = (await pathState(page)).locals;
     await page.locator('[data-local-tool="path"]').click();
+    await page.locator("#local-add-adjustment").click();
     await clickNormalized(page, box, .2, .2);
     await clickNormalized(page, box, .6, .2);
     await overlay.focus();
@@ -285,12 +287,14 @@ async function clickNormalized(page, box, x, y, options = {}) {
     assert((await pathState(page)).locals === completedLocals && !(await pathState(page)).draft, "Esc did not cancel an unfinished Path draft.");
 
     await page.locator('[data-local-tool="path"]').click();
+    await page.locator("#local-add-adjustment").click();
     await clickNormalized(page, box, .25, .25);
     await clickNormalized(page, box, .65, .25);
     await page.locator("#local-show-mask").click();
     assert((await pathState(page)).locals === completedLocals && !(await pathState(page)).draft, "External interaction did not cancel an invalid two-node draft.");
 
     await page.locator('[data-local-tool="path"]').click();
+    await page.locator("#local-add-adjustment").click();
     await clickNormalized(page, box, .2, .2);
     await clickNormalized(page, box, .65, .2);
     await clickNormalized(page, box, .45, .65);
@@ -301,6 +305,7 @@ async function clickNormalized(page, box, x, y, options = {}) {
     assert((await pathState(page)).locals === completedLocals + 1, "Enter-closed Path was not retained.");
 
     await page.locator('[data-local-tool="path"]').click();
+    await page.locator("#local-add-adjustment").click();
     await clickNormalized(page, box, .3, .25);
     await clickNormalized(page, box, .7, .3);
     await clickNormalized(page, box, .5, .7);
@@ -313,6 +318,7 @@ async function clickNormalized(page, box, x, y, options = {}) {
     // overlay pane. It must still be hit-testable and draggable from there.
     const beforeEdgePathLocals = (await pathState(page)).locals;
     await page.locator('[data-local-tool="path"]').click();
+    await page.locator("#local-add-adjustment").click();
     await page.mouse.move(box.x + box.width * .03, box.y + box.height * .38);
     await page.mouse.down();
     await page.mouse.move(box.x + box.width * .14, box.y + box.height * .32, { steps: 4 });

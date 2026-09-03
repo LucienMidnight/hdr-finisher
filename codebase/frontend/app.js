@@ -220,6 +220,14 @@ const localBrushGestureCanvasCache = new WeakMap();
 const localTintedMaskCanvasCache = new WeakMap();
 const localAuthoritativeMaskCache = new Map();
 const localAuthoritativeMaskRequests = new Map();
+const localComparisonMaskCache = new Map();
+const localComparisonMaskRequests = new Map();
+const localComparisonCompositeCache = new Map();
+const LOCAL_COMPARISON_COLORS = Object.freeze({
+  parent: Object.freeze([255, 38, 61]),
+  child: Object.freeze([38, 117, 255]),
+  overlap: Object.freeze([255, 48, 226]),
+});
 const geometryCoordinateMapCache = new Map();
 const geometryCoordinateMapRequests = new Map();
 let localMaskOverlayFrame = 0;
@@ -263,7 +271,11 @@ const state = {
   editDocument: null,
   editRevision: 0,
   selectedLocalId: null,
+  selectedSubMaskId: null,
   localTool: null,
+  localCreationTool: null,
+  pendingLocalAdjustment: null,
+  pendingSubMask: null,
   localShowMask: false,
   localOverlayColor: "#ff263d",
   compareWithoutLocals: false,
@@ -11198,14 +11210,25 @@ function syncSourceFilenameOverflow() {
   }
 }
 
-function newLocalAdjustment(type) {
-  const number = (state.editDocument?.local_adjustments?.length || 0) + 1;
+function newMaskExpression(type) {
   return {
     id: crypto.randomUUID(),
-    name: `Local Adjustment ${number}`,
+    enabled: true,
+    operator: "leaf",
+    leaf: newMaskLeaf(type),
+    children: [],
+    inverted: false,
+  };
+}
+
+function newLocalAdjustment(type, pending = null) {
+  const number = (state.editDocument?.local_adjustments?.length || 0) + 1;
+  return {
+    id: pending?.id || crypto.randomUUID(),
+    name: pending?.name || `Local Adjustment ${number}`,
     enabled: true,
     opacity: 1,
-    mask: { operator: "leaf", leaf: newMaskLeaf(type), children: [], inverted: false },
+    mask: newMaskExpression(type),
     hdr_grade: defaultLocalGrade(),
     sdr_grade: defaultLocalGrade(),
   };
@@ -11215,7 +11238,7 @@ async function finishLocalPathDraft() {
   const draft = state.localPathDraft;
   if (!draft || draft.finishing) return false;
   const local = localAdjustments().find((item) => item.id === draft.localId);
-  const leaf = firstMaskLeaf(local?.mask, "path");
+  const leaf = selectedMaskLeaf(local, "path");
   if (!local || !leaf || leaf.nodes.length < 3) {
     cancelLocalPathDraft();
     return false;
@@ -11225,12 +11248,19 @@ async function finishLocalPathDraft() {
   state.localPathDraft = null;
   state.selectedPathNode = 0;
   renderLocalAdjustments();
-  const created = await queueEditCommand("create_local", { local: JSON.parse(JSON.stringify(local)) });
+  const created = draft.command === "update"
+    ? await commitSelectedLocal()
+    : await queueEditCommand("create_local", { local: JSON.parse(JSON.stringify(local)) });
   state.localPathCreatePendingId = null;
   if (!created) {
-    const index = localAdjustments().findIndex((item) => item.id === local.id);
-    if (index >= 0) localAdjustments().splice(index, 1);
-    state.selectedLocalId = localAdjustments().at(-1)?.id || null;
+    if (draft.command === "update" && draft.previousMask) {
+      local.mask = draft.previousMask;
+      state.selectedSubMaskId = null;
+    } else {
+      const index = localAdjustments().findIndex((item) => item.id === local.id);
+      if (index >= 0) localAdjustments().splice(index, 1);
+      state.selectedLocalId = localAdjustments().at(-1)?.id || null;
+    }
     renderLocalAdjustments();
   }
   return created;
@@ -11239,13 +11269,112 @@ async function finishLocalPathDraft() {
 function cancelLocalPathDraft() {
   const draft = state.localPathDraft;
   if (!draft) return;
-  const index = localAdjustments().findIndex((item) => item.id === draft.localId);
-  if (index >= 0) localAdjustments().splice(index, 1);
+  const local = localAdjustments().find((item) => item.id === draft.localId);
+  if (draft.command === "update" && local && draft.previousMask) {
+    local.mask = draft.previousMask;
+    state.selectedSubMaskId = null;
+  } else {
+    const index = localAdjustments().findIndex((item) => item.id === draft.localId);
+    if (index >= 0) localAdjustments().splice(index, 1);
+    state.selectedLocalId = localAdjustments().at(-1)?.id || null;
+  }
   state.localPathDraft = null;
   state.localPointerGesture = null;
   state.selectedPathNode = null;
-  state.selectedLocalId = localAdjustments().at(-1)?.id || null;
   renderLocalAdjustments();
+}
+
+function beginPendingLocalAdjustment() {
+  if (state.pendingLocalAdjustment) return state.pendingLocalAdjustment;
+  const number = localAdjustments().length + 1;
+  state.pendingLocalAdjustment = {
+    id: crypto.randomUUID(),
+    name: `Local Adjustment ${number}`,
+  };
+  state.pendingSubMask = null;
+  state.selectedLocalId = state.pendingLocalAdjustment.id;
+  state.selectedSubMaskId = null;
+  state.localTool = null;
+  return state.pendingLocalAdjustment;
+}
+
+function beginPendingSubMask(local) {
+  if (!local) return null;
+  const ordinal = subMaskRows(local.mask).length + 1;
+  state.pendingSubMask = {
+    id: crypto.randomUUID(),
+    parentLocalId: local.id,
+    name: `Sub-mask ${ordinal}`,
+  };
+  state.pendingLocalAdjustment = null;
+  state.selectedLocalId = local.id;
+  state.selectedSubMaskId = state.pendingSubMask.id;
+  state.localCreationTool = null;
+  state.localTool = null;
+  renderLocalAdjustments();
+  return state.pendingSubMask;
+}
+
+async function assignToolToPending(type) {
+  if (!state.editDocument) await refreshEditState();
+  if (!state.editDocument) return false;
+  state.localCreationTool = null;
+  state.localTool = type;
+  state.localErase = false;
+  if (["brush", "linear_gradient", "luminance_range"].includes(type)) state.localShowMask = true;
+
+  if (state.pendingSubMask) {
+    const pending = state.pendingSubMask;
+    const local = localAdjustments().find((item) => item.id === pending.parentLocalId);
+    if (!local) return false;
+    const previousMask = JSON.parse(JSON.stringify(local.mask));
+    const expression = newMaskExpression(type);
+    const wrapper = {
+      id: pending.id,
+      enabled: true,
+      operator: "union",
+      leaf: null,
+      children: [local.mask, expression],
+      inverted: false,
+    };
+    local.mask = wrapper;
+    state.pendingSubMask = null;
+    state.selectedLocalId = local.id;
+    state.selectedSubMaskId = wrapper.id;
+    if (type === "path") {
+      state.localPathDraft = { localId: local.id, command: "update", previousMask, finishing: false };
+      state.localPathEditMode = "path";
+      state.selectedPathNode = null;
+      state.localShowMask = true;
+      renderLocalAdjustments();
+      els.localMaskOverlay?.focus({ preventScroll: true });
+      return true;
+    }
+    renderLocalAdjustments();
+    await commitSelectedLocal();
+    return true;
+  }
+
+  const pending = state.pendingLocalAdjustment || beginPendingLocalAdjustment();
+  const local = newLocalAdjustment(type, pending);
+  state.pendingLocalAdjustment = null;
+  state.selectedLocalId = local.id;
+  state.selectedSubMaskId = null;
+  setGradeMode("local");
+  if (type === "path") {
+    state.editDocument.local_adjustments.push(local);
+    state.localPathDraft = { localId: local.id, command: "create", finishing: false };
+    state.localPathEditMode = "path";
+    state.selectedPathNode = null;
+    state.localShowMask = true;
+    renderLocalAdjustments();
+    els.localMaskOverlay?.focus({ preventScroll: true });
+    return true;
+  }
+  const created = await queueEditCommand("create_local", { local });
+  if (!created) state.selectedLocalId = localAdjustments()[0]?.id || null;
+  renderLocalAdjustments();
+  return created;
 }
 
 function bindLocalAdjustmentEvents() {
@@ -11259,34 +11388,14 @@ function bindLocalAdjustmentEvents() {
       updateLocalToolState();
       return;
     }
-    state.localTool = button.dataset.localTool;
+    const type = button.dataset.localTool;
+    if (state.pendingLocalAdjustment || state.pendingSubMask) {
+      await assignToolToPending(type);
+      return;
+    }
+    state.localCreationTool = type;
     state.localErase = false;
-    if (["brush", "linear_gradient", "luminance_range"].includes(state.localTool)) state.localShowMask = true;
     updateLocalToolState();
-    if (!state.editDocument) await refreshEditState();
-    if (!state.editDocument) {
-      els.badge.textContent = "Local adjustment state is not ready. Please try the mask tool again.";
-      els.badge.className = "badge warn";
-      return;
-    }
-    const local = newLocalAdjustment(state.localTool);
-    state.selectedLocalId = local.id;
-    setGradeMode("local");
-    if (state.localTool === "path") {
-      state.editDocument.local_adjustments.push(local);
-      state.localPathDraft = { localId: local.id, finishing: false };
-      state.localPathEditMode = "path";
-      state.selectedPathNode = null;
-      state.localShowMask = true;
-      renderLocalAdjustments();
-      els.localMaskOverlay?.focus({ preventScroll: true });
-      return;
-    }
-    const created = await queueEditCommand("create_local", { local });
-    if (!created) {
-      state.selectedLocalId = localAdjustments()[0]?.id || null;
-      renderLocalAdjustments();
-    }
   }));
   els.localEraser?.addEventListener("click", () => {
     if (els.localEraser.disabled) return;
@@ -11304,27 +11413,53 @@ function bindLocalAdjustmentEvents() {
       await queueEditCommand("update_local", { local: JSON.parse(JSON.stringify(local)) }, local.id);
       return;
     }
+    const subMaskBypassButton = event.target.closest("button[data-sub-mask-bypass-id]");
+    if (subMaskBypassButton) {
+      const local = localAdjustments().find((item) => item.id === subMaskBypassButton.dataset.localId);
+      const entry = subMaskEntry(local, subMaskBypassButton.dataset.subMaskBypassId);
+      if (!local || !entry) return;
+      entry.container.enabled = entry.container.enabled === false;
+      state.selectedLocalId = local.id;
+      state.selectedSubMaskId = entry.id;
+      renderLocalAdjustments();
+      queueLocalMaskOverlayRender();
+      await commitSelectedLocal();
+      return;
+    }
     const menuAction = event.target.closest("button[data-local-menu-action]");
     if (menuAction) {
       state.selectedLocalId = menuAction.dataset.localId;
+      state.selectedSubMaskId = menuAction.dataset.subMaskId || null;
       state.localAdjustmentMenuId = null;
       renderLocalAdjustments();
-      if (menuAction.dataset.localMenuAction === "add-sub-mask") await addSubMask();
+      if (menuAction.dataset.localMenuAction === "add-sub-mask") beginPendingSubMask(selectedLocal());
+      if (menuAction.dataset.localMenuAction === "set-sub-mask-blend") {
+        const entry = subMaskEntry(selectedLocal(), menuAction.dataset.subMaskId);
+        if (entry) {
+          entry.container.operator = menuAction.dataset.blendMode;
+          await commitSelectedLocal();
+        }
+      }
       return;
     }
     const menuButton = event.target.closest("button[data-local-menu-id]");
     if (menuButton) {
       const localId = menuButton.dataset.localMenuId;
       state.selectedLocalId = localId;
-      state.localTool = firstMaskLeaf(selectedLocal()?.mask)?.type || null;
-      state.localAdjustmentMenuId = state.localAdjustmentMenuId === localId ? null : localId;
+      state.selectedSubMaskId = menuButton.dataset.subMaskId || null;
+      state.localCreationTool = null;
+      state.localTool = selectedMaskLeaf()?.type || null;
+      const menuId = state.selectedSubMaskId || localId;
+      state.localAdjustmentMenuId = state.localAdjustmentMenuId === menuId ? null : menuId;
       renderLocalAdjustments();
       return;
     }
     const button = event.target.closest("button[data-local-id]");
     if (!button) return;
     state.selectedLocalId = button.dataset.localId;
-    state.localTool = firstMaskLeaf(selectedLocal()?.mask)?.type || null;
+    state.selectedSubMaskId = button.dataset.subMaskId || null;
+    state.localCreationTool = null;
+    state.localTool = selectedMaskLeaf()?.type || null;
     state.localAdjustmentMenuId = null;
     renderLocalAdjustments();
   });
@@ -11388,6 +11523,7 @@ function bindLocalAdjustmentEvents() {
     if (!local) return;
     const copy = JSON.parse(JSON.stringify(local));
     copy.id = crypto.randomUUID();
+    regenerateMaskExpressionIds(copy.mask);
     copy.name = `${local.name} copy`;
     const index = localAdjustments().findIndex((item) => item.id === local.id) + 1;
     state.selectedLocalId = copy.id;
@@ -11395,26 +11531,48 @@ function bindLocalAdjustmentEvents() {
   });
   els.localAddAdjustment?.addEventListener("click", async () => {
     if (!state.session) return;
-    const type = state.localTool || firstMaskLeaf(selectedLocal()?.mask)?.type || "brush";
-    const local = newLocalAdjustment(type);
-    state.selectedLocalId = local.id;
-    if (["brush", "linear_gradient", "luminance_range"].includes(type)) state.localShowMask = true;
-    const created = await queueEditCommand("create_local", { local });
-    if (!created) state.selectedLocalId = localAdjustments()[0]?.id || null;
+    beginPendingLocalAdjustment();
+    const type = state.localCreationTool;
+    if (type) await assignToolToPending(type);
     renderLocalAdjustments();
   });
   els.localInvert?.addEventListener("click", () => {
     const local = selectedLocal();
     if (!local) return;
-    local.mask.inverted = !local.mask.inverted;
+    const expression = selectedMaskExpression(local);
+    if (!expression) return;
+    expression.inverted = !expression.inverted;
     if (gpuLumaMaskPreviewActive(local)) scheduleLocalPreview();
     commitSelectedLocal();
   });
   els.localDelete?.addEventListener("click", async () => {
+    if (state.pendingLocalAdjustment && state.selectedLocalId === state.pendingLocalAdjustment.id) {
+      state.pendingLocalAdjustment = null;
+      state.selectedLocalId = localAdjustments()[0]?.id || null;
+      renderLocalAdjustments();
+      return;
+    }
+    if (state.pendingSubMask && state.selectedSubMaskId === state.pendingSubMask.id) {
+      state.pendingSubMask = null;
+      state.selectedSubMaskId = null;
+      renderLocalAdjustments();
+      return;
+    }
     const local = selectedLocal();
     if (!local) return;
+    if (state.selectedSubMaskId) {
+      const entry = subMaskEntry(local, state.selectedSubMaskId);
+      if (!entry) return;
+      local.mask = replaceMaskExpression(local.mask, entry.container.id, entry.container.children[0]);
+      state.selectedSubMaskId = null;
+      state.localTool = firstMaskLeaf(local.mask)?.type || null;
+      renderLocalAdjustments();
+      await commitSelectedLocal();
+      return;
+    }
     await queueEditCommand("delete_local", {}, local.id);
     state.selectedLocalId = localAdjustments()[0]?.id || null;
+    state.selectedSubMaskId = null;
     renderLocalAdjustments();
   });
   els.localMoveUp?.addEventListener("click", () => moveSelectedLocal(-1));
@@ -11461,12 +11619,22 @@ function setGradeMode(mode) {
 
 function updateLocalToolState() {
   const local = selectedLocal();
-  const brushSelected = Boolean(local && firstMaskLeaf(local.mask, "brush"));
+  const assignedType = selectedMaskLeaf(local)?.type || null;
+  const displayedType = state.localCreationTool || assignedType;
+  const brushSelected = assignedType === "brush";
+  const toolLocked = Boolean(assignedType && !state.pendingLocalAdjustment && !state.pendingSubMask);
   els.localToolButtons.forEach((button) => {
-    const active = button.dataset.localTool === state.localTool;
+    const active = button.dataset.localTool === displayedType;
     button.classList.toggle("active", active);
+    button.classList.toggle("queued", Boolean(state.localCreationTool && active));
     button.setAttribute("aria-pressed", String(active));
-    button.disabled = false;
+    button.disabled = toolLocked;
+    if (!button.dataset.creationTitle) button.dataset.creationTitle = button.title;
+    button.title = toolLocked
+      ? (active
+        ? `${localMaskTypeLabel(assignedType)} is locked to this mask`
+        : `Create a new adjustment or sub-mask to use ${localMaskTypeLabel(button.dataset.localTool)}`)
+      : button.dataset.creationTitle;
   });
   if (els.localEraser) {
     els.localEraser.disabled = !brushSelected;
@@ -11484,86 +11652,209 @@ function selectedLocal() {
   return localAdjustments().find((item) => item.id === state.selectedLocalId) || null;
 }
 
+function subMaskRows(expression, rows = []) {
+  if (!expression || expression.operator === "leaf") return rows;
+  const children = expression.children || [];
+  if (children[0]) subMaskRows(children[0], rows);
+  children.slice(1).forEach((child, index) => {
+    rows.push({
+      id: expression.id || `${rows.length}:${index}`,
+      container: expression,
+      expression: child,
+      operator: expression.operator,
+    });
+  });
+  return rows;
+}
+
+function subMaskEntry(local, id) {
+  if (!local || !id) return null;
+  return subMaskRows(local.mask).find((entry) => entry.id === id) || null;
+}
+
+function selectedChildMaskParts(local = selectedLocal()) {
+  if (!local || !state.selectedSubMaskId) return null;
+  if (state.pendingSubMask?.id === state.selectedSubMaskId) {
+    return {
+      id: state.pendingSubMask.id,
+      parent: local.mask,
+      child: null,
+    };
+  }
+  const entry = subMaskEntry(local, state.selectedSubMaskId);
+  if (!entry) return null;
+  return {
+    id: entry.id,
+    parent: entry.container.children?.[0] || null,
+    child: entry.expression,
+  };
+}
+
+function selectedMaskExpression(local = selectedLocal()) {
+  if (!local) return null;
+  if (state.selectedSubMaskId) return subMaskEntry(local, state.selectedSubMaskId)?.expression || null;
+  return parentMaskExpression(local.mask);
+}
+
+function parentMaskExpression(expression) {
+  let current = expression;
+  while (current && current.operator !== "leaf" && current.children?.[0]) current = current.children[0];
+  return current || null;
+}
+
+function selectedMaskLeaf(local = selectedLocal(), type = null) {
+  return firstMaskLeaf(selectedMaskExpression(local), type);
+}
+
+function replaceMaskExpression(expression, targetId, replacement) {
+  if (!expression) return expression;
+  if (expression.id === targetId) return replacement;
+  if (expression.operator === "leaf") return expression;
+  expression.children = (expression.children || []).map((child) => replaceMaskExpression(child, targetId, replacement));
+  return expression;
+}
+
+function regenerateMaskExpressionIds(expression) {
+  if (!expression) return;
+  expression.id = crypto.randomUUID();
+  (expression.children || []).forEach(regenerateMaskExpressionIds);
+}
+
 function renderLocalAdjustments() {
   if (!els.localAdjustmentList) return;
   const locals = localAdjustments();
   if (els.localAdjustmentCount) els.localAdjustmentCount.textContent = locals.length ? String(locals.length) : "0";
   if (!state.selectedLocalId && locals.length) state.selectedLocalId = locals[0].id;
-  if (state.localAdjustmentMenuId && !locals.some((local) => local.id === state.localAdjustmentMenuId)) {
+  const validMenuIds = new Set(locals.flatMap((local) => [local.id, ...subMaskRows(local.mask).map((entry) => entry.id)]));
+  if (state.localAdjustmentMenuId && !validMenuIds.has(state.localAdjustmentMenuId)) {
     state.localAdjustmentMenuId = null;
   }
   els.localAdjustmentList.innerHTML = "";
-  locals.forEach((local, index) => {
+  const appendRow = (local, { subMask = null, pending = null } = {}) => {
+    let openMenu = null;
     const item = document.createElement("li");
     item.className = "local-adjustment-item";
+    item.classList.toggle("is-sub-mask", Boolean(subMask || pending?.parentLocalId));
+    item.classList.toggle("is-pending", Boolean(pending));
     const button = document.createElement("button");
     button.type = "button";
     button.className = "local-adjustment-select";
-    button.dataset.localId = local.id;
-    button.classList.toggle("active", local.id === state.selectedLocalId);
-    const maskType = firstMaskLeaf(local.mask)?.type || "mask";
-    button.innerHTML = `<span class="local-adjustment-copy"><span>${escapeHtml(local.name)}</span><small>${escapeHtml(localMaskTypeLabel(maskType))}</small></span>`;
+    button.dataset.localId = local?.id || pending?.id;
+    if (subMask) button.dataset.subMaskId = subMask.id;
+    if (pending?.parentLocalId) {
+      button.dataset.localId = pending.parentLocalId;
+      button.dataset.subMaskId = pending.id;
+    }
+    const active = pending
+      ? (pending.parentLocalId ? state.selectedSubMaskId === pending.id : state.selectedLocalId === pending.id)
+      : local?.id === state.selectedLocalId && (subMask ? subMask.id === state.selectedSubMaskId : !state.selectedSubMaskId);
+    button.classList.toggle("active", active);
+    const leaf = subMask ? firstMaskLeaf(subMask.expression) : firstMaskLeaf(local?.mask);
+    const title = pending?.name || (subMask ? `Sub-mask ${subMaskRows(local.mask).findIndex((entry) => entry.id === subMask.id) + 1}` : local.name);
+    const subtitle = pending ? "Pick a tool" : localMaskTypeLabel(leaf?.type || "mask");
+    button.innerHTML = `<span class="local-adjustment-copy"><span>${escapeHtml(title)}</span><small>${escapeHtml(subtitle)}</small></span>`;
+    if (pending) {
+      els.localAdjustmentList.append(item);
+      item.append(button);
+      return;
+    }
     const bypassButton = document.createElement("button");
     bypassButton.type = "button";
     bypassButton.className = "local-adjustment-bypass";
-    bypassButton.classList.toggle("bypassed", !local.enabled);
-    bypassButton.dataset.localBypassId = local.id;
-    bypassButton.setAttribute("aria-label", `${local.enabled ? "Bypass" : "Show"} ${local.name}`);
-    bypassButton.setAttribute("aria-pressed", String(!local.enabled));
-    bypassButton.title = `${local.enabled ? "Bypass" : "Show"} ${local.name}`;
+    const enabled = subMask ? subMask.container.enabled !== false : local.enabled !== false;
+    bypassButton.classList.toggle("bypassed", !enabled);
+    bypassButton.dataset.localId = local.id;
+    if (subMask) bypassButton.dataset.subMaskBypassId = subMask.id;
+    else bypassButton.dataset.localBypassId = local.id;
+    bypassButton.setAttribute("aria-label", `${enabled ? "Bypass" : "Show"} ${title}`);
+    bypassButton.setAttribute("aria-pressed", String(!enabled));
+    bypassButton.title = `${enabled ? "Bypass" : "Show"} ${title}`;
     const menuButton = document.createElement("button");
     menuButton.type = "button";
     menuButton.className = "local-adjustment-menu-button";
     menuButton.dataset.localMenuId = local.id;
-    menuButton.setAttribute("aria-label", `More actions for ${local.name}`);
+    if (subMask) menuButton.dataset.subMaskId = subMask.id;
+    menuButton.setAttribute("aria-label", `More actions for ${title}`);
     menuButton.setAttribute("aria-haspopup", "menu");
-    menuButton.setAttribute("aria-expanded", String(state.localAdjustmentMenuId === local.id));
-    menuButton.title = `More actions for ${local.name}`;
+    const menuId = subMask?.id || local.id;
+    menuButton.setAttribute("aria-expanded", String(state.localAdjustmentMenuId === menuId));
+    menuButton.title = `More actions for ${title}`;
     menuButton.textContent = "⋯";
     item.append(button, bypassButton, menuButton);
-    if (state.localAdjustmentMenuId === local.id) {
+    if (state.localAdjustmentMenuId === menuId) {
       const menu = document.createElement("div");
       menu.className = "local-adjustment-menu";
       menu.setAttribute("role", "menu");
-      menu.setAttribute("aria-label", `Actions for ${local.name}`);
-      const addMask = document.createElement("button");
-      addMask.type = "button";
-      addMask.setAttribute("role", "menuitem");
-      addMask.dataset.localMenuAction = "add-sub-mask";
-      addMask.dataset.localId = local.id;
-      addMask.textContent = "Add sub-mask";
-      menu.append(addMask);
+      menu.setAttribute("aria-label", `Actions for ${title}`);
+      if (subMask) {
+        [
+          ["union", "Union"],
+          ["intersect", "Intersection"],
+          ["subtract", "Subtract"],
+        ].forEach(([mode, label]) => {
+          const action = document.createElement("button");
+          action.type = "button";
+          action.setAttribute("role", "menuitemradio");
+          action.setAttribute("aria-checked", String(subMask.container.operator === mode));
+          action.dataset.localMenuAction = "set-sub-mask-blend";
+          action.dataset.localId = local.id;
+          action.dataset.subMaskId = subMask.id;
+          action.dataset.blendMode = mode;
+          action.textContent = label;
+          menu.append(action);
+        });
+      } else {
+        const addMask = document.createElement("button");
+        addMask.type = "button";
+        addMask.setAttribute("role", "menuitem");
+        addMask.dataset.localMenuAction = "add-sub-mask";
+        addMask.dataset.localId = local.id;
+        addMask.textContent = "Create sub-mask";
+        menu.append(addMask);
+      }
       item.append(menu);
+      openMenu = menu;
     }
     els.localAdjustmentList.append(item);
+    if (openMenu) positionLocalAdjustmentMenu(openMenu, menuButton);
+  };
+  locals.forEach((local) => {
+    appendRow(local);
+    subMaskRows(local.mask).forEach((subMask) => appendRow(local, { subMask }));
+    if (state.pendingSubMask?.parentLocalId === local.id) appendRow(local, { pending: state.pendingSubMask });
   });
+  if (state.pendingLocalAdjustment) appendRow(null, { pending: state.pendingLocalAdjustment });
   const local = selectedLocal();
-  els.localEmpty?.classList.toggle("hidden", locals.length > 0);
-  if (!locals.length && els.localEmpty) {
+  const hasRows = Boolean(locals.length || state.pendingLocalAdjustment);
+  els.localEmpty?.classList.toggle("hidden", hasRows);
+  if (!hasRows && els.localEmpty) {
     els.localEmpty.textContent = state.session
-      ? "Choose a mask tool to create the first local adjustment."
-      : "Load an image, then choose a mask tool to create the first local adjustment.";
+      ? "Choose a mask tool, then press + — or press + first and pick a tool."
+      : "Load an image to create the first local adjustment.";
   }
-  els.localEditor?.classList.toggle("hidden", !local);
+  const pendingSelected = state.pendingLocalAdjustment?.id === state.selectedLocalId
+    || state.pendingSubMask?.id === state.selectedSubMaskId;
+  els.localEditor?.classList.toggle("hidden", !local || pendingSelected);
   const selectedIndex = local ? locals.findIndex((item) => item.id === local.id) : -1;
   if (els.localAddAdjustment) els.localAddAdjustment.disabled = !state.session;
-  if (els.localRename) els.localRename.disabled = !local;
-  if (els.localDuplicate) els.localDuplicate.disabled = !local;
-  if (els.localDelete) els.localDelete.disabled = !local;
-  if (els.localMoveUp) els.localMoveUp.disabled = !local || selectedIndex <= 0;
-  if (els.localMoveDown) els.localMoveDown.disabled = !local || selectedIndex >= locals.length - 1;
+  if (els.localRename) els.localRename.disabled = !local || Boolean(state.selectedSubMaskId);
+  if (els.localDuplicate) els.localDuplicate.disabled = !local || Boolean(state.selectedSubMaskId);
+  if (els.localDelete) els.localDelete.disabled = !local && !pendingSelected;
+  if (els.localMoveUp) els.localMoveUp.disabled = !local || Boolean(state.selectedSubMaskId) || selectedIndex <= 0;
+  if (els.localMoveDown) els.localMoveDown.disabled = !local || Boolean(state.selectedSubMaskId) || selectedIndex >= locals.length - 1;
   if (els.projectSave) {
     els.projectSave.disabled = !state.session;
     els.projectSave.textContent = state.documentDirty ? "Save project *" : "Save project";
   }
   syncDesktopDocumentState();
-  if (local) {
+  if (local && !pendingSelected) {
     els.localOpacity.value = String(local.opacity);
     els.localOpacityValue.textContent = `${Math.round(local.opacity * 100)}%`;
     els.localOpacity.closest(".control-row")?.classList.toggle("modified", Math.abs(Number(local.opacity) - 1) > 1e-8);
-    const brushLeaf = firstMaskLeaf(local.mask, "brush");
-    els.localInvert.setAttribute("aria-pressed", String(Boolean(local.mask.inverted)));
-    els.localInvert.textContent = local.mask.inverted ? "Restore mask" : "Invert mask";
+    const expression = selectedMaskExpression(local);
+    const brushLeaf = firstMaskLeaf(expression, "brush");
+    els.localInvert.setAttribute("aria-pressed", String(Boolean(expression?.inverted)));
+    els.localInvert.textContent = expression?.inverted ? "Restore mask" : "Invert mask";
     els.localInvert.disabled = Boolean(brushLeaf && !(brushLeaf.strokes || []).length);
     syncLocalMaskOverlayControl();
     els.localLaneButtons.forEach((button) => {
@@ -11591,6 +11882,25 @@ function renderLocalAdjustments() {
   syncRangeVisuals(els.localEditor);
   updateLocalToolState();
   renderLocalMaskOverlay();
+}
+
+function positionLocalAdjustmentMenu(menu, anchor) {
+  if (!menu?.isConnected || !anchor?.isConnected) return;
+  const anchorRect = anchor.getBoundingClientRect();
+  const menuRect = menu.getBoundingClientRect();
+  const viewportPadding = 8;
+  const gap = 4;
+  const left = clamp(
+    anchorRect.right - menuRect.width,
+    viewportPadding,
+    Math.max(viewportPadding, window.innerWidth - menuRect.width - viewportPadding),
+  );
+  const spaceBelow = window.innerHeight - anchorRect.bottom - viewportPadding;
+  const top = spaceBelow >= menuRect.height + gap
+    ? anchorRect.bottom + gap
+    : Math.max(viewportPadding, anchorRect.top - menuRect.height - gap);
+  menu.style.left = `${Math.round(left)}px`;
+  menu.style.top = `${Math.round(top)}px`;
 }
 
 function localMaskTypeLabel(type) {
@@ -11688,8 +11998,15 @@ function scheduleSpatialMaskPreview(local) {
     return;
   }
   state.localMaskDraftDirty = true;
-  if (local?.mask?.leaf?.type === "path") beginPathMaskProgress(local);
-  scheduleAuthoritativeLocalMaskDraft(local);
+  const selectedLeaf = selectedMaskLeaf(local);
+  if (selectedLeaf?.type === "path") beginPathMaskProgress(local);
+  if (state.selectedSubMaskId) {
+    const parts = selectedChildMaskParts(local);
+    if (parts?.parent) queueLocalComparisonMask(local, parts.id, "parent", parts.parent);
+    if (parts?.child) queueLocalComparisonMask(local, parts.id, "child", parts.child);
+  } else {
+    scheduleAuthoritativeLocalMaskDraft(local);
+  }
   scheduleLocalPreview({ spatialMaskChanged: true });
 }
 
@@ -11699,6 +12016,7 @@ function gpuLumaMaskOverlayOptions() {
     state.gradeMode !== "local"
     || !state.localShowMask
     || local?.enabled === false
+    || state.selectedSubMaskId
     || !gpuLumaMaskPreviewActive(local)
   ) return null;
   const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(state.localOverlayColor);
@@ -11709,13 +12027,14 @@ function gpuLumaMaskOverlayOptions() {
 }
 
 function renderMaskTreeEditor(local) {
-  const leaf = firstMaskLeaf(local.mask);
+  const leaf = selectedMaskLeaf(local);
   els.localMaskFooterActions?.append(els.localInvert);
   els.localMaskTreeSummary.textContent = "";
   if (els.localGradientControls) {
     els.localGradientControls.textContent = "";
     els.localGradientControls.classList.add("hidden");
   }
+  if (state.selectedSubMaskId) appendLocalMaskComparisonLegend();
   if (!leaf) return;
   if (leaf.type === "luminance_range") {
     const panel = createLocalMaskSubpanel("Luma Controls", "Scene luminance range");
@@ -11772,7 +12091,7 @@ function renderMaskTreeEditor(local) {
       commitSelectedLocal();
     });
     actions.append(els.localInvert, clearStrokes, undoStroke);
-    els.localInvert.textContent = local.mask.inverted ? "Restore Mask" : "Invert Mask";
+    els.localInvert.textContent = selectedMaskExpression(local)?.inverted ? "Restore Mask" : "Invert Mask";
     els.localInvert.disabled = !hasStrokes;
     maskPanel.append(actions);
     els.localMaskTreeSummary.append(brushPanel, maskPanel);
@@ -12354,23 +12673,6 @@ function firstMaskLeaf(expression, type = null) {
   return null;
 }
 
-async function addSubMask() {
-  const local = selectedLocal();
-  if (!local) return;
-  const type = window.prompt("Sub-mask type: brush, linear_gradient, luminance_range, or path", "brush")?.trim();
-  if (!["brush", "linear_gradient", "luminance_range", "path"].includes(type)) return;
-  const operator = window.prompt("Combine using union, intersect, or subtract", "union")?.trim();
-  if (!["union", "intersect", "subtract"].includes(operator)) return;
-  local.mask = {
-    operator,
-    leaf: null,
-    children: [local.mask, { operator: "leaf", leaf: newMaskLeaf(type), children: [], inverted: false }],
-    inverted: false,
-  };
-  state.localTool = type;
-  await commitSelectedLocal();
-}
-
 async function moveSelectedLocal(direction) {
   const locals = localAdjustments();
   const index = locals.findIndex((item) => item.id === state.selectedLocalId);
@@ -12383,14 +12685,15 @@ async function moveSelectedLocal(direction) {
 
 async function commitSelectedLocal({ refreshPreview = true } = {}) {
   const local = selectedLocal();
-  if (!local) return;
+  if (!local) return false;
+  let committed = false;
   state.localMaskCommitDepth += 1;
   state.localMaskCommitRefreshPending ||= refreshPreview;
   try {
     // Local strokes are optimistic and may overlap a previous commit. Hold the
     // adjusted preview until the last queued commit so it cannot render an
     // intermediate mask between strokes.
-    const committed = await queueEditCommand("update_local", { local: JSON.parse(JSON.stringify(local)) }, local.id, { refreshPreview: false });
+    committed = await queueEditCommand("update_local", { local: JSON.parse(JSON.stringify(local)) }, local.id, { refreshPreview: false });
     if (committed) {
       window.clearTimeout(state.localMaskDraftTimer);
       state.localMaskDraftTimer = 0;
@@ -12413,6 +12716,23 @@ async function commitSelectedLocal({ refreshPreview = true } = {}) {
     }
     queueLocalMaskOverlayRender();
   }
+  return committed;
+}
+
+function appendLocalMaskComparisonLegend() {
+  const legend = document.createElement("div");
+  legend.className = "local-mask-comparison-legend";
+  legend.setAttribute("aria-label", "Mask comparison colors");
+  [
+    ["parent", "Parent"],
+    ["child", "Child"],
+    ["overlap", "Overlap"],
+  ].forEach(([role, label]) => {
+    const item = document.createElement("span");
+    item.innerHTML = `<i class="${role}" aria-hidden="true"></i>${label}`;
+    legend.append(item);
+  });
+  els.localMaskTreeSummary.append(legend);
 }
 
 async function setSdrMatch(action) {
@@ -12635,7 +12955,7 @@ function bindLocalMaskCanvas() {
     if (event.button !== 0) return;
     const local = selectedLocal();
     if (!local || state.gradeMode !== "local") return;
-    const leaf = firstMaskLeaf(local.mask, state.localTool) || firstMaskLeaf(local.mask);
+    const leaf = selectedMaskLeaf(local);
     if (!leaf) return;
     const displayPoint = localDisplayPointerPoint(event);
     const point = leaf.type === "luminance_range"
@@ -12756,16 +13076,16 @@ function bindLocalMaskCanvas() {
       ? localDisplayPointerPoint(event)
       : localPointerPoint(event);
     if (!point) return;
-    const hoveredPathLeaf = firstMaskLeaf(selectedLocal()?.mask, "path");
+    const hoveredPathLeaf = selectedMaskLeaf(selectedLocal(), "path");
     if (hoveredPathLeaf) state.localPathCursor = point;
-    const activeLeaf = firstMaskLeaf(selectedLocal()?.mask, "brush");
+    const activeLeaf = selectedMaskLeaf(selectedLocal(), "brush");
     if (activeLeaf && state.localTool === "brush") {
       state.localBrushCursor = point;
       state.localBrushPreviewPinned = false;
     }
     if (!gesture) {
       if (activeLeaf && state.localTool === "brush") queueLocalMaskOverlayRender();
-      const pathLeaf = firstMaskLeaf(selectedLocal()?.mask, "path");
+      const pathLeaf = selectedMaskLeaf(selectedLocal(), "path");
       if (pathLeaf) {
         const nodes = state.localPathDraft ? pathLeaf.nodes : activePathNodes(pathLeaf);
         const hovered = pathTargetAtPointer(event, nodes, state.selectedPathNode);
@@ -12812,7 +13132,7 @@ function bindLocalMaskCanvas() {
   canvas.addEventListener("contextmenu", (event) => {
     event.preventDefault();
     const local = selectedLocal();
-    const leaf = firstMaskLeaf(local?.mask, "path");
+    const leaf = selectedMaskLeaf(local, "path");
     if (!leaf || state.localPathDraft) return;
     const nodes = activePathNodes(leaf);
     const target = pathTargetAtPointer(event, nodes, state.selectedPathNode);
@@ -13234,7 +13554,7 @@ function localDisplayPointerPoint(event) {
   if (!preview) return null;
   const rect = preview.getBoundingClientRect();
   const outside = event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom;
-  const pathLeaf = firstMaskLeaf(selectedLocal()?.mask, "path");
+  const pathLeaf = selectedMaskLeaf(selectedLocal(), "path");
   // A closed Path can have legal Bezier handles outside the image even though
   // its anchors remain source-bounded. Accept pointer coordinates across the
   // larger overlay canvas so those rendered handles can be acquired; node
@@ -13257,7 +13577,7 @@ function localPointerPoint(event, displayPoint = null) {
     return null;
   }
   const source = projectivePoint(coordinateMap.outputToSource, point);
-  const pathLeaf = firstMaskLeaf(selectedLocal()?.mask, "path");
+  const pathLeaf = selectedMaskLeaf(selectedLocal(), "path");
   const allowOutside = Boolean(pathLeaf && (state.localPathEditMode === "feather" || !state.localPathDraft));
   return {
     x: clamp(source.x, allowOutside ? -1 : 0, allowOutside ? 2 : 1),
@@ -13391,7 +13711,7 @@ function updatePathHandleGesture(gesture, point) {
 
 function handlePathCanvasKeydown(event) {
   const local = selectedLocal();
-  const leaf = firstMaskLeaf(local?.mask, "path");
+  const leaf = selectedMaskLeaf(local, "path");
   if (!leaf) return;
   if (state.localPathDraft) {
     if (event.key === "Enter") { event.preventDefault(); void finishLocalPathDraft(); }
@@ -13595,14 +13915,19 @@ function renderLocalMaskOverlay() {
   };
   const x = (value) => offsetX + value * imageRect.width;
   const y = (value) => offsetY + value * imageRect.height;
+  const childParts = selectedChildMaskParts(local);
+  if (childParts) {
+    renderChildMaskComparisonOverlay(context, local, childParts, x, y, imageRect, rect);
+    return;
+  }
+  const editorExpression = selectedMaskExpression(local);
   const maskSignature = JSON.stringify(local.mask);
   const spatialSignature = localMaskSpatialSignature(local.mask);
-  const authoritative = local.mask?.operator === "leaf"
-    ? localAuthoritativeMaskCache.get(local.id)
-    : null;
+  const authoritative = localAuthoritativeMaskCache.get(local.id);
   const authoritativeCurrent = Boolean(authoritative
     && authoritative.signature === (authoritative.spatialOnly ? spatialSignature : maskSignature));
-  const needsAuthoritativeOverlay = ["linear_gradient", "luminance_range"].includes(local.mask?.leaf?.type);
+  const needsAuthoritativeOverlay = local.mask?.operator !== "leaf"
+    || ["linear_gradient", "luminance_range"].includes(local.mask?.leaf?.type);
   const drawOptions = {
     localId: local.id,
     maskSignature,
@@ -13622,18 +13947,22 @@ function renderLocalMaskOverlay() {
     exactMaskPending: state.localMaskDraftDirty,
     gpuLumaOverlay: gpuLumaMaskPreviewActive(local),
   };
-  drawMaskExpression(context, local.mask, x, y, { ...drawOptions, renderPhase: "mask" });
+  if (local.mask?.operator !== "leaf" && authoritativeCurrent && state.localShowMask) {
+    drawAuthoritativeMaskOverlay(context, authoritative.canvas, x, y, 1);
+  } else {
+    drawMaskExpression(context, local.mask, x, y, { ...drawOptions, renderPhase: "mask" });
+  }
   const coordinateMap = currentGeometryCoordinateMap();
   if (coordinateMap) {
     if (projectiveMatrixIsAffine(coordinateMap.sourceToOutput)) {
       context.save();
       applySourceGeometryCanvasTransform(context, imageRect, rect, coordinateMap.sourceToOutput);
-      drawMaskExpression(context, local.mask, x, y, { ...drawOptions, renderPhase: "gizmo", skipBrush: true });
+      drawMaskExpression(context, editorExpression, x, y, { ...drawOptions, renderPhase: "gizmo", skipBrush: true });
       context.restore();
     } else {
       drawMaskExpression(
         context,
-        projectMaskExpressionToOutput(local.mask, coordinateMap.sourceToOutput),
+        projectMaskExpressionToOutput(editorExpression, coordinateMap.sourceToOutput),
         x,
         y,
         { ...drawOptions, renderPhase: "gizmo", skipBrush: true },
@@ -13641,7 +13970,7 @@ function renderLocalMaskOverlay() {
     }
     drawBrushExpressionOutputSpace(
       context,
-      local.mask,
+      editorExpression,
       x,
       y,
       drawOptions,
@@ -13651,6 +13980,57 @@ function renderLocalMaskOverlay() {
     void ensureGeometryCoordinateMap();
   }
   if (!gpuLumaMaskPreviewActive(local)) void queueAuthoritativeLocalMask(local);
+}
+
+function renderChildMaskComparisonOverlay(context, local, parts, x, y, imageRect, paneRect) {
+  const parentEntry = localComparisonMaskEntry(local, parts.id, "parent");
+  const childEntry = parts.child ? localComparisonMaskEntry(local, parts.id, "child") : null;
+  if (state.localShowMask && parentEntry) {
+    drawLocalMaskComparison(context, parentEntry, childEntry, x, y);
+  }
+  void queueLocalComparisonMask(local, parts.id, "parent", parts.parent);
+  if (parts.child) void queueLocalComparisonMask(local, parts.id, "child", parts.child);
+  if (!parts.child) return;
+
+  const maskSignature = JSON.stringify(parts.child);
+  const spatialSignature = localMaskSpatialSignature(parts.child);
+  const drawOptions = {
+    localId: `${local.id}:${parts.id}:child`,
+    maskSignature,
+    spatialSignature,
+    authoritative: childEntry,
+    authoritativeCurrent: Boolean(childEntry?.signature === spatialSignature),
+    exactMaskPending: false,
+    gpuLumaOverlay: false,
+    overlayColor: "#2675ff",
+  };
+  const coordinateMap = currentGeometryCoordinateMap();
+  if (coordinateMap) {
+    if (projectiveMatrixIsAffine(coordinateMap.sourceToOutput)) {
+      context.save();
+      applySourceGeometryCanvasTransform(context, imageRect, paneRect, coordinateMap.sourceToOutput);
+      drawMaskExpression(context, parts.child, x, y, { ...drawOptions, renderPhase: "gizmo", skipBrush: true });
+      context.restore();
+    } else {
+      drawMaskExpression(
+        context,
+        projectMaskExpressionToOutput(parts.child, coordinateMap.sourceToOutput),
+        x,
+        y,
+        { ...drawOptions, renderPhase: "gizmo", skipBrush: true },
+      );
+    }
+    drawBrushExpressionOutputSpace(
+      context,
+      parts.child,
+      x,
+      y,
+      drawOptions,
+      brushOutputSpaceMapper(imageRect, coordinateMap.sourceToOutput),
+    );
+  } else {
+    void ensureGeometryCoordinateMap();
+  }
 }
 
 function projectiveMatrixIsAffine(matrix) {
@@ -13724,18 +14104,160 @@ function localMaskSpatialSignature(expression) {
   });
 }
 
+function localComparisonMaskSlot(localId, childId, role) {
+  return `${localId}:${childId}:${role}`;
+}
+
+function localComparisonMaskEntry(local, childId, role) {
+  return localComparisonMaskCache.get(localComparisonMaskSlot(local.id, childId, role)) || null;
+}
+
+function queueLocalComparisonMask(local, childId, role, expression) {
+  if (!state.session || !local || !expression) return;
+  const slot = localComparisonMaskSlot(local.id, childId, role);
+  const signature = localMaskSpatialSignature(expression);
+  const longEdge = settledProxyLongEdge();
+  const requestedGeometrySignature = geometrySignature();
+  const key = `${state.session.session_id}:${slot}:${longEdge}:${requestedGeometrySignature}:${signature}`;
+  if (localComparisonMaskCache.get(slot)?.key === key) return;
+  const previous = localComparisonMaskRequests.get(slot);
+  if (previous?.key === key) return;
+  if (previous) {
+    window.clearTimeout(previous.timer);
+    previous.controller?.abort();
+  }
+  const pending = {
+    key,
+    signature,
+    expression: JSON.parse(JSON.stringify(expression)),
+    longEdge,
+    requestedGeometrySignature,
+    controller: null,
+    timer: 0,
+  };
+  pending.timer = window.setTimeout(() => loadLocalComparisonMask(local, childId, role, slot, pending), 70);
+  localComparisonMaskRequests.set(slot, pending);
+}
+
+async function loadLocalComparisonMask(local, childId, role, slot, pending) {
+  if (localComparisonMaskRequests.get(slot) !== pending || !state.session) return;
+  const controller = new AbortController();
+  pending.controller = controller;
+  try {
+    const response = await fetch(
+      `/api/session/${state.session.session_id}/local-mask/${encodeURIComponent(local.id)}/preview`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          mask: pending.expression,
+          adjustments: state.adjustments,
+          edit_revision: state.editRevision,
+          long_edge: pending.longEdge,
+        }),
+      },
+    );
+    if (!response.ok || localComparisonMaskRequests.get(slot) !== pending) return;
+    const width = Number(response.headers.get("X-Image-Width"));
+    const height = Number(response.headers.get("X-Image-Height"));
+    const alpha = new Uint8Array(await response.arrayBuffer());
+    const currentLocal = selectedLocal();
+    const currentParts = selectedChildMaskParts(currentLocal);
+    const currentExpression = role === "parent" ? currentParts?.parent : currentParts?.child;
+    if (
+      currentLocal?.id !== local.id
+      || currentParts?.id !== childId
+      || pending.requestedGeometrySignature !== geometrySignature()
+      || pending.signature !== localMaskSpatialSignature(currentExpression)
+    ) return;
+    localComparisonMaskCache.set(slot, {
+      key: pending.key,
+      signature: pending.signature,
+      canvas: alphaMaskCanvas(alpha, width, height),
+    });
+    while (localComparisonMaskCache.size > 12) {
+      localComparisonMaskCache.delete(localComparisonMaskCache.keys().next().value);
+    }
+    localComparisonCompositeCache.clear();
+    queueLocalMaskOverlayRender();
+  } catch (error) {
+    if (error?.name !== "AbortError") console.warn("Local mask comparison could not be loaded.", error);
+  } finally {
+    if (localComparisonMaskRequests.get(slot) === pending) localComparisonMaskRequests.delete(slot);
+  }
+}
+
+function drawLocalMaskComparison(context, parentEntry, childEntry, x, y) {
+  const compositeKey = `${parentEntry.key}:${childEntry?.key || "no-child"}`;
+  let composite = localComparisonCompositeCache.get(compositeKey);
+  if (!composite) {
+    const width = parentEntry.canvas.width;
+    const height = parentEntry.canvas.height;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const canvasContext = canvas.getContext("2d");
+    const parentPixels = parentEntry.canvas.getContext("2d").getImageData(0, 0, width, height).data;
+    let childPixels = null;
+    if (childEntry) {
+      const childCanvas = document.createElement("canvas");
+      childCanvas.width = width;
+      childCanvas.height = height;
+      childCanvas.getContext("2d").drawImage(childEntry.canvas, 0, 0, width, height);
+      childPixels = childCanvas.getContext("2d").getImageData(0, 0, width, height).data;
+    }
+    const output = canvasContext.createImageData(width, height);
+    const parentColor = LOCAL_COMPARISON_COLORS.parent;
+    const childColor = LOCAL_COMPARISON_COLORS.child;
+    const overlapColor = LOCAL_COMPARISON_COLORS.overlap;
+    for (let index = 0; index < output.data.length; index += 4) {
+      const parentAmount = parentPixels[index + 3] / 255;
+      const childAmount = childPixels ? childPixels[index + 3] / 255 : 0;
+      const parentOnly = parentAmount * (1 - childAmount);
+      const childOnly = childAmount * (1 - parentAmount);
+      const overlap = parentAmount * childAmount;
+      const coverage = parentOnly + childOnly + overlap;
+      if (coverage <= 0.0001) continue;
+      for (let channel = 0; channel < 3; channel += 1) {
+        output.data[index + channel] = Math.round((
+          parentOnly * parentColor[channel]
+          + childOnly * childColor[channel]
+          + overlap * overlapColor[channel]
+        ) / coverage);
+      }
+      output.data[index + 3] = Math.round(255 * 0.58 * coverage);
+    }
+    canvasContext.putImageData(output, 0, 0);
+    composite = canvas;
+    localComparisonCompositeCache.set(compositeKey, composite);
+    while (localComparisonCompositeCache.size > 8) {
+      localComparisonCompositeCache.delete(localComparisonCompositeCache.keys().next().value);
+    }
+  }
+  const left = x(0);
+  const top = y(0);
+  const width = Math.max(1, Math.round(x(1) - left));
+  const height = Math.max(1, Math.round(y(1) - top));
+  context.drawImage(composite, left, top, width, height);
+}
+
 function drawMaskExpression(context, expression, x, y, options = {}) {
   if (expression.operator !== "leaf") {
-    (expression.children || []).forEach((child) => drawMaskExpression(context, child, x, y, options));
+    const children = expression.enabled === false
+      ? (expression.children || []).slice(0, 1)
+      : (expression.children || []).filter((child) => child.enabled !== false);
+    children.forEach((child) => drawMaskExpression(context, child, x, y, options));
     return;
   }
+  if (expression.enabled === false) return;
   const leaf = expression.leaf;
   if (!leaf) return;
   const renderMask = options.renderPhase !== "gizmo";
   const renderGizmo = options.renderPhase !== "mask";
   context.save();
   context.strokeStyle = "rgba(238, 252, 255, .98)";
-  context.fillStyle = overlayColorWithAlpha(0.22);
+  context.fillStyle = overlayColorWithAlpha(0.22, options.overlayColor);
   context.lineWidth = 2;
   if (leaf.type === "linear_gradient") {
     if (renderMask && state.localShowMask && options.authoritative) {
@@ -13757,7 +14279,9 @@ function drawMaskExpression(context, expression, x, y, options = {}) {
     if (renderGizmo && state.localShowMask && !options.authoritative) {
       drawBrushMaskOverlay(context, leaf, null, x, y, expression.inverted, options);
     }
-    if (renderGizmo && state.localShowMask && activeStroke) drawActiveBrushStrokeOverlay(context, activeStroke, x, y);
+    if (renderGizmo && state.localShowMask && activeStroke) {
+      drawActiveBrushStrokeOverlay(context, activeStroke, x, y, null, options.overlayColor);
+    }
     const cursor = state.localBrushCursor || activeStroke?.points?.at(-1);
     if (renderGizmo && cursor) drawBrushGizmo(context, cursor, brushSettings(leaf), x, y);
   } else if (leaf.type === "luminance_range") {
@@ -13814,10 +14338,14 @@ function brushOutputSpaceMapper(imageRect, matrix) {
 
 function drawBrushExpressionOutputSpace(context, expression, x, y, options, mapper) {
   if (expression.operator !== "leaf") {
-    (expression.children || []).forEach((child) =>
+    const children = expression.enabled === false
+      ? (expression.children || []).slice(0, 1)
+      : (expression.children || []).filter((child) => child.enabled !== false);
+    children.forEach((child) =>
       drawBrushExpressionOutputSpace(context, child, x, y, options, mapper));
     return;
   }
+  if (expression.enabled === false) return;
   const leaf = expression.leaf;
   if (leaf?.type !== "brush") return;
   const gesture = state.localPointerGesture;
@@ -13834,7 +14362,7 @@ function drawBrushExpressionOutputSpace(context, expression, x, y, options, mapp
     drawBrushMaskOverlay(context, transformedLeaf, null, x, y, expression.inverted, outputOptions);
   }
   if (state.localShowMask && activeStroke) {
-    drawActiveBrushStrokeOverlay(context, activeStroke, x, y, mapper);
+    drawActiveBrushStrokeOverlay(context, activeStroke, x, y, mapper, options.overlayColor);
   }
   const cursor = state.localBrushCursor || activeStroke?.points?.at(-1);
   if (cursor) {
@@ -13918,7 +14446,7 @@ function drawBrushMaskOverlay(context, leaf, activeStroke, x, y, inverted = fals
   }
   // Shift/Feather generate alpha outside the painted source. Colorize only
   // after those operations so newly covered pixels cannot retain black RGB.
-  maskCanvas = tintedBrushMaskCanvas(maskCanvas, !activeStroke);
+  maskCanvas = tintedBrushMaskCanvas(maskCanvas, !activeStroke, options.overlayColor);
   context.save();
   const influenceOpacity = options.authoritative?.spatialOnly === false
     ? 1
@@ -13929,12 +14457,11 @@ function drawBrushMaskOverlay(context, leaf, activeStroke, x, y, inverted = fals
 }
 
 async function queueAuthoritativeLocalMask(local) {
-  if (!state.session || !local || local.mask?.operator !== "leaf") return;
+  if (!state.session || !local || !local.mask) return;
   if (state.localPathDraft?.localId === local.id) return;
   if (state.localPathCreatePendingId === local.id) return;
   if (state.localMaskCommitDepth > 0) return;
-  if (!["brush", "linear_gradient", "luminance_range", "path"].includes(local.mask.leaf?.type)) return;
-  if (local.mask.leaf?.type === "brush" && !(local.mask.leaf.strokes || []).length) return;
+  if (local.mask.operator === "leaf" && local.mask.leaf?.type === "brush" && !(local.mask.leaf.strokes || []).length) return;
   if (state.localMaskDraftDirty) return;
   const signature = localMaskSpatialSignature(local.mask);
   const longEdge = settledProxyLongEdge();
@@ -13975,18 +14502,19 @@ async function queueAuthoritativeLocalMask(local) {
 }
 
 function scheduleAuthoritativeLocalMaskDraft(local) {
-  if (!state.session || !local || local.mask?.operator !== "leaf") return;
+  if (!state.session || !local || !local.mask) return;
   if (state.localPathDraft?.localId === local.id) return;
   if (state.localPathCreatePendingId === local.id) return;
-  if (!["brush", "linear_gradient", "luminance_range", "path"].includes(local.mask.leaf?.type)) return;
-  if (local.mask.leaf?.type === "brush" && !(local.mask.leaf.strokes || []).length) return;
+  const leaf = selectedMaskLeaf(local);
+  if (!leaf) return;
+  if (leaf.type === "brush" && local.mask.operator === "leaf" && !(leaf.strokes || []).length) return;
   const signature = JSON.stringify(local.mask);
   state.localMaskDraftPending = {
     localId: local.id,
     mask: JSON.parse(signature),
     signature,
     revision: state.editRevision,
-    longEdge: local.mask.leaf?.type === "path"
+    longEdge: leaf.type === "path"
       ? Math.min(1600, settledProxyLongEdge())
       : settledProxyLongEdge(),
     adjustments: JSON.parse(JSON.stringify(state.adjustments)),
@@ -14017,7 +14545,7 @@ function flushAuthoritativeLocalMaskDraft() {
   );
 }
 
-function drawActiveBrushStrokeOverlay(context, stroke, x, y, mapper = null) {
+function drawActiveBrushStrokeOverlay(context, stroke, x, y, mapper = null, color = state.localOverlayColor) {
   const left = x(0);
   const top = y(0);
   const displayWidth = Math.max(1, Math.round(x(1) - left));
@@ -14043,10 +14571,13 @@ function drawActiveBrushStrokeOverlay(context, stroke, x, y, mapper = null) {
       : { ...stroke, points: pendingPoints };
     drawBrushMaskStroke(gesture.canvas.getContext("2d"), pendingStroke, width, height);
     gesture.renderedPointCount = stroke.points.length;
+  }
+  if (gesture.color !== color || pendingPoints.length) {
     const tintedContext = gesture.tinted.getContext("2d");
     tintedContext.clearRect(0, 0, width, height);
     tintedContext.drawImage(gesture.canvas, 0, 0);
-    tintBrushMask(tintedContext, width, height);
+    tintBrushMask(tintedContext, width, height, color);
+    gesture.color = color;
   }
   context.save();
   context.globalAlpha = 0.52;
@@ -14082,12 +14613,12 @@ async function loadAuthoritativeLocalMaskDraft(
     const height = Number(response.headers.get("X-Image-Height"));
     const alpha = new Uint8Array(await response.arrayBuffer());
     const selected = selectedLocal();
-    const currentPathMatch = selected?.mask?.leaf?.type === "path"
+    const currentMaskMatch = Boolean(selected?.mask)
       && localId === selected.id
       && signature === JSON.stringify(selected.mask)
       && requestedGeometrySignature === geometrySignature();
     if (
-      (!currentPathMatch && (generation !== state.localMaskDraftGeneration || revision !== state.editRevision))
+      (!currentMaskMatch && (generation !== state.localMaskDraftGeneration || revision !== state.editRevision))
       || requestedGeometrySignature !== geometrySignature()
       || localId !== state.selectedLocalId
       || signature !== JSON.stringify(selected?.mask)
@@ -14242,8 +14773,7 @@ function postProcessBrushMaskPreviewWithErase(paintedSource, eraseAttenuation, l
   return canvas;
 }
 
-function tintedBrushMaskCanvas(maskCanvas, cacheable = false) {
-  const color = state.localOverlayColor;
+function tintedBrushMaskCanvas(maskCanvas, cacheable = false, color = state.localOverlayColor) {
   const cached = cacheable ? localTintedMaskCanvasCache.get(maskCanvas) : null;
   if (cached?.color === color) return cached.canvas;
   const canvas = document.createElement("canvas");
@@ -14251,21 +14781,21 @@ function tintedBrushMaskCanvas(maskCanvas, cacheable = false) {
   canvas.height = maskCanvas.height;
   const context = canvas.getContext("2d");
   context.drawImage(maskCanvas, 0, 0);
-  tintBrushMask(context, canvas.width, canvas.height);
+  tintBrushMask(context, canvas.width, canvas.height, color);
   if (cacheable) localTintedMaskCanvasCache.set(maskCanvas, { color, canvas });
   return canvas;
 }
 
-function tintBrushMask(context, width, height) {
+function tintBrushMask(context, width, height, color = state.localOverlayColor) {
   context.save();
   context.globalCompositeOperation = "source-in";
-  context.fillStyle = state.localOverlayColor;
+  context.fillStyle = color;
   context.fillRect(0, 0, width, height);
   context.restore();
 }
 
-function overlayColorWithAlpha(alpha) {
-  const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(state.localOverlayColor);
+function overlayColorWithAlpha(alpha, color = state.localOverlayColor) {
+  const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(color);
   if (!match) return `rgba(255, 38, 61, ${alpha})`;
   return `rgba(${parseInt(match[1], 16)}, ${parseInt(match[2], 16)}, ${parseInt(match[3], 16)}, ${alpha})`;
 }
@@ -14483,7 +15013,7 @@ function drawPathMaskGizmo(context, leaf, x, y, { drawFill = true } = {}) {
     if (!reducedPathMotion && !pathMarchingAntFrame) {
       pathMarchingAntFrame = window.requestAnimationFrame(() => {
         pathMarchingAntFrame = 0;
-        if (firstMaskLeaf(selectedLocal()?.mask, "path")) queueLocalMaskOverlayRender();
+        if (selectedMaskLeaf(selectedLocal(), "path")) queueLocalMaskOverlayRender();
       });
     }
   }

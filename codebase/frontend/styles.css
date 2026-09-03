@@ -3700,6 +3700,12 @@ input[type="text"] {
   opacity: .38;
 }
 
+.local-tool-strip button.active:disabled,
+.local-tool-strip button[aria-pressed="true"]:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
 .local-stack-heading,
 .local-action-row {
   display: flex;
@@ -3794,6 +3800,32 @@ input[type="text"] {
   color: #aab7b9;
   font: 11px/1.5 var(--mono, monospace);
 }
+
+.local-mask-comparison-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 2px 0 8px;
+  color: #c4ced0;
+  font: 10px/1.2 var(--sans, sans-serif);
+}
+
+.local-mask-comparison-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.local-mask-comparison-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 20%);
+}
+
+.local-mask-comparison-legend i.parent { background: #ff263d; }
+.local-mask-comparison-legend i.child { background: #2675ff; }
+.local-mask-comparison-legend i.overlap { background: #ff30e2; }
 
 .local-mask-subpanel {
   display: grid;
@@ -4593,6 +4625,27 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
   position: relative;
 }
 
+.local-adjustment-item.is-sub-mask {
+  margin-left: 18px;
+}
+
+.local-adjustment-item.is-sub-mask::before {
+  position: absolute;
+  top: -1px;
+  bottom: 8px;
+  left: -10px;
+  width: 8px;
+  border-bottom: 1px solid #536467;
+  border-left: 1px solid #536467;
+  content: "";
+  pointer-events: none;
+}
+
+.local-adjustment-item.is-pending .local-adjustment-copy small {
+  color: var(--accent);
+  font-style: italic;
+}
+
 .local-adjustment-list .local-adjustment-select {
   grid-template-columns: minmax(0, 1fr);
   min-height: 49px;
@@ -4680,10 +4733,10 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 }
 
 .local-adjustment-menu {
-  position: absolute;
-  z-index: 20;
-  top: 41px;
-  right: 6px;
+  position: fixed;
+  z-index: 1000;
+  top: 0;
+  left: 0;
   min-width: 138px;
   padding: 4px;
   border: 1px solid #586568;
@@ -4707,6 +4760,12 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 .local-adjustment-list .local-adjustment-menu > button:hover,
 .local-adjustment-list .local-adjustment-menu > button:focus-visible {
   background: #31575b;
+}
+
+.local-adjustment-list .local-adjustment-menu > button[aria-checked="true"]::before {
+  display: inline-block;
+  width: 16px;
+  content: "✓";
 }
 
 .local-editor {
@@ -7195,13 +7254,13 @@ body {
 }
 
 .local-adjustments-group .local-stack-surface {
-  height: 220px;
-  min-height: 220px;
+  height: auto;
+  min-height: 72px;
   max-height: 220px;
   overflow-x: hidden;
-  overflow-y: scroll;
+  overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
+  scrollbar-gutter: auto;
   scrollbar-color: var(--local-stack-scrollbar-thumb) var(--local-stack-scrollbar-track);
   scrollbar-width: thin;
 }
@@ -7222,9 +7281,14 @@ body {
 }
 
 .local-adjustments-group .local-adjustment-list {
-  min-height: 100%;
+  min-height: 0;
   grid-auto-rows: max-content;
   align-content: start;
+}
+
+.local-adjustments-group .local-empty {
+  min-height: 70px;
+  padding: 11px 12px;
 }
 
 .local-lane-folder {

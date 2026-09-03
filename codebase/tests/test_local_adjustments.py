@@ -77,6 +77,26 @@ def test_mask_algebra_uses_soft_union_intersection_subtraction_and_inversion() -
     np.testing.assert_allclose(evaluate_mask(_gradient().model_copy(update={"inverted": True}), reference, x, y), x, atol=1e-6)
 
 
+@pytest.mark.parametrize("operator", ["union", "intersect", "subtract"])
+def test_bypassed_sub_mask_operation_returns_the_previous_mask(operator: str) -> None:
+    reference = np.full((1, 5, 3), 0.18, dtype=np.float32)
+    x = np.linspace(0.0, 1.0, 5, dtype=np.float32)[None, :]
+    y = np.full_like(x, 0.5)
+    base = _gradient()
+    sub_mask = _leaf(MaskLeaf(
+        type="linear_gradient",
+        start=MaskPoint(x=1.0, y=0.5),
+        end=MaskPoint(x=0.0, y=0.5),
+    ))
+    operation = MaskExpression(operator=operator, children=[base, sub_mask], enabled=False)
+
+    np.testing.assert_allclose(
+        evaluate_mask(operation, reference, x, y),
+        evaluate_mask(base, reference, x, y),
+        atol=1e-6,
+    )
+
+
 def test_gradient_starts_full_fades_to_zero_and_uses_two_falloff_anchors() -> None:
     reference = np.full((1, 7, 3), 0.18, dtype=np.float32)
     x = np.linspace(0.0, 1.0, 7, dtype=np.float32)[None, :]

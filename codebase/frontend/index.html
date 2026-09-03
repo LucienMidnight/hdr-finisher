@@ -640,12 +640,12 @@
         </div>
         <div id="local-adjustments-panel" class="control-group-body local-adjustments-panel" aria-label="Local adjustments">
         <div class="local-section-heading">Mask Tools</div>
-        <div class="local-tool-strip" role="toolbar" aria-label="Add local mask">
-          <button class="local-tool-brush" type="button" data-local-tool="brush" aria-pressed="false" title="Create a pressure-aware brush adjustment"><span class="local-tool-icon" aria-hidden="true"></span><span>Brush</span></button>
+        <div class="local-tool-strip" role="toolbar" aria-label="Choose a local mask tool">
+          <button class="local-tool-brush" type="button" data-local-tool="brush" aria-pressed="false" title="Select Brush for a new adjustment"><span class="local-tool-icon" aria-hidden="true"></span><span>Brush</span></button>
           <button class="local-tool-erase" id="local-eraser" type="button" aria-pressed="false" title="Paint subtraction strokes on the selected brush mask"><span class="local-tool-icon" aria-hidden="true"></span><span>Erase</span></button>
-          <button class="local-tool-gradient" type="button" data-local-tool="linear_gradient" aria-pressed="false" title="Create a linear-gradient adjustment"><span class="local-tool-icon" aria-hidden="true"></span><span>Gradient</span></button>
-          <button class="local-tool-luma" type="button" data-local-tool="luminance_range" aria-pressed="false" title="Create a scene-luminance range adjustment"><span class="local-tool-icon" aria-hidden="true"></span><span>Luma</span></button>
-          <button class="local-tool-path" type="button" data-local-tool="path" aria-pressed="false" title="Create a closed Bezier-path adjustment"><span class="local-tool-icon" aria-hidden="true"></span><span>Path</span></button>
+          <button class="local-tool-gradient" type="button" data-local-tool="linear_gradient" aria-pressed="false" title="Select Gradient for a new adjustment"><span class="local-tool-icon" aria-hidden="true"></span><span>Gradient</span></button>
+          <button class="local-tool-luma" type="button" data-local-tool="luminance_range" aria-pressed="false" title="Select Luma for a new adjustment"><span class="local-tool-icon" aria-hidden="true"></span><span>Luma</span></button>
+          <button class="local-tool-path" type="button" data-local-tool="path" aria-pressed="false" title="Select Path for a new adjustment"><span class="local-tool-icon" aria-hidden="true"></span><span>Path</span></button>
         </div>
         <div class="local-overlay-actions">
           <button id="local-show-mask" class="local-overlay-toggle" type="button" aria-pressed="false"><span class="local-overlay-icon" aria-hidden="true"></span><span>Show overlay</span></button>
@@ -660,7 +660,7 @@
         </div>
         <div class="local-stack-surface">
           <ol id="local-adjustment-list" class="local-adjustment-list" aria-label="Local adjustment stack"></ol>
-          <div id="local-empty" class="local-empty">Choose a mask tool to create the first local adjustment.</div>
+          <div id="local-empty" class="local-empty">Choose a mask tool, then press + — or press + first and pick a tool.</div>
         </div>
         <div class="local-action-row local-stack-primary-actions">
           <button id="local-rename" type="button">Rename</button>

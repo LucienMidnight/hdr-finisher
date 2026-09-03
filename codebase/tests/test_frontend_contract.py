@@ -1296,7 +1296,7 @@ def test_phase_one_local_influence_and_latest_generation_contract() -> None:
     assert "window.setTimeout(flushAuthoritativeLocalMaskDraft, 90)" in javascript
     assert "Math.min(1600, settledProxyLongEdge())" in javascript
     assert "signature !== JSON.stringify(selected?.mask)" in javascript
-    assert "currentPathMatch" in javascript
+    assert "currentMaskMatch" in javascript
     assert "local_adjustments: requestLocals" in javascript
     assert "local_adjustments: state.localPreviewDirty" in javascript
     assert 'conflict?.detail === "Stale scope request dropped."' in javascript
@@ -1467,7 +1467,7 @@ def test_startup_is_ephemeral_and_all_grade_groups_begin_collapsed() -> None:
     assert "localStorage" not in proofing
 
 
-def test_local_adjustments_use_group_and_folder_hierarchy_with_immediate_tool_state() -> None:
+def test_local_adjustments_use_group_and_folder_hierarchy_with_locked_tool_assignment() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
@@ -1478,11 +1478,19 @@ def test_local_adjustments_use_group_and_folder_hierarchy_with_immediate_tool_st
     assert html.count('role="tablist"') >= 2
     assert 'class="local-lane-folder"' in html
     assert 'class="local-stack-surface"' in html
-    assert 'aria-pressed="false" title="Create a linear-gradient adjustment"' in html
+    assert 'aria-pressed="false" title="Select Gradient for a new adjustment"' in html
     assert "function updateLocalToolState()" in javascript
-    assert "updateLocalToolState();\n    if (!state.editDocument) await refreshEditState();" in javascript
+    assert "function beginPendingLocalAdjustment()" in javascript
+    assert "async function assignToolToPending(type)" in javascript
+    assert 'subtitle = pending ? "Pick a tool"' in javascript
+    assert 'addMask.textContent = "Create sub-mask"' in javascript
+    assert '["subtract", "Subtract"]' in javascript
     assert 'if (!state.editDocument) await refreshEditState();' in javascript
-    assert 'button.disabled = false;' in javascript
+    assert 'button.disabled = toolLocked;' in javascript
+    assert 'const toolLocked = Boolean(assignedType && !state.pendingLocalAdjustment && !state.pendingSubMask);' in javascript
+    assert 'return parentMaskExpression(local.mask);' in javascript
+    assert 'drawMaskExpression(context, editorExpression, x, y, { ...drawOptions, renderPhase: "gizmo", skipBrush: true });' in javascript
+    assert '.local-tool-strip button.active:disabled' in css
     assert 'els.localEraser.disabled = !brushSelected;' in javascript
     assert 'if (group === els.localAdjustmentGroup) setGradeMode(collapsed ? "global" : "local");' in javascript
     assert 'body[data-grade-mode="local"] #grade-workflow-panel > :not(.grade-header):not(.local-adjustments-group)' not in css
@@ -1525,7 +1533,7 @@ def test_local_mask_authoring_uses_bidirectional_authoritative_geometry_mapping(
     assert "projectivePoint(coordinateMap.outputToSource, point)" in javascript
     assert "projectivePoint(coordinateMap.sourceToOutput, point)" in javascript
     assert "applySourceGeometryCanvasTransform(context, imageRect, rect, coordinateMap.sourceToOutput)" in javascript
-    assert "projectMaskExpressionToOutput(local.mask, coordinateMap.sourceToOutput)" in javascript
+    assert "projectMaskExpressionToOutput(editorExpression, coordinateMap.sourceToOutput)" in javascript
     assert "const denominator = matrix[6] * point.x + matrix[7] * point.y + matrix[8]" in javascript
     assert 'if (state.gradeMode === "local") void ensureGeometryCoordinateMap();' in javascript
     assert 'renderPhase: "mask"' in javascript
@@ -1578,6 +1586,31 @@ def test_local_adjustment_rows_use_theme_tokens_for_readable_text_and_icons() ->
     assert "color: var(--local-icon-color);" in css
     select_rule = css.split(".local-adjustment-list .local-adjustment-select {", 2)[2].split("}", 1)[0]
     assert "color: var(--local-button-text);" in select_rule
+
+
+def test_local_adjustment_stack_grows_to_a_scrollable_cap() -> None:
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    stack_rule = css.split(".local-adjustments-group .local-stack-surface {", 1)[1].split("}", 1)[0]
+    list_rule = css.split(".local-adjustments-group .local-adjustment-list {", 1)[1].split("}", 1)[0]
+
+    assert "height: auto;" in stack_rule
+    assert "min-height: 72px;" in stack_rule
+    assert "max-height: 220px;" in stack_rule
+    assert "overflow-y: auto;" in stack_rule
+    assert "scrollbar-gutter: auto;" in stack_rule
+    assert "min-height: 0;" in list_rule
+
+
+def test_local_adjustment_menus_float_outside_the_stack_scroller() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    menu_rule = css.split(".local-adjustment-menu {", 1)[1].split("}", 1)[0]
+
+    assert "position: fixed;" in menu_rule
+    assert "z-index: 1000;" in menu_rule
+    assert "function positionLocalAdjustmentMenu(menu, anchor)" in javascript
+    assert "anchorRect.bottom + gap" in javascript
+    assert "anchorRect.top - menuRect.height - gap" in javascript
 
 
 def test_manual_interpretation_action_reveals_the_source_rail() -> None:

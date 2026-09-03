@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 import os
 
@@ -134,7 +135,13 @@ def spatial_mask_expression(expression: MaskExpression) -> MaskExpression:
 
 
 def spatial_mask_signature(expression: MaskExpression) -> str:
-    return spatial_mask_expression(expression).model_dump_json()
+    def render_payload(node: MaskExpression) -> dict[str, object]:
+        payload = node.model_dump(mode="json")
+        payload.pop("id", None)
+        payload["children"] = [render_payload(child) for child in node.children]
+        return payload
+
+    return json.dumps(render_payload(spatial_mask_expression(expression)), separators=(",", ":"))
 
 
 def compile_spatial_preview_mask(
@@ -175,6 +182,16 @@ def evaluate_mask(
     source_y: np.ndarray,
     pixel_aspect: float = 1.0,
 ) -> np.ndarray:
+    if not expression.enabled:
+        if expression.operator != "leaf" and expression.children:
+            return evaluate_mask(
+                expression.children[0],
+                fixed_source_tile,
+                source_x,
+                source_y,
+                pixel_aspect,
+            )
+        return np.zeros(source_x.shape, dtype=np.float32)
     brush_erase_attenuation: np.ndarray | None = None
     if expression.operator == "leaf":
         if expression.leaf is not None and expression.leaf.type == "brush":
@@ -182,18 +199,22 @@ def evaluate_mask(
         else:
             result = _evaluate_leaf(expression.leaf, fixed_source_tile, source_x, source_y, pixel_aspect)
     else:
+        active_children = [child for child in expression.children if child.enabled]
         children = [
             evaluate_mask(child, fixed_source_tile, source_x, source_y, pixel_aspect)
-            for child in expression.children
+            for child in active_children
         ]
-        result = children[0]
-        for child in children[1:]:
-            if expression.operator == "union":
-                result = np.maximum(result, child)
-            elif expression.operator == "intersect":
-                result = result * child
-            else:
-                result = result * (1.0 - child)
+        if not children:
+            result = np.zeros(source_x.shape, dtype=np.float32)
+        else:
+            result = children[0]
+            for child in children[1:]:
+                if expression.operator == "union":
+                    result = np.maximum(result, child)
+                elif expression.operator == "intersect":
+                    result = result * child
+                else:
+                    result = result * (1.0 - child)
     if expression.operator == "leaf" and expression.leaf is not None and expression.leaf.type == "brush":
         leaf = expression.leaf
         if leaf.mask_shift_edge != 0.0 and np.any(result > 0.0):
