@@ -112,6 +112,45 @@ def geometry_coordinate_map(
     return output_to_source, source_to_output, output_width, output_height
 
 
+def geometry_output_dimensions(width: int, height: int, geometry: GeometryAdjustments) -> tuple[int, int]:
+    """Resolve full-resolution geometry dimensions without allocating an image."""
+    if geometry.rotation in (90, 270):
+        width, height = height, width
+    total_roll = geometry.straighten_angle + geometry.perspective_rotate
+    if geometry.perspective_horizontal or geometry.perspective_vertical:
+        left, top, right, bottom = _perspective_safe_rectangle(
+            width, height, round(total_roll, 6),
+            round(geometry.perspective_horizontal, 6), round(geometry.perspective_vertical, 6),
+        )
+        width, height = right - left, bottom - top
+    elif total_roll:
+        safe_width, safe_height = _largest_rotated_rectangle(width, height, math.radians(abs(total_roll)))
+        width, height = max(1, math.floor(safe_width) - 4), max(1, math.floor(safe_height) - 4)
+    crop = geometry.crop
+    left = min(width - 1, max(0, round(crop.x * width)))
+    top = min(height - 1, max(0, round(crop.y * height)))
+    right = min(width, max(left + 1, round((crop.x + crop.width) * width)))
+    bottom = min(height, max(top + 1, round((crop.y + crop.height) * height)))
+    return right - left, bottom - top
+
+
+def _perspective_solve_dimensions(width: int, height: int) -> tuple[int, int]:
+    scale = min(1.0, 256 / max(width, height, 1))
+    return max(32, int(round(width * scale))), max(32, int(round(height * scale)))
+
+
+def perspective_guide_transform(
+    width: int, height: int, before: GeometryAdjustments, after: GeometryAdjustments,
+) -> tuple[float, ...]:
+    """Keep applied guides anchored to the same source lines after a solve."""
+    width, height = _perspective_solve_dimensions(width, height)
+    inverse, _, _, _ = geometry_coordinate_map(width, height, before)
+    _, forward, _, _ = geometry_coordinate_map(width, height, after)
+    transform = np.asarray(forward).reshape(3, 3) @ np.asarray(inverse).reshape(3, 3)
+    transform /= transform[2, 2]
+    return tuple(float(value) for value in transform.ravel())
+
+
 def solve_perspective_guides(
     width: int,
     height: int,
@@ -120,10 +159,7 @@ def solve_perspective_guides(
     horizontal_guides: list[PerspectiveGuideLine],
 ) -> tuple[float, float, float, float]:
     """Solve bounded perspective and roll values for user-authored guide pairs."""
-    solve_edge = 256
-    scale = min(1.0, solve_edge / max(width, height, 1))
-    solve_width = max(32, int(round(width * scale)))
-    solve_height = max(32, int(round(height * scale)))
+    solve_width, solve_height = _perspective_solve_dimensions(width, height)
     base_output_to_source, _base_source_to_output, _base_width, _base_height = geometry_coordinate_map(
         solve_width, solve_height, geometry
     )
@@ -269,7 +305,13 @@ def _perspective_inverse_matrix(
     angle = math.radians(float(straighten_angle))
     cosine = math.cos(angle)
     sine = math.sin(angle)
-    rotation = np.array([[cosine, sine, 0.0], [-sine, cosine, 0.0], [0.0, 0.0, 1.0]])
+    # Normalized X/Y have different pixel scales on a non-square image.
+    # Compensate them so roll remains a rigid rotation in pixel coordinates.
+    rotation = np.array([
+        [cosine, sine * height_scale / width_scale, 0.0],
+        [-sine * width_scale / height_scale, cosine, 0.0],
+        [0.0, 0.0, 1.0],
+    ])
     projective = np.array(
         [
             [1.0, 0.0, 0.0],

@@ -402,6 +402,7 @@ const state = {
   perspectiveGuidesDirty: false,
   perspectiveResetPending: false,
   perspectiveGuideDrag: null,
+  perspectiveSolveController: null,
   perspectivePreviewController: null,
   perspectivePreviewTimer: 0,
   perspectivePreviewUrl: null,
@@ -755,6 +756,7 @@ function projectivePoint(matrix, point) {
 
 async function ensureGeometryCoordinateMap() {
   if (!state.session || geometryTransformIsNeutral()) return IDENTITY_GEOMETRY_COORDINATE_MAP;
+  const sessionId = state.session.session_id;
   const signature = geometrySignature();
   const longEdge = settledProxyLongEdge();
   const key = geometryCoordinateMapKey(signature, longEdge);
@@ -770,18 +772,22 @@ async function ensureGeometryCoordinateMap() {
   }).then(async (response) => {
     if (!response.ok) throw new Error(`Geometry coordinate map failed (${response.status}).`);
     const payload = await response.json();
-    if (signature !== geometrySignature()) return null;
+    if (state.session?.session_id !== sessionId || signature !== geometrySignature()) return null;
     const result = {
       outputToSource: payload.output_to_source,
       sourceToOutput: payload.source_to_output,
       outputWidth: payload.output_width,
       outputHeight: payload.output_height,
+      fullOutputWidth: payload.full_output_width,
+      fullOutputHeight: payload.full_output_height,
     };
     geometryCoordinateMapCache.set(key, result);
     while (geometryCoordinateMapCache.size > 12) {
       geometryCoordinateMapCache.delete(geometryCoordinateMapCache.keys().next().value);
     }
     queueLocalMaskOverlayRender();
+    applyZoomGeometry();
+    if (state.cropMode) constrainCropToRatio();
     return result;
   }).catch((error) => {
     console.warn("Source-anchored editor geometry is unavailable.", error);
@@ -891,6 +897,8 @@ function acceptPresentation(lane, tier, width, height, transport, fallbackReason
     };
     state.geometryPresentationPending = false;
     applyZoomGeometry();
+    if (state.adjustments.shared.geometry.perspective_horizontal
+      || state.adjustments.shared.geometry.perspective_vertical) void ensureGeometryCoordinateMap();
   }
   const targetLabel = previewResolutionLabel();
   const dimensions = width && height ? `${Number(width)} × ${Number(height)}` : longEdge ? `${longEdge}px max` : "";
@@ -2999,6 +3007,7 @@ async function uploadFile(file) {
       showUploadError(detail);
       return false;
     }
+    clearPreviewCache();
     state.session = payload.session;
     if (els.rawSettingsPanel) delete els.rawSettingsPanel.dataset.initialized;
     setPreviewMessage("Source decoded. Preparing preview...", 28);
@@ -3013,7 +3022,6 @@ async function uploadFile(file) {
     await applyNewSessionPreferences();
     activateWorkflowTab("grade", { focus: false });
     state.interpretationGateDismissed = false;
-    clearPreviewCache();
     state.gpuPreview?.resetSession(payload.session.session_id);
     invalidatePreview("hdr", { markDirty: false });
     invalidatePreview("sdr", { markDirty: false });
@@ -3051,6 +3059,7 @@ async function ejectCurrentSession() {
   if (!state.session) return;
   if (!await confirmUnsavedTransition("eject the current image")) return;
   await fetch("/api/session/current", { method: "DELETE" }).catch(() => null);
+  clearPreviewCache();
   state.session = null;
   renderExperimentalDngNote();
   renderRawImportControls(null);
@@ -3070,7 +3079,6 @@ async function ejectCurrentSession() {
   state.interpretationGateDismissed = false;
   state.lastScope = null;
   state.lastExportPath = "";
-  clearPreviewCache();
   state.gpuPreview?.resetSession();
   state.previewInfo = {
     mediaType: "n/a",
@@ -3729,7 +3737,7 @@ async function settlePreview(lane = state.currentView, task = {}) {
 }
 
 async function refinePreview(lane, task = {}) {
-  if (!state.session || !previewNeedsRefinement() || lane !== state.currentView) return;
+  if (!state.session || geometryDraftActive() || !previewNeedsRefinement() || lane !== state.currentView) return;
   if (task.applicationGeneration !== undefined && task.applicationGeneration !== state.previewGeneration[lane]) return;
   const generation = state.previewGeneration[lane];
   const signature = geometrySignature();
@@ -3738,7 +3746,7 @@ async function refinePreview(lane, task = {}) {
   const rendered = gpuPreviewEligible(lane)
     ? await renderGpuDraft(lane, { longEdge: targetLongEdge, tier: "refinement" })
     : false;
-  if (rendered || !previewNeedsRefinement() || lane !== state.currentView || targetLongEdge !== refinementProxyLongEdge()) return;
+  if (rendered || geometryDraftActive() || !previewNeedsRefinement() || lane !== state.currentView || targetLongEdge !== refinementProxyLongEdge()) return;
   await renderPreviewForLane(lane, true, targetLongEdge, { showProgress: false });
   if (generation !== state.previewGeneration[lane] || signature !== geometrySignature() || !previewNeedsRefinement()) return;
 }
@@ -3856,9 +3864,12 @@ async function renderPreviewForLane(
   longEdge = 1600,
   { showProgress = true, progressSteps = [12, 76, 92], raw = !state.gpuPreview?.available } = {},
 ) {
-  if (!state.session) return false;
+  // Perspective owns its transient preview until Apply/Cancel. Revision-based
+  // renders still contain the committed geometry, even when the controls reset.
+  if (!state.session || geometryDraftActive()) return false;
   const sessionId = state.session.session_id;
   if (await syncGlobalEditState() === false) return false;
+  if (geometryDraftActive() || state.session?.session_id !== sessionId) return false;
   if (raw) return renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showProgress });
   const cached = state.previewCache[lane];
   const generation = state.previewGeneration[lane];
@@ -3894,6 +3905,7 @@ async function renderPreviewForLane(
   });
   if (!response || response.aborted) return;
   const requestIsCurrent = () => controller === state.previewControllers[lane]
+    && !geometryDraftActive()
     && state.session?.session_id === sessionId
     && generation === state.previewGeneration[lane]
     && signature === geometrySignature();
@@ -3913,11 +3925,23 @@ async function renderPreviewForLane(
 
   if (displayWhenReady && showProgress) setPreviewMessage("Processing complete. Decoding preview...", progressSteps[1]);
   const previewInfo = previewInfoFromResponse(response, lane);
-  const width = Number(response.headers.get("X-Image-Width"));
-  const height = Number(response.headers.get("X-Image-Height"));
+  let width = Number(response.headers.get("X-Image-Width"));
+  let height = Number(response.headers.get("X-Image-Height"));
   const blob = await response.blob();
   if (!requestIsCurrent()) return false;
   const url = URL.createObjectURL(blob);
+  if (!(width > 0 && height > 0)) {
+    try {
+      const decoded = await decodePreviewImage(url);
+      width = decoded.naturalWidth;
+      height = decoded.naturalHeight;
+    } catch (error) {
+      URL.revokeObjectURL(url);
+      if (requestIsCurrent()) setPreviewError(error.message);
+      return false;
+    }
+    if (!requestIsCurrent()) { URL.revokeObjectURL(url); return false; }
+  }
   const previous = state.previewCache[lane];
   if (previous?.url) URL.revokeObjectURL(previous.url);
   state.previewCache[lane] = { url, generation, longEdge: Math.max(width, height) || longEdge, width, height, geometrySignature: signature };
@@ -3944,6 +3968,7 @@ async function renderPreviewForLane(
 }
 
 async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showProgress = false } = {}) {
+  if (!state.session || geometryDraftActive()) return false;
   const generation = state.previewGeneration[lane];
   const signature = geometrySignature();
   const cached = state.previewCache[lane];
@@ -3979,7 +4004,8 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
   const height = Number(response.headers.get("X-Image-Height"));
   const rawGeneration = Number(response.headers.get("X-Generation"));
   const data = new Uint8ClampedArray(await response.arrayBuffer());
-  if (generation !== state.previewGeneration[lane] || rawGeneration !== generation || signature !== geometrySignature()) return false;
+  if (geometryDraftActive() || controller !== state.previewControllers[lane]
+    || generation !== state.previewGeneration[lane] || rawGeneration !== generation || signature !== geometrySignature()) return false;
   const frame = { raw: data, width, height, generation, longEdge: Math.max(width, height) || longEdge, geometrySignature: signature };
   state.previewCache[lane] = frame;
   state.previewInfoByLane[lane] = {
@@ -4041,7 +4067,7 @@ function applyRawComparisonPreview(frame) {
 }
 
 async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 1600) {
-  await syncGlobalEditState();
+  if (geometryDraftActive() || await syncGlobalEditState() === false || geometryDraftActive()) return;
   if (!state.session) return;
   state.overlayAbortController?.abort();
   state.overlayAbortController = null;
@@ -4087,9 +4113,13 @@ async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 16
 }
 
 function refreshScopes(longEdge = 960, { tier = "settled", generation = null, lane = state.currentView } = {}) {
-  if (!state.session) return Promise.resolve(false);
+  if (!state.session || geometryDraftActive()) return Promise.resolve(false);
   if (state.globalEditDirty) {
-    return syncGlobalEditState().then(() => refreshScopes(longEdge, { tier, generation, lane }));
+    // A deferred or rejected sync can leave edits dirty. Retrying it in a
+    // resolved-Promise loop starves input and grows the heap until V8 OOMs.
+    return syncGlobalEditState().then((applied) => applied && !state.globalEditDirty
+      ? refreshScopes(longEdge, { tier, generation, lane })
+      : false);
   }
   // Scheduler generations and direct refreshes originate in different
   // counters. Normalize both into one strictly increasing presentation serial
@@ -6024,10 +6054,7 @@ function bindCropEditor() {
       closeRotateMode(false);
       return;
     }
-    state.rotateDraftGeometry = JSON.parse(JSON.stringify(state.adjustments.shared.geometry));
-    state.geometryTool = "rotate";
-    renderRotateDraftTransform();
-    renderGeometryToolState();
+    openRotateMode();
   });
   els.cropDone?.addEventListener("click", () => closeCropMode(true));
   els.cropCancel?.addEventListener("click", () => closeCropMode(false));
@@ -6065,6 +6092,7 @@ function bindCropEditor() {
   els.cropBox?.addEventListener("pointerdown", beginCropDrag);
   window.addEventListener("pointermove", moveCropDrag);
   window.addEventListener("pointerup", endCropDrag);
+  window.addEventListener("pointercancel", endCropDrag);
   els.cropStraighten?.addEventListener("pointerdown", beginStraightenGesture);
   els.cropStraighten?.addEventListener("keydown", beginStraightenGesture);
   ["pointerup", "pointercancel", "change", "keyup"].forEach((eventName) => {
@@ -6100,6 +6128,7 @@ function bindPerspectiveEditor() {
   els.perspectiveGuideHandles?.addEventListener("keydown", movePerspectiveGuideWithKeyboard);
   window.addEventListener("pointermove", movePerspectiveGuideDrag);
   window.addEventListener("pointerup", endPerspectiveGuideDrag);
+  window.addEventListener("pointercancel", endPerspectiveGuideDrag);
   window.addEventListener("resize", renderPerspectiveGuides);
   renderPerspectiveControls();
 }
@@ -6122,6 +6151,7 @@ function openPerspectiveMode() {
   if (state.cropMode) closeCropMode(true);
   if (state.rotateDraftGeometry) closeRotateMode(false);
   state.perspectiveMode = true;
+  suspendGeometryPreviewWork();
   state.perspectiveDraftGeometry = JSON.parse(JSON.stringify(state.adjustments.shared.geometry));
   state.perspectiveGuides = defaultPerspectiveGuides();
   state.perspectiveGuidesTouched = { vertical: false, horizontal: false };
@@ -6132,10 +6162,38 @@ function openPerspectiveMode() {
   renderPerspectiveControls();
 }
 
+function geometryDraftActive() {
+  return Boolean(state.perspectiveMode || state.rotateDraftGeometry);
+}
+
+function suspendGeometryPreviewWork() {
+  // Retire ordinary preview work, including frames already decoding or waiting
+  // on a GPU proxy, before this transaction can change the geometry.
+  state.previewScheduler?.cancel();
+  window.clearTimeout(state.settleTimer);
+  state.settleTimer = null;
+  state.gpuRenderSerial += 1;
+  for (const lane of ["hdr", "sdr"]) {
+    state.previewControllers[lane]?.abort();
+    state.previewControllers[lane] = null;
+  }
+}
+
+function openRotateMode() {
+  if (!state.session || state.rotateDraftGeometry) return;
+  state.rotateDraftGeometry = JSON.parse(JSON.stringify(state.adjustments.shared.geometry));
+  state.geometryTool = "rotate";
+  suspendGeometryPreviewWork();
+  renderRotateDraftTransform();
+  renderGeometryToolState();
+}
+
 function closePerspectiveMode(commit) {
   if (!state.perspectiveMode) return;
   const original = state.perspectiveDraftGeometry;
   const changed = original && !valuesEqual(original, state.adjustments.shared.geometry);
+  state.perspectiveSolveController?.abort();
+  state.perspectiveSolveController = null;
   state.perspectivePreviewController?.abort();
   state.perspectivePreviewController = null;
   window.clearTimeout(state.perspectivePreviewTimer);
@@ -6164,6 +6222,10 @@ function closePerspectiveMode(commit) {
     invalidatePreview("sdr");
     debouncePreview(state.currentView);
   } else {
+    if (state.globalEditDirty || state.geometryPresentationPending) {
+      debouncePreview(state.currentView);
+      return;
+    }
     void showCachedPreview(state.currentView).then((shown) => {
       if (!shown) debouncePreview(state.currentView);
     });
@@ -6228,7 +6290,10 @@ function renderPerspectiveGuides() {
   overlay.classList.remove("hidden");
   overlay.setAttribute("aria-hidden", "false");
   svg.replaceChildren();
-  handles.replaceChildren();
+  const existingHandles = [...handles.children];
+  const reuseHandles = existingHandles.length === 4
+    && existingHandles.every((handle) => handle.dataset.orientation === orientation);
+  if (!reuseHandles) handles.replaceChildren();
   state.perspectiveGuides[orientation].forEach((guide, guideIndex) => {
     const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
     line.setAttribute("x1", `${guide.start.x * 100}%`); line.setAttribute("y1", `${guide.start.y * 100}%`);
@@ -6236,7 +6301,9 @@ function renderPerspectiveGuides() {
     svg.append(line);
     for (const pointName of ["start", "end"]) {
       const point = guide[pointName];
-      const handle = document.createElement("button");
+      const handle = reuseHandles
+        ? existingHandles[guideIndex * 2 + (pointName === "end" ? 1 : 0)]
+        : document.createElement("button");
       handle.type = "button";
       handle.className = "perspective-guide-handle";
       handle.dataset.orientation = orientation;
@@ -6245,7 +6312,7 @@ function renderPerspectiveGuides() {
       handle.style.left = `${point.x * 100}%`;
       handle.style.top = `${point.y * 100}%`;
       handle.setAttribute("aria-label", `${orientation} guide ${guideIndex + 1} ${pointName}. Use arrow keys to move; Shift moves ten pixels.`);
-      handles.append(handle);
+      if (!reuseHandles) handles.append(handle);
     }
   });
 }
@@ -6306,40 +6373,99 @@ function markPerspectiveGuidesDirty(orientation) {
 }
 
 async function applyPerspectiveGuides() {
-  if (!state.perspectiveGuidesDirty) return;
-  await solvePerspectiveGuides();
+  if (!state.perspectiveGuidesDirty) return true;
+  return solvePerspectiveGuides();
+}
+
+function transformPerspectiveGuide(guide, matrix) {
+  const start = projectivePoint(matrix, guide.start);
+  const end = projectivePoint(matrix, guide.end);
+  if (![start.x, start.y, end.x, end.y].every(Number.isFinite)) return null;
+  // A safe-area crop can move an endpoint outside the corrected image. Clip
+  // the segment, rather than clamping X/Y independently and bending the line.
+  let near = 0;
+  let far = 1;
+  for (const axis of ["x", "y"]) {
+    const delta = end[axis] - start[axis];
+    if (Math.abs(delta) < 1e-12) {
+      if (start[axis] < 0 || start[axis] > 1) return null;
+      continue;
+    }
+    const a = -start[axis] / delta;
+    const b = (1 - start[axis]) / delta;
+    near = Math.max(near, Math.min(a, b));
+    far = Math.min(far, Math.max(a, b));
+  }
+  if (near > far) return null;
+  const point = (t) => ({ x: clamp(start.x + t * (end.x - start.x), 0, 1),
+    y: clamp(start.y + t * (end.y - start.y), 0, 1) });
+  const clipped = { start: point(near), end: point(far) };
+  return Math.hypot(clipped.end.x - clipped.start.x, clipped.end.y - clipped.start.y) >= 0.05
+    ? clipped : null;
 }
 
 async function solvePerspectiveGuides() {
-  if (!state.session || !state.perspectiveMode) return;
+  if (!state.session || !state.perspectiveMode) return false;
   const vertical = state.perspectiveGuidesTouched.vertical ? state.perspectiveGuides.vertical : [];
   const horizontal = state.perspectiveGuidesTouched.horizontal ? state.perspectiveGuides.horizontal : [];
-  if (!vertical.length && !horizontal.length) return;
+  if (!vertical.length && !horizontal.length) return false;
+  state.perspectiveSolveController?.abort();
+  const controller = new AbortController();
+  state.perspectiveSolveController = controller;
+  const sessionId = state.session.session_id;
+  const draft = state.perspectiveDraftGeometry;
+  const signature = JSON.stringify([state.adjustments.shared.geometry, state.perspectiveGuides, state.perspectiveGuidesTouched]);
+  const isCurrent = () => state.perspectiveMode && state.perspectiveDraftGeometry === draft
+    && state.session?.session_id === sessionId && controller === state.perspectiveSolveController
+    && signature === JSON.stringify([state.adjustments.shared.geometry, state.perspectiveGuides, state.perspectiveGuidesTouched]);
   els.perspectiveStatus.textContent = "Solving guided correction…";
   const response = await fetch(`/api/session/${state.session.session_id}/perspective-solve`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ adjustments: state.adjustments, vertical_guides: vertical, horizontal_guides: horizontal, edit_revision: state.editRevision }),
+    signal: controller.signal,
   }).catch(() => null);
+  if (!isCurrent()) return false;
   if (!response?.ok) {
     const payload = response ? await safeJson(response) : null;
+    if (!isCurrent()) return false;
     els.perspectiveStatus.textContent = responseErrorMessage(payload, "The selected guides could not be solved.");
-    return;
+    return false;
   }
   const solved = await response.json();
+  if (!isCurrent()) return false;
   const geometry = state.adjustments.shared.geometry;
   geometry.perspective_horizontal = solved.perspective_horizontal;
   geometry.perspective_vertical = solved.perspective_vertical;
   geometry.perspective_rotate = solved.perspective_rotate;
+  let guidesOutsideFrame = false;
+  if (solved.guide_transform) {
+    for (const orientation of ["vertical", "horizontal"]) {
+      if (!state.perspectiveGuidesTouched[orientation]) continue;
+      const guides = state.perspectiveGuides[orientation].map((guide) => transformPerspectiveGuide(guide, solved.guide_transform));
+      if (guides.every(Boolean)) state.perspectiveGuides[orientation] = guides;
+      else {
+        state.perspectiveGuides[orientation] = defaultPerspectiveGuides()[orientation];
+        state.perspectiveGuidesTouched[orientation] = false;
+        guidesOutsideFrame = true;
+      }
+    }
+  }
   state.perspectiveGuidesDirty = false;
   els.perspectiveStatus.textContent = `Guides aligned within ${Number(solved.residual_degrees).toFixed(2)}°.`;
+  if (guidesOutsideFrame) els.perspectiveStatus.textContent += " Some guides fell outside the corrected image; place those guides again before another solve.";
   renderPerspectiveControls();
+  renderPerspectiveGuides();
   schedulePerspectiveDraftPreview();
+  return true;
 }
 
 async function commitPerspectiveMode() {
-  if (state.perspectiveGuidesDirty) await applyPerspectiveGuides();
+  const draft = state.perspectiveDraftGeometry;
+  if (state.perspectiveGuidesDirty && !await applyPerspectiveGuides()) return false;
+  if (!state.perspectiveMode || state.perspectiveDraftGeometry !== draft) return false;
   closePerspectiveMode(true);
+  return true;
 }
 
 function schedulePerspectiveDraftPreview() {
@@ -6352,7 +6478,12 @@ async function renderPerspectiveDraftPreview() {
   state.perspectivePreviewController?.abort();
   const controller = new AbortController();
   state.perspectivePreviewController = controller;
+  const sessionId = state.session.session_id;
+  const lane = state.currentView;
   const signature = JSON.stringify(state.adjustments.shared.geometry);
+  const isCurrent = () => state.perspectiveMode && controller === state.perspectivePreviewController
+    && state.session?.session_id === sessionId && state.currentView === lane
+    && signature === JSON.stringify(state.adjustments.shared.geometry);
   const response = await fetch(`/api/session/${state.session.session_id}/preview/${state.currentView}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -6368,20 +6499,24 @@ async function renderPerspectiveDraftPreview() {
     }),
     signal: controller.signal,
   }).catch((error) => error.name === "AbortError" ? null : null);
-  if (!response || controller !== state.perspectivePreviewController || !state.perspectiveMode || signature !== JSON.stringify(state.adjustments.shared.geometry)) return;
+  if (!response || !isCurrent()) return;
   if (!response.ok) {
     const payload = await safeJson(response);
+    if (!isCurrent()) return;
     els.perspectiveStatus.textContent = responseErrorMessage(payload, "Perspective preview failed.");
     return;
   }
-  const url = URL.createObjectURL(await response.blob());
+  const blob = await response.blob();
+  if (!isCurrent()) return;
+  const url = URL.createObjectURL(blob);
+  const applied = await applyPreviewUrl(url, isCurrent);
+  if (!applied) { URL.revokeObjectURL(url); return; }
   const previous = state.perspectivePreviewUrl;
   state.perspectivePreviewUrl = url;
-  const applied = await applyPreviewUrl(url, () => state.perspectiveMode && controller === state.perspectivePreviewController && signature === JSON.stringify(state.adjustments.shared.geometry));
   if (previous) URL.revokeObjectURL(previous);
-  if (!applied) return;
   renderPerspectiveGuides();
   renderControlState();
+  void ensureGeometryCoordinateMap();
 }
 
 function openCropMode() {
@@ -6398,6 +6533,7 @@ function openCropMode() {
   els.cropEditorOverlay?.setAttribute("aria-hidden", "false");
   renderGeometryToolState();
   renderCropOptions();
+  void ensureGeometryCoordinateMap();
 }
 
 function responseErrorMessage(payload, fallback) {
@@ -6679,6 +6815,8 @@ function closeRotateMode(commit) {
   const original = state.rotateDraftGeometry;
   const changed = !valuesEqual(original, state.adjustments.shared.geometry);
   state.rotateDraftGeometry = null;
+  state.straightenGestureActive = false;
+  hideStraightenGrid();
   state.geometryTool = null;
   if (!commit) state.adjustments.shared.geometry = original;
   // If the current bitmap is still the pre-rotation frame, keep its draft
@@ -6706,6 +6844,8 @@ function closeRotateMode(commit) {
     state.gpuPreparedLane = { hdr: false, sdr: false };
     invalidatePreview("hdr");
     invalidatePreview("sdr");
+    debouncePreview(state.currentView);
+  } else if (state.globalEditDirty || state.geometryPresentationPending) {
     debouncePreview(state.currentView);
   }
 }
@@ -6769,6 +6909,8 @@ function cropAspectRatio() {
 
 function cropAuthoringFrameAspect() {
   const geometry = activeCropGeometry();
+  const map = currentGeometryCoordinateMap();
+  if (map?.fullOutputWidth && map?.fullOutputHeight) return map.fullOutputWidth / map.fullOutputHeight;
   const source = state.session?.source;
   if (!source?.width || !source?.height) {
     return Math.max(0.01, els.cropEditorOverlay.clientWidth / Math.max(1, els.cropEditorOverlay.clientHeight));
@@ -6776,7 +6918,7 @@ function cropAuthoringFrameAspect() {
   let width = Number(source.width);
   let height = Number(source.height);
   if ([90, 270].includes(geometry.rotation)) [width, height] = [height, width];
-  const angle = Math.abs(Number(geometry.straighten_angle) || 0) * Math.PI / 180;
+  const angle = Math.abs((Number(geometry.straighten_angle) || 0) + (Number(geometry.perspective_rotate) || 0)) * Math.PI / 180;
   const sine = Math.abs(Math.sin(angle));
   const cosine = Math.abs(Math.cos(angle));
   if (sine >= 1e-9) {
@@ -6818,10 +6960,12 @@ function beginProjectOpenStatus(label) {
 function sourcePixelFrameDimensions(geometry = state.adjustments?.shared?.geometry) {
   const source = state.session?.source;
   if (!source?.width || !source?.height || !geometry) return null;
+  const map = geometryCoordinateMapCache.get(geometryCoordinateMapKey(JSON.stringify(geometry)));
+  if (map?.fullOutputWidth && map?.fullOutputHeight) return { width: map.fullOutputWidth, height: map.fullOutputHeight };
   let width = Number(source.width);
   let height = Number(source.height);
   if ([90, 270].includes(Number(geometry.rotation) || 0)) [width, height] = [height, width];
-  const angle = Math.abs(Number(geometry.straighten_angle) || 0) * Math.PI / 180;
+  const angle = Math.abs((Number(geometry.straighten_angle) || 0) + (Number(geometry.perspective_rotate) || 0)) * Math.PI / 180;
   const sine = Math.abs(Math.sin(angle));
   const cosine = Math.abs(Math.cos(angle));
   if (sine >= 1e-9) {
@@ -9192,14 +9336,18 @@ function monotoneCurveValues(points, sampleX) {
   });
 }
 
+function decodePreviewImage(url) {
+  return new Promise((resolve, reject) => {
+    const decoder = new Image();
+    decoder.onload = () => resolve(decoder);
+    decoder.onerror = () => reject(new Error("Image element could not load preview data."));
+    decoder.src = url;
+  });
+}
+
 async function applyPreviewUrl(url, isCurrent = () => true) {
   try {
-    await new Promise((resolve, reject) => {
-      const decoder = new Image();
-      decoder.onload = () => resolve();
-      decoder.onerror = () => reject(new Error("Image element could not load preview data."));
-      decoder.src = url;
-    });
+    await decodePreviewImage(url);
   } catch (error) {
     if (isCurrent()) setPreviewError(error.message || "Preview image failed to decode.");
     return false;
@@ -9241,6 +9389,7 @@ async function renderGpuDraft(
   lane = state.currentView,
   { hideStatus = true, longEdge = settledProxyLongEdge(), allowInactive = false, tier = "settled" } = {},
 ) {
+  if (geometryDraftActive()) return false;
   if (!gpuPreviewEligible(lane)) return false;
   if (!state.session || (!allowInactive && lane !== state.currentView)) return false;
   if (state.comparePeekActive && !allowInactive) return false;
@@ -9262,6 +9411,7 @@ async function renderGpuDraft(
     // renderer, before it resizes or submits to that canvas, because rejecting
     // the result here after await would already be visibly too late.
     isCurrent: () => serial === state.gpuRenderSerial
+      && !geometryDraftActive()
       && state.session?.session_id === sessionId
       && generation === state.previewGeneration[lane]
       && requestedGeometrySignature === geometrySignature()
@@ -9887,11 +10037,11 @@ async function switchLane(lane) {
   if (!["hdr", "sdr"].includes(lane)) return;
   const switchGeneration = ++state.laneSwitchGeneration;
   abandonPerspectiveDraft();
+  if (state.rotateDraftGeometry) closeRotateMode(false);
   // A lane change is a presentation boundary. Commit the newest optimistic
   // global state before either lane renders so a round trip cannot replace a
   // settled draft with an older authoritative revision.
   if (await syncGlobalEditState() === false || switchGeneration !== state.laneSwitchGeneration) return;
-  if (state.rotateDraftGeometry) closeRotateMode(false);
   if (state.currentView === lane && cacheReady(lane)) {
     renderLaneChrome();
     renderLocalAdjustments();
@@ -10037,6 +10187,33 @@ function endGlobalEditGesture(control) {
 }
 
 function clearPreviewCache() {
+  // Source/project replacement must retire tool transactions, without copying
+  // their old snapshots into the newly loaded document.
+  state.perspectiveSolveController?.abort();
+  state.perspectiveSolveController = null;
+  state.perspectiveMode = false;
+  state.perspectiveDraftGeometry = null;
+  state.perspectiveGuides = null;
+  state.perspectiveGuidesDirty = false;
+  state.perspectiveResetPending = false;
+  state.perspectiveTool = null;
+  state.perspectiveGuideDrag = null;
+  state.rotateDraftGeometry = null;
+  state.cropMode = false;
+  state.cropDraftGeometry = null;
+  state.cropEditBaseCrop = null;
+  state.cropDrag = null;
+  state.geometryTool = null;
+  state.straightenGestureActive = false;
+  state.straightenPreviewBaseAngle = null;
+  state.globalEditDirty = false;
+  state.globalEditSyncPending = null;
+  for (const overlay of [els.cropEditorOverlay, els.perspectiveEditorOverlay, els.straightenGridOverlay]) {
+    overlay?.classList.add("hidden");
+    overlay?.setAttribute("aria-hidden", "true");
+  }
+  renderGeometryToolState();
+  renderPerspectiveControls();
   state.geometryTransformHandoffSignature = null;
   state.detailInteractionRestore = null;
   clearRotateDraftTransformProperties();
@@ -10095,16 +10272,33 @@ function cacheReady(lane) {
 }
 
 async function showCachedPreview(lane) {
+  if (geometryDraftActive()) return false;
+  const sessionId = state.session?.session_id;
   const cached = state.previewCache[lane];
-  if (gpuPreviewEligible(lane) && state.gpuPreparedLane[lane] && await renderGpuDraft(lane, { allowInactive: lane !== state.currentView })) return true;
-  if (!cached || cached.generation !== state.previewGeneration[lane] || cached.geometrySignature !== geometrySignature()) return false;
+  // Restoring a view is the final presentation, not a grading gesture. The
+  // display-bounded default can replace a refined frame with a 1K proxy after
+  // comparison/peek or cancelling Perspective, with no scheduler task left to
+  // refine it again. Request the selected quality explicitly; geometry may
+  // make the returned bitmap smaller than the requested proxy edge.
+  if (gpuPreviewEligible(lane) && state.gpuPreparedLane[lane] && await renderGpuDraft(lane, {
+    allowInactive: lane !== state.currentView,
+    longEdge: refinementProxyLongEdge(),
+    tier: "refinement",
+  })) return true;
+  const isCurrent = () => !geometryDraftActive() && state.session?.session_id === sessionId
+    && cached === state.previewCache[lane] && cached?.generation === state.previewGeneration[lane]
+    && cached.geometrySignature === geometrySignature();
+  if (!cached || !isCurrent()) return false;
   if (cached.raw) applyRawPreview(cached);
   else if (cached.url) {
-    await applyPreviewUrl(cached.url);
+    if (!await applyPreviewUrl(cached.url, isCurrent)) return false;
     acceptPresentation(lane, cached.longEdge >= refinementProxyLongEdge() ? "refinement" : "settled", cached.width, cached.height, state.previewInfoByLane[lane].transport, "CPU/backend");
   }
   state.previewInfo = state.previewInfoByLane[lane];
   renderReadouts();
+  if (lane === state.currentView && !state.comparePeekActive && (cached.longEdge || 0) < refinementProxyLongEdge()) {
+    debouncePreview(lane);
+  }
   return true;
 }
 
@@ -11026,6 +11220,8 @@ function resetControlGroup(group) {
   const defaults = defaultAdjustments();
   if (group === "perspective") {
     openPerspectiveMode();
+    state.perspectiveSolveController?.abort();
+    state.perspectiveSolveController = null;
     // perspective_horizontal, perspective_vertical, and perspective_rotate are
     // exclusively owned by this module, so Reset can zero all three outright.
     // Straighten stays untouched: it belongs to Crop & Rotate.
@@ -11052,7 +11248,7 @@ function resetControlGroup(group) {
     // aspect), and leaves an open Perspective draft alone entirely.
     const current = state.cropDraftGeometry || state.adjustments.shared.geometry;
     if (!cropRotateGeometryModified(current, defaults.shared.geometry) && !state.rotateDraftGeometry) return;
-    if (!window.confirm("Reset all Crop & Rotate values? This cannot be undone.")) return;
+    if (!window.confirm("Reset all Crop & Rotate values?")) return;
     if (state.cropMode) closeCropMode(false);
     if (state.rotateDraftGeometry) closeRotateMode(false);
   }
@@ -11065,6 +11261,16 @@ function resetControlGroup(group) {
     invalidatePreview("hdr"); invalidatePreview("sdr");
   } else invalidatePreview(group.startsWith("sdr-") ? "sdr" : "hdr");
   renderControlState();
+  if (group === "geometry" && state.perspectiveMode) {
+    // Keep Reset visible inside the active draft, and preserve this separate
+    // module's reset if the user subsequently cancels Perspective.
+    paths.forEach((path) => {
+      const key = path.replace("shared.geometry.", "");
+      setValueByPath(state.perspectiveDraftGeometry, key, getValueByPath(defaults, path));
+    });
+    schedulePerspectiveDraftPreview();
+    return;
+  }
   debouncePreview(group === "geometry" ? state.currentView : group.startsWith("sdr-") ? "sdr" : "hdr");
 }
 
@@ -13104,17 +13310,21 @@ async function setSdrMatch(action) {
 }
 
 function queueEditCommand(commandType, payload = {}, targetId = null, { refreshPreview = true, globalEditGeneration = null, historyGroup = null } = {}) {
+  const sessionId = state.session?.session_id;
   if (commandType !== "set_global_adjustments" && state.globalEditDirty) {
-    return syncGlobalEditState().then(() => queueEditCommand(commandType, payload, targetId, { refreshPreview, globalEditGeneration, historyGroup }));
+    return syncGlobalEditState().then((applied) => state.session?.session_id === sessionId && applied && !state.globalEditDirty
+      ? queueEditCommand(commandType, payload, targetId, { refreshPreview, globalEditGeneration, historyGroup })
+      : false);
   }
   state.editCommandQueue = (state.editCommandQueue || Promise.resolve()).then(async () => {
-    if (!state.session) return false;
+    if (!sessionId || state.session?.session_id !== sessionId) return false;
     const response = await fetch(`/api/session/${state.session.session_id}/edit-commands`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ commands: [{ expected_revision: state.editRevision, command_type: commandType, target_id: targetId, history_group: historyGroup, payload }] }),
     });
     const result = await safeJson(response);
+    if (state.session?.session_id !== sessionId) return false;
     if (response.status === 409) {
       await refreshEditState();
       throw new Error(result?.detail?.message || "The edit state changed in another request.");
@@ -13129,6 +13339,7 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
     const preserveNewerGlobalEdit = globalEditGeneration !== null
       && globalEditGeneration !== state.globalEditGeneration;
     const optimisticAdjustments = preserveNewerGlobalEdit ? state.adjustments : null;
+    const draftGeometry = geometryDraftActive() ? state.adjustments.shared.geometry : null;
     state.editRevision = result.revision;
     state.editDocument = result.document;
     if (commandType === "replace_document") loadDenoiseDocument(state.editDocument);
@@ -13136,6 +13347,7 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
     if (optimisticAdjustments) state.editDocument.global_adjustments = optimisticAdjustments;
     state.documentDirty = preserveNewerGlobalEdit || Boolean(result.dirty);
     state.adjustments = optimisticAdjustments || result.document.global_adjustments;
+    if (draftGeometry) state.adjustments.shared.geometry = draftGeometry;
     if (state.geometryTransformHandoffSignature
       && state.geometryTransformHandoffSignature !== geometrySignature()) {
       state.geometryTransformHandoffSignature = null;
@@ -13177,13 +13389,15 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
 
 async function syncGlobalEditState() {
   if (!state.session) return true;
+  const sessionId = state.session.session_id;
   // Perspective owns a transaction-local copy represented in the shared
   // adjustment object for transient previews. Never persist it before Apply.
-  if (state.perspectiveMode) return true;
+  if (geometryDraftActive()) return true;
   if (!state.globalEditDirty) {
     const pending = state.globalEditSyncPending;
     if (!pending) return true;
     const applied = await pending;
+    if (state.session?.session_id !== sessionId) return false;
     if (!applied) return false;
     return state.globalEditDirty || state.globalEditSyncPending ? syncGlobalEditState() : true;
   }
@@ -13204,6 +13418,7 @@ async function syncGlobalEditState() {
   const pending = queueEditCommand(commandType, payload, null, { globalEditGeneration: generation, historyGroup });
   state.globalEditSyncPending = pending;
   const applied = await pending;
+  if (state.session?.session_id !== sessionId) return false;
   if (state.globalEditSyncPending === pending) state.globalEditSyncPending = null;
   if (applied && matchOverride) state.sdrMatchGrainOverridePending = false;
   if (!applied) state.globalEditDirty = true;
@@ -13213,19 +13428,22 @@ async function syncGlobalEditState() {
 
 async function refreshEditState({ preserveLocalDraft = false } = {}) {
   if (!state.session) return;
+  const sessionId = state.session.session_id;
   const optimisticLocals = preserveLocalDraft
     ? state.editDocument?.local_adjustments
     : null;
   const response = await fetch(`/api/session/${state.session.session_id}/edit-state`);
   const result = await safeJson(response);
-  if (!response.ok) return;
+  if (!response.ok || state.session?.session_id !== sessionId) return;
+  const draftGeometry = geometryDraftActive() ? state.adjustments.shared.geometry : null;
   state.editRevision = result.revision;
   state.editDocument = result.document;
   state.sdrMatchGrainOverridePending = false;
   loadDenoiseDocument(state.editDocument);
   if (optimisticLocals) state.editDocument.local_adjustments = optimisticLocals;
-  state.documentDirty = Boolean(result.dirty);
+  state.documentDirty = state.globalEditDirty || Boolean(result.dirty);
   state.adjustments = result.document.global_adjustments;
+  if (draftGeometry) state.adjustments.shared.geometry = draftGeometry;
   // Rebuilding the active range input releases pointer capture. Keep the
   // existing control alive while its optimistic local object is still in use.
   if (!preserveLocalDraft) renderLocalAdjustments();
@@ -15637,6 +15855,7 @@ function finishCancelledImport() {
 }
 
 async function activateDesktopSession(session, projectPath) {
+  clearPreviewCache();
   state.session = session;
   state.importInProgress = false;
   if (els.rawSettingsPanel) delete els.rawSettingsPanel.dataset.initialized;
@@ -15650,7 +15869,6 @@ async function activateDesktopSession(session, projectPath) {
   state.currentView = "hdr";
   if (!projectPath) await applyNewSessionPreferences();
   state.interpretationGateDismissed = false;
-  clearPreviewCache();
   state.gpuPreview?.resetSession(session.session_id);
   invalidatePreview("hdr", { markDirty: false });
   invalidatePreview("sdr", { markDirty: false });

@@ -1141,6 +1141,8 @@ class GeometryMapResponse(BaseModel):
     source_to_output: list[float] = Field(min_length=9, max_length=9)
     output_width: int = Field(gt=0)
     output_height: int = Field(gt=0)
+    full_output_width: int = Field(gt=0)
+    full_output_height: int = Field(gt=0)
 
 
 class PerspectiveGuideLine(BaseModel):
@@ -1178,6 +1180,7 @@ class PerspectiveSolveResponse(BaseModel):
     perspective_vertical: float = Field(ge=-100.0, le=100.0)
     perspective_rotate: float = Field(ge=-45.0, le=45.0)
     residual_degrees: float = Field(ge=0.0)
+    guide_transform: list[float] = Field(min_length=9, max_length=9)
 
 
 class LocalLuminanceSampleRequest(BaseModel):

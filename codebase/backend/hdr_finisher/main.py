@@ -70,7 +70,7 @@ from .models import (
 from .overlay import encode_processed_overlay_bytes
 from .preview import encode_processed_preview_bytes, encode_processed_rgba8
 from .render_cache import StaleRender, encode_rgba_proxy
-from .finishing import solve_perspective_guides
+from .finishing import geometry_output_dimensions, perspective_guide_transform, solve_perspective_guides
 from .display_probe import probe_displays
 from .proofing import EvidenceStore, ProofArtifactStore
 from .projects import ProjectError, ProjectSourceRelinkRequired, open_project, save_project
@@ -884,12 +884,15 @@ def geometry_map(session_id: str, request: GeometryMapRequest) -> GeometryMapRes
         adjustments,
         request.long_edge,
     )
+    full_width, full_height = geometry_output_dimensions(session.source.width, session.source.height, adjustments.shared.geometry)
     return GeometryMapResponse(
         geometry_signature=adjustments.shared.geometry.model_dump_json(),
         output_to_source=list(output_to_source),
         source_to_output=list(source_to_output),
         output_width=width,
         output_height=height,
+        full_output_width=full_width,
+        full_output_height=full_height,
     )
 
 
@@ -916,11 +919,19 @@ def perspective_solve(session_id: str, request: PerspectiveSolveRequest) -> Pers
         raise _revision_conflict(exc) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    solved_geometry = request.adjustments.shared.geometry.model_copy(update={
+        "perspective_horizontal": horizontal,
+        "perspective_vertical": vertical,
+        "perspective_rotate": perspective_rotate,
+    })
     return PerspectiveSolveResponse(
         perspective_horizontal=horizontal,
         perspective_vertical=vertical,
         perspective_rotate=perspective_rotate,
         residual_degrees=residual,
+        guide_transform=list(perspective_guide_transform(
+            source.shape[1], source.shape[0], request.adjustments.shared.geometry, solved_geometry,
+        )),
     )
 
 

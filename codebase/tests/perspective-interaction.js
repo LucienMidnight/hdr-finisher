@@ -22,7 +22,7 @@ function assert(condition, message) {
     const moduleNumber = await group.locator(".control-group-header").evaluate(
       (element) => getComputedStyle(element, "::before").content,
     );
-    assert(moduleNumber === '"03"', `Perspective has the wrong module number: ${moduleNumber}`);
+    assert(moduleNumber === '"04"', `Perspective has the wrong module number: ${moduleNumber}`);
 
     const initial = await page.evaluate(() => ({
       revision: state.editRevision,
@@ -31,6 +31,8 @@ function assert(condition, message) {
     await page.locator("#perspective-vertical-tool").click();
     await page.locator(".perspective-guide-handle").first().waitFor({ state: "visible" });
     await page.locator(".perspective-guide-handle").first().press("Shift+ArrowRight");
+    assert(await page.locator(".perspective-guide-handle").first().evaluate((handle) => document.activeElement === handle),
+      "Guide movement replaced the focused handle, breaking repeated keyboard input and pointer capture.");
     await page.waitForFunction(() => state.perspectiveGuidesDirty === true);
     const staged = await page.evaluate(() => ({
       draft: state.perspectiveMode,
@@ -55,9 +57,15 @@ function assert(condition, message) {
     assert(JSON.stringify(cancelledGuide) === JSON.stringify(initial.geometry), "Cancel did not restore the complete pre-guide geometry.");
 
     const solveRequests = [];
+    const solveResponses = [];
     page.on("request", (request) => {
       if (request.method() === "POST" && request.url().includes("/perspective-solve")) {
         solveRequests.push(JSON.parse(request.postData() || "{}"));
+      }
+    });
+    page.on("response", async (response) => {
+      if (response.request().method() === "POST" && response.url().includes("/perspective-solve")) {
+        solveResponses.push({ status: response.status(), body: await response.text().catch(() => "") });
       }
     });
     await page.locator("#perspective-vertical-tool").click();
@@ -65,7 +73,15 @@ function assert(condition, message) {
     await page.locator(".perspective-guide-handle").first().press("Shift+ArrowRight");
     await page.waitForFunction(() => state.perspectiveGuidesDirty === true);
     await page.locator("#perspective-guide-apply").click();
-    await page.waitForFunction(() => state.perspectiveGuidesDirty === false);
+    await page.waitForFunction(() => state.perspectiveGuidesDirty === false).catch(async (error) => {
+      const ui = await page.evaluate(() => ({
+        status: document.querySelector("#perspective-status")?.textContent,
+        geometry: structuredClone(state.adjustments.shared.geometry),
+        guides: structuredClone(state.perspectiveGuides),
+        touched: structuredClone(state.perspectiveGuidesTouched),
+      }));
+      throw new Error(`${error.message}; requests=${JSON.stringify(solveRequests)}; responses=${JSON.stringify(solveResponses)}; ui=${JSON.stringify(ui)}`);
+    });
     assert(solveRequests.length === 1, `Expected one solve call after applying vertical guides, got ${solveRequests.length}`);
     assert(
       solveRequests[0].vertical_guides.length > 0 && solveRequests[0].horizontal_guides.length === 0,
@@ -77,7 +93,9 @@ function assert(condition, message) {
     await page.locator(".perspective-guide-handle").first().press("Shift+ArrowRight");
     await page.waitForFunction(() => state.perspectiveGuidesDirty === true);
     await page.locator("#perspective-guide-apply").click();
-    await page.waitForFunction(() => state.perspectiveGuidesDirty === false);
+    await page.waitForFunction(() => state.perspectiveGuidesDirty === false).catch((error) => {
+      throw new Error(`${error.message}; requests=${JSON.stringify(solveRequests)}; responses=${JSON.stringify(solveResponses)}`);
+    });
     assert(solveRequests.length === 2, `Expected a second solve call after applying horizontal guides, got ${solveRequests.length}`);
     assert(
       solveRequests[1].vertical_guides.length > 0 && solveRequests[1].horizontal_guides.length > 0,
