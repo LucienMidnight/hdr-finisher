@@ -8531,6 +8531,17 @@ html.desktop-shell .window-chrome {
   user-select: none;
 }
 
+/* Native macOS chrome is outside the renderer viewport. Author display rules
+   must not override the hidden custom menu and window controls. */
+html.desktop-shell.native-application-menu {
+  --window-chrome-h: 0px;
+}
+
+html.desktop-shell.native-application-menu .window-chrome,
+.window-menu-bar[hidden] {
+  display: none;
+}
+
 html.desktop-shell .app-shell {
   height: calc(100vh - var(--window-chrome-h));
   min-height: 0;

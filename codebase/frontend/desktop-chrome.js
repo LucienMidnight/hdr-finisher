@@ -22,7 +22,8 @@
   if (menuBar && usesNativeApplicationMenu) {
     menuBar.hidden = true;
     menuBar.setAttribute("aria-hidden", "true");
-    document.querySelector(".window-chrome")?.setAttribute("aria-label", "Window controls");
+    const chrome = document.querySelector(".window-chrome");
+    if (chrome) chrome.hidden = true;
   }
 
   const menus = [...document.querySelectorAll(".window-menu")];

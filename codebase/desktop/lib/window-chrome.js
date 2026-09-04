@@ -1,8 +1,8 @@
 function windowChromeOptions(platform = process.platform) {
   return {
-    frame: false,
+    frame: platform === "darwin",
     autoHideMenuBar: true,
-    // Frameless square-corner windows cannot complete macOS zoom/full-screen transitions.
+    // macOS uses its native title bar, traffic lights, and full-screen behavior.
     roundedCorners: platform === "darwin",
   };
 }

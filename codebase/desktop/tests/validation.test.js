@@ -44,14 +44,16 @@ test("update cache is discarded after an application upgrade", () => {
   assert.equal(cachedUpdateResult({ ...cache, checkedAt: now - UPDATE_CACHE_MAX_AGE_MS }, "0.7.3", now), null);
 });
 
-test("desktop chrome preserves macOS zoom support", () => {
+test("desktop chrome uses a native frame on macOS and custom frames elsewhere", () => {
   assert.deepEqual(windowChromeOptions("darwin"), {
-    frame: false,
+    frame: true,
     autoHideMenuBar: true,
     roundedCorners: true,
   });
   assert.equal(windowChromeOptions("win32").roundedCorners, false);
   assert.equal(windowChromeOptions("linux").roundedCorners, false);
+  assert.equal(windowChromeOptions("win32").frame, false);
+  assert.equal(windowChromeOptions("linux").frame, false);
 });
 
 test("desktop path types are restricted to supported extensions", () => {

@@ -92,6 +92,32 @@ async function main() {
     const window = await electronApp.firstWindow();
     await window.waitForSelector("#empty-import-button", { state: "visible", timeout: 30000 });
     checkpoint("window ready");
+    const nativeMacChrome = process.platform === "darwin";
+    const selectMenuItem = async (menuLabel, itemLabel, customMenuLabel, selector) => {
+      if (nativeMacChrome) {
+        await electronApp.evaluate(({ Menu, BrowserWindow }, { menuLabel, itemLabel }) => {
+          const item = Menu.getApplicationMenu()?.items.find((item) => item.label === menuLabel)
+            ?.submenu?.items.find((item) => item.label === itemLabel);
+          if (!item || !item.enabled) throw new Error(`Native menu item unavailable: ${menuLabel} > ${itemLabel}`);
+          item.click(undefined, BrowserWindow.getAllWindows()[0]);
+        }, { menuLabel, itemLabel });
+      } else {
+        await window.getByRole("button", { name: customMenuLabel, exact: true }).click();
+        await window.locator(selector).click();
+      }
+    };
+    if (nativeMacChrome) {
+      assert.equal(await window.locator(".window-chrome").isVisible(), false);
+      assert.equal(await window.locator(".window-menu-bar").isVisible(), false);
+      assert.equal(await window.locator(".window-controls").isVisible(), false);
+      const nativeWindow = await electronApp.evaluate(({ BrowserWindow, Menu }) => ({
+        titleBarHeight: BrowserWindow.getAllWindows()[0].getBounds().height - BrowserWindow.getAllWindows()[0].getContentBounds().height,
+        menus: Menu.getApplicationMenu().items.map((item) => item.label),
+      }));
+      assert.ok(nativeWindow.titleBarHeight > 0, "macOS should have a native title bar outside the renderer");
+      assert.ok(nativeWindow.menus.includes("File"));
+      assert.ok(nativeWindow.menus.includes("Window"));
+    }
     await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1100, 720));
     await window.waitForFunction(() => document.querySelector(".app-shell")?.classList.contains("compact-workspace"));
     const compactLayout = await window.evaluate(() => ({
@@ -142,7 +168,7 @@ async function main() {
       return title;
     });
     assert.equal(initialNativeTitle, "HDR Finisher");
-    assert.equal(await window.locator(".window-chrome").isVisible(), true);
+    assert.equal(await window.locator(".window-chrome").isVisible(), !nativeMacChrome);
     const headerGeometry = await window.evaluate(() => ({
       heights: [".rail-title-row", ".viewer-bar", ".grade-header"].map((selector) => document.querySelector(selector)?.getBoundingClientRect().height),
       sourceCollapsed: document.querySelector(".source-rail")?.classList.contains("collapsed"),
@@ -214,7 +240,7 @@ async function main() {
         };
       });
       assert.ok(layout.overflow <= 0, `Electron shell overflowed at ${width}x${height}: ${JSON.stringify(layout)}`);
-      assert.equal(layout.chromeHeight, 30, `Custom chrome height changed at ${width}x${height}`);
+      assert.equal(layout.chromeHeight, nativeMacChrome ? 0 : 30, `Custom chrome height changed at ${width}x${height}`);
       assert.equal(layout.viewerToolbarFits, true, `Viewer toolbar escaped beneath the Control Panel at ${width}x${height}: ${JSON.stringify(layout)}`);
       assert.equal(layout.viewerToolbarSingleRow, true, `Viewer toolbar changed rows at ${width}x${height}: ${JSON.stringify(layout)}`);
       assert.equal(layout.viewerToolbarCentered, true, `Viewer toolbar was not centered in the available header space at ${width}x${height}: ${JSON.stringify(layout)}`);
@@ -229,9 +255,11 @@ async function main() {
     await window.waitForFunction(() => !document.querySelector(".app-shell")?.classList.contains("compact-workspace"));
     await window.screenshot({ path: path.join(outputDirectory, "custom-shell-full.png") });
     await window.screenshot({ path: path.join(outputDirectory, "custom-shell-top.png"), clip: { x: 0, y: 0, width: 1800, height: 138 } });
-    await window.getByRole("button", { name: "File", exact: true }).click();
-    await window.screenshot({ path: path.join(outputDirectory, "custom-shell-file-menu.png"), clip: { x: 0, y: 0, width: 520, height: 360 } });
-    await window.keyboard.press("Escape");
+    if (!nativeMacChrome) {
+      await window.getByRole("button", { name: "File", exact: true }).click();
+      await window.screenshot({ path: path.join(outputDirectory, "custom-shell-file-menu.png"), clip: { x: 0, y: 0, width: 520, height: 360 } });
+      await window.keyboard.press("Escape");
+    }
     await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1100, 720));
     await window.waitForFunction(() => document.querySelector(".app-shell")?.classList.contains("compact-workspace"));
     assert.equal(await window.evaluate(() => typeof window.require), "undefined");
@@ -250,8 +278,7 @@ async function main() {
     assert.match(frontendSource, /Windows shell integrations and catalog applications/);
     assert.doesNotMatch(frontendSource, /That dropped file type is not supported by HDR Finisher/);
 
-    await window.getByRole("button", { name: "File", exact: true }).click();
-    await window.locator("#settings-open").click();
+    await selectMenuItem("Edit", "Settings…", "File", "#settings-open");
     await window.locator("#settings-dialog").waitFor({ state: "visible" });
     assert.equal(await window.locator(".top-actions #hdr-reference-white").count(), 0);
     await window.locator("#hdr-reference-white").selectOption("100");
@@ -308,8 +335,7 @@ async function main() {
     await window.locator("#settings-dialog").waitFor({ state: "visible" });
     await window.locator("#settings-close").click();
 
-    await window.getByRole("button", { name: "Help", exact: true }).click();
-    await window.locator("#help-open").click();
+    await selectMenuItem("Help", "HDR Finisher Help", "Help", "#help-open");
     await window.locator("#help-document h1").waitFor({ state: "visible" });
     assert.equal(await window.locator("#help-document h1").textContent(), "Five-Minute Quick Start");
     await window.locator("#help-search").fill("reference white");
@@ -656,8 +682,7 @@ async function main() {
     assert.equal(savedProject.global_adjustments.shared.false_color_ceiling_nits, 1000);
     assert.equal(Object.hasOwn(savedProject.global_adjustments.shared, "overlay_preset"), false);
     assert.equal(await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getTitle()), "HDR Finisher");
-    await window.getByRole("button", { name: "File", exact: true }).click();
-    await window.locator("#project-open").click();
+    await selectMenuItem("File", "Open Project…", "File", "#project-open");
     await window.locator("#directory-browser").waitFor({ state: "visible" });
     assert.equal(await window.locator("#directory-browser").getAttribute("data-mode"), "project_open");
     const savedProjectRow = window.locator(".directory-browser-entry.supported").filter({ hasText: "electron-smoke.hdrfinisher" });
