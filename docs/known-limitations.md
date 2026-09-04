@@ -1,6 +1,6 @@
 # Known Limitations and Support Status
 
-This page prevents implemented, validated, expected, and planned behavior from being conflated. Status reflects the repository on **September 3, 2026**.
+This page prevents implemented, validated, expected, and planned behavior from being conflated. Status reflects the repository on **September 4, 2026**.
 
 ## Platform matrix
 
@@ -52,6 +52,7 @@ Importing, opening a project, ejecting, and closing prompt to save or discard un
 - Headless automated tests cannot certify emitted luminance.
 - Display telemetry is descriptive and may be inaccurate; it is not a meter.
 - Linux HDR presentation is qualified only on native Wayland when Chromium reports HDR and the extended `rgba16float` WebGPU canvas is active. X11/Xwayland, SDR output, and CPU/device-loss fallback are explicitly labeled as non-authoritative SDR simulation.
+- On the qualified KDE/Wayland NVIDIA path, smooth HDR gradients may show more visible contouring or banding than the same content on Windows or macOS, even when the Technical scope reports a 16-bit-float WebGPU canvas, 10-bit components, and 30-bit screen output. Lowering the tested display from 143.98 Hz to 59.95 Hz did not change the result. This is a live Linux presentation limitation and does not by itself indicate that high-bit-depth exported pixels are banded; verify critical gradients in a high-bit-depth export on the intended delivery platform. Presentation-only dithering is planned as a later polish investigation.
 - Crop, Rotate/Straighten, and Perspective are not GPU-accelerated. Each interactive change round-trips to a backend Python/Pillow warp, so dragging these controls feels less immediate than grading sliders, which run on WebGPU after one initial geometry proxy load.
 
 ## Color limitations
