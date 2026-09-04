@@ -11358,6 +11358,7 @@ function activateWorkflowTab(workflow, { focus = false } = {}) {
   window.HDRProofing?.render();
   window.dispatchEvent(new CustomEvent("hdrfinisher:workflowchange", { detail: { workflow: next } }));
   renderVignetteCenter();
+  renderLocalMaskOverlay();
 }
 
 function prepareExportRail() {
@@ -14385,7 +14386,12 @@ function renderLocalMaskOverlay() {
   if (state.pathMaskProgressTarget && state.pathMaskProgressTarget.localId !== local?.id) {
     cancelPathMaskProgress();
   }
-  const active = state.gradeMode === "local" && Boolean(local) && local.enabled !== false;
+  // The mask gizmo belongs to the Grade stage only. Proof and Export show the
+  // same preview element, so a stale gizmo would otherwise stay drawn over it.
+  const active = state.activeWorkflow === "grade"
+    && state.gradeMode === "local"
+    && Boolean(local)
+    && local.enabled !== false;
   canvas.classList.toggle("editing", active);
   syncLocalMaskOverlayViewport();
   const rect = canvas.getBoundingClientRect();

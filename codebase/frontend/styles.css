@@ -980,10 +980,16 @@ body[data-active-lane="sdr"] .lane-dot {
 }
 
 .zoom-value {
-  flex: 0 0 7ch;
-  width: 7ch;
-  min-width: 7ch;
-  max-width: 7ch;
+  /* Four digits plus the percent sign ("1600%"). The readout renders in a
+     proportional face, where "%" is ~1.66ch rather than 1ch, so the string is
+     ~5.7ch wide -- and border-box sizing folds the padding and border into the
+     width on top of that. Measured worst case is 33.8px of text inside 18px of
+     chrome; 6ch + 20px clears it at every toolbar breakpoint. */
+  --zoom-value-width: calc(6ch + 20px);
+  flex: 0 0 var(--zoom-value-width);
+  width: var(--zoom-value-width);
+  min-width: var(--zoom-value-width);
+  max-width: var(--zoom-value-width);
   height: 24px;
   padding: 2px 5px;
   border: 1px solid var(--border);
@@ -3290,10 +3296,10 @@ body[data-active-lane="sdr"] .grade-rail {
   }
 
   .zoom-value {
-    flex-basis: 6.5ch;
-    width: 6.5ch;
-    min-width: 6.5ch;
-    max-width: 6.5ch;
+    flex-basis: var(--zoom-value-width);
+    width: var(--zoom-value-width);
+    min-width: var(--zoom-value-width);
+    max-width: var(--zoom-value-width);
   }
 }
 
@@ -7657,10 +7663,6 @@ body {
   display: flex;
 }
 
-.compact-workspace .viewer-tool-divider:last-of-type {
-  display: none;
-}
-
 .compact-workspace .scope-layout {
   grid-template-columns: minmax(0, 1fr) clamp(160px, 25%, 200px);
 }
@@ -8780,10 +8782,10 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
 }
 
 .zoom-value {
-  flex-basis: 6.5ch;
-  width: 6.5ch;
-  min-width: 6.5ch;
-  max-width: 6.5ch;
+  flex-basis: var(--zoom-value-width);
+  width: var(--zoom-value-width);
+  min-width: var(--zoom-value-width);
+  max-width: var(--zoom-value-width);
 }
 
 .viewer-menu-toggle {
@@ -8989,10 +8991,10 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
   }
 
   .zoom-value {
-    flex-basis: 6.5ch;
-    width: 6.5ch;
-    min-width: 6.5ch;
-    max-width: 6.5ch;
+    flex-basis: var(--zoom-value-width);
+    width: var(--zoom-value-width);
+    min-width: var(--zoom-value-width);
+    max-width: var(--zoom-value-width);
   }
 }
 

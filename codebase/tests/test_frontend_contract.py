@@ -1563,7 +1563,12 @@ def test_viewer_exposes_icon_comparison_layouts_with_active_lane_scopes() -> Non
     assert 'id="comparison-image"' in html
     assert 'id="compare-button"' in html and "A/B" not in html
     assert 'id="compare-status"' not in html
-    assert html.count('class="viewer-tool-divider"') == 4
+    # Four group boundaries, plus one between each of Overlays, Preview and
+    # Frame -- they open separate tools, not one grouped control.
+    assert html.count('class="viewer-tool-divider"') == 6
+    divider = '<span class="viewer-tool-divider" aria-hidden="true">|</span>'
+    for toggle in ("preview-toggle", "frame-toggle"):
+        assert html.split(f'<button id="{toggle}"')[0].rstrip().endswith(divider)
     assert 'class="zoom-presets" role="group" aria-label="Zoom presets"' in html
     assert 'state.compareLayout = "single"' in javascript
     assert 'els.compareStatus' not in javascript
@@ -1580,7 +1585,9 @@ def test_viewer_exposes_icon_comparison_layouts_with_active_lane_scopes() -> Non
     assert '.preview-stage[data-compare-layout="split-vertical"]' in css
     assert '.preview-stage[data-compare-layout="side-vertical"]' in css
     assert ".tool-button.compare-mode-button" in css
-    assert "flex: 0 0 7ch;" in css
+    # The zoom readout has to hold four digits plus the percent sign.
+    assert "--zoom-value-width: calc(6ch + 20px);" in css
+    assert "flex: 0 0 var(--zoom-value-width);" in css
     assert "width: clamp(120px, 13vw, 190px);" in css
     assert ".viewer-tool-divider" in css
     assert ".zoom-presets" in css
