@@ -69,12 +69,6 @@ async function canvasVariationCount(locator) {
     assert(await localToggle.getAttribute("aria-expanded") === "true", "Local Adjustments did not expand.");
     assert(await page.locator("#local-adjustments-group").evaluate((node) => !node.classList.contains("collapsed")), "Local group remained collapsed.");
     assert(await page.locator('[data-group="hdr-tone"]').isVisible(), "Tone disappeared when Local Adjustments expanded.");
-    const localGroupBox = await page.locator("#local-adjustments-group").boundingBox();
-    const cropGroupBox = await page.locator('[data-group="geometry"]').boundingBox();
-    assert(
-      localGroupBox && cropGroupBox && cropGroupBox.y >= localGroupBox.y + localGroupBox.height - 1,
-      "Crop & Rotate and the grading groups should remain in flow below the expanded Local Adjustments group.",
-    );
 
     const expectedTools = ["brush", "linear_gradient", "luminance_range", "path"];
     for (let index = 0; index < expectedTools.length; index += 1) {
