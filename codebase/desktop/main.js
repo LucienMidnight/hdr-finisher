@@ -1,4 +1,4 @@
-const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, screen, session, shell } = require("electron");
+const { app, BrowserWindow, clipboard, crashReporter, dialog, ipcMain, Menu, screen, session, shell } = require("electron");
 const { spawn } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -19,6 +19,7 @@ const { distributionChannel, linuxSessionState, serializeDisplay, updatesManaged
 const { cachedUpdateResult } = require("./lib/updates");
 const { DEFAULT_WINDOW_BOUNDS, clampWindowBounds } = require("./lib/window-bounds");
 const { windowChromeOptions } = require("./lib/window-chrome");
+const { installProcessDiagnostics } = require("./lib/process-diagnostics");
 
 if (!app.isPackaged) app.setVersion(require("./package.json").version);
 
@@ -57,6 +58,8 @@ let updateCheckCache = null;
 let pendingOpenPaths = [];
 let rendererReady = false;
 let displayChangeTimer = null;
+let processDiagnostics = null;
+let windowFailure = null;
 const knownProjectPaths = new Set();
 const grantedExportPaths = new Set();
 
@@ -877,6 +880,7 @@ async function createWindow() {
       webviewTag: false,
     },
   });
+  windowFailure = processDiagnostics.attachWindow(mainWindow);
   buildMenu();
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   mainWindow.setMenuBarVisibility(false);
@@ -905,6 +909,7 @@ async function createWindow() {
   mainWindow.on("closed", () => {
     clearTimeout(displayChangeTimer);
     mainWindow = null;
+    windowFailure = null;
     if (!shuttingDown) forceClose = false;
   });
   for (const eventName of ["maximize", "unmaximize", "enter-full-screen", "leave-full-screen"]) {
@@ -936,6 +941,12 @@ async function dispatchPendingOpenPaths() {
 }
 
 async function requestClose() {
+  if (windowFailure?.hasFailed()) {
+    // Save is implemented in the renderer. Offering it after that process
+    // exits would leave the user waiting forever for an impossible reply.
+    await windowFailure.showFailure();
+    return;
+  }
   if (!documentState.dirty) {
     if (quitRequested) {
       beginShutdown();
@@ -981,6 +992,13 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
+  processDiagnostics = installProcessDiagnostics({
+    app, crashReporter, dialog, shell,
+    isShuttingDown: () => shuttingDown,
+    getDocumentState: () => documentState,
+    onRendererGone: () => { rendererReady = false; },
+    quit: beginShutdown,
+  });
   pendingOpenPaths.push(...applicationArgs(process.argv));
   app.on("second-instance", (_event, argv) => {
     pendingOpenPaths.push(...applicationArgs(argv));
