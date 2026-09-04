@@ -85,6 +85,111 @@ def build_sdr_match_target(settled_hdr: np.ndarray) -> np.ndarray:
     return compress_to_srgb_gamut(acescg_to_linear_srgb(mapped_acescg))
 
 
+def _refinement_improves(
+    current: SDRMatchQualityMetrics, trial: SDRMatchQualityMetrics
+) -> bool:
+    """Accept a curve refinement only when nothing a normal match needs regresses.
+
+    Perceptual error at the 95th percentile is what these passes are chasing, but
+    a curve that buys it by pushing the median across a normal-match gate the
+    current candidate still satisfies leaves the whole result worse off.
+    """
+    return (
+        trial.p95_oklab_error < current.p95_oklab_error
+        and trial.p95_luma_error <= max(0.05, current.p95_luma_error)
+        and trial.median_luma_error <= max(0.01, current.median_luma_error)
+        and trial.median_oklab_error <= max(0.015, current.median_oklab_error)
+    )
+
+
+def _apply_tone_equalizer_merge(
+    source: np.ndarray,
+    adjustments: AdjustmentState,
+    local_adjustments: list[LocalAdjustment],
+    source_pixel_scale: float,
+    target: np.ndarray,
+    body: np.ndarray,
+    candidate: np.ndarray,
+    quality: SDRMatchQualityMetrics,
+    *,
+    gain: float = 0.65,
+) -> tuple[np.ndarray, SDRMatchQualityMetrics]:
+    """Merge the image residual into Exposure Bands, keeping it only if it helps.
+
+    Every other stage here proposes a change and verifies it.  This one used to
+    apply unconditionally, and the Tone Equalizer's response over a narrow band
+    is neither strong nor monotonic once the node corrections are re-ordered, so
+    the merge could darken the very band it was computed to lift.
+    """
+    sdr = adjustments.sdr
+    previous_nodes = [node.model_copy(deep=True) for node in sdr.tone_equalizer_nodes]
+    previous_enabled = sdr.tone_equalizer_section_enabled
+    _merge_image_tone_equalizer(sdr, candidate, target, body, gain=gain)
+    trial = _render_candidate(source, adjustments, local_adjustments, source_pixel_scale)
+    trial_quality = _quality_metrics(target, trial, body)
+    improves = (
+        trial_quality.p95_luma_error + 1e-6 < quality.p95_luma_error
+        or (
+            trial_quality.p95_luma_error <= quality.p95_luma_error + 1e-6
+            and trial_quality.median_luma_error + 1e-6 < quality.median_luma_error
+        )
+    )
+    if improves:
+        return trial, trial_quality
+    sdr.tone_equalizer_nodes = previous_nodes
+    sdr.tone_equalizer_section_enabled = previous_enabled
+    return candidate, quality
+
+
+def _refine_image_exposure(
+    source: np.ndarray,
+    adjustments: AdjustmentState,
+    local_adjustments: list[LocalAdjustment],
+    source_pixel_scale: float,
+    target: np.ndarray,
+    body: np.ndarray,
+) -> None:
+    """Correct the neutral-ramp Exposure fit against the actual image.
+
+    The neutral fit only ever sees a synthetic grey ramp, so it is blind to any
+    error that depends on what colour the image was.  A fully desaturated grade
+    is the extreme case: the HDR and SDR desaturation paths weight their
+    primaries differently, which leaves a near-uniform brightness offset the
+    ramp has no way to show.  The Tone Equalizer cannot clean that up on its own
+    -- over a narrow band its authority is weak and not even monotonic -- so a
+    bounded Exposure refinement runs first, against the real target.
+    """
+    sdr = adjustments.sdr
+    authored = float(sdr.exposure)
+
+    def measure(exposure: float) -> SDRMatchQualityMetrics:
+        sdr.exposure = float(np.clip(exposure, -8.0, 8.0))
+        return _quality_metrics(
+            target, _render_candidate(source, adjustments, local_adjustments, source_pixel_scale), body
+        )
+
+    best_exposure = authored
+    best_quality = measure(authored)
+
+    def consider(offset: float) -> None:
+        nonlocal best_exposure, best_quality
+        exposure = authored + offset
+        trial_quality = measure(exposure)
+        if (
+            trial_quality.p95_luma_error + 1e-6 < best_quality.p95_luma_error
+            and trial_quality.p95_oklab_error <= best_quality.p95_oklab_error + 0.003
+        ):
+            best_exposure = float(sdr.exposure)
+            best_quality = trial_quality
+
+    for offset in (-0.30, -0.20, -0.10, 0.10, 0.20, 0.30):
+        consider(offset)
+    coarse = best_exposure - authored
+    for offset in (coarse - 0.05, coarse + 0.05):
+        consider(offset)
+    sdr.exposure = best_exposure
+
+
 def materialize_sdr_match(
     source: np.ndarray,
     adjustments: AdjustmentState,
@@ -127,12 +232,15 @@ def materialize_sdr_match(
     result_locals = _materialize_local_grades(source, settled_hdr, adjustments, local_adjustments)
 
     _fit_neutral_tonal_response(result_adjustments, adjustments, reference_white_nits)
-
-    candidate = _render_candidate(source, result_adjustments, result_locals, source_pixel_scale)
-    _merge_image_tone_equalizer(result_adjustments.sdr, candidate, target, body)
+    _refine_image_exposure(
+        source, result_adjustments, result_locals, source_pixel_scale, target, body
+    )
 
     candidate = _render_candidate(source, result_adjustments, result_locals, source_pixel_scale)
     quality = _quality_metrics(target, candidate, body)
+    candidate, quality = _apply_tone_equalizer_merge(
+        source, result_adjustments, result_locals, source_pixel_scale, target, body, candidate, quality
+    )
     candidate, quality = _fit_image_semantic_controls(
         source,
         result_adjustments,
@@ -159,10 +267,7 @@ def materialize_sdr_match(
             setattr(result_adjustments.sdr, channel_name, curve)
         joint_candidate = _render_candidate(source, result_adjustments, result_locals, source_pixel_scale)
         joint_quality = _quality_metrics(target, joint_candidate, body)
-        if (
-            joint_quality.p95_oklab_error < quality.p95_oklab_error
-            and joint_quality.p95_luma_error <= max(0.05, quality.p95_luma_error)
-        ):
+        if _refinement_improves(quality, joint_quality):
             candidate = joint_candidate
             quality = joint_quality
         else:
@@ -187,10 +292,7 @@ def materialize_sdr_match(
                 source, result_adjustments, result_locals, source_pixel_scale
             )
             residual_quality = _quality_metrics(target, residual_candidate, body)
-            if (
-                residual_quality.p95_oklab_error < quality.p95_oklab_error
-                and residual_quality.p95_luma_error <= max(0.05, quality.p95_luma_error)
-            ):
+            if _refinement_improves(quality, residual_quality):
                 candidate = residual_candidate
                 quality = residual_quality
             else:
@@ -204,10 +306,7 @@ def materialize_sdr_match(
             ))
             trial_candidate = _render_candidate(source, result_adjustments, result_locals, source_pixel_scale)
             trial_quality = _quality_metrics(target, trial_candidate, body)
-            if (
-                trial_quality.p95_oklab_error < quality.p95_oklab_error
-                and trial_quality.p95_luma_error <= max(0.05, quality.p95_luma_error)
-            ):
+            if _refinement_improves(quality, trial_quality):
                 candidate = trial_candidate
                 quality = trial_quality
             else:
@@ -216,9 +315,10 @@ def materialize_sdr_match(
         # One conservative luma-only correction is permitted before rejecting.
         # It remains an ordinary Tone Equalizer edit so later Exposure changes
         # keep useful slope and never run into an auto-generated curve plateau.
-        _merge_image_tone_equalizer(result_adjustments.sdr, candidate, target, body, gain=0.45)
-        candidate = _render_candidate(source, result_adjustments, result_locals, source_pixel_scale)
-        quality = _quality_metrics(target, candidate, body)
+        candidate, quality = _apply_tone_equalizer_merge(
+            source, result_adjustments, result_locals, source_pixel_scale, target, body,
+            candidate, quality, gain=0.45,
+        )
 
     if not np.isfinite(candidate).all() or quality.p95_luma_error > 0.05 or quality.p95_oklab_error > 0.05:
         raise SDRMatchMaterializationError(
@@ -239,6 +339,60 @@ def materialize_sdr_match(
         quality=quality,
         status="matched" if normal else "needs_review",
     )
+
+
+# The luma weights _apply_color_grading uses to make a wheel's tint neutral.
+# They differ per lane, which is why the same wheel is a different colour in
+# each -- see _translate_color_grading_wheels.
+_HDR_GRADING_LUMA = np.array([0.2722287, 0.6740818, 0.0536895], dtype=np.float32)
+_SDR_GRADING_LUMA = np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+
+
+def _grading_tint_vectors(hues: object, weights: np.ndarray) -> np.ndarray:
+    """The tint directions _apply_color_grading builds for these wheel angles."""
+    angle = np.deg2rad(np.asarray(hues, dtype=np.float32)).reshape(-1, 1)
+    vectors = np.concatenate(
+        (np.cos(angle), np.cos(angle - 2.0 * np.pi / 3.0), np.cos(angle + 2.0 * np.pi / 3.0)),
+        axis=1,
+    ).astype(np.float32)
+    vectors -= vectors @ np.asarray(weights, dtype=np.float32).reshape(3, 1)
+    vectors /= np.maximum(np.max(np.abs(vectors), axis=1, keepdims=True), 1e-6)
+    return vectors
+
+
+def _translate_color_grading_wheels(
+    grading: ColorGradingAdjustments, source: ColorGradingAdjustments
+) -> None:
+    """Re-aim each wheel so SDR tints the colour the HDR lane actually produced.
+
+    Each lane builds its wheel direction in its own primaries and makes it
+    luma-neutral with its own weights, so an identical hue number is a
+    different colour in each -- up to sixteen degrees apart, and up to twice the
+    strength, once the HDR tint is measured in display primaries. Copying the
+    numbers across therefore does not copy the grade.  Solve instead for the
+    wheel angle and saturation whose SDR tint best reproduces the HDR one.
+    """
+    candidate_hues = np.arange(0.0, 360.0, 0.25, dtype=np.float32)
+    candidates = _grading_tint_vectors(candidate_hues, _SDR_GRADING_LUMA)
+    energy = np.maximum(np.sum(candidates * candidates, axis=1), 1e-6)
+    for name in ("shadows", "midtones", "highlights"):
+        authored = getattr(source, name)
+        saturation = float(authored.saturation)
+        if saturation <= 1e-6:
+            continue
+        target = acescg_to_linear_srgb(
+            (
+                _grading_tint_vectors([authored.hue], _HDR_GRADING_LUMA)[0]
+                * np.float32(saturation)
+            ).reshape(1, 1, 3)
+        ).reshape(3)
+        scales = (candidates @ target) / energy
+        residuals = np.linalg.norm(candidates * scales[:, None] - target, axis=1)
+        residuals = np.where(scales > 0.0, residuals, np.float32(np.inf))
+        best = int(np.argmin(residuals))
+        wheel = getattr(grading, name)
+        wheel.hue = float(candidate_hues[best] % 360.0)
+        wheel.saturation = float(np.clip(scales[best], 0.0, 100.0))
 
 
 def _semantic_sdr_translation(adjustments: AdjustmentState, settled_hdr: np.ndarray) -> SDRAdjustments:
@@ -272,6 +426,7 @@ def _semantic_sdr_translation(adjustments: AdjustmentState, settled_hdr: np.ndar
     sdr.vignette = hdr.vignette.model_copy(deep=True)
     sdr.film_look = hdr.film_look.model_copy(deep=True)
     sdr.color_grading = hdr.color_grading.model_copy(deep=True)
+    _translate_color_grading_wheels(sdr.color_grading, hdr.color_grading)
 
     luma = np.maximum(_acescg_luma(settled_hdr), 0.0)
     normalized = luma / np.float32(0.18) * SDR_DISPLAY_REFERENCE_WHITE
@@ -575,6 +730,11 @@ def _fit_image_semantic_controls(
             score(trial_quality) + 1e-6 < score(quality)
             and trial_quality.p95_luma_error <= max(0.05, quality.p95_luma_error + 0.003)
             and trial_quality.p95_oklab_error <= max(0.05, quality.p95_oklab_error + 0.003)
+            # A semantic correction may improve the aggregate score while
+            # pushing a normal-match gate the current candidate still meets
+            # over its limit. Never trade a satisfied gate away.
+            and trial_quality.median_luma_error <= max(0.01, quality.median_luma_error)
+            and trial_quality.median_oklab_error <= max(0.015, quality.median_oklab_error)
         )
 
     if quality.p95_luma_error <= 0.03 and quality.p95_oklab_error <= 0.04:
@@ -584,22 +744,31 @@ def _fit_image_semantic_controls(
     authored_vignette = float(sdr.vignette.amount)
     best_saturation = authored_saturation
     best_vignette = authored_vignette
-    if sdr.vignette_section_enabled and abs(authored_vignette) > 1e-6:
-        trials = (
-            (-0.32, 0.0), (-0.24, 0.0), (-0.16, 0.0), (-0.08, 0.0), (0.0, 0.0),
-            (-0.24, 0.5), (-0.16, 0.5), (-0.08, 0.5),
-        )
-    else:
-        trials = tuple((offset, 1.0) for offset in (-0.40, -0.32, -0.24, -0.16, -0.08, 0.08, 0.16, 0.24, 0.32))
-    for saturation_offset, vignette_scale in trials:
-        sdr.saturation = float(np.clip(authored_saturation + saturation_offset, -1.0, 3.0))
-        sdr.vignette.amount = float(np.clip(authored_vignette * vignette_scale, -100.0, 100.0))
+
+    def try_trial(saturation: float, vignette_amount: float) -> None:
+        nonlocal candidate, quality, best_saturation, best_vignette
+        sdr.saturation = float(np.clip(saturation, -1.0, 3.0))
+        sdr.vignette.amount = float(np.clip(vignette_amount, -100.0, 100.0))
         trial = _render_candidate(source, adjustments, local_adjustments, source_pixel_scale)
         trial_quality = _quality_metrics(target, trial, body)
         if accept_trial(trial, trial_quality):
             candidate, quality = trial, trial_quality
             best_saturation = sdr.saturation
             best_vignette = sdr.vignette.amount
+
+    # Saturation is fitted against the vignette the grade actually authored.
+    # Pairing every saturation offset with a scaled-away vignette let a residual
+    # that has nothing to do with falloff quietly halve or erase a copied
+    # Vignette, so the two axes are searched separately.
+    # Ordered by magnitude so the smallest departure from the authored
+    # Saturation wins whenever a larger one is not materially better.
+    for saturation_offset in (-0.08, 0.08, -0.16, 0.16, -0.24, 0.24, -0.32, 0.32, -0.40):
+        try_trial(authored_saturation + saturation_offset, authored_vignette)
+    # Only once saturation has settled may the vignette itself give, and only
+    # when the grade authored one at all.
+    if sdr.vignette_section_enabled and abs(authored_vignette) > 1e-6:
+        for vignette_scale in (0.5, 0.0):
+            try_trial(best_saturation, authored_vignette * vignette_scale)
     sdr.saturation = best_saturation
     sdr.vignette.amount = best_vignette
 

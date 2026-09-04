@@ -152,7 +152,11 @@ def test_calibrated_scene_materializes_into_normal_visible_modules() -> None:
     raised_luma = np.einsum("...c,c->...", raised_candidate, SDR_LUMA, optimize=True)
     editable_body = (candidate_luma >= 0.10) & (candidate_luma <= 0.80)
     assert float(np.median(raised_luma[editable_body] - candidate_luma[editable_body])) > 0.05
-    assert float(np.percentile(raised_luma, 75)) > float(np.percentile(candidate_luma, 75)) + 0.02
+    # Sampled inside the editable body. The match now lands a brighter, more
+    # faithful upper-mid, so a whole-frame P75 sits in the deliberately
+    # compressed shoulder, where a squashed response is the intended behaviour
+    # rather than a loss of Exposure headroom.
+    assert float(np.percentile(raised_luma[editable_body], 75)) > float(np.percentile(candidate_luma[editable_body], 75)) + 0.02
     assert float(np.mean(raised_luma >= 0.999)) <= float(np.mean(candidate_luma >= 0.999)) + 0.01
     robust_body = (candidate_luma >= 0.05) & (candidate_luma <= 0.75)
     body_delta = raised_luma[robust_body] - candidate_luma[robust_body]
@@ -213,3 +217,94 @@ def test_specular_only_local_tone_is_neutralized_without_authoring_curves() -> N
     assert _curve_is_identity(translated.red_curve)
     assert _curve_is_identity(translated.green_curve)
     assert _curve_is_identity(translated.blue_curve)
+
+
+def _monochrome_grade() -> AdjustmentState:
+    """A black-and-white conversion on top of an ordinary HDR grade."""
+    adjustments = AdjustmentState()
+    hdr = adjustments.hdr
+    hdr.saturation = -1.0
+    hdr.exposure = 0.35
+    hdr.contrast = 0.20
+    hdr.highlight_section_enabled = True
+    hdr.highlight_compression_start_nits = 300.0
+    hdr.highlight_compression_target_nits = 800.0
+    hdr.detail.clarity_amount = 20.0
+    hdr.film_look.print_strength = 25.0
+    hdr.vignette.amount = -25.0
+    return adjustments
+
+
+def _mean_chroma(image: np.ndarray) -> float:
+    values = np.asarray(image, dtype=np.float32)
+    return float(np.mean(np.max(values, axis=-1) - np.min(values, axis=-1)))
+
+
+def test_black_and_white_grade_materializes_into_a_black_and_white_recipe() -> None:
+    """A desaturated HDR grade must survive Match rather than be rejected.
+
+    The neutral tonal fit only sees a synthetic grey ramp, so it is blind to
+    error that depends on the image's colour. Pulling Saturation to -1 is the
+    case where the HDR and SDR desaturation paths diverge most, and the whole
+    match used to be rejected -- which left the SDR lane untouched and still in
+    full colour beside a black-and-white HDR.
+    """
+    source = tifffile.imread(FIXTURE).astype(np.float32)
+    adjustments = _monochrome_grade()
+    result = materialize_sdr_match(
+        source,
+        adjustments,
+        [],
+        reference_white_nits=203,
+        source_pixel_scale=1.0,
+    )
+
+    assert result.status in {"matched", "needs_review"}
+    assert result.adjustments.sdr.saturation == -1.0
+    candidate = apply_adjustments(
+        source, result.adjustments, PreviewKind.SDR, include_grain=False, local_adjustments=[]
+    )
+    assert _mean_chroma(candidate) < 0.002
+
+
+def test_color_grading_wheels_are_translated_into_sdr_primaries() -> None:
+    """The same wheel numbers are not the same colour in both lanes.
+
+    Each lane builds its tint direction in its own primaries and neutralises it
+    with its own luma weights, so copying hue and saturation across leaves the
+    SDR grade pointing at a visibly different colour -- up to sixteen degrees
+    away on the green/magenta axis.
+    """
+    from hdr_finisher.adjustments import _apply_color_grading
+    from hdr_finisher.color import acescg_to_linear_srgb, linear_srgb_to_acescg
+    from hdr_finisher.models import ColorGradingAdjustments
+    from hdr_finisher.sdr_match import _translate_color_grading_wheels
+
+    def hue_of(tint: np.ndarray) -> float:
+        red, green, blue = (float(channel) for channel in tint)
+        x = red - 0.5 * (green + blue)
+        y = (np.sqrt(3.0) / 2.0) * (green - blue)
+        return float(np.degrees(np.arctan2(y, x))) % 360.0
+
+    sdr_grey = np.full((8, 8, 3), 0.18, dtype=np.float32)
+    hdr_grey = linear_srgb_to_acescg(sdr_grey.copy())
+
+    for wheel_name in ("shadows", "midtones", "highlights"):
+        for hue in (0.0, 90.0, 120.0, 210.0, 300.0):
+            authored = ColorGradingAdjustments()
+            authored.blending = 100.0
+            getattr(authored, wheel_name).hue = hue
+            getattr(authored, wheel_name).saturation = 60.0
+
+            reference = acescg_to_linear_srgb(
+                _apply_color_grading(hdr_grey.copy(), authored, PreviewKind.HDR)
+            )
+            reference_hue = hue_of(reference.mean(axis=(0, 1)) - sdr_grey.mean(axis=(0, 1)))
+
+            translated = authored.model_copy(deep=True)
+            _translate_color_grading_wheels(translated, authored)
+            graded = _apply_color_grading(sdr_grey.copy(), translated, PreviewKind.SDR)
+            graded_hue = hue_of(graded.mean(axis=(0, 1)) - sdr_grey.mean(axis=(0, 1)))
+
+            error = abs((graded_hue - reference_hue + 180.0) % 360.0 - 180.0)
+            assert error <= 1.0, f"{wheel_name} at {hue} deg drifted {error:.1f} deg"
