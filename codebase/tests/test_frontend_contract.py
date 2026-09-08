@@ -172,8 +172,16 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert "Highlight Compression" in html
     assert 'data-group="hdr-highlights"' in html
     assert 'data-section-path="hdr.highlight_section_enabled"' in html
-    assert '"hdr-tone", "hdr-equalizer", "hdr-zones", "curves", "hdr-color"' in script
-    assert 'panel.append(outputHighlights)' in script
+    # HDR reads Highlight Compression after the tone and curve work it
+    # compresses, since it is the output limiter. SDR keeps its shoulder early,
+    # where it is the scene-to-display placement rather than a limiter.
+    assert '"hdr-tone", "hdr-equalizer", "hdr-zones", "curves", "hdr-highlights", "hdr-color"' in script
+    assert '"sdr-tone", "sdr-highlights", "sdr-equalizer", "sdr-zones", "curves", "sdr-color"' in script
+    # The painted module index has to ascend in display order in both lanes, so
+    # Curves and Highlight Compression swap numbers when HDR is active.
+    assert 'body[data-active-lane="hdr"] .control-group[data-group="curves"] > .control-group-header::before { content: "09"; }' in css
+    assert '.control-group[data-group="hdr-highlights"] > .control-group-header::before { content: "10"; }' in css
+    assert '.control-group[data-group="curves"] > .control-group-header::before { content: "10"; }' in css
     assert '"sdr-tone", "sdr-highlights", "sdr-equalizer", "sdr-zones", "curves", "sdr-color"' in script
     assert "colorGrading.after(localAdjustmentsGroup)" in script
     assert "Output target" in html

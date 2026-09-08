@@ -29,7 +29,7 @@ function curvePointPosition(box, x, y) {
         .map((element) => element.dataset.group)
         .filter(Boolean)
     ), lane);
-    const expectedHdrOrder = ["denoise", "hdr-tone", "hdr-equalizer", "hdr-zones", "hdr-highlights", "curves", "hdr-color"];
+    const expectedHdrOrder = ["denoise", "hdr-tone", "hdr-equalizer", "hdr-zones", "curves", "hdr-highlights", "hdr-color"];
     const hdrOrder = await controlOrder("hdr");
     if (JSON.stringify(hdrOrder) !== JSON.stringify(expectedHdrOrder)) {
       throw new Error(`Unexpected HDR control order: ${JSON.stringify(hdrOrder)}`);

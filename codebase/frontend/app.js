@@ -10099,8 +10099,11 @@ async function switchLane(lane) {
 function arrangeLaneControlGroups(lane) {
   const panel = els.lanePanels.find((candidate) => candidate.dataset.lanePanel === lane);
   if (!panel) return;
+  // HDR runs Highlight Compression as the output limiter, so it reads after the
+  // tone and curve work it compresses and before Color. SDR keeps its shoulder
+  // early, where it is the scene-to-display placement rather than a limiter.
   const groupOrder = lane === "hdr"
-    ? ["denoise", "hdr-tone", "hdr-equalizer", "hdr-zones", "curves", "hdr-color"]
+    ? ["denoise", "hdr-tone", "hdr-equalizer", "hdr-zones", "curves", "hdr-highlights", "hdr-color"]
     : ["denoise", "sdr-tone", "sdr-highlights", "sdr-equalizer", "sdr-zones", "curves", "sdr-color"];
   for (const groupName of groupOrder) {
     const group = document.querySelector(`.control-group[data-group="${groupName}"]`);
@@ -10109,10 +10112,6 @@ function arrangeLaneControlGroups(lane) {
   const colorGrading = document.querySelector('.control-group[data-group="color-grading"]');
   const localAdjustmentsGroup = document.querySelector('.control-group[data-group="local-adjustments"]');
   if (colorGrading && localAdjustmentsGroup) colorGrading.after(localAdjustmentsGroup);
-  if (lane === "hdr") {
-    const outputHighlights = document.querySelector('.control-group[data-group="hdr-highlights"]');
-    if (outputHighlights) panel.append(outputHighlights);
-  }
 }
 
 function renderLaneChrome() {
