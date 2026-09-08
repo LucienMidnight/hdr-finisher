@@ -732,8 +732,8 @@ output {
   color: var(--blocking);
 }
 
-.interpretation-gate .attention-label {
-  margin-bottom: 4px;
+.viewer-status-attention .attention-label {
+  margin-right: 8px;
   color: var(--attention);
 }
 
@@ -855,6 +855,7 @@ input[type="text"] {
 
 .viewer-bar {
   position: relative;
+  z-index: 40;
   padding: 5px 10px;
   border-bottom: 1px solid var(--hairline);
   background: var(--panel);
@@ -1480,6 +1481,7 @@ body[data-active-lane="sdr"] .lane-dot {
 .empty-state {
   position: absolute;
   inset: 0;
+  z-index: 5;
   display: grid;
   align-content: center;
   justify-items: center;
@@ -1503,24 +1505,69 @@ body[data-active-lane="sdr"] .lane-dot {
   line-height: 1.5;
 }
 
-.preview-status {
+/* Progress reporting lives in a bar that slides out from under the viewer header.
+   It sits on the viewer panel rather than inside .viewport-frame, so zoom
+   scrolling cannot carry it out of view, and it is fully opaque so nothing
+   reads through it. */
+.viewer-status-dock {
   position: absolute;
-  right: 12px;
-  bottom: 12px;
-  z-index: 5;
-  max-width: min(520px, calc(100% - 24px));
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--panel) 94%, transparent);
-  color: var(--body);
-  font-family: var(--mono);
-  font-size: 10px;
+  top: var(--panel-header-h, 38px);
+  right: 0;
+  left: 0;
+  z-index: 35;
+  display: grid;
+  pointer-events: none;
+  transform: translateY(-100%);
+  transition: transform 200ms ease, visibility 200ms;
+  visibility: hidden;
 }
 
-.path-mask-progress {
-  z-index: 30;
-  pointer-events: none;
+.viewer-status-dock.open,
+.viewer-status-dock.closing {
+  visibility: visible;
+}
+
+.viewer-status-dock.open {
+  transform: translateY(0);
+}
+
+/* Rows are display:none when idle, which would collapse the bar before it could
+   move. Hold the last one laid out for the length of the slide back up. */
+.viewer-status-dock.closing > .viewer-status-row.held.hidden {
+  display: flex !important;
+}
+
+.viewer-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--body);
+  font-family: var(--mono);
+  font-size: 11px;
+  pointer-events: auto;
+}
+
+.viewer-status-row + .viewer-status-row {
+  border-top: 1px solid var(--hairline);
+}
+
+.viewer-status-row:not(:last-child) {
+  border-bottom: 0;
+}
+
+.viewer-status-copy {
+  flex: 1 1 240px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.viewer-status-row .preview-progress {
+  flex: 1 1 clamp(90px, 22cqi, 260px);
+  max-width: 260px;
 }
 
 .path-feather-status {
@@ -1538,49 +1585,20 @@ body[data-active-lane="sdr"] .lane-dot {
   color: var(--blocking);
 }
 
-.preview-status.error {
-  border-color: var(--blocking);
+.viewer-status-row.error {
   color: var(--error-text);
+  box-shadow: inset 3px 0 0 var(--blocking);
 }
 
-.interpretation-gate {
-  position: absolute;
-  left: 50%;
-  bottom: 18px;
-  z-index: 4;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 16px;
-  width: min(720px, calc(100% - 32px));
-  padding: 12px 14px;
-  border: 1px solid var(--attention);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--panel) 96%, transparent);
-  color: var(--body);
-  font-size: 12px;
-  line-height: 1.45;
-  transform: translateX(-50%);
+.viewer-status-attention {
+  box-shadow: inset 3px 0 0 var(--attention);
 }
 
-.overlay-legend {
-  position: absolute;
-  left: 12px;
-  bottom: 12px;
-  z-index: 3;
-  display: grid;
-  gap: 3px;
-  padding: 7px 9px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--panel) 92%, transparent);
-  color: var(--body);
-  font-family: var(--mono);
-  font-size: 9px;
-}
-
-.overlay-legend span:last-child {
-  color: var(--muted);
+.viewer-status-row .button-row {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .probe-strip {
@@ -1748,6 +1766,7 @@ body[data-active-lane="sdr"] .lane-dot {
      summon that bar across the bottom of the panel. */
   overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   border-top: 2px solid var(--text);
 }
 
@@ -3284,7 +3303,7 @@ body[data-active-lane="sdr"] .grade-rail {
     min-height: 26px;
   }
 
-  .viewer-tools > .tool-button,
+  .viewer-tools > .tool-button:not(.scope-region-toggle),
   .zoom-presets .tool-button {
     padding-inline: 5px;
   }
@@ -5801,7 +5820,9 @@ body[data-workflow="export"] .grade-rail {
   width: var(--grade-w);
   min-width: 340px;
   max-width: 420px;
+  overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   border-left: 1px solid var(--hairline);
   background: var(--panel);
   scrollbar-color: var(--border) var(--panel);
@@ -7013,25 +7034,13 @@ body {
   line-height: 1.4;
 }
 
-.preview-status {
-  top: 50%;
-  right: auto;
-  bottom: auto;
-  left: 50%;
-  display: grid;
-  gap: 14px;
-  width: min(440px, calc(100% - 48px));
-  max-width: none;
-  padding: 18px 20px;
-  border-color: color-mix(in srgb, var(--accent) 70%, var(--hairline));
-  background: color-mix(in srgb, var(--panel) 96%, transparent);
-  box-shadow: 0 14px 44px #0009, inset 3px 0 0 var(--accent);
+.viewer-status-row {
+  box-shadow: inset 3px 0 0 var(--accent);
   color: var(--text);
   font-family: var(--sans);
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 600;
   letter-spacing: .01em;
-  transform: translate(-50%, -50%);
 }
 
 .preview-progress {
@@ -7042,13 +7051,6 @@ body {
   border-radius: 999px;
   overflow: hidden;
   accent-color: var(--accent);
-}
-
-.preview-status-actions {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
 }
 
 .preview-cancel {
@@ -7073,9 +7075,41 @@ body {
   transition: width 180ms ease-out;
 }
 
-.preview-status.error {
-  border-color: var(--blocking);
-  box-shadow: 0 14px 44px #0009, inset 3px 0 0 var(--blocking);
+/* appearance: none drops the engine's built-in indeterminate animation, leaving
+   a dead grey track on every wait we cannot measure - imports, feather updates,
+   proof builds. Sweep it ourselves so those still read as working. */
+.preview-progress:indeterminate::-webkit-progress-bar {
+  background:
+    linear-gradient(90deg, transparent, var(--accent), transparent) no-repeat,
+    var(--input);
+  background-size: 38% 100%, auto;
+  animation: viewer-status-sweep 1150ms ease-in-out infinite;
+}
+
+.preview-progress:indeterminate::-moz-progress-bar {
+  background: transparent;
+}
+
+@keyframes viewer-status-sweep {
+  from { background-position: -40% 0, 0 0; }
+  to { background-position: 140% 0, 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preview-progress:indeterminate::-webkit-progress-bar {
+    background:
+      linear-gradient(90deg, transparent, var(--accent), transparent) center no-repeat,
+      var(--input);
+    animation: none;
+  }
+}
+
+.viewer-status-row.error {
+  box-shadow: inset 3px 0 0 var(--blocking);
+}
+
+.viewer-status-attention {
+  box-shadow: inset 3px 0 0 var(--attention);
 }
 
 .analysis-dock {
@@ -7718,15 +7752,6 @@ body {
     gap: 4px;
   }
 
-  .interpretation-gate {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 10px;
-    width: calc(100% - 24px);
-  }
-
-  .interpretation-gate .button-row {
-    flex-wrap: wrap;
-  }
 }
 
 /* Shared typography for control groups and metadata disclosures. */
@@ -8247,6 +8272,19 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
   color: var(--accent-strong);
   background: var(--segment-selected-background);
   box-shadow: var(--segment-selected-shadow);
+}
+
+.proof-rail .proof-preview-switch {
+  display: flex;
+  width: 100%;
+}
+
+.proof-rail .proof-preview-switch button {
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: center;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 
 /* Action buttons use the same lit, machined material as the selected segment plate. */
@@ -8780,7 +8818,7 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
   min-height: 26px;
 }
 
-.viewer-tools > .tool-button,
+.viewer-tools > .tool-button:not(.scope-region-toggle),
 .zoom-presets .tool-button {
   padding-inline: 5px;
 }
@@ -8989,7 +9027,7 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
     min-height: 26px;
   }
 
-  .viewer-tools > .tool-button,
+  .viewer-tools > .tool-button:not(.scope-region-toggle),
   .zoom-presets .tool-button {
     padding-inline: 5px;
   }

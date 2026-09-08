@@ -50,7 +50,11 @@ async function main() {
     await page.locator("#chrome-proof-toggle").click();
     await page.locator("#chrome-proof-image").waitFor({ state: "visible", timeout: 120000 });
     await page.locator("#chrome-proof-image").evaluate((image) => image.decode());
-    await page.waitForFunction(() => !["Updating…", "Stale"].includes(document.getElementById("chrome-proof-inline-status")?.textContent), { timeout: 120000 });
+    await page.waitForFunction(() => {
+      const building = document.getElementById("chrome-proof-refresh")?.textContent === "Building proof…";
+      const stale = document.getElementById("chrome-proof-status")?.textContent.startsWith("STALE PROOF");
+      return !building && !stale;
+    }, { timeout: 120000 });
     const firstProofUrl = await page.locator("#chrome-proof-image").getAttribute("src");
     await page.locator('[data-proof-preview="sdr"]').click();
     const sdrProofUrl = await page.locator("#chrome-proof-image").getAttribute("src");
@@ -66,17 +70,18 @@ async function main() {
     });
     await page.locator('[data-workflow-tab="proof"]').click();
     const visibleWhileStale = await page.locator("#chrome-proof-image").isVisible();
-    const staleStatus = await page.locator("#chrome-proof-inline-status").textContent();
+    const staleStatus = await page.locator("#chrome-proof-status").textContent();
     const staleProofUrl = await page.locator("#chrome-proof-image").getAttribute("src");
-    if (staleProofUrl !== firstProofUrl || staleStatus !== "Stale") {
+    if (staleProofUrl !== firstProofUrl || !staleStatus.startsWith("STALE PROOF")) {
       throw new Error(`Proof rebuilt during grading: ${staleStatus}`);
     }
     await page.locator("#chrome-proof-refresh").click();
     await page.waitForFunction(
       (previous) => {
         const image = document.getElementById("chrome-proof-image");
-        const status = document.getElementById("chrome-proof-inline-status")?.textContent;
-        return image?.getAttribute("src") !== previous && !["Updating…", "Stale"].includes(status);
+        const building = document.getElementById("chrome-proof-refresh")?.textContent === "Building proof…";
+        const stale = document.getElementById("chrome-proof-status")?.textContent.startsWith("STALE PROOF");
+        return image?.getAttribute("src") !== previous && !building && !stale;
       },
       firstProofUrl,
       { timeout: 120000 },
@@ -85,13 +90,13 @@ async function main() {
     await page.locator('[data-workflow-tab="grade"]').click();
     await page.locator('[data-kind="sdr"]').click();
     await page.locator('[data-workflow-tab="proof"]').click();
+    const entersOnHdr = await page.locator('[data-proof-lane="hdr"]').getAttribute("aria-pressed") === "true";
+    await page.locator('[data-proof-lane="sdr"]').click();
     const suspended = {
       imageVisible: await page.locator("#chrome-proof-image").isVisible(),
-      status: await page.locator("#chrome-proof-inline-status").textContent(),
+      status: await page.locator("#chrome-proof-status").textContent(),
     };
-    await page.locator('[data-workflow-tab="grade"]').click();
-    await page.locator('[data-kind="hdr"]').click();
-    await page.locator('[data-workflow-tab="proof"]').click();
+    await page.locator('[data-proof-lane="hdr"]').click();
     const resumedVisible = await page.locator("#chrome-proof-image").isVisible();
     await page.locator("#chrome-proof-toggle").click();
     const authoredVisible = await page.evaluate(() => [...document.querySelectorAll("#preview-image, #preview-canvas")]
@@ -114,28 +119,30 @@ async function main() {
 
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.screenshot({ path: path.join(output, "chrome-proof-1280.png"), fullPage: true });
-    const result = await page.evaluate(({ proofFormat, workflowLabels, mismatchStatus, visibleWhileStale, suspended, resumedVisible, authoredVisible }) => ({
+    const result = await page.evaluate(({ proofFormat, workflowLabels, mismatchStatus, visibleWhileStale, suspended, entersOnHdr, resumedVisible, authoredVisible }) => ({
       proofFormat,
       workflowLabels,
       mismatchStatus,
       visibleWhileStale,
       suspended,
+      entersOnHdr,
       resumedVisible,
       authoredVisible,
       targetOptions: [...document.querySelectorAll("#chrome-proof-target option")].map((option) => option.textContent),
       horizontalOverflow: document.documentElement.scrollWidth - window.innerWidth,
       userAgent: navigator.userAgent,
-    }), { proofFormat, workflowLabels, mismatchStatus, visibleWhileStale, suspended, resumedVisible, authoredVisible });
+    }), { proofFormat, workflowLabels, mismatchStatus, visibleWhileStale, suspended, entersOnHdr, resumedVisible, authoredVisible });
     result.consoleErrors = consoleErrors;
     result.pageErrors = pageErrors;
     fs.writeFileSync(path.join(output, "result.json"), JSON.stringify(result, null, 2));
     if (
       consoleErrors.length
       || pageErrors.length
-      || staleStatus !== "Stale"
+      || !staleStatus.startsWith("STALE PROOF")
       || !visibleWhileStale
+      || !entersOnHdr
       || suspended.imageVisible
-      || suspended.status !== "Suspended"
+      || !suspended.status.includes("suspended")
       || !resumedVisible
       || result.horizontalOverflow > 1
       || (!mismatchStatus.includes("Proofed") && mismatchStatus !== "alternate encoder unavailable")

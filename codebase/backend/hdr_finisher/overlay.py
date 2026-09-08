@@ -4,28 +4,21 @@ from io import BytesIO
 
 import numpy as np
 
-from .adjustments import apply_adjustments
 from .color_context import RenderColorContext, scene_linear_to_nits
 from .models import AdjustmentState, OverlayMode, PreviewKind
-from .preview import downsample_image
 
-
-def render_overlay_bytes(
-    image: np.ndarray,
-    adjustments: AdjustmentState,
-    kind: PreviewKind,
-    long_edge: int,
-    sdr_reference_image: np.ndarray | None = None,
-    color_context: RenderColorContext | None = None,
-) -> tuple[bytes, str]:
-    context = color_context or RenderColorContext()
-    if adjustments.shared.overlay_mode == OverlayMode.OFF:
-        return b"", "image/png"
-
-    processed = apply_adjustments(image, adjustments, kind, sdr_reference_image=sdr_reference_image, color_context=context)
-    downsampled = downsample_image(processed, long_edge)
-    overlay = build_overlay_rgba(downsampled, adjustments, kind, color_context=context)
-    return _encode_overlay_png(overlay), "image/png"
+FALSE_COLOR_PALETTE = np.array(
+    [
+        [0.18, 0.0, 0.42],
+        [0.0, 0.18, 0.85],
+        [0.0, 0.62, 1.0],
+        [0.0, 0.85, 0.35],
+        [0.98, 0.88, 0.18],
+        [1.0, 0.48, 0.12],
+        [1.0, 0.12, 0.12],
+    ],
+    dtype=np.float32,
+)
 
 
 def encode_processed_overlay_bytes(
@@ -72,19 +65,14 @@ def _false_color_overlay(image: np.ndarray, adjustments: AdjustmentState, opacit
         ],
         dtype=np.float32,
     )
+    # A reference white above the ceiling would leave the boundaries out of order; searchsorted needs them sorted.
+    bands = np.maximum.accumulate(bands)
+    # One band index per pixel: band i covers [bands[i - 1], bands[i]), with the last colour above the ceiling.
+    band_index = np.searchsorted(bands, luminance_nits, side="right")
+    palette = FALSE_COLOR_PALETTE[band_index]
+
     normalized = np.clip(luminance_nits / max(peak_nits, 1e-4), 0.0, 1.0)
-
-    palette = np.empty((*normalized.shape, 3), dtype=np.float32)
-    palette[luminance_nits < bands[0]] = np.array([0.18, 0.0, 0.42], dtype=np.float32)
-    palette[(luminance_nits >= bands[0]) & (luminance_nits < bands[1])] = np.array([0.0, 0.18, 0.85], dtype=np.float32)
-    palette[(luminance_nits >= bands[1]) & (luminance_nits < bands[2])] = np.array([0.0, 0.62, 1.0], dtype=np.float32)
-    palette[(luminance_nits >= bands[2]) & (luminance_nits < bands[3])] = np.array([0.0, 0.85, 0.35], dtype=np.float32)
-    palette[(luminance_nits >= bands[3]) & (luminance_nits < bands[4])] = np.array([0.98, 0.88, 0.18], dtype=np.float32)
-    palette[(luminance_nits >= bands[4]) & (luminance_nits < bands[5])] = np.array([1.0, 0.48, 0.12], dtype=np.float32)
-    palette[luminance_nits >= bands[5]] = np.array([1.0, 0.12, 0.12], dtype=np.float32)
-
-    alpha = np.full(normalized.shape, opacity * 255.0, dtype=np.float32)
-    alpha = np.clip(alpha * (0.45 + 0.55 * normalized), 0.0, 255.0)
+    alpha = opacity * 255.0 * (0.45 + 0.55 * normalized)
     return _stack_rgba(palette, alpha)
 
 
@@ -102,17 +90,6 @@ def _zebra_overlay(image: np.ndarray, opacity: np.float32, threshold_nits: np.fl
     rgba[..., :3] = np.where(stripes[..., None], 255, 24).astype(np.uint8)
     rgba[..., 3] = np.where(hot, np.uint8(np.clip(opacity * 255.0, 0.0, 255.0)), 0)
     return rgba
-
-
-def _luminance(image: np.ndarray, kind: PreviewKind) -> np.ndarray:
-    image = np.clip(image.astype(np.float32, copy=False), 0.0, None)
-    if kind == PreviewKind.HDR:
-        luminance = 0.2722287 * image[..., 0] + 0.6740818 * image[..., 1] + 0.0536895 * image[..., 2]
-    else:
-        luminance = 0.2126 * image[..., 0] + 0.7152 * image[..., 1] + 0.0722 * image[..., 2]
-    if kind == PreviewKind.HDR:
-        return luminance / 0.18
-    return np.clip(luminance, 0.0, 1.0)
 
 
 def _luminance_nits(image: np.ndarray, kind: PreviewKind = PreviewKind.HDR, color_context: RenderColorContext | None = None) -> np.ndarray:

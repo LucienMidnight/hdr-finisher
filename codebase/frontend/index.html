@@ -264,7 +264,7 @@
               </select>
             </label>
             <label>False Color Ceiling
-              <select id="false-color-ceiling" data-path="shared.false_color_ceiling_nits">
+              <select id="false-color-ceiling" data-path="shared.false_color_ceiling_nits" data-value-type="number">
                 <option value="100">100 nit</option>
                 <option value="1000" selected>1,000 nit</option>
                 <option value="4000">4,000 nit</option>
@@ -323,7 +323,10 @@
           <aside id="proof-workflow-panel" class="workflow-side-panel proof-rail panel" data-workflow-panel="proof" aria-label="Chromium Proof settings">
             <div class="workflow-rail-header">
               <div><p class="section-kicker">Browser review</p><h1 class="panel-title">Control Panel</h1></div>
-              <span id="chrome-proof-inline-status" class="status-text muted">Off</span>
+            </div>
+            <div id="proof-lane-switch" class="proof-preview-switch proof-lane-switch" role="group" aria-label="Active rendition">
+              <button type="button" class="active tooltip-trigger" data-proof-lane="hdr" data-tooltip="Review the graded HDR rendition. Chromium Proof renders on this lane." aria-pressed="true">HDR</button>
+              <button type="button" class="tooltip-trigger" data-proof-lane="sdr" data-tooltip="Review the SDR fallback. Chromium Proof pauses here and resumes on HDR." aria-pressed="false">SDR</button>
             </div>
             <label class="proof-enable-row tooltip-trigger" data-tooltip="Renders the actual delivered file through this app's Chromium HDR pipeline.">
               <span><strong>Show Chromium proof</strong></span>
@@ -371,6 +374,31 @@
           </aside>
         </div>
 
+        <div id="viewer-status-dock" class="viewer-status-dock" aria-live="polite">
+          <div id="interpretation-gate" class="viewer-status-row viewer-status-attention hidden" role="alert">
+            <span class="viewer-status-copy">
+              <span class="attention-label">Source interpretation needs review</span>
+              <span id="interpretation-gate-copy">We found ambiguous source metadata. Confirm the assumption before judging color or export.</span>
+            </span>
+            <span class="button-row">
+              <button id="accept-interpretation" class="button-secondary" type="button">Use assumption</button>
+              <button id="manual-interpretation" class="button-secondary" type="button">Set manually</button>
+            </span>
+          </div>
+          <div id="preview-status" class="viewer-status-row hidden">
+            <span id="preview-status-copy" class="viewer-status-copy" role="status"></span>
+            <progress id="preview-progress" class="preview-progress" aria-label="Preview progress"></progress>
+            <button id="cancel-import" class="button-secondary preview-cancel hidden" type="button">Cancel import</button>
+          </div>
+          <div id="path-mask-progress" class="viewer-status-row hidden" role="status">
+            <span id="path-mask-progress-copy" class="viewer-status-copy">Updating feather…</span>
+            <progress class="preview-progress" aria-label="Path feather progress"></progress>
+          </div>
+          <div id="proof-build-status" class="viewer-status-row hidden" role="status">
+            <span id="proof-build-status-copy" class="viewer-status-copy">Building proof…</span>
+            <progress class="preview-progress" aria-label="Proof build progress"></progress>
+          </div>
+        </div>
         <div class="viewport-frame" id="dropzone">
           <div id="preview-stage" class="preview-stage" data-compare-layout="single" data-primary-lane="hdr">
             <div id="preview-primary-pane" class="preview-pane preview-primary-pane" data-lane="hdr">
@@ -420,31 +448,6 @@
             <p class="empty-state-title">Drop an HDR image anywhere in the viewer</p>
             <p class="empty-state-copy">EXR, TIFF, Radiance HDR, PFM, HEIC, JPEG, or PNG</p>
             <button id="empty-import-button" class="button-secondary" type="button">Choose image</button>
-          </div>
-          <div id="false-color-legend" class="overlay-legend hidden">
-            <span>False color</span>
-            <span>Black · diffuse white · highlight ceiling</span>
-          </div>
-          <div id="interpretation-gate" class="interpretation-gate hidden" role="alert">
-            <div>
-              <p class="attention-label">Source interpretation needs review</p>
-              <p id="interpretation-gate-copy">We found ambiguous source metadata. Confirm the assumption before judging color or export.</p>
-            </div>
-            <div class="button-row">
-              <button id="accept-interpretation" class="button-secondary" type="button">Use assumption</button>
-              <button id="manual-interpretation" class="button-secondary" type="button">Set manually</button>
-            </div>
-          </div>
-          <div id="preview-status" class="preview-status hidden" aria-live="polite">
-            <span id="preview-status-copy" role="status"></span>
-            <div class="preview-status-actions">
-              <progress id="preview-progress" class="preview-progress" aria-label="Preview progress"></progress>
-              <button id="cancel-import" class="button-secondary preview-cancel hidden" type="button">Cancel import</button>
-            </div>
-          </div>
-          <div id="path-mask-progress" class="preview-status path-mask-progress hidden" role="status" aria-live="polite">
-            <span id="path-mask-progress-copy">Updating feather…</span>
-            <progress class="preview-progress" aria-label="Path feather progress"></progress>
           </div>
         </div>
       </section>

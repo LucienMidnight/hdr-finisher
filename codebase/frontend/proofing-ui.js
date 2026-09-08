@@ -5,6 +5,17 @@
   let errorMessage = "";
   let reviewSuggestion = "";
   let autoFallbackNotice = false;
+  let buildStage = null;
+
+  // A proof build runs through four observable steps, and the encode dominates
+  // the wall clock, so the weights are spaced to match rather than evenly.
+  const PROOF_BUILD_STAGES = {
+    encoding: { percent: 6, copy: () => `Encoding ${proofFormatLabel()} delivery bytes…` },
+    reusing: { percent: 45, copy: () => `Reusing the encoded ${proofFormatLabel()} artifact…` },
+    reconstructing: { percent: 55, copy: () => `Reconstructing at ${proofTargetShortLabel()}…` },
+    decoding: { percent: 82, copy: () => "Decoding the proof preview…" },
+    presenting: { percent: 96, copy: () => "Presenting the proof…" },
+  };
 
   bindProofEvents();
   window.HDRProofing = {
@@ -135,6 +146,7 @@
 
   function cancelPendingProof() {
     requestGeneration += 1;
+    buildStage = null;
   }
 
   async function refreshProof({ force = false } = {}) {
@@ -152,10 +164,13 @@
     const generation = ++requestGeneration;
     phase = "updating";
     errorMessage = "";
+    const mustEncode = force || artifactDirty || !state.proofArtifact
+      || state.proofArtifact.format !== state.proofFormat;
+    buildStage = PROOF_BUILD_STAGES[mustEncode ? "encoding" : "reusing"];
     renderProofUi();
     try {
       let artifact = state.proofArtifact;
-      if (force || artifactDirty || !artifact || artifact.format !== state.proofFormat) {
+      if (mustEncode) {
         const artifactResponse = await fetch(`/api/session/${state.session.session_id}/proof/artifact`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -182,6 +197,7 @@
         if (generation !== requestGeneration) return;
         artifact = payload;
       }
+      reportProofStage("reconstructing");
 
       const reconstructionRequest = (target) => fetch("/api/proof/reconstruction", {
         method: "POST",
@@ -196,12 +212,16 @@
         parseProofResponse(reconstructionResponse, "Chromium proof reconstruction failed."),
         parseProofResponse(sdrResponse, "SDR proof endpoint failed."),
       ]);
+      if (generation !== requestGeneration) return;
+      reportProofStage("decoding");
+
       const [deliveryAvailable] = await Promise.all([
         preloadImage(artifact.url).then(() => true, () => false),
         preloadImage(reconstruction.tile.url),
         preloadImage(sdrReconstruction.tile.url),
       ]);
       if (generation !== requestGeneration) return;
+      reportProofStage("presenting");
 
       state.proofArtifact = artifact;
       state.proofReconstruction = reconstruction;
@@ -211,10 +231,12 @@
       state.proofDirty = false;
       artifactDirty = false;
       phase = "idle";
+      buildStage = null;
       syncProofPresentation();
       renderProofUi();
     } catch (error) {
       if (generation !== requestGeneration) return;
+      buildStage = null;
       showProofFailure(error?.message || "Chromium proof failed.");
     }
   }
@@ -300,13 +322,7 @@
       const key = capabilityForFormat[option.value];
       option.disabled = state.capabilities[key]?.status !== "available";
     }
-    const suspended = state.proofEnabled && state.activeWorkflow === "proof" && (state.currentView !== "hdr" || state.comparePeekActive);
-    if (!state.proofEnabled) els.chromeProofInlineStatus.textContent = "Off";
-    else if (suspended) els.chromeProofInlineStatus.textContent = "Suspended";
-    else if (phase === "updating") els.chromeProofInlineStatus.textContent = "Updating…";
-    else if (phase === "error") els.chromeProofInlineStatus.textContent = "Unavailable";
-    else if (state.proofDirty) els.chromeProofInlineStatus.textContent = "Stale";
-    else els.chromeProofInlineStatus.textContent = proofTargetShortLabel();
+    syncProofBuildStatus();
     els.chromeProofStatus.textContent = proofStatusMessage(encoderReady);
     els.chromeProofStatus.dataset.state = phase;
     els.proofPreviewSwitch.classList.toggle("hidden", !state.proofReconstruction);
@@ -323,6 +339,26 @@
     renderWorkflowContext();
   }
 
+  function reportProofStage(name) {
+    buildStage = PROOF_BUILD_STAGES[name] || null;
+    syncProofBuildStatus();
+  }
+
+  // Building a proof is long enough to need the same visible progress the viewer
+  // dock gives imports, and it must be legible from any workflow stage.
+  function syncProofBuildStatus() {
+    if (phase !== "updating") {
+      setViewerStatusRow(els.proofBuildStatus, null);
+      return;
+    }
+    const prefix = state.proofReconstruction ? "Rebuilding proof" : "Building proof";
+    setViewerStatusRow(
+      els.proofBuildStatus,
+      buildStage ? `${prefix} · ${buildStage.copy()}` : `${prefix}…`,
+      { progress: buildStage ? buildStage.percent : null },
+    );
+  }
+
   function proofStatusMessage(encoderReady) {
     if (!state.session) return "Import an image to begin proofing.";
     if (!encoderReady) return state.capabilities[capabilityForFormat[state.proofFormat]]?.detail || "The selected encoder is unavailable.";
@@ -330,7 +366,7 @@
     if (phase === "updating") return state.proofReconstruction
       ? "Updating from delivered bytes. The previous proof remains visible until the new one is ready."
       : "Encoding and reconstructing the first Chromium proof…";
-    if (state.proofEnabled && state.currentView === "sdr") return "Chromium Proof is suspended on SDR Fallback and will resume on HDR Grade.";
+    if (state.proofEnabled && state.currentView === "sdr") return "Chromium Proof pauses on the SDR fallback. Switch to HDR above to resume it.";
     if (state.proofReconstruction && state.proofDirty) return `STALE PROOF · ${proofFormatLabel()} · ${proofTargetLabel()}. Refresh to include the latest adjustments or delivery settings.`;
     if (!state.proofReconstruction) {
       const fallback = autoFallbackNotice ? " Auto is unavailable, so 1,000 nits was selected." : "";

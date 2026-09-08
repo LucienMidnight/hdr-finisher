@@ -192,6 +192,8 @@ const DARKTABLE_TINT_HUE_STOPS = [
 const MIN_ZOOM_PERCENT = 1;
 const MAX_ZOOM_PERCENT = 3200;
 const ZOOM_STEPS = [1, 2, 3, 4, 5, 6.25, 8.33, 12.5, 16.67, 25, 33.33, 50, 66.67, 100, 200, 300, 400, 500, 600, 800, 1200, 1600, 2400, 3200];
+// Matches the .viewer-status-dock transform transition in styles.css.
+const VIEWER_STATUS_DOCK_SLIDE_MS = 200;
 const LAYOUT_DEFAULTS = { railW: 268, gradeW: 340, dockH: 252, dockOpen: true, dockTab: "histogram" };
 const LAYOUT_LIMITS = {
   railW: [200, 380],
@@ -305,6 +307,7 @@ const state = {
   localMaskDraftController: null,
   localMaskDraftGeneration: 0,
   localMaskDraftPending: null,
+  viewerStatusDockTimer: 0,
   pathMaskProgressTimer: 0,
   pathMaskProgressTarget: null,
   pathMaskProgressStartedAt: 0,
@@ -1225,7 +1228,6 @@ const els = {
   chromeProofWatermark: document.getElementById("chrome-proof-watermark"),
   chromeProofToggle: document.getElementById("chrome-proof-toggle"),
   chromeProofWatermarkToggle: document.getElementById("chrome-proof-watermark-toggle"),
-  chromeProofInlineStatus: document.getElementById("chrome-proof-inline-status"),
   chromeProofRefresh: document.getElementById("chrome-proof-refresh"),
   openProofExternal: document.getElementById("open-proof-external"),
   chromeProofFormat: document.getElementById("chrome-proof-format"),
@@ -1237,11 +1239,14 @@ const els = {
   proofPreviewSwitch: document.getElementById("proof-preview-switch"),
   proofPreviewButtons: [...document.querySelectorAll("[data-proof-preview]")],
   emptyState: document.getElementById("empty-state"),
+  viewerStatusDock: document.getElementById("viewer-status-dock"),
+  proofBuildStatus: document.getElementById("proof-build-status"),
+  proofBuildStatusCopy: document.getElementById("proof-build-status-copy"),
+  proofLaneButtons: [...document.querySelectorAll("#proof-lane-switch button")],
   previewStatus: document.getElementById("preview-status"),
   previewStatusCopy: document.getElementById("preview-status-copy"),
   previewProgress: document.getElementById("preview-progress"),
   cancelImport: document.getElementById("cancel-import"),
-  falseColorLegend: document.getElementById("false-color-legend"),
   viewerBranchNote: document.getElementById("viewer-branch-note"),
   compareButton: document.getElementById("compare-button"),
   compareLayoutButtons: [...document.querySelectorAll("button[data-compare-layout]")],
@@ -2459,6 +2464,9 @@ function bindEvents() {
       next?.click();
     }));
   });
+  els.proofLaneButtons.forEach((button) => button.addEventListener("click", () => {
+    switchLane(button.dataset.proofLane);
+  }));
   els.fileInput.addEventListener("change", async (event) => {
     const [file] = event.target.files;
     if (file && await confirmUnsavedTransition("import another source")) await uploadFile(file);
@@ -2656,9 +2664,7 @@ function bindEvents() {
       endGlobalEditGesture(control);
     });
     control.addEventListener("input", () => {
-      const value = control.type === "range" || control.type === "number"
-        ? Number(control.value)
-        : control.type === "checkbox" ? control.checked : control.value;
+      const value = readControlValue(control);
       if (control.dataset.path === "shared.geometry.straighten_angle") {
         updateStraightenInteractive(value);
         return;
@@ -3252,7 +3258,6 @@ function renderOverlayPresetNote() {
   els.overlayToggle.setAttribute("aria-pressed", String(active));
   els.overlayToggle.setAttribute("aria-label", active ? `Overlays on: ${mode === "false_color" ? "False Color" : "Zebra"}` : "Overlays off");
   renderFalseColorKey(mode);
-  els.falseColorLegend.classList.toggle("hidden", mode !== "false_color" || !state.session);
 }
 
 function renderFalseColorKey(mode) {
@@ -7524,6 +7529,13 @@ function prepareSdrMatchGrainOverride() {
   return true;
 }
 
+// Select elements always report strings; numeric paths must not send "4000" where the backend expects 4000.
+function readControlValue(control) {
+  if (control.type === "checkbox") return control.checked;
+  const numeric = control.type === "range" || control.type === "number" || control.dataset.valueType === "number";
+  return numeric ? Number(control.value) : control.value;
+}
+
 function commitAdjustmentValue(path, value, { manual = false } = {}) {
   const resolvedPath = resolveAdjustmentPath(path);
   if (manual) {
@@ -9622,6 +9634,56 @@ function clearPreviewOverlay() {
   els.previewOverlay.style.height = "";
 }
 
+// The dock slides out from under the viewer header whenever any row has something
+// to report, and slides back once they are all clear.
+function syncViewerStatusDock() {
+  const dock = els.viewerStatusDock;
+  if (!dock) return;
+  const rows = [...dock.children];
+  const shown = rows.filter((row) => !row.classList.contains("hidden"));
+  window.clearTimeout(state.viewerStatusDockTimer);
+  state.viewerStatusDockTimer = 0;
+  if (shown.length) {
+    // Remember which rows are up so the slide back can hold exactly those, and
+    // not summon the idle ones into an empty bar on the way out.
+    rows.forEach((row) => row.classList.toggle("held", shown.includes(row)));
+    dock.classList.remove("closing");
+    dock.classList.add("open");
+    return;
+  }
+  if (!dock.classList.contains("open")) return;
+  dock.classList.remove("open");
+  dock.classList.add("closing");
+  state.viewerStatusDockTimer = window.setTimeout(() => {
+    dock.classList.remove("closing");
+    rows.forEach((row) => row.classList.remove("held"));
+  }, VIEWER_STATUS_DOCK_SLIDE_MS);
+}
+
+function setViewerStatusRow(row, message, { error = false, progress = null } = {}) {
+  if (!row) return;
+  const copy = row.querySelector(".viewer-status-copy");
+  if (message === null) {
+    row.classList.add("hidden");
+  } else {
+    if (copy) copy.textContent = message;
+    row.classList.remove("hidden");
+  }
+  const bar = row.querySelector("progress");
+  if (bar && message !== null) {
+    if (progress === null) {
+      bar.removeAttribute("value");
+      bar.setAttribute("aria-valuetext", message);
+    } else {
+      bar.max = 100;
+      bar.value = clamp(Number(progress) || 0, 0, 100);
+      bar.setAttribute("aria-valuetext", `${Math.round(bar.value)}% — ${message}`);
+    }
+  }
+  row.classList.toggle("error", Boolean(message !== null && error));
+  syncViewerStatusDock();
+}
+
 function setPreviewMessage(message, progress = 0) {
   els.previewStatusCopy.textContent = message;
   els.previewProgress.value = clamp(Number(progress) || 0, 0, 100);
@@ -9629,6 +9691,7 @@ function setPreviewMessage(message, progress = 0) {
   els.previewProgress.setAttribute("aria-valuetext", `${Math.round(els.previewProgress.value)}% — ${message}`);
   els.previewProgress.classList.remove("hidden");
   els.previewStatus.classList.remove("hidden", "error");
+  syncViewerStatusDock();
 }
 
 function setIndeterminatePreviewMessage(message) {
@@ -9638,6 +9701,7 @@ function setIndeterminatePreviewMessage(message) {
   els.previewProgress.setAttribute("aria-valuetext", message);
   els.previewProgress.classList.remove("hidden");
   els.previewStatus.classList.remove("hidden", "error");
+  syncViewerStatusDock();
 }
 
 function setPreviewError(message) {
@@ -9645,6 +9709,7 @@ function setPreviewError(message) {
   els.previewProgress.classList.add("hidden");
   els.previewStatus.classList.remove("hidden");
   els.previewStatus.classList.add("error");
+  syncViewerStatusDock();
 }
 
 function setImportCancelVisible(visible) {
@@ -9660,6 +9725,7 @@ function hidePreviewMessage() {
   els.previewStatus.classList.add("hidden");
   els.previewStatus.classList.remove("error");
   setImportCancelVisible(false);
+  syncViewerStatusDock();
 }
 
 async function safeJson(response) {
@@ -10037,6 +10103,7 @@ function renderInterpretationGate() {
   const needsReview = Boolean(state.session?.analysis?.needs_color_override);
   const visible = needsReview && !state.interpretationGateDismissed;
   els.interpretationGate.classList.toggle("hidden", !visible);
+  syncViewerStatusDock();
   if (needsReview) {
     els.interpretationGateCopy.textContent = overrideMessage(state.session);
   }
@@ -10125,6 +10192,12 @@ function renderLaneChrome() {
     const active = button.dataset.kind === lane;
     button.classList.toggle("active", active);
     button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+  });
+  els.proofLaneButtons.forEach((button) => {
+    const active = button.dataset.proofLane === lane;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
     button.tabIndex = active ? 0 : -1;
   });
   els.lanePanels.forEach((panel) => panel.classList.toggle("hidden", panel.dataset.lanePanel !== lane));
@@ -11366,6 +11439,7 @@ function activateWorkflowTab(workflow, { focus = false } = {}) {
     if (active && focus) button.focus();
   });
   if (next === "export") prepareExportRail();
+  if (next === "proof" && state.currentView !== "hdr") switchLane("hdr");
   renderWorkflowContext();
   window.HDRProofing?.render();
   window.dispatchEvent(new CustomEvent("hdrfinisher:workflowchange", { detail: { workflow: next } }));
@@ -14358,6 +14432,7 @@ function beginPathMaskProgress(local) {
     if (!state.pathMaskProgressTarget) return;
     els.pathMaskProgressCopy.textContent = "Updating feather…";
     els.pathMaskProgress.classList.remove("hidden", "error");
+    syncViewerStatusDock();
   }, 400);
 }
 
@@ -14369,6 +14444,7 @@ function finishPathMaskProgress(localId, signature, spatialOnly = false) {
   state.pathMaskProgressTimer = 0;
   state.pathMaskProgressTarget = null;
   els.pathMaskProgress?.classList.add("hidden");
+  syncViewerStatusDock();
   if (window.HDRFinisherPerformance) {
     window.HDRFinisherPerformance.pathMaskLatencyMs = performance.now() - state.pathMaskProgressStartedAt;
   }
@@ -14380,6 +14456,7 @@ function cancelPathMaskProgress() {
   state.pathMaskProgressTarget = null;
   els.pathMaskProgress?.classList.add("hidden");
   els.pathMaskProgress?.classList.remove("error");
+  syncViewerStatusDock();
 }
 
 function failPathMaskProgress(localId) {
@@ -14389,6 +14466,7 @@ function failPathMaskProgress(localId) {
   els.pathMaskProgressCopy.textContent = "Feather preview could not be updated.";
   els.pathMaskProgress.classList.remove("hidden");
   els.pathMaskProgress.classList.add("error");
+  syncViewerStatusDock();
 }
 
 function renderLocalMaskOverlay() {

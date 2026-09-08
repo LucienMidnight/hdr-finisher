@@ -1325,10 +1325,28 @@ def lens_profiles(q: str | None = Query(default=None), limit: int = Query(defaul
     return {"profiles": profiles, "available": capabilities["lens_correction"].status == "available"}
 
 
+def _asset_version() -> str:
+    """Version the static asset URLs by content timestamp.
+
+    Pinning the query to APP_VERSION alone meant an edited stylesheet or script
+    kept the same URL, so browsers served the previous copy from cache until the
+    app version changed. Folding in the newest frontend mtime gives every edit a
+    fresh URL without touching the release version.
+    """
+    newest = 0.0
+    for asset in FRONTEND_DIR.glob("*"):
+        if asset.suffix in {".css", ".js"}:
+            try:
+                newest = max(newest, asset.stat().st_mtime)
+            except OSError:
+                continue
+    return f"{APP_VERSION}-{int(newest)}" if newest else APP_VERSION
+
+
 @app.get("/")
 def root() -> HTMLResponse:
     html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
-    html = html.replace("__HDR_FINISHER_ASSET_VERSION__", APP_VERSION)
+    html = html.replace("__HDR_FINISHER_ASSET_VERSION__", _asset_version())
     return HTMLResponse(content=html, headers={"Cache-Control": "no-store"})
 
 
