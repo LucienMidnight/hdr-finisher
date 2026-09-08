@@ -138,7 +138,7 @@ Important invariants:
 
 ## WebGPU implementation and parameter map
 
-The WebGPU implementation retains `hdrPeakFit` / `hdrSoftCeiling` for direct parity tests. Final-stage HDR compression runs on WebGPU: a `finishFragmentMain` pass resolves Film Look, Vignette and grain into `finishTexture`, `finishedPeakReductionMain` reduces over that finished target for the anchor, and the composite pass applies the shoulder and ceiling. A settled render performs one reduction and one readback; an interactive drag performs none and reuses the lane's last anchor. Relevant packed parameters are:
+The WebGPU implementation retains `hdrPeakFit` / `hdrSoftCeiling` for direct parity tests. Final-stage HDR compression runs on WebGPU: a `finishFragmentMain` pass resolves Film Look, Vignette and grain into `finishTexture`, and the composite pass applies the shoulder and ceiling to it. The preview anchors Peak Fit on a source-domain estimate carried through Tone and Color, measured before any pass is encoded; the CPU export anchors on the finished image. Closing that remaining difference requires the scheduler to request a refinement once a reduction over `finishTexture` lands, because a settled draft that awaits inside the render loses its race and the scheduler answers a failed draft with a full CPU preview. Relevant packed parameters are:
 
 | Index | Meaning |
 |---:|---|

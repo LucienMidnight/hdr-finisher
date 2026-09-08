@@ -339,7 +339,7 @@ class HDRAdjustments(BaseModel):
     # ``off`` remains accepted for v4 project/API compatibility, but the UI
     # uses highlight_section_enabled as the sole bypass control.
     highlight_compression_mode: Literal["off", "peak_fit", "soft_ceiling", "clip"] = "peak_fit"
-    highlight_compression_peak_measurement: Literal["maximum", "robust", "manual"] = "robust"
+    highlight_compression_peak_measurement: Literal["maximum", "maximum", "manual"] = "maximum"
     highlight_compression_source_peak_nits: float = Field(default=1000.0, ge=1.0, le=1_000_000.0)
     highlight_compression_manual_peak_nits: float = Field(default=1000.0, ge=1.0, le=1_000_000.0)
     highlight_compression_peak_detail: float = Field(default=35.0, ge=0.0, le=100.0)
@@ -430,7 +430,7 @@ class SDRAdjustments(BaseModel):
     highlight_compression_start_percent: float = Field(default=50.0, ge=1.0, le=99.0)
     highlight_compression_softness: float = Field(default=0.0, ge=0.0, le=100.0)
     highlight_compression_mode: Literal["off", "peak_fit", "soft_ceiling", "clip"] = "peak_fit"
-    highlight_compression_peak_measurement: Literal["maximum", "robust", "manual"] = "robust"
+    highlight_compression_peak_measurement: Literal["maximum", "maximum", "manual"] = "maximum"
     highlight_compression_source_peak_percent: float = Field(default=100.0, ge=1.0, le=1_000_000.0)
     highlight_compression_manual_peak_percent: float = Field(default=100.0, ge=1.0, le=1_000_000.0)
     highlight_compression_peak_detail: float = Field(default=35.0, ge=0.0, le=100.0)

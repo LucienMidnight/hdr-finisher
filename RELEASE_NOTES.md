@@ -1,16 +1,16 @@
 # HDR Finisher 0.8.11
 
-HDR Finisher 0.8.11 makes the Proof page match the Grade view. Highlight Compression is now a true final-output limiter: it anchors on the finished picture in both the WebGPU preview and the CPU export, and the output target is a guarantee rather than an aim.
+HDR Finisher 0.8.11 brings the Proof page back in line with the Grade view. Sharpening no longer produces unbounded halos that hijacked the export's highlight anchor, and the output target is now a guarantee rather than an aim.
 
-- Peak Fit anchors on the finished picture in both engines. The preview previously measured the source through Tone and Color only, which is where the module used to sit, while export measured the finished image. On a representative grade the two anchors sat 1.85 stops apart, which silently moved an authored 400 nit shoulder to 154 nit and took 28% of the luminance and 23% of the saturation out of the 400-1000 nit band. Anchor divergence is now 0.175 stops, and the proof tracks the grade to within 0.33% luminance below 1000 nit.
+- The Proof page no longer diverges from the Grade view in the 400-1000 nit band. Sharpening ringing had been setting the export's Peak Fit anchor, putting it 1.85 stops away from the preview's and silently moving an authored 400 nit shoulder to 154 nit, which cost 28% of the luminance and 23% of the saturation in that band. Both engines now honour the authored shoulder.
 - Output target is an unconditional ceiling. Peak Fit and Soft Ceiling both end at the target in the delivery primaries, so a technical delivery spec holds regardless of what Detail, Film Look, grain or output finishing add downstream. A shoulder anchored on a measured peak cannot promise the target on its own.
 - Sharpening no longer produces unbounded halos. The halo fence scaled its allowance by the local neighborhood range against a log floor at 1e-7, so any pixel beside a near-black sample reported a twenty-stop range and the fence stopped bounding anything; ringing reached +4.27 stops. The excursion is now capped at 0.25 EV with a raised luminance floor. Sharpening coverage and response to Amount are unchanged, and the peak no longer moves with Amount at all.
-- Highlight peak measurement defaults to Robust rather than Maximum. Robust is far steadier across the preview-to-export resolution change, and does not let a handful of ringing or grain samples define the shoulder for the whole picture. Existing projects keep their saved setting.
 - The SDR lane applies its highlight shoulder exactly once. The WebGPU preview had gained a second application for scene-referred sources. The SDR shoulder stays where it is, since it is the scene-to-display placement that fits the remaining scene headroom rather than a limiter, and receives the output ceiling alone.
 - Scopes read the same finished render target the viewer presents, instead of recomputing Film Look, so scopes and the presented frame agree by construction.
-- Export takes its limiter anchor from the same point as the preview and clips after output finishing, so output sharpening lands under the ceiling instead of on top of it.
+- The preview still anchors Peak Fit on a source-domain estimate rather than the finished picture, so a grade with heavy Film Look or local work can still show a small difference against the proof in the top stop. Measuring the finished picture in the preview needs the render scheduler to request a refinement after the measurement lands, and is deferred.
+- Export clips after output finishing, so output sharpening lands under the ceiling instead of on top of it.
 
-Grading latency is unchanged. A settled render performs one peak reduction and one readback, as before; an interactive drag performs none and carries the lane's last anchor.
+Grading latency is unchanged.
 
 ## Downloads
 

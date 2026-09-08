@@ -117,11 +117,9 @@ function assert(condition, message) {
       const activeHdrGpuEligible = gpuPreviewEligible("hdr");
       invalidatePreview("hdr");
       renderer.peakReductionCache.clear();
-      // The limiter anchors on the finished render target, so the settled tier
-      // measures that rather than re-deriving a source-domain estimate.
-      const originalMeasure = renderer.measureFinishedPeak.bind(renderer);
+      const originalMeasure = renderer.measureToneAdjustedPeak.bind(renderer);
       let reductions = 0;
-      renderer.measureFinishedPeak = async (...args) => {
+      renderer.measureToneAdjustedPeak = async (...args) => {
         reductions += 1;
         return originalMeasure(...args);
       };

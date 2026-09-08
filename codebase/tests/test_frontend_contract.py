@@ -1268,8 +1268,16 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     assert "measureToneAdjustedPeak" in webgpu
     assert 'sourceOptions?.tier !== "interactive"' in webgpu
     render_to = webgpu[webgpu.index("async renderTo(canvas"):webgpu.index("async analyzeDenoiseProxy")]
+    # Resizing a visible canvas clears its presented frame, so the peak
+    # measurement must complete before the resize and the submit must follow it
+    # with nothing awaited in between. A settled draft that loses its race
+    # returns false, and the scheduler answers that with a full CPU preview,
+    # which the user sees as a black flash. Any future move to anchor on the
+    # finished picture has to schedule a refinement rather than await here.
     assert render_to.index("await this.measureToneAdjustedPeak") < render_to.index("canvas.width = proxy.width")
-    assert render_to.index("canvas.height = proxy.height") < render_to.index("this.device.queue.submit")
+    presentation = render_to[render_to.index("canvas.width = proxy.width"):]
+    presentation = presentation[:presentation.index("this.device.queue.submit")]
+    assert "await" not in presentation
     assert "tier," in javascript[javascript.index("const sourceOptions = {"):javascript.index("try {", javascript.index("const sourceOptions = {"))]
 
 

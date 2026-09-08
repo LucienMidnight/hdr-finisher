@@ -284,9 +284,6 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.scopeResources = new Map();
       this.peakReductionPipeline = null;
       this.peakReductionCache = new Map();
-      // Last settled anchor per lane, so an interactive drag has something
-      // stable to hold while its own measurement is skipped.
-      this.lastFinishedPeaks = new Map();
       this.bindGroupLayout = null;
       this.pipelineLayout = null;
       this.maskBindGroupLayout = null;
@@ -447,7 +444,6 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       }
       this.scopeResources.clear();
       this.peakReductionCache.clear();
-      this.lastFinishedPeaks.clear();
     }
 
     invalidateSurfaces() {
@@ -655,35 +651,15 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         sourcePixelScale,
         sourceOptions?.inheritedGrain || null,
       );
-      // Peak Fit anchors on the finished picture, which only exists once the
-      // render has run. A settled render measures it and caches the result; an
-      // interactive render reuses the last known anchor so a drag never blocks
-      // on a readback. The anchor moves slowly, so the settled correction that
-      // follows a gesture is not a visible re-grade.
-      const anchorMeasurement = adjustments[lane]?.highlight_compression_peak_measurement || "robust";
-      const anchorRequired = params[74] === 1 && anchorMeasurement !== "manual";
-      // Only the HDR limiter moved to the end of the pipeline, so only it can
-      // anchor on the finished picture. The SDR shoulder is still the
-      // scene-to-display placement near the top of its lane, and has to keep
-      // measuring the source domain it actually operates on.
-      const anchorKey = anchorRequired && lane === "hdr"
-        ? this.finishedPeakKey(sourceProxy, lane, anchorMeasurement, params)
-        : null;
-      let pendingAnchor = false;
-      if (anchorKey) {
-        const cachedPeak = this.peakReductionCache.get(anchorKey);
-        if (cachedPeak !== undefined) {
-          params[75] = cachedPeak;
-        } else if (sourceOptions?.tier === "interactive") {
-          // Every parameter feeds the anchor now, so a drag misses the cache on
-          // each frame. Carry the lane's last measurement rather than falling
-          // back to the source-domain estimate, which would visibly jump.
-          const previous = this.lastFinishedPeaks.get(lane);
-          if (previous !== undefined) params[75] = previous;
-        } else {
-          pendingAnchor = true;
-        }
-      } else if (anchorRequired && params[159] > 0.5) {
+      // The anchor is measured before anything is encoded, so this render can
+      // never await once it owns GPU resources or the canvas. A settled draft
+      // that loses its race returns false, and the scheduler answers that with
+      // a full CPU preview -- visible as a flash -- so awaiting later is not an
+      // option here. Measuring the finished picture instead of this
+      // source-domain estimate needs the scheduler to request a refinement
+      // after the reduction lands, rather than an await inside the render.
+      const anchorMeasurement = adjustments[lane]?.highlight_compression_peak_measurement || "maximum";
+      if ((lane === "hdr" || params[159] > 0.5) && params[74] === 1 && anchorMeasurement !== "manual") {
         const peakKey = JSON.stringify([
           sourceProxy.identity, lane, params[1], params[159],
           anchorMeasurement,
@@ -1039,20 +1015,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // its peak can be measured, and the measured peak has to exist before the
       // limiter runs. The submit count matches the previous scheme, which also
       // performed one reduction and one readback per settled render.
-      let compositeEncoder = encoder;
-      if (pendingAnchor) {
-        this.device.queue.submit([encoder.finish()]);
-        params[75] = await this.measureFinishedPeak(
-          intermediate.finishTexture, proxy.width, proxy.height, params, anchorMeasurement, anchorKey,
-        );
-        if (resourceGeneration !== this.resourceGeneration
-          || serial !== this.renderSerials.get(canvas)
-          || sourceOptions?.isCurrent?.() === false) return false;
-        this.lastFinishedPeaks.set(lane, params[75]);
-        compositeEncoder = this.device.createCommandEncoder();
-      }
       this.device.queue.writeBuffer(intermediate.compositeParamBuffer, 0, params);
-      const pass = compositeEncoder.beginRenderPass({
+      const pass = encoder.beginRenderPass({
         ...(gpuTiming ? { timestampWrites: { querySet: gpuTiming.querySet, endOfPassWriteIndex: 1 } } : {}),
         colorAttachments: [{
           view: context.getCurrentTexture().createView(),
@@ -1066,10 +1030,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       pass.draw(3);
       pass.end();
       if (gpuTiming) {
-        compositeEncoder.resolveQuerySet(gpuTiming.querySet, 0, 2, gpuTiming.resolveBuffer, 0);
-        compositeEncoder.copyBufferToBuffer(gpuTiming.resolveBuffer, 0, gpuTiming.readBuffer, 0, 16);
+        encoder.resolveQuerySet(gpuTiming.querySet, 0, 2, gpuTiming.resolveBuffer, 0);
+        encoder.copyBufferToBuffer(gpuTiming.resolveBuffer, 0, gpuTiming.readBuffer, 0, 16);
       }
-      this.device.queue.submit([compositeEncoder.finish()]);
+      this.device.queue.submit([encoder.finish()]);
       const submittedAt = performance.now();
       this.recordStage("grading", {
         serial,
@@ -2029,30 +1993,6 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       });
       this.peakReductionPipelines.set(entryPoint, pipeline);
       return pipeline;
-    }
-
-    // Every stage of the grade now feeds the anchor, so the key has to cover the
-    // whole parameter set rather than the hand-picked tone and colour entries
-    // the source-domain estimate needed.
-    finishedPeakKey(sourceProxy, lane, measurement, params) {
-      let hash = 0x811c9dc5;
-      const bytes = new Uint8Array(params.buffer, params.byteOffset, params.byteLength);
-      for (let index = 0; index < bytes.length; index += 1) {
-        hash ^= bytes[index];
-        hash = Math.imul(hash, 0x01000193) >>> 0;
-      }
-      return `${sourceProxy.identity}:${lane}:${measurement}:${hash.toString(16)}`;
-    }
-
-    // Measures the finished render target, which is the domain the CPU limiter
-    // anchors in. The analytic path below cannot see Exposure Bands, curves,
-    // colour grading, Detail, locals, Film Look, Vignette or grain, so once the
-    // limiter moved to the end of the pipeline it stopped being a valid anchor.
-    async measureFinishedPeak(texture, width, height, params, measurement, cacheKey) {
-      const cached = this.peakReductionCache.get(cacheKey);
-      if (cached !== undefined) return cached;
-      const pipeline = await this.ensurePeakReductionPipeline("finishedPeakReductionMain");
-      return this.runPeakReduction(pipeline, texture, width, height, params, measurement, cacheKey);
     }
 
     async measureToneAdjustedPeak(sourceProxy, params, measurement, cacheKey) {
@@ -3582,8 +3522,12 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       var signal = y;
       if (p[110] > 0.5) { signal = max(channelPeak, 0.0); }
       let start = max(p[53], 0.000001);
-      let peakLevel = max(p[75], 1.0);
-      if (peakLevel <= 1.0) { return input; }
+      // Skip against the authored target, matching the CPU limiter. A fixed
+      // 1.0 scene-linear threshold is reference-white dependent and diverges
+      // from it for any target above that level.
+      let targetPeak = max(p[73], 0.000001);
+      let peakLevel = max(p[75], targetPeak);
+      if (peakLevel <= targetPeak) { return input; }
       let startStop = log2(start);
       let peakStop = log2(peakLevel);
       let curveBias = p[77];
