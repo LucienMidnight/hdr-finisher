@@ -46,6 +46,10 @@ SDR_WHITE_NITS = 203.0
 # rendition; the positive bound expands further when the authored HDR peak
 # requires it.
 ULTRAHDR_CHROMATIC_LATITUDE_STOPS = 4.0
+# Ultra HDR reconstructs multiplicatively, so a base code of zero carries no HDR
+# detail at any gain. Two codes sit below the visible threshold in the SDR base
+# and keep the shadow recoverable.
+ULTRAHDR_BASE_FLOOR_CODE = 2
 # A small guided filter removes pixel-scale HDR/SDR ratio noise before Safari
 # and other viewers multiply it back into the SDR primary. The encoded SDR
 # remains untouched, and the SDR image itself guides the filter so real edges
@@ -429,6 +433,9 @@ class JPEGUltraHDRExportBackend(ExportBackend):
                 hdr_rgba, target_peak_nits = _prepare_hdr_linear_rgba_f16(hdr_image, reference_white_nits)
                 hdr_raw_path.write_bytes(hdr_rgba.tobytes(order="C"))
                 sdr_rgb = _linear_to_srgb8(sdr_image[..., :3], dither=settings.dithering)
+                # Floor before either write: the raw pixels generate the gain map
+                # and the JPEG becomes the base, so they have to agree.
+                sdr_rgb = _floor_ultrahdr_base(sdr_rgb, hdr_image)
                 _write_sdr_rgba8888_pixels(sdr_raw_path, sdr_rgb)
                 _write_sdr_jpeg_pixels(
                     sdr_jpeg_path,
@@ -769,6 +776,25 @@ def _write_sdr_rgba8888(path: Path, image: np.ndarray, *, dithering: str = "auto
     # in smooth gradients before libultrahdr derives and compresses the map.
     rgb = _linear_to_srgb8(image[..., :3], dither=dithering)
     _write_sdr_rgba8888_pixels(path, rgb)
+
+
+def _floor_ultrahdr_base(sdr_rgb: np.ndarray, hdr_image: np.ndarray) -> np.ndarray:
+    """Keep the Ultra HDR base above zero wherever the HDR grade has signal.
+
+    The gain map is a multiplier, so a base channel of zero decodes to black
+    however bright the HDR grade was there. Shadow blocking in the 8-bit base
+    drives whole JPEG blocks to zero once the SDR grade is dark -- which is what
+    turns an HDR shadow into scattered black squares, and why matching a dark
+    SDR grade makes it worse. Channels the HDR grade leaves at zero stay at zero,
+    so deliberate black is still black.
+    """
+    if sdr_rgb.dtype != np.uint8:
+        raise ValueError("Ultra HDR base flooring expects 8-bit sRGB channels.")
+    hdr_rgb = hdr_image[..., :3]
+    if hdr_rgb.shape[:2] != sdr_rgb.shape[:2]:
+        return sdr_rgb
+    floor = np.uint8(ULTRAHDR_BASE_FLOOR_CODE)
+    return np.where((hdr_rgb > 0.0) & (sdr_rgb < floor), floor, sdr_rgb).astype(np.uint8, copy=False)
 
 
 def _write_sdr_rgba8888_pixels(path: Path, rgb: np.ndarray) -> None:

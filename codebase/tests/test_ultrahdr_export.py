@@ -560,3 +560,28 @@ def test_real_ultrahdr_gradient_has_no_long_reconstruction_plateaus_when_encoder
     # up to a six-sample half-float plateau in this 1280-pixel proof gradient,
     # while remaining visually smooth and below 0.5% of the sampled row.
     assert longest <= 6
+
+
+def test_base_floor_keeps_hdr_shadows_recoverable() -> None:
+    """A zero base code cannot carry HDR detail, whatever the gain map says.
+
+    Shadow blocking in the 8-bit base drives whole JPEG blocks to zero once the
+    SDR grade is dark, which decodes as scattered black squares in an otherwise
+    lit HDR shadow. Matching a dark SDR grade makes it worse.
+    """
+    from backend.hdr_finisher.exporters import ULTRAHDR_BASE_FLOOR_CODE, _floor_ultrahdr_base
+
+    hdr = np.full((4, 4, 3), 0.5, dtype=np.float32)
+    hdr[3, 3] = 0.0
+    base = np.zeros((4, 4, 3), dtype=np.uint8)
+    base[0, 0] = 40
+
+    floored = _floor_ultrahdr_base(base, hdr)
+
+    assert floored.dtype == np.uint8
+    # Lit shadows become recoverable.
+    assert int(floored[1, 1, 0]) == ULTRAHDR_BASE_FLOOR_CODE
+    # Content above the floor is untouched.
+    assert int(floored[0, 0, 0]) == 40
+    # Deliberate black stays black.
+    assert int(floored[3, 3, 0]) == 0
