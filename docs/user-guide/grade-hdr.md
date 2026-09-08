@@ -36,26 +36,27 @@ Applies a luma-weighted change that is strongest in dark regions and fades towar
 
 ## Highlights
 
-Highlights is a separate, independently bypassable section after Tone. Both compression modes therefore see the result of Exposure, Contrast, Pivot, and Shadow / Black.
+Highlights is a separate, independently bypassable output section. It runs after the creative grade, output finishing, and grain, so changes in Tone, Exposure Bands, color, curves, local adjustments, and Film Look are all included in its measurement.
 
 ### Highlight Compression
 
-Use **Peak Fit** for most HDR work. It measures the full-resolution source highlight peak, constructs a smooth curve in stops, and anchors that peak exactly at **Target Peak** inside the Highlights section. Unlike a nearly flat ceiling, its **Highlight Detail** control can retain a positive slope at the brightest end, which helps rounded reflections and emissive objects keep visible shape.
+Use **Peak Fit** for most HDR work. It measures the full-resolution finished highlight peak, constructs a smooth curve in stops, and anchors that peak exactly at **Target Peak**. Unlike a nearly flat ceiling, its **Highlight Detail** control can retain a positive slope at the brightest end, which helps rounded reflections and emissive objects keep visible shape.
 
 - **Start** protects tones below the shoulder. When an extreme source peak, low target, and high detail cannot all fit above Start without reversing the curve, Peak Fit automatically widens the shoulder below the requested value. The transfer graph shows the actual curve and its caption reports the effective start.
 - **Target Peak** is the brightest intended luminance after the Highlights section and the upper anchor of Peak Fit.
 - **Highlight Detail** is the local stop contrast retained at the source peak. Its default is 35%, which keeps shape in bright fixtures and reflections. Lower it when the peak still feels too sharp or when you want more near-peak samples gathered close to Target Peak. At 0%, the endpoint tangent is flat and peak regions can look more plateaued.
 - **Soft Ceiling** is the former asymptotic compressor. Its **Softness** control is useful when you do not want a measured peak anchor, but extreme inputs can bunch together near the ceiling.
+- **Clip** applies a strict linear BT.2020 per-channel ceiling at Target Peak. It is useful as a final legalizer and deliberately produces a hard clipped endpoint.
 
 The compact graph plots input nits horizontally and output nits vertically. The dashed diagonal means no compression; the cyan curve shows the active mapping. In **Advanced highlight controls**, choose the absolute maximum, a robust measurement that ignores isolated pixels, or a manual source peak. **Compression Bias** redistributes contrast through the shoulder without moving its endpoints.
 
 **Highlight Color** controls both which peak enters the compressor and what happens to saturated highlights. **Smooth color rolloff** is the default when compression is enabled: it measures the brightest linear BT.2020 channel and applies the same smooth Peak Fit shoulder independently to each channel. Dominant channels compress first, reducing harsh magenta/green/blue transitions and gradually approaching white without brightening weak channels. **Preserve color** measures ACEScg luminance and scales RGB together, retaining exact hue and channel ratios but allowing a saturated channel to extend above Target Peak. **Neutralize peak** retains the older grouped behavior and forces extreme colored highlights to converge to white at the endpoint.
 
-The Highlight Compression section starts bypassed, with Peak Fit and Smooth color rolloff preselected. Use the section bypass button as the single on/off control. Once enabled, automatic peak measurement follows the chosen color mode: BT.2020 maximum channel for Smooth color rolloff, ACEScg luminance for Preserve color, or ACEScg maximum channel for Neutralize peak. Manual Source Peak is specified before Tone controls and follows the same meaning. Peak Fit runs after Exposure, Shadow / Black, and Contrast, so its graph and endpoint account for all three.
+The Highlight Compression section starts bypassed, with Peak Fit and Smooth color rolloff preselected. Use the section bypass button as the single on/off control. Once enabled, automatic peak measurement follows the chosen color mode: BT.2020 maximum channel for Smooth color rolloff, ACEScg luminance for Preserve color, or ACEScg maximum channel for Neutralize peak. Manual Source Peak specifies the final pre-compression peak. Peak Fit runs after the whole grade and finishing path.
 
 The implementation contract and CPU/GPU parameter mapping are documented in [Highlight Compression Technical Reference](../technical/highlight-compression.md).
 
-Target Peak is local to the Highlights section, not a permanent clamp on the finished image. Exposure Bands, Color, Lift/Gamma/Gain, Curves, and Film Look remain creative stages after it and can move the final waveform peak. Recheck the scope after using those sections.
+Peak Fit's Target Peak is the endpoint for the measured final-grade signal. Preserve color can still leave an individual saturated channel above a luminance-based target; use Smooth color rolloff or Clip when the channel ceiling itself matters.
 
 The source peak is measured at full resolution, but Standard preview scopes analyze a downsampled rendition. If the exact brightest sample is filtered away, the preview can read below Target Peak even though Peak Fit's full-resolution endpoint is correct. This is especially visible with nonzero Highlight Detail because nearby samples deliberately retain contrast below the endpoint. Use High-res Preview or a full-resolution export for the authoritative peak check.
 
@@ -130,7 +131,7 @@ Film Look is the final creative layer after Curves. Open its **Preset** browser 
 - **Halation** adds warm edge scatter around branch-relative highlights. Sensitivity selects analogous highlight populations in HDR and SDR; **View qualification map** is a preview diagnostic and is never baked into an export.
 - **Bloom & Diffusion** creates a broader, mostly neutral highlight glow using a smooth linear-light diffusion filter. Highlight Detail separates optical bloom from core diffusion: at 100% the source edge stays intact beneath the added glow; lower values progressively move highlight energy outward and soften the bright core.
 - **Image Structure** softens brittle digital edges or adjusts microcontrast before grain.
-- **Grain** varies through shadows, midtones, and highlights. Film Resolution controls the pre-grain resolving character; grain is always the last operation. **View grain map** isolates the grain field on a neutral mid-grey card so size, softness, chroma, and the shadow/midtone/highlight response can be judged without the picture; like the Halation map it is a preview diagnostic and never reaches an export.
+- **Grain** varies through shadows, midtones, and highlights. Film Resolution controls the pre-grain resolving character; grain is the last creative operation, followed only by enabled output highlight compression. **View grain map** isolates the grain field on a neutral mid-grey card so size, softness, chroma, and the shadow/midtone/highlight response can be judged without the picture; like the Halation map it is a preview diagnostic and never reaches an export.
 
 Radius values are percentages of image diagonal, so their apparent scale remains consistent between proxy preview and full-resolution export. The HDR and SDR branches share a deterministic grain field while retaining independent grain strength and response.
 
@@ -139,17 +140,18 @@ Radius values are percentages of image diagonal, so their apparent scale remains
 The current HDR order is:
 
 1. Tone: exposure, shadow/black, and contrast
-2. Highlights: Soft Ceiling or Peak Fit, including smooth color rolloff or specialist color handling
-3. White balance, primary shaping, saturation, and vibrance
-4. Exposure Bands
-5. Lift/Gamma/Gain
-6. Curves
+2. White balance, primary shaping, saturation, and vibrance
+3. Exposure Bands
+4. Lift/Gamma/Gain
+5. Curves
+6. Detail and local adjustments
 7. Film Response and Color Density
 8. Halation
 9. Bloom/Diffusion
 10. Image Softness and Microcontrast
 11. Grain
-12. Clamp final negative values to zero
+12. Output Highlights: Peak Fit, Soft Ceiling, or Clip
+13. Clamp final negative values to zero
 
 Order matters. A curve sees the result of every preceding enabled section.
 

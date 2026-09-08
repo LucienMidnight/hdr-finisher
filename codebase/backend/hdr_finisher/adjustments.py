@@ -55,6 +55,7 @@ def apply_adjustments(
     sdr_reference_image: np.ndarray | None = None,
     *,
     include_grain: bool = True,
+    include_output_highlight_compression: bool = True,
     local_adjustments: list[LocalAdjustment] | None = None,
     compiled_local_masks: dict[str, np.ndarray] | None = None,
     color_context: RenderColorContext | None = None,
@@ -89,6 +90,7 @@ def apply_adjustments(
             fixed_source,
             adjustments,
             include_grain,
+            include_output_highlight_compression=include_output_highlight_compression,
             local_adjustments=local_adjustments,
             fixed_source=fixed_source,
             compiled_local_masks=compiled_local_masks,
@@ -101,6 +103,7 @@ def apply_adjustments(
             reference,
             adjustments,
             include_grain,
+            include_output_highlight_compression=include_output_highlight_compression,
             local_adjustments=local_adjustments,
             fixed_source=fixed_source,
             compiled_local_masks=compiled_local_masks,
@@ -110,6 +113,7 @@ def apply_adjustments(
         fixed_source,
         adjustments,
         include_grain,
+        include_output_highlight_compression=include_output_highlight_compression,
         local_adjustments=local_adjustments,
         fixed_source=fixed_source,
         compiled_local_masks=compiled_local_masks,
@@ -229,6 +233,7 @@ def _apply_hdr_adjustments(
     adjustments: AdjustmentState,
     include_grain: bool = True,
     *,
+    include_output_highlight_compression: bool = True,
     local_adjustments: list[LocalAdjustment] | None = None,
     fixed_source: np.ndarray | None = None,
     compiled_local_masks: dict[str, np.ndarray] | None = None,
@@ -243,34 +248,6 @@ def _apply_hdr_adjustments(
         result = _apply_luminance_section_controls(
             result, hdr, PreviewKind.HDR, apply_primaries=False, apply_contrast=True
         )
-    if hdr.highlight_section_enabled:
-        if hdr.highlight_compression_mode == "peak_fit":
-            result = _compress_scene_highlights(
-                result,
-                hdr.highlight_compression_start_nits,
-                hdr.highlight_compression_target_nits,
-                hdr.highlight_compression_softness,
-                mode="peak_fit",
-                source_peak_nits=_tone_adjusted_source_peak_nits(
-                    result,
-                    hdr,
-                    tone_enabled=hdr.tone_section_enabled,
-                    color_context=color_context,
-                ),
-                peak_detail=hdr.highlight_compression_peak_detail,
-                bias=hdr.highlight_compression_bias,
-                color_handling=hdr.highlight_compression_color_handling,
-                reference_white_nits=color_context.hdr_reference_white_nits,
-            )
-        elif hdr.highlight_compression_mode == "soft_ceiling":
-            result = _compress_scene_highlights(
-                result,
-                hdr.highlight_compression_start_nits,
-                hdr.highlight_compression_target_nits,
-                hdr.highlight_compression_softness,
-                mode="soft_ceiling",
-                reference_white_nits=color_context.hdr_reference_white_nits,
-            )
     if hdr.color_section_enabled:
         result = _apply_hdr_color(result, hdr)
     if hdr.tone_equalizer_section_enabled:
@@ -303,7 +280,70 @@ def _apply_hdr_adjustments(
         result = _apply_vignette(result, hdr.vignette, PreviewKind.HDR)
     if include_grain:
         result = apply_final_grain(result, adjustments, PreviewKind.HDR)
+    if include_output_highlight_compression:
+        result = apply_hdr_output_highlight_compression(result, adjustments, color_context=color_context)
     return np.clip(result, 0.0, None)
+
+
+def apply_hdr_output_highlight_compression(
+    image: np.ndarray,
+    adjustments: AdjustmentState,
+    *,
+    color_context: RenderColorContext | None = None,
+) -> np.ndarray:
+    """Apply the HDR output limiter after all creative and finishing operations.
+
+    The shoulder shapes the picture and the ceiling guarantees the delivery
+    spec. Anchoring the shoulder on a measured peak alone cannot promise the
+    target, because a single ringing or grain sample sits far above the picture
+    the shoulder was fitted to.
+    """
+    hdr = adjustments.hdr
+    if not hdr.highlight_section_enabled:
+        return image
+    color_context = color_context or RenderColorContext()
+    compressed = _compress_scene_highlights(
+        image,
+        hdr.highlight_compression_start_nits,
+        hdr.highlight_compression_target_nits,
+        hdr.highlight_compression_softness,
+        mode=hdr.highlight_compression_mode,
+        source_peak_nits=_tone_adjusted_source_peak_nits(
+            image,
+            hdr,
+            tone_enabled=False,
+            color_context=color_context,
+        ),
+        peak_detail=hdr.highlight_compression_peak_detail,
+        bias=hdr.highlight_compression_bias,
+        color_handling=hdr.highlight_compression_color_handling,
+        reference_white_nits=color_context.hdr_reference_white_nits,
+    )
+    if hdr.highlight_compression_mode == "off":
+        return compressed
+    return _clip_to_output_target(
+        compressed,
+        hdr.highlight_compression_target_nits,
+        color_context.hdr_reference_white_nits,
+    )
+
+
+def _clip_to_output_target(
+    image: np.ndarray,
+    target_nits: float,
+    reference_white_nits: int,
+) -> np.ndarray:
+    """Bound every delivery channel at the authored output target.
+
+    Clipping happens in the delivery primaries so the selected target is also a
+    hard per-channel ceiling in the encoded BT.2020 HDR signal.
+    """
+    target = np.float32(nits_to_scene_linear(max(target_nits, 1.0), reference_white_nits))
+    transport = acescg_to_linear_bt2020(image)
+    if float(np.max(transport)) <= float(target):
+        return np.clip(image, 0.0, None).astype(np.float32, copy=False)
+    np.clip(transport, np.float32(0.0), target, out=transport)
+    return np.clip(linear_bt2020_to_acescg(transport), 0.0, None).astype(np.float32, copy=False)
 
 
 def _apply_hdr_color(image: np.ndarray, hdr) -> np.ndarray:
@@ -430,11 +470,33 @@ def _tone_adjusted_source_peak_nits(
     return max(1.0, float(scene_linear_to_nits(peak_linear, context.hdr_reference_white_nits)))
 
 
+def apply_sdr_output_highlight_compression(
+    image: np.ndarray,
+    adjustments: AdjustmentState,
+) -> np.ndarray:
+    """Bound the SDR lane at display white after finishing operations.
+
+    Unlike HDR, the SDR shoulder cannot move to the end of the lane: it is the
+    scene-to-display placement that fits the remaining scene headroom onto the
+    normalized canvas, and every stage after it — Exposure Bands, contrast,
+    curves, colour grading, Film Look — is display-referred. So the SDR shoulder
+    stays where the headroom still exists and only the ceiling runs last, which
+    is what output finishing and grain need bounding by.
+    """
+    sdr = adjustments.sdr
+    if sdr.rendering_version == "legacy_base_v1" or not sdr.highlight_section_enabled:
+        return image
+    if sdr.highlight_compression_mode == "off":
+        return image
+    return np.clip(image, 0.0, 1.0).astype(np.float32, copy=False)
+
+
 def _apply_sdr_adjustments(
     image: np.ndarray,
     adjustments: AdjustmentState,
     include_grain: bool = True,
     *,
+    include_output_highlight_compression: bool = True,
     local_adjustments: list[LocalAdjustment] | None = None,
     fixed_source: np.ndarray | None = None,
     compiled_local_masks: dict[str, np.ndarray] | None = None,
@@ -498,6 +560,8 @@ def _apply_sdr_adjustments(
         result = _apply_vignette(result, sdr.vignette, PreviewKind.SDR)
     if include_grain:
         result = apply_final_grain(result, adjustments, PreviewKind.SDR)
+    if include_output_highlight_compression:
+        result = apply_sdr_output_highlight_compression(result, adjustments)
     return np.clip(result, 0.0, 1.0)
 
 
@@ -506,6 +570,7 @@ def _apply_sdr_adjustments_to_reference(
     adjustments: AdjustmentState,
     include_grain: bool = True,
     *,
+    include_output_highlight_compression: bool = True,
     local_adjustments: list[LocalAdjustment] | None = None,
     fixed_source: np.ndarray | None = None,
     compiled_local_masks: dict[str, np.ndarray] | None = None,
@@ -572,6 +637,8 @@ def _apply_sdr_adjustments_to_reference(
         result = _apply_vignette(result, sdr.vignette, PreviewKind.SDR)
     if include_grain:
         result = apply_final_grain(result, adjustments, PreviewKind.SDR)
+    if include_output_highlight_compression:
+        result = apply_sdr_output_highlight_compression(result, adjustments)
     return np.clip(result, 0.0, 1.0)
 
 
@@ -863,6 +930,8 @@ def _compress_sdr_highlights(image: np.ndarray, sdr: object) -> np.ndarray:
     result = image.astype(np.float32, copy=True)
     start = np.float32(np.clip(float(getattr(sdr, "highlight_compression_start_percent", 50.0)) / 100.0, 0.01, 0.99))
     target = np.float32(1.0)
+    if mode == "clip":
+        return np.clip(result, 0.0, target).astype(np.float32, copy=False)
     luma = _linear_luma(result)
     positive_luma = np.clip(luma, 0.0, None)
 
@@ -997,6 +1066,8 @@ def _compress_scene_highlights(
     result = image.astype(np.float32, copy=False)
     luma = _acescg_luma(result)
     positive_luma = np.clip(luma, 0.0, None)
+    if mode == "clip":
+        return _clip_to_output_target(result, target_nits, reference_white_nits)
     smooth_rolloff = mode == "peak_fit" and color_handling == "smooth_rolloff"
     grouped_channels = mode == "peak_fit" and color_handling == "path_to_white"
     transport = acescg_to_linear_bt2020(result) if smooth_rolloff else None

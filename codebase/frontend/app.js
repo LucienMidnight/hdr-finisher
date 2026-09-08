@@ -445,7 +445,7 @@ const state = {
       highlight_compression_target_nits: 1000,
       highlight_compression_softness: 0,
       highlight_compression_mode: "peak_fit",
-      highlight_compression_peak_measurement: "maximum",
+      highlight_compression_peak_measurement: "robust",
       highlight_compression_source_peak_nits: 1000,
       highlight_compression_manual_peak_nits: 1000,
       highlight_compression_peak_detail: 35,
@@ -498,7 +498,7 @@ const state = {
       highlight_compression_start_percent: 50,
       highlight_compression_softness: 0,
       highlight_compression_mode: "peak_fit",
-      highlight_compression_peak_measurement: "maximum",
+      highlight_compression_peak_measurement: "robust",
       highlight_compression_source_peak_percent: 100,
       highlight_compression_manual_peak_percent: 100,
       highlight_compression_peak_detail: 35,
@@ -934,7 +934,7 @@ const defaultAdjustments = () => ({
     highlight_compression_target_nits: 1000,
     highlight_compression_softness: 0,
     highlight_compression_mode: "peak_fit",
-    highlight_compression_peak_measurement: "maximum",
+    highlight_compression_peak_measurement: "robust",
     highlight_compression_source_peak_nits: 1000,
     highlight_compression_manual_peak_nits: 1000,
     highlight_compression_peak_detail: 35,
@@ -995,7 +995,7 @@ const defaultAdjustments = () => ({
     highlight_compression_start_percent: 50,
     highlight_compression_softness: 0,
     highlight_compression_mode: "peak_fit",
-    highlight_compression_peak_measurement: "maximum",
+    highlight_compression_peak_measurement: "robust",
     highlight_compression_source_peak_percent: 100,
     highlight_compression_manual_peak_percent: 100,
     highlight_compression_peak_detail: 35,
@@ -7673,6 +7673,7 @@ function peakFitCurveInfo(hdr) {
 function mapHighlightNits(inputNits, hdr) {
   const mode = hdr.highlight_compression_mode || "peak_fit";
   if (mode === "off") return inputNits;
+  if (mode === "clip") return Math.min(inputNits, Number(hdr.highlight_compression_target_nits) || 1000);
   if (mode === "soft_ceiling") {
     const softness = Number(hdr.highlight_compression_softness) || 0;
     if (softness <= 0) return inputNits;
@@ -7704,9 +7705,12 @@ function renderHighlightCompressionControls() {
   if (!hdr || !els.highlightCompressionGraph) return;
   syncHighlightCompressionSourcePeak();
   const mode = hdr.highlight_compression_mode || "peak_fit";
+  document.querySelector('[data-control-path="hdr.highlight_compression_start_nits"]')?.toggleAttribute("hidden", mode === "clip");
   document.querySelector('[data-control-path="hdr.highlight_compression_softness"]')?.toggleAttribute("hidden", mode !== "soft_ceiling");
   document.querySelector('[data-control-path="hdr.highlight_compression_peak_detail"]')?.toggleAttribute("hidden", mode !== "peak_fit");
   document.querySelector('[data-control-path="hdr.highlight_compression_color_handling"]')?.toggleAttribute("hidden", mode !== "peak_fit");
+  document.querySelector('[data-control-path="hdr.highlight_compression_peak_measurement"]')?.toggleAttribute("hidden", mode === "clip");
+  document.querySelector('[data-control-path="hdr.highlight_compression_bias"]')?.toggleAttribute("hidden", mode !== "peak_fit");
   document.querySelector('[data-control-path="hdr.highlight_compression_manual_peak_nits"]')?.toggleAttribute("hidden", hdr.highlight_compression_peak_measurement !== "manual");
 
   const canvas = els.highlightCompressionGraph;
@@ -7752,6 +7756,8 @@ function renderHighlightCompressionControls() {
   context.lineWidth = 1;
   if (mode === "off") {
     els.highlightCompressionSummary.dataset.tooltip = "Compression is off. The ultraviolet identity line leaves highlights unchanged.";
+  } else if (mode === "clip") {
+    els.highlightCompressionSummary.dataset.tooltip = `Clip applies a hard final-output ceiling at ${Math.round(hdr.highlight_compression_target_nits)} nit.`;
   } else if (mode === "soft_ceiling") {
     els.highlightCompressionSummary.dataset.tooltip = `Soft Ceiling approaches ${Math.round(hdr.highlight_compression_target_nits)} nit without a hard peak anchor.`;
   } else {
@@ -7763,7 +7769,7 @@ function renderHighlightCompressionControls() {
       : hdr.highlight_compression_color_handling === "preserve_color"
         ? "; color ratios are preserved"
         : "; Rec.2020 channels roll off smoothly toward white";
-    els.highlightCompressionSummary.dataset.tooltip = `Peak Fit anchors the measured source peak near ${Math.round(info.target)} nit at the Highlights stage${adjusted ? `; the curve fit widens the shoulder to ${Math.round(effective)} nit` : ""}${colorNote}. Later modules can change the final scoped peak.`;
+    els.highlightCompressionSummary.dataset.tooltip = `Peak Fit anchors the measured final-grade peak near ${Math.round(info.target)} nit${adjusted ? `; the curve fit widens the shoulder to ${Math.round(effective)} nit` : ""}${colorNote}.`;
   }
 }
 
@@ -7919,6 +7925,7 @@ function renderSdrHighlightCompressionControls() {
   if (!sdr || !canvas) return;
   syncSdrHighlightCompressionSourcePeak();
   const mode = sdr.highlight_compression_mode || "peak_fit";
+  document.querySelector('[data-control-path="sdr.highlight_compression_start_percent"]')?.toggleAttribute("hidden", mode === "clip");
   document.querySelector('[data-control-path="sdr.highlight_compression_softness"]')?.toggleAttribute("hidden", mode !== "soft_ceiling");
   document.querySelector('[data-control-path="sdr.highlight_compression_peak_detail"]')?.toggleAttribute("hidden", mode !== "peak_fit");
   document.querySelector('[data-control-path="sdr.highlight_compression_color_handling"]')?.toggleAttribute("hidden", mode !== "peak_fit");
@@ -7965,9 +7972,11 @@ function renderSdrHighlightCompressionControls() {
       : sdr.highlight_compression_color_handling === "preserve_color"
         ? " Color ratios are preserved."
         : " sRGB channels roll off independently for smooth color transitions.";
-    els.sdrHighlightCompressionSummary.dataset.tooltip = mode === "soft_ceiling"
-      ? "Soft Ceiling approaches display white without a measured peak anchor."
-      : `Peak Fit places the measured ${Math.round(sourcePeak)}% input peak at display white.${colorNote}`;
+    els.sdrHighlightCompressionSummary.dataset.tooltip = mode === "clip"
+      ? "Clip applies a hard ceiling at display white."
+      : mode === "soft_ceiling"
+        ? "Soft Ceiling approaches display white without a measured peak anchor."
+        : `Peak Fit places the measured ${Math.round(sourcePeak)}% input peak at display white.${colorNote}`;
   }
 }
 
@@ -10091,7 +10100,7 @@ function arrangeLaneControlGroups(lane) {
   const panel = els.lanePanels.find((candidate) => candidate.dataset.lanePanel === lane);
   if (!panel) return;
   const groupOrder = lane === "hdr"
-    ? ["denoise", "hdr-tone", "hdr-equalizer", "hdr-zones", "hdr-highlights", "curves", "hdr-color"]
+    ? ["denoise", "hdr-tone", "hdr-equalizer", "hdr-zones", "curves", "hdr-color"]
     : ["denoise", "sdr-tone", "sdr-highlights", "sdr-equalizer", "sdr-zones", "curves", "sdr-color"];
   for (const groupName of groupOrder) {
     const group = document.querySelector(`.control-group[data-group="${groupName}"]`);
@@ -10100,6 +10109,10 @@ function arrangeLaneControlGroups(lane) {
   const colorGrading = document.querySelector('.control-group[data-group="color-grading"]');
   const localAdjustmentsGroup = document.querySelector('.control-group[data-group="local-adjustments"]');
   if (colorGrading && localAdjustmentsGroup) colorGrading.after(localAdjustmentsGroup);
+  if (lane === "hdr") {
+    const outputHighlights = document.querySelector('.control-group[data-group="hdr-highlights"]');
+    if (outputHighlights) panel.append(outputHighlights);
+  }
 }
 
 function renderLaneChrome() {

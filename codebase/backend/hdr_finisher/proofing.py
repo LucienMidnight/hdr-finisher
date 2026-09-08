@@ -198,6 +198,8 @@ class ProofArtifactStore:
             adjustments=request.adjustments,
             hdr_reference_white_nits=context.hdr_reference_white_nits,
             color_context=context,
+            local_adjustments=getattr(session, "local_adjustments", None),
+            sdr_match=getattr(session, "sdr_match", None),
         )
         suffix, media_type = PROOF_FORMAT_INFO[request.format]
         # Proofs are internal cache artifacts, not user exports. Use a unique
@@ -531,7 +533,7 @@ class ProofArtifactStore:
                         ]
                     )
                 return output.read_bytes()
-        return _encode_hdr_avif(reconstructed)
+        return _encode_hdr_avif(reconstructed, artifact.reference_white_nits)
 
     @staticmethod
     def _request_signature(session_id: str, request: ProofArtifactRequest, color_context: RenderColorContext) -> str:

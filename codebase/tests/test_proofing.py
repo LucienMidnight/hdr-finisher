@@ -303,6 +303,46 @@ class _FailOnceWithPartialArtifactBackend:
         )
 
 
+def test_proof_proxy_preserves_local_adjustments_and_sdr_match(monkeypatch, tmp_path: Path) -> None:
+    captured = {}
+
+    class CapturingBackend(_FakeBackend):
+        def export(self, session: object, settings: object) -> ExportResponse:
+            captured["locals"] = getattr(session, "local_adjustments")
+            captured["match"] = getattr(session, "sdr_match")
+            return super().export(session, settings)
+
+    proof_store = ProofArtifactStore()
+    proof_store.root = tmp_path
+    image = np.full((12, 16, 3), 0.18, dtype=np.float32)
+    local_sentinel = [object()]
+    match_sentinel = object()
+    session = type(
+        "Session",
+        (),
+        {
+            "session_id": "proof-edit-parity",
+            "render_cache": SessionRenderCache(image, None),
+            "local_adjustments": local_sentinel,
+            "sdr_match": match_sentinel,
+        },
+    )()
+    monkeypatch.setattr(proofing_module, "_inspect_artifact", lambda *_args: (3.0, "test metadata"))
+    monkeypatch.setattr(
+        proofing_module,
+        "_render_export_branch",
+        lambda *_args, **_kwargs: np.full((12, 16, 3), 0.18, dtype=np.float32),
+    )
+
+    proof_store.create(
+        session,
+        ProofArtifactRequest(adjustments=AdjustmentState(), format="jpeg_ultrahdr", long_edge=256),
+        CapturingBackend(),
+    )
+
+    assert captured == {"locals": local_sentinel, "match": match_sentinel}
+
+
 def test_failed_proof_build_cleans_internal_staging_file_before_retry(monkeypatch, tmp_path: Path) -> None:
     store = ProofArtifactStore()
     store.root = tmp_path

@@ -172,11 +172,13 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert "Highlight Compression" in html
     assert 'data-group="hdr-highlights"' in html
     assert 'data-section-path="hdr.highlight_section_enabled"' in html
-    assert '"hdr-tone", "hdr-equalizer", "hdr-zones", "hdr-highlights", "curves", "hdr-color"' in script
+    assert '"hdr-tone", "hdr-equalizer", "hdr-zones", "curves", "hdr-color"' in script
+    assert 'panel.append(outputHighlights)' in script
     assert '"sdr-tone", "sdr-highlights", "sdr-equalizer", "sdr-zones", "curves", "sdr-color"' in script
     assert "colorGrading.after(localAdjustmentsGroup)" in script
-    assert "Highlights-stage target" in html
-    assert "Later grading and Film Look controls may raise or lower the final scoped output." in html
+    assert "Output target" in html
+    assert "Sets the final peak after grading" in html
+    assert '<option value="clip">Clip</option>' in html
     assert 'data-path="hdr.highlight_compression_start_nits"' in html
     assert 'data-path="hdr.highlight_compression_target_nits"' in html
     assert 'data-path="hdr.highlight_compression_softness"' in html
@@ -1014,7 +1016,32 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     assert "localDetailVerticalFragmentMain" in shader
     assert "localDetailCompositeFragmentMain" in shader
     assert "localDetailMixFragmentMain" in shader
-    assert "hdrPrimaries(toneEqualizer(sceneColor(hdrPeakFit(hdrSoftCeiling(hdrContrast(hdrBase(source)))))))" in shader
+    assert "let contrasted = hdrContrast(hdrBase(source))" in shader
+    assert "let balanced = sceneColor(contrasted)" in shader
+    assert "let equalized = toneEqualizer(balanced)" in shader
+    assert "let primaries = hdrPrimaries(equalized)" in shader
+    # Film Look resolves into its own target so the output limiter can anchor on
+    # the finished picture instead of predicting it from the source, and so the
+    # composite and scope passes agree by construction rather than by mirroring.
+    assert "fn finishFragmentMain(" in shader
+    assert "return vec4f(applyFilmLook(coordinate), 1.0);" in shader
+    assert shader.count("applyFilmLook(coordinate)") == 1
+    assert "applyOutputHighlights(finishedAt(coordinate))" in shader
+    assert "entryPoint: \"finishFragmentMain\"" in shader
+    assert "finishTexture: createTexture()" in shader
+    # The limiter is a single final-output stage: one shoulder call site per lane,
+    # each followed by the ceiling that makes the target a delivery guarantee.
+    assert shader.count("hdrPeakFit(hdrSoftCeiling(") == 1
+    assert shader.count("sdrPeakFit(sdrSoftCeiling(") == 2
+    assert "fn clipToOutputTarget(input: vec3f) -> vec3f" in shader
+    assert "if (p[0] > 0.5) { return clipToOutputTarget(hdrPeakFit(hdrSoftCeiling(input))); }" in shader
+    assert "if (p[159] > 0.5) { return clipToOutputTarget(input); }" in shader
+    # Sharpening excursions must stay bounded, or the anchor above measures
+    # ringing instead of picture.
+    assert "const SHARPEN_HALO_ALLOWANCE_EV: f32 = 0.25;" in shader
+    assert "const DETAIL_LUMA_FLOOR: f32 = 0.0001;" in shader
+    assert shader.count("min(0.12 * (extrema.y - extrema.x), SHARPEN_HALO_ALLOWANCE_EV)") == 2
+    assert "0.12 * (extrema.y - extrema.x);" not in shader
     assert "sdrReferenceColor(sdrContrast(toneEqualizer(highlightRecovery(rgb))))" in shader
     assert "toneMap(sceneColor(rgb))" in shader
     assert "sdrPrimaries(sdrContrast(toneEqualizer(highlightRecovery(toneMap(sceneColor(rgb))))))" in shader
@@ -1031,6 +1058,7 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     assert "let target =" not in shader
     assert "let softness = clamp(p[3] / 100.0, 0.0, 1.0)" in shader
     assert 'branch.highlight_compression_mode === "peak_fit" ? 1' in shader
+    assert 'branch.highlight_compression_mode === "clip" ? 3' in shader
     assert 'branch.highlight_compression_color_handling === "smooth_rolloff" ? 2' in shader
     assert 'branch.highlight_compression_color_handling === "path_to_white"' in shader
     assert "fn hdrPeakFit(input: vec3f) -> vec3f" in shader

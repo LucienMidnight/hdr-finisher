@@ -10,6 +10,15 @@ from .models import DetailAdjustments, PreviewKind
 _ACESCG_LUMA = np.array([0.2722287, 0.6740818, 0.0536895], dtype=np.float32)
 _SRGB_LUMA = np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
 _TEXTURE_EDGE_THRESHOLD_EV = np.float32(0.20)
+# Log luminance needs a floor well above zero. A floor at the edge of float
+# precision makes the local neighbourhood range around any near-black sample
+# span twenty stops or more, which the sharpening halo fence reads as licence
+# for an unbounded excursion.
+_DETAIL_LUMA_FLOOR = np.float32(1e-4)
+# Absolute ceiling on how far a sharpened sample may travel past its local
+# neighbourhood. The fence stays range-relative for ordinary structure and only
+# this cap engages at high-contrast edges.
+_SHARPEN_HALO_ALLOWANCE_EV = np.float32(0.25)
 
 
 def detail_is_neutral(detail: DetailAdjustments) -> bool:
@@ -31,7 +40,9 @@ def apply_detail(
     if detail_is_neutral(detail):
         return image
     weights = _ACESCG_LUMA if kind == PreviewKind.HDR else _SRGB_LUMA
-    original_luma = np.maximum(np.einsum("...c,c->...", image[..., :3], weights, optimize=True), 1e-7)
+    original_luma = np.maximum(
+        np.einsum("...c,c->...", image[..., :3], weights, optimize=True), _DETAIL_LUMA_FLOOR
+    )
     # Log luminance makes equal local contrast changes read consistently in
     # shadows and highlights.  Values below black remain clamped and finite.
     log_luma = np.log2(original_luma)
@@ -75,8 +86,10 @@ def apply_detail(
         # A strict local-extrema fence pins the brightest and darkest edge
         # samples at every non-zero Amount, which makes sharpening behave like
         # an on/off switch. Permit a small, range-relative excursion while
-        # retaining a firm halo bound.
-        allowance = np.float32(0.12) * (local_max - local_min)
+        # retaining a firm halo bound. The absolute cap keeps that excursion
+        # bounded where the local range is itself large, so a specular edge
+        # cannot be sharpened into a value the picture never contained.
+        allowance = np.minimum(np.float32(0.12) * (local_max - local_min), _SHARPEN_HALO_ALLOWANCE_EV)
         adjusted = np.clip(sharpened, local_min - allowance, local_max + allowance)
 
     delta = np.clip(adjusted - log_luma, -16.0, 16.0).astype(np.float32)

@@ -8,6 +8,6 @@ Match, Rematch, Revert, and the first grain override apply a fully materialized 
 
 ## Relationship to HDR Highlight Compression
 
-HDR Peak Fit or Soft Ceiling remains an early creative operation inside the captured HDR grade; SDR Match neither replaces nor bypasses it. The Match knee runs later against the fully rendered, already-compressed HDR result, so the two shoulders intentionally stack: Peak Fit shapes the HDR highlight relationships first, and Match compresses only the remaining HDR headroom into SDR.
+HDR Peak Fit, Soft Ceiling, or Clip remains part of the captured HDR grade; SDR Match neither replaces nor bypasses it. Output Highlight Compression finishes the rendered HDR result before the Match knee maps its remaining headroom into SDR, so the two shoulders intentionally stack.
 
 The automatic percentile `P` is measured after Highlight Compression and the rest of the captured HDR recipe. Peak Fit can therefore lower `P`, move the automatic Match knee upward, and produce a gentler SDR shoulder. The Peak Fit-shaped relationships remain visible in SDR; additional compression applies only where highlights still extend beyond the Match boundary.

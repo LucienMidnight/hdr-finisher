@@ -13,7 +13,13 @@ import zlib
 
 import numpy as np
 
-from .adjustments import apply_adjustments, apply_final_grain, apply_matched_final_grain
+from .adjustments import (
+    apply_adjustments,
+    apply_final_grain,
+    apply_hdr_output_highlight_compression,
+    apply_matched_final_grain,
+    apply_sdr_output_highlight_compression,
+)
 from .binaries import resolve_binary
 from .subprocess_utils import hidden_window_options
 from .color import acescg_to_linear_bt2020
@@ -88,14 +94,21 @@ def _render_export_branch(
         kind,
         sdr_reference_image=getattr(session, "sdr_reference_image", None),
         include_grain=False,
+        include_output_highlight_compression=False,
         local_adjustments=getattr(session, "local_adjustments", None),
         color_context=color_context,
         sdr_match=getattr(session, "sdr_match", None),
     )
+    # Output finishing resamples and sharpens for the delivered size, neither of
+    # which the preview models. Running it before the limiter keeps its ringing
+    # underneath the ceiling instead of on top of it.
     image = apply_output_finishing(image, settings.output_finishing, kind)
     if kind == PreviewKind.SDR and getattr(getattr(session, "sdr_match", None), "active", False):
         return apply_matched_final_grain(image, adjustments, getattr(session, "sdr_match"))
-    return apply_final_grain(image, adjustments, kind)
+    image = apply_final_grain(image, adjustments, kind)
+    if kind == PreviewKind.HDR:
+        return apply_hdr_output_highlight_compression(image, adjustments, color_context=color_context)
+    return apply_sdr_output_highlight_compression(image, adjustments)
 
 
 class StubExportBackend(ExportBackend):

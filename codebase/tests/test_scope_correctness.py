@@ -99,7 +99,7 @@ def test_hdr_scope_peak_hits_peak_fit_target_when_compression_is_final_tonal_ope
     assert scope.peak_value == pytest.approx(1000.0, rel=5e-5)
 
 
-def test_hdr_scope_reports_legitimate_re_expansion_after_peak_fit() -> None:
+def test_hdr_scope_reports_final_peak_fit_after_exposure_band_expansion() -> None:
     source_peak_nits = 4000.0
     image = np.full((4, 4, 3), source_peak_nits * 0.18 / 203.0, dtype=np.float32)
     adjustments = AdjustmentState(
@@ -117,11 +117,9 @@ def test_hdr_scope_reports_legitimate_re_expansion_after_peak_fit() -> None:
 
     scope = build_scope(image, adjustments, PreviewKind.HDR)
 
-    # Highlight Compression anchors the signal at its own stage. The Tone
-    # Equalizer is downstream and may intentionally lift that result; scopes
-    # must continue reporting the completed grade rather than the module target.
-    assert scope.peak_value == pytest.approx(4000.0, rel=8e-5)
-    assert scope.peak_value > adjustments.hdr.highlight_compression_target_nits
+    # Exposure Bands first lift the source; output Highlight Compression then
+    # measures that completed grade and anchors it to the mastering target.
+    assert scope.peak_value == pytest.approx(1000.0, rel=8e-5)
 
 
 def test_gpu_waveform_uses_the_same_acescg_to_rec2020_matrix() -> None:

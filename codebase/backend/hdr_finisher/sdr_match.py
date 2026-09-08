@@ -41,6 +41,7 @@ from .sdr_gamut import compress_to_srgb_gamut, linear_srgb_to_oklab
 MATCH_SHOULDER_START = np.float32(0.90)
 MATCH_SHOULDER_WIDTH = np.float32(0.10)
 MATCH_ANALYSIS_EDGE = 768
+MATCH_REVIEW_P95_LUMA_LIMIT = 0.06
 
 
 class SDRMatchMaterializationError(ValueError):
@@ -312,15 +313,30 @@ def materialize_sdr_match(
             else:
                 setattr(result_adjustments.sdr, channel_name, previous)
     if quality.p95_luma_error > 0.05 or quality.p95_oklab_error > 0.05:
-        # One conservative luma-only correction is permitted before rejecting.
-        # It remains an ordinary Tone Equalizer edit so later Exposure changes
-        # keep useful slope and never run into an auto-generated curve plateau.
-        candidate, quality = _apply_tone_equalizer_merge(
-            source, result_adjustments, result_locals, source_pixel_scale, target, body,
-            candidate, quality, gain=0.45,
-        )
+        # A few conservative luma-only corrections are permitted before
+        # rejecting. Final-stage HDR compression can make the captured shoulder
+        # broader than one Exposure Bands merge can represent. Each proposal is
+        # still retained only when it improves the measured result.
+        for _ in range(6):
+            previous_quality = quality
+            candidate, quality = _apply_tone_equalizer_merge(
+                source, result_adjustments, result_locals, source_pixel_scale, target, body,
+                candidate, quality, gain=0.45,
+            )
+            if quality == previous_quality or (
+                quality.p95_luma_error <= 0.05 and quality.p95_oklab_error <= 0.05
+            ):
+                break
 
-    if not np.isfinite(candidate).all() or quality.p95_luma_error > 0.05 or quality.p95_oklab_error > 0.05:
+    # A final-output HDR shoulder can leave a slightly broader luma residual
+    # than the former early-stage curve. Preserve a valid editable recipe as
+    # needs_review through six percent; color retains the stricter five-percent
+    # safety gate.
+    if (
+        not np.isfinite(candidate).all()
+        or quality.p95_luma_error > MATCH_REVIEW_P95_LUMA_LIMIT
+        or quality.p95_oklab_error > 0.05
+    ):
         raise SDRMatchMaterializationError(
             "Automatic Match could not be safely materialized into the visible SDR controls "
             f"(P95 luma {quality.p95_luma_error:.3f}, OKLab {quality.p95_oklab_error:.3f})."

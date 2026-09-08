@@ -1,6 +1,6 @@
 # Highlight Compression Technical Reference
 
-Highlight compression is the shared bright-end shaping design used by both rendering lanes. HDR applies it to its scene-linear grade after Tone. Generated SDR first uses fixed middle-gray placement and converts to display-linear sRGB; authored SDR applies it directly to its retained display-linear base. In both lanes it precedes Exposure Bands and later creative stages, so it is a shoulder anchor rather than a permanent final clamp.
+Highlight compression is the shared bright-end shaping design used by both rendering lanes. HDR applies it as the final output operation after global and local adjustments, Detail, Film Look, Vignette, output finishing, and grain. Generated SDR first uses fixed middle-gray placement and converts to display-linear sRGB; authored SDR applies it directly to its retained display-linear base.
 
 This document is the implementation contract for the CPU renderer, WebGPU preview, controls, scopes, tests, and future changes.
 
@@ -8,10 +8,11 @@ DNG clipped-highlight color recovery is a separate import-stage operation. It re
 
 ## User intent and modes
 
-The section bypass is the sole on/off control. When enabled, it supports two compression modes:
+The section bypass is the sole on/off control. When enabled, it supports three compression modes:
 
-- **Peak Fit** measures or accepts a source peak, builds a monotonic shoulder in log2 stops, and anchors that measured peak at Target Peak inside the Highlights stage.
+- **Peak Fit** measures or accepts the final-grade peak, builds a monotonic shoulder in log2 stops, and anchors that measured peak at Target Peak.
 - **Soft Ceiling** is an asymptotic compressor controlled by Softness. It has no measured endpoint anchor.
+- **Clip** applies a strict per-channel ceiling in the HDR delivery primaries. It is intentionally hard and does not use Start, Softness, source-peak measurement, Highlight Detail, Bias, or Highlight Color.
 
 Peak Fit is the normal mastering control when the user needs a defined endpoint. Soft Ceiling is a creative shoulder and must not be described as an exact maximum.
 
@@ -37,16 +38,17 @@ The HDR global order relevant to this module is:
 1. Exposure
 2. Shadow / Black
 3. Contrast and Pivot
-4. Highlight Compression
-5. Color, Exposure Bands, Primaries, Curves, local adjustments, and Film Look
+4. Color, Exposure Bands, Primaries, Curves, Color Grading, Detail, local adjustments, Film Look, and Vignette
+5. Final grain
+6. Output Highlight Compression
 
-Peak Fit predicts the measured source peak after the preceding Tone controls. Later stages can raise the finished waveform above Target Peak; users must recheck the final scope after changing them.
+Peak Fit measures the finished post-grain pixels, so later exposure, creative, finishing, or texture changes cannot invalidate the target.
 
 The SDR order is Exposure/Shadow, generated placement and sRGB conversion when needed, Highlight Compression, gamut compression, then Exposure Bands and later display-referred controls. SDR Peak Fit likewise includes Tone Exposure when predicting a manual source peak.
 
-[HDR-to-SDR Match](sdr-match.md) does not replace or bypass Peak Fit or Soft Ceiling. Highlight Compression remains an early creative operation inside the captured HDR grade; the Match knee runs later against the fully rendered, already-compressed HDR result, so the two shoulders intentionally stack: Peak Fit shapes HDR highlight relationships first, and Match compresses only the remaining HDR headroom into SDR.
+[HDR-to-SDR Match](sdr-match.md) does not replace or bypass Peak Fit, Soft Ceiling, or Clip. The Match knee consumes the fully rendered, already-compressed HDR result.
 
-The automatic Match percentile is measured after Highlight Compression and the rest of the captured HDR recipe. Peak Fit can therefore lower that percentile, move the automatic Match knee upward, and produce a gentler SDR shoulder; users should expect the Peak Fit-shaped relationships to remain, with additional compression only where highlights still extend beyond the Match boundary.
+The automatic Match percentile is measured from the fully rendered captured HDR recipe, including output Highlight Compression. Peak Fit can therefore lower that percentile, move the automatic Match knee upward, and produce a gentler SDR shoulder; users should expect the Peak Fit-shaped relationships to remain, with additional compression only where highlights still extend beyond the Match boundary.
 
 ## Measurement signals
 
@@ -87,7 +89,7 @@ This mode intentionally handles saturated blue, red, or green highlights whose A
 
 - **Measured maximum** uses the exact signal maximum appropriate to Highlight Color.
 - **Ignore isolated pixels** uses the corresponding robust 99.99th-percentile signal.
-- **Manual** uses the entered Source Peak before Tone controls. Its meaning follows Highlight Color: luminance for Preserve color, the maximum output-working-space channel for Smooth color rolloff, and the maximum grouped channel for Neutralize peak.
+- **Manual** uses the entered estimate for the final pre-compression peak. Its meaning follows Highlight Color: luminance for Preserve color, the maximum output-working-space channel for Smooth color rolloff, and the maximum grouped channel for Neutralize peak.
 
 Changing Highlight Color or Input Peak must resynchronize the derived source peak. Saved projects keep the internal enums `preserve_color` and `path_to_white`; the new default is serialized as `smooth_rolloff`.
 
@@ -105,7 +107,11 @@ Peak Fit uses Start, Target Peak, source peak, Highlight Detail, and Compression
 
 The curve must remain continuous and monotonic. Highlight Detail retains positive contrast at the endpoint; it must never introduce a reversal.
 
-Target Peak is an exact transfer-curve endpoint for the measured source signal, not a hard clip and not a requirement that the displayed preview scope read the same number. Source-peak analysis is performed on the full-resolution import. A Standard or otherwise downsampled preview can filter away the exact maximum sample, so its measured peak can land below Target Peak. This difference is normally larger at higher Highlight Detail because the positive endpoint slope leaves near-peak samples farther below the anchor. At `0%`, the endpoint tangent is flat, so a wider neighborhood maps close to Target Peak and a downsampled scope commonly reads higher. Full-resolution export remains the authoritative endpoint check, subject to later creative stages.
+Target Peak is an exact transfer-curve endpoint for the measured final-grade signal, and every mode is followed by an unconditional ceiling at Target Peak in the delivery primaries. The shoulder shapes the picture; the ceiling makes the target a delivery guarantee. That separation matters because the shoulder anchors on a measured peak, and sharpening ringing, grain, and output finishing all leave individual samples above the picture the shoulder was fitted to. A Standard or otherwise downsampled preview can filter away the exact maximum sample, so its measured peak can land below Target Peak; it can never land above.
+
+## Clip
+
+Clip converts the finished HDR grade to linear BT.2020, clamps every channel to Target Peak, and converts back to ACEScg. It is the deterministic mastering option when no encoded channel may exceed the selected ceiling. Unlike Peak Fit and Soft Ceiling, it intentionally creates a flat clipped endpoint and can alter hue in saturated clipped colors.
 
 The default Highlight Detail is `35%`. This is intentional: it retains visible shape and local contrast in bright fixtures and reflections. `0%` is available when a flatter, fuller shoulder is preferred, but it is not the neutral technical default and can make peak regions feel plateaued.
 
@@ -125,34 +131,34 @@ Important invariants:
 - exact identity when Off, when Soft Ceiling softness is zero, or when Peak Fit does not need compression;
 - no NaN/Inf generation for finite inputs;
 - values at or below the effective start remain unchanged;
-- CPU and WebGPU choose the same signal and evaluate the same curve;
+- the authoritative CPU preview/export path measures Peak Fit after all creative stages;
 - Smooth color rolloff never lifts a weak BT.2020 channel and anchors the brightest transport channel at Target Peak;
 - SDR Smooth color rolloff never lifts a weak linear-sRGB channel and anchors the measured source channel at display white;
 - the Neutralize peak endpoint is white at Target Peak.
 
 ## WebGPU implementation and parameter map
 
-The live preview implementation is `hdrPeakFit` / `hdrSoftCeiling` in `codebase/frontend/webgpu-preview.js`. Relevant packed parameters are:
+The WebGPU implementation retains `hdrPeakFit` / `hdrSoftCeiling` for direct parity tests. Final-stage HDR compression runs on WebGPU: a `finishFragmentMain` pass resolves Film Look, Vignette and grain into `finishTexture`, `finishedPeakReductionMain` reduces over that finished target for the anchor, and the composite pass applies the shoulder and ceiling. A settled render performs one reduction and one readback; an interactive drag performs none and reuses the lane's last anchor. Relevant packed parameters are:
 
 | Index | Meaning |
 |---:|---|
 | `p[3]` | Softness percentage |
 | `p[53]` | Start in scene-linear units |
 | `p[73]` | Target Peak in scene-linear units |
-| `p[74]` | Mode: `0` off, `1` Peak Fit, `2` Soft Ceiling |
+| `p[74]` | Legacy shader mode: `0` off, `1` Peak Fit, `2` Soft Ceiling |
 | `p[75]` | Tone-adjusted source peak in scene-linear units |
 | `p[76]` | Highlight Detail normalized to 0–1 |
 | `p[77]` | Compression Bias normalized and scaled to ±0.6 |
 | `p[110]` | Highlight Color: `0` Preserve color, `1` Neutralize peak, `2` Smooth color rolloff |
 | `p[159]` | SDR renderer contract: `1` Highlight Compression v2, `0` legacy Base Rendition compatibility |
 
-Any CPU curve change must be mirrored in WGSL and covered by parity tests in the same change.
+The authoring preview keeps active HDR and SDR output compression on WebGPU. Peak Fit, Soft Ceiling, and Clip are applied in the final composite after Film Look, spatial effects, vignette, and grain; Clip therefore remains a true output-boundary clamp without forcing a backend preview. Proof and export continue through the authoritative CPU path.
 
 ## UI, graph, and scopes
 
 The compact graph plots scalar input nits against scalar output nits. Its scalar is luminance for Preserve color, maximum ACEScg channel for Neutralize peak, and maximum BT.2020 channel for Smooth color rolloff. The summary must identify the active color trajectory.
 
-HDR histogram and waveform scopes can show composite RGB or Luma; SDR scopes use normalized display values. A composite channel peak above the target is valid in Preserve color but is a failure of the grouped/channel-wise mode when measured at full resolution before later creative stages. A preview-proxy peak below the target is expected when downsampling removes the exact source-peak sample. UI wording must distinguish these cases.
+HDR histogram and waveform scopes can show composite RGB or Luma; SDR scopes use normalized display values. A composite channel peak above the target is valid in Preserve color but is a failure of the grouped/channel-wise mode when measured at full resolution after output compression. A preview-proxy peak below the target is expected when downsampling removes the exact source-peak sample. UI wording must distinguish these cases.
 
 ## Required regression coverage
 
@@ -162,7 +168,8 @@ Tests must cover:
 - tones below Start remaining unchanged;
 - monotonic Soft Ceiling behavior;
 - exact Peak Fit endpoint and positive highlight slope;
-- Tone-before-Highlights peak prediction;
+- final-stage Peak Fit after Exposure Bands and other creative modules;
+- strict BT.2020 channel ceiling in Clip mode;
 - Highlights section bypass;
 - saturated, low-luminance single-channel highlights entering grouped compression;
 - grouped maximum-channel endpoint at Target Peak;
@@ -180,6 +187,6 @@ Private photographs remain manual corpus material under `codebase/local-test-med
 - Do not change the SDR `smooth_rolloff` working space away from linear sRGB without updating SDR measurement and CPU/WebGPU parity tests.
 - Preserve `legacy_base_v1` on projects saved before the SDR rendering-version marker; compatibility fields remain serialized but are not exposed in the current UI.
 - Do not introduce a local reference-white conversion; use the shared render color context.
-- Do not turn Target Peak into a final-pipeline hard clamp; later creative stages remain independent.
+- Keep Peak Fit and Soft Ceiling distinct from Clip as *shoulder shapes*: Clip is the mode with no shoulder at all. All three end at the same unconditional Target Peak ceiling.
 - Do not use display-referred gamut clipping as a substitute for scene-linear highlight compression.
 - Update this document whenever measurement, curve construction, stage order, GPU parameters, or endpoint guarantees change.

@@ -361,8 +361,8 @@
               </label>
             </div>
             <div id="proof-preview-switch" class="proof-preview-switch hidden" role="group" aria-label="Proof preview rendition">
-              <button type="button" class="active tooltip-trigger" data-proof-preview="delivered" data-tooltip="Renders the encoded artifact itself." aria-pressed="true">Browser delivery</button>
-              <button type="button" class="tooltip-trigger" data-proof-preview="hdr" data-tooltip="Reconstructs the encoded gain-map bytes for the selected headroom; it is not a prediction of browser adaptation." aria-pressed="false">Reference target</button>
+              <button type="button" class="active tooltip-trigger" data-proof-preview="delivered" data-tooltip="Renders the encoded artifact through Chromium's adaptive HDR decoder." aria-pressed="true">Browser delivery</button>
+              <button type="button" class="tooltip-trigger" data-proof-preview="hdr" data-tooltip="Reconstructs the encoded gain-map endpoints at the selected headroom for a deterministic comparison with the authored HDR grade." aria-pressed="false">Reference target</button>
               <button type="button" class="tooltip-trigger" data-proof-preview="sdr" data-tooltip="Shows the exact SDR fallback encoded into the proof artifact." aria-pressed="false">SDR base</button>
             </div>
             <button id="chrome-proof-refresh" class="button-primary rail-primary-action tooltip-trigger" type="button" data-tooltip="Proofs refresh on demand. Grading changes mark the result stale without interrupting editing.">Build proof</button>
@@ -871,11 +871,12 @@
           <div class="control-group-body">
             <div class="control-row select-control" data-control-path="hdr.highlight_compression_mode">
               <div class="control-heading">
-                <label id="highlight-compression-summary" class="tooltip-trigger" for="hdr-compression-mode" data-tooltip="Peak Fit anchors the measured source peak at the Highlights stage. Later modules can change the final scoped peak.">Mode</label>
+                <label id="highlight-compression-summary" class="tooltip-trigger" for="hdr-compression-mode" data-tooltip="Peak Fit anchors the measured final-grade peak at the output target.">Mode</label>
               </div>
               <select id="hdr-compression-mode" data-path="hdr.highlight_compression_mode">
                 <option value="peak_fit">Peak Fit</option>
                 <option value="soft_ceiling">Soft Ceiling</option>
+                <option value="clip">Clip</option>
               </select>
             </div>
             <div class="control-row" data-control-path="hdr.highlight_compression_start_nits">
@@ -884,7 +885,7 @@
             </div>
             <div class="control-row" data-control-path="hdr.highlight_compression_target_nits">
               <div class="control-heading">
-                <label class="tooltip-trigger" for="hdr-compression-target" data-tooltip="Sets the peak at this module. Later grading and Film Look controls may raise or lower the final scoped output.">Highlights-stage target</label>
+                <label class="tooltip-trigger" for="hdr-compression-target" data-tooltip="Sets the final peak after grading, local adjustments, Detail, Film Look, and Vignette.">Output target</label>
                 <output data-value-path="hdr.highlight_compression_target_nits">1000 nit</output>
               </div>
               <input id="hdr-compression-target" type="range" min="200" max="10000" step="25" value="1000" data-path="hdr.highlight_compression_target_nits">
@@ -1080,7 +1081,7 @@
           <div class="control-group-body">
             <div class="control-row select-control" data-control-path="sdr.highlight_compression_mode">
               <div class="control-heading"><label id="sdr-highlight-compression-summary" class="tooltip-trigger" for="sdr-compression-mode" data-tooltip="Peak Fit anchors the measured source peak at display white while preserving a smooth highlight gradient.">Mode</label></div>
-              <select id="sdr-compression-mode" data-path="sdr.highlight_compression_mode"><option value="peak_fit">Peak Fit</option><option value="soft_ceiling">Soft Ceiling</option></select>
+              <select id="sdr-compression-mode" data-path="sdr.highlight_compression_mode"><option value="peak_fit">Peak Fit</option><option value="soft_ceiling">Soft Ceiling</option><option value="clip">Clip</option></select>
             </div>
             <div class="control-row" data-control-path="sdr.highlight_compression_start_percent">
               <div class="control-heading"><label for="sdr-compression-start">Start</label><output data-value-path="sdr.highlight_compression_start_percent">50%</output></div>

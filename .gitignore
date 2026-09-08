@@ -57,3 +57,6 @@ codebase/local-test-media/
 
 # Small deterministic EXR fixtures are part of the automated test suite.
 !codebase/tests/fixtures/*.exr
+
+# Desktop test and diagnostic output
+codebase/desktop/output/

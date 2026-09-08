@@ -80,13 +80,10 @@ fn peakSdrInput(input: vec3f) -> vec3f {
   return peakAcescgToSrgb(peakSceneColor(rgb)) * ((100.0 / 203.0) / 0.18);
 }
 
-@compute @workgroup_size(8, 8)
-fn peakReductionMain(@builtin(global_invocation_id) id: vec3u) {
-  let dimensions = textureDimensions(peakSource);
-  if (id.x >= dimensions.x || id.y >= dimensions.y) { return; }
-  let source = textureLoad(peakSource, vec2i(id.xy), 0).rgb;
-  let sdrV2 = peakParams[0] < 0.5 && peakParams[159] > 0.5;
-  let rgb = select(peakTone(source), peakSdrInput(source), sdrV2);
+// The measurement domain follows the selected colour handling: BT.2020 channel
+// peak for Smooth Rolloff, RGB channel peak for Path to White, luminance
+// otherwise. Both entry points must agree on it.
+fn peakSignalOf(rgb: vec3f, sdrV2: bool) -> f32 {
   let channelPeak = max(max(rgb.r, rgb.g), rgb.b);
   let transport = peakAcescgToBt2020(rgb);
   let transportPeak = max(max(transport.r, transport.g), transport.b);
@@ -98,11 +95,35 @@ fn peakReductionMain(@builtin(global_invocation_id) id: vec3u) {
   } else if (peakParams[110] > 0.5) {
     signal = channelPeak;
   }
-  signal = max(signal, 0.0);
+  return max(signal, 0.0);
+}
+
+fn recordPeak(signal: f32) {
   atomicMax(&peakResult[0], bitcast<u32>(signal));
   let stop = clamp(log2(max(signal, exp2(-32.0))), -32.0, 32.0);
   let bin = min(${PEAK_HISTOGRAM_BINS - 1}u, u32(floor((stop + 32.0) * ${PEAK_HISTOGRAM_BINS}.0 / 64.0)));
   atomicAdd(&peakResult[1u + bin], 1u);
+}
+
+@compute @workgroup_size(8, 8)
+fn peakReductionMain(@builtin(global_invocation_id) id: vec3u) {
+  let dimensions = textureDimensions(peakSource);
+  if (id.x >= dimensions.x || id.y >= dimensions.y) { return; }
+  let source = textureLoad(peakSource, vec2i(id.xy), 0).rgb;
+  let sdrV2 = peakParams[0] < 0.5 && peakParams[159] > 0.5;
+  let rgb = select(peakTone(source), peakSdrInput(source), sdrV2);
+  recordPeak(peakSignalOf(rgb, sdrV2));
+}
+
+// Reads an already-finished render target, so no stage of the grade has to be
+// re-derived analytically. This is the domain the CPU limiter measures in.
+@compute @workgroup_size(8, 8)
+fn finishedPeakReductionMain(@builtin(global_invocation_id) id: vec3u) {
+  let dimensions = textureDimensions(peakSource);
+  if (id.x >= dimensions.x || id.y >= dimensions.y) { return; }
+  let rgb = textureLoad(peakSource, vec2i(id.xy), 0).rgb;
+  let sdrV2 = peakParams[0] < 0.5 && peakParams[159] > 0.5;
+  recordPeak(peakSignalOf(rgb, sdrV2));
 }`;
   const DENOISE_ALGORITHM_VERSION = "compact-haar-residual-v1";
   // Preserve progressively more structure at medium/coarse Haar scales. Full
@@ -263,6 +284,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.scopeResources = new Map();
       this.peakReductionPipeline = null;
       this.peakReductionCache = new Map();
+      // Last settled anchor per lane, so an interactive drag has something
+      // stable to hold while its own measurement is skipped.
+      this.lastFinishedPeaks = new Map();
       this.bindGroupLayout = null;
       this.pipelineLayout = null;
       this.maskBindGroupLayout = null;
@@ -423,6 +447,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       }
       this.scopeResources.clear();
       this.peakReductionCache.clear();
+      this.lastFinishedPeaks.clear();
     }
 
     invalidateSurfaces() {
@@ -630,24 +655,49 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         sourcePixelScale,
         sourceOptions?.inheritedGrain || null,
       );
-      if ((lane === "hdr" || params[159] > 0.5) && params[74] === 1) {
-        const measurement = adjustments[lane]?.highlight_compression_peak_measurement || "maximum";
-        if (measurement !== "manual") {
-          const peakKey = JSON.stringify([
-            sourceProxy.identity, lane, params[1], params[159],
-            measurement,
-            params[2], params[4], params[8], params[9], params[110],
-            ...params.slice(10, 12), ...params.slice(61, 73),
-          ]);
-          const cachedPeak = this.peakReductionCache.get(peakKey);
-          if (cachedPeak !== undefined) {
-            params[75] = cachedPeak;
-          } else if (sourceOptions?.tier !== "interactive") {
-            params[75] = await this.measureToneAdjustedPeak(sourceProxy, params, measurement, peakKey);
-            if (resourceGeneration !== this.resourceGeneration
-              || serial !== this.renderSerials.get(canvas)
-              || sourceOptions?.isCurrent?.() === false) return false;
-          }
+      // Peak Fit anchors on the finished picture, which only exists once the
+      // render has run. A settled render measures it and caches the result; an
+      // interactive render reuses the last known anchor so a drag never blocks
+      // on a readback. The anchor moves slowly, so the settled correction that
+      // follows a gesture is not a visible re-grade.
+      const anchorMeasurement = adjustments[lane]?.highlight_compression_peak_measurement || "robust";
+      const anchorRequired = params[74] === 1 && anchorMeasurement !== "manual";
+      // Only the HDR limiter moved to the end of the pipeline, so only it can
+      // anchor on the finished picture. The SDR shoulder is still the
+      // scene-to-display placement near the top of its lane, and has to keep
+      // measuring the source domain it actually operates on.
+      const anchorKey = anchorRequired && lane === "hdr"
+        ? this.finishedPeakKey(sourceProxy, lane, anchorMeasurement, params)
+        : null;
+      let pendingAnchor = false;
+      if (anchorKey) {
+        const cachedPeak = this.peakReductionCache.get(anchorKey);
+        if (cachedPeak !== undefined) {
+          params[75] = cachedPeak;
+        } else if (sourceOptions?.tier === "interactive") {
+          // Every parameter feeds the anchor now, so a drag misses the cache on
+          // each frame. Carry the lane's last measurement rather than falling
+          // back to the source-domain estimate, which would visibly jump.
+          const previous = this.lastFinishedPeaks.get(lane);
+          if (previous !== undefined) params[75] = previous;
+        } else {
+          pendingAnchor = true;
+        }
+      } else if (anchorRequired && params[159] > 0.5) {
+        const peakKey = JSON.stringify([
+          sourceProxy.identity, lane, params[1], params[159],
+          anchorMeasurement,
+          params[2], params[4], params[8], params[9], params[110],
+          ...params.slice(10, 12), ...params.slice(61, 73),
+        ]);
+        const cachedPeak = this.peakReductionCache.get(peakKey);
+        if (cachedPeak !== undefined) {
+          params[75] = cachedPeak;
+        } else if (sourceOptions?.tier !== "interactive") {
+          params[75] = await this.measureToneAdjustedPeak(sourceProxy, params, anchorMeasurement, peakKey);
+          if (resourceGeneration !== this.resourceGeneration
+            || serial !== this.renderSerials.get(canvas)
+            || sourceOptions?.isCurrent?.() === false) return false;
         }
       }
       // Changing a visible canvas's backing size clears its presented frame.
@@ -743,10 +793,16 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const verticalBindGroup = spatialActive
         ? makeBindGroup(intermediate.filmTexture.createView(), intermediate.spatialBTexture.createView())
         : null;
+      const finishBindGroup = makeBindGroup(intermediate.filmTexture.createView(), spatialAView);
+      if (!intermediate.compositeParamBuffer
+        || intermediate.compositeParamBuffer.size < Math.max(16, Math.ceil(params.byteLength / 4) * 4)) {
+        intermediate.compositeParamBuffer?.destroy();
+        intermediate.compositeParamBuffer = this.createStorageBuffer(params);
+      }
       const compositeBindGroup = makeBindGroup(
-        intermediate.filmTexture.createView(),
+        intermediate.finishTexture.createView(),
         spatialAView,
-        this.paramBuffer,
+        intermediate.compositeParamBuffer,
         overlayMask?.texture?.createView() || spatialAView,
       );
       const encoder = this.device.createCommandEncoder();
@@ -967,7 +1023,36 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         verticalPass.draw(3);
         verticalPass.end();
       }
-      const pass = encoder.beginRenderPass({
+      const finishPass = encoder.beginRenderPass({
+        colorAttachments: [{
+          view: intermediate.finishTexture.createView(),
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          loadOp: "clear",
+          storeOp: "store",
+        }],
+      });
+      finishPass.setPipeline(pipelines.finish);
+      finishPass.setBindGroup(0, finishBindGroup);
+      finishPass.draw(3);
+      finishPass.end();
+      // A settled render splits here: the finished picture has to exist before
+      // its peak can be measured, and the measured peak has to exist before the
+      // limiter runs. The submit count matches the previous scheme, which also
+      // performed one reduction and one readback per settled render.
+      let compositeEncoder = encoder;
+      if (pendingAnchor) {
+        this.device.queue.submit([encoder.finish()]);
+        params[75] = await this.measureFinishedPeak(
+          intermediate.finishTexture, proxy.width, proxy.height, params, anchorMeasurement, anchorKey,
+        );
+        if (resourceGeneration !== this.resourceGeneration
+          || serial !== this.renderSerials.get(canvas)
+          || sourceOptions?.isCurrent?.() === false) return false;
+        this.lastFinishedPeaks.set(lane, params[75]);
+        compositeEncoder = this.device.createCommandEncoder();
+      }
+      this.device.queue.writeBuffer(intermediate.compositeParamBuffer, 0, params);
+      const pass = compositeEncoder.beginRenderPass({
         ...(gpuTiming ? { timestampWrites: { querySet: gpuTiming.querySet, endOfPassWriteIndex: 1 } } : {}),
         colorAttachments: [{
           view: context.getCurrentTexture().createView(),
@@ -981,10 +1066,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       pass.draw(3);
       pass.end();
       if (gpuTiming) {
-        encoder.resolveQuerySet(gpuTiming.querySet, 0, 2, gpuTiming.resolveBuffer, 0);
-        encoder.copyBufferToBuffer(gpuTiming.resolveBuffer, 0, gpuTiming.readBuffer, 0, 16);
+        compositeEncoder.resolveQuerySet(gpuTiming.querySet, 0, 2, gpuTiming.resolveBuffer, 0);
+        compositeEncoder.copyBufferToBuffer(gpuTiming.resolveBuffer, 0, gpuTiming.readBuffer, 0, 16);
       }
-      this.device.queue.submit([encoder.finish()]);
+      this.device.queue.submit([compositeEncoder.finish()]);
       const submittedAt = performance.now();
       this.recordStage("grading", {
         serial,
@@ -1000,8 +1085,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         lane,
         width: proxy.width,
         height: proxy.height,
-        filmTexture: intermediate.filmTexture,
-        spatialTexture: intermediate.spatialATexture || intermediate.filmTexture,
+        // Scopes read the finished picture the composite pass presented, so they
+        // never recompute Film Look and never disagree with it.
+        filmTexture: intermediate.finishTexture,
+        spatialTexture: intermediate.spatialATexture || intermediate.finishTexture,
         params: new Float32Array(params),
         sessionId,
       });
@@ -1788,6 +1875,12 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         fragment: { module: this.module, entryPoint: "spatialBlurVerticalFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
+      const finish = this.device.createRenderPipeline({
+        layout: this.pipelineLayout,
+        vertex: { module: this.module, entryPoint: "vertexMain" },
+        fragment: { module: this.module, entryPoint: "finishFragmentMain", targets: [{ format: "rgba16float" }] },
+        primitive: { topology: "triangle-list" },
+      });
       const composite = this.device.createRenderPipeline({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
@@ -1796,6 +1889,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       });
       const pipelines = {
         base,
+        finish,
         local,
         localCandidate,
         localDetailHorizontal,
@@ -1852,14 +1946,20 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       }
       current?.baseTexture?.destroy();
       current?.filmTexture?.destroy();
+      current?.finishTexture?.destroy();
       current?.spatialATexture?.destroy();
       current?.spatialBTexture?.destroy();
       current?.localTexture?.destroy();
       current?.detailATexture?.destroy();
       current?.detailBTexture?.destroy();
+      current?.compositeParamBuffer?.destroy();
       const intermediate = {
         baseTexture: createTexture(),
         filmTexture: createTexture(),
+        // Film Look, Vignette and grain resolve here so the output limiter can
+        // measure the finished picture instead of predicting it, and so the
+        // scope pass reads that result instead of computing it a second time.
+        finishTexture: createTexture(),
         localTexture: createTexture(),
         detailATexture: detailActive ? createTexture() : null,
         detailBTexture: detailActive ? createTexture() : null,
@@ -1872,7 +1972,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.intermediates.set(canvas, intermediate);
       this.recordAllocation(
         "grading-intermediates",
-        width * height * 8 * (3 + (detailActive ? 2 : 0)) + (spatialActive ? spatialWidth * spatialHeight * 8 * 2 : 0),
+        width * height * 8 * (4 + (detailActive ? 2 : 0)) + (spatialActive ? spatialWidth * spatialHeight * 8 * 2 : 0),
         { width, height, spatialWidth: spatialActive ? spatialWidth : 0, spatialHeight: spatialActive ? spatialHeight : 0 },
       );
       return intermediate;
@@ -1912,23 +2012,59 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       });
     }
 
-    async ensurePeakReductionPipeline() {
-      if (this.peakReductionPipeline) return this.peakReductionPipeline;
-      const module = this.device.createShaderModule({ code: PEAK_REDUCTION_SHADER_SOURCE });
-      const compilation = await module.getCompilationInfo();
-      const errors = compilation.messages.filter((message) => message.type === "error");
-      if (errors.length) throw new Error(errors.map((message) => message.message).join("; "));
-      this.peakReductionPipeline = await this.device.createComputePipelineAsync({
+    async ensurePeakReductionPipeline(entryPoint = "peakReductionMain") {
+      this.peakReductionPipelines = this.peakReductionPipelines || new Map();
+      const existing = this.peakReductionPipelines.get(entryPoint);
+      if (existing) return existing;
+      if (!this.peakReductionModule) {
+        const module = this.device.createShaderModule({ code: PEAK_REDUCTION_SHADER_SOURCE });
+        const compilation = await module.getCompilationInfo();
+        const errors = compilation.messages.filter((message) => message.type === "error");
+        if (errors.length) throw new Error(errors.map((message) => message.message).join("; "));
+        this.peakReductionModule = module;
+      }
+      const pipeline = await this.device.createComputePipelineAsync({
         layout: "auto",
-        compute: { module, entryPoint: "peakReductionMain" },
+        compute: { module: this.peakReductionModule, entryPoint },
       });
-      return this.peakReductionPipeline;
+      this.peakReductionPipelines.set(entryPoint, pipeline);
+      return pipeline;
+    }
+
+    // Every stage of the grade now feeds the anchor, so the key has to cover the
+    // whole parameter set rather than the hand-picked tone and colour entries
+    // the source-domain estimate needed.
+    finishedPeakKey(sourceProxy, lane, measurement, params) {
+      let hash = 0x811c9dc5;
+      const bytes = new Uint8Array(params.buffer, params.byteOffset, params.byteLength);
+      for (let index = 0; index < bytes.length; index += 1) {
+        hash ^= bytes[index];
+        hash = Math.imul(hash, 0x01000193) >>> 0;
+      }
+      return `${sourceProxy.identity}:${lane}:${measurement}:${hash.toString(16)}`;
+    }
+
+    // Measures the finished render target, which is the domain the CPU limiter
+    // anchors in. The analytic path below cannot see Exposure Bands, curves,
+    // colour grading, Detail, locals, Film Look, Vignette or grain, so once the
+    // limiter moved to the end of the pipeline it stopped being a valid anchor.
+    async measureFinishedPeak(texture, width, height, params, measurement, cacheKey) {
+      const cached = this.peakReductionCache.get(cacheKey);
+      if (cached !== undefined) return cached;
+      const pipeline = await this.ensurePeakReductionPipeline("finishedPeakReductionMain");
+      return this.runPeakReduction(pipeline, texture, width, height, params, measurement, cacheKey);
     }
 
     async measureToneAdjustedPeak(sourceProxy, params, measurement, cacheKey) {
       const cached = this.peakReductionCache.get(cacheKey);
       if (cached !== undefined) return cached;
       const pipeline = await this.ensurePeakReductionPipeline();
+      return this.runPeakReduction(
+        pipeline, sourceProxy.texture, sourceProxy.width, sourceProxy.height, params, measurement, cacheKey,
+      );
+    }
+
+    async runPeakReduction(pipeline, texture, width, height, params, measurement, cacheKey) {
       const valueCount = 1 + PEAK_HISTOGRAM_BINS;
       const byteSize = valueCount * 4;
       const resultBuffer = this.device.createBuffer({
@@ -1945,7 +2081,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const bindGroup = this.device.createBindGroup({
         layout: pipeline.getBindGroupLayout(0),
         entries: [
-          { binding: 0, resource: sourceProxy.texture.createView() },
+          { binding: 0, resource: texture.createView() },
           { binding: 1, resource: { buffer: parameterBuffer } },
           { binding: 2, resource: { buffer: resultBuffer } },
         ],
@@ -1954,7 +2090,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const pass = encoder.beginComputePass();
       pass.setPipeline(pipeline);
       pass.setBindGroup(0, bindGroup);
-      pass.dispatchWorkgroups(Math.ceil(sourceProxy.width / 8), Math.ceil(sourceProxy.height / 8));
+      pass.dispatchWorkgroups(Math.ceil(width / 8), Math.ceil(height / 8));
       pass.end();
       encoder.copyBufferToBuffer(resultBuffer, 0, readBuffer, 0, byteSize);
       this.device.queue.submit([encoder.finish()]);
@@ -1963,7 +2099,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         const values = new Uint32Array(readBuffer.getMappedRange());
         let peak = new Float32Array(new Uint32Array([values[0]]).buffer)[0];
         if (measurement === "robust") {
-          const population = sourceProxy.width * sourceProxy.height;
+          const population = width * height;
           const threshold = Math.max(1, Math.ceil(population * 0.9999));
           let cumulative = 0;
           for (let index = 0; index < PEAK_HISTOGRAM_BINS; index += 1) {
@@ -2654,7 +2790,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     params[71] = colorActive ? colorSource.vibrance || 0 : 0;
     params[72] = colorActive ? 1 : 0;
     params[73] = lane === "hdr" ? ((branch.highlight_compression_target_nits ?? 1000) * 0.18 / projectReferenceWhite) : sdrHighlightV2 ? 1 : 0;
-    params[74] = highlightEnabled ? (branch.highlight_compression_mode === "peak_fit" ? 1 : branch.highlight_compression_mode === "soft_ceiling" ? 2 : 0) : 0;
+    params[74] = highlightEnabled ? (branch.highlight_compression_mode === "peak_fit" ? 1 : branch.highlight_compression_mode === "soft_ceiling" ? 2 : branch.highlight_compression_mode === "clip" ? 3 : 0) : 0;
     params[75] = lane === "hdr"
       ? toneAdjustedHighlightPeakLinear(branch, toneEnabled, projectReferenceWhite)
       : sdrHighlightV2 ? Math.max(0.01, (branch.highlight_compression_peak_measurement === "manual"
@@ -3651,7 +3787,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return compressSrgbGamut(acescgToSrgb(sceneColor(srgbToAcescg(input))));
     }
     fn renderHdrBase(source: vec3f) -> vec3f {
-      return max(applyColorGrading(applyCurves(hdrPrimaries(toneEqualizer(sceneColor(hdrPeakFit(hdrSoftCeiling(hdrContrast(hdrBase(source))))))), true), true), vec3f(0.0));
+      let contrasted = hdrContrast(hdrBase(source));
+      let balanced = sceneColor(contrasted);
+      let equalized = toneEqualizer(balanced);
+      let primaries = hdrPrimaries(equalized);
+      return max(applyColorGrading(applyCurves(primaries, true), true), vec3f(0.0));
     }
     fn displayHdr(rgb: vec3f) -> vec3f {
       if (p[16] > 0.5) {
@@ -3692,6 +3832,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           rgb = max(rgb + vec3f(p[4] * 0.08 * mask), vec3f(0.0));
         }
         if (p[159] > 0.5) {
+          // The SDR shoulder is the scene-to-display placement, not a final
+          // limiter: every stage below it is display-referred. Only the ceiling
+          // runs in applyOutputHighlights.
           rgb = compressSrgbGamut(sdrPeakFit(sdrSoftCeiling(acescgToSrgb(sceneColor(rgb)) * ((100.0 / 203.0) / 0.18))));
           rgb = toneEqualizer(rgb);
           rgb = sdrContrast(rgb);
@@ -3771,6 +3914,24 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         rgb = vec3f(responseY) + (rgb - vec3f(responseY)) * (1.0 - desaturation);
       }
       return max(rgb, vec3f(0.0));
+    }
+    // Clip in the delivery primaries so the selected target is also a hard
+    // per-channel ceiling in the encoded signal.
+    fn clipToOutputTarget(input: vec3f) -> vec3f {
+      if (p[0] > 0.5) {
+        return bt2020ToAcescg(clamp(acescgToBt2020(input), vec3f(0.0), vec3f(p[73])));
+      }
+      return clamp(input, vec3f(0.0), vec3f(1.0));
+    }
+    // The shoulder shapes the picture and the ceiling guarantees the delivery
+    // spec. A shoulder anchored on a measured peak cannot promise the target on
+    // its own, because ringing and grain samples sit above the picture it fits.
+    fn applyOutputHighlights(input: vec3f) -> vec3f {
+      if (p[74] < 0.5) { return input; }
+      if (p[74] == 3.0) { return clipToOutputTarget(input); }
+      if (p[0] > 0.5) { return clipToOutputTarget(hdrPeakFit(hdrSoftCeiling(input))); }
+      if (p[159] > 0.5) { return clipToOutputTarget(input); }
+      return input;
     }
     fn boundedCoordinate(coordinate: vec2i) -> vec2i {
       let dimensions = textureDimensions(sourceTexture);
@@ -4012,9 +4173,19 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return max(rgb, vec3f(0.0));
     }
 
+    // Log luminance needs a floor well above zero. A floor at the edge of float
+    // precision makes the local neighbourhood range around any near-black sample
+    // span twenty stops or more, which the sharpening halo fence reads as licence
+    // for an unbounded excursion.
+    const DETAIL_LUMA_FLOOR: f32 = 0.0001;
+    // Absolute ceiling on how far a sharpened sample may travel past its local
+    // neighbourhood. The fence stays range-relative for ordinary structure and
+    // only this cap engages at high-contrast edges.
+    const SHARPEN_HALO_ALLOWANCE_EV: f32 = 0.25;
+
     fn detailLogLuma(rgb: vec3f) -> f32 {
       let y = select(lumaSrgb(rgb), lumaAces(rgb), p[0] > 0.5);
-      return log2(max(y, 0.0000001));
+      return log2(max(y, DETAIL_LUMA_FLOOR));
     }
 
     fn detailRadii() -> vec4f {
@@ -4138,7 +4309,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       let source = textureLoad(sourceTexture, coordinate, 0).rgb;
       let uv = (vec2f(coordinate) + vec2f(0.5)) / vec2f(dimensions);
       let blurred = textureSampleLevel(spatialTexture, spatialSampler, uv, 0.0);
-      let sourceY = max(select(lumaSrgb(source), lumaAces(source), p[0] > 0.5), 0.0000001);
+      let sourceY = max(select(lumaSrgb(source), lumaAces(source), p[0] > 0.5), DETAIL_LUMA_FLOOR);
       let logY = log2(sourceY);
       var adjusted = logY;
       if (abs(p[149]) > 0.000001) {
@@ -4155,7 +4326,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         let qualification = select(smoothRange(p[154], p[154] + 0.04, abs(edge)), 1.0, p[154] <= 0.000001);
         let qualified = edge * qualification;
         let extrema = detailLocalExtrema(coordinate);
-        let allowance = 0.12 * (extrema.y - extrema.x);
+        let allowance = min(0.12 * (extrema.y - extrema.x), SHARPEN_HALO_ALLOWANCE_EV);
         adjusted = clamp(adjusted + qualified * p[152], extrema.x - allowance, extrema.y + allowance);
       }
       let delta = clamp(adjusted - logY, -16.0, 16.0);
@@ -4212,7 +4383,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       let source = textureLoad(sourceTexture, coordinate, 0).rgb;
       let uv = (vec2f(coordinate) + vec2f(0.5)) / vec2f(dimensions);
       let blurred = textureSampleLevel(spatialTexture, spatialSampler, uv, 0.0);
-      let sourceY = max(select(lumaSrgb(source), lumaAces(source), p[0] > 0.5), 0.0000001);
+      let sourceY = max(select(lumaSrgb(source), lumaAces(source), p[0] > 0.5), DETAIL_LUMA_FLOOR);
       let logY = log2(sourceY);
       var adjusted = logY;
       if (abs(p[14]) > 0.000001) {
@@ -4229,7 +4400,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         let qualification = select(smoothRange(p[19], p[19] + 0.04, abs(edge)), 1.0, p[19] <= 0.000001);
         let qualified = edge * qualification;
         let extrema = detailLocalExtrema(coordinate);
-        let allowance = 0.12 * (extrema.y - extrema.x);
+        let allowance = min(0.12 * (extrema.y - extrema.x), SHARPEN_HALO_ALLOWANCE_EV);
         adjusted = clamp(adjusted + qualified * p[17], extrema.x - allowance, extrema.y + allowance);
       }
       let delta = clamp(adjusted - logY, -16.0, 16.0);
@@ -4300,8 +4471,20 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return spatialBlur(vec2f(0.0, 1.0), input.position.xy);
     }
 
+    // Film Look, Vignette and grain resolve into their own texture so the output
+    // limiter measures the finished picture rather than predicting it from the
+    // source, and so the scope pass reads that result instead of recomputing it.
+    @fragment fn finishFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let dimensions = textureDimensions(sourceTexture);
+      let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
+      return vec4f(applyFilmLook(coordinate), 1.0);
+    }
+
+    fn finishedAt(coordinate: vec2i) -> vec3f {
+      return textureLoad(sourceTexture, boundedCoordinate(coordinate), 0).rgb;
+    }
     fn scopeOutputAt(coordinate: vec2i) -> vec3f {
-      let filmOutput = applyFilmLook(coordinate);
+      let filmOutput = applyOutputHighlights(finishedAt(coordinate));
       return select(clamp(filmOutput, vec3f(0.0), vec3f(1.0)), max(filmOutput, vec3f(0.0)), p[0] > 0.5);
     }
     fn scopePeakSignal(rgb: vec3f) -> f32 {
@@ -4358,7 +4541,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     @fragment fn fragmentMain(input: VertexOut) -> @location(0) vec4f {
       let dimensions = textureDimensions(sourceTexture);
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
-      let filmOutput = applyFilmLook(coordinate);
+      let filmOutput = applyOutputHighlights(finishedAt(coordinate));
       let output = select(clamp(filmOutput, vec3f(0.0), vec3f(1.0)), displayHdr(filmOutput), p[0] > 0.5);
       var encoded = displayEncode(output);
       if (p[131] > 0.5) {

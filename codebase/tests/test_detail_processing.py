@@ -103,3 +103,50 @@ def test_texture_edge_protection_retains_low_amplitude_surface_detail() -> None:
 
     assert _mean_change(image, result) > 0.001
     assert float(np.std(result[..., 1])) > float(np.std(image[..., 1]))
+
+
+def test_sharpen_halo_stays_within_the_local_neighbourhood_bound() -> None:
+    """A specular edge must not be sharpened into a value the picture never held.
+
+    The final-output highlight limiter anchors its shoulder on the finished
+    image, so unbounded sharpening ringing would silently reshape the delivered
+    highlight rolloff.
+    """
+    image = np.full((64, 64, 3), 1e-6, dtype=np.float32)
+    image[24:40, 24:40, :] = 12.0
+
+    result = apply_detail(
+        image,
+        DetailAdjustments(sharpen_amount=100.0, sharpen_radius_px=0.8, sharpen_threshold=10.0),
+        PreviewKind.HDR,
+    )
+
+    # 0.25 EV is the absolute halo allowance. Without it the range-relative
+    # fence reads the near-black background as a seventeen-stop local range and
+    # permits a two-stop excursion.
+    assert float(np.max(result)) <= float(np.max(image)) * 2.0 ** 0.25 + 1e-4
+    # The bound must not turn sharpening off at the edge it is protecting.
+    assert _mean_change(image, result) > 1e-4
+
+
+def test_sharpen_amount_keeps_responding_under_the_halo_bound() -> None:
+    """The halo cap trims excursions without behaving like a strict fence.
+
+    Amount must keep changing the picture while the bound holds the peak, so the
+    final-output limiter sees a stable anchor at every Amount.
+    """
+    image = _detail_fixture()
+    changes = []
+    peaks = []
+    for amount in (20.0, 83.0, 150.0):
+        result = apply_detail(
+            image,
+            DetailAdjustments(sharpen_amount=amount, sharpen_radius_px=0.8, sharpen_threshold=10.0),
+            PreviewKind.HDR,
+        )
+        changes.append(_mean_change(image, result))
+        peaks.append(float(np.max(result)))
+
+    assert changes[0] < changes[1] < changes[2]
+    assert max(peaks) <= float(np.max(image)) * 2.0 ** 0.25 + 1e-4
+    assert abs(peaks[-1] - peaks[0]) < 1e-5

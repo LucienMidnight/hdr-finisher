@@ -116,23 +116,24 @@ The HDR branch remains linear ACEScg. Current order:
 1. Exposure (`2^EV`)
 2. Shadow/black adjustment
 3. Contrast about a linear pivot
-4. Highlights section: Soft Ceiling or Peak Fit, with a linear BT.2020 smooth color rolloff by default
-5. White balance
-6. ACEScg primary/tint matrix
-7. Saturation and vibrance
-8. Monotonic scene-EV Exposure Bands
-9. Lift/Gamma/Gain luminance zones
-10. HDR-domain luma/R/G/B curves
+4. White balance
+5. ACEScg primary/tint matrix
+6. Saturation and vibrance
+7. Monotonic scene-EV Exposure Bands
+8. Lift/Gamma/Gain luminance zones
+9. HDR-domain luma/R/G/B curves
+10. Detail and local adjustments
 11. Film Response and subtractive Color Density
 12. Halation
 13. Bloom/Diffusion
 14. Image Softness and Microcontrast
 15. Seeded density-aware Grain
-16. Final non-negative clip
+16. Output Highlights: Peak Fit, Soft Ceiling, or Clip
+17. Final non-negative clip
 
 HDR luma coefficients are ACEScg-derived: `0.2722287 R + 0.6740818 G + 0.0536895 B`.
 
-Peak Fit predicts the measured source peak after the independently bypassable Tone section. Smooth color rolloff measures the brightest linear BT.2020 channel and maps channels independently through one shoulder, reducing highlight chroma continuously without lifting weak channels. Preserve color anchors ACEScg luminance while retaining RGB ratios. Neutralize peak keeps the specialist grouped-channel path that converges the endpoint to neutral white. Later creative sections are deliberately not peak constrained. See [Highlight Compression Technical Reference](../technical/highlight-compression.md) for the curve and CPU/GPU contract.
+Peak Fit measures the final pre-compression grade. Smooth color rolloff measures the brightest linear BT.2020 channel and maps channels independently through one shoulder, reducing highlight chroma continuously without lifting weak channels. Preserve color anchors ACEScg luminance while retaining RGB ratios. Neutralize peak keeps the specialist grouped-channel path that converges the endpoint to neutral white. Clip is a strict per-channel BT.2020 output ceiling. See [Highlight Compression Technical Reference](../technical/highlight-compression.md) for the curve and preview contract.
 
 ## SDR adjustment branch
 

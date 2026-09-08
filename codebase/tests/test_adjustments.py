@@ -1126,6 +1126,95 @@ def test_peak_fit_anchor_is_applied_after_other_tone_controls() -> None:
     np.testing.assert_allclose(output_nits, 1000.0, rtol=3e-5)
 
 
+def test_peak_fit_runs_after_exposure_bands_and_anchors_the_finished_peak() -> None:
+    source_peak_nits = 2000.0
+    image = np.full((1, 1, 3), source_peak_nits * 0.18 / 203.0, dtype=np.float32)
+    raised_nodes = [ToneEqualizerNode(input_ev=value, adjustment_ev=1.0) for value in (-6.0, 0.0, 6.0)]
+    state = AdjustmentState(
+        hdr=HDRAdjustments(
+            highlight_compression_mode="peak_fit",
+            highlight_compression_start_nits=400.0,
+            highlight_compression_target_nits=1000.0,
+            tone_equalizer_nodes=raised_nodes,
+        )
+    )
+
+    output = _apply_hdr_adjustments(image, state)
+
+    np.testing.assert_allclose(output[0, 0, 0] * 203.0 / 0.18, 1000.0, rtol=3e-5)
+
+
+def test_hdr_clip_mode_is_a_strict_bt2020_output_ceiling() -> None:
+    target_nits = 1000.0
+    image = np.array([[[20.0, 2.0, 0.5], [0.5, 12.0, 30.0]]], dtype=np.float32)
+
+    clipped = _compress_scene_highlights(image, target_nits=target_nits, mode="clip")
+    transport = acescg_to_linear_bt2020(clipped)
+
+    target_linear = target_nits * 0.18 / 203.0
+    assert float(np.max(transport)) <= target_linear + 2e-5
+    assert np.isfinite(clipped).all()
+
+
+@pytest.mark.parametrize("mode", ["peak_fit", "soft_ceiling", "clip"])
+@pytest.mark.parametrize("color_handling", ["smooth_rolloff", "path_to_white", "preserve_color"])
+def test_output_limiter_never_exceeds_the_authored_target(mode: str, color_handling: str) -> None:
+    """The ceiling is what makes the target a delivery guarantee.
+
+    A shoulder anchored on a measured peak cannot promise the target on its own:
+    sharpening ringing and grain leave samples above the picture the shoulder was
+    fitted to.
+    """
+    target_nits = 1000.0
+    image = np.full((4, 4, 3), 600.0 * 0.18 / 203.0, dtype=np.float32)
+    image[0, 0] = np.float32(12000.0 * 0.18 / 203.0)
+    state = AdjustmentState(
+        hdr=HDRAdjustments(
+            highlight_compression_mode=mode,
+            highlight_compression_start_nits=400.0,
+            highlight_compression_target_nits=target_nits,
+            highlight_compression_softness=50.0,
+            highlight_compression_color_handling=color_handling,
+        )
+    )
+
+    limited = adjustments_module.apply_hdr_output_highlight_compression(image, state)
+    transport = acescg_to_linear_bt2020(limited)
+
+    assert float(np.max(transport)) <= target_nits * 0.18 / 203.0 + 2e-5
+    assert np.isfinite(limited).all()
+
+
+def test_output_limiter_leaves_an_authored_bypass_alone() -> None:
+    """``off`` is an explicit request for no limiting, so no ceiling either."""
+    image = np.full((2, 2, 3), 12000.0 * 0.18 / 203.0, dtype=np.float32)
+    state = AdjustmentState(
+        hdr=HDRAdjustments(
+            highlight_compression_mode="off",
+            highlight_compression_target_nits=1000.0,
+        )
+    )
+
+    np.testing.assert_array_equal(
+        adjustments_module.apply_hdr_output_highlight_compression(image, state), image
+    )
+
+
+def test_output_limiter_ceiling_does_not_disturb_content_below_target() -> None:
+    """The ceiling is a bound, not a global rescale."""
+    image = np.full((4, 4, 3), 300.0 * 0.18 / 203.0, dtype=np.float32)
+    state = AdjustmentState(
+        hdr=HDRAdjustments(
+            highlight_compression_mode="clip",
+            highlight_compression_target_nits=1000.0,
+        )
+    )
+
+    np.testing.assert_allclose(
+        adjustments_module.apply_hdr_output_highlight_compression(image, state), image, rtol=1e-6
+    )
+
+
 def test_highlights_section_bypass_is_independent_from_tone() -> None:
     source_peak_nits = 4000.0
     image = np.full((1, 1, 3), source_peak_nits * 0.18 / 203.0, dtype=np.float32)
