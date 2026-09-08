@@ -127,7 +127,11 @@ def _encode_png_sdr(image: np.ndarray) -> bytes:
     return buffer.getvalue()
 
 
-def _encode_hdr_avif(image: np.ndarray, reference_white_nits: int = DEFAULT_HDR_REFERENCE_WHITE_NITS) -> bytes:
+def _encode_hdr_avif(
+    image: np.ndarray,
+    reference_white_nits: int = DEFAULT_HDR_REFERENCE_WHITE_NITS,
+    quality: int = 82,
+) -> bytes:
     avifenc = resolve_binary("avifenc")
     if avifenc is None:
         raise RuntimeError("avifenc is required for HDR AVIF preview rendering.")
@@ -150,7 +154,7 @@ def _encode_hdr_avif(image: np.ndarray, reference_white_nits: int = DEFAULT_HDR_
                     "-s",
                     "6",
                     "-q",
-                    "82",
+                    str(int(quality)),
                     str(y4m_path),
                     str(avif_path),
                 ],

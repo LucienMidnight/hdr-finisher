@@ -1185,6 +1185,18 @@ def test_output_limiter_never_exceeds_the_authored_target(mode: str, color_handl
     assert np.isfinite(limited).all()
 
 
+@pytest.mark.parametrize("lane_model", [HDRAdjustments, SDRAdjustments])
+@pytest.mark.parametrize("measurement", ["maximum", "robust", "manual"])
+def test_peak_measurement_accepts_every_authored_mode(lane_model, measurement: str) -> None:
+    """Every mode the UI can write has to load back.
+
+    Changing the default must not narrow the accepted set: a project saved with
+    a mode that later stops validating cannot be opened at all.
+    """
+    model = lane_model(highlight_compression_peak_measurement=measurement)
+    assert model.highlight_compression_peak_measurement == measurement
+
+
 def test_output_limiter_leaves_an_authored_bypass_alone() -> None:
     """``off`` is an explicit request for no limiting, so no ceiling either."""
     image = np.full((2, 2, 3), 12000.0 * 0.18 / 203.0, dtype=np.float32)

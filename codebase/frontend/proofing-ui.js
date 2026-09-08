@@ -85,7 +85,10 @@
     if (!state.session) return;
     state.proofEnabled = true;
     await refreshDisplayTelemetry().catch(() => null);
-    await refreshProof().catch(() => null);
+    // Pressing Build proof rebuilds. Replaying the cached artifact makes the
+    // button look inert exactly when someone reaches for it because they
+    // suspect the cache rather than the grade.
+    await refreshProof({ force: true }).catch(() => null);
   }
 
   async function openProofExternally() {
@@ -134,7 +137,7 @@
     requestGeneration += 1;
   }
 
-  async function refreshProof() {
+  async function refreshProof({ force = false } = {}) {
     if (!state.session) return;
     const encoderKey = capabilityForFormat[state.proofFormat];
     const capability = state.capabilities[encoderKey];
@@ -152,7 +155,7 @@
     renderProofUi();
     try {
       let artifact = state.proofArtifact;
-      if (artifactDirty || !artifact || artifact.format !== state.proofFormat) {
+      if (force || artifactDirty || !artifact || artifact.format !== state.proofFormat) {
         const artifactResponse = await fetch(`/api/session/${state.session.session_id}/proof/artifact`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -172,6 +175,7 @@
             jpegxl_precision: els.jpegxlPrecision.value || "uint12",
             dithering: els.exportDithering.disabled ? "off" : els.exportDithering.value || "auto",
             long_edge: Math.min(1200, state.session.preview?.long_edge || 1200),
+            force,
           }),
         });
         const payload = await parseProofResponse(artifactResponse, "Chromium proof encoding failed.");

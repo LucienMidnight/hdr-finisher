@@ -621,3 +621,45 @@ def test_real_avif_proof_honors_gain_map_chroma(gain_map_chroma: str) -> None:
     assert response.status_code == 200, response.text
     assert response.json()["url"].endswith(".avif")
     session_store.clear()
+
+
+def test_forced_build_re_encodes_instead_of_replaying_the_cache(monkeypatch, tmp_path: Path) -> None:
+    """Build proof is the escape hatch when the cached artifact is suspect.
+
+    Replaying the cache makes the button look inert exactly when someone reaches
+    for it, so an explicit build re-runs the encoder while still landing on the
+    same cache entry an ordinary request would.
+    """
+    store = ProofArtifactStore()
+    store.root = tmp_path
+    image = np.full((12, 16, 3), 0.18, dtype=np.float32)
+    session = type(
+        "Session",
+        (),
+        {"session_id": "proof-session", "render_cache": SessionRenderCache(image, None)},
+    )()
+    monkeypatch.setattr(proofing_module, "_inspect_artifact", lambda *_args: (3.0, "test metadata"))
+    monkeypatch.setattr(store, "_matrix_endpoints", lambda artifact: (artifact.sdr_authored, artifact.hdr_authored))
+    monkeypatch.setattr(store, "_encoded_matrix_tile", lambda *_args: b"stable-tile")
+
+    encodes = 0
+
+    class CountingBackend(_FakeBackend):
+        def export(self, session, settings):
+            nonlocal encodes
+            encodes += 1
+            return super().export(session, settings)
+
+    request = ProofArtifactRequest(adjustments=AdjustmentState(), format="jpeg_ultrahdr", long_edge=256)
+    first = store.create(session, request, CountingBackend())
+    store.create(session, request, CountingBackend())
+    assert encodes == 1, "an unforced repeat should replay the cached artifact"
+
+    forced = ProofArtifactRequest(
+        adjustments=AdjustmentState(), format="jpeg_ultrahdr", long_edge=256, force=True
+    )
+    rebuilt = store.create(session, forced, CountingBackend())
+    assert encodes == 2, "an explicit build must re-run the encoder"
+    # Identical input still yields identical content, so the artifact identity
+    # and every tile derived from it stay stable across a forced rebuild.
+    assert rebuilt.artifact_id == first.artifact_id

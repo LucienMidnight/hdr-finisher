@@ -48,6 +48,10 @@ PROOF_FORMAT_INFO = {
 }
 SUPPORTED_PROOF_FORMATS = set(PROOF_FORMAT_INFO)
 MATRIX_HEADROOMS = (0.0, 1.0, 2.0, 3.0, 4.0)
+# Proof tiles are a measurement surface, not a delivery artifact. Encode them
+# well above the interactive preview's quality so what the tile shows is the
+# reconstruction and not the tile encoder.
+PROOF_TILE_QUALITY = 95
 
 
 @dataclass
@@ -184,11 +188,12 @@ class ProofArtifactStore:
             raise ValueError(f"Unsupported proof format: {request.format}")
         context = getattr(session, "color_context", RenderColorContext(getattr(session, "hdr_reference_white_nits", 203)))
         signature = self._request_signature(getattr(session, "session_id"), request, context)
-        with self._lock:
-            cached_id = self._request_cache.get(signature)
-            cached = self._artifacts.get(cached_id or "")
-            if cached is not None and cached.path.exists():
-                return self._response(cached)
+        if not request.force:
+            with self._lock:
+                cached_id = self._request_cache.get(signature)
+                cached = self._artifacts.get(cached_id or "")
+                if cached is not None and cached.path.exists():
+                    return self._response(cached)
 
         source, sdr_reference = getattr(session, "render_cache").source_pair(request.long_edge)
         proxy_session = SimpleNamespace(
@@ -533,11 +538,19 @@ class ProofArtifactStore:
                         ]
                     )
                 return output.read_bytes()
-        return _encode_hdr_avif(reconstructed, artifact.reference_white_nits)
+        # Only jpeg_ultrahdr reconstructs from genuinely decoded endpoints -- an
+        # 8-bit sRGB base and an 8-bit gain map -- so it is the one format whose
+        # tile is already carrying quantization before it is encoded. Matching
+        # the quality libavif tonemaps at keeps the proof from adding shadow
+        # artifacts of its own on top of that.
+        return _encode_hdr_avif(reconstructed, artifact.reference_white_nits, quality=PROOF_TILE_QUALITY)
 
     @staticmethod
     def _request_signature(session_id: str, request: ProofArtifactRequest, color_context: RenderColorContext) -> str:
-        payload = f"{APP_VERSION}|{session_id}|{color_context.cache_key}|{request.model_dump_json()}".encode("utf-8")
+        # ``force`` selects how the request is served, not what it produces, so
+        # it stays out of the signature.
+        request_payload = request.model_dump_json(exclude={"force"})
+        payload = f"{APP_VERSION}|{session_id}|{color_context.cache_key}|{request_payload}".encode("utf-8")
         return hashlib.sha256(payload).hexdigest()[:24]
 
     @staticmethod
