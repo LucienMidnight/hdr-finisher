@@ -1742,6 +1742,11 @@ body[data-active-lane="sdr"] .lane-dot {
   grid-column: 3;
   grid-row: 2;
   padding: 12px;
+  /* Declaring only overflow-y promotes overflow-x from visible to auto, so the
+     rail gains a horizontal scrollbar it never wants. Hidden tooltips still
+     count toward scroll extent, and one wider than the rail is enough to
+     summon that bar across the bottom of the panel. */
+  overflow-x: hidden;
   overflow-y: auto;
   border-top: 2px solid var(--text);
 }
@@ -6838,7 +6843,9 @@ body[data-workflow="grade"] .import-workflow-panel { display: none; }
 
 .lane-title-tooltip {
   top: calc(100% + 7px);
-  width: min(286px, calc(100vw - 24px));
+  /* Bounded by the rail it lives in, not the viewport, so narrowing the rail
+     cannot leave the tooltip wider than the panel showing it. */
+  width: min(286px, calc(var(--grade-w) - 28px), calc(100vw - 24px));
   text-align: left;
   text-transform: none;
   letter-spacing: normal;
