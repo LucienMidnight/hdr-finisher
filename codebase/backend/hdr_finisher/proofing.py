@@ -241,10 +241,18 @@ class ProofArtifactStore:
             artifact_id = digest[:24]
             final_path = self.root / f"{artifact_id}{suffix}"
             if output_path != final_path:
-                if final_path.exists():
-                    output_path.unlink(missing_ok=True)
-                else:
+                # The name is the content digest, so two builds of the same
+                # grade race for the same destination. Checking existence first
+                # leaves a window where both see it missing and both rename;
+                # on Windows the loser is denied because the winner already
+                # holds the file open for inspection. Losing that race means
+                # the identical bytes are already on disk, so treat it as a hit.
+                try:
                     output_path.replace(final_path)
+                except OSError:
+                    if not final_path.exists():
+                        raise
+                    output_path.unlink(missing_ok=True)
         finally:
             # Cleanup must never hide the encoder/inspection failure that the UI
             # needs to report. A unique future stage also makes a locked remnant harmless.

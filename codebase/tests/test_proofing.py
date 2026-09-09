@@ -365,6 +365,66 @@ def test_failed_proof_build_cleans_internal_staging_file_before_retry(monkeypatc
     assert list(tmp_path.glob("request-*")) == []
 
 
+def _proof_race_session():
+    image = np.full((12, 16, 3), 0.18, dtype=np.float32)
+    return type(
+        "Session",
+        (),
+        {"session_id": "proof-race", "render_cache": SessionRenderCache(image, None)},
+    )()
+
+
+def test_concurrent_builds_of_the_same_grade_publish_one_artifact(monkeypatch, tmp_path: Path) -> None:
+    """Losing the publish race means the identical bytes already landed.
+
+    Artifacts are named by content digest, so two builds of one grade target the
+    same destination. On Windows the loser's rename is denied because the winner
+    already holds the file open, which surfaced to the user as a 500.
+    """
+    store = ProofArtifactStore()
+    store.root = tmp_path
+    request = ProofArtifactRequest(adjustments=AdjustmentState(), format="jpeg_ultrahdr", long_edge=256)
+    monkeypatch.setattr(proofing_module, "_inspect_artifact", lambda *_args: (3.0, "test metadata"))
+
+    original_replace = Path.replace
+    calls = []
+
+    def losing_replace(self: Path, target):
+        calls.append(target)
+        # Stand in for the winning build: the destination is already published
+        # and still open, so this rename is refused.
+        Path(target).write_bytes(self.read_bytes())
+        raise PermissionError(5, "Access is denied")
+
+    monkeypatch.setattr(Path, "replace", losing_replace)
+    response = store.create(_proof_race_session(), request, _FakeBackend())
+
+    assert calls, "the publish path should still attempt the rename"
+    assert response.artifact_id
+    assert store.artifact(response.artifact_id).path.exists()
+    assert list(tmp_path.glob("request-*")) == [], "the staged copy must not be left behind"
+
+    monkeypatch.setattr(Path, "replace", original_replace)
+    again = store.create(_proof_race_session(), request, _FakeBackend())
+    assert again.artifact_id == response.artifact_id
+
+
+def test_publish_failure_without_a_winner_is_still_reported(monkeypatch, tmp_path: Path) -> None:
+    """Only a genuine race is absorbed; a rename that publishes nothing must raise."""
+    store = ProofArtifactStore()
+    store.root = tmp_path
+    request = ProofArtifactRequest(adjustments=AdjustmentState(), format="jpeg_ultrahdr", long_edge=256)
+    monkeypatch.setattr(proofing_module, "_inspect_artifact", lambda *_args: (3.0, "test metadata"))
+
+    def failing_replace(self: Path, target):
+        raise PermissionError(5, "Access is denied")
+
+    monkeypatch.setattr(Path, "replace", failing_replace)
+
+    with pytest.raises(PermissionError):
+        store.create(_proof_race_session(), request, _FakeBackend())
+
+
 def test_jpegxl_direct_hdr_is_available_as_a_proof_artifact(monkeypatch, tmp_path: Path) -> None:
     store = ProofArtifactStore()
     store.root = tmp_path
