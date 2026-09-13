@@ -225,7 +225,14 @@ const LEGACY_UI_PREFERENCE_KEYS = new Set([
 const COMPARE_LAYOUTS = new Set(["single", "split-vertical", "split-horizontal", "side-horizontal", "side-vertical"]);
 const waveformCanvasCache = new WeakMap();
 const vectorscopeTransferLutCache = new Map();
+// Session-bound fallback brush rasters use local IDs or mask objects as keys.
+// Keep only a small LRU working set and clear it whenever the active session is
+// retired so deleted locals and replaced projects cannot retain canvases.
+const LOCAL_BRUSH_MASK_CACHE_LIMIT = 8;
 const localBrushMaskCanvasCache = new Map();
+// Gesture/tint caches are weak because their owning stroke/canvas objects define
+// their lifetime. The remaining mask caches are bounded Maps because their keys
+// are stable IDs/signatures needed to deduplicate asynchronous requests.
 const localBrushGestureCanvasCache = new WeakMap();
 const localTintedMaskCanvasCache = new WeakMap();
 const localAuthoritativeMaskCache = new Map();
@@ -342,6 +349,7 @@ const state = {
   rawSettingsOpen: false,
   activeImportJobId: null,
   importGeneration: 0,
+  byteUploadQueue: Promise.resolve(),
   projectOpenGeneration: 0,
   projectOpenController: null,
   mediaBrowserGeneration: 0,
@@ -2469,19 +2477,23 @@ function bindEvents() {
   }));
   els.fileInput.addEventListener("change", async (event) => {
     const [file] = event.target.files;
-    if (file && await confirmUnsavedTransition("import another source")) await uploadFile(file);
+    if (file) await importByteFile(file, "import another source");
     event.target.value = "";
   });
   els.importButton.addEventListener("click", requestSourceImport);
   els.cancelImport?.addEventListener("click", cancelActiveImport);
   els.testPatternButton.addEventListener("click", async () => {
     if (!await confirmUnsavedTransition("replace the source with a test pattern")) return;
+    const confirmedDocument = documentTransitionToken();
+    const importGeneration = claimSessionReplacement();
     els.badge.textContent = "Generating delivery proof test pattern...";
     try {
       const response = await fetch("/api/proof/test-pattern");
+      if (importGeneration !== state.importGeneration) return;
       if (!response.ok) throw new Error(`Test pattern failed with HTTP ${response.status}.`);
       const file = new File([await response.blob()], "hdr_delivery_proof_pattern.tiff", { type: "image/tiff" });
-      await uploadFile(file);
+      if (importGeneration !== state.importGeneration) return;
+      await importByteFile(file, "replace the source with a test pattern", confirmedDocument, importGeneration);
     } catch (error) {
       showUploadError(error?.message || "The delivery proof test pattern could not be generated.");
     }
@@ -2610,12 +2622,12 @@ function bindEvents() {
           // real File without exposing a filesystem path to Electron. Upload
           // those bytes through the local backend instead of misreporting the
           // source extension as unsupported.
-          if (await confirmUnsavedTransition("import another source")) await uploadFile(file);
+          await importByteFile(file, "import another source");
           return;
         }
         await openDesktopSelection(selection);
       } else {
-        await uploadFile(file);
+        await importByteFile(file, "import another source");
       }
     } catch (error) {
       console.error(error);
@@ -2991,11 +3003,49 @@ function bindRangeResetControls() {
   });
 }
 
-async function uploadFile(file) {
+function claimSessionReplacement() {
+  state.projectOpenGeneration += 1;
+  state.projectOpenController?.abort();
+  state.projectOpenController = null;
+  return ++state.importGeneration;
+}
+
+async function importByteFile(file, actionLabel = "import another source", confirmedDocument = null, ownershipGeneration = null) {
+  if (confirmedDocument === null) {
+    if (!await confirmUnsavedTransition(actionLabel)) return false;
+    confirmedDocument = documentTransitionToken();
+  } else if (documentTransitionToken() !== confirmedDocument) {
+    if (!await confirmUnsavedTransition(actionLabel)) return false;
+    confirmedDocument = documentTransitionToken();
+  }
+  return uploadFile(file, { confirmedDocument, ownershipGeneration });
+}
+
+async function uploadFile(file, { confirmedDocument = documentTransitionToken(), ownershipGeneration = null } = {}) {
+  const generation = ownershipGeneration ?? claimSessionReplacement();
+  if (generation !== state.importGeneration) return false;
+  const activeJobId = state.activeImportJobId;
+  state.activeImportJobId = null;
+  if (activeJobId) await fetch(`/api/import-jobs/${activeJobId}`, { method: "DELETE" }).catch(() => null);
+  if (generation !== state.importGeneration) return false;
+  const previousUpload = state.byteUploadQueue;
+  let releaseUpload;
+  state.byteUploadQueue = new Promise((resolve) => { releaseUpload = resolve; });
+  await previousUpload.catch(() => null);
+  if (generation !== state.importGeneration) {
+    releaseUpload();
+    return false;
+  }
+  if (documentTransitionToken() !== confirmedDocument && !await confirmUnsavedTransition("import another source")) {
+    releaseUpload();
+    return false;
+  }
   renderExperimentalDngNote(file);
   const formData = new FormData();
   formData.append("file", file);
   els.badge.textContent = "Loading image and building session...";
+  state.importInProgress = true;
+  updateExportAvailability();
   setPreviewMessage("Reading source file...", 8);
   const startedAt = performance.now();
   const ticker = window.setInterval(() => {
@@ -3008,12 +3058,13 @@ async function uploadFile(file) {
   try {
     const response = await fetch("/api/session", { method: "POST", body: formData });
     const payload = await safeJson(response);
+    if (generation !== state.importGeneration) return false;
     if (!response.ok || !payload?.session) {
       const detail = payload?.detail || `Upload failed with HTTP ${response.status}.`;
       showUploadError(detail);
       return false;
     }
-    clearPreviewCache();
+    retireActiveSession();
     state.session = payload.session;
     if (els.rawSettingsPanel) delete els.rawSettingsPanel.dataset.initialized;
     setPreviewMessage("Source decoded. Preparing preview...", 28);
@@ -3026,6 +3077,7 @@ async function uploadFile(file) {
     state.projectPath = "";
     state.currentView = "hdr";
     await applyNewSessionPreferences();
+    if (generation !== state.importGeneration || state.session?.session_id !== payload.session.session_id) return false;
     activateWorkflowTab("grade", { focus: false });
     state.interpretationGateDismissed = false;
     state.gpuPreview?.resetSession(payload.session.session_id);
@@ -3035,37 +3087,72 @@ async function uploadFile(file) {
     renderLocalAdjustments();
     seedExportFieldsFromSession();
     const gpuReady = await renderGpuDraft("hdr", { hideStatus: false, longEdge: settledProxyLongEdge() });
+    if (generation !== state.importGeneration || state.session?.session_id !== payload.session.session_id) return false;
     await Promise.all([
       gpuReady ? Promise.resolve(true) : refreshPreview({ progressSteps: [36, 76, 92] }),
       refreshOverlay(),
       refreshScopes(scopeLongEdge("settled"), { tier: "settled" }),
     ]);
+    if (generation !== state.importGeneration || state.session?.session_id !== payload.session.session_id) return false;
     hidePreviewMessage();
     prepareInactivePreview();
     if (previewNeedsRefinement()) debouncePreview("hdr");
     return true;
   } catch (error) {
+    if (generation !== state.importGeneration) return false;
     console.error(error);
+    // The upload response can be lost after the backend has already activated
+    // the new session. Reconcile with backend truth before reporting failure so
+    // the frontend never continues editing a session whose owned source was
+    // retired by a completed upload.
+    const currentResponse = await fetch("/api/session/current").catch(() => null);
+    const currentPayload = currentResponse ? await safeJson(currentResponse) : null;
+    if (
+      generation === state.importGeneration
+      && currentResponse?.ok
+      && currentPayload?.session
+      && currentPayload.session.session_id !== state.session?.session_id
+    ) {
+      await activateDesktopSession(currentPayload.session, "");
+      hidePreviewMessage();
+      return true;
+    }
     showUploadError("The upload could not reach the local HDR Finisher server.");
     return false;
   } finally {
     window.clearInterval(ticker);
+    releaseUpload();
+    if (generation === state.importGeneration) {
+      state.importInProgress = false;
+      updateExportAvailability();
+    }
   }
 }
 
 function showUploadError(message) {
   els.badge.textContent = message;
   els.badge.className = "badge bad";
-  setPreviewError(message);
-  clearPreviewImage();
-  clearPreviewOverlay();
+  if (state.session) {
+    hidePreviewMessage();
+    renderSession();
+  } else {
+    setPreviewError(message);
+    clearPreviewImage();
+    clearPreviewOverlay();
+  }
 }
 
 async function ejectCurrentSession() {
   if (!state.session) return;
   if (!await confirmUnsavedTransition("eject the current image")) return;
+  const generation = claimSessionReplacement();
+  const activeJobId = state.activeImportJobId;
+  state.activeImportJobId = null;
+  if (activeJobId) await fetch(`/api/import-jobs/${activeJobId}`, { method: "DELETE" }).catch(() => null);
+  await state.byteUploadQueue.catch(() => null);
+  if (generation !== state.importGeneration) return;
   await fetch("/api/session/current", { method: "DELETE" }).catch(() => null);
-  clearPreviewCache();
+  retireActiveSession();
   state.session = null;
   renderExperimentalDngNote();
   renderRawImportControls(null);
@@ -4291,13 +4378,6 @@ function enqueueScopeRequest(request) {
   active.controller?.abort();
 }
 
-function scopeRequestKey(request) {
-  const region = request.scopeRegion
-    ? [request.scopeRegion.x, request.scopeRegion.y, request.scopeRegion.width, request.scopeRegion.height].map((value) => value.toFixed(5)).join(",")
-    : "full";
-  return `${request.sessionId}:${request.lane}:${request.mode}:${request.quality}:${request.maxNits}:${region}`;
-}
-
 function markScopeUpdating() {
   els.scopeFreshness.textContent = "Updating";
   els.scopeFreshness.classList.add("updating");
@@ -5361,11 +5441,6 @@ function settleMediaBrowserSelection(selection) {
 function updateProjectSaveBrowserAction() {
   if (els.directoryBrowser.dataset.mode !== "project_save") return;
   els.directoryBrowserSelect.disabled = !els.directoryBrowserFilename.value.trim();
-}
-
-async function loadExportDirectory(path) {
-  els.directoryBrowser.dataset.mode = "export_directory";
-  return loadMediaDirectory(path);
 }
 
 function formatMediaBrowserSize(bytes) {
@@ -10271,6 +10346,63 @@ function endGlobalEditGesture(control) {
   });
 }
 
+function retireActiveSession() {
+  // End every document-owned timer, controller, selection, draft, and cache
+  // before a replacement document is installed. Generations remain monotonic
+  // so callbacks already queued by the browser cannot publish into the next
+  // session even after their controller has been aborted.
+  window.clearTimeout(state.localMaskDraftTimer);
+  state.localMaskDraftTimer = 0;
+  state.localMaskDraftController?.abort();
+  state.localMaskDraftController = null;
+  state.localMaskDraftPending = null;
+  state.localMaskDraftGeneration += 1;
+  state.localMaskDraftDirty = false;
+  for (const pending of localComparisonMaskRequests.values()) {
+    window.clearTimeout(pending.timer);
+    pending.controller?.abort();
+  }
+  for (const pending of localAuthoritativeMaskRequests.values()) pending.controller?.abort();
+  localAuthoritativeMaskRequests.clear();
+  localComparisonMaskRequests.clear();
+  localAuthoritativeMaskCache.clear();
+  localComparisonMaskCache.clear();
+  localComparisonCompositeCache.clear();
+  localBrushMaskCanvasCache.clear();
+  if (localMaskOverlayFrame) window.cancelAnimationFrame(localMaskOverlayFrame);
+  localMaskOverlayFrame = 0;
+  if (pathMarchingAntFrame) window.cancelAnimationFrame(pathMarchingAntFrame);
+  pathMarchingAntFrame = 0;
+  window.clearTimeout(state.pathMaskProgressTimer);
+  state.pathMaskProgressTimer = 0;
+  state.pathMaskProgressTarget = null;
+  state.pathMaskProgressStartedAt = 0;
+  state.selectedLocalId = null;
+  state.selectedSubMaskId = null;
+  state.pendingLocalAdjustment = null;
+  state.pendingSubMask = null;
+  state.localTool = null;
+  state.localCreationTool = null;
+  state.localPointerGesture = null;
+  state.localPathDraft = null;
+  state.localPathCreatePendingId = null;
+  state.selectedPathNode = null;
+  state.hoveredPathTarget = null;
+  state.localPathCursor = null;
+  state.pathInvalidGesture = false;
+  state.localBrushCursor = null;
+  state.localBrushPreviewPinned = false;
+  state.localBrushVisibleBounds = null;
+  state.localAdjustmentMenuId = null;
+  state.localShowMask = false;
+  state.compareWithoutLocals = false;
+  state.localPreviewDirty = false;
+  state.localMaskCommitDepth = 0;
+  state.localMaskCommitRefreshPending = false;
+  state.localErase = false;
+  clearPreviewCache();
+}
+
 function clearPreviewCache() {
   // Source/project replacement must retire tool transactions, without copying
   // their old snapshots into the newly loaded document.
@@ -12146,6 +12278,24 @@ function bindLocalAdjustmentEvents() {
       await commitSelectedLocal();
       return;
     }
+    localBrushMaskCanvasCache.delete(local.id);
+    localBrushMaskCanvasCache.delete(local.mask);
+    localAuthoritativeMaskCache.delete(local.id);
+    for (const [key, pending] of localAuthoritativeMaskRequests) {
+      if (!key.includes(`:${local.id}:`)) continue;
+      pending.controller?.abort();
+      localAuthoritativeMaskRequests.delete(key);
+    }
+    for (const [slot, pending] of localComparisonMaskRequests) {
+      if (!slot.startsWith(`${local.id}:`)) continue;
+      window.clearTimeout(pending.timer);
+      pending.controller?.abort();
+      localComparisonMaskRequests.delete(slot);
+    }
+    for (const slot of localComparisonMaskCache.keys()) {
+      if (slot.startsWith(`${local.id}:`)) localComparisonMaskCache.delete(slot);
+    }
+    localComparisonCompositeCache.clear();
     await queueEditCommand("delete_local", {}, local.id);
     state.selectedLocalId = localAdjustments()[0]?.id || null;
     state.selectedSubMaskId = null;
@@ -13094,20 +13244,30 @@ function createGradientLuminanceRange(local, leaf) {
   ramp.className = "gradient-luma-ramp";
   const fields = ["fade_in_start_ev", "full_start_ev", "full_end_ev", "fade_out_end_ev"];
   const defaults = [-12, -8, 6, 10];
-  fields.forEach((field, index) => {
+  const handleLabels = ["Dark fade", "Dark full", "Light full", "Light fade"];
+  const track = document.createElement("span");
+  track.className = "gradient-luma-track";
+  const fadeInRegion = document.createElement("span");
+  fadeInRegion.className = "gradient-luma-region gradient-luma-region-fade-in";
+  const fullRegion = document.createElement("span");
+  fullRegion.className = "gradient-luma-region gradient-luma-region-full";
+  const fadeOutRegion = document.createElement("span");
+  fadeOutRegion.className = "gradient-luma-region gradient-luma-region-fade-out";
+  track.append(fadeInRegion, fullRegion, fadeOutRegion);
+  ramp.append(track);
+  const inputs = fields.map((field, index) => {
     if (!Number.isFinite(Number(leaf[field]))) leaf[field] = defaults[index];
     const input = document.createElement("input");
     Object.assign(input, { type: "range", min: "-24", max: "24", step: "0.1", value: String(leaf[field]) });
     input.dataset.defaultValue = String(defaults[index]);
     input.dataset.rangeHandle = String(index);
-    input.setAttribute("aria-label", ["Dark fade", "Dark full", "Light full", "Light fade"][index]);
+    input.setAttribute("aria-label", handleLabels[index]);
     input.addEventListener("input", () => {
       const lower = index === 0 ? -24 : Number(leaf[fields[index - 1]]);
       const upper = index === fields.length - 1 ? 24 : Number(leaf[fields[index + 1]]);
       leaf[field] = Number(clamp(Number(input.value), lower, upper).toFixed(2));
-      input.value = String(leaf[field]);
       leaf.gradient_luma_enabled = true;
-      toggle.checked = true;
+      updateGradientLuminanceRamp();
       state.localMaskDraftDirty = true;
       scheduleAuthoritativeLocalMaskDraft(local);
       scheduleLocalPreview({ spatialMaskChanged: true });
@@ -13116,9 +13276,35 @@ function createGradientLuminanceRange(local, leaf) {
     input.addEventListener("change", () => commitSelectedLocal());
     bindLocalPreviewInteraction(input);
     ramp.append(input);
+    return input;
   });
+  const values = document.createElement("div");
+  values.className = "gradient-luma-values";
+  const valueOutputs = handleLabels.map((label) => {
+    const output = document.createElement("output");
+    output.title = label;
+    values.append(output);
+    return output;
+  });
+  const signedEv = (value) => `${Number(value) > 0 ? "+" : ""}${Number(value).toFixed(1)}`;
+  function updateGradientLuminanceRamp() {
+    const positions = fields.map((field, index) => {
+      const value = clamp(Number(leaf[field]), -24, 24);
+      inputs[index].value = String(value);
+      inputs[index].setAttribute("aria-valuetext", `${signedEv(value)} EV`);
+      valueOutputs[index].textContent = signedEv(value);
+      return (value + 24) / 48 * 100;
+    });
+    ramp.style.setProperty("--gradient-luma-fade-in-start", `${positions[0]}%`);
+    ramp.style.setProperty("--gradient-luma-full-start", `${positions[1]}%`);
+    ramp.style.setProperty("--gradient-luma-full-end", `${positions[2]}%`);
+    ramp.style.setProperty("--gradient-luma-fade-out-end", `${positions[3]}%`);
+    ramp.classList.toggle("enabled", Boolean(leaf.gradient_luma_enabled));
+    toggle.checked = Boolean(leaf.gradient_luma_enabled);
+  }
   toggle.addEventListener("change", () => {
     leaf.gradient_luma_enabled = toggle.checked;
+    updateGradientLuminanceRamp();
     state.localMaskDraftDirty = true;
     scheduleAuthoritativeLocalMaskDraft(local);
     scheduleLocalPreview({ spatialMaskChanged: true });
@@ -13129,7 +13315,8 @@ function createGradientLuminanceRange(local, leaf) {
   const scale = document.createElement("div");
   scale.className = "gradient-luma-scale";
   scale.innerHTML = "<span>Blacks</span><span>Midtones</span><span>Highlights</span>";
-  section.append(heading, ramp, scale);
+  updateGradientLuminanceRamp();
+  section.append(heading, ramp, values, scale);
   return section;
 }
 
@@ -14545,6 +14732,7 @@ function renderLocalMaskOverlay() {
     authoritativeCurrent,
     exactMaskPending: state.localMaskDraftDirty,
     gpuLumaOverlay: gpuLumaMaskPreviewActive(local),
+    pathCursor: state.localPathCursor,
   };
   if (local.mask?.operator !== "leaf" && authoritativeCurrent && state.localShowMask) {
     drawAuthoritativeMaskOverlay(context, authoritative.canvas, x, y, 1);
@@ -14564,7 +14752,17 @@ function renderLocalMaskOverlay() {
         projectMaskExpressionToOutput(editorExpression, coordinateMap.sourceToOutput),
         x,
         y,
-        { ...drawOptions, renderPhase: "gizmo", skipBrush: true },
+        {
+          ...drawOptions,
+          renderPhase: "gizmo",
+          skipBrush: true,
+          // Projective Path geometry is drawn after its nodes have been
+          // converted into output space. Keep the live draft endpoint in that
+          // same space or the guide visibly falls behind the pointer.
+          pathCursor: state.localPathCursor
+            ? projectivePoint(coordinateMap.sourceToOutput, state.localPathCursor)
+            : null,
+        },
       );
     }
     drawBrushExpressionOutputSpace(
@@ -14602,6 +14800,7 @@ function renderChildMaskComparisonOverlay(context, local, parts, x, y, imageRect
     exactMaskPending: false,
     gpuLumaOverlay: false,
     overlayColor: "#2675ff",
+    pathCursor: state.localPathCursor,
   };
   const coordinateMap = currentGeometryCoordinateMap();
   if (coordinateMap) {
@@ -14616,7 +14815,14 @@ function renderChildMaskComparisonOverlay(context, local, parts, x, y, imageRect
         projectMaskExpressionToOutput(parts.child, coordinateMap.sourceToOutput),
         x,
         y,
-        { ...drawOptions, renderPhase: "gizmo", skipBrush: true },
+        {
+          ...drawOptions,
+          renderPhase: "gizmo",
+          skipBrush: true,
+          pathCursor: state.localPathCursor
+            ? projectivePoint(coordinateMap.sourceToOutput, state.localPathCursor)
+            : null,
+        },
       );
     }
     drawBrushExpressionOutputSpace(
@@ -14719,11 +14925,12 @@ function localComparisonMaskEntry(local, childId, role) {
 
 function queueLocalComparisonMask(local, childId, role, expression) {
   if (!state.session || !local || !expression) return;
+  const sessionId = state.session.session_id;
   const slot = localComparisonMaskSlot(local.id, childId, role);
   const signature = localMaskSpatialSignature(expression);
   const longEdge = settledProxyLongEdge();
   const requestedGeometrySignature = geometrySignature();
-  const key = `${state.session.session_id}:${slot}:${longEdge}:${requestedGeometrySignature}:${signature}`;
+  const key = `${sessionId}:${slot}:${longEdge}:${requestedGeometrySignature}:${signature}`;
   if (localComparisonMaskCache.get(slot)?.key === key) return;
   const previous = localComparisonMaskRequests.get(slot);
   if (previous?.key === key) return;
@@ -14737,6 +14944,7 @@ function queueLocalComparisonMask(local, childId, role, expression) {
     expression: JSON.parse(JSON.stringify(expression)),
     longEdge,
     requestedGeometrySignature,
+    sessionId,
     controller: null,
     timer: 0,
   };
@@ -14745,12 +14953,12 @@ function queueLocalComparisonMask(local, childId, role, expression) {
 }
 
 async function loadLocalComparisonMask(local, childId, role, slot, pending) {
-  if (localComparisonMaskRequests.get(slot) !== pending || !state.session) return;
+  if (localComparisonMaskRequests.get(slot) !== pending || state.session?.session_id !== pending.sessionId) return;
   const controller = new AbortController();
   pending.controller = controller;
   try {
     const response = await fetch(
-      `/api/session/${state.session.session_id}/local-mask/${encodeURIComponent(local.id)}/preview`,
+      `/api/session/${pending.sessionId}/local-mask/${encodeURIComponent(local.id)}/preview`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -14763,10 +14971,11 @@ async function loadLocalComparisonMask(local, childId, role, slot, pending) {
         }),
       },
     );
-    if (!response.ok || localComparisonMaskRequests.get(slot) !== pending) return;
+    if (!response.ok || localComparisonMaskRequests.get(slot) !== pending || state.session?.session_id !== pending.sessionId) return;
     const width = Number(response.headers.get("X-Image-Width"));
     const height = Number(response.headers.get("X-Image-Height"));
     const alpha = new Uint8Array(await response.arrayBuffer());
+    if (localComparisonMaskRequests.get(slot) !== pending || state.session?.session_id !== pending.sessionId) return;
     const currentLocal = selectedLocal();
     const currentParts = selectedChildMaskParts(currentLocal);
     const currentExpression = role === "parent" ? currentParts?.parent : currentParts?.child;
@@ -14903,7 +15112,10 @@ function drawMaskExpression(context, expression, x, y, options = {}) {
     if (renderMask && state.localShowMask && currentAuthoritative) {
       drawAuthoritativeMaskOverlay(context, currentAuthoritative.canvas, x, y, currentAuthoritative.spatialOnly ? leaf.mask_opacity : 1);
     }
-    if (renderGizmo) drawPathMaskGizmo(context, leaf, x, y, { drawFill: !currentAuthoritative });
+    if (renderGizmo) drawPathMaskGizmo(context, leaf, x, y, {
+      drawFill: !currentAuthoritative,
+      pathCursor: options.pathCursor,
+    });
   }
   context.restore();
 }
@@ -14993,6 +15205,10 @@ function drawBrushMaskOverlay(context, leaf, activeStroke, x, y, inverted = fals
   let cached = null;
   if (!authoritativeCanvas) {
     cached = localBrushMaskCanvasCache.get(cacheKey);
+    if (cached) {
+      localBrushMaskCanvasCache.delete(cacheKey);
+      localBrushMaskCanvasCache.set(cacheKey, cached);
+    }
     if (!cached || cached.signature !== signature) {
       const canvas = document.createElement("canvas");
       canvas.width = width;
@@ -15021,6 +15237,9 @@ function drawBrushMaskOverlay(context, leaf, activeStroke, x, y, inverted = fals
       );
       cached = { signature, processedCanvas };
       localBrushMaskCanvasCache.set(cacheKey, cached);
+      while (localBrushMaskCanvasCache.size > LOCAL_BRUSH_MASK_CACHE_LIMIT) {
+        localBrushMaskCanvasCache.delete(localBrushMaskCanvasCache.keys().next().value);
+      }
     }
   }
   let maskCanvas = authoritativeCanvas
@@ -15073,18 +15292,22 @@ async function queueAuthoritativeLocalMask(local) {
   const longEdge = settledProxyLongEdge();
   const revision = state.editRevision;
   const requestedGeometrySignature = geometrySignature();
-  const key = `${state.session.session_id}:${local.id}:${longEdge}:${requestedGeometrySignature}:${signature}`;
+  const sessionId = state.session.session_id;
+  const key = `${sessionId}:${local.id}:${longEdge}:${requestedGeometrySignature}:${signature}`;
   const cached = localAuthoritativeMaskCache.get(local.id);
   if (cached?.key === key || localAuthoritativeMaskRequests.has(key)) return;
-  const request = fetch(`/api/session/${state.session.session_id}/local-mask/${encodeURIComponent(local.id)}?long_edge=${longEdge}&edit_revision=${revision}&geometry_signature=${encodeURIComponent(requestedGeometrySignature)}&spatial_only=true`)
+  const controller = new AbortController();
+  const request = fetch(`/api/session/${sessionId}/local-mask/${encodeURIComponent(local.id)}?long_edge=${longEdge}&edit_revision=${revision}&geometry_signature=${encodeURIComponent(requestedGeometrySignature)}&spatial_only=true`, { signal: controller.signal })
     .then(async (response) => {
-      if (!response.ok) return;
+      if (!response.ok || state.session?.session_id !== sessionId) return;
       if (response.headers.get("X-Geometry-Signature") !== requestedGeometrySignature) return;
       const width = Number(response.headers.get("X-Image-Width"));
       const height = Number(response.headers.get("X-Image-Height"));
       const alpha = new Uint8Array(await response.arrayBuffer());
       if (
-        signature !== localMaskSpatialSignature(selectedLocal()?.mask)
+        state.session?.session_id !== sessionId
+        || localAuthoritativeMaskRequests.get(key)?.request !== request
+        || signature !== localMaskSpatialSignature(selectedLocal()?.mask)
         || requestedGeometrySignature !== geometrySignature()
       ) return;
       const canvas = document.createElement("canvas");
@@ -15108,9 +15331,13 @@ async function queueAuthoritativeLocalMask(local) {
       }
       queueLocalMaskOverlayRender();
     })
-    .catch((error) => console.warn("Authoritative local mask could not be loaded.", error))
-    .finally(() => localAuthoritativeMaskRequests.delete(key));
-  localAuthoritativeMaskRequests.set(key, request);
+    .catch((error) => {
+      if (error?.name !== "AbortError") console.warn("Authoritative local mask could not be loaded.", error);
+    })
+    .finally(() => {
+      if (localAuthoritativeMaskRequests.get(key)?.request === request) localAuthoritativeMaskRequests.delete(key);
+    });
+  localAuthoritativeMaskRequests.set(key, { controller, request, sessionId });
   await request;
 }
 
@@ -15123,6 +15350,7 @@ function scheduleAuthoritativeLocalMaskDraft(local) {
   if (leaf.type === "brush" && local.mask.operator === "leaf" && !(leaf.strokes || []).length) return;
   const signature = JSON.stringify(local.mask);
   state.localMaskDraftPending = {
+    sessionId: state.session.session_id,
     localId: local.id,
     mask: JSON.parse(signature),
     signature,
@@ -15155,6 +15383,7 @@ function flushAuthoritativeLocalMaskDraft() {
     pending.adjustments,
     pending.geometrySignature,
     pending.generation,
+    pending.sessionId,
   );
 }
 
@@ -15207,13 +15436,15 @@ async function loadAuthoritativeLocalMaskDraft(
   adjustments,
   requestedGeometrySignature,
   generation,
+  sessionId,
 ) {
+  if (state.session?.session_id !== sessionId) return;
   const controller = new AbortController();
   state.localMaskDraftController = controller;
   const requestedAt = performance.now();
   try {
     const response = await fetch(
-      `/api/session/${state.session.session_id}/local-mask/${encodeURIComponent(localId)}/preview`,
+      `/api/session/${sessionId}/local-mask/${encodeURIComponent(localId)}/preview`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -15221,10 +15452,11 @@ async function loadAuthoritativeLocalMaskDraft(
         body: JSON.stringify({ mask, adjustments, edit_revision: revision, long_edge: longEdge }),
       },
     );
-    if (!response.ok) return;
+    if (!response.ok || state.session?.session_id !== sessionId) return;
     const width = Number(response.headers.get("X-Image-Width"));
     const height = Number(response.headers.get("X-Image-Height"));
     const alpha = new Uint8Array(await response.arrayBuffer());
+    if (state.session?.session_id !== sessionId) return;
     const selected = selectedLocal();
     const currentMaskMatch = Boolean(selected?.mask)
       && localId === selected.id
@@ -15578,7 +15810,34 @@ function drawSelectedPathHandles(context, node, nodeIndex, x, y) {
   context.restore();
 }
 
-function drawPathMaskGizmo(context, leaf, x, y, { drawFill = true } = {}) {
+function interpolatePathNodes(inner, outer, amount) {
+  if (!inner?.length || inner.length !== outer?.length) return [];
+  return inner.map((node, index) => {
+    const target = outer[index];
+    const mixed = { ...node };
+    for (const key of ["x", "y", "in_x", "in_y", "out_x", "out_y"]) {
+      const axis = key.endsWith("_y") || key === "y" ? "y" : "x";
+      const start = Number(node[key] ?? node[axis]);
+      const end = Number(target[key] ?? target[axis]);
+      mixed[key] = start + (end - start) * amount;
+    }
+    return mixed;
+  });
+}
+
+function drawPathFeatherDraftFill(context, inner, outer, x, y, opacity) {
+  if (!outer.length || inner.length !== outer.length) return;
+  // The exact feather raster arrives asynchronously. These nested contours
+  // provide an immediate, progressively fading preview so dragging a feather
+  // node or slider never looks as though it failed to apply.
+  for (let step = 8; step >= 1; step -= 1) {
+    tracePathBoundary(context, interpolatePathNodes(inner, outer, step / 8), x, y, true);
+    context.fillStyle = overlayColorWithAlpha(0.028 * opacity);
+    context.fill();
+  }
+}
+
+function drawPathMaskGizmo(context, leaf, x, y, { drawFill = true, pathCursor = state.localPathCursor } = {}) {
   const draft = Boolean(state.localPathDraft && state.localPathDraft.localId === selectedLocal()?.id);
   const inner = leaf.nodes || [];
   const closed = !draft && inner.length >= 3;
@@ -15587,6 +15846,14 @@ function drawPathMaskGizmo(context, leaf, x, y, { drawFill = true } = {}) {
     : [];
   const innerPath = () => tracePathBoundary(context, inner, x, y, closed);
   if (drawFill && closed && state.localShowMask) {
+    drawPathFeatherDraftFill(
+      context,
+      inner,
+      outer,
+      x,
+      y,
+      clamp(Number(leaf.mask_opacity ?? 1), 0, 1),
+    );
     innerPath();
     context.fillStyle = overlayColorWithAlpha(0.22 * clamp(Number(leaf.mask_opacity ?? 1), 0, 1));
     context.fill();
@@ -15601,16 +15868,13 @@ function drawPathMaskGizmo(context, leaf, x, y, { drawFill = true } = {}) {
     context.stroke();
     context.restore();
   }
-  if (draft && inner.length && state.localPathCursor) {
-    context.save();
-    context.beginPath();
-    context.moveTo(x(inner.at(-1).x), y(inner.at(-1).y));
-    context.lineTo(x(state.localPathCursor.x), y(state.localPathCursor.y));
-    context.setLineDash([5, 5]);
-    context.strokeStyle = uiToken("--text");
-    context.lineWidth = 1.5;
-    context.stroke();
-    context.restore();
+  if (draft && inner.length && pathCursor) {
+    const liveSegment = () => {
+      context.beginPath();
+      context.moveTo(x(inner.at(-1).x), y(inner.at(-1).y));
+      context.lineTo(x(pathCursor.x), y(pathCursor.y));
+    };
+    drawLocalGizmoStroke(context, liveSegment, 1.75, uiToken("--accent"));
   }
   if (outer.length) {
     context.save();
@@ -15618,8 +15882,15 @@ function drawPathMaskGizmo(context, leaf, x, y, { drawFill = true } = {}) {
     const outerPath = () => tracePathBoundary(context, outer, x, y, true);
     context.lineCap = "round";
     context.lineJoin = "round";
-    context.strokeStyle = state.pathInvalidGesture ? "rgba(255, 92, 92, .55)" : "rgba(174, 184, 187, .4)";
-    context.lineWidth = 1.25;
+    context.strokeStyle = "rgba(0, 0, 0, .82)";
+    context.lineWidth = 3.5;
+    outerPath(); context.stroke();
+    context.strokeStyle = state.pathInvalidGesture
+      ? "rgba(255, 92, 92, .95)"
+      : state.localPathEditMode === "feather"
+        ? uiToken("--accent")
+        : "rgba(218, 229, 232, .78)";
+    context.lineWidth = 1.5;
     context.setLineDash([5, 5]);
     context.lineDashOffset = reducedPathMotion ? 0 : -performance.now() / 70;
     outerPath(); context.stroke();
@@ -15822,10 +16093,12 @@ async function openDesktopSelection(selection) {
 }
 
 async function openStagedDesktopSource(selection) {
-  const generation = ++state.importGeneration;
+  const generation = claimSessionReplacement();
   if (state.activeImportJobId) {
     await fetch(`/api/import-jobs/${state.activeImportJobId}`, { method: "DELETE" }).catch(() => null);
   }
+  if (generation !== state.importGeneration) return;
+  await state.byteUploadQueue.catch(() => null);
   if (generation !== state.importGeneration) return;
   els.badge.textContent = "Loading image and building session...";
   state.importInProgress = true;
@@ -15956,7 +16229,7 @@ function finishCancelledImport() {
 }
 
 async function activateDesktopSession(session, projectPath) {
-  clearPreviewCache();
+  retireActiveSession();
   state.session = session;
   state.importInProgress = false;
   if (els.rawSettingsPanel) delete els.rawSettingsPanel.dataset.initialized;
@@ -16009,6 +16282,12 @@ async function openProjectFromPath(desktopSelection = null) {
     );
     if (!selection) return;
     if (documentTransitionToken() !== confirmedDocument && !await confirmUnsavedTransition("open another project")) return;
+    const replacementGeneration = ++state.importGeneration;
+    const activeJobId = state.activeImportJobId;
+    state.activeImportJobId = null;
+    if (activeJobId) await fetch(`/api/import-jobs/${activeJobId}`, { method: "DELETE" }).catch(() => null);
+    await state.byteUploadQueue.catch(() => null);
+    if (replacementGeneration !== state.importGeneration) return;
     const openGeneration = ++state.projectOpenGeneration;
     state.projectOpenController?.abort();
     const controller = new AbortController();
@@ -16057,6 +16336,9 @@ async function openProjectFromPath(desktopSelection = null) {
   }
   const path = window.prompt("Path to a .hdrfinisher project", state.projectPath || "");
   if (!path) return;
+  const replacementGeneration = ++state.importGeneration;
+  await state.byteUploadQueue.catch(() => null);
+  if (replacementGeneration !== state.importGeneration) return;
   const statusTimer = beginProjectOpenStatus(path.split(/[\\/]/).pop() || "loading source");
   await new Promise((resolve) => window.requestAnimationFrame(resolve));
   let sourcePath = null;

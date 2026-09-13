@@ -1,6 +1,6 @@
 const { chromium } = require("playwright");
 
-const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
+const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -9,7 +9,8 @@ function assert(condition, message) {
 (async () => {
   const browser = await chromium.launch({ headless: true, channel: "msedge" });
   try {
-    for (const width of [1800, 1440]) {
+    const widths = [1800, 1600, 1599, 1500, 1499, 1440];
+    for (const width of widths) {
       const page = await browser.newPage({ viewport: { width, height: 1000 } });
       await page.goto(baseUrl, { waitUntil: "networkidle" });
       await page.getByRole("button", { name: "Load test pattern" }).click();
@@ -51,6 +52,16 @@ function assert(condition, message) {
       await page.mouse.move(railBox.x + Math.min(20, railBox.width / 2), railBox.y + 20);
       const titleLeftAfterHover = await page.locator(".rail-title-row .panel-title").evaluate((title) => title.getBoundingClientRect().left);
       assert(Math.abs(titleLeftAfterHover - titleLeftBeforeHover) < 0.5, `Metadata title shifted on hover at ${width}px: ${JSON.stringify({ titleLeftBeforeHover, titleLeftAfterHover })}`);
+      for (const stateName of ["hover", "focus", "pinned"]) {
+        if (stateName === "focus") await page.locator(".source-rail-expand").focus();
+        if (stateName === "pinned") await rail.evaluate((element) => element.classList.add("pinned-open"));
+        const separation = await page.locator(".rail-title-row").evaluate((row) => {
+          const title = row.querySelector(".panel-title").getBoundingClientRect();
+          const action = row.querySelector(".source-rail-expand").getBoundingClientRect();
+          return action.left - title.right;
+        });
+        assert(separation >= 4, `Metadata title/action separation is ${separation}px in ${stateName} state at ${width}px.`);
+      }
       for (const [toggleId, panelId] of [["source-settings-toggle", "source-settings-panel"], ["metadata-toggle", "metadata-panel"]]) {
         const toggle = page.locator(`#${toggleId}`);
         const panel = page.locator(`#${panelId}`);
@@ -79,7 +90,7 @@ function assert(condition, message) {
       }
       await page.close();
     }
-    console.log(JSON.stringify({ browser: await browser.version(), viewports: [1800, 1440] }));
+    console.log(JSON.stringify({ browser: await browser.version(), viewports: widths }));
   } finally {
     await browser.close();
   }

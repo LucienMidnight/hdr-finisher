@@ -680,7 +680,7 @@ def test_scope_zoom_exposes_1000_4000_and_10000_nit_computation_ranges() -> None
     assert '<option value="4000">4K nits</option>' in html
     assert '<option value="10000">10K nits</option>' in html
     assert "max_nits=${maxNits}" in javascript
-    assert "request.maxNits" in javascript
+    assert "maxNits: state.scopeMaxNits" in javascript
 
 
 def test_overlay_ui_explains_reference_nit_zebras_and_has_a_false_color_key() -> None:
@@ -1301,7 +1301,8 @@ def test_electron_preview_correctness_contract() -> None:
     assert 'document.addEventListener(eventName' in javascript
     assert 'desktop.resolveDroppedFile(file)' in javascript
     assert "Windows shell integrations and catalog applications" in javascript
-    assert "await uploadFile(file);" in javascript
+    assert 'await importByteFile(file, "import another source")' in javascript
+    assert 'if (!await confirmUnsavedTransition(actionLabel)) return false;' in javascript
     assert 'const nativeOverwriteApproved = ["win32", "darwin", "linux"].includes(process.platform)' in main
     assert "Boolean(nativeOverwrite)" in javascript
     assert 'id="rotate-apply"' in html and 'id="rotate-cancel"' in html

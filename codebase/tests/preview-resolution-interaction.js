@@ -1,6 +1,6 @@
 const { chromium } = require("playwright");
 
-const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
+const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
 
 (async () => {
   const browser = await chromium.launch({ headless: true, channel: "chrome" });
@@ -40,6 +40,8 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
     if (Math.abs(actualSize.cssWidth - actualSize.sourceWidth) > 1 || Math.abs(actualSize.cssHeight - actualSize.sourceHeight) > 1) {
       throw new Error(`100% zoom was not one source pixel per CSS pixel: ${JSON.stringify(actualSize)}`);
     }
+    await page.locator("#preview-toggle").click();
+    await page.locator("#preview-popover").waitFor({ state: "visible" });
     await selector.selectOption("4096");
     await page.waitForFunction(() => window.HDRFinisherPerformance.authoringState().previewResolution === "4096");
     const fourK = await page.evaluate(() => window.HDRFinisherPerformance.authoringState());

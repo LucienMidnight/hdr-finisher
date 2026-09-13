@@ -205,10 +205,47 @@ async function gradientZoomAlignment(page) {
     assert(await page.evaluate(() => selectedLocal().mask.leaf.gradient_fan === 0.55), "Gradient fan did not persist.");
 
     const darkFull = panel.locator('.gradient-luma-ramp input[data-range-handle="1"]');
+    const lumaRampBox = await panel.locator(".gradient-luma-ramp").boundingBox();
+    assert(lumaRampBox, "Luminance range ramp has no interactive bounds.");
+    const lumaValueX = (value) => lumaRampBox.x + 4.5 + (lumaRampBox.width - 9) * ((value + 24) / 48);
     editResponse = page.waitForResponse((response) => response.url().includes("/edit-commands") && response.request().method() === "POST");
-    await darkFull.fill("-7");
-    assert((await editResponse).ok(), "Changing the luminance range failed.");
+    await page.mouse.move(lumaValueX(-8), lumaRampBox.y + lumaRampBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(lumaValueX(-5), lumaRampBox.y + lumaRampBox.height / 2, { steps: 6 });
+    await page.mouse.up();
+    assert((await editResponse).ok(), "Dragging a luminance range handle failed.");
+    const draggedDarkFull = Number(await darkFull.inputValue());
+    assert(Math.abs(draggedDarkFull - (-5)) < .35, `The visible luminance handle did not follow the drag (${draggedDarkFull}).`);
+    assert(Math.abs((await page.evaluate(() => selectedLocal().mask.leaf.full_start_ev)) - draggedDarkFull) < .011,
+      "The dragged luminance handle and mask state diverged.");
+    const rampVisual = await panel.locator(".gradient-luma-ramp").evaluate((ramp) => ({
+      fullStart: Number.parseFloat(ramp.style.getPropertyValue("--gradient-luma-full-start")),
+      enabled: ramp.classList.contains("enabled"),
+      readouts: [...ramp.nextElementSibling.querySelectorAll("output")].map((output) => output.textContent),
+    }));
+    const expectedFullStartPosition = (draggedDarkFull + 24) / 48 * 100;
+    assert(Math.abs(rampVisual.fullStart - expectedFullStartPosition) < .05,
+      `The luminance gizmo did not redraw from its mask value: ${JSON.stringify(rampVisual)}`);
+    assert(rampVisual.enabled && rampVisual.readouts[1] === draggedDarkFull.toFixed(1),
+      `The luminance gizmo did not expose the dragged value: ${JSON.stringify(rampVisual)}`);
     assert(await page.evaluate(() => selectedLocal().mask.leaf.gradient_luma_enabled), "Moving a luminance dot did not enable luminance refinement.");
+
+    for (const gesture of [
+      { index: 0, from: -12, to: -14, field: "fade_in_start_ev" },
+      { index: 2, from: 6, to: 4, field: "full_end_ev" },
+      { index: 3, from: 10, to: 12, field: "fade_out_end_ev" },
+    ]) {
+      editResponse = page.waitForResponse((response) => response.url().includes("/edit-commands") && response.request().method() === "POST");
+      await page.mouse.move(lumaValueX(gesture.from), lumaRampBox.y + lumaRampBox.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(lumaValueX(gesture.to), lumaRampBox.y + lumaRampBox.height / 2, { steps: 5 });
+      await page.mouse.up();
+      assert((await editResponse).ok(), `Dragging luminance handle ${gesture.index} failed.`);
+      const visible = Number(await panel.locator(`.gradient-luma-ramp input[data-range-handle="${gesture.index}"]`).inputValue());
+      const stored = await page.evaluate((field) => Number(selectedLocal().mask.leaf[field]), gesture.field);
+      assert(Math.abs(visible - gesture.to) < .35 && Math.abs(stored - visible) < .011,
+        `Luminance handle ${gesture.index} did not stay synchronized: ${JSON.stringify({ visible, stored, gesture })}`);
+    }
 
     await page.waitForFunction(() => {
       const local = selectedLocal();

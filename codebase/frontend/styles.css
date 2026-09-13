@@ -2181,12 +2181,6 @@ input[type="range"] {
   font-weight: 400;
 }
 
-.legacy-controls {
-  margin-top: 3px;
-  border-top: 1px dashed var(--border);
-  opacity: 0.86;
-}
-
 .export-sheet {
   width: min(980px, calc(100vw - 48px));
   max-height: calc(100vh - 48px);
@@ -3955,11 +3949,55 @@ input[type="text"] {
 
 .gradient-luma-ramp {
   position: relative;
-  height: 28px;
-  border: 1px solid #435054;
-  border-radius: 4px;
-  background: linear-gradient(90deg, #050607 0%, #171b1d 28%, #768084 67%, #edf2f2 100%);
-  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 36%);
+  height: var(--instrument-slider-hit-h);
+}
+
+.gradient-luma-track {
+  position: absolute;
+  top: calc((var(--instrument-slider-hit-h) - var(--instrument-slider-track-h)) / 2);
+  right: 0;
+  left: 0;
+  height: var(--instrument-slider-track-h);
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, .46) 0%, transparent 44%, rgba(255, 255, 255, .18) 100%),
+    linear-gradient(90deg, #050607 0%, #171b1d 28%, #768084 67%, #edf2f2 100%);
+  box-shadow: var(--instrument-slider-channel-shadow), inset 0 0 0 1px rgba(0, 0, 0, .48);
+  pointer-events: none;
+}
+
+.gradient-luma-region {
+  position: absolute;
+  z-index: 0;
+  top: 2px;
+  bottom: 2px;
+  opacity: .34;
+  pointer-events: none;
+}
+
+.gradient-luma-ramp.enabled .gradient-luma-region {
+  opacity: 1;
+}
+
+.gradient-luma-region-fade-in {
+  left: var(--gradient-luma-fade-in-start, 25%);
+  width: calc(var(--gradient-luma-full-start, 33.333%) - var(--gradient-luma-fade-in-start, 25%));
+  background: linear-gradient(90deg, transparent, rgb(103 210 217 / 42%));
+}
+
+.gradient-luma-region-full {
+  left: var(--gradient-luma-full-start, 33.333%);
+  width: calc(var(--gradient-luma-full-end, 62.5%) - var(--gradient-luma-full-start, 33.333%));
+  border-top: 1px solid rgb(223 252 255 / 58%);
+  border-bottom: 1px solid rgb(223 252 255 / 58%);
+  background: rgb(103 210 217 / 30%);
+}
+
+.gradient-luma-region-fade-out {
+  left: var(--gradient-luma-full-end, 62.5%);
+  width: calc(var(--gradient-luma-fade-out-end, 70.833%) - var(--gradient-luma-full-end, 62.5%));
+  background: linear-gradient(90deg, rgb(103 210 217 / 42%), transparent);
 }
 
 .gradient-luma-ramp input[type="range"] {
@@ -3968,7 +4006,7 @@ input[type="text"] {
   width: 100%;
   height: 100%;
   margin: 0;
-  padding: 0 5px;
+  padding: 0;
   border: 0;
   pointer-events: none;
   appearance: none;
@@ -3976,30 +4014,55 @@ input[type="text"] {
 }
 
 .gradient-luma-ramp input[type="range"]::-webkit-slider-runnable-track {
-  height: 2px;
-  background: rgb(111 211 218 / 48%);
+  height: var(--instrument-slider-track-h);
+  background: transparent;
 }
 
 .gradient-luma-ramp input[type="range"]::-webkit-slider-thumb {
-  width: 12px;
-  height: 12px;
-  margin-top: -5px;
-  border: 2px solid #dffcff;
-  border-radius: 50%;
+  width: var(--instrument-slider-thumb-w);
+  height: var(--instrument-slider-thumb-h);
+  margin-top: calc((var(--instrument-slider-track-h) - var(--instrument-slider-thumb-h)) / 2);
+  border: 0;
+  border-radius: var(--radius-1);
   pointer-events: auto;
   appearance: none;
-  background: #2f8e95;
-  box-shadow: 0 0 0 2px rgb(0 0 0 / 68%);
+  background: var(--instrument-slider-thumb-background);
+  box-shadow: var(--instrument-slider-thumb-shadow);
 }
 
 .gradient-luma-ramp input[data-range-handle="1"]::-webkit-slider-thumb,
 .gradient-luma-ramp input[data-range-handle="2"]::-webkit-slider-thumb {
-  background: #67d2d9;
+  background:
+    linear-gradient(180deg, transparent 0 43%, var(--accent-strong) 43% 57%, transparent 57%),
+    var(--instrument-slider-thumb-background);
+}
+
+.gradient-luma-ramp:hover input[type="range"]::-webkit-slider-thumb,
+.gradient-luma-ramp:focus-within input[type="range"]::-webkit-slider-thumb {
+  background-color: var(--instrument-slider-thumb-background-active);
 }
 
 .gradient-luma-scale {
   color: var(--muted);
   font: 9px/1.2 var(--mono, monospace);
+}
+
+.gradient-luma-values {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3px;
+  color: var(--quiet);
+  font: 9px/1.15 var(--mono, monospace);
+}
+
+.gradient-luma-values output {
+  min-width: 0;
+  text-align: center;
+}
+
+.gradient-luma-values output:nth-child(2),
+.gradient-luma-values output:nth-child(3) {
+  color: var(--accent);
 }
 
 .luma-sampling-hint {
@@ -5647,10 +5710,6 @@ input[type="range"]::-webkit-slider-thumb {
   display: flex;
   align-items: baseline;
   min-width: 0;
-}
-
-.legacy-controls {
-  opacity: .66;
 }
 
 .toggle-row {
@@ -8968,28 +9027,29 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
   padding: 0;
 }
 
-/* Anchor the Metadata chevron to the header itself. Older responsive rules
-   switch this row between flex and grid, which otherwise changes the button's
-   inset as the source rail enters compact/overlay states. */
+/* Metadata always uses normal grid placement. This keeps the title and action
+   in separate tracks at every compact boundary and interaction state. */
 .source-rail .rail-title-row {
-  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--panel-collapse-button-size);
+  align-items: center;
+  gap: 8px;
   height: var(--panel-header-h);
   min-height: var(--panel-header-h);
   max-height: var(--panel-header-h);
-  padding-right: 52px;
   box-sizing: border-box;
 }
 
 .source-rail .source-rail-expand {
-  position: absolute;
-  inset: 50% 12px auto auto;
+  position: static;
+  inset: auto;
   display: inline-grid !important;
-  transform: translateY(-50%);
+  transform: none;
 }
 
 .source-rail.collapsed .source-rail-expand {
-  inset: 50% auto auto 50%;
-  transform: translate(-50%, -50%);
+  inset: auto;
+  transform: none;
 }
 
 @container (max-width: 1100px) {

@@ -46,6 +46,77 @@ async function activePreviewBox(page) {
     const box = await activePreviewBox(page);
     assert(box, "Path overlay is unavailable.");
 
+    // A projective geometry map puts Path nodes into output space before they
+    // are drawn. The live endpoint must be projected by the same map, and the
+    // creation guide must be a continuous solid stroke all the way to the
+    // latest pointer position.
+    await page.evaluate(() => {
+      state.adjustments.shared.geometry.perspective_vertical = 1;
+      geometryCoordinateMapCache.set(geometryCoordinateMapKey(), {
+        sourceToOutput: [1, 0, 0, 0, 1, 0, 0, .5, 1],
+        outputToSource: [1, 0, 0, 0, 1, 0, 0, -.5, 1],
+      });
+      renderLocalMaskOverlay();
+    });
+    await clickNormalized(page, box, .25, .20);
+    const liveTarget = { x: box.x + box.width * .48, y: box.y + box.height * .58 };
+    await page.mouse.move(box.x + box.width * .43, box.y + box.height * .48);
+    await page.mouse.move(liveTarget.x, liveTarget.y);
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const liveGuide = await page.evaluate(({ clientX, clientY }) => {
+      const canvas = document.querySelector("#local-mask-overlay");
+      const canvasRect = canvas.getBoundingClientRect();
+      const imageRect = activePreviewElement().getBoundingClientRect();
+      const leaf = firstMaskLeaf(selectedLocal().mask, "path");
+      const start = sourcePointToDisplay(leaf.nodes[0]);
+      const end = sourcePointToDisplay(state.localPathCursor);
+      const sampleAlpha = (displayX, displayY) => {
+        const cssX = imageRect.left + imageRect.width * displayX - canvasRect.left;
+        const cssY = imageRect.top + imageRect.height * displayY - canvasRect.top;
+        const scaleX = canvas.width / canvasRect.width;
+        const scaleY = canvas.height / canvasRect.height;
+        const centerX = Math.round(cssX * scaleX);
+        const centerY = Math.round(cssY * scaleY);
+        const radius = Math.max(2, Math.ceil(window.devicePixelRatio * 2));
+        const left = Math.max(0, centerX - radius);
+        const top = Math.max(0, centerY - radius);
+        const width = Math.min(canvas.width - left, radius * 2 + 1);
+        const height = Math.min(canvas.height - top, radius * 2 + 1);
+        const pixels = canvas.getContext("2d").getImageData(left, top, width, height).data;
+        let peak = 0;
+        for (let index = 3; index < pixels.length; index += 4) peak = Math.max(peak, pixels[index]);
+        return peak;
+      };
+      const samples = [];
+      for (let index = 1; index < 20; index += 1) {
+        const amount = index / 20;
+        samples.push(sampleAlpha(
+          start.x + (end.x - start.x) * amount,
+          start.y + (end.y - start.y) * amount,
+        ));
+      }
+      return {
+        end,
+        expected: {
+          x: (clientX - imageRect.left) / imageRect.width,
+          y: (clientY - imageRect.top) / imageRect.height,
+        },
+        samples,
+      };
+    }, { clientX: liveTarget.x, clientY: liveTarget.y });
+    assert(Math.hypot(liveGuide.end.x - liveGuide.expected.x, liveGuide.end.y - liveGuide.expected.y) < .005,
+      `Projective live Path endpoint missed the cursor: ${JSON.stringify(liveGuide)}`);
+    assert(liveGuide.samples.every((alpha) => alpha > 0),
+      `Live Path guide was not solid through the cursor: ${JSON.stringify(liveGuide.samples)}`);
+    await overlay.focus();
+    await page.keyboard.press("Escape");
+    await page.evaluate(() => {
+      state.adjustments.shared.geometry = defaultGeometry();
+      renderLocalMaskOverlay();
+    });
+    await page.locator("#local-add-adjustment").click();
+    await page.locator('[data-local-tool="path"]').click();
+
     await clickNormalized(page, box, .25, .25);
     await page.mouse.move(box.x + box.width * .67, box.y + box.height * .25);
     await page.mouse.down();
@@ -226,6 +297,23 @@ async function activePreviewBox(page) {
       return canvas.getContext("2d").getImageData(pixelX, pixelY, 1, 1).data[3];
     });
     assert(liveFillAlpha > 0, "Path overlay disappeared while a newer Feather mask was pending.");
+    const liveFeatherBandAlpha = await page.evaluate(() => {
+      const leaf = firstMaskLeaf(selectedLocal().mask, "path");
+      const midpoint = (nodes) => ({
+        x: (nodes[0].x + nodes[1].x) * .5,
+        y: (nodes[0].y + nodes[1].y) * .5,
+      });
+      const inner = midpoint(leaf.nodes);
+      const outer = midpoint(leaf.feather_nodes);
+      const display = sourcePointToDisplay({ x: (inner.x + outer.x) * .5, y: (inner.y + outer.y) * .5 });
+      const canvas = document.querySelector("#local-mask-overlay");
+      const canvasRect = canvas.getBoundingClientRect();
+      const imageRect = activePreviewElement().getBoundingClientRect();
+      const pixelX = Math.max(0, Math.min(canvas.width - 1, Math.round((imageRect.left + imageRect.width * display.x - canvasRect.left) * canvas.width / canvasRect.width)));
+      const pixelY = Math.max(0, Math.min(canvas.height - 1, Math.round((imageRect.top + imageRect.height * display.y - canvasRect.top) * canvas.height / canvasRect.height)));
+      return canvas.getContext("2d").getImageData(pixelX, pixelY, 1, 1).data[3];
+    });
+    assert(liveFeatherBandAlpha > 0, "Feather band gave no immediate visual feedback while its exact mask was pending.");
     await page.locator("#path-mask-progress").waitFor({ state: "visible", timeout: 1500 });
     assert((await page.locator("#path-mask-progress-copy").textContent()).includes("Updating feather"), "Slow Path work did not explain its loading state.");
     const latestPreviewPresented = page.evaluate(() => new Promise((resolve, reject) => {

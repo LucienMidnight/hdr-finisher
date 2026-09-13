@@ -379,6 +379,14 @@ async def create_session(file: UploadFile = File(...)) -> SessionSummary:
     return SessionSummary(session=payload)
 
 
+@app.get("/api/session/current")
+def get_current_session() -> SessionSummary:
+    session = store.current()
+    if session is None:
+        raise HTTPException(status_code=404, detail="No active session.")
+    return SessionSummary(session=session.to_payload())
+
+
 @app.get("/api/session/{session_id}")
 def get_session(session_id: str) -> SessionSummary:
     try:

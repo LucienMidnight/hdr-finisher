@@ -574,6 +574,17 @@ def test_clearing_session_removes_owned_upload_temp_file() -> None:
     assert not staged_path.exists()
 
 
+def test_current_session_endpoint_reports_backend_activation_truth() -> None:
+    empty = client.get("/api/session/current")
+    assert empty.status_code == 404
+
+    upload = client.post("/api/session", files={"file": ("current.png", make_png_bytes(), "image/png")})
+    assert upload.status_code == 200
+    current = client.get("/api/session/current")
+    assert current.status_code == 200
+    assert current.json()["session"]["session_id"] == upload.json()["session"]["session_id"]
+
+
 def test_source_interpretation_preserves_uploaded_filename() -> None:
     upload = client.post("/api/session", files={"file": ("original-name.png", make_png_bytes(), "image/png")})
     assert upload.status_code == 200

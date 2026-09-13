@@ -74,10 +74,14 @@ async function canvasVariationCount(locator) {
     for (let index = 0; index < expectedTools.length; index += 1) {
       const tool = expectedTools[index];
       const button = page.locator(`[data-local-tool="${tool}"]`);
-      await button.click();
-      assert(await button.getAttribute("aria-pressed") === "true", `${tool} did not expose immediate active state.`);
       await page.locator("#local-add-adjustment").click();
+      await button.click();
+      await page.waitForFunction((assignedTool) => selectedMaskLeaf(selectedLocal())?.type === assignedTool, tool);
       await page.waitForFunction((count) => document.querySelectorAll("#local-adjustment-list > li").length === count, index + 1);
+      assert(await button.getAttribute("aria-pressed") === "true", `${tool} did not expose immediate active state.`);
+      if (tool !== "path") {
+        assert(await button.isDisabled(), `${tool} was not locked after assignment to its mask.`);
+      }
       if (tool === "path") {
         const overlay = page.locator("#local-mask-overlay");
         const box = await overlay.boundingBox();
@@ -155,7 +159,8 @@ async function canvasVariationCount(locator) {
     assert(maskFeatherSmoothing.at(-1).outside > 2, `Maximum Mask Feather is still too narrow: ${JSON.stringify(maskFeatherSmoothing)}`);
     await page.screenshot({ path: path.join(outputDirectory, "local-adjustments-overlay-qa.png"), fullPage: false });
 
-    const brushRow = page.locator("#local-adjustment-list button[data-local-id]").first();
+    const localRows = page.locator("#local-adjustment-list .local-adjustment-select[data-local-id]");
+    const brushRow = localRows.first();
     await brushRow.click();
     const brushSize = page.locator(".local-mask-subpanel").first().locator('input[type="range"]').first();
     await brushSize.fill("0.1");
@@ -183,7 +188,7 @@ async function canvasVariationCount(locator) {
     await page.mouse.up();
     assert((await editResponse).ok(), "Brush/Erase stroke edit command failed.");
 
-    await page.locator("#local-adjustment-list button[data-local-id]").nth(1).click();
+    await localRows.nth(1).click();
     assert(await eraser.isDisabled(), "Erase should be disabled for a non-brush mask.");
     assert(await eraser.getAttribute("aria-pressed") === "false", "Erase remained active after selecting a non-brush mask.");
     editResponse = page.waitForResponse((response) => response.url().includes("/edit-commands") && response.request().method() === "POST");
@@ -193,7 +198,7 @@ async function canvasVariationCount(locator) {
     await page.mouse.up();
     assert((await editResponse).ok(), "Gradient gesture edit command failed.");
 
-    await page.locator("#local-adjustment-list button[data-local-id]").nth(2).click();
+    await localRows.nth(2).click();
     const previewBox = await page.locator("#preview-canvas").boundingBox();
     assert(previewBox && previewBox.width > 40 && previewBox.height > 40, "The active preview surface is unavailable for Luma editing.");
     editResponse = page.waitForResponse((response) => response.url().includes("/edit-commands") && response.request().method() === "POST");
@@ -204,7 +209,7 @@ async function canvasVariationCount(locator) {
     assert((await editResponse).ok(), "Luminance-range handle gesture edit command failed.");
     assert(Number(await page.locator("#local-mask-tree-summary input").nth(1).inputValue()) > -8, "Luminance-range handle did not update its EV value.");
 
-    await page.locator("#local-adjustment-list button[data-local-id]").nth(3).click();
+    await localRows.nth(3).click();
     editResponse = page.waitForResponse((response) => response.url().includes("/edit-commands") && response.request().method() === "POST");
     await page.mouse.move(overlayBox.x + overlayBox.width * 0.30, overlayBox.y + overlayBox.height * 0.30);
     await page.mouse.down();
@@ -214,47 +219,20 @@ async function canvasVariationCount(locator) {
     if (!pathResponse.ok()) {
       throw new Error(`Path-node gesture edit command failed (${pathResponse.status()}): ${await pathResponse.text()}`);
     }
-    await page.locator("#local-adjustment-list button[data-local-id]").nth(1).click();
+    await localRows.nth(1).click();
 
     const histogram = page.locator("#histogram");
-    let scopeResponse = page.evaluate(() => new Promise((resolve) => {
-      const handler = (event) => {
-        if (event.detail?.mode !== "waveform") return;
-        window.removeEventListener("hdrfinisher:scope-presented", handler);
-        resolve(event.detail);
-      };
-      window.addEventListener("hdrfinisher:scope-presented", handler);
-    }));
-    await page.locator('[data-dock-tab="waveform"]').click();
-    await scopeResponse;
+    await page.locator("#scope-mode").selectOption("waveform");
     await page.waitForFunction(() => document.querySelector("#scope-title")?.textContent?.toLowerCase().includes("waveform"));
     assert(await canvasVariationCount(histogram) > 100, "Waveform canvas remained visually blank after local edits.");
     await page.locator("#analysis-dock").screenshot({ path: path.join(outputDirectory, "local-adjustments-waveform-qa.png") });
 
-    scopeResponse = page.evaluate(() => new Promise((resolve) => {
-      const handler = (event) => {
-        if (event.detail?.mode !== "histogram") return;
-        window.removeEventListener("hdrfinisher:scope-presented", handler);
-        resolve(event.detail);
-      };
-      window.addEventListener("hdrfinisher:scope-presented", handler);
-    }));
-    await page.locator('[data-dock-tab="histogram"]').click();
-    await scopeResponse;
+    await page.locator("#scope-mode").selectOption("histogram");
     await page.waitForFunction(() => document.querySelector("#scope-title")?.textContent?.toLowerCase().includes("histogram"));
     assert(await canvasVariationCount(histogram) > 100, "Histogram canvas remained visually blank after local edits.");
     await page.locator("#analysis-dock").screenshot({ path: path.join(outputDirectory, "local-adjustments-histogram-qa.png") });
 
-    scopeResponse = page.evaluate(() => new Promise((resolve) => {
-      const handler = (event) => {
-        if (event.detail?.mode !== "vectorscope") return;
-        window.removeEventListener("hdrfinisher:scope-presented", handler);
-        resolve(event.detail);
-      };
-      window.addEventListener("hdrfinisher:scope-presented", handler);
-    }));
-    await page.locator('[data-dock-tab="vectorscope"]').click();
-    await scopeResponse;
+    await page.locator("#scope-mode").selectOption("vectorscope");
     await page.waitForFunction(() => document.querySelector("#scope-title")?.textContent?.toLowerCase().includes("vectorscope"));
     assert(await canvasVariationCount(histogram) > 100, "Vectorscope canvas remained visually blank after local edits.");
 
