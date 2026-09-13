@@ -31,6 +31,9 @@
   </categories>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.8.12" date="2026-09-13">
+      <description><p>Fixes frontend pipeline synchronization and improves transformed path drawing, feather feedback, and four-handle luminance range controls.</p></description>
+    </release>
     <release version="0.8.8" date="2026-09-04">
       <description><p>Fixes native macOS window controls and adds local mask sub-masks, new themes, guided perspective correction, camera-linear RAW import, and smooth highlight compression.</p></description>
     </release>

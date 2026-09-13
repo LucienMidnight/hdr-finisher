@@ -1,16 +1,14 @@
-# HDR Finisher 0.8.11
+# HDR Finisher 0.8.12
 
-HDR Finisher 0.8.11 brings the Proof page back in line with the Grade view. Sharpening no longer produces unbounded halos that hijacked the export's highlight anchor, and the output target is now a guarantee rather than an aim.
+HDR Finisher 0.8.12 tightens the frontend pipeline and makes local mask controls respond directly and predictably while editing.
 
-- The Proof page no longer diverges from the Grade view in the 400-1000 nit band. Sharpening ringing had been setting the export's Peak Fit anchor, putting it 1.85 stops away from the preview's and silently moving an authored 400 nit shoulder to 154 nit, which cost 28% of the luminance and 23% of the saturation in that band. Both engines now honour the authored shoulder.
-- Output target is an unconditional ceiling. Peak Fit and Soft Ceiling both end at the target in the delivery primaries, so a technical delivery spec holds regardless of what Detail, Film Look, grain or output finishing add downstream. A shoulder anchored on a measured peak cannot promise the target on its own.
-- Sharpening no longer produces unbounded halos. The halo fence scaled its allowance by the local neighborhood range against a log floor at 1e-7, so any pixel beside a near-black sample reported a twenty-stop range and the fence stopped bounding anything; ringing reached +4.27 stops. The excursion is now capped at 0.25 EV with a raised luminance floor. Sharpening coverage and response to Amount are unchanged, and the peak no longer moves with Amount at all.
-- The SDR lane applies its highlight shoulder exactly once. The WebGPU preview had gained a second application for scene-referred sources. The SDR shoulder stays where it is, since it is the scene-to-display placement that fits the remaining scene headroom rather than a limiter, and receives the output ceiling alone.
-- Scopes read the same finished render target the viewer presents, instead of recomputing Film Look, so scopes and the presented frame agree by construction.
-- The preview still anchors Peak Fit on a source-domain estimate rather than the finished picture, so a grade with heavy Film Look or local work can still show a small difference against the proof in the top stop. Measuring the finished picture in the preview needs the render scheduler to request a refinement after the measurement lands, and is deferred.
-- Export clips after output finishing, so output sharpening lands under the ceiling instead of on top of it.
-
-Grading latency is unchanged.
+- Replacing a source now retires the previous backend session cleanly and prevents stale requests from restoring superseded state.
+- Preview-resolution and source-disclosure controls stay synchronized with the active pipeline state.
+- Path-mask drawing follows the cursor through viewer geometry transforms, keeps the live segment visible, and shows feather feedback immediately during interaction.
+- Path gizmos remain aligned after crop, rotation, perspective, zoom, and viewer-fit changes.
+- Gradient-mask luminance selection is now a single grayscale rail with four handles, live EV readouts, and a clear selected-range fill.
+- Control-panel luminance adjustments and on-image mask feedback now update through the same state synchronization path.
+- Browser interaction coverage now exercises source replacement, transformed path drawing, feather feedback, pipeline controls, and all four luminance handles with real pointer input.
 
 ## Downloads
 
@@ -29,6 +27,6 @@ Capture sharpening is evaluated at 1:1. Below roughly 38% of full resolution the
 
 Linux HDR preview can show visible gradient banding on the documented KDE/Wayland NVIDIA path; this does not by itself indicate banding in high-bit-depth exports. X11/Xwayland uses an explicit SDR simulation. RAW development remains a constrained beta, and difficult clipped highlights can retain color artifacts.
 
-See [Known limitations](https://github.com/LucienMidnight/hdr-finisher/blob/v0.8.11/docs/known-limitations.md) for the full support status.
+See [Known limitations](https://github.com/LucienMidnight/hdr-finisher/blob/v0.8.12/docs/known-limitations.md) for the full support status.
 
-**Full changelog:** https://github.com/LucienMidnight/hdr-finisher/compare/v0.8.10...v0.8.11
+**Full changelog:** https://github.com/LucienMidnight/hdr-finisher/compare/v0.8.11...v0.8.12
