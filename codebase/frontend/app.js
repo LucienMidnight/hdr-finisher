@@ -14643,7 +14643,12 @@ function projectPathNodeToOutput(node, matrix) {
   const projected = { ...node, ...projectivePoint(matrix, node) };
   for (const prefix of ["in", "out"]) {
     const source = { x: node?.[`${prefix}_x`], y: node?.[`${prefix}_y`] };
-    if (!Number.isFinite(Number(source.x)) || !Number.isFinite(Number(source.y))) continue;
+    // Sharp nodes persist absent handles as null. Number(null) is zero, so a
+    // coercing finite check projects those missing handles from source (0, 0)
+    // and turns every straight edge into a giant Bezier curve whenever the
+    // geometry map is projective (for example after Straighten). Preserve the
+    // nulls; only real numeric handle pairs may be projected.
+    if (!Number.isFinite(source.x) || !Number.isFinite(source.y)) continue;
     const handle = projectivePoint(matrix, source);
     projected[`${prefix}_x`] = handle.x;
     projected[`${prefix}_y`] = handle.y;

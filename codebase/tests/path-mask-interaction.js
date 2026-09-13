@@ -23,6 +23,10 @@ async function clickNormalized(page, box, x, y, options = {}) {
   await page.mouse.click(box.x + box.width * x, box.y + box.height * y, options);
 }
 
+async function activePreviewBox(page) {
+  return page.evaluate(() => activePreviewElement()?.getBoundingClientRect().toJSON() || null);
+}
+
 (async () => {
   const browser = await chromium.launch({ headless: true, channel: "msedge" });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
@@ -36,10 +40,10 @@ async function clickNormalized(page, box, x, y, options = {}) {
     await page.getByRole("button", { name: "Load test pattern" }).click();
     await page.locator("#grade-workflow-panel").waitFor({ state: "visible", timeout: 30000 });
     await page.locator("#grade-mode-local").click();
-    await page.locator('[data-local-tool="path"]').click();
     await page.locator("#local-add-adjustment").click();
+    await page.locator('[data-local-tool="path"]').click();
     const overlay = page.locator("#local-mask-overlay");
-    const box = await page.locator("#preview-canvas").boundingBox();
+    const box = await activePreviewBox(page);
     assert(box, "Path overlay is unavailable.");
 
     await clickNormalized(page, box, .25, .25);
@@ -59,6 +63,21 @@ async function clickNormalized(page, box, x, y, options = {}) {
     assert((await response).ok(), "Clicking the first node did not close and create the mask.");
     current = await pathState(page);
     assert(!current.draft && current.leaf.feather_mode === "outer_boundary", "Closed path did not enter outer-boundary editing.");
+
+    const sharpProjection = await page.evaluate(() => {
+      const expression = newMaskExpression("path");
+      expression.leaf.nodes = [
+        { x: .2, y: .2, in_x: null, in_y: null, out_x: null, out_y: null, node_type: "sharp" },
+        { x: .8, y: .2, in_x: null, in_y: null, out_x: null, out_y: null, node_type: "sharp" },
+        { x: .5, y: .8, in_x: null, in_y: null, out_x: null, out_y: null, node_type: "sharp" },
+      ];
+      const projected = projectMaskExpressionToOutput(expression, [1, 0, 0, 0, 1, 0, .015, -.01, 1]);
+      return projected.leaf.nodes;
+    });
+    assert(
+      sharpProjection.every((node) => node.in_x === null && node.in_y === null && node.out_x === null && node.out_y === null),
+      `Projective geometry fabricated Bezier handles for sharp Path nodes: ${JSON.stringify(sharpProjection)}`,
+    );
 
     // The visible editor geometry and the applied grade must consume the same
     // committed Path mask. Compare-without provides a direct rendered parity
@@ -278,23 +297,23 @@ async function clickNormalized(page, box, x, y, options = {}) {
     await page.locator("#preview-primary-pane").screenshot({ path: path.join(outputDirectory, "path-and-feather-overlay.png") });
 
     const completedLocals = (await pathState(page)).locals;
-    await page.locator('[data-local-tool="path"]').click();
     await page.locator("#local-add-adjustment").click();
+    await page.locator('[data-local-tool="path"]').click();
     await clickNormalized(page, box, .2, .2);
     await clickNormalized(page, box, .6, .2);
     await overlay.focus();
     await page.keyboard.press("Escape");
     assert((await pathState(page)).locals === completedLocals && !(await pathState(page)).draft, "Esc did not cancel an unfinished Path draft.");
 
-    await page.locator('[data-local-tool="path"]').click();
     await page.locator("#local-add-adjustment").click();
+    await page.locator('[data-local-tool="path"]').click();
     await clickNormalized(page, box, .25, .25);
     await clickNormalized(page, box, .65, .25);
     await page.locator("#local-show-mask").click();
     assert((await pathState(page)).locals === completedLocals && !(await pathState(page)).draft, "External interaction did not cancel an invalid two-node draft.");
 
-    await page.locator('[data-local-tool="path"]').click();
     await page.locator("#local-add-adjustment").click();
+    await page.locator('[data-local-tool="path"]').click();
     await clickNormalized(page, box, .2, .2);
     await clickNormalized(page, box, .65, .2);
     await clickNormalized(page, box, .45, .65);
@@ -304,8 +323,8 @@ async function clickNormalized(page, box, x, y, options = {}) {
     assert((await response).ok(), "Enter did not close a valid Path draft.");
     assert((await pathState(page)).locals === completedLocals + 1, "Enter-closed Path was not retained.");
 
-    await page.locator('[data-local-tool="path"]').click();
     await page.locator("#local-add-adjustment").click();
+    await page.locator('[data-local-tool="path"]').click();
     await clickNormalized(page, box, .3, .25);
     await clickNormalized(page, box, .7, .3);
     await clickNormalized(page, box, .5, .7);
@@ -317,8 +336,8 @@ async function clickNormalized(page, box, x, y, options = {}) {
     // A Path handle may extend beyond the image while remaining inside the
     // overlay pane. It must still be hit-testable and draggable from there.
     const beforeEdgePathLocals = (await pathState(page)).locals;
-    await page.locator('[data-local-tool="path"]').click();
     await page.locator("#local-add-adjustment").click();
+    await page.locator('[data-local-tool="path"]').click();
     await page.mouse.move(box.x + box.width * .03, box.y + box.height * .38);
     await page.mouse.down();
     await page.mouse.move(box.x + box.width * .14, box.y + box.height * .32, { steps: 4 });
@@ -342,7 +361,7 @@ async function clickNormalized(page, box, x, y, options = {}) {
       renderLocalMaskOverlay();
     });
     await page.waitForTimeout(50);
-    const edgeBox = await page.locator("#preview-canvas").boundingBox();
+    const edgeBox = await activePreviewBox(page);
     assert(edgeBox, "Letterboxed preview is unavailable.");
     const edgeHandleScreen = { x: edgeBox.x + edgeBox.width * edgeHandleBefore.x, y: edgeBox.y + edgeBox.height * edgeHandleBefore.y };
     const hitElement = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.id, edgeHandleScreen);
@@ -363,7 +382,7 @@ async function clickNormalized(page, box, x, y, options = {}) {
       renderLocalMaskOverlay();
     });
     await page.waitForTimeout(50);
-    const evidenceBox = await page.locator("#preview-canvas").boundingBox();
+    const evidenceBox = await activePreviewBox(page);
     assert(evidenceBox, "Out-of-image handle evidence preview is unavailable.");
     await page.mouse.move(
       evidenceBox.x + evidenceBox.width * current.leaf.nodes[0].in_x,
@@ -372,6 +391,46 @@ async function clickNormalized(page, box, x, y, options = {}) {
     await page.waitForTimeout(50);
     assert(await page.evaluate(() => state.hoveredPathTarget?.type === "handle"), "Out-of-image handle did not expose its hover target.");
     await page.locator("#preview-primary-pane").screenshot({ path: path.join(outputDirectory, "out-of-image-handle.png") });
+
+    // A Path assigned as a sub-mask must remain the selected editor expression
+    // through its provisional draft and commit the completed child to the same
+    // mask graph on both the client and server.
+    const parentName = await page.evaluate(() => selectedLocal().name);
+    await page.getByRole("button", { name: `More actions for ${parentName}` }).click();
+    await page.getByRole("menuitem", { name: "Create sub-mask" }).click();
+    await page.locator('[data-local-tool="path"]').click();
+    assert(await page.evaluate(() => Boolean(state.localPathDraft && state.selectedSubMaskId)), "Path sub-mask did not enter its draft editor.");
+    const subMaskBox = await activePreviewBox(page);
+    await clickNormalized(page, subMaskBox, .25, .35);
+    await clickNormalized(page, subMaskBox, .70, .30);
+    await clickNormalized(page, subMaskBox, .72, .70);
+    await clickNormalized(page, subMaskBox, .28, .72);
+    response = page.waitForResponse((item) => item.url().includes("/edit-commands") && item.request().method() === "POST");
+    await clickNormalized(page, subMaskBox, .25, .35);
+    assert((await response).ok(), "Completed Path sub-mask was rejected.");
+    const subMaskRoundTrip = await page.evaluate(async () => {
+      const local = selectedLocal();
+      const childId = state.selectedSubMaskId;
+      const client = subMaskEntry(local, childId)?.expression;
+      const server = await fetch(`/api/session/${state.session.session_id}/edit-state`).then((item) => item.json());
+      const serverLocal = server.document.local_adjustments.find((item) => item.id === local.id);
+      const serverChild = subMaskRows(serverLocal.mask).find((entry) => entry.id === childId)?.expression;
+      return {
+        draft: Boolean(state.localPathDraft),
+        clientType: client?.leaf?.type,
+        clientNodes: client?.leaf?.nodes?.length,
+        serverType: serverChild?.leaf?.type,
+        serverNodes: serverChild?.leaf?.nodes?.length,
+      };
+    });
+    assert(
+      !subMaskRoundTrip.draft
+        && subMaskRoundTrip.clientType === "path"
+        && subMaskRoundTrip.clientNodes === 4
+        && subMaskRoundTrip.serverType === "path"
+        && subMaskRoundTrip.serverNodes === 4,
+      `Path sub-mask did not round-trip through the mask graph: ${JSON.stringify(subMaskRoundTrip)}`,
+    );
 
     assert(pageErrors.length === 0, `Browser errors occurred: ${pageErrors.join(" | ")}`);
     console.log(JSON.stringify({ nodes: current.leaf.nodes.length, featherNodes: (await pathState(page)).leaf.feather_nodes.length, outputDirectory }));
