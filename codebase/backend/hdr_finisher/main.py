@@ -69,6 +69,7 @@ from .models import (
 )
 from .overlay import encode_processed_overlay_bytes
 from .preview import encode_processed_preview_bytes, encode_processed_rgba8
+from .cpu_strips import StripExecutionRefused
 from .render_cache import StaleRender, TileUnavailableError, encode_rgba_proxy
 from .finishing import geometry_output_dimensions, perspective_guide_transform, solve_perspective_guides
 from .display_probe import probe_displays
@@ -508,6 +509,69 @@ def open_project_file(request: ProjectOpenRequest) -> SessionSummary:
     return SessionSummary(session=session.to_payload())
 
 
+def _render_selected_execution(session, request, kind, adjustments, preview_long_edge, is_current):
+    """Render one preview frame through the route the request asked for.
+
+    ``execution="strips"`` is the engineering entry to the bounded CPU path of
+    PRD Phase 4. It is answered 409 with the refusal list rather than quietly
+    rendering whole-frame, because a caller measuring the bounded path needs to
+    know it did not run. Nothing in the application sets it yet.
+    """
+    local_adjustments = (
+        (
+            request.local_adjustments
+            if request.local_adjustments is not None
+            else session.local_adjustments
+        )
+        if request.include_locals
+        else []
+    )
+    if request.execution == "strips":
+        processed, report = session.render_cache.adjusted_frame_in_strips(
+            adjustments,
+            kind,
+            preview_long_edge,
+            is_current=is_current,
+            local_adjustments=local_adjustments,
+            sdr_match=session.sdr_match,
+            denoise_active=_denoise_is_active(session, kind),
+        )
+        return processed, report
+    processed = session.render_cache.adjusted_frame(
+        adjustments,
+        kind,
+        preview_long_edge,
+        is_current=is_current,
+        local_adjustments=local_adjustments,
+        sdr_match=session.sdr_match,
+    )
+    return processed, None
+
+
+def _strip_report_headers(report) -> dict[str, str]:
+    """Carry the bounded render's own account of itself back to the caller."""
+    if report is None:
+        return {}
+    return {"X-Strip-Execution": json.dumps(report.payload(), separators=(",", ":"))}
+
+
+def _denoise_is_active(session, kind: PreviewKind) -> bool:
+    denoise = getattr(session, "denoise", None)
+    lane = getattr(denoise, kind.value, None) if denoise is not None else None
+    return bool(getattr(lane, "enabled", False))
+
+
+def _strip_execution_conflict(exc: StripExecutionRefused) -> JSONResponse:
+    return JSONResponse(
+        status_code=409,
+        content={
+            "detail": "Bounded strip execution refused this graph.",
+            "code": "strip_execution_refused",
+            "refusals": list(exc.reasons),
+        },
+    )
+
+
 @app.post("/api/session/{session_id}/preview/{kind}")
 def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Response:
     if request.transient_adjustments and request.adjustments is None:
@@ -528,17 +592,13 @@ def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
     _guard_preview_resources(session, preview_long_edge)
     token = store.next_preview_token(session_id, kind)
     try:
-        processed = session.render_cache.adjusted_frame(
-            adjustments,
+        processed, strip_report = _render_selected_execution(
+            session,
+            request,
             kind,
+            adjustments,
             preview_long_edge,
-            is_current=lambda: session.preview_tokens[kind] == token,
-            local_adjustments=(
-                request.local_adjustments
-                if request.local_adjustments is not None
-                else session.local_adjustments
-            ) if request.include_locals else [],
-            sdr_match=session.sdr_match,
+            lambda: session.preview_tokens[kind] == token,
         )
         body, media_type = encode_processed_preview_bytes(
             processed,
@@ -546,6 +606,8 @@ def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
             hdr_display=request.hdr_display,
             reference_white_nits=session.hdr_reference_white_nits,
         )
+    except StripExecutionRefused as exc:
+        return _strip_execution_conflict(exc)
     except StaleRender:
         return JSONResponse(status_code=409, content={"detail": "Stale preview request dropped."})
     except RuntimeError as exc:
@@ -553,7 +615,8 @@ def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
 
     if not store.is_preview_current(session_id, kind, token):
         return JSONResponse(status_code=409, content={"detail": "Stale preview request dropped."})
-    return Response(content=body, media_type=media_type)
+    headers = _strip_report_headers(strip_report)
+    return Response(content=body, media_type=media_type, headers=headers)
 
 
 @app.get("/api/session/{session_id}/preview-preflight")
@@ -582,19 +645,17 @@ def preview_raw(session_id: str, kind: PreviewKind, request: PreviewRequest) -> 
     _guard_preview_resources(session, preview_long_edge)
     token = store.next_preview_token(session_id, kind)
     try:
-        processed = session.render_cache.adjusted_frame(
-            adjustments,
+        processed, strip_report = _render_selected_execution(
+            session,
+            request,
             kind,
+            adjustments,
             preview_long_edge,
-            is_current=lambda: session.preview_tokens[kind] == token,
-            local_adjustments=(
-                request.local_adjustments
-                if request.local_adjustments is not None
-                else session.local_adjustments
-            ) if request.include_locals else [],
-            sdr_match=session.sdr_match,
+            lambda: session.preview_tokens[kind] == token,
         )
         body = encode_processed_rgba8(processed, kind)
+    except StripExecutionRefused as exc:
+        return _strip_execution_conflict(exc)
     except StaleRender:
         return JSONResponse(status_code=409, content={"detail": "Stale raw preview request dropped."})
     if not store.is_preview_current(session_id, kind, token):
@@ -610,6 +671,7 @@ def preview_raw(session_id: str, kind: PreviewKind, request: PreviewRequest) -> 
             "X-Preview-Lane": kind.value,
             "X-Display-Interpretation": "srgb-rgba8",
             "X-Cache-Identity": f"{session_id}:{kind.value}:{token}",
+            **_strip_report_headers(strip_report),
         },
     )
 

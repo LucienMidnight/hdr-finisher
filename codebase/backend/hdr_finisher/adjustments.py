@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 
 from .color import (
@@ -48,6 +50,26 @@ SDR_FILM_HIGHLIGHT_DESATURATION_START = np.float32(0.62)
 SDR_FILM_HIGHLIGHT_DESATURATION_END = np.float32(1.0)
 
 
+@dataclass(frozen=True)
+class HighlightAnchor:
+    """Whole-frame reductions the highlight stages cannot measure from a strip.
+
+    Peak Fit fits its shoulder to the brightest pixel in the *image*, and
+    ``_clip_to_output_target`` chooses between two branches that differ once a
+    delivery channel is negative. A strip that measured either for itself would
+    get its own shoulder and its own branch, so the bounded CPU path measures
+    them once over the whole frame and injects them here.
+
+    Every field is ``None`` on the ordinary whole-frame path, which keeps
+    measuring exactly as before.
+    """
+
+    hdr_source_peak_nits: float | None = None
+    hdr_clip_transport_max: float | None = None
+    hdr_output_transport_max: float | None = None
+    sdr_peak: float | None = None
+
+
 def apply_adjustments(
     image: np.ndarray,
     adjustments: AdjustmentState,
@@ -62,6 +84,8 @@ def apply_adjustments(
     source_pixel_scale: float = 1.0,
     sdr_match: SdrMatchState | None = None,
     matched_sdr_base: np.ndarray | None = None,
+    highlight_anchor: HighlightAnchor | None = None,
+    apply_output_clamp: bool = True,
 ) -> np.ndarray:
     color_context = color_context or RenderColorContext()
     if kind == PreviewKind.SDR and sdr_match is not None and sdr_match.active:
@@ -85,6 +109,51 @@ def apply_adjustments(
             for local in local_adjustments
             if local.enabled and local.opacity > 0.0
         }
+    fixed_reference = (
+        apply_geometry(sdr_reference_image, geometry)
+        if kind == PreviewKind.SDR
+        and sdr_reference_image is not None
+        and adjustments.sdr.use_authored_base
+        else None
+    )
+    return apply_fixed_source_adjustments(
+        fixed_source,
+        adjustments,
+        kind,
+        fixed_sdr_reference=fixed_reference,
+        include_grain=include_grain,
+        include_output_highlight_compression=include_output_highlight_compression,
+        local_adjustments=local_adjustments,
+        compiled_local_masks=compiled_local_masks,
+        color_context=color_context,
+        source_pixel_scale=source_pixel_scale,
+        highlight_anchor=highlight_anchor,
+        apply_output_clamp=apply_output_clamp,
+    )
+
+
+def apply_fixed_source_adjustments(
+    fixed_source: np.ndarray,
+    adjustments: AdjustmentState,
+    kind: PreviewKind,
+    *,
+    fixed_sdr_reference: np.ndarray | None = None,
+    include_grain: bool = True,
+    include_output_highlight_compression: bool = True,
+    local_adjustments: list[LocalAdjustment] | None = None,
+    compiled_local_masks: dict[str, np.ndarray] | None = None,
+    color_context: RenderColorContext | None = None,
+    source_pixel_scale: float = 1.0,
+    highlight_anchor: HighlightAnchor | None = None,
+    apply_output_clamp: bool = True,
+) -> np.ndarray:
+    """Grade an already geometry-fixed frame, or one bounded region of one.
+
+    ``apply_adjustments`` is this function preceded by the geometry stage. The
+    bounded CPU path extracts its own post-geometry region and enters here, so
+    it must not pay for, or re-apply, a whole-frame geometry pass.
+    """
+    color_context = color_context or RenderColorContext()
     if kind == PreviewKind.HDR:
         return _apply_hdr_adjustments(
             fixed_source,
@@ -96,11 +165,12 @@ def apply_adjustments(
             compiled_local_masks=compiled_local_masks,
             color_context=color_context,
             source_pixel_scale=source_pixel_scale,
+            highlight_anchor=highlight_anchor,
+            apply_output_clamp=apply_output_clamp,
         )
-    if sdr_reference_image is not None and adjustments.sdr.use_authored_base:
-        reference = apply_geometry(sdr_reference_image, geometry)
+    if fixed_sdr_reference is not None:
         return _apply_sdr_adjustments_to_reference(
-            reference,
+            fixed_sdr_reference,
             adjustments,
             include_grain,
             include_output_highlight_compression=include_output_highlight_compression,
@@ -108,6 +178,7 @@ def apply_adjustments(
             fixed_source=fixed_source,
             compiled_local_masks=compiled_local_masks,
             source_pixel_scale=source_pixel_scale,
+            highlight_anchor=highlight_anchor,
         )
     return _apply_sdr_adjustments(
         fixed_source,
@@ -118,6 +189,7 @@ def apply_adjustments(
         fixed_source=fixed_source,
         compiled_local_masks=compiled_local_masks,
         source_pixel_scale=source_pixel_scale,
+        highlight_anchor=highlight_anchor,
     )
 
 
@@ -239,6 +311,8 @@ def _apply_hdr_adjustments(
     compiled_local_masks: dict[str, np.ndarray] | None = None,
     color_context: RenderColorContext | None = None,
     source_pixel_scale: float = 1.0,
+    highlight_anchor: HighlightAnchor | None = None,
+    apply_output_clamp: bool = True,
 ) -> np.ndarray:
     color_context = color_context or RenderColorContext()
     hdr = adjustments.hdr
@@ -281,7 +355,14 @@ def _apply_hdr_adjustments(
     if include_grain:
         result = apply_final_grain(result, adjustments, PreviewKind.HDR)
     if include_output_highlight_compression:
-        result = apply_hdr_output_highlight_compression(result, adjustments, color_context=color_context)
+        result = apply_hdr_output_highlight_compression(
+            result, adjustments, color_context=color_context, anchor=highlight_anchor
+        )
+    if not apply_output_clamp:
+        # The bounded strip path retains this exact value and runs the output
+        # stage over it afterwards. Clamping here would feed the shoulder a
+        # different picture than the whole-frame path gives it.
+        return result
     return np.clip(result, 0.0, None)
 
 
@@ -290,6 +371,7 @@ def apply_hdr_output_highlight_compression(
     adjustments: AdjustmentState,
     *,
     color_context: RenderColorContext | None = None,
+    anchor: HighlightAnchor | None = None,
 ) -> np.ndarray:
     """Apply the HDR output limiter after all creative and finishing operations.
 
@@ -302,36 +384,78 @@ def apply_hdr_output_highlight_compression(
     if not hdr.highlight_section_enabled:
         return image
     color_context = color_context or RenderColorContext()
-    compressed = _compress_scene_highlights(
+    compressed = compress_hdr_output_highlights(
+        image, adjustments, color_context=color_context, anchor=anchor
+    )
+    if hdr.highlight_compression_mode == "off":
+        return compressed
+    return clip_hdr_output_target(compressed, adjustments, color_context=color_context, anchor=anchor)
+
+
+def compress_hdr_output_highlights(
+    image: np.ndarray,
+    adjustments: AdjustmentState,
+    *,
+    color_context: RenderColorContext | None = None,
+    anchor: HighlightAnchor | None = None,
+    source_peak_nits: float | None = None,
+) -> np.ndarray:
+    """The shoulder half of the HDR output stage, without the delivery ceiling.
+
+    Exposed separately because the ceiling measures the *compressed* frame,
+    so a bounded path has to reduce between the two halves.
+    """
+    hdr = adjustments.hdr
+    color_context = color_context or RenderColorContext()
+    if source_peak_nits is None:
+        source_peak_nits = anchor.hdr_source_peak_nits if anchor is not None else None
+    if source_peak_nits is None:
+        source_peak_nits = _tone_adjusted_source_peak_nits(
+            image, hdr, tone_enabled=False, color_context=color_context
+        )
+    return _compress_scene_highlights(
         image,
         hdr.highlight_compression_start_nits,
         hdr.highlight_compression_target_nits,
         hdr.highlight_compression_softness,
         mode=hdr.highlight_compression_mode,
-        source_peak_nits=_tone_adjusted_source_peak_nits(
-            image,
-            hdr,
-            tone_enabled=False,
-            color_context=color_context,
-        ),
+        source_peak_nits=source_peak_nits,
         peak_detail=hdr.highlight_compression_peak_detail,
         bias=hdr.highlight_compression_bias,
         color_handling=hdr.highlight_compression_color_handling,
         reference_white_nits=color_context.hdr_reference_white_nits,
+        clip_transport_max=anchor.hdr_clip_transport_max if anchor is not None else None,
     )
-    if hdr.highlight_compression_mode == "off":
-        return compressed
+
+
+def clip_hdr_output_target(
+    image: np.ndarray,
+    adjustments: AdjustmentState,
+    *,
+    color_context: RenderColorContext | None = None,
+    anchor: HighlightAnchor | None = None,
+) -> np.ndarray:
+    """The delivery-ceiling half of the HDR output stage."""
+    color_context = color_context or RenderColorContext()
     return _clip_to_output_target(
-        compressed,
-        hdr.highlight_compression_target_nits,
+        image,
+        adjustments.hdr.highlight_compression_target_nits,
         color_context.hdr_reference_white_nits,
+        transport_max=anchor.hdr_output_transport_max if anchor is not None else None,
     )
+
+
+def hdr_output_transport_signal(image: np.ndarray) -> np.ndarray:
+    """The BT.2020 delivery signal ``clip_hdr_output_target`` takes its maximum of."""
+    return acescg_to_linear_bt2020(image)
 
 
 def _clip_to_output_target(
     image: np.ndarray,
     target_nits: float,
     reference_white_nits: int,
+    *,
+    transport_max: float | None = None,
 ) -> np.ndarray:
     """Bound every delivery channel at the authored output target.
 
@@ -340,7 +464,10 @@ def _clip_to_output_target(
     """
     target = np.float32(nits_to_scene_linear(max(target_nits, 1.0), reference_white_nits))
     transport = acescg_to_linear_bt2020(image)
-    if float(np.max(transport)) <= float(target):
+    # The two branches are not interchangeable once a delivery channel is
+    # negative, so a strip has to use the whole frame's maximum, not its own.
+    measured_max = float(np.max(transport)) if transport_max is None else float(transport_max)
+    if measured_max <= float(target):
         return np.clip(image, 0.0, None).astype(np.float32, copy=False)
     np.clip(transport, np.float32(0.0), target, out=transport)
     return np.clip(linear_bt2020_to_acescg(transport), 0.0, None).astype(np.float32, copy=False)
@@ -432,18 +559,10 @@ def _tone_adjusted_source_peak_nits(
     context = color_context or RenderColorContext()
     measurement = str(getattr(hdr, "highlight_compression_peak_measurement", "maximum"))
     if measurement != "manual":
-        color_handling = str(getattr(hdr, "highlight_compression_color_handling", "smooth_rolloff"))
-        if color_handling == "smooth_rolloff":
-            transport = acescg_to_linear_bt2020(tone_adjusted_image)
-            signal = np.max(transport, axis=-1)
-            np.maximum(signal, np.float32(0.0), out=signal)
-        elif color_handling == "path_to_white":
-            signal = np.max(np.clip(tone_adjusted_image, 0.0, None), axis=-1)
-        else:
-            signal = np.clip(_acescg_luma(tone_adjusted_image), 0.0, None)
-        if signal.size:
+        signal = hdr_highlight_peak_signal(tone_adjusted_image, hdr)
+        if signal is not None and signal.size:
             measured = float(np.quantile(signal, 0.9999)) if measurement == "robust" else float(np.max(signal))
-            return max(1.0, float(scene_linear_to_nits(measured, context.hdr_reference_white_nits)))
+            return hdr_peak_nits_from_measured(measured, context)
 
     peak = max(
         float(
@@ -468,6 +587,31 @@ def _tone_adjusted_source_peak_nits(
         stops = np.log2(max(peak_linear, 1e-8) / pivot)
         peak_linear = pivot * float(np.exp2(np.clip(stops * (2.0 ** contrast), -32.0, 32.0)))
     return max(1.0, float(scene_linear_to_nits(peak_linear, context.hdr_reference_white_nits)))
+
+
+def hdr_highlight_peak_signal(tone_adjusted_image: np.ndarray, hdr: object) -> np.ndarray | None:
+    """Return the per-pixel signal Peak Fit reduces, or ``None`` for a manual peak.
+
+    Shared so the bounded strip path reduces exactly the array the whole-frame
+    path reduces, rather than a second copy of this selection that could drift.
+    """
+    measurement = str(getattr(hdr, "highlight_compression_peak_measurement", "maximum"))
+    if measurement == "manual":
+        return None
+    color_handling = str(getattr(hdr, "highlight_compression_color_handling", "smooth_rolloff"))
+    if color_handling == "smooth_rolloff":
+        transport = acescg_to_linear_bt2020(tone_adjusted_image)
+        signal = np.max(transport, axis=-1)
+        np.maximum(signal, np.float32(0.0), out=signal)
+        return signal
+    if color_handling == "path_to_white":
+        return np.max(np.clip(tone_adjusted_image, 0.0, None), axis=-1)
+    return np.clip(_acescg_luma(tone_adjusted_image), 0.0, None)
+
+
+def hdr_peak_nits_from_measured(measured: float, context: RenderColorContext) -> float:
+    """Convert a reduced peak signal into the nits Peak Fit anchors on."""
+    return max(1.0, float(scene_linear_to_nits(measured, context.hdr_reference_white_nits)))
 
 
 def apply_sdr_output_highlight_compression(
@@ -501,16 +645,10 @@ def _apply_sdr_adjustments(
     fixed_source: np.ndarray | None = None,
     compiled_local_masks: dict[str, np.ndarray] | None = None,
     source_pixel_scale: float = 1.0,
+    highlight_anchor: HighlightAnchor | None = None,
 ) -> np.ndarray:
     sdr = adjustments.sdr
-    result = image.astype(np.float32, copy=True)
-    if sdr.tone_section_enabled:
-        result = np.clip(result * np.float32(2.0 ** sdr.exposure), 0.0, None)
-    if sdr.tone_section_enabled and sdr.shadow != 0:
-        shadow_mask = 1.0 - _smoothstep(0.0, 0.5, _acescg_luma(result))
-        result = np.clip(result + sdr.shadow * 0.08 * shadow_mask[..., None], 0.0, None)
-    if _sdr_color_is_enabled(adjustments):
-        result = _apply_hdr_color(result, adjustments.sdr)
+    result = _sdr_pre_highlight(image, adjustments)
     if sdr.rendering_version == "legacy_base_v1":
         tone_mapper = sdr.tone_mapper if sdr.base_section_enabled else ToneMapper.FILMIC
         tone_contrast = sdr.tone_contrast if sdr.base_section_enabled else 1.0
@@ -522,9 +660,10 @@ def _apply_sdr_adjustments(
         # Neutral SDR placement: scene 0.18 is the 100-nit diffuse-white anchor
         # on the normalized 203-nit SDR canvas. The explicit highlight stage is
         # solely responsible for fitting the remaining scene headroom.
-        result = acescg_to_linear_srgb(result * SDR_SCENE_TO_DISPLAY_SCALE)
         if sdr.highlight_section_enabled:
-            result = _compress_sdr_highlights(result, sdr)
+            result = _compress_sdr_highlights(
+                result, sdr, peak_override=None if highlight_anchor is None else highlight_anchor.sdr_peak
+            )
         result = _compress_to_srgb_gamut(result)
     if sdr.tone_equalizer_section_enabled:
         result = _apply_sdr_tone_equalizer(result, sdr)
@@ -565,17 +704,32 @@ def _apply_sdr_adjustments(
     return np.clip(result, 0.0, 1.0)
 
 
-def _apply_sdr_adjustments_to_reference(
-    image: np.ndarray,
-    adjustments: AdjustmentState,
-    include_grain: bool = True,
-    *,
-    include_output_highlight_compression: bool = True,
-    local_adjustments: list[LocalAdjustment] | None = None,
-    fixed_source: np.ndarray | None = None,
-    compiled_local_masks: dict[str, np.ndarray] | None = None,
-    source_pixel_scale: float = 1.0,
-) -> np.ndarray:
+def _sdr_pre_highlight(image: np.ndarray, adjustments: AdjustmentState) -> np.ndarray:
+    """Render the scene up to the SDR highlight stage, in display-linear sRGB.
+
+    Peak Fit measures the whole frame here, so the bounded strip path needs the
+    same picture the highlight stage sees. Sharing this prefix is what keeps the
+    measured anchor the anchor the render actually uses.
+    """
+    sdr = adjustments.sdr
+    result = image.astype(np.float32, copy=True)
+    if sdr.tone_section_enabled:
+        result = np.clip(result * np.float32(2.0 ** sdr.exposure), 0.0, None)
+    if sdr.tone_section_enabled and sdr.shadow != 0:
+        shadow_mask = 1.0 - _smoothstep(0.0, 0.5, _acescg_luma(result))
+        result = np.clip(result + sdr.shadow * 0.08 * shadow_mask[..., None], 0.0, None)
+    if _sdr_color_is_enabled(adjustments):
+        result = _apply_hdr_color(result, adjustments.sdr)
+    if sdr.rendering_version == "legacy_base_v1":
+        return result
+    # Neutral SDR placement: scene 0.18 is the 100-nit diffuse-white anchor
+    # on the normalized 203-nit SDR canvas. The explicit highlight stage is
+    # solely responsible for fitting the remaining scene headroom.
+    return acescg_to_linear_srgb(result * SDR_SCENE_TO_DISPLAY_SCALE)
+
+
+def _sdr_reference_pre_highlight(image: np.ndarray, adjustments: AdjustmentState) -> np.ndarray:
+    """The authored-SDR-base equivalent of ``_sdr_pre_highlight``."""
     sdr = adjustments.sdr
     result = image.astype(np.float32, copy=True)
     if sdr.rendering_version == "legacy_base_v1":
@@ -587,6 +741,32 @@ def _apply_sdr_adjustments_to_reference(
     if sdr.tone_section_enabled and sdr.shadow != 0:
         shadow_mask = 1.0 - _smoothstep(0.0, 0.5, _linear_luma(result))
         result = np.clip(result + sdr.shadow * 0.08 * shadow_mask[..., None], 0.0, None)
+    return result
+
+
+def sdr_highlight_stage_input(
+    image: np.ndarray, adjustments: AdjustmentState, *, authored_reference: bool
+) -> np.ndarray:
+    """Return the picture the SDR highlight stage receives, for anchor measurement."""
+    if authored_reference:
+        return _sdr_reference_pre_highlight(image, adjustments)
+    return _sdr_pre_highlight(image, adjustments)
+
+
+def _apply_sdr_adjustments_to_reference(
+    image: np.ndarray,
+    adjustments: AdjustmentState,
+    include_grain: bool = True,
+    *,
+    include_output_highlight_compression: bool = True,
+    local_adjustments: list[LocalAdjustment] | None = None,
+    fixed_source: np.ndarray | None = None,
+    compiled_local_masks: dict[str, np.ndarray] | None = None,
+    source_pixel_scale: float = 1.0,
+    highlight_anchor: HighlightAnchor | None = None,
+) -> np.ndarray:
+    sdr = adjustments.sdr
+    result = _sdr_reference_pre_highlight(image, adjustments)
     if sdr.rendering_version == "legacy_base_v1":
         if sdr.base_section_enabled:
             result = _retone_map_sdr_reference(
@@ -598,7 +778,9 @@ def _apply_sdr_adjustments_to_reference(
         if sdr.tone_section_enabled:
             result = _apply_sdr_highlight_recovery(result, sdr.highlight_recovery)
     elif sdr.highlight_section_enabled:
-        result = _compress_sdr_highlights(result, sdr)
+        result = _compress_sdr_highlights(
+            result, sdr, peak_override=None if highlight_anchor is None else highlight_anchor.sdr_peak
+        )
     if sdr.tone_equalizer_section_enabled:
         result = _apply_sdr_tone_equalizer(result, sdr)
     if sdr.tone_section_enabled:
@@ -914,7 +1096,26 @@ def _apply_sdr_highlight_recovery(image: np.ndarray, strength: float) -> np.ndar
     return result * ratio[..., None]
 
 
-def _compress_sdr_highlights(image: np.ndarray, sdr: object) -> np.ndarray:
+def sdr_highlight_peak_signal(display_linear: np.ndarray, sdr: object) -> np.ndarray | None:
+    """Return the per-pixel signal SDR Peak Fit reduces, or ``None`` when it does not measure.
+
+    ``display_linear`` is the picture as it reaches the highlight stage. Shared
+    with ``_compress_sdr_highlights`` so the bounded strip path reduces exactly
+    the array the whole-frame path reduces.
+    """
+    if str(getattr(sdr, "highlight_compression_mode", "peak_fit")) != "peak_fit":
+        return None
+    if str(getattr(sdr, "highlight_compression_peak_measurement", "maximum")) == "manual":
+        return None
+    color_handling = str(getattr(sdr, "highlight_compression_color_handling", "smooth_rolloff"))
+    if color_handling in ("smooth_rolloff", "path_to_white"):
+        return np.max(np.clip(display_linear, 0.0, None), axis=-1)
+    return np.clip(_linear_luma(display_linear), 0.0, None)
+
+
+def _compress_sdr_highlights(
+    image: np.ndarray, sdr: object, *, peak_override: float | None = None
+) -> np.ndarray:
     """Fit display-linear sRGB highlights into the normalized SDR canvas.
 
     Peak Fit uses the same stop-domain Hermite shoulder as HDR, but its target
@@ -939,6 +1140,7 @@ def _compress_sdr_highlights(image: np.ndarray, sdr: object) -> np.ndarray:
         color_handling = str(getattr(sdr, "highlight_compression_color_handling", "smooth_rolloff"))
         smooth_rolloff = color_handling == "smooth_rolloff"
         grouped_channels = color_handling == "path_to_white"
+        measured_signal = sdr_highlight_peak_signal(result, sdr)
         compression_signal = (
             np.max(np.clip(result, 0.0, None), axis=-1)
             if smooth_rolloff or grouped_channels
@@ -951,11 +1153,13 @@ def _compress_sdr_highlights(image: np.ndarray, sdr: object) -> np.ndarray:
             )
             if bool(getattr(sdr, "tone_section_enabled", True)):
                 peak *= np.float32(2.0 ** float(getattr(sdr, "exposure", 0.0)))
-        elif compression_signal.size:
+        elif peak_override is not None:
+            peak = np.float32(peak_override)
+        elif measured_signal is not None and measured_signal.size:
             peak = np.float32(
-                np.quantile(compression_signal, 0.9999)
+                np.quantile(measured_signal, 0.9999)
                 if measurement == "robust"
-                else np.max(compression_signal)
+                else np.max(measured_signal)
             )
         else:
             peak = np.float32(
@@ -1059,6 +1263,7 @@ def _compress_scene_highlights(
     bias: float = 0.0,
     color_handling: str = "smooth_rolloff",
     reference_white_nits: int = 203,
+    clip_transport_max: float | None = None,
 ) -> np.ndarray:
     """Compress luminance above ``start_nits`` smoothly toward ``target_nits``."""
     if mode == "off" or (mode == "soft_ceiling" and softness <= 0.0):
@@ -1067,7 +1272,9 @@ def _compress_scene_highlights(
     luma = _acescg_luma(result)
     positive_luma = np.clip(luma, 0.0, None)
     if mode == "clip":
-        return _clip_to_output_target(result, target_nits, reference_white_nits)
+        return _clip_to_output_target(
+            result, target_nits, reference_white_nits, transport_max=clip_transport_max
+        )
     smooth_rolloff = mode == "peak_fit" and color_handling == "smooth_rolloff"
     grouped_channels = mode == "peak_fit" and color_handling == "path_to_white"
     transport = acescg_to_linear_bt2020(result) if smooth_rolloff else None

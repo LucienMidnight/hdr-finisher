@@ -1114,6 +1114,11 @@ class PreviewRequest(BaseModel):
     include_locals: bool = True
     local_adjustments: list[LocalAdjustment] | None = None
     scope_region: ScopeRegion | None = None
+    # Engineering-only. "whole" is the shipped route; "strips" asks for the
+    # bounded CPU path and is answered 409 with the refusal list when this
+    # graph cannot run there exactly. Nothing in the application sets it yet:
+    # PRD Phase 4 builds the path and proves it before Full is selectable.
+    execution: Literal["whole", "strips"] = "whole"
 
 
 class LocalMaskPreviewRequest(BaseModel):

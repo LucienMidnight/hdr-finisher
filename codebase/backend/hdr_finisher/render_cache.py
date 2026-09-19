@@ -10,6 +10,14 @@ import numpy as np
 
 from .adjustments import apply_adjustments, render_matched_sdr_base
 from .color_context import RenderColorContext
+from .cpu_strips import (
+    DEFAULT_STRIP_BUDGET_BYTES,
+    StripCancelled,
+    StripExecutionRefused,
+    StripReport,
+    render_in_strips,
+    strip_execution_refusals,
+)
 from .finishing import (
     apply_geometry,
     apply_geometry_region,
@@ -442,6 +450,93 @@ class SessionRenderCache:
                     self._inflight.pop(flight_key, None)
                 flight.set()
         return processed
+
+    def adjusted_frame_in_strips(
+        self,
+        adjustments: AdjustmentState,
+        kind: PreviewKind,
+        long_edge: int,
+        is_current: Callable[[], bool] | None = None,
+        local_adjustments: list[LocalAdjustment] | None = None,
+        sdr_match: SdrMatchState | None = None,
+        denoise_active: bool = False,
+        budget_bytes: int = DEFAULT_STRIP_BUDGET_BYTES,
+    ) -> tuple[np.ndarray, StripReport]:
+        """Produce the same frame ``adjusted_frame`` does, through the bounded path.
+
+        Shares the frame cache with ``adjusted_frame`` under the same key, so
+        the two are interchangeable to every consumer: whichever runs first, the
+        other finds its result. It raises ``StripExecutionRefused`` for a graph
+        the strip path cannot reproduce exactly, and the caller decides whether
+        to fall back -- this method never silently renders whole-frame instead.
+        """
+        edge = max(256, int(long_edge))
+        with self._lock:
+            source_epoch = self._source_epoch
+        match_signature = sdr_match.model_dump_json() if sdr_match is not None else "inactive"
+        signature = (
+            adjustment_signature(adjustments)
+            + local_adjustment_signature(local_adjustments)
+            + match_signature
+            + repr(self.color_context.cache_key)
+        )
+        key = (source_epoch, kind.value, edge, signature)
+
+        source, sdr_reference = self._proxies(edge)
+        refusals = strip_execution_refusals(
+            adjustments,
+            kind,
+            local_adjustments=local_adjustments,
+            sdr_match=sdr_match,
+            denoise_active=denoise_active,
+            source_width=source.shape[1],
+            source_height=source.shape[0],
+            long_edge=edge,
+        )
+        if refusals:
+            raise StripExecutionRefused(refusals)
+
+        with self._lock:
+            cached = self._frames.get(key)
+            if cached is not None:
+                self._hits += 1
+                self._frames.move_to_end(key)
+        if cached is not None:
+            from .cpu_strips import plan_strips
+
+            plan = plan_strips(cached.shape[1], cached.shape[0], budget_bytes=budget_bytes)
+            return cached, StripReport(plan=plan, passes=("cached",))
+
+        if is_current is not None and not is_current():
+            with self._lock:
+                self._stale_cancellations += 1
+            raise StaleRender("A newer adjustment replaced this render.")
+
+        try:
+            processed, report = render_in_strips(
+                source,
+                adjustments,
+                kind,
+                sdr_reference_image=sdr_reference,
+                color_context=self.color_context,
+                source_pixel_scale=min(1.0, edge / max(self.image.shape[:2])),
+                long_edge=edge,
+                local_adjustments=local_adjustments,
+                sdr_match=sdr_match,
+                denoise_active=denoise_active,
+                budget_bytes=budget_bytes,
+                is_current=is_current,
+            )
+        except StripCancelled as exc:
+            with self._lock:
+                self._stale_cancellations += 1
+            raise StaleRender("A newer adjustment replaced this render.") from exc
+
+        with self._lock:
+            self._misses += 1
+            self._frames[key] = processed
+            self._evict_locked()
+        return processed, report
 
     def scope_result(
         self,
