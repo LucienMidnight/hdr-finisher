@@ -1424,8 +1424,17 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     # finished picture has to schedule a refinement rather than await here.
     assert render_to.index("await this.measureToneAdjustedPeak") < render_to.index("canvas.width = proxy.width")
     presentation = render_to[render_to.index("canvas.width = proxy.width"):]
-    presentation = presentation[:presentation.index("this.device.queue.submit")]
-    assert "await" not in presentation
+    direct_presentation = presentation[presentation.index("const intermediate = this.ensureIntermediate"):]
+    direct_presentation = direct_presentation[:direct_presentation.index("this.device.queue.submit")]
+    assert "await" not in direct_presentation
+    # The tiled helper is awaited for its validation result, but it encodes and
+    # submits synchronously before its first await. Thus the caller cannot expose
+    # a resized, cleared canvas while tiled work is pending either.
+    tiled_encoder = webgpu[
+        webgpu.index("async encodeTiledGeneration"):
+        webgpu.index("refuseRender(reason)")
+    ]
+    assert tiled_encoder.index("this.device.queue.submit") < tiled_encoder.index("await this.device.popErrorScope")
     assert "tier," in javascript[javascript.index("const sourceOptions = {"):javascript.index("try {", javascript.index("const sourceOptions = {"))]
 
 

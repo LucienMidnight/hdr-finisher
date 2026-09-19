@@ -28,6 +28,20 @@ def test_preview_diagnostics_separate_requested_and_presented_identity() -> None
     assert "previewDimensions: previewResolutionDimensions()" in javascript
 
 
+def test_full_is_engineering_gated_and_cpu_full_requests_bounded_strips() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+
+    preview_selector = html.split('id="preview-resolution"', 1)[1].split("</select>", 1)[0]
+    settings_selector = html.split('id="settings-preview-resolution"', 1)[1].split("</select>", 1)[0]
+    assert 'value="full"' not in preview_selector
+    assert 'value="full"' not in settings_selector
+    assert 'ENGINEERING_FULL_PREVIEW_QUERY = "engineeringFullPreview"' in javascript
+    assert 'option.textContent = "Full · Engineering"' in javascript
+    assert 'normalizedPreviewResolution(value) === "full" ? "strips" : "whole"' in javascript
+    assert javascript.count("execution: previewExecutionForTier()") == 2
+
+
 
 def test_gpu_memory_budget_reaches_the_renderer_and_never_gates_a_tier() -> None:
     """Phase 2: the budget decides Direct versus Tiled, not what the menu offers.

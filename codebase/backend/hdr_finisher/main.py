@@ -515,7 +515,8 @@ def _render_selected_execution(session, request, kind, adjustments, preview_long
     ``execution="strips"`` is the engineering entry to the bounded CPU path of
     PRD Phase 4. It is answered 409 with the refusal list rather than quietly
     rendering whole-frame, because a caller measuring the bounded path needs to
-    know it did not run. Nothing in the application sets it yet.
+    know it did not run. The engineering-only Full selector requests this route
+    for CPU previews; public tiers continue to use whole-frame execution.
     """
     local_adjustments = (
         (

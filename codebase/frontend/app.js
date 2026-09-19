@@ -205,6 +205,7 @@ const COMPACT_WORKSPACE_QUERY = "(max-width: 1499px)";
 /** @typedef {"1024"|"2048"|"4096"|"full"} PreviewResolution */
 const PREVIEW_RESOLUTION_OPTIONS = new Set(["1024", "2048", "4096", "full"]);
 const DEFAULT_PREVIEW_RESOLUTION = "1024";
+const ENGINEERING_FULL_PREVIEW_QUERY = "engineeringFullPreview";
 const DEFAULT_SCOPE_QUALITY = "detailed";
 const SCOPE_QUALITY_PROFILES = {
   performance: { densityGain: 1.35, horizontalSpread: 1, interactiveEdge: 384, settledEdge: 768, refinementEdge: 960 },
@@ -878,6 +879,10 @@ function previewResolutionDimensions(value = state.previewResolution) {
     longEdge,
     tier: normalized,
   };
+}
+
+function previewExecutionForTier(value = state.previewResolution) {
+  return normalizedPreviewResolution(value) === "full" ? "strips" : "whole";
 }
 
 function previewNeedsRefinement() {
@@ -1811,6 +1816,7 @@ boot();
 
 async function boot() {
   clearLegacyUiPreferences();
+  installEngineeringFullPreviewOptions();
   initializeLocalOverlayColor();
   initializePreviewPreferences();
   initializeInstrumentShell();
@@ -1847,6 +1853,23 @@ async function boot() {
   observeScopeSize();
   observeGraphEditorSizes();
   observeViewerSize();
+}
+
+function engineeringFullPreviewEnabled() {
+  return new URLSearchParams(window.location.search).get(ENGINEERING_FULL_PREVIEW_QUERY) === "1";
+}
+
+function installEngineeringFullPreviewOptions() {
+  if (!engineeringFullPreviewEnabled()) return false;
+  [els.previewResolution, document.getElementById("settings-preview-resolution")].forEach((select) => {
+    if (!select || select.querySelector('option[value="full"]')) return;
+    const option = document.createElement("option");
+    option.value = "full";
+    option.textContent = "Full · Engineering";
+    select.append(option);
+  });
+  document.documentElement.dataset.engineeringFullPreview = "true";
+  return true;
 }
 
 async function initializeGpuPreview() {
@@ -2031,6 +2054,7 @@ function initializePreviewScheduler() {
       previewResolution: normalizedPreviewResolution(),
       previewMaxDimension: previewTargetLongEdge(),
       previewDimensions: previewResolutionDimensions(),
+      engineeringFullPreview: engineeringFullPreviewEnabled(),
       longEdge: settledProxyLongEdge(),
     }),
   };
@@ -4245,6 +4269,7 @@ async function renderPreviewForLane(
         ? JSON.parse(JSON.stringify(localAdjustments()))
         : null,
       long_edge: longEdge,
+      execution: previewExecutionForTier(),
       hdr_display: mediaQueryMatch("(dynamic-range: high)"),
     }),
     signal: controller.signal,
@@ -4260,7 +4285,15 @@ async function renderPreviewForLane(
     && generation === state.previewGeneration[lane]
     && signature === geometrySignature();
   if (response.status === 409) {
-    if (displayWhenReady && showProgress && requestIsCurrent()) setPreviewMessage("A newer adjustment replaced this render.", progressSteps[0]);
+    const payload = await safeJson(response);
+    if (payload?.code === "strip_execution_refused" && displayWhenReady && requestIsCurrent()) {
+      const reasons = Array.isArray(payload.refusals) && payload.refusals.length
+        ? ` ${payload.refusals.join(", ")}.`
+        : "";
+      markPreviewUnavailable(`${payload.detail || "Bounded Full preview is unavailable for this graph."}${reasons}`);
+    } else if (displayWhenReady && showProgress && requestIsCurrent()) {
+      setPreviewMessage("A newer adjustment replaced this render.", progressSteps[0]);
+    }
     return false;
   }
   if (!response.ok) {
@@ -4346,6 +4379,7 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
       long_edge: longEdge,
       generation,
       tier: "settled",
+      execution: previewExecutionForTier(),
       hdr_display: false,
     }),
     signal: controller.signal,
@@ -4353,7 +4387,17 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
     if (error.name !== "AbortError") console.error(error);
     return null;
   });
-  if (!response || response.status === 409 || controller !== state.previewControllers[lane]) return false;
+  if (!response || controller !== state.previewControllers[lane]) return false;
+  if (response.status === 409) {
+    const payload = await safeJson(response);
+    if (payload?.code === "strip_execution_refused" && displayWhenReady && lane === state.currentView) {
+      const reasons = Array.isArray(payload.refusals) && payload.refusals.length
+        ? ` ${payload.refusals.join(", ")}.`
+        : "";
+      markPreviewUnavailable(`${payload.detail || "Bounded Full preview is unavailable for this graph."}${reasons}`);
+    }
+    return false;
+  }
   if (!response.ok) {
     // The raw path already retained the previous frame by returning early.
     // Reporting Unavailable is what turns a silent retention into a truthful
