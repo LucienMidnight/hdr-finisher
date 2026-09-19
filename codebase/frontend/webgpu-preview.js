@@ -1213,6 +1213,80 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     }
 
     /**
+     * The proxy-to-source scale every parameter build needs.
+     *
+     * Direct and Tiled must derive this identically or the same grade would
+     * read as two different pictures depending on which route ran.
+     */
+    sourcePixelScaleFor(proxy, sourceSize) {
+      const sourceLongEdge = Math.max(
+        Number(sourceSize?.width) || proxy.width,
+        Number(sourceSize?.height) || proxy.height,
+      );
+      return Math.min(1, Math.max(proxy.width, proxy.height) / Math.max(1, sourceLongEdge));
+    }
+
+    /** Which optional stages this parameter set actually switches on. */
+    graphActivity(params) {
+      return {
+        spatialActive: params[78] > 0.5 && params[79] > 0
+          && (params[85] > 0.5 || (params[92] > 0.5 && params[93] > 0)),
+        detailActive: params[148] > 0.5
+          && (Math.abs(params[149]) > 0.000001 || Math.abs(params[150]) > 0.000001 || params[152] > 0.000001),
+      };
+    }
+
+    /**
+     * Describe the highlight-peak anchor this render needs, without taking it.
+     *
+     * The anchor is a whole-image measurement, and its cache key is a long
+     * list of parameter indices that has to mean the same thing on both
+     * routes -- a Direct render and a Tiled one of the same grade must hit the
+     * same cache entry, or the shoulder moves when execution changes. Returns
+     * `null` when this graph does not measure, and otherwise the key and any
+     * cached value; *taking* the measurement is left to the caller, because
+     * Direct and Tiled differ on when they are willing to await one.
+     */
+    highlightAnchorRequest(lane, adjustments, proxy, params) {
+      const measurement = adjustments[lane]?.highlight_compression_peak_measurement || "maximum";
+      const measures = (lane === "hdr" || params[159] > 0.5) && params[74] === 1 && measurement !== "manual";
+      if (!measures) return null;
+      const key = JSON.stringify([
+        proxy.identity, lane, params[1], params[159], measurement,
+        params[2], params[4], params[8], params[9], params[110],
+        ...params.slice(10, 12), ...params.slice(61, 73),
+      ]);
+      return { measurement, key, cached: this.peakReductionCache.get(key) };
+    }
+
+    /** Upload the parameter and curve storage both routes read from. */
+    uploadParamsAndCurves(lane, adjustments, curveSampler, params) {
+      const curves = buildCurves(lane, adjustments, curveSampler, this.curveSampleCache);
+      this.ensureStorageBuffers(params.byteLength, curves.byteLength);
+      this.device.queue.writeBuffer(this.paramBuffer, 0, params);
+      if (curves !== this.lastCurveSamples) {
+        this.device.queue.writeBuffer(this.curveBuffer, 0, curves);
+        this.lastCurveSamples = curves;
+      }
+      return curves;
+    }
+
+    /** The one bind-group shape every pass on either route uses. */
+    bindGraphResources(sourceView, spatialView, parameterBinding = { buffer: this.paramBuffer }, overlayView = spatialView) {
+      return this.device.createBindGroup({
+        layout: this.bindGroupLayout,
+        entries: [
+          { binding: 0, resource: sourceView },
+          { binding: 1, resource: parameterBinding },
+          { binding: 2, resource: { buffer: this.curveBuffer } },
+          { binding: 3, resource: spatialView },
+          { binding: 4, resource: this.spatialSampler },
+          { binding: 5, resource: overlayView },
+        ],
+      });
+    }
+
+    /**
      * One reusable tile-sized working set.
      *
      * This is the whole point of tiled execution: the graph's intermediates
@@ -1300,16 +1374,12 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const surface = this.configureSurface(canvas, context, lane === "hdr");
       const pipelines = this.pipelineFor(surface.format);
 
-      const sourceLongEdge = Math.max(Number(sourceSize?.width) || proxy.width, Number(sourceSize?.height) || proxy.height);
-      const sourcePixelScale = Math.min(1, Math.max(proxy.width, proxy.height) / Math.max(1, sourceLongEdge));
       const params = buildParams(
-        lane, adjustments, proxy.workingSpace, surface.hdr, referenceWhiteNits, sourcePixelScale,
+        lane, adjustments, proxy.workingSpace, surface.hdr, referenceWhiteNits,
+        this.sourcePixelScaleFor(proxy, sourceSize),
         sourceOptions?.inheritedGrain || null,
       );
-      const spatialActive = params[78] > 0.5 && params[79] > 0
-        && (params[85] > 0.5 || (params[92] > 0.5 && params[93] > 0));
-      const detailActive = params[148] > 0.5
-        && (Math.abs(params[149]) > 0.000001 || Math.abs(params[150]) > 0.000001 || params[152] > 0.000001);
+      const { spatialActive, detailActive } = this.graphActivity(params);
 
       const refusals = this.tiledExecutionRefusals({
         activeLocals, detailActive, spatialActive, overlayMask: maskOverlay, params, surface,
@@ -1322,26 +1392,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // The highlight anchor is a whole-image measurement, so it is taken once
       // and shared by every tile. Measuring per tile would make each tile fit
       // its own peak and the seams would show.
-      const anchorMeasurement = adjustments[lane]?.highlight_compression_peak_measurement || "maximum";
-      if ((lane === "hdr" || params[159] > 0.5) && params[74] === 1 && anchorMeasurement !== "manual") {
-        const peakKey = JSON.stringify([
-          proxy.identity, lane, params[1], params[159], anchorMeasurement,
-          params[2], params[4], params[8], params[9], params[110],
-          ...params.slice(10, 12), ...params.slice(61, 73),
-        ]);
-        const cachedPeak = this.peakReductionCache.get(peakKey);
-        params[75] = cachedPeak !== undefined
-          ? cachedPeak
-          : await this.measureToneAdjustedPeak(proxy, params, anchorMeasurement, peakKey);
+      const anchor = this.highlightAnchorRequest(lane, adjustments, proxy, params);
+      if (anchor) {
+        params[75] = anchor.cached !== undefined
+          ? anchor.cached
+          : await this.measureToneAdjustedPeak(proxy, params, anchor.measurement, anchor.key);
       }
 
-      const curves = buildCurves(lane, adjustments, curveSampler, this.curveSampleCache);
-      this.ensureStorageBuffers(params.byteLength, curves.byteLength);
-      this.device.queue.writeBuffer(this.paramBuffer, 0, params);
-      if (curves !== this.lastCurveSamples) {
-        this.device.queue.writeBuffer(this.curveBuffer, 0, curves);
-        this.lastCurveSamples = curves;
-      }
+      this.uploadParamsAndCurves(lane, adjustments, curveSampler, params);
 
       const scheduler = this.tileScheduler instanceof Scheduler
         ? this.tileScheduler
@@ -1385,25 +1443,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       });
       this.device.queue.writeBuffer(this.tileCompositeParamBuffer, 0, slots);
 
-      const bind = (sourceView, spatialView, parameterBinding = { buffer: this.paramBuffer }, overlayView = spatialView) => this.device.createBindGroup({
-        layout: this.bindGroupLayout,
-        entries: [
-          { binding: 0, resource: sourceView },
-          { binding: 1, resource: parameterBinding },
-          { binding: 2, resource: { buffer: this.curveBuffer } },
-          { binding: 3, resource: spatialView },
-          { binding: 4, resource: this.spatialSampler },
-          { binding: 5, resource: overlayView },
-        ],
-      });
       const tileSourceView = graph.sourceTexture.createView();
       const baseView = graph.baseTexture.createView();
       const filmView = graph.filmTexture.createView();
       const finishView = graph.finishTexture.createView();
-      const baseBind = bind(tileSourceView, tileSourceView);
-      const responseBind = bind(baseView, tileSourceView);
-      const finishBind = bind(filmView, tileSourceView);
-      const compositeBinds = plan.tiles.map((tile, index) => bind(
+      const baseBind = this.bindGraphResources(tileSourceView, tileSourceView);
+      const responseBind = this.bindGraphResources(baseView, tileSourceView);
+      const finishBind = this.bindGraphResources(filmView, tileSourceView);
+      const compositeBinds = plan.tiles.map((tile, index) => this.bindGraphResources(
         finishView,
         tileSourceView,
         { buffer: this.tileCompositeParamBuffer, offset: index * stride, size: params.byteLength },
@@ -1558,8 +1605,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       if (!context) throw new Error("The comparison WebGPU canvas context is unavailable");
       let surface = this.configureSurface(canvas, context, lane === "hdr");
       let pipelines = this.pipelineFor(surface.format);
-      const sourceLongEdge = Math.max(Number(sourceSize?.width) || proxy.width, Number(sourceSize?.height) || proxy.height);
-      const sourcePixelScale = Math.min(1, Math.max(proxy.width, proxy.height) / Math.max(1, sourceLongEdge));
+      const sourcePixelScale = this.sourcePixelScaleFor(proxy, sourceSize);
       let params = buildParams(
         lane,
         adjustments,
@@ -1576,19 +1622,15 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // option here. Measuring the finished picture instead of this
       // source-domain estimate needs the scheduler to request a refinement
       // after the reduction lands, rather than an await inside the render.
-      const anchorMeasurement = adjustments[lane]?.highlight_compression_peak_measurement || "maximum";
-      if ((lane === "hdr" || params[159] > 0.5) && params[74] === 1 && anchorMeasurement !== "manual") {
-        const peakKey = JSON.stringify([
-          sourceProxy.identity, lane, params[1], params[159],
-          anchorMeasurement,
-          params[2], params[4], params[8], params[9], params[110],
-          ...params.slice(10, 12), ...params.slice(61, 73),
-        ]);
-        const cachedPeak = this.peakReductionCache.get(peakKey);
-        if (cachedPeak !== undefined) {
-          params[75] = cachedPeak;
+      const anchor = this.highlightAnchorRequest(lane, adjustments, sourceProxy, params);
+      if (anchor) {
+        if (anchor.cached !== undefined) {
+          params[75] = anchor.cached;
         } else if (sourceOptions?.tier !== "interactive") {
-          params[75] = await this.measureToneAdjustedPeak(sourceProxy, params, anchorMeasurement, peakKey);
+          // Only Direct declines to await here: an interactive frame that
+          // stopped for a whole-image reduction would miss its deadline, and
+          // Tiled is never the interactive route.
+          params[75] = await this.measureToneAdjustedPeak(sourceProxy, params, anchor.measurement, anchor.key);
           if (resourceGeneration !== this.resourceGeneration) return this.refuseRender("peak:resource-generation");
           if (serial !== this.renderSerials.get(canvas)) return this.refuseRender("peak:newer-render-started");
           if (sourceOptions?.isCurrent?.() === false) return this.refuseRender("peak:application-not-current");
@@ -1628,17 +1670,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       params[133] = Number(overlayColor[0]) || 0;
       params[134] = Number(overlayColor[1]) || 0;
       params[135] = Number(overlayColor[2]) || 0;
-      const curves = buildCurves(lane, adjustments, curveSampler, this.curveSampleCache);
-      this.ensureStorageBuffers(params.byteLength, curves.byteLength);
-      this.device.queue.writeBuffer(this.paramBuffer, 0, params);
-      if (curves !== this.lastCurveSamples) {
-        this.device.queue.writeBuffer(this.curveBuffer, 0, curves);
-        this.lastCurveSamples = curves;
-      }
-      const spatialActive = params[78] > 0.5 && params[79] > 0
-        && (params[85] > 0.5 || (params[92] > 0.5 && params[93] > 0));
-      const detailActive = params[148] > 0.5
-        && (Math.abs(params[149]) > 0.000001 || Math.abs(params[150]) > 0.000001 || params[152] > 0.000001);
+      this.uploadParamsAndCurves(lane, adjustments, curveSampler, params);
+      const { spatialActive, detailActive } = this.graphActivity(params);
       const localDetailActive = activeLocals.some((local) => gpuLocalDetailActive(local[`${lane}_grade`]));
       // Admission runs against the graph this render is about to build, so the
       // plan and the decision describe real work rather than a generic guess.
@@ -1668,17 +1701,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         });
         return this.refuseRender("intermediate-allocation-failed");
       }
-      const makeBindGroup = (sourceView, spatialView, parameterBuffer = this.paramBuffer, overlayView = spatialView) => this.device.createBindGroup({
-          layout: this.bindGroupLayout,
-          entries: [
-            { binding: 0, resource: sourceView },
-            { binding: 1, resource: { buffer: parameterBuffer } },
-            { binding: 2, resource: { buffer: this.curveBuffer } },
-            { binding: 3, resource: spatialView },
-            { binding: 4, resource: this.spatialSampler },
-            { binding: 5, resource: overlayView },
-          ],
-      });
+      // Direct's passes each own a whole parameter buffer, while Tiled binds
+      // one buffer at a per-tile offset, so this adapts the buffer to the
+      // binding resource the shared helper takes.
+      const makeBindGroup = (sourceView, spatialView, parameterBuffer = this.paramBuffer, overlayView = spatialView) =>
+        this.bindGraphResources(sourceView, spatialView, { buffer: parameterBuffer }, overlayView);
       // When spatial effects are inactive, use the immutable proxy as the
       // required placeholder binding. Binding filmTexture here would make the
       // response pass sample from the same texture it renders into, which is
