@@ -790,8 +790,18 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         this.adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
         if (!this.adapter) throw new Error("No WebGPU adapter was returned");
         const timestampQueries = this.adapter.features.has("timestamp-query");
+        // The default WebGPU maxBufferSize is 256 MiB even when the adapter can
+        // support more. An 8192² RGBA16F Full surface is 512 MiB, and Chromium's
+        // compositor/readback path may require one buffer of that size. Request
+        // only the bounded surface maximum, capped to the adapter's capability;
+        // this raises a limit but does not allocate the buffer.
+        const fullSurfaceBufferLimit = Math.min(
+          Number(this.adapter.limits.maxBufferSize) || (256 * 1024 * 1024),
+          512 * 1024 * 1024,
+        );
         this.device = await this.adapter.requestDevice({
           requiredFeatures: timestampQueries ? ["timestamp-query"] : [],
+          requiredLimits: { maxBufferSize: fullSurfaceBufferLimit },
         });
         const info = this.adapter.info || {};
         const adapterDescription = [info.vendor, info.architecture, info.device, info.description]
@@ -3192,12 +3202,32 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           if (firstTileMs === null) firstTileMs = performance.now() - startedAt;
           transferredBytes += data.byteLength;
           chunkCount += 1;
-          this.device.queue.writeTexture(
-            { texture, origin: { x: 0, y: top } },
-            data,
-            { offset: 0, bytesPerRow, rowsPerImage: rows },
-            { width, height: rows },
-          );
+          // queue.writeTexture lets Chromium accumulate every chunk in one
+          // Dawn dynamic-uploader buffer until the eventual render submit. At
+          // 42 MP that silently reconstructs an image-sized staging allocation
+          // and exceeds WebGPU's default 256 MiB maxBufferSize. Give each chunk
+          // its own mapped COPY_SRC buffer and finish that copy before moving
+          // on. Source preparation may use multiple submissions; the finished
+          // canvas generation is still one atomic render submission.
+          const staging = this.device.createBuffer({
+            size: data.byteLength,
+            usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.MAP_WRITE,
+            mappedAtCreation: true,
+          });
+          try {
+            new Uint8Array(staging.getMappedRange()).set(new Uint8Array(data));
+            staging.unmap();
+            const encoder = this.device.createCommandEncoder();
+            encoder.copyBufferToTexture(
+              { buffer: staging, offset: 0, bytesPerRow, rowsPerImage: rows },
+              { texture, origin: { x: 0, y: top } },
+              { width, height: rows },
+            );
+            this.device.queue.submit([encoder.finish()]);
+            await this.device.queue.onSubmittedWorkDone();
+          } finally {
+            staging.destroy();
+          }
         }
       } catch (error) {
         this.destroyAfterActiveRenders(() => texture.destroy());

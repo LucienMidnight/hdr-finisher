@@ -6,7 +6,7 @@
 // of the gate: it compares what the viewer actually sees, not an intermediate.
 //
 //   node tests/tiled-direct-parity.js --url http://127.0.0.1:8000 \
-//     --input local-test-media/inputs/<file>
+//     --input local-test-media/inputs/<file> [--native]
 
 const fs = require("fs");
 const path = require("path");
@@ -26,6 +26,7 @@ const MAX_DIFFERING_FRACTION = 0.0005;
 (async () => {
   const url = argument("--url", process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000");
   const input = argument("--input", null);
+  const native = process.argv.includes("--native");
   const tileSizes = (argument("--tile-sizes", "256,512") || "").split(",").map(Number).filter(Boolean);
 
   const browser = await chromium.launch({
@@ -38,7 +39,9 @@ const MAX_DIFFERING_FRACTION = 0.0005;
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
   try {
-    await page.goto(url, { waitUntil: "networkidle" });
+    const pageUrl = new URL(url);
+    if (native) pageUrl.searchParams.set("engineeringFullPreview", "1");
+    await page.goto(pageUrl.toString(), { waitUntil: "networkidle" });
     if (input) {
       const resolved = path.resolve(input);
       if (!fs.existsSync(resolved)) throw new Error(`Input does not exist: ${resolved}`);
@@ -49,6 +52,21 @@ const MAX_DIFFERING_FRACTION = 0.0005;
     await page.waitForFunction(() => state.session?.session_id, null, { timeout: 600000 });
     await page.waitForFunction(() => state.gpuPreview?.available === true, null, { timeout: 120000 });
     await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 180000 });
+
+    if (native) {
+      await page.locator("#preview-resolution").evaluate((select) => {
+        select.value = "full";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      await page.waitForFunction(() => state.acceptedPresentation?.requestedTier === "full"
+        && state.acceptedPresentation?.exact === true
+        && viewerState().status === "ready", null, { timeout: 600000 });
+      await page.evaluate(async () => {
+        if (state.gpuDraftInFlight) await state.gpuDraftInFlight.catch(() => false);
+        state.previewScheduler?.cancel();
+        applyGpuMemoryBudget(8);
+      });
+    }
 
     // Exercise a non-neutral grade so parity is tested on real tone mapping,
     // not on an identity transform that any implementation would match.
@@ -66,27 +84,75 @@ const MAX_DIFFERING_FRACTION = 0.0005;
         const longEdge = previewTargetLongEdge();
 
         const direct = await window.HDRFinisherPerformance.renderGpuTier(longEdge);
-        if (!direct) return { error: "direct render failed" };
+        if (!direct) return {
+          error: "direct render failed",
+          lastRefusal: state.lastGpuDraftRefusal || null,
+          lastRenderRefusal: state.gpuPreview?.lastRenderRefusal || null,
+          diagnostics: state.gpuPreview?.diagnosticsSnapshot?.() || null,
+        };
+        if (state.acceptedPresentation?.execution !== "direct") return {
+          error: `planner selected ${state.acceptedPresentation?.execution || "unknown"}, not direct`,
+        };
+        await state.gpuPreview.device.queue.onSubmittedWorkDone();
         return { staged: "direct", width: canvas.width, height: canvas.height };
       }, tileSize);
       if (comparison.error) throw new Error(`tileSize ${tileSize}: ${comparison.error}`);
 
+      if (native) {
+        const dimensions = await page.locator("#preview-canvas").evaluate((canvas) => {
+          canvas.style.setProperty("width", `${canvas.width}px`, "important");
+          canvas.style.setProperty("height", `${canvas.height}px`, "important");
+          canvas.style.setProperty("max-width", "none", "important");
+          canvas.style.setProperty("max-height", "none", "important");
+          canvas.style.setProperty("position", "absolute", "important");
+          canvas.style.setProperty("inset", "0 auto auto 0", "important");
+          canvas.style.setProperty("z-index", "2147483647", "important");
+          canvas.style.setProperty("transform", "none", "important");
+          canvas.style.setProperty("transform-origin", "0 0", "important");
+          canvas.style.setProperty("object-fit", "fill", "important");
+          document.body.append(canvas);
+          for (const child of document.body.children) {
+            if (child !== canvas) child.style.setProperty("display", "none", "important");
+          }
+          for (const root of [document.documentElement, document.body]) {
+            root.style.setProperty("width", `${canvas.width}px`, "important");
+            root.style.setProperty("height", `${canvas.height}px`, "important");
+            root.style.setProperty("min-width", `${canvas.width}px`, "important");
+            root.style.setProperty("min-height", `${canvas.height}px`, "important");
+            root.style.setProperty("overflow", "visible", "important");
+          }
+          return { width: canvas.width, height: canvas.height };
+        });
+        assertNativeDimensions(dimensions);
+      }
+
       // drawImage() cannot read back a WebGPU canvas in headless Chromium, so
-      // the presented frame is captured as an element screenshot and decoded
-      // into pixels. This compares what the compositor actually shows.
+      // the presented frame is captured from the compositor and decoded into
+      // pixels. Native mode walks viewport-sized captures over the isolated
+      // canvas because one image-sized screenshot exceeds default GPU buffers.
       await page.waitForTimeout(250);
-      const directShot = (await page.locator("#preview-canvas").screenshot()).toString("base64");
+      const directShot = native
+        ? await captureCanvasTiles(page, comparison.width, comparison.height)
+        : [{ data: (await page.locator("#preview-canvas").screenshot()).toString("base64"), x: 0, y: 0 }];
 
       const tiledResult = await page.evaluate(async (size) => {
         const result = await window.HDRFinisherPerformance.renderTiledTier(previewTargetLongEdge(), { tileSize: size });
-        if (!result?.rendered) return { error: `tiled render refused: ${(result?.refusals || []).join(", ")}` };
+        if (!result?.rendered) return {
+          error: `tiled render refused: ${(result?.refusals || []).join(", ")}`,
+          diagnostics: state.gpuPreview?.diagnosticsSnapshot?.() || null,
+        };
+        await state.gpuPreview.device.queue.onSubmittedWorkDone();
         return { metrics: result.metrics };
       }, tileSize);
-      if (tiledResult.error) throw new Error(`tileSize ${tileSize}: ${tiledResult.error}`);
+      if (tiledResult.error) throw new Error(`tileSize ${tileSize}: ${JSON.stringify(tiledResult)}`);
       await page.waitForTimeout(250);
-      const tiledShot = (await page.locator("#preview-canvas").screenshot()).toString("base64");
+      const tiledShot = native
+        ? await captureCanvasTiles(page, comparison.width, comparison.height)
+        : [{ data: (await page.locator("#preview-canvas").screenshot()).toString("base64"), x: 0, y: 0 }];
 
-      comparison = await page.evaluate(async ({ a, b }) => {
+      const captures = [];
+      for (let captureIndex = 0; captureIndex < directShot.length; captureIndex += 1) {
+        captures.push(await page.evaluate(async ({ a, b }) => {
         const decode = async (base64) => {
           const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${base64}`)).blob());
           const surface = document.createElement("canvas");
@@ -118,18 +184,34 @@ const MAX_DIFFERING_FRACTION = 0.0005;
           }
           if (pixelDelta > 0) differing += 1;
         }
-        return {
+          return {
           width: directImage.width,
           height: directImage.height,
           samples: directPixels.length / 4,
           differing,
           maxDelta,
           worst,
-        };
-      }, { a: directShot, b: tiledShot });
+          };
+        }, { a: directShot[captureIndex].data, b: tiledShot[captureIndex].data }));
+        captures[captureIndex].origin = { x: directShot[captureIndex].x, y: directShot[captureIndex].y };
+      }
+      const differingCaptures = captures
+        .filter((capture) => capture.differing > 0)
+        .map((capture) => ({ origin: capture.origin, differing: capture.differing, maxDelta: capture.maxDelta }));
+      comparison = captures.reduce((total, capture) => ({
+        width: native ? comparison.width : capture.width,
+        height: native ? comparison.height : capture.height,
+        samples: total.samples + capture.samples,
+        differing: total.differing + capture.differing,
+        maxDelta: Math.max(total.maxDelta, capture.maxDelta),
+        worst: total.maxDelta >= capture.maxDelta ? total.worst : capture.worst,
+        differingCaptures,
+        error: total.error || capture.error,
+      }), { samples: 0, differing: 0, maxDelta: 0, worst: null, error: null });
       comparison.metrics = tiledResult.metrics;
 
       if (comparison.error) throw new Error(`tileSize ${tileSize}: ${comparison.error}`);
+      if (native) assertNativeDimensions(comparison);
       const fraction = comparison.differing / comparison.samples;
       const passed = comparison.maxDelta <= MAX_CHANNEL_DELTA && fraction <= MAX_DIFFERING_FRACTION;
       results.push({ tileSize, ...comparison, differingFraction: fraction, passed });
@@ -139,6 +221,7 @@ const MAX_DIFFERING_FRACTION = 0.0005;
         + `maxDelta ${comparison.maxDelta}  differing ${comparison.differing}/${comparison.samples} `
         + `(${(fraction * 100).toFixed(4)}%)  ${passed ? "PASS" : "FAIL"}`,
       );
+      if (!passed) console.log(JSON.stringify({ worst: comparison.worst, differingCaptures }, null, 2));
     }
 
     // A refusal must be explicit rather than a silent fallback to Direct.
@@ -166,3 +249,31 @@ const MAX_DIFFERING_FRACTION = 0.0005;
     await browser.close();
   }
 })();
+
+function assertNativeDimensions(dimensions) {
+  const pixels = Number(dimensions.width) * Number(dimensions.height);
+  if (!(pixels >= 40_000_000)) {
+    throw new Error(`Native parity capture is not a 42 MP-class frame: ${dimensions.width}x${dimensions.height}`);
+  }
+}
+
+async function captureCanvasTiles(page, width, height, captureEdge = 1024) {
+  const captures = [];
+  for (let y = 0; y < height; y += captureEdge) {
+    for (let x = 0; x < width; x += captureEdge) {
+      const tileWidth = Math.min(captureEdge, width - x);
+      const tileHeight = Math.min(captureEdge, height - y);
+      await page.setViewportSize({ width: tileWidth, height: tileHeight });
+      await page.evaluate(({ left, top }) => {
+        window.scrollTo(left, top);
+        return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      }, { left: x, top: y });
+      captures.push({
+        data: (await page.screenshot({ animations: "disabled" })).toString("base64"),
+        x,
+        y,
+      });
+    }
+  }
+  return captures;
+}

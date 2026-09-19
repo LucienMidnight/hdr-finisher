@@ -2,7 +2,7 @@
 // image-sized browser response buffer."
 //
 // The renderer's streamed loader is driven against a fake backend that records
-// every request and every writeTexture, so the suite can assert the peak
+// every request and bounded staging copy, so the suite can assert the peak
 // response buffer, the assembled coverage, and the stale-source behavior
 // without a WebGPU adapter or a live server.
 
@@ -118,7 +118,29 @@ function createDevice() {
         return { __entry: entry, destroy() { entry.destroyed = true; } };
       },
       createBuffer(descriptor) {
-        return { size: descriptor.size, destroy() {} };
+        const data = new ArrayBuffer(descriptor.size);
+        return {
+          size: descriptor.size,
+          __data: data,
+          getMappedRange: () => data,
+          unmap() {},
+          destroy() {},
+        };
+      },
+      createCommandEncoder() {
+        return {
+          copyBufferToTexture(source, destination, size) {
+            writes.push({
+              originY: destination.origin?.y ?? 0,
+              bytes: source.buffer.__data.byteLength,
+              rows: size.height,
+              width: size.width,
+              bytesPerRow: source.bytesPerRow,
+              data: source.buffer.__data,
+            });
+          },
+          finish: () => ({}),
+        };
       },
       queue: {
         writeTexture(destination, data, layout, size) {
@@ -130,6 +152,8 @@ function createDevice() {
             bytesPerRow: layout.bytesPerRow,
           });
         },
+        submit() {},
+        onSubmittedWorkDone: async () => {},
       },
     },
   };
