@@ -995,7 +995,7 @@ function applyPreviewResolution(value, { schedule = true } = {}) {
   renderViewerStatus();
 }
 
-function acceptPresentation(lane, schedulerTier, width, height, transport, fallbackReason = "", sourceSerial = null, generation = state.previewGeneration[lane]) {
+function acceptPresentation(lane, schedulerTier, width, height, transport, fallbackReason = "", sourceSerial = null, generation = state.previewGeneration[lane], execution = null) {
   const longEdge = Math.max(Number(width) || 0, Number(height) || 0);
   const requestedTier = normalizedPreviewResolution();
   // `tier` is what this image actually is, not what the user asked for. A
@@ -1014,6 +1014,7 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
     height: Number(height) || null,
     longEdge,
     transport,
+    execution,
     sourceSerial,
     fallbackReason,
   };
@@ -1934,9 +1935,8 @@ function initializePreviewScheduler() {
       longEdge: Number(longEdge),
       tier: "settled",
     }),
-    // Phase 4 tiled execution is reachable only from here until Direct/Tiled
-    // parity is proved. Nothing in the normal render path calls it, so the
-    // admitted execution for every user-visible render is still Direct.
+    // Diagnostic entry for explicit parity and residency probes. Normal
+    // user-visible renders reach the same encoder through admission planning.
     renderTiledTier: async (longEdge, options = {}) => {
       if (!state.gpuPreview || !state.session) return { rendered: false, refusals: ["no gpu session"] };
       return state.gpuPreview.renderTiledTo(
@@ -4532,6 +4532,7 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
   }
   if (gpuPreviewEligible(lane)
     && lane === state.currentView
+    && state.acceptedPresentation?.execution !== "tiled"
     && els.previewCanvas.style.display !== "none"
     && !state.comparePeekActive
     && state.activeWorkflow !== "proof") {
@@ -4553,6 +4554,7 @@ function gpuScopeEligible(lane) {
     && lane === state.currentView
     && state.acceptedPresentation?.lane === lane
     && state.acceptedPresentation?.transport === "WebGPU"
+    && state.acceptedPresentation?.execution !== "tiled"
     && state.acceptedPresentation?.generation === state.previewGeneration[lane]
     && state.acceptedPresentation?.geometrySignature === geometrySignature()
     && Number.isInteger(state.acceptedPresentation?.sourceSerial)
@@ -9851,6 +9853,7 @@ async function renderGpuDraftInner(
       "",
       result.sourceSerial,
       generation,
+      result.execution || "direct",
     );
     setZoomMode(state.zoomMode);
     renderReadouts();

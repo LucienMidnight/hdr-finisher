@@ -714,8 +714,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // no larger than this.
       this.maxSourceChunkBytes = 16 * 1024 * 1024;
       this.sourceTransportMetrics = null;
-      // Phase 4 tiled execution. Reachable only through the diagnostic hook
-      // until Direct/Tiled parity is proved, so Direct is unaffected.
+      // Phase 4 tiled execution. The admission planner uses it when Direct
+      // does not fit; the diagnostic hook can still invoke it explicitly.
       this.tileGraph = null;
       this.tileScheduler = null;
       this.tileCompositeParamBuffer = null;
@@ -1401,6 +1401,25 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
 
       this.uploadParamsAndCurves(lane, adjustments, curveSampler, params);
 
+      return this.encodeTiledGeneration(canvas, context, proxy, surface, pipelines, params, {
+        Scheduler,
+        tileSize,
+        lane,
+        longEdge,
+        editRevision,
+        applicationGeneration: sourceOptions?.applicationGeneration,
+      });
+    }
+
+    /** Encode and submit one complete tiled generation from an already prepared graph. */
+    async encodeTiledGeneration(canvas, context, proxy, surface, pipelines, params, options = {}) {
+      const Scheduler = options.Scheduler
+        || (typeof window !== "undefined" ? window.HDRTileScheduler : null);
+      if (!Scheduler) return { rendered: false, refusals: ["tile scheduler is unavailable"] };
+      const tileSize = Math.max(64, Math.floor(Number(options.tileSize) || Scheduler.DEFAULT_TILE_SIZE));
+      const lane = options.lane || "hdr";
+      const longEdge = Number(options.longEdge) || Math.max(proxy.width, proxy.height);
+      const editRevision = Number(options.editRevision) || 0;
       const scheduler = this.tileScheduler instanceof Scheduler
         ? this.tileScheduler
         : (this.tileScheduler = new Scheduler({
@@ -1412,7 +1431,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         width: proxy.width,
         height: proxy.height,
         identity,
-        generation: Number(sourceOptions?.applicationGeneration ?? 0),
+        generation: Number(options.applicationGeneration ?? 0),
         tileSize,
         nodes: ["geometry", "exposure", "white-balance", "curves", "color", "grading"],
       });
@@ -1458,6 +1477,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       ));
 
       const startedAt = performance.now();
+      // A tiled generation has no whole-frame finish texture. Remove the
+      // previous Direct source before submission so no scope request can label
+      // that older texture as belonging to the newly accepted presentation.
+      this.scopeSources.delete(canvas);
       // A validation error discards the whole command buffer silently, which
       // would leave the canvas untouched and look like a parity failure rather
       // than a bug. Capture it and report it instead.
@@ -1538,6 +1561,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         hdr: surface.hdr,
         proxyFormat: proxy.pixelFormat,
         sourceSerial: proxy.sourceSerial ?? null,
+        execution: "tiled",
         metrics: this.tiledExecutionMetrics,
       };
     }
@@ -1681,6 +1705,40 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         sourceBytesPerPixel: proxy.pixelFormat === "rgba16float" ? 8 : 16,
         tier: sourceOptions?.tier ?? null,
       });
+      if (plan.decision.mode === "tiled") {
+        const refusals = this.tiledExecutionRefusals({
+          activeLocals,
+          detailActive,
+          spatialActive,
+          overlayMask,
+          params,
+          surface,
+        });
+        if (sourceOptions?.tier === "interactive") refusals.push("interactive render");
+        if (refusals.length) {
+          this.recordStage("tiled-refused", { lane, longEdge, refusals });
+          return this.refuseRender(`tiled-refused:${refusals.join(",")}`);
+        }
+        this.recordStage("admission", {
+          mode: "tiled",
+          reason: plan.decision.violations.map((violation) => violation.rule).join(",") || "planner",
+          width: proxy.width,
+          height: proxy.height,
+          peakLogicalBytes: plan.totals.peakLogicalBytes,
+          budgetBytes: plan.budgetBytes,
+        });
+        const tiled = await this.encodeTiledGeneration(canvas, context, sourceProxy, surface, pipelines, params, {
+          tileSize: sourceOptions?.tileSize,
+          lane,
+          longEdge,
+          editRevision,
+          applicationGeneration: sourceOptions?.applicationGeneration,
+        });
+        if (!tiled?.rendered) {
+          return this.refuseRender(`tiled-encode-failed:${(tiled?.refusals || []).join(",")}`);
+        }
+        return { ...tiled, sourceSerial: serial };
+      }
       const intermediate = this.ensureIntermediate(
         canvas,
         proxy.width,
@@ -2054,6 +2112,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         hdr: surface.hdr,
         proxyFormat: proxy.pixelFormat,
         sourceSerial: serial,
+        execution: "direct",
       };
       } finally {
         this.finishActiveRender();
@@ -2853,9 +2912,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         format: "rgba16float",
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
       });
-      // PRD 4.3: allocation failure retries through Tiled execution. It records
-      // the backoff and abandons this render so the caller keeps the last valid
-      // presentation. It never reduces the selected preview resolution.
+      // PRD 4.3: an allocation failure records a durable backoff. This render
+      // retains the last valid presentation; the next plan selects Tiled. The
+      // selected preview resolution is never reduced.
       const guard = (create, kind) => {
         try {
           return create();
