@@ -1,7 +1,7 @@
 # Stable Exact Preview Tiers and Full-Resolution Processing Sprint
 
 **Date:** September 19, 2026  
-**Status:** Approved direction; Phases 0-3 complete, Phase 4 ready to start  
+**Status:** Approved direction; Phases 0-3 complete, Phase 4 in progress  
 **Owner:** HDR Finisher engineering  
 **Application target:** A staged preview-pipeline release that restores Full preview without silent resolution fallback  
 **Primary platforms:** Packaged Windows and macOS application shells, with and without usable WebGPU  
@@ -715,7 +715,7 @@ Update this table at every phase boundary or whenever work stops unexpectedly. L
 | 1 — Stable existing tiers | Complete | `903bdef` on `main` | Closed | All five gate conditions met on the CPU route. Evidence: [`phase-1-stable-tier-lifecycle-evidence-2026-09-19.md`](../technical/phase-1-stable-tier-lifecycle-evidence-2026-09-19.md). GPU timing measurement and Phase 7 scope/comparison tightening carried forward. |
 | 2 — GPU planner and budget | Complete | `69ca21e` on `main` | Closed | All four gate conditions met. Evidence: [`phase-2-gpu-planner-evidence-2026-09-19.md`](../technical/phase-2-gpu-planner-evidence-2026-09-19.md). A `tiled` decision currently means "Direct was not admitted"; Phase 4 builds the scheduler that acts on it. |
 | 3 — Bounded transport | Complete | `4ac3aba` on `main` | Closed | All four gate conditions met. Evidence: [`phase-3-bounded-transport-evidence-2026-09-19.md`](../technical/phase-3-bounded-transport-evidence-2026-09-19.md). Source transport is bounded; mask transport is Phase 5. The Phases 0-2 "environment defect" is retracted there. |
-| 4 — Tile scheduler and pointwise graph | Ready to start | — | Open | Phases 0-3 are closed. The planner already emits a `tiled` decision and the source-tile contract already serves rectangles with halos; Phase 4 is the scheduler that consumes both. |
+| 4 — Tile scheduler and pointwise graph | **In progress** | Checkpoint commit recorded below | **Open** | Gates 2 and 3 met: `tile-scheduler.js` owns global tile identity, declared halos, visible-region priority, bounded LRU residency and no-mixed-generation admission; `buildTiledPlan()` brings 24 MP, 42 MP and 8K inside the Auto budget and rescues a graph Direct cannot fit. Gates 1 and 4 open: tiled execution, Direct/Tiled parity, CPU bounded Full and engineering-only Full still to land. Evidence: [`phase-4-tile-scheduler-checkpoint-2026-09-19.md`](../technical/phase-4-tile-scheduler-checkpoint-2026-09-19.md). |
 | 5 — Masks, locals, Detail | Not started | — | Open | Depends on tile scheduler. |
 | 6 — Denoise | Not started | — | Open | Depends on tile scheduler and budget. |
 | 7 — Spatial film, scopes, comparison | Not started | — | Open | Depends on tile scheduler. |
@@ -726,7 +726,7 @@ Update this table at every phase boundary or whenever work stops unexpectedly. L
 
 **Last updated:** September 19, 2026
 **Last completed phase:** Phase 3 — Geometry-aware bounded transport (exit gate closed)
-**Active phase:** None; Phase 4 — Tile scheduler and pointwise render graph is ready to start
+**Active phase:** Phase 4 — Tile scheduler and pointwise render graph (2 of 4 exit gates met; see the checkpoint evidence)
 **Branch and base:** `main`. Phase 0 is `ba58d6d`, Phase 1 is `903bdef`, Phase 2 is `69ca21e`, Phase 3 is `4ac3aba`, and the worktree is clean. A `.claude/launch.json` was added for local dev-server launching; it is covered by a global gitignore rule and is intentionally not committed.
 
 ## Environment: use the project venv
@@ -780,7 +780,16 @@ Phases 0-2 recorded an "environment defect" claiming a missing Python 3.12 envir
 
 **Reference hardware note:** the director's RTX 4070 Ti reports `maxTextureDimension2D` of **8192**, not 16384. A source whose Full long edge exceeds 8192 cannot be Direct-admitted on this machine at all, which is precisely the case Phase 4's tiled execution exists for. The 42.4 MP test source has a 7968 long edge and still fits.
 
-**Next safe edit:** Begin Phase 4 — implement globally anchored tile identity, LRU residency, visible-region priority, and bounded scratch; port geometry and pointwise grading nodes; implement atomic visible-region assembly with no mixed-generation admission; and add engineering-only Full selection. The source-tile contract from Phase 3 already supplies rectangles with halos, and `buildRenderPlan().decision.mode` already says when Tiled is required. No app or server process is intentionally left running.
+**Next safe edit:** Continue Phase 4 with the execution half. The scheduling half has landed and is covered by 17 deterministic cases plus a live check in the running app.
+
+Remaining, in order:
+
+1. **Thread a tile origin through the fragment entry points.** The shaders derive the source texel straight from `input.position.xy`, clamped to `textureDimensions(sourceTexture)`, so source and destination coordinates are 1:1 and the sampling logic needs no change. Rendering into a tile-sized target makes that position tile-local, so each entry point needs a `globalCoordinate(position)` that adds a tile origin carried in two new slots, raising `PARAM_COUNT` from 160 to 162. That is roughly fifteen fragment entry points in `webgpu-preview.js`; `test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_bands` asserts `const PARAM_COUNT = 160` and will need updating with them.
+2. **Encode one generation as one submission.** Take one `getCurrentTexture()`, encode every tile pass into a single command encoder, and submit once. The canvas then presents the complete assembly or nothing, so atomicity comes from the architecture rather than from a lock. Drive the order from `HDRTileScheduler.plan().tiles`, which is already sorted visible-first, nearest-the-viewport-centre-first.
+3. **Direct versus Tiled parity corpus** over the pointwise graph — this is exit gate 1.
+4. **Measured tiled residency** at 24 MP, 42 MP and 8K, replacing the modelled figures currently backing exit gate 3.
+5. **CPU tiled/strip execution and cancellation** — exit gate 4.
+6. **Engineering-only Full selection**, only once 1-5 hold. Exposing Full before tiled execution exists would be the "Direct-only Full" the PRD lists as a non-goal, and the reference adapter's `maxTextureDimension2D` of 8192 means a Full graph above 8192 px cannot be Direct-admitted there at all. No app or server process is intentionally left running.
 
 When handing work to another task, replace the checkpoint above with:
 

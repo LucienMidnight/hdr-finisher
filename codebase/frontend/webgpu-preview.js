@@ -371,6 +371,110 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
    * This function is pure: the same inputs always produce the same plan and the
    * same decision, which is what the Phase 2 exit gate requires.
    */
+  const DEFAULT_TILE_SIZE = 512;
+
+  /**
+   * Model a Tiled execution of the same graph.
+   *
+   * Direct sizes every intermediate to the whole output, which is what puts a
+   * 42 MP or 8K graph over the budget. Tiled keeps the source and the
+   * presentation surface whole but sizes the working set to one tile plus its
+   * halo, so peak residency stops following the image.
+   */
+  function buildTiledPlan(options = {}) {
+    const width = Math.max(1, Math.floor(Number(options.width) || 1));
+    const height = Math.max(1, Math.floor(Number(options.height) || 1));
+    const tileSize = Math.max(64, Math.floor(Number(options.tileSize) || DEFAULT_TILE_SIZE));
+    const halo = Math.max(0, Math.floor(Number(options.halo) || 0));
+    const sourceBytesPerPixel = options.sourceBytesPerPixel === 16 ? 16 : 8;
+    const detailActive = options.detailActive !== false;
+    const spatialActive = options.spatialActive !== false;
+    const denoiseLevels = Math.max(0, Math.min(4, Math.floor(Number(options.denoiseLevels ?? 0) || 0)));
+    const retainedPresentation = options.retainedPresentation !== false;
+    const contingencyFraction = Number.isFinite(Number(options.contingencyFraction))
+      ? Math.max(0, Number(options.contingencyFraction))
+      : GPU_PLAN_CONTINGENCY_FRACTION;
+
+    const columns = Math.ceil(width / tileSize);
+    const rows = Math.ceil(height / tileSize);
+    const tileCount = columns * rows;
+    // The working tile is one full tile plus its halo on every side, which is
+    // the largest tile the graph ever has to hold.
+    const workWidth = Math.min(width, tileSize + halo * 2);
+    const workHeight = Math.min(height, tileSize + halo * 2);
+    const workPixels = workWidth * workHeight;
+
+    const entries = [];
+    const add = (id, category, lifetime, bytes, detail = {}) => {
+      if (bytes > 0) entries.push({ id, category, lifetime, bytes, ...detail });
+    };
+
+    // Whole-image resources that tiling does not shrink.
+    add("source-proxy", "source", "cached", width * height * sourceBytesPerPixel, { bytesPerPixel: sourceBytesPerPixel });
+    add("presentation-surface", "presentation", "resident", width * height * 8, { whole: true });
+
+    // Per-tile working set, sized to one tile rather than to the image.
+    add("tile-grading-core", "grading", "resident", workPixels * 8 * 4, { textures: 4, tile: true });
+    if (detailActive) add("tile-grading-detail", "detail", "resident", workPixels * 8 * 2, { textures: 2, tile: true });
+    if (spatialActive) {
+      add("tile-spatial-film", "spatial", "resident",
+        Math.ceil(workWidth / 4) * Math.ceil(workHeight / 4) * 8 * 2, { textures: 2, tile: true });
+    }
+    if (denoiseLevels > 0) {
+      const denoise = denoiseLogicalBytes(workWidth, workHeight, denoiseLevels);
+      add("tile-denoise-evidence", "denoise", "cached", denoise.evidenceBytes, { levels: denoiseLevels, tile: true });
+      add("tile-denoise-resolved", "denoise", "resident", denoise.resolvedBytes, { tile: true });
+      add("tile-denoise-scratch", "denoise", "transient", denoise.reconstructionScratchBytes, { tile: true });
+    }
+    add("tile-result-cache", "tile-cache", "cached",
+      Math.max(0, Math.floor(Number(options.tileCacheBytes) || 0)), { tile: true });
+    add("upload-staging", "staging", "transient", Math.max(0, Math.floor(Number(options.stagingBytes) || 0)));
+    add("parameter-buffers", "parameter", "resident", Math.max(0, Math.floor(Number(options.parameterBufferBytes) || 0)));
+
+    const sumBy = (lifetime) => entries
+      .filter((entry) => entry.lifetime === lifetime)
+      .reduce((total, entry) => total + entry.bytes, 0);
+    const residentBytes = sumBy("resident");
+    const cachedBytes = sumBy("cached");
+    const transientBytes = sumBy("transient");
+    const retainedPresentationOverlapBytes = retainedPresentation ? width * height * 8 : 0;
+    if (retainedPresentationOverlapBytes > 0) {
+      entries.push({
+        id: "retained-presentation-overlap",
+        category: "presentation",
+        lifetime: "overlap",
+        bytes: retainedPresentationOverlapBytes,
+      });
+    }
+    const beforeContingency = residentBytes + cachedBytes + transientBytes + retainedPresentationOverlapBytes;
+    const contingencyBytes = Math.round(beforeContingency * contingencyFraction);
+    if (contingencyBytes > 0) {
+      entries.push({ id: "contingency-margin", category: "margin", lifetime: "margin", bytes: contingencyBytes });
+    }
+
+    return {
+      mode: "tiled",
+      width,
+      height,
+      tileSize,
+      halo,
+      columns,
+      rows,
+      tileCount,
+      workWidth,
+      workHeight,
+      entries,
+      totals: {
+        residentBytes,
+        cachedBytes,
+        transientBytes,
+        retainedPresentationOverlapBytes,
+        contingencyBytes,
+        peakLogicalBytes: beforeContingency + contingencyBytes,
+      },
+    };
+  }
+
   function buildRenderPlan(options = {}) {
     const width = Math.max(1, Math.floor(Number(options.width) || 1));
     const height = Math.max(1, Math.floor(Number(options.height) || 1));
@@ -476,6 +580,23 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       violations.push({ rule: "allocation-backoff", detail: String(options.allocationBackoff) });
     }
 
+    // The Tiled alternative is computed for every plan, so a Direct refusal
+    // always arrives with the execution that replaces it rather than with a
+    // question about the resolution.
+    const tiled = buildTiledPlan({
+      ...options,
+      width,
+      height,
+      sourceBytesPerPixel,
+      detailActive,
+      spatialActive,
+      denoiseLevels,
+      contingencyFraction,
+      retainedPresentation,
+      stagingBytes,
+      parameterBufferBytes,
+    });
+
     return {
       width,
       height,
@@ -489,6 +610,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         contingencyBytes,
         peakLogicalBytes,
       },
+      tiled,
       budgetBytes,
       limits,
       decision: {
@@ -517,6 +639,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
 
     static buildRenderPlan(options = {}) {
       return buildRenderPlan(options);
+    }
+
+    static buildTiledPlan(options = {}) {
+      return buildTiledPlan(options);
     }
 
     static normalizeGpuBudgetBytes(value) {

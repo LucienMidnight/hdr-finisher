@@ -245,3 +245,73 @@ test("Denoise levels carry an explicit, enforceable byte cost in the plan", () =
   assert.equal(enforced.decision.mode, "tiled");
   assert.ok(enforced.decision.violations.some((v) => v.rule === "budget"));
 });
+
+test("Tiled sizes the working set to a tile, so peak stops following the image", () => {
+  const direct = planFor({ budget: 8, width: 7680, height: 4320 });
+  const tiled = direct.tiled;
+
+  assert.equal(tiled.mode, "tiled");
+  assert.equal(tiled.tileCount, Math.ceil(7680 / 512) * Math.ceil(4320 / 512));
+  assert.ok(tiled.totals.peakLogicalBytes < direct.totals.peakLogicalBytes);
+
+  // The grading working set is one tile, not the whole output.
+  const byId = Object.fromEntries(tiled.entries.map((entry) => [entry.id, entry]));
+  assert.equal(byId["tile-grading-core"].bytes, 512 * 512 * 8 * 4);
+  assert.equal(byId["tile-grading-detail"].bytes, 512 * 512 * 8 * 2);
+  // The source and the presentation surface are deliberately still whole.
+  assert.equal(byId["source-proxy"].bytes, 7680 * 4320 * 8);
+  assert.equal(byId["presentation-surface"].bytes, 7680 * 4320 * 8);
+});
+
+test("a halo grows the working tile but not the whole-image resources", () => {
+  const plain = Preview.buildTiledPlan({ width: 4096, height: 4096, tileSize: 512, halo: 0 });
+  const haloed = Preview.buildTiledPlan({ width: 4096, height: 4096, tileSize: 512, halo: 16 });
+
+  assert.equal(plain.workWidth, 512);
+  assert.equal(haloed.workWidth, 512 + 32);
+  assert.equal(plain.tileCount, haloed.tileCount);
+
+  const whole = (plan) => plan.entries.find((entry) => entry.id === "source-proxy").bytes;
+  assert.equal(whole(plain), whole(haloed));
+  assert.ok(haloed.totals.peakLogicalBytes > plain.totals.peakLogicalBytes);
+});
+
+test("24MP, 42MP and 8K all fit the Auto budget under Tiled execution", () => {
+  // The Phase 4 exit gate: jobs at these sizes stay within configured budgets.
+  const cases = [
+    { id: "24MP", width: 6000, height: 4000 },
+    { id: "42MP", width: 5320, height: 7968 },
+    { id: "8K UHD", width: 7680, height: 4320 },
+  ];
+  const autoBudget = 2 * GIB;
+
+  for (const entry of cases) {
+    const plan = Preview.buildRenderPlan({
+      ...entry,
+      denoiseLevels: 2,
+      detailActive: true,
+      spatialActive: true,
+      limits: { maxTextureDimension2D: 16384 },
+    });
+    assert.ok(
+      plan.tiled.totals.peakLogicalBytes <= autoBudget,
+      `${entry.id} tiled peak ${plan.tiled.totals.peakLogicalBytes} exceeded the Auto budget`,
+    );
+  }
+});
+
+test("Tiled is what rescues a graph Direct cannot fit", () => {
+  // 8K with four-level Denoise is over the Auto budget as one graph.
+  const plan = Preview.buildRenderPlan({
+    width: 7680,
+    height: 4320,
+    denoiseLevels: 4,
+    tier: "full",
+    limits: { maxTextureDimension2D: 16384 },
+  });
+  assert.equal(plan.decision.mode, "tiled");
+  assert.ok(plan.totals.peakLogicalBytes > plan.budgetBytes);
+  // And the execution that replaces it does fit, so the tier is never at risk.
+  assert.ok(plan.tiled.totals.peakLogicalBytes <= plan.budgetBytes);
+  assert.equal(plan.decision.tier, "full");
+});

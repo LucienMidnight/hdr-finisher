@@ -1882,10 +1882,12 @@ def test_perspective_module_is_numbered_fourth_and_exposes_draft_guided_tools() 
 def test_frontend_assets_use_the_application_version_for_cache_busting() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
 
-    assert html.count("__HDR_FINISHER_ASSET_VERSION__") == 7
+    assert html.count("__HDR_FINISHER_ASSET_VERSION__") == 8
     assert '/static/app.js?v=__HDR_FINISHER_ASSET_VERSION__' in html
     assert '/static/desktop-chrome.js?v=__HDR_FINISHER_ASSET_VERSION__' in html
     assert '/static/styles.css?v=__HDR_FINISHER_ASSET_VERSION__' in html
+    assert '/static/preview-scheduler.js?v=__HDR_FINISHER_ASSET_VERSION__' in html
+    assert '/static/tile-scheduler.js?v=__HDR_FINISHER_ASSET_VERSION__' in html
 
 
 def test_macos_uses_the_native_application_menu_without_renderer_duplicates() -> None:
