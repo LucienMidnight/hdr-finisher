@@ -91,3 +91,38 @@ def test_backend_preflight_reports_host_constraints_without_deciding_gpu_viabili
     assert "FULL_PREVIEW_MAX_DIMENSION" in guarded
     assert "safely_available is not None and estimated > safely_available" in guarded
     assert "FULL_PREVIEW_MAX_PIXELS" not in guarded
+
+
+def test_a_render_in_flight_is_not_superseded_outside_a_gesture() -> None:
+    """A settled render has already paid for its source upload and its
+    highlight-peak measurement by the time a later frame could replace it.
+
+    Outside a gesture there is no responsiveness to win by starting a second
+    render, so the interactive frame and the refinement pass both stand down.
+    During a gesture latest-wins still applies, which is what the
+    `interacting` check preserves.
+    """
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    wrapper = javascript[javascript.index("function renderGpuDraft(lane = state.currentView, options = {})"):
+                         javascript.index("async function renderGpuDraftInner(")]
+    assert "state.gpuDraftInFlight = pending;" in wrapper
+    assert "if (state.gpuDraftInFlight === pending) state.gpuDraftInFlight = null;" in wrapper
+
+    scheduler = javascript[javascript.index("function initializePreviewScheduler()"):
+                           javascript.index("function observeScopeSize()")]
+    assert "if (!state.previewScheduler?.interacting && state.gpuDraftInFlight) return false;" in scheduler
+
+    refine = javascript[javascript.index("async function refinePreview(lane, task = {})"):
+                        javascript.index("function displayedLongEdge()")]
+    assert "await state.gpuDraftInFlight.catch(() => null);" in refine
+
+
+def test_a_declined_render_records_why() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+
+    assert 'return refuse("gpu-not-eligible");' in javascript
+    assert 'return refuse("superseded-during-render");' in javascript
+    assert "refuseRender(reason)" in webgpu
+    assert 'this.refuseRender("peak:newer-render-started")' in webgpu

@@ -1483,7 +1483,9 @@ def test_electron_preview_correctness_contract() -> None:
     assert "state.globalEditDirty && state.acceptedPresentation?.geometrySignature !== geometrySignature()" in javascript
     close_crop = javascript[javascript.index("function closeCropMode(commit)"):javascript.index("function renderGeometryToolState()")]
     assert "state.geometryTransformHandoffSignature = geometrySignature();" in close_crop
-    gpu_draft = javascript[javascript.index("async function renderGpuDraft("):javascript.index("function gpuLumaMaskOverlayOptions")]
+    # renderGpuDraft is now a thin wrapper that tracks the render in flight;
+    # the body it used to name lives in renderGpuDraftInner.
+    gpu_draft = javascript[javascript.index("async function renderGpuDraftInner("):javascript.index("function gpuLumaMaskOverlayOptions")]
     assert "requestedGeometrySignature === geometrySignature()" in gpu_draft
     assert "isCurrent: () => serial === state.gpuRenderSerial" in gpu_draft
     webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")

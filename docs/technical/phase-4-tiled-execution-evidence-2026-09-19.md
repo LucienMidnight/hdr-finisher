@@ -137,47 +137,76 @@ Grain is section-enabled by default, so the refusal is on grain that actually
 contributes; zero-amount grain leaves pixels alone and cannot make a tile
 disagree with the whole frame.
 
-## Open regression: `gpu-highlight-compression-parity` is now flaky
+## Fixed regression: `gpu-highlight-compression-parity`
 
-**This is a regression the sprint introduced, and it is not fixed.**
+**Found, diagnosed and fixed.** It passes 6/6 again, matching the pre-sprint
+rate.
 
-Measured failure rates, six runs each, same adapter and server:
+Failure rates, six runs each on the same adapter and server:
 
 | Tree | Result |
 |---|---|
-| Pre-sprint `83bca70` | **6 pass / 0 fail** |
-| Phase 4 checkpoint `ecb3c4a` (no tiled execution) | 3 pass / 3 fail |
-| With tiled execution | 1 pass / 5 fail |
+| Pre-sprint `83bca70` | 6 pass / 0 fail |
+| Phase 4 checkpoint `ecb3c4a` | 3 pass / 3 fail |
+| With tiled execution, before the fix | 1 pass / 5 fail |
+| **With the fix** | **6 pass / 0 fail** |
 
-So it was introduced somewhere in Phases 1-3 and the Phase 4 work made it more
-likely. Every numeric assertion in the suite still passes — the measured peak
-matches the expected peak to five decimal places. The failing assertion is
-`replacementCurrent`, reached because `renderGpuDraft` returned `false` for the
-replacement render.
+### What it actually was
 
-**Mechanism.** A probe of the same sequence captured the state at the moment of
-failure: `needsRefinement: true`, `selectedTierReady: false`,
-`acceptedExact: false`, `schedulerCurrent: true`. Phase 1 redefined
-`previewNeedsRefinement()` as `!selectedTierReady()`. The suite deliberately
-renders at `longEdge: 512` while the selected tier is 1K, so the accepted
-presentation is never exact, so the scheduler now arms a refinement pass that
-pre-sprint code would have disarmed. That background render increments
-`state.gpuRenderSerial`, and the suite's own concurrent `renderGpuDraft` then
-sees `serial !== state.gpuRenderSerial` and returns `false`.
+My first two hypotheses were wrong, and guessing cost more than instrumenting
+would have. Adding a recorded reason to every declining return found it in one
+run:
 
-**Why this is arguable but not dismissible.** In normal use the behavior is
-correct: when the presented image is below the selected tier, more work *is*
-owed, and once a settle reaches the tier `selectedTierReady()` becomes true and
-refinement disarms. The suite drives the app into a state the new contract
-treats as "keep working". But a 1-in-6 pass rate means the app is doing
-substantially more background work in that state than it used to, and that
-deserves a fix rather than a reclassification of the test.
+1. `renderGpuDraft` returned `renderer-returned-nothing` — so the refusal was
+   inside `renderTo`, not in the draft guards.
+2. Splitting that guard gave `peak:newer-render-started` — `serial !==
+   this.renderSerials.get(canvas)`, meaning another render on the same canvas
+   started during the highlight-peak `await`.
+3. Logging the caller of every render named it: the scheduler's **interactive**
+   frame, at `longEdge: 889`, starting **1 ms** into the settled render's peak
+   measurement.
 
-**Not yet decided:** whether the fix is to stop arming refinement when the
-shortfall was caused by an explicitly requested lower edge rather than by the
-scheduler's own work, or to give `refinePreview` a guard against racing an
-in-flight external render. Either way it is a lifecycle fix in Phase 1
-territory, not a tiled-execution fix.
+889 is `bootstrapProxyLongEdge()`. The suite deliberately renders at
+`longEdge: 512` while the tier is 1K, so the accepted presentation is never
+exact, so `selectedTierReady()` is false, so the scheduler's interactive frame
+takes the bootstrap path instead of rendering at the tier. That placeholder
+frame then supersedes a settled render that had already paid for its source
+upload and its peak measurement.
+
+### The fix
+
+Outside a gesture there is no responsiveness to win by starting a second render,
+so both callers that can start one while another is running now stand down:
+
+- `onFrame` returns early when `!state.previewScheduler?.interacting && state.gpuDraftInFlight`.
+- `refinePreview` awaits `state.gpuDraftInFlight` and re-checks its guards, because the render it waited for may well have left nothing to refine.
+
+During a gesture, `interacting` is true and latest-wins still applies, which is
+the documented contract.
+
+`renderGpuDraft` became a thin wrapper that records the pending render, with the
+former body in `renderGpuDraftInner`.
+
+### It also made interaction faster
+
+Re-running the latency harness after the fix, against the same 42.4 MP source:
+
+| Tier | Input p95 before | Input p95 after | Present p95 after | Target |
+|---|---:|---:|---:|---:|
+| 1K | 3.2 ms | **2.3 ms** | 5.0 ms | 16.7 ms |
+| 2K | 3.4 ms | **1.9 ms** | 4.7 ms | 16.7 ms |
+| 4K | 3.1 ms | **1.9 ms** | 4.9 ms | 33 ms |
+
+`failures: NONE`, stale 0, non-exact presentations 0. Fewer wasted renders is
+simply less work on the main thread.
+
+### Diagnostics kept
+
+The reason-recording survives, because a falsy render was otherwise impossible
+to diagnose from a failure message: `state.lastGpuDraftRefusal` and
+`gpuPreview.lastRenderRefusal`, both set only on declining paths. The
+per-render stack capture and the per-call `isCurrent` instrumentation were
+removed — they were triage-only and sat on hot paths.
 
 ## Regression evidence
 
@@ -190,7 +219,7 @@ territory, not a tiled-execution fix.
 | `gpu-scope-parity` | PASS |
 | `sdr-match-gpu-interaction`, `sdr-gamut-gpu-parity` | PASS |
 | `device-loss-fallback`, and 7 further browser suites | PASS |
-| `gpu-highlight-compression-parity` | **FLAKY — see the open regression above** |
+| `gpu-highlight-compression-parity` | **PASS, 6/6** — see the fixed regression above |
 
 Two test constants moved with `PARAM_COUNT`: the frontend contract test now
 asserts 162 plus the tile-origin symbols, and the allocation-agreement suite's

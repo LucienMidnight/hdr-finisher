@@ -385,6 +385,8 @@ const state = {
   // Set only when the selected tier could not be produced. It never clears the
   // retained presentation; it explains why that presentation is still the newest.
   previewUnavailableReason: "",
+  // The grading render currently in flight, so refinement can wait for it.
+  gpuDraftInFlight: null,
   // Application allocation budget for preview GPU work, not physical VRAM.
   gpuMemoryBudget: "auto",
   detailInteractionRestore: null,
@@ -1895,6 +1897,12 @@ function initializePreviewScheduler() {
       // callback owns the final value at that point; submitting another low-res
       // frame here could overwrite the restored refined frame.
       if (detailInteraction && !state.previewScheduler?.interacting) return false;
+      // Outside a gesture there is no responsiveness to win by starting a
+      // second render. Superseding one that is already in flight throws away a
+      // source upload and a highlight-peak measurement, and the frame that
+      // replaces it is a bootstrap placeholder. During a gesture latest-wins
+      // still applies, so this only stands down when nothing is being dragged.
+      if (!state.previewScheduler?.interacting && state.gpuDraftInFlight) return false;
       const residentLongEdge = detailActive || detailInteraction ? residentAuthoringLongEdge() : null;
       if (residentLongEdge) {
         state.detailInteractionRestore = { lane: task.lane, longEdge: residentLongEdge };
@@ -4062,6 +4070,14 @@ async function settlePreview(lane = state.currentView, task = {}) {
 async function refinePreview(lane, task = {}) {
   if (!state.session || geometryDraftActive() || !previewNeedsRefinement() || lane !== state.currentView) return;
   if (task.applicationGeneration !== undefined && task.applicationGeneration !== state.previewGeneration[lane]) return;
+  // Let an in-flight render finish first. Superseding it would throw away work
+  // that has already loaded its source and measured its highlight peak, and
+  // that render may well leave nothing for refinement to do.
+  if (state.gpuDraftInFlight) {
+    await state.gpuDraftInFlight.catch(() => null);
+    if (!state.session || geometryDraftActive() || !previewNeedsRefinement() || lane !== state.currentView) return;
+    if (task.applicationGeneration !== undefined && task.applicationGeneration !== state.previewGeneration[lane]) return;
+  }
   const generation = state.previewGeneration[lane];
   const signature = geometrySignature();
   const targetLongEdge = refinementProxyLongEdge();
@@ -9744,15 +9760,35 @@ async function applyComparisonUrl(url) {
   return true;
 }
 
-async function renderGpuDraft(
+/**
+ * Track the render in flight for the current lane.
+ *
+ * Two grading renders racing means the loser is abandoned after it has already
+ * paid for its source upload and its highlight-peak measurement. Refinement is
+ * the one caller that can start while another render is still running, so it
+ * waits on this instead of superseding it.
+ */
+function renderGpuDraft(lane = state.currentView, options = {}) {
+  const pending = renderGpuDraftInner(lane, options);
+  state.gpuDraftInFlight = pending;
+  void pending.catch(() => null).finally(() => {
+    if (state.gpuDraftInFlight === pending) state.gpuDraftInFlight = null;
+  });
+  return pending;
+}
+
+async function renderGpuDraftInner(
   lane = state.currentView,
   { hideStatus = true, longEdge = settledProxyLongEdge(), allowInactive = false, tier = "settled" } = {},
 ) {
-  if (geometryDraftActive()) return false;
-  if (!gpuPreviewEligible(lane)) return false;
-  if (!state.session || (!allowInactive && lane !== state.currentView)) return false;
-  if (state.comparePeekActive && !allowInactive) return false;
-  if (state.globalEditDirty && state.acceptedPresentation?.geometrySignature !== geometrySignature()) return false;
+  // Record why a draft declined. A silent false is very hard to diagnose from
+  // a failing browser test, and every one of these is a legitimate refusal.
+  const refuse = (reason) => { state.lastGpuDraftRefusal = { reason, lane, tier, at: performance.now() }; return false; };
+  if (geometryDraftActive()) return refuse("geometry-draft-active");
+  if (!gpuPreviewEligible(lane)) return refuse("gpu-not-eligible");
+  if (!state.session || (!allowInactive && lane !== state.currentView)) return refuse("no-session-or-inactive-lane");
+  if (state.comparePeekActive && !allowInactive) return refuse("compare-peek-active");
+  if (state.globalEditDirty && state.acceptedPresentation?.geometrySignature !== geometrySignature()) return refuse("dirty-edit-with-stale-geometry");
   const serial = ++state.gpuRenderSerial;
   const sessionId = state.session.session_id;
   const generation = state.previewGeneration[lane];
@@ -9790,7 +9826,8 @@ async function renderGpuDraft(
       { width: state.session.source.width, height: state.session.source.height },
       sourceOptions,
     );
-    if (!result || !sourceOptions.isCurrent()) return false;
+    if (!result) return refuse("renderer-returned-nothing");
+    if (!sourceOptions.isCurrent()) return refuse("superseded-during-render");
     state.gpuPreparedLane[lane] = true;
     setGpuSurfaceHdr(lane, result.hdr);
     els.previewImage.style.display = "none";

@@ -1495,13 +1495,20 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       };
     }
 
+    /** Record why a render declined, so a falsy result is diagnosable. */
+    refuseRender(reason) {
+      this.lastRenderRefusal = { reason, at: performance.now() };
+      this.recordStage("render-refused", { reason });
+      return false;
+    }
+
     async renderTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203, sourceSize = null, sourceOptions = null) {
-      if (!this.available || !sessionId) return false;
+      if (!this.available || !sessionId) return this.refuseRender("unavailable-or-no-session");
       const activeLocals = activeGpuLocals(lane, localAdjustments);
       // Eligibility is deliberately checked before resetting a session or
       // requesting a proxy. Unsupported local modules use the CPU renderer,
       // and must not first pay for a WebGPU proxy that cannot be presented.
-      if (!activeLocals.every((local) => gpuLocalSupported(local[`${lane}_grade`]))) return false;
+      if (!activeLocals.every((local) => gpuLocalSupported(local[`${lane}_grade`]))) return this.refuseRender("unsupported-local-adjustment");
       const renderStartedAt = performance.now();
       if (this.sessionId !== sessionId) this.resetSession(sessionId);
       const resourceGeneration = this.resourceGeneration;
@@ -1531,7 +1538,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       if (resourceGeneration !== this.resourceGeneration
         || serial !== this.renderSerials.get(canvas)
         || !proxy
-        || sourceOptions?.isCurrent?.() === false) return false;
+        || sourceOptions?.isCurrent?.() === false) return this.refuseRender("superseded-before-proxy");
       const sourceProxy = this.selectedDenoiseSource(proxy);
       const masks = await Promise.all(activeLocals.map((local) => this.loadLocalMask(
         sessionId,
@@ -1545,7 +1552,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       if (resourceGeneration !== this.resourceGeneration
         || serial !== this.renderSerials.get(canvas)
         || masks.some((mask) => !mask)
-        || sourceOptions?.isCurrent?.() === false) return false;
+        || sourceOptions?.isCurrent?.() === false) return this.refuseRender("superseded-after-masks");
 
       const context = canvas.getContext("webgpu");
       if (!context) throw new Error("The comparison WebGPU canvas context is unavailable");
@@ -1582,9 +1589,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           params[75] = cachedPeak;
         } else if (sourceOptions?.tier !== "interactive") {
           params[75] = await this.measureToneAdjustedPeak(sourceProxy, params, anchorMeasurement, peakKey);
-          if (resourceGeneration !== this.resourceGeneration
-            || serial !== this.renderSerials.get(canvas)
-            || sourceOptions?.isCurrent?.() === false) return false;
+          if (resourceGeneration !== this.resourceGeneration) return this.refuseRender("peak:resource-generation");
+          if (serial !== this.renderSerials.get(canvas)) return this.refuseRender("peak:newer-render-started");
+          if (sourceOptions?.isCurrent?.() === false) return this.refuseRender("peak:application-not-current");
         }
       }
       // Changing a visible canvas's backing size clears its presented frame.
@@ -1659,7 +1666,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           peakLogicalBytes: plan.totals.peakLogicalBytes,
           budgetBytes: plan.budgetBytes,
         });
-        return false;
+        return this.refuseRender("intermediate-allocation-failed");
       }
       const makeBindGroup = (sourceView, spatialView, parameterBuffer = this.paramBuffer, overlayView = spatialView) => this.device.createBindGroup({
           layout: this.bindGroupLayout,

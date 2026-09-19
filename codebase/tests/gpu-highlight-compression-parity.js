@@ -166,6 +166,9 @@ function assert(condition, message) {
         refreshedRendered,
         currentScopeApplied,
         replacementCurrent: state.acceptedPresentation?.generation === state.previewGeneration.hdr,
+        // Kept: a falsy render is otherwise undiagnosable from a failure message.
+        lastRefusal: state.lastGpuDraftRefusal || null,
+        lastRenderRefusal: state.gpuPreview?.lastRenderRefusal || null,
       };
     });
 
