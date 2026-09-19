@@ -69,7 +69,7 @@ from .models import (
 )
 from .overlay import encode_processed_overlay_bytes
 from .preview import encode_processed_preview_bytes, encode_processed_rgba8
-from .render_cache import StaleRender, encode_rgba_proxy
+from .render_cache import StaleRender, TileUnavailableError, encode_rgba_proxy
 from .finishing import geometry_output_dimensions, perspective_guide_transform, solve_perspective_guides
 from .display_probe import probe_displays
 from .proofing import EvidenceStore, ProofArtifactStore
@@ -775,6 +775,90 @@ def webgpu_proxy(
             "X-Working-Space": working_space,
             "X-Pixel-Format": pixel_format,
             "X-Geometry-Signature": accepted_geometry_signature,
+            "X-Edit-Revision": str(session.edit_revision),
+        },
+    )
+
+
+@app.get("/api/session/{session_id}/source-tile/{kind}")
+def webgpu_source_tile(
+    session_id: str,
+    kind: PreviewKind,
+    x: int = Query(default=0, ge=0),
+    y: int = Query(default=0, ge=0),
+    width: int = Query(default=512, ge=1, le=8192),
+    height: int = Query(default=512, ge=1, le=8192),
+    halo: int = Query(default=0, ge=0, le=256),
+    long_edge: int = Query(default=1600, ge=256),
+    format: str = Query(default="rgba16f", pattern="^(rgba16f|rgba32f)$"),
+    edit_revision: int | None = Query(default=None, ge=0),
+    geometry_signature: str | None = Query(default=None),
+    source_epoch: int | None = Query(default=None, ge=0),
+) -> Response:
+    """Serve one bounded post-geometry source tile.
+
+    PRD 5.4: the request names a source epoch, a lane, a tier, a geometry
+    signature, a core output rectangle, a halo, and a pixel format, and the
+    response is bounded by the rectangle rather than by the image. There is no
+    ``long_edge`` ceiling here because the response size no longer follows it.
+    """
+    try:
+        session = store.get(session_id)
+        _check_revision(session.edit_revision, edit_revision)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RevisionConflictError as exc:
+        raise _revision_conflict(exc) from exc
+
+    if geometry_signature is not None:
+        try:
+            requested_geometry = json.loads(geometry_signature)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail="Invalid geometry signature.") from exc
+        if requested_geometry != session.adjustments.shared.geometry.model_dump(mode="json"):
+            raise HTTPException(status_code=409, detail="Stale geometry tile request dropped.")
+
+    try:
+        tile, working_space, authoritative_signature, placement = session.render_cache.geometry_source_tile(
+            kind,
+            long_edge,
+            session.adjustments,
+            session.sdr_match,
+            (x, y, x + width, y + height),
+            halo,
+        )
+    except TileUnavailableError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    # A stale source must not be answered with pixels from the new one. The
+    # epoch is read inside the cache alongside the image it produced.
+    if source_epoch is not None and int(source_epoch) != int(placement["source_epoch"]):
+        raise HTTPException(status_code=409, detail="Stale source epoch tile request dropped.")
+
+    body, bytes_per_row, pixel_format = encode_rgba_proxy(tile, prefer_half=format == "rgba16f")
+    delivered = placement["delivered"]
+    core = placement["core"]
+    return Response(
+        content=body,
+        media_type="application/octet-stream",
+        headers={
+            "X-Tile-X": str(delivered[0]),
+            "X-Tile-Y": str(delivered[1]),
+            "X-Tile-Width": str(delivered[2] - delivered[0]),
+            "X-Tile-Height": str(delivered[3] - delivered[1]),
+            "X-Core-X": str(core[0]),
+            "X-Core-Y": str(core[1]),
+            "X-Core-Width": str(core[2] - core[0]),
+            "X-Core-Height": str(core[3] - core[1]),
+            "X-Halo": str(placement["halo"]),
+            "X-Output-Width": str(placement["output_width"]),
+            "X-Output-Height": str(placement["output_height"]),
+            "X-Resample-Stage": placement["resample_stage"],
+            "X-Source-Epoch": str(placement["source_epoch"]),
+            "X-Bytes-Per-Row": str(bytes_per_row),
+            "X-Working-Space": working_space,
+            "X-Pixel-Format": pixel_format,
+            "X-Geometry-Signature": geometry_signature or authoritative_signature,
             "X-Edit-Revision": str(session.edit_revision),
         },
     )

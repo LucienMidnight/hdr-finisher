@@ -7,6 +7,16 @@
 **Host:** Windows 10.0.26200; Node v24.14.0; Python 3.10.10
 **Browser used for traces:** the in-app Chromium pane, **WebGPU unavailable**
 
+
+> **Retracted 2026-09-19 (Phase 3):** the "environment defect" recorded below is
+> wrong. `codebase/.venv` already contains Python 3.12.10 with every declared
+> dependency, including `imagecodecs`, `rawpy`, and `lensfunpy`. This record ran
+> the global `python` (3.10.10) instead. Re-run in the venv, the full suite is
+> `1017 passed, 3 skipped, 0 failed` with no prerequisite failures. The
+> before/after comparison in this document is still a valid comparison, but it
+> never exercised the JPEG XL, AVIF gain-map, or Lensfun routes. See
+> [phase-3-bounded-transport-evidence-2026-09-19.md](phase-3-bounded-transport-evidence-2026-09-19.md).
+
 ## What changed
 
 ### A render plan replaces a bytes-per-pixel estimate

@@ -55,6 +55,172 @@ def apply_geometry(image: np.ndarray, geometry: GeometryAdjustments) -> np.ndarr
     return np.ascontiguousarray(result[top:bottom, left:right], dtype=np.float32)
 
 
+def _oriented_view(image: np.ndarray, geometry: GeometryAdjustments) -> np.ndarray:
+    """Return the quarter-turn and flip stage as a view, allocating nothing.
+
+    ``apply_geometry`` copies after each of these steps. The values are the
+    same either way, so a region extraction can stay lazy here and copy only
+    the window it was asked for.
+    """
+    result = image
+    if geometry.rotation:
+        result = np.rot90(result, k=(-geometry.rotation // 90) % 4)
+    if geometry.flip_horizontal:
+        result = np.flip(result, axis=1)
+    if geometry.flip_vertical:
+        result = np.flip(result, axis=0)
+    return result
+
+
+def _crop_bounds(width: int, height: int, geometry: GeometryAdjustments) -> tuple[int, int, int, int]:
+    """The same crop rounding ``apply_geometry`` applies to its final stage."""
+    crop = geometry.crop
+    left = int(np.clip(round(crop.x * width), 0, width - 1))
+    top = int(np.clip(round(crop.y * height), 0, height - 1))
+    right = int(np.clip(round((crop.x + crop.width) * width), left + 1, width))
+    bottom = int(np.clip(round((crop.y + crop.height) * height), top + 1, height))
+    return left, top, right, bottom
+
+
+def geometry_resample_stage(geometry: GeometryAdjustments) -> str:
+    """Name the resampling stage a region extraction has to cross.
+
+    ``index`` needs no resampling at all, so a region is pure slicing.
+    ``perspective`` is a projective map that can be evaluated for one window.
+    ``roll`` goes through ``Image.rotate(expand=True)``, whose expansion and
+    safe-inset geometry this module does not yet reproduce for a window.
+    """
+    if geometry.perspective_horizontal or geometry.perspective_vertical:
+        return "perspective"
+    if geometry.straighten_angle + geometry.perspective_rotate:
+        return "roll"
+    return "index"
+
+
+def apply_geometry_region(
+    image: np.ndarray,
+    geometry: GeometryAdjustments,
+    rect: tuple[int, int, int, int] | None = None,
+) -> np.ndarray:
+    """Extract one post-geometry output rectangle.
+
+    ``rect`` is ``(left, top, right, bottom)`` in the coordinate space of
+    ``apply_geometry(image, geometry)``; ``None`` means the whole output. The
+    result is required to equal the corresponding slice of the full-frame path,
+    which ``tests/test_geometry_region.py`` asserts directly.
+
+    PRD 5.4: the backend must extract a post-geometry output region without
+    first constructing the complete transformed frame. The ``index`` and
+    ``perspective`` stages meet that; ``roll`` still materializes and is
+    recorded as a known limitation.
+    """
+    oriented = _oriented_view(image, geometry)
+    stage = geometry_resample_stage(geometry)
+    total_roll = geometry.straighten_angle + geometry.perspective_rotate
+
+    if stage == "index":
+        left, top, right, bottom = _crop_bounds(oriented.shape[1], oriented.shape[0], geometry)
+        window = _clamp_rect(rect, right - left, bottom - top)
+        return np.ascontiguousarray(
+            oriented[top + window[1] : top + window[3], left + window[0] : left + window[2]],
+            dtype=np.float32,
+        )
+
+    if stage == "roll":
+        # Image.rotate(expand=True) owns its own expansion and inset geometry.
+        # Reproducing it for a window is deferred, so this path still builds the
+        # rotated frame and slices it. Parity is exact; memory is not bounded.
+        rotated = _rotate_to_valid_pixels(np.ascontiguousarray(oriented, dtype=np.float32), total_roll)
+        left, top, right, bottom = _crop_bounds(rotated.shape[1], rotated.shape[0], geometry)
+        window = _clamp_rect(rect, right - left, bottom - top)
+        return np.ascontiguousarray(
+            rotated[top + window[1] : top + window[3], left + window[0] : left + window[2]],
+            dtype=np.float32,
+        )
+
+    return _warp_perspective_region(oriented, geometry, total_roll, rect)
+
+
+def _clamp_rect(
+    rect: tuple[int, int, int, int] | None,
+    width: int,
+    height: int,
+) -> tuple[int, int, int, int]:
+    if rect is None:
+        return 0, 0, width, height
+    left = int(np.clip(int(rect[0]), 0, max(0, width - 1)))
+    top = int(np.clip(int(rect[1]), 0, max(0, height - 1)))
+    right = int(np.clip(int(rect[2]), left + 1, width))
+    bottom = int(np.clip(int(rect[3]), top + 1, height))
+    return left, top, right, bottom
+
+
+def _warp_perspective_region(
+    oriented: np.ndarray,
+    geometry: GeometryAdjustments,
+    total_roll: float,
+    rect: tuple[int, int, int, int] | None,
+) -> np.ndarray:
+    """Evaluate the projective map for one output window only."""
+    try:
+        from PIL import Image
+    except ImportError as exc:  # pragma: no cover - Pillow is required
+        raise RuntimeError("Pillow is required for perspective correction") from exc
+
+    height, width = oriented.shape[:2]
+    inverse = _perspective_inverse_matrix(
+        width, height, total_roll, geometry.perspective_horizontal, geometry.perspective_vertical
+    )
+    safe_left, safe_top, safe_right, safe_bottom = _perspective_safe_rectangle(
+        width,
+        height,
+        round(float(total_roll), 6),
+        round(float(geometry.perspective_horizontal), 6),
+        round(float(geometry.perspective_vertical), 6),
+    )
+    crop_left, crop_top, crop_right, crop_bottom = _crop_bounds(
+        safe_right - safe_left, safe_bottom - safe_top, geometry
+    )
+    window = _clamp_rect(rect, crop_right - crop_left, crop_bottom - crop_top)
+    window_width = window[2] - window[0]
+    window_height = window[3] - window[1]
+
+    # Translate the output origin into the homography so Pillow renders only
+    # this window. Output pixel (0, 0) of the window is warped-frame pixel
+    # (offset_x, offset_y).
+    offset_x = safe_left + crop_left + window[0]
+    offset_y = safe_top + crop_top + window[1]
+    if offset_x == 0 and offset_y == 0:
+        # Composing with an identity translation and renormalizing perturbs the
+        # coefficients in the last float bits. Skip it so a window anchored at
+        # the warped origin stays bit-identical to the full-frame path.
+        shifted = inverse
+    else:
+        translation = np.array(
+            [[1.0, 0.0, float(offset_x)], [0.0, 1.0, float(offset_y)], [0.0, 0.0, 1.0]],
+            dtype=np.float64,
+        )
+        shifted = inverse @ translation
+        shifted = shifted / shifted[2, 2]
+    coefficients = tuple(float(value) for value in shifted.ravel()[:8])
+
+    channels: list[np.ndarray] = []
+    for index in range(oriented.shape[2]):
+        source = np.ascontiguousarray(oriented[..., index], dtype=np.float32)
+        transformed = Image.fromarray(source).transform(
+            (window_width, window_height),
+            Image.Transform.PERSPECTIVE,
+            coefficients,
+            resample=Image.Resampling.BICUBIC,
+            fillcolor=0.0,
+        )
+        channel = np.asarray(transformed, dtype=np.float32)
+        # The full-frame path clips against the whole channel's range, so the
+        # window must use the same bounds rather than its own local extremes.
+        channels.append(np.clip(channel, float(np.min(source)), float(np.max(source))))
+    return np.ascontiguousarray(np.stack(channels, axis=-1), dtype=np.float32)
+
+
 def geometry_coordinate_map(
     width: int,
     height: int,

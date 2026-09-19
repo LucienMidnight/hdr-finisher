@@ -1,7 +1,7 @@
 # Stable Exact Preview Tiers and Full-Resolution Processing Sprint
 
 **Date:** September 19, 2026  
-**Status:** Approved direction; Phases 0-2 complete, Phase 3 ready to start  
+**Status:** Approved direction; Phases 0-3 complete, Phase 4 ready to start  
 **Owner:** HDR Finisher engineering  
 **Application target:** A staged preview-pipeline release that restores Full preview without silent resolution fallback  
 **Primary platforms:** Packaged Windows and macOS application shells, with and without usable WebGPU  
@@ -714,8 +714,8 @@ Update this table at every phase boundary or whenever work stops unexpectedly. L
 | 0 — Contracts and instrumentation | Complete | `ba58d6d` on `main` (parent `83bca70`) | Closed | All three gate conditions met. Evidence: [`phase-0-exit-gate-evidence-2026-09-19.md`](../technical/phase-0-exit-gate-evidence-2026-09-19.md), [`phase-0-gpu-logical-memory-baselines-2026-09-19.md`](../technical/phase-0-gpu-logical-memory-baselines-2026-09-19.md), [`phase-0-preview-resolution-boundary-inventory-2026-09-19.md`](../technical/phase-0-preview-resolution-boundary-inventory-2026-09-19.md). Six discrepancies carried forward, listed in the evidence document. |
 | 1 — Stable existing tiers | Complete | `903bdef` on `main` | Closed | All five gate conditions met on the CPU route. Evidence: [`phase-1-stable-tier-lifecycle-evidence-2026-09-19.md`](../technical/phase-1-stable-tier-lifecycle-evidence-2026-09-19.md). GPU timing measurement and Phase 7 scope/comparison tightening carried forward. |
 | 2 — GPU planner and budget | Complete | `69ca21e` on `main` | Closed | All four gate conditions met. Evidence: [`phase-2-gpu-planner-evidence-2026-09-19.md`](../technical/phase-2-gpu-planner-evidence-2026-09-19.md). A `tiled` decision currently means "Direct was not admitted"; Phase 4 builds the scheduler that acts on it. |
-| 3 — Bounded transport | Ready to start | — | Open | Phases 0-2 are closed. Removes the image-sized Full source and mask responses, and with them the 16,384-pixel request bound. |
-| 4 — Tile scheduler and pointwise graph | Not started | — | Open | Depends on Phases 2 and 3. |
+| 3 — Bounded transport | Complete | Uncommitted checkpoint on `main` at `493a318` | Closed | All four gate conditions met. Evidence: [`phase-3-bounded-transport-evidence-2026-09-19.md`](../technical/phase-3-bounded-transport-evidence-2026-09-19.md). Source transport is bounded; mask transport is Phase 5. The Phases 0-2 "environment defect" is retracted there. |
+| 4 — Tile scheduler and pointwise graph | Ready to start | — | Open | Phases 0-3 are closed. The planner already emits a `tiled` decision and the source-tile contract already serves rectangles with halos; Phase 4 is the scheduler that consumes both. |
 | 5 — Masks, locals, Detail | Not started | — | Open | Depends on tile scheduler. |
 | 6 — Denoise | Not started | — | Open | Depends on tile scheduler and budget. |
 | 7 — Spatial film, scopes, comparison | Not started | — | Open | Depends on tile scheduler. |
@@ -724,60 +724,61 @@ Update this table at every phase boundary or whenever work stops unexpectedly. L
 
 ### Current handoff checkpoint
 
-**Last updated:** September 19, 2026  
-**Last completed phase:** Phase 2 — Frontend GPU planner and configurable budget (exit gate closed)  
-**Active phase:** None; Phase 3 — Geometry-aware bounded transport is ready to start  
-**Branch and base:** `main`. Phase 0 is `ba58d6d`, Phase 1 is `903bdef`, Phase 2 is `69ca21e`, and the worktree is clean. A `.claude/launch.json` was added for local dev-server launching; it is covered by a global gitignore rule and is intentionally not committed.  
+**Last updated:** September 19, 2026
+**Last completed phase:** Phase 3 — Geometry-aware bounded transport (exit gate closed)
+**Active phase:** None; Phase 4 — Tile scheduler and pointwise render graph is ready to start
+**Branch and base:** `main`. Phase 0 is `ba58d6d`, Phase 1 is `903bdef`, Phase 2 is `69ca21e`, Phase 3 is the commit recorded in the ledger row above. A `.claude/launch.json` was added for local dev-server launching; it is covered by a global gitignore rule and is intentionally not committed.
 
-**Phase 0 completed work:** semantic `PreviewResolution` contract with an explicit `"full"` sentinel; preview-tier and GPU-budget preference schema; corrected four-versus-three grading residency; categorized planned/resident/transient/cached/peak diagnostics with static 24 MP/42 MP/8K models; device-limit capture; coercion and allocation inventories; and `webgpu-allocation-agreement.test.js`, which proves the diagnostics equal the renderer's own allocation calls through a recording `GPUDevice` stub.
+## Environment: use the project venv
 
-**Phase 1 completed work:** `deriveViewerState()` producing Ready/Updating/Preparing/Unavailable from a snapshot; truthful presentation identity (`requestedTier`, `exact`, a `tier` that is `null` for a placeholder, `schedulerTier`); removal of interaction-time resolution downgrade, with the bounded proxy surviving only as `bootstrapProxyLongEdge()`; `applyPreviewResolution()` no longer resetting the GPU session; both CPU routes retaining the last valid presentation through `markPreviewUnavailable()`; generation- and geometry-safe overlay acceptance; and Updating reported on the generation bump.
+**`codebase/.venv` is the project environment — Python 3.12.10 with every declared dependency installed, including `imagecodecs`, `rawpy`, and `lensfunpy`.** `desktop/lib/runtime.js` resolves exactly that interpreter for the dev Electron shell. Run the suite as:
 
-**Phase 2 completed work:**
+```
+codebase/.venv/Scripts/python.exe -m pytest -q
+```
 
-- `buildRenderPlan()` — a pure function enumerating every resource a Direct render would hold, one entry per resource with an `id`, `category`, `lifetime`, and byte count. Lifetimes are `resident`, `cached`, `transient`, `overlap`, and `margin`, so retained-frame overlap, transient scratch, and a contingency margin are admitted explicitly.
-- `planRender()` merges live renderer state (cached proxy levels, CPU versus Boolean masks, scene luminance, scope pool, parameter buffers, Denoise levels) and records `lastRenderPlan`, which `diagnosticsSnapshot()` exposes.
-- The `maximumGpuMemoryGiB` preference now reaches the renderer. `applyGpuMemoryBudget()` applies it on every preferences change and `initializeGpuPreview()` applies the stored value at construction, so load order does not matter. Auto is a stated 2 GiB application budget.
-- `decision.mode` is `direct` or `tiled` and has no third value, so no plan can express refusing a resolution. Violations are reported by rule name.
-- `ensureIntermediate` routes every texture creation through a `guard()` that records an allocation failure and abandons the graph, leaving the previous presentation on screen. The recorded backoff forces Tiled until cleared, which raising the budget does.
-- Backend preflight stops deciding GPU viability. `allowed` now reflects only the hard request-dimension bound and **measured** host working memory; the 26 MP monolithic-graph guideline and the unmeasurable-memory case moved to a non-gating `advisories` list, and the payload carries `decides_gpu_viability: false`.
+Phases 0-2 recorded an "environment defect" claiming a missing Python 3.12 environment and 23 prerequisite failures. **That is retracted.** Those runs used the global `python` (3.10.10) and never checked for the venv. In the correct interpreter the suite is fully green and always was. The retraction is recorded at the top of each of the three earlier evidence documents and in the Phase 3 evidence. The `run_app.py` guard requiring Python 3.12 is correct and needs no workaround; the Electron shell and `npm start` work as shipped.
+
+## Completed work by phase
+
+**Phase 0:** semantic `PreviewResolution` contract with an explicit `"full"` sentinel; preview-tier and GPU-budget preference schema; corrected four-versus-three grading residency; categorized planned/resident/transient/cached/peak diagnostics with static 24 MP/42 MP/8K models; device-limit capture; coercion and allocation inventories; and `webgpu-allocation-agreement.test.js`, which proves the diagnostics equal the renderer's own allocation calls through a recording `GPUDevice` stub.
+
+**Phase 1:** `deriveViewerState()` producing Ready/Updating/Preparing/Unavailable from a snapshot; truthful presentation identity (`requestedTier`, `exact`, a `tier` that is `null` for a placeholder, `schedulerTier`); removal of interaction-time resolution downgrade, with the bounded proxy surviving only as `bootstrapProxyLongEdge()`; `applyPreviewResolution()` no longer resetting the GPU session; both CPU routes retaining the last valid presentation through `markPreviewUnavailable()`; generation- and geometry-safe overlay acceptance; Updating reported on the generation bump.
+
+**Phase 2:** `buildRenderPlan()` enumerating every resource with an explicit lifetime; `planRender()` merging live renderer state; the `maximumGpuMemoryGiB` preference reaching the renderer; a two-valued `direct`/`tiled` admission decision that cannot express refusing a resolution; an allocation guard in `ensureIntermediate` that backs off to Tiled and keeps the previous presentation; and a backend preflight that reports host constraints instead of deciding GPU viability.
+
+**Phase 3:**
+
+- `apply_geometry_region(image, geometry, rect)` extracts one post-geometry output rectangle. `geometry_resample_stage()` names the route: `index` (quarter turns, flips, crop) is pure slicing over numpy views with no full-frame allocation; `perspective` composes the projective matrix with a translation so Pillow renders only the requested window; `roll` still materializes, because `Image.rotate(expand=True)` owns expansion and safe-inset geometry this module does not yet reproduce for a window.
+- `GET /api/session/{id}/source-tile/{kind}` carries source epoch, lane, tier, geometry signature, core rectangle, halo, and pixel format, and answers with the delivered and core rectangles, the full output size, the resample stage, and the identity headers. It has **no `long_edge` ceiling**, because the response no longer scales with the tier. Stale epoch, geometry, or revision is answered 409 rather than with pixels from another state.
+- `RenderCache.geometry_source_tile()` refuses with `TileUnavailableError` in the one case a per-tile result would not reproduce the whole-frame one, so a parity-breaking tile can never be served silently.
+- `loadProxyStreamed()` allocates one destination texture and fills it from full-width row strips bounded by `maxSourceChunkBytes` (16 MiB), keeping each chunk's row pitch identical to the whole-frame case. `loadProxy()` takes this route when the whole frame would exceed the budget and falls back when the backend declines. `sourceTransportMetrics` records route, chunk count, transferred bytes, largest response buffer, and time-to-first-tile.
+- The planner's `upload-staging` entry, a placeholder since Phase 2, is now populated with the chunk budget.
 
 **Validation:**
 
-- `node --test` over `render-plan-admission`, `viewer-state-transitions`, `webgpu-memory-diagnostics`, `webgpu-allocation-agreement` gives `tests 31 / pass 31 / fail 0`.
-- `tests/test_dng_resource_preflight.py` + `tests/test_api.py` gives `44 passed`.
-- Full Python suite gives `989 passed, 4 skipped, 23 failed`, with a `FAILED` list byte-identical to clean `83bca70`.
-- 14 non-GPU Playwright browser suites all pass.
-- Browser traces: at the Auto 2 GiB budget a 42 MP plan is `tiled` with a `budget` violation while the selected tier stays `4096` and the selector stays enabled with all three options; raising the budget to 4 GiB re-admits `direct` for both 4K and 42 MP.
+- Full Python suite in the venv: `1073 passed, 3 skipped, 0 failed`. Before Phase 3 it was `1017 passed, 3 skipped, 0 failed`; the +56 are this phase's new cases.
+- `node --test` over `source-transport`, `render-plan-admission`, `viewer-state-transitions`, `webgpu-memory-diagnostics`, `webgpu-allocation-agreement`: `tests 41 / pass 41 / fail 0`.
+- 16 Playwright browser suites pass, including `perspective-interaction` and `perspective-preview-ownership`.
+- Live server trace: the real 1024x576 output reassembled from 6 strips is **byte-identical** to the whole-frame proxy, with peak chunk at 16.7% of the frame, identical row pitch, and time-to-first-tile 9.8 ms against 59.5 ms for the complete transfer.
+- `test_geometry_region.py` (40 cases) compares region extraction against `apply_geometry` itself across a grid of uneven tiles, every boundary edge, single-row and single-column tiles, clamped rects, and odd dimensions. `test_source_tile_api.py` (16 cases) reassembles live endpoint tiles for rotate, flips, crop, rotate+crop, perspective, and roll.
 
-**Evidence:** `docs/technical/phase-2-gpu-planner-evidence-2026-09-19.md`, `docs/technical/phase-1-stable-tier-lifecycle-evidence-2026-09-19.md`, `docs/technical/phase-0-exit-gate-evidence-2026-09-19.md`, `docs/technical/phase-0-gpu-logical-memory-baselines-2026-09-19.md`, `docs/technical/phase-0-preview-resolution-boundary-inventory-2026-09-19.md`.
+**Approved tolerance:** every route is exact except a windowed projective resample not anchored at the warped origin, where composing the matrix with a translation perturbs float32 in its last bits. Worst case measured: 6e-08 absolute, 9e-08 relative, on 2 of 1680 samples, about four orders of magnitude below RGBA16F transport precision.
 
-**Environment defect (unchanged, not a phase blocker):** `requirements.txt` pins `imagecodecs>=2026.6.26`, which requires Python 3.12 or newer; the active interpreter is 3.10.10, so the pin cannot be installed and 23 JPEG XL / AVIF / Lensfun cases cannot execute. They fail identically at clean `83bca70`. `rawpy` and `lensfunpy` are also absent. Python 3.12.10 exists on this host with a bare site-packages. `run_app.py` refuses to start under Python below 3.12, so the browser traces were produced by running `uvicorn hdr_finisher.main:app` directly under 3.10.10, which imports and serves correctly.
+**Evidence:** `docs/technical/phase-3-bounded-transport-evidence-2026-09-19.md`, `phase-2-gpu-planner-evidence-2026-09-19.md`, `phase-1-stable-tier-lifecycle-evidence-2026-09-19.md`, `phase-0-exit-gate-evidence-2026-09-19.md`, `phase-0-gpu-logical-memory-baselines-2026-09-19.md`, `phase-0-preview-resolution-boundary-inventory-2026-09-19.md`.
 
 **Carried-forward items:**
 
-1. **Tiled execution does not exist yet.** A `tiled` admission decision currently means "Direct was not admitted"; Phase 4 builds the scheduler that acts on it. Until then an unadmitted graph still attempts Direct and relies on the allocation backoff.
-2. **No GPU trace for Phases 1 or 2.** Exact-tier interaction and the planner are unmeasured on a real WebGPU adapter. The section 11.1 timing targets (16.7 ms p95 at 1K/2K, 33 ms p95 at 4K) need a run on named reference hardware. If exact-tier 4K interaction proves too slow there, the answer is Phase 4 tiled execution, not a resolution downgrade.
-3. `upload-staging` and `comparison-lanes` are plan inputs with no live source yet; they contribute zero until Phase 3 and Phase 7 supply real figures.
-4. The 16,384-pixel request bound still exists in the backend request models and is still a genuine refusal — Phase 3 removes the need for it.
-5. Scopes still derive from any accepted generation rather than an exact selected-tier generation — Phase 7.
-6. Comparison lanes do not yet state tier and generation explicitly — Phase 7.
+1. **No GPU trace for Phases 1-3.** The in-app browser has no WebGPU adapter, so exact-tier interaction, the planner, and the streamed loader were exercised through device stubs and the live endpoint rather than a real adapter. The section 11.1 timing targets (16.7 ms p95 at 1K/2K, 33 ms p95 at 4K) still need a run on named reference hardware. The director reports that exact-tier interaction feels faster than the published build on an RTX 4070 Ti, which is encouraging but is not a measurement.
+2. **The `roll` region route still materializes** the rotated frame and slices it. Parity is exact and the browser response is still bounded; only the backend allocation is not.
+3. **Mask transport is still whole-frame.** `GET /local-mask/{id}` returns a full-frame byte payload. The bounded-mask model is Phase 5.
+4. **The 16,384-pixel bound remains on the older endpoints** (`PreviewRequest`, `GeometryMapRequest`, `LocalMaskPreviewRequest`, `LocalLuminanceSampleRequest`, `/proxy`, `/local-mask`). They retire as their consumers move to tiles.
+5. **Tiled execution does not exist yet.** A `tiled` admission decision still means "Direct was not admitted"; Phase 4 builds the scheduler that acts on it.
+6. Scopes still derive from any accepted generation rather than an exact selected-tier generation, and comparison lanes do not yet state tier and generation explicitly — both Phase 7.
 7. `window.HDRFinisherPerformance` render/denoise hooks still call `Number(longEdge)` with no numeric-contract validation.
 8. Full remains absent from the preview selector and the Settings menu; the sentinel is implemented and tested but not user-selectable until Phase 4.
 
-**Next safe edit:** Begin Phase 3 — define the source-tile and mask-tile API contracts, bind them to source epoch, geometry, lane input, tier, rectangle, and halo, and stream Direct source textures in bounded chunks. No app or server process is intentionally left running; the port-8000 dev server used for the browser traces was stopped.
-
-**Phase 3 reconnaissance (read before starting):** the current transport was traced but not yet changed.
-
-- `GET /api/session/{id}/proxy/{kind}` in `backend/hdr_finisher/main.py` is the whole-frame source path. It already carries `edit_revision` and an optional `geometry_signature` that returns 409 on a stale request, so the epoch and geometry halves of the tile identity have a working precedent to copy. It does **not** carry a rectangle, a halo, or a lane-input identity.
-- `RenderCache.geometry_source_proxy()` in `render_cache.py` calls `apply_geometry(proxy, geometry)` and then `downsample_image(...)`. `RenderCache` already maintains a `_source_epoch` counter that increments on source replacement, which is the epoch the tile contract should bind to.
-- `apply_geometry()` in `finishing.py` materializes the complete transformed frame. It composes `np.rot90`, flips, an optional perspective warp or roll, and a final crop slice. Region extraction therefore splits naturally into two cases:
-  - **Exact index path** — quarter-turn rotation, flips, and crop only. An output rectangle maps to a source rectangle by pure index arithmetic, so a tile can be extracted with no full-frame allocation and should be bit-identical to the full-frame path.
-  - **Resampling path** — `straighten_angle`, `perspective_rotate`, `perspective_horizontal`, or `perspective_vertical` non-zero. These need a windowed inverse warp. `geometry_coordinate_map()` already fits an `output_to_source` homography against the real operation, but it is a least-squares **fit**, so using it for pixel extraction risks failing the parity gate. Either derive the exact homography from the same primitives `_warp_perspective_to_valid_pixels` uses, or materialize for this case and record it as a carried-forward memory limitation. The browser-response half of the exit gate is met either way, because the response is per-tile regardless of what the backend does internally.
-- Request models cap `long_edge` at 16,384 across `PreviewRequest`, `GeometryMapRequest`, `LocalMaskPreviewRequest`, `LocalLuminanceSampleRequest`, and the `/proxy` and `/local-mask` query parameters. The tile contract should carry a rectangle instead, which is what removes that bound.
-- Frontend `loadProxy` in `webgpu-preview.js` fetches one response and uploads one texture. Chunked upload means `writeTexture` per tile into an already-allocated destination, with `proxyInflight` extended from one entry per proxy to one per tile for single-flight reuse.
-- `buildRenderPlan` already has an `upload-staging` entry with no live source; Phase 3 is what should populate it.
-
+**Next safe edit:** Begin Phase 4 — implement globally anchored tile identity, LRU residency, visible-region priority, and bounded scratch; port geometry and pointwise grading nodes; implement atomic visible-region assembly with no mixed-generation admission; and add engineering-only Full selection. The source-tile contract from Phase 3 already supplies rectangles with halos, and `buildRenderPlan().decision.mode` already says when Tiled is required. No app or server process is intentionally left running.
 
 When handing work to another task, replace the checkpoint above with:
 

@@ -579,6 +579,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // Tiled and is cleared only by an explicit reset, so a transient OOM can
       // never be mistaken for continuing headroom. It never changes the tier.
       this.allocationBackoff = null;
+      // Largest source response the browser is ever asked to buffer. Direct
+      // execution still allocates one full texture, but fills it from chunks
+      // no larger than this.
+      this.maxSourceChunkBytes = 16 * 1024 * 1024;
+      this.sourceTransportMetrics = null;
     }
 
     setMemoryBudget(value) {
@@ -626,6 +631,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         scopeBytes,
         parameterBufferBytes,
         budget: this.memoryBudget,
+        // Bounded transport means staging is one chunk, not one image.
+        stagingBytes: this.maxSourceChunkBytes,
         limits: this.adapterInfo?.limits || snapshotDeviceLimits(this.device?.limits),
         allocationBackoff: this.allocationBackoff?.reason || null,
         ...options,
@@ -1033,6 +1040,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           },
           plan: this.lastRenderPlan,
           allocationBackoff: this.allocationBackoff,
+          sourceTransport: this.sourceTransportMetrics,
+          maxSourceChunkBytes: this.maxSourceChunkBytes,
         },
       };
     }
@@ -2564,6 +2573,140 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       }
     }
 
+    /**
+     * Fill a Direct source texture from bounded tile responses.
+     *
+     * PRD 5.4: for Direct execution the renderer may allocate a full source
+     * texture but fill it incrementally, so the browser never needs a single
+     * image-sized response buffer. Chunks are full-width row strips, which
+     * keeps each response's row pitch identical to the whole-frame case and
+     * makes the assembled texture what the whole-frame path would have written.
+     *
+     * Returns null when the backend declines the tile route, so the caller can
+     * fall back to the whole-frame request rather than failing the render.
+     */
+    async loadProxyStreamed(sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key) {
+      const startedAt = performance.now();
+      const query = (rect) => `/api/session/${sessionId}/source-tile/${lane}`
+        + `?long_edge=${longEdge}&format=rgba16f&edit_revision=${editRevision}`
+        + `&geometry_signature=${encodeURIComponent(geometrySignature)}`
+        + `&x=${rect.x}&y=${rect.y}&width=${rect.width}&height=${rect.height}`
+        + (rect.epoch === undefined ? "" : `&source_epoch=${rect.epoch}`);
+
+      const probe = await fetch(query({ x: 0, y: 0, width: 1, height: 1 }));
+      if (!probe.ok) {
+        // 409 here means this geometry cannot be served as tiles, or the
+        // request is already stale. Either way the caller decides what next.
+        await probe.arrayBuffer().catch(() => null);
+        return null;
+      }
+      const width = Number(probe.headers.get("X-Output-Width"));
+      const height = Number(probe.headers.get("X-Output-Height"));
+      const pixelFormat = probe.headers.get("X-Pixel-Format") || "rgba16float";
+      const workingSpace = probe.headers.get("X-Working-Space") || "acescg";
+      const acceptedGeometry = probe.headers.get("X-Geometry-Signature") || "{}";
+      const sourceEpoch = Number(probe.headers.get("X-Source-Epoch"));
+      await probe.arrayBuffer().catch(() => null);
+      if (!(width > 0 && height > 0)) return null;
+      if (acceptedGeometry !== geometrySignature) {
+        const error = new Error("Stale WebGPU geometry tile rejected");
+        error.recoverable = true;
+        throw error;
+      }
+
+      const bytesPerPixel = pixelFormat === "rgba16float" ? 8 : 16;
+      let texture;
+      try {
+        texture = this.device.createTexture({
+          size: { width, height },
+          format: pixelFormat,
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC,
+        });
+      } catch (error) {
+        this.recordAllocationFailure("source-proxy", error, { width, height });
+        throw error;
+      }
+
+      const rowBytes = Math.max(1, width * bytesPerPixel);
+      const rowsPerChunk = Math.max(1, Math.min(height, Math.floor(this.maxSourceChunkBytes / rowBytes)));
+      let transferredBytes = 0;
+      let firstTileMs = null;
+      let chunkCount = 0;
+      try {
+        for (let top = 0; top < height; top += rowsPerChunk) {
+          const rows = Math.min(rowsPerChunk, height - top);
+          const response = await fetch(query({ x: 0, y: top, width, height: rows, epoch: sourceEpoch }));
+          if (!response.ok) {
+            const payload = await response.json().catch(() => null);
+            const error = new Error(payload?.detail || "A source tile could not be loaded");
+            // A stale source or geometry mid-stream is recoverable: the caller
+            // keeps the previous presentation and a newer request supersedes.
+            error.recoverable = response.status === 409;
+            error.status = response.status;
+            throw error;
+          }
+          const bytesPerRow = Number(response.headers.get("X-Bytes-Per-Row"));
+          const data = await response.arrayBuffer();
+          if (firstTileMs === null) firstTileMs = performance.now() - startedAt;
+          transferredBytes += data.byteLength;
+          chunkCount += 1;
+          this.device.queue.writeTexture(
+            { texture, origin: { x: 0, y: top } },
+            data,
+            { offset: 0, bytesPerRow, rowsPerImage: rows },
+            { width, height: rows },
+          );
+        }
+      } catch (error) {
+        this.destroyAfterActiveRenders(() => texture.destroy());
+        throw error;
+      }
+
+      const byteSize = width * height * bytesPerPixel;
+      const proxy = {
+        texture,
+        width,
+        height,
+        sessionId,
+        lane,
+        longEdge,
+        workingSpace,
+        pixelFormat,
+        geometrySignature,
+        sourceIdentity,
+        identity: key,
+        byteSize,
+        streamed: true,
+        bindGroups: new Map(),
+      };
+      this.proxies.set(key, proxy);
+      this.sourceTransportMetrics = {
+        route: "tiled",
+        width,
+        height,
+        chunkCount,
+        rowsPerChunk,
+        transferredBytes,
+        // The peak response buffer, which is the figure the exit gate is about.
+        largestResponseBytes: Math.min(this.maxSourceChunkBytes, rowBytes * rowsPerChunk),
+        timeToFirstTileMs: firstTileMs,
+        totalMs: performance.now() - startedAt,
+      };
+      this.recordAllocation("source-proxy", byteSize, { width, height, lane, longEdge, pixelFormat, streamed: true });
+      this.recordStage("proxy-request", {
+        lane,
+        longEdge,
+        cacheHit: false,
+        route: "tiled",
+        chunkCount,
+        durationMs: this.sourceTransportMetrics.totalMs,
+        timeToFirstTileMs: firstTileMs,
+        bytes: transferredBytes,
+      });
+      this.trimProxyLevels(sessionId, lane);
+      return proxy;
+    }
+
     async loadProxy(sessionId, lane, longEdge, geometrySignature = "{}", editRevision = 0, sourceIdentity = "source") {
       const key = `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}`;
       if (this.proxies.has(key)) {
@@ -2573,6 +2716,15 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       if (this.proxyInflight.has(key)) return this.proxyInflight.get(key);
       const pending = (async () => {
         const startedAt = performance.now();
+        // A whole-frame response above the chunk budget is exactly the
+        // image-sized browser buffer this sprint removes. Try tiles first; the
+        // tile route returns null when the backend cannot serve this geometry.
+        if (longEdge * longEdge * 8 > this.maxSourceChunkBytes) {
+          const streamed = await this.loadProxyStreamed(
+            sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key,
+          );
+          if (streamed) return streamed;
+        }
         const response = await fetch(`/api/session/${sessionId}/proxy/${lane}?long_edge=${longEdge}&format=rgba16f&edit_revision=${editRevision}&geometry_signature=${encodeURIComponent(geometrySignature)}`);
         if (!response.ok) {
           const payload = await response.json().catch(() => null);
@@ -2625,10 +2777,21 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         };
         this.proxies.set(key, proxy);
         this.recordAllocation("source-proxy", byteSize, { width, height, lane, longEdge, pixelFormat });
+        this.sourceTransportMetrics = {
+          route: "whole-frame",
+          width,
+          height,
+          chunkCount: 1,
+          transferredBytes: data.byteLength,
+          largestResponseBytes: data.byteLength,
+          timeToFirstTileMs: performance.now() - startedAt,
+          totalMs: performance.now() - startedAt,
+        };
         this.recordStage("proxy-request", {
           lane,
           longEdge,
           cacheHit: false,
+          route: "whole-frame",
           durationMs: performance.now() - startedAt,
           bytes: data.byteLength,
         });

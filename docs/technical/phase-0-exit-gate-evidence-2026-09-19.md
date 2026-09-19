@@ -10,6 +10,16 @@
 This record evaluates the three Phase 0 exit-gate conditions stated in Section 10 of the sprint PRD. It supersedes the "gate status: open" note in
 [phase-0-gpu-logical-memory-baselines-2026-09-19.md](phase-0-gpu-logical-memory-baselines-2026-09-19.md) for gates 1 and 3.
 
+
+> **Retracted 2026-09-19 (Phase 3):** the "environment defect" recorded below is
+> wrong. `codebase/.venv` already contains Python 3.12.10 with every declared
+> dependency, including `imagecodecs`, `rawpy`, and `lensfunpy`. This record ran
+> the global `python` (3.10.10) instead. Re-run in the venv, the full suite is
+> `1017 passed, 3 skipped, 0 failed` with no prerequisite failures. The
+> before/after comparison in this document is still a valid comparison, but it
+> never exercised the JPEG XL, AVIF gain-map, or Lensfun routes. See
+> [phase-3-bounded-transport-evidence-2026-09-19.md](phase-3-bounded-transport-evidence-2026-09-19.md).
+
 ## Gate 1 — Diagnostic totals agree with allocations in deterministic tests
 
 **Status: met.**

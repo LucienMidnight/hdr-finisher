@@ -10,7 +10,13 @@ import numpy as np
 
 from .adjustments import apply_adjustments, render_matched_sdr_base
 from .color_context import RenderColorContext
-from .finishing import apply_geometry, geometry_coordinate_map
+from .finishing import (
+    apply_geometry,
+    apply_geometry_region,
+    geometry_coordinate_map,
+    geometry_output_dimensions,
+    geometry_resample_stage,
+)
 from .local_adjustments import (
     compile_geometry_fixed_mask,
     mask_influence_opacity,
@@ -56,6 +62,19 @@ def scope_region_view(
     x1 = min(width, max(x0 + 1, int(np.ceil((x + region_width) * width))))
     y1 = min(height, max(y0 + 1, int(np.ceil((y + region_height) * height))))
     return image[y0:y1, x0:x1]
+
+
+
+class TileUnavailableError(RuntimeError):
+    """Raised when a bounded tile cannot reproduce the whole-frame result."""
+
+
+def _clamp_output_rect(rect: tuple[int, int, int, int], width: int, height: int) -> tuple[int, int, int, int]:
+    left = min(max(int(rect[0]), 0), max(0, width - 1))
+    top = min(max(int(rect[1]), 0), max(0, height - 1))
+    right = min(max(int(rect[2]), left + 1), width)
+    bottom = min(max(int(rect[3]), top + 1), height)
+    return left, top, right, bottom
 
 
 @dataclass
@@ -146,6 +165,78 @@ class SessionRenderCache:
         working_space = "linear-srgb" if use_authored_sdr else "acescg"
         fixed = apply_geometry(proxy, geometry)
         return downsample_image(fixed, edge), working_space, signature
+
+    def geometry_source_tile(
+        self,
+        kind: PreviewKind,
+        long_edge: int,
+        adjustments: AdjustmentState,
+        sdr_match: SdrMatchState | None,
+        rect: tuple[int, int, int, int],
+        halo: int = 0,
+    ) -> tuple[np.ndarray, str, str, dict[str, Any]]:
+        """Return one bounded post-geometry source tile and its placement.
+
+        The tile contract of PRD 5.4: the caller names a core output rectangle
+        and a halo, and receives back the pixels plus the identity they belong
+        to -- source epoch, tier, geometry signature, the full output size, and
+        the rectangle actually delivered after clamping.
+
+        The tile is produced by ``apply_geometry_region``, which does not build
+        the complete transformed frame for the index or perspective routes.
+        """
+        edge = max(256, int(long_edge))
+        geometry = adjustments.shared.geometry
+        signature = geometry.model_dump_json()
+        halo = max(0, int(halo))
+
+        if kind == PreviewKind.SDR and sdr_match is not None and sdr_match.active:
+            source, _sdr_reference = self._proxies(edge)
+            base = self.matched_sdr_base(source, adjustments, sdr_match, edge)
+            working_space = "linear-srgb"
+        else:
+            source, sdr_reference = self._proxies(edge)
+            use_authored_sdr = (
+                kind == PreviewKind.SDR
+                and sdr_reference is not None
+                and adjustments.sdr.use_authored_base
+            )
+            base = sdr_reference if use_authored_sdr else source
+            working_space = "linear-srgb" if use_authored_sdr else "acescg"
+
+        with self._lock:
+            source_epoch = self._source_epoch
+
+        output_width, output_height = geometry_output_dimensions(base.shape[1], base.shape[0], geometry)
+        if max(output_width, output_height) > edge:
+            # The whole-frame path would downsample here, and a per-tile
+            # downsample does not reproduce a whole-frame one at the edges.
+            # Refuse rather than deliver a tile that fails parity.
+            raise TileUnavailableError(
+                "This geometry needs a post-geometry downsample, which the tile path does not reproduce."
+            )
+
+        core = _clamp_output_rect(rect, output_width, output_height)
+        haloed = (
+            max(0, core[0] - halo),
+            max(0, core[1] - halo),
+            min(output_width, core[2] + halo),
+            min(output_height, core[3] + halo),
+        )
+        tile = apply_geometry_region(base, geometry, haloed)
+        placement = {
+            "source_epoch": source_epoch,
+            "geometry_signature": signature,
+            "resample_stage": geometry_resample_stage(geometry),
+            "working_space": working_space,
+            "output_width": output_width,
+            "output_height": output_height,
+            "core": core,
+            "delivered": haloed,
+            "halo": halo,
+            "long_edge": edge,
+        }
+        return tile, working_space, signature, placement
 
     def matched_sdr_base(
         self,
