@@ -80,6 +80,17 @@ class ResourceEstimate:
 
 @dataclass(frozen=True)
 class PreviewResourceEstimate:
+    """Host-resource report for a preview request.
+
+    Sprint contract (PRD 5.1): the backend cannot observe WebGPU device limits,
+    frontend allocation state, or driver heap usage, so it does not decide
+    whether a GPU render is viable. ``allowed`` therefore reflects only
+    constraints the backend genuinely owns and can measure -- its own working
+    memory, and the hard dimension bound of its request models. Everything the
+    old monolithic-GPU heuristic used to reject on is reported in
+    ``advisories`` so the frontend planner can weigh it, and never gates here.
+    """
+
     requested_max_dimension: int
     width: int
     height: int
@@ -88,6 +99,10 @@ class PreviewResourceEstimate:
     safely_available_bytes: int | None
     allowed: bool
     reason: str
+    advisories: tuple[str, ...] = ()
+    # A frontend planner owns GPU admission. This flag is part of the response
+    # so the boundary is explicit to every reader of the payload.
+    decides_gpu_viability: bool = False
 
 
 def detect_memory_resources() -> ResourceSnapshot:
@@ -158,26 +173,34 @@ def estimate_preview_resources(
 
     reason = ""
     allowed = True
+    advisories: list[str] = []
+    above_baseline = max(preview_width, preview_height) > FULL_PREVIEW_BASELINE_DIMENSION
+
     if max(preview_width, preview_height) > FULL_PREVIEW_MAX_DIMENSION:
+        # A hard bound of the current request models, not a resource heuristic.
+        # Phase 3's bounded tile transport removes the need for it.
         allowed = False
         reason = (
             f"Full preview would be {preview_width:,} × {preview_height:,}, above the "
-            f"{FULL_PREVIEW_MAX_DIMENSION:,}-pixel safety limit in either dimension."
+            f"{FULL_PREVIEW_MAX_DIMENSION:,}-pixel request limit in either dimension."
         )
-    elif pixels > FULL_PREVIEW_MAX_PIXELS:
+    elif above_baseline and safely_available is not None and estimated > safely_available:
+        # Measured host memory is the one preview constraint the backend owns.
         allowed = False
         reason = (
-            f"Full preview would contain {pixels / 1_000_000:.1f} megapixels, above the "
-            f"{FULL_PREVIEW_MAX_PIXELS / 1_000_000:.0f}-megapixel working-memory limit."
+            f"Full preview is estimated to need {estimated / GIB:.2f} GiB of host working "
+            f"memory; only {safely_available / GIB:.2f} GiB is safely available."
         )
-    elif max(preview_width, preview_height) > FULL_PREVIEW_BASELINE_DIMENSION and safely_available is None:
-        allowed = False
-        reason = "System memory could not be measured, so Full preview safety cannot be confirmed."
-    elif max(preview_width, preview_height) > FULL_PREVIEW_BASELINE_DIMENSION and estimated > (safely_available or 0):
-        allowed = False
-        reason = (
-            f"Full preview is estimated to need {estimated / GIB:.2f} GiB of working memory; "
-            f"only {(safely_available or 0) / GIB:.2f} GiB is safely available."
+
+    if pixels > FULL_PREVIEW_MAX_PIXELS:
+        advisories.append(
+            f"Preview would contain {pixels / 1_000_000:.1f} megapixels, above the "
+            f"{FULL_PREVIEW_MAX_PIXELS / 1_000_000:.0f}-megapixel monolithic-graph guideline. "
+            "The frontend planner decides Direct versus Tiled execution."
+        )
+    if above_baseline and safely_available is None:
+        advisories.append(
+            "System memory could not be measured, so host working-memory headroom is unknown."
         )
 
     return PreviewResourceEstimate(
@@ -189,6 +212,7 @@ def estimate_preview_resources(
         safely_available_bytes=safely_available,
         allowed=allowed,
         reason=reason,
+        advisories=tuple(advisories),
     )
 
 

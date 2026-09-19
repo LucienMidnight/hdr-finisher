@@ -100,20 +100,55 @@ def test_full_preview_allows_common_24mp_source_with_safe_memory() -> None:
     assert (estimate.width, estimate.height) == (6_000, 4_000)
 
 
-def test_full_preview_rejects_unsafe_memory_or_excessive_pixel_count() -> None:
+def test_full_preview_rejects_measured_host_memory_shortfall() -> None:
     low_memory = estimate_preview_resources(
         width=6_000,
         height=4_000,
         max_dimension=6_000,
         resources=ResourceSnapshot(8 * GIB, 3 * GIB, "test"),
     )
+    assert low_memory.allowed is False
+    assert "working memory" in low_memory.reason
+
+
+def test_pixel_count_guideline_advises_but_does_not_disable_full() -> None:
+    """PRD 5.1 and the Phase 2 exit gate: no heuristic memory estimate disables Full.
+
+    The 26 MP figure models a monolithic GPU graph, which the backend cannot
+    observe. It is reported so the frontend planner can weigh it, and it no
+    longer refuses the request.
+    """
     oversized = estimate_preview_resources(
         width=8_000,
         height=6_000,
         max_dimension=8_000,
         resources=ResourceSnapshot(64 * GIB, 48 * GIB, "test"),
     )
-    assert low_memory.allowed is False
-    assert "working memory" in low_memory.reason
+    assert oversized.allowed is True
+    assert oversized.reason == ""
+    assert oversized.decides_gpu_viability is False
+    assert any("megapixels" in advisory for advisory in oversized.advisories)
+
+
+def test_unmeasurable_host_memory_advises_but_does_not_disable_full() -> None:
+    unknown = estimate_preview_resources(
+        width=6_000,
+        height=4_000,
+        max_dimension=6_000,
+        resources=ResourceSnapshot(None, None, "unavailable"),
+    )
+    assert unknown.allowed is True
+    assert any("could not be measured" in advisory for advisory in unknown.advisories)
+
+
+def test_hard_request_dimension_bound_still_rejects() -> None:
+    # Not a resource heuristic: the current request models cap a single
+    # dimension at 16,384. Phase 3's bounded tile transport removes the need.
+    oversized = estimate_preview_resources(
+        width=40_000,
+        height=30_000,
+        max_dimension=40_000,
+        resources=ResourceSnapshot(64 * GIB, 48 * GIB, "test"),
+    )
     assert oversized.allowed is False
-    assert "megapixels" in oversized.reason
+    assert "request limit" in oversized.reason

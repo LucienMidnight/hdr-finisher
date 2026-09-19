@@ -385,6 +385,8 @@ const state = {
   // Set only when the selected tier could not be produced. It never clears the
   // retained presentation; it explains why that presentation is still the newest.
   previewUnavailableReason: "",
+  // Application allocation budget for preview GPU work, not physical VRAM.
+  gpuMemoryBudget: "auto",
   detailInteractionRestore: null,
   previewScheduler: null,
   gpuPreparedLane: { hdr: false, sdr: false },
@@ -1847,6 +1849,9 @@ async function boot() {
 async function initializeGpuPreview() {
   if (!window.HDRWebGPUPreview) return;
   state.gpuPreview = new window.HDRWebGPUPreview(els.previewCanvas);
+  // Preferences can load before or after the renderer exists, so apply the
+  // stored budget here as well as on every preferences change.
+  state.gpuPreview.setMemoryBudget(state.gpuMemoryBudget ?? "auto");
   await state.gpuPreview.initialize();
   state.displayInfo.gpu = state.gpuPreview.detail;
 }
@@ -1985,7 +1990,10 @@ function initializePreviewScheduler() {
       presentedTier: state.acceptedPresentation?.tier || null,
       presentedGeneration: state.acceptedPresentation?.generation ?? null,
       currentGeneration: state.previewGeneration[state.currentView],
-      executionMode: state.acceptedPresentation?.transport === "WebGPU" ? "direct-gpu" : "direct-cpu",
+      executionMode: previewExecutionMode(),
+      gpuBudget: state.gpuMemoryBudget ?? "auto",
+      renderPlan: state.gpuPreview?.lastRenderPlan || null,
+      allocationBackoff: state.gpuPreview?.allocationBackoff || null,
       previewResolution: normalizedPreviewResolution(),
       previewMaxDimension: previewTargetLongEdge(),
       previewDimensions: previewResolutionDimensions(),
@@ -3706,10 +3714,27 @@ async function initializeApplicationShell() {
       } else if (selectablePreviewResolution !== state.previewResolution) {
         applyPreviewResolution(selectablePreviewResolution);
       }
+      applyGpuMemoryBudget(preferences.maximumGpuMemoryGiB);
       if (options.initial) state.renderingMode = preferences.renderingMode;
       else if (preferences.renderingMode !== state.renderingMode) void applyRenderingMode(preferences.renderingMode);
     },
   });
+}
+
+function applyGpuMemoryBudget(value) {
+  // PRD 4.2: the budget decides Direct versus Tiled execution and cache
+  // eviction. It never decides whether a resolution option is visible, so
+  // nothing here touches the preview-resolution selector.
+  const setting = value === "auto" || value === undefined || value === null ? "auto" : value;
+  state.gpuMemoryBudget = setting;
+  const bytes = state.gpuPreview?.setMemoryBudget?.(setting)
+    ?? window.HDRWebGPUPreview?.normalizeGpuBudgetBytes?.(setting)
+    ?? null;
+  // A larger budget can re-admit Direct execution that an earlier allocation
+  // failure backed off from, so let the next render re-plan from scratch.
+  state.gpuPreview?.clearAllocationBackoff?.();
+  renderReadouts();
+  return bytes;
 }
 
 async function applyNewSessionPreferences() {
@@ -3759,6 +3784,28 @@ function lumaBandLabel(lower, upper) {
   return `${formatReferenceNits(lower)} - ${formatReferenceNits(upper)}`;
 }
 
+function previewExecutionMode() {
+  // The four modes in PRD 8. Execution is a renderer decision; it is tracked
+  // separately from the tier so neither can be read off the other.
+  const gpu = state.acceptedPresentation?.transport === "WebGPU" || Boolean(state.gpuPreview?.available);
+  const tiled = state.gpuPreview?.lastRenderPlan?.decision?.mode === "tiled";
+  if (!gpu) return "direct-cpu";
+  return tiled ? "tiled-gpu" : "direct-gpu";
+}
+
+function previewExecutionLabel() {
+  const transport = state.acceptedPresentation?.transport;
+  const engine = transport === "WebGPU" ? "GPU" : state.gpuPreview?.available ? "GPU" : "CPU";
+  const plan = state.gpuPreview?.lastRenderPlan;
+  const mode = plan?.decision?.mode === "tiled" ? "Tiled" : "Direct";
+  const budget = state.gpuMemoryBudget === "auto" || state.gpuMemoryBudget === undefined
+    ? "Auto"
+    : `${state.gpuMemoryBudget} GiB`;
+  if (engine !== "GPU") return `Direct CPU · budget ${budget}`;
+  const backoff = state.gpuPreview?.allocationBackoff ? " · allocation backoff" : "";
+  return `${mode} GPU · budget ${budget}${backoff}`;
+}
+
 function previewOutputEntries() {
   const target = previewResolutionDimensions();
   return [
@@ -3769,6 +3816,7 @@ function previewOutputEntries() {
       ? `${state.acceptedPresentation.tier ? previewResolutionLabel(state.acceptedPresentation.tier) : "Placeholder"} · ${state.acceptedPresentation.longEdge}px · ${state.acceptedPresentation.transport}`
       : "Waiting"],
     ["Status", viewerStatusLabel()],
+    ["Execution", previewExecutionLabel()],
     ["Scope", els.scopeFreshness?.textContent || "Waiting"],
     ["Transport", state.previewInfo.transport],
     ["Media", state.previewInfo.mediaType],

@@ -1168,7 +1168,9 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     assert shader.count("applyFilmLook(coordinate)") == 1
     assert "applyOutputHighlights(finishedAt(coordinate))" in shader
     assert "entryPoint: \"finishFragmentMain\"" in shader
-    assert "finishTexture: createTexture()" in shader
+    # The four grading textures still exist; Phase 2 routes their creation
+    # through the allocation guard so an OOM backs off to Tiled execution.
+    assert 'finishTexture: guard(createTexture, "grading-finish")' in shader
     # The limiter is a single final-output stage: one shoulder call site per lane,
     # each followed by the ceiling that makes the target a delivery guarantee.
     assert shader.count("hdrPeakFit(hdrSoftCeiling(") == 1
@@ -1309,7 +1311,7 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     assert "if (p[108] < 1.0)" in shader
     assert "if (p[100] > 0.5 && p[108] < 1.0)" not in shader
     assert "detailActive || localDetailActive" in shader
-    assert "spatialATexture: spatialActive ? createSpatialTexture() : null" in shader
+    assert 'spatialATexture: spatialActive ? guard(createSpatialTexture, "spatial-a") : null' in shader
     assert "current?.width === width && current?.height === height && current.spatialActive === spatialActive" not in shader
     assert "if (spatialActive && (!current.spatialATexture || !current.spatialBTexture))" in shader
     assert '"grading-spatial-intermediates"' in shader

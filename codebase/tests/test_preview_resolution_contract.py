@@ -27,3 +27,67 @@ def test_preview_diagnostics_separate_requested_and_presented_identity() -> None
     assert "currentGeneration: state.previewGeneration[state.currentView]" in javascript
     assert "previewDimensions: previewResolutionDimensions()" in javascript
 
+
+
+def test_gpu_memory_budget_reaches_the_renderer_and_never_gates_a_tier() -> None:
+    """Phase 2: the budget decides Direct versus Tiled, not what the menu offers.
+
+    PRD 4.2 is explicit that the budget "never decides whether a resolution
+    option is visible", so this pins both halves: the preference is plumbed into
+    the renderer, and nothing in that path touches the resolution selector.
+    """
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    apply_budget = javascript[javascript.index("function applyGpuMemoryBudget(") : javascript.index("function previewExecutionMode(")]
+
+    assert "state.gpuPreview?.setMemoryBudget?.(setting)" in apply_budget
+    assert "state.gpuPreview?.clearAllocationBackoff?.()" in apply_budget
+    assert "previewResolution" not in apply_budget
+    assert "applyPreviewResolution" not in apply_budget
+
+    # The renderer receives the stored budget even when it is constructed after
+    # preferences have already loaded.
+    init = javascript[javascript.index("async function initializeGpuPreview()") : javascript.index("function clearLegacyUiPreferences()")]
+    assert 'state.gpuPreview.setMemoryBudget(state.gpuMemoryBudget ?? "auto")' in init
+
+    # No code path disables or hides the preview-resolution selector.
+    assert "previewResolution.disabled" not in javascript
+    assert "els.previewResolution?.setAttribute(\"disabled\"" not in javascript
+
+
+def test_execution_mode_is_tracked_separately_from_the_tier() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    mode = javascript[javascript.index("function previewExecutionMode(") : javascript.index("function previewExecutionLabel(")]
+
+    assert '"direct-cpu"' in mode
+    assert '"tiled-gpu"' in mode
+    assert '"direct-gpu"' in mode
+    assert 'lastRenderPlan?.decision?.mode === "tiled"' in mode
+    # Execution never reads or writes the selected resolution.
+    assert "previewResolution" not in mode
+
+
+def test_render_plan_admission_never_expresses_an_unavailable_tier() -> None:
+    javascript = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    plan = javascript[javascript.index("function buildRenderPlan(") : javascript.index("class HDRWebGPUPreview")]
+
+    assert 'mode: violations.length ? "tiled" : "direct",' in plan
+    # A decision can only choose an execution strategy. There is no branch that
+    # could report a resolution as unavailable.
+    assert '"unavailable"' not in plan
+    assert "maxTextureDimension2D" in plan
+    assert "retained-presentation-overlap" in plan
+    assert "contingency-margin" in plan
+
+
+def test_backend_preflight_reports_host_constraints_without_deciding_gpu_viability() -> None:
+    backend = (FRONTEND.parent / "backend" / "hdr_finisher" / "resource_preflight.py").read_text(encoding="utf-8")
+    estimate = backend[backend.index("def estimate_preview_resources(") : backend.index("def estimate_resources(")]
+
+    assert "decides_gpu_viability" in backend
+    assert "advisories.append(" in estimate
+    # The megapixel guideline and the unmeasurable-memory case advise; only the
+    # hard request bound and measured host memory can refuse.
+    guarded = estimate[estimate.index("reason = \"\"") : estimate.index("if pixels > FULL_PREVIEW_MAX_PIXELS:")]
+    assert "FULL_PREVIEW_MAX_DIMENSION" in guarded
+    assert "safely_available is not None and estimated > safely_available" in guarded
+    assert "FULL_PREVIEW_MAX_PIXELS" not in guarded

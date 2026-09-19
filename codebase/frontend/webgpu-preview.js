@@ -348,6 +348,161 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       .map((name) => [name, Number(limits[name])]));
   }
 
+  // PRD 4.2: Auto is an application allocation budget, not detected physical
+  // VRAM. WebGPU does not report capacity, so the default is a stated policy
+  // number rather than a measurement.
+  const GPU_BUDGET_AUTO_BYTES = 2 * 1024 * 1024 * 1024;
+  const GPU_PLAN_CONTINGENCY_FRACTION = 0.1;
+
+  function normalizeGpuBudgetBytes(value) {
+    if (value === "auto" || value === null || value === undefined) return GPU_BUDGET_AUTO_BYTES;
+    const gib = Number(value);
+    if (!Number.isFinite(gib) || gib < 0.25 || gib > 64) return GPU_BUDGET_AUTO_BYTES;
+    return Math.round(gib * 1024 * 1024 * 1024);
+  }
+
+  /**
+   * Enumerate every resource a Direct render of this graph would hold, rather
+   * than estimating a bytes-per-pixel figure. PRD 4.3 admits Direct only when
+   * the predicted peak — including retained-presentation overlap, transient
+   * scratch, and a contingency margin — fits the configured budget and the
+   * device's own limits.
+   *
+   * This function is pure: the same inputs always produce the same plan and the
+   * same decision, which is what the Phase 2 exit gate requires.
+   */
+  function buildRenderPlan(options = {}) {
+    const width = Math.max(1, Math.floor(Number(options.width) || 1));
+    const height = Math.max(1, Math.floor(Number(options.height) || 1));
+    const pixels = width * height;
+    const spatialPixels = Math.ceil(width / 4) * Math.ceil(height / 4);
+    const sourceBytesPerPixel = options.sourceBytesPerPixel === 16 ? 16 : 8;
+    const detailActive = options.detailActive !== false;
+    const spatialActive = options.spatialActive !== false;
+    const denoiseLevels = Math.max(0, Math.min(4, Math.floor(Number(options.denoiseLevels ?? 0) || 0)));
+    const cachedProxyLevels = Math.max(1, Math.floor(Number(options.cachedProxyLevels ?? 1) || 1));
+    const maskCount = Math.max(0, Math.floor(Number(options.maskCount) || 0));
+    const booleanMaskPasses = Math.max(0, Math.floor(Number(options.booleanMaskPasses) || 0));
+    const sceneLuminanceEntries = Math.max(0, Math.floor(Number(options.sceneLuminanceEntries) || 0));
+    const comparisonLanes = Math.max(0, Math.floor(Number(options.comparisonLanes) || 0));
+    const scopeBytes = Math.max(0, Math.floor(Number(options.scopeBytes) || 0));
+    const parameterBufferBytes = Math.max(0, Math.floor(Number(options.parameterBufferBytes) || 0));
+    const stagingBytes = Math.max(0, Math.floor(Number(options.stagingBytes) || 0));
+    const retainedPresentation = options.retainedPresentation !== false;
+    const contingencyFraction = Number.isFinite(Number(options.contingencyFraction))
+      ? Math.max(0, Number(options.contingencyFraction))
+      : GPU_PLAN_CONTINGENCY_FRACTION;
+
+    const entries = [];
+    const add = (id, category, lifetime, bytes, detail = {}) => {
+      if (bytes > 0) entries.push({ id, category, lifetime, bytes, ...detail });
+    };
+
+    add("source-proxy", "source", "cached", pixels * sourceBytesPerPixel * cachedProxyLevels,
+      { levels: cachedProxyLevels, bytesPerPixel: sourceBytesPerPixel });
+    add("grading-core", "grading", "resident", pixels * 8 * 4, { textures: 4 });
+    if (detailActive) add("grading-detail", "detail", "resident", pixels * 8 * 2, { textures: 2 });
+    if (spatialActive) add("spatial-film", "spatial", "resident", spatialPixels * 8 * 2, { textures: 2 });
+
+    if (denoiseLevels > 0) {
+      const denoise = denoiseLogicalBytes(width, height, denoiseLevels);
+      add("denoise-evidence", "denoise", "cached", denoise.evidenceBytes, { levels: denoiseLevels });
+      add("denoise-resolved", "denoise", "resident", denoise.resolvedBytes);
+      add("denoise-reconstruction-scratch", "denoise", "transient", denoise.reconstructionScratchBytes);
+    }
+
+    add("cpu-mask-leaves", "mask", "cached", pixels * maskCount, { masks: maskCount });
+    add("boolean-mask-nodes", "mask", "resident", pixels * 2 * booleanMaskPasses, { passes: booleanMaskPasses });
+    add("scene-luminance", "mask", "cached", pixels * 2 * sceneLuminanceEntries, { entries: sceneLuminanceEntries });
+    add("scope-pool", "scope", "resident", scopeBytes);
+    add("parameter-buffers", "parameter", "resident", parameterBufferBytes);
+    add("upload-staging", "staging", "transient", stagingBytes);
+    // A comparison canvas owns a second graph of the same size.
+    add("comparison-lanes", "comparison", "resident", comparisonLanes * pixels * 8 * 4, { lanes: comparisonLanes });
+
+    const sumBy = (lifetime) => entries
+      .filter((entry) => entry.lifetime === lifetime)
+      .reduce((total, entry) => total + entry.bytes, 0);
+    const residentBytes = sumBy("resident");
+    const cachedBytes = sumBy("cached");
+    const transientBytes = sumBy("transient");
+
+    // PRD 2.2 keeps the previous accepted image alive while the replacement is
+    // built, so its surface overlaps the new graph and must be admitted.
+    const retainedPresentationOverlapBytes = retainedPresentation ? pixels * 8 : 0;
+    if (retainedPresentationOverlapBytes > 0) {
+      entries.push({
+        id: "retained-presentation-overlap",
+        category: "presentation",
+        lifetime: "overlap",
+        bytes: retainedPresentationOverlapBytes,
+      });
+    }
+
+    const beforeContingency = residentBytes + cachedBytes + transientBytes + retainedPresentationOverlapBytes;
+    const contingencyBytes = Math.round(beforeContingency * contingencyFraction);
+    if (contingencyBytes > 0) {
+      entries.push({
+        id: "contingency-margin",
+        category: "margin",
+        lifetime: "margin",
+        bytes: contingencyBytes,
+        fraction: contingencyFraction,
+      });
+    }
+    const peakLogicalBytes = beforeContingency + contingencyBytes;
+
+    const budgetBytes = normalizeGpuBudgetBytes(options.budget);
+    const limits = options.limits || null;
+    const maxTextureDimension2D = Number(limits?.maxTextureDimension2D) || null;
+
+    const violations = [];
+    if (maxTextureDimension2D && (width > maxTextureDimension2D || height > maxTextureDimension2D)) {
+      violations.push({
+        rule: "maxTextureDimension2D",
+        detail: `${width}x${height} exceeds the device limit of ${maxTextureDimension2D}`,
+      });
+    }
+    if (peakLogicalBytes > budgetBytes) {
+      violations.push({
+        rule: "budget",
+        detail: `predicted peak ${peakLogicalBytes} exceeds the configured budget ${budgetBytes}`,
+      });
+    }
+    if (options.formatsSupported === false) {
+      violations.push({ rule: "formats", detail: "a planned texture format or usage is unsupported" });
+    }
+    if (options.allocationBackoff) {
+      violations.push({ rule: "allocation-backoff", detail: String(options.allocationBackoff) });
+    }
+
+    return {
+      width,
+      height,
+      pixelCount: pixels,
+      entries,
+      totals: {
+        residentBytes,
+        cachedBytes,
+        transientBytes,
+        retainedPresentationOverlapBytes,
+        contingencyBytes,
+        peakLogicalBytes,
+      },
+      budgetBytes,
+      limits,
+      decision: {
+        // Admission chooses how to execute. It never changes the selected
+        // resolution: PRD 4.3 requires allocation failure to retry through
+        // Tiled execution instead of silently reducing the tier.
+        mode: violations.length ? "tiled" : "direct",
+        admitted: violations.length === 0,
+        violations,
+        tier: options.tier ?? null,
+      },
+    };
+  }
+
   class HDRWebGPUPreview {
     static directPreviewMemoryModel(width, height, options = {}) {
       return directPreviewMemoryModel(width, height, options);
@@ -358,6 +513,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         id: entry.id,
         ...directPreviewMemoryModel(entry.width, entry.height, options),
       }));
+    }
+
+    static buildRenderPlan(options = {}) {
+      return buildRenderPlan(options);
+    }
+
+    static normalizeGpuBudgetBytes(value) {
+      return normalizeGpuBudgetBytes(value);
     }
 
     constructor(canvas) {
@@ -408,6 +571,71 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.activeRenderCount = 0;
       this.activeScopeCount = 0;
       this.deferredDestroy = [];
+      // Phase 2 planner state. The budget is an application allocation budget
+      // chosen by the user, never a physical VRAM measurement.
+      this.memoryBudget = "auto";
+      this.lastRenderPlan = null;
+      // Set when a real allocation fails. It forces subsequent admission to
+      // Tiled and is cleared only by an explicit reset, so a transient OOM can
+      // never be mistaken for continuing headroom. It never changes the tier.
+      this.allocationBackoff = null;
+    }
+
+    setMemoryBudget(value) {
+      this.memoryBudget = value === "auto" ? "auto" : value;
+      return this.memoryBudgetBytes();
+    }
+
+    memoryBudgetBytes() {
+      return normalizeGpuBudgetBytes(this.memoryBudget);
+    }
+
+    clearAllocationBackoff() {
+      this.allocationBackoff = null;
+    }
+
+    recordAllocationFailure(kind, error, detail = {}) {
+      const reason = `${kind}: ${error?.message || String(error || "allocation failed")}`;
+      this.allocationBackoff = { kind, reason, at: performance.now(), ...detail };
+      this.recordStage("allocation-failure", { kind, reason, ...detail });
+      return this.allocationBackoff;
+    }
+
+    /**
+     * Merge live renderer state into a render plan for the given output size.
+     * Cache multiplicities, mask residency, scope pools, and parameter buffers
+     * come from what the renderer is actually holding, so the plan describes
+     * this session rather than a generic graph.
+     */
+    planRender(width, height, options = {}) {
+      const denoiseLevels = this.denoiseSourceSelector?.cache?.levels?.length || 0;
+      const scopeBytes = [...this.scopeResources.values()].reduce(
+        (sum, pool) => sum + pool.reduce((poolSum, resource) => poolSum + (resource.byteSize || 0), 0),
+        0,
+      );
+      const parameterBufferBytes = (this.paramBuffer?.size || 0) + (this.curveBuffer?.size || 0)
+        + [...this.localParamBuffers.values()].reduce((sum, buffer) => sum + (buffer.size || 0), 0);
+      const plan = buildRenderPlan({
+        width,
+        height,
+        denoiseLevels,
+        cachedProxyLevels: Math.max(1, this.proxies.size),
+        maskCount: [...this.localMasks.values()].filter((mask) => mask.kind !== "gpu-mask-graph").length,
+        booleanMaskPasses: [...this.localMasks.values()].filter((mask) => mask.kind === "gpu-mask-graph").length,
+        sceneLuminanceEntries: this.sceneLuminance.size,
+        scopeBytes,
+        parameterBufferBytes,
+        budget: this.memoryBudget,
+        limits: this.adapterInfo?.limits || snapshotDeviceLimits(this.device?.limits),
+        allocationBackoff: this.allocationBackoff?.reason || null,
+        ...options,
+      });
+      this.lastRenderPlan = plan;
+      return plan;
+    }
+
+    admitDirect(width, height, options = {}) {
+      return this.planRender(width, height, options).decision;
     }
 
     async initialize() {
@@ -797,6 +1025,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           denoiseBytes: (this.denoiseSourceSelector?.resolved?.byteSize || 0)
             + (this.denoiseSourceSelector?.cache?.byteSize || 0),
           memory,
+          // Phase 2 planner surface: the budget in force, the last plan and its
+          // admission decision, and any recorded allocation backoff.
+          budget: {
+            setting: this.memoryBudget,
+            bytes: this.memoryBudgetBytes(),
+          },
+          plan: this.lastRenderPlan,
+          allocationBackoff: this.allocationBackoff,
         },
       };
     }
@@ -939,6 +1175,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const detailActive = params[148] > 0.5
         && (Math.abs(params[149]) > 0.000001 || Math.abs(params[150]) > 0.000001 || params[152] > 0.000001);
       const localDetailActive = activeLocals.some((local) => gpuLocalDetailActive(local[`${lane}_grade`]));
+      // Admission runs against the graph this render is about to build, so the
+      // plan and the decision describe real work rather than a generic guess.
+      const plan = this.planRender(proxy.width, proxy.height, {
+        detailActive: detailActive || localDetailActive,
+        spatialActive,
+        sourceBytesPerPixel: proxy.pixelFormat === "rgba16float" ? 8 : 16,
+        tier: sourceOptions?.tier ?? null,
+      });
       const intermediate = this.ensureIntermediate(
         canvas,
         proxy.width,
@@ -946,6 +1190,19 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         spatialActive,
         detailActive || localDetailActive,
       );
+      if (!intermediate) {
+        // An allocation failed and the backoff is recorded. Abandon this render
+        // and keep the previous presentation; the selected tier is unchanged.
+        this.recordStage("admission", {
+          mode: "tiled",
+          reason: this.allocationBackoff?.reason || "allocation failed",
+          width: proxy.width,
+          height: proxy.height,
+          peakLogicalBytes: plan.totals.peakLogicalBytes,
+          budgetBytes: plan.budgetBytes,
+        });
+        return false;
+      }
       const makeBindGroup = (sourceView, spatialView, parameterBuffer = this.paramBuffer, overlayView = spatialView) => this.device.createBindGroup({
           layout: this.bindGroupLayout,
           entries: [
@@ -2104,10 +2361,25 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         format: "rgba16float",
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
       });
+      // PRD 4.3: allocation failure retries through Tiled execution. It records
+      // the backoff and abandons this render so the caller keeps the last valid
+      // presentation. It never reduces the selected preview resolution.
+      const guard = (create, kind) => {
+        try {
+          return create();
+        } catch (error) {
+          this.recordAllocationFailure(kind, error, { width, height });
+          throw error;
+        }
+      };
       if (current?.width === width && current?.height === height) {
         if (spatialActive && (!current.spatialATexture || !current.spatialBTexture)) {
-          current.spatialATexture = createSpatialTexture();
-          current.spatialBTexture = createSpatialTexture();
+          try {
+            current.spatialATexture = guard(createSpatialTexture, "spatial-a");
+            current.spatialBTexture = guard(createSpatialTexture, "spatial-b");
+          } catch {
+            return null;
+          }
           this.recordAllocation(
             "grading-spatial-intermediates",
             spatialWidth * spatialHeight * 8 * 2,
@@ -2115,8 +2387,12 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           );
         }
         if (detailActive && (!current.detailATexture || !current.detailBTexture)) {
-          current.detailATexture = createTexture();
-          current.detailBTexture = createTexture();
+          try {
+            current.detailATexture = guard(createTexture, "grading-detail-a");
+            current.detailBTexture = guard(createTexture, "grading-detail-b");
+          } catch {
+            return null;
+          }
           this.recordAllocation("grading-detail-intermediates", width * height * 8 * 2, { width, height });
         }
         // Retain spatial textures after first use. Bypass toggles and non-spatial
@@ -2134,22 +2410,29 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       current?.detailATexture?.destroy();
       current?.detailBTexture?.destroy();
       current?.compositeParamBuffer?.destroy();
-      const intermediate = {
-        baseTexture: createTexture(),
-        filmTexture: createTexture(),
-        // Film Look, Vignette and grain resolve here so the output limiter can
-        // measure the finished picture instead of predicting it, and so the
-        // scope pass reads that result instead of computing it a second time.
-        finishTexture: createTexture(),
-        localTexture: createTexture(),
-        detailATexture: detailActive ? createTexture() : null,
-        detailBTexture: detailActive ? createTexture() : null,
-        spatialATexture: spatialActive ? createSpatialTexture() : null,
-        spatialBTexture: spatialActive ? createSpatialTexture() : null,
-        spatialActive,
-        width,
-        height,
-      };
+      let intermediate;
+      try {
+        intermediate = {
+          baseTexture: guard(createTexture, "grading-base"),
+          filmTexture: guard(createTexture, "grading-film"),
+          // Film Look, Vignette and grain resolve here so the output limiter can
+          // measure the finished picture instead of predicting it, and so the
+          // scope pass reads that result instead of computing it a second time.
+          finishTexture: guard(createTexture, "grading-finish"),
+          localTexture: guard(createTexture, "grading-local"),
+          detailATexture: detailActive ? guard(createTexture, "grading-detail-a") : null,
+          detailBTexture: detailActive ? guard(createTexture, "grading-detail-b") : null,
+          spatialATexture: spatialActive ? guard(createSpatialTexture, "spatial-a") : null,
+          spatialBTexture: spatialActive ? guard(createSpatialTexture, "spatial-b") : null,
+          spatialActive,
+          width,
+          height,
+        };
+      } catch {
+        // The backoff is already recorded. Returning null abandons this render
+        // and leaves the previous accepted presentation on screen.
+        return null;
+      }
       this.intermediates.set(canvas, intermediate);
       this.recordAllocation(
         "grading-intermediates",

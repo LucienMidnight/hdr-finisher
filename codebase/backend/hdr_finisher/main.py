@@ -114,10 +114,19 @@ def _preview_resource_payload(session, max_dimension: int) -> dict[str, object]:
         "pixel_count": estimate.pixel_count,
         "estimated_peak_bytes": estimate.estimated_peak_bytes,
         "safely_available_bytes": estimate.safely_available_bytes,
+        "advisories": list(estimate.advisories),
+        "decides_gpu_viability": estimate.decides_gpu_viability,
     }
 
 
 def _guard_preview_resources(session, max_dimension: int) -> None:
+    """Reject only on host constraints the backend owns and can measure.
+
+    PRD 5.1: the backend does not decide GPU viability. ``allowed`` is already
+    limited to measured host working memory and the hard request-dimension
+    bound, and advisories never gate, so a preview is no longer refused because
+    a generic estimate assumed a monolithic GPU graph.
+    """
     if int(max_dimension) <= FULL_PREVIEW_BASELINE_DIMENSION:
         return
     payload = _preview_resource_payload(session, max_dimension)
