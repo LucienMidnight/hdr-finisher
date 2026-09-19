@@ -716,18 +716,55 @@ Update this table at every phase boundary or whenever work stops unexpectedly. L
 | 2 — GPU planner and budget | Complete | `69ca21e` on `main` | Closed | All four gate conditions met. Evidence: [`phase-2-gpu-planner-evidence-2026-09-19.md`](../technical/phase-2-gpu-planner-evidence-2026-09-19.md). A `tiled` decision currently means "Direct was not admitted"; Phase 4 builds the scheduler that acts on it. |
 | 3 — Bounded transport | Complete | `4ac3aba` on `main` | Closed | All four gate conditions met. Evidence: [`phase-3-bounded-transport-evidence-2026-09-19.md`](../technical/phase-3-bounded-transport-evidence-2026-09-19.md). Source transport is bounded; mask transport is Phase 5. The Phases 0-2 "environment defect" is retracted there. |
 | 4 — Tile scheduler and pointwise graph | Complete | `55bb3e6` on `main` (follow-ups `8081d42`, `a552aed`, `de6608e`, `7f3e857`; earlier checkpoints `ce67149`, `e0ae5cc`, `ace4f43`) | Closed | **All four gate conditions and all four ordered follow-ups met.** Gates 1-3 (Direct/Tiled parity byte-exact, one submission per generation, measured constant 8.4 MB tiled working set): [`phase-4-tiled-execution-evidence-2026-09-19.md`](../technical/phase-4-tiled-execution-evidence-2026-09-19.md). Gate 4 (CPU Full through a bounded path): [`phase-4-cpu-bounded-full-evidence-2026-09-19.md`](../technical/phase-4-cpu-bounded-full-evidence-2026-09-19.md) — 42.4 MP at Full, byte-exact, peak host RAM 4,083 MB to 496 MB, cancellation in 0.19 s of a 14.4 s job. Tiled admission and truthful CPU scope fallback: [`phase-4-tiled-admission-scope-evidence-2026-09-19.md`](../technical/phase-4-tiled-admission-scope-evidence-2026-09-19.md). Engineering Full and native 42.4 MP parity: [`phase-4-full-selection-native-parity-evidence-2026-09-19.md`](../technical/phase-4-full-selection-native-parity-evidence-2026-09-19.md). |
-| 5 — Masks, locals, Detail | Not started | — | Open | Depends on tile scheduler. |
-| 6 — Denoise | Not started | — | Open | Depends on tile scheduler and budget. |
+| 5 — Masks, locals, Detail | Complete | `e26c5ba` on `main` (with Phase 6; base `24dc9dc`) | Closed | **All four gate conditions met.** Evidence: [`phase-5-masks-locals-detail-evidence-2026-09-19.md`](../technical/phase-5-masks-locals-detail-evidence-2026-09-19.md). Gate 1: Direct/Tiled parity byte-exact (maxDelta 0, 0 differing pixels) over a global-Detail + Brush + Path local stack at tile sizes 256 and 512, and again at maximum Detail radii (halo 73). Gate 2: amount/threshold drags run zero band analysis; a global amount drag reuses global bands and rebuilds only the downstream local ones. Gate 3: **measured** at 24 MP, 42 MP and 8K — peak residency 964.7-965.1 MB, a 0.4 MB spread, inside a 1 GiB budget. Gate 4: the seam tiling introduces against the CPU reference is 0.0000 at both tile sizes, measured differentially against a Direct control. Three defects found and fixed along the way: the diagnostics did not count the Phase 5 caches, the cache bounds ignored non-cache residency, and the post-submit trim was a race. `path-mask-interaction` (carried-forward item 9) was a test defect and is fixed. |
+| 6 — Denoise | Complete | `e26c5ba` on `main` (with Phase 5; base `24dc9dc`) | Closed | **All five gate conditions met.** Evidence: [`phase-6-tiled-denoise-evidence-2026-09-20.md`](../technical/phase-6-tiled-denoise-evidence-2026-09-20.md). Gate 1: tiled analysis and reconstruction are **bit-identical** to the whole-image routines — a Haar transform over non-overlapping 2x2 blocks needs no halo, only a `2**levels`-aligned origin. 44 CPU cases across levels 1-4, odd dimensions and partial edges; 32 GPU configurations with zero differing samples, including odd 1023x575 proxies. Gate 2: four live-control drags issue **0** analysis dispatches, enforced statically as well. Gate 3: a superseded analysis leaves the previous selector, cache identity and resolved texture untouched. Gate 4: six measured traces (2 and 4 levels at 24 MP, 42 MP and 8K) within the shipped 2 GiB budget, with analysis scratch **2.6-2.8 MB at every size** against ~106 MB whole-image. Gate 5: `denoise-selector-seam` and the rest of the suite unchanged. Also: the Denoise contract's sections 5.1, 6, 7 and 9 are corrected and its Phase 2 memory stop gate is closed; the cache identity is pinned across CPU and GPU by a shared fixture; and a chunk-size dependence in the CPU reference (`np.tensordot` via BLAS) was found and fixed. Remaining: the resolved proxy is still whole-frame. |
 | 7 — Spatial film, scopes, comparison | Not started | — | Open | Depends on tile scheduler. |
 | 8 — Export parity and corpus | Not started | — | Open | Depends on tile-capable modules and Denoise. |
 | 9 — Public release and hardening | Not started | — | Open | Depends on every earlier release gate. |
 
 ### Current handoff checkpoint
 
-**Last updated:** September 19, 2026
-**Last completed phase:** Phase 4 — Tile scheduler and pointwise render graph (all four exit gates closed)
-**Active phase:** Phase 5 — masks, locals and Detail. All four Phase 4 follow-ups are closed.
-**Branch and base:** `main`. Phase 0 is `ba58d6d`, Phase 1 is `903bdef`, Phase 2 is `69ca21e`, Phase 3 is `4ac3aba`, Phase 4 is `55bb3e6`; the four ordered follow-ups are `8081d42`, `a552aed`, `de6608e` and `7f3e857`. The worktree is clean after the ledger commit. A `.claude/launch.json` was added for local dev-server launching; it is covered by a global gitignore rule and is intentionally not committed. No app or server process is left running.
+**Last updated:** September 20, 2026
+**Last completed phase:** Phase 6 — tiled Denoise evidence and reconstruction. **All five exit gates closed.**
+**Active phase:** none. Phase 7 (spatial film effects, scopes, comparison, proofing) is the next safe implementation phase.
+
+**Branch and base:** `main`. Phases 5 and 6 landed together as **`e26c5ba`**, on base `24dc9dc`. They share `webgpu-preview.js`, so splitting them into two commits would have meant splitting one file's hunks and risking a commit that did not build; one commit with both phases described was the honest option. The files it touches:
+
+Phase 5 — masks, locals and Detail:
+
+- `codebase/backend/hdr_finisher/main.py` — the bounded `local-mask-tile` endpoint;
+- `codebase/frontend/webgpu-preview.js` — `PARAM_COUNT` 162 to 166, haloed tiled execution, the packed Detail band cache, mask tiles, the sequential local stack, the corrected memory ledger and free-budget cache sizing;
+- `codebase/tests/tiled-direct-parity.js`, `tiled-cpu-detail-parity.js` (new), `performance/detail-cache-residency.js` (new), `path-mask-interaction.js`, `render-plan-admission.test.js`, `test_api.py`, `test_frontend_contract.py`, `webgpu-allocation-agreement.test.js`.
+
+Phase 6 — tiled Denoise:
+
+- `codebase/backend/hdr_finisher/denoise_tiles.py` (**new**) — aligned tiles, tiled analysis and reconstruction, the shared cache identity;
+- `codebase/backend/hdr_finisher/denoise_reference.py` — `_rgb_to_components` made chunk-independent;
+- `codebase/frontend/webgpu-preview.js` — rect-aware denoise shaders, tiled analysis with one reusable scratch chain, per-tile evidence, region reconstruction, denoise counters;
+- `codebase/tests/test_denoise_tiles.py` (**new**), `denoise-tiled-parity.js` (**new**), `denoise-cache-identity.test.js` (**new**), `performance/denoise-memory-trace.js` (**new**), `fixtures/denoise-cache-identity.json` (**new**);
+- `docs/technical/denoising.md` — sections 5.1, 6, 7 and 9 corrected, Phase 2 memory stop gate closed.
+
+**Commands used:**
+
+- `codebase/.venv/Scripts/python.exe -m pytest -q`, **run from `codebase/`** — running it from the repository root collects `codebase/output/libultrahdr-build/.../googletest` and fails at collection with 8 errors. Result: `1254 passed, 3 skipped`.
+- `node --test tests/*.test.js` from `codebase/`: `tests 77 / pass 77 / fail 0`.
+- With the dev server running, from `codebase/`:
+  - `node tests/tiled-direct-parity.js --url http://127.0.0.1:8000`
+  - `node tests/tiled-cpu-detail-parity.js --url http://127.0.0.1:8000`
+  - `node tests/denoise-tiled-parity.js --url http://127.0.0.1:8000`
+  - `node tests/performance/detail-cache-residency.js --url http://127.0.0.1:8000 --inputs <24MP>,<42MP>,<8K>`
+  - `node tests/performance/denoise-memory-trace.js --url http://127.0.0.1:8000 --inputs <24MP>,<42MP>,<8K>`
+- 20 browser suites via `npm run test:<name>`: 20 / 20 pass.
+
+**Generated inputs for the memory gates.** The 24 MP and 8K sources are synthetic and **ignored by Git**, at `codebase/output/residency-media/residency-24mp-6000x4000.tiff` and `residency-8k-7680x4320.tiff`. Regenerate with `build_hdr_test_pattern(width, height)` from `backend/hdr_finisher/test_pattern.py`. The 42 MP source is the committed `codebase/local-test-media/inputs/Affinity_DSC06898_DisplayP3_Linear_32f.exr` (7968 x 5320).
+
+**Active failure or unresolved decision:** none. Follow-ups are recorded in each phase's evidence document; none block Phase 7.
+
+**Next safe edit:** Phase 7, spatial film effects, scopes, comparison and proofing. The remaining Phase 6 item — making the resolved denoise proxy per-tile — is a render-path change and can be taken with Phase 7 or after it.
+
+**Repository note:** the git repository root is `ai/`, not the enclosing `HDR Finisher Tool/` directory, which has a `.git` containing only `info/` and is not a repository.
+
+**Server:** a uvicorn dev server was started on `127.0.0.1:8000` from `.claude/launch.json` for the browser suites and stopped afterwards. No app or server process is intentionally left running.
 
 ## Environment: use the project venv
 
@@ -764,10 +801,37 @@ Phases 0-2 recorded an "environment defect" claiming a missing Python 3.12 envir
 - The three whole-frame reductions a pointwise graph still needs — the HDR and SDR Peak Fit anchors and the HDR delivery-ceiling branch — are measured once in bounded reduction passes and injected through `HighlightAnchor`, which is what makes the bounded result byte-identical rather than merely close. The robust 0.9999-quantile measurement is reproduced exactly from a retained top-*k*, not approximated.
 - `PreviewRequest.execution` is the bounded CPU entry: `"whole"` is the shipped public route, while engineering Full sets `"strips"`; an unsupported graph is answered 409 with the refusal list rather than silently running whole-frame.
 
+**Phase 5:**
+
+- The parameter block carries the full output extent (164/165) and the valid tile extent (162/163) alongside Phase 4's tile origin, raising `PARAM_COUNT` to **166**. Detail derives its radii from the *image* diagonal rather than the bound texture's, which is what makes a tile's Detail agree with Direct's; `validTileDimensions()` clamps sampling to the part of the tile texture that holds real pixels. Direct leaves all six at zero and is unchanged.
+- The band shaders no longer branch on amount. A cached band cannot depend on the amounts that consume it, or its key would be lying.
+- `GET /api/session/{id}/local-mask-tile/{local_id}` serves one globally anchored, haloed mask rectangle. **Mask compilation stays whole-image and authoritative** — feather peak normalization and Boolean graphs cannot be made to agree at a tile edge if each tile compiles its own mask — so only transport is bounded, never semantics.
+- `detailBandIdentity()` excludes texture amount, clarity amount, sharpen amount and sharpen threshold, and includes every radius and every upstream input. A local band's input identity accumulates the global parameters and each preceding local's mask, grade and opacity, so an earlier local invalidates the bands of every local below it.
+- `detailBandTile()` counts hits and misses **separately for global and local scope**. A global amount drag must reuse global bands and rebuild local ones; a single combined counter cannot tell that from a cache that does not work.
+- `trimDetailBandTiles()` and `trimMaskTiles()` bound both caches by LRU with the current generation pinned, so submitted work can never reference a destroyed texture.
+- `tiledExecutionRefusals()` no longer refuses local adjustments, Detail or the mask overlay. Spatial film, vignette and seeded grain remain refusals and are Phase 7.
+- **The memory diagnostics now count the Phase 5 caches.** `detailBandTile()` and `loadLocalMaskTile()` create real device textures, and neither those nor the tiled working graph were in `resourceMemorySnapshot()`, so a tiled render reported a smaller peak than a Direct one while holding more. That broke the Phase 0 contract that the diagnostics equal the renderer's own allocations.
+- **`cacheBudgetBytes()` sizes both caches from what is actually free** — the budget, less a 10% contingency matching the planner's, less the non-cache resident set — instead of taking a flat 60% and 15% of the total. The flat fractions left too little for the proxy, presentation surface and working graph, and a measured peak could exceed the budget the planner had just admitted the render against.
+- The unpinned post-submission trim is retained as `pendingCacheTrim`, so a measurement can await the steady state instead of racing it.
+
+**Phase 6:**
+
+- Denoise needs **no halo**. `compact-haar-residual-v1` is a Haar transform over non-overlapping 2x2 blocks, so a tile whose origin is a multiple of `2 ** levels` decomposes exactly as the whole image does there. That one rule — plus contiguous tiles, a trailing span under two pixels absorbed into its neighbour, and the last tile running to the image edge so edge padding matches — makes tiled analysis and tiled reconstruction **bit-identical**, not merely close.
+- `backend/hdr_finisher/denoise_tiles.py` is the CPU half: `analyze_denoise_tiled()`, `resolve_denoise_tiled()` with an optional region, the aligned tile grid, and `denoise_cache_identity()`. Each tile runs the *unmodified* reference, so the tiled path cannot drift away from the thing it is checked against.
+- The denoise shaders take explicit rects. `AnalysisParams` gains an output extent, a source origin and a valid sub-rect — the last because levels 1 and above read a reusable scratch texture larger than the tile's own low band, and clamping to the allocation would invent edge pixels the whole-image run never sees. `ResolveParams` gains an output/original origin, zero for the intermediate passes that write to tile-local scratch.
+- Analysis walks tiles with **one reusable scratch chain** sized to the largest tile. Measured analysis scratch is 2.6-2.8 MB at 24 MP, 42 MP and 8K alike, against about 106 MB for a whole-image two-level chain at 42.4 MP.
+- Evidence is per-tile textures rather than whole-image bands, addressable under the same identity with the tile rectangle appended.
+- `denoiseCounters.analysisDispatches` makes the live-control contract checkable rather than assertable-by-inspection; `test_denoise_phase_two_...` additionally asserts `resolveDenoiseProxy`'s body never names `pipelines.analysis`.
+- `resolveDenoiseProxy(controls, { region })` rebuilds only the tiles a region touches. A request is honoured at tile granularity, and the renderer reports the rounded rectangle as `selector.resolvedRegion` so a caller can tell what is current.
+- **A chunk-size dependence in the CPU reference was found and fixed.** `_rgb_to_components` used `np.tensordot`, which dispatches to BLAS and accumulates differently depending on how many rows it is handed, so a pixel came out up to one ULP apart depending on whether it was analysed whole or as a tile. A reference whose result depends on how the work is chunked cannot be the reference for a tiled implementation.
+- The cache identity is now one function written twice — Python and JavaScript — and pinned by `tests/fixtures/denoise-cache-identity.json`, which both sides assert against.
+
 **Validation:**
 
-- Full Python suite in the venv: `1208 passed, 3 skipped, 0 failed` (Phase 4 adds 133; Phase 3 closed at `1073`, and the pre-Phase-4 baseline was `1075`).
-- `node --test` over seven deterministic suites: `tests 69 / pass 69 / fail 0`.
+- Full Python suite in the venv, run from `codebase/`: `1254 passed, 3 skipped, 0 failed` at the Phase 6 boundary (`1210` at Phase 5) (Phase 4 closed at `1208`; Phase 4 adds 133; Phase 3 closed at `1073`, and the pre-Phase-4 baseline was `1075`).
+- `node --test` over the deterministic suites: `tests 77 / pass 77 / fail 0` at the Phase 6 boundary (`72` at Phase 5, `69` at Phase 4).
+- 19 browser suites at the Phase 5 boundary: 19 / 19 pass, including the mask, local-authoring and GPU-parity surface Phase 5 touches. `path-mask` passes 8 consecutive runs after its test defect was fixed.
+- Three Phase 5 gate harnesses pass: `tiled-direct-parity`, `tiled-cpu-detail-parity` and `performance/detail-cache-residency`.
 - Earlier, at the Phase 3 boundary: Full Python suite in the venv: `1073 passed, 3 skipped, 0 failed`. Before Phase 3 it was `1017 passed, 3 skipped, 0 failed`; the +56 are this phase's new cases.
 - `node --test` over `source-transport`, `render-plan-admission`, `viewer-state-transitions`, `webgpu-memory-diagnostics`, `webgpu-allocation-agreement`: `tests 41 / pass 41 / fail 0`.
 - 16 Playwright browser suites pass, including `perspective-interaction` and `perspective-preview-ownership`.
@@ -782,14 +846,14 @@ Phases 0-2 recorded an "environment defect" claiming a missing Python 3.12 envir
 
 1. ~~**No GPU trace for Phases 1-3.**~~ **Closed 2026-09-19.** Measured on a real NVIDIA `lovelace` adapter (RTX 4070 Ti, not a fallback) through headless Edge with `--enable-unsafe-webgpu`, on a 42.4 MP source, 30 inputs per tier inside one gesture. Every section 11.1 target passes: input handling 3.1-3.4 ms p95 against 16.7 ms; submit-to-present 5.0 / 2.9 / 2.3 ms at 1K / 2K / 4K against 16.7 / 16.7 / 33 ms; feedback 0 ms p95 against 100 ms; **zero** stale results and **zero** non-exact presentations at every tier. The streamed transport ran for real: 4K took 6 chunks with a 16.8 MB peak response against a 90 MB total. Harness `codebase/tests/performance/exact-tier-latency.js`; evidence `docs/technical/exact-tier-gpu-latency-2026-09-19.md`; raw report at the ignored path `codebase/output/performance/exact-tier-latency-42mp.json`. Full now has native parity evidence, but not the 30-input gesture latency trace; it remains engineering-only. The multi-host environment matrix is Phase 9.
 2. **The `roll` region route still materializes** the rotated frame and slices it. Parity is exact and the browser response is still bounded; only the backend allocation is not.
-3. **Mask transport is still whole-frame.** `GET /local-mask/{id}` returns a full-frame byte payload. The bounded-mask model is Phase 5.
-4. **The 16,384-pixel bound remains on the older endpoints** (`PreviewRequest`, `GeometryMapRequest`, `LocalMaskPreviewRequest`, `LocalLuminanceSampleRequest`, `/proxy`, `/local-mask`). They retire as their consumers move to tiles.
+3. ~~**Mask transport is still whole-frame.**~~ **Closed 2026-09-19.** `GET /api/session/{id}/local-mask-tile/{local_id}` serves bounded, globally anchored, haloed mask tiles, and the tiled route uses them instead of the whole-frame payload. Compilation remains whole-image and authoritative. `test_local_mask_tiles_reassemble_the_authoritative_global_mask` proves a tiled reassembly is byte-identical to the whole-frame mask. Evidence: [`phase-5-masks-locals-detail-evidence-2026-09-19.md`](../technical/phase-5-masks-locals-detail-evidence-2026-09-19.md).
+4. **The 16,384-pixel bound remains on the older endpoints** — but no longer on the mask path, whose tiled consumer landed in Phase 5 — (`PreviewRequest`, `GeometryMapRequest`, `LocalMaskPreviewRequest`, `LocalLuminanceSampleRequest`, `/proxy`, `/local-mask`). They retire as their consumers move to tiles.
 5. ~~**Tiled execution does not exist yet.**~~ **Closed 2026-09-19.** Phase 4 built the scheduler, and follow-up 2 (`a552aed`) wires the planner's `tiled` decision into the normal render path. Evidence: [`phase-4-tiled-admission-scope-evidence-2026-09-19.md`](../technical/phase-4-tiled-admission-scope-evidence-2026-09-19.md).
 6. Scopes still derive from any accepted generation rather than an exact selected-tier generation, and comparison lanes do not yet state tier and generation explicitly — both Phase 7.
 7. `window.HDRFinisherPerformance` render/denoise hooks still call `Number(longEdge)` with no numeric-contract validation.
 8. ~~Full remains absent from the preview selector and the Settings menu.~~ **Engineering gate closed 2026-09-19, `de6608e`.** Public HTML still exposes only 1K/2K/4K. `?engineeringFullPreview=1` installs Full in both selectors, sends CPU Full through strips and lets the GPU planner choose Direct or Tiled. Evidence: [`phase-4-full-selection-native-parity-evidence-2026-09-19.md`](../technical/phase-4-full-selection-native-parity-evidence-2026-09-19.md).
 
-9. **`path-mask-interaction` fails, and it predates this sprint.** Line 460's `waitForResponse` for the `/edit-commands` commit of an out-of-image Path handle drag times out. Reproduced at the pre-sprint release commit `83bca70`, on its own suite, server and port: 1 pass / 2 fail. At head it is 0 pass / 4 fail. A separate local-adjustments defect, not a preview-execution one; it is not fixed by Phase 4 and should not be attributed to it. Detail in [`phase-4-cpu-bounded-full-evidence-2026-09-19.md`](../technical/phase-4-cpu-bounded-full-evidence-2026-09-19.md).
+9. ~~**`path-mask-interaction` fails, and it predates this sprint.**~~ **Closed 2026-09-19.** It was a **test** defect, not a product one. A Path node or handle drag only commits when the pointer gesture registered movement (`gesture.changed`), so a press that missed the handle produced no request at all and the test waited the full 30 s for one that was never coming. The press missed because the drag setup letterboxes the preview and then reads the handle position after a fixed 50 ms wait; when layout had not settled the box read back at the old size. Both waits are now conditions, and each Path drag waits for the gesture to register before releasing. **8 consecutive passes.** Detail in [`phase-5-masks-locals-detail-evidence-2026-09-19.md`](../technical/phase-5-masks-locals-detail-evidence-2026-09-19.md). Original note: Line 460's `waitForResponse` for the `/edit-commands` commit of an out-of-image Path handle drag times out. Reproduced at the pre-sprint release commit `83bca70`, on its own suite, server and port: 1 pass / 2 fail. At head it is 0 pass / 4 fail. A separate local-adjustments defect, not a preview-execution one; it is not fixed by Phase 4 and should not be attributed to it. Detail in [`phase-4-cpu-bounded-full-evidence-2026-09-19.md`](../technical/phase-4-cpu-bounded-full-evidence-2026-09-19.md).
 
 **Phase 4 follow-ups, in order:**
 
