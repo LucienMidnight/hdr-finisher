@@ -765,7 +765,7 @@ Update this table at every phase boundary or whenever work stops unexpectedly. L
 7. `window.HDRFinisherPerformance` render/denoise hooks still call `Number(longEdge)` with no numeric-contract validation.
 8. Full remains absent from the preview selector and the Settings menu; the sentinel is implemented and tested but not user-selectable until Phase 4.
 
-**Next safe edit:** Begin Phase 3 — define the source-tile and mask-tile API contracts, bind them to source epoch, geometry, lane input, tier, rectangle, and halo, and stream Direct source textures in bounded chunks. A local server may still be running on port 8000; stop it with the preview tooling if so.
+**Next safe edit:** Begin Phase 3 — define the source-tile and mask-tile API contracts, bind them to source epoch, geometry, lane input, tier, rectangle, and halo, and stream Direct source textures in bounded chunks. No app or server process is intentionally left running; the port-8000 dev server used for the browser traces was stopped.
 
 **Phase 3 reconnaissance (read before starting):** the current transport was traced but not yet changed.
 
