@@ -712,7 +712,7 @@ Update this table at every phase boundary or whenever work stops unexpectedly. L
 | Phase | Status | Commit/checkpoint | Exit gate | Evidence and next action |
 |---|---|---|---|---|
 | 0 — Contracts and instrumentation | Complete | `ba58d6d` on `main` (parent `83bca70`) | Closed | All three gate conditions met. Evidence: [`phase-0-exit-gate-evidence-2026-09-19.md`](../technical/phase-0-exit-gate-evidence-2026-09-19.md), [`phase-0-gpu-logical-memory-baselines-2026-09-19.md`](../technical/phase-0-gpu-logical-memory-baselines-2026-09-19.md), [`phase-0-preview-resolution-boundary-inventory-2026-09-19.md`](../technical/phase-0-preview-resolution-boundary-inventory-2026-09-19.md). Six discrepancies carried forward, listed in the evidence document. |
-| 1 — Stable existing tiers | Complete | Uncommitted checkpoint on `main` at `ba58d6d` | Closed | All five gate conditions met on the CPU route. Evidence: [`phase-1-stable-tier-lifecycle-evidence-2026-09-19.md`](../technical/phase-1-stable-tier-lifecycle-evidence-2026-09-19.md). GPU timing measurement and Phase 7 scope/comparison tightening carried forward. |
+| 1 — Stable existing tiers | Complete | `903bdef` on `main` | Closed | All five gate conditions met on the CPU route. Evidence: [`phase-1-stable-tier-lifecycle-evidence-2026-09-19.md`](../technical/phase-1-stable-tier-lifecycle-evidence-2026-09-19.md). GPU timing measurement and Phase 7 scope/comparison tightening carried forward. |
 | 2 — GPU planner and budget | Ready to start | — | Open | Phases 0 and 1 are closed. The GPU-budget preference UI already exists from Phase 0 and needs its schema, planner, and admission logic. |
 | 3 — Bounded transport | Not started | — | Open | Depends on source/geometry identity contract. |
 | 4 — Tile scheduler and pointwise graph | Not started | — | Open | Depends on Phases 2 and 3. |
@@ -727,7 +727,7 @@ Update this table at every phase boundary or whenever work stops unexpectedly. L
 **Last updated:** September 19, 2026  
 **Last completed phase:** Phase 1 — Stable-tier lifecycle for 1K, 2K, and 4K (exit gate closed)  
 **Active phase:** None; Phase 2 — Frontend GPU planner and configurable budget is ready to start  
-**Branch and base:** `main` at `ba58d6d`. Phase 0 is committed. Phase 1 is an uncommitted checkpoint: modified `codebase/frontend/app.js`, `codebase/frontend/index.html`, `codebase/package.json`, `codebase/tests/test_frontend_contract.py`; added `codebase/tests/viewer-state-transitions.test.js`, `docs/technical/phase-1-stable-tier-lifecycle-evidence-2026-09-19.md`, and `.claude/launch.json` (a local dev-server config, not part of the product).  
+**Branch and base:** `main` at `903bdef`. Phase 0 is `ba58d6d`, Phase 1 is `903bdef`, and the worktree is clean. A `.claude/launch.json` was also added for local dev-server launching; it is covered by a global gitignore rule and is intentionally not committed.  
 
 **Phase 0 completed work:** semantic `PreviewResolution` contract with an explicit `"full"` sentinel; preview-tier and GPU-budget preference schema; corrected four-versus-three grading residency; categorized planned/resident/transient/cached/peak diagnostics with static 24 MP/42 MP/8K models; device-limit capture; coercion and allocation inventories; and `webgpu-allocation-agreement.test.js`, which proves the diagnostics equal the renderer's own allocation calls through a recording `GPUDevice` stub.
 
