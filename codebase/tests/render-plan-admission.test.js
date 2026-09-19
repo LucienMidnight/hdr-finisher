@@ -257,7 +257,10 @@ test("Tiled sizes the working set to a tile, so peak stops following the image",
   // The grading working set is one tile, not the whole output.
   const byId = Object.fromEntries(tiled.entries.map((entry) => [entry.id, entry]));
   assert.equal(byId["tile-grading-core"].bytes, 512 * 512 * 8 * 4);
-  assert.equal(byId["tile-grading-detail"].bytes, 512 * 512 * 8 * 2);
+  // Phase 5 retains one packed band image in tile allocations so amount and
+  // threshold drags can reuse analysis; only horizontal scratch is tile-sized.
+  assert.equal(byId["tile-detail-packed-cache"].bytes, 7680 * 4320 * 8);
+  assert.equal(byId["tile-detail-horizontal-scratch"].bytes, 512 * 512 * 8);
   // The source and the presentation surface are deliberately still whole.
   assert.equal(byId["source-proxy"].bytes, 7680 * 4320 * 8);
   assert.equal(byId["presentation-surface"].bytes, 7680 * 4320 * 8);
@@ -274,6 +277,56 @@ test("a halo grows the working tile but not the whole-image resources", () => {
   const whole = (plan) => plan.entries.find((entry) => entry.id === "source-proxy").bytes;
   assert.equal(whole(plain), whole(haloed));
   assert.ok(haloed.totals.peakLogicalBytes > plain.totals.peakLogicalBytes);
+});
+
+test("Detail band identity reuses amount and threshold but invalidates radius and upstream input", () => {
+  const params = new Float32Array(166);
+  params[149] = 0.25;
+  params[150] = -0.4;
+  params[151] = 0.75;
+  params[152] = 0.8;
+  params[153] = 1.2;
+  params[154] = 0.1;
+  params[155] = 1;
+  const baseline = Preview.detailBandIdentity(params, "upstream-a");
+  const liveDrag = new Float32Array(params);
+  liveDrag[149] = -0.9;
+  liveDrag[150] = 0.7;
+  liveDrag[152] = 1.6;
+  liveDrag[154] = 0.4;
+  assert.equal(Preview.detailBandIdentity(liveDrag, "upstream-a"), baseline);
+  liveDrag[151] = 2.5;
+  assert.notEqual(Preview.detailBandIdentity(liveDrag, "upstream-a"), baseline);
+  assert.notEqual(Preview.detailBandIdentity(params, "upstream-b"), baseline);
+});
+
+test("local Detail invalidates downstream bands when an earlier local changes", () => {
+  const params = new Float32Array(166);
+  params[14] = 0.4;
+  params[15] = 0.2;
+  params[16] = 0.75;
+  params[17] = 0.5;
+  params[18] = 0.8;
+  params[19] = 0.1;
+  const before = Preview.detailBandIdentity(params, "source|local-a:v1", "local");
+  const amountDrag = new Float32Array(params);
+  amountDrag[14] = -0.8;
+  amountDrag[15] = 0.9;
+  amountDrag[17] = 1.5;
+  amountDrag[19] = 0.3;
+  assert.equal(Preview.detailBandIdentity(amountDrag, "source|local-a:v1", "local"), before);
+  assert.notEqual(Preview.detailBandIdentity(params, "source|local-a:v2", "local"), before);
+});
+
+test("Detail halo covers the maximum separable and coarse-guide reach", () => {
+  const params = new Float32Array(166);
+  params[151] = 3;
+  params[153] = 3;
+  params[155] = 1;
+  const diagonal = Math.hypot(7680, 4320);
+  const halo = Preview.detailTileHalo(7680, 4320, params);
+  assert.ok(halo >= Math.ceil(diagonal * 0.03 * 2));
+  assert.ok(halo >= Math.ceil(diagonal * 0.0012 * 4));
 });
 
 test("24MP, 42MP and 8K all fit the Auto budget under Tiled execution", () => {

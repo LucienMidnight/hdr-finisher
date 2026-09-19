@@ -68,17 +68,70 @@ const MAX_DIFFERING_FRACTION = 0.0005;
       });
     }
 
-    // Exercise a non-neutral grade so parity is tested on real tone mapping,
-    // not on an identity transform that any implementation would match.
+    await page.evaluate(async () => {
+      const brush = newLocalAdjustment("brush");
+      brush.name = "Tiled brush Detail";
+      brush.mask.leaf.strokes = [{
+        points: [{ x: 0.08, y: 0.25 }, { x: 0.48, y: 0.72 }],
+        radius: 0.12, hardness: 0.45, flow: 1, opacity: 1, erase: false,
+      }];
+      brush.mask.leaf.mask_feather = 0.025;
+      brush.hdr_grade.exposure = 0.35;
+      Object.assign(brush.hdr_grade.detail, {
+        texture_amount: 30, clarity_amount: 25, clarity_radius_percent: 0.9,
+        sharpen_amount: 40, sharpen_radius_px: 0.9, sharpen_threshold: 12,
+      });
+      const pathLocal = newLocalAdjustment("path");
+      pathLocal.name = "Tiled path Detail";
+      const node = (x, y) => ({ x, y, in_x: null, in_y: null, out_x: null, out_y: null, node_type: "sharp" });
+      pathLocal.mask.leaf.nodes = [node(0.35, 0.12), node(0.92, 0.2), node(0.8, 0.9), node(0.3, 0.78)];
+      pathLocal.mask.leaf.feather = 0.03;
+      pathLocal.hdr_grade.exposure = -0.2;
+      Object.assign(pathLocal.hdr_grade.detail, {
+        texture_amount: -20, clarity_amount: 40, clarity_radius_percent: 1.3,
+        sharpen_amount: 25, sharpen_radius_px: 1.4, sharpen_threshold: 18,
+      });
+      if (!await queueEditCommand("create_local", { local: brush })) throw new Error("Could not create tiled Brush local");
+      if (!await queueEditCommand("create_local", { local: pathLocal })) throw new Error("Could not create tiled Path local");
+      await syncGlobalEditState();
+    });
+
+    // Each create_local bumps the edit revision and starts its own render, so
+    // two are still settling when this returns. Calling renderGpuTier now would
+    // be superseded mid-mask-load and refuse correctly, which would look like a
+    // parity failure rather than the sequencing it is. Let the queue drain
+    // first; the Phase 4 flow needed no such wait because it committed no edits.
+    await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 180000 });
+    await page.evaluate(async () => {
+      if (state.gpuDraftInFlight) await state.gpuDraftInFlight.catch(() => false);
+      state.previewScheduler?.cancel();
+    });
+
+    // The global grade is applied only now, and deliberately after the locals.
+    // `state.adjustments` is uncommitted client state, and the document each
+    // create_local returns replaces it, so a grade set before those commands is
+    // silently discarded -- which would leave global Detail inactive and test
+    // the locals alone. Exercise a non-neutral grade so parity is tested on
+    // real tone mapping, not on an identity transform anything would match.
     await page.evaluate(() => {
       state.adjustments.hdr.exposure = 0.85;
       state.adjustments.hdr.contrast = 18;
       state.adjustments.hdr.saturation = 12;
       state.adjustments.hdr.white_balance_kelvin = 5200;
+      Object.assign(state.adjustments.hdr.detail, {
+        texture_amount: 35,
+        clarity_amount: -25,
+        clarity_radius_percent: 1.2,
+        sharpen_amount: 55,
+        sharpen_radius_px: 1.1,
+        sharpen_threshold: 20,
+      });
     });
 
     const results = [];
-    for (const tileSize of tileSizes) {
+    // One parity pass at one tile size. `label` names the radius configuration
+    // so the maximum-radius seam run is reported apart from the standard one.
+    const parityPass = async (label, tileSize) => {
       let comparison = await page.evaluate(async (size) => {
         const canvas = els.previewCanvas;
         const longEdge = previewTargetLongEdge();
@@ -96,7 +149,7 @@ const MAX_DIFFERING_FRACTION = 0.0005;
         await state.gpuPreview.device.queue.onSubmittedWorkDone();
         return { staged: "direct", width: canvas.width, height: canvas.height };
       }, tileSize);
-      if (comparison.error) throw new Error(`tileSize ${tileSize}: ${comparison.error}`);
+      if (comparison.error) throw new Error(`tileSize ${tileSize}: ${JSON.stringify(comparison)}`);
 
       if (native) {
         const dimensions = await page.locator("#preview-canvas").evaluate((canvas) => {
@@ -214,15 +267,59 @@ const MAX_DIFFERING_FRACTION = 0.0005;
       if (native) assertNativeDimensions(comparison);
       const fraction = comparison.differing / comparison.samples;
       const passed = comparison.maxDelta <= MAX_CHANNEL_DELTA && fraction <= MAX_DIFFERING_FRACTION;
-      results.push({ tileSize, ...comparison, differingFraction: fraction, passed });
+      results.push({ label, tileSize, ...comparison, differingFraction: fraction, passed });
       console.log(
-        `tileSize ${String(tileSize).padStart(4)}  ${comparison.width}x${comparison.height}  `
-        + `tiles ${String(comparison.metrics.tileCount).padStart(4)}  submissions ${comparison.metrics.submissions}  `
+        `${label.padEnd(14)} tileSize ${String(tileSize).padStart(4)}  ${comparison.width}x${comparison.height}  `
+        + `tiles ${String(comparison.metrics.tileCount).padStart(4)}  halo ${String(comparison.metrics.halo).padStart(4)}  `
+        + `submissions ${comparison.metrics.submissions}  `
         + `maxDelta ${comparison.maxDelta}  differing ${comparison.differing}/${comparison.samples} `
         + `(${(fraction * 100).toFixed(4)}%)  ${passed ? "PASS" : "FAIL"}`,
       );
       if (!passed) console.log(JSON.stringify({ worst: comparison.worst, differingCaptures }, null, 2));
+    };
+
+    for (const tileSize of tileSizes) await parityPass("standard", tileSize);
+
+    // Maximum-radius seam evidence. Every Detail radius goes to the top of its
+    // documented range (clarity 3.0%, sharpen 3.0px) on the global grade and on
+    // both locals at once, which is the largest halo the scheduler can be asked
+    // for. Running it at the smallest tile size makes the halo large relative
+    // to the tile, so a halo that is even slightly short shows up as a seam at
+    // every tile boundary rather than as a single edge case.
+    await page.evaluate(async () => {
+      const maxima = { clarity_radius_percent: 3.0, sharpen_radius_px: 3.0 };
+      Object.assign(state.adjustments.hdr.detail, maxima, {
+        texture_amount: 80, clarity_amount: 75, sharpen_amount: 100, sharpen_threshold: 0,
+      });
+      for (const local of state.editDocument.local_adjustments) {
+        Object.assign(local.hdr_grade.detail, maxima, {
+          texture_amount: 70, clarity_amount: 65, sharpen_amount: 95, sharpen_threshold: 0,
+        });
+      }
+    });
+    for (const tileSize of tileSizes) await parityPass("max-radius", tileSize);
+
+    const seamRuns = results.filter((entry) => entry.label === "max-radius");
+    if (!seamRuns.length || seamRuns.some((entry) => !entry.passed)) {
+      throw new Error(`Maximum-radius Detail seams appeared: ${JSON.stringify(seamRuns.map((e) => ({
+        tileSize: e.tileSize, maxDelta: e.maxDelta, differing: e.differing,
+      })))}`);
     }
+    console.log(`maximum-radius seams: ${seamRuns.map((e) => `tile ${e.tileSize} halo ${e.metrics.halo} maxDelta ${e.maxDelta}`).join("; ")}  PASS`);
+
+    // Restore the standard radii so the Detail cache trace below measures
+    // amount and threshold reuse against the configuration it was written for.
+    await page.evaluate(async () => {
+      Object.assign(state.adjustments.hdr.detail, {
+        texture_amount: 35, clarity_amount: -25, clarity_radius_percent: 1.2,
+        sharpen_amount: 55, sharpen_radius_px: 1.1, sharpen_threshold: 20,
+      });
+      for (const local of state.editDocument.local_adjustments) {
+        Object.assign(local.hdr_grade.detail, {
+          clarity_radius_percent: 0.9, sharpen_radius_px: 0.9,
+        });
+      }
+    });
 
     // A refusal must be explicit rather than a silent fallback to Direct.
     const refusal = await page.evaluate(async () => {
@@ -241,10 +338,111 @@ const MAX_DIFFERING_FRACTION = 0.0005;
     if (!atomic) throw new Error("A tiled generation used more than one submission, so replacement is not atomic");
     console.log("atomic assembly: every generation submitted exactly once  PASS");
 
+    // Phase 5 Detail cache and local-stack invalidation trace.
+    //
+    // The stack here is global Detail followed by two locals that each carry
+    // their own Detail, so every band the renderer can cache is exercised. The
+    // steps are ordered so that each one changes exactly one thing:
+    //
+    //  1. warm-up          -- establishes the baseline; every band is a miss.
+    //  2. repeat           -- nothing changed, so every band must be reused.
+    //  3. last-local drag  -- amount and threshold on the LAST local. Nothing
+    //                         upstream or downstream of any band changes, so
+    //                         this is the pure form of the exit gate: no band
+    //                         analysis at all.
+    //  4. global drag      -- amount and threshold on the global. The global
+    //                         bands must still be reused, but the local bands
+    //                         below legitimately regenerate, because the global
+    //                         Detail composite is their input. Asserting the
+    //                         two scopes apart is what distinguishes correct
+    //                         downstream invalidation from a broken cache.
+    //  5. radius change    -- a global radius. Every band must regenerate.
+    const cacheTrace = await page.evaluate(async (size) => {
+      const render = async () => window.HDRFinisherPerformance.renderTiledTier(
+        previewTargetLongEdge(), { tileSize: size },
+      );
+      const lastLocal = state.editDocument.local_adjustments.at(-1);
+      const warmUp = await render();
+      const repeat = await render();
+
+      // Drag the last local's amount and threshold only. Its own band identity
+      // excludes them, and nothing downstream reads its Detail bands.
+      Object.assign(lastLocal.hdr_grade.detail, {
+        texture_amount: -55, clarity_amount: 70, sharpen_amount: 80, sharpen_threshold: 60,
+      });
+      const localDrag = await render();
+
+      Object.assign(state.adjustments.hdr.detail, {
+        texture_amount: -45, clarity_amount: 60, sharpen_amount: 90, sharpen_threshold: 55,
+      });
+      const globalDrag = await render();
+
+      state.adjustments.hdr.detail.clarity_radius_percent = 2.4;
+      const radius = await render();
+      return { warmUp, repeat, localDrag, globalDrag, radius };
+    }, tileSizes.at(-1));
+
+    for (const [label, step] of Object.entries(cacheTrace)) {
+      if (!step?.rendered) throw new Error(`Detail cache trace step "${label}" did not render: ${JSON.stringify(step)}`);
+    }
+    const metrics = Object.fromEntries(Object.entries(cacheTrace).map(([key, step]) => [key, step.metrics]));
+    const stacks = metrics.warmUp.detailBandStacks;
+    const tiles = metrics.warmUp.tileCount;
+    if (stacks !== 3) {
+      throw new Error(`Expected global Detail plus two local Detail stacks, got ${stacks}. `
+        + "A stack is missing, so the trace below would not prove what it claims.");
+    }
+
+    const expect = (label, actual, wanted) => {
+      if (actual !== wanted) {
+        throw new Error(`Detail cache trace, ${label}: expected ${wanted}, got ${actual}. `
+          + `Full metrics: ${JSON.stringify(metrics, null, 2)}`);
+      }
+    };
+    // The warm-up only has to leave every band of every stack resident. It is
+    // not asserted to be all misses: the parity loop above already rendered
+    // this exact configuration tiled, so these bands are legitimately still
+    // cached, and demanding misses here would be asserting a cold cache that
+    // the preceding steps have no reason to leave behind.
+    expect("warm-up bands touched", metrics.warmUp.detailCacheHits + metrics.warmUp.detailCacheMisses, tiles * stacks);
+    expect("warm-up analysis passes", metrics.warmUp.detailAnalysisPasses, metrics.warmUp.detailCacheMisses * 2);
+    expect("identical repeat hits", metrics.repeat.detailCacheHits, tiles * stacks);
+    expect("identical repeat analysis passes", metrics.repeat.detailAnalysisPasses, 0);
+
+    // The exit gate: an amount/threshold drag with radii and input unchanged
+    // performs no band analysis anywhere in the stack.
+    expect("last-local amount/threshold drag hits", metrics.localDrag.detailCacheHits, tiles * stacks);
+    expect("last-local amount/threshold drag analysis passes", metrics.localDrag.detailAnalysisPasses, 0);
+
+    // The local-stack invalidation trace: global bands reused, locals rebuilt.
+    expect("global amount/threshold drag, global bands reused", metrics.globalDrag.detailGlobalCacheHits, tiles);
+    expect("global amount/threshold drag, global bands analysed", metrics.globalDrag.detailGlobalCacheMisses, 0);
+    expect("global amount/threshold drag, downstream local bands rebuilt",
+      metrics.globalDrag.detailLocalCacheMisses, tiles * (stacks - 1));
+    expect("global amount/threshold drag, downstream local bands reused",
+      metrics.globalDrag.detailLocalCacheHits, 0);
+
+    expect("radius change misses", metrics.radius.detailCacheMisses, tiles * stacks);
+    expect("radius change analysis passes", metrics.radius.detailAnalysisPasses, tiles * stacks * 2);
+
+    console.log(
+      `Detail cache (${tiles} tiles x ${stacks} band stacks):
+`
+      + `  warm-up            ${metrics.warmUp.detailCacheHits} hits / ${metrics.warmUp.detailCacheMisses} misses / ${metrics.warmUp.detailAnalysisPasses} analysis passes  PASS
+`
+      + `  identical repeat   ${metrics.repeat.detailCacheHits} hits / 0 analysis passes  PASS
+`
+      + `  local amount drag  ${metrics.localDrag.detailCacheHits} hits / 0 analysis passes  PASS
+`
+      + `  global amount drag global ${metrics.globalDrag.detailGlobalCacheHits} hits, local ${metrics.globalDrag.detailLocalCacheMisses} rebuilt  PASS
+`
+      + `  global radius      ${metrics.radius.detailCacheMisses} misses / ${metrics.radius.detailAnalysisPasses} analysis passes  PASS`,
+    );
+
     const failures = results.filter((entry) => !entry.passed);
     if (failures.length) throw new Error(`Direct/Tiled parity failed for tile sizes: ${failures.map((entry) => entry.tileSize).join(", ")}`);
     if (pageErrors.length) throw new Error(`Browser errors: ${pageErrors.join(" | ")}`);
-    console.log("Direct/Tiled pointwise parity passed.");
+    console.log("Direct/Tiled pointwise, local-stack and Detail parity passed.");
   } finally {
     await browser.close();
   }

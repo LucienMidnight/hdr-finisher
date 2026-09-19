@@ -1,0 +1,61 @@
+{
+  "purpose": "The denoise analysis cache identity, pinned across the CPU reference and the WebGPU renderer. Both tests/test_denoise_tiles.py and tests/denoise-cache-identity.test.js assert against these literals, so neither implementation can change the identity without the other failing. An identity that disagreed between the two would mean a CPU analysis and a GPU analysis of the same document disagreed about what is cached and about when it is stale.",
+  "cases": [
+    {
+      "name": "default Photo / Fine preset, whole image",
+      "sourceIdentity": "source:hdr:1024",
+      "settings": {
+        "levels": 2,
+        "noiseThreshold": 3.0,
+        "lumaSigma": 0.035,
+        "chromaSigma": 0.035,
+        "lumaStrength": 1.0,
+        "chromaStrength": 1.25
+      },
+      "tile": null,
+      "expected": "source:hdr:1024|compact-haar-residual-v1|levels=2|noise=3|luma_sigma=0.035|chroma_sigma=0.035|luma_strength=1|chroma_strength=1.25"
+    },
+    {
+      "name": "default preset, one tile",
+      "sourceIdentity": "source:hdr:1024",
+      "settings": {
+        "levels": 2,
+        "noiseThreshold": 3.0,
+        "lumaSigma": 0.035,
+        "chromaSigma": 0.035,
+        "lumaStrength": 1.0,
+        "chromaStrength": 1.25
+      },
+      "tile": { "x": 0, "y": 0, "width": 1024, "height": 576 },
+      "expected": "source:hdr:1024|compact-haar-residual-v1|levels=2|noise=3|luma_sigma=0.035|chroma_sigma=0.035|luma_strength=1|chroma_strength=1.25|tile=0,0,1024,576"
+    },
+    {
+      "name": "four levels with a coarse noise model",
+      "sourceIdentity": "source:sdr:4096",
+      "settings": {
+        "levels": 4,
+        "noiseThreshold": 9.5,
+        "lumaSigma": 0.0625,
+        "chromaSigma": 0.075,
+        "lumaStrength": 1.5,
+        "chromaStrength": 2.0
+      },
+      "tile": { "x": 2048, "y": 1024, "width": 1024, "height": 512 },
+      "expected": "source:sdr:4096|compact-haar-residual-v1|levels=4|noise=9.5|luma_sigma=0.0625|chroma_sigma=0.075|luma_strength=1.5|chroma_strength=2|tile=2048,1024,1024,512"
+    },
+    {
+      "name": "a tile off the origin at one level",
+      "sourceIdentity": "session-a:hdr:2048",
+      "settings": {
+        "levels": 1,
+        "noiseThreshold": 1.25,
+        "lumaSigma": 0.01,
+        "chromaSigma": 0.02,
+        "lumaStrength": 0.5,
+        "chromaStrength": 0.75
+      },
+      "tile": { "x": 512, "y": 256, "width": 256, "height": 129 },
+      "expected": "session-a:hdr:2048|compact-haar-residual-v1|levels=1|noise=1.25|luma_sigma=0.01|chroma_sigma=0.02|luma_strength=0.5|chroma_strength=0.75|tile=512,256,256,129"
+    }
+  ]
+}

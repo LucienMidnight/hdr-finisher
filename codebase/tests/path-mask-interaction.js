@@ -5,6 +5,22 @@ const { chromium } = require("playwright");
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
 
+// A Path node/handle drag only commits when the pointer gesture actually
+// registered movement: pointerup returns without posting when `changed` is
+// false. Waiting for that flag makes the drag deterministic, and turns a drag
+// that never took hold into an immediate, accurate failure instead of a
+// thirty-second wait for a request that was never going to be sent.
+async function waitForPathGestureMovement(page, what) {
+  try {
+    await page.waitForFunction(() => state.localPointerGesture?.changed === true, null, { timeout: 5000 });
+  } catch {
+    const gesture = await page.evaluate(() => (state.localPointerGesture
+      ? { type: state.localPointerGesture.type, changed: state.localPointerGesture.changed }
+      : null));
+    throw new Error(`${what}: the drag never registered as movement (gesture ${JSON.stringify(gesture)}).`);
+  }
+}
+
 async function pathState(page) {
   return page.evaluate(() => {
     const local = selectedLocal();
@@ -204,6 +220,7 @@ async function activePreviewBox(page) {
     await page.mouse.move(box.x + box.width * smoothBefore.out_x, box.y + box.height * smoothBefore.out_y);
     await page.mouse.down();
     await page.mouse.move(box.x + box.width * (smoothBefore.out_x + .035), box.y + box.height * (smoothBefore.out_y + .015), { steps: 4 });
+    await waitForPathGestureMovement(page, "Smooth handle drag");
     response = page.waitForResponse((item) => item.url().includes("/edit-commands") && item.request().method() === "POST");
     await page.mouse.up();
     assert((await response).ok(), "Smooth handle drag did not commit.");
@@ -239,6 +256,7 @@ async function activePreviewBox(page) {
     await page.mouse.move(box.x + box.width * firstFeather.x, box.y + box.height * firstFeather.y);
     await page.mouse.down();
     await page.mouse.move(box.x + box.width * (firstFeather.x - .035), box.y + box.height * (firstFeather.y - .03), { steps: 4 });
+    await waitForPathGestureMovement(page, "Independent feather-node drag");
     response = page.waitForResponse((item) => item.url().includes("/edit-commands") && item.request().method() === "POST");
     await page.mouse.up();
     assert((await response).ok(), "Independent feather-node drag did not commit.");
@@ -441,14 +459,23 @@ async function activePreviewBox(page) {
     const edgeHandleBefore = { x: current.leaf.nodes[0].in_x, y: current.leaf.nodes[0].in_y };
     // Create a contained-image/letterbox layout like portrait photos in the
     // desktop viewer so the outside handle remains inside the overlay pane.
-    await page.evaluate(() => {
+    const beforeLetterbox = await page.evaluate(() => {
       const preview = activePreviewElement();
       const rect = preview.getBoundingClientRect();
       preview.style.width = `${rect.width * .72}px`;
       preview.style.height = `${rect.height * .72}px`;
       renderLocalMaskOverlay();
+      return rect.width;
     });
-    await page.waitForTimeout(50);
+    // Wait for the letterboxed geometry to be real rather than for a fixed
+    // interval. Reading the box before layout settles yields handle
+    // coordinates for the old size, and the press then misses the handle,
+    // which is what made this drag intermittent.
+    await page.waitForFunction(
+      (previous) => activePreviewElement().getBoundingClientRect().width < previous * .9,
+      beforeLetterbox,
+      { timeout: 5000 },
+    );
     const edgeBox = await activePreviewBox(page);
     assert(edgeBox, "Letterboxed preview is unavailable.");
     const edgeHandleScreen = { x: edgeBox.x + edgeBox.width * edgeHandleBefore.x, y: edgeBox.y + edgeBox.height * edgeHandleBefore.y };
@@ -457,6 +484,7 @@ async function activePreviewBox(page) {
     await page.mouse.move(edgeHandleScreen.x, edgeHandleScreen.y);
     await page.mouse.down();
     await page.mouse.move(edgeBox.x + edgeBox.width * (edgeHandleBefore.x - .035), edgeBox.y + edgeBox.height * (edgeHandleBefore.y + .015), { steps: 4 });
+    await waitForPathGestureMovement(page, "Out-of-image Path handle drag");
     response = page.waitForResponse((item) => item.url().includes("/edit-commands") && item.request().method() === "POST");
     await page.mouse.up();
     assert((await response).ok(), "Out-of-image Path handle did not commit.");

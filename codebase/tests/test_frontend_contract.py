@@ -1143,7 +1143,7 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     # does not masquerade as a pipeline-order regression.
     # 160 and 161 carry the tile origin for tiled execution; Direct leaves
     # them at zero, so every index below keeps its meaning.
-    assert "const PARAM_COUNT = 162" in shader
+    assert "const PARAM_COUNT = 166" in shader
     assert "const TILE_ORIGIN_X_INDEX = 160" in shader
     assert "const TILE_ORIGIN_Y_INDEX = 161" in shader
     assert "params[TILE_ORIGIN_X_INDEX] = 0;" in shader
@@ -1662,7 +1662,7 @@ def test_webgpu_local_detail_uses_ordered_gpu_chain_and_scaled_parameters() -> N
     webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
 
     params = webgpu[webgpu.index("function buildLocalParams"):webgpu.index("function gpuMaskInfluenceOpacity")]
-    assert "new Float32Array(24)" in params
+    assert "new Float32Array(PARAM_COUNT)" in params
     assert "values[14] = (Number(detail.texture_amount) || 0) / 100" in params
     assert "values[15] = (Number(detail.clarity_amount) || 0) / 125" in params
     assert "values[17] = Math.min(2, Math.max(0, (Number(detail.sharpen_amount) || 0) / 100))" in params
@@ -2137,7 +2137,7 @@ def test_denoise_phase_two_keeps_analysis_structural_and_resolve_reconstruction_
 
     assert 'DENOISE_ALGORITHM_VERSION = "compact-haar-residual-v1"' in preview
     assert "analyzeDenoiseProxy(" in preview
-    assert "resolveDenoiseProxy(controls = {})" in preview
+    assert "resolveDenoiseProxy(controls = {}, { region = null } = {})" in preview
     assert 'const weights = ["amount", "luminance", "colorNoise", "detailRecovery"]' in preview
     assert "settings.lumaSigma * scale" in preview
     assert 'recordStage("denoise-analysis"' in preview
@@ -2146,8 +2146,19 @@ def test_denoise_phase_two_keeps_analysis_structural_and_resolve_reconstruction_
     assert 'recordStage("denoise-resolve", { state: "error"' in preview
     assert "if (!cacheInstalled) {" in preview
     assert "for (const item of evidenceAllocated) item.texture.destroy();" in preview
-    assert "for (const item of resolveScratch) item.texture.destroy();" in preview
-    assert "for (const buffer of resolveParamBuffers) buffer.destroy();" in preview
+    # Phase 6 moved the reconstruction scratch and the parameter buffer out of
+    # the failed-analysis cleanup: the scratch now belongs to the installed
+    # cache and is released by destroyDenoiseSelector, and the parameter buffer
+    # is a single offset-bound allocation released in every path.
+    assert "for (const item of selector.cache?.resolveScratch || []) item.texture?.destroy();" in preview
+    assert "paramBuffer?.destroy();" in preview
+
+    # The reconstruction-only contract, asserted on behaviour rather than on the
+    # shape of a cleanup block: resolve must never reach for the analysis
+    # pipeline, however the two are arranged.
+    resolve_body = preview[preview.index("async resolveDenoiseProxy("):preview.index("async prepareDenoiseSelectorSeam(")]
+    assert "pipelines.analysis" not in resolve_body, "reconstruction must not dispatch analysis"
+    assert "analysisDispatches" not in resolve_body, "reconstruction must not count an analysis dispatch"
     assert "if (candidateIsNew) candidate.texture.destroy();" in preview
     assert "longEdge = retainedOriginal.longEdge;" in preview
     assert "retainedOriginal.sourceIdentity === sourceIdentity" in preview

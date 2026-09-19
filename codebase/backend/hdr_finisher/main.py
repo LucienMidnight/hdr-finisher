@@ -10,6 +10,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import uvicorn
+import numpy as np
 from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
@@ -985,6 +986,90 @@ def local_mask_proxy(
             "X-Geometry-Signature": geometry_signature or session.adjustments.shared.geometry.model_dump_json(),
             "X-CPU-Mask-Ms": f"{cpu_mask_ms:.3f}",
             "X-Mask-Content": "spatial" if spatial_only else "influence",
+        },
+    )
+
+
+@app.get("/api/session/{session_id}/local-mask-tile/{local_id}")
+def local_mask_tile_proxy(
+    session_id: str,
+    local_id: str,
+    x: int = Query(default=0, ge=0),
+    y: int = Query(default=0, ge=0),
+    width: int = Query(default=512, ge=1, le=8192),
+    height: int = Query(default=512, ge=1, le=8192),
+    halo: int = Query(default=0, ge=0, le=2048),
+    long_edge: int = Query(default=1600, ge=256),
+    edit_revision: int | None = Query(default=None, ge=0),
+    geometry_signature: str | None = Query(default=None),
+) -> Response:
+    """Serve one globally anchored, bounded local-mask tile.
+
+    Mask compilation remains authoritative and whole-image so feather peak
+    normalization and Boolean graphs cannot change at tile edges.  Only the
+    requested haloed rectangle crosses the browser boundary; this retires the
+    old endpoint's 16,384-pixel transport ceiling without approximating mask
+    semantics.
+    """
+    try:
+        session = store.get(session_id)
+        _check_revision(session.edit_revision, edit_revision)
+        local = next(item for item in session.local_adjustments if item.id == local_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except StopIteration as exc:
+        raise HTTPException(status_code=404, detail=f"Local adjustment '{local_id}' was not found.") from exc
+    except RevisionConflictError as exc:
+        raise _revision_conflict(exc) from exc
+    if geometry_signature is not None:
+        try:
+            requested_geometry = json.loads(geometry_signature)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail="Invalid geometry signature.") from exc
+        if requested_geometry != session.adjustments.shared.geometry.model_dump(mode="json"):
+            raise HTTPException(status_code=409, detail="Stale local mask geometry request dropped.")
+
+    started = perf_counter()
+    mask = session.render_cache.compiled_local_mask(
+        session.adjustments,
+        local,
+        long_edge,
+        spatial_only=True,
+    )
+    output_height, output_width = mask.shape
+    core_x0 = min(x, output_width)
+    core_y0 = min(y, output_height)
+    core_x1 = min(output_width, x + width)
+    core_y1 = min(output_height, y + height)
+    if core_x1 <= core_x0 or core_y1 <= core_y0:
+        raise HTTPException(status_code=416, detail="Mask tile rectangle is outside the output.")
+    tile_x0 = max(0, core_x0 - halo)
+    tile_y0 = max(0, core_y0 - halo)
+    tile_x1 = min(output_width, core_x1 + halo)
+    tile_y1 = min(output_height, core_y1 + halo)
+    tile = np.ascontiguousarray(mask[tile_y0:tile_y1, tile_x0:tile_x1])
+    cpu_mask_ms = (perf_counter() - started) * 1000.0
+    return Response(
+        content=tile.tobytes(order="C"),
+        media_type="application/octet-stream",
+        headers={
+            "X-Tile-X": str(tile_x0),
+            "X-Tile-Y": str(tile_y0),
+            "X-Tile-Width": str(tile_x1 - tile_x0),
+            "X-Tile-Height": str(tile_y1 - tile_y0),
+            "X-Core-X": str(core_x0),
+            "X-Core-Y": str(core_y0),
+            "X-Core-Width": str(core_x1 - core_x0),
+            "X-Core-Height": str(core_y1 - core_y0),
+            "X-Halo": str(halo),
+            "X-Output-Width": str(output_width),
+            "X-Output-Height": str(output_height),
+            "X-Pixel-Format": "r8unorm",
+            "X-Local-Adjustment": local.id,
+            "X-Geometry-Signature": geometry_signature or session.adjustments.shared.geometry.model_dump_json(),
+            "X-Edit-Revision": str(session.edit_revision),
+            "X-CPU-Mask-Ms": f"{cpu_mask_ms:.3f}",
+            "X-Mask-Content": "spatial",
         },
     )
 

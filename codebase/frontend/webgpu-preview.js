@@ -1,7 +1,10 @@
 (function () {
   // 160 and 161 carry the tile origin in global output coordinates. Direct
   // execution leaves them at zero, so its arithmetic is unchanged.
-  const PARAM_COUNT = 162;
+  // 160/161: tile origin; 162/163: valid tile extent; 164/165: full output
+  // extent. Direct leaves the tile fields zero and falls back to the bound
+  // texture dimensions.
+  const PARAM_COUNT = 166;
   const TILE_ORIGIN_X_INDEX = 160;
   const TILE_ORIGIN_Y_INDEX = 161;
   const CURVE_SAMPLES = 1024;
@@ -134,8 +137,20 @@ fn finishedPeakReductionMain(@builtin(global_invocation_id) id: vec3u) {
   // strength at all levels makes a three-level resolve visibly tile into 8x8
   // blocks when Amount and Luminance approach 100%.
   const DENOISE_LEVEL_WEIGHTS = Object.freeze([1.0, 0.55, 0.25, 0.1]);
+  // Large enough that one 42 MP frame is tens of tiles rather than hundreds of
+  // textures, small enough that the reusable analysis scratch chain stays a
+  // couple of megabytes. Rounded up to the wavelet alignment when used.
+  const DENOISE_TILE_SIZE = 1024;
   const DENOISE_SHADER_SOURCE = `
-struct AnalysisParams { sigmaThreshold: vec4f, };
+// rect: (outWidth, outHeight, sourceOriginX, sourceOriginY) and valid:
+// (sourceValidWidth, sourceValidHeight, ...) turn this into a tiled kernel.
+// The Haar block grid is what a tile has to respect, so a tile origin is always
+// a multiple of 2^levels and the parity arithmetic below is unchanged by it.
+// Clamping is to the *valid* sub-rect rather than to the bound texture, because
+// level 1 and above read a reusable scratch texture that is larger than the
+// tile's own low band; clamping to the allocation would invent edge pixels that
+// the whole-image run never sees.
+struct AnalysisParams { sigmaThreshold: vec4f, rect: vec4f, valid: vec4f, };
 @group(0) @binding(0) var analysisSource: texture_2d<f32>;
 @group(0) @binding(1) var analysisLow: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(2) var analysisH: texture_storage_2d<rgba16float, write>;
@@ -144,8 +159,10 @@ struct AnalysisParams { sigmaThreshold: vec4f, };
 @group(0) @binding(5) var<uniform> analysisParams: AnalysisParams;
 
 fn loadClamped(source: texture_2d<f32>, p: vec2i) -> vec3f {
-  let size = vec2i(textureDimensions(source));
-  return textureLoad(source, clamp(p, vec2i(0), size - vec2i(1)), 0).rgb;
+  let valid = vec2i(i32(analysisParams.valid.x), i32(analysisParams.valid.y));
+  let origin = vec2i(i32(analysisParams.rect.z), i32(analysisParams.rect.w));
+  let size = min(valid, vec2i(textureDimensions(source)) - origin);
+  return textureLoad(source, origin + clamp(p, vec2i(0), size - vec2i(1)), 0).rgb;
 }
 fn components(rgb: vec3f) -> vec3f {
   let y = dot(rgb, vec3f(0.2722287, 0.6740818, 0.0536895));
@@ -164,7 +181,7 @@ fn evidence(c: vec3f, mag: f32, total: f32) -> vec4f {
 }
 @compute @workgroup_size(8, 8)
 fn analyzeMain(@builtin(global_invocation_id) id: vec3u) {
-  let outSize = textureDimensions(analysisLow);
+  let outSize = vec2u(u32(analysisParams.rect.x), u32(analysisParams.rect.y));
   if (id.x >= outSize.x || id.y >= outSize.y) { return; }
   let p = vec2i(id.xy) * 2;
   let a = loadClamped(analysisSource, p);
@@ -185,7 +202,11 @@ fn analyzeMain(@builtin(global_invocation_id) id: vec3u) {
   textureStore(analysisD, vec2i(id.xy), evidence(diagonal, md, total));
 }
 
-struct ResolveParams { weights: vec4f, flags: vec4f, };
+// rect: (outWidth, outHeight, originX, originY). The origin applies to the
+// output store and to the original read, and is zero for the intermediate
+// passes that write into a tile-local scratch. Evidence is always read at
+// tile-local coordinates, because evidence is stored per tile.
+struct ResolveParams { weights: vec4f, flags: vec4f, rect: vec4f, };
 @group(1) @binding(0) var resolveLow: texture_2d<f32>;
 @group(1) @binding(1) var resolveH: texture_2d<f32>;
 @group(1) @binding(2) var resolveV: texture_2d<f32>;
@@ -210,10 +231,13 @@ fn weightedDetail(packed: vec4f) -> vec3f {
 }
 @compute @workgroup_size(8, 8)
 fn resolveMain(@builtin(global_invocation_id) id: vec3u) {
-  let outSize = textureDimensions(resolveOutput);
+  let outSize = vec2u(u32(resolveParams.rect.x), u32(resolveParams.rect.y));
   if (id.x >= outSize.x || id.y >= outSize.y) { return; }
   let p = vec2i(id.xy);
+  let storeAt = p + vec2i(i32(resolveParams.rect.z), i32(resolveParams.rect.w));
   let q = p / 2;
+  // A tile origin is a multiple of 2^levels, so local and global parity agree
+  // at every level and the sign pattern is the whole-image one.
   let sx = select(1.0, -1.0, (p.x & 1) == 1);
   let sy = select(1.0, -1.0, (p.y & 1) == 1);
   var residual = vec3f(0.0);
@@ -222,8 +246,8 @@ fn resolveMain(@builtin(global_invocation_id) id: vec3u) {
   residual += sy * weightedDetail(textureLoad(resolveV, q, 0));
   residual += sx * sy * weightedDetail(textureLoad(resolveD, q, 0));
   var rgb = residual;
-  if (resolveParams.flags.y > 0.5) { rgb = textureLoad(resolveOriginal, p, 0).rgb - residual; }
-  textureStore(resolveOutput, p, vec4f(rgb, 1.0));
+  if (resolveParams.flags.y > 0.5) { rgb = textureLoad(resolveOriginal, storeAt, 0).rgb - residual; }
+  textureStore(resolveOutput, storeAt, vec4f(rgb, 1.0));
 }
 
 @group(2) @binding(0) var directH0: texture_2d<f32>;
@@ -238,9 +262,10 @@ fn resolveMain(@builtin(global_invocation_id) id: vec3u) {
 
 @compute @workgroup_size(8, 8)
 fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
-  let outSize = textureDimensions(directOutput);
+  let outSize = vec2u(u32(directParams.rect.x), u32(directParams.rect.y));
   if (id.x >= outSize.x || id.y >= outSize.y) { return; }
   let p = vec2i(id.xy);
+  let storeAt = p + vec2i(i32(directParams.rect.z), i32(directParams.rect.w));
   let q0 = p / 2;
   let q1 = q0 / 2;
   let sx0 = select(1.0, -1.0, (p.x & 1) == 1);
@@ -254,9 +279,94 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
   residual += sx0 * weightedDetailWith(textureLoad(directH0, q0, 0), weights);
   residual += sy0 * weightedDetailWith(textureLoad(directV0, q0, 0), weights);
   residual += sx0 * sy0 * weightedDetailWith(textureLoad(directD0, q0, 0), weights);
-  let rgb = textureLoad(directOriginal, p, 0).rgb - residual;
-  textureStore(directOutput, p, vec4f(rgb, 1.0));
+  let rgb = textureLoad(directOriginal, storeAt, 0).rgb - residual;
+  textureStore(directOutput, storeAt, vec4f(rgb, 1.0));
 }`;
+
+  // The Haar grid a denoise tile must land on. Level 0 consumes 2x2 source
+  // blocks, level 1 consumes 2x2 blocks of those, and so on, so a tile that
+  // starts on a multiple of 2^levels decomposes exactly as the whole image
+  // does at that position -- and needs no halo, because no stage of a Haar
+  // transform reads outside its own block.
+  function denoiseTileAlignment(levels) {
+    if (!Number.isInteger(levels) || levels < 1 || levels > 4) {
+      throw new Error("Wavelet analysis supports one through four decimated scales.");
+    }
+    return 2 ** levels;
+  }
+
+  function denoiseSpans(extent, step) {
+    const spans = [];
+    for (let offset = 0; offset < extent; offset += step) {
+      spans.push({ offset, length: Math.min(step, extent - offset) });
+    }
+    // A one-pixel trailing span has no 2x2 block to transform. Folding it into
+    // the previous span leaves every origin on the grid and still covers the
+    // image exactly once.
+    if (spans.length > 1 && spans.at(-1).length < 2) {
+      spans[spans.length - 2].length += spans.at(-1).length;
+      spans.pop();
+    }
+    return spans;
+  }
+
+  function alignedDenoiseTiles(width, height, tileSize, levels) {
+    if (width <= 0 || height <= 0) throw new Error("Denoise tiling requires a positive image size.");
+    if (!(tileSize > 0)) throw new Error("Denoise tile size must be positive.");
+    const alignment = denoiseTileAlignment(levels);
+    const step = Math.ceil(tileSize / alignment) * alignment;
+    const columns = denoiseSpans(width, step);
+    const rows = denoiseSpans(height, step);
+    const tiles = [];
+    for (const row of rows) {
+      for (const column of columns) {
+        tiles.push({
+          x: column.offset,
+          y: row.offset,
+          width: column.length,
+          height: row.length,
+          key: `${column.offset},${row.offset},${column.length},${row.length}`,
+        });
+      }
+    }
+    return tiles;
+  }
+
+  /**
+   * The identity an analysis result is cached under.
+   *
+   * Excludes the live reconstruction controls on purpose: they consume
+   * evidence and never create it, so including them would make every slider
+   * drag a cache miss -- the exact behaviour the wavelet cache exists to
+   * avoid. Kept byte-for-byte in step with `denoise_cache_identity()` in
+   * `backend/hdr_finisher/denoise_tiles.py`.
+   */
+  function denoiseCacheIdentity(sourceIdentity, settings, tile = null) {
+    const number = (value) => Number(value).toPrecision(6).replace(/\.?0+e/, "e").replace(/\.?0+$/, "");
+    const parts = [
+      sourceIdentity,
+      DENOISE_ALGORITHM_VERSION,
+      `levels=${Math.trunc(settings.levels)}`,
+      `noise=${number(settings.noiseThreshold)}`,
+      `luma_sigma=${number(settings.lumaSigma)}`,
+      `chroma_sigma=${number(settings.chromaSigma)}`,
+      `luma_strength=${number(settings.lumaStrength)}`,
+      `chroma_strength=${number(settings.chromaStrength)}`,
+    ];
+    if (tile) parts.push(`tile=${tile.key}`);
+    return parts.join("|");
+  }
+
+  // Extents of one tile's band chain: entry 0 is the tile itself, entry i is
+  // the extent at scale 2^i.
+  function denoiseExtentChain(width, height, levels) {
+    const chain = [{ width, height }];
+    for (let index = 0; index < levels; index += 1) {
+      const previous = chain[index];
+      chain.push({ width: Math.ceil(previous.width / 2), height: Math.ceil(previous.height / 2) });
+    }
+    return chain;
+  }
 
   const DEVICE_LIMIT_NAMES = [
     "maxTextureDimension1D", "maxTextureDimension2D", "maxTextureDimension3D",
@@ -377,6 +487,39 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
    */
   const DEFAULT_TILE_SIZE = 512;
 
+  function detailTileHalo(width, height, params, localAdjustments = [], lane = "hdr") {
+    const diagonal = Math.hypot(Math.max(1, width), Math.max(1, height));
+    const globalRadii = [
+      Math.max(0.35, diagonal * 0.0003),
+      Math.max(0.70, diagonal * 0.0012),
+      Math.max(0.50, diagonal * Number(params?.[151] || 0) / 100),
+      Math.max(0.30, Number(params?.[153] || 0) * Number(params?.[155] || 1)),
+    ];
+    const radii = [...globalRadii];
+    for (const local of localAdjustments) {
+      const detail = local?.[`${lane}_grade`]?.detail || {};
+      radii.push(
+        Math.max(0.35, diagonal * 0.0003),
+        Math.max(0.70, diagonal * 0.0012),
+        Math.max(0.50, diagonal * Math.min(3, Math.max(0.2, Number(detail.clarity_radius_percent) || 0.75)) / 100),
+        Math.max(0.30, Math.min(3, Math.max(0.3, Number(detail.sharpen_radius_px) || 0.8))
+          * Math.min(1, Math.max(0.05, Number(params?.[155]) || 1))),
+      );
+    }
+    // Separable analysis reaches two radii in each direction. Texture's edge
+    // guide then reaches another two coarse radii into that packed band.
+    return Math.ceil(Math.max(2 * radii[0], 4 * radii[1], ...radii.slice(2).map((radius) => 2 * radius)) + 2);
+  }
+
+  function detailBandIdentity(params, inputIdentity, scope = "global") {
+    const values = Array.from(params || []);
+    // Amounts and sharpen threshold consume packed bands but do not create
+    // them. Excluding them is what makes live drags true cache hits.
+    const ignored = scope === "global" ? [149, 150, 152, 154] : [14, 15, 17, 19];
+    ignored.forEach((index) => { if (index < values.length) values[index] = 0; });
+    return `${inputIdentity}|${JSON.stringify(values)}`;
+  }
+
   /**
    * Model a Tiled execution of the same graph.
    *
@@ -419,7 +562,13 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
 
     // Per-tile working set, sized to one tile rather than to the image.
     add("tile-grading-core", "grading", "resident", workPixels * 8 * 4, { textures: 4, tile: true });
-    if (detailActive) add("tile-grading-detail", "detail", "resident", workPixels * 8 * 2, { textures: 2, tile: true });
+    if (detailActive) {
+      add("tile-detail-packed-cache", "detail", "cached",
+        Math.max(0, Math.floor(Number(options.detailCacheBytes) || width * height * 8)),
+        { textures: "one packed RGBA16F band tile per resident output tile", tile: true });
+      add("tile-detail-horizontal-scratch", "detail", "transient", workPixels * 8,
+        { textures: 1, tile: true });
+    }
     if (spatialActive) {
       add("tile-spatial-film", "spatial", "resident",
         Math.ceil(workWidth / 4) * Math.ceil(workHeight / 4) * 8 * 2, { textures: 2, tile: true });
@@ -649,6 +798,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return buildTiledPlan(options);
     }
 
+    static detailTileHalo(width, height, params, localAdjustments = [], lane = "hdr") {
+      return detailTileHalo(width, height, params, localAdjustments, lane);
+    }
+
+    static detailBandIdentity(params, inputIdentity, scope = "global") {
+      return detailBandIdentity(params, inputIdentity, scope);
+    }
+
     static normalizeGpuBudgetBytes(value) {
       return normalizeGpuBudgetBytes(value);
     }
@@ -695,6 +852,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.denoiseSourceSelector = null;
       this.denoiseSelectorGeneration = 0;
       this.denoiseCounters = this.emptyDenoiseCounters();
+      this.denoiseTileSize = DENOISE_TILE_SIZE;
       this.denoisePipelines = null;
       this.adapterInfo = null;
       this.resourceGeneration = 0;
@@ -720,6 +878,13 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.tileScheduler = null;
       this.tileCompositeParamBuffer = null;
       this.tiledExecutionMetrics = null;
+      this.pendingCacheTrim = null;
+      this.detailBandTiles = new Map();
+      this.maskTiles = new Map();
+      this.detailCacheCounters = {
+        hits: 0, misses: 0, analysisPasses: 0, evictions: 0,
+        globalHits: 0, globalMisses: 0, localHits: 0, localMisses: 0,
+      };
     }
 
     setMemoryBudget(value) {
@@ -893,8 +1058,17 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.resourceGeneration += 1;
       this.disposeDenoiseSelectorSeam();
       this.destroyTileGraph();
+      for (const entry of this.detailBandTiles.values()) entry.texture?.destroy();
+      this.detailBandTiles.clear();
+      for (const entry of this.maskTiles.values()) entry.texture?.destroy();
+      this.maskTiles.clear();
+      this.detailCacheCounters = {
+        hits: 0, misses: 0, analysisPasses: 0, evictions: 0,
+        globalHits: 0, globalMisses: 0, localHits: 0, localMisses: 0,
+      };
       this.tileScheduler = null;
       this.tiledExecutionMetrics = null;
+      this.pendingCacheTrim = null;
       this.sessionId = sessionId;
       this.renderSerials = new WeakMap();
       for (const proxy of this.proxies.values()) this.destroyAfterActiveRenders(() => proxy.texture?.destroy());
@@ -994,7 +1168,32 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         allocatedBytes: 0,
         atomicSwaps: 0,
         toggles: 0,
+        // `analysisDispatches` is the number that makes the live-control
+        // contract checkable: a drag of Amount, Luminance, Color Noise or
+        // Detail Recovery must leave it untouched.
+        analysisDispatches: 0,
+        resolveDispatches: 0,
+        analysisTiles: 0,
+        resolveTiles: 0,
+        evidenceBytes: 0,
+        analysisScratchBytes: 0,
+        resolveScratchBytes: 0,
       };
+    }
+
+    /**
+     * Cover a denoise source with tiles the Haar grid agrees with.
+     *
+     * Mirrors `backend/hdr_finisher/denoise_tiles.py` exactly, including the
+     * absorbed short trailing span, because the CPU reference and this renderer
+     * must agree on what a tile is before they can agree on what is cached.
+     */
+    static alignedDenoiseTiles(width, height, tileSize, levels) {
+      return alignedDenoiseTiles(width, height, tileSize, levels);
+    }
+
+    static denoiseCacheIdentity(sourceIdentity, settings, tile = null) {
+      return denoiseCacheIdentity(sourceIdentity, settings, tile);
     }
 
     recordStage(stage, detail = {}) {
@@ -1024,6 +1223,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const sceneLuminanceBytes = [...this.sceneLuminance.values()]
         .reduce((sum, entry) => sum + (entry.byteSize || 0), 0);
       const localMaskBytes = [...this.localMasks.values()].reduce((sum, entry) => sum + (entry.byteSize || 0), 0);
+      // Phase 5's two LRU caches and the tiled working graph. These are real
+      // device textures with the same lifetime as any other cache here, so
+      // leaving them out made a tiled render's reported peak smaller than a
+      // Direct one's while it actually held more.
+      const detailBandCacheBytes = [...this.detailBandTiles.values()]
+        .reduce((sum, entry) => sum + (entry.byteSize || 0), 0);
+      const maskTileBytes = [...this.maskTiles.values()].reduce((sum, entry) => sum + (entry.byteSize || 0), 0);
+      const tileGraphBytes = this.tileGraph?.byteSize || 0;
       const scopeBytes = [...this.scopeResources.values()].reduce(
         (sum, pool) => sum + pool.reduce((poolSum, resource) => poolSum + (resource.byteSize || 0), 0),
         0,
@@ -1067,6 +1274,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         gradingDetailBytes,
         sceneLuminanceBytes,
         localMaskBytes,
+        detailBandCacheBytes,
+        maskTileBytes,
+        tileGraphBytes,
         scopeBytes,
         denoiseEvidenceBytes,
         denoiseReconstructionScratchBytes,
@@ -1078,6 +1288,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         sourceProxyBytes: proxyBytes,
         sceneLuminanceBytes,
         localMaskBytes,
+        detailBandCacheBytes,
+        maskTileBytes,
         denoiseEvidenceBytes,
         denoiseReconstructionScratchBytes,
       };
@@ -1200,19 +1412,13 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     /**
      * Why a node keeps a graph off the tiled path.
      *
-     * Phase 4 ports geometry and the pointwise global grading nodes. Everything
-     * that reads image-absolute coordinates or a neighbourhood still belongs to
-     * a later phase, and a tile would silently treat itself as the whole image
-     * if it ran here: vignette normalizes to the image, grain seeds on absolute
-     * coordinates, and Detail, spatial film and masks need halos or full-frame
-     * inputs this path does not yet carry.
+     * Phase 5 adds haloed Detail, mask tiles, overlays and the sequential local
+     * stack. Remaining refusals are modules whose absolute-coordinate or
+     * multiscale contracts are owned by later phases.
      */
     tiledExecutionRefusals({ activeLocals = [], detailActive, spatialActive, overlayMask, params, surface }) {
       const reasons = [];
-      if (activeLocals.length) reasons.push("local adjustments");
-      if (detailActive) reasons.push("detail");
       if (spatialActive) reasons.push("spatial film effects");
-      if (overlayMask) reasons.push("mask overlay");
       if (params[123] > 0.5 && Math.abs(params[124]) > 0.000001) reasons.push("vignette");
       // Grain is section-enabled by default, so the refusal is on grain that
       // actually contributes. Zero-amount grain leaves the pixels alone and
@@ -1322,9 +1528,12 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           sourceFormat,
           sourceTexture: make(sourceFormat, GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST),
           baseTexture: make("rgba16float", attachment),
+          localTexture: make("rgba16float", attachment),
+          detailScratchTexture: make("rgba16float", attachment),
+          detailResultTexture: make("rgba16float", attachment | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST),
           filmTexture: make("rgba16float", attachment),
           finishTexture: make("rgba16float", attachment),
-          byteSize: width * height * (8 * 3 + (sourceFormat === "rgba16float" ? 8 : 16)),
+          byteSize: width * height * (8 * 6 + (sourceFormat === "rgba16float" ? 8 : 16)),
         };
       } catch (error) {
         this.recordAllocationFailure("tile-graph", error, { width, height });
@@ -1342,6 +1551,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.destroyAfterActiveRenders(() => {
         graph.sourceTexture?.destroy();
         graph.baseTexture?.destroy();
+        graph.localTexture?.destroy();
+        graph.detailScratchTexture?.destroy();
+        graph.detailResultTexture?.destroy();
         graph.filmTexture?.destroy();
         graph.finishTexture?.destroy();
       });
@@ -1409,6 +1621,16 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           : await this.measureToneAdjustedPeak(proxy, params, anchor.measurement, anchor.key);
       }
 
+      const overlayIndex = maskOverlay?.localId
+        ? activeLocals.findIndex((local) => local.id === maskOverlay.localId)
+        : -1;
+      const overlayColor = Array.isArray(maskOverlay?.color) ? maskOverlay.color : [0.12, 0.72, 0.86];
+      params[131] = overlayIndex >= 0 ? 1 : 0;
+      params[132] = overlayIndex >= 0 ? gpuMaskInfluenceOpacity(activeLocals[overlayIndex].mask) : 0;
+      params[133] = Number(overlayColor[0]) || 0;
+      params[134] = Number(overlayColor[1]) || 0;
+      params[135] = Number(overlayColor[2]) || 0;
+
       this.uploadParamsAndCurves(lane, adjustments, curveSampler, params);
 
       return this.encodeTiledGeneration(canvas, context, proxy, surface, pipelines, params, {
@@ -1418,10 +1640,134 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         longEdge,
         editRevision,
         applicationGeneration: sourceOptions?.applicationGeneration,
+        sessionId,
+        activeLocals,
+        geometrySignature,
+        overlayIndex,
+        sourcePixelScale: this.sourcePixelScaleFor(proxy, sourceSize),
       });
     }
 
-    /** Encode and submit one complete tiled generation from an already prepared graph. */
+    // `scope` is "global" or "local". The two are counted apart because they
+    // answer different questions: a global amount drag must reuse every global
+    // band, while the local bands below it legitimately regenerate, since the
+    // global Detail composite is their input. One combined counter cannot tell
+    // correct downstream invalidation from a cache that simply does not work.
+    detailBandTile(key, width, height, scope = "global") {
+      let entry = this.detailBandTiles.get(key);
+      if (entry && entry.width === width && entry.height === height) {
+        this.detailBandTiles.delete(key);
+        this.detailBandTiles.set(key, entry);
+        this.detailCacheCounters.hits += 1;
+        this.detailCacheCounters[`${scope}Hits`] += 1;
+        return { ...entry, hit: true };
+      }
+      if (entry) entry.texture.destroy();
+      const texture = this.device.createTexture({
+        size: { width, height },
+        format: "rgba16float",
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC,
+      });
+      entry = { texture, width, height, byteSize: width * height * 8 };
+      this.detailBandTiles.set(key, entry);
+      this.detailCacheCounters.misses += 1;
+      this.detailCacheCounters[`${scope}Misses`] += 1;
+      this.detailCacheCounters.analysisPasses += 2;
+      return { ...entry, hit: false };
+    }
+
+    /**
+     * How many bytes the two tile caches may hold between them.
+     *
+     * A flat fraction of the configured budget is wrong: the proxy, the
+     * presentation surface and the tiled working graph are resident too, and at
+     * 24 MP and above they are a large share of the budget. Taking 60% and 15%
+     * of the *total* for the caches left less than the rest of the resident set
+     * needed, so a measured peak could exceed the budget the planner had just
+     * admitted the render against. Sizing the caches from what is actually
+     * free keeps the two consistent.
+     */
+    cacheBudgetBytes(share, floorBytes) {
+      const snapshot = this.resourceMemorySnapshot();
+      const categories = snapshot.resident?.categories || {};
+      const cacheBytes = (categories.detailBandCacheBytes || 0) + (categories.maskTileBytes || 0);
+      const nonCacheBytes = Math.max(0, (snapshot.resident?.totalBytes || 0) - cacheBytes);
+      // A tenth of the budget is held back for the contingency the planner
+      // already reserves, so the two do not disagree about what fits.
+      const free = Math.max(0, this.memoryBudgetBytes() * 0.9 - nonCacheBytes);
+      return Math.max(floorBytes, Math.floor(free * share));
+    }
+
+    trimDetailBandTiles(pinned = []) {
+      const protectedKeys = new Set(pinned);
+      const budget = this.cacheBudgetBytes(0.80, 64 * 1024 * 1024);
+      let bytes = [...this.detailBandTiles.values()].reduce((sum, entry) => sum + entry.byteSize, 0);
+      for (const [key, entry] of [...this.detailBandTiles]) {
+        if (bytes <= budget) break;
+        if (protectedKeys.has(key)) continue;
+        this.detailBandTiles.delete(key);
+        entry.texture.destroy();
+        bytes -= entry.byteSize;
+        this.detailCacheCounters.evictions += 1;
+      }
+      return bytes;
+    }
+
+    async loadLocalMaskTile(sessionId, local, tile, longEdge, editRevision, geometrySignature, isCurrent) {
+      const signature = gpuMaskIdentity(local.mask);
+      const key = `${sessionId}:${local.id}:${longEdge}:${geometrySignature}:${editRevision}:${signature}:${tile.key}`;
+      const cached = this.maskTiles.get(key);
+      if (cached) {
+        this.maskTiles.delete(key);
+        this.maskTiles.set(key, cached);
+        return cached;
+      }
+      const rect = tile.rect;
+      const query = new URLSearchParams({
+        x: String(rect.x), y: String(rect.y), width: String(rect.width), height: String(rect.height),
+        halo: String(tile.halo), long_edge: String(longEdge), edit_revision: String(editRevision),
+        geometry_signature: geometrySignature,
+      });
+      const response = await fetch(`/api/session/${sessionId}/local-mask-tile/${encodeURIComponent(local.id)}?${query}`);
+      if (!response.ok) return null;
+      const width = Number(response.headers.get("X-Tile-Width"));
+      const height = Number(response.headers.get("X-Tile-Height"));
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (!isCurrent()) return null;
+      const bytesPerRow = Math.ceil(width / 256) * 256;
+      const padded = bytesPerRow === width ? bytes : new Uint8Array(bytesPerRow * height);
+      if (padded !== bytes) {
+        for (let row = 0; row < height; row += 1) {
+          padded.set(bytes.subarray(row * width, (row + 1) * width), row * bytesPerRow);
+        }
+      }
+      const texture = this.device.createTexture({
+        size: { width, height }, format: "r8unorm",
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      });
+      this.device.queue.writeTexture(
+        { texture }, padded, { bytesPerRow, rowsPerImage: height }, { width, height },
+      );
+      const entry = { texture, width, height, byteSize: width * height, key };
+      this.maskTiles.set(key, entry);
+      return entry;
+    }
+
+    trimMaskTiles(pinned = []) {
+      const protectedKeys = new Set(pinned);
+      const budget = this.cacheBudgetBytes(0.20, 32 * 1024 * 1024);
+      let bytes = [...this.maskTiles.values()].reduce((sum, entry) => sum + entry.byteSize, 0);
+      for (const [key, entry] of [...this.maskTiles]) {
+        if (bytes <= budget) break;
+        if (protectedKeys.has(key)) continue;
+        this.maskTiles.delete(key);
+        entry.texture.destroy();
+        bytes -= entry.byteSize;
+      }
+      return bytes;
+    }
+
+    /** Encode and submit one complete haloed tiled generation. */
     async encodeTiledGeneration(canvas, context, proxy, surface, pipelines, params, options = {}) {
       const Scheduler = options.Scheduler
         || (typeof window !== "undefined" ? window.HDRTileScheduler : null);
@@ -1430,149 +1776,276 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const lane = options.lane || "hdr";
       const longEdge = Number(options.longEdge) || Math.max(proxy.width, proxy.height);
       const editRevision = Number(options.editRevision) || 0;
+      const activeLocals = options.activeLocals || [];
+      const { detailActive } = this.graphActivity(params);
+      const localDetailActive = activeLocals.some((local) => gpuLocalDetailActive(local[`${lane}_grade`]));
+      const halo = (detailActive || localDetailActive)
+        ? detailTileHalo(proxy.width, proxy.height, params, activeLocals, lane)
+        : 0;
       const scheduler = this.tileScheduler instanceof Scheduler
         ? this.tileScheduler
         : (this.tileScheduler = new Scheduler({
           tileSize,
-          maxResidentBytes: Math.floor(this.memoryBudgetBytes() / 4),
+          maxResidentBytes: Math.floor(this.memoryBudgetBytes() * 0.7),
+          maxScratchBytes: (tileSize + halo * 2) ** 2 * 8,
         }));
       const identity = `${proxy.identity}|${editRevision}|${surface.format}`;
+      const nodes = ["geometry", "exposure", "white-balance", "curves", "color", "grading"];
+      if (detailActive || localDetailActive) nodes.push({ id: "detail", halo });
       const plan = scheduler.plan({
         width: proxy.width,
         height: proxy.height,
         identity,
         generation: Number(options.applicationGeneration ?? 0),
         tileSize,
-        nodes: ["geometry", "exposure", "white-balance", "curves", "color", "grading"],
+        nodes,
       });
-
-      const graph = this.ensureTileGraph(tileSize, tileSize, surface.format, proxy.pixelFormat);
+      const workWidth = Math.min(proxy.width, tileSize + halo * 2);
+      const workHeight = Math.min(proxy.height, tileSize + halo * 2);
+      const graph = this.ensureTileGraph(workWidth, workHeight, surface.format, proxy.pixelFormat);
       if (!graph) return { rendered: false, refusals: ["tile graph allocation failed"] };
 
-      // Every tile needs its own origin in the composite parameters, and a
-      // queue write would land once for the whole submission rather than once
-      // per tile. One buffer holding a slot per tile, bound at an offset, keeps
-      // the whole generation in a single command buffer.
+      const isCurrent = options.isCurrent || (() => true);
+      const maskMatrix = activeLocals.length
+        ? await Promise.all(plan.tiles.map((tile) => Promise.all(activeLocals.map((local) => this.loadLocalMaskTile(
+          options.sessionId, local, tile, longEdge, editRevision, options.geometrySignature || "{}", isCurrent,
+        )))))
+        : plan.tiles.map(() => []);
+      if (!isCurrent() || maskMatrix.some((row) => row.some((entry) => !entry))) {
+        return { rendered: false, refusals: ["mask tile unavailable or superseded"] };
+      }
+
       const alignment = 256;
       const stride = Math.ceil(params.byteLength / alignment) * alignment;
       const required = stride * plan.tileCount;
       if (!this.tileCompositeParamBuffer || this.tileCompositeParamBuffer.size < required) {
         this.tileCompositeParamBuffer?.destroy();
         this.tileCompositeParamBuffer = this.device.createBuffer({
-          size: required,
-          usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+          size: required, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
       }
       const slots = new Float32Array((stride / 4) * plan.tileCount);
       plan.tiles.forEach((tile, index) => {
         const base = index * (stride / 4);
         slots.set(params, base);
-        slots[base + 160] = tile.rect.x;
-        slots[base + 161] = tile.rect.y;
+        slots[base + 160] = tile.haloRect.x;
+        slots[base + 161] = tile.haloRect.y;
+        slots[base + 162] = tile.haloRect.width;
+        slots[base + 163] = tile.haloRect.height;
+        slots[base + 164] = proxy.width;
+        slots[base + 165] = proxy.height;
       });
       this.device.queue.writeBuffer(this.tileCompositeParamBuffer, 0, slots);
 
-      const tileSourceView = graph.sourceTexture.createView();
+      const localBuffers = activeLocals.map((local) => {
+        const localStride = Math.ceil(PARAM_COUNT * 4 / alignment) * alignment;
+        const buffer = this.device.createBuffer({
+          size: localStride * plan.tileCount,
+          usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        });
+        const values = new Float32Array((localStride / 4) * plan.tileCount);
+        plan.tiles.forEach((tile, index) => {
+          const offset = index * (localStride / 4);
+          values.set(buildLocalParams(local, lane, options.sourcePixelScale || 1), offset);
+          values[offset + 162] = tile.haloRect.width;
+          values[offset + 163] = tile.haloRect.height;
+          values[offset + 164] = proxy.width;
+          values[offset + 165] = proxy.height;
+        });
+        this.device.queue.writeBuffer(buffer, 0, values);
+        return { buffer, stride: localStride };
+      });
+
+      const sourceView = graph.sourceTexture.createView();
       const baseView = graph.baseTexture.createView();
+      const localView = graph.localTexture.createView();
+      const scratchView = graph.detailScratchTexture.createView();
+      const detailResultView = graph.detailResultTexture.createView();
       const filmView = graph.filmTexture.createView();
       const finishView = graph.finishTexture.createView();
-      const baseBind = this.bindGraphResources(tileSourceView, tileSourceView);
-      const responseBind = this.bindGraphResources(baseView, tileSourceView);
-      const finishBind = this.bindGraphResources(filmView, tileSourceView);
-      const compositeBinds = plan.tiles.map((tile, index) => this.bindGraphResources(
-        finishView,
-        tileSourceView,
-        { buffer: this.tileCompositeParamBuffer, offset: index * stride, size: params.byteLength },
-        tileSourceView,
-      ));
-
+      const globalInputIdentity = detailBandIdentity(params, proxy.identity, "global");
+      const pinnedDetail = [];
+      const pinnedMasks = maskMatrix.flat().map((entry) => entry.key);
+      const cacheBefore = { ...this.detailCacheCounters };
       const startedAt = performance.now();
-      // A tiled generation has no whole-frame finish texture. Remove the
-      // previous Direct source before submission so no scope request can label
-      // that older texture as belonging to the newly accepted presentation.
       this.scopeSources.delete(canvas);
-      // A validation error discards the whole command buffer silently, which
-      // would leave the canvas untouched and look like a parity failure rather
-      // than a bug. Capture it and report it instead.
       this.device.pushErrorScope("validation");
-      const canvasTexture = context.getCurrentTexture();
       const encoder = this.device.createCommandEncoder();
-      const pass = (view, pipeline, bindGroup) => {
+      const pass = (view, pipeline, bindGroup, width, height, alpha = 1) => {
         const renderPass = encoder.beginRenderPass({
-          colorAttachments: [{ view, clearValue: { r: 0, g: 0, b: 0, a: 1 }, loadOp: "clear", storeOp: "store" }],
+          colorAttachments: [{ view, clearValue: { r: 0, g: 0, b: 0, a: alpha }, loadOp: "clear", storeOp: "store" }],
         });
+        renderPass.setViewport(0, 0, width, height, 0, 1);
+        renderPass.setScissorRect(0, 0, width, height);
         renderPass.setPipeline(pipeline);
         renderPass.setBindGroup(0, bindGroup);
         renderPass.draw(3);
         renderPass.end();
       };
+      const canvasView = context.getCurrentTexture().createView();
+      const bandTileKey = (prefix, candidate) => `${prefix}|${candidate.rect.x},${candidate.rect.y},${candidate.rect.width},${candidate.rect.height}|h${candidate.halo}`;
+      const intersect = (left, right) => {
+        const x0 = Math.max(left.x, right.x);
+        const y0 = Math.max(left.y, right.y);
+        const x1 = Math.min(left.x + left.width, right.x + right.width);
+        const y1 = Math.min(left.y + left.height, right.y + right.height);
+        return x1 > x0 && y1 > y0 ? { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } : null;
+      };
+      const assemblePackedHalo = (prefix, targetTile) => {
+        const pieces = plan.tiles.map((candidate) => ({
+          candidate,
+          overlap: intersect(candidate.rect, targetTile.haloRect),
+          entry: this.detailBandTiles.get(bandTileKey(prefix, candidate)),
+        })).filter((piece) => piece.overlap);
+        if (pieces.some((piece) => !piece.entry)) return false;
+        pieces.forEach(({ candidate, overlap, entry }) => {
+          encoder.copyTextureToTexture(
+            { texture: entry.texture, origin: { x: overlap.x - candidate.rect.x, y: overlap.y - candidate.rect.y, z: 0 } },
+            { texture: graph.detailResultTexture, origin: { x: overlap.x - targetTile.haloRect.x, y: overlap.y - targetTile.haloRect.y, z: 0 } },
+            { width: overlap.width, height: overlap.height, depthOrArrayLayers: 1 },
+          );
+        });
+        return true;
+      };
 
-      const canvasView = canvasTexture.createView();
       plan.tiles.forEach((tile, index) => {
-        // Copying the tile out of the proxy is what lets every intermediate
-        // pass keep reading at its own fragment position: the tile is its whole
-        // world, so those shaders need no notion of tiling at all.
+        const width = tile.haloRect.width;
+        const height = tile.haloRect.height;
+        const parameterBinding = {
+          buffer: this.tileCompositeParamBuffer, offset: index * stride, size: params.byteLength,
+        };
+        const bind = (source, spatial = source, overlay = spatial, binding = parameterBinding) =>
+          this.bindGraphResources(source, spatial, binding, overlay);
         encoder.copyTextureToTexture(
-          { texture: proxy.texture, origin: { x: tile.rect.x, y: tile.rect.y, z: 0 } },
+          { texture: proxy.texture, origin: { x: tile.haloRect.x, y: tile.haloRect.y, z: 0 } },
           { texture: graph.sourceTexture, origin: { x: 0, y: 0, z: 0 } },
-          { width: tile.rect.width, height: tile.rect.height, depthOrArrayLayers: 1 },
+          { width, height, depthOrArrayLayers: 1 },
         );
-        pass(baseView, pipelines.base, baseBind);
-        pass(filmView, pipelines.response, responseBind);
-        pass(finishView, pipelines.finish, finishBind);
+        pass(baseView, pipelines.base, bind(sourceView), width, height);
+        let localSource = graph.baseTexture;
 
-        // The composite renders into the canvas itself, scissored to this
-        // tile's rectangle. A copy-only write is not enough: the swapchain is
-        // only presented for a texture that was rendered to.
+        if (detailActive) {
+          const prefix = `global|${globalInputIdentity}`;
+          const key = bandTileKey(prefix, tile);
+          const packed = this.detailBandTile(key, tile.rect.width, tile.rect.height, "global");
+          pinnedDetail.push(key);
+          const assembled = packed.hit && assemblePackedHalo(prefix, tile);
+          if (!assembled) {
+            pass(scratchView, pipelines.detailHorizontal, bind(baseView, baseView), width, height, 0);
+            pass(detailResultView, pipelines.detailVertical, bind(scratchView, scratchView), width, height, 0);
+            encoder.copyTextureToTexture(
+              { texture: graph.detailResultTexture, origin: { x: tile.rect.x - tile.haloRect.x, y: tile.rect.y - tile.haloRect.y, z: 0 } },
+              { texture: packed.texture },
+              { width: tile.rect.width, height: tile.rect.height, depthOrArrayLayers: 1 },
+            );
+          }
+          pass(localView, pipelines.detailComposite, bind(baseView, detailResultView), width, height);
+          localSource = graph.localTexture;
+        }
+
+        let precedingIdentity = `${proxy.identity}|${JSON.stringify(Array.from(params))}`;
+        activeLocals.forEach((local, localIndex) => {
+          const target = localSource === graph.baseTexture ? graph.localTexture : graph.baseTexture;
+          const targetView = target.createView();
+          const localBinding = {
+            buffer: localBuffers[localIndex].buffer,
+            offset: index * localBuffers[localIndex].stride,
+            size: PARAM_COUNT * 4,
+          };
+          const maskView = maskMatrix[index][localIndex].texture.createView();
+          if (gpuLocalDetailActive(local[`${lane}_grade`])) {
+            pass(finishView, pipelines.localCandidate,
+              bind(localSource.createView(), localSource.createView(), localSource.createView(), localBinding), width, height);
+            const localValues = buildLocalParams(local, lane, options.sourcePixelScale || 1);
+            const bandIdentity = detailBandIdentity(localValues, precedingIdentity, "local");
+            const prefix = `local:${local.id}|${bandIdentity}`;
+            const key = bandTileKey(prefix, tile);
+            const packed = this.detailBandTile(key, tile.rect.width, tile.rect.height, "local");
+            pinnedDetail.push(key);
+            const assembled = packed.hit && assemblePackedHalo(prefix, tile);
+            if (!assembled) {
+              pass(scratchView, pipelines.localDetailHorizontal,
+                bind(finishView, finishView, finishView, localBinding), width, height, 0);
+              pass(detailResultView, pipelines.localDetailVertical,
+                bind(scratchView, scratchView, scratchView, localBinding), width, height, 0);
+              encoder.copyTextureToTexture(
+                { texture: graph.detailResultTexture, origin: { x: tile.rect.x - tile.haloRect.x, y: tile.rect.y - tile.haloRect.y, z: 0 } },
+                { texture: packed.texture },
+                { width: tile.rect.width, height: tile.rect.height, depthOrArrayLayers: 1 },
+              );
+            }
+            pass(scratchView, pipelines.localDetailComposite,
+              bind(finishView, detailResultView, detailResultView, localBinding), width, height);
+            pass(targetView, pipelines.localDetailMix,
+              bind(localSource.createView(), maskView, scratchView, localBinding), width, height);
+          } else {
+            pass(targetView, pipelines.local,
+              bind(localSource.createView(), maskView, maskView, localBinding), width, height);
+          }
+          localSource = target;
+          precedingIdentity += `|${JSON.stringify(gpuMaskRenderPayload(local.mask))}|${JSON.stringify(local[`${lane}_grade`])}|${local.opacity}`;
+        });
+
+        pass(filmView, pipelines.response, bind(localSource.createView()), width, height);
+        pass(finishView, pipelines.finish, bind(filmView), width, height);
+        const overlayView = options.overlayIndex >= 0
+          ? maskMatrix[index][options.overlayIndex].texture.createView()
+          : sourceView;
+        const compositeBind = bind(finishView, sourceView, overlayView);
         const compositePass = encoder.beginRenderPass({
           colorAttachments: [{
-            view: canvasView,
-            loadOp: index === 0 ? "clear" : "load",
-            clearValue: { r: 0, g: 0, b: 0, a: 1 },
-            storeOp: "store",
+            view: canvasView, loadOp: index === 0 ? "clear" : "load",
+            clearValue: { r: 0, g: 0, b: 0, a: 1 }, storeOp: "store",
           }],
         });
         compositePass.setScissorRect(tile.rect.x, tile.rect.y, tile.rect.width, tile.rect.height);
         compositePass.setPipeline(pipelines.composite);
-        compositePass.setBindGroup(0, compositeBinds[index]);
+        compositePass.setBindGroup(0, compositeBind);
         compositePass.draw(3);
         compositePass.end();
         scheduler.acceptTile(tile.key, plan.generation);
       });
 
-      // One submission for the whole generation: the canvas shows the complete
-      // assembly or nothing, so a partially replaced frame cannot be presented.
       this.device.queue.submit([encoder.finish()]);
+      localBuffers.forEach((entry) => entry.buffer.destroy());
       const validationError = await this.device.popErrorScope();
       if (validationError) {
         this.recordStage("tiled-validation-error", { message: validationError.message });
         return { rendered: false, refusals: [`validation: ${validationError.message}`] };
       }
-
+      const detailCacheBytes = this.trimDetailBandTiles(pinnedDetail);
+      const maskCacheBytes = this.trimMaskTiles(pinnedMasks);
+      // The trim above cannot evict this generation's own tiles, because
+      // submitted work still references them. Once the queue drains they are
+      // evictable, so trim again without pins. Retained as a promise so a
+      // measurement can await the steady state rather than sampling mid-trim.
+      this.pendingCacheTrim = this.device.queue.onSubmittedWorkDone().then(() => {
+        this.trimDetailBandTiles();
+        this.trimMaskTiles();
+      }).catch(() => null);
       const durationMs = performance.now() - startedAt;
       this.tiledExecutionMetrics = {
-        width: proxy.width,
-        height: proxy.height,
-        tileSize,
-        tileCount: plan.tileCount,
-        visibleCount: plan.visibleCount,
-        submissions: 1,
-        workingSetBytes: graph.byteSize,
-        proxyBytes: proxy.byteSize,
-        presentableGeneration: scheduler.presentableGeneration(plan),
-        durationMs,
+        width: proxy.width, height: proxy.height, tileSize, halo,
+        tileCount: plan.tileCount, visibleCount: plan.visibleCount, submissions: 1,
+        workingSetBytes: graph.byteSize, proxyBytes: proxy.byteSize,
+        detailCacheBytes, maskCacheBytes,
+        detailCacheHits: this.detailCacheCounters.hits - cacheBefore.hits,
+        detailCacheMisses: this.detailCacheCounters.misses - cacheBefore.misses,
+        detailAnalysisPasses: this.detailCacheCounters.analysisPasses - cacheBefore.analysisPasses,
+        detailGlobalCacheHits: this.detailCacheCounters.globalHits - cacheBefore.globalHits,
+        detailGlobalCacheMisses: this.detailCacheCounters.globalMisses - cacheBefore.globalMisses,
+        detailLocalCacheHits: this.detailCacheCounters.localHits - cacheBefore.localHits,
+        detailLocalCacheMisses: this.detailCacheCounters.localMisses - cacheBefore.localMisses,
+        detailBandStacks: (detailActive ? 1 : 0)
+          + activeLocals.filter((local) => gpuLocalDetailActive(local[`${lane}_grade`])).length,
+        presentableGeneration: scheduler.presentableGeneration(plan), durationMs,
       };
+      this.recordStage("detail-cache", { ...this.tiledExecutionMetrics });
       this.recordStage("tiled-render", { lane, longEdge, ...this.tiledExecutionMetrics });
       return {
-        rendered: true,
-        refusals: [],
-        width: proxy.width,
-        height: proxy.height,
-        hdr: surface.hdr,
-        proxyFormat: proxy.pixelFormat,
-        sourceSerial: proxy.sourceSerial ?? null,
-        execution: "tiled",
-        metrics: this.tiledExecutionMetrics,
+        rendered: true, refusals: [], width: proxy.width, height: proxy.height,
+        hdr: surface.hdr, proxyFormat: proxy.pixelFormat,
+        sourceSerial: proxy.sourceSerial ?? null, execution: "tiled", metrics: this.tiledExecutionMetrics,
       };
     }
 
@@ -1621,19 +2094,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         || !proxy
         || sourceOptions?.isCurrent?.() === false) return this.refuseRender("superseded-before-proxy");
       const sourceProxy = this.selectedDenoiseSource(proxy);
-      const masks = await Promise.all(activeLocals.map((local) => this.loadLocalMask(
-        sessionId,
-        local,
-        longEdge,
-        editRevision,
-        geometrySignature,
-        () => serial === this.renderSerials.get(canvas),
-      )));
-      const masksReadyAt = performance.now();
-      if (resourceGeneration !== this.resourceGeneration
-        || serial !== this.renderSerials.get(canvas)
-        || masks.some((mask) => !mask)
-        || sourceOptions?.isCurrent?.() === false) return this.refuseRender("superseded-after-masks");
+      let masks = [];
+      let masksReadyAt = proxyReadyAt;
 
       const context = canvas.getContext("webgpu");
       if (!context) throw new Error("The comparison WebGPU canvas context is unavailable");
@@ -1675,6 +2137,40 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // work awaits highlight-peak analysis, then resize and submit the new
       // frame in one synchronous presentation step. Otherwise the compositor
       // can expose the cleared (black) canvas between pointerup and settle.
+      // Activity and admission are decided here, before the canvas is resized.
+      // They read only grade-derived parameter slots, so the surface-format
+      // rebuild below cannot change them.
+      const { spatialActive, detailActive } = this.graphActivity(params);
+      const localDetailActive = activeLocals.some((local) => gpuLocalDetailActive(local[`${lane}_grade`]));
+      // Admission runs against the graph this render is about to build, so the
+      // plan and the decision describe real work rather than a generic guess.
+      const plan = this.planRender(proxy.width, proxy.height, {
+        detailActive: detailActive || localDetailActive,
+        spatialActive,
+        sourceBytesPerPixel: proxy.pixelFormat === "rgba16float" ? 8 : 16,
+        tier: sourceOptions?.tier ?? null,
+      });
+      // Direct's whole-frame masks must be fetched before the resize below.
+      // Resizing a visible canvas clears its presented frame, so any await
+      // between the resize and the submission can leave a cleared canvas on
+      // screen -- and, if the render is then superseded, leave it there with no
+      // accepted presentation at all, which strands the geometry handoff. Tiled
+      // skips this entirely: it carries bounded per-tile masks instead.
+      if (plan.decision.mode !== "tiled") {
+        masks = await Promise.all(activeLocals.map((local) => this.loadLocalMask(
+          sessionId,
+          local,
+          longEdge,
+          editRevision,
+          geometrySignature,
+          () => serial === this.renderSerials.get(canvas),
+        )));
+        masksReadyAt = performance.now();
+        if (resourceGeneration !== this.resourceGeneration
+          || serial !== this.renderSerials.get(canvas)
+          || masks.some((mask) => !mask)
+          || sourceOptions?.isCurrent?.() === false) return this.refuseRender("superseded-after-masks");
+      }
       const measuredPeak = params[75];
       if (canvas.width !== proxy.width) canvas.width = proxy.width;
       if (canvas.height !== proxy.height) canvas.height = proxy.height;
@@ -1696,7 +2192,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const overlayIndex = maskOverlay?.localId
         ? activeLocals.findIndex((local) => local.id === maskOverlay.localId)
         : -1;
-      const overlayMask = overlayIndex >= 0 ? masks[overlayIndex] : null;
+      const overlayMask = overlayIndex >= 0;
       const overlayLocal = overlayIndex >= 0 ? activeLocals[overlayIndex] : null;
       const overlayColor = Array.isArray(maskOverlay?.color) ? maskOverlay.color : [0.12, 0.72, 0.86];
       params[131] = overlayMask ? 1 : 0;
@@ -1705,16 +2201,6 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       params[134] = Number(overlayColor[1]) || 0;
       params[135] = Number(overlayColor[2]) || 0;
       this.uploadParamsAndCurves(lane, adjustments, curveSampler, params);
-      const { spatialActive, detailActive } = this.graphActivity(params);
-      const localDetailActive = activeLocals.some((local) => gpuLocalDetailActive(local[`${lane}_grade`]));
-      // Admission runs against the graph this render is about to build, so the
-      // plan and the decision describe real work rather than a generic guess.
-      const plan = this.planRender(proxy.width, proxy.height, {
-        detailActive: detailActive || localDetailActive,
-        spatialActive,
-        sourceBytesPerPixel: proxy.pixelFormat === "rgba16float" ? 8 : 16,
-        tier: sourceOptions?.tier ?? null,
-      });
       if (plan.decision.mode === "tiled") {
         const refusals = this.tiledExecutionRefusals({
           activeLocals,
@@ -1743,6 +2229,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           longEdge,
           editRevision,
           applicationGeneration: sourceOptions?.applicationGeneration,
+          sessionId,
+          activeLocals,
+          geometrySignature,
+          overlayIndex,
+          sourcePixelScale,
+          isCurrent: () => resourceGeneration === this.resourceGeneration
+            && serial === this.renderSerials.get(canvas)
+            && sourceOptions?.isCurrent?.() !== false,
         });
         if (!tiled?.rendered) {
           return this.refuseRender(`tiled-encode-failed:${(tiled?.refusals || []).join(",")}`);
@@ -1813,7 +2307,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         intermediate.finishTexture.createView(),
         spatialAView,
         intermediate.compositeParamBuffer,
-        overlayMask?.texture?.createView() || spatialAView,
+        masks[overlayIndex]?.texture?.createView() || spatialAView,
       );
       const encoder = this.device.createCommandEncoder();
       const gpuTiming = this.instrumentationEnabled && this.device.features.has("timestamp-query")
@@ -2163,6 +2657,19 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return { texture, width, height, byteSize: width * height * 8 };
     }
 
+    /**
+     * Analyse the proxy tile by tile into a cache of Haar evidence.
+     *
+     * Tiling buys two things. The transient low-band chain becomes one tile's
+     * worth instead of the whole image's, so analysis scratch stops following
+     * the source; and evidence becomes a set of per-tile textures rather than
+     * one monolithic band per level, which is what lets a cache evict it.
+     *
+     * It costs nothing in accuracy. A tile origin is a multiple of 2^levels, so
+     * its block grid is the whole image's block grid, and a Haar stage never
+     * reads outside its own block. The result is the same coefficients, not
+     * approximately the same ones.
+     */
     async analyzeDenoiseProxy(sessionId, lane, adjustments, longEdge, editRevision = 0, preset = {}, sourceIdentity = "source", controls = {}) {
       if (!this.available || !sessionId) return false;
       const generation = ++this.denoiseSelectorGeneration;
@@ -2187,83 +2694,121 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const startedAt = performance.now();
       this.denoiseCounters.analysisCalls += 1;
       this.recordStage("denoise-analysis", { state: "started", generation, longEdge });
-      const levels = [];
-      const transient = [];
+
+      const tileSize = Math.max(64, Number(this.denoiseTileSize) || DENOISE_TILE_SIZE);
+      const tiles = alignedDenoiseTiles(original.width, original.height, tileSize, settings.levels);
+      const alignment = denoiseTileAlignment(settings.levels);
+      const step = Math.ceil(tileSize / alignment) * alignment;
+      // One scratch chain, sized to the largest tile, reused by every tile.
+      // Passes in a command buffer execute in order with implicit barriers, so
+      // reuse across tiles is safe without a fence per tile.
+      const scratchChain = denoiseExtentChain(step, step, settings.levels);
+      const scratch = [];
       const evidenceAllocated = [];
-      const paramBuffers = [];
-      const resolveScratch = [];
-      const resolveParamBuffers = [];
+      const tileEvidence = [];
+      let paramBuffer = null;
       let cacheInstalled = false;
-      let input = original;
       try {
-        const encoder = this.device.createCommandEncoder();
-        for (let index = 0; index < settings.levels; index += 1) {
-          const width = Math.ceil(input.width / 2);
-          const height = Math.ceil(input.height / 2);
-          const low = this.createDenoiseTexture(width, height, `denoise-low-${index}`);
-          const evidence = ["h", "v", "d"].map((axis) => this.createDenoiseTexture(width, height, `denoise-${axis}-${index}`));
-          transient.push(low);
-          evidenceAllocated.push(...evidence);
-          const params = this.device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-          paramBuffers.push(params);
-          const scale = 0.5 ** (index + 1);
-          this.device.queue.writeBuffer(params, 0, new Float32Array([
-            settings.lumaSigma * scale * settings.lumaStrength,
-            settings.chromaSigma * scale * settings.chromaStrength,
-            settings.chromaSigma * scale * settings.chromaStrength,
-            settings.noiseThreshold,
-          ]));
-          const bindGroup = this.device.createBindGroup({
-            layout: pipelines.analysis.getBindGroupLayout(0),
-            entries: [
-              { binding: 0, resource: input.texture.createView() },
-              { binding: 1, resource: low.texture.createView() },
-              { binding: 2, resource: evidence[0].texture.createView() },
-              { binding: 3, resource: evidence[1].texture.createView() },
-              { binding: 4, resource: evidence[2].texture.createView() },
-              { binding: 5, resource: { buffer: params } },
-            ],
-          });
-          const pass = encoder.beginComputePass();
-          pass.setPipeline(pipelines.analysis);
-          pass.setBindGroup(0, bindGroup);
-          pass.dispatchWorkgroups(Math.ceil(width / 8), Math.ceil(height / 8));
-          pass.end();
-          levels.push({ sourceWidth: input.width, sourceHeight: input.height, low, evidence, params });
-          input = low;
+        for (let index = 1; index <= settings.levels; index += 1) {
+          scratch.push(this.createDenoiseTexture(
+            scratchChain[index].width,
+            scratchChain[index].height,
+            `denoise-analysis-scratch-${index}`,
+          ));
         }
+        const slot = 256;
+        paramBuffer = this.device.createBuffer({
+          size: Math.max(slot, tiles.length * settings.levels * slot),
+          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+        const slots = new Float32Array((paramBuffer.size / 4));
+
+        const encoder = this.device.createCommandEncoder();
+        let dispatches = 0;
+        tiles.forEach((tile, tileIndex) => {
+          const chain = denoiseExtentChain(tile.width, tile.height, settings.levels);
+          const levels = [];
+          let source = original.texture;
+          let originX = tile.x;
+          let originY = tile.y;
+          for (let index = 0; index < settings.levels; index += 1) {
+            const valid = chain[index];
+            const out = chain[index + 1];
+            const evidence = ["h", "v", "d"].map((axis) =>
+              this.createDenoiseTexture(out.width, out.height, `denoise-${axis}-${index}-${tile.key}`));
+            evidenceAllocated.push(...evidence);
+            const base = (tileIndex * settings.levels + index) * (slot / 4);
+            const scale = 0.5 ** (index + 1);
+            slots.set([
+              settings.lumaSigma * scale * settings.lumaStrength,
+              settings.chromaSigma * scale * settings.chromaStrength,
+              settings.chromaSigma * scale * settings.chromaStrength,
+              settings.noiseThreshold,
+              out.width, out.height, originX, originY,
+              valid.width, valid.height, 0, 0,
+            ], base);
+            const bindGroup = this.device.createBindGroup({
+              layout: pipelines.analysis.getBindGroupLayout(0),
+              entries: [
+                { binding: 0, resource: source.createView() },
+                { binding: 1, resource: scratch[index].texture.createView() },
+                { binding: 2, resource: evidence[0].texture.createView() },
+                { binding: 3, resource: evidence[1].texture.createView() },
+                { binding: 4, resource: evidence[2].texture.createView() },
+                { binding: 5, resource: { buffer: paramBuffer, offset: (tileIndex * settings.levels + index) * slot, size: 48 } },
+              ],
+            });
+            const pass = encoder.beginComputePass();
+            pass.setPipeline(pipelines.analysis);
+            pass.setBindGroup(0, bindGroup);
+            pass.dispatchWorkgroups(Math.ceil(out.width / 8), Math.ceil(out.height / 8));
+            pass.end();
+            dispatches += 1;
+            levels.push({ evidence, width: out.width, height: out.height });
+            source = scratch[index].texture;
+            originX = 0;
+            originY = 0;
+          }
+          tileEvidence.push({ tile, levels, chain });
+        });
+        this.device.queue.writeBuffer(paramBuffer, 0, slots);
         this.device.queue.submit([encoder.finish()]);
         await this.device.queue.onSubmittedWorkDone();
         if (generation !== this.denoiseSelectorGeneration || this.sessionId !== sessionId) {
           this.recordStage("denoise-analysis", { state: "stale", generation });
           return false;
         }
-        for (let index = 1; index < levels.length; index += 1) {
+
+        const resolveChain = denoiseExtentChain(step, step, settings.levels);
+        const resolveScratch = [];
+        for (let index = 1; index < settings.levels; index += 1) {
           resolveScratch.push(this.createDenoiseTexture(
-            levels[index].sourceWidth,
-            levels[index].sourceHeight,
+            resolveChain[index].width,
+            resolveChain[index].height,
             `denoise-resolve-scratch-${index}`,
           ));
         }
-        for (let index = 0; index < Math.max(1, levels.length); index += 1) {
-          resolveParamBuffers.push(this.device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }));
-        }
         const previous = this.denoiseSourceSelector;
-        const evidenceByteSize = levels.reduce((sum, level) => sum + level.evidence.reduce((value, item) => value + item.byteSize, 0), 0);
-        const scratchByteSize = resolveScratch.reduce((sum, item) => sum + item.byteSize, 0);
-        const byteSize = evidenceByteSize + scratchByteSize;
+        const evidenceByteSize = evidenceAllocated.reduce((sum, item) => sum + item.byteSize, 0);
+        const analysisScratchBytes = scratch.reduce((sum, item) => sum + item.byteSize, 0);
+        const resolveScratchBytes = resolveScratch.reduce((sum, item) => sum + item.byteSize, 0);
         const cache = {
           algorithmVersion: DENOISE_ALGORITHM_VERSION,
           settings,
-          levels: levels.map((level) => ({
-            sourceWidth: level.sourceWidth,
-            sourceHeight: level.sourceHeight,
-            evidence: level.evidence,
+          identity: denoiseCacheIdentity(original.identity, settings),
+          tileSize: step,
+          tiles: tileEvidence,
+          // Retained so the existing diagnostics keep reporting a per-level
+          // view of the evidence even though it is now stored per tile.
+          levels: Array.from({ length: settings.levels }, (_, index) => ({
+            sourceWidth: denoiseExtentChain(original.width, original.height, settings.levels)[index].width,
+            sourceHeight: denoiseExtentChain(original.width, original.height, settings.levels)[index].height,
+            evidence: tileEvidence.flatMap((entry) => entry.levels[index].evidence),
           })),
           resolveScratch,
-          resolveParamBuffers,
-          byteSize,
-          textureCount: levels.length * 3 + resolveScratch.length,
+          resolveParamBuffer: null,
+          byteSize: evidenceByteSize + resolveScratchBytes,
+          textureCount: evidenceAllocated.length + resolveScratch.length,
         };
         this.denoiseSourceSelector = {
           identity: original.identity,
@@ -2276,19 +2821,30 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         cacheInstalled = true;
         this.destroyDenoiseSelector(previous);
         this.denoiseCounters.allocations += cache.textureCount;
-        this.denoiseCounters.allocatedBytes += byteSize;
-        this.recordAllocation("denoise-wavelet-cache", byteSize, { textures: cache.textureCount, longEdge });
-        this.recordStage("denoise-analysis", { state: "ready", generation, durationMs: performance.now() - startedAt });
+        this.denoiseCounters.allocatedBytes += cache.byteSize;
+        this.denoiseCounters.analysisDispatches += dispatches;
+        this.denoiseCounters.analysisTiles += tiles.length;
+        this.denoiseCounters.evidenceBytes = evidenceByteSize;
+        this.denoiseCounters.analysisScratchBytes = analysisScratchBytes;
+        this.denoiseCounters.resolveScratchBytes = resolveScratchBytes;
+        this.recordAllocation("denoise-wavelet-cache", cache.byteSize, { textures: cache.textureCount, longEdge });
+        this.recordStage("denoise-analysis", {
+          state: "ready",
+          generation,
+          durationMs: performance.now() - startedAt,
+          tiles: tiles.length,
+          dispatches,
+          evidenceBytes: evidenceByteSize,
+          analysisScratchBytes,
+        });
       } catch (error) {
         this.recordStage("denoise-analysis", { state: "error", generation, durationMs: performance.now() - startedAt });
         throw error;
       } finally {
-        for (const item of transient) item.texture.destroy();
-        for (const buffer of paramBuffers) buffer.destroy();
+        for (const item of scratch) item.texture.destroy();
+        paramBuffer?.destroy();
         if (!cacheInstalled) {
           for (const item of evidenceAllocated) item.texture.destroy();
-          for (const item of resolveScratch) item.texture.destroy();
-          for (const buffer of resolveParamBuffers) buffer.destroy();
         }
       }
       return this.resolveDenoiseProxy({
@@ -2299,7 +2855,16 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       });
     }
 
-    async resolveDenoiseProxy(controls = {}) {
+    /**
+     * Reconstruct from cached evidence. Runs no analysis, by construction:
+     * nothing here touches the analysis pipeline, so a drag of any live control
+     * cannot issue an analysis dispatch however often it fires.
+     *
+     * `region` reconstructs only part of the frame, which is what makes zoom
+     * and pan cheap. It must start on the wavelet grid for the same reason a
+     * tile must.
+     */
+    async resolveDenoiseProxy(controls = {}, { region = null } = {}) {
       const selector = this.denoiseSourceSelector;
       if (!selector?.cache || !selector.original) return false;
       const generation = ++this.denoiseSelectorGeneration;
@@ -2311,74 +2876,98 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         return value;
       });
       const pipelines = await this.ensureDenoisePipelines();
-      const levels = selector.cache.levels;
+      const cache = selector.cache;
+      const levelCount = cache.settings.levels;
+      const alignment = denoiseTileAlignment(levelCount);
+      if (region && ((region.x % alignment) || (region.y % alignment))) {
+        throw new Error(`A denoise resolve region must start on the ${alignment}px wavelet grid.`);
+      }
+      const overlaps = (tile) => !region || (
+        tile.x < region.x + region.width && tile.x + tile.width > region.x
+        && tile.y < region.y + region.height && tile.y + tile.height > region.y
+      );
+      const active = cache.tiles.filter((entry) => overlaps(entry.tile));
+      if (!active.length) return false;
+
       const candidateIsNew = !selector.resolved;
-      const candidate = selector.resolved || this.createDenoiseTexture(selector.original.width, selector.original.height, "denoise-resolved");
+      const candidate = selector.resolved
+        || this.createDenoiseTexture(selector.original.width, selector.original.height, "denoise-resolved");
+      let paramBuffer = null;
       try {
+        const slot = 256;
+        paramBuffer = this.device.createBuffer({
+          size: Math.max(slot, active.length * Math.max(1, levelCount) * slot),
+          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+        const slots = new Float32Array(paramBuffer.size / 4);
         const encoder = this.device.createCommandEncoder();
-        if (levels.length === 2) {
-          const params = selector.cache.resolveParamBuffers[0];
-          this.device.queue.writeBuffer(params, 0, new Float32Array([...weights, 0, 1, 0, 0]));
-          const fine = levels[0].evidence;
-          const medium = levels[1].evidence;
-          const bindGroup = this.device.createBindGroup({
-            layout: pipelines.resolveTwoLevel.getBindGroupLayout(2),
-            entries: [
-              { binding: 0, resource: fine[0].texture.createView() },
-              { binding: 1, resource: fine[1].texture.createView() },
-              { binding: 2, resource: fine[2].texture.createView() },
-              { binding: 3, resource: medium[0].texture.createView() },
-              { binding: 4, resource: medium[1].texture.createView() },
-              { binding: 5, resource: medium[2].texture.createView() },
-              { binding: 6, resource: selector.original.texture.createView() },
-              { binding: 7, resource: candidate.texture.createView() },
-              { binding: 8, resource: { buffer: params } },
-            ],
-          });
-          const pass = encoder.beginComputePass();
-          pass.setPipeline(pipelines.resolveTwoLevel);
-          pass.setBindGroup(2, bindGroup);
-          pass.dispatchWorkgroups(Math.ceil(candidate.width / 8), Math.ceil(candidate.height / 8));
-          pass.end();
-        } else {
+        let dispatches = 0;
+
+        active.forEach((entry, entryIndex) => {
+          const { tile, levels, chain } = entry;
+          if (levelCount === 2) {
+            const base = entryIndex * levelCount * (slot / 4);
+            slots.set([...weights, 0, 1, 0, 0, tile.width, tile.height, tile.x, tile.y], base);
+            const fine = levels[0].evidence;
+            const medium = levels[1].evidence;
+            const bindGroup = this.device.createBindGroup({
+              layout: pipelines.resolveTwoLevel.getBindGroupLayout(2),
+              entries: [
+                { binding: 0, resource: fine[0].texture.createView() },
+                { binding: 1, resource: fine[1].texture.createView() },
+                { binding: 2, resource: fine[2].texture.createView() },
+                { binding: 3, resource: medium[0].texture.createView() },
+                { binding: 4, resource: medium[1].texture.createView() },
+                { binding: 5, resource: medium[2].texture.createView() },
+                { binding: 6, resource: selector.original.texture.createView() },
+                { binding: 7, resource: candidate.texture.createView() },
+                { binding: 8, resource: { buffer: paramBuffer, offset: entryIndex * levelCount * slot, size: 48 } },
+              ],
+            });
+            const pass = encoder.beginComputePass();
+            pass.setPipeline(pipelines.resolveTwoLevel);
+            pass.setBindGroup(2, bindGroup);
+            pass.dispatchWorkgroups(Math.ceil(tile.width / 8), Math.ceil(tile.height / 8));
+            pass.end();
+            dispatches += 1;
+            return;
+          }
           let reconstructedLow = null;
-          for (let index = levels.length - 1; index >= 0; index -= 1) {
-            const level = levels[index];
+          for (let index = levelCount - 1; index >= 0; index -= 1) {
             const finalPass = index === 0;
-            const output = finalPass ? candidate : selector.cache.resolveScratch[index - 1];
-            const params = selector.cache.resolveParamBuffers[index];
+            const out = chain[index];
+            const output = finalPass ? candidate : cache.resolveScratch[index - 1];
             const levelWeight = DENOISE_LEVEL_WEIGHTS[Math.min(index, DENOISE_LEVEL_WEIGHTS.length - 1)];
-            this.device.queue.writeBuffer(params, 0, new Float32Array([
-              weights[0] * levelWeight,
-              weights[1],
-              weights[2],
-              weights[3],
-              reconstructedLow ? 1 : 0,
-              finalPass ? 1 : 0,
-              0,
-              0,
-            ]));
-            const dummyLow = reconstructedLow || level.evidence[0];
+            const base = (entryIndex * levelCount + index) * (slot / 4);
+            slots.set([
+              weights[0] * levelWeight, weights[1], weights[2], weights[3],
+              reconstructedLow ? 1 : 0, finalPass ? 1 : 0, 0, 0,
+              out.width, out.height, finalPass ? tile.x : 0, finalPass ? tile.y : 0,
+            ], base);
+            const dummyLow = reconstructedLow || levels[index].evidence[0];
             const bindGroup = this.device.createBindGroup({
               layout: pipelines.resolve.getBindGroupLayout(1),
               entries: [
                 { binding: 0, resource: dummyLow.texture.createView() },
-                { binding: 1, resource: level.evidence[0].texture.createView() },
-                { binding: 2, resource: level.evidence[1].texture.createView() },
-                { binding: 3, resource: level.evidence[2].texture.createView() },
+                { binding: 1, resource: levels[index].evidence[0].texture.createView() },
+                { binding: 2, resource: levels[index].evidence[1].texture.createView() },
+                { binding: 3, resource: levels[index].evidence[2].texture.createView() },
                 { binding: 4, resource: selector.original.texture.createView() },
                 { binding: 5, resource: output.texture.createView() },
-                { binding: 6, resource: { buffer: params } },
+                { binding: 6, resource: { buffer: paramBuffer, offset: (entryIndex * levelCount + index) * slot, size: 48 } },
               ],
             });
             const pass = encoder.beginComputePass();
             pass.setPipeline(pipelines.resolve);
             pass.setBindGroup(1, bindGroup);
-            pass.dispatchWorkgroups(Math.ceil(output.width / 8), Math.ceil(output.height / 8));
+            pass.dispatchWorkgroups(Math.ceil(out.width / 8), Math.ceil(out.height / 8));
             pass.end();
+            dispatches += 1;
             reconstructedLow = output;
           }
-        }
+        });
+
+        this.device.queue.writeBuffer(paramBuffer, 0, slots);
         this.device.queue.submit([encoder.finish()]);
         await this.device.queue.onSubmittedWorkDone();
         if (generation !== this.denoiseSelectorGeneration || selector !== this.denoiseSourceSelector) {
@@ -2395,6 +2984,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
             identity: selector.original.identity,
           };
         }
+        // The swap is the last thing that happens, and only on success. A
+        // half-finished reconstruction can never become the presented result.
         selector.selected = "resolved";
         selector.controls = {
           amount: weights[0],
@@ -2402,18 +2993,46 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           colorNoise: weights[2],
           detailRecovery: weights[3],
         };
+        // A region is honoured at tile granularity: a tile is the smallest unit
+        // whose evidence indexing lines up, so the rectangle actually rewritten
+        // is the union of the tiles the request touches. Report that rather
+        // than the request, or a caller cannot tell what is now current.
+        selector.resolvedRegion = region
+          ? active.reduce((union, entry) => {
+            const { tile } = entry;
+            const x = Math.min(union.x, tile.x);
+            const y = Math.min(union.y, tile.y);
+            return {
+              x,
+              y,
+              width: Math.max(union.x + union.width, tile.x + tile.width) - x,
+              height: Math.max(union.y + union.height, tile.y + tile.height) - y,
+            };
+          }, { ...active[0].tile })
+          : null;
         this.denoiseCounters.atomicSwaps += 1;
+        this.denoiseCounters.resolveDispatches += dispatches;
+        this.denoiseCounters.resolveTiles += active.length;
         if (candidateIsNew) {
           this.denoiseCounters.allocations += 1;
           this.denoiseCounters.allocatedBytes += candidate.byteSize;
           this.recordAllocation("denoise-resolved", candidate.byteSize, { generation });
         }
-        this.recordStage("denoise-resolve", { state: "ready", generation, durationMs: performance.now() - startedAt });
+        this.recordStage("denoise-resolve", {
+          state: "ready",
+          generation,
+          durationMs: performance.now() - startedAt,
+          tiles: active.length,
+          dispatches,
+          region: region ? `${region.x},${region.y},${region.width},${region.height}` : "whole",
+        });
         return true;
       } catch (error) {
         if (candidateIsNew) candidate.texture.destroy();
         this.recordStage("denoise-resolve", { state: "error", generation, durationMs: performance.now() - startedAt });
         throw error;
+      } finally {
+        paramBuffer?.destroy();
       }
     }
 
@@ -2523,11 +3142,15 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       }
     }
 
-    async readDenoiseResolvedRegion(width = 16, height = 16) {
+    // `x` and `y` let a caller read a window that straddles a denoise tile
+    // boundary, which is where a seam would be if there were one.
+    async readDenoiseResolvedRegion(width = 16, height = 16, x = 0, y = 0) {
       const resolved = this.denoiseSourceSelector?.resolved;
       if (!resolved) return null;
-      const copyWidth = Math.min(Math.max(1, Number(width) || 1), resolved.width);
-      const copyHeight = Math.min(Math.max(1, Number(height) || 1), resolved.height);
+      const originX = Math.min(Math.max(0, Math.trunc(Number(x) || 0)), resolved.width - 1);
+      const originY = Math.min(Math.max(0, Math.trunc(Number(y) || 0)), resolved.height - 1);
+      const copyWidth = Math.min(Math.max(1, Number(width) || 1), resolved.width - originX);
+      const copyHeight = Math.min(Math.max(1, Number(height) || 1), resolved.height - originY);
       const bytesPerRow = Math.ceil((copyWidth * 8) / 256) * 256;
       const buffer = this.device.createBuffer({
         size: bytesPerRow * copyHeight,
@@ -2535,7 +3158,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       });
       const encoder = this.device.createCommandEncoder();
       encoder.copyTextureToBuffer(
-        { texture: resolved.texture },
+        { texture: resolved.texture, origin: { x: originX, y: originY, z: 0 } },
         { buffer, bytesPerRow, rowsPerImage: copyHeight },
         { width: copyWidth, height: copyHeight },
       );
@@ -2548,7 +3171,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         for (let y = 0; y < copyHeight; y += 1) {
           for (let x = 0; x < copyWidth * 4; x += 1) values.push(halfToFloat(source[y * stride + x]));
         }
-        return { width: copyWidth, height: copyHeight, values };
+        return { width: copyWidth, height: copyHeight, x: originX, y: originY, values };
       } finally {
         if (buffer.mapState === "mapped") buffer.unmap();
         buffer.destroy();
@@ -4145,7 +4768,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
   function buildLocalParams(local, lane, sourcePixelScale = 1) {
     const grade = local[`${lane}_grade`];
     const detail = grade.detail || {};
-    const values = new Float32Array(24);
+    const values = new Float32Array(PARAM_COUNT);
     values[0] = lane === "hdr" ? 1 : 0;
     values[1] = Number(local.opacity) || 0;
     values[2] = Number(grade.exposure) || 0;
@@ -5370,8 +5993,23 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return log2(max(y, DETAIL_LUMA_FLOOR));
     }
 
+    fn validTileDimensions() -> vec2i {
+      let textureSize = vec2i(textureDimensions(sourceTexture));
+      if (arrayLength(&p) > 163u && p[162] > 0.0 && p[163] > 0.0) {
+        return min(textureSize, vec2i(i32(p[162]), i32(p[163])));
+      }
+      return textureSize;
+    }
+
+    fn detailFrameDimensions() -> vec2f {
+      if (arrayLength(&p) > 165u && p[164] > 0.0 && p[165] > 0.0) {
+        return vec2f(p[164], p[165]);
+      }
+      return vec2f(textureDimensions(sourceTexture));
+    }
+
     fn detailRadii() -> vec4f {
-      let dimensions = vec2f(textureDimensions(sourceTexture));
+      let dimensions = detailFrameDimensions();
       let diagonal = length(dimensions);
       return vec4f(
         max(0.35, diagonal * 0.0003),
@@ -5383,7 +6021,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
 
     fn detailHorizontalBlur(coordinate: vec2f, radius: f32, halfSamples: i32, enabled: bool) -> f32 {
       let dimensions = vec2f(textureDimensions(spatialTexture));
-      let centerUv = (coordinate + vec2f(0.5)) / dimensions;
+      let valid = vec2f(validTileDimensions());
+      let centerUv = clamp(coordinate + vec2f(0.5), vec2f(0.5), valid - vec2f(0.5)) / dimensions;
       let center = detailLogLuma(textureSampleLevel(spatialTexture, spatialSampler, centerUv, 0.0).rgb);
       if (!enabled) { return center; }
       var total = 0.0;
@@ -5392,7 +6031,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         if (abs(index) <= halfSamples) {
           let distance = 2.0 * f32(index) / f32(halfSamples);
           let weight = exp(-0.5 * distance * distance);
-          let sampleUv = (coordinate + vec2f(distance * radius, 0.0) + vec2f(0.5)) / dimensions;
+          let sampleUv = clamp(
+            coordinate + vec2f(distance * radius, 0.0) + vec2f(0.5),
+            vec2f(0.5), valid - vec2f(0.5)
+          ) / dimensions;
           total += detailLogLuma(textureSampleLevel(spatialTexture, spatialSampler, sampleUv, 0.0).rgb) * weight;
           weightTotal += weight;
         }
@@ -5402,7 +6044,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
 
     fn detailVerticalBlur(coordinate: vec2f, radius: f32, channel: u32, halfSamples: i32, enabled: bool) -> f32 {
       let dimensions = vec2f(textureDimensions(spatialTexture));
-      let centerUv = (coordinate + vec2f(0.5)) / dimensions;
+      let valid = vec2f(validTileDimensions());
+      let centerUv = clamp(coordinate + vec2f(0.5), vec2f(0.5), valid - vec2f(0.5)) / dimensions;
       let center = textureSampleLevel(spatialTexture, spatialSampler, centerUv, 0.0)[channel];
       if (!enabled) { return center; }
       var total = 0.0;
@@ -5411,7 +6054,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         if (abs(index) <= halfSamples) {
           let distance = 2.0 * f32(index) / f32(halfSamples);
           let weight = exp(-0.5 * distance * distance);
-          let sampleUv = (coordinate + vec2f(0.0, distance * radius) + vec2f(0.5)) / dimensions;
+          let sampleUv = clamp(
+            coordinate + vec2f(0.0, distance * radius) + vec2f(0.5),
+            vec2f(0.5), valid - vec2f(0.5)
+          ) / dimensions;
           total += textureSampleLevel(spatialTexture, spatialSampler, sampleUv, 0.0)[channel] * weight;
           weightTotal += weight;
         }
@@ -5421,27 +6067,24 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
 
     fn detailTextureEdgeWeight(coordinate: vec2f, logY: f32, coarse: f32) -> f32 {
       let dimensions = vec2f(textureDimensions(spatialTexture));
-      let coarseRadius = max(0.70, length(dimensions) * 0.0012);
+      let coarseRadius = max(0.70, length(detailFrameDimensions()) * 0.0012);
       let reach = max(1.0, 2.0 * coarseRadius);
-      let centerUv = (coordinate + vec2f(0.5)) / dimensions;
+      let valid = vec2f(validTileDimensions());
+      let centerUv = clamp(coordinate + vec2f(0.5), vec2f(0.5), valid - vec2f(0.5)) / dimensions;
+      let rightUv = clamp(coordinate + vec2f(reach, 0.0) + vec2f(0.5), vec2f(0.5), valid - vec2f(0.5)) / dimensions;
+      let leftUv = clamp(coordinate - vec2f(reach, 0.0) + vec2f(0.5), vec2f(0.5), valid - vec2f(0.5)) / dimensions;
+      let downUv = clamp(coordinate + vec2f(0.0, reach) + vec2f(0.5), vec2f(0.5), valid - vec2f(0.5)) / dimensions;
+      let upUv = clamp(coordinate - vec2f(0.0, reach) + vec2f(0.5), vec2f(0.5), valid - vec2f(0.5)) / dimensions;
       var guide = abs(logY - coarse);
-      guide = max(guide, abs(coarse - textureSampleLevel(
-        spatialTexture, spatialSampler, centerUv + vec2f(reach / dimensions.x, 0.0), 0.0
-      ).y));
-      guide = max(guide, abs(coarse - textureSampleLevel(
-        spatialTexture, spatialSampler, centerUv - vec2f(reach / dimensions.x, 0.0), 0.0
-      ).y));
-      guide = max(guide, abs(coarse - textureSampleLevel(
-        spatialTexture, spatialSampler, centerUv + vec2f(0.0, reach / dimensions.y), 0.0
-      ).y));
-      guide = max(guide, abs(coarse - textureSampleLevel(
-        spatialTexture, spatialSampler, centerUv - vec2f(0.0, reach / dimensions.y), 0.0
-      ).y));
+      guide = max(guide, abs(coarse - textureSampleLevel(spatialTexture, spatialSampler, rightUv, 0.0).y));
+      guide = max(guide, abs(coarse - textureSampleLevel(spatialTexture, spatialSampler, leftUv, 0.0).y));
+      guide = max(guide, abs(coarse - textureSampleLevel(spatialTexture, spatialSampler, downUv, 0.0).y));
+      guide = max(guide, abs(coarse - textureSampleLevel(spatialTexture, spatialSampler, upUv, 0.0).y));
       return exp(-(guide / 0.20) * (guide / 0.20));
     }
 
     fn detailLocalExtrema(coordinate: vec2i) -> vec2f {
-      let dimensions = vec2i(textureDimensions(sourceTexture));
+      let dimensions = validTileDimensions();
       var minimum = 1000000.0;
       var maximum = -1000000.0;
       for (var y: i32 = -1; y <= 1; y = y + 1) {
@@ -5456,40 +6099,34 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     }
 
     @fragment fn detailHorizontalFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      let dimensions = textureDimensions(sourceTexture);
+      let dimensions = vec2u(validTileDimensions());
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let radii = detailRadii();
-      let textureActive = abs(p[149]) > 0.000001;
-      let clarityActive = abs(p[150]) > 0.000001;
-      let sharpenActive = p[152] > 0.000001;
       return vec4f(
-        detailHorizontalBlur(vec2f(coordinate), radii.x, 2, textureActive),
-        detailHorizontalBlur(vec2f(coordinate), radii.y, 2, textureActive),
-        detailHorizontalBlur(vec2f(coordinate), radii.z, 8, clarityActive),
-        detailHorizontalBlur(vec2f(coordinate), radii.w, 3, sharpenActive)
+        detailHorizontalBlur(vec2f(coordinate), radii.x, 2, true),
+        detailHorizontalBlur(vec2f(coordinate), radii.y, 2, true),
+        detailHorizontalBlur(vec2f(coordinate), radii.z, 8, true),
+        detailHorizontalBlur(vec2f(coordinate), radii.w, 3, true)
       );
     }
 
     @fragment fn detailVerticalFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      let dimensions = textureDimensions(sourceTexture);
+      let dimensions = vec2u(validTileDimensions());
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let radii = detailRadii();
-      let textureActive = abs(p[149]) > 0.000001;
-      let clarityActive = abs(p[150]) > 0.000001;
-      let sharpenActive = p[152] > 0.000001;
       return vec4f(
-        detailVerticalBlur(vec2f(coordinate), radii.x, 0u, 2, textureActive),
-        detailVerticalBlur(vec2f(coordinate), radii.y, 1u, 2, textureActive),
-        detailVerticalBlur(vec2f(coordinate), radii.z, 2u, 8, clarityActive),
-        detailVerticalBlur(vec2f(coordinate), radii.w, 3u, 3, sharpenActive)
+        detailVerticalBlur(vec2f(coordinate), radii.x, 0u, 2, true),
+        detailVerticalBlur(vec2f(coordinate), radii.y, 1u, 2, true),
+        detailVerticalBlur(vec2f(coordinate), radii.z, 2u, 8, true),
+        detailVerticalBlur(vec2f(coordinate), radii.w, 3u, 3, true)
       );
     }
 
     @fragment fn detailCompositeFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      let dimensions = textureDimensions(sourceTexture);
+      let dimensions = vec2u(validTileDimensions());
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let source = textureLoad(sourceTexture, coordinate, 0).rgb;
-      let uv = (vec2f(coordinate) + vec2f(0.5)) / vec2f(dimensions);
+      let uv = (vec2f(coordinate) + vec2f(0.5)) / vec2f(textureDimensions(spatialTexture));
       let blurred = textureSampleLevel(spatialTexture, spatialSampler, uv, 0.0);
       let sourceY = max(select(lumaSrgb(source), lumaAces(source), p[0] > 0.5), DETAIL_LUMA_FLOOR);
       let logY = log2(sourceY);
@@ -5519,7 +6156,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     }
 
     fn localDetailRadii() -> vec4f {
-      let dimensions = vec2f(textureDimensions(sourceTexture));
+      let dimensions = detailFrameDimensions();
       let diagonal = length(dimensions);
       return vec4f(
         max(0.35, diagonal * 0.0003),
@@ -5530,40 +6167,34 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     }
 
     @fragment fn localDetailHorizontalFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      let dimensions = textureDimensions(sourceTexture);
+      let dimensions = vec2u(validTileDimensions());
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let radii = localDetailRadii();
-      let textureActive = abs(p[14]) > 0.000001;
-      let clarityActive = abs(p[15]) > 0.000001;
-      let sharpenActive = p[17] > 0.000001;
       return vec4f(
-        detailHorizontalBlur(vec2f(coordinate), radii.x, 2, textureActive),
-        detailHorizontalBlur(vec2f(coordinate), radii.y, 2, textureActive),
-        detailHorizontalBlur(vec2f(coordinate), radii.z, 8, clarityActive),
-        detailHorizontalBlur(vec2f(coordinate), radii.w, 3, sharpenActive)
+        detailHorizontalBlur(vec2f(coordinate), radii.x, 2, true),
+        detailHorizontalBlur(vec2f(coordinate), radii.y, 2, true),
+        detailHorizontalBlur(vec2f(coordinate), radii.z, 8, true),
+        detailHorizontalBlur(vec2f(coordinate), radii.w, 3, true)
       );
     }
 
     @fragment fn localDetailVerticalFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      let dimensions = textureDimensions(sourceTexture);
+      let dimensions = vec2u(validTileDimensions());
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let radii = localDetailRadii();
-      let textureActive = abs(p[14]) > 0.000001;
-      let clarityActive = abs(p[15]) > 0.000001;
-      let sharpenActive = p[17] > 0.000001;
       return vec4f(
-        detailVerticalBlur(vec2f(coordinate), radii.x, 0u, 2, textureActive),
-        detailVerticalBlur(vec2f(coordinate), radii.y, 1u, 2, textureActive),
-        detailVerticalBlur(vec2f(coordinate), radii.z, 2u, 8, clarityActive),
-        detailVerticalBlur(vec2f(coordinate), radii.w, 3u, 3, sharpenActive)
+        detailVerticalBlur(vec2f(coordinate), radii.x, 0u, 2, true),
+        detailVerticalBlur(vec2f(coordinate), radii.y, 1u, 2, true),
+        detailVerticalBlur(vec2f(coordinate), radii.z, 2u, 8, true),
+        detailVerticalBlur(vec2f(coordinate), radii.w, 3u, 3, true)
       );
     }
 
     @fragment fn localDetailCompositeFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      let dimensions = textureDimensions(sourceTexture);
+      let dimensions = vec2u(validTileDimensions());
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let source = textureLoad(sourceTexture, coordinate, 0).rgb;
-      let uv = (vec2f(coordinate) + vec2f(0.5)) / vec2f(dimensions);
+      let uv = (vec2f(coordinate) + vec2f(0.5)) / vec2f(textureDimensions(spatialTexture));
       let blurred = textureSampleLevel(spatialTexture, spatialSampler, uv, 0.0);
       let sourceY = max(select(lumaSrgb(source), lumaAces(source), p[0] > 0.5), DETAIL_LUMA_FLOOR);
       let logY = log2(sourceY);
@@ -5601,10 +6232,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     }
 
     @fragment fn localAdjustmentFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      let dimensions = textureDimensions(sourceTexture);
+      let dimensions = vec2u(validTileDimensions());
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let source = textureLoad(sourceTexture, coordinate, 0).rgb;
-      let uv = (vec2f(coordinate) + vec2f(0.5)) / vec2f(dimensions);
+      let uv = (vec2f(coordinate) + vec2f(0.5)) / vec2f(textureDimensions(spatialTexture));
       let influence = clamp(textureSampleLevel(spatialTexture, spatialSampler, uv, 0.0).r * p[1] * p[13], 0.0, 1.0);
       return vec4f(mix(source, applyLocalGrade(source), influence), 1.0);
     }
@@ -5616,10 +6247,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     }
 
     @fragment fn localDetailMixFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      let dimensions = textureDimensions(sourceTexture);
+      let dimensions = vec2u(validTileDimensions());
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let source = textureLoad(sourceTexture, coordinate, 0).rgb;
-      let uv = (vec2f(coordinate) + vec2f(0.5)) / vec2f(dimensions);
+      let uv = (vec2f(coordinate) + vec2f(0.5)) / vec2f(textureDimensions(spatialTexture));
       let influence = clamp(textureSampleLevel(spatialTexture, spatialSampler, uv, 0.0).r * p[1] * p[13], 0.0, 1.0);
       let candidate = textureLoad(overlayMaskTexture, coordinate, 0).rgb;
       return vec4f(mix(source, candidate, influence), 1.0);
@@ -5732,7 +6363,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       let output = select(clamp(filmOutput, vec3f(0.0), vec3f(1.0)), displayHdr(filmOutput), p[0] > 0.5);
       var encoded = displayEncode(output);
       if (p[131] > 0.5) {
-        let uv = (vec2f(coordinate) + vec2f(0.5)) / vec2f(dimensions);
+        let uv = (vec2f(coordinate) + vec2f(0.5)) / vec2f(textureDimensions(overlayMaskTexture));
         let mask = textureSampleLevel(overlayMaskTexture, spatialSampler, uv, 0.0).r;
         encoded = mix(encoded, vec3f(p[133], p[134], p[135]), clamp(mask * p[132] * 0.52, 0.0, 0.52));
       }

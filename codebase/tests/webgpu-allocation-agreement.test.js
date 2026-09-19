@@ -14,7 +14,7 @@ const vm = require("node:vm");
 const { test } = require("node:test");
 
 // Kept in step with webgpu-preview.js, where 160 and 161 carry the tile origin.
-const PARAM_COUNT = 162;
+const PARAM_COUNT = 166;
 
 const BYTES_PER_PIXEL = {
   rgba32float: 16,

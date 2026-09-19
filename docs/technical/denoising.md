@@ -1,6 +1,10 @@
 # Denoising v2: Wavelet Cache Implementation Contract
 
-**Status:** Approved implementation direction. Phases 0 and 1 are accepted on `feature/denoising`. Phase 2 WebGPU analysis/resolve and Phase 3 UI/document integration are implemented and pass the measured correctness, isolation, viewport, and packaged-Electron timing gates described below. Final Phase 2 acceptance remains open because sections 7 and 10 require an explicit per-device GPU byte budget, but this contract does not define one and the browser WebGPU API does not expose driver heap usage. Do not advance to corpus tuning or export until that budget conflict is resolved.
+**Status:** Approved implementation direction. Phases 0 and 1 are accepted on `feature/denoising`. Phase 2 WebGPU analysis/resolve and Phase 3 UI/document integration are implemented and pass the measured correctness, isolation, viewport, and packaged-Electron timing gates described below.
+
+**The Phase 2 memory stop gate is closed, September 20, 2026.** It was open because sections 7 and 10 required an explicit per-device GPU byte budget that this contract did not define and that the browser WebGPU API does not expose. The [Stable Exact Preview sprint](../product/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md) supplied the missing piece in its Phase 2: a user-controllable `maximumGpuMemoryGiB` budget with an `auto` default, an admission planner that enumerates every resource a render would hold and refuses Direct execution that does not fit, and categorized resident/transient/cached/peak diagnostics. The budget is a *configured* one rather than a driver heap reading, which is the honest form of the requirement — the API still does not expose heap usage, and nothing here pretends otherwise.
+
+**Sections 6 and 9 are corrected below.** They told implementers not to build source-resolution tiling for v2. That instruction was right when it was written and is now superseded: sprint Phase 6 built it, and the reasons the instruction gave — invalidation, seam, handoff and viewport risk — are addressed by measurement rather than by avoidance.
 **Decision date:** August 25, 2026.
 **Pipeline baseline:** `95060fa`; see [Image Processing Pipeline](image-processing-pipeline.md).
 **Research archive:** [Denoising Technology Watch — August 2026](denoising-technology-watch-2026.md) is background only and is not an implementation plan.
@@ -168,6 +172,10 @@ denoise algorithm/version
 
 Live weights are not part of the analysis key. They belong to the resolved-proxy key/state.
 
+Since September 20, 2026 this key is a single function, written twice and pinned once: `denoise_cache_identity()` in `backend/hdr_finisher/denoise_tiles.py` and `denoiseCacheIdentity()` in `frontend/webgpu-preview.js`. Both are asserted against the shared literals in `tests/fixtures/denoise-cache-identity.json`, by `tests/test_denoise_tiles.py` and `tests/denoise-cache-identity.test.js` respectively, so neither can drift without the other's test failing. That matters because a CPU analysis and a GPU analysis of the same document must agree on what is cached and on when it is stale; two independently written key builders that merely looked similar would not guarantee that.
+
+A tile identity is the same string with the tile rectangle appended, so per-tile evidence is addressable under the same rules.
+
 ### 5.2 First use and recalculation
 
 On first Enable, if no valid cache exists, retain the original image while building the default analysis asynchronously. The UI reports that denoise is preparing; it does not resize or replace the canvas. Completion creates the first resolved proxy and swaps it atomically.
@@ -197,9 +205,27 @@ Before implementing wavelets, benchmark a selector-only seam using two known tes
 
 The first implementation uses the existing stable 1K/2K/4K proxy tiers. A 4K proxy is the authoritative interactive denoise source at the 4K tier. At 200% zoom the user is inspecting enlarged 4K pixels, not requesting a hidden full-resolution denoise job.
 
-Do not build an interactive ROI or source-resolution tile scheduler for v2. It adds invalidation, seam, handoff, and viewport risks before evidence says it is necessary. Revisit it only if real-device testing proves a 4K cached result is inadequate.
+### Superseded, September 20, 2026
 
-Full-resolution export is different: it may later use internal tiles or strips with correct halos to bound memory. That implementation detail must never leak into interactive zoom or canvas ownership.
+> **Previous instruction, kept for the record:** "Do not build an interactive ROI or source-resolution tile scheduler for v2. It adds invalidation, seam, handoff, and viewport risks before evidence says it is necessary. Revisit it only if real-device testing proves a 4K cached result is inadequate."
+
+That instruction was a reasonable default in the absence of evidence, and it is now superseded by sprint Phase 6, which built the tiling and produced the evidence the instruction asked for.
+
+The risk it named was seams, and seams turned out not to be a risk at all here — not because they were measured small, but because the decomposition makes them impossible. `compact-haar-residual-v1` is a Haar transform over non-overlapping 2x2 blocks: level 0 reads source `[2q, 2q+1]`, level 1 reads the level-0 low band at `[2r, 2r+1]`, and no stage reads outside its own block. A tile therefore needs **no halo**. What it needs is to sit on the same block grid the whole image uses, which is one rule:
+
+> a denoise tile origin must be a multiple of `2 ** levels`
+
+with tiles contiguous so the last tile in each row and column runs to the image edge, and a trailing span shorter than two pixels absorbed into its neighbour. Edge padding then matches too, because the reference pads only when a dimension is odd and the only tile with an odd dimension is the one ending at the image edge.
+
+The consequence is stronger than "no visible seam": tiled analysis and tiled reconstruction are **bit-identical** to the whole-image routines. `tests/test_denoise_tiles.py` asserts array equality across one to four levels, several tile sizes, odd and partial-edge dimensions, and includes a test that a deliberately misaligned grid *does* differ, so the equality is not vacuous. `tests/denoise-tiled-parity.js` asserts the same on the GPU against the renderer's own whole-image path, including odd proxies.
+
+Invalidation, handoff and viewport risk are addressed by the cache identity in section 5.1, which excludes the live reconstruction controls, and by the region reconstruction below.
+
+### Zoom and pan from cached evidence
+
+A reconstruction may be restricted to a region, which rebuilds only the tiles that region touches, from evidence that is already resident, with no analysis. The rectangle actually rewritten is the union of those tiles rather than the exact request, because a tile is the smallest unit whose evidence indexing lines up; the renderer reports that rounded rectangle so a caller can tell what is current.
+
+Full-resolution export is different again: it may later use internal tiles or strips with correct halos to bound memory. That implementation detail must never leak into interactive zoom or canvas ownership.
 
 ## 7. Memory contract
 
@@ -217,6 +243,25 @@ A naïve undecimated pyramid with five full-resolution RGBA16F bands would add r
 Once built, coefficients for the active document, lane, and preview tier remain resident while interactive denoise controls are in use. Evicting them on every panel close would break the slider contract. Any constrained-device fallback, such as offering a 2K analysis instead of 4K, must be explicit and tested rather than a silent quality change.
 
 Measure the current pipeline's real GPU footprint before choosing the final representation. The estimates above are guardrails, not proof that a particular device has enough headroom.
+
+### Measured, September 20, 2026
+
+The guardrails above have been replaced by measurement. `tests/performance/denoise-memory-trace.js` runs a native-resolution analysis and a live reconstruction at each size and reads the renderer's own categorized diagnostics, on an NVIDIA Lovelace adapter with the shipped `auto` 2 GiB budget:
+
+| Source | Levels | Evidence | Resolved | Analysis scratch | Reconstruction scratch | Peak | Budget |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 6000 x 4000 (24.0 MP) | 2 | 180.0 MB | 192.0 MB | 2.6 MB | 2.1 MB | 1341.3 MB | 2147.5 MB |
+| 6000 x 4000 (24.0 MP) | 4 | 191.3 MB | 192.0 MB | 2.8 MB | 2.8 MB | 1353.2 MB | 2147.5 MB |
+| 5320 x 7968 (42.4 MP) | 2 | 317.9 MB | 339.1 MB | 2.6 MB | 2.1 MB | 1042.5 MB | 2147.5 MB |
+| 5320 x 7968 (42.4 MP) | 4 | 337.8 MB | 339.1 MB | 2.8 MB | 2.8 MB | 1063.1 MB | 2147.5 MB |
+| 7680 x 4320 (33.2 MP) | 2 | 248.8 MB | 265.4 MB | 2.6 MB | 2.1 MB | 1850.6 MB | 2147.5 MB |
+| 7680 x 4320 (33.2 MP) | 4 | 264.4 MB | 265.4 MB | 2.8 MB | 2.8 MB | 1866.0 MB | 2147.5 MB |
+
+Evidence lands close to the predicted "about 4/3 of one full-resolution image" once decimation is accounted for, and confirms the decimated pyramid choice.
+
+**Analysis scratch is 2.6 to 2.8 MB at every size.** That is the measured consequence of tiling the analysis: the transient low-band chain now follows the 1024-pixel denoise tile instead of the source, where a whole-image two-level chain at 42.4 MP would have been about 106 MB held at once. It is the figure to watch if the tile size ever changes.
+
+**What is still whole-frame.** The resolved proxy is one full-size `rgba16float` texture and remains the largest single denoise allocation. Region reconstruction writes into it rather than replacing it, so zoom and pan are cheap in *work* but not yet in *residency*. Making the resolved image per-tile as well requires the grading path to source from resolved tiles, which is a render-path change rather than a denoise one; it is recorded as remaining work rather than claimed.
 
 ## 8. Export contract
 
@@ -259,7 +304,9 @@ Implementation note, August 25, 2026: `hdr_finisher.denoise_reference` defines t
 - Keep one default preset until the cache and live resolve pass all performance gates.
 - Cache both the original and resolved denoised proxies.
 
-Implementation note, August 25, 2026: `compact-haar-residual-v1` is ported to two WebGPU analysis dispatches and one direct two-level reconstruction dispatch. The persistent cache is six decimated `rgba16float` evidence textures plus one full-size resolved `rgba16float` proxy; analysis scratch is destroyed after queue completion, live resolves reuse the resolved allocation, and failed/stale candidates are destroyed without replacing the last valid selector. CPU/GPU comparison over 768 RGB samples has maximum absolute error `0.0009765625` (tolerance `0.002`). Final packaged ORF measurements on an NVIDIA Lovelace adapter were: 1K analysis-to-present `49.1 ms`, resolve p95 `5.5 ms`; 2K `89.8 ms`, `14.8 ms`; 4K `209.9 ms`, `22.8 ms`. All live thresholds, latest-wins checks, unrelated-grade isolation, scope thresholds, and zero encoded-preview-request checks pass. Logical denoise residency is `11.6 / 46.4 / 185.6 MiB` at 1K/2K/4K, while total instrumented pipeline residency is `44.5 / 159.3 / 594.9 MiB`. These are resource-size totals, not driver heap measurements. The missing explicit per-device budget prevents final Phase 2 acceptance.
+Implementation note, August 25, 2026: `compact-haar-residual-v1` is ported to two WebGPU analysis dispatches and one direct two-level reconstruction dispatch. The persistent cache is six decimated `rgba16float` evidence textures plus one full-size resolved `rgba16float` proxy; analysis scratch is destroyed after queue completion, live resolves reuse the resolved allocation, and failed/stale candidates are destroyed without replacing the last valid selector. CPU/GPU comparison over 768 RGB samples has maximum absolute error `0.0009765625` (tolerance `0.002`). Final packaged ORF measurements on an NVIDIA Lovelace adapter were: 1K analysis-to-present `49.1 ms`, resolve p95 `5.5 ms`; 2K `89.8 ms`, `14.8 ms`; 4K `209.9 ms`, `22.8 ms`. All live thresholds, latest-wins checks, unrelated-grade isolation, scope thresholds, and zero encoded-preview-request checks pass. Logical denoise residency is `11.6 / 46.4 / 185.6 MiB` at 1K/2K/4K, while total instrumented pipeline residency is `44.5 / 159.3 / 594.9 MiB`. These are resource-size totals, not driver heap measurements. The missing explicit per-device budget prevented final Phase 2 acceptance at the time.
+
+Correction, September 20, 2026: that budget now exists, and this note's description of the cache is out of date. Analysis is tiled on a `2 ** levels` grid with a reusable per-tile scratch chain, evidence is a set of per-tile decimated `rgba16float` textures rather than six whole-image ones, and reconstruction is per tile with an optional region. The results are bit-identical to the whole-image path described above. See section 6 and the measured table in section 7.
 
 ### Phase 3 — UI and document integration
 
@@ -283,7 +330,9 @@ An aggressive **Photo / Mixed** manual test at 4K and 659% zoom exposed visible 
 - Add the memory-bounded full-resolution implementation.
 - Validate preview/export parity, edge halos, seams, HDR range, output order, and 24–42 MP memory behavior.
 
-Do not add local denoise masks, neural models, multiple algorithms, or source-resolution interactive tiling between these phases.
+Do not add local denoise masks, neural models, or multiple algorithms between these phases.
+
+Correction, September 20, 2026: source-resolution interactive tiling was on that list and has since been built, under sprint Phase 6, with bit-identical results and measured memory. The rest of the list stands.
 
 ## 10. Acceptance gates
 

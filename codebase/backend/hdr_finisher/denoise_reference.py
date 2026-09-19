@@ -239,7 +239,18 @@ def _haar_inverse(
 
 
 def _rgb_to_components(detail: np.ndarray) -> np.ndarray:
-    luminance = np.tensordot(detail, ACESCG_LUMINANCE, axes=([-1], [0])).astype(np.float32, copy=False)
+    # Written out rather than as a tensordot on purpose. tensordot dispatches to
+    # BLAS, which blocks and accumulates differently depending on how many rows
+    # it is handed, so the same pixel came out up to one ULP apart depending on
+    # whether it was analysed as part of the whole image or as part of a tile.
+    # A reference whose result depends on how the work is chunked cannot be the
+    # reference a tiled implementation is checked against, so this evaluates in
+    # a fixed order that is identical at every chunk size.
+    luminance = (
+        detail[..., 0] * ACESCG_LUMINANCE[0]
+        + detail[..., 1] * ACESCG_LUMINANCE[1]
+        + detail[..., 2] * ACESCG_LUMINANCE[2]
+    ).astype(np.float32, copy=False)
     return np.stack((luminance, detail[..., 0] - luminance, detail[..., 2] - luminance), axis=-1)
 
 

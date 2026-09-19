@@ -461,6 +461,60 @@ def test_local_mask_graph_leaves_are_addressable_as_retained_spatial_masks() -> 
     assert invalid.status_code == 422
 
 
+def test_local_mask_tiles_reassemble_the_authoritative_global_mask() -> None:
+    upload = client.post("/api/session", files={"file": ("mask-tiles.png", make_png_bytes(), "image/png")})
+    session_id = upload.json()["session"]["session_id"]
+    local = {
+        "id": "mask-tiles",
+        "name": "Mask tiles",
+        "mask": {
+            "operator": "intersect",
+            "children": [
+                {"operator": "leaf", "leaf": {"type": "linear_gradient", "start": {"x": 0.0, "y": 0.2}, "end": {"x": 1.0, "y": 0.8}}},
+                {"operator": "leaf", "leaf": {"type": "brush", "strokes": [{"points": [{"x": 0.2, "y": 0.5}, {"x": 0.8, "y": 0.5}], "radius": 0.16, "hardness": 0.4, "flow": 1.0, "opacity": 1.0}], "mask_feather": 0.03}},
+            ],
+        },
+    }
+    created = client.post(
+        f"/api/session/{session_id}/edit-commands",
+        json={"commands": [{"expected_revision": 0, "command_type": "create_local", "payload": {"local": local}}]},
+    )
+    assert created.status_code == 200
+    geometry = created.json()["document"]["global_adjustments"]["shared"]["geometry"]
+    signature = json.dumps(geometry, separators=(",", ":"))
+    full = client.get(
+        f"/api/session/{session_id}/local-mask/mask-tiles",
+        params={"long_edge": 256, "edit_revision": 1, "geometry_signature": signature, "spatial_only": True},
+    )
+    assert full.status_code == 200
+    output_width = int(full.headers["x-image-width"])
+    output_height = int(full.headers["x-image-height"])
+    assembled = bytearray(output_width * output_height)
+    for y in range(0, output_height, 17):
+        for x in range(0, output_width, 19):
+            core_width = min(19, output_width - x)
+            core_height = min(17, output_height - y)
+            tile = client.get(
+                f"/api/session/{session_id}/local-mask-tile/mask-tiles",
+                params={
+                    "x": x, "y": y, "width": core_width, "height": core_height, "halo": 7,
+                    "long_edge": 256, "edit_revision": 1, "geometry_signature": signature,
+                },
+            )
+            assert tile.status_code == 200
+            tile_x = int(tile.headers["x-tile-x"])
+            tile_y = int(tile.headers["x-tile-y"])
+            tile_width = int(tile.headers["x-tile-width"])
+            core_x = int(tile.headers["x-core-x"])
+            core_y = int(tile.headers["x-core-y"])
+            payload = tile.content
+            for row in range(core_height):
+                source_start = (core_y - tile_y + row) * tile_width + (core_x - tile_x)
+                target_start = (y + row) * output_width + x
+                assembled[target_start:target_start + core_width] = payload[source_start:source_start + core_width]
+    assert bytes(assembled) == full.content
+
+
 def test_local_luminance_sampling_returns_a_low_precision_scene_ev_range() -> None:
     upload = client.post("/api/session", files={"file": ("luma.png", make_png_bytes(), "image/png")})
     assert upload.status_code == 200
