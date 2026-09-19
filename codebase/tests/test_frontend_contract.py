@@ -1141,7 +1141,13 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     # The packed parameter layout currently occupies indices 0..159. Keep the
     # contract aligned with the actual highest shader index so stale padding
     # does not masquerade as a pipeline-order regression.
-    assert "const PARAM_COUNT = 160" in shader
+    # 160 and 161 carry the tile origin for tiled execution; Direct leaves
+    # them at zero, so every index below keeps its meaning.
+    assert "const PARAM_COUNT = 162" in shader
+    assert "const TILE_ORIGIN_X_INDEX = 160" in shader
+    assert "const TILE_ORIGIN_Y_INDEX = 161" in shader
+    assert "params[TILE_ORIGIN_X_INDEX] = 0;" in shader
+    assert "let tileOrigin = vec2i(i32(p[160]), i32(p[161]));" in shader
     assert "params[153] = Math.min(3, Math.max(0.3, Number(detail.sharpen_radius_px)" in shader
     assert "params[154] = Math.min(1, Math.max(0, Number(detail.sharpen_threshold)" in shader
     assert "params[156] = grainSectionEnabled ? 1 : 0" in shader

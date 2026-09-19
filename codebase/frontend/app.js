@@ -1926,6 +1926,32 @@ function initializePreviewScheduler() {
       longEdge: Number(longEdge),
       tier: "settled",
     }),
+    // Phase 4 tiled execution is reachable only from here until Direct/Tiled
+    // parity is proved. Nothing in the normal render path calls it, so the
+    // admitted execution for every user-visible render is still Direct.
+    renderTiledTier: async (longEdge, options = {}) => {
+      if (!state.gpuPreview || !state.session) return { rendered: false, refusals: ["no gpu session"] };
+      return state.gpuPreview.renderTiledTo(
+        els.previewCanvas,
+        state.session.session_id,
+        state.currentView,
+        JSON.parse(JSON.stringify(state.adjustments)),
+        sampleCurvePoints,
+        Number(longEdge),
+        state.compareWithoutLocals ? [] : JSON.parse(JSON.stringify(localAdjustments())),
+        state.editRevision,
+        null,
+        projectReferenceWhiteNits(),
+        { width: state.session.source.width, height: state.session.source.height },
+        {
+          ...(gpuPreviewSourceOptions(state.currentView) || {}),
+          tier: "settled",
+          tileSize: Number(options.tileSize) || undefined,
+          applicationGeneration: state.previewGeneration[state.currentView],
+        },
+      );
+    },
+    tiledExecutionMetrics: () => state.gpuPreview?.tiledExecutionMetrics || null,
     prepareDenoiseSelectorSeam: (variant = "resolved-a", longEdge = settledProxyLongEdge()) => (
       state.gpuPreview?.prepareDenoiseSelectorSeam?.(
         state.session?.session_id,

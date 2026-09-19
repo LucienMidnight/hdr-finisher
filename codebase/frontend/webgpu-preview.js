@@ -1,5 +1,9 @@
 (function () {
-  const PARAM_COUNT = 160;
+  // 160 and 161 carry the tile origin in global output coordinates. Direct
+  // execution leaves them at zero, so its arithmetic is unchanged.
+  const PARAM_COUNT = 162;
+  const TILE_ORIGIN_X_INDEX = 160;
+  const TILE_ORIGIN_Y_INDEX = 161;
   const CURVE_SAMPLES = 1024;
   const PEAK_HISTOGRAM_BINS = 4096;
   const PEAK_REDUCTION_SHADER_SOURCE = `
@@ -710,6 +714,12 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // no larger than this.
       this.maxSourceChunkBytes = 16 * 1024 * 1024;
       this.sourceTransportMetrics = null;
+      // Phase 4 tiled execution. Reachable only through the diagnostic hook
+      // until Direct/Tiled parity is proved, so Direct is unaffected.
+      this.tileGraph = null;
+      this.tileScheduler = null;
+      this.tileCompositeParamBuffer = null;
+      this.tiledExecutionMetrics = null;
     }
 
     setMemoryBudget(value) {
@@ -872,6 +882,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     resetSession(sessionId = null) {
       this.resourceGeneration += 1;
       this.disposeDenoiseSelectorSeam();
+      this.destroyTileGraph();
+      this.tileScheduler = null;
+      this.tiledExecutionMetrics = null;
       this.sessionId = sessionId;
       this.renderSerials = new WeakMap();
       for (const proxy of this.proxies.values()) this.destroyAfterActiveRenders(() => proxy.texture?.destroy());
@@ -1168,7 +1181,317 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           allocationBackoff: this.allocationBackoff,
           sourceTransport: this.sourceTransportMetrics,
           maxSourceChunkBytes: this.maxSourceChunkBytes,
+          tiledExecution: this.tiledExecutionMetrics,
+          tileScheduler: this.tileScheduler?.snapshot?.() || null,
         },
+      };
+    }
+
+    /**
+     * Why a node keeps a graph off the tiled path.
+     *
+     * Phase 4 ports geometry and the pointwise global grading nodes. Everything
+     * that reads image-absolute coordinates or a neighbourhood still belongs to
+     * a later phase, and a tile would silently treat itself as the whole image
+     * if it ran here: vignette normalizes to the image, grain seeds on absolute
+     * coordinates, and Detail, spatial film and masks need halos or full-frame
+     * inputs this path does not yet carry.
+     */
+    tiledExecutionRefusals({ activeLocals = [], detailActive, spatialActive, overlayMask, params, surface }) {
+      const reasons = [];
+      if (activeLocals.length) reasons.push("local adjustments");
+      if (detailActive) reasons.push("detail");
+      if (spatialActive) reasons.push("spatial film effects");
+      if (overlayMask) reasons.push("mask overlay");
+      if (params[123] > 0.5 && Math.abs(params[124]) > 0.000001) reasons.push("vignette");
+      // Grain is section-enabled by default, so the refusal is on grain that
+      // actually contributes. Zero-amount grain leaves the pixels alone and
+      // cannot make a tile disagree with the whole frame.
+      if (params[156] > 0.5 && params[157] > 0.0 && params[101] > 0.000001) reasons.push("grain");
+      if (this.denoiseSourceSelector) reasons.push("denoise");
+      return reasons;
+    }
+
+    /**
+     * One reusable tile-sized working set.
+     *
+     * This is the whole point of tiled execution: the graph's intermediates
+     * stop following the image and follow the tile instead, so peak residency
+     * stays flat as the selected tier grows.
+     */
+    ensureTileGraph(width, height, outputFormat, sourceFormat) {
+      const current = this.tileGraph;
+      if (current && current.width === width && current.height === height
+        && current.outputFormat === outputFormat && current.sourceFormat === sourceFormat) {
+        return current;
+      }
+      this.destroyTileGraph();
+      const make = (format, usage) => this.device.createTexture({
+        size: { width, height }, format, usage,
+      });
+      const attachment = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING;
+      try {
+        this.tileGraph = {
+          width,
+          height,
+          outputFormat,
+          sourceFormat,
+          sourceTexture: make(sourceFormat, GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST),
+          baseTexture: make("rgba16float", attachment),
+          filmTexture: make("rgba16float", attachment),
+          finishTexture: make("rgba16float", attachment),
+          byteSize: width * height * (8 * 3 + (sourceFormat === "rgba16float" ? 8 : 16)),
+        };
+      } catch (error) {
+        this.recordAllocationFailure("tile-graph", error, { width, height });
+        this.tileGraph = null;
+        return null;
+      }
+      this.recordAllocation("tile-graph", this.tileGraph.byteSize, { width, height });
+      return this.tileGraph;
+    }
+
+    destroyTileGraph() {
+      const graph = this.tileGraph;
+      if (!graph) return;
+      this.tileGraph = null;
+      this.destroyAfterActiveRenders(() => {
+        graph.sourceTexture?.destroy();
+        graph.baseTexture?.destroy();
+        graph.filmTexture?.destroy();
+        graph.finishTexture?.destroy();
+      });
+    }
+
+    /**
+     * Render the selected tier tile by tile.
+     *
+     * Every tile is copied out of the resident proxy into a tile-sized source,
+     * run through the same pipelines the Direct path uses, and copied back into
+     * the canvas at its global origin. Because each pass reads its input at the
+     * fragment position and its input is the same tile, the shaders need no
+     * knowledge that they are running on a tile at all.
+     *
+     * The whole generation is encoded into one command buffer and submitted
+     * once, so the canvas presents the complete assembly or nothing. That is
+     * what makes replacement atomic and a mixed-generation frame impossible.
+     */
+    async renderTiledTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203, sourceSize = null, sourceOptions = null) {
+      if (!this.available || !this.device) return false;
+      const Scheduler = typeof window !== "undefined" ? window.HDRTileScheduler : null;
+      if (!Scheduler) return { rendered: false, refusals: ["tile scheduler is unavailable"] };
+
+      const tileSize = Math.max(64, Math.floor(Number(sourceOptions?.tileSize) || Scheduler.DEFAULT_TILE_SIZE));
+      // The signature is derived from the adjustments this render was handed,
+      // exactly as the Direct path derives it, so both request the same proxy.
+      const geometrySignature = JSON.stringify(adjustments.shared?.geometry || {});
+      const sourceIdentity = sourceOptions?.identity || "source";
+      const activeLocals = activeGpuLocals(lane, localAdjustments);
+
+      const proxy = await this.loadProxy(sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity);
+      if (!proxy) return { rendered: false, refusals: ["source proxy unavailable"] };
+
+      const context = canvas.getContext("webgpu");
+      if (!context) return { rendered: false, refusals: ["no webgpu canvas context"] };
+      if (canvas.width !== proxy.width || canvas.height !== proxy.height) {
+        canvas.width = proxy.width;
+        canvas.height = proxy.height;
+      }
+      const surface = this.configureSurface(canvas, context, lane === "hdr");
+      const pipelines = this.pipelineFor(surface.format);
+
+      const sourceLongEdge = Math.max(Number(sourceSize?.width) || proxy.width, Number(sourceSize?.height) || proxy.height);
+      const sourcePixelScale = Math.min(1, Math.max(proxy.width, proxy.height) / Math.max(1, sourceLongEdge));
+      const params = buildParams(
+        lane, adjustments, proxy.workingSpace, surface.hdr, referenceWhiteNits, sourcePixelScale,
+        sourceOptions?.inheritedGrain || null,
+      );
+      const spatialActive = params[78] > 0.5 && params[79] > 0
+        && (params[85] > 0.5 || (params[92] > 0.5 && params[93] > 0));
+      const detailActive = params[148] > 0.5
+        && (Math.abs(params[149]) > 0.000001 || Math.abs(params[150]) > 0.000001 || params[152] > 0.000001);
+
+      const refusals = this.tiledExecutionRefusals({
+        activeLocals, detailActive, spatialActive, overlayMask: maskOverlay, params, surface,
+      });
+      if (refusals.length) {
+        this.recordStage("tiled-refused", { lane, longEdge, refusals });
+        return { rendered: false, refusals };
+      }
+
+      // The highlight anchor is a whole-image measurement, so it is taken once
+      // and shared by every tile. Measuring per tile would make each tile fit
+      // its own peak and the seams would show.
+      const anchorMeasurement = adjustments[lane]?.highlight_compression_peak_measurement || "maximum";
+      if ((lane === "hdr" || params[159] > 0.5) && params[74] === 1 && anchorMeasurement !== "manual") {
+        const peakKey = JSON.stringify([
+          proxy.identity, lane, params[1], params[159], anchorMeasurement,
+          params[2], params[4], params[8], params[9], params[110],
+          ...params.slice(10, 12), ...params.slice(61, 73),
+        ]);
+        const cachedPeak = this.peakReductionCache.get(peakKey);
+        params[75] = cachedPeak !== undefined
+          ? cachedPeak
+          : await this.measureToneAdjustedPeak(proxy, params, anchorMeasurement, peakKey);
+      }
+
+      const curves = buildCurves(lane, adjustments, curveSampler, this.curveSampleCache);
+      this.ensureStorageBuffers(params.byteLength, curves.byteLength);
+      this.device.queue.writeBuffer(this.paramBuffer, 0, params);
+      if (curves !== this.lastCurveSamples) {
+        this.device.queue.writeBuffer(this.curveBuffer, 0, curves);
+        this.lastCurveSamples = curves;
+      }
+
+      const scheduler = this.tileScheduler instanceof Scheduler
+        ? this.tileScheduler
+        : (this.tileScheduler = new Scheduler({
+          tileSize,
+          maxResidentBytes: Math.floor(this.memoryBudgetBytes() / 4),
+        }));
+      const identity = `${proxy.identity}|${editRevision}|${surface.format}`;
+      const plan = scheduler.plan({
+        width: proxy.width,
+        height: proxy.height,
+        identity,
+        generation: Number(sourceOptions?.applicationGeneration ?? 0),
+        tileSize,
+        nodes: ["geometry", "exposure", "white-balance", "curves", "color", "grading"],
+      });
+
+      const graph = this.ensureTileGraph(tileSize, tileSize, surface.format, proxy.pixelFormat);
+      if (!graph) return { rendered: false, refusals: ["tile graph allocation failed"] };
+
+      // Every tile needs its own origin in the composite parameters, and a
+      // queue write would land once for the whole submission rather than once
+      // per tile. One buffer holding a slot per tile, bound at an offset, keeps
+      // the whole generation in a single command buffer.
+      const alignment = 256;
+      const stride = Math.ceil(params.byteLength / alignment) * alignment;
+      const required = stride * plan.tileCount;
+      if (!this.tileCompositeParamBuffer || this.tileCompositeParamBuffer.size < required) {
+        this.tileCompositeParamBuffer?.destroy();
+        this.tileCompositeParamBuffer = this.device.createBuffer({
+          size: required,
+          usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        });
+      }
+      const slots = new Float32Array((stride / 4) * plan.tileCount);
+      plan.tiles.forEach((tile, index) => {
+        const base = index * (stride / 4);
+        slots.set(params, base);
+        slots[base + 160] = tile.rect.x;
+        slots[base + 161] = tile.rect.y;
+      });
+      this.device.queue.writeBuffer(this.tileCompositeParamBuffer, 0, slots);
+
+      const bind = (sourceView, spatialView, parameterBinding = { buffer: this.paramBuffer }, overlayView = spatialView) => this.device.createBindGroup({
+        layout: this.bindGroupLayout,
+        entries: [
+          { binding: 0, resource: sourceView },
+          { binding: 1, resource: parameterBinding },
+          { binding: 2, resource: { buffer: this.curveBuffer } },
+          { binding: 3, resource: spatialView },
+          { binding: 4, resource: this.spatialSampler },
+          { binding: 5, resource: overlayView },
+        ],
+      });
+      const tileSourceView = graph.sourceTexture.createView();
+      const baseView = graph.baseTexture.createView();
+      const filmView = graph.filmTexture.createView();
+      const finishView = graph.finishTexture.createView();
+      const baseBind = bind(tileSourceView, tileSourceView);
+      const responseBind = bind(baseView, tileSourceView);
+      const finishBind = bind(filmView, tileSourceView);
+      const compositeBinds = plan.tiles.map((tile, index) => bind(
+        finishView,
+        tileSourceView,
+        { buffer: this.tileCompositeParamBuffer, offset: index * stride, size: params.byteLength },
+        tileSourceView,
+      ));
+
+      const startedAt = performance.now();
+      // A validation error discards the whole command buffer silently, which
+      // would leave the canvas untouched and look like a parity failure rather
+      // than a bug. Capture it and report it instead.
+      this.device.pushErrorScope("validation");
+      const canvasTexture = context.getCurrentTexture();
+      const encoder = this.device.createCommandEncoder();
+      const pass = (view, pipeline, bindGroup) => {
+        const renderPass = encoder.beginRenderPass({
+          colorAttachments: [{ view, clearValue: { r: 0, g: 0, b: 0, a: 1 }, loadOp: "clear", storeOp: "store" }],
+        });
+        renderPass.setPipeline(pipeline);
+        renderPass.setBindGroup(0, bindGroup);
+        renderPass.draw(3);
+        renderPass.end();
+      };
+
+      const canvasView = canvasTexture.createView();
+      plan.tiles.forEach((tile, index) => {
+        // Copying the tile out of the proxy is what lets every intermediate
+        // pass keep reading at its own fragment position: the tile is its whole
+        // world, so those shaders need no notion of tiling at all.
+        encoder.copyTextureToTexture(
+          { texture: proxy.texture, origin: { x: tile.rect.x, y: tile.rect.y, z: 0 } },
+          { texture: graph.sourceTexture, origin: { x: 0, y: 0, z: 0 } },
+          { width: tile.rect.width, height: tile.rect.height, depthOrArrayLayers: 1 },
+        );
+        pass(baseView, pipelines.base, baseBind);
+        pass(filmView, pipelines.response, responseBind);
+        pass(finishView, pipelines.finish, finishBind);
+
+        // The composite renders into the canvas itself, scissored to this
+        // tile's rectangle. A copy-only write is not enough: the swapchain is
+        // only presented for a texture that was rendered to.
+        const compositePass = encoder.beginRenderPass({
+          colorAttachments: [{
+            view: canvasView,
+            loadOp: index === 0 ? "clear" : "load",
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            storeOp: "store",
+          }],
+        });
+        compositePass.setScissorRect(tile.rect.x, tile.rect.y, tile.rect.width, tile.rect.height);
+        compositePass.setPipeline(pipelines.composite);
+        compositePass.setBindGroup(0, compositeBinds[index]);
+        compositePass.draw(3);
+        compositePass.end();
+        scheduler.acceptTile(tile.key, plan.generation);
+      });
+
+      // One submission for the whole generation: the canvas shows the complete
+      // assembly or nothing, so a partially replaced frame cannot be presented.
+      this.device.queue.submit([encoder.finish()]);
+      const validationError = await this.device.popErrorScope();
+      if (validationError) {
+        this.recordStage("tiled-validation-error", { message: validationError.message });
+        return { rendered: false, refusals: [`validation: ${validationError.message}`] };
+      }
+
+      const durationMs = performance.now() - startedAt;
+      this.tiledExecutionMetrics = {
+        width: proxy.width,
+        height: proxy.height,
+        tileSize,
+        tileCount: plan.tileCount,
+        visibleCount: plan.visibleCount,
+        submissions: 1,
+        workingSetBytes: graph.byteSize,
+        proxyBytes: proxy.byteSize,
+        presentableGeneration: scheduler.presentableGeneration(plan),
+        durationMs,
+      };
+      this.recordStage("tiled-render", { lane, longEdge, ...this.tiledExecutionMetrics });
+      return {
+        rendered: true,
+        refusals: [],
+        width: proxy.width,
+        height: proxy.height,
+        hdr: surface.hdr,
+        proxyFormat: proxy.pixelFormat,
+        sourceSerial: proxy.sourceSerial ?? null,
+        metrics: this.tiledExecutionMetrics,
       };
     }
 
@@ -3624,6 +3947,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     params[154] = Math.min(1, Math.max(0, Number(detail.sharpen_threshold) || 0) / 100) * 0.50;
     params[155] = Math.min(1, Math.max(0.05, Number(sourcePixelScale) || 1));
     params[159] = sdrHighlightV2 ? 1 : 0;
+    // Direct renders the whole output, so its tile origin is the origin.
+    params[TILE_ORIGIN_X_INDEX] = 0;
+    params[TILE_ORIGIN_Y_INDEX] = 0;
     return params;
   }
 
@@ -5273,7 +5599,12 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
 
     @fragment fn fragmentMain(input: VertexOut) -> @location(0) vec4f {
       let dimensions = textureDimensions(sourceTexture);
-      let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
+      // This is the one pass whose render target is the whole canvas while its
+      // input may be a single tile, so it is the one place that has to convert
+      // a global fragment position into a tile-local texel. p[160..161] are the
+      // tile origin, and Direct leaves them at zero.
+      let tileOrigin = vec2i(i32(p[160]), i32(p[161]));
+      let coordinate = clamp(vec2i(input.position.xy) - tileOrigin, vec2i(0), vec2i(dimensions) - vec2i(1));
       let filmOutput = applyOutputHighlights(finishedAt(coordinate));
       let output = select(clamp(filmOutput, vec3f(0.0), vec3f(1.0)), displayHdr(filmOutput), p[0] > 0.5);
       var encoded = displayEncode(output);

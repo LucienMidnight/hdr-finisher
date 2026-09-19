@@ -46,7 +46,8 @@
     "test:render-plan": "node --test tests/render-plan-admission.test.js",
     "test:source-transport": "node --test tests/source-transport.test.js",
     "test:exact-tier-latency": "node tests/performance/exact-tier-latency.js",
-    "test:tile-scheduler": "node --test tests/tile-scheduler.test.js"
+    "test:tile-scheduler": "node --test tests/tile-scheduler.test.js",
+    "test:tiled-parity": "node tests/tiled-direct-parity.js"
   },
   "devDependencies": {
     "playwright": "^1.50.0"
