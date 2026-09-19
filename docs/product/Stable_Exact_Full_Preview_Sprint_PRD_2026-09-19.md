@@ -767,6 +767,18 @@ Update this table at every phase boundary or whenever work stops unexpectedly. L
 
 **Next safe edit:** Begin Phase 3 — define the source-tile and mask-tile API contracts, bind them to source epoch, geometry, lane input, tier, rectangle, and halo, and stream Direct source textures in bounded chunks. A local server may still be running on port 8000; stop it with the preview tooling if so.
 
+**Phase 3 reconnaissance (read before starting):** the current transport was traced but not yet changed.
+
+- `GET /api/session/{id}/proxy/{kind}` in `backend/hdr_finisher/main.py` is the whole-frame source path. It already carries `edit_revision` and an optional `geometry_signature` that returns 409 on a stale request, so the epoch and geometry halves of the tile identity have a working precedent to copy. It does **not** carry a rectangle, a halo, or a lane-input identity.
+- `RenderCache.geometry_source_proxy()` in `render_cache.py` calls `apply_geometry(proxy, geometry)` and then `downsample_image(...)`. `RenderCache` already maintains a `_source_epoch` counter that increments on source replacement, which is the epoch the tile contract should bind to.
+- `apply_geometry()` in `finishing.py` materializes the complete transformed frame. It composes `np.rot90`, flips, an optional perspective warp or roll, and a final crop slice. Region extraction therefore splits naturally into two cases:
+  - **Exact index path** — quarter-turn rotation, flips, and crop only. An output rectangle maps to a source rectangle by pure index arithmetic, so a tile can be extracted with no full-frame allocation and should be bit-identical to the full-frame path.
+  - **Resampling path** — `straighten_angle`, `perspective_rotate`, `perspective_horizontal`, or `perspective_vertical` non-zero. These need a windowed inverse warp. `geometry_coordinate_map()` already fits an `output_to_source` homography against the real operation, but it is a least-squares **fit**, so using it for pixel extraction risks failing the parity gate. Either derive the exact homography from the same primitives `_warp_perspective_to_valid_pixels` uses, or materialize for this case and record it as a carried-forward memory limitation. The browser-response half of the exit gate is met either way, because the response is per-tile regardless of what the backend does internally.
+- Request models cap `long_edge` at 16,384 across `PreviewRequest`, `GeometryMapRequest`, `LocalMaskPreviewRequest`, `LocalLuminanceSampleRequest`, and the `/proxy` and `/local-mask` query parameters. The tile contract should carry a rectangle instead, which is what removes that bound.
+- Frontend `loadProxy` in `webgpu-preview.js` fetches one response and uploads one texture. Chunked upload means `writeTexture` per tile into an already-allocated destination, with `proxyInflight` extended from one entry per proxy to one per tile for single-flight reuse.
+- `buildRenderPlan` already has an `upload-staging` entry with no live source; Phase 3 is what should populate it.
+
+
 When handing work to another task, replace the checkpoint above with:
 
 - exact branch and commit or uncommitted file list;
