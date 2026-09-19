@@ -793,10 +793,23 @@ Phases 0-2 recorded an "environment defect" claiming a missing Python 3.12 envir
 
 **Phase 4 follow-ups, in order:**
 
-1. Converge `renderTiledTo` and `renderTo` onto one pass-chain encoder. They duplicate a preamble -- proxy load, surface configuration, parameter and curve buffers, and the highlight-peak anchor -- and will drift.
-2. Wire tiled execution into admission, so a graph Direct cannot fit renders tiled instead of relying on the allocation backoff.
-3. Engineering-only Full selection, once 1 and 2 hold.
+1. ~~Converge `renderTiledTo` and `renderTo` onto one pass-chain encoder.~~ **Done, `8081d42`.** `sourcePixelScaleFor`, `graphActivity`, `highlightAnchorRequest`, `uploadParamsAndCurves` and `bindGraphResources` are now single definitions both routes call. The highlight-peak cache key was the drift risk that mattered: it is a list of parameter indices that must mean the same thing on both routes, or a Direct and a Tiled render of the same grade stop sharing a cache entry and the shoulder moves when execution changes. What genuinely differs stays separate with the reason recorded: only Direct declines to await the anchor on an interactive frame, because Tiled is never the interactive route.
+
+2. **Wire tiled execution into admission**, so a graph Direct cannot fit renders tiled instead of relying on the allocation backoff. Designed and prototyped, then **reverted unverified** rather than shipped — see the note below.
+
+3. **Engineering-only Full selection**, once 2 holds.
+
 4. A native-resolution Direct/Tiled parity comparison at 42 MP.
+
+### Follow-up 2 has a Phase 7 dependency that has to be settled first
+
+The wiring itself is small: split the encoding half of `renderTiledTo` into an `encodeTiledGeneration(canvas, context, proxy, surface, pipelines, params, options)` that both the engineering entry and `renderTo` call, then in `renderTo` act on `plan.decision.mode === "tiled"` before `ensureIntermediate` rather than after the allocation fails.
+
+**What blocks it is scopes.** `analyzeScope` samples `scopeSources[canvas].filmTexture`, a whole-frame finish texture that tiled execution deliberately does not produce — that absence is the point of the design. Today a missing or unusable GPU scope source makes `runGpuScopeRequest` return false, and `runQueuedGpuScopeRequest` then relabels the freshness readout with the *previous* scope's tier. So routing real renders through Tiled would silently present a stale scope as a settled one, which section 11 forbids and which carried-forward item 6 already describes as a Phase 7 gap.
+
+The intended resolution, prototyped and reverted: carry an `execution` field on the accepted presentation (`"direct"` or `"tiled"`), have the tiled path drop the stale `scopeSources` entry, and exclude `execution === "tiled"` from `gpuScopeEligible()` so the existing CPU scope route takes over rather than a GPU scope going quietly stale. That is correct but slower, and it is a user-visible behaviour change that needs its own evidence — including a browser test that forces a tiled decision by lowering the GPU budget, since every existing suite renders inside the Auto budget and would leave the new branch unexercised.
+
+**Do not land follow-up 2 without that test.** A passing suite run proves nothing here.
 
 **Reference hardware note:** the director's RTX 4070 Ti reports `maxTextureDimension2D` of **8192**, not 16384. A source whose Full long edge exceeds 8192 cannot be Direct-admitted on this machine at all, which is precisely the case Phase 4's tiled execution exists for. The 42.4 MP test source has a 7968 long edge and still fits.
 
