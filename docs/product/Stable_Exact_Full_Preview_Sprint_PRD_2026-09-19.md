@@ -769,7 +769,7 @@ Phases 0-2 recorded an "environment defect" claiming a missing Python 3.12 envir
 
 **Carried-forward items:**
 
-1. **No GPU trace for Phases 1-3.** The in-app browser has no WebGPU adapter, so exact-tier interaction, the planner, and the streamed loader were exercised through device stubs and the live endpoint rather than a real adapter. The section 11.1 timing targets (16.7 ms p95 at 1K/2K, 33 ms p95 at 4K) still need a run on named reference hardware. The director reports that exact-tier interaction feels faster than the published build on an RTX 4070 Ti, which is encouraging but is not a measurement.
+1. ~~**No GPU trace for Phases 1-3.**~~ **Closed 2026-09-19.** Measured on a real NVIDIA `lovelace` adapter (RTX 4070 Ti, not a fallback) through headless Edge with `--enable-unsafe-webgpu`, on a 42.4 MP source, 30 inputs per tier inside one gesture. Every section 11.1 target passes: input handling 3.1-3.4 ms p95 against 16.7 ms; submit-to-present 5.0 / 2.9 / 2.3 ms at 1K / 2K / 4K against 16.7 / 16.7 / 33 ms; feedback 0 ms p95 against 100 ms; **zero** stale results and **zero** non-exact presentations at every tier. The streamed transport ran for real: 4K took 6 chunks with a 16.8 MB peak response against a 90 MB total. Harness `codebase/tests/performance/exact-tier-latency.js`; evidence `docs/technical/exact-tier-gpu-latency-2026-09-19.md`; raw report at the ignored path `codebase/output/performance/exact-tier-latency-42mp.json`. Remaining gap: Full is not measured because it is not yet selectable, and this is one adapter on one host — the environment matrix is Phase 9.
 2. **The `roll` region route still materializes** the rotated frame and slices it. Parity is exact and the browser response is still bounded; only the backend allocation is not.
 3. **Mask transport is still whole-frame.** `GET /local-mask/{id}` returns a full-frame byte payload. The bounded-mask model is Phase 5.
 4. **The 16,384-pixel bound remains on the older endpoints** (`PreviewRequest`, `GeometryMapRequest`, `LocalMaskPreviewRequest`, `LocalLuminanceSampleRequest`, `/proxy`, `/local-mask`). They retire as their consumers move to tiles.
@@ -777,6 +777,8 @@ Phases 0-2 recorded an "environment defect" claiming a missing Python 3.12 envir
 6. Scopes still derive from any accepted generation rather than an exact selected-tier generation, and comparison lanes do not yet state tier and generation explicitly — both Phase 7.
 7. `window.HDRFinisherPerformance` render/denoise hooks still call `Number(longEdge)` with no numeric-contract validation.
 8. Full remains absent from the preview selector and the Settings menu; the sentinel is implemented and tested but not user-selectable until Phase 4.
+
+**Reference hardware note:** the director's RTX 4070 Ti reports `maxTextureDimension2D` of **8192**, not 16384. A source whose Full long edge exceeds 8192 cannot be Direct-admitted on this machine at all, which is precisely the case Phase 4's tiled execution exists for. The 42.4 MP test source has a 7968 long edge and still fits.
 
 **Next safe edit:** Begin Phase 4 — implement globally anchored tile identity, LRU residency, visible-region priority, and bounded scratch; port geometry and pointwise grading nodes; implement atomic visible-region assembly with no mixed-generation admission; and add engineering-only Full selection. The source-tile contract from Phase 3 already supplies rectangles with halos, and `buildRenderPlan().decision.mode` already says when Tiled is required. No app or server process is intentionally left running.
 

@@ -35,7 +35,7 @@ consequences for the earlier evidence:
   valid before/after comparison, but it was measured in the wrong interpreter
   and never exercised the JPEG XL, AVIF gain-map, or Lensfun routes at all.
 - Those routes are now covered, and they pass.
-- The "no GPU trace" limitation is unaffected and still stands.
+- The "no GPU trace" limitation was unaffected by this correction, and was closed separately the same day by [exact-tier-gpu-latency-2026-09-19.md](exact-tier-gpu-latency-2026-09-19.md).
 
 The environment-defect paragraphs in the Phase 0, 1, and 2 evidence documents
 and in the PRD ledger are superseded by this section. From this phase onward the
@@ -216,7 +216,7 @@ Halo behavior is asserted separately:
    proxy for a tier is already at that tier's scale, so the post-geometry
    downsample is a no-op and this does not trigger; the guard exists so a
    parity-breaking tile can never be served silently.
-5. **No GPU trace.** Unchanged from Phases 1 and 2. The streamed loader was
+5. ~~**No GPU trace.**~~ **Closed 2026-09-19** by [exact-tier-gpu-latency-2026-09-19.md](exact-tier-gpu-latency-2026-09-19.md), where the streamed loader ran on a real adapter: 6 chunks at 4K with a 16.8 MB peak response against a 90 MB total. The original note follows. The streamed loader was
    driven through a recording device stub and the live endpoint, not against a
    real WebGPU adapter.
 

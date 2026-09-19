@@ -216,7 +216,7 @@ the overlay guard change and passed again.
 
 ## Carried-forward items
 
-1. **No GPU trace.** The in-app browser pane has no WebGPU adapter, so every
+1. ~~**No GPU trace.**~~ **Closed 2026-09-19** by [exact-tier-gpu-latency-2026-09-19.md](exact-tier-gpu-latency-2026-09-19.md): measured on a real RTX 4070 Ti, every section 11.1 target passes with zero stale results and zero non-exact presentations across 30 inputs per tier. The original note follows. The in-app browser pane has no WebGPU adapter, so every
    browser trace above is the CPU/raw route. The exact-tier change affects the
    GPU path identically — both read the same `interactiveProxyLongEdge()` and
    `settledProxyLongEdge()` — but the *performance* consequence of exact-tier

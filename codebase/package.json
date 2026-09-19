@@ -44,7 +44,8 @@
     "test:webgpu-allocation-agreement": "node --test tests/webgpu-allocation-agreement.test.js",
     "test:viewer-state": "node --test tests/viewer-state-transitions.test.js",
     "test:render-plan": "node --test tests/render-plan-admission.test.js",
-    "test:source-transport": "node --test tests/source-transport.test.js"
+    "test:source-transport": "node --test tests/source-transport.test.js",
+    "test:exact-tier-latency": "node tests/performance/exact-tier-latency.js"
   },
   "devDependencies": {
     "playwright": "^1.50.0"

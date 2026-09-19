@@ -196,7 +196,7 @@ Phase 6 and are not claimed here.
    "Direct was not admitted". Phase 4 builds the scheduler that acts on it. Until
    then a graph that fails admission still attempts Direct and relies on the
    allocation backoff, which is why the backoff path is tested directly.
-2. **No GPU trace.** The in-app browser has no WebGPU adapter, so the planner was
+2. ~~**No GPU trace.**~~ **Closed 2026-09-19** by [exact-tier-gpu-latency-2026-09-19.md](exact-tier-gpu-latency-2026-09-19.md), which confirms the planner's Direct decisions against real measured residency at 1K, 2K, and 4K. The original note follows. The in-app browser has no WebGPU adapter, so the planner was
    exercised through `planRender()` and a device stub rather than against a real
    adapter's limits and a real out-of-memory condition. The plan reads
    `adapterInfo.limits`, which Phase 0 captures from a live device.
