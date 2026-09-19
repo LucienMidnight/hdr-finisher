@@ -714,7 +714,7 @@ Update this table at every phase boundary or whenever work stops unexpectedly. L
 | 0 — Contracts and instrumentation | Complete | `ba58d6d` on `main` (parent `83bca70`) | Closed | All three gate conditions met. Evidence: [`phase-0-exit-gate-evidence-2026-09-19.md`](../technical/phase-0-exit-gate-evidence-2026-09-19.md), [`phase-0-gpu-logical-memory-baselines-2026-09-19.md`](../technical/phase-0-gpu-logical-memory-baselines-2026-09-19.md), [`phase-0-preview-resolution-boundary-inventory-2026-09-19.md`](../technical/phase-0-preview-resolution-boundary-inventory-2026-09-19.md). Six discrepancies carried forward, listed in the evidence document. |
 | 1 — Stable existing tiers | Complete | `903bdef` on `main` | Closed | All five gate conditions met on the CPU route. Evidence: [`phase-1-stable-tier-lifecycle-evidence-2026-09-19.md`](../technical/phase-1-stable-tier-lifecycle-evidence-2026-09-19.md). GPU timing measurement and Phase 7 scope/comparison tightening carried forward. |
 | 2 — GPU planner and budget | Complete | `69ca21e` on `main` | Closed | All four gate conditions met. Evidence: [`phase-2-gpu-planner-evidence-2026-09-19.md`](../technical/phase-2-gpu-planner-evidence-2026-09-19.md). A `tiled` decision currently means "Direct was not admitted"; Phase 4 builds the scheduler that acts on it. |
-| 3 — Bounded transport | Complete | Uncommitted checkpoint on `main` at `493a318` | Closed | All four gate conditions met. Evidence: [`phase-3-bounded-transport-evidence-2026-09-19.md`](../technical/phase-3-bounded-transport-evidence-2026-09-19.md). Source transport is bounded; mask transport is Phase 5. The Phases 0-2 "environment defect" is retracted there. |
+| 3 — Bounded transport | Complete | `4ac3aba` on `main` | Closed | All four gate conditions met. Evidence: [`phase-3-bounded-transport-evidence-2026-09-19.md`](../technical/phase-3-bounded-transport-evidence-2026-09-19.md). Source transport is bounded; mask transport is Phase 5. The Phases 0-2 "environment defect" is retracted there. |
 | 4 — Tile scheduler and pointwise graph | Ready to start | — | Open | Phases 0-3 are closed. The planner already emits a `tiled` decision and the source-tile contract already serves rectangles with halos; Phase 4 is the scheduler that consumes both. |
 | 5 — Masks, locals, Detail | Not started | — | Open | Depends on tile scheduler. |
 | 6 — Denoise | Not started | — | Open | Depends on tile scheduler and budget. |
@@ -727,7 +727,7 @@ Update this table at every phase boundary or whenever work stops unexpectedly. L
 **Last updated:** September 19, 2026
 **Last completed phase:** Phase 3 — Geometry-aware bounded transport (exit gate closed)
 **Active phase:** None; Phase 4 — Tile scheduler and pointwise render graph is ready to start
-**Branch and base:** `main`. Phase 0 is `ba58d6d`, Phase 1 is `903bdef`, Phase 2 is `69ca21e`, Phase 3 is the commit recorded in the ledger row above. A `.claude/launch.json` was added for local dev-server launching; it is covered by a global gitignore rule and is intentionally not committed.
+**Branch and base:** `main`. Phase 0 is `ba58d6d`, Phase 1 is `903bdef`, Phase 2 is `69ca21e`, Phase 3 is `4ac3aba`, and the worktree is clean. A `.claude/launch.json` was added for local dev-server launching; it is covered by a global gitignore rule and is intentionally not committed.
 
 ## Environment: use the project venv
 
