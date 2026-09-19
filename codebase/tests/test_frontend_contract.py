@@ -477,18 +477,123 @@ def test_curve_drag_uses_live_preview_scheduler_and_three_point_default_shape() 
     assert 'return Math.min(profile.interactiveEdge, interactiveProxyLongEdge())' in javascript
 
 
-def test_resident_high_resolution_preview_is_retained_for_settle_but_not_interaction() -> None:
+def test_interaction_holds_the_selected_tier_once_it_has_produced_a_result() -> None:
+    """Phase 1: a gesture may not lower the processing resolution.
+
+    The previous contract deliberately dropped interaction to a 512-1024
+    display-bounded proxy and refined afterwards. The stable-tier contract
+    replaces that with exact-tier processing, and keeps the bounded proxy only
+    as a bootstrap path for a tier that has not produced a result yet.
+    """
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     resident = javascript[javascript.index("function residentAuthoringLongEdge()") : javascript.index("function scopeLongEdge(tier)")]
     assert 'accepted?.transport !== "WebGPU"' in resident
     assert "accepted.geometrySignature !== geometrySignature()" in resident
     assert "accepted.longEdge !== target" in resident
+
+    bootstrap = resident[resident.index("function bootstrapProxyLongEdge()") : resident.index("function interactiveProxyLongEdge()")]
     interactive = resident[resident.index("function interactiveProxyLongEdge()") : resident.index("function globalDetailActive")]
     settled = resident[resident.index("function settledProxyLongEdge()") : resident.index("function refinementProxyLongEdge")]
+
+    assert "clamp(displayedLongEdge(), 512, 1024)" in bootstrap
     assert "residentAuthoringLongEdge" not in interactive
-    assert "clamp(displayedLongEdge(), 512, 1024)" in interactive
+    assert "if (selectedTierReady()) return previewTargetLongEdge();" in interactive
+    assert "return bootstrapProxyLongEdge();" in interactive
+    # The bounded proxy is reachable only through the bootstrap helper.
+    assert "clamp(displayedLongEdge()" not in interactive
+
     assert "const resident = residentAuthoringLongEdge();" in settled
     assert "if (resident) return resident;" in settled
+    # The settled pass aims at the selected tier, not at a display-bounded edge.
+    assert "return Math.round(previewTargetLongEdge());" in settled
+    assert "clamp(displayedLongEdge()" not in settled
+
+
+def test_viewer_state_is_derived_and_names_the_four_states() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    derive = javascript[javascript.index("function deriveViewerState(") : javascript.index("function viewerState(")]
+
+    assert 'return { status: "unavailable"' in derive
+    assert 'return { status: "preparing"' in derive
+    assert 'return { status: current ? "ready" : "updating"' in derive
+    # Preparing is decided by whether the selected tier itself produced an
+    # exact result, never by whether some image happens to be on screen.
+    assert "accepted.exact === true && accepted.requestedTier === tier" in derive
+    assert "accepted.generation === currentGeneration" in derive
+    assert "accepted.geometrySignature === currentGeometrySignature" in derive
+
+
+def test_accepted_presentation_records_what_it_actually_is() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    accept = javascript[javascript.index("function acceptPresentation(") : javascript.index("function markPreviewUnavailable(")]
+
+    assert "const requestedTier = normalizedPreviewResolution();" in accept
+    assert "const exact = longEdge > 0 && longEdge >= previewTargetLongEdge(requestedTier);" in accept
+    assert "tier: exact ? requestedTier : null," in accept
+    assert "requestedTier," in accept
+    assert "exact," in accept
+
+
+def test_preparing_state_labels_the_placeholder_tier_truthfully() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    label = javascript[javascript.index("function viewerStatusLabel(") : javascript.index("function renderViewerStatus(")]
+
+    assert "showing previous ${previewResolutionLabel(viewer.presentedTier)} result" in label
+    assert "return `Preparing ${tierLabel}${showing}`;" in label
+    assert "return `Updating — ${tierLabel}`;" in label
+    assert "return `Ready — ${tierLabel}`;" in label
+    assert "unavailable" in label
+
+
+def test_changing_preview_tier_does_not_reset_the_renderer_or_clear_the_viewport() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    apply_tier = javascript[javascript.index("function applyPreviewResolution(") : javascript.index("function acceptPresentation(")]
+
+    assert "resetSession" not in apply_tier
+    assert "clearPreviewImage" not in apply_tier
+    assert "state.gpuPreparedLane" not in apply_tier
+    assert 'invalidatePreview(state.currentView, { markDirty: false });' in apply_tier
+
+
+def test_cpu_preview_failure_retains_the_last_valid_presentation() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    render = javascript[javascript.index("async function renderPreviewForLane(") : javascript.index("async function renderRawPreviewForLane(")]
+    failure = render[render.index("if (!response.ok) {") :]
+
+    assert "markPreviewUnavailable(detail)" in failure
+    assert failure.index("if (state.acceptedPresentation?.lane === lane) markPreviewUnavailable(detail);") < failure.index("clearPreviewImage()")
+
+
+def test_raw_preview_failure_reports_unavailable_without_clearing() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    raw = javascript[javascript.index("async function renderRawPreviewForLane(") :]
+    raw = raw[: raw.index("const width = Number(response.headers.get(\"X-Image-Width\"));")]
+    failure = raw[raw.index("if (!response.ok) {") :]
+
+    assert "markPreviewUnavailable(" in failure
+    assert "clearPreviewImage" not in failure
+
+
+def test_overlay_acceptance_is_generation_and_geometry_safe() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    overlay = javascript[javascript.index("async function refreshOverlay(") :]
+    overlay = overlay[: overlay.index("const requestIsCurrent = () => controller === state.overlayAbortController") + 2000]
+
+    assert "const overlayGeneration = state.previewGeneration[lane];" in overlay
+    assert "const overlaySignature = geometrySignature();" in overlay
+    assert "state.previewGeneration[lane] === overlayGeneration" in overlay
+    assert "geometrySignature() === overlaySignature" in overlay
+
+
+def test_generation_change_reports_updating_immediately() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    invalidate = javascript[javascript.index("function invalidatePreview(") : javascript.index("function markGlobalEditDirty(")]
+
+    # The 100 ms Updating/Preparing feedback target is met by reporting on the
+    # generation bump, not by waiting for the render that follows it.
+    assert "state.previewGeneration[lane] += 1;" in invalidate
+    assert "if (lane === state.currentView) renderViewerStatus();" in invalidate
+    assert invalidate.index("state.previewGeneration[lane] += 1;") < invalidate.index("renderViewerStatus();")
 
 
 def test_detail_interaction_backpressures_the_gpu_queue() -> None:

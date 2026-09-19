@@ -382,6 +382,9 @@ const state = {
   renderingMode: "auto",
   appPreferences: null,
   acceptedPresentation: null,
+  // Set only when the selected tier could not be produced. It never clears the
+  // retained presentation; it explains why that presentation is still the newest.
+  previewUnavailableReason: "",
   detailInteractionRestore: null,
   previewScheduler: null,
   gpuPreparedLane: { hdr: false, sdr: false },
@@ -874,39 +877,135 @@ function previewResolutionDimensions(value = state.previewResolution) {
 }
 
 function previewNeedsRefinement() {
-  return previewTargetLongEdge() > settledProxyLongEdge();
+  // "Has the selected tier been reached yet?" The settled pass now targets the
+  // tier directly, so comparing the settled edge against the target would
+  // always answer no. Every caller uses this to decide whether more work is
+  // owed before the viewer can claim the selected tier.
+  return !selectedTierReady();
+}
+
+/**
+ * @typedef {"ready"|"updating"|"preparing"|"unavailable"} ViewerStatus
+ */
+
+/**
+ * The four viewer states are derived, never stored. A stored status drifts out
+ * of agreement with the image on screen; a derived one is always a statement
+ * about the presentation the viewer can actually see.
+ *
+ * @returns {{ status: ViewerStatus, tier: PreviewResolution, presentedTier: PreviewResolution|null, detail: string }}
+ */
+function deriveViewerState({
+  requestedTier,
+  accepted,
+  currentGeneration,
+  lane,
+  geometrySignature: currentGeometrySignature,
+  unavailableReason = "",
+} = {}) {
+  const tier = PREVIEW_RESOLUTION_OPTIONS.has(requestedTier) ? requestedTier : DEFAULT_PREVIEW_RESOLUTION;
+  const laneMatches = Boolean(accepted) && accepted.lane === lane;
+  const presentedTier = laneMatches ? (accepted.tier || null) : null;
+  if (unavailableReason) return { status: "unavailable", tier, presentedTier, detail: unavailableReason };
+  // The selected tier owns the viewer only once it has produced an exact
+  // result of its own. Anything else is still a placeholder, however good it
+  // looks, and must be labeled as one.
+  const selectedTierAccepted = laneMatches && accepted.exact === true && accepted.requestedTier === tier;
+  if (!selectedTierAccepted) return { status: "preparing", tier, presentedTier, detail: "" };
+  const current = accepted.generation === currentGeneration
+    && accepted.geometrySignature === currentGeometrySignature;
+  return { status: current ? "ready" : "updating", tier, presentedTier, detail: "" };
+}
+
+function viewerState(lane = state.currentView) {
+  return deriveViewerState({
+    requestedTier: normalizedPreviewResolution(),
+    accepted: state.acceptedPresentation,
+    currentGeneration: state.previewGeneration[lane],
+    lane,
+    geometrySignature: geometrySignature(),
+    unavailableReason: state.previewUnavailableReason || "",
+  });
+}
+
+function viewerStatusLabel(viewer = viewerState()) {
+  const tierLabel = previewResolutionLabel(viewer.tier);
+  if (viewer.status === "unavailable") {
+    return `${tierLabel} unavailable${viewer.detail ? ` — ${viewer.detail}` : ""}`;
+  }
+  if (viewer.status === "preparing") {
+    const showing = viewer.presentedTier
+      ? ` — showing previous ${previewResolutionLabel(viewer.presentedTier)} result`
+      : "";
+    return `Preparing ${tierLabel}${showing}`;
+  }
+  if (viewer.status === "updating") return `Updating — ${tierLabel}`;
+  return `Ready — ${tierLabel}`;
+}
+
+function renderViewerStatus() {
+  const viewer = viewerState();
+  const label = viewerStatusLabel(viewer);
+  if (els.previewQualityStatus) els.previewQualityStatus.textContent = label;
+  // Ready is the quiet state; the dock is for work the viewer is waiting on.
+  setViewerStatusRow(els.viewerTierStatus, viewer.status === "ready" ? null : label, {
+    error: viewer.status === "unavailable",
+  });
+  syncViewerStatusDock();
+  return viewer;
+}
+
+function selectedTierReady(lane = state.currentView) {
+  // PRD 2.2: after the selected tier has produced a valid result, interaction
+  // keeps processing at that resolution. It never drops to a smaller proxy and
+  // then jumps back up once the control settles.
+  const accepted = state.acceptedPresentation;
+  return Boolean(accepted
+    && accepted.lane === lane
+    && accepted.exact === true
+    && accepted.requestedTier === normalizedPreviewResolution());
 }
 
 function applyPreviewResolution(value, { schedule = true } = {}) {
+  const previous = state.previewResolution;
   state.previewResolution = normalizedPreviewResolution(value);
   if (els.previewResolution) {
     els.previewResolution.value = state.previewResolution;
     els.previewResolution.title = "Sets the maximum preview width and height. Higher settings use more memory; export quality is unchanged.";
   }
-  state.gpuPreview?.resetSession(state.session?.session_id || null);
+  if (previous !== state.previewResolution) state.previewUnavailableReason = "";
+  // PRD 8: changing tiers must not reset the GPU session or clear the current
+  // preview. Proxy levels are keyed by long edge and trimmed by the renderer's
+  // own LRU, so the outgoing tier is retired only when the budget requires it.
   if (state.denoise?.[state.currentView]?.enabled) {
     state.denoiseRuntime[state.currentView].status = "dirty";
     state.denoiseRuntime[state.currentView].dirty = true;
     if (schedule) window.setTimeout(() => recalculateDenoise(), 300);
   }
-  state.gpuPreparedLane = { hdr: false, sdr: false };
   if (state.session) {
     invalidatePreview(state.currentView, { markDirty: false });
-    if (previewNeedsRefinement()) markRefining();
     if (schedule) debouncePreview(state.currentView);
   }
   renderReadouts();
   renderCurrentPreviewSize();
+  renderViewerStatus();
 }
 
-function acceptPresentation(lane, tier, width, height, transport, fallbackReason = "", sourceSerial = null, generation = state.previewGeneration[lane]) {
+function acceptPresentation(lane, schedulerTier, width, height, transport, fallbackReason = "", sourceSerial = null, generation = state.previewGeneration[lane]) {
   const longEdge = Math.max(Number(width) || 0, Number(height) || 0);
+  const requestedTier = normalizedPreviewResolution();
+  // `tier` is what this image actually is, not what the user asked for. A
+  // bootstrap proxy accepted while the selected tier is still preparing must
+  // never be labeled with the selected tier.
+  const exact = longEdge > 0 && longEdge >= previewTargetLongEdge(requestedTier);
   state.acceptedPresentation = {
     lane,
     generation,
     geometrySignature: geometrySignature(),
-    tier: normalizedPreviewResolution(),
-    renderTier: tier,
+    requestedTier,
+    tier: exact ? requestedTier : null,
+    exact,
+    schedulerTier,
     width: Number(width) || null,
     height: Number(height) || null,
     longEdge,
@@ -914,6 +1013,7 @@ function acceptPresentation(lane, tier, width, height, transport, fallbackReason
     sourceSerial,
     fallbackReason,
   };
+  if (exact) state.previewUnavailableReason = "";
   if (lane === state.currentView && width && height) {
     if (state.geometryTransformHandoffSignature === geometrySignature()) {
       state.geometryTransformHandoffSignature = null;
@@ -937,17 +1037,23 @@ function acceptPresentation(lane, tier, width, height, transport, fallbackReason
     if (state.adjustments.shared.geometry.perspective_horizontal
       || state.adjustments.shared.geometry.perspective_vertical) void ensureGeometryCoordinateMap();
   }
-  const targetLabel = previewResolutionLabel();
-  const dimensions = width && height ? `${Number(width)} × ${Number(height)}` : longEdge ? `${longEdge}px max` : "";
-  const label = `${fallbackReason ? "Fallback · " : ""}${targetLabel}${dimensions ? ` · ${dimensions}` : ""}`;
-  if (els.previewQualityStatus) els.previewQualityStatus.textContent = label;
   renderCurrentPreviewSize();
   renderReadouts();
+  renderViewerStatus();
+}
+
+function markPreviewUnavailable(reason) {
+  // Unavailable keeps the last valid presentation on screen. It reports that
+  // the selected tier could not be produced; it never blanks the viewer.
+  state.previewUnavailableReason = String(reason || "").trim() || "Preview failed to render";
+  renderCurrentPreviewSize();
+  renderReadouts();
+  renderViewerStatus();
 }
 
 function markRefining() {
-  if (els.previewQualityStatus) els.previewQualityStatus.textContent = "Refining…";
-  renderCurrentPreviewSize({ refining: true });
+  renderCurrentPreviewSize();
+  renderViewerStatus();
 }
 
 const defaultAdjustments = () => ({
@@ -1274,6 +1380,7 @@ const els = {
   proofPreviewButtons: [...document.querySelectorAll("[data-proof-preview]")],
   emptyState: document.getElementById("empty-state"),
   viewerStatusDock: document.getElementById("viewer-status-dock"),
+  viewerTierStatus: document.getElementById("viewer-tier-status"),
   proofBuildStatus: document.getElementById("proof-build-status"),
   proofBuildStatusCopy: document.getElementById("proof-build-status-copy"),
   proofLaneButtons: [...document.querySelectorAll("#proof-lane-switch button")],
@@ -3345,12 +3452,15 @@ function renderMetadata(session) {
   }
 }
 
-function currentPreviewSizeLabel({ refining = false } = {}) {
+function currentPreviewSizeLabel() {
   const target = previewResolutionLabel();
-  if (refining) return `${target} · Refining…`;
   const presentation = state.acceptedPresentation;
   if (!presentation?.width || !presentation?.height || presentation.lane !== state.currentView) return `${target} · Waiting`;
-  return `${target} · ${presentation.width} × ${presentation.height}`;
+  // A presentation that is not yet the selected tier says so. Reporting the
+  // selected tier next to a smaller pixel count is the exact misreport the
+  // stable-tier contract exists to prevent.
+  const qualifier = presentation.exact ? "" : " · placeholder";
+  return `${target} · ${presentation.width} × ${presentation.height}${qualifier}`;
 }
 
 function renderCurrentPreviewSize(options) {
@@ -3656,8 +3766,9 @@ function previewOutputEntries() {
     ["Rendering", state.renderingMode === "cpu" ? "CPU Compatibility" : state.renderingMode === "gpu" ? "GPU Preferred" : "Auto"],
     ["Preview Target", `${previewResolutionLabel()} · ${target.width} × ${target.height}`],
     ["Presented", state.acceptedPresentation?.longEdge
-      ? `${previewResolutionLabel(state.acceptedPresentation.tier)} · ${state.acceptedPresentation.longEdge}px · ${state.acceptedPresentation.transport}`
+      ? `${state.acceptedPresentation.tier ? previewResolutionLabel(state.acceptedPresentation.tier) : "Placeholder"} · ${state.acceptedPresentation.longEdge}px · ${state.acceptedPresentation.transport}`
       : "Waiting"],
+    ["Status", viewerStatusLabel()],
     ["Scope", els.scopeFreshness?.textContent || "Waiting"],
     ["Transport", state.previewInfo.transport],
     ["Media", state.previewInfo.mediaType],
@@ -3908,11 +4019,19 @@ function residentAuthoringLongEdge() {
   return target;
 }
 
+function bootstrapProxyLongEdge() {
+  // Used only while the selected tier is still Preparing, so the viewer has
+  // something truthful to show instead of an empty surface. It is labeled as a
+  // placeholder and is never accepted as the selected tier.
+  return Math.round(Math.min(previewTargetLongEdge(), clamp(displayedLongEdge(), 512, 1024)));
+}
+
 function interactiveProxyLongEdge() {
-  // Interaction is intentionally display-bounded even when a 2K/4K refined
-  // proxy is resident. The GPU proxy cache retains two levels per lane, so the
-  // refined source remains available for the post-gesture settle/refinement.
-  return Math.round(clamp(displayedLongEdge(), 512, 1024));
+  // PRD 2.2 and the Phase 1 exit gate: once the selected tier has produced a
+  // valid result, a gesture may not change the processing resolution. The
+  // previous display-bounded 512-1024 proxy is now the bootstrap path only.
+  if (selectedTierReady()) return previewTargetLongEdge();
+  return bootstrapProxyLongEdge();
 }
 
 function globalDetailActive(lane = state.currentView) {
@@ -3957,7 +4076,10 @@ function beginGlobalDetailInteraction(path) {
 function settledProxyLongEdge() {
   const resident = residentAuthoringLongEdge();
   if (resident) return resident;
-  return Math.round(Math.min(previewTargetLongEdge(), clamp(displayedLongEdge(), 768, 1024)));
+  // The settled pass always aims at the selected tier. Stopping short of it
+  // here is what produced the old "low while dragging, high once it settles"
+  // jump that this sprint removes.
+  return Math.round(previewTargetLongEdge());
 }
 
 function refinementProxyLongEdge() {
@@ -4054,9 +4176,16 @@ async function renderPreviewForLane(
   if (!response.ok) {
     const payload = await safeJson(response);
     if (displayWhenReady && requestIsCurrent()) {
-      setPreviewError(payload?.detail || "Preview failed to render.");
-      clearPreviewImage();
-      clearPreviewOverlay();
+      const detail = payload?.detail || "Preview failed to render.";
+      setPreviewError(detail);
+      // PRD 2.3 and the Phase 1 exit gate: a CPU preview failure moves the
+      // viewer to Unavailable and keeps the last valid presentation. Clearing
+      // the image here destroyed a good frame because a later one failed.
+      if (state.acceptedPresentation?.lane === lane) markPreviewUnavailable(detail);
+      else {
+        clearPreviewImage();
+        clearPreviewOverlay();
+      }
     }
     return false;
   }
@@ -4136,6 +4265,13 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
   });
   if (!response || response.status === 409 || controller !== state.previewControllers[lane]) return false;
   if (!response.ok) {
+    // The raw path already retained the previous frame by returning early.
+    // Reporting Unavailable is what turns a silent retention into a truthful
+    // one: the viewer is told why the image it can see is still the newest.
+    const payload = await safeJson(response);
+    if (displayWhenReady && lane === state.currentView) {
+      markPreviewUnavailable(payload?.detail || "Preview failed to render.");
+    }
     return false;
   }
   const width = Number(response.headers.get("X-Image-Width"));
@@ -4217,6 +4353,11 @@ async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 16
   state.overlayAbortController = controller;
   const sessionId = state.session.session_id;
   const lane = state.currentView;
+  // The overlay must describe the image underneath it. editRevision alone does
+  // not move for local-only invalidations or geometry changes, so a response
+  // could be painted over a different generation of the picture.
+  const overlayGeneration = state.previewGeneration[lane];
+  const overlaySignature = geometrySignature();
   const revision = state.editRevision;
   const response = await fetch(`/api/session/${sessionId}/overlay/${lane}`, {
     method: "POST",
@@ -4233,6 +4374,8 @@ async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 16
     && state.session?.session_id === sessionId
     && state.currentView === lane
     && state.editRevision === revision
+    && state.previewGeneration[lane] === overlayGeneration
+    && geometrySignature() === overlaySignature
     && state.adjustments.shared.overlay_mode !== "off";
   if (!requestIsCurrent()) return;
   if (response.status === 204) {
@@ -10363,6 +10506,10 @@ function invalidatePreview(lane, { local = false, markDirty = true } = {}) {
   window.HDRProofing?.invalidate(lane);
   renderCompareStatus();
   updateExportAvailability();
+  // The generation bump is what moves the viewer to Updating. Reporting it
+  // here is what keeps that feedback inside the 100 ms acceptance target,
+  // rather than waiting for the render that follows.
+  if (lane === state.currentView) renderViewerStatus();
 }
 
 function markGlobalEditDirty() {

@@ -1,7 +1,7 @@
 # Stable Exact Preview Tiers and Full-Resolution Processing Sprint
 
 **Date:** September 19, 2026  
-**Status:** Approved direction; Phase 0 complete, Phase 1 ready to start  
+**Status:** Approved direction; Phases 0 and 1 complete, Phase 2 ready to start  
 **Owner:** HDR Finisher engineering  
 **Application target:** A staged preview-pipeline release that restores Full preview without silent resolution fallback  
 **Primary platforms:** Packaged Windows and macOS application shells, with and without usable WebGPU  
@@ -712,8 +712,8 @@ Update this table at every phase boundary or whenever work stops unexpectedly. L
 | Phase | Status | Commit/checkpoint | Exit gate | Evidence and next action |
 |---|---|---|---|---|
 | 0 — Contracts and instrumentation | Complete | `ba58d6d` on `main` (parent `83bca70`) | Closed | All three gate conditions met. Evidence: [`phase-0-exit-gate-evidence-2026-09-19.md`](../technical/phase-0-exit-gate-evidence-2026-09-19.md), [`phase-0-gpu-logical-memory-baselines-2026-09-19.md`](../technical/phase-0-gpu-logical-memory-baselines-2026-09-19.md), [`phase-0-preview-resolution-boundary-inventory-2026-09-19.md`](../technical/phase-0-preview-resolution-boundary-inventory-2026-09-19.md). Six discrepancies carried forward, listed in the evidence document. |
-| 1 — Stable existing tiers | Ready to start | — | Open | Phase 0 diagnostics and state contract are in place. Start with requested-tier versus presented-tier state and the presented-tier labeling defect (discrepancy 1 below). |
-| 2 — GPU planner and budget | Not started | — | Open | Depends on Phase 0; may follow Phase 1 implementation. |
+| 1 — Stable existing tiers | Complete | Uncommitted checkpoint on `main` at `ba58d6d` | Closed | All five gate conditions met on the CPU route. Evidence: [`phase-1-stable-tier-lifecycle-evidence-2026-09-19.md`](../technical/phase-1-stable-tier-lifecycle-evidence-2026-09-19.md). GPU timing measurement and Phase 7 scope/comparison tightening carried forward. |
+| 2 — GPU planner and budget | Ready to start | — | Open | Phases 0 and 1 are closed. The GPU-budget preference UI already exists from Phase 0 and needs its schema, planner, and admission logic. |
 | 3 — Bounded transport | Not started | — | Open | Depends on source/geometry identity contract. |
 | 4 — Tile scheduler and pointwise graph | Not started | — | Open | Depends on Phases 2 and 3. |
 | 5 — Masks, locals, Detail | Not started | — | Open | Depends on tile scheduler. |
@@ -725,23 +725,46 @@ Update this table at every phase boundary or whenever work stops unexpectedly. L
 ### Current handoff checkpoint
 
 **Last updated:** September 19, 2026  
-**Last completed phase:** Phase 0 — Freeze contracts and correct instrumentation (exit gate closed)  
-**Active phase:** None; Phase 1 — Stable-tier lifecycle for 1K, 2K, and 4K is ready to start  
-**Branch and base:** `main` at `ba58d6d`, parent `83bca70`. The worktree is clean; Phase 0 is committed as one reviewable commit covering `codebase/desktop/main.js`, `codebase/frontend/app.js`, `codebase/frontend/application-shell.js`, `codebase/frontend/index.html`, `codebase/frontend/webgpu-preview.js`, `codebase/package.json`, `codebase/tests/test_frontend_contract.py`, `codebase/tests/test_preview_resolution_contract.py`, `codebase/tests/webgpu-memory-diagnostics.test.js`, `codebase/tests/webgpu-allocation-agreement.test.js`, `docs/technical/phase-0-preview-resolution-boundary-inventory-2026-09-19.md`, `docs/technical/phase-0-gpu-logical-memory-baselines-2026-09-19.md`, `docs/technical/phase-0-exit-gate-evidence-2026-09-19.md`, and this PRD.  
-**Completed work:** Added the semantic `PreviewResolution` contract and explicit `"full"` branching; persisted the preview-tier and GPU-budget preference schema across `application-shell.js` and `desktop/main.js`; corrected the four-versus-three grading-texture residency undercount; added categorized planned/resident/transient/cached/peak logical memory diagnostics plus static 24 MP/42 MP/8K models; captured WebGPU device-limit diagnostics; recorded the coercion and allocation inventories; and added `codebase/tests/webgpu-allocation-agreement.test.js`, which proves the diagnostics equal the renderer's own allocation calls by driving `ensureIntermediate`, `ensureStorageBuffers`, and `acquireScopeResource` through a recording `GPUDevice` stub.  
+**Last completed phase:** Phase 1 — Stable-tier lifecycle for 1K, 2K, and 4K (exit gate closed)  
+**Active phase:** None; Phase 2 — Frontend GPU planner and configurable budget is ready to start  
+**Branch and base:** `main` at `ba58d6d`. Phase 0 is committed. Phase 1 is an uncommitted checkpoint: modified `codebase/frontend/app.js`, `codebase/frontend/index.html`, `codebase/package.json`, `codebase/tests/test_frontend_contract.py`; added `codebase/tests/viewer-state-transitions.test.js`, `docs/technical/phase-1-stable-tier-lifecycle-evidence-2026-09-19.md`, and `.claude/launch.json` (a local dev-server config, not part of the product).  
+
+**Phase 0 completed work:** semantic `PreviewResolution` contract with an explicit `"full"` sentinel; preview-tier and GPU-budget preference schema; corrected four-versus-three grading residency; categorized planned/resident/transient/cached/peak diagnostics with static 24 MP/42 MP/8K models; device-limit capture; coercion and allocation inventories; and `webgpu-allocation-agreement.test.js`, which proves the diagnostics equal the renderer's own allocation calls through a recording `GPUDevice` stub.
+
+**Phase 1 completed work:**
+
+- `deriveViewerState()` — a pure function producing Ready, Updating, Preparing, and Unavailable from requested tier, accepted presentation, generation, lane, geometry, and an unavailable reason. `renderViewerStatus()` paints it into a new `#viewer-tier-status` dock row, hidden while Ready.
+- `acceptPresentation` now records what an image *is*: `requestedTier`, `exact`, a `tier` that is `null` for a placeholder, and `schedulerTier` for the scheduler stage. This closes Phase 0 discrepancy 1.
+- Interaction-time downgrade removed. `interactiveProxyLongEdge()` and `settledProxyLongEdge()` return the selected tier; the 512-1024 bounded proxy survives only as `bootstrapProxyLongEdge()`, reachable while the tier is Preparing.
+- `previewNeedsRefinement()` redefined as `!selectedTierReady()`, which is what all five call sites meant.
+- `applyPreviewResolution()` no longer resets the GPU session or clears `gpuPreparedLane`, so a tier change keeps the viewport and retires old-tier proxies through the renderer's own LRU.
+- Both CPU routes call `markPreviewUnavailable()` instead of blanking or failing silently; the reason clears on the next exact acceptance.
+- `refreshOverlay` pins `previewGeneration[lane]` and the geometry signature, not just `editRevision`.
+- `invalidatePreview()` reports Updating on the generation bump, inside the 100 ms target.
+
 **Validation:**
 
-- `node --test tests/webgpu-memory-diagnostics.test.js tests/webgpu-allocation-agreement.test.js` → `tests 9 / pass 9 / fail 0`.
-- `python -m pytest -q tests/test_frontend_contract.py tests/test_preview_resolution_contract.py` → `77 passed`.
-- Full Python suite, Phase 0 worktree → `978 passed, 4 skipped, 23 failed`.
-- Full Python suite, clean `83bca70` via `git stash push -u` → `975 passed, 4 skipped, 23 failed`, restored with `git stash pop`.
-- The two `FAILED` lists are byte-identical; the `+3 passed` delta is exactly the Phase 0 test additions. No existing behavior or export path regressed.
+- Browser traces (in-app Chromium, **no WebGPU adapter** — CPU/raw route): exact-tier held across a five-edit gesture with no downgrade; rapid 4K to 1K to 4K reversal with `staleResults 0` and preserved zoom; simulated HTTP 500 on both preview routes retaining the image under `4K unavailable — ...`; tier change preserving `width 627.556px` and `zoom fit`.
+- `python -m pytest tests/test_frontend_contract.py tests/test_preview_resolution_contract.py` gives `85 passed`.
+- `node --test` over `viewer-state-transitions`, `webgpu-memory-diagnostics`, `webgpu-allocation-agreement` gives `tests 19 / pass 19 / fail 0`.
+- Full Python suite gives `986 passed, 4 skipped, 23 failed`, with a `FAILED` list byte-identical to clean `83bca70`.
+- 14 non-GPU Playwright browser suites all pass; the overlay-affected subset was re-run after the overlay guard change and passed again.
 
-**Evidence:** `docs/technical/phase-0-exit-gate-evidence-2026-09-19.md` (gate-by-gate results and commands), `docs/technical/phase-0-gpu-logical-memory-baselines-2026-09-19.md`, `docs/technical/phase-0-preview-resolution-boundary-inventory-2026-09-19.md`, and the two deterministic Node suites registered as `test:webgpu-memory` and `test:webgpu-allocation-agreement`.  
-**Environment defect (not a Phase 0 blocker):** the 23 failures are a Python-version mismatch, re-diagnosed from the earlier "missing `imagecodecs`" note. `requirements.txt` pins `imagecodecs>=2026.6.26`, and every `imagecodecs` release from `2026.5.10` onward requires Python ≥ 3.12. The active interpreter is Python 3.10.10, whose newest installable `imagecodecs` is `2025.3.30`, so `pip install` cannot satisfy the pin at all. `rawpy` 0.27.1 and `lensfunpy` 1.18.0 resolve on 3.10 but are also absent. Python 3.12.10 exists on this host at `C:\Users\Steve\AppData\Local\Programs\Python\Python312\python.exe` with a bare site-packages. Provisioning a Python ≥ 3.12 environment from `requirements.txt` + `requirements-dev.txt` is a standalone environment task; the affected JPEG XL, AVIF gain-map, and Lensfun routes fail identically at clean `83bca70` and are untouched by the Phase 0 diff.  
-**Carried-forward discrepancies:** six, enumerated in the exit-gate evidence document. The one that Phase 1 must address first: `acceptPresentation` now stores the requested tier as `tier` and the executed tier as `renderTier`, and the Preview Output readout labels the presented image with `tier`, so a lower-resolution interaction proxy is currently labeled with the selected tier. That conflicts with §2.2 and the §2.3 state table.  
-**Full availability:** the `"full"` sentinel is implemented and tested end to end through normalization, labeling, long-edge derivation, dimension derivation, and preference persistence, but Full is deliberately absent from both the preview selector and the Settings default-preview-resolution menu. Phase 4 adds engineering-only selection; Phase 9 makes it public.  
-**Next safe edit:** Begin Phase 1 — add requested-tier versus presented-tier state and the Ready/Updating/Preparing/Unavailable states, starting by making the Preview Output readout derive from `renderTier`. No app or server process is intentionally left running.
+**Evidence:** `docs/technical/phase-1-stable-tier-lifecycle-evidence-2026-09-19.md`, `docs/technical/phase-0-exit-gate-evidence-2026-09-19.md`, `docs/technical/phase-0-gpu-logical-memory-baselines-2026-09-19.md`, `docs/technical/phase-0-preview-resolution-boundary-inventory-2026-09-19.md`.
+
+**Environment defect (unchanged, not a phase blocker):** `requirements.txt` pins `imagecodecs>=2026.6.26`, which requires Python 3.12 or newer; the active interpreter is 3.10.10, so the pin cannot be installed and 23 JPEG XL / AVIF / Lensfun cases cannot execute. They fail identically at clean `83bca70`. `rawpy` and `lensfunpy` are also absent. Python 3.12.10 exists on this host with a bare site-packages. Note that `run_app.py` refuses to start under Python below 3.12, so the browser traces were produced by running `uvicorn hdr_finisher.main:app` directly under 3.10.10, which imports and serves correctly.
+
+**Carried-forward items:**
+
+1. **No GPU trace for Phase 1.** Exact-tier interaction is unmeasured on a WebGPU adapter. The section 11.1 timing targets (16.7 ms p95 at 1K/2K, 33 ms p95 at 4K) need a run on named reference hardware. If exact-tier 4K interaction proves too slow there, the answer is the Phase 2 planner and Phase 4 tiled execution, not a resolution downgrade.
+2. Scopes still derive from any accepted generation rather than specifically an exact selected-tier generation — Phase 7.
+3. Comparison lanes do not yet state tier and generation explicitly — Phase 7.
+4. `window.HDRFinisherPerformance` render/denoise hooks still call `Number(longEdge)` with no numeric-contract validation.
+5. Backend request models cap preview work at 16,384 pixels — removed by Phase 3 bounded transport.
+6. Full remains absent from the preview selector and the Settings menu; the sentinel is implemented and tested but not user-selectable until Phase 4.
+7. Retained-presentation overlap is still an `8P` approximation, and the static model excludes Denoise analysis temporaries, staging, scope pools, masks, comparison surfaces, and multiple cached proxy tiers — replaced by the Phase 2 render-plan inventory.
+
+**Next safe edit:** Begin Phase 2 — add the GPU-memory preference schema and migration behind the existing settings UI, then build the render-plan inventory and Direct-versus-Tiled admission. A local server may still be running on port 8000; stop it with the preview tooling if so.
 
 When handing work to another task, replace the checkpoint above with:
 
