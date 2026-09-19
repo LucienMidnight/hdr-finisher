@@ -3,10 +3,15 @@
 
   const STORAGE_KEY = "hdr-finisher:application-preferences:v1";
   const PROJECT_URL = "https://github.com/LucienMidnight/hdr-finisher";
+  const PREVIEW_RESOLUTIONS = new Set(["1024", "2048", "4096", "full"]);
+  const GPU_MEMORY_PRESETS_GIB = [1, 2, 3, 4, 6, 8, 12];
+  const DEFAULT_CUSTOM_GPU_MEMORY_GIB = 2;
   const DEFAULT_PREFERENCES = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     defaultReferenceWhiteNits: 203,
     renderingMode: "auto",
+    previewResolution: "1024",
+    maximumGpuMemoryGiB: "auto",
     theme: "default-dark",
     viewerFrame: { preset: "theme", customColor: "#000000" },
     folders: { projectSave: "", projectImport: "", fileSave: "", fileImport: "", presetSave: "" },
@@ -135,12 +140,20 @@
   const byId = (id) => document.getElementById(id);
   const clone = (value) => JSON.parse(JSON.stringify(value));
   const isMacPlatform = () => navigator.platform.toLowerCase().includes("mac");
+  const normalizeGpuMemoryGiB = (value) => {
+    if (value === "auto") return "auto";
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric < 0.25 || numeric > 64) return "auto";
+    return Math.round(numeric * 100) / 100;
+  };
   const mergePreferences = (value = {}) => ({
     ...clone(DEFAULT_PREFERENCES),
     ...value,
-    schemaVersion: 1,
+    schemaVersion: 2,
     defaultReferenceWhiteNits: Number(value.defaultReferenceWhiteNits) === 100 ? 100 : 203,
     renderingMode: ["auto", "gpu", "cpu"].includes(value.renderingMode) ? value.renderingMode : "auto",
+    previewResolution: PREVIEW_RESOLUTIONS.has(String(value.previewResolution)) ? String(value.previewResolution) : "1024",
+    maximumGpuMemoryGiB: normalizeGpuMemoryGiB(value.maximumGpuMemoryGiB),
     theme: THEME_IDS.includes(value.theme) ? value.theme : "default-dark",
     viewerFrame: {
       preset: FRAME_PRESET_IDS.includes(value.viewerFrame?.preset) ? value.viewerFrame.preset : "theme",
@@ -585,6 +598,12 @@
 
   function renderSettings() {
     byId("settings-rendering-mode").value = shell.preferences.renderingMode;
+    byId("settings-preview-resolution").value = shell.preferences.previewResolution;
+    const memoryBudget = shell.preferences.maximumGpuMemoryGiB;
+    const presetBudget = typeof memoryBudget === "number" && GPU_MEMORY_PRESETS_GIB.includes(memoryBudget);
+    byId("settings-gpu-memory-limit").value = memoryBudget === "auto" ? "auto" : presetBudget ? String(memoryBudget) : "custom";
+    byId("settings-gpu-memory-custom").value = String(memoryBudget === "auto" ? DEFAULT_CUSTOM_GPU_MEMORY_GIB : memoryBudget);
+    byId("settings-gpu-memory-custom-field").classList.toggle("hidden", memoryBudget === "auto" || presetBudget);
     byId("settings-auto-updates").checked = shell.preferences.updates.checkAutomatically;
     renderThemeOptions();
     renderFolderSettings();
@@ -816,6 +835,30 @@
       shell.preferences.renderingMode = event.target.value;
       persistPreferences();
     });
+    byId("settings-preview-resolution").addEventListener("change", (event) => {
+      shell.preferences.previewResolution = PREVIEW_RESOLUTIONS.has(event.target.value) ? event.target.value : "1024";
+      persistPreferences();
+    });
+    byId("settings-gpu-memory-limit").addEventListener("change", (event) => {
+      const custom = event.target.value === "custom";
+      byId("settings-gpu-memory-custom-field").classList.toggle("hidden", !custom);
+      if (custom) {
+        const input = byId("settings-gpu-memory-custom");
+        const existing = shell.preferences.maximumGpuMemoryGiB;
+        shell.preferences.maximumGpuMemoryGiB = existing === "auto" ? DEFAULT_CUSTOM_GPU_MEMORY_GIB : normalizeGpuMemoryGiB(existing);
+        input.value = String(shell.preferences.maximumGpuMemoryGiB);
+        input.focus();
+      } else {
+        shell.preferences.maximumGpuMemoryGiB = normalizeGpuMemoryGiB(event.target.value);
+      }
+      persistPreferences();
+    });
+    byId("settings-gpu-memory-custom").addEventListener("change", (event) => {
+      const normalized = normalizeGpuMemoryGiB(event.target.value);
+      shell.preferences.maximumGpuMemoryGiB = normalized === "auto" ? DEFAULT_CUSTOM_GPU_MEMORY_GIB : normalized;
+      event.target.value = String(shell.preferences.maximumGpuMemoryGiB);
+      persistPreferences();
+    });
     byId("settings-auto-updates").addEventListener("change", (event) => {
       shell.preferences.updates.checkAutomatically = event.target.checked;
       persistPreferences();
@@ -916,6 +959,14 @@
     if (byId("settings-rendering-mode")) byId("settings-rendering-mode").value = mode;
   }
 
+  function setPreviewResolutionPreference(value) {
+    const normalized = String(value);
+    if (!PREVIEW_RESOLUTIONS.has(normalized) || !shell.preferences) return;
+    shell.preferences.previewResolution = normalized;
+    persistPreferences();
+    if (byId("settings-preview-resolution")) byId("settings-preview-resolution").value = normalized;
+  }
+
   async function listGradingPresets(groupId) {
     if (shell.desktop?.listGradingPresets) return shell.desktop.listGradingPresets(groupId);
     const presets = shell.preferences.gradingPresets[groupId];
@@ -950,6 +1001,7 @@
     openHelp,
     checkForUpdates,
     setRenderingModePreference,
+    setPreviewResolutionPreference,
     listGradingPresets,
     saveGradingPreset,
     deleteGradingPreset,

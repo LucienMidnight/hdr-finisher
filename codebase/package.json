@@ -39,7 +39,9 @@
     "test:gpu-highlights": "node tests/gpu-highlight-compression-parity.js",
     "test:sdr-match-gpu": "node tests/sdr-match-gpu-interaction.js",
     "test:sdr-gamut-gpu": "node tests/sdr-gamut-gpu-parity.js",
-    "test:webgpu-shader": "node tests/webgpu-shader-compilation.js"
+    "test:webgpu-shader": "node tests/webgpu-shader-compilation.js",
+    "test:webgpu-memory": "node --test tests/webgpu-memory-diagnostics.test.js",
+    "test:webgpu-allocation-agreement": "node --test tests/webgpu-allocation-agreement.test.js"
   },
   "devDependencies": {
     "playwright": "^1.50.0"

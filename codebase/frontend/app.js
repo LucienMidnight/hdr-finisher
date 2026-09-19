@@ -202,7 +202,8 @@ const LAYOUT_LIMITS = {
 };
 const LAYOUT_SETTLE_DELAY = 120;
 const COMPACT_WORKSPACE_QUERY = "(max-width: 1499px)";
-const PREVIEW_RESOLUTION_OPTIONS = new Set(["1024", "2048", "4096"]);
+/** @typedef {"1024"|"2048"|"4096"|"full"} PreviewResolution */
+const PREVIEW_RESOLUTION_OPTIONS = new Set(["1024", "2048", "4096", "full"]);
 const DEFAULT_PREVIEW_RESOLUTION = "1024";
 const DEFAULT_SCOPE_QUALITY = "detailed";
 const SCOPE_QUALITY_PROFILES = {
@@ -831,6 +832,7 @@ function gpuPreviewSourceOptions(lane = state.currentView) {
   };
 }
 
+/** @returns {PreviewResolution} */
 function normalizedPreviewResolution(value = state.previewResolution) {
   const normalized = String(value || "");
   return PREVIEW_RESOLUTION_OPTIONS.has(normalized) ? normalized : DEFAULT_PREVIEW_RESOLUTION;
@@ -838,14 +840,37 @@ function normalizedPreviewResolution(value = state.previewResolution) {
 
 function previewResolutionLabel(value = state.previewResolution) {
   const normalized = normalizedPreviewResolution(value);
+  if (normalized === "full") return "Full";
   return `${Math.round(Number(normalized) / 1024)}K`;
 }
 
 function previewTargetLongEdge(value = state.previewResolution) {
   const normalized = normalizedPreviewResolution(value);
   const sourceEdge = Math.max(Number(state.session?.source?.width) || 0, Number(state.session?.source?.height) || 0);
+  if (normalized === "full") return Math.max(256, sourceEdge || 256);
   const requested = Number(normalized);
   return Math.max(256, Math.min(sourceEdge || requested, requested));
+}
+
+function previewResolutionDimensions(value = state.previewResolution) {
+  const normalized = normalizedPreviewResolution(value);
+  const sourceWidth = Math.max(0, Number(state.session?.source?.width) || 0);
+  const sourceHeight = Math.max(0, Number(state.session?.source?.height) || 0);
+  if (!(sourceWidth > 0 && sourceHeight > 0)) {
+    const edge = previewTargetLongEdge(normalized);
+    return { width: edge, height: edge, longEdge: edge, tier: normalized };
+  }
+  if (normalized === "full") {
+    return { width: sourceWidth, height: sourceHeight, longEdge: Math.max(sourceWidth, sourceHeight), tier: normalized };
+  }
+  const longEdge = previewTargetLongEdge(normalized);
+  const scale = Math.min(1, longEdge / Math.max(sourceWidth, sourceHeight));
+  return {
+    width: Math.max(1, Math.round(sourceWidth * scale)),
+    height: Math.max(1, Math.round(sourceHeight * scale)),
+    longEdge,
+    tier: normalized,
+  };
 }
 
 function previewNeedsRefinement() {
@@ -880,7 +905,8 @@ function acceptPresentation(lane, tier, width, height, transport, fallbackReason
     lane,
     generation,
     geometrySignature: geometrySignature(),
-    tier,
+    tier: normalizedPreviewResolution(),
+    renderTier: tier,
     width: Number(width) || null,
     height: Number(height) || null,
     longEdge,
@@ -1848,8 +1874,14 @@ function initializePreviewScheduler() {
       sessionId: state.session?.session_id || null,
       lane: state.currentView,
       adjustments: JSON.parse(JSON.stringify(state.adjustments)),
+      requestedTier: normalizedPreviewResolution(),
+      presentedTier: state.acceptedPresentation?.tier || null,
+      presentedGeneration: state.acceptedPresentation?.generation ?? null,
+      currentGeneration: state.previewGeneration[state.currentView],
+      executionMode: state.acceptedPresentation?.transport === "WebGPU" ? "direct-gpu" : "direct-cpu",
       previewResolution: normalizedPreviewResolution(),
       previewMaxDimension: previewTargetLongEdge(),
+      previewDimensions: previewResolutionDimensions(),
       longEdge: settledProxyLongEdge(),
     }),
   };
@@ -2580,6 +2612,7 @@ function bindEvents() {
   });
   els.previewResolution?.addEventListener("change", () => {
     const requested = normalizedPreviewResolution(els.previewResolution.value);
+    window.HDRApplicationShell?.setPreviewResolutionPreference?.(requested);
     applyPreviewResolution(requested);
   });
   els.scopeDetail?.addEventListener("change", async () => {
@@ -3553,6 +3586,16 @@ async function initializeApplicationShell() {
         void loadDefaultExportDirectory();
       }
       if (!state.session) els.hdrReferenceWhite.value = String(preferences.defaultReferenceWhiteNits);
+      const preferredPreviewResolution = normalizedPreviewResolution(preferences.previewResolution);
+      const selectablePreviewResolution = els.previewResolution?.querySelector(`option[value="${preferredPreviewResolution}"]`)
+        ? preferredPreviewResolution
+        : DEFAULT_PREVIEW_RESOLUTION;
+      if (options.initial) {
+        state.previewResolution = selectablePreviewResolution;
+        if (els.previewResolution) els.previewResolution.value = selectablePreviewResolution;
+      } else if (selectablePreviewResolution !== state.previewResolution) {
+        applyPreviewResolution(selectablePreviewResolution);
+      }
       if (options.initial) state.renderingMode = preferences.renderingMode;
       else if (preferences.renderingMode !== state.renderingMode) void applyRenderingMode(preferences.renderingMode);
     },
@@ -3607,11 +3650,14 @@ function lumaBandLabel(lower, upper) {
 }
 
 function previewOutputEntries() {
+  const target = previewResolutionDimensions();
   return [
     ["View", state.currentView.toUpperCase()],
     ["Rendering", state.renderingMode === "cpu" ? "CPU Compatibility" : state.renderingMode === "gpu" ? "GPU Preferred" : "Auto"],
-    ["Preview Target", `${previewResolutionLabel()} · max ${previewTargetLongEdge()} × ${previewTargetLongEdge()}`],
-    ["Presented", state.acceptedPresentation?.longEdge ? `${state.acceptedPresentation.longEdge}px · ${state.acceptedPresentation.transport}` : "Waiting"],
+    ["Preview Target", `${previewResolutionLabel()} · ${target.width} × ${target.height}`],
+    ["Presented", state.acceptedPresentation?.longEdge
+      ? `${previewResolutionLabel(state.acceptedPresentation.tier)} · ${state.acceptedPresentation.longEdge}px · ${state.acceptedPresentation.transport}`
+      : "Waiting"],
     ["Scope", els.scopeFreshness?.textContent || "Waiting"],
     ["Transport", state.previewInfo.transport],
     ["Media", state.previewInfo.mediaType],

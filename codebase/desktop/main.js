@@ -64,9 +64,11 @@ const knownProjectPaths = new Set();
 const grantedExportPaths = new Set();
 
 const DEFAULT_APPLICATION_PREFERENCES = Object.freeze({
-  schemaVersion: 1,
+  schemaVersion: 2,
   defaultReferenceWhiteNits: 203,
   renderingMode: "auto",
+  previewResolution: "1024",
+  maximumGpuMemoryGiB: "auto",
   folders: { projectSave: "", projectImport: "", fileSave: "", fileImport: "", presetSave: "" },
   shortcuts: {},
   shortcutPresets: {},
@@ -102,9 +104,19 @@ function sanitizeApplicationPreferences(value = {}) {
     )).slice(0, 50).map(([name, shortcuts]) => [name, cleanShortcutMap(shortcuts)]))
     : {};
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     defaultReferenceWhiteNits: Number(value.defaultReferenceWhiteNits) === 100 ? 100 : 203,
     renderingMode: ["auto", "gpu", "cpu"].includes(value.renderingMode) ? value.renderingMode : "auto",
+    previewResolution: ["1024", "2048", "4096", "full"].includes(String(value.previewResolution))
+      ? String(value.previewResolution)
+      : "1024",
+    maximumGpuMemoryGiB: (() => {
+      if (value.maximumGpuMemoryGiB === "auto") return "auto";
+      const numeric = Number(value.maximumGpuMemoryGiB);
+      return Number.isFinite(numeric) && numeric >= 0.25 && numeric <= 64
+        ? Math.round(numeric * 100) / 100
+        : "auto";
+    })(),
     folders: cleanFolderPreferences(value.folders),
     shortcuts: cleanShortcutMap(value.shortcuts),
     shortcutPresets: presets,

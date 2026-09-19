@@ -254,7 +254,112 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
   textureStore(directOutput, p, vec4f(rgb, 1.0));
 }`;
 
+  const DEVICE_LIMIT_NAMES = [
+    "maxTextureDimension1D", "maxTextureDimension2D", "maxTextureDimension3D",
+    "maxTextureArrayLayers", "maxBindGroups", "maxBindingsPerBindGroup",
+    "maxDynamicUniformBuffersPerPipelineLayout", "maxDynamicStorageBuffersPerPipelineLayout",
+    "maxSampledTexturesPerShaderStage", "maxSamplersPerShaderStage",
+    "maxStorageBuffersPerShaderStage", "maxStorageTexturesPerShaderStage",
+    "maxUniformBuffersPerShaderStage", "maxUniformBufferBindingSize",
+    "maxStorageBufferBindingSize", "minUniformBufferOffsetAlignment",
+    "minStorageBufferOffsetAlignment", "maxBufferSize", "maxColorAttachments",
+    "maxColorAttachmentBytesPerSample", "maxComputeWorkgroupStorageSize",
+    "maxComputeInvocationsPerWorkgroup", "maxComputeWorkgroupSizeX",
+    "maxComputeWorkgroupSizeY", "maxComputeWorkgroupSizeZ",
+    "maxComputeWorkgroupsPerDimension",
+  ];
+
+  const STATIC_PREVIEW_MEMORY_CASES = Object.freeze([
+    Object.freeze({ id: "24MP", width: 6000, height: 4000 }),
+    Object.freeze({ id: "42MP", width: 7000, height: 6000 }),
+    Object.freeze({ id: "8K UHD", width: 7680, height: 4320 }),
+  ]);
+
+  function denoiseLogicalBytes(width, height, levels = 2) {
+    let inputWidth = width;
+    let inputHeight = height;
+    let evidenceBytes = 0;
+    let reconstructionScratchBytes = 0;
+    for (let level = 0; level < levels; level += 1) {
+      const levelWidth = Math.ceil(inputWidth / 2);
+      const levelHeight = Math.ceil(inputHeight / 2);
+      evidenceBytes += levelWidth * levelHeight * 8 * 3;
+      if (level > 0) reconstructionScratchBytes += inputWidth * inputHeight * 8;
+      inputWidth = levelWidth;
+      inputHeight = levelHeight;
+    }
+    return {
+      evidenceBytes,
+      reconstructionScratchBytes,
+      resolvedBytes: width * height * 8,
+      totalBytes: evidenceBytes + reconstructionScratchBytes + width * height * 8,
+    };
+  }
+
+  function directPreviewMemoryModel(width, height, options = {}) {
+    const normalizedWidth = Math.max(1, Math.floor(Number(width) || 1));
+    const normalizedHeight = Math.max(1, Math.floor(Number(height) || 1));
+    const pixels = normalizedWidth * normalizedHeight;
+    const detailActive = options.detailActive !== false;
+    const spatialActive = options.spatialActive !== false;
+    const denoiseLevels = Math.max(0, Math.min(4, Math.floor(Number(options.denoiseLevels ?? 2) || 0)));
+    const sourceBytesPerPixel = options.sourceBytesPerPixel === 16 ? 16 : 8;
+    const sourceBytes = pixels * sourceBytesPerPixel;
+    const gradingBytes = pixels * 8 * 4;
+    const detailBytes = detailActive ? pixels * 8 * 2 : 0;
+    const spatialWidth = Math.ceil(normalizedWidth / 4);
+    const spatialHeight = Math.ceil(normalizedHeight / 4);
+    const spatialBytes = spatialActive ? spatialWidth * spatialHeight * 8 * 2 : 0;
+    const denoise = denoiseLevels > 0
+      ? denoiseLogicalBytes(normalizedWidth, normalizedHeight, denoiseLevels)
+      : { evidenceBytes: 0, reconstructionScratchBytes: 0, resolvedBytes: 0, totalBytes: 0 };
+    const residentBytes = sourceBytes + gradingBytes + detailBytes + spatialBytes
+      + denoise.evidenceBytes + denoise.resolvedBytes;
+    const transientBytes = denoise.reconstructionScratchBytes;
+    const retainedPresentationOverlapBytes = Math.max(0, Math.floor(Number(options.retainedPresentationOverlapBytes) || 0));
+    return {
+      width: normalizedWidth,
+      height: normalizedHeight,
+      pixelCount: pixels,
+      sourceBytesPerPixel,
+      categories: {
+        sourceBytes,
+        gradingBytes,
+        detailBytes,
+        spatialBytes,
+        denoiseEvidenceBytes: denoise.evidenceBytes,
+        denoiseResolvedBytes: denoise.resolvedBytes,
+        denoiseReconstructionScratchBytes: denoise.reconstructionScratchBytes,
+      },
+      plannedBytes: residentBytes + transientBytes,
+      residentBytes,
+      transientBytes,
+      cachedBytes: sourceBytes + denoise.evidenceBytes,
+      retainedPresentationOverlapBytes,
+      peakLogicalBytes: residentBytes + transientBytes + retainedPresentationOverlapBytes,
+      totalBytes: residentBytes + transientBytes + retainedPresentationOverlapBytes,
+    };
+  }
+
+  function snapshotDeviceLimits(limits) {
+    if (!limits) return null;
+    return Object.fromEntries(DEVICE_LIMIT_NAMES
+      .filter((name) => Number.isFinite(Number(limits[name])))
+      .map((name) => [name, Number(limits[name])]));
+  }
+
   class HDRWebGPUPreview {
+    static directPreviewMemoryModel(width, height, options = {}) {
+      return directPreviewMemoryModel(width, height, options);
+    }
+
+    static staticPreviewMemoryModels(options = {}) {
+      return STATIC_PREVIEW_MEMORY_CASES.map((entry) => ({
+        id: entry.id,
+        ...directPreviewMemoryModel(entry.width, entry.height, options),
+      }));
+    }
+
     constructor(canvas) {
       this.canvas = canvas;
       this.context = null;
@@ -329,6 +434,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           fallback: Boolean(this.adapter.isFallbackAdapter)
             || /swiftshader|llvmpipe|lavapipe|software rasterizer/i.test(adapterDescription),
           timestampQueries,
+          limits: snapshotDeviceLimits(this.device.limits),
         };
         this.context = this.canvas.getContext("webgpu");
         if (!this.context) throw new Error("The WebGPU canvas context is unavailable");
@@ -529,7 +635,117 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.recordStage("presentation", detail);
     }
 
+    resourceMemorySnapshot() {
+      const proxyBytes = [...this.proxies.values()].reduce((sum, entry) => sum + (entry.byteSize || 0), 0);
+      const sceneLuminanceBytes = [...this.sceneLuminance.values()]
+        .reduce((sum, entry) => sum + (entry.byteSize || 0), 0);
+      const localMaskBytes = [...this.localMasks.values()].reduce((sum, entry) => sum + (entry.byteSize || 0), 0);
+      const scopeBytes = [...this.scopeResources.values()].reduce(
+        (sum, pool) => sum + pool.reduce((poolSum, resource) => poolSum + (resource.byteSize || 0), 0),
+        0,
+      );
+      const intermediateEntries = [...this.intermediates.values()];
+      const gradingCoreBytes = intermediateEntries.reduce(
+        (sum, entry) => sum + entry.width * entry.height * 8 * 4,
+        0,
+      );
+      const gradingSpatialBytes = intermediateEntries.reduce((sum, entry) => {
+        if (!entry.spatialATexture || !entry.spatialBTexture) return sum;
+        return sum + Math.ceil(entry.width / 4) * Math.ceil(entry.height / 4) * 8 * 2;
+      }, 0);
+      const gradingDetailBytes = intermediateEntries.reduce((sum, entry) => (
+        sum + (entry.detailATexture && entry.detailBTexture ? entry.width * entry.height * 8 * 2 : 0)
+      ), 0);
+      const gradingIntermediateBytes = gradingCoreBytes + gradingSpatialBytes + gradingDetailBytes;
+      const denoiseCache = this.denoiseSourceSelector?.cache;
+      const hasMeasuredDenoiseEvidence = denoiseCache?.levels?.some((level) => Array.isArray(level.evidence));
+      const measuredDenoiseEvidenceBytes = hasMeasuredDenoiseEvidence
+        ? denoiseCache.levels.reduce((sum, level) => (
+          sum + (level.evidence || []).reduce((levelSum, entry) => levelSum + (entry.byteSize || 0), 0)
+        ), 0)
+        : undefined;
+      const denoiseReconstructionScratchBytes = (denoiseCache?.resolveScratch || [])
+        .reduce((sum, entry) => sum + (entry.byteSize || 0), 0);
+      const denoiseParameterBufferBytes = (denoiseCache?.resolveParamBuffers || [])
+        .reduce((sum, buffer) => sum + (buffer.size || 0), 0);
+      const denoiseEvidenceBytes = measuredDenoiseEvidenceBytes === undefined
+        ? (denoiseCache?.byteSize || 0)
+        : measuredDenoiseEvidenceBytes;
+      const denoiseResolvedBytes = this.denoiseSourceSelector?.resolved?.byteSize || 0;
+      const parameterBufferBytes = (this.paramBuffer?.size || 0) + (this.curveBuffer?.size || 0)
+        + [...this.localParamBuffers.values()].reduce((sum, buffer) => sum + (buffer.size || 0), 0)
+        + intermediateEntries.reduce((sum, entry) => sum + (entry.compositeParamBuffer?.size || 0), 0)
+        + denoiseParameterBufferBytes;
+      const residentCategories = {
+        sourceProxyBytes: proxyBytes,
+        gradingCoreBytes,
+        gradingSpatialBytes,
+        gradingDetailBytes,
+        sceneLuminanceBytes,
+        localMaskBytes,
+        scopeBytes,
+        denoiseEvidenceBytes,
+        denoiseReconstructionScratchBytes,
+        denoiseResolvedBytes,
+        parameterBufferBytes,
+      };
+      const residentBytes = Object.values(residentCategories).reduce((sum, value) => sum + value, 0);
+      const cachedCategories = {
+        sourceProxyBytes: proxyBytes,
+        sceneLuminanceBytes,
+        localMaskBytes,
+        denoiseEvidenceBytes,
+        denoiseReconstructionScratchBytes,
+      };
+      const cachedBytes = Object.values(cachedCategories).reduce((sum, value) => sum + value, 0);
+      // Submitted GPU work may still reference resources queued for destruction.
+      // These bytes are not part of the current cache, but remain logically live
+      // until queue completion. Destruction callbacks do not expose resource size,
+      // so this starts at zero and is explicitly marked as untracked below.
+      const transientBytes = 0;
+      const largestPresentationBytes = intermediateEntries.reduce(
+        (largest, entry) => Math.max(largest, entry.width * entry.height * 8),
+        0,
+      );
+      const retainedPresentationOverlapBytes = this.performanceMetrics.presentations?.length
+        ? largestPresentationBytes
+        : 0;
+      const planningEntry = intermediateEntries.reduce((largest, entry) => (
+        !largest || entry.width * entry.height > largest.width * largest.height ? entry : largest
+      ), null);
+      const planned = planningEntry
+        ? directPreviewMemoryModel(planningEntry.width, planningEntry.height, {
+          detailActive: Boolean(planningEntry.detailATexture && planningEntry.detailBTexture),
+          spatialActive: Boolean(planningEntry.spatialATexture && planningEntry.spatialBTexture),
+          denoiseLevels: this.denoiseSourceSelector?.cache?.levels?.length || 0,
+          retainedPresentationOverlapBytes,
+        })
+        : null;
+      return {
+        planned,
+        resident: { totalBytes: residentBytes, categories: residentCategories },
+        transient: {
+          totalBytes: transientBytes,
+          categories: { submittedWorkPendingDestructionBytes: 0 },
+          complete: this.deferredDestroy.length === 0,
+        },
+        cached: { totalBytes: cachedBytes, categories: cachedCategories },
+        retainedPresentationOverlapBytes,
+        peakLogicalBytes: residentBytes + transientBytes + retainedPresentationOverlapBytes,
+        totals: {
+          plannedBytes: planned?.plannedBytes || 0,
+          residentBytes,
+          transientBytes,
+          cachedBytes,
+          retainedPresentationOverlapBytes,
+          peakLogicalBytes: residentBytes + transientBytes + retainedPresentationOverlapBytes,
+        },
+        staticModels: HDRWebGPUPreview.staticPreviewMemoryModels(),
+      };
+    }
+
     diagnosticsSnapshot() {
+      const memory = this.resourceMemorySnapshot();
       return {
         adapter: this.adapterInfo,
         available: this.available,
@@ -574,12 +790,13 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
             const detailBytes = entry.detailATexture && entry.detailBTexture
               ? entry.width * entry.height * 8 * 2
               : 0;
-            return sum + entry.width * entry.height * 8 * 3 + spatialBytes + detailBytes;
+            return sum + entry.width * entry.height * 8 * 4 + spatialBytes + detailBytes;
           }, 0),
           denoiseTextures: (this.denoiseSourceSelector?.resolved ? 1 : 0)
             + (this.denoiseSourceSelector?.cache?.textureCount || 0),
           denoiseBytes: (this.denoiseSourceSelector?.resolved?.byteSize || 0)
             + (this.denoiseSourceSelector?.cache?.byteSize || 0),
+          memory,
         },
       };
     }

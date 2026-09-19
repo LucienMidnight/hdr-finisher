@@ -277,6 +277,33 @@ def test_default_shortcuts_are_conservative_and_warn_about_macos_system_bindings
     assert "Only standard application commands are assigned by default." in html
 
 
+def test_preview_resolution_and_gpu_memory_are_persisted_application_preferences() -> None:
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    shell = (FRONTEND / "application-shell.js").read_text(encoding="utf-8")
+    desktop = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
+
+    assert 'previewResolution: "1024"' in shell
+    assert 'maximumGpuMemoryGiB: "auto"' in shell
+    assert 'new Set(["1024", "2048", "4096", "full"])' in shell
+    assert "GPU_MEMORY_PRESETS_GIB = [1, 2, 3, 4, 6, 8, 12]" in shell
+    assert 'id="settings-preview-resolution"' in html
+    for value, label in [("1024", "1K"), ("2048", "2K"), ("4096", "4K")]:
+        assert f'<option value="{value}">{label}</option>' in html
+    assert 'id="settings-gpu-memory-limit"' in html
+    for value in ["1", "2", "3", "4", "6", "8", "12"]:
+        assert f'<option value="{value}">{value} GiB</option>' in html
+    assert '<option value="custom">Custom…</option>' in html
+    assert 'id="settings-gpu-memory-custom" type="number" min="0.25" max="64" step="0.25"' in html
+    assert 'byId("settings-preview-resolution").addEventListener("change"' in shell
+    assert 'byId("settings-gpu-memory-limit").addEventListener("change"' in shell
+    assert 'byId("settings-gpu-memory-custom").addEventListener("change"' in shell
+    assert "persistPreferences();" in shell
+    assert 'previewResolution: "1024"' in desktop
+    assert 'maximumGpuMemoryGiB: "auto"' in desktop
+    assert 'schemaVersion: 2' in shell
+    assert 'schemaVersion: 2' in desktop
+
+
 def test_undo_redo_repaint_controls_from_the_restored_document() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     queue = javascript[
@@ -1239,7 +1266,7 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     assert '/static/preview-scheduler.js' in html
     assert 'const DEFAULT_PREVIEW_RESOLUTION = "1024"' in javascript
     assert "function previewTargetLongEdge" in javascript
-    assert 'new Set(["1024", "2048", "4096"])' in javascript
+    assert 'new Set(["1024", "2048", "4096", "full"])' in javascript
     assert "function fullPreviewSafety" not in javascript
     assert "preview-raw" in javascript
     assert 'tier: "interactive"' in scheduler
