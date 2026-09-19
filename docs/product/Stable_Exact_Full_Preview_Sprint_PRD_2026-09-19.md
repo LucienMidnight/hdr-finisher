@@ -715,7 +715,7 @@ Update this table at every phase boundary or whenever work stops unexpectedly. L
 | 1 — Stable existing tiers | Complete | `903bdef` on `main` | Closed | All five gate conditions met on the CPU route. Evidence: [`phase-1-stable-tier-lifecycle-evidence-2026-09-19.md`](../technical/phase-1-stable-tier-lifecycle-evidence-2026-09-19.md). GPU timing measurement and Phase 7 scope/comparison tightening carried forward. |
 | 2 — GPU planner and budget | Complete | `69ca21e` on `main` | Closed | All four gate conditions met. Evidence: [`phase-2-gpu-planner-evidence-2026-09-19.md`](../technical/phase-2-gpu-planner-evidence-2026-09-19.md). A `tiled` decision currently means "Direct was not admitted"; Phase 4 builds the scheduler that acts on it. |
 | 3 — Bounded transport | Complete | `4ac3aba` on `main` | Closed | All four gate conditions met. Evidence: [`phase-3-bounded-transport-evidence-2026-09-19.md`](../technical/phase-3-bounded-transport-evidence-2026-09-19.md). Source transport is bounded; mask transport is Phase 5. The Phases 0-2 "environment defect" is retracted there. |
-| 4 — Tile scheduler and pointwise graph | Complete | `55bb3e6` on `main` (earlier checkpoints `ce67149`, `e0ae5cc`, `ace4f43`) | Closed | **All four gate conditions met.** Gates 1-3 (Direct/Tiled parity byte-exact, one submission per generation, measured constant 8.4 MB tiled working set): [`phase-4-tiled-execution-evidence-2026-09-19.md`](../technical/phase-4-tiled-execution-evidence-2026-09-19.md). Gate 4 (CPU Full through a bounded path): [`phase-4-cpu-bounded-full-evidence-2026-09-19.md`](../technical/phase-4-cpu-bounded-full-evidence-2026-09-19.md) — 42.4 MP at Full, byte-exact, peak host RAM 4,083 MB to 496 MB, cancellation in 0.19 s of a 14.4 s job. Scheduler detail: [`phase-4-tile-scheduler-checkpoint-2026-09-19.md`](../technical/phase-4-tile-scheduler-checkpoint-2026-09-19.md). Four follow-ups carried into Phase 5, listed below. |
+| 4 — Tile scheduler and pointwise graph | Complete | `55bb3e6` on `main` (follow-ups `8081d42`, `a552aed`; earlier checkpoints `ce67149`, `e0ae5cc`, `ace4f43`) | Closed | **All four gate conditions met.** Gates 1-3 (Direct/Tiled parity byte-exact, one submission per generation, measured constant 8.4 MB tiled working set): [`phase-4-tiled-execution-evidence-2026-09-19.md`](../technical/phase-4-tiled-execution-evidence-2026-09-19.md). Gate 4 (CPU Full through a bounded path): [`phase-4-cpu-bounded-full-evidence-2026-09-19.md`](../technical/phase-4-cpu-bounded-full-evidence-2026-09-19.md) — 42.4 MP at Full, byte-exact, peak host RAM 4,083 MB to 496 MB, cancellation in 0.19 s of a 14.4 s job. Tiled admission and truthful CPU scope fallback: [`phase-4-tiled-admission-scope-evidence-2026-09-19.md`](../technical/phase-4-tiled-admission-scope-evidence-2026-09-19.md). Two follow-ups remain, listed below. |
 | 5 — Masks, locals, Detail | Not started | — | Open | Depends on tile scheduler. |
 | 6 — Denoise | Not started | — | Open | Depends on tile scheduler and budget. |
 | 7 — Spatial film, scopes, comparison | Not started | — | Open | Depends on tile scheduler. |
@@ -726,8 +726,8 @@ Update this table at every phase boundary or whenever work stops unexpectedly. L
 
 **Last updated:** September 19, 2026
 **Last completed phase:** Phase 4 — Tile scheduler and pointwise render graph (all four exit gates closed)
-**Active phase:** none. Phase 5 (masks, locals, Detail) is unblocked; the four Phase 4 follow-ups below should land first.
-**Branch and base:** `main`. Phase 0 is `ba58d6d`, Phase 1 is `903bdef`, Phase 2 is `69ca21e`, Phase 3 is `4ac3aba`, Phase 4 is `55bb3e6`, and the worktree is clean. A `.claude/launch.json` was added for local dev-server launching; it is covered by a global gitignore rule and is intentionally not committed. No app or server process is left running.
+**Active phase:** none. Phase 5 (masks, locals, Detail) is unblocked; engineering-only Full selection and native-resolution 42 MP parity are the two remaining Phase 4 follow-ups.
+**Branch and base:** `main`. Phase 0 is `ba58d6d`, Phase 1 is `903bdef`, Phase 2 is `69ca21e`, Phase 3 is `4ac3aba`, Phase 4 is `55bb3e6`; shared-preamble follow-up 1 is `8081d42`, and tiled-admission follow-up 2 is `a552aed`. The worktree is clean after the ledger commit. A `.claude/launch.json` was added for local dev-server launching; it is covered by a global gitignore rule and is intentionally not committed. No app or server process is left running.
 
 ## Environment: use the project venv
 
@@ -784,10 +784,10 @@ Phases 0-2 recorded an "environment defect" claiming a missing Python 3.12 envir
 2. **The `roll` region route still materializes** the rotated frame and slices it. Parity is exact and the browser response is still bounded; only the backend allocation is not.
 3. **Mask transport is still whole-frame.** `GET /local-mask/{id}` returns a full-frame byte payload. The bounded-mask model is Phase 5.
 4. **The 16,384-pixel bound remains on the older endpoints** (`PreviewRequest`, `GeometryMapRequest`, `LocalMaskPreviewRequest`, `LocalLuminanceSampleRequest`, `/proxy`, `/local-mask`). They retire as their consumers move to tiles.
-5. **Tiled execution does not exist yet.** A `tiled` admission decision still means "Direct was not admitted"; Phase 4 builds the scheduler that acts on it.
+5. ~~**Tiled execution does not exist yet.**~~ **Closed 2026-09-19.** Phase 4 built the scheduler, and follow-up 2 (`a552aed`) wires the planner's `tiled` decision into the normal render path. Evidence: [`phase-4-tiled-admission-scope-evidence-2026-09-19.md`](../technical/phase-4-tiled-admission-scope-evidence-2026-09-19.md).
 6. Scopes still derive from any accepted generation rather than an exact selected-tier generation, and comparison lanes do not yet state tier and generation explicitly — both Phase 7.
 7. `window.HDRFinisherPerformance` render/denoise hooks still call `Number(longEdge)` with no numeric-contract validation.
-8. Full remains absent from the preview selector and the Settings menu; the sentinel is implemented and tested but not user-selectable. Phase 4 deliberately did not expose it: the four follow-ups below come first.
+8. Full remains absent from the preview selector and the Settings menu; the sentinel is implemented and tested but not user-selectable. The two prerequisite follow-ups are now closed, so engineering-only Full selection is the next safe edit.
 
 9. **`path-mask-interaction` fails, and it predates this sprint.** Line 460's `waitForResponse` for the `/edit-commands` commit of an out-of-image Path handle drag times out. Reproduced at the pre-sprint release commit `83bca70`, on its own suite, server and port: 1 pass / 2 fail. At head it is 0 pass / 4 fail. A separate local-adjustments defect, not a preview-execution one; it is not fixed by Phase 4 and should not be attributed to it. Detail in [`phase-4-cpu-bounded-full-evidence-2026-09-19.md`](../technical/phase-4-cpu-bounded-full-evidence-2026-09-19.md).
 
@@ -795,27 +795,27 @@ Phases 0-2 recorded an "environment defect" claiming a missing Python 3.12 envir
 
 1. ~~Converge `renderTiledTo` and `renderTo` onto one pass-chain encoder.~~ **Done, `8081d42`.** `sourcePixelScaleFor`, `graphActivity`, `highlightAnchorRequest`, `uploadParamsAndCurves` and `bindGraphResources` are now single definitions both routes call. The highlight-peak cache key was the drift risk that mattered: it is a list of parameter indices that must mean the same thing on both routes, or a Direct and a Tiled render of the same grade stop sharing a cache entry and the shoulder moves when execution changes. What genuinely differs stays separate with the reason recorded: only Direct declines to await the anchor on an interactive frame, because Tiled is never the interactive route.
 
-2. **Wire tiled execution into admission**, so a graph Direct cannot fit renders tiled instead of relying on the allocation backoff. Designed and prototyped, then **reverted unverified** rather than shipped — see the note below.
+2. ~~**Wire tiled execution into admission**, so a graph Direct cannot fit renders tiled instead of relying on the allocation backoff.~~ **Done, `a552aed`.** The normal render path acts on the planner before Direct allocation, accepted presentations identify their execution, tiled acceptance drops the stale whole-frame scope source, and scopes deliberately use CPU until Phase 7 supplies a tiled GPU source. The forced low-budget browser branch is recorded in [`phase-4-tiled-admission-scope-evidence-2026-09-19.md`](../technical/phase-4-tiled-admission-scope-evidence-2026-09-19.md).
 
 3. **Engineering-only Full selection**, once 2 holds.
 
 4. A native-resolution Direct/Tiled parity comparison at 42 MP.
 
-### Follow-up 2 has a Phase 7 dependency that has to be settled first
+### Follow-up 2's Phase 7 dependency — resolved for admission
 
-The wiring itself is small: split the encoding half of `renderTiledTo` into an `encodeTiledGeneration(canvas, context, proxy, surface, pipelines, params, options)` that both the engineering entry and `renderTo` call, then in `renderTo` act on `plan.decision.mode === "tiled"` before `ensureIntermediate` rather than after the allocation fails.
+The landed wiring splits the encoding half of `renderTiledTo` into an `encodeTiledGeneration(canvas, context, proxy, surface, pipelines, params, options)` that both the engineering entry and `renderTo` call. `renderTo` acts on `plan.decision.mode === "tiled"` before `ensureIntermediate`, rather than after a Direct allocation fails.
 
-**What blocks it is scopes.** `analyzeScope` samples `scopeSources[canvas].filmTexture`, a whole-frame finish texture that tiled execution deliberately does not produce — that absence is the point of the design. Today a missing or unusable GPU scope source makes `runGpuScopeRequest` return false, and `runQueuedGpuScopeRequest` then relabels the freshness readout with the *previous* scope's tier. So routing real renders through Tiled would silently present a stale scope as a settled one, which section 11 forbids and which carried-forward item 6 already describes as a Phase 7 gap.
+**The blocker was scopes.** `analyzeScope` samples `scopeSources[canvas].filmTexture`, a whole-frame finish texture that tiled execution deliberately does not produce — that absence is the point of the design. A missing or unusable GPU scope source previously made `runGpuScopeRequest` return false, after which `runQueuedGpuScopeRequest` could relabel the freshness readout with the *previous* scope's tier. Routing real renders through Tiled without addressing that would have silently presented a stale scope as settled, which section 11 forbids.
 
-The intended resolution, prototyped and reverted: carry an `execution` field on the accepted presentation (`"direct"` or `"tiled"`), have the tiled path drop the stale `scopeSources` entry, and exclude `execution === "tiled"` from `gpuScopeEligible()` so the existing CPU scope route takes over rather than a GPU scope going quietly stale. That is correct but slower, and it is a user-visible behaviour change that needs its own evidence — including a browser test that forces a tiled decision by lowering the GPU budget, since every existing suite renders inside the Auto budget and would leave the new branch unexercised.
+The landed resolution carries an `execution` field on the accepted presentation (`"direct"` or `"tiled"`), has the tiled path drop the stale `scopeSources` entry, and excludes `execution === "tiled"` from both `gpuScopeEligible()` and the GPU-wait guard so the existing CPU scope route takes over. It is correct but slower. `tiled-admission-scope-fallback.js` forces a tiled decision with the low-budget planner branch and proves a new CPU scope becomes Settled with zero GPU-scope calls.
 
-**Do not land follow-up 2 without that test.** A passing suite run proves nothing here.
+The required discriminating test passes; follow-up 2 is closed. A generic suite run alone would not have exercised this branch.
 
 **Reference hardware note:** the director's RTX 4070 Ti reports `maxTextureDimension2D` of **8192**, not 16384. A source whose Full long edge exceeds 8192 cannot be Direct-admitted on this machine at all, which is precisely the case Phase 4's tiled execution exists for. The 42.4 MP test source has a 7968 long edge and still fits.
 
 **Resolved blocker:** `gpu-highlight-compression-parity` regressed during this sprint and is now fixed; it passes 6/6, matching pre-sprint. The cause was the scheduler's interactive frame taking the bootstrap path (`longEdge: 889`) and superseding a settled render 1 ms into its highlight-peak measurement, because the suite renders below the tier so `selectedTierReady()` is never true. Outside a gesture both `onFrame` and `refinePreview` now stand down while a render is in flight; during a gesture latest-wins still applies. The fix also cut input-handling p95 from 3.1-3.4 ms to 1.9-2.3 ms. Detail in [`phase-4-tiled-execution-evidence-2026-09-19.md`](../technical/phase-4-tiled-execution-evidence-2026-09-19.md).
 
-**Phase 4 is closed.** The four follow-ups listed above carry into Phase 5.
+**Phase 4 is closed.** Follow-ups 1 and 2 are complete. Engineering-only Full selection and native-resolution 42 MP parity remain before Phase 5 work starts.
 
 The work that closed it, in the order it landed (historical; each item is now done):
 
