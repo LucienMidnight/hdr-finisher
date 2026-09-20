@@ -322,16 +322,22 @@ const MAX_DIFFERING_FRACTION = 0.0005;
     });
 
     // A refusal must be explicit rather than a silent fallback to Direct.
+    // Phase 7 moved vignette onto the tiled path, so the refusal this asserts
+    // is a module that phase has not reached yet: the spatial film effects,
+    // whose quarter-resolution intermediates still have no tile contract.
     const refusal = await page.evaluate(async () => {
-      state.adjustments.hdr.vignette.amount = 40;
+      const film = state.adjustments.hdr.film_look;
+      const restore = { halation_amount: film.halation_amount, halation_radius: film.halation_radius };
+      film.halation_amount = 60;
+      film.halation_radius = 0.3;
       const result = await window.HDRFinisherPerformance.renderTiledTier(previewTargetLongEdge());
-      state.adjustments.hdr.vignette.amount = 0;
+      Object.assign(film, restore);
       return result;
     });
-    if (refusal.rendered || !refusal.refusals.includes("vignette")) {
-      throw new Error(`Vignette should keep a graph off the tiled path: ${JSON.stringify(refusal)}`);
+    if (refusal.rendered || !refusal.refusals.includes("spatial film effects")) {
+      throw new Error(`Halation should keep a graph off the tiled path: ${JSON.stringify(refusal)}`);
     }
-    console.log(`refusal check: vignette -> ${JSON.stringify(refusal.refusals)}  PASS`);
+    console.log(`refusal check: halation -> ${JSON.stringify(refusal.refusals)}  PASS`);
 
     // One submission per generation is what makes replacement atomic.
     const atomic = results.every((entry) => entry.metrics.submissions === 1);

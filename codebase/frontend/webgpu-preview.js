@@ -1419,11 +1419,6 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     tiledExecutionRefusals({ activeLocals = [], detailActive, spatialActive, overlayMask, params, surface }) {
       const reasons = [];
       if (spatialActive) reasons.push("spatial film effects");
-      if (params[123] > 0.5 && Math.abs(params[124]) > 0.000001) reasons.push("vignette");
-      // Grain is section-enabled by default, so the refusal is on grain that
-      // actually contributes. Zero-amount grain leaves the pixels alone and
-      // cannot make a tile disagree with the whole frame.
-      if (params[156] > 0.5 && params[157] > 0.0 && params[101] > 0.000001) reasons.push("grain");
       if (this.denoiseSourceSelector) reasons.push("denoise");
       return reasons;
     }
@@ -5738,15 +5733,48 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       if (p[159] > 0.5) { return clipToOutputTarget(input); }
       return input;
     }
+    // The tile work texture is allocated once at the largest tile plus halo and
+    // reused, so an edge tile's valid region is smaller than the texture it
+    // lives in. Every neighbourhood read has to clamp to the valid region, or
+    // an edge tile samples whatever the previous tile left behind.
+    fn validTileDimensions() -> vec2i {
+      let textureSize = vec2i(textureDimensions(sourceTexture));
+      if (arrayLength(&p) > 163u && p[162] > 0.0 && p[163] > 0.0) {
+        return min(textureSize, vec2i(i32(p[162]), i32(p[163])));
+      }
+      return textureSize;
+    }
+
+    // The whole picture's size, which is not this tile's size. Any radius
+    // expressed as a fraction of the frame -- or as a physical distance on the
+    // film plane -- has to be derived from this, or a tile would compute a
+    // different radius than the Direct render of the same grade.
+    fn frameDimensions() -> vec2f {
+      if (arrayLength(&p) > 165u && p[164] > 0.0 && p[165] > 0.0) {
+        return vec2f(p[164], p[165]);
+      }
+      return vec2f(textureDimensions(sourceTexture));
+    }
+
+    // This pixel's position in the whole picture. Vignette is placed against
+    // the frame and grain is a fixed field over it, so both must ask where they
+    // are in the frame, not where they are in the tile. Direct leaves the tile
+    // origin at zero, which makes this the identity.
+    fn frameCoordinate(coordinate: vec2i) -> vec2i {
+      if (arrayLength(&p) > 161u) {
+        return coordinate + vec2i(i32(p[160]), i32(p[161]));
+      }
+      return coordinate;
+    }
+
     fn boundedCoordinate(coordinate: vec2i) -> vec2i {
-      let dimensions = textureDimensions(sourceTexture);
-      return clamp(coordinate, vec2i(0), vec2i(dimensions) - vec2i(1));
+      return clamp(coordinate, vec2i(0), validTileDimensions() - vec2i(1));
     }
     fn sampleFilm(coordinate: vec2i) -> vec3f {
       return textureLoad(sourceTexture, boundedCoordinate(coordinate), 0).rgb;
     }
     fn outputRelativeOffset(percentDiagonal: f32, maximumRadius: i32) -> i32 {
-      let dimensions = vec2f(textureDimensions(sourceTexture));
+      let dimensions = frameDimensions();
       return clamp(i32(round(length(dimensions) * max(percentDiagonal, 0.0) / 100.0)), 1, maximumRadius);
     }
     fn filmPixelsPerMm(dimensions: vec2f) -> f32 {
@@ -5756,7 +5784,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return pixelsPerMm;
     }
     fn filmPhysicalOffset(percent35mmDiagonal: f32, maximumRadius: i32) -> i32 {
-      let dimensions = vec2f(textureDimensions(sourceTexture));
+      let dimensions = frameDimensions();
       let radiusMm = 43.2666153 * max(percent35mmDiagonal, 0.0) / 100.0;
       return clamp(i32(round(filmPixelsPerMm(dimensions) * radiusMm)), 1, maximumRadius);
     }
@@ -5901,11 +5929,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       }
       rgb = applyVignette(rgb, coordinate);
       if (p[156] > 0.5 && p[157] > 0.0 && p[100] > 0.5 && (p[101] > 0.0 || p[158] > 0.5)) {
-        let pixelsPerMm = filmPixelsPerMm(dimensions);
+        let pixelsPerMm = filmPixelsPerMm(frameDimensions());
         let physicalPitch = pixelsPerMm * (6.0 + 24.0 * p[102]) / 1000.0;
         let pitch = max(1.0, physicalPitch);
         let pixelCoverage = min(1.0, physicalPitch);
-        let grainCoordinate = vec2f(coordinate) / pitch;
+        let grainCoordinate = vec2f(frameCoordinate(coordinate)) / pitch;
         let mono = mix(grainValueNoise(grainCoordinate, 0.0), grainValueNoise(grainCoordinate * 0.53, 17.0), p[103] * 0.55);
         let signal = clamp(filmSignalFromLuma(max(filmLuma(rgb), 0.0)), 0.0, 1.0);
         let shadowWeight = pow(1.0 - signal, 2.0);
@@ -5927,10 +5955,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     }
     fn applyVignette(rgb: vec3f, coordinate: vec2i) -> vec3f {
       if (p[123] < 0.5 || abs(p[124]) < 0.000001) { return rgb; }
-      let dimensions = vec2f(textureDimensions(sourceTexture));
+      let dimensions = frameDimensions();
       let center = vec2f(p[129], p[130]) * max(dimensions - vec2f(1.0), vec2f(1.0));
       let scale = max(1.0, 0.5 * min(dimensions.x, dimensions.y));
-      let delta = abs((vec2f(coordinate) - center) / scale);
+      let delta = abs((vec2f(frameCoordinate(coordinate)) - center) / scale);
       let exponent = max(p[126], 1.0);
       let radius = pow(pow(delta.x, exponent) + pow(delta.y, exponent), 1.0 / exponent);
       var mask = smoothRange(p[125], p[125] + p[127], radius);
@@ -5993,23 +6021,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return log2(max(y, DETAIL_LUMA_FLOOR));
     }
 
-    fn validTileDimensions() -> vec2i {
-      let textureSize = vec2i(textureDimensions(sourceTexture));
-      if (arrayLength(&p) > 163u && p[162] > 0.0 && p[163] > 0.0) {
-        return min(textureSize, vec2i(i32(p[162]), i32(p[163])));
-      }
-      return textureSize;
-    }
-
-    fn detailFrameDimensions() -> vec2f {
-      if (arrayLength(&p) > 165u && p[164] > 0.0 && p[165] > 0.0) {
-        return vec2f(p[164], p[165]);
-      }
-      return vec2f(textureDimensions(sourceTexture));
-    }
-
     fn detailRadii() -> vec4f {
-      let dimensions = detailFrameDimensions();
+      let dimensions = frameDimensions();
       let diagonal = length(dimensions);
       return vec4f(
         max(0.35, diagonal * 0.0003),
@@ -6067,7 +6080,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
 
     fn detailTextureEdgeWeight(coordinate: vec2f, logY: f32, coarse: f32) -> f32 {
       let dimensions = vec2f(textureDimensions(spatialTexture));
-      let coarseRadius = max(0.70, length(detailFrameDimensions()) * 0.0012);
+      let coarseRadius = max(0.70, length(frameDimensions()) * 0.0012);
       let reach = max(1.0, 2.0 * coarseRadius);
       let valid = vec2f(validTileDimensions());
       let centerUv = clamp(coordinate + vec2f(0.5), vec2f(0.5), valid - vec2f(0.5)) / dimensions;
@@ -6156,7 +6169,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     }
 
     fn localDetailRadii() -> vec4f {
-      let dimensions = detailFrameDimensions();
+      let dimensions = frameDimensions();
       let diagonal = length(dimensions);
       return vec4f(
         max(0.35, diagonal * 0.0003),
@@ -6288,8 +6301,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     // limiter measures the finished picture rather than predicting it from the
     // source, and so the scope pass reads that result instead of recomputing it.
     @fragment fn finishFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      let dimensions = textureDimensions(sourceTexture);
-      let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
+      let coordinate = clamp(vec2i(input.position.xy), vec2i(0), validTileDimensions() - vec2i(1));
       return vec4f(applyFilmLook(coordinate), 1.0);
     }
 

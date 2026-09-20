@@ -48,6 +48,7 @@
     "test:exact-tier-latency": "node tests/performance/exact-tier-latency.js",
     "test:tile-scheduler": "node --test tests/tile-scheduler.test.js",
     "test:tiled-parity": "node tests/tiled-direct-parity.js",
+    "test:tiled-film-parity": "node tests/tiled-film-parity.js",
     "test:tiled-admission-scopes": "node tests/tiled-admission-scope-fallback.js",
     "test:engineering-full": "node tests/engineering-full-preview.js"
   },
