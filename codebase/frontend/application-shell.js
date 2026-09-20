@@ -4,6 +4,10 @@
   const STORAGE_KEY = "hdr-finisher:application-preferences:v1";
   const PROJECT_URL = "https://github.com/LucienMidnight/hdr-finisher";
   const PREVIEW_RESOLUTIONS = new Set(["1024", "2048", "4096", "full"]);
+  // Diagnostic only. Direct and Tiled are required to produce identical pixels,
+  // so this exists to make that comparable on the same grade rather than to
+  // give the two routes different jobs.
+  const EXECUTION_OVERRIDES = new Set(["auto", "direct", "tiled"]);
   const GPU_MEMORY_PRESETS_GIB = [1, 2, 3, 4, 6, 8, 12];
   const DEFAULT_CUSTOM_GPU_MEMORY_GIB = 2;
   const DEFAULT_PREFERENCES = {
@@ -12,6 +16,7 @@
     renderingMode: "auto",
     previewResolution: "1024",
     maximumGpuMemoryGiB: "auto",
+    executionOverride: "auto",
     theme: "default-dark",
     viewerFrame: { preset: "theme", customColor: "#000000" },
     folders: { projectSave: "", projectImport: "", fileSave: "", fileImport: "", presetSave: "" },
@@ -154,6 +159,7 @@
     renderingMode: ["auto", "gpu", "cpu"].includes(value.renderingMode) ? value.renderingMode : "auto",
     previewResolution: PREVIEW_RESOLUTIONS.has(String(value.previewResolution)) ? String(value.previewResolution) : "1024",
     maximumGpuMemoryGiB: normalizeGpuMemoryGiB(value.maximumGpuMemoryGiB),
+    executionOverride: EXECUTION_OVERRIDES.has(value.executionOverride) ? value.executionOverride : "auto",
     theme: THEME_IDS.includes(value.theme) ? value.theme : "default-dark",
     viewerFrame: {
       preset: FRAME_PRESET_IDS.includes(value.viewerFrame?.preset) ? value.viewerFrame.preset : "theme",
@@ -604,6 +610,9 @@
     byId("settings-gpu-memory-limit").value = memoryBudget === "auto" ? "auto" : presetBudget ? String(memoryBudget) : "custom";
     byId("settings-gpu-memory-custom").value = String(memoryBudget === "auto" ? DEFAULT_CUSTOM_GPU_MEMORY_GIB : memoryBudget);
     byId("settings-gpu-memory-custom-field").classList.toggle("hidden", memoryBudget === "auto" || presetBudget);
+    byId("settings-execution-override").value = EXECUTION_OVERRIDES.has(shell.preferences.executionOverride)
+      ? shell.preferences.executionOverride
+      : "auto";
     byId("settings-auto-updates").checked = shell.preferences.updates.checkAutomatically;
     renderThemeOptions();
     renderFolderSettings();
@@ -858,6 +867,13 @@
       shell.preferences.maximumGpuMemoryGiB = normalized === "auto" ? DEFAULT_CUSTOM_GPU_MEMORY_GIB : normalized;
       event.target.value = String(shell.preferences.maximumGpuMemoryGiB);
       persistPreferences();
+    });
+    byId("settings-execution-override").addEventListener("change", (event) => {
+      shell.preferences.executionOverride = EXECUTION_OVERRIDES.has(event.target.value)
+        ? event.target.value
+        : "auto";
+      persistPreferences();
+      shell.onExecutionOverrideChange?.(shell.preferences.executionOverride);
     });
     byId("settings-auto-updates").addEventListener("change", (event) => {
       shell.preferences.updates.checkAutomatically = event.target.checked;

@@ -848,7 +848,19 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         // Admission chooses how to execute. It never changes the selected
         // resolution: PRD 4.3 requires allocation failure to retry through
         // Tiled execution instead of silently reducing the tier.
-        mode: violations.length ? "tiled" : "direct",
+        //
+        // `executionOverride` forces one route for testing. It can only make
+        // admission *more* conservative or equal to it: forcing Tiled is always
+        // safe, and forcing Direct is honoured only when admission would have
+        // allowed it anyway. Otherwise the override could ask for a render the
+        // budget cannot hold, and a diagnostic switch has no business
+        // overriding the memory guard.
+        mode: options.executionOverride === "tiled" ? "tiled"
+          : options.executionOverride === "direct" && violations.length === 0 ? "direct"
+            : violations.length ? "tiled" : "direct",
+        overridden: options.executionOverride === "tiled"
+          || (options.executionOverride === "direct" && violations.length === 0),
+        overrideRefused: options.executionOverride === "direct" && violations.length > 0,
         admitted: violations.length === 0,
         violations,
         tier: options.tier ?? null,
@@ -2501,6 +2513,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // Admission runs against the graph this render is about to build, so the
       // plan and the decision describe real work rather than a generic guess.
       const plan = this.planRender(proxy.width, proxy.height, {
+        executionOverride: this.executionOverride || null,
         detailActive: detailActive || localDetailActive,
         spatialActive,
         // Without this the tiled model sizes its working set to a bare tile

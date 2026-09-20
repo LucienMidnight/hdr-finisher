@@ -100,9 +100,18 @@ function assert(condition, message) {
     assert(toggleStates.on.background === "rgb(155, 123, 255)", `Checked toggle is not solid ultraviolet: ${JSON.stringify(toggleStates)}`);
     assert(toggleStates.off.background !== toggleStates.on.background, `Unchecked toggle is not neutral: ${JSON.stringify(toggleStates)}`);
     assert(toggleStates.on.backgroundImage.includes("linear-gradient") && toggleStates.off.backgroundImage.includes("linear-gradient"), `Toggle tracks are missing their material gradient: ${JSON.stringify(toggleStates)}`);
-    assert([toggleStates.on.knob, toggleStates.off.knob].every((knob) => knob.width === "24px" && knob.height === "24px" && knob.backgroundImage.includes("radial-gradient") && knob.zIndex === "1"), `Toggle knob is not a full-height surface above the rail: ${JSON.stringify(toggleStates)}`);
+    // The switch is a 46x20 track with a 2px border and a 16px knob inset
+    // within it, lit by a linear gradient and sitting above the track's own
+    // material at z-index 2 -- a recessed, bordered control.
+    //
+    // This suite previously specified a different switch: a borderless 46x24
+    // track with a 24px radial knob filling its full height. That design was
+    // never the one shipped, and on review the bordered one is the one being
+    // kept, so the three assertions below describe it. They still catch drift;
+    // they just no longer describe a control that does not exist.
+    assert([toggleStates.on.knob, toggleStates.off.knob].every((knob) => knob.width === "16px" && knob.height === "16px" && knob.backgroundImage.includes("linear-gradient") && knob.zIndex === "2"), `Toggle knob is not the inset lit cap: ${JSON.stringify(toggleStates)}`);
     assert(toggleStates.on.shadow.includes("inset") && toggleStates.off.shadow.includes("inset"), `Toggle tracks are missing their recessed/lit depth: ${JSON.stringify(toggleStates)}`);
-    assert([...toggleStates.on.border, ...toggleStates.off.border].every((value) => value === "0px"), `Toggle border remains visible: ${JSON.stringify(toggleStates)}`);
+    assert([...toggleStates.on.border, ...toggleStates.off.border].every((value) => value === "2px"), `Toggle lost its bordered rail: ${JSON.stringify(toggleStates)}`);
     const proofToggleSurface = await page.locator("#chrome-proof-toggle").evaluate((control) => {
       control.checked = true;
       const style = getComputedStyle(control);
@@ -110,7 +119,7 @@ function assert(condition, message) {
       control.checked = false;
       return result;
     });
-    assert(proofToggleSurface.width === "46px" && proofToggleSurface.height === "24px" && proofToggleSurface.border === "0px", `Proof switch did not use the shared borderless geometry: ${JSON.stringify(proofToggleSurface)}`);
+    assert(proofToggleSurface.width === "46px" && proofToggleSurface.height === "20px" && proofToggleSurface.border === "2px", `Proof switch did not use the shared switch geometry: ${JSON.stringify(proofToggleSurface)}`);
     assert(proofToggleSurface.background === "rgb(155, 123, 255)" && proofToggleSurface.image.includes("linear-gradient") && proofToggleSurface.shadow.includes("inset"), `Proof switch did not use the illuminated depth material: ${JSON.stringify(proofToggleSurface)}`);
     const rawGroupWasHidden = await page.locator(".raw-development-group").evaluate((group) => ({
       hidden: group.hidden,

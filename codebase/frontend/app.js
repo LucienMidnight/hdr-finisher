@@ -3792,10 +3792,33 @@ async function initializeApplicationShell() {
         applyPreviewResolution(selectablePreviewResolution);
       }
       applyGpuMemoryBudget(preferences.maximumGpuMemoryGiB);
+      applyExecutionOverride(preferences.executionOverride);
       if (options.initial) state.renderingMode = preferences.renderingMode;
       else if (preferences.renderingMode !== state.renderingMode) void applyRenderingMode(preferences.renderingMode);
     },
   });
+}
+
+/**
+ * Force one execution route, for comparing the two on the same grade.
+ *
+ * Diagnostic. Direct and Tiled are required to produce identical pixels, so
+ * this exists to make that difference observable rather than to give the two
+ * routes different jobs. Admission still refuses a forced Direct it cannot
+ * hold: a diagnostic switch has no business overriding the memory guard.
+ */
+function applyExecutionOverride(value) {
+  const setting = value === "direct" || value === "tiled" ? value : null;
+  state.executionOverride = setting;
+  if (state.gpuPreview) state.gpuPreview.executionOverride = setting;
+  state.gpuPreview?.clearAllocationBackoff?.();
+  renderReadouts();
+  // Re-render so the change is visible immediately rather than at the next
+  // edit, which is the whole point of a switch you flip to compare routes.
+  if (state.session) {
+    invalidatePreview(state.currentView, { markDirty: false });
+    debouncePreview(state.currentView);
+  }
 }
 
 function applyGpuMemoryBudget(value) {

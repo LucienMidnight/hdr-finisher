@@ -84,10 +84,23 @@ def test_render_plan_admission_never_expresses_an_unavailable_tier() -> None:
     javascript = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
     plan = javascript[javascript.index("function buildRenderPlan(") : javascript.index("class HDRWebGPUPreview")]
 
-    assert 'mode: violations.length ? "tiled" : "direct",' in plan
-    # A decision can only choose an execution strategy. There is no branch that
-    # could report a resolution as unavailable.
+    # The budget still decides when nothing overrides it.
+    assert 'violations.length ? "tiled" : "direct"' in plan
+    # A diagnostic override may force Tiled, which is always safe, and may force
+    # Direct only where admission would have allowed it anyway -- so it can make
+    # admission more conservative but never less. A switch in the settings panel
+    # has no business overriding the memory guard.
+    assert 'options.executionOverride === "tiled" ? "tiled"' in plan
+    assert 'options.executionOverride === "direct" && violations.length === 0 ? "direct"' in plan
+    # A decision can only choose an execution strategy. Whatever the override
+    # asks for, there is still no branch that could report a resolution as
+    # unavailable: every arm of it yields "tiled" or "direct".
     assert '"unavailable"' not in plan
+    # Read the decision's mode expression and check every literal it can yield.
+    decision = plan[plan.index("decision: {"):]
+    expression = decision[decision.index("mode:"):decision.index("overridden:")]
+    yielded = {token for token in expression.split('"')[1::2]}
+    assert yielded <= {"tiled", "direct"}, yielded
     assert "maxTextureDimension2D" in plan
     assert "retained-presentation-overlap" in plan
     assert "contingency-margin" in plan

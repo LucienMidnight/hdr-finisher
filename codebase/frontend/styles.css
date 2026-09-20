@@ -868,6 +868,18 @@ input[type="text"] {
   color: var(--body);
   font-size: 12px;
   font-weight: 500;
+  /* The bar is a grid. Without these the title overflows its own track to the
+     right and the tools in the next track draw on top of it, so the label ends
+     up with buttons through the middle of it. Clipped, it degrades to an
+     ellipsis instead of a collision. */
+  min-width: 0;
+  overflow: hidden;
+}
+
+.viewer-lane .panel-title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .lane-dot {

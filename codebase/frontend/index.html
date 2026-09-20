@@ -1643,6 +1643,14 @@
             <input id="settings-gpu-memory-custom" type="number" min="0.25" max="64" step="0.25" inputmode="decimal" value="2">
           </label>
           <p class="helper">This is an application allocation budget, not detected physical VRAM. It controls Direct versus Tiled preview execution and cache eviction; it never removes a resolution choice.</p>
+          <label class="settings-field">Preview execution
+            <select id="settings-execution-override" title="Diagnostic. Auto lets the memory budget decide. Forcing Tiled always works. Forcing Direct is ignored when the budget cannot hold a whole-frame render, because a diagnostic switch must not override the memory guard.">
+              <option value="auto">Auto · the budget decides</option>
+              <option value="direct">Force Direct</option>
+              <option value="tiled">Force Tiled</option>
+            </select>
+          </label>
+          <p class="helper">Diagnostic, for comparing the two execution routes on the same grade. Direct and Tiled are required to produce identical pixels, so any visible difference between them is a defect worth reporting. Forcing Direct is refused when the budget cannot hold it, and the Output readout says which route actually ran.</p>
         </section>
         <section data-settings-panel="appearance" hidden>
           <h3>Appearance</h3>
