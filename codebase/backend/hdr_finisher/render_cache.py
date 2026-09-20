@@ -95,6 +95,10 @@ class SessionRenderCache:
     max_proxy_levels: int = 2
     _lock: RLock = field(default_factory=RLock, init=False, repr=False)
     _source_proxies: OrderedDict[int, np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
+    # The rolled frame the straighten path has to materialize, held across
+    # the row chunks of one streamed proxy instead of being rebuilt for each
+    # of them. Single entry by contract; see apply_geometry_region.
+    _roll_frame: dict = field(default_factory=dict, init=False, repr=False)
     _sdr_proxies: OrderedDict[int, np.ndarray | None] = field(default_factory=OrderedDict, init=False, repr=False)
     _frames: OrderedDict[tuple[int, str, int, str], np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
     _matched_sdr_bases: OrderedDict[tuple[int, str], np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
@@ -127,6 +131,7 @@ class SessionRenderCache:
             self._source_epoch += 1
             self._source_proxies.clear()
             self._sdr_proxies.clear()
+            self._roll_frame.clear()
             self._frames.clear()
             self._matched_sdr_bases.clear()
             self._scopes.clear()
@@ -231,7 +236,26 @@ class SessionRenderCache:
             min(output_width, core[2] + halo),
             min(output_height, core[3] + halo),
         )
-        tile = apply_geometry_region(base, geometry, haloed)
+        tile = apply_geometry_region(
+            base,
+            geometry,
+            haloed,
+            roll_cache=self._roll_frame,
+            # Everything the rolled frame depends on, and nothing else. The
+            # crop is applied by slicing afterwards, so a crop drag over a
+            # straightened image reuses the frame rather than rebuilding it.
+            roll_cache_key=(
+                source_epoch,
+                edge,
+                working_space,
+                int(geometry.rotation),
+                bool(geometry.flip_horizontal),
+                bool(geometry.flip_vertical),
+                round(float(geometry.straighten_angle + geometry.perspective_rotate), 9),
+                round(float(geometry.perspective_horizontal), 9),
+                round(float(geometry.perspective_vertical), 9),
+            ),
+        )
         placement = {
             "source_epoch": source_epoch,
             "geometry_signature": signature,
@@ -682,7 +706,8 @@ class SessionRenderCache:
     def _proxy_bytes_locked(self) -> int:
         source = sum(int(proxy.nbytes) for proxy in self._source_proxies.values())
         sdr = sum(int(proxy.nbytes) for proxy in self._sdr_proxies.values() if proxy is not None)
-        return source + sdr
+        roll = sum(int(frame.nbytes) for _base, frame in self._roll_frame.values())
+        return source + sdr + roll
 
     def _compiled_masks(
         self,

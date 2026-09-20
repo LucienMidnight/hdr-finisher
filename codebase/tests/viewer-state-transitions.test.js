@@ -29,11 +29,14 @@ vm.runInContext(
     'const PREVIEW_RESOLUTION_OPTIONS = new Set(["1024", "2048", "4096", "full"]);',
     'const DEFAULT_PREVIEW_RESOLUTION = "1024";',
     extract("function deriveViewerState(", "function viewerState("),
+    extract("function viewerStatusLabel(", "function renderViewerStatus("),
+    'function previewResolutionLabel(value) { return value === "full" ? "Full" : `${Math.round(Number(value) / 1024)}K`; }',
     "globalThis.deriveViewerState = deriveViewerState;",
+    "globalThis.viewerStatusLabel = viewerStatusLabel;",
   ].join("\n"),
   context,
 );
-const { deriveViewerState } = context;
+const { deriveViewerState, viewerStatusLabel } = context;
 
 const GEOMETRY = "geometry-a";
 
@@ -147,4 +150,37 @@ test("rapid reversal back to the accepted tier returns to Ready without an inter
   });
   assert.equal(back.status, "ready");
   assert.equal(back.presentedTier, "4096");
+});
+
+
+// A geometry change is the slow kind of Updating: it invalidates the source
+// proxy, so the frame is fetched and re-rolled rather than re-graded. The
+// viewer used to report that with the same word it uses for a slider nudge,
+// which is what made a crop or rotate look like nothing was happening.
+
+test("a stale geometry signature is reported as geometry work", () => {
+  const viewer = derive({ geometrySignature: "geometry-b" });
+  assert.equal(viewer.status, "updating");
+  assert.equal(viewer.detail, "geometry");
+  assert.equal(viewerStatusLabel(viewer), "Applying crop & rotation — 4K");
+});
+
+test("an ordinary edit is still just Updating", () => {
+  const viewer = derive({ currentGeneration: 8 });
+  assert.equal(viewer.status, "updating");
+  assert.equal(viewer.detail, "");
+  assert.equal(viewerStatusLabel(viewer), "Updating — 4K");
+});
+
+test("a geometry change during an edit still names the geometry", () => {
+  const viewer = derive({ currentGeneration: 8, geometrySignature: "geometry-b" });
+  assert.equal(viewerStatusLabel(viewer), "Applying crop & rotation — 4K");
+});
+
+test("Ready and Preparing labels are unchanged", () => {
+  assert.equal(viewerStatusLabel(derive()), "Ready — 4K");
+  assert.equal(
+    viewerStatusLabel(derive({ accepted: presentation({ exact: false, tier: null, requestedTier: "1024" }) })),
+    "Preparing 4K",
+  );
 });

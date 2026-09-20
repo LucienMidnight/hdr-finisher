@@ -389,3 +389,55 @@ Removing the checklist must not remove real safeguards. Continue to disable or r
 - Successful completion, cancellation, and failure each replace the working treatment with an appropriate final state.
 - Missing source interpretation or encoder capability still prevents export and produces a concise actionable message without restoring the checklist.
 - Add frontend coverage for idle, blocked, encoding, validating, success, cancellation, and error states, including contrast/accessibility checks for the chosen colors.
+
+## Performance
+
+### PERF-01 — Extract a straighten window without building the whole rolled frame
+
+**Priority:** Major / geometry responsiveness
+**Status:** Open — partially mitigated September 20, 2026
+**Area:** `backend/hdr_finisher/finishing.py`, `apply_geometry_region`
+
+**Current behavior**
+
+`apply_geometry_region` serves the `index` stage (quarter turns, flips, crop) by pure slicing and the `perspective` stage by evaluating the projective map for one window. The `roll` stage — any non-zero straighten or perspective rotation — does neither. It calls `Image.rotate(expand=True)` on the **entire** frame and slices the requested window out of the result, because Pillow's expansion and safe-inset geometry have not been reproduced for a window.
+
+The streamed source-tile route asks for one row chunk at a time, so a straightened image rebuilt that whole frame once per chunk. Measured on a 4096 × 2731 float32 RGBA frame at −1.8°: **1.2 s per rotation, six chunks, all serial** — roughly 7 s of pure recomputation before any pixel reached the viewer, repeated on every geometry change and every tier change.
+
+**Mitigation already in place**
+
+A single-entry roll cache (`roll_cache` / `roll_cache_key` on `apply_geometry_region`, held by `SessionRenderCache._roll_frame`) keeps the rolled frame across the row chunks of one streamed proxy. One rotation now serves every chunk. The key deliberately excludes the crop rectangle, so dragging a crop over a straightened image reuses the frame; entries are accepted on array identity, so two bases that share a key cannot be confused. Covered by `tests/test_geometry_roll_cache.py`.
+
+This removes the repetition, not the cost. One full-frame rotation is still paid per geometry change, and the cache holds a frame as large as the proxy itself (~179 MB at the 4K tier) for as long as it is resident.
+
+**Desired behavior**
+
+Reproduce Pillow's `rotate(expand=True)` expansion, pixel-center convention, and safe-inset geometry well enough to evaluate one output window directly, as `_warp_perspective_region` already does for the projective route. The `roll` stage then becomes bounded in both time and memory, the cache becomes unnecessary, and a straighten costs the same per tile as a crop.
+
+**Acceptance criteria**
+
+- `apply_geometry_region` on the `roll` stage allocates memory proportional to the requested window, not to the frame.
+- Output is byte-identical to the corresponding slice of `apply_geometry` for the whole existing straighten corpus in `tests/test_geometry_region.py`, at every rotation and flip combination.
+- `geometry_source_tile` no longer needs `roll_cache`, and `SessionRenderCache._roll_frame` is removed along with its memory accounting.
+- A straightened tier load performs no full-frame rotation at all, asserted by counting `_rotate_to_valid_pixels` calls as `tests/test_geometry_roll_cache.py` does today.
+
+### PERF-02 — Fetch streamed proxy row chunks concurrently
+
+**Priority:** Minor / geometry responsiveness
+**Status:** Open
+**Area:** `frontend/webgpu-preview.js`, `loadProxyStreamed`
+
+**Current behavior**
+
+`loadProxyStreamed` awaits each row chunk inside a `for` loop, so a six-chunk proxy is six sequential round trips. Each one costs a backend geometry extraction plus transfer, and none of them overlap.
+
+**Desired behavior**
+
+Issue chunk requests with a bounded concurrency window so transfer and backend extraction overlap, while keeping `maxSourceChunkBytes` as the cap on bytes in flight rather than on bytes per request. Writes into the destination texture must stay ordered by rectangle, not by completion.
+
+**Acceptance criteria**
+
+- Total wall time for a multi-chunk proxy load improves measurably against the serial baseline on the same source.
+- Peak staging memory stays within the existing `maxSourceChunkBytes` budget.
+- The assembled proxy remains byte-identical to the serial path.
+- A superseded render still abandons in-flight chunks without writing them.

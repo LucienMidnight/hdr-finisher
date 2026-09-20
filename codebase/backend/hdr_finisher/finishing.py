@@ -101,6 +101,8 @@ def apply_geometry_region(
     image: np.ndarray,
     geometry: GeometryAdjustments,
     rect: tuple[int, int, int, int] | None = None,
+    roll_cache: dict | None = None,
+    roll_cache_key: object | None = None,
 ) -> np.ndarray:
     """Extract one post-geometry output rectangle.
 
@@ -113,6 +115,16 @@ def apply_geometry_region(
     first constructing the complete transformed frame. The ``index`` and
     ``perspective`` stages meet that; ``roll`` still materializes and is
     recorded as a known limitation.
+
+    ``roll_cache`` softens that limitation for the caller that feels it most.
+    A streamed proxy asks for the same rolled frame once per row chunk, so a
+    straightened 4K tier rebuilt it six times over -- measured at 1.2 s each,
+    serially, before a single pixel reached the viewer. The cache holds exactly
+    one frame: the entry is replaced, not accumulated, because the frame is as
+    large as the proxy itself. ``roll_cache_key`` must identify everything the
+    rolled frame depends on -- the source it came from and the total roll --
+    but deliberately not the crop, which is applied by slicing afterwards, so
+    dragging a crop rectangle over a straightened image reuses it.
     """
     oriented = _oriented_view(image, geometry)
     stage = geometry_resample_stage(geometry)
@@ -130,7 +142,24 @@ def apply_geometry_region(
         # Image.rotate(expand=True) owns its own expansion and inset geometry.
         # Reproducing it for a window is deferred, so this path still builds the
         # rotated frame and slices it. Parity is exact; memory is not bounded.
-        rotated = _rotate_to_valid_pixels(np.ascontiguousarray(oriented, dtype=np.float32), total_roll)
+        cacheable = roll_cache is not None and roll_cache_key is not None
+        cached = roll_cache.get(roll_cache_key) if cacheable else None
+        # The entry holds the array it was rolled from and is accepted only on
+        # identity. A key describes the geometry, but two different bases can
+        # share one -- an SDR-matched base and an authored SDR reference are
+        # both "linear-srgb" at the same epoch -- and serving one frame's
+        # pixels for the other would be silent corruption. Holding the base
+        # also keeps it alive, so `is` can never meet a recycled object.
+        rotated = cached[1] if cached is not None and cached[0] is image else None
+        if rotated is None:
+            rotated = _rotate_to_valid_pixels(np.ascontiguousarray(oriented, dtype=np.float32), total_roll)
+            if cacheable:
+                # Single entry: drop the previous frame before holding a new
+                # one, so this never costs more than the one rotation already
+                # in flight.
+                roll_cache.clear()
+                rotated.setflags(write=False)
+                roll_cache[roll_cache_key] = (image, rotated)
         left, top, right, bottom = _crop_bounds(rotated.shape[1], rotated.shape[0], geometry)
         window = _clamp_rect(rect, right - left, bottom - top)
         return np.ascontiguousarray(

@@ -912,6 +912,10 @@ function previewNeedsRefinement() {
  * of agreement with the image on screen; a derived one is always a statement
  * about the presentation the viewer can actually see.
  *
+ * `detail` says why the viewer is not Ready: the reason it is unavailable,
+ * or "geometry" when what is outstanding is a crop or rotation rather than a
+ * grading change. Both are derived from the same snapshot; neither is stored.
+ *
  * @returns {{ status: ViewerStatus, tier: PreviewResolution, presentedTier: PreviewResolution|null, detail: string }}
  */
 function deriveViewerState({
@@ -931,9 +935,13 @@ function deriveViewerState({
   // looks, and must be labeled as one.
   const selectedTierAccepted = laneMatches && accepted.exact === true && accepted.requestedTier === tier;
   if (!selectedTierAccepted) return { status: "preparing", tier, presentedTier, detail: "" };
-  const current = accepted.generation === currentGeneration
-    && accepted.geometrySignature === currentGeometrySignature;
-  return { status: current ? "ready" : "updating", tier, presentedTier, detail: "" };
+  const geometryCurrent = accepted.geometrySignature === currentGeometrySignature;
+  const current = accepted.generation === currentGeneration && geometryCurrent;
+  // A geometry change is the slow one -- it invalidates the source proxy, so
+  // the whole frame is fetched and re-rolled rather than re-graded. Saying so
+  // is the difference between a viewer that looks busy and one that looks
+  // stuck.
+  return { status: current ? "ready" : "updating", tier, presentedTier, detail: geometryCurrent ? "" : "geometry" };
 }
 
 function viewerState(lane = state.currentView) {
@@ -958,7 +966,10 @@ function viewerStatusLabel(viewer = viewerState()) {
       : "";
     return `Preparing ${tierLabel}${showing}`;
   }
-  if (viewer.status === "updating") return `Updating — ${tierLabel}`;
+  if (viewer.status === "updating") {
+    if (viewer.detail === "geometry") return `Applying crop & rotation — ${tierLabel}`;
+    return `Updating — ${tierLabel}`;
+  }
   return `Ready — ${tierLabel}`;
 }
 
