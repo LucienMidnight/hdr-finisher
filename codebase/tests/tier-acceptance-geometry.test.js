@@ -147,3 +147,35 @@ test("the resident short-circuit still declines a frame processed below the tier
   app.acceptPresentation("hdr", "settled", 1003, 652, "WebGPU", "", 1, 7, "direct", 1024);
   assert.equal(app.residentAuthoringLongEdge(), null);
 });
+
+// Selecting a smaller tier is a request for less work, and a frame processed
+// above the tier is not that tier. A resident Full frame used to satisfy the
+// "at least the tier" test and report "Ready - 1K" over 7968 pixels of Full,
+// which also told the scheduler there was nothing left to do -- so the
+// selector looked inert.
+
+test("a Full frame does not satisfy a smaller selected tier", () => {
+  const app = shell({ previewResolution: "1024" });
+  app.acceptPresentation("hdr", "refinement", 4000, 6000, "WebGPU", "", 1, 7, "tiled", 6000);
+  assert.equal(app.state.acceptedPresentation.exact, false);
+  assert.equal(app.state.acceptedPresentation.tier, null);
+  assert.equal(viewerStatus(app), "preparing");
+  // And the scheduler must still see work outstanding, or nothing re-renders.
+  assert.equal(app.residentAuthoringLongEdge(), null);
+});
+
+test("the same frame does satisfy the Full tier it was processed at", () => {
+  const app = shell({ previewResolution: "full" });
+  app.acceptPresentation("hdr", "refinement", 4000, 6000, "WebGPU", "", 1, 7, "tiled", 6000);
+  assert.equal(app.state.acceptedPresentation.exact, true);
+  assert.equal(app.state.acceptedPresentation.tier, "full");
+  assert.equal(viewerStatus(app), "ready");
+});
+
+test("a straightened Full frame is exact at Full", () => {
+  // Geometry still trims: processed at the source edge, presented smaller.
+  const app = shell({ previewResolution: "full" });
+  app.acceptPresentation("hdr", "refinement", 3915, 5874, "WebGPU", "", 1, 7, "tiled", 6000);
+  assert.equal(app.state.acceptedPresentation.exact, true);
+  assert.equal(viewerStatus(app), "ready");
+});

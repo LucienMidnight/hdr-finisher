@@ -537,7 +537,10 @@ def test_accepted_presentation_records_what_it_actually_is() -> None:
     # frame: a straighten at the 4K tier processes at 4096 and presents
     # 4011, and that is still an exact 4K result.
     assert "const processedEdge = Number(processedLongEdge) > 0 ? Number(processedLongEdge) : longEdge;" in accept
-    assert "const exact = longEdge > 0 && processedEdge >= previewTargetLongEdge(requestedTier);" in accept
+    # Equality, not "at least". A frame processed above the selected tier is
+    # not that tier either -- a resident Full frame satisfying ">=" reported
+    # "Ready - 1K" over it and told the scheduler there was nothing to do.
+    assert "const exact = longEdge > 0 && processedEdge === previewTargetLongEdge(requestedTier);" in accept
     assert "processedLongEdge: processedEdge," in accept
     assert "tier: exact ? requestedTier : null," in accept
     assert "requestedTier," in accept

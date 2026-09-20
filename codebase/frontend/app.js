@@ -1003,6 +1003,19 @@ function applyPreviewResolution(value, { schedule = true } = {}) {
     els.previewResolution.title = "Sets the maximum preview width and height. Higher settings use more memory; export quality is unchanged.";
   }
   if (previous !== state.previewResolution) state.previewUnavailableReason = "";
+  if (previous !== state.previewResolution) {
+    // The denoise selector is bound to one long edge -- its identity contains
+    // it -- and the renderer pins every render to the retained original's edge
+    // so that live denoise controls keep hitting the evidence they were
+    // analysed against. That pin outranks the requested tier, so leaving a
+    // selector from the outgoing tier in place made this selector inert: the
+    // renderer was asked for 1024 and kept returning the 7968 frame, while the
+    // viewer reported "Ready - 1K" over it.
+    //
+    // A tier change invalidates a resolution-bound cache by definition, the
+    // same way a lane change does where renderPreviewForLane already evicts.
+    state.gpuPreview?.evictDenoiseCache?.();
+  }
   // PRD 8: changing tiers must not reset the GPU session or clear the current
   // preview. Proxy levels are keyed by long edge and trimmed by the renderer's
   // own LRU, so the outgoing tier is retired only when the budget requires it.
@@ -1034,7 +1047,15 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
   // `tier` is what this image actually is, not what the user asked for. A
   // bootstrap proxy accepted while the selected tier is still preparing must
   // never be labeled with the selected tier.
-  const exact = longEdge > 0 && processedEdge >= previewTargetLongEdge(requestedTier);
+  //
+  // The test is equality, not "at least". A frame processed above the selected
+  // tier is not that tier either: selecting 1K while a Full frame is resident
+  // used to satisfy `>=` and report "Ready - 1K" over 7968 pixels of Full.
+  // Someone who picks a smaller tier is asking for less work, and saying it
+  // happened when it did not is the same lie in the other direction. If a
+  // render ever does overshoot, this reports Preparing and the scheduler
+  // renders the tier properly, which self-heals instead of misreporting.
+  const exact = longEdge > 0 && processedEdge === previewTargetLongEdge(requestedTier);
   state.acceptedPresentation = {
     lane,
     generation,
