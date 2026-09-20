@@ -322,22 +322,31 @@ const MAX_DIFFERING_FRACTION = 0.0005;
     });
 
     // A refusal must be explicit rather than a silent fallback to Direct.
-    // Phase 7 moved vignette onto the tiled path, so the refusal this asserts
-    // is a module that phase has not reached yet: the spatial film effects,
-    // whose quarter-resolution intermediates still have no tile contract.
+    // Phase 7 moved vignette, grain and the spatial film effects onto the tiled
+    // path in turn, so the refusal this asserts is the one that is still true:
+    // the resolved denoise proxy, which is still whole-frame.
     const refusal = await page.evaluate(async () => {
-      const film = state.adjustments.hdr.film_look;
-      const restore = { halation_amount: film.halation_amount, halation_radius: film.halation_radius };
-      film.halation_amount = 60;
-      film.halation_radius = 0.3;
+      const preview = state.gpuPreview;
+      const analyzed = await preview.analyzeDenoiseProxy(
+        state.session.session_id,
+        "hdr",
+        JSON.parse(JSON.stringify(state.adjustments)),
+        previewTargetLongEdge(),
+        state.editRevision,
+        { levels: 2, noiseThreshold: 3.0, lumaSigma: 0.035, chromaSigma: 0.035 },
+        "source",
+        { amount: 0.8, luminance: 0.7, colorNoise: 0.6, detailRecovery: 0.3 },
+      );
+      if (!analyzed) return { error: "denoise analysis did not run" };
       const result = await window.HDRFinisherPerformance.renderTiledTier(previewTargetLongEdge());
-      Object.assign(film, restore);
+      preview.denoiseSourceSelector = null;
       return result;
     });
-    if (refusal.rendered || !refusal.refusals.includes("spatial film effects")) {
-      throw new Error(`Halation should keep a graph off the tiled path: ${JSON.stringify(refusal)}`);
+    if (refusal.error) throw new Error(`Could not set up the denoise refusal: ${refusal.error}`);
+    if (refusal.rendered || !refusal.refusals.includes("denoise")) {
+      throw new Error(`Denoise should keep a graph off the tiled path: ${JSON.stringify(refusal)}`);
     }
-    console.log(`refusal check: halation -> ${JSON.stringify(refusal.refusals)}  PASS`);
+    console.log(`refusal check: denoise -> ${JSON.stringify(refusal.refusals)}  PASS`);
 
     // One submission per generation is what makes replacement atomic.
     const atomic = results.every((entry) => entry.metrics.submissions === 1);

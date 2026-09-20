@@ -511,6 +511,70 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     return Math.ceil(Math.max(2 * radii[0], 4 * radii[1], ...radii.slice(2).map((radius) => 2 * radius)) + 2);
   }
 
+  /**
+   * How far past its own rectangle a tile has to be correct for the film stage.
+   *
+   * Every number here mirrors a line of the shader, because a halo that is
+   * derived differently from the radius it is covering is a seam waiting to
+   * appear at one particular setting. The blur runs on the quarter-resolution
+   * grid, so its reach converts back to full resolution by four; the extract
+   * and the finish pass read the film texture directly and reach their own
+   * short distances into it.
+   *
+   * The result is rounded up to a multiple of four so that a tile's halo
+   * rectangle starts on a frame quarter-texel boundary. Without that the
+   * tile's spatial grid would be offset from the frame's by one, two or three
+   * pixels and could not be byte-exact against Direct whatever its size.
+   */
+  function spatialTileHalo(width, height, params) {
+    const quarter = [Math.ceil(Math.max(1, width) / 4), Math.ceil(Math.max(1, height) / 4)];
+    const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
+    const bloomActive = params[92] > 0.5 && params[93] > 0;
+    const halationActive = params[85] > 0.5;
+
+    // `spatialBlur`: nine taps out to +/- the radius, in quarter-resolution
+    // texels, capped at 64 by the shader exactly as it is here.
+    let blurTexels = 0;
+    if (bloomActive) {
+      blurTexels = Math.max(blurTexels,
+        clamp(Math.hypot(quarter[0], quarter[1]) * Math.max(Number(params[95]) || 0, 0) / 100, 0.25, 64));
+    }
+    if (halationActive) {
+      // `filmPixelsPerMm` over the frame's quarter-resolution size.
+      let pixelsPerMm = Math.max(quarter[0] / params[140], quarter[1] / params[141]);
+      if (params[142] > 0.5 && params[142] < 1.5) pixelsPerMm = quarter[1] / params[141];
+      if (params[142] > 1.5) pixelsPerMm = quarter[0] / params[140];
+      blurTexels = Math.max(blurTexels,
+        clamp(pixelsPerMm * 43.2666153 * Math.max(Number(params[88]) || 0, 0) / 100, 0.25, 64));
+    }
+
+    // Full-resolution reads: halation's edge source from `filmPhysicalOffset`,
+    // the image-structure blur from `outputRelativeOffset(0.06, 24)`, and the
+    // film-resolution blur from `filmPhysicalBlur(<= 0.12, 32)`. `blurAtRadius`
+    // taps at exactly +/- its radius.
+    const frameDiagonal = Math.hypot(Math.max(1, width), Math.max(1, height));
+    let framePixelsPerMm = Math.max(width / params[140], height / params[141]);
+    if (params[142] > 0.5 && params[142] < 1.5) framePixelsPerMm = height / params[141];
+    if (params[142] > 1.5) framePixelsPerMm = width / params[140];
+    const physicalOffset = (percent, maximum) => clamp(
+      Math.round(framePixelsPerMm * 43.2666153 * Math.max(percent, 0) / 100), 1, maximum,
+    );
+    let direct = 0;
+    if (halationActive) {
+      direct = Math.max(direct, clamp(Math.floor(physicalOffset(Number(params[88]) || 0, 256) / 4), 1, 16));
+    }
+    const structureActive = params[97] > 0.5 && (Math.abs(params[98]) > 0 || Math.abs(params[99]) > 0);
+    if (structureActive) {
+      direct = Math.max(direct, clamp(Math.round(frameDiagonal * 0.06 / 100), 1, 24));
+    }
+    if (params[108] < 1) {
+      direct = Math.max(direct, physicalOffset(0.04 + 0.08 * (1 - params[108]) * params[79], 32));
+    }
+
+    const total = Math.ceil(blurTexels) * 4 + Math.ceil(direct);
+    return total > 0 ? Math.ceil(total / 4) * 4 : 0;
+  }
+
   function detailBandIdentity(params, inputIdentity, scope = "global") {
     const values = Array.from(params || []);
     // Amounts and sharpen threshold consume packed bands but do not create
@@ -1418,9 +1482,36 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
      */
     tiledExecutionRefusals({ activeLocals = [], detailActive, spatialActive, overlayMask, params, surface }) {
       const reasons = [];
-      if (spatialActive) reasons.push("spatial film effects");
       if (this.denoiseSourceSelector) reasons.push("denoise");
       return reasons;
+    }
+
+    /**
+     * How far past its rectangle a tile has to be correct, for this whole graph.
+     *
+     * Detail runs before the film stage and the film stage reads a
+     * neighbourhood of Detail's output, so the two reaches compose rather than
+     * compete. The sum is rounded up to a multiple of four whenever the film
+     * stage is involved, because that is what keeps a tile's halo rectangle on
+     * a frame quarter-texel boundary and its spatial grid aligned with the
+     * frame's.
+     *
+     * The planner and the encoder both call this. If they disagreed, the
+     * planner would admit a tiled execution against a working set the encoder
+     * does not build -- which is the same class of defect as a memory ledger
+     * that does not count a cache.
+     */
+    composedTileHalo(width, height, params, activeLocals = [], lane = "hdr") {
+      const { detailActive, filmNeighbourhoodActive } = this.graphActivity(params);
+      const localDetailActive = activeLocals.some((local) => gpuLocalDetailActive(local[`${lane}_grade`]));
+      const detailHalo = (detailActive || localDetailActive)
+        ? detailTileHalo(width, height, params, activeLocals, lane)
+        : 0;
+      const spatialHalo = filmNeighbourhoodActive ? spatialTileHalo(width, height, params) : 0;
+      const halo = spatialHalo > 0
+        ? Math.ceil((detailHalo + spatialHalo) / 4) * 4
+        : detailHalo;
+      return { halo, detailHalo, spatialHalo };
     }
 
     /**
@@ -1439,9 +1530,22 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
 
     /** Which optional stages this parameter set actually switches on. */
     graphActivity(params) {
+      const filmActive = params[78] > 0.5 && params[79] > 0;
+      // Halation and bloom are the two stages that need the quarter-resolution
+      // pair, because they are the two that blur on it.
+      const spatialActive = filmActive
+        && (params[85] > 0.5 || (params[92] > 0.5 && params[93] > 0));
+      // Image structure and film resolution blur the film texture directly, at
+      // full resolution. They allocate nothing, but they read past the pixel
+      // they are writing just as surely, so they need a halo. The CPU strip
+      // path has always counted them; this side had not.
+      const filmBlurActive = filmActive && (
+        (params[97] > 0.5 && (Math.abs(params[98]) > 0.000001 || Math.abs(params[99]) > 0.000001))
+        || params[108] < 1
+      );
       return {
-        spatialActive: params[78] > 0.5 && params[79] > 0
-          && (params[85] > 0.5 || (params[92] > 0.5 && params[93] > 0)),
+        spatialActive,
+        filmNeighbourhoodActive: spatialActive || filmBlurActive,
         detailActive: params[148] > 0.5
           && (Math.abs(params[149]) > 0.000001 || Math.abs(params[150]) > 0.000001 || params[152] > 0.000001),
       };
@@ -1504,10 +1608,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
      * stop following the image and follow the tile instead, so peak residency
      * stays flat as the selected tier grows.
      */
-    ensureTileGraph(width, height, outputFormat, sourceFormat) {
+    ensureTileGraph(width, height, outputFormat, sourceFormat, spatialActive = false) {
       const current = this.tileGraph;
       if (current && current.width === width && current.height === height
-        && current.outputFormat === outputFormat && current.sourceFormat === sourceFormat) {
+        && current.outputFormat === outputFormat && current.sourceFormat === sourceFormat
+        && current.spatialActive === spatialActive) {
         return current;
       }
       this.destroyTileGraph();
@@ -1515,12 +1620,20 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         size: { width, height }, format, usage,
       });
       const attachment = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING;
+      // The spatial pair is a quarter of the work tile in each axis, the same
+      // ratio the Direct graph uses, so it costs an eighth of one intermediate.
+      const spatialWidth = Math.max(1, Math.ceil(width / 4));
+      const spatialHeight = Math.max(1, Math.ceil(height / 4));
+      const makeSpatial = () => this.device.createTexture({
+        size: { width: spatialWidth, height: spatialHeight }, format: "rgba16float", usage: attachment,
+      });
       try {
         this.tileGraph = {
           width,
           height,
           outputFormat,
           sourceFormat,
+          spatialActive,
           sourceTexture: make(sourceFormat, GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST),
           baseTexture: make("rgba16float", attachment),
           localTexture: make("rgba16float", attachment),
@@ -1528,7 +1641,12 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           detailResultTexture: make("rgba16float", attachment | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST),
           filmTexture: make("rgba16float", attachment),
           finishTexture: make("rgba16float", attachment),
-          byteSize: width * height * (8 * 6 + (sourceFormat === "rgba16float" ? 8 : 16)),
+          spatialATexture: spatialActive ? makeSpatial() : null,
+          spatialBTexture: spatialActive ? makeSpatial() : null,
+          spatialWidth,
+          spatialHeight,
+          byteSize: width * height * (8 * 6 + (sourceFormat === "rgba16float" ? 8 : 16))
+            + (spatialActive ? spatialWidth * spatialHeight * 8 * 2 : 0),
         };
       } catch (error) {
         this.recordAllocationFailure("tile-graph", error, { width, height });
@@ -1551,6 +1669,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         graph.detailResultTexture?.destroy();
         graph.filmTexture?.destroy();
         graph.finishTexture?.destroy();
+        graph.spatialATexture?.destroy();
+        graph.spatialBTexture?.destroy();
       });
     }
 
@@ -1772,11 +1892,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const longEdge = Number(options.longEdge) || Math.max(proxy.width, proxy.height);
       const editRevision = Number(options.editRevision) || 0;
       const activeLocals = options.activeLocals || [];
-      const { detailActive } = this.graphActivity(params);
+      const { detailActive, spatialActive, filmNeighbourhoodActive } = this.graphActivity(params);
       const localDetailActive = activeLocals.some((local) => gpuLocalDetailActive(local[`${lane}_grade`]));
-      const halo = (detailActive || localDetailActive)
-        ? detailTileHalo(proxy.width, proxy.height, params, activeLocals, lane)
-        : 0;
+      const { halo, detailHalo, spatialHalo } = this.composedTileHalo(
+        proxy.width, proxy.height, params, activeLocals, lane,
+      );
       const scheduler = this.tileScheduler instanceof Scheduler
         ? this.tileScheduler
         : (this.tileScheduler = new Scheduler({
@@ -1786,7 +1906,13 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         }));
       const identity = `${proxy.identity}|${editRevision}|${surface.format}`;
       const nodes = ["geometry", "exposure", "white-balance", "curves", "color", "grading"];
+      // Every neighbourhood node declares the composed reach, because each of
+      // them has to be correct over the tile plus whatever the stages after it
+      // will read. Detail runs first, so its own reach is the largest.
       if (detailActive || localDetailActive) nodes.push({ id: "detail", halo });
+      if (params[85] > 0.5) nodes.push({ id: "halation", halo });
+      if (params[92] > 0.5 && params[93] > 0) nodes.push({ id: "bloom", halo });
+      if (filmNeighbourhoodActive && !spatialActive) nodes.push({ id: "softness", halo });
       const plan = scheduler.plan({
         width: proxy.width,
         height: proxy.height,
@@ -1797,7 +1923,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       });
       const workWidth = Math.min(proxy.width, tileSize + halo * 2);
       const workHeight = Math.min(proxy.height, tileSize + halo * 2);
-      const graph = this.ensureTileGraph(workWidth, workHeight, surface.format, proxy.pixelFormat);
+      const graph = this.ensureTileGraph(workWidth, workHeight, surface.format, proxy.pixelFormat, spatialActive);
       if (!graph) return { rendered: false, refusals: ["tile graph allocation failed"] };
 
       const isCurrent = options.isCurrent || (() => true);
@@ -1982,7 +2108,23 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         });
 
         pass(filmView, pipelines.response, bind(localSource.createView()), width, height);
-        pass(finishView, pipelines.finish, bind(filmView), width, height);
+        let spatialResultView = sourceView;
+        if (spatialActive) {
+          // The quarter-resolution grid is anchored to the frame, and this
+          // tile's halo rectangle starts on one of its texels, so the valid
+          // region is exactly the tile's own quarter extent. Rendering only
+          // that region keeps an edge tile from writing texels its source
+          // never covered, which `validSpatialDimensions()` then reads back.
+          const spatialWidth = Math.ceil(width / 4);
+          const spatialHeight = Math.ceil(height / 4);
+          const spatialAView = graph.spatialATexture.createView();
+          const spatialBView = graph.spatialBTexture.createView();
+          pass(spatialAView, pipelines.extract, bind(filmView, spatialBView), spatialWidth, spatialHeight, 0);
+          pass(spatialBView, pipelines.blurHorizontal, bind(filmView, spatialAView), spatialWidth, spatialHeight, 0);
+          pass(spatialAView, pipelines.blurVertical, bind(filmView, spatialBView), spatialWidth, spatialHeight, 0);
+          spatialResultView = graph.spatialATexture.createView();
+        }
+        pass(finishView, pipelines.finish, bind(filmView, spatialResultView), width, height);
         const overlayView = options.overlayIndex >= 0
           ? maskMatrix[index][options.overlayIndex].texture.createView()
           : sourceView;
@@ -2021,6 +2163,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const durationMs = performance.now() - startedAt;
       this.tiledExecutionMetrics = {
         width: proxy.width, height: proxy.height, tileSize, halo,
+        detailHalo, spatialHalo, tileWidth: workWidth, tileHeight: workHeight,
         tileCount: plan.tileCount, visibleCount: plan.visibleCount, submissions: 1,
         workingSetBytes: graph.byteSize, proxyBytes: proxy.byteSize,
         detailCacheBytes, maskCacheBytes,
@@ -2142,6 +2285,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const plan = this.planRender(proxy.width, proxy.height, {
         detailActive: detailActive || localDetailActive,
         spatialActive,
+        // Without this the tiled model sizes its working set to a bare tile
+        // while the encoder builds one tile plus its halo, and admission would
+        // be decided against a working set nobody allocates. A spatial graph
+        // makes the gap large: a 256 tile with a 136 halo is 528 on a side.
+        halo: this.composedTileHalo(proxy.width, proxy.height, params, activeLocals, lane).halo,
         sourceBytesPerPixel: proxy.pixelFormat === "rgba16float" ? 8 : 16,
         tier: sourceOptions?.tier ?? null,
       });
@@ -5842,29 +5990,50 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       let halation = halationEdgeSource(pixel, p[87], edgeRadius) * select(0.0, 1.0, p[85] > 0.5);
       return vec4f(bloom, halation);
     }
-    fn sampleSpatial(uv: vec2f) -> vec4f {
-      return textureSampleLevel(spatialTexture, spatialSampler, clamp(uv, vec2f(0.0), vec2f(1.0)), 0.0);
+    // The spatial intermediates are a quarter-resolution grid anchored to the
+    // frame at a strict factor of four, rather than a proportional rescale of
+    // whatever texture they happen to live in. That is what lets a tile's grid
+    // coincide with the frame's: with a halo that is a multiple of four, a
+    // tile's texel j is the frame's texel j + haloRect.x / 4, covering the same
+    // four source pixels the Direct render covered.
+    const SPATIAL_SCALE: f32 = 4.0;
+
+    fn validSpatialDimensions() -> vec2i {
+      return (validTileDimensions() + vec2i(3)) / vec2i(4);
+    }
+
+    fn frameSpatialDimensions() -> vec2f {
+      return ceil(frameDimensions() / SPATIAL_SCALE);
+    }
+
+    // Sampling is in texel coordinates, not in normalized uv, because the
+    // texture an edge tile lives in is larger than its valid region: the clamp
+    // has to stop at the last valid texel's centre and not at the texture's.
+    fn sampleSpatialTexel(texel: vec2f) -> vec4f {
+      let texture = vec2f(textureDimensions(spatialTexture));
+      let valid = vec2f(validSpatialDimensions());
+      let clamped = clamp(texel, vec2f(0.5), max(valid - vec2f(0.5), vec2f(0.5)));
+      return textureSampleLevel(spatialTexture, spatialSampler, clamped / texture, 0.0);
     }
     fn spatialBlur(direction: vec2f, coordinate: vec2f) -> vec4f {
-      let dimensions = vec2f(textureDimensions(spatialTexture));
-      let uv = coordinate / dimensions;
       // Bloom is an output-relative optical finish. Halation is a film-plane
       // distance and shares Film Format/capture geometry with grain and MTF.
+      // Both are properties of the picture, so both are derived from the
+      // frame's quarter-resolution size and not from this tile's.
       // Spatial intermediates are quarter resolution, so the CPU/export cap of
       // 256 full-resolution pixels becomes 64 samples in this texture.
-      let bloomRadius = clamp(length(dimensions) * max(p[95], 0.0) / 100.0, 0.25, 64.0);
+      let frameSpatial = frameSpatialDimensions();
+      let bloomRadius = clamp(length(frameSpatial) * max(p[95], 0.0) / 100.0, 0.25, 64.0);
       let halationRadiusMm = 43.2666153 * max(p[88], 0.0) / 100.0;
-      let halationRadius = clamp(filmPixelsPerMm(dimensions) * halationRadiusMm, 0.25, 64.0);
+      let halationRadius = clamp(filmPixelsPerMm(frameSpatial) * halationRadiusMm, 0.25, 64.0);
       var bloomTotal = vec3f(0.0);
       var halationTotal = 0.0;
       var weightTotal = 0.0;
       for (var index: i32 = -4; index <= 4; index = index + 1) {
         let normalized = f32(index) / 4.0;
         let weight = exp(-4.5 * normalized * normalized);
-        let bloomUv = uv + direction * normalized * bloomRadius / dimensions;
-        let halationUv = uv + direction * normalized * halationRadius / dimensions;
-        bloomTotal += sampleSpatial(bloomUv).rgb * weight;
-        halationTotal += sampleSpatial(halationUv).a * weight;
+        bloomTotal += sampleSpatialTexel(coordinate + direction * normalized * bloomRadius).rgb * weight;
+        halationTotal += sampleSpatialTexel(coordinate + direction * normalized * halationRadius).a * weight;
         weightTotal += weight;
       }
       return vec4f(bloomTotal / weightTotal, halationTotal / weightTotal);
@@ -5882,11 +6051,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     }
     fn applyFilmLook(coordinate: vec2i) -> vec3f {
       var rgb = sampleFilm(coordinate);
-      let dimensions = vec2f(textureDimensions(sourceTexture));
       if (p[78] >= 0.5 && p[79] > 0.0) {
         var spatial = vec4f(0.0);
         if (p[85] > 0.5 || (p[92] > 0.5 && p[93] > 0.0)) {
-          spatial = sampleSpatial((vec2f(coordinate) + vec2f(0.5)) / dimensions);
+          spatial = sampleSpatialTexel((vec2f(coordinate) + vec2f(0.5)) / SPATIAL_SCALE);
         }
         if (p[85] > 0.5) {
           let halationRadius = filmPhysicalOffset(p[88], 256);
@@ -6276,11 +6444,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     }
 
     @fragment fn spatialExtractFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      let sourceDimensions = vec2f(textureDimensions(sourceTexture));
-      let targetDimensions = vec2f(textureDimensions(spatialTexture));
-      let scale = sourceDimensions / targetDimensions;
-      let center = input.position.xy * scale;
-      let offset = scale * 0.25;
+      let center = input.position.xy * SPATIAL_SCALE;
+      let offset = vec2f(SPATIAL_SCALE * 0.25);
       return (
         packedQualifiedSample(center + vec2f(-offset.x, -offset.y))
         + packedQualifiedSample(center + vec2f(offset.x, -offset.y))

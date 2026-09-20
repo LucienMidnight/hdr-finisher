@@ -1326,12 +1326,17 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     assert "let structureBlur = filmBlur(coordinate, 0.06);\n      if (p[97] > 0.5)" not in shader
     assert "if (p[97] > 0.5 && (abs(p[98]) > 0.000001 || abs(p[99]) > 0.000001))" in shader
     assert "fn filmPixelsPerMm(dimensions: vec2f) -> f32" in shader
-    assert "filmPixelsPerMm(dimensions) * halationRadiusMm" in shader
+    # Halation is a film-plane distance, and Phase 7 anchored the spatial grid
+    # to the frame, so the pixels-per-mm it scales by is the frame's at quarter
+    # resolution rather than whatever texture the blur happens to run in.
+    assert "filmPixelsPerMm(frameSpatial) * halationRadiusMm" in shader
+    assert "fn frameSpatialDimensions() -> vec2f" in shader
     assert "filmPhysicalBlur(coordinate, 0.04 + 0.08 * resolutionLoss, 32)" in shader
-    assert "length(dimensions) * max(p[95], 0.0) / 100.0" in shader
-    assert "length(dimensions) * max(p[88], 0.0) / 100.0" not in shader
-    assert "clamp(length(dimensions) * max(p[95], 0.0) / 100.0, 0.25, 64.0)" in shader
-    assert "clamp(filmPixelsPerMm(dimensions) * halationRadiusMm, 0.25, 64.0)" in shader
+    # Bloom stays output-relative and halation stays film-plane -- the change is
+    # only which extent they are relative to.
+    assert "clamp(length(frameSpatial) * max(p[95], 0.0) / 100.0, 0.25, 64.0)" in shader
+    assert "clamp(filmPixelsPerMm(frameSpatial) * halationRadiusMm, 0.25, 64.0)" in shader
+    assert "length(frameSpatial) * max(p[88], 0.0) / 100.0" not in shader
     assert "filmBlur(coordinate, 0.06, 24)" in shader
     assert "let canonicalTintSrgb = mix(vec3f(warmY), warm" in shader
     assert "select(canonicalTintSrgb, srgbToAcescg(canonicalTintSrgb), p[0] > 0.5)" in shader

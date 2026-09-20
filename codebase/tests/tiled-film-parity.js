@@ -78,8 +78,6 @@ const MAX_CHANNEL_DELTA = 0;
       Object.assign(state.adjustments.hdr.film_look, {
         grain_amount: 65, grain_size: 45, grain_softness: 30, grain_chroma: 35,
         grain_shadow_response: 110, grain_midtone_response: 100, grain_highlight_response: 70,
-        // Halation and bloom stay off: the spatial intermediates are a later
-        // increment of this phase, and the scheduler still refuses them.
         halation_amount: 0, bloom_amount: 0,
       }, extra);
     }, overrides);
@@ -149,7 +147,8 @@ const MAX_CHANNEL_DELTA = 0;
       results.push({ label, tileSize, ...comparison, passed, metrics, tiledShot });
       console.log(
         `${label.padEnd(16)} tileSize ${String(tileSize).padStart(4)}  ${comparison.width}x${comparison.height}  `
-        + `tiles ${String(metrics.tileCount).padStart(4)}  submissions ${metrics.submissions}  `
+        + `tiles ${String(metrics.tileCount).padStart(4)}  halo ${String(metrics.halo).padStart(4)}  `
+        + `work ${metrics.tileWidth ?? "?"}x${metrics.tileHeight ?? "?"}  submissions ${metrics.submissions}  `
         + `maxDelta ${comparison.maxDelta}  differing ${comparison.differing}/${comparison.samples}  `
         + `${passed ? "PASS" : "FAIL"}`,
       );
@@ -159,6 +158,29 @@ const MAX_CHANNEL_DELTA = 0;
     // 1 and 2 -- parity with the picture present.
     await configure();
     for (const tileSize of tileSizes) await parityPass("vignette+grain", tileSize);
+
+    // 4 -- the spatial film effects. Halation and bloom are separable blurs on
+    // the quarter-resolution grid, so this is where a tile whose grid is offset
+    // from the frame's, or whose halo is short, shows a seam at every boundary.
+    await configure({ halation_amount: 70, halation_radius: 1.2, halation_sensitivity: 60,
+      bloom_amount: 55, bloom_radius: 3.0, image_structure_enabled: true,
+      image_softness: 25, microcontrast: 30, film_resolution: 82 });
+    for (const tileSize of tileSizes) await parityPass("spatial", tileSize);
+
+    // 5 -- the same at the largest radii either effect can be asked for, where
+    // the halo is at its 64-texel cap and largest relative to the tile.
+    await configure({ halation_amount: 100, halation_radius: 5.0, halation_sensitivity: 100,
+      bloom_amount: 100, bloom_radius: 10.0, image_structure_enabled: true,
+      image_softness: 100, microcontrast: 100, film_resolution: 0 });
+    for (const tileSize of tileSizes) await parityPass("spatial-max", tileSize);
+
+    // 6 -- the halation view map, which replaces the picture with the halo
+    // field alone, so a seam in it has nothing to hide behind.
+    await configure({ halation_amount: 70, halation_radius: 1.2, halation_view_map: true,
+      bloom_amount: 0, image_structure_enabled: false, film_resolution: 100 });
+    for (const tileSize of tileSizes) await parityPass("halation-view-map", tileSize);
+    await configure({ halation_amount: 0, halation_view_map: false, bloom_amount: 0,
+      image_structure_enabled: false, film_resolution: 100 });
 
     // 3 -- the grain view map: a neutral grey card carrying the grain field and
     // nothing else. Any tile-origin drift in the noise is the whole signal here.
