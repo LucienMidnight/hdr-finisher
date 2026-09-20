@@ -1695,6 +1695,7 @@ body[data-active-lane="sdr"] .lane-dot {
   gap: 6px;
 }
 
+.scope-exact-peak-control,
 .scope-zoom-control,
 .scope-detail-control {
   display: flex;
@@ -1704,6 +1705,12 @@ body[data-active-lane="sdr"] .lane-dot {
   font-family: var(--mono);
   font-size: 9px;
   white-space: nowrap;
+}
+
+/* The checkbox sits after its label, like every other control in this row. */
+.scope-exact-peak-control input {
+  margin: 0;
+  cursor: pointer;
 }
 
 .scope-mode-select {

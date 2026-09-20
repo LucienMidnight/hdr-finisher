@@ -9,6 +9,13 @@
   const TILE_ORIGIN_Y_INDEX = 161;
   const CURVE_SAMPLES = 1024;
   const PEAK_HISTOGRAM_BINS = 4096;
+  // The tile peak reduction target. A maximum is decomposable, so this grid
+  // is a work-splitting device and not a picture: any size gives the exact same
+  // answer. 64 x 64 keeps each fragment's loop to roughly (workTile / 64)^2
+  // iterations -- about 64 for a 528-pixel work tile -- and the readback to
+  // 32 KB per generation.
+  const SCOPE_PEAK_GRID = 64;
+
   const PEAK_REDUCTION_SHADER_SOURCE = `
 @group(0) @binding(0) var peakSource: texture_2d<f32>;
 @group(0) @binding(1) var<storage, read> peakParams: array<f32>;
@@ -1602,6 +1609,65 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     }
 
     /**
+     * The grid every tile max-blends its peak into, and the buffer it reads
+     * back through. One per renderer, reused for every generation: it is 64x64
+     * whatever the image is, so it never follows the picture.
+     */
+    ensureScopePeakTarget() {
+      if (this.scopePeakTarget) return this.scopePeakTarget;
+      const size = SCOPE_PEAK_GRID;
+      // rgba16float is 8 bytes a texel, and copyTextureToBuffer wants rows
+      // aligned to 256 bytes. 64 texels is 512 bytes, so the pitch is already
+      // aligned and the readback needs no row padding arithmetic.
+      const bytesPerRow = size * 8;
+      try {
+        this.scopePeakTarget = {
+          size,
+          bytesPerRow,
+          texture: this.device.createTexture({
+            size: { width: size, height: size },
+            format: "rgba16float",
+            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
+              | GPUTextureUsage.COPY_SRC,
+          }),
+          readBuffer: this.device.createBuffer({
+            size: bytesPerRow * size,
+            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+          }),
+        };
+      } catch (error) {
+        this.recordAllocationFailure("scope-peak", error, { width: size, height: size });
+        return null;
+      }
+      this.recordAllocation("scope-peak", bytesPerRow * size * 2, { width: size, height: size });
+      return this.scopePeakTarget;
+    }
+
+    /**
+     * The exact maximum of a finished generation, from the accumulated grid.
+     *
+     * Returns null rather than a guess when the readback cannot be taken, so a
+     * caller can say the peak is unmeasured instead of reporting a wrong one.
+     */
+    async readScopePeak(target) {
+      if (!target) return null;
+      try {
+        await target.readBuffer.mapAsync(GPUMapMode.READ);
+        const values = new Uint16Array(target.readBuffer.getMappedRange());
+        let peak = 0;
+        for (let index = 0; index < values.length; index += 4) {
+          const value = halfToFloat(values[index]);
+          if (value > peak) peak = value;
+        }
+        return peak;
+      } catch (error) {
+        return null;
+      } finally {
+        if (target.readBuffer.mapState === "mapped") target.readBuffer.unmap();
+      }
+    }
+
+    /**
      * One reusable tile-sized working set.
      *
      * This is the whole point of tiled execution: the graph's intermediates
@@ -1704,7 +1770,13 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
 
       const context = canvas.getContext("webgpu");
       if (!context) return { rendered: false, refusals: ["no webgpu canvas context"] };
-      if (canvas.width !== proxy.width || canvas.height !== proxy.height) {
+      // A measurement pass never presents, so it must not resize the canvas
+      // the viewer is looking at, and it needs no presentation surface at its
+      // own resolution -- which is the whole reason a native measurement is
+      // affordable when a native *presentation* would not be. It borrows the
+      // surface format only, to pick the same pipelines.
+      const measureOnly = Boolean(sourceOptions?.measureOnly);
+      if (!measureOnly && (canvas.width !== proxy.width || canvas.height !== proxy.height)) {
         canvas.width = proxy.width;
         canvas.height = proxy.height;
       }
@@ -1749,6 +1821,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.uploadParamsAndCurves(lane, adjustments, curveSampler, params);
 
       return this.encodeTiledGeneration(canvas, context, proxy, surface, pipelines, params, {
+        measureOnly,
         Scheduler,
         tileSize,
         lane,
@@ -1888,6 +1961,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         || (typeof window !== "undefined" ? window.HDRTileScheduler : null);
       if (!Scheduler) return { rendered: false, refusals: ["tile scheduler is unavailable"] };
       const tileSize = Math.max(64, Math.floor(Number(options.tileSize) || Scheduler.DEFAULT_TILE_SIZE));
+      // A measurement pass renders the graph to read one number off it and
+      // presents nothing, so it must leave every piece of state that describes
+      // the presented generation exactly as it found it.
+      const measureOnly = Boolean(options.measureOnly);
       const lane = options.lane || "hdr";
       const longEdge = Number(options.longEdge) || Math.max(proxy.width, proxy.height);
       const editRevision = Number(options.editRevision) || 0;
@@ -1955,6 +2032,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         slots[base + 163] = tile.haloRect.height;
         slots[base + 164] = proxy.width;
         slots[base + 165] = proxy.height;
+        // The peak reduction reads its grid from the same slots the scope
+        // passes do. Nothing else in the render graph reads them.
+        slots[base + 136] = SCOPE_PEAK_GRID;
+        slots[base + 137] = SCOPE_PEAK_GRID;
       });
       this.device.queue.writeBuffer(this.tileCompositeParamBuffer, 0, slots);
 
@@ -1984,12 +2065,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const detailResultView = graph.detailResultTexture.createView();
       const filmView = graph.filmTexture.createView();
       const finishView = graph.finishTexture.createView();
+      const peakTarget = this.ensureScopePeakTarget();
+      const peakView = peakTarget?.texture.createView() || null;
       const globalInputIdentity = detailBandIdentity(params, proxy.identity, "global");
       const pinnedDetail = [];
       const pinnedMasks = maskMatrix.flat().map((entry) => entry.key);
       const cacheBefore = { ...this.detailCacheCounters };
       const startedAt = performance.now();
-      this.scopeSources.delete(canvas);
+      if (!measureOnly) this.scopeSources.delete(canvas);
       this.device.pushErrorScope("validation");
       const encoder = this.device.createCommandEncoder();
       const pass = (view, pipeline, bindGroup, width, height, alpha = 1) => {
@@ -2003,7 +2086,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         renderPass.draw(3);
         renderPass.end();
       };
-      const canvasView = context.getCurrentTexture().createView();
+      // A measurement pass must not acquire the swap chain: doing so would
+      // hand it a texture sized to the canvas the viewer is looking at, and
+      // presenting it would replace their frame with a partial one.
+      const canvasView = measureOnly ? null : context.getCurrentTexture().createView();
       const bandTileKey = (prefix, candidate) => `${prefix}|${candidate.rect.x},${candidate.rect.y},${candidate.rect.width},${candidate.rect.height}|h${candidate.halo}`;
       const intersect = (left, right) => {
         const x0 = Math.max(left.x, right.x);
@@ -2125,30 +2211,74 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           spatialResultView = graph.spatialATexture.createView();
         }
         pass(finishView, pipelines.finish, bind(filmView, spatialResultView), width, height);
-        const overlayView = options.overlayIndex >= 0
-          ? maskMatrix[index][options.overlayIndex].texture.createView()
-          : sourceView;
-        const compositeBind = bind(finishView, sourceView, overlayView);
-        const compositePass = encoder.beginRenderPass({
-          colorAttachments: [{
-            view: canvasView, loadOp: index === 0 ? "clear" : "load",
-            clearValue: { r: 0, g: 0, b: 0, a: 1 }, storeOp: "store",
-          }],
-        });
-        compositePass.setScissorRect(tile.rect.x, tile.rect.y, tile.rect.width, tile.rect.height);
-        compositePass.setPipeline(pipelines.composite);
-        compositePass.setBindGroup(0, compositeBind);
-        compositePass.draw(3);
-        compositePass.end();
+        // The finished tile is measured before it is composited, because the
+        // composite encodes for the display and this has to read the picture.
+        // On a measurement pass this is the only thing the tile is for.
+        if (peakTarget) {
+          const peakPass = encoder.beginRenderPass({
+            colorAttachments: [{
+              view: peakView,
+              loadOp: index === 0 ? "clear" : "load",
+              clearValue: { r: 0, g: 0, b: 0, a: 0 },
+              storeOp: "store",
+            }],
+          });
+          peakPass.setPipeline(pipelines.scopePeakTile);
+          peakPass.setBindGroup(0, bind(finishView));
+          peakPass.draw(3);
+          peakPass.end();
+        }
+        if (!measureOnly) {
+          const overlayView = options.overlayIndex >= 0
+            ? maskMatrix[index][options.overlayIndex].texture.createView()
+            : sourceView;
+          const compositeBind = bind(finishView, sourceView, overlayView);
+          const compositePass = encoder.beginRenderPass({
+            colorAttachments: [{
+              view: canvasView, loadOp: index === 0 ? "clear" : "load",
+              clearValue: { r: 0, g: 0, b: 0, a: 1 }, storeOp: "store",
+            }],
+          });
+          compositePass.setScissorRect(tile.rect.x, tile.rect.y, tile.rect.width, tile.rect.height);
+          compositePass.setPipeline(pipelines.composite);
+          compositePass.setBindGroup(0, compositeBind);
+          compositePass.draw(3);
+          compositePass.end();
+        }
         scheduler.acceptTile(tile.key, plan.generation);
       });
 
+      if (peakTarget) {
+        encoder.copyTextureToBuffer(
+          { texture: peakTarget.texture },
+          { buffer: peakTarget.readBuffer, bytesPerRow: peakTarget.bytesPerRow, rowsPerImage: peakTarget.size },
+          { width: peakTarget.size, height: peakTarget.size },
+        );
+      }
       this.device.queue.submit([encoder.finish()]);
       localBuffers.forEach((entry) => entry.buffer.destroy());
       const validationError = await this.device.popErrorScope();
       if (validationError) {
         this.recordStage("tiled-validation-error", { message: validationError.message });
         return { rendered: false, refusals: [`validation: ${validationError.message}`] };
+      }
+      // Taken now, while this generation's grid is still the one in the
+      // target. It is an exact maximum over every pixel the tiles covered, and
+      // `measuredLongEdge` says what resolution those pixels were, because a
+      // maximum over a downsampled proxy is a lower bound on the real one and
+      // must never be presented as though it were not.
+      const measuredPeak = await this.readScopePeak(peakTarget);
+      if (measuredPeak !== null && !measureOnly) {
+        this.exactScopePeak = {
+          peak: measuredPeak,
+          lane,
+          longEdge: Math.max(proxy.width, proxy.height),
+          width: proxy.width,
+          height: proxy.height,
+          editRevision,
+          applicationGeneration: Number(options.applicationGeneration ?? 0),
+          identity: proxy.identity,
+        };
       }
       const detailCacheBytes = this.trimDetailBandTiles(pinnedDetail);
       const maskCacheBytes = this.trimMaskTiles(pinnedMasks);
@@ -2161,9 +2291,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         this.trimMaskTiles();
       }).catch(() => null);
       const durationMs = performance.now() - startedAt;
-      this.tiledExecutionMetrics = {
+      const metrics = {
         width: proxy.width, height: proxy.height, tileSize, halo,
         detailHalo, spatialHalo, tileWidth: workWidth, tileHeight: workHeight,
+        exactPeak: measuredPeak, exactPeakLongEdge: Math.max(proxy.width, proxy.height),
         tileCount: plan.tileCount, visibleCount: plan.visibleCount, submissions: 1,
         workingSetBytes: graph.byteSize, proxyBytes: proxy.byteSize,
         detailCacheBytes, maskCacheBytes,
@@ -2179,11 +2310,15 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         presentableGeneration: scheduler.presentableGeneration(plan), durationMs,
       };
       this.recordStage("detail-cache", { ...this.tiledExecutionMetrics });
-      this.recordStage("tiled-render", { lane, longEdge, ...this.tiledExecutionMetrics });
+      // Likewise the diagnostics: `tiledExecutionMetrics` describes the
+      // generation on screen, and a measurement pass has not put one there.
+      // Its own numbers come back through the return value instead.
+      if (!measureOnly) this.tiledExecutionMetrics = metrics;
+      this.recordStage(measureOnly ? "tiled-measure" : "tiled-render", { lane, longEdge, ...metrics });
       return {
         rendered: true, refusals: [], width: proxy.width, height: proxy.height,
         hdr: surface.hdr, proxyFormat: proxy.pixelFormat,
-        sourceSerial: proxy.sourceSerial ?? null, execution: "tiled", metrics: this.tiledExecutionMetrics,
+        sourceSerial: proxy.sourceSerial ?? null, execution: "tiled", metrics,
       };
     }
 
@@ -3652,9 +3787,29 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         fragment: { module: this.module, entryPoint: "fragmentMain", targets: [{ format }] },
         primitive: { topology: "triangle-list" },
       });
+      // Max blending is what lets every tile accumulate into one grid without
+      // a readback each. `one`/`one` with operation `max` is a plain maximum:
+      // the factors are ignored for min and max operations.
+      const scopePeakTile = this.device.createRenderPipeline({
+        layout: this.pipelineLayout,
+        vertex: { module: this.module, entryPoint: "vertexMain" },
+        fragment: {
+          module: this.module,
+          entryPoint: "scopePeakTileFragmentMain",
+          targets: [{
+            format: "rgba16float",
+            blend: {
+              color: { operation: "max", srcFactor: "one", dstFactor: "one" },
+              alpha: { operation: "max", srcFactor: "one", dstFactor: "one" },
+            },
+          }],
+        },
+        primitive: { topology: "triangle-list" },
+      });
       const pipelines = {
         base,
         finish,
+        scopePeakTile,
         local,
         localCandidate,
         localDetailHorizontal,
@@ -6502,6 +6657,39 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       }
       return vec4f(total / 16.0, peak);
     }
+    // The exact maximum of the finished picture over one tile.
+    //
+    // This is the number a delivery decision is made on -- "is this under 1000
+    // nits" -- so it is a true maximum over every pixel, never a sample. The
+    // grid it writes into is a reduction target and not a picture: cell (i, j)
+    // holds the maximum over its share of *this tile*, with no relationship to
+    // any frame position. A maximum is decomposable, so max-blending every
+    // tile into one grid and taking the largest cell at the end is exactly the
+    // maximum over the frame, whatever the tiling. That is what makes this
+    // affordable: the grid stays small, each fragment's loop stays short, and
+    // the readback is one small texture per generation rather than one per
+    // tile.
+    //
+    // It reduces the same expression the settled scope pass reduces, so this
+    // cannot drift from what the scopes draw.
+    @fragment fn scopePeakTileFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let grid = max(vec2u(u32(p[136]), u32(p[137])), vec2u(1u));
+      let valid = vec2u(max(validTileDimensions(), vec2i(1)));
+      let cell = vec2u(input.position.xy - vec2f(0.5));
+      let start = vec2u(floor(vec2f(cell) * vec2f(valid) / vec2f(grid)));
+      let end = min(
+        valid,
+        max(start + vec2u(1u), vec2u(ceil(vec2f(cell + vec2u(1u)) * vec2f(valid) / vec2f(grid))))
+      );
+      var peak = 0.0;
+      for (var y = start.y; y < end.y; y = y + 1u) {
+        for (var x = start.x; x < end.x; x = x + 1u) {
+          peak = max(peak, scopePeakSignal(scopeOutputAt(vec2i(i32(x), i32(y)))));
+        }
+      }
+      return vec4f(peak, peak, peak, peak);
+    }
+
     @fragment fn settledScopeFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let targetDimensions = max(vec2u(u32(p[136]), u32(p[137])), vec2u(1u));
       let sourceDimensions = textureDimensions(sourceTexture);

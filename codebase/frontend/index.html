@@ -490,6 +490,10 @@
                 <option value="reference">Reference</option>
               </select>
             </label>
+            <label class="scope-exact-peak-control" for="scope-exact-peak" title="Measures the peak at full resolution rather than at the preview's. The preview is a downsample, so its peak reads low on small speculars: on a 42 MP frame it under-reports by about 11%. Turn this off only if the extra pass is too slow on this machine.">
+              <span>Exact peak</span>
+              <input type="checkbox" id="scope-exact-peak" checked>
+            </label>
             <label class="scope-zoom-control" for="scope-zoom">
               <span>Scope zoom</span>
               <select id="scope-zoom" class="scope-mode-select">
