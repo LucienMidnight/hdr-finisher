@@ -213,7 +213,12 @@ fn analyzeMain(@builtin(global_invocation_id) id: vec3u) {
 // output store and to the original read, and is zero for the intermediate
 // passes that write into a tile-local scratch. Evidence is always read at
 // tile-local coordinates, because evidence is stored per tile.
-struct ResolveParams { weights: vec4f, flags: vec4f, rect: vec4f, };
+// The rect is (width, height, x, y) in frame coordinates. The origin is where
+// the destination texture's own (0, 0) sits in those coordinates, so a
+// reconstruction can read the whole-frame original at its true position while
+// writing into a texture that covers only one tile. Whole-frame destinations
+// leave it at zero, which makes reading and writing the same coordinate again.
+struct ResolveParams { weights: vec4f, flags: vec4f, rect: vec4f, origin: vec4f, };
 @group(1) @binding(0) var resolveLow: texture_2d<f32>;
 @group(1) @binding(1) var resolveH: texture_2d<f32>;
 @group(1) @binding(2) var resolveV: texture_2d<f32>;
@@ -241,7 +246,8 @@ fn resolveMain(@builtin(global_invocation_id) id: vec3u) {
   let outSize = vec2u(u32(resolveParams.rect.x), u32(resolveParams.rect.y));
   if (id.x >= outSize.x || id.y >= outSize.y) { return; }
   let p = vec2i(id.xy);
-  let storeAt = p + vec2i(i32(resolveParams.rect.z), i32(resolveParams.rect.w));
+  let frameAt = p + vec2i(i32(resolveParams.rect.z), i32(resolveParams.rect.w));
+  let storeAt = frameAt - vec2i(i32(resolveParams.origin.x), i32(resolveParams.origin.y));
   let q = p / 2;
   // A tile origin is a multiple of 2^levels, so local and global parity agree
   // at every level and the sign pattern is the whole-image one.
@@ -253,7 +259,7 @@ fn resolveMain(@builtin(global_invocation_id) id: vec3u) {
   residual += sy * weightedDetail(textureLoad(resolveV, q, 0));
   residual += sx * sy * weightedDetail(textureLoad(resolveD, q, 0));
   var rgb = residual;
-  if (resolveParams.flags.y > 0.5) { rgb = textureLoad(resolveOriginal, storeAt, 0).rgb - residual; }
+  if (resolveParams.flags.y > 0.5) { rgb = textureLoad(resolveOriginal, frameAt, 0).rgb - residual; }
   textureStore(resolveOutput, storeAt, vec4f(rgb, 1.0));
 }
 
@@ -272,7 +278,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
   let outSize = vec2u(u32(directParams.rect.x), u32(directParams.rect.y));
   if (id.x >= outSize.x || id.y >= outSize.y) { return; }
   let p = vec2i(id.xy);
-  let storeAt = p + vec2i(i32(directParams.rect.z), i32(directParams.rect.w));
+  let frameAt = p + vec2i(i32(directParams.rect.z), i32(directParams.rect.w));
+  let storeAt = frameAt - vec2i(i32(directParams.origin.x), i32(directParams.origin.y));
   let q0 = p / 2;
   let q1 = q0 / 2;
   let sx0 = select(1.0, -1.0, (p.x & 1) == 1);
@@ -286,7 +293,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
   residual += sx0 * weightedDetailWith(textureLoad(directH0, q0, 0), weights);
   residual += sy0 * weightedDetailWith(textureLoad(directV0, q0, 0), weights);
   residual += sx0 * sy0 * weightedDetailWith(textureLoad(directD0, q0, 0), weights);
-  let rgb = textureLoad(directOriginal, storeAt, 0).rgb - residual;
+  let rgb = textureLoad(directOriginal, frameAt, 0).rgb - residual;
   textureStore(directOutput, storeAt, vec4f(rgb, 1.0));
 }`;
 
@@ -1489,7 +1496,6 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
      */
     tiledExecutionRefusals({ activeLocals = [], detailActive, spatialActive, overlayMask, params, surface }) {
       const reasons = [];
-      if (this.denoiseSourceSelector) reasons.push("denoise");
       return reasons;
     }
 
@@ -1674,11 +1680,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
      * stop following the image and follow the tile instead, so peak residency
      * stays flat as the selected tier grows.
      */
-    ensureTileGraph(width, height, outputFormat, sourceFormat, spatialActive = false) {
+    ensureTileGraph(width, height, outputFormat, sourceFormat, spatialActive = false, denoiseActive = false) {
       const current = this.tileGraph;
       if (current && current.width === width && current.height === height
         && current.outputFormat === outputFormat && current.sourceFormat === sourceFormat
-        && current.spatialActive === spatialActive) {
+        && current.spatialActive === spatialActive && current.denoiseActive === denoiseActive) {
         return current;
       }
       this.destroyTileGraph();
@@ -1711,8 +1717,23 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           spatialBTexture: spatialActive ? makeSpatial() : null,
           spatialWidth,
           spatialHeight,
+          denoiseActive,
+          // One tile's worth of denoised picture, rebuilt per tile from cached
+          // evidence. The whole-frame resolved texture this replaces is 340 MB
+          // on a 42 MP frame, and allocating it is what used to put a denoised
+          // Full over any budget.
+          denoiseResolvedTexture: denoiseActive
+            ? this.device.createTexture({
+              label: "tile-denoise-resolved",
+              size: { width, height },
+              format: "rgba16float",
+              usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING
+                | GPUTextureUsage.COPY_SRC,
+            })
+            : null,
           byteSize: width * height * (8 * 6 + (sourceFormat === "rgba16float" ? 8 : 16))
-            + (spatialActive ? spatialWidth * spatialHeight * 8 * 2 : 0),
+            + (spatialActive ? spatialWidth * spatialHeight * 8 * 2 : 0)
+            + (denoiseActive ? width * height * 8 : 0),
         };
       } catch (error) {
         this.recordAllocationFailure("tile-graph", error, { width, height });
@@ -1737,6 +1758,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         graph.finishTexture?.destroy();
         graph.spatialATexture?.destroy();
         graph.spatialBTexture?.destroy();
+        graph.denoiseResolvedTexture?.destroy();
       });
     }
 
@@ -1971,9 +1993,32 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const activeLocals = options.activeLocals || [];
       const { detailActive, spatialActive, filmNeighbourhoodActive } = this.graphActivity(params);
       const localDetailActive = activeLocals.some((local) => gpuLocalDetailActive(local[`${lane}_grade`]));
-      const { halo, detailHalo, spatialHalo } = this.composedTileHalo(
+      // Denoise reconstructs into a tile-sized texture rather than reading a
+      // whole-frame resolved one. The alignment is the wavelet grid: a Haar
+      // decomposition indexes from the frame's origin, so a tile that started
+      // off the grid would reconstruct against the wrong parity.
+      const denoiseSelector = this.denoiseSourceSelector;
+      // The evidence is indexed against the frame the analysis ran on. If this
+      // render is at a different resolution the indexing does not line up, and
+      // reconstructing anyway would denoise against the wrong pixels -- so the
+      // graph renders undenoised rather than wrongly, exactly as it did before
+      // an analysis existed.
+      const denoiseActive = Boolean(
+        denoiseSelector?.cache && denoiseSelector.original
+        && denoiseSelector.original.width === proxy.width
+        && denoiseSelector.original.height === proxy.height,
+      );
+      const denoiseControls = denoiseSelector?.controls
+        || { amount: 0.5, luminance: 0.5, colorNoise: 0.5, detailRecovery: 0.5 };
+      const denoiseAlignment = denoiseActive
+        ? denoiseTileAlignment(denoiseSelector.cache.settings.levels)
+        : 1;
+      let { halo, detailHalo, spatialHalo } = this.composedTileHalo(
         proxy.width, proxy.height, params, activeLocals, lane,
       );
+      if (denoiseActive && halo % denoiseAlignment) {
+        halo = Math.ceil(halo / denoiseAlignment) * denoiseAlignment;
+      }
       const scheduler = this.tileScheduler instanceof Scheduler
         ? this.tileScheduler
         : (this.tileScheduler = new Scheduler({
@@ -2000,10 +2045,17 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       });
       const workWidth = Math.min(proxy.width, tileSize + halo * 2);
       const workHeight = Math.min(proxy.height, tileSize + halo * 2);
-      const graph = this.ensureTileGraph(workWidth, workHeight, surface.format, proxy.pixelFormat, spatialActive);
+      const graph = this.ensureTileGraph(
+        workWidth, workHeight, surface.format, proxy.pixelFormat, spatialActive, denoiseActive,
+      );
       if (!graph) return { rendered: false, refusals: ["tile graph allocation failed"] };
 
       const isCurrent = options.isCurrent || (() => true);
+      // Parameter buffers the reconstruction encoded against. They must outlive
+      // the submission that reads them, so they are freed alongside the local
+      // buffers once it has gone through.
+      const denoiseParamBuffers = [];
+      let denoiseTileResolves = 0;
       const maskMatrix = activeLocals.length
         ? await Promise.all(plan.tiles.map((tile) => Promise.all(activeLocals.map((local) => this.loadLocalMaskTile(
           options.sessionId, local, tile, longEdge, editRevision, options.geometrySignature || "{}", isCurrent,
@@ -2115,7 +2167,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         return true;
       };
 
-      plan.tiles.forEach((tile, index) => {
+      // Denoise reconstructs into the same encoder, one tile at a time, so this
+      // loop has to be able to wait for it. Command order is call order, and
+      // every tile is reconstructed before the copy that reads it.
+      for (const [index, tile] of plan.tiles.entries()) {
         const width = tile.haloRect.width;
         const height = tile.haloRect.height;
         const parameterBinding = {
@@ -2123,11 +2178,38 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         };
         const bind = (source, spatial = source, overlay = spatial, binding = parameterBinding) =>
           this.bindGraphResources(source, spatial, binding, overlay);
-        encoder.copyTextureToTexture(
-          { texture: proxy.texture, origin: { x: tile.haloRect.x, y: tile.haloRect.y, z: 0 } },
-          { texture: graph.sourceTexture, origin: { x: 0, y: 0, z: 0 } },
-          { width, height, depthOrArrayLayers: 1 },
-        );
+        if (denoiseActive) {
+          // Reconstruct only this tile, into a texture the size of one tile,
+          // and into the same encoder so the generation stays one submission.
+          // The reconstruction reads the original at its true frame position,
+          // so the pixels are the ones the whole-frame resolve would produce.
+          const resolved = await this.resolveDenoiseProxy(denoiseControls, {
+            region: {
+              x: tile.haloRect.x, y: tile.haloRect.y,
+              width: tile.haloRect.width, height: tile.haloRect.height,
+            },
+            destination: {
+              texture: graph.denoiseResolvedTexture,
+              width: graph.width,
+              height: graph.height,
+              byteSize: graph.width * graph.height * 8,
+            },
+            encoder,
+          });
+          if (resolved?.paramBuffer) denoiseParamBuffers.push(resolved.paramBuffer);
+          denoiseTileResolves += 1;
+          encoder.copyTextureToTexture(
+            { texture: graph.denoiseResolvedTexture, origin: { x: 0, y: 0, z: 0 } },
+            { texture: graph.sourceTexture, origin: { x: 0, y: 0, z: 0 } },
+            { width, height, depthOrArrayLayers: 1 },
+          );
+        } else {
+          encoder.copyTextureToTexture(
+            { texture: proxy.texture, origin: { x: tile.haloRect.x, y: tile.haloRect.y, z: 0 } },
+            { texture: graph.sourceTexture, origin: { x: 0, y: 0, z: 0 } },
+            { width, height, depthOrArrayLayers: 1 },
+          );
+        }
         pass(baseView, pipelines.base, bind(sourceView), width, height);
         let localSource = graph.baseTexture;
 
@@ -2246,7 +2328,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           compositePass.end();
         }
         scheduler.acceptTile(tile.key, plan.generation);
-      });
+      }
 
       if (peakTarget) {
         encoder.copyTextureToBuffer(
@@ -2257,6 +2339,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       }
       this.device.queue.submit([encoder.finish()]);
       localBuffers.forEach((entry) => entry.buffer.destroy());
+      denoiseParamBuffers.forEach((buffer) => buffer.destroy());
       const validationError = await this.device.popErrorScope();
       if (validationError) {
         this.recordStage("tiled-validation-error", { message: validationError.message });
@@ -3142,7 +3225,21 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
      * and pan cheap. It must start on the wavelet grid for the same reason a
      * tile must.
      */
-    async resolveDenoiseProxy(controls = {}, { region = null } = {}) {
+    /**
+     * Reconstruct the denoised picture from cached evidence.
+     *
+     * With no `destination` this fills the selector's whole-frame resolved
+     * texture, which is what an interactive control drag wants: one texture the
+     * renderer keeps binding as its source.
+     *
+     * With one, it fills a caller-owned texture that covers only `region`,
+     * which is what tiled execution wants: the resolved picture is then bounded
+     * by a tile rather than by the image, and the whole-frame resolved
+     * texture -- 340 MB on a 42 MP frame -- is never allocated at all. The
+     * reconstruction still reads the original at its true frame position, so
+     * the result is the same pixels either way; only where they land differs.
+     */
+    async resolveDenoiseProxy(controls = {}, { region = null, destination = null, encoder: sharedEncoder = null } = {}) {
       const selector = this.denoiseSourceSelector;
       if (!selector?.cache || !selector.original) return false;
       const generation = ++this.denoiseSelectorGeneration;
@@ -3167,8 +3264,13 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const active = cache.tiles.filter((entry) => overlaps(entry.tile));
       if (!active.length) return false;
 
-      const candidateIsNew = !selector.resolved;
-      const candidate = selector.resolved
+    // Where the destination's own (0, 0) sits in frame coordinates. A
+    // whole-frame destination is the identity.
+      const destinationOrigin = destination
+        ? { x: Math.max(0, Math.floor(region?.x || 0)), y: Math.max(0, Math.floor(region?.y || 0)) }
+        : { x: 0, y: 0 };
+      const candidateIsNew = !destination && !selector.resolved;
+      const candidate = destination || selector.resolved
         || this.createDenoiseTexture(selector.original.width, selector.original.height, "denoise-resolved");
       let paramBuffer = null;
       try {
@@ -3178,14 +3280,21 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
         const slots = new Float32Array(paramBuffer.size / 4);
-        const encoder = this.device.createCommandEncoder();
+        // A tiled generation is one submission, because that is what makes
+        // replacement atomic. When the caller hands over its encoder, the
+        // reconstruction joins that submission instead of making one of its
+        // own, and the caller frees the parameter buffer after its own submit.
+        const encoder = sharedEncoder || this.device.createCommandEncoder();
         let dispatches = 0;
 
         active.forEach((entry, entryIndex) => {
           const { tile, levels, chain } = entry;
           if (levelCount === 2) {
             const base = entryIndex * levelCount * (slot / 4);
-            slots.set([...weights, 0, 1, 0, 0, tile.width, tile.height, tile.x, tile.y], base);
+            slots.set([
+              ...weights, 0, 1, 0, 0, tile.width, tile.height, tile.x, tile.y,
+              destinationOrigin.x, destinationOrigin.y, 0, 0,
+            ], base);
             const fine = levels[0].evidence;
             const medium = levels[1].evidence;
             const bindGroup = this.device.createBindGroup({
@@ -3199,7 +3308,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
                 { binding: 5, resource: medium[2].texture.createView() },
                 { binding: 6, resource: selector.original.texture.createView() },
                 { binding: 7, resource: candidate.texture.createView() },
-                { binding: 8, resource: { buffer: paramBuffer, offset: entryIndex * levelCount * slot, size: 48 } },
+                { binding: 8, resource: { buffer: paramBuffer, offset: entryIndex * levelCount * slot, size: 64 } },
               ],
             });
             const pass = encoder.beginComputePass();
@@ -3221,6 +3330,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
               weights[0] * levelWeight, weights[1], weights[2], weights[3],
               reconstructedLow ? 1 : 0, finalPass ? 1 : 0, 0, 0,
               out.width, out.height, finalPass ? tile.x : 0, finalPass ? tile.y : 0,
+              // Only the final pass writes into the caller's destination. The
+              // intermediate levels write into whole scratch textures of their
+              // own and are already at their own origin.
+              finalPass ? destinationOrigin.x : 0, finalPass ? destinationOrigin.y : 0, 0, 0,
             ], base);
             const dummyLow = reconstructedLow || levels[index].evidence[0];
             const bindGroup = this.device.createBindGroup({
@@ -3232,7 +3345,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
                 { binding: 3, resource: levels[index].evidence[2].texture.createView() },
                 { binding: 4, resource: selector.original.texture.createView() },
                 { binding: 5, resource: output.texture.createView() },
-                { binding: 6, resource: { buffer: paramBuffer, offset: (entryIndex * levelCount + index) * slot, size: 48 } },
+                { binding: 6, resource: { buffer: paramBuffer, offset: (entryIndex * levelCount + index) * slot, size: 64 } },
               ],
             });
             const pass = encoder.beginComputePass();
@@ -3246,6 +3359,13 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         });
 
         this.device.queue.writeBuffer(paramBuffer, 0, slots);
+        if (sharedEncoder) {
+          this.denoiseCounters.resolveDispatches += dispatches;
+          this.denoiseCounters.resolveTiles += active.length;
+          const encoded = paramBuffer;
+          paramBuffer = null;
+          return { encoded: true, dispatches, tiles: active.length, paramBuffer: encoded };
+        }
         this.device.queue.submit([encoder.finish()]);
         await this.device.queue.onSubmittedWorkDone();
         if (generation !== this.denoiseSelectorGeneration || selector !== this.denoiseSourceSelector) {
@@ -3261,6 +3381,24 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
             geometrySignature: selector.original.geometrySignature,
             identity: selector.original.identity,
           };
+        }
+        // A bounded destination is the caller's own texture for one tile. It
+        // is not the selector's resolved picture, so it does not become the
+        // selected source and does not claim a resolved region: saying it did
+        // would tell the renderer a whole frame is denoised when one tile is.
+        if (destination) {
+          this.denoiseCounters.resolveDispatches += dispatches;
+          this.denoiseCounters.resolveTiles += active.length;
+          this.recordStage("denoise-resolve", {
+            state: "ready",
+            generation,
+            durationMs: performance.now() - startedAt,
+            tiles: active.length,
+            dispatches,
+            region: `${region.x},${region.y},${region.width},${region.height}`,
+            destination: "bounded",
+          });
+          return true;
         }
         // The swap is the last thing that happens, and only on success. A
         // half-finished reconstruction can never become the presented result.

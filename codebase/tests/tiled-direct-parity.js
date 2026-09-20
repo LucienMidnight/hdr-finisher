@@ -321,13 +321,15 @@ const MAX_DIFFERING_FRACTION = 0.0005;
       }
     });
 
-    // A refusal must be explicit rather than a silent fallback to Direct.
-    // Phase 7 moved vignette, grain and the spatial film effects onto the tiled
-    // path in turn, so the refusal this asserts is the one that is still true:
-    // the resolved denoise proxy, which is still whole-frame.
-    const refusal = await page.evaluate(async () => {
-      const preview = state.gpuPreview;
-      const analyzed = await preview.analyzeDenoiseProxy(
+    // Denoise was the tile scheduler's last refusal. Direct reads a whole-frame
+    // resolved texture -- 340 MB on a 42 MP frame, which is what used to put a
+    // denoised Full over any budget; Tiled reconstructs one tile at a time from
+    // the same cached evidence. Those are two different routes to the same
+    // pixels, so this is the parity that replaces the refusal, and it runs at
+    // both tile sizes because reconstruction is indexed off the frame's wavelet
+    // grid and a misaligned tile would reconstruct against the wrong parity.
+    const denoiseSetup = await page.evaluate(async () => {
+      const analyzed = await state.gpuPreview.analyzeDenoiseProxy(
         state.session.session_id,
         "hdr",
         JSON.parse(JSON.stringify(state.adjustments)),
@@ -338,15 +340,35 @@ const MAX_DIFFERING_FRACTION = 0.0005;
         { amount: 0.8, luminance: 0.7, colorNoise: 0.6, detailRecovery: 0.3 },
       );
       if (!analyzed) return { error: "denoise analysis did not run" };
-      const result = await window.HDRFinisherPerformance.renderTiledTier(previewTargetLongEdge());
-      preview.denoiseSourceSelector = null;
-      return result;
+      // Direct must actually be reading the reconstructed picture, or this
+      // compares two undenoised renders and proves nothing.
+      if (state.gpuPreview.denoiseSourceSelector?.selected !== "resolved") {
+        return { error: "the selector did not switch to the resolved source" };
+      }
+      return { ok: true };
     });
-    if (refusal.error) throw new Error(`Could not set up the denoise refusal: ${refusal.error}`);
-    if (refusal.rendered || !refusal.refusals.includes("denoise")) {
-      throw new Error(`Denoise should keep a graph off the tiled path: ${JSON.stringify(refusal)}`);
+    if (denoiseSetup.error) throw new Error(`Could not set up denoise parity: ${denoiseSetup.error}`);
+    for (const tileSize of tileSizes) await parityPass("denoise", tileSize);
+    const denoiseRuns = results.filter((entry) => entry.label === "denoise");
+    if (denoiseRuns.some((entry) => !entry.passed)) {
+      throw new Error(`Denoised Direct/Tiled parity failed: ${JSON.stringify(denoiseRuns.map((e) => ({
+        tileSize: e.tileSize, maxDelta: e.maxDelta, differing: e.differing,
+      })))}`);
     }
-    console.log(`refusal check: denoise -> ${JSON.stringify(refusal.refusals)}  PASS`);
+    console.log(`denoise parity: ${denoiseRuns.map((e) => `tile ${e.tileSize} maxDelta ${e.maxDelta}`).join("; ")}  PASS`);
+    await page.evaluate(() => { state.gpuPreview.denoiseSourceSelector = null; });
+
+    // Nothing is refused any more. That is the claim, so it is asserted rather
+    // than left as the absence of a check: a silent fallback to Direct is the
+    // failure this suite exists to catch.
+    const refusals = await page.evaluate(async () => {
+      const result = await window.HDRFinisherPerformance.renderTiledTier(previewTargetLongEdge());
+      return { rendered: result?.rendered, refusals: result?.refusals || [] };
+    });
+    if (!refusals.rendered || refusals.refusals.length) {
+      throw new Error(`The tile scheduler refused a graph it should now take: ${JSON.stringify(refusals)}`);
+    }
+    console.log("refusal check: no module keeps this graph off the tiled path  PASS");
 
     // One submission per generation is what makes replacement atomic.
     const atomic = results.every((entry) => entry.metrics.submissions === 1);
