@@ -7765,7 +7765,11 @@ body {
 
 .compact-workspace.source-overlay-open .source-rail {
   position: absolute;
-  z-index: 30;
+  /* Above the viewer bar at 40, which otherwise covers the top of the rail --
+     including the button that closes it, so the overlay could be opened and
+     not shut. Below the tooltips and menus at 50 and up, which should still
+     be able to appear over it. */
+  z-index: 45;
   top: var(--top-h);
   bottom: 0;
   left: 0;

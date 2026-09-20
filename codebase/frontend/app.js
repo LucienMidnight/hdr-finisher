@@ -4258,10 +4258,22 @@ function exactScopePeakKey(lane = state.currentView) {
  */
 async function measureExactScopePeak({ lane = state.currentView, force = false } = {}) {
   if (!state.gpuPreview?.available || !state.session) return null;
+  // This is speculative work: nobody asked for it, it paints nothing, and a
+  // full-resolution render is the most expensive thing the renderer does. It
+  // must therefore never be in the way of something the user did ask for.
+  // Importing a source replaces the session this would be measuring, so there
+  // is nothing to measure and every reason not to compete for the network and
+  // the device while it happens.
+  if (state.importInProgress) return null;
   const key = exactScopePeakKey(lane);
   if (!force && exactScopePeakCache.has(key)) return exactScopePeakCache.get(key);
   const nativeEdge = previewTargetLongEdge("full");
   const started = performance.now();
+  // The session this measurement describes. A native render takes seconds on a
+  // large frame, and a result attributed to a session that has since been
+  // replaced is worse than no result at all.
+  const sessionId = state.session.session_id;
+  const importGeneration = state.importGeneration;
   let measured = null;
   try {
     const result = await state.gpuPreview.renderTiledTo(
@@ -4283,6 +4295,9 @@ async function measureExactScopePeak({ lane = state.currentView, force = false }
         applicationGeneration: state.previewGeneration[lane],
       },
     );
+    if (state.session?.session_id !== sessionId || state.importGeneration !== importGeneration) {
+      return null;
+    }
     if (result?.rendered && Number.isFinite(result.metrics?.exactPeak)) {
       measured = {
         peak: result.metrics.exactPeak,
@@ -4297,8 +4312,12 @@ async function measureExactScopePeak({ lane = state.currentView, force = false }
   } catch (error) {
     measured = { peak: null, exact: false, refusals: [String(error?.message || error)] };
   }
-  exactScopePeakCache.set(key, measured);
-  while (exactScopePeakCache.size > 8) exactScopePeakCache.delete(exactScopePeakCache.keys().next().value);
+  // Only cache against a session that is still the one in hand, or a later
+  // session could read this answer as its own.
+  if (state.session?.session_id === sessionId && state.importGeneration === importGeneration) {
+    exactScopePeakCache.set(key, measured);
+    while (exactScopePeakCache.size > 8) exactScopePeakCache.delete(exactScopePeakCache.keys().next().value);
+  }
   return measured;
 }
 
