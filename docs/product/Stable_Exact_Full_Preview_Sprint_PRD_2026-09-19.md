@@ -1025,3 +1025,50 @@ The sprint is complete when:
 - memory, cancellation, stale-generation, seam, device-loss, and endurance gates pass at 24 MP, 42 MP, and 8K;
 - the Denoise technical contract and user documentation describe the shipped behavior accurately;
 - the final handoff ledger contains reproducible evidence and no undocumented release blocker.
+
+---
+
+## Post-Sprint Manual QA — 2026-09-20
+
+Findings from the reporter driving the shipped build on their own images.
+Each was reproduced with a measurement before anything was changed. Work that
+is not this sprint's is recorded in the project PRD rather than here:
+DENOISE-01 (screen door at high Amount), PERF-03 to PERF-05 (Full-tier
+interactive performance), PERF-01 and PERF-02 and MINOR-10 in the backlog.
+
+### Fixed in this sprint's scope
+
+| Report | Cause | Commit |
+|---|---|---|
+| "Preparing 1K" never resolves; tier change slow with no feedback | Acceptance compared the **presented** long edge against the tier target. Geometry trims the frame — a 1.8 degree straighten at 4K processes 4096 and presents 4011 — so any straightened or cropped image was never accepted as exact. One cause, three symptoms: permanent Preparing, every gesture falling back to the 1024 bootstrap proxy, and a preview cache that never matched its own entries. | `8c25f3b` |
+| Rotate and crop slow; no status while they run | The straighten route materialises the whole rolled frame per tile, and a streamed proxy asks once per row chunk — six full-frame rotations at 1.2 s each, serial. A geometry change was also reported with the same word as a slider nudge. | `1f247fb` |
+| Preview selector does nothing | The renderer pins every render to the denoise selector's retained original, which outranks the requested edge and never checks whether denoise is engaged. A Full render left a selector at 7968 and every later tier came back at 7968. Acceptance then blessed it, because "at least the tier" is satisfied by a larger frame. | `3c82edc` |
+| Denoise bypass does nothing at Full | The tiled path reconstructed from the evidence cache whenever a cache existed, never consulting the `selected` switch that Direct honours through `selectedDenoiseSource`. A cache outlives the toggle by design, so every tiled render came out denoised — and Full always tiles. | `ba6266f` |
+| Reset on Crop and Rotate locks the preview dropdown | A native `window.confirm`. A `<select>` popup is a native window, and after a blocking native modal the renderer will not open one until focus has left and returned. | `d2861d9` |
+
+### Contract changes this QA forced
+
+- **Exactness is a fact about the resolution a frame was processed at**, not
+  about the size of the picture it produced, and the test is equality. A frame
+  processed above the selected tier is not that tier either: a resident Full
+  frame satisfying "at least" reported "Ready — 1K" over 7968 pixels and told
+  the scheduler there was nothing to do.
+- **A tier change evicts the denoise selector.** Its identity contains the
+  long edge, so it is stale by definition, exactly as a lane change already
+  treated it.
+- **Full is a shipped tier**, offered beside 1K/2K/4K. It was gated on bounded
+  source transport and tiled execution passing their release gates; both are
+  closed. The `?engineeringFullPreview=1` flag is removed rather than left
+  gating nothing.
+
+### Tests added
+
+`tier-acceptance-geometry.test.js`, `full-tier-denoise.js` (with
+`large-noisy-tiff.js`, a generated 7968 x 5320 source so no corpus is needed),
+`test_geometry_roll_cache.py`, and label coverage in
+`viewer-state-transitions.test.js`.
+
+Every one was checked by reverting the fix and confirming it fails. Two
+earlier versions of the denoise test were discarded for passing without the
+fix — a 4200px fixture rendered Full on the Direct route and never reached the
+broken path. A test that has not been seen to fail is not evidence.

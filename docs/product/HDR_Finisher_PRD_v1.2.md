@@ -465,6 +465,99 @@ which match the report.
 
 ---
 
+## 11b. Full-Tier Interactive Performance — Deferred Work
+
+**Status:** Open. Measured 2026-09-20 on a 7968 x 5320 source.
+**Area:** `frontend/app.js` settle path, `frontend/webgpu-preview.js` tiled encoder
+
+### PERF-03 — A superseded GPU draft must not be answered by a CPU frame
+
+One tone drag, same image, same gesture, measured end to end:
+
+| Tier | Ready | GPU renders | Backend work |
+|---|---|---|---|
+| 4K, Direct | 565 ms | 17 grading renders | 8 edit-commands, 29 ms |
+| Full, Tiled | 7 916 ms | 2 tiled, **10 refused** | 30 requests, 9 641 ms |
+
+At Full the GPU draft repeatedly lost its race to the next drag event and
+returned false with `superseded-during-render`. The settle path answered that
+by rendering the whole frame on the CPU backend: one `/preview/hdr` at
+**7 059 ms**, with `acceptedPresentation.execution` coming back `null` — the
+frame finally presented at Full was not a GPU frame at all. That single
+fallback is the reported slowness, the CPU fan, and the black viewer, because
+nothing is on the canvas while it runs.
+
+Being superseded is not a failure; it means a newer render is already
+running. The fix is for the settle and refinement paths to wait for that
+render rather than pay for a CPU frame that is about to be replaced.
+
+**Nothing is shipped for this yet, deliberately.** Two attempts were made and
+neither is in the tree:
+
+1. Skipping the fallback when `gpuDraftInFlight` was non-null. This lost
+   liveness — nothing guarantees the newer draft presents, and the viewer
+   never reached Ready at all, confirmed by a 900 s test timeout.
+2. Waiting on the newer draft and falling back only if that one also failed.
+   Logically sound and probably right, but the measurement to confirm it was
+   abandoned for time, and this is the same code path that attempt 1 hung.
+   An unverified change here is not worth the risk it carries.
+
+Whoever picks this up starts from attempt 2 and measures it. The harness is
+`tone-cost` style: drive one tone drag at Full and assert no `/preview/hdr`
+request is issued while the GPU path is available.
+
+**Remaining acceptance criteria**
+
+- A tone drag at Full issues no `/preview/hdr` request while the GPU path is
+  available.
+- Time to Ready at Full is within a small multiple of the 4K figure rather
+  than an order of magnitude above it.
+- The viewer never presents an empty canvas during an interactive edit.
+
+### PERF-04 — Background settle work at Full is cheap to feel and expensive to run
+
+`prepareInactivePreview()` and `debounceOverlayAndScopes()` both run after the
+presented frame and neither is awaited, so they do not delay the preview
+image. They are still real machine cost on the same CPU: measured per settled
+edit at Full, 24 `/source-tile/sdr` requests totalling 1 945 ms for the lane
+the user is not looking at, and 3 `/scopes` requests totalling 1 726 ms.
+
+This is a scheduling question, not a correctness one, and the current ordering
+is correct. What is open is whether the inactive lane should be prepared at
+all at the Full tier, or deferred until the user actually switches lanes.
+
+**Acceptance criteria**
+
+- Preview latency is unchanged by any change here, asserted rather than
+  assumed, since the present ordering is already right.
+- Total backend CPU per settled edit at Full falls measurably.
+- Switching lanes after the change is not worse than one lane render.
+
+### PERF-05 — Tiled encode fails validation under GPU instrumentation
+
+With `enableGpuInstrumentation(true)` a tiled render at Full failed with:
+
+    [Buffer (unlabeled)] used in submit while mapped.
+     - While calling [Queue].Submit([[CommandBuffer]])
+
+which refuses the whole tiled generation. It did not reproduce with
+instrumentation off, so the suspect is the GPU timing readback buffers
+(`querySet` / `resolveBuffer` / `readBuffer`) being mapped across a submit
+rather than anything on the ordinary path.
+
+This matters more than its rarity suggests: instrumentation is exactly what
+the performance suite runs under, so any tiled measurement taken at Full is
+measuring a path that refused.
+
+**Acceptance criteria**
+
+- A tiled render at Full completes with instrumentation enabled, with no
+  validation error raised on the device.
+- The timing readback is unmapped before any submit that could reference it.
+- A performance run at Full reports tiled renders rather than refusals.
+
+---
+
 ## 12. Out of Scope for v1 (Explicit Deferrals)
 
 The following are reasonable future features but are explicitly deferred to avoid scope bloat:
