@@ -868,18 +868,6 @@ input[type="text"] {
   color: var(--body);
   font-size: 12px;
   font-weight: 500;
-  /* The bar is a grid. Without these the title overflows its own track to the
-     right and the tools in the next track draw on top of it, so the label ends
-     up with buttons through the middle of it. Clipped, it degrades to an
-     ellipsis instead of a collision. */
-  min-width: 0;
-  overflow: hidden;
-}
-
-.viewer-lane .panel-title {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 .lane-dot {
@@ -8906,7 +8894,15 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
 
 .viewer-tools {
   justify-self: center;
-  justify-content: center;
+  /* `safe` is the whole point here. Centred content that outgrows its box
+     overflows on *both* sides, and the left half lands on the viewer lane --
+     buttons drawn through the middle of the "Preview Window" label. Measured
+     in the desktop shell at a 1100px window: 606px of tools in a 554px box put
+     the first button at x=137 while the label still ran to x=179.
+     `safe center` centres exactly as before while there is room and falls back
+     to start alignment once there is not, so the overflow goes right, where
+     the bar clips it, instead of over the label. */
+  justify-content: safe center;
   width: max-content;
   max-width: 100%;
   min-width: 0;
@@ -9120,7 +9116,8 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
 
   .viewer-tools {
     justify-self: center;
-    justify-content: center;
+    /* Safe for the same reason as the rule above. */
+    justify-content: safe center;
     gap: 2px;
   }
 
