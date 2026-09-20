@@ -718,47 +718,90 @@ Update this table at every phase boundary or whenever work stops unexpectedly. L
 | 4 — Tile scheduler and pointwise graph | Complete | `55bb3e6` on `main` (follow-ups `8081d42`, `a552aed`, `de6608e`, `7f3e857`; earlier checkpoints `ce67149`, `e0ae5cc`, `ace4f43`) | Closed | **All four gate conditions and all four ordered follow-ups met.** Gates 1-3 (Direct/Tiled parity byte-exact, one submission per generation, measured constant 8.4 MB tiled working set): [`phase-4-tiled-execution-evidence-2026-09-19.md`](../technical/phase-4-tiled-execution-evidence-2026-09-19.md). Gate 4 (CPU Full through a bounded path): [`phase-4-cpu-bounded-full-evidence-2026-09-19.md`](../technical/phase-4-cpu-bounded-full-evidence-2026-09-19.md) — 42.4 MP at Full, byte-exact, peak host RAM 4,083 MB to 496 MB, cancellation in 0.19 s of a 14.4 s job. Tiled admission and truthful CPU scope fallback: [`phase-4-tiled-admission-scope-evidence-2026-09-19.md`](../technical/phase-4-tiled-admission-scope-evidence-2026-09-19.md). Engineering Full and native 42.4 MP parity: [`phase-4-full-selection-native-parity-evidence-2026-09-19.md`](../technical/phase-4-full-selection-native-parity-evidence-2026-09-19.md). |
 | 5 — Masks, locals, Detail | Complete | `e26c5ba` on `main` (with Phase 6; base `24dc9dc`) | Closed | **All four gate conditions met.** Evidence: [`phase-5-masks-locals-detail-evidence-2026-09-19.md`](../technical/phase-5-masks-locals-detail-evidence-2026-09-19.md). Gate 1: Direct/Tiled parity byte-exact (maxDelta 0, 0 differing pixels) over a global-Detail + Brush + Path local stack at tile sizes 256 and 512, and again at maximum Detail radii (halo 73). Gate 2: amount/threshold drags run zero band analysis; a global amount drag reuses global bands and rebuilds only the downstream local ones. Gate 3: **measured** at 24 MP, 42 MP and 8K — peak residency 964.7-965.1 MB, a 0.4 MB spread, inside a 1 GiB budget. Gate 4: the seam tiling introduces against the CPU reference is 0.0000 at both tile sizes, measured differentially against a Direct control. Three defects found and fixed along the way: the diagnostics did not count the Phase 5 caches, the cache bounds ignored non-cache residency, and the post-submit trim was a race. `path-mask-interaction` (carried-forward item 9) was a test defect and is fixed. |
 | 6 — Denoise | Complete | `e26c5ba` on `main` (with Phase 5; base `24dc9dc`) | Closed | **All five gate conditions met.** Evidence: [`phase-6-tiled-denoise-evidence-2026-09-20.md`](../technical/phase-6-tiled-denoise-evidence-2026-09-20.md). Gate 1: tiled analysis and reconstruction are **bit-identical** to the whole-image routines — a Haar transform over non-overlapping 2x2 blocks needs no halo, only a `2**levels`-aligned origin. 44 CPU cases across levels 1-4, odd dimensions and partial edges; 32 GPU configurations with zero differing samples, including odd 1023x575 proxies. Gate 2: four live-control drags issue **0** analysis dispatches, enforced statically as well. Gate 3: a superseded analysis leaves the previous selector, cache identity and resolved texture untouched. Gate 4: six measured traces (2 and 4 levels at 24 MP, 42 MP and 8K) within the shipped 2 GiB budget, with analysis scratch **2.6-2.8 MB at every size** against ~106 MB whole-image. Gate 5: `denoise-selector-seam` and the rest of the suite unchanged. Also: the Denoise contract's sections 5.1, 6, 7 and 9 are corrected and its Phase 2 memory stop gate is closed; the cache identity is pinned across CPU and GPU by a shared fixture; and a chunk-size dependence in the CPU reference (`np.tensordot` via BLAS) was found and fixed. Remaining: the resolved proxy is still whole-frame. |
-| 7 — Spatial film, scopes, comparison | **In progress** | `8708333`, `d4fa1dc`, `4c14b15` on `main` (base `582d5ec`) | Open | **Three of six work items done; the exit gate is open.** Evidence: [`phase-7-film-modules-evidence-2026-09-20.md`](../technical/phase-7-film-modules-evidence-2026-09-20.md). Done: vignette, deterministic grain, halation, bloom, image structure and film resolution all run tiled, byte-exact against Direct (maxDelta 0, 0 of 631,626 pixels differing) at tile sizes 256 and 512, including at maximum radii and through both view maps; grain is identical across tilings, which is the determinism claim; vignette and grain are also exact on the CPU strip path, HDR and SDR. Two negative controls show the parity test is load-bearing: with the halo at zero 15,425-59,074 pixels differ, and with the halo *grown* by two so the quarter grid misaligns 1,199-24,188 still differ — the frame anchoring is doing the work, not the halo's size. Three defects found on the way: image structure and film resolution read a neighbourhood but never earned a halo on the GPU side; `boundedCoordinate` clamped to the reused work texture rather than to the valid tile; and `planRender` modelled a bare tile while the encoder built a tile plus its halo, so admission was decided against a working set nobody allocates. Scope peak accuracy is closed by `644fd42` ([evidence](../technical/phase-7-exact-scope-peak-evidence-2026-09-20.md)): the peak is now an exact maximum of the finished picture at native resolution, accumulated across tiles, with an "Exact peak" checkbox on by default. On the 42 MP frame the three scope profiles were under-reporting it by 13.6%, 11.3% and 5.0% — always low, which is the direction that says a delivery is compliant when it is not. **Not done:** spatial effects on the CPU strip path, tile-wise accumulation of the scope *distributions* (as opposed to the peak), the peak on the CPU scope route a tiled presentation uses, comparison/A-B disclosure, and proofing. |
-| 8 — Export parity and corpus | Not started | — | Open | Depends on tile-capable modules and Denoise. |
-| 9 — Public release and hardening | Not started | — | Open | Depends on every earlier release gate. |
+| 7 — Spatial film, scopes, comparison | **Complete** | `8708333`, `d4fa1dc`, `4c14b15`, `644fd42`, `012e562`, `be1b9bc`, `adf48e8` on `main` (base `582d5ec`) | **Closed** | **All four gate conditions met.** Evidence: [`phase-7-film-modules-evidence-2026-09-20.md`](../technical/phase-7-film-modules-evidence-2026-09-20.md), [`phase-7-exact-scope-peak-evidence-2026-09-20.md`](../technical/phase-7-exact-scope-peak-evidence-2026-09-20.md), [`phase-7-8-completion-evidence-2026-09-20.md`](../technical/phase-7-8-completion-evidence-2026-09-20.md). Gate 1 (film effects seam-free at maximum radii): byte-exact, maxDelta 0 over 631,626 pixels at tile sizes 256 and 512, with two negative controls showing the test is load-bearing — halo at zero gives 15,425-59,074 differing pixels, and a halo *grown* by two so the quarter grid misaligns still gives 1,199-24,188. Gate 2 (grain identical across tile order, pan and Direct/Tiled): the two tilings agree with each other exactly, with and without the grain view map. Gate 3 (scopes describe the displayed generation): the peak is an exact maximum at native resolution, accumulated across tiles; the three scope profiles had been under-reporting it by 13.6%, 11.3% and 5.0% on the 42 MP frame, always low. Gate 4 (comparison never presents unlike tiers as exact without disclosure): each pane records what it presented and the stage names any tier or generation difference. **Denoise, the last refusal, is lifted** — Direct/Tiled parity byte-exact at both tile sizes — so every preview module now runs tiled and Full is available for any graph. |
+| 8 — Export parity and corpus | **In progress** | `839630a`, `37cd361` on `main` | Open | **Two of six work items done; the exit gate is open.** Evidence: [`phase-7-8-completion-evidence-2026-09-20.md`](../technical/phase-7-8-completion-evidence-2026-09-20.md). Authored Denoise now reaches the export graph — it did not before, and an export silently discarded it, because the settings live beside the grade rather than inside the `AdjustmentState` export is handed. It reconstructs through the tiled reference routines Phase 6 proved bit-identical, so export is bounded and shares the preview's arithmetic. Preview and export are pinned to the same graph: with output finishing neutral, export is **exactly** the preview by `assert_array_equal` for both lanes, which is what "export-exact" has to mean before Full may be labelled with it. HDR range, negative values and the view-map strip are pinned too. **Not done:** Denoise corpus acceptance and progressive disclosure, both of which want judgement on real images rather than a test, and applying the export-exact label itself, which is a product call the numbers now support. |
+| 9 — Public release and hardening | Not started | — | Open | **Blocked on hardware rather than on code.** Its exit gate requires packaged-app testing on discrete GPU, integrated/unified GPU and CPU-only configurations, and physical HDR and SDR display sign-off. None of that can be done from a single development machine, and claiming it from one would be the kind of untested release evidence this ledger exists to prevent. What *is* automatable has been done and is reported under the suite state below: the full browser suite now stands at 50 of 51. The remaining failure is a design-spec disagreement, not a defect — see the evidence document. |
 
 ### Current handoff checkpoint
 
 **Last updated:** September 20, 2026
-**Last completed phase:** Phase 6 — tiled Denoise evidence and reconstruction. **All five exit gates closed.**
-**Active phase:** **Phase 7, partially delivered.** Its film modules are done and evidenced; its scopes, comparison and proofing work is not started. See the Phase 7 section immediately below, then the Phases 5-6 record that follows it.
+**Last completed phase:** Phase 7 — spatial film effects, scopes, comparison and proofing. **All four exit gates closed.**
+**Active phase:** Phase 8, two of six work items delivered. Phase 9 is blocked on hardware rather than on code.
 
-#### Phase 7 so far
+#### Where the sprint stands
 
-Three commits on `main`, base `582d5ec`, each green on its own:
+**Every preview module now runs tiled. Full is available for any graph.** Denoise
+was the last refusal and it is lifted; `tiledExecutionRefusals` returns an empty
+list, and `tiled-direct-parity.js` asserts that it does, so a silent fallback to
+Direct cannot creep back in.
 
-- **`8708333`** — vignette and grain placed against the frame on the GPU tiled path. Adds `frameDimensions()`, `frameCoordinate()` and moves `validTileDimensions()` ahead of the film stage; `boundedCoordinate` clamps to the valid tile. Files: `codebase/frontend/webgpu-preview.js`, `codebase/tests/tiled-film-parity.js` (**new**), `tiled-direct-parity.js`, `package.json`.
-- **`d4fa1dc`** — the same two stages on the CPU strip path, through a new `FrameWindow` threaded from the strip renderer into all three graders. Files: `codebase/backend/hdr_finisher/adjustments.py`, `cpu_strips.py`, `codebase/tests/test_cpu_strips.py`, `test_cpu_strips_api.py`.
-- **`4c14b15`** — the spatial film effects on a frame-anchored quarter grid, with `spatialTileHalo()` and `composedTileHalo()`. Files: `codebase/frontend/webgpu-preview.js`, `codebase/tests/tiled-film-parity.js`, `tiled-direct-parity.js`, `test_frontend_contract.py`.
+Phase 7 commits, each green on its own: `8708333` (vignette and grain against the
+frame), `d4fa1dc` (the same on the CPU strip path), `4c14b15` (spatial film
+effects on a frame-anchored quarter grid), `644fd42` (the exact scope peak),
+`012e562` (per-tile denoise), `be1b9bc` (comparison disclosure), `adf48e8` (two
+defects the full sweep found).
 
-**The one behaviour change outside tiling:** Direct's spatial extract grid is now a strict factor of four rather than `sourceDimensions / ceil(sourceDimensions / 4)` — 4.0 where it was 3.9925 on a 1058-wide frame. It is a sub-pixel phase shift in a quarter-resolution intermediate that is then blurred by 4 to 256 pixels, and it is what lets one grid serve Direct and Tiled both. Nothing in the suite moved because of it.
+Phase 8 commits: `839630a` (authored denoise on export), `37cd361` (preview and
+export pinned to the same graph).
 
-**The scope decision, taken.** The original question was framed around resolution: the scope pass is a downsample rather than a histogram, and Direct reduces it on demand from a resident whole-resolution `finishTexture`, which Tiled cannot keep. The product owner reframed it around what the number is *for* — "if I see 999.5 nits, my export should not be 1001" — and that reframing split the problem in two:
+**Three behaviour changes outside tiling, recorded because a reader would not
+infer them:**
 
-- **The peak** is a compliance number, read for a pass/fail against a delivery ceiling. A tolerance on it defeats it, so the tolerance is zero.
-- **The distributions** (waveform, histogram, parade) are read for shape and can stay sampled at the quality profile's resolution.
+1. Direct's spatial extract grid is a strict factor of four rather than
+   `sourceDimensions / ceil(sourceDimensions / 4)` — a sub-pixel phase shift in a
+   quarter-resolution intermediate that is then blurred by 4 to 256 pixels. It is
+   what lets one grid serve Direct and Tiled both.
+2. The scope's peak is now measured at native resolution by default, through an
+   "Exact peak" checkbox that is on. The three scope profiles had been
+   under-reporting it by 13.6%, 11.3% and 5.0% on the 42 MP frame — always low,
+   the direction that says a delivery is inside its ceiling when it is not.
+3. Export applies authored denoise. It did not before, and silently discarded it.
 
-That split makes the expensive half unnecessary. A maximum is *decomposable* — max over tiles is max over the frame, exactly — so the peak never needed the resolution contract the original question was about; it needed to be measured over the right picture. `644fd42` implements it: a 64×64 max-blended reduction grid per generation, and a native-resolution measure-only pass through the tile scheduler that allocates no presentation surface. Exact, and about 1.75 s on a 42 MP frame, cached per edit state.
+#### Next safe edits
 
-The distributions still come from the proxy at the profile's resolution, which is correct and now clearly scoped: they are the half that was always meant to trade accuracy for speed.
+1. **Phase 8's judgement work**: Denoise corpus acceptance, and progressive
+   disclosure for Strength, Detail Recovery, Luminance and Colour Noise. Both
+   want decisions about real images rather than tests, which is why they are
+   still open rather than attempted.
+2. **Apply the export-exact label**, which the numbers now support.
+3. **The scope peak on the CPU route.** The exact peak covers the GPU scope
+   route, which is what a Direct presentation uses. A tiled presentation settles
+   through the CPU scope route, where the peak is still the proxy's.
+4. **Tile-wise accumulation of the scope distributions**, which is where the
+   original scope-resolution question still applies. Nothing about the peak
+   depends on it.
+5. **Spatial film effects on the CPU strip path.** They still refuse there, so a
+   CPU Full with halation falls back to whole-frame CPU — exact, but not
+   bounded. Conservative rather than wrong.
 
-**Still open on scopes:** the exact peak covers the GPU scope route, which is what a Direct presentation uses. A *tiled* presentation settles through the CPU scope route (Phase 4's truthful fallback), where the peak is still the proxy's. Closing that means either routing the CPU scope's peak through the same measurement or giving a tiled presentation a GPU scope source of its own — which is the tile-wise accumulation of the distributions, and the place where the original resolution question still applies. Nothing about the peak depends on it.
+#### Known failures and open questions
 
-**Next safe edits, in the order they unblock each other:** (1) comparison and A/B tier and generation disclosure, and proofing; (2) the peak on the CPU scope route, then tile-wise accumulation of the distributions; (3) spatial film effects on the CPU strip path; (4) the Phase 6 loose end, the whole-frame resolved denoise proxy, which is now the tile scheduler's *only* remaining refusal.
+- **`npm run test:local-design`** is the one browser suite still failing, at 50
+  of 51. It is no longer the failure this session cleared: it now expects the
+  toggle knob to be 24px with a radial gradient at `z-index: 1`, where the
+  shipped component is 16px with a linear gradient at `z-index: 2`. That is a
+  disagreement about the visual spec, and satisfying it would change every
+  toggle in the application, so it wants a design decision rather than a guess.
+- **Phase 9 cannot be closed from one machine.** Its gate requires packaged-app
+  testing across discrete GPU, integrated/unified GPU and CPU-only
+  configurations, plus physical HDR and SDR display sign-off. Claiming any of
+  that from a single development machine would be exactly the untested release
+  evidence this ledger exists to prevent.
 
-**A pre-existing failure, noted so it is not mistaken for new:** `npm run test:local-design` fails with a `viewer-bar` pointer-event interception. It fails identically on `e03248a`, before any of this session's UI work, and no commit in this session touched a layout file until `644fd42`. Not investigated.
+#### Commands added this session
 
-**Commands, for the Phase 7 work specifically.** All the Phase 5-6 commands below still apply, plus, with the dev server running, from `codebase/`:
+With the dev server running, from `codebase/`:
 
-- `node tests/tiled-film-parity.js --url http://127.0.0.1:8000`, or `npm run test:tiled-film-parity`.
-- `node tests/scope-exact-peak.js --url http://127.0.0.1:8000`, or `npm run test:scope-exact-peak`. **Pass `--input local-test-media/inputs/Affinity_DSC06898_DisplayP3_Linear_32f.exr` for the claim that matters**: the built-in pattern's highlights are flat enough that downsampling costs nothing, so without a real photograph the under-report check skips itself rather than passing vacuously.
+- `npm run test:tiled-film-parity` — vignette, grain and the spatial effects.
+- `npm run test:scope-exact-peak` — **pass
+  `--input local-test-media/inputs/Affinity_DSC06898_DisplayP3_Linear_32f.exr`
+  for the claim that matters.** The built-in pattern's highlights are flat
+  enough that downsampling costs nothing, so without a real photograph the
+  under-report check skips itself rather than passing vacuously.
+- `npm run test:comparison-disclosure` — tier and generation disclosure.
 
 #### Phases 5 and 6
+
 
 **Branch and base:** `main`. Phases 5 and 6 landed together as **`e26c5ba`**, on base `24dc9dc`. They share `webgpu-preview.js`, so splitting them into two commits would have meant splitting one file's hunks and risking a commit that did not build; one commit with both phases described was the honest option. The files it touches:
 
@@ -790,9 +833,9 @@ Phase 6 — tiled Denoise:
 
 **Generated inputs for the memory gates.** The 24 MP and 8K sources are synthetic and **ignored by Git**, at `codebase/output/residency-media/residency-24mp-6000x4000.tiff` and `residency-8k-7680x4320.tiff`. Regenerate with `build_hdr_test_pattern(width, height)` from `backend/hdr_finisher/test_pattern.py`. The 42 MP source is the committed `codebase/local-test-media/inputs/Affinity_DSC06898_DisplayP3_Linear_32f.exr` (7968 x 5320).
 
-**Active failure or unresolved decision:** no unresolved decisions — the scope question is answered above. One pre-existing test failure, `test:local-design`, which predates this session's work and is recorded under *Phase 7 so far*.
+**Active failure or unresolved decision:** see *Known failures and open questions* under *Where the sprint stands* above. In short: one browser suite failing on a visual-spec disagreement, and Phase 9 blocked on hardware.
 
-**Next safe edit:** see *Next safe edits* under *Phase 7 so far* above.
+**Next safe edit:** see *Next safe edits* under *Where the sprint stands* above.
 
 **Repository note:** the git repository root is `ai/`, not the enclosing `HDR Finisher Tool/` directory, which has a `.git` containing only `info/` and is not a repository.
 
