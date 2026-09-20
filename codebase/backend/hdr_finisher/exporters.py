@@ -24,6 +24,8 @@ from .binaries import resolve_binary
 from .subprocess_utils import hidden_window_options
 from .color import acescg_to_linear_bt2020
 from .color_context import RenderColorContext, scene_linear_to_nits
+from .denoise_reference import AnalysisPreset, ResolveControls
+from .denoise_tiles import analyze_denoise_tiled, resolve_denoise_tiled
 from .config import EXPORTS_DIR, SAMPLES_DIR
 from .finishing import apply_output_finishing
 from .gainmap_decoders import parse_jpeg_gain_map_probe
@@ -88,12 +90,79 @@ def _finishing_adjustments_for_export(session: object) -> AdjustmentState:
     return adjustments
 
 
+def denoise_settings_for_export(session: object, kind: PreviewKind) -> object | None:
+    """The authored denoise for this lane, or None when it contributes nothing.
+
+    Denoise is authored beside the grade rather than inside
+    ``AdjustmentState``, which is why the export graph did not see it: it
+    grades ``session.image`` through ``apply_adjustments``, and the settings
+    are not reachable from there.
+
+    ``LoadedSession`` holds them directly; an ``EditDocument`` holds them one
+    level down. Both are read, because export is handed whichever the caller
+    has, and a lookup that found neither would silently drop the denoise all
+    over again.
+    """
+    denoise = getattr(session, "denoise", None)
+    if denoise is None:
+        document = getattr(session, "document", None)
+        denoise = getattr(document, "denoise", None) if document is not None else None
+    if denoise is None or not hasattr(denoise, "hdr"):
+        return None
+    lane = denoise.hdr if kind == PreviewKind.HDR else denoise.sdr
+    if not lane.enabled:
+        return None
+    controls = lane.controls
+    # The same short-circuit the reconstruction itself applies: zero amount, or
+    # neither channel weighted, removes nothing.
+    if controls.amount <= 0.0 or (controls.luminance <= 0.0 and controls.color_noise <= 0.0):
+        return None
+    return lane
+
+
+def _denoised_export_source(session: object, kind: PreviewKind) -> np.ndarray:
+    """Apply the authored denoise to the full-resolution source.
+
+    The preview replaces its *source proxy* with the reconstruction and grades
+    that, so export has to denoise before grading too, or the two would differ
+    by where in the graph the noise was removed rather than by resolution.
+
+    Analysis and reconstruction are the tiled reference routines, which Phase 6
+    proved bit-identical to the whole-image ones. That matters twice over: the
+    export stays bounded on a 42 MP frame, and it is the same arithmetic the
+    preview's GPU path was pinned against by a shared fixture.
+    """
+    image = getattr(session, "image")
+    lane = denoise_settings_for_export(session, kind)
+    if lane is None:
+        return image
+    analysis_settings = lane.analysis
+    preset = AnalysisPreset(
+        levels=analysis_settings.levels,
+        noise_threshold=analysis_settings.noise_threshold,
+        luma_sigma=analysis_settings.luma_sigma,
+        chroma_sigma=analysis_settings.chroma_sigma,
+    )
+    analysis = analyze_denoise_tiled(image, preset)
+    controls = lane.controls
+    return resolve_denoise_tiled(
+        image,
+        analysis,
+        ResolveControls(
+            amount=controls.amount,
+            luminance=controls.luminance,
+            color_noise=controls.color_noise,
+            detail_recovery=controls.detail_recovery,
+        ),
+    )
+
+
 def _render_export_branch(
     session: object, settings: ExportSettings, kind: PreviewKind, adjustments: AdjustmentState
 ) -> np.ndarray:
     color_context = getattr(session, "color_context", RenderColorContext(getattr(session, "hdr_reference_white_nits", 203)))
     image = apply_adjustments(
-        getattr(session, "image"),
+        _denoised_export_source(session, kind),
         adjustments,
         kind,
         sdr_reference_image=getattr(session, "sdr_reference_image", None),
