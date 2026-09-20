@@ -489,7 +489,11 @@ def test_interaction_holds_the_selected_tier_once_it_has_produced_a_result() -> 
     resident = javascript[javascript.index("function residentAuthoringLongEdge()") : javascript.index("function scopeLongEdge(tier)")]
     assert 'accepted?.transport !== "WebGPU"' in resident
     assert "accepted.geometrySignature !== geometrySignature()" in resident
-    assert "accepted.longEdge !== target" in resident
+    # The comparison is against the resolution the frame was *processed* at.
+    # Geometry trims the presented frame, so comparing the presented edge
+    # made a straightened or cropped image never resident, and every gesture
+    # re-rendered the whole frame.
+    assert "(accepted.processedLongEdge ?? accepted.longEdge) !== target" in resident
 
     bootstrap = resident[resident.index("function bootstrapProxyLongEdge()") : resident.index("function interactiveProxyLongEdge()")]
     interactive = resident[resident.index("function interactiveProxyLongEdge()") : resident.index("function globalDetailActive")]
@@ -528,7 +532,13 @@ def test_accepted_presentation_records_what_it_actually_is() -> None:
     accept = javascript[javascript.index("function acceptPresentation(") : javascript.index("function markPreviewUnavailable(")]
 
     assert "const requestedTier = normalizedPreviewResolution();" in accept
-    assert "const exact = longEdge > 0 && longEdge >= previewTargetLongEdge(requestedTier);" in accept
+    # Exactness is a fact about the resolution the frame was processed at,
+    # not about the size of the picture that came out. Geometry trims the
+    # frame: a straighten at the 4K tier processes at 4096 and presents
+    # 4011, and that is still an exact 4K result.
+    assert "const processedEdge = Number(processedLongEdge) > 0 ? Number(processedLongEdge) : longEdge;" in accept
+    assert "const exact = longEdge > 0 && processedEdge >= previewTargetLongEdge(requestedTier);" in accept
+    assert "processedLongEdge: processedEdge," in accept
     assert "tier: exact ? requestedTier : null," in accept
     assert "requestedTier," in accept
     assert "exact," in accept

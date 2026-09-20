@@ -2615,7 +2615,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         if (!tiled?.rendered) {
           return this.refuseRender(`tiled-encode-failed:${(tiled?.refusals || []).join(",")}`);
         }
-        return { ...tiled, sourceSerial: serial };
+        // The resolution this generation was processed at, which is not the
+        // size of the picture it produced: geometry trims the frame. The
+        // viewer needs the former to decide whether the selected tier has
+        // been reached.
+        return { ...tiled, sourceSerial: serial, processedLongEdge: proxy.longEdge };
       }
       const intermediate = this.ensureIntermediate(
         canvas,
@@ -2991,6 +2995,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         proxyFormat: proxy.pixelFormat,
         sourceSerial: serial,
         execution: "direct",
+        processedLongEdge: proxy.longEdge,
       };
       } finally {
         this.finishActiveRender();

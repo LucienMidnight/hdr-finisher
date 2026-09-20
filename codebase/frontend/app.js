@@ -1010,13 +1010,21 @@ function applyPreviewResolution(value, { schedule = true } = {}) {
   renderViewerStatus();
 }
 
-function acceptPresentation(lane, schedulerTier, width, height, transport, fallbackReason = "", sourceSerial = null, generation = state.previewGeneration[lane], execution = null) {
+function acceptPresentation(lane, schedulerTier, width, height, transport, fallbackReason = "", sourceSerial = null, generation = state.previewGeneration[lane], execution = null, processedLongEdge = null) {
   const longEdge = Math.max(Number(width) || 0, Number(height) || 0);
   const requestedTier = normalizedPreviewResolution();
+  // Exactness is a fact about the resolution this frame was processed at, not
+  // about how large the picture that came out of it is. Geometry trims the
+  // frame: a 1.8 degree straighten at the 4K tier processes every pixel at
+  // 4096 and presents 4011. Judging by the presented edge therefore left any
+  // straightened or cropped image permanently "Preparing", dropped every
+  // gesture back to the bootstrap proxy, and missed the preview cache on each
+  // request -- all three of the symptoms reported for a tier change.
+  const processedEdge = Number(processedLongEdge) > 0 ? Number(processedLongEdge) : longEdge;
   // `tier` is what this image actually is, not what the user asked for. A
   // bootstrap proxy accepted while the selected tier is still preparing must
   // never be labeled with the selected tier.
-  const exact = longEdge > 0 && longEdge >= previewTargetLongEdge(requestedTier);
+  const exact = longEdge > 0 && processedEdge >= previewTargetLongEdge(requestedTier);
   state.acceptedPresentation = {
     lane,
     generation,
@@ -1024,6 +1032,7 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
     requestedTier,
     tier: exact ? requestedTier : null,
     exact,
+    processedLongEdge: processedEdge,
     schedulerTier,
     width: Number(width) || null,
     height: Number(height) || null,
@@ -4170,7 +4179,7 @@ function residentAuthoringLongEdge() {
     || accepted?.transport !== "WebGPU"
     || accepted.lane !== state.currentView
     || accepted.geometrySignature !== geometrySignature()
-    || accepted.longEdge !== target
+    || (accepted.processedLongEdge ?? accepted.longEdge) !== target
     || els.previewCanvas.style.display === "none") return null;
   return target;
 }
@@ -4392,7 +4401,8 @@ async function renderPreviewForLane(
   const cached = state.previewCache[lane];
   const generation = state.previewGeneration[lane];
   const signature = geometrySignature();
-  if (cached?.generation === generation && cached.geometrySignature === signature && (cached.longEdge || 0) >= longEdge) {
+  if (cached?.generation === generation && cached.geometrySignature === signature
+    && (cached.requestedLongEdge || cached.longEdge || 0) >= longEdge) {
     if (displayWhenReady && state.currentView === lane && !state.comparePeekActive) showCachedPreview(lane);
     renderCompareStatus();
     return true;
@@ -4478,7 +4488,7 @@ async function renderPreviewForLane(
   }
   const previous = state.previewCache[lane];
   if (previous?.url) URL.revokeObjectURL(previous.url);
-  state.previewCache[lane] = { url, generation, longEdge: Math.max(width, height) || longEdge, width, height, geometrySignature: signature };
+  state.previewCache[lane] = { url, generation, longEdge: Math.max(width, height) || longEdge, requestedLongEdge: longEdge, width, height, geometrySignature: signature };
   if (displayWhenReady && state.currentView === lane && !state.comparePeekActive) {
     if (showProgress) setPreviewMessage("Presenting preview...", progressSteps[2]);
     const keptGpuSurface = shouldKeepHdrGpuSurface(lane)
@@ -4490,7 +4500,7 @@ async function renderPreviewForLane(
       state.previewInfoByLane[lane] = previewInfo;
       if (!await applyPreviewUrl(url, requestIsCurrent)) return false;
       state.previewInfo = previewInfo;
-      acceptPresentation(lane, longEdge >= refinementProxyLongEdge() ? "refinement" : "settled", width, height, previewInfo.transport, gpuPreviewEligible(lane) ? "" : "CPU/backend");
+      acceptPresentation(lane, longEdge >= refinementProxyLongEdge() ? "refinement" : "settled", width, height, previewInfo.transport, gpuPreviewEligible(lane) ? "" : "CPU/backend", null, generation, null, longEdge);
       els.scopeKindLabel.textContent = lane.toUpperCase();
       renderReadouts();
     }
@@ -4558,7 +4568,7 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
   const data = new Uint8ClampedArray(await response.arrayBuffer());
   if (geometryDraftActive() || controller !== state.previewControllers[lane]
     || generation !== state.previewGeneration[lane] || rawGeneration !== generation || signature !== geometrySignature()) return false;
-  const frame = { raw: data, width, height, generation, longEdge: Math.max(width, height) || longEdge, geometrySignature: signature };
+  const frame = { raw: data, width, height, generation, longEdge: Math.max(width, height) || longEdge, requestedLongEdge: longEdge, geometrySignature: signature };
   state.previewCache[lane] = frame;
   state.previewInfoByLane[lane] = {
     mediaType: "application/octet-stream",
@@ -4596,7 +4606,8 @@ function applyRawPreview(frame) {
   clearInteractiveStraightenPreview();
   applyZoomGeometry();
   renderReadouts();
-  acceptPresentation(state.currentView, frame.longEdge >= refinementProxyLongEdge() ? "refinement" : "settled", frame.width, frame.height, "Raw RGBA8", "CPU/backend");
+  const rawProcessedEdge = frame.requestedLongEdge || frame.longEdge;
+  acceptPresentation(state.currentView, rawProcessedEdge >= refinementProxyLongEdge() ? "refinement" : "settled", frame.width, frame.height, "Raw RGBA8", "CPU/backend", null, frame.generation, null, rawProcessedEdge);
 }
 
 function applyRawComparisonPreview(frame) {
@@ -10073,6 +10084,7 @@ async function renderGpuDraftInner(
       result.sourceSerial,
       generation,
       result.execution || "direct",
+      result.processedLongEdge || longEdge,
     );
     setZoomMode(state.zoomMode);
     renderReadouts();
@@ -11035,11 +11047,13 @@ async function showCachedPreview(lane) {
   if (cached.raw) applyRawPreview(cached);
   else if (cached.url) {
     if (!await applyPreviewUrl(cached.url, isCurrent)) return false;
-    acceptPresentation(lane, cached.longEdge >= refinementProxyLongEdge() ? "refinement" : "settled", cached.width, cached.height, state.previewInfoByLane[lane].transport, "CPU/backend");
+    const cachedProcessedEdge = cached.requestedLongEdge || cached.longEdge;
+    acceptPresentation(lane, cachedProcessedEdge >= refinementProxyLongEdge() ? "refinement" : "settled", cached.width, cached.height, state.previewInfoByLane[lane].transport, "CPU/backend", null, cached.generation, null, cachedProcessedEdge);
   }
   state.previewInfo = state.previewInfoByLane[lane];
   renderReadouts();
-  if (lane === state.currentView && !state.comparePeekActive && (cached.longEdge || 0) < refinementProxyLongEdge()) {
+  if (lane === state.currentView && !state.comparePeekActive
+    && (cached.requestedLongEdge || cached.longEdge || 0) < refinementProxyLongEdge()) {
     debouncePreview(lane);
   }
   return true;
