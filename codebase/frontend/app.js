@@ -407,6 +407,11 @@ const state = {
   compareHeld: false,
   comparePeekActive: false,
   compareLayout: "single",
+  // What the comparison pane is actually showing, as opposed to what the
+  // primary pane is. The two are rendered by different calls at different
+  // times and, since Phase 1 let the primary pane hold any selected tier, at
+  // different resolutions. Recording it is what lets the UI say so.
+  comparisonPresentation: null,
   comparisonRenderedLane: null,
   comparisonRenderedGeneration: null,
   comparisonRenderedGeometry: null,
@@ -1406,6 +1411,7 @@ const els = {
   viewerBranchNote: document.getElementById("viewer-branch-note"),
   compareButton: document.getElementById("compare-button"),
   compareLayoutButtons: [...document.querySelectorAll("button[data-compare-layout]")],
+  comparisonDisclosure: document.getElementById("comparison-disclosure"),
   zoomFit: document.getElementById("zoom-fit"),
   zoomActual: document.getElementById("zoom-actual"),
   zoomOut: document.getElementById("zoom-out"),
@@ -11137,6 +11143,7 @@ function renderCompareLayout() {
   applyZoomGeometry();
   syncOverlayPlacement();
   renderCompareStatus();
+  renderComparisonDisclosure();
 }
 
 async function renderComparisonPreview(lane, { force = false } = {}) {
@@ -11173,6 +11180,14 @@ async function renderComparisonPreview(lane, { force = false } = {}) {
         state.comparisonRenderedLane = lane;
         state.comparisonRenderedGeneration = generation;
         state.comparisonRenderedGeometry = signature;
+        state.comparisonPresentation = {
+          lane,
+          generation,
+          longEdge: settledProxyLongEdge(),
+          transport: "WebGPU",
+          exact: true,
+        };
+        renderComparisonDisclosure();
         applyZoomGeometry();
         renderCompareStatus();
         return true;
@@ -11199,9 +11214,70 @@ async function renderComparisonPreview(lane, { force = false } = {}) {
   state.comparisonRenderedLane = lane;
   state.comparisonRenderedGeneration = generation;
   state.comparisonRenderedGeometry = signature;
+  state.comparisonPresentation = {
+    lane,
+    generation,
+    longEdge: settledProxyLongEdge(),
+    transport: cached.raw ? "CPU" : "CPU (encoded)",
+    exact: true,
+  };
+  renderComparisonDisclosure();
   applyZoomGeometry();
   renderCompareStatus();
   return true;
+}
+
+/**
+ * Say when the two panes are not the same picture at the same size.
+ *
+ * The comparison pane renders the other lane at the settled proxy edge. The
+ * primary pane holds whatever tier is selected, which since Phase 1 may be
+ * larger -- up to Full. Side by side at the same on-screen size, two different
+ * processing resolutions look like a difference in the grade, and a colourist
+ * reading them as an A/B would attribute a resampling difference to their own
+ * decisions.
+ *
+ * So the rule is not that comparison must match: it is that comparison must
+ * never present unlike tiers *as an exact comparison* without saying so.
+ */
+function renderComparisonDisclosure() {
+  const element = els.comparisonDisclosure;
+  if (!element) return;
+  const comparison = state.comparisonPresentation;
+  const accepted = state.acceptedPresentation;
+  if (state.compareLayout === "single" || !comparison || !accepted) {
+    element.classList.add("hidden");
+    element.textContent = "";
+    return;
+  }
+  const primaryEdge = Number(accepted.longEdge) || null;
+  const comparisonEdge = Number(comparison.longEdge) || null;
+  const reasons = [];
+  if (primaryEdge && comparisonEdge && primaryEdge !== comparisonEdge) {
+    reasons.push(`${formatTierEdge(primaryEdge)} vs ${formatTierEdge(comparisonEdge)}`);
+  }
+  if (accepted.generation != null && comparison.generation != null
+    && accepted.generation !== comparison.generation) {
+    reasons.push(`edit ${accepted.generation} vs ${comparison.generation}`);
+  }
+  if (!reasons.length) {
+    element.classList.add("hidden");
+    element.textContent = "";
+    return;
+  }
+  element.classList.remove("hidden");
+  element.textContent = `Not an exact comparison — ${reasons.join(", ")}`;
+  element.title = "The two panes were processed at different resolutions or from "
+    + "different edit generations. Differences between them include that, not only the grade.";
+}
+
+function formatTierEdge(edge) {
+  const sourceEdge = Math.max(
+    Number(state.session?.source?.width) || 0,
+    Number(state.session?.source?.height) || 0,
+  );
+  if (sourceEdge && edge >= sourceEdge) return "Full";
+  return `${edge}px`;
 }
 
 function setZoomMode(mode) {
