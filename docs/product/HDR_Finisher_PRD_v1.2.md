@@ -410,6 +410,61 @@ The AVIF path uses a **10-bit logarithmic gain map**. JPEG Ultra HDR uses libult
 
 ---
 
+## 11a. Denoise Algorithm — Deferred Work
+
+**Status:** Open, deferred. Reported from manual testing on 2026-09-20.
+**Area:** `frontend/webgpu-preview.js` wavelet denoise, `backend/hdr_finisher/denoise*.py`
+
+### DENOISE-01 — Screen-door pattern at high Strength
+
+At high Amount the current denoise leaves a regular grid texture in flat
+areas, visible as a fine screen door rather than as smoothing.
+
+This is a property of the method, not a defect in its implementation. The
+transform is a **decimated** Haar wavelet at two scales. Two things follow:
+
+1. A decimated basis is not shift invariant. Each coefficient owns a fixed
+   2x2 block at each level, so the reconstruction error is anchored to the
+   lattice rather than spread across it, and the residual is periodic at the
+   level's block size.
+2. Shrinkage at high Amount drives whole coefficient bands to zero. With only
+   two scales there is no coarser band to carry the structure that the fine
+   bands just lost, so what remains is the block lattice itself.
+
+The effect is therefore expected to worsen with Amount, to be strongest in
+flat low-contrast areas, and to have a period tied to `2**levels` — all of
+which match the report.
+
+**Directions, in increasing order of cost**
+
+- **Soft thresholding with a smooth knee.** The cheapest change with real
+  effect: replace the current shrinkage curve with one that is continuous in
+  both value and slope at the threshold, so a coefficient never snaps to
+  zero. Reduces the lattice without changing the transform, the cache format,
+  or the tile contract.
+- **Cycle spinning.** Average the reconstruction over a small set of lattice
+  shifts, which restores approximate shift invariance for a fixed multiple of
+  the current cost. Interacts with the tile alignment contract, since the
+  shifts must not cross a tile boundary differently than the whole-frame path
+  would — `alignedDenoiseTiles` and the export reference both have to agree.
+- **Undecimated (stationary) wavelet transform.** Shift invariant by
+  construction and the real fix, at roughly `levels` times the coefficient
+  storage. The evidence cache is already the dominant denoise allocation, so
+  this needs its own memory plan before it can be considered.
+
+**Acceptance criteria**
+
+- At maximum Amount on a flat, low-contrast region, no periodic structure is
+  measurable at the `2**levels` period above the noise floor of the source.
+- Preview and export remain byte-identical under the parity tests that cover
+  denoise today, including Direct/Tiled parity and CPU/GPU parity.
+- The live-control contract is unchanged: a drag of Amount, Luminance, Colour
+  Noise or Detail Recovery still performs no analysis dispatches.
+- Whatever is chosen is measured against a reference on the denoise corpus
+  rather than accepted on appearance alone.
+
+---
+
 ## 12. Out of Scope for v1 (Explicit Deferrals)
 
 The following are reasonable future features but are explicitly deferred to avoid scope bloat:

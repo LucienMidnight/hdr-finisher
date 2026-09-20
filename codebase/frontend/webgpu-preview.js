@@ -2015,8 +2015,17 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // reconstructing anyway would denoise against the wrong pixels -- so the
       // graph renders undenoised rather than wrongly, exactly as it did before
       // an analysis existed.
+      //
+      // `selected` is the switch. Direct honours it through
+      // selectedDenoiseSource; this path used to reconstruct from the evidence
+      // whenever a cache existed, without asking whether denoise was on. A
+      // cache outlives the toggle -- bypassing sets `selected` to "original"
+      // and keeps the evidence so re-enabling is free -- so on every tiled
+      // render, which is every render at the Full tier, Denoise could not be
+      // switched off at all.
       const denoiseActive = Boolean(
         denoiseSelector?.cache && denoiseSelector.original
+        && denoiseSelector.selected === "resolved"
         && denoiseSelector.original.width === proxy.width
         && denoiseSelector.original.height === proxy.height,
       );
