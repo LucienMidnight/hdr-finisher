@@ -441,3 +441,34 @@ Issue chunk requests with a bounded concurrency window so transfer and backend e
 - Peak staging memory stays within the existing `maxSourceChunkBytes` budget.
 - The assembled proxy remains byte-identical to the serial path.
 - A superseded render still abandons in-flight chunks without writing them.
+
+### MINOR-10 — A native `window.confirm` leaves the Electron renderer unable to open a `<select>`
+
+**Priority:** Major / input lockout
+**Status:** Open — the reported path removed September 20, 2026
+**Area:** `frontend/app.js`, remaining `window.confirm` call sites
+
+**Reported behavior**
+
+Reset on Crop & Rotate raised a native confirmation dialog with default Windows styling. After dismissing it — with either answer — the Maximum preview size dropdown could no longer be opened. Clicking it did nothing. Focusing another Windows application and returning to the Electron window restored it.
+
+A `<select>` popup in Chromium is a native window, and after a blocking native modal the renderer's focus state is left in a condition where it will not open one. Losing and regaining window focus resets it. This is a property of the native modal, not of the selector, so it applies to every `window.confirm` in the application.
+
+**Resolved for the reported path**
+
+Crop & Rotate Reset no longer confirms at all. Every other Reset in that panel acts immediately and is undoable through the edit history, and this one behaved differently for no reason the user could see. Removing it fixes the reported lockout and makes the panel consistent.
+
+**Still open**
+
+Seven `window.confirm` call sites remain and can each reproduce the lockout: export overwrite approval, project replacement, group preset delete, group preset replace, SDR match consent, and the two unsaved-changes transitions. They are rarer than a Reset button but not rare.
+
+**Desired behavior**
+
+Replace them with an in-application confirmation built on the existing `<dialog>` + `showModal()` pattern already used by `#settings-dialog`, `#directory-browser` and `#group-preset-dialog`, returning a promise. This also removes the last generic-OS styling from the authoring surface.
+
+**Acceptance criteria**
+
+- No `window.confirm`, `window.alert` or `window.prompt` remains in `frontend/app.js`.
+- Each converted flow keeps its current outcome for both answers, including the three-way unsaved-changes transition (save / discard / cancel).
+- After any confirmation is dismissed, the preview resolution selector opens on the first click without a focus round trip — asserted in the Electron integration suite, since this does not reproduce in a plain browser.
+- The dialog is keyboard-operable: Escape cancels, Enter confirms, and focus returns to the control that opened it.

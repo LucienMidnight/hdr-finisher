@@ -40,7 +40,6 @@ const MAX_DIFFERING_FRACTION = 0.0005;
 
   try {
     const pageUrl = new URL(url);
-    if (native) pageUrl.searchParams.set("engineeringFullPreview", "1");
     await page.goto(pageUrl.toString(), { waitUntil: "networkidle" });
     if (input) {
       const resolved = path.resolve(input);

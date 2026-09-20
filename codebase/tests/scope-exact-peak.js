@@ -58,7 +58,6 @@ function assert(condition, message) {
 
   try {
     const target = new URL(url);
-    if (input) target.searchParams.set("engineeringFullPreview", "1");
     await page.goto(target.toString(), { waitUntil: "networkidle" });
     if (input) {
       const resolved = path.resolve(input);

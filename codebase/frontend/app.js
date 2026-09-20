@@ -205,7 +205,6 @@ const COMPACT_WORKSPACE_QUERY = "(max-width: 1499px)";
 /** @typedef {"1024"|"2048"|"4096"|"full"} PreviewResolution */
 const PREVIEW_RESOLUTION_OPTIONS = new Set(["1024", "2048", "4096", "full"]);
 const DEFAULT_PREVIEW_RESOLUTION = "1024";
-const ENGINEERING_FULL_PREVIEW_QUERY = "engineeringFullPreview";
 const DEFAULT_SCOPE_QUALITY = "detailed";
 const SCOPE_QUALITY_PROFILES = {
   performance: { densityGain: 1.35, horizontalSpread: 1, interactiveEdge: 384, settledEdge: 768, refinementEdge: 960 },
@@ -1848,7 +1847,6 @@ boot();
 
 async function boot() {
   clearLegacyUiPreferences();
-  installEngineeringFullPreviewOptions();
   initializeLocalOverlayColor();
   initializePreviewPreferences();
   initializeInstrumentShell();
@@ -1885,23 +1883,6 @@ async function boot() {
   observeScopeSize();
   observeGraphEditorSizes();
   observeViewerSize();
-}
-
-function engineeringFullPreviewEnabled() {
-  return new URLSearchParams(window.location.search).get(ENGINEERING_FULL_PREVIEW_QUERY) === "1";
-}
-
-function installEngineeringFullPreviewOptions() {
-  if (!engineeringFullPreviewEnabled()) return false;
-  [els.previewResolution, document.getElementById("settings-preview-resolution")].forEach((select) => {
-    if (!select || select.querySelector('option[value="full"]')) return;
-    const option = document.createElement("option");
-    option.value = "full";
-    option.textContent = "Full · Engineering";
-    select.append(option);
-  });
-  document.documentElement.dataset.engineeringFullPreview = "true";
-  return true;
 }
 
 async function initializeGpuPreview() {
@@ -2089,7 +2070,6 @@ function initializePreviewScheduler() {
       previewResolution: normalizedPreviewResolution(),
       previewMaxDimension: previewTargetLongEdge(),
       previewDimensions: previewResolutionDimensions(),
-      engineeringFullPreview: engineeringFullPreviewEnabled(),
       longEdge: settledProxyLongEdge(),
     }),
   };
@@ -12086,7 +12066,10 @@ function resetControlGroup(group) {
     // aspect), and leaves an open Perspective draft alone entirely.
     const current = state.cropDraftGeometry || state.adjustments.shared.geometry;
     if (!cropRotateGeometryModified(current, defaults.shared.geometry) && !state.rotateDraftGeometry) return;
-    if (!window.confirm("Reset all Crop & Rotate values?")) return;
+    // No confirmation. Every other Reset in the panel acts immediately and is
+    // undoable, and this one was the only native `confirm` in the authoring
+    // surface -- which on Windows left the renderer unable to open a <select>
+    // popup until the window lost and regained focus.
     if (state.cropMode) closeCropMode(false);
     if (state.rotateDraftGeometry) closeRotateMode(false);
   }

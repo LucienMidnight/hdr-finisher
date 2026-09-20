@@ -1381,10 +1381,10 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
 
     assert 'id="preview-resolution" aria-label="Preview resolution"' in html
-    for value, label in [("1024", "1K"), ("2048", "2K"), ("4096", "4K")]:
+    for value, label in [("1024", "1K"), ("2048", "2K"), ("4096", "4K"), ("full", "Full")]:
         assert f'<option value="{value}">{label}</option>' in html
     preview_selector = html.split('id="preview-resolution"', 1)[1].split("</select>", 1)[0]
-    assert 'value="full"' not in preview_selector
+    assert 'value="full"' in preview_selector
     assert "Sets the maximum preview width and height." in html
     assert html.index('id="overlay-toggle"') < html.index('id="overlay-popover"') < html.index('id="preview-resolution"')
     assert ".toolbar-preview-resolution::after" in css

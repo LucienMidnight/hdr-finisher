@@ -298,6 +298,7 @@
                 <option value="1024">1K</option>
                 <option value="2048">2K</option>
                 <option value="4096">4K</option>
+                <option value="full">Full</option>
               </select>
             </label>
             <div class="preview-popover-status">
@@ -1623,9 +1624,10 @@
               <option value="1024">1K</option>
               <option value="2048">2K</option>
               <option value="4096">4K</option>
+              <option value="full">Full</option>
             </select>
           </label>
-          <p class="helper">The selected tier is the processing resolution for preview work. Full is enabled after bounded source transport and tiled execution pass their release gates.</p>
+          <p class="helper">The selected tier is the processing resolution for preview work. Full processes at the source resolution and uses the most memory.</p>
           <label class="settings-field">Maximum GPU memory for previews
             <select id="settings-gpu-memory-limit">
               <option value="auto">Auto · 2 GiB initial budget</option>

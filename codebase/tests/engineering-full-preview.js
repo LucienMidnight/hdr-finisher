@@ -36,16 +36,16 @@ function assert(condition, message) {
       if (headers["x-strip-execution"]) stripResponses.push(headers["x-strip-execution"]);
     });
 
-    await page.goto(`${baseUrl}/?engineeringFullPreview=1`, { waitUntil: "networkidle" });
-    const engineeringOptions = await page.evaluate(() => ({
+    await page.goto(baseUrl, { waitUntil: "networkidle" });
+    // Full is a shipped tier now, offered in the markup beside 1K/2K/4K
+    // rather than installed by a query flag. Both selectors must carry it,
+    // because the Settings copy and the viewer popover are the same choice.
+    const fullOptions = await page.evaluate(() => ({
       preview: document.querySelector('#preview-resolution option[value="full"]')?.textContent,
       settings: document.querySelector('#settings-preview-resolution option[value="full"]')?.textContent,
-      dataset: document.documentElement.dataset.engineeringFullPreview,
     }));
-    assert(engineeringOptions.preview === "Full · Engineering"
-      && engineeringOptions.settings === "Full · Engineering"
-      && engineeringOptions.dataset === "true",
-    `Engineering Full options were not installed coherently: ${JSON.stringify(engineeringOptions)}`);
+    assert(fullOptions.preview === "Full" && fullOptions.settings === "Full",
+      `Full was not offered coherently in both selectors: ${JSON.stringify(fullOptions)}`);
 
     await page.getByRole("button", { name: "Load test pattern" }).click();
     await page.waitForFunction(() => state.session?.session_id && viewerState().status === "ready", null, { timeout: 120000 });
@@ -61,7 +61,6 @@ function assert(condition, message) {
       return {
         accepted: { ...state.acceptedPresentation },
         authoring: {
-          engineeringFullPreview: authoring.engineeringFullPreview,
           previewResolution: authoring.previewResolution,
           previewDimensions: authoring.previewDimensions,
           executionMode: authoring.executionMode,
@@ -71,8 +70,7 @@ function assert(condition, message) {
     });
     assert(gpuFull.accepted.transport === "WebGPU" && gpuFull.accepted.execution === "direct",
       `Engineering Full did not render on the admitted GPU route: ${JSON.stringify(gpuFull)}`);
-    assert(gpuFull.authoring.engineeringFullPreview === true
-      && gpuFull.authoring.previewResolution === "full"
+    assert(gpuFull.authoring.previewResolution === "full"
       && gpuFull.authoring.previewDimensions.width === gpuFull.source.width
       && gpuFull.authoring.previewDimensions.height === gpuFull.source.height,
     `Full did not retain source dimensions: ${JSON.stringify(gpuFull)}`);

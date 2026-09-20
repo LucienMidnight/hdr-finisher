@@ -60,7 +60,6 @@ const MB = (bytes) => `${(bytes / 1e6).toFixed(1)} MB`;
           }, ["hdr-finisher:application-preferences:v1", budgetGiB]);
 
           const pageUrl = new URL(url);
-          pageUrl.searchParams.set("engineeringFullPreview", "1");
           await page.goto(pageUrl.toString(), { waitUntil: "networkidle" });
           await page.setInputFiles("#file-input", resolved);
           await page.waitForFunction(() => state.session?.session_id, null, { timeout: 1_800_000 });

@@ -28,16 +28,27 @@ def test_preview_diagnostics_separate_requested_and_presented_identity() -> None
     assert "previewDimensions: previewResolutionDimensions()" in javascript
 
 
-def test_full_is_engineering_gated_and_cpu_full_requests_bounded_strips() -> None:
+def test_full_is_offered_publicly_and_cpu_full_requests_bounded_strips() -> None:
+    """Full ships in the markup, not behind a query flag.
+
+    It was gated on bounded source transport and tiled execution passing their
+    release gates. Both are closed -- every preview module tiles and the source
+    is streamed in bounded chunks -- so Full is an ordinary choice now, offered
+    in both selectors that present the same setting. The engineering flag that
+    used to install it is gone rather than left behind gating nothing.
+    """
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
 
     preview_selector = html.split('id="preview-resolution"', 1)[1].split("</select>", 1)[0]
     settings_selector = html.split('id="settings-preview-resolution"', 1)[1].split("</select>", 1)[0]
-    assert 'value="full"' not in preview_selector
-    assert 'value="full"' not in settings_selector
-    assert 'ENGINEERING_FULL_PREVIEW_QUERY = "engineeringFullPreview"' in javascript
-    assert 'option.textContent = "Full · Engineering"' in javascript
+    assert '<option value="full">Full</option>' in preview_selector
+    assert '<option value="full">Full</option>' in settings_selector
+    # Full is last, below 4K, because the list reads smallest to largest.
+    assert preview_selector.index('value="4096"') < preview_selector.index('value="full"')
+    assert settings_selector.index('value="4096"') < settings_selector.index('value="full"')
+    assert "engineeringFullPreview" not in javascript
+    assert "Full · Engineering" not in javascript
     assert 'normalizedPreviewResolution(value) === "full" ? "strips" : "whole"' in javascript
     assert javascript.count("execution: previewExecutionForTier()") == 2
 
