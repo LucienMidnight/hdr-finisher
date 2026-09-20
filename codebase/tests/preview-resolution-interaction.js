@@ -12,7 +12,8 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
     await page.goto(baseUrl, { waitUntil: "networkidle" });
     const selector = page.locator("#preview-resolution");
     const options = await selector.locator("option").evaluateAll((items) => items.map((item) => [item.value, item.textContent]));
-    const expected = [["1024", "1K"], ["2048", "2K"], ["4096", "4K"]];
+    // Smallest to largest, Full last: it is an ordinary tier now, not a flag.
+    const expected = [["1024", "1K"], ["2048", "2K"], ["4096", "4K"], ["full", "Full"]];
     if (JSON.stringify(options) !== JSON.stringify(expected)) {
       throw new Error(`Preview resolution options were incorrect: ${JSON.stringify(options)}`);
     }

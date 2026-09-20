@@ -13,16 +13,6 @@ function assert(condition, message) {
     args: ["--enable-unsafe-webgpu", "--enable-features=Vulkan,UseSkiaRenderer"],
   });
   try {
-    const publicPage = await browser.newPage();
-    await publicPage.goto(baseUrl, { waitUntil: "networkidle" });
-    const publicOptions = await publicPage.evaluate(() => ({
-      preview: Boolean(document.querySelector('#preview-resolution option[value="full"]')),
-      settings: Boolean(document.querySelector('#settings-preview-resolution option[value="full"]')),
-    }));
-    assert(!publicOptions.preview && !publicOptions.settings,
-      `Full escaped the engineering gate: ${JSON.stringify(publicOptions)}`);
-    await publicPage.close();
-
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     const previewRequests = [];
     const stripResponses = [];
@@ -88,7 +78,7 @@ function assert(condition, message) {
     assert(cpuFull.exact === true && cpuFull.requestedTier === "full" && cpuFull.tier === "full",
       `CPU Full was not accepted truthfully: ${JSON.stringify(cpuFull)}`);
 
-    console.log(JSON.stringify({ publicOptions, engineeringOptions, gpuFull, cpuFull, fullCpuRequests, stripResponses }, null, 2));
+    console.log(JSON.stringify({ fullOptions, gpuFull, cpuFull, fullCpuRequests, stripResponses }, null, 2));
     await page.close();
   } finally {
     await browser.close();
