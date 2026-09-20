@@ -55,10 +55,14 @@ def test_strip_execution_returns_the_same_pixels_as_the_whole_frame_route() -> N
 
 
 def test_strip_execution_refuses_a_graph_it_cannot_reproduce() -> None:
+    # Vignette used to be the refusal here. It runs strip by strip since the
+    # placed stages learned where they sit in the frame, so the refusal this
+    # asserts is one that is still true: halation, whose quarter-resolution
+    # intermediates have no bounded contract yet.
     session_id, adjustments = _session()
     adjustments = json.loads(json.dumps(adjustments))
-    adjustments["sdr"]["vignette_section_enabled"] = True
-    adjustments["sdr"]["vignette"]["amount"] = -45.0
+    adjustments["sdr"]["film_look_section_enabled"] = True
+    adjustments["sdr"]["film_look"]["halation_amount"] = 50.0
 
     response = client.post(
         f"/api/session/{session_id}/preview-raw/sdr",
@@ -68,7 +72,7 @@ def test_strip_execution_refuses_a_graph_it_cannot_reproduce() -> None:
     assert response.status_code == 409
     body = response.json()
     assert body["code"] == "strip_execution_refused"
-    assert "vignette" in body["refusals"]
+    assert "spatial film effects" in body["refusals"]
 
 
 def test_the_encoded_preview_route_also_carries_the_report() -> None:

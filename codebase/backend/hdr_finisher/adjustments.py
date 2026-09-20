@@ -51,6 +51,39 @@ SDR_FILM_HIGHLIGHT_DESATURATION_END = np.float32(1.0)
 
 
 @dataclass(frozen=True)
+class FrameWindow:
+    """Where a rendered region sits in the whole output frame.
+
+    A strip is not a small picture. A vignette is placed against the frame and
+    grain is a fixed field over it, so both have to ask where they are in the
+    frame rather than where they are in the region they happen to be rendered
+    in. Without this a strip would draw its own small vignette and restart the
+    grain field at its own first row.
+
+    ``None`` everywhere on the ordinary whole-frame path, where the region is
+    the frame and the offsets are zero.
+    """
+
+    left: int
+    top: int
+    width: int
+    height: int
+
+    @staticmethod
+    def resolve(window: "FrameWindow | None", region: np.ndarray) -> tuple[int, int, int, int]:
+        """This region's origin and the frame's size.
+
+        With no window the region is the frame: the origin is zero and the
+        frame is whatever was handed in, which is what the whole-frame path
+        has always computed.
+        """
+        if window is None:
+            height, width = region.shape[:2]
+            return 0, 0, int(width), int(height)
+        return int(window.left), int(window.top), int(window.width), int(window.height)
+
+
+@dataclass(frozen=True)
 class HighlightAnchor:
     """Whole-frame reductions the highlight stages cannot measure from a strip.
 
@@ -146,6 +179,7 @@ def apply_fixed_source_adjustments(
     source_pixel_scale: float = 1.0,
     highlight_anchor: HighlightAnchor | None = None,
     apply_output_clamp: bool = True,
+    frame_window: FrameWindow | None = None,
 ) -> np.ndarray:
     """Grade an already geometry-fixed frame, or one bounded region of one.
 
@@ -167,6 +201,7 @@ def apply_fixed_source_adjustments(
             source_pixel_scale=source_pixel_scale,
             highlight_anchor=highlight_anchor,
             apply_output_clamp=apply_output_clamp,
+            frame_window=frame_window,
         )
     if fixed_sdr_reference is not None:
         return _apply_sdr_adjustments_to_reference(
@@ -179,6 +214,7 @@ def apply_fixed_source_adjustments(
             compiled_local_masks=compiled_local_masks,
             source_pixel_scale=source_pixel_scale,
             highlight_anchor=highlight_anchor,
+            frame_window=frame_window,
         )
     return _apply_sdr_adjustments(
         fixed_source,
@@ -190,6 +226,7 @@ def apply_fixed_source_adjustments(
         compiled_local_masks=compiled_local_masks,
         source_pixel_scale=source_pixel_scale,
         highlight_anchor=highlight_anchor,
+        frame_window=frame_window,
     )
 
 
@@ -313,6 +350,7 @@ def _apply_hdr_adjustments(
     source_pixel_scale: float = 1.0,
     highlight_anchor: HighlightAnchor | None = None,
     apply_output_clamp: bool = True,
+    frame_window: FrameWindow | None = None,
 ) -> np.ndarray:
     color_context = color_context or RenderColorContext()
     hdr = adjustments.hdr
@@ -351,9 +389,9 @@ def _apply_hdr_adjustments(
     if hdr.film_look_section_enabled:
         result = _apply_film_look(result, adjustments, PreviewKind.HDR, include_grain=False)
     if hdr.vignette_section_enabled:
-        result = _apply_vignette(result, hdr.vignette, PreviewKind.HDR)
+        result = _apply_vignette(result, hdr.vignette, PreviewKind.HDR, frame_window=frame_window)
     if include_grain:
-        result = apply_final_grain(result, adjustments, PreviewKind.HDR)
+        result = apply_final_grain(result, adjustments, PreviewKind.HDR, frame_window=frame_window)
     if include_output_highlight_compression:
         result = apply_hdr_output_highlight_compression(
             result, adjustments, color_context=color_context, anchor=highlight_anchor
@@ -646,6 +684,7 @@ def _apply_sdr_adjustments(
     compiled_local_masks: dict[str, np.ndarray] | None = None,
     source_pixel_scale: float = 1.0,
     highlight_anchor: HighlightAnchor | None = None,
+    frame_window: FrameWindow | None = None,
 ) -> np.ndarray:
     sdr = adjustments.sdr
     result = _sdr_pre_highlight(image, adjustments)
@@ -696,9 +735,9 @@ def _apply_sdr_adjustments(
     if sdr.film_look_section_enabled:
         result = _apply_film_look(result, adjustments, PreviewKind.SDR, include_grain=False)
     if sdr.vignette_section_enabled:
-        result = _apply_vignette(result, sdr.vignette, PreviewKind.SDR)
+        result = _apply_vignette(result, sdr.vignette, PreviewKind.SDR, frame_window=frame_window)
     if include_grain:
-        result = apply_final_grain(result, adjustments, PreviewKind.SDR)
+        result = apply_final_grain(result, adjustments, PreviewKind.SDR, frame_window=frame_window)
     if include_output_highlight_compression:
         result = apply_sdr_output_highlight_compression(result, adjustments)
     return np.clip(result, 0.0, 1.0)
@@ -764,6 +803,7 @@ def _apply_sdr_adjustments_to_reference(
     compiled_local_masks: dict[str, np.ndarray] | None = None,
     source_pixel_scale: float = 1.0,
     highlight_anchor: HighlightAnchor | None = None,
+    frame_window: FrameWindow | None = None,
 ) -> np.ndarray:
     sdr = adjustments.sdr
     result = _sdr_reference_pre_highlight(image, adjustments)
@@ -816,9 +856,9 @@ def _apply_sdr_adjustments_to_reference(
     if sdr.film_look_section_enabled:
         result = _apply_film_look(result, adjustments, PreviewKind.SDR, include_grain=False)
     if sdr.vignette_section_enabled:
-        result = _apply_vignette(result, sdr.vignette, PreviewKind.SDR)
+        result = _apply_vignette(result, sdr.vignette, PreviewKind.SDR, frame_window=frame_window)
     if include_grain:
-        result = apply_final_grain(result, adjustments, PreviewKind.SDR)
+        result = apply_final_grain(result, adjustments, PreviewKind.SDR, frame_window=frame_window)
     if include_output_highlight_compression:
         result = apply_sdr_output_highlight_compression(result, adjustments)
     return np.clip(result, 0.0, 1.0)
@@ -1614,8 +1654,19 @@ def _apply_film_look(
     return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
 
 
-def apply_final_grain(image: np.ndarray, adjustments: AdjustmentState, kind: PreviewKind) -> np.ndarray:
-    """Synthesize deterministic film grain at the current (preview or final export) resolution."""
+def apply_final_grain(
+    image: np.ndarray,
+    adjustments: AdjustmentState,
+    kind: PreviewKind,
+    *,
+    frame_window: FrameWindow | None = None,
+) -> np.ndarray:
+    """Synthesize deterministic film grain at the current (preview or final export) resolution.
+
+    ``frame_window`` places ``image`` in the whole frame when it is one region
+    of one, so a strip samples the frame's grain field rather than starting a
+    new one at its own first row.
+    """
     branch = adjustments.hdr if kind == PreviewKind.HDR else adjustments.sdr
     if not branch.film_look_section_enabled:
         return image
@@ -1629,11 +1680,14 @@ def apply_final_grain(image: np.ndarray, adjustments: AdjustmentState, kind: Pre
         return image
     if look.grain_view_map:
         return _apply_density_grain(
-            image, look, kind, adjustments.shared.film_grain_seed, strength, view_map=True
+            image, look, kind, adjustments.shared.film_grain_seed, strength,
+            view_map=True, frame_window=frame_window,
         )
     if look.grain_amount <= 0.0:
         return image
-    return _apply_density_grain(image, look, kind, adjustments.shared.film_grain_seed, strength)
+    return _apply_density_grain(
+        image, look, kind, adjustments.shared.film_grain_seed, strength, frame_window=frame_window
+    )
 
 
 def _apply_color_grading(image: np.ndarray, grading: object, kind: PreviewKind) -> np.ndarray:
@@ -1673,14 +1727,23 @@ def _apply_color_grading(image: np.ndarray, grading: object, kind: PreviewKind) 
     return np.clip(tinted, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
 
 
-def _apply_vignette(image: np.ndarray, vignette: object, kind: PreviewKind) -> np.ndarray:
+def _apply_vignette(
+    image: np.ndarray,
+    vignette: object,
+    kind: PreviewKind,
+    *,
+    frame_window: FrameWindow | None = None,
+) -> np.ndarray:
     if vignette.amount == 0.0:
         return image
-    # `image` is the geometry-fixed frame produced by apply_geometry(). Build
-    # the vignette entirely in that output space so its center, radius, and
-    # roundness follow the crop rather than the uncropped source dimensions.
-    height, width = image.shape[:2]
-    y, x = np.mgrid[0:height, 0:width].astype(np.float32)
+    # `image` is the geometry-fixed frame produced by apply_geometry(), or one
+    # region of it. Build the vignette in that output space so its center,
+    # radius, and roundness follow the crop rather than the uncropped source
+    # dimensions -- and, when this is a region, against the whole frame's size
+    # at this region's place in it rather than against the region itself.
+    region_height, region_width = image.shape[:2]
+    left, top, width, height = FrameWindow.resolve(frame_window, image)
+    y, x = np.mgrid[top:top + region_height, left:left + region_width].astype(np.float32)
     scale = np.float32(max(1.0, 0.5 * min(width, height)))
     dx = np.abs((x - np.float32(vignette.center_x * max(width - 1, 1))) / scale)
     dy = np.abs((y - np.float32(vignette.center_y * max(height - 1, 1))) / scale)
@@ -2096,7 +2159,14 @@ def _apply_film_resolution(
 
 
 def _apply_density_grain(
-    image: np.ndarray, look: object, kind: PreviewKind, seed: int, master: np.float32, *, view_map: bool = False
+    image: np.ndarray,
+    look: object,
+    kind: PreviewKind,
+    seed: int,
+    master: np.float32,
+    *,
+    view_map: bool = False,
+    frame_window: FrameWindow | None = None,
 ) -> np.ndarray:
     """Modulate the frame by the film grain density field.
 
@@ -2106,8 +2176,11 @@ def _apply_density_grain(
     subject, still carrying the shadow/midtone/highlight qualification the
     image drives.
     """
-    height, width = image.shape[:2]
-    yy, xx = np.indices((height, width), dtype=np.float32)
+    region_height, region_width = image.shape[:2]
+    left, top, width, height = FrameWindow.resolve(frame_window, image)
+    yy, xx = np.indices((region_height, region_width), dtype=np.float32)
+    yy += np.float32(top)
+    xx += np.float32(left)
     physical_pitch = np.float32(_grain_pitch_pixels(width, height, look))
     pitch = np.maximum(np.float32(1.0), physical_pitch)
     pixel_coverage = np.minimum(np.float32(1.0), physical_pitch)

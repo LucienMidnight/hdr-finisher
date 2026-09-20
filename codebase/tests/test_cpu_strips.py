@@ -203,6 +203,62 @@ def test_authored_sdr_base_is_exact():
     np.testing.assert_array_equal(strips, reference)
 
 
+@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
+def test_placed_stages_are_exact(kind):
+    """A strip renders its share of the frame's vignette and grain field.
+
+    Both stages are pointwise but neither is region-local, so this is the test
+    that would fail if either one read the strip's own shape: the vignette is
+    deliberately off-centre, and the grain field would visibly restart at every
+    strip boundary. The frame is 61 rows against a 4096-byte budget, so there
+    are many strips and many boundaries to disagree at.
+    """
+    state = _graded_state()
+    branch = state.hdr if kind == PreviewKind.HDR else state.sdr
+    branch.vignette_section_enabled = True
+    branch.vignette.amount = -55.0
+    branch.vignette.midpoint = 38.0
+    branch.vignette.roundness = 30.0
+    branch.vignette.feather = 60.0
+    branch.vignette.highlight_protection = 25.0
+    branch.vignette.center_x = 0.33
+    branch.vignette.center_y = 0.61
+    branch.film_look_section_enabled = True
+    branch.film_look.grain_enabled = True
+    branch.film_look.grain_amount = 65.0
+    branch.film_look.grain_size = 45.0
+    branch.film_look.grain_chroma = 35.0
+    image = _source()
+
+    assert strip_execution_refusals(state, kind) == []
+    reference = apply_adjustments(image, state, kind)
+    strips, report = render_in_strips(image, state, kind, budget_bytes=4096)
+
+    assert report.plan.strip_count > 1
+    np.testing.assert_array_equal(strips, reference)
+
+
+def test_grain_view_map_is_exact_in_strips():
+    """The grain view map is the grain field alone, with nothing to hide drift.
+
+    The picture is replaced by a neutral grey card once the tonal response has
+    been read from it, so any per-strip restart of the noise is the whole
+    signal rather than a modulation of one.
+    """
+    state = _graded_state()
+    state.hdr.film_look_section_enabled = True
+    state.hdr.film_look.grain_enabled = True
+    state.hdr.film_look.grain_amount = 65.0
+    state.hdr.film_look.grain_view_map = True
+    image = _source()
+
+    reference = apply_adjustments(image, state, PreviewKind.HDR)
+    strips, report = render_in_strips(image, state, PreviewKind.HDR, budget_bytes=4096)
+
+    assert report.plan.strip_count > 1
+    np.testing.assert_array_equal(strips, reference)
+
+
 def test_legacy_sdr_rendering_is_exact():
     state = _graded_state()
     state.sdr.rendering_version = "legacy_base_v1"
@@ -225,8 +281,6 @@ def _local(identifier: str = "a") -> LocalAdjustment:
 @pytest.mark.parametrize(
     ("configure", "expected"),
     [
-        (lambda s: setattr(s.hdr.vignette, "amount", -40.0), "vignette"),
-        (lambda s: setattr(s.hdr.film_look, "grain_amount", 30.0), "grain"),
         (lambda s: setattr(s.hdr.film_look, "halation_amount", 50.0), "spatial film effects"),
         (lambda s: setattr(s.hdr.film_look, "film_resolution", 80.0), "spatial film effects"),
         (lambda s: setattr(s.hdr.detail, "sharpen_amount", 40.0), "detail"),
@@ -248,13 +302,22 @@ def test_refusals_name_the_node(configure, expected):
     assert expected in raised.value.reasons
 
 
-def test_zero_amount_grain_does_not_refuse():
-    """Grain is section-enabled by default; only grain that contributes refuses."""
+def test_placed_stages_do_not_refuse():
+    """Vignette and grain are placed against the frame, so a strip can run them.
+
+    Both used to refuse, because both derived their geometry from the array
+    they were handed: a strip would have drawn its own small vignette and
+    restarted the grain field at its own first row. ``FrameWindow`` tells them
+    where the strip sits in the frame instead. ``test_placed_stages_are_exact``
+    is the claim behind this; this is only the refusal list agreeing with it.
+    """
     state = _graded_state()
+    state.hdr.vignette_section_enabled = True
+    state.hdr.vignette.amount = -40.0
     state.hdr.film_look_section_enabled = True
     state.hdr.film_look.grain_enabled = True
-    state.hdr.film_look.grain_amount = 0.0
-    assert "grain" not in strip_execution_refusals(state, PreviewKind.HDR)
+    state.hdr.film_look.grain_amount = 30.0
+    assert strip_execution_refusals(state, PreviewKind.HDR) == []
 
 
 def test_local_adjustments_and_denoise_refuse():
@@ -279,13 +342,13 @@ def test_post_geometry_downsample_refuses():
 
 def test_refusal_carries_every_reason():
     state = _graded_state()
-    state.hdr.vignette_section_enabled = True
-    state.hdr.vignette.amount = 30.0
+    state.hdr.film_look_section_enabled = True
+    state.hdr.film_look.halation_amount = 50.0
     state.hdr.detail_section_enabled = True
     state.hdr.detail.clarity_amount = 25.0
     with pytest.raises(StripExecutionRefused) as raised:
         render_in_strips(_source(), state, PreviewKind.HDR)
-    assert set(raised.value.reasons) >= {"vignette", "detail"}
+    assert set(raised.value.reasons) >= {"spatial film effects", "detail"}
 
 
 # --- cancellation and bounds ------------------------------------------------

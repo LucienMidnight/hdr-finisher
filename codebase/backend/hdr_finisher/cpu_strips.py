@@ -37,6 +37,7 @@ from typing import Callable, Sequence
 import numpy as np
 
 from .adjustments import (
+    FrameWindow,
     HighlightAnchor,
     apply_fixed_source_adjustments,
     clip_hdr_output_target,
@@ -207,12 +208,10 @@ def strip_execution_refusals(
         )
         if spatial:
             reasons.append("spatial film effects")
-        # Grain is section-enabled by default, so the refusal is on grain that
-        # actually contributes; zero-amount grain leaves the pixels alone.
-        if look.grain_enabled and (look.grain_amount > 0.0 or look.grain_view_map):
-            reasons.append("grain")
-    if branch.vignette_section_enabled and float(branch.vignette.amount) != 0.0:
-        reasons.append("vignette")
+    # Grain and vignette are placed against the frame through ``FrameWindow``,
+    # so a strip draws its share of the frame's vignette and samples the
+    # frame's grain field rather than starting its own. Neither needs a
+    # refusal any more; the GPU side lifted the same two in the same phase.
     if denoise_active:
         reasons.append("denoise")
     if sdr_match is not None and sdr_match.active:
@@ -342,6 +341,10 @@ def render_in_strips(
     def region(source: np.ndarray, top: int, bottom: int) -> np.ndarray:
         return apply_geometry_region(source, geometry, (0, top, output_width, bottom))
 
+    def window(top: int) -> FrameWindow:
+        """Where this strip sits in the frame, for the stages that are placed."""
+        return FrameWindow(left=0, top=top, width=output_width, height=output_height)
+
     output = np.empty((output_height, output_width, 3), dtype=np.float32)
     passes: list[str] = []
     anchor: HighlightAnchor | None = None
@@ -369,11 +372,12 @@ def render_in_strips(
                 color_context=color_context,
                 source_pixel_scale=source_pixel_scale,
                 highlight_anchor=anchor,
+                frame_window=window(top),
             )
             report.strips_rendered += 1
     else:
         anchor, passes_used = _render_hdr_strips(
-            image, adjustments, plan, region, check, output, color_context, source_pixel_scale, report
+            image, adjustments, plan, region, check, output, color_context, source_pixel_scale, report, window
         )
         passes.extend(passes_used)
 
@@ -435,6 +439,7 @@ def _render_hdr_strips(
     color_context: RenderColorContext,
     source_pixel_scale: float,
     report: StripReport,
+    window: Callable[[int], FrameWindow],
 ) -> tuple[HighlightAnchor | None, list[str]]:
     """Render the HDR lane, staging the output highlight pass over the buffer.
 
@@ -454,6 +459,7 @@ def _render_hdr_strips(
                 PreviewKind.HDR,
                 color_context=color_context,
                 source_pixel_scale=source_pixel_scale,
+                frame_window=window(top),
             )
             report.strips_rendered += 1
         return None, ["render"]
@@ -474,6 +480,7 @@ def _render_hdr_strips(
             source_pixel_scale=source_pixel_scale,
             include_output_highlight_compression=False,
             apply_output_clamp=False,
+            frame_window=window(top),
         )
         output[top:bottom] = graded
         signal = hdr_highlight_peak_signal(graded, hdr)
