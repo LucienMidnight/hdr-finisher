@@ -145,7 +145,11 @@ def test_a_render_in_flight_is_not_superseded_outside_a_gesture() -> None:
     wrapper = javascript[javascript.index("function renderGpuDraft(lane = state.currentView, options = {})"):
                          javascript.index("async function renderGpuDraftInner(")]
     assert "state.gpuDraftInFlight = pending;" in wrapper
-    assert "if (state.gpuDraftInFlight === pending) state.gpuDraftInFlight = null;" in wrapper
+    # The slot is cleared only when it still holds *this* render. Written as
+    # a block since PERF-03 added the tier alongside it, so the assertion is
+    # on the identity guard rather than on a one-line spelling of it.
+    assert "if (state.gpuDraftInFlight === pending) {" in wrapper
+    assert "state.gpuDraftInFlight = null;" in wrapper
 
     scheduler = javascript[javascript.index("function initializePreviewScheduler()"):
                            javascript.index("function observeScopeSize()")]

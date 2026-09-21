@@ -180,7 +180,7 @@ behavioural one; reverting the stale-close fix fails the three-way.
 ### MINOR-11 — In-app Help shows "Documentation unavailable" for every topic
 
 **Priority:** Major / feature entirely non-functional
-**Status:** Open — found 2026-09-21 while running the desktop suite
+**Status:** Fixed 2026-09-21. `backend/hdr_finisher/config.py` `_is_bundled()`; covered by `tests/test_docs_root.py`
 **Area:** `backend/hdr_finisher/config.py` `DOCS_DIR`
 
 **Reported behavior**
@@ -216,3 +216,54 @@ proxy that stopped being true.
   backend.
 - `tests/electron-smoke.js` passes its Help assertions without modification —
   it has been correct about this the whole time.
+
+---
+
+### MINOR-12 — Applying a straighten strands the geometry handoff with no GPU
+
+**Priority:** Major / the edit never completes
+**Status:** Open — found 2026-09-21, pre-existing, cause not yet established
+**Area:** `frontend/app.js` geometry handoff, `backend/hdr_finisher/cpu_strips.py`
+
+**Reported behavior**
+
+With WebGPU unavailable, applying a straighten leaves
+`state.geometryTransformHandoffSignature` set forever.
+`tests/electron-smoke.js` has been failing on it at line 563, thirty seconds
+after `straighten slider cancellation`.
+
+Nobody had seen it, because the suite was already failing eighty lines
+earlier on MINOR-11 and never reached this point. Fixing Help revealed it.
+
+**Not caused by this session.** Verified twice: the failure is identical with
+the PERF-03 settle guard neutralised, and identical again on baseline
+`d909b7a` carrying only the MINOR-11 fix, which is the smallest change that
+lets the suite reach line 563 at all.
+
+**What is known**
+
+The bounded CPU strip path refuses roll geometry by design — `Image.rotate(expand=True)`
+materialises the whole rotated frame, so a windowed roll is exact but not
+bounded, which is the property that path sells. With no GPU and Full
+selected, that refusal surfaces as **"Full unavailable — Bounded strip
+execution refused this graph. roll geometry."** and, it appears, an accepted
+presentation that never arrives, so the handoff has nothing to clear it.
+
+That is a hypothesis about the connection. The refusal is confirmed and the
+stranded handoff is confirmed; the link between them is not.
+
+**Why it matters more than its rarity suggests**
+
+This is a CPU-only configuration, which is one of the three Phase 9 was meant
+to validate and which has now been descoped to project PRD 11c. On such a
+machine, Full plus any rotation is not merely slow — it is unavailable, and
+the geometry edit does not complete. The same refusal list also covers
+spatial film effects, denoise, matched SDR and post-geometry downsample, so
+the exposure is wider than straighten alone.
+
+**Acceptance criteria**
+
+- Applying a straighten clears the geometry handoff with no GPU available.
+- A refusal from the bounded strip path leaves the viewer in a state the user
+  can act on, rather than an edit that never completes.
+- `tests/electron-smoke.js` passes line 563 without modification.

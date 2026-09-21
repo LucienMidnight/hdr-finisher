@@ -226,7 +226,12 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert "function matchHdrColorsToSdr()" in script
     assert "function resetSdrColorSliders()" not in script
     assert "/api/export-directory/default" in script
-    assert "window.confirm" in script
+    # MINOR-10: the overwrite approval is an in-application dialog now. A
+    # native modal left the Electron renderer unable to open a <select>
+    # until the window lost and regained focus, so the absence is as much
+    # the contract as the presence.
+    assert "window.HDRDialogs.confirm(" in script
+    assert "window.confirm(" not in script
     assert "overwrite," in script
 
 
@@ -939,7 +944,10 @@ def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     assert 'desktop.grantProjectPath(requestedPath' in javascript
     assert 'mode === "project_save" && selection.exists' in javascript
     assert 'addEventListener("click", () => openProjectFromPath())' in javascript
-    assert 'window.alert(responseErrorMessage(payload, "The project could not be opened."))' in javascript
+    # MINOR-10: likewise for the project-open failure report.
+    assert 'responseErrorMessage(payload, "The project could not be opened.")' in javascript
+    assert "window.HDRDialogs.alert(" in javascript
+    assert "window.alert(" not in javascript
     assert 'grantProjectPath: (filePath, intent)' in (DESKTOP / "preload.js").read_text(encoding="utf-8")
     assert 'id="directory-browser-kicker"' not in html
     source_summary = html.split('<section class="source-summary">', 1)[1].split("</section>", 1)[0]
@@ -1917,7 +1925,16 @@ def test_perspective_module_is_numbered_fourth_and_exposes_draft_guided_tools() 
 def test_frontend_assets_use_the_application_version_for_cache_busting() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
 
-    assert html.count("__HDR_FINISHER_ASSET_VERSION__") == 8
+    # Every served asset carries the cache-busting token. Asserted over
+    # whatever the markup references rather than against a hand-counted
+    # total, which needed editing whenever a file was added and never
+    # checked the file that was added.
+    referenced = re.findall(r'(?:src|href)="(/static/[^"?]+\.(?:js|css))(\?[^"]*)?"', html)
+    assert referenced, "No /static assets are referenced at all."
+    unversioned = [path for path, query in referenced
+                   if query != "?v=__HDR_FINISHER_ASSET_VERSION__"]
+    assert not unversioned, f"Assets served without a cache-busting version: {unversioned}"
+    assert "/static/app-dialog.js" in [path for path, _ in referenced]
     assert '/static/app.js?v=__HDR_FINISHER_ASSET_VERSION__' in html
     assert '/static/desktop-chrome.js?v=__HDR_FINISHER_ASSET_VERSION__' in html
     assert '/static/styles.css?v=__HDR_FINISHER_ASSET_VERSION__' in html
