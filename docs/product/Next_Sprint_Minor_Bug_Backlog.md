@@ -140,11 +140,27 @@ runs. `app-dialog.js` counts the closes it caused instead.
   all three answers.
 - **Still owed.** *After any confirmation is dismissed, the preview resolution
   selector opens on the first click without a focus round trip — asserted in
-  the Electron integration suite.* There is no Electron integration suite:
-  nothing under `tests/` drives Electron over CDP. The lockout is a property
-  of the native modal and no native modal is raised any more, so the cause is
-  removed, but that is an argument rather than a measurement. Building the
-  Electron harness is its own piece of work and is not done.
+  the Electron integration suite.* The suite exists, at
+  `codebase/desktop/tests/` (`electron-smoke.js` and friends, driving Electron
+  through Playwright), and `codebase/desktop/tests/confirmation-focus.js` now
+  runs the export-overwrite confirmation there and asserts that no native
+  modal is raised and that the preview resolution selector is operable
+  immediately afterwards.
+
+  What that assertion cannot cover is the popup itself. A `<select>` popup in
+  Chromium is a native window with no in-page observable: the renderer cannot
+  tell whether it opened, and Playwright's `selectOption` sets the value
+  without opening it, so the broken path is not the one a scripted click takes.
+  The test therefore asserts the cause is gone and that the control still
+  responds, not the popup itself. The reported symptom remains verified by
+  hand only.
+
+  One thing the negative control corrected. In a browser a surviving
+  `window.confirm` surfaces as Playwright's `dialog` event, and the browser
+  test relies on that. In Electron it does not: restoring one `window.confirm`
+  put a real native window on screen and the run blocked with nothing
+  delivered to the listener. What fails the Electron run is the in-app
+  `<dialog>` never opening, which is what the negative control was seen to do.
 - ~~The dialog is keyboard-operable: Escape cancels, Enter confirms, and focus
   returns to the control that opened it.~~ Asserted. Note that the focus
   return is the platform's own `<dialog>` behaviour: an explicit

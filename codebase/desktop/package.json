@@ -15,6 +15,7 @@
     "test:highlight-lane-4k": "node tests/highlight-lane-4k.js",
     "test:proof-grade-diagnostic": "node tests/proof-grade-diagnostic.js",
     "test:renderer-crash": "node tests/renderer-crash.js",
+    "test:confirmation-focus": "node tests/confirmation-focus.js",
     "test:packaged": "node tests/electron-smoke.js --packaged",
     "pack:dir": "electron-builder --dir --win --x64",
     "pack:dir:mac": "electron-builder --dir --mac",
