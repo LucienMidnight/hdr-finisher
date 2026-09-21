@@ -585,26 +585,65 @@ all at the Full tier, or deferred until the user actually switches lanes.
 
 ### PERF-05 — Tiled encode fails validation under GPU instrumentation
 
+**Status:** Not reproduced 2026-09-21. Harness added, no fix shipped.
+`tests/performance/full-tier-instrumented-tiling.js`
+(`npm run test:full-tier-instrumented-tiling`).
+
 With `enableGpuInstrumentation(true)` a tiled render at Full failed with:
 
     [Buffer (unlabeled)] used in submit while mapped.
      - While calling [Queue].Submit([[CommandBuffer]])
 
 which refuses the whole tiled generation. It did not reproduce with
-instrumentation off, so the suspect is the GPU timing readback buffers
-(`querySet` / `resolveBuffer` / `readBuffer`) being mapped across a submit
-rather than anything on the ordinary path.
+instrumentation off, so the suspect was the GPU timing readback buffers
+(`querySet` / `resolveBuffer` / `readBuffer`) being mapped across a submit.
 
-This matters more than its rarity suggests: instrumentation is exactly what
-the performance suite runs under, so any tiled measurement taken at Full is
-measuring a path that refused.
+**The timing buffers are not the suspect.** `createGpuTimingResources()`
+allocates a fresh `querySet`, `resolveBuffer` and `readBuffer` per render and
+`collectGpuTiming()` destroys all three once the readback lands. Nothing is
+shared and nothing is reused, so no submit can reference a buffer another
+render has mapped.
+
+**The one shared readback is the scope peak target.**
+`ensureScopePeakTarget()` is a singleton — one `readBuffer`, allocated once,
+with no `busy` flag and no `mapState` check, unlike `acquireScopeResource()`
+which has both. `encodeTiledGeneration()` copies into it, submits, and then
+maps it in `readScopePeak()`. Two tiled generations overlapping would put one
+submit against the buffer while the other holds it mapped, which is both the
+reported error and, since the buffer is created without a label, an unlabeled
+one. That is the only structure in the tiled path that fits the message.
+
+**It does not fire.** Measured on a 7968 x 5320 source, tiled route pinned,
+`timestamp-query` present, instrumentation on:
+
+- 8 consecutive tiled Full renders: 8 tiled, 0 refused, 0 device errors.
+- 3 rounds of two `renderTiledTier()` calls plus an exact-peak measurement
+  started together: every round confirmed two generations actually rendered
+  (not declined), 0 device errors.
+
+So the hazard is real in the code and did not reproduce on this adapter even
+when deliberately contended. **No fix was shipped.** A guard on the peak
+target would be a speculative change to a path that is currently passing,
+which is the kind of change this sprint's QA has already rejected twice.
+
+The harness is committed so that the next occurrence is caught with the
+device error in hand rather than from memory. It listens on `uncapturederror`
+rather than only on the render's return value, so a validation error that no
+error scope happens to cover still fails the run, and it refuses to pass on an
+adapter without `timestamp-query`, where the instrumented path does not exist.
 
 **Acceptance criteria**
 
-- A tiled render at Full completes with instrumentation enabled, with no
-  validation error raised on the device.
+- ~~A tiled render at Full completes with instrumentation enabled, with no
+  validation error raised on the device.~~ Asserted; 8/8 clean.
 - The timing readback is unmapped before any submit that could reference it.
-- A performance run at Full reports tiled renders rather than refusals.
+  Holds by construction — the buffers are per-render and destroyed after use.
+- ~~A performance run at Full reports tiled renders rather than refusals.~~
+  Asserted; 8/8 tiled.
+
+**Open.** Whether the singleton peak readback needs the `busy` and `mapState`
+guards that the scope pool already has. Reproduce first — on the reporter's
+adapter, or with denoise and local masks engaged, which this run did not have.
 
 ---
 
