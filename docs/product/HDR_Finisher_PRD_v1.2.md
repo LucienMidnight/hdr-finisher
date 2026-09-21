@@ -602,6 +602,31 @@ This is not a regression from PERF-03: the black frame is present with the
 PERF-03 guard neutralised, and the fallback that guard removes was never what
 painted the canvas.
 
+**Measured 2026-09-21** by `tests/performance/tier-change-blank-canvas.js`,
+which samples presented pixels rather than `style.display`, across a 4K to
+Full change on a 7968 x 5320 source:
+
+| Run | Proxy state | Elapsed | Blank samples | First blank |
+|---|---|---|---|---|
+| 1 | cold | 8 367 ms | **162 of 164** | sample 1, ~40 ms in |
+| 2 | warm | 260 ms | 1 of 7 | sample 6, near the end |
+
+Both are gate violations; the cold one is what the reporter sees.
+
+**The account above is not yet confirmed, and run 1 argues against it as
+written.** The resize sits after `loadProxy`, so on a cold change the eight
+seconds are spent fetching the Full proxy *before* any resize — and yet the
+canvas is already black 40 ms in. Either something blanks the viewer earlier
+than the resize, or an earlier, cheaper render at the new tier performs the
+resize first and the expensive settle then runs against an already-cleared
+canvas. The second fits both runs, but it is a hypothesis: the resize has not
+been instrumented directly, and this sprint has already produced three
+plausible-and-wrong diagnoses. Instrument the resize before changing it.
+
+Run 2 also shows the fix is not simply "resize later": 260 ms with a warm
+proxy still blanks once near the end, which is the encode-to-submit window
+rather than the fetch.
+
 **Acceptance criteria**
 
 - Switching tier and immediately dragging never shows an empty canvas — the

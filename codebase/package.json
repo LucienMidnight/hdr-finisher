@@ -57,7 +57,8 @@
     "test:full-tier-tone-cost": "node tests/performance/full-tier-tone-cost.js",
     "test:full-tier-instrumented-tiling": "node tests/performance/full-tier-instrumented-tiling.js",
     "test:in-app-confirmations": "node tests/in-app-confirmations.js",
-    "test:denoise-disclosure": "node tests/denoise-progressive-disclosure.js"
+    "test:denoise-disclosure": "node tests/denoise-progressive-disclosure.js",
+    "test:tier-change-blank": "node tests/performance/tier-change-blank-canvas.js"
   },
   "devDependencies": {
     "playwright": "^1.50.0"
