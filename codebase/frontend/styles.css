@@ -9179,6 +9179,11 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
   overflow-wrap: anywhere;
   line-height: 1.45;
 }
+/* The `hidden` attribute only hides an element through the UA stylesheet's
+   `display: none`, which any author `display` rule outranks -- so this needs
+   to opt out explicitly or the prompt's text field appears on every
+   confirmation. */
+.app-dialog-field[hidden] { display: none; }
 .app-dialog-field { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
 .app-dialog-field label { font-size: 12px; color: var(--muted); }
 .app-dialog-field input { width: 100%; }
