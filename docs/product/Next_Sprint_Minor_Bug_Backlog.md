@@ -174,3 +174,45 @@ surviving `window.confirm` would answer itself and the run would look clean.
 Negative controls: restoring one native `window.confirm` at a real call site
 fails both the structural check and, with that check disabled, the
 behavioural one; reverting the stale-close fix fails the three-way.
+
+---
+
+### MINOR-11 — In-app Help shows "Documentation unavailable" for every topic
+
+**Priority:** Major / feature entirely non-functional
+**Status:** Open — found 2026-09-21 while running the desktop suite
+**Area:** `backend/hdr_finisher/config.py` `DOCS_DIR`
+
+**Reported behavior**
+
+Help → HDR Finisher Help renders `Documentation unavailable` instead of the
+topic. Every topic, not one. `tests/electron-smoke.js` has been failing on it:
+
+    actual:   'Documentation unavailable'
+    expected: 'Five-Minute Quick Start'
+
+**Cause**
+
+`DOCS_DIR = RESOURCE_ROOT / "docs" if (RESOURCE_ROOT / "docs").is_dir() else PROJECT_ROOT.parent / "docs"`
+
+The fallback is the right directory — `ai/docs`, which holds
+`getting-started/quick-start.md` and everything else the Help navigation
+lists. The first branch wins anyway, because `codebase/docs` exists. It
+contains two geometry/preview audit notes from 2026-09-04 and none of the
+help content, so `/docs/getting-started/quick-start.md` is a 404 and
+`documentText()` throws.
+
+`codebase/docs` was added in `4d32eb2` on 2026-09-04, which is when Help
+would have broken. The condition is a packaging test — in a packaged build
+the resources really do carry `docs` — so it is asking "am I packaged?" by a
+proxy that stopped being true.
+
+**Acceptance criteria**
+
+- Every topic in the Help navigation loads in both a development run and a
+  packaged build, asserted for at least one topic in each.
+- The packaged and development roots are distinguished by something that says
+  so, rather than by whether some directory happens to exist beside the
+  backend.
+- `tests/electron-smoke.js` passes its Help assertions without modification —
+  it has been correct about this the whole time.
