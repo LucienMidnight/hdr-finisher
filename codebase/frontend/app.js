@@ -391,6 +391,7 @@ const state = {
   // retained presentation; it explains why that presentation is still the newest.
   previewUnavailableReason: "",
   // The grading render currently in flight, so refinement can wait for it.
+  denoiseAdvancedOpen: false,
   gpuDraftInFlight: null,
   gpuDraftInFlightTier: null,
   gpuDraftRefusals: {},
@@ -1277,6 +1278,8 @@ const els = {
   denoiseColorValue: document.getElementById("denoise-color-value"),
   denoiseDetailValue: document.getElementById("denoise-detail-value"),
   denoiseRecalculate: document.getElementById("denoise-recalculate"),
+  denoiseAdvancedToggle: document.getElementById("denoise-advanced-toggle"),
+  denoiseAdvancedPanel: document.getElementById("denoise-advanced-panel"),
   denoiseState: document.getElementById("denoise-state"),
   denoiseStatus: document.getElementById("denoise-status"),
   hdrReferenceWhite: document.getElementById("hdr-reference-white"),
@@ -2966,6 +2969,13 @@ function bindEvents() {
     }
   }
   els.denoiseRecalculate?.addEventListener("click", () => recalculateDenoise());
+  // PRD 6.3 progressive disclosure. Purely a matter of what is on screen:
+  // the controls keep their values and keep applying while the panel is shut,
+  // because `renderDenoiseControls` writes to them either way.
+  els.denoiseAdvancedToggle?.addEventListener("click", () => {
+    state.denoiseAdvancedOpen = !state.denoiseAdvancedOpen;
+    renderDenoiseAdvancedVisibility();
+  });
   bindRangeResetControls();
 
   els.curveChannelButtons.forEach((button) => {
@@ -9246,6 +9256,7 @@ function renderDenoiseControls() {
     updateRangeVisual(input);
   }
   els.denoiseRecalculate.disabled = !enabled || ["preparing", "recalculating"].includes(runtime.status);
+  renderDenoiseAdvancedVisibility();
   const labels = { off: "Off", preparing: "Preparing", ready: "Ready", dirty: "Dirty", recalculating: "Recalculating", error: "Error" };
   if (els.denoiseState) els.denoiseState.textContent = labels[runtime.status] || runtime.status;
   els.denoiseStatus.textContent = runtime.error || ({
@@ -9265,6 +9276,21 @@ function markDenoiseAnalysisDirty() {
   runtime.error = "";
   runtime.status = state.denoise[lane].enabled ? "dirty" : "off";
   renderDenoiseControls();
+}
+
+/**
+ * Show or hide the Advanced denoise controls.
+ *
+ * PRD 6.3: Amount and Detail Recovery are always visible, Luminance and
+ * Colour Noise are Advanced. This changes nothing but visibility -- the
+ * values persist, are still written by `renderDenoiseControls`, and still
+ * reach the render, which is what "without changing results silently"
+ * requires.
+ */
+function renderDenoiseAdvancedVisibility() {
+  const open = Boolean(state.denoiseAdvancedOpen);
+  els.denoiseAdvancedToggle?.setAttribute("aria-expanded", String(open));
+  els.denoiseAdvancedPanel?.classList.toggle("hidden", !open);
 }
 
 function updateDenoiseAnalysisPreset(presetName) {
