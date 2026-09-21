@@ -52,6 +52,7 @@ def test_strip_execution_returns_the_same_pixels_as_the_whole_frame_route() -> N
     assert report["strips_rendered"] == report["strip_count"]
     assert report["planned_transient_bytes"] <= report["budget_bytes"]
     assert report["refusals"] == []
+    assert float(strips.headers["x-scope-peak"]) == report["scope_peak_value"]
 
 
 def test_strip_execution_refuses_a_graph_it_cannot_reproduce() -> None:

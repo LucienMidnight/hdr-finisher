@@ -308,6 +308,71 @@ def test_cpu_spatial_kernels_match_webgpu_normalization_and_edge_policy() -> Non
     assert float(np.sum(detail[..., 0])) == pytest.approx(1.0, abs=1e-6)
 
 
+@pytest.mark.parametrize("radius", [4, 8, 16, 24, 48, 96, 256])
+def test_optical_blur_falls_off_without_echoing_the_source(radius: int) -> None:
+    """A highlight must fade, not reappear further out.
+
+    The kernel used to take a fixed nine taps however wide the radius, so past
+    about four pixels the taps stopped overlapping and each one reprinted the
+    source instead of blurring it. Separably, that put a grid of displaced
+    copies of every highlight into Bloom, Diffusion and Halation -- invisible
+    on a draft, where the radius is small, and obvious at Full.
+    """
+    size = 4 * radius + 1
+    centre = size // 2
+    impulse = np.zeros((size, size, 1), dtype=np.float32)
+    impulse[centre, centre] = 1.0
+
+    profile = _diffusion_blur(impulse, radius)[centre, centre:, 0].astype(np.float64)
+
+    assert profile[0] == pytest.approx(float(np.max(profile)))
+    # Monotone to well past the radius: any rise is a tap printing a copy.
+    rises = np.flatnonzero(np.diff(profile) > 1e-9)
+    assert rises.size == 0, f"echo at offsets {rises.tolist()}"
+    # The blur still carries the width the radius asks for, and no more. The
+    # reference is the truncated Gaussian the WebGPU preview samples,
+    # exp(-4.5 * (offset / radius) ** 2) out to +/- the radius.
+    def spread(weights: np.ndarray, offsets: np.ndarray) -> float:
+        return float(np.sqrt(np.sum(weights * offsets * offsets) / np.sum(weights)))
+
+    symmetric = np.concatenate((profile[:0:-1], profile))
+    positions = np.arange(symmetric.size, dtype=np.float64) - (profile.size - 1)
+    reference_offsets = np.arange(-radius, radius + 1, dtype=np.float64)
+    reference = np.exp(-4.5 * (reference_offsets / radius) ** 2)
+
+    assert spread(symmetric, positions) == pytest.approx(
+        spread(reference, reference_offsets), rel=0.03
+    )
+    assert float(np.sum(profile[radius + 1:])) == pytest.approx(0.0, abs=1e-6)
+
+
+@pytest.mark.parametrize("radius", [1, 3, 4, 6, 9, 12, 24, 32])
+def test_detail_low_pass_has_no_isolated_taps(radius: int) -> None:
+    """Image Softness, Microcontrast and Film Resolution share this kernel.
+
+    It used to be a nine-sample star, so a bright point came back as itself
+    plus eight separate copies at 8.3% -- a faint cross rather than a blur.
+    """
+    size = 4 * radius + 1
+    centre = size // 2
+    impulse = np.zeros((size, size, 1), dtype=np.float32)
+    impulse[centre, centre] = 1.0
+
+    response = _film_detail_blur(impulse, radius)[..., 0].astype(np.float64)
+
+    assert response[centre, centre] == pytest.approx(float(np.max(response)))
+    # Every step away from the centre falls, on both axes and the diagonal.
+    for walk in (
+        response[centre, centre:],
+        response[centre:, centre],
+        np.array([response[centre + k, centre + k] for k in range(centre)]),
+    ):
+        assert np.all(np.diff(walk) <= 1e-9), "isolated tap away from the centre"
+    # It does not reach past the radius the halo reserves.
+    beyond = np.abs(np.argwhere(response > 1e-6) - centre).max()
+    assert beyond <= radius
+
+
 def test_cpu_film_spatial_stages_reuse_the_response_frame(monkeypatch: pytest.MonkeyPatch) -> None:
     image = np.full((8, 10, 3), 0.18, dtype=np.float32)
     state = AdjustmentState()
@@ -654,8 +719,9 @@ def test_film_resolution_attenuates_microcontrast_but_protects_hard_edges() -> N
 
 
 def test_bloom_highlight_detail_controls_real_core_diffusion() -> None:
-    image = np.zeros((81, 81, 3), dtype=np.float32)
-    image[38:43, 38:43] = 8.0
+    yy, xx = np.mgrid[:81, :81].astype(np.float32)
+    soft_highlight = np.exp(-((xx - 40.0) ** 2 + (yy - 40.0) ** 2) / (2.0 * 9.0 ** 2)) * 8.0
+    image = np.repeat(soft_highlight[..., None], 3, axis=-1).astype(np.float32)
     detailed = AdjustmentState()
     look = detailed.hdr.film_look
     look.bloom_amount = 100
@@ -670,9 +736,32 @@ def test_bloom_highlight_detail_controls_real_core_diffusion() -> None:
     diffused_output = apply_adjustments(image, diffused, PreviewKind.HDR)
 
     assert float(diffused_output[40, 40, 0]) < float(detailed_output[40, 40, 0])
-    assert float(diffused_output[34, 40, 0]) > float(detailed_output[34, 40, 0])
+    assert float(diffused_output[25, 40, 0]) > float(detailed_output[25, 40, 0])
     assert np.all(np.isfinite(diffused_output))
     assert float(diffused_output.min()) >= 0.0
+
+
+def test_bloom_diffusion_does_not_cut_a_dark_echo_into_a_hard_edge() -> None:
+    image = np.zeros((81, 81, 3), dtype=np.float32)
+    image[:, :41] = 8.0
+    detailed = AdjustmentState()
+    look = detailed.hdr.film_look
+    look.bloom_amount = 100
+    look.bloom_radius = 4.0
+    look.bloom_sensitivity = 100
+    look.bloom_highlight_detail = 100
+    look.halation_enabled = False
+
+    diffused = detailed.model_copy(deep=True)
+    diffused.hdr.film_look.bloom_highlight_detail = 0
+    detailed_output = apply_adjustments(image, detailed, PreviewKind.HDR)
+    diffused_output = apply_adjustments(image, diffused, PreviewKind.HDR)
+
+    # The transition may still receive a tiny amount of low-contrast
+    # diffusion, but it must not cut the several-percent dark notch produced
+    # by the unprotected subtraction.
+    assert float(np.min(diffused_output[:, 39])) >= float(np.min(detailed_output[:, 39])) * 0.995
+    np.testing.assert_allclose(diffused_output[:, 40:43], detailed_output[:, 40:43], atol=1e-6)
 
 
 def test_bloom_has_a_smooth_monotonic_hard_edge_profile() -> None:

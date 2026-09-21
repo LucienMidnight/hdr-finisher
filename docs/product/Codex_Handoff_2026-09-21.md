@@ -5,8 +5,9 @@
 **Repo root:** the `ai/` directory under `D:\AI\AI Projects\HDR Finisher Tool`
 — **not** the enclosing folder, which contains a stray `.git` holding only
 `info/`.
-**Branch:** `main`, 60 commits ahead of `origin/main`, nothing pushed, tree
-clean.
+**Branch:** `main`, 60 commits ahead of `origin/main`, nothing pushed. The
+continuation work summarized below is present in the working tree and has not
+been committed.
 
 ---
 
@@ -23,13 +24,37 @@ Read these before starting:
 |---|---|
 | `docs/product/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md` | Section 12 phase ledger, "Current handoff checkpoint", global gates in section 11 |
 | `docs/product/HDR_Finisher_PRD_v1.2.md` | Sections 11a (DENOISE-01), 11b (PERF-03/04/05/07), 11c (deferred hardware validation) |
-| `docs/product/Next_Sprint_Minor_Bug_Backlog.md` | MINOR-10 (done), MINOR-11 (done), MINOR-12 (open) |
+| `docs/product/Next_Sprint_Minor_Bug_Backlog.md` | MINOR-10 (done), MINOR-11 (done), MINOR-12 (resolved in the continuation below) |
 
 Phase 8 closed today with two recorded deviations and one waived condition —
 progressive disclosure shipped without renaming Amount to Strength, Recalculate
 stayed outside the Custom block, and Denoise corpus acceptance was **waived
 rather than passed**. The reasoning is in the Phase 8 ledger row. Don't
 re-litigate those; they were Director decisions.
+
+### Continuation outcome — later on 2026-09-21
+
+The implementation items handed off below are now resolved, one reported
+symptom was not reproduced with a corrected harness, and all are covered by
+[`sprint-wrap-evidence-2026-09-21.md`](../technical/sprint-wrap-evidence-2026-09-21.md):
+
+- bounded CPU presentations return the exact accepted-frame scope peak;
+- compositor screenshots stayed painted across Full-tier replacement; the
+  earlier black-frame result was a WebGPU `drawImage` readback artifact, so no
+  speculative continuity workaround ships and PERF-07 remains unconfirmed;
+- guaranteed-tiled interactive drafts are declined before dispatch;
+- the shared exact-peak readback fault reproduced and was replaced with a
+  bounded two-target pool;
+- a CPU strip refusal now completes, rather than strands, a geometry handoff;
+- the synthetic Bloom Highlight Detail edge case now has matching CPU/WebGPU
+  edge protection and a confirmed negative control, but the Director's real
+  4K/Full dark/bright/cyan edge report was unchanged in the corrected package
+  and remains open. Package/source hashes and running process paths rule out a
+  stale Electron build; investigate another film or display-sampling stage.
+
+The historical observations below are retained because their failed runs and
+withdrawn hypotheses are part of the evidence trail. Where later measurement
+confirmed or superseded them, the continuation evidence is authoritative.
 
 ---
 
@@ -72,7 +97,7 @@ Desktop suites:       npm scripts in ai/codebase/desktop/package.json
 Electron manually:    cd ai/codebase/desktop && npx electron . --remote-debugging-port=9222
 ```
 
-Current state: **pytest 1287 passed, 3 skipped**. Desktop unit 18/18. The
+Current state: **pytest 1290 passed, 3 skipped**. Desktop unit 18/18. The
 packaging build (`npm run pack:dir` in `desktop/`) succeeds.
 
 Three practical traps, all of which cost time today:
@@ -130,31 +155,20 @@ on every drag afterwards.
 a new one can replace it. Global gate 11.1 requires Full to remain "visibly
 progressing"; a canvas that is black for an entire render is not.
 
-**Harness already exists:** `npm run test:tier-change-blank`
-(`tests/performance/tier-change-blank-canvas.js`). It samples presented
-pixels rather than `style.display`, and samples across the tier change rather
-than after it — the two things the earlier harness got wrong when it reported
-zero blank frames. Measured on 7968x5320:
+**Corrected harness:** `npm run test:tier-change-blank`
+(`tests/performance/tier-change-blank-canvas.js`) samples clipped page
+screenshots across the tier change. The earlier implementation used
+`drawImage` on the WebGPU canvas; Chromium returned zeroes even while the page
+compositor displayed the frame, producing a false black result. The corrected
+run measured 4/4 painted samples and zero blank samples on a 4K-to-Full
+transition.
 
-| Proxy state | Elapsed | Blank samples | First blank |
-|---|---|---|---|
-| Cold | 8 367 ms | 162 of 164 | ~40 ms in |
-| Warm | 260 ms | 1 of 7 | near the end |
-
-**Hypothesis, explicitly unconfirmed.** `renderTiledTo` resizes the canvas
-when the tier changes, and resizing a visible canvas discards its presented
-frame. The Direct path carries a comment about exactly this hazard and orders
-its awaits around it; the tiled path does not.
-
-**But the cold run argues against that as written**: the resize sits after
-`loadProxy`, so those eight seconds are the proxy fetch and no resize has
-happened yet — and the canvas is already black 40 ms in. An earlier, cheaper
-render at the new tier performing the resize first would fit both runs, but
-the resize has not been instrumented. **Instrument it before changing it.**
-
-The warm run also says "resize later" alone is not sufficient: 260 ms with
-everything cached still blanks near the end, which is the encode-to-submit
-window rather than the fetch.
+**Status: not reproduced, cause unconfirmed.** A retained 2D overlay and a
+dual-WebGPU-canvas implementation were evaluated and removed because the
+corrected harness passed without them. Keep PERF-07 in the manual matrix,
+particularly for a cold Full proxy and other GPU configurations. Do not ship a
+canvas-lifecycle change unless a compositor-level negative control first
+reproduces the visible blank.
 
 **Scope boundary:** the tiled encoder carries the byte-exact Direct/Tiled
 parity gates from Phases 4 through 7. Run `test:tiled-parity`,
@@ -218,9 +232,12 @@ frame, so a windowed roll is exact but not bounded, which is the property that
 path sells. With no GPU and Full selected, that surfaces as **"Full
 unavailable — Bounded strip execution refused this graph. roll geometry."**
 
-**Hypothesis:** the refusal leaves no accepted presentation, so the handoff has
-nothing to clear it. The refusal is confirmed and the stranded handoff is
-confirmed; **the link between them is not.**
+**Resolved later on 2026-09-21:** the hypothesis was confirmed. The refusal
+prevents the matching accepted presentation that normally owns handoff cleanup.
+Unavailable now completes the matching handoff, removes the temporary
+transform, retains the last valid frame, and leaves tier selection/editing
+usable. The unchanged Electron smoke assertion reached its formerly failing
+checkpoint.
 
 **Why it may outrank PERF-06:** CPU-only is one of the three configurations
 Phase 9 was meant to validate and 11c now defers. On such a machine, Full plus
@@ -264,12 +281,12 @@ machine:
   two-line fix.
 - **PERF-02 is referenced** in the sprint PRD's QA section but **defined
   nowhere**. Either it was lost or the reference is wrong.
-- **PERF-05 did not reproduce** across 8 instrumented tiled renders plus
-  forced overlap. The timing buffers were ruled out; the one shared readback
-  is `ensureScopePeakTarget()`, a singleton lacking the `busy`/`mapState`
-  guards its sibling pool has. **No fix was shipped deliberately** — guarding
-  a passing path on a defect never seen here would be speculative. Harness:
-  `npm run test:full-tier-instrumented-tiling`.
+- **PERF-05 subsequently reproduced** when an exact-peak measurement overlapped
+  tiled presentation: WebGPU rejected a submit because the singleton readback
+  buffer was pending map. It now uses a bounded two-target pool with
+  `busy`/`mapState` guards and omits the optional measurement under further
+  backpressure. `npm run test:full-tier-instrumented-tiling` then completed
+  8/8 tiled renders and three forced overlaps without a device error.
 
 ---
 

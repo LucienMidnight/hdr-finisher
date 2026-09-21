@@ -546,8 +546,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     const bloomActive = params[92] > 0.5 && params[93] > 0;
     const halationActive = params[85] > 0.5;
 
-    // `spatialBlur`: nine taps out to +/- the radius, in quarter-resolution
-    // texels, capped at 64 by the shader exactly as it is here.
+    // `spatialBlur`: a Gaussian sampled one texel apart out to floor(radius),
+    // in quarter-resolution texels, capped at 64 by the shader exactly as it
+    // is here. Rounding up below reserves one texel more than the kernel
+    // reaches, which is the right way round: a halo shorter than the kernel
+    // substitutes the tile's edge for the picture and shows a seam.
     let blurTexels = 0;
     if (bloomActive) {
       blurTexels = Math.max(blurTexels,
@@ -565,7 +568,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     // Full-resolution reads: halation's edge source from `filmPhysicalOffset`,
     // the image-structure blur from `outputRelativeOffset(0.06, 24)`, and the
     // film-resolution blur from `filmPhysicalBlur(<= 0.12, 32)`. `blurAtRadius`
-    // taps at exactly +/- its radius.
+    // spans a square of exactly +/- its radius on each axis.
     const frameDiagonal = Math.hypot(Math.max(1, width), Math.max(1, height));
     let framePixelsPerMm = Math.max(width / params[140], height / params[141]);
     if (params[142] > 0.5 && params[142] < 1.5) framePixelsPerMm = height / params[141];
@@ -927,6 +930,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.localParamValues = new Map();
       this.scopeSources = new WeakMap();
       this.scopeResources = new Map();
+      this.scopePeakTargets = [];
       this.peakReductionPipeline = null;
       this.peakReductionCache = new Map();
       this.bindGroupLayout = null;
@@ -1034,6 +1038,38 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
 
     admitDirect(width, height, options = {}) {
       return this.planRender(width, height, options).decision;
+    }
+
+    /**
+     * Whether even the smallest graph at these exact dimensions must tile.
+     *
+     * This is intentionally a lower bound, not a prediction of the current
+     * graph.  If it says tiled, no edit can make a Direct interactive draft
+     * fit; if it says direct, the caller must dispatch and let the real plan
+     * decide.  That one-sided contract avoids suppressing a useful frame.
+     */
+    minimumExecutionDecision(width, height, tier = null) {
+      return buildRenderPlan({
+        width,
+        height,
+        sourceBytesPerPixel: 8,
+        detailActive: false,
+        spatialActive: false,
+        denoiseLevels: 0,
+        cachedProxyLevels: 1,
+        maskCount: 0,
+        booleanMaskPasses: 0,
+        sceneLuminanceEntries: 0,
+        comparisonLanes: 0,
+        scopeBytes: 0,
+        parameterBufferBytes: 0,
+        stagingBytes: this.maxSourceChunkBytes,
+        retainedPresentation: true,
+        budget: this.memoryBudget,
+        limits: this.adapterInfo?.limits || snapshotDeviceLimits(this.device?.limits),
+        allocationBackoff: this.allocationBackoff?.reason || null,
+        tier,
+      }).decision;
     }
 
     async initialize() {
@@ -1628,20 +1664,32 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
 
     /**
      * The grid every tile max-blends its peak into, and the buffer it reads
-     * back through. One per renderer, reused for every generation: it is 64x64
-     * whatever the image is, so it never follows the picture.
+     * back through. A bounded pair covers presentation/measurement overlap;
+     * each target is 64x64 whatever the image is, so it never follows the
+     * picture.
      */
     ensureScopePeakTarget() {
-      if (this.scopePeakTarget) return this.scopePeakTarget;
+      const available = this.scopePeakTargets.find((target) => (
+        !target.busy && target.readBuffer.mapState === "unmapped"
+      ));
+      if (available) {
+        available.busy = true;
+        return available;
+      }
+      // One presentation and one background exact-peak measurement may
+      // legitimately overlap. Beyond that, omit this optional measurement for
+      // the generation instead of reusing a buffer while it is mapped.
+      if (this.scopePeakTargets.length >= 2) return null;
       const size = SCOPE_PEAK_GRID;
       // rgba16float is 8 bytes a texel, and copyTextureToBuffer wants rows
       // aligned to 256 bytes. 64 texels is 512 bytes, so the pitch is already
       // aligned and the readback needs no row padding arithmetic.
       const bytesPerRow = size * 8;
       try {
-        this.scopePeakTarget = {
+        const target = {
           size,
           bytesPerRow,
+          busy: true,
           texture: this.device.createTexture({
             size: { width: size, height: size },
             format: "rgba16float",
@@ -1653,12 +1701,13 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
             usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
           }),
         };
+        this.scopePeakTargets.push(target);
+        this.recordAllocation("scope-peak", bytesPerRow * size * 2, { width: size, height: size });
+        return target;
       } catch (error) {
         this.recordAllocationFailure("scope-peak", error, { width: size, height: size });
         return null;
       }
-      this.recordAllocation("scope-peak", bytesPerRow * size * 2, { width: size, height: size });
-      return this.scopePeakTarget;
     }
 
     /**
@@ -1682,6 +1731,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         return null;
       } finally {
         if (target.readBuffer.mapState === "mapped") target.readBuffer.unmap();
+        target.busy = false;
       }
     }
 
@@ -2363,6 +2413,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       denoiseParamBuffers.forEach((buffer) => buffer.destroy());
       const validationError = await this.device.popErrorScope();
       if (validationError) {
+        if (peakTarget) peakTarget.busy = false;
         this.recordStage("tiled-validation-error", { message: validationError.message });
         return { rendered: false, refusals: [`validation: ${validationError.message}`] };
       }
@@ -6256,18 +6307,50 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       let radiusMm = 43.2666153 * max(percent35mmDiagonal, 0.0) / 100.0;
       return clamp(i32(round(filmPixelsPerMm(dimensions) * radiusMm)), 1, maximumRadius);
     }
+    // The detail low-pass behind Image Softness, Microcontrast and Film
+    // Resolution. It used to be a nine-sample star: a centre and eight taps on
+    // the axes and diagonals, each carrying a twelfth of the weight. Nothing
+    // filled the space between them, so a bright point came back as itself
+    // plus eight separate copies at 8.3% -- a faint cross rather than a blur.
+    // It is the same defect the spatial kernel had, at a tenth of the radius.
+    //
+    // Sigma is 0.7 of the radius, measured: at that width Image Softness,
+    // Microcontrast and Film Resolution move a frame within 0.3% of what the
+    // star moved it, so the presets keep their tuning. Truncation stays on the
+    // same +/- radius square the halo already reserves, which leaves about a
+    // third of the peak weight at the boundary -- the cost of holding the
+    // star's width on the star's support, since the star carried its width by
+    // putting weight at exactly +/- radius. The response still falls
+    // monotonically, so the cutoff reads as a glow that ends, not as a rim.
+    // There is no bilinear
+    // pair trick available here: binding 0 is unfilterable, so sampleFilm is
+    // a texel load and the kernel reads every texel it spans. The radii are
+    // small by construction -- 0.06% of the output diagonal and at most 0.12%
+    // of the film gate, four and nine pixels on a 6K frame -- which is what
+    // keeps a dense two-dimensional kernel affordable without its own passes.
     fn blurAtRadius(coordinate: vec2i, radius: i32) -> vec3f {
-      let halfRadius = max(1, radius / 2);
-      var total = sampleFilm(coordinate) * 4.0;
-      total += sampleFilm(coordinate + vec2i(radius, 0));
-      total += sampleFilm(coordinate + vec2i(-radius, 0));
-      total += sampleFilm(coordinate + vec2i(0, radius));
-      total += sampleFilm(coordinate + vec2i(0, -radius));
-      total += sampleFilm(coordinate + vec2i(halfRadius, halfRadius));
-      total += sampleFilm(coordinate + vec2i(-halfRadius, halfRadius));
-      total += sampleFilm(coordinate + vec2i(halfRadius, -halfRadius));
-      total += sampleFilm(coordinate + vec2i(-halfRadius, -halfRadius));
-      return total / 12.0;
+      let sigma = max(f32(radius), 1.0) * 0.7;
+      let denominator = 2.0 * sigma * sigma;
+      // The bound is read once. sampleFilm resolves it per call, out of the
+      // params storage buffer, which costs more than the texel fetch does and
+      // is what made a dense kernel look unaffordable when it is not.
+      let bound = validTileDimensions() - vec2i(1);
+      var total = vec3f(0.0);
+      var weightTotal = 0.0;
+      for (var y: i32 = -radius; y <= radius; y = y + 1) {
+        // The kernel is separable, so the row's weight is a common factor and
+        // only the column term changes inside the inner loop.
+        let rowOffset = f32(y);
+        let rowWeight = exp(-rowOffset * rowOffset / denominator);
+        for (var x: i32 = -radius; x <= radius; x = x + 1) {
+          let columnOffset = f32(x);
+          let weight = rowWeight * exp(-columnOffset * columnOffset / denominator);
+          let texel = clamp(coordinate + vec2i(x, y), vec2i(0), bound);
+          total += textureLoad(sourceTexture, texel, 0).rgb * weight;
+          weightTotal += weight;
+        }
+      }
+      return total / weightTotal;
     }
     fn filmBlur(coordinate: vec2i, percentDiagonal: f32, maximumRadius: i32) -> vec3f {
       return blurAtRadius(coordinate, outputRelativeOffset(percentDiagonal, maximumRadius));
@@ -6335,6 +6418,52 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       let clamped = clamp(texel, vec2f(0.5), max(valid - vec2f(0.5), vec2f(0.5)));
       return textureSampleLevel(spatialTexture, spatialSampler, clamped / texture, 0.0);
     }
+    // The kernel is the same truncated Gaussian it has always been,
+    // exp(-4.5 * (offset / radius)^2) out to +/- the radius. What matters is
+    // how densely it is sampled: a separable pass whose taps are further than
+    // one texel apart does not blur, it reprints the source once per tap, and
+    // the horizontal and vertical passes multiply those copies into a grid.
+    // A fixed nine taps hold together only while the radius is about four
+    // texels, which is why a draft looked clean and Full echoed -- the radius
+    // grows with the frame while the tap count did not.
+    fn spatialGaussianWeight(offset: f32, radius: f32) -> f32 {
+      let normalized = offset / max(radius, 0.0001);
+      return exp(-4.5 * normalized * normalized);
+    }
+
+    // Whole texels, addressed by index. The obvious optimisation here is to
+    // read taps in pairs through the linear sampler, which halves the fetch
+    // count for the same kernel, but it cannot be used: a sampler is addressed
+    // in normalised uv, so every tap divides by the texture's size and the
+    // sampler multiplies it back, and a tile's texture is not the frame's
+    // size. On a tap that lands exactly on a texel centre that round trip
+    // rounds one way for the frame and the other way for a tile, which leaves
+    // a sub-LSB difference in the blur. Most of the picture absorbs it. A
+    // pixel sitting on a knife edge in the tone map downstream does not, and
+    // Direct and Tiled then disagree by a whole channel on a handful of
+    // pixels. textureLoad takes an integer texel and has no such round trip,
+    // so the two agree bit for bit at every radius.
+    fn loadSpatialTexel(texel: vec2i) -> vec4f {
+      return textureLoad(spatialTexture, clamp(texel, vec2i(0), validSpatialDimensions() - vec2i(1)), 0);
+    }
+
+    // The furthest tap lands at floor(radius), never past it. A tile's halo is
+    // reserved from the radius, and a tap beyond it reads a texel the tile
+    // does not hold.
+    fn spatialGaussianAxis(direction: vec2f, coordinate: vec2f, radius: f32) -> vec4f {
+      let extent = i32(floor(max(radius, 0.0)));
+      let base = vec2i(floor(coordinate));
+      let step = vec2i(direction);
+      var total = loadSpatialTexel(base);
+      var weightTotal = 1.0;
+      for (var index: i32 = 1; index <= extent; index = index + 1) {
+        let weight = spatialGaussianWeight(f32(index), radius);
+        total += (loadSpatialTexel(base + step * index) + loadSpatialTexel(base - step * index)) * weight;
+        weightTotal += 2.0 * weight;
+      }
+      return total / weightTotal;
+    }
+
     fn spatialBlur(direction: vec2f, coordinate: vec2f) -> vec4f {
       // Bloom is an output-relative optical finish. Halation is a film-plane
       // distance and shares Film Format/capture geometry with grain and MTF.
@@ -6346,17 +6475,17 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       let bloomRadius = clamp(length(frameSpatial) * max(p[95], 0.0) / 100.0, 0.25, 64.0);
       let halationRadiusMm = 43.2666153 * max(p[88], 0.0) / 100.0;
       let halationRadius = clamp(filmPixelsPerMm(frameSpatial) * halationRadiusMm, 0.25, 64.0);
-      var bloomTotal = vec3f(0.0);
-      var halationTotal = 0.0;
-      var weightTotal = 0.0;
-      for (var index: i32 = -4; index <= 4; index = index + 1) {
-        let normalized = f32(index) / 4.0;
-        let weight = exp(-4.5 * normalized * normalized);
-        bloomTotal += sampleSpatialTexel(coordinate + direction * normalized * bloomRadius).rgb * weight;
-        halationTotal += sampleSpatialTexel(coordinate + direction * normalized * halationRadius).a * weight;
-        weightTotal += weight;
+      // The two effects carry different radii in the same packed texture, so
+      // each walks its own kernel. An inactive effect's channels are already
+      // zero out of the extract pass and are not worth walking.
+      var result = vec4f(0.0);
+      if (p[92] > 0.5 && p[93] > 0.0) {
+        result = vec4f(spatialGaussianAxis(direction, coordinate, bloomRadius).rgb, 0.0);
       }
-      return vec4f(bloomTotal / weightTotal, halationTotal / weightTotal);
+      if (p[85] > 0.5) {
+        result.a = spatialGaussianAxis(direction, coordinate, halationRadius).a;
+      }
+      return result;
     }
     fn grainHash(coordinate: vec2f, salt: f32) -> f32 {
       return fract(sin(dot(coordinate, vec2f(12.9898, 78.233)) + p[109] * 0.001 + salt) * 43758.5453) * 2.0 - 1.0;
@@ -6394,7 +6523,13 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           let qualified = rgb * bloomMask * bloomMask;
           let amount = p[93] * p[79];
           let additive = spatial.rgb * (0.22 * amount);
-          let diffusion = (spatial.rgb - qualified) * ((1.0 - p[96]) * 0.35 * amount);
+          let diffusionDelta = spatial.rgb - qualified;
+          let absoluteDetail = abs(diffusionDelta);
+          let qualifiedMagnitude = abs(qualified);
+          let relativeDetail = max(max(absoluteDetail.r, absoluteDetail.g), absoluteDetail.b)
+            / (max(max(qualifiedMagnitude.r, qualifiedMagnitude.g), qualifiedMagnitude.b) + 0.02);
+          let edgeProtection = smoothRange(0.025, 0.20, relativeDetail);
+          let diffusion = diffusionDelta * ((1.0 - p[96]) * 0.35 * amount * (1.0 - edgeProtection));
           rgb = max(rgb + additive + diffusion, vec3f(0.0));
         }
         if (p[97] > 0.5 && (abs(p[98]) > 0.000001 || abs(p[99]) > 0.000001)) {

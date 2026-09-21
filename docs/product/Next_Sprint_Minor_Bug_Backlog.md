@@ -222,7 +222,7 @@ proxy that stopped being true.
 ### MINOR-12 — Applying a straighten strands the geometry handoff with no GPU
 
 **Priority:** Major / the edit never completes
-**Status:** Open — found 2026-09-21, pre-existing, cause not yet established
+**Status:** Resolved 2026-09-21 — cause confirmed and existing Electron acceptance passed the failing checkpoint
 **Area:** `frontend/app.js` geometry handoff, `backend/hdr_finisher/cpu_strips.py`
 
 **Reported behavior**
@@ -249,8 +249,11 @@ selected, that refusal surfaces as **"Full unavailable — Bounded strip
 execution refused this graph. roll geometry."** and, it appears, an accepted
 presentation that never arrives, so the handoff has nothing to clear it.
 
-That is a hypothesis about the connection. The refusal is confirmed and the
-stranded handoff is confirmed; the link between them is not.
+That connection is now confirmed. A matching accepted presentation is the
+normal owner of handoff cleanup, but the deliberate strip refusal means no
+such presentation can arrive. `markPreviewUnavailable` now completes the
+matching handoff, removes the temporary transform, retains the last valid
+frame, and leaves the viewer usable so the user can select another tier.
 
 **Why it matters more than its rarity suggests**
 

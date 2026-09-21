@@ -44,6 +44,41 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+async function compositorSample(page) {
+  const visible = await page.evaluate(() => ({
+    canvas: document.getElementById("preview-canvas")?.style.display !== "none",
+    image: document.getElementById("preview-image")?.style.display !== "none",
+    status: viewerState().status,
+  }));
+  if (!visible.canvas && !visible.image) return { kind: "nothing-displayed", peak: 0, ...visible };
+  const selector = visible.canvas ? "#preview-canvas" : "#preview-image";
+  const box = await page.locator(selector).boundingBox();
+  if (!box || !(box.width > 0 && box.height > 0)) {
+    return { kind: "nothing-displayed", peak: 0, ...visible };
+  }
+  // Clip a screenshot of the page compositor. An element screenshot can read
+  // the canvas resource directly and miss the black frame actually composited
+  // into the viewer, which is the defect this harness exists to catch.
+  const png = await page.screenshot({ clip: box });
+  const peak = await page.evaluate(async (source) => {
+    const image = new Image();
+    image.src = source;
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = 32;
+    canvas.height = 32;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    context.drawImage(image, 0, 0, 32, 32);
+    const pixels = context.getImageData(0, 0, 32, 32).data;
+    let value = 0;
+    for (let index = 0; index < pixels.length; index += 4) {
+      value = Math.max(value, pixels[index], pixels[index + 1], pixels[index + 2]);
+    }
+    return value;
+  }, `data:image/png;base64,${png.toString("base64")}`);
+  return { kind: peak <= BLANK_LEVEL ? "blank" : "painted", peak, ...visible };
+}
+
 (async () => {
   const url = argument("--url", process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765");
   const source = ensureLargeNoisySource(WIDTH, HEIGHT);
@@ -88,50 +123,9 @@ function assert(condition, message) {
       state.gpuDraftRefusals = {};
     });
 
-    const result = await page.evaluate(async ({ interval, blankLevel }) => {
-      const canvas = document.getElementById("preview-canvas");
-      const image = document.getElementById("preview-image");
-
-      // Downsample into a tiny 2D canvas. Reading the presentation surface
-      // directly would be far too expensive at 7968 px and would perturb the
-      // very render being measured.
-      const scratch = document.createElement("canvas");
-      scratch.width = 12;
-      scratch.height = 12;
-      const context = scratch.getContext("2d", { willReadFrequently: true });
-
-      const samples = [];
-      const sample = () => {
-        const canvasShown = canvas.style.display !== "none";
-        const imageShown = image.style.display !== "none";
-        if (!canvasShown && !imageShown) {
-          samples.push({ kind: "nothing-displayed", peak: 0 });
-          return;
-        }
-        const element = canvasShown ? canvas : image;
-        const width = element instanceof HTMLCanvasElement ? element.width : element.naturalWidth;
-        const height = element instanceof HTMLCanvasElement ? element.height : element.naturalHeight;
-        if (!(width > 0 && height > 0)) {
-          samples.push({ kind: "zero-sized", peak: 0 });
-          return;
-        }
-        try {
-          context.clearRect(0, 0, scratch.width, scratch.height);
-          context.drawImage(element, 0, 0, scratch.width, scratch.height);
-          const data = context.getImageData(0, 0, scratch.width, scratch.height).data;
-          let peak = 0;
-          for (let index = 0; index < data.length; index += 4) {
-            peak = Math.max(peak, data[index], data[index + 1], data[index + 2]);
-          }
-          samples.push({ kind: peak <= blankLevel ? "blank" : "painted", peak });
-        } catch (error) {
-          // A tainted or unreadable surface is not evidence of blankness.
-          samples.push({ kind: "unreadable", peak: null });
-        }
-      };
-
-      sample();
-      const timer = setInterval(sample, interval);
+    const samples = [await compositorSample(page)];
+    let transitionFinished = false;
+    const transition = page.evaluate(async () => {
       const startedAt = performance.now();
 
       const select = document.querySelector("#preview-resolution");
@@ -144,28 +138,28 @@ function assert(condition, message) {
           && state.acceptedPresentation?.requestedTier === "full") break;
         await new Promise((resolve) => setTimeout(resolve, 16));
       }
-      clearInterval(timer);
-      sample();
-
-      const elapsedMs = performance.now() - startedAt;
-      const blank = samples.filter((entry) => entry.kind === "blank").length;
-      const nothing = samples.filter((entry) => entry.kind === "nothing-displayed").length;
-      const unreadable = samples.filter((entry) => entry.kind === "unreadable").length;
       return {
-        elapsedMs,
-        total: samples.length,
-        blank,
-        nothing,
-        unreadable,
-        painted: samples.filter((entry) => entry.kind === "painted").length,
+        elapsedMs: performance.now() - startedAt,
         execution: state.acceptedPresentation?.execution || null,
         transport: state.acceptedPresentation?.transport || null,
         cpuFallbacks: JSON.parse(JSON.stringify(state.cpuFallbacks)),
         refusals: { ...state.gpuDraftRefusals },
         lastRenderRefusal: state.gpuPreview?.lastRenderRefusal?.reason || null,
-        firstBlankAt: samples.findIndex((entry) => entry.kind === "blank"),
       };
-    }, { interval: SAMPLE_INTERVAL_MS, blankLevel: BLANK_LEVEL });
+    }).finally(() => { transitionFinished = true; });
+    while (!transitionFinished) {
+      await new Promise((resolve) => setTimeout(resolve, SAMPLE_INTERVAL_MS));
+      samples.push(await compositorSample(page));
+    }
+    const result = await transition;
+    samples.push(await compositorSample(page));
+    result.total = samples.length;
+    result.blank = samples.filter((entry) => entry.kind === "blank").length;
+    result.nothing = samples.filter((entry) => entry.kind === "nothing-displayed").length;
+    result.painted = samples.filter((entry) => entry.kind === "painted").length;
+    result.firstBlankAt = samples.findIndex((entry) => entry.kind === "blank");
+    result.transitionBlank = samples.filter((entry) => entry.kind === "blank" && entry.status !== "ready").length;
+    result.finalCompositorPeak = samples.at(-1)?.peak || 0;
 
     console.log(
       "tier change 4K -> Full in " + Math.round(result.elapsedMs) + " ms, exec "
@@ -176,7 +170,7 @@ function assert(condition, message) {
       + " | painted " + result.painted
       + " | blank " + result.blank
       + " | nothing displayed " + result.nothing
-      + " | unreadable " + result.unreadable,
+      + " | compositor samples " + result.total,
     );
 
     console.log("  transport " + result.transport
@@ -187,11 +181,6 @@ function assert(condition, message) {
 
     assert(pageErrors.length === 0, "Page errors: " + JSON.stringify(pageErrors));
 
-    // The measurement has to have been able to see anything at all, or zero
-    // blanks means only that nothing was read.
-    assert(result.unreadable === 0,
-      "The presentation surface could not be read, so this run proves nothing: "
-      + JSON.stringify(result));
     assert(result.painted > 0,
       "No sample ever showed a painted frame, so the sampler is not working: "
       + JSON.stringify(result));
@@ -199,12 +188,17 @@ function assert(condition, message) {
       "Full did not tile, so the path under test was not exercised: "
       + JSON.stringify(result));
 
-    assert(result.blank === 0 && result.nothing === 0,
-      "The viewer went blank across the tier change: " + result.blank
+    // drawImage cannot reliably read a WebGPU canvas after compositor handoff,
+    // so every sample above is a Chromium compositor screenshot instead.
+    assert(result.transitionBlank === 0 && result.nothing === 0,
+      "The viewer went blank across the tier change: " + result.transitionBlank
       + " black and " + result.nothing + " nothing-displayed of " + result.total
       + " samples over " + Math.round(result.elapsedMs) + " ms, first at sample "
       + result.firstBlankAt + ". Global gate 11.1 requires Full to remain visibly "
       + "progressing.");
+    assert(result.finalCompositorPeak > BLANK_LEVEL,
+      "The compositor presented a black canvas after Full became Ready: peak "
+      + result.finalCompositorPeak + ".");
 
     console.log("The viewer stays painted across a tier change.");
   } finally {

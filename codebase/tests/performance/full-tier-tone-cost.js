@@ -316,6 +316,16 @@ function round(value) {
       "No burst landed on a running settled render, so the race under test never "
       + "happened and this run proves nothing.");
 
+    // A Full frame that cannot fit even the minimum Direct graph must be
+    // refused before source preparation or renderer submission. Counting the
+    // old renderer-returned-nothing refusal would mean the guard ran too late.
+    assert((full.refusals["interactive:pre-dispatch-tiled"] || 0) > 0,
+      "No guaranteed-tiled interactive draft was refused before dispatch: "
+      + JSON.stringify(full.refusals));
+    assert((full.refusals["interactive:renderer-returned-nothing"] || 0) === 0,
+      "A guaranteed-tiled interactive draft still reached the renderer: "
+      + JSON.stringify(full.refusals));
+
     // The settle path taking its CPU branch is the defect, and it is the
     // reliable observable. Whether that branch then reaches the network
     // depends on incidental preview-cache state, so asserting only on the

@@ -1295,7 +1295,22 @@ def test_advanced_finishing_controls_are_wired_to_the_editor_and_export_contract
     assert "/color_grading\\..+\\.(hue|saturation)$/" in script
     assert "spatialBlurHorizontalFragmentMain" in shader
     assert "spatialBlurVerticalFragmentMain" in shader
-    assert "let diffusion = (spatial.rgb - qualified)" in shader
+    # The spatial kernel walks whole texels out to ceil(radius). A tap count
+    # fixed independently of the radius is the echo defect: the spacing then
+    # grows with the frame and the separable passes print a grid of copies of
+    # every highlight instead of blurring it.
+    assert "fn spatialGaussianAxis(direction: vec2f, coordinate: vec2f, radius: f32)" in shader
+    assert "let extent = i32(floor(max(radius, 0.0)))" in shader
+    # Taps are addressed by texel index. Sampling them through the linear
+    # sampler divides by the texture's size, which is not the frame's size on
+    # a tile, and the rounding difference costs byte-exact Direct/Tiled parity.
+    assert "fn loadSpatialTexel(texel: vec2i)" in shader
+    assert "total += (loadSpatialTexel(base + step * index) + loadSpatialTexel(base - step * index)) * weight" in shader
+    assert "normalized * bloomRadius" not in shader
+    assert "normalized * halationRadius" not in shader
+    assert "let diffusionDelta = spatial.rgb - qualified" in shader
+    assert "let edgeProtection = smoothRange(0.025, 0.20, relativeDetail)" in shader
+    assert "(1.0 - edgeProtection)" in shader
     assert "chromaHighlightGuard" in shader
     assert "rgb *= exp2(vec3f(mono * amount))" in shader
     assert "if (p[158] > 0.5) { rgb = vec3f(filmLumaFromSignal(0.5)); }" in shader

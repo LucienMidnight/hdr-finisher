@@ -34,6 +34,7 @@ codebase/thumbnails/
 codebase/favorite-folders.json
 codebase/dist/
 codebase/dist-electron/
+codebase/dist-electron-*/
 codebase/.npm-cache/
 codebase/.electron-builder-cache/
 codebase/.pyinstaller-cache/

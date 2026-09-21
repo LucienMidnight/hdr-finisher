@@ -115,6 +115,7 @@ class StripReport:
     cancelled_at_strip: int | None = None
     refusals: tuple[str, ...] = ()
     measured_peak_transient_bytes: int | None = None
+    scope_peak_value: float | None = None
 
     def payload(self) -> dict[str, object]:
         return {
@@ -130,6 +131,7 @@ class StripReport:
             "strips_rendered": self.strips_rendered,
             "cancelled_at_strip": self.cancelled_at_strip,
             "refusals": list(self.refusals),
+            "scope_peak_value": self.scope_peak_value,
             "highlight_anchor": None if self.anchor is None else {
                 "hdr_source_peak_nits": self.anchor.hdr_source_peak_nits,
                 "hdr_clip_transport_max": self.anchor.hdr_clip_transport_max,
@@ -380,6 +382,19 @@ def render_in_strips(
             image, adjustments, plan, region, check, output, color_context, source_pixel_scale, report, window
         )
         passes.extend(passes_used)
+
+    # The bounded render has the only native-resolution CPU pixels in hand.
+    # Reduce the delivery-critical scope maximum now, one strip at a time, so
+    # a later proxy-sized histogram can report the peak of the frame that was
+    # actually presented without retaining another full-frame intermediate.
+    from .scopes import scope_peak_value
+
+    peak = 0.0
+    for index, (top, bottom) in enumerate(plan.strips):
+        check(index)
+        peak = max(peak, scope_peak_value(output[top:bottom], kind, color_context))
+    report.scope_peak_value = peak
+    passes.append("scope-peak")
 
     report.passes = tuple(passes)
     report.anchor = anchor

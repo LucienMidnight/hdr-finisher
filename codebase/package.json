@@ -58,7 +58,9 @@
     "test:full-tier-instrumented-tiling": "node tests/performance/full-tier-instrumented-tiling.js",
     "test:in-app-confirmations": "node tests/in-app-confirmations.js",
     "test:denoise-disclosure": "node tests/denoise-progressive-disclosure.js",
-    "test:tier-change-blank": "node tests/performance/tier-change-blank-canvas.js"
+    "test:tier-change-blank": "node tests/performance/tier-change-blank-canvas.js",
+    "test:tier-film-consistency": "node tests/performance/tier-film-consistency.js",
+    "test:electron": "node tests/run-in-electron.js"
   },
   "devDependencies": {
     "playwright": "^1.50.0"

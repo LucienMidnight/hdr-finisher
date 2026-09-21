@@ -139,7 +139,7 @@ def _build_hdr_histogram(
         stats=_hdr_stats(luminance_nits),
         channels=channels,
         normalization_peak=_normalization_peak(channels),
-        peak_value=float(np.max(luminance_nits)),
+        peak_value=scope_peak_value(processed, PreviewKind.HDR, color_context),
         clipped=bool(np.any(transport >= nits_to_scene_linear(10000.0, color_context.hdr_reference_white_nits))),
     )
 
@@ -176,7 +176,7 @@ def _build_sdr_histogram(
         stats=_sdr_stats(luma),
         channels=channels,
         normalization_peak=_normalization_peak(channels),
-        peak_value=float(np.max(luma)),
+        peak_value=scope_peak_value(processed, PreviewKind.SDR),
         clipped=bool(np.any(linear[..., :3] >= 1.0)),
     )
 
@@ -326,6 +326,43 @@ def _build_vectorscope(processed: np.ndarray, kind: PreviewKind, bins: int, colo
         peak_value=float(np.max(display_luma)),
         clipped=bool(np.any(display_luma >= (10000.0 if kind == PreviewKind.HDR else 1.0))),
     )
+
+
+def scope_peak_value(
+    processed: np.ndarray,
+    kind: PreviewKind,
+    color_context: RenderColorContext | None = None,
+) -> float:
+    """Return the scope maximum for finished pixels without building a scope.
+
+    Callers may feed this one bounded strip at a time and take the maximum of
+    the answers.  Keeping the calculation here makes the CPU presentation
+    metadata and the ordinary scope payload use the same color-domain rules.
+    """
+    context = color_context or RenderColorContext()
+    if kind == PreviewKind.HDR:
+        transport = np.clip(
+            acescg_to_linear_bt2020(processed.astype(np.float32, copy=False)),
+            0.0,
+            None,
+        )
+        luma = (
+            np.float32(0.2627) * transport[..., 0]
+            + np.float32(0.6780) * transport[..., 1]
+            + np.float32(0.0593) * transport[..., 2]
+        )
+        return float(np.max(np.clip(
+            scene_linear_to_nits(luma, context.hdr_reference_white_nits),
+            0.0,
+            None,
+        )))
+    signal = _linear_srgb_to_signal(np.clip(processed, 0.0, 1.0))
+    luma = (
+        np.float32(0.2126) * signal[..., 0]
+        + np.float32(0.7152) * signal[..., 1]
+        + np.float32(0.0722) * signal[..., 2]
+    )
+    return float(np.max(luma))
 
 
 def _scope_pq_oetf(normalized_luminance: np.ndarray) -> np.ndarray:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from threading import Event, Thread
 
 import numpy as np
+import pytest
 
 import hdr_finisher.render_cache as render_cache_module
 from hdr_finisher.finishing import apply_geometry
@@ -336,3 +337,61 @@ def test_interactive_proxy_and_mask_work_do_not_change_authoritative_local_outpu
     )
 
     np.testing.assert_array_equal(after_interaction, authoritative)
+
+
+def test_cached_strip_frame_still_reports_its_exact_scope_peak() -> None:
+    """A warm frame has to state its peak as truthfully as a cold one.
+
+    The frame cache is shared with ``adjusted_frame``, and only the bounded
+    strip path measures a peak. Before this, a second request for the same
+    grade was served out of the cache with a report that carried no peak at
+    all, so the exact presentation lost the one number it exists to deliver.
+    """
+    source = np.linspace(0.0, 4.0, 32 * 48 * 3, dtype=np.float32).reshape(32, 48, 3)
+    cache = SessionRenderCache(source, None)
+    adjustments = AdjustmentState()
+
+    _cold, cold_report = cache.adjusted_frame_in_strips(
+        adjustments, PreviewKind.HDR, 256, budget_bytes=4096,
+    )
+    _warm, warm_report = cache.adjusted_frame_in_strips(
+        adjustments, PreviewKind.HDR, 256, budget_bytes=4096,
+    )
+
+    assert "cached" in warm_report.passes, "the second render should have been a cache hit"
+    assert cold_report.scope_peak_value is not None
+    assert warm_report.scope_peak_value == cold_report.scope_peak_value
+
+
+def test_strip_frame_cached_by_the_whole_frame_path_is_measured_on_use() -> None:
+    """``adjusted_frame`` never measures a peak, and its frames are shared."""
+    source = np.linspace(0.0, 4.0, 32 * 48 * 3, dtype=np.float32).reshape(32, 48, 3)
+    cache = SessionRenderCache(source, None)
+    adjustments = AdjustmentState()
+
+    cache.adjusted_frame(adjustments, PreviewKind.HDR, 256)
+    _frame, report = cache.adjusted_frame_in_strips(
+        adjustments, PreviewKind.HDR, 256, budget_bytes=4096,
+    )
+
+    assert "cached" in report.passes
+    assert report.scope_peak_value is not None and report.scope_peak_value > 0.0
+
+    reference = SessionRenderCache(source, None).adjusted_frame_in_strips(
+        adjustments, PreviewKind.HDR, 256, budget_bytes=4096,
+    )[1]
+    assert report.scope_peak_value == pytest.approx(reference.scope_peak_value, rel=2e-6)
+
+
+def test_evicting_a_cached_frame_drops_the_peak_it_was_holding() -> None:
+    source = np.linspace(0.0, 4.0, 32 * 48 * 3, dtype=np.float32).reshape(32, 48, 3)
+    cache = SessionRenderCache(source, None)
+    cache.max_frames = 1
+    first = AdjustmentState()
+    second = AdjustmentState()
+    second.hdr.exposure = 1.25
+
+    cache.adjusted_frame_in_strips(first, PreviewKind.HDR, 256, budget_bytes=4096)
+    cache.adjusted_frame_in_strips(second, PreviewKind.HDR, 256, budget_bytes=4096)
+
+    assert len(cache._frame_scope_peaks) <= len(cache._frames)

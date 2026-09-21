@@ -16,6 +16,7 @@ function assert(condition, message) {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     const previewRequests = [];
     const stripResponses = [];
+    const stripPeaks = [];
     page.on("request", (request) => {
       if (request.method() !== "POST" || !/\/preview(?:-raw)?\/(?:hdr|sdr)$/.test(new URL(request.url()).pathname)) return;
       try { previewRequests.push({ url: request.url(), body: request.postDataJSON() }); } catch {}
@@ -24,6 +25,7 @@ function assert(condition, message) {
       if (!/\/preview(?:-raw)?\/(?:hdr|sdr)$/.test(new URL(response.url()).pathname)) return;
       const headers = await response.allHeaders();
       if (headers["x-strip-execution"]) stripResponses.push(headers["x-strip-execution"]);
+      if (headers["x-scope-peak"]) stripPeaks.push(Number(headers["x-scope-peak"]));
     });
 
     await page.goto(baseUrl, { waitUntil: "networkidle" });
@@ -78,7 +80,49 @@ function assert(condition, message) {
     assert(cpuFull.exact === true && cpuFull.requestedTier === "full" && cpuFull.tier === "full",
       `CPU Full was not accepted truthfully: ${JSON.stringify(cpuFull)}`);
 
-    console.log(JSON.stringify({ fullOptions, gpuFull, cpuFull, fullCpuRequests, stripResponses }, null, 2));
+    assert(stripPeaks.length > 0 && Number.isFinite(stripPeaks.at(-1)),
+      `CPU Full response did not carry its exact scope peak: ${JSON.stringify(stripPeaks)}`);
+    await page.evaluate(() => refreshScopes(scopeLongEdge("settled"), { tier: "settled" }));
+    try {
+      await page.waitForFunction(() => state.lastScope?.peak_exact === true
+        && state.lastScope?.peak_value === state.acceptedPresentation?.scopePeak,
+      null, { timeout: 120000 });
+    } catch (error) {
+      const diagnostics = await page.evaluate(() => ({
+        accepted: state.acceptedPresentation,
+        lastScope: state.lastScope,
+        scopeGeneration: state.scopeGeneration,
+        previewGeneration: state.previewGeneration,
+        currentView: state.currentView,
+        scopeExactPeak: state.scopeExactPeak,
+        inFlight: state.scopeRequestInFlight && {
+          lane: state.scopeRequestInFlight.lane,
+          tier: state.scopeRequestInFlight.tier,
+          generation: state.scopeRequestInFlight.generation,
+        },
+      }));
+      throw new Error(`CPU Full exact peak never became current: ${JSON.stringify(diagnostics)} (${error.message})`);
+    }
+    const cpuScope = await page.evaluate(() => ({ scope: state.lastScope }));
+    assert(cpuScope.scope?.peak_exact === true
+      && cpuScope.scope?.peak_value === stripPeaks.at(-1)
+      && cpuScope.scope?.stats?.[0]?.label === "Peak",
+    `CPU Full scope did not use the accepted presentation peak: ${JSON.stringify({ cpuScope, stripPeaks })}`);
+
+    console.log(JSON.stringify({
+      fullOptions,
+      gpuFull,
+      cpuFull,
+      cpuScope: {
+        peakValue: cpuScope.scope.peak_value,
+        peakExact: cpuScope.scope.peak_exact,
+        peakMeasuredLongEdge: cpuScope.scope.peak_measured_long_edge,
+        peakStat: cpuScope.scope.stats?.[0],
+      },
+      fullCpuRequests,
+      stripResponses,
+      stripPeaks,
+    }, null, 2));
     await page.close();
   } finally {
     await browser.close();

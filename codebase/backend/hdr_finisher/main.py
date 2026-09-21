@@ -554,7 +554,10 @@ def _strip_report_headers(report) -> dict[str, str]:
     """Carry the bounded render's own account of itself back to the caller."""
     if report is None:
         return {}
-    return {"X-Strip-Execution": json.dumps(report.payload(), separators=(",", ":"))}
+    headers = {"X-Strip-Execution": json.dumps(report.payload(), separators=(",", ":"))}
+    if report.scope_peak_value is not None:
+        headers["X-Scope-Peak"] = repr(float(report.scope_peak_value))
+    return headers
 
 
 def _denoise_is_active(session, kind: PreviewKind) -> bool:

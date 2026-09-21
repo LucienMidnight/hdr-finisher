@@ -101,6 +101,12 @@ class SessionRenderCache:
     _roll_frame: dict = field(default_factory=dict, init=False, repr=False)
     _sdr_proxies: OrderedDict[int, np.ndarray | None] = field(default_factory=OrderedDict, init=False, repr=False)
     _frames: OrderedDict[tuple[int, str, int, str], np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
+    # The exact scope peak of a cached frame, keyed alongside it. Only the
+    # bounded strip path measures one, and only while it renders; without this
+    # a second request for the same grade is served from `_frames` and answers
+    # with no peak at all, which is the one thing an exact presentation has to
+    # be able to state about itself.
+    _frame_scope_peaks: OrderedDict[tuple[int, str, int, str], float] = field(default_factory=OrderedDict, init=False, repr=False)
     _matched_sdr_bases: OrderedDict[tuple[int, str], np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
     _scopes: OrderedDict[tuple[object, ...], Any] = field(default_factory=OrderedDict, init=False, repr=False)
     _masks: OrderedDict[tuple[int, str, str, str], np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
@@ -120,6 +126,7 @@ class SessionRenderCache:
             self.color_context = context
             self._source_epoch += 1
             self._frames.clear()
+            self._frame_scope_peaks.clear()
             self._matched_sdr_bases.clear()
             self._scopes.clear()
             self._cancel_inflight_locked()
@@ -133,6 +140,7 @@ class SessionRenderCache:
             self._sdr_proxies.clear()
             self._roll_frame.clear()
             self._frames.clear()
+            self._frame_scope_peaks.clear()
             self._matched_sdr_bases.clear()
             self._scopes.clear()
             self._masks.clear()
@@ -142,6 +150,7 @@ class SessionRenderCache:
     def clear_adjusted(self, *, clear_masks: bool = False) -> None:
         with self._lock:
             self._frames.clear()
+            self._frame_scope_peaks.clear()
             self._scopes.clear()
             if clear_masks:
                 self._masks.clear()
@@ -527,9 +536,26 @@ class SessionRenderCache:
                 self._frames.move_to_end(key)
         if cached is not None:
             from .cpu_strips import plan_strips
+            from .scopes import scope_peak_value
 
             plan = plan_strips(cached.shape[1], cached.shape[0], budget_bytes=budget_bytes)
-            return cached, StripReport(plan=plan, passes=("cached",))
+            with self._lock:
+                peak = self._frame_scope_peaks.get(key)
+            passes = ("cached",)
+            if peak is None:
+                # `_frames` is shared with `adjusted_frame`, which never
+                # measures a peak, so a hit can land on a frame this path did
+                # not render. Measure it now, one strip at a time out of the
+                # frame already in hand, rather than return a bounded response
+                # that cannot say what it presented.
+                peak = 0.0
+                for top, bottom in plan.strips:
+                    peak = max(peak, scope_peak_value(cached[top:bottom], kind, self.color_context))
+                passes = ("cached", "scope-peak")
+                with self._lock:
+                    if key in self._frames:
+                        self._frame_scope_peaks[key] = peak
+            return cached, StripReport(plan=plan, passes=passes, scope_peak_value=peak)
 
         if is_current is not None and not is_current():
             with self._lock:
@@ -559,6 +585,8 @@ class SessionRenderCache:
         with self._lock:
             self._misses += 1
             self._frames[key] = processed
+            if report.scope_peak_value is not None:
+                self._frame_scope_peaks[key] = float(report.scope_peak_value)
             self._evict_locked()
         return processed, report
 
@@ -760,7 +788,8 @@ class SessionRenderCache:
             )
 
         while self._frames and (len(self._frames) > self.max_frames or cached_bytes() > self.max_cache_bytes):
-            self._frames.popitem(last=False)
+            evicted, _ = self._frames.popitem(last=False)
+            self._frame_scope_peaks.pop(evicted, None)
             self._evictions += 1
 
     def _cancel_inflight_locked(self) -> None:

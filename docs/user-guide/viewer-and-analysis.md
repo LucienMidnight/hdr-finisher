@@ -6,7 +6,7 @@ The viewer shows the current HDR or SDR branch. The analysis dock measures the p
 
 On a supported GPU, the WebGPU canvas is both the interactive and settled authoring preview. Input events are coalesced to one render per animation frame, and settling does not request or decode a PNG/AVIF replacement. The CPU/export pipeline remains authoritative for Chrome Proof and final export.
 
-Without WebGPU, the app keeps a smaller CPU working proxy and presents raw RGBA8 pixels in a persistent canvas. The current image stays visible while replacement work is pending.
+Without WebGPU, the app uses the backend renderer and presents raw RGBA8 pixels in a persistent canvas. Bounded strip execution is used for CPU Full when the authored graph supports it. If a Full graph cannot use that bounded route, the viewer keeps the last valid frame, reports Full as unavailable, and lets you select a smaller tier; export quality is unchanged.
 
 The optional **High-quality preview** preference lives on the Technical tab. It uses a larger idle GPU proxy and a refined scope after you pause. It is off on every app load, lasts only for the current page session, and never changes source interpretation, adjustments, proof settings, export dimensions, or export quality.
 
@@ -26,7 +26,9 @@ In single-frame mode, tap `V` (or click the active single-frame icon) to switch 
 - **100%** means one preview-proxy pixel per screen pixel.
 - The slider, plus/minus controls, or typed percentage set other zooms.
 
-Fast proxies are display-aware and normally capped near 1,024 px during interaction and 1,200 px when settled. High-quality refinement may use 1,600–2,000 px. Therefore, 100% is not necessarily one original source pixel per display pixel. Use the source editor or final full-resolution export for critical sharpness, fine noise, demosaicing, and texture judgments.
+The resolution selector chooses the settled processing tier: **1K**, **2K**, **4K**, or **Full**. Full processes at the source resolution. The app may use a smaller transient image while a gesture is moving, but Ready is shown only after the selected tier is presented exactly; it does not silently substitute 4K for Full. Direct and tiled GPU execution are internal resource choices and do not change the selected resolution.
+
+At **100%**, one pixel of the currently presented tier maps to one screen pixel. It is one original source pixel only when the Full tier is Ready. Use Full or final export for critical sharpness, fine noise, demosaicing, and texture judgments.
 
 Proxy resampling preserves float values and uses a high-quality filter, but downsampling can still hide single-pixel clipping or artifacts.
 
@@ -118,7 +120,7 @@ Use zebras to locate clipping risk or regions above a chosen delivery target. A 
 
 ## Scope accuracy and limits
 
-On supported WebGPU paths, histogram, waveform, and vectorscope are generated from a compact render of the same current GPU output used by the visible preview. Unsupported geometry, proof/comparison states, and WebGPU fallback use the exact CPU scope path. Both routes describe the processed authored rendition; they are deterministic numerical diagnostics, not instruments measuring the screen.
+On supported WebGPU paths, histogram, waveform, and vectorscope are generated from a compact render of the same current GPU output used by the visible preview. Unsupported geometry, proof/comparison states, and WebGPU fallback use the CPU scope path. Both routes describe the processed authored rendition; they are deterministic numerical diagnostics, not instruments measuring the screen. With **Exact peak** enabled, the peak and clipping readouts are reduced over the pixels of the accepted selected-tier frame on both GPU and bounded CPU routes, independently of the compact distributions used to draw the scopes.
 
 The freshness badge reads **Updating**, **Preview**, **Settled**, or **Refined**. The last valid scope remains on screen while the next generation is computed. Preview scopes trade density for cadence; a higher-density result replaces them after the interaction settles. The peak readout and clipping flag are calculated separately from drawing normalization so a tiny highlight cannot be hidden merely by the drawing scale.
 

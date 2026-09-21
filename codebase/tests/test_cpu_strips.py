@@ -41,6 +41,7 @@ from hdr_finisher.models import (  # noqa: E402
     PreviewKind,
     ToneEqualizerNode,
 )
+from hdr_finisher.scopes import build_scope_from_processed  # noqa: E402
 
 # The windowed projective resample perturbs float32 in its last bits, which
 # `test_geometry_region.py` measures at 6e-08 absolute. That difference is in
@@ -127,6 +128,19 @@ def test_strip_render_equals_whole_frame(kind, geometry_name, budget):
     _assert_matches(strips, reference, geometry, f"{kind}/{geometry_name}/budget={budget}")
     assert report.strips_rendered == report.plan.strip_count
     assert report.cancelled_at_strip is None
+
+
+@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
+def test_strip_report_carries_the_exact_peak_of_the_pixels_it_presented(kind):
+    """The CPU Full scope must not fall back to a downsampled proxy peak."""
+    state = _graded_state()
+    state.hdr.highlight_section_enabled = True
+    image = _source(height=73, width=59, seed=17)
+
+    strips, report = render_in_strips(image, state, kind, budget_bytes=4096)
+    expected = build_scope_from_processed(strips, kind).peak_value
+
+    assert report.scope_peak_value == pytest.approx(expected, rel=2e-6)
 
 
 @pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])

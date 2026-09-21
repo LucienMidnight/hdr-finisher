@@ -1952,10 +1952,16 @@ def _box_blur_axis(image: np.ndarray, radius: int, axis: int) -> np.ndarray:
     pads = [(0, 0)] * image.ndim
     pads[axis] = (radius, radius)
     padded = np.pad(image, pads, mode="edge")
-    cumulative = np.cumsum(padded, axis=axis, dtype=np.float32)
-    zero_shape = list(cumulative.shape)
-    zero_shape[axis] = 1
-    cumulative = np.concatenate((np.zeros(zero_shape, dtype=np.float32), cumulative), axis=axis)
+    # The running sum is written straight into a buffer that already carries
+    # the leading zero the difference needs, rather than being concatenated
+    # onto one afterwards. At export sizes each avoided copy of the frame is
+    # worth about a second.
+    cumulative_shape = list(padded.shape)
+    cumulative_shape[axis] += 1
+    cumulative = np.zeros(cumulative_shape, dtype=np.float32)
+    tail = [slice(None)] * image.ndim
+    tail[axis] = slice(1, None)
+    np.cumsum(padded, axis=axis, dtype=np.float32, out=cumulative[tuple(tail)])
     high = [slice(None)] * image.ndim
     low = [slice(None)] * image.ndim
     width = 2 * radius + 1
@@ -1970,52 +1976,136 @@ def _box_blur(image: np.ndarray, radius: int) -> np.ndarray:
     return _box_blur_axis(_box_blur_axis(image, radius, 0), radius, 1)
 
 
-def _diffusion_blur(image: np.ndarray, radius: int) -> np.ndarray:
-    """Apply the separable nine-tap optical kernel used by WebGPU preview."""
-    if radius <= 0:
-        return image
-    offsets = np.linspace(-float(radius), float(radius), 9, dtype=np.float32)
+# Above this radius the exact tap-by-tap kernel costs more than the frame is
+# worth and the box cascade below stands in for it. The threshold is in output
+# pixels and is generous: a 17-tap pass is still cheap.
+_DIFFUSION_EXACT_RADIUS = 8
+
+
+def _diffusion_kernel(radius: int) -> tuple[np.ndarray, np.ndarray]:
+    """Return the offsets and weights of the optical kernel at ``radius``.
+
+    The shape is the truncated Gaussian the WebGPU preview uses,
+    ``exp(-4.5 * (offset / radius) ** 2)`` out to +/- the radius. The taps sit
+    one pixel apart. Spacing is the whole point: a separable pass whose taps
+    are further apart than a pixel does not blur, it reprints the source once
+    per tap, and the two axes multiply those copies into a grid of echoes. The
+    old kernel used nine taps whatever the radius, so the spacing grew with the
+    frame and Full echoed where a draft did not.
+    """
+    extent = max(1, int(np.ceil(radius)))
+    offsets = np.arange(-extent, extent + 1, dtype=np.float32)
     normalized = offsets / np.float32(max(radius, 1))
     weights = np.exp(np.float32(-4.5) * normalized * normalized).astype(np.float32)
     weights /= np.sum(weights, dtype=np.float32)
-    return _weighted_blur_axis(_weighted_blur_axis(image, offsets, weights, 1), offsets, weights, 0)
+    return offsets, weights
+
+
+def _box_cascade_radii(variance: float, passes: int = 3) -> list[int]:
+    """Return box radii whose cascade carries ``variance``.
+
+    Three successive box blurs converge on a Gaussian closely enough that the
+    difference does not survive an 8-bit view, and each one is O(1) in the
+    radius through the cumulative sums in :func:`_box_blur_axis`. That is what
+    makes a 256-pixel export radius affordable: sampling it tap by tap costs
+    half a minute per axis on a 24-megapixel frame.
+
+    A box of radius ``r`` has variance ``(r * r + r) / 3``. Mixing two adjacent
+    integer radii lets the cascade land on the requested variance rather than
+    on the nearest whole box.
+    """
+    if variance <= 0.0 or passes <= 0:
+        return []
+    ideal = (-1.0 + float(np.sqrt(1.0 + 12.0 * variance / passes))) / 2.0
+    lower = int(np.floor(ideal))
+    carried = lambda count: (
+        count * (lower * lower + lower) + (passes - count) * ((lower + 1) ** 2 + (lower + 1))
+    ) / 3.0
+    wide = min(range(passes + 1), key=lambda count: abs(carried(count) - variance))
+    return [lower] * wide + [lower + 1] * (passes - wide)
+
+
+def _diffusion_blur(image: np.ndarray, radius: int) -> np.ndarray:
+    """Apply the separable optical kernel used by the WebGPU preview."""
+    if radius <= 0:
+        return image
+    offsets, weights = _diffusion_kernel(radius)
+    if radius <= _DIFFUSION_EXACT_RADIUS:
+        return _weighted_blur_axis(_weighted_blur_axis(image, offsets, weights, 1), offsets, weights, 0)
+    variance = float(np.sum(weights * offsets * offsets, dtype=np.float64))
+    result = image
+    for box in _box_cascade_radii(variance):
+        result = _box_blur_axis(_box_blur_axis(result, box, 1), box, 0)
+    return result.astype(np.float32)
 
 
 def _weighted_blur_axis(
     image: np.ndarray, offsets: np.ndarray, weights: np.ndarray, axis: int
 ) -> np.ndarray:
-    """Sample a clamped axis with linear interpolation, matching the GPU sampler."""
+    """Accumulate whole-pixel taps along one clamped axis.
+
+    Both kernels that use this sample at whole pixels, so a tap is a shift of
+    the frame rather than an interpolation of it. Padding once and taking
+    slices keeps every read contiguous; addressing the same taps through
+    ``np.take`` costs about eleven times as much at export sizes, because
+    fancy indexing rebuilds the frame per tap.
+    """
+    extent = int(np.max(np.abs(offsets))) if len(offsets) else 0
+    if extent <= 0:
+        return image.astype(np.float32, copy=True)
+    pads = [(0, 0)] * image.ndim
+    pads[axis] = (extent, extent)
+    padded = np.pad(image, pads, mode="edge")
     length = image.shape[axis]
-    coordinate = np.arange(length, dtype=np.float32)
     result = np.zeros_like(image, dtype=np.float32)
-    index_shape = [1] * image.ndim
-    index_shape[axis] = length
+    window = [slice(None)] * image.ndim
     for offset, weight in zip(offsets, weights, strict=True):
-        position = np.clip(coordinate + offset, 0.0, float(length - 1))
-        low = np.floor(position).astype(np.intp)
-        high = np.minimum(low + 1, length - 1)
-        fraction = (position - low).reshape(index_shape)
-        sample = np.take(image, low, axis=axis) * (np.float32(1.0) - fraction)
-        sample += np.take(image, high, axis=axis) * fraction
-        result += sample * weight
+        start = extent + int(round(float(offset)))
+        window[axis] = slice(start, start + length)
+        result += padded[tuple(window)] * weight
     return result.astype(np.float32)
 
 
+FILM_DETAIL_SIGMA_SCALE = np.float32(0.7)
+
+
 def _film_detail_blur(image: np.ndarray, radius: int) -> np.ndarray:
-    """Apply the capped nine-sample detail kernel used by WebGPU preview."""
+    """Apply the detail low-pass used by WebGPU preview.
+
+    Image Softness, Microcontrast and Film Resolution all read this. It was a
+    nine-sample star -- a centre plus eight taps on the axes and diagonals --
+    which left the space between the taps empty, so a bright point came back
+    as itself plus eight separate copies at 8.3%: a faint cross rather than a
+    blur. The kernel is now a Gaussian sampled at every pixel it spans.
+
+    Sigma is 0.7 of the radius, measured: at that width Image Softness,
+    Microcontrast and Film Resolution move a frame within 0.3% of what the
+    star moved it, so the presets keep their tuning. Matching the star's
+    variance instead would mean a value that wobbles with the radius, because
+    ``max(1, radius // 2)`` placed its diagonal taps differently for odd and
+    even radii, and it would still not match the strength.
+
+    Truncation stays on the same +/- radius the halo already reserves, which
+    leaves about a third of the peak weight at the boundary. That is the cost
+    of holding the star's width on the star's support: the star carried its
+    width by putting weight at exactly +/- radius, and no kernel that tapers
+    to nothing by then is as wide. The response still falls monotonically, so
+    the cutoff reads as a glow that ends rather than as a rim.
+
+    The preview walks the square directly because its fragment shader has no
+    second pass to hand the axes to. Here the two axes are separable, which is
+    the same kernel for 2 * (2r + 1) reads per pixel instead of (2r + 1) ** 2.
+    The radii stay small by construction -- 0.06% of the output diagonal and
+    at most 0.12% of the film gate -- so the taps are counted rather than
+    approximated the way the much wider :func:`_diffusion_blur` has to.
+    """
     if radius <= 0:
         return image
-    half_radius = max(1, radius // 2)
-    result = image.astype(np.float32, copy=True) * np.float32(4.0)
-    for y_offset, x_offset in (
-        (0, radius), (0, -radius), (radius, 0), (-radius, 0),
-        (half_radius, half_radius), (-half_radius, half_radius),
-        (half_radius, -half_radius), (-half_radius, -half_radius),
-    ):
-        y_indices = np.clip(np.arange(image.shape[0]) + y_offset, 0, image.shape[0] - 1)
-        x_indices = np.clip(np.arange(image.shape[1]) + x_offset, 0, image.shape[1] - 1)
-        result += image[np.ix_(y_indices, x_indices)]
-    return (result / np.float32(12.0)).astype(np.float32)
+    offsets = np.arange(-radius, radius + 1, dtype=np.float32)
+    sigma = np.float32(max(radius, 1)) * FILM_DETAIL_SIGMA_SCALE
+    weights = np.exp(-(offsets * offsets) / (np.float32(2.0) * sigma * sigma)).astype(np.float32)
+    weights /= np.sum(weights, dtype=np.float32)
+    return _weighted_blur_axis(_weighted_blur_axis(image, offsets, weights, 1), offsets, weights, 0)
 
 
 def _highlight_mask(image: np.ndarray, kind: PreviewKind, sensitivity: float) -> np.ndarray:
@@ -2110,7 +2200,22 @@ def _apply_bloom(
     # Highlight Detail crossfades only the diffusion component, so 100% keeps
     # the source edge intact while still allowing ordinary optical bloom.
     additive = blurred * (np.float32(0.22) * amount)
-    diffusion = (blurred - current_qualified) * ((np.float32(1.0) - detail) * np.float32(0.35) * amount)
+    # Do not turn a decisive object boundary into a dark/bright echo. The
+    # qualified highlight is nonlinear, so subtracting it from its blur at an
+    # unprotected hard edge is resolution-sensitive: a Full frame retains a
+    # sharper threshold crossing than its 4K proxy. Keep diffusion on smooth
+    # highlight structure while letting the additive veil handle hard edges.
+    diffusion_delta = blurred - current_qualified
+    relative_detail = np.max(np.abs(diffusion_delta), axis=-1) / (
+        np.max(np.abs(current_qualified), axis=-1) + np.float32(0.02)
+    )
+    edge_protection = _smoothstep(0.025, 0.20, relative_detail)
+    diffusion = diffusion_delta * (
+        (np.float32(1.0) - detail)
+        * np.float32(0.35)
+        * amount
+        * (np.float32(1.0) - edge_protection)[..., None]
+    )
     return np.maximum(image + additive + diffusion, 0.0).astype(np.float32)
 
 
