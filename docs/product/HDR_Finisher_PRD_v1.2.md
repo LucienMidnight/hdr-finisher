@@ -472,6 +472,9 @@ which match the report.
 
 ### PERF-03 — A superseded GPU draft must not be answered by a CPU frame
 
+**Status:** Fixed 2026-09-21. `frontend/app.js` `supersededByScheduledWork()`.
+Harness: `tests/performance/full-tier-tone-cost.js` (`npm run test:full-tier-tone-cost`).
+
 One tone drag, same image, same gesture, measured end to end:
 
 | Tier | Ready | GPU renders | Backend work |
@@ -487,32 +490,79 @@ frame finally presented at Full was not a GPU frame at all. That single
 fallback is the reported slowness, the CPU fan, and the black viewer, because
 nothing is on the canvas while it runs.
 
-Being superseded is not a failure; it means a newer render is already
-running. The fix is for the settle and refinement paths to wait for that
-render rather than pay for a CPU frame that is about to be replaced.
+**What the measurement added.** The supersession is not a race between two
+useful renders. At Full the tiled encoder refuses every interactive draft
+outright (`tiled-refused:interactive render`), but only *after*
+`renderGpuDraftInner` has taken the supersession token. So each of the ~37
+interactive drafts the scheduler dispatches during one drag invalidates the
+settled render in flight while doing no work itself. Measured on a 7968 x 5320
+source, one drag:
 
-**Nothing is shipped for this yet, deliberately.** Two attempts were made and
-neither is in the tree:
+    interactive:renderer-returned-nothing   37
+    refinement:superseded-during-render      4
+    settle CPU fallbacks                     4   (all superseded-during-render)
 
-1. Skipping the fallback when `gpuDraftInFlight` was non-null. This lost
-   liveness — nothing guarantees the newer draft presents, and the viewer
-   never reached Ready at all, confirmed by a 900 s test timeout.
-2. Waiting on the newer draft and falling back only if that one also failed.
-   Logically sound and probably right, but the measurement to confirm it was
-   abandoned for time, and this is the same code path that attempt 1 hung.
-   An unverified change here is not worth the risk it carries.
+The supersession itself is correct — once new input arrives, the settled
+render is producing stale values. The defect is only the response: paying for
+a whole-frame CPU render of exactly the values the supersession just rejected.
+The frame already on screen is a better answer.
 
-Whoever picks this up starts from attempt 2 and measures it. The harness is
-`tone-cost` style: drive one tone drag at Full and assert no `/preview/hdr`
-request is issued while the GPU path is available.
+**The fix.** `settlePreview` stands down instead of falling back, but only
+when it can point at work that is certainly coming. The test is the
+scheduler's own image generation: `schedule()` bumps it and arms a settle in
+the same call, so a generation newer than this task's means a newer settle is
+already armed and will present. Every other refusal reason, and any
+supersession that did not come from newer input, still falls back exactly as
+before.
+
+This is what separates it from the two abandoned attempts. Attempt 1 keyed on
+`gpuDraftInFlight` being non-null, which is also true for refusals that
+nothing follows, and the viewer never reached Ready — a 900 s timeout.
+Attempt 2 was to wait on the newer draft and fall back if it also failed;
+the measurement shows that would not have worked either, because the newer
+draft is an interactive one that refuses instantly, so the wait would have
+ended in the same CPU frame.
+
+**The refinement path was left alone, deliberately.** Its CPU fallback is
+unreachable: `settledProxyLongEdge()` and `refinementProxyLongEdge()` both
+return `previewTargetLongEdge()`, so `previewNeedsRefinement()` is false once
+the tier is reached and `refinePreview` returns before its fallback. Measured
+zero refinement fallbacks across every run. Changing code that cannot be seen
+to fail is what this sprint's QA rejected elsewhere.
+
+**Result**, 7968 x 5320, one tone drag, same harness:
+
+| | settle CPU fallbacks | `/preview/hdr` | gesture to Ready | blank frames |
+|---|---|---|---|---|
+| Before | 4 | 0 | 1 634 ms | 0 / 34 |
+| After | **0** | 0 | 1 557 ms | 0 / 32 |
+
+Negative control: with the guard reverted the harness fails with exactly the
+four fallbacks, on a run that still reproduced the race (`settleCaught` > 0).
+
+**A caveat on severity.** On this generated fixture the fallback branch was
+entered four times but issued no `/preview/hdr`, because `renderPreviewForLane`
+found a usable cached frame first. The seven-second cost in the original
+report needs a source where that cache misses. This is why the harness asserts
+on the fallback *branch* rather than only on the request: asserting on the
+request alone would pass on a machine that happened to hold a usable cache.
 
 **Remaining acceptance criteria**
 
-- A tone drag at Full issues no `/preview/hdr` request while the GPU path is
-  available.
-- Time to Ready at Full is within a small multiple of the 4K figure rather
-  than an order of magnitude above it.
-- The viewer never presents an empty canvas during an interactive edit.
+- ~~A tone drag at Full issues no `/preview/hdr` request while the GPU path is
+  available.~~ Asserted, and strengthened to the fallback branch itself.
+- ~~Time to Ready at Full is within a small multiple of the 4K figure rather
+  than an order of magnitude above it.~~ Asserted at 4x; measured at 1.0x.
+- ~~The viewer never presents an empty canvas during an interactive edit.~~
+  Sampled every 50 ms across gesture and settle; 0 blank samples.
+
+**Still open.** The ~37 interactive drafts per drag at Full each fetch a
+proxy, build masks and measure a highlight peak before the tiled encoder
+refuses them. That work is pure waste and is the reason the race exists at
+all. Declining them before dispatch needs a cheap predicate for "this tier
+will tile", which `admitDirect()` could supply but only with the halo and
+graph-activity inputs that today are derived inside `render()`. Tracked as
+PERF-06.
 
 ### PERF-04 — Background settle work at Full is cheap to feel and expensive to run
 

@@ -392,6 +392,9 @@ const state = {
   previewUnavailableReason: "",
   // The grading render currently in flight, so refinement can wait for it.
   gpuDraftInFlight: null,
+  gpuDraftInFlightTier: null,
+  gpuDraftRefusals: {},
+  cpuFallbacks: { settle: [], refine: [] },
   // Application allocation budget for preview GPU work, not physical VRAM.
   gpuMemoryBudget: "auto",
   detailInteractionRestore: null,
@@ -4125,6 +4128,39 @@ function queueGpuDraft(lane = state.currentView) {
   });
 }
 
+/**
+ * Whether a refused draft is going to be answered by work that is already
+ * scheduled, so this path does not have to pay for a CPU frame.
+ *
+ * PERF-03. At Full a settled render takes seconds and every interactive draft
+ * the scheduler dispatches during a drag is refused outright by the tiled
+ * encoder -- but only after it has taken the supersession token, so the
+ * settled render in flight comes back `superseded-during-render`. Answering
+ * that with `renderPreviewForLane` rendered the whole frame on the CPU
+ * backend: measured at 7 059 ms for a 7968 px source, with nothing on the
+ * canvas while it ran, to produce the stale values the supersession had just
+ * rejected.
+ *
+ * Being superseded is not a failure, and the frame already on screen is a
+ * better answer than a slow render of values the user has moved past. But
+ * standing down is only safe when something else is certainly coming. An
+ * earlier attempt keyed this on `gpuDraftInFlight` being non-null, which is
+ * true for refusals that nothing follows, and the viewer never reached Ready
+ * at all.
+ *
+ * So the test is the scheduler's own image generation. `schedule()` bumps it
+ * and arms a settle in the same call, so a generation newer than this task's
+ * means a newer settle is already armed and will present. Every other
+ * refusal, and any supersession that did not come from newer input, still
+ * falls back exactly as before.
+ */
+function supersededByScheduledWork(task) {
+  if (state.lastGpuDraftRefusal?.reason !== "superseded-during-render") return false;
+  const scheduler = state.previewScheduler;
+  if (!scheduler || task?.imageGeneration === undefined) return false;
+  return task.imageGeneration !== scheduler.generations.image;
+}
+
 async function settlePreview(lane = state.currentView, task = {}) {
   // Rotate/Straighten is an explicit Apply/Cancel transaction. A scheduler
   // task left resident by an earlier grading gesture must never settle the
@@ -4143,7 +4179,10 @@ async function settlePreview(lane = state.currentView, task = {}) {
     if (gpuPreviewEligible(lane)) {
       const rendered = await renderGpuDraft(lane, { longEdge, tier });
       if (rendered) await refreshOverlay(longEdge);
-      else await renderPreviewForLane(lane, true, longEdge, { showProgress: false });
+      else if (!supersededByScheduledWork(task)) {
+        state.cpuFallbacks.settle.push(state.lastGpuDraftRefusal?.reason || "unknown");
+        await renderPreviewForLane(lane, true, longEdge, { showProgress: false });
+      }
     } else {
       await renderPreviewForLane(lane, true, longEdge, { showProgress: false });
     }
@@ -4173,6 +4212,7 @@ async function refinePreview(lane, task = {}) {
     ? await renderGpuDraft(lane, { longEdge: targetLongEdge, tier: "refinement" })
     : false;
   if (rendered || geometryDraftActive() || !previewNeedsRefinement() || lane !== state.currentView || targetLongEdge !== refinementProxyLongEdge()) return;
+  state.cpuFallbacks.refine.push(state.lastGpuDraftRefusal?.reason || "unknown");
   await renderPreviewForLane(lane, true, targetLongEdge, { showProgress: false });
   if (generation !== state.previewGeneration[lane] || signature !== geometrySignature() || !previewNeedsRefinement()) return;
 }
@@ -10015,8 +10055,15 @@ async function applyComparisonUrl(url) {
 function renderGpuDraft(lane = state.currentView, options = {}) {
   const pending = renderGpuDraftInner(lane, options);
   state.gpuDraftInFlight = pending;
+  // Which tier is holding the device. A settled draft at Full is a multi-second
+  // tiled render; an interactive one is refused immediately. Telling them apart
+  // is what lets a caller decide whether waiting is worth anything.
+  state.gpuDraftInFlightTier = options.tier || "settled";
   void pending.catch(() => null).finally(() => {
-    if (state.gpuDraftInFlight === pending) state.gpuDraftInFlight = null;
+    if (state.gpuDraftInFlight === pending) {
+      state.gpuDraftInFlight = null;
+      state.gpuDraftInFlightTier = null;
+    }
   });
   return pending;
 }
@@ -10027,7 +10074,15 @@ async function renderGpuDraftInner(
 ) {
   // Record why a draft declined. A silent false is very hard to diagnose from
   // a failing browser test, and every one of these is a legitimate refusal.
-  const refuse = (reason) => { state.lastGpuDraftRefusal = { reason, lane, tier, at: performance.now() }; return false; };
+  const refuse = (reason) => {
+    state.lastGpuDraftRefusal = { reason, lane, tier, at: performance.now() };
+    // Cumulative, because the interesting refusals arrive in bursts during a
+    // drag and only the histogram distinguishes "superseded once" from the
+    // repeated supersession that PERF-03 is about.
+    const key = `${tier}:${reason}`;
+    state.gpuDraftRefusals[key] = (state.gpuDraftRefusals[key] || 0) + 1;
+    return false;
+  };
   if (geometryDraftActive()) return refuse("geometry-draft-active");
   if (!gpuPreviewEligible(lane)) return refuse("gpu-not-eligible");
   if (!state.session || (!allowInactive && lane !== state.currentView)) return refuse("no-session-or-inactive-lane");
