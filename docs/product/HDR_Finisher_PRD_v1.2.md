@@ -553,8 +553,15 @@ request alone would pass on a machine that happened to hold a usable cache.
   available.~~ Asserted, and strengthened to the fallback branch itself.
 - ~~Time to Ready at Full is within a small multiple of the 4K figure rather
   than an order of magnitude above it.~~ Asserted at 4x; measured at 1.0x.
-- ~~The viewer never presents an empty canvas during an interactive edit.~~
-  Sampled every 50 ms across gesture and settle; 0 blank samples.
+- **Not met.** *The viewer never presents an empty canvas during an
+  interactive edit.* Reported still failing on the first drag after switching
+  to Full, on 2026-09-21, by the same reporter driving real images: one black
+  frame, then correct for every later drag. Tracked as PERF-07 below. The
+  harness reported 0 blank samples and was wrong to, twice over: it samples
+  `style.display` rather than pixels, so a canvas that is visible and cleared
+  reads as fine, and it drags only after the tier has settled, so the canvas
+  is never resized during the measurement. Both are fixed as part of PERF-07,
+  not claimed as passing here.
 
 **Still open.** The ~37 interactive drafts per drag at Full each fetch a
 proxy, build masks and measure a highlight peak before the tiled encoder
@@ -563,6 +570,48 @@ all. Declining them before dispatch needs a cheap predicate for "this tier
 will tile", which `admitDirect()` could supply but only with the halo and
 graph-activity inputs that today are derived inside `render()`. Tracked as
 PERF-06.
+
+### PERF-07 — The tiled path clears the canvas on a tier change and leaves it black
+
+**Status:** Open. Reported 2026-09-21, diagnosed, not fixed.
+**Area:** `frontend/webgpu-preview.js` `renderTiledTo`
+
+Switching to Full and dragging shows one black frame; every drag after that is
+clean. A canvas resize discards the presented frame, and `renderTiledTo` does
+this before it has anything to put back:
+
+    if (!measureOnly && (canvas.width !== proxy.width || canvas.height !== proxy.height)) {
+      canvas.width = proxy.width;
+      canvas.height = proxy.height;
+    }
+
+Seconds of tiled work follow before the first tile's composite pass lands, and
+that pass clears anyway (`loadOp: index === 0 ? "clear" : "load"`). So the
+viewer holds an empty canvas for the whole first Full render. It does not
+recur because the canvas is already 7968 by the second drag, and no resize
+means no clear — which is exactly the reported shape.
+
+The Direct path already knows about this. It carries a comment saying that
+resizing a visible canvas clears its presented frame and that any await
+between the resize and the submission leaves a cleared canvas on screen, and
+it orders its mask fetches before the resize for that reason. Tiled took no
+such care, because the comment's concern was whole-frame masks rather than
+the resize itself.
+
+This is not a regression from PERF-03: the black frame is present with the
+PERF-03 guard neutralised, and the fallback that guard removes was never what
+painted the canvas.
+
+**Acceptance criteria**
+
+- Switching tier and immediately dragging never shows an empty canvas — the
+  previous frame stays until the new one can replace it.
+- Asserted on sampled canvas pixels, not on `style.display`, and across a
+  tier change rather than only after one.
+- No stale pixels survive outside the new frame when geometry changes, which
+  is what the clear was protecting against.
+
+---
 
 ### PERF-04 — Background settle work at Full is cheap to feel and expensive to run
 

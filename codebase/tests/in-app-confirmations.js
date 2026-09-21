@@ -113,6 +113,23 @@ function assert(condition, message) {
     await page.click("#shortcuts-reset-all");
     await waitOpen();
     assert(await dialogVisible(), "Reset all did not open the in-app dialog.");
+
+    // A confirmation has nothing to type into. Asserted on what is rendered
+    // rather than on the `hidden` attribute: `hidden` works only through the
+    // UA stylesheet's `display: none`, so any author `display` rule silently
+    // outranks it, and the attribute reads correct while the field is on
+    // screen. That is exactly what shipped -- the field appeared on every
+    // confirmation and the attribute check did not notice.
+    const fieldShown = await page.evaluate(() => {
+      const field = document.getElementById("app-dialog-field");
+      return {
+        attribute: field.hidden,
+        display: getComputedStyle(field).display,
+        boxes: field.getClientRects().length,
+      };
+    });
+    assert(fieldShown.attribute === true && fieldShown.display === "none" && fieldShown.boxes === 0,
+      "A confirmation showed the prompt's text field: " + JSON.stringify(fieldShown));
     await clickAction("false");
     await waitClosed();
     assert(await labelFor() === customLabel,
@@ -149,8 +166,12 @@ function assert(condition, message) {
 
     await page.click("#shortcut-save-preset");
     await waitOpen();
-    assert(await page.evaluate(() => document.getElementById("app-dialog-field")?.hidden === false),
-      "The prompt dialog did not show its text field.");
+    const promptField = await page.evaluate(() => {
+      const field = document.getElementById("app-dialog-field");
+      return { attribute: field.hidden, boxes: field.getClientRects().length };
+    });
+    assert(promptField.attribute === false && promptField.boxes > 0,
+      "The prompt dialog did not show its text field: " + JSON.stringify(promptField));
     await page.fill("#app-dialog-input", "Test preset");
     await page.keyboard.press("Enter");
     await waitClosed();
