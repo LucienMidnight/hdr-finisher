@@ -5,8 +5,8 @@
 **Repo root:** the `ai/` directory under `D:\AI\AI Projects\HDR Finisher Tool`
 — **not** the enclosing folder, which contains a stray `.git` holding only
 `info/`.
-**Branch:** `main`, 58 commits ahead of `origin/main`, nothing pushed, tree
-clean at `1403aca`.
+**Branch:** `main`, 60 commits ahead of `origin/main`, nothing pushed, tree
+clean.
 
 ---
 
