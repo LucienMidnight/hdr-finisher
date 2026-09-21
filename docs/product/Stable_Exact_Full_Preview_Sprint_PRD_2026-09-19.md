@@ -652,31 +652,39 @@ Handoff evidence:
 
 ### Phase 9 — Public Full release and endurance hardening
 
-**Goal:** Remove the engineering gate and ship Full as a durable option.
+**Descoped from this sprint on 2026-09-21.** The development host has no
+discrete graphics card, so the configuration matrix this phase is built around
+cannot be exercised here. Carried to the project PRD as a release-readiness
+note rather than left open as a sprint phase.
 
-Work:
+The phase is split rather than dropped whole, because only part of it was ever
+hardware-bound.
 
-- Run packaged-app testing on discrete GPU, integrated/unified GPU, CPU-only, and device-loss configurations.
-- Exercise Direct and Tiled rendering across repeated edits, tier changes, source changes, HDR/SDR switching, comparison, overlays, undo/redo, proof, and export.
-- Validate physical HDR and SDR display behavior.
-- Verify application-preference migration and recovery.
-- Publish final performance, memory, parity, and known-limit evidence.
-- Update user-facing help for preview tiers, GPU budget, CPU expectations, and status meanings.
+**Hardware-blocked — carried to the project PRD:**
 
-Exit gate:
+- Packaged-app testing on discrete GPU, integrated/unified GPU and CPU-only
+  configurations.
+- Physical HDR and SDR display behaviour sign-off.
 
-- Full is available and recoverable on all supported configurations.
-- No tested failure silently returns to 4K.
-- Direct and Tiled paths pass endurance and device-loss testing.
-- The complete deterministic suite and packaged browser suites pass, apart from explicitly documented unrelated prerequisites.
-- Release documentation identifies remaining limitations without weakening the selected-tier contract.
+**Not hardware-blocked — still owed, and still automatable on this host:**
 
-Handoff evidence:
+- Endurance across repeated edits, tier changes, source changes, HDR/SDR
+  switching, comparison, overlays, undo/redo, proof and export. Device-loss
+  recovery is already covered by `test:device-loss`, which passes.
+- Application-preference migration and recovery.
+- Publishing the final performance, memory, parity and known-limit evidence.
+- Updating user-facing help for preview tiers, GPU budget, CPU expectations and
+  status meanings. Note that Help itself is currently broken — MINOR-11 — so
+  this is blocked behind that fix rather than behind hardware.
 
-- final environment matrix;
-- endurance report;
-- physical display sign-off;
-- release notes and known limitations.
+Recording these here so that descoping the phase does not quietly descope the
+four items in it that this machine can still do.
+
+**What descoping costs.** Full ships without multi-configuration validation.
+The original exit gate asked that "Full is available and recoverable on all
+supported configurations" and that "no tested failure silently returns to 4K";
+neither can be claimed from one machine with no discrete GPU. The release note
+must say so plainly rather than implying coverage that was not obtained.
 
 ## 11. Global acceptance gates
 
@@ -722,7 +730,7 @@ Update this table at every phase boundary or whenever work stops unexpectedly. L
 | 6 — Denoise | Complete | `e26c5ba` on `main` (with Phase 5; base `24dc9dc`) | Closed | **All five gate conditions met.** Evidence: [`phase-6-tiled-denoise-evidence-2026-09-20.md`](../technical/phase-6-tiled-denoise-evidence-2026-09-20.md). Gate 1: tiled analysis and reconstruction are **bit-identical** to the whole-image routines — a Haar transform over non-overlapping 2x2 blocks needs no halo, only a `2**levels`-aligned origin. 44 CPU cases across levels 1-4, odd dimensions and partial edges; 32 GPU configurations with zero differing samples, including odd 1023x575 proxies. Gate 2: four live-control drags issue **0** analysis dispatches, enforced statically as well. Gate 3: a superseded analysis leaves the previous selector, cache identity and resolved texture untouched. Gate 4: six measured traces (2 and 4 levels at 24 MP, 42 MP and 8K) within the shipped 2 GiB budget, with analysis scratch **2.6-2.8 MB at every size** against ~106 MB whole-image. Gate 5: `denoise-selector-seam` and the rest of the suite unchanged. Also: the Denoise contract's sections 5.1, 6, 7 and 9 are corrected and its Phase 2 memory stop gate is closed; the cache identity is pinned across CPU and GPU by a shared fixture; and a chunk-size dependence in the CPU reference (`np.tensordot` via BLAS) was found and fixed. Remaining: the resolved proxy is still whole-frame. |
 | 7 — Spatial film, scopes, comparison | **Complete** | `8708333`, `d4fa1dc`, `4c14b15`, `644fd42`, `012e562`, `be1b9bc`, `adf48e8` on `main` (base `582d5ec`) | **Closed** | **All four gate conditions met.** Evidence: [`phase-7-film-modules-evidence-2026-09-20.md`](../technical/phase-7-film-modules-evidence-2026-09-20.md), [`phase-7-exact-scope-peak-evidence-2026-09-20.md`](../technical/phase-7-exact-scope-peak-evidence-2026-09-20.md), [`phase-7-8-completion-evidence-2026-09-20.md`](../technical/phase-7-8-completion-evidence-2026-09-20.md). Gate 1 (film effects seam-free at maximum radii): byte-exact, maxDelta 0 over 631,626 pixels at tile sizes 256 and 512, with two negative controls showing the test is load-bearing — halo at zero gives 15,425-59,074 differing pixels, and a halo *grown* by two so the quarter grid misaligns still gives 1,199-24,188. Gate 2 (grain identical across tile order, pan and Direct/Tiled): the two tilings agree with each other exactly, with and without the grain view map. Gate 3 (scopes describe the displayed generation): the peak is an exact maximum at native resolution, accumulated across tiles; the three scope profiles had been under-reporting it by 13.6%, 11.3% and 5.0% on the 42 MP frame, always low. Gate 4 (comparison never presents unlike tiers as exact without disclosure): each pane records what it presented and the stage names any tier or generation difference. **Denoise, the last refusal, is lifted** — Direct/Tiled parity byte-exact at both tile sizes — so every preview module now runs tiled and Full is available for any graph. |
 | 8 — Export parity and corpus | **Complete** | `839630a`, `37cd361`, plus progressive disclosure on `main` | **Closed, with one condition waived** | **All six work items resolved.** Evidence: [`phase-7-8-completion-evidence-2026-09-20.md`](../technical/phase-7-8-completion-evidence-2026-09-20.md). Authored Denoise reaches the export graph and reconstructs through the tiled reference routines Phase 6 proved bit-identical, so export is bounded and shares the preview's arithmetic. With output finishing neutral, export is **exactly** the preview by `assert_array_equal` for both lanes; HDR range, negative values and the view-map strip are pinned too. **Progressive disclosure is implemented** to section 6.3: Amount and Detail Recovery always visible, Luminance and Colour Noise under Advanced, the preset selector visible, Custom analysis behind Custom. Covered by `denoise-progressive-disclosure.js`, whose load-bearing assertion is 6.3's own constraint — opening and closing Advanced is pixel-identical, and a control driven while hidden still reaches the document and moves the picture. Two negative controls, both seen to fail; two earlier ones were discarded for passing against a reverted fix. **Two deviations, both recorded:** Amount is not renamed to Strength, because 6.3 forbids changing labels before corpus measurement and that measurement is deferred; and Recalculate stays outside the Custom block, because changing a *preset* also marks the analysis dirty and burying Recalculate would strand it. **One condition waived:** Denoise corpus acceptance. The presets were accepted on the reporter's own images on 2026-09-21 — "denoise works fine right now", functioning at Full — with the corpus run deferred alongside the algorithm revision tracked as DENOISE-01. This is a waiver, not a pass: no corpus was run, and the exit gate's "pass the corpus or revise with explicit migration" was met by neither branch. The export-exact label is applied on the parity measurement, which does not depend on preset quality. |
-| 9 — Public release and hardening | Not started | — | Open | **Blocked on hardware rather than on code.** Its exit gate requires packaged-app testing on discrete GPU, integrated/unified GPU and CPU-only configurations, and physical HDR and SDR display sign-off. None of that can be done from a single development machine, and claiming it from one would be the kind of untested release evidence this ledger exists to prevent. What *is* automatable has been done and is reported under the suite state below: the full browser suite now stands at 50 of 51. The remaining failure is a design-spec disagreement, not a defect — see the evidence document. |
+| 9 — Public release and hardening | **Descoped** | — | Carried to the project PRD | **Removed from this sprint on 2026-09-21: the development host has no discrete graphics card.** The configuration matrix and physical display sign-off move to the project PRD as a release-readiness note. Four items in this phase were never hardware-bound and remain owed — endurance across repeated edits and tier/source/lane changes, preference migration and recovery, publishing the final evidence, and updating user-facing help (itself blocked behind MINOR-11, since Help does not currently load). Descoping the phase must not be read as descoping those. Full therefore ships without multi-configuration validation, and the release note says so rather than implying coverage that was not obtained. |
 
 ### Current handoff checkpoint
 

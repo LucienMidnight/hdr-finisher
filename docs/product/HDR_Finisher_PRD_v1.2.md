@@ -721,6 +721,36 @@ adapter, or with denoise and local masks engaged, which this run did not have.
 
 ---
 
+## 11c. Full Tier Release Readiness — Deferred Hardware Validation
+
+**Status:** Open, deferred. Recorded 2026-09-21.
+**Origin:** Phase 9 of the Stable Exact Full Preview sprint, descoped there.
+
+The Full preview tier ships without multi-configuration validation. The
+development host has no discrete graphics card, so the matrix the sprint's
+Phase 9 was built around could not be exercised, and claiming it from one
+machine would be exactly the untested release evidence that sprint's ledger
+exists to prevent.
+
+**Not yet validated**
+
+- Packaged-app behaviour on discrete GPU, integrated/unified GPU, and
+  CPU-only configurations.
+- Physical HDR and SDR display behaviour, on real displays rather than
+  through reported capability.
+- That no tested failure silently returns to 4K across those configurations.
+
+**What is validated**, on this host with its integrated adapter: Direct and
+Tiled parity byte-exact, device-loss recovery (`test:device-loss`), the
+bounded CPU Full route, and the deterministic and browser suites.
+
+**Before Full is described as released**, the three items above need a machine
+with a discrete GPU and a calibrated HDR display, or an explicit statement in
+the release notes that Full is validated only on the configurations actually
+tested. The second is acceptable; silence is not.
+
+---
+
 ## 12. Out of Scope for v1 (Explicit Deferrals)
 
 The following are reasonable future features but are explicitly deferred to avoid scope bloat:
