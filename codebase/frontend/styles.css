@@ -9157,3 +9157,49 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
     display: flex;
   }
 }
+
+/* MINOR-10: the in-application confirmation, in place of a native modal. */
+.app-dialog {
+  width: min(460px, calc(100vw - 44px));
+  height: auto;
+  max-height: min(520px, calc(100vh - 44px));
+  display: flex;
+  flex-direction: column;
+}
+.app-dialog .application-dialog-header { min-height: 0; padding-bottom: 0; }
+.app-dialog-content {
+  padding: 14px 20px 4px;
+  overflow: auto;
+}
+#app-dialog-message {
+  margin: 0;
+  /* Confirmations carry a path on its own line, so newlines are meaningful
+     and a long path must break rather than widen the dialog. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+.app-dialog-field { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+.app-dialog-field label { font-size: 12px; color: var(--muted); }
+.app-dialog-field input { width: 100%; }
+.app-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 20px 18px;
+}
+.app-dialog-actions button {
+  min-height: 30px;
+  padding: 6px 15px;
+  border: 1px solid var(--panel-border-external);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+.app-dialog-actions .button-danger {
+  border-color: var(--error-text);
+  background: var(--error-text);
+  color: var(--inverse);
+  font-weight: 600;
+}

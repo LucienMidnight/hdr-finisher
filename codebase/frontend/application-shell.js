@@ -573,7 +573,7 @@
       renderShortcutList();
     };
     const cancel = () => finish();
-    const capture = (event) => {
+    const capture = async (event) => {
       event.preventDefault();
       event.stopPropagation();
       if (event.key === "Escape") return finish();
@@ -585,9 +585,21 @@
       const shortcut = normalizeKey(event);
       if (!shortcut) return;
       const reservation = isMacPlatform() ? MACOS_RESERVED_SHORTCUTS.get(shortcut) : "";
-      if (reservation && !window.confirm(`${displayShortcut(shortcut)} is normally used by macOS for ${reservation} and may not reach HDR Finisher. Assign it anyway?`)) return;
       const conflict = shell.commands.find((candidate) => candidate.id !== command.id && shortcutFor(candidate.id) === shortcut);
-      if (conflict && !window.confirm(`${displayShortcut(shortcut)} is assigned to “${conflict.label}”. Reassign it?`)) return;
+      if (reservation || conflict) {
+        // The dialog takes focus off the recording button, and this
+        // button's own blur handler cancels the recording -- which would
+        // tear down the capture while the question is still on screen.
+        button.removeEventListener("blur", cancel);
+        if (reservation && !await window.HDRDialogs.confirm(
+          `${displayShortcut(shortcut)} is normally used by macOS for ${reservation} and may not reach HDR Finisher.`,
+          { title: "Reserved shortcut", confirmLabel: "Assign anyway" },
+        )) return finish();
+        if (conflict && !await window.HDRDialogs.confirm(
+          `${displayShortcut(shortcut)} is assigned to “${conflict.label}”.`,
+          { title: "Shortcut in use", confirmLabel: "Reassign" },
+        )) return finish();
+      }
       if (conflict) shell.preferences.shortcuts[conflict.id] = "";
       shell.preferences.shortcuts[command.id] = shortcut;
       persistPreferences();
@@ -880,14 +892,19 @@
       persistPreferences();
     });
     byId("shortcut-search").addEventListener("input", renderShortcutList);
-    byId("shortcuts-reset-all").addEventListener("click", () => {
-      if (!window.confirm("Reset every keyboard shortcut to its default?")) return;
+    byId("shortcuts-reset-all").addEventListener("click", async () => {
+      if (!await window.HDRDialogs.confirm(
+        "Reset every keyboard shortcut to its default?",
+        { title: "Reset shortcuts", confirmLabel: "Reset", destructive: true },
+      )) return;
       shell.preferences.shortcuts = {};
       persistPreferences();
       renderShortcutList();
     });
-    byId("shortcut-save-preset").addEventListener("click", () => {
-      const name = window.prompt("Shortcut preset name")?.trim();
+    byId("shortcut-save-preset").addEventListener("click", async () => {
+      const name = (await window.HDRDialogs.prompt(
+        "Shortcut preset name", "", { title: "Save shortcut preset", confirmLabel: "Save" },
+      ))?.trim();
       if (!name) return;
       shell.preferences.shortcutPresets[name.slice(0, 80)] = resolvedShortcutMap();
       persistPreferences();
@@ -914,7 +931,10 @@
       if (external && shell.desktop?.openDocumentation) {
         event.preventDefault();
         if (external.href.startsWith(PROJECT_URL)) openProjectWebsite(external.href);
-        else shell.desktop.openDocumentation(external.href).catch((error) => window.alert(error?.message || "That documentation link could not be opened."));
+        else shell.desktop.openDocumentation(external.href).catch((error) => window.HDRDialogs.alert(
+          error?.message || "That documentation link could not be opened.",
+          { title: "Documentation" },
+        ));
       }
     });
     byId("frame-toggle").addEventListener("click", toggleFramePopover);

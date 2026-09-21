@@ -1725,10 +1725,28 @@
     </div>
   </dialog>
 
+  <!-- MINOR-10: the in-application stand-in for window.confirm / alert /
+       prompt. A native modal leaves the Electron renderer unable to open a
+       <select> popup until the window loses and regains focus. -->
+  <dialog id="app-dialog" class="application-dialog app-dialog" aria-labelledby="app-dialog-title">
+    <div class="application-dialog-header">
+      <div><h2 id="app-dialog-title">Confirm</h2></div>
+    </div>
+    <div class="app-dialog-content">
+      <p id="app-dialog-message"></p>
+      <div id="app-dialog-field" class="app-dialog-field" hidden>
+        <label id="app-dialog-input-label" for="app-dialog-input"></label>
+        <input id="app-dialog-input" type="text" autocomplete="off" spellcheck="false">
+      </div>
+    </div>
+    <div id="app-dialog-actions" class="app-dialog-actions"></div>
+  </dialog>
+
   <script src="/static/webgpu-preview.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/preview-scheduler.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/tile-scheduler.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/desktop-chrome.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+  <script src="/static/app-dialog.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/application-shell.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/app.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/proofing-ui.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>

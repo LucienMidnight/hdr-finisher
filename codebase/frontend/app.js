@@ -5891,7 +5891,10 @@ async function exportCurrentSession() {
     let payload = await safeJson(response);
     if (response.status === 409 && payload?.detail?.code === "overwrite_required") {
       const detail = payload.detail;
-      const approved = window.confirm(`${detail.message}\n\n${detail.output_path}\n\nThis cannot be undone.`);
+      const approved = await window.HDRDialogs.confirm(
+        `${detail.message}\n\n${detail.output_path}`,
+        { title: "Overwrite file", confirmLabel: "Overwrite", destructive: true },
+      );
       if (!approved) {
         els.exportStatus.textContent = "Export cancelled; the existing file was left unchanged.";
         return;
@@ -6545,7 +6548,10 @@ async function confirmMediaBrowserSelection() {
       if (!requestedPath) return;
       const selection = await desktop.grantProjectPath(requestedPath, mode === "project_open" ? "project-open" : "project-save");
       if (mode === "project_save" && selection.exists) {
-        const approved = window.confirm(`Replace the existing project?\n\n${selection.path}\n\nThis cannot be undone.`);
+        const approved = await window.HDRDialogs.confirm(
+          `Replace the existing project?\n\n${selection.path}`,
+          { title: "Replace project", confirmLabel: "Replace", destructive: true },
+        );
         if (!approved) {
           els.directoryBrowserStatus.textContent = "The existing project was left unchanged.";
           return;
@@ -11995,7 +12001,10 @@ function appendGroupPresetRow(preset) {
     remove.className = "text-button";
     remove.textContent = "Delete";
     remove.addEventListener("click", async () => {
-      if (!window.confirm(`Delete the “${preset.name}” preset?`)) return;
+      if (!await window.HDRDialogs.confirm(
+        `Delete the “${preset.name}” preset?`,
+        { title: "Delete preset", confirmLabel: "Delete", destructive: true },
+      )) return;
       await removeGroupPreset(preset);
       await renderGroupPresetList();
     });
@@ -12054,7 +12063,10 @@ async function saveCurrentGroupPreset() {
   }
   const existing = await listSavedGroupPresets(context.groupId);
   if (existing.some((preset) => preset.name.toLocaleLowerCase() === name.toLocaleLowerCase())
-    && !window.confirm(`Replace the existing “${name}” preset?`)) return;
+    && !await window.HDRDialogs.confirm(
+      `Replace the existing “${name}” preset?`,
+      { title: "Replace preset", confirmLabel: "Replace", destructive: true },
+    )) return;
   const values = Object.fromEntries(context.paths.map((path) => [path, JSON.parse(JSON.stringify(groupPresetPathValue(context, path)))]));
   await persistGroupPreset({ groupId: context.groupId, name, recipeVersion: 1, values });
   els.groupPresetName.value = "";
@@ -12897,10 +12909,13 @@ function bindLocalAdjustmentEvents() {
     control.addEventListener("change", () => commitSelectedLocal({ refreshPreview: false }));
     bindLocalPreviewInteraction(control);
   });
-  els.localRename?.addEventListener("click", () => {
+  els.localRename?.addEventListener("click", async () => {
     const local = selectedLocal();
     if (!local) return;
-    const name = window.prompt("Local adjustment name", local.name)?.trim();
+    const name = (await window.HDRDialogs.prompt(
+      "Local adjustment name", local.name,
+      { title: "Rename adjustment", confirmLabel: "Rename" },
+    ))?.trim();
     if (name) {
       local.name = name;
       commitSelectedLocal();
@@ -14184,8 +14199,9 @@ async function setSdrMatch(action) {
   const authored = state.editDocument?.source?.luminance?.sdr_rendition === "authored";
   let consent = false;
   if (action === "match" && authored) {
-    consent = window.confirm(
-      "This source contains an authored SDR rendition. Match will replace it with an editable generated SDR rendition. Undo restores the authored grade. Continue?"
+    consent = await window.HDRDialogs.confirm(
+      "This source contains an authored SDR rendition. Match will replace it with an editable generated SDR rendition. Undo restores the authored grade.",
+      { title: "Replace authored SDR rendition", confirmLabel: "Continue" },
     );
     if (!consent) return false;
   }
@@ -17000,7 +17016,10 @@ async function openProjectFromPath(desktopSelection = null) {
       }
       if (openGeneration !== state.projectOpenGeneration) return;
       if (!response.ok || !payload?.session) {
-        window.alert(responseErrorMessage(payload, "The project could not be opened."));
+        await window.HDRDialogs.alert(
+          responseErrorMessage(payload, "The project could not be opened."),
+          { title: "Open project" },
+        );
         return;
       }
       await activateDesktopSession(payload.session, selection.path);
@@ -17014,7 +17033,10 @@ async function openProjectFromPath(desktopSelection = null) {
       }
     }
   }
-  const path = window.prompt("Path to a .hdrfinisher project", state.projectPath || "");
+  const path = await window.HDRDialogs.prompt(
+    "Path to a .hdrfinisher project", state.projectPath || "",
+    { title: "Open project", confirmLabel: "Open" },
+  );
   if (!path) return;
   const replacementGeneration = ++state.importGeneration;
   await state.byteUploadQueue.catch(() => null);
@@ -17030,7 +17052,10 @@ async function openProjectFromPath(desktopSelection = null) {
     });
     let payload = await safeJson(response);
     if (!response.ok && projectOpenNeedsSourceRelink(payload)) {
-      sourcePath = window.prompt("The saved source is unavailable or changed. Select the matching original source path.", "");
+      sourcePath = await window.HDRDialogs.prompt(
+        "The saved source is unavailable or changed. Select the matching original source path.",
+        "", { title: "Relink source" },
+      );
       if (!sourcePath) return;
       response = await fetch("/api/project/open", {
         method: "POST",
@@ -17040,7 +17065,10 @@ async function openProjectFromPath(desktopSelection = null) {
       payload = await safeJson(response);
     }
     if (!response.ok || !payload?.session) {
-      window.alert(responseErrorMessage(payload, "The project could not be opened."));
+      await window.HDRDialogs.alert(
+          responseErrorMessage(payload, "The project could not be opened."),
+          { title: "Open project" },
+        );
       return;
     }
     await activateDesktopSession(payload.session, path);
@@ -17079,7 +17107,10 @@ async function saveProjectToPath({ saveAs = false } = {}) {
     });
     const payload = await safeJson(response);
     if (!response.ok) {
-      window.alert(responseErrorMessage(payload, "The project could not be saved."));
+      await window.HDRDialogs.alert(
+        responseErrorMessage(payload, "The project could not be saved."),
+        { title: "Save project" },
+      );
       return false;
     }
     state.projectPath = payload.path;
@@ -17092,11 +17123,17 @@ async function saveProjectToPath({ saveAs = false } = {}) {
     els.badge.className = "badge good";
     return true;
   }
-  const path = window.prompt("Save project path", state.projectPath || `${state.session.source.filename}.hdrfinisher`);
+  const path = await window.HDRDialogs.prompt(
+    "Save project path", state.projectPath || `${state.session.source.filename}.hdrfinisher`,
+    { title: "Save project", confirmLabel: "Save" },
+  );
   if (!path) return false;
   let sourcePath = state.editDocument?.source?.durable_path || null;
   if (!sourcePath) {
-    sourcePath = window.prompt("Path to the durable original source (the project stores no source pixels)", "");
+    sourcePath = await window.HDRDialogs.prompt(
+      "Path to the durable original source (the project stores no source pixels)",
+      "", { title: "Durable source path" },
+    );
     if (!sourcePath) return false;
   }
   const response = await fetch(`/api/session/${state.session.session_id}/project/save`, {
@@ -17106,7 +17143,10 @@ async function saveProjectToPath({ saveAs = false } = {}) {
   });
   const payload = await safeJson(response);
   if (!response.ok) {
-    window.alert(responseErrorMessage(payload, "The project could not be saved."));
+    await window.HDRDialogs.alert(
+        responseErrorMessage(payload, "The project could not be saved."),
+        { title: "Save project" },
+      );
     return false;
   }
   state.projectPath = payload.path;
@@ -17124,10 +17164,20 @@ async function confirmUnsavedTransition(actionLabel) {
   let choice = "cancel";
   if (desktop?.confirmUnsavedTransition) {
     choice = await desktop.confirmUnsavedTransition({ actionLabel });
-  } else if (window.confirm(`Save changes before you ${actionLabel}?`)) {
-    choice = "save";
-  } else if (window.confirm(`Discard unsaved changes and ${actionLabel}?`)) {
-    choice = "discard";
+  } else {
+    // One three-way question, not two yes-or-no ones. Asking "save?" and then
+    // "discard?" makes Cancel the answer to a question the user was never
+    // shown, and it put two native modals in a row on the path that broke the
+    // renderer's <select> handling.
+    choice = await window.HDRDialogs.choose(
+      `Save changes before you ${actionLabel}?`,
+      [
+        { label: "Cancel", value: "cancel", cancel: true },
+        { label: "Discard", value: "discard", destructive: true },
+        { label: "Save", value: "save", primary: true },
+      ],
+      { title: "Unsaved changes" },
+    ) || "cancel";
   }
   if (choice === "discard") return true;
   if (choice === "save") return await saveProjectToPath({ saveAs: false });
