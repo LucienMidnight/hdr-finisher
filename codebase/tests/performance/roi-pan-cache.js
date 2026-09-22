@@ -124,7 +124,14 @@ async function waitForPanPass(page, since) {
     const renderRefinement = () => page.evaluate(async () => {
       const longEdge = previewTargetLongEdge();
       const rendered = await renderGpuDraft(state.currentView, { tier: "refinement", longEdge });
-      return { rendered: Boolean(rendered), metrics: window.HDRFinisherPerformance.tiledExecutionMetrics() };
+      // The stage record carries the same metrics plus the timestamp the
+      // summary wants, and a later render cannot overwrite it.
+      const stages = window.HDRFinisherPerformance.gpuSnapshot()?.stages || [];
+      const stage = [...stages].reverse().find((entry) => entry.stage === "tiled-render");
+      return {
+        rendered: Boolean(rendered),
+        metrics: stage || window.HDRFinisherPerformance.tiledExecutionMetrics(),
+      };
     });
 
     // The initial load already presented a whole-frame tiled frame at the
