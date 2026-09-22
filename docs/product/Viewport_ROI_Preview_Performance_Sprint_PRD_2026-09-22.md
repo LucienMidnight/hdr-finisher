@@ -1192,3 +1192,47 @@ Next safe edit, in order:
 1. Dedicated catch-up driver that waits for genuine app idle and asserts the catch-up pass (`roiCatchUp`, `viewportRequested: false`, `skippedTiles: 0`, `retainedFrame: true`).
 2. Display-scale pan cache (item 8), which removes the first-scroll residual the owner reported.
 3. Coordinator extraction and generation ownership out of `app.js` (item 1), then the legacy-versus-ROI parity run (item 9).
+
+### 15.16 Committed checkpoint — 2026-09-22 (display-scale pan cache and the catch-up driver)
+
+Checkpoints committed as `9bb23f5` — "Add the display-scale pan cache for ROI refinement", `c3bd9d9` — "Add ROI catch-up and pan-cache runtime drivers", `1b23892` — "Make the mask transport ROI measurement generation-fresh".
+
+This unit lands Phase 2 work item 8 and closes the 15.14 verification gap. Both were committed before the coordinator extraction was started, per the sprint instruction.
+
+**What the pan cache is.** The retained presentation target already holds the composited accepted frame; the tile scheduler already keeps a per-tile accepted-generation ledger. Together they are the cache: a viewport pass partitions its padded foreground candidates by whether the ledger holds them at the pass's own generation, processes only the pending ones, and leaves the rest as they are in the retained frame. The plan identity already contains the proxy (session, lane, long edge, geometry, source identity) plus the edit revision and surface format, so the cache is **per display scale by construction**: a zoom recreates the presentation target, `retainedFrame` goes false, and the pass redraws whole rather than reusing scale-dependent pixels.
+
+Landed:
+
+- `viewport-request.js`: `partitionByGeneration(tiles, acceptedGeneration, generation)` splits candidates into `cached` and `pending`. Only an exact generation match is a cache hit; an older generation is pending, which is what keeps an edit from reusing stale pixels.
+- `webgpu-preview.js`: a retained viewport pass selects `foregroundTiles` from `pending` and reports `viewportTiles`, `reusedTiles`, `reusedPixels`, `panPass`, alongside the existing metrics. `foregroundTiles` stays the tiles that actually ran.
+- `retainedFrame` now describes the **frame**, not the request: a whole-frame catch-up retains too, it just has no region to answer from the cache. The composite therefore loads instead of clearing at position 0 for any retained pass, and the catch-up metric is honest.
+- Measurement passes no longer call `acceptTile`: a `measureOnly` pass never presents, so it must not make the cache believe its tiles are in the retained frame. A pass that processes nothing skips the peak readback instead of attributing a stale maximum to the current generation.
+- **Root cause of the 15.14 gap fixed.** The app's own tiled path (`render()` → `encodeTiledGeneration`) built its options object by hand and never forwarded `roiCatchUp` (or the new `panPass`), so the catch-up flag could never be true on the real path — only on `renderTiledTo` diagnostics. Both are now forwarded on both paths.
+- `app.js`: a scroll pauses for `ROI_PAN_DELAY_MS = 140` and then asks for a refinement-tier pass at the resident edge (`requestRoiPanRefinement`). It only runs for a retained tiled frame at the selected tier, yields to work already holding the device instead of superseding it, re-arms the whole-frame catch-up (so stopping after a pan still converges), and is cancelled by a newer edit, a mode change, or session retirement. Diagnostics: `roiPanState`, `panRefinement`, `cancelRoiCatchUp`.
+- Drivers: `tests/performance/roi-catch-up.js` (real edit, waits for the ROI pass to arm the timer, waits for genuine idle, asserts the catch-up from the renderer's stage record — a record no later render can overwrite) and `tests/performance/roi-pan-cache.js` (fresh-generation ROI pass leaves a partial ledger, then real scroll events; asserts only the exposed strip renders and a pan back processes nothing). `roi-refinement.js` now proves the fresh-generation restriction and the same-generation cache hit separately.
+
+**Runtime evidence** (raw JSON under `codebase/output/performance/`, one GPU scenario at a time):
+
+- `roi-catch-up.json`: the app's own edit path. ROI pass `viewportRequested true`, `retainedFrame true`, 2 of 4 tiles, 2 skipped. Catch-up: `roiCatchUp true`, `viewportRequested false`, `viewport` = whole frame, `foregroundTiles 4 === tileCount 4`, `skippedTiles 0`, `retainedFrame true`, 4.8 ms. Accepted generation equals the generation the timer was armed at; viewer Ready; 0 page errors. **The 15.14 gap is closed.**
+- `roi-pan-cache.json`: warm frame 6/6 tiles, 0 skipped. Fresh-generation ROI pass: `viewportTiles 1`, `foregroundTiles 1`, `reusedTiles 0`, `skippedTiles 5` — only its region. Pan 1 (newly exposed strip): `panPass true`, `viewportTiles 1`, `foregroundTiles 1`, `processedPixels 262 144 / 921 600`, 2 submissions — only the strip rendered, not the frame. Pan 2 (back into the refined region): `foregroundTiles 0`, `reusedTiles 1`, `processedPixels 0`, `submissions 1` — the pass copied the retained frame and did no work. Accepted generation unchanged; viewer Ready; 0 page errors.
+- `roi-refinement.json`: `off` requests no viewport; `onWarm` redraws whole (retained false, 0 skipped); `on` at a fresh generation restricts the batch (2 foreground, 0 reused, 4 skipped); `cached` at the same generation answers every candidate (0 foreground, 2 reused, 0 processed pixels).
+- Regressions, one at a time: `tiled-mask-batch-transport.json` (batches [4, 6], 0 per-tile requests, offscreen region unchanged) and `presentation-gate.json` (retained frame and refusal taxonomy) both pass. The mask scenario needed a generation bump between its legacy and ROI passes — with the cache, its same-generation ROI pass correctly became zero work and measured no transport — and its offscreen sample now sits beyond the last foreground tile's scissor and below the status dock, which are not canvas pixels.
+- Suites: **148 JS**, **154 Python**, all passing.
+
+Gate status, stated plainly:
+
+- **Phase 2 item 8 (pan cache): mechanism verified.** A pan back into a region refined for the current generation processes nothing; a newly exposed strip is the only work; the pan passes are the app's own scroll-scheduled path. What the driver does *not* yet do is derive the partial ledger from a real edit's settle pass: it draws the generation boundary with a diagnostic refinement pass (the same mechanism 15.12–15.14 use), while the catch-up driver covers the real edit path. Recorded rather than implied.
+- **First-scroll residual:** mechanism landed, owner check not yet repeated.
+- **Memory:** no new GPU allocations. The cache is the existing retained presentation target (already accounted as `presentation-surface` in the budget model) plus a per-session CPU ledger keyed by the plan identity and bounded by the tile grid; it is cleared with the scheduler on session reset.
+- **Nothing partial or mixed-generation is presented:** a viewport pass loads the accepted frame and overwrites only tiles it processed at its own generation; a frame that is not retained redraws whole; the catch-up rewrites the frame at one generation.
+- **Zoom:** processed pixels are not reused across scales (by design); zoom changes the target size, so the next pass is a full redraw.
+- **Direct tiers:** where the interactive pass is not refused, the whole frame is already current and the cache has nothing to save. The cache matters on tiled-required tiers, which is the owner's 42 MP case.
+
+Owner check to repeat (switch on): Settings → **Region of interest** → *Visible region*, zoom to roughly 36%, drag an adjustment, then scroll immediately. Expect the newly exposed strip to refine shortly after the scroll pauses, no work at all when scrolling back into the already-refined region, and no unadjusted boundary left behind. Report anything blank, stale beyond one edit, or slower than the previous build.
+
+Next safe edit:
+
+1. Coordinator extraction and generation ownership out of `app.js` (item 1), now unblocked.
+2. Legacy-versus-ROI parity run (item 9) once the coordinator owns generation.
+3. If the owner's repeat check still shows first-scroll staleness, the next lever is prefetching the strip in the pan's direction rather than more cache work.
+
