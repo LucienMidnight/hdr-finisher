@@ -66,9 +66,25 @@ function argument(name, fallback = null) {
       && state.acceptedPresentation?.requestedTier === value
     ), tier, { timeout: 900000 });
     await page.evaluate(async () => state.gpuPreview.device.queue.onSubmittedWorkDone());
-    const box = await page.locator("#preview-canvas").boundingBox();
+    // Queue completion makes the texture ready; the browser compositor can
+    // still be presenting the preceding canvas frame until its next commit.
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(
+      () => requestAnimationFrame(resolve),
+    )));
+    const canvas = page.locator("#preview-canvas");
+    const box = await canvas.boundingBox();
     if (!box || box.width < 2 || box.height < 2) throw new Error(`No visible canvas at ${tier}`);
-    return (await page.screenshot({ clip: box })).toString("base64");
+    // Element capture keeps fractional layout coordinates stable between tier
+    // changes. With the interpretation gate dismissed below, the compositor
+    // has no UI layer overlapping this element, so these are picture pixels.
+    let previous = null;
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const shot = await canvas.screenshot();
+      if (previous?.equals(shot)) return shot.toString("base64");
+      previous = shot;
+      await page.waitForTimeout(100);
+    }
+    throw new Error(`WebGPU compositor did not settle at ${tier}`);
   };
 
   try {
@@ -77,6 +93,16 @@ function argument(name, fallback = null) {
     await page.waitForFunction(() => state.session?.session_id, null, { timeout: 900000 });
     await page.waitForFunction(() => state.gpuPreview?.available === true, null, { timeout: 120000 });
     await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 900000 });
+
+    // This fixture has no chromaticities. Accept the application's disclosed
+    // fallback explicitly so the interpretation warning no longer overlaps
+    // the canvas: compositor capture is required for WebGPU, but UI chrome is
+    // not picture data and must not dilute the per-pixel measurements.
+    const interpretationGate = page.locator("#interpretation-gate");
+    if (await interpretationGate.isVisible()) {
+      await page.click("#accept-interpretation");
+      await interpretationGate.waitFor({ state: "hidden" });
+    }
 
     await configure("neutral");
     const neutral4k = await captureTier("4096");
@@ -167,6 +193,10 @@ function argument(name, fallback = null) {
 
     console.log(JSON.stringify(metrics, null, 2));
     if (metrics.error) throw new Error(metrics.error);
+    // Keep the proportional regression guard intact. Chromium is the
+    // authoritative harness for this test and the dense-kernel change passes
+    // here; the earlier Electron-only failure came from that harness's fixed
+    // window geometry, not evidence that this threshold needed relaxing.
     if (metrics.diffusion.meanContributionDisagreement
       > metrics.bloom.meanContributionDisagreement * 1.25
       || metrics.diffusion.peakContributionDisagreement

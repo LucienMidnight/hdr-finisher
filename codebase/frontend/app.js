@@ -4201,12 +4201,41 @@ function supersededByScheduledWork(task) {
   return task.imageGeneration !== scheduler.generations.image;
 }
 
+/**
+ * A renderer generation can lose ownership while it is awaiting a proxy,
+ * mask, or highlight reduction. That is cancellation, not a reason to switch
+ * execution engines. At Full the CPU fallback is deliberately bounded and
+ * may refuse graphs (locals and spatial film are two examples) that the next
+ * GPU generation can render exactly. Showing that CPU refusal between two GPU
+ * generations turns an ordinary latest-wins race into a false Unavailable.
+ */
+function transientGpuRefusal() {
+  const reason = String(state.lastGpuDraftRefusal?.reason || "");
+  return reason === "superseded-during-render"
+    || reason.startsWith("superseded-")
+    || reason.startsWith("peak:newer-render-started")
+    || reason.startsWith("peak:application-not-current")
+    || (reason.startsWith("tiled-encode-failed:") && reason.includes("superseded"));
+}
+
 async function settlePreview(lane = state.currentView, task = {}) {
   // Rotate/Straighten is an explicit Apply/Cancel transaction. A scheduler
   // task left resident by an earlier grading gesture must never settle the
   // transient geometry on slider release.
   if (!state.session || state.rotateDraftGeometry || state.perspectiveMode) return false;
   await syncGlobalEditState();
+  // A local slider's `change` handler persists its optimistic value through
+  // the serialized edit queue. The scheduler's settle timer is independent of
+  // that request and can otherwise snapshot the old revision while the new
+  // mask/grade is still being committed. At Full that stale GPU generation is
+  // cancelled, then the bounded CPU fallback truthfully refuses locals. Wait
+  // for the queue that was present when settling began so the authoritative
+  // pass always snapshots one coherent revision.
+  const pendingEdits = state.editCommandQueue;
+  if (pendingEdits && await pendingEdits === false) return false;
+  if (!state.session || state.rotateDraftGeometry || state.perspectiveMode) return false;
+  if (task.applicationGeneration !== undefined
+    && task.applicationGeneration !== state.previewGeneration[lane]) return false;
   const display = lane === state.currentView;
   const detailRestore = state.detailInteractionRestore?.lane === lane
     && state.detailInteractionRestore.longEdge === refinementProxyLongEdge()
@@ -4217,9 +4246,27 @@ async function settlePreview(lane = state.currentView, task = {}) {
   const tier = longEdge >= refinementProxyLongEdge() ? "refinement" : "settled";
   if (display) {
     if (gpuPreviewEligible(lane)) {
-      const rendered = await renderGpuDraft(lane, { longEdge, tier });
+      let rendered = await renderGpuDraft(lane, { longEdge, tier });
+      // Latest-wins cancellation is expected while a mask proxy or edit
+      // revision changes underneath a Full render. If this is still the
+      // current scheduler task, retry once after the serialized edit queue has
+      // drained. One bounded retry recovers the real result without turning a
+      // normal GPU handoff into an unsupported CPU Full request.
+      if (!rendered && transientGpuRefusal() && !supersededByScheduledWork(task)) {
+        const retryEdits = state.editCommandQueue;
+        if (!retryEdits || await retryEdits !== false) {
+          const schedulerCurrent = !state.previewScheduler
+            || task.imageGeneration === undefined
+            || state.previewScheduler.current?.imageGeneration === task.imageGeneration;
+          const applicationCurrent = task.applicationGeneration === undefined
+            || task.applicationGeneration === state.previewGeneration[lane];
+          if (schedulerCurrent && applicationCurrent && lane === state.currentView) {
+            rendered = await renderGpuDraft(lane, { longEdge, tier });
+          }
+        }
+      }
       if (rendered) await refreshOverlay(longEdge);
-      else if (!supersededByScheduledWork(task)) {
+      else if (!supersededByScheduledWork(task) && !transientGpuRefusal()) {
         state.cpuFallbacks.settle.push(state.lastGpuDraftRefusal?.reason || "unknown");
         await renderPreviewForLane(lane, true, longEdge, { showProgress: false });
       }
@@ -4252,6 +4299,7 @@ async function refinePreview(lane, task = {}) {
     ? await renderGpuDraft(lane, { longEdge: targetLongEdge, tier: "refinement" })
     : false;
   if (rendered || geometryDraftActive() || !previewNeedsRefinement() || lane !== state.currentView || targetLongEdge !== refinementProxyLongEdge()) return;
+  if (transientGpuRefusal()) return;
   state.cpuFallbacks.refine.push(state.lastGpuDraftRefusal?.reason || "unknown");
   await renderPreviewForLane(lane, true, targetLongEdge, { showProgress: false });
   if (generation !== state.previewGeneration[lane] || signature !== geometrySignature() || !previewNeedsRefinement()) return;
@@ -7174,6 +7222,15 @@ function schedulePerspectiveDraftPreview() {
   state.perspectivePreviewTimer = window.setTimeout(renderPerspectiveDraftPreview, 90);
 }
 
+function perspectiveDraftLongEdge() {
+  // Perspective changes the source sampling geometry, so unlike ordinary
+  // grading it cannot reuse the resident GPU proxy. The transient endpoint is
+  // CPU-backed; asking it to rebuild a saved Full/4K tier for every slider
+  // event makes the control appear frozen. Keep the transaction preview
+  // bounded to 1K, then render the selected authoring tier once on Apply.
+  return Math.min(previewTargetLongEdge(), 1024);
+}
+
 async function renderPerspectiveDraftPreview() {
   if (!state.session || !state.perspectiveMode) return;
   state.perspectivePreviewController?.abort();
@@ -7194,7 +7251,7 @@ async function renderPerspectiveDraftPreview() {
       edit_revision: state.editRevision,
       include_locals: !state.compareWithoutLocals,
       local_adjustments: state.compareWithoutLocals ? [] : localAdjustments(),
-      long_edge: interactiveProxyLongEdge(),
+      long_edge: perspectiveDraftLongEdge(),
       hdr_display: mediaQueryMatch("(dynamic-range: high)"),
       tier: "interactive",
     }),
@@ -10211,7 +10268,7 @@ async function renderGpuDraftInner(
       { width: state.session.source.width, height: state.session.source.height },
       sourceOptions,
     );
-    if (!result) return refuse("renderer-returned-nothing");
+    if (!result) return refuse(state.gpuPreview.lastRenderRefusal?.reason || "renderer-returned-nothing");
     if (!sourceOptions.isCurrent()) return refuse("superseded-during-render");
     state.gpuPreparedLane[lane] = true;
     setGpuSurfaceHdr(lane, result.hdr);
@@ -12890,7 +12947,17 @@ function bindLocalAdjustmentEvents() {
       local.enabled = !local.enabled;
       renderLocalAdjustments();
       queueLocalMaskOverlayRender();
-      await queueEditCommand("update_local", { local: JSON.parse(JSON.stringify(local)) }, local.id);
+      // Bypass changes graph participation, not mask pixels. Present the GPU
+      // change immediately and persist it in parallel instead of making the
+      // viewer wait for the edit-command round trip first.
+      scheduleLocalPreview();
+      const committed = await queueEditCommand(
+        "update_local",
+        { local: JSON.parse(JSON.stringify(local)) },
+        local.id,
+        { refreshPreview: false },
+      );
+      if (committed) state.localPreviewDirty = false;
       return;
     }
     const subMaskBypassButton = event.target.closest("button[data-sub-mask-bypass-id]");
@@ -14251,6 +14318,13 @@ async function commitSelectedLocal({ refreshPreview = true } = {}) {
       invalidatePreview("hdr", { local: true });
       invalidatePreview("sdr", { local: true });
       debouncePreview(state.currentView);
+    } else if (committed && !refreshPreview && state.localMaskCommitDepth === 0 && !state.localPointerGesture) {
+      // `input` already invalidated and scheduled the visual update, so these
+      // controls intentionally avoid a duplicate generation on `change`.
+      // Re-arm that generation after persistence completes, though: Full
+      // tiled interaction skips its draft by design and needs a guaranteed
+      // post-commit settled pass.
+      state.previewScheduler?.endInteraction();
     }
     queueLocalMaskOverlayRender();
   }
@@ -16903,16 +16977,11 @@ async function openStagedDesktopSource(selection) {
   }
   state.activeImportJobId = job.job_id;
   const startedAt = performance.now();
-  let previewShown = false;
   while (generation === state.importGeneration && state.activeImportJobId === job.job_id) {
     const elapsed = (performance.now() - startedAt) / 1000;
     const label = job.phase_label || "Preparing source";
     const reassurance = elapsed >= 10 ? " · still working normally" : "";
     setIndeterminatePreviewMessage(`${label}${reassurance} · ${elapsed.toFixed(1)}s elapsed`);
-    if (job.preview_available && !previewShown && !state.session) {
-      previewShown = true;
-      showStagedImportPreview(`${job.preview_url}?v=${Date.now()}`, generation, job.job_id);
-    }
     if (job.state === "ready" && job.session_id) {
       const sessionResponse = await fetch(`/api/session/${job.session_id}`);
       const payload = await safeJson(sessionResponse);
@@ -16948,35 +17017,6 @@ async function openStagedDesktopSource(selection) {
       return;
     }
   }
-}
-
-function showStagedImportPreview(url, generation, jobId) {
-  const image = els.previewImage;
-  els.previewCanvas.style.display = "none";
-  image.style.display = "none";
-  image.style.width = "";
-  image.style.height = "";
-  els.emptyState.style.display = "none";
-  image.onload = () => {
-    image.onload = null;
-    image.onerror = null;
-    if (generation !== state.importGeneration || state.activeImportJobId !== jobId) return;
-    const naturalWidth = Math.max(1, image.naturalWidth);
-    const naturalHeight = Math.max(1, image.naturalHeight);
-    const frameWidth = Math.max(1, els.dropzone.clientWidth);
-    const frameHeight = Math.max(1, els.dropzone.clientHeight);
-    const scale = Math.min(frameWidth / naturalWidth, frameHeight / naturalHeight);
-    image.style.width = `${naturalWidth * scale}px`;
-    image.style.height = `${naturalHeight * scale}px`;
-    els.previewStage.style.width = `${frameWidth}px`;
-    els.previewStage.style.height = `${frameHeight}px`;
-    image.style.display = "block";
-  };
-  image.onerror = () => {
-    image.onload = null;
-    image.onerror = null;
-  };
-  image.src = url;
 }
 
 async function cancelActiveImport() {
@@ -17017,6 +17057,12 @@ async function activateDesktopSession(session, projectPath) {
   state.selectedLocalId = state.editDocument.local_adjustments[0]?.id || null;
   state.projectPath = projectPath || "";
   state.currentView = "hdr";
+  // A source replacement starts as a new viewing task. Carrying an Actual or
+  // custom zoom across differently-sized files makes the first authoritative
+  // frame arrive cropped or far off-screen, so every import begins at Fit.
+  state.zoomMode = "fit";
+  state.zoomPercent = 100;
+  state.zoomReferenceFrame = null;
   if (!projectPath) await applyNewSessionPreferences();
   state.interpretationGateDismissed = false;
   state.gpuPreview?.resetSession(session.session_id);

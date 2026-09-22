@@ -59,17 +59,50 @@ def test_raw_highlight_reconstruction_is_a_versioned_module_stack_control() -> N
     assert 'els.rawHighlightGroup.classList.toggle("modified", modified)' in script
     assert "applyRawImportSettings" in script
 
-def test_staged_import_waits_for_natural_aspect_before_display() -> None:
+def test_staged_import_waits_for_the_authoritative_preview_and_resets_fit_zoom() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
-    staged_preview = javascript[
-        javascript.index("function showStagedImportPreview"):
+    staged_import = javascript[
+        javascript.index("async function openStagedDesktopSource"):
         javascript.index("async function cancelActiveImport")
     ]
+    activation = javascript[
+        javascript.index("async function activateDesktopSession"):
+        javascript.index("function documentTransitionToken")
+    ]
 
-    assert 'image.style.display = "none";' in staged_preview
-    assert "image.naturalWidth" in staged_preview
-    assert "image.naturalHeight" in staged_preview
-    assert staged_preview.index("image.naturalWidth") < staged_preview.index('image.style.display = "block";')
+    assert "showStagedImportPreview" not in staged_import
+    assert "job.preview_available" not in staged_import
+    assert 'state.zoomMode = "fit";' in activation
+    assert "state.zoomReferenceFrame = null;" in activation
+
+
+def test_local_bypass_renders_optimistically_and_tiled_masks_ignore_grade_revisions() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    bypass = javascript[
+        javascript.index('const bypassButton = event.target.closest("button[data-local-bypass-id]")'):
+        javascript.index('const subMaskBypassButton = event.target.closest("button[data-sub-mask-bypass-id]")')
+    ]
+    tile_loader = webgpu[
+        webgpu.index("async loadLocalMaskTile"):
+        webgpu.index("trimMaskTiles", webgpu.index("async loadLocalMaskTile"))
+    ]
+
+    assert bypass.index("scheduleLocalPreview();") < bypass.index('queueEditCommand(')
+    assert "{ refreshPreview: false }" in bypass
+    assert "editRevision}:${signature}" not in tile_loader
+    assert "geometrySignature}:${signature}:${tile.key}" in tile_loader
+
+
+def test_perspective_draft_is_bounded_before_authoring_tier_apply() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    draft = javascript[
+        javascript.index("function perspectiveDraftLongEdge"):
+        javascript.index("function openCropMode")
+    ]
+
+    assert "Math.min(previewTargetLongEdge(), 1024)" in draft
+    assert "long_edge: perspectiveDraftLongEdge()" in draft
 
 
 def test_brand_assets_and_fonts_are_bundled_locally() -> None:

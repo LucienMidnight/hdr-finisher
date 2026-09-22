@@ -17,6 +17,7 @@
     "test:edit-sync-retry": "node --test tests/edit-sync-retry.test.js",
     "test:session-replacement": "node tests/session-replacement-interaction.js",
     "test:brush-mask": "node tests/brush-mask-interaction.js",
+    "test:full-tier-brush-feather": "node tests/full-tier-brush-feather.js",
     "test:gradient-mask": "node tests/gradient-mask-interaction.js",
     "test:path-mask": "node tests/path-mask-interaction.js",
     "test:luma-mask": "node tests/luma-mask-interaction.js",

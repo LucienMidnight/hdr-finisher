@@ -7,6 +7,25 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
 (async () => {
   const browser = await chromium.launch({ headless: true, channel: "msedge" });
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  // preview-raw is intentionally an SDR/sRGB byte surface. On an HDR desktop
+  // Electron otherwise configures the WebGPU canvas as extended Display P3,
+  // making this parity check compare two different presentation encodings and
+  // report a large false error. This test owns shader parity, not OS HDR
+  // presentation, so pin its canvas to the same standard-range contract.
+  await page.addInitScript(() => {
+    const inherited = window.matchMedia.bind(window);
+    window.matchMedia = (query) => {
+      const result = inherited(query);
+      if (query !== "(dynamic-range: high)") return result;
+      return new Proxy(result, {
+        get(target, property) {
+          if (property === "matches") return false;
+          const value = Reflect.get(target, property, target);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+    };
+  });
   let trackCpuFallback = false;
   const cpuFallbackRequests = [];
   page.on("request", (request) => {

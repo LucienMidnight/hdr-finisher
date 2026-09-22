@@ -1987,7 +1987,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
 
     async loadLocalMaskTile(sessionId, local, tile, longEdge, editRevision, geometrySignature, isCurrent) {
       const signature = gpuMaskIdentity(local.mask);
-      const key = `${sessionId}:${local.id}:${longEdge}:${geometrySignature}:${editRevision}:${signature}:${tile.key}`;
+      // A revision also changes for grade values, opacity and bypass. None of
+      // those alter the spatial mask, so including it here discarded every
+      // resident tile after every local edit (tiles x local layers). Spatial
+      // identity plus geometry is the actual invalidation boundary.
+      const key = `${sessionId}:${local.id}:${longEdge}:${geometrySignature}:${signature}:${tile.key}`;
       const cached = this.maskTiles.get(key);
       if (cached) {
         this.maskTiles.delete(key);

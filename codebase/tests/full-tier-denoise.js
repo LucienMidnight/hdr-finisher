@@ -82,26 +82,33 @@ const MIN_DIFFERING_FRACTION = 0.005;
     };
 
     const setDenoise = async (enabled) => {
-      await page.evaluate((want) => {
+      await page.evaluate(async (want) => {
         const group = document.querySelector(".denoise-group .group-toggle");
         if (group.getAttribute("aria-expanded") !== "true") group.click();
-        const bypass = document.querySelector("#denoise-bypass");
-        if ((bypass.getAttribute("aria-pressed") === "true") !== want) bypass.click();
-      }, enabled);
-      if (enabled) {
-        await page.evaluate(() => {
+        if (want) {
+          // Set the strength while bypassed; the handler updates state without
+          // launching a resolve, then enable performs one complete analysis
+          // and render with that value.
           const amount = document.querySelector("#denoise-amount");
           amount.value = "1";
           amount.dispatchEvent(new Event("input", { bubbles: true }));
           amount.dispatchEvent(new Event("change", { bubbles: true }));
-        });
+        }
+        // The button's click listener delegates to this same async action but
+        // DOM dispatch cannot expose its promise. Await the action directly so
+        // a screenshot can never race the GPU render it starts.
+        if (state.denoise[state.currentView].enabled !== want) {
+          await setDenoiseEnabled(want);
+        }
+      }, enabled);
+      if (enabled) {
         await page.waitForFunction(
           () => ["ready", "error"].includes(state.denoiseRuntime[state.currentView].status),
           null, { timeout: 900000 },
         );
       }
+      await page.evaluate(async () => state.gpuPreview.waitForSubmittedWork());
       await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 900000 });
-      await page.waitForTimeout(1500);
     };
 
     const capture = async () => page.locator("#preview-canvas").screenshot({

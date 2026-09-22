@@ -9043,9 +9043,8 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
 
 .preview-popover-status {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
   padding-top: 10px;
   border-top: 1px solid var(--hairline);
   color: var(--muted);
@@ -9054,9 +9053,12 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
 }
 
 .preview-popover-status strong {
+  min-width: 0;
   color: var(--body);
   font-weight: 500;
-  white-space: nowrap;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .source-rail.collapsed .rail-title-row {

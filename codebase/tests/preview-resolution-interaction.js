@@ -43,6 +43,22 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
     }
     await page.locator("#preview-toggle").click();
     await page.locator("#preview-popover").waitFor({ state: "visible" });
+    const statusFitsPopover = await page.evaluate(() => {
+      const popover = document.querySelector("#preview-popover");
+      const status = document.querySelector("#preview-quality-status");
+      const original = status.textContent;
+      status.textContent = "Full unavailable — Bounded strip execution refused this graph. local adjustments, spatial film effects.";
+      const popoverRect = popover.getBoundingClientRect();
+      const statusRect = status.getBoundingClientRect();
+      const fits = statusRect.left >= popoverRect.left
+        && statusRect.right <= popoverRect.right
+        && status.scrollWidth <= status.clientWidth;
+      status.textContent = original;
+      return { fits, popoverWidth: popoverRect.width, statusWidth: statusRect.width };
+    });
+    if (!statusFitsPopover.fits) {
+      throw new Error(`A long Preview status overflowed its popover: ${JSON.stringify(statusFitsPopover)}`);
+    }
     await selector.selectOption("4096");
     await page.waitForFunction(() => window.HDRFinisherPerformance.authoringState().previewResolution === "4096");
     const fourK = await page.evaluate(() => window.HDRFinisherPerformance.authoringState());
