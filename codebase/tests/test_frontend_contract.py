@@ -252,6 +252,47 @@ def test_roi_refinement_is_opt_in_and_tier_limited() -> None:
     assert "outputPixels: proxy.width * proxy.height," in webgpu
 
 
+def test_display_scale_pan_cache_is_generation_aware() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    contract = (FRONTEND / "viewport-request.js").read_text(encoding="utf-8")
+
+    # The cache is the accepted-generation ledger, so the partition is the
+    # contract's job and is unit tested there.
+    assert "static partitionByGeneration(tiles, acceptedGeneration, generation)" in contract
+    assert "const panCache = viewportTiles" in webgpu
+    assert "Contract.partitionByGeneration(" in webgpu
+    # Only a retained frame may answer from the cache; a new target size or a
+    # direct pass redraws whole.
+    assert "const viewportTiles = retainedFrame && Contract && foregroundRegion" in webgpu
+    assert "const foregroundTiles = panCache ? panCache.pending : plan.tiles;" in webgpu
+    # A measurement pass never presents, so it must not make the cache believe
+    # its tiles are in the retained frame.
+    assert "if (!measureOnly) scheduler.acceptTile(tile.key, plan.generation);" in webgpu
+    # Telemetry: what the region asked for, what came from the cache, what ran.
+    assert "panPass: Boolean(options.panPass)," in webgpu
+    assert "viewportTiles: viewportTiles ? viewportTiles.length : null," in webgpu
+    assert "reusedTiles: reusedTiles.length," in webgpu
+    assert "reusedPixels: reusedTiles.reduce(" in webgpu
+    # The catch-up flag has to reach the encoder or the metric can never be
+    # true: the option is forwarded from sourceOptions, exactly like panPass.
+    assert "roiCatchUp: sourceOptions?.roiCatchUp," in webgpu
+    assert "panPass: sourceOptions?.panPass," in webgpu
+    # The deferred pan follow-up exists, is wired to the viewer scroll, and is
+    # cancelled by a newer edit like the catch-up.
+    assert "const ROI_PAN_DELAY_MS = 140;" in javascript
+    assert "function noteViewerPan() {" in javascript
+    assert "noteViewerPan();" in javascript
+    assert "function requestRoiPanRefinement() {" in javascript
+    assert "function cancelRoiPanRefinement() {" in javascript
+    assert "panPass: true" in javascript
+    assert "cancelRoiPanRefinement();" in javascript
+    # Diagnostics expose the pan state and the same entry point the scroll
+    # path uses, so a driver can measure it deterministically.
+    assert "roiPanState: () => ({" in javascript
+    assert "panRefinement: () => requestRoiPanRefinement()," in javascript
+
+
 def test_roi_refinement_has_a_settings_surface() -> None:
     markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")

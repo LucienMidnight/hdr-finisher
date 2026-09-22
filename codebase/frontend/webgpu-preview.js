@@ -2008,6 +2008,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         serial,
         isCurrent: sourceOptions?.isCurrent || null,
         viewport: sourceOptions?.viewport || null,
+        panPass: sourceOptions?.panPass,
+        roiCatchUp: sourceOptions?.roiCatchUp,
         tileSize,
         lane,
         longEdge,
@@ -2303,16 +2305,37 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         width: Math.min(proxy.width - Math.max(0, viewport.x - roiPadX), viewport.width + roiPadX * 2),
         height: Math.min(proxy.height - Math.max(0, viewport.y - roiPadY), viewport.height + roiPadY * 2),
       } : null;
-      const retainedFrame = Boolean(viewport) && Boolean(presentationTarget?.valid)
+      // Whether the target behind this pass still holds the accepted frame at
+      // this exact size, identity and format. This is about the frame, not the
+      // request: a whole-frame catch-up retains too, it just has no region to
+      // answer from the pan cache.
+      const retainedFrame = Boolean(presentationTarget?.valid)
         && Boolean(previousFrame)
         && previousFrame.sessionId === options.sessionId
         && previousFrame.lane === lane
         && previousFrame.geometrySignature === geometrySignature
         && previousFrame.execution === "tiled"
         && previousFrame.format === surface.format;
-      const foregroundTiles = retainedFrame && Contract
+      // Phase 2 item 8, the display-scale pan cache. A viewport pass over a
+      // retained frame is split into the tiles that still owe the current
+      // generation and the tiles the cache already holds at this display
+      // scale (the plan's identity is per proxy, so the scale is part of the
+      // key). Panning back into a region refined for this generation then
+      // processes nothing at all, and a newly exposed strip is the only work.
+      // A frame that is not retained -- a new target size, a direct pass in
+      // between -- has no trustworthy cache, so it redraws whole.
+      const viewportTiles = retainedFrame && Contract && foregroundRegion
         ? Contract.foregroundTiles(plan.tiles, foregroundRegion)
-        : plan.tiles;
+        : null;
+      const panCache = viewportTiles
+        ? Contract.partitionByGeneration(
+          viewportTiles,
+          (key) => scheduler.acceptedGeneration(key),
+          plan.generation,
+        )
+        : null;
+      const foregroundTiles = panCache ? panCache.pending : plan.tiles;
+      const reusedTiles = panCache ? panCache.cached : [];
       let cancelled = false;
       const graph = this.ensureTileGraph(
         workWidth, workHeight, surface.format, proxy.pixelFormat, spatialActive, denoiseActive,
@@ -2678,7 +2701,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           compositePass.draw(3);
           compositePass.end();
         }
-        scheduler.acceptTile(tile.key, plan.generation);
+        // Only a tile that was actually composited may be recorded as current
+        // for this generation. A measurement pass never presents, so it must
+        // not make the pan cache believe its tiles are in the retained frame.
+        if (!measureOnly) scheduler.acceptTile(tile.key, plan.generation);
         batchTiles += 1;
         if (batchTiles >= tileBatchSize) flushTiles();
       }
@@ -2706,7 +2732,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         );
         presentationTarget.valid = true;
       }
-      if (peakTarget) {
+      if (peakTarget && processedTiles > 0) {
         encoder.copyTextureToBuffer(
           { texture: peakTarget.texture },
           { buffer: peakTarget.readBuffer, bytesPerRow: peakTarget.bytesPerRow, rowsPerImage: peakTarget.size },
@@ -2749,7 +2775,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // `measuredLongEdge` says what resolution those pixels were, because a
       // maximum over a downsampled proxy is a lower bound on the real one and
       // must never be presented as though it were not.
-      const measuredPeak = await this.readScopePeak(peakTarget);
+      // A pass that processed nothing (a pan answered entirely from the cache)
+      // has no fresh grid to measure, so it leaves the previous peak alone
+      // rather than attributing a stale maximum to the current generation.
+      let measuredPeak = null;
+      if (peakTarget) {
+        if (processedTiles > 0) measuredPeak = await this.readScopePeak(peakTarget);
+        else peakTarget.busy = false;
+      }
       if (measuredPeak !== null && !measureOnly) {
         this.exactScopePeak = {
           peak: measuredPeak,
@@ -2785,8 +2818,19 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         viewport: plan.viewport ? { ...plan.viewport } : null,
         viewportRequested: Boolean(options.viewport),
         roiCatchUp: Boolean(options.roiCatchUp),
+        // Phase 2 item 8, the display-scale pan cache. `viewportTiles` is what
+        // the padded region asked for; `reusedTiles` came back from the
+        // retained frame at this generation and was not re-processed;
+        // `foregroundTiles` is what actually ran. A pan back into a refined
+        // region reports zero foreground tiles and a full cache hit.
+        panPass: Boolean(options.panPass),
         roi: foregroundRegion ? { ...foregroundRegion } : null,
         offscreenTiles: plan.tileCount - plan.visibleCount,
+        viewportTiles: viewportTiles ? viewportTiles.length : null,
+        reusedTiles: reusedTiles.length,
+        reusedPixels: reusedTiles.reduce(
+          (sum, tile) => sum + tile.haloRect.width * tile.haloRect.height, 0,
+        ),
         foregroundTiles: processedTiles,
         skippedTiles: plan.tileCount - processedTiles,
         retainedFrame,
@@ -3014,6 +3058,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           tileSize: sourceOptions?.tileSize,
           serial,
           viewport: sourceOptions?.viewport || null,
+          // The app's own passes reach the encoder here, not through
+          // renderTiledTo, so the ROI flags have to be forwarded here too or
+          // the catch-up and pan telemetry can never be true.
+          roiCatchUp: sourceOptions?.roiCatchUp,
+          panPass: sourceOptions?.panPass,
           lane,
           longEdge,
           editRevision,

@@ -188,3 +188,50 @@ test("foreground tiles are the ones intersecting the viewport, in plan order", (
     [tiles[0].rect],
   );
 });
+
+test("the pan cache partitions tiles by their accepted generation", () => {
+  const tiles = [
+    { key: "a|0,0,512,512|h0" },
+    { key: "a|512,0,512,512|h0" },
+    { key: "a|0,512,512,512|h0" },
+    { key: "a|512,512,512,512|h0" },
+  ];
+  const accepted = new Map([
+    ["a|0,0,512,512|h0", 7],
+    ["a|512,0,512,512|h0", 6],
+    ["a|0,512,512,512|h0", 7],
+  ]);
+  const partition = HDRViewportRequest.partitionByGeneration(
+    tiles,
+    (key) => (accepted.has(key) ? accepted.get(key) : null),
+    7,
+  );
+
+  // Only the tiles accepted at exactly this generation are cache hits; an
+  // older generation is pending, which is what keeps an edit from reusing
+  // stale pixels.
+  assert.deepEqual(partition.cached.map((tile) => tile.key), [tiles[0].key, tiles[2].key]);
+  assert.deepEqual(partition.pending.map((tile) => tile.key), [tiles[1].key, tiles[3].key]);
+  assert.equal(partition.cached.length + partition.pending.length, tiles.length);
+});
+
+test("the pan cache treats every tile as pending without an accepted ledger", () => {
+  const tiles = [{ key: "a|0,0,512,512|h0" }, { rect: { x: 0, y: 0, width: 512, height: 512 } }];
+
+  const missing = HDRViewportRequest.partitionByGeneration(tiles, undefined, 3);
+  assert.equal(missing.cached.length, 0);
+  assert.equal(missing.pending.length, 2);
+
+  // A tile without a key cannot be matched to the ledger, so it must run.
+  const keyed = HDRViewportRequest.partitionByGeneration(tiles, () => 3, 3);
+  assert.deepEqual(keyed.cached.map((tile) => tile.key), [tiles[0].key]);
+  assert.deepEqual(keyed.pending, [tiles[1]]);
+});
+
+test("the pan cache compares generations as numbers", () => {
+  const tiles = [{ key: "a|0,0,512,512|h0" }];
+  const partition = HDRViewportRequest.partitionByGeneration(tiles, () => "5", 5);
+  // The ledger stores numbers; a string match is not a generation match.
+  assert.equal(partition.cached.length, 0);
+  assert.equal(partition.pending.length, 1);
+});

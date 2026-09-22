@@ -228,6 +228,33 @@
       });
     }
 
+    /**
+     * Split foreground candidates into the tiles the pan cache already holds at
+     * the requested generation and the ones that still have to run.
+     *
+     * The display-scale pan cache is the retained presentation target plus the
+     * scheduler's per-tile accepted-generation ledger: a tile accepted at the
+     * current generation is already composited into the retained frame at the
+     * display scale this plan is for, so re-processing it is pure waste. Only
+     * tiles accepted at exactly the requested generation are reusable; a tile
+     * from an older generation is pending, which is what keeps an edit or a
+     * scale change from presenting stale pixels as current.
+     *
+     * `acceptedGeneration` is a lookup function (key) -> generation | null.
+     */
+    static partitionByGeneration(tiles, acceptedGeneration, generation) {
+      const target = Number(generation);
+      const cached = [];
+      const pending = [];
+      const lookup = typeof acceptedGeneration === "function" ? acceptedGeneration : () => null;
+      for (const entry of Array.isArray(tiles) ? tiles : []) {
+        const key = entry && entry.key ? entry.key : null;
+        if (key && lookup(key) === target) cached.push(entry);
+        else pending.push(entry);
+      }
+      return { cached, pending };
+    }
+
     static sameRect(a, b) {
       return Boolean(a && b) && sameRect(a, b);
     }
