@@ -341,11 +341,10 @@ const state = {
   scopeChannelMode: "composite",
   scopeMaxNits: 4000,
   scopeQuality: DEFAULT_SCOPE_QUALITY,
-  // On by default: the measurement is exact and cheap -- 159 ms across 176
-  // tiles on a 42 MP frame -- and the proxy peak it replaces is wrong in the
-  // direction that matters, reading low on exactly the small speculars a
-  // delivery ceiling is about.
-  scopeExactPeak: true,
+  // Explicit opt-in during continuous authoring. A native exact-peak pass is
+  // background whole-image work and must not automatically compete with the
+  // foreground presentation path.
+  scopeExactPeak: false,
   scopeRegionEnabled: false,
   scopeRegion: null,
   scopeRegionDrag: null,
@@ -1954,7 +1953,7 @@ function initializePreviewPreferences() {
   state.previewResolution = DEFAULT_PREVIEW_RESOLUTION;
   state.scopeMaxNits = 4000;
   state.scopeQuality = DEFAULT_SCOPE_QUALITY;
-  state.scopeExactPeak = true;
+  state.scopeExactPeak = false;
   state.compareLayout = "single";
   if (els.previewResolution) els.previewResolution.value = state.previewResolution;
   if (els.scopeZoom) els.scopeZoom.value = String(state.scopeMaxNits);

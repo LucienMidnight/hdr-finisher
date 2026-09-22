@@ -141,7 +141,7 @@ function assert(condition, message) {
       };
       const panelOn = await readPanel(true);
       const panelOff = await readPanel(false);
-      await readPanel(true);
+      await readPanel(false);
 
       return {
         longEdge, nativeEdge, directPeak, tiled, measured, before, after, panelOn, panelOff,
@@ -185,7 +185,7 @@ function assert(condition, message) {
     console.log(`native measurement  ${result.measured.longEdge} long edge, ${result.measured.tiles} tiles, `
       + `${Math.round(result.measured.durationMs)} ms  PASS`);
 
-    assert(result.checkboxDefault === true, "The exact-peak preference does not default to on");
+    assert(result.checkboxDefault === false, "The exact-peak preference must default to off during authoring");
     assert(result.panelOn.exact === true && result.panelOn.label === "Peak",
       `The panel did not report an exact peak when enabled: ${JSON.stringify(result.panelOn)}`);
     assert(result.panelOff.exact === false && result.panelOff.label === "Peak (preview)",

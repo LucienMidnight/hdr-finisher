@@ -287,6 +287,94 @@ def test_simple_mask_opacity_reuses_the_spatial_mask_cache() -> None:
     assert np.max(exact) <= np.ceil(np.max(first) * 0.25)
 
 
+def test_concurrent_cold_mask_requests_compile_one_identity_once(monkeypatch) -> None:
+    image = np.full((256, 256, 3), 0.18, dtype=np.float32)
+    cache = SessionRenderCache(image, None)
+    adjustments = AdjustmentState()
+    local = LocalAdjustment(
+        id="singleflight-mask",
+        mask=MaskExpression(
+            operator="leaf",
+            leaf=MaskLeaf(type="luminance_range", mask_feather=0.05),
+        ),
+    )
+    started = Event()
+    release = Event()
+    compile_count = 0
+    original_compile = render_cache_module.compile_geometry_fixed_mask
+
+    def delayed_compile(*args, **kwargs):
+        nonlocal compile_count
+        compile_count += 1
+        started.set()
+        assert release.wait(2)
+        return original_compile(*args, **kwargs)
+
+    monkeypatch.setattr(render_cache_module, "compile_geometry_fixed_mask", delayed_compile)
+    results: list[np.ndarray] = []
+    workers = [
+        Thread(
+            target=lambda: results.append(
+                cache.compiled_local_mask(adjustments, local, 256, spatial_only=True)
+            )
+        )
+        for _ in range(4)
+    ]
+
+    for worker in workers:
+        worker.start()
+    assert started.wait(2)
+    release.set()
+    for worker in workers:
+        worker.join(2)
+
+    assert compile_count == 1
+    assert len(results) == 4
+    assert all(result is results[0] for result in results)
+    assert cache.diagnostics()["singleflight_waits"] == 3
+    assert cache.diagnostics()["local_mask_entries"] == 1
+
+
+def test_replaced_source_rejects_an_obsolete_mask_compile(monkeypatch) -> None:
+    old_source = np.full((256, 256, 3), 0.18, dtype=np.float32)
+    new_source = np.full((256, 256, 3), 0.72, dtype=np.float32)
+    cache = SessionRenderCache(old_source, None)
+    adjustments = AdjustmentState()
+    local = LocalAdjustment(id="source-bound-mask")
+    started = Event()
+    release = Event()
+    compile_count = 0
+    original_compile = render_cache_module.compile_geometry_fixed_mask
+
+    def delayed_first_compile(*args, **kwargs):
+        nonlocal compile_count
+        compile_count += 1
+        if compile_count == 1:
+            started.set()
+            assert release.wait(2)
+        return original_compile(*args, **kwargs)
+
+    monkeypatch.setattr(render_cache_module, "compile_geometry_fixed_mask", delayed_first_compile)
+    worker = Thread(
+        target=lambda: cache.compiled_local_mask(
+            adjustments,
+            local,
+            256,
+            spatial_only=True,
+        )
+    )
+    worker.start()
+    assert started.wait(2)
+    cache.replace_source(new_source, None)
+    release.set()
+    worker.join(2)
+
+    assert cache.diagnostics()["local_mask_entries"] == 0
+    cache.compiled_local_mask(adjustments, local, 256, spatial_only=True)
+    assert compile_count == 2
+    assert cache.diagnostics()["local_mask_entries"] == 1
+
+
 def test_clear_adjusted_preserves_masks_but_source_replacement_does_not() -> None:
     image = np.full((256, 256, 3), 0.18, dtype=np.float32)
     cache = SessionRenderCache(image, None)

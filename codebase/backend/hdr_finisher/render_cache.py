@@ -109,7 +109,7 @@ class SessionRenderCache:
     _frame_scope_peaks: OrderedDict[tuple[int, str, int, str], float] = field(default_factory=OrderedDict, init=False, repr=False)
     _matched_sdr_bases: OrderedDict[tuple[int, str], np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
     _scopes: OrderedDict[tuple[object, ...], Any] = field(default_factory=OrderedDict, init=False, repr=False)
-    _masks: OrderedDict[tuple[int, str, str, str], np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
+    _masks: OrderedDict[tuple[int, int, str, str, str], np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
     _geometry_maps: OrderedDict[tuple[int, str], tuple[tuple[float, ...], tuple[float, ...], int, int]] = field(default_factory=OrderedDict, init=False, repr=False)
     _inflight: dict[tuple[object, ...], Event] = field(default_factory=dict, init=False, repr=False)
     _hits: int = field(default=0, init=False, repr=False)
@@ -369,12 +369,20 @@ class SessionRenderCache:
         spatial_only: bool = False,
     ) -> np.ndarray:
         edge = max(256, int(long_edge))
-        source, _sdr_reference = self._proxies(edge)
+        with self._lock:
+            source_epoch = self._source_epoch
+            source, _sdr_reference = self._proxies_locked(edge)
         # The overlay remains inspectable while the adjustment is bypassed.
         # Rendering filters disabled/zero-opacity locals, so compile an enabled
         # view of this one mask without changing the persisted adjustment.
         mask_source = local_adjustment.model_copy(update={"enabled": True, "opacity": 1.0})
-        masks = self._compiled_masks(source, adjustments, [mask_source], edge)
+        masks = self._compiled_masks(
+            source,
+            adjustments,
+            [mask_source],
+            edge,
+            source_epoch=source_epoch,
+        )
         assert masks is not None
         mask = masks[local_adjustment.id]
         if spatial_only or mask_influence_opacity(local_adjustment.mask) >= 1.0:
@@ -450,7 +458,13 @@ class SessionRenderCache:
             flight.wait()
 
         try:
-            compiled_masks = self._compiled_masks(source, adjustments, local_adjustments, edge)
+            compiled_masks = self._compiled_masks(
+                source,
+                adjustments,
+                local_adjustments,
+                edge,
+                source_epoch=source_epoch,
+            )
             matched_sdr_base = None
             if kind == PreviewKind.SDR and sdr_match is not None and sdr_match.active:
                 matched_sdr_base = self.matched_sdr_base(source, adjustments, sdr_match, edge)
@@ -695,7 +709,7 @@ class SessionRenderCache:
                 "scope_bytes": scope_bytes,
                 "local_mask_bytes": mask_bytes,
                 "local_mask_entries": len(self._masks),
-                "local_mask_budget_bytes": 160 * 1024 * 1024 if any(key[0] > 1600 for key in self._masks) else 96 * 1024 * 1024,
+                "local_mask_budget_bytes": 160 * 1024 * 1024 if any(key[1] > 1600 for key in self._masks) else 96 * 1024 * 1024,
                 "managed_bytes": source_bytes + proxy_bytes + frame_bytes + matched_base_bytes + scope_bytes + mask_bytes,
                 "entries": len(self._source_proxies) + len(self._frames) + len(self._matched_sdr_bases) + len(self._scopes) + len(self._masks),
                 "hits": self._hits,
@@ -743,6 +757,8 @@ class SessionRenderCache:
         adjustments: AdjustmentState,
         local_adjustments: list[LocalAdjustment] | None,
         edge: int,
+        *,
+        source_epoch: int,
     ) -> dict[str, np.ndarray] | None:
         active = [item for item in (local_adjustments or []) if item.enabled and item.opacity > 0.0]
         if not active:
@@ -752,23 +768,50 @@ class SessionRenderCache:
         compiled: dict[str, np.ndarray] = {}
         for local in active:
             mask_signature = spatial_mask_signature(local.mask)
-            key = (edge, geometry_signature, local.id, mask_signature)
-            with self._lock:
-                mask = self._masks.get(key)
-                if mask is not None:
-                    self._hits += 1
-                    self._masks.move_to_end(key)
-            if mask is None:
-                mask = compile_geometry_fixed_mask(source, local.mask, geometry, spatial_only=True)
-                mask.setflags(write=False)
+            key = (source_epoch, edge, geometry_signature, local.id, mask_signature)
+            flight_key = ("mask", *key)
+            while True:
                 with self._lock:
-                    existing = self._masks.get(key)
-                    if existing is None:
-                        self._masks[key] = mask
-                        self._misses += 1
-                        self._evict_masks_locked(160 * 1024 * 1024 if edge > 1600 else 96 * 1024 * 1024)
-                    else:
-                        mask = existing
+                    mask = self._masks.get(key)
+                    if mask is not None:
+                        self._hits += 1
+                        self._masks.move_to_end(key)
+                        break
+                    # A request that outlived source replacement may finish for
+                    # its original caller, but must not join or populate the
+                    # current source's cache.
+                    if source_epoch != self._source_epoch:
+                        flight = None
+                        break
+                    flight = self._inflight.get(flight_key)
+                    if flight is None:
+                        flight = Event()
+                        self._inflight[flight_key] = flight
+                        break
+                    self._singleflight_waits += 1
+                flight.wait()
+
+            if mask is None:
+                owns_flight = flight is not None
+                try:
+                    mask = compile_geometry_fixed_mask(source, local.mask, geometry, spatial_only=True)
+                    mask.setflags(write=False)
+                    with self._lock:
+                        if source_epoch == self._source_epoch:
+                            existing = self._masks.get(key)
+                            if existing is None:
+                                self._masks[key] = mask
+                                self._misses += 1
+                                self._evict_masks_locked(160 * 1024 * 1024 if edge > 1600 else 96 * 1024 * 1024)
+                            else:
+                                mask = existing
+                finally:
+                    if owns_flight:
+                        with self._lock:
+                            # Invalidation may already have detached this event.
+                            if self._inflight.get(flight_key) is flight:
+                                self._inflight.pop(flight_key, None)
+                            flight.set()
             compiled[local.id] = mask
         return compiled
 
