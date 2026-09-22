@@ -665,8 +665,9 @@ This section is the authoritative continuation point for agents working through 
 | Phase | Status | Gate note |
 |---|---|---|
 | Phase 0 | **Pending product/hardware gate** | The display-driven contract, control replacement, parity tolerances, migration behavior, 42.4 MP packaged baselines, and Fit filtering A/B still require product-owner decisions and reference-hardware evidence. No approval is inferred from starting safe Phase 1 defect work. |
-| Phase 1 | **In progress** | Work items 1, 2, 3, 4, and 8 are implemented below; item 3's batch transport landed in the 15.3 checkpoint and item 4's presentation gate in 15.4. The phase remains open until items 5–7 and every runtime exit gate pass. |
-| Phases 2–5 | **Not started** | Do not begin dependent architecture work until the Phase 0 stop gate is resolved and recorded. |
+| Phase 1 | **Complete (code and gates)** | All eight work items are implemented across checkpoints 15.1–15.5, and all six Phase 1 exit gates pass in focused automated and Chromium/Edge runtime evidence. Packaged-app (Electron) evidence and the Phase 0 baselines remain outstanding; see 15.5. |
+| Phase 2 | **Contract increment landed, integration blocked** | The immutable viewport request, telemetry, and scheduler pass-through landed in 15.6 (`dd89ed7`). The coordinator extraction, the real visible-rect source, the offscreen presentation target, small-batch submission, and the pan cache are **not** built: they depend on the Phase 0 stop gate, which is still unsigned. |
+| Phases 3–5 | **Not started** | Do not begin dependent architecture work until the Phase 0 stop gate is resolved and recorded. |
 
 ### 15.2 Working-tree checkpoint — 2026-09-22
 
@@ -905,3 +906,80 @@ Next safe edit:
 1. Phase 1.5 — replace generic sticky GPU disablement with the failure taxonomy in Section 5.8. Add a synthetic recoverable allocation or transport failure and prove WebGPU is not permanently disabled and the accepted frame survives.
 2. Then Phase 1.6 Denoise input coalescing and Phase 1.7 source abort/generation propagation.
 3. Re-run the mask and presentation scenarios through the Electron harness once it can launch in the target environment, and record packaged evidence under `codebase/output/performance/`.
+
+### 15.5 Committed checkpoint — 2026-09-22 (Phase 1 complete)
+
+Checkpoints committed on `main`, continuing 15.2–15.4:
+
+| Commit | Phase | Summary |
+|---|---|---|
+| `33b03df` | 1.1, 1.2, 1.8 | Idle-gated exact peak, single-flight mask compiles, direct `renderTiledTo` lifetime protection |
+| `2ac7538` | 1.3, 1.4 | Batched local-mask transport, per-canvas presentation gate |
+| `29a321b` | 1.5 | Section 5.8 failure taxonomy, device rebuild instead of sticky disable |
+| `a6c2820` | 1.6 | Live Denoise input coalesced to one in-flight plus one latest pending |
+| `22bf815` | 1.7 | Abort and generation checks for source transport |
+
+Completed work:
+
+- [x] **Phase 1.5 — failure taxonomy.** `frontend/render-failure.js` classifies superseded, transport, allocation, unsupported graph, validation, device loss, and permanent initialization failure. Only initialization failure or validation failure repeated three times without a successful render in between may disable WebGPU. Transport and allocation failures retry within a bounded budget; device loss rebuilds the device and re-renders; every recoverable path keeps the accepted frame and the device.
+- [x] **Phase 1.6 — Denoise coalescing.** `frontend/latest-work-queue.js` gives one in-flight plus one latest pending. The live control path submits through it, so a drag costs runs rather than input events and the last value is the one that lands.
+- [x] **Phase 1.7 — source abort and generation checks.** Source transport carries the caller's currency check and a session-scoped abort. A superseded stream stops fetching between chunks and destroys its partial texture; a superseded whole-frame proxy is never uploaded; replacing the session aborts in-flight source work.
+
+Verification at this checkpoint:
+
+- `node --test`: **135 passed**, 0 failed.
+- `pytest` focused (`test_render_cache.py`, `test_api.py`, `test_frontend_contract.py`): **148 passed**.
+- Runtime, one scenario at a time against the dev server on `127.0.0.1:8799`:
+  - `tests/performance/failure-taxonomy.js` — synthetic transport failure recorded as recoverable with `available: true` and the viewer still Ready at peak 245; removal returns a WebGPU presentation; three consecutive validation failures disable and are recorded. Evidence: `codebase/output/performance/failure-taxonomy.json`.
+  - `tests/performance/denoise-input-coalescing.js` — twelve rapid inputs started **two** reconstructions, eleven coalesced, last payload accepted, pixels moved on a WebGPU presentation. Evidence: `codebase/output/performance/denoise-input-coalescing.json`.
+  - `tests/performance/tiled-mask-batch-transport.js` — 2 batch requests, 0 per-tile, batches of 4 and 6.
+  - `tests/full-tier-brush-feather.js` (42.4 MP, Full, tiled, streamed source) — Ready/Full, exact, no CPU fallback, no Unavailable event.
+
+Phase 1 exit gate accounting:
+
+| Gate | Status | Evidence |
+|---|---|---|
+| Concurrent cold requests compile one mask identity once | Passed | `X-Mask-Batch-Compiles`, `test_render_cache.py`, batch API tests |
+| Rapid local edits never exceed configured request/compile limits | Passed (Chromium) | batch caps 64/32 MiB front, 64/128 MiB back; runtime batches of 4 and 6 |
+| A superseded or failed render never clears the accepted frame | Passed | presentation gate unit + runtime controls; tier-change scenario 12/12 painted |
+| A synthetic recoverable failure does not permanently disable WebGPU | Passed | `failure-taxonomy.js` |
+| Denoise rapid-input tests show bounded counts and latest-state acceptance | Passed | `denoise-input-coalescing.js` |
+| Exact-peak analysis never starts while foreground work is queued | Passed | 15.1 checkpoint (idle gate), `scope-exact-peak.js` |
+
+Remaining Phase 1 evidence gaps, not code gaps:
+
+- Packaged-app (Electron) runs are still deferred: `node tests/run-in-electron.js` fails with `Process failed to launch!` in this environment while the Electron binary itself runs (v24.18.1).
+- The Phase 0 gates (display-driven contract sign-off, retired tier selector, 42.4 MP packaged baselines) remain unsigned. See the concern in 15.6.
+- `recalculateDenoise` (analysis, as opposed to live reconstruction) is generation-guarded but not routed through the coalescing queue; a user hammering Recalculate can still start overlapping analyses. Recorded as a follow-up, not a Phase 1 gate.
+
+### 15.6 Phase 2 contract increment and the Phase 0 stop-gate concern
+
+Checkpoint committed as `dd89ed7` — "Define the immutable viewport request and pass it to the tile scheduler".
+
+**Concern requiring product-owner attention (recorded at the owner's request):** the PRD's own Phase 0 stop condition is still unfulfilled. Section 3 says that if the selected-tier doctrine remains authoritative, Phases 2–5 must not execute and the sprint should narrow to defect remediation. No sign-off of the display-driven contract and no retirement of the tier selector is recorded in this document. The instruction to continue through the next phases was given directly by the owner with the explicit request that concerns be noted here for later action. In response, this checkpoint implements only the parts of Phase 2 that are **doctrine-neutral** — the request contract, telemetry, and scheduler pass-through — and deliberately does **not** build the viewport-sized offscreen presentation target or change what the viewer presents. If the product decision goes the other way, this work is still correct and reusable; if it is confirmed, the remaining Phase 2 items below are the next unit of work.
+
+Landed in this checkpoint (Phase 2 work items 2, 6, 7-contract, 9-contract, and the scheduler half of 3):
+
+- `frontend/viewport-request.js` builds a frozen request with the visible output region, the minimum-ROI-padded region (default 15% per side, clamped), the source rect it maps back to, the haloed region, and the globally anchored tiles covering it. It also reports processed/output pixels, halo amplification, tile count and visible tile count.
+- `HDRViewportRequest.compareWithLegacy` performs the pointwise max-difference comparison against a whole-frame render over the intersection of two rects, which is the mechanism the Phase 2 ROI-parity gate needs.
+- `tile-scheduler.js` now receives a real viewport from the renderer (`sourceOptions.viewport`) instead of assuming Fit; no viewport still means Fit, so current behaviour is unchanged.
+- Tiled execution metrics report `viewport`, `offscreenTiles`, `processedPixels`, and `outputPixels`.
+- Diagnostics expose `HDRFinisherPerformance.viewportRequest({ visible, halo, tileSize, longEdge })` so the contract can be exercised in the running app.
+- Runtime evidence (batch transport scenario, test pattern 1280×720): a 512×512 viewport reached the scheduler, `offscreenTiles: 5` of 6, telemetry present, ROI padded to 666×576, source rect 834×720, and the render still presented the full frame.
+
+Still required to finish Phase 2 (not attempted here):
+
+1. Extract render coordination and generation ownership from `app.js` (work item 1).
+2. Supply the real visible rect from the app's zoom/pan state so requests stop being Fit (the remaining half of item 3). The app's viewer uses DOM transforms, so this needs the coordinator's viewport model, not a guess.
+3. Viewport-sized offscreen/retained presentation target (item 4) — this is what makes "the visible canvas is never cleared between generations" true and what lets an ROI actually be presented.
+4. Small-batch tiled submission with cancellation checks (item 5).
+5. Display-scale pan cache (item 8).
+6. Full engineering switch integration (item 9): the comparison function exists; the legacy-versus-ROI A/B path in diagnostics does not.
+
+Manual checks for the owner:
+
+- **Decide the Phase 0 gate**: sign off the display-driven contract and retire the tier selector, or direct the sprint back to defect remediation. Phases 2–5 integration is blocked on this decision.
+- Confirm the minimum-ROI padding default of 15% per side and the conservative `+1` source-pixel guard in the ROI-to-source mapping are the intended values.
+- Confirm the `processedPixels` definition (sum of tile haloed areas) is the figure the halo-amplification gate should report.
+- Launch `node tests/run-in-electron.js tests/mask-graph-interaction.js` in an environment where Playwright's Electron launcher works, and record the packaged evidence under `codebase/output/performance/`.
+- Capture the 42.4 MP packaged baselines the Phase 0 table requires.
