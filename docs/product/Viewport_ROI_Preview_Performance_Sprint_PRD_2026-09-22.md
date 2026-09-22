@@ -664,7 +664,7 @@ This section is the authoritative continuation point for agents working through 
 
 | Phase | Status | Gate note |
 |---|---|---|
-| Phase 0 | **Pending product/hardware gate** | The display-driven contract, control replacement, parity tolerances, migration behavior, 42.4 MP packaged baselines, and Fit filtering A/B still require product-owner decisions and reference-hardware evidence. No approval is inferred from starting safe Phase 1 defect work. |
+| Phase 0 | **Product direction recorded 2026-09-22** | The owner exercised the 4K and Full paths in the desktop app (4K smooth, local adjustments and feather smooth, Full correct but slower as expected, technical scopes reporting tiled for Full and direct for 4K) and directed Phase 2 to proceed. The individual Phase 0 checklist items — parity tolerances, migration behavior, 42.4 MP packaged baselines, Fit filtering A/B — are still not individually signed off, so Phase 2 keeps legacy mode as the fallback and no Phase 3 work starts until those numbers exist. Observation to address in Phase 2: a long rapid exposure drag at Full showed a transient "full not available" state that cleared on release; acceptable per the owner, but it is the backpressure signal Phase 2's 50 ms stop gate and progressive passes exist to remove. |
 | Phase 1 | **Complete (code and gates)** | All eight work items are implemented across checkpoints 15.1–15.5, and all six Phase 1 exit gates pass in focused automated and Chromium/Edge runtime evidence. Packaged-app (Electron) evidence and the Phase 0 baselines remain outstanding; see 15.5. |
 | Phase 2 | **Contract increment landed, integration blocked** | The immutable viewport request, telemetry, and scheduler pass-through landed in 15.6 (`dd89ed7`). The coordinator extraction, the real visible-rect source, the offscreen presentation target, small-batch submission, and the pan cache are **not** built: they depend on the Phase 0 stop gate, which is still unsigned. |
 | Phases 3–5 | **Not started** | Do not begin dependent architecture work until the Phase 0 stop gate is resolved and recorded. |
@@ -956,7 +956,7 @@ Remaining Phase 1 evidence gaps, not code gaps:
 
 Checkpoint committed as `dd89ed7` — "Define the immutable viewport request and pass it to the tile scheduler".
 
-**Concern requiring product-owner attention (recorded at the owner's request):** the PRD's own Phase 0 stop condition is still unfulfilled. Section 3 says that if the selected-tier doctrine remains authoritative, Phases 2–5 must not execute and the sprint should narrow to defect remediation. No sign-off of the display-driven contract and no retirement of the tier selector is recorded in this document. The instruction to continue through the next phases was given directly by the owner with the explicit request that concerns be noted here for later action. In response, this checkpoint implements only the parts of Phase 2 that are **doctrine-neutral** — the request contract, telemetry, and scheduler pass-through — and deliberately does **not** build the viewport-sized offscreen presentation target or change what the viewer presents. If the product decision goes the other way, this work is still correct and reusable; if it is confirmed, the remaining Phase 2 items below are the next unit of work.
+**Product direction (recorded 2026-09-22):** the owner reviewed the running desktop app and directed Phase 2 to proceed. Phase 2 therefore continues with the contract already landed, and legacy mode stays available behind diagnostics until the ROI path passes the parity gate, as Phase 2 itself requires. The remaining Phase 0 checklist items (parity tolerances, migration behavior, 42.4 MP packaged baselines, Fit filtering A/B) are still to be signed off individually; Phase 3 does not start until they are.
 
 Landed in this checkpoint (Phase 2 work items 2, 6, 7-contract, 9-contract, and the scheduler half of 3):
 
@@ -983,3 +983,22 @@ Manual checks for the owner:
 - Confirm the `processedPixels` definition (sum of tile haloed areas) is the figure the halo-amplification gate should report.
 - Launch `node tests/run-in-electron.js <scenario>` with `ELECTRON_RUN_AS_NODE` cleared (see the resolved note in 15.5) to capture packaged-path evidence for the presentation gate, failure taxonomy, batch transport, and brush-feather scenarios, and record it under `codebase/output/performance/`.
 - Capture the 42.4 MP packaged baselines the Phase 0 table requires.
+
+### 15.7 Committed checkpoint — 2026-09-22 (Phase 2 foreground selection, cancellation, and the retention finding)
+
+Checkpoint committed as `94e5dbf` — "Stop superseded tiled encodes at a tile boundary and record foreground/retained telemetry".
+
+Landed:
+
+- **Cancellation at a tile boundary (work item 5, first half).** A tiled generation checks its currency at every tile boundary and refuses with `superseded-during-encode` before anything is submitted, so a superseded render never presents a partial frame and obsolete work stops within one tile instead of running to the end of the image. This is the mechanism the 50 ms stop gate will be measured against; the stop is bounded by one tile, not by the whole generation.
+- **Viewport reaches the scheduler (work item 3, renderer half)** and the renderer records what the canvas currently shows (`lastPresentedFrame`) so a later pass can know whether a frame is retainable.
+- **Foreground selection and telemetry (items 6 and 7).** `HDRViewportRequest.foregroundTiles` returns the tiles intersecting the viewport, with unit coverage. Tiled metrics report `foregroundTiles`, `skippedTiles`, `retainedFrame`, `cancelled`, and `processedPixels` now counts only the tiles a pass actually processed.
+- **Runtime evidence** (`tiled-mask-batch-transport.js`): the viewport reached the scheduler, 5 of 6 tiles were reported offscreen, both passes processed all six tiles, and the offscreen region measured 150.44 before and after the ROI pass — unchanged.
+
+**Finding that shapes the next unit of work:** a swap-chain texture does not retain its previous contents. A pass that composites only the foreground tiles with `loadOp: "load"` leaves the offscreen region undefined, and the measurement confirmed it (offscreen brightness fell to 2.69 — black — instead of staying at 150.44). `loadOp: "load"` on the canvas is therefore **not** frame retention. Skipping offscreen tiles, presenting an ROI at all, and the "visible canvas is never cleared between generations" gate all require the viewport-sized offscreen/retained presentation target (work item 4), which is now the immediate next unit. Offscreen skipping is deliberately gated on that target existing, so the current build still redraws every frame whole and no partial frame can reach the viewer.
+
+Next safe edit:
+
+1. Build the retained presentation target: an offscreen texture that survives between generations, composited into per pass and blitted to the canvas in one final full-frame pass. Then enable offscreen skipping behind the existing guard and prove the "offscreen tiles are not part of the foreground batch" gate with a scheduler trace.
+2. Small-batch tiled submission on top of that target, so each batch is a separate submit and cancellation has a submit boundary to stop at.
+3. Then the coordinator extraction and the real visible-rect source (items 1 and 3), the pan cache (item 8), and the legacy-versus-ROI switch integration (item 9).
