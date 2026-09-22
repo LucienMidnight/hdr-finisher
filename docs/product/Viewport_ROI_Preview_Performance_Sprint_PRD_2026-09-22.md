@@ -666,7 +666,7 @@ This section is the authoritative continuation point for agents working through 
 |---|---|---|
 | Phase 0 | **Product direction recorded 2026-09-22** | The owner exercised the 4K and Full paths in the desktop app (4K smooth, local adjustments and feather smooth, Full correct but slower as expected, technical scopes reporting tiled for Full and direct for 4K) and directed Phase 2 to proceed. The individual Phase 0 checklist items — parity tolerances, migration behavior, 42.4 MP packaged baselines, Fit filtering A/B — are still not individually signed off, so Phase 2 keeps legacy mode as the fallback and no Phase 3 work starts until those numbers exist. Observation to address in Phase 2: a long rapid exposure drag at Full showed a transient "full not available" state that cleared on release; acceptable per the owner, but it is the backpressure signal Phase 2's 50 ms stop gate and progressive passes exist to remove. |
 | Phase 1 | **Complete (code and gates)** | All eight work items are implemented across checkpoints 15.1–15.5, and all six Phase 1 exit gates pass in focused automated and Chromium/Edge runtime evidence. Packaged-app (Electron) evidence and the Phase 0 baselines remain outstanding; see 15.5. |
-| Phase 2 | **Contract increment landed, integration blocked** | The immutable viewport request, telemetry, and scheduler pass-through landed in 15.6 (`dd89ed7`). The coordinator extraction, the real visible-rect source, the offscreen presentation target, small-batch submission, and the pan cache are **not** built: they depend on the Phase 0 stop gate, which is still unsigned. |
+| Phase 2 | **Accepted by owner, one residual** | The core mechanism is shipped and accepted: visible-region refinement with a retained presentation target, offscreen tiles excluded from the foreground batch, small-batch submission, a deferred whole-frame catch-up, and a Settings switch. The owner's judgement (15.15): much improved, updates automatically, workable for users on a low-performance machine — **passing**. Residual: the first scroll after an edit can briefly show the unadjusted boundary before it settles; the pan cache (item 8) is the unit that removes it. |
 | Phases 3–5 | **Not started** | Do not begin dependent architecture work until the Phase 0 stop gate is resolved and recorded. |
 
 ### 15.2 Working-tree checkpoint — 2026-09-22
@@ -1172,3 +1172,23 @@ Next safe edit:
 1. A dedicated catch-up driver that waits for genuine idle and asserts the catch-up pass, closing the verification gap above.
 2. Pan cache (item 8) if the owner's repeat check still shows a seam after the catch-up.
 3. Coordinator extraction and generation ownership out of `app.js` (item 1).
+
+### 15.15 Owner acceptance — 2026-09-22 (ROI refinement passes)
+
+Owner review after the catch-up landed, in their words: much improved, and it updates automatically now; it does not keep up with the first scroll, so there is a point where the unadjusted boundary lines are visible before it settles; probably workable for users on a low-performance machine. **Verdict: passing.**
+
+What this closes:
+
+- The refinement-only ROI path with the retained presentation target, offscreen exclusion, small-batch submission, and deferred catch-up is **accepted as working** and is the first Phase 2 mechanism the owner has judged shippable.
+- The earlier seam (15.13) is resolved by the catch-up; what remains is a *transient* artifact during the first scroll rather than a persistent boundary.
+
+Recorded residual, with its cause and the unit that fixes it:
+
+- **First-scroll staleness.** Panning into a region whose tiles are not yet refined shows the accepted frame there until a render catches up. The catch-up closes it on idle, but a scroll that arrives before the catch-up runs exposes the older pixels for a moment. This is the display-scale pan cache (item 8): keeping refined tiles resident per display scale means a pan inside the cached region needs no work at all, so there is nothing to expose. Progressive idle catch-up (already landed) plus the pan cache together remove the artifact rather than merely shortening it.
+- The catch-up pass itself still has **no automated runtime assertion** (15.14): the scenario races the app's render cycle. A dedicated idle-waiting driver remains the verification item, and it is now the only unverified piece of the accepted path.
+
+Next safe edit, in order:
+
+1. Dedicated catch-up driver that waits for genuine app idle and asserts the catch-up pass (`roiCatchUp`, `viewportRequested: false`, `skippedTiles: 0`, `retainedFrame: true`).
+2. Display-scale pan cache (item 8), which removes the first-scroll residual the owner reported.
+3. Coordinator extraction and generation ownership out of `app.js` (item 1), then the legacy-versus-ROI parity run (item 9).
