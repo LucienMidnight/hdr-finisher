@@ -3954,6 +3954,7 @@ async function initializeApplicationShell() {
       }
       applyGpuMemoryBudget(preferences.maximumGpuMemoryGiB);
       applyExecutionOverride(preferences.executionOverride);
+      applyRoiPreview(preferences.roiPreview);
       if (options.initial) state.renderingMode = preferences.renderingMode;
       else if (preferences.renderingMode !== state.renderingMode) void applyRenderingMode(preferences.renderingMode);
     },
@@ -3976,6 +3977,22 @@ function applyExecutionOverride(value) {
   renderReadouts();
   // Re-render so the change is visible immediately rather than at the next
   // edit, which is the whole point of a switch you flip to compare routes.
+  if (state.session) {
+    invalidatePreview(state.currentView, { markDirty: false });
+    debouncePreview(state.currentView);
+  }
+}
+
+/**
+ * Limit the refinement pass to the visible region, or process the whole frame.
+ *
+ * Experimental and off by default. Pan and zoom are never limited, so a newly
+ * exposed region always has complete pixels; this only decides whether the
+ * expensive refinement pass spends its time on tiles the viewer cannot see.
+ */
+function applyRoiPreview(value) {
+  state.roiPreviewMode = value === "refinement" ? "refinement" : "fit";
+  renderReadouts();
   if (state.session) {
     invalidatePreview(state.currentView, { markDirty: false });
     debouncePreview(state.currentView);

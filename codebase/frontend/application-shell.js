@@ -8,6 +8,7 @@
   // so this exists to make that comparable on the same grade rather than to
   // give the two routes different jobs.
   const EXECUTION_OVERRIDES = new Set(["auto", "direct", "tiled"]);
+  const ROI_PREVIEW_MODES = new Set(["fit", "refinement"]);
   const GPU_MEMORY_PRESETS_GIB = [1, 2, 3, 4, 6, 8, 12];
   const DEFAULT_CUSTOM_GPU_MEMORY_GIB = 2;
   const DEFAULT_PREFERENCES = {
@@ -17,6 +18,7 @@
     previewResolution: "1024",
     maximumGpuMemoryGiB: "auto",
     executionOverride: "auto",
+    roiPreview: "fit",
     theme: "default-dark",
     viewerFrame: { preset: "theme", customColor: "#000000" },
     folders: { projectSave: "", projectImport: "", fileSave: "", fileImport: "", presetSave: "" },
@@ -160,6 +162,7 @@
     previewResolution: PREVIEW_RESOLUTIONS.has(String(value.previewResolution)) ? String(value.previewResolution) : "1024",
     maximumGpuMemoryGiB: normalizeGpuMemoryGiB(value.maximumGpuMemoryGiB),
     executionOverride: EXECUTION_OVERRIDES.has(value.executionOverride) ? value.executionOverride : "auto",
+    roiPreview: ROI_PREVIEW_MODES.has(value.roiPreview) ? value.roiPreview : "fit",
     theme: THEME_IDS.includes(value.theme) ? value.theme : "default-dark",
     viewerFrame: {
       preset: FRAME_PRESET_IDS.includes(value.viewerFrame?.preset) ? value.viewerFrame.preset : "theme",
@@ -625,6 +628,9 @@
     byId("settings-execution-override").value = EXECUTION_OVERRIDES.has(shell.preferences.executionOverride)
       ? shell.preferences.executionOverride
       : "auto";
+    byId("settings-roi-preview").value = ROI_PREVIEW_MODES.has(shell.preferences.roiPreview)
+      ? shell.preferences.roiPreview
+      : "fit";
     byId("settings-auto-updates").checked = shell.preferences.updates.checkAutomatically;
     renderThemeOptions();
     renderFolderSettings();
@@ -886,6 +892,13 @@
         : "auto";
       persistPreferences();
       shell.onExecutionOverrideChange?.(shell.preferences.executionOverride);
+    });
+    byId("settings-roi-preview").addEventListener("change", (event) => {
+      shell.preferences.roiPreview = ROI_PREVIEW_MODES.has(event.target.value)
+        ? event.target.value
+        : "fit";
+      persistPreferences();
+      shell.onRoiPreviewChange?.(shell.preferences.roiPreview);
     });
     byId("settings-auto-updates").addEventListener("change", (event) => {
       shell.preferences.updates.checkAutomatically = event.target.checked;

@@ -69,9 +69,12 @@ function assert(condition, message) {
       `A refinement pass requested a viewport with the switch off: ${JSON.stringify(off.metrics)}`,
     );
 
-    // Magnify, then enable the switch.
+    // Magnify so a real visible region exists.
     await page.evaluate((percent) => setCustomZoom(percent), ZOOM_PERCENT);
     await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 300000 });
+    // Enable through the API for the measurement: a preference change schedules
+    // the app's own render cycle, which races a diagnostic render and overwrites
+    // the metrics under test. The user-facing select is verified at the end.
     const enabled = await page.evaluate(() => window.HDRFinisherPerformance.setRoiPreviewMode("refinement"));
     assert(enabled === "refinement", `The switch did not enable: ${enabled}`);
     const visibleRect = await page.evaluate(() => ({
@@ -140,6 +143,24 @@ function assert(condition, message) {
       );
     }
 
+    // The user-facing surface: the Settings select drives the same state. Done
+    // last, because a preference change schedules the app's own render cycle.
+    const selectDriven = await page.evaluate(() => {
+      const select = document.getElementById("settings-roi-preview");
+      const flip = (value) => {
+        select.value = value;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        return state.roiPreviewMode;
+      };
+      const on = flip("refinement");
+      const off = flip("fit");
+      return { on, off };
+    });
+    assert(
+      selectDriven.on === "refinement" && selectDriven.off === "fit",
+      `The settings select did not drive the ROI mode: ${JSON.stringify(selectDriven)}`,
+    );
+
     const summary = {
       url,
       zoomPercent: ZOOM_PERCENT,
@@ -154,6 +175,7 @@ function assert(condition, message) {
         retainedFrame: on.metrics?.retainedFrame ?? null,
       },
       interactive: { rendered: interactive.rendered, viewportRequested: interactive.metrics?.viewportRequested ?? null },
+      settingsSelect: selectDriven,
       pageErrors,
     };
     assert(pageErrors.length === 0, `Page errors were raised: ${JSON.stringify(pageErrors)}`);

@@ -1665,6 +1665,13 @@
             </select>
           </label>
           <p class="helper">Diagnostic, for comparing the two execution routes on the same grade. Direct and Tiled are required to produce identical pixels, so any visible difference between them is a defect worth reporting. Forcing Direct is refused when the budget cannot hold it, and the Output readout says which route actually ran.</p>
+          <label class="settings-field">Region of interest
+            <select id="settings-roi-preview" title="When enabled, only the refinement pass is limited to the visible region: the tiles you can see are refined at full tier quality and the rest of the frame keeps the accepted image. Pan and zoom are never limited, so a newly exposed region always has complete pixels.">
+              <option value="fit">Whole frame · refinement processes every tile</option>
+              <option value="refinement">Visible region · refinement processes what you see</option>
+            </select>
+          </label>
+          <p class="helper">Experimental. The refinement pass is the expensive one at large tiers, so limiting it to the visible region is where the time goes. The rest of the frame keeps the accepted image until you pan to it, so if a newly exposed region looks one edit behind, switch this back to Whole frame and report it.</p>
         </section>
         <section data-settings-panel="appearance" hidden>
           <h3>Appearance</h3>

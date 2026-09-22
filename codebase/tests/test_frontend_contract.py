@@ -252,6 +252,23 @@ def test_roi_refinement_is_opt_in_and_tier_limited() -> None:
     assert "outputPixels: proxy.width * proxy.height," in webgpu
 
 
+def test_roi_refinement_has_a_settings_surface() -> None:
+    markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    shell = (FRONTEND / "application-shell.js").read_text(encoding="utf-8")
+
+    # Reachable without devtools, and persisted like the other diagnostics.
+    assert 'id="settings-roi-preview"' in markup
+    assert 'ROI_PREVIEW_MODES = new Set(["fit", "refinement"])' in shell
+    assert 'roiPreview: "fit",' in shell
+    assert "roiPreview: ROI_PREVIEW_MODES.has(value.roiPreview) ? value.roiPreview : \"fit\"," in shell
+    assert 'byId("settings-roi-preview").value = ROI_PREVIEW_MODES.has(shell.preferences.roiPreview)' in shell
+    assert 'byId("settings-roi-preview").addEventListener("change"' in shell
+    # The app applies it through the ordinary preferences path.
+    assert "applyRoiPreview(preferences.roiPreview);" in javascript
+    assert "function applyRoiPreview(value) {" in javascript
+
+
 def test_perspective_draft_is_bounded_before_authoring_tier_apply() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     draft = javascript[
