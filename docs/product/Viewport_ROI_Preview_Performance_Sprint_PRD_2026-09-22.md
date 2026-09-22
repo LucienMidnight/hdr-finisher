@@ -1002,3 +1002,30 @@ Next safe edit:
 1. Build the retained presentation target: an offscreen texture that survives between generations, composited into per pass and blitted to the canvas in one final full-frame pass. Then enable offscreen skipping behind the existing guard and prove the "offscreen tiles are not part of the foreground batch" gate with a scheduler trace.
 2. Small-batch tiled submission on top of that target, so each batch is a separate submit and cancellation has a submit boundary to stop at.
 3. Then the coordinator extraction and the real visible-rect source (items 1 and 3), the pan cache (item 8), and the legacy-versus-ROI switch integration (item 9).
+
+### 15.8 Committed checkpoint — 2026-09-22 (retained presentation target and offscreen skipping)
+
+Checkpoint committed as `cc31ebf` — "Retain the tiled frame in an offscreen presentation target". This closes item 1 of the 15.7 next-safe-edit list and satisfies the "offscreen tiles are not part of the foreground batch" exit gate.
+
+Completed work:
+
+- **Retained presentation target (work item 4).** Tiled passes composite into an output-sized offscreen texture that survives between generations. One `copyTextureToTexture` hands the completed frame to the canvas, so the swap chain is never presented cleared or half-written, whatever the pass did to the target. The target is `RENDER_ATTACHMENT | COPY_SRC`; both surface configurations now include `COPY_DST` so the canvas can be a copy destination. The plan's `presentation-surface` entry (339 MB at 42.4 MP) is now an allocation rather than a model-only entry.
+- **Retention is explicit.** A pass may load the target only when the previous frame was tiled, in the same session, lane, geometry signature, and surface format, and the target is marked valid. A Direct pass records `execution: "direct"`, so a later tiled pass knows there is no retained frame and redraws whole.
+- **Offscreen skipping enabled.** A viewport pass processes only the tiles intersecting the viewport and keeps the accepted frame everywhere else. This is the exit gate: offscreen tiles are not part of the foreground batch.
+- **Runtime evidence** (`tiled-mask-batch-transport.js`, test pattern 1280×720, 6 tiles, viewport 512×512): the legacy pass processed 6 of 6 tiles with `retainedFrame: false`; the ROI pass processed **1 of 6 tiles** (262,144 of 921,600 pixels), reported `retainedFrame: true` and `skippedTiles: 5`, and the offscreen region measured the same brightness before and after (150.44).
+- **Regressions pass with the target in place:** the 42.4 MP Full brush-feather race (Ready/Full, exact, tiled, no CPU fallback, no Unavailable) and the 4K→Full tier change (18/18 compositor samples painted, 0 blank, 0 CPU fallbacks, 0 `/preview` requests).
+
+Verification at this checkpoint:
+
+- `node --test`: 145 passed.
+- `pytest` focused: **150 passed** (new retained-target contract).
+- Runtime scenarios run one at a time against the dev server on `127.0.0.1:8799`.
+
+Remaining Phase 2 work:
+
+1. Small-batch tiled submission on top of the target: each batch becomes its own submit, so cancellation has a submit boundary and a 42.4 MP foreground pass can stop within the 50 ms gate. The retained target already makes partial submits invisible, which is what made this possible.
+2. Coordinator extraction and generation ownership out of `app.js` (item 1).
+3. The real visible-rect source from the app's zoom/pan state, so requests stop being Fit (item 3, app half).
+4. Display-scale pan cache (item 8).
+5. Full legacy-versus-ROI switch integration in diagnostics (item 9).
+6. ROI parity evidence: pointwise comparison against a crop of the legacy render within the approved tolerance (`compareWithLegacy` exists; the tolerances themselves are a Phase 0 sign-off item).
