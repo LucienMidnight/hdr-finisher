@@ -1029,3 +1029,32 @@ Remaining Phase 2 work:
 4. Display-scale pan cache (item 8).
 5. Full legacy-versus-ROI switch integration in diagnostics (item 9).
 6. ROI parity evidence: pointwise comparison against a crop of the legacy render within the approved tolerance (`compareWithLegacy` exists; the tolerances themselves are a Phase 0 sign-off item).
+
+### 15.9 Committed checkpoint — 2026-09-22 (small-batch tiled submission)
+
+Checkpoint committed as `13d12a3` — "Submit tiled work in small batches so supersession stops at a boundary". This closes item 1 of the 15.8 next-safe-edit list.
+
+Completed work:
+
+- **Small-batch submission (work item 5).** Tiled encoding submits in batches of four tiles (`options.tileBatchSize`) instead of one command buffer per generation. The GPU starts on a batch while the CPU encodes the next, and the cancel check runs **before** the partial batch is flushed, so a superseded generation stops within one batch rather than at the end of the image. The retained presentation target keeps the batches invisible until the single final copy hands the complete frame to the canvas, so partial submits never reach the viewer.
+- **Metrics** report `submissions` and `tileBatchSize` alongside the existing foreground/retained fields.
+- **Runtime evidence** (`tiled-mask-batch-transport.js`): the six-tile legacy pass submitted **3 times**; the one-tile ROI pass submitted **2 times**; retained frame, one-of-six foreground tiles, `skippedTiles: 5`, and the unchanged offscreen region (brightness 150.44) all held.
+- **Regression:** the 42.4 MP Full brush-feather race still passes (Ready/Full, exact, tiled, no CPU fallback, no Unavailable).
+
+Verification at this checkpoint:
+
+- `node --test`: 145 passed.
+- `pytest` focused: **151 passed** (new small-batch contract).
+- Runtime scenario and 42.4 MP regression run one at a time against the dev server on `127.0.0.1:8799`.
+
+Stop-gate status:
+
+- "Offscreen tiles are not part of the foreground batch": **passed** (15.8, re-proven here).
+- "A new input stops further obsolete submissions within 50 ms": **mechanism in place and bounded by one four-tile batch**; the wall-clock 50 ms number still needs a reference-hardware measurement with a rapid-input driver, which is not yet built. Recorded as the next measurement item, not a code item.
+- "Warm pan renders only newly exposed tiles" and "ROI pointwise output matches a crop of the legacy render": still pending the app-side visible rect and the parity tolerances.
+
+Next safe edit:
+
+1. Coordinator extraction and generation ownership out of `app.js` (item 1), which is also what supplies the real visible rect (item 3) and lets the pan cache (item 8) be measured.
+2. Build the rapid-input stop-gate driver: fire edits during a 42.4 MP tiled pass and record the time from input to the last obsolete submission.
+3. Legacy-versus-ROI switch integration and the parity run (items 9 and the Phase 0 tolerances).
