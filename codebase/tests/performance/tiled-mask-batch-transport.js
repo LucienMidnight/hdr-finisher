@@ -127,15 +127,41 @@ async function clipBrightness(page, clip) {
       };
     }, longEdge);
 
-    // The region the ROI pass must not touch, captured before it runs.
+    // Stop the app's own frame/settle/refine/idle cycle for the measurement
+    // window: a later app pass would repaint the offscreen region and make the
+    // retained-frame check meaningless.
+    await page.evaluate(() => {
+      state.previewScheduler?.cancel();
+      window.HDRFinisherPerformance.cancelRoiCatchUp();
+    });
+
+    // The region the ROI pass must not touch, captured before it runs. The
+    // viewport is 512 wide and the contract pads it to 666, which reaches into
+    // the second 512px tile; that tile's composite covers x 512..1024, so the
+    // clip starts beyond the last foreground tile's scissor. A region any
+    // foreground tile repaints is not offscreen. The clip also starts well
+    // below the viewer status dock, which slides over the canvas top and is not
+    // canvas content.
     const canvasBox = await page.locator("#preview-canvas").boundingBox();
     const offscreenClip = {
-      x: canvasBox.x + canvasBox.width * 0.6,
-      y: canvasBox.y,
-      width: canvasBox.width * 0.4,
-      height: canvasBox.height,
+      x: canvasBox.x + canvasBox.width * 0.82,
+      y: canvasBox.y + 120,
+      width: canvasBox.width * 0.18,
+      height: Math.max(32, canvasBox.height - 120),
     };
     const offscreenBefore = await clipBrightness(page, offscreenClip);
+
+    // A fresh generation, exactly as an edit leaves it: the legacy pass above
+    // accepted every tile at the previous generation, and the display-scale pan
+    // cache would otherwise answer this ROI pass entirely from the retained
+    // frame and never ask the backend for a mask.
+    await page.evaluate(() => {
+      invalidatePreview(state.currentView, { markDirty: false });
+      window.HDRFinisherPerformance.cancelRoiCatchUp();
+      // The invalidate raises the viewer's "Updating" banner, which slides over
+      // the canvas top; it is not part of the pixels under test.
+      hidePreviewMessage();
+    });
 
     // The ROI pass: only tiles intersecting the viewport are processed, and the
     // accepted frame is kept everywhere else.
