@@ -1100,3 +1100,26 @@ Next safe edit:
 1. Coordinator extraction and generation ownership out of `app.js` (item 1), which also makes the pan cache (item 8) measurable.
 2. Display-scale pan cache (item 8) once the owner's pan check above says it is needed.
 3. Legacy-versus-ROI switch integration and the parity run (items 9 and the Phase 0 tolerances).
+
+### 15.12 Committed checkpoint — 2026-09-22 (Settings switch for ROI refinement)
+
+Checkpoint committed as `cdd6ffa` — "Give ROI refinement a Settings switch so it needs no devtools".
+
+Context: the owner reviewed the running app and reported no visible difference while panning after an edit. That was expected and is worth recording plainly — the default is `fit`, so the review exercised the shipped whole-frame path, and the ROI path has still not been judged visually by a person.
+
+Landed:
+
+- A persisted `roiPreview` preference (default `"fit"`), validated like `executionOverride`, applied through the ordinary preferences path, with a **Region of interest** select beside **Preview execution** in Settings and helper text that names the experimental behaviour and what to report.
+- `applyRoiPreview` re-renders on change so the comparison is immediate, exactly like the execution-route switch.
+- Runtime evidence (`roi-refinement.js`): the Settings select drives the mode both ways (`refinement`, then `fit`); with the switch on at 300% zoom the refinement pass requests the visible rect, retains the accepted frame, and processes 2 of 6 tiles with 4 skipped; with it off, no viewport is requested; an interactive pass cannot be ROI-limited.
+- Contract coverage for the preference, the select binding, the app-side application, and the diagnostics API.
+
+Measurement note recorded for future scenarios: a preference change schedules the app's own render cycle, which races a diagnostic render and overwrites `tiledExecutionMetrics`. The scenario therefore verifies the Settings surface **after** the measurement, and the measurement itself is driven through `HDRFinisherPerformance.setRoiPreviewMode`.
+
+Manual check for the owner (now without devtools):
+
+1. Settings (Mod+,) → **Preview execution** section → **Region of interest** → *Visible region*.
+2. Zoom to roughly 200–400%, make an edit, then pan. Judge whether the retained offscreen region (one edit behind) is acceptable, or whether the pan cache (item 8) must land before this ships.
+3. Switch back to *Whole frame* for the same edit to compare. Report anything that looks blank, stale beyond one edit, or slower than expected.
+
+Next safe edit: unchanged — coordinator extraction and generation ownership out of `app.js` (item 1), then the pan cache (item 8) if the owner's check calls for it.
