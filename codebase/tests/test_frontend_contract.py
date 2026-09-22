@@ -142,6 +142,25 @@ def test_failure_taxonomy_replaces_sticky_gpu_disablement() -> None:
     assert "consecutiveValidation >= this.validationThreshold" in taxonomy
 
 
+def test_live_denoise_input_is_coalesced() -> None:
+    markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    queue = (FRONTEND / "latest-work-queue.js").read_text(encoding="utf-8")
+
+    assert markup.index("latest-work-queue.js") < markup.index("app.js")
+    live_control = javascript[
+        javascript.index("async function updateLiveDenoiseControl("):
+        javascript.index("function denoiseInputQueue()")
+    ]
+    # The live control path goes through the queue, not straight to the
+    # renderer, so a drag costs runs rather than input events.
+    assert "denoiseInputQueue().submit(" in live_control
+    assert "resolveDenoiseProxy" not in live_control
+    assert "denoiseInputStats: () => state.denoiseInputQueue?.stats || null" in javascript
+    assert "this.pending = payload;" in queue
+    assert "this.stats.coalesced += 1;" in queue
+
+
 def test_perspective_draft_is_bounded_before_authoring_tier_apply() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     draft = javascript[
@@ -2352,7 +2371,10 @@ def test_denoise_phase_three_exposes_locked_wavelet_methods_and_four_live_contro
     assert 'queueEditCommand("set_denoise_settings"' in app_script
     assert "updateDenoiseAnalysisPreset" in app_script
     assert "updateCustomDenoiseAnalysis" in app_script
-    assert "state.gpuPreview.resolveDenoiseProxy" in app_script
+    # The live controls still reach the renderer's reconstruction, but through
+    # the coalescing queue rather than one call per input event.
+    assert "state.gpuPreview?.resolveDenoiseProxy?.(controls)" in app_script
+    assert "denoiseInputQueue().submit(" in app_script
     assert "state.gpuPreview.analyzeDenoiseProxy" in app_script
     assert "updateRangeVisual(input)" in app_script
     assert "refinementProxyLongEdge()," in app_script

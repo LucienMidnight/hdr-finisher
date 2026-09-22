@@ -400,6 +400,9 @@ const state = {
   gpuFailurePolicy: null,
   gpuRebuildAttempts: 0,
   gpuRenderRetries: 0,
+  // Live Denoise reconstruction runs through one in-flight plus one latest
+  // pending state (Section 5.6), so a control drag costs runs, not events.
+  denoiseInputQueue: null,
   cpuFallbacks: { settle: [], refine: [] },
   // Application allocation budget for preview GPU work, not physical VRAM.
   gpuMemoryBudget: "auto",
@@ -2084,6 +2087,7 @@ function initializePreviewScheduler() {
     },
     measureExactPeak: (options = {}) => measureExactScopePeak(options),
     tiledExecutionMetrics: () => state.gpuPreview?.tiledExecutionMetrics || null,
+    denoiseInputStats: () => state.denoiseInputQueue?.stats || null,
     prepareDenoiseSelectorSeam: (variant = "resolved-a", longEdge = settledProxyLongEdge()) => (
       state.gpuPreview?.prepareDenoiseSelectorSeam?.(
         state.session?.session_id,
@@ -9568,16 +9572,38 @@ async function updateLiveDenoiseControl(key, value) {
   settings.controls[key] = clamp(value, 0, 1);
   renderDenoiseControls();
   if (!settings.enabled || runtime.status !== "ready" || runtime.showOriginal) return;
-  const controls = settings.controls;
-  const ready = await state.gpuPreview.resolveDenoiseProxy({
-    amount: controls.amount,
-    luminance: controls.luminance,
-    colorNoise: controls.color_noise,
-    detailRecovery: controls.detail_recovery,
+  // Section 5.6: reconstruction is coalesced to one in-flight run plus one
+  // latest pending state, so dragging a control costs runs rather than input
+  // events and the last value is the one that lands.
+  await denoiseInputQueue().submit({
+    lane,
+    controls: {
+      amount: settings.controls.amount,
+      luminance: settings.controls.luminance,
+      colorNoise: settings.controls.color_noise,
+      detailRecovery: settings.controls.detail_recovery,
+    },
   });
-  if (!ready || lane !== state.currentView) return;
-  await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
-  debounceOverlayAndScopes();
+}
+
+function denoiseInputQueue() {
+  if (!state.denoiseInputQueue) {
+    const Queue = window.HDRLatestWorkQueue;
+    state.denoiseInputQueue = Queue
+      ? new Queue(async ({ lane, controls }) => {
+        const ready = await state.gpuPreview?.resolveDenoiseProxy?.(controls);
+        if (!ready || lane !== state.currentView) return;
+        await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
+        debounceOverlayAndScopes();
+      }, { onError: (error) => console.warn("Live denoise reconstruction failed.", error) })
+      : null;
+  }
+  return state.denoiseInputQueue || { submit: async ({ lane, controls }) => {
+    const ready = await state.gpuPreview?.resolveDenoiseProxy?.(controls);
+    if (!ready || lane !== state.currentView) return;
+    await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
+    debounceOverlayAndScopes();
+  }, stats: null };
 }
 
 function removeToneEqualizerNode(requestedIndex = null, lane = state.currentView) {

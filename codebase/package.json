@@ -64,6 +64,7 @@
     "test:tiled-mask-batch": "node tests/performance/tiled-mask-batch-transport.js",
     "test:presentation-gate": "node tests/performance/presentation-gate.js",
     "test:failure-taxonomy": "node tests/performance/failure-taxonomy.js",
+    "test:denoise-input-coalescing": "node tests/performance/denoise-input-coalescing.js",
     "test:electron": "node tests/run-in-electron.js"
   },
   "devDependencies": {
