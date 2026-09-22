@@ -171,6 +171,11 @@ async function clipBrightness(page, clip) {
         retainedFrame: outcome.metrics?.retainedFrame ?? null,
         offscreenBrightness: { before: offscreenBefore, after: offscreenAfter },
       },
+      submissions: {
+        legacy: legacy.metrics?.submissions ?? null,
+        roi: outcome.metrics?.submissions ?? null,
+        tileBatchSize: outcome.metrics?.tileBatchSize ?? null,
+      },
       batchRequests: transport.batch.length,
       perTileRequests: transport.perTile.length,
       batchTiles,
@@ -264,6 +269,19 @@ async function clipBrightness(page, clip) {
     assert(
       outcome.metrics.skippedTiles > 0,
       `Offscreen tiles were still part of the foreground batch: ${JSON.stringify(outcome.metrics)}`,
+    );
+    // Small-batch submission: a six-tile pass is not one giant submit, and the
+    // ROI pass still submits in batches rather than per tile.
+    assert(
+      legacy.metrics?.submissions >= 2 && outcome.metrics?.submissions >= 2,
+      `Small-batch submission was not used: ${JSON.stringify({
+        legacy: legacy.metrics?.submissions,
+        roi: outcome.metrics?.submissions,
+      })}`,
+    );
+    assert(
+      outcome.metrics.tileBatchSize >= 1,
+      `The tile batch size was not reported: ${JSON.stringify(outcome.metrics)}`,
     );
     // The offscreen region stays painted and materially unchanged: a pass that
     // cleared the canvas or presented a partial frame would show it.

@@ -214,6 +214,22 @@ def test_retained_presentation_target_owns_the_tiled_frame() -> None:
     assert "previousFrame.execution === \"tiled\"" in webgpu
     assert "previousFrame.format === surface.format" in webgpu
     assert "execution: \"direct\"," in webgpu
+
+
+def test_tiled_encoding_submits_in_small_batches() -> None:
+    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+
+    # Batches are submitted as they are encoded, so the GPU works while the CPU
+    # encodes the next batch and a superseded generation stops at a boundary.
+    assert "const flushTiles = () => {" in webgpu
+    assert "if (batchTiles >= tileBatchSize) flushTiles();" in webgpu
+    assert "tileBatchSize," in webgpu
+    assert "submissions += 1;" in webgpu
+    # The cancel check precedes the flush of the partial batch, so a superseded
+    # generation never submits the work it was encoding.
+    cancel = webgpu.index("if (cancelled) {")
+    flush = webgpu.index("flushTiles();", cancel)
+    assert cancel < flush
     assert "outputPixels: proxy.width * proxy.height," in webgpu
 
 

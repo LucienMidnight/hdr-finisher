@@ -2428,10 +2428,24 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       }
       let encodeError = null;
       let processedTiles = 0;
+      // Small-batch submission (Phase 2 item 5). The GPU starts on one batch
+      // while the CPU encodes the next, and a superseded generation stops
+      // submitting at the next batch boundary instead of finishing the image.
+      // The retained target keeps the batches invisible until the final copy.
+      const tileBatchSize = Math.max(1, Math.floor(Number(options.tileBatchSize) || 4));
+      let batchTiles = 0;
+      let submissions = 0;
       try {
       if (!measureOnly) this.scopeSources.delete(canvas);
       this.device.pushErrorScope("validation");
-      const encoder = this.device.createCommandEncoder();
+      let encoder = this.device.createCommandEncoder();
+      const flushTiles = () => {
+        if (batchTiles === 0) return;
+        this.device.queue.submit([encoder.finish()]);
+        encoder = this.device.createCommandEncoder();
+        batchTiles = 0;
+        submissions += 1;
+      };
       const pass = (view, pipeline, bindGroup, width, height, alpha = 1) => {
         const renderPass = encoder.beginRenderPass({
           colorAttachments: [{ view, clearValue: { r: 0, g: 0, b: 0, a: alpha }, loadOp: "clear", storeOp: "store" }],
@@ -2648,8 +2662,22 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           compositePass.end();
         }
         scheduler.acceptTile(tile.key, plan.generation);
+        batchTiles += 1;
+        if (batchTiles >= tileBatchSize) flushTiles();
       }
 
+      // A superseded generation stops before the next batch is submitted: the
+      // batches already submitted finish, and nothing further is encoded or
+      // presented.
+      if (cancelled) {
+        localBuffers.forEach((entry) => entry.buffer.destroy());
+        denoiseParamBuffers.forEach((buffer) => buffer.destroy());
+        this.recordStage("tiled-cancelled", {
+          lane, processedTiles, foregroundTiles: foregroundTiles.length, submissions,
+        });
+        return { rendered: false, refusals: ["superseded-during-encode"] };
+      }
+      flushTiles();
       if (presentationTarget) {
         // One copy hands the completed frame to the canvas: the swap chain is
         // never presented cleared or half-written, whatever the pass did to
@@ -2668,14 +2696,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           { width: peakTarget.size, height: peakTarget.size },
         );
       }
-      if (cancelled) {
-        localBuffers.forEach((entry) => entry.buffer.destroy());
-        denoiseParamBuffers.forEach((buffer) => buffer.destroy());
-        this.recordStage("tiled-cancelled", {
-          lane, processedTiles, foregroundTiles: foregroundTiles.length,
-        });
-        return { rendered: false, refusals: ["superseded-during-encode"] };
-      }
+      submissions += 1;
       this.device.queue.submit([encoder.finish()]);
       } catch (error) {
         encodeError = error;
@@ -2738,7 +2759,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         width: proxy.width, height: proxy.height, tileSize, halo,
         detailHalo, spatialHalo, tileWidth: workWidth, tileHeight: workHeight,
         exactPeak: measuredPeak, exactPeakLongEdge: Math.max(proxy.width, proxy.height),
-        tileCount: plan.tileCount, visibleCount: plan.visibleCount, submissions: 1,
+        tileCount: plan.tileCount, visibleCount: plan.visibleCount, submissions,
+        tileBatchSize,
         // Phase 2 work item 6: what the request asked for versus what the graph
         // processed. Each tile processes its haloed rect, so the sum is the
         // real processed area and the ratio is the halo amplification.
