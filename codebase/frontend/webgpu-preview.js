@@ -2769,6 +2769,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         // processed. Each tile processes its haloed rect, so the sum is the
         // real processed area and the ratio is the halo amplification.
         viewport: plan.viewport ? { ...plan.viewport } : null,
+        viewportRequested: Boolean(options.viewport),
         offscreenTiles: plan.tileCount - plan.visibleCount,
         foregroundTiles: processedTiles,
         skippedTiles: plan.tileCount - processedTiles,

@@ -230,6 +230,25 @@ def test_tiled_encoding_submits_in_small_batches() -> None:
     cancel = webgpu.index("if (cancelled) {")
     flush = webgpu.index("flushTiles();", cancel)
     assert cancel < flush
+
+
+def test_roi_refinement_is_opt_in_and_tier_limited() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    # Off by default, so the shipped behaviour stays whole frame.
+    assert 'roiPreviewMode: "fit",' in javascript
+    # Only the refinement tier may be ROI-limited; pan and zoom stay whole
+    # frame so a newly exposed region always has complete pixels.
+    assert 'state.roiPreviewMode === "refinement" && tier === "refinement"' in javascript
+    assert "function visibleOutputRect(outputWidth, outputHeight)" in javascript
+    # A fully visible frame reports no viewport: Fit has nothing to skip.
+    assert "if (x === 0 && y === 0 && visibleWidth >= width && visibleHeight >= height) return null;" in javascript
+    # Diagnostics can flip it without a rebuild.
+    assert 'setRoiPreviewMode: (mode) => {' in javascript
+    assert "visibleOutputRect: () => visibleOutputRect(els.previewCanvas.width, els.previewCanvas.height)," in javascript
+    # The renderer distinguishes a requested viewport from Fit's effective one.
+    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    assert "viewportRequested: Boolean(options.viewport)," in webgpu
     assert "outputPixels: proxy.width * proxy.height," in webgpu
 
 

@@ -400,6 +400,11 @@ const state = {
   gpuFailurePolicy: null,
   gpuRebuildAttempts: 0,
   gpuRenderRetries: 0,
+  // Phase 2 ROI switch. "fit" keeps the app on whole-frame rendering (the
+  // shipped behaviour); "refinement" limits the refinement-tier pass to the
+  // visible region and keeps the retained frame everywhere else. Interactive
+  // pan and zoom are never ROI-limited, so they cannot show a gap.
+  roiPreviewMode: "fit",
   // Live Denoise reconstruction runs through one in-flight plus one latest
   // pending state (Section 5.6), so a control drag costs runs, not events.
   denoiseInputQueue: null,
@@ -2089,6 +2094,14 @@ function initializePreviewScheduler() {
     measureExactPeak: (options = {}) => measureExactScopePeak(options),
     tiledExecutionMetrics: () => state.gpuPreview?.tiledExecutionMetrics || null,
     denoiseInputStats: () => state.denoiseInputQueue?.stats || null,
+    // Phase 2 ROI switch. "fit" (default) keeps whole-frame rendering;
+    // "refinement" limits the refinement-tier pass to the visible region.
+    setRoiPreviewMode: (mode) => {
+      state.roiPreviewMode = mode === "refinement" ? "refinement" : "fit";
+      return state.roiPreviewMode;
+    },
+    roiPreviewMode: () => state.roiPreviewMode,
+    visibleOutputRect: () => visibleOutputRect(els.previewCanvas.width, els.previewCanvas.height),
     // Phase 2 contract surface: build the immutable viewport request the ROI
     // path will consume. The app still requests Fit (no visible rect) until the
     // coordinator supplies one, so this exists to exercise and inspect the
@@ -10350,6 +10363,13 @@ async function renderGpuDraftInner(
     ...(gpuPreviewSourceOptions(lane) || {}),
     tier,
     applicationGeneration: generation,
+    // The refinement pass is the expensive one at large tiers, so that is where
+    // the visible region pays off. Interactive and settled passes stay whole
+    // frame: pan and zoom then always show complete pixels, and the ROI pass
+    // only improves a region that is already correct.
+    viewport: state.roiPreviewMode === "refinement" && tier === "refinement"
+      ? visibleOutputRect(els.previewCanvas.width, els.previewCanvas.height)
+      : null,
     // WebGPU renders directly into the mounted canvas. Guard inside the
     // renderer, before it resizes or submits to that canvas, because rejecting
     // the result here after await would already be visibly too late.
@@ -10568,6 +10588,40 @@ function clearComparisonPreview({ keepRenderedState = false } = {}) {
 function activePreviewElement() {
   if (els.chromeProofImage?.style.display !== "none") return els.chromeProofImage;
   return els.previewCanvas.style.display !== "none" ? els.previewCanvas : els.previewImage;
+}
+
+/**
+ * The part of the presented canvas the viewer can actually see, in output
+ * pixels, or null when the whole frame is visible (Fit).
+ *
+ * Measured from the mounted canvas and the scrolling dropzone rather than from
+ * the zoom model, so centering, scroll position, comparison layouts and any
+ * future transform are all accounted for by construction. Returning null for a
+ * fully visible frame is deliberate: a Fit viewport has no offscreen tiles to
+ * skip and must keep the whole-frame path.
+ */
+function visibleOutputRect(outputWidth, outputHeight) {
+  if (!previewIsVisible()) return null;
+  const width = Math.max(1, Math.floor(Number(outputWidth) || 0));
+  const height = Math.max(1, Math.floor(Number(outputHeight) || 0));
+  const canvas = els.previewCanvas;
+  const box = canvas.getBoundingClientRect();
+  if (!(box.width > 0 && box.height > 0)) return null;
+  const viewport = els.dropzone.getBoundingClientRect();
+  const left = Math.max(box.left, viewport.left);
+  const top = Math.max(box.top, viewport.top);
+  const right = Math.min(box.right, viewport.right);
+  const bottom = Math.min(box.bottom, viewport.bottom);
+  if (right <= left || bottom <= top) return null;
+  const scaleX = width / box.width;
+  const scaleY = height / box.height;
+  const x = Math.max(0, Math.floor((left - box.left) * scaleX));
+  const y = Math.max(0, Math.floor((top - box.top) * scaleY));
+  const visibleWidth = Math.min(width - x, Math.ceil((right - left) * scaleX));
+  const visibleHeight = Math.min(height - y, Math.ceil((bottom - top) * scaleY));
+  if (!(visibleWidth > 0 && visibleHeight > 0)) return null;
+  if (x === 0 && y === 0 && visibleWidth >= width && visibleHeight >= height) return null;
+  return { x, y, width: visibleWidth, height: visibleHeight };
 }
 
 function previewIsVisible() {
