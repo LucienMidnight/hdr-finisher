@@ -1123,3 +1123,27 @@ Manual check for the owner (now without devtools):
 3. Switch back to *Whole frame* for the same edit to compare. Report anything that looks blank, stale beyond one edit, or slower than expected.
 
 Next safe edit: unchanged — coordinator extraction and generation ownership out of `app.js` (item 1), then the pan cache (item 8) if the owner's check calls for it.
+
+### 15.13 Committed checkpoint — 2026-09-22 (ROI seam found in owner review; padding mitigation)
+
+Checkpoint committed as `4f867e7` — "Pad the ROI foreground region so a small pan does not expose the old boundary".
+
+**Owner finding (visual review, screenshot supplied):** at 36% zoom with ROI refinement enabled, dragging an adjustment produced a **visible seam**: a rectangular region inside the viewport carried the new grade while the surrounding tiles kept the previous one. The owner's verdict: adjustment lag makes the seam visible, so refinement-only ROI is **not shippable as scoped**. This is the manual check 15.12 asked for, and it answers it.
+
+Diagnosis recorded:
+
+1. The seam lands **inside** the viewport because the foreground region was selected from the raw visible rect, so the tiles just outside it were never refined. The PRD's minimum-ROI padding exists for exactly this and was only being applied in the request contract, not in the renderer's foreground selection.
+2. The deeper cause is unchanged: offscreen tiles keep the accepted frame, which after an edit is one generation behind. Nothing in the current build ever brings them forward, so the seam is inevitable wherever the refined region ends — padding only moves it.
+
+Landed:
+
+- The renderer pads the requested viewport by 15% per side (clamped to the output) before selecting foreground tiles, so a small pan reuses tiles that were already refined instead of exposing the previous pass's boundary. Tiled metrics report the padded `roi` alongside the requested `viewport`.
+- Verification: 145 JS tests, 153 Python tests pass; the ROI scenario still shows the visible-region pass requesting a viewport, retaining the frame, and restricting the foreground batch.
+
+Still required before ROI refinement can ship (recorded as the next work, in priority order):
+
+1. **Progressive catch-up**: after the visible region is refined, continue refining the remaining tiles in bounded idle work until the whole frame matches the current generation. This is what removes the seam, and it is the PRD's Phase 3 progressive-pass requirement rather than an optional extra.
+2. **Pan cache** (item 8): keep refined tiles resident per display scale so a pan inside the cached region needs no work at all.
+3. Re-run the owner's check afterwards: same zoom, same edit, same pan.
+
+Until those land, the switch stays experimental and default **Whole frame**; the shipped behaviour is unaffected.
