@@ -948,7 +948,7 @@ Phase 1 exit gate accounting:
 
 Remaining Phase 1 evidence gaps, not code gaps:
 
-- Packaged-app (Electron) runs are still deferred: `node tests/run-in-electron.js` fails with `Process failed to launch!` in this environment while the Electron binary itself runs (v24.18.1).
+- **Electron launch failure resolved (2026-09-22).** The harness failure was environmental, not a defect in the app or the harness: this shell exports `ELECTRON_RUN_AS_NODE=1`, which makes `electron.exe` run as plain Node, so `desktop/main.js:24` crashed on `require("electron").app` being undefined and Playwright reported `Process failed to launch!`. Clearing the variable before launching is the fix. With it cleared, `node tests/run-in-electron.js tests/mask-graph-interaction.js` **passed in Electron**: mask influence edits issued zero mask requests, undo/redo intact, boolean operators union/intersect/subtract/subtract, and the renderer reported the settled resource set (5 local masks, 15.7 MB cached). The remaining Electron scenarios (presentation gate, failure taxonomy, batch transport, brush feather) can now be run the same way; they have not been re-run under Electron yet.
 - The Phase 0 gates (display-driven contract sign-off, retired tier selector, 42.4 MP packaged baselines) remain unsigned. See the concern in 15.6.
 - `recalculateDenoise` (analysis, as opposed to live reconstruction) is generation-guarded but not routed through the coalescing queue; a user hammering Recalculate can still start overlapping analyses. Recorded as a follow-up, not a Phase 1 gate.
 
@@ -981,5 +981,5 @@ Manual checks for the owner:
 - **Decide the Phase 0 gate**: sign off the display-driven contract and retire the tier selector, or direct the sprint back to defect remediation. Phases 2–5 integration is blocked on this decision.
 - Confirm the minimum-ROI padding default of 15% per side and the conservative `+1` source-pixel guard in the ROI-to-source mapping are the intended values.
 - Confirm the `processedPixels` definition (sum of tile haloed areas) is the figure the halo-amplification gate should report.
-- Launch `node tests/run-in-electron.js tests/mask-graph-interaction.js` in an environment where Playwright's Electron launcher works, and record the packaged evidence under `codebase/output/performance/`.
+- Launch `node tests/run-in-electron.js <scenario>` with `ELECTRON_RUN_AS_NODE` cleared (see the resolved note in 15.5) to capture packaged-path evidence for the presentation gate, failure taxonomy, batch transport, and brush-feather scenarios, and record it under `codebase/output/performance/`.
 - Capture the 42.4 MP packaged baselines the Phase 0 table requires.
