@@ -2784,6 +2784,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         // real processed area and the ratio is the halo amplification.
         viewport: plan.viewport ? { ...plan.viewport } : null,
         viewportRequested: Boolean(options.viewport),
+        roiCatchUp: Boolean(options.roiCatchUp),
         roi: foregroundRegion ? { ...foregroundRegion } : null,
         offscreenTiles: plan.tileCount - plan.visibleCount,
         foregroundTiles: processedTiles,

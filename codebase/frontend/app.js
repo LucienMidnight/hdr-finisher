@@ -405,6 +405,7 @@ const state = {
   // visible region and keeps the retained frame everywhere else. Interactive
   // pan and zoom are never ROI-limited, so they cannot show a gap.
   roiPreviewMode: "fit",
+  roiCatchUpTimer: null,
   // Live Denoise reconstruction runs through one in-flight plus one latest
   // pending state (Section 5.6), so a control drag costs runs, not events.
   denoiseInputQueue: null,
@@ -2101,6 +2102,14 @@ function initializePreviewScheduler() {
       return state.roiPreviewMode;
     },
     roiPreviewMode: () => state.roiPreviewMode,
+    roiCatchUpState: () => ({
+      timerPending: state.roiCatchUpTimer !== null,
+      mode: state.roiPreviewMode,
+      generation: state.previewGeneration[state.currentView],
+      inFlight: Boolean(state.gpuDraftInFlight),
+      error: state.roiCatchUpError || null,
+      refusal: state.lastGpuDraftRefusal,
+    }),
     visibleOutputRect: () => visibleOutputRect(els.previewCanvas.width, els.previewCanvas.height),
     // Phase 2 contract surface: build the immutable viewport request the ROI
     // path will consume. The app still requests Fit (no visible rect) until the
@@ -3983,6 +3992,8 @@ function applyExecutionOverride(value) {
   }
 }
 
+const ROI_CATCH_UP_DELAY_MS = 700;
+
 /**
  * Limit the refinement pass to the visible region, or process the whole frame.
  *
@@ -3992,11 +4003,41 @@ function applyExecutionOverride(value) {
  */
 function applyRoiPreview(value) {
   state.roiPreviewMode = value === "refinement" ? "refinement" : "fit";
+  cancelRoiCatchUp();
   renderReadouts();
   if (state.session) {
     invalidatePreview(state.currentView, { markDirty: false });
     debouncePreview(state.currentView);
   }
+}
+
+function cancelRoiCatchUp() {
+  if (state.roiCatchUpTimer === null) return;
+  clearTimeout(state.roiCatchUpTimer);
+  state.roiCatchUpTimer = null;
+}
+
+/**
+ * Bring the rest of the frame to the current generation after an ROI pass.
+ *
+ * The visible region is refined first for immediate feedback. This follow-up
+ * runs the same tier as a whole-frame pass once the user pauses, which is what
+ * closes the seam between the refined region and the tiles that kept the
+ * accepted frame. It is deliberately deferred and yields to anything newer: a
+ * new edit cancels it, and the pass it starts is superseded like any other.
+ */
+function scheduleRoiCatchUp(lane, longEdge, generation) {
+  if (state.roiPreviewMode !== "refinement") return;
+  cancelRoiCatchUp();
+  state.roiCatchUpTimer = window.setTimeout(() => {
+    state.roiCatchUpTimer = null;
+    if (state.roiPreviewMode !== "refinement") return;
+    if (!state.session || lane !== state.currentView) return;
+    if (generation !== state.previewGeneration[lane]) return;
+    state.roiCatchUpError = null;
+    renderGpuDraft(lane, { tier: "refinement", longEdge, roiCatchUp: true })
+      .catch((error) => { state.roiCatchUpError = String(error?.message || error); });
+  }, ROI_CATCH_UP_DELAY_MS);
 }
 
 function applyGpuMemoryBudget(value) {
@@ -10349,7 +10390,7 @@ function renderGpuDraft(lane = state.currentView, options = {}) {
 
 async function renderGpuDraftInner(
   lane = state.currentView,
-  { hideStatus = true, longEdge = settledProxyLongEdge(), allowInactive = false, tier = "settled" } = {},
+  { hideStatus = true, longEdge = settledProxyLongEdge(), allowInactive = false, tier = "settled", roiCatchUp = false } = {},
 ) {
   // Record why a draft declined. A silent false is very hard to diagnose from
   // a failing browser test, and every one of these is a legitimate refusal.
@@ -10383,10 +10424,12 @@ async function renderGpuDraftInner(
     // The refinement pass is the expensive one at large tiers, so that is where
     // the visible region pays off. Interactive and settled passes stay whole
     // frame: pan and zoom then always show complete pixels, and the ROI pass
-    // only improves a region that is already correct.
-    viewport: state.roiPreviewMode === "refinement" && tier === "refinement"
+    // only improves a region that is already correct. A catch-up pass is the
+    // whole-frame follow-up that closes the seam, so it never carries a viewport.
+    viewport: state.roiPreviewMode === "refinement" && tier === "refinement" && !roiCatchUp
       ? visibleOutputRect(els.previewCanvas.width, els.previewCanvas.height)
       : null,
+    roiCatchUp,
     // WebGPU renders directly into the mounted canvas. Guard inside the
     // renderer, before it resizes or submits to that canvas, because rejecting
     // the result here after await would already be visibly too late.
@@ -10415,6 +10458,10 @@ async function renderGpuDraftInner(
     if (!sourceOptions.isCurrent()) return refuse("superseded-during-render");
     state.gpuRenderRetries = 0;
     state.gpuFailurePolicy?.noteSuccess();
+    // The visible region is refined. Bring the rest of the frame to the same
+    // generation once the user pauses, so the refinement boundary stops being
+    // visible as a seam.
+    if (sourceOptions.viewport) scheduleRoiCatchUp(lane, longEdge, generation);
     state.gpuPreparedLane[lane] = true;
     setGpuSurfaceHdr(lane, result.hdr);
     els.previewImage.style.display = "none";
@@ -11261,6 +11308,9 @@ function renderLaneChrome() {
 
 function invalidatePreview(lane, { local = false, markDirty = true } = {}) {
   if (markDirty && !local) markGlobalEditDirty();
+  // A newer edit makes the pending catch-up obsolete; it would render the old
+  // generation into the frame.
+  cancelRoiCatchUp();
   state.previewGeneration[lane] += 1;
   window.HDRProofing?.invalidate(lane);
   renderCompareStatus();
