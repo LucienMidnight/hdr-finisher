@@ -942,6 +942,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // composite only the foreground tiles into it (Phase 2).
       this.lastPresentedFrame = null;
       this.presentationTarget = null;
+      // Bounded submission log for the Phase 2 stop-gate measurement.
+      this.submissionLog = [];
       this.paramBuffer = null;
       this.curveBuffer = null;
       this.curveSampleCache = new Map();
@@ -2442,6 +2444,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const flushTiles = () => {
         if (batchTiles === 0) return;
         this.device.queue.submit([encoder.finish()]);
+        this.recordSubmission(lane, options, batchTiles);
         encoder = this.device.createCommandEncoder();
         batchTiles = 0;
         submissions += 1;
@@ -2698,6 +2701,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       }
       submissions += 1;
       this.device.queue.submit([encoder.finish()]);
+      this.recordSubmission(lane, options, 0);
       } catch (error) {
         encodeError = error;
       } finally {
@@ -4276,6 +4280,24 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         this.surfaceKeys.set(canvas, key);
       }
       return { format, hdr: false };
+    }
+
+    /**
+     * Bounded submission log for the Phase 2 stop-gate measurement. Records
+     * when a tiled generation submitted and how many tiles that batch carried,
+     * so a driver can prove that a superseded generation stopped submitting
+     * within the gate instead of finishing the image.
+     */
+    recordSubmission(lane, options, tiles) {
+      if (!this.instrumentationEnabled) return;
+      this.submissionLog.push({
+        at: performance.now(),
+        lane,
+        tiles,
+        serial: options?.serial ?? null,
+        generation: Number(options?.applicationGeneration ?? 0),
+      });
+      if (this.submissionLog.length > 128) this.submissionLog.shift();
     }
 
     /**

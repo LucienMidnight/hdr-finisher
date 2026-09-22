@@ -65,6 +65,7 @@
     "test:presentation-gate": "node tests/performance/presentation-gate.js",
     "test:failure-taxonomy": "node tests/performance/failure-taxonomy.js",
     "test:denoise-input-coalescing": "node tests/performance/denoise-input-coalescing.js",
+    "test:tiled-stop-gate": "node tests/performance/tiled-stop-gate.js",
     "test:electron": "node tests/run-in-electron.js"
   },
   "devDependencies": {
