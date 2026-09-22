@@ -63,6 +63,7 @@
     "test:tier-film-consistency": "node tests/performance/tier-film-consistency.js",
     "test:tiled-mask-batch": "node tests/performance/tiled-mask-batch-transport.js",
     "test:presentation-gate": "node tests/performance/presentation-gate.js",
+    "test:failure-taxonomy": "node tests/performance/failure-taxonomy.js",
     "test:electron": "node tests/run-in-electron.js"
   },
   "devDependencies": {

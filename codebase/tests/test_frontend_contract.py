@@ -120,6 +120,28 @@ def test_presentation_gate_owns_every_presentation_resize() -> None:
     assert "superseded-before-presentation" in webgpu
 
 
+def test_failure_taxonomy_replaces_sticky_gpu_disablement() -> None:
+    markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    taxonomy = (FRONTEND / "render-failure.js").read_text(encoding="utf-8")
+
+    assert markup.index("render-failure.js") < markup.index("app.js")
+    assert "new window.HDRRenderFailurePolicy()" in javascript
+    assert "state.gpuFailurePolicy.record(error" in javascript
+    assert "state.gpuFailurePolicy?.noteSuccess()" in javascript
+    # Device loss rebuilds the device instead of disabling the session, and the
+    # old device's loss must not clear the rebuilt one's availability.
+    assert "hdrfinisher:webgpulost" in javascript
+    assert "rebuildGpuPreview" in javascript
+    assert "async rebuild()" in webgpu
+    assert "this.device !== lostDevice" in webgpu
+    # The only sticky decisions are permanent init failure and repeated
+    # validation failure, as Section 5.8 allows.
+    assert 'failure.kind === "init"' in taxonomy
+    assert "consecutiveValidation >= this.validationThreshold" in taxonomy
+
+
 def test_perspective_draft_is_bounded_before_authoring_tier_apply() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     draft = javascript[
@@ -1618,7 +1640,10 @@ def test_electron_preview_correctness_contract() -> None:
     assert "isCurrent: () => serial === state.gpuRenderSerial" in gpu_draft
     webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
     assert "sourceOptions?.isCurrent?.() === false" in webgpu
-    assert "if (error?.recoverable)" in javascript
+    # A deferred render is classified as superseded, so it returns without
+    # recording a failure and without disabling the device.
+    assert "state.gpuFailurePolicy.record(error, { superseded: Boolean(error?.recoverable) })" in gpu_draft
+    assert 'if (verdict.kind === "superseded")' in gpu_draft
     clear_straighten = javascript[
         javascript.index("function clearInteractiveStraightenPreview()"):
         javascript.index("function rotateGeometry(delta)")

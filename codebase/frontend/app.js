@@ -394,6 +394,12 @@ const state = {
   gpuDraftInFlight: null,
   gpuDraftInFlightTier: null,
   gpuDraftRefusals: {},
+  // Section 5.8 failure policy: only permanent initialization failure or
+  // repeated unrecoverable validation failure may disable WebGPU. Everything
+  // else keeps the device and the accepted frame.
+  gpuFailurePolicy: null,
+  gpuRebuildAttempts: 0,
+  gpuRenderRetries: 0,
   cpuFallbacks: { settle: [], refine: [] },
   // Application allocation budget for preview GPU work, not physical VRAM.
   gpuMemoryBudget: "auto",
@@ -1925,12 +1931,46 @@ async function boot() {
 
 async function initializeGpuPreview() {
   if (!window.HDRWebGPUPreview) return;
+  state.gpuFailurePolicy = window.HDRRenderFailurePolicy ? new window.HDRRenderFailurePolicy() : null;
   state.gpuPreview = new window.HDRWebGPUPreview(els.previewCanvas);
   // Preferences can load before or after the renderer exists, so apply the
   // stored budget here as well as on every preferences change.
   state.gpuPreview.setMemoryBudget(state.gpuMemoryBudget ?? "auto");
   await state.gpuPreview.initialize();
+  if (!state.gpuPreview.available && state.gpuFailurePolicy) {
+    // Initialization failure is the one permanent failure in Section 5.8.
+    state.gpuFailurePolicy.record(new Error(state.gpuPreview.detail || "WebGPU initialization failed"), { init: true });
+  }
   state.displayInfo.gpu = state.gpuPreview.detail;
+}
+
+/**
+ * Rebuild the GPU device after device loss, then re-render. Section 5.8 makes
+ * device loss recoverable; only a rebuild that cannot initialize is permanent,
+ * and that decision is recorded through the failure policy.
+ */
+async function rebuildGpuPreview(reason = "") {
+  if (!state.gpuPreview) return false;
+  try {
+    const rebuilt = await state.gpuPreview.rebuild();
+    if (!rebuilt) {
+      state.gpuFailurePolicy?.record(
+        new Error(state.gpuPreview.detail || reason || "WebGPU device rebuild failed"),
+        { init: true },
+      );
+      markPreviewUnavailable(`WebGPU device rebuild failed: ${state.gpuPreview.detail || reason}`);
+      return false;
+    }
+    state.gpuRebuildAttempts = 0;
+    state.displayInfo.gpu = state.gpuPreview.detail;
+    renderReadouts();
+    if (state.session) await settlePreview(state.currentView);
+    return true;
+  } catch (error) {
+    state.gpuFailurePolicy?.record(error, { init: true });
+    markPreviewUnavailable(`WebGPU device rebuild failed: ${error?.message || error}`);
+    return false;
+  }
 }
 
 function clearLegacyUiPreferences() {
@@ -3241,9 +3281,19 @@ function bindEvents() {
 
   bindCompareControl();
   window.addEventListener("hdrfinisher:webgpulost", (event) => {
-    state.displayInfo.gpu = event.detail?.message || "WebGPU device lost; using CPU fallback";
+    const message = event.detail?.message || "WebGPU device lost";
+    const verdict = state.gpuFailurePolicy?.record(new Error(message), { deviceLost: true });
+    state.displayInfo.gpu = verdict?.recoverable === false
+      ? message
+      : `${message}; rebuilding the device`;
     clearGpuSurfaceHdr();
     renderReadouts();
+    if (verdict?.recoverable !== false && state.gpuRebuildAttempts < 2) {
+      state.gpuRebuildAttempts += 1;
+      void rebuildGpuPreview(message);
+      return;
+    }
+    markPreviewUnavailable(`${message}. WebGPU could not be rebuilt for this session.`);
     if (state.session) settlePreview(state.currentView).catch(() => null);
   });
   if (window.matchMedia) {
@@ -10269,6 +10319,8 @@ async function renderGpuDraftInner(
     );
     if (!result) return refuse(state.gpuPreview.lastRenderRefusal?.reason || "renderer-returned-nothing");
     if (!sourceOptions.isCurrent()) return refuse("superseded-during-render");
+    state.gpuRenderRetries = 0;
+    state.gpuFailurePolicy?.noteSuccess();
     state.gpuPreparedLane[lane] = true;
     setGpuSurfaceHdr(lane, result.hdr);
     els.previewImage.style.display = "none";
@@ -10329,14 +10381,39 @@ async function renderGpuDraftInner(
       });
       return true;
   } catch (error) {
-    if (error?.recoverable) {
+    const verdict = state.gpuFailurePolicy
+      ? state.gpuFailurePolicy.record(error, { superseded: Boolean(error?.recoverable) })
+      : {
+        kind: error?.recoverable ? "superseded" : "transport",
+        recoverable: true,
+        retryable: false,
+        disabled: false,
+        detail: error?.message || "WebGPU draft failed",
+      };
+    if (verdict.kind === "superseded") {
       console.debug("WebGPU authoring render deferred until geometry commit.", error);
       return false;
     }
-    console.warn("WebGPU authoring render failed; using raw CPU preview.", error);
+    if (verdict.recoverable && !verdict.disabled) {
+      // Section 5.8: keep the device and the accepted frame. A retryable
+      // transport or allocation failure is re-dispatched within a bounded
+      // budget; a validation failure only counts toward the sticky threshold.
+      console.warn(`WebGPU authoring render failed (${verdict.kind}); keeping the accepted frame.`, error);
+      state.gpuPreview.detail = `${verdict.kind} failure: ${verdict.detail}`;
+      state.displayInfo.gpu = state.gpuPreview.detail;
+      renderReadouts();
+      if (verdict.retryable && state.gpuRenderRetries < 2) {
+        state.gpuRenderRetries += 1;
+        window.setTimeout(() => {
+          if (state.session) settlePreview(lane).catch(() => null);
+        }, 250);
+      }
+      return false;
+    }
+    console.warn("WebGPU authoring render failed permanently; using raw CPU preview.", error);
     state.gpuPreview.available = false;
     setGpuSurfaceHdr(lane, false);
-    state.gpuPreview.detail = error?.message || "WebGPU draft failed";
+    state.gpuPreview.detail = `${verdict.kind} failure: ${verdict.detail}`;
     state.displayInfo.gpu = state.gpuPreview.detail;
     renderReadouts();
     return false;

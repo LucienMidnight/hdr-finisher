@@ -1177,10 +1177,17 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           refine: this.createMaskPipeline("maskRefinementFragmentMain"),
           combine: this.createMaskPipeline("maskCombineFragmentMain"),
         };
+        const lostDevice = this.device;
         this.device.lost.then((info) => {
+          // A rebuild replaces the device; the old loss must not clear the new
+          // one's availability.
+          if (this.device !== lostDevice) return;
+          this.deviceLost = true;
           this.available = false;
           this.detail = `WebGPU device lost: ${info.message || info.reason}`;
-          window.dispatchEvent(new CustomEvent("hdrfinisher:webgpulost", { detail: { message: this.detail } }));
+          window.dispatchEvent(new CustomEvent("hdrfinisher:webgpulost", {
+            detail: { message: this.detail, reason: info.reason || null },
+          }));
         });
         this.available = true;
         this.detail = this.adapterInfo.fallback
@@ -1192,6 +1199,43 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         this.detail = error?.message || "WebGPU initialization failed";
         return false;
       }
+    }
+
+    /**
+     * Rebuild the device after device loss (Section 5.8).
+     *
+     * Device loss is recoverable: the device and every resource created from it
+     * are replaced and the caller re-renders. Nothing here disables WebGPU for
+     * the session; only repeated initialization failure does, and that decision
+     * belongs to the failure policy the caller records into.
+     */
+    async rebuild() {
+      const sessionId = this.sessionId;
+      this.available = false;
+      // Destroy session caches while the old device reference is still valid,
+      // then replace everything the device owned.
+      this.resetSession(sessionId);
+      this.device = null;
+      this.adapter = null;
+      this.adapterInfo = null;
+      this.context = null;
+      this.module = null;
+      this.maskModule = null;
+      this.pipelines = new Map();
+      this.surfaceKeys = new WeakMap();
+      this.bindGroupLayout = null;
+      this.pipelineLayout = null;
+      this.maskBindGroupLayout = null;
+      this.maskPipelineLayout = null;
+      this.maskPipelines = null;
+      this.scopePipeline = null;
+      this.settledScopePipeline = null;
+      this.spatialSampler = null;
+      this.paramBuffer = null;
+      this.curveBuffer = null;
+      this.peakReductionPipeline = null;
+      this.deviceLost = false;
+      return this.initialize();
     }
 
     resetSession(sessionId = null) {
