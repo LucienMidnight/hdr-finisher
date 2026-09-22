@@ -240,10 +240,10 @@ async function clipBrightness(page, clip) {
       outcome.contract?.roi && outcome.contract.roi.width > 512,
       `The viewport contract did not pad the ROI: ${JSON.stringify(outcome.contract?.roi)}`,
     );
-    // The legacy pass processes everything and retains nothing. The ROI pass
-    // reaches the scheduler with the viewport, but skipping offscreen tiles
-    // still needs the retained presentation target (Phase 2 item 4): a
-    // swap-chain texture cannot be loaded back, so the frame is redrawn whole.
+    // The legacy pass processes everything and retains nothing; the ROI pass
+    // keeps the retained frame and processes only the tiles intersecting the
+    // viewport, which is the "offscreen tiles are not part of the foreground
+    // batch" gate.
     assert(
       legacy.metrics?.retainedFrame === false && legacy.metrics?.skippedTiles === 0,
       `The legacy pass was not a full-frame pass: ${JSON.stringify(legacy.metrics)}`,
@@ -253,12 +253,17 @@ async function clipBrightness(page, clip) {
       `The legacy pass did not process every tile: ${JSON.stringify(legacy.metrics)}`,
     );
     assert(
-      outcome.metrics?.retainedFrame === false && outcome.metrics?.skippedTiles === 0,
-      `Offscreen tiles were skipped without a retained presentation target: ${JSON.stringify(outcome.metrics)}`,
+      outcome.metrics?.retainedFrame === true,
+      `The ROI pass did not retain the accepted frame: ${JSON.stringify(outcome.metrics)}`,
     );
     assert(
-      outcome.metrics.foregroundTiles === outcome.metrics.tileCount,
-      `The ROI pass did not fall back to a full-frame pass: ${JSON.stringify(outcome.metrics)}`,
+      outcome.metrics.foregroundTiles > 0
+        && outcome.metrics.foregroundTiles < outcome.metrics.tileCount,
+      `The ROI pass did not restrict the foreground batch: ${JSON.stringify(outcome.metrics)}`,
+    );
+    assert(
+      outcome.metrics.skippedTiles > 0,
+      `Offscreen tiles were still part of the foreground batch: ${JSON.stringify(outcome.metrics)}`,
     );
     // The offscreen region stays painted and materially unchanged: a pass that
     // cleared the canvas or presented a partial frame would show it.

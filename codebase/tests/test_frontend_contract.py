@@ -196,6 +196,24 @@ def test_viewport_request_contract_reaches_the_scheduler() -> None:
     assert "foregroundTiles: processedTiles," in webgpu
     assert "processedPixels: foregroundTiles.reduce(" in webgpu
     assert 'refusals: ["superseded-during-encode"]' in webgpu
+
+
+def test_retained_presentation_target_owns_the_tiled_frame() -> None:
+    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+
+    # The target survives between generations and is a copy source; the canvas
+    # is configured to be a copy destination.
+    assert "ensurePresentationTarget(proxy.width, proxy.height, surface.format)" in webgpu
+    assert "usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC," in webgpu
+    assert webgpu.count("usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST,") == 2
+    # The canvas receives the completed frame in one copy, so it is never
+    # presented cleared or half-written.
+    assert "encoder.copyTextureToTexture(\n          { texture: presentationTarget.texture }," in webgpu
+    assert "presentationTarget.valid = true;" in webgpu
+    # Retention needs a tiled frame of the same identity and format.
+    assert "previousFrame.execution === \"tiled\"" in webgpu
+    assert "previousFrame.format === surface.format" in webgpu
+    assert "execution: \"direct\"," in webgpu
     assert "outputPixels: proxy.width * proxy.height," in webgpu
 
 

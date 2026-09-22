@@ -2282,20 +2282,18 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         }
         : null;
       const previousFrame = this.lastPresentedFrame;
-      // Skipping offscreen tiles requires a presentation target that survives
-      // between generations: a swap-chain texture is undefined outside what
-      // this pass writes, so `loadOp: "load"` is not retention. Until that
-      // target exists (Phase 2 item 4) every tile stays in the batch and the
-      // frame is redrawn whole.
-      const retainedFrame = Boolean(viewport) && !measureOnly
-        && Boolean(this.presentationTarget)
-        && canvas.width === proxy.width && canvas.height === proxy.height
+      // The retained target holds the accepted frame between generations, so a
+      // viewport pass can load it and process only its foreground tiles.
+      const presentationTarget = measureOnly
+        ? null
+        : this.ensurePresentationTarget(proxy.width, proxy.height, surface.format);
+      const retainedFrame = Boolean(viewport) && Boolean(presentationTarget?.valid)
         && Boolean(previousFrame)
         && previousFrame.sessionId === options.sessionId
         && previousFrame.lane === lane
         && previousFrame.geometrySignature === geometrySignature
-        && previousFrame.width === proxy.width
-        && previousFrame.height === proxy.height;
+        && previousFrame.execution === "tiled"
+        && previousFrame.format === surface.format;
       const foregroundTiles = retainedFrame && Contract
         ? Contract.foregroundTiles(plan.tiles, viewport)
         : plan.tiles;
@@ -2447,8 +2445,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       };
       // A measurement pass must not acquire the swap chain: doing so would
       // hand it a texture sized to the canvas the viewer is looking at, and
-      // presenting it would replace their frame with a partial one.
-      const canvasView = measureOnly ? null : context.getCurrentTexture().createView();
+      // presenting it would replace their frame with a partial one. A
+      // presenting pass composites into the retained target instead and copies
+      // that to the canvas once the frame is complete.
+      const canvasView = presentationTarget ? presentationTarget.texture.createView() : null;
       const bandTileKey = (prefix, candidate) => `${prefix}|${candidate.rect.x},${candidate.rect.y},${candidate.rect.width},${candidate.rect.height}|h${candidate.halo}`;
       const intersect = (left, right) => {
         const x0 = Math.max(left.x, right.x);
@@ -2650,6 +2650,17 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         scheduler.acceptTile(tile.key, plan.generation);
       }
 
+      if (presentationTarget) {
+        // One copy hands the completed frame to the canvas: the swap chain is
+        // never presented cleared or half-written, whatever the pass did to
+        // the target.
+        encoder.copyTextureToTexture(
+          { texture: presentationTarget.texture },
+          { texture: context.getCurrentTexture() },
+          { width: proxy.width, height: proxy.height },
+        );
+        presentationTarget.valid = true;
+      }
       if (peakTarget) {
         encoder.copyTextureToBuffer(
           { texture: peakTarget.texture },
@@ -2689,6 +2700,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           geometrySignature,
           width: proxy.width,
           height: proxy.height,
+          execution: "tiled",
+          format: surface.format,
           applicationGeneration: Number(options.applicationGeneration ?? 0),
         };
       }
@@ -3322,6 +3335,18 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       } finally {
         presentation.release();
       }
+      // Direct composites straight to the canvas, so there is no retained
+      // target behind this frame and a later tiled pass must redraw it whole.
+      this.lastPresentedFrame = {
+        sessionId,
+        lane,
+        geometrySignature,
+        width: proxy.width,
+        height: proxy.height,
+        execution: "direct",
+        format: presentationSurface.format,
+        applicationGeneration: Number(sourceOptions?.applicationGeneration ?? 0),
+      };
       const submittedAt = performance.now();
       this.recordStage("grading", {
         serial,
@@ -4205,6 +4230,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
               colorSpace: "display-p3",
               toneMapping: { mode: "extended" },
               alphaMode: "opaque",
+              // The retained presentation target is copied into the canvas, so
+              // the swap-chain texture must be a copy destination.
+              usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST,
             });
             this.surfaceKeys.set(canvas, key);
           }
@@ -4216,10 +4244,53 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const format = navigator.gpu.getPreferredCanvasFormat();
       const key = `${format}:srgb:standard:${canvas.width}x${canvas.height}`;
       if (this.surfaceKeys.get(canvas) !== key) {
-        context.configure({ device: this.device, format, colorSpace: "srgb", alphaMode: "opaque" });
+        context.configure({
+          device: this.device,
+          format,
+          colorSpace: "srgb",
+          alphaMode: "opaque",
+          usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST,
+        });
         this.surfaceKeys.set(canvas, key);
       }
       return { format, hdr: false };
+    }
+
+    /**
+     * The retained presentation target (Phase 2 item 4).
+     *
+     * A swap-chain texture is undefined outside what the current pass writes,
+     * so it cannot hold the accepted frame between generations. This texture
+     * can: tiled passes composite into it, a retained pass loads its previous
+     * contents instead of clearing them, and one copy hands the completed
+     * frame to the canvas. It is tiled-only, sized to the processed output, and
+     * freed with the session.
+     */
+    ensurePresentationTarget(width, height, format) {
+      const existing = this.presentationTarget;
+      if (existing && existing.width === width && existing.height === height && existing.format === format) {
+        return existing;
+      }
+      if (existing) {
+        const previous = existing.texture;
+        this.destroyAfterActiveRenders(() => previous.destroy());
+      }
+      const texture = this.device.createTexture({
+        size: { width, height },
+        format,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+      });
+      const target = {
+        texture,
+        width,
+        height,
+        format,
+        byteSize: width * height * (format === "rgba16float" ? 8 : 4),
+        valid: false,
+      };
+      this.presentationTarget = target;
+      this.recordAllocation("presentation-surface", target.byteSize, { width, height, format });
+      return target;
     }
 
     createMaskPipeline(entryPoint) {
