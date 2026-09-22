@@ -157,3 +157,34 @@ test("compareWithLegacy only compares the intersection of the two rects", () => 
   assert.equal(result.comparedPixels, 4);
   assert.equal(result.withinTolerance, true);
 });
+
+test("foreground tiles are the ones intersecting the viewport, in plan order", () => {
+  const tiles = [
+    { rect: { x: 0, y: 0, width: 512, height: 512 } },
+    { rect: { x: 512, y: 0, width: 512, height: 512 } },
+    { rect: { x: 0, y: 512, width: 512, height: 512 } },
+    { rect: { x: 512, y: 512, width: 512, height: 512 } },
+  ];
+
+  // Fit: no viewport means every tile is foreground.
+  assert.equal(HDRViewportRequest.foregroundTiles(tiles, null).length, 4);
+
+  const corner = HDRViewportRequest.foregroundTiles(tiles, { x: 0, y: 0, width: 500, height: 500 });
+  assert.deepEqual(corner, [tiles[0]]);
+
+  // A viewport crossing the 512 boundary touches the two top tiles only.
+  const strip = HDRViewportRequest.foregroundTiles(tiles, { x: 500, y: 0, width: 100, height: 100 });
+  assert.deepEqual(strip, [tiles[0], tiles[1]]);
+
+  // A viewport entirely offscreen processes nothing.
+  assert.deepEqual(
+    HDRViewportRequest.foregroundTiles(tiles, { x: 2000, y: 2000, width: 100, height: 100 }),
+    [],
+  );
+
+  // Plain rects are accepted as well as plan entries.
+  assert.deepEqual(
+    HDRViewportRequest.foregroundTiles([tiles[0].rect], { x: 0, y: 0, width: 10, height: 10 }),
+    [tiles[0].rect],
+  );
+});

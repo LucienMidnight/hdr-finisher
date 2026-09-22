@@ -193,7 +193,9 @@ def test_viewport_request_contract_reaches_the_scheduler() -> None:
     assert "static compareWithLegacy(options = {})" in contract
     # Telemetry for processed/output pixels and halo amplification.
     assert "offscreenTiles: plan.tileCount - plan.visibleCount," in webgpu
-    assert "processedPixels: plan.tiles.reduce(" in webgpu
+    assert "foregroundTiles: processedTiles," in webgpu
+    assert "processedPixels: foregroundTiles.reduce(" in webgpu
+    assert 'refusals: ["superseded-during-encode"]' in webgpu
     assert "outputPixels: proxy.width * proxy.height," in webgpu
 
 

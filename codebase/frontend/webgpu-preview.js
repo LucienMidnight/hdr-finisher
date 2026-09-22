@@ -938,6 +938,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // every in-flight source fetch; generation checks between chunks stop a
       // superseded stream without waiting for the whole image.
       this.sourceAbort = null;
+      // What the canvas is currently showing, so an ROI pass can keep it and
+      // composite only the foreground tiles into it (Phase 2).
+      this.lastPresentedFrame = null;
+      this.presentationTarget = null;
       this.paramBuffer = null;
       this.curveBuffer = null;
       this.curveSampleCache = new Map();
@@ -1260,6 +1264,13 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // Source fetches for the session being replaced have nowhere to land.
       this.sourceAbort?.abort();
       this.sourceAbort = null;
+      // A different session has no accepted frame to retain.
+      this.lastPresentedFrame = null;
+      if (this.presentationTarget) {
+        const target = this.presentationTarget;
+        this.destroyAfterActiveRenders(() => target.texture?.destroy());
+        this.presentationTarget = null;
+      }
       this.disposeDenoiseSelectorSeam();
       this.destroyTileGraph();
       for (const entry of this.detailBandTiles.values()) entry.texture?.destroy();
@@ -2255,6 +2266,40 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       });
       const workWidth = Math.min(proxy.width, tileSize + halo * 2);
       const workHeight = Math.min(proxy.height, tileSize + halo * 2);
+      // Phase 2 foreground selection. With a viewport and an accepted frame of
+      // this exact size and identity already on the canvas, only the tiles that
+      // intersect the viewport are processed and the rest of the accepted
+      // frame is kept: offscreen tiles are not part of the foreground batch.
+      // Without a viewport, or when the canvas has nothing to retain, every
+      // tile is processed exactly as before.
+      const Contract = typeof window !== "undefined" ? window.HDRViewportRequest : null;
+      const viewport = options.viewport
+        ? {
+          x: Math.max(0, Math.floor(Number(options.viewport.x) || 0)),
+          y: Math.max(0, Math.floor(Number(options.viewport.y) || 0)),
+          width: Math.max(1, Math.floor(Number(options.viewport.width) || 1)),
+          height: Math.max(1, Math.floor(Number(options.viewport.height) || 1)),
+        }
+        : null;
+      const previousFrame = this.lastPresentedFrame;
+      // Skipping offscreen tiles requires a presentation target that survives
+      // between generations: a swap-chain texture is undefined outside what
+      // this pass writes, so `loadOp: "load"` is not retention. Until that
+      // target exists (Phase 2 item 4) every tile stays in the batch and the
+      // frame is redrawn whole.
+      const retainedFrame = Boolean(viewport) && !measureOnly
+        && Boolean(this.presentationTarget)
+        && canvas.width === proxy.width && canvas.height === proxy.height
+        && Boolean(previousFrame)
+        && previousFrame.sessionId === options.sessionId
+        && previousFrame.lane === lane
+        && previousFrame.geometrySignature === geometrySignature
+        && previousFrame.width === proxy.width
+        && previousFrame.height === proxy.height;
+      const foregroundTiles = retainedFrame && Contract
+        ? Contract.foregroundTiles(plan.tiles, viewport)
+        : plan.tiles;
+      let cancelled = false;
       const graph = this.ensureTileGraph(
         workWidth, workHeight, surface.format, proxy.pixelFormat, spatialActive, denoiseActive,
       );
@@ -2384,6 +2429,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         this.configureSurface(canvas, context, lane === "hdr");
       }
       let encodeError = null;
+      let processedTiles = 0;
       try {
       if (!measureOnly) this.scopeSources.delete(canvas);
       this.device.pushErrorScope("validation");
@@ -2431,7 +2477,17 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // Denoise reconstructs into the same encoder, one tile at a time, so this
       // loop has to be able to wait for it. Command order is call order, and
       // every tile is reconstructed before the copy that reads it.
-      for (const [index, tile] of plan.tiles.entries()) {
+      const planIndexOf = new Map(plan.tiles.map((candidate, index) => [candidate, index]));
+      const foregroundEntries = foregroundTiles.map((tile) => ({ tile, index: planIndexOf.get(tile) }));
+      for (const [position, { tile, index }] of foregroundEntries.entries()) {
+        // A superseded generation stops at a tile boundary. Nothing has been
+        // submitted yet, so it never presents a partial frame; the newer
+        // generation presents instead.
+        if (isCurrent() === false) {
+          cancelled = true;
+          break;
+        }
+        processedTiles += 1;
         const width = tile.haloRect.width;
         const height = tile.haloRect.height;
         const parameterBinding = {
@@ -2561,7 +2617,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           const peakPass = encoder.beginRenderPass({
             colorAttachments: [{
               view: peakView,
-              loadOp: index === 0 ? "clear" : "load",
+              loadOp: position === 0 ? "clear" : "load",
               clearValue: { r: 0, g: 0, b: 0, a: 0 },
               storeOp: "store",
             }],
@@ -2578,7 +2634,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           const compositeBind = bind(finishView, sourceView, overlayView);
           const compositePass = encoder.beginRenderPass({
             colorAttachments: [{
-              view: canvasView, loadOp: index === 0 ? "clear" : "load",
+              view: canvasView,
+              // A retained ROI pass loads the accepted frame and overwrites
+              // only the tiles it processed; the first full pass clears.
+              loadOp: position === 0 && !retainedFrame ? "clear" : "load",
               clearValue: { r: 0, g: 0, b: 0, a: 1 }, storeOp: "store",
             }],
           });
@@ -2598,6 +2657,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           { width: peakTarget.size, height: peakTarget.size },
         );
       }
+      if (cancelled) {
+        localBuffers.forEach((entry) => entry.buffer.destroy());
+        denoiseParamBuffers.forEach((buffer) => buffer.destroy());
+        this.recordStage("tiled-cancelled", {
+          lane, processedTiles, foregroundTiles: foregroundTiles.length,
+        });
+        return { rendered: false, refusals: ["superseded-during-encode"] };
+      }
       this.device.queue.submit([encoder.finish()]);
       } catch (error) {
         encodeError = error;
@@ -2612,6 +2679,18 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         if (peakTarget) peakTarget.busy = false;
         this.recordStage("tiled-validation-error", { message: validationError.message });
         return { rendered: false, refusals: [`validation: ${validationError.message}`] };
+      }
+      if (!measureOnly) {
+        // What the canvas now shows. A later ROI pass of this exact size and
+        // identity may keep it and process only its foreground tiles.
+        this.lastPresentedFrame = {
+          sessionId: options.sessionId,
+          lane,
+          geometrySignature,
+          width: proxy.width,
+          height: proxy.height,
+          applicationGeneration: Number(options.applicationGeneration ?? 0),
+        };
       }
       // Taken now, while this generation's grid is still the one in the
       // target. It is an exact maximum over every pixel the tiles covered, and
@@ -2652,7 +2731,12 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         // real processed area and the ratio is the halo amplification.
         viewport: plan.viewport ? { ...plan.viewport } : null,
         offscreenTiles: plan.tileCount - plan.visibleCount,
-        processedPixels: plan.tiles.reduce(
+        foregroundTiles: processedTiles,
+        skippedTiles: plan.tileCount - processedTiles,
+        retainedFrame,
+        cancelled,
+        // Only the tiles this pass actually processed contribute work.
+        processedPixels: foregroundTiles.reduce(
           (sum, tile) => sum + tile.haloRect.width * tile.haloRect.height, 0,
         ),
         outputPixels: proxy.width * proxy.height,

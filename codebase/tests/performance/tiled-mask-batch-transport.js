@@ -31,6 +31,26 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+async function clipBrightness(page, clip) {
+  const png = await page.screenshot({ clip });
+  return page.evaluate(async (source) => {
+    const image = new Image();
+    image.src = source;
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = 32;
+    canvas.height = 32;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    context.drawImage(image, 0, 0, 32, 32);
+    const pixels = context.getImageData(0, 0, 32, 32).data;
+    let total = 0;
+    for (let index = 0; index < pixels.length; index += 4) {
+      total += (pixels[index] + pixels[index + 1] + pixels[index + 2]) / 3;
+    }
+    return total / (pixels.length / 4);
+  }, `data:image/png;base64,${png.toString("base64")}`);
+}
+
 (async () => {
   const url = argument("--url", process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765");
   const output = argument("--output", path.join("output", "performance", "tiled-mask-batch-transport.json"));
@@ -94,10 +114,33 @@ function assert(condition, message) {
     // is a different defect; this scenario measures transport.
     await page.evaluate(() => applyExecutionOverride("tiled"));
     await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 300000 });
-    const outcome = await page.evaluate(async () => {
-      const longEdge = Math.max(state.session.source.width, state.session.source.height);
-      const viewport = { x: 0, y: 0, width: 512, height: 512 };
-      const rendered = await window.HDRFinisherPerformance.renderTiledTier(longEdge, { viewport });
+    // A legacy pass first: no viewport, every tile foreground, nothing kept.
+    const longEdge = await page.evaluate(
+      () => Math.max(state.session.source.width, state.session.source.height),
+    );
+    const legacy = await page.evaluate(async (edge) => {
+      const rendered = await window.HDRFinisherPerformance.renderTiledTier(edge);
+      return {
+        rendered: Boolean(rendered && rendered.rendered),
+        refusals: (rendered && rendered.refusals) || [],
+        metrics: window.HDRFinisherPerformance.tiledExecutionMetrics(),
+      };
+    }, longEdge);
+
+    // The region the ROI pass must not touch, captured before it runs.
+    const canvasBox = await page.locator("#preview-canvas").boundingBox();
+    const offscreenClip = {
+      x: canvasBox.x + canvasBox.width * 0.6,
+      y: canvasBox.y,
+      width: canvasBox.width * 0.4,
+      height: canvasBox.height,
+    };
+    const offscreenBefore = await clipBrightness(page, offscreenClip);
+
+    // The ROI pass: only tiles intersecting the viewport are processed, and the
+    // accepted frame is kept everywhere else.
+    const outcome = await page.evaluate(async ({ edge, viewport }) => {
+      const rendered = await window.HDRFinisherPerformance.renderTiledTier(edge, { viewport });
       return {
         rendered: Boolean(rendered && rendered.rendered),
         refusals: (rendered && rendered.refusals) || [],
@@ -106,7 +149,8 @@ function assert(condition, message) {
         contract: window.HDRFinisherPerformance.viewportRequest({ visible: viewport }),
         transport: window.__maskTransport,
       };
-    });
+    }, { edge: longEdge, viewport: { x: 0, y: 0, width: 512, height: 512 } });
+    const offscreenAfter = await clipBrightness(page, offscreenClip);
 
     const transport = outcome.transport;
     const batchTiles = transport.batch.map((entry) => entry.tiles);
@@ -115,6 +159,18 @@ function assert(condition, message) {
       execution: outcome.execution,
       rendered: outcome.rendered,
       refusals: outcome.refusals,
+      legacy: {
+        rendered: legacy.rendered,
+        foregroundTiles: legacy.metrics?.foregroundTiles ?? null,
+        skippedTiles: legacy.metrics?.skippedTiles ?? null,
+        retainedFrame: legacy.metrics?.retainedFrame ?? null,
+      },
+      roi: {
+        foregroundTiles: outcome.metrics?.foregroundTiles ?? null,
+        skippedTiles: outcome.metrics?.skippedTiles ?? null,
+        retainedFrame: outcome.metrics?.retainedFrame ?? null,
+        offscreenBrightness: { before: offscreenBefore, after: offscreenAfter },
+      },
       batchRequests: transport.batch.length,
       perTileRequests: transport.perTile.length,
       batchTiles,
@@ -183,6 +239,36 @@ function assert(condition, message) {
     assert(
       outcome.contract?.roi && outcome.contract.roi.width > 512,
       `The viewport contract did not pad the ROI: ${JSON.stringify(outcome.contract?.roi)}`,
+    );
+    // The legacy pass processes everything and retains nothing. The ROI pass
+    // reaches the scheduler with the viewport, but skipping offscreen tiles
+    // still needs the retained presentation target (Phase 2 item 4): a
+    // swap-chain texture cannot be loaded back, so the frame is redrawn whole.
+    assert(
+      legacy.metrics?.retainedFrame === false && legacy.metrics?.skippedTiles === 0,
+      `The legacy pass was not a full-frame pass: ${JSON.stringify(legacy.metrics)}`,
+    );
+    assert(
+      legacy.metrics?.foregroundTiles === legacy.metrics?.tileCount,
+      `The legacy pass did not process every tile: ${JSON.stringify(legacy.metrics)}`,
+    );
+    assert(
+      outcome.metrics?.retainedFrame === false && outcome.metrics?.skippedTiles === 0,
+      `Offscreen tiles were skipped without a retained presentation target: ${JSON.stringify(outcome.metrics)}`,
+    );
+    assert(
+      outcome.metrics.foregroundTiles === outcome.metrics.tileCount,
+      `The ROI pass did not fall back to a full-frame pass: ${JSON.stringify(outcome.metrics)}`,
+    );
+    // The offscreen region stays painted and materially unchanged: a pass that
+    // cleared the canvas or presented a partial frame would show it.
+    assert(
+      offscreenAfter > 4,
+      `The ROI pass left the offscreen region blank: brightness ${offscreenAfter}`,
+    );
+    assert(
+      Math.abs(offscreenAfter - offscreenBefore) < 12,
+      `The ROI pass changed the offscreen region: ${offscreenBefore} -> ${offscreenAfter}`,
     );
 
     fs.mkdirSync(path.dirname(output), { recursive: true });

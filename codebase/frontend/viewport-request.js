@@ -231,6 +231,26 @@
     static sameRect(a, b) {
       return Boolean(a && b) && sameRect(a, b);
     }
+
+    /**
+     * The tiles a foreground pass must process for one viewport: those that
+     * intersect the visible region, in the plan's own order.
+     *
+     * Offscreen tiles are not part of the foreground batch (Phase 2 exit
+     * gate). They stay resident for the pan cache and are refreshed only when
+     * the viewport reaches them; the accepted frame keeps their pixels until
+     * then. With no viewport every tile is foreground, which is Fit.
+     */
+    static foregroundTiles(tiles, viewport) {
+      const list = Array.isArray(tiles) ? tiles : [];
+      if (!viewport) return list;
+      return list.filter((entry) => {
+        const rect = entry && entry.rect ? entry.rect : entry;
+        if (!rect) return false;
+        return rect.x < viewport.x + viewport.width && viewport.x < rect.x + rect.width
+          && rect.y < viewport.y + viewport.height && viewport.y < rect.y + rect.height;
+      });
+    }
   }
 
   if (typeof window !== "undefined") window.HDRViewportRequest = HDRViewportRequest;
