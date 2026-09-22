@@ -1236,3 +1236,29 @@ Next safe edit:
 2. Legacy-versus-ROI parity run (item 9) once the coordinator owns generation.
 3. If the owner's repeat check still shows first-scroll staleness, the next lever is prefetching the strip in the pan's direction rather than more cache work.
 
+### 15.17 Owner acceptance — 2026-09-22 (pan cache passes)
+
+Owner check repeated on the build from 15.16, at Full tier on a large source with the ROI switch on. Owner's words: **working great**; aggressive scrolling still shows some boundaries, but that is **within acceptable limits**.
+
+What this closes:
+
+- **Phase 2 item 8 (display-scale pan cache) is accepted.** The first-scroll residual recorded in 15.15 — the unadjusted boundary visible until the deferred catch-up runs — is now within the owner's tolerance.
+- The mechanism the owner exercised is the committed one: the paused-scroll follow-up at the resident tier, cache reuse for tiles already current at this generation, and the deferred whole-frame catch-up still converging the rest.
+
+Recorded residual, accepted rather than fixed:
+
+- **Aggressive continuous scrolling can still show boundaries.** The pan follow-up is scheduled only after the scroll pauses (`ROI_PAN_DELAY_MS = 140`), so while the viewer is still moving, a fast-exposed strip may briefly carry an older grade; the catch-up closes it once movement stops. This is a latency characteristic of a non-blocking pan, not a mixed-generation presentation: the retained frame is copied whole and only whole tiles at the pass's own generation are composited.
+- If the owner later wants the boundary gone during movement rather than only after it, the lever recorded in 15.16 stands: prefetch the strip in the pan's direction while the scroll is in progress.
+
+Gate status:
+
+- Phase 2 item 8: **owner-accepted**; automated evidence and the honest caveats remain in 15.16.
+- The catch-up runtime assertion from 15.14 remains closed by `tests/performance/roi-catch-up.js`.
+- Suites unchanged since 15.16: **148 JS**, **154 Python**.
+
+Next safe edit:
+
+1. Coordinator extraction and generation ownership out of `app.js` (item 1): the pan cache and the catch-up driver are committed and owner-accepted, so the sprint instruction's gate for starting item 1 is lifted.
+2. Legacy-versus-ROI parity run (item 9) once the coordinator owns generation.
+
+
