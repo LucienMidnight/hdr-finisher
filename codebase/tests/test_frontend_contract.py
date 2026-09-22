@@ -161,6 +161,22 @@ def test_live_denoise_input_is_coalesced() -> None:
     assert "this.stats.coalesced += 1;" in queue
 
 
+def test_source_transport_carries_abort_and_generation_checks() -> None:
+    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+
+    # A replaced session aborts source work that has nowhere to land.
+    assert "this.sourceAbort?.abort();" in webgpu
+    assert "sourceAbortSignal()" in webgpu
+    # Both source routes take the caller's currency check and stop early.
+    assert "supersededSourceError" in webgpu
+    assert 'assertCurrent("Source tile stream was superseded")' in webgpu
+    assert 'assertCurrent("Source tile probe was superseded")' in webgpu
+    assert 'throw supersededSourceError("Source proxy was superseded")' in webgpu
+    # The presenting renderers pass their currency into the proxy load.
+    assert webgpu.count("isCurrent: () => resourceGeneration === this.resourceGeneration") == 2
+    assert "{ isCurrent: sourceOptions?.isCurrent }" in webgpu
+
+
 def test_perspective_draft_is_bounded_before_authoring_tier_apply() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     draft = javascript[

@@ -871,6 +871,19 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     };
   }
 
+  /**
+   * A superseded source request is not a failure: nothing is wrong with the
+   * device or the graph, the caller simply stopped wanting this frame. It is
+   * recoverable and marked superseded so the failure policy keeps the device
+   * and the accepted frame without counting it as a defect.
+   */
+  function supersededSourceError(message) {
+    const error = new Error(message || "Source preparation was superseded");
+    error.recoverable = true;
+    error.superseded = true;
+    return error;
+  }
+
   class HDRWebGPUPreview {
     static directPreviewMemoryModel(width, height, options = {}) {
       return directPreviewMemoryModel(width, height, options);
@@ -921,6 +934,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.renderSerials = new WeakMap();
       const PresentationGate = typeof window !== "undefined" ? window.HDRPresentationGate : null;
       this.presentationGate = PresentationGate ? new PresentationGate() : null;
+      // Session-scoped abort for source transport. Replacing the session aborts
+      // every in-flight source fetch; generation checks between chunks stop a
+      // superseded stream without waiting for the whole image.
+      this.sourceAbort = null;
       this.paramBuffer = null;
       this.curveBuffer = null;
       this.curveSampleCache = new Map();
@@ -1240,6 +1257,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
 
     resetSession(sessionId = null) {
       this.resourceGeneration += 1;
+      // Source fetches for the session being replaced have nowhere to land.
+      this.sourceAbort?.abort();
+      this.sourceAbort = null;
       this.disposeDenoiseSelectorSeam();
       this.destroyTileGraph();
       for (const entry of this.detailBandTiles.values()) entry.texture?.destroy();
@@ -1911,7 +1931,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const sourceIdentity = sourceOptions?.identity || "source";
       const activeLocals = activeGpuLocals(lane, localAdjustments);
 
-      const proxy = await this.loadProxy(sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity);
+      const proxy = await this.loadProxy(
+        sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity,
+        { isCurrent: sourceOptions?.isCurrent },
+      );
       if (!proxy) return { rendered: false, refusals: ["source proxy unavailable"] };
 
       const context = canvas.getContext("webgpu");
@@ -2683,6 +2706,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         geometrySignature,
         editRevision,
         sourceIdentity,
+        {
+          isCurrent: () => resourceGeneration === this.resourceGeneration
+            && serial === this.renderSerials.get(canvas)
+            && sourceOptions?.isCurrent?.() !== false,
+        },
       );
       const proxyReadyAt = performance.now();
       if (resourceGeneration !== this.resourceGeneration
@@ -3308,7 +3336,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       if (!this.available || !sessionId) return false;
       const generation = ++this.denoiseSelectorGeneration;
       const geometrySignature = JSON.stringify(adjustments?.shared?.geometry || {});
-      const original = await this.loadProxy(sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity);
+      const original = await this.loadProxy(sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, {
+        isCurrent: () => generation === this.denoiseSelectorGeneration && this.sessionId === sessionId,
+      });
       if (!original) return false;
       if (generation !== this.denoiseSelectorGeneration || this.sessionId !== sessionId) return false;
       const pipelines = await this.ensureDenoisePipelines();
@@ -3729,7 +3759,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       if (!this.available || !sessionId) return false;
       const generation = ++this.denoiseSelectorGeneration;
       const geometrySignature = JSON.stringify(adjustments?.shared?.geometry || {});
-      const original = await this.loadProxy(sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity);
+      const original = await this.loadProxy(sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, {
+        isCurrent: () => generation === this.denoiseSelectorGeneration && this.sessionId === sessionId,
+      });
       if (!original) return false;
       if (generation !== this.denoiseSelectorGeneration || this.sessionId !== sessionId) return false;
       const startedAt = performance.now();
@@ -4469,21 +4501,38 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
      * Returns null when the backend declines the tile route, so the caller can
      * fall back to the whole-frame request rather than failing the render.
      */
-    async loadProxyStreamed(sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key) {
+    /**
+     * Session-scoped abort signal for source transport. The renderer never
+     * aborts on its own: callers pass their currency check, and replacing the
+     * session aborts everything still in flight for the old one.
+     */
+    sourceAbortSignal() {
+      if (typeof AbortController === "undefined") return undefined;
+      if (!this.sourceAbort) this.sourceAbort = new AbortController();
+      return this.sourceAbort.signal;
+    }
+
+    async loadProxyStreamed(sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key, options = {}) {
       const startedAt = performance.now();
+      const signal = options.signal || this.sourceAbortSignal();
+      const isCurrent = typeof options.isCurrent === "function" ? options.isCurrent : null;
+      const assertCurrent = (message) => {
+        if (isCurrent && isCurrent() === false) throw supersededSourceError(message);
+      };
       const query = (rect) => `/api/session/${sessionId}/source-tile/${lane}`
         + `?long_edge=${longEdge}&format=rgba16f&edit_revision=${editRevision}`
         + `&geometry_signature=${encodeURIComponent(geometrySignature)}`
         + `&x=${rect.x}&y=${rect.y}&width=${rect.width}&height=${rect.height}`
         + (rect.epoch === undefined ? "" : `&source_epoch=${rect.epoch}`);
 
-      const probe = await fetch(query({ x: 0, y: 0, width: 1, height: 1 }));
+      const probe = await fetch(query({ x: 0, y: 0, width: 1, height: 1 }), { signal });
       if (!probe.ok) {
         // 409 here means this geometry cannot be served as tiles, or the
         // request is already stale. Either way the caller decides what next.
         await probe.arrayBuffer().catch(() => null);
         return null;
       }
+      assertCurrent("Source tile probe was superseded");
       const width = Number(probe.headers.get("X-Output-Width"));
       const height = Number(probe.headers.get("X-Output-Height"));
       const pixelFormat = probe.headers.get("X-Pixel-Format") || "rgba16float";
@@ -4519,7 +4568,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       try {
         for (let top = 0; top < height; top += rowsPerChunk) {
           const rows = Math.min(rowsPerChunk, height - top);
-          const response = await fetch(query({ x: 0, y: top, width, height: rows, epoch: sourceEpoch }));
+          assertCurrent("Source tile stream was superseded");
+          const response = await fetch(query({ x: 0, y: top, width, height: rows, epoch: sourceEpoch }), { signal });
           if (!response.ok) {
             const payload = await response.json().catch(() => null);
             const error = new Error(payload?.detail || "A source tile could not be loaded");
@@ -4560,6 +4610,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           } finally {
             staging.destroy();
           }
+          // A superseded stream stops here rather than fetching the rest of an
+          // image the caller no longer wants.
+          assertCurrent("Source tile stream was superseded");
         }
       } catch (error) {
         this.destroyAfterActiveRenders(() => texture.destroy());
@@ -4611,13 +4664,15 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return proxy;
     }
 
-    async loadProxy(sessionId, lane, longEdge, geometrySignature = "{}", editRevision = 0, sourceIdentity = "source") {
+    async loadProxy(sessionId, lane, longEdge, geometrySignature = "{}", editRevision = 0, sourceIdentity = "source", options = {}) {
       const key = `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}`;
       if (this.proxies.has(key)) {
         this.recordStage("proxy-request", { lane, longEdge, cacheHit: true });
         return this.proxies.get(key);
       }
       if (this.proxyInflight.has(key)) return this.proxyInflight.get(key);
+      const signal = options.signal || this.sourceAbortSignal();
+      const isCurrent = typeof options.isCurrent === "function" ? options.isCurrent : null;
       const pending = (async () => {
         const startedAt = performance.now();
         // A whole-frame response above the chunk budget is exactly the
@@ -4626,10 +4681,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         if (longEdge * longEdge * 8 > this.maxSourceChunkBytes) {
           const streamed = await this.loadProxyStreamed(
             sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key,
+            { signal, isCurrent },
           );
           if (streamed) return streamed;
         }
-        const response = await fetch(`/api/session/${sessionId}/proxy/${lane}?long_edge=${longEdge}&format=rgba16f&edit_revision=${editRevision}&geometry_signature=${encodeURIComponent(geometrySignature)}`);
+        const response = await fetch(`/api/session/${sessionId}/proxy/${lane}?long_edge=${longEdge}&format=rgba16f&edit_revision=${editRevision}&geometry_signature=${encodeURIComponent(geometrySignature)}`, { signal });
         if (!response.ok) {
           const payload = await response.json().catch(() => null);
           const error = new Error(payload?.detail || (response.status === 409
@@ -4652,6 +4708,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           error.recoverable = true;
           throw error;
         }
+        // The proxy is only uploaded if the caller still wants this frame.
+        if (isCurrent && isCurrent() === false) throw supersededSourceError("Source proxy was superseded");
         const texture = this.device.createTexture({
           size: { width, height },
           format: pixelFormat,

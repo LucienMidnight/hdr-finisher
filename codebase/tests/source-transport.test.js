@@ -23,6 +23,7 @@ function loadPreview(fetchImpl) {
     performance: { now: () => Date.now() },
     console,
     fetch: fetchImpl,
+    AbortController,
     GPUTextureUsage: {
       COPY_SRC: 1, COPY_DST: 2, TEXTURE_BINDING: 4, STORAGE_BINDING: 8, RENDER_ATTACHMENT: 16,
     },
@@ -333,4 +334,76 @@ test("a second request for the same proxy is single-flighted, not re-fetched", a
   const cached = await preview.loadProxy("session", "hdr", 4096, "{}", 0, "source");
   assert.equal(cached, first);
   assert.equal(backend.requests.length, before, "a cached proxy must issue no requests");
+});
+
+test("a superseded source stream stops fetching and destroys the partial texture", async () => {
+  const backend = createBackend({ width: 512, height: 512 });
+  let current = true;
+  let chunkResponses = 0;
+  const fetchImpl = async (url, init) => {
+    const response = await backend.fetchImpl(url, init);
+    if (url.includes("/source-tile/") && !url.includes("width=1&height=1")) {
+      chunkResponses += 1;
+      if (chunkResponses === 1) current = false;
+    }
+    return response;
+  };
+  const Preview = loadPreview(fetchImpl);
+  const preview = new Preview(null);
+  const harness = createDevice();
+  preview.device = harness.device;
+  preview.instrumentationEnabled = true;
+  preview.maxSourceChunkBytes = 512 * 8 * 256; // exactly 256 rows per chunk
+
+  await assert.rejects(
+    () => preview.loadProxyStreamed("session", "hdr", 512, "{}", 0, "source", "key", {
+      isCurrent: () => current,
+    }),
+    (error) => {
+      assert.equal(error.recoverable, true);
+      assert.equal(error.superseded, true);
+      return true;
+    },
+  );
+
+  // Probe plus exactly one chunk: the second chunk was never requested.
+  const tileRequests = backend.requests.filter((url) => url.includes("/source-tile/"));
+  assert.equal(tileRequests.length, 2, "a superseded stream must stop fetching");
+  assert.equal(preview.proxies.size, 0);
+  assert.equal(harness.textures.length, 1);
+  assert.equal(harness.textures[0].destroyed, true, "the partial texture must be destroyed");
+});
+
+test("a superseded whole-frame proxy is never uploaded", async () => {
+  const backend = createBackend({ width: 256, height: 256 });
+  const Preview = loadPreview(backend.fetchImpl);
+  const preview = new Preview(null);
+  const harness = createDevice();
+  preview.device = harness.device;
+  preview.instrumentationEnabled = true;
+
+  await assert.rejects(
+    () => preview.loadProxy("session", "hdr", 256, "{}", 0, "source", { isCurrent: () => false }),
+    (error) => {
+      assert.equal(error.recoverable, true);
+      assert.equal(error.superseded, true);
+      return true;
+    },
+  );
+  assert.equal(harness.textures.length, 0, "no texture is created for a superseded proxy");
+  assert.equal(preview.proxies.size, 0);
+});
+
+test("replacing the session aborts in-flight source transport", () => {
+  const backend = createBackend({ width: 64, height: 64 });
+  const Preview = loadPreview(backend.fetchImpl);
+  const preview = new Preview(null);
+  preview.device = createDevice().device;
+
+  const signal = preview.sourceAbortSignal();
+  assert.equal(signal.aborted, false);
+  preview.resetSession("next-session");
+  assert.equal(signal.aborted, true);
+  assert.notEqual(preview.sourceAbortSignal(), signal, "a new session gets a fresh signal");
+  assert.equal(preview.sourceAbortSignal().aborted, false);
 });
