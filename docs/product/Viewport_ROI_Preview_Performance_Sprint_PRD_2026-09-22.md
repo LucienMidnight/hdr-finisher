@@ -1050,7 +1050,7 @@ Verification at this checkpoint:
 Stop-gate status:
 
 - "Offscreen tiles are not part of the foreground batch": **passed** (15.8, re-proven here).
-- "A new input stops further obsolete submissions within 50 ms": **mechanism in place and bounded by one four-tile batch**; the wall-clock 50 ms number still needs a reference-hardware measurement with a rapid-input driver, which is not yet built. Recorded as the next measurement item, not a code item.
+- "A new input stops further obsolete submissions within 50 ms": **measured and passed, with a correction to the mechanism claim.** Driver committed as `9f3f3c3` (`tests/performance/tiled-stop-gate.js`, instrumentation-only submission log in the renderer). Two consecutive 42.4 MP tiled passes with Denoise active: each generation submitted **45 batches** and its entire encode phase spanned **8.2 ms** and **7.1 ms**, with **zero stale submissions** after supersession, and both passes presented on WebGPU. The correction: the tile-boundary currency check can only fire where the encoder yields, and a JavaScript encode loop is atomic between awaits, so a timer cannot interrupt a non-Denoise pass mid-loop. What actually bounds obsolete work is that one generation's encode phase is far shorter than the gate; the phases that *can* outlive a supersession (mask and proxy transport) are aborted by the coordinator and the generation checks. The 50 ms gate is therefore met structurally, not by mid-loop interruption, and the ledger records that distinction rather than claiming an interruption that does not occur.
 - "Warm pan renders only newly exposed tiles" and "ROI pointwise output matches a crop of the legacy render": still pending the app-side visible rect and the parity tolerances.
 
 Next safe edit:
@@ -1058,3 +1058,19 @@ Next safe edit:
 1. Coordinator extraction and generation ownership out of `app.js` (item 1), which is also what supplies the real visible rect (item 3) and lets the pan cache (item 8) be measured.
 2. Build the rapid-input stop-gate driver: fire edits during a 42.4 MP tiled pass and record the time from input to the last obsolete submission.
 3. Legacy-versus-ROI switch integration and the parity run (items 9 and the Phase 0 tolerances).
+
+### 15.10 Committed checkpoint — 2026-09-22 (stop-gate measurement)
+
+Checkpoint committed as `9f3f3c3` — "Measure the Phase 2 stop gate on a 42.4 MP tiled pass".
+
+Landed:
+
+- **Submission instrumentation.** The renderer keeps a bounded (128-entry) submission log when `instrumentationEnabled` is set: time, lane, tiles per batch, render serial, and application generation. Diagnostics only; it changes no rendering behaviour.
+- **Stop-gate driver** (`tests/performance/tiled-stop-gate.js`, `npm run test:tiled-stop-gate`): imports the 42.4 MP fixture, enables a local and Denoise, forces tiled, warms the proxy/mask caches, then runs two consecutive tiled passes and supersedes the first mid-pass.
+- **Measured result:** both generations submitted 45 batches (176 tiles at batch size four plus the final copy), encode phases spanned **8.2 ms** and **7.1 ms**, **zero** stale submissions after supersession, no stale submission after the newer generation's first submit, both passes presented, viewer Ready on WebGPU.
+- **Correction recorded:** the tile-boundary currency check fires only where the encoder yields. A JavaScript encode loop is atomic between awaits, so a timer cannot interrupt a non-Denoise pass mid-loop; with Denoise the per-tile awaits exist, but a warm 42.4 MP pass still finishes in under 10 ms. Obsolete work is therefore bounded by the encode-phase duration rather than by mid-loop interruption, and the phases that can genuinely outlive a supersession — mask and proxy transport — are aborted by the coordinator and generation checks. The gate passes on that basis, and the ledger says so plainly instead of claiming an interruption that does not occur.
+
+Next safe edit (unchanged, now with the measurement closed):
+
+1. Coordinator extraction and generation ownership out of `app.js` (item 1) — the next substantial unit; it also supplies the real visible rect (item 3) and makes the pan cache (item 8) measurable.
+2. Legacy-versus-ROI switch integration and the parity run (items 9 and the Phase 0 tolerances).
