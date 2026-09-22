@@ -91,7 +91,33 @@ def test_local_bypass_renders_optimistically_and_tiled_masks_ignore_grade_revisi
     assert bypass.index("scheduleLocalPreview();") < bypass.index('queueEditCommand(')
     assert "{ refreshPreview: false }" in bypass
     assert "editRevision}:${signature}" not in tile_loader
-    assert "geometrySignature}:${signature}:${tile.key}" in tile_loader
+    assert "geometrySignature}:${signature}:" in tile_loader
+    assert "${prefix}${tile.key}" in tile_loader
+
+
+def test_tiled_mask_transport_is_batched_not_one_request_per_tile() -> None:
+    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    loader = webgpu[
+        webgpu.index("async loadLocalMaskTiles"):
+        webgpu.index("trimMaskTiles", webgpu.index("async loadLocalMaskTiles"))
+    ]
+
+    assert "/local-mask-tiles" in loader
+    assert "/local-mask-tile/" not in loader
+    assert "this.maskTileBatch.plan({ locals: activeLocals, tiles: plan.tiles })" in webgpu
+
+
+def test_presentation_gate_owns_every_presentation_resize() -> None:
+    markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+
+    assert markup.index("presentation-gate.js") < markup.index("webgpu-preview.js")
+    assert webgpu.count("presentationGate.acquire(") == 2
+    # The gate's two callbacks are the only places the presented canvas is
+    # resized. A resize anywhere else can clear the accepted frame while
+    # another generation is encoding against it.
+    assert webgpu.count("if (canvas.width !== proxy.width) canvas.width = proxy.width;") == 2
+    assert "superseded-before-presentation" in webgpu
 
 
 def test_perspective_draft_is_bounded_before_authoring_tier_apply() -> None:
@@ -103,6 +129,21 @@ def test_perspective_draft_is_bounded_before_authoring_tier_apply() -> None:
 
     assert "Math.min(previewTargetLongEdge(), 1024)" in draft
     assert "long_edge: perspectiveDraftLongEdge()" in draft
+
+
+def test_native_exact_peak_is_explicit_opt_in_during_authoring() -> None:
+    markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    script = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    exact_peak_input = re.search(r'<input type="checkbox" id="scope-exact-peak"([^>]*)>', markup)
+    assert exact_peak_input is not None
+    assert "checked" not in exact_peak_input.group(1)
+    assert "scopeExactPeak: false" in script
+    initialization = script[
+        script.index("function initializePreviewPreferences"):
+        script.index("function initializePreviewScheduler")
+    ]
+    assert "state.scopeExactPeak = false;" in initialization
 
 
 def test_brand_assets_and_fonts_are_bundled_locally() -> None:
@@ -1491,16 +1532,20 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     assert 'sourceOptions?.tier !== "interactive"' in webgpu
     render_to = webgpu[webgpu.index("async renderTo(canvas"):webgpu.index("async analyzeDenoiseProxy")]
     # Resizing a visible canvas clears its presented frame, so the peak
-    # measurement must complete before the resize and the submit must follow it
-    # with nothing awaited in between. A settled draft that loses its race
-    # returns false, and the scheduler answers that with a full CPU preview,
-    # which the user sees as a black flash. Any future move to anchor on the
-    # finished picture has to schedule a refinement rather than await here.
-    assert render_to.index("await this.measureToneAdjustedPeak") < render_to.index("canvas.width = proxy.width")
-    presentation = render_to[render_to.index("canvas.width = proxy.width"):]
-    direct_presentation = presentation[presentation.index("const intermediate = this.ensureIntermediate"):]
-    direct_presentation = direct_presentation[:direct_presentation.index("this.device.queue.submit")]
-    assert "await" not in direct_presentation
+    # measurement must complete before the resize. The resize itself happens
+    # inside the presentation gate, and the submit follows it with nothing
+    # awaited: presentation is one critical section, so a resized, cleared
+    # canvas is never left on screen while work is pending. A settled draft that
+    # loses its race returns false, and the scheduler answers that with a full
+    # CPU preview, which the user sees as a black flash. Any future move to
+    # anchor on the finished picture has to schedule a refinement rather than
+    # await here.
+    assert render_to.index("await this.measureToneAdjustedPeak") < render_to.index(
+        "if (canvas.width !== proxy.width) canvas.width = proxy.width;"
+    )
+    presentation = render_to[render_to.index("if (canvas.width !== proxy.width) canvas.width = proxy.width;"):]
+    presentation = presentation[:presentation.index("this.device.queue.submit")]
+    assert "await" not in presentation
     # The tiled helper is awaited for its validation result, but it encodes and
     # submits synchronously before its first await. Thus the caller cannot expose
     # a resized, cleared canvas while tiled work is pending either.

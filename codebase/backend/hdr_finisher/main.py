@@ -4,6 +4,7 @@ import atexit
 import json
 import os
 import secrets
+import struct
 import time
 from time import perf_counter
 from pathlib import Path
@@ -50,6 +51,7 @@ from .models import (
     LocalLuminanceSampleRequest,
     LocalLuminanceSampleResponse,
     LocalMaskPreviewRequest,
+    LocalMaskTileBatchRequest,
     MaskExpression,
     PreviewKind,
     PreviewRequest,
@@ -931,6 +933,51 @@ def webgpu_source_tile(
     )
 
 
+MASK_TILE_BATCH_MAGIC = b"HDRMTB1\n"
+
+
+def _slice_mask_tile(
+    mask: np.ndarray,
+    x: int,
+    y: int,
+    width: int,
+    height: int,
+    halo: int,
+) -> tuple[dict[str, int], bytes] | None:
+    """Slice one globally anchored tile out of a compiled mask.
+
+    Returns the clamped tile/core geometry and the r8 payload, or ``None``
+    when the requested rectangle lies entirely outside the compiled mask.
+    Single-tile and batch transport share this so both answer with identical
+    geometry for identical requests.
+    """
+    output_height, output_width = mask.shape
+    core_x0 = min(x, output_width)
+    core_y0 = min(y, output_height)
+    core_x1 = min(output_width, x + width)
+    core_y1 = min(output_height, y + height)
+    if core_x1 <= core_x0 or core_y1 <= core_y0:
+        return None
+    tile_x0 = max(0, core_x0 - halo)
+    tile_y0 = max(0, core_y0 - halo)
+    tile_x1 = min(output_width, core_x1 + halo)
+    tile_y1 = min(output_height, core_y1 + halo)
+    tile = np.ascontiguousarray(mask[tile_y0:tile_y1, tile_x0:tile_x1])
+    geometry = {
+        "output_width": output_width,
+        "output_height": output_height,
+        "tile_x": tile_x0,
+        "tile_y": tile_y0,
+        "tile_width": tile_x1 - tile_x0,
+        "tile_height": tile_y1 - tile_y0,
+        "core_x": core_x0,
+        "core_y": core_y0,
+        "core_width": core_x1 - core_x0,
+        "core_height": core_y1 - core_y0,
+    }
+    return geometry, tile.tobytes(order="C")
+
+
 @app.get("/api/session/{session_id}/local-mask/{local_id}")
 def local_mask_proxy(
     session_id: str,
@@ -1039,40 +1086,146 @@ def local_mask_tile_proxy(
         long_edge,
         spatial_only=True,
     )
-    output_height, output_width = mask.shape
-    core_x0 = min(x, output_width)
-    core_y0 = min(y, output_height)
-    core_x1 = min(output_width, x + width)
-    core_y1 = min(output_height, y + height)
-    if core_x1 <= core_x0 or core_y1 <= core_y0:
+    sliced = _slice_mask_tile(mask, x, y, width, height, halo)
+    if sliced is None:
         raise HTTPException(status_code=416, detail="Mask tile rectangle is outside the output.")
-    tile_x0 = max(0, core_x0 - halo)
-    tile_y0 = max(0, core_y0 - halo)
-    tile_x1 = min(output_width, core_x1 + halo)
-    tile_y1 = min(output_height, core_y1 + halo)
-    tile = np.ascontiguousarray(mask[tile_y0:tile_y1, tile_x0:tile_x1])
+    geometry, payload = sliced
     cpu_mask_ms = (perf_counter() - started) * 1000.0
     return Response(
-        content=tile.tobytes(order="C"),
+        content=payload,
         media_type="application/octet-stream",
         headers={
-            "X-Tile-X": str(tile_x0),
-            "X-Tile-Y": str(tile_y0),
-            "X-Tile-Width": str(tile_x1 - tile_x0),
-            "X-Tile-Height": str(tile_y1 - tile_y0),
-            "X-Core-X": str(core_x0),
-            "X-Core-Y": str(core_y0),
-            "X-Core-Width": str(core_x1 - core_x0),
-            "X-Core-Height": str(core_y1 - core_y0),
+            "X-Tile-X": str(geometry["tile_x"]),
+            "X-Tile-Y": str(geometry["tile_y"]),
+            "X-Tile-Width": str(geometry["tile_width"]),
+            "X-Tile-Height": str(geometry["tile_height"]),
+            "X-Core-X": str(geometry["core_x"]),
+            "X-Core-Y": str(geometry["core_y"]),
+            "X-Core-Width": str(geometry["core_width"]),
+            "X-Core-Height": str(geometry["core_height"]),
             "X-Halo": str(halo),
-            "X-Output-Width": str(output_width),
-            "X-Output-Height": str(output_height),
+            "X-Output-Width": str(geometry["output_width"]),
+            "X-Output-Height": str(geometry["output_height"]),
             "X-Pixel-Format": "r8unorm",
             "X-Local-Adjustment": local.id,
             "X-Geometry-Signature": geometry_signature or session.adjustments.shared.geometry.model_dump_json(),
             "X-Edit-Revision": str(session.edit_revision),
             "X-CPU-Mask-Ms": f"{cpu_mask_ms:.3f}",
             "X-Mask-Content": "spatial",
+        },
+    )
+
+
+@app.post("/api/session/{session_id}/local-mask-tiles")
+def local_mask_tiles_batch_proxy(
+    session_id: str,
+    request: LocalMaskTileBatchRequest,
+) -> Response:
+    """Serve a bounded batch of globally anchored local-mask tiles.
+
+    One request carries many tiles.  Mask compilation remains authoritative
+    and whole-image, and every distinct mask identity in the batch is compiled
+    once and sliced for each of its requested rectangles, so a tiled
+    generation no longer needs one HTTP request per tile or a cold compile per
+    tile.  Entries outside the compiled mask are reported per entry instead of
+    failing the batch, and the payload is one length-prefixed container so the
+    browser parses a single response.
+    """
+    try:
+        session = store.get(session_id)
+        _check_revision(session.edit_revision, request.edit_revision)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RevisionConflictError as exc:
+        raise _revision_conflict(exc) from exc
+    if request.geometry_signature is not None:
+        try:
+            requested_geometry = json.loads(request.geometry_signature)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail="Invalid geometry signature.") from exc
+        if requested_geometry != session.adjustments.shared.geometry.model_dump(mode="json"):
+            raise HTTPException(status_code=409, detail="Stale local mask geometry request dropped.")
+    _guard_preview_resources(session, request.long_edge)
+
+    locals_by_id = {item.id: item for item in session.local_adjustments}
+    compiled: dict[tuple[str, str | None], np.ndarray] = {}
+    entries: list[dict[str, object]] = []
+    payloads: list[bytes] = []
+    started = perf_counter()
+    for index, tile in enumerate(request.tiles):
+        entry: dict[str, object] = {
+            "index": index,
+            "local_id": tile.local_id,
+            "mask_path": tile.mask_path,
+            "status": "ok",
+            "error": None,
+            "halo": tile.halo,
+            "payload_length": 0,
+        }
+        local = locals_by_id.get(tile.local_id)
+        if local is None:
+            entry["status"] = "missing"
+            entry["error"] = f"Local adjustment '{tile.local_id}' was not found."
+            entries.append(entry)
+            payloads.append(b"")
+            continue
+        identity = (tile.local_id, tile.mask_path)
+        mask = compiled.get(identity)
+        if mask is None:
+            try:
+                selected_mask = _mask_expression_at_path(local.mask, tile.mask_path)
+            except HTTPException as exc:
+                entry["status"] = "invalid"
+                entry["error"] = str(exc.detail)
+                entries.append(entry)
+                payloads.append(b"")
+                continue
+            mask_source = local.model_copy(
+                update={
+                    "id": f"{local.id}:{tile.mask_path}" if tile.mask_path else local.id,
+                    "mask": selected_mask,
+                },
+                deep=True,
+            )
+            mask = session.render_cache.compiled_local_mask(
+                session.adjustments,
+                mask_source,
+                request.long_edge,
+                spatial_only=True,
+            )
+            compiled[identity] = mask
+        sliced = _slice_mask_tile(mask, tile.x, tile.y, tile.width, tile.height, tile.halo)
+        if sliced is None:
+            entry["status"] = "outside"
+            entry["error"] = "Mask tile rectangle is outside the output."
+            entries.append(entry)
+            payloads.append(b"")
+            continue
+        geometry, payload = sliced
+        entry.update(geometry)
+        entry["payload_length"] = len(payload)
+        entries.append(entry)
+        payloads.append(payload)
+
+    manifest = {
+        "version": 1,
+        "long_edge": request.long_edge,
+        "edit_revision": session.edit_revision,
+        "entries": entries,
+    }
+    manifest_bytes = json.dumps(manifest, separators=(",", ":")).encode("utf-8")
+    frames = b"".join(struct.pack("<I", len(payload)) + payload for payload in payloads)
+    body = MASK_TILE_BATCH_MAGIC + struct.pack("<II", len(entries), len(manifest_bytes)) + manifest_bytes + frames
+    cpu_mask_ms = (perf_counter() - started) * 1000.0
+    return Response(
+        content=body,
+        media_type="application/octet-stream",
+        headers={
+            "X-Mask-Batch-Entries": str(len(entries)),
+            "X-Mask-Batch-Bytes": str(len(body)),
+            "X-Mask-Batch-Compiles": str(len(compiled)),
+            "X-Edit-Revision": str(session.edit_revision),
+            "X-CPU-Mask-Ms": f"{cpu_mask_ms:.3f}",
         },
     )
 

@@ -1132,6 +1132,53 @@ class LocalMaskPreviewRequest(BaseModel):
     long_edge: int = Field(default=1600, ge=256, le=16384)
 
 
+MAX_MASK_TILE_BATCH_ENTRIES = 64
+MAX_MASK_TILE_BATCH_BYTES = 128 * 1024 * 1024
+
+
+class LocalMaskTileRequest(BaseModel):
+    """One globally anchored local-mask tile inside a batch request."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    local_id: str = Field(min_length=1, max_length=128)
+    mask_path: str | None = Field(default=None, pattern=r"^\d+(?:\.\d+)*$")
+    x: int = Field(default=0, ge=0)
+    y: int = Field(default=0, ge=0)
+    width: int = Field(default=512, ge=1, le=8192)
+    height: int = Field(default=512, ge=1, le=8192)
+    halo: int = Field(default=0, ge=0, le=2048)
+
+
+class LocalMaskTileBatchRequest(BaseModel):
+    """A bounded batch of local-mask tiles sharing one edit revision.
+
+    One request carries many tiles so a tiled generation no longer needs one
+    HTTP request per tile.  The count and total haloed payload are capped here,
+    before the endpoint compiles anything, so a malformed client cannot make
+    the backend materialize an unbounded response.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    tiles: list[LocalMaskTileRequest] = Field(min_length=1, max_length=MAX_MASK_TILE_BATCH_ENTRIES)
+    long_edge: int = Field(default=1600, ge=256, le=16384)
+    edit_revision: int | None = Field(default=None, ge=0)
+    geometry_signature: str | None = None
+
+    @model_validator(mode="after")
+    def validate_batch_bytes(self) -> "LocalMaskTileBatchRequest":
+        total = sum(
+            (tile.width + tile.halo * 2) * (tile.height + tile.halo * 2)
+            for tile in self.tiles
+        )
+        if total > MAX_MASK_TILE_BATCH_BYTES:
+            raise ValueError(
+                f"A mask tile batch may not exceed {MAX_MASK_TILE_BATCH_BYTES} bytes of haloed tiles."
+            )
+        return self
+
+
 class GeometryMapRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

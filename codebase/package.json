@@ -61,6 +61,8 @@
     "test:denoise-disclosure": "node tests/denoise-progressive-disclosure.js",
     "test:tier-change-blank": "node tests/performance/tier-change-blank-canvas.js",
     "test:tier-film-consistency": "node tests/performance/tier-film-consistency.js",
+    "test:tiled-mask-batch": "node tests/performance/tiled-mask-batch-transport.js",
+    "test:presentation-gate": "node tests/performance/presentation-gate.js",
     "test:electron": "node tests/run-in-electron.js"
   },
   "devDependencies": {

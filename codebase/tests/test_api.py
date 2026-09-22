@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import struct
 from io import BytesIO
 
 import pytest
@@ -513,6 +514,221 @@ def test_local_mask_tiles_reassemble_the_authoritative_global_mask() -> None:
                 target_start = (y + row) * output_width + x
                 assembled[target_start:target_start + core_width] = payload[source_start:source_start + core_width]
     assert bytes(assembled) == full.content
+
+
+def _mask_tile_batch_png_bytes(width: int, height: int) -> bytes:
+    buffer = BytesIO()
+    Image.new("RGB", (width, height), color=(120, 90, 60)).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def parse_mask_tile_batch(content: bytes) -> tuple[dict, list[dict]]:
+    """Parse the length-prefixed container the batched mask transport returns."""
+    assert content[:8] == b"HDRMTB1\n"
+    entry_count, manifest_length = struct.unpack_from("<II", content, 8)
+    manifest_end = 16 + manifest_length
+    manifest = json.loads(content[16:manifest_end])
+    entries: list[dict] = []
+    cursor = manifest_end
+    for index in range(entry_count):
+        (length,) = struct.unpack_from("<I", content, cursor)
+        cursor += 4
+        payload = content[cursor:cursor + length]
+        cursor += length
+        entries.append({**manifest["entries"][index], "payload": payload})
+    assert cursor == len(content)
+    return manifest, entries
+
+
+def _create_mask_batch_session(local_ids: list[str]) -> tuple[str, str, int]:
+    upload = client.post(
+        "/api/session",
+        files={"file": ("mask-batch.png", _mask_tile_batch_png_bytes(256, 192), "image/png")},
+    )
+    assert upload.status_code == 200
+    session_id = upload.json()["session"]["session_id"]
+    commands = []
+    for index, local_id in enumerate(local_ids):
+        commands.append({
+            "expected_revision": index,
+            "command_type": "create_local",
+            "payload": {
+                "local": {
+                    "id": local_id,
+                    "name": local_id,
+                    "mask": {
+                        "operator": "leaf",
+                        "leaf": {
+                            "type": "linear_gradient",
+                            "start": {"x": 0.0, "y": 0.2},
+                            "end": {"x": 1.0, "y": 0.8},
+                        },
+                    },
+                },
+            },
+        })
+    created = client.post(f"/api/session/{session_id}/edit-commands", json={"commands": commands})
+    assert created.status_code == 200
+    state = created.json()
+    geometry = state["document"]["global_adjustments"]["shared"]["geometry"]
+    return session_id, json.dumps(geometry, separators=(",", ":")), state["revision"]
+
+
+def test_local_mask_tile_batch_reassembles_one_compile_for_many_tiles() -> None:
+    session_id, signature, revision = _create_mask_batch_session(["mask-batch"])
+    full = client.get(
+        f"/api/session/{session_id}/local-mask/mask-batch",
+        params={"long_edge": 256, "edit_revision": revision, "geometry_signature": signature, "spatial_only": True},
+    )
+    assert full.status_code == 200
+    output_width = int(full.headers["x-image-width"])
+    output_height = int(full.headers["x-image-height"])
+    assert (output_width, output_height) == (256, 192)
+
+    tiles = [
+        {"x": x, "y": y, "width": 100, "height": 100, "halo": 8}
+        for y in range(0, output_height, 100)
+        for x in range(0, output_width, 100)
+    ]
+    response = client.post(
+        f"/api/session/{session_id}/local-mask-tiles",
+        json={
+            "tiles": [{"local_id": "mask-batch", **tile} for tile in tiles],
+            "long_edge": 256,
+            "edit_revision": revision,
+            "geometry_signature": signature,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["x-mask-batch-entries"] == str(len(tiles))
+    # One identity, one compile, however many tiles the batch carries.
+    assert response.headers["x-mask-batch-compiles"] == "1"
+    manifest, entries = parse_mask_tile_batch(response.content)
+    assert manifest["edit_revision"] == revision
+    assert manifest["long_edge"] == 256
+    assembled = bytearray(output_width * output_height)
+    for tile, entry in zip(tiles, entries):
+        assert entry["status"] == "ok"
+        core_width = min(tile["width"], output_width - tile["x"])
+        core_height = min(tile["height"], output_height - tile["y"])
+        assert (entry["core_width"], entry["core_height"]) == (core_width, core_height)
+        assert entry["payload_length"] == entry["tile_width"] * entry["tile_height"]
+        assert len(entry["payload"]) == entry["payload_length"]
+        payload = entry["payload"]
+        for row in range(core_height):
+            source_start = (
+                (entry["core_y"] - entry["tile_y"] + row) * entry["tile_width"]
+                + (entry["core_x"] - entry["tile_x"])
+            )
+            target_start = (tile["y"] + row) * output_width + tile["x"]
+            assembled[target_start:target_start + core_width] = payload[source_start:source_start + core_width]
+    assert bytes(assembled) == full.content
+
+
+def test_local_mask_tile_batch_reports_edge_outside_missing_and_invalid_entries() -> None:
+    session_id, signature, revision = _create_mask_batch_session(["mask-batch-edge"])
+    response = client.post(
+        f"/api/session/{session_id}/local-mask-tiles",
+        json={
+            "tiles": [
+                {"local_id": "mask-batch-edge", "x": 240, "y": 176, "width": 100, "height": 100, "halo": 8},
+                {"local_id": "mask-batch-edge", "x": 4000, "y": 4000, "width": 100, "height": 100, "halo": 8},
+                {"local_id": "deleted-local", "x": 0, "y": 0, "width": 50, "height": 50, "halo": 0},
+                {"local_id": "mask-batch-edge", "mask_path": "0", "x": 0, "y": 0, "width": 50, "height": 50, "halo": 0},
+            ],
+            "long_edge": 256,
+            "edit_revision": revision,
+            "geometry_signature": signature,
+        },
+    )
+
+    assert response.status_code == 200
+    manifest, entries = parse_mask_tile_batch(response.content)
+    edge, outside, missing, invalid = entries
+    assert edge["status"] == "ok"
+    assert (edge["core_x"], edge["core_y"], edge["core_width"], edge["core_height"]) == (240, 176, 16, 16)
+    assert (edge["tile_x"], edge["tile_y"], edge["tile_width"], edge["tile_height"]) == (232, 168, 24, 24)
+    assert outside["status"] == "outside" and outside["payload_length"] == 0 and outside["payload"] == b""
+    assert missing["status"] == "missing"
+    assert invalid["status"] == "invalid"
+    # Only the edge entry needed a compile; the outside, missing and invalid
+    # entries must not compile or recompile anything.
+    assert response.headers["x-mask-batch-compiles"] == "1"
+
+    single = client.get(
+        f"/api/session/{session_id}/local-mask-tile/mask-batch-edge",
+        params={
+            "x": 240, "y": 176, "width": 100, "height": 100, "halo": 8,
+            "long_edge": 256, "edit_revision": revision, "geometry_signature": signature,
+        },
+    )
+    assert single.status_code == 200
+    assert single.content == edge["payload"]
+    assert int(single.headers["x-tile-x"]) == edge["tile_x"]
+    assert int(single.headers["x-tile-width"]) == edge["tile_width"]
+
+
+def test_local_mask_tile_batch_bounds_identities_and_rejects_stale_requests() -> None:
+    session_id, signature, revision = _create_mask_batch_session(["mask-batch-a", "mask-batch-b"])
+    batch = {
+        "tiles": [
+            {"local_id": "mask-batch-a", "x": 0, "y": 0, "width": 64, "height": 64, "halo": 4},
+            {"local_id": "mask-batch-b", "x": 32, "y": 32, "width": 64, "height": 64, "halo": 4},
+        ],
+        "long_edge": 256,
+        "edit_revision": revision,
+        "geometry_signature": signature,
+    }
+    response = client.post(f"/api/session/{session_id}/local-mask-tiles", json=batch)
+    assert response.status_code == 200
+    # Two locals in one batch compile their two distinct identities once each.
+    assert response.headers["x-mask-batch-compiles"] == "2"
+    manifest, entries = parse_mask_tile_batch(response.content)
+    assert [entry["status"] for entry in entries] == ["ok", "ok"]
+    assert [entry["local_id"] for entry in entries] == ["mask-batch-a", "mask-batch-b"]
+
+    stale = client.post(
+        f"/api/session/{session_id}/local-mask-tiles",
+        json={**batch, "edit_revision": revision - 1},
+    )
+    assert stale.status_code == 409
+
+    geometry_mismatch = client.post(
+        f"/api/session/{session_id}/local-mask-tiles",
+        json={**batch, "geometry_signature": json.dumps({"rotation": 90}, separators=(",", ":"))},
+    )
+    assert geometry_mismatch.status_code == 409
+
+    invalid_geometry = client.post(
+        f"/api/session/{session_id}/local-mask-tiles",
+        json={**batch, "geometry_signature": "not-json"},
+    )
+    assert invalid_geometry.status_code == 400
+
+    assert client.post(
+        f"/api/session/{session_id}/local-mask-tiles",
+        json={**batch, "tiles": []},
+    ).status_code == 422
+    assert client.post(
+        f"/api/session/{session_id}/local-mask-tiles",
+        json={**batch, "tiles": [{**batch["tiles"][0], "width": 0}]},
+    ).status_code == 422
+    assert client.post(
+        f"/api/session/{session_id}/local-mask-tiles",
+        json={**batch, "tiles": [{**batch["tiles"][0], "halo": 4096}]},
+    ).status_code == 422
+    too_many = [{**batch["tiles"][0], "x": index} for index in range(65)]
+    assert client.post(
+        f"/api/session/{session_id}/local-mask-tiles",
+        json={**batch, "tiles": too_many},
+    ).status_code == 422
+    # A single haloed 8192x8192 tile exceeds the batch byte ceiling.
+    oversize = [{"local_id": "mask-batch-a", "x": 0, "y": 0, "width": 8192, "height": 8192, "halo": 2048}]
+    assert client.post(
+        f"/api/session/{session_id}/local-mask-tiles",
+        json={**batch, "tiles": oversize},
+    ).status_code == 422
 
 
 def test_local_luminance_sampling_returns_a_low_precision_scene_ev_range() -> None:

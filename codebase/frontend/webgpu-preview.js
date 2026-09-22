@@ -919,6 +919,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.available = false;
       this.detail = "WebGPU has not been initialized";
       this.renderSerials = new WeakMap();
+      const PresentationGate = typeof window !== "undefined" ? window.HDRPresentationGate : null;
+      this.presentationGate = PresentationGate ? new PresentationGate() : null;
       this.paramBuffer = null;
       this.curveBuffer = null;
       this.curveSampleCache = new Map();
@@ -975,6 +977,18 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.pendingCacheTrim = null;
       this.detailBandTiles = new Map();
       this.maskTiles = new Map();
+      const MaskRequestCoordinator = typeof window !== "undefined"
+        ? window.HDRMaskRequestCoordinator
+        : null;
+      this.maskRequestCoordinator = MaskRequestCoordinator
+        ? new MaskRequestCoordinator(6)
+        : null;
+      // Explicit analysis is background work. Its smaller independent queue
+      // cannot cancel or consume all request slots from a foreground render.
+      this.backgroundMaskRequestCoordinator = MaskRequestCoordinator
+        ? new MaskRequestCoordinator(2)
+        : null;
+      this.maskTileBatch = typeof window !== "undefined" ? window.HDRMaskTileBatch : null;
       this.detailCacheCounters = {
         hits: 0, misses: 0, analysisPasses: 0, evictions: 0,
         globalHits: 0, globalMisses: 0, localHits: 0, localMisses: 0,
@@ -1841,6 +1855,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       if (!this.available || !this.device) return false;
       const Scheduler = typeof window !== "undefined" ? window.HDRTileScheduler : null;
       if (!Scheduler) return { rendered: false, refusals: ["tile scheduler is unavailable"] };
+      this.activeRenderCount += 1;
+      const serial = (this.renderSerials.get(canvas) || 0) + 1;
+      this.renderSerials.set(canvas, serial);
+      try {
 
       const tileSize = Math.max(64, Math.floor(Number(sourceOptions?.tileSize) || Scheduler.DEFAULT_TILE_SIZE));
       // The signature is derived from the adjustments this render was handed,
@@ -1860,10 +1878,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // affordable when a native *presentation* would not be. It borrows the
       // surface format only, to pick the same pipelines.
       const measureOnly = Boolean(sourceOptions?.measureOnly);
-      if (!measureOnly && (canvas.width !== proxy.width || canvas.height !== proxy.height)) {
-        canvas.width = proxy.width;
-        canvas.height = proxy.height;
-      }
+      // The canvas is resized and configured only at presentation time, inside
+      // `encodeTiledGeneration`, once masks and the tile graph are ready. The
+      // accepted frame stays on screen until its replacement can actually be
+      // encoded, and a superseded generation never clears it.
       const surface = this.configureSurface(canvas, context, lane === "hdr");
       const pipelines = this.pipelineFor(surface.format);
 
@@ -1907,6 +1925,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return this.encodeTiledGeneration(canvas, context, proxy, surface, pipelines, params, {
         measureOnly,
         Scheduler,
+        serial,
+        isCurrent: sourceOptions?.isCurrent || null,
         tileSize,
         lane,
         longEdge,
@@ -1918,6 +1938,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         overlayIndex,
         sourcePixelScale: this.sourcePixelScaleFor(proxy, sourceSize),
       });
+      } finally {
+        this.finishActiveRender();
+      }
     }
 
     // `scope` is "global" or "local". The two are counted apart because they
@@ -1985,48 +2008,88 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return bytes;
     }
 
-    async loadLocalMaskTile(sessionId, local, tile, longEdge, editRevision, geometrySignature, isCurrent) {
-      const signature = gpuMaskIdentity(local.mask);
+    /**
+     * Load every missing tile of one local in a single batched request.
+     *
+     * Resident tiles are answered from `maskTiles` without a request, so a
+     * pan or a grade-only edit fetches only the tiles that are actually new.
+     * One response carries the whole batch as a length-prefixed container and
+     * each entry is split back into the same per-tile cache shape the
+     * single-tile path used, so pinning and eviction are unchanged.
+     */
+    async loadLocalMaskTiles(
+      sessionId, batch, longEdge, editRevision, geometrySignature, isCurrent, signal,
+    ) {
+      const signature = gpuMaskIdentity(batch.local.mask);
       // A revision also changes for grade values, opacity and bypass. None of
       // those alter the spatial mask, so including it here discarded every
       // resident tile after every local edit (tiles x local layers). Spatial
       // identity plus geometry is the actual invalidation boundary.
-      const key = `${sessionId}:${local.id}:${longEdge}:${geometrySignature}:${signature}:${tile.key}`;
-      const cached = this.maskTiles.get(key);
-      if (cached) {
-        this.maskTiles.delete(key);
-        this.maskTiles.set(key, cached);
-        return cached;
-      }
-      const rect = tile.rect;
-      const query = new URLSearchParams({
-        x: String(rect.x), y: String(rect.y), width: String(rect.width), height: String(rect.height),
-        halo: String(tile.halo), long_edge: String(longEdge), edit_revision: String(editRevision),
-        geometry_signature: geometrySignature,
-      });
-      const response = await fetch(`/api/session/${sessionId}/local-mask-tile/${encodeURIComponent(local.id)}?${query}`);
-      if (!response.ok) return null;
-      const width = Number(response.headers.get("X-Tile-Width"));
-      const height = Number(response.headers.get("X-Tile-Height"));
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      if (!isCurrent()) return null;
-      const bytesPerRow = Math.ceil(width / 256) * 256;
-      const padded = bytesPerRow === width ? bytes : new Uint8Array(bytesPerRow * height);
-      if (padded !== bytes) {
-        for (let row = 0; row < height; row += 1) {
-          padded.set(bytes.subarray(row * width, (row + 1) * width), row * bytesPerRow);
+      const prefix = `${sessionId}:${batch.local.id}:${longEdge}:${geometrySignature}:${signature}:`;
+      const entries = new Map();
+      const missing = [];
+      for (const tile of batch.tiles) {
+        const key = `${prefix}${tile.key}`;
+        const cached = this.maskTiles.get(key);
+        if (cached) {
+          this.maskTiles.delete(key);
+          this.maskTiles.set(key, cached);
+          entries.set(tile.key, cached);
+          continue;
         }
+        missing.push({ tile, key });
       }
-      const texture = this.device.createTexture({
-        size: { width, height }, format: "r8unorm",
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-      });
-      this.device.queue.writeTexture(
-        { texture }, padded, { bytesPerRow, rowsPerImage: height }, { width, height },
+      if (!missing.length) return { localIndex: batch.localIndex, entries };
+      const response = await fetch(
+        `/api/session/${sessionId}/local-mask-tiles`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal,
+          body: JSON.stringify({
+            edit_revision: editRevision,
+            geometry_signature: geometrySignature,
+            long_edge: longEdge,
+            tiles: missing.map(({ tile }) => ({
+              local_id: batch.local.id,
+              x: tile.rect.x,
+              y: tile.rect.y,
+              width: tile.rect.width,
+              height: tile.rect.height,
+              halo: tile.halo,
+            })),
+          }),
+        },
       );
-      const entry = { texture, width, height, byteSize: width * height, key };
-      this.maskTiles.set(key, entry);
-      return entry;
+      if (!response.ok || !this.maskTileBatch) return { localIndex: batch.localIndex, entries };
+      const parsed = this.maskTileBatch.parse(new Uint8Array(await response.arrayBuffer()));
+      if (!isCurrent()) return { localIndex: batch.localIndex, entries };
+      parsed.entries.forEach((entry, index) => {
+        const target = missing[index];
+        if (!target || entry.status !== "ok") return;
+        const width = Number(entry.tile_width);
+        const height = Number(entry.tile_height);
+        const bytes = entry.payload;
+        if (!width || !height || !bytes || bytes.byteLength < width * height) return;
+        const bytesPerRow = Math.ceil(width / 256) * 256;
+        const padded = bytesPerRow === width ? bytes : new Uint8Array(bytesPerRow * height);
+        if (padded !== bytes) {
+          for (let row = 0; row < height; row += 1) {
+            padded.set(bytes.subarray(row * width, (row + 1) * width), row * bytesPerRow);
+          }
+        }
+        const texture = this.device.createTexture({
+          size: { width, height }, format: "r8unorm",
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+        });
+        this.device.queue.writeTexture(
+          { texture }, padded, { bytesPerRow, rowsPerImage: height }, { width, height },
+        );
+        const cached = { texture, width, height, byteSize: width * height, key: target.key };
+        this.maskTiles.set(target.key, cached);
+        entries.set(target.tile.key, cached);
+      });
+      return { localIndex: batch.localIndex, entries };
     }
 
     trimMaskTiles(pinned = []) {
@@ -2131,12 +2194,39 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // buffers once it has gone through.
       const denoiseParamBuffers = [];
       let denoiseTileResolves = 0;
-      const maskMatrix = activeLocals.length
-        ? await Promise.all(plan.tiles.map((tile) => Promise.all(activeLocals.map((local) => this.loadLocalMaskTile(
-          options.sessionId, local, tile, longEdge, editRevision, options.geometrySignature || "{}", isCurrent,
-        )))))
-        : plan.tiles.map(() => []);
-      if (!isCurrent() || maskMatrix.some((row) => row.some((entry) => !entry))) {
+      // Tiles are grouped by local and sent as bounded batches: one HTTP
+      // request and one coordinator slot per batch, and one mask identity per
+      // batch for the backend to compile once.
+      const maskBatches = activeLocals.length && this.maskTileBatch
+        ? this.maskTileBatch.plan({ locals: activeLocals, tiles: plan.tiles })
+        : [];
+      const maskCoordinator = measureOnly
+        ? this.backgroundMaskRequestCoordinator
+        : this.maskRequestCoordinator;
+      const maskGeneration = `${identity}|${Number(options.applicationGeneration ?? 0)}|${measureOnly ? "analysis" : "foreground"}`;
+      const loadedMasks = maskBatches.length && maskCoordinator
+        ? await maskCoordinator.run(
+          maskGeneration,
+          maskBatches,
+          (batch, _index, signal) => this.loadLocalMaskTiles(
+            options.sessionId, batch, longEdge, editRevision,
+            options.geometrySignature || "{}", isCurrent, signal,
+          ),
+          isCurrent,
+        )
+        : { results: [], current: isCurrent() };
+      const tileIndexByKey = new Map(plan.tiles.map((tile, index) => [tile.key, index]));
+      const maskMatrix = plan.tiles.map(() => activeLocals.map(() => null));
+      if (loadedMasks.current && isCurrent()) {
+        for (const loaded of loadedMasks.results) {
+          if (!loaded) continue;
+          loaded.entries.forEach((entry, tileKey) => {
+            const tileIndex = tileIndexByKey.get(tileKey);
+            if (tileIndex !== undefined) maskMatrix[tileIndex][loaded.localIndex] = entry;
+          });
+        }
+      }
+      if (!loadedMasks.current || !isCurrent() || maskMatrix.some((row) => row.some((entry) => !entry))) {
         return { rendered: false, refusals: ["mask tile unavailable or superseded"] };
       }
 
@@ -2199,6 +2289,30 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const pinnedMasks = maskMatrix.flat().map((entry) => entry.key);
       const cacheBefore = { ...this.detailCacheCounters };
       const startedAt = performance.now();
+      // The presentation gate is taken here, after every await this generation
+      // needs: proxy, masks, tile graph and parameter buffers are all ready.
+      // Only the newest generation may resize the canvas, and a superseded one
+      // refuses before it has cleared anything.
+      let presentation = null;
+      if (!measureOnly) {
+        presentation = this.presentationGate
+          ? await this.presentationGate.acquire(
+            canvas,
+            () => options.serial === this.renderSerials.get(canvas) && isCurrent(),
+            () => {
+              if (canvas.width !== proxy.width) canvas.width = proxy.width;
+              if (canvas.height !== proxy.height) canvas.height = proxy.height;
+            },
+          )
+          : { current: () => true, release: () => {} };
+        if (!presentation) {
+          this.recordStage("tiled-refused", { lane, longEdge, refusals: ["superseded-before-presentation"] });
+          return { rendered: false, refusals: ["superseded-before-presentation"] };
+        }
+        this.configureSurface(canvas, context, lane === "hdr");
+      }
+      let encodeError = null;
+      try {
       if (!measureOnly) this.scopeSources.delete(canvas);
       this.device.pushErrorScope("validation");
       const encoder = this.device.createCommandEncoder();
@@ -2413,6 +2527,12 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         );
       }
       this.device.queue.submit([encoder.finish()]);
+      } catch (error) {
+        encodeError = error;
+      } finally {
+        presentation?.release();
+      }
+      if (encodeError) throw encodeError;
       localBuffers.forEach((entry) => entry.buffer.destroy());
       denoiseParamBuffers.forEach((buffer) => buffer.destroy());
       const validationError = await this.device.popErrorScope();
@@ -2610,8 +2730,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           || sourceOptions?.isCurrent?.() === false) return this.refuseRender("superseded-after-masks");
       }
       const measuredPeak = params[75];
-      if (canvas.width !== proxy.width) canvas.width = proxy.width;
-      if (canvas.height !== proxy.height) canvas.height = proxy.height;
+      // The resize happens at presentation time, not here. Resizing a visible
+      // canvas clears its presented frame, and this generation still has an
+      // intermediate graph to build and passes to encode; clearing before then
+      // would leave the viewer with nothing if the encode failed or was
+      // superseded. The presentation gate below is the only place that resizes.
       const presentationSurface = this.configureSurface(canvas, context, lane === "hdr");
       if (presentationSurface.format !== surface.format || presentationSurface.hdr !== surface.hdr) {
         surface = presentationSurface;
@@ -2663,6 +2786,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         });
         const tiled = await this.encodeTiledGeneration(canvas, context, sourceProxy, surface, pipelines, params, {
           tileSize: sourceOptions?.tileSize,
+          serial,
           lane,
           longEdge,
           editRevision,
@@ -2985,6 +3109,26 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // its peak can be measured, and the measured peak has to exist before the
       // limiter runs. The submit count matches the previous scheme, which also
       // performed one reduction and one readback per settled render.
+      //
+      // Presentation is the only part that touches the canvas, so it is the
+      // only part that takes the gate. The intermediate graph, the bind groups
+      // and the whole command encoder are ready before the frame is replaced,
+      // and a superseded generation refuses here without clearing it.
+      const presentation = this.presentationGate
+        ? await this.presentationGate.acquire(
+          canvas,
+          () => serial === this.renderSerials.get(canvas)
+            && resourceGeneration === this.resourceGeneration
+            && sourceOptions?.isCurrent?.() !== false,
+          () => {
+            if (canvas.width !== proxy.width) canvas.width = proxy.width;
+            if (canvas.height !== proxy.height) canvas.height = proxy.height;
+          },
+        )
+        : { current: () => true, release: () => {} };
+      if (!presentation) return this.refuseRender("superseded-before-presentation");
+      this.configureSurface(canvas, context, lane === "hdr");
+      try {
       this.device.queue.writeBuffer(intermediate.compositeParamBuffer, 0, params);
       const pass = encoder.beginRenderPass({
         ...(gpuTiming ? { timestampWrites: { querySet: gpuTiming.querySet, endOfPassWriteIndex: 1 } } : {}),
@@ -3004,6 +3148,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         encoder.copyBufferToBuffer(gpuTiming.resolveBuffer, 0, gpuTiming.readBuffer, 0, 16);
       }
       this.device.queue.submit([encoder.finish()]);
+      } finally {
+        presentation.release();
+      }
       const submittedAt = performance.now();
       this.recordStage("grading", {
         serial,
