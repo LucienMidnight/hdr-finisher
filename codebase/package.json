@@ -66,6 +66,8 @@
     "test:failure-taxonomy": "node tests/performance/failure-taxonomy.js",
     "test:denoise-input-coalescing": "node tests/performance/denoise-input-coalescing.js",
     "test:tiled-stop-gate": "node tests/performance/tiled-stop-gate.js",
+    "test:roi-catch-up": "node tests/performance/roi-catch-up.js",
+    "test:roi-pan-cache": "node tests/performance/roi-pan-cache.js",
     "test:electron": "node tests/run-in-electron.js"
   },
   "devDependencies": {

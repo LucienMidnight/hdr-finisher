@@ -95,6 +95,16 @@ function assert(condition, message) {
       `The first pass at a new target size was expected to redraw whole: ${JSON.stringify(onWarm.metrics)}`,
     );
 
+    // A fresh generation: the retained frame is still on screen, but no tile in
+    // it is current for the new generation, so this pass proves the foreground
+    // restriction. At the same generation the pan cache would answer every tile
+    // instead (the `cached` pass below).
+    const generation = await page.evaluate(() => {
+      invalidatePreview(state.currentView, { markDirty: false });
+      window.HDRFinisherPerformance.cancelRoiCatchUp();
+      return state.previewGeneration[state.currentView];
+    });
+
     const on = await renderRefinement();
     assert(on.metrics?.viewportRequested === true, `The refinement pass did not request the visible rect: ${JSON.stringify(on.metrics)}`);
     // The measured rect may come from a later bitmap size (a settle pass can
@@ -125,10 +135,34 @@ function assert(condition, message) {
       on.metrics.foregroundTiles < on.metrics.tileCount,
       `The ROI refinement did not restrict the foreground batch: ${JSON.stringify(on.metrics)}`,
     );
+    assert(
+      on.metrics.reusedTiles === 0,
+      `A fresh generation reused a cached tile: ${JSON.stringify(on.metrics)}`,
+    );
+
+    // Same generation, same viewport: the display-scale pan cache holds every
+    // candidate, so the pass processes nothing at all. This is the no-work
+    // guarantee a pan back into a refined region relies on.
+    await page.evaluate(() => window.HDRFinisherPerformance.cancelRoiCatchUp());
+    const cached = await renderRefinement();
+    assert(
+      cached.metrics?.viewportRequested === true && cached.metrics?.retainedFrame === true,
+      `The cached pass did not keep the viewport and retained frame: ${JSON.stringify(cached.metrics)}`,
+    );
+    assert(
+      cached.metrics.foregroundTiles === 0 && cached.metrics.reusedTiles > 0,
+      `The cached pass did not answer from the pan cache: ${JSON.stringify(cached.metrics)}`,
+    );
+    assert(
+      cached.metrics.reusedTiles + cached.metrics.foregroundTiles === cached.metrics.viewportTiles,
+      `The cached pass partition is incomplete: ${JSON.stringify(cached.metrics)}`,
+    );
+    assert(cached.metrics.processedPixels === 0, `The cached pass processed pixels: ${JSON.stringify(cached.metrics)}`);
 
     // An interactive pass must stay whole frame even with the switch on. It may
     // refuse (the viewer is at another tier), in which case there is no new
     // presentation to inspect; the static contract test enforces the tier gate.
+    await page.evaluate(() => window.HDRFinisherPerformance.cancelRoiCatchUp());
     const interactive = await page.evaluate(async () => {
       const rendered = await renderGpuDraft(state.currentView, { tier: "interactive", longEdge: 512 });
       return {
@@ -167,12 +201,21 @@ function assert(condition, message) {
       off: { mode: off.mode, viewportRequested: off.metrics?.viewportRequested ?? null },
       visibleRect,
       onWarm: { retainedFrame: onWarm.metrics?.retainedFrame ?? null, skippedTiles: onWarm.metrics?.skippedTiles ?? null },
+      generation,
       on: {
         viewportRequested: on.metrics?.viewportRequested ?? null,
         viewport: on.metrics?.viewport ?? null,
         foregroundTiles: on.metrics?.foregroundTiles ?? null,
+        reusedTiles: on.metrics?.reusedTiles ?? null,
         skippedTiles: on.metrics?.skippedTiles ?? null,
         retainedFrame: on.metrics?.retainedFrame ?? null,
+      },
+      cached: {
+        viewportTiles: cached.metrics?.viewportTiles ?? null,
+        foregroundTiles: cached.metrics?.foregroundTiles ?? null,
+        reusedTiles: cached.metrics?.reusedTiles ?? null,
+        processedPixels: cached.metrics?.processedPixels ?? null,
+        retainedFrame: cached.metrics?.retainedFrame ?? null,
       },
       interactive: { rendered: interactive.rendered, viewportRequested: interactive.metrics?.viewportRequested ?? null },
       settingsSelect: selectDriven,
