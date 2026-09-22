@@ -1994,6 +1994,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         Scheduler,
         serial,
         isCurrent: sourceOptions?.isCurrent || null,
+        viewport: sourceOptions?.viewport || null,
         tileSize,
         lane,
         longEdge,
@@ -2247,6 +2248,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         generation: Number(options.applicationGeneration ?? 0),
         tileSize,
         nodes,
+        // Phase 2 work item 3: a real viewport request orders visible tiles
+        // first and lets a magnified ROI keep offscreen tiles out of the
+        // foreground batch. No viewport means Fit, which is the whole output.
+        viewport: options.viewport || undefined,
       });
       const workWidth = Math.min(proxy.width, tileSize + halo * 2);
       const workHeight = Math.min(proxy.height, tileSize + halo * 2);
@@ -2642,6 +2647,15 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         detailHalo, spatialHalo, tileWidth: workWidth, tileHeight: workHeight,
         exactPeak: measuredPeak, exactPeakLongEdge: Math.max(proxy.width, proxy.height),
         tileCount: plan.tileCount, visibleCount: plan.visibleCount, submissions: 1,
+        // Phase 2 work item 6: what the request asked for versus what the graph
+        // processed. Each tile processes its haloed rect, so the sum is the
+        // real processed area and the ratio is the halo amplification.
+        viewport: plan.viewport ? { ...plan.viewport } : null,
+        offscreenTiles: plan.tileCount - plan.visibleCount,
+        processedPixels: plan.tiles.reduce(
+          (sum, tile) => sum + tile.haloRect.width * tile.haloRect.height, 0,
+        ),
+        outputPixels: proxy.width * proxy.height,
         workingSetBytes: graph.byteSize, proxyBytes: proxy.byteSize,
         detailCacheBytes, maskCacheBytes,
         detailCacheHits: this.detailCacheCounters.hits - cacheBefore.hits,
@@ -2859,6 +2873,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         const tiled = await this.encodeTiledGeneration(canvas, context, sourceProxy, surface, pipelines, params, {
           tileSize: sourceOptions?.tileSize,
           serial,
+          viewport: sourceOptions?.viewport || null,
           lane,
           longEdge,
           editRevision,

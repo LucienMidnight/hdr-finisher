@@ -2081,6 +2081,7 @@ function initializePreviewScheduler() {
           ...(gpuPreviewSourceOptions(state.currentView) || {}),
           tier: "settled",
           tileSize: Number(options.tileSize) || undefined,
+          viewport: options.viewport || null,
           applicationGeneration: state.previewGeneration[state.currentView],
         },
       );
@@ -2088,6 +2089,36 @@ function initializePreviewScheduler() {
     measureExactPeak: (options = {}) => measureExactScopePeak(options),
     tiledExecutionMetrics: () => state.gpuPreview?.tiledExecutionMetrics || null,
     denoiseInputStats: () => state.denoiseInputQueue?.stats || null,
+    // Phase 2 contract surface: build the immutable viewport request the ROI
+    // path will consume. The app still requests Fit (no visible rect) until the
+    // coordinator supplies one, so this exists to exercise and inspect the
+    // contract in the running app. The output size is the selected tier scaled
+    // from the source; geometry cropping is not modelled here.
+    viewportRequest: (options = {}) => {
+      const Request = window.HDRViewportRequest;
+      if (!Request || !state.session) return null;
+      const source = state.session.source;
+      const targetLongEdge = Number(options.longEdge) || previewTargetLongEdge();
+      const ratio = Math.min(1, targetLongEdge / Math.max(source.width, source.height));
+      return Request.build({
+        lane: state.currentView,
+        sessionId: state.session.session_id,
+        geometrySignature: geometrySignature(),
+        applicationGeneration: state.previewGeneration[state.currentView],
+        editRevision: state.editRevision,
+        output: {
+          width: Math.max(1, Math.round(source.width * ratio)),
+          height: Math.max(1, Math.round(source.height * ratio)),
+        },
+        source: { width: source.width, height: source.height },
+        visible: options.visible || null,
+        halo: Number(options.halo) || 0,
+        minimumRoiFraction: options.minimumRoiFraction,
+        tileSize: Number(options.tileSize) || undefined,
+        dpr: Number(window.devicePixelRatio) || 1,
+        zoom: Number(options.zoom) || 1,
+      });
+    },
     prepareDenoiseSelectorSeam: (variant = "resolved-a", longEdge = settledProxyLongEdge()) => (
       state.gpuPreview?.prepareDenoiseSelectorSeam?.(
         state.session?.session_id,

@@ -96,12 +96,14 @@ function assert(condition, message) {
     await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 300000 });
     const outcome = await page.evaluate(async () => {
       const longEdge = Math.max(state.session.source.width, state.session.source.height);
-      const rendered = await window.HDRFinisherPerformance.renderTiledTier(longEdge);
+      const viewport = { x: 0, y: 0, width: 512, height: 512 };
+      const rendered = await window.HDRFinisherPerformance.renderTiledTier(longEdge, { viewport });
       return {
         rendered: Boolean(rendered && rendered.rendered),
         refusals: (rendered && rendered.refusals) || [],
         execution: state.acceptedPresentation?.execution || null,
         metrics: window.HDRFinisherPerformance.tiledExecutionMetrics(),
+        contract: window.HDRFinisherPerformance.viewportRequest({ visible: viewport }),
         transport: window.__maskTransport,
       };
     });
@@ -120,6 +122,18 @@ function assert(condition, message) {
       totalTilesRequested: batchTiles.reduce((sum, value) => sum + Math.max(0, value), 0),
       batchStatuses: transport.batch.map((entry) => entry.status),
       pageErrors,
+      viewport: outcome.metrics?.viewport || null,
+      offscreenTiles: outcome.metrics?.offscreenTiles ?? null,
+      processedPixels: outcome.metrics?.processedPixels ?? null,
+      outputPixels: outcome.metrics?.outputPixels ?? null,
+      contract: outcome.contract
+        ? {
+            roi: { ...outcome.contract.roi },
+            sourceRect: { ...outcome.contract.sourceRect },
+            tileCount: outcome.contract.tiles.length,
+            telemetry: { ...outcome.contract.telemetry },
+          }
+        : null,
       tiledMetrics: outcome.metrics
         ? {
             tileCount: outcome.metrics.tileCount ?? null,
@@ -151,6 +165,24 @@ function assert(condition, message) {
     assert(
       summary.maxTilesInBatch > 1,
       "Every batch carried a single tile, so batching was not demonstrated",
+    );
+    assert(
+      outcome.metrics?.viewport
+        && outcome.metrics.viewport.x === 0
+        && outcome.metrics.viewport.width === 512,
+      `The scheduler did not receive the viewport request: ${JSON.stringify(outcome.metrics?.viewport)}`,
+    );
+    assert(
+      outcome.metrics.offscreenTiles > 0,
+      "A magnified viewport still reported every tile as visible",
+    );
+    assert(
+      outcome.metrics.processedPixels > 0 && outcome.metrics.outputPixels > 0,
+      `Processed/output pixel telemetry is missing: ${JSON.stringify(outcome.metrics)}`,
+    );
+    assert(
+      outcome.contract?.roi && outcome.contract.roi.width > 512,
+      `The viewport contract did not pad the ROI: ${JSON.stringify(outcome.contract?.roi)}`,
     );
 
     fs.mkdirSync(path.dirname(output), { recursive: true });

@@ -177,6 +177,26 @@ def test_source_transport_carries_abort_and_generation_checks() -> None:
     assert "{ isCurrent: sourceOptions?.isCurrent }" in webgpu
 
 
+def test_viewport_request_contract_reaches_the_scheduler() -> None:
+    markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    contract = (FRONTEND / "viewport-request.js").read_text(encoding="utf-8")
+
+    assert markup.index("viewport-request.js") < markup.index("webgpu-preview.js")
+    # The scheduler is given the request instead of assuming Fit.
+    assert "viewport: options.viewport || undefined," in webgpu
+    assert "viewport: sourceOptions?.viewport || null," in webgpu
+    # The diagnostics surface can build and compare the contract.
+    assert "viewportRequest: (options = {}) =>" in javascript
+    assert "static build(options = {})" in contract
+    assert "static compareWithLegacy(options = {})" in contract
+    # Telemetry for processed/output pixels and halo amplification.
+    assert "offscreenTiles: plan.tileCount - plan.visibleCount," in webgpu
+    assert "processedPixels: plan.tiles.reduce(" in webgpu
+    assert "outputPixels: proxy.width * proxy.height," in webgpu
+
+
 def test_perspective_draft_is_bounded_before_authoring_tier_apply() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     draft = javascript[
