@@ -2289,6 +2289,20 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const presentationTarget = measureOnly
         ? null
         : this.ensurePresentationTarget(proxy.width, proxy.height, surface.format);
+      // Pad the request by a fraction of itself before selecting foreground
+      // tiles. Without the padding a small pan exposes the previous pass's
+      // boundary as a seam inside the viewport, because the newly visible strip
+      // was never refined. The padding is a mitigation, not a fix: an edit that
+      // moves the view further than the padding, or leaves the frame at all,
+      // still needs progressive catch-up before the rest of the image matches.
+      const roiPadX = viewport ? Math.round(viewport.width * 0.15) : 0;
+      const roiPadY = viewport ? Math.round(viewport.height * 0.15) : 0;
+      const foregroundRegion = viewport ? {
+        x: Math.max(0, viewport.x - roiPadX),
+        y: Math.max(0, viewport.y - roiPadY),
+        width: Math.min(proxy.width - Math.max(0, viewport.x - roiPadX), viewport.width + roiPadX * 2),
+        height: Math.min(proxy.height - Math.max(0, viewport.y - roiPadY), viewport.height + roiPadY * 2),
+      } : null;
       const retainedFrame = Boolean(viewport) && Boolean(presentationTarget?.valid)
         && Boolean(previousFrame)
         && previousFrame.sessionId === options.sessionId
@@ -2297,7 +2311,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         && previousFrame.execution === "tiled"
         && previousFrame.format === surface.format;
       const foregroundTiles = retainedFrame && Contract
-        ? Contract.foregroundTiles(plan.tiles, viewport)
+        ? Contract.foregroundTiles(plan.tiles, foregroundRegion)
         : plan.tiles;
       let cancelled = false;
       const graph = this.ensureTileGraph(
@@ -2770,6 +2784,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         // real processed area and the ratio is the halo amplification.
         viewport: plan.viewport ? { ...plan.viewport } : null,
         viewportRequested: Boolean(options.viewport),
+        roi: foregroundRegion ? { ...foregroundRegion } : null,
         offscreenTiles: plan.tileCount - plan.visibleCount,
         foregroundTiles: processedTiles,
         skippedTiles: plan.tileCount - processedTiles,
