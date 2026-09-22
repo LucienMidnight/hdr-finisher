@@ -1074,3 +1074,29 @@ Next safe edit (unchanged, now with the measurement closed):
 
 1. Coordinator extraction and generation ownership out of `app.js` (item 1) — the next substantial unit; it also supplies the real visible rect (item 3) and makes the pan cache (item 8) measurable.
 2. Legacy-versus-ROI switch integration and the parity run (items 9 and the Phase 0 tolerances).
+
+### 15.11 Committed checkpoint — 2026-09-22 (opt-in ROI refinement and the pan-behaviour decision)
+
+Checkpoint committed as `799fe8f` — "Make ROI refinement opt-in and limited to the visible region".
+
+**Product direction recorded.** Asked to recommend pan behaviour for stability and performance, following industry standard: pan and zoom must never trigger a render (they are a compositor operation on available pixels — that is why they feel instant), newly exposed regions must never be blank or wrong (so the base layer stays a complete frame), and the expensive pass is the one to bound. The recommendation adopted is therefore **ROI for the refinement tier only, with the retained full-tier frame behind interactive pan and zoom** — Lightroom/Capture One behaviour — rather than re-rendering on every pan or showing stale content. Extending ROI to the settle pass for magnified views, with progressive idle catch-up, is the later step. The owner approved landing this behind a diagnostic switch first and keeping the app on Fit until reviewed.
+
+Landed:
+
+- **`visibleOutputRect()`** measures the visible part of the mounted canvas against the scrolling dropzone rather than from the zoom model, so centering, scroll position, comparison layouts and future transforms are all accounted for. A fully visible frame returns `null`: Fit has nothing to skip.
+- **`state.roiPreviewMode`**, default `"fit"` (shipped behaviour unchanged), flippable from diagnostics via `HDRFinisherPerformance.setRoiPreviewMode("refinement")`. Only the refinement tier is ROI-limited: interactive and settled passes stay whole frame.
+- **`viewportRequested`** in tiled metrics distinguishes Fit's effective viewport from a real request.
+- **Runtime evidence** (`tests/performance/roi-refinement.js`, test pattern, tiled, 300% zoom): switch off → refinement requested **no** viewport; switch on → requested the visible region (`{x:492, y:271, width:297, height:178}` of 1280×720), `retainedFrame: true`, **2 of 6 tiles** processed, 4 skipped; the first pass at a new target size correctly redrew whole (`retainedFrame: false`, 0 skipped); an interactive pass was refused by the viewer's tier state and could not be ROI-limited.
+- Suites: 145 JS, **152** Python (new opt-in/tier-gate contract).
+
+Manual check for the owner (the switch is off by default, so nothing changes until it is turned on):
+
+1. In the running app, run `window.HDRFinisherPerformance.setRoiPreviewMode("refinement")`, zoom to roughly 200–400%, and edit an adjustment. The visible region should refine at full tier quality while the rest of the frame stays at the accepted image; pan immediately afterwards to see whether the retained region is acceptable or whether the pan cache (item 8) must land before this can ship.
+2. Compare against `setRoiPreviewMode("fit")` on the same edit. What to look for: no blank or wrong pixels anywhere, refinement latency in the visible region, and whether the offscreen region's older grade is noticeable after a pan.
+3. Decide whether the refinement-only scope is enough for the first release or whether the settle pass should also become ROI-limited at magnified zoom.
+
+Next safe edit:
+
+1. Coordinator extraction and generation ownership out of `app.js` (item 1), which also makes the pan cache (item 8) measurable.
+2. Display-scale pan cache (item 8) once the owner's pan check above says it is needed.
+3. Legacy-versus-ROI switch integration and the parity run (items 9 and the Phase 0 tolerances).
