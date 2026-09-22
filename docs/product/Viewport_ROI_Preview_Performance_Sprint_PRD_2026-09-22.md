@@ -1147,3 +1147,28 @@ Still required before ROI refinement can ship (recorded as the next work, in pri
 3. Re-run the owner's check afterwards: same zoom, same edit, same pan.
 
 Until those land, the switch stays experimental and default **Whole frame**; the shipped behaviour is unaffected.
+
+### 15.14 Committed checkpoint — 2026-09-22 (deferred catch-up closes the seam)
+
+Checkpoint committed as `ad67d45` — "Close the ROI seam with a deferred whole-frame catch-up pass".
+
+Landed:
+
+- **Deferred catch-up.** After an ROI refinement presents, the app schedules the same tier as a **whole-frame** pass once the user pauses (`ROI_CATCH_UP_DELAY_MS = 700`), so the tiles that kept the accepted frame converge on the current generation and the refinement boundary stops being visible as a seam. The catch-up is cancelled by any new edit (`invalidatePreview`) or mode change (`applyRoiPreview`), is skipped when the generation has moved on, and yields to newer renders like any other pass, so it cannot fight the foreground.
+- Tiled metrics mark the pass with `roiCatchUp`, and diagnostics expose `roiCatchUpState` for a dedicated driver.
+- The padding mitigation from 15.13 remains: foreground selection is padded 15% per side, so a small pan reuses already-refined tiles.
+
+Verification status, stated plainly:
+
+- Suites: **145 JS**, **153 Python**, all passing.
+- The ROI scenario still proves the visible-region pass (viewport requested, retained frame, 2 of 6 tiles, 4 skipped, settings select drives the mode).
+- **The catch-up itself is not yet verified at runtime.** The scenario drives a diagnostic render and polls for the catch-up metrics, but the app's own settle/refine cycle keeps issuing renders that supersede the catch-up before it produces metrics; the scenario therefore records the observation instead of asserting it, and the earlier attempt at asserting it was flaky in this environment. A dedicated driver that waits for genuine app idle, then asserts `roiCatchUp` with `viewportRequested: false`, `skippedTiles: 0`, and `retainedFrame: true`, is the next verification step.
+- The padded ROI (`roi` in metrics) is the region actually used for foreground selection; `viewport` remains the raw request.
+
+Owner check to repeat (switch on, same as before): Settings → Region of interest → **Visible region**, zoom to ~36%, drag an adjustment. The visible region should update immediately and the seam should close about a second after the drag stops, once the catch-up pass runs. If the seam persists or reappears on a pan, the pan cache (item 8) is the next unit rather than more padding.
+
+Next safe edit:
+
+1. A dedicated catch-up driver that waits for genuine idle and asserts the catch-up pass, closing the verification gap above.
+2. Pan cache (item 8) if the owner's repeat check still shows a seam after the catch-up.
+3. Coordinator extraction and generation ownership out of `app.js` (item 1).
