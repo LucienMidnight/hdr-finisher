@@ -177,6 +177,17 @@ The UI must not claim byte-exact export matching unless the test corpus proves i
 
 CPU-only systems use the same viewport/scale contract. Work runs outside the UI thread, is cancellable between strips/tiles, and retains the accepted frame. Responsive and Balanced may use a coarse pass; Precise waits for exact-at-display-scale output. Export remains unchanged.
 
+### 4.8 WYSIWYG and accuracy expectations
+
+Recorded product direction, 2026-09-23. The authoring preview is judged perceptually, and its reference is Chromium's own rendering of the delivered file:
+
+- **Perceptual alignment is the target.** For Fit and low zoom, display-exact output must look like the delivered file shown at the same size through the same Chromium rendering path. Display exact is a sampling floor, not the fidelity ceiling.
+- **Comparison anchor.** The reference is the delivered file rendered by this application's Chromium proof path at the same size, display, and target peak as the preview. How other applications render a file is out of scope and is not a gate.
+- **Tolerance method.** Perceptual sign-off by the product owner on side-by-side pairs calibrates the tolerance per module class. Numeric metrics exist to catch extreme errors, not to decide acceptability: differences invisible at the intended viewing size are acceptable unless they are structural, localized spikes, or changes of texture character.
+- **Inspection guarantee.** At zoom >=100%, the native-region exact and export-parity requirements of Section 4.5 are unchanged.
+- **Known scale residual.** Where the display transform is nonlinear, filtering the source before the graph and filtering the graded result differ for content at or below the display Nyquist (fine repeating detail, sub-pixel speculars, thin bright lines). That residual is judged against the perceptual standard above, not by byte equality.
+- **Future option, not this sprint.** A fidelity mode that always processes as the export does (native-resolution grade plus filtered presentation) is recorded as a future option, not a current setting.
+
 ## 5. Target architecture
 
 ### 5.1 Render coordinator
@@ -1540,6 +1551,31 @@ Feature measurements on the same pairs: the grain band is indistinguishable (mea
 **Gate status.** Phase 0 item 6: measured with the corrected reference; item 7 remains the owner's decision, now with the scale residual named and quantified. The 15.22/15.24 screenshot comparison is superseded as judgement evidence and retained only as the record of what the browser displays today. Suites: **176 JS** (172 + 4 resampler tests). No Python touched.
 
 Next safe edit: export/reference parity — the preview frame against an actual exported file, which is the direct test of the owner's WYSIWYG requirement — or hold for the owner's tolerance decision. Do not start Phase 3.
+
+### 15.26 WYSIWYG target and tolerance method — 2026-09-23 (owner direction; PRD 4.8 added)
+
+Owner decisions from the design discussion, recorded as product direction:
+
+1. **Perceptual alignment is the target.** The exactness terminology (display exact, native-region exact) is a floor, not the ceiling; everything else is a nice-to-have or noise.
+2. **The comparison anchor is Chromium itself:** the delivered file as Chromium renders it versus the preview through this application's Chromium pipeline. How other applications render a file cannot be accounted for, and Chromium is the shared pipeline by design.
+3. **The tolerance method is perceptual sign-off on side-by-side pairs** per module class; numeric metrics exist to catch extreme errors rather than to decide acceptability. Small pixel-level differences matter only when they are extreme errors.
+
+PRD **4.8** was added with those statements, consistent with 4.5 (terms unchanged) and 12 (Fit is not export-resolution processing; it must be perceptually aligned with the export as displayed).
+
+**The anchor already exists as a product feature.** `Show Chromium proof` renders the delivered file through the app's Chromium HDR pipeline (`backend/hdr_finisher/proofing.py`, `frontend/proofing-ui.js`) with delivery format and target peak selection. The export/reference parity run can use it directly instead of building a viewer.
+
+**Where perceptual sign-off falls apart, and the mitigations (recorded so the method is not oversold):**
+
+- It is not reproducible or automatable. Acceptable for the item 7 calibration; not for every regression. Mitigation: the sign-off calibrates a numeric bound per class; routine runs compare against the bound and flag extremes; the owner re-reviews only when a class changes or a bound is exceeded.
+- Any review sheet that rescales images introduces its own filter; 15.24 showed the browser's downscale of a 4096-px canvas aliasing. Mitigation: capture both sides at display size with the harness (preview canvas screenshot and Chromium-proof screenshot at the same box) and compose side-by-side and difference sheets without further scaling.
+- Flip comparison inflates sensitivity — 15.24's "jarring" reaction was mostly the stress fixture's sub-Nyquist content. Mitigation: judge side-by-side and isolated, at the intended viewing size.
+- Grain and Denoise are texture-character judgements; pointwise metrics can read large while the eye sees the same texture. Mitigation: report texture/energy statistics beside pointwise numbers and name the class.
+- HDR classes depend on the display path: the proof's target peak must match the preview's reference white and an HDR-capable display is required. Mitigation: sign HDR classes on the packaged configuration only, with the peak recorded.
+- Format coverage: Chromium decodes PNG/JPEG/AVIF natively; this product already labels JPEG XL as limited browser support. Mitigation: gate the Chromium-anchored classes on formats Chromium decodes (SDR PNG/JPEG, Ultra HDR JPEG, AVIF gain map) and treat JXL through a different reference or an explicit exclusion.
+
+**Gate status.** Phase 0 item 1 (contract approval): 4.8 is now written. Item 6: measured. Item 7: the method is defined, the table remains unsigned. Suites unchanged: **176 JS**. Phase 3 untouched.
+
+Next safe edit: the export/reference parity run — export from a session, render the delivered file through the Chromium proof path, capture both sides at display size, and produce the side-by-side and difference sheets for the owner's perceptual sign-off. That is the direct test of 4.8 and the last uncovered class in 15.21.
 
 
 
