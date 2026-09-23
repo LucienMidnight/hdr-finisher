@@ -4,6 +4,7 @@ from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import subprocess
+from typing import Callable
 
 import numpy as np
 
@@ -14,6 +15,10 @@ from .color import acescg_to_linear_bt2020, acescg_to_linear_srgb
 from .color_context import DEFAULT_HDR_REFERENCE_WHITE_NITS, scene_linear_to_nits
 from .config import MAX_PREVIEW_LONG_EDGE, PREVIEW_IMAGE_FORMAT
 from .models import AdjustmentState, PreviewKind
+
+
+class ResizeCancelled(RuntimeError):
+    """The caller superseded a filtered source resize."""
 
 
 def render_preview_bytes(
@@ -66,7 +71,13 @@ def _hdr_to_sdr_display(image: np.ndarray) -> np.ndarray:
     return display / (np.float32(1.0) + display)
 
 
-def downsample_image(image: np.ndarray, max_long_edge: int) -> np.ndarray:
+def downsample_image(
+    image: np.ndarray,
+    max_long_edge: int,
+    *,
+    is_current: Callable[[], bool] | None = None,
+    progress: Callable[[int, int], None] | None = None,
+) -> np.ndarray:
     height, width = image.shape[:2]
     long_edge = max(height, width)
     if long_edge <= max_long_edge:
@@ -82,7 +93,10 @@ def downsample_image(image: np.ndarray, max_long_edge: int) -> np.ndarray:
     source = image.astype(np.float32, copy=False)
     channels = source[..., None] if source.ndim == 2 else source
     resized_channels = []
-    for channel_index in range(channels.shape[2]):
+    channel_count = channels.shape[2]
+    for channel_index in range(channel_count):
+        if is_current is not None and not is_current():
+            raise ResizeCancelled("A newer source replaced this resize.")
         channel = channels[..., channel_index]
         resized = np.asarray(
             Image.fromarray(channel).resize((target_w, target_h), Image.Resampling.LANCZOS),
@@ -91,6 +105,11 @@ def downsample_image(image: np.ndarray, max_long_edge: int) -> np.ndarray:
         # Filtering must not invent negative light or HDR peaks beyond the
         # source channel's range.
         resized_channels.append(np.clip(resized, float(np.min(channel)), float(np.max(channel))))
+        if progress is not None:
+            progress(channel_index + 1, channel_count)
+
+    if is_current is not None and not is_current():
+        raise ResizeCancelled("A newer source replaced this resize.")
 
     result = np.stack(resized_channels, axis=-1)
     if source.ndim == 2:

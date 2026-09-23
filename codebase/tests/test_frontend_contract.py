@@ -104,7 +104,7 @@ def test_tiled_mask_transport_is_batched_not_one_request_per_tile() -> None:
 
     assert "/local-mask-tiles" in loader
     assert "/local-mask-tile/" not in loader
-    assert "this.maskTileBatch.plan({ locals: activeLocals, tiles: plan.tiles })" in webgpu
+    assert "this.maskTileBatch.plan({ locals: activeLocals, tiles: foregroundTiles })" in webgpu
 
 
 def test_presentation_gate_owns_every_presentation_resize() -> None:
@@ -187,7 +187,8 @@ def test_viewport_request_contract_reaches_the_scheduler() -> None:
 
     assert markup.index("viewport-request.js") < markup.index("webgpu-preview.js")
     # The scheduler is given the request instead of assuming Fit.
-    assert "viewport: options.viewport || undefined," in webgpu
+    assert "{ ...options, viewport: options.viewport, editRevision }" in webgpu
+    assert "viewport: viewportRequest.fit ? undefined : viewportRequest.visible," in webgpu
     assert "viewport: sourceOptions?.viewport || null," in webgpu
     # The diagnostics surface can build and compare the contract.
     assert "viewportRequest: (options = {}) =>" in javascript

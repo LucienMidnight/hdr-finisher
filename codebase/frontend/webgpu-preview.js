@@ -2004,7 +2004,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       );
       let proxy = await this.loadProxy(
         sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity,
-        { isCurrent: sourceOptions?.isCurrent, region },
+        { isCurrent: sourceOptions?.isCurrent, onProgress: sourceOptions?.onSourceProgress, region },
       );
       if (!proxy) return { rendered: false, refusals: ["source proxy unavailable"] };
       if (proxy.region && (!previousFrame
@@ -3024,6 +3024,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           isCurrent: () => resourceGeneration === this.resourceGeneration
             && serial === this.renderSerials.get(canvas)
             && sourceOptions?.isCurrent?.() !== false,
+          onProgress: sourceOptions?.onSourceProgress,
           region,
         },
       );
@@ -5440,9 +5441,33 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         return proxy;
       })();
       this.proxyInflight.set(key, pending);
+      let progressTimer = null;
+      let finished = false;
+      if (typeof options.onProgress === "function") {
+        const poll = async () => {
+          if (finished || signal.aborted) return;
+          try {
+            const response = await fetch(`/api/session/${sessionId}/source-mip-progress`, { signal });
+            if (response.ok) {
+              const payload = await response.json();
+              const build = payload.active_builds?.find((item) => item.long_edge === longEdge);
+              if (build && !finished && (!isCurrent || isCurrent())) {
+                options.onProgress({ state: "building", ...build });
+              }
+            }
+          } catch (_) {
+            // Progress is advisory; the source request owns error reporting.
+          }
+          if (!finished) progressTimer = setTimeout(poll, 120);
+        };
+        progressTimer = setTimeout(poll, 120);
+      }
       try {
         return await pending;
       } finally {
+        finished = true;
+        if (progressTimer !== null) clearTimeout(progressTimer);
+        options.onProgress?.({ state: "done", long_edge: longEdge });
         this.proxyInflight.delete(key);
       }
     }

@@ -269,6 +269,9 @@ def test_source_mip_levels_persist_across_sessions() -> None:
     assert warm.status_code == 200
     assert warm.headers["x-source-level-state"] == "memory"
     assert warm.content == cold.content
+    progress = client.get(f"/api/session/{first_id}/source-mip-progress")
+    assert progress.status_code == 200
+    assert progress.json() == {"active_builds": []}
 
     source_store.clear_memory()
 

@@ -1735,6 +1735,11 @@ Next safe edit: Phase 3 item 4 — port all active nodes to the ROI request cont
 
 Next safe edit: Phase 3 item 5 — implement the small whole-image preview pipe for scopes, navigation and mask overview.
 
+### 15.34 Implementation checkpoint — 2026-09-23 (cold source-level progress and cancellation; Phase 3 item 8)
+
+The source mip builder now reports completed filter channels through a session-scoped progress endpoint. The WebGPU source loader polls only while a source request is active and surfaces channel progress in the existing preview status. A superseded edit cancels an in-progress resize between channels and prevents its result from entering the memory or disk cache; single-flight waiters also stop waiting when superseded. Both whole-proxy and source-tile routes pass the session revision check into the mip builder and return 409 for stale work. Native and warm cache hits check currency before returning.
+
+Focused cache/API tests pass (72); frontend syntax and diff checks pass. The full system-Python shell lacks the bundled imagecodecs/lensfun decoders and has a NumPy quantile difference; its two frontend contract assertions were updated to the actual foreground-only mask batching and immutable viewport request. Runtime cold/warm timing and footprint evidence is still owed. Items 5–7 and the Phase 3 exit gates remain open.
 
 
 

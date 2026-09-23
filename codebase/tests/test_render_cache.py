@@ -12,6 +12,7 @@ from hdr_finisher.models import AdjustmentState, GeometryAdjustments, LocalAdjus
 from hdr_finisher.preview import downsample_image
 from hdr_finisher.render_cache import (
     SessionRenderCache,
+    StaleRender,
     SourceMipIdentity,
     SourceMipStore,
     adjustment_signature,
@@ -703,6 +704,32 @@ def test_source_mip_telemetry_counts_cold_warm_and_build_duration(tmp_path) -> N
     disk.level(identity, 256, image)
     assert disk.diagnostics()["warm_hits"] == 1
     assert disk.diagnostics()["disk_bytes"] > 0
+
+
+def test_cold_mip_reports_channel_progress_and_discards_a_cancelled_build(tmp_path) -> None:
+    image = _mip_image()
+    identity = _mip_identity(image)
+    store = SourceMipStore(tmp_path / "mips")
+    current = True
+    observed = []
+
+    def report(completed: int, total: int) -> None:
+        nonlocal current
+        observed.append((completed, total, store.diagnostics()["active_builds"]))
+        current = False
+
+    with pytest.raises(StaleRender):
+        store.level(identity, 256, image, is_current=lambda: current, progress=report)
+
+    assert observed[0][0:2] == (1, 3)
+    assert observed[0][2][0]["completed"] == 1
+    assert store.diagnostics()["active_builds"] == []
+    assert store.diagnostics()["memory_entries"] == 0
+    assert store.diagnostics()["disk_entries"] == 0
+
+    level, state = store.level(identity, 256, image)
+    assert state == "built"
+    np.testing.assert_array_equal(level, downsample_image(image, 256))
 
 
 def test_source_mip_native_edge_returns_the_decoded_image_uncached(tmp_path) -> None:

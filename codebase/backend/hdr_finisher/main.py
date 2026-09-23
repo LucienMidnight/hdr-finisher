@@ -798,6 +798,22 @@ def scopes_for_adjustments(
     return result
 
 
+@app.get("/api/session/{session_id}/source-mip-progress")
+def source_mip_progress(session_id: str) -> dict[str, object]:
+    try:
+        session = store.get(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    mip_store = session.render_cache.mip_store
+    identities = {
+        identity.digest()
+        for identity in (session.render_cache.source_identity, session.render_cache.sdr_identity)
+        if identity is not None
+    }
+    builds = mip_store.build_progress() if mip_store is not None else []
+    return {"active_builds": [build for build in builds if build["identity"] in identities]}
+
+
 @app.get("/api/session/{session_id}/proxy/{kind}")
 def webgpu_proxy(
     session_id: str,
@@ -815,12 +831,17 @@ def webgpu_proxy(
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
     _guard_preview_resources(session, long_edge)
-    proxy, working_space, authoritative_geometry_signature = session.render_cache.geometry_source_proxy(
-        kind,
-        long_edge,
-        session.adjustments,
-        session.sdr_match,
-    )
+    revision = session.edit_revision
+    try:
+        proxy, working_space, authoritative_geometry_signature = session.render_cache.geometry_source_proxy(
+            kind,
+            long_edge,
+            session.adjustments,
+            session.sdr_match,
+            is_current=lambda: session.edit_revision == revision,
+        )
+    except StaleRender:
+        return JSONResponse(status_code=409, content={"detail": "Stale source mip request dropped."})
     if geometry_signature is not None:
         try:
             requested_geometry = json.loads(geometry_signature)
@@ -889,6 +910,7 @@ def webgpu_source_tile(
         if requested_geometry != session.adjustments.shared.geometry.model_dump(mode="json"):
             raise HTTPException(status_code=409, detail="Stale geometry tile request dropped.")
 
+    revision = session.edit_revision
     try:
         tile, working_space, authoritative_signature, placement = session.render_cache.geometry_source_tile(
             kind,
@@ -897,7 +919,10 @@ def webgpu_source_tile(
             session.sdr_match,
             (x, y, x + width, y + height),
             halo,
+            is_current=lambda: session.edit_revision == revision,
         )
+    except StaleRender:
+        raise HTTPException(status_code=409, detail="Stale source tile request dropped.")
     except TileUnavailableError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 

@@ -10656,6 +10656,13 @@ async function renderGpuDraftInner(
     viewport: request.viewport || null,
     roiCatchUp,
     panPass,
+    onSourceProgress: (progress) => {
+      if (progress.state !== "building" || !sourceOptions.isCurrent() || !hideStatus) return;
+      const completed = Math.max(0, Number(progress.completed) || 0);
+      const total = Math.max(1, Number(progress.total) || 1);
+      setPreviewMessage(`Preparing source level · ${completed}/${total} channels`,
+        15 + Math.round(30 * completed / total));
+    },
     // WebGPU renders directly into the mounted canvas. Guard inside the
     // renderer, before it resizes or submits to that canvas, because rejecting
     // the result here after await would already be visibly too late. The
