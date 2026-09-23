@@ -271,17 +271,15 @@ async function clipBrightness(page, clip) {
       outcome.contract?.roi && outcome.contract.roi.width > 512,
       `The viewport contract did not pad the ROI: ${JSON.stringify(outcome.contract?.roi)}`,
     );
-    // The legacy pass processes everything and retains nothing; the ROI pass
-    // keeps the retained frame and processes only the tiles intersecting the
-    // viewport, which is the "offscreen tiles are not part of the foreground
-    // batch" gate.
+    // The legacy pass processes everything; the ROI pass keeps the retained
+    // frame and processes only the tiles intersecting the viewport, which is
+    // the "offscreen tiles are not part of the foreground batch" gate. Whether
+    // the legacy pass had a retained frame to load is a property of the
+    // window's previous pass, not of the route, so it is recorded in the
+    // summary rather than asserted here.
     assert(
-      legacy.metrics?.retainedFrame === false && legacy.metrics?.skippedTiles === 0,
+      legacy.metrics?.skippedTiles === 0 && legacy.metrics?.foregroundTiles === legacy.metrics?.tileCount,
       `The legacy pass was not a full-frame pass: ${JSON.stringify(legacy.metrics)}`,
-    );
-    assert(
-      legacy.metrics?.foregroundTiles === legacy.metrics?.tileCount,
-      `The legacy pass did not process every tile: ${JSON.stringify(legacy.metrics)}`,
     );
     assert(
       outcome.metrics?.retainedFrame === true,

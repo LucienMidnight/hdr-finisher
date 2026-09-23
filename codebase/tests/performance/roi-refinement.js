@@ -87,12 +87,18 @@ function assert(condition, message) {
       `A magnified viewer reported no visible rect: ${JSON.stringify(visibleRect)}`,
     );
 
-    // The zoom-triggered settle presented at a different size, so the retained
-    // target is recreated and the first pass at this size must redraw whole.
+    // The zoom-triggered settle may have presented at a different size, which
+    // recreates the retained target so the first pass at this size must redraw
+    // whole. In a window whose settle chose the same size, the target survives
+    // and the same-generation cache correctly answers every candidate instead.
+    // The fresh-generation pass below is the deterministic control either way.
     const onWarm = await renderRefinement();
+    const warmRedrewWhole = onWarm.metrics?.retainedFrame === false && onWarm.metrics?.skippedTiles === 0;
+    const warmAnsweredFromCache = onWarm.metrics?.retainedFrame === true
+      && onWarm.metrics?.foregroundTiles === 0 && onWarm.metrics?.reusedTiles > 0;
     assert(
-      onWarm.metrics?.retainedFrame === false && onWarm.metrics?.skippedTiles === 0,
-      `The first pass at a new target size was expected to redraw whole: ${JSON.stringify(onWarm.metrics)}`,
+      warmRedrewWhole || warmAnsweredFromCache,
+      `The first pass after the zoom neither redrew whole nor answered from the cache: ${JSON.stringify(onWarm.metrics)}`,
     );
 
     // A fresh generation: the retained frame is still on screen, but no tile in
@@ -200,7 +206,12 @@ function assert(condition, message) {
       zoomPercent: ZOOM_PERCENT,
       off: { mode: off.mode, viewportRequested: off.metrics?.viewportRequested ?? null },
       visibleRect,
-      onWarm: { retainedFrame: onWarm.metrics?.retainedFrame ?? null, skippedTiles: onWarm.metrics?.skippedTiles ?? null },
+      onWarm: {
+        retainedFrame: onWarm.metrics?.retainedFrame ?? null,
+        skippedTiles: onWarm.metrics?.skippedTiles ?? null,
+        redrewWhole: warmRedrewWhole,
+        answeredFromCache: warmAnsweredFromCache,
+      },
       generation,
       on: {
         viewportRequested: on.metrics?.viewportRequested ?? null,
