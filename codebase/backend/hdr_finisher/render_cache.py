@@ -1,15 +1,23 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+import hashlib
 import json
-from threading import Event, RLock
+import os
+from pathlib import Path
+import shutil
+import struct
+from threading import Event, RLock, get_ident
+import time
 from typing import Any, Callable
+import zlib
 
 import numpy as np
 
 from .adjustments import apply_adjustments, render_matched_sdr_base
-from .color_context import RenderColorContext
+from .color_context import DEFAULT_HDR_REFERENCE_WHITE_NITS, RenderColorContext
+from .config import APP_DATA_DIR
 from .cpu_strips import (
     DEFAULT_STRIP_BUDGET_BYTES,
     StripCancelled,
@@ -85,6 +93,448 @@ def _clamp_output_rect(rect: tuple[int, int, int, int], width: int, height: int)
     return left, top, right, bottom
 
 
+SOURCE_MIP_FORMAT_VERSION = 1
+SOURCE_MIP_MAGIC = b"HDRMIP01"
+_SOURCE_MIP_HEADER = struct.Struct("<8sIIIIIIQI")
+_SOURCE_MIP_DTYPE_FLOAT32 = 1
+DEFAULT_SOURCE_MIP_MEMORY_BYTES = 256 * 1024 * 1024
+DEFAULT_SOURCE_MIP_DISK_BYTES = 1024 * 1024 * 1024
+
+
+def downsample_target_dimensions(width: int, height: int, long_edge: int) -> tuple[int, int]:
+    """The dimensions ``downsample_image`` would produce for this long edge."""
+    long_side = max(int(width), int(height))
+    if long_side <= int(long_edge):
+        return int(width), int(height)
+    scale = int(long_edge) / long_side
+    return max(1, int(round(width * scale))), max(1, int(round(height * scale)))
+
+
+@dataclass(frozen=True)
+class SourceMipIdentity:
+    """Everything a persisted source level depends on, and nothing else.
+
+    The levels hold pre-adjustment canonical scene-linear pixels, so moving a
+    slider, changing an overlay, or retargeting the presentation must never
+    invalidate them (PRD 5.3). What does invalidate them is anything that
+    changes the decoded pixels: the source content itself, the decoder, the
+    color transform, the reference white used at decode, a user color
+    interpretation override, the RAW recipe, and the orientation the loader
+    normalized away. ``lane`` separates the HDR source from an authored SDR
+    base decoded from the same file.
+    """
+
+    content_key: str
+    byte_size: int
+    width: int
+    height: int
+    decoder_version: str
+    color_transform_version: str
+    orientation: int = 1
+    lane: str = "hdr"
+    reference_white_nits: int = DEFAULT_HDR_REFERENCE_WHITE_NITS
+    interpretation: str = ""
+    format_version: int = SOURCE_MIP_FORMAT_VERSION
+
+    def payload(self) -> dict[str, Any]:
+        return {
+            "content": self.content_key,
+            "bytes": int(self.byte_size),
+            "width": int(self.width),
+            "height": int(self.height),
+            "decoder": self.decoder_version,
+            "color_transform": self.color_transform_version,
+            "orientation": int(self.orientation),
+            "lane": self.lane,
+            "reference_white_nits": int(self.reference_white_nits),
+            "interpretation": self.interpretation,
+            "format": int(self.format_version),
+        }
+
+    def digest(self) -> str:
+        serialized = json.dumps(self.payload(), sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(serialized).hexdigest()
+
+    @property
+    def native_long_edge(self) -> int:
+        return max(int(self.width), int(self.height))
+
+
+class SourceMipStore:
+    """Persistent, byte-bounded multi-resolution source cache (PRD 5.3).
+
+    Levels are keyed by a ``SourceMipIdentity`` digest and a long edge, and
+    hold correctly filtered scene-linear data produced by the same
+    ``downsample_image`` the session has always used, so a warm level is
+    pixel-identical to a cold one. Memory and disk are separate byte-bounded
+    LRUs; a level is built from the decoded source only on a miss, written to
+    disk atomically (temp file plus replace), and a level that fails
+    validation on read is discarded and rebuilt rather than served. Disk
+    entries under stale format versions are removed when the store first
+    runs, and interrupted temp files are swept.
+    """
+
+    def __init__(
+        self,
+        root: str | Path,
+        *,
+        memory_budget_bytes: int = DEFAULT_SOURCE_MIP_MEMORY_BYTES,
+        disk_budget_bytes: int = DEFAULT_SOURCE_MIP_DISK_BYTES,
+    ) -> None:
+        self.root = Path(root)
+        self.memory_budget_bytes = max(0, int(memory_budget_bytes))
+        self.disk_budget_bytes = max(0, int(disk_budget_bytes))
+        self._lock = RLock()
+        self._memory: OrderedDict[tuple[str, int], np.ndarray] = OrderedDict()
+        self._inflight: dict[tuple[str, int], Event] = {}
+        self._memory_bytes = 0
+        self._cleaned = False
+        self._counters: dict[str, float] = {
+            "memory_hits": 0,
+            "disk_hits": 0,
+            "cold_builds": 0,
+            "native_passes": 0,
+            "bytes_read": 0,
+            "bytes_generated": 0,
+            "build_ms_total": 0.0,
+            "build_count": 0,
+            "memory_evictions": 0,
+            "disk_evictions": 0,
+            "corrupt_discards": 0,
+            "stale_removed": 0,
+            "write_failures": 0,
+            "singleflight_waits": 0,
+        }
+
+    def level(
+        self,
+        identity: SourceMipIdentity,
+        long_edge: int,
+        image: np.ndarray,
+        *,
+        is_current: Callable[[], bool] | None = None,
+    ) -> tuple[np.ndarray, str]:
+        """Return the level for ``long_edge`` and how it was answered.
+
+        States are ``native`` (no downscale was needed; the decoded image is
+        returned unchanged), ``memory``, ``disk`` and ``built``. Building is
+        single-flight per identity and level. A cancelled build raises
+        ``StaleRender`` and never populates either cache.
+        """
+        edge = max(256, int(long_edge))
+        if edge >= identity.native_long_edge:
+            with self._lock:
+                self._counters["native_passes"] += 1
+            return image, "native"
+        key = (identity.digest(), edge)
+        while True:
+            with self._lock:
+                cached = self._memory.get(key)
+                if cached is not None:
+                    self._memory.move_to_end(key)
+                    self._counters["memory_hits"] += 1
+                    return cached, "memory"
+                flight = self._inflight.get(key)
+                if flight is None:
+                    flight = Event()
+                    self._inflight[key] = flight
+                    break
+                self._counters["singleflight_waits"] += 1
+            flight.wait()
+        try:
+            self._ensure_cleaned()
+            array, state = self._load_or_build(identity, edge, image, is_current)
+            with self._lock:
+                self._insert_memory_locked(key, array)
+            return array, state
+        finally:
+            with self._lock:
+                if self._inflight.get(key) is flight:
+                    self._inflight.pop(key, None)
+            flight.set()
+
+    def discard_memory(self, identity: SourceMipIdentity) -> None:
+        """Drop this identity's in-memory levels; disk entries stay reusable."""
+        digest = identity.digest()
+        with self._lock:
+            for key in [item for item in self._memory if item[0] == digest]:
+                self._memory_bytes -= int(self._memory.pop(key).nbytes)
+
+    def clear_memory(self) -> None:
+        with self._lock:
+            self._memory.clear()
+            self._memory_bytes = 0
+
+    def diagnostics(self) -> dict[str, Any]:
+        with self._lock:
+            counters = dict(self._counters)
+            memory_entries = len(self._memory)
+            memory_bytes = self._memory_bytes
+        disk_bytes, disk_entries = self._disk_usage()
+        payload: dict[str, Any] = dict(counters)
+        payload.update(
+            {
+                "warm_hits": int(counters["memory_hits"] + counters["disk_hits"]),
+                "build_ms_mean": (counters["build_ms_total"] / counters["build_count"]) if counters["build_count"] else 0.0,
+                "memory_entries": memory_entries,
+                "memory_bytes": memory_bytes,
+                "memory_budget_bytes": self.memory_budget_bytes,
+                "disk_entries": disk_entries,
+                "disk_bytes": disk_bytes,
+                "disk_budget_bytes": self.disk_budget_bytes,
+                "root": str(self.root),
+            }
+        )
+        return payload
+
+    # -- internals ----------------------------------------------------------
+
+    def _load_or_build(
+        self,
+        identity: SourceMipIdentity,
+        edge: int,
+        image: np.ndarray,
+        is_current: Callable[[], bool] | None,
+    ) -> tuple[np.ndarray, str]:
+        if self.disk_budget_bytes > 0:
+            loaded = self._read_disk_level(identity, edge)
+            if loaded is not None:
+                with self._lock:
+                    self._counters["disk_hits"] += 1
+                    self._counters["bytes_read"] += int(loaded.nbytes)
+                return loaded, "disk"
+        if is_current is not None and not is_current():
+            raise StaleRender("A newer source replaced this mip build.")
+        started = time.perf_counter()
+        array = np.ascontiguousarray(downsample_image(image, edge), dtype=np.float32)
+        array.setflags(write=False)
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        with self._lock:
+            self._counters["cold_builds"] += 1
+            self._counters["build_count"] += 1
+            self._counters["build_ms_total"] += elapsed_ms
+            self._counters["bytes_generated"] += int(array.nbytes)
+        if is_current is not None and not is_current():
+            raise StaleRender("A newer source replaced this mip build.")
+        if self.disk_budget_bytes > 0:
+            self._write_disk_level(identity, edge, array)
+            self._prune_disk()
+        return array, "built"
+
+    def _identity_dir(self, identity: SourceMipIdentity) -> Path:
+        return self.root / f"v{int(identity.format_version)}" / identity.digest()
+
+    def _level_path(self, identity: SourceMipIdentity, edge: int) -> Path:
+        return self._identity_dir(identity) / f"{int(edge)}.f32"
+
+    def _read_disk_level(self, identity: SourceMipIdentity, edge: int) -> np.ndarray | None:
+        path = self._level_path(identity, edge)
+        try:
+            data = path.read_bytes()
+        except OSError:
+            return None
+        expected_width, expected_height = downsample_target_dimensions(identity.width, identity.height, edge)
+        header_size = _SOURCE_MIP_HEADER.size
+        if len(data) < header_size:
+            self._discard_corrupt(path)
+            return None
+        magic, version, width, height, channels, dtype, _reserved, data_bytes, crc = _SOURCE_MIP_HEADER.unpack_from(data, 0)
+        valid = (
+            magic == SOURCE_MIP_MAGIC
+            and version == int(identity.format_version)
+            and dtype == _SOURCE_MIP_DTYPE_FLOAT32
+            and channels == 3
+            and width == expected_width
+            and height == expected_height
+            and data_bytes == len(data) - header_size
+            and (zlib.crc32(data[header_size:]) & 0xFFFFFFFF) == crc
+        )
+        if not valid:
+            self._discard_corrupt(path)
+            return None
+        array = np.frombuffer(
+            data,
+            dtype="<f4",
+            count=int(width) * int(height) * 3,
+            offset=header_size,
+        ).reshape(int(height), int(width), 3)
+        try:
+            os.utime(path, None)
+        except OSError:
+            pass
+        return array
+
+    def _write_disk_level(self, identity: SourceMipIdentity, edge: int, array: np.ndarray) -> None:
+        path = self._level_path(identity, edge)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            payload = np.ascontiguousarray(array).tobytes()
+            crc = zlib.crc32(payload) & 0xFFFFFFFF
+            header = _SOURCE_MIP_HEADER.pack(
+                SOURCE_MIP_MAGIC,
+                int(identity.format_version),
+                int(array.shape[1]),
+                int(array.shape[0]),
+                3,
+                _SOURCE_MIP_DTYPE_FLOAT32,
+                0,
+                len(payload),
+                crc,
+            )
+            temp = path.with_name(f".{path.name}.{os.getpid()}.{get_ident()}.tmp")
+            temp.write_bytes(header + payload)
+            os.replace(temp, path)
+        except OSError:
+            with self._lock:
+                self._counters["write_failures"] += 1
+
+    def _discard_corrupt(self, path: Path) -> None:
+        try:
+            path.unlink()
+        except OSError:
+            return
+        with self._lock:
+            self._counters["corrupt_discards"] += 1
+
+    def _insert_memory_locked(self, key: tuple[str, int], array: np.ndarray) -> None:
+        if self.memory_budget_bytes <= 0 or int(array.nbytes) > self.memory_budget_bytes:
+            return
+        existing = self._memory.pop(key, None)
+        if existing is not None:
+            self._memory_bytes -= int(existing.nbytes)
+        self._memory[key] = array
+        self._memory_bytes += int(array.nbytes)
+        while self._memory_bytes > self.memory_budget_bytes and self._memory:
+            _evicted_key, evicted = self._memory.popitem(last=False)
+            self._memory_bytes -= int(evicted.nbytes)
+            self._counters["memory_evictions"] += 1
+
+    def _ensure_cleaned(self) -> None:
+        with self._lock:
+            if self._cleaned:
+                return
+            self._cleaned = True
+        current = f"v{SOURCE_MIP_FORMAT_VERSION}"
+        removed = 0
+        try:
+            children = list(self.root.iterdir())
+        except OSError:
+            children = []
+        for child in children:
+            try:
+                if child.is_dir() and child.name.startswith("v"):
+                    suffix = child.name[1:]
+                    if suffix.isdigit() and int(suffix) != SOURCE_MIP_FORMAT_VERSION:
+                        shutil.rmtree(child, ignore_errors=True)
+                        removed += 1
+            except OSError:
+                continue
+        try:
+            for path in self.root.rglob("*.tmp"):
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    continue
+        except OSError:
+            pass
+        with self._lock:
+            self._counters["stale_removed"] += removed
+
+    def _prune_disk(self) -> None:
+        if self.disk_budget_bytes <= 0:
+            return
+        entries: list[tuple[float, int, Path]] = []
+        total = 0
+        try:
+            for path in self.root.rglob("*.f32"):
+                try:
+                    stat = path.stat()
+                except OSError:
+                    continue
+                entries.append((stat.st_mtime, stat.st_size, path))
+                total += stat.st_size
+        except OSError:
+            return
+        if total <= self.disk_budget_bytes:
+            return
+        entries.sort(key=lambda item: item[0])
+        removed = 0
+        for _mtime, size, path in entries:
+            if total <= self.disk_budget_bytes:
+                break
+            try:
+                path.unlink()
+            except OSError:
+                continue
+            total -= size
+            removed += 1
+        if removed:
+            with self._lock:
+                self._counters["disk_evictions"] += removed
+
+    def _disk_usage(self) -> tuple[int, int]:
+        total = 0
+        count = 0
+        try:
+            for path in self.root.rglob("*.f32"):
+                try:
+                    total += path.stat().st_size
+                except OSError:
+                    continue
+                count += 1
+        except OSError:
+            return 0, 0
+        return total, count
+
+
+def _env_int(name: str, fallback: int) -> int:
+    raw = os.environ.get(name)
+    if not raw:
+        return fallback
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return fallback
+
+
+_default_source_mip_store: SourceMipStore | None = None
+_default_source_mip_store_resolved = False
+
+
+def default_source_mip_store() -> SourceMipStore | None:
+    """The process-wide persistent source cache, or ``None`` when disabled.
+
+    ``HDR_FINISHER_SOURCE_CACHE_DIR`` relocates the store (the test suite
+    points it at a temporary directory); ``HDR_FINISHER_SOURCE_CACHE_DISABLE``
+    turns persistence off entirely. Budgets are bytes and are read once.
+    """
+    global _default_source_mip_store, _default_source_mip_store_resolved
+    if _default_source_mip_store_resolved:
+        return _default_source_mip_store
+    _default_source_mip_store_resolved = True
+    if os.environ.get("HDR_FINISHER_SOURCE_CACHE_DISABLE"):
+        return None
+    configured = os.environ.get("HDR_FINISHER_SOURCE_CACHE_DIR")
+    root = Path(configured) if configured else APP_DATA_DIR / "source-mips"
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    _default_source_mip_store = SourceMipStore(
+        root,
+        memory_budget_bytes=_env_int("HDR_FINISHER_SOURCE_MIP_MEMORY_BYTES", DEFAULT_SOURCE_MIP_MEMORY_BYTES),
+        disk_budget_bytes=_env_int("HDR_FINISHER_SOURCE_MIP_DISK_BYTES", DEFAULT_SOURCE_MIP_DISK_BYTES),
+    )
+    return _default_source_mip_store
+
+
+def reset_default_source_mip_store() -> None:
+    """Test hook: forget the resolved default so a new environment applies."""
+    global _default_source_mip_store, _default_source_mip_store_resolved
+    _default_source_mip_store = None
+    _default_source_mip_store_resolved = False
+
+
 @dataclass
 class SessionRenderCache:
     image: np.ndarray
@@ -93,6 +543,9 @@ class SessionRenderCache:
     max_frames: int = 6
     max_cache_bytes: int = 192 * 1024 * 1024
     max_proxy_levels: int = 2
+    source_identity: SourceMipIdentity | None = None
+    sdr_identity: SourceMipIdentity | None = None
+    mip_store: SourceMipStore | None = field(default=None, repr=False)
     _lock: RLock = field(default_factory=RLock, init=False, repr=False)
     _source_proxies: OrderedDict[int, np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
     # The rolled frame the straighten path has to materialize, held across
@@ -118,6 +571,10 @@ class SessionRenderCache:
     _singleflight_waits: int = field(default=0, init=False, repr=False)
     _stale_cancellations: int = field(default=0, init=False, repr=False)
     _source_epoch: int = field(default=0, init=False, repr=False)
+    # The last answer each source edge received, for the transport headers:
+    # ``native`` (the decoded frame itself), ``memory``/``disk`` (warm mip),
+    # ``built`` (cold mip build) or ``session`` (no persistent store).
+    _source_level_states: dict[int, str] = field(default_factory=dict, init=False, repr=False)
 
     def set_color_context(self, context: RenderColorContext) -> None:
         with self._lock:
@@ -131,10 +588,24 @@ class SessionRenderCache:
             self._scopes.clear()
             self._cancel_inflight_locked()
 
-    def replace_source(self, image: np.ndarray, sdr_reference_image: np.ndarray | None) -> None:
+    def replace_source(
+        self,
+        image: np.ndarray,
+        sdr_reference_image: np.ndarray | None,
+        *,
+        identity: SourceMipIdentity | None = None,
+        sdr_identity: SourceMipIdentity | None = None,
+    ) -> None:
         with self._lock:
+            if self.mip_store is not None:
+                if self.source_identity is not None:
+                    self.mip_store.discard_memory(self.source_identity)
+                if self.sdr_identity is not None:
+                    self.mip_store.discard_memory(self.sdr_identity)
             self.image = image
             self.sdr_reference_image = sdr_reference_image
+            self.source_identity = identity
+            self.sdr_identity = sdr_identity
             self._source_epoch += 1
             self._source_proxies.clear()
             self._sdr_proxies.clear()
@@ -692,7 +1163,7 @@ class SessionRenderCache:
                 flight.set()
         return result
 
-    def diagnostics(self) -> dict[str, int]:
+    def diagnostics(self) -> dict[str, Any]:
         with self._lock:
             source_bytes = int(self.image.nbytes) + int(self.sdr_reference_image.nbytes if self.sdr_reference_image is not None else 0)
             proxy_bytes = self._proxy_bytes_locked()
@@ -700,6 +1171,8 @@ class SessionRenderCache:
             matched_base_bytes = sum(int(frame.nbytes) for frame in self._matched_sdr_bases.values())
             scope_bytes = sum(len(scope.model_dump_json().encode("utf-8")) for scope in self._scopes.values())
             mask_bytes = sum(int(mask.nbytes) for mask in self._masks.values())
+            source_mip = self.mip_store.diagnostics() if self.mip_store is not None else None
+            source_identity = self.source_identity.digest() if self.source_identity is not None else None
             return {
                 "source_bytes": source_bytes,
                 "proxy_bytes": proxy_bytes,
@@ -718,6 +1191,8 @@ class SessionRenderCache:
                 "in_flight": len(self._inflight),
                 "singleflight_waits": self._singleflight_waits,
                 "stale_cancellations": self._stale_cancellations,
+                "source_mip": source_mip,
+                "source_mip_identity": source_identity,
             }
 
     def _proxies(self, long_edge: int) -> tuple[np.ndarray, np.ndarray | None]:
@@ -726,17 +1201,11 @@ class SessionRenderCache:
             return self._proxies_locked(edge)
 
     def _proxies_locked(self, edge: int) -> tuple[np.ndarray, np.ndarray | None]:
-        if edge not in self._source_proxies:
-            source = np.ascontiguousarray(downsample_image(self.image, edge), dtype=np.float32)
-            source.setflags(write=False)
-            self._source_proxies[edge] = source
-        if edge not in self._sdr_proxies:
-            if self.sdr_reference_image is None:
-                self._sdr_proxies[edge] = None
-            else:
-                reference = np.ascontiguousarray(downsample_image(self.sdr_reference_image, edge), dtype=np.float32)
-                reference.setflags(write=False)
-                self._sdr_proxies[edge] = reference
+        self._source_proxies[edge] = self._source_level_locked(edge, PreviewKind.HDR)
+        if self.sdr_reference_image is None:
+            self._sdr_proxies[edge] = None
+        else:
+            self._sdr_proxies[edge] = self._source_level_locked(edge, PreviewKind.SDR)
         self._source_proxies.move_to_end(edge)
         self._sdr_proxies.move_to_end(edge)
         while len(self._source_proxies) > self.max_proxy_levels:
@@ -744,6 +1213,41 @@ class SessionRenderCache:
             self._sdr_proxies.pop(old_edge, None)
             self._evictions += 1
         return self._source_proxies[edge], self._sdr_proxies[edge]
+
+    def _source_level_locked(self, edge: int, kind: PreviewKind) -> np.ndarray:
+        """Return one source level, through the persistent mip store when present.
+
+        The store holds pre-adjustment scene-linear levels keyed by source
+        identity and edge, so a warm request reads a level rather than
+        downsampling the decoded frame again. The store is consulted on every
+        request so the level state it reports describes the request that was
+        just answered; without a store this is the original path, with the
+        session's small LRU in front.
+        """
+        image = self.image if kind == PreviewKind.HDR else self.sdr_reference_image
+        identity = self.source_identity if kind == PreviewKind.HDR else self.sdr_identity
+        if identity is not None and self.mip_store is not None and image is not None:
+            level, state = self.mip_store.level(identity, edge, image)
+        else:
+            session_proxies = self._source_proxies if kind == PreviewKind.HDR else self._sdr_proxies
+            cached = session_proxies.get(edge)
+            if cached is not None:
+                self._source_level_states.setdefault(
+                    edge, "native" if edge >= max(image.shape[:2]) else "session"
+                )
+                return cached
+            level = downsample_image(image, edge)
+            state = "native" if edge >= max(image.shape[:2]) else "session"
+        source = np.ascontiguousarray(level, dtype=np.float32)
+        source.setflags(write=False)
+        self._source_level_states[edge] = state
+        return source
+
+    def source_level_state(self, long_edge: int) -> str | None:
+        """How the last request for this edge was answered (telemetry)."""
+        edge = max(256, int(long_edge))
+        with self._lock:
+            return self._source_level_states.get(edge)
 
     def _proxy_bytes_locked(self) -> int:
         source = sum(int(proxy.nbytes) for proxy in self._source_proxies.values())

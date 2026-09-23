@@ -834,6 +834,7 @@ def webgpu_proxy(
         accepted_geometry_signature = authoritative_geometry_signature
     body, bytes_per_row, pixel_format = encode_rgba_proxy(proxy, prefer_half=format == "rgba16f")
     height, width = proxy.shape[:2]
+    source_state = session.render_cache.source_level_state(long_edge)
     return Response(
         content=body,
         media_type="application/octet-stream",
@@ -845,6 +846,7 @@ def webgpu_proxy(
             "X-Pixel-Format": pixel_format,
             "X-Geometry-Signature": accepted_geometry_signature,
             "X-Edit-Revision": str(session.edit_revision),
+            "X-Source-Level-State": source_state or "unknown",
         },
     )
 
@@ -907,6 +909,7 @@ def webgpu_source_tile(
     body, bytes_per_row, pixel_format = encode_rgba_proxy(tile, prefer_half=format == "rgba16f")
     delivered = placement["delivered"]
     core = placement["core"]
+    source_state = session.render_cache.source_level_state(long_edge)
     return Response(
         content=body,
         media_type="application/octet-stream",
@@ -929,6 +932,7 @@ def webgpu_source_tile(
             "X-Pixel-Format": pixel_format,
             "X-Geometry-Signature": geometry_signature or authoritative_signature,
             "X-Edit-Revision": str(session.edit_revision),
+            "X-Source-Level-State": source_state or "unknown",
         },
     )
 

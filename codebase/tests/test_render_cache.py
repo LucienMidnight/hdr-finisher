@@ -6,9 +6,20 @@ import numpy as np
 import pytest
 
 import hdr_finisher.render_cache as render_cache_module
+from hdr_finisher.color_context import RenderColorContext
 from hdr_finisher.finishing import apply_geometry
 from hdr_finisher.models import AdjustmentState, GeometryAdjustments, LocalAdjustment, MaskExpression, MaskLeaf, OverlayMode, PreviewKind, SDRMatchRevertState, SdrMatchState
-from hdr_finisher.render_cache import SessionRenderCache, adjustment_signature, encode_rgba32f_proxy, encode_rgba_proxy, scope_region_view
+from hdr_finisher.preview import downsample_image
+from hdr_finisher.render_cache import (
+    SessionRenderCache,
+    SourceMipIdentity,
+    SourceMipStore,
+    adjustment_signature,
+    downsample_target_dimensions,
+    encode_rgba32f_proxy,
+    encode_rgba_proxy,
+    scope_region_view,
+)
 
 
 def test_source_replacement_cannot_reinsert_an_obsolete_matched_sdr_base(monkeypatch) -> None:
@@ -483,3 +494,298 @@ def test_evicting_a_cached_frame_drops_the_peak_it_was_holding() -> None:
     cache.adjusted_frame_in_strips(second, PreviewKind.HDR, 256, budget_bytes=4096)
 
     assert len(cache._frame_scope_peaks) <= len(cache._frames)
+
+
+# -- persistent source mip cache (PRD 5.3) ---------------------------------
+
+
+def _mip_identity(image: np.ndarray, **overrides) -> SourceMipIdentity:
+    height, width = image.shape[:2]
+    payload = {
+        "content_key": "test-content",
+        "byte_size": int(image.nbytes),
+        "width": int(width),
+        "height": int(height),
+        "decoder_version": "decoder-v1",
+        "color_transform_version": "color-v1",
+    }
+    payload.update(overrides)
+    return SourceMipIdentity(**payload)
+
+
+def _mip_image(height: int = 400, width: int = 600) -> np.ndarray:
+    return np.linspace(0.0, 4.0, height * width * 3, dtype=np.float32).reshape(height, width, 3)
+
+
+def test_source_mip_level_matches_the_cold_downsample_and_survives_a_restart(tmp_path) -> None:
+    image = _mip_image()
+    identity = _mip_identity(image)
+    root = tmp_path / "mips"
+    store = SourceMipStore(root)
+
+    level, state = store.level(identity, 256, image)
+
+    assert state == "built"
+    np.testing.assert_array_equal(level, downsample_image(image, 256))
+    assert not level.flags.writeable
+    assert level.shape == (171, 256, 3)
+
+    restarted = SourceMipStore(root)
+    warm, warm_state = restarted.level(identity, 256, image)
+
+    assert warm_state == "disk"
+    np.testing.assert_array_equal(warm, level)
+    diagnostics = restarted.diagnostics()
+    assert diagnostics["disk_hits"] == 1
+    assert diagnostics["bytes_read"] == int(level.nbytes)
+    assert diagnostics["cold_builds"] == 0
+    assert diagnostics["bytes_generated"] == 0
+
+
+def test_source_mip_identity_covers_every_decode_input_and_nothing_else(tmp_path) -> None:
+    image = _mip_image()
+    base = _mip_identity(image)
+    payload = base.payload()
+
+    assert "grade" not in payload and "adjustments" not in payload
+    variants = [
+        _mip_identity(image, content_key="other-content"),
+        _mip_identity(image, decoder_version="decoder-v2"),
+        _mip_identity(image, color_transform_version="color-v2"),
+        _mip_identity(image, orientation=6),
+        _mip_identity(image, reference_white_nits=100),
+        _mip_identity(image, interpretation="override"),
+        _mip_identity(image, lane="sdr"),
+    ]
+
+    digests = {base.digest(), *(variant.digest() for variant in variants)}
+    assert len(digests) == len(variants) + 1
+
+
+def test_source_mip_cold_builds_do_not_invalidate_on_grade_changes(tmp_path) -> None:
+    image = _mip_image()
+    identity = _mip_identity(image)
+    store = SourceMipStore(tmp_path / "mips")
+    adjustments = AdjustmentState()
+    adjusted = adjustments.model_copy(deep=True)
+    adjusted.hdr.exposure = 1.5
+
+    first = SessionRenderCache(image, None, source_identity=identity, mip_store=store)
+    second = SessionRenderCache(image, None, source_identity=identity, mip_store=store)
+    first.adjusted_frame(adjustments, PreviewKind.HDR, 256)
+    second.adjusted_frame(adjusted, PreviewKind.HDR, 256)
+
+    diagnostics = store.diagnostics()
+    assert diagnostics["cold_builds"] == 1
+    assert diagnostics["memory_hits"] == 1
+    assert first._source_proxies[256] is second._source_proxies[256]
+
+
+def test_source_mip_serves_disk_after_memory_is_dropped(tmp_path) -> None:
+    image = _mip_image()
+    identity = _mip_identity(image)
+    store = SourceMipStore(tmp_path / "mips")
+    built, _state = store.level(identity, 256, image)
+    store.clear_memory()
+
+    warm, state = store.level(identity, 256, image)
+
+    assert state == "disk"
+    np.testing.assert_array_equal(warm, built)
+
+
+def test_source_mip_odd_dimensions_preserve_headroom_negatives_and_edges(tmp_path) -> None:
+    image = np.full((777, 1235, 3), 0.18, dtype=np.float32)
+    image[10, 20] = np.float32(5000.0)
+    image[700, 1200] = np.float32(-3.0)
+    identity = _mip_identity(image)
+    root = tmp_path / "mips"
+
+    level, _state = SourceMipStore(root).level(identity, 256, image)
+    warm, state = SourceMipStore(root).level(identity, 256, image)
+
+    assert (level.shape[1], level.shape[0]) == downsample_target_dimensions(1235, 777, 256)
+    assert state == "disk"
+    assert np.array_equal(warm, level)
+    assert bool(np.all(np.isfinite(level)))
+    assert float(np.max(level)) > 100.0
+    assert float(np.min(level)) < 0.0
+    np.testing.assert_array_equal(level[0, :], warm[0, :])
+    np.testing.assert_array_equal(level[-1, -8:], warm[-1, -8:])
+
+
+def test_source_mip_corruption_is_discarded_and_rebuilt(tmp_path) -> None:
+    image = _mip_image()
+    identity = _mip_identity(image)
+    root = tmp_path / "mips"
+    store = SourceMipStore(root)
+    built, _state = store.level(identity, 256, image)
+    path = store._level_path(identity, 256)
+
+    payload = bytearray(path.read_bytes())
+    payload[-1] ^= 0xFF
+    path.write_bytes(bytes(payload))
+
+    restarted = SourceMipStore(root)
+    rebuilt, state = restarted.level(identity, 256, image)
+
+    assert state == "built"
+    assert restarted.diagnostics()["corrupt_discards"] == 1
+    np.testing.assert_array_equal(rebuilt, built)
+    assert restarted.diagnostics()["disk_hits"] == 0
+
+    truncated = bytearray(path.read_bytes())
+    path.write_bytes(bytes(truncated[:20]))
+    third = SourceMipStore(root)
+    again, state = third.level(identity, 256, image)
+    assert state == "built"
+    assert third.diagnostics()["corrupt_discards"] == 1
+    np.testing.assert_array_equal(again, built)
+
+
+def test_source_mip_stale_versions_and_interrupted_writes_are_swept(tmp_path) -> None:
+    image = _mip_image()
+    identity = _mip_identity(image)
+    root = tmp_path / "mips"
+    stale = root / "v0" / "deadbeef"
+    stale.mkdir(parents=True)
+    (stale / "256.f32").write_bytes(b"old")
+    interrupted = root / "v1" / ".256.f32.1234.5678.tmp"
+    interrupted.parent.mkdir(parents=True, exist_ok=True)
+    interrupted.write_bytes(b"partial")
+
+    store = SourceMipStore(root)
+    store.level(identity, 256, image)
+
+    assert not stale.exists()
+    assert not interrupted.exists()
+    assert store.diagnostics()["stale_removed"] == 1
+
+
+def test_source_mip_memory_and_disk_lrus_are_byte_bounded(tmp_path) -> None:
+    image = _mip_image(900, 600)
+    identity = _mip_identity(image)
+    store = SourceMipStore(tmp_path / "mips", memory_budget_bytes=800_000, disk_budget_bytes=1_300_000)
+
+    store.level(identity, 256, image)
+    store.level(identity, 300, image)
+    store.level(identity, 400, image)
+
+    diagnostics = store.diagnostics()
+    assert diagnostics["memory_bytes"] <= store.memory_budget_bytes
+    assert diagnostics["disk_bytes"] <= store.disk_budget_bytes
+    assert diagnostics["disk_entries"] >= 1
+    assert diagnostics["memory_evictions"] >= 1
+    assert diagnostics["disk_evictions"] >= 1
+
+
+def test_source_mip_telemetry_counts_cold_warm_and_build_duration(tmp_path) -> None:
+    image = _mip_image()
+    identity = _mip_identity(image)
+    root = tmp_path / "mips"
+    store = SourceMipStore(root)
+
+    store.level(identity, 256, image)
+    cold = store.diagnostics()
+    assert cold["cold_builds"] == 1
+    assert cold["build_count"] == 1
+    assert cold["build_ms_total"] > 0.0
+    assert cold["build_ms_mean"] > 0.0
+    assert cold["bytes_generated"] == int(downsample_image(image, 256).nbytes)
+    assert cold["warm_hits"] == 0
+
+    store.level(identity, 256, image)
+    memory = store.diagnostics()
+    assert memory["memory_hits"] == 1
+    assert memory["warm_hits"] == 1
+
+    disk = SourceMipStore(root)
+    disk.level(identity, 256, image)
+    assert disk.diagnostics()["warm_hits"] == 1
+    assert disk.diagnostics()["disk_bytes"] > 0
+
+
+def test_source_mip_native_edge_returns_the_decoded_image_uncached(tmp_path) -> None:
+    image = _mip_image(300, 500)
+    identity = _mip_identity(image)
+    store = SourceMipStore(tmp_path / "mips")
+
+    level, state = store.level(identity, 500, image)
+    level, state = store.level(identity, 4096, image)
+
+    assert state == "native"
+    assert level is image
+    diagnostics = store.diagnostics()
+    assert diagnostics["native_passes"] == 2
+    assert diagnostics["cold_builds"] == 0
+    assert diagnostics["disk_entries"] == 0
+
+
+def test_source_replacement_swaps_identity_and_drops_the_old_memory(tmp_path) -> None:
+    old_image = _mip_image()
+    new_image = np.full((400, 600, 3), 0.72, dtype=np.float32)
+    store = SourceMipStore(tmp_path / "mips")
+    cache = SessionRenderCache(
+        old_image,
+        None,
+        source_identity=_mip_identity(old_image),
+        mip_store=store,
+    )
+    cache._proxies(256)
+    assert store.diagnostics()["memory_entries"] == 1
+
+    new_identity = _mip_identity(new_image, content_key="new-content")
+    cache.replace_source(new_image, None, identity=new_identity)
+    level, _sdr = cache._proxies(256)
+
+    assert store.diagnostics()["memory_entries"] <= 1
+    assert float(np.max(level)) < 1.0
+
+
+def test_color_context_changes_do_not_invalidate_source_mips(tmp_path) -> None:
+    image = _mip_image()
+    store = SourceMipStore(tmp_path / "mips")
+    cache = SessionRenderCache(image, None, source_identity=_mip_identity(image), mip_store=store)
+    first, _sdr = cache._proxies(256)
+
+    cache.set_color_context(RenderColorContext(100))
+    second, _sdr = cache._proxies(256)
+
+    assert second is first
+    assert store.diagnostics()["cold_builds"] == 1
+
+
+def test_geometry_tiles_served_from_a_warm_mip_match_the_cold_path(tmp_path) -> None:
+    image = _mip_image(600, 900)
+    identity = _mip_identity(image)
+    root = tmp_path / "mips"
+    adjustments = AdjustmentState()
+    adjustments.shared.geometry = GeometryAdjustments(
+        rotation=90,
+        crop={"x": 0.25, "y": 0.125, "width": 0.5, "height": 0.75},
+    )
+
+    cold_cache = SessionRenderCache(image, None, source_identity=identity, mip_store=SourceMipStore(root))
+    cold_tile, _space, _signature, cold_placement = cold_cache.geometry_source_tile(
+        PreviewKind.HDR,
+        256,
+        adjustments,
+        None,
+        (10, 20, 90, 120),
+        halo=16,
+    )
+
+    warm_cache = SessionRenderCache(image, None, source_identity=identity, mip_store=SourceMipStore(root))
+    warm_tile, _space, _signature, warm_placement = warm_cache.geometry_source_tile(
+        PreviewKind.HDR,
+        256,
+        adjustments,
+        None,
+        (10, 20, 90, 120),
+        halo=16,
+    )
+
+    np.testing.assert_array_equal(warm_tile, cold_tile)
+    assert warm_placement == cold_placement
+    assert warm_cache.mip_store.diagnostics()["disk_hits"] >= 1
+    assert warm_cache.mip_store.diagnostics()["cold_builds"] == 0

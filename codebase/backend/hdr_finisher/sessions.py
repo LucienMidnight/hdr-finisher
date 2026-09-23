@@ -13,7 +13,7 @@ import numpy as np
 from .capabilities import probe_capabilities
 from .color_context import DEFAULT_HDR_REFERENCE_WHITE_NITS, RenderColorContext, scene_linear_to_nits
 from .adjustments import SDR_SCENE_TO_DISPLAY_SCALE
-from .loader import load_image
+from .loader import SOURCE_COLOR_TRANSFORM_VERSION, SOURCE_DECODER_VERSION, load_image
 from .metadata import extract_metadata
 from .models import (
     AdjustmentState,
@@ -34,7 +34,7 @@ from .models import (
     SourceInterpretationOverride,
     SourceReference,
 )
-from .render_cache import SessionRenderCache
+from .render_cache import SessionRenderCache, SourceMipIdentity, default_source_mip_store
 from .source_luminance import describe_source_luminance
 from .sdr_match import MATCH_ANALYSIS_EDGE, SDRMatchMaterializationError, materialize_sdr_match
 
@@ -121,6 +121,36 @@ def _refresh_sdr_match_staleness(session: "LoadedSession") -> None:
     )
 
 
+def _source_mip_identity(session: "LoadedSession", lane: str = "hdr") -> SourceMipIdentity:
+    """The persistent source cache key for this session's decoded pixels.
+
+    Everything folded in here changes the decoded scene-linear data for the
+    same file: the decode route and color transform versions, the reference
+    white used at decode, and any user interpretation override or RAW recipe.
+    Grade state is deliberately absent (PRD 5.3).
+    """
+    interpretation = json.dumps(
+        {
+            "override": session.interpretation_override.model_dump(mode="json"),
+            "raw": session.raw_import_settings.model_dump(mode="json"),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return SourceMipIdentity(
+        content_key=session.source_fingerprint_sha256,
+        byte_size=session.source_byte_size,
+        width=int(session.image.shape[1]),
+        height=int(session.image.shape[0]),
+        decoder_version=SOURCE_DECODER_VERSION,
+        color_transform_version=SOURCE_COLOR_TRANSFORM_VERSION,
+        orientation=1,
+        lane=lane,
+        reference_white_nits=int(session.hdr_reference_white_nits),
+        interpretation=interpretation,
+    )
+
+
 @dataclass
 class HistoryEntry:
     forward: EditCommand
@@ -183,7 +213,14 @@ class LoadedSession:
                 "sdr_ev": 0.0 if self.sdr_reference_image is not None else recommended_exposure,
                 "method": "bounded_median_and_p90_minus_1_5_ev",
             }
-        self.render_cache = SessionRenderCache(self.image, self.sdr_reference_image, color_context=self.color_context)
+        self.render_cache = SessionRenderCache(
+            self.image,
+            self.sdr_reference_image,
+            color_context=self.color_context,
+            source_identity=_source_mip_identity(self),
+            sdr_identity=_source_mip_identity(self, lane="sdr") if self.sdr_reference_image is not None else None,
+            mip_store=default_source_mip_store(),
+        )
         self._sync_highlight_source_peaks()
 
     def _sync_highlight_source_peaks(self) -> None:
@@ -921,7 +958,12 @@ class SessionStore:
                 session._sync_highlight_source_peaks()
             session.preview_tokens = {PreviewKind.HDR: 0, PreviewKind.SDR: 0}
             session.scope_tokens = {PreviewKind.HDR: 0, PreviewKind.SDR: 0}
-            session.render_cache.replace_source(image, sdr_reference_image)
+            session.render_cache.replace_source(
+                image,
+                sdr_reference_image,
+                identity=_source_mip_identity(session),
+                sdr_identity=_source_mip_identity(session, lane="sdr") if sdr_reference_image is not None else None,
+            )
             session.edit_revision += 1
             session.dirty = True
             return session

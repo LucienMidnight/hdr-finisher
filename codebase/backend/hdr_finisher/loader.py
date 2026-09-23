@@ -32,6 +32,12 @@ EXR_COLOR_INTEROP_SPACES = {
     "lin_ap1_scene": "ACEScg",
 }
 
+# Provenance for the persistent source mip cache (PRD 5.3). Bump either
+# constant when a change alters the decoded scene-linear pixels for the same
+# file; stale levels are then ignored and removed by version.
+SOURCE_DECODER_VERSION = "hdr-finisher-loader-v1"
+SOURCE_COLOR_TRANSFORM_VERSION = "acescg-bounded-v1"
+
 # Display-P3 and sRGB share D65, so the hot-path linear conversion is a fixed
 # float32 matrix and does not require a general-purpose colour transform.
 DISPLAY_P3_TO_SRGB = np.asarray(

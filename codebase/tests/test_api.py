@@ -247,6 +247,41 @@ def test_real_png_upload_preview_and_scopes() -> None:
     assert diagnostics.json()["render_cache"]["managed_bytes"] > 0
 
 
+def test_source_mip_levels_persist_across_sessions() -> None:
+    from hdr_finisher.render_cache import default_source_mip_store
+
+    buffer = BytesIO()
+    Image.new("RGB", (400, 300), color=(120, 90, 61)).save(buffer, format="PNG")
+    payload = buffer.getvalue()
+
+    first = client.post("/api/session", files={"file": ("mip-source.png", payload, "image/png")})
+    assert first.status_code == 200
+    first_id = first.json()["session"]["session_id"]
+
+    source_store = default_source_mip_store()
+    assert source_store is not None
+    builds_before = source_store.diagnostics()["cold_builds"]
+
+    cold = client.get(f"/api/session/{first_id}/proxy/hdr?long_edge=256")
+    assert cold.status_code == 200
+    assert cold.headers["x-source-level-state"] == "built"
+    warm = client.get(f"/api/session/{first_id}/proxy/hdr?long_edge=256")
+    assert warm.status_code == 200
+    assert warm.headers["x-source-level-state"] == "memory"
+    assert warm.content == cold.content
+
+    source_store.clear_memory()
+
+    second = client.post("/api/session", files={"file": ("mip-source.png", payload, "image/png")})
+    assert second.status_code == 200
+    second_id = second.json()["session"]["session_id"]
+    restarted = client.get(f"/api/session/{second_id}/proxy/hdr?long_edge=256")
+    assert restarted.status_code == 200
+    assert restarted.headers["x-source-level-state"] == "disk"
+    assert restarted.content == cold.content
+    assert source_store.diagnostics()["cold_builds"] == builds_before + 1
+
+
 def test_materialized_sdr_match_uses_the_ordinary_acescg_webgpu_source() -> None:
     upload = client.post(
         "/api/session",
