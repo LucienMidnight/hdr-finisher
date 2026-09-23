@@ -186,6 +186,9 @@ Recorded product direction, 2026-09-23. The authoring preview is judged perceptu
 - **Tolerance method.** Perceptual sign-off by the product owner on side-by-side pairs calibrates the tolerance per module class. Numeric metrics exist to catch extreme errors, not to decide acceptability: differences invisible at the intended viewing size are acceptable unless they are structural, localized spikes, or changes of texture character.
 - **Inspection guarantee.** At zoom >=100%, the native-region exact and export-parity requirements of Section 4.5 are unchanged.
 - **Known scale residual.** Where the display transform is nonlinear, filtering the source before the graph and filtering the graded result differ for content at or below the display Nyquist (fine repeating detail, sub-pixel speculars, thin bright lines). That residual is judged against the perceptual standard above, not by byte equality.
+- **What perceptual does not cover.** Measurement claims stay exact. Peak nits, ceiling checks, gain-map metadata and headroom are verified numerically, never by eye: if the app reports 999.5 nits, the export is not 1001.
+- **What the Chromium anchor does not prove.** The anchor shows the preview and the export agree through the shared Chromium display path; it cannot show that either is right when that path is wrong. Export correctness is verified separately by decoding the delivered file and checking its values and metadata — the existing decode and inspection paths for Ultra HDR JPEG and AVIF gain maps.
+- **Comparison precision.** Numeric and difference evidence for HDR uses real-precision reads on both sides: a float readback of the presentation target and a decode of the delivered file. Page captures (CDP screenshots, Electron `capturePage`) are 8-bit display-referred; any composite built from them must be labelled SDR-only and may not be the basis of an HDR difference claim.
 - **Future option, not this sprint.** A fidelity mode that always processes as the export does (native-resolution grade plus filtered presentation) is recorded as a future option, not a current setting.
 
 ## 5. Target architecture
@@ -1576,6 +1579,26 @@ PRD **4.8** was added with those statements, consistent with 4.5 (terms unchange
 **Gate status.** Phase 0 item 1 (contract approval): 4.8 is now written. Item 6: measured. Item 7: the method is defined, the table remains unsigned. Suites unchanged: **176 JS**. Phase 3 untouched.
 
 Next safe edit: the export/reference parity run — export from a session, render the delivered file through the Chromium proof path, capture both sides at display size, and produce the side-by-side and difference sheets for the owner's perceptual sign-off. That is the direct test of 4.8 and the last uncovered class in 15.21.
+
+### 15.27 Accuracy boundaries — 2026-09-23 (owner: what perceptual does not cover; the anchor's blind spot; HDR precision)
+
+The owner added three constraints to the 4.8 target, now written into it:
+
+1. **Measurement claims stay exact.** Peak nits, ceiling checks, gain-map metadata and headroom are checked numerically, never by eye. If the app reports 999.5 nits, the export is not 1001.
+2. **The Chromium anchor proves agreement, not correctness.** Preview and proof share the same Chromium display path, so a wrong tone map, headroom or colour-management decision makes both sides wrong in the same way and they still match. The export therefore needs its own decode-and-verify check: values and metadata read from the delivered file.
+3. **HDR evidence must be read at real precision on both sides.** CDP/Playwright page captures and Electron `capturePage` return display-referred 8-bit; a difference image built from them would look clean exactly where HDR errors live. Any composite from page captures is labelled SDR-only and may not support an HDR difference claim.
+
+**What the tree already provides (verified, so the parity unit does not invent it):**
+
+- Preview side: `readPresentationRegion` returns half-float values from the `rgba16float` presentation target — the same readback the route parity runs use.
+- File side: `gainmap_decoders.decode_ultrahdr_jpeg` returns canonical HDR ACEScg plus the exact decoded SDR base with its gain-map metadata; `decode_avif` covers plain, direct-HDR and ISO 21496-1 gain-map AVIF; `avif_info.inspect_avif` reports gain-map presence, bit depth and headroom labels; capability gates already exist for both decoders.
+- Screenshots remain valid for SDR-viewable composites only.
+
+**Consequence for the next unit.** Export/reference parity begins with the precision capability check: confirm a float readback of the preview and a real-precision decode of the exported file for the chosen format, compare values and metadata numerically, and only then build the perceptual review sheets. Export correctness (decode plus metadata) is a separate assertion from preview-agrees-with-export; both must pass for the parity class to close, and the review sheet states which parts were read at real precision and which are SDR-only.
+
+Gate status: item 7's method now includes the numeric/measurement boundary; the table remains unsigned. Suites unchanged: **176 JS**. Phase 3 untouched.
+
+Next safe edit: export/reference parity with the precision precheck, per 4.8.
 
 
 
