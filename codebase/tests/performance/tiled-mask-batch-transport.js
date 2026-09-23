@@ -134,6 +134,7 @@ async function clipBrightness(page, clip) {
       state.previewScheduler?.cancel();
       window.HDRFinisherPerformance.cancelRoiCatchUp();
     });
+    const batchesBeforeRoi = await page.evaluate(() => window.__maskTransport.batch.length);
 
     // The region the ROI pass must not touch, captured before it runs. The
     // viewport is 512 wide and the contract pads it to 666, which reaches into
@@ -180,6 +181,7 @@ async function clipBrightness(page, clip) {
 
     const transport = outcome.transport;
     const batchTiles = transport.batch.map((entry) => entry.tiles);
+    const roiBatchTiles = transport.batch.slice(batchesBeforeRoi).map((entry) => entry.tiles);
     const summary = {
       url,
       execution: outcome.execution,
@@ -205,6 +207,7 @@ async function clipBrightness(page, clip) {
       batchRequests: transport.batch.length,
       perTileRequests: transport.perTile.length,
       batchTiles,
+      roiBatchTiles,
       maxTilesInBatch: batchTiles.length ? Math.max(...batchTiles) : 0,
       totalTilesRequested: batchTiles.reduce((sum, value) => sum + Math.max(0, value), 0),
       batchStatuses: transport.batch.map((entry) => entry.status),
@@ -227,6 +230,9 @@ async function clipBrightness(page, clip) {
             visibleCount: outcome.metrics.visibleCount ?? null,
             batchCount: outcome.metrics.batchCount ?? null,
             passes: outcome.metrics.passes ?? null,
+            activeNodes: outcome.metrics.activeNodes ?? null,
+            maskTilesRequested: outcome.metrics.maskTilesRequested ?? null,
+            viewportRequest: outcome.metrics.viewportRequest ?? null,
           }
         : null,
     };
@@ -289,6 +295,16 @@ async function clipBrightness(page, clip) {
       outcome.metrics.foregroundTiles > 0
         && outcome.metrics.foregroundTiles < outcome.metrics.tileCount,
       `The ROI pass did not restrict the foreground batch: ${JSON.stringify(outcome.metrics)}`,
+    );
+    assert(
+      roiBatchTiles.reduce((sum, count) => sum + count, 0) <= outcome.metrics.foregroundTiles,
+      `Local masks were fetched outside the ROI foreground: ${JSON.stringify(roiBatchTiles)}`,
+    );
+    assert(
+      outcome.metrics.maskTilesRequested === outcome.metrics.foregroundTiles
+        && outcome.metrics.activeNodes.includes("mask-feather")
+        && outcome.metrics.viewportRequest.roi.width === outcome.metrics.roi.width,
+      `The active mask node did not consume the renderer's ROI request: ${JSON.stringify(outcome.metrics)}`,
     );
     assert(
       outcome.metrics.skippedTiles > 0,

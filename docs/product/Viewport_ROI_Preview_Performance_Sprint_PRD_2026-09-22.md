@@ -1723,6 +1723,17 @@ Committed as `c786239` — "Declare the processing-scale contract for every spat
 
 Next safe edit: Phase 3 item 4 — port all active nodes to the ROI request contract. Do not start Phase 4.
 
+### 15.33 Implementation checkpoint — 2026-09-23 (active graph on the ROI request; Phase 3 item 4)
+
+**What changed.** The tiled renderer builds one immutable, frame-anchored `HDRViewportRequest` from the actual proxy, source size, generation, processing scale, composed graph halo and viewport. Source-region fetch, scheduler ordering and foreground tile selection now use its visible rectangle, halo and padded ROI; the fetch helper accepts the same minimum-ROI fraction. The ordered node declaration includes active Denoise, masks, Detail, spatial film, vignette and grain along with pointwise grading nodes. A viewport render through `renderTo` is admitted to Tiled even when Direct would fit, because Direct processes the whole frame. The graph still runs every active stage in the existing order on each selected tile.
+
+**Local-mask work follows the request.** Mask batches now contain only the pending foreground tiles, including their halo rectangles. Validation and cache pinning inspect those tiles only. A warm pan answered from the accepted tile ledger requests no new masks. `tiledExecutionMetrics` records the request identity fields, active nodes and mask tile count so the runtime route can be audited.
+
+**Verification.** The ROI source-region coverage test now derives foreground tiles from the actual request and checks three padding fractions at image edges and interior positions. The local-mask transport driver asserts that the ROI pass requests no more mask tiles than it processes; its recorded run requested four masks for four foreground tiles and kept two offscreen tiles unchanged. `roi-source-transport` remained byte-equal to the whole-frame path over 118,815 pixels with a 0.2332 native upload fraction. `roi-parity` remained byte-equal over 34,034 pixels, and `roi-pan-cache` reused the previously accepted tile on pan-back with zero processed tiles. The film parity driver now checks bounded batch submissions plus one final presentation copy, replacing its obsolete one-submission assertion; all cases including maximum spatial radius were byte-equal. Node tests: 174 passed; the four focused request/scale/scheduler files: 46 passed. The first `roi-parity` run raced another browser driver and refused an interactive render; a serial rerun passed.
+
+**Remaining Phase 3 work.** Item 5 is the separate small whole-image pipe. Item 6 covers GPU analytic masks, item 7 scale-aware local Detail/Denoise evidence, and item 8 cold-cache progress/cancellation. Phase 3 exit gates still need the zoom >=100% export/reference parity extension including masks, geometry/mask-boundary/image-edge seam sweeps, the runtime invalidation matrix, the 100%-after-DPR check, and complete cold/warm timing and footprint evidence. Do not start Phase 4.
+
+Next safe edit: Phase 3 item 5 — implement the small whole-image preview pipe for scopes, navigation and mask overview.
 
 
 

@@ -205,11 +205,13 @@ const MAX_CHANNEL_DELTA = 0;
       }
     }
 
-    // One submission per generation is what makes replacement atomic.
-    if (!results.every((entry) => entry.metrics.submissions === 1)) {
-      throw new Error("A tiled generation used more than one submission, so replacement is not atomic");
+    // Tiles submit in bounded batches; a final copy presents the assembled
+    // offscreen target. Submission count therefore grows with tile count.
+    if (!results.every((entry) => entry.metrics.submissions
+      === Math.ceil(entry.metrics.foregroundTiles / entry.metrics.tileBatchSize) + 1)) {
+      throw new Error("A tiled generation did not use bounded tile batches and one presentation copy");
     }
-    console.log("atomic assembly: every generation submitted exactly once  PASS");
+    console.log("bounded tile batches plus one presentation copy  PASS");
 
     const failures = results.filter((entry) => !entry.passed);
     if (failures.length) {

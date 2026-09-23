@@ -2187,11 +2187,10 @@ function initializePreviewScheduler() {
     }),
     panRefinement: () => requestRoiPanRefinement(),
     visibleOutputRect: () => visibleOutputRect(els.previewCanvas.width, els.previewCanvas.height),
-    // Phase 2 contract surface: build the immutable viewport request the ROI
-    // path will consume. The app still requests Fit (no visible rect) until the
-    // coordinator supplies one, so this exists to exercise and inspect the
-    // contract in the running app. The output size is the selected tier scaled
-    // from the source; geometry cropping is not modelled here.
+    // Diagnostic view of the immutable viewport contract. The renderer builds
+    // its own frame-anchored request from the actual proxy and composed halo;
+    // this app-level version uses the selected tier and is for inspection.
+    // Geometry cropping is not modelled here.
     viewportRequest: (options = {}) => {
       const Request = window.HDRViewportRequest;
       if (!Request || !state.session) return null;

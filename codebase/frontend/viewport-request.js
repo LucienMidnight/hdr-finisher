@@ -74,7 +74,7 @@
    * outside the padded region is ever read. Clamped to the output; the
    * backend clamps again.
    */
-  function sourceFetchRegion(visible, outputWidth, outputHeight, tileSize, halo) {
+  function sourceFetchRegion(visible, outputWidth, outputHeight, tileSize, halo, minimumRoiFraction = DEFAULT_MINIMUM_ROI_FRACTION) {
     const width = Math.max(1, toInt(outputWidth, 1));
     const height = Math.max(1, toInt(outputHeight, 1));
     const size = Math.max(64, Math.floor(Number(tileSize) || DEFAULT_TILE_SIZE));
@@ -83,7 +83,7 @@
       normalizedRect(visible, width, height),
       width,
       height,
-      DEFAULT_MINIMUM_ROI_FRACTION,
+      clamp(Number(minimumRoiFraction), 0, 1),
     );
     return normalizedRect({
       x: roi.x - margin,
@@ -294,8 +294,8 @@
      * The source region to fetch for one magnified ROI pass (Phase 3 item 2).
      * Pure geometry: `visible` and the result are in output-frame pixels.
      */
-    static sourceFetchRegion(visible, outputWidth, outputHeight, tileSize, halo) {
-      return sourceFetchRegion(visible, outputWidth, outputHeight, tileSize, halo);
+    static sourceFetchRegion(visible, outputWidth, outputHeight, tileSize, halo, minimumRoiFraction) {
+      return sourceFetchRegion(visible, outputWidth, outputHeight, tileSize, halo, minimumRoiFraction);
     }
 
     /**

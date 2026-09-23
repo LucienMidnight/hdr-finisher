@@ -4,9 +4,11 @@ const test = require("node:test");
 const { HDRTileScheduler } = require("../frontend/tile-scheduler.js");
 const { HDRViewportRequest } = require("../frontend/viewport-request.js");
 
-// The foreground selection the encoder performs: the visible rect padded by
-// 15% and clamped to the output, then the plan's tiles that intersect it.
-function planForegroundTiles(output, viewport, tileSize, halo) {
+// The same immutable request supplies source fetch and graph foreground ROI.
+function planForegroundTiles(output, viewport, tileSize, halo, minimumRoiFraction) {
+  const request = HDRViewportRequest.build({
+    output, source: output, visible: viewport, tileSize, halo, minimumRoiFraction,
+  });
   const scheduler = new HDRTileScheduler({ tileSize });
   const plan = scheduler.plan({
     width: output.width,
@@ -16,17 +18,9 @@ function planForegroundTiles(output, viewport, tileSize, halo) {
     tileSize,
     halo,
     nodes: [],
-    viewport,
+    viewport: request.visible,
   });
-  const padX = Math.round(viewport.width * 0.15);
-  const padY = Math.round(viewport.height * 0.15);
-  const foregroundRegion = {
-    x: Math.max(0, viewport.x - padX),
-    y: Math.max(0, viewport.y - padY),
-    width: Math.min(output.width - Math.max(0, viewport.x - padX), viewport.width + padX * 2),
-    height: Math.min(output.height - Math.max(0, viewport.y - padY), viewport.height + padY * 2),
-  };
-  return HDRViewportRequest.foregroundTiles(plan.tiles, foregroundRegion);
+  return HDRViewportRequest.foregroundTiles(plan.tiles, request.roi);
 }
 
 function containsRect(outer, inner) {
@@ -47,17 +41,19 @@ test("a magnified fetch region covers every foreground tile's halo rect", () => 
   for (const viewport of viewports) {
     for (const tileSize of [256, 512]) {
       for (const halo of [0, 64, 136, 384]) {
+        for (const minimumRoiFraction of [0, 0.15, 0.4]) {
         const region = HDRViewportRequest.sourceFetchRegion(
-          viewport, output.width, output.height, tileSize, halo,
+          viewport, output.width, output.height, tileSize, halo, minimumRoiFraction,
         );
         assert.ok(region.width > 0 && region.height > 0, "the region must have area");
         assert.ok(containsRect({ x: 0, y: 0, ...output }, region), "the region stays inside the frame");
-        for (const tile of planForegroundTiles(output, viewport, tileSize, halo)) {
+        for (const tile of planForegroundTiles(output, viewport, tileSize, halo, minimumRoiFraction)) {
           assert.ok(
             containsRect(region, tile.haloRect),
             `halo rect ${JSON.stringify(tile.haloRect)} is outside region ${JSON.stringify(region)}`
               + ` (viewport ${JSON.stringify(viewport)}, tile ${tileSize}, halo ${halo})`,
           );
+        }
         }
       }
     }

@@ -1870,15 +1870,40 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       if (!previousFrame?.workingSpace || !Contract?.sourceFetchRegion) return null;
       const Scheduler = typeof window !== "undefined" ? window.HDRTileScheduler : null;
       const tileSize = Math.max(64, Math.floor(Number(sourceOptions?.tileSize) || Scheduler?.DEFAULT_TILE_SIZE || 512));
+      const halo = this.roiSourceHalo(
+        lane, adjustments, previousFrame, sourceSize, surface, referenceWhiteNits, sourceOptions, activeLocals,
+      );
+      const request = this.tileViewportRequest(
+        sessionId, lane, previousFrame, sourceSize, sourceOptions, geometrySignature, tileSize, halo,
+      );
       return Contract.sourceFetchRegion(
-        viewport,
+        request.visible,
         previousFrame.width,
         previousFrame.height,
         tileSize,
-        this.roiSourceHalo(
-          lane, adjustments, previousFrame, sourceSize, surface, referenceWhiteNits, sourceOptions, activeLocals,
-        ),
+        request.halo,
+        request.minimumRoiFraction,
       );
+    }
+
+    /** One immutable frame-anchored request shared by source, graph and masks. */
+    tileViewportRequest(sessionId, lane, frame, sourceSize, sourceOptions, geometrySignature, tileSize, halo) {
+      const Contract = typeof window !== "undefined" ? window.HDRViewportRequest : null;
+      if (!Contract) throw new Error("HDRViewportRequest is required for tiled rendering");
+      const source = sourceSize || { width: frame.width, height: frame.height };
+      return Contract.build({
+        sessionId, lane, geometrySignature,
+        applicationGeneration: sourceOptions?.applicationGeneration,
+        editRevision: sourceOptions?.editRevision,
+        output: { width: frame.width, height: frame.height },
+        source,
+        scale: this.sourcePixelScaleFor(frame, source),
+        visible: sourceOptions?.viewport || null,
+        minimumRoiFraction: sourceOptions?.minimumRoiFraction,
+        tileSize, halo,
+        dpr: sourceOptions?.dpr,
+        zoom: sourceOptions?.zoom,
+      });
     }
 
     /**
@@ -1934,15 +1959,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     /**
      * Render the selected tier tile by tile.
      *
-     * Every tile is copied out of the resident proxy into a tile-sized source,
-     * run through the same pipelines the Direct path uses, and copied back into
-     * the canvas at its global origin. Because each pass reads its input at the
-     * fragment position and its input is the same tile, the shaders need no
-     * knowledge that they are running on a tile at all.
-     *
-     * The whole generation is encoded into one command buffer and submitted
-     * once, so the canvas presents the complete assembly or nothing. That is
-     * what makes replacement atomic and a mixed-generation frame impossible.
+     * Every foreground tile uses the same ordered graph as Direct. The
+     * immutable viewport request fixes the frame scale, ROI and halo for
+     * source fetch, scheduler, masks and graph execution. Small command
+     * batches write an offscreen target; one final copy presents it.
      */
     async renderTiledTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203, sourceSize = null, sourceOptions = null) {
       if (!this.available || !this.device) return false;
@@ -2053,6 +2073,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         geometrySignature,
         overlayIndex,
         sourcePixelScale: this.sourcePixelScaleFor(proxy, sourceSize),
+        sourceSize,
+        minimumRoiFraction: sourceOptions?.minimumRoiFraction,
+        dpr: sourceOptions?.dpr,
+        zoom: sourceOptions?.zoom,
       });
       } finally {
         this.finishActiveRender();
@@ -2273,6 +2297,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       if (denoiseActive && halo % denoiseAlignment) {
         halo = Math.ceil(halo / denoiseAlignment) * denoiseAlignment;
       }
+      const viewportRequest = this.tileViewportRequest(
+        options.sessionId, lane, proxy, options.sourceSize,
+        { ...options, viewport: options.viewport, editRevision },
+        options.geometrySignature || "{}", tileSize, halo,
+      );
       const scheduler = this.tileScheduler instanceof Scheduler
         ? this.tileScheduler
         : (this.tileScheduler = new Scheduler({
@@ -2281,14 +2310,19 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           maxScratchBytes: (tileSize + halo * 2) ** 2 * 8,
         }));
       const identity = `${proxy.identity}|${editRevision}|${surface.format}`;
-      const nodes = ["geometry", "exposure", "white-balance", "curves", "color", "grading"];
+      const nodes = ["geometry"];
+      if (denoiseActive) nodes.push({ id: "denoise", halo });
+      nodes.push("exposure", "white-balance", "curves", "color", "grading");
       // Every neighbourhood node declares the composed reach, because each of
       // them has to be correct over the tile plus whatever the stages after it
       // will read. Detail runs first, so its own reach is the largest.
       if (detailActive || localDetailActive) nodes.push({ id: "detail", halo });
+      if (activeLocals.length) nodes.push({ id: "mask-feather", halo });
       if (params[85] > 0.5) nodes.push({ id: "halation", halo });
       if (params[92] > 0.5 && params[93] > 0) nodes.push({ id: "bloom", halo });
       if (filmNeighbourhoodActive && !spatialActive) nodes.push({ id: "softness", halo });
+      if (params[123] > 0.5 && params[124] !== 0) nodes.push("vignette");
+      if (params[156] > 0.5 && params[157] > 0) nodes.push("grain");
       const plan = scheduler.plan({
         width: proxy.width,
         height: proxy.height,
@@ -2299,7 +2333,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         // Phase 2 work item 3: a real viewport request orders visible tiles
         // first and lets a magnified ROI keep offscreen tiles out of the
         // foreground batch. No viewport means Fit, which is the whole output.
-        viewport: options.viewport || undefined,
+        viewport: viewportRequest.fit ? undefined : viewportRequest.visible,
       });
       const workWidth = Math.min(proxy.width, tileSize + halo * 2);
       const workHeight = Math.min(proxy.height, tileSize + halo * 2);
@@ -2310,14 +2344,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // Without a viewport, or when the canvas has nothing to retain, every
       // tile is processed exactly as before.
       const Contract = typeof window !== "undefined" ? window.HDRViewportRequest : null;
-      const viewport = options.viewport
-        ? {
-          x: Math.max(0, Math.floor(Number(options.viewport.x) || 0)),
-          y: Math.max(0, Math.floor(Number(options.viewport.y) || 0)),
-          width: Math.max(1, Math.floor(Number(options.viewport.width) || 1)),
-          height: Math.max(1, Math.floor(Number(options.viewport.height) || 1)),
-        }
-        : null;
+      const viewport = viewportRequest.fit ? null : viewportRequest.visible;
       // The retained target holds the accepted frame between generations, so a
       // viewport pass can load it and process only its foreground tiles.
       const presentationTarget = measureOnly
@@ -2329,14 +2356,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // was never refined. The padding is a mitigation, not a fix: an edit that
       // moves the view further than the padding, or leaves the frame at all,
       // still needs progressive catch-up before the rest of the image matches.
-      const roiPadX = viewport ? Math.round(viewport.width * 0.15) : 0;
-      const roiPadY = viewport ? Math.round(viewport.height * 0.15) : 0;
-      const foregroundRegion = viewport ? {
-        x: Math.max(0, viewport.x - roiPadX),
-        y: Math.max(0, viewport.y - roiPadY),
-        width: Math.min(proxy.width - Math.max(0, viewport.x - roiPadX), viewport.width + roiPadX * 2),
-        height: Math.min(proxy.height - Math.max(0, viewport.y - roiPadY), viewport.height + roiPadY * 2),
-      } : null;
+      const foregroundRegion = viewport ? viewportRequest.roi : null;
       // Whether the target behind this pass still holds the accepted frame at
       // this exact size, identity and format. This is about the frame, not the
       // request: a whole-frame catch-up retains too, it just has no region to
@@ -2397,8 +2417,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // Tiles are grouped by local and sent as bounded batches: one HTTP
       // request and one coordinator slot per batch, and one mask identity per
       // batch for the backend to compile once.
-      const maskBatches = activeLocals.length && this.maskTileBatch
-        ? this.maskTileBatch.plan({ locals: activeLocals, tiles: plan.tiles })
+      const maskBatches = activeLocals.length && foregroundTiles.length && this.maskTileBatch
+        ? this.maskTileBatch.plan({ locals: activeLocals, tiles: foregroundTiles })
         : [];
       const maskCoordinator = measureOnly
         ? this.backgroundMaskRequestCoordinator
@@ -2426,7 +2446,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           });
         }
       }
-      if (!loadedMasks.current || !isCurrent() || maskMatrix.some((row) => row.some((entry) => !entry))) {
+      if (!loadedMasks.current || !isCurrent() || foregroundTiles.some((tile) => (
+        maskMatrix[tileIndexByKey.get(tile.key)].some((entry) => !entry)
+      ))) {
         return { rendered: false, refusals: ["mask tile unavailable or superseded"] };
       }
 
@@ -2486,7 +2508,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const peakView = peakTarget?.texture.createView() || null;
       const globalInputIdentity = detailBandIdentity(params, proxy.identity, "global");
       const pinnedDetail = [];
-      const pinnedMasks = maskMatrix.flat().map((entry) => entry.key);
+      const pinnedMasks = maskMatrix.flat().filter(Boolean).map((entry) => entry.key);
       const cacheBefore = { ...this.detailCacheCounters };
       const startedAt = performance.now();
       // The presentation gate is taken here, after every await this generation
@@ -2879,6 +2901,15 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         // real processed area and the ratio is the halo amplification.
         viewport: plan.viewport ? { ...plan.viewport } : null,
         viewportRequested: Boolean(options.viewport),
+        viewportRequest: {
+          version: viewportRequest.version,
+          scale: viewportRequest.scale,
+          halo: viewportRequest.halo,
+          roi: { ...viewportRequest.roi },
+          sourceRect: { ...viewportRequest.sourceRect },
+          applicationGeneration: viewportRequest.applicationGeneration,
+        },
+        activeNodes: nodes.map((node) => node.id || node),
         roiCatchUp: Boolean(options.roiCatchUp),
         // Phase 2 item 8, the display-scale pan cache. `viewportTiles` is what
         // the padded region asked for; `reusedTiles` came back from the
@@ -2894,6 +2925,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           (sum, tile) => sum + tile.haloRect.width * tile.haloRect.height, 0,
         ),
         foregroundTiles: processedTiles,
+        maskTilesRequested: maskBatches.reduce((sum, batch) => sum + batch.tiles.length, 0),
         skippedTiles: plan.tileCount - processedTiles,
         retainedFrame,
         cancelled,
@@ -3026,7 +3058,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // Admission runs against the graph this render is about to build, so the
       // plan and the decision describe real work rather than a generic guess.
       const plan = this.planRender(proxy.width, proxy.height, {
-        executionOverride: this.executionOverride || null,
+        executionOverride: sourceOptions?.viewport ? "tiled" : (this.executionOverride || null),
         detailActive: detailActive || localDetailActive,
         spatialActive,
         // Without this the tiled model sizes its working set to a bare tile
@@ -3037,11 +3069,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         sourceBytesPerPixel: proxy.pixelFormat === "rgba16float" ? 8 : 16,
         tier: sourceOptions?.tier ?? null,
       });
-      // A region source belongs to the tiled route. Admission decides after
-      // the proxy exists, so a viewport request admitted Direct (a small tier)
-      // falls back to the whole frame here; the frame dimensions, working
-      // space and pixel format are identical, so the plan, the parameters and
-      // the masks are unaffected.
+      // A region source belongs to the tiled route. A viewport request also
+      // needs that route even when Direct would fit: Direct executes every
+      // active node over the whole frame and cannot honour the ROI contract.
+      // The whole-frame fallback below still protects a diagnostic region
+      // request if an execution policy changes in the future.
       if (proxy.region && plan.decision.mode !== "tiled") {
         const whole = await this.loadProxy(
           sessionId,
