@@ -16,6 +16,12 @@ const source = fs.readFileSync(
   path.join(__dirname, "../frontend/webgpu-preview.js"),
   "utf8",
 );
+// The renderer's halo math is the declared processing-scale contract, which the
+// page loads as its own script. The harness mirrors that script set.
+const graphScaleSource = fs.readFileSync(
+  path.join(__dirname, "../frontend/graph-scale.js"),
+  "utf8",
+);
 const context = vm.createContext({
   window: {},
   performance: { now: () => 1 },
@@ -23,6 +29,7 @@ const context = vm.createContext({
   GPUTextureUsage: { COPY_SRC: 1, COPY_DST: 2, TEXTURE_BINDING: 4, STORAGE_BINDING: 8, RENDER_ATTACHMENT: 16 },
   GPUBufferUsage: { MAP_READ: 1, MAP_WRITE: 2, COPY_SRC: 4, COPY_DST: 8, UNIFORM: 64, STORAGE: 128, QUERY_RESOLVE: 512 },
 });
+vm.runInContext(graphScaleSource, context);
 vm.runInContext(source, context);
 const Preview = context.window.HDRWebGPUPreview;
 

@@ -200,6 +200,55 @@ def test_viewport_request_contract_reaches_the_scheduler() -> None:
     assert 'refusals: ["superseded-during-encode"]' in webgpu
 
 
+def test_processing_scale_contract_is_declared_and_consumed() -> None:
+    markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    contract = (FRONTEND / "graph-scale.js").read_text(encoding="utf-8")
+
+    # The declared contract loads before the renderer that consumes it.
+    assert markup.index("viewport-request.js") < markup.index("graph-scale.js")
+    assert markup.index("graph-scale.js") < markup.index("webgpu-preview.js")
+    # The renderer delegates every scale-dependent number rather than keeping a
+    # second copy of the arithmetic: the halo, the scale and the stage switches.
+    assert "return graphScaleContract().detailReach(" in webgpu
+    assert "return graphScaleContract().spatialReach(" in webgpu
+    assert "return graphScaleContract().composedReach(" in webgpu
+    assert "return graphScaleContract().processingScaleFor(" in webgpu
+    assert "return graphScaleContract().graphActivity(" in webgpu
+    assert "return graphScaleContract().localDetailActive(" in webgpu
+    # A build that forgot the script must fail loudly instead of reserving a
+    # halo of zero.
+    assert "the processing-scale contract is required" in webgpu
+    # The declared contract names every module the sprint asks about.
+    for module_id in (
+        'id: "detail"',
+        'id: "detail-local"',
+        'id: "denoise"',
+        'id: "grain"',
+        'id: "bloom"',
+        'id: "halation"',
+        'id: "softness"',
+        'id: "masks"',
+        'id: "geometry"',
+    ):
+        assert module_id in contract
+    # The quarter-resolution grid the halo converts through is the shader's own
+    # constant, so a shader change cannot silently outrun the halo.
+    assert "const SPATIAL_SCALE: f32 = 4.0;" in webgpu
+    assert "const SPATIAL_SCALE = 4;" in contract
+    # The viewport request declares the processing scale it will run at, derived
+    # from the same contract the renderer and the CPU reference use.
+    request = javascript[
+        javascript.index("viewportRequest: (options = {}) =>"):
+        javascript.index("prepareDenoiseSelectorSeam:")
+    ]
+    assert "window.HDRGraphScale?.processingScaleFor" in request
+    assert "        scale," in request
+    # Telemetry states which scale produced the frame.
+    assert "processingScale: Number.isFinite(Number(options.sourcePixelScale))" in webgpu
+
+
 def test_retained_presentation_target_owns_the_tiled_frame() -> None:
     webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
 

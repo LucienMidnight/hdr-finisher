@@ -15,6 +15,9 @@ const { test } = require("node:test");
 
 function loadPreview() {
   const source = fs.readFileSync(path.join(__dirname, "..", "frontend", "webgpu-preview.js"), "utf8");
+  // The renderer's halo math is the declared processing-scale contract, which
+  // the page loads as its own script. The harness mirrors that script set.
+  const graphScaleSource = fs.readFileSync(path.join(__dirname, "..", "frontend", "graph-scale.js"), "utf8");
   const context = {
     window: {},
     document: {},
@@ -25,6 +28,7 @@ function loadPreview() {
   context.self = context.window;
   context.globalThis = context;
   vm.createContext(context);
+  vm.runInContext(graphScaleSource, context);
   vm.runInContext(source, context);
   return context.window.HDRWebGPUPreview;
 }

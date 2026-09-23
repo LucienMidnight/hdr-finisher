@@ -16,6 +16,22 @@
   // 32 KB per generation.
   const SCOPE_PEAK_GRID = 64;
 
+  /**
+   * The processing-scale contract (sprint PRD Phase 3 item 3, PRD 5.9).
+   *
+   * Every scale-dependent radius and every tile halo is declared and computed
+   * in `graph-scale.js`, which the page loads before this file. The resolver is
+   * deliberately lazy and loud: a build that forgot the script must fail at the
+   * first halo computation rather than quietly reserve a halo of zero.
+   */
+  function graphScaleContract() {
+    const module = (typeof window !== "undefined" && window.HDRGraphScale) || null;
+    if (!module) {
+      throw new Error("HDRGraphScale is not loaded; the processing-scale contract is required");
+    }
+    return module;
+  }
+
   const PEAK_REDUCTION_SHADER_SOURCE = `
 @group(0) @binding(0) var peakSource: texture_2d<f32>;
 @group(0) @binding(1) var<storage, read> peakParams: array<f32>;
@@ -502,27 +518,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
   const DEFAULT_TILE_SIZE = 512;
 
   function detailTileHalo(width, height, params, localAdjustments = [], lane = "hdr") {
-    const diagonal = Math.hypot(Math.max(1, width), Math.max(1, height));
-    const globalRadii = [
-      Math.max(0.35, diagonal * 0.0003),
-      Math.max(0.70, diagonal * 0.0012),
-      Math.max(0.50, diagonal * Number(params?.[151] || 0) / 100),
-      Math.max(0.30, Number(params?.[153] || 0) * Number(params?.[155] || 1)),
-    ];
-    const radii = [...globalRadii];
-    for (const local of localAdjustments) {
-      const detail = local?.[`${lane}_grade`]?.detail || {};
-      radii.push(
-        Math.max(0.35, diagonal * 0.0003),
-        Math.max(0.70, diagonal * 0.0012),
-        Math.max(0.50, diagonal * Math.min(3, Math.max(0.2, Number(detail.clarity_radius_percent) || 0.75)) / 100),
-        Math.max(0.30, Math.min(3, Math.max(0.3, Number(detail.sharpen_radius_px) || 0.8))
-          * Math.min(1, Math.max(0.05, Number(params?.[155]) || 1))),
-      );
-    }
-    // Separable analysis reaches two radii in each direction. Texture's edge
-    // guide then reaches another two coarse radii into that packed band.
-    return Math.ceil(Math.max(2 * radii[0], 4 * radii[1], ...radii.slice(2).map((radius) => 2 * radius)) + 2);
+    return graphScaleContract().detailReach(width, height, params, localAdjustments, lane);
   }
 
   /**
@@ -541,55 +537,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
    * pixels and could not be byte-exact against Direct whatever its size.
    */
   function spatialTileHalo(width, height, params) {
-    const quarter = [Math.ceil(Math.max(1, width) / 4), Math.ceil(Math.max(1, height) / 4)];
-    const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
-    const bloomActive = params[92] > 0.5 && params[93] > 0;
-    const halationActive = params[85] > 0.5;
-
-    // `spatialBlur`: a Gaussian sampled one texel apart out to floor(radius),
-    // in quarter-resolution texels, capped at 64 by the shader exactly as it
-    // is here. Rounding up below reserves one texel more than the kernel
-    // reaches, which is the right way round: a halo shorter than the kernel
-    // substitutes the tile's edge for the picture and shows a seam.
-    let blurTexels = 0;
-    if (bloomActive) {
-      blurTexels = Math.max(blurTexels,
-        clamp(Math.hypot(quarter[0], quarter[1]) * Math.max(Number(params[95]) || 0, 0) / 100, 0.25, 64));
-    }
-    if (halationActive) {
-      // `filmPixelsPerMm` over the frame's quarter-resolution size.
-      let pixelsPerMm = Math.max(quarter[0] / params[140], quarter[1] / params[141]);
-      if (params[142] > 0.5 && params[142] < 1.5) pixelsPerMm = quarter[1] / params[141];
-      if (params[142] > 1.5) pixelsPerMm = quarter[0] / params[140];
-      blurTexels = Math.max(blurTexels,
-        clamp(pixelsPerMm * 43.2666153 * Math.max(Number(params[88]) || 0, 0) / 100, 0.25, 64));
-    }
-
-    // Full-resolution reads: halation's edge source from `filmPhysicalOffset`,
-    // the image-structure blur from `outputRelativeOffset(0.06, 24)`, and the
-    // film-resolution blur from `filmPhysicalBlur(<= 0.12, 32)`. `blurAtRadius`
-    // spans a square of exactly +/- its radius on each axis.
-    const frameDiagonal = Math.hypot(Math.max(1, width), Math.max(1, height));
-    let framePixelsPerMm = Math.max(width / params[140], height / params[141]);
-    if (params[142] > 0.5 && params[142] < 1.5) framePixelsPerMm = height / params[141];
-    if (params[142] > 1.5) framePixelsPerMm = width / params[140];
-    const physicalOffset = (percent, maximum) => clamp(
-      Math.round(framePixelsPerMm * 43.2666153 * Math.max(percent, 0) / 100), 1, maximum,
-    );
-    let direct = 0;
-    if (halationActive) {
-      direct = Math.max(direct, clamp(Math.floor(physicalOffset(Number(params[88]) || 0, 256) / 4), 1, 16));
-    }
-    const structureActive = params[97] > 0.5 && (Math.abs(params[98]) > 0 || Math.abs(params[99]) > 0);
-    if (structureActive) {
-      direct = Math.max(direct, clamp(Math.round(frameDiagonal * 0.06 / 100), 1, 24));
-    }
-    if (params[108] < 1) {
-      direct = Math.max(direct, physicalOffset(0.04 + 0.08 * (1 - params[108]) * params[79], 32));
-    }
-
-    const total = Math.ceil(blurTexels) * 4 + Math.ceil(direct);
-    return total > 0 ? Math.ceil(total / 4) * 4 : 0;
+    return graphScaleContract().spatialReach(width, height, params);
   }
 
   function detailBandIdentity(params, inputIdentity, scope = "global") {
@@ -910,6 +858,22 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
 
     static detailBandIdentity(params, inputIdentity, scope = "global") {
       return detailBandIdentity(params, inputIdentity, scope);
+    }
+
+    /**
+     * The declared per-module scale contract, for diagnostics and tests.
+     *
+     * `HDRGraphScale.MODULE_SCALE_CONTRACT` names each module the sprint asks
+     * about, its authored unit, its radius conversion, its halo and its cache
+     * identity. Exposing it here keeps the renderer's diagnostics able to state
+     * which contract the running build implements.
+     */
+    static graphScaleContract() {
+      return graphScaleContract().MODULE_SCALE_CONTRACT;
+    }
+
+    static processingScaleFor(sourceSize, frame) {
+      return graphScaleContract().processingScaleFor(sourceSize, frame);
     }
 
     static normalizeGpuBudgetBytes(value) {
@@ -1654,53 +1618,24 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
      * that does not count a cache.
      */
     composedTileHalo(width, height, params, activeLocals = [], lane = "hdr") {
-      const { detailActive, filmNeighbourhoodActive } = this.graphActivity(params);
-      const localDetailActive = activeLocals.some((local) => gpuLocalDetailActive(local[`${lane}_grade`]));
-      const detailHalo = (detailActive || localDetailActive)
-        ? detailTileHalo(width, height, params, activeLocals, lane)
-        : 0;
-      const spatialHalo = filmNeighbourhoodActive ? spatialTileHalo(width, height, params) : 0;
-      const halo = spatialHalo > 0
-        ? Math.ceil((detailHalo + spatialHalo) / 4) * 4
-        : detailHalo;
-      return { halo, detailHalo, spatialHalo };
+      return graphScaleContract().composedReach(width, height, params, activeLocals, lane);
     }
 
     /**
      * The proxy-to-source scale every parameter build needs.
      *
      * Direct and Tiled must derive this identically or the same grade would
-     * read as two different pictures depending on which route ran.
+     * read as two different pictures depending on which route ran. The
+     * derivation itself is the declared contract (`HDRGraphScale`), shared with
+     * the backend's `source_pixel_scale`.
      */
     sourcePixelScaleFor(proxy, sourceSize) {
-      const sourceLongEdge = Math.max(
-        Number(sourceSize?.width) || proxy.width,
-        Number(sourceSize?.height) || proxy.height,
-      );
-      return Math.min(1, Math.max(proxy.width, proxy.height) / Math.max(1, sourceLongEdge));
+      return graphScaleContract().processingScaleFor(sourceSize, proxy);
     }
 
     /** Which optional stages this parameter set actually switches on. */
     graphActivity(params) {
-      const filmActive = params[78] > 0.5 && params[79] > 0;
-      // Halation and bloom are the two stages that need the quarter-resolution
-      // pair, because they are the two that blur on it.
-      const spatialActive = filmActive
-        && (params[85] > 0.5 || (params[92] > 0.5 && params[93] > 0));
-      // Image structure and film resolution blur the film texture directly, at
-      // full resolution. They allocate nothing, but they read past the pixel
-      // they are writing just as surely, so they need a halo. The CPU strip
-      // path has always counted them; this side had not.
-      const filmBlurActive = filmActive && (
-        (params[97] > 0.5 && (Math.abs(params[98]) > 0.000001 || Math.abs(params[99]) > 0.000001))
-        || params[108] < 1
-      );
-      return {
-        spatialActive,
-        filmNeighbourhoodActive: spatialActive || filmBlurActive,
-        detailActive: params[148] > 0.5
-          && (Math.abs(params[149]) > 0.000001 || Math.abs(params[150]) > 0.000001 || params[152] > 0.000001),
-      };
+      return graphScaleContract().graphActivity(params);
     }
 
     /**
@@ -2975,6 +2910,12 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         sourceRegion: proxy.region ? { ...proxy.region } : null,
         sourceTextureBytes: proxy.byteSize,
         sourceFrameBytes: proxy.width * proxy.height * (proxy.pixelFormat === "rgba16float" ? 8 : 16),
+        // Phase 3 item 3: the processing scale this generation ran at. It is the
+        // same number the graph's radius conversions used, so telemetry and the
+        // contract can never disagree about which scale produced the frame.
+        processingScale: Number.isFinite(Number(options.sourcePixelScale))
+          ? Number(options.sourcePixelScale)
+          : null,
         detailCacheBytes, maskCacheBytes,
         detailCacheHits: this.detailCacheCounters.hits - cacheBefore.hits,
         detailCacheMisses: this.detailCacheCounters.misses - cacheBefore.misses,
@@ -6233,9 +6174,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
   }
 
   function gpuLocalDetailActive(grade) {
-    const detail = grade?.detail || {};
-    return [detail.texture_amount, detail.clarity_amount, detail.sharpen_amount]
-      .some((value) => Math.abs(Number(value) || 0) > 0.000001);
+    return graphScaleContract().localDetailActive(grade);
   }
 
   function buildLocalParams(local, lane, sourcePixelScale = 1) {

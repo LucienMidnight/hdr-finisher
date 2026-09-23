@@ -2198,17 +2198,25 @@ function initializePreviewScheduler() {
       const source = state.session.source;
       const targetLongEdge = Number(options.longEdge) || previewTargetLongEdge();
       const ratio = Math.min(1, targetLongEdge / Math.max(source.width, source.height));
+      const output = {
+        width: Math.max(1, Math.round(source.width * ratio)),
+        height: Math.max(1, Math.round(source.height * ratio)),
+      };
+      // Phase 3 item 3: the request declares the processing scale the graph will
+      // run at. It is the same contract the renderer and the CPU reference
+      // derive, so a request can never describe a scale the pass did not use.
+      const scale = window.HDRGraphScale?.processingScaleFor
+        ? window.HDRGraphScale.processingScaleFor({ width: source.width, height: source.height }, output)
+        : ratio;
       return Request.build({
         lane: state.currentView,
         sessionId: state.session.session_id,
         geometrySignature: geometrySignature(),
         applicationGeneration: state.previewGeneration[state.currentView],
         editRevision: state.editRevision,
-        output: {
-          width: Math.max(1, Math.round(source.width * ratio)),
-          height: Math.max(1, Math.round(source.height * ratio)),
-        },
+        output,
         source: { width: source.width, height: source.height },
+        scale,
         visible: options.visible || null,
         halo: Number(options.halo) || 0,
         minimumRoiFraction: options.minimumRoiFraction,
