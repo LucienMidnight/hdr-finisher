@@ -1343,6 +1343,35 @@ Gate status:
 
 Next safe edit: the 42.4 MP packaged-baseline driver (Fit / 100% / 200% / pan), then the remaining Phase 0 sign-offs. Do not start Phase 3.
 
+### 15.20 Packaged baselines — 2026-09-23 (42.4 MP, Fit / 100% / 200% / pan)
+
+Committed as `22dc36a` — "Add the 42.4 MP packaged baseline driver". Evidence: `codebase/output/performance/electron-packaged-baselines.json` (Electron) and `packaged-baselines.json` (Chromium, for comparison).
+
+The driver (`tests/performance/packaged-baselines.js`, also `npm run test:packaged-baselines`) loads the 7968×5320 noisy TIFF, forces tiled execution, and for each view state makes a real exposure change, recording slider-to-frame, first presentation at the edit's generation, the stable tier/edge/pixels, the coordinator's queue and dispatch latency, the planned peak GPU bytes, long tasks, JS heap, and the source bytes pulled. At 200% it pans 400 px and samples the retained frame.
+
+**Packaged (Electron), 42.4 MP:**
+
+| State | slider→frame | → first current | tier | processed px | submissions | dispatch (warm) | queue delay | peak logical | heap |
+|---|---|---|---|---|---|---|---|---|---|
+| Fit | 4.1 ms | 691.5 ms | Full 7968 tiled | 42 389 760 | 45 | 4 289 ms cold → 43/53 ms | ≈0 | 2 256 653 018 B | 161.9 MB |
+| 100% | 4.6 ms | 283.9 ms | Full 7968 tiled | 42 389 760 | 45 | 162.8 ms | ≈0 | 2 629 682 906 B | 7.3 MB |
+| 200% | 5.2 ms | 404.8 ms | Full 7968 tiled | 42 389 760 | 45 | 275 ms | ≈0 | 2 629 682 906 B | 8.2 MB |
+
+Pan at 200%: 359 ms from scroll to the sampled frame (350 ms of that is the driver's own settle wait), retained-frame luma 0.815 (painted, not blank), accepted generation equals the current generation, viewer Ready. 0 page errors, 0 long tasks in the packaged window.
+
+**Chromium, same fixture (comparison):** resident tier 1024 tiled (700 416 processed px), Fit 847.6 ms → current (cold proxy upload 5.6 MB), 100%/200% 137.8/140.1 ms, pan luma 0.364. The packaged app chooses Full where Chromium chooses 1024 — the display-scale policy difference the Phase 0 contract is about; both are recorded rather than reconciled here.
+
+Observations for the tolerance and Fit-filtering decisions, recorded rather than acted on:
+
+- Warm full-frame passes at Full are 43–275 ms of dispatch for 42.4 MP in the packaged build, with queue delay at zero — the coordinator is not adding a queueing tax at this size.
+- The 100% and 200% planned peaks (2 629 682 906 B) exceed the 2 GiB Auto budget, and the plan says so, while tiled execution proceeds. The baseline records it; whether the budget model should treat this as a violation or the display-tier policy should avoid Full here is a Phase 0 decision.
+- The only long task observed anywhere was a single 102 ms event during the Chromium cold load; the packaged window showed none.
+
+Gate status: Phase 0 item 3 (42.4 MP packaged baselines) now has raw evidence at all four view states. Item 4's measurements are present for the same run (frame latency, time to current/stable, queue delay, processed pixels, planned GPU bytes, heap, long tasks, source bytes); scope-work timing is covered by the existing scope instrumentation rather than this driver. Items 6 (Fit filtering A/B), 7 (per-module tolerance sign-off) and 8 (migration behavior) remain. Suites unchanged: **161 JS**, **157 Python**.
+
+Next safe edit: per-module parity runs (grain, Detail, Denoise, halation, spatial film) to feed the tolerance sign-off, then the Fit filtering A/B. Do not start Phase 3.
+
+
 
 
 
