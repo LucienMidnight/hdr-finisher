@@ -1400,6 +1400,51 @@ Owner checks to batch (nothing blocks continued work):
 
 Next safe edit: the Fit filtering A/B (or a recorded deferral), then the Denoise parity run. Do not start Phase 3.
 
+### 15.22 Phase 0 item 6 — 2026-09-23 (Fit filtering A/B measured)
+
+Committed as `fb2b222` — "Add the Fit filtering A/B driver, fixture, and comparator". Evidence: `codebase/output/performance/fit-filtering-ab.json` plus the captured PNGs under `codebase/output/performance/fit-filtering/`. Run: `node tests/performance/fit-filtering-ab.js --url http://127.0.0.1:8799` (also `npm run test:fit-filtering`).
+
+**What the unit built.**
+
+- `tests/performance/fit-filtering-fixture.js`: one deterministic 4096×2304 ACEScg scene-linear float TIFF, six 384-px bands — smooth midtones (grain), textured midtones (Detail), noisy midtones (Denoise), bright sources on dark (halation), fine repeating detail (zone plate plus 1–2 px gratings), saturated highlights. Values are unmarked float data, so the loader passes both branches identical source pixels. 113 MB, too large to commit; generated once per machine into temp, the `large-noisy-tiff.js` pattern.
+- `tests/performance/fit-filtering-compare.js`: the comparator. Two equal-size RGBA8 screenshots in, display-unit statistics out — max/mean/p95/p99 worst-channel delta, counts above 1 and 2 levels, mean luma delta, a 2×2-averaged "half" comparison (a difference that survives block averaging is a picture difference, not a sampling phase), and a mean-absolute-luma-gradient "energy" that says how much fine detail each side kept. 10 unit tests cover the arithmetic.
+- `tests/performance/fit-filtering-ab.js`: imports the fixture, forces tiled execution, sets Fit, and for each of six scenarios runs both branches with the graph, zoom and framed image held fixed:
+  - **full-at-fit** — tier `full` (4096), the graph runs at source resolution and the browser shows the downscaled result (today's packaged Fit behavior);
+  - **display-scale** — the tier closest to the on-screen size (1024 against an 889-px pane, ratio 1.15), so the graph runs on that tier's per-channel Lanczos scene-linear source at roughly display scale.
+  Both branches are captured as screenshots of the mounted canvas — what the user sees — and compared per band. Denoise is included: its selector is bound to the tier edge, so each branch gets its own analysis at its own scale.
+
+**Why this does not need the Phase 3 mip cache.** The tier proxy is already a correctly filtered, scene-linear, pre-adjustment source, so the display-scale branch is the visual contract the mip path must preserve; the cache changes how that filtered source is produced, not what it looks like. Recorded so this item's evidence is not entangled with unvalidated Phase 3 code. The driver asserts both branches took the tiled route and were exact, so a silent fallback cannot produce a green-looking run.
+
+Observation for future diagnostic drivers: setting the tier through the `#preview-resolution` select persists the preference through the application shell, whose preference echo calls `applyExecutionOverride` with the stored value and silently clears a forced route. The first run fell back to Direct at every branch because of this; the driver now applies the tier through `applyPreviewResolution` and re-asserts the route. The product behavior is arguably correct (the persisted preference wins); the trap is in the driver.
+
+**Evidence (Chromium, SDR surface, tiled, exact, 0 page errors).** Display-scale versus full-at-fit, 0–255 display units, on each scenario's focus band:
+
+| scenario | focus band | max | p99 | mean | detail energy (display / full) |
+|---|---|---:|---:|---:|---:|
+| grain | smooth midtones | 4 | 2 | 0.82 | 0.5 / 0.6 |
+| detail | textured midtones | 31 | 8 | 2.16 | 5.3 / 6.5 |
+| denoise | noisy midtones | 27 | 10 | 2.59 | 1.6 / 4.2 |
+| halation | bright sources on dark | 94 | 93 | 6.42 | 1.7 / 1.7 |
+| fine-detail | fine repeating detail | 65 | 53 | 17.23 | 1.7 / 17.0 |
+| highlights | saturated highlights | 208 | 82 | 8.42 | 4.4 / 4.1 |
+
+Interpretation, stated plainly:
+
+- **grain** is the tightest class: max 4, p99 2, mean 0.82. The grain field rendered at 1024 is the grain field rendered at 4096 within a few levels.
+- **Detail and Denoise** differ at the 8–10 p99 level with moderate means. Denoise's energy (1.6 vs 4.2) says the display-scale route is the *cleaner* one: the source is filtered before denoise runs, so less residual per-pixel noise survives.
+- **halation** differs sharply but locally — p99 93 with identical global energy. The glow radius is a scale-dependent spatial effect and the two branches place it differently; this is the class the tolerance table has to decide.
+- **fine repeating detail** is the expected big one. The source's 1–2 px gratings are below the display tier's Nyquist, so the display-scale branch averages them to flat fields (energy 1.7) while full-at-fit shows moiré (energy 17.0). The display-scale result is the more truthful rendering of detail the screen cannot show.
+- **saturated highlights**: localized large differences at speculars (max 208) between the browser's downscale of the 4096 frame and the ~1:1 display frame; band mean 8.42.
+- Whole-frame comparison of the same pairs: max 200–208, and 114–121 after 2×2 averaging — the differences survive block averaging, so they are not half-pixel sampling phase. The per-band table is the informative view.
+- Cross-check: the first (Direct-route) run's focus-band metrics matched the tiled run exactly, and the driver's screenshots are deterministic.
+
+**Gate status, stated plainly:**
+
+- Phase 0 item 6: **measured, not signed off.** The numbers above are the evidence; which differences are acceptable, and whether Fit should process at display scale for these classes, is the item 7 owner decision. Uncovered and not to be signed off from this run: the packaged/HDR surface, export/reference parity, and the legacy-versus-ROI Denoise parity (the Denoise scenario here compares two *scales*, not two routes).
+- Suites: **172 JS** (162 + 10 comparator unit tests), full JS suite passing. No Python touched by this unit.
+
+Next safe edit: the Denoise parity run — extend the parity scenario to cover Denoise reconstruction, the main gap in the 15.21 tolerance proposal — then the per-module tolerance sign-off. Do not start Phase 3.
+
 
 
 
