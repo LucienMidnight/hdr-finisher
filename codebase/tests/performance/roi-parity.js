@@ -66,7 +66,17 @@ async function applyFilmLook(page) {
     }
   }, FILM_LOOK_SETTINGS);
   await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 300000 });
-  return Object.fromEntries(FILM_LOOK_SETTINGS);
+  // Return the state the render was asked for, not the values the driver meant
+  // to set: the parity claim is about this graph, so the graph is verified.
+  return page.evaluate((entries) => {
+    const applied = {};
+    for (const [path] of entries) {
+      const key = path.split(".").pop();
+      const look = state.adjustments[state.currentView].film_look || {};
+      applied[key] = look[key] ?? null;
+    }
+    return applied;
+  }, FILM_LOOK_SETTINGS);
 }
 
 function assert(condition, message) {
@@ -175,6 +185,13 @@ function assert(condition, message) {
     assert(enabled === "refinement", `The ROI mode did not enable: ${enabled}`);
     await page.evaluate(() => window.HDRFinisherPerformance.cancelRoiCatchUp());
     const filmLook = film ? await applyFilmLook(page) : null;
+    if (film) {
+      for (const [path, value] of FILM_LOOK_SETTINGS) {
+        const key = path.split(".").pop();
+        assert(Number(filmLook[key]) === Number(value),
+          `Film look ${path} is ${filmLook[key]}, wanted ${value}: ${JSON.stringify(filmLook)}`);
+      }
+    }
     await page.evaluate(() => window.HDRFinisherPerformance.cancelRoiCatchUp());
     const denoiseBefore = denoise ? await denoiseCounters() : null;
     if (denoise) {

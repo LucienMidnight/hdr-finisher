@@ -12,6 +12,7 @@ const {
   compareRgba,
   cropRgba,
   halveRgba,
+  lanczosResampleRgba,
   lumaEnergy,
   summarizePair,
 } = require("./fit-filtering-compare.js");
@@ -114,4 +115,47 @@ test("summarizePair refuses mismatched sizes", () => {
   const a = buildImage(4, 4, () => [0, 0, 0]);
   const b = buildImage(4, 5, () => [0, 0, 0]);
   assert.throws(() => summarizePair(a, b), /differ in size/);
+});
+
+test("lanczos resample keeps a constant field constant", () => {
+  const flat = buildImage(16, 12, () => [40, 80, 120]);
+  const reduced = lanczosResampleRgba(flat, 5, 4);
+  assert.equal(reduced.width, 5);
+  assert.equal(reduced.height, 4);
+  for (let index = 0; index < reduced.data.length; index += 4) {
+    assert.equal(reduced.data[index], 40);
+    assert.equal(reduced.data[index + 1], 80);
+    assert.equal(reduced.data[index + 2], 120);
+  }
+});
+
+test("lanczos resample at the same size is the identity", () => {
+  const image = buildImage(8, 8, (x, y) => [x * 20, y * 20, (x + y) * 10]);
+  const same = lanczosResampleRgba(image, 8, 8);
+  assert.equal(compareRgba(image, same).maxAbs, 0);
+});
+
+test("a 4x downscale averages a sub-Nyquist checker instead of aliasing it", () => {
+  // Period-2 stripes at the source are beyond the reduced image's Nyquist:
+  // the only correct answer is the mean, not a lower-frequency pattern.
+  const checker = buildImage(16, 16, (x, y) => {
+    const on = (x + y) % 2 === 0;
+    return on ? [255, 255, 255] : [0, 0, 0];
+  });
+  const reduced = lanczosResampleRgba(checker, 4, 4);
+  for (let index = 0; index < reduced.data.length; index += 4) {
+    assert.ok(Math.abs(reduced.data[index] - 128) <= 12, `expected ~128, got ${reduced.data[index]}`);
+  }
+});
+
+test("lanczos resample preserves a monotone ramp", () => {
+  const ramp = buildImage(32, 4, (x) => [x * 8, x * 8, x * 8]);
+  const reduced = lanczosResampleRgba(ramp, 8, 1);
+  for (let x = 1; x < reduced.width; x += 1) {
+    assert.ok(reduced.data[x * 4] >= reduced.data[(x - 1) * 4], "ramp must not reverse");
+  }
+  // The first and last output centres sit one and a half source pixels inside
+  // the ramp, so the ends land near, not on, the ramp's endpoints.
+  assert.ok(reduced.data[0] <= 16, `left end near black, got ${reduced.data[0]}`);
+  assert.ok(reduced.data[(reduced.width - 1) * 4] >= 232, `right end near white, got ${reduced.data[(reduced.width - 1) * 4]}`);
 });

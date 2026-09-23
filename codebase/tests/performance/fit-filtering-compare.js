@@ -147,6 +147,102 @@ function cropRgba(image, x, y, width, height) {
 }
 
 /**
+ * Separable Lanczos-3 resample of an RGBA8 image.
+ *
+ * This is the reference filter for "what the exported file would look like on
+ * this screen": the A/B downsamples the full-resolution processed frame with
+ * it, so the comparison is against a correct display of the full render rather
+ * than against whatever filter the browser happens to apply to a huge canvas.
+ *
+ * Self-contained on purpose: the driver injects its source into the page with
+ * `Function` so the readback is reduced to display size before it crosses the
+ * CDP boundary.
+ */
+function lanczosResampleRgba(image, targetWidth, targetHeight, lobes = 3) {
+  const sourceWidth = image.width;
+  const sourceHeight = image.height;
+  const width = Math.max(1, Math.round(targetWidth));
+  const height = Math.max(1, Math.round(targetHeight));
+  const scaleX = sourceWidth / width;
+  const scaleY = sourceHeight / height;
+  const supportX = lobes * scaleX;
+  const supportY = lobes * scaleY;
+  const kernel = (distance) => {
+    const x = Math.abs(distance);
+    if (x === 0) return 1;
+    if (x >= lobes) return 0;
+    const pix = Math.PI * x;
+    return (Math.sin(pix) / pix) * (Math.sin(pix / lobes) / (pix / lobes));
+  };
+  // Weights depend only on the output index, so they are built once per axis
+  // and reused down the other axis. This runs in the page twelve times per A/B
+  // run, so the kernel must not be evaluated per sample.
+  const buildTaps = (count, scale, support, sourceSize) => {
+    const taps = [];
+    for (let index = 0; index < count; index += 1) {
+      const center = (index + 0.5) * scale - 0.5;
+      const first = Math.ceil(center - support);
+      const last = Math.floor(center + support);
+      const entries = [];
+      let total = 0;
+      for (let sample = first; sample <= last; sample += 1) {
+        const weight = kernel((sample - center) / scale);
+        if (weight === 0) continue;
+        entries.push([Math.min(sourceSize - 1, Math.max(0, sample)), weight]);
+        total += weight;
+      }
+      const norm = total || 1;
+      for (const entry of entries) entry[1] /= norm;
+      taps.push(entries);
+    }
+    return taps;
+  };
+  const tapsX = buildTaps(width, scaleX, supportX, sourceWidth);
+  const tapsY = buildTaps(height, scaleY, supportY, sourceHeight);
+  const horizontal = new Float32Array(width * sourceHeight * 4);
+  for (let y = 0; y < sourceHeight; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const entries = tapsX[x];
+      let r = 0; let g = 0; let b = 0; let a = 0;
+      for (let tap = 0; tap < entries.length; tap += 1) {
+        const index = (y * sourceWidth + entries[tap][0]) * 4;
+        const weight = entries[tap][1];
+        r += image.data[index] * weight;
+        g += image.data[index + 1] * weight;
+        b += image.data[index + 2] * weight;
+        a += image.data[index + 3] * weight;
+      }
+      const out = (y * width + x) * 4;
+      horizontal[out] = r;
+      horizontal[out + 1] = g;
+      horizontal[out + 2] = b;
+      horizontal[out + 3] = a;
+    }
+  }
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    const entries = tapsY[y];
+    for (let x = 0; x < width; x += 1) {
+      let r = 0; let g = 0; let b = 0; let a = 0;
+      for (let tap = 0; tap < entries.length; tap += 1) {
+        const index = (entries[tap][0] * width + x) * 4;
+        const weight = entries[tap][1];
+        r += horizontal[index] * weight;
+        g += horizontal[index + 1] * weight;
+        b += horizontal[index + 2] * weight;
+        a += horizontal[index + 3] * weight;
+      }
+      const out = (y * width + x) * 4;
+      data[out] = r;
+      data[out + 1] = g;
+      data[out + 2] = b;
+      data[out + 3] = a;
+    }
+  }
+  return { width, height, data };
+}
+
+/**
  * The full answer for one captured pair: raw comparison, phase-robust
  * half-scale comparison, and the fine-detail energy of each side.
  */
@@ -177,6 +273,7 @@ module.exports = {
   compareRgba,
   cropRgba,
   halveRgba,
+  lanczosResampleRgba,
   lumaEnergy,
   summarizePair,
 };
