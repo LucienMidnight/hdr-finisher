@@ -1,0 +1,3571 @@
+{
+  "fixture": "deterministic noisy TIFF; Edge/WebGPU; same Windows workstation",
+  "electron": "Runner failed before page startup: DevTools WebSocket ECONNRESET",
+  "phase3Commit": "55455e6",
+  "phase3": [
+    {
+      "name": "fit-1k",
+      "tier": "1024",
+      "ms": 24,
+      "edge": 1024,
+      "status": "Ready — 1K"
+    },
+    {
+      "name": "zoom50-1k",
+      "tier": "1024",
+      "ms": 1951,
+      "edge": 1024,
+      "status": "Ready — 1K"
+    },
+    {
+      "name": "zoom100-1k",
+      "tier": "1024",
+      "ms": 3162,
+      "edge": 7968,
+      "status": "Ready — 1K"
+    },
+    {
+      "name": "fit-2k",
+      "tier": "2048",
+      "ms": 2077,
+      "edge": 2048,
+      "status": "Ready — 2K"
+    },
+    {
+      "name": "zoom50-2k",
+      "tier": "2048",
+      "ms": 55,
+      "edge": 2048,
+      "status": "Ready — 2K"
+    },
+    {
+      "name": "zoom100-2k",
+      "tier": "2048",
+      "ms": 314,
+      "edge": 7968,
+      "status": "Ready — 2K"
+    },
+    {
+      "name": "fit-4k",
+      "tier": "4096",
+      "ms": 2269,
+      "edge": 4096,
+      "status": "Ready — 4K"
+    },
+    {
+      "name": "zoom100-4k",
+      "tier": "4096",
+      "ms": 1537,
+      "edge": 7968,
+      "status": "Ready — 4K"
+    },
+    {
+      "name": "fit-full",
+      "tier": "full",
+      "ms": 130,
+      "edge": 7968,
+      "status": "Ready — Full"
+    },
+    {
+      "name": "zoom100-full",
+      "tier": "full",
+      "ms": 261,
+      "edge": 7968,
+      "status": "Ready — Full"
+    }
+  ],
+  "phase3Adjustments": [
+    {
+      "name": "zoom100-2k-exposure",
+      "tier": "2048",
+      "ms": 293,
+      "edge": 4200
+    },
+    {
+      "name": "zoom100-full-exposure",
+      "tier": "full",
+      "ms": 293,
+      "edge": 4200
+    }
+  ],
+  "before": [
+    {
+      "preference": "responsive",
+      "name": "out-50",
+      "immediateStatus": "Ready — Display exact",
+      "previousEdge": 800,
+      "requiredEdge": 2100,
+      "coarseEdge": null,
+      "firstCurrentMs": 2032,
+      "exactMs": 2036,
+      "accepted": {
+        "generation": 3,
+        "edge": 2100,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": null,
+      "sourceMip": {
+        "coldBuilds": 1,
+        "buildMs": 259,
+        "memoryHits": 8,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": []
+    }
+  ],
+  "cold42": [
+    {
+      "preference": "responsive",
+      "name": "out-50",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 798,
+      "requiredEdge": 3984,
+      "coarseEdge": 1992,
+      "firstCurrentMs": 1816,
+      "exactMs": 3737,
+      "accepted": {
+        "generation": 3,
+        "edge": 3984,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "tiled",
+      "sourceMip": {
+        "coldBuilds": 2,
+        "buildMs": 1757,
+        "memoryHits": 9,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 1992,
+          "route": "tiled",
+          "durationMs": 1721.0999999996275,
+          "timeToFirstTileMs": 1053.699999999255,
+          "chunkCount": 2,
+          "bytes": 21450240
+        },
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 341.30000000074506,
+          "timeToFirstTileMs": 59.70000000111759,
+          "chunkCount": 6,
+          "bytes": 85120000
+        }
+      ]
+    },
+    {
+      "preference": "responsive",
+      "name": "out-35",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 3984,
+      "requiredEdge": 2789,
+      "coarseEdge": 697,
+      "firstCurrentMs": 785,
+      "exactMs": 1949,
+      "accepted": {
+        "generation": 3,
+        "edge": 2789,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "tiled",
+      "sourceMip": {
+        "coldBuilds": 2,
+        "buildMs": 1338,
+        "memoryHits": 3,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 1992,
+          "route": "tiled",
+          "durationMs": 1721.0999999996275,
+          "timeToFirstTileMs": 1053.699999999255,
+          "chunkCount": 2,
+          "bytes": 21450240
+        },
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 341.30000000074506,
+          "timeToFirstTileMs": 59.70000000111759,
+          "chunkCount": 6,
+          "bytes": 85120000
+        },
+        {
+          "longEdge": 697,
+          "route": "whole-frame",
+          "durationMs": 679.2000000011176,
+          "bytes": 2618880
+        },
+        {
+          "longEdge": 2789,
+          "route": "tiled",
+          "durationMs": 1161.6000000014901,
+          "timeToFirstTileMs": 1049,
+          "chunkCount": 3,
+          "bytes": 41947136
+        }
+      ]
+    },
+    {
+      "preference": "responsive",
+      "name": "native-100",
+      "immediateStatus": "Preparing view — Native region exact",
+      "previousEdge": 2789,
+      "requiredEdge": 7968,
+      "coarseEdge": 1992,
+      "firstCurrentMs": 209,
+      "exactMs": 2484,
+      "accepted": {
+        "generation": 3,
+        "edge": 7968,
+        "execution": "tiled",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 1,
+        "buildMs": 718,
+        "memoryHits": 3,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 1992,
+          "route": "tiled",
+          "durationMs": 1721.0999999996275,
+          "timeToFirstTileMs": 1053.699999999255,
+          "chunkCount": 2,
+          "bytes": 21450240
+        },
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 341.30000000074506,
+          "timeToFirstTileMs": 59.70000000111759,
+          "chunkCount": 6,
+          "bytes": 85120000
+        },
+        {
+          "longEdge": 697,
+          "route": "whole-frame",
+          "durationMs": 679.2000000011176,
+          "bytes": 2618880
+        },
+        {
+          "longEdge": 2789,
+          "route": "tiled",
+          "durationMs": 1161.6000000014901,
+          "timeToFirstTileMs": 1049,
+          "chunkCount": 3,
+          "bytes": 41947136
+        },
+        {
+          "longEdge": 1992,
+          "route": "tiled",
+          "durationMs": 89.09999999962747,
+          "timeToFirstTileMs": 58.40000000037253,
+          "chunkCount": 2,
+          "bytes": 21450240
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 2152.4000000003725,
+          "timeToFirstTileMs": 68.90000000037253,
+          "chunkCount": 21,
+          "bytes": 339118080
+        }
+      ]
+    },
+    {
+      "preference": "responsive",
+      "name": "warm-50",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 798,
+      "requiredEdge": 3984,
+      "coarseEdge": 996,
+      "firstCurrentMs": 802,
+      "exactMs": 1136,
+      "accepted": {
+        "generation": 3,
+        "edge": 3984,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 1,
+        "buildMs": 652,
+        "memoryHits": 7,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 1992,
+          "route": "tiled",
+          "durationMs": 89.09999999962747,
+          "timeToFirstTileMs": 58.40000000037253,
+          "chunkCount": 2,
+          "bytes": 21450240
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 2152.4000000003725,
+          "timeToFirstTileMs": 68.90000000037253,
+          "chunkCount": 21,
+          "bytes": 339118080
+        },
+        {
+          "longEdge": 256,
+          "route": "whole-frame",
+          "durationMs": 705.8000000007451,
+          "bytes": 350208
+        },
+        {
+          "longEdge": 798,
+          "route": "whole-frame",
+          "durationMs": 17.800000000745058,
+          "bytes": 3411200
+        },
+        {
+          "longEdge": 996,
+          "route": "whole-frame",
+          "durationMs": 709.7000000011176,
+          "bytes": 5447680
+        },
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 327,
+          "timeToFirstTileMs": 59,
+          "chunkCount": 6,
+          "bytes": 85120000
+        }
+      ]
+    }
+  ],
+  "repaired42": [
+    {
+      "preference": "responsive",
+      "name": "out-50",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 798,
+      "requiredEdge": 3984,
+      "coarseEdge": 1024,
+      "firstCurrentMs": 113,
+      "exactMs": 1906,
+      "accepted": {
+        "generation": 3,
+        "edge": 3984,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "tiled",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 10,
+        "diskHits": 1,
+        "memoryEvictions": 10,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 1024,
+          "route": "whole-frame",
+          "durationMs": 25.200000001117587,
+          "bytes": 5603328
+        },
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 358.30000000074506,
+          "timeToFirstTileMs": 57.80000000074506,
+          "chunkCount": 6,
+          "bytes": 85120000
+        }
+      ]
+    },
+    {
+      "preference": "responsive",
+      "name": "out-35",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 3984,
+      "requiredEdge": 2789,
+      "coarseEdge": 1024,
+      "firstCurrentMs": 97,
+      "exactMs": 308,
+      "accepted": {
+        "generation": 3,
+        "edge": 2789,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "tiled",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 3,
+        "diskHits": 1,
+        "memoryEvictions": 6,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 1024,
+          "route": "whole-frame",
+          "durationMs": 25.200000001117587,
+          "bytes": 5603328
+        },
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 358.30000000074506,
+          "timeToFirstTileMs": 57.80000000074506,
+          "chunkCount": 6,
+          "bytes": 85120000
+        },
+        {
+          "longEdge": 1024
+        },
+        {
+          "longEdge": 2789,
+          "route": "tiled",
+          "durationMs": 216.59999999962747,
+          "timeToFirstTileMs": 97.39999999850988,
+          "chunkCount": 3,
+          "bytes": 41947136
+        }
+      ]
+    },
+    {
+      "preference": "responsive",
+      "name": "native-100",
+      "immediateStatus": "Preparing view — Native region exact",
+      "previousEdge": 2789,
+      "requiredEdge": 7968,
+      "coarseEdge": 1024,
+      "firstCurrentMs": 113,
+      "exactMs": 1616,
+      "accepted": {
+        "generation": 3,
+        "edge": 7968,
+        "execution": "tiled",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 1,
+        "diskHits": 1,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 358.30000000074506,
+          "timeToFirstTileMs": 57.80000000074506,
+          "chunkCount": 6,
+          "bytes": 85120000
+        },
+        {
+          "longEdge": 1024
+        },
+        {
+          "longEdge": 2789,
+          "route": "tiled",
+          "durationMs": 216.59999999962747,
+          "timeToFirstTileMs": 97.39999999850988,
+          "chunkCount": 3,
+          "bytes": 41947136
+        },
+        {
+          "longEdge": 1024,
+          "route": "whole-frame",
+          "durationMs": 21.200000001117587,
+          "bytes": 5603328
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1368.0999999996275,
+          "timeToFirstTileMs": 56.5,
+          "chunkCount": 21,
+          "bytes": 339118080
+        }
+      ]
+    },
+    {
+      "preference": "responsive",
+      "name": "zoom-200",
+      "immediateStatus": "Ready — Native region exact",
+      "previousEdge": 7968,
+      "requiredEdge": 7968,
+      "coarseEdge": null,
+      "firstCurrentMs": null,
+      "exactMs": 2,
+      "accepted": {
+        "generation": 3,
+        "edge": 7968,
+        "execution": "tiled",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 358.30000000074506,
+          "timeToFirstTileMs": 57.80000000074506,
+          "chunkCount": 6,
+          "bytes": 85120000
+        },
+        {
+          "longEdge": 1024
+        },
+        {
+          "longEdge": 2789,
+          "route": "tiled",
+          "durationMs": 216.59999999962747,
+          "timeToFirstTileMs": 97.39999999850988,
+          "chunkCount": 3,
+          "bytes": 41947136
+        },
+        {
+          "longEdge": 1024,
+          "route": "whole-frame",
+          "durationMs": 21.200000001117587,
+          "bytes": 5603328
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1368.0999999996275,
+          "timeToFirstTileMs": 56.5,
+          "chunkCount": 21,
+          "bytes": 339118080
+        }
+      ]
+    },
+    {
+      "preference": "responsive",
+      "name": "fit",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 7968,
+      "requiredEdge": 798,
+      "coarseEdge": null,
+      "firstCurrentMs": 107,
+      "exactMs": 106,
+      "accepted": {
+        "generation": 3,
+        "edge": 798,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 1,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 1024
+        },
+        {
+          "longEdge": 2789,
+          "route": "tiled",
+          "durationMs": 216.59999999962747,
+          "timeToFirstTileMs": 97.39999999850988,
+          "chunkCount": 3,
+          "bytes": 41947136
+        },
+        {
+          "longEdge": 1024,
+          "route": "whole-frame",
+          "durationMs": 21.200000001117587,
+          "bytes": 5603328
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1368.0999999996275,
+          "timeToFirstTileMs": 56.5,
+          "chunkCount": 21,
+          "bytes": 339118080
+        },
+        {
+          "longEdge": 798,
+          "route": "whole-frame",
+          "durationMs": 16.199999999254942,
+          "bytes": 3411200
+        }
+      ]
+    },
+    {
+      "preference": "responsive",
+      "name": "warm-50",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 798,
+      "requiredEdge": 3984,
+      "coarseEdge": 1024,
+      "firstCurrentMs": 107,
+      "exactMs": 489,
+      "accepted": {
+        "generation": 3,
+        "edge": 3984,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 8,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 2789,
+          "route": "tiled",
+          "durationMs": 216.59999999962747,
+          "timeToFirstTileMs": 97.39999999850988,
+          "chunkCount": 3,
+          "bytes": 41947136
+        },
+        {
+          "longEdge": 1024,
+          "route": "whole-frame",
+          "durationMs": 21.200000001117587,
+          "bytes": 5603328
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1368.0999999996275,
+          "timeToFirstTileMs": 56.5,
+          "chunkCount": 21,
+          "bytes": 339118080
+        },
+        {
+          "longEdge": 798,
+          "route": "whole-frame",
+          "durationMs": 16.199999999254942,
+          "bytes": 3411200
+        },
+        {
+          "longEdge": 1024,
+          "route": "whole-frame",
+          "durationMs": 20.40000000037253,
+          "bytes": 5603328
+        },
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 375.19999999925494,
+          "timeToFirstTileMs": 57.5,
+          "chunkCount": 6,
+          "bytes": 85120000
+        }
+      ]
+    },
+    {
+      "preference": "responsive",
+      "name": "warm-100",
+      "immediateStatus": "Preparing view — Native region exact",
+      "previousEdge": 3984,
+      "requiredEdge": 7968,
+      "coarseEdge": 1024,
+      "firstCurrentMs": 97,
+      "exactMs": 1588,
+      "accepted": {
+        "generation": 3,
+        "edge": 7968,
+        "execution": "tiled",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 798,
+          "route": "whole-frame",
+          "durationMs": 16.199999999254942,
+          "bytes": 3411200
+        },
+        {
+          "longEdge": 1024,
+          "route": "whole-frame",
+          "durationMs": 20.40000000037253,
+          "bytes": 5603328
+        },
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 375.19999999925494,
+          "timeToFirstTileMs": 57.5,
+          "chunkCount": 6,
+          "bytes": 85120000
+        },
+        {
+          "longEdge": 1024
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1371,
+          "timeToFirstTileMs": 54.600000001490116,
+          "chunkCount": 21,
+          "bytes": 339118080
+        }
+      ]
+    },
+    {
+      "preference": "responsive",
+      "name": "exposure",
+      "immediateStatus": "Updating — Native region exact",
+      "requiredEdge": 7968,
+      "coarseEdge": 1024,
+      "firstCurrentMs": 65,
+      "exactMs": 231,
+      "accepted": {
+        "generation": 5,
+        "edge": 7968,
+        "transport": "WebGPU"
+      },
+      "transportRoute": null,
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 1024
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1371,
+          "timeToFirstTileMs": 54.600000001490116,
+          "chunkCount": 21,
+          "bytes": 339118080
+        },
+        {
+          "longEdge": 1024,
+          "route": "whole-frame",
+          "durationMs": 24.09999999962747,
+          "bytes": 5603328
+        },
+        {
+          "longEdge": 7968
+        }
+      ]
+    },
+    {
+      "preference": "responsive",
+      "name": "detail",
+      "immediateStatus": "Updating — Native region exact",
+      "requiredEdge": 7968,
+      "coarseEdge": null,
+      "firstCurrentMs": null,
+      "exactMs": 396,
+      "accepted": {
+        "generation": 7,
+        "edge": 7968,
+        "transport": "WebGPU"
+      },
+      "transportRoute": null,
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 1024,
+          "route": "whole-frame",
+          "durationMs": 24.09999999962747,
+          "bytes": 5603328
+        },
+        {
+          "longEdge": 7968
+        },
+        {
+          "longEdge": 1024
+        },
+        {
+          "longEdge": 7968
+        }
+      ]
+    },
+    {
+      "preference": "balanced",
+      "name": "out-50",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 7968,
+      "requiredEdge": 3984,
+      "coarseEdge": null,
+      "firstCurrentMs": 570,
+      "exactMs": 574,
+      "accepted": {
+        "generation": 9,
+        "edge": 3984,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 14,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 7968
+        },
+        {
+          "longEdge": 1024
+        },
+        {
+          "longEdge": 7968
+        },
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 479.7999999988824,
+          "timeToFirstTileMs": 80.29999999888241,
+          "chunkCount": 6,
+          "bytes": 85120000
+        },
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 486.09999999962747,
+          "timeToFirstTileMs": 84.90000000037253,
+          "chunkCount": 6,
+          "bytes": 85120000
+        }
+      ]
+    },
+    {
+      "preference": "balanced",
+      "name": "out-35",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 3984,
+      "requiredEdge": 2789,
+      "coarseEdge": 2048,
+      "firstCurrentMs": 182,
+      "exactMs": 342,
+      "accepted": {
+        "generation": 9,
+        "edge": 2789,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 7,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 1024
+        },
+        {
+          "longEdge": 7968
+        },
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 479.7999999988824,
+          "timeToFirstTileMs": 80.29999999888241,
+          "chunkCount": 6,
+          "bytes": 85120000
+        },
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 486.09999999962747,
+          "timeToFirstTileMs": 84.90000000037253,
+          "chunkCount": 6,
+          "bytes": 85120000
+        },
+        {
+          "longEdge": 2048,
+          "route": "tiled",
+          "durationMs": 91,
+          "timeToFirstTileMs": 55.80000000074506,
+          "chunkCount": 2,
+          "bytes": 22396928
+        },
+        {
+          "longEdge": 2789,
+          "route": "tiled",
+          "durationMs": 163.5,
+          "timeToFirstTileMs": 57.5,
+          "chunkCount": 3,
+          "bytes": 41947136
+        }
+      ]
+    },
+    {
+      "preference": "balanced",
+      "name": "native-100",
+      "immediateStatus": "Preparing view — Native region exact",
+      "previousEdge": 2789,
+      "requiredEdge": 7968,
+      "coarseEdge": 2048,
+      "firstCurrentMs": 97,
+      "exactMs": 1483,
+      "accepted": {
+        "generation": 9,
+        "edge": 7968,
+        "execution": "tiled",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 479.7999999988824,
+          "timeToFirstTileMs": 80.29999999888241,
+          "chunkCount": 6,
+          "bytes": 85120000
+        },
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 486.09999999962747,
+          "timeToFirstTileMs": 84.90000000037253,
+          "chunkCount": 6,
+          "bytes": 85120000
+        },
+        {
+          "longEdge": 2048,
+          "route": "tiled",
+          "durationMs": 91,
+          "timeToFirstTileMs": 55.80000000074506,
+          "chunkCount": 2,
+          "bytes": 22396928
+        },
+        {
+          "longEdge": 2789,
+          "route": "tiled",
+          "durationMs": 163.5,
+          "timeToFirstTileMs": 57.5,
+          "chunkCount": 3,
+          "bytes": 41947136
+        },
+        {
+          "longEdge": 2048
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1253.5999999996275,
+          "timeToFirstTileMs": 54.399999998509884,
+          "chunkCount": 21,
+          "bytes": 339118080
+        }
+      ]
+    },
+    {
+      "preference": "balanced",
+      "name": "zoom-200",
+      "immediateStatus": "Ready — Native region exact",
+      "previousEdge": 7968,
+      "requiredEdge": 7968,
+      "coarseEdge": null,
+      "firstCurrentMs": null,
+      "exactMs": 2,
+      "accepted": {
+        "generation": 9,
+        "edge": 7968,
+        "execution": "tiled",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 479.7999999988824,
+          "timeToFirstTileMs": 80.29999999888241,
+          "chunkCount": 6,
+          "bytes": 85120000
+        },
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 486.09999999962747,
+          "timeToFirstTileMs": 84.90000000037253,
+          "chunkCount": 6,
+          "bytes": 85120000
+        },
+        {
+          "longEdge": 2048,
+          "route": "tiled",
+          "durationMs": 91,
+          "timeToFirstTileMs": 55.80000000074506,
+          "chunkCount": 2,
+          "bytes": 22396928
+        },
+        {
+          "longEdge": 2789,
+          "route": "tiled",
+          "durationMs": 163.5,
+          "timeToFirstTileMs": 57.5,
+          "chunkCount": 3,
+          "bytes": 41947136
+        },
+        {
+          "longEdge": 2048
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1253.5999999996275,
+          "timeToFirstTileMs": 54.399999998509884,
+          "chunkCount": 21,
+          "bytes": 339118080
+        }
+      ]
+    },
+    {
+      "preference": "balanced",
+      "name": "fit",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 7968,
+      "requiredEdge": 798,
+      "coarseEdge": null,
+      "firstCurrentMs": 107,
+      "exactMs": 107,
+      "accepted": {
+        "generation": 9,
+        "edge": 798,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 1,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 486.09999999962747,
+          "timeToFirstTileMs": 84.90000000037253,
+          "chunkCount": 6,
+          "bytes": 85120000
+        },
+        {
+          "longEdge": 2048,
+          "route": "tiled",
+          "durationMs": 91,
+          "timeToFirstTileMs": 55.80000000074506,
+          "chunkCount": 2,
+          "bytes": 22396928
+        },
+        {
+          "longEdge": 2789,
+          "route": "tiled",
+          "durationMs": 163.5,
+          "timeToFirstTileMs": 57.5,
+          "chunkCount": 3,
+          "bytes": 41947136
+        },
+        {
+          "longEdge": 2048
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1253.5999999996275,
+          "timeToFirstTileMs": 54.399999998509884,
+          "chunkCount": 21,
+          "bytes": 339118080
+        },
+        {
+          "longEdge": 798,
+          "route": "whole-frame",
+          "durationMs": 17.09999999962747,
+          "bytes": 3411200
+        }
+      ]
+    },
+    {
+      "preference": "balanced",
+      "name": "warm-50",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 798,
+      "requiredEdge": 3984,
+      "coarseEdge": 2048,
+      "firstCurrentMs": 195,
+      "exactMs": 514,
+      "accepted": {
+        "generation": 9,
+        "edge": 3984,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 10,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 2789,
+          "route": "tiled",
+          "durationMs": 163.5,
+          "timeToFirstTileMs": 57.5,
+          "chunkCount": 3,
+          "bytes": 41947136
+        },
+        {
+          "longEdge": 2048
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1253.5999999996275,
+          "timeToFirstTileMs": 54.399999998509884,
+          "chunkCount": 21,
+          "bytes": 339118080
+        },
+        {
+          "longEdge": 798,
+          "route": "whole-frame",
+          "durationMs": 17.09999999962747,
+          "bytes": 3411200
+        },
+        {
+          "longEdge": 2048,
+          "route": "tiled",
+          "durationMs": 100.40000000037253,
+          "timeToFirstTileMs": 68.40000000037253,
+          "chunkCount": 2,
+          "bytes": 22396928
+        },
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 320.2999999988824,
+          "timeToFirstTileMs": 57.19999999925494,
+          "chunkCount": 6,
+          "bytes": 85120000
+        }
+      ]
+    },
+    {
+      "preference": "balanced",
+      "name": "warm-100",
+      "immediateStatus": "Preparing view — Native region exact",
+      "previousEdge": 3984,
+      "requiredEdge": 7968,
+      "coarseEdge": 2048,
+      "firstCurrentMs": 93,
+      "exactMs": 1556,
+      "accepted": {
+        "generation": 9,
+        "edge": 7968,
+        "execution": "tiled",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 798,
+          "route": "whole-frame",
+          "durationMs": 17.09999999962747,
+          "bytes": 3411200
+        },
+        {
+          "longEdge": 2048,
+          "route": "tiled",
+          "durationMs": 100.40000000037253,
+          "timeToFirstTileMs": 68.40000000037253,
+          "chunkCount": 2,
+          "bytes": 22396928
+        },
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 320.2999999988824,
+          "timeToFirstTileMs": 57.19999999925494,
+          "chunkCount": 6,
+          "bytes": 85120000
+        },
+        {
+          "longEdge": 2048
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1292.5999999996275,
+          "timeToFirstTileMs": 56.5,
+          "chunkCount": 21,
+          "bytes": 339118080
+        }
+      ]
+    },
+    {
+      "preference": "balanced",
+      "name": "exposure",
+      "immediateStatus": "Updating — Native region exact",
+      "requiredEdge": 7968,
+      "coarseEdge": null,
+      "firstCurrentMs": null,
+      "exactMs": 311,
+      "accepted": {
+        "generation": 11,
+        "edge": 7968,
+        "transport": "WebGPU"
+      },
+      "transportRoute": "region",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 2048,
+          "route": "tiled",
+          "durationMs": 100.40000000037253,
+          "timeToFirstTileMs": 68.40000000037253,
+          "chunkCount": 2,
+          "bytes": 22396928
+        },
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 320.2999999988824,
+          "timeToFirstTileMs": 57.19999999925494,
+          "chunkCount": 6,
+          "bytes": 85120000
+        },
+        {
+          "longEdge": 2048
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1292.5999999996275,
+          "timeToFirstTileMs": 56.5,
+          "chunkCount": 21,
+          "bytes": 339118080
+        },
+        {
+          "longEdge": 7968,
+          "route": "region",
+          "durationMs": 174,
+          "timeToFirstTileMs": 62.30000000074506,
+          "chunkCount": 3,
+          "bytes": 40115712
+        }
+      ]
+    },
+    {
+      "preference": "balanced",
+      "name": "detail",
+      "immediateStatus": "Updating — Native region exact",
+      "requiredEdge": 7968,
+      "coarseEdge": null,
+      "firstCurrentMs": null,
+      "exactMs": 1607,
+      "accepted": {
+        "generation": 13,
+        "edge": 7968,
+        "transport": "WebGPU"
+      },
+      "transportRoute": "tiled",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1292.5999999996275,
+          "timeToFirstTileMs": 56.5,
+          "chunkCount": 21,
+          "bytes": 339118080
+        },
+        {
+          "longEdge": 7968,
+          "route": "region",
+          "durationMs": 174,
+          "timeToFirstTileMs": 62.30000000074506,
+          "chunkCount": 3,
+          "bytes": 40115712
+        },
+        {
+          "longEdge": 2048,
+          "route": "tiled",
+          "durationMs": 105.5,
+          "timeToFirstTileMs": 61.80000000074506,
+          "chunkCount": 2,
+          "bytes": 22396928
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1247.2999999988824,
+          "timeToFirstTileMs": 53.899999998509884,
+          "chunkCount": 21,
+          "bytes": 339118080
+        }
+      ]
+    },
+    {
+      "preference": "precise",
+      "name": "out-50",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 7968,
+      "requiredEdge": 3984,
+      "coarseEdge": null,
+      "firstCurrentMs": 475,
+      "exactMs": 471,
+      "accepted": {
+        "generation": 15,
+        "edge": 3984,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 7,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 7968,
+          "route": "region",
+          "durationMs": 174,
+          "timeToFirstTileMs": 62.30000000074506,
+          "chunkCount": 3,
+          "bytes": 40115712
+        },
+        {
+          "longEdge": 2048,
+          "route": "tiled",
+          "durationMs": 105.5,
+          "timeToFirstTileMs": 61.80000000074506,
+          "chunkCount": 2,
+          "bytes": 22396928
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1247.2999999988824,
+          "timeToFirstTileMs": 53.899999998509884,
+          "chunkCount": 21,
+          "bytes": 339118080
+        },
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 324.19999999925494,
+          "timeToFirstTileMs": 58.09999999962747,
+          "chunkCount": 6,
+          "bytes": 85120000
+        }
+      ]
+    },
+    {
+      "preference": "precise",
+      "name": "out-35",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 3984,
+      "requiredEdge": 2789,
+      "coarseEdge": null,
+      "firstCurrentMs": 259,
+      "exactMs": 260,
+      "accepted": {
+        "generation": 15,
+        "edge": 2789,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 4,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 7968,
+          "route": "region",
+          "durationMs": 174,
+          "timeToFirstTileMs": 62.30000000074506,
+          "chunkCount": 3,
+          "bytes": 40115712
+        },
+        {
+          "longEdge": 2048,
+          "route": "tiled",
+          "durationMs": 105.5,
+          "timeToFirstTileMs": 61.80000000074506,
+          "chunkCount": 2,
+          "bytes": 22396928
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1247.2999999988824,
+          "timeToFirstTileMs": 53.899999998509884,
+          "chunkCount": 21,
+          "bytes": 339118080
+        },
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 324.19999999925494,
+          "timeToFirstTileMs": 58.09999999962747,
+          "chunkCount": 6,
+          "bytes": 85120000
+        },
+        {
+          "longEdge": 2789,
+          "route": "tiled",
+          "durationMs": 165.5,
+          "timeToFirstTileMs": 57.80000000074506,
+          "chunkCount": 3,
+          "bytes": 41947136
+        }
+      ]
+    },
+    {
+      "preference": "precise",
+      "name": "native-100",
+      "immediateStatus": "Preparing view — Native region exact",
+      "previousEdge": 2789,
+      "requiredEdge": 7968,
+      "coarseEdge": null,
+      "firstCurrentMs": 1447,
+      "exactMs": 1444,
+      "accepted": {
+        "generation": 15,
+        "edge": 7968,
+        "execution": "tiled",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 2048,
+          "route": "tiled",
+          "durationMs": 105.5,
+          "timeToFirstTileMs": 61.80000000074506,
+          "chunkCount": 2,
+          "bytes": 22396928
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1247.2999999988824,
+          "timeToFirstTileMs": 53.899999998509884,
+          "chunkCount": 21,
+          "bytes": 339118080
+        },
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 324.19999999925494,
+          "timeToFirstTileMs": 58.09999999962747,
+          "chunkCount": 6,
+          "bytes": 85120000
+        },
+        {
+          "longEdge": 2789,
+          "route": "tiled",
+          "durationMs": 165.5,
+          "timeToFirstTileMs": 57.80000000074506,
+          "chunkCount": 3,
+          "bytes": 41947136
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1243.7999999988824,
+          "timeToFirstTileMs": 54.40000000037253,
+          "chunkCount": 21,
+          "bytes": 339118080
+        }
+      ]
+    },
+    {
+      "preference": "precise",
+      "name": "zoom-200",
+      "immediateStatus": "Ready — Native region exact",
+      "previousEdge": 7968,
+      "requiredEdge": 7968,
+      "coarseEdge": null,
+      "firstCurrentMs": null,
+      "exactMs": 2,
+      "accepted": {
+        "generation": 15,
+        "edge": 7968,
+        "execution": "tiled",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 2048,
+          "route": "tiled",
+          "durationMs": 105.5,
+          "timeToFirstTileMs": 61.80000000074506,
+          "chunkCount": 2,
+          "bytes": 22396928
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1247.2999999988824,
+          "timeToFirstTileMs": 53.899999998509884,
+          "chunkCount": 21,
+          "bytes": 339118080
+        },
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 324.19999999925494,
+          "timeToFirstTileMs": 58.09999999962747,
+          "chunkCount": 6,
+          "bytes": 85120000
+        },
+        {
+          "longEdge": 2789,
+          "route": "tiled",
+          "durationMs": 165.5,
+          "timeToFirstTileMs": 57.80000000074506,
+          "chunkCount": 3,
+          "bytes": 41947136
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1243.7999999988824,
+          "timeToFirstTileMs": 54.40000000037253,
+          "chunkCount": 21,
+          "bytes": 339118080
+        }
+      ]
+    },
+    {
+      "preference": "precise",
+      "name": "fit",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 7968,
+      "requiredEdge": 798,
+      "coarseEdge": null,
+      "firstCurrentMs": 104,
+      "exactMs": 104,
+      "accepted": {
+        "generation": 15,
+        "edge": 798,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 1,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1247.2999999988824,
+          "timeToFirstTileMs": 53.899999998509884,
+          "chunkCount": 21,
+          "bytes": 339118080
+        },
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 324.19999999925494,
+          "timeToFirstTileMs": 58.09999999962747,
+          "chunkCount": 6,
+          "bytes": 85120000
+        },
+        {
+          "longEdge": 2789,
+          "route": "tiled",
+          "durationMs": 165.5,
+          "timeToFirstTileMs": 57.80000000074506,
+          "chunkCount": 3,
+          "bytes": 41947136
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1243.7999999988824,
+          "timeToFirstTileMs": 54.40000000037253,
+          "chunkCount": 21,
+          "bytes": 339118080
+        },
+        {
+          "longEdge": 798,
+          "route": "whole-frame",
+          "durationMs": 16.399999998509884,
+          "bytes": 3411200
+        }
+      ]
+    },
+    {
+      "preference": "precise",
+      "name": "warm-50",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 798,
+      "requiredEdge": 3984,
+      "coarseEdge": null,
+      "firstCurrentMs": 418,
+      "exactMs": 418,
+      "accepted": {
+        "generation": 15,
+        "edge": 3984,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 7,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 324.19999999925494,
+          "timeToFirstTileMs": 58.09999999962747,
+          "chunkCount": 6,
+          "bytes": 85120000
+        },
+        {
+          "longEdge": 2789,
+          "route": "tiled",
+          "durationMs": 165.5,
+          "timeToFirstTileMs": 57.80000000074506,
+          "chunkCount": 3,
+          "bytes": 41947136
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1243.7999999988824,
+          "timeToFirstTileMs": 54.40000000037253,
+          "chunkCount": 21,
+          "bytes": 339118080
+        },
+        {
+          "longEdge": 798,
+          "route": "whole-frame",
+          "durationMs": 16.399999998509884,
+          "bytes": 3411200
+        },
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 324.30000000074506,
+          "timeToFirstTileMs": 56,
+          "chunkCount": 6,
+          "bytes": 85120000
+        }
+      ]
+    },
+    {
+      "preference": "precise",
+      "name": "warm-100",
+      "immediateStatus": "Preparing view — Native region exact",
+      "previousEdge": 3984,
+      "requiredEdge": 7968,
+      "coarseEdge": null,
+      "firstCurrentMs": 1505,
+      "exactMs": 1503,
+      "accepted": {
+        "generation": 15,
+        "edge": 7968,
+        "execution": "tiled",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 2789,
+          "route": "tiled",
+          "durationMs": 165.5,
+          "timeToFirstTileMs": 57.80000000074506,
+          "chunkCount": 3,
+          "bytes": 41947136
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1243.7999999988824,
+          "timeToFirstTileMs": 54.40000000037253,
+          "chunkCount": 21,
+          "bytes": 339118080
+        },
+        {
+          "longEdge": 798,
+          "route": "whole-frame",
+          "durationMs": 16.399999998509884,
+          "bytes": 3411200
+        },
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 324.30000000074506,
+          "timeToFirstTileMs": 56,
+          "chunkCount": 6,
+          "bytes": 85120000
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1258.8999999985099,
+          "timeToFirstTileMs": 53.09999999962747,
+          "chunkCount": 21,
+          "bytes": 339118080
+        }
+      ]
+    },
+    {
+      "preference": "precise",
+      "name": "exposure",
+      "immediateStatus": "Updating — Native region exact",
+      "requiredEdge": 7968,
+      "coarseEdge": null,
+      "firstCurrentMs": null,
+      "exactMs": 298,
+      "accepted": {
+        "generation": 17,
+        "edge": 7968,
+        "transport": "WebGPU"
+      },
+      "transportRoute": "region",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 798,
+          "route": "whole-frame",
+          "durationMs": 16.399999998509884,
+          "bytes": 3411200
+        },
+        {
+          "longEdge": 3984,
+          "route": "tiled",
+          "durationMs": 324.30000000074506,
+          "timeToFirstTileMs": 56,
+          "chunkCount": 6,
+          "bytes": 85120000
+        },
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1258.8999999985099,
+          "timeToFirstTileMs": 53.09999999962747,
+          "chunkCount": 21,
+          "bytes": 339118080
+        },
+        {
+          "longEdge": 7968,
+          "route": "region",
+          "durationMs": 166.2999999988824,
+          "timeToFirstTileMs": 59.90000000037253,
+          "chunkCount": 3,
+          "bytes": 40115712
+        }
+      ]
+    },
+    {
+      "preference": "precise",
+      "name": "detail",
+      "immediateStatus": "Updating — Native region exact",
+      "requiredEdge": 7968,
+      "coarseEdge": null,
+      "firstCurrentMs": null,
+      "exactMs": 217,
+      "accepted": {
+        "generation": 19,
+        "edge": 7968,
+        "transport": "WebGPU"
+      },
+      "transportRoute": null,
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 7968,
+          "route": "tiled",
+          "durationMs": 1258.8999999985099,
+          "timeToFirstTileMs": 53.09999999962747,
+          "chunkCount": 21,
+          "bytes": 339118080
+        },
+        {
+          "longEdge": 7968,
+          "route": "region",
+          "durationMs": 166.2999999988824,
+          "timeToFirstTileMs": 59.90000000037253,
+          "chunkCount": 3,
+          "bytes": 40115712
+        },
+        {
+          "longEdge": 7968
+        },
+        {
+          "longEdge": 7968
+        }
+      ]
+    }
+  ],
+  "repaired4200": [
+    {
+      "preference": "responsive",
+      "name": "out-50",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 800,
+      "requiredEdge": 2100,
+      "coarseEdge": 1024,
+      "firstCurrentMs": 123,
+      "exactMs": 1480,
+      "accepted": {
+        "generation": 3,
+        "edge": 2100,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "tiled",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 2,
+        "diskHits": 2,
+        "memoryEvictions": 4,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 1024,
+          "route": "whole-frame",
+          "durationMs": 37,
+          "bytes": 5595136
+        },
+        {
+          "longEdge": 2100,
+          "route": "tiled",
+          "durationMs": 1352.8999999985099,
+          "timeToFirstTileMs": 81.69999999925494,
+          "chunkCount": 2,
+          "bytes": 23654400
+        }
+      ]
+    },
+    {
+      "preference": "responsive",
+      "name": "out-35",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 2100,
+      "requiredEdge": 1470,
+      "coarseEdge": 1024,
+      "firstCurrentMs": 94,
+      "exactMs": 153,
+      "accepted": {
+        "generation": 3,
+        "edge": 1470,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "tiled",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 1,
+        "diskHits": 1,
+        "memoryEvictions": 1,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 1024,
+          "route": "whole-frame",
+          "durationMs": 37,
+          "bytes": 5595136
+        },
+        {
+          "longEdge": 2100,
+          "route": "tiled",
+          "durationMs": 1352.8999999985099,
+          "timeToFirstTileMs": 81.69999999925494,
+          "chunkCount": 2,
+          "bytes": 23654400
+        },
+        {
+          "longEdge": 1024
+        },
+        {
+          "longEdge": 1470,
+          "route": "tiled",
+          "durationMs": 62.90000000037253,
+          "timeToFirstTileMs": 55.69999999925494,
+          "chunkCount": 1,
+          "bytes": 11540480
+        }
+      ]
+    },
+    {
+      "preference": "responsive",
+      "name": "native-100",
+      "immediateStatus": "Preparing view — Native region exact",
+      "previousEdge": 1470,
+      "requiredEdge": 4200,
+      "coarseEdge": 1024,
+      "firstCurrentMs": 125,
+      "exactMs": 575,
+      "accepted": {
+        "generation": 3,
+        "edge": 4200,
+        "execution": "tiled",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 1,
+        "diskHits": 1,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 1024,
+          "route": "whole-frame",
+          "durationMs": 37,
+          "bytes": 5595136
+        },
+        {
+          "longEdge": 2100,
+          "route": "tiled",
+          "durationMs": 1352.8999999985099,
+          "timeToFirstTileMs": 81.69999999925494,
+          "chunkCount": 2,
+          "bytes": 23654400
+        },
+        {
+          "longEdge": 1024
+        },
+        {
+          "longEdge": 1470,
+          "route": "tiled",
+          "durationMs": 62.90000000037253,
+          "timeToFirstTileMs": 55.69999999925494,
+          "chunkCount": 1,
+          "bytes": 11540480
+        },
+        {
+          "longEdge": 1024,
+          "route": "whole-frame",
+          "durationMs": 22,
+          "bytes": 5595136
+        },
+        {
+          "longEdge": 4200,
+          "route": "tiled",
+          "durationMs": 409.80000000074506,
+          "timeToFirstTileMs": 59.69999999925494,
+          "chunkCount": 6,
+          "bytes": 94617600
+        }
+      ]
+    },
+    {
+      "preference": "responsive",
+      "name": "zoom-200",
+      "immediateStatus": "Ready — Native region exact",
+      "previousEdge": 4200,
+      "requiredEdge": 4200,
+      "coarseEdge": null,
+      "firstCurrentMs": null,
+      "exactMs": 2,
+      "accepted": {
+        "generation": 3,
+        "edge": 4200,
+        "execution": "tiled",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 1024,
+          "route": "whole-frame",
+          "durationMs": 37,
+          "bytes": 5595136
+        },
+        {
+          "longEdge": 2100,
+          "route": "tiled",
+          "durationMs": 1352.8999999985099,
+          "timeToFirstTileMs": 81.69999999925494,
+          "chunkCount": 2,
+          "bytes": 23654400
+        },
+        {
+          "longEdge": 1024
+        },
+        {
+          "longEdge": 1470,
+          "route": "tiled",
+          "durationMs": 62.90000000037253,
+          "timeToFirstTileMs": 55.69999999925494,
+          "chunkCount": 1,
+          "bytes": 11540480
+        },
+        {
+          "longEdge": 1024,
+          "route": "whole-frame",
+          "durationMs": 22,
+          "bytes": 5595136
+        },
+        {
+          "longEdge": 4200,
+          "route": "tiled",
+          "durationMs": 409.80000000074506,
+          "timeToFirstTileMs": 59.69999999925494,
+          "chunkCount": 6,
+          "bytes": 94617600
+        }
+      ]
+    },
+    {
+      "preference": "responsive",
+      "name": "fit",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 4200,
+      "requiredEdge": 800,
+      "coarseEdge": 512,
+      "firstCurrentMs": 94,
+      "exactMs": 112,
+      "accepted": {
+        "generation": 3,
+        "edge": 800,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 2,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 1024
+        },
+        {
+          "longEdge": 1470,
+          "route": "tiled",
+          "durationMs": 62.90000000037253,
+          "timeToFirstTileMs": 55.69999999925494,
+          "chunkCount": 1,
+          "bytes": 11540480
+        },
+        {
+          "longEdge": 1024,
+          "route": "whole-frame",
+          "durationMs": 22,
+          "bytes": 5595136
+        },
+        {
+          "longEdge": 4200,
+          "route": "tiled",
+          "durationMs": 409.80000000074506,
+          "timeToFirstTileMs": 59.69999999925494,
+          "chunkCount": 6,
+          "bytes": 94617600
+        },
+        {
+          "longEdge": 512,
+          "route": "whole-frame",
+          "durationMs": 9.5,
+          "bytes": 1396736
+        },
+        {
+          "longEdge": 800,
+          "route": "whole-frame",
+          "durationMs": 15.200000001117587,
+          "bytes": 3411200
+        }
+      ]
+    },
+    {
+      "preference": "responsive",
+      "name": "warm-50",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 800,
+      "requiredEdge": 2100,
+      "coarseEdge": 1024,
+      "firstCurrentMs": 107,
+      "exactMs": 220,
+      "accepted": {
+        "generation": 3,
+        "edge": 2100,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 4,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 1024,
+          "route": "whole-frame",
+          "durationMs": 22,
+          "bytes": 5595136
+        },
+        {
+          "longEdge": 4200,
+          "route": "tiled",
+          "durationMs": 409.80000000074506,
+          "timeToFirstTileMs": 59.69999999925494,
+          "chunkCount": 6,
+          "bytes": 94617600
+        },
+        {
+          "longEdge": 512,
+          "route": "whole-frame",
+          "durationMs": 9.5,
+          "bytes": 1396736
+        },
+        {
+          "longEdge": 800,
+          "route": "whole-frame",
+          "durationMs": 15.200000001117587,
+          "bytes": 3411200
+        },
+        {
+          "longEdge": 1024,
+          "route": "whole-frame",
+          "durationMs": 20.90000000037253,
+          "bytes": 5595136
+        },
+        {
+          "longEdge": 2100,
+          "route": "tiled",
+          "durationMs": 108,
+          "timeToFirstTileMs": 59.19999999925494,
+          "chunkCount": 2,
+          "bytes": 23654400
+        }
+      ]
+    },
+    {
+      "preference": "responsive",
+      "name": "warm-100",
+      "immediateStatus": "Preparing view — Native region exact",
+      "previousEdge": 2100,
+      "requiredEdge": 4200,
+      "coarseEdge": 1024,
+      "firstCurrentMs": 93,
+      "exactMs": 553,
+      "accepted": {
+        "generation": 3,
+        "edge": 4200,
+        "execution": "tiled",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 512,
+          "route": "whole-frame",
+          "durationMs": 9.5,
+          "bytes": 1396736
+        },
+        {
+          "longEdge": 800,
+          "route": "whole-frame",
+          "durationMs": 15.200000001117587,
+          "bytes": 3411200
+        },
+        {
+          "longEdge": 1024,
+          "route": "whole-frame",
+          "durationMs": 20.90000000037253,
+          "bytes": 5595136
+        },
+        {
+          "longEdge": 2100,
+          "route": "tiled",
+          "durationMs": 108,
+          "timeToFirstTileMs": 59.19999999925494,
+          "chunkCount": 2,
+          "bytes": 23654400
+        },
+        {
+          "longEdge": 1024
+        },
+        {
+          "longEdge": 4200,
+          "route": "tiled",
+          "durationMs": 413.09999999962747,
+          "timeToFirstTileMs": 58.09999999962747,
+          "chunkCount": 6,
+          "bytes": 94617600
+        }
+      ]
+    },
+    {
+      "preference": "responsive",
+      "name": "exposure",
+      "immediateStatus": "Updating — Native region exact",
+      "requiredEdge": 4200,
+      "coarseEdge": 1024,
+      "firstCurrentMs": 68,
+      "exactMs": 176,
+      "accepted": {
+        "generation": 5,
+        "edge": 4200,
+        "transport": "WebGPU"
+      },
+      "transportRoute": null,
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 1024
+        },
+        {
+          "longEdge": 4200,
+          "route": "tiled",
+          "durationMs": 413.09999999962747,
+          "timeToFirstTileMs": 58.09999999962747,
+          "chunkCount": 6,
+          "bytes": 94617600
+        },
+        {
+          "longEdge": 1024,
+          "route": "whole-frame",
+          "durationMs": 25,
+          "bytes": 5595136
+        },
+        {
+          "longEdge": 4200
+        }
+      ]
+    },
+    {
+      "preference": "responsive",
+      "name": "detail",
+      "immediateStatus": "Updating — Native region exact",
+      "requiredEdge": 4200,
+      "coarseEdge": 1024,
+      "firstCurrentMs": 24,
+      "exactMs": 275,
+      "accepted": {
+        "generation": 7,
+        "edge": 4200,
+        "transport": "WebGPU"
+      },
+      "transportRoute": null,
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 1024,
+          "route": "whole-frame",
+          "durationMs": 25,
+          "bytes": 5595136
+        },
+        {
+          "longEdge": 4200
+        },
+        {
+          "longEdge": 1024
+        },
+        {
+          "longEdge": 4200
+        }
+      ]
+    },
+    {
+      "preference": "balanced",
+      "name": "out-50",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 4200,
+      "requiredEdge": 2100,
+      "coarseEdge": null,
+      "firstCurrentMs": 201,
+      "exactMs": 193,
+      "accepted": {
+        "generation": 9,
+        "edge": 2100,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 4,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 4200
+        },
+        {
+          "longEdge": 1024
+        },
+        {
+          "longEdge": 4200
+        },
+        {
+          "longEdge": 2100,
+          "route": "tiled",
+          "durationMs": 108,
+          "timeToFirstTileMs": 57.59999999962747,
+          "chunkCount": 2,
+          "bytes": 23654400
+        }
+      ]
+    },
+    {
+      "preference": "balanced",
+      "name": "out-35",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 2100,
+      "requiredEdge": 1470,
+      "coarseEdge": null,
+      "firstCurrentMs": 144,
+      "exactMs": 137,
+      "accepted": {
+        "generation": 9,
+        "edge": 1470,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 2,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 1024
+        },
+        {
+          "longEdge": 4200
+        },
+        {
+          "longEdge": 2100,
+          "route": "tiled",
+          "durationMs": 108,
+          "timeToFirstTileMs": 57.59999999962747,
+          "chunkCount": 2,
+          "bytes": 23654400
+        },
+        {
+          "longEdge": 1470,
+          "route": "tiled",
+          "durationMs": 49.90000000037253,
+          "timeToFirstTileMs": 41.90000000037253,
+          "chunkCount": 1,
+          "bytes": 11540480
+        }
+      ]
+    },
+    {
+      "preference": "balanced",
+      "name": "native-100",
+      "immediateStatus": "Preparing view — Native region exact",
+      "previousEdge": 1470,
+      "requiredEdge": 4200,
+      "coarseEdge": 2048,
+      "firstCurrentMs": 212,
+      "exactMs": 668,
+      "accepted": {
+        "generation": 9,
+        "edge": 4200,
+        "execution": "tiled",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 3,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 4200
+        },
+        {
+          "longEdge": 2100,
+          "route": "tiled",
+          "durationMs": 108,
+          "timeToFirstTileMs": 57.59999999962747,
+          "chunkCount": 2,
+          "bytes": 23654400
+        },
+        {
+          "longEdge": 1470,
+          "route": "tiled",
+          "durationMs": 49.90000000037253,
+          "timeToFirstTileMs": 41.90000000037253,
+          "chunkCount": 1,
+          "bytes": 11540480
+        },
+        {
+          "longEdge": 2048,
+          "route": "tiled",
+          "durationMs": 100.79999999888241,
+          "timeToFirstTileMs": 54,
+          "chunkCount": 2,
+          "bytes": 22364160
+        },
+        {
+          "longEdge": 4200,
+          "route": "tiled",
+          "durationMs": 398.5,
+          "timeToFirstTileMs": 57.69999999925494,
+          "chunkCount": 6,
+          "bytes": 94617600
+        }
+      ]
+    },
+    {
+      "preference": "balanced",
+      "name": "zoom-200",
+      "immediateStatus": "Ready — Native region exact",
+      "previousEdge": 4200,
+      "requiredEdge": 4200,
+      "coarseEdge": null,
+      "firstCurrentMs": null,
+      "exactMs": 2,
+      "accepted": {
+        "generation": 9,
+        "edge": 4200,
+        "execution": "tiled",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 4200
+        },
+        {
+          "longEdge": 2100,
+          "route": "tiled",
+          "durationMs": 108,
+          "timeToFirstTileMs": 57.59999999962747,
+          "chunkCount": 2,
+          "bytes": 23654400
+        },
+        {
+          "longEdge": 1470,
+          "route": "tiled",
+          "durationMs": 49.90000000037253,
+          "timeToFirstTileMs": 41.90000000037253,
+          "chunkCount": 1,
+          "bytes": 11540480
+        },
+        {
+          "longEdge": 2048,
+          "route": "tiled",
+          "durationMs": 100.79999999888241,
+          "timeToFirstTileMs": 54,
+          "chunkCount": 2,
+          "bytes": 22364160
+        },
+        {
+          "longEdge": 4200,
+          "route": "tiled",
+          "durationMs": 398.5,
+          "timeToFirstTileMs": 57.69999999925494,
+          "chunkCount": 6,
+          "bytes": 94617600
+        }
+      ]
+    },
+    {
+      "preference": "balanced",
+      "name": "fit",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 4200,
+      "requiredEdge": 800,
+      "coarseEdge": null,
+      "firstCurrentMs": 101,
+      "exactMs": 101,
+      "accepted": {
+        "generation": 9,
+        "edge": 800,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 1,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 2100,
+          "route": "tiled",
+          "durationMs": 108,
+          "timeToFirstTileMs": 57.59999999962747,
+          "chunkCount": 2,
+          "bytes": 23654400
+        },
+        {
+          "longEdge": 1470,
+          "route": "tiled",
+          "durationMs": 49.90000000037253,
+          "timeToFirstTileMs": 41.90000000037253,
+          "chunkCount": 1,
+          "bytes": 11540480
+        },
+        {
+          "longEdge": 2048,
+          "route": "tiled",
+          "durationMs": 100.79999999888241,
+          "timeToFirstTileMs": 54,
+          "chunkCount": 2,
+          "bytes": 22364160
+        },
+        {
+          "longEdge": 4200,
+          "route": "tiled",
+          "durationMs": 398.5,
+          "timeToFirstTileMs": 57.69999999925494,
+          "chunkCount": 6,
+          "bytes": 94617600
+        },
+        {
+          "longEdge": 800,
+          "route": "whole-frame",
+          "durationMs": 17,
+          "bytes": 3411200
+        }
+      ]
+    },
+    {
+      "preference": "balanced",
+      "name": "warm-50",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 800,
+      "requiredEdge": 2100,
+      "coarseEdge": 2048,
+      "firstCurrentMs": 184,
+      "exactMs": 288,
+      "accepted": {
+        "generation": 9,
+        "edge": 2100,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 6,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 1470,
+          "route": "tiled",
+          "durationMs": 49.90000000037253,
+          "timeToFirstTileMs": 41.90000000037253,
+          "chunkCount": 1,
+          "bytes": 11540480
+        },
+        {
+          "longEdge": 2048,
+          "route": "tiled",
+          "durationMs": 100.79999999888241,
+          "timeToFirstTileMs": 54,
+          "chunkCount": 2,
+          "bytes": 22364160
+        },
+        {
+          "longEdge": 4200,
+          "route": "tiled",
+          "durationMs": 398.5,
+          "timeToFirstTileMs": 57.69999999925494,
+          "chunkCount": 6,
+          "bytes": 94617600
+        },
+        {
+          "longEdge": 800,
+          "route": "whole-frame",
+          "durationMs": 17,
+          "bytes": 3411200
+        },
+        {
+          "longEdge": 2048,
+          "route": "tiled",
+          "durationMs": 95.30000000074506,
+          "timeToFirstTileMs": 52.70000000111759,
+          "chunkCount": 2,
+          "bytes": 22364160
+        },
+        {
+          "longEdge": 2100,
+          "route": "tiled",
+          "durationMs": 102.40000000037253,
+          "timeToFirstTileMs": 56.30000000074506,
+          "chunkCount": 2,
+          "bytes": 23654400
+        }
+      ]
+    },
+    {
+      "preference": "balanced",
+      "name": "warm-100",
+      "immediateStatus": "Preparing view — Native region exact",
+      "previousEdge": 2100,
+      "requiredEdge": 4200,
+      "coarseEdge": 2048,
+      "firstCurrentMs": 109,
+      "exactMs": 562,
+      "accepted": {
+        "generation": 9,
+        "edge": 4200,
+        "execution": "tiled",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 800,
+          "route": "whole-frame",
+          "durationMs": 17,
+          "bytes": 3411200
+        },
+        {
+          "longEdge": 2048,
+          "route": "tiled",
+          "durationMs": 95.30000000074506,
+          "timeToFirstTileMs": 52.70000000111759,
+          "chunkCount": 2,
+          "bytes": 22364160
+        },
+        {
+          "longEdge": 2100,
+          "route": "tiled",
+          "durationMs": 102.40000000037253,
+          "timeToFirstTileMs": 56.30000000074506,
+          "chunkCount": 2,
+          "bytes": 23654400
+        },
+        {
+          "longEdge": 2048
+        },
+        {
+          "longEdge": 4200,
+          "route": "tiled",
+          "durationMs": 388.59999999962747,
+          "timeToFirstTileMs": 58.80000000074506,
+          "chunkCount": 6,
+          "bytes": 94617600
+        }
+      ]
+    },
+    {
+      "preference": "balanced",
+      "name": "exposure",
+      "immediateStatus": "Updating — Native region exact",
+      "requiredEdge": 4200,
+      "coarseEdge": null,
+      "firstCurrentMs": null,
+      "exactMs": 322,
+      "accepted": {
+        "generation": 11,
+        "edge": 4200,
+        "transport": "WebGPU"
+      },
+      "transportRoute": "region",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 2048,
+          "route": "tiled",
+          "durationMs": 95.30000000074506,
+          "timeToFirstTileMs": 52.70000000111759,
+          "chunkCount": 2,
+          "bytes": 22364160
+        },
+        {
+          "longEdge": 2100,
+          "route": "tiled",
+          "durationMs": 102.40000000037253,
+          "timeToFirstTileMs": 56.30000000074506,
+          "chunkCount": 2,
+          "bytes": 23654400
+        },
+        {
+          "longEdge": 2048
+        },
+        {
+          "longEdge": 4200,
+          "route": "tiled",
+          "durationMs": 388.59999999962747,
+          "timeToFirstTileMs": 58.80000000074506,
+          "chunkCount": 6,
+          "bytes": 94617600
+        },
+        {
+          "longEdge": 4200,
+          "route": "region",
+          "durationMs": 166.09999999962747,
+          "timeToFirstTileMs": 61.5,
+          "chunkCount": 3,
+          "bytes": 35482112
+        }
+      ]
+    },
+    {
+      "preference": "balanced",
+      "name": "detail",
+      "immediateStatus": "Updating — Native region exact",
+      "requiredEdge": 4200,
+      "coarseEdge": null,
+      "firstCurrentMs": null,
+      "exactMs": 259,
+      "accepted": {
+        "generation": 13,
+        "edge": 4200,
+        "transport": "WebGPU"
+      },
+      "transportRoute": null,
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 2048
+        },
+        {
+          "longEdge": 4200,
+          "route": "tiled",
+          "durationMs": 388.59999999962747,
+          "timeToFirstTileMs": 58.80000000074506,
+          "chunkCount": 6,
+          "bytes": 94617600
+        },
+        {
+          "longEdge": 4200,
+          "route": "region",
+          "durationMs": 166.09999999962747,
+          "timeToFirstTileMs": 61.5,
+          "chunkCount": 3,
+          "bytes": 35482112
+        },
+        {
+          "longEdge": 4200
+        }
+      ]
+    },
+    {
+      "preference": "precise",
+      "name": "out-50",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 4200,
+      "requiredEdge": 2100,
+      "coarseEdge": null,
+      "firstCurrentMs": 204,
+      "exactMs": 199,
+      "accepted": {
+        "generation": 15,
+        "edge": 2100,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "region",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 3,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 4200,
+          "route": "region",
+          "durationMs": 166.09999999962747,
+          "timeToFirstTileMs": 61.5,
+          "chunkCount": 3,
+          "bytes": 35482112
+        },
+        {
+          "longEdge": 4200
+        },
+        {
+          "longEdge": 4200
+        },
+        {
+          "longEdge": 2100,
+          "route": "tiled",
+          "durationMs": 109.09999999962747,
+          "timeToFirstTileMs": 57.70000000111759,
+          "chunkCount": 2,
+          "bytes": 23654400
+        }
+      ]
+    },
+    {
+      "preference": "precise",
+      "name": "out-35",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 2100,
+      "requiredEdge": 1470,
+      "coarseEdge": null,
+      "firstCurrentMs": 144,
+      "exactMs": 140,
+      "accepted": {
+        "generation": 15,
+        "edge": 1470,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "region",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 2,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 4200,
+          "route": "region",
+          "durationMs": 166.09999999962747,
+          "timeToFirstTileMs": 61.5,
+          "chunkCount": 3,
+          "bytes": 35482112
+        },
+        {
+          "longEdge": 4200
+        },
+        {
+          "longEdge": 4200
+        },
+        {
+          "longEdge": 2100,
+          "route": "tiled",
+          "durationMs": 109.09999999962747,
+          "timeToFirstTileMs": 57.70000000111759,
+          "chunkCount": 2,
+          "bytes": 23654400
+        },
+        {
+          "longEdge": 1470,
+          "route": "tiled",
+          "durationMs": 49.40000000037253,
+          "timeToFirstTileMs": 41.59999999962747,
+          "chunkCount": 1,
+          "bytes": 11540480
+        }
+      ]
+    },
+    {
+      "preference": "precise",
+      "name": "native-100",
+      "immediateStatus": "Preparing view — Native region exact",
+      "previousEdge": 1470,
+      "requiredEdge": 4200,
+      "coarseEdge": null,
+      "firstCurrentMs": 565,
+      "exactMs": 568,
+      "accepted": {
+        "generation": 15,
+        "edge": 4200,
+        "execution": "tiled",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 4200
+        },
+        {
+          "longEdge": 4200
+        },
+        {
+          "longEdge": 2100,
+          "route": "tiled",
+          "durationMs": 109.09999999962747,
+          "timeToFirstTileMs": 57.70000000111759,
+          "chunkCount": 2,
+          "bytes": 23654400
+        },
+        {
+          "longEdge": 1470,
+          "route": "tiled",
+          "durationMs": 49.40000000037253,
+          "timeToFirstTileMs": 41.59999999962747,
+          "chunkCount": 1,
+          "bytes": 11540480
+        },
+        {
+          "longEdge": 4200,
+          "route": "tiled",
+          "durationMs": 393.59999999962747,
+          "timeToFirstTileMs": 57,
+          "chunkCount": 6,
+          "bytes": 94617600
+        }
+      ]
+    },
+    {
+      "preference": "precise",
+      "name": "zoom-200",
+      "immediateStatus": "Ready — Native region exact",
+      "previousEdge": 4200,
+      "requiredEdge": 4200,
+      "coarseEdge": null,
+      "firstCurrentMs": null,
+      "exactMs": 2,
+      "accepted": {
+        "generation": 15,
+        "edge": 4200,
+        "execution": "tiled",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 4200
+        },
+        {
+          "longEdge": 4200
+        },
+        {
+          "longEdge": 2100,
+          "route": "tiled",
+          "durationMs": 109.09999999962747,
+          "timeToFirstTileMs": 57.70000000111759,
+          "chunkCount": 2,
+          "bytes": 23654400
+        },
+        {
+          "longEdge": 1470,
+          "route": "tiled",
+          "durationMs": 49.40000000037253,
+          "timeToFirstTileMs": 41.59999999962747,
+          "chunkCount": 1,
+          "bytes": 11540480
+        },
+        {
+          "longEdge": 4200,
+          "route": "tiled",
+          "durationMs": 393.59999999962747,
+          "timeToFirstTileMs": 57,
+          "chunkCount": 6,
+          "bytes": 94617600
+        }
+      ]
+    },
+    {
+      "preference": "precise",
+      "name": "fit",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 4200,
+      "requiredEdge": 800,
+      "coarseEdge": null,
+      "firstCurrentMs": 106,
+      "exactMs": 104,
+      "accepted": {
+        "generation": 15,
+        "edge": 800,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 1,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 4200
+        },
+        {
+          "longEdge": 2100,
+          "route": "tiled",
+          "durationMs": 109.09999999962747,
+          "timeToFirstTileMs": 57.70000000111759,
+          "chunkCount": 2,
+          "bytes": 23654400
+        },
+        {
+          "longEdge": 1470,
+          "route": "tiled",
+          "durationMs": 49.40000000037253,
+          "timeToFirstTileMs": 41.59999999962747,
+          "chunkCount": 1,
+          "bytes": 11540480
+        },
+        {
+          "longEdge": 4200,
+          "route": "tiled",
+          "durationMs": 393.59999999962747,
+          "timeToFirstTileMs": 57,
+          "chunkCount": 6,
+          "bytes": 94617600
+        },
+        {
+          "longEdge": 800,
+          "route": "whole-frame",
+          "durationMs": 15.800000000745058,
+          "bytes": 3411200
+        }
+      ]
+    },
+    {
+      "preference": "precise",
+      "name": "warm-50",
+      "immediateStatus": "Preparing view — Display exact",
+      "previousEdge": 800,
+      "requiredEdge": 2100,
+      "coarseEdge": null,
+      "firstCurrentMs": 209,
+      "exactMs": 208,
+      "accepted": {
+        "generation": 15,
+        "edge": 2100,
+        "execution": "direct",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 3,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 4200
+        },
+        {
+          "longEdge": 2100,
+          "route": "tiled",
+          "durationMs": 109.09999999962747,
+          "timeToFirstTileMs": 57.70000000111759,
+          "chunkCount": 2,
+          "bytes": 23654400
+        },
+        {
+          "longEdge": 1470,
+          "route": "tiled",
+          "durationMs": 49.40000000037253,
+          "timeToFirstTileMs": 41.59999999962747,
+          "chunkCount": 1,
+          "bytes": 11540480
+        },
+        {
+          "longEdge": 4200,
+          "route": "tiled",
+          "durationMs": 393.59999999962747,
+          "timeToFirstTileMs": 57,
+          "chunkCount": 6,
+          "bytes": 94617600
+        },
+        {
+          "longEdge": 800,
+          "route": "whole-frame",
+          "durationMs": 15.800000000745058,
+          "bytes": 3411200
+        },
+        {
+          "longEdge": 2100,
+          "route": "tiled",
+          "durationMs": 111.5,
+          "timeToFirstTileMs": 58.19999999925494,
+          "chunkCount": 2,
+          "bytes": 23654400
+        }
+      ]
+    },
+    {
+      "preference": "precise",
+      "name": "warm-100",
+      "immediateStatus": "Preparing view — Native region exact",
+      "previousEdge": 2100,
+      "requiredEdge": 4200,
+      "coarseEdge": null,
+      "firstCurrentMs": 560,
+      "exactMs": 554,
+      "accepted": {
+        "generation": 15,
+        "edge": 4200,
+        "execution": "tiled",
+        "transport": "WebGPU"
+      },
+      "transportRoute": "streamed",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 1470,
+          "route": "tiled",
+          "durationMs": 49.40000000037253,
+          "timeToFirstTileMs": 41.59999999962747,
+          "chunkCount": 1,
+          "bytes": 11540480
+        },
+        {
+          "longEdge": 4200,
+          "route": "tiled",
+          "durationMs": 393.59999999962747,
+          "timeToFirstTileMs": 57,
+          "chunkCount": 6,
+          "bytes": 94617600
+        },
+        {
+          "longEdge": 800,
+          "route": "whole-frame",
+          "durationMs": 15.800000000745058,
+          "bytes": 3411200
+        },
+        {
+          "longEdge": 2100,
+          "route": "tiled",
+          "durationMs": 111.5,
+          "timeToFirstTileMs": 58.19999999925494,
+          "chunkCount": 2,
+          "bytes": 23654400
+        },
+        {
+          "longEdge": 4200,
+          "route": "tiled",
+          "durationMs": 396.40000000037253,
+          "timeToFirstTileMs": 56.30000000074506,
+          "chunkCount": 6,
+          "bytes": 94617600
+        }
+      ]
+    },
+    {
+      "preference": "precise",
+      "name": "exposure",
+      "immediateStatus": "Updating — Native region exact",
+      "requiredEdge": 4200,
+      "coarseEdge": null,
+      "firstCurrentMs": null,
+      "exactMs": 310,
+      "accepted": {
+        "generation": 17,
+        "edge": 4200,
+        "transport": "WebGPU"
+      },
+      "transportRoute": "region",
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 800,
+          "route": "whole-frame",
+          "durationMs": 15.800000000745058,
+          "bytes": 3411200
+        },
+        {
+          "longEdge": 2100,
+          "route": "tiled",
+          "durationMs": 111.5,
+          "timeToFirstTileMs": 58.19999999925494,
+          "chunkCount": 2,
+          "bytes": 23654400
+        },
+        {
+          "longEdge": 4200,
+          "route": "tiled",
+          "durationMs": 396.40000000037253,
+          "timeToFirstTileMs": 56.30000000074506,
+          "chunkCount": 6,
+          "bytes": 94617600
+        },
+        {
+          "longEdge": 4200,
+          "route": "region",
+          "durationMs": 162.2999999988824,
+          "timeToFirstTileMs": 62.09999999962747,
+          "chunkCount": 3,
+          "bytes": 35482112
+        }
+      ]
+    },
+    {
+      "preference": "precise",
+      "name": "detail",
+      "immediateStatus": "Updating — Native region exact",
+      "requiredEdge": 4200,
+      "coarseEdge": null,
+      "firstCurrentMs": null,
+      "exactMs": 252,
+      "accepted": {
+        "generation": 19,
+        "edge": 4200,
+        "transport": "WebGPU"
+      },
+      "transportRoute": null,
+      "sourceMip": {
+        "coldBuilds": 0,
+        "buildMs": 0,
+        "memoryHits": 0,
+        "diskHits": 0,
+        "memoryEvictions": 0,
+        "diskEvictions": 0
+      },
+      "proxyStages": [
+        {
+          "longEdge": 4200,
+          "route": "tiled",
+          "durationMs": 396.40000000037253,
+          "timeToFirstTileMs": 56.30000000074506,
+          "chunkCount": 6,
+          "bytes": 94617600
+        },
+        {
+          "longEdge": 4200,
+          "route": "region",
+          "durationMs": 162.2999999988824,
+          "timeToFirstTileMs": 62.09999999962747,
+          "chunkCount": 3,
+          "bytes": 35482112
+        },
+        {
+          "longEdge": 4200
+        },
+        {
+          "longEdge": 4200
+        }
+      ]
+    }
+  ],
+  "roiSpatialSweep": [
+    {
+      "comparedPixels": 52866,
+      "maxAbsDifference": 0,
+      "tolerance": 0,
+      "withinTolerance": true
+    },
+    {
+      "comparedPixels": 52866,
+      "maxAbsDifference": 0,
+      "tolerance": 0,
+      "withinTolerance": true
+    },
+    {
+      "comparedPixels": 52866,
+      "maxAbsDifference": 0,
+      "tolerance": 0,
+      "withinTolerance": true
+    }
+  ],
+  "exportCases": [
+    {
+      "name": "grain",
+      "exportCorrect": true,
+      "peakNits": 1615.935
+    },
+    {
+      "name": "detail",
+      "exportCorrect": true,
+      "peakNits": 2096.322
+    },
+    {
+      "name": "denoise",
+      "exportCorrect": true,
+      "peakNits": 1547.102
+    },
+    {
+      "name": "halation",
+      "exportCorrect": true,
+      "peakNits": 960.582
+    },
+    {
+      "name": "fine-detail",
+      "exportCorrect": true,
+      "peakNits": 1615.935
+    },
+    {
+      "name": "highlights",
+      "exportCorrect": true,
+      "peakNits": 1615.935
+    }
+  ]
+}
