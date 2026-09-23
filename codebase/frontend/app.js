@@ -4373,6 +4373,9 @@ function previewExecutionLabel() {
 
 function previewOutputEntries() {
   const target = previewResolutionDimensions();
+  const live = state.acceptedPresentation?.execution === "tiled"
+    ? state.gpuPreview?.tiledExecutionMetrics || null : null;
+  const viewport = state.renderCoordinator?.state(state.currentView)?.viewport || null;
   return [
     ["View", state.currentView.toUpperCase()],
     ["Rendering", state.renderingMode === "cpu" ? "CPU Compatibility" : state.renderingMode === "gpu" ? "GPU Preferred" : "Auto"],
@@ -4381,6 +4384,13 @@ function previewOutputEntries() {
     ["Legacy override", state.previewResolutionOverride ? previewResolutionLabel() : "Off"],
     ["Controller", JSON.stringify(state.previewLatencyController?.snapshot()?.decisions || {})],
     ["Migrated tier", state.appPreferences?.previewMigration?.previousTier || "None"],
+    ["Viewport", viewport ? `${viewport.x},${viewport.y} · ${viewport.width} × ${viewport.height}` : "Fit"],
+    ["Processing scale", live?.processingScale ?? (state.session
+      ? (requiredProcessingLongEdge() / Math.max(state.session.source.width, state.session.source.height)).toFixed(3) : "Waiting")],
+    ["Source mip", `${state.acceptedPresentation?.processedLongEdge || target.longEdge}px`],
+    ["Generation", `${state.acceptedPresentation?.generation ?? "—"} / ${state.previewGeneration[state.currentView]}`],
+    ["Detail cache", live ? `${live.detailCacheHits} hits · ${live.detailCacheMisses} misses` : "Direct / waiting"],
+    ["GPU working", live ? `${(live.workingSetBytes / 1048576).toFixed(1)} MiB` : "Direct / waiting"],
     ["Presented", state.acceptedPresentation?.longEdge
       ? `${state.acceptedPresentation.tier ? previewResolutionLabel(state.acceptedPresentation.tier) : "Placeholder"} · ${state.acceptedPresentation.longEdge}px · ${state.acceptedPresentation.transport}`
       : "Waiting"],
