@@ -26,6 +26,36 @@ function argument(name, fallback = null) {
   return index >= 0 && index + 1 < process.argv.length ? process.argv[index + 1] : fallback;
 }
 
+function flag(name) {
+  return process.argv.includes(name);
+}
+
+// A representative film-look graph for the tolerance run: grain, halation,
+// bloom, image structure (softness and microcontrast). These are the modules
+// whose identity the Phase 0 tolerance table has to cover; Denoise is a
+// separate analysis pipeline and is exercised by its own scenarios.
+const FILM_LOOK_SETTINGS = [
+  ["current.film_look.grain_amount", 40],
+  ["current.film_look.grain_size", 60],
+  ["current.film_look.halation_amount", 35],
+  ["current.film_look.bloom_amount", 25],
+  ["current.film_look.image_softness", 15],
+  ["current.film_look.microcontrast", 20],
+];
+
+async function applyFilmLook(page) {
+  await page.evaluate((entries) => {
+    for (const [path, value] of entries) {
+      const control = document.querySelector(`[data-path="${path}"]`);
+      if (!control) throw new Error(`Missing control ${path}`);
+      control.value = String(value);
+      control.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  }, FILM_LOOK_SETTINGS);
+  await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 300000 });
+  return Object.fromEntries(FILM_LOOK_SETTINGS);
+}
+
 function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
@@ -55,6 +85,8 @@ function assert(condition, message) {
     await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 300000 });
     const enabled = await page.evaluate(() => window.HDRFinisherPerformance.setRoiPreviewMode("refinement"));
     assert(enabled === "refinement", `The ROI mode did not enable: ${enabled}`);
+    await page.evaluate(() => window.HDRFinisherPerformance.cancelRoiCatchUp());
+    const filmLook = flag("--film") ? await applyFilmLook(page) : null;
     await page.evaluate(() => window.HDRFinisherPerformance.cancelRoiCatchUp());
 
     const outcome = await page.evaluate(async (tolerance) => {
@@ -88,6 +120,7 @@ function assert(condition, message) {
     const summary = {
       url,
       zoomPercent: ZOOM_PERCENT,
+      filmLook,
       longEdge: outcome.parity.longEdge,
       visible: outcome.parity.visible,
       legacy: outcome.parity.legacy,
