@@ -71,6 +71,7 @@
     "test:roi-parity": "node tests/performance/roi-parity.js",
     "test:packaged-baselines": "node tests/performance/packaged-baselines.js",
     "test:fit-filtering": "node tests/performance/fit-filtering-ab.js",
+    "test:export-parity": "node tests/performance/export-parity.js",
     "test:electron": "node tests/run-in-electron.js"
   },
   "devDependencies": {
