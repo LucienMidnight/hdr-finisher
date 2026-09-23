@@ -1661,6 +1661,25 @@ The owner reviewed the export/reference parity sheets and passed all of them: "a
 
 Next safe edit: return to the sprint plan with Phase 0 complete for items 3, 4, 6, 7 and 8; do not start Phase 3.
 
+### 15.30 Committed checkpoint — 2026-09-23 (persistent source mip cache; Phase 3 item 1)
+
+Committed as `87d38f3` — "Add the persistent multi-resolution source mip cache".
+
+**What was built.** `SourceMipStore` in `backend/hdr_finisher/render_cache.py` implements the §5.3 contract:
+
+- **Key.** `SourceMipIdentity` carries content fingerprint, byte size, dimensions, decoder version, color-transform version, orientation, lane (`hdr`/`sdr`), the reference white used at decode, a canonical user-interpretation/RAW-recipe string, and the cache format version. Its digest names the disk directory (`<root>/v1/<digest>/<edge>.f32`). Grade state is deliberately absent, so slider moves, overlays and presentation retargets cannot invalidate a level. `SOURCE_DECODER_VERSION` and `SOURCE_COLOR_TRANSFORM_VERSION` live in `loader.py`; the loader normalizes orientation at decode, so the key records `orientation=1` for the upright stored data.
+- **Contents.** Levels are pre-adjustment canonical scene-linear data produced by the same `downsample_image` call the session always used, so a warm level is byte-identical to a cold one (tested). Levels at or above the native edge are never cached — the decoded image is returned unchanged.
+- **Atomic build.** Single-flight per identity and level; the level file is written to a temp path and `os.replace`d. Interrupted temp files are swept on first use; a level that fails magic/version/shape/size/CRC32 validation is discarded and rebuilt rather than served.
+- **Bounds.** Memory and disk are separate byte-bounded LRUs (defaults 256 MiB / 1 GiB; env-overridable) with per-edge eviction counters. Stale format-version directories are removed on first use.
+- **Telemetry.** `source_mip` in `render_cache.diagnostics()` exposes memory/disk hits, cold builds, bytes read, bytes generated, build duration (total and mean), native passes, evictions, corrupt discards, stale removals, write failures, single-flight waits, and current RAM/disk footprints. The `/proxy` and `/source-tile` responses carry `X-Source-Level-State` (`built`/`memory`/`disk`/`native`/`session`), which is how the warm-Fit gate will be measured.
+- **Wiring.** `sessions.py` builds the identity at session creation and on `update_source_interpretation` (which re-decodes the same file with different pixels); `replace_source` swaps identity and drops the old identity's memory; `set_color_context` intentionally does **not** invalidate mips. `tests/conftest.py` points the store at a temporary root so the suite never writes to application data. `HDR_FINISHER_SOURCE_CACHE_DISABLE` turns persistence off; `HDR_FINISHER_SOURCE_CACHE_DIR` relocates it.
+
+**Evidence.** 14 new Python tests: byte-identical cold/warm/restart levels, identity coverage of every decode input and nothing else, grade-change non-invalidation through two cache instances, disk warm after memory drop, odd dimensions with 5000.0 and negative values preserved through a disk round-trip (edge rows included), corruption and truncation discarded and rebuilt, stale-version and interrupted-write sweeps, byte-bounded memory and disk LRUs, telemetry counters, native-edge pass-through, source replacement, color-context non-invalidation, and geometry tiles served from a warm mip equal to the cold path. One API test (`test_source_mip_levels_persist_across_sessions`) drives the real endpoints: `built` → `memory` within a session, then `disk` for a second session over the same content, byte-equal bodies, exactly one cold build.
+
+**Gate status, stated plainly.** Phase 3 item 1 is implemented and tested on the backend. Not yet done and not claimed: the frontend ROI routing of item 2 (warm Fit still loads the tier proxy whole; the store currently serves the existing `/proxy` and `/source-tile` callers), the runtime cold/warm timing and footprint recording, and the remaining Phase 3 units. No §4 text changed. Suites: focused Python trio **171** (157 + 14); full Python **1366 passed / 3 skipped**; JS **176** unchanged.
+
+Next safe edit: Phase 3 item 2 — route ROI source requests to the mip and region the pass needs (frontend source upload path), then measure the warm-Fit gate. Do not start Phase 4.
+
 
 
 
