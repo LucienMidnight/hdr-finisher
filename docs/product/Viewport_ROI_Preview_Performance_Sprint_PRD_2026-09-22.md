@@ -666,7 +666,7 @@ This section is the authoritative continuation point for agents working through 
 |---|---|---|
 | Phase 0 | **Product direction recorded 2026-09-22** | The owner exercised the 4K and Full paths in the desktop app (4K smooth, local adjustments and feather smooth, Full correct but slower as expected, technical scopes reporting tiled for Full and direct for 4K) and directed Phase 2 to proceed. The individual Phase 0 checklist items — parity tolerances, migration behavior, 42.4 MP packaged baselines, Fit filtering A/B — are still not individually signed off, so Phase 2 keeps legacy mode as the fallback and no Phase 3 work starts until those numbers exist. Observation to address in Phase 2: a long rapid exposure drag at Full showed a transient "full not available" state that cleared on release; acceptable per the owner, but it is the backpressure signal Phase 2's 50 ms stop gate and progressive passes exist to remove. |
 | Phase 1 | **Complete (code and gates)** | All eight work items are implemented across checkpoints 15.1–15.5, and all six Phase 1 exit gates pass in focused automated and Chromium/Edge runtime evidence. Packaged-app (Electron) evidence and the Phase 0 baselines remain outstanding; see 15.5. |
-| Phase 2 | **Items 1–8 landed and regression-verified; parity measured, gate open** | Item 1 (coordinator extraction and generation ownership out of `app.js`) landed with the ROI, catch-up and pan paths delegated and every runtime scenario re-run (15.18); visible-region refinement, real viewport, retained presentation target, offscreen exclusion, small-batch submission, the deferred whole-frame catch-up, the display-scale pan cache and the Settings switch remain landed and owner-accepted (15.15, 15.17); the 50 ms stop gate is measured (15.10). Item 9's legacy-versus-ROI A/B run measured byte equality on the synthetic SDR pattern, but the Phase 0 per-module tolerances are unsigned, so the parity gate stays open. Remaining: the Phase 0 tolerance and migration items, 42.4 MP packaged baselines, Fit filtering A/B, and packaged/Electron evidence. |
+| Phase 2 | **Items 1–8 landed and regression-verified; parity measured, gate open** | Item 1 (coordinator extraction and generation ownership out of `app.js`) landed with the ROI, catch-up and pan paths delegated and every runtime scenario re-run (15.18); visible-region refinement, real viewport, retained presentation target, offscreen exclusion, small-batch submission, the deferred whole-frame catch-up, the display-scale pan cache and the Settings switch remain landed and owner-accepted (15.15, 15.17); the 50 ms stop gate is measured (15.10). Item 9's legacy-versus-ROI A/B run measured byte equality on the synthetic SDR pattern and on the packaged HDR surface (15.19), but the Phase 0 per-module tolerances are unsigned, so the parity gate stays open. Packaged/Electron evidence for the Phase 2 paths now exists (15.19). Remaining: the Phase 0 tolerance and migration items, 42.4 MP packaged baselines, and the Fit filtering A/B. |
 | Phases 3–5 | **Not started** | Do not begin dependent architecture work until the Phase 0 stop gate is resolved and recorded. |
 
 ### 15.2 Working-tree checkpoint — 2026-09-22
@@ -1310,6 +1310,39 @@ Owner checks to batch when convenient (nothing here blocks continued sprint work
 3. Optional: `npm run test:roi-parity` on a real source (the diagnostic needs a magnified view; it is also on `HDRFinisherPerformance.roiParity({ tolerance })`).
 
 Next safe edit: packaged/Electron evidence for the Phase 2 paths and the 42.4 MP packaged baselines, then the tolerance and migration Phase 0 items. Do not start Phase 3.
+
+### 15.19 Packaged evidence — 2026-09-23 (Electron runs of the Phase 2 paths)
+
+Committed as `ae578d9` — "Make two ROI runtime drivers robust to packaged window geometry".
+
+All runs used `node tests/run-in-electron.js <driver>` with `ELECTRON_RUN_AS_NODE` cleared (a wrapper script removes it), one GPU scenario at a time. Evidence JSON carries an `electron-` prefix under `codebase/output/performance/` so the Chromium runs are preserved beside it.
+
+Results:
+
+- `electron-roi-catch-up.json`: ROI pass 2 of 6 tiles, 4 skipped, retained; catch-up whole frame 6/6, `roiCatchUp true`, `viewportRequested false`, accepted generation equals the armed generation; viewer Ready; 0 page errors.
+- `electron-roi-pan-cache.json`: warm frame 6/6; ROI pass 1 of 6; pan 1 (exposed strip) 1 tile, 262 144 processed pixels; pan 2 (back into the refined region) `foregroundTiles 0`, `reusedTiles 1`, 0 processed pixels, 1 submission; accepted generation unchanged; 0 page errors.
+- `electron-roi-refinement.json`: `off` requests no viewport; the warm pass answered from the cache (`answeredFromCache true`, `redrewWhole false`) because the packaged window's settle chose the same 1280×720 target, so the retained target survived; the fresh-generation pass restricts to 2 foreground / 0 reused / 4 skipped; the same-generation pass is 0 foreground / 2 reused / 0 processed; the settings select drives the mode; 0 page errors.
+- `electron-roi-parity.json`: **correction to 15.18** — the packaged surface is HDR (`rgba16float`), so this run exercises the half-float readback path 15.18 recorded as uncovered. 297×168 = **49 896 pixels compared, `maxAbsDifference 0`**; the ROI pass re-rendered 2 tiles with a retained frame; coordinator record 5 submits/5 dispatched, 0 coalesced, 0 dropped, 0 cancelled, `queueDelayMs` all 0; 0 page errors.
+- `electron-presentation-gate.json`: `hdr true`, unchanged taxonomy (stale same-size generation refuses `superseded-before-presentation`, newest presents), min sampled peak 255; 0 page errors.
+- `electron-failure-taxonomy.json`: transport failures keep the device available and the frame painted (255 before and after); three validation failures disable it at the threshold; 0 page errors.
+- `electron-tiled-mask-batch-transport.json`: legacy 6/6 tiles (its retained frame is recorded, not asserted), ROI 4/6 with the retained frame, offscreen brightness unchanged at 232.84, one 6-tile batch, 0 per-tile requests; 0 page errors.
+- `full-tier-brush-feather` (42.4 MP, packaged, no JSON file): Ready/Full, exact, tiled, no Unavailable events, and the deliberate superseded mask refusal recovers.
+
+Driver fixes that packaged geometry required (committed in `ae578d9`):
+
+- `roi-refinement.js`: the warm-pass assertion now accepts either a whole redraw (target recreated by a size change) or a cache-answered pass (target survived because the packaged settle chose the same size). The fresh-generation control below it is unchanged and deterministic; the summary records which branch was taken.
+- `tiled-mask-batch-transport.js`: "the legacy pass is a full-frame pass" no longer requires `retainedFrame === false`. Since 15.16, retention describes the frame, not the route, so the assertion is `skippedTiles === 0 && foregroundTiles === tileCount` and `retainedFrame` is recorded in the summary.
+
+Observation, recorded rather than hidden: the first Electron `roi-parity` launch timed out waiting for `gpuPreview.available`; the immediate retry produced identical numbers to the Chromium run. A transient GPU-process initialization on that launch, not a defect in the code under test.
+
+Gate status:
+
+- **Packaged/Electron evidence for the Phase 2 paths: closed** for these scenarios. Phase 1's remaining packaged debt (presentation gate, failure taxonomy, batch transport, brush feather) is also closed by the runs above.
+- Still owed: the 42.4 MP packaged baselines at Fit, 100%, 200% and a representative pan (Phase 0 item 3) and its measurements (item 4), the Fit filtering A/B (item 6), the per-module tolerance sign-off (item 7), and migration behavior for existing preview preferences (item 8).
+- Suites unchanged: **161 JS**, **157 Python**.
+
+Next safe edit: the 42.4 MP packaged-baseline driver (Fit / 100% / 200% / pan), then the remaining Phase 0 sign-offs. Do not start Phase 3.
+
 
 
 
