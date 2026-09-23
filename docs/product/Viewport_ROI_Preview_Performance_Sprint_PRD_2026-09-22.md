@@ -1445,6 +1445,34 @@ Interpretation, stated plainly:
 
 Next safe edit: the Denoise parity run — extend the parity scenario to cover Denoise reconstruction, the main gap in the 15.21 tolerance proposal — then the per-module tolerance sign-off. Do not start Phase 3.
 
+### 15.23 Denoise parity — 2026-09-23 (the 15.21 gap, ROI route)
+
+Committed as `031cfa3` — "Add the Denoise scenario to the parity driver". Evidence: `codebase/output/performance/roi-parity-denoise.json` (Chromium, SDR surface) and `electron-roi-parity-denoise.json` (packaged, HDR `rgba16float` surface). Run: `node tests/performance/roi-parity.js --url <url> --denoise` (Chromium) and `node tests/run-in-electron.js tests/performance/roi-parity.js --denoise --output output/performance/electron-roi-parity-denoise.json` (packaged).
+
+**What changed.** `roi-parity.js` takes `--denoise` (enable Denoise reconstruction through the real controls — amount 1, then wait for the runtime to reach ready) and `--input <file>` (load a file source; the plain run still uses the test pattern). Without `--input` the Denoise run uses the generated 2400×1600 noisy TIFF, because a smooth fixture gives the reconstruction nothing to do. The summary records the source, the Denoise settings and identity, and cumulative counter snapshots before / ready / after; assertions require the analysis to have dispatched and the parity passes to have resolved more tiles than the enable-time render, so a run cannot look green with the pipeline idle. Default output names are suffixed (`roi-parity-denoise.json`, `roi-parity-film.json`) so a flag run cannot overwrite the plain evidence.
+
+**Evidence.**
+
+| run | tier | visible region | compared pixels | maxAbsDifference | analysis (dispatches / tiles / evidence) | resolve tiles ready → after |
+|---|---|---:|---:|---:|---|---|
+| Chromium, SDR | 1024 | 127×76 | 9 652 | **0** | 2 / 1 / 5 253 120 B | 5 → 11 |
+| Packaged, HDR | 2400 (Full) | 297×168 | 49 896 | **0** | 12 / 6 / 28 800 000 B | 26 → 48 |
+
+- Both runs: Denoise `selectedSource resolved`, `cacheReady true`, identity bound to the tier edge (`:hdr:1024:` / `:hdr:2400:`), settings amount 1 / luminance 0.5 / color noise 0.5 / detail recovery 0.5.
+- ROI pass in both: `viewportRequested true`, 2 foreground tiles, retained frame, tiled, a newer generation than the legacy pass (2 → 3).
+- Coordinator: Chromium 7 submits / 7 dispatched, 1 coalesced, 1 cancelled; packaged 8 / 8, 0 coalesced / dropped / cancelled; `queueDelayMs` ≈ 0 in both.
+- Regression: the plain test-pattern run after the change reproduces 15.18 exactly — 238×143 = 34 034 pixels, `maxAbsDifference 0`, 2 foreground tiles, retained frame, 0 page errors.
+- 0 page errors in all three runs.
+
+**Interpretation.** The tile-wise Denoise reconstruction produces the same pixels as the whole-frame reconstruction over the visible region, on both surfaces, including the packaged Full tier where the analysis covered 6 tiles. This is the evidence the 15.21 tolerance proposal named as its main gap. It covers the legacy-versus-ROI route comparison only; export/reference parity is a different implementation and remains uncovered.
+
+**Gate status:**
+
+- Phase 0 item 7's Denoise gap: **covered for legacy-versus-ROI parity**. The owner's tolerance decision remains open, now with Denoise evidence in hand.
+- Suites unchanged by this unit (no Python touched; JS unchanged): **172 JS**. Phase 3 untouched.
+
+Next safe edit: export/reference parity — the remaining uncovered class in the 15.21 proposal — or hold for the owner's tolerance decision. Do not start Phase 3.
+
 
 
 
