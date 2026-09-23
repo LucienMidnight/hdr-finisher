@@ -664,7 +664,7 @@ This section is the authoritative continuation point for agents working through 
 
 | Phase | Status | Gate note |
 |---|---|---|
-| Phase 0 | **Product direction recorded 2026-09-22** | The owner exercised the 4K and Full paths in the desktop app (4K smooth, local adjustments and feather smooth, Full correct but slower as expected, technical scopes reporting tiled for Full and direct for 4K) and directed Phase 2 to proceed. The individual Phase 0 checklist items — parity tolerances, migration behavior, 42.4 MP packaged baselines, Fit filtering A/B — are still not individually signed off, so Phase 2 keeps legacy mode as the fallback and no Phase 3 work starts until those numbers exist. Observation to address in Phase 2: a long rapid exposure drag at Full showed a transient "full not available" state that cleared on release; acceptable per the owner, but it is the backpressure signal Phase 2's 50 ms stop gate and progressive passes exist to remove. |
+| Phase 0 | **Product direction recorded 2026-09-22** | The owner exercised the 4K and Full paths in the desktop app (4K smooth, local adjustments and feather smooth, Full correct but slower as expected, technical scopes reporting tiled for Full and direct for 4K) and directed Phase 2 to proceed. Since then: the 42.4 MP packaged baselines and their measurements are captured (15.20), migration behavior is recorded and tested (15.21), and film-look parity is byte-identical on both surfaces (15.21). The per-module tolerance sign-off (item 7, proposed in 15.21) and the Fit filtering A/B (item 6) remain unsigned, so Phase 2 keeps legacy mode as the fallback and no Phase 3 work starts until those numbers exist. Observation to address in Phase 2: a long rapid exposure drag at Full showed a transient "full not available" state that cleared on release; acceptable per the owner, but it is the backpressure signal Phase 2's 50 ms stop gate and progressive passes exist to remove. |
 | Phase 1 | **Complete (code and gates)** | All eight work items are implemented across checkpoints 15.1–15.5, and all six Phase 1 exit gates pass in focused automated and Chromium/Edge runtime evidence. Packaged-app (Electron) evidence and the Phase 0 baselines remain outstanding; see 15.5. |
 | Phase 2 | **Items 1–8 landed and regression-verified; parity measured, gate open** | Item 1 (coordinator extraction and generation ownership out of `app.js`) landed with the ROI, catch-up and pan paths delegated and every runtime scenario re-run (15.18); visible-region refinement, real viewport, retained presentation target, offscreen exclusion, small-batch submission, the deferred whole-frame catch-up, the display-scale pan cache and the Settings switch remain landed and owner-accepted (15.15, 15.17); the 50 ms stop gate is measured (15.10). Item 9's legacy-versus-ROI A/B run measured byte equality on the synthetic SDR pattern and on the packaged HDR surface (15.19), but the Phase 0 per-module tolerances are unsigned, so the parity gate stays open. Packaged/Electron evidence for the Phase 2 paths now exists (15.19). Remaining: the Phase 0 tolerance and migration items, 42.4 MP packaged baselines, and the Fit filtering A/B. |
 | Phases 3–5 | **Not started** | Do not begin dependent architecture work until the Phase 0 stop gate is resolved and recorded. |
@@ -1370,6 +1370,36 @@ Observations for the tolerance and Fit-filtering decisions, recorded rather than
 Gate status: Phase 0 item 3 (42.4 MP packaged baselines) now has raw evidence at all four view states. Item 4's measurements are present for the same run (frame latency, time to current/stable, queue delay, processed pixels, planned GPU bytes, heap, long tasks, source bytes); scope-work timing is covered by the existing scope instrumentation rather than this driver. Items 6 (Fit filtering A/B), 7 (per-module tolerance sign-off) and 8 (migration behavior) remain. Suites unchanged: **161 JS**, **157 Python**.
 
 Next safe edit: per-module parity runs (grain, Detail, Denoise, halation, spatial film) to feed the tolerance sign-off, then the Fit filtering A/B. Do not start Phase 3.
+
+### 15.21 Phase 0 evidence — 2026-09-23 (film-look parity, migration behavior, tolerance proposal)
+
+Committed as `4a79114` — "Test preview preference migration behavior" and `9594b66` — "Add a film-look graph to the parity scenario".
+
+**Per-module parity with a film-look graph.** The parity driver now takes `--film`, which applies a representative film-look graph through the real controls — grain amount 40 / size 60, halation 35, bloom 25, image softness 15, microcontrast 20 — and waits for Ready before running the A/B. The graph exercises the module classes the Phase 0 tolerance table names (grain, halation/bloom around saturated highlights, and fine-structure softness/microcontrast) together.
+
+- `roi-parity-film.json` (Chromium, SDR surface): 238×143 = **34 034 pixels, `maxAbsDifference 0`**, ROI pass 2 foreground tiles, retained frame, 0 page errors.
+- `electron-roi-parity-film.json` (packaged, HDR `rgba16float` surface): 297×168 = **49 896 pixels, `maxAbsDifference 0`**, 0 page errors.
+- Coordinator in both runs: 8 submits / 8 dispatched, 0 coalesced, 0 dropped, 0 cancelled, `queueDelayMs` all 0.
+
+**Tolerance proposal for the owner (evidence, not sign-off).** On the synthetic fixture, with tone/color edits and the film-look graph above, the legacy whole-frame route and the ROI route are **byte-identical over the visible region on both surfaces**. The proposal that follows from that is: byte equality is the tolerance wherever both routes run the same graph through the same deterministic renderer (tone, color, curves, film look including grain, halation, bloom and structure); a numeric tolerance is needed only where the route changes the computation rather than its ordering. Two classes are **not covered by this evidence and should not be signed off from it**: Denoise reconstruction (a separate analysis pipeline, not active in these runs) and any export/reference comparison (different implementation). Detail-band and spatial-film module classes were active only as part of the film-look graph, not isolated.
+
+**Migration behavior (Phase 0 item 8), now tested rather than described.** `tests/viewer-state-transitions.test.js` asserts `normalizedPreviewResolution` maps unknown, empty, null and differently-cased stored values to the 1024 default while preserving the four real options; `tests/test_preview_resolution_contract.py::test_preview_preferences_migrate_unknown_values_to_the_default` locks the two-stage migration (normalize, then require the selector to carry the option, else default), the startup removal of the legacy UI keys, and the ROI preference normalization (`"refinement"` else `"fit"`). A preference file from another build cannot select a tier this build cannot present.
+
+Gate status:
+
+- Phase 0 item 3 (42.4 MP packaged baselines) and item 4 (measurements): raw evidence in 15.20. Item 8 (migration behavior): recorded and tested here.
+- Phase 0 item 6 (Fit filtering A/B): **still open**; no measurement yet. It needs a fixture with the named content classes and a mip-filtered comparator, which does not exist in this tree.
+- Phase 0 item 7 (tolerance sign-off): **owner decision**; the proposal above is the evidence it should be made from. Denoise and export parity are explicitly uncovered.
+- Suites: **162 JS** (161 + migration case), focused Python trio **157**, full Python suite **1331 passed / 3 skipped**.
+
+Owner checks to batch (nothing blocks continued work):
+
+1. Decide the Phase 0 tolerance table from the evidence above, or name what additional per-module runs are needed (Denoise is the obvious one).
+2. Confirm the Fit filtering A/B fixture and comparator approach, or defer the item with a recorded reason.
+3. The Phase 2 manual checks from 15.18 remain valid; the packaged build now has evidence for every Phase 2 path (15.19).
+
+Next safe edit: the Fit filtering A/B (or a recorded deferral), then the Denoise parity run. Do not start Phase 3.
+
 
 
 
