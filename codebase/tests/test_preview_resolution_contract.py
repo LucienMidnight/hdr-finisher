@@ -168,3 +168,26 @@ def test_a_declined_render_records_why() -> None:
     assert 'return refuse("superseded-during-render");' in javascript
     assert "refuseRender(reason)" in webgpu
     assert 'this.refuseRender("peak:newer-render-started")' in webgpu
+
+
+def test_preview_preferences_migrate_unknown_values_to_the_default() -> None:
+    """Phase 0 item 8: recorded migration behavior for preview preferences.
+
+    A stored resolution the current build no longer offers is normalized to the
+    default before it reaches the renderer, and a stored value the selector does
+    not carry also falls back, so a preference file from another build cannot
+    select a tier this build cannot present. The legacy UI keys are removed at
+    startup rather than reinterpreted. The ROI preference is likewise
+    normalized: anything that is not "refinement" is the shipped whole-frame
+    behavior.
+    """
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    assert 'return PREVIEW_RESOLUTION_OPTIONS.has(normalized) ? normalized : DEFAULT_PREVIEW_RESOLUTION;' in javascript
+    assert "const selectablePreviewResolution = els.previewResolution?.querySelector(`option[value=\"${preferredPreviewResolution}\"]`)" in javascript
+    assert "? preferredPreviewResolution" in javascript
+    assert ": DEFAULT_PREVIEW_RESOLUTION;" in javascript
+    assert "clearLegacyUiPreferences();" in javascript
+    assert '"hdr-finisher:high-quality-preview:v1",' in javascript
+    assert '"hdr-finisher:compare-layout:v1",' in javascript
+    assert 'state.roiPreviewMode = value === "refinement" ? "refinement" : "fit";' in javascript

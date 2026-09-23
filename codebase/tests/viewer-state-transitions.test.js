@@ -28,15 +28,17 @@ vm.runInContext(
   [
     'const PREVIEW_RESOLUTION_OPTIONS = new Set(["1024", "2048", "4096", "full"]);',
     'const DEFAULT_PREVIEW_RESOLUTION = "1024";',
+    extract("function normalizedPreviewResolution(", "function previewResolutionLabel("),
     extract("function deriveViewerState(", "function viewerState("),
     extract("function viewerStatusLabel(", "function renderViewerStatus("),
     'function previewResolutionLabel(value) { return value === "full" ? "Full" : `${Math.round(Number(value) / 1024)}K`; }',
+    "globalThis.normalizedPreviewResolution = normalizedPreviewResolution;",
     "globalThis.deriveViewerState = deriveViewerState;",
     "globalThis.viewerStatusLabel = viewerStatusLabel;",
   ].join("\n"),
   context,
 );
-const { deriveViewerState, viewerStatusLabel } = context;
+const { deriveViewerState, normalizedPreviewResolution, viewerStatusLabel } = context;
 
 const GEOMETRY = "geometry-a";
 
@@ -183,4 +185,20 @@ test("Ready and Preparing labels are unchanged", () => {
     viewerStatusLabel(derive({ accepted: presentation({ exact: false, tier: null, requestedTier: "1024" }) })),
     "Preparing 4K",
   );
+});
+
+// Phase 0 item 8: migration behavior for existing preview preferences. A
+// stored resolution from a build whose selector offered other options, or a
+// corrupted one, must never reach the renderer as a tier; it lands on the
+// default instead. This is the function the application shell applies to the
+// stored preference before it touches the selector.
+test("an unknown or retired preview resolution migrates to the default", () => {
+  assert.equal(normalizedPreviewResolution("1024"), "1024");
+  assert.equal(normalizedPreviewResolution("2048"), "2048");
+  assert.equal(normalizedPreviewResolution("4096"), "4096");
+  assert.equal(normalizedPreviewResolution("full"), "full");
+  assert.equal(normalizedPreviewResolution("1080"), "1024");
+  assert.equal(normalizedPreviewResolution(""), "1024");
+  assert.equal(normalizedPreviewResolution(null), "1024");
+  assert.equal(normalizedPreviewResolution("FULL"), "1024");
 });
