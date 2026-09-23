@@ -293,6 +293,39 @@ def test_display_scale_pan_cache_is_generation_aware() -> None:
     assert "panRefinement: () => requestRoiPanRefinement()," in javascript
 
 
+def test_render_coordinator_owns_generations_priority_and_follow_ups() -> None:
+    markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    coordinator = (FRONTEND / "render-coordinator.js").read_text(encoding="utf-8")
+
+    # Loaded after the viewport contract it builds on and before app.js, which
+    # consumes it through dispatch and present callbacks.
+    assert markup.index("viewport-request.js") < markup.index("render-coordinator.js")
+    assert markup.index("render-coordinator.js") < markup.index("/static/app.js")
+
+    # The five generations live in one place.
+    assert "class HDRRenderCoordinator" in coordinator
+    assert "editGeneration" in coordinator
+    assert "viewportGeneration" in coordinator
+    assert "scaleGeneration" in coordinator
+    assert "sourceGeneration" in coordinator
+    assert "laneGeneration" in coordinator
+    # Foreground versus background priority and one-in-flight/one-latest.
+    assert 'intent.priority === "background" ? "background" : "foreground"' in coordinator
+    assert "st.pending = entry;" in coordinator
+    assert "foregroundBusy()" in coordinator
+    # Cancellation tokens carry an abort signal and a currency check.
+    assert "new AbortController()" in coordinator
+    assert "token.isCurrent = () => this.tokenCurrent(token);" in coordinator
+    assert "token.cancel = (reason) => {" in coordinator
+    # Presentation acceptance, the coarse-to-refined lifecycle, and timing.
+    assert "noteAccepted(record)" in coordinator
+    assert "armCatchUp(lane" in coordinator
+    assert "notePan(lane)" in coordinator
+    assert "DEFAULT_CATCH_UP_DELAY_MS = 700" in coordinator
+    assert "DEFAULT_PAN_DELAY_MS = 140" in coordinator
+    assert "dispatchMs" in coordinator
+
+
 def test_roi_refinement_has_a_settings_surface() -> None:
     markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
