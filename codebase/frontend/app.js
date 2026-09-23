@@ -1128,6 +1128,9 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
   renderCurrentPreviewSize();
   renderReadouts();
   renderViewerStatus();
+  // The coordinator keeps the same record, so its follow-up decisions (pan
+  // candidate, catch-up freshness) read one source of truth.
+  state.renderCoordinator?.noteAccepted(state.acceptedPresentation);
 }
 
 function markPreviewUnavailable(reason) {
@@ -2068,8 +2071,30 @@ function initializePreviewScheduler() {
     onRefine: (task) => refinePreview(task.lane, task),
     onInactive: (task) => preloadInactiveLane(task.lane, task.applicationGeneration),
   });
+  // Phase 2 work item 1: the coordinator owns generations, cancellation
+  // tokens, priority, one-in-flight/one-latest coalescing, presentation
+  // bookkeeping and the deferred follow-ups. app.js supplies the renderer call
+  // and the state it presents, and emits intent for everything else.
+  state.renderCoordinator = window.HDRRenderCoordinator
+    ? new window.HDRRenderCoordinator({
+      dispatch: (request) => renderGpuDraftInner(request.lane, request),
+      present: (request) => (state.acceptedPresentation?.lane === request.lane
+        ? state.acceptedPresentation
+        : null),
+      canPanRefine: () => Boolean(state.session)
+        && !geometryDraftActive()
+        && state.acceptedPresentation?.geometrySignature === geometrySignature(),
+      onRefusal: (refusal) => {
+        state.lastGpuDraftRefusal = {
+          reason: refusal.reason, lane: refusal.lane, tier: refusal.tier, at: refusal.at,
+        };
+      },
+      roiMode: state.roiPreviewMode,
+    })
+    : null;
   window.HDRFinisherPerformance = {
     snapshot: () => state.previewScheduler.snapshot(),
+    renderCoordinator: () => state.renderCoordinator?.snapshot() || null,
     gpuSnapshot: () => state.gpuPreview?.diagnosticsSnapshot?.() || null,
     enableGpuInstrumentation: (enabled = true) => state.gpuPreview?.setInstrumentationEnabled?.(enabled),
     renderGpuTier: (longEdge) => renderGpuDraft(state.currentView, {
@@ -2108,6 +2133,9 @@ function initializePreviewScheduler() {
     // "refinement" limits the refinement-tier pass to the visible region.
     setRoiPreviewMode: (mode) => {
       state.roiPreviewMode = mode === "refinement" ? "refinement" : "fit";
+      // Diagnostics flip the mode without disturbing a timer a driver may be
+      // measuring; an already-armed follow-up skips itself at fire time.
+      state.renderCoordinator?.setRoiMode(state.roiPreviewMode, { cancelFollowUps: false });
       return state.roiPreviewMode;
     },
     roiPreviewMode: () => state.roiPreviewMode,
@@ -3490,6 +3518,7 @@ async function uploadFile(file, { confirmedDocument = documentTransitionToken(),
     }
     retireActiveSession();
     state.session = payload.session;
+    state.renderCoordinator?.noteSource(payload.session.session_id);
     if (els.rawSettingsPanel) delete els.rawSettingsPanel.dataset.initialized;
     setPreviewMessage("Source decoded. Preparing preview...", 28);
     state.adjustments = payload.session.adjustments;
@@ -3578,6 +3607,7 @@ async function ejectCurrentSession() {
   await fetch("/api/session/current", { method: "DELETE" }).catch(() => null);
   retireActiveSession();
   state.session = null;
+  state.renderCoordinator?.noteSource(null);
   renderExperimentalDngNote();
   renderRawImportControls(null);
   if (els.rawSettingsPanel) delete els.rawSettingsPanel.dataset.initialized;
@@ -4033,6 +4063,7 @@ const ROI_PAN_DELAY_MS = 140;
  */
 function applyRoiPreview(value) {
   state.roiPreviewMode = value === "refinement" ? "refinement" : "fit";
+  state.renderCoordinator?.setRoiMode(state.roiPreviewMode);
   cancelRoiCatchUp();
   cancelRoiPanRefinement();
   renderReadouts();
@@ -6983,6 +7014,7 @@ async function applyInterpretationOverride() {
       return;
     }
     state.session = payload.session;
+    state.renderCoordinator?.noteSource(payload.session.session_id);
     setPreviewMessage("Interpretation applied. Preparing preview...", 28);
     state.adjustments = payload.session.adjustments;
     state.editDocument = payload.session.edit_document;
@@ -7176,6 +7208,12 @@ function suspendGeometryPreviewWork() {
   state.previewScheduler?.cancel();
   window.clearTimeout(state.settleTimer);
   state.settleTimer = null;
+  // The coordinator cancels the in-flight tokens and any pending intent, which
+  // is what makes a render already past its entry checks stop at its next
+  // boundary. The serial bump retires the presentation record of one that had
+  // already presented.
+  state.renderCoordinator?.cancelLane("hdr", "geometry-suspend");
+  state.renderCoordinator?.cancelLane("sdr", "geometry-suspend");
   state.gpuRenderSerial += 1;
   for (const lane of ["hdr", "sdr"]) {
     state.previewControllers[lane]?.abort();
@@ -10473,12 +10511,43 @@ async function applyComparisonUrl(url) {
  * waits on this instead of superseding it.
  */
 function renderGpuDraft(lane = state.currentView, options = {}) {
-  const pending = renderGpuDraftInner(lane, options);
+  const tier = options.tier || "settled";
+  const longEdge = Number(options.longEdge) > 0 ? Number(options.longEdge) : settledProxyLongEdge();
+  const coordinator = state.renderCoordinator;
+  if (coordinator) {
+    // The visible region is measured here, where the mounted canvas is known,
+    // and handed to the coordinator so the deferred pan pass can use the same
+    // model without measuring DOM state from inside the state machine.
+    coordinator.noteViewport(lane, visibleOutputRect(els.previewCanvas.width, els.previewCanvas.height));
+    coordinator.noteScale(lane, { tier, longEdge });
+  }
+  const pending = coordinator
+    ? coordinator.submit({
+      lane,
+      tier,
+      longEdge,
+      reason: options.reason || tier,
+      priority: options.priority || "foreground",
+      // The refinement pass is the expensive one at large tiers, so that is
+      // where the visible region pays off. Interactive and settled passes stay
+      // whole frame: pan and zoom then always show complete pixels, and the ROI
+      // pass only improves a region that is already correct. A catch-up pass is
+      // the whole-frame follow-up that closes the seam, so it never carries a
+      // viewport.
+      viewport: options.viewport !== undefined
+        ? Boolean(options.viewport)
+        : state.roiPreviewMode === "refinement" && tier === "refinement" && !options.roiCatchUp,
+      catchUp: Boolean(options.roiCatchUp),
+      panPass: Boolean(options.panPass),
+      allowInactive: Boolean(options.allowInactive),
+      hideStatus: options.hideStatus !== false,
+    })
+    : renderGpuDraftInner(lane, options);
   state.gpuDraftInFlight = pending;
   // Which tier is holding the device. A settled draft at Full is a multi-second
   // tiled render; an interactive one is refused immediately. Telling them apart
   // is what lets a caller decide whether waiting is worth anything.
-  state.gpuDraftInFlightTier = options.tier || "settled";
+  state.gpuDraftInFlightTier = tier;
   void pending.catch(() => null).finally(() => {
     if (state.gpuDraftInFlight === pending) {
       state.gpuDraftInFlight = null;
@@ -10490,8 +10559,16 @@ function renderGpuDraft(lane = state.currentView, options = {}) {
 
 async function renderGpuDraftInner(
   lane = state.currentView,
-  { hideStatus = true, longEdge = settledProxyLongEdge(), allowInactive = false, tier = "settled", roiCatchUp = false, panPass = false } = {},
+  request = {},
 ) {
+  const {
+    hideStatus = true,
+    longEdge = settledProxyLongEdge(),
+    allowInactive = false,
+    tier = "settled",
+    roiCatchUp = false,
+    panPass = false,
+  } = request;
   // Record why a draft declined. A silent false is very hard to diagnose from
   // a failing browser test, and every one of these is a legitimate refusal.
   const refuse = (reason) => {
@@ -10508,9 +10585,14 @@ async function renderGpuDraftInner(
   if (!state.session || (!allowInactive && lane !== state.currentView)) return refuse("no-session-or-inactive-lane");
   if (state.comparePeekActive && !allowInactive) return refuse("compare-peek-active");
   if (state.globalEditDirty && state.acceptedPresentation?.geometrySignature !== geometrySignature()) return refuse("dirty-edit-with-stale-geometry");
-  const serial = ++state.gpuRenderSerial;
+  // The coordinator assigns the dispatch serial when the render actually
+  // starts; a superseded or coalesced intent never consumes one.
+  const serial = Number(request.dispatchSerial) || 0;
+  state.gpuRenderSerial = serial;
   const sessionId = state.session.session_id;
-  const generation = state.previewGeneration[lane];
+  const generation = Number.isFinite(Number(request.applicationGeneration))
+    ? Number(request.applicationGeneration)
+    : state.previewGeneration[lane];
   const requestedGeometrySignature = geometrySignature();
   const adjustmentsSnapshot = JSON.parse(JSON.stringify(state.adjustments));
   const localSnapshot = state.compareWithoutLocals
@@ -10521,20 +10603,15 @@ async function renderGpuDraftInner(
     ...(gpuPreviewSourceOptions(lane) || {}),
     tier,
     applicationGeneration: generation,
-    // The refinement pass is the expensive one at large tiers, so that is where
-    // the visible region pays off. Interactive and settled passes stay whole
-    // frame: pan and zoom then always show complete pixels, and the ROI pass
-    // only improves a region that is already correct. A catch-up pass is the
-    // whole-frame follow-up that closes the seam, so it never carries a viewport.
-    viewport: state.roiPreviewMode === "refinement" && tier === "refinement" && !roiCatchUp
-      ? visibleOutputRect(els.previewCanvas.width, els.previewCanvas.height)
-      : null,
+    viewport: request.viewport || null,
     roiCatchUp,
     panPass,
     // WebGPU renders directly into the mounted canvas. Guard inside the
     // renderer, before it resizes or submits to that canvas, because rejecting
-    // the result here after await would already be visibly too late.
-    isCurrent: () => serial === state.gpuRenderSerial
+    // the result here after await would already be visibly too late. The
+    // coordinator's token covers generations and cancellation; these are the
+    // app-domain facts it cannot know.
+    isCurrent: () => (typeof request.isCurrent === "function" ? request.isCurrent() : true)
       && !geometryDraftActive()
       && state.session?.session_id === sessionId
       && generation === state.previewGeneration[lane]
@@ -11295,6 +11372,7 @@ async function switchLane(lane) {
     return;
   }
   state.currentView = lane;
+  state.renderCoordinator?.noteActiveLane(lane);
   state.selectedCurvePoint = Math.min(state.selectedCurvePoint ?? 0, currentCurveValues().length - 1);
   renderLaneChrome();
   // Local controls belong to the selected rendition too. Update them before
@@ -11412,9 +11490,17 @@ function invalidatePreview(lane, { local = false, markDirty = true } = {}) {
   // A newer edit makes the pending catch-up obsolete; it would render the old
   // generation into the frame. The same is true of the deferred pan pass: its
   // newly exposed strip belongs to the generation the edit just replaced.
-  cancelRoiCatchUp();
-  cancelRoiPanRefinement();
-  state.previewGeneration[lane] += 1;
+  // The coordinator bumps the generation and cancels both follow-ups; the
+  // mirror keeps every existing reader of previewGeneration valid.
+  const coordinator = state.renderCoordinator;
+  if (coordinator) {
+    coordinator.noteEdit(lane);
+    state.previewGeneration[lane] = coordinator.generation(lane, "edit");
+  } else {
+    cancelRoiCatchUp();
+    cancelRoiPanRefinement();
+    state.previewGeneration[lane] += 1;
+  }
   window.HDRProofing?.invalidate(lane);
   renderCompareStatus();
   updateExportAvailability();
@@ -11556,13 +11642,19 @@ function clearPreviewCache() {
   state.pendingGpuScopeRequest = null;
   state.overlayAbortController?.abort();
   state.overlayAbortController = null;
+  // The coordinator retires every lane's tokens, retained-frame facts and
+  // deferred follow-ups. Its generations stay monotonic, so work already
+  // queued by the browser can never publish into the replacement document.
+  state.renderCoordinator?.noteSource(null);
   for (const lane of ["hdr", "sdr"]) {
     state.previewControllers[lane]?.abort();
     state.previewControllers[lane] = null;
     const cached = state.previewCache[lane];
     if (cached?.url) URL.revokeObjectURL(cached.url);
     state.previewCache[lane] = null;
-    state.previewGeneration[lane] = 0;
+    state.previewGeneration[lane] = state.renderCoordinator
+      ? state.renderCoordinator.generation(lane, "edit")
+      : 0;
   }
   state.comparePeekActive = false;
   state.comparisonRenderedLane = null;
@@ -17406,6 +17498,7 @@ function finishCancelledImport() {
 async function activateDesktopSession(session, projectPath) {
   retireActiveSession();
   state.session = session;
+  state.renderCoordinator?.noteSource(session.session_id);
   state.importInProgress = false;
   if (els.rawSettingsPanel) delete els.rawSettingsPanel.dataset.initialized;
   state.adjustments = session.adjustments;

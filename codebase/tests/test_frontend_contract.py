@@ -326,6 +326,30 @@ def test_render_coordinator_owns_generations_priority_and_follow_ups() -> None:
     assert "dispatchMs" in coordinator
 
 
+def test_app_emits_intent_to_the_render_coordinator() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+
+    # Renders are submitted as intent; the coordinator owns admission.
+    assert "coordinator.submit({" in javascript
+    assert "dispatch: (request) => renderGpuDraftInner(request.lane, request)," in javascript
+    assert "const coordinator = state.renderCoordinator;" in javascript
+    assert "coordinator.noteEdit(lane);" in javascript
+    assert "state.renderCoordinator?.noteSource(payload.session.session_id);" in javascript
+    assert "state.renderCoordinator?.noteSource(null);" in javascript
+    assert "state.renderCoordinator?.noteActiveLane(lane);" in javascript
+    assert "state.renderCoordinator?.cancelLane(\"hdr\", \"geometry-suspend\");" in javascript
+    # The dispatch serial comes from the coordinator, not a second counter.
+    assert "const serial = Number(request.dispatchSerial) || 0;" in javascript
+    assert "state.gpuRenderSerial = serial;" in javascript
+    # The accepted frame is mirrored so follow-up decisions share one record.
+    assert "state.renderCoordinator?.noteAccepted(state.acceptedPresentation);" in javascript
+    assert "renderCoordinator: () => state.renderCoordinator?.snapshot() || null," in javascript
+    # The ROI mode reaches the coordinator from both the preference path and
+    # the diagnostics entry.
+    assert "state.renderCoordinator?.setRoiMode(state.roiPreviewMode);" in javascript
+    assert "state.renderCoordinator?.setRoiMode(state.roiPreviewMode, { cancelFollowUps: false });" in javascript
+
+
 def test_roi_refinement_has_a_settings_surface() -> None:
     markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
@@ -1834,11 +1858,16 @@ def test_electron_preview_correctness_contract() -> None:
     assert "state.globalEditDirty && state.acceptedPresentation?.geometrySignature !== geometrySignature()" in javascript
     close_crop = javascript[javascript.index("function closeCropMode(commit)"):javascript.index("function renderGeometryToolState()")]
     assert "state.geometryTransformHandoffSignature = geometrySignature();" in close_crop
-    # renderGpuDraft is now a thin wrapper that tracks the render in flight;
-    # the body it used to name lives in renderGpuDraftInner.
+    # renderGpuDraft is now a thin wrapper that submits intent to the
+    # coordinator; the body it used to name lives in renderGpuDraftInner.
     gpu_draft = javascript[javascript.index("async function renderGpuDraftInner("):javascript.index("function gpuLumaMaskOverlayOptions")]
     assert "requestedGeometrySignature === geometrySignature()" in gpu_draft
-    assert "isCurrent: () => serial === state.gpuRenderSerial" in gpu_draft
+    # The coordinator token supplies generation currency; the app-domain guards
+    # the token cannot know stay here.
+    assert "isCurrent: () => (typeof request.isCurrent === \"function\" ? request.isCurrent() : true)" in gpu_draft
+    assert "&& generation === state.previewGeneration[lane]" in gpu_draft
+    assert "&& requestedGeometrySignature === geometrySignature()" in gpu_draft
+    assert "&& (allowInactive || lane === state.currentView)," in gpu_draft
     webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
     assert "sourceOptions?.isCurrent?.() === false" in webgpu
     # A deferred render is classified as superseded, so it returns without

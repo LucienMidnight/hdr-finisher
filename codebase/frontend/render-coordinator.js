@@ -70,6 +70,10 @@
       this.sessionId = options.sessionId ?? null;
       this.activeLane = options.activeLane || "hdr";
       this.tokenSerial = 0;
+      // Monotonic per dispatch, not per submission: a coalesced intent that
+      // never starts must not invalidate the presentation record of the render
+      // that actually presented.
+      this.dispatchSerial = 0;
       this.lanes = new Map();
       for (const lane of LANES) this.lanes.set(lane, this.freshLane(lane));
       this.metrics = {
@@ -205,11 +209,13 @@
       this.dropPending(lane, reason);
     }
 
-    setRoiMode(mode) {
+    setRoiMode(mode, { cancelFollowUps = true } = {}) {
       const next = mode === "refinement" ? "refinement" : "fit";
       if (this.roiMode === next) return false;
       this.roiMode = next;
-      for (const lane of this.lanes.keys()) this.cancelFollowUps(lane);
+      if (cancelFollowUps) {
+        for (const lane of this.lanes.keys()) this.cancelFollowUps(lane);
+      }
       return true;
     }
 
@@ -398,6 +404,7 @@
       this.recordMetric("queueDelayMs", Math.max(0, startedAt - entry.submittedAt));
       if (entry.priority === "foreground") this.metrics.foregroundDispatches += 1;
       else this.metrics.backgroundDispatches += 1;
+      entry.request.dispatchSerial = ++this.dispatchSerial;
 
       let result = null;
       let error = null;
