@@ -1473,6 +1473,35 @@ Committed as `031cfa3` — "Add the Denoise scenario to the parity driver". Evid
 
 Next safe edit: export/reference parity — the remaining uncovered class in the 15.21 proposal — or hold for the owner's tolerance decision. Do not start Phase 3.
 
+### 15.24 Owner review of the Fit filtering A/B — 2026-09-23 (screenshots read as jarring; measured cause)
+
+The owner reviewed the twelve PNGs from 15.22 and reported that the scenarios look "wildly different" when flipped back and forth, specifically that the fine repeating detail band — checkerboard and stripes — is "basically invisible" in display-scale mode. No code changed and nothing was signed off; this section records the reaction and the measurements taken in response.
+
+Measurements on the same PNGs (889×501 each, luma 0–255):
+
+| band / feature | full-at-fit | display-scale |
+|---|---|---|
+| grain, smooth midtones | mean 119.50, sd 2.56 | mean 119.50, sd 2.48 |
+| Detail, textured midtones | 117.35, sd 8.28 | 117.44, sd 6.75 |
+| Denoise, noisy midtones | 120.91, sd 5.56 | 121.36, sd 2.59 |
+| halation, glow profile through the bright line | rise over ~5 px, peak 248 | rise over ~7 px, peak 244 |
+| halation, dot region | mean 43.8, sd 47.5 | mean 52.7, sd 54.6 |
+| fine detail, gratings region | sd 24.46 | sd 2.83 |
+| fine detail, zone plate | sd 25.01 | sd 10.36 |
+| highlights, soft blob | 231.41, sd 20.94 | 231.59, sd 20.91 |
+| highlights, 16× patch | 232.44, sd 44.95 | 238.01, sd 29.68 |
+
+**What the measurements say.**
+
+- The module classes the tolerance table names are close. Grain is indistinguishable; Detail is within a level with slightly lower texture contrast; the halation glow is 1–3 px wider on one side with a peak within 4 levels; the large highlight blob is identical. The graph is already scale-aware for these: halation/bloom derive their radii from the processing frame's physical gate, and Detail's sharpen radius is scaled by the proxy-to-source ratio (`p[155]`).
+- The dramatic difference is content at or below the display resolution: the 1–2 px gratings and checkerboards, per-pixel noise, and specks a few source pixels wide. At display scale these average to the flat value a correct filter must produce; the full-at-fit branch shows moiré, residual noise and aliased specks because the browser's downscale of the 4096 canvas is a crude filter. The display-scale branch is the more truthful rendering of that content — the full-at-fit branch is not "sharper", it is showing false detail.
+- Denoise's display-scale band is smoother because the source is filtered before the analysis runs; the fixture's noise is per-pixel, so this is the same effect.
+- The fixture is a deliberate worst case and every screenshot carries the same fine-detail strip, so flipping any pair shows that strip first. Normal photographic texture behaves like the Detail band.
+
+**Consequence for the decision.** The screenshot comparison alone conflates (a) graph behaviour at the processing scale with (b) the browser's sampling of a full-resolution canvas for display. (a) measures close; (b) is where the jarring difference comes from, and (b) is what the display-scale path fixes. Before the tolerance sign-off, the measurement that separates them: read back both processed frames and downsample the full-at-fit frame with a correct (Lanczos) filter to the display size, then compare. The comparator from 15.22 already has the statistics half; the driver needs a readback capture and a resampler.
+
+Recorded as the reason that follow-up exists, not as a rejection of the display-scale contract.
+
 
 
 
