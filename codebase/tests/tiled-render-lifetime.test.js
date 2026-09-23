@@ -12,6 +12,9 @@ const source = fs.readFileSync(
 function loadPreview() {
   const context = vm.createContext({
     window: { HDRTileScheduler: { DEFAULT_TILE_SIZE: 512 } },
+    // The renderer inspects the surface before it requests a source, because
+    // a retained frame's format decides whether a region fetch is safe.
+    navigator: { gpu: { getPreferredCanvasFormat: () => "bgra8unorm" } },
     performance: { now: () => Date.now() },
     console,
     fetch: async () => { throw new Error("unexpected fetch"); },
@@ -33,7 +36,7 @@ test("direct renderTiledTo calls retain resources until their async lifetime end
   preview.device = {};
   let rejectProxy;
   preview.loadProxy = () => new Promise((_resolve, reject) => { rejectProxy = reject; });
-  const canvas = {};
+  const canvas = { getContext: () => ({ configure() {} }) };
   const adjustments = { shared: { geometry: {} } };
 
   const render = preview.renderTiledTo(canvas, "session", "hdr", adjustments, null);

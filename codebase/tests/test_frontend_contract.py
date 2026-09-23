@@ -172,8 +172,10 @@ def test_source_transport_carries_abort_and_generation_checks() -> None:
     assert 'assertCurrent("Source tile stream was superseded")' in webgpu
     assert 'assertCurrent("Source tile probe was superseded")' in webgpu
     assert 'throw supersededSourceError("Source proxy was superseded")' in webgpu
-    # The presenting renderers pass their currency into the proxy load.
-    assert webgpu.count("isCurrent: () => resourceGeneration === this.resourceGeneration") == 2
+    # The presenting renderers pass their currency into the proxy load. The
+    # third site is the ROI region fallback: a viewport request admitted Direct
+    # reloads the whole frame and must carry the same checks.
+    assert webgpu.count("isCurrent: () => resourceGeneration === this.resourceGeneration") == 3
     assert "{ isCurrent: sourceOptions?.isCurrent }" in webgpu
 
 
@@ -210,9 +212,11 @@ def test_retained_presentation_target_owns_the_tiled_frame() -> None:
     # presented cleared or half-written.
     assert "encoder.copyTextureToTexture(\n          { texture: presentationTarget.texture }," in webgpu
     assert "presentationTarget.valid = true;" in webgpu
-    # Retention needs a tiled frame of the same identity and format.
+    # Retention needs a tiled frame of the same identity and format. The
+    # predicate is the shared helper, so a region source can never be fetched
+    # against a frame that would not be retained.
     assert "previousFrame.execution === \"tiled\"" in webgpu
-    assert "previousFrame.format === surface.format" in webgpu
+    assert "previousFrame.format === format" in webgpu
     assert "execution: \"direct\"," in webgpu
 
 
@@ -2532,7 +2536,7 @@ def test_denoise_phase_zero_selector_remains_lazy_and_outside_the_base_shader() 
 
     assert "this.denoiseSourceSelector = null;" in preview
     assert "this.denoiseCounters = this.emptyDenoiseCounters();" in preview
-    assert 'const sourceProxy = this.selectedDenoiseSource(proxy);' in preview
+    assert 'let sourceProxy = this.selectedDenoiseSource(proxy);' in preview
     assert "makeBindGroup(sourceProxy.texture.createView()" in preview
     assert "denoiseEnabled" not in preview
     assert 'analysisCalls: 0' in preview

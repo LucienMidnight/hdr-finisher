@@ -62,6 +62,37 @@
     }, outputWidth, outputHeight);
   }
 
+  /**
+   * The source region one ROI pass has to fetch (Phase 3 item 2).
+   *
+   * A magnified pass reads a viewport-sized corner of the frame, so fetching
+   * the whole frame at that scale is pure transport. The plan pads the visible
+   * region by the minimum ROI fraction, and every foreground tile carries its
+   * own halo; a tile that merely intersects the padded region may start a
+   * whole tile outside it. Expanding the same padded region by halo plus one
+   * tile therefore covers every halo rect the pass will copy, and nothing
+   * outside the padded region is ever read. Clamped to the output; the
+   * backend clamps again.
+   */
+  function sourceFetchRegion(visible, outputWidth, outputHeight, tileSize, halo) {
+    const width = Math.max(1, toInt(outputWidth, 1));
+    const height = Math.max(1, toInt(outputHeight, 1));
+    const size = Math.max(64, Math.floor(Number(tileSize) || DEFAULT_TILE_SIZE));
+    const margin = Math.max(0, toInt(halo, 0)) + size;
+    const roi = paddedRoi(
+      normalizedRect(visible, width, height),
+      width,
+      height,
+      DEFAULT_MINIMUM_ROI_FRACTION,
+    );
+    return normalizedRect({
+      x: roi.x - margin,
+      y: roi.y - margin,
+      width: roi.width + margin * 2,
+      height: roi.height + margin * 2,
+    }, width, height);
+  }
+
   /** The source-pixel region a padded output region maps back to. */
   function sourceRectFor(roi, output, source) {
     const scaleX = source.width / output.width;
@@ -257,6 +288,14 @@
 
     static sameRect(a, b) {
       return Boolean(a && b) && sameRect(a, b);
+    }
+
+    /**
+     * The source region to fetch for one magnified ROI pass (Phase 3 item 2).
+     * Pure geometry: `visible` and the result are in output-frame pixels.
+     */
+    static sourceFetchRegion(visible, outputWidth, outputHeight, tileSize, halo) {
+      return sourceFetchRegion(visible, outputWidth, outputHeight, tileSize, halo);
     }
 
     /**

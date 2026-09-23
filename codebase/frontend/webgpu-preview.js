@@ -1916,6 +1916,87 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     }
 
     /**
+     * The source region this pass should fetch, or null for the whole frame.
+     *
+     * A region is only safe when the retained target already holds the
+     * accepted frame at this size, lane, geometry and format -- that is what
+     * guarantees the pass processes the viewport's tiles rather than the whole
+     * frame. The frame dimensions are confirmed after the fetch; a mismatch
+     * falls back to the whole-frame route.
+     */
+    roiRegionFor(canvas, context, sessionId, lane, adjustments, sourceSize, referenceWhiteNits, sourceOptions, activeLocals) {
+      const viewport = sourceOptions?.viewport || null;
+      if (!viewport) return null;
+      const geometrySignature = JSON.stringify(adjustments.shared?.geometry || {});
+      const surface = this.configureSurface(canvas, context, lane === "hdr");
+      if (!this.retainedTiledFrame(sessionId, lane, geometrySignature, surface.format)) return null;
+      const previousFrame = this.lastPresentedFrame;
+      const Contract = typeof window !== "undefined" ? window.HDRViewportRequest : null;
+      if (!previousFrame?.workingSpace || !Contract?.sourceFetchRegion) return null;
+      const Scheduler = typeof window !== "undefined" ? window.HDRTileScheduler : null;
+      const tileSize = Math.max(64, Math.floor(Number(sourceOptions?.tileSize) || Scheduler?.DEFAULT_TILE_SIZE || 512));
+      return Contract.sourceFetchRegion(
+        viewport,
+        previousFrame.width,
+        previousFrame.height,
+        tileSize,
+        this.roiSourceHalo(
+          lane, adjustments, previousFrame, sourceSize, surface, referenceWhiteNits, sourceOptions, activeLocals,
+        ),
+      );
+    }
+
+    /**
+     * Whether the retained presentation target still holds the accepted frame
+     * for this session, lane, geometry and surface format.
+     *
+     * This is about the frame, not the request: a whole-frame catch-up retains
+     * too, it just has no region to answer from the pan cache. It is also what
+     * makes a region source safe -- without a retained frame the pass
+     * processes every tile, not just the viewport's.
+     */
+    retainedTiledFrame(sessionId, lane, geometrySignature, format) {
+      const previousFrame = this.lastPresentedFrame;
+      return Boolean(this.presentationTarget?.valid)
+        && Boolean(previousFrame)
+        && previousFrame.sessionId === sessionId
+        && previousFrame.lane === lane
+        && previousFrame.geometrySignature === geometrySignature
+        && previousFrame.execution === "tiled"
+        && previousFrame.format === format;
+    }
+
+    /**
+     * The graph halo a magnified ROI pass will need, computed before its
+     * source is fetched so the fetch region can be sized correctly.
+     *
+     * The retained frame carries the working space and dimensions this pass
+     * will use, so the parameter set and the composed halo are the same ones
+     * `encodeTiledGeneration` derives after the proxy arrives.
+     */
+    roiSourceHalo(lane, adjustments, frame, sourceSize, surface, referenceWhiteNits, sourceOptions, activeLocals) {
+      if (!frame?.workingSpace) return 0;
+      const params = buildParams(
+        lane, adjustments, frame.workingSpace, surface.hdr, referenceWhiteNits,
+        this.sourcePixelScaleFor({ width: frame.width, height: frame.height }, sourceSize),
+        sourceOptions?.inheritedGrain || null,
+      );
+      let { halo } = this.composedTileHalo(frame.width, frame.height, params, activeLocals, lane);
+      const selector = this.denoiseSourceSelector;
+      const denoiseActive = Boolean(
+        selector?.cache && selector.original
+        && selector.selected === "resolved"
+        && selector.original.width === frame.width
+        && selector.original.height === frame.height,
+      );
+      if (denoiseActive) {
+        const alignment = denoiseTileAlignment(selector.cache.settings.levels);
+        if (halo % alignment) halo = Math.ceil(halo / alignment) * alignment;
+      }
+      return halo;
+    }
+
+    /**
      * Render the selected tier tile by tile.
      *
      * Every tile is copied out of the resident proxy into a tile-sized source,
@@ -1944,12 +2025,6 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const sourceIdentity = sourceOptions?.identity || "source";
       const activeLocals = activeGpuLocals(lane, localAdjustments);
 
-      const proxy = await this.loadProxy(
-        sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity,
-        { isCurrent: sourceOptions?.isCurrent },
-      );
-      if (!proxy) return { rendered: false, refusals: ["source proxy unavailable"] };
-
       const context = canvas.getContext("webgpu");
       if (!context) return { rendered: false, refusals: ["no webgpu canvas context"] };
       // A measurement pass never presents, so it must not resize the canvas
@@ -1963,6 +2038,29 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // accepted frame stays on screen until its replacement can actually be
       // encoded, and a superseded generation never clears it.
       const surface = this.configureSurface(canvas, context, lane === "hdr");
+      // Phase 3 item 2: a magnified ROI fetches only the source region it will
+      // process, from the mip this pass needs, instead of the whole frame at
+      // that scale. `roiRegionFor` returns null unless the retained frame
+      // makes the region safe, so this is the ordinary whole-frame route in
+      // every other case.
+      const previousFrame = this.lastPresentedFrame;
+      const region = this.roiRegionFor(
+        canvas, context, sessionId, lane, adjustments, sourceSize, referenceWhiteNits, sourceOptions, activeLocals,
+      );
+      let proxy = await this.loadProxy(
+        sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity,
+        { isCurrent: sourceOptions?.isCurrent, region },
+      );
+      if (!proxy) return { rendered: false, refusals: ["source proxy unavailable"] };
+      if (proxy.region && (!previousFrame
+        || proxy.width !== previousFrame.width || proxy.height !== previousFrame.height)) {
+        const whole = await this.loadProxy(
+          sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity,
+          { isCurrent: sourceOptions?.isCurrent },
+        );
+        if (whole) proxy = whole;
+      }
+
       const pipelines = this.pipelineFor(surface.format);
 
       const params = buildParams(
@@ -2285,7 +2383,6 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           height: Math.max(1, Math.floor(Number(options.viewport.height) || 1)),
         }
         : null;
-      const previousFrame = this.lastPresentedFrame;
       // The retained target holds the accepted frame between generations, so a
       // viewport pass can load it and process only its foreground tiles.
       const presentationTarget = measureOnly
@@ -2308,14 +2405,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // Whether the target behind this pass still holds the accepted frame at
       // this exact size, identity and format. This is about the frame, not the
       // request: a whole-frame catch-up retains too, it just has no region to
-      // answer from the pan cache.
-      const retainedFrame = Boolean(presentationTarget?.valid)
-        && Boolean(previousFrame)
-        && previousFrame.sessionId === options.sessionId
-        && previousFrame.lane === lane
-        && previousFrame.geometrySignature === geometrySignature
-        && previousFrame.execution === "tiled"
-        && previousFrame.format === surface.format;
+      // answer from the pan cache. The signature string must be the one this
+      // pass stored, never the global helper of the same name.
+      const retainedFrame = this.retainedTiledFrame(
+        options.sessionId, lane, options.geometrySignature || "{}", surface.format,
+      );
       // Phase 2 item 8, the display-scale pan cache. A viewport pass over a
       // retained frame is split into the tiles that still owe the current
       // generation and the tiles the cache already holds at this display
@@ -2336,6 +2430,23 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         : null;
       const foregroundTiles = panCache ? panCache.pending : plan.tiles;
       const reusedTiles = panCache ? panCache.cached : [];
+      // Phase 3 item 2: a region source only carries the viewport's corner of
+      // the frame, so every tile this pass will copy must lie inside it. The
+      // fetch region is sized for exactly that; a miss means the region math
+      // and the plan disagree, and refusing is safer than reading outside the
+      // texture and presenting whatever is there.
+      if (proxy.region) {
+        const region = proxy.region;
+        const uncovered = foregroundTiles.some((tile) => (
+          tile.haloRect.x < region.x || tile.haloRect.y < region.y
+          || tile.haloRect.x + tile.haloRect.width > region.x + region.width
+          || tile.haloRect.y + tile.haloRect.height > region.y + region.height
+        ));
+        if (uncovered) {
+          this.recordStage("roi-region-refused", { lane, longEdge, region: { ...region } });
+          return { rendered: false, refusals: ["roi source region does not cover its foreground tiles"] };
+        }
+      }
       let cancelled = false;
       const graph = this.ensureTileGraph(
         workWidth, workHeight, surface.format, proxy.pixelFormat, spatialActive, denoiseActive,
@@ -2575,8 +2686,19 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
             { width, height, depthOrArrayLayers: 1 },
           );
         } else {
+          // A region source is positioned at the region's own origin, so the
+          // tile's frame coordinates become region-relative ones. The plan,
+          // the parameters and the presentation target all stay frame-anchored.
+          const sourceOrigin = proxy.region || { x: 0, y: 0 };
           encoder.copyTextureToTexture(
-            { texture: proxy.texture, origin: { x: tile.haloRect.x, y: tile.haloRect.y, z: 0 } },
+            {
+              texture: proxy.texture,
+              origin: {
+                x: tile.haloRect.x - sourceOrigin.x,
+                y: tile.haloRect.y - sourceOrigin.y,
+                z: 0,
+              },
+            },
             { texture: graph.sourceTexture, origin: { x: 0, y: 0, z: 0 } },
             { width, height, depthOrArrayLayers: 1 },
           );
@@ -2762,11 +2884,16 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         this.lastPresentedFrame = {
           sessionId: options.sessionId,
           lane,
-          geometrySignature,
+          // The signature string, never the global helper: a retained pass
+          // compares this to decide whether a region source is safe.
+          geometrySignature: options.geometrySignature || "{}",
           width: proxy.width,
           height: proxy.height,
           execution: "tiled",
           format: surface.format,
+          // A retained pass that wants a region source needs this pass's
+          // working space to derive the same parameters before its fetch.
+          workingSpace: proxy.workingSpace,
           applicationGeneration: Number(options.applicationGeneration ?? 0),
         };
       }
@@ -2841,6 +2968,13 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         ),
         outputPixels: proxy.width * proxy.height,
         workingSetBytes: graph.byteSize, proxyBytes: proxy.byteSize,
+        // Phase 3 item 2: what the source transport actually carried. A region
+        // pass uploads its region, not the frame, and the driver reads these
+        // to prove the warm-Fit and ROI transport gates.
+        sourceRoute: proxy.region ? "region" : (proxy.streamed ? "streamed" : "whole-frame"),
+        sourceRegion: proxy.region ? { ...proxy.region } : null,
+        sourceTextureBytes: proxy.byteSize,
+        sourceFrameBytes: proxy.width * proxy.height * (proxy.pixelFormat === "rgba16float" ? 8 : 16),
         detailCacheBytes, maskCacheBytes,
         detailCacheHits: this.detailCacheCounters.hits - cacheBefore.hits,
         detailCacheMisses: this.detailCacheCounters.misses - cacheBefore.misses,
@@ -2889,6 +3023,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.renderSerials.set(canvas, serial);
       const geometrySignature = JSON.stringify(adjustments.shared?.geometry || {});
       const sourceIdentity = sourceOptions?.identity || "source";
+      const context = canvas.getContext("webgpu");
+      if (!context) throw new Error("The comparison WebGPU canvas context is unavailable");
       const retainedOriginal = this.denoiseSourceSelector?.original;
       if (retainedOriginal
         && retainedOriginal.sessionId === sessionId
@@ -2897,7 +3033,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         && retainedOriginal.sourceIdentity === sourceIdentity) {
         longEdge = retainedOriginal.longEdge;
       }
-      const proxy = await this.loadProxy(
+      // Phase 3 item 2: a magnified ROI fetches only the region it processes,
+      // at the mip this pass needs. Admission has not run yet, so a region
+      // request that is later admitted Direct is replaced by the whole frame
+      // below.
+      const region = this.roiRegionFor(
+        canvas, context, sessionId, lane, adjustments, sourceSize, referenceWhiteNits, sourceOptions, activeLocals,
+      );
+      let proxy = await this.loadProxy(
         sessionId,
         lane,
         longEdge,
@@ -2908,6 +3051,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           isCurrent: () => resourceGeneration === this.resourceGeneration
             && serial === this.renderSerials.get(canvas)
             && sourceOptions?.isCurrent?.() !== false,
+          region,
         },
       );
       const proxyReadyAt = performance.now();
@@ -2915,12 +3059,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         || serial !== this.renderSerials.get(canvas)
         || !proxy
         || sourceOptions?.isCurrent?.() === false) return this.refuseRender("superseded-before-proxy");
-      const sourceProxy = this.selectedDenoiseSource(proxy);
+      let sourceProxy = this.selectedDenoiseSource(proxy);
       let masks = [];
       let masksReadyAt = proxyReadyAt;
 
-      const context = canvas.getContext("webgpu");
-      if (!context) throw new Error("The comparison WebGPU canvas context is unavailable");
       let surface = this.configureSurface(canvas, context, lane === "hdr");
       let pipelines = this.pipelineFor(surface.format);
       const sourcePixelScale = this.sourcePixelScaleFor(proxy, sourceSize);
@@ -2933,6 +3075,51 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         sourcePixelScale,
         sourceOptions?.inheritedGrain || null,
       );
+      // Activity and admission are decided before the anchor, because a region
+      // source belongs to the tiled route and the anchor must measure the
+      // source the pass will actually use. They read only grade-derived
+      // parameter slots, so the surface-format rebuild below cannot change
+      // them.
+      const { spatialActive, detailActive } = this.graphActivity(params);
+      const localDetailActive = activeLocals.some((local) => gpuLocalDetailActive(local[`${lane}_grade`]));
+      // Admission runs against the graph this render is about to build, so the
+      // plan and the decision describe real work rather than a generic guess.
+      const plan = this.planRender(proxy.width, proxy.height, {
+        executionOverride: this.executionOverride || null,
+        detailActive: detailActive || localDetailActive,
+        spatialActive,
+        // Without this the tiled model sizes its working set to a bare tile
+        // while the encoder builds one tile plus its halo, and admission would
+        // be decided against a working set nobody allocates. A spatial graph
+        // makes the gap large: a 256 tile with a 136 halo is 528 on a side.
+        halo: this.composedTileHalo(proxy.width, proxy.height, params, activeLocals, lane).halo,
+        sourceBytesPerPixel: proxy.pixelFormat === "rgba16float" ? 8 : 16,
+        tier: sourceOptions?.tier ?? null,
+      });
+      // A region source belongs to the tiled route. Admission decides after
+      // the proxy exists, so a viewport request admitted Direct (a small tier)
+      // falls back to the whole frame here; the frame dimensions, working
+      // space and pixel format are identical, so the plan, the parameters and
+      // the masks are unaffected.
+      if (proxy.region && plan.decision.mode !== "tiled") {
+        const whole = await this.loadProxy(
+          sessionId,
+          lane,
+          longEdge,
+          geometrySignature,
+          editRevision,
+          sourceIdentity,
+          {
+            isCurrent: () => resourceGeneration === this.resourceGeneration
+              && serial === this.renderSerials.get(canvas)
+              && sourceOptions?.isCurrent?.() !== false,
+          },
+        );
+        if (whole) {
+          proxy = whole;
+          sourceProxy = this.selectedDenoiseSource(proxy);
+        }
+      }
       // The anchor is measured before anything is encoded, so this render can
       // never await once it owns GPU resources or the canvas. A settled draft
       // that loses its race returns false, and the scheduler answers that with
@@ -2959,25 +3146,6 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // work awaits highlight-peak analysis, then resize and submit the new
       // frame in one synchronous presentation step. Otherwise the compositor
       // can expose the cleared (black) canvas between pointerup and settle.
-      // Activity and admission are decided here, before the canvas is resized.
-      // They read only grade-derived parameter slots, so the surface-format
-      // rebuild below cannot change them.
-      const { spatialActive, detailActive } = this.graphActivity(params);
-      const localDetailActive = activeLocals.some((local) => gpuLocalDetailActive(local[`${lane}_grade`]));
-      // Admission runs against the graph this render is about to build, so the
-      // plan and the decision describe real work rather than a generic guess.
-      const plan = this.planRender(proxy.width, proxy.height, {
-        executionOverride: this.executionOverride || null,
-        detailActive: detailActive || localDetailActive,
-        spatialActive,
-        // Without this the tiled model sizes its working set to a bare tile
-        // while the encoder builds one tile plus its halo, and admission would
-        // be decided against a working set nobody allocates. A spatial graph
-        // makes the gap large: a 256 tile with a 136 halo is 528 on a side.
-        halo: this.composedTileHalo(proxy.width, proxy.height, params, activeLocals, lane).halo,
-        sourceBytesPerPixel: proxy.pixelFormat === "rgba16float" ? 8 : 16,
-        tier: sourceOptions?.tier ?? null,
-      });
       // Direct's whole-frame masks must be fetched before the resize below.
       // Resizing a visible canvas clears its presented frame, so any await
       // between the resize and the submission can leave a cleared canvas on
@@ -4996,8 +5164,204 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return proxy;
     }
 
+    /**
+     * Load only the source region one ROI pass will process (Phase 3 item 2).
+     *
+     * The whole-frame route uploads the entire frame at the pass's scale even
+     * though a magnified pass reads a viewport-sized corner of it. This asks
+     * the source-tile endpoint for exactly the fetch region at the same mip
+     * level the pass needs, one row-chunk at a time, and returns a proxy whose
+     * texture covers that region while its width and height stay the frame's,
+     * so the tile plan, the presentation target and every frame-anchored
+     * parameter are unchanged. Returns null when the endpoint cannot serve the
+     * geometry (409), when the region is empty, or when the delivered region
+     * is the whole frame -- the caller then falls back to the ordinary
+     * whole-frame route.
+     */
+    async loadProxyRegion(sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key, region, options = {}) {
+      const startedAt = performance.now();
+      const signal = options.signal || this.sourceAbortSignal();
+      const isCurrent = typeof options.isCurrent === "function" ? options.isCurrent : null;
+      const assertCurrent = (message) => {
+        if (isCurrent && isCurrent() === false) throw supersededSourceError(message);
+      };
+      const query = (rect, epoch) => `/api/session/${sessionId}/source-tile/${lane}`
+        + `?long_edge=${longEdge}&format=rgba16f&edit_revision=${editRevision}`
+        + `&geometry_signature=${encodeURIComponent(geometrySignature)}`
+        + `&x=${rect.x}&y=${rect.y}&width=${rect.width}&height=${rect.height}&halo=0`
+        + (epoch === undefined ? "" : `&source_epoch=${epoch}`);
+
+      const probe = await fetch(query({ x: region.x, y: region.y, width: 1, height: 1 }), { signal });
+      if (!probe.ok) {
+        // 409 here means this geometry cannot be served as tiles, or the
+        // request is already stale. Either way the caller decides what next.
+        await probe.arrayBuffer().catch(() => null);
+        return null;
+      }
+      assertCurrent("ROI source region probe was superseded");
+      const outputWidth = Number(probe.headers.get("X-Output-Width"));
+      const outputHeight = Number(probe.headers.get("X-Output-Height"));
+      const pixelFormat = probe.headers.get("X-Pixel-Format") || "rgba16float";
+      const workingSpace = probe.headers.get("X-Working-Space") || "acescg";
+      const acceptedGeometry = probe.headers.get("X-Geometry-Signature") || "{}";
+      const sourceEpoch = Number(probe.headers.get("X-Source-Epoch"));
+      await probe.arrayBuffer().catch(() => null);
+      if (!(outputWidth > 0 && outputHeight > 0)) return null;
+      if (acceptedGeometry !== geometrySignature) {
+        const error = new Error("Stale WebGPU geometry region rejected");
+        error.recoverable = true;
+        throw error;
+      }
+      const delivered = {
+        x: Math.max(0, Math.min(region.x, outputWidth)),
+        y: Math.max(0, Math.min(region.y, outputHeight)),
+        width: 0,
+        height: 0,
+      };
+      delivered.width = Math.max(0, Math.min(region.x + region.width, outputWidth) - delivered.x);
+      delivered.height = Math.max(0, Math.min(region.y + region.height, outputHeight) - delivered.y);
+      if (!(delivered.width > 0 && delivered.height > 0)) return null;
+      // Not a transport win when the region is (nearly) the whole frame.
+      if (delivered.width * delivered.height >= outputWidth * outputHeight * 0.9) return null;
+
+      const bytesPerPixel = pixelFormat === "rgba16float" ? 8 : 16;
+      let texture;
+      try {
+        texture = this.device.createTexture({
+          size: { width: delivered.width, height: delivered.height },
+          format: pixelFormat,
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC,
+        });
+      } catch (error) {
+        this.recordAllocationFailure("source-proxy", error, { width: delivered.width, height: delivered.height });
+        throw error;
+      }
+
+      const rowBytes = Math.max(1, delivered.width * bytesPerPixel);
+      const rowsPerChunk = Math.max(1, Math.min(delivered.height, Math.floor(this.maxSourceChunkBytes / rowBytes)));
+      let transferredBytes = 0;
+      let chunkCount = 0;
+      let firstTileMs = null;
+      try {
+        for (let top = 0; top < delivered.height; top += rowsPerChunk) {
+          const rows = Math.min(rowsPerChunk, delivered.height - top);
+          assertCurrent("ROI source region stream was superseded");
+          const response = await fetch(query({ x: delivered.x, y: delivered.y + top, width: delivered.width, height: rows }, sourceEpoch), { signal });
+          if (!response.ok) {
+            const payload = await response.json().catch(() => null);
+            const error = new Error(payload?.detail || "A source region could not be loaded");
+            error.recoverable = response.status === 409;
+            error.status = response.status;
+            throw error;
+          }
+          // The delivered chunk is authoritative: it may be clamped at the
+          // frame edge, so its own rect decides where it lands.
+          const chunk = {
+            x: Number(response.headers.get("X-Tile-X")),
+            y: Number(response.headers.get("X-Tile-Y")),
+            width: Number(response.headers.get("X-Tile-Width")),
+            height: Number(response.headers.get("X-Tile-Height")),
+          };
+          const bytesPerRow = Number(response.headers.get("X-Bytes-Per-Row"));
+          const data = await response.arrayBuffer();
+          if (!(chunk.width > 0 && chunk.height > 0)) {
+            throw new Error("A source region chunk arrived empty");
+          }
+          if (chunk.x < delivered.x || chunk.y < delivered.y
+            || chunk.x + chunk.width > delivered.x + delivered.width
+            || chunk.y + chunk.height > delivered.y + delivered.height) {
+            throw new Error("A source region chunk arrived outside its region");
+          }
+          if (firstTileMs === null) firstTileMs = performance.now() - startedAt;
+          transferredBytes += data.byteLength;
+          chunkCount += 1;
+          // Same reason as the streamed route: one mapped buffer per chunk
+          // keeps the dynamic uploader from accumulating an image-sized
+          // staging allocation.
+          const staging = this.device.createBuffer({
+            size: data.byteLength,
+            usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.MAP_WRITE,
+            mappedAtCreation: true,
+          });
+          try {
+            new Uint8Array(staging.getMappedRange()).set(new Uint8Array(data));
+            staging.unmap();
+            const encoder = this.device.createCommandEncoder();
+            encoder.copyBufferToTexture(
+              { buffer: staging, offset: 0, bytesPerRow, rowsPerImage: chunk.height },
+              { texture, origin: { x: chunk.x - delivered.x, y: chunk.y - delivered.y } },
+              { width: chunk.width, height: chunk.height },
+            );
+            this.device.queue.submit([encoder.finish()]);
+            await this.device.queue.onSubmittedWorkDone();
+          } finally {
+            staging.destroy();
+          }
+          assertCurrent("ROI source region stream was superseded");
+        }
+      } catch (error) {
+        this.destroyAfterActiveRenders(() => texture.destroy());
+        throw error;
+      }
+
+      const byteSize = delivered.width * delivered.height * bytesPerPixel;
+      const proxy = {
+        texture,
+        width: outputWidth,
+        height: outputHeight,
+        region: { ...delivered },
+        textureWidth: delivered.width,
+        textureHeight: delivered.height,
+        sessionId,
+        lane,
+        longEdge,
+        workingSpace,
+        pixelFormat,
+        geometrySignature,
+        sourceIdentity,
+        identity: key,
+        byteSize,
+        streamed: true,
+        regionTransport: true,
+        bindGroups: new Map(),
+      };
+      this.proxies.set(key, proxy);
+      this.sourceTransportMetrics = {
+        route: "region",
+        width: outputWidth,
+        height: outputHeight,
+        region: { ...delivered },
+        chunkCount,
+        rowsPerChunk,
+        transferredBytes,
+        largestResponseBytes: Math.min(this.maxSourceChunkBytes, rowBytes * rowsPerChunk),
+        timeToFirstTileMs: firstTileMs,
+        totalMs: performance.now() - startedAt,
+      };
+      this.recordAllocation("source-proxy", byteSize, {
+        width: delivered.width, height: delivered.height, lane, longEdge, pixelFormat, region: true,
+      });
+      this.recordStage("proxy-request", {
+        lane,
+        longEdge,
+        cacheHit: false,
+        route: "region",
+        chunkCount,
+        region: { ...delivered },
+        durationMs: this.sourceTransportMetrics.totalMs,
+        timeToFirstTileMs: firstTileMs,
+        bytes: transferredBytes,
+      });
+      this.trimProxyLevels(sessionId, lane);
+      return proxy;
+    }
+
     async loadProxy(sessionId, lane, longEdge, geometrySignature = "{}", editRevision = 0, sourceIdentity = "source", options = {}) {
-      const key = `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}`;
+      const region = options.region || null;
+      const regionKey = region
+        ? `:region:${region.x},${region.y},${region.width},${region.height}`
+        : "";
+      const key = `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}${regionKey}`;
       if (this.proxies.has(key)) {
         this.recordStage("proxy-request", { lane, longEdge, cacheHit: true });
         return this.proxies.get(key);
@@ -5007,6 +5371,16 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const isCurrent = typeof options.isCurrent === "function" ? options.isCurrent : null;
       const pending = (async () => {
         const startedAt = performance.now();
+        // A magnified ROI asks for its own region first: the response is
+        // bounded by the viewport rather than by the frame. The route returns
+        // null when it cannot win (geometry refusal, whole-frame region).
+        if (region) {
+          const regional = await this.loadProxyRegion(
+            sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key, region,
+            { signal, isCurrent },
+          );
+          if (regional) return regional;
+        }
         // A whole-frame response above the chunk budget is exactly the
         // image-sized browser buffer this sprint removes. Try tiles first; the
         // tile route returns null when the backend cannot serve this geometry.
