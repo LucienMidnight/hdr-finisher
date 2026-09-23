@@ -256,6 +256,7 @@ def test_display_scale_pan_cache_is_generation_aware() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
     contract = (FRONTEND / "viewport-request.js").read_text(encoding="utf-8")
+    coordinator = (FRONTEND / "render-coordinator.js").read_text(encoding="utf-8")
 
     # The cache is the accepted-generation ledger, so the partition is the
     # contract's job and is unit tested there.
@@ -279,14 +280,17 @@ def test_display_scale_pan_cache_is_generation_aware() -> None:
     assert "roiCatchUp: sourceOptions?.roiCatchUp," in webgpu
     assert "panPass: sourceOptions?.panPass," in webgpu
     # The deferred pan follow-up exists, is wired to the viewer scroll, and is
-    # cancelled by a newer edit like the catch-up.
+    # cancelled by a newer edit like the catch-up. The follow-up lifecycle
+    # itself (timers, candidate facts, busy re-arm) lives in the coordinator.
     assert "const ROI_PAN_DELAY_MS = 140;" in javascript
     assert "function noteViewerPan() {" in javascript
     assert "noteViewerPan();" in javascript
     assert "function requestRoiPanRefinement() {" in javascript
     assert "function cancelRoiPanRefinement() {" in javascript
-    assert "panPass: true" in javascript
+    assert "panPass: true" in coordinator
     assert "cancelRoiPanRefinement();" in javascript
+    assert "state.renderCoordinator?.notePan(state.currentView);" in javascript
+    assert "state.renderCoordinator?.cancelPan(state.currentView);" in javascript
     # Diagnostics expose the pan state and the same entry point the scroll
     # path uses, so a driver can measure it deterministically.
     assert "roiPanState: () => ({" in javascript
@@ -348,6 +352,10 @@ def test_app_emits_intent_to_the_render_coordinator() -> None:
     # the diagnostics entry.
     assert "state.renderCoordinator?.setRoiMode(state.roiPreviewMode);" in javascript
     assert "state.renderCoordinator?.setRoiMode(state.roiPreviewMode, { cancelFollowUps: false });" in javascript
+    # The deferred follow-up lifecycle is delegated, not duplicated.
+    assert "state.renderCoordinator?.cancelCatchUp(state.currentView);" in javascript
+    assert "state.renderCoordinator.panCandidate(state.currentView)" in javascript
+    assert "state.renderCoordinator.requestPanRefinement(state.currentView)" in javascript
 
 
 def test_roi_refinement_has_a_settings_surface() -> None:

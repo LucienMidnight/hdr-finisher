@@ -62,6 +62,8 @@
       this.present = typeof options.present === "function" ? options.present : null;
       this.canPanRefine = typeof options.canPanRefine === "function" ? options.canPanRefine : null;
       this.onRefusal = typeof options.onRefusal === "function" ? options.onRefusal : null;
+      this.onError = typeof options.onError === "function" ? options.onError : null;
+      this.onFollowUpStart = typeof options.onFollowUpStart === "function" ? options.onFollowUpStart : null;
       this.onChange = typeof options.onChange === "function" ? options.onChange : null;
       this.catchUpDelayMs = clampDelay(options.catchUpDelayMs, DEFAULT_CATCH_UP_DELAY_MS);
       this.panDelayMs = clampDelay(options.panDelayMs, DEFAULT_PAN_DELAY_MS);
@@ -475,6 +477,10 @@
       if (this.onRefusal) this.onRefusal(st.lastRefusal);
     }
 
+    reportError(lane, reason, error) {
+      if (this.onError) this.onError(lane, reason, error);
+    }
+
     // ---- follow-up lifecycle --------------------------------------------
 
     /**
@@ -539,6 +545,7 @@
       }
       const longEdge = st.accepted?.processedLongEdge;
       if (!(longEdge > 0)) return false;
+      if (this.onFollowUpStart) this.onFollowUpStart(lane, "pan");
       return this.submit({
         lane,
         tier: "refinement",
@@ -547,6 +554,9 @@
         priority: "foreground",
         viewport: true,
         panPass: true,
+      }).catch((error) => {
+        this.reportError(lane, "pan", error);
+        return false;
       });
     }
 
@@ -568,6 +578,7 @@
         if (this.activeLane !== lane) return;
         if (!this.sessionId) return;
         if (targetGeneration !== st.editGeneration) return;
+        if (this.onFollowUpStart) this.onFollowUpStart(lane, "catch-up");
         void this.submit({
           lane,
           tier: "refinement",
@@ -576,7 +587,7 @@
           priority: "foreground",
           viewport: false,
           catchUp: true,
-        });
+        }).catch((error) => this.reportError(lane, "catch-up", error));
       }, this.catchUpDelayMs);
       return true;
     }

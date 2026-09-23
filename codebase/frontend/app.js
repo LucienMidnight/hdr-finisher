@@ -405,15 +405,13 @@ const state = {
   // visible region and keeps the retained frame everywhere else. Interactive
   // pan and zoom are never ROI-limited, so they cannot show a gap.
   roiPreviewMode: "fit",
-  roiCatchUpTimer: null,
   roiCatchUpError: null,
   // Phase 2 item 8, the display-scale pan cache. A pan is a compositor
   // operation, but a scroll can expose a strip that was never refined for the
-  // current generation. This timer asks for a refinement pass limited to the
-  // new visible region once the scroll pauses; the renderer reuses every tile
-  // the cache already holds at this generation, so a pan back into a refined
-  // region processes nothing.
-  roiPanTimer: null,
+  // current generation. The coordinator asks for a refinement pass limited to
+  // the new visible region once the scroll pauses; the renderer reuses every
+  // tile the cache already holds at this generation, so a pan back into a
+  // refined region processes nothing.
   roiPanError: null,
   // Live Denoise reconstruction runs through one in-flight plus one latest
   // pending state (Section 5.6), so a control drag costs runs, not events.
@@ -2022,6 +2020,12 @@ function initializePreviewPreferences() {
   if (els.scopeExactPeak) els.scopeExactPeak.checked = state.scopeExactPeak;
 }
 
+// Deferred follow-up delays (Phase 2 item 8): the pan follow-up fires shortly
+// after the scroll pauses; the whole-frame catch-up waits longer so it never
+// competes with the pan it follows.
+const ROI_CATCH_UP_DELAY_MS = 700;
+const ROI_PAN_DELAY_MS = 140;
+
 function initializePreviewScheduler() {
   if (!window.HDRPreviewScheduler) return;
   state.previewScheduler = new window.HDRPreviewScheduler({
@@ -2089,7 +2093,17 @@ function initializePreviewScheduler() {
           reason: refusal.reason, lane: refusal.lane, tier: refusal.tier, at: refusal.at,
         };
       },
+      onError: (lane, reason, error) => {
+        if (reason === "catch-up") state.roiCatchUpError = String(error?.message || error);
+        else if (reason === "pan") state.roiPanError = String(error?.message || error);
+      },
+      onFollowUpStart: (lane, reason) => {
+        if (reason === "catch-up") state.roiCatchUpError = null;
+        else if (reason === "pan") state.roiPanError = null;
+      },
       roiMode: state.roiPreviewMode,
+      catchUpDelayMs: ROI_CATCH_UP_DELAY_MS,
+      panDelayMs: ROI_PAN_DELAY_MS,
     })
     : null;
   window.HDRFinisherPerformance = {
@@ -2140,7 +2154,9 @@ function initializePreviewScheduler() {
     },
     roiPreviewMode: () => state.roiPreviewMode,
     roiCatchUpState: () => ({
-      timerPending: state.roiCatchUpTimer !== null,
+      timerPending: state.renderCoordinator
+        ? state.renderCoordinator.catchUpPending(state.currentView)
+        : false,
       mode: state.roiPreviewMode,
       generation: state.previewGeneration[state.currentView],
       inFlight: Boolean(state.gpuDraftInFlight),
@@ -2151,12 +2167,16 @@ function initializePreviewScheduler() {
     // measure a pan without the deferred whole-frame pass arriving mid-pass.
     cancelRoiCatchUp: () => {
       cancelRoiCatchUp();
-      return state.roiCatchUpTimer === null;
+      return state.renderCoordinator
+        ? !state.renderCoordinator.catchUpPending(state.currentView)
+        : true;
     },
     // Phase 2 item 8 diagnostics: the deferred pan follow-up and the cache
     // evidence the renderer reports through tiledExecutionMetrics.
     roiPanState: () => ({
-      timerPending: state.roiPanTimer !== null,
+      timerPending: state.renderCoordinator
+        ? state.renderCoordinator.panPending(state.currentView)
+        : false,
       mode: state.roiPreviewMode,
       generation: state.previewGeneration[state.currentView],
       inFlight: Boolean(state.gpuDraftInFlight),
@@ -3310,8 +3330,13 @@ function bindEvents() {
   els.dropzone.addEventListener("scroll", () => {
     syncLocalMaskOverlayViewport();
     queueLocalMaskOverlayRender();
-    // The pan itself is compositor-only; this only schedules the deferred
-    // follow-up that refines a newly exposed strip (Phase 2 pan cache).
+    // The pan itself is compositor-only; this updates the coordinator's
+    // viewport model and schedules the deferred follow-up that refines a newly
+    // exposed strip (Phase 2 pan cache).
+    state.renderCoordinator?.noteViewport(
+      state.currentView,
+      visibleOutputRect(els.previewCanvas.width, els.previewCanvas.height),
+    );
     noteViewerPan();
   }, { passive: true });
   els.overlayToggle.addEventListener("click", toggleOverlayPopover);
@@ -4051,9 +4076,6 @@ function applyExecutionOverride(value) {
   }
 }
 
-const ROI_CATCH_UP_DELAY_MS = 700;
-const ROI_PAN_DELAY_MS = 140;
-
 /**
  * Limit the refinement pass to the visible region, or process the whole frame.
  *
@@ -4074,38 +4096,11 @@ function applyRoiPreview(value) {
 }
 
 function cancelRoiCatchUp() {
-  if (state.roiCatchUpTimer === null) return;
-  clearTimeout(state.roiCatchUpTimer);
-  state.roiCatchUpTimer = null;
-}
-
-/**
- * Bring the rest of the frame to the current generation after an ROI pass.
- *
- * The visible region is refined first for immediate feedback. This follow-up
- * runs the same tier as a whole-frame pass once the user pauses, which is what
- * closes the seam between the refined region and the tiles that kept the
- * accepted frame. It is deliberately deferred and yields to anything newer: a
- * new edit cancels it, and the pass it starts is superseded like any other.
- */
-function scheduleRoiCatchUp(lane, longEdge, generation) {
-  if (state.roiPreviewMode !== "refinement") return;
-  cancelRoiCatchUp();
-  state.roiCatchUpTimer = window.setTimeout(() => {
-    state.roiCatchUpTimer = null;
-    if (state.roiPreviewMode !== "refinement") return;
-    if (!state.session || lane !== state.currentView) return;
-    if (generation !== state.previewGeneration[lane]) return;
-    state.roiCatchUpError = null;
-    renderGpuDraft(lane, { tier: "refinement", longEdge, roiCatchUp: true })
-      .catch((error) => { state.roiCatchUpError = String(error?.message || error); });
-  }, ROI_CATCH_UP_DELAY_MS);
+  state.renderCoordinator?.cancelCatchUp(state.currentView);
 }
 
 function cancelRoiPanRefinement() {
-  if (state.roiPanTimer === null) return;
-  clearTimeout(state.roiPanTimer);
-  state.roiPanTimer = null;
+  state.renderCoordinator?.cancelPan(state.currentView);
 }
 
 /**
@@ -4114,61 +4109,33 @@ function cancelRoiPanRefinement() {
  * Only a retained tiled frame at the selected tier can be panned into without
  * the whole frame being redrawn, so that is the only case this pass is for.
  * A direct frame, a smaller proxy, a geometry change or a fit view all mean
- * the ordinary settle path already owns the next render.
+ * the ordinary settle path already owns the next render. The coordinator owns
+ * the retained-frame and viewport facts; the app supplies session and geometry.
  */
 function roiPanCandidate() {
-  const accepted = state.acceptedPresentation;
-  if (!accepted || accepted.transport !== "WebGPU" || accepted.execution !== "tiled") return false;
-  if (accepted.lane !== state.currentView) return false;
-  if (accepted.exact !== true) return false;
-  if (accepted.geometrySignature !== geometrySignature()) return false;
-  if (!(accepted.processedLongEdge > 0)) return false;
-  return Boolean(visibleOutputRect(els.previewCanvas.width, els.previewCanvas.height));
+  return state.renderCoordinator
+    ? state.renderCoordinator.panCandidate(state.currentView)
+    : false;
 }
 
 /**
  * A pan never waits on a render: the compositor moves the accepted frame
  * immediately. What a pan can do is expose a strip that was never refined for
- * the current generation, so once the scroll pauses this asks for a refinement
- * pass over the new visible region. The renderer's display-scale pan cache
- * answers every tile it already holds at this generation, so panning back into
- * a refined region costs nothing and only a newly exposed strip is rendered.
- *
- * The pass yields like any other: it waits for work already holding the device
- * instead of superseding it, a new edit cancels it, and the pass it starts is
- * superseded by anything newer. It also re-arms the whole-frame catch-up, so
- * stopping after a pan still converges the rest of the image.
+ * the current generation, so once the scroll pauses the coordinator asks for a
+ * refinement pass over the new visible region. The renderer's display-scale pan
+ * cache answers every tile it already holds at this generation, so panning back
+ * into a refined region costs nothing and only a newly exposed strip is
+ * rendered. The pass it starts re-arms the whole-frame catch-up, so stopping
+ * after a pan still converges the rest of the image.
  */
 function noteViewerPan() {
-  if (state.roiPreviewMode !== "refinement" || !state.session) return;
-  if (!roiPanCandidate()) return;
-  cancelRoiPanRefinement();
-  state.roiPanTimer = window.setTimeout(() => {
-    state.roiPanTimer = null;
-    void requestRoiPanRefinement();
-  }, ROI_PAN_DELAY_MS);
+  state.renderCoordinator?.notePan(state.currentView);
 }
 
 async function requestRoiPanRefinement() {
-  if (state.roiPreviewMode !== "refinement" || !state.session) return;
-  if (geometryDraftActive() || !roiPanCandidate()) return;
-  // The pan pass is a follow-up, not a competitor. If a render already holds
-  // the device, wait for it rather than throwing away its source upload.
-  if (state.gpuDraftInFlight) {
-    if (state.roiPanTimer === null) {
-      state.roiPanTimer = window.setTimeout(() => {
-        state.roiPanTimer = null;
-        void requestRoiPanRefinement();
-      }, ROI_PAN_DELAY_MS);
-    }
-    return;
-  }
-  const lane = state.currentView;
-  const longEdge = state.acceptedPresentation?.processedLongEdge;
-  if (!(longEdge > 0)) return;
-  state.roiPanError = null;
-  await renderGpuDraft(lane, { tier: "refinement", longEdge, panPass: true })
-    .catch((error) => { state.roiPanError = String(error?.message || error); });
+  return state.renderCoordinator
+    ? state.renderCoordinator.requestPanRefinement(state.currentView)
+    : false;
 }
 
 function applyGpuMemoryBudget(value) {
@@ -10636,10 +10603,9 @@ async function renderGpuDraftInner(
     if (!sourceOptions.isCurrent()) return refuse("superseded-during-render");
     state.gpuRenderRetries = 0;
     state.gpuFailurePolicy?.noteSuccess();
-    // The visible region is refined. Bring the rest of the frame to the same
-    // generation once the user pauses, so the refinement boundary stops being
-    // visible as a seam.
-    if (sourceOptions.viewport) scheduleRoiCatchUp(lane, longEdge, generation);
+    // The coordinator arms the whole-frame catch-up once this pass presents,
+    // so the refinement boundary stops being visible as a seam. It owns the
+    // deferred follow-up and cancels it on a newer edit or a mode change.
     state.gpuPreparedLane[lane] = true;
     setGpuSurfaceHdr(lane, result.hdr);
     els.previewImage.style.display = "none";
