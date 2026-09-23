@@ -1502,6 +1502,45 @@ Measurements on the same PNGs (889×501 each, luma 0–255):
 
 Recorded as the reason that follow-up exists, not as a rejection of the display-scale contract.
 
+### 15.25 Fit A/B corrected — 2026-09-23 (reference is the export look; residual is the view transform)
+
+Committed as `4a59c29` — "Rebuild the Fit A/B reference from the processed frames". Evidence: `codebase/output/performance/fit-filtering-ab.json`, the review pairs under `codebase/output/performance/fit-filtering/` (`<scenario>-reference.png`, `<scenario>-preview.png`, `<scenario>-difference.png`), and the superseded browser screenshots under `fit-filtering/screen/`.
+
+**Owner direction, recorded.** The finishing app has to be judged perceptually: when the user moves grain, Detail, halation or Denoise, the preview must align with the file they will export, and from the owner's point of view display and full should look identical. The 15.22 review set did not set that up — it compared the display-scale render against the browser's own crude downscale of a 4096-px canvas — so it was a waste of the owner's time. Test setups from here on must present the export look at screen size and ask for a "close enough" judgement.
+
+**What changed.**
+
+- `fit-filtering-compare.js` gained `lanczosResampleRgba` (separable Lanczos-3 with precomputed taps, self-contained so it can be injected into the page) plus four unit tests: constant field, identity, a sub-Nyquist checker converging to its mean, and a monotone ramp.
+- `fit-filtering-ab.js` now captures the **processed frames**: the retained presentation target is read back in 384-row strips and both branches are reduced to the canvas CSS box (889×500) with the same Lanczos filter. The primary comparison is `reference` (full-tier frame — what the exported file looks like at this size) versus `preview` (display-tier frame — what display-scale Fit shows). Screenshots are kept under `screen/` as secondary evidence only.
+- Graph-state assertions: every scenario/branch must show its scenario's values, and every tracked key not named by a scenario must sit at its default. This caught a driver bug: a value-tracking guard in the reset loop silently skipped halation and bloom, so three scenarios shared one graph and read as a scale result. The reset is now unconditional, selects reset to their marked option, and the film-look parity driver returns and asserts the verified state.
+- `--only` selects scenarios for iteration.
+- Re-ran the film-look parity with the verified graph on both surfaces: `roi-parity-film.json` 34 034 pixels and `electron-roi-parity-film.json` 49 896 pixels, **`maxAbsDifference 0`**, halation 35 and bloom 25 confirmed active in the recorded state. The 15.21 claim now has a state-verified graph.
+
+**Result (Chromium, SDR, tiled, exact, 0 page errors).** Reference versus preview, p99 / mean in 0–255 units, per band:
+
+| scenario | smooth | texture | noise | halation | fine | highlights |
+|---|---|---|---|---|---|---|
+| grain | 2 / 0.87 | 2 / 0.85 | 4 / 0.90 | 75 / 3.94 | 26 / 14.48 | 115 / 6.47 |
+| detail | 2 / 0.31 | 3 / 0.66 | 5 / 0.78 | 82 / 4.02 | 27 / 14.55 | 118 / 6.48 |
+| denoise | 1 / 0.19 | 3 / 0.86 | 4 / 0.75 | 75 / 3.74 | 25 / 14.57 | 115 / 6.29 |
+| halation | 1 / 0.18 | 2 / 0.46 | 4 / 0.71 | 95 / 6.89 | 21 / 11.33 | 87 / 8.71 |
+| fine-detail | 1 / 0.18 | 2 / 0.45 | 4 / 0.69 | 75 / 3.78 | 26 / 14.61 | 115 / 6.31 |
+| highlights | 1 / 0.18 | 2 / 0.45 | 4 / 0.69 | 75 / 3.78 | 26 / 14.61 | 115 / 6.31 |
+
+Feature measurements on the same pairs: the grain band is indistinguishable (mean 114.01, sd 25.37 on both); the averaged checkerboard sits 12–13 levels brighter in the preview (gratings 155.78 vs 143.31, both flat); the halation line peaks 255 in the preview against 233 in the reference; the highlight band averages 5 levels brighter in the preview.
+
+**What the numbers mean.**
+
+- The module classes match: grain, Detail and Denoise bands average under one level apart with p99 ≤ 5. The graph is scale-aware for them.
+- The residual is confined to content at or below the display Nyquist: the 1–2 px gratings and checkerboard, the 5-px bright line, sub-pixel speculars. There the difference is systematic and has one cause: **the display transform is nonlinear, so filtering the source before the graph is not the same as filtering the graded result.** The preview (filter then grade) shows unresolved high-contrast detail as a brighter, smoother average; the export viewed at the same size (grade then filter) shows it slightly darker and broader. Halation and bloom spread the same mismatch rather than causing it.
+- This is inherent to display-scale processing. No better filter or cache removes it; only grading at full resolution and filtering the graded frame for display reproduces the export exactly (the slow path), and grading at a multiple of display scale would bound the error.
+- **Consequence for the hypothesis:** the Fit filtering hypothesis is partially disproven as a perceptual-identity claim. Identity holds for grain, Detail, Denoise and normal texture; it does not hold exactly for sub-Nyquist high-contrast detail and speculars, where the difference is a property of the nonlinear view transform. Whether that residual is acceptable at Fit — or whether the final view must be a graded-then-filtered frame — is the owner's decision (Phase 0 item 7).
+- Preview-versus-export parity remains a separate open item: the reference here is the renderer's own full frame, not an exported file.
+
+**Gate status.** Phase 0 item 6: measured with the corrected reference; item 7 remains the owner's decision, now with the scale residual named and quantified. The 15.22/15.24 screenshot comparison is superseded as judgement evidence and retained only as the record of what the browser displays today. Suites: **176 JS** (172 + 4 resampler tests). No Python touched.
+
+Next safe edit: export/reference parity — the preview frame against an actual exported file, which is the direct test of the owner's WYSIWYG requirement — or hold for the owner's tolerance decision. Do not start Phase 3.
+
 
 
 
