@@ -1,0 +1,85 @@
+{
+  "migration": {
+    "preferences": {
+      "schemaVersion": 3,
+      "defaultReferenceWhiteNits": 203,
+      "renderingMode": "auto",
+      "previewResolution": "auto",
+      "previewPreference": "balanced",
+      "previewMigration": {
+        "previousTier": "2048",
+        "noticeShown": false
+      },
+      "maximumGpuMemoryGiB": "auto",
+      "executionOverride": "auto",
+      "roiPreview": "fit",
+      "theme": "default-dark",
+      "viewerFrame": {
+        "preset": "theme",
+        "customColor": "#000000"
+      },
+      "folders": {
+        "projectSave": "",
+        "projectImport": "",
+        "fileSave": "",
+        "fileImport": "",
+        "presetSave": ""
+      },
+      "shortcuts": {},
+      "shortcutPresets": {},
+      "gradingPresets": {},
+      "updates": {
+        "checkAutomatically": true,
+        "dismissedVersion": ""
+      }
+    },
+    "normalTierSelector": false,
+    "diagnosticTierSelector": true,
+    "notice": true
+  },
+  "roundTrip": {
+    "preference": "responsive",
+    "migration": {
+      "previousTier": "2048",
+      "noticeShown": true
+    }
+  },
+  "fit": {
+    "processed": 800,
+    "native": 2400,
+    "status": "Ready — Display exact",
+    "output": "display"
+  },
+  "coarse": {
+    "edge": 256,
+    "exact": false,
+    "label": "Coarse — refining to Display exact",
+    "generation": 3
+  },
+  "responsive": {
+    "edge": 800,
+    "generation": 3
+  },
+  "parity": "byte-equal",
+  "reversal": {
+    "currentAtInput": 8
+  },
+  "finalState": {
+    "accepted": 8,
+    "current": 8,
+    "presented": [
+      {
+        "generation": 8,
+        "coarse": false
+      }
+    ]
+  },
+  "native": {
+    "processed": 2400,
+    "backing": 2400,
+    "css": 2400,
+    "dpr": 1,
+    "status": "Ready — Native region exact"
+  },
+  "errors": []
+}

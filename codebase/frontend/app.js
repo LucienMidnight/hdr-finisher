@@ -389,6 +389,9 @@ const state = {
   lastScope: null,
   scopeGeneration: 0,
   previewResolution: DEFAULT_PREVIEW_RESOLUTION,
+  previewResolutionOverride: false,
+  previewLatencyPreference: "balanced",
+  previewLatencyController: null,
   renderingMode: "auto",
   appPreferences: null,
   acceptedPresentation: null,
@@ -888,6 +891,8 @@ function normalizedPreviewResolution(value = state.previewResolution) {
 }
 
 function previewResolutionLabel(value = state.previewResolution) {
+  if (value === "display") return state.zoomMode === "custom" && state.zoomPercent >= 100
+    ? "Native region exact" : "Display exact";
   if (value === "native-region") return "Native region";
   const normalized = normalizedPreviewResolution(value);
   if (normalized === "full") return "Full";
@@ -903,12 +908,26 @@ function previewTargetLongEdge(value = state.previewResolution) {
 }
 
 function requiredProcessingLongEdge() {
+  if (state.previewResolutionOverride === false) {
+    const nativeEdge = previewTargetLongEdge("full");
+    return Math.round(Math.max(256, Math.min(nativeEdge, state.zoomMode === "custom" && state.zoomPercent >= 100
+      ? nativeEdge : displayedLongEdge())));
+  }
   return state.zoomMode === "custom" && state.zoomPercent >= 100
     ? previewTargetLongEdge("full")
     : previewTargetLongEdge();
 }
 
 function previewResolutionDimensions(value = state.previewResolution) {
+  if (value === state.previewResolution && state.previewResolutionOverride === false) value = "display";
+  if (value === "display") {
+    const edge = requiredProcessingLongEdge();
+    const sourceWidth = Math.max(1, Number(state.session?.source?.width) || edge);
+    const sourceHeight = Math.max(1, Number(state.session?.source?.height) || edge);
+    const scale = Math.min(1, edge / Math.max(sourceWidth, sourceHeight));
+    return { width: Math.max(1, Math.round(sourceWidth * scale)),
+      height: Math.max(1, Math.round(sourceHeight * scale)), longEdge: edge, tier: "display" };
+  }
   const normalized = normalizedPreviewResolution(value);
   const sourceWidth = Math.max(0, Number(state.session?.source?.width) || 0);
   const sourceHeight = Math.max(0, Number(state.session?.source?.height) || 0);
@@ -930,15 +949,18 @@ function previewResolutionDimensions(value = state.previewResolution) {
 }
 
 function previewExecutionForTier(value = state.previewResolution) {
+  if (state.previewResolutionOverride === false && value === state.previewResolution) {
+    return requiredProcessingLongEdge() >= previewTargetLongEdge("full") ? "strips" : "whole";
+  }
   return normalizedPreviewResolution(value) === "full" ? "strips" : "whole";
 }
 
 function previewNeedsRefinement() {
-  // "Has the selected tier been reached yet?" The settled pass now targets the
-  // tier directly, so comparing the settled edge against the target would
-  // always answer no. Every caller uses this to decide whether more work is
-  // owed before the viewer can claim the selected tier.
-  return !selectedTierReady();
+  const accepted = state.acceptedPresentation;
+  return !selectedTierReady()
+    || accepted?.generation !== state.previewGeneration[state.currentView]
+    || accepted?.geometrySignature !== geometrySignature()
+    || accepted?.processedLongEdge !== requiredProcessingLongEdge();
 }
 
 /**
@@ -964,7 +986,8 @@ function deriveViewerState({
   geometrySignature: currentGeometrySignature,
   unavailableReason = "",
 } = {}) {
-  const tier = PREVIEW_RESOLUTION_OPTIONS.has(requestedTier) ? requestedTier : DEFAULT_PREVIEW_RESOLUTION;
+  const tier = requestedTier === "display" ? "display"
+    : PREVIEW_RESOLUTION_OPTIONS.has(requestedTier) ? requestedTier : DEFAULT_PREVIEW_RESOLUTION;
   const laneMatches = Boolean(accepted) && accepted.lane === lane;
   const presentedTier = laneMatches ? (accepted.tier || null) : null;
   if (unavailableReason) return { status: "unavailable", tier, presentedTier, detail: unavailableReason };
@@ -972,7 +995,8 @@ function deriveViewerState({
   // result of its own. Anything else is still a placeholder, however good it
   // looks, and must be labeled as one.
   const selectedTierAccepted = laneMatches && accepted.exact === true && accepted.requestedTier === tier;
-  if (!selectedTierAccepted) return { status: "preparing", tier, presentedTier, detail: "" };
+  if (!selectedTierAccepted) return { status: "preparing", tier, presentedTier, detail: "",
+    coarse: Boolean(laneMatches && accepted.coarse && accepted.generation === currentGeneration) };
   const geometryCurrent = accepted.geometrySignature === currentGeometrySignature;
   const current = accepted.generation === currentGeneration && geometryCurrent;
   // A geometry change is the slow one -- it invalidates the source proxy, so
@@ -984,7 +1008,7 @@ function deriveViewerState({
 
 function viewerState(lane = state.currentView) {
   return deriveViewerState({
-    requestedTier: normalizedPreviewResolution(),
+    requestedTier: state.previewResolutionOverride === false ? "display" : normalizedPreviewResolution(),
     accepted: state.acceptedPresentation,
     currentGeneration: state.previewGeneration[lane],
     lane,
@@ -999,6 +1023,7 @@ function viewerStatusLabel(viewer = viewerState()) {
     return `${tierLabel} unavailable${viewer.detail ? ` — ${viewer.detail}` : ""}`;
   }
   if (viewer.status === "preparing") {
+    if (viewer.coarse) return `Coarse — refining to ${tierLabel}`;
     const showing = viewer.presentedTier
       ? ` — showing previous ${previewResolutionLabel(viewer.presentedTier)} result`
       : "";
@@ -1031,18 +1056,15 @@ function selectedTierReady(lane = state.currentView) {
   return Boolean(accepted
     && accepted.lane === lane
     && accepted.exact === true
-    && accepted.requestedTier === normalizedPreviewResolution());
+    && accepted.requestedTier === (state.previewResolutionOverride === false ? "display" : normalizedPreviewResolution()));
 }
 
 function applyPreviewResolution(value, { schedule = true } = {}) {
-  const previous = state.previewResolution;
-  state.previewResolution = normalizedPreviewResolution(value);
-  if (els.previewResolution) {
-    els.previewResolution.value = state.previewResolution;
-    els.previewResolution.title = "Sets the maximum preview width and height. Higher settings use more memory; export quality is unchanged.";
-  }
-  if (previous !== state.previewResolution) state.previewUnavailableReason = "";
-  if (previous !== state.previewResolution) {
+  const previous = `${state.previewResolutionOverride}:${state.previewResolution}`;
+  state.previewResolutionOverride = value !== "auto";
+  if (state.previewResolutionOverride) state.previewResolution = normalizedPreviewResolution(value);
+  if (previous !== `${state.previewResolutionOverride}:${state.previewResolution}`) state.previewUnavailableReason = "";
+  if (previous !== `${state.previewResolutionOverride}:${state.previewResolution}`) {
     // The denoise selector is bound to one long edge -- its identity contains
     // it -- and the renderer pins every render to the retained original's edge
     // so that live denoise controls keep hitting the evidence they were
@@ -1072,9 +1094,9 @@ function applyPreviewResolution(value, { schedule = true } = {}) {
   renderViewerStatus();
 }
 
-function acceptPresentation(lane, schedulerTier, width, height, transport, fallbackReason = "", sourceSerial = null, generation = state.previewGeneration[lane], execution = null, processedLongEdge = null, scopePeak = null) {
+function acceptPresentation(lane, schedulerTier, width, height, transport, fallbackReason = "", sourceSerial = null, generation = state.previewGeneration[lane], execution = null, processedLongEdge = null, scopePeak = null, coarse = false) {
   const longEdge = Math.max(Number(width) || 0, Number(height) || 0);
-  const requestedTier = normalizedPreviewResolution();
+  const requestedTier = state.previewResolutionOverride === false ? "display" : normalizedPreviewResolution();
   // Exactness is a fact about the resolution this frame was processed at, not
   // about how large the picture that came out of it is. Geometry trims the
   // frame: a 1.8 degree straighten at the 4K tier processes every pixel at
@@ -1100,8 +1122,10 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
     generation,
     geometrySignature: geometrySignature(),
     requestedTier,
-    tier: exact ? (processedEdge === previewTargetLongEdge(requestedTier) ? requestedTier : "native-region") : null,
+    tier: exact ? (requestedTier === "display" ? "display"
+      : processedEdge === previewTargetLongEdge(requestedTier) ? requestedTier : "native-region") : null,
     exact,
+    coarse: Boolean(coarse) && !exact,
     processedLongEdge: processedEdge,
     schedulerTier,
     width: Number(width) || null,
@@ -1544,7 +1568,9 @@ const els = {
   dockTabs: [...document.querySelectorAll("[data-dock-tab]")],
   scopeView: document.getElementById("scope-view"),
   technicalView: document.getElementById("technical-view"),
-  previewResolution: document.getElementById("preview-resolution"),
+  previewLatency: document.getElementById("preview-latency"),
+  previewMigrationNotice: document.getElementById("preview-migration-notice"),
+  previewMigrationDismiss: document.getElementById("preview-migration-dismiss"),
   previewQualityStatus: document.getElementById("preview-quality-status"),
   exportSheet: document.getElementById("export-sheet"),
   exportConfirmButton: document.getElementById("export-confirm-button"),
@@ -2027,11 +2053,15 @@ function initializeLocalOverlayColor() {
 
 function initializePreviewPreferences() {
   state.previewResolution = DEFAULT_PREVIEW_RESOLUTION;
+  state.previewResolutionOverride = false;
+  state.previewLatencyPreference = "balanced";
+  state.previewLatencyController = window.HDRPreviewLatencyController
+    ? new window.HDRPreviewLatencyController() : null;
   state.scopeMaxNits = 4000;
   state.scopeQuality = DEFAULT_SCOPE_QUALITY;
   state.scopeExactPeak = false;
   state.compareLayout = "single";
-  if (els.previewResolution) els.previewResolution.value = state.previewResolution;
+  if (els.previewLatency) els.previewLatency.value = state.previewLatencyPreference;
   if (els.scopeZoom) els.scopeZoom.value = String(state.scopeMaxNits);
   if (els.scopeDetail) els.scopeDetail.value = state.scopeQuality;
   if (els.scopeExactPeak) els.scopeExactPeak.checked = state.scopeExactPeak;
@@ -2043,12 +2073,11 @@ function initializePreviewScheduler() {
     highQuality: () => previewNeedsRefinement(),
     onFrame: async (task) => {
       if (state.localMaskDraftDirty) return false;
-      if (interactiveDraftGuaranteedTiled(task.lane)) {
-        const reason = "pre-dispatch-tiled";
-        state.lastGpuDraftRefusal = { reason, lane: task.lane, tier: "interactive", at: performance.now() };
-        const key = `interactive:${reason}`;
-        state.gpuDraftRefusals[key] = (state.gpuDraftRefusals[key] || 0) + 1;
-        return false;
+      let decision = interactiveScaleDecision(task.lane);
+      if (interactiveDraftGuaranteedTiled(task.lane) && !decision.coarse
+        && state.previewLatencyPreference !== "precise") {
+        decision = { edge: Math.max(256, Math.round(refinementProxyLongEdge() * 0.5)),
+          coarse: true, scale: 0.5 };
       }
       const detailActive = gpuDetailGraphActive(task.lane);
       const detailInteraction = state.detailInteractionRestore?.lane === task.lane;
@@ -2068,8 +2097,9 @@ function initializePreviewScheduler() {
         state.detailInteractionRestore = { lane: task.lane, longEdge: residentLongEdge };
       }
       const rendered = await renderGpuDraft(task.lane, {
-        longEdge: interactiveProxyLongEdge(),
+        longEdge: decision.edge,
         tier: "interactive",
+        coarse: decision.coarse,
       });
       // Detail adds three full-frame filtering passes. Keep at most one such
       // graph in the GPU queue so rapid slider input coalesces to the newest
@@ -2290,12 +2320,12 @@ function initializePreviewScheduler() {
     disposeDenoiseSelectorSeam: () => state.gpuPreview?.disposeDenoiseSelectorSeam?.(),
     evictDenoiseCache: () => state.gpuPreview?.evictDenoiseCache?.(),
     sessionId: () => state.session?.session_id || null,
-    previewMode: () => `${previewResolutionLabel().toLowerCase()}-${state.gpuPreview?.available ? "gpu" : "cpu"}`,
+    previewMode: () => `${state.previewLatencyPreference}-${state.gpuPreview?.available ? "gpu" : "cpu"}`,
     authoringState: () => ({
       sessionId: state.session?.session_id || null,
       lane: state.currentView,
       adjustments: JSON.parse(JSON.stringify(state.adjustments)),
-      requestedTier: normalizedPreviewResolution(),
+      requestedTier: state.previewResolutionOverride ? normalizedPreviewResolution() : "display",
       presentedTier: state.acceptedPresentation?.tier || null,
       presentedGeneration: state.acceptedPresentation?.generation ?? null,
       currentGeneration: state.previewGeneration[state.currentView],
@@ -2303,8 +2333,11 @@ function initializePreviewScheduler() {
       gpuBudget: state.gpuMemoryBudget ?? "auto",
       renderPlan: state.gpuPreview?.lastRenderPlan || null,
       allocationBackoff: state.gpuPreview?.allocationBackoff || null,
-      previewResolution: normalizedPreviewResolution(),
-      previewMaxDimension: previewTargetLongEdge(),
+      previewResolution: state.previewResolutionOverride ? normalizedPreviewResolution() : "auto",
+      previewPreference: state.previewLatencyPreference,
+      previousPreviewTier: state.appPreferences?.previewMigration?.previousTier || null,
+      previewLatency: state.previewLatencyController?.snapshot() || null,
+      previewMaxDimension: requiredProcessingLongEdge(),
       previewDimensions: previewResolutionDimensions(),
       longEdge: settledProxyLongEdge(),
     }),
@@ -2318,7 +2351,7 @@ function interactiveDraftGuaranteedTiled(lane = state.currentView) {
   return state.gpuPreview.minimumExecutionDecision(
     accepted.width,
     accepted.height,
-    normalizedPreviewResolution(),
+    state.previewResolutionOverride ? normalizedPreviewResolution() : "display",
   )?.mode === "tiled";
 }
 
@@ -3045,10 +3078,16 @@ function bindEvents() {
     state.scopeMaxNits = [1000, 4000, 10000].includes(requestedMaxNits) ? requestedMaxNits : 4000;
     await refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
   });
-  els.previewResolution?.addEventListener("change", () => {
-    const requested = normalizedPreviewResolution(els.previewResolution.value);
-    window.HDRApplicationShell?.setPreviewResolutionPreference?.(requested);
-    applyPreviewResolution(requested);
+  els.previewLatency?.addEventListener("change", () => {
+    const selected = ["responsive", "balanced", "precise"].includes(els.previewLatency.value)
+      ? els.previewLatency.value : "balanced";
+    window.HDRApplicationShell?.setPreviewPreference?.(selected);
+    state.previewLatencyPreference = selected;
+    renderReadouts();
+  });
+  els.previewMigrationDismiss?.addEventListener("click", () => {
+    els.previewMigrationNotice?.classList.add("hidden");
+    window.HDRApplicationShell?.acknowledgePreviewMigration?.();
   });
   els.scopeDetail?.addEventListener("change", async () => {
     state.scopeQuality = SCOPE_QUALITY_PROFILES[els.scopeDetail.value] ? els.scopeDetail.value : DEFAULT_SCOPE_QUALITY;
@@ -3822,7 +3861,7 @@ function renderMetadata(session) {
 }
 
 function currentPreviewSizeLabel() {
-  const target = previewResolutionLabel();
+  const target = previewResolutionLabel(state.previewResolutionOverride ? state.previewResolution : "display");
   const presentation = state.acceptedPresentation;
   if (!presentation?.width || !presentation?.height || presentation.lane !== state.currentView) return `${target} · Waiting`;
   // A presentation that is not yet the selected tier says so. Reporting the
@@ -4065,14 +4104,19 @@ async function initializeApplicationShell() {
         void loadDefaultExportDirectory();
       }
       if (!state.session) els.hdrReferenceWhite.value = String(preferences.defaultReferenceWhiteNits);
-      const preferredPreviewResolution = normalizedPreviewResolution(preferences.previewResolution);
-      const selectablePreviewResolution = els.previewResolution?.querySelector(`option[value="${preferredPreviewResolution}"]`)
-        ? preferredPreviewResolution
-        : DEFAULT_PREVIEW_RESOLUTION;
+      const preferredPreviewResolution = preferences.previewResolution === "auto"
+        ? "auto" : normalizedPreviewResolution(preferences.previewResolution);
+      const selectablePreviewResolution = preferredPreviewResolution;
+      const preferredPreviewLatency = ["responsive", "balanced", "precise"].includes(preferences.previewPreference)
+        ? preferences.previewPreference : "balanced";
+      state.previewLatencyPreference = preferredPreviewLatency;
+      if (els.previewLatency) els.previewLatency.value = preferredPreviewLatency;
+      els.previewMigrationNotice?.classList.toggle("hidden",
+        !preferences.previewMigration?.previousTier || preferences.previewMigration.noticeShown === true);
       if (options.initial) {
-        state.previewResolution = selectablePreviewResolution;
-        if (els.previewResolution) els.previewResolution.value = selectablePreviewResolution;
-      } else if (selectablePreviewResolution !== state.previewResolution) {
+        state.previewResolutionOverride = selectablePreviewResolution !== "auto";
+        if (state.previewResolutionOverride) state.previewResolution = selectablePreviewResolution;
+      } else if (selectablePreviewResolution !== (state.previewResolutionOverride ? state.previewResolution : "auto")) {
         applyPreviewResolution(selectablePreviewResolution);
       }
       applyGpuMemoryBudget(preferences.maximumGpuMemoryGiB);
@@ -4332,7 +4376,11 @@ function previewOutputEntries() {
   return [
     ["View", state.currentView.toUpperCase()],
     ["Rendering", state.renderingMode === "cpu" ? "CPU Compatibility" : state.renderingMode === "gpu" ? "GPU Preferred" : "Auto"],
-    ["Preview Target", `${previewResolutionLabel()} · ${target.width} × ${target.height}`],
+    ["Preview Target", `${previewResolutionLabel(state.previewResolutionOverride ? state.previewResolution : "display")} · ${target.width} × ${target.height}`],
+    ["Response", state.previewLatencyPreference],
+    ["Legacy override", state.previewResolutionOverride ? previewResolutionLabel() : "Off"],
+    ["Controller", JSON.stringify(state.previewLatencyController?.snapshot()?.decisions || {})],
+    ["Migrated tier", state.appPreferences?.previewMigration?.previousTier || "None"],
     ["Presented", state.acceptedPresentation?.longEdge
       ? `${state.acceptedPresentation.tier ? previewResolutionLabel(state.acceptedPresentation.tier) : "Placeholder"} · ${state.acceptedPresentation.longEdge}px · ${state.acceptedPresentation.transport}`
       : "Waiting"],
@@ -4593,6 +4641,15 @@ async function settlePreview(lane = state.currentView, task = {}) {
   if (!state.session || state.rotateDraftGeometry || state.perspectiveMode) return false;
   if (task.applicationGeneration !== undefined
     && task.applicationGeneration !== state.previewGeneration[lane]) return false;
+  if (state.acceptedPresentation?.lane === lane
+    && state.acceptedPresentation.exact
+    && state.acceptedPresentation.generation === state.previewGeneration[lane]
+    && state.acceptedPresentation.geometrySignature === geometrySignature()
+    && state.acceptedPresentation.processedLongEdge === refinementProxyLongEdge()) {
+    prepareInactivePreview();
+    window.HDRProofing?.settled(lane);
+    return true;
+  }
   const display = lane === state.currentView;
   const detailRestore = state.detailInteractionRestore?.lane === lane
     && state.detailInteractionRestore.longEdge === refinementProxyLongEdge()
@@ -4666,7 +4723,20 @@ function displayedLongEdge() {
   const rect = els.dropzone.getBoundingClientRect();
   const paneWidth = state.compareLayout === "side-horizontal" ? rect.width / 2 : rect.width;
   const paneHeight = state.compareLayout === "side-vertical" ? rect.height / 2 : rect.height;
-  return Math.max(paneWidth, paneHeight) * Math.max(1, window.devicePixelRatio || 1);
+  // Keep this calculation independent of the geometry coordinate-map cache:
+  // that cache keys itself by settledProxyLongEdge(), which calls this helper.
+  const source = { width: state.session?.source?.width || 1, height: state.session?.source?.height || 1 };
+  const geometry = state.adjustments?.shared?.geometry || {};
+  const rotated = [90, 270].includes(Number(geometry.rotation) || 0);
+  const crop = geometry.crop || {};
+  const frame = {
+    width: Math.max(1, (rotated ? source.height : source.width) * (Number(crop.width) || 1)),
+    height: Math.max(1, (rotated ? source.width : source.height) * (Number(crop.height) || 1)),
+  };
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const fitScale = Math.min(paneWidth * dpr / frame.width, paneHeight * dpr / frame.height);
+  return Math.max(source.width, source.height) * (state.zoomMode === "fit"
+    ? fitScale : Math.min(1, state.zoomPercent / 100));
 }
 
 function residentAuthoringLongEdge() {
@@ -4694,6 +4764,27 @@ function interactiveProxyLongEdge() {
   // previous display-bounded 512-1024 proxy is now the bootstrap path only.
   if (selectedTierReady()) return requiredProcessingLongEdge();
   return bootstrapProxyLongEdge();
+}
+
+function previewGraphTimingKey(lane = state.currentView) {
+  const film = state.adjustments?.[lane]?.film_look || {};
+  return [lane, Boolean(state.denoise?.[lane]?.enabled), gpuDetailGraphActive(lane),
+    localAdjustments().filter((item) => item.enabled !== false).length,
+    Number(film.grain_amount) > 0, Number(film.bloom_amount) > 0,
+    Number(film.halation_amount) > 0, Number(film.image_softness) > 0,
+    state.zoomMode === "custom" ? "zoom" : "fit"].join(":");
+}
+
+function interactiveScaleDecision(lane = state.currentView) {
+  const exactEdge = refinementProxyLongEdge();
+  const visibleEdge = Math.min(exactEdge, Math.max(1, displayedLongEdge()));
+  return state.previewLatencyController?.choose({
+    preference: state.previewLatencyPreference,
+    graph: previewGraphTimingKey(lane),
+    exactEdge,
+    visiblePixels: visibleEdge * visibleEdge,
+    interacting: true,
+  }) || { edge: interactiveProxyLongEdge(), coarse: false, scale: 1 };
 }
 
 function globalDetailActive(lane = state.currentView) {
@@ -10629,6 +10720,7 @@ function renderGpuDraft(lane = state.currentView, options = {}) {
       panPass: Boolean(options.panPass),
       allowInactive: Boolean(options.allowInactive),
       hideStatus: options.hideStatus !== false,
+      coarse: Boolean(options.coarse),
     })
     : renderGpuDraftInner(lane, options);
   state.gpuDraftInFlight = pending;
@@ -10657,6 +10749,7 @@ async function renderGpuDraftInner(
     roiCatchUp = false,
     panPass = false,
   } = request;
+  const renderStartedAt = performance.now();
   // Record why a draft declined. A silent false is very hard to diagnose from
   // a failing browser test, and every one of these is a legitimate refusal.
   const refuse = (reason) => {
@@ -10768,7 +10861,13 @@ async function renderGpuDraftInner(
       generation,
       result.execution || "direct",
       result.processedLongEdge || longEdge,
+      null,
+      request.coarse,
     );
+    const exactEdge = refinementProxyLongEdge();
+    const visibleEdge = Math.min(exactEdge, Math.max(1, displayedLongEdge()));
+    state.previewLatencyController?.record({ graph: previewGraphTimingKey(lane), edge: longEdge,
+      exactEdge, visiblePixels: visibleEdge * visibleEdge, elapsedMs: performance.now() - renderStartedAt });
     setZoomMode(state.zoomMode);
     renderReadouts();
       if (hideStatus) hidePreviewMessage();

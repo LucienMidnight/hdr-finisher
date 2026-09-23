@@ -4,6 +4,8 @@
   const STORAGE_KEY = "hdr-finisher:application-preferences:v1";
   const PROJECT_URL = "https://github.com/LucienMidnight/hdr-finisher";
   const PREVIEW_RESOLUTIONS = new Set(["1024", "2048", "4096", "full"]);
+  const PREVIEW_PREFERENCES = new Set(["responsive", "balanced", "precise"]);
+  const migratedPreviewPreference = (tier) => tier === "1024" ? "responsive" : tier === "full" ? "precise" : "balanced";
   // Diagnostic only. Direct and Tiled are required to produce identical pixels,
   // so this exists to make that comparable on the same grade rather than to
   // give the two routes different jobs.
@@ -12,10 +14,12 @@
   const GPU_MEMORY_PRESETS_GIB = [1, 2, 3, 4, 6, 8, 12];
   const DEFAULT_CUSTOM_GPU_MEMORY_GIB = 2;
   const DEFAULT_PREFERENCES = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     defaultReferenceWhiteNits: 203,
     renderingMode: "auto",
-    previewResolution: "1024",
+    previewResolution: "auto",
+    previewPreference: "balanced",
+    previewMigration: { previousTier: null, noticeShown: false },
     maximumGpuMemoryGiB: "auto",
     executionOverride: "auto",
     roiPreview: "fit",
@@ -156,10 +160,19 @@
   const mergePreferences = (value = {}) => ({
     ...clone(DEFAULT_PREFERENCES),
     ...value,
-    schemaVersion: 2,
+    schemaVersion: 3,
     defaultReferenceWhiteNits: Number(value.defaultReferenceWhiteNits) === 100 ? 100 : 203,
     renderingMode: ["auto", "gpu", "cpu"].includes(value.renderingMode) ? value.renderingMode : "auto",
-    previewResolution: PREVIEW_RESOLUTIONS.has(String(value.previewResolution)) ? String(value.previewResolution) : "1024",
+    previewResolution: PREVIEW_RESOLUTIONS.has(String(value.previewResolution)) && Number(value.schemaVersion) >= 3
+      ? String(value.previewResolution) : "auto",
+    previewPreference: PREVIEW_PREFERENCES.has(value.previewPreference) ? value.previewPreference
+      : Number(value.schemaVersion) < 3 && PREVIEW_RESOLUTIONS.has(String(value.previewResolution))
+        ? migratedPreviewPreference(String(value.previewResolution)) : "balanced",
+    previewMigration: { previousTier: PREVIEW_RESOLUTIONS.has(String(value.previewMigration?.previousTier))
+      ? String(value.previewMigration.previousTier)
+      : Number(value.schemaVersion) < 3 && PREVIEW_RESOLUTIONS.has(String(value.previewResolution))
+        ? String(value.previewResolution) : null,
+      noticeShown: value.previewMigration?.noticeShown === true },
     maximumGpuMemoryGiB: normalizeGpuMemoryGiB(value.maximumGpuMemoryGiB),
     executionOverride: EXECUTION_OVERRIDES.has(value.executionOverride) ? value.executionOverride : "auto",
     roiPreview: ROI_PREVIEW_MODES.has(value.roiPreview) ? value.roiPreview : "fit",
@@ -619,6 +632,7 @@
 
   function renderSettings() {
     byId("settings-rendering-mode").value = shell.preferences.renderingMode;
+    byId("settings-preview-preference").value = shell.preferences.previewPreference;
     byId("settings-preview-resolution").value = shell.preferences.previewResolution;
     const memoryBudget = shell.preferences.maximumGpuMemoryGiB;
     const presetBudget = typeof memoryBudget === "number" && GPU_MEMORY_PRESETS_GIB.includes(memoryBudget);
@@ -863,7 +877,11 @@
       persistPreferences();
     });
     byId("settings-preview-resolution").addEventListener("change", (event) => {
-      shell.preferences.previewResolution = PREVIEW_RESOLUTIONS.has(event.target.value) ? event.target.value : "1024";
+      shell.preferences.previewResolution = PREVIEW_RESOLUTIONS.has(event.target.value) ? event.target.value : "auto";
+      persistPreferences();
+    });
+    byId("settings-preview-preference").addEventListener("change", (event) => {
+      shell.preferences.previewPreference = PREVIEW_PREFERENCES.has(event.target.value) ? event.target.value : "balanced";
       persistPreferences();
     });
     byId("settings-gpu-memory-limit").addEventListener("change", (event) => {
@@ -1010,10 +1028,23 @@
 
   function setPreviewResolutionPreference(value) {
     const normalized = String(value);
-    if (!PREVIEW_RESOLUTIONS.has(normalized) || !shell.preferences) return;
+    if (normalized !== "auto" && !PREVIEW_RESOLUTIONS.has(normalized) || !shell.preferences) return;
     shell.preferences.previewResolution = normalized;
     persistPreferences();
     if (byId("settings-preview-resolution")) byId("settings-preview-resolution").value = normalized;
+  }
+
+  function setPreviewPreference(value) {
+    if (!PREVIEW_PREFERENCES.has(value) || !shell.preferences) return;
+    shell.preferences.previewPreference = value;
+    persistPreferences();
+    if (byId("settings-preview-preference")) byId("settings-preview-preference").value = value;
+  }
+
+  function acknowledgePreviewMigration() {
+    if (!shell.preferences?.previewMigration?.previousTier || shell.preferences.previewMigration.noticeShown) return;
+    shell.preferences.previewMigration.noticeShown = true;
+    persistPreferences();
   }
 
   async function listGradingPresets(groupId) {
@@ -1051,6 +1082,8 @@
     checkForUpdates,
     setRenderingModePreference,
     setPreviewResolutionPreference,
+    setPreviewPreference,
+    acknowledgePreviewMigration,
     listGradingPresets,
     saveGradingPreset,
     deleteGradingPreset,

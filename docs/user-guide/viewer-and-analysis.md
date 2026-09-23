@@ -6,9 +6,9 @@ The viewer shows the current HDR or SDR branch. The analysis dock measures the p
 
 On a supported GPU, the WebGPU canvas is both the interactive and settled authoring preview. Input events are coalesced to one render per animation frame, and settling does not request or decode a PNG/AVIF replacement. The CPU/export pipeline remains authoritative for Chrome Proof and final export.
 
-Without WebGPU, the app uses the backend renderer and presents raw RGBA8 pixels in a persistent canvas. Bounded strip execution is used for CPU Full when the authored graph supports it. If a Full graph cannot use that bounded route, the viewer keeps the last valid frame, reports Full as unavailable, and lets you select a smaller tier; export quality is unchanged.
+Without WebGPU, the app uses the backend renderer and presents raw RGBA8 pixels in a persistent canvas. Native-scale CPU requests use bounded strips where the authored graph supports them. If that route cannot render the graph, the viewer keeps the last valid frame and reports the refusal; export quality is unchanged.
 
-The optional **High-quality preview** preference lives on the Technical tab. It uses a larger idle GPU proxy and a refined scope after you pause. It is off on every app load, lasts only for the current page session, and never changes source interpretation, adjustments, proof settings, export dimensions, or export quality.
+The **Preview response** control offers Responsive, Balanced, and Precise. Responsive aims for 33 ms current-edit feedback, Balanced for 66 ms, and Precise starts at the exact display scale with a 150 ms target. These are starting latency targets, not guarantees. Responsive and Balanced can show a labelled Coarse frame during interaction; after input stops, the same adjustment graph always refines to the display-required scale. The setting never changes export.
 
 ## HDR and SDR viewing
 
@@ -22,13 +22,13 @@ In single-frame mode, tap `V` (or click the active single-frame icon) to switch 
 
 ## Zoom and resolution
 
-- **Fit** scales the proxy into the viewport.
-- **100%** means one preview-proxy pixel per screen pixel.
+- **Fit** processes enough pixels for the displayed image and filters it for the viewport.
+- **100%** processes native source pixels in the visible region, with one processed pixel per device pixel after display scaling.
 - The slider, plus/minus controls, or typed percentage set other zooms.
 
-The resolution selector chooses the settled processing tier: **1K**, **2K**, **4K**, or **Full**. Full processes at the source resolution. The app may use a smaller transient image while a gesture is moving, but Ready is shown only after the selected tier is presented exactly; it does not silently substitute 4K for Full. Direct and tiled GPU execution are internal resource choices and do not change the selected resolution.
+The old 1K/2K/4K/Full selector is available only as a **Legacy tier override** in Settings diagnostics, for parity and memory investigation. Normal preview processing follows the displayed view. Direct and tiled GPU execution are internal resource choices.
 
-At **100%**, one pixel of the currently presented tier maps to one screen pixel. It is one original source pixel only when the Full tier is Ready. Use Full or final export for critical sharpness, fine noise, demosaicing, and texture judgments.
+At **100%** and above, Ready means the visible region was processed at native source scale. Above 100%, magnification does not add source information. For final delivery judgments, inspect the exported file as well.
 
 Proxy resampling preserves float values and uses a high-quality filter, but downsampling can still hide single-pixel clipping or artifacts.
 

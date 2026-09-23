@@ -21,31 +21,23 @@ def test_preview_resolution_contract_has_a_non_numeric_full_sentinel() -> None:
 def test_preview_diagnostics_separate_requested_and_presented_identity() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
-    assert "requestedTier: normalizedPreviewResolution()" in javascript
+    assert 'requestedTier: state.previewResolutionOverride ? normalizedPreviewResolution() : "display"' in javascript
     assert "presentedTier: state.acceptedPresentation?.tier || null" in javascript
     assert "presentedGeneration: state.acceptedPresentation?.generation ?? null" in javascript
     assert "currentGeneration: state.previewGeneration[state.currentView]" in javascript
     assert "previewDimensions: previewResolutionDimensions()" in javascript
 
 
-def test_full_is_offered_publicly_and_cpu_full_requests_bounded_strips() -> None:
-    """Full ships in the markup, not behind a query flag.
-
-    It was gated on bounded source transport and tiled execution passing their
-    release gates. Both are closed -- every preview module tiles and the source
-    is streamed in bounded chunks -- so Full is an ordinary choice now, offered
-    in both selectors that present the same setting. The engineering flag that
-    used to install it is gone rather than left behind gating nothing.
-    """
+def test_full_is_diagnostic_only_and_cpu_full_requests_bounded_strips() -> None:
+    """The old tier selector is confined to Settings diagnostics."""
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
 
-    preview_selector = html.split('id="preview-resolution"', 1)[1].split("</select>", 1)[0]
+    preview_selector = html.split('id="preview-latency"', 1)[1].split("</select>", 1)[0]
     settings_selector = html.split('id="settings-preview-resolution"', 1)[1].split("</select>", 1)[0]
-    assert '<option value="full">Full</option>' in preview_selector
+    assert '<option value="full">Full</option>' not in preview_selector
     assert '<option value="full">Full</option>' in settings_selector
     # Full is last, below 4K, because the list reads smallest to largest.
-    assert preview_selector.index('value="4096"') < preview_selector.index('value="full"')
     assert settings_selector.index('value="4096"') < settings_selector.index('value="full"')
     assert "engineeringFullPreview" not in javascript
     assert "Full · Engineering" not in javascript
@@ -184,9 +176,9 @@ def test_preview_preferences_migrate_unknown_values_to_the_default() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
     assert 'return PREVIEW_RESOLUTION_OPTIONS.has(normalized) ? normalized : DEFAULT_PREVIEW_RESOLUTION;' in javascript
-    assert "const selectablePreviewResolution = els.previewResolution?.querySelector(`option[value=\"${preferredPreviewResolution}\"]`)" in javascript
-    assert "? preferredPreviewResolution" in javascript
-    assert ": DEFAULT_PREVIEW_RESOLUTION;" in javascript
+    assert 'const preferredPreviewResolution = preferences.previewResolution === "auto"' in javascript
+    assert 'const selectablePreviewResolution = preferredPreviewResolution;' in javascript
+    assert 'state.previewResolutionOverride = selectablePreviewResolution !== "auto";' in javascript
     assert "clearLegacyUiPreferences();" in javascript
     assert '"hdr-finisher:high-quality-preview:v1",' in javascript
     assert '"hdr-finisher:compare-layout:v1",' in javascript

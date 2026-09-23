@@ -323,6 +323,8 @@
         viewport: this.viewportFor(intent, st),
         roiCatchUp: Boolean(intent.catchUp),
         panPass: Boolean(intent.panPass),
+        coarse: Boolean(intent.coarse),
+        hideStatus: intent.hideStatus !== false,
         sessionId: this.sessionId,
         token,
         isCurrent: token.isCurrent,
@@ -367,6 +369,8 @@
         viewport: Boolean(intent.viewport),
         catchUp: Boolean(intent.catchUp),
         panPass: Boolean(intent.panPass),
+        coarse: Boolean(intent.coarse),
+        hideStatus: intent.hideStatus !== false,
         allowInactive: Boolean(intent.allowInactive),
       };
       const st = this.laneState(lane);

@@ -293,19 +293,22 @@
               <span>Preview</span>
               <button id="preview-close" class="text-button" type="button">Close</button>
             </div>
-            <label for="preview-resolution">Maximum preview size
-              <select id="preview-resolution" aria-label="Preview resolution" title="Sets the maximum preview width and height. Higher settings use more memory; export quality is unchanged.">
-                <option value="1024">1K</option>
-                <option value="2048">2K</option>
-                <option value="4096">4K</option>
-                <option value="full">Full</option>
+            <label for="preview-latency">Preview response
+              <select id="preview-latency" aria-label="Preview response" title="Controls interaction speed; every coarse frame refines to the exact displayed view. Export quality is unchanged.">
+                <option value="responsive">Responsive · 33 ms target</option>
+                <option value="balanced" selected>Balanced · 66 ms target</option>
+                <option value="precise">Precise · exact first</option>
               </select>
             </label>
             <div class="preview-popover-status">
               <span>Current preview size</span>
               <strong id="preview-quality-status" aria-live="polite">Standard</strong>
             </div>
-            <p class="helper">Higher settings use more memory. Export quality is unchanged.</p>
+            <p class="helper">Coarse means a current edit at reduced scale. It always refines to Display exact at Fit or Native-region exact at 100% and above. Export quality is unchanged.</p>
+            <div id="preview-migration-notice" class="hidden" role="status">
+              Preview now follows the displayed view. Your previous preview size was moved to diagnostics; export quality is unchanged.
+              <button id="preview-migration-dismiss" type="button" class="text-button">Got it</button>
+            </div>
           </div>
           <div id="frame-popover" class="overlay-popover frame-popover hidden">
             <div class="popover-heading">
@@ -1635,15 +1638,14 @@
             </select>
           </label>
           <p class="helper">Auto uses WebGPU when available and falls back safely. CPU compatibility keeps preview rendering on the backend; export quality is unchanged.</p>
-          <label class="settings-field">Default preview resolution
-            <select id="settings-preview-resolution">
-              <option value="1024">1K</option>
-              <option value="2048">2K</option>
-              <option value="4096">4K</option>
-              <option value="full">Full</option>
+          <label class="settings-field">Preview response
+            <select id="settings-preview-preference">
+              <option value="responsive">Responsive</option>
+              <option value="balanced">Balanced</option>
+              <option value="precise">Precise</option>
             </select>
           </label>
-          <p class="helper">The selected tier is the processing resolution for preview work. Full processes at the source resolution and uses the most memory.</p>
+          <p class="helper">Responsive aims for 33 ms feedback, Balanced for 66 ms, and Precise starts exact with a 150 ms target. Coarse frames are labelled and always refine. Display exact follows the screen; Native-region exact samples source pixels at 100% zoom and above. Exact analysis is separate from the visible preview. Export quality is unchanged.</p>
           <label class="settings-field">Maximum GPU memory for previews
             <select id="settings-gpu-memory-limit">
               <option value="auto">Auto · 2 GiB initial budget</option>
@@ -1669,6 +1671,16 @@
             </select>
           </label>
           <p class="helper">Diagnostic, for comparing the two execution routes on the same grade. Direct and Tiled are required to produce identical pixels, so any visible difference between them is a defect worth reporting. Forcing Direct is refused when the budget cannot hold it, and the Output readout says which route actually ran.</p>
+          <label class="settings-field">Legacy tier override · diagnostic
+            <select id="settings-preview-resolution">
+              <option value="auto">Off · display driven</option>
+              <option value="1024">1K</option>
+              <option value="2048">2K</option>
+              <option value="4096">4K</option>
+              <option value="full">Full</option>
+            </select>
+          </label>
+          <p class="helper">For parity and memory diagnosis only. The previous tier choice is retained in preference migration diagnostics.</p>
           <label class="settings-field">Region of interest
             <select id="settings-roi-preview" title="When enabled, only the refinement pass is limited to the visible region: the tiles you can see are refined at full tier quality and the rest of the frame keeps the accepted image. Pan and zoom are never limited, so a newly exposed region always has complete pixels.">
               <option value="fit">Whole frame · refinement processes every tile</option>
@@ -1776,6 +1788,7 @@
   <script src="/static/preview-scheduler.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/tile-scheduler.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/render-coordinator.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+  <script src="/static/preview-latency-controller.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/desktop-chrome.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/app-dialog.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/application-shell.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>

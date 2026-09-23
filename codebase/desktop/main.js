@@ -64,10 +64,12 @@ const knownProjectPaths = new Set();
 const grantedExportPaths = new Set();
 
 const DEFAULT_APPLICATION_PREFERENCES = Object.freeze({
-  schemaVersion: 2,
+  schemaVersion: 3,
   defaultReferenceWhiteNits: 203,
   renderingMode: "auto",
-  previewResolution: "1024",
+  previewResolution: "auto",
+  previewPreference: "balanced",
+  previewMigration: { previousTier: null, noticeShown: false },
   maximumGpuMemoryGiB: "auto",
   folders: { projectSave: "", projectImport: "", fileSave: "", fileImport: "", presetSave: "" },
   shortcuts: {},
@@ -98,18 +100,25 @@ function cleanShortcutMap(value) {
 }
 
 function sanitizeApplicationPreferences(value = {}) {
+  const legacyTiers = ["1024", "2048", "4096", "full"];
+  const oldTier = legacyTiers.includes(String(value.previewResolution)) ? String(value.previewResolution) : null;
+  const migrating = Number(value.schemaVersion) < 3 && Boolean(oldTier);
+  const previewPreference = ["responsive", "balanced", "precise"].includes(value.previewPreference)
+    ? value.previewPreference : migrating ? oldTier === "1024" ? "responsive" : oldTier === "full" ? "precise" : "balanced" : "balanced";
   const presets = value.shortcutPresets && typeof value.shortcutPresets === "object" && !Array.isArray(value.shortcutPresets)
     ? Object.fromEntries(Object.entries(value.shortcutPresets).filter(([name, shortcuts]) => (
       typeof name === "string" && name.trim() && name.length <= 80 && shortcuts && typeof shortcuts === "object"
     )).slice(0, 50).map(([name, shortcuts]) => [name, cleanShortcutMap(shortcuts)]))
     : {};
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     defaultReferenceWhiteNits: Number(value.defaultReferenceWhiteNits) === 100 ? 100 : 203,
     renderingMode: ["auto", "gpu", "cpu"].includes(value.renderingMode) ? value.renderingMode : "auto",
-    previewResolution: ["1024", "2048", "4096", "full"].includes(String(value.previewResolution))
-      ? String(value.previewResolution)
-      : "1024",
+    previewResolution: !migrating && oldTier ? oldTier : "auto",
+    previewPreference,
+    previewMigration: { previousTier: legacyTiers.includes(String(value.previewMigration?.previousTier))
+      ? String(value.previewMigration.previousTier) : migrating ? oldTier : null,
+      noticeShown: value.previewMigration?.noticeShown === true },
     maximumGpuMemoryGiB: (() => {
       if (value.maximumGpuMemoryGiB === "auto") return "auto";
       const numeric = Number(value.maximumGpuMemoryGiB);

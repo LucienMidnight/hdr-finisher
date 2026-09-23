@@ -690,11 +690,13 @@ def test_preview_resolution_and_gpu_memory_are_persisted_application_preferences
     shell = (FRONTEND / "application-shell.js").read_text(encoding="utf-8")
     desktop = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
 
-    assert 'previewResolution: "1024"' in shell
+    assert 'previewResolution: "auto"' in shell
+    assert 'previewPreference: "balanced"' in shell
     assert 'maximumGpuMemoryGiB: "auto"' in shell
     assert 'new Set(["1024", "2048", "4096", "full"])' in shell
     assert "GPU_MEMORY_PRESETS_GIB = [1, 2, 3, 4, 6, 8, 12]" in shell
     assert 'id="settings-preview-resolution"' in html
+    assert 'id="settings-preview-preference"' in html
     for value, label in [("1024", "1K"), ("2048", "2K"), ("4096", "4K")]:
         assert f'<option value="{value}">{label}</option>' in html
     assert 'id="settings-gpu-memory-limit"' in html
@@ -706,10 +708,11 @@ def test_preview_resolution_and_gpu_memory_are_persisted_application_preferences
     assert 'byId("settings-gpu-memory-limit").addEventListener("change"' in shell
     assert 'byId("settings-gpu-memory-custom").addEventListener("change"' in shell
     assert "persistPreferences();" in shell
-    assert 'previewResolution: "1024"' in desktop
+    assert 'previewResolution: "auto"' in desktop
+    assert 'previewPreference: "balanced"' in desktop
     assert 'maximumGpuMemoryGiB: "auto"' in desktop
-    assert 'schemaVersion: 2' in shell
-    assert 'schemaVersion: 2' in desktop
+    assert 'schemaVersion: 3' in shell
+    assert 'schemaVersion: 3' in desktop
 
 
 def test_undo_redo_repaint_controls_from_the_restored_document() -> None:
@@ -939,7 +942,7 @@ def test_accepted_presentation_records_what_it_actually_is() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     accept = javascript[javascript.index("function acceptPresentation(") : javascript.index("function markPreviewUnavailable(")]
 
-    assert "const requestedTier = normalizedPreviewResolution();" in accept
+    assert 'const requestedTier = state.previewResolutionOverride === false ? "display" : normalizedPreviewResolution();' in accept
     # Exactness is a fact about the resolution the frame was processed at,
     # not about the size of the picture that came out. Geometry trims the
     # frame: a straighten at the 4K tier processes at 4096 and presents
@@ -950,7 +953,7 @@ def test_accepted_presentation_records_what_it_actually_is() -> None:
     # "Ready - 1K" over it and told the scheduler there was nothing to do.
     assert "const exact = longEdge > 0 && processedEdge === requiredProcessingLongEdge();" in accept
     assert "processedLongEdge: processedEdge," in accept
-    assert 'tier: exact ? (processedEdge === previewTargetLongEdge(requestedTier) ? requestedTier : "native-region") : null,' in accept
+    assert 'tier: exact ? (requestedTier === "display" ? "display"' in accept
     assert "requestedTier," in accept
     assert "exact," in accept
 
@@ -1554,7 +1557,7 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     assert 'id="preview-toggle"' in html
     assert 'aria-controls="preview-popover"' in html
     assert '>Preview</button>' in html
-    assert 'id="preview-resolution"' in html
+    assert 'id="preview-latency"' in html
     assert '["Current Preview Size", currentPreviewSizeLabel()]' in javascript
     assert "compact-workspace" in css
     assert "source-overlay-open" in css
@@ -1809,13 +1812,13 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
 
-    assert 'id="preview-resolution" aria-label="Preview resolution"' in html
-    for value, label in [("1024", "1K"), ("2048", "2K"), ("4096", "4K"), ("full", "Full")]:
-        assert f'<option value="{value}">{label}</option>' in html
-    preview_selector = html.split('id="preview-resolution"', 1)[1].split("</select>", 1)[0]
-    assert 'value="full"' in preview_selector
-    assert "Sets the maximum preview width and height." in html
-    assert html.index('id="overlay-toggle"') < html.index('id="overlay-popover"') < html.index('id="preview-resolution"')
+    assert 'id="preview-latency" aria-label="Preview response"' in html
+    preview_selector = html.split('id="preview-latency"', 1)[1].split("</select>", 1)[0]
+    for value in ("responsive", "balanced", "precise"):
+        assert f'value="{value}"' in preview_selector
+    assert 'value="full"' not in preview_selector
+    assert "Controls interaction speed" in html
+    assert html.index('id="overlay-toggle"') < html.index('id="overlay-popover"') < html.index('id="preview-latency"')
     assert ".toolbar-preview-resolution::after" in css
     assert "overflow-wrap: anywhere;" in css
     assert "white-space: normal;" in css
