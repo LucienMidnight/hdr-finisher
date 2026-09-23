@@ -1,5 +1,11 @@
 const desktop = window.hdrFinisherDesktop || null;
 const FINE_ADJUSTMENT_SCALE = 0.1;
+// Deferred follow-up delays (Phase 2 item 8): the pan follow-up fires shortly
+// after the scroll pauses; the whole-frame catch-up waits longer so it never
+// competes with the pan it follows. Declared before boot() runs, because the
+// coordinator is constructed during it.
+const ROI_CATCH_UP_DELAY_MS = 700;
+const ROI_PAN_DELAY_MS = 140;
 
 const latitudePresets = {
   WIDE: {
@@ -2020,12 +2026,6 @@ function initializePreviewPreferences() {
   if (els.scopeExactPeak) els.scopeExactPeak.checked = state.scopeExactPeak;
 }
 
-// Deferred follow-up delays (Phase 2 item 8): the pan follow-up fires shortly
-// after the scroll pauses; the whole-frame catch-up waits longer so it never
-// competes with the pan it follows.
-const ROI_CATCH_UP_DELAY_MS = 700;
-const ROI_PAN_DELAY_MS = 140;
-
 function initializePreviewScheduler() {
   if (!window.HDRPreviewScheduler) return;
   state.previewScheduler = new window.HDRPreviewScheduler({
@@ -2109,6 +2109,8 @@ function initializePreviewScheduler() {
   window.HDRFinisherPerformance = {
     snapshot: () => state.previewScheduler.snapshot(),
     renderCoordinator: () => state.renderCoordinator?.snapshot() || null,
+    // Phase 2 work item 9: legacy-versus-ROI A/B over the visible region.
+    roiParity: (options = {}) => runRoiParity(options),
     gpuSnapshot: () => state.gpuPreview?.diagnosticsSnapshot?.() || null,
     enableGpuInstrumentation: (enabled = true) => state.gpuPreview?.setInstrumentationEnabled?.(enabled),
     renderGpuTier: (longEdge) => renderGpuDraft(state.currentView, {
@@ -4136,6 +4138,80 @@ async function requestRoiPanRefinement() {
   return state.renderCoordinator
     ? state.renderCoordinator.requestPanRefinement(state.currentView)
     : false;
+}
+
+/**
+ * Phase 2 work item 9: the legacy-versus-ROI A/B path.
+ *
+ * Renders the same edit both ways at the same tier and compares the visible
+ * region pointwise through the frozen request contract. The generation is
+ * bumped between the two passes so the ROI pass re-renders the region instead
+ * of reusing the legacy pass's accepted tiles; the graph and edit state are
+ * identical, so the route is the only difference under test. The tolerance is
+ * supplied by the caller because the Phase 0 per-module tolerance sign-off is
+ * still outstanding.
+ */
+async function runRoiParity(options = {}) {
+  const lane = state.currentView;
+  if (!state.session) return { ok: false, reason: "no-session" };
+  if (!gpuPreviewEligible(lane)) return { ok: false, reason: "gpu-not-eligible" };
+  if (geometryDraftActive()) return { ok: false, reason: "geometry-draft-active" };
+  if (!state.gpuPreview?.readPresentationRegion) return { ok: false, reason: "no-readback" };
+  const longEdge = Number(options.longEdge) > 0 ? Number(options.longEdge) : refinementProxyLongEdge();
+  const visible = visibleOutputRect(els.previewCanvas.width, els.previewCanvas.height);
+  if (!visible) return { ok: false, reason: "fit-has-no-roi" };
+  const capture = () => state.gpuPreview.readPresentationRegion(
+    visible.width,
+    visible.height,
+    visible.x,
+    visible.y,
+  );
+  const accepted = () => {
+    const record = state.acceptedPresentation;
+    return record
+      ? {
+        generation: record.generation ?? null,
+        execution: record.execution || null,
+        processedLongEdge: record.processedLongEdge ?? null,
+      }
+      : null;
+  };
+
+  const legacy = await renderGpuDraft(lane, { tier: "refinement", longEdge, viewport: false });
+  if (!legacy) return { ok: false, reason: "legacy-render-refused", refusal: state.lastGpuDraftRefusal };
+  const legacyPixels = await capture();
+  if (!legacyPixels) return { ok: false, reason: "legacy-readback-failed" };
+  const legacyAccepted = accepted();
+
+  // A newer generation forces the ROI pass to re-render the region rather than
+  // reuse the legacy pass's tiles. The graph and edit state are unchanged.
+  invalidatePreview(lane, { markDirty: false });
+  const roi = await renderGpuDraft(lane, { tier: "refinement", longEdge });
+  if (!roi) return { ok: false, reason: "roi-render-refused", refusal: state.lastGpuDraftRefusal };
+  const roiPixels = await capture();
+  if (!roiPixels) return { ok: false, reason: "roi-readback-failed" };
+  const roiAccepted = accepted();
+
+  const comparison = window.HDRViewportRequest?.compareWithLegacy
+    ? window.HDRViewportRequest.compareWithLegacy({
+      roiPixels: roiPixels.values,
+      legacyPixels: legacyPixels.values,
+      roiRect: { x: 0, y: 0, width: roiPixels.width, height: roiPixels.height },
+      legacyRect: { x: 0, y: 0, width: legacyPixels.width, height: legacyPixels.height },
+      roiWidth: roiPixels.width,
+      legacyWidth: legacyPixels.width,
+      channels: 4,
+      tolerance: Number(options.tolerance) || 0,
+    })
+    : null;
+  return {
+    ok: true,
+    visible,
+    longEdge,
+    legacy: { ...legacyAccepted, pixels: { width: legacyPixels.width, height: legacyPixels.height } },
+    roi: { ...roiAccepted, pixels: { width: roiPixels.width, height: roiPixels.height } },
+    comparison,
+  };
 }
 
 function applyGpuMemoryBudget(value) {

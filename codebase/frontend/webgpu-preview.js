@@ -4115,6 +4115,58 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       }
     }
 
+    /**
+     * Diagnostic readback (Phase 2 work item 9). The retained presentation
+     * target is the frame both the legacy whole-frame pass and the ROI pass
+     * composite into, before the single copy to the canvas, so comparing a
+     * region of it compares rendered pixels rather than a canvas screenshot.
+     */
+    async readPresentationRegion(width = 16, height = 16, x = 0, y = 0) {
+      const target = this.presentationTarget;
+      if (!target?.texture || !target.valid) return null;
+      const originX = Math.min(Math.max(0, Math.trunc(Number(x) || 0)), target.width - 1);
+      const originY = Math.min(Math.max(0, Math.trunc(Number(y) || 0)), target.height - 1);
+      const copyWidth = Math.min(Math.max(1, Number(width) || 1), target.width - originX);
+      const copyHeight = Math.min(Math.max(1, Number(height) || 1), target.height - originY);
+      const bytesPerTexel = String(target.format).includes("16float") ? 8 : 4;
+      const bytesPerRow = Math.ceil((copyWidth * bytesPerTexel) / 256) * 256;
+      const buffer = this.device.createBuffer({
+        size: bytesPerRow * copyHeight,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+      });
+      const encoder = this.device.createCommandEncoder();
+      encoder.copyTextureToBuffer(
+        { texture: target.texture, origin: { x: originX, y: originY, z: 0 } },
+        { buffer, bytesPerRow, rowsPerImage: copyHeight },
+        { width: copyWidth, height: copyHeight },
+      );
+      this.device.queue.submit([encoder.finish()]);
+      try {
+        await buffer.mapAsync(GPUMapMode.READ);
+        const values = [];
+        if (bytesPerTexel === 8) {
+          const source = new Uint16Array(buffer.getMappedRange());
+          const stride = bytesPerRow / 2;
+          for (let row = 0; row < copyHeight; row += 1) {
+            for (let column = 0; column < copyWidth * 4; column += 1) {
+              values.push(halfToFloat(source[row * stride + column]));
+            }
+          }
+        } else {
+          const source = new Uint8Array(buffer.getMappedRange());
+          for (let row = 0; row < copyHeight; row += 1) {
+            for (let column = 0; column < copyWidth * 4; column += 1) {
+              values.push(source[row * bytesPerRow + column] / 255);
+            }
+          }
+        }
+        return { x: originX, y: originY, width: copyWidth, height: copyHeight, values };
+      } finally {
+        if (buffer.mapState === "mapped") buffer.unmap();
+        buffer.destroy();
+      }
+    }
+
     disposeDenoiseSelectorSeam() {
       this.denoiseSelectorGeneration += 1;
       const selector = this.denoiseSourceSelector;

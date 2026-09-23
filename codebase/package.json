@@ -68,6 +68,7 @@
     "test:tiled-stop-gate": "node tests/performance/tiled-stop-gate.js",
     "test:roi-catch-up": "node tests/performance/roi-catch-up.js",
     "test:roi-pan-cache": "node tests/performance/roi-pan-cache.js",
+    "test:roi-parity": "node tests/performance/roi-parity.js",
     "test:electron": "node tests/run-in-electron.js"
   },
   "devDependencies": {

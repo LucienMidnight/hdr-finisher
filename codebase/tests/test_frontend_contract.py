@@ -358,6 +358,26 @@ def test_app_emits_intent_to_the_render_coordinator() -> None:
     assert "state.renderCoordinator.requestPanRefinement(state.currentView)" in javascript
 
 
+def test_roi_parity_diagnostic_compares_legacy_and_roi() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    contract = (FRONTEND / "viewport-request.js").read_text(encoding="utf-8")
+
+    # Work item 9: the A/B path renders the same edit whole frame and ROI, with
+    # a newer generation between the passes so the ROI route cannot answer from
+    # the legacy pass's accepted tiles, then compares the visible region.
+    assert "roiParity: (options = {}) => runRoiParity(options)," in javascript
+    assert "async function runRoiParity(options = {}) {" in javascript
+    assert 'renderGpuDraft(lane, { tier: "refinement", longEdge, viewport: false })' in javascript
+    assert "compareWithLegacy({" in javascript
+    assert "roiPixels: roiPixels.values," in javascript
+    assert "legacyPixels: legacyPixels.values," in javascript
+    # The comparison reads the retained presentation target, which is the frame
+    # both routes composite into, not a canvas screenshot.
+    assert "async readPresentationRegion(" in webgpu
+    assert "static compareWithLegacy(options = {})" in contract
+
+
 def test_roi_refinement_has_a_settings_surface() -> None:
     markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
