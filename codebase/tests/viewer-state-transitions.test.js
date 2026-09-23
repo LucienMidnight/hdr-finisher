@@ -31,7 +31,7 @@ vm.runInContext(
     extract("function normalizedPreviewResolution(", "function previewResolutionLabel("),
     extract("function deriveViewerState(", "function viewerState("),
     extract("function viewerStatusLabel(", "function renderViewerStatus("),
-    'function previewResolutionLabel(value) { return value === "full" ? "Full" : `${Math.round(Number(value) / 1024)}K`; }',
+    'function previewResolutionLabel(value) { return value === "display" ? "Display exact" : value === "full" ? "Full" : `${Math.round(Number(value) / 1024)}K`; }',
     "globalThis.normalizedPreviewResolution = normalizedPreviewResolution;",
     "globalThis.deriveViewerState = deriveViewerState;",
     "globalThis.viewerStatusLabel = viewerStatusLabel;",
@@ -71,6 +71,19 @@ test("an exact result at the current generation is Ready", () => {
   assert.equal(viewer.status, "ready");
   assert.equal(viewer.tier, "4096");
   assert.equal(viewer.presentedTier, "4096");
+});
+
+test("zoomed scale change cannot report Ready over the previous exact pixels", () => {
+  const viewer = derive({ requiredProcessingEdge: 4200,
+    accepted: presentation({ processedLongEdge: 800, requestedTier: "display", tier: "display" }),
+    requestedTier: "display" });
+  assert.equal(viewer.status, "updating");
+  assert.equal(viewer.detail, "scale");
+  assert.equal(viewerStatusLabel(viewer), "Preparing view — Display exact");
+  const ready = derive({ requiredProcessingEdge: 4200,
+    accepted: presentation({ processedLongEdge: 4200, requestedTier: "display", tier: "display" }),
+    requestedTier: "display" });
+  assert.equal(ready.status, "ready");
 });
 
 test("a newer edit generation is Updating, and the same-tier image stays presented", () => {

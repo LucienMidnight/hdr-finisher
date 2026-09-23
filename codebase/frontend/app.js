@@ -430,6 +430,7 @@ const state = {
   gpuMemoryBudget: "auto",
   detailInteractionRestore: null,
   previewScheduler: null,
+  inactiveSourceController: null,
   gpuPreparedLane: { hdr: false, sdr: false },
   scopeZoneOverlay: null,
   lastExportPath: "",
@@ -984,6 +985,7 @@ function deriveViewerState({
   currentGeneration,
   lane,
   geometrySignature: currentGeometrySignature,
+  requiredProcessingEdge = null,
   unavailableReason = "",
 } = {}) {
   const tier = requestedTier === "display" ? "display"
@@ -998,12 +1000,15 @@ function deriveViewerState({
   if (!selectedTierAccepted) return { status: "preparing", tier, presentedTier, detail: "",
     coarse: Boolean(laneMatches && accepted.coarse && accepted.generation === currentGeneration) };
   const geometryCurrent = accepted.geometrySignature === currentGeometrySignature;
-  const current = accepted.generation === currentGeneration && geometryCurrent;
+  const scaleCurrent = requiredProcessingEdge == null
+    || accepted.processedLongEdge === requiredProcessingEdge;
+  const current = accepted.generation === currentGeneration && geometryCurrent && scaleCurrent;
   // A geometry change is the slow one -- it invalidates the source proxy, so
   // the whole frame is fetched and re-rolled rather than re-graded. Saying so
   // is the difference between a viewer that looks busy and one that looks
   // stuck.
-  return { status: current ? "ready" : "updating", tier, presentedTier, detail: geometryCurrent ? "" : "geometry" };
+  return { status: current ? "ready" : "updating", tier, presentedTier,
+    detail: !geometryCurrent ? "geometry" : !scaleCurrent ? "scale" : "" };
 }
 
 function viewerState(lane = state.currentView) {
@@ -1013,6 +1018,7 @@ function viewerState(lane = state.currentView) {
     currentGeneration: state.previewGeneration[lane],
     lane,
     geometrySignature: geometrySignature(),
+    requiredProcessingEdge: requiredProcessingLongEdge(),
     unavailableReason: state.previewUnavailableReason || "",
   });
 }
@@ -1031,6 +1037,7 @@ function viewerStatusLabel(viewer = viewerState()) {
   }
   if (viewer.status === "updating") {
     if (viewer.detail === "geometry") return `Applying crop & rotation — ${tierLabel}`;
+    if (viewer.detail === "scale") return `Preparing view — ${tierLabel}`;
     return `Updating — ${tierLabel}`;
   }
   return `Ready — ${tierLabel}`;
@@ -2074,11 +2081,13 @@ function initializePreviewScheduler() {
     onFrame: async (task) => {
       if (state.localMaskDraftDirty) return false;
       let decision = interactiveScaleDecision(task.lane);
-      if (interactiveDraftGuaranteedTiled(task.lane) && !decision.coarse
+      const tiled = interactiveDraftGuaranteedTiled(task.lane);
+      if (tiled && !decision.coarse
         && state.previewLatencyPreference !== "precise") {
         decision = { edge: Math.max(256, Math.round(refinementProxyLongEdge() * 0.5)),
           coarse: true, scale: 0.5 };
       }
+      if (decision.coarse) decision.edge = responseCoarseLongEdge(refinementProxyLongEdge());
       const detailActive = gpuDetailGraphActive(task.lane);
       const detailInteraction = state.detailInteractionRestore?.lane === task.lane;
       // A queued interactive callback may become runnable only after pointerup
@@ -2098,7 +2107,9 @@ function initializePreviewScheduler() {
       }
       const rendered = await renderGpuDraft(task.lane, {
         longEdge: decision.edge,
-        tier: "interactive",
+        // The interactive tier refuses tiled work. Coarse feedback at native
+        // zoom must use the bounded refinement route, then settle exact.
+        tier: tiled && decision.coarse ? "refinement" : "interactive",
         coarse: decision.coarse,
       });
       // Detail adds three full-frame filtering passes. Keep at most one such
@@ -2346,9 +2357,13 @@ function initializePreviewScheduler() {
 
 function interactiveDraftGuaranteedTiled(lane = state.currentView) {
   const accepted = state.acceptedPresentation;
-  if (!state.gpuPreview?.available || !selectedTierReady(lane)
-    || accepted?.lane !== lane || !(accepted.width > 0 && accepted.height > 0)) return false;
-  return state.gpuPreview.minimumExecutionDecision(
+  // An edit bumps the generation before this prediction runs. The previous
+  // exact frame still describes the same viewport and allocation footprint.
+  if (!state.gpuPreview?.available || accepted?.lane !== lane
+    || accepted.geometrySignature !== geometrySignature()
+    || accepted.processedLongEdge !== requiredProcessingLongEdge()
+    || !(accepted.width > 0 && accepted.height > 0)) return false;
+  return accepted.execution === "tiled" || state.gpuPreview.minimumExecutionDecision(
     accepted.width,
     accepted.height,
     state.previewResolutionOverride ? normalizedPreviewResolution() : "display",
@@ -4795,6 +4810,15 @@ function interactiveScaleDecision(lane = state.currentView) {
     visiblePixels: visibleEdge * visibleEdge,
     interacting: true,
   }) || { edge: interactiveProxyLongEdge(), coarse: false, scale: 1 };
+}
+
+function responseCoarseLongEdge(exactEdge) {
+  // Reuse one small source level across nearby zooms and graph changes. Exact
+  // output remains at the display-required edge in the mandatory follow-up.
+  const cap = state.previewLatencyPreference === "responsive" ? 1024 : 2048;
+  const edge = Math.min(cap, Math.max(256, exactEdge - 1));
+  return edge >= 1024 ? (edge >= 2048 ? 2048 : 1024)
+    : edge >= 512 ? 512 : 256;
 }
 
 function globalDetailActive(lane = state.currentView) {
@@ -11953,6 +11977,9 @@ async function preloadInactiveLane(lane, generation) {
     await renderComparisonPreview(lane);
     return;
   }
+  const controller = new AbortController();
+  state.inactiveSourceController?.abort();
+  state.inactiveSourceController = controller;
   try {
     const sourceIdentity = gpuPreviewSourceOptions(lane)?.identity || "source";
     await state.gpuPreview.loadProxy(
@@ -11962,12 +11989,16 @@ async function preloadInactiveLane(lane, generation) {
       geometrySignature(),
       state.editRevision,
       sourceIdentity,
+      { signal: controller.signal, isCurrent: () => !controller.signal.aborted
+        && generation === state.previewGeneration[lane] },
     );
-    if (generation !== state.previewGeneration[lane]) return;
+    if (controller.signal.aborted || generation !== state.previewGeneration[lane]) return;
     state.gpuPreparedLane[lane] = true;
     renderCompareStatus();
   } catch (error) {
-    console.debug("Inactive GPU lane preparation skipped.", error);
+    if (!controller.signal.aborted) console.debug("Inactive GPU lane preparation skipped.", error);
+  } finally {
+    if (state.inactiveSourceController === controller) state.inactiveSourceController = null;
   }
 }
 
@@ -12306,12 +12337,37 @@ async function refreshNavigationThumbnail() {
 function scheduleZoomRefinement() {
   if (!state.session || !gpuPreviewEligible(state.currentView)) return;
   window.clearTimeout(state.zoomRefinementTimer);
-  state.zoomRefinementTimer = window.setTimeout(() => {
+  // A pending adjustment settle from the previous scale can otherwise race
+  // this zoom and start a whole-frame CPU fallback at the new edge.
+  state.previewScheduler?.cancel();
+  state.inactiveSourceController?.abort();
+  state.inactiveSourceController = null;
+  // Zoom changes the requested processing scale without changing the edit
+  // generation. Recompute the visible status before the debounce expires.
+  renderViewerStatus();
+  state.zoomRefinementTimer = window.setTimeout(async () => {
     state.zoomRefinementTimer = 0;
     if (!state.session || !gpuPreviewEligible(state.currentView)) return;
     const target = requiredProcessingLongEdge();
     if (state.acceptedPresentation?.processedLongEdge !== target) {
-      void renderGpuDraft(state.currentView, { tier: "refinement", longEdge: target, reason: "zoom-scale" });
+      const lane = state.currentView;
+      const sessionId = state.session.session_id;
+      const decision = interactiveScaleDecision(lane);
+      if (decision.coarse && decision.edge < target) {
+        // Zoom can require the tiled renderer even for its reduced pass.
+        // Interactive tier explicitly refuses tiles; refinement tier accepts
+        // them while the coarse flag keeps the presentation truthful.
+        await renderGpuDraft(lane, { tier: "refinement", longEdge: responseCoarseLongEdge(target),
+          coarse: true, reason: "zoom-current-coarse" });
+      }
+      // A failed, cancelled, or superseded coarse pass never cancels the exact
+      // obligation. A newer zoom owns its own request and wins at presentation.
+      if (state.session?.session_id !== sessionId || state.currentView !== lane
+        || requiredProcessingLongEdge() !== target) return;
+      if (state.acceptedPresentation?.processedLongEdge !== target
+        || !state.acceptedPresentation.exact) {
+        await renderGpuDraft(lane, { tier: "refinement", longEdge: target, reason: "zoom-scale" });
+      }
     } else {
       noteViewerPan();
     }

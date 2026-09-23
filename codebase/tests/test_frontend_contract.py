@@ -1025,7 +1025,7 @@ def test_detail_interaction_backpressures_the_gpu_queue() -> None:
     webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
 
     scheduler = javascript[javascript.index("function initializePreviewScheduler()") : javascript.index("function observeScopeSize()")]
-    assert 'tier: "interactive"' in scheduler
+    assert 'tier: tiled && decision.coarse ? "refinement" : "interactive"' in scheduler
     assert "const detailActive = gpuDetailGraphActive(task.lane);" in scheduler
     assert "const detailInteraction = state.detailInteractionRestore?.lane === task.lane;" in scheduler
     assert "if (detailInteraction && !state.previewScheduler?.interacting) return false;" in scheduler
