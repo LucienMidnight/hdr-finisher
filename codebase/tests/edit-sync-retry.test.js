@@ -41,6 +41,7 @@ test("scope refresh proceeds after one successful sync", async () => {
       scopeGeneration: 0, scopeMode: "histogram" },
     syncGlobalEditState: async () => { syncCalls++; context.state.globalEditDirty = false; return true; },
     activeScopeRegion: () => null,
+    window: { HDRWholeImagePreviewPipe: { edgeFor: (_purpose, edge) => Math.min(1600, edge) } },
     gpuScopeEligible: () => true,
     enqueueGpuScopeRequest: async () => true,
   });

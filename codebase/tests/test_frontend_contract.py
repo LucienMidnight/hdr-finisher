@@ -909,7 +909,7 @@ def test_interaction_holds_the_selected_tier_once_it_has_produced_a_result() -> 
 
     assert "clamp(displayedLongEdge(), 512, 1024)" in bootstrap
     assert "residentAuthoringLongEdge" not in interactive
-    assert "if (selectedTierReady()) return previewTargetLongEdge();" in interactive
+    assert "if (selectedTierReady()) return requiredProcessingLongEdge();" in interactive
     assert "return bootstrapProxyLongEdge();" in interactive
     # The bounded proxy is reachable only through the bootstrap helper.
     assert "clamp(displayedLongEdge()" not in interactive
@@ -917,7 +917,7 @@ def test_interaction_holds_the_selected_tier_once_it_has_produced_a_result() -> 
     assert "const resident = residentAuthoringLongEdge();" in settled
     assert "if (resident) return resident;" in settled
     # The settled pass aims at the selected tier, not at a display-bounded edge.
-    assert "return Math.round(previewTargetLongEdge());" in settled
+    assert "return Math.round(requiredProcessingLongEdge());" in settled
     assert "clamp(displayedLongEdge()" not in settled
 
 
@@ -948,9 +948,9 @@ def test_accepted_presentation_records_what_it_actually_is() -> None:
     # Equality, not "at least". A frame processed above the selected tier is
     # not that tier either -- a resident Full frame satisfying ">=" reported
     # "Ready - 1K" over it and told the scheduler there was nothing to do.
-    assert "const exact = longEdge > 0 && processedEdge === previewTargetLongEdge(requestedTier);" in accept
+    assert "const exact = longEdge > 0 && processedEdge === requiredProcessingLongEdge();" in accept
     assert "processedLongEdge: processedEdge," in accept
-    assert "tier: exact ? requestedTier : null," in accept
+    assert 'tier: exact ? (processedEdge === previewTargetLongEdge(requestedTier) ? requestedTier : "native-region") : null,' in accept
     assert "requestedTier," in accept
     assert "exact," in accept
 
@@ -2629,8 +2629,9 @@ def test_denoise_phase_two_keeps_analysis_structural_and_resolve_reconstruction_
     assert "pipelines.analysis" not in resolve_body, "reconstruction must not dispatch analysis"
     assert "analysisDispatches" not in resolve_body, "reconstruction must not count an analysis dispatch"
     assert "if (candidateIsNew) candidate.texture.destroy();" in preview
-    assert "longEdge = retainedOriginal.longEdge;" in preview
-    assert "retainedOriginal.sourceIdentity === sourceIdentity" in preview
+    assert "longEdge = retainedOriginal.longEdge;" not in preview
+    assert 'recalculateDenoise(lane, { longEdge, renderAfter: false })' in app_script
+    assert 'denoiseSelector.identity === proxy.identity' in preview
     assert "cancelDenoiseProcessing({ selectOriginal = true } = {})" in preview
     assert "runtime.generation += 1;" in app_script
     assert 'const sourceIdentity = gpuPreviewSourceOptions(lane)?.identity || "source";' in app_script

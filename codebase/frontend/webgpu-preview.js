@@ -927,6 +927,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.maskBindGroupLayout = null;
       this.maskPipelineLayout = null;
       this.maskPipelines = null;
+      this.gpuAnalyticMasksEnabled = true;
       this.instrumentationEnabled = false;
       this.performanceMetrics = { renders: [], scopes: [], maskEvents: [], stages: [], allocations: [], presentations: [] };
       // Phase 0 denoise seam. This remains null until the explicit selector
@@ -1163,6 +1164,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           qualify: this.createMaskPipeline("lumaQualificationFragmentMain"),
           refine: this.createMaskPipeline("maskRefinementFragmentMain"),
           combine: this.createMaskPipeline("maskCombineFragmentMain"),
+          linearGradient: this.createMaskPipeline("linearGradientFragmentMain"),
         };
         const lostDevice = this.device;
         this.device.lost.then((info) => {
@@ -1859,7 +1861,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
      * frame. The frame dimensions are confirmed after the fetch; a mismatch
      * falls back to the whole-frame route.
      */
-    roiRegionFor(canvas, context, sessionId, lane, adjustments, sourceSize, referenceWhiteNits, sourceOptions, activeLocals) {
+    roiRegionFor(canvas, context, sessionId, lane, adjustments, sourceSize, referenceWhiteNits, sourceOptions, activeLocals, longEdge) {
       const viewport = sourceOptions?.viewport || null;
       if (!viewport) return null;
       const geometrySignature = JSON.stringify(adjustments.shared?.geometry || {});
@@ -1868,6 +1870,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const previousFrame = this.lastPresentedFrame;
       const Contract = typeof window !== "undefined" ? window.HDRViewportRequest : null;
       if (!previousFrame?.workingSpace || !Contract?.sourceFetchRegion) return null;
+      // A viewport is measured in the requested frame's coordinates. A
+      // retained frame from the preceding scale cannot anchor its ROI fetch.
+      if (Math.max(previousFrame.width, previousFrame.height) !== longEdge) return null;
       const Scheduler = typeof window !== "undefined" ? window.HDRTileScheduler : null;
       const tileSize = Math.max(64, Math.floor(Number(sourceOptions?.tileSize) || Scheduler?.DEFAULT_TILE_SIZE || 512));
       const halo = this.roiSourceHalo(
@@ -1891,6 +1896,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const Contract = typeof window !== "undefined" ? window.HDRViewportRequest : null;
       if (!Contract) throw new Error("HDRViewportRequest is required for tiled rendering");
       const source = sourceSize || { width: frame.width, height: frame.height };
+      const requested = sourceOptions?.viewport;
+      const left = Math.max(0, Math.min(frame.width, Math.floor(Number(requested?.x) || 0)));
+      const top = Math.max(0, Math.min(frame.height, Math.floor(Number(requested?.y) || 0)));
+      const right = Math.max(left, Math.min(frame.width, Math.ceil((Number(requested?.x) || 0) + (Number(requested?.width) || 0))));
+      const bottom = Math.max(top, Math.min(frame.height, Math.ceil((Number(requested?.y) || 0) + (Number(requested?.height) || 0))));
+      const visible = requested && right > left && bottom > top
+        ? { x: left, y: top, width: right - left, height: bottom - top }
+        : null;
       return Contract.build({
         sessionId, lane, geometrySignature,
         applicationGeneration: sourceOptions?.applicationGeneration,
@@ -1898,7 +1911,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         output: { width: frame.width, height: frame.height },
         source,
         scale: this.sourcePixelScaleFor(frame, source),
-        visible: sourceOptions?.viewport || null,
+        visible,
         minimumRoiFraction: sourceOptions?.minimumRoiFraction,
         tileSize, halo,
         dpr: sourceOptions?.dpr,
@@ -2000,7 +2013,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // every other case.
       const previousFrame = this.lastPresentedFrame;
       const region = this.roiRegionFor(
-        canvas, context, sessionId, lane, adjustments, sourceSize, referenceWhiteNits, sourceOptions, activeLocals,
+        canvas, context, sessionId, lane, adjustments, sourceSize, referenceWhiteNits, sourceOptions, activeLocals, longEdge,
       );
       let proxy = await this.loadProxy(
         sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity,
@@ -2158,9 +2171,12 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
      * single-tile path used, so pinning and eviction are unchanged.
      */
     async loadLocalMaskTiles(
-      sessionId, batch, longEdge, editRevision, geometrySignature, isCurrent, signal,
+      sessionId, batch, longEdge, editRevision, geometrySignature, isCurrent, signal, proxy = null,
     ) {
       const signature = gpuMaskIdentity(batch.local.mask);
+      if (this.gpuAnalyticMasksEnabled && proxy && isGpuLinearGradientMask(batch.local.mask, geometrySignature)) {
+        return this.loadGpuLinearGradientTiles(sessionId, batch, longEdge, geometrySignature, signature, isCurrent, proxy);
+      }
       // A revision also changes for grade values, opacity and bypass. None of
       // those alter the spatial mask, so including it here discarded every
       // resident tile after every local edit (tiles x local layers). Spatial
@@ -2232,6 +2248,52 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return { localIndex: batch.localIndex, entries };
     }
 
+    loadGpuLinearGradientTiles(sessionId, batch, longEdge, geometrySignature, signature, isCurrent, proxy) {
+      const prefix = `${sessionId}:${batch.local.id}:${longEdge}:${geometrySignature}:${signature}:`;
+      const entries = new Map();
+      const encoder = this.device.createCommandEncoder();
+      const buffers = [];
+      let generated = 0;
+      const expression = batch.local.mask;
+      const leaf = expression.leaf;
+      for (const tile of batch.tiles) {
+        if (!isCurrent()) break;
+        const key = `${prefix}${tile.key}`;
+        let entry = this.maskTiles.get(key);
+        if (!entry) {
+          const rect = tile.haloRect;
+          const texture = this.createMaskTexture(rect.width, rect.height);
+          const values = new Float32Array([
+            Number(leaf.start.x), Number(leaf.start.y), Number(leaf.end.x), Number(leaf.end.y),
+            Number(leaf.gradient_midpoint_1), Number(leaf.gradient_midpoint_2),
+            rect.x, rect.y, proxy.width, proxy.height,
+            expression.inverted ? 1 : 0, expression.enabled === false ? 0 : 1,
+          ]);
+          const buffer = this.createStorageBuffer(values);
+          this.device.queue.writeBuffer(buffer, 0, values);
+          this.encodeMaskPass(encoder, this.maskPipelines.linearGradient,
+            this.createMaskBindGroup(proxy.texture, buffer), texture);
+          buffers.push(buffer);
+          entry = { key, texture, width: rect.width, height: rect.height,
+            byteSize: rect.width * rect.height * 2, kind: "gpu-linear-gradient" };
+          this.maskTiles.set(key, entry);
+          generated += 1;
+        } else {
+          this.maskTiles.delete(key);
+          this.maskTiles.set(key, entry);
+        }
+        entries.set(tile.key, entry);
+      }
+      if (generated) {
+        this.device.queue.submit([encoder.finish()]);
+        this.destroyAfterActiveRenders(() => buffers.forEach((buffer) => buffer.destroy()));
+        this.performanceMetrics.maskEvents ||= [];
+        this.performanceMetrics.maskEvents.push({ kind: "gpu-linear-gradient", longEdge, tiles: generated,
+          cpuMaskRequest: false });
+      }
+      return { localIndex: batch.localIndex, entries };
+    }
+
     trimMaskTiles(pinned = []) {
       const protectedKeys = new Set(pinned);
       const budget = this.cacheBudgetBytes(0.20, 32 * 1024 * 1024);
@@ -2283,6 +2345,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const denoiseActive = Boolean(
         denoiseSelector?.cache && denoiseSelector.original
         && denoiseSelector.selected === "resolved"
+        && denoiseSelector.identity === proxy.identity
         && denoiseSelector.original.width === proxy.width
         && denoiseSelector.original.height === proxy.height,
       );
@@ -2430,7 +2493,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           maskBatches,
           (batch, _index, signal) => this.loadLocalMaskTiles(
             options.sessionId, batch, longEdge, editRevision,
-            options.geometrySignature || "{}", isCurrent, signal,
+            options.geometrySignature || "{}", isCurrent, signal, proxy,
           ),
           isCurrent,
         )
@@ -2998,20 +3061,18 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const sourceIdentity = sourceOptions?.identity || "source";
       const context = canvas.getContext("webgpu");
       if (!context) throw new Error("The comparison WebGPU canvas context is unavailable");
-      const retainedOriginal = this.denoiseSourceSelector?.original;
-      if (retainedOriginal
-        && retainedOriginal.sessionId === sessionId
-        && retainedOriginal.lane === lane
-        && retainedOriginal.geometrySignature === geometrySignature
-        && retainedOriginal.sourceIdentity === sourceIdentity) {
-        longEdge = retainedOriginal.longEdge;
-      }
       // Phase 3 item 2: a magnified ROI fetches only the region it processes,
       // at the mip this pass needs. Admission has not run yet, so a region
       // request that is later admitted Direct is replaced by the whole frame
       // below.
-      const region = this.roiRegionFor(
-        canvas, context, sessionId, lane, adjustments, sourceSize, referenceWhiteNits, sourceOptions, activeLocals,
+      // Denoise evidence is indexed against its whole processing frame. The
+      // analysis has already made that source level resident, so reuse it and
+      // process only the visible ROI rather than uploading a second region.
+      const denoiseAtScale = this.denoiseSourceSelector?.selected === "resolved"
+        && this.denoiseSourceSelector?.original?.longEdge === longEdge
+        && this.denoiseSourceSelector?.original?.sourceIdentity === sourceIdentity;
+      const region = denoiseAtScale ? null : this.roiRegionFor(
+        canvas, context, sessionId, lane, adjustments, sourceSize, referenceWhiteNits, sourceOptions, activeLocals, longEdge,
       );
       let proxy = await this.loadProxy(
         sessionId,
@@ -5368,7 +5429,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         const response = await fetch(`/api/session/${sessionId}/proxy/${lane}?long_edge=${longEdge}&format=rgba16f&edit_revision=${editRevision}&geometry_signature=${encodeURIComponent(geometrySignature)}`, { signal });
         if (!response.ok) {
           const payload = await response.json().catch(() => null);
-          const error = new Error(payload?.detail || (response.status === 409
+          const error = new Error((typeof payload?.detail === "string" ? payload.detail : payload?.detail?.message) || (response.status === 409
             ? "WebGPU geometry proxy is waiting for the committed edit"
             : "WebGPU proxy could not be loaded"));
           error.recoverable = response.status === 409 || response.status === 507;
@@ -6288,6 +6349,26 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     return expression?.operator === "leaf"
       && expression.leaf?.type === "luminance_range"
       && (!expression.children || expression.children.length === 0);
+  }
+
+  function isGpuLinearGradientMask(expression, geometrySignature) {
+    if (expression?.operator !== "leaf" || expression.leaf?.type !== "linear_gradient"
+      || expression.children?.length || expression.leaf.gradient_luma_enabled
+      || Number(expression.leaf.gradient_fan || 0) !== 0
+      || !(Number(expression.leaf.gradient_midpoint_1) > 0)
+      || !(Number(expression.leaf.gradient_midpoint_2) > Number(expression.leaf.gradient_midpoint_1))
+      || !(Number(expression.leaf.gradient_midpoint_2) < 1)) return false;
+    let geometry;
+    try { geometry = JSON.parse(geometrySignature); } catch (_) { return false; }
+    const crop = geometry?.crop || {};
+    return Number(geometry.rotation || 0) === 0
+      && !geometry.flip_horizontal && !geometry.flip_vertical
+      && Number(geometry.straighten_angle || 0) === 0
+      && Number(geometry.perspective_horizontal || 0) === 0
+      && Number(geometry.perspective_vertical || 0) === 0
+      && Number(geometry.perspective_rotate || 0) === 0
+      && Number(crop.x ?? 0) === 0 && Number(crop.y ?? 0) === 0
+      && Number(crop.width ?? 1) === 1 && Number(crop.height ?? 1) === 1;
   }
 
   function gpuLumaBaseIdentity(expression) {
@@ -8014,6 +8095,23 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       let source = textureLoad(sourceTexture, pixelCoordinate(input.position.xy), 0).rgb;
       let luma = dot(source, vec3f(0.2722287, 0.6740818, 0.0536895));
       return vec4f(luma, luma, luma, 1.0);
+    }
+
+    @fragment fn linearGradientFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let coordinate = input.position.xy + vec2f(p[6], p[7]);
+      let uv = coordinate / max(vec2f(p[8], p[9]), vec2f(1.0));
+      let axis = vec2f(p[2] - p[0], p[3] - p[1]);
+      let position = dot(uv - vec2f(p[0], p[1]), axis) / max(dot(axis, axis), 0.00000001);
+      let first = clamp(position / max(p[4], 0.000001), 0.0, 1.0);
+      let middle = clamp((position - p[4]) / max(p[5] - p[4], 0.000001), 0.0, 1.0);
+      let last = clamp((position - p[5]) / max(1.0 - p[5], 0.000001), 0.0, 1.0);
+      var value = select(1.0 - first / 3.0,
+        select(2.0 / 3.0 - middle / 3.0, (1.0 - last) / 3.0, position > p[5]),
+        position > p[4]);
+      if (p[10] > 0.5) { value = 1.0 - value; }
+      if (p[11] < 0.5) { value = 0.0; }
+      value = round(clamp(value, 0.0, 1.0) * 255.0) / 255.0;
+      return vec4f(value, value, value, 1.0);
     }
 
     @fragment fn lumaQualificationFragmentMain(input: VertexOut) -> @location(0) vec4f {

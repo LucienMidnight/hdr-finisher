@@ -473,6 +473,7 @@ const state = {
   vignetteCenterGesture: null,
   groupPresetContext: null,
   previewCache: { hdr: null, sdr: null },
+  zoomRefinementTimer: 0,
   previewControllers: { hdr: null, sdr: null },
   previewInfoByLane: {
     hdr: {
@@ -887,6 +888,7 @@ function normalizedPreviewResolution(value = state.previewResolution) {
 }
 
 function previewResolutionLabel(value = state.previewResolution) {
+  if (value === "native-region") return "Native region";
   const normalized = normalizedPreviewResolution(value);
   if (normalized === "full") return "Full";
   return `${Math.round(Number(normalized) / 1024)}K`;
@@ -898,6 +900,12 @@ function previewTargetLongEdge(value = state.previewResolution) {
   if (normalized === "full") return Math.max(256, sourceEdge || 256);
   const requested = Number(normalized);
   return Math.max(256, Math.min(sourceEdge || requested, requested));
+}
+
+function requiredProcessingLongEdge() {
+  return state.zoomMode === "custom" && state.zoomPercent >= 100
+    ? previewTargetLongEdge("full")
+    : previewTargetLongEdge();
 }
 
 function previewResolutionDimensions(value = state.previewResolution) {
@@ -1086,13 +1094,13 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
   // happened when it did not is the same lie in the other direction. If a
   // render ever does overshoot, this reports Preparing and the scheduler
   // renders the tier properly, which self-heals instead of misreporting.
-  const exact = longEdge > 0 && processedEdge === previewTargetLongEdge(requestedTier);
+  const exact = longEdge > 0 && processedEdge === requiredProcessingLongEdge();
   state.acceptedPresentation = {
     lane,
     generation,
     geometrySignature: geometrySignature(),
     requestedTier,
-    tier: exact ? requestedTier : null,
+    tier: exact ? (processedEdge === previewTargetLongEdge(requestedTier) ? requestedTier : "native-region") : null,
     exact,
     processedLongEdge: processedEdge,
     schedulerTier,
@@ -1329,6 +1337,9 @@ const els = {
   projectSave: document.getElementById("project-save"),
   fileInput: document.getElementById("file-input"),
   dropzone: document.getElementById("dropzone"),
+  navigationThumb: document.getElementById("navigation-thumb"),
+  navigationThumbImage: document.getElementById("navigation-thumb-image"),
+  navigationThumbViewport: document.getElementById("navigation-thumb-viewport"),
   appShell: document.querySelector(".app-shell"),
   workspaceMain: document.querySelector(".workspace-main"),
   sourceSplitter: document.getElementById("source-splitter"),
@@ -3339,6 +3350,7 @@ function bindEvents() {
   els.dropzone.addEventListener("scroll", () => {
     syncLocalMaskOverlayViewport();
     queueLocalMaskOverlayRender();
+    updateNavigationViewport();
     // The pan itself is compositor-only; this updates the coordinator's
     // viewport model and schedules the deferred follow-up that refines a newly
     // exposed strip (Phase 2 pan cache).
@@ -3348,6 +3360,15 @@ function bindEvents() {
     );
     noteViewerPan();
   }, { passive: true });
+  els.navigationThumb.addEventListener("click", (event) => {
+    if (!state.session || state.zoomMode !== "custom") return;
+    const imageBox = els.navigationThumbImage.getBoundingClientRect();
+    const x = event.detail === 0 ? 0.5 : clamp((event.clientX - imageBox.left) / Math.max(1, imageBox.width), 0, 1);
+    const y = event.detail === 0 ? 0.5 : clamp((event.clientY - imageBox.top) / Math.max(1, imageBox.height), 0, 1);
+    els.dropzone.scrollLeft = x * els.dropzone.scrollWidth - els.dropzone.clientWidth / 2;
+    els.dropzone.scrollTop = y * els.dropzone.scrollHeight - els.dropzone.clientHeight / 2;
+    updateNavigationViewport();
+  });
   els.overlayToggle.addEventListener("click", toggleOverlayPopover);
   els.overlayClose.addEventListener("click", closeOverlayPopover);
   els.previewToggle.addEventListener("click", togglePreviewPopover);
@@ -4650,7 +4671,7 @@ function displayedLongEdge() {
 
 function residentAuthoringLongEdge() {
   const accepted = state.acceptedPresentation;
-  const target = previewTargetLongEdge();
+  const target = requiredProcessingLongEdge();
   if (!gpuPreviewEligible(state.currentView)
     || accepted?.transport !== "WebGPU"
     || accepted.lane !== state.currentView
@@ -4664,14 +4685,14 @@ function bootstrapProxyLongEdge() {
   // Used only while the selected tier is still Preparing, so the viewer has
   // something truthful to show instead of an empty surface. It is labeled as a
   // placeholder and is never accepted as the selected tier.
-  return Math.round(Math.min(previewTargetLongEdge(), clamp(displayedLongEdge(), 512, 1024)));
+  return Math.round(Math.min(requiredProcessingLongEdge(), clamp(displayedLongEdge(), 512, 1024)));
 }
 
 function interactiveProxyLongEdge() {
   // PRD 2.2 and the Phase 1 exit gate: once the selected tier has produced a
   // valid result, a gesture may not change the processing resolution. The
   // previous display-bounded 512-1024 proxy is now the bootstrap path only.
-  if (selectedTierReady()) return previewTargetLongEdge();
+  if (selectedTierReady()) return requiredProcessingLongEdge();
   return bootstrapProxyLongEdge();
 }
 
@@ -4720,11 +4741,11 @@ function settledProxyLongEdge() {
   // The settled pass always aims at the selected tier. Stopping short of it
   // here is what produced the old "low while dragging, high once it settles"
   // jump that this sprint removes.
-  return Math.round(previewTargetLongEdge());
+  return Math.round(requiredProcessingLongEdge());
 }
 
 function refinementProxyLongEdge() {
-  return Math.round(previewTargetLongEdge());
+  return Math.round(requiredProcessingLongEdge());
 }
 
 // One measured peak per edit state, so a scope refresh that changes nothing
@@ -4858,7 +4879,8 @@ function refreshOverlayAndScopesImmediately() {
 }
 
 async function refreshPreview(options = {}) {
-  return renderPreviewForLane(state.currentView, true, state.session?.preview?.long_edge || 1600, options);
+  const longEdge = window.HDRWholeImagePreviewPipe.edgeFor("fitPlaceholder", state.session?.preview?.long_edge || 1600);
+  return renderPreviewForLane(state.currentView, true, longEdge, options);
 }
 
 async function renderPreviewForLane(
@@ -5181,7 +5203,8 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
     ? waveformRequestResolution(tier)
     : mode === "vectorscope" ? vectorscopeRequestResolution(tier)
       : { bins: 256, columns: 256 };
-  const effectiveLongEdge = mode === "waveform" ? waveformScopeLongEdge(tier, longEdge) : longEdge;
+  const effectiveLongEdge = window.HDRWholeImagePreviewPipe.edgeFor("scopes",
+    mode === "waveform" ? waveformScopeLongEdge(tier, longEdge) : longEdge);
   const includeLocals = !state.compareWithoutLocals;
   const scopeRegion = activeScopeRegion();
 
@@ -9789,7 +9812,12 @@ async function setDenoiseEnabled(enabled) {
     void persistDenoiseSettings();
     return;
   }
-  void persistDenoiseSettings();
+  if (!await persistDenoiseSettings()) {
+    runtime.status = "error";
+    runtime.error = "Denoise settings could not be saved";
+    renderDenoiseControls();
+    return;
+  }
   const denoise = state.gpuPreview?.diagnosticsSnapshot?.().denoise;
   const sourceIdentity = gpuPreviewSourceOptions(lane)?.identity || "source";
   const expectedIdentity = `${state.session?.session_id}:${lane}:${refinementProxyLongEdge()}:${JSON.stringify(state.adjustments.shared?.geometry || {})}:${sourceIdentity}`;
@@ -9805,7 +9833,7 @@ async function setDenoiseEnabled(enabled) {
   await recalculateDenoise();
 }
 
-async function recalculateDenoise(lane = state.currentView) {
+async function recalculateDenoise(lane = state.currentView, options = {}) {
   const settings = state.denoise[lane];
   if (!state.session || !settings.enabled || !state.gpuPreview?.available) return false;
   const runtime = state.denoiseRuntime[lane];
@@ -9820,7 +9848,7 @@ async function recalculateDenoise(lane = state.currentView) {
       state.session.session_id,
       lane,
       JSON.parse(JSON.stringify(state.adjustments)),
-      refinementProxyLongEdge(),
+      options.longEdge || refinementProxyLongEdge(),
       state.editRevision,
       {
         name: settings.analysis.preset,
@@ -9842,14 +9870,17 @@ async function recalculateDenoise(lane = state.currentView) {
     runtime.status = "ready";
     runtime.dirty = false;
     runtime.showOriginal = false;
-    await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
-    debounceOverlayAndScopes();
+    if (options.renderAfter !== false) {
+      await renderGpuDraft(lane, { longEdge: options.longEdge || refinementProxyLongEdge() });
+      debounceOverlayAndScopes();
+    }
     if (lane === state.currentView) renderDenoiseControls();
     return true;
   } catch (error) {
     if (generation !== runtime.generation) return false;
     runtime.status = "error";
-    runtime.error = error?.message || "Denoise analysis failed.";
+    runtime.error = error?.message || error?.detail || JSON.stringify(error) || "Denoise analysis failed.";
+    console.warn("Denoise analysis failed.", error);
     if (lane === state.currentView) renderDenoiseControls();
     return false;
   }
@@ -10568,7 +10599,13 @@ function renderGpuDraft(lane = state.currentView, options = {}) {
     // The visible region is measured here, where the mounted canvas is known,
     // and handed to the coordinator so the deferred pan pass can use the same
     // model without measuring DOM state from inside the state machine.
-    coordinator.noteViewport(lane, visibleOutputRect(els.previewCanvas.width, els.previewCanvas.height));
+    const frame = sourcePixelFrameDimensions(state.adjustments?.shared?.geometry)
+      || { width: state.session?.source?.width || 1, height: state.session?.source?.height || 1 };
+    const scale = longEdge / Math.max(frame.width, frame.height);
+    coordinator.noteViewport(lane, visibleOutputRect(
+      Math.max(1, Math.round(frame.width * scale)),
+      Math.max(1, Math.round(frame.height * scale)),
+    ));
     coordinator.noteScale(lane, { tier, longEdge });
   }
   const pending = coordinator
@@ -10586,7 +10623,8 @@ function renderGpuDraft(lane = state.currentView, options = {}) {
       // viewport.
       viewport: options.viewport !== undefined
         ? Boolean(options.viewport)
-        : state.roiPreviewMode === "refinement" && tier === "refinement" && !options.roiCatchUp,
+        : (state.roiPreviewMode === "refinement" && tier === "refinement" && !options.roiCatchUp)
+          || (state.zoomMode === "custom" && state.zoomPercent >= 100 && !options.roiCatchUp),
       catchUp: Boolean(options.roiCatchUp),
       panPass: Boolean(options.panPass),
       allowInactive: Boolean(options.allowInactive),
@@ -10644,6 +10682,15 @@ async function renderGpuDraftInner(
     ? Number(request.applicationGeneration)
     : state.previewGeneration[lane];
   const requestedGeometrySignature = geometrySignature();
+  if (state.denoise?.[lane]?.enabled && !state.denoiseRuntime?.[lane]?.showOriginal) {
+    const sourceIdentity = gpuPreviewSourceOptions(lane)?.identity || "source";
+    const expectedIdentity = `${sessionId}:${lane}:${longEdge}:${requestedGeometrySignature}:${sourceIdentity}`;
+    const denoise = state.gpuPreview?.diagnosticsSnapshot?.().denoise;
+    if (state.denoiseRuntime[lane].dirty || !denoise?.cacheReady || denoise.identity !== expectedIdentity) {
+      const ready = await recalculateDenoise(lane, { longEdge, renderAfter: false });
+      if (!ready) return refuse("denoise-scale-analysis-unavailable");
+    }
+  }
   const adjustmentsSnapshot = JSON.parse(JSON.stringify(state.adjustments));
   const localSnapshot = state.compareWithoutLocals
     ? []
@@ -11600,6 +11647,7 @@ function retireActiveSession() {
   // session even after their controller has been aborted.
   cancelRoiCatchUp();
   cancelRoiPanRefinement();
+  clearNavigationThumbnail();
   window.clearTimeout(state.localMaskDraftTimer);
   state.localMaskDraftTimer = 0;
   state.localMaskDraftController?.abort();
@@ -12062,10 +12110,103 @@ function setZoomMode(mode) {
     setCustomZoom(state.zoomPercent);
     return;
   }
+  const changed = state.zoomMode !== "fit";
   state.zoomMode = "fit";
   els.dropzone.scrollLeft = 0;
   els.dropzone.scrollTop = 0;
   applyZoomGeometry();
+  scheduleNavigationThumbnail();
+  if (changed) scheduleZoomRefinement();
+}
+
+const navigationThumbnail = { timer: 0, controller: null, key: "", url: "" };
+
+function clearNavigationThumbnail() {
+  window.clearTimeout(navigationThumbnail.timer);
+  navigationThumbnail.timer = 0;
+  navigationThumbnail.controller?.abort();
+  navigationThumbnail.controller = null;
+  navigationThumbnail.key = "";
+  if (navigationThumbnail.url) URL.revokeObjectURL(navigationThumbnail.url);
+  navigationThumbnail.url = "";
+  els.navigationThumbImage.removeAttribute("src");
+  els.navigationThumb.classList.add("hidden");
+}
+
+function updateNavigationViewport() {
+  const visible = state.session && state.zoomMode === "custom" && state.zoomPercent >= 100
+    && Boolean(els.navigationThumbImage.src);
+  els.navigationThumb.classList.toggle("hidden", !visible);
+  if (!visible) return;
+  const preview = activePreviewElement();
+  const frameWidth = preview instanceof HTMLCanvasElement ? preview.width : preview.naturalWidth;
+  const frameHeight = preview instanceof HTMLCanvasElement ? preview.height : preview.naturalHeight;
+  if (!(frameWidth > 0 && frameHeight > 0)) return;
+  const rect = visibleOutputRect(frameWidth, frameHeight)
+    || { x: 0, y: 0, width: frameWidth, height: frameHeight };
+  const outline = els.navigationThumbViewport.style;
+  outline.left = `${rect.x / frameWidth * 100}%`;
+  outline.top = `${rect.y / frameHeight * 100}%`;
+  outline.width = `${rect.width / frameWidth * 100}%`;
+  outline.height = `${rect.height / frameHeight * 100}%`;
+}
+
+function scheduleNavigationThumbnail() {
+  updateNavigationViewport();
+  window.clearTimeout(navigationThumbnail.timer);
+  if (!state.session || state.zoomMode !== "custom" || state.zoomPercent < 100) return;
+  navigationThumbnail.timer = window.setTimeout(() => { void refreshNavigationThumbnail(); }, 300);
+}
+
+async function refreshNavigationThumbnail() {
+  if (!state.session || state.zoomMode !== "custom" || state.zoomPercent < 100) return;
+  const sessionId = state.session.session_id;
+  const lane = state.currentView;
+  if (await syncGlobalEditState() === false || state.session?.session_id !== sessionId) return;
+  const request = window.HDRWholeImagePreviewPipe.request("navigation", state.session.source.width,
+    { sessionId, lane, editRevision: state.editRevision, geometrySignature: geometrySignature() });
+  const key = JSON.stringify(request);
+  if (navigationThumbnail.key === key && navigationThumbnail.url) return;
+  navigationThumbnail.controller?.abort();
+  const controller = new AbortController();
+  navigationThumbnail.controller = controller;
+  try {
+    const response = await fetch(`/api/session/${sessionId}/preview/${lane}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ edit_revision: request.editRevision, include_locals: !state.compareWithoutLocals,
+        long_edge: request.longEdge, execution: "whole", hdr_display: false }),
+      signal: controller.signal,
+    });
+    if (!response.ok) return;
+    const blob = await response.blob();
+    if (controller !== navigationThumbnail.controller || state.session?.session_id !== sessionId
+      || state.editRevision !== request.editRevision || state.currentView !== lane) return;
+    const url = URL.createObjectURL(blob);
+    const previous = navigationThumbnail.url;
+    navigationThumbnail.url = url;
+    navigationThumbnail.key = key;
+    els.navigationThumbImage.onload = updateNavigationViewport;
+    els.navigationThumbImage.src = url;
+    if (previous) URL.revokeObjectURL(previous);
+  } catch (error) {
+    if (error.name !== "AbortError") console.warn("Navigation thumbnail unavailable", error);
+  }
+}
+
+function scheduleZoomRefinement() {
+  if (!state.session || !gpuPreviewEligible(state.currentView)) return;
+  window.clearTimeout(state.zoomRefinementTimer);
+  state.zoomRefinementTimer = window.setTimeout(() => {
+    state.zoomRefinementTimer = 0;
+    if (!state.session || !gpuPreviewEligible(state.currentView)) return;
+    const target = requiredProcessingLongEdge();
+    if (state.acceptedPresentation?.processedLongEdge !== target) {
+      void renderGpuDraft(state.currentView, { tier: "refinement", longEdge: target, reason: "zoom-scale" });
+    } else {
+      noteViewerPan();
+    }
+  }, 80);
 }
 
 function shouldKeepHdrGpuSurface(lane) {
@@ -12076,6 +12217,7 @@ function shouldKeepHdrGpuSurface(lane) {
 
 function setCustomZoom(percent, anchor = null) {
   const nextPercent = clamp(Number(percent) || 100, MIN_ZOOM_PERCENT, MAX_ZOOM_PERCENT);
+  const changed = state.zoomMode !== "custom" || Math.abs(state.zoomPercent - nextPercent) > 0.001;
   const preview = anchor?.previewElement || activePreviewElement();
   const imageVisible = previewIsVisible();
   const oldRect = imageVisible ? preview.getBoundingClientRect() : null;
@@ -12094,6 +12236,8 @@ function setCustomZoom(percent, anchor = null) {
     els.dropzone.scrollTop += (newRect.top + normalizedY * newRect.height) - anchorY;
   }
   syncOverlayPlacement();
+  scheduleNavigationThumbnail();
+  if (changed) scheduleZoomRefinement();
 }
 
 function applyZoomGeometry() {
@@ -12181,10 +12325,12 @@ function applyZoomGeometry() {
   const paneHeight = state.compareLayout === "side-vertical" ? frameHeight / 2 : frameHeight;
   const fitSourceWidth = interactiveRotationSwapsAxes ? sourceHeight : sourceWidth;
   const fitSourceHeight = interactiveRotationSwapsAxes ? sourceWidth : sourceHeight;
-  const fitPercent = Math.min(paneWidth / fitSourceWidth, paneHeight / fitSourceHeight) * 100;
+  const deviceRatio = Math.max(1, Number(window.devicePixelRatio) || 1);
+  const fitPercent = Math.min(paneWidth * deviceRatio / fitSourceWidth,
+    paneHeight * deviceRatio / fitSourceHeight) * 100;
   const percent = state.zoomMode === "fit" ? fitPercent : state.zoomPercent;
-  const displayWidth = Math.max(1, sourceWidth * percent / 100);
-  const displayHeight = Math.max(1, sourceHeight * percent / 100);
+  const displayWidth = Math.max(1, sourceWidth * percent / (100 * deviceRatio));
+  const displayHeight = Math.max(1, sourceHeight * percent / (100 * deviceRatio));
   const visualDisplayWidth = interactiveRotationSwapsAxes ? displayHeight : displayWidth;
   const visualDisplayHeight = interactiveRotationSwapsAxes ? displayWidth : displayHeight;
 
@@ -16285,7 +16431,7 @@ function queueLocalComparisonMask(local, childId, role, expression) {
   const sessionId = state.session.session_id;
   const slot = localComparisonMaskSlot(local.id, childId, role);
   const signature = localMaskSpatialSignature(expression);
-  const longEdge = settledProxyLongEdge();
+  const longEdge = window.HDRWholeImagePreviewPipe.edgeFor("maskOverview", settledProxyLongEdge());
   const requestedGeometrySignature = geometrySignature();
   const key = `${sessionId}:${slot}:${longEdge}:${requestedGeometrySignature}:${signature}`;
   if (localComparisonMaskCache.get(slot)?.key === key) return;
@@ -16646,7 +16792,7 @@ async function queueAuthoritativeLocalMask(local) {
   if (local.mask.operator === "leaf" && local.mask.leaf?.type === "brush" && !(local.mask.leaf.strokes || []).length) return;
   if (state.localMaskDraftDirty) return;
   const signature = localMaskSpatialSignature(local.mask);
-  const longEdge = settledProxyLongEdge();
+  const longEdge = window.HDRWholeImagePreviewPipe.edgeFor("maskOverview", settledProxyLongEdge());
   const revision = state.editRevision;
   const requestedGeometrySignature = geometrySignature();
   const sessionId = state.session.session_id;
@@ -16712,9 +16858,7 @@ function scheduleAuthoritativeLocalMaskDraft(local) {
     mask: JSON.parse(signature),
     signature,
     revision: state.editRevision,
-    longEdge: leaf.type === "path"
-      ? Math.min(1600, settledProxyLongEdge())
-      : settledProxyLongEdge(),
+    longEdge: window.HDRWholeImagePreviewPipe.edgeFor("maskOverview", settledProxyLongEdge()),
     adjustments: JSON.parse(JSON.stringify(state.adjustments)),
     geometrySignature: geometrySignature(),
     generation: ++state.localMaskDraftGeneration,

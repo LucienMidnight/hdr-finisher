@@ -214,7 +214,7 @@ test("viewport generation moves only when the visible region changes", () => {
   assert.equal(coordinator.generation("hdr", "viewport"), 3);
 });
 
-test("a request carries a viewport only for a refinement pass that is not a catch-up", async () => {
+test("an explicit viewport intent reaches any foreground tier but not catch-up", async () => {
   const { coordinator, dispatches } = makeCoordinator();
   coordinator.setRoiMode("refinement");
   coordinator.noteViewport("hdr", { x: 5, y: 6, width: 70, height: 80 });
@@ -223,7 +223,7 @@ test("a request carries a viewport only for a refinement pass that is not a catc
   assert.deepEqual(dispatches[0].viewport, { x: 5, y: 6, width: 70, height: 80 });
 
   await coordinator.submit({ lane: "hdr", tier: "settled", viewport: true, longEdge: 1000, reason: "settle" });
-  assert.equal(dispatches[1].viewport, null, "only the refinement tier may be ROI-limited");
+  assert.deepEqual(dispatches[1].viewport, { x: 5, y: 6, width: 70, height: 80 });
 
   await coordinator.submit({ lane: "hdr", tier: "refinement", viewport: true, catchUp: true, longEdge: 1000, reason: "catch-up" });
   assert.equal(dispatches[2].viewport, null, "a catch-up is a whole-frame pass");
@@ -231,7 +231,7 @@ test("a request carries a viewport only for a refinement pass that is not a catc
 
   coordinator.setRoiMode("fit");
   await coordinator.submit({ lane: "hdr", tier: "refinement", viewport: true, longEdge: 1000, reason: "refine" });
-  assert.equal(dispatches[3].viewport, null, "Fit has nothing to skip");
+  assert.deepEqual(dispatches[3].viewport, { x: 5, y: 6, width: 70, height: 80 });
 });
 
 test("presentation acceptance stores the accepted frame and refuses stale results", async () => {

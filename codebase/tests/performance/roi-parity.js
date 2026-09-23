@@ -3,6 +3,7 @@
 //   node tests/performance/roi-parity.js --url http://127.0.0.1:8765
 //   node tests/performance/roi-parity.js --url http://127.0.0.1:8765 --denoise
 //   node tests/performance/roi-parity.js --url http://127.0.0.1:8765 --denoise --input <file>
+//   node tests/performance/roi-parity.js --url http://127.0.0.1:8765 --denoise --film --spatial-sweep
 //
 // Renders the same edit twice at the refinement tier: once whole frame (the
 // legacy route) and once limited to the visible region (the ROI route), with a
@@ -18,6 +19,9 @@
 // the analysis and resolve work actually ran. Without `--input` the Denoise run
 // uses the noisy generated source, because a smooth fixture gives the
 // reconstruction nothing to do.
+// `--spatial-sweep` adds Detail at its maximum radius, geometry rotation and
+// a gradient local mask, then compares top-left, center and bottom-right
+// visible regions. This covers image edges and mask/geometry boundaries at 300%.
 //
 // The Phase 0 per-module tolerance sign-off is still outstanding, so this run
 // records the raw maximum absolute difference and judges it against the
@@ -87,8 +91,9 @@ function assert(condition, message) {
   const url = argument("--url", process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765");
   const denoise = flag("--denoise");
   const film = flag("--film");
+  const spatialSweep = flag("--spatial-sweep");
   const input = argument("--input", null);
-  const suffix = `${denoise ? "-denoise" : ""}${film ? "-film" : ""}`;
+  const suffix = `${denoise ? "-denoise" : ""}${film ? "-film" : ""}${spatialSweep ? "-spatial-sweep" : ""}`;
   const output = argument("--output", path.join("output", "performance", `roi-parity${suffix}.json`));
   const browser = await chromium.launch({
     headless: true,
@@ -147,8 +152,8 @@ function assert(condition, message) {
       () => ["ready", "error"].includes(state.denoiseRuntime[state.currentView].status),
       null, { timeout: 900000 },
     );
-    const status = await page.evaluate(() => state.denoiseRuntime[state.currentView].status);
-    assert(status === "ready", `Denoise did not reach ready: ${status}`);
+    const runtime = await page.evaluate(() => state.denoiseRuntime[state.currentView]);
+    assert(runtime.status === "ready", `Denoise did not reach ready: ${JSON.stringify(runtime)}`);
     await page.evaluate(async () => { await state.gpuPreview.waitForSubmittedWork(); });
     await waitReady();
   };
@@ -185,6 +190,31 @@ function assert(condition, message) {
     assert(enabled === "refinement", `The ROI mode did not enable: ${enabled}`);
     await page.evaluate(() => window.HDRFinisherPerformance.cancelRoiCatchUp());
     const filmLook = film ? await applyFilmLook(page) : null;
+    if (spatialSweep) {
+      await page.evaluate(async () => {
+        const document = JSON.parse(JSON.stringify(state.editDocument));
+        document.global_adjustments.hdr.detail.texture_amount = 45;
+        document.global_adjustments.hdr.detail.clarity_amount = 40;
+        document.global_adjustments.hdr.detail.clarity_radius_percent = 3;
+        document.global_adjustments.hdr.detail.sharpen_amount = 55;
+        document.global_adjustments.hdr.detail.sharpen_radius_px = 3;
+        document.global_adjustments.shared.geometry.rotation = 90;
+        document.local_adjustments = [{
+          id: "roi-boundary-gradient", name: "ROI boundary", enabled: true, opacity: 1,
+          mask: { operator: "leaf", enabled: true, inverted: false, children: [], leaf: {
+            type: "linear_gradient", start: { x: 0.08, y: 0.07 }, end: { x: 0.9, y: 0.91 },
+            gradient_midpoint_1: 0.3, gradient_midpoint_2: 0.7,
+            gradient_fan: 0, gradient_luma_enabled: false, mask_opacity: 1,
+          } },
+          hdr_grade: { exposure: 1.4 }, sdr_grade: {},
+        }];
+        if (!await queueEditCommand("replace_document", { document }, null, { refreshPreview: false })) {
+          throw new Error("The spatial sweep edit was rejected");
+        }
+        await renderGpuDraft("hdr", { longEdge: requiredProcessingLongEdge(), tier: "refinement" });
+      });
+      await waitReady();
+    }
     if (film) {
       for (const [path, value] of FILM_LOOK_SETTINGS) {
         const key = path.split(".").pop();
@@ -199,19 +229,44 @@ function assert(condition, message) {
       await page.evaluate(() => window.HDRFinisherPerformance.cancelRoiCatchUp());
     }
     const denoiseReady = denoise ? await denoiseCounters() : null;
+    if (spatialSweep) {
+      await page.waitForFunction(() => !state.zoomRefinementTimer && !state.gpuDraftInFlight,
+        null, { timeout: 120000 });
+      await page.evaluate(() => {
+        state.previewScheduler?.cancel();
+        window.HDRFinisherPerformance.cancelRoiCatchUp();
+      });
+    }
 
-    const outcome = await page.evaluate(async (tolerance) => {
+    const outcome = await page.evaluate(async ({ tolerance, sweep }) => {
+      const samples = [];
+      if (sweep) {
+        const positions = [[0, 0], [0.5, 0.5], [1, 1]];
+        for (const [horizontal, vertical] of positions) {
+          els.dropzone.scrollLeft = (els.dropzone.scrollWidth - els.dropzone.clientWidth) * horizontal;
+          els.dropzone.scrollTop = (els.dropzone.scrollHeight - els.dropzone.clientHeight) * vertical;
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          cancelRoiPanRefinement();
+          const sample = await window.HDRFinisherPerformance.roiParity({ tolerance });
+          samples.push({ horizontal, vertical, ok: sample.ok, reason: sample.reason,
+            visible: sample.visible, comparison: sample.comparison });
+        }
+      }
       const parity = await window.HDRFinisherPerformance.roiParity({ tolerance });
       const metrics = window.HDRFinisherPerformance.tiledExecutionMetrics();
       const coordinator = window.HDRFinisherPerformance.renderCoordinator();
-      return { parity, metrics, coordinator };
-    }, 0);
+      return { parity, metrics, coordinator, samples };
+    }, { tolerance: 0, sweep: spatialSweep });
     const denoiseAfter = denoise ? await denoiseCounters() : null;
 
     assert(outcome.parity?.ok, `The parity run did not complete: ${JSON.stringify(outcome.parity)}`);
     const comparison = outcome.parity.comparison;
     assert(comparison, "The parity run produced no comparison");
     assert(comparison.comparedPixels > 0, `The comparison covered no pixels: ${JSON.stringify(comparison)}`);
+    for (const sample of outcome.samples) {
+      assert(sample.comparison?.maxAbsDifference === 0,
+        `The spatial sweep differed at ${sample.horizontal}, ${sample.vertical}: ${JSON.stringify(sample)}`);
+    }
     assert(
       outcome.parity.legacy.pixels.width === outcome.parity.roi.pixels.width
         && outcome.parity.legacy.pixels.height === outcome.parity.roi.pixels.height,
@@ -247,6 +302,7 @@ function assert(condition, message) {
       zoomPercent: ZOOM_PERCENT,
       source,
       filmLook,
+      spatialSweep: spatialSweep ? outcome.samples : null,
       denoise: denoise ? {
         settings: denoiseReady?.selector.controls ?? null,
         identity: denoiseReady?.selector.identity ?? null,

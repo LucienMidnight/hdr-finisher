@@ -303,8 +303,6 @@
     viewportFor(intent, st) {
       if (!intent.viewport) return null;
       if (intent.catchUp) return null;
-      if (this.roiMode !== "refinement") return null;
-      if (intent.tier !== "refinement") return null;
       return st.viewport;
     }
 

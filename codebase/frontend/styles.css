@@ -1192,6 +1192,35 @@ body[data-active-lane="sdr"] .lane-dot {
   transition: background-color 120ms ease, border-color 120ms ease;
 }
 
+.navigation-thumb {
+  position: absolute;
+  z-index: 35;
+  right: 12px;
+  bottom: 40px;
+  display: grid;
+  gap: 4px;
+  width: 172px;
+  padding: 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: rgb(17 22 28 / 94%);
+  color: var(--text);
+  box-shadow: 0 4px 18px rgb(0 0 0 / 35%);
+  cursor: crosshair;
+}
+
+.navigation-thumb.hidden { display: none; }
+.navigation-thumb-title { text-align: left; font-size: 9px; letter-spacing: .12em; }
+.navigation-thumb-image-wrap { position: relative; display: block; width: 100%; }
+.navigation-thumb-image-wrap img { display: block; width: 100%; height: auto; }
+#navigation-thumb-viewport {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid white;
+  background: rgb(255 255 255 / 10%);
+  pointer-events: none;
+}
+
 .preview-stage {
   position: relative;
   width: 100%;
