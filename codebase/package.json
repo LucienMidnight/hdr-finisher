@@ -70,6 +70,7 @@
     "test:roi-pan-cache": "node tests/performance/roi-pan-cache.js",
     "test:roi-parity": "node tests/performance/roi-parity.js",
     "test:packaged-baselines": "node tests/performance/packaged-baselines.js",
+    "test:fit-filtering": "node tests/performance/fit-filtering-ab.js",
     "test:electron": "node tests/run-in-electron.js"
   },
   "devDependencies": {
