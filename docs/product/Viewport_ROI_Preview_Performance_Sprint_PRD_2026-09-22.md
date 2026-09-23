@@ -666,7 +666,7 @@ This section is the authoritative continuation point for agents working through 
 |---|---|---|
 | Phase 0 | **Product direction recorded 2026-09-22** | The owner exercised the 4K and Full paths in the desktop app (4K smooth, local adjustments and feather smooth, Full correct but slower as expected, technical scopes reporting tiled for Full and direct for 4K) and directed Phase 2 to proceed. The individual Phase 0 checklist items — parity tolerances, migration behavior, 42.4 MP packaged baselines, Fit filtering A/B — are still not individually signed off, so Phase 2 keeps legacy mode as the fallback and no Phase 3 work starts until those numbers exist. Observation to address in Phase 2: a long rapid exposure drag at Full showed a transient "full not available" state that cleared on release; acceptable per the owner, but it is the backpressure signal Phase 2's 50 ms stop gate and progressive passes exist to remove. |
 | Phase 1 | **Complete (code and gates)** | All eight work items are implemented across checkpoints 15.1–15.5, and all six Phase 1 exit gates pass in focused automated and Chromium/Edge runtime evidence. Packaged-app (Electron) evidence and the Phase 0 baselines remain outstanding; see 15.5. |
-| Phase 2 | **Owner-accepted; items 2–8 landed, item 1 and the parity run open** | Visible-region refinement, real viewport from the viewer, retained presentation target, offscreen exclusion, small-batch submission, the deferred whole-frame catch-up, the display-scale pan cache, and the Settings switch are landed and owner-accepted (15.15, 15.17); the 50 ms stop gate is measured (15.10). Remaining: item 1 (coordinator extraction and generation ownership out of `app.js`), item 9's legacy-versus-ROI parity run against the Phase 0 tolerances, and packaged/Electron evidence. |
+| Phase 2 | **Items 1–8 landed and regression-verified; parity measured, gate open** | Item 1 (coordinator extraction and generation ownership out of `app.js`) landed with the ROI, catch-up and pan paths delegated and every runtime scenario re-run (15.18); visible-region refinement, real viewport, retained presentation target, offscreen exclusion, small-batch submission, the deferred whole-frame catch-up, the display-scale pan cache and the Settings switch remain landed and owner-accepted (15.15, 15.17); the 50 ms stop gate is measured (15.10). Item 9's legacy-versus-ROI A/B run measured byte equality on the synthetic SDR pattern, but the Phase 0 per-module tolerances are unsigned, so the parity gate stays open. Remaining: the Phase 0 tolerance and migration items, 42.4 MP packaged baselines, Fit filtering A/B, and packaged/Electron evidence. |
 | Phases 3–5 | **Not started** | Do not begin dependent architecture work until the Phase 0 stop gate is resolved and recorded. |
 
 ### 15.2 Working-tree checkpoint — 2026-09-22
@@ -1260,5 +1260,56 @@ Next safe edit:
 
 1. Coordinator extraction and generation ownership out of `app.js` (item 1): the pan cache and the catch-up driver are committed and owner-accepted, so the sprint instruction's gate for starting item 1 is lifted.
 2. Legacy-versus-ROI parity run (item 9) once the coordinator owns generation.
+
+### 15.18 Committed checkpoint — 2026-09-23 (coordinator extraction, item 1; legacy-versus-ROI parity run, item 9)
+
+Checkpoints committed as `4f3466f` — "Add the render coordinator state machine", `5564dcb` — "Route preview rendering through the coordinator", `8185c2a` — "Move the ROI follow-up lifecycle into the coordinator", `d1ce1de` — "Add the legacy-versus-ROI parity diagnostic and driver".
+
+**What the coordinator is.** `frontend/render-coordinator.js` is a pure state machine: no DOM, no GPU, no rendering. `dispatch` and `present` are injected by `app.js`, so the module is unit-testable without an adapter and `app.js` is left to emit intent and present state. It owns:
+
+- **Five generations per lane** — edit, viewport, scale, source, lane. Tokens snapshot all five; `token.isCurrent()` gates on edit and source (the generations that invalidate work), and the viewport/scale/lane generations drive follow-up decisions and telemetry. `noteEdit` bumps the generation, cancels the deferred follow-ups and stops the in-flight render at its next boundary; `noteSource` retires every lane's tokens, pending intent, viewport, scale and retained-frame record; `noteViewport`/`noteScale` bump only on a real change.
+- **Foreground versus background priority** with **one in-flight / one latest pending**. A foreground submission cancels the in-flight token (which stops it at its next tile boundary) and becomes the pending slot; rapid submissions collapse onto it and a replaced pending resolves `false` with a `coalesced-by-newer-render` refusal. Background work never displaces foreground work: it waits behind it, is refused (`background-deferred`) when a foreground pending exists, and a foreground submission supersedes it.
+- **Cancellation tokens.** Each intent carries a token with an `AbortController` signal and `cancel(reason)`. The app passes `request.isCurrent` into the renderer's existing per-tile guard (fetch, CPU controllers and unsubmitted GPU batches all stop through that path), and the app-domain facts a token cannot know — geometry signature, session id, compare peek, active lane — stay in `renderGpuDraftInner`'s guard.
+- **Presentation acceptance.** `present(request, result)` is the app's acceptance call; the coordinator stores the accepted record and every presentation path mirrors it through `noteAccepted`, so the pan candidate and follow-up freshness read one record.
+- **Coarse-to-refined lifecycle.** Catch-up is armed only after a viewport pass presents (never after a refusal), skipped when the generation moved, the mode changed or the lane is inactive, and its own pass carries no viewport. The pan follow-up yields to busy work and re-arms itself, and its pass re-arms the catch-up.
+- **Timing feedback.** Dispatch and queue latency per request plus the preview-scheduler snapshot, exposed as `HDRFinisherPerformance.renderCoordinator()`.
+
+**What `app.js` keeps.** Intent and presentation. `renderGpuDraft` measures the visible region, notes it on the coordinator and submits intent; `renderGpuDraftInner` is the dispatch callback; the ROI functions are adapters that keep their diagnostic names. `state.previewGeneration` is a **transitional mirror**: the coordinator is its only writer, written back from the coordinator generation after `noteEdit`/`noteSource`, so every existing reader stays valid until the mirror is removed.
+
+**Behavior-preservation details worth recording:**
+
+- The dispatch serial is assigned **per dispatch, not per submission** (`request.dispatchSerial`), so a coalesced intent that never starts cannot invalidate the presentation record of the render that actually presented. This is what keeps the rAF `serial !== state.gpuRenderSerial` semantics identical.
+- `suspendGeometryPreviewWork` cancels both lanes' tokens and keeps its serial bump, so a render that had already presented is also retired from the record path.
+- The follow-up delays stay in `app.js` as the named constants (`ROI_CATCH_UP_DELAY_MS = 700`, `ROI_PAN_DELAY_MS = 140`) and are passed to the coordinator; the diagnostics mode flip sets the coordinator mode **without** cancelling an armed timer, preserving `roiPanState().timerPending` semantics that the pan driver measures.
+- Boot order: the delay constants are declared before `boot()` runs, because the coordinator is constructed during it. `8185c2a` had them below the call site (temporal dead zone); `d1ce1de` moved them to the top of `app.js`.
+
+**Runtime evidence** (raw JSON under `codebase/output/performance/`, one GPU scenario at a time):
+
+- `roi-catch-up.json`: the app's own edit path. ROI pass `viewportRequested true`, 2 of 4 tiles, 2 skipped. Catch-up `roiCatchUp true`, `viewportRequested false`, whole frame 4/4, `retainedFrame true`, accepted generation equals the armed generation; viewer Ready; 0 page errors.
+- `roi-pan-cache.json`: newly exposed strip renders alone (1 foreground tile); a pan back into the refined region does no work (`foregroundTiles 0`, `reusedTiles 1`, 1 submission) and the accepted generation is unchanged.
+- `roi-refinement.json`: `off`/`onWarm`/`on`/`cached` all as recorded in 15.16.
+- `tiled-stop-gate.json`: 45 submissions per generation, longest encode span 8.6/8.2 ms, 0 stale submissions after supersession, both generations rendered.
+- `presentation-gate.json`: unchanged taxonomy — the stale same-size generation refuses `superseded-before-presentation`, the newest presents, min sampled peak 245.
+- `tiled-mask-batch-transport.json`: batches [4, 6], 0 per-tile requests, offscreen region unchanged.
+- `tier-change-blank-canvas`: 0 blank samples across two runs, painted throughout, 0 CPU fallbacks. Wall time 3015 ms and 3891 ms for 4K→Full against 2190 ms recorded at 15.4 — **flagged for the packaged baseline**, not a gate failure; the scenario's gates are blank samples and fallbacks, and machine load during this session is the likely source.
+- `full-tier-brush-feather` (42.4 MP): Ready/Full, exact, tiled, no Unavailable events, and the deliberate superseded mask refusal recovers.
+- `mask-graph-interaction`: 0 mask requests during influence edits, undo/redo intact.
+- `roi-parity.json` (item 9): legacy whole-frame and ROI passes at the same tier, a newer generation between them so the ROI pass re-renders instead of reusing; the visible 238×143 region (34 034 pixels) compared pointwise — **`maxAbsDifference 0`**; the ROI pass re-rendered 2 tiles with 0 reused and a retained frame. Coordinator record: 5 submits/5 dispatched, 0 coalesced, 0 dropped, 0 cancelled, `queueDelayMs` all 0, catch-up armed.
+
+**Gate status, stated plainly:**
+
+- **Phase 2 item 1: mechanism landed and regression-verified.** Honest caveats: (a) `state.previewGeneration` remains a single-writer compatibility mirror, not removed; (b) the queue is per lane, so cross-lane device contention behaves as before; (c) the coordinator adds no new allocations. The 1241 ms dispatch inside the parity run is the app's own whole-frame source transport, not queueing — `queueDelayMs` is 0 for every request.
+- **Phase 2 item 9: the A/B path and the run exist; the gate is measured, not closed.** The run measured byte equality on the synthetic SDR test pattern at 300% zoom. The **Phase 0 per-module tolerance sign-off is outstanding**, so the 1/255 judgement in the evidence is provisional. Modules with grain, Detail, Denoise and spatial film were not active in this run, and the HDR surface path was not covered. The evidence is what the tolerance decision should be made from.
+- **Still owed and not skipped:** the Phase 0 checklist items — parity tolerances (7), migration behavior (8), 42.4 MP packaged baselines (3), Fit filtering A/B (6) — and packaged/Electron evidence. Phase 3 remains untouched.
+- **Suites:** **161 JS** (148 + 13 coordinator unit tests), **157 Python** (154 + 3 contract tests). All passing.
+
+Owner checks to batch when convenient (nothing here blocks continued sprint work):
+
+1. ROI switch on, zoom to roughly 36%, drag an adjustment, then scroll immediately. Expect the strip to refine shortly after the scroll pauses, zero work when scrolling back into the refined region, and no unadjusted boundary beyond one edit. This is the 15.16/15.17 check, now running through the coordinator.
+2. Change tier 4K→Full on a large source and compare the pause against the previous build; the two timings above are the reference.
+3. Optional: `npm run test:roi-parity` on a real source (the diagnostic needs a magnified view; it is also on `HDRFinisherPerformance.roiParity({ tolerance })`).
+
+Next safe edit: packaged/Electron evidence for the Phase 2 paths and the 42.4 MP packaged baselines, then the tolerance and migration Phase 0 items. Do not start Phase 3.
+
 
 
