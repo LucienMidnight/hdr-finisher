@@ -1644,6 +1644,23 @@ The two encodings are not comparable in magnitude: the SDR fallback's Reinhard c
 
 Next safe edit: item 7's tolerance table, fed by this run — route parity is byte-equal (15.18/19/21/23), export parity comes from 15.28, and per-module isolated runs only if the owner names them.
 
+### 15.29 Owner sign-off on export parity and the Phase 0 item 7 tolerance table — 2026-09-23
+
+The owner reviewed the export/reference parity sheets and passed all of them: "all of the side-by-sides are passing for me." Reviewed set: the six scenarios of the packaged HDR run (`output/performance/export-parity-electron/*-side-by-side.png`, with the x4 differences beside them) and the delivery-scale export run (`output/performance/export-parity-export/*`). The owner's one question — the saturated purple/teal highlight patches in the delivered file where the preview reads near-white — was answered as 15.28 item 4 (gain-map capacity at high-chroma speculars) and accepted.
+
+**Scope of the sign-off, stated so it is not oversold.** The sign-off is perceptual, on the 8-bit SDR-only composites, at the declared 1000-nit delivery target, on the packaged configuration with the peak recorded (per 15.26). It does not replace the numeric claims: peak nits, ceilings, metadata and headroom remain the decoded-file checks in 15.28, and any composite built from page captures still supports no HDR difference claim.
+
+**Phase 0 item 7 — approved parity tolerances per module class.**
+
+- **Byte equality required:** route parity (tiled versus whole-frame, ROI versus legacy) — byte-equal, 15.18/19/21/23. No tolerance is granted here.
+- **Export parity: perceptual, per class, anchored on the accepted 15.28 numbers.** Accepted anchors from the packaged real-precision run, focus-band mean / p99 in encoding levels: grain (smooth) 2.22 / 5.14; detail (texture) 6.75 / 13.35; denoise (noise) 2.14 / 6.50; halation 12.43 / 178.26; fine-detail (fine) 2.28 / 13.90; highlights 32.02 / 369.08. The delivery-scale export run's numbers are the file-side check for the same classes. These anchors are the accepted values, not a tight bound: a routine run that exceeds an anchor flags the class for the owner's re-review rather than failing automatically (15.26's mitigation), and the owner re-reviews only when a class changes or an anchor is exceeded.
+- **Accepted residual classes, named:** sub-Nyquist content at display-tier versus source-resolution processing; grain and Denoise texture character; halation and bloom skirt amplitude/radius; gain-map capacity at high-chroma speculars (the fixture's 72,000-nit patches; accepted as format behaviour, and a product decision — not a parity regression — if it appears in real content); proof-scale ceiling overshoot at sub-Nyquist speculars, recorded and not asserted, with the delivery-scale encode carrying the strict rule.
+- **Per-module isolated runs:** not named by the owner; none scheduled. The six-scenario run covers the classes.
+
+**Gate status.** Phase 0 items 3, 4, 6, 7 and 8 are now done (item 7 defined and signed here). Suites: **176 JS**; Python **1352 passed, 3 skipped**. Phase 3 untouched.
+
+Next safe edit: return to the sprint plan with Phase 0 complete for items 3, 4, 6, 7 and 8; do not start Phase 3.
+
 
 
 
