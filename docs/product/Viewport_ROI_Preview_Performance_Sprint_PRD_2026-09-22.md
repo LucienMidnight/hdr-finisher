@@ -1600,6 +1600,50 @@ Gate status: item 7's method now includes the numeric/measurement boundary; the 
 
 Next safe edit: export/reference parity with the precision precheck, per 4.8.
 
+### 15.28 Export/reference parity run — 2026-09-23 (precision precheck, two assertions, review sheets; a proof-path defect found and fixed)
+
+The export/reference parity unit was built and run: the last uncovered class in the 15.21 tolerance proposal. Evidence is raw under `codebase/output/performance/` (gitignored): `export-parity-export.json` + `export-parity-export/` (delivery-scale run on the Chromium surface) and `electron-export-parity.json` + `export-parity-electron/` (packaged run on the HDR surface).
+
+**What was built.** `tests/performance/export-parity.js` drives a session through the real controls (delivery ceiling declared through the highlight section, format and encode settings applied through the export panel so the proof request and the export request read the same values), forces the display tier, reads the presentation target back as float, builds the app's own proof artifact through `Show Chromium proof`, downloads it, captures both sides at the same canvas box, composes side-by-side and x4-difference sheets with a provenance caption, and exports at delivery scale when the export endpoint is reachable. `tests/performance/export_parity_check.py` is the file side: decode, assertion 1, the named-encoding transform, one Lanczos-3 reduction for both sides, band and whole-frame statistics, reference PNGs. `tests/test_export_parity.py` (19 tests) covers the transform against analytic identities, the resampler, the comparator, the band crops, the ceiling rules, and a real JPEG Ultra HDR encode/decode when the bundled encoder is present.
+
+**Precision precheck (1a), verified at run time.** Preview float readback is real only on the packaged surface: the packaged run read a 1024x576 `rgba16float` target; the Chromium surface presents `bgra8unorm`, so that run is labelled SDR-only and makes no HDR precision claim. The file side decodes at real precision: libultrahdr's linear f16 output for JPEG Ultra HDR (16f), with `decoder_reference_white_nits = 203` confirmed in the metadata; AVIF gain-map decode and `inspect_avif` exist behind their capability gates and were not exercised (format chosen: `jpeg_ultrahdr`). Page captures remain 8-bit display-referred and every sheet says so.
+
+**Named common encoding.** The comparison is in the *preview presentation encoding*: display-referred, transfer-encoded, extended canvas convention (1.0 = 203 nits), or the SDR fallback otherwise. The export side is mapped through the preview's own transform — `displayHdr`/`displayEncode` from `webgpu-preview.js` with the shader's matrix constants, not a re-derivation. Analytic checks pin it: a neutral 0.18 encodes to exactly 1.0 at 203 nits, to `sRGB(100/203)` at 100 nits, and the transport clamp at 10 000 nits is exact. The alternative (inverting the preview back to scene-linear) is deliberately not used: the inverse transfer function amplifies half-float quantization on the preview side.
+
+**Delivery declaration.** The run declares a delivery ceiling (highlight section enabled, peak fit, 1000 nits) through the real controls. Without a ceiling the fixture's 72 000-nit speculars exceed what any gain-map format can carry above a tone-mapped base, and the delivered file clips below the preview for a reason that says nothing about the preview.
+
+**Assertion 1 — export correctness (decoded values and metadata versus declared settings).** Delivery-scale run, all six scenarios: sha256 matches the declared artifact, dimensions match, JPEG Ultra HDR container confirmed, capacity bounds sane, decoded headroom equals the app's reported `encoded_headroom` (2.2829 vs 2.283 stops), SDR base finite and in [0,1], and the strict ceiling holds — decoded peaks 991.7, 1007.5, 989.6, 992.4, 989.0, 989.0 nits against a 1011-nit allowance, zero pixels above. Proof-scale run: same metadata checks pass; the strict ceiling rule is reserved for delivery-scale encodes because a proof-sized encode overshoots it at sub-Nyquist speculars (below).
+
+**Assertion 2 — preview agrees with export, in the named encoding.** Deltas are worst-channel, in encoding levels (1/255), after both sides are reduced to the 889x500 canvas box with the same filter.
+
+| scenario / focus band | delivery-scale export run (SDR fallback encoding) | packaged proof-scale run (P3 extended encoding) |
+| --- | --- | --- |
+| grain / smooth | mean 1.87, p99 2.97, max 3.7 | mean 2.22, p99 5.14, max 16.5 |
+| detail / texture | mean 2.87, p99 4.35, max 7.5 | mean 6.75, p99 13.35, max 20.5 |
+| denoise / noise | mean 1.68, p99 4.91, max 13.5 | mean 2.14, p99 6.50, max 96.5 |
+| halation / halation | mean 5.32, p99 55.24, max 56.4 | mean 12.43, p99 178.26, max 243.7 |
+| fine-detail / fine | mean 8.54, p99 19.32, max 28.2 | mean 2.28, p99 13.90, max 57.5 |
+| highlights / highlights | mean 13.06, p99 132.30, max 157.3 | mean 32.02, p99 369.08, max 429.2 |
+| whole frame | mean 4.94-5.96, p99 92.0-93.0 | mean 7.74-10.75, p99 255.8-258.6 |
+
+The two encodings are not comparable in magnitude: the SDR fallback's Reinhard compression shrinks scene differences that the extended encoding reports at full slope. The packaged numbers are the real-precision ones for the HDR class; the SDR run is the delivery-scale file check.
+
+**Named residual classes and mechanisms (what the numbers are).**
+
+1. **Sub-Nyquist content** (fine 8.5, texture 2.9 at delivery scale): the preview processes at the display tier and the export at source resolution; the same class 15.25 named, now with the file's own encode/decode in the chain.
+2. **Grain and Denoise texture character** (smooth 1.9/2.2, noise 1.7/2.1): pointwise deltas read larger than the texture difference the eye sees; the sheets and the energy columns are the judgement, per 15.26.
+3. **Halation and bloom edges** (p99 55/178): the glow's low-amplitude skirt survives the file at a slightly different amplitude and radius than the display-tier preview produces.
+4. **Highlights: gain-map capacity versus SDR-base compression.** At the fixture's saturated specular patches the SDR base JPEG is dark (measured at patch 5: encoded 0.110, 0.008, 0.122) with the gain map saturated at 1.0, and the capacity (2.28 stops) cannot reconstruct the authored HDR (ceiling-compressed toward white, preview scene ~0.76). The delivered file therefore reads dark and saturated where the preview reads bright: delivered encoded (0.434, 0.126, 0.484) versus preview (1.865, 1.288, 1.319). Mechanism verified by splitting the delivered file and reading base and gain map directly. This is a format-capacity property at high-chroma speculars when the SDR rendition compresses below the HDR, not a preview error; it is the largest single contributor to the highlights band and is a candidate for the item 7 table and for an owner decision (the encode's capacity policy).
+5. **Proof-scale ceiling overshoot at sub-Nyquist speculars.** The proof artifact (1200 long edge, the product's cap) decodes above the declared ceiling on 31-99 pixels of 810 000 (0.004-0.012%), up to 2.1x the ceiling, in the highlights band; the same grade exported at 4096 decodes at 989-1007 nits with zero pixels above. Mechanism: the guided gain-map denoise crosses sharp base edges where the speculars are sub-pixel at proof scale. Recorded, not asserted, for proof-scale encodes; the delivery-scale run carries the strict rule.
+
+**A proof-path defect found and fixed.** The proof proxy session omitted `denoise`, so a proof artifact of a denoised edit showed a file the export endpoint would never produce — the anchor silently disagreed with the delivered file by construction. `ProofArtifactStore.create` now carries the session's denoise into the proxy, and `_request_signature` folds the denoise state in so a proof built before a denoise change can no longer be served for it unchanged. Two tests added in `tests/test_proofing.py`.
+
+**Method notes recorded so this is not oversold.** The first packaged run read a 4096x2304 target because the packaged app's persisted tier preference was full resolution; the driver now forces the display tier through `applyPreviewResolution` (with the execution override re-asserted) and fails if the readback is not that tier — otherwise the run would have compared a full-resolution preview while calling it the display preview. The proof artifact is capped at 1200 long edge by the product; the delivery-scale run is the one whose file side is a real export.
+
+**Gate status.** Assertion 1 passes on both surfaces; assertion 2 is measured and awaits the owner's perceptual sign-off on the sheets (`export-parity-export/*-side-by-side.png`, `export-parity-electron/*-side-by-side.png`, with x4 differences beside them). Suites: **176 JS**; Python **1352 passed, 3 skipped**. Phase 3 untouched.
+
+Next safe edit: item 7's tolerance table, fed by this run — route parity is byte-equal (15.18/19/21/23), export parity comes from 15.28, and per-module isolated runs only if the owner names them.
+
 
 
 
