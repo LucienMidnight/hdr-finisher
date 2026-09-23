@@ -29,7 +29,7 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
     }
 
     const startup = await page.evaluate(() => ({
-      previewResolution: document.querySelector("#preview-resolution")?.value,
+      previewResponse: document.querySelector("#preview-latency")?.value,
       scopeZoom: document.querySelector("#scope-zoom")?.value,
       compareLayout: document.querySelector("#preview-stage")?.dataset.compareLayout,
       sourceCollapsed: document.querySelector(".source-rail")?.classList.contains("collapsed"),
@@ -42,7 +42,7 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
     }));
 
     const expected = {
-      previewResolution: "1024",
+      previewResponse: "balanced",
       scopeZoom: "4000",
       compareLayout: "single",
       sourceCollapsed: true,

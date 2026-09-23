@@ -38,7 +38,7 @@ function assert(condition, message) {
       await queueEditCommand("set_global_adjustments", {
         adjustments: JSON.parse(JSON.stringify(state.adjustments)),
       });
-      const select = document.querySelector("#preview-resolution");
+      const select = document.querySelector("#settings-preview-resolution");
       select.value = "full";
       select.dispatchEvent(new Event("change", { bubbles: true }));
     });

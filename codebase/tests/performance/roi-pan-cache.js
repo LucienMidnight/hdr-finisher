@@ -93,7 +93,7 @@ async function waitForPanPass(page, since) {
     // The tier change round-trips through the shell preferences, which resets
     // the execution override, so the override is applied after it.
     await page.evaluate(() => {
-      const select = document.getElementById("preview-resolution");
+      const select = document.getElementById("settings-preview-resolution");
       select.value = "full";
       select.dispatchEvent(new Event("change", { bubbles: true }));
     });

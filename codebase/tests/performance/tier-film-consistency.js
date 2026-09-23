@@ -56,7 +56,7 @@ function argument(name, fallback = null) {
 
   const captureTier = async (tier) => {
     await page.evaluate((value) => {
-      const select = document.querySelector("#preview-resolution");
+      const select = document.querySelector("#settings-preview-resolution");
       select.value = value;
       select.dispatchEvent(new Event("change", { bubbles: true }));
     }, tier);

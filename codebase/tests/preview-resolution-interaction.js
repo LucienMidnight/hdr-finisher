@@ -10,12 +10,11 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
 
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    const selector = page.locator("#preview-resolution");
-    const options = await selector.locator("option").evaluateAll((items) => items.map((item) => [item.value, item.textContent]));
-    // Smallest to largest, Full last: it is an ordinary tier now, not a flag.
-    const expected = [["1024", "1K"], ["2048", "2K"], ["4096", "4K"], ["full", "Full"]];
+    const selector = page.locator("#preview-latency");
+    const options = await selector.locator("option").evaluateAll((items) => items.map((item) => item.value));
+    const expected = ["responsive", "balanced", "precise"];
     if (JSON.stringify(options) !== JSON.stringify(expected)) {
-      throw new Error(`Preview resolution options were incorrect: ${JSON.stringify(options)}`);
+      throw new Error(`Preview response options were incorrect: ${JSON.stringify(options)}`);
     }
 
     await page.click("#test-pattern-button");
@@ -59,22 +58,26 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
     if (!statusFitsPopover.fits) {
       throw new Error(`A long Preview status overflowed its popover: ${JSON.stringify(statusFitsPopover)}`);
     }
-    await selector.selectOption("4096");
-    await page.waitForFunction(() => window.HDRFinisherPerformance.authoringState().previewResolution === "4096");
-    const fourK = await page.evaluate(() => window.HDRFinisherPerformance.authoringState());
-    if (fourK.previewMaxDimension > 4096) {
-      throw new Error(`4K preview target exceeded its hard dimension cap: ${JSON.stringify(fourK)}`);
+    await selector.selectOption("precise");
+    await page.waitForFunction(() => window.HDRFinisherPerformance.authoringState().previewPreference === "precise");
+    await page.waitForFunction(() => state.acceptedPresentation?.generation === state.previewGeneration[state.currentView]
+      && !previewNeedsRefinement(), null, { timeout: 120000 });
+    const precise = await page.evaluate(() => window.HDRFinisherPerformance.authoringState());
+    if (precise.previewResolution !== "auto") {
+      throw new Error(`Precise response unexpectedly enabled a legacy tier: ${JSON.stringify(precise)}`);
     }
-    const afterResolutionChange = await page.evaluate(() => ({
+    const afterResponseChange = await page.evaluate(() => ({
       width: Number.parseFloat(activePreviewElement().style.width),
       height: Number.parseFloat(activePreviewElement().style.height),
     }));
-    if (Math.abs(afterResolutionChange.width - actualSize.sourceWidth) > 1 || Math.abs(afterResolutionChange.height - actualSize.sourceHeight) > 1) {
-      throw new Error(`Preview resolution changed 100% viewer geometry: ${JSON.stringify(afterResolutionChange)}`);
+    if (Math.abs(afterResponseChange.width - actualSize.sourceWidth) > 1 || Math.abs(afterResponseChange.height - actualSize.sourceHeight) > 1) {
+      throw new Error(`Preview response changed 100% viewer geometry: ${JSON.stringify(afterResponseChange)}`);
     }
+    await selector.selectOption("responsive");
+    await page.waitForFunction(() => window.HDRFinisherPerformance.authoringState().previewPreference === "responsive");
 
     if (pageErrors.length) throw new Error(`Browser errors: ${pageErrors.join(" | ")}`);
-    console.log("Preview resolution selector and 4K ceiling browser test passed.");
+    console.log("Preview response selector and native zoom geometry browser test passed.");
   } finally {
     await browser.close();
   }

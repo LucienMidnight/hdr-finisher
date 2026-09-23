@@ -53,7 +53,7 @@ const MAX_DIFFERING_FRACTION = 0.0005;
     await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 180000 });
 
     if (native) {
-      await page.locator("#preview-resolution").evaluate((select) => {
+      await page.locator("#settings-preview-resolution").evaluate((select) => {
         select.value = "full";
         select.dispatchEvent(new Event("change", { bubbles: true }));
       });

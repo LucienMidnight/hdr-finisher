@@ -103,7 +103,7 @@ async function compositorSample(page) {
     // presented frame to another. Starting cold would confuse "nothing has
     // been drawn yet" with "what was drawn has been thrown away".
     await page.evaluate(() => {
-      const select = document.querySelector("#preview-resolution");
+      const select = document.querySelector("#settings-preview-resolution");
       select.value = "4096";
       select.dispatchEvent(new Event("change", { bubbles: true }));
     });
@@ -128,7 +128,7 @@ async function compositorSample(page) {
     const transition = page.evaluate(async () => {
       const startedAt = performance.now();
 
-      const select = document.querySelector("#preview-resolution");
+      const select = document.querySelector("#settings-preview-resolution");
       select.value = "full";
       select.dispatchEvent(new Event("change", { bubbles: true }));
 

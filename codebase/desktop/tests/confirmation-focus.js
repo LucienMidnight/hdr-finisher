@@ -1,7 +1,7 @@
 // MINOR-10, the Electron half -- a confirmation must not raise a native modal.
 //
 // Reported from manual testing: after dismissing the native confirmation on
-// Crop & Rotate Reset, the Maximum preview size dropdown could no longer be
+// Crop & Rotate Reset, the Preview response dropdown could no longer be
 // opened. Clicking it did nothing until another Windows application was
 // focused and the window returned. A `<select>` popup in Chromium is a native
 // window, and after a blocking native modal the renderer's focus state will
@@ -118,18 +118,17 @@ async function main() {
     assert.equal(nativeDialogs.length, 0,
       `A native modal was raised: ${JSON.stringify(nativeDialogs)}`);
 
-    // Close Settings so the selector under test is the one the report names:
-    // Maximum preview size, in the viewer's Preview popover.
+    // Close Settings so the selector under test is in the viewer's Preview popover.
     await window.evaluate(() => document.getElementById("settings-dialog")?.close());
     await window.click("#preview-toggle");
-    await window.waitForSelector("#preview-resolution", { state: "visible", timeout: 10000 });
+    await window.waitForSelector("#preview-latency", { state: "visible", timeout: 10000 });
 
     // The selector, immediately, with no focus round trip. Clicking it must
     // reach the element and leave it focused and usable.
-    const selector = window.locator("#preview-resolution");
+    const selector = window.locator("#preview-latency");
     await selector.click();
     const state = await window.evaluate(() => {
-      const element = document.getElementById("preview-resolution");
+      const element = document.getElementById("preview-latency");
       return {
         focused: document.activeElement === element,
         disabled: element.disabled,
@@ -137,15 +136,15 @@ async function main() {
         value: element.value,
       };
     });
-    assert.equal(state.disabled, false, "The preview resolution selector was disabled.");
+    assert.equal(state.disabled, false, "The preview response selector was disabled.");
     assert.ok(state.options > 1, `The selector had no choices: ${JSON.stringify(state)}`);
     assert.equal(state.focused, true,
       `Clicking the selector did not focus it after a confirmation: ${JSON.stringify(state)}`);
 
     // And it still changes, without the window having lost and regained focus.
-    const target = state.value === "1024" ? "2048" : "1024";
+    const target = state.value === "responsive" ? "balanced" : "responsive";
     await selector.selectOption(target);
-    const after = await window.evaluate(() => document.getElementById("preview-resolution").value);
+    const after = await window.evaluate(() => document.getElementById("preview-latency").value);
     assert.equal(after, target,
       `The selector did not change after a confirmation: ${JSON.stringify({ after, target })}`);
 

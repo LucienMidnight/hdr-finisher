@@ -81,7 +81,7 @@ const MB = (bytes) => `${(bytes / 1e6).toFixed(1)} MB`;
           throw new Error(`The GPU budget did not take: wanted ${budgetGiB} GiB, renderer reports ${MB(budgetBytes)}`);
         }
 
-        await page.locator("#preview-resolution").evaluate((select) => {
+        await page.locator("#settings-preview-resolution").evaluate((select) => {
           select.value = "full";
           select.dispatchEvent(new Event("change", { bubbles: true }));
         });

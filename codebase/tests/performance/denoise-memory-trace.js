@@ -66,7 +66,7 @@ const MB = (bytes) => `${(bytes / 1e6).toFixed(1)} MB`;
           await page.waitForFunction(() => state.gpuPreview?.available === true, null, { timeout: 120000 });
           await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 600000 });
 
-          await page.locator("#preview-resolution").evaluate((select) => {
+          await page.locator("#settings-preview-resolution").evaluate((select) => {
             select.value = "full";
             select.dispatchEvent(new Event("change", { bubbles: true }));
           });

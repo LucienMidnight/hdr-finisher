@@ -214,7 +214,7 @@ async function runScenario(browser, options) {
   const loadReadyMs = performance.now() - loadStarted;
 
   if (options.highQuality) {
-    await page.locator("#preview-resolution").evaluate((control) => {
+    await page.locator("#settings-preview-resolution").evaluate((control) => {
       control.value = "2048";
       control.dispatchEvent(new Event("change", { bubbles: true }));
     });

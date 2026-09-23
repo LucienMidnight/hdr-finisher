@@ -70,7 +70,7 @@ function assert(condition, message) {
     );
 
     await page.evaluate(() => {
-      const select = document.querySelector("#preview-resolution");
+      const select = document.querySelector("#settings-preview-resolution");
       select.value = "full";
       select.dispatchEvent(new Event("change", { bubbles: true }));
     });

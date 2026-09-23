@@ -194,7 +194,7 @@ async function main() {
     }
     await window.waitForFunction(() => document.getElementById("preview-canvas")?.style.display !== "none", null, { timeout: 30000 });
     if (phase3) {
-      await window.locator("#preview-resolution").evaluate((control, edge) => {
+      await window.locator("#settings-preview-resolution").evaluate((control, edge) => {
         control.value = String(edge);
         control.dispatchEvent(new Event("change", { bubbles: true }));
       }, longEdge);

@@ -58,7 +58,7 @@ const TIERS = [
 
 async function selectTier(page, tier) {
   await page.evaluate((value) => {
-    const selector = document.getElementById("preview-resolution");
+    const selector = document.getElementById("settings-preview-resolution");
     selector.value = value;
     selector.dispatchEvent(new Event("change", { bubbles: true }));
   }, tier);

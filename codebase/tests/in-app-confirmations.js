@@ -1,7 +1,7 @@
 // MINOR-10 -- confirmations are in-application, not native.
 //
 // Reported from manual testing: after dismissing the native confirmation on
-// Crop & Rotate Reset, the Maximum preview size dropdown could no longer be
+// Crop & Rotate Reset, the Preview response dropdown could no longer be
 // opened. Clicking it did nothing until another Windows application was
 // focused and the window returned. A `<select>` popup in Chromium is a native
 // window, and after a blocking native modal the renderer will not open one.

@@ -26,7 +26,7 @@ const { _electron: electron } = require("playwright");
     }
     await page.waitForFunction(() => Boolean(state.acceptedPresentation), null, { timeout: 60000 });
     const timings = [];
-    for (const value of ["4096", "1024", "2048", "4096", "1024"]) {
+    for (const value of ["precise", "responsive", "balanced", "precise", "responsive"]) {
       if (await page.locator("#preview-popover").isVisible()) await page.locator("#preview-close").click();
       await page.locator("#zoom-fit").click();
       const image = await page.evaluate(() => { const rect = activePreviewElement().getBoundingClientRect(); return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }; });
@@ -43,13 +43,13 @@ const { _electron: electron } = require("playwright");
       const started = Date.now();
       // selectOption bypasses the native dropdown. Exercise the real click,
       // popup, keyboard selection, and change event while previews refine.
-      await page.locator("#preview-resolution").click();
-      await page.waitForFunction(() => document.querySelector("#preview-resolution").matches(":open"), null, { timeout: 3000 });
+      await page.locator("#preview-latency").click();
+      await page.waitForFunction(() => document.querySelector("#preview-latency").matches(":open"), null, { timeout: 3000 });
       timings.push(Date.now() - started);
       await page.keyboard.press("Home");
-      for (let index = 0; index < ["1024", "2048", "4096"].indexOf(value); index++) await page.keyboard.press("ArrowDown");
+      for (let index = 0; index < ["responsive", "balanced", "precise"].indexOf(value); index++) await page.keyboard.press("ArrowDown");
       await page.keyboard.press("Enter");
-      await page.waitForFunction((expected) => state.previewResolution === expected, value);
+      await page.waitForFunction((expected) => state.previewLatencyPreference === expected, value);
       assert.equal(await page.locator("#preview-popover").isVisible(), true);
       try {
         await page.waitForFunction(() => {
@@ -61,7 +61,7 @@ const { _electron: electron } = require("playwright");
         }, null, { timeout: 30000 });
       } finally {
         console.log(JSON.stringify(await page.evaluate(() => ({
-          resolution: state.previewResolution, accepted: state.acceptedPresentation,
+          response: state.previewLatencyPreference, accepted: state.acceptedPresentation,
           target: previewTargetLongEdge(), quality: els.previewQualityStatus.textContent,
           generation: state.previewGeneration, geometryDraft: geometryDraftActive(),
           scheduler: { current: state.previewScheduler.current, interacting: state.previewScheduler.interacting,

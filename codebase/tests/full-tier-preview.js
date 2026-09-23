@@ -29,19 +29,18 @@ function assert(condition, message) {
     });
 
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    // Full is a shipped tier now, offered in the markup beside 1K/2K/4K
-    // rather than installed by a query flag. Both selectors must carry it,
-    // because the Settings copy and the viewer popover are the same choice.
+    // Full remains available to diagnostics after the normal preview control
+    // switches to response preferences.
     const fullOptions = await page.evaluate(() => ({
       preview: document.querySelector('#preview-resolution option[value="full"]')?.textContent,
       settings: document.querySelector('#settings-preview-resolution option[value="full"]')?.textContent,
     }));
-    assert(fullOptions.preview === "Full" && fullOptions.settings === "Full",
-      `Full was not offered coherently in both selectors: ${JSON.stringify(fullOptions)}`);
+    assert(fullOptions.preview === undefined && fullOptions.settings === "Full",
+      `Full diagnostic override was not offered as expected: ${JSON.stringify(fullOptions)}`);
 
     await page.getByRole("button", { name: "Load test pattern" }).click();
     await page.waitForFunction(() => state.session?.session_id && viewerState().status === "ready", null, { timeout: 120000 });
-    await page.locator("#preview-resolution").evaluate((select) => {
+    await page.locator("#settings-preview-resolution").evaluate((select) => {
       select.value = "full";
       select.dispatchEvent(new Event("change", { bubbles: true }));
     });
@@ -82,7 +81,12 @@ function assert(condition, message) {
 
     assert(stripPeaks.length > 0 && Number.isFinite(stripPeaks.at(-1)),
       `CPU Full response did not carry its exact scope peak: ${JSON.stringify(stripPeaks)}`);
-    await page.evaluate(() => refreshScopes(scopeLongEdge("settled"), { tier: "settled" }));
+    // Exact scope peak is an explicit analysis option during authoring.
+    await page.evaluate(() => {
+      const exactPeak = document.querySelector("#scope-exact-peak");
+      exactPeak.checked = true;
+      exactPeak.dispatchEvent(new Event("change", { bubbles: true }));
+    });
     try {
       await page.waitForFunction(() => state.lastScope?.peak_exact === true
         && state.lastScope?.peak_value === state.acceptedPresentation?.scopePeak,
@@ -90,7 +94,8 @@ function assert(condition, message) {
     } catch (error) {
       const diagnostics = await page.evaluate(() => ({
         accepted: state.acceptedPresentation,
-        lastScope: state.lastScope,
+        lastScope: state.lastScope && { tier: state.lastScope.tier,
+          peak_value: state.lastScope.peak_value, peak_exact: state.lastScope.peak_exact },
         scopeGeneration: state.scopeGeneration,
         previewGeneration: state.previewGeneration,
         currentView: state.currentView,
