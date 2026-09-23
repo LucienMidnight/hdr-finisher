@@ -18,11 +18,13 @@ from hdr_finisher.models import (
     BrowserEvidenceRecord,
     CapabilityInfo,
     CapabilityStatus,
+    DenoiseDocumentSettings,
     ExportResponse,
     JPEGGainMapProofMetadata,
     ProofArtifactRequest,
     ProofReconstructionRequest,
 )
+from hdr_finisher.color_context import RenderColorContext
 from hdr_finisher.proofing import (
     EvidenceStore,
     GainMapParameters,
@@ -341,6 +343,71 @@ def test_proof_proxy_preserves_local_adjustments_and_sdr_match(monkeypatch, tmp_
     )
 
     assert captured == {"locals": local_sentinel, "match": match_sentinel}
+
+
+def test_proof_proxy_preserves_denoise(monkeypatch, tmp_path: Path) -> None:
+    """A proof claims to show the delivered file; the export carries denoise.
+
+    The proof proxy is a reduced session, so anything the export graph reads
+    from the session and the proxy omits silently disappears from the proof.
+    Denoise is authored beside the grade and read from the session, so it has
+    to survive the reduction.
+    """
+    captured = {}
+
+    class CapturingBackend(_FakeBackend):
+        def export(self, session: object, settings: object) -> ExportResponse:
+            captured["denoise"] = getattr(session, "denoise", None)
+            return super().export(session, settings)
+
+    proof_store = ProofArtifactStore()
+    proof_store.root = tmp_path
+    image = np.full((12, 16, 3), 0.18, dtype=np.float32)
+    denoise_sentinel = object()
+    session = type(
+        "Session",
+        (),
+        {
+            "session_id": "proof-denoise-parity",
+            "render_cache": SessionRenderCache(image, None),
+            "denoise": denoise_sentinel,
+        },
+    )()
+    monkeypatch.setattr(proofing_module, "_inspect_artifact", lambda *_args: (3.0, "test metadata"))
+    monkeypatch.setattr(
+        proofing_module,
+        "_render_export_branch",
+        lambda *_args, **_kwargs: np.full((12, 16, 3), 0.18, dtype=np.float32),
+    )
+
+    proof_store.create(
+        session,
+        ProofArtifactRequest(adjustments=AdjustmentState(), format="jpeg_ultrahdr", long_edge=256),
+        CapturingBackend(),
+    )
+
+    assert captured == {"denoise": denoise_sentinel}
+
+
+def test_proof_signature_tracks_denoise_state() -> None:
+    """Denoise is not part of the request, so the signature must fold it in.
+
+    Without this, a proof built before a denoise change would be served for it
+    unchanged and would silently describe a different file.
+    """
+    request = ProofArtifactRequest(adjustments=AdjustmentState(), format="jpeg_ultrahdr", long_edge=256)
+    context = RenderColorContext()
+    enabled = DenoiseDocumentSettings()
+    enabled.hdr.enabled = True
+    enabled.hdr.controls.amount = 0.8
+    disabled = DenoiseDocumentSettings()
+
+    signatures = {
+        ProofArtifactStore._request_signature("session", request, context, None),
+        ProofArtifactStore._request_signature("session", request, context, enabled),
+        ProofArtifactStore._request_signature("session", request, context, disabled),
+    }
+    assert len(signatures) == 3
 
 
 def test_failed_proof_build_cleans_internal_staging_file_before_retry(monkeypatch, tmp_path: Path) -> None:

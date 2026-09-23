@@ -187,7 +187,8 @@ class ProofArtifactStore:
         if request.format not in SUPPORTED_PROOF_FORMATS:
             raise ValueError(f"Unsupported proof format: {request.format}")
         context = getattr(session, "color_context", RenderColorContext(getattr(session, "hdr_reference_white_nits", 203)))
-        signature = self._request_signature(getattr(session, "session_id"), request, context)
+        denoise = getattr(session, "denoise", None)
+        signature = self._request_signature(getattr(session, "session_id"), request, context, denoise)
         if not request.force:
             with self._lock:
                 cached_id = self._request_cache.get(signature)
@@ -205,6 +206,11 @@ class ProofArtifactStore:
             color_context=context,
             local_adjustments=getattr(session, "local_adjustments", None),
             sdr_match=getattr(session, "sdr_match", None),
+            # Denoise is authored beside the grade, and the export graph reads it
+            # from the session. A proof that claims to show the delivered file
+            # must carry it too, or a denoised edit would be reviewed through a
+            # file the export endpoint would never produce.
+            denoise=denoise,
         )
         suffix, media_type = PROOF_FORMAT_INFO[request.format]
         # Proofs are internal cache artifacts, not user exports. Use a unique
@@ -554,11 +560,27 @@ class ProofArtifactStore:
         return _encode_hdr_avif(reconstructed, artifact.reference_white_nits, quality=PROOF_TILE_QUALITY)
 
     @staticmethod
-    def _request_signature(session_id: str, request: ProofArtifactRequest, color_context: RenderColorContext) -> str:
+    def _request_signature(
+        session_id: str,
+        request: ProofArtifactRequest,
+        color_context: RenderColorContext,
+        denoise: object | None = None,
+    ) -> str:
         # ``force`` selects how the request is served, not what it produces, so
-        # it stays out of the signature.
+        # it stays out of the signature. Denoise is not part of the request, so
+        # its state has to be folded in explicitly: otherwise a proof built
+        # before a denoise change would be served for it unchanged.
         request_payload = request.model_dump_json(exclude={"force"})
-        payload = f"{APP_VERSION}|{session_id}|{color_context.cache_key}|{request_payload}".encode("utf-8")
+        denoise_payload = ""
+        if denoise is not None:
+            denoise_payload = (
+                denoise.model_dump_json()
+                if hasattr(denoise, "model_dump_json")
+                else json.dumps(denoise, sort_keys=True, default=str)
+            )
+        payload = (
+            f"{APP_VERSION}|{session_id}|{color_context.cache_key}|{denoise_payload}|{request_payload}"
+        ).encode("utf-8")
         return hashlib.sha256(payload).hexdigest()[:24]
 
     @staticmethod
