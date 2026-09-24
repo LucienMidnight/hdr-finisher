@@ -158,6 +158,26 @@ def test_preview_downsample_filters_high_frequency_detail_without_losing_hdr_ran
     assert float(np.std(result[..., 0])) < 0.1
 
 
+def test_preview_downsample_parallel_channels_match_the_sequential_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Phase 5 carry-over: a large cold level resizes its three channels on a
+    # small thread pool, because the first progress tick otherwise waits for a
+    # whole channel. The result must be bit-identical either way.
+    import hdr_finisher.preview as preview_module
+
+    rng = np.random.default_rng(11)
+    image = rng.random((1600, 1400, 3), dtype=np.float32)
+    observed: list[tuple[int, int]] = []
+
+    parallel = downsample_image(image, 512, progress=lambda done, total: observed.append((done, total)))
+
+    monkeypatch.setattr(preview_module, "PARALLEL_CHANNEL_MIN_PIXELS", 10**12)
+    sequential = downsample_image(image, 512)
+
+    np.testing.assert_array_equal(parallel, sequential)
+    assert sorted(observed) == [(1, 3), (2, 3), (3, 3)]
+    assert observed[-1] == (3, 3)
+
+
 def test_sdr_export_quantization_returns_uint8() -> None:
     image = np.ones((2, 2, 3), dtype=np.float32) * 0.5
     quantized = _linear_to_srgb8(image)

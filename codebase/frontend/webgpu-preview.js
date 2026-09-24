@@ -516,6 +516,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
    * same decision, which is what the Phase 2 exit gate requires.
    */
   const DEFAULT_TILE_SIZE = 512;
+  // Phase 5 item 3: bounded staging ring for source streaming. Four 16 MiB
+  // chunks keep the staging bound unchanged while overlapping fetches with
+  // copies and draining the queue once per stream instead of once per chunk.
+  const SOURCE_UPLOAD_RING_SIZE = 4;
 
   function detailTileHalo(width, height, params, localAdjustments = [], lane = "hdr") {
     return graphScaleContract().detailReach(width, height, params, localAdjustments, lane);
@@ -956,6 +960,25 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // no larger than this.
       this.maxSourceChunkBytes = 16 * 1024 * 1024;
       this.sourceTransportMetrics = null;
+      // Phase 5 item 4: which route carries an above-budget source frame.
+      // "stream" reads one chunked row-strip response through the staging ring,
+      // "single" reads one prebuilt whole-frame response the same way, and
+      // "strips" is the per-strip request route the ring first landed with.
+      // The streaming route is the measured default; the others stay for the
+      // A/B driver and as an in-field fallback.
+      this.sourceTransportMode = "stream";
+      // Phase 5 item 2: the calibrated Auto budget, once a device exists.
+      this.gpuBudget = null;
+      // Phase 5 item 1: one allocator owns the budget, the LRU order and the
+      // reservations for everything the renderer caches. Cache entries are
+      // evicted through it by global least-recent use, not by per-cache caps.
+      const GpuAllocator = typeof window !== "undefined" ? window.HDRGpuAllocator : null;
+      this.gpuAllocator = GpuAllocator
+        ? new GpuAllocator({ budgetBytes: this.memoryBudgetBytes() })
+        : null;
+      // A lane keeps its source levels until the central budget asks for them
+      // back; this cap only stops pathological key growth.
+      this.proxyLevelCapPerLane = 6;
       // Phase 4 tiled execution. The admission planner uses it when Direct
       // does not fit; the diagnostic hook can still invoke it explicitly.
       this.tileGraph = null;
@@ -965,6 +988,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.pendingCacheTrim = null;
       this.detailBandTiles = new Map();
       this.maskTiles = new Map();
+      // Phase 5 item 1: every cache map is registered through the allocator, so
+      // a set, delete or clear *is* an allocation event and no call site can
+      // forget to report one. Reads touch the global LRU order.
+      this.proxies = this.trackGpuCache("source-proxy", this.proxies);
+      this.sceneLuminance = this.trackGpuCache("scene-luminance", this.sceneLuminance);
+      this.localMasks = this.trackGpuCache("local-mask", this.localMasks);
+      this.detailBandTiles = this.trackGpuCache("detail-band-tile", this.detailBandTiles);
+      this.maskTiles = this.trackGpuCache("mask-tile", this.maskTiles);
       const MaskRequestCoordinator = typeof window !== "undefined"
         ? window.HDRMaskRequestCoordinator
         : null;
@@ -985,11 +1016,54 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
 
     setMemoryBudget(value) {
       this.memoryBudget = value === "auto" ? "auto" : value;
+      this.gpuAllocator?.setBudget(this.memoryBudgetBytes());
       return this.memoryBudgetBytes();
     }
 
     memoryBudgetBytes() {
-      return normalizeGpuBudgetBytes(this.memoryBudget);
+      const normalized = normalizeGpuBudgetBytes(this.memoryBudget);
+      // Phase 5 item 2: an explicit setting is the user's number and stands.
+      // Auto uses the calibrated budget when calibration exists, and can only
+      // be lowered by it -- the policy value is the ceiling until item 6's
+      // failure recovery passes (PRD 5.7).
+      if (this.memoryBudget === "auto" && this.gpuBudget?.budgetBytes > 0) {
+        return Math.min(normalized, this.gpuBudget.budgetBytes);
+      }
+      return normalized;
+    }
+
+    /**
+     * Phase 5 item 2: calibrate Auto from verified device information and a
+     * bounded allocation probe. The probe is a real device allocation of the
+     * candidate's probe size, created and destroyed immediately; a failure is
+     * evidence, not an exception, and it downgrades the budget.
+     */
+    calibrateGpuBudget() {
+      const Budget = typeof window !== "undefined" ? window.HDRGpuBudget : null;
+      if (!Budget) return null;
+      this.gpuBudget = Budget.calibrate({
+        policyBytes: GPU_BUDGET_AUTO_BYTES,
+        adapterInfo: this.adapterInfo,
+        limits: this.adapterInfo?.limits || snapshotDeviceLimits(this.device?.limits),
+        probe: (bytes) => this.probeGpuAllocation(bytes),
+      });
+      this.gpuAllocator?.setBudget(this.memoryBudgetBytes());
+      return this.gpuBudget;
+    }
+
+    probeGpuAllocation(bytes) {
+      if (!this.device || !(bytes > 0)) return false;
+      try {
+        const buffer = this.device.createBuffer({
+          size: bytes,
+          usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+        });
+        buffer.destroy();
+        return true;
+      } catch (error) {
+        this.recordStage("gpu-budget-probe", { bytes, passed: false, reason: error?.message || String(error) });
+        return false;
+      }
     }
 
     clearAllocationBackoff() {
@@ -1001,6 +1075,126 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.allocationBackoff = { kind, reason, at: performance.now(), ...detail };
       this.recordStage("allocation-failure", { kind, reason, ...detail });
       return this.allocationBackoff;
+    }
+
+    /**
+     * Central registry hooks (Phase 5 item 1). Every cache entry the renderer
+     * holds must pass through `gpuCacheEntry` so the allocator sees its bytes
+     * and can release the *texture*, not just the map key, when it evicts.
+     * Registration is the allocation: there is no second place to forget.
+     */
+    trackGpuCache(kind, map) {
+      if (!this.gpuAllocator) return map;
+      const renderer = this;
+      return new Proxy(map, {
+        get(target, property) {
+          if (property === "set") {
+            return (key, value) => {
+              const previous = target.get(key);
+              if (previous && previous !== value) {
+                // A same-key replacement is still an allocation: the old
+                // texture must be released, or it becomes unreferenced live
+                // memory the registry no longer knows about.
+                renderer.gpuCacheRelease(previous);
+                renderer.releaseGpuCacheValue(kind, previous);
+              }
+              target.set(key, renderer.gpuCacheEntry(kind, key, value));
+              return this;
+            };
+          }
+          if (property === "delete") {
+            return (key) => {
+              const previous = target.get(key);
+              if (previous) renderer.gpuCacheRelease(previous);
+              return target.delete(key);
+            };
+          }
+          if (property === "clear") {
+            return () => {
+              for (const value of target.values()) renderer.gpuCacheRelease(value);
+              return target.clear();
+            };
+          }
+          if (property === "get") {
+            return (key) => {
+              const value = target.get(key);
+              if (value) renderer.touchGpuCache(value);
+              return value;
+            };
+          }
+          const value = Reflect.get(target, property, target);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+    }
+
+    gpuCacheEntry(kind, key, entry) {
+      if (!this.gpuAllocator || !entry) return entry;
+      if (entry.allocatorEntry) this.gpuAllocator.unregister(entry.allocatorEntry);
+      entry.allocatorEntry = this.gpuAllocator.register({
+        kind,
+        key,
+        bytes: entry.byteSize || 0,
+        evict: () => this.evictGpuCacheEntry(kind, key),
+      });
+      return entry;
+    }
+
+    gpuCacheRelease(entry) {
+      if (!this.gpuAllocator || !entry) return entry;
+      if (entry.allocatorEntry) {
+        this.gpuAllocator.unregister(entry.allocatorEntry);
+        entry.allocatorEntry = null;
+      }
+      return entry;
+    }
+
+    /** Destroy one cache value by kind, without touching its map key. */
+    releaseGpuCacheValue(kind, entry) {
+      if (!entry) return;
+      if (kind === "source-proxy" || kind === "scene-luminance") {
+        this.destroyAfterActiveRenders(() => entry.texture?.destroy());
+      } else if (kind === "local-mask") {
+        this.destroyAfterActiveRenders(() => this.destroyLocalMaskEntry(entry));
+      } else {
+        entry.texture?.destroy();
+      }
+    }
+
+    touchGpuCache(entry) {
+      if (this.gpuAllocator && entry?.allocatorEntry) this.gpuAllocator.touch(entry.allocatorEntry);
+      return entry;
+    }
+
+    /** Release one registered cache entry by kind and key, through its owner. */
+    evictGpuCacheEntry(kind, key) {
+      if (kind === "source-proxy") {
+        const proxy = this.proxies.get(key);
+        if (!proxy) return;
+        this.proxies.delete(key);
+        this.destroyAfterActiveRenders(() => proxy.texture?.destroy());
+      } else if (kind === "detail-band-tile") {
+        const entry = this.detailBandTiles.get(key);
+        if (!entry) return;
+        this.detailBandTiles.delete(key);
+        this.detailCacheCounters.evictions += 1;
+        entry.texture?.destroy();
+      } else if (kind === "mask-tile") {
+        const entry = this.maskTiles.get(key);
+        if (!entry) return;
+        this.maskTiles.delete(key);
+        entry.texture?.destroy();
+      } else if (kind === "scene-luminance") {
+        const entry = this.sceneLuminance.get(key);
+        if (!entry) return;
+        this.sceneLuminance.delete(key);
+        this.destroyAfterActiveRenders(() => entry.texture?.destroy());
+      } else if (kind === "local-mask") {
+        const entry = this.localMasks.get(key);
+        if (!entry) return;
+        this.localMasks.delete(key);
+        this.destroyAfterActiveRenders(() => this.destroyLocalMaskEntry(entry));
+      }
     }
 
     /**
@@ -1110,6 +1304,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           timestampQueries,
           limits: snapshotDeviceLimits(this.device.limits),
         };
+        // Phase 5 item 2: Auto is calibrated once the device exists, and the
+        // allocator adopts the calibrated number.
+        this.calibrateGpuBudget();
         this.context = this.canvas.getContext("webgpu");
         if (!this.context) throw new Error("The WebGPU canvas context is unavailable");
         this.module = this.device.createShaderModule({ code: SHADER_SOURCE });
@@ -1207,6 +1404,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.device = null;
       this.adapter = null;
       this.adapterInfo = null;
+      this.gpuBudget = null;
       this.context = null;
       this.module = null;
       this.maskModule = null;
@@ -1236,6 +1434,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.lastPresentedFrame = null;
       if (this.presentationTarget) {
         const target = this.presentationTarget;
+        if (target.allocatorEntry) {
+          this.gpuAllocator?.unregister(target.allocatorEntry);
+          target.allocatorEntry = null;
+        }
         this.destroyAfterActiveRenders(() => target.texture?.destroy());
         this.presentationTarget = null;
       }
@@ -1450,6 +1652,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         + [...this.localParamBuffers.values()].reduce((sum, buffer) => sum + (buffer.size || 0), 0)
         + intermediateEntries.reduce((sum, entry) => sum + (entry.compositeParamBuffer?.size || 0), 0)
         + denoiseParameterBufferBytes;
+      // Phase 5 item 1: the retained presentation target is live device memory
+      // (and a pinned allocator reservation). It used to be missing from the
+      // resident categories while the peak-agreement driver counted it, which
+      // is exactly the drift the exit gate measures.
+      const presentationSurfaceBytes = this.presentationTarget?.byteSize || 0;
       const residentCategories = {
         sourceProxyBytes: proxyBytes,
         gradingCoreBytes,
@@ -1465,6 +1672,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         denoiseReconstructionScratchBytes,
         denoiseResolvedBytes,
         parameterBufferBytes,
+        presentationSurfaceBytes,
       };
       const residentBytes = Object.values(residentCategories).reduce((sum, value) => sum + value, 0);
       const cachedCategories = {
@@ -1486,8 +1694,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         (largest, entry) => Math.max(largest, entry.width * entry.height * 8),
         0,
       );
+      // One extra retained frame is reserved while a scale change replaces the
+      // target: the old texture is destroyed only after submitted work that may
+      // still read it. The current target's own bytes are resident above.
       const retainedPresentationOverlapBytes = this.performanceMetrics.presentations?.length
-        ? largestPresentationBytes
+        ? (this.presentationTarget?.byteSize || largestPresentationBytes)
         : 0;
       const planningEntry = intermediateEntries.reduce((largest, entry) => (
         !largest || entry.width * entry.height > largest.width * largest.height ? entry : largest
@@ -1502,6 +1713,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         : null;
       return {
         planned,
+        // Phase 5 item 1: the central allocator's view. `usedBytes` is every
+        // registered cache entry plus every reservation; `overBudgetBytes` is
+        // what eviction could not fund. Peak agreement is measured against the
+        // driver/browser overhead separately by the peak-agreement driver.
+        allocator: this.gpuAllocator?.snapshot() || null,
         resident: { totalBytes: residentBytes, categories: residentCategories },
         transient: {
           totalBytes: transientBytes,
@@ -1581,10 +1797,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           budget: {
             setting: this.memoryBudget,
             bytes: this.memoryBudgetBytes(),
+            // Phase 5 item 2: where Auto's number came from, and the probe
+            // evidence behind it. Never a claim about physical VRAM.
+            calibration: this.gpuBudget,
           },
           plan: this.lastRenderPlan,
           allocationBackoff: this.allocationBackoff,
           sourceTransport: this.sourceTransportMetrics,
+          sourceTransportMode: this.sourceTransportMode,
           maxSourceChunkBytes: this.maxSourceChunkBytes,
           tiledExecution: this.tiledExecutionMetrics,
           tileScheduler: this.tileScheduler?.snapshot?.() || null,
@@ -1831,6 +2051,13 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         return null;
       }
       this.recordAllocation("tile-graph", this.tileGraph.byteSize, { width, height });
+      if (this.gpuAllocator) {
+        // A pinned reservation: the graph is the pass's own working set, never
+        // an eviction candidate while it exists.
+        this.tileGraph.allocatorEntry = this.gpuAllocator.register({
+          kind: "tile-graph", key: "tile-graph", bytes: this.tileGraph.byteSize, pinned: true,
+        });
+      }
       return this.tileGraph;
     }
 
@@ -1838,6 +2065,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const graph = this.tileGraph;
       if (!graph) return;
       this.tileGraph = null;
+      if (graph.allocatorEntry) {
+        this.gpuAllocator?.unregister(graph.allocatorEntry);
+        graph.allocatorEntry = null;
+      }
       this.destroyAfterActiveRenders(() => {
         graph.sourceTexture?.destroy();
         graph.baseTexture?.destroy();
@@ -1984,6 +2215,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.activeRenderCount += 1;
       const serial = (this.renderSerials.get(canvas) || 0) + 1;
       this.renderSerials.set(canvas, serial);
+      // The source this pass reads is pinned for the pass: a cache allocation
+      // inside the pass may trigger global eviction, and the texture being
+      // copied from must never be the victim.
+      let proxyPin = null;
       try {
 
       const tileSize = Math.max(64, Math.floor(Number(sourceOptions?.tileSize) || Scheduler.DEFAULT_TILE_SIZE));
@@ -2028,6 +2263,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         );
         if (whole) proxy = whole;
       }
+      proxyPin = this.gpuAllocator && proxy.allocatorEntry ? this.gpuAllocator.pin(proxy.allocatorEntry) : null;
 
       const pipelines = this.pipelineFor(surface.format);
 
@@ -2092,6 +2328,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         zoom: sourceOptions?.zoom,
       });
       } finally {
+        if (proxyPin) this.gpuAllocator.unpin(proxyPin);
         this.finishActiveRender();
       }
     }
@@ -3054,6 +3291,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       if (this.sessionId !== sessionId) this.resetSession(sessionId);
       const resourceGeneration = this.resourceGeneration;
       this.activeRenderCount += 1;
+      let proxyPin = null;
       try {
       const serial = (this.renderSerials.get(canvas) || 0) + 1;
       this.renderSerials.set(canvas, serial);
@@ -3095,6 +3333,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         || !proxy
         || sourceOptions?.isCurrent?.() === false) return this.refuseRender("superseded-before-proxy");
       let sourceProxy = this.selectedDenoiseSource(proxy);
+      proxyPin = this.gpuAllocator && proxy.allocatorEntry ? this.gpuAllocator.pin(proxy.allocatorEntry) : null;
       let masks = [];
       let masksReadyAt = proxyReadyAt;
 
@@ -3700,6 +3939,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         processedLongEdge: proxy.longEdge,
       };
       } finally {
+        if (proxyPin) this.gpuAllocator.unpin(proxyPin);
         this.finishActiveRender();
       }
     }
@@ -4638,6 +4878,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       }
       if (existing) {
         const previous = existing.texture;
+        if (existing.allocatorEntry) {
+          this.gpuAllocator?.unregister(existing.allocatorEntry);
+          existing.allocatorEntry = null;
+        }
         this.destroyAfterActiveRenders(() => previous.destroy());
       }
       const texture = this.device.createTexture({
@@ -4654,6 +4898,13 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         valid: false,
       };
       this.presentationTarget = target;
+      if (this.gpuAllocator) {
+        // The accepted frame is a reservation, not a cache entry: nothing may
+        // evict it while it is retained.
+        target.allocatorEntry = this.gpuAllocator.register({
+          kind: "presentation-surface", key: "presentation", bytes: target.byteSize, pinned: true,
+        });
+      }
       this.recordAllocation("presentation-surface", target.byteSize, { width, height, format });
       return target;
     }
@@ -4920,11 +5171,15 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     trimProxyLevels(sessionId, lane) {
       const prefix = `${sessionId}:${lane}:`;
       const keys = [...this.proxies.keys()].filter((key) => key.startsWith(prefix));
-      while (keys.length > 2) {
-        const key = keys.shift();
-        const proxy = this.proxies.get(key);
-        this.destroyAfterActiveRenders(() => proxy?.texture?.destroy());
-        this.proxies.delete(key);
+      // A lane keeps its source levels until the central budget asks for them
+      // back: evicting the level a warm step is about to reuse is exactly the
+      // churn this item removes. The global LRU evicts by budget and protects
+      // anything a pass has pinned, so the count below is only a last-resort
+      // cap for pathological key growth.
+      while (keys.length > this.proxyLevelCapPerLane) {
+        // The eviction hook releases the registry entry and destroys the
+        // texture in one place, so the map and the allocator cannot disagree.
+        this.evictGpuCacheEntry("source-proxy", keys.shift());
       }
     }
 
@@ -5047,6 +5302,259 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return this.sourceAbort.signal;
     }
 
+    /**
+     * Copy one row chunk into a source texture through a bounded ring of
+     * reusable staging buffers.
+     *
+     * `queue.writeTexture` accumulates every chunk in one Dawn dynamic-uploader
+     * buffer until the eventual render submit; at 42 MP that silently
+     * reconstructs an image-sized staging allocation and exceeds WebGPU's
+     * default 256 MiB maxBufferSize. One mapped buffer per chunk avoids that,
+     * but awaiting `onSubmittedWorkDone()` after each copy serialises the whole
+     * stream behind every chunk: no fetch can start while a copy runs. The only
+     * thing a slot's next write must wait for is that slot's own earlier copy,
+     * and `mapAsync` is exactly that fence. A small ring therefore overlaps
+     * fetches with copies and needs one queue drain at the end of the stream,
+     * not one per chunk.
+     *
+     * Returns the buffer the chunk was written through, so the caller can
+     * release the ring once the stream is done.
+     */
+    async copySourceChunkStaged(ring, retired, slot, data, { bytesPerRow, rows, width, texture, origin }) {
+      const capacity = Math.max(1, bytesPerRow * rows);
+      let staging = ring[slot];
+      if (!staging || staging.size < capacity) {
+        if (staging) retired.push(staging);
+        staging = this.device.createBuffer({
+          size: capacity,
+          usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.MAP_WRITE,
+        });
+        ring[slot] = staging;
+      }
+      await staging.mapAsync(GPUMapMode.WRITE);
+      new Uint8Array(staging.getMappedRange()).set(new Uint8Array(data));
+      staging.unmap();
+      const encoder = this.device.createCommandEncoder();
+      encoder.copyBufferToTexture(
+        { buffer: staging, offset: 0, bytesPerRow, rowsPerImage: rows },
+        { texture, origin },
+        { width, height: rows },
+      );
+      this.device.queue.submit([encoder.finish()]);
+      return staging;
+    }
+
+    /** Release a staging ring once its copies have executed. */
+    async releaseSourceStaging(ring, retired = []) {
+      const buffers = [...ring, ...retired].filter(Boolean);
+      ring.length = 0;
+      retired.length = 0;
+      if (!buffers.length) return;
+      // Every slot's copy must have executed before its buffer goes away. One
+      // drain covers the whole stream; a lost device has nothing to release.
+      await this.device.queue.onSubmittedWorkDone().catch(() => null);
+      for (const buffer of buffers) buffer.destroy();
+    }
+
+    /**
+     * Select the transport for an above-budget source frame (Phase 5 item 4).
+     * Kept on the renderer so a driver can A/B the routes against the same
+     * session and a field problem can fall back without a rebuild.
+     */
+    setSourceTransport(mode) {
+      const normalized = String(mode || "");
+      if (!["strips", "single", "stream"].includes(normalized)) return this.sourceTransportMode;
+      this.sourceTransportMode = normalized;
+      return this.sourceTransportMode;
+    }
+
+    /**
+     * Read one whole-frame proxy response as a byte stream and fill the source
+     * texture through the bounded staging ring (Phase 5 item 4).
+     *
+     * The per-strip route pays a fresh backend encode and a request round trip
+     * per chunk. This route asks for the frame once: `stream` reads it back as
+     * chunked row strips while the backend is still encoding later rows, and
+     * `single` reads the prebuilt body the same way. Either way the frame never
+     * exists as an image-sized buffer in JS -- the request body is consumed in
+     * chunks and copied into the ring as it arrives -- and the row math is the
+     * same as the strip route, so the uploaded bytes are identical.
+     */
+    async loadProxyStreaming(sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key, options = {}) {
+      const startedAt = performance.now();
+      const endpoint = options.endpoint === "single" ? "proxy" : "proxy-stream";
+      const signal = options.signal || this.sourceAbortSignal();
+      const isCurrent = typeof options.isCurrent === "function" ? options.isCurrent : null;
+      const assertCurrent = (message) => {
+        if (isCurrent && isCurrent() === false) throw supersededSourceError(message);
+      };
+      const url = `/api/session/${sessionId}/${endpoint}/${lane}`
+        + `?long_edge=${longEdge}&format=rgba16f&edit_revision=${editRevision}`
+        + `&geometry_signature=${encodeURIComponent(geometrySignature)}`;
+      const response = await fetch(url, { signal });
+      if (!response.ok) {
+        if (response.status === 409 || response.status === 507) {
+          const payload = await response.json().catch(() => null);
+          const error = new Error((typeof payload?.detail === "string" ? payload.detail : payload?.detail?.message)
+            || (response.status === 409
+              ? "WebGPU geometry proxy is waiting for the committed edit"
+              : "WebGPU proxy could not be loaded"));
+          error.recoverable = true;
+          error.previewCapacity = response.status === 507;
+          error.status = response.status;
+          throw error;
+        }
+        // An unavailable route (an older packaged backend, a proxy in front of
+        // it) is not an error: the caller falls back to the strip route.
+        await response.arrayBuffer().catch(() => null);
+        return null;
+      }
+      const width = Number(response.headers.get("X-Image-Width"));
+      const height = Number(response.headers.get("X-Image-Height"));
+      const bytesPerRow = Number(response.headers.get("X-Bytes-Per-Row"));
+      const pixelFormat = response.headers.get("X-Pixel-Format") || "rgba16float";
+      const workingSpace = response.headers.get("X-Working-Space") || "acescg";
+      const acceptedGeometry = response.headers.get("X-Geometry-Signature") || "{}";
+      if (!(width > 0 && height > 0 && bytesPerRow > 0)) {
+        await response.arrayBuffer().catch(() => null);
+        return null;
+      }
+      if (acceptedGeometry !== geometrySignature) {
+        const error = new Error("Stale WebGPU geometry proxy rejected");
+        error.recoverable = true;
+        throw error;
+      }
+      assertCurrent("Source stream was superseded before upload");
+      const bytesPerPixel = pixelFormat === "rgba16float" ? 8 : 16;
+      let texture;
+      try {
+        texture = this.device.createTexture({
+          size: { width, height },
+          format: pixelFormat,
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC,
+        });
+      } catch (error) {
+        this.recordAllocationFailure("source-proxy", error, { width, height });
+        throw error;
+      }
+      const rowsPerChunk = Math.max(1, Math.min(height, Math.floor(this.maxSourceChunkBytes / bytesPerRow)));
+      const chunkBytes = rowsPerChunk * bytesPerRow;
+      const chunkTotal = Math.ceil(height / rowsPerChunk);
+      const ringSize = Math.max(1, Math.min(SOURCE_UPLOAD_RING_SIZE, chunkTotal));
+      const stagingRing = [];
+      const retiredStaging = [];
+      const pending = new Uint8Array(chunkBytes);
+      let pendingBytes = 0;
+      let transferredBytes = 0;
+      let chunkCount = 0;
+      let firstByteMs = null;
+      let firstTileMs = null;
+      const flush = async () => {
+        if (!pendingBytes) return;
+        if (pendingBytes % bytesPerRow !== 0) {
+          const error = new Error("A streamed source chunk was not row-aligned");
+          error.recoverable = true;
+          throw error;
+        }
+        const rows = pendingBytes / bytesPerRow;
+        await this.copySourceChunkStaged(stagingRing, retiredStaging, chunkCount % ringSize,
+          pending.subarray(0, pendingBytes), {
+            bytesPerRow, rows, width, texture, origin: { x: 0, y: chunkCount * rowsPerChunk },
+          });
+        if (firstTileMs === null) firstTileMs = performance.now() - startedAt;
+        chunkCount += 1;
+        pendingBytes = 0;
+      };
+      const consume = async (value) => {
+        if (firstByteMs === null) firstByteMs = performance.now() - startedAt;
+        transferredBytes += value.byteLength;
+        let offset = 0;
+        while (offset < value.byteLength) {
+          const take = Math.min(chunkBytes - pendingBytes, value.byteLength - offset);
+          pending.set(value.subarray(offset, offset + take), pendingBytes);
+          pendingBytes += take;
+          offset += take;
+          if (pendingBytes === chunkBytes) await flush();
+        }
+      };
+      try {
+        const reader = response.body?.getReader ? response.body.getReader() : null;
+        if (reader) {
+          for (;;) {
+            assertCurrent("Source stream was superseded");
+            const { value, done } = await reader.read();
+            if (done) break;
+            await consume(value);
+          }
+        } else {
+          // A response without a readable body still arrives in one piece; the
+          // row split below is what keeps the JS buffer bounded either way.
+          await consume(new Uint8Array(await response.arrayBuffer()));
+        }
+        assertCurrent("Source stream was superseded");
+        await flush();
+        if (transferredBytes !== bytesPerRow * height) {
+          const error = new Error("A streamed source proxy ended before the whole frame arrived");
+          error.recoverable = true;
+          throw error;
+        }
+      } catch (error) {
+        this.destroyAfterActiveRenders(() => texture.destroy());
+        throw error;
+      } finally {
+        await this.releaseSourceStaging(stagingRing, retiredStaging);
+      }
+      const byteSize = width * height * bytesPerPixel;
+      const proxy = {
+        texture,
+        width,
+        height,
+        sessionId,
+        lane,
+        longEdge,
+        workingSpace,
+        pixelFormat,
+        geometrySignature,
+        sourceIdentity,
+        identity: key,
+        byteSize,
+        streamed: true,
+        streamedSingle: true,
+        bindGroups: new Map(),
+      };
+      this.proxies.set(key, proxy);
+      this.sourceTransportMetrics = {
+        route: "streamed",
+        endpoint,
+        width,
+        height,
+        chunkCount,
+        rowsPerChunk,
+        transferredBytes,
+        // The peak client buffer, which is what the browser ever holds: the
+        // response body is consumed in chunks rather than buffered whole.
+        largestResponseBytes: chunkBytes,
+        timeToFirstByteMs: firstByteMs,
+        timeToFirstTileMs: firstTileMs,
+        totalMs: performance.now() - startedAt,
+      };
+      this.recordAllocation("source-proxy", byteSize, { width, height, lane, longEdge, pixelFormat, streamed: true, endpoint });
+      this.recordStage("proxy-request", {
+        lane,
+        longEdge,
+        cacheHit: false,
+        route: "streamed",
+        endpoint,
+        chunkCount,
+        durationMs: this.sourceTransportMetrics.totalMs,
+        timeToFirstByteMs: firstByteMs,
+        timeToFirstTileMs: firstTileMs,
+        bytes: transferredBytes,
+      });
+      this.trimProxyLevels(sessionId, lane);
+      return proxy;
+    }
+
     async loadProxyStreamed(sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key, options = {}) {
       const startedAt = performance.now();
       const signal = options.signal || this.sourceAbortSignal();
@@ -5097,6 +5605,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
 
       const rowBytes = Math.max(1, width * bytesPerPixel);
       const rowsPerChunk = Math.max(1, Math.min(height, Math.floor(this.maxSourceChunkBytes / rowBytes)));
+      const chunkTotal = Math.ceil(height / rowsPerChunk);
+      const ringSize = Math.max(1, Math.min(SOURCE_UPLOAD_RING_SIZE, chunkTotal));
+      const stagingRing = [];
+      const retiredStaging = [];
       let transferredBytes = 0;
       let firstTileMs = null;
       let chunkCount = 0;
@@ -5119,32 +5631,15 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           if (firstTileMs === null) firstTileMs = performance.now() - startedAt;
           transferredBytes += data.byteLength;
           chunkCount += 1;
-          // queue.writeTexture lets Chromium accumulate every chunk in one
-          // Dawn dynamic-uploader buffer until the eventual render submit. At
-          // 42 MP that silently reconstructs an image-sized staging allocation
-          // and exceeds WebGPU's default 256 MiB maxBufferSize. Give each chunk
-          // its own mapped COPY_SRC buffer and finish that copy before moving
-          // on. Source preparation may use multiple submissions; the finished
-          // canvas generation is still one atomic render submission.
-          const staging = this.device.createBuffer({
-            size: data.byteLength,
-            usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.MAP_WRITE,
-            mappedAtCreation: true,
-          });
-          try {
-            new Uint8Array(staging.getMappedRange()).set(new Uint8Array(data));
-            staging.unmap();
-            const encoder = this.device.createCommandEncoder();
-            encoder.copyBufferToTexture(
-              { buffer: staging, offset: 0, bytesPerRow, rowsPerImage: rows },
-              { texture, origin: { x: 0, y: top } },
-              { width, height: rows },
-            );
-            this.device.queue.submit([encoder.finish()]);
-            await this.device.queue.onSubmittedWorkDone();
-          } finally {
-            staging.destroy();
-          }
+          // One staging buffer per chunk kept Dawn's dynamic uploader from
+          // accumulating an image-sized allocation, but draining the queue
+          // after every copy left no room for the next fetch. The bounded ring
+          // waits only for the slot's own earlier copy, so fetches overlap
+          // copies; the stream drains once, in `releaseSourceStaging` below.
+          await this.copySourceChunkStaged(stagingRing, retiredStaging,
+            chunkCount % ringSize, data, {
+              bytesPerRow, rows, width, texture, origin: { x: 0, y: top },
+            });
           // A superseded stream stops here rather than fetching the rest of an
           // image the caller no longer wants.
           assertCurrent("Source tile stream was superseded");
@@ -5152,6 +5647,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       } catch (error) {
         this.destroyAfterActiveRenders(() => texture.destroy());
         throw error;
+      } finally {
+        await this.releaseSourceStaging(stagingRing, retiredStaging);
       }
 
       const byteSize = width * height * bytesPerPixel;
@@ -5274,6 +5771,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
 
       const rowBytes = Math.max(1, delivered.width * bytesPerPixel);
       const rowsPerChunk = Math.max(1, Math.min(delivered.height, Math.floor(this.maxSourceChunkBytes / rowBytes)));
+      const chunkTotal = Math.ceil(delivered.height / rowsPerChunk);
+      const ringSize = Math.max(1, Math.min(SOURCE_UPLOAD_RING_SIZE, chunkTotal));
+      const stagingRing = [];
+      const retiredStaging = [];
       let transferredBytes = 0;
       let chunkCount = 0;
       let firstTileMs = null;
@@ -5310,33 +5811,21 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           if (firstTileMs === null) firstTileMs = performance.now() - startedAt;
           transferredBytes += data.byteLength;
           chunkCount += 1;
-          // Same reason as the streamed route: one mapped buffer per chunk
-          // keeps the dynamic uploader from accumulating an image-sized
-          // staging allocation.
-          const staging = this.device.createBuffer({
-            size: data.byteLength,
-            usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.MAP_WRITE,
-            mappedAtCreation: true,
-          });
-          try {
-            new Uint8Array(staging.getMappedRange()).set(new Uint8Array(data));
-            staging.unmap();
-            const encoder = this.device.createCommandEncoder();
-            encoder.copyBufferToTexture(
-              { buffer: staging, offset: 0, bytesPerRow, rowsPerImage: chunk.height },
-              { texture, origin: { x: chunk.x - delivered.x, y: chunk.y - delivered.y } },
-              { width: chunk.width, height: chunk.height },
-            );
-            this.device.queue.submit([encoder.finish()]);
-            await this.device.queue.onSubmittedWorkDone();
-          } finally {
-            staging.destroy();
-          }
+          // Same reason as the streamed route: the bounded ring keeps the
+          // dynamic uploader from accumulating an image-sized staging
+          // allocation without serialising every copy behind the queue.
+          await this.copySourceChunkStaged(stagingRing, retiredStaging,
+            chunkCount % ringSize, data, {
+              bytesPerRow, rows: chunk.height, width: chunk.width, texture,
+              origin: { x: chunk.x - delivered.x, y: chunk.y - delivered.y },
+            });
           assertCurrent("ROI source region stream was superseded");
         }
       } catch (error) {
         this.destroyAfterActiveRenders(() => texture.destroy());
         throw error;
+      } finally {
+        await this.releaseSourceStaging(stagingRing, retiredStaging);
       }
 
       const byteSize = delivered.width * delivered.height * bytesPerPixel;
@@ -5417,9 +5906,21 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           if (regional) return regional;
         }
         // A whole-frame response above the chunk budget is exactly the
-        // image-sized browser buffer this sprint removes. Try tiles first; the
-        // tile route returns null when the backend cannot serve this geometry.
+        // image-sized browser buffer this sprint removes. The streaming route
+        // reads that frame back in bounded row strips; the strip route stays as
+        // the fallback when the streaming endpoint is unavailable.
         if (longEdge * longEdge * 8 > this.maxSourceChunkBytes) {
+          if (this.sourceTransportMode !== "strips") {
+            const streaming = await this.loadProxyStreaming(
+              sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key,
+              {
+                signal,
+                isCurrent,
+                endpoint: this.sourceTransportMode === "single" ? "single" : "stream",
+              },
+            );
+            if (streaming) return streaming;
+          }
           const streamed = await this.loadProxyStreamed(
             sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key,
             { signal, isCurrent },

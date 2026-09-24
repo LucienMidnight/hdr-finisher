@@ -1390,6 +1390,58 @@ class SessionRenderCache:
         self._inflight.clear()
 
 
+def rgba_proxy_pixel_format(image: np.ndarray, prefer_half: bool = True) -> str:
+    """Resolve the wire pixel format once, so rows and whole frames agree."""
+    source = image.astype(np.float32, copy=False)
+    if source.size:
+        # Scalar reductions avoid the two full-frame temporary arrays created
+        # by isfinite(source) and abs(source) on every new GPU proxy level.
+        minimum = float(np.min(source))
+        maximum = float(np.max(source))
+        half_limit = float(np.finfo(np.float16).max)
+        safe_half = bool(np.isfinite(minimum) and np.isfinite(maximum) and minimum >= -half_limit and maximum <= half_limit)
+    else:
+        safe_half = True
+    if not prefer_half or not safe_half:
+        return "rgba32float"
+    return "rgba16float"
+
+
+def encode_rgba_proxy_rows(
+    image: np.ndarray,
+    start_row: int = 0,
+    end_row: int | None = None,
+    prefer_half: bool = True,
+    pixel_format: str | None = None,
+) -> tuple[bytes, int]:
+    """Encode one row range with the whole-frame pixel format and pitch.
+
+    Slicing the frame at row boundaries and encoding each range on its own
+    produces exactly the bytes the whole-frame encoder produces for the same
+    rows: the half-float decision is resolved against the whole frame and the
+    padded row pitch depends only on the width. That is what lets the streaming
+    route reuse the bounded row buffering the stage ring already provides.
+    """
+    source = image.astype(np.float32, copy=False)
+    height, width = source.shape[:2]
+    start = max(0, min(height, int(start_row)))
+    end = height if end_row is None else max(start, min(height, int(end_row)))
+    resolved = pixel_format or rgba_proxy_pixel_format(source, prefer_half=prefer_half)
+    dtype = np.dtype("<f2") if resolved == "rgba16float" else np.dtype("<f4")
+    itemsize = dtype.itemsize
+    row_bytes = width * 4 * itemsize
+    padded_row_bytes = ((row_bytes + 255) // 256) * 256
+    row_values = padded_row_bytes // itemsize
+    strip = source[start:end]
+    packed = np.empty((strip.shape[0], row_values), dtype=dtype)
+    if row_values > width * 4:
+        packed[:, width * 4 :] = 0
+    rgba = packed[:, : width * 4].reshape(strip.shape[0], width, 4)
+    rgba[..., :3] = strip[..., :3]
+    rgba[..., 3] = np.float16(1.0) if resolved == "rgba16float" else 1.0
+    return packed.tobytes(), padded_row_bytes
+
+
 def encode_rgba32f_proxy(image: np.ndarray) -> tuple[bytes, int]:
     """Return WebGPU-ready rows whose byte stride is aligned to 256 bytes."""
     height, width = image.shape[:2]
@@ -1407,28 +1459,6 @@ def encode_rgba32f_proxy(image: np.ndarray) -> tuple[bytes, int]:
 
 def encode_rgba_proxy(image: np.ndarray, prefer_half: bool = True) -> tuple[bytes, int, str]:
     """Pack an aligned float proxy, using half float when its finite range is safe."""
-    source = image.astype(np.float32, copy=False)
-    if source.size:
-        # Scalar reductions avoid the two full-frame temporary arrays created
-        # by isfinite(source) and abs(source) on every new GPU proxy level.
-        minimum = float(np.min(source))
-        maximum = float(np.max(source))
-        half_limit = float(np.finfo(np.float16).max)
-        safe_half = bool(np.isfinite(minimum) and np.isfinite(maximum) and minimum >= -half_limit and maximum <= half_limit)
-    else:
-        safe_half = True
-    if not prefer_half or not safe_half:
-        body, bytes_per_row = encode_rgba32f_proxy(source)
-        return body, bytes_per_row, "rgba32float"
-
-    height, width = source.shape[:2]
-    row_bytes = width * 4 * np.dtype(np.float16).itemsize
-    padded_row_bytes = ((row_bytes + 255) // 256) * 256
-    row_values = padded_row_bytes // np.dtype(np.float16).itemsize
-    packed = np.empty((height, row_values), dtype="<f2")
-    if row_values > width * 4:
-        packed[:, width * 4 :] = 0
-    rgba = packed[:, : width * 4].reshape(height, width, 4)
-    rgba[..., :3] = source[..., :3]
-    rgba[..., 3] = np.float16(1.0)
-    return packed.tobytes(), padded_row_bytes, "rgba16float"
+    pixel_format = rgba_proxy_pixel_format(image, prefer_half=prefer_half)
+    body, bytes_per_row = encode_rgba_proxy_rows(image, pixel_format=pixel_format)
+    return body, bytes_per_row, pixel_format

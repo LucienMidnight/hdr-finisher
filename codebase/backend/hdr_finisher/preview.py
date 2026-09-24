@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -19,6 +20,15 @@ from .models import AdjustmentState, PreviewKind
 
 class ResizeCancelled(RuntimeError):
     """The caller superseded a filtered source resize."""
+
+
+# Phase 5 carry-over: a 42 MP cold level resized three channels one after the
+# other, so the first progress tick arrived only after a full channel's Lanczos
+# (hundreds of ms) and the UI sat on "0/3 channels". Pillow releases the GIL for
+# this resize, so the three channels run concurrently on large sources. Small
+# sources stay sequential: the pool would cost more than it saves.
+PARALLEL_CHANNEL_MIN_PIXELS = 2_000_000
+PARALLEL_CHANNEL_MAX_WORKERS = 3
 
 
 def render_preview_bytes(
@@ -92,9 +102,9 @@ def downsample_image(
 
     source = image.astype(np.float32, copy=False)
     channels = source[..., None] if source.ndim == 2 else source
-    resized_channels = []
     channel_count = channels.shape[2]
-    for channel_index in range(channel_count):
+
+    def resize_channel(channel_index: int) -> np.ndarray:
         if is_current is not None and not is_current():
             raise ResizeCancelled("A newer source replaced this resize.")
         channel = channels[..., channel_index]
@@ -104,9 +114,30 @@ def downsample_image(
         )
         # Filtering must not invent negative light or HDR peaks beyond the
         # source channel's range.
-        resized_channels.append(np.clip(resized, float(np.min(channel)), float(np.max(channel))))
-        if progress is not None:
-            progress(channel_index + 1, channel_count)
+        return np.clip(resized, float(np.min(channel)), float(np.max(channel)))
+
+    resized_channels: list[np.ndarray] = []
+    if channel_count > 1 and channels.shape[0] * channels.shape[1] >= PARALLEL_CHANNEL_MIN_PIXELS:
+        # Progress is reported from this thread as each future completes, so a
+        # callback never runs on a worker and the count stays monotonic.
+        with ThreadPoolExecutor(
+            max_workers=min(channel_count, PARALLEL_CHANNEL_MAX_WORKERS),
+            thread_name_prefix="mip-resize",
+        ) as pool:
+            pending = {pool.submit(resize_channel, index): index for index in range(channel_count)}
+            completed = [None] * channel_count
+            done = 0
+            for future in as_completed(pending):
+                completed[pending[future]] = future.result()
+                done += 1
+                if progress is not None:
+                    progress(done, channel_count)
+        resized_channels = completed
+    else:
+        for channel_index in range(channel_count):
+            resized_channels.append(resize_channel(channel_index))
+            if progress is not None:
+                progress(channel_index + 1, channel_count)
 
     if is_current is not None and not is_current():
         raise ResizeCancelled("A newer source replaced this resize.")

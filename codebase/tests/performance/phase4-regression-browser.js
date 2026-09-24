@@ -75,7 +75,8 @@ const preferences = process.argv.includes('--preferences')
             states: window.__regressionStates.slice(stateCount),
             route: window.HDRFinisherPerformance.tiledExecutionMetrics(),
             gpu: window.HDRFinisherPerformance.gpuSnapshot(), refusals: state.gpuDraftRefusals,
-            lastRefusal: state.lastGpuDraftRefusal, fallbacks: state.cpuFallbacks };
+            lastRefusal: state.lastGpuDraftRefusal, fallbacks: state.cpuFallbacks,
+            scheduler: window.HDRFinisherPerformance.snapshot() };
         }, before);
         const firstCurrent = after.states.find((entry) => entry.at >= immediate.at
           && entry.edge !== immediate.accepted && entry.generation === after.accepted.generation);
@@ -87,13 +88,47 @@ const preferences = process.argv.includes('--preferences')
             execution: after.accepted.execution, transport: after.accepted.transport },
           route: after.route?.sourceRoute, stages: after.gpu?.stages?.slice(-20) || [],
           renders: after.gpu?.renders?.slice(-4) || [], refusals: after.refusals,
-          lastRefusal: after.lastRefusal, fallbacks: after.fallbacks });
+          lastRefusal: after.lastRefusal, fallbacks: after.fallbacks, scheduler: after.scheduler });
         console.log(`${preference} ${name}: ${steps.at(-1).exactMs}ms, ${steps.at(-1).firstCurrentMs}ms first`);
         if (immediate.required !== immediate.accepted) {
           assert.notEqual(immediate.status.slice(0, 5), 'Ready', `${preference} ${name}: stale scale said Ready`);
         }
         assert.equal(after.accepted.processedLongEdge, immediate.required,
           `${preference} ${name}: exact scale was not reached`);
+      }
+      // Warm pan at the native zoom the previous step left the viewer in. The
+      // pan pass reuses the retained frame and refines only the exposed strip;
+      // record how long the retained frame took to repaint, whether it left a
+      // painted frame, and whether a pan follow-up dispatched.
+      {
+        const before = await page.evaluate(() => ({ stateCount: window.__regressionStates.length }));
+        const pan = await page.evaluate(async () => {
+          const scrollTopBefore = els.dropzone.scrollTop;
+          els.dropzone.scrollTop = scrollTopBefore + 400;
+          const scrolledAt = performance.now();
+          await new Promise((resolve) => setTimeout(resolve, 350));
+          const region = await state.gpuPreview?.readPresentationRegion?.(8, 8, 4, 4);
+          const values = region?.values || [];
+          let luma = 0;
+          for (let index = 0; index + 3 < values.length; index += 4) {
+            luma += (values[index] + values[index + 1] + values[index + 2]) / 3;
+          }
+          return { scrollTopBefore, scrollTopAfter: els.dropzone.scrollTop,
+            settleMs: performance.now() - scrolledAt,
+            centerLuma: luma / Math.max(1, Math.floor(values.length / 4)),
+            viewer: viewerState().status, status: viewerStatusLabel(),
+            coordinator: window.HDRFinisherPerformance.renderCoordinator() };
+        });
+        await page.waitForTimeout(600);
+        const after = await page.evaluate((stateCount) => ({
+          states: window.__regressionStates.slice(stateCount),
+          coordinator: window.HDRFinisherPerformance.renderCoordinator(),
+          gpu: window.HDRFinisherPerformance.gpuSnapshot(),
+        }), before.stateCount);
+        steps.push({ preference, name: 'pan', pan, states: after.states,
+          coordinator: after.coordinator, stages: after.gpu?.stages?.slice(-12) || [] });
+        console.log(`${preference} pan: settle ${Math.round(pan.settleMs)}ms, `
+          + `luma ${pan.centerLuma.toFixed(3)}, ${pan.viewer}`);
       }
       for (const [name, selector, value] of [['exposure', '#hdr-exposure',
         preference === 'responsive' ? '0.25' : preference === 'balanced' ? '0.5' : '0.75'],
@@ -124,22 +159,34 @@ const preferences = process.argv.includes('--preferences')
         console.log(`${preference} ${name}: ${steps.at(-1).exactMs}ms, ${steps.at(-1).firstCurrentMs}ms first`);
       }
     }
+    // Evidence is written before the gates: a red gate must still leave the
+    // run's data on disk for diagnosis.
+    fs.mkdirSync(path.dirname(output), { recursive: true });
+    fs.writeFileSync(output, JSON.stringify({ fixture: `${width}x${height} deterministic noisy TIFF`, steps }, null, 2));
     if (preferences.includes('responsive')) {
       const cold = steps.find((step) => step.preference === 'responsive' && step.name === 'out-50');
       const warm = steps.find((step) => step.preference === 'responsive' && step.name === 'warm-50');
       const coldCoarse = cold?.states?.find((entry) => entry.coarse);
       const warmCoarse = warm?.states?.find((entry) => entry.coarse);
       assert.ok(coldCoarse, 'Responsive zoom never presented coarse pixels');
-      assert.equal(warmCoarse?.edge, coldCoarse.edge, 'Warm zoom changed the reusable coarse source level');
+      // Phase 5 item 1 keeps a lane's source levels until the central budget
+      // asks for them back, so a warm 50% can reuse the exact level it built
+      // cold and present it without a coarse flash. The invariant is that warm
+      // never rebuilds a source level and never invents a different coarse
+      // edge; presenting exact immediately is the stronger outcome.
+      if (warmCoarse) {
+        assert.equal(warmCoarse.edge, coldCoarse.edge, 'Warm zoom changed the reusable coarse source level');
+      } else {
+        assert.ok(warm.states.every((entry) => !entry.coarse),
+          'Warm zoom presented an unrecognised coarse frame');
+      }
       assert.equal(warm.cacheAfter.cold_builds - warm.cacheBefore.cold_builds, 0,
         'Warm zoom rebuilt a source mip instead of reusing the cache');
     }
     if (preferences.includes('precise')) {
       assert.ok(steps.filter((step) => step.preference === 'precise')
-        .every((step) => !step.states?.some((entry) => entry.coarse)),
+        .every((entry) => !entry.states?.some((state) => state.coarse)),
       'Precise unexpectedly presented a coarse frame');
     }
-    fs.mkdirSync(path.dirname(output), { recursive: true });
-    fs.writeFileSync(output, JSON.stringify({ fixture: `${width}x${height} deterministic noisy TIFF`, steps }, null, 2));
   } finally { await browser.close(); }
 })().catch((error) => { console.error(error); process.exitCode = 1; });

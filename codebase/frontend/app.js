@@ -440,6 +440,9 @@ const state = {
   compareHoldTimer: null,
   compareHeld: false,
   comparePeekActive: false,
+  // Phase 5 item 5: a peek asked for before the inactive lane was prepared.
+  // It completes when the explicit preload lands, if the hold is still down.
+  comparePendingPeek: false,
   compareLayout: "single",
   // What the comparison pane is actually showing, as opposed to what the
   // primary pane is. The two are rendered by different calls at different
@@ -2165,6 +2168,9 @@ function initializePreviewScheduler() {
     roiParity: (options = {}) => runRoiParity(options),
     gpuSnapshot: () => state.gpuPreview?.diagnosticsSnapshot?.() || null,
     enableGpuInstrumentation: (enabled = true) => state.gpuPreview?.setInstrumentationEnabled?.(enabled),
+    // Phase 5 item 4 A/B: "stream" (default), "single", or the legacy "strips".
+    setSourceTransport: (mode) => state.gpuPreview?.setSourceTransport?.(mode) || null,
+    sourceTransportMode: () => state.gpuPreview?.sourceTransportMode || null,
     renderGpuTier: (longEdge) => renderGpuDraft(state.currentView, {
       longEdge: Number(longEdge),
       tier: "settled",
@@ -10900,6 +10906,11 @@ async function renderGpuDraftInner(
     );
     const exactEdge = refinementProxyLongEdge();
     const visibleEdge = Math.min(exactEdge, Math.max(1, displayedLongEdge()));
+    // Total wall time is the model input on purpose. Phase 5 checked feeding
+    // the renderer's graph-only stage time here (source and mask waits
+    // excluded): at 42 MP it made the controller skip the coarse frame
+    // entirely at warm 50%, because a scale change always pays a fresh source
+    // upload and that upload is exactly the cost the coarse frame buys down.
     state.previewLatencyController?.record({ graph: previewGraphTimingKey(lane), edge: longEdge,
       exactEdge, visiblePixels: visibleEdge * visibleEdge, elapsedMs: performance.now() - renderStartedAt });
     setZoomMode(state.zoomMode);
@@ -11596,6 +11607,7 @@ function renderInterpretationGate() {
 async function switchLane(lane) {
   if (!["hdr", "sdr"].includes(lane)) return;
   const switchGeneration = ++state.laneSwitchGeneration;
+  state.comparePendingPeek = false;
   abandonPerspectiveDraft();
   if (state.rotateDraftGeometry) closeRotateMode(false);
   // A lane change is a presentation boundary. Commit the newest optimistic
@@ -11957,7 +11969,30 @@ async function showCachedPreview(lane) {
   return true;
 }
 
-function prepareInactivePreview() {
+/**
+ * Phase 5 item 5: whether the editor is actually idle.
+ *
+ * The inactive lane's preparation is a whole-frame proxy upload for a lane
+ * nobody is looking at. `requestIdleCallback` fires on any quiet moment in the
+ * event loop, including the gap between a settled frame and the refinement
+ * that is about to follow it. This gate is the app's own answer: no draft in
+ * flight, no gesture, and no pass queued or running for either lane.
+ */
+function previewIdleNow() {
+  if (!state.session || state.gpuDraftInFlight || geometryDraftActive()) return false;
+  if (state.previewScheduler?.interacting) return false;
+  const coordinator = state.renderCoordinator;
+  if (coordinator) {
+    for (const lane of ["hdr", "sdr"]) {
+      const laneState = coordinator.state(lane);
+      if (laneState.inFlight || laneState.pending
+        || laneState.panTimerPending || laneState.catchUpTimerPending) return false;
+    }
+  }
+  return true;
+}
+
+function prepareInactivePreview({ immediate = false } = {}) {
   if (!state.session) return;
   const other = state.currentView === "hdr" ? "sdr" : "hdr";
   if (state.compareLayout !== "single") {
@@ -11968,7 +12003,15 @@ function prepareInactivePreview() {
     renderCompareStatus();
     return;
   }
-  state.previewScheduler?.scheduleInactive(other, state.previewGeneration[other]);
+  // An explicit comparison gesture runs now; the automatic path waits for
+  // true idle so a background lane cannot compete with the edit on screen.
+  if (immediate) {
+    if (!state.inactiveSourceController) {
+      void preloadInactiveLane(other, state.previewGeneration[other]);
+    }
+    return;
+  }
+  state.previewScheduler?.scheduleInactive(other, state.previewGeneration[other], previewIdleNow);
 }
 
 async function preloadInactiveLane(lane, generation) {
@@ -11995,6 +12038,14 @@ async function preloadInactiveLane(lane, generation) {
     if (controller.signal.aborted || generation !== state.previewGeneration[lane]) return;
     state.gpuPreparedLane[lane] = true;
     renderCompareStatus();
+    // A held comparison gesture asked for this lane before it was ready.
+    // Complete the peek now, while the user is still holding.
+    if (state.comparePendingPeek && state.compareHeld
+      && state.compareLayout === "single" && !state.comparePeekActive
+      && lane !== state.currentView) {
+      state.comparePendingPeek = false;
+      await peekOtherLane();
+    }
   } catch (error) {
     if (!controller.signal.aborted) console.debug("Inactive GPU lane preparation skipped.", error);
   } finally {
@@ -12010,7 +12061,12 @@ function renderCompareStatus() {
   const other = state.currentView === "hdr" ? "sdr" : "hdr";
   const ready = cacheReady(other);
   els.compareLayoutButtons.forEach((button) => { button.disabled = false; });
-  els.compareButton.disabled = state.compareLayout === "single" && !ready;
+  // Phase 5 item 5: readiness no longer gates the control. Inactive-lane work
+  // is deferred to true idle, so disabling the control would make the
+  // deferral unreachable; an explicit click or held comparison starts the
+  // load now instead. `dataset.prepared` keeps the state observable to
+  // diagnostics and tests.
+  els.compareButton.dataset.prepared = String(ready);
 }
 
 function bindCompareControl() {
@@ -12019,7 +12075,11 @@ function bindCompareControl() {
       const layout = button.dataset.compareLayout;
       if (layout === "single" && state.compareLayout === "single") {
         const other = state.currentView === "hdr" ? "sdr" : "hdr";
-        if (cacheReady(other)) await switchLane(other);
+        // Explicit comparison intent: warm the other lane now. `switchLane`
+        // renders it either way, but the preload marks the lane prepared so a
+        // following hold-to-peek is instant.
+        if (!cacheReady(other)) prepareInactivePreview({ immediate: true });
+        await switchLane(other);
         return;
       }
       await setCompareLayout(layout);
@@ -12038,7 +12098,9 @@ function beginCompareHold() {
   state.compareHoldTimer = window.setTimeout(async () => {
     state.compareHoldTimer = null;
     if (!state.compareHeld) return;
-    await peekOtherLane();
+    // `false` means the lane is not prepared: an explicit preload has started
+    // and the peek completes when it lands, if the hold is still down.
+    if (await peekOtherLane() === false && state.compareHeld) state.comparePendingPeek = true;
   }, 180);
 }
 
@@ -12046,6 +12108,7 @@ async function endCompareHold() {
   if (state.compareLayout !== "single") return;
   if (!state.compareHeld) return;
   state.compareHeld = false;
+  state.comparePendingPeek = false;
   if (state.compareHoldTimer) {
     window.clearTimeout(state.compareHoldTimer);
     state.compareHoldTimer = null;
@@ -12057,16 +12120,20 @@ async function endCompareHold() {
 }
 
 async function peekOtherLane() {
-  if (state.compareLayout !== "single") return;
+  if (state.compareLayout !== "single") return false;
   const other = state.currentView === "hdr" ? "sdr" : "hdr";
   if (!cacheReady(other)) {
-    return;
+    // Explicit comparison intent: prepare the lane now instead of leaving the
+    // gesture inert, and let the preload complete it.
+    prepareInactivePreview({ immediate: true });
+    return false;
   }
   state.comparePeekActive = true;
   window.HDRProofing?.syncLane();
   clearPreviewOverlay();
   await showCachedPreview(other);
   els.viewerBranchNote.textContent = `${branchCopy[other]} Release V to return to the authored preview.`;
+  return true;
 }
 
 async function restoreActiveLane() {
@@ -12081,6 +12148,7 @@ async function setCompareLayout(layout) {
   if (!COMPARE_LAYOUTS.has(layout)) return;
   state.compareLayout = layout;
   state.comparePeekActive = false;
+  state.comparePendingPeek = false;
   renderCompareLayout();
   if (layout === "single") {
     await showCachedPreview(state.currentView);

@@ -19,6 +19,7 @@ from hdr_finisher.render_cache import (
     downsample_target_dimensions,
     encode_rgba32f_proxy,
     encode_rgba_proxy,
+    encode_rgba_proxy_rows,
     scope_region_view,
 )
 
@@ -239,6 +240,32 @@ def test_webgpu_half_proxy_initializes_padding_and_rejects_nonfinite_values() ->
     nonfinite[0, 0, 0] = np.nan
     _body, _bytes_per_row, fallback_format = encode_rgba_proxy(nonfinite)
     assert fallback_format == "rgba32float"
+
+
+def test_webgpu_proxy_row_strips_reproduce_the_whole_frame_bytes() -> None:
+    image = (np.arange(96 * 40 * 3, dtype=np.float32).reshape(40, 96, 3) % 97) / 53.0
+    whole, bytes_per_row, pixel_format = encode_rgba_proxy(image)
+    assert pixel_format == "rgba16float"
+
+    strips = [
+        encode_rgba_proxy_rows(image, top, min(40, top + 7), pixel_format=pixel_format)[0]
+        for top in range(0, 40, 7)
+    ]
+    assert b"".join(strips) == whole
+    assert all(
+        encode_rgba_proxy_rows(image, top, min(40, top + 7), pixel_format=pixel_format)[1] == bytes_per_row
+        for top in range(0, 40, 7)
+    )
+
+    nonfinite = image.copy()
+    nonfinite[3, 4, 0] = np.inf
+    float_whole, float_row, float_format = encode_rgba_proxy(nonfinite)
+    assert float_format == "rgba32float"
+    float_strips = [
+        encode_rgba_proxy_rows(nonfinite, top, min(40, top + 11), pixel_format=float_format)[0]
+        for top in range(0, 40, 11)
+    ]
+    assert b"".join(float_strips) == float_whole
 
 
 def test_webgpu_source_proxy_applies_committed_geometry_before_grading() -> None:

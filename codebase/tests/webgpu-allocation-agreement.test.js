@@ -101,6 +101,14 @@ function loadPreviewModule() {
     path.join(__dirname, "../frontend/graph-scale.js"),
     "utf8",
   );
+  const allocatorSource = fs.readFileSync(
+    path.join(__dirname, "../frontend/gpu-allocator.js"),
+    "utf8",
+  );
+  const budgetSource = fs.readFileSync(
+    path.join(__dirname, "../frontend/gpu-budget.js"),
+    "utf8",
+  );
   const context = vm.createContext({
     window: {},
     performance: { now: () => 1 },
@@ -114,6 +122,8 @@ function loadPreviewModule() {
     },
   });
   vm.runInContext(graphScaleSource, context);
+  vm.runInContext(allocatorSource, context);
+  vm.runInContext(budgetSource, context);
   vm.runInContext(source, context);
   return context.window.HDRWebGPUPreview;
 }
@@ -243,4 +253,119 @@ test("the planned model for the resident graph agrees with the measured grading 
   // No presentation has been recorded, so peak carries no retained overlap yet.
   assert.equal(memory.retainedPresentationOverlapBytes, 0);
   assert.equal(memory.peakLogicalBytes, memory.resident.totalBytes);
+});
+
+function cacheTexture(preview, width, height) {
+  return {
+    texture: preview.device.createTexture({
+      size: { width, height }, format: "rgba16float", usage: 1,
+    }),
+    width,
+    height,
+    byteSize: width * height * 8,
+  };
+}
+
+test("every cache map registers through the allocator, so a set is an allocation", () => {
+  const { preview } = createPreview();
+  preview.detailBandTiles.set("detail:1", cacheTexture(preview, 32, 16));
+  preview.maskTiles.set("mask:1", cacheTexture(preview, 16, 16));
+  preview.sceneLuminance.set("scene:1", cacheTexture(preview, 64, 8));
+  preview.localMasks.set("local:1", cacheTexture(preview, 8, 8));
+  preview.proxies.set("session:hdr:1600:{}:source", cacheTexture(preview, 96, 24));
+
+  const snapshot = preview.gpuAllocator.snapshot();
+  assert.equal(snapshot.byKind["detail-band-tile"].bytes, 32 * 16 * 8);
+  assert.equal(snapshot.byKind["mask-tile"].bytes, 16 * 16 * 8);
+  assert.equal(snapshot.byKind["scene-luminance"].bytes, 64 * 8 * 8);
+  assert.equal(snapshot.byKind["local-mask"].bytes, 8 * 8 * 8);
+  assert.equal(snapshot.byKind["source-proxy"].bytes, 96 * 24 * 8);
+  assert.equal(snapshot.registeredBytes, (32 * 16 + 16 * 16 + 64 * 8 + 8 * 8 + 96 * 24) * 8);
+
+  for (const map of [preview.detailBandTiles, preview.maskTiles, preview.sceneLuminance,
+    preview.localMasks, preview.proxies]) {
+    for (const entry of map.values()) {
+      assert.ok(entry.allocatorEntry, "every cache entry must carry its registration");
+    }
+  }
+  // Deleting through the map releases the registration with it.
+  preview.maskTiles.delete("mask:1");
+  assert.equal(preview.gpuAllocator.snapshot().byKind["mask-tile"], undefined);
+});
+
+test("budget pressure evicts the global LRU across cache kinds, through each entry's release", () => {
+  const { preview, ledger } = createPreview();
+  preview.detailBandTiles.set("detail:lru", cacheTexture(preview, 24, 24));
+  preview.maskTiles.set("mask:lru", cacheTexture(preview, 24, 24));
+  assert.equal(preview.gpuAllocator.usedBytes(), 2 * 24 * 24 * 8);
+
+  preview.gpuAllocator.setBudget(24 * 24 * 8);
+  // The detail tile was registered first, so it is the LRU victim; the mask
+  // tile survives, and the victim's texture is destroyed through its owner.
+  assert.equal(preview.detailBandTiles.size, 0);
+  assert.equal(preview.maskTiles.size, 1);
+  assert.equal(preview.gpuAllocator.evictions, 1);
+  assert.equal(preview.gpuAllocator.usedBytes(), 24 * 24 * 8);
+  assert.equal(ledger.destroyed.length >= 1, true);
+  assert.ok(preview.maskTiles.get("mask:lru").allocatorEntry);
+});
+
+test("calibrated Auto lowers the budget, adopts the allocator, and reports its source", () => {
+  const { preview } = createPreview();
+  preview.adapterInfo = {
+    fallback: true, description: "software", vendor: "sw",
+    limits: { maxBufferSize: 256 * 1024 * 1024, maxTextureDimension2D: 16384 },
+  };
+  const budget = preview.calibrateGpuBudget();
+  assert.ok(budget);
+  assert.equal(budget.budgetBytes, 512 * 1024 * 1024);
+  assert.equal(budget.source, "software-adapter");
+  assert.equal(preview.memoryBudgetBytes(), 512 * 1024 * 1024);
+  assert.equal(preview.gpuAllocator.budgetBytes, 512 * 1024 * 1024);
+  assert.equal(preview.diagnosticsSnapshot().resources.budget.calibration.source, "software-adapter");
+});
+
+test("an explicit budget setting outranks the calibration, and Auto returns to it", () => {
+  const { preview } = createPreview();
+  preview.adapterInfo = {
+    fallback: true, description: "software", vendor: "sw",
+    limits: { maxBufferSize: 256 * 1024 * 1024, maxTextureDimension2D: 16384 },
+  };
+  preview.calibrateGpuBudget();
+  assert.equal(preview.setMemoryBudget(4), 4 * 1024 * 1024 * 1024);
+  assert.equal(preview.gpuAllocator.budgetBytes, 4 * 1024 * 1024 * 1024);
+  assert.equal(preview.setMemoryBudget("auto"), 512 * 1024 * 1024);
+  assert.equal(preview.gpuAllocator.budgetBytes, 512 * 1024 * 1024);
+});
+
+test("a failed allocation probe downgrades Auto before a single preview is planned", () => {
+  const { preview } = createPreview();
+  preview.adapterInfo = {
+    fallback: false, description: "full", vendor: "vendor",
+    limits: { maxBufferSize: 256 * 1024 * 1024, maxTextureDimension2D: 16384 },
+  };
+  preview.probeGpuAllocation = () => false;
+  const budget = preview.calibrateGpuBudget();
+  assert.equal(budget.budgetBytes, 1024 * 1024 * 1024);
+  assert.equal(budget.source, "probe-downgrade");
+  assert.equal(preview.memoryBudgetBytes(), 1024 * 1024 * 1024);
+  assert.equal(preview.gpuAllocator.budgetBytes, 1024 * 1024 * 1024);
+});
+
+test("the tiled working graph and the retained presentation are pinned reservations", () => {
+  const { preview } = createPreview();
+  const graph = preview.ensureTileGraph(64, 32, "rgba16float", "rgba16float", false, false);
+  const target = preview.ensurePresentationTarget(64, 32, "rgba16float");
+  assert.ok(graph);
+  assert.ok(target);
+
+  preview.gpuAllocator.setBudget(1);
+  assert.ok(preview.gpuAllocator.entries.has(graph.allocatorEntry.id), "the tile graph must not be evicted");
+  assert.ok(preview.gpuAllocator.entries.has(target.allocatorEntry.id), "the retained frame must not be evicted");
+  assert.equal(preview.gpuAllocator.snapshot().overBudgetBytes > 0, true);
+  assert.equal(preview.gpuAllocator.evictions, 0);
+
+  const graphEntryId = graph.allocatorEntry.id;
+  preview.destroyTileGraph();
+  assert.equal(preview.gpuAllocator.entries.has(graphEntryId), false);
 });

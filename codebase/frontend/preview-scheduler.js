@@ -5,6 +5,10 @@
     refinementMs: 520,
   };
 
+  // Phase 5 item 5: how long to wait before retrying deferred inactive work
+  // once the editor reports it is no longer busy.
+  const INACTIVE_RETRY_MS = 400;
+
   class HDRPreviewScheduler {
     constructor(callbacks, timings = {}) {
       this.callbacks = callbacks;
@@ -20,6 +24,7 @@
       this.settleTimer = null;
       this.refinementTimer = null;
       this.idleHandle = null;
+      this.idleKind = null;
       this.interacting = false;
       this.lastScopeStartedAt = -Infinity;
       this.metrics = {
@@ -28,6 +33,7 @@
         staleResults: 0,
         coalescedFrames: 0,
         coalescedScopes: 0,
+        inactiveDeferred: 0,
         queueDelayMs: [],
         renderMs: [],
         scopeMs: [],
@@ -68,16 +74,44 @@
       return task;
     }
 
-    scheduleInactive(lane, applicationGeneration) {
+    /**
+     * Prepare the inactive lane, but only when it cannot compete with work
+     * the user is looking at.
+     *
+     * `requestIdleCallback` only reports a gap in the browser's event loop; it
+     * has no idea a settled render, a queued follow-up or a caught-up pan is
+     * still holding the GPU. Phase 5 item 5 keeps that lane's whole-frame
+     * upload off the foreground by asking `canRun` again at the moment the
+     * idle callback fires and retrying later if the editor is still busy. An
+     * explicit comparison gesture bypasses this and calls the preload
+     * directly.
+     */
+    scheduleInactive(lane, applicationGeneration, canRun = null) {
       const generation = ++this.generations.inactive;
       const task = { lane, applicationGeneration, generation };
+      const arm = () => {
+        this.idleHandle = null;
+        if (generation !== this.generations.inactive || this.interacting) return;
+        if (window.requestIdleCallback) {
+          this.idleKind = "idle";
+          this.idleHandle = window.requestIdleCallback(run, { timeout: 1200 });
+        } else {
+          this.idleKind = "timer";
+          this.idleHandle = window.setTimeout(run, 300);
+        }
+      };
       const run = () => {
         this.idleHandle = null;
         if (generation !== this.generations.inactive || this.interacting) return;
+        if (canRun && !canRun()) {
+          this.metrics.inactiveDeferred += 1;
+          this.idleKind = "timer";
+          this.idleHandle = window.setTimeout(arm, INACTIVE_RETRY_MS);
+          return;
+        }
         this.callbacks.onInactive?.(task);
       };
-      if (window.requestIdleCallback) this.idleHandle = window.requestIdleCallback(run, { timeout: 1200 });
-      else this.idleHandle = window.setTimeout(run, 300);
+      arm();
     }
 
     cancel() {
@@ -171,10 +205,11 @@
       window.clearTimeout(this.refinementTimer);
       this.refinementTimer = null;
       if (this.idleHandle !== null) {
-        if (window.cancelIdleCallback) window.cancelIdleCallback(this.idleHandle);
+        if (this.idleKind === "idle" && window.cancelIdleCallback) window.cancelIdleCallback(this.idleHandle);
         else window.clearTimeout(this.idleHandle);
       }
       this.idleHandle = null;
+      this.idleKind = null;
       this.generations.inactive += 1;
     }
 

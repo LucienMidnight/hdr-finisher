@@ -9,12 +9,13 @@ import time
 from time import perf_counter
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from typing import Iterator
 
 import uvicorn
 import numpy as np
 from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from .capabilities import probe_capabilities
@@ -73,7 +74,7 @@ from .models import (
 from .overlay import encode_processed_overlay_bytes
 from .preview import encode_processed_preview_bytes, encode_processed_rgba8
 from .cpu_strips import StripExecutionRefused
-from .render_cache import StaleRender, TileUnavailableError, encode_rgba_proxy
+from .render_cache import StaleRender, TileUnavailableError, encode_rgba_proxy, encode_rgba_proxy_rows, rgba_proxy_pixel_format
 from .finishing import geometry_output_dimensions, perspective_guide_transform, solve_perspective_guides
 from .display_probe import probe_displays
 from .proofing import EvidenceStore, ProofArtifactStore
@@ -100,6 +101,10 @@ _EXPORT_SUFFIXES = {
     "sdr_png": ".png",
     "sdr_jpegxl": ".jxl",
 }
+# One row strip of the streaming proxy route. Matches the frontend staging
+# ring's chunk budget (16 MiB) so the client copies each strip without
+# re-splitting it while the next strip is still being encoded.
+PROXY_STREAM_CHUNK_BYTES = 16 * 1024 * 1024
 
 
 def _preview_resource_payload(session, max_dimension: int) -> dict[str, object]:
@@ -863,6 +868,95 @@ def webgpu_proxy(
             "X-Image-Width": str(width),
             "X-Image-Height": str(height),
             "X-Bytes-Per-Row": str(bytes_per_row),
+            "X-Working-Space": working_space,
+            "X-Pixel-Format": pixel_format,
+            "X-Geometry-Signature": accepted_geometry_signature,
+            "X-Edit-Revision": str(session.edit_revision),
+            "X-Source-Level-State": source_state or "unknown",
+        },
+    )
+
+
+@app.get("/api/session/{session_id}/proxy-stream/{kind}")
+def webgpu_proxy_stream(
+    session_id: str,
+    kind: PreviewKind,
+    long_edge: int = Query(default=1600, ge=256, le=16384),
+    format: str = Query(default="rgba16f", pattern="^(rgba16f|rgba32f)$"),
+    edit_revision: int | None = Query(default=None, ge=0),
+    geometry_signature: str | None = Query(default=None),
+) -> Response:
+    """Stream one whole-frame GPU proxy as bounded row strips.
+
+    The bytes are exactly those ``/proxy`` returns for the same request, so a
+    client can choose the streaming route without changing what it uploads.
+    Streaming exists for the transport, not the pixels: the first strip is
+    encoded and sent while the rest of the frame is still being encoded, so the
+    client's bounded staging ring can start copying immediately and the frame
+    never has to exist as one image-sized response body on either side.
+    """
+    try:
+        session = store.get(session_id)
+        _check_revision(session.edit_revision, edit_revision)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RevisionConflictError as exc:
+        raise _revision_conflict(exc) from exc
+    _guard_preview_resources(session, long_edge)
+    revision = session.edit_revision
+    try:
+        proxy, working_space, authoritative_geometry_signature = session.render_cache.geometry_source_proxy(
+            kind,
+            long_edge,
+            session.adjustments,
+            session.sdr_match,
+            is_current=lambda: session.edit_revision == revision,
+        )
+    except StaleRender:
+        return JSONResponse(status_code=409, content={"detail": "Stale source mip request dropped."})
+    if geometry_signature is not None:
+        try:
+            requested_geometry = json.loads(geometry_signature)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail="Invalid geometry signature.") from exc
+        authoritative_geometry = session.adjustments.shared.geometry.model_dump(mode="json")
+        if requested_geometry != authoritative_geometry:
+            raise HTTPException(status_code=409, detail="Stale geometry proxy request dropped.")
+        accepted_geometry_signature = geometry_signature
+    else:
+        accepted_geometry_signature = authoritative_geometry_signature
+
+    height, width = proxy.shape[:2]
+    pixel_format = rgba_proxy_pixel_format(proxy, prefer_half=format == "rgba16f")
+    itemsize = 2 if pixel_format == "rgba16float" else 4
+    bytes_per_row = ((width * 4 * itemsize + 255) // 256) * 256
+    rows_per_chunk = max(1, min(height, PROXY_STREAM_CHUNK_BYTES // bytes_per_row))
+    prefer_half = format == "rgba16f"
+
+    def row_strips() -> Iterator[bytes]:
+        for top in range(0, height, rows_per_chunk):
+            # A superseded edit ends the body early; the client sees a short
+            # stream and treats it as recoverable rather than as pixels.
+            if session.edit_revision != revision:
+                return
+            body, _stride = encode_rgba_proxy_rows(
+                proxy,
+                top,
+                min(height, top + rows_per_chunk),
+                prefer_half=prefer_half,
+                pixel_format=pixel_format,
+            )
+            yield body
+
+    source_state = session.render_cache.source_level_state(long_edge)
+    return StreamingResponse(
+        row_strips(),
+        media_type="application/octet-stream",
+        headers={
+            "X-Image-Width": str(width),
+            "X-Image-Height": str(height),
+            "X-Bytes-Per-Row": str(bytes_per_row),
+            "X-Rows-Per-Chunk": str(rows_per_chunk),
             "X-Working-Space": working_space,
             "X-Pixel-Format": pixel_format,
             "X-Geometry-Signature": accepted_geometry_signature,

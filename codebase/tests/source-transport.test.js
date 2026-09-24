@@ -22,6 +22,12 @@ const graphScaleSource = fs.readFileSync(
   path.join(__dirname, "../frontend/graph-scale.js"),
   "utf8",
 );
+// Phase 5 item 1: the renderer registers every cache entry with the central
+// allocator, so the harness loads that module with the renderer.
+const gpuAllocatorSource = fs.readFileSync(
+  path.join(__dirname, "../frontend/gpu-allocator.js"),
+  "utf8",
+);
 
 function loadPreview(fetchImpl) {
   const context = vm.createContext({
@@ -36,8 +42,10 @@ function loadPreview(fetchImpl) {
     GPUBufferUsage: {
       MAP_READ: 1, MAP_WRITE: 2, COPY_SRC: 4, COPY_DST: 8, UNIFORM: 64, STORAGE: 128, QUERY_RESOLVE: 512,
     },
+    GPUMapMode: { READ: 1, WRITE: 2 },
   });
   vm.runInContext(graphScaleSource, context);
+  vm.runInContext(gpuAllocatorSource, context);
   vm.runInContext(source, context);
   return context.window.HDRWebGPUPreview;
 }
@@ -46,15 +54,68 @@ function alignRow(bytes) {
   return Math.ceil(bytes / 256) * 256;
 }
 
+/** A response body that delivers arbitrary pieces, like a network stream. */
+function chunkedBody(buffer, pieceSize) {
+  const bytes = new Uint8Array(buffer);
+  let offset = 0;
+  return {
+    getReader: () => ({
+      read: async () => {
+        if (offset >= bytes.length) return { done: true, value: undefined };
+        const end = Math.min(bytes.length, offset + pieceSize);
+        const value = bytes.subarray(offset, end);
+        offset = end;
+        return { done: false, value };
+      },
+    }),
+  };
+}
+
+/** A whole-frame body whose first channel of each row marks its global row. */
+function wholeFrameBuffer(width, height, bytesPerRow) {
+  const buffer = new ArrayBuffer(bytesPerRow * height);
+  const view = new Uint16Array(buffer);
+  for (let row = 0; row < height; row += 1) {
+    view[(row * bytesPerRow) / 2] = row;
+  }
+  return buffer;
+}
+
 /**
  * A backend that serves a synthetic image through the tile contract. Each
  * pixel's first channel encodes its global row so a misplaced strip is visible.
  */
-function createBackend({ width, height, geometrySignature = "{}", epoch = 3, declineTiles = false, failAt = null }) {
+function createBackend({
+  width, height, geometrySignature = "{}", epoch = 3, declineTiles = false, failAt = null,
+  declineStream = false, streamPieceBytes = 128 * 1024, truncateStream = false,
+}) {
   const requests = [];
   const fetchImpl = async (url) => {
     requests.push(url);
     const parsed = new URL(url, "http://localhost");
+    const bytesPerRow = alignRow(width * 8);
+    if (parsed.pathname.includes("/proxy-stream/")) {
+      if (declineStream) {
+        return { ok: false, status: 404, headers: { get: () => null }, json: async () => ({ detail: "not found" }), arrayBuffer: async () => new ArrayBuffer(0) };
+      }
+      const buffer = wholeFrameBuffer(width, height, bytesPerRow);
+      const trimmed = truncateStream ? buffer.slice(0, bytesPerRow * 2) : buffer;
+      const headers = new Map([
+        ["X-Image-Width", String(width)],
+        ["X-Image-Height", String(height)],
+        ["X-Bytes-Per-Row", String(bytesPerRow)],
+        ["X-Working-Space", "acescg"],
+        ["X-Pixel-Format", "rgba16float"],
+        ["X-Geometry-Signature", geometrySignature],
+      ]);
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: (name) => headers.get(name) ?? null },
+        body: chunkedBody(trimmed, streamPieceBytes),
+        arrayBuffer: async () => trimmed,
+      };
+    }
     if (parsed.pathname.includes("/source-tile/")) {
       if (declineTiles) {
         return { ok: false, status: 409, headers: new Map(), json: async () => ({ detail: "declined" }), arrayBuffer: async () => new ArrayBuffer(0) };
@@ -93,7 +154,6 @@ function createBackend({ width, height, geometrySignature = "{}", epoch = 3, dec
       };
     }
     // The whole-frame fallback.
-    const bytesPerRow = alignRow(width * 8);
     const headers = new Map([
       ["X-Image-Width", String(width)],
       ["X-Image-Height", String(height)],
@@ -106,7 +166,7 @@ function createBackend({ width, height, geometrySignature = "{}", epoch = 3, dec
       ok: true,
       status: 200,
       headers: { get: (name) => headers.get(name) ?? null },
-      arrayBuffer: async () => new ArrayBuffer(bytesPerRow * height),
+      arrayBuffer: async () => wholeFrameBuffer(width, height, bytesPerRow),
     };
   };
   return { fetchImpl, requests };
@@ -115,9 +175,13 @@ function createBackend({ width, height, geometrySignature = "{}", epoch = 3, dec
 function createDevice() {
   const writes = [];
   const textures = [];
+  const buffers = [];
+  let drains = 0;
   return {
     writes,
     textures,
+    buffers,
+    get drains() { return drains; },
     device: {
       limits: { maxTextureDimension2D: 16384 },
       createTexture(descriptor) {
@@ -127,12 +191,16 @@ function createDevice() {
       },
       createBuffer(descriptor) {
         const data = new ArrayBuffer(descriptor.size);
+        const entry = { size: descriptor.size, destroyed: false, mapped: false };
+        buffers.push(entry);
         return {
           size: descriptor.size,
+          __entry: entry,
           __data: data,
           getMappedRange: () => data,
-          unmap() {},
-          destroy() {},
+          mapAsync: async () => { entry.mapped = true; },
+          unmap() { entry.mapped = false; },
+          destroy() { entry.destroyed = true; },
         };
       },
       createCommandEncoder() {
@@ -145,6 +213,7 @@ function createDevice() {
               width: size.width,
               bytesPerRow: source.bytesPerRow,
               data: source.buffer.__data,
+              buffer: source.buffer,
             });
           },
           finish: () => ({}),
@@ -161,7 +230,7 @@ function createDevice() {
           });
         },
         submit() {},
-        onSubmittedWorkDone: async () => {},
+        onSubmittedWorkDone: async () => { drains += 1; },
       },
     },
   };
@@ -203,6 +272,172 @@ test("a 42 MP source streams in chunks that never reach the whole image size", a
   // One texture allocated, filled incrementally.
   assert.equal(harness.textures.length, 1);
   assert.equal(harness.writes.length, metrics.chunkCount);
+});
+
+test("staging is a bounded ring: one queue drain per stream, not one per chunk", async () => {
+  const { preview, harness } = await streamProxy({ width: 512, height: 512, chunkBytes: 64 * 1024 });
+
+  const metrics = preview.sourceTransportMetrics;
+  assert.ok(metrics.chunkCount > 4, "the fixture must need more chunks than the ring holds");
+  // The staging bound is the ring, not the chunk count and not the image.
+  const distinct = new Set(harness.writes.map((write) => write.buffer));
+  assert.equal(distinct.size, 4, "four slots must carry every chunk");
+  assert.equal(harness.buffers.length, 4, "no buffer is created beyond the ring");
+  // Copies wait only for their own slot, so the stream drains once at the end
+  // rather than once per chunk (the pre-Phase-5 behaviour).
+  assert.equal(harness.drains, 1, `expected one queue drain, saw ${harness.drains}`);
+  // Every staging buffer is released when the stream completes.
+  assert.ok(harness.buffers.every((buffer) => buffer.destroyed), "staging must be released");
+});
+
+test("the streaming route reads one response through the same bounded ring", async () => {
+  const width = 1024;
+  const height = 1200;
+  const backend = createBackend({ width, height, streamPieceBytes: 100 * 1024 });
+  const Preview = loadPreview(backend.fetchImpl);
+  const preview = new Preview(null);
+  const harness = createDevice();
+  preview.device = harness.device;
+  preview.instrumentationEnabled = true;
+  preview.maxSourceChunkBytes = 256 * 1024;
+
+  const proxy = await preview.loadProxy("session", "hdr", 8192, "{}", 0, "source");
+  assert.ok(proxy);
+  const metrics = preview.sourceTransportMetrics;
+  assert.equal(metrics.route, "streamed");
+  assert.equal(metrics.endpoint, "proxy-stream");
+  // One request for the frame, not one request per chunk.
+  assert.equal(backend.requests.length, 1);
+  assert.ok(backend.requests[0].includes("/proxy-stream/"));
+  const wholeBytes = alignRow(width * 8) * height;
+  assert.equal(metrics.transferredBytes, wholeBytes);
+  assert.ok(metrics.chunkCount > 1);
+  // The gate: what the browser buffers is the chunk, never the frame.
+  assert.ok(metrics.largestResponseBytes <= preview.maxSourceChunkBytes);
+  assert.ok(metrics.largestResponseBytes < wholeBytes / 10);
+  assert.equal(typeof metrics.timeToFirstByteMs, "number");
+  assert.equal(typeof metrics.timeToFirstTileMs, "number");
+
+  const covered = new Array(height).fill(0);
+  let expectedOrigin = 0;
+  for (const write of harness.writes) {
+    assert.equal(write.originY, expectedOrigin, "stream pieces must be rebased in row order");
+    for (let row = write.originY; row < write.originY + write.rows; row += 1) covered[row] += 1;
+    expectedOrigin += write.rows;
+  }
+  assert.equal(expectedOrigin, height);
+  assert.ok(covered.every((count) => count === 1), "every row written exactly once");
+  assert.equal(new Set(harness.writes.map((write) => write.buffer)).size, 4);
+  assert.equal(harness.buffers.length, 4);
+  assert.equal(harness.drains, 1);
+  assert.ok(harness.buffers.every((buffer) => buffer.destroyed));
+  assert.equal(harness.textures.length, 1);
+  // Phase 5 item 1: the published proxy is registered centrally, with the
+  // bytes the texture was created for.
+  const allocator = preview.gpuAllocator.snapshot();
+  assert.equal(allocator.byKind["source-proxy"].entries, 1);
+  assert.equal(allocator.byKind["source-proxy"].bytes, alignRow(width * 8) * height);
+  assert.ok(proxy.allocatorEntry);
+});
+
+test("single mode reads the prebuilt whole-frame response the same way", async () => {
+  const width = 512;
+  const height = 900;
+  const backend = createBackend({ width, height });
+  const Preview = loadPreview(backend.fetchImpl);
+  const preview = new Preview(null);
+  const harness = createDevice();
+  preview.device = harness.device;
+  preview.instrumentationEnabled = true;
+  preview.sourceTransportMode = "single";
+  preview.maxSourceChunkBytes = 128 * 1024;
+
+  const proxy = await preview.loadProxy("session", "hdr", 8192, "{}", 0, "source");
+  assert.ok(proxy);
+  assert.equal(preview.sourceTransportMetrics.route, "streamed");
+  assert.equal(preview.sourceTransportMetrics.endpoint, "proxy");
+  assert.ok(backend.requests[0].includes("/proxy/"));
+  assert.equal(backend.requests.some((url) => url.includes("/source-tile/")), false);
+  assert.equal(preview.sourceTransportMetrics.transferredBytes, alignRow(width * 8) * height);
+});
+
+test("a streamed response that ends early is recoverable and publishes nothing", async () => {
+  const backend = createBackend({ width: 512, height: 900, truncateStream: true });
+  const Preview = loadPreview(backend.fetchImpl);
+  const preview = new Preview(null);
+  const harness = createDevice();
+  preview.device = harness.device;
+  preview.instrumentationEnabled = true;
+
+  await assert.rejects(
+    () => preview.loadProxy("session", "hdr", 8192, "{}", 0, "source"),
+    (error) => {
+      assert.equal(error.recoverable, true);
+      assert.match(error.message, /ended before the whole frame/);
+      return true;
+    },
+  );
+  assert.equal(preview.proxies.size, 0);
+  assert.equal(harness.textures.length, 1);
+  assert.equal(harness.textures[0].destroyed, true);
+});
+
+test("an unavailable streaming route falls back to per-strip requests", async () => {
+  const backend = createBackend({ width: 4096, height: 4096, declineStream: true });
+  const Preview = loadPreview(backend.fetchImpl);
+  const preview = new Preview(null);
+  const harness = createDevice();
+  preview.device = harness.device;
+  preview.instrumentationEnabled = true;
+
+  const proxy = await preview.loadProxy("session", "hdr", 4096, "{}", 0, "source");
+  assert.ok(proxy);
+  assert.equal(preview.sourceTransportMetrics.route, "tiled");
+  assert.ok(backend.requests.some((url) => url.includes("/proxy-stream/")));
+  assert.ok(backend.requests.some((url) => url.includes("/source-tile/")));
+});
+
+test("a superseded streaming read stops early and destroys the partial texture", async () => {
+  const base = createBackend({ width: 512, height: 512, streamPieceBytes: 8 * 1024 });
+  let current = true;
+  let reads = 0;
+  const fetchImpl = async (url, init) => {
+    const response = await base.fetchImpl(url, init);
+    if (!url.includes("/proxy-stream/")) return response;
+    const reader = response.body.getReader();
+    return {
+      ...response,
+      body: {
+        getReader: () => ({
+          read: async () => {
+            reads += 1;
+            if (reads === 3) current = false;
+            return reader.read();
+          },
+        }),
+      },
+    };
+  };
+  const Preview = loadPreview(fetchImpl);
+  const preview = new Preview(null);
+  const harness = createDevice();
+  preview.device = harness.device;
+  preview.instrumentationEnabled = true;
+  preview.maxSourceChunkBytes = 64 * 1024;
+
+  await assert.rejects(
+    () => preview.loadProxy("session", "hdr", 8192, "{}", 0, "source", { isCurrent: () => current }),
+    (error) => {
+      assert.equal(error.recoverable, true);
+      assert.equal(error.superseded, true);
+      return true;
+    },
+  );
+
+  assert.ok(reads <= 4, `a superseded stream must stop reading, saw ${reads}`);
+  assert.equal(preview.proxies.size, 0);
+  assert.equal(harness.textures.length, 1);
+  assert.equal(harness.textures[0].destroyed, true);
 });
 
 test("streamed chunks cover every row exactly once, in order, with no gap", async () => {
@@ -309,7 +544,7 @@ test("loadProxy uses the whole-frame route when the payload is already bounded",
   assert.equal(backend.requests.some((url) => url.includes("/source-tile/")), false);
 });
 
-test("loadProxy takes the tile route once the whole frame would exceed the chunk budget", async () => {
+test("loadProxy takes the bounded streaming route once the whole frame would exceed the chunk budget", async () => {
   const backend = createBackend({ width: 4096, height: 4096 });
   const Preview = loadPreview(backend.fetchImpl);
   const preview = new Preview(null);
@@ -319,8 +554,25 @@ test("loadProxy takes the tile route once the whole frame would exceed the chunk
 
   const proxy = await preview.loadProxy("session", "hdr", 4096, "{}", 0, "source");
   assert.ok(proxy);
+  assert.equal(preview.sourceTransportMetrics.route, "streamed");
+  assert.ok(backend.requests.some((url) => url.includes("/proxy-stream/")));
+  assert.equal(backend.requests.some((url) => url.includes("/source-tile/")), false);
+});
+
+test("strips mode keeps the per-strip request route as the in-field fallback", async () => {
+  const backend = createBackend({ width: 4096, height: 4096 });
+  const Preview = loadPreview(backend.fetchImpl);
+  const preview = new Preview(null);
+  const harness = createDevice();
+  preview.device = harness.device;
+  preview.instrumentationEnabled = true;
+  assert.equal(preview.setSourceTransport("strips"), "strips");
+
+  const proxy = await preview.loadProxy("session", "hdr", 4096, "{}", 0, "source");
+  assert.ok(proxy);
   assert.equal(preview.sourceTransportMetrics.route, "tiled");
   assert.ok(backend.requests.some((url) => url.includes("/source-tile/")));
+  assert.equal(backend.requests.some((url) => url.includes("/proxy-stream/")), false);
 });
 
 test("a second request for the same proxy is single-flighted, not re-fetched", async () => {

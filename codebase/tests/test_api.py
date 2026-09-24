@@ -203,6 +203,22 @@ def test_real_png_upload_preview_and_scopes() -> None:
     assert stale_proxy.status_code == 409
     assert stale_proxy.json()["detail"] == "Stale geometry proxy request dropped."
 
+    streamed_proxy = client.get(
+        f"/api/session/{session_id}/proxy-stream/hdr",
+        params={"long_edge": 512, "format": "rgba16f"},
+    )
+    assert streamed_proxy.status_code == 200
+    assert streamed_proxy.headers["content-type"] == "application/octet-stream"
+    assert streamed_proxy.headers["x-pixel-format"] == "rgba16float"
+    assert streamed_proxy.headers["x-bytes-per-row"] == half_proxy.headers["x-bytes-per-row"]
+    assert int(streamed_proxy.headers["x-rows-per-chunk"]) >= 1
+    assert streamed_proxy.content == half_proxy.content
+    stale_stream = client.get(
+        f"/api/session/{session_id}/proxy-stream/hdr",
+        params={"long_edge": 512, "geometry_signature": '{"rotation":90}'},
+    )
+    assert stale_stream.status_code == 409
+
     draft_adjustments = json.loads(json.dumps(upload_payload["session"]["adjustments"]))
     draft_adjustments["shared"]["geometry"]["rotation"] = 90
     transient_preview = client.post(
