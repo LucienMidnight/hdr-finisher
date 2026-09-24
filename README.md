@@ -5,6 +5,7 @@ HDR Finisher is an offline finishing and export application for HDR photographs 
 The project is an early technical alpha. Native Windows x64, macOS Apple Silicon, and Linux x86_64 desktop packages are supported. Kubuntu 26.04 LTS with Plasma 6.6 on native Wayland is the tier-one Linux HDR target; X11/Xwayland remains usable with an explicit non-authoritative SDR preview. Physical Linux HDR qualification is tracked separately from export correctness. See [Known limitations](docs/known-limitations.md) before relying on it for delivery work.
 
 Here's a video walkthrough of the application and its core functions: https://youtu.be/hXmW3yf1eXs
+And another video of an editing session using v0.8.12: https://youtu.be/dUpW6_n3_fg
 
 ## What it is for
 
