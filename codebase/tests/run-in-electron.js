@@ -2,6 +2,13 @@
  * Run any Playwright preview test inside Electron.
  *
  *   node tests/run-in-electron.js tests/full-tier-preview.js [--tile-sizes 256,512]
+ *   node tests/run-in-electron.js tests/performance/packaged-baselines.js --packaged
+ *
+ * `--packaged` launches the electron-builder output (dist-electron/win-unpacked)
+ * instead of the development tree; that packaged app is the §8 reference setup.
+ * Every run gets a disposable user-data profile so tests that assert fresh
+ * startup state behave as they do under a Playwright-launched Chromium, and
+ * the owner's real application profile is never touched.
  *
  * The GPU tests are written against `chromium.launch`, which is the right
  * default: it is fast and it runs the app the way a browser does. But a
@@ -24,11 +31,16 @@
  *   - A test that needs two pages at once is not supported here. Run it under
  *     Chromium, where it was already working.
  */
+const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
 const playwright = require("playwright");
 
 const DESKTOP_DIRECTORY = path.resolve(__dirname, "..", "desktop");
+const DEFAULT_PACKAGED_EXECUTABLE = path.resolve(
+  __dirname, "..", "dist-electron", "win-unpacked", "HDR Finisher.exe",
+);
 
 function electronExecutable() {
   // The `electron` package exports the path to its own binary when required
@@ -37,21 +49,98 @@ function electronExecutable() {
   return typeof resolved === "string" ? resolved : undefined;
 }
 
+function packagedExecutable() {
+  // `--packaged` runs the same drivers against the electron-builder output,
+  // which is the §8 reference setup: the packaged app with the bundled
+  // backend. `HDR_FINISHER_PACKAGED_EXECUTABLE` names a build elsewhere.
+  const requested = process.env.HDR_FINISHER_PACKAGED_EXECUTABLE || DEFAULT_PACKAGED_EXECUTABLE;
+  if (!fs.existsSync(requested)) {
+    throw new Error(`Packaged executable not found: ${requested}. Run npm run pack:dir in desktop/ first.`);
+  }
+  return requested;
+}
+
 (async () => {
   const [testPath, ...rest] = process.argv.slice(2);
   if (!testPath) {
-    console.error("usage: node tests/run-in-electron.js <test.js> [test args...]");
+    console.error("usage: node tests/run-in-electron.js <test.js> [--packaged] [test args...]");
     process.exit(2);
+  }
+  const packaged = rest.includes("--packaged");
+  const testArguments = rest.filter((argument) => argument !== "--packaged");
+
+  // A test that asserts fresh startup state needs a fresh profile, exactly as
+  // a Playwright-launched Chromium gets one; the app's real profile would make
+  // the result depend on whoever ran the app last. Each run also gets its own
+  // disposable profile so the runner never writes to the owner's app state.
+  const userDataDirectory = process.env.HDR_FINISHER_ELECTRON_TEST_USER_DATA
+    || fs.mkdtempSync(path.join(os.tmpdir(), "hdr-finisher-electron-test-"));
+
+  // The §8 reference setup names a 2560x1440 viewport. The app restores its
+  // window bounds from `window-state.json` in userData and a runtime resize
+  // does not stick (the app re-applies the restored bounds when it shows the
+  // window), so the reference size is seeded before launch instead.
+  if (process.env.HDR_FINISHER_ELECTRON_WINDOW_SIZE) {
+    const [width, height] = process.env.HDR_FINISHER_ELECTRON_WINDOW_SIZE.split("x").map(Number);
+    if (Number.isFinite(width) && Number.isFinite(height)) {
+      fs.writeFileSync(
+        path.join(userDataDirectory, "window-state.json"),
+        JSON.stringify({ x: 0, y: 0, width, height }),
+      );
+    }
+  }
+
+  // Some editors and agent hosts export ELECTRON_RUN_AS_NODE=1 into every
+  // child process. Electron then starts as plain Node: `require("electron")`
+  // returns the package path, `main.js` throws on `app.isPackaged`, and the
+  // debugger lines Playwright waits for never appear (or the DevTools socket
+  // resets when the crash kills the process). The app is launched with that
+  // variable removed so the runner behaves the same in any host shell.
+  const launchEnvironment = { ...process.env };
+  delete launchEnvironment.ELECTRON_RUN_AS_NODE;
+  launchEnvironment.HDR_FINISHER_USER_DATA_DIR = userDataDirectory;
+  if (process.env.HDR_FINISHER_RUNNER_DEBUG === "1") {
+    console.error(`[runner] env ${JSON.stringify({
+      runnerVar: process.env.HDR_FINISHER_USER_DATA_DIR || null,
+      testVar: process.env.HDR_FINISHER_ELECTRON_TEST_USER_DATA || null,
+      launchVar: launchEnvironment.HDR_FINISHER_USER_DATA_DIR,
+      tempProfile: userDataDirectory,
+    })}`);
   }
 
   const app = await playwright._electron.launch({
-    args: ["."],
+    // An absolute app path. `.` is not enough: Electron falls back to its own
+    // `resources/app` when the app argument is not resolved, and this
+    // checkout's Electron distribution carries a leftover review launcher
+    // there (it forces a review profile and re-requires the desktop main.js).
+    args: packaged ? [] : [DESKTOP_DIRECTORY],
     cwd: DESKTOP_DIRECTORY,
-    executablePath: electronExecutable(),
+    executablePath: packaged ? packagedExecutable() : electronExecutable(),
+    env: launchEnvironment,
     timeout: 180000,
   });
   const window = await app.firstWindow({ timeout: 180000 });
   await window.waitForLoadState("domcontentloaded");
+  // The launcher pid Playwright tracks is the shell on Windows; the main
+  // process pid is what owns the window and the backend sidecar, so shutdown
+  // is anchored to it.
+  const electronMainProcessId = await app.evaluate(() => process.pid);
+  // Power mode is part of every §8 latency report and only the main process
+  // can see it.
+  process.env.HDR_FINISHER_POWER_MODE = await app.evaluate(({ powerMonitor }) => (
+    powerMonitor.isOnBatteryPower() ? "battery" : "ac"
+  )).catch(() => "unknown");
+  if (process.env.HDR_FINISHER_RUNNER_DEBUG === "1") {
+    const debugInfo = await app.evaluate(({ app: electronApp }) => ({
+      pid: process.pid,
+      appPath: electronApp.getAppPath(),
+      userData: electronApp.getPath("userData"),
+      userDataEnvironment: process.env.HDR_FINISHER_USER_DATA_DIR || null,
+      runAsNode: process.env.ELECTRON_RUN_AS_NODE || null,
+      packaged: electronApp.isPackaged,
+    }));
+    console.error(`[runner] ${JSON.stringify(debugInfo)}`);
+  }
   const origin = new URL(window.url()).origin;
 
   // Every address the test knows about is the sidecar's. A test reads this at
@@ -141,7 +230,9 @@ function electronExecutable() {
     if (stopped) return;
     stopped = true;
     const child = app.process();
-    const pid = child && child.pid;
+    // The launcher command is a shell on Windows; killing it can orphan the
+    // Electron tree. The main process pid is the tree root that matters.
+    const pid = electronMainProcessId || (child && child.pid);
     if (process.platform === "win32" && pid) {
       try { execFileSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" }); return; } catch { /* fall through */ }
     }
@@ -161,10 +252,22 @@ function electronExecutable() {
       if (viewport && viewport.width && viewport.height) {
         const handle = await app.browserWindow(window).catch(() => null);
         if (handle) {
-          await handle.evaluate((browserWindow, size) => {
-            browserWindow.setContentSize(Math.round(size.width), Math.round(size.height));
-          }, viewport).catch(() => { /* the window manager may refuse the size */ });
-          await window.waitForTimeout(250);
+          // A no-op resize is still a resize: the app reacts to the event and
+          // can re-plan an expensive frame, so the current size is compared
+          // first and a request that already matches is left alone.
+          const current = await handle.evaluate((browserWindow) => {
+            const [width, height] = browserWindow.getContentSize();
+            return { width, height };
+          }).catch(() => null);
+          const differs = !current
+            || Math.abs(current.width - viewport.width) > 1
+            || Math.abs(current.height - viewport.height) > 1;
+          if (differs) {
+            await handle.evaluate((browserWindow, size) => {
+              browserWindow.setContentSize(Math.round(size.width), Math.round(size.height));
+            }, viewport).catch(() => { /* the window manager may refuse the size */ });
+            await window.waitForTimeout(250);
+          }
         }
       }
       return window;
@@ -178,6 +281,6 @@ function electronExecutable() {
     process.on(signal, () => { stop(); process.exit(130); });
   }
 
-  process.argv = [process.argv[0], path.resolve(testPath), ...rest];
+  process.argv = [process.argv[0], path.resolve(testPath), ...testArguments];
   require(path.resolve(testPath));
 })().catch((error) => { console.error(error); process.exit(1); });

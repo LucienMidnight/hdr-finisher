@@ -836,6 +836,55 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     return error;
   }
 
+  /**
+   * Read one chunk from a streamed response while staying supersedeable.
+   *
+   * `reader.read()` can stay pending for seconds while the backend encodes, or
+   * indefinitely when a connection stalls. The transport deliberately never
+   * aborts on its own -- callers pass a currency check -- but a pending read is
+   * exactly where that check cannot run, and a stream abandoned at that point
+   * holds its HTTP/1.1 connection open. Six abandoned streams exhaust the
+   * browser's per-origin pool: every later request, edit commands included,
+   * then queues with no error at all, which presents as a frozen editor with an
+   * idle CPU. Racing the pending read against a short timer lets the currency
+   * check run and cancel the reader, which releases the socket.
+   */
+  function readSourceChunk(reader, isCurrent, assertCurrent, intervalMs = 200) {
+    const pending = reader.read();
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (callback) => {
+        if (settled) return;
+        settled = true;
+        clearInterval(timer);
+        callback();
+      };
+      const timer = setInterval(() => {
+        if (!isCurrent || isCurrent() !== false) return;
+        finish(() => {
+          // Readers in tests and in older runtimes may only implement read();
+          // cancellation is best effort there, and the currency error is what
+          // the caller acts on either way.
+          const cancelled = typeof reader.cancel === "function"
+            ? reader.cancel()
+            : Promise.resolve();
+          Promise.resolve(cancelled).catch(() => null).then(() => {
+            try {
+              assertCurrent("Source stream was superseded");
+              resolve({ value: undefined, done: true });
+            } catch (error) {
+              reject(error);
+            }
+          });
+        });
+      }, intervalMs);
+      pending.then(
+        (result) => finish(() => resolve(result)),
+        (error) => finish(() => reject(error)),
+      );
+    });
+  }
+
   class HDRWebGPUPreview {
     static directPreviewMemoryModel(width, height, options = {}) {
       return directPreviewMemoryModel(width, height, options);
@@ -2454,7 +2503,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           }),
         },
       );
-      if (!response.ok || !this.maskTileBatch) return { localIndex: batch.localIndex, entries };
+      if (!response.ok || !this.maskTileBatch) {
+        await response.body?.cancel?.().catch(() => null);
+        return { localIndex: batch.localIndex, entries };
+      }
       const parsed = this.maskTileBatch.parse(new Uint8Array(await response.arrayBuffer()));
       if (!isCurrent()) return { localIndex: batch.localIndex, entries };
       parsed.entries.forEach((entry, index) => {
@@ -5392,97 +5444,112 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         + `?long_edge=${longEdge}&format=rgba16f&edit_revision=${editRevision}`
         + `&geometry_signature=${encodeURIComponent(geometrySignature)}`;
       const response = await fetch(url, { signal });
-      if (!response.ok) {
-        if (response.status === 409 || response.status === 507) {
-          const payload = await response.json().catch(() => null);
-          const error = new Error((typeof payload?.detail === "string" ? payload.detail : payload?.detail?.message)
-            || (response.status === 409
-              ? "WebGPU geometry proxy is waiting for the committed edit"
-              : "WebGPU proxy could not be loaded"));
-          error.recoverable = true;
-          error.previewCapacity = response.status === 507;
-          error.status = response.status;
-          throw error;
-        }
-        // An unavailable route (an older packaged backend, a proxy in front of
-        // it) is not an error: the caller falls back to the strip route.
-        await response.arrayBuffer().catch(() => null);
-        return null;
-      }
-      const width = Number(response.headers.get("X-Image-Width"));
-      const height = Number(response.headers.get("X-Image-Height"));
-      const bytesPerRow = Number(response.headers.get("X-Bytes-Per-Row"));
-      const pixelFormat = response.headers.get("X-Pixel-Format") || "rgba16float";
-      const workingSpace = response.headers.get("X-Working-Space") || "acescg";
-      const acceptedGeometry = response.headers.get("X-Geometry-Signature") || "{}";
-      if (!(width > 0 && height > 0 && bytesPerRow > 0)) {
-        await response.arrayBuffer().catch(() => null);
-        return null;
-      }
-      if (acceptedGeometry !== geometrySignature) {
-        const error = new Error("Stale WebGPU geometry proxy rejected");
-        error.recoverable = true;
-        throw error;
-      }
-      assertCurrent("Source stream was superseded before upload");
-      const bytesPerPixel = pixelFormat === "rgba16float" ? 8 : 16;
-      let texture;
-      try {
-        texture = this.device.createTexture({
-          size: { width, height },
-          format: pixelFormat,
-          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC,
-        });
-      } catch (error) {
-        this.recordAllocationFailure("source-proxy", error, { width, height });
-        throw error;
-      }
-      const rowsPerChunk = Math.max(1, Math.min(height, Math.floor(this.maxSourceChunkBytes / bytesPerRow)));
-      const chunkBytes = rowsPerChunk * bytesPerRow;
-      const chunkTotal = Math.ceil(height / rowsPerChunk);
-      const ringSize = Math.max(1, Math.min(SOURCE_UPLOAD_RING_SIZE, chunkTotal));
+      // The response body is owned from here on. Every exit that does not
+      // consume it must cancel it: an abandoned 200 body keeps its HTTP/1.1
+      // connection claimed while the backend keeps writing into backpressure,
+      // and six of those exhaust the browser's per-origin pool. Every later
+      // request -- the next source fetch included -- then queues with no error
+      // at all, which presents as a render that never settles and a viewer
+      // stuck on "Updating -- Native region exact".
+      let texture = null;
+      let reader = null;
+      let complete = false;
       const stagingRing = [];
       const retiredStaging = [];
-      const pending = new Uint8Array(chunkBytes);
-      let pendingBytes = 0;
-      let transferredBytes = 0;
-      let chunkCount = 0;
-      let firstByteMs = null;
-      let firstTileMs = null;
-      const flush = async () => {
-        if (!pendingBytes) return;
-        if (pendingBytes % bytesPerRow !== 0) {
-          const error = new Error("A streamed source chunk was not row-aligned");
+      try {
+        if (!response.ok) {
+          if (response.status === 409 || response.status === 507) {
+            const payload = await response.json().catch(() => null);
+            const error = new Error((typeof payload?.detail === "string" ? payload.detail : payload?.detail?.message)
+              || (response.status === 409
+                ? "WebGPU geometry proxy is waiting for the committed edit"
+                : "WebGPU proxy could not be loaded"));
+            error.recoverable = true;
+            error.previewCapacity = response.status === 507;
+            error.status = response.status;
+            complete = true;
+            throw error;
+          }
+          // An unavailable route (an older packaged backend, a proxy in front of
+          // it) is not an error: the caller falls back to the strip route.
+          await response.arrayBuffer().catch(() => null);
+          complete = true;
+          return null;
+        }
+        const width = Number(response.headers.get("X-Image-Width"));
+        const height = Number(response.headers.get("X-Image-Height"));
+        const bytesPerRow = Number(response.headers.get("X-Bytes-Per-Row"));
+        const pixelFormat = response.headers.get("X-Pixel-Format") || "rgba16float";
+        const workingSpace = response.headers.get("X-Working-Space") || "acescg";
+        const acceptedGeometry = response.headers.get("X-Geometry-Signature") || "{}";
+        if (!(width > 0 && height > 0 && bytesPerRow > 0)) {
+          await response.arrayBuffer().catch(() => null);
+          complete = true;
+          return null;
+        }
+        if (acceptedGeometry !== geometrySignature) {
+          const error = new Error("Stale WebGPU geometry proxy rejected");
           error.recoverable = true;
           throw error;
         }
-        const rows = pendingBytes / bytesPerRow;
-        await this.copySourceChunkStaged(stagingRing, retiredStaging, chunkCount % ringSize,
-          pending.subarray(0, pendingBytes), {
-            bytesPerRow, rows, width, texture, origin: { x: 0, y: chunkCount * rowsPerChunk },
+        assertCurrent("Source stream was superseded before upload");
+        const bytesPerPixel = pixelFormat === "rgba16float" ? 8 : 16;
+        try {
+          texture = this.device.createTexture({
+            size: { width, height },
+            format: pixelFormat,
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC,
           });
-        if (firstTileMs === null) firstTileMs = performance.now() - startedAt;
-        chunkCount += 1;
-        pendingBytes = 0;
-      };
-      const consume = async (value) => {
-        if (firstByteMs === null) firstByteMs = performance.now() - startedAt;
-        transferredBytes += value.byteLength;
-        let offset = 0;
-        while (offset < value.byteLength) {
-          const take = Math.min(chunkBytes - pendingBytes, value.byteLength - offset);
-          pending.set(value.subarray(offset, offset + take), pendingBytes);
-          pendingBytes += take;
-          offset += take;
-          if (pendingBytes === chunkBytes) await flush();
+        } catch (error) {
+          this.recordAllocationFailure("source-proxy", error, { width, height });
+          throw error;
         }
-      };
-      try {
-        const reader = response.body?.getReader ? response.body.getReader() : null;
+        const rowsPerChunk = Math.max(1, Math.min(height, Math.floor(this.maxSourceChunkBytes / bytesPerRow)));
+        const chunkBytes = rowsPerChunk * bytesPerRow;
+        const chunkTotal = Math.ceil(height / rowsPerChunk);
+        const ringSize = Math.max(1, Math.min(SOURCE_UPLOAD_RING_SIZE, chunkTotal));
+        const pending = new Uint8Array(chunkBytes);
+        let pendingBytes = 0;
+        let transferredBytes = 0;
+        let chunkCount = 0;
+        let firstByteMs = null;
+        let firstTileMs = null;
+        const flush = async () => {
+          if (!pendingBytes) return;
+          if (pendingBytes % bytesPerRow !== 0) {
+            const error = new Error("A streamed source chunk was not row-aligned");
+            error.recoverable = true;
+            throw error;
+          }
+          const rows = pendingBytes / bytesPerRow;
+          await this.copySourceChunkStaged(stagingRing, retiredStaging, chunkCount % ringSize,
+            pending.subarray(0, pendingBytes), {
+              bytesPerRow, rows, width, texture, origin: { x: 0, y: chunkCount * rowsPerChunk },
+            });
+          if (firstTileMs === null) firstTileMs = performance.now() - startedAt;
+          chunkCount += 1;
+          pendingBytes = 0;
+        };
+        const consume = async (value) => {
+          if (firstByteMs === null) firstByteMs = performance.now() - startedAt;
+          transferredBytes += value.byteLength;
+          let offset = 0;
+          while (offset < value.byteLength) {
+            const take = Math.min(chunkBytes - pendingBytes, value.byteLength - offset);
+            pending.set(value.subarray(offset, offset + take), pendingBytes);
+            pendingBytes += take;
+            offset += take;
+            if (pendingBytes === chunkBytes) await flush();
+          }
+        };
+        reader = response.body?.getReader ? response.body.getReader() : null;
         if (reader) {
           for (;;) {
             assertCurrent("Source stream was superseded");
-            const { value, done } = await reader.read();
+            // readSourceChunk keeps a supersession check running while the read
+            // is pending, so an abandoned stream cancels instead of parking its
+            // connection (see the helper).
+            const { value, done } = await readSourceChunk(reader, isCurrent, assertCurrent);
             if (done) break;
             await consume(value);
           }
@@ -5498,61 +5565,81 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           error.recoverable = true;
           throw error;
         }
+        complete = true;
+        // Drain before publishing: the proxy enters the cache only once its
+        // copies have executed, and `totalMs` keeps covering the drain exactly
+        // as the tiled and region routes do. Nothing below may throw into the
+        // catch once the proxy is registered, or it would destroy a cached
+        // texture; the drain in `finally` is then a no-op.
+        await this.releaseSourceStaging(stagingRing, retiredStaging);
+        const byteSize = width * height * bytesPerPixel;
+        const proxy = {
+          texture,
+          width,
+          height,
+          sessionId,
+          lane,
+          longEdge,
+          workingSpace,
+          pixelFormat,
+          geometrySignature,
+          sourceIdentity,
+          identity: key,
+          byteSize,
+          streamed: true,
+          streamedSingle: true,
+          bindGroups: new Map(),
+        };
+        texture = null;
+        this.proxies.set(key, proxy);
+        this.sourceTransportMetrics = {
+          route: "streamed",
+          endpoint,
+          width,
+          height,
+          chunkCount,
+          rowsPerChunk,
+          transferredBytes,
+          // The peak client buffer, which is what the browser ever holds: the
+          // response body is consumed in chunks rather than buffered whole.
+          largestResponseBytes: chunkBytes,
+          timeToFirstByteMs: firstByteMs,
+          timeToFirstTileMs: firstTileMs,
+          totalMs: performance.now() - startedAt,
+        };
+        this.recordAllocation("source-proxy", byteSize, { width, height, lane, longEdge, pixelFormat, streamed: true, endpoint });
+        this.recordStage("proxy-request", {
+          lane,
+          longEdge,
+          cacheHit: false,
+          route: "streamed",
+          endpoint,
+          chunkCount,
+          durationMs: this.sourceTransportMetrics.totalMs,
+          timeToFirstByteMs: firstByteMs,
+          timeToFirstTileMs: firstTileMs,
+          bytes: transferredBytes,
+        });
+        this.trimProxyLevels(sessionId, lane);
+        return proxy;
       } catch (error) {
-        this.destroyAfterActiveRenders(() => texture.destroy());
+        this.destroyAfterActiveRenders(() => texture?.destroy?.());
         throw error;
       } finally {
+        // A superseded or failed stream must give its HTTP/1.1 connection back
+        // even when no read was pending and no reader was ever created. The
+        // checks above (geometry, supersession, texture admission) throw before
+        // the reader exists, and an unread 200 body there holds the socket
+        // until the server's write drain times out.
+        if (!complete) {
+          if (reader && typeof reader.cancel === "function") {
+            await reader.cancel().catch(() => null);
+          } else if (typeof response.body?.cancel === "function") {
+            await response.body.cancel().catch(() => null);
+          }
+        }
         await this.releaseSourceStaging(stagingRing, retiredStaging);
       }
-      const byteSize = width * height * bytesPerPixel;
-      const proxy = {
-        texture,
-        width,
-        height,
-        sessionId,
-        lane,
-        longEdge,
-        workingSpace,
-        pixelFormat,
-        geometrySignature,
-        sourceIdentity,
-        identity: key,
-        byteSize,
-        streamed: true,
-        streamedSingle: true,
-        bindGroups: new Map(),
-      };
-      this.proxies.set(key, proxy);
-      this.sourceTransportMetrics = {
-        route: "streamed",
-        endpoint,
-        width,
-        height,
-        chunkCount,
-        rowsPerChunk,
-        transferredBytes,
-        // The peak client buffer, which is what the browser ever holds: the
-        // response body is consumed in chunks rather than buffered whole.
-        largestResponseBytes: chunkBytes,
-        timeToFirstByteMs: firstByteMs,
-        timeToFirstTileMs: firstTileMs,
-        totalMs: performance.now() - startedAt,
-      };
-      this.recordAllocation("source-proxy", byteSize, { width, height, lane, longEdge, pixelFormat, streamed: true, endpoint });
-      this.recordStage("proxy-request", {
-        lane,
-        longEdge,
-        cacheHit: false,
-        route: "streamed",
-        endpoint,
-        chunkCount,
-        durationMs: this.sourceTransportMetrics.totalMs,
-        timeToFirstByteMs: firstByteMs,
-        timeToFirstTileMs: firstTileMs,
-        bytes: transferredBytes,
-      });
-      this.trimProxyLevels(sessionId, lane);
-      return proxy;
     }
 
     async loadProxyStreamed(sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key, options = {}) {
@@ -5575,14 +5662,16 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         await probe.arrayBuffer().catch(() => null);
         return null;
       }
-      assertCurrent("Source tile probe was superseded");
       const width = Number(probe.headers.get("X-Output-Width"));
       const height = Number(probe.headers.get("X-Output-Height"));
       const pixelFormat = probe.headers.get("X-Pixel-Format") || "rgba16float";
       const workingSpace = probe.headers.get("X-Working-Space") || "acescg";
       const acceptedGeometry = probe.headers.get("X-Geometry-Signature") || "{}";
       const sourceEpoch = Number(probe.headers.get("X-Source-Epoch"));
+      // Drain the probe body before any check can throw, so no exit leaves it
+      // unread (see loadProxyStreaming).
       await probe.arrayBuffer().catch(() => null);
+      assertCurrent("Source tile probe was superseded");
       if (!(width > 0 && height > 0)) return null;
       if (acceptedGeometry !== geometrySignature) {
         const error = new Error("Stale WebGPU geometry tile rejected");
@@ -5730,7 +5819,6 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         await probe.arrayBuffer().catch(() => null);
         return null;
       }
-      assertCurrent("ROI source region probe was superseded");
       const outputWidth = Number(probe.headers.get("X-Output-Width"));
       const outputHeight = Number(probe.headers.get("X-Output-Height"));
       const pixelFormat = probe.headers.get("X-Pixel-Format") || "rgba16float";
@@ -5738,6 +5826,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const acceptedGeometry = probe.headers.get("X-Geometry-Signature") || "{}";
       const sourceEpoch = Number(probe.headers.get("X-Source-Epoch"));
       await probe.arrayBuffer().catch(() => null);
+      assertCurrent("ROI source region probe was superseded");
       if (!(outputWidth > 0 && outputHeight > 0)) return null;
       if (acceptedGeometry !== geometrySignature) {
         const error = new Error("Stale WebGPU geometry region rejected");
@@ -6055,8 +6144,12 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const pathQuery = maskPath ? `&mask_path=${encodeURIComponent(maskPath)}` : "";
       const startedAt = performance.now();
       const response = await fetch(`/api/session/${sessionId}/local-mask/${encodeURIComponent(local.id)}?long_edge=${longEdge}&edit_revision=${editRevision}&geometry_signature=${encodeURIComponent(geometrySignature)}&spatial_only=true${pathQuery}`);
-      if (!response.ok) return null;
-      if (response.headers.get("X-Geometry-Signature") !== geometrySignature) return null;
+      // A refused or stale mask still owns its body: a native-edge mask is tens
+      // of MB, and leaving it unread holds an HTTP/1.1 connection (§15.56).
+      if (!response.ok || response.headers.get("X-Geometry-Signature") !== geometrySignature) {
+        await response.body?.cancel?.().catch(() => null);
+        return null;
+      }
       const width = Number(response.headers.get("X-Image-Width"));
       const height = Number(response.headers.get("X-Image-Height"));
       const source = new Uint8Array(await response.arrayBuffer());

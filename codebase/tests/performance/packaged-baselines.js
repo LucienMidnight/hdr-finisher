@@ -25,11 +25,22 @@ const ZOOM_STATES = [
   { id: "fit", apply: () => setZoomMode("fit") },
   { id: "100", apply: () => setCustomZoom(100) },
   { id: "200", apply: () => setCustomZoom(200) },
+  // §8.4 requires 400% as well as 200%; the packaged surface is the reference
+  // setup, so the extreme zoom is recorded here rather than in a note.
+  { id: "400", apply: () => setCustomZoom(400) },
 ];
 
 function argument(name, fallback = null) {
   const index = process.argv.indexOf(name);
   return index >= 0 && index + 1 < process.argv.length ? process.argv[index + 1] : fallback;
+}
+
+// Stage logging for a driver whose waits are long enough that a stall is
+// otherwise invisible; enabled with HDR_FINISHER_DRIVER_DEBUG=1.
+function debug(...parts) {
+  if (process.env.HDR_FINISHER_DRIVER_DEBUG === "1") {
+    console.error(`[packaged-baselines] ${parts.join(" ")}`);
+  }
 }
 
 function assert(condition, message) {
@@ -139,12 +150,19 @@ async function measurePan(page) {
   const url = argument("--url", process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765");
   const output = argument("--output", path.join("output", "performance", "packaged-baselines.json"));
   const input = ensureLargeNoisySource(WIDTH, HEIGHT);
+  // The §8 reference viewport is 2560x1440; it is requested here so the page
+  // (or the Electron runner's real window) is sized to it before any state is
+  // measured, and the size that actually measured is reported below.
+  const viewportArgument = argument("--viewport", "1280x900").split("x").map(Number);
+  const viewport = Number.isFinite(viewportArgument[0]) && Number.isFinite(viewportArgument[1])
+    ? { width: viewportArgument[0], height: viewportArgument[1] }
+    : { width: 1280, height: 900 };
   const browser = await chromium.launch({
     headless: true,
     channel: argument("--channel", "msedge"),
     args: ["--enable-unsafe-webgpu", "--enable-features=Vulkan,UseSkiaRenderer"],
   });
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const page = await browser.newPage({ viewport });
   const pageErrors = [];
   const sourceResponses = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
@@ -168,19 +186,30 @@ async function measurePan(page) {
       }).observe({ type: "longtask", buffered: true });
     });
     await page.goto(url, { waitUntil: "networkidle" });
+    debug("page loaded", url);
     await page.locator("#file-input").setInputFiles(input);
+    debug("fixture attached", input);
     await page.waitForFunction(() => state.session?.session_id, null, { timeout: 180000 });
+    debug("session", await page.evaluate(() => state.session.session_id));
     await page.waitForFunction(() => state.gpuPreview?.available === true, null, { timeout: 180000 });
+    debug("webgpu available");
     await waitForReady(page);
+    debug("ready");
     await page.evaluate(() => applyExecutionOverride("tiled"));
     await waitForReady(page);
+    debug("tiled override ready");
 
     const states = [];
     for (const state of ZOOM_STATES) {
       const sourceStart = sourceResponses.length;
+      debug("state", state.id, "start");
       await page.evaluate(state.apply);
       await waitForReady(page);
       const measured = await measureEdit(page);
+      debug("state", state.id, "measured", JSON.stringify({
+        currentMs: measured.timeToCurrentMs, stableMs: measured.timeToStableMs,
+        edge: measured.processedLongEdge,
+      }));
       states.push({
         zoom: state.id,
         ...measured,
@@ -196,6 +225,16 @@ async function measurePan(page) {
 
     const summary = {
       url,
+      // The §8 reference setup names a 2560x1440 viewport; the Electron window
+      // is sized by the runner, so the viewport that actually measured is
+      // recorded here rather than assumed from the requested size.
+      environment: await page.evaluate(() => ({
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        devicePixelRatio: window.devicePixelRatio,
+        userAgent: navigator.userAgent,
+      })),
+      powerMode: process.env.HDR_FINISHER_POWER_MODE || "unknown",
+      requestedWindowSize: process.env.HDR_FINISHER_ELECTRON_WINDOW_SIZE || null,
       source: { width: WIDTH, height: HEIGHT, path: input },
       states,
       pageErrors,

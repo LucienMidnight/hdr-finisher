@@ -36,6 +36,13 @@ function loadPreview(fetchImpl) {
     console,
     fetch: fetchImpl,
     AbortController,
+    // The streaming transport races a pending read against a currency tick so a
+    // superseded stream cancels its reader; the sandbox supplies the timers
+    // that race needs.
+    setInterval,
+    clearInterval,
+    setTimeout,
+    clearTimeout,
     GPUTextureUsage: {
       COPY_SRC: 1, COPY_DST: 2, TEXTURE_BINDING: 4, STORAGE_BINDING: 8, RENDER_ATTACHMENT: 16,
     },

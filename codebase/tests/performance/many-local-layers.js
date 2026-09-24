@@ -75,7 +75,10 @@ function assert(condition, message) {
     }));
 
     const tiers = [];
-    for (const count of [16, 32, 64]) {
+    // The §8.4 matrix asks for a representative spread of one, four, and
+    // eight locals; 16/32/64 stay in the list as the pressure tiers the
+    // original Phase 5 budget read.
+    for (const count of [1, 4, 8, 16, 32, 64]) {
       await page.evaluate(async ({ locals, count }) => {
         const document = JSON.parse(JSON.stringify(state.editDocument));
         document.local_adjustments = locals.slice(0, count);

@@ -197,6 +197,14 @@ const DARKTABLE_TINT_HUE_STOPS = [
 
 const MIN_ZOOM_PERCENT = 1;
 const MAX_ZOOM_PERCENT = 3200;
+// Lost-wake-up safety net. A deliberate retire (zoom refinement, structural
+// mask gesture, geometry transaction) is expected to be re-armed by its own
+// follow-up; if that follow-up is cancelled or refused, the viewer can sit in
+// "Preparing" with nothing queued. The watchdog re-arms once a second while the
+// viewer is not ready and no work is in flight, and gives up after this many
+// consecutive attempts so a genuine refusal cannot become a submit loop.
+const PREVIEW_WATCHDOG_INTERVAL_MS = 1000;
+const PREVIEW_WATCHDOG_MAX_REARMS = 20;
 const ZOOM_STEPS = [1, 2, 3, 4, 5, 6.25, 8.33, 12.5, 16.67, 25, 33.33, 50, 66.67, 100, 200, 300, 400, 500, 600, 800, 1200, 1600, 2400, 3200];
 // Matches the .viewer-status-dock transform transition in styles.css.
 const VIEWER_STATUS_DOCK_SLIDE_MS = 200;
@@ -481,6 +489,10 @@ const state = {
   groupPresetContext: null,
   previewCache: { hdr: null, sdr: null },
   zoomRefinementTimer: 0,
+  // Lost-wake-up safety net (see initializePreviewScheduler): the number of
+  // consecutive automatic re-arms and the interval that makes them.
+  previewWatchdogTimer: 0,
+  previewWatchdogRearms: 0,
   previewControllers: { hdr: null, sdr: null },
   previewInfoByLane: {
     hdr: {
@@ -622,6 +634,10 @@ const state = {
   selectedToneEqualizerBand: 2,
   previewAbortController: null,
   overlayAbortController: null,
+  // What the exposure overlay on screen was rendered for, and the live
+  // refresh loop that keeps it following edits (see requestLiveOverlay).
+  overlayPresented: null,
+  liveOverlay: { running: false, pending: null },
   scopeRequestInFlight: null,
   pendingScopeRequest: null,
   gpuScopeRequestInFlight: null,
@@ -1544,7 +1560,6 @@ const els = {
   viewerBranchNote: document.getElementById("viewer-branch-note"),
   compareButton: document.getElementById("compare-button"),
   compareLayoutButtons: [...document.querySelectorAll("button[data-compare-layout]")],
-  comparisonDisclosure: document.getElementById("comparison-disclosure"),
   zoomFit: document.getElementById("zoom-fit"),
   zoomActual: document.getElementById("zoom-actual"),
   zoomOut: document.getElementById("zoom-out"),
@@ -2077,6 +2092,42 @@ function initializePreviewPreferences() {
   if (els.scopeExactPeak) els.scopeExactPeak.checked = state.scopeExactPeak;
 }
 
+/**
+ * Re-arm a preview that a deliberate retire left with no follow-up.
+ *
+ * The contract: while the viewer is not ready and no work is in flight for the
+ * current lane, schedule the current generation again once a second. Every
+ * guard exists to avoid competing with work that is legitimately running:
+ * an active gesture, an in-flight GPU draft, a geometry transaction, an open
+ * mask draft, a comparison peek, or a render coordinator lane that already has
+ * an in-flight or pending request. Ordinary schedules reset the attempt budget
+ * so a user-driven recovery is never counted against the bound, and the bound
+ * stops a genuine refusal from becoming a submit loop.
+ */
+function installPreviewWatchdog() {
+  stopPreviewWatchdog();
+  state.previewWatchdogTimer = window.setInterval(() => {
+    if (!state.session || !state.previewScheduler) return;
+    const viewer = viewerState();
+    if (viewer.status === "ready" || viewer.status === "unavailable") {
+      state.previewWatchdogRearms = 0;
+      return;
+    }
+    if (state.previewScheduler.interacting || state.gpuDraftInFlight) return;
+    if (geometryDraftActive() || state.localMaskDraftDirty || state.comparePeekActive) return;
+    const laneState = state.renderCoordinator?.snapshot?.()?.lanes?.[state.currentView];
+    if (laneState?.inFlight || laneState?.pending) return;
+    if (state.previewWatchdogRearms >= PREVIEW_WATCHDOG_MAX_REARMS) return;
+    state.previewWatchdogRearms += 1;
+    state.previewScheduler.schedule(state.currentView, state.previewGeneration[state.currentView]);
+  }, PREVIEW_WATCHDOG_INTERVAL_MS);
+}
+
+function stopPreviewWatchdog() {
+  window.clearInterval(state.previewWatchdogTimer);
+  state.previewWatchdogTimer = 0;
+}
+
 function initializePreviewScheduler() {
   if (!window.HDRPreviewScheduler) return;
   state.previewScheduler = new window.HDRPreviewScheduler({
@@ -2121,11 +2172,18 @@ function initializePreviewScheduler() {
       if (rendered && (detailActive || detailInteraction)) await state.gpuPreview?.waitForSubmittedWork?.();
       return rendered;
     },
-    onScope: (task) => refreshScopes(scopeLongEdge(task.tier), {
-      tier: task.tier,
-      generation: task.scopeGeneration,
-      lane: task.lane,
-    }),
+    onScope: (task) => {
+      // The exposure overlay follows the same throttled, latest-wins cadence
+      // as the scopes: during a drag, after settle and after refinement. It
+      // runs beside them rather than inside this callback so an overlay render
+      // never delays or inflates the scope pass.
+      if (task.lane === state.currentView) requestLiveOverlay(task.tier);
+      return refreshScopes(scopeLongEdge(task.tier), {
+        tier: task.tier,
+        generation: task.scopeGeneration,
+        lane: task.lane,
+      });
+    },
     onSettle: (task) => settlePreview(task.lane, task),
     onRefine: (task) => refinePreview(task.lane, task),
     onInactive: (task) => preloadInactiveLane(task.lane, task.applicationGeneration),
@@ -2161,9 +2219,30 @@ function initializePreviewScheduler() {
       panDelayMs: ROI_PAN_DELAY_MS,
     })
     : null;
+  // Lost-wake-up safety net. Several flows deliberately retire the scheduler
+  // before changing what the viewer must show (zoom refinement, a structural
+  // mask gesture, a geometry transaction) and rely on their own follow-up to
+  // schedule the next pass. When that follow-up is cancelled, refused or
+  // superseded without scheduling anything else, the viewer can sit in
+  // "Preparing" with no queued task, no in-flight render and no pending
+  // request, and nothing wakes it until the next input. See
+  // installPreviewWatchdog for the recovery contract and its bound.
+  installPreviewWatchdog();
   window.HDRFinisherPerformance = {
     snapshot: () => state.previewScheduler.snapshot(),
     renderCoordinator: () => state.renderCoordinator?.snapshot() || null,
+    previewWatchdog: () => ({
+      active: state.previewWatchdogTimer !== 0,
+      rearms: state.previewWatchdogRearms,
+      maxRearms: PREVIEW_WATCHDOG_MAX_REARMS,
+    }),
+    // Diagnostic entry for the stall regression; disabling it reproduces the
+    // pre-fix behavior for a retired scheduler with a dropped follow-up.
+    previewWatchdogEnable: (enabled = true) => {
+      if (enabled) installPreviewWatchdog();
+      else stopPreviewWatchdog();
+      return state.previewWatchdogTimer !== 0;
+    },
     // Phase 2 work item 9: legacy-versus-ROI A/B over the visible region.
     roiParity: (options = {}) => runRoiParity(options),
     gpuSnapshot: () => state.gpuPreview?.diagnosticsSnapshot?.() || null,
@@ -4584,6 +4663,7 @@ function applyLatitudePresets(latitude) {
 }
 
 function debouncePreview(lane = state.currentView) {
+  state.previewWatchdogRearms = 0;
   if (!state.previewScheduler) {
     queueGpuDraft(lane);
     window.clearTimeout(state.settleTimer);
@@ -5262,7 +5342,52 @@ function applyRawComparisonPreview(frame) {
   canvas.style.display = "block";
 }
 
-async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 1600) {
+/**
+ * Keep the exposure overlay following edits.
+ *
+ * The overlay is a backend image composited over the GPU preview, so it only
+ * changes when it is asked for again. Before this it was asked for only from
+ * the GPU settle path, which the refinement pass bypasses: after an exposure
+ * drag the zebra stayed on the pre-drag frame indefinitely. The scheduler's
+ * scope pass runs at every tier, so it drives this loop instead.
+ *
+ * One request in flight, newest tier pending: a drag produces a steady stream
+ * of overlays at the interactive edge instead of aborting each one before it
+ * lands, and the settled request that follows always runs.
+ */
+function requestLiveOverlay(tier) {
+  if (!state.session || state.adjustments.shared.overlay_mode === "off") return;
+  const loop = state.liveOverlay;
+  loop.pending = tier;
+  if (loop.running) return;
+  loop.running = true;
+  void (async () => {
+    try {
+      while (loop.pending) {
+        const next = loop.pending;
+        loop.pending = null;
+        const interim = next === "interactive";
+        const longEdge = interim
+          ? Math.min(interactiveProxyLongEdge(), settledProxyLongEdge())
+          : settledProxyLongEdge();
+        const presented = state.overlayPresented;
+        const lane = state.currentView;
+        // The settle path may already have delivered this exact overlay.
+        if (!interim && presented && !presented.interim
+          && presented.lane === lane
+          && presented.generation === state.previewGeneration[lane]
+          && presented.revision === state.editRevision
+          && presented.signature === geometrySignature()
+          && presented.longEdge === longEdge) continue;
+        await refreshOverlay(longEdge, { interim }).catch(() => null);
+      }
+    } finally {
+      loop.running = false;
+    }
+  })();
+}
+
+async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 1600, { interim = false } = {}) {
   if (geometryDraftActive() || await syncGlobalEditState() === false || geometryDraftActive()) return;
   if (!state.session) return;
   state.overlayAbortController?.abort();
@@ -5292,27 +5417,41 @@ async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 16
     return null;
   });
   if (!response || response.aborted) return;
+  // A settled overlay must describe exactly the picture under it. An interim
+  // one, requested while a drag is still moving the picture, is allowed to lag
+  // it by the overlay's own render time -- that is what live means here -- but
+  // never to go backwards, change lane or geometry, or outlive the overlay
+  // being switched off. The settled pass that follows every drag replaces it.
   const requestIsCurrent = () => controller === state.overlayAbortController
     && state.session?.session_id === sessionId
     && state.currentView === lane
-    && state.editRevision === revision
-    && state.previewGeneration[lane] === overlayGeneration
     && geometrySignature() === overlaySignature
-    && state.adjustments.shared.overlay_mode !== "off";
+    && state.adjustments.shared.overlay_mode !== "off"
+    && (interim
+      ? (state.overlayPresented?.lane !== lane
+        || (state.overlayPresented.generation ?? -1) <= overlayGeneration)
+      : state.editRevision === revision && state.previewGeneration[lane] === overlayGeneration);
   if (!requestIsCurrent()) return;
   if (response.status === 204) {
     clearPreviewOverlay();
     return;
   }
   if (!response.ok) {
-    clearPreviewOverlay();
+    // Mid-drag, a refused interim request (typically a revision the backend
+    // has already moved past) keeps the last overlay; the next one replaces it.
+    if (interim) await response.body?.cancel?.().catch(() => null);
+    else clearPreviewOverlay();
     return;
   }
 
   const blob = await response.blob();
   if (!requestIsCurrent()) return;
   const url = URL.createObjectURL(blob);
-  await applyOverlayUrl(url, requestIsCurrent);
+  if (await applyOverlayUrl(url, requestIsCurrent)) {
+    state.overlayPresented = {
+      lane, generation: overlayGeneration, revision, signature: overlaySignature, longEdge, interim,
+    };
+  }
 }
 
 function refreshScopes(longEdge = 960, { tier = "settled", generation = null, lane = state.currentView } = {}) {
@@ -11118,6 +11257,7 @@ function previewIsVisible() {
 }
 
 function clearPreviewOverlay() {
+  state.overlayPresented = null;
   const previousUrl = els.previewOverlay.dataset.objectUrl;
   if (previousUrl) URL.revokeObjectURL(previousUrl);
   delete els.previewOverlay.dataset.objectUrl;
@@ -12172,7 +12312,6 @@ function renderCompareLayout() {
   applyZoomGeometry();
   syncOverlayPlacement();
   renderCompareStatus();
-  renderComparisonDisclosure();
 }
 
 async function renderComparisonPreview(lane, { force = false } = {}) {
@@ -12216,7 +12355,6 @@ async function renderComparisonPreview(lane, { force = false } = {}) {
           transport: "WebGPU",
           exact: true,
         };
-        renderComparisonDisclosure();
         applyZoomGeometry();
         renderCompareStatus();
         return true;
@@ -12250,63 +12388,9 @@ async function renderComparisonPreview(lane, { force = false } = {}) {
     transport: cached.raw ? "CPU" : "CPU (encoded)",
     exact: true,
   };
-  renderComparisonDisclosure();
   applyZoomGeometry();
   renderCompareStatus();
   return true;
-}
-
-/**
- * Say when the two panes are not the same picture at the same size.
- *
- * The comparison pane renders the other lane at the settled proxy edge. The
- * primary pane holds whatever tier is selected, which since Phase 1 may be
- * larger -- up to Full. Side by side at the same on-screen size, two different
- * processing resolutions look like a difference in the grade, and a colourist
- * reading them as an A/B would attribute a resampling difference to their own
- * decisions.
- *
- * So the rule is not that comparison must match: it is that comparison must
- * never present unlike tiers *as an exact comparison* without saying so.
- */
-function renderComparisonDisclosure() {
-  const element = els.comparisonDisclosure;
-  if (!element) return;
-  const comparison = state.comparisonPresentation;
-  const accepted = state.acceptedPresentation;
-  if (state.compareLayout === "single" || !comparison || !accepted) {
-    element.classList.add("hidden");
-    element.textContent = "";
-    return;
-  }
-  const primaryEdge = Number(accepted.longEdge) || null;
-  const comparisonEdge = Number(comparison.longEdge) || null;
-  const reasons = [];
-  if (primaryEdge && comparisonEdge && primaryEdge !== comparisonEdge) {
-    reasons.push(`${formatTierEdge(primaryEdge)} vs ${formatTierEdge(comparisonEdge)}`);
-  }
-  if (accepted.generation != null && comparison.generation != null
-    && accepted.generation !== comparison.generation) {
-    reasons.push(`edit ${accepted.generation} vs ${comparison.generation}`);
-  }
-  if (!reasons.length) {
-    element.classList.add("hidden");
-    element.textContent = "";
-    return;
-  }
-  element.classList.remove("hidden");
-  element.textContent = `Not an exact comparison — ${reasons.join(", ")}`;
-  element.title = "The two panes were processed at different resolutions or from "
-    + "different edit generations. Differences between them include that, not only the grade.";
-}
-
-function formatTierEdge(edge) {
-  const sourceEdge = Math.max(
-    Number(state.session?.source?.width) || 0,
-    Number(state.session?.source?.height) || 0,
-  );
-  if (sourceEdge && edge >= sourceEdge) return "Full";
-  return `${edge}px`;
 }
 
 function setZoomMode(mode) {

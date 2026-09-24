@@ -20,6 +20,15 @@ The comparison icons select single frame, vertical split, horizontal split, side
 
 In single-frame mode, tap `V` (or click the active single-frame icon) to switch branches and hold `V` to peek at the other prepared branch. In a two-frame mode, `V` changes the active editing branch while both remain visible. Comparing branches is useful for composition and color continuity, but they are not intended to have identical highlight brightness.
 
+### Two-frame comparisons are not always exact
+
+In a two-frame layout the two panes are not guaranteed to show the same edit at the same resolution, and the viewer does not flag it when they differ:
+
+- **Different edits.** Only the active branch re-renders as you work. The other pane keeps its last settled result and catches up when the editor is idle, so right after a change the two panes can come from different points in your edit history.
+- **Different resolutions.** The other pane is rendered at the settled preview size, while the active pane follows the selected preview tier (up to **Full**) and your zoom. When those differ, the two panes are resampled differently.
+
+Either difference can look like a grading difference, so don't read a two-frame view as a strict A/B. For a closer check, pause until both panes have settled before comparing.
+
 ## Zoom and resolution
 
 - **Fit** processes enough pixels for the displayed image and filters it for the viewport.
@@ -117,6 +126,8 @@ Use false color to find diffuse-white placement, values entering the highlight r
 Zebras mark values at or above the selected threshold. On the HDR branch, the threshold readout is tied to the app reference-nit mapping. On SDR, it relates to the normalized output range.
 
 Use zebras to locate clipping risk or regions above a chosen delivery target. A zebra is a warning, not proof of clipping: gain-map delivery can adapt values above a display’s current headroom.
+
+Zebras and false color follow your edits while you drag a slider. During the drag the overlay is drawn at a lower resolution and can trail the picture by a moment; when you release, it is redrawn for the final values at the settled preview size.
 
 ## Scope accuracy and limits
 

@@ -44,6 +44,12 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+// The classifier the whole harness rests on. Kept as one function so the
+// negative control below can prove it is not blind to a cleared frame.
+function classifyPeak(peak) {
+  return peak <= BLANK_LEVEL ? "blank" : "painted";
+}
+
 async function compositorSample(page) {
   const visible = await page.evaluate(() => ({
     canvas: document.getElementById("preview-canvas")?.style.display !== "none",
@@ -76,8 +82,15 @@ async function compositorSample(page) {
     }
     return value;
   }, `data:image/png;base64,${png.toString("base64")}`);
-  return { kind: peak <= BLANK_LEVEL ? "blank" : "painted", peak, ...visible };
+  return { kind: classifyPeak(peak), peak, ...visible };
 }
+
+// Negative control: a cleared compositor frame is a zero-luma frame, and the
+// harness is only worth running if that frame reads as blank. Injecting the
+// synthetic peaks proves the classifier can fail the run instead of passing
+// every transition by construction.
+assert(classifyPeak(0) === "blank" && classifyPeak(255) === "painted",
+  "The blank classifier cannot distinguish a cleared frame from a painted one");
 
 (async () => {
   const url = argument("--url", process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765");

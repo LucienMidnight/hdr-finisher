@@ -5,6 +5,17 @@ const { ensureLargeNoisySource } = require("../large-noisy-tiff.js");
 const urlIndex = process.argv.indexOf("--url");
 const url = urlIndex >= 0 ? process.argv[urlIndex + 1] : "http://127.0.0.1:8799";
 
+// The 100% inspection contract for a 2400-wide source: the processed edge is
+// the native edge, the canvas backing is css x dpr, and that product is the
+// source's own width. One function so the negative control below can reuse the
+// exact predicate the live run asserts.
+function assertNativePresentation(result, nativeEdge) {
+  assert.equal(result.processedLongEdge, nativeEdge,
+    `The 100% presentation processed ${result.processedLongEdge}px of a ${nativeEdge}px source`);
+  assert.ok(Math.abs(result.cssWidth * result.dpr - result.sourceWidth) <= 1, JSON.stringify(result));
+  assert.ok(Math.abs(result.backingWidth - result.cssWidth * result.dpr) <= 1, JSON.stringify(result));
+}
+
 (async () => {
   const browser = await chromium.launch({ headless: true, channel: "msedge",
     args: ["--enable-unsafe-webgpu", "--enable-features=Vulkan,UseSkiaRenderer"] });
@@ -38,9 +49,13 @@ const url = urlIndex >= 0 ? process.argv[urlIndex + 1] : "http://127.0.0.1:8799"
           navigationVisible: !els.navigationThumb.classList.contains("hidden") };
       });
       assert.equal(errors.length, 0, errors.join(" | "));
-      assert.equal(result.processedLongEdge, 2400);
-      assert.ok(Math.abs(result.cssWidth * result.dpr - result.sourceWidth) <= 1, JSON.stringify(result));
-      assert.ok(Math.abs(result.backingWidth - result.cssWidth * result.dpr) <= 1, JSON.stringify(result));
+      assertNativePresentation(result, 2400);
+      // Negative control: the adverse 4K-at-100% case is an upsampled coarse
+      // tier presented as native. Its signature is a smaller processed edge
+      // over the native source, so the control injects exactly that and the
+      // contract above must reject it.
+      assert.throws(() => assertNativePresentation({ ...result, processedLongEdge: 1024 }, 2400),
+        /processed 1024px of a 2400px source/);
       assert.equal(result.viewport, true);
       assert.ok(result.navigationVisible && result.navigationEdge <= 512, JSON.stringify(result));
       await page.evaluate(() => setCustomZoom(300));

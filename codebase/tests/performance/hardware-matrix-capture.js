@@ -10,6 +10,7 @@
 // untested rather than inferred.
 //
 //   node tests/performance/hardware-matrix-capture.js --machine "studio-4090" --class discrete
+//   node tests/performance/hardware-matrix-capture.js --machine "workstation-amd-igpu" --class integrated --gpu low-power
 //   node tests/performance/hardware-matrix-summary.js
 
 const fs = require('node:fs');
@@ -28,6 +29,13 @@ const hardwareClass = argOf('class', 'unclassified');
 const width = Number(argOf('width', 4200));
 const height = Number(argOf('height', 2800));
 const channel = argOf('channel', 'msedge');
+// The operator may pin the adapter class under test on a hybrid machine: this
+// workstation has both a discrete NVIDIA adapter and an integrated AMD one, and
+// `--gpu low-power` asks Chromium for the integrated adapter. The class column
+// still comes from the operator, never from this switch.
+const gpuPreference = argOf('gpu', '');
+const gpuPreferenceArgs = gpuPreference === 'low-power' ? ['--force_low_power_gpu']
+  : gpuPreference === 'high-performance' ? ['--force_high_performance_gpu'] : [];
 const outputDirectory = argOf('dir', path.join(__dirname, '../../output/performance/hardware'));
 const output = path.join(outputDirectory, `${machine.replace(/[^a-z0-9._-]+/gi, '_')}.json`);
 
@@ -138,10 +146,11 @@ async function sampleStep(page, name) {
 
 (async () => {
   const browser = await chromium.launch({ headless: true, channel,
-    args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan,UseSkiaRenderer'] });
+    args: [...gpuPreferenceArgs, '--enable-unsafe-webgpu', '--enable-features=Vulkan,UseSkiaRenderer'] });
   const record = {
     machine,
     class: hardwareClass,
+    gpuPreference: gpuPreference || 'default',
     capturedAt: new Date().toISOString(),
     platform: { os: os.platform(), release: os.release(), arch: os.arch(), browser: channel,
       browserVersion: browser.version() },

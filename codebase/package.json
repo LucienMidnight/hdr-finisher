@@ -51,7 +51,6 @@
     "test:tiled-parity": "node tests/tiled-direct-parity.js",
     "test:tiled-film-parity": "node tests/tiled-film-parity.js",
     "test:scope-exact-peak": "node tests/scope-exact-peak.js",
-    "test:comparison-disclosure": "node tests/comparison-disclosure.js",
     "test:tiled-admission-scopes": "node tests/tiled-admission-scope-fallback.js",
     "test:full-tier": "node tests/full-tier-preview.js",
     "test:full-tier-denoise": "node tests/full-tier-denoise.js",
