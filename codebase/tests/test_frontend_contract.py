@@ -1973,6 +1973,10 @@ def test_electron_preview_correctness_contract() -> None:
     assert "&& generation === state.previewGeneration[lane]" in gpu_draft
     assert "&& requestedGeometrySignature === geometrySignature()" in gpu_draft
     assert "&& (allowInactive || lane === state.currentView)" in gpu_draft
+    # P5/P6: a live GPU scope does not wait for a backend save, and never
+    # submits beside a drag frame.
+    assert 'const liveGpuScope = tier === "interactive" && gpuScopeEligible(lane);' in javascript
+    assert 'if (tier === "interactive" && state.previewScheduler?.frameInFlight) {' in javascript
     # P5: a softer drag frame still on the GPU at release never reaches the canvas.
     assert '&& !(request.coarse && request.reason === "drag-coarse" && !state.previewScheduler?.interacting),' in gpu_draft
     webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")

@@ -5604,7 +5604,12 @@ async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 16
 
 function refreshScopes(longEdge = 960, { tier = "settled", generation = null, lane = state.currentView } = {}) {
   if (!state.session || geometryDraftActive()) return Promise.resolve(false);
-  if (state.globalEditDirty) {
+  // P5/P6: a live GPU scope during a drag reads the presented canvas, not the
+  // backend's copy, so it does not wait for a save round trip. Waiting put its
+  // readback on the GPU beside the next drag frame. The save still runs at
+  // release and in the settled pass, and a CPU scope still saves first.
+  const liveGpuScope = tier === "interactive" && gpuScopeEligible(lane);
+  if (state.globalEditDirty && !liveGpuScope) {
     // A deferred or rejected sync can leave edits dirty. Retrying it in a
     // resolved-Promise loop starves input and grows the heap until V8 OOMs.
     return syncGlobalEditState().then((applied) => applied && !state.globalEditDirty
@@ -5694,6 +5699,13 @@ async function runGpuScopeRequest(request) {
   const sampleHeight = tier === "interactive"
     ? state.scopeQuality === "performance" ? 128 : state.scopeQuality === "reference" ? 256 : 192
     : state.scopeQuality === "performance" ? 256 : state.scopeQuality === "reference" ? 512 : 384;
+  // P6: a live scope never shares the GPU with a drag frame. The scheduler
+  // starts it in the gap after a frame; if a frame has started since, this
+  // pass stands down and the next one (at most 100 ms later) runs instead.
+  if (tier === "interactive" && state.previewScheduler?.frameInFlight) {
+    state.previewScheduler.recordStaleResult();
+    return false;
+  }
   const analysis = await state.gpuPreview.analyzeScope(els.previewCanvas, {
     width: sampleWidth,
     height: sampleHeight,
