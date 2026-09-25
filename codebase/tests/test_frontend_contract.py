@@ -1830,7 +1830,8 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     # Responsive / Balanced / Precise menu; full detail is the default.
     assert 'id="preview-latency"' not in html
     assert '<input id="preview-faster-dragging" type="checkbox">' in html
-    assert "Faster dragging on slower hardware — show a softer image while dragging, sharpening when you let go" in html
+    assert '<span>Faster dragging</span>' in html
+    assert html.count('title="For slower computers: shows a softer image while you drag, sharp again when you let go. Exports are unaffected."') == 2
     assert html.index('id="overlay-toggle"') < html.index('id="overlay-popover"') < html.index('id="preview-faster-dragging"')
     assert "fasterDragging: false," in javascript
     assert 'return state.fasterDragging ? "balanced" : "precise";' in javascript

@@ -293,15 +293,14 @@
               <span>Preview</span>
               <button id="preview-close" class="text-button" type="button">Close</button>
             </div>
-            <label class="checkbox-row preview-faster-dragging" for="preview-faster-dragging">
+            <label class="checkbox-row preview-faster-dragging" for="preview-faster-dragging" title="For slower computers: shows a softer image while you drag, sharp again when you let go. Exports are unaffected.">
               <input id="preview-faster-dragging" type="checkbox">
-              <span>Faster dragging on slower hardware — show a softer image while dragging, sharpening when you let go</span>
+              <span>Faster dragging</span>
             </label>
             <div class="preview-popover-status">
               <span>Current preview size</span>
               <strong id="preview-quality-status" aria-live="polite">Standard</strong>
             </div>
-            <p class="helper">The preview shows full detail at all times, including while you drag a slider. Only if dragging feels jerky on your computer, turn on Faster dragging: the image looks softer while you drag and sharpens as soon as you let go. Exports and measurements are never affected.</p>
             <div id="preview-migration-notice" class="hidden" role="status">
               Preview now follows the displayed view. Your previous preview size was moved to diagnostics; export quality is unchanged.
               <button id="preview-migration-dismiss" type="button" class="text-button">Got it</button>
@@ -1652,7 +1651,7 @@
             </select>
           </label>
           <p class="helper">Auto uses WebGPU when available and falls back safely. CPU compatibility keeps preview rendering on the backend; export quality is unchanged.</p>
-          <label class="checkbox-row settings-faster-dragging"><input id="settings-faster-dragging" type="checkbox"> Faster dragging on slower hardware — show a softer image while dragging, sharpening when you let go</label>
+          <label class="checkbox-row settings-faster-dragging" title="For slower computers: shows a softer image while you drag, sharp again when you let go. Exports are unaffected."><input id="settings-faster-dragging" type="checkbox"> Faster dragging</label>
           <p class="helper">Off (recommended): the preview shows full detail at every moment, including while you drag a slider or zoom. Turn this on only if dragging feels jerky on your computer: while you drag, the image may look softer, and it sharpens as soon as you let go. Exports, peak readings and delivery checks are never affected.</p>
           <label class="settings-field">Maximum GPU memory for previews
             <select id="settings-gpu-memory-limit">

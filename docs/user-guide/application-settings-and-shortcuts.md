@@ -14,7 +14,7 @@ In the desktop app, open **Settings** from **File > Settings** or use the assign
 
 Rendering mode does not change final export quality.
 
-**Faster dragging on slower hardware** is off by default, and then the preview shows full detail at every moment, including while you drag a slider. Turn it on only if dragging feels jerky on your computer: while you drag, the image may look softer, and it sharpens as soon as you let go. The same checkbox is in the viewer's **Preview** menu. It doesn't affect exports or measurements.
+**Faster dragging** is off by default, and then the preview shows full detail at every moment, including while you drag a slider. Turn it on only if dragging feels jerky on your computer: while you drag, the image may look softer, and it sharpens as soon as you let go. The same checkbox is in the viewer's **Preview** menu. It doesn't affect exports or measurements.
 
 **Maximum GPU memory for previews** sets how much of the graphics card the preview may use. **Auto** uses up to half of the card's own memory, or 2 GiB when the card's memory can't be read. With more memory the preview processes the whole image in one fast pass. Choose a lower limit if you run other graphics-heavy apps at the same time. Export is unaffected.
 

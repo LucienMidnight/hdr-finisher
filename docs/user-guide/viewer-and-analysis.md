@@ -10,7 +10,7 @@ Without WebGPU, the app uses the backend renderer and presents raw RGBA8 pixels 
 
 The preview shows full detail at all times, including while you drag a slider or zoom. When you let go of a slider, the picture you were looking at is already the finished one; the scopes and readouts catch up a moment later.
 
-If dragging feels jerky on your computer, open **Preview** in the viewer toolbar (or **Settings > General**) and turn on **Faster dragging on slower hardware**. While you drag, the image may then look softer, and the viewer labels it **Coarse**. It sharpens as soon as you let go, and a soft image is never left on screen after you release. Zooming follows the same setting. It's off by default, and it never changes exports, peak readings or delivery checks.
+If dragging feels jerky on your computer, open **Preview** in the viewer toolbar (or **Settings > General**) and turn on **Faster dragging**. While you drag, the image may then look softer, and the viewer labels it **Coarse**. It sharpens as soon as you let go, and a soft image is never left on screen after you release. Zooming follows the same setting. It's off by default, and it never changes exports, peak readings or delivery checks.
 
 This replaces the earlier Responsive / Balanced / Precise choice. Your earlier choice carries over without a prompt: Precise and Balanced become the default (off), and Responsive turns Faster dragging on.
 
