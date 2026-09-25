@@ -2028,6 +2028,7 @@ async function initializeGpuPreview() {
   if (!window.HDRWebGPUPreview) return;
   state.gpuFailurePolicy = window.HDRRenderFailurePolicy ? new window.HDRRenderFailurePolicy() : null;
   state.gpuPreview = new window.HDRWebGPUPreview(els.previewCanvas);
+  state.gpuPreview.featherReferenceScale = maskFeatherReferenceScale;
   // Preferences can load before or after the renderer exists, so apply the
   // stored budget here as well as on every preferences change.
   state.gpuPreview.setMemoryBudget(state.gpuMemoryBudget ?? "auto");
@@ -8546,6 +8547,23 @@ function sourcePixelFrameDimensions(geometry = state.adjustments?.shared?.geomet
   const right = clamp(Math.round((Number(crop.x || 0) + Number(crop.width || 1)) * width), left + 1, width);
   const bottom = clamp(Math.round((Number(crop.y || 0) + Number(crop.height || 1)) * height), top + 1, height);
   return { width: right - left, height: bottom - top };
+}
+
+/**
+ * Source long edge over the long edge of the frame a geometry produces.
+ *
+ * Mask radii (luma feather) are fractions of the uncropped source, because
+ * the backend builds every mask in source space and crops it afterwards. The
+ * GPU draws its masks in the cropped, straightened frame, so it scales them by
+ * this ratio: 2 under a 50% crop.
+ */
+function maskFeatherReferenceScale(signature) {
+  const source = state.session?.source;
+  let geometry = null;
+  try { geometry = JSON.parse(signature); } catch { return 1; }
+  const frame = sourcePixelFrameDimensions(geometry);
+  if (!source?.width || !source?.height || !frame) return 1;
+  return Math.max(source.width, source.height) / Math.max(frame.width, frame.height);
 }
 
 function constrainCropToRatio() {

@@ -136,6 +136,99 @@ function analyse(mask, width, height, pathName, feather) {
   return { path: pathName, feather, width, height, strips, rowProfile, columnProfile, row, column };
 }
 
+// A crop, and a straighten with a crop inside the rotated frame.
+const GEOMETRY_SCENARIOS = [
+  { name: "50% crop", slug: "crop50", geometry: { crop: { x: 0.25, y: 0.2, width: 0.5, height: 0.5 } } },
+  { name: "straighten 4 deg + crop", slug: "straighten", geometry: { straighten_angle: 4, crop: { x: 0.2, y: 0.2, width: 0.6, height: 0.6 } } },
+];
+
+async function setFeather(page, feather) {
+  await page.evaluate(async (value) => {
+    const leaf = firstMaskLeaf(selectedLocal().mask, "luminance_range");
+    // 1000 nit and up, to the 10,000 nit ceiling of the luma controls (EV is
+    // relative to reference white, 203 nit). The refined range must sit inside
+    // the reference bounds, as the sliders keep it, or the backend rejects it.
+    const top = Math.log2(10000 / 203);
+    Object.assign(leaf, { fade_in_start_ev: 1.8, reference_start_ev: 2.3, full_start_ev: 2.3, full_end_ev: top,
+      reference_end_ev: top, fade_out_end_ev: top + 0.75, mask_feather: value / 2000, mask_opacity: 1 });
+    const accepted = await commitSelectedLocal({ refreshPreview: true });
+    if (!accepted) throw new Error("The backend rejected the luma mask update.");
+  }, feather);
+  await page.waitForFunction(() => viewerState().status === "ready" && !state.gpuDraftInFlight, null, { timeout: 120000 });
+  await page.waitForTimeout(300);
+}
+
+/** The mask the preview renders with, read back from the GPU. */
+function readGpuMask(page) {
+  return page.evaluate(async () => {
+    const preview = state.gpuPreview;
+    const leaf = firstMaskLeaf(selectedLocal().mask, "luminance_range");
+    const geometry = geometrySignature();
+    // The entry for this range and geometry (older ones may still be cached).
+    const entry = [...preview.localMasks.entries()].reverse()
+      .find(([key, candidate]) => candidate.kind === "gpu-luma" && key.includes(geometry)
+        && key.includes(`"full_start_ev":${leaf.full_start_ev},`)
+        && key.includes(`"fade_out_end_ev":${leaf.fade_out_end_ev}`))?.[1];
+    if (!entry) return null;
+    const { device } = preview;
+    const target = device.createTexture({ size: { width: entry.width, height: entry.height }, format: "r16float",
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
+    const params = preview.createStorageBuffer(new Float32Array([0, 1, 1, 0]));
+    device.queue.writeBuffer(params, 0, new Float32Array([0, 1, 1, 0]));
+    const encoder = device.createCommandEncoder();
+    preview.encodeMaskPass(encoder, preview.maskPipelines.combine, preview.createMaskBindGroup(entry.texture, params, entry.texture), target);
+    const bytesPerRow = Math.ceil((entry.width * 2) / 256) * 256;
+    const buffer = device.createBuffer({ size: bytesPerRow * entry.height, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    encoder.copyTextureToBuffer({ texture: target }, { buffer, bytesPerRow }, { width: entry.width, height: entry.height });
+    device.queue.submit([encoder.finish()]);
+    await buffer.mapAsync(GPUMapMode.READ);
+    const bytes = new Uint16Array(buffer.getMappedRange().slice(0));
+    buffer.unmap();
+    buffer.destroy(); target.destroy(); params.destroy();
+    const packed = [];
+    for (let y = 0; y < entry.height; y += 1) for (let x = 0; x < entry.width; x += 1) packed.push(bytes[y * (bytesPerRow / 2) + x]);
+    return { width: entry.width, height: entry.height, bits: packed };
+  });
+}
+
+/** The export's mask for the same local, from the backend. */
+function readBackendMask(page, longEdge) {
+  return page.evaluate(async (edge) => {
+    const local = selectedLocal();
+    const response = await fetch(`/api/session/${state.session.session_id}/local-mask/${encodeURIComponent(local.id)}?long_edge=${edge}&edit_revision=${state.editRevision}&spatial_only=true`);
+    if (!response.ok) return { error: response.status };
+    return { width: Number(response.headers.get("X-Image-Width")), height: Number(response.headers.get("X-Image-Height")),
+      bytes: Array.from(new Uint8Array(await response.arrayBuffer())) };
+  }, longEdge);
+}
+
+/** Bilinear resample, so masks of different sizes can be compared pixel for pixel. */
+function resample(mask, width, height, targetWidth, targetHeight) {
+  if (width === targetWidth && height === targetHeight) return mask;
+  const out = new Float32Array(targetWidth * targetHeight);
+  for (let y = 0; y < targetHeight; y += 1) {
+    const sy = Math.min(height - 1, Math.max(0, ((y + 0.5) * height) / targetHeight - 0.5));
+    const y0 = Math.floor(sy);
+    const y1 = Math.min(height - 1, y0 + 1);
+    for (let x = 0; x < targetWidth; x += 1) {
+      const sx = Math.min(width - 1, Math.max(0, ((x + 0.5) * width) / targetWidth - 0.5));
+      const x0 = Math.floor(sx);
+      const x1 = Math.min(width - 1, x0 + 1);
+      const top = mask[y0 * width + x0] * (1 - (sx - x0)) + mask[y0 * width + x1] * (sx - x0);
+      const bottom = mask[y1 * width + x0] * (1 - (sx - x0)) + mask[y1 * width + x1] * (sx - x0);
+      out[y * targetWidth + x] = top * (1 - (sy - y0)) + bottom * (sy - y0);
+    }
+  }
+  return out;
+}
+
+/** Greyscale PGM of a mask, for looking at it (HDR_FINISHER_DUMP_MASKS=<folder>). */
+function dumpMask(name, mask, width, height) {
+  fs.mkdirSync(process.env.HDR_FINISHER_DUMP_MASKS, { recursive: true });
+  fs.writeFileSync(path.join(process.env.HDR_FINISHER_DUMP_MASKS, name),
+    Buffer.concat([Buffer.from(`P5 ${width} ${height} 255\n`), Buffer.from(Array.from(mask, (value) => Math.round(Math.min(1, Math.max(0, value)) * 255)))]));
+}
+
 (async () => {
   const fixture = path.join(os.tmpdir(), "hdr-finisher-luma-strips.tiff");
   writeFloatTiff(fixture);
@@ -156,66 +249,16 @@ function analyse(mask, width, height, pathName, feather) {
     await page.locator('[data-local-tool="luminance_range"]').click();
     await created;
     for (const feather of FEATHERS) {
-      await page.evaluate(async (value) => {
-        const leaf = firstMaskLeaf(selectedLocal().mask, "luminance_range");
-        // The refined range must sit inside the reference bounds, as the
-        // sliders keep it; otherwise the backend rejects the update.
-        // 1000 nit and up, to the 10,000 nit ceiling of the luma controls
-        // (EV is relative to reference white, 203 nit).
-        const top = Math.log2(10000 / 203);
-        Object.assign(leaf, { fade_in_start_ev: 1.8, reference_start_ev: 2.3, full_start_ev: 2.3, full_end_ev: top,
-          reference_end_ev: top, fade_out_end_ev: top + 0.75, mask_feather: value / 2000, mask_opacity: 1 });
-        const accepted = await commitSelectedLocal({ refreshPreview: true });
-        if (!accepted) throw new Error("The backend rejected the luma mask update.");
-      }, feather);
-      await page.waitForFunction(() => viewerState().status === "ready" && !state.gpuDraftInFlight, null, { timeout: 120000 });
-      await page.waitForTimeout(300);
-      const gpu = await page.evaluate(async () => {
-        const preview = state.gpuPreview;
-        const leaf = firstMaskLeaf(selectedLocal().mask, "luminance_range");
-        // The entry for this range (older ranges may still be cached).
-        const entry = [...preview.localMasks.entries()].reverse()
-          .find(([key, candidate]) => candidate.kind === "gpu-luma"
-            && key.includes(`"full_start_ev":${leaf.full_start_ev},`)
-            && key.includes(`"fade_out_end_ev":${leaf.fade_out_end_ev}`))?.[1];
-        if (!entry) return null;
-        const { device } = preview;
-        const target = device.createTexture({ size: { width: entry.width, height: entry.height }, format: "r16float",
-          usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
-        const params = preview.createStorageBuffer(new Float32Array([0, 1, 1, 0]));
-        device.queue.writeBuffer(params, 0, new Float32Array([0, 1, 1, 0]));
-        const encoder = device.createCommandEncoder();
-        preview.encodeMaskPass(encoder, preview.maskPipelines.combine, preview.createMaskBindGroup(entry.texture, params, entry.texture), target);
-        const bytesPerRow = Math.ceil((entry.width * 2) / 256) * 256;
-        const buffer = device.createBuffer({ size: bytesPerRow * entry.height, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
-        encoder.copyTextureToBuffer({ texture: target }, { buffer, bytesPerRow }, { width: entry.width, height: entry.height });
-        device.queue.submit([encoder.finish()]);
-        await buffer.mapAsync(GPUMapMode.READ);
-        const bytes = new Uint16Array(buffer.getMappedRange().slice(0));
-        buffer.unmap();
-        buffer.destroy(); target.destroy(); params.destroy();
-        const packed = [];
-        for (let y = 0; y < entry.height; y += 1) for (let x = 0; x < entry.width; x += 1) packed.push(bytes[y * (bytesPerRow / 2) + x]);
-        return { width: entry.width, height: entry.height, bits: packed };
-      });
+      await setFeather(page, feather);
+      const gpu = await readGpuMask(page);
       if (!gpu) { failures.push(`${feather}%: no GPU luma mask was rendered`); continue; }
       const gpuMask = Float32Array.from(gpu.bits, halfFloat);
-      const backend = await page.evaluate(async (longEdge) => {
-        const local = selectedLocal();
-        const response = await fetch(`/api/session/${state.session.session_id}/local-mask/${encodeURIComponent(local.id)}?long_edge=${longEdge}&edit_revision=${state.editRevision}&spatial_only=true`);
-        if (!response.ok) return { error: response.status };
-        return { width: Number(response.headers.get("X-Image-Width")), height: Number(response.headers.get("X-Image-Height")),
-          bytes: Array.from(new Uint8Array(await response.arrayBuffer())) };
-      }, Math.max(gpu.width, gpu.height));
+      const backend = await readBackendMask(page, Math.max(gpu.width, gpu.height));
       if (backend.error) { failures.push(`${feather}%: backend mask request failed (${backend.error})`); continue; }
       const backendMask = Float32Array.from(backend.bytes, (value) => value / 255);
       if (process.env.HDR_FINISHER_DUMP_MASKS) {
-        // Greyscale PGM images of both masks, for looking at the artifact.
-        const dump = (name, mask, width, height) => fs.writeFileSync(path.join(process.env.HDR_FINISHER_DUMP_MASKS, name),
-          Buffer.concat([Buffer.from(`P5 ${width} ${height} 255\n`), Buffer.from(Array.from(mask, (value) => Math.round(Math.min(1, Math.max(0, value)) * 255)))]));
-        fs.mkdirSync(process.env.HDR_FINISHER_DUMP_MASKS, { recursive: true });
-        dump(`feather-${feather}-preview.pgm`, gpuMask, gpu.width, gpu.height);
-        dump(`feather-${feather}-export.pgm`, backendMask, backend.width, backend.height);
+        dumpMask(`feather-${feather}-preview.pgm`, gpuMask, gpu.width, gpu.height);
+        dumpMask(`feather-${feather}-export.pgm`, backendMask, backend.width, backend.height);
       }
       const results = [analyse(gpuMask, gpu.width, gpu.height, "preview (GPU)", feather),
         analyse(backendMask, backend.width, backend.height, "export (backend)", feather)];
@@ -246,6 +289,42 @@ function analyse(mask, width, height, pathName, feather) {
         if (feather > 0 && worst > 0.06) failures.push(`${feather}%: preview and export masks differ by up to ${worst.toFixed(3)}`);
       } else {
         failures.push(`${feather}%: preview ${gpu.width}x${gpu.height} and export ${backend.width}x${backend.height} masks differ in size`);
+      }
+    }
+    // Cropped and straightened: the feather is a fraction of the uncropped
+    // source's long edge in the export, so the preview has to measure it the
+    // same way or the two differ in proportion to the crop.
+    for (const scenario of GEOMETRY_SCENARIOS) {
+      await page.evaluate(async (geometry) => {
+        openCropMode();
+        Object.assign(state.cropDraftGeometry, geometry);
+        closeCropMode(true);
+        await syncGlobalEditState();
+      }, scenario.geometry);
+      await page.waitForFunction(() => viewerState().status === "ready" && !state.gpuDraftInFlight, null, { timeout: 120000 });
+      for (const feather of [25, 100]) {
+        await setFeather(page, feather);
+        const gpu = await readGpuMask(page);
+        if (!gpu) { failures.push(`${scenario.name} ${feather}%: no GPU luma mask was rendered`); continue; }
+        const backend = await readBackendMask(page, Math.max(gpu.width, gpu.height));
+        if (backend.error) { failures.push(`${scenario.name} ${feather}%: backend mask request failed (${backend.error})`); continue; }
+        const preview = Float32Array.from(gpu.bits, halfFloat);
+        const exported = resample(Float32Array.from(backend.bytes, (value) => value / 255), backend.width, backend.height, gpu.width, gpu.height);
+        let worst = 0;
+        let total = 0;
+        for (let index = 0; index < preview.length; index += 1) {
+          const difference = Math.abs(preview[index] - exported[index]);
+          worst = Math.max(worst, difference);
+          total += difference;
+        }
+        const entry = { scenario: scenario.name, feather, preview: `${gpu.width}x${gpu.height}`, export: `${backend.width}x${backend.height}`,
+          maxDifference: Number(worst.toFixed(3)), meanDifference: Number((total / preview.length).toFixed(4)) };
+        report.push(entry);
+        if (worst > 0.06) failures.push(`${scenario.name} ${feather}%: preview and export masks differ by up to ${worst.toFixed(3)} (mean ${entry.meanDifference})`);
+        if (process.env.HDR_FINISHER_DUMP_MASKS) {
+          dumpMask(`${scenario.slug}-${feather}-preview.pgm`, preview, gpu.width, gpu.height);
+          dumpMask(`${scenario.slug}-${feather}-export.pgm`, exported, gpu.width, gpu.height);
+        }
       }
     }
     if (pageErrors.length) failures.push(`Page errors: ${pageErrors.join(" | ")}`);

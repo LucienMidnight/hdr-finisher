@@ -2202,7 +2202,9 @@ def test_phase_two_gpu_luma_retained_mask_contract() -> None:
     # P7: the luma feather is round (a fraction of the long edge on both axes)
     # and reads every texel it covers; 25 taps a quarter-sigma apart turned
     # thin strips into repeating copies.
-    assert "const sigma = 0.09 * amount * Math.max(width, height);" in webgpu
+    assert "const sigma = 0.09 * amount * Math.max(width, height) * referenceScale;" in webgpu
+    # ...measured against the uncropped source, as the backend does.
+    assert "state.gpuPreview.featherReferenceScale = maskFeatherReferenceScale;" in (FRONTEND / "app.js").read_text(encoding="utf-8")
     assert "for (var tap = -reach; tap <= reach; tap = tap + 1)" in webgpu
     assert "stepSize = max(1.0, sigma * 0.25)" not in webgpu
     assert 'this.createMaskPipeline("maskDownsampleFragmentMain")' in webgpu

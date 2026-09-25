@@ -997,6 +997,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.maskBindGroupLayout = null;
       this.maskPipelineLayout = null;
       this.maskPipelines = null;
+      // Mask radii are fractions of the uncropped source's long edge (as in
+      // the backend, which builds masks in source space and then crops). A
+      // mask here is drawn in the cropped, straightened frame, so the app
+      // supplies source long edge / frame long edge for a geometry signature.
+      this.featherReferenceScale = null;
       this.gpuAnalyticMasksEnabled = true;
       this.instrumentationEnabled = false;
       this.performanceMetrics = { renders: [], scopes: [], maskEvents: [], stages: [], allocations: [], presentations: [] };
@@ -6590,10 +6595,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const leaf = local.mask.leaf;
       const feather = Math.min(0.05, Math.max(0, Number(leaf.mask_feather) || 0));
       const inverted = Boolean(local.mask.inverted);
-      const refinementIdentity = `${feather}:${inverted}`;
+      const referenceScale = Math.max(0.001, Number(this.featherReferenceScale?.(geometrySignature)) || 1);
+      const refinementIdentity = `${feather}:${inverted}:${referenceScale}`;
       let refinementRan = false;
       if (entry.refinementIdentity !== refinementIdentity) {
-        const plan = lumaFeatherPlan(feather, entry.width, entry.height);
+        const plan = lumaFeatherPlan(feather, entry.width, entry.height, referenceScale);
         if (plan.sigma < 0.25 && !inverted) {
           entry.texture = entry.baseTexture;
         } else {
@@ -7274,16 +7280,20 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
   /**
    * The luma feather's Gaussian, in pixels of a mask `width` x `height`.
    *
-   * Feather is a distance: 0.09 of the long edge at 100%, the same in both
-   * directions. It used to be 0.09 of each side, which on a 3:2 image spread
-   * the feather 1.5 times further sideways than up and down. Above 8 px the
+   * Feather is a distance: 0.09 of the uncropped source's long edge at 100%,
+   * the same in both directions. `referenceScale` is that long edge over the
+   * mask's own (cropped, straightened) long edge, so cropping never changes
+   * how soft a mask is, and the preview matches the export. It used to be
+   * 0.09 of each side of the cropped frame, which on a 3:2 image spread the
+   * feather 1.5 times further sideways than up and down, and halved it under
+   * a 50% crop. Above 8 px the
    * blur runs on a copy area-averaged by `factor`, with `reducedSigma` chosen so
    * the averaging and the bilinear upsample (together about a quarter of a
    * reduced texel squared) add up to the requested spread.
    */
-  function lumaFeatherPlan(feather, width, height) {
+  function lumaFeatherPlan(feather, width, height, referenceScale = 1) {
     const amount = Math.min(1, Math.max(0, Number(feather) || 0) / 0.05);
-    const sigma = 0.09 * amount * Math.max(width, height);
+    const sigma = 0.09 * amount * Math.max(width, height) * referenceScale;
     if (sigma < 8) return { sigma, factor: 1, reducedSigma: sigma };
     const factor = Math.floor(sigma / 4);
     return { sigma, factor, reducedSigma: Math.sqrt(Math.max(0.0625, (sigma * sigma) / (factor * factor) - 0.25)) };
