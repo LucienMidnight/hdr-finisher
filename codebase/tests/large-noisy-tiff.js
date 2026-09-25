@@ -98,4 +98,4 @@ function ensureLargeNoisySource(width = WIDTH, height = HEIGHT) {
   return target;
 }
 
-module.exports = { ensureLargeNoisySource, WIDTH, HEIGHT };
+module.exports = { ensureLargeNoisySource, encodeTiff, WIDTH, HEIGHT };

@@ -12671,6 +12671,13 @@ function applyZoomGeometry() {
     els.chromeProofWatermark.style.width = `${displayWidth}px`;
     els.chromeProofWatermark.style.height = `${displayHeight}px`;
   }
+  // Past 100% one source pixel covers more than one device pixel. Show it as
+  // a flat square, the way an inspection zoom should; at and below 100% the
+  // compositor keeps its smooth filtering so Fit does not alias.
+  const magnified = percent > 100.5;
+  for (const element of [els.previewCanvas, els.comparisonCanvas, els.previewImage, els.comparisonImage]) {
+    element.classList.toggle("pixel-magnified", magnified);
+  }
   state.zoomPercent = percent;
   updateZoomReadout();
   syncOverlayPlacement();
