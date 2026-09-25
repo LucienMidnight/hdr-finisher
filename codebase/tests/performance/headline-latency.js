@@ -239,6 +239,9 @@ async function installProbe(page) {
         generation: event.detail?.generation ?? null,
         lane: event.detail?.lane ?? null,
         longEdge: event.detail?.longEdge ?? null,
+        // Read in the same task as the presentation, so it describes the frame
+        // this event announced.
+        coarse: state.acceptedPresentation?.coarse === true,
       });
     });
     window.__headlineProbe = probe;
@@ -444,7 +447,11 @@ function analyseRelease(collection) {
       ? finalGeneration - generationAtUp : null,
     dragFramesPresented: distinct(duringDrag, (frame) => Number.isFinite(frame.accepted) && frame.accepted > (collection.baseAccepted ?? -1)),
     coarseFramesDuringDrag: distinct(duringDrag, (frame) => frame.coarse),
-    coarseFramesAfterRelease: distinct(afterUp, (frame) => frame.coarse),
+    // A coarse frame presented after the release breaks the P5 rule. One that
+    // was already on screen when the pointer lifted is replaced by the settled
+    // frame; the time that takes is release -> settled.
+    coarseFramesAfterRelease: collection.events.filter((event) => event.t >= up.t && event.coarse).length,
+    coarseOnScreenAtRelease: Boolean(afterUp[0]?.coarse),
   };
 }
 
@@ -749,6 +756,7 @@ async function measureInputHandler(page) {
           dragFramesPresentedMin: Math.min(...entries.map((entry) => entry.dragFramesPresented || 0)),
           coarseDuringDragTotal: entries.reduce((sum, entry) => sum + (entry.coarseFramesDuringDrag || 0), 0),
           coarseAfterReleaseTotal: entries.reduce((sum, entry) => sum + (entry.coarseFramesAfterRelease || 0), 0),
+          coarseOnScreenAtRelease: entries.filter((entry) => entry.coarseOnScreenAtRelease).length,
           untrustedReleases: entries.filter((entry) => entry.trusted === false).length,
           samples: entries.length,
         };
@@ -767,7 +775,7 @@ async function measureInputHandler(page) {
       gate(find("zoom-sharp-100", "warm"), "zoomToSharp", 300, "zoom change -> sharp, warm");
       const strokes = releaseSummary.filter((row) => row.label.startsWith("release-settled-"));
       const total = (field) => strokes.reduce((sum, row) => sum + (row[field] || 0), 0);
-      if (total("coarseAfterReleaseTotal") > 0) failures.push(`${total("coarseAfterReleaseTotal")} coarse frame(s) shown after release`);
+      if (total("coarseAfterReleaseTotal") > 0) failures.push(`${total("coarseAfterReleaseTotal")} coarse frame(s) presented after release`);
       if (total("untrustedReleases") > 0) failures.push("a release was not a trusted pointer-up");
       if (!dragSetting.on && dragSetting.control === "faster-dragging") {
         if (total("coarseDuringDragTotal") > 0) failures.push(`${total("coarseDuringDragTotal")} coarse frame(s) while dragging with Faster dragging off`);
