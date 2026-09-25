@@ -5690,7 +5690,9 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 
 .slider-fill {
   top: var(--instrument-slider-track-top);
-  left: 0;
+  /* A two-sided fill starts at the slider's home, not the rail's left edge.
+     Every shell honours --fill-start whatever container it sits in. */
+  left: var(--fill-start, 0);
   width: var(--fill-w);
   height: var(--instrument-slider-track-h);
   border-radius: 999px;
