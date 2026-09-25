@@ -186,3 +186,60 @@ After step 3, the owner does a hands-on check before steps 4–7, since P2 and P
 - The before/after table for P5 and P6 is filled in with measured numbers in a ledger section appended to this document.
 - The owner completes every manual check in Section 3 and signs off.
 - Settings, help text and the user guide match the new behaviour; the old preference migrates without a prompt.
+
+## 9. Implementation ledger
+
+### 9.1 Steps 1–3 (P1, P4, P2, P3) — 2026-09-25
+
+Branch `sprint/preview-responsiveness-tuning` (not pushed). Commits: `90677c7` (this PRD), `4f605a4` P1, `d9dd7be` P4, `6ac27d8` probe driver, `0e6de86` P2, `666f07d` P3 instrument. Every run here used the **development Electron build** through `tests/run-in-electron.js` at 2560×1440, DPR 1, AC power, RTX 4070 Ti (driver 32.0.16.1692), on the 7968×5320 fixture unless stated. **The packaged build was not rebuilt or measured in this step.** Those numbers are still owed for Section 8.
+
+**P1: slider fill (done).** The generic `.slider-fill` rule now places the fill at `--fill-start` for every range shell. New test `tests/slider-fill-anchoring.js` checks all 64 rendered range inputs in the HDR and SDR panels (170 samples below, at and above home). Negative control: 3 failing samples, all on the HDR Selected band rail (home edge off by 44–146 px). After: 0. *Differs from the PRD:* the SDR band slider sits inside `.control-row` and was already correct on the current build.
+
+**P4: sharp pixels above 100% (done).** Above 100%, the zoom layout tags the preview/comparison canvas and image with `.pixel-magnified`, which switches `image-rendering` to `pixelated`. New test `tests/pixel-magnification.js` (1-px checkerboard, screenshot of the composited viewer): before, the worst spread inside one source pixel's 8×8 block was 21 levels (HDR) and 16 (SDR), a fail; after, 0 in both lanes. At 50% both lanes stay a uniform mid-grey, so smooth filtering is unchanged. The comparison view uses the same class but has no automated check.
+
+**Route and work diagnosis, measured before P2** (`tests/performance/responsiveness-probe.js`, `output/performance/sprint-0925-probe-before-auto.json`, Auto, Balanced):
+
+- The Auto budget was 2048 MiB. A native plan's source charge was 1617–2264 MiB (5–7 cached levels × native size), so native plans read a peak of 3578–4289 MiB and were refused, falling back to Tiled. P2 causes 1 and 2 confirmed.
+- At custom zoom ≥ 100% every render carried a viewport and was forced to Tiled (`overridden: true` even when `admitted: true`). P2 cause 3 confirmed. **A consequence the PRD did not list:** Tiled refuses interactive renders, so at 200/400/800% **every drag frame was refused** (17–19 per stroke), and the picture didn't change until release.
+- At 200–800% the settled pass processed **all 42,389,760 pixels** (176/176 tiles, `retainedFrame: false`) even though it requested a viewport. A coarse 2048 px drag frame had replaced the native presentation, which left no retained native frame to limit the pass to.
+
+**P2: Direct when it fits (done).**
+
+- Auto is half of the detected dedicated video memory (Q2). The desktop shell reads it from the display driver (`desktop/lib/video-memory.js`: Windows `HardwareInformation.qwMemorySize` matched to the active adapter's PCI id; amdgpu sysfs on Linux; otherwise not detected). Measured here: 12,878,610,432 bytes, so **Auto is 6 GiB**. *Judgment call for the owner:* a "dedicated" figure under 4 GiB is treated as an integrated-graphics carve-out (this machine's AMD iGPU reports 512 MiB) and keeps the 2 GiB fallback, so laptops don't end up with a smaller budget than today.
+- **Defect found and fixed:** the planner received the bare `"auto"` setting and turned it back into 2 GiB, so a calibrated Auto never reached admission.
+- Source levels are charged at their real bytes, and stale levels (other session, older geometry or source, earlier region fetches) are evicted before planning. Region requests use ordinary admission. A budget change re-plans and re-renders. The readout shows "Auto · 6 GiB (detected 12 GiB)" or "Auto · 2 GiB (not detected)", and the Settings Auto option and help text say the same in user terms.
+- Tests: 7 new unit cases fail before and pass after (`gpu-budget`, `render-plan-admission`, `webgpu-allocation-agreement`), and 4 new desktop `video-memory` cases pass. `tests/performance/budget-route.js`: before, Fit ran Direct but 100% and 200% ran Tiled, and a budget change produced **no new frame within 3 s**. After, Fit, 100% and 200% run Direct on Auto. Switching to 1 GiB presented a Tiled frame in 13 ms, and switching back to Auto presented a Direct frame in 6 ms (viewer Ready at 164 and 140 ms). The readout matched the plan each time.
+- GPU cost of the new route (timestamp queries): a full native 42 MP Direct frame takes **~8.1 ms of GPU time median** (max 15–35 ms), with queue-complete at ~11 ms. Fit takes ~0.2–2.7 ms.
+
+**P3: zoomed editing (measured; planned fix not applied, see 9.2).** `headline-latency.js` gains 200/400/800% rows, route and processed-pixel fields, and a fix for frames sampled before the input (once presentation became fast, those produced negative latencies). Same driver, same machine, 8 samples, Balanced, warm p95 (median in brackets), in ms:
+
+| Row | Before P2 | After P2 | Target |
+|---|---|---|---|
+| slider → exact, Fit | 277.7 (277.4) | 5.3 (5.2) | ≤ 100 |
+| slider → exact, 100% | 277.7 (271.7) | 11.4 (11.2) | ≤ 100 |
+| slider → exact, 200% | 234.7 (223.5), Tiled | 11.4 (10.6), Direct | ≤ Fit p95 + 50 |
+| slider → exact, 400% | 247.4 (217.4), Tiled | 47.3 (5.6), Direct | ≤ Fit p95 + 50 |
+| slider → exact, 800% | 235.3 (223.4), Tiled | 11.5 (5.2), Direct | ≤ Fit p95 + 50 |
+| first visible after view change (Fit → 100%) | 206.2 | 87.5 | ≤ 150 |
+| warm pan | 11.2 | 11.2 | ≤ 33 |
+| cold first stroke, Fit exact | 271.4 | 167.5 | — |
+| cold first stroke, 100% exact | 441.1 | 199.2 | — |
+
+Artifacts: `output/performance/sprint-0925-headline-before-p2.json`, `sprint-0925-headline-after-p2.json`, `sprint-0925-probe-after-p2-auto.json`, and `sprint-0925-budget-route-{before,after}.json`. Timings carry up to one display interval of observation quantisation.
+
+Processed pixels per settled edit at 200–800% after P2: 42,389,760 (Direct, whole frame), against 31,833–505,818 visible source pixels. The P3 processed-pixel bound is therefore **not met on this machine**. That's inherent to Direct; see 9.2.
+
+**Suites after these steps.** Node: 227 passed, 0 failed. Python: 1370 passed, 3 skipped (same as baseline). Desktop: 22 passed. Electron drivers after P2 that pass: `denoise-tiled-parity`, `roi-parity`, `roi-pan-cache`, `roi-catch-up`, `export-parity`, `presentation-gate`, `slider-fill-anchoring`, `pixel-magnification` and `budget-route`. **Three fail: `tiled-direct-parity`, `tiled-film-parity` and `roi-refinement`. They fail the same way on the pre-P2 build, and `tiled-film-parity` also fails with `main`'s frontend (`a114e90`).** The failing configuration changes between runs (one tile size passes and the other fails, with maxDelta 255). That points to a race between the drivers' diagnostic passes and the app's own render cycle under the Electron runner, not to a pixel defect. This sprint didn't cause them, but the PRD requires these gates to be green, so they're an open item.
+
+### 9.2 P3: the measurement contradicts the PRD's diagnosis (stopped, not forced)
+
+- The PRD blames the 42.4 MP settled passes on "Region of interest" shipping as *Whole frame*. Measured: at custom zoom ≥ 100% the app already requests the visible region on every pass, whatever that setting says (`renderGpuDraft`: `zoomMode === "custom" && zoomPercent >= 100`). The whole-frame passes came from coarse drag frames breaking the retained native frame, and from drag frames being refused on the forced Tiled route. Turning the setting on by default would have changed nothing at ≥ 100%.
+- P2 as specified ("region requests… Direct when admitted") conflicts with P3's processed-pixel test, because Direct processes the whole frame. On the reference machine a whole-frame Direct pass is ~8 ms of GPU work, and zoomed editing is now faster than Fit was before, which meets P3's user outcome. The visible-region limit still applies automatically whenever Direct is refused (smaller memory limits, larger images), because those passes run on the Tiled route.
+- Held until the owner decides: making *Visible region* the default, moving *Whole frame* to diagnostics, and the processed-pixel assertion. Recommendation: accept whole-image Direct as the zoomed path when memory allows, and keep the visible-region limit for the Tiled route. If P6 shows the card still working too hard while dragging at zoom, reconsider visible-area-only drawing then. That needs region support in the Direct path, which is larger than this sprint's tuning scope.
+
+### 9.3 Open items carried forward
+
+- Packaged-build numbers (Section 8) haven't been recorded yet. Everything above is development Electron.
+- The three Electron parity driver failures from 9.1, which predate this sprint.
+- The Section 4 settings changes (Execution moves to diagnostics, preview modes are removed, help text and user guide rewritten) belong with P5 and haven't started.
+- Balanced still issues coarse 2048 px drag frames on a cold stroke at 100% (seen in the probe after P2). P5 removes coarse frames by default.
