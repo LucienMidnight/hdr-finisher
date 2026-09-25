@@ -15442,6 +15442,22 @@ async function setSdrMatch(action) {
   }
 }
 
+/**
+ * JSON with object keys sorted, so two documents with the same values compare
+ * equal whatever order the backend wrote their keys in.
+ */
+function stablePreviewJson(value) {
+  return JSON.stringify(value ?? null, (key, entry) => (entry && typeof entry === "object" && !Array.isArray(entry)
+    ? Object.fromEntries(Object.keys(entry).sort().map((name) => [name, entry[name]]))
+    : entry));
+}
+
+/**
+ * `refreshPreview` is true (always re-render on success), false, or
+ * "if-changed": re-render only when the acknowledged document changes what the
+ * preview draws. The optimistic edit already rendered its own values, so an
+ * acknowledgement that matches them has nothing new to show.
+ */
 function queueEditCommand(commandType, payload = {}, targetId = null, { refreshPreview = true, globalEditGeneration = null, historyGroup = null } = {}) {
   const sessionId = state.session?.session_id;
   if (commandType !== "set_global_adjustments" && state.globalEditDirty) {
@@ -15473,6 +15489,8 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
       && globalEditGeneration !== state.globalEditGeneration;
     const optimisticAdjustments = preserveNewerGlobalEdit ? state.adjustments : null;
     const draftGeometry = geometryDraftActive() ? state.adjustments.shared.geometry : null;
+    const shownInputs = refreshPreview === "if-changed"
+      ? stablePreviewJson([state.adjustments, state.editDocument?.local_adjustments]) : null;
     state.editRevision = result.revision;
     state.editDocument = result.document;
     if (commandType === "replace_document") loadDenoiseDocument(state.editDocument);
@@ -15505,7 +15523,14 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
       renderOverlayPresetNote();
       updateExportAvailability();
     }
-    if (refreshPreview) {
+    // P5 (Preview Responsiveness Tuning Sprint): a global-edit save used to
+    // start a new render generation for values already on screen, both during
+    // a drag (the scope pass saves) and after release, where it cost a
+    // duplicate render and the settle debounce before the settled pass.
+    const previewInputsChanged = refreshPreview === "if-changed"
+      ? stablePreviewJson([state.adjustments, state.editDocument?.local_adjustments]) !== shownInputs
+      : refreshPreview;
+    if (previewInputsChanged) {
       invalidatePreview("hdr", { local: true });
       invalidatePreview("sdr", { local: true });
       debouncePreview(state.currentView);
@@ -15548,7 +15573,11 @@ async function syncGlobalEditState() {
         authored_sdr_override_consent: true,
       }
     : { adjustments };
-  const pending = queueEditCommand(commandType, payload, null, { globalEditGeneration: generation, historyGroup });
+  // A plain global save only re-renders if the backend's document differs from
+  // the optimistic values already drawn; an SDR-match override always does.
+  const pending = queueEditCommand(commandType, payload, null, {
+    globalEditGeneration: generation, historyGroup, refreshPreview: matchOverride ? true : "if-changed",
+  });
   state.globalEditSyncPending = pending;
   const applied = await pending;
   if (state.session?.session_id !== sessionId) return false;

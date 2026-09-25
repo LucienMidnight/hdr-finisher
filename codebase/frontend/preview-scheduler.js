@@ -38,6 +38,7 @@
       this.lastScopeStartedAt = -Infinity;
       this.lastFrameStartedAt = -Infinity;
       this.scopeAfterFrame = null;
+      this.settleAfterFrame = null;
       this.metrics = {
         inputCount: 0,
         frameCount: 0,
@@ -54,6 +55,7 @@
 
     beginInteraction() {
       this.interacting = true;
+      this.settleAfterFrame = null;
       this.cancelIdleWork();
     }
 
@@ -61,9 +63,27 @@
       this.metrics.staleResults += 1;
     }
 
+    /**
+     * Release ends the input, so there is nothing left to debounce.
+     *
+     * P5 (Preview Responsiveness Tuning Sprint): release -> settled is the
+     * metric the user judges an edit by. The settle debounce exists for input
+     * that is still arriving; after a release it only delayed the settled
+     * pass. That pass is unchanged: when the last drag frame is already exact
+     * at the current generation, settlePreview accepts it as the settled
+     * frame and only the settled scopes run. A frame still on the GPU finishes
+     * first, and the ordinary debounce stays armed as the fallback in case
+     * that frame never completes.
+     */
     endInteraction() {
       this.interacting = false;
-      if (this.current) this.armSettle(this.current);
+      if (!this.current) return;
+      if (this.frameInFlight || this.framePending || this.frame !== null) {
+        this.settleAfterFrame = this.current;
+        this.armSettle(this.current);
+        return;
+      }
+      this.armSettle(this.current, 0);
     }
 
     schedule(lane, applicationGeneration) {
@@ -134,6 +154,7 @@
       this.frame = null;
       this.framePending = false;
       this.scopeAfterFrame = null;
+      this.settleAfterFrame = null;
       if (this.scopePending) this.scopePending.resolve(false);
       this.scopePending = null;
       window.clearTimeout(this.scopeTimer);
@@ -185,6 +206,13 @@
             this.framePending = false;
             if (this.current) this.requestFrame(this.current);
           }
+          // A release that arrived while this frame was on the GPU settles
+          // now, unless another frame for the same task is still to come.
+          const released = this.settleAfterFrame;
+          if (released && this.frame === null && !this.frameInFlight) {
+            this.settleAfterFrame = null;
+            if (released === this.current && !this.interacting) this.armSettle(released, 0);
+          }
         }
       });
     }
@@ -210,7 +238,7 @@
       }, delay);
     }
 
-    armSettle(task) {
+    armSettle(task, delay = this.timings.settleMs) {
       window.clearTimeout(this.settleTimer);
       this.settleTimer = window.setTimeout(async () => {
         if (this.current !== task) return;
@@ -220,7 +248,7 @@
         await this.runScope({ task, tier: "settled" });
         this.recordMetric("settleMs", performance.now() - started);
         this.armRefinement(task);
-      }, this.timings.settleMs);
+      }, delay);
     }
 
     armRefinement(task) {
