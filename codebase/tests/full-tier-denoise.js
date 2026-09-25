@@ -153,7 +153,9 @@ const MIN_DIFFERING_FRACTION = 0.005;
     };
 
     const results = [];
-    for (const [tier, execution] of [["4096", "direct"], ["full", null]]) {
+    // Both rows pin their route: since Auto uses half the detected video
+    // memory (tuning sprint P2), Full can fit Direct and would skip the path.
+    for (const [tier, execution] of [["4096", "direct"], ["full", "tiled"]]) {
       await setTier(tier);
       if (execution) await setExecution(execution);
       await setDenoise(true);

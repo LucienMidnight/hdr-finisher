@@ -4187,8 +4187,13 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       if (!selector || selector.identity !== originalProxy.identity) {
         return originalProxy;
       }
+      // The source cache can replace this identity's copy and free the old
+      // texture (a same-key reload, or eviction and reload). The pixels are the
+      // same, so the selector adopts the live copy; holding the old one made
+      // every Denoise-off frame sample a freed texture and present black.
+      if (selector.original !== originalProxy) selector.original = originalProxy;
       if (selector.selected === "resolved" && selector.resolved) return selector.resolved;
-      return selector.original;
+      return originalProxy;
     }
 
     async ensureDenoisePipelines() {
@@ -4442,6 +4447,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     async resolveDenoiseProxy(controls = {}, { region = null, destination = null, encoder: sharedEncoder = null } = {}) {
       const selector = this.denoiseSourceSelector;
       if (!selector?.cache || !selector.original) return false;
+      // Reconstruction reads the original's pixels; adopt the live copy if the
+      // source cache has replaced (and freed) the one the selector holds.
+      const live = this.proxies.get(selector.identity);
+      if (live && live !== selector.original) selector.original = live;
       const generation = ++this.denoiseSelectorGeneration;
       const startedAt = performance.now();
       this.denoiseCounters.resolveCalls += 1;

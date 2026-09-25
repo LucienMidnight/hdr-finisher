@@ -129,3 +129,21 @@ test("a change to the authored source peak alone does not move a carried anchor"
   const carried = await preview.resolveHighlightAnchor(dragAnchor, original, drifted, { interactive: true, lane: "hdr" });
   assert.ok(Math.abs(carried - 4.5) < 1e-6, `carried ${carried}`);
 });
+
+// Owner report 2026-09-25 (black preview): the image cache replaced the
+// native source copy and freed the old texture, but the denoise selector still
+// held the old copy as its "original". With Denoise off every frame sampled the
+// freed texture, the submit was rejected, and the canvas showed black while the
+// app reported Ready.
+test("the denoise selector follows the live source copy, never a freed one", () => {
+  const preview = new Preview(null);
+  const identity = "s:hdr:7968:{}:source";
+  const stale = { identity, texture: { id: "freed" }, width: 5320, height: 7968 };
+  const live = { identity, texture: { id: "live" }, width: 5320, height: 7968 };
+  const resolved = { identity, texture: { id: "resolved" }, width: 5320, height: 7968 };
+  preview.denoiseSourceSelector = { identity, original: stale, resolved, selected: "original" };
+  assert.equal(preview.selectedDenoiseSource(live), live);
+  assert.equal(preview.denoiseSourceSelector.original, live, "the selector must adopt the live copy");
+  preview.denoiseSourceSelector.selected = "resolved";
+  assert.equal(preview.selectedDenoiseSource(live), resolved);
+});
