@@ -394,3 +394,28 @@ Artifacts: `output/performance/sprint-0925-p5-release-{before-off,before-on,mid-
 - The masks the backend sends to the preview are 8-bit, so very weak feather tails (under about 2%) step in 1/255 increments; the GPU luma mask is 16-bit float. Not measured as visible.
 - A project saved before this change will look different where it used a luma feather on thin highlights (weaker, as decided) or any feather on a non-square image (round now).
 - P7's performance work (the CPU mask compile when zoomed in) hasn't started. On the Direct route a single luma leaf is already masked on the GPU, so the slow path has to be re-measured first (mask graphs, brush, the Tiled route).
+
+### 9.10 Luma feather under a crop (fixed, `15a7cbe`) and P7 measured (done, `a73284b`)
+
+**Crop.** The backend builds every mask in source space and crops it afterwards, so a feather is a fraction of the *uncropped* source's long edge. The GPU drew its luma mask in the cropped, straightened frame and measured the feather against that frame instead. Under a 50% crop the preview's feather was half as wide as the export's, and cropping further changed how soft an existing mask looked. Following the owner's go-ahead (reference = the uncropped source, so cropping never changes a mask and it matches the other local tools), the app now gives the renderer *source long edge / frame long edge* for a geometry, and the GPU scales the feather by it. `luma-feather-quality.js` gains a 50% crop and a 4° straighten plus crop, both applied through the Crop tool. Preview vs export, before: up to 0.135 (crop) and 0.307 (straighten) apart. After: within 0.021.
+
+**P7 measured.** The owner reports no remaining slowness and suspected earlier work had resolved it. `tests/performance/luma-feather-latency.js`: 42.4 MP fixture, a luma local with Feather 50% and +1 EV, 200% zoom, Direct. Real drags on Feather and on the local's Exposure. Release → settled is the trusted pointer-up to the first exact, current, Ready frame. Also counted per stroke: backend mask requests and GPU mask rebuilds.
+
+- **The PRD's cause is gone.** No stroke requested a backend mask (0 across all runs): a single luma mask is qualified and feathered on the GPU, and the Direct route covers zoomed views. The 4 s CPU blur is no longer on this path.
+- **Found and fixed:** at 200% one feathered mask (about 255 MB with its blur textures) was bigger than the 160 MB mask cache. The cache evicted the mask the render had just used, so every frame rebuilt it: 42 of 42 renders during Exposure-only strokes. That breaks P7's "grade-only edits hit the mask cache". Masks the current render uses are now exempt from trimming, and the full-size intermediate texture is only allocated for small feathers.
+
+| Metric (warm p95 unless stated, ms) | Before | After (3 runs) | Target |
+|---|---|---|---|
+| Feather change → settled, cold | 30.3 | 23.2 – 39.6 | ≤ 2000 |
+| Feather change → settled, warm | 23.5 | 23.4 – 33.1 | ≤ 1000 |
+| Local Exposure change → settled, warm | 6.4 | 11.4 – 15.7 | ≤ 200 (P5 zoomed) |
+| Mask rebuilds during Exposure-only strokes | 84 (42 renders × base + blur) | **0** | 0 |
+| Backend mask requests, all strokes | 0 | 0 | 0 for grade edits |
+
+The Exposure latency differences are within one to two display refreshes (6.1 ms at 164 Hz) and swing between runs (medians 5.4–10.9 ms after, 6.0 before). Removing the rebuilds removes per-frame GPU work; it didn't measurably change latency on the RTX 4070 Ti. The other targets were already met before the fix.
+
+**Suites.** Node 244 passed; frontend contracts 101 passed. Electron drivers passing: `luma-feather-quality`, `luma-mask-interaction`, `mask-graph-interaction`, `local-adjustments-interaction`, `brush-mask-interaction`, `path-mask-interaction`, `local-crop-anchor-interaction`, `crop-apply-handoff`, `geometry-transactions`, `export-parity`, `presentation-gate`, `highlight-ceiling`, `highlight-anchor-stability`, `drag-gpu-load`.
+
+**Not measured.** Brush and mask-graph (combined) locals at native zoom, and the Tiled route with a feathered luma mask (low memory setting), where masks still come from the backend per tile. The owner reported no slowness; these are the remaining places the PRD's CPU cost could still appear.
+
+**Sprint status.** P1–P7 done. Section 8 still owes the packaged-build numbers and the pre-existing failing drivers (9.3, 9.8, 9.9).
