@@ -319,11 +319,33 @@ async function measureSliderStroke(page, label, { zoom = null, deltaX = 8 } = {}
   const collection = await collect(page);
   await disarm(page);
   const input = firstInput(collection.inputs);
-  const currentFrame = firstChangedFrame(collection);
-  const refinedFrame = firstChangedFrame(collection, (frame) => frame.exact === true);
+  // A frame sampled before the stroke's own input cannot be its response. With
+  // fast presentation the reset's last frame can land after arming, which used
+  // to be counted and produced negative latencies.
+  const afterInput = (frame) => Boolean(input) && frame.t >= input.t;
+  const currentFrame = firstChangedFrame(collection, afterInput);
+  const refinedFrame = firstChangedFrame(collection, (frame) => afterInput(frame) && frame.exact === true);
+  // P3 (Preview Responsiveness Tuning Sprint): how much of the image the
+  // settled pass processed, against what is visible. Direct processes its
+  // whole frame; Tiled reports the tiles it ran.
+  const work = await page.evaluate(() => {
+    const accepted = state.acceptedPresentation;
+    const plan = state.gpuPreview?.lastRenderPlan || null;
+    const tiled = accepted?.execution === "tiled" ? state.gpuPreview?.tiledExecutionMetrics || null : null;
+    const canvas = els.previewCanvas;
+    const visible = visibleOutputRect(canvas.width, canvas.height);
+    return {
+      execution: accepted?.execution ?? null,
+      processedPixels: tiled ? tiled.processedPixels ?? null : (plan ? plan.width * plan.height : null),
+      frameSourcePixels: canvas.width * canvas.height,
+      visibleSourcePixels: visible ? visible.width * visible.height : canvas.width * canvas.height,
+      halo: tiled?.halo ?? null,
+    };
+  });
   return {
     label,
     zoom: zoom ?? "fit",
+    ...work,
     deltaEv: null,
     input: input ? { type: input.type, target: input.target } : null,
     baselineGeneration: before.generation,
@@ -411,7 +433,7 @@ async function measureLocalGrade(page) {
   const collection = await collect(page);
   await disarm(page);
   const input = firstInput(collection.inputs);
-  const currentFrame = firstChangedFrame(collection);
+  const currentFrame = firstChangedFrame(collection, (frame) => Boolean(input) && frame.t >= input.t);
   return {
     label: "local-grade",
     zoom: 100,
@@ -537,6 +559,10 @@ async function measureInputHandler(page) {
       sampleRows.push({ ...fit, label: "slider-refined-fit", currentMs: null });
       sampleRows.push(await measureSliderStroke(page, "slider-refined-100", { zoom: 100, deltaX: direction }));
       sampleRows.push(await measureSliderStroke(page, "slider-current-200", { zoom: 200, deltaX: direction }));
+      // P3: settled latency and processed pixels at 200%, 400% and 800%.
+      for (const zoom of [200, 400, 800]) {
+        sampleRows.push(await measureSliderStroke(page, `slider-refined-${zoom}`, { zoom, deltaX: direction }));
+      }
       sampleRows.push(await measurePan(page));
       sampleRows.push(await measureViewChange(page, "#zoom-actual", "view-change-actual", () => sample === 0));
       sampleRows.push(await measureViewChange(page, "#zoom-fit", "view-change-fit", () => false));
@@ -569,6 +595,10 @@ async function measureInputHandler(page) {
       "slider-refined-fit": { metric: "refined", targetMs: 100, gate: "Slider-to-refined, Fit, Balanced" },
       "slider-refined-100": { metric: "refined", targetMs: 100, gate: "Slider-to-refined, 100% zoom" },
       "slider-current-200": { metric: "current", targetMs: 50, gate: "Slider-to-current-pixel, 200% zoom" },
+      // P3: zoomed settled latency is gated against Fit's p95 + 50 ms below.
+      "slider-refined-200": { metric: "refined", targetMs: null, gate: "P3 slider-to-settled, 200% (<= Fit p95 + 50 ms)" },
+      "slider-refined-400": { metric: "refined", targetMs: null, gate: "P3 slider-to-settled, 400% (<= Fit p95 + 50 ms)" },
+      "slider-refined-800": { metric: "refined", targetMs: null, gate: "P3 slider-to-settled, 800% (<= Fit p95 + 50 ms)" },
       pan: { metric: "pan", targetMs: 33, gate: "Warm pan to current pixels" },
       "view-change-actual": { metric: "current", targetMs: 150, gate: "First visible ROI after cold zoom/view change" },
       "local-grade": { metric: "current", targetMs: 100, gate: "Warm local-grade edit with unchanged mask geometry" },
@@ -590,6 +620,24 @@ async function measureInputHandler(page) {
         verdict: target && values.length ? (percentile(values, 0.95) <= target.targetMs ? "pass" : "fail") : "no-target",
       };
     });
+    // P3 gates. Zoomed settled p95 is compared with the warm Fit refined p95;
+    // processed pixels are bounded by the visible region only on the Tiled
+    // route, since Direct processes its whole frame by construction.
+    const fitRefined = summary.find((row) => row.label === "slider-refined-fit" && row.coldWarm === "warm");
+    for (const row of summary) {
+      if (!/^slider-refined-(200|400|800)$/.test(row.label) || row.coldWarm !== "warm") continue;
+      row.targetMs = fitRefined?.p95Ms !== null && fitRefined?.p95Ms !== undefined ? fitRefined.p95Ms + 50 : null;
+      row.verdict = row.targetMs !== null && row.p95Ms !== null ? (row.p95Ms <= row.targetMs ? "pass" : "fail") : "no-target";
+      const zoomRows = rows.filter((entry) => entry.label === row.label && entry.coldWarm === "warm");
+      row.executions = [...new Set(zoomRows.map((entry) => entry.execution))];
+      const tiledRows = zoomRows.filter((entry) => entry.execution === "tiled");
+      row.processedPixelsMax = zoomRows.length ? Math.max(...zoomRows.map((entry) => entry.processedPixels || 0)) : null;
+      row.visibleSourcePixels = zoomRows[0]?.visibleSourcePixels ?? null;
+      row.processedPixelVerdict = tiledRows.length
+        ? (tiledRows.every((entry) => entry.processedPixels <= 2 * entry.visibleSourcePixels
+          + 4 * (entry.halo || 0) * Math.sqrt(entry.visibleSourcePixels)) ? "pass" : "fail")
+        : "direct-whole-frame";
+    }
     summary.push({
       label: "input-handler",
       zoom: handler.zoom,
