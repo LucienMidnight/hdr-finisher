@@ -58,6 +58,7 @@
     "test:full-tier-instrumented-tiling": "node tests/performance/full-tier-instrumented-tiling.js",
     "test:in-app-confirmations": "node tests/in-app-confirmations.js",
     "test:denoise-disclosure": "node tests/denoise-progressive-disclosure.js",
+    "test:denoise-noise-view": "node tests/denoise-noise-view.js",
     "test:tier-change-blank": "node tests/performance/tier-change-blank-canvas.js",
     "test:tier-film-consistency": "node tests/performance/tier-film-consistency.js",
     "test:tiled-mask-batch": "node tests/performance/tiled-mask-batch-transport.js",

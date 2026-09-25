@@ -205,6 +205,9 @@ const MAX_ZOOM_PERCENT = 3200;
 // consecutive attempts so a genuine refusal cannot become a submit loop.
 const PREVIEW_WATCHDOG_INTERVAL_MS = 1000;
 const PREVIEW_WATCHDOG_MAX_REARMS = 20;
+// Matches `.bounded-help-tooltip { max-width }` so help wraps to a readable measure.
+const TOOLTIP_MAX_WIDTH = 260;
+const TOOLTIP_SIDE_RAILS = ".grade-rail, .workflow-side-panel";
 const ZOOM_STEPS = [1, 2, 3, 4, 5, 6.25, 8.33, 12.5, 16.67, 25, 33.33, 50, 66.67, 100, 200, 300, 400, 500, 600, 800, 1200, 1600, 2400, 3200];
 // Matches the .viewer-status-dock transform transition in styles.css.
 const VIEWER_STATUS_DOCK_SLIDE_MS = 200;
@@ -309,6 +312,8 @@ const state = {
   pendingLocalAdjustment: null,
   pendingSubMask: null,
   localShowMask: false,
+  // Denoise's Show noise view. View state only: never saved or exported.
+  denoiseNoiseView: false,
   localOverlayColor: "#ff263d",
   compareWithoutLocals: false,
   localPointerGesture: null,
@@ -1362,6 +1367,8 @@ state.adjustments = defaultAdjustments();
 
 const els = {
   denoiseBypass: document.getElementById("denoise-bypass"),
+  denoiseShowNoise: document.getElementById("denoise-show-noise"),
+  noiseViewBadge: document.getElementById("noise-view-badge"),
   denoiseMethod: document.getElementById("denoise-method"),
   denoiseMethodNote: document.getElementById("denoise-method-note"),
   denoiseCustomSettings: document.getElementById("denoise-custom-settings"),
@@ -3338,6 +3345,7 @@ function bindEvents() {
     });
   });
   els.denoiseBypass?.addEventListener("click", () => setDenoiseEnabled(!state.denoise[state.currentView].enabled));
+  els.denoiseShowNoise?.addEventListener("click", toggleDenoiseNoiseView);
   els.denoiseMethod?.addEventListener("change", () => updateDenoiseAnalysisPreset(els.denoiseMethod.value));
   els.denoiseLevels?.addEventListener("change", () => updateCustomDenoiseAnalysis("levels", Number(els.denoiseLevels.value)));
   const denoiseAnalysisSliders = [
@@ -9399,23 +9407,37 @@ function initializeBoundedTooltips() {
     const margin = 8;
     const gap = 7;
     const triggerRect = activeTrigger.getBoundingClientRect();
-    tooltip.style.maxWidth = `${Math.max(80, viewport.width - margin * 2)}px`;
+    // The stylesheet's readable measure is the cap; the viewport only narrows
+    // it further. An inline viewport-wide max-width let copy run on one line.
+    tooltip.style.maxWidth = `${Math.max(80, Math.min(TOOLTIP_MAX_WIDTH, viewport.width - margin * 2))}px`;
     tooltip.style.left = "0px";
     tooltip.style.top = "0px";
     const tooltipRect = tooltip.getBoundingClientRect();
     const minimumLeft = viewport.left + margin;
     const maximumLeft = viewport.left + viewport.width - margin - tooltipRect.width;
-    const left = clamp(
-      triggerRect.left + triggerRect.width / 2 - tooltipRect.width / 2,
-      minimumLeft,
-      Math.max(minimumLeft, maximumLeft),
-    );
     const minimumTop = viewport.top + margin;
     const maximumTop = viewport.top + viewport.height - margin - tooltipRect.height;
-    const below = triggerRect.bottom + gap;
-    const above = triggerRect.top - gap - tooltipRect.height;
-    const preferredTop = below <= maximumTop ? below : above;
-    const top = clamp(preferredTop, minimumTop, Math.max(minimumTop, maximumTop));
+    // Help for anything inside a side rail opens beside the rail, so it never
+    // covers the neighbouring module headers or controls the user is scanning.
+    const rail = activeTrigger.closest(TOOLTIP_SIDE_RAILS);
+    const railRect = rail?.getBoundingClientRect();
+    const besideRail = railRect && railRect.left - gap - tooltipRect.width >= minimumLeft;
+    let left;
+    let top;
+    if (besideRail) {
+      left = railRect.left - gap - tooltipRect.width;
+      top = clamp(triggerRect.top, minimumTop, Math.max(minimumTop, maximumTop));
+    } else {
+      left = clamp(
+        triggerRect.left + triggerRect.width / 2 - tooltipRect.width / 2,
+        minimumLeft,
+        Math.max(minimumLeft, maximumLeft),
+      );
+      const below = triggerRect.bottom + gap;
+      const above = triggerRect.top - gap - tooltipRect.height;
+      const preferredTop = below <= maximumTop ? below : above;
+      top = clamp(preferredTop, minimumTop, Math.max(minimumTop, maximumTop));
+    }
     tooltip.style.left = `${Math.round(left)}px`;
     tooltip.style.top = `${Math.round(top)}px`;
   };
@@ -9447,14 +9469,23 @@ function initializeBoundedTooltips() {
     const trigger = triggerFromEvent(event);
     if (trigger && !trigger.contains(event.relatedTarget)) schedule(trigger);
   });
+  // Clicking is acting, not asking: any press dismisses help, including a
+  // press on the trigger itself (twirling a module open changes the layout
+  // the tooltip was placed against).
+  document.addEventListener("pointerdown", () => {
+    if (activeTrigger || pendingTrigger) hide();
+  }, true);
   document.addEventListener("pointerout", (event) => {
     const trigger = triggerFromEvent(event);
-    if (!trigger || trigger.contains(event.relatedTarget) || document.activeElement === trigger) return;
+    if (!trigger || trigger.contains(event.relatedTarget)) return;
+    // Only keyboard focus keeps help open after the pointer leaves; a click
+    // also focuses the trigger and must not pin the tooltip.
+    if (trigger.matches(":focus-visible")) return;
     if (activeTrigger === trigger || pendingTrigger === trigger) hide();
   });
   document.addEventListener("focusin", (event) => {
     const trigger = triggerFromEvent(event);
-    if (trigger) schedule(trigger);
+    if (trigger && trigger.matches(":focus-visible")) schedule(trigger);
   });
   document.addEventListener("focusout", (event) => {
     const trigger = triggerFromEvent(event);
@@ -10181,6 +10212,7 @@ function renderDenoiseControls() {
     updateRangeVisual(input);
   }
   els.denoiseRecalculate.disabled = !enabled || ["preparing", "recalculating"].includes(runtime.status);
+  renderDenoiseNoiseViewControl();
   renderDenoiseAdvancedVisibility();
   const labels = { off: "Off", preparing: "Preparing", ready: "Ready", dirty: "Dirty", recalculating: "Recalculating", error: "Error" };
   if (els.denoiseState) els.denoiseState.textContent = labels[runtime.status] || runtime.status;
@@ -10192,6 +10224,49 @@ function renderDenoiseControls() {
     recalculating: "Recalculating; the previous valid result remains interactive.",
     error: "Denoise could not be prepared. The original pipeline remains available.",
   }[runtime.status] || "");
+}
+
+/**
+ * Whether the current preview can show what Denoise removes. Only the WebGPU
+ * preview reconstructs denoise, and only once an analysis exists; a dirty
+ * analysis still has its previous valid result on screen.
+ */
+function denoiseNoiseViewAvailable(lane = state.currentView) {
+  const runtime = state.denoiseRuntime?.[lane];
+  return Boolean(
+    state.gpuPreview?.available
+    && state.denoise?.[lane]?.enabled
+    && runtime && !runtime.showOriginal
+    && ["ready", "dirty", "recalculating"].includes(runtime.status),
+  );
+}
+
+function denoiseNoiseViewActive(lane = state.currentView) {
+  return Boolean(state.denoiseNoiseView) && denoiseNoiseViewAvailable(lane);
+}
+
+function renderDenoiseNoiseViewControl() {
+  const active = denoiseNoiseViewActive();
+  if (els.denoiseShowNoise) {
+    els.denoiseShowNoise.disabled = !denoiseNoiseViewAvailable();
+    els.denoiseShowNoise.setAttribute("aria-pressed", String(active));
+    els.denoiseShowNoise.lastElementChild.textContent = active ? "Hide noise" : "Show noise";
+  }
+  els.noiseViewBadge?.classList.toggle("hidden", !active);
+  document.body.classList.toggle("denoise-noise-view", active);
+}
+
+function toggleDenoiseNoiseView() {
+  const lane = state.currentView;
+  if (!state.denoiseNoiseView && !denoiseNoiseViewAvailable(lane)) return;
+  state.denoiseNoiseView = !state.denoiseNoiseView;
+  renderDenoiseNoiseViewControl();
+  // A view change, not an edit: a new generation so no pass of the other view
+  // is accepted, without marking the grade dirty.
+  invalidatePreview(lane, { markDirty: false });
+  debouncePreview(lane);
+  // Scopes describe the graded picture, so they only refresh on the way back.
+  if (!state.denoiseNoiseView) debounceOverlayAndScopes();
 }
 
 function markDenoiseAnalysisDirty() {
@@ -10254,6 +10329,7 @@ async function setDenoiseEnabled(enabled) {
     runtime.generation += 1;
     runtime.status = "off";
     runtime.showOriginal = true;
+    state.denoiseNoiseView = false;
     state.gpuPreview?.cancelDenoiseProcessing?.({ selectOriginal: true });
     await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
     renderDenoiseControls();
@@ -11153,6 +11229,7 @@ async function renderGpuDraftInner(
     viewport: request.viewport || null,
     roiCatchUp,
     panPass,
+    noiseView: denoiseNoiseViewActive(lane),
     onSourceProgress: (progress) => {
       if (progress.state !== "building" || !sourceOptions.isCurrent() || !hideStatus) return;
       const completed = Math.max(0, Number(progress.completed) || 0);
@@ -12159,6 +12236,7 @@ function retireActiveSession() {
   state.localBrushVisibleBounds = null;
   state.localAdjustmentMenuId = null;
   state.localShowMask = false;
+  state.denoiseNoiseView = false;
   state.compareWithoutLocals = false;
   state.localPreviewDirty = false;
   state.localMaskCommitDepth = 0;

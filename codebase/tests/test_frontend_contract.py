@@ -1583,8 +1583,11 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     # contract aligned with the actual highest shader index so stale padding
     # does not masquerade as a pipeline-order regression.
     # 160 and 161 carry the tile origin for tiled execution; Direct leaves
-    # them at zero, so every index below keeps its meaning.
-    assert "const PARAM_COUNT = 166" in shader
+    # them at zero, so every index below keeps its meaning. 166 carries
+    # Denoise's Show noise view flag.
+    assert "const PARAM_COUNT = 167" in shader
+    assert "const NOISE_VIEW_INDEX = 166" in shader
+    assert "const NOISE_VIEW_INDEX: u32 = 166u;" in shader
     assert "const TILE_ORIGIN_X_INDEX = 160" in shader
     assert "const TILE_ORIGIN_Y_INDEX = 161" in shader
     assert "params[TILE_ORIGIN_X_INDEX] = 0;" in shader
@@ -2166,7 +2169,7 @@ def test_webgpu_local_detail_uses_ordered_gpu_chain_and_scaled_parameters() -> N
     assert [render.index(token) for token in ordered_tokens] == sorted(render.index(token) for token in ordered_tokens)
     assert "intermediate.detailATexture" in render and "intermediate.detailBTexture" in render
     assert "masks[index].texture.createView()" in render
-    assert "intermediate.detailATexture.createView(),\n          )" in render
+    assert "intermediate.detailATexture.createView(),\n            )" in render
 
     support = webgpu[webgpu.index("function gpuLocalSupported"):webgpu.index("function activeGpuLocals")]
     assert "texture_amount" not in support
@@ -2213,7 +2216,7 @@ def test_phase_two_gpu_luma_retained_mask_contract() -> None:
     assert "textureSampleLevel(spatialTexture, spatialSampler, uv, 0.0)" in webgpu
     assert "params[129] = vignette.center_x" in webgpu
     assert "params[130] = vignette.center_y" in webgpu
-    assert "params[131] = overlayMask ? 1 : 0" in webgpu
+    assert "params[131] = overlayMask && !noiseView ? 1 : 0" in webgpu
     assert "vec3f(p[133], p[134], p[135])" in webgpu
     assert "if (!isCurrent()) return null" in webgpu
     assert "gpuLumaMaskPreviewActive" in javascript

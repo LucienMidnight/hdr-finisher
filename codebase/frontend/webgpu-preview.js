@@ -3,10 +3,12 @@
   // execution leaves them at zero, so its arithmetic is unchanged.
   // 160/161: tile origin; 162/163: valid tile extent; 164/165: full output
   // extent. Direct leaves the tile fields zero and falls back to the bound
-  // texture dimensions.
-  const PARAM_COUNT = 166;
+  // texture dimensions. 166 is Denoise's Show noise view (0 off, 1 on, 2 on
+  // with nothing removed); it is view state and never reaches an export.
+  const PARAM_COUNT = 167;
   const TILE_ORIGIN_X_INDEX = 160;
   const TILE_ORIGIN_Y_INDEX = 161;
+  const NOISE_VIEW_INDEX = 166;
   const CURVE_SAMPLES = 1024;
   const PEAK_HISTOGRAM_BINS = 4096;
   // The tile peak reduction target. A maximum is decomposable, so this grid
@@ -2834,6 +2836,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       );
       const denoiseControls = denoiseSelector?.controls
         || { amount: 0.5, luminance: 0.5, colorNoise: 0.5, detailRecovery: 0.5 };
+      // Show noise differences the original against this generation's own
+      // reconstruction, so whether anything was removed is decided here.
+      const noiseView = params[NOISE_VIEW_INDEX] > 0;
+      if (noiseView) params[NOISE_VIEW_INDEX] = denoiseActive ? 1 : 2;
       const denoiseAlignment = denoiseActive
         ? denoiseTileAlignment(denoiseSelector.cache.settings.levels)
         : 1;
@@ -2855,7 +2861,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           maxResidentBytes: Math.floor(this.memoryBudgetBytes() * 0.7),
           maxScratchBytes: (tileSize + halo * 2) ** 2 * 8,
         }));
-      const identity = `${proxy.identity}|${editRevision}|${surface.format}`;
+      // The view mode is part of tile identity so the pan cache never answers a
+      // noise-view pass with graded tiles, or the reverse.
+      const identity = `${proxy.identity}|${editRevision}|${surface.format}${noiseView ? "|noise" : ""}`;
       const nodes = ["geometry"];
       if (denoiseActive) nodes.push({ id: "denoise", halo });
       nodes.push("exposure", "white-balance", "curves", "color", "grading");
@@ -3050,7 +3058,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const detailResultView = graph.detailResultTexture.createView();
       const filmView = graph.filmTexture.createView();
       const finishView = graph.finishTexture.createView();
-      const peakTarget = this.ensureScopePeakTarget();
+      // No finished picture exists in the noise view, so there is no peak to
+      // measure, and reading back an unwritten grid would report a stale one.
+      const peakTarget = noiseView ? null : this.ensureScopePeakTarget();
       const peakView = peakTarget?.texture.createView() || null;
       const globalInputIdentity = detailBandIdentity(params, proxy.identity, "global");
       const pinnedDetail = [];
@@ -3183,12 +3193,17 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           });
           if (resolved?.paramBuffer) denoiseParamBuffers.push(resolved.paramBuffer);
           denoiseTileResolves += 1;
-          encoder.copyTextureToTexture(
-            { texture: graph.denoiseResolvedTexture, origin: { x: 0, y: 0, z: 0 } },
-            { texture: graph.sourceTexture, origin: { x: 0, y: 0, z: 0 } },
-            { width, height, depthOrArrayLayers: 1 },
-          );
-        } else {
+          // Show noise keeps the reconstruction where it is and takes the
+          // original as the source below.
+          if (!noiseView) {
+            encoder.copyTextureToTexture(
+              { texture: graph.denoiseResolvedTexture, origin: { x: 0, y: 0, z: 0 } },
+              { texture: graph.sourceTexture, origin: { x: 0, y: 0, z: 0 } },
+              { width, height, depthOrArrayLayers: 1 },
+            );
+          }
+        }
+        if (!denoiseActive || noiseView) {
           // A region source is positioned at the region's own origin, so the
           // tile's frame coordinates become region-relative ones. The plan,
           // the parameters and the presentation target all stay frame-anchored.
@@ -3206,89 +3221,94 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
             { width, height, depthOrArrayLayers: 1 },
           );
         }
-        pass(baseView, pipelines.base, bind(sourceView), width, height);
-        let localSource = graph.baseTexture;
+        pass(baseView, pipelines.base, noiseView && denoiseActive
+          ? bind(sourceView, sourceView, graph.denoiseResolvedTexture.createView())
+          : bind(sourceView), width, height);
+        // Show noise presents the base pass itself; the grade never runs.
+        if (!noiseView) {
+          let localSource = graph.baseTexture;
 
-        if (detailActive) {
-          const prefix = `global|${globalInputIdentity}`;
-          const key = bandTileKey(prefix, tile);
-          const packed = this.detailBandTile(key, tile.rect.width, tile.rect.height, "global");
-          pinnedDetail.push(key);
-          const assembled = packed.hit && assemblePackedHalo(prefix, tile);
-          if (!assembled) {
-            pass(scratchView, pipelines.detailHorizontal, bind(baseView, baseView), width, height, 0);
-            pass(detailResultView, pipelines.detailVertical, bind(scratchView, scratchView), width, height, 0);
-            encoder.copyTextureToTexture(
-              { texture: graph.detailResultTexture, origin: { x: tile.rect.x - tile.haloRect.x, y: tile.rect.y - tile.haloRect.y, z: 0 } },
-              { texture: packed.texture },
-              { width: tile.rect.width, height: tile.rect.height, depthOrArrayLayers: 1 },
-            );
-          }
-          pass(localView, pipelines.detailComposite, bind(baseView, detailResultView), width, height);
-          localSource = graph.localTexture;
-        }
-
-        let precedingIdentity = `${proxy.identity}|${JSON.stringify(Array.from(params))}`;
-        activeLocals.forEach((local, localIndex) => {
-          const target = localSource === graph.baseTexture ? graph.localTexture : graph.baseTexture;
-          const targetView = target.createView();
-          const localBinding = {
-            buffer: localBuffers[localIndex].buffer,
-            offset: index * localBuffers[localIndex].stride,
-            size: PARAM_COUNT * 4,
-          };
-          const maskView = maskMatrix[index][localIndex].texture.createView();
-          if (gpuLocalDetailActive(local[`${lane}_grade`])) {
-            pass(finishView, pipelines.localCandidate,
-              bind(localSource.createView(), localSource.createView(), localSource.createView(), localBinding), width, height);
-            const localValues = buildLocalParams(local, lane, options.sourcePixelScale || 1);
-            const bandIdentity = detailBandIdentity(localValues, precedingIdentity, "local");
-            const prefix = `local:${local.id}|${bandIdentity}`;
+          if (detailActive) {
+            const prefix = `global|${globalInputIdentity}`;
             const key = bandTileKey(prefix, tile);
-            const packed = this.detailBandTile(key, tile.rect.width, tile.rect.height, "local");
+            const packed = this.detailBandTile(key, tile.rect.width, tile.rect.height, "global");
             pinnedDetail.push(key);
             const assembled = packed.hit && assemblePackedHalo(prefix, tile);
             if (!assembled) {
-              pass(scratchView, pipelines.localDetailHorizontal,
-                bind(finishView, finishView, finishView, localBinding), width, height, 0);
-              pass(detailResultView, pipelines.localDetailVertical,
-                bind(scratchView, scratchView, scratchView, localBinding), width, height, 0);
+              pass(scratchView, pipelines.detailHorizontal, bind(baseView, baseView), width, height, 0);
+              pass(detailResultView, pipelines.detailVertical, bind(scratchView, scratchView), width, height, 0);
               encoder.copyTextureToTexture(
                 { texture: graph.detailResultTexture, origin: { x: tile.rect.x - tile.haloRect.x, y: tile.rect.y - tile.haloRect.y, z: 0 } },
                 { texture: packed.texture },
                 { width: tile.rect.width, height: tile.rect.height, depthOrArrayLayers: 1 },
               );
             }
-            pass(scratchView, pipelines.localDetailComposite,
-              bind(finishView, detailResultView, detailResultView, localBinding), width, height);
-            pass(targetView, pipelines.localDetailMix,
-              bind(localSource.createView(), maskView, scratchView, localBinding), width, height);
-          } else {
-            pass(targetView, pipelines.local,
-              bind(localSource.createView(), maskView, maskView, localBinding), width, height);
+            pass(localView, pipelines.detailComposite, bind(baseView, detailResultView), width, height);
+            localSource = graph.localTexture;
           }
-          localSource = target;
-          precedingIdentity += `|${JSON.stringify(gpuMaskRenderPayload(local.mask))}|${JSON.stringify(local[`${lane}_grade`])}|${local.opacity}`;
-        });
 
-        pass(filmView, pipelines.response, bind(localSource.createView()), width, height);
-        let spatialResultView = sourceView;
-        if (spatialActive) {
-          // The quarter-resolution grid is anchored to the frame, and this
-          // tile's halo rectangle starts on one of its texels, so the valid
-          // region is exactly the tile's own quarter extent. Rendering only
-          // that region keeps an edge tile from writing texels its source
-          // never covered, which `validSpatialDimensions()` then reads back.
-          const spatialWidth = Math.ceil(width / 4);
-          const spatialHeight = Math.ceil(height / 4);
-          const spatialAView = graph.spatialATexture.createView();
-          const spatialBView = graph.spatialBTexture.createView();
-          pass(spatialAView, pipelines.extract, bind(filmView, spatialBView), spatialWidth, spatialHeight, 0);
-          pass(spatialBView, pipelines.blurHorizontal, bind(filmView, spatialAView), spatialWidth, spatialHeight, 0);
-          pass(spatialAView, pipelines.blurVertical, bind(filmView, spatialBView), spatialWidth, spatialHeight, 0);
-          spatialResultView = graph.spatialATexture.createView();
+          let precedingIdentity = `${proxy.identity}|${JSON.stringify(Array.from(params))}`;
+          activeLocals.forEach((local, localIndex) => {
+            const target = localSource === graph.baseTexture ? graph.localTexture : graph.baseTexture;
+            const targetView = target.createView();
+            const localBinding = {
+              buffer: localBuffers[localIndex].buffer,
+              offset: index * localBuffers[localIndex].stride,
+              size: PARAM_COUNT * 4,
+            };
+            const maskView = maskMatrix[index][localIndex].texture.createView();
+            if (gpuLocalDetailActive(local[`${lane}_grade`])) {
+              pass(finishView, pipelines.localCandidate,
+                bind(localSource.createView(), localSource.createView(), localSource.createView(), localBinding), width, height);
+              const localValues = buildLocalParams(local, lane, options.sourcePixelScale || 1);
+              const bandIdentity = detailBandIdentity(localValues, precedingIdentity, "local");
+              const prefix = `local:${local.id}|${bandIdentity}`;
+              const key = bandTileKey(prefix, tile);
+              const packed = this.detailBandTile(key, tile.rect.width, tile.rect.height, "local");
+              pinnedDetail.push(key);
+              const assembled = packed.hit && assemblePackedHalo(prefix, tile);
+              if (!assembled) {
+                pass(scratchView, pipelines.localDetailHorizontal,
+                  bind(finishView, finishView, finishView, localBinding), width, height, 0);
+                pass(detailResultView, pipelines.localDetailVertical,
+                  bind(scratchView, scratchView, scratchView, localBinding), width, height, 0);
+                encoder.copyTextureToTexture(
+                  { texture: graph.detailResultTexture, origin: { x: tile.rect.x - tile.haloRect.x, y: tile.rect.y - tile.haloRect.y, z: 0 } },
+                  { texture: packed.texture },
+                  { width: tile.rect.width, height: tile.rect.height, depthOrArrayLayers: 1 },
+                );
+              }
+              pass(scratchView, pipelines.localDetailComposite,
+                bind(finishView, detailResultView, detailResultView, localBinding), width, height);
+              pass(targetView, pipelines.localDetailMix,
+                bind(localSource.createView(), maskView, scratchView, localBinding), width, height);
+            } else {
+              pass(targetView, pipelines.local,
+                bind(localSource.createView(), maskView, maskView, localBinding), width, height);
+            }
+            localSource = target;
+            precedingIdentity += `|${JSON.stringify(gpuMaskRenderPayload(local.mask))}|${JSON.stringify(local[`${lane}_grade`])}|${local.opacity}`;
+          });
+
+          pass(filmView, pipelines.response, bind(localSource.createView()), width, height);
+          let spatialResultView = sourceView;
+          if (spatialActive) {
+            // The quarter-resolution grid is anchored to the frame, and this
+            // tile's halo rectangle starts on one of its texels, so the valid
+            // region is exactly the tile's own quarter extent. Rendering only
+            // that region keeps an edge tile from writing texels its source
+            // never covered, which `validSpatialDimensions()` then reads back.
+            const spatialWidth = Math.ceil(width / 4);
+            const spatialHeight = Math.ceil(height / 4);
+            const spatialAView = graph.spatialATexture.createView();
+            const spatialBView = graph.spatialBTexture.createView();
+            pass(spatialAView, pipelines.extract, bind(filmView, spatialBView), spatialWidth, spatialHeight, 0);
+            pass(spatialBView, pipelines.blurHorizontal, bind(filmView, spatialAView), spatialWidth, spatialHeight, 0);
+            pass(spatialAView, pipelines.blurVertical, bind(filmView, spatialBView), spatialWidth, spatialHeight, 0);
+            spatialResultView = graph.spatialATexture.createView();
+          }
+          pass(finishView, pipelines.finish, bind(filmView, spatialResultView), width, height);
         }
-        pass(finishView, pipelines.finish, bind(filmView, spatialResultView), width, height);
         // The finished tile is measured before it is composited, because the
         // composite encodes for the display and this has to read the picture.
         // On a measurement pass this is the only thing the tile is for.
@@ -3310,7 +3330,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           const overlayView = options.overlayIndex >= 0
             ? maskMatrix[index][options.overlayIndex].texture.createView()
             : sourceView;
-          const compositeBind = bind(finishView, sourceView, overlayView);
+          const compositeBind = bind(noiseView ? baseView : finishView, sourceView, overlayView);
           const compositePass = encoder.beginRenderPass({
             colorAttachments: [{
               view: canvasView,
@@ -3651,7 +3671,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // option here. Measuring the finished picture instead of this
       // source-domain estimate needs the scheduler to request a refinement
       // after the reduction lands, rather than an await inside the render.
-      const anchor = this.highlightAnchorRequest(lane, adjustments, sourceProxy, params);
+      // Show noise never reaches the output mapping, so it has no peak to anchor.
+      const noiseView = Boolean(sourceOptions?.noiseView);
+      const anchor = noiseView ? null : this.highlightAnchorRequest(lane, adjustments, sourceProxy, params);
       if (anchor) {
         const interactive = sourceOptions?.tier === "interactive";
         // An interactive frame that stopped for a whole-image reduction would
@@ -3718,11 +3740,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const overlayMask = overlayIndex >= 0;
       const overlayLocal = overlayIndex >= 0 ? activeLocals[overlayIndex] : null;
       const overlayColor = Array.isArray(maskOverlay?.color) ? maskOverlay.color : [0.12, 0.72, 0.86];
-      params[131] = overlayMask ? 1 : 0;
+      params[131] = overlayMask && !noiseView ? 1 : 0;
       params[132] = overlayLocal ? gpuMaskInfluenceOpacity(overlayLocal.mask) : 0;
       params[133] = Number(overlayColor[0]) || 0;
       params[134] = Number(overlayColor[1]) || 0;
       params[135] = Number(overlayColor[2]) || 0;
+      // Direct reads a whole-frame resolved source; Tiled re-derives this per
+      // generation from whether it reconstructs tiles.
+      params[NOISE_VIEW_INDEX] = noiseView ? (sourceProxy !== proxy ? 1 : 2) : 0;
       this.uploadParamsAndCurves(lane, adjustments, curveSampler, params);
       if (plan.decision.mode === "tiled") {
         const refusals = this.tiledExecutionRefusals({
@@ -3746,7 +3771,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           peakLogicalBytes: plan.totals.peakLogicalBytes,
           budgetBytes: plan.budgetBytes,
         });
-        const tiled = await this.encodeTiledGeneration(canvas, context, sourceProxy, surface, pipelines, params, {
+        // Show noise needs the original and a reconstruction per tile, so it
+        // hands Tiled the original even when a whole-frame resolve is resident.
+        const tiled = await this.encodeTiledGeneration(canvas, context, noiseView ? proxy : sourceProxy, surface, pipelines, params, {
           tileSize: sourceOptions?.tileSize,
           serial,
           viewport: sourceOptions?.viewport || null,
@@ -3808,7 +3835,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // invalid in WebGPU even when the inactive shader branch never samples it.
       const fallbackSpatialView = sourceProxy.texture.createView();
       const spatialAView = intermediate.spatialATexture?.createView() || fallbackSpatialView;
-      const baseBindGroup = makeBindGroup(sourceProxy.texture.createView(), spatialAView);
+      // Show noise binds the original as the source and the resolved picture
+      // in the overlay slot, so the base pass can difference the two.
+      const baseBindGroup = params[NOISE_VIEW_INDEX] === 1
+        ? makeBindGroup(proxy.texture.createView(), spatialAView, this.paramBuffer, sourceProxy.texture.createView())
+        : makeBindGroup(sourceProxy.texture.createView(), spatialAView);
       // Detail blur samples the filterable spatial binding so fractional radii
       // move continuously instead of jumping between integer texels. Each pass
       // binds its immutable input to both sampled slots; neither aliases that
@@ -3838,7 +3869,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         intermediate.compositeParamBuffer = this.createStorageBuffer(params);
       }
       const compositeBindGroup = makeBindGroup(
-        intermediate.finishTexture.createView(),
+        (noiseView ? intermediate.baseTexture : intermediate.finishTexture).createView(),
         spatialAView,
         intermediate.compositeParamBuffer,
         masks[overlayIndex]?.texture?.createView() || spatialAView,
@@ -3860,72 +3891,12 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       basePass.setBindGroup(0, baseBindGroup);
       basePass.draw(3);
       basePass.end();
-      let localSource = intermediate.baseTexture;
-      if (detailActive) {
-        const detailHorizontalPass = encoder.beginRenderPass({
-          colorAttachments: [{
-            view: intermediate.detailATexture.createView(),
-            clearValue: { r: 0, g: 0, b: 0, a: 0 },
-            loadOp: "clear",
-            storeOp: "store",
-          }],
-        });
-        detailHorizontalPass.setPipeline(pipelines.detailHorizontal);
-        detailHorizontalPass.setBindGroup(0, detailHorizontalBindGroup);
-        detailHorizontalPass.draw(3);
-        detailHorizontalPass.end();
-
-        const detailVerticalPass = encoder.beginRenderPass({
-          colorAttachments: [{
-            view: intermediate.detailBTexture.createView(),
-            clearValue: { r: 0, g: 0, b: 0, a: 0 },
-            loadOp: "clear",
-            storeOp: "store",
-          }],
-        });
-        detailVerticalPass.setPipeline(pipelines.detailVertical);
-        detailVerticalPass.setBindGroup(0, detailVerticalBindGroup);
-        detailVerticalPass.draw(3);
-        detailVerticalPass.end();
-
-        const detailCompositePass = encoder.beginRenderPass({
-          colorAttachments: [{
-            view: intermediate.localTexture.createView(),
-            clearValue: { r: 0, g: 0, b: 0, a: 1 },
-            loadOp: "clear",
-            storeOp: "store",
-          }],
-        });
-        detailCompositePass.setPipeline(pipelines.detailComposite);
-        detailCompositePass.setBindGroup(0, detailCompositeBindGroup);
-        detailCompositePass.draw(3);
-        detailCompositePass.end();
-        localSource = intermediate.localTexture;
-      }
-      for (let index = 0; index < activeLocals.length; index += 1) {
-        const local = activeLocals[index];
-        const target = localSource === intermediate.baseTexture ? intermediate.localTexture : intermediate.baseTexture;
-        const localBuffer = this.localParamBuffer(local, lane, sourcePixelScale);
-        if (gpuLocalDetailActive(local[`${lane}_grade`])) {
-          // Preserve the pre-local source until the final mask mix. The normal
-          // ping-pong target holds the unmasked candidate, while the two Detail
-          // scratch textures are reused serially for every local adjustment.
-          const candidateBindGroup = makeBindGroup(localSource.createView(), localSource.createView(), localBuffer);
-          const candidatePass = encoder.beginRenderPass({
-            colorAttachments: [{
-              view: target.createView(),
-              clearValue: { r: 0, g: 0, b: 0, a: 1 },
-              loadOp: "clear",
-              storeOp: "store",
-            }],
-          });
-          candidatePass.setPipeline(pipelines.localCandidate);
-          candidatePass.setBindGroup(0, candidateBindGroup);
-          candidatePass.draw(3);
-          candidatePass.end();
-
-          const horizontalBindGroup = makeBindGroup(target.createView(), target.createView(), localBuffer);
-          const horizontalPass = encoder.beginRenderPass({
+      // Show noise presents the base pass directly: nothing after it belongs
+      // to what Denoise removed.
+      if (!noiseView) {
+        let localSource = intermediate.baseTexture;
+        if (detailActive) {
+          const detailHorizontalPass = encoder.beginRenderPass({
             colorAttachments: [{
               view: intermediate.detailATexture.createView(),
               clearValue: { r: 0, g: 0, b: 0, a: 0 },
@@ -3933,17 +3904,12 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
               storeOp: "store",
             }],
           });
-          horizontalPass.setPipeline(pipelines.localDetailHorizontal);
-          horizontalPass.setBindGroup(0, horizontalBindGroup);
-          horizontalPass.draw(3);
-          horizontalPass.end();
+          detailHorizontalPass.setPipeline(pipelines.detailHorizontal);
+          detailHorizontalPass.setBindGroup(0, detailHorizontalBindGroup);
+          detailHorizontalPass.draw(3);
+          detailHorizontalPass.end();
 
-          const verticalBindGroup = makeBindGroup(
-            intermediate.detailATexture.createView(),
-            intermediate.detailATexture.createView(),
-            localBuffer,
-          );
-          const verticalPass = encoder.beginRenderPass({
+          const detailVerticalPass = encoder.beginRenderPass({
             colorAttachments: [{
               view: intermediate.detailBTexture.createView(),
               clearValue: { r: 0, g: 0, b: 0, a: 0 },
@@ -3951,36 +3917,120 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
               storeOp: "store",
             }],
           });
-          verticalPass.setPipeline(pipelines.localDetailVertical);
-          verticalPass.setBindGroup(0, verticalBindGroup);
-          verticalPass.draw(3);
-          verticalPass.end();
+          detailVerticalPass.setPipeline(pipelines.detailVertical);
+          detailVerticalPass.setBindGroup(0, detailVerticalBindGroup);
+          detailVerticalPass.draw(3);
+          detailVerticalPass.end();
 
-          const detailCompositeBindGroup = makeBindGroup(
-            target.createView(),
-            intermediate.detailBTexture.createView(),
-            localBuffer,
-          );
           const detailCompositePass = encoder.beginRenderPass({
             colorAttachments: [{
-              view: intermediate.detailATexture.createView(),
+              view: intermediate.localTexture.createView(),
               clearValue: { r: 0, g: 0, b: 0, a: 1 },
               loadOp: "clear",
               storeOp: "store",
             }],
           });
-          detailCompositePass.setPipeline(pipelines.localDetailComposite);
+          detailCompositePass.setPipeline(pipelines.detailComposite);
           detailCompositePass.setBindGroup(0, detailCompositeBindGroup);
           detailCompositePass.draw(3);
           detailCompositePass.end();
+          localSource = intermediate.localTexture;
+        }
+        for (let index = 0; index < activeLocals.length; index += 1) {
+          const local = activeLocals[index];
+          const target = localSource === intermediate.baseTexture ? intermediate.localTexture : intermediate.baseTexture;
+          const localBuffer = this.localParamBuffer(local, lane, sourcePixelScale);
+          if (gpuLocalDetailActive(local[`${lane}_grade`])) {
+            // Preserve the pre-local source until the final mask mix. The normal
+            // ping-pong target holds the unmasked candidate, while the two Detail
+            // scratch textures are reused serially for every local adjustment.
+            const candidateBindGroup = makeBindGroup(localSource.createView(), localSource.createView(), localBuffer);
+            const candidatePass = encoder.beginRenderPass({
+              colorAttachments: [{
+                view: target.createView(),
+                clearValue: { r: 0, g: 0, b: 0, a: 1 },
+                loadOp: "clear",
+                storeOp: "store",
+              }],
+            });
+            candidatePass.setPipeline(pipelines.localCandidate);
+            candidatePass.setBindGroup(0, candidateBindGroup);
+            candidatePass.draw(3);
+            candidatePass.end();
 
-          const mixBindGroup = makeBindGroup(
-            localSource.createView(),
-            masks[index].texture.createView(),
-            localBuffer,
-            intermediate.detailATexture.createView(),
-          );
-          const mixPass = encoder.beginRenderPass({
+            const horizontalBindGroup = makeBindGroup(target.createView(), target.createView(), localBuffer);
+            const horizontalPass = encoder.beginRenderPass({
+              colorAttachments: [{
+                view: intermediate.detailATexture.createView(),
+                clearValue: { r: 0, g: 0, b: 0, a: 0 },
+                loadOp: "clear",
+                storeOp: "store",
+              }],
+            });
+            horizontalPass.setPipeline(pipelines.localDetailHorizontal);
+            horizontalPass.setBindGroup(0, horizontalBindGroup);
+            horizontalPass.draw(3);
+            horizontalPass.end();
+
+            const verticalBindGroup = makeBindGroup(
+              intermediate.detailATexture.createView(),
+              intermediate.detailATexture.createView(),
+              localBuffer,
+            );
+            const verticalPass = encoder.beginRenderPass({
+              colorAttachments: [{
+                view: intermediate.detailBTexture.createView(),
+                clearValue: { r: 0, g: 0, b: 0, a: 0 },
+                loadOp: "clear",
+                storeOp: "store",
+              }],
+            });
+            verticalPass.setPipeline(pipelines.localDetailVertical);
+            verticalPass.setBindGroup(0, verticalBindGroup);
+            verticalPass.draw(3);
+            verticalPass.end();
+
+            const detailCompositeBindGroup = makeBindGroup(
+              target.createView(),
+              intermediate.detailBTexture.createView(),
+              localBuffer,
+            );
+            const detailCompositePass = encoder.beginRenderPass({
+              colorAttachments: [{
+                view: intermediate.detailATexture.createView(),
+                clearValue: { r: 0, g: 0, b: 0, a: 1 },
+                loadOp: "clear",
+                storeOp: "store",
+              }],
+            });
+            detailCompositePass.setPipeline(pipelines.localDetailComposite);
+            detailCompositePass.setBindGroup(0, detailCompositeBindGroup);
+            detailCompositePass.draw(3);
+            detailCompositePass.end();
+
+            const mixBindGroup = makeBindGroup(
+              localSource.createView(),
+              masks[index].texture.createView(),
+              localBuffer,
+              intermediate.detailATexture.createView(),
+            );
+            const mixPass = encoder.beginRenderPass({
+              colorAttachments: [{
+                view: target.createView(),
+                clearValue: { r: 0, g: 0, b: 0, a: 1 },
+                loadOp: "clear",
+                storeOp: "store",
+              }],
+            });
+            mixPass.setPipeline(pipelines.localDetailMix);
+            mixPass.setBindGroup(0, mixBindGroup);
+            mixPass.draw(3);
+            mixPass.end();
+            localSource = target;
+            continue;
+          }
+          const localBindGroup = makeBindGroup(localSource.createView(), masks[index].texture.createView(), localBuffer);
+          const localPass = encoder.beginRenderPass({
             colorAttachments: [{
               view: target.createView(),
               clearValue: { r: 0, g: 0, b: 0, a: 1 },
@@ -3988,91 +4038,76 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
               storeOp: "store",
             }],
           });
-          mixPass.setPipeline(pipelines.localDetailMix);
-          mixPass.setBindGroup(0, mixBindGroup);
-          mixPass.draw(3);
-          mixPass.end();
+          localPass.setPipeline(pipelines.local);
+          localPass.setBindGroup(0, localBindGroup);
+          localPass.draw(3);
+          localPass.end();
           localSource = target;
-          continue;
         }
-        const localBindGroup = makeBindGroup(localSource.createView(), masks[index].texture.createView(), localBuffer);
-        const localPass = encoder.beginRenderPass({
+        const responseBindGroup = makeBindGroup(localSource.createView(), spatialAView);
+        const responsePass = encoder.beginRenderPass({
           colorAttachments: [{
-            view: target.createView(),
+            view: intermediate.filmTexture.createView(),
             clearValue: { r: 0, g: 0, b: 0, a: 1 },
             loadOp: "clear",
             storeOp: "store",
           }],
         });
-        localPass.setPipeline(pipelines.local);
-        localPass.setBindGroup(0, localBindGroup);
-        localPass.draw(3);
-        localPass.end();
-        localSource = target;
+        responsePass.setPipeline(pipelines.response);
+        responsePass.setBindGroup(0, responseBindGroup);
+        responsePass.draw(3);
+        responsePass.end();
+        if (spatialActive) {
+          const extractPass = encoder.beginRenderPass({
+            colorAttachments: [{
+              view: intermediate.spatialATexture.createView(),
+              clearValue: { r: 0, g: 0, b: 0, a: 0 },
+              loadOp: "clear",
+              storeOp: "store",
+            }],
+          });
+          extractPass.setPipeline(pipelines.extract);
+          extractPass.setBindGroup(0, extractBindGroup);
+          extractPass.draw(3);
+          extractPass.end();
+          const horizontalPass = encoder.beginRenderPass({
+            colorAttachments: [{
+              view: intermediate.spatialBTexture.createView(),
+              clearValue: { r: 0, g: 0, b: 0, a: 0 },
+              loadOp: "clear",
+              storeOp: "store",
+            }],
+          });
+          horizontalPass.setPipeline(pipelines.blurHorizontal);
+          horizontalPass.setBindGroup(0, horizontalBindGroup);
+          horizontalPass.draw(3);
+          horizontalPass.end();
+          const verticalPass = encoder.beginRenderPass({
+            colorAttachments: [{
+              view: intermediate.spatialATexture.createView(),
+              clearValue: { r: 0, g: 0, b: 0, a: 0 },
+              loadOp: "clear",
+              storeOp: "store",
+            }],
+          });
+          verticalPass.setPipeline(pipelines.blurVertical);
+          verticalPass.setBindGroup(0, verticalBindGroup);
+          verticalPass.draw(3);
+          verticalPass.end();
+        }
+        const finishPass = encoder.beginRenderPass({
+          colorAttachments: [{
+            view: intermediate.finishTexture.createView(),
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            loadOp: "clear",
+            storeOp: "store",
+          }],
+        });
+        finishPass.setPipeline(pipelines.finish);
+        finishPass.setBindGroup(0, finishBindGroup);
+        finishPass.draw(3);
+        finishPass.end();
       }
-      const responseBindGroup = makeBindGroup(localSource.createView(), spatialAView);
-      const responsePass = encoder.beginRenderPass({
-        colorAttachments: [{
-          view: intermediate.filmTexture.createView(),
-          clearValue: { r: 0, g: 0, b: 0, a: 1 },
-          loadOp: "clear",
-          storeOp: "store",
-        }],
-      });
-      responsePass.setPipeline(pipelines.response);
-      responsePass.setBindGroup(0, responseBindGroup);
-      responsePass.draw(3);
-      responsePass.end();
-      if (spatialActive) {
-        const extractPass = encoder.beginRenderPass({
-          colorAttachments: [{
-            view: intermediate.spatialATexture.createView(),
-            clearValue: { r: 0, g: 0, b: 0, a: 0 },
-            loadOp: "clear",
-            storeOp: "store",
-          }],
-        });
-        extractPass.setPipeline(pipelines.extract);
-        extractPass.setBindGroup(0, extractBindGroup);
-        extractPass.draw(3);
-        extractPass.end();
-        const horizontalPass = encoder.beginRenderPass({
-          colorAttachments: [{
-            view: intermediate.spatialBTexture.createView(),
-            clearValue: { r: 0, g: 0, b: 0, a: 0 },
-            loadOp: "clear",
-            storeOp: "store",
-          }],
-        });
-        horizontalPass.setPipeline(pipelines.blurHorizontal);
-        horizontalPass.setBindGroup(0, horizontalBindGroup);
-        horizontalPass.draw(3);
-        horizontalPass.end();
-        const verticalPass = encoder.beginRenderPass({
-          colorAttachments: [{
-            view: intermediate.spatialATexture.createView(),
-            clearValue: { r: 0, g: 0, b: 0, a: 0 },
-            loadOp: "clear",
-            storeOp: "store",
-          }],
-        });
-        verticalPass.setPipeline(pipelines.blurVertical);
-        verticalPass.setBindGroup(0, verticalBindGroup);
-        verticalPass.draw(3);
-        verticalPass.end();
-      }
-      const finishPass = encoder.beginRenderPass({
-        colorAttachments: [{
-          view: intermediate.finishTexture.createView(),
-          clearValue: { r: 0, g: 0, b: 0, a: 1 },
-          loadOp: "clear",
-          storeOp: "store",
-        }],
-      });
-      finishPass.setPipeline(pipelines.finish);
-      finishPass.setBindGroup(0, finishBindGroup);
-      finishPass.draw(3);
-      finishPass.end();
       // A settled render splits here: the finished picture has to exist before
       // its peak can be measured, and the measured peak has to exist before the
       // limiter runs. The submit count matches the previous scheme, which also
@@ -4139,7 +4174,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         source: sourceProxy === proxy ? "original" : "resolved",
         durationMs: submittedAt - masksReadyAt,
       });
-      this.scopeSources.set(canvas, {
+      // Scopes describe the graded picture; the noise view has no finished
+      // texture for them to read this generation.
+      if (noiseView) this.scopeSources.delete(canvas);
+      else this.scopeSources.set(canvas, {
         serial,
         applicationGeneration: sourceOptions?.applicationGeneration ?? null,
         geometrySignature,
@@ -8832,10 +8870,34 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return vec4f(result, 1.0);
     }
 
+    // Denoise's Show noise view. The difference is taken after a fixed display
+    // transform (lane exposure, a simple shoulder, a 2.2 gamma) so shadow noise
+    // reads about as strongly as it looks, and so the view is independent of
+    // every other grade setting. Mid gray is "nothing removed".
+    // Mirrors NOISE_VIEW_INDEX in the JS above.
+    const NOISE_VIEW_INDEX: u32 = 166u;
+    const NOISE_VIEW_GAIN: f32 = 6.0;
+    fn noiseViewEncode(rgb: vec3f) -> vec3f {
+      let exposed = max(rgb * exp2(p[2]), vec3f(0.0));
+      return pow(exposed / (vec3f(1.0) + exposed), vec3f(1.0 / 2.2));
+    }
+    fn noiseViewActive() -> bool {
+      return arrayLength(&p) > NOISE_VIEW_INDEX && p[NOISE_VIEW_INDEX] > 0.5;
+    }
+
     @fragment fn baseFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let dimensions = textureDimensions(sourceTexture);
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let source = textureLoad(sourceTexture, coordinate, 0).rgb;
+      if (noiseViewActive()) {
+        // 1: the original is bound as the source and the denoised picture as
+        // the overlay. 2: Denoise produced nothing for this frame, so nothing
+        // was removed and the view is flat.
+        if (p[NOISE_VIEW_INDEX] > 1.5) { return vec4f(vec3f(0.5), 1.0); }
+        let denoised = textureLoad(overlayMaskTexture, coordinate, 0).rgb;
+        let removed = noiseViewEncode(source) - noiseViewEncode(denoised);
+        return vec4f(clamp(vec3f(0.5) + removed * NOISE_VIEW_GAIN, vec3f(0.0), vec3f(1.0)), 1.0);
+      }
       let output = select(renderSdrBase(source), renderHdrBase(source), p[0] > 0.5);
       return vec4f(output, 1.0);
     }
@@ -8997,6 +9059,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // tile origin, and Direct leaves them at zero.
       let tileOrigin = vec2i(i32(p[160]), i32(p[161]));
       let coordinate = clamp(vec2i(input.position.xy) - tileOrigin, vec2i(0), vec2i(dimensions) - vec2i(1));
+      // The noise view is already display-encoded gray; it bypasses the grade's
+      // output mapping, and the canvas transfer is the same sRGB curve.
+      if (noiseViewActive()) { return vec4f(clamp(finishedAt(coordinate), vec3f(0.0), vec3f(1.0)), 1.0); }
       let filmOutput = applyOutputHighlights(finishedAt(coordinate));
       let output = select(clamp(filmOutput, vec3f(0.0), vec3f(1.0)), displayHdr(filmOutput), p[0] > 0.5);
       var encoded = displayEncode(output);
