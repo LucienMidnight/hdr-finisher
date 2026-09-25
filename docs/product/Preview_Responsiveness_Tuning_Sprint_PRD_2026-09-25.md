@@ -285,3 +285,23 @@ Results of the owner's check on the development build (after the 9.4 and 9.5 fix
 - **P3 (resolves 9.2):** when the card has room, zoomed views draw the whole image Direct (the owner accepted the recommendation). The visible-region limit stays automatic on the Tiled route, which applies when memory is tight. *Visible region* is not made the default. The processed-pixel bound applies to the Tiled route only; `headline-latency.js` already reports it that way. Revisit visible-area-only Direct drawing only if P6 shows the card still working too hard at zoom.
 - **Technical scope panel (added to P5 scope):** today it lists 45 rows across three columns, which don't fit at any panel height. Technical keeps about 13 plain-language rows: Preview (View, Status, Detail, Processing), Display (HDR on this display, Monitor), and Source (File, Interpretation, Encoding, Signal, Source peak, Reference white, Bit depth). The full list moves to a new **Diagnostics** entry in the scope-type dropdown (the owner's suggestion).
 - **Zoom maximum:** stays at 3200% (unchanged since July; it is only newly noticeable because pixels are now sharp).
+
+### 9.7 P6: frame cap and one frame in flight (done, `e70b913`)
+
+**Diagnosis confirmed by measurement** (`tests/performance/drag-gpu-load.js`: a 5-second continuous Exposure drag on the 42.4 MP fixture, Precise, pointer moves at 1 kHz from inside the page). A Playwright-driven mouse only reaches ~50 input events per second, which would hide the missing cap. Display 163.9 Hz. Before: frames followed the display refresh (Fit 139.6 fps, 200% 100.4 fps), and up to 7 frames were in flight on the GPU. A frame counted as done at submission, not at completion.
+
+**Change.** The scheduler paces drag frames at 60 fps from the vsync timestamp (2.5 ms tolerance, so a 60 Hz display keeps every frame). Every drag frame waits for GPU completion before the next is drawn. Interactive scopes run every 100 ms and never while a preview frame is in flight. Idle behaviour is unchanged.
+
+| Drag, reference machine | Fit before | Fit after | 200% before | 200% after | Target |
+|---|---|---|---|---|---|
+| Presented fps (worst 1 s) | 139.6 (132) | 51.2 (49) | 100.4 (87) | 49.2 (40) | ≤ 63; ≥ 30, never < 20 |
+| GPU frames in flight (max) | 7 | 1 | 7 | 1 | ≤ 1 |
+| Card utilisation (nvidia-smi) | 8.4% | 11.4% | **44.2%** | **25.6%** | roughly halved |
+| Card power | 25.2 W | 21.0 W | **86.6 W** | **57.4 W** | — |
+| Coarse frames shown | 0 | 0 | 0 | 0 | 0 |
+
+At 200%, active power above idle fell from about 70 W to about 40 W. On a 164 Hz display the cap lands at ~50 fps, not 60, because frames align to vsync (every third refresh, 18.3 ms). The renderer's timestamp-query "GPU busy" read ~366 ms/s both before and after; it counts queue waiting when frames overlap, so it is **not** used as the load metric. Utilisation and power are.
+
+**Unchanged responsiveness** (`headline-latency.js`, 8 samples, warm, median / p95 ms): Fit 5.2 / 11.1, 100% 10.9 / 11.3, 200% 5.5 / 11.4, 400% 12.3 / 33.9, 800% 5.4 / 17.5, pan 11.1 / 11.2. All rows pass.
+
+**Tests.** `tests/preview-scheduler-pacing.test.js`: 3 of 4 fail before (164.5 fps, a scope during a frame, 60 ms scopes) and pass after. `drag-gpu-load.js` fails before and passes after. Also passing: Node 239, frontend contract 101, `highlight-anchor-stability`, `presentation-gate`, `roi-catch-up`, `budget-route`. The owner's manual fan check is still to do.
