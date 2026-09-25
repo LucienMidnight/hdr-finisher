@@ -17562,7 +17562,8 @@ function postProcessBrushMaskPreview(source, leaf, width, height) {
     blurred.width = width;
     blurred.height = height;
     const blurredContext = blurred.getContext("2d");
-    blurredContext.filter = `blur(${Math.max(0.25, Math.abs(shift) * width)}px)`;
+    // Radii are fractions of the long edge, as in the backend.
+    blurredContext.filter = `blur(${Math.max(0.25, Math.abs(shift) * Math.max(width, height))}px)`;
     blurredContext.drawImage(result, 0, 0);
     const sourcePixels = result.getContext("2d").getImageData(0, 0, width, height);
     const shiftedPixels = blurredContext.getImageData(0, 0, width, height);
@@ -17589,7 +17590,7 @@ function postProcessBrushMaskPreview(source, leaf, width, height) {
   const softenedContext = softened.getContext("2d");
   const sourcePixels = result.getContext("2d").getImageData(0, 0, width, height);
   const featherRadius = 0.18 * Math.pow(featherAmount, 0.75);
-  softenedContext.filter = `blur(${Math.max(0.25, featherRadius * width)}px)`;
+  softenedContext.filter = `blur(${Math.max(0.25, featherRadius * Math.max(width, height))}px)`;
   softenedContext.drawImage(result, 0, 0);
   const outputPixels = softenedContext.getImageData(0, 0, width, height);
   let sourcePeak = 0;

@@ -2199,7 +2199,13 @@ def test_phase_two_gpu_luma_retained_mask_contract() -> None:
     assert "mask_feather: 0" in webgpu and "mask_opacity: 1" in webgpu
     assert "entry.baseTexture" in webgpu and "entry.horizontalTexture" in webgpu
     assert "entry.refinedTexture" in webgpu
-    assert "sigmaX = 0.09 * amount * entry.width" in webgpu
+    # P7: the luma feather is round (a fraction of the long edge on both axes)
+    # and reads every texel it covers; 25 taps a quarter-sigma apart turned
+    # thin strips into repeating copies.
+    assert "const sigma = 0.09 * amount * Math.max(width, height);" in webgpu
+    assert "for (var tap = -reach; tap <= reach; tap = tap + 1)" in webgpu
+    assert "stepSize = max(1.0, sigma * 0.25)" not in webgpu
+    assert 'this.createMaskPipeline("maskDownsampleFragmentMain")' in webgpu
     assert "sceneLuminanceTextures: this.sceneLuminance.size" in webgpu
     assert "cpuMaskRequest: false" in webgpu
     assert "textureSampleLevel(spatialTexture, spatialSampler, uv, 0.0)" in webgpu

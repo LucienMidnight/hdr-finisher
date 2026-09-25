@@ -210,6 +210,67 @@ def test_luminance_range_feather_softens_the_finished_spatial_mask() -> None:
     assert 0.0 < feathered[128, size // 2] < 1.0
 
 
+def _strip_image(width: int, height: int, vertical: bool, strip: int = 4) -> np.ndarray:
+    """Reference-white ground with one bright strip through the centre."""
+    image = np.full((height, width, 3), 0.18, dtype=np.float32)
+    if vertical:
+        image[:, width // 2 - strip // 2 : width // 2 + strip // 2, :] = 0.18 * 2**3
+    else:
+        image[height // 2 - strip // 2 : height // 2 + strip // 2, :, :] = 0.18 * 2**3
+    return image
+
+
+def _bright_range(feather: float) -> MaskLeaf:
+    return MaskLeaf(type="luminance_range", fade_in_start_ev=1.5, full_start_ev=2.0, full_end_ev=5.0,
+                    fade_out_end_ev=6.0, mask_feather=feather)
+
+
+def _grid(width: int, height: int) -> tuple[np.ndarray, np.ndarray]:
+    x = ((np.arange(width, dtype=np.float32) + 0.5) / width)[None, :].repeat(height, axis=0)
+    y = ((np.arange(height, dtype=np.float32) + 0.5) / height)[:, None].repeat(width, axis=1)
+    return x, y
+
+
+def _half_width(profile: np.ndarray) -> int:
+    centre = len(profile) // 2
+    peak = profile[centre]
+    return int(np.argmax(profile[centre:] < peak * 0.5))
+
+
+@pytest.mark.parametrize("feather", [0.00625, 0.0125, 0.025, 0.05])
+def test_luminance_range_feather_is_round_on_a_wide_image(feather: float) -> None:
+    # P7 owner report: on a 3:2 image a vertical strip feathered 1.5 times as
+    # far as a horizontal one, because the radius was a fraction of each side.
+    width, height = 1200, 800
+    x, y = _grid(width, height)
+    across_vertical = evaluate_mask(_leaf(_bright_range(feather)), _strip_image(width, height, True), x, y)[height // 2, :]
+    across_horizontal = evaluate_mask(_leaf(_bright_range(feather)), _strip_image(width, height, False), x, y)[:, width // 2]
+    centre_x, centre_y = width // 2, height // 2
+    reach = min(centre_x, centre_y)
+    sideways = _half_width(across_vertical[centre_x - reach : centre_x + reach])
+    up_down = _half_width(across_horizontal[centre_y - reach : centre_y + reach])
+    assert sideways > 2
+    assert abs(sideways - up_down) <= 1, (sideways, up_down)
+
+
+def test_luminance_range_feather_is_a_plain_blur_not_rescaled_to_full_strength() -> None:
+    # Owner decision (P7): a thin highlight feathered wider than itself softens
+    # and weakens by the same rule everywhere, and does not depend on what else
+    # the range selects.
+    width, height = 600, 400
+    x, y = _grid(width, height)
+    thin_only = _strip_image(width, height, True, strip=4)
+    with_large_area = thin_only.copy()
+    with_large_area[:, :60, :] = 0.18 * 2**3
+    leaf = _leaf(_bright_range(0.025))
+    alone = evaluate_mask(leaf, thin_only, x, y)
+    beside_large = evaluate_mask(leaf, with_large_area, x, y)
+    centre = (height // 2, width // 2)
+    assert alone[centre] < 0.2, "a 4 px strip under a wide feather keeps only its share of the blur"
+    assert alone[centre] == pytest.approx(beside_large[centre], abs=1e-3)
+    assert beside_large[height // 2, 5] > 0.9, "a large selected area keeps full strength"
+
+
 def _path_nodes(left: float = 0.25, top: float = 0.25, right: float = 0.75, bottom: float = 0.75) -> list[PathNode]:
     return [
         PathNode(x=left, y=top, node_type="sharp"),

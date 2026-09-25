@@ -1483,6 +1483,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           sceneLuminance: this.createMaskPipeline("sceneLuminanceFragmentMain"),
           qualify: this.createMaskPipeline("lumaQualificationFragmentMain"),
           refine: this.createMaskPipeline("maskRefinementFragmentMain"),
+          downsample: this.createMaskPipeline("maskDownsampleFragmentMain"),
+          upsample: this.createMaskPipeline("maskUpsampleFragmentMain"),
           combine: this.createMaskPipeline("maskCombineFragmentMain"),
           linearGradient: this.createMaskPipeline("linearGradientFragmentMain"),
         };
@@ -6591,10 +6593,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const refinementIdentity = `${feather}:${inverted}`;
       let refinementRan = false;
       if (entry.refinementIdentity !== refinementIdentity) {
-        const amount = feather / 0.05;
-        const sigmaX = 0.09 * amount * entry.width;
-        const sigmaY = 0.09 * amount * entry.height;
-        if (Math.max(sigmaX, sigmaY) < 0.25 && !inverted) {
+        const plan = lumaFeatherPlan(feather, entry.width, entry.height);
+        if (plan.sigma < 0.25 && !inverted) {
           entry.texture = entry.baseTexture;
         } else {
           if (!entry.horizontalTexture) {
@@ -6604,23 +6604,38 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
             entry.verticalBuffer = this.createStorageBuffer(new Float32Array(4));
             entry.byteSize += entry.width * entry.height * 2 * 2 + 32;
           }
-          const horizontalValues = new Float32Array([sigmaX, sigmaY, 0, 0]);
-          const verticalValues = new Float32Array([sigmaX, sigmaY, 1, inverted ? 1 : 0]);
-          this.device.queue.writeBuffer(entry.horizontalBuffer, 0, horizontalValues);
-          this.device.queue.writeBuffer(entry.verticalBuffer, 0, verticalValues);
           const encoder = this.device.createCommandEncoder();
-          this.encodeMaskPass(
-            encoder,
-            this.maskPipelines.refine,
-            this.createMaskBindGroup(entry.baseTexture, entry.horizontalBuffer),
-            entry.horizontalTexture,
-          );
-          this.encodeMaskPass(
-            encoder,
-            this.maskPipelines.refine,
-            this.createMaskBindGroup(entry.horizontalTexture, entry.verticalBuffer),
-            entry.refinedTexture,
-          );
+          if (plan.factor === 1) {
+            this.device.queue.writeBuffer(entry.horizontalBuffer, 0, new Float32Array([plan.sigma, 0, 0, 0]));
+            this.device.queue.writeBuffer(entry.verticalBuffer, 0, new Float32Array([plan.sigma, 0, 1, inverted ? 1 : 0]));
+            this.encodeMaskPass(encoder, this.maskPipelines.refine,
+              this.createMaskBindGroup(entry.baseTexture, entry.horizontalBuffer), entry.horizontalTexture);
+            this.encodeMaskPass(encoder, this.maskPipelines.refine,
+              this.createMaskBindGroup(entry.horizontalTexture, entry.verticalBuffer), entry.refinedTexture);
+          } else {
+            const reduced = this.lumaFeatherScratch(entry, plan.factor);
+            const values = [
+              [plan.factor, 0, 0, 0],
+              [plan.factor, 1, 0, 0],
+              [plan.reducedSigma, 0, 0, 0],
+              [plan.reducedSigma, 0, 1, 0],
+              [plan.factor, inverted ? 1 : 0, 0, 0],
+            ];
+            values.forEach((value, index) => this.device.queue.writeBuffer(reduced.buffers[index], 0, new Float32Array(value)));
+            // Area-average across, then down (the first pass writes into the
+            // full-width scratch texture), blur at the reduced size, and
+            // interpolate back to the mask's own size.
+            this.encodeMaskPass(encoder, this.maskPipelines.downsample,
+              this.createMaskBindGroup(entry.baseTexture, reduced.buffers[0]), reduced.narrow);
+            this.encodeMaskPass(encoder, this.maskPipelines.downsample,
+              this.createMaskBindGroup(reduced.narrow, reduced.buffers[1]), reduced.first);
+            this.encodeMaskPass(encoder, this.maskPipelines.refine,
+              this.createMaskBindGroup(reduced.first, reduced.buffers[2]), reduced.second);
+            this.encodeMaskPass(encoder, this.maskPipelines.refine,
+              this.createMaskBindGroup(reduced.second, reduced.buffers[3]), reduced.first);
+            this.encodeMaskPass(encoder, this.maskPipelines.upsample,
+              this.createMaskBindGroup(reduced.first, reduced.buffers[4]), entry.refinedTexture);
+          }
           this.device.queue.submit([encoder.finish()]);
           entry.texture = entry.refinedTexture;
           refinementRan = true;
@@ -6646,6 +6661,39 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         if (this.performanceMetrics.maskEvents.length > 480) this.performanceMetrics.maskEvents.shift();
       }
       return entry;
+    }
+
+    /**
+     * Scratch textures for a large luma feather, kept per mask entry and
+     * rebuilt only when the reduction factor changes.
+     */
+    lumaFeatherScratch(entry, factor) {
+      if (entry.featherScratch?.factor === factor) return entry.featherScratch;
+      this.releaseLumaFeatherScratch(entry);
+      const width = Math.ceil(entry.width / factor);
+      const height = Math.ceil(entry.height / factor);
+      const scratch = {
+        factor,
+        narrow: this.createMaskTexture(width, entry.height),
+        first: this.createMaskTexture(width, height),
+        second: this.createMaskTexture(width, height),
+        buffers: Array.from({ length: 5 }, () => this.createStorageBuffer(new Float32Array(4))),
+        byteSize: (width * entry.height + width * height * 2) * 2 + 5 * 16,
+      };
+      entry.featherScratch = scratch;
+      entry.byteSize += scratch.byteSize;
+      return scratch;
+    }
+
+    releaseLumaFeatherScratch(entry) {
+      const scratch = entry.featherScratch;
+      if (!scratch) return;
+      entry.featherScratch = null;
+      entry.byteSize -= scratch.byteSize;
+      this.destroyAfterActiveRenders(() => {
+        [scratch.narrow, scratch.first, scratch.second].forEach((texture) => texture.destroy());
+        scratch.buffers.forEach((buffer) => buffer.destroy());
+      });
     }
 
     createMaskTexture(width, height) {
@@ -6706,6 +6754,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       entry.qualifyBuffer?.destroy();
       entry.horizontalBuffer?.destroy();
       entry.verticalBuffer?.destroy();
+      if (entry.featherScratch) {
+        [entry.featherScratch.narrow, entry.featherScratch.first, entry.featherScratch.second].forEach((texture) => texture.destroy());
+        entry.featherScratch.buffers.forEach((buffer) => buffer.destroy());
+        entry.featherScratch = null;
+      }
     }
 
     localParamBuffer(local, lane, sourcePixelScale) {
@@ -7216,6 +7269,24 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         mask_opacity: 1,
       },
     });
+  }
+
+  /**
+   * The luma feather's Gaussian, in pixels of a mask `width` x `height`.
+   *
+   * Feather is a distance: 0.09 of the long edge at 100%, the same in both
+   * directions. It used to be 0.09 of each side, which on a 3:2 image spread
+   * the feather 1.5 times further sideways than up and down. Above 8 px the
+   * blur runs on a copy area-averaged by `factor`, with `reducedSigma` chosen so
+   * the averaging and the bilinear upsample (together about a quarter of a
+   * reduced texel squared) add up to the requested spread.
+   */
+  function lumaFeatherPlan(feather, width, height) {
+    const amount = Math.min(1, Math.max(0, Number(feather) || 0) / 0.05);
+    const sigma = 0.09 * amount * Math.max(width, height);
+    if (sigma < 8) return { sigma, factor: 1, reducedSigma: sigma };
+    const factor = Math.floor(sigma / 4);
+    return { sigma, factor, reducedSigma: Math.sqrt(Math.max(0.0625, (sigma * sigma) / (factor * factor) - 0.25)) };
   }
 
   function buildGpuLumaQualificationParams(expression) {
@@ -8957,30 +9028,67 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return vec4f(mask, mask, mask, 1.0);
     }
 
+    // One axis of a Gaussian feather: p[0] sigma in texels, p[2] axis (0 x,
+    // 1 y), p[3] invert. Every texel within three sigma is read. The former
+    // pass read 25 taps a quarter-sigma apart, which skipped any feature
+    // narrower than the spacing and turned a thin strip into a row of copies.
+    // The edge is extended, as in the backend's blur.
     @fragment fn maskRefinementFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      let dimensions = textureDimensions(sourceTexture);
+      let dimensions = vec2i(textureDimensions(sourceTexture));
       let coordinate = pixelCoordinate(input.position.xy);
-      let sigma = select(p[0], p[1], p[2] > 0.5);
+      let sigma = p[0];
       var value = textureLoad(sourceTexture, coordinate, 0).r;
       if (sigma >= 0.25) {
-        let direction = select(vec2f(1.0, 0.0), vec2f(0.0, 1.0), p[2] > 0.5);
-        let stepSize = max(1.0, sigma * 0.25);
+        let direction = select(vec2i(1, 0), vec2i(0, 1), p[2] > 0.5);
+        let reach = min(i32(ceil(sigma * 3.0)), 64);
         var total = 0.0;
         var weightTotal = 0.0;
-        for (var tap = -12; tap <= 12; tap = tap + 1) {
-          let offset = f32(tap) * stepSize;
-          let weight = exp(-0.5 * offset * offset / max(sigma * sigma, 0.000001));
-          let sampleCoordinate = clamp(
-            coordinate + vec2i(round(direction * offset)),
-            vec2i(0),
-            vec2i(dimensions) - vec2i(1),
-          );
+        for (var tap = -reach; tap <= reach; tap = tap + 1) {
+          let weight = exp(-0.5 * f32(tap * tap) / (sigma * sigma));
+          let sampleCoordinate = clamp(coordinate + direction * tap, vec2i(0), dimensions - vec2i(1));
           total += textureLoad(sourceTexture, sampleCoordinate, 0).r * weight;
           weightTotal += weight;
         }
         value = total / max(weightTotal, 0.000001);
       }
       if (p[3] > 0.5) { value = 1.0 - value; }
+      return vec4f(value, value, value, 1.0);
+    }
+
+    // Area-average p[0] texels along one axis (p[1]: 0 x, 1 y) into one. A
+    // thin feature keeps its share of the average instead of being missed.
+    @fragment fn maskDownsampleFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let dimensions = vec2i(textureDimensions(sourceTexture));
+      let output = vec2i(input.position.xy);
+      let factor = i32(p[0]);
+      let alongY = p[1] > 0.5;
+      let start = select(output.x, output.y, alongY) * factor;
+      let stop = min(start + factor, select(dimensions.x, dimensions.y, alongY));
+      var total = 0.0;
+      var count = 0.0;
+      for (var index = start; index < stop; index = index + 1) {
+        let coordinate = select(vec2i(index, output.y), vec2i(output.x, index), alongY);
+        total += textureLoad(sourceTexture, clamp(coordinate, vec2i(0), dimensions - vec2i(1)), 0).r;
+        count += 1.0;
+      }
+      let value = total / max(count, 1.0);
+      return vec4f(value, value, value, 1.0);
+    }
+
+    // Bilinear upsample of a mask reduced by p[0] in both axes; p[1] inverts.
+    @fragment fn maskUpsampleFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let reduced = vec2i(textureDimensions(sourceTexture));
+      let position = input.position.xy / p[0] - vec2f(0.5);
+      let origin = floor(position);
+      let fraction = position - origin;
+      let base = vec2i(origin);
+      let last = reduced - vec2i(1);
+      let a = textureLoad(sourceTexture, clamp(base, vec2i(0), last), 0).r;
+      let b = textureLoad(sourceTexture, clamp(base + vec2i(1, 0), vec2i(0), last), 0).r;
+      let c = textureLoad(sourceTexture, clamp(base + vec2i(0, 1), vec2i(0), last), 0).r;
+      let d = textureLoad(sourceTexture, clamp(base + vec2i(1, 1), vec2i(0), last), 0).r;
+      var value = mix(mix(a, b, fraction.x), mix(c, d, fraction.x), fraction.y);
+      if (p[1] > 0.5) { value = 1.0 - value; }
       return vec4f(value, value, value, 1.0);
     }
 
