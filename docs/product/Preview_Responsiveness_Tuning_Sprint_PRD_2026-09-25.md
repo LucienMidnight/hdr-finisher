@@ -305,3 +305,5 @@ At 200%, active power above idle fell from about 70 W to about 40 W. On a 164 Hz
 **Unchanged responsiveness** (`headline-latency.js`, 8 samples, warm, median / p95 ms): Fit 5.2 / 11.1, 100% 10.9 / 11.3, 200% 5.5 / 11.4, 400% 12.3 / 33.9, 800% 5.4 / 17.5, pan 11.1 / 11.2. All rows pass.
 
 **Tests.** `tests/preview-scheduler-pacing.test.js`: 3 of 4 fail before (164.5 fps, a scope during a frame, 60 ms scopes) and pass after. `drag-gpu-load.js` fails before and passes after. Also passing: Node 239, frontend contract 101, `highlight-anchor-stability`, `presentation-gate`, `roi-catch-up`, `budget-route`. The owner's manual fan check is still to do.
+
+**Owner check (P6), 2026-09-25:** passed. Drags stay smooth and the GPU load and fans are noticeably lower. The Technical / Diagnostics scope-panel change (9.6) is bundled into P5 at the owner's request.
