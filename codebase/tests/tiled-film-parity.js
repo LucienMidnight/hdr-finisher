@@ -82,9 +82,38 @@ const MAX_CHANNEL_DELTA = 0;
       }, extra);
     }, overrides);
 
+    // What a capture actually shows. The comparison is only meaningful when
+    // each screenshot shows the frame the test just rendered, at the same
+    // backing size. Both diagnostic renders run at the size the app itself
+    // presents, so the viewer stays Ready and has no reason to redraw; if the
+    // app does present a frame of its own between a render and its screenshot
+    // (it announces every presentation), the pair is refused rather than
+    // compared, because resampling alone differs at every edge.
+    const presentedFrame = () => page.evaluate(() => {
+      if (window.__parityPresentations === undefined) {
+        window.__parityPresentations = 0;
+        window.addEventListener("hdrfinisher:preview-presented", () => { window.__parityPresentations += 1; });
+      }
+      return { backing: [els.previewCanvas.width, els.previewCanvas.height], presentations: window.__parityPresentations,
+        execution: state.acceptedPresentation?.execution ?? null };
+    });
+    const assertComparable = (label, tileSize, direct, tiled) => {
+      const stable = (capture) => capture.mark.presentations === capture.after.presentations
+        && capture.mark.backing.join("x") === capture.after.backing.join("x");
+      if (direct.mark.execution !== "direct" || !stable(direct) || !stable(tiled)
+        || direct.after.backing.join("x") !== tiled.after.backing.join("x")) {
+        throw new Error(`${label} tileSize ${tileSize}: the app presented its own frame during the captures, so they are not comparable: `
+          + JSON.stringify({ direct, tiled }));
+      }
+    };
+    await presentedFrame();
+    let lastFrame = null;
     const capture = async () => {
+      const mark = await presentedFrame();
       await page.waitForTimeout(250);
-      return (await page.locator("#preview-canvas").screenshot()).toString("base64");
+      const shot = (await page.locator("#preview-canvas").screenshot()).toString("base64");
+      lastFrame = { mark, after: await presentedFrame() };
+      return shot;
     };
 
     const compare = async (a, b) => page.evaluate(async ({ left, right }) => {
@@ -115,7 +144,7 @@ const MAX_CHANNEL_DELTA = 0;
 
     const renderDirect = async () => {
       const staged = await page.evaluate(async () => {
-        const rendered = await window.HDRFinisherPerformance.renderGpuTier(previewTargetLongEdge());
+        const rendered = await window.HDRFinisherPerformance.renderGpuTier(requiredProcessingLongEdge());
         if (!rendered) return { error: "direct render failed", lastRefusal: state.lastGpuDraftRefusal || null };
         if (state.acceptedPresentation?.execution !== "direct") {
           return { error: `planner selected ${state.acceptedPresentation?.execution || "unknown"}, not direct` };
@@ -129,7 +158,7 @@ const MAX_CHANNEL_DELTA = 0;
 
     const renderTiled = async (tileSize) => {
       const staged = await page.evaluate(async (size) => {
-        const result = await window.HDRFinisherPerformance.renderTiledTier(previewTargetLongEdge(), { tileSize: size });
+        const result = await window.HDRFinisherPerformance.renderTiledTier(requiredProcessingLongEdge(), { tileSize: size });
         if (!result?.rendered) return { error: `tiled render refused: ${(result?.refusals || []).join(", ")}` };
         await state.gpuPreview.device.queue.onSubmittedWorkDone();
         return { metrics: result.metrics };
@@ -139,8 +168,21 @@ const MAX_CHANNEL_DELTA = 0;
     };
 
     const parityPass = async (label, tileSize) => {
+      // Start from an idle app: Ready, nothing in flight, and no settle or
+      // refinement timer left to present its own frame over a capture.
+      await page.waitForFunction(() => viewerState().status === "ready" && !state.gpuDraftInFlight, null, { timeout: 180000 });
+      await page.evaluate(() => state.previewScheduler?.cancel());
       const directShot = await renderDirect();
+      const directFrame = lastFrame;
       const { shot: tiledShot, metrics } = await renderTiled(tileSize);
+      assertComparable(label, tileSize, directFrame, lastFrame);
+      if (process.env.HDR_FINISHER_DUMP_PARITY) {
+        // The two presented frames, for inspecting where they differ.
+        fs.mkdirSync(process.env.HDR_FINISHER_DUMP_PARITY, { recursive: true });
+        const slug = label.replace(/[^a-z0-9]+/gi, "-");
+        fs.writeFileSync(path.join(process.env.HDR_FINISHER_DUMP_PARITY, `film-${slug}-${tileSize}-direct.png`), Buffer.from(directShot, "base64"));
+        fs.writeFileSync(path.join(process.env.HDR_FINISHER_DUMP_PARITY, `film-${slug}-${tileSize}-tiled.png`), Buffer.from(tiledShot, "base64"));
+      }
       const comparison = await compare(directShot, tiledShot);
       if (comparison.error) throw new Error(`${label} tileSize ${tileSize}: ${comparison.error}`);
       const passed = comparison.maxDelta <= MAX_CHANNEL_DELTA;
