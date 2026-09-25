@@ -120,9 +120,12 @@ async function runCase(page, label) {
     await page.waitForFunction(() => state.session?.session_id && state.gpuPreview?.available === true, null, { timeout: 900000 });
     await idle(page);
     await page.evaluate(() => {
-      const select = document.getElementById("preview-latency");
-      select.value = "precise";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
+      // P5: full detail while dragging is the default; make sure the opt-in is off.
+      const faster = document.getElementById("preview-faster-dragging");
+      if (faster?.checked) {
+        faster.checked = false;
+        faster.dispatchEvent(new Event("change", { bubbles: true }));
+      }
       activateWorkflowTab("grade");
       const toggle = document.querySelector('section[data-group="hdr-tone"] .group-toggle');
       if (toggle && toggle.getAttribute("aria-expanded") !== "true") toggle.click();

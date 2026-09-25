@@ -181,10 +181,14 @@ async function measureStroke(page, deltaX) {
     await page.waitForFunction(() => state.gpuPreview?.available === true, null, { timeout: 300000 });
     await waitForIdle(page, 900000);
     if (preference) {
-      await page.evaluate((value) => {
-        const select = document.getElementById("preview-latency");
-        select.value = value;
-        select.dispatchEvent(new Event("change", { bubbles: true }));
+      await page.evaluate((mode) => {
+        // P5: Responsive and Balanced became Faster dragging on; Precise is off.
+        const faster = document.getElementById("preview-faster-dragging");
+        const on = mode !== "precise";
+        if (faster && faster.checked !== on) {
+          faster.checked = on;
+          faster.dispatchEvent(new Event("change", { bubbles: true }));
+        }
       }, preference);
     }
     await page.evaluate((value) => {
@@ -204,7 +208,7 @@ async function measureStroke(page, deltaX) {
     const environment = await page.evaluate(() => ({
       viewport: { width: innerWidth, height: innerHeight },
       devicePixelRatio,
-      preference: document.getElementById("preview-latency")?.value ?? null,
+      preference: window.HDRFinisherPerformance.authoringState().previewPreference ?? null,
       roiPreviewMode: state.roiPreviewMode,
       budget: state.gpuPreview?.diagnosticsSnapshot?.()?.budget || null,
       gpuMemoryBudgetSetting: state.gpuMemoryBudget,

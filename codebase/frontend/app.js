@@ -398,7 +398,10 @@ const state = {
   scopeGeneration: 0,
   previewResolution: DEFAULT_PREVIEW_RESOLUTION,
   previewResolutionOverride: false,
-  previewLatencyPreference: "balanced",
+  // P5 (Preview Responsiveness Tuning Sprint): the single opt-in "Faster
+  // dragging on slower hardware". Off, every drag frame is exact; on, the
+  // latency controller may show a softer frame while a gesture is active.
+  fasterDragging: false,
   previewLatencyController: null,
   renderingMode: "auto",
   appPreferences: null,
@@ -1598,7 +1601,7 @@ const els = {
   dockTabs: [...document.querySelectorAll("[data-dock-tab]")],
   scopeView: document.getElementById("scope-view"),
   technicalView: document.getElementById("technical-view"),
-  previewLatency: document.getElementById("preview-latency"),
+  previewFasterDragging: document.getElementById("preview-faster-dragging"),
   previewMigrationNotice: document.getElementById("preview-migration-notice"),
   previewMigrationDismiss: document.getElementById("preview-migration-dismiss"),
   previewQualityStatus: document.getElementById("preview-quality-status"),
@@ -2089,14 +2092,14 @@ function initializeLocalOverlayColor() {
 function initializePreviewPreferences() {
   state.previewResolution = DEFAULT_PREVIEW_RESOLUTION;
   state.previewResolutionOverride = false;
-  state.previewLatencyPreference = "balanced";
+  state.fasterDragging = false;
   state.previewLatencyController = window.HDRPreviewLatencyController
     ? new window.HDRPreviewLatencyController() : null;
   state.scopeMaxNits = 4000;
   state.scopeQuality = DEFAULT_SCOPE_QUALITY;
   state.scopeExactPeak = false;
   state.compareLayout = "single";
-  if (els.previewLatency) els.previewLatency.value = state.previewLatencyPreference;
+  if (els.previewFasterDragging) els.previewFasterDragging.checked = state.fasterDragging;
   if (els.scopeZoom) els.scopeZoom.value = String(state.scopeMaxNits);
   if (els.scopeDetail) els.scopeDetail.value = state.scopeQuality;
   if (els.scopeExactPeak) els.scopeExactPeak.checked = state.scopeExactPeak;
@@ -2144,10 +2147,13 @@ function initializePreviewScheduler() {
     highQuality: () => previewNeedsRefinement(),
     onFrame: async (task) => {
       if (state.localMaskDraftDirty) return false;
-      let decision = interactiveScaleDecision(task.lane);
+      // P5: a softer frame is only for an active gesture with Faster
+      // dragging on. A frame that runs after release (a coalesced one, or an
+      // edit with no gesture) is exact, so nothing coarse follows the release.
+      const gesture = Boolean(state.previewScheduler?.interacting);
+      let decision = interactiveScaleDecision(task.lane, { interacting: gesture });
       const tiled = interactiveDraftGuaranteedTiled(task.lane);
-      if (tiled && !decision.coarse
-        && state.previewLatencyPreference !== "precise") {
+      if (tiled && !decision.coarse && gesture && state.fasterDragging) {
         decision = { edge: Math.max(256, Math.round(refinementProxyLongEdge() * 0.5)),
           coarse: true, scale: 0.5 };
       }
@@ -2175,6 +2181,9 @@ function initializePreviewScheduler() {
         // zoom must use the bounded refinement route, then settle exact.
         tier: tiled && decision.coarse ? "refinement" : "interactive",
         coarse: decision.coarse,
+        // Lets the renderer drop this frame if the gesture ends before it
+        // reaches the canvas (see renderGpuDraftInner's isCurrent).
+        reason: decision.coarse ? "drag-coarse" : undefined,
       });
       // P6: at most one drag frame on the GPU. The next frame waits for this
       // one to finish on the device, not merely to be submitted, so rapid
@@ -2427,7 +2436,7 @@ function initializePreviewScheduler() {
     disposeDenoiseSelectorSeam: () => state.gpuPreview?.disposeDenoiseSelectorSeam?.(),
     evictDenoiseCache: () => state.gpuPreview?.evictDenoiseCache?.(),
     sessionId: () => state.session?.session_id || null,
-    previewMode: () => `${state.previewLatencyPreference}-${state.gpuPreview?.available ? "gpu" : "cpu"}`,
+    previewMode: () => `${dragLatencyPreference()}-${state.gpuPreview?.available ? "gpu" : "cpu"}`,
     authoringState: () => ({
       sessionId: state.session?.session_id || null,
       lane: state.currentView,
@@ -2441,7 +2450,8 @@ function initializePreviewScheduler() {
       renderPlan: state.gpuPreview?.lastRenderPlan || null,
       allocationBackoff: state.gpuPreview?.allocationBackoff || null,
       previewResolution: state.previewResolutionOverride ? normalizedPreviewResolution() : "auto",
-      previewPreference: state.previewLatencyPreference,
+      previewPreference: dragLatencyPreference(),
+      fasterDragging: state.fasterDragging,
       previousPreviewTier: state.appPreferences?.previewMigration?.previousTier || null,
       previewLatency: state.previewLatencyController?.snapshot() || null,
       previewMaxDimension: requiredProcessingLongEdge(),
@@ -3206,11 +3216,10 @@ function bindEvents() {
     state.scopeMaxNits = [1000, 4000, 10000].includes(requestedMaxNits) ? requestedMaxNits : 4000;
     await refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
   });
-  els.previewLatency?.addEventListener("change", () => {
-    const selected = ["responsive", "balanced", "precise"].includes(els.previewLatency.value)
-      ? els.previewLatency.value : "balanced";
-    window.HDRApplicationShell?.setPreviewPreference?.(selected);
-    state.previewLatencyPreference = selected;
+  els.previewFasterDragging?.addEventListener("change", () => {
+    const enabled = els.previewFasterDragging.checked === true;
+    window.HDRApplicationShell?.setFasterDragging?.(enabled);
+    state.fasterDragging = enabled;
     renderReadouts();
   });
   els.previewMigrationDismiss?.addEventListener("click", () => {
@@ -4251,10 +4260,8 @@ async function initializeApplicationShell() {
       const preferredPreviewResolution = preferences.previewResolution === "auto"
         ? "auto" : normalizedPreviewResolution(preferences.previewResolution);
       const selectablePreviewResolution = preferredPreviewResolution;
-      const preferredPreviewLatency = ["responsive", "balanced", "precise"].includes(preferences.previewPreference)
-        ? preferences.previewPreference : "balanced";
-      state.previewLatencyPreference = preferredPreviewLatency;
-      if (els.previewLatency) els.previewLatency.value = preferredPreviewLatency;
+      state.fasterDragging = preferences.fasterDragging === true;
+      if (els.previewFasterDragging) els.previewFasterDragging.checked = state.fasterDragging;
       els.previewMigrationNotice?.classList.toggle("hidden",
         !preferences.previewMigration?.previousTier || preferences.previewMigration.noticeShown === true);
       if (options.initial) {
@@ -4608,7 +4615,7 @@ function previewOutputEntries() {
     ["View", state.currentView.toUpperCase()],
     ["Rendering", state.renderingMode === "cpu" ? "CPU Compatibility" : state.renderingMode === "gpu" ? "GPU Preferred" : "Auto"],
     ["Preview Target", `${previewResolutionLabel(state.previewResolutionOverride ? state.previewResolution : "display")} · ${target.width} × ${target.height}`],
-    ["Response", state.previewLatencyPreference],
+    ["Faster dragging", state.fasterDragging ? "On · softer while dragging" : "Off · full detail while dragging"],
     ["Legacy override", state.previewResolutionOverride ? previewResolutionLabel() : "Off"],
     ["Controller", JSON.stringify(state.previewLatencyController?.snapshot()?.decisions || {})],
     ["Migrated tier", state.appPreferences?.previewMigration?.previousTier || "None"],
@@ -5016,23 +5023,34 @@ function previewGraphTimingKey(lane = state.currentView) {
     state.zoomMode === "custom" ? "zoom" : "fit"].join(":");
 }
 
-function interactiveScaleDecision(lane = state.currentView) {
+/**
+ * The latency controller's preference for the current setting.
+ *
+ * P5 (Preview Responsiveness Tuning Sprint) replaced the three-way preview
+ * response menu with one opt-in. Off is the old Precise: every frame exact,
+ * no coarse pass. On is the old Balanced: the controller may choose a coarse
+ * scale when its timing evidence says an exact frame would be slow.
+ */
+function dragLatencyPreference() {
+  return state.fasterDragging ? "balanced" : "precise";
+}
+
+function interactiveScaleDecision(lane = state.currentView, { interacting = true } = {}) {
   const exactEdge = refinementProxyLongEdge();
   const visibleEdge = Math.min(exactEdge, Math.max(1, displayedLongEdge()));
   return state.previewLatencyController?.choose({
-    preference: state.previewLatencyPreference,
+    preference: dragLatencyPreference(),
     graph: previewGraphTimingKey(lane),
     exactEdge,
     visiblePixels: visibleEdge * visibleEdge,
-    interacting: true,
+    interacting,
   }) || { edge: interactiveProxyLongEdge(), coarse: false, scale: 1 };
 }
 
 function responseCoarseLongEdge(exactEdge) {
   // Reuse one small source level across nearby zooms and graph changes. Exact
   // output remains at the display-required edge in the mandatory follow-up.
-  const cap = state.previewLatencyPreference === "responsive" ? 1024 : 2048;
-  const edge = Math.min(cap, Math.max(256, exactEdge - 1));
+  const edge = Math.min(2048, Math.max(256, exactEdge - 1));
   return edge >= 1024 ? (edge >= 2048 ? 2048 : 1024)
     : edge >= 512 ? 512 : 256;
 }
@@ -11122,7 +11140,11 @@ async function renderGpuDraftInner(
       && state.session?.session_id === sessionId
       && generation === state.previewGeneration[lane]
       && requestedGeometrySignature === geometrySignature()
-      && (allowInactive || lane === state.currentView),
+      && (allowInactive || lane === state.currentView)
+      // P5: a softer drag frame is never shown after release. One still on
+      // the GPU when the pointer lifts is dropped before it reaches the
+      // canvas; the settled pass that follows the release draws full detail.
+      && !(request.coarse && request.reason === "drag-coarse" && !state.previewScheduler?.interacting),
   };
   try {
     const result = await state.gpuPreview.render(

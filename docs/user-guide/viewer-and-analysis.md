@@ -8,7 +8,11 @@ On a supported GPU, the WebGPU canvas is both the interactive and settled author
 
 Without WebGPU, the app uses the backend renderer and presents raw RGBA8 pixels in a persistent canvas. Native-scale CPU requests use bounded strips where the authored graph supports them. If that route cannot render the graph, the viewer keeps the last valid frame and reports the refusal; export quality is unchanged.
 
-The **Preview response** control offers Responsive, Balanced, and Precise. Responsive aims for 33 ms current-edit feedback, Balanced for 66 ms, and Precise starts at the exact display scale with a 150 ms target. These are starting latency targets, not guarantees. Responsive and Balanced can show a labelled Coarse frame during interaction; after input stops, the same adjustment graph always refines to the display-required scale. The setting never changes export.
+The preview shows full detail at all times, including while you drag a slider or zoom. When you let go of a slider, the picture you were looking at is already the finished one; the scopes and readouts catch up a moment later.
+
+If dragging feels jerky on your computer, open **Preview** in the viewer toolbar (or **Settings > General**) and turn on **Faster dragging on slower hardware**. While you drag, the image may then look softer, and the viewer labels it **Coarse**. It sharpens as soon as you let go, and a soft image is never left on screen after you release. Zooming follows the same setting. It's off by default, and it never changes exports, peak readings or delivery checks.
+
+This replaces the earlier Responsive / Balanced / Precise choice. Your earlier choice carries over without a prompt: Precise and Balanced become the default (off), and Responsive turns Faster dragging on.
 
 ## HDR and SDR viewing
 
@@ -35,7 +39,9 @@ Either difference can look like a grading difference, so don't read a two-frame 
 - **100%** processes native source pixels in the visible region, with one processed pixel per device pixel after display scaling.
 - The slider, plus/minus controls, or typed percentage set other zooms.
 
-The old 1K/2K/4K/Full selector is available only as a **Legacy tier override** in Settings diagnostics, for parity and memory investigation. Normal preview processing follows the displayed view. Direct and tiled GPU execution are internal resource choices.
+The old 1K/2K/4K/Full selector is available only as a **Legacy tier override** under **Settings > Diagnostics**, for troubleshooting. Normal preview processing follows the displayed view.
+
+When the graphics card has room (see **Maximum GPU memory for previews** in **Settings > General**), the preview processes the whole image in one pass at every zoom. With a lower memory limit or a very large image it works in tiles instead, and when you're zoomed in it finishes the part you can see first. Both look the same. The Technical readout's **Processing** row says which one is in use.
 
 At **100%** and above, Ready means the visible region was processed at native source scale. Above 100%, magnification does not add source information. For final delivery judgments, inspect the exported file as well.
 

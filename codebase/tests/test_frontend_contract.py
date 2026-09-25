@@ -694,12 +694,22 @@ def test_preview_resolution_and_gpu_memory_are_persisted_application_preferences
     desktop = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
 
     assert 'previewResolution: "auto"' in shell
-    assert 'previewPreference: "balanced"' in shell
+    assert "fasterDragging: false," in shell
     assert 'maximumGpuMemoryGiB: "auto"' in shell
     assert 'new Set(["1024", "2048", "4096", "full"])' in shell
     assert "GPU_MEMORY_PRESETS_GIB = [1, 2, 3, 4, 6, 8, 12]" in shell
     assert 'id="settings-preview-resolution"' in html
-    assert 'id="settings-preview-preference"' in html
+    assert 'id="settings-faster-dragging" type="checkbox"' in html
+    assert 'id="settings-preview-preference"' not in html
+    # Execution, the legacy tier and region of interest are diagnostics now.
+    diagnostics = html.split('data-settings-panel="diagnostics"', 1)[1].split("</section>", 1)[0]
+    for control in ("settings-execution-override", "settings-preview-resolution", "settings-roi-preview"):
+        assert f'id="{control}"' in diagnostics
+    general = html.split('data-settings-panel="general"', 1)[1].split("</section>", 1)[0]
+    assert 'id="settings-gpu-memory-limit"' in general
+    # Help in user terms: what you see and when, not millisecond targets.
+    for target in ("33 ms", "66 ms", "150 ms"):
+        assert target not in html
     for value, label in [("1024", "1K"), ("2048", "2K"), ("4096", "4K")]:
         assert f'<option value="{value}">{label}</option>' in html
     assert 'id="settings-gpu-memory-limit"' in html
@@ -712,7 +722,7 @@ def test_preview_resolution_and_gpu_memory_are_persisted_application_preferences
     assert 'byId("settings-gpu-memory-custom").addEventListener("change"' in shell
     assert "persistPreferences();" in shell
     assert 'previewResolution: "auto"' in desktop
-    assert 'previewPreference: "balanced"' in desktop
+    assert "fasterDragging: false," in desktop
     assert 'maximumGpuMemoryGiB: "auto"' in desktop
     assert 'schemaVersion: 3' in shell
     assert 'schemaVersion: 3' in desktop
@@ -1561,7 +1571,7 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     assert 'id="preview-toggle"' in html
     assert 'aria-controls="preview-popover"' in html
     assert '>Preview</button>' in html
-    assert 'id="preview-latency"' in html
+    assert 'id="preview-faster-dragging"' in html
     assert '["Current Preview Size", currentPreviewSizeLabel()]' in javascript
     assert "compact-workspace" in css
     assert "source-overlay-open" in css
@@ -1816,13 +1826,15 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
 
-    assert 'id="preview-latency" aria-label="Preview response"' in html
-    preview_selector = html.split('id="preview-latency"', 1)[1].split("</select>", 1)[0]
-    for value in ("responsive", "balanced", "precise"):
-        assert f'value="{value}"' in preview_selector
-    assert 'value="full"' not in preview_selector
-    assert "Controls interaction speed" in html
-    assert html.index('id="overlay-toggle"') < html.index('id="overlay-popover"') < html.index('id="preview-latency"')
+    # P5 (Preview Responsiveness Tuning Sprint): one opt-in replaced the
+    # Responsive / Balanced / Precise menu; full detail is the default.
+    assert 'id="preview-latency"' not in html
+    assert '<input id="preview-faster-dragging" type="checkbox">' in html
+    assert "Faster dragging on slower hardware — show a softer image while dragging, sharpening when you let go" in html
+    assert html.index('id="overlay-toggle"') < html.index('id="overlay-popover"') < html.index('id="preview-faster-dragging"')
+    assert "fasterDragging: false," in javascript
+    assert 'return state.fasterDragging ? "balanced" : "precise";' in javascript
+    assert "armSettle(this.current, 0);" in scheduler
     assert ".toolbar-preview-resolution::after" in css
     assert "overflow-wrap: anywhere;" in css
     assert "white-space: normal;" in css
@@ -1960,7 +1972,9 @@ def test_electron_preview_correctness_contract() -> None:
     assert "isCurrent: () => (typeof request.isCurrent === \"function\" ? request.isCurrent() : true)" in gpu_draft
     assert "&& generation === state.previewGeneration[lane]" in gpu_draft
     assert "&& requestedGeometrySignature === geometrySignature()" in gpu_draft
-    assert "&& (allowInactive || lane === state.currentView)," in gpu_draft
+    assert "&& (allowInactive || lane === state.currentView)" in gpu_draft
+    # P5: a softer drag frame still on the GPU at release never reaches the canvas.
+    assert '&& !(request.coarse && request.reason === "drag-coarse" && !state.previewScheduler?.interacting),' in gpu_draft
     webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
     assert "sourceOptions?.isCurrent?.() === false" in webgpu
     # A deferred render is classified as superseded, so it returns without

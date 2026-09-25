@@ -33,7 +33,7 @@ def test_full_is_diagnostic_only_and_cpu_full_requests_bounded_strips() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
 
-    preview_selector = html.split('id="preview-latency"', 1)[1].split("</select>", 1)[0]
+    preview_selector = html.split('id="preview-popover"', 1)[1].split("</div>", 1)[0]
     settings_selector = html.split('id="settings-preview-resolution"', 1)[1].split("</select>", 1)[0]
     assert '<option value="full">Full</option>' not in preview_selector
     assert '<option value="full">Full</option>' in settings_selector

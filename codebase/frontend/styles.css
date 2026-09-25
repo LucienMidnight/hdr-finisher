@@ -1817,6 +1817,12 @@ body[data-active-lane="sdr"] .lane-dot {
   white-space: nowrap;
 }
 
+.preview-faster-dragging {
+  align-items: flex-start !important;
+  color: var(--body);
+  line-height: 1.4;
+}
+
 .grade-rail {
   grid-column: 3;
   grid-row: 2;
@@ -5320,6 +5326,7 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 .shortcut-record.recording { border-color: var(--accent-strong); color: var(--text); box-shadow: 0 0 0 1px var(--accent); }
 .shortcut-empty { padding: 30px 8px; color: var(--muted); text-align: center; }
 .settings-update-toggle { margin: 22px 0 8px; }
+.settings-faster-dragging { max-width: 540px; margin: 22px 0 8px; color: var(--body); line-height: 1.4; }
 .settings-update-row { display: flex; margin-top: 20px; gap: 12px; align-items: center; }
 .settings-update-row span { color: var(--muted); }
 

@@ -121,32 +121,23 @@ async function main() {
     // Close Settings so the selector under test is in the viewer's Preview popover.
     await window.evaluate(() => document.getElementById("settings-dialog")?.close());
     await window.click("#preview-toggle");
-    await window.waitForSelector("#preview-latency", { state: "visible", timeout: 10000 });
+    await window.waitForSelector("#preview-faster-dragging", { state: "visible", timeout: 10000 });
 
-    // The selector, immediately, with no focus round trip. Clicking it must
-    // reach the element and leave it focused and usable.
-    const selector = window.locator("#preview-latency");
+    // The control, immediately, with no focus round trip. Clicking it must
+    // reach the element, leave it focused, and change it (P5 replaced the
+    // Preview response menu with this checkbox).
+    const selector = window.locator("#preview-faster-dragging");
+    const before = await selector.isChecked();
     await selector.click();
     const state = await window.evaluate(() => {
-      const element = document.getElementById("preview-latency");
-      return {
-        focused: document.activeElement === element,
-        disabled: element.disabled,
-        options: element.options.length,
-        value: element.value,
-      };
+      const element = document.getElementById("preview-faster-dragging");
+      return { focused: document.activeElement === element, disabled: element.disabled, checked: element.checked };
     });
-    assert.equal(state.disabled, false, "The preview response selector was disabled.");
-    assert.ok(state.options > 1, `The selector had no choices: ${JSON.stringify(state)}`);
+    assert.equal(state.disabled, false, "The Faster dragging checkbox was disabled.");
     assert.equal(state.focused, true,
-      `Clicking the selector did not focus it after a confirmation: ${JSON.stringify(state)}`);
-
-    // And it still changes, without the window having lost and regained focus.
-    const target = state.value === "responsive" ? "balanced" : "responsive";
-    await selector.selectOption(target);
-    const after = await window.evaluate(() => document.getElementById("preview-latency").value);
-    assert.equal(after, target,
-      `The selector did not change after a confirmation: ${JSON.stringify({ after, target })}`);
+      `Clicking the checkbox did not focus it after a confirmation: ${JSON.stringify(state)}`);
+    assert.equal(state.checked, !before,
+      `The checkbox did not change after a confirmation: ${JSON.stringify({ before, state })}`);
 
     assert.equal(nativeDialogs.length, 0,
       `A native modal was raised: ${JSON.stringify(nativeDialogs)}`);

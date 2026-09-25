@@ -10,12 +10,10 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
 
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    const selector = page.locator("#preview-latency");
-    const options = await selector.locator("option").evaluateAll((items) => items.map((item) => item.value));
-    const expected = ["responsive", "balanced", "precise"];
-    if (JSON.stringify(options) !== JSON.stringify(expected)) {
-      throw new Error(`Preview response options were incorrect: ${JSON.stringify(options)}`);
-    }
+    // P5: one opt-in replaced the three-way Preview response menu.
+    const selector = page.locator("#preview-faster-dragging");
+    if (await page.locator("#preview-latency").count() !== 0) throw new Error("The old Preview response menu is still present.");
+    if (await selector.isChecked()) throw new Error("Faster dragging should be off by default.");
 
     await page.click("#test-pattern-button");
     await page.waitForFunction(() => document.body.dataset.workflow === "grade");
@@ -58,26 +56,28 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
     if (!statusFitsPopover.fits) {
       throw new Error(`A long Preview status overflowed its popover: ${JSON.stringify(statusFitsPopover)}`);
     }
-    await selector.selectOption("precise");
+    await selector.check();
+    await page.waitForFunction(() => window.HDRFinisherPerformance.authoringState().fasterDragging === true);
+    await selector.uncheck();
     await page.waitForFunction(() => window.HDRFinisherPerformance.authoringState().previewPreference === "precise");
     await page.waitForFunction(() => state.acceptedPresentation?.generation === state.previewGeneration[state.currentView]
       && !previewNeedsRefinement(), null, { timeout: 120000 });
     const precise = await page.evaluate(() => window.HDRFinisherPerformance.authoringState());
     if (precise.previewResolution !== "auto") {
-      throw new Error(`Precise response unexpectedly enabled a legacy tier: ${JSON.stringify(precise)}`);
+      throw new Error(`Faster dragging unexpectedly enabled a legacy tier: ${JSON.stringify(precise)}`);
     }
     const afterResponseChange = await page.evaluate(() => ({
       width: Number.parseFloat(activePreviewElement().style.width),
       height: Number.parseFloat(activePreviewElement().style.height),
     }));
     if (Math.abs(afterResponseChange.width - actualSize.sourceWidth) > 1 || Math.abs(afterResponseChange.height - actualSize.sourceHeight) > 1) {
-      throw new Error(`Preview response changed 100% viewer geometry: ${JSON.stringify(afterResponseChange)}`);
+      throw new Error(`Faster dragging changed 100% viewer geometry: ${JSON.stringify(afterResponseChange)}`);
     }
-    await selector.selectOption("responsive");
-    await page.waitForFunction(() => window.HDRFinisherPerformance.authoringState().previewPreference === "responsive");
+    await selector.check();
+    await page.waitForFunction(() => window.HDRFinisherPerformance.authoringState().previewPreference === "balanced");
 
     if (pageErrors.length) throw new Error(`Browser errors: ${pageErrors.join(" | ")}`);
-    console.log("Preview response selector and native zoom geometry browser test passed.");
+    console.log("Faster dragging opt-in and native zoom geometry browser test passed.");
   } finally {
     await browser.close();
   }
