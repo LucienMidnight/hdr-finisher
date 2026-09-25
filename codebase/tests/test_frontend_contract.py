@@ -1029,7 +1029,8 @@ def test_detail_interaction_backpressures_the_gpu_queue() -> None:
     assert "const detailActive = gpuDetailGraphActive(task.lane);" in scheduler
     assert "const detailInteraction = state.detailInteractionRestore?.lane === task.lane;" in scheduler
     assert "if (detailInteraction && !state.previewScheduler?.interacting) return false;" in scheduler
-    assert "if (rendered && (detailActive || detailInteraction))" in scheduler
+    # P6: every drag frame waits for GPU completion (one frame in flight).
+    assert "if (rendered) await state.gpuPreview?.waitForSubmittedWork?.();" in scheduler
     assert "waitForSubmittedWork" in scheduler
     assert "state.detailInteractionRestore = { lane: task.lane, longEdge: residentLongEdge }" in scheduler
     assert "async waitForSubmittedWork()" in webgpu

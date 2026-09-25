@@ -2171,10 +2171,11 @@ function initializePreviewScheduler() {
         tier: tiled && decision.coarse ? "refinement" : "interactive",
         coarse: decision.coarse,
       });
-      // Detail adds three full-frame filtering passes. Keep at most one such
-      // graph in the GPU queue so rapid slider input coalesces to the newest
-      // scheduler task instead of building latency behind obsolete frames.
-      if (rendered && (detailActive || detailInteraction)) await state.gpuPreview?.waitForSubmittedWork?.();
+      // P6: at most one drag frame on the GPU. The next frame waits for this
+      // one to finish on the device, not merely to be submitted, so rapid
+      // input coalesces to the newest task instead of queueing obsolete
+      // frames (up to seven were measured in flight at 200%).
+      if (rendered) await state.gpuPreview?.waitForSubmittedWork?.();
       return rendered;
     },
     onScope: (task) => {

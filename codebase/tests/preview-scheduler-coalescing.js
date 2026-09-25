@@ -48,7 +48,9 @@ async function main() {
 
   scheduler.current = first;
   scheduler.requestFrame(first);
-  const firstFrame = animationFrames.shift()();
+  // Vsync timestamps 100 ms apart: well outside the 60 fps pacing interval,
+  // so this test sees coalescing alone.
+  const firstFrame = animationFrames.shift()(0);
   await Promise.resolve();
   scheduler.current = second;
   scheduler.requestFrame(second);
@@ -56,7 +58,7 @@ async function main() {
   scheduler.requestFrame(latest);
   frameGate.resolve();
   await firstFrame;
-  await animationFrames.shift()();
+  await animationFrames.shift()(100);
 
   scheduler.current = first;
   const firstScope = scheduler.runScope({ task: first, tier: "interactive" });

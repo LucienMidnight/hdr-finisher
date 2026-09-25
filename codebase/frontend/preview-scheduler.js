@@ -1,9 +1,18 @@
 (function () {
   const DEFAULTS = {
-    interactiveScopeMs: 60,
+    // P6 (Preview Responsiveness Tuning Sprint): live scopes during a drag at
+    // most every 100 ms, and never while a preview frame is on the GPU.
+    interactiveScopeMs: 100,
     settleMs: 110,
     refinementMs: 520,
+    // P6, owner decision Q3: drag frames are capped at 60 fps whatever the
+    // display's refresh rate, so a 144-165 Hz monitor does not drive the GPU
+    // two or three times as hard for no visible gain.
+    maxInteractiveFps: 60,
   };
+  // Vsync timestamps jitter; a frame due a little early still counts as due,
+  // or a 60 Hz display would drop to 30 fps.
+  const FRAME_PACING_TOLERANCE_MS = 2.5;
 
   // Phase 5 item 5: how long to wait before retrying deferred inactive work
   // once the editor reports it is no longer busy.
@@ -27,6 +36,8 @@
       this.idleKind = null;
       this.interacting = false;
       this.lastScopeStartedAt = -Infinity;
+      this.lastFrameStartedAt = -Infinity;
+      this.scopeAfterFrame = null;
       this.metrics = {
         inputCount: 0,
         frameCount: 0,
@@ -122,6 +133,7 @@
       if (this.frame !== null) cancelAnimationFrame(this.frame);
       this.frame = null;
       this.framePending = false;
+      this.scopeAfterFrame = null;
       if (this.scopePending) this.scopePending.resolve(false);
       this.scopePending = null;
       window.clearTimeout(this.scopeTimer);
@@ -146,10 +158,18 @@
         return;
       }
       if (this.frame !== null) return;
-      this.frame = requestAnimationFrame(async () => {
+      this.frame = requestAnimationFrame(async (vsync) => {
         this.frame = null;
         const current = this.current;
         if (!current) return;
+        const now = Number.isFinite(vsync) ? vsync : performance.now();
+        const minimumInterval = 1000 / Math.max(1, this.timings.maxInteractiveFps) - FRAME_PACING_TOLERANCE_MS;
+        if (now - this.lastFrameStartedAt < minimumInterval) {
+          // Too soon for the cap: wait for a later vsync with the latest task.
+          this.requestFrame(this.current);
+          return;
+        }
+        this.lastFrameStartedAt = now;
         const started = performance.now();
         this.recordMetric("queueDelayMs", started - current.inputAt);
         this.frameInFlight = true;
@@ -158,6 +178,9 @@
           this.metrics.frameCount += 1;
         } finally {
           this.frameInFlight = false;
+          const deferredScope = this.scopeAfterFrame;
+          this.scopeAfterFrame = null;
+          if (deferredScope && this.current === deferredScope) this.startInteractiveScope(deferredScope);
           if (this.framePending) {
             this.framePending = false;
             if (this.current) this.requestFrame(this.current);
@@ -166,14 +189,24 @@
       });
     }
 
+    startInteractiveScope(task) {
+      // A scope readback competes with the preview for the GPU. While a frame
+      // is in flight it waits for that frame, then runs in the gap.
+      if (this.frameInFlight) {
+        this.scopeAfterFrame = task;
+        return;
+      }
+      this.lastScopeStartedAt = performance.now();
+      this.runScope({ task, tier: "interactive" });
+    }
+
     armInteractiveScope(task) {
       window.clearTimeout(this.scopeTimer);
       const elapsed = performance.now() - this.lastScopeStartedAt;
       const delay = Math.max(0, this.timings.interactiveScopeMs - elapsed);
       this.scopeTimer = window.setTimeout(async () => {
         if (this.current !== task) return;
-        this.lastScopeStartedAt = performance.now();
-        await this.runScope({ task, tier: "interactive" });
+        this.startInteractiveScope(task);
       }, delay);
     }
 
