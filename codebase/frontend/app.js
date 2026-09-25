@@ -1482,6 +1482,11 @@ const els = {
   metadataList: document.getElementById("metadata-list"),
   workflowContextList: document.getElementById("workflow-context-list"),
   previewOutputList: document.getElementById("preview-output-list"),
+  technicalSummary: document.getElementById("technical-summary"),
+  technicalDiagnostics: document.getElementById("technical-diagnostics"),
+  technicalPreviewList: document.getElementById("technical-preview-list"),
+  technicalDisplayList: document.getElementById("technical-display-list"),
+  technicalSourceList: document.getElementById("technical-source-list"),
   displayInfoList: document.getElementById("display-info-list"),
   sourcePreviewList: document.getElementById("source-preview-list"),
   sessionName: document.getElementById("session-name"),
@@ -2592,11 +2597,12 @@ function applyLayoutState() {
     button.classList.toggle("active", active);
     button.setAttribute("aria-selected", String(active));
   });
-  const technical = state.activeDockTab === "technical";
+  const technical = readoutDockTab(state.activeDockTab);
   els.scopeView.classList.toggle("hidden", technical);
   els.technicalView.classList.toggle("hidden", !technical);
+  renderReadoutPanelMode(state.activeDockTab);
   if (technical) {
-    els.scopeMode.value = "technical";
+    els.scopeMode.value = state.activeDockTab;
   } else {
     state.scopeMode = state.activeDockTab === "vectorscope"
       ? "vectorscope"
@@ -2610,8 +2616,24 @@ function applyLayoutState() {
   updateSplitterAria();
 }
 
+/**
+ * Technical and Diagnostics are readouts, not scopes; they share one panel.
+ *
+ * P5 (Preview Responsiveness Tuning Sprint, ledger 9.6): Technical is a short
+ * plain-language list that fits the panel at its minimum height. Diagnostics
+ * is the full list it used to be.
+ */
+function readoutDockTab(tab) {
+  return tab === "technical" || tab === "diagnostics";
+}
+
+function renderReadoutPanelMode(tab) {
+  els.technicalSummary?.classList.toggle("hidden", tab === "diagnostics");
+  els.technicalDiagnostics?.classList.toggle("hidden", tab !== "diagnostics");
+}
+
 function renderScopeControlAvailability() {
-  const technical = state.scopeMode === "technical" || state.activeDockTab === "technical";
+  const technical = state.scopeMode === "technical" || readoutDockTab(state.activeDockTab);
   const vectorscope = state.scopeMode === "vectorscope";
   // Channel selection and nit range do not alter a standards-based
   // vectorscope. Hide them instead of leaving controls that appear to work.
@@ -3994,6 +4016,12 @@ function renderCurrentPreviewSize(options) {
 
 function renderReadouts() {
   renderPresentationCapability();
+  if (els.technicalPreviewList) {
+    const technical = technicalSummaryEntries();
+    renderKeyValueList(els.technicalPreviewList, technical.preview);
+    renderKeyValueList(els.technicalDisplayList, technical.display);
+    renderKeyValueList(els.technicalSourceList, technical.source);
+  }
   renderKeyValueList(els.previewOutputList, previewOutputEntries());
   renderKeyValueList(els.displayInfoList, displayProbeEntries());
   renderKeyValueList(els.sourcePreviewList, sourceInterpretationEntries());
@@ -4503,6 +4531,74 @@ function previewExecutionLabel() {
   return `${mode} GPU · budget ${budget}${backoff}`;
 }
 
+/**
+ * The Technical readout: what the preview is showing and why, in plain words.
+ *
+ * Thirteen rows chosen by the owner (ledger 9.6). Everything else, including
+ * generations, caches and the controller's state, lives under Diagnostics.
+ */
+function technicalSummaryEntries() {
+  const viewer = viewerState();
+  const accepted = state.acceptedPresentation;
+  const lane = state.currentView === "sdr" ? "SDR" : "HDR";
+  const zoom = state.zoomMode === "fit" ? "Fit" : `${Math.round(state.zoomPercent)}%`;
+  const status = viewer.status === "ready" ? "Ready"
+    : viewer.status === "unavailable" ? `Unavailable${viewer.detail ? ` — ${viewer.detail}` : ""}`
+      : viewer.coarse ? "Coarse — sharpening"
+        : viewer.status === "updating" ? "Updating" : "Preparing";
+  const detail = !state.session || !accepted ? "Waiting"
+    : accepted.exact ? "Full detail"
+      : accepted.coarse ? "Softer while dragging" : "Placeholder";
+  const setting = state.fasterDragging ? " · faster dragging on" : "";
+  const plan = state.gpuPreview?.lastRenderPlan;
+  const gpu = accepted?.transport === "WebGPU" || Boolean(state.gpuPreview?.available);
+  const route = !gpu ? "On the processor (CPU)" : plan?.decision?.mode === "tiled" ? "In tiles" : "Whole image";
+  const memory = state.gpuMemoryBudget === "auto" || state.gpuMemoryBudget === undefined
+    ? (window.HDRGpuBudget?.autoLabel?.(state.gpuPreview?.gpuBudget) || "Auto")
+    : `${state.gpuMemoryBudget} GiB`;
+  const presentation = state.presentationCapability || presentationCapabilityState();
+  const display = state.desktopEnvironment?.currentDisplay;
+  const preview = [
+    ["View", `${lane} · ${zoom}`],
+    ["Status", status],
+    ["Detail", `${detail}${setting}`],
+    ["Processing", `${route} · memory ${memory}`],
+  ];
+  const displayRows = [
+    ["HDR on this display", presentation.qualified ? "Yes" : "No · SDR simulation"],
+    ["Monitor", display?.label || "This display"],
+  ];
+  if (!state.session) {
+    return { preview, display: displayRows, source: [
+      ["File", "No image open"], ["Interpretation", "—"], ["Encoding", "—"], ["Signal", "—"],
+      ["Source peak", "—"], ["Reference white", `${projectReferenceWhiteNits()} nit`], ["Bit depth", "—"],
+    ] };
+  }
+  const source = state.session.source;
+  const luminance = state.editDocument?.source?.luminance || {};
+  const mode = source.interpretation_mode === "manual" ? "Manual" : "Auto";
+  return {
+    preview,
+    display: displayRows,
+    source: [
+      ["File", source.filename || source.suffix || "—"],
+      ["Interpretation", isDevelopedRawSession(state.session) ? `${mode} · camera RAW profile` : mode],
+      ["Encoding", source.source_color_space || source.transfer_function
+        ? `${source.source_color_space || "Unknown colours"} · ${source.transfer_function || "unknown curve"}`
+        : "Not declared by the file"],
+      ["Signal", {
+        HDR_TRUE: "HDR",
+        HDR_ENCODED: "HDR-encoded file",
+        HDR_LINEAR_UNCONFIRMED: "Linear, HDR not confirmed",
+        SDR_ONLY: "SDR",
+      }[state.session.analysis?.classification] || state.session.analysis?.classification || "—"],
+      ["Source peak", luminance.source_peak_nits ? `${luminance.source_peak_nits} nit` : "Not declared"],
+      ["Reference white", `${projectReferenceWhiteNits()} nit`],
+      ["Bit depth", String(state.session.metadata?.bit_depth || "Unknown")],
+    ],
+  };
+}
+
 function previewOutputEntries() {
   const target = previewResolutionDimensions();
   const live = state.acceptedPresentation?.execution === "tiled"
@@ -4676,6 +4772,8 @@ function renderKeyValueList(container, entries) {
     dt.textContent = key;
     const dd = document.createElement("dd");
     dd.textContent = value;
+    // A narrow column may shorten a long value; the full text is on hover.
+    dd.title = String(value ?? "");
     container.append(dt, dd);
   }
 }
@@ -12844,10 +12942,11 @@ async function activateDockTab(tab) {
     button.classList.toggle("active", active);
     button.setAttribute("aria-selected", String(active));
   });
-  const technical = tab === "technical";
+  const technical = readoutDockTab(tab);
   els.scopeView.classList.toggle("hidden", technical);
   els.technicalView.classList.toggle("hidden", !technical);
-  els.scopeMode.value = technical ? "technical" : tab === "parade" ? "waveform" : tab;
+  renderReadoutPanelMode(tab);
+  els.scopeMode.value = technical ? tab : tab === "parade" ? "waveform" : tab;
   [els.scopeChannelMode, els.scopeDetail, els.scopeZoom].forEach((control) => { if (control) control.disabled = technical; });
   scheduleLayoutSettled();
   if (technical) return;

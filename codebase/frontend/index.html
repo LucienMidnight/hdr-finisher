@@ -484,6 +484,7 @@
               <option value="waveform">Waveform</option>
               <option value="vectorscope">Vectorscope</option>
               <option value="technical">Technical</option>
+              <option value="diagnostics">Diagnostics</option>
             </select>
             <select id="scope-channel-mode" class="scope-mode-select" aria-label="Scope channels">
               <option value="composite">Composite</option>
@@ -533,18 +534,34 @@
           </div>
         </div>
 
-        <div id="technical-view" class="dock-content technical-layout hidden">
-          <div class="readout-block">
-            <p class="section-kicker">Output</p>
-            <dl id="preview-output-list" class="readout-list"></dl>
+        <div id="technical-view" class="dock-content hidden">
+          <div id="technical-summary" class="technical-layout technical-summary">
+            <div class="readout-block">
+              <p class="section-kicker">Preview</p>
+              <dl id="technical-preview-list" class="readout-list"></dl>
+            </div>
+            <div class="readout-block">
+              <p class="section-kicker">Display</p>
+              <dl id="technical-display-list" class="readout-list"></dl>
+            </div>
+            <div class="readout-block">
+              <p class="section-kicker">Source</p>
+              <dl id="technical-source-list" class="readout-list"></dl>
+            </div>
           </div>
-          <div class="readout-block">
-            <p class="section-kicker">Display probe</p>
-            <dl id="display-info-list" class="readout-list"></dl>
-          </div>
-          <div class="readout-block">
-            <p class="section-kicker">Interpretation</p>
-            <dl id="source-preview-list" class="readout-list"></dl>
+          <div id="technical-diagnostics" class="technical-layout hidden">
+            <div class="readout-block">
+              <p class="section-kicker">Output</p>
+              <dl id="preview-output-list" class="readout-list"></dl>
+            </div>
+            <div class="readout-block">
+              <p class="section-kicker">Display probe</p>
+              <dl id="display-info-list" class="readout-list"></dl>
+            </div>
+            <div class="readout-block">
+              <p class="section-kicker">Interpretation</p>
+              <dl id="source-preview-list" class="readout-list"></dl>
+            </div>
           </div>
         </div>
       </section>

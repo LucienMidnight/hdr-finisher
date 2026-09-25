@@ -653,6 +653,9 @@ def test_panel_titles_and_scope_description_follow_shared_design_contract() -> N
     assert 'id="scope-title" class="visually-hidden"' in html
     assert 'class="scope-header-controls field-inline"' in html
     assert '<option value="technical">Technical</option>' in html
+    # P5 (ledger 9.6): the short Technical readout, and the full list under Diagnostics.
+    assert '<option value="diagnostics">Diagnostics</option>' in html
+    assert 'id="technical-summary"' in html and 'id="technical-diagnostics"' in html
     assert 'class="dock-tabs"' not in html
     assert 'id="scope-note" class="visually-hidden"' in html
     assert 'id="histogram" width="720" height="220" aria-label="Image scope" aria-describedby="scope-note"' in html

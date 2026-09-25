@@ -98,15 +98,17 @@ The vectorscope plots chroma direction and saturation independently of image pos
 
 Vectorscope density is intentionally reduced during interaction and becomes more precise after the edit settles. It is a diagnostic of the authored rendition, not a gamut-compliance certification.
 
-## Technical panel
+## Technical and Diagnostics panels
 
-The Technical tab separates three kinds of evidence:
+Choose **Technical** in the scope-type menu for a short, plain-language summary that fits the scopes panel at any height:
 
-- **Output:** current preview media type, gamut/transfer, bit depth, and render-path notes.
-- **Display probe:** browser media-query/GPU information plus native Windows telemetry where available.
-- **Interpretation:** source primaries, transfer, confidence, and internal working space.
+- **Preview:** **View** (HDR or SDR, and the zoom), **Status** (Ready, Updating, or Coarse while you drag with Faster dragging on), **Detail** (full detail, or softer while dragging), and **Processing** (whole image or in tiles, with the memory setting in use).
+- **Display:** **HDR on this display** (whether the viewer is really showing HDR, or an SDR simulation) and the **Monitor** the window is on.
+- **Source:** the **File**, how it was interpreted, its **Encoding** (colours and transfer curve), the **Signal** type, the **Source peak** if the file declares one, the project's **Reference white**, and the **Bit depth**.
 
-Use it when the picture looks wrong before changing the grade. A display-path or source-interpretation problem should not be “fixed” with creative controls.
+Choose **Diagnostics** for the full list behind it: render generations, processing scale, caches, the execution route and memory budget, the display probe (media queries, GPU and native Windows telemetry where available), and the complete source interpretation. It's intended for troubleshooting and bug reports.
+
+Use either when the picture looks wrong before changing the grade. A display-path or source-interpretation problem should not be “fixed” with creative controls.
 
 ## False Color
 
