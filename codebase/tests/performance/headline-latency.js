@@ -43,6 +43,12 @@ const option = (name, fallback) => {
 const baseUrl = option("--url", process.env.HDR_FINISHER_URL || "http://127.0.0.1:8799");
 const outputPath = path.resolve(option("--output", "output/performance/headline-latency.json"));
 const sampleCount = Math.max(1, Number(option("--samples", "10")));
+// P5: "all" runs every row; "release" runs only the release -> settled rows.
+const suite = option("--suite", "all");
+// P5: "off" (the default after P5), "on" (the opt-in escape hatch), or
+// "app-default" (whatever a fresh profile does). On a build that still has
+// the three-way preference, off maps to Precise and on to Balanced.
+const fasterDragging = option("--faster-dragging", "app-default");
 const inputPath = option("--input", "");
 // The §8 reference viewport. The Electron runner turns this into the real
 // window size, and the size that actually measured is written into the report.
@@ -138,7 +144,12 @@ async function installProbe(page) {
             generation: state.previewGeneration?.[state.currentView] ?? null,
             accepted: accepted?.generation ?? null,
             exact: accepted?.exact === true,
+            coarse: accepted?.coarse === true,
             status: viewerState().status,
+            // P5: completed settle passes (settle render check + settled
+            // scopes), so the settle wait after release is observable.
+            settles: state.previewScheduler?.__settleCount ?? null,
+            zoom: state.zoomMode === "fit" ? "fit" : state.zoomPercent,
             // A pan moves the viewport over a canvas that is larger than the
             // window, so the pan is observable as the scroll offset, not as a
             // change in the canvas's own pixels.
@@ -186,6 +197,25 @@ async function installProbe(page) {
       probe.inputs.push({
         type: "pointerdown", t: event.timeStamp, now: performance.now(),
         target: event.target?.id || event.target?.tagName || null,
+      });
+    });
+    // The scheduler keeps only its last 240 timings, so completed settle
+    // passes are counted here rather than read from the array's length.
+    const scheduler = state.previewScheduler;
+    if (scheduler && !scheduler.__settleCounted) {
+      const record = scheduler.recordMetric.bind(scheduler);
+      scheduler.__settleCount = 0;
+      scheduler.recordMetric = (bucket, value) => {
+        if (bucket === "settleMs") scheduler.__settleCount += 1;
+        return record(bucket, value);
+      };
+      scheduler.__settleCounted = true;
+    }
+    probe.on(window, "pointerup", (event) => {
+      if (!probe.armed) return;
+      probe.inputs.push({
+        type: "pointerup", t: event.timeStamp, now: performance.now(), trusted: event.isTrusted,
+        target: event.target?.getAttribute?.("data-path") || event.target?.id || event.target?.tagName || null,
       });
     });
     probe.on(window, "wheel", (event) => {
@@ -357,6 +387,120 @@ async function measureSliderStroke(page, label, { zoom = null, deltaX = 8 } = {}
   };
 }
 
+// P5 (Preview Responsiveness Tuning Sprint): release -> settled, the primary
+// metric. A real drag with several frames, a short hold, then a trusted
+// pointer-up. "Settled" is the first sampled frame at or after the pointer-up
+// that the renderer reports exact at the current (final) generation, with the
+// viewer Ready (which also requires the current geometry and scale). When the
+// last drag frame was already exact, that is the first vsync after release.
+// The same stroke also reports what the settle pass still did afterwards:
+// frames presented after release (a duplicate render shows up here), the
+// settled scope pass, and any coarse frame during or after the drag.
+async function dragAndRelease(page, selector, deltaX) {
+  const control = page.locator(selector).first();
+  await control.waitFor({ state: "visible", timeout: 60000 });
+  const box = await control.boundingBox();
+  assert(box && box.width > 0, `No box for ${selector}`);
+  const x = box.x + box.width * 0.5;
+  const y = box.y + box.height * 0.5;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  for (let step = 1; step <= 6; step += 1) {
+    await page.mouse.move(x + (deltaX * step) / 6, y);
+    await page.waitForTimeout(40);
+  }
+  await page.waitForTimeout(30);
+  await page.mouse.up();
+}
+
+function analyseRelease(collection) {
+  const up = collection.inputs.find((entry) => entry.type === "pointerup") || null;
+  const start = firstInput(collection.inputs);
+  const last = collection.frames[collection.frames.length - 1] || null;
+  const finalGeneration = last?.generation ?? null;
+  if (!up || !last) return { up: null };
+  const afterUp = collection.frames.filter((frame) => frame.t >= up.t);
+  const duringDrag = collection.frames.filter((frame) => start && frame.t >= start.t && frame.t < up.t);
+  const settled = afterUp.find((frame) => frame.accepted === finalGeneration && frame.exact
+    && frame.status === "ready" && Number.isFinite(frame.signature)) || null;
+  const settlesAtUp = [...collection.frames].reverse().find((frame) => frame.t < up.t)?.settles ?? afterUp[0]?.settles ?? null;
+  const scopes = Number.isFinite(settlesAtUp)
+    ? afterUp.find((frame) => Number.isFinite(frame.settles) && frame.settles > settlesAtUp) || null
+    : null;
+  const lastDragFrame = [...duringDrag].reverse().find((frame) => Number.isFinite(frame.accepted)) || null;
+  // No input follows the release, so a generation that starts after it is a
+  // render of values that were already on screen.
+  const generationAtUp = [...collection.frames].reverse().find((frame) => frame.t < up.t)?.generation ?? null;
+  const distinct = (frames, predicate) => new Set(frames.filter(predicate).map((frame) => frame.accepted)).size;
+  return {
+    up,
+    trusted: up.trusted === true,
+    finalGeneration,
+    releaseToSettledMs: settled ? settled.t - up.t : null,
+    releaseToSettleScopesMs: scopes ? scopes.t - up.t : null,
+    lastDragFrameExactAtFinal: Boolean(lastDragFrame && lastDragFrame.exact && lastDragFrame.accepted === finalGeneration),
+    presentedAfterRelease: collection.events.filter((event) => event.t >= up.t).length,
+    generationsAfterRelease: Number.isFinite(generationAtUp) && Number.isFinite(finalGeneration)
+      ? finalGeneration - generationAtUp : null,
+    dragFramesPresented: distinct(duringDrag, (frame) => Number.isFinite(frame.accepted) && frame.accepted > (collection.baseAccepted ?? -1)),
+    coarseFramesDuringDrag: distinct(duringDrag, (frame) => frame.coarse),
+    coarseFramesAfterRelease: distinct(afterUp, (frame) => frame.coarse),
+  };
+}
+
+async function measureRelease(page, label, { zoom = null, deltaX = 8, coldAfterZoom = false } = {}) {
+  await page.evaluate(() => setZoomMode("fit"));
+  await waitForIdle(page);
+  if (coldAfterZoom) {
+    // The measured drag is the first edit after the zoom change.
+    await setExposure(page, 0);
+    await page.evaluate((percent) => setCustomZoom(percent), zoom);
+    await waitForIdle(page);
+  } else {
+    if (zoom !== null) {
+      await page.evaluate((percent) => setCustomZoom(percent), zoom);
+      await waitForIdle(page);
+    }
+    await setExposure(page, 0);
+  }
+  await page.waitForTimeout(300);
+  await arm(page);
+  await dragAndRelease(page, '[data-path="hdr.exposure"]', deltaX);
+  await page.waitForTimeout(1500);
+  const collection = await collect(page);
+  await disarm(page);
+  const result = analyseRelease(collection);
+  const execution = await page.evaluate(() => state.acceptedPresentation?.execution ?? null);
+  return {
+    label, zoom: zoom ?? "fit", execution, ...result,
+    up: result.up ? { t: result.up.t, target: result.up.target } : null,
+    coldWarm: coldAfterZoom ? "cold" : "warm",
+  };
+}
+
+// P5: a warm zoom change to the first sampled frame the viewer reports Ready
+// at the new zoom (exact, current generation, current processing scale).
+async function measureZoomSharp(page, cold) {
+  await page.evaluate(() => setZoomMode("fit"));
+  await waitForIdle(page);
+  await page.waitForTimeout(300);
+  await arm(page);
+  await page.locator("#zoom-actual").click();
+  await page.waitForTimeout(2000);
+  const collection = await collect(page);
+  await disarm(page);
+  const click = collection.inputs.find((entry) => entry.type === "click") || firstInput(collection.inputs);
+  const sharp = click ? collection.frames.find((frame) => frame.t >= click.t && frame.zoom === 100
+    && frame.status === "ready" && Number.isFinite(frame.signature)) : null;
+  return {
+    label: "zoom-sharp-100", zoom: 100,
+    zoomToSharpMs: click && sharp ? sharp.t - click.t : null,
+    coarseFrames: new Set(collection.frames.filter((frame) => click && frame.t >= click.t && frame.coarse)
+      .map((frame) => frame.accepted)).size,
+    coldWarm: cold ? "cold" : "warm",
+  };
+}
+
 async function measurePan(page) {
   await page.evaluate(() => setCustomZoom(200));
   await waitForIdle(page);
@@ -496,15 +640,25 @@ async function measureInputHandler(page) {
     await page.waitForFunction(() => state.session?.session_id, null, { timeout: 900000 });
     await page.waitForFunction(() => state.gpuPreview?.available === true, null, { timeout: 300000 });
     await waitForIdle(page, 900000);
-    // Balanced is the §8.1 preference row; a fresh profile is already Balanced,
-    // but an existing profile may not be.
-    await page.evaluate(() => {
+    // The drag setting under test. A fresh profile starts at the app default;
+    // an existing one may not, so every mode is set explicitly.
+    const dragSetting = await page.evaluate((mode) => {
+      const box = document.getElementById("preview-faster-dragging");
+      if (box) {
+        if (mode !== "app-default" && box.checked !== (mode === "on")) {
+          box.checked = mode === "on";
+          box.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+        return { control: "faster-dragging", on: box.checked };
+      }
       const select = document.getElementById("preview-latency");
-      if (select && select.value !== "balanced") {
-        select.value = "balanced";
+      const value = mode === "on" ? "balanced" : mode === "off" ? "precise" : "balanced";
+      if (select && select.value !== value) {
+        select.value = value;
         select.dispatchEvent(new Event("change", { bubbles: true }));
       }
-    });
+      return { control: "preview-response", value: select?.value ?? null };
+    }, fasterDragging);
     await waitForIdle(page);
     // Every §8.1 interaction is real input on the grade rail; the rail is
     // shown through the application's own workflow switch.
@@ -548,6 +702,99 @@ async function measureInputHandler(page) {
         preference: document.getElementById("preview-latency")?.value ?? null,
       };
     });
+    environment.dragSetting = dragSetting;
+    environment.fasterDraggingRequested = fasterDragging;
+
+    if (suite === "release") {
+      const releaseRows = [];
+      for (let sample = 0; sample < sampleCount; sample += 1) {
+        const direction = sample % 2 === 0 ? 8 : -8;
+        const warm = sample === 0 ? "cold" : "warm";
+        for (const zoom of [null, 100, 200, 400]) {
+          const row = await measureRelease(page, `release-settled-${zoom ?? "fit"}`, { zoom, deltaX: direction });
+          releaseRows.push({ ...row, coldWarm: warm });
+        }
+        // The first edit after a zoom change (Fit -> 100%, which changes the
+        // processing scale); always cold by construction.
+        releaseRows.push(await measureRelease(page, "release-settled-cold-after-zoom",
+          { zoom: 100, deltaX: direction, coldAfterZoom: true }));
+        releaseRows.push(await measureZoomSharp(page, sample === 0));
+      }
+      assert(pageErrors.length === 0, `Page errors occurred: ${pageErrors.join(" | ")}`);
+      const groups = {};
+      for (const row of releaseRows) {
+        const key = `${row.label}:${row.coldWarm}`;
+        (groups[key] = groups[key] || []).push(row);
+      }
+      const stat = (entries, field) => {
+        const values = entries.map((entry) => entry[field]).filter(Number.isFinite);
+        return { medianMs: percentile(values, 0.5), p95Ms: percentile(values, 0.95),
+          worstMs: values.length ? Math.max(...values) : null, samples: values.length };
+      };
+      const releaseSummary = Object.entries(groups).map(([key, entries]) => {
+        const [label, coldWarm] = key.split(":");
+        if (label === "zoom-sharp-100") {
+          return { label, coldWarm, zoomToSharp: stat(entries, "zoomToSharpMs"),
+            coarseFramesMax: Math.max(...entries.map((entry) => entry.coarseFrames || 0)) };
+        }
+        return {
+          label, coldWarm,
+          executions: [...new Set(entries.map((entry) => entry.execution))],
+          releaseToSettled: stat(entries, "releaseToSettledMs"),
+          releaseToSettleScopes: stat(entries, "releaseToSettleScopesMs"),
+          lastDragFrameExactAtFinal: entries.filter((entry) => entry.lastDragFrameExactAtFinal).length,
+          presentedAfterReleaseMax: Math.max(...entries.map((entry) => entry.presentedAfterRelease || 0)),
+          presentedAfterReleaseTotal: entries.reduce((sum, entry) => sum + (entry.presentedAfterRelease || 0), 0),
+          strokesWithNewGenerationAfterRelease: entries.filter((entry) => entry.generationsAfterRelease > 0).length,
+          dragFramesPresentedMin: Math.min(...entries.map((entry) => entry.dragFramesPresented || 0)),
+          coarseDuringDragTotal: entries.reduce((sum, entry) => sum + (entry.coarseFramesDuringDrag || 0), 0),
+          coarseAfterReleaseTotal: entries.reduce((sum, entry) => sum + (entry.coarseFramesAfterRelease || 0), 0),
+          untrustedReleases: entries.filter((entry) => entry.trusted === false).length,
+          samples: entries.length,
+        };
+      });
+      // P5 gates (PRD P5 tests), warm p95 unless stated.
+      const failures = [];
+      const find = (label, coldWarm) => releaseSummary.find((row) => row.label === label && row.coldWarm === coldWarm);
+      const gate = (row, field, targetMs, name) => {
+        const value = row?.[field]?.p95Ms;
+        if (!Number.isFinite(value)) failures.push(`${name}: no samples`);
+        else if (value > targetMs) failures.push(`${name}: p95 ${value.toFixed(1)} ms > ${targetMs} ms`);
+      };
+      gate(find("release-settled-fit", "warm"), "releaseToSettled", 150, "release -> settled, Fit");
+      for (const zoom of [100, 200, 400]) gate(find(`release-settled-${zoom}`, "warm"), "releaseToSettled", 200, `release -> settled, ${zoom}%`);
+      gate(find("release-settled-cold-after-zoom", "cold"), "releaseToSettled", 400, "release -> settled, cold first edit after zoom");
+      gate(find("zoom-sharp-100", "warm"), "zoomToSharp", 300, "zoom change -> sharp, warm");
+      const strokes = releaseSummary.filter((row) => row.label.startsWith("release-settled-"));
+      const total = (field) => strokes.reduce((sum, row) => sum + (row[field] || 0), 0);
+      if (total("coarseAfterReleaseTotal") > 0) failures.push(`${total("coarseAfterReleaseTotal")} coarse frame(s) shown after release`);
+      if (total("untrustedReleases") > 0) failures.push("a release was not a trusted pointer-up");
+      if (!dragSetting.on && dragSetting.control === "faster-dragging") {
+        if (total("coarseDuringDragTotal") > 0) failures.push(`${total("coarseDuringDragTotal")} coarse frame(s) while dragging with Faster dragging off`);
+      }
+      if (total("strokesWithNewGenerationAfterRelease") > 0) {
+        failures.push(`${total("strokesWithNewGenerationAfterRelease")} stroke(s) started a new render after release with no new input`);
+      }
+      const report = {
+        failures,
+        recordedAt: new Date().toISOString(),
+        measurementRule: "trusted pointer-up timeStamp -> first rAF at or after it whose accepted presentation is exact at the final generation with the viewer Ready (at most one display interval of observation quantization)",
+        environment: {
+          ...environment,
+          os: `${process.platform} ${os.release()}`,
+          node: process.versions.node,
+          powerMode: process.env.HDR_FINISHER_POWER_MODE || "unknown",
+          requestedWindowSize: process.env.HDR_FINISHER_ELECTRON_WINDOW_SIZE || null,
+        },
+        summary: releaseSummary,
+        rows: releaseRows,
+      };
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      fs.writeFileSync(outputPath, JSON.stringify(report, null, 2));
+      console.log(JSON.stringify({ environment: report.environment, summary: releaseSummary, failures }, null, 2));
+      if (failures.length) throw new Error(`P5 release gates failed: ${failures.join("; ")}`);
+      return;
+    }
 
     const rows = [];
     for (let sample = 0; sample < sampleCount; sample += 1) {
