@@ -20,6 +20,7 @@ const { cachedUpdateResult } = require("./lib/updates");
 const { DEFAULT_WINDOW_BOUNDS, clampWindowBounds } = require("./lib/window-bounds");
 const { windowChromeOptions } = require("./lib/window-chrome");
 const { installProcessDiagnostics } = require("./lib/process-diagnostics");
+const { detectVideoMemory } = require("./lib/video-memory");
 
 if (!app.isPackaged) app.setVersion(require("./package.json").version);
 
@@ -522,6 +523,13 @@ function registerIpc() {
   });
 
   handle("desktop:environment", () => desktopEnvironment());
+  // The active card's dedicated video memory, read once: the preview's Auto
+  // memory budget is half of it (Preview Responsiveness Tuning Sprint P2).
+  let videoMemory = null;
+  handle("desktop:video-memory", () => {
+    videoMemory = videoMemory || detectVideoMemory({ app });
+    return videoMemory;
+  });
   handle("desktop:renderer-ready", async () => {
     rendererReady = true;
     await dispatchPendingOpenPaths();

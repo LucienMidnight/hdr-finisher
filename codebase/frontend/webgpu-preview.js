@@ -671,6 +671,12 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     const spatialActive = options.spatialActive !== false;
     const denoiseLevels = Math.max(0, Math.min(4, Math.floor(Number(options.denoiseLevels ?? 0) || 0)));
     const cachedProxyLevels = Math.max(1, Math.floor(Number(options.cachedProxyLevels ?? 1) || 1));
+    // The live planner knows what each resident source level really occupies.
+    // Charging the current frame's size once per cached level counted a 1024
+    // px mip as if it were native, so a 42 MP render was charged 2.37 GB for
+    // 339 MB of source (Preview Responsiveness Tuning Sprint P2).
+    const residentSourceBytes = Number.isFinite(Number(options.sourceProxyBytes))
+      ? Math.max(0, Number(options.sourceProxyBytes)) : null;
     const maskCount = Math.max(0, Math.floor(Number(options.maskCount) || 0));
     const booleanMaskPasses = Math.max(0, Math.floor(Number(options.booleanMaskPasses) || 0));
     const sceneLuminanceEntries = Math.max(0, Math.floor(Number(options.sceneLuminanceEntries) || 0));
@@ -688,8 +694,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       if (bytes > 0) entries.push({ id, category, lifetime, bytes, ...detail });
     };
 
-    add("source-proxy", "source", "cached", pixels * sourceBytesPerPixel * cachedProxyLevels,
-      { levels: cachedProxyLevels, bytesPerPixel: sourceBytesPerPixel });
+    add("source-proxy", "source", "cached", residentSourceBytes ?? pixels * sourceBytesPerPixel * cachedProxyLevels,
+      { levels: cachedProxyLevels, bytesPerPixel: sourceBytesPerPixel, measured: residentSourceBytes !== null });
     add("grading-core", "grading", "resident", pixels * 8 * 4, { textures: 4 });
     if (detailActive) add("grading-detail", "detail", "resident", pixels * 8 * 2, { textures: 2 });
     if (spatialActive) add("spatial-film", "spatial", "resident", spatialPixels * 8 * 2, { textures: 2 });
@@ -1071,14 +1077,26 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
 
     memoryBudgetBytes() {
       const normalized = normalizeGpuBudgetBytes(this.memoryBudget);
-      // Phase 5 item 2: an explicit setting is the user's number and stands.
-      // Auto uses the calibrated budget when calibration exists, and can only
-      // be lowered by it -- the policy value is the ceiling until item 6's
-      // failure recovery passes (PRD 5.7).
+      // An explicit setting is the user's number and stands, higher or lower
+      // than Auto. Auto is the calibrated budget: half of the detected
+      // dedicated video memory, or the stated fallback, lowered by verified
+      // adapter facts and the allocation probe.
       if (this.memoryBudget === "auto" && this.gpuBudget?.budgetBytes > 0) {
-        return Math.min(normalized, this.gpuBudget.budgetBytes);
+        return this.gpuBudget.budgetBytes;
       }
       return normalized;
+    }
+
+    /**
+     * The desktop shell's reading of the active adapter's dedicated video
+     * memory, or null when it could not tell. Auto recalibrates from it.
+     */
+    setDetectedVideoMemory(info) {
+      this.detectedVideoMemory = Number(info?.bytes) > 0
+        ? { bytes: Number(info.bytes), device: info.device || null, source: info.source || null }
+        : null;
+      if (this.device || this.adapterInfo) this.calibrateGpuBudget();
+      return this.detectedVideoMemory;
     }
 
     /**
@@ -1092,6 +1110,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       if (!Budget) return null;
       this.gpuBudget = Budget.calibrate({
         policyBytes: GPU_BUDGET_AUTO_BYTES,
+        detectedVideoMemory: this.detectedVideoMemory || null,
         adapterInfo: this.adapterInfo,
         limits: this.adapterInfo?.limits || snapshotDeviceLimits(this.device?.limits),
         probe: (bytes) => this.probeGpuAllocation(bytes),
@@ -1260,17 +1279,24 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       );
       const parameterBufferBytes = (this.paramBuffer?.size || 0) + (this.curveBuffer?.size || 0)
         + [...this.localParamBuffers.values()].reduce((sum, buffer) => sum + (buffer.size || 0), 0);
+      // Resident source levels at their real size, plus a whole-frame source
+      // this render is about to load (a region proxy that Direct replaces).
+      const residentProxyBytes = [...this.proxies.values()].reduce((sum, proxy) => sum + (proxy.byteSize || 0), 0);
+      const pendingSourceBytes = Math.max(0, Number(options.pendingSourceBytes) || 0);
       const plan = buildRenderPlan({
         width,
         height,
         denoiseLevels,
         cachedProxyLevels: Math.max(1, this.proxies.size),
+        sourceProxyBytes: residentProxyBytes + pendingSourceBytes,
         maskCount: [...this.localMasks.values()].filter((mask) => mask.kind !== "gpu-mask-graph").length,
         booleanMaskPasses: [...this.localMasks.values()].filter((mask) => mask.kind === "gpu-mask-graph").length,
         sceneLuminanceEntries: this.sceneLuminance.size,
         scopeBytes,
         parameterBufferBytes,
-        budget: this.memoryBudget,
+        // In GiB, the unit the planner takes: the calibrated Auto or the
+        // user's limit, never the bare "auto" fallback.
+        budget: this.memoryBudgetBytes() / (1024 * 1024 * 1024),
         // Bounded transport means staging is one chunk, not one image.
         stagingBytes: this.maxSourceChunkBytes,
         limits: this.adapterInfo?.limits || snapshotDeviceLimits(this.device?.limits),
@@ -1279,6 +1305,41 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       });
       this.lastRenderPlan = plan;
       return plan;
+    }
+
+    /**
+     * Drop source levels this lane can no longer use -- another session, an
+     * earlier geometry or source identity, or a region fetched for an earlier
+     * viewport -- so admission charges only what is worth keeping. Levels at
+     * other long edges of the current source stay: a zoom back reuses them,
+     * and the allocator's LRU owns their eviction under pressure.
+     */
+    evictStaleProxies({ sessionId, lane, geometrySignature, sourceIdentity, keep = null } = {}) {
+      let evicted = 0;
+      const protectedProxy = this.denoiseSourceSelector?.original || null;
+      for (const [key, proxy] of [...this.proxies.entries()]) {
+        if (key === keep || proxy === protectedProxy) continue;
+        const otherSession = proxy.sessionId !== sessionId;
+        const sameLane = proxy.lane === lane;
+        const outdated = sameLane && (proxy.geometrySignature !== geometrySignature
+          || proxy.sourceIdentity !== sourceIdentity);
+        const oldRegion = sameLane && String(proxy.identity || key).includes(":region:");
+        if (!otherSession && !outdated && !oldRegion) continue;
+        this.evictGpuCacheEntry("source-proxy", key);
+        evicted += 1;
+      }
+      return evicted;
+    }
+
+    /**
+     * The execution override a render carries into admission. Only the
+     * diagnostic Execution setting forces a route. A region (viewport) request
+     * used to be forced to Tiled even when Direct was admitted; it now goes
+     * through ordinary admission, Direct when it fits and Tiled only when
+     * refused (Preview Responsiveness Tuning Sprint P2).
+     */
+    executionOverrideFor(sourceOptions = null) {
+      return this.executionOverride || null;
     }
 
     admitDirect(width, height, options = {}) {
@@ -1310,7 +1371,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         parameterBufferBytes: 0,
         stagingBytes: this.maxSourceChunkBytes,
         retainedPresentation: true,
-        budget: this.memoryBudget,
+        // In GiB, the unit the planner takes: the calibrated Auto or the
+        // user's limit, never the bare "auto" fallback.
+        budget: this.memoryBudgetBytes() / (1024 * 1024 * 1024),
         limits: this.adapterInfo?.limits || snapshotDeviceLimits(this.device?.limits),
         allocationBackoff: this.allocationBackoff?.reason || null,
         tier,
@@ -3410,8 +3473,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const localDetailActive = activeLocals.some((local) => gpuLocalDetailActive(local[`${lane}_grade`]));
       // Admission runs against the graph this render is about to build, so the
       // plan and the decision describe real work rather than a generic guess.
+      // Stale levels leave before admission, so the plan charges what the
+      // device will actually hold for this render.
+      this.evictStaleProxies({ sessionId, lane, geometrySignature, sourceIdentity, keep: proxy.identity });
       const plan = this.planRender(proxy.width, proxy.height, {
-        executionOverride: sourceOptions?.viewport ? "tiled" : (this.executionOverride || null),
+        executionOverride: this.executionOverrideFor(sourceOptions),
+        // A region proxy covers only the visible area; if Direct is admitted
+        // the whole frame is loaded below, so admission charges it now.
+        pendingSourceBytes: proxy.region ? proxy.width * proxy.height * (proxy.pixelFormat === "rgba16float" ? 8 : 16) : 0,
         detailActive: detailActive || localDetailActive,
         spatialActive,
         // Without this the tiled model sizes its working set to a bare tile
@@ -3422,11 +3491,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         sourceBytesPerPixel: proxy.pixelFormat === "rgba16float" ? 8 : 16,
         tier: sourceOptions?.tier ?? null,
       });
-      // A region source belongs to the tiled route. A viewport request also
-      // needs that route even when Direct would fit: Direct executes every
-      // active node over the whole frame and cannot honour the ROI contract.
-      // The whole-frame fallback below still protects a diagnostic region
-      // request if an execution policy changes in the future.
+      // A region source belongs to the tiled route. When admission chooses
+      // Direct for a viewport request, Direct executes every active node over
+      // the whole frame, so it needs the whole-frame source: load it here.
       if (proxy.region && plan.decision.mode !== "tiled") {
         const whole = await this.loadProxy(
           sessionId,

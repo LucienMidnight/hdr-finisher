@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   apiVersion: 2,
   platform: process.platform,
   environment: () => ipcRenderer.invoke("desktop:environment"),
+  videoMemory: () => ipcRenderer.invoke("desktop:video-memory"),
   rendererReady: () => ipcRenderer.invoke("desktop:renderer-ready"),
   getPreferences: () => ipcRenderer.invoke("desktop:get-preferences"),
   getDefaultPresetDirectory: () => ipcRenderer.invoke("desktop:get-default-preset-directory"),

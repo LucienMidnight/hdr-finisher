@@ -110,3 +110,51 @@ test("without a policy there is no budget to claim", () => {
   assert.equal(result.source, "unavailable");
   assert.equal(result.fallback, true);
 });
+
+// Preview Responsiveness Tuning Sprint P2 (owner decision Q2): Auto uses up to
+// half of the detected dedicated video memory; without a detection it keeps
+// the stated 2 GiB fallback, and the readout says which of the two applies.
+const GIB = 1024 * 1024 * 1024;
+
+test("detected dedicated video memory sets Auto to half of it", () => {
+  const result = calibrate({
+    detectedVideoMemory: { bytes: 12 * GIB, device: "NVIDIA GeForce RTX 4070 Ti" },
+    adapterInfo: { fallback: false, description: "lovelace", vendor: "nvidia" },
+    limits: { maxBufferSize: 2 * GIB, maxTextureDimension2D: 16384 },
+    probe: () => true,
+  });
+  assert.equal(result.budgetBytes, 6 * GIB);
+  assert.equal(result.source, "detected-vram");
+  assert.equal(result.fallback, false);
+  assert.equal(result.detectedBytes, 12 * GIB);
+  assert.equal(loadBudget().autoLabel(result), "Auto · 6 GiB (detected 12 GiB)");
+});
+
+test("without a detection Auto keeps the 2 GiB fallback and says so", () => {
+  const result = calibrate({ detectedVideoMemory: null, probe: () => true });
+  assert.equal(result.budgetBytes, POLICY);
+  assert.equal(result.source, "policy-fallback");
+  assert.equal(result.detectedBytes, null);
+  assert.equal(loadBudget().autoLabel(result), "Auto · 2 GiB (not detected)");
+});
+
+test("a small dedicated carve-out is not treated as a discrete card", () => {
+  // Integrated graphics report a BIOS carve-out (512 MiB here) while WebGPU
+  // allocates from shared memory; halving it would starve the preview.
+  const result = calibrate({ detectedVideoMemory: { bytes: 0.5 * GIB, device: "AMD Radeon(TM) Graphics" }, probe: () => true });
+  assert.equal(result.budgetBytes, POLICY);
+  assert.equal(result.source, "policy-fallback");
+  assert.equal(result.detectedBytes, 0.5 * GIB);
+});
+
+test("verified device limits and a failed probe still lower a detected Auto", () => {
+  const limited = calibrate({
+    detectedVideoMemory: { bytes: 12 * GIB },
+    limits: { maxTextureDimension2D: 4096, maxBufferSize: 512 * 1024 * 1024 },
+  });
+  assert.equal(limited.budgetBytes, GIB);
+  assert.equal(limited.source, "limited-device");
+  const probed = calibrate({ detectedVideoMemory: { bytes: 12 * GIB }, probe: () => false });
+  assert.equal(probed.budgetBytes, GIB);
+  assert.equal(probed.source, "probe-downgrade");
+});

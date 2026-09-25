@@ -375,3 +375,61 @@ test("Tiled is what rescues a graph Direct cannot fit", () => {
   assert.ok(plan.tiled.totals.peakLogicalBytes <= plan.budgetBytes);
   assert.equal(plan.decision.tier, "full");
 });
+
+// Preview Responsiveness Tuning Sprint P2: resident source proxies are charged
+// at their real byte size, not as the current frame's size times the number of
+// cached levels, and a region request goes through ordinary admission.
+test("resident source proxies are charged at their summed real bytes", () => {
+  const preview = new Preview(null);
+  const native = 7968 * 5320 * 8;
+  const levels = [1024 * 684 * 8, 2048 * 1367 * 8, native];
+  levels.forEach((byteSize, index) => preview.proxies.set(`level-${index}`, { byteSize, sessionId: "s" }));
+  preview.setMemoryBudget(8);
+  const plan = preview.planRender(7968, 5320, { sourceBytesPerPixel: 8 });
+  const sourceEntry = plan.entries.find((entry) => entry.id === "source-proxy");
+  assert.equal(sourceEntry.bytes, levels.reduce((sum, bytes) => sum + bytes, 0));
+  assert.equal(plan.decision.mode, "direct");
+  assert.equal(plan.decision.admitted, true);
+});
+
+test("a source the render has yet to hold resident is charged at its frame size", () => {
+  const preview = new Preview(null);
+  preview.proxies.set("region", { byteSize: 1000 });
+  preview.setMemoryBudget(8);
+  const plan = preview.planRender(4000, 3000, { sourceBytesPerPixel: 8, pendingSourceBytes: 4000 * 3000 * 8 });
+  assert.equal(plan.entries.find((entry) => entry.id === "source-proxy").bytes, 1000 + 4000 * 3000 * 8);
+});
+
+test("a region request is admitted like any other: Direct when it fits", () => {
+  const preview = new Preview(null);
+  preview.setMemoryBudget(8);
+  const viewport = { x: 3000, y: 2000, width: 969, height: 522 };
+  const override = preview.executionOverrideFor({ viewport });
+  assert.equal(override, null);
+  const plan = preview.planRender(7968, 5320, { sourceBytesPerPixel: 8, executionOverride: override });
+  assert.equal(plan.decision.mode, "direct");
+  // The diagnostic Execution override still applies to region requests.
+  preview.executionOverride = "tiled";
+  assert.equal(preview.executionOverrideFor({ viewport }), "tiled");
+});
+
+test("stale source levels are evicted before planning, current levels are kept", () => {
+  const preview = new Preview(null);
+  const put = (key, fields) => preview.proxies.set(key, { identity: key, byteSize: 100, ...fields });
+  const current = { sessionId: "s", lane: "hdr", geometrySignature: "{}", sourceIdentity: "src" };
+  put("s:hdr:1024:{}:src", { ...current, longEdge: 1024 });
+  put("s:hdr:7968:{}:src", { ...current, longEdge: 7968 });
+  put("s:sdr:7968:{}:src", { ...current, lane: "sdr", longEdge: 7968 });
+  put("old:hdr:7968:{}:src", { ...current, sessionId: "old", longEdge: 7968 });
+  put("s:hdr:7968:{\"crop\":1}:src", { ...current, geometrySignature: "{\"crop\":1}", longEdge: 7968 });
+  put("s:hdr:7968:{}:src:region:0,0,10,10", { ...current, longEdge: 7968 });
+  put("s:hdr:7968:{}:src:region:5,5,10,10", { ...current, longEdge: 7968 });
+  const evicted = preview.evictStaleProxies({ ...current, keep: "s:hdr:7968:{}:src:region:5,5,10,10" });
+  assert.deepEqual([...preview.proxies.keys()].sort(), [
+    "s:hdr:1024:{}:src",
+    "s:hdr:7968:{}:src",
+    "s:hdr:7968:{}:src:region:5,5,10,10",
+    "s:sdr:7968:{}:src",
+  ]);
+  assert.equal(evicted, 3);
+});

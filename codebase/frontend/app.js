@@ -2023,7 +2023,12 @@ async function initializeGpuPreview() {
   // Preferences can load before or after the renderer exists, so apply the
   // stored budget here as well as on every preferences change.
   state.gpuPreview.setMemoryBudget(state.gpuMemoryBudget ?? "auto");
+  // Auto is half of the active card's dedicated video memory when the desktop
+  // shell can read it; a browser, or a failed read, keeps the 2 GiB fallback.
+  const videoMemory = await desktop?.videoMemory?.().catch(() => null);
+  state.gpuPreview.setDetectedVideoMemory(videoMemory?.detected ? videoMemory : null);
   await state.gpuPreview.initialize();
+  renderGpuMemoryAutoLabel();
   if (!state.gpuPreview.available && state.gpuFailurePolicy) {
     // Initialization failure is the one permanent failure in Section 5.8.
     state.gpuFailurePolicy.record(new Error(state.gpuPreview.detail || "WebGPU initialization failed"), { init: true });
@@ -4391,6 +4396,7 @@ function applyGpuMemoryBudget(value) {
   // eviction. It never decides whether a resolution option is visible, so
   // nothing here touches the preview-resolution selector.
   const setting = value === "auto" || value === undefined || value === null ? "auto" : value;
+  const previousBytes = state.gpuPreview?.memoryBudgetBytes?.() ?? null;
   state.gpuMemoryBudget = setting;
   const bytes = state.gpuPreview?.setMemoryBudget?.(setting)
     ?? window.HDRWebGPUPreview?.normalizeGpuBudgetBytes?.(setting)
@@ -4399,7 +4405,22 @@ function applyGpuMemoryBudget(value) {
   // failure backed off from, so let the next render re-plan from scratch.
   state.gpuPreview?.clearAllocationBackoff?.();
   renderReadouts();
+  // A new budget can change the route. Re-plan and re-render the current view
+  // now, so the readout never shows a route that the next edit would change.
+  if (state.session && state.gpuPreview?.available && bytes !== previousBytes) {
+    invalidatePreview(state.currentView, { markDirty: false });
+    debouncePreview(state.currentView);
+  }
   return bytes;
+}
+
+/** Settings shows what Auto means on this machine, not a fixed number. */
+function renderGpuMemoryAutoLabel() {
+  const option = document.querySelector('#settings-gpu-memory-limit option[value="auto"]');
+  const calibration = state.gpuPreview?.gpuBudget || null;
+  if (option && calibration && window.HDRGpuBudget?.autoLabel) {
+    option.textContent = window.HDRGpuBudget.autoLabel(calibration);
+  }
 }
 
 async function applyNewSessionPreferences() {
@@ -4464,7 +4485,7 @@ function previewExecutionLabel() {
   const plan = state.gpuPreview?.lastRenderPlan;
   const mode = plan?.decision?.mode === "tiled" ? "Tiled" : "Direct";
   const budget = state.gpuMemoryBudget === "auto" || state.gpuMemoryBudget === undefined
-    ? "Auto"
+    ? (window.HDRGpuBudget?.autoLabel?.(state.gpuPreview?.gpuBudget) || "Auto")
     : `${state.gpuMemoryBudget} GiB`;
   if (engine !== "GPU") return `Direct CPU · budget ${budget}`;
   const backoff = state.gpuPreview?.allocationBackoff ? " · allocation backoff" : "";
