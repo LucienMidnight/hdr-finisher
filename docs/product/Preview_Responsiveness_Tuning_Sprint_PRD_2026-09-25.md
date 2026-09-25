@@ -419,3 +419,33 @@ The Exposure latency differences are within one to two display refreshes (6.1 ms
 **Not measured.** Brush and mask-graph (combined) locals at native zoom, and the Tiled route with a feathered luma mask (low memory setting), where masks still come from the backend per tile. The owner reported no slowness; these are the remaining places the PRD's CPU cost could still appear.
 
 **Sprint status.** P1–P7 done. Section 8 still owes the packaged-build numbers and the pre-existing failing drivers (9.3, 9.8, 9.9).
+
+### 9.11 Packaged build measured, and the pre-existing failing drivers resolved
+
+**Packaged build (Section 8).** Rebuilt from `a73284b` (includes every P1–P7 change): PyInstaller backend (`HDRFinisherBackend.spec`) plus `npm run pack:dir` into `dist-electron/win-unpacked`. The backend bundle was built from the `.venv` repaired on 2026-09-25 (see memory note: numpy 2.5.3, Pillow 11.3.0 are the newest versions allowed by `requirements.txt`, so they may differ from earlier bundles). Every run below used `--packaged` at 2560×1440 on the reference machine, one at a time. All 13 passed: `electron-smoke`, release suite (checkbox off and on), full `headline-latency`, `drag-gpu-load`, `luma-feather-latency`, `luma-feather-quality`, `highlight-ceiling`, `highlight-anchor-stability`, `budget-route`, `pixel-magnification`, `technical-panel-fit`, and `desktop/tests/preview-menu.js` (needs a packaged executable; not run before).
+
+| Packaged, warm p95 (median) unless stated | Result | Target |
+|---|---|---|
+| Release → settled, Fit / 100 / 200 / 400%, checkbox off | 5.3 (3.1) / 5.4 / 5.5 / 5.4 ms | ≤ 150 / ≤ 200 |
+| Release → settled, cold first edit after zoom change | 11.4 (5.3) ms | ≤ 400 |
+| Zoom change → sharp, warm | 87.2 ms | ≤ 300 |
+| Renders after release with no new input; coarse frames (off) | 0; 0 | 0 |
+| Checkbox on: coarse frames presented after release | 0 | 0 |
+| Checkbox on: first stroke after enabling (cold) | 169 / 187 ms at Fit / 100% (as in 9.8) | — |
+| Drag fps, Fit / 200% (worst second); in flight | 48.8 (43) / 48.2 (40); max 1 | ≥ 30, never < 20; ≤ 1 |
+| Headline slider → exact, Fit / 100 / 200 / 400 / 800% | 13.5 / 11.4 / 13.0 / 11.6 / 47.8 ms | ≤ 100 / Fit + 50 |
+| Pan / first view after change / input handler | 11.1 / 87.0 / 6.0 ms | ≤ 33 / ≤ 150 / ≤ 16.7 |
+| P7 feather change: cold, warm p95; grade change warm p95 | 35.0, 23.7 ms; 17.6 ms; 0 mask rebuilds | ≤ 2000, ≤ 1000; ≤ 200; 0 |
+| Highlight ceiling (target 1000 nit) | 0 of 5,126,400 channels over | 0 |
+
+Artifacts: `output/performance/sprint-0925-packaged-{release-off,release-on,headline,p7}.json`.
+
+**Pre-existing failing drivers (9.1, 9.5, 9.8).** Four were stale tests, not app defects; each is now fixed and passes repeatedly. One needs a rewrite.
+
+- `tiled-direct-parity` and `tiled-film-parity` (`1fa0021`). Both rendered at the legacy fixed 1K tier while the app presents at the display-driven edge (1058 px here). After a diagnostic 1K render the viewer isn't Ready, so the app redrew at 1058 on its own, and each screenshot caught whichever frame was up. Recorded canvas sizes confirmed it: every failing pair compared a 1024 px frame with a 1058 px one, and every matching pair was identical. The "1 px ring at every edge, maxDelta 255" (including the maximum-radius case I first suspected was a real Detail difference) was resampling. The drivers now render at `requiredProcessingLongEdge()`, start each pair from an idle app, and refuse a pair if the app presented its own frame during a capture. The atomic-assembly check is updated for batched tiled submission (`13d12a3`: batches into the retained target, one presentation copy). Result: 4 of 4 runs each pass, **every comparison exact (maxDelta 0, 0 differing pixels)** for standard, maximum radius, denoise, vignette+grain, spatial, spatial-max and the halation/grain view maps, at both tile sizes.
+- `full-tier-denoise` (`f7c92a2`). "Bypass does nothing" (0.22%) came from the measurement. A locator screenshot has no clip option, so the whole 42 MP canvas was compared instead of a 512 px corner, and at 100% most of the fixture (a gradient) clips to white, where noise and denoise can't show. The driver now views the dark top-left and compares the visible area: switching Denoise off changes **76% of visible pixels** (maxDelta 73), identically on Direct (4096) and Tiled (Full), 2 of 2 runs. The switch works on both routes.
+- `gradient-mask-interaction` (`ab98aae`). It counted the app's intended latest-wins cancellation of a superseded `/local-mask/<id>` fetch as a failure. It now allows that cancellation, and any other failed request still fails. 3 of 3 pass.
+- `roi-refinement`: 4 of 4 recent runs pass without changes (it was intermittent before P5; the duplicate renders removed in P5 are a likely reason, not proven).
+- **`denoise-selector-seam`: not fixed; needs a rewrite.** Its fixture is 70 × 40 px, yet it forces diagnostic renders at a fixed 1024 px edge while zoomed to 200%, where the app wants the native frame. The same redraw race makes the first exposure sample miss its 3 s telemetry window (both before and after this sprint). When it gets past that (usually, since P5 made settled scopes arrive), it stops at a later check that counts the navigator thumbnail's `/preview/hdr` request as an encoded-preview fallback (confirmed by stack trace: `refreshNavigationThumbnail`, no settle/refine CPU fallback). It also leaves Electron running after a failure. A patch would hide the design mismatch, so this is left for a deliberate rewrite around display-driven rendering.
+
+**Sprint status.** P1–P7 done and signed off by the owner (P7 by measurement; the owner reported no remaining slowness). Section 8: automated tests pass on the packaged build; the P5/P6 before/after tables are recorded (9.7, 9.8, this section); settings, help and the user guide match. Open: the `denoise-selector-seam` rewrite, and the pre-existing items noted in 9.9–9.10 (8-bit backend masks, brush/graph masks at native zoom and the Tiled route with a feathered luma mask not measured).
