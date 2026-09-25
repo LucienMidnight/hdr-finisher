@@ -3593,6 +3593,16 @@ function bindEvents() {
   els.exportSharpening?.addEventListener("change", markExportPresetCustom);
 
   bindCompareControl();
+  // A drag frame carries the last highlight measurement instead of waiting
+  // for one. When the measurement it skipped lands and differs, redraw the
+  // current view so the resting frame uses the real anchor. The renderer has
+  // cached it, so the redraw is one ordinary pass.
+  window.addEventListener("hdrfinisher:highlight-anchor-measured", (event) => {
+    const lane = event.detail?.lane;
+    if (!state.session || lane !== state.currentView) return;
+    invalidatePreview(lane, { markDirty: false });
+    debouncePreview(lane);
+  });
   window.addEventListener("hdrfinisher:webgpulost", (event) => {
     const message = event.detail?.message || "WebGPU device lost";
     const verdict = state.gpuFailurePolicy?.record(new Error(message), { deviceLost: true });

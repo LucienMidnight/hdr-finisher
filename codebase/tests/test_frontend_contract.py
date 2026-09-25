@@ -1861,7 +1861,11 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     assert "cellPeaks" in webgpu
     assert "peakReductionMain" in webgpu
     assert "measureToneAdjustedPeak" in webgpu
-    assert 'sourceOptions?.tier !== "interactive"' in webgpu
+    # Interactive frames never wait for the whole-image reduction: they carry
+    # the last real measurement and the skipped one is scheduled afterwards.
+    assert 'const interactive = sourceOptions?.tier === "interactive";' in webgpu
+    assert "scheduleHighlightMeasurement(anchor, sourceProxy, params, lane, used)" in webgpu
+    assert 'hdrfinisher:highlight-anchor-measured' in javascript
     render_to = webgpu[webgpu.index("async renderTo(canvas"):webgpu.index("async analyzeDenoiseProxy")]
     # Resizing a visible canvas clears its presented frame, so the peak
     # measurement must complete before the resize. The resize itself happens
@@ -1872,7 +1876,7 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     # CPU preview, which the user sees as a black flash. Any future move to
     # anchor on the finished picture has to schedule a refinement rather than
     # await here.
-    assert render_to.index("await this.measureToneAdjustedPeak") < render_to.index(
+    assert render_to.index("await this.resolveHighlightAnchor") < render_to.index(
         "if (canvas.width !== proxy.width) canvas.width = proxy.width;"
     )
     presentation = render_to[render_to.index("if (canvas.width !== proxy.width) canvas.width = proxy.width;"):]

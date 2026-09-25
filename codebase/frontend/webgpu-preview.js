@@ -516,6 +516,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
    * same decision, which is what the Phase 2 exit gate requires.
    */
   const DEFAULT_TILE_SIZE = 512;
+  // A highlight measurement this many times the estimate (or the carried last
+  // measurement) is measured once more before it is trusted.
+  const HIGHLIGHT_ANCHOR_RECHECK_FACTOR = 8;
   // Phase 5 item 3: bounded staging ring for source streaming. Four 16 MiB
   // chunks keep the staging bound unchanged while overlapping fetches with
   // copies and draining the queue once per stream instead of once per chunk.
@@ -981,6 +984,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.scopePeakTargets = [];
       this.peakReductionPipeline = null;
       this.peakReductionCache = new Map();
+      // The last real highlight measurement per lane, with the estimate it was
+      // taken against, so a drag frame can carry it instead of the estimate.
+      this.lastHighlightMeasurement = { hdr: null, sdr: null };
+      this.pendingHighlightMeasurement = null;
+      // In-flight measurements by cache key, so a settled frame reuses the one
+      // a drag frame deferred instead of running the same reduction twice.
+      this.pendingHighlightKeys = new Map();
+      this.denoiseResolveVersion = 0;
       this.bindGroupLayout = null;
       this.pipelineLayout = null;
       this.maskBindGroupLayout = null;
@@ -1988,11 +1999,122 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const measures = (lane === "hdr" || params[159] > 0.5) && params[74] === 1 && measurement !== "manual";
       if (!measures) return null;
       const key = JSON.stringify([
-        proxy.identity, lane, params[1], params[159], measurement,
+        proxy.identity, this.highlightSourceToken(proxy), lane, params[1], params[159], measurement,
         params[2], params[4], params[8], params[9], params[110],
         ...params.slice(10, 12), ...params.slice(61, 73),
       ]);
       return { measurement, key, cached: this.peakReductionCache.get(key) };
+    }
+
+    /**
+     * Which pixels a highlight measurement was taken on. The original source
+     * and each denoise reconstruction share the proxy identity, so without this
+     * a measurement taken with Denoise off was reused with it on, and one taken
+     * on an earlier reconstruction was reused for the next.
+     */
+    highlightSourceToken(proxy) {
+      const selector = this.denoiseSourceSelector;
+      if (selector?.resolved && proxy === selector.resolved) return `denoise:${selector.resolvedVersion ?? 0}`;
+      return "original";
+    }
+
+    /**
+     * The Peak fit shoulder anchor for one render (params[75] arrives holding
+     * the rough estimate from the authored source peak).
+     *
+     * This anchor only shapes the shoulder. The delivery ceiling is a separate
+     * per-channel clip at the target in the same shader, which never reads it,
+     * so no value here can let output exceed the target. What a bad value can
+     * do is change the picture: far too high and the shoulder squeezes the
+     * image into SDR range (the 2026-09-25 owner report).
+     *
+     *   cached     a real measurement for exactly this source and grade.
+     *   settled    measure now; a result far above anything plausible is
+     *              measured once more and the second result is used as is.
+     *   drag       never wait for a whole-image reduction. Carry the last real
+     *              measurement, scaled by how the estimate moved, so the
+     *              shoulder does not jump between frames; then run the skipped
+     *              measurement and ask for a re-render if it differs.
+     */
+    async resolveHighlightAnchor(anchor, sourceProxy, params, { interactive = false, lane = "hdr" } = {}) {
+      const estimate = params[75];
+      if (anchor.cached !== undefined) {
+        this.noteHighlightMeasurement(lane, sourceProxy, params, anchor.cached);
+        return anchor.cached;
+      }
+      const carried = this.carriedHighlightAnchor(lane, sourceProxy, params);
+      const inFlight = this.pendingHighlightKeys.get(anchor.key);
+      if (!interactive && inFlight) {
+        await inFlight;
+        const measured = this.peakReductionCache.get(anchor.key);
+        if (measured !== undefined) return measured;
+      }
+      if (interactive) {
+        const used = carried ?? estimate;
+        this.scheduleHighlightMeasurement(anchor, sourceProxy, params, lane, used);
+        return used;
+      }
+      const value = await this.measureToneAdjustedPeak(sourceProxy, params, anchor.measurement, anchor.key, {
+        reference: Math.max(estimate, carried ?? 0),
+      });
+      this.noteHighlightMeasurement(lane, sourceProxy, params, value);
+      return value;
+    }
+
+    noteHighlightMeasurement(lane, sourceProxy, params, value) {
+      if (!(value > 0)) return;
+      this.lastHighlightMeasurement[lane] = {
+        identity: sourceProxy.identity,
+        tone: highlightToneSettings(params),
+        value,
+      };
+    }
+
+    /**
+     * The last real measurement for this lane, carried through the change in
+     * the tone stages the measurement applies (exposure, shadow lift,
+     * contrast): the measured value is taken back through the settings it was
+     * measured with and forward through the current ones, with the same maths
+     * as the reduction shader. The authored source peak never enters, so a
+     * change to it cannot move the carried anchor. A measurement at another
+     * source size is used when none exists at this one: a small mip reads its
+     * highlights slightly lower, which is still far closer than the estimate.
+     */
+    carriedHighlightAnchor(lane, sourceProxy, params) {
+      const last = this.lastHighlightMeasurement[lane];
+      if (!last) return null;
+      const session = (identity) => String(identity || "").split(":")[0];
+      if (session(last.identity) !== session(sourceProxy.identity)) return null;
+      const now = highlightToneSettings(params);
+      const source = invertHighlightTone(last.value, last.tone);
+      const carried = applyHighlightTone(source, now);
+      return Number.isFinite(carried) && carried > 0 ? carried : null;
+    }
+
+    /** Run a measurement a drag frame skipped; re-render if it moves the anchor. */
+    scheduleHighlightMeasurement(anchor, sourceProxy, params, lane, used) {
+      if (this.pendingHighlightKeys.has(anchor.key)) return this.pendingHighlightKeys.get(anchor.key);
+      const snapshot = new Float32Array(params);
+      const estimate = params[75];
+      const resourceGeneration = this.resourceGeneration;
+      const run = (this.pendingHighlightMeasurement || Promise.resolve()).then(async () => {
+        if (resourceGeneration !== this.resourceGeneration || !sourceProxy.texture) return;
+        const value = await this.measureToneAdjustedPeak(sourceProxy, snapshot, anchor.measurement, anchor.key, {
+          reference: Math.max(estimate, used || 0),
+        });
+        this.noteHighlightMeasurement(lane, sourceProxy, snapshot, value);
+        if (Math.abs(value / Math.max(used, 1e-9) - 1) > 0.005
+          && typeof window !== "undefined" && typeof CustomEvent !== "undefined") {
+          window.dispatchEvent(new CustomEvent("hdrfinisher:highlight-anchor-measured", {
+            detail: { lane, key: anchor.key, used, measured: value },
+          }));
+        }
+      }).catch(() => null).finally(() => {
+        if (this.pendingHighlightKeys.get(anchor.key) === run) this.pendingHighlightKeys.delete(anchor.key);
+      });
+      this.pendingHighlightKeys.set(anchor.key, run);
+      this.pendingHighlightMeasurement = run;
+      return run;
     }
 
     /** Upload the parameter and curve storage both routes read from. */
@@ -2399,9 +2521,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // its own peak and the seams would show.
       const anchor = this.highlightAnchorRequest(lane, adjustments, proxy, params);
       if (anchor) {
-        params[75] = anchor.cached !== undefined
-          ? anchor.cached
-          : await this.measureToneAdjustedPeak(proxy, params, anchor.measurement, anchor.key);
+        params[75] = await this.resolveHighlightAnchor(anchor, proxy, params, { interactive: false, lane });
       }
 
       const overlayIndex = maskOverlay?.localId
@@ -3522,13 +3642,12 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // after the reduction lands, rather than an await inside the render.
       const anchor = this.highlightAnchorRequest(lane, adjustments, sourceProxy, params);
       if (anchor) {
-        if (anchor.cached !== undefined) {
-          params[75] = anchor.cached;
-        } else if (sourceOptions?.tier !== "interactive") {
-          // Only Direct declines to await here: an interactive frame that
-          // stopped for a whole-image reduction would miss its deadline, and
-          // Tiled is never the interactive route.
-          params[75] = await this.measureToneAdjustedPeak(sourceProxy, params, anchor.measurement, anchor.key);
+        const interactive = sourceOptions?.tier === "interactive";
+        // An interactive frame that stopped for a whole-image reduction would
+        // miss its deadline, so it carries the last measurement instead and
+        // the skipped measurement runs afterwards.
+        params[75] = await this.resolveHighlightAnchor(anchor, sourceProxy, params, { interactive, lane });
+        if (!interactive && anchor.cached === undefined) {
           if (resourceGeneration !== this.resourceGeneration) return this.refuseRender("peak:resource-generation");
           if (serial !== this.renderSerials.get(canvas)) return this.refuseRender("peak:newer-render-started");
           if (sourceOptions?.isCurrent?.() === false) return this.refuseRender("peak:application-not-current");
@@ -4484,6 +4603,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         // The swap is the last thing that happens, and only on success. A
         // half-finished reconstruction can never become the presented result.
         selector.selected = "resolved";
+        selector.resolvedVersion = ++this.denoiseResolveVersion;
         selector.controls = {
           amount: weights[0],
           luminance: weights[1],
@@ -4588,6 +4708,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           byteSize,
         },
         selected: previous?.identity === original.identity ? previous.selected : "original",
+        resolvedVersion: ++this.denoiseResolveVersion,
         variant,
         generation,
       };
@@ -5329,13 +5450,26 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return pipeline;
     }
 
-    async measureToneAdjustedPeak(sourceProxy, params, measurement, cacheKey) {
+    async measureToneAdjustedPeak(sourceProxy, params, measurement, cacheKey, { reference = null } = {}) {
       const cached = this.peakReductionCache.get(cacheKey);
       if (cached !== undefined) return cached;
       const pipeline = await this.ensurePeakReductionPipeline();
-      return this.runPeakReduction(
+      const measure = () => this.runPeakReduction(
         pipeline, sourceProxy.texture, sourceProxy.width, sourceProxy.height, params, measurement, cacheKey,
       );
+      const first = await measure();
+      // A result far above anything this grade can plausibly produce is taken
+      // once more before it is trusted. The second result is used as measured:
+      // nothing is invented or clamped, so a genuinely extreme highlight still
+      // anchors the shoulder. (One such reading, cached, turned the owner's
+      // zoomed preview SDR-looking on 2026-09-25.)
+      if (reference > 0 && first > reference * HIGHLIGHT_ANCHOR_RECHECK_FACTOR) {
+        this.peakReductionCache.delete(cacheKey);
+        const second = await measure();
+        this.recordStage("highlight-anchor-recheck", { first, second, reference });
+        return second;
+      }
+      return first;
     }
 
     async runPeakReduction(pipeline, texture, width, height, params, measurement, cacheKey) {
@@ -6701,6 +6835,36 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
   function toneEqualizerNeutral(branch) {
     const nodes = branch?.tone_equalizer_nodes;
     return !Array.isArray(nodes) || nodes.every((node) => Math.abs(Number(node?.adjustment_ev) || 0) < 0.000001);
+  }
+
+  // The tone stages the highlight reduction applies before it takes the peak
+  // (peakTone in the reduction shader), for one neutral value. Carrying a
+  // measurement across a drag runs it back through the settings it was taken
+  // with and forward through the current ones.
+  function highlightToneSettings(params) {
+    return { exposure: params[2] || 0, lift: params[4] || 0, contrast: params[8] || 0, pivot: params[9] || 0.1845 };
+  }
+
+  function applyHighlightTone(value, tone) {
+    let rgb = value * Math.pow(2, tone.exposure);
+    if (tone.lift !== 0) rgb *= 1 + Math.min(tone.lift * (1 - Math.min(1, Math.max(0, rgb))), 1);
+    if (tone.contrast !== 0 && rgb > 0.00000001) {
+      const pivot = Math.max(tone.pivot, 0.000001);
+      const stops = Math.log2(rgb / pivot);
+      rgb = pivot * Math.pow(2, Math.min(32, Math.max(-32, stops * Math.pow(2, tone.contrast))));
+    }
+    return rgb;
+  }
+
+  function invertHighlightTone(value, tone) {
+    // Monotonic for every legal setting, so bisect in log space.
+    let low = -40;
+    let high = 40;
+    for (let step = 0; step < 80; step += 1) {
+      const middle = (low + high) / 2;
+      if (applyHighlightTone(2 ** middle, tone) < value) low = middle; else high = middle;
+    }
+    return 2 ** ((low + high) / 2);
   }
 
   function toneAdjustedHighlightPeakLinear(branch, toneEnabled, referenceWhiteNits) {

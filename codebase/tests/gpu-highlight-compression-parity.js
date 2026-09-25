@@ -119,13 +119,23 @@ function assert(condition, message) {
       renderer.peakReductionCache.clear();
       const originalMeasure = renderer.measureToneAdjustedPeak.bind(renderer);
       let reductions = 0;
+      let completedReductions = 0;
       renderer.measureToneAdjustedPeak = async (...args) => {
         reductions += 1;
-        return originalMeasure(...args);
+        try {
+          return await originalMeasure(...args);
+        } finally {
+          completedReductions += 1;
+        }
       };
+      // A drag frame never waits for the whole-image reduction: it returns
+      // before any measurement completes and defers the one it skipped. The
+      // settled frame then reuses that deferred measurement, so the pair
+      // costs exactly one reduction.
       const interactiveRendered = await renderGpuDraft("hdr", { longEdge: 512, tier: "interactive" });
-      const interactiveReductions = reductions;
+      const interactiveReductions = completedReductions;
       const settledRendered = await renderGpuDraft("hdr", { longEdge: 512, tier: "settled" });
+      await renderer.pendingHighlightMeasurement;
       const settledReductions = reductions;
 
       const low = await renderer.analyzeScope(els.previewCanvas, { width: 64, height: 32, tier: "settled" });
