@@ -257,3 +257,15 @@ Processed pixels per settled edit at 200–800% after P2: 42,389,760 (Direct, wh
 **Stability.** `tests/performance/highlight-anchor-stability.js` (real drags at 200%, Precise, Denoise off/on). Before: resting frame 1.03% off its own measurement with Denoise on (fixture), 0.35% (ARW). After: 0 error, no frame-to-frame anchor jumps, on both the fixture and the ARW.
 
 **Suites.** Node 234, Python 1370 passed / 3 skipped, frontend contract 101. Also passing: `gpu-highlight-compression-parity` (its reduction-count rule updated: the drag frame no longer waits, and drag + settle cost one reduction), `scope-exact-peak`, `export-parity`, `denoise-tiled-parity`, `roi-parity`, `budget-route`, `presentation-gate`.
+
+### 9.5 Black preview while "Ready" (fixed, `dfa98e9`)
+
+**Owner report.** The preview went black at 183% zoom, with Denoise previously used and now off. The navigator kept working and the app reported Ready.
+
+**Diagnosis (read-only, through the debug port).** The GPU device was healthy (not lost, probe OK), and video memory was 4.8 of 12 GB used. The canvas was correctly configured (HDR, 5320×7968, on screen), and the sharp-pixel style was ruled out by an A/B test. A validation scope around one redraw returned: "Destroyed texture [5320x7968 RGBA16Float] used in a submit". The denoise selector's `original` was an older proxy object than the live cache entry, and its texture had been freed; the allocator recorded 0 evictions, so it was a cache replacement, not LRU. With Denoise off, `selectedDenoiseSource` returned that freed copy, so every Direct submit was rejected and presented black. The app has no signal for a rejected submit, so it stayed Ready.
+
+**Fix.** The selector adopts the live copy whenever the renderer hands it one (same identity, same pixels), and reconstruction adopts the live cached copy before reading the original. Which exact path replaced the entry in the owner's session was not determined; the fix covers every path.
+
+**Tests.** A unit case in `highlight-anchor.test.js` fails before and passes after. `tests/performance/denoise-stale-source.js` reproduces the owner's exact validation error before and passes after, with Denoise off and on. `full-tier-denoise` now pins its Full row to Tiled (with the P2 budget, Full fits Direct and skipped the path it checks). **Pre-existing, not fixed:** `full-tier-denoise`'s "bypass does nothing" (0.22% of pixels differ, identical on `main`) and `denoise-selector-seam`'s telemetry timeout (identical without this change).
+
+**Open, suggested:** a rejected Direct submit should not leave the viewer claiming Ready. Detecting it (a validation scope on the presentation submit, as the Tiled route already does) would turn any future case like this into a visible retry instead of a silent black frame.
