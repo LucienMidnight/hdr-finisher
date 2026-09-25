@@ -1488,6 +1488,14 @@ body[data-active-lane="sdr"] .lane-dot {
   image-rendering: auto;
 }
 
+/* Above 100% zoom each source pixel is drawn as a sharp square. */
+#preview-canvas.pixel-magnified,
+#comparison-canvas.pixel-magnified,
+#preview-image.pixel-magnified,
+#comparison-image.pixel-magnified {
+  image-rendering: pixelated;
+}
+
 .viewport-frame.zoom-custom {
   overflow: auto;
   scrollbar-color: var(--border) var(--frame-color);
@@ -1790,6 +1798,29 @@ body[data-active-lane="sdr"] .lane-dot {
 
 .readout-block .section-kicker {
   margin-bottom: 8px;
+}
+
+/* P5 (Preview Responsiveness Tuning Sprint): Technical is a short readout that
+   fits the scopes panel at its minimum height; Diagnostics keeps every row. */
+.technical-summary {
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr) minmax(0, 1.15fr);
+}
+
+.technical-summary .readout-list {
+  gap: 4px 10px;
+}
+
+.technical-summary .readout-list dd {
+  overflow: hidden;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-faster-dragging {
+  align-items: flex-start !important;
+  color: var(--body);
+  line-height: 1.4;
 }
 
 .grade-rail {
@@ -5295,6 +5326,7 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 .shortcut-record.recording { border-color: var(--accent-strong); color: var(--text); box-shadow: 0 0 0 1px var(--accent); }
 .shortcut-empty { padding: 30px 8px; color: var(--muted); text-align: center; }
 .settings-update-toggle { margin: 22px 0 8px; }
+.settings-faster-dragging { max-width: 540px; margin: 22px 0 8px; color: var(--body); line-height: 1.4; }
 .settings-update-row { display: flex; margin-top: 20px; gap: 12px; align-items: center; }
 .settings-update-row span { color: var(--muted); }
 
@@ -5690,7 +5722,9 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 
 .slider-fill {
   top: var(--instrument-slider-track-top);
-  left: 0;
+  /* A two-sided fill starts at the slider's home, not the rail's left edge.
+     Every shell honours --fill-start whatever container it sits in. */
+  left: var(--fill-start, 0);
   width: var(--fill-w);
   height: var(--instrument-slider-track-h);
   border-radius: 999px;

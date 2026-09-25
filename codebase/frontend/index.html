@@ -293,18 +293,14 @@
               <span>Preview</span>
               <button id="preview-close" class="text-button" type="button">Close</button>
             </div>
-            <label for="preview-latency">Preview response
-              <select id="preview-latency" aria-label="Preview response" title="Controls interaction speed; every coarse frame refines to the exact displayed view. Export quality is unchanged.">
-                <option value="responsive">Responsive · 33 ms target</option>
-                <option value="balanced" selected>Balanced · 66 ms target</option>
-                <option value="precise">Precise · exact first</option>
-              </select>
+            <label class="checkbox-row preview-faster-dragging" for="preview-faster-dragging" title="For slower computers: shows a softer image while you drag, sharp again when you let go. Exports are unaffected.">
+              <input id="preview-faster-dragging" type="checkbox">
+              <span>Faster dragging</span>
             </label>
             <div class="preview-popover-status">
               <span>Current preview size</span>
               <strong id="preview-quality-status" aria-live="polite">Standard</strong>
             </div>
-            <p class="helper">Coarse means a current edit at reduced scale. It always refines to Display exact at Fit or Native-region exact at 100% and above. Export quality is unchanged.</p>
             <div id="preview-migration-notice" class="hidden" role="status">
               Preview now follows the displayed view. Your previous preview size was moved to diagnostics; export quality is unchanged.
               <button id="preview-migration-dismiss" type="button" class="text-button">Got it</button>
@@ -484,6 +480,7 @@
               <option value="waveform">Waveform</option>
               <option value="vectorscope">Vectorscope</option>
               <option value="technical">Technical</option>
+              <option value="diagnostics">Diagnostics</option>
             </select>
             <select id="scope-channel-mode" class="scope-mode-select" aria-label="Scope channels">
               <option value="composite">Composite</option>
@@ -533,18 +530,34 @@
           </div>
         </div>
 
-        <div id="technical-view" class="dock-content technical-layout hidden">
-          <div class="readout-block">
-            <p class="section-kicker">Output</p>
-            <dl id="preview-output-list" class="readout-list"></dl>
+        <div id="technical-view" class="dock-content hidden">
+          <div id="technical-summary" class="technical-layout technical-summary">
+            <div class="readout-block">
+              <p class="section-kicker">Preview</p>
+              <dl id="technical-preview-list" class="readout-list"></dl>
+            </div>
+            <div class="readout-block">
+              <p class="section-kicker">Display</p>
+              <dl id="technical-display-list" class="readout-list"></dl>
+            </div>
+            <div class="readout-block">
+              <p class="section-kicker">Source</p>
+              <dl id="technical-source-list" class="readout-list"></dl>
+            </div>
           </div>
-          <div class="readout-block">
-            <p class="section-kicker">Display probe</p>
-            <dl id="display-info-list" class="readout-list"></dl>
-          </div>
-          <div class="readout-block">
-            <p class="section-kicker">Interpretation</p>
-            <dl id="source-preview-list" class="readout-list"></dl>
+          <div id="technical-diagnostics" class="technical-layout hidden">
+            <div class="readout-block">
+              <p class="section-kicker">Output</p>
+              <dl id="preview-output-list" class="readout-list"></dl>
+            </div>
+            <div class="readout-block">
+              <p class="section-kicker">Display probe</p>
+              <dl id="display-info-list" class="readout-list"></dl>
+            </div>
+            <div class="readout-block">
+              <p class="section-kicker">Interpretation</p>
+              <dl id="source-preview-list" class="readout-list"></dl>
+            </div>
           </div>
         </div>
       </section>
@@ -1617,6 +1630,7 @@
         <button type="button" data-settings-tab="locations" aria-selected="false">Locations</button>
         <button type="button" data-settings-tab="shortcuts" aria-selected="false">Shortcuts</button>
         <button type="button" data-settings-tab="updates" aria-selected="false">Updates</button>
+        <button type="button" data-settings-tab="diagnostics" aria-selected="false">Diagnostics</button>
       </nav>
       <div class="settings-content">
         <section data-settings-panel="general">
@@ -1637,17 +1651,11 @@
             </select>
           </label>
           <p class="helper">Auto uses WebGPU when available and falls back safely. CPU compatibility keeps preview rendering on the backend; export quality is unchanged.</p>
-          <label class="settings-field">Preview response
-            <select id="settings-preview-preference">
-              <option value="responsive">Responsive</option>
-              <option value="balanced">Balanced</option>
-              <option value="precise">Precise</option>
-            </select>
-          </label>
-          <p class="helper">Responsive aims for 33 ms feedback, Balanced for 66 ms, and Precise starts exact with a 150 ms target. Coarse frames are labelled and always refine. Display exact follows the screen; Native-region exact samples source pixels at 100% zoom and above. Exact analysis is separate from the visible preview. Export quality is unchanged.</p>
+          <label class="checkbox-row settings-faster-dragging" title="For slower computers: shows a softer image while you drag, sharp again when you let go. Exports are unaffected."><input id="settings-faster-dragging" type="checkbox"> Faster dragging</label>
+          <p class="helper">Off (recommended): the preview shows full detail at every moment, including while you drag a slider or zoom. Turn this on only if dragging feels jerky on your computer: while you drag, the image may look softer, and it sharpens as soon as you let go. Exports, peak readings and delivery checks are never affected.</p>
           <label class="settings-field">Maximum GPU memory for previews
             <select id="settings-gpu-memory-limit">
-              <option value="auto">Auto · 2 GiB initial budget</option>
+              <option value="auto">Auto · up to half of your graphics card's memory</option>
               <option value="1">1 GiB</option>
               <option value="2">2 GiB</option>
               <option value="3">3 GiB</option>
@@ -1661,32 +1669,7 @@
           <label id="settings-gpu-memory-custom-field" class="settings-field hidden">Custom GPU memory budget (GiB)
             <input id="settings-gpu-memory-custom" type="number" min="0.25" max="64" step="0.25" inputmode="decimal" value="2">
           </label>
-          <p class="helper">This is an application allocation budget, not detected physical VRAM. It controls Direct versus Tiled preview execution and cache eviction; it never removes a resolution choice.</p>
-          <label class="settings-field">Preview execution
-            <select id="settings-execution-override" title="Diagnostic. Auto lets the memory budget decide. Forcing Tiled always works. Forcing Direct is ignored when the budget cannot hold a whole-frame render, because a diagnostic switch must not override the memory guard.">
-              <option value="auto">Auto · the budget decides</option>
-              <option value="direct">Force Direct</option>
-              <option value="tiled">Force Tiled</option>
-            </select>
-          </label>
-          <p class="helper">Diagnostic, for comparing the two execution routes on the same grade. Direct and Tiled are required to produce identical pixels, so any visible difference between them is a defect worth reporting. Forcing Direct is refused when the budget cannot hold it, and the Output readout says which route actually ran.</p>
-          <label class="settings-field">Legacy tier override · diagnostic
-            <select id="settings-preview-resolution">
-              <option value="auto">Off · display driven</option>
-              <option value="1024">1K</option>
-              <option value="2048">2K</option>
-              <option value="4096">4K</option>
-              <option value="full">Full</option>
-            </select>
-          </label>
-          <p class="helper">For parity and memory diagnosis only. The previous tier choice is retained in preference migration diagnostics.</p>
-          <label class="settings-field">Region of interest
-            <select id="settings-roi-preview" title="When enabled, only the refinement pass is limited to the visible region: the tiles you can see are refined at full tier quality and the rest of the frame keeps the accepted image. Pan and zoom are never limited, so a newly exposed region always has complete pixels.">
-              <option value="fit">Whole frame · refinement processes every tile</option>
-              <option value="refinement">Visible region · refinement processes what you see</option>
-            </select>
-          </label>
-          <p class="helper">Experimental. The refinement pass is the expensive one at large tiers, so limiting it to the visible region is where the time goes. The rest of the frame keeps the accepted image until you pan to it, so if a newly exposed region looks one edit behind, switch this back to Whole frame and report it.</p>
+          <p class="helper">How much of your graphics card the preview may use. Auto uses up to half of the card's own memory, or 2 GiB when the card's memory can't be read. More memory lets the preview process the whole image in one fast pass. Choose a lower limit if you run other graphics-heavy apps at the same time. Export is unaffected.</p>
         </section>
         <section data-settings-panel="appearance" hidden>
           <h3>Appearance</h3>
@@ -1709,6 +1692,35 @@
           </div>
           <div class="shortcut-list-header" aria-hidden="true"><span>Command</span><span>Shortcut</span><span></span></div>
           <div id="shortcut-list" class="shortcut-list"></div>
+        </section>
+        <section data-settings-panel="diagnostics" hidden>
+          <h3>Diagnostics</h3>
+          <p class="helper">For troubleshooting and for comparing results. You don't need to change anything here for normal work, and none of it affects exports.</p>
+          <label class="settings-field">Preview execution
+            <select id="settings-execution-override" title="Diagnostic. Auto lets the memory budget decide. Forcing Tiled always works. Forcing Direct is ignored when the budget cannot hold a whole-frame render, because a diagnostic switch must not override the memory guard.">
+              <option value="auto">Auto · the budget decides</option>
+              <option value="direct">Force Direct</option>
+              <option value="tiled">Force Tiled</option>
+            </select>
+          </label>
+          <p class="helper">How the preview is processed: the whole image in one pass (Direct) or in tiles (Tiled). Auto picks Direct whenever the memory setting allows it. Both must look identical, so forcing one is only for checking that; if you ever see a difference, please report it. Direct is refused when there isn't enough memory for it, and the Diagnostics scope says which one actually ran.</p>
+          <label class="settings-field">Legacy tier override · diagnostic
+            <select id="settings-preview-resolution">
+              <option value="auto">Off · display driven</option>
+              <option value="1024">1K</option>
+              <option value="2048">2K</option>
+              <option value="4096">4K</option>
+              <option value="full">Full</option>
+            </select>
+          </label>
+          <p class="helper">Forces an older fixed preview size instead of following your screen. For troubleshooting only; leave it Off.</p>
+          <label class="settings-field">Region of interest
+            <select id="settings-roi-preview" title="When enabled, only the refinement pass is limited to the visible region: the tiles you can see are refined at full tier quality and the rest of the frame keeps the accepted image. Pan and zoom are never limited, so a newly exposed region always has complete pixels.">
+              <option value="fit">Whole frame · refinement processes every tile</option>
+              <option value="refinement">Visible region · refinement processes what you see</option>
+            </select>
+          </label>
+          <p class="helper">Only matters when the preview is processed in tiles (a low memory setting or a very large image). Visible region finishes the part of the image you can see first and catches up the rest when you pan to it. If an area you pan to ever looks one edit behind, switch back to Whole frame and report it.</p>
         </section>
         <section data-settings-panel="updates" hidden>
           <h3>Application updates</h3>

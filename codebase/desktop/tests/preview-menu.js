@@ -26,7 +26,9 @@ const { _electron: electron } = require("playwright");
     }
     await page.waitForFunction(() => Boolean(state.acceptedPresentation), null, { timeout: 60000 });
     const timings = [];
-    for (const value of ["precise", "responsive", "balanced", "precise", "responsive"]) {
+    // P5: the Preview response menu became one checkbox. The check is still
+    // that the control reacts at once to a real click while previews refine.
+    for (const value of [false, true, false, true, false]) {
       if (await page.locator("#preview-popover").isVisible()) await page.locator("#preview-close").click();
       await page.locator("#zoom-fit").click();
       const image = await page.evaluate(() => { const rect = activePreviewElement().getBoundingClientRect(); return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }; });
@@ -41,15 +43,12 @@ const { _electron: electron } = require("playwright");
       await page.mouse.up();
       if (!await page.locator("#preview-popover").isVisible()) await page.locator("#preview-toggle").click();
       const started = Date.now();
-      // selectOption bypasses the native dropdown. Exercise the real click,
-      // popup, keyboard selection, and change event while previews refine.
-      await page.locator("#preview-latency").click();
-      await page.waitForFunction(() => document.querySelector("#preview-latency").matches(":open"), null, { timeout: 3000 });
+      // A real click and change event, not a scripted value.
+      if (await page.locator("#preview-faster-dragging").isChecked() !== value) {
+        await page.locator("#preview-faster-dragging").click();
+      }
+      await page.waitForFunction((expected) => state.fasterDragging === expected, value, { timeout: 3000 });
       timings.push(Date.now() - started);
-      await page.keyboard.press("Home");
-      for (let index = 0; index < ["responsive", "balanced", "precise"].indexOf(value); index++) await page.keyboard.press("ArrowDown");
-      await page.keyboard.press("Enter");
-      await page.waitForFunction((expected) => state.previewLatencyPreference === expected, value);
       assert.equal(await page.locator("#preview-popover").isVisible(), true);
       try {
         await page.waitForFunction(() => {
@@ -61,7 +60,7 @@ const { _electron: electron } = require("playwright");
         }, null, { timeout: 30000 });
       } finally {
         console.log(JSON.stringify(await page.evaluate(() => ({
-          response: state.previewLatencyPreference, accepted: state.acceptedPresentation,
+          fasterDragging: state.fasterDragging, accepted: state.acceptedPresentation,
           target: previewTargetLongEdge(), quality: els.previewQualityStatus.textContent,
           generation: state.previewGeneration, geometryDraft: geometryDraftActive(),
           scheduler: { current: state.previewScheduler.current, interacting: state.previewScheduler.interacting,
@@ -71,7 +70,7 @@ const { _electron: electron } = require("playwright");
         }))));
       }
     }
-    console.log(JSON.stringify({ result: "passed", popupOpenMilliseconds: timings,
+    console.log(JSON.stringify({ result: "passed", toggleMilliseconds: timings,
       rendering: await page.evaluate(() => ({ mode: state.renderingMode, gpuAvailable: Boolean(state.gpuPreview?.available) })) }));
   } finally {
     // This isolated profile contains only the fixture loaded by this test.

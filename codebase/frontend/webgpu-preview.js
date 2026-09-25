@@ -516,6 +516,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
    * same decision, which is what the Phase 2 exit gate requires.
    */
   const DEFAULT_TILE_SIZE = 512;
+  // A highlight measurement this many times the estimate (or the carried last
+  // measurement) is measured once more before it is trusted.
+  const HIGHLIGHT_ANCHOR_RECHECK_FACTOR = 8;
   // Phase 5 item 3: bounded staging ring for source streaming. Four 16 MiB
   // chunks keep the staging bound unchanged while overlapping fetches with
   // copies and draining the queue once per stream instead of once per chunk.
@@ -671,6 +674,12 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     const spatialActive = options.spatialActive !== false;
     const denoiseLevels = Math.max(0, Math.min(4, Math.floor(Number(options.denoiseLevels ?? 0) || 0)));
     const cachedProxyLevels = Math.max(1, Math.floor(Number(options.cachedProxyLevels ?? 1) || 1));
+    // The live planner knows what each resident source level really occupies.
+    // Charging the current frame's size once per cached level counted a 1024
+    // px mip as if it were native, so a 42 MP render was charged 2.37 GB for
+    // 339 MB of source (Preview Responsiveness Tuning Sprint P2).
+    const residentSourceBytes = Number.isFinite(Number(options.sourceProxyBytes))
+      ? Math.max(0, Number(options.sourceProxyBytes)) : null;
     const maskCount = Math.max(0, Math.floor(Number(options.maskCount) || 0));
     const booleanMaskPasses = Math.max(0, Math.floor(Number(options.booleanMaskPasses) || 0));
     const sceneLuminanceEntries = Math.max(0, Math.floor(Number(options.sceneLuminanceEntries) || 0));
@@ -688,8 +697,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       if (bytes > 0) entries.push({ id, category, lifetime, bytes, ...detail });
     };
 
-    add("source-proxy", "source", "cached", pixels * sourceBytesPerPixel * cachedProxyLevels,
-      { levels: cachedProxyLevels, bytesPerPixel: sourceBytesPerPixel });
+    add("source-proxy", "source", "cached", residentSourceBytes ?? pixels * sourceBytesPerPixel * cachedProxyLevels,
+      { levels: cachedProxyLevels, bytesPerPixel: sourceBytesPerPixel, measured: residentSourceBytes !== null });
     add("grading-core", "grading", "resident", pixels * 8 * 4, { textures: 4 });
     if (detailActive) add("grading-detail", "detail", "resident", pixels * 8 * 2, { textures: 2 });
     if (spatialActive) add("spatial-film", "spatial", "resident", spatialPixels * 8 * 2, { textures: 2 });
@@ -975,11 +984,28 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.scopePeakTargets = [];
       this.peakReductionPipeline = null;
       this.peakReductionCache = new Map();
+      // The last real highlight measurement per lane, with the estimate it was
+      // taken against, so a drag frame can carry it instead of the estimate.
+      this.lastHighlightMeasurement = { hdr: null, sdr: null };
+      this.pendingHighlightMeasurement = null;
+      // In-flight measurements by cache key, so a settled frame reuses the one
+      // a drag frame deferred instead of running the same reduction twice.
+      this.pendingHighlightKeys = new Map();
+      this.denoiseResolveVersion = 0;
       this.bindGroupLayout = null;
       this.pipelineLayout = null;
       this.maskBindGroupLayout = null;
       this.maskPipelineLayout = null;
       this.maskPipelines = null;
+      // Mask radii are fractions of the uncropped source's long edge (as in
+      // the backend, which builds masks in source space and then crops). A
+      // mask here is drawn in the cropped, straightened frame, so the app
+      // supplies source long edge / frame long edge for a geometry signature.
+      this.featherReferenceScale = null;
+      // Masks a render uses are never trimmed from the cache by that render:
+      // at native size one feathered luma mask exceeds the cache budget on its
+      // own, and trimming it rebuilt the mask on every drag frame (P7).
+      this.maskUseSerial = 0;
       this.gpuAnalyticMasksEnabled = true;
       this.instrumentationEnabled = false;
       this.performanceMetrics = { renders: [], scopes: [], maskEvents: [], stages: [], allocations: [], presentations: [] };
@@ -1071,14 +1097,26 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
 
     memoryBudgetBytes() {
       const normalized = normalizeGpuBudgetBytes(this.memoryBudget);
-      // Phase 5 item 2: an explicit setting is the user's number and stands.
-      // Auto uses the calibrated budget when calibration exists, and can only
-      // be lowered by it -- the policy value is the ceiling until item 6's
-      // failure recovery passes (PRD 5.7).
+      // An explicit setting is the user's number and stands, higher or lower
+      // than Auto. Auto is the calibrated budget: half of the detected
+      // dedicated video memory, or the stated fallback, lowered by verified
+      // adapter facts and the allocation probe.
       if (this.memoryBudget === "auto" && this.gpuBudget?.budgetBytes > 0) {
-        return Math.min(normalized, this.gpuBudget.budgetBytes);
+        return this.gpuBudget.budgetBytes;
       }
       return normalized;
+    }
+
+    /**
+     * The desktop shell's reading of the active adapter's dedicated video
+     * memory, or null when it could not tell. Auto recalibrates from it.
+     */
+    setDetectedVideoMemory(info) {
+      this.detectedVideoMemory = Number(info?.bytes) > 0
+        ? { bytes: Number(info.bytes), device: info.device || null, source: info.source || null }
+        : null;
+      if (this.device || this.adapterInfo) this.calibrateGpuBudget();
+      return this.detectedVideoMemory;
     }
 
     /**
@@ -1092,6 +1130,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       if (!Budget) return null;
       this.gpuBudget = Budget.calibrate({
         policyBytes: GPU_BUDGET_AUTO_BYTES,
+        detectedVideoMemory: this.detectedVideoMemory || null,
         adapterInfo: this.adapterInfo,
         limits: this.adapterInfo?.limits || snapshotDeviceLimits(this.device?.limits),
         probe: (bytes) => this.probeGpuAllocation(bytes),
@@ -1260,17 +1299,24 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       );
       const parameterBufferBytes = (this.paramBuffer?.size || 0) + (this.curveBuffer?.size || 0)
         + [...this.localParamBuffers.values()].reduce((sum, buffer) => sum + (buffer.size || 0), 0);
+      // Resident source levels at their real size, plus a whole-frame source
+      // this render is about to load (a region proxy that Direct replaces).
+      const residentProxyBytes = [...this.proxies.values()].reduce((sum, proxy) => sum + (proxy.byteSize || 0), 0);
+      const pendingSourceBytes = Math.max(0, Number(options.pendingSourceBytes) || 0);
       const plan = buildRenderPlan({
         width,
         height,
         denoiseLevels,
         cachedProxyLevels: Math.max(1, this.proxies.size),
+        sourceProxyBytes: residentProxyBytes + pendingSourceBytes,
         maskCount: [...this.localMasks.values()].filter((mask) => mask.kind !== "gpu-mask-graph").length,
         booleanMaskPasses: [...this.localMasks.values()].filter((mask) => mask.kind === "gpu-mask-graph").length,
         sceneLuminanceEntries: this.sceneLuminance.size,
         scopeBytes,
         parameterBufferBytes,
-        budget: this.memoryBudget,
+        // In GiB, the unit the planner takes: the calibrated Auto or the
+        // user's limit, never the bare "auto" fallback.
+        budget: this.memoryBudgetBytes() / (1024 * 1024 * 1024),
         // Bounded transport means staging is one chunk, not one image.
         stagingBytes: this.maxSourceChunkBytes,
         limits: this.adapterInfo?.limits || snapshotDeviceLimits(this.device?.limits),
@@ -1279,6 +1325,41 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       });
       this.lastRenderPlan = plan;
       return plan;
+    }
+
+    /**
+     * Drop source levels this lane can no longer use -- another session, an
+     * earlier geometry or source identity, or a region fetched for an earlier
+     * viewport -- so admission charges only what is worth keeping. Levels at
+     * other long edges of the current source stay: a zoom back reuses them,
+     * and the allocator's LRU owns their eviction under pressure.
+     */
+    evictStaleProxies({ sessionId, lane, geometrySignature, sourceIdentity, keep = null } = {}) {
+      let evicted = 0;
+      const protectedProxy = this.denoiseSourceSelector?.original || null;
+      for (const [key, proxy] of [...this.proxies.entries()]) {
+        if (key === keep || proxy === protectedProxy) continue;
+        const otherSession = proxy.sessionId !== sessionId;
+        const sameLane = proxy.lane === lane;
+        const outdated = sameLane && (proxy.geometrySignature !== geometrySignature
+          || proxy.sourceIdentity !== sourceIdentity);
+        const oldRegion = sameLane && String(proxy.identity || key).includes(":region:");
+        if (!otherSession && !outdated && !oldRegion) continue;
+        this.evictGpuCacheEntry("source-proxy", key);
+        evicted += 1;
+      }
+      return evicted;
+    }
+
+    /**
+     * The execution override a render carries into admission. Only the
+     * diagnostic Execution setting forces a route. A region (viewport) request
+     * used to be forced to Tiled even when Direct was admitted; it now goes
+     * through ordinary admission, Direct when it fits and Tiled only when
+     * refused (Preview Responsiveness Tuning Sprint P2).
+     */
+    executionOverrideFor(sourceOptions = null) {
+      return this.executionOverride || null;
     }
 
     admitDirect(width, height, options = {}) {
@@ -1310,7 +1391,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         parameterBufferBytes: 0,
         stagingBytes: this.maxSourceChunkBytes,
         retainedPresentation: true,
-        budget: this.memoryBudget,
+        // In GiB, the unit the planner takes: the calibrated Auto or the
+        // user's limit, never the bare "auto" fallback.
+        budget: this.memoryBudgetBytes() / (1024 * 1024 * 1024),
         limits: this.adapterInfo?.limits || snapshotDeviceLimits(this.device?.limits),
         allocationBackoff: this.allocationBackoff?.reason || null,
         tier,
@@ -1409,6 +1492,8 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           sceneLuminance: this.createMaskPipeline("sceneLuminanceFragmentMain"),
           qualify: this.createMaskPipeline("lumaQualificationFragmentMain"),
           refine: this.createMaskPipeline("maskRefinementFragmentMain"),
+          downsample: this.createMaskPipeline("maskDownsampleFragmentMain"),
+          upsample: this.createMaskPipeline("maskUpsampleFragmentMain"),
           combine: this.createMaskPipeline("maskCombineFragmentMain"),
           linearGradient: this.createMaskPipeline("linearGradientFragmentMain"),
         };
@@ -1925,11 +2010,122 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const measures = (lane === "hdr" || params[159] > 0.5) && params[74] === 1 && measurement !== "manual";
       if (!measures) return null;
       const key = JSON.stringify([
-        proxy.identity, lane, params[1], params[159], measurement,
+        proxy.identity, this.highlightSourceToken(proxy), lane, params[1], params[159], measurement,
         params[2], params[4], params[8], params[9], params[110],
         ...params.slice(10, 12), ...params.slice(61, 73),
       ]);
       return { measurement, key, cached: this.peakReductionCache.get(key) };
+    }
+
+    /**
+     * Which pixels a highlight measurement was taken on. The original source
+     * and each denoise reconstruction share the proxy identity, so without this
+     * a measurement taken with Denoise off was reused with it on, and one taken
+     * on an earlier reconstruction was reused for the next.
+     */
+    highlightSourceToken(proxy) {
+      const selector = this.denoiseSourceSelector;
+      if (selector?.resolved && proxy === selector.resolved) return `denoise:${selector.resolvedVersion ?? 0}`;
+      return "original";
+    }
+
+    /**
+     * The Peak fit shoulder anchor for one render (params[75] arrives holding
+     * the rough estimate from the authored source peak).
+     *
+     * This anchor only shapes the shoulder. The delivery ceiling is a separate
+     * per-channel clip at the target in the same shader, which never reads it,
+     * so no value here can let output exceed the target. What a bad value can
+     * do is change the picture: far too high and the shoulder squeezes the
+     * image into SDR range (the 2026-09-25 owner report).
+     *
+     *   cached     a real measurement for exactly this source and grade.
+     *   settled    measure now; a result far above anything plausible is
+     *              measured once more and the second result is used as is.
+     *   drag       never wait for a whole-image reduction. Carry the last real
+     *              measurement, scaled by how the estimate moved, so the
+     *              shoulder does not jump between frames; then run the skipped
+     *              measurement and ask for a re-render if it differs.
+     */
+    async resolveHighlightAnchor(anchor, sourceProxy, params, { interactive = false, lane = "hdr" } = {}) {
+      const estimate = params[75];
+      if (anchor.cached !== undefined) {
+        this.noteHighlightMeasurement(lane, sourceProxy, params, anchor.cached);
+        return anchor.cached;
+      }
+      const carried = this.carriedHighlightAnchor(lane, sourceProxy, params);
+      const inFlight = this.pendingHighlightKeys.get(anchor.key);
+      if (!interactive && inFlight) {
+        await inFlight;
+        const measured = this.peakReductionCache.get(anchor.key);
+        if (measured !== undefined) return measured;
+      }
+      if (interactive) {
+        const used = carried ?? estimate;
+        this.scheduleHighlightMeasurement(anchor, sourceProxy, params, lane, used);
+        return used;
+      }
+      const value = await this.measureToneAdjustedPeak(sourceProxy, params, anchor.measurement, anchor.key, {
+        reference: Math.max(estimate, carried ?? 0),
+      });
+      this.noteHighlightMeasurement(lane, sourceProxy, params, value);
+      return value;
+    }
+
+    noteHighlightMeasurement(lane, sourceProxy, params, value) {
+      if (!(value > 0)) return;
+      this.lastHighlightMeasurement[lane] = {
+        identity: sourceProxy.identity,
+        tone: highlightToneSettings(params),
+        value,
+      };
+    }
+
+    /**
+     * The last real measurement for this lane, carried through the change in
+     * the tone stages the measurement applies (exposure, shadow lift,
+     * contrast): the measured value is taken back through the settings it was
+     * measured with and forward through the current ones, with the same maths
+     * as the reduction shader. The authored source peak never enters, so a
+     * change to it cannot move the carried anchor. A measurement at another
+     * source size is used when none exists at this one: a small mip reads its
+     * highlights slightly lower, which is still far closer than the estimate.
+     */
+    carriedHighlightAnchor(lane, sourceProxy, params) {
+      const last = this.lastHighlightMeasurement[lane];
+      if (!last) return null;
+      const session = (identity) => String(identity || "").split(":")[0];
+      if (session(last.identity) !== session(sourceProxy.identity)) return null;
+      const now = highlightToneSettings(params);
+      const source = invertHighlightTone(last.value, last.tone);
+      const carried = applyHighlightTone(source, now);
+      return Number.isFinite(carried) && carried > 0 ? carried : null;
+    }
+
+    /** Run a measurement a drag frame skipped; re-render if it moves the anchor. */
+    scheduleHighlightMeasurement(anchor, sourceProxy, params, lane, used) {
+      if (this.pendingHighlightKeys.has(anchor.key)) return this.pendingHighlightKeys.get(anchor.key);
+      const snapshot = new Float32Array(params);
+      const estimate = params[75];
+      const resourceGeneration = this.resourceGeneration;
+      const run = (this.pendingHighlightMeasurement || Promise.resolve()).then(async () => {
+        if (resourceGeneration !== this.resourceGeneration || !sourceProxy.texture) return;
+        const value = await this.measureToneAdjustedPeak(sourceProxy, snapshot, anchor.measurement, anchor.key, {
+          reference: Math.max(estimate, used || 0),
+        });
+        this.noteHighlightMeasurement(lane, sourceProxy, snapshot, value);
+        if (Math.abs(value / Math.max(used, 1e-9) - 1) > 0.005
+          && typeof window !== "undefined" && typeof CustomEvent !== "undefined") {
+          window.dispatchEvent(new CustomEvent("hdrfinisher:highlight-anchor-measured", {
+            detail: { lane, key: anchor.key, used, measured: value },
+          }));
+        }
+      }).catch(() => null).finally(() => {
+        if (this.pendingHighlightKeys.get(anchor.key) === run) this.pendingHighlightKeys.delete(anchor.key);
+      });
+      this.pendingHighlightKeys.set(anchor.key, run);
+      this.pendingHighlightMeasurement = run;
+      return run;
     }
 
     /** Upload the parameter and curve storage both routes read from. */
@@ -2336,9 +2532,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // its own peak and the seams would show.
       const anchor = this.highlightAnchorRequest(lane, adjustments, proxy, params);
       if (anchor) {
-        params[75] = anchor.cached !== undefined
-          ? anchor.cached
-          : await this.measureToneAdjustedPeak(proxy, params, anchor.measurement, anchor.key);
+        params[75] = await this.resolveHighlightAnchor(anchor, proxy, params, { interactive: false, lane });
       }
 
       const overlayIndex = maskOverlay?.localId
@@ -3410,8 +3604,14 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const localDetailActive = activeLocals.some((local) => gpuLocalDetailActive(local[`${lane}_grade`]));
       // Admission runs against the graph this render is about to build, so the
       // plan and the decision describe real work rather than a generic guess.
+      // Stale levels leave before admission, so the plan charges what the
+      // device will actually hold for this render.
+      this.evictStaleProxies({ sessionId, lane, geometrySignature, sourceIdentity, keep: proxy.identity });
       const plan = this.planRender(proxy.width, proxy.height, {
-        executionOverride: sourceOptions?.viewport ? "tiled" : (this.executionOverride || null),
+        executionOverride: this.executionOverrideFor(sourceOptions),
+        // A region proxy covers only the visible area; if Direct is admitted
+        // the whole frame is loaded below, so admission charges it now.
+        pendingSourceBytes: proxy.region ? proxy.width * proxy.height * (proxy.pixelFormat === "rgba16float" ? 8 : 16) : 0,
         detailActive: detailActive || localDetailActive,
         spatialActive,
         // Without this the tiled model sizes its working set to a bare tile
@@ -3422,11 +3622,9 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         sourceBytesPerPixel: proxy.pixelFormat === "rgba16float" ? 8 : 16,
         tier: sourceOptions?.tier ?? null,
       });
-      // A region source belongs to the tiled route. A viewport request also
-      // needs that route even when Direct would fit: Direct executes every
-      // active node over the whole frame and cannot honour the ROI contract.
-      // The whole-frame fallback below still protects a diagnostic region
-      // request if an execution policy changes in the future.
+      // A region source belongs to the tiled route. When admission chooses
+      // Direct for a viewport request, Direct executes every active node over
+      // the whole frame, so it needs the whole-frame source: load it here.
       if (proxy.region && plan.decision.mode !== "tiled") {
         const whole = await this.loadProxy(
           sessionId,
@@ -3455,13 +3653,12 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // after the reduction lands, rather than an await inside the render.
       const anchor = this.highlightAnchorRequest(lane, adjustments, sourceProxy, params);
       if (anchor) {
-        if (anchor.cached !== undefined) {
-          params[75] = anchor.cached;
-        } else if (sourceOptions?.tier !== "interactive") {
-          // Only Direct declines to await here: an interactive frame that
-          // stopped for a whole-image reduction would miss its deadline, and
-          // Tiled is never the interactive route.
-          params[75] = await this.measureToneAdjustedPeak(sourceProxy, params, anchor.measurement, anchor.key);
+        const interactive = sourceOptions?.tier === "interactive";
+        // An interactive frame that stopped for a whole-image reduction would
+        // miss its deadline, so it carries the last measurement instead and
+        // the skipped measurement runs afterwards.
+        params[75] = await this.resolveHighlightAnchor(anchor, sourceProxy, params, { interactive, lane });
+        if (!interactive && anchor.cached === undefined) {
           if (resourceGeneration !== this.resourceGeneration) return this.refuseRender("peak:resource-generation");
           if (serial !== this.renderSerials.get(canvas)) return this.refuseRender("peak:newer-render-started");
           if (sourceOptions?.isCurrent?.() === false) return this.refuseRender("peak:application-not-current");
@@ -3479,6 +3676,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // accepted presentation at all, which strands the geometry handoff. Tiled
       // skips this entirely: it carries bounded per-tile masks instead.
       if (plan.decision.mode !== "tiled") {
+        this.maskUseSerial += 1;
         masks = await Promise.all(activeLocals.map((local) => this.loadLocalMask(
           sessionId,
           local,
@@ -4001,8 +4199,13 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       if (!selector || selector.identity !== originalProxy.identity) {
         return originalProxy;
       }
+      // The source cache can replace this identity's copy and free the old
+      // texture (a same-key reload, or eviction and reload). The pixels are the
+      // same, so the selector adopts the live copy; holding the old one made
+      // every Denoise-off frame sample a freed texture and present black.
+      if (selector.original !== originalProxy) selector.original = originalProxy;
       if (selector.selected === "resolved" && selector.resolved) return selector.resolved;
-      return selector.original;
+      return originalProxy;
     }
 
     async ensureDenoisePipelines() {
@@ -4256,6 +4459,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
     async resolveDenoiseProxy(controls = {}, { region = null, destination = null, encoder: sharedEncoder = null } = {}) {
       const selector = this.denoiseSourceSelector;
       if (!selector?.cache || !selector.original) return false;
+      // Reconstruction reads the original's pixels; adopt the live copy if the
+      // source cache has replaced (and freed) the one the selector holds.
+      const live = this.proxies.get(selector.identity);
+      if (live && live !== selector.original) selector.original = live;
       const generation = ++this.denoiseSelectorGeneration;
       const startedAt = performance.now();
       this.denoiseCounters.resolveCalls += 1;
@@ -4417,6 +4624,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         // The swap is the last thing that happens, and only on success. A
         // half-finished reconstruction can never become the presented result.
         selector.selected = "resolved";
+        selector.resolvedVersion = ++this.denoiseResolveVersion;
         selector.controls = {
           amount: weights[0],
           luminance: weights[1],
@@ -4521,6 +4729,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
           byteSize,
         },
         selected: previous?.identity === original.identity ? previous.selected : "original",
+        resolvedVersion: ++this.denoiseResolveVersion,
         variant,
         generation,
       };
@@ -5262,13 +5471,26 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return pipeline;
     }
 
-    async measureToneAdjustedPeak(sourceProxy, params, measurement, cacheKey) {
+    async measureToneAdjustedPeak(sourceProxy, params, measurement, cacheKey, { reference = null } = {}) {
       const cached = this.peakReductionCache.get(cacheKey);
       if (cached !== undefined) return cached;
       const pipeline = await this.ensurePeakReductionPipeline();
-      return this.runPeakReduction(
+      const measure = () => this.runPeakReduction(
         pipeline, sourceProxy.texture, sourceProxy.width, sourceProxy.height, params, measurement, cacheKey,
       );
+      const first = await measure();
+      // A result far above anything this grade can plausibly produce is taken
+      // once more before it is trusted. The second result is used as measured:
+      // nothing is invented or clamped, so a genuinely extreme highlight still
+      // anchors the shoulder. (One such reading, cached, turned the owner's
+      // zoomed preview SDR-looking on 2026-09-25.)
+      if (reference > 0 && first > reference * HIGHLIGHT_ANCHOR_RECHECK_FACTOR) {
+        this.peakReductionCache.delete(cacheKey);
+        const second = await measure();
+        this.recordStage("highlight-anchor-recheck", { first, second, reference });
+        return second;
+      }
+      return first;
     }
 
     async runPeakReduction(pipeline, texture, width, height, params, measurement, cacheKey) {
@@ -6139,6 +6361,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       if (cached) {
         this.localMasks.delete(key);
         this.localMasks.set(key, cached);
+        cached.lastUseSerial = this.maskUseSerial;
         return cached;
       }
       const pathQuery = maskPath ? `&mask_path=${encodeURIComponent(maskPath)}` : "";
@@ -6172,7 +6395,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       );
       const entry = { kind: "cpu-spatial-leaf", texture, width, height, byteSize: width * height };
       this.localMasks.set(key, entry);
-      this.trimLocalMaskCache(longEdge > 1600 ? 160 * 1024 * 1024 : 96 * 1024 * 1024);
+      this.retainLocalMask(entry, longEdge);
       if (this.instrumentationEnabled) {
         this.performanceMetrics.maskEvents ||= [];
         this.performanceMetrics.maskEvents.push({
@@ -6198,6 +6421,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       if (entry?.influenceIdentity === influenceIdentity) {
         this.localMasks.delete(key);
         this.localMasks.set(key, entry);
+        entry.lastUseSerial = this.maskUseSerial;
         return entry;
       }
 
@@ -6277,7 +6501,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.device.queue.submit([encoder.finish()]);
       parameterBuffers.forEach((buffer) => buffer.destroy());
       this.localMasks.set(key, entry);
-      this.trimLocalMaskCache(longEdge > 1600 ? 160 * 1024 * 1024 : 96 * 1024 * 1024);
+      this.retainLocalMask(entry, longEdge);
       if (this.instrumentationEnabled) {
         this.performanceMetrics.maskEvents ||= [];
         this.performanceMetrics.maskEvents.push({
@@ -6378,46 +6602,65 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       const leaf = local.mask.leaf;
       const feather = Math.min(0.05, Math.max(0, Number(leaf.mask_feather) || 0));
       const inverted = Boolean(local.mask.inverted);
-      const refinementIdentity = `${feather}:${inverted}`;
+      const referenceScale = Math.max(0.001, Number(this.featherReferenceScale?.(geometrySignature)) || 1);
+      const refinementIdentity = `${feather}:${inverted}:${referenceScale}`;
       let refinementRan = false;
       if (entry.refinementIdentity !== refinementIdentity) {
-        const amount = feather / 0.05;
-        const sigmaX = 0.09 * amount * entry.width;
-        const sigmaY = 0.09 * amount * entry.height;
-        if (Math.max(sigmaX, sigmaY) < 0.25 && !inverted) {
+        const plan = lumaFeatherPlan(feather, entry.width, entry.height, referenceScale);
+        if (plan.sigma < 0.25 && !inverted) {
           entry.texture = entry.baseTexture;
         } else {
-          if (!entry.horizontalTexture) {
-            entry.horizontalTexture = this.createMaskTexture(entry.width, entry.height);
+          if (!entry.refinedTexture) {
             entry.refinedTexture = this.createMaskTexture(entry.width, entry.height);
             entry.horizontalBuffer = this.createStorageBuffer(new Float32Array(4));
             entry.verticalBuffer = this.createStorageBuffer(new Float32Array(4));
-            entry.byteSize += entry.width * entry.height * 2 * 2 + 32;
+            entry.byteSize += entry.width * entry.height * 2 + 32;
           }
-          const horizontalValues = new Float32Array([sigmaX, sigmaY, 0, 0]);
-          const verticalValues = new Float32Array([sigmaX, sigmaY, 1, inverted ? 1 : 0]);
-          this.device.queue.writeBuffer(entry.horizontalBuffer, 0, horizontalValues);
-          this.device.queue.writeBuffer(entry.verticalBuffer, 0, verticalValues);
+          // A full-size intermediate only for a small feather; a large one is
+          // blurred at a reduced size.
+          if (plan.factor === 1 && !entry.horizontalTexture) {
+            entry.horizontalTexture = this.createMaskTexture(entry.width, entry.height);
+            entry.byteSize += entry.width * entry.height * 2;
+          }
           const encoder = this.device.createCommandEncoder();
-          this.encodeMaskPass(
-            encoder,
-            this.maskPipelines.refine,
-            this.createMaskBindGroup(entry.baseTexture, entry.horizontalBuffer),
-            entry.horizontalTexture,
-          );
-          this.encodeMaskPass(
-            encoder,
-            this.maskPipelines.refine,
-            this.createMaskBindGroup(entry.horizontalTexture, entry.verticalBuffer),
-            entry.refinedTexture,
-          );
+          if (plan.factor === 1) {
+            this.device.queue.writeBuffer(entry.horizontalBuffer, 0, new Float32Array([plan.sigma, 0, 0, 0]));
+            this.device.queue.writeBuffer(entry.verticalBuffer, 0, new Float32Array([plan.sigma, 0, 1, inverted ? 1 : 0]));
+            this.encodeMaskPass(encoder, this.maskPipelines.refine,
+              this.createMaskBindGroup(entry.baseTexture, entry.horizontalBuffer), entry.horizontalTexture);
+            this.encodeMaskPass(encoder, this.maskPipelines.refine,
+              this.createMaskBindGroup(entry.horizontalTexture, entry.verticalBuffer), entry.refinedTexture);
+          } else {
+            const reduced = this.lumaFeatherScratch(entry, plan.factor);
+            const values = [
+              [plan.factor, 0, 0, 0],
+              [plan.factor, 1, 0, 0],
+              [plan.reducedSigma, 0, 0, 0],
+              [plan.reducedSigma, 0, 1, 0],
+              [plan.factor, inverted ? 1 : 0, 0, 0],
+            ];
+            values.forEach((value, index) => this.device.queue.writeBuffer(reduced.buffers[index], 0, new Float32Array(value)));
+            // Area-average across, then down (the first pass writes into the
+            // full-width scratch texture), blur at the reduced size, and
+            // interpolate back to the mask's own size.
+            this.encodeMaskPass(encoder, this.maskPipelines.downsample,
+              this.createMaskBindGroup(entry.baseTexture, reduced.buffers[0]), reduced.narrow);
+            this.encodeMaskPass(encoder, this.maskPipelines.downsample,
+              this.createMaskBindGroup(reduced.narrow, reduced.buffers[1]), reduced.first);
+            this.encodeMaskPass(encoder, this.maskPipelines.refine,
+              this.createMaskBindGroup(reduced.first, reduced.buffers[2]), reduced.second);
+            this.encodeMaskPass(encoder, this.maskPipelines.refine,
+              this.createMaskBindGroup(reduced.second, reduced.buffers[3]), reduced.first);
+            this.encodeMaskPass(encoder, this.maskPipelines.upsample,
+              this.createMaskBindGroup(reduced.first, reduced.buffers[4]), entry.refinedTexture);
+          }
           this.device.queue.submit([encoder.finish()]);
           entry.texture = entry.refinedTexture;
           refinementRan = true;
         }
         entry.refinementIdentity = refinementIdentity;
       }
-      this.trimLocalMaskCache(longEdge > 1600 ? 160 * 1024 * 1024 : 96 * 1024 * 1024);
+      this.retainLocalMask(entry, longEdge);
       if (this.instrumentationEnabled) {
         const event = {
           kind: "gpu-luma",
@@ -6436,6 +6679,39 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         if (this.performanceMetrics.maskEvents.length > 480) this.performanceMetrics.maskEvents.shift();
       }
       return entry;
+    }
+
+    /**
+     * Scratch textures for a large luma feather, kept per mask entry and
+     * rebuilt only when the reduction factor changes.
+     */
+    lumaFeatherScratch(entry, factor) {
+      if (entry.featherScratch?.factor === factor) return entry.featherScratch;
+      this.releaseLumaFeatherScratch(entry);
+      const width = Math.ceil(entry.width / factor);
+      const height = Math.ceil(entry.height / factor);
+      const scratch = {
+        factor,
+        narrow: this.createMaskTexture(width, entry.height),
+        first: this.createMaskTexture(width, height),
+        second: this.createMaskTexture(width, height),
+        buffers: Array.from({ length: 5 }, () => this.createStorageBuffer(new Float32Array(4))),
+        byteSize: (width * entry.height + width * height * 2) * 2 + 5 * 16,
+      };
+      entry.featherScratch = scratch;
+      entry.byteSize += scratch.byteSize;
+      return scratch;
+    }
+
+    releaseLumaFeatherScratch(entry) {
+      const scratch = entry.featherScratch;
+      if (!scratch) return;
+      entry.featherScratch = null;
+      entry.byteSize -= scratch.byteSize;
+      this.destroyAfterActiveRenders(() => {
+        [scratch.narrow, scratch.first, scratch.second].forEach((texture) => texture.destroy());
+        scratch.buffers.forEach((buffer) => buffer.destroy());
+      });
     }
 
     createMaskTexture(width, height) {
@@ -6472,10 +6748,20 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       pass.end();
     }
 
+    retainLocalMask(entry, longEdge) {
+      entry.lastUseSerial = this.maskUseSerial;
+      this.trimLocalMaskCache(longEdge > 1600 ? 160 * 1024 * 1024 : 96 * 1024 * 1024);
+    }
+
+    /**
+     * Evict least-recently-used masks down to `budget`, except the ones the
+     * current render uses, which may exceed it together.
+     */
     trimLocalMaskCache(budget) {
       let total = [...this.localMasks.values()].reduce((sum, entry) => sum + entry.byteSize, 0);
-      while (this.localMasks.size && total > budget) {
-        const [key, entry] = this.localMasks.entries().next().value;
+      for (const [key, entry] of [...this.localMasks.entries()]) {
+        if (total <= budget) break;
+        if (entry.lastUseSerial === this.maskUseSerial) continue;
         this.destroyAfterActiveRenders(() => this.destroyLocalMaskEntry(entry));
         this.localMasks.delete(key);
         total -= entry.byteSize;
@@ -6496,6 +6782,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       entry.qualifyBuffer?.destroy();
       entry.horizontalBuffer?.destroy();
       entry.verticalBuffer?.destroy();
+      if (entry.featherScratch) {
+        [entry.featherScratch.narrow, entry.featherScratch.first, entry.featherScratch.second].forEach((texture) => texture.destroy());
+        entry.featherScratch.buffers.forEach((buffer) => buffer.destroy());
+        entry.featherScratch = null;
+      }
     }
 
     localParamBuffer(local, lane, sourcePixelScale) {
@@ -6634,6 +6925,36 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
   function toneEqualizerNeutral(branch) {
     const nodes = branch?.tone_equalizer_nodes;
     return !Array.isArray(nodes) || nodes.every((node) => Math.abs(Number(node?.adjustment_ev) || 0) < 0.000001);
+  }
+
+  // The tone stages the highlight reduction applies before it takes the peak
+  // (peakTone in the reduction shader), for one neutral value. Carrying a
+  // measurement across a drag runs it back through the settings it was taken
+  // with and forward through the current ones.
+  function highlightToneSettings(params) {
+    return { exposure: params[2] || 0, lift: params[4] || 0, contrast: params[8] || 0, pivot: params[9] || 0.1845 };
+  }
+
+  function applyHighlightTone(value, tone) {
+    let rgb = value * Math.pow(2, tone.exposure);
+    if (tone.lift !== 0) rgb *= 1 + Math.min(tone.lift * (1 - Math.min(1, Math.max(0, rgb))), 1);
+    if (tone.contrast !== 0 && rgb > 0.00000001) {
+      const pivot = Math.max(tone.pivot, 0.000001);
+      const stops = Math.log2(rgb / pivot);
+      rgb = pivot * Math.pow(2, Math.min(32, Math.max(-32, stops * Math.pow(2, tone.contrast))));
+    }
+    return rgb;
+  }
+
+  function invertHighlightTone(value, tone) {
+    // Monotonic for every legal setting, so bisect in log space.
+    let low = -40;
+    let high = 40;
+    for (let step = 0; step < 80; step += 1) {
+      const middle = (low + high) / 2;
+      if (applyHighlightTone(2 ** middle, tone) < value) low = middle; else high = middle;
+    }
+    return 2 ** ((low + high) / 2);
   }
 
   function toneAdjustedHighlightPeakLinear(branch, toneEnabled, referenceWhiteNits) {
@@ -6976,6 +7297,28 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         mask_opacity: 1,
       },
     });
+  }
+
+  /**
+   * The luma feather's Gaussian, in pixels of a mask `width` x `height`.
+   *
+   * Feather is a distance: 0.09 of the uncropped source's long edge at 100%,
+   * the same in both directions. `referenceScale` is that long edge over the
+   * mask's own (cropped, straightened) long edge, so cropping never changes
+   * how soft a mask is, and the preview matches the export. It used to be
+   * 0.09 of each side of the cropped frame, which on a 3:2 image spread the
+   * feather 1.5 times further sideways than up and down, and halved it under
+   * a 50% crop. Above 8 px the
+   * blur runs on a copy area-averaged by `factor`, with `reducedSigma` chosen so
+   * the averaging and the bilinear upsample (together about a quarter of a
+   * reduced texel squared) add up to the requested spread.
+   */
+  function lumaFeatherPlan(feather, width, height, referenceScale = 1) {
+    const amount = Math.min(1, Math.max(0, Number(feather) || 0) / 0.05);
+    const sigma = 0.09 * amount * Math.max(width, height) * referenceScale;
+    if (sigma < 8) return { sigma, factor: 1, reducedSigma: sigma };
+    const factor = Math.floor(sigma / 4);
+    return { sigma, factor, reducedSigma: Math.sqrt(Math.max(0.0625, (sigma * sigma) / (factor * factor) - 0.25)) };
   }
 
   function buildGpuLumaQualificationParams(expression) {
@@ -8717,30 +9060,67 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       return vec4f(mask, mask, mask, 1.0);
     }
 
+    // One axis of a Gaussian feather: p[0] sigma in texels, p[2] axis (0 x,
+    // 1 y), p[3] invert. Every texel within three sigma is read. The former
+    // pass read 25 taps a quarter-sigma apart, which skipped any feature
+    // narrower than the spacing and turned a thin strip into a row of copies.
+    // The edge is extended, as in the backend's blur.
     @fragment fn maskRefinementFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      let dimensions = textureDimensions(sourceTexture);
+      let dimensions = vec2i(textureDimensions(sourceTexture));
       let coordinate = pixelCoordinate(input.position.xy);
-      let sigma = select(p[0], p[1], p[2] > 0.5);
+      let sigma = p[0];
       var value = textureLoad(sourceTexture, coordinate, 0).r;
       if (sigma >= 0.25) {
-        let direction = select(vec2f(1.0, 0.0), vec2f(0.0, 1.0), p[2] > 0.5);
-        let stepSize = max(1.0, sigma * 0.25);
+        let direction = select(vec2i(1, 0), vec2i(0, 1), p[2] > 0.5);
+        let reach = min(i32(ceil(sigma * 3.0)), 64);
         var total = 0.0;
         var weightTotal = 0.0;
-        for (var tap = -12; tap <= 12; tap = tap + 1) {
-          let offset = f32(tap) * stepSize;
-          let weight = exp(-0.5 * offset * offset / max(sigma * sigma, 0.000001));
-          let sampleCoordinate = clamp(
-            coordinate + vec2i(round(direction * offset)),
-            vec2i(0),
-            vec2i(dimensions) - vec2i(1),
-          );
+        for (var tap = -reach; tap <= reach; tap = tap + 1) {
+          let weight = exp(-0.5 * f32(tap * tap) / (sigma * sigma));
+          let sampleCoordinate = clamp(coordinate + direction * tap, vec2i(0), dimensions - vec2i(1));
           total += textureLoad(sourceTexture, sampleCoordinate, 0).r * weight;
           weightTotal += weight;
         }
         value = total / max(weightTotal, 0.000001);
       }
       if (p[3] > 0.5) { value = 1.0 - value; }
+      return vec4f(value, value, value, 1.0);
+    }
+
+    // Area-average p[0] texels along one axis (p[1]: 0 x, 1 y) into one. A
+    // thin feature keeps its share of the average instead of being missed.
+    @fragment fn maskDownsampleFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let dimensions = vec2i(textureDimensions(sourceTexture));
+      let output = vec2i(input.position.xy);
+      let factor = i32(p[0]);
+      let alongY = p[1] > 0.5;
+      let start = select(output.x, output.y, alongY) * factor;
+      let stop = min(start + factor, select(dimensions.x, dimensions.y, alongY));
+      var total = 0.0;
+      var count = 0.0;
+      for (var index = start; index < stop; index = index + 1) {
+        let coordinate = select(vec2i(index, output.y), vec2i(output.x, index), alongY);
+        total += textureLoad(sourceTexture, clamp(coordinate, vec2i(0), dimensions - vec2i(1)), 0).r;
+        count += 1.0;
+      }
+      let value = total / max(count, 1.0);
+      return vec4f(value, value, value, 1.0);
+    }
+
+    // Bilinear upsample of a mask reduced by p[0] in both axes; p[1] inverts.
+    @fragment fn maskUpsampleFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let reduced = vec2i(textureDimensions(sourceTexture));
+      let position = input.position.xy / p[0] - vec2f(0.5);
+      let origin = floor(position);
+      let fraction = position - origin;
+      let base = vec2i(origin);
+      let last = reduced - vec2i(1);
+      let a = textureLoad(sourceTexture, clamp(base, vec2i(0), last), 0).r;
+      let b = textureLoad(sourceTexture, clamp(base + vec2i(1, 0), vec2i(0), last), 0).r;
+      let c = textureLoad(sourceTexture, clamp(base + vec2i(0, 1), vec2i(0), last), 0).r;
+      let d = textureLoad(sourceTexture, clamp(base + vec2i(1, 1), vec2i(0), last), 0).r;
+      var value = mix(mix(a, b, fraction.x), mix(c, d, fraction.x), fraction.y);
+      if (p[1] > 0.5) { value = 1.0 - value; }
       return vec4f(value, value, value, 1.0);
     }
 

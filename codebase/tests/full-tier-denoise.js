@@ -70,6 +70,12 @@ const MIN_DIFFERING_FRACTION = 0.005;
     // averages away exactly the fine noise being measured.
     await page.click("#zoom-actual");
     await page.waitForTimeout(500);
+    // The fixture is a gradient that is darkest at the top-left and clips to
+    // white towards the centre, where 100% opens. Noise (and so denoise) is
+    // only visible where the picture is not clipped, so view the top-left.
+    await page.evaluate(() => { els.dropzone.scrollLeft = 0; els.dropzone.scrollTop = 0; });
+    await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 900000 });
+    await page.waitForTimeout(500);
 
     const setTier = async (tier) => {
       await page.evaluate((value) => {
@@ -111,9 +117,21 @@ const MIN_DIFFERING_FRACTION = 0.005;
       await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 900000 });
     };
 
-    const capture = async () => page.locator("#preview-canvas").screenshot({
-      clip: { x: 0, y: 0, width: 512, height: 512 },
-    });
+    // The part of the image on screen (the dark top-left, see above). A
+    // locator screenshot has no clip option, so the former 512 px "clip" was
+    // ignored and the whole 42 MP canvas was compared, most of it clipped
+    // white where denoise has nothing to show: a working bypass moved 0.2% of
+    // the canvas, under the bar.
+    const capture = async () => {
+      const canvas = await page.locator("#preview-canvas").boundingBox();
+      const viewer = await page.locator("#dropzone").boundingBox();
+      const x = Math.max(canvas.x, viewer.x);
+      const y = Math.max(canvas.y, viewer.y);
+      const width = Math.min(canvas.x + canvas.width, viewer.x + viewer.width) - x;
+      const height = Math.min(canvas.y + canvas.height, viewer.y + viewer.height) - y;
+      assert(width > 64 && height > 64, "The canvas is not visible in the viewer: " + JSON.stringify({ canvas, viewer }));
+      return page.screenshot({ clip: { x, y, width, height } });
+    };
 
     const compare = async (a, b) => page.evaluate(async ({ first, second }) => {
       const decode = async (base64) => {
@@ -153,7 +171,9 @@ const MIN_DIFFERING_FRACTION = 0.005;
     };
 
     const results = [];
-    for (const [tier, execution] of [["4096", "direct"], ["full", null]]) {
+    // Both rows pin their route: since Auto uses half the detected video
+    // memory (tuning sprint P2), Full can fit Direct and would skip the path.
+    for (const [tier, execution] of [["4096", "direct"], ["full", "tiled"]]) {
       await setTier(tier);
       if (execution) await setExecution(execution);
       await setDenoise(true);

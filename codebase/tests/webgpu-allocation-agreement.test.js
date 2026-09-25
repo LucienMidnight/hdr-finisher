@@ -369,3 +369,23 @@ test("the tiled working graph and the retained presentation are pinned reservati
   preview.destroyTileGraph();
   assert.equal(preview.gpuAllocator.entries.has(graphEntryId), false);
 });
+
+test("a detected card raises Auto to half its video memory, and a manual limit still wins", () => {
+  const GIB = 1024 * 1024 * 1024;
+  const { preview } = createPreview();
+  preview.adapterInfo = {
+    fallback: false, description: "lovelace", vendor: "nvidia",
+    limits: { maxBufferSize: 2 * GIB, maxTextureDimension2D: 16384 },
+  };
+  preview.probeGpuAllocation = () => true;
+  preview.setDetectedVideoMemory({ bytes: 12 * GIB, device: "NVIDIA GeForce RTX 4070 Ti" });
+  assert.equal(preview.gpuBudget.source, "detected-vram");
+  assert.equal(preview.memoryBudgetBytes(), 6 * GIB);
+  assert.equal(preview.gpuAllocator.budgetBytes, 6 * GIB);
+  // Admission plans against the calibrated Auto, not the 2 GiB fallback.
+  assert.equal(preview.planRender(7968, 5320).budgetBytes, 6 * GIB);
+  assert.equal(preview.minimumExecutionDecision(7968, 5320) !== null, true);
+  // A lower manual limit overrides Auto, and returning to Auto restores it.
+  assert.equal(preview.setMemoryBudget(1), GIB);
+  assert.equal(preview.setMemoryBudget("auto"), 6 * GIB);
+});

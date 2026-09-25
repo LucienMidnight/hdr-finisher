@@ -14,6 +14,18 @@ In the desktop app, open **Settings** from **File > Settings** or use the assign
 
 Rendering mode does not change final export quality.
 
+**Faster dragging** is off by default, and then the preview shows full detail at every moment, including while you drag a slider. Turn it on only if dragging feels jerky on your computer: while you drag, the image may look softer, and it sharpens as soon as you let go. The same checkbox is in the viewer's **Preview** menu. It doesn't affect exports or measurements.
+
+**Maximum GPU memory for previews** sets how much of the graphics card the preview may use. **Auto** uses up to half of the card's own memory, or 2 GiB when the card's memory can't be read. With more memory the preview processes the whole image in one fast pass. Choose a lower limit if you run other graphics-heavy apps at the same time. Export is unaffected.
+
+## Diagnostics
+
+The Diagnostics section holds troubleshooting switches that you don't need for normal work. None of them affect exports.
+
+- **Preview execution** forces the preview to process the whole image in one pass (Direct) or in tiles (Tiled). Auto chooses Direct whenever the memory setting allows it. Both must look identical, so forcing one is only for checking that. Direct is refused when there isn't enough memory for it.
+- **Legacy tier override** forces an older fixed preview size (1K, 2K, 4K or Full) instead of following your screen.
+- **Region of interest** only matters when the preview is processed in tiles. **Visible region** finishes the part of the image you can see first and catches up the rest when you pan to it.
+
 ## Default folders
 
 The Locations section can set independent starting folders for project save, project import, finished-file save, source-file import, and the shared HDRF preset library. Clearing a location restores its default. Folder selection is available in the desktop application because it uses native file dialogs.

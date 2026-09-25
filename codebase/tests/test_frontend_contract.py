@@ -653,6 +653,9 @@ def test_panel_titles_and_scope_description_follow_shared_design_contract() -> N
     assert 'id="scope-title" class="visually-hidden"' in html
     assert 'class="scope-header-controls field-inline"' in html
     assert '<option value="technical">Technical</option>' in html
+    # P5 (ledger 9.6): the short Technical readout, and the full list under Diagnostics.
+    assert '<option value="diagnostics">Diagnostics</option>' in html
+    assert 'id="technical-summary"' in html and 'id="technical-diagnostics"' in html
     assert 'class="dock-tabs"' not in html
     assert 'id="scope-note" class="visually-hidden"' in html
     assert 'id="histogram" width="720" height="220" aria-label="Image scope" aria-describedby="scope-note"' in html
@@ -691,12 +694,22 @@ def test_preview_resolution_and_gpu_memory_are_persisted_application_preferences
     desktop = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
 
     assert 'previewResolution: "auto"' in shell
-    assert 'previewPreference: "balanced"' in shell
+    assert "fasterDragging: false," in shell
     assert 'maximumGpuMemoryGiB: "auto"' in shell
     assert 'new Set(["1024", "2048", "4096", "full"])' in shell
     assert "GPU_MEMORY_PRESETS_GIB = [1, 2, 3, 4, 6, 8, 12]" in shell
     assert 'id="settings-preview-resolution"' in html
-    assert 'id="settings-preview-preference"' in html
+    assert 'id="settings-faster-dragging" type="checkbox"' in html
+    assert 'id="settings-preview-preference"' not in html
+    # Execution, the legacy tier and region of interest are diagnostics now.
+    diagnostics = html.split('data-settings-panel="diagnostics"', 1)[1].split("</section>", 1)[0]
+    for control in ("settings-execution-override", "settings-preview-resolution", "settings-roi-preview"):
+        assert f'id="{control}"' in diagnostics
+    general = html.split('data-settings-panel="general"', 1)[1].split("</section>", 1)[0]
+    assert 'id="settings-gpu-memory-limit"' in general
+    # Help in user terms: what you see and when, not millisecond targets.
+    for target in ("33 ms", "66 ms", "150 ms"):
+        assert target not in html
     for value, label in [("1024", "1K"), ("2048", "2K"), ("4096", "4K")]:
         assert f'<option value="{value}">{label}</option>' in html
     assert 'id="settings-gpu-memory-limit"' in html
@@ -709,7 +722,7 @@ def test_preview_resolution_and_gpu_memory_are_persisted_application_preferences
     assert 'byId("settings-gpu-memory-custom").addEventListener("change"' in shell
     assert "persistPreferences();" in shell
     assert 'previewResolution: "auto"' in desktop
-    assert 'previewPreference: "balanced"' in desktop
+    assert "fasterDragging: false," in desktop
     assert 'maximumGpuMemoryGiB: "auto"' in desktop
     assert 'schemaVersion: 3' in shell
     assert 'schemaVersion: 3' in desktop
@@ -1029,7 +1042,8 @@ def test_detail_interaction_backpressures_the_gpu_queue() -> None:
     assert "const detailActive = gpuDetailGraphActive(task.lane);" in scheduler
     assert "const detailInteraction = state.detailInteractionRestore?.lane === task.lane;" in scheduler
     assert "if (detailInteraction && !state.previewScheduler?.interacting) return false;" in scheduler
-    assert "if (rendered && (detailActive || detailInteraction))" in scheduler
+    # P6: every drag frame waits for GPU completion (one frame in flight).
+    assert "if (rendered) await state.gpuPreview?.waitForSubmittedWork?.();" in scheduler
     assert "waitForSubmittedWork" in scheduler
     assert "state.detailInteractionRestore = { lane: task.lane, longEdge: residentLongEdge }" in scheduler
     assert "async waitForSubmittedWork()" in webgpu
@@ -1557,7 +1571,7 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     assert 'id="preview-toggle"' in html
     assert 'aria-controls="preview-popover"' in html
     assert '>Preview</button>' in html
-    assert 'id="preview-latency"' in html
+    assert 'id="preview-faster-dragging"' in html
     assert '["Current Preview Size", currentPreviewSizeLabel()]' in javascript
     assert "compact-workspace" in css
     assert "source-overlay-open" in css
@@ -1812,13 +1826,16 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
 
-    assert 'id="preview-latency" aria-label="Preview response"' in html
-    preview_selector = html.split('id="preview-latency"', 1)[1].split("</select>", 1)[0]
-    for value in ("responsive", "balanced", "precise"):
-        assert f'value="{value}"' in preview_selector
-    assert 'value="full"' not in preview_selector
-    assert "Controls interaction speed" in html
-    assert html.index('id="overlay-toggle"') < html.index('id="overlay-popover"') < html.index('id="preview-latency"')
+    # P5 (Preview Responsiveness Tuning Sprint): one opt-in replaced the
+    # Responsive / Balanced / Precise menu; full detail is the default.
+    assert 'id="preview-latency"' not in html
+    assert '<input id="preview-faster-dragging" type="checkbox">' in html
+    assert '<span>Faster dragging</span>' in html
+    assert html.count('title="For slower computers: shows a softer image while you drag, sharp again when you let go. Exports are unaffected."') == 2
+    assert html.index('id="overlay-toggle"') < html.index('id="overlay-popover"') < html.index('id="preview-faster-dragging"')
+    assert "fasterDragging: false," in javascript
+    assert 'return state.fasterDragging ? "balanced" : "precise";' in javascript
+    assert "armSettle(this.current, 0);" in scheduler
     assert ".toolbar-preview-resolution::after" in css
     assert "overflow-wrap: anywhere;" in css
     assert "white-space: normal;" in css
@@ -1861,7 +1878,11 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     assert "cellPeaks" in webgpu
     assert "peakReductionMain" in webgpu
     assert "measureToneAdjustedPeak" in webgpu
-    assert 'sourceOptions?.tier !== "interactive"' in webgpu
+    # Interactive frames never wait for the whole-image reduction: they carry
+    # the last real measurement and the skipped one is scheduled afterwards.
+    assert 'const interactive = sourceOptions?.tier === "interactive";' in webgpu
+    assert "scheduleHighlightMeasurement(anchor, sourceProxy, params, lane, used)" in webgpu
+    assert 'hdrfinisher:highlight-anchor-measured' in javascript
     render_to = webgpu[webgpu.index("async renderTo(canvas"):webgpu.index("async analyzeDenoiseProxy")]
     # Resizing a visible canvas clears its presented frame, so the peak
     # measurement must complete before the resize. The resize itself happens
@@ -1872,7 +1893,7 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     # CPU preview, which the user sees as a black flash. Any future move to
     # anchor on the finished picture has to schedule a refinement rather than
     # await here.
-    assert render_to.index("await this.measureToneAdjustedPeak") < render_to.index(
+    assert render_to.index("await this.resolveHighlightAnchor") < render_to.index(
         "if (canvas.width !== proxy.width) canvas.width = proxy.width;"
     )
     presentation = render_to[render_to.index("if (canvas.width !== proxy.width) canvas.width = proxy.width;"):]
@@ -1952,7 +1973,13 @@ def test_electron_preview_correctness_contract() -> None:
     assert "isCurrent: () => (typeof request.isCurrent === \"function\" ? request.isCurrent() : true)" in gpu_draft
     assert "&& generation === state.previewGeneration[lane]" in gpu_draft
     assert "&& requestedGeometrySignature === geometrySignature()" in gpu_draft
-    assert "&& (allowInactive || lane === state.currentView)," in gpu_draft
+    assert "&& (allowInactive || lane === state.currentView)" in gpu_draft
+    # P5/P6: a live GPU scope does not wait for a backend save, and never
+    # submits beside a drag frame.
+    assert 'const liveGpuScope = tier === "interactive" && gpuScopeEligible(lane);' in javascript
+    assert 'if (tier === "interactive" && state.previewScheduler?.frameInFlight) {' in javascript
+    # P5: a softer drag frame still on the GPU at release never reaches the canvas.
+    assert '&& !(request.coarse && request.reason === "drag-coarse" && !state.previewScheduler?.interacting),' in gpu_draft
     webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
     assert "sourceOptions?.isCurrent?.() === false" in webgpu
     # A deferred render is classified as superseded, so it returns without
@@ -2172,7 +2199,15 @@ def test_phase_two_gpu_luma_retained_mask_contract() -> None:
     assert "mask_feather: 0" in webgpu and "mask_opacity: 1" in webgpu
     assert "entry.baseTexture" in webgpu and "entry.horizontalTexture" in webgpu
     assert "entry.refinedTexture" in webgpu
-    assert "sigmaX = 0.09 * amount * entry.width" in webgpu
+    # P7: the luma feather is round (a fraction of the long edge on both axes)
+    # and reads every texel it covers; 25 taps a quarter-sigma apart turned
+    # thin strips into repeating copies.
+    assert "const sigma = 0.09 * amount * Math.max(width, height) * referenceScale;" in webgpu
+    # ...measured against the uncropped source, as the backend does.
+    assert "state.gpuPreview.featherReferenceScale = maskFeatherReferenceScale;" in (FRONTEND / "app.js").read_text(encoding="utf-8")
+    assert "for (var tap = -reach; tap <= reach; tap = tap + 1)" in webgpu
+    assert "stepSize = max(1.0, sigma * 0.25)" not in webgpu
+    assert 'this.createMaskPipeline("maskDownsampleFragmentMain")' in webgpu
     assert "sceneLuminanceTextures: this.sceneLuminance.size" in webgpu
     assert "cpuMaskRequest: false" in webgpu
     assert "textureSampleLevel(spatialTexture, spatialSampler, uv, 0.0)" in webgpu

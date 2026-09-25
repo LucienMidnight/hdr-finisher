@@ -25,7 +25,8 @@ const url = index >= 0 ? process.argv[index + 1] : "http://127.0.0.1:8799";
       normalTierSelector: Boolean(document.querySelector("#preview-resolution")),
       diagnosticTierSelector: Boolean(document.querySelector("#settings-preview-resolution")),
       notice: !document.querySelector("#preview-migration-notice").classList.contains("hidden") }));
-    assert.equal(migration.preferences.previewPreference, "balanced");
+    // P5: the 2K tier migrated to Balanced, which is now the default (off).
+    assert.equal(migration.preferences.fasterDragging, false);
     assert.equal(migration.preferences.previewResolution, "auto");
     assert.equal(migration.preferences.previewMigration.previousTier, "2048");
     assert.equal(migration.normalTierSelector, false);
@@ -33,15 +34,15 @@ const url = index >= 0 ? process.argv[index + 1] : "http://127.0.0.1:8799";
     assert.equal(migration.notice, true);
     await page.evaluate(() => document.querySelector("#preview-migration-dismiss").click());
     await page.evaluate(() => {
-      const select = document.querySelector("#preview-latency");
-      select.value = "responsive";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
+      const faster = document.querySelector("#preview-faster-dragging");
+      faster.checked = true;
+      faster.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    await page.waitForFunction(() => window.HDRApplicationShell.preferences().previewPreference === "responsive");
+    await page.waitForFunction(() => window.HDRApplicationShell.preferences().fasterDragging === true);
     await page.reload({ waitUntil: "networkidle" });
-    const roundTrip = await page.evaluate(() => ({ preference: state.previewLatencyPreference,
+    const roundTrip = await page.evaluate(() => ({ faster: state.fasterDragging,
       migration: window.HDRApplicationShell.preferences().previewMigration }));
-    assert.equal(roundTrip.preference, "responsive");
+    assert.equal(roundTrip.faster, true);
     assert.equal(roundTrip.migration.noticeShown, true);
     await page.evaluate(() => {
       const override = document.querySelector("#settings-preview-resolution");
@@ -69,6 +70,8 @@ const url = index >= 0 ? process.argv[index + 1] : "http://127.0.0.1:8799";
       state.previewLatencyController.samples.set(previewGraphTimingKey(), { msPerPixel: 0.001, count: 1 });
     });
     await page.evaluate(() => {
+      // P5: a softer frame is only for an active gesture.
+      state.previewScheduler.beginInteraction();
       const control = document.querySelector("#hdr-exposure");
       control.value = "0.5";
       control.dispatchEvent(new Event("input", { bubbles: true }));
@@ -78,6 +81,7 @@ const url = index >= 0 ? process.argv[index + 1] : "http://127.0.0.1:8799";
       exact: state.acceptedPresentation.exact, label: viewerStatusLabel(),
       generation: state.acceptedPresentation.generation }));
     assert.equal(coarse.exact, false);
+    await page.evaluate(() => state.previewScheduler.endInteraction());
     await page.waitForFunction(() => viewerState().status === "ready" && state.acceptedPresentation.exact,
       null, { timeout: 120000 });
     const responsive = await page.evaluate(() => ({
@@ -89,9 +93,9 @@ const url = index >= 0 ? process.argv[index + 1] : "http://127.0.0.1:8799";
     assert.ok(responsive.generation >= coarse.generation, JSON.stringify({ coarse, responsive }));
 
     await page.evaluate(() => {
-      const select = document.querySelector("#preview-latency");
-      select.value = "precise";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
+      const faster = document.querySelector("#preview-faster-dragging");
+      faster.checked = false;
+      faster.dispatchEvent(new Event("change", { bubbles: true }));
     });
     await page.evaluate(() => renderGpuDraft(state.currentView,
       { tier: "refinement", longEdge: refinementProxyLongEdge(), reason: "phase4-no-coarse-control" }));

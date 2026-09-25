@@ -4,8 +4,17 @@
   const STORAGE_KEY = "hdr-finisher:application-preferences:v1";
   const PROJECT_URL = "https://github.com/LucienMidnight/hdr-finisher";
   const PREVIEW_RESOLUTIONS = new Set(["1024", "2048", "4096", "full"]);
-  const PREVIEW_PREFERENCES = new Set(["responsive", "balanced", "precise"]);
-  const migratedPreviewPreference = (tier) => tier === "1024" ? "responsive" : tier === "full" ? "precise" : "balanced";
+  // P5 (Preview Responsiveness Tuning Sprint): the Responsive / Balanced /
+  // Precise preference became one opt-in, "Faster dragging on slower
+  // hardware". It migrates without a prompt: Precise and Balanced become the
+  // default (off), Responsive turns it on. The legacy 1K tier, which migrated
+  // to Responsive, turns it on as well.
+  const LEGACY_PREVIEW_PREFERENCES = new Set(["responsive", "balanced", "precise"]);
+  const migratedFasterDragging = (value) => {
+    if (typeof value.fasterDragging === "boolean") return value.fasterDragging;
+    if (LEGACY_PREVIEW_PREFERENCES.has(value.previewPreference)) return value.previewPreference === "responsive";
+    return Number(value.schemaVersion) < 3 && String(value.previewResolution) === "1024";
+  };
   // Diagnostic only. Direct and Tiled are required to produce identical pixels,
   // so this exists to make that comparable on the same grade rather than to
   // give the two routes different jobs.
@@ -18,7 +27,7 @@
     defaultReferenceWhiteNits: 203,
     renderingMode: "auto",
     previewResolution: "auto",
-    previewPreference: "balanced",
+    fasterDragging: false,
     previewMigration: { previousTier: null, noticeShown: false },
     maximumGpuMemoryGiB: "auto",
     executionOverride: "auto",
@@ -165,9 +174,9 @@
     renderingMode: ["auto", "gpu", "cpu"].includes(value.renderingMode) ? value.renderingMode : "auto",
     previewResolution: PREVIEW_RESOLUTIONS.has(String(value.previewResolution)) && Number(value.schemaVersion) >= 3
       ? String(value.previewResolution) : "auto",
-    previewPreference: PREVIEW_PREFERENCES.has(value.previewPreference) ? value.previewPreference
-      : Number(value.schemaVersion) < 3 && PREVIEW_RESOLUTIONS.has(String(value.previewResolution))
-        ? migratedPreviewPreference(String(value.previewResolution)) : "balanced",
+    fasterDragging: migratedFasterDragging(value),
+    // Migrated into fasterDragging above; not written back.
+    previewPreference: undefined,
     previewMigration: { previousTier: PREVIEW_RESOLUTIONS.has(String(value.previewMigration?.previousTier))
       ? String(value.previewMigration.previousTier)
       : Number(value.schemaVersion) < 3 && PREVIEW_RESOLUTIONS.has(String(value.previewResolution))
@@ -632,7 +641,7 @@
 
   function renderSettings() {
     byId("settings-rendering-mode").value = shell.preferences.renderingMode;
-    byId("settings-preview-preference").value = shell.preferences.previewPreference;
+    byId("settings-faster-dragging").checked = shell.preferences.fasterDragging === true;
     byId("settings-preview-resolution").value = shell.preferences.previewResolution;
     const memoryBudget = shell.preferences.maximumGpuMemoryGiB;
     const presetBudget = typeof memoryBudget === "number" && GPU_MEMORY_PRESETS_GIB.includes(memoryBudget);
@@ -880,8 +889,8 @@
       shell.preferences.previewResolution = PREVIEW_RESOLUTIONS.has(event.target.value) ? event.target.value : "auto";
       persistPreferences();
     });
-    byId("settings-preview-preference").addEventListener("change", (event) => {
-      shell.preferences.previewPreference = PREVIEW_PREFERENCES.has(event.target.value) ? event.target.value : "balanced";
+    byId("settings-faster-dragging").addEventListener("change", (event) => {
+      shell.preferences.fasterDragging = event.target.checked === true;
       persistPreferences();
     });
     byId("settings-gpu-memory-limit").addEventListener("change", (event) => {
@@ -1034,11 +1043,11 @@
     if (byId("settings-preview-resolution")) byId("settings-preview-resolution").value = normalized;
   }
 
-  function setPreviewPreference(value) {
-    if (!PREVIEW_PREFERENCES.has(value) || !shell.preferences) return;
-    shell.preferences.previewPreference = value;
+  function setFasterDragging(value) {
+    if (typeof value !== "boolean" || !shell.preferences) return;
+    shell.preferences.fasterDragging = value;
     persistPreferences();
-    if (byId("settings-preview-preference")) byId("settings-preview-preference").value = value;
+    if (byId("settings-faster-dragging")) byId("settings-faster-dragging").checked = value;
   }
 
   function acknowledgePreviewMigration() {
@@ -1082,7 +1091,7 @@
     checkForUpdates,
     setRenderingModePreference,
     setPreviewResolutionPreference,
-    setPreviewPreference,
+    setFasterDragging,
     acknowledgePreviewMigration,
     listGradingPresets,
     saveGradingPreset,

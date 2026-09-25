@@ -8,7 +8,11 @@ On a supported GPU, the WebGPU canvas is both the interactive and settled author
 
 Without WebGPU, the app uses the backend renderer and presents raw RGBA8 pixels in a persistent canvas. Native-scale CPU requests use bounded strips where the authored graph supports them. If that route cannot render the graph, the viewer keeps the last valid frame and reports the refusal; export quality is unchanged.
 
-The **Preview response** control offers Responsive, Balanced, and Precise. Responsive aims for 33 ms current-edit feedback, Balanced for 66 ms, and Precise starts at the exact display scale with a 150 ms target. These are starting latency targets, not guarantees. Responsive and Balanced can show a labelled Coarse frame during interaction; after input stops, the same adjustment graph always refines to the display-required scale. The setting never changes export.
+The preview shows full detail at all times, including while you drag a slider or zoom. When you let go of a slider, the picture you were looking at is already the finished one; the scopes and readouts catch up a moment later.
+
+If dragging feels jerky on your computer, open **Preview** in the viewer toolbar (or **Settings > General**) and turn on **Faster dragging**. While you drag, the image may then look softer, and the viewer labels it **Coarse**. It sharpens as soon as you let go, and a soft image is never left on screen after you release. Zooming follows the same setting. It's off by default, and it never changes exports, peak readings or delivery checks.
+
+This replaces the earlier Responsive / Balanced / Precise choice. Your earlier choice carries over without a prompt: Precise and Balanced become the default (off), and Responsive turns Faster dragging on.
 
 ## HDR and SDR viewing
 
@@ -35,7 +39,9 @@ Either difference can look like a grading difference, so don't read a two-frame 
 - **100%** processes native source pixels in the visible region, with one processed pixel per device pixel after display scaling.
 - The slider, plus/minus controls, or typed percentage set other zooms.
 
-The old 1K/2K/4K/Full selector is available only as a **Legacy tier override** in Settings diagnostics, for parity and memory investigation. Normal preview processing follows the displayed view. Direct and tiled GPU execution are internal resource choices.
+The old 1K/2K/4K/Full selector is available only as a **Legacy tier override** under **Settings > Diagnostics**, for troubleshooting. Normal preview processing follows the displayed view.
+
+When the graphics card has room (see **Maximum GPU memory for previews** in **Settings > General**), the preview processes the whole image in one pass at every zoom. With a lower memory limit or a very large image it works in tiles instead, and when you're zoomed in it finishes the part you can see first. Both look the same. The Technical readout's **Processing** row says which one is in use.
 
 At **100%** and above, Ready means the visible region was processed at native source scale. Above 100%, magnification does not add source information. For final delivery judgments, inspect the exported file as well.
 
@@ -98,15 +104,17 @@ The vectorscope plots chroma direction and saturation independently of image pos
 
 Vectorscope density is intentionally reduced during interaction and becomes more precise after the edit settles. It is a diagnostic of the authored rendition, not a gamut-compliance certification.
 
-## Technical panel
+## Technical and Diagnostics panels
 
-The Technical tab separates three kinds of evidence:
+Choose **Technical** in the scope-type menu for a short, plain-language summary that fits the scopes panel at any height:
 
-- **Output:** current preview media type, gamut/transfer, bit depth, and render-path notes.
-- **Display probe:** browser media-query/GPU information plus native Windows telemetry where available.
-- **Interpretation:** source primaries, transfer, confidence, and internal working space.
+- **Preview:** **View** (HDR or SDR, and the zoom), **Status** (Ready, Updating, or Coarse while you drag with Faster dragging on), **Detail** (full detail, or softer while dragging), and **Processing** (whole image or in tiles, with the memory setting in use).
+- **Display:** **HDR on this display** (whether the viewer is really showing HDR, or an SDR simulation) and the **Monitor** the window is on.
+- **Source:** the **File**, how it was interpreted, its **Encoding** (colours and transfer curve), the **Signal** type, the **Source peak** if the file declares one, the project's **Reference white**, and the **Bit depth**.
 
-Use it when the picture looks wrong before changing the grade. A display-path or source-interpretation problem should not be “fixed” with creative controls.
+Choose **Diagnostics** for the full list behind it: render generations, processing scale, caches, the execution route and memory budget, the display probe (media queries, GPU and native Windows telemetry where available), and the complete source interpretation. It's intended for troubleshooting and bug reports.
+
+Use either when the picture looks wrong before changing the grade. A display-path or source-interpretation problem should not be “fixed” with creative controls.
 
 ## False Color
 

@@ -576,9 +576,17 @@ def _feather_mask(
     if max(pixel_radii) < 0.25:
         return mask
     blurred = _gaussian_blur_float(mask, pixel_radii)
-    # Feather is a true smoothing operation, not an additive halo. Normalize
-    # the blurred alpha back to the painted peak so Density remains stable even
-    # when a small mark is feathered heavily.
+    if luminance_range:
+        # A luma feather is a plain blur of what the range selects (owner
+        # decision, 2026-09-25): a large area keeps full strength with a soft
+        # edge, and a feature thinner than the feather spreads and weakens by
+        # the same rule everywhere. It used to be rescaled so its strongest
+        # point was full strength, which tied every thin highlight to whatever
+        # else in the image was selected and made the export several times
+        # stronger than the preview, which never rescaled.
+        return blurred.astype(np.float32, copy=False)
+    # A painted mark keeps its Density: normalize the blurred alpha back to the
+    # painted peak so a small mark feathered heavily stays as strong.
     source_peak = float(np.max(mask))
     blurred_peak = float(np.max(blurred))
     if source_peak <= 0.0 or blurred_peak <= 0.0:
@@ -677,6 +685,13 @@ def _box_blur_axis(values: np.ndarray, radius: int, axis: int) -> np.ndarray:
 
 
 def _mask_radii_pixels(x: np.ndarray, y: np.ndarray, radius: float) -> tuple[float, float]:
+    """Turn a mask radius (a fraction of the source's long edge) into pixels.
+
+    The grid holds source coordinates normalized per axis, so one pixel is
+    1/width across and 1/height down. A radius is a distance, so it is taken
+    against the long edge on both axes and the blur is round. Dividing each
+    axis by its own step made it 1.5 times wider than tall on a 3:2 image.
+    """
     x_step = 0.0
     y_step = 0.0
     if x.shape[1] > 1:
@@ -686,10 +701,9 @@ def _mask_radii_pixels(x: np.ndarray, y: np.ndarray, radius: float) -> tuple[flo
     fallback = next((step for step in (x_step, y_step) if step > 1e-12), 1.0)
     x_step = x_step if x_step > 1e-12 else fallback
     y_step = y_step if y_step > 1e-12 else fallback
-    return (
-        min(2048.0, max(0.0, radius / x_step)),
-        min(2048.0, max(0.0, radius / y_step)),
-    )
+    # The smaller normalized step belongs to the long edge.
+    pixels = min(2048.0, max(0.0, radius / min(x_step, y_step)))
+    return (pixels, pixels)
 
 
 def _painted_mask_feather_radius(value: float) -> float:

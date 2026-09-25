@@ -127,13 +127,42 @@ const MAX_DIFFERING_FRACTION = 0.0005;
       });
     });
 
+    // What a capture actually shows. The comparison is only meaningful when
+    // each screenshot shows the frame the test just rendered, at the same
+    // backing size. Both diagnostic renders run at the size the app itself
+    // presents, so the viewer stays Ready and has no reason to redraw; if the
+    // app does present a frame of its own between a render and its screenshot
+    // (it announces every presentation), the pair is refused rather than
+    // compared, because resampling alone differs at every edge.
+    const presentedFrame = () => page.evaluate(() => {
+      if (window.__parityPresentations === undefined) {
+        window.__parityPresentations = 0;
+        window.addEventListener("hdrfinisher:preview-presented", () => { window.__parityPresentations += 1; });
+      }
+      return { backing: [els.previewCanvas.width, els.previewCanvas.height], presentations: window.__parityPresentations,
+        execution: state.acceptedPresentation?.execution ?? null };
+    });
+    const assertComparable = (label, tileSize, direct, tiled) => {
+      const stable = (capture) => capture.mark.presentations === capture.after.presentations
+        && capture.mark.backing.join("x") === capture.after.backing.join("x");
+      if (direct.mark.execution !== "direct" || !stable(direct) || !stable(tiled)
+        || direct.after.backing.join("x") !== tiled.after.backing.join("x")) {
+        throw new Error(`${label} tileSize ${tileSize}: the app presented its own frame during the captures, so they are not comparable: `
+          + JSON.stringify({ direct, tiled }));
+      }
+    };
+    await presentedFrame();
     const results = [];
     // One parity pass at one tile size. `label` names the radius configuration
     // so the maximum-radius seam run is reported apart from the standard one.
     const parityPass = async (label, tileSize) => {
+      // Start from an idle app: Ready, nothing in flight, and no settle or
+      // refinement timer left to present its own frame over a capture.
+      await page.waitForFunction(() => viewerState().status === "ready" && !state.gpuDraftInFlight, null, { timeout: 180000 });
+      await page.evaluate(() => state.previewScheduler?.cancel());
       let comparison = await page.evaluate(async (size) => {
         const canvas = els.previewCanvas;
-        const longEdge = previewTargetLongEdge();
+        const longEdge = requiredProcessingLongEdge();
 
         const direct = await window.HDRFinisherPerformance.renderGpuTier(longEdge);
         if (!direct) return {
@@ -182,13 +211,15 @@ const MAX_DIFFERING_FRACTION = 0.0005;
       // the presented frame is captured from the compositor and decoded into
       // pixels. Native mode walks viewport-sized captures over the isolated
       // canvas because one image-sized screenshot exceeds default GPU buffers.
+      const directMark = await presentedFrame();
       await page.waitForTimeout(250);
       const directShot = native
         ? await captureCanvasTiles(page, comparison.width, comparison.height)
         : [{ data: (await page.locator("#preview-canvas").screenshot()).toString("base64"), x: 0, y: 0 }];
+      const directFrame = { mark: directMark, after: await presentedFrame() };
 
       const tiledResult = await page.evaluate(async (size) => {
-        const result = await window.HDRFinisherPerformance.renderTiledTier(previewTargetLongEdge(), { tileSize: size });
+        const result = await window.HDRFinisherPerformance.renderTiledTier(requiredProcessingLongEdge(), { tileSize: size });
         if (!result?.rendered) return {
           error: `tiled render refused: ${(result?.refusals || []).join(", ")}`,
           diagnostics: state.gpuPreview?.diagnosticsSnapshot?.() || null,
@@ -197,11 +228,18 @@ const MAX_DIFFERING_FRACTION = 0.0005;
         return { metrics: result.metrics };
       }, tileSize);
       if (tiledResult.error) throw new Error(`tileSize ${tileSize}: ${JSON.stringify(tiledResult)}`);
+      const tiledMark = await presentedFrame();
       await page.waitForTimeout(250);
       const tiledShot = native
         ? await captureCanvasTiles(page, comparison.width, comparison.height)
         : [{ data: (await page.locator("#preview-canvas").screenshot()).toString("base64"), x: 0, y: 0 }];
-
+      assertComparable(label, tileSize, directFrame, { mark: tiledMark, after: await presentedFrame() });
+      if (process.env.HDR_FINISHER_DUMP_PARITY) {
+        // The two presented frames, for inspecting where they differ.
+        fs.mkdirSync(process.env.HDR_FINISHER_DUMP_PARITY, { recursive: true });
+        directShot.forEach((shot, index) => fs.writeFileSync(path.join(process.env.HDR_FINISHER_DUMP_PARITY, `${label}-${tileSize}-${index}-direct.png`), Buffer.from(shot.data, "base64")));
+        tiledShot.forEach((shot, index) => fs.writeFileSync(path.join(process.env.HDR_FINISHER_DUMP_PARITY, `${label}-${tileSize}-${index}-tiled.png`), Buffer.from(shot.data, "base64")));
+      }
       const captures = [];
       for (let captureIndex = 0; captureIndex < directShot.length; captureIndex += 1) {
         captures.push(await page.evaluate(async ({ a, b }) => {
@@ -332,7 +370,7 @@ const MAX_DIFFERING_FRACTION = 0.0005;
         state.session.session_id,
         "hdr",
         JSON.parse(JSON.stringify(state.adjustments)),
-        previewTargetLongEdge(),
+        requiredProcessingLongEdge(),
         state.editRevision,
         { levels: 2, noiseThreshold: 3.0, lumaSigma: 0.035, chromaSigma: 0.035 },
         "source",
@@ -361,7 +399,7 @@ const MAX_DIFFERING_FRACTION = 0.0005;
     // than left as the absence of a check: a silent fallback to Direct is the
     // failure this suite exists to catch.
     const refusals = await page.evaluate(async () => {
-      const result = await window.HDRFinisherPerformance.renderTiledTier(previewTargetLongEdge());
+      const result = await window.HDRFinisherPerformance.renderTiledTier(requiredProcessingLongEdge());
       return { rendered: result?.rendered, refusals: result?.refusals || [] };
     });
     if (!refusals.rendered || refusals.refusals.length) {
@@ -369,10 +407,21 @@ const MAX_DIFFERING_FRACTION = 0.0005;
     }
     console.log("refusal check: no module keeps this graph off the tiled path  PASS");
 
-    // One submission per generation is what makes replacement atomic.
-    const atomic = results.every((entry) => entry.metrics.submissions === 1);
-    if (!atomic) throw new Error("A tiled generation used more than one submission, so replacement is not atomic");
-    console.log("atomic assembly: every generation submitted exactly once  PASS");
+    // Replacement is atomic because the canvas is written once. Since tiled
+    // work is submitted in small batches (13d12a3), the batches render into a
+    // retained offscreen target and one final copy presents it, so a
+    // generation is one submission per batch plus that copy. The parity
+    // comparisons above are the behavioural check: a half-written or mixed
+    // frame on the canvas would not match Direct.
+    const atomic = results.every((entry) => entry.metrics.submissions >= 1
+      && entry.metrics.submissions <= Math.ceil(entry.metrics.tileCount / entry.metrics.tileBatchSize) + 1);
+    if (!atomic) {
+      throw new Error(`A tiled generation submitted more than its batches plus one presentation copy: ${JSON.stringify(results.map((entry) => ({
+        label: entry.label, tileSize: entry.tileSize, submissions: entry.metrics.submissions,
+        tileCount: entry.metrics.tileCount, tileBatchSize: entry.metrics.tileBatchSize,
+      })))}`);
+    }
+    console.log("atomic assembly: batches into the retained target, one presentation copy  PASS");
 
     // Phase 5 Detail cache and local-stack invalidation trace.
     //
@@ -395,7 +444,7 @@ const MAX_DIFFERING_FRACTION = 0.0005;
     //  5. radius change    -- a global radius. Every band must regenerate.
     const cacheTrace = await page.evaluate(async (size) => {
       const render = async () => window.HDRFinisherPerformance.renderTiledTier(
-        previewTargetLongEdge(), { tileSize: size },
+        requiredProcessingLongEdge(), { tileSize: size },
       );
       const lastLocal = state.editDocument.local_adjustments.at(-1);
       const warmUp = await render();

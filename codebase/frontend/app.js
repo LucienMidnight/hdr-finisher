@@ -398,7 +398,10 @@ const state = {
   scopeGeneration: 0,
   previewResolution: DEFAULT_PREVIEW_RESOLUTION,
   previewResolutionOverride: false,
-  previewLatencyPreference: "balanced",
+  // P5 (Preview Responsiveness Tuning Sprint): the single opt-in "Faster
+  // dragging on slower hardware". Off, every drag frame is exact; on, the
+  // latency controller may show a softer frame while a gesture is active.
+  fasterDragging: false,
   previewLatencyController: null,
   renderingMode: "auto",
   appPreferences: null,
@@ -1482,6 +1485,11 @@ const els = {
   metadataList: document.getElementById("metadata-list"),
   workflowContextList: document.getElementById("workflow-context-list"),
   previewOutputList: document.getElementById("preview-output-list"),
+  technicalSummary: document.getElementById("technical-summary"),
+  technicalDiagnostics: document.getElementById("technical-diagnostics"),
+  technicalPreviewList: document.getElementById("technical-preview-list"),
+  technicalDisplayList: document.getElementById("technical-display-list"),
+  technicalSourceList: document.getElementById("technical-source-list"),
   displayInfoList: document.getElementById("display-info-list"),
   sourcePreviewList: document.getElementById("source-preview-list"),
   sessionName: document.getElementById("session-name"),
@@ -1593,7 +1601,7 @@ const els = {
   dockTabs: [...document.querySelectorAll("[data-dock-tab]")],
   scopeView: document.getElementById("scope-view"),
   technicalView: document.getElementById("technical-view"),
-  previewLatency: document.getElementById("preview-latency"),
+  previewFasterDragging: document.getElementById("preview-faster-dragging"),
   previewMigrationNotice: document.getElementById("preview-migration-notice"),
   previewMigrationDismiss: document.getElementById("preview-migration-dismiss"),
   previewQualityStatus: document.getElementById("preview-quality-status"),
@@ -2020,10 +2028,16 @@ async function initializeGpuPreview() {
   if (!window.HDRWebGPUPreview) return;
   state.gpuFailurePolicy = window.HDRRenderFailurePolicy ? new window.HDRRenderFailurePolicy() : null;
   state.gpuPreview = new window.HDRWebGPUPreview(els.previewCanvas);
+  state.gpuPreview.featherReferenceScale = maskFeatherReferenceScale;
   // Preferences can load before or after the renderer exists, so apply the
   // stored budget here as well as on every preferences change.
   state.gpuPreview.setMemoryBudget(state.gpuMemoryBudget ?? "auto");
+  // Auto is half of the active card's dedicated video memory when the desktop
+  // shell can read it; a browser, or a failed read, keeps the 2 GiB fallback.
+  const videoMemory = await desktop?.videoMemory?.().catch(() => null);
+  state.gpuPreview.setDetectedVideoMemory(videoMemory?.detected ? videoMemory : null);
   await state.gpuPreview.initialize();
+  renderGpuMemoryAutoLabel();
   if (!state.gpuPreview.available && state.gpuFailurePolicy) {
     // Initialization failure is the one permanent failure in Section 5.8.
     state.gpuFailurePolicy.record(new Error(state.gpuPreview.detail || "WebGPU initialization failed"), { init: true });
@@ -2079,14 +2093,14 @@ function initializeLocalOverlayColor() {
 function initializePreviewPreferences() {
   state.previewResolution = DEFAULT_PREVIEW_RESOLUTION;
   state.previewResolutionOverride = false;
-  state.previewLatencyPreference = "balanced";
+  state.fasterDragging = false;
   state.previewLatencyController = window.HDRPreviewLatencyController
     ? new window.HDRPreviewLatencyController() : null;
   state.scopeMaxNits = 4000;
   state.scopeQuality = DEFAULT_SCOPE_QUALITY;
   state.scopeExactPeak = false;
   state.compareLayout = "single";
-  if (els.previewLatency) els.previewLatency.value = state.previewLatencyPreference;
+  if (els.previewFasterDragging) els.previewFasterDragging.checked = state.fasterDragging;
   if (els.scopeZoom) els.scopeZoom.value = String(state.scopeMaxNits);
   if (els.scopeDetail) els.scopeDetail.value = state.scopeQuality;
   if (els.scopeExactPeak) els.scopeExactPeak.checked = state.scopeExactPeak;
@@ -2134,10 +2148,13 @@ function initializePreviewScheduler() {
     highQuality: () => previewNeedsRefinement(),
     onFrame: async (task) => {
       if (state.localMaskDraftDirty) return false;
-      let decision = interactiveScaleDecision(task.lane);
+      // P5: a softer frame is only for an active gesture with Faster
+      // dragging on. A frame that runs after release (a coalesced one, or an
+      // edit with no gesture) is exact, so nothing coarse follows the release.
+      const gesture = Boolean(state.previewScheduler?.interacting);
+      let decision = interactiveScaleDecision(task.lane, { interacting: gesture });
       const tiled = interactiveDraftGuaranteedTiled(task.lane);
-      if (tiled && !decision.coarse
-        && state.previewLatencyPreference !== "precise") {
+      if (tiled && !decision.coarse && gesture && state.fasterDragging) {
         decision = { edge: Math.max(256, Math.round(refinementProxyLongEdge() * 0.5)),
           coarse: true, scale: 0.5 };
       }
@@ -2165,11 +2182,15 @@ function initializePreviewScheduler() {
         // zoom must use the bounded refinement route, then settle exact.
         tier: tiled && decision.coarse ? "refinement" : "interactive",
         coarse: decision.coarse,
+        // Lets the renderer drop this frame if the gesture ends before it
+        // reaches the canvas (see renderGpuDraftInner's isCurrent).
+        reason: decision.coarse ? "drag-coarse" : undefined,
       });
-      // Detail adds three full-frame filtering passes. Keep at most one such
-      // graph in the GPU queue so rapid slider input coalesces to the newest
-      // scheduler task instead of building latency behind obsolete frames.
-      if (rendered && (detailActive || detailInteraction)) await state.gpuPreview?.waitForSubmittedWork?.();
+      // P6: at most one drag frame on the GPU. The next frame waits for this
+      // one to finish on the device, not merely to be submitted, so rapid
+      // input coalesces to the newest task instead of queueing obsolete
+      // frames (up to seven were measured in flight at 200%).
+      if (rendered) await state.gpuPreview?.waitForSubmittedWork?.();
       return rendered;
     },
     onScope: (task) => {
@@ -2416,7 +2437,7 @@ function initializePreviewScheduler() {
     disposeDenoiseSelectorSeam: () => state.gpuPreview?.disposeDenoiseSelectorSeam?.(),
     evictDenoiseCache: () => state.gpuPreview?.evictDenoiseCache?.(),
     sessionId: () => state.session?.session_id || null,
-    previewMode: () => `${state.previewLatencyPreference}-${state.gpuPreview?.available ? "gpu" : "cpu"}`,
+    previewMode: () => `${dragLatencyPreference()}-${state.gpuPreview?.available ? "gpu" : "cpu"}`,
     authoringState: () => ({
       sessionId: state.session?.session_id || null,
       lane: state.currentView,
@@ -2430,7 +2451,8 @@ function initializePreviewScheduler() {
       renderPlan: state.gpuPreview?.lastRenderPlan || null,
       allocationBackoff: state.gpuPreview?.allocationBackoff || null,
       previewResolution: state.previewResolutionOverride ? normalizedPreviewResolution() : "auto",
-      previewPreference: state.previewLatencyPreference,
+      previewPreference: dragLatencyPreference(),
+      fasterDragging: state.fasterDragging,
       previousPreviewTier: state.appPreferences?.previewMigration?.previousTier || null,
       previewLatency: state.previewLatencyController?.snapshot() || null,
       previewMaxDimension: requiredProcessingLongEdge(),
@@ -2586,11 +2608,12 @@ function applyLayoutState() {
     button.classList.toggle("active", active);
     button.setAttribute("aria-selected", String(active));
   });
-  const technical = state.activeDockTab === "technical";
+  const technical = readoutDockTab(state.activeDockTab);
   els.scopeView.classList.toggle("hidden", technical);
   els.technicalView.classList.toggle("hidden", !technical);
+  renderReadoutPanelMode(state.activeDockTab);
   if (technical) {
-    els.scopeMode.value = "technical";
+    els.scopeMode.value = state.activeDockTab;
   } else {
     state.scopeMode = state.activeDockTab === "vectorscope"
       ? "vectorscope"
@@ -2604,8 +2627,24 @@ function applyLayoutState() {
   updateSplitterAria();
 }
 
+/**
+ * Technical and Diagnostics are readouts, not scopes; they share one panel.
+ *
+ * P5 (Preview Responsiveness Tuning Sprint, ledger 9.6): Technical is a short
+ * plain-language list that fits the panel at its minimum height. Diagnostics
+ * is the full list it used to be.
+ */
+function readoutDockTab(tab) {
+  return tab === "technical" || tab === "diagnostics";
+}
+
+function renderReadoutPanelMode(tab) {
+  els.technicalSummary?.classList.toggle("hidden", tab === "diagnostics");
+  els.technicalDiagnostics?.classList.toggle("hidden", tab !== "diagnostics");
+}
+
 function renderScopeControlAvailability() {
-  const technical = state.scopeMode === "technical" || state.activeDockTab === "technical";
+  const technical = state.scopeMode === "technical" || readoutDockTab(state.activeDockTab);
   const vectorscope = state.scopeMode === "vectorscope";
   // Channel selection and nit range do not alter a standards-based
   // vectorscope. Hide them instead of leaving controls that appear to work.
@@ -3178,11 +3217,10 @@ function bindEvents() {
     state.scopeMaxNits = [1000, 4000, 10000].includes(requestedMaxNits) ? requestedMaxNits : 4000;
     await refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
   });
-  els.previewLatency?.addEventListener("change", () => {
-    const selected = ["responsive", "balanced", "precise"].includes(els.previewLatency.value)
-      ? els.previewLatency.value : "balanced";
-    window.HDRApplicationShell?.setPreviewPreference?.(selected);
-    state.previewLatencyPreference = selected;
+  els.previewFasterDragging?.addEventListener("change", () => {
+    const enabled = els.previewFasterDragging.checked === true;
+    window.HDRApplicationShell?.setFasterDragging?.(enabled);
+    state.fasterDragging = enabled;
     renderReadouts();
   });
   els.previewMigrationDismiss?.addEventListener("click", () => {
@@ -3588,6 +3626,16 @@ function bindEvents() {
   els.exportSharpening?.addEventListener("change", markExportPresetCustom);
 
   bindCompareControl();
+  // A drag frame carries the last highlight measurement instead of waiting
+  // for one. When the measurement it skipped lands and differs, redraw the
+  // current view so the resting frame uses the real anchor. The renderer has
+  // cached it, so the redraw is one ordinary pass.
+  window.addEventListener("hdrfinisher:highlight-anchor-measured", (event) => {
+    const lane = event.detail?.lane;
+    if (!state.session || lane !== state.currentView) return;
+    invalidatePreview(lane, { markDirty: false });
+    debouncePreview(lane);
+  });
   window.addEventListener("hdrfinisher:webgpulost", (event) => {
     const message = event.detail?.message || "WebGPU device lost";
     const verdict = state.gpuFailurePolicy?.record(new Error(message), { deviceLost: true });
@@ -3978,6 +4026,12 @@ function renderCurrentPreviewSize(options) {
 
 function renderReadouts() {
   renderPresentationCapability();
+  if (els.technicalPreviewList) {
+    const technical = technicalSummaryEntries();
+    renderKeyValueList(els.technicalPreviewList, technical.preview);
+    renderKeyValueList(els.technicalDisplayList, technical.display);
+    renderKeyValueList(els.technicalSourceList, technical.source);
+  }
   renderKeyValueList(els.previewOutputList, previewOutputEntries());
   renderKeyValueList(els.displayInfoList, displayProbeEntries());
   renderKeyValueList(els.sourcePreviewList, sourceInterpretationEntries());
@@ -4207,10 +4261,8 @@ async function initializeApplicationShell() {
       const preferredPreviewResolution = preferences.previewResolution === "auto"
         ? "auto" : normalizedPreviewResolution(preferences.previewResolution);
       const selectablePreviewResolution = preferredPreviewResolution;
-      const preferredPreviewLatency = ["responsive", "balanced", "precise"].includes(preferences.previewPreference)
-        ? preferences.previewPreference : "balanced";
-      state.previewLatencyPreference = preferredPreviewLatency;
-      if (els.previewLatency) els.previewLatency.value = preferredPreviewLatency;
+      state.fasterDragging = preferences.fasterDragging === true;
+      if (els.previewFasterDragging) els.previewFasterDragging.checked = state.fasterDragging;
       els.previewMigrationNotice?.classList.toggle("hidden",
         !preferences.previewMigration?.previousTier || preferences.previewMigration.noticeShown === true);
       if (options.initial) {
@@ -4391,6 +4443,7 @@ function applyGpuMemoryBudget(value) {
   // eviction. It never decides whether a resolution option is visible, so
   // nothing here touches the preview-resolution selector.
   const setting = value === "auto" || value === undefined || value === null ? "auto" : value;
+  const previousBytes = state.gpuPreview?.memoryBudgetBytes?.() ?? null;
   state.gpuMemoryBudget = setting;
   const bytes = state.gpuPreview?.setMemoryBudget?.(setting)
     ?? window.HDRWebGPUPreview?.normalizeGpuBudgetBytes?.(setting)
@@ -4399,7 +4452,22 @@ function applyGpuMemoryBudget(value) {
   // failure backed off from, so let the next render re-plan from scratch.
   state.gpuPreview?.clearAllocationBackoff?.();
   renderReadouts();
+  // A new budget can change the route. Re-plan and re-render the current view
+  // now, so the readout never shows a route that the next edit would change.
+  if (state.session && state.gpuPreview?.available && bytes !== previousBytes) {
+    invalidatePreview(state.currentView, { markDirty: false });
+    debouncePreview(state.currentView);
+  }
   return bytes;
+}
+
+/** Settings shows what Auto means on this machine, not a fixed number. */
+function renderGpuMemoryAutoLabel() {
+  const option = document.querySelector('#settings-gpu-memory-limit option[value="auto"]');
+  const calibration = state.gpuPreview?.gpuBudget || null;
+  if (option && calibration && window.HDRGpuBudget?.autoLabel) {
+    option.textContent = window.HDRGpuBudget.autoLabel(calibration);
+  }
 }
 
 async function applyNewSessionPreferences() {
@@ -4464,11 +4532,79 @@ function previewExecutionLabel() {
   const plan = state.gpuPreview?.lastRenderPlan;
   const mode = plan?.decision?.mode === "tiled" ? "Tiled" : "Direct";
   const budget = state.gpuMemoryBudget === "auto" || state.gpuMemoryBudget === undefined
-    ? "Auto"
+    ? (window.HDRGpuBudget?.autoLabel?.(state.gpuPreview?.gpuBudget) || "Auto")
     : `${state.gpuMemoryBudget} GiB`;
   if (engine !== "GPU") return `Direct CPU · budget ${budget}`;
   const backoff = state.gpuPreview?.allocationBackoff ? " · allocation backoff" : "";
   return `${mode} GPU · budget ${budget}${backoff}`;
+}
+
+/**
+ * The Technical readout: what the preview is showing and why, in plain words.
+ *
+ * Thirteen rows chosen by the owner (ledger 9.6). Everything else, including
+ * generations, caches and the controller's state, lives under Diagnostics.
+ */
+function technicalSummaryEntries() {
+  const viewer = viewerState();
+  const accepted = state.acceptedPresentation;
+  const lane = state.currentView === "sdr" ? "SDR" : "HDR";
+  const zoom = state.zoomMode === "fit" ? "Fit" : `${Math.round(state.zoomPercent)}%`;
+  const status = viewer.status === "ready" ? "Ready"
+    : viewer.status === "unavailable" ? `Unavailable${viewer.detail ? ` — ${viewer.detail}` : ""}`
+      : viewer.coarse ? "Coarse — sharpening"
+        : viewer.status === "updating" ? "Updating" : "Preparing";
+  const detail = !state.session || !accepted ? "Waiting"
+    : accepted.exact ? "Full detail"
+      : accepted.coarse ? "Softer while dragging" : "Placeholder";
+  const setting = state.fasterDragging ? " · faster dragging on" : "";
+  const plan = state.gpuPreview?.lastRenderPlan;
+  const gpu = accepted?.transport === "WebGPU" || Boolean(state.gpuPreview?.available);
+  const route = !gpu ? "On the processor (CPU)" : plan?.decision?.mode === "tiled" ? "In tiles" : "Whole image";
+  const memory = state.gpuMemoryBudget === "auto" || state.gpuMemoryBudget === undefined
+    ? (window.HDRGpuBudget?.autoLabel?.(state.gpuPreview?.gpuBudget) || "Auto")
+    : `${state.gpuMemoryBudget} GiB`;
+  const presentation = state.presentationCapability || presentationCapabilityState();
+  const display = state.desktopEnvironment?.currentDisplay;
+  const preview = [
+    ["View", `${lane} · ${zoom}`],
+    ["Status", status],
+    ["Detail", `${detail}${setting}`],
+    ["Processing", `${route} · memory ${memory}`],
+  ];
+  const displayRows = [
+    ["HDR on this display", presentation.qualified ? "Yes" : "No · SDR simulation"],
+    ["Monitor", display?.label || "This display"],
+  ];
+  if (!state.session) {
+    return { preview, display: displayRows, source: [
+      ["File", "No image open"], ["Interpretation", "—"], ["Encoding", "—"], ["Signal", "—"],
+      ["Source peak", "—"], ["Reference white", `${projectReferenceWhiteNits()} nit`], ["Bit depth", "—"],
+    ] };
+  }
+  const source = state.session.source;
+  const luminance = state.editDocument?.source?.luminance || {};
+  const mode = source.interpretation_mode === "manual" ? "Manual" : "Auto";
+  return {
+    preview,
+    display: displayRows,
+    source: [
+      ["File", source.filename || source.suffix || "—"],
+      ["Interpretation", isDevelopedRawSession(state.session) ? `${mode} · camera RAW profile` : mode],
+      ["Encoding", source.source_color_space || source.transfer_function
+        ? `${source.source_color_space || "Unknown colours"} · ${source.transfer_function || "unknown curve"}`
+        : "Not declared by the file"],
+      ["Signal", {
+        HDR_TRUE: "HDR",
+        HDR_ENCODED: "HDR-encoded file",
+        HDR_LINEAR_UNCONFIRMED: "Linear, HDR not confirmed",
+        SDR_ONLY: "SDR",
+      }[state.session.analysis?.classification] || state.session.analysis?.classification || "—"],
+      ["Source peak", luminance.source_peak_nits ? `${luminance.source_peak_nits} nit` : "Not declared"],
+      ["Reference white", `${projectReferenceWhiteNits()} nit`],
+      ["Bit depth", String(state.session.metadata?.bit_depth || "Unknown")],
+    ],
+  };
 }
 
 function previewOutputEntries() {
@@ -4480,7 +4616,7 @@ function previewOutputEntries() {
     ["View", state.currentView.toUpperCase()],
     ["Rendering", state.renderingMode === "cpu" ? "CPU Compatibility" : state.renderingMode === "gpu" ? "GPU Preferred" : "Auto"],
     ["Preview Target", `${previewResolutionLabel(state.previewResolutionOverride ? state.previewResolution : "display")} · ${target.width} × ${target.height}`],
-    ["Response", state.previewLatencyPreference],
+    ["Faster dragging", state.fasterDragging ? "On · softer while dragging" : "Off · full detail while dragging"],
     ["Legacy override", state.previewResolutionOverride ? previewResolutionLabel() : "Off"],
     ["Controller", JSON.stringify(state.previewLatencyController?.snapshot()?.decisions || {})],
     ["Migrated tier", state.appPreferences?.previewMigration?.previousTier || "None"],
@@ -4644,6 +4780,8 @@ function renderKeyValueList(container, entries) {
     dt.textContent = key;
     const dd = document.createElement("dd");
     dd.textContent = value;
+    // A narrow column may shorten a long value; the full text is on hover.
+    dd.title = String(value ?? "");
     container.append(dt, dd);
   }
 }
@@ -4886,23 +5024,34 @@ function previewGraphTimingKey(lane = state.currentView) {
     state.zoomMode === "custom" ? "zoom" : "fit"].join(":");
 }
 
-function interactiveScaleDecision(lane = state.currentView) {
+/**
+ * The latency controller's preference for the current setting.
+ *
+ * P5 (Preview Responsiveness Tuning Sprint) replaced the three-way preview
+ * response menu with one opt-in. Off is the old Precise: every frame exact,
+ * no coarse pass. On is the old Balanced: the controller may choose a coarse
+ * scale when its timing evidence says an exact frame would be slow.
+ */
+function dragLatencyPreference() {
+  return state.fasterDragging ? "balanced" : "precise";
+}
+
+function interactiveScaleDecision(lane = state.currentView, { interacting = true } = {}) {
   const exactEdge = refinementProxyLongEdge();
   const visibleEdge = Math.min(exactEdge, Math.max(1, displayedLongEdge()));
   return state.previewLatencyController?.choose({
-    preference: state.previewLatencyPreference,
+    preference: dragLatencyPreference(),
     graph: previewGraphTimingKey(lane),
     exactEdge,
     visiblePixels: visibleEdge * visibleEdge,
-    interacting: true,
+    interacting,
   }) || { edge: interactiveProxyLongEdge(), coarse: false, scale: 1 };
 }
 
 function responseCoarseLongEdge(exactEdge) {
   // Reuse one small source level across nearby zooms and graph changes. Exact
   // output remains at the display-required edge in the mandatory follow-up.
-  const cap = state.previewLatencyPreference === "responsive" ? 1024 : 2048;
-  const edge = Math.min(cap, Math.max(256, exactEdge - 1));
+  const edge = Math.min(2048, Math.max(256, exactEdge - 1));
   return edge >= 1024 ? (edge >= 2048 ? 2048 : 1024)
     : edge >= 512 ? 512 : 256;
 }
@@ -5456,7 +5605,12 @@ async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 16
 
 function refreshScopes(longEdge = 960, { tier = "settled", generation = null, lane = state.currentView } = {}) {
   if (!state.session || geometryDraftActive()) return Promise.resolve(false);
-  if (state.globalEditDirty) {
+  // P5/P6: a live GPU scope during a drag reads the presented canvas, not the
+  // backend's copy, so it does not wait for a save round trip. Waiting put its
+  // readback on the GPU beside the next drag frame. The save still runs at
+  // release and in the settled pass, and a CPU scope still saves first.
+  const liveGpuScope = tier === "interactive" && gpuScopeEligible(lane);
+  if (state.globalEditDirty && !liveGpuScope) {
     // A deferred or rejected sync can leave edits dirty. Retrying it in a
     // resolved-Promise loop starves input and grows the heap until V8 OOMs.
     return syncGlobalEditState().then((applied) => applied && !state.globalEditDirty
@@ -5546,6 +5700,13 @@ async function runGpuScopeRequest(request) {
   const sampleHeight = tier === "interactive"
     ? state.scopeQuality === "performance" ? 128 : state.scopeQuality === "reference" ? 256 : 192
     : state.scopeQuality === "performance" ? 256 : state.scopeQuality === "reference" ? 512 : 384;
+  // P6: a live scope never shares the GPU with a drag frame. The scheduler
+  // starts it in the gap after a frame; if a frame has started since, this
+  // pass stands down and the next one (at most 100 ms later) runs instead.
+  if (tier === "interactive" && state.previewScheduler?.frameInFlight) {
+    state.previewScheduler.recordStaleResult();
+    return false;
+  }
   const analysis = await state.gpuPreview.analyzeScope(els.previewCanvas, {
     width: sampleWidth,
     height: sampleHeight,
@@ -8388,6 +8549,23 @@ function sourcePixelFrameDimensions(geometry = state.adjustments?.shared?.geomet
   return { width: right - left, height: bottom - top };
 }
 
+/**
+ * Source long edge over the long edge of the frame a geometry produces.
+ *
+ * Mask radii (luma feather) are fractions of the uncropped source, because
+ * the backend builds every mask in source space and crops it afterwards. The
+ * GPU draws its masks in the cropped, straightened frame, so it scales them by
+ * this ratio: 2 under a 50% crop.
+ */
+function maskFeatherReferenceScale(signature) {
+  const source = state.session?.source;
+  let geometry = null;
+  try { geometry = JSON.parse(signature); } catch { return 1; }
+  const frame = sourcePixelFrameDimensions(geometry);
+  if (!source?.width || !source?.height || !frame) return 1;
+  return Math.max(source.width, source.height) / Math.max(frame.width, frame.height);
+}
+
 function constrainCropToRatio() {
   const ratio = cropAspectRatio();
   if (!ratio) return renderCropFrame();
@@ -10992,7 +11170,11 @@ async function renderGpuDraftInner(
       && state.session?.session_id === sessionId
       && generation === state.previewGeneration[lane]
       && requestedGeometrySignature === geometrySignature()
-      && (allowInactive || lane === state.currentView),
+      && (allowInactive || lane === state.currentView)
+      // P5: a softer drag frame is never shown after release. One still on
+      // the GPU when the pointer lifts is dropped before it reaches the
+      // canvas; the settled pass that follows the release draws full detail.
+      && !(request.coarse && request.reason === "drag-coarse" && !state.previewScheduler?.interacting),
   };
   try {
     const result = await state.gpuPreview.render(
@@ -12671,6 +12853,13 @@ function applyZoomGeometry() {
     els.chromeProofWatermark.style.width = `${displayWidth}px`;
     els.chromeProofWatermark.style.height = `${displayHeight}px`;
   }
+  // Past 100% one source pixel covers more than one device pixel. Show it as
+  // a flat square, the way an inspection zoom should; at and below 100% the
+  // compositor keeps its smooth filtering so Fit does not alias.
+  const magnified = percent > 100.5;
+  for (const element of [els.previewCanvas, els.comparisonCanvas, els.previewImage, els.comparisonImage]) {
+    element.classList.toggle("pixel-magnified", magnified);
+  }
   state.zoomPercent = percent;
   updateZoomReadout();
   syncOverlayPlacement();
@@ -12805,10 +12994,11 @@ async function activateDockTab(tab) {
     button.classList.toggle("active", active);
     button.setAttribute("aria-selected", String(active));
   });
-  const technical = tab === "technical";
+  const technical = readoutDockTab(tab);
   els.scopeView.classList.toggle("hidden", technical);
   els.technicalView.classList.toggle("hidden", !technical);
-  els.scopeMode.value = technical ? "technical" : tab === "parade" ? "waveform" : tab;
+  renderReadoutPanelMode(tab);
+  els.scopeMode.value = technical ? tab : tab === "parade" ? "waveform" : tab;
   [els.scopeChannelMode, els.scopeDetail, els.scopeZoom].forEach((control) => { if (control) control.disabled = technical; });
   scheduleLayoutSettled();
   if (technical) return;
@@ -15403,6 +15593,22 @@ async function setSdrMatch(action) {
   }
 }
 
+/**
+ * JSON with object keys sorted, so two documents with the same values compare
+ * equal whatever order the backend wrote their keys in.
+ */
+function stablePreviewJson(value) {
+  return JSON.stringify(value ?? null, (key, entry) => (entry && typeof entry === "object" && !Array.isArray(entry)
+    ? Object.fromEntries(Object.keys(entry).sort().map((name) => [name, entry[name]]))
+    : entry));
+}
+
+/**
+ * `refreshPreview` is true (always re-render on success), false, or
+ * "if-changed": re-render only when the acknowledged document changes what the
+ * preview draws. The optimistic edit already rendered its own values, so an
+ * acknowledgement that matches them has nothing new to show.
+ */
 function queueEditCommand(commandType, payload = {}, targetId = null, { refreshPreview = true, globalEditGeneration = null, historyGroup = null } = {}) {
   const sessionId = state.session?.session_id;
   if (commandType !== "set_global_adjustments" && state.globalEditDirty) {
@@ -15434,6 +15640,8 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
       && globalEditGeneration !== state.globalEditGeneration;
     const optimisticAdjustments = preserveNewerGlobalEdit ? state.adjustments : null;
     const draftGeometry = geometryDraftActive() ? state.adjustments.shared.geometry : null;
+    const shownInputs = refreshPreview === "if-changed"
+      ? stablePreviewJson([state.adjustments, state.editDocument?.local_adjustments]) : null;
     state.editRevision = result.revision;
     state.editDocument = result.document;
     if (commandType === "replace_document") loadDenoiseDocument(state.editDocument);
@@ -15466,7 +15674,14 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
       renderOverlayPresetNote();
       updateExportAvailability();
     }
-    if (refreshPreview) {
+    // P5 (Preview Responsiveness Tuning Sprint): a global-edit save used to
+    // start a new render generation for values already on screen, both during
+    // a drag (the scope pass saves) and after release, where it cost a
+    // duplicate render and the settle debounce before the settled pass.
+    const previewInputsChanged = refreshPreview === "if-changed"
+      ? stablePreviewJson([state.adjustments, state.editDocument?.local_adjustments]) !== shownInputs
+      : refreshPreview;
+    if (previewInputsChanged) {
       invalidatePreview("hdr", { local: true });
       invalidatePreview("sdr", { local: true });
       debouncePreview(state.currentView);
@@ -15509,7 +15724,11 @@ async function syncGlobalEditState() {
         authored_sdr_override_consent: true,
       }
     : { adjustments };
-  const pending = queueEditCommand(commandType, payload, null, { globalEditGeneration: generation, historyGroup });
+  // A plain global save only re-renders if the backend's document differs from
+  // the optimistic values already drawn; an SDR-match override always does.
+  const pending = queueEditCommand(commandType, payload, null, {
+    globalEditGeneration: generation, historyGroup, refreshPreview: matchOverride ? true : "if-changed",
+  });
   state.globalEditSyncPending = pending;
   const applied = await pending;
   if (state.session?.session_id !== sessionId) return false;
@@ -17361,7 +17580,8 @@ function postProcessBrushMaskPreview(source, leaf, width, height) {
     blurred.width = width;
     blurred.height = height;
     const blurredContext = blurred.getContext("2d");
-    blurredContext.filter = `blur(${Math.max(0.25, Math.abs(shift) * width)}px)`;
+    // Radii are fractions of the long edge, as in the backend.
+    blurredContext.filter = `blur(${Math.max(0.25, Math.abs(shift) * Math.max(width, height))}px)`;
     blurredContext.drawImage(result, 0, 0);
     const sourcePixels = result.getContext("2d").getImageData(0, 0, width, height);
     const shiftedPixels = blurredContext.getImageData(0, 0, width, height);
@@ -17388,7 +17608,7 @@ function postProcessBrushMaskPreview(source, leaf, width, height) {
   const softenedContext = softened.getContext("2d");
   const sourcePixels = result.getContext("2d").getImageData(0, 0, width, height);
   const featherRadius = 0.18 * Math.pow(featherAmount, 0.75);
-  softenedContext.filter = `blur(${Math.max(0.25, featherRadius * width)}px)`;
+  softenedContext.filter = `blur(${Math.max(0.25, featherRadius * Math.max(width, height))}px)`;
   softenedContext.drawImage(result, 0, 0);
   const outputPixels = softenedContext.getImageData(0, 0, width, height);
   let sourcePeak = 0;

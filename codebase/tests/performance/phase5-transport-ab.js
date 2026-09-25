@@ -38,9 +38,12 @@ function median(values) {
     await page.waitForFunction(() => !state.gpuDraftInFlight && state.gpuPreview?.available, null,
       { timeout: 600000 });
     await page.evaluate(() => {
-      const control = document.querySelector('#preview-latency');
-      control.value = 'precise';
-      control.dispatchEvent(new Event('change', { bubbles: true }));
+      // P5: full detail while dragging (the old Precise) is the default.
+      const faster = document.getElementById("preview-faster-dragging");
+      if (faster?.checked) {
+        faster.checked = false;
+        faster.dispatchEvent(new Event("change", { bubbles: true }));
+      }
     });
     await page.waitForTimeout(500);
 

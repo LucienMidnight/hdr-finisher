@@ -47,9 +47,13 @@ const preferences = process.argv.includes('--preferences')
     const steps = [];
     for (const preference of preferences) {
       await page.evaluate((mode) => {
-        const control = document.querySelector('#preview-latency');
-        control.value = mode;
-        control.dispatchEvent(new Event('change', { bubbles: true }));
+        // P5: Responsive and Balanced became Faster dragging on; Precise is off.
+        const faster = document.getElementById("preview-faster-dragging");
+        const on = mode !== "precise";
+        if (faster && faster.checked !== on) {
+          faster.checked = on;
+          faster.dispatchEvent(new Event("change", { bubbles: true }));
+        }
       }, preference);
       for (const [name, zoom] of [['out-50', 50], ['out-35', 35], ['native-100', 100], ['zoom-200', 200],
         ['fit', null], ['warm-50', 50], ['warm-100', 100]]) {

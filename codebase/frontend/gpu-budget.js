@@ -3,15 +3,18 @@
  * information, validate it with a bounded allocation probe, and keep the
  * stated policy value as the conservative fallback.
  *
- * WebGPU does not report physical VRAM, so nothing here may claim to know it.
- * What can be verified is the adapter's own identity and its limits, and what
- * can be tested is whether an allocation of the candidate size actually
- * succeeds on this device right now. Both are used only to *lower* the
- * candidate: PRD 5.7 says Auto must not be raised above the policy fallback
- * before ledger agreement and failure recovery pass, so the policy number is a
- * ceiling that this module never crosses and the source of every decision is
- * reported rather than inferred.
+ * WebGPU does not report physical VRAM. The desktop shell can: it reads the
+ * active adapter's dedicated memory from the driver (see desktop/lib/
+ * video-memory.js). Failure recovery has landed (ROI sprint ledger 15.44), so
+ * the Preview Responsiveness Tuning Sprint (owner decision Q2) lets Auto use
+ * up to half of that detected dedicated memory. Without a detection -- a
+ * browser, an unsupported platform, or integrated graphics whose dedicated
+ * figure is only a small carve-out -- Auto stays at the stated policy
+ * fallback. Verified adapter facts and a real allocation probe can then only
+ * *lower* the candidate, and the source of every decision is reported rather
+ * than inferred.
  *
+ *   detected card     -> half of its dedicated video memory
  *   software adapter  -> 512 MiB candidate  (verified: isFallbackAdapter or a
  *                        software rasterizer in the adapter description)
  *   limited device    -> 1 GiB candidate    (verified: device limits below what
@@ -31,13 +34,30 @@ const HDRGPU_BUDGET_PROBE_LIMIT_BYTES = 256 * 1024 * 1024;
 // full-resolution intermediate class at the sprint's reference sizes.
 const HDRGPU_BUDGET_MIN_TEXTURE_DIMENSION = 8192;
 const HDRGPU_BUDGET_MIN_BUFFER_BYTES = 128 * 1024 * 1024;
+// Below this a "dedicated" figure is an integrated GPU's carve-out, not a card:
+// WebGPU on those adapters allocates from shared memory.
+const HDRGPU_BUDGET_MIN_DISCRETE_BYTES = 4 * 1024 * 1024 * 1024;
+const HDRGPU_GIB = 1024 * 1024 * 1024;
+
+function formatGib(bytes) {
+  const gib = bytes / HDRGPU_GIB;
+  return Number.isInteger(Math.round(gib * 10) / 10) ? String(Math.round(gib)) : gib.toFixed(1);
+}
 
 const HDRGpuBudget = {
-  calibrate({ policyBytes, adapterInfo = null, limits = null, probe = null } = {}) {
-    const policy = Math.max(0, Number(policyBytes) || 0);
+  calibrate({ policyBytes, detectedVideoMemory = null, adapterInfo = null, limits = null, probe = null } = {}) {
+    const fallbackPolicy = Math.max(0, Number(policyBytes) || 0);
     const notes = [];
+    const detectedBytes = Number(detectedVideoMemory?.bytes) > 0 ? Number(detectedVideoMemory.bytes) : null;
+    const discrete = detectedBytes !== null && detectedBytes >= HDRGPU_BUDGET_MIN_DISCRETE_BYTES && fallbackPolicy > 0;
+    const policy = discrete ? Math.floor(detectedBytes / 2) : fallbackPolicy;
     let candidate = policy;
-    let source = policy > 0 ? "policy-fallback" : "unavailable";
+    let source = discrete ? "detected-vram" : policy > 0 ? "policy-fallback" : "unavailable";
+    if (discrete) {
+      notes.push(`detected ${formatGib(detectedBytes)} GiB dedicated video memory${detectedVideoMemory.device ? ` on ${detectedVideoMemory.device}` : ""}; Auto uses half`);
+    } else if (detectedBytes !== null) {
+      notes.push(`detected ${formatGib(detectedBytes)} GiB dedicated memory is an integrated carve-out; the standard Auto limit applies`);
+    }
 
     const fallbackAdapter = Boolean(adapterInfo?.fallback);
     if (fallbackAdapter) {
@@ -89,6 +109,7 @@ const HDRGpuBudget = {
       budgetBytes,
       source,
       fallback: source === "policy-fallback" || source === "unavailable",
+      detectedBytes,
       notes,
       probe: probeEvidence,
       adapter: adapterInfo
@@ -99,6 +120,18 @@ const HDRGpuBudget = {
         }
         : null,
     };
+  },
+
+  /** The readout for Auto: the budget in use and whether it came from the card. */
+  autoLabel(calibration) {
+    const bytes = Number(calibration?.budgetBytes) || 0;
+    const detected = Number(calibration?.detectedBytes) || 0;
+    const budget = `Auto · ${formatGib(bytes)} GiB`;
+    if (calibration?.source === "detected-vram") return `${budget} (detected ${formatGib(detected)} GiB)`;
+    if (calibration?.source === "policy-fallback" || calibration?.source === "unavailable" || !calibration) {
+      return `${budget} (not detected)`;
+    }
+    return `${budget} (${calibration.source.replace(/-/g, " ")})`;
   },
 };
 
