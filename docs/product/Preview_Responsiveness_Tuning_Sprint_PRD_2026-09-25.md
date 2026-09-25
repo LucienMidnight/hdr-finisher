@@ -307,3 +307,63 @@ At 200%, active power above idle fell from about 70 W to about 40 W. On a 164 Hz
 **Tests.** `tests/preview-scheduler-pacing.test.js`: 3 of 4 fail before (164.5 fps, a scope during a frame, 60 ms scopes) and pass after. `drag-gpu-load.js` fails before and passes after. Also passing: Node 239, frontend contract 101, `highlight-anchor-stability`, `presentation-gate`, `roi-catch-up`, `budget-route`. The owner's manual fan check is still to do.
 
 **Owner check (P6), 2026-09-25:** passed. Drags stay smooth and the GPU load and fans are noticeably lower. The Technical / Diagnostics scope-panel change (9.6) is bundled into P5 at the owner's request.
+
+### 9.8 P5: release → settled, one opt-in, the Technical panel (done; owner check pending)
+
+Commits: `59cffeb` release → settled instrument, `3c790a7` settle at release and no duplicate render, `60131a0` Technical / Diagnostics panel, `4201feb` the Faster dragging opt-in, settings and user guide, `cb15bd1` live scopes during a drag (found while re-running P6's gate), `2bbef4a` instrument refinement. Development Electron through `tests/run-in-electron.js` at 2560×1440, DPR 1, AC power, RTX 4070 Ti, 42.4 MP fixture, Auto memory (every measured stroke ran Direct). **The packaged build was not rebuilt or measured.**
+
+**Measured first, and where it differs from the PRD.** The PRD's P5 baseline (slider → refined 284 ms at Fit and 296 ms at 100%, ledger 15.50) predates P2 and P6. On the build before any P5 change, with Precise (the new default), the picture was already exact **5–17 ms** after release at every zoom. The settle pass did no second full render; `settlePreview` already accepted an exact frame. Two things still happened after release:
+
+- The 110 ms settle debounce held back the settled pass, so the settled scopes arrived about 126–139 ms after release.
+- A backend save of the slider values started a new render generation for values already on screen. On the warm strokes this caused a duplicate render after release in 6 of 7 at Fit and 5 of 7 at 100%, then the debounce again for that new generation.
+
+So the fix targeted those two things. `settlePreview` is not restructured.
+
+**What changed.**
+
+- *Settle at release* (`preview-scheduler.js`). Releasing a control ends the input, so the settled pass starts as soon as any frame on the GPU finishes, not after the 110 ms debounce. The debounce stays armed as the fallback, and it still applies while input is arriving and to edits made without a gesture.
+- *No duplicate render* (`app.js`, `queueEditCommand`). A plain global-edit save re-renders only when the backend's acknowledged document differs from the values already drawn (compared with sorted keys). An SDR-match override always re-renders, as before.
+- *Live scopes during a drag* (`app.js`, `refreshScopes`). Found when `drag-gpu-load` failed after the fix above: it reported 2 GPU submissions in flight at Fit and 200%. Every live scope pass saved to the backend before analysing. The save used to bump the generation, so the scope pass went stale and never reached the GPU (**live scopes updated about once per 5-second drag before P5**). With the generation stable, the pass survived, and its readback landed beside the next drag frame after the save's round trip. A live GPU scope now reads the canvas without waiting for the save, and it stands down if a drag frame has started. The release and the settled pass still save, and a CPU scope still saves first. Live scope updates per 5-second drag went from 1 to 10 at Fit and from 1 to 4 at 200%. The rate is still limited by the existing rule that a scope only analyses a frame matching the latest edit, which a fast drag keeps outrunning.
+- *One opt-in*. Responsive / Balanced / Precise is removed. The default is the old Precise. **Faster dragging on slower hardware — show a softer image while dragging, sharpening when you let go** is off by default. When on, the latency controller chooses coarse scales as Balanced did. A softer frame is only for an active gesture: frames rendered after release are exact, and a coarse drag frame still on the GPU when the pointer lifts is dropped before it reaches the canvas. The zoom path already used the same controller (15.39), so it follows the setting. Migration happens without a prompt: Precise and Balanced become off, and Responsive (and the legacy 1K tier that migrated to it) becomes on. The old key isn't written back.
+- *Settings*. The checkbox replaces the menu in General and in the viewer's Preview popover. Preview execution, the legacy tier override and Region of interest move to a new **Diagnostics** section. Maximum GPU memory stays in General. The help text says what you'll see and when. `docs/user-guide/viewer-and-analysis.md` and `application-settings-and-shortcuts.md` are updated.
+- *Technical / Diagnostics* (ledger 9.6). Technical shows the owner's 13 rows. A new Diagnostics entry in the scope-type dropdown shows the full 46. A long value is shortened, with the full text on hover.
+
+**P5 before/after** (reference setup, warm p95 with the median in brackets, 7 warm samples per row unless stated; release → settled is the trusted pointer-up to the first sampled frame the renderer reports exact at the final generation with the viewer Ready).
+
+| Metric | Before | After (checkbox off, default) | Target |
+|---|---|---|---|
+| Drag: full-detail fps, Fit / 200% (`drag-gpu-load`, worst 1 s in brackets) | 51.2 (49) / 49.2 (40), Precise after P6 (9.7) | **50.0 (48) / 47.6 (40)** | ≥ 30, never < 20 |
+| Drag: coarse frames shown | 0 with Precise; the shipped default was Balanced: 5 and 7 on the cold Fit and 100% strokes | **0** | 0 |
+| Release → settled, Fit | 17.5 (15.9) | **5.4 (4.0)** | ≤ 150 |
+| Release → settled, 100% / 200% / 400% | 17.4 (5.4) / 5.4 (5.4) / 5.3 (4.7) | **5.5 (5.4) / 5.6 (5.5) / 5.6 (5.4)** | ≤ 200 |
+| Release → settled, cold first edit after zoom change (8 samples) | 11.6 (5.3) | **5.4 (5.3)** | ≤ 400 |
+| Zoom change → sharp at the new zoom, warm (Fit → 100%) | 87.6 (87.1) | **87.2 (87.2)** | ≤ 300 |
+| Checkbox on: coarse frame presented after release | 1, on the cold 100% stroke (pre-P5 build, Balanced; 1 of 2 runs) | **0** (8 samples × 4 zooms, plus 8 cold) | 0 |
+| Settled scopes after release, Fit / 100 / 200 / 400% | 137.5 / 126.7 / 126.7 / 126.5 | **17.6 / 35.7 / 35.9 / 17.7** | — |
+| Strokes that render again after release with no new input, warm Fit / 100% | 6 of 7 / 5 of 7 | **0 of 7 / 0 of 7** | 0 |
+
+With the checkbox **on**, warm release → settled is 5.4–5.5 ms p95 at every zoom and cold-after-zoom is 5.4 ms. **The first stroke after turning it on is slower than with it off**: 126 ms at Fit and 174 ms at 100%, with no drag frame shown during that stroke. The controller chooses a softer frame, which needs a smaller copy of the 42 MP source that isn't built yet. That build took about 0.44 s, and frames are processed one at a time (P6). The frame that finished after release is dropped, and the sharp frame follows. That's the old Balanced behaviour meeting a cold cache (the old default built that copy at launch), not a P5 regression. On this machine the opt-in has nothing to gain; it's for slower hardware.
+
+Card load at 200% during the 5-second drag is unchanged from 9.7: 25.5% utilisation, 57.9 W.
+
+Artifacts: `output/performance/sprint-0925-p5-release-{before-off,before-on,mid-off,after-off,after-on}.json`. `before-*` are the build before P5 (Precise / Balanced through the old menu). `mid-off` has the settle change but not the duplicate-render fix (the negative control for the render-after-release count). Timings carry up to one display interval (6.1 ms at 164 Hz) of observation quantisation, so the ~5 ms rows mean the settled frame was the next vsync after release.
+
+**Tests and negative controls.**
+
+- `tests/preview-scheduler-settle.test.js` (new): 2 of 5 cases fail on the previous build (settle armed at 110 ms after release) and pass now.
+- `tests/preview-preferences-migration.test.js`: the 2 new migration cases fail on the previous build and pass now. The round-trip case is a regression guard.
+- `tests/technical-panel-fit.js` (new, panel at its minimum height). Previous build: 46 rows, 24 clipped, scrolls, no Diagnostics entry. Now: 13 rows, none clipped, no scroll, and Diagnostics shows all 46.
+- `headline-latency.js --suite release` gates on the P5 table. On the previous build it fails (renders after release in 4–5 strokes; a coarse frame presented after release in 1 of 2 Balanced runs). It passes with the checkbox off and on.
+- `drag-gpu-load` failed after the duplicate-render fix (2 in flight at Fit and 200%) and passes after `cb15bd1`.
+- Existing tests updated from the menu to the checkbox: `preview-resolution-interaction`, `startup-state`, `preview-coarse-scale`, the frontend contracts, `drag-gpu-load`, `highlight-anchor-stability`, and (not run, see below) `desktop/tests/preview-menu.js`, `phase4-preview`, `phase4-regression-browser`, `phase5-transport-ab` and `responsiveness-probe`.
+
+**Suites after P5.** Node 244 passed; desktop units 22 passed; pytest 1370 passed, 3 skipped; frontend contracts 101 + 10 passed. Electron drivers, one at a time on the final code, all passed: `technical-panel-fit`, `slider-fill-anchoring`, `pixel-magnification`, `startup-state`, `preview-resolution-interaction`, `scope-region-interaction`, `gpu-highlight-compression-parity`, `scope-exact-peak`, `export-parity`, `denoise-tiled-parity`, `roi-parity`, `roi-catch-up`, `presentation-gate`, `budget-route`, `highlight-ceiling` (0 of 5,126,400 channels above 1000 nit in every compression-on case; the compression-off control reaches 5,164.88 nit), `highlight-anchor-stability` (0 error, Denoise off and on), and `drag-gpu-load`.
+
+**Pre-existing failures, re-run for status (not fixed).** `tiled-direct-parity` and `tiled-film-parity` fail as in 9.1 (256 px tiles and one 512 px film case at maxDelta 255; the other 512 px cases pass). `full-tier-denoise` fails as in 9.5 ("bypass does nothing", 0.22–0.23% of pixels). `roi-refinement` passed this time; it has been intermittent under the runner. `denoise-selector-seam` still fails, but differently. On the pre-P5 build it times out waiting for the settled scope on its first sample, as before. On the P5 build the settled scope arrives (see live scopes above), so the driver usually gets past that and stops at a later check: a `/preview/hdr` request in its measured window. A traced run shows that request is the navigator thumbnail (`refreshNavigationThumbnail`), not a CPU preview fallback (the settle and refine fallback counters were empty). One traced run still hit the old first-sample timeout. The driver then hung after failing and had to be stopped. The desktop `confirmation-focus` test, updated for the checkbox, passes.
+
+**Not confirmed.**
+
+- Packaged build: not rebuilt or measured (Section 8 still owes it).
+- The owner's ARW: not used; it's for the owner's check.
+- Release → settled on the Tiled route (low memory setting) wasn't measured. Every stroke above ran Direct on Auto.
+- `desktop/tests/preview-menu.js` needs a packaged executable and wasn't run. The older Phase 4/5 drivers and `responsiveness-probe` were updated to the checkbox but not run.
