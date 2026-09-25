@@ -269,3 +269,19 @@ Processed pixels per settled edit at 200–800% after P2: 42,389,760 (Direct, wh
 **Tests.** A unit case in `highlight-anchor.test.js` fails before and passes after. `tests/performance/denoise-stale-source.js` reproduces the owner's exact validation error before and passes after, with Denoise off and on. `full-tier-denoise` now pins its Full row to Tiled (with the P2 budget, Full fits Direct and skipped the path it checks). **Pre-existing, not fixed:** `full-tier-denoise`'s "bypass does nothing" (0.22% of pixels differ, identical on `main`) and `denoise-selector-seam`'s telemetry timeout (identical without this change).
 
 **Open, suggested:** a rejected Direct submit should not leave the viewer claiming Ready. Detecting it (a validation scope on the presentation submit, as the Tiled route already does) would turn any future case like this into a visible retry instead of a silent black frame.
+
+### 9.6 Owner hands-on check after P3 — 2026-09-25 (passed) and decisions
+
+Results of the owner's check on the development build (after the 9.4 and 9.5 fixes):
+
+- Auto memory: the Settings option reads "Auto · 6 GiB (detected 12 GiB)". Passed.
+- Exposure drag at 200%/400%: smooth, full detail, final on release. Panning and scrolling: no blank or stale regions. Passed.
+- Memory limit 1 GiB: Tiled at 100%+ and Direct at 12% (the small frame fits), then back to Direct on Auto. Passed.
+- Sharp pixels past 100% (checked up to 3200%): passed. Exposure Bands fill follows the thumb: passed.
+- Highlight shoulder / HDR-SDR flip (9.4) and black preview (9.5): fixed, and confirmed working by the owner after a restart.
+
+**Decisions recorded.**
+
+- **P3 (resolves 9.2):** when the card has room, zoomed views draw the whole image Direct (the owner accepted the recommendation). The visible-region limit stays automatic on the Tiled route, which applies when memory is tight. *Visible region* is not made the default. The processed-pixel bound applies to the Tiled route only; `headline-latency.js` already reports it that way. Revisit visible-area-only Direct drawing only if P6 shows the card still working too hard at zoom.
+- **Technical scope panel (added to P5 scope):** today it lists 45 rows across three columns, which don't fit at any panel height. Technical keeps about 13 plain-language rows: Preview (View, Status, Detail, Processing), Display (HDR on this display, Monitor), and Source (File, Interpretation, Encoding, Signal, Source peak, Reference white, Bit depth). The full list moves to a new **Diagnostics** entry in the scope-type dropdown (the owner's suggestion).
+- **Zoom maximum:** stays at 3200% (unchanged since July; it is only newly noticeable because pixels are now sharp).
