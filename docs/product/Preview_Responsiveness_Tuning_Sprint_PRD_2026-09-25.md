@@ -367,3 +367,30 @@ Artifacts: `output/performance/sprint-0925-p5-release-{before-off,before-on,mid-
 - The owner's ARW: not used; it's for the owner's check.
 - Release → settled on the Tiled route (low memory setting) wasn't measured. Every stroke above ran Direct on Auto.
 - `desktop/tests/preview-menu.js` needs a packaged executable and wasn't run. The older Phase 4/5 drivers and `responsiveness-probe` were updated to the checkbox but not run.
+
+### 9.9 P5 sign-off, and the luma feather defects found at the start of P7 (fixed, `e106af3`)
+
+**P5.** After the rename to **Faster dragging** with a hover tooltip (`aee289c`), the owner reported "working great". Recorded as P5 sign-off.
+
+**Owner report (P7 scope, added by the owner).** When thin, very bright strips are selected with a luma range (1000 nit and up) and Feather goes past about 25%, a strip breaks into a repeating, tiled pattern. The owner saw the artifact in the reproduction below and confirmed it's the same one.
+
+**Found, all confirmed by measurement** (`tests/luma-feather-quality.js`: float TIFF with 2, 4, 8 and 16 px strips at about 2000 nit on a 203 nit ground; Feather 0/25/50/100%; the preview's GPU mask is read back and compared with the backend's mask at the same size):
+
+1. *Tiling (preview only).* The GPU feather took 25 point samples a quarter-sigma apart. A feature narrower than that spacing is either hit or skipped as the pixel moves, so a strip became a row of copies: 15–47 bands per strip at 25–100%. It isn't a mathematical limit; it's undersampling.
+2. *Stretched feather (preview, export, and the brush mask's feather and Shift Edge).* The radius was a fraction of each side, so on a 3:2 image the feather spread 1.5× further sideways than up and down (25 vs 17 px at 25%).
+3. *Preview ≠ export.* The backend rescaled the blurred luma mask so its strongest point was full strength; the preview didn't. Thin strips were 2–7× stronger in the export, masks differed by up to 1.0, and a strip's strength depended on whatever else the range selected.
+
+**Owner decision (2026-09-25): "soften evenly".** A luma feather is a plain blur. A large area keeps full strength with a soft edge, and a feature thinner than the feather spreads and weakens by the same rule everywhere. A painted brush mark still keeps its Density (unchanged).
+
+**Fix.** GPU: every texel within 3σ is read. Above σ = 8 px the mask is area-averaged by ⌊σ/4⌋ (a thin feature keeps its share), blurred at that size with the variance of the averaging and the bilinear upsample subtracted, and interpolated back. Both paths use 0.09 × the long edge at 100% on both axes. Backend: no rescaling for luma. The brush draft overlay uses the long edge too.
+
+**Results.** Before: 31 failures. After: 0. Every strip is one band at every feather level, the stretch is gone where the strips are far enough apart to measure it (25%; a unit test checks roundness on a single strip at every level), and preview and export agree within 0.014–0.025. New backend unit cases: 5 fail before, pass after. Suites: Node 244 passed; pytest 1375 passed, 3 skipped; frontend contracts 101 passed (the luma pin now requires the round, dense blur). Electron drivers passing: `luma-feather-quality`, `luma-mask-interaction`, `brush-mask-interaction`, `full-tier-brush-feather`, `local-adjustments-interaction`, `mask-graph-interaction`, `path-mask-interaction`, `export-parity`, `gpu-highlight-compression-parity`, `highlight-ceiling`, `highlight-anchor-stability`, `presentation-gate`, `denoise-tiled-parity`, `roi-parity`.
+
+**Pre-existing, not caused by this change.** `gradient-mask-interaction` fails on an aborted `/local-mask` request, the same on the previous code (2 of 2 runs). `performance/gpu-local-adjustments` can't run under the Electron runner (`browser.version is not a function`).
+
+**Not confirmed / open.**
+
+- With a crop, the GPU luma mask measures the feather against the cropped long edge, while the backend uses the full source's long edge, so the two diverge in proportion to the crop. This predates this change and isn't fixed.
+- The masks the backend sends to the preview are 8-bit, so very weak feather tails (under about 2%) step in 1/255 increments; the GPU luma mask is 16-bit float. Not measured as visible.
+- A project saved before this change will look different where it used a luma feather on thin highlights (weaker, as decided) or any feather on a non-square image (round now).
+- P7's performance work (the CPU mask compile when zoomed in) hasn't started. On the Direct route a single luma leaf is already masked on the GPU, so the slow path has to be re-measured first (mask graphs, brush, the Tiled route).
