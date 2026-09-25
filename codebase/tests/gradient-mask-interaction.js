@@ -66,8 +66,11 @@ async function gradientZoomAlignment(page) {
   page.on("requestfailed", (request) => {
     const failure = request.failure()?.errorText;
     const pathname = new URL(request.url()).pathname;
+    // Latest-wins cancellations are intended: a newer edit to a local aborts
+    // that local's authoritative mask fetch still in flight (app.js, the
+    // localAuthoritativeMaskRequests loop when a mask changes).
     const expectedLatestStateAbort = failure === "net::ERR_ABORTED"
-      && (/\/scopes$/.test(pathname) || /\/local-mask\/[^/]+\/preview$/.test(pathname));
+      && (/\/scopes$/.test(pathname) || /\/local-mask\/[^/]+(\/preview)?$/.test(pathname));
     if (!expectedLatestStateAbort) requestFailures.push(`${request.method()} ${request.url()}: ${failure}`);
   });
 
