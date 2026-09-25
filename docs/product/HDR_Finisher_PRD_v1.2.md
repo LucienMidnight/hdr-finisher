@@ -463,6 +463,40 @@ which match the report.
 - Whatever is chosen is measured against a reference on the denoise corpus
   rather than accepted on appearance alone.
 
+### DENOISE-02 — Future denoise engines (ideas, not scheduled)
+
+Recorded 2026-09-25. The current plan is a Noise Preview view plus an upgraded
+classical algorithm (signal-dependent noise model, better transform, automatic
+noise estimation). The two engines below are parked until that work has landed
+and been measured; neither is committed scope.
+
+**Intel Open Image Denoise (OIDN) as an optional Render mode**
+
+- Licence: Apache-2.0, compatible with GPL-3.0 distribution; add to
+  `THIRD_PARTY_NOTICES.md`.
+- Integration: the backend can call OIDN's small C API directly (ctypes). It
+  cannot run in the WebGPU preview, so it would be an analysis-style step:
+  run once, cache the result, and blend live between source and denoised.
+- Quality: excellent on Monte Carlo render noise, best when the EXR carries
+  Blender's Denoising Albedo and Normal passes. Poor fit for camera noise
+  (trained on render noise; tends toward a smooth, painterly result).
+- Cost: installer is ~161 MB today; the CPU device plus built-in weights adds
+  an estimated 50–100 MB, more per GPU backend. Measure before committing;
+  consider CPU-only by default.
+- Open question: renders usually arrive already denoised in Blender. Confirm
+  there is real demand for finishing-time render denoise before building it.
+
+**Neural photo denoise (ONNX Runtime / DirectML)**
+
+- Potentially the best photographic result, closest to Lightroom AI Denoise
+  or DxO DeepPRIME.
+- Blockers: pretrained weights are frequently non-commercial even when the
+  code is permissive, which conflicts with GPL distribution; most available
+  models are trained on sRGB phone images rather than scene-linear HDR, and
+  the strongest results come from raw-domain (pre-demosaic) denoising.
+- First step if revisited: a weight-licence survey and a raw-domain
+  feasibility check against the RAW import path.
+
 ---
 
 ## 11b. Full-Tier Interactive Performance — Deferred Work
