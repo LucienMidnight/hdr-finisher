@@ -1002,6 +1002,10 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // mask here is drawn in the cropped, straightened frame, so the app
       // supplies source long edge / frame long edge for a geometry signature.
       this.featherReferenceScale = null;
+      // Masks a render uses are never trimmed from the cache by that render:
+      // at native size one feathered luma mask exceeds the cache budget on its
+      // own, and trimming it rebuilt the mask on every drag frame (P7).
+      this.maskUseSerial = 0;
       this.gpuAnalyticMasksEnabled = true;
       this.instrumentationEnabled = false;
       this.performanceMetrics = { renders: [], scopes: [], maskEvents: [], stages: [], allocations: [], presentations: [] };
@@ -3672,6 +3676,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       // accepted presentation at all, which strands the geometry handoff. Tiled
       // skips this entirely: it carries bounded per-tile masks instead.
       if (plan.decision.mode !== "tiled") {
+        this.maskUseSerial += 1;
         masks = await Promise.all(activeLocals.map((local) => this.loadLocalMask(
           sessionId,
           local,
@@ -6356,6 +6361,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       if (cached) {
         this.localMasks.delete(key);
         this.localMasks.set(key, cached);
+        cached.lastUseSerial = this.maskUseSerial;
         return cached;
       }
       const pathQuery = maskPath ? `&mask_path=${encodeURIComponent(maskPath)}` : "";
@@ -6389,7 +6395,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       );
       const entry = { kind: "cpu-spatial-leaf", texture, width, height, byteSize: width * height };
       this.localMasks.set(key, entry);
-      this.trimLocalMaskCache(longEdge > 1600 ? 160 * 1024 * 1024 : 96 * 1024 * 1024);
+      this.retainLocalMask(entry, longEdge);
       if (this.instrumentationEnabled) {
         this.performanceMetrics.maskEvents ||= [];
         this.performanceMetrics.maskEvents.push({
@@ -6415,6 +6421,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       if (entry?.influenceIdentity === influenceIdentity) {
         this.localMasks.delete(key);
         this.localMasks.set(key, entry);
+        entry.lastUseSerial = this.maskUseSerial;
         return entry;
       }
 
@@ -6494,7 +6501,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       this.device.queue.submit([encoder.finish()]);
       parameterBuffers.forEach((buffer) => buffer.destroy());
       this.localMasks.set(key, entry);
-      this.trimLocalMaskCache(longEdge > 1600 ? 160 * 1024 * 1024 : 96 * 1024 * 1024);
+      this.retainLocalMask(entry, longEdge);
       if (this.instrumentationEnabled) {
         this.performanceMetrics.maskEvents ||= [];
         this.performanceMetrics.maskEvents.push({
@@ -6603,12 +6610,17 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         if (plan.sigma < 0.25 && !inverted) {
           entry.texture = entry.baseTexture;
         } else {
-          if (!entry.horizontalTexture) {
-            entry.horizontalTexture = this.createMaskTexture(entry.width, entry.height);
+          if (!entry.refinedTexture) {
             entry.refinedTexture = this.createMaskTexture(entry.width, entry.height);
             entry.horizontalBuffer = this.createStorageBuffer(new Float32Array(4));
             entry.verticalBuffer = this.createStorageBuffer(new Float32Array(4));
-            entry.byteSize += entry.width * entry.height * 2 * 2 + 32;
+            entry.byteSize += entry.width * entry.height * 2 + 32;
+          }
+          // A full-size intermediate only for a small feather; a large one is
+          // blurred at a reduced size.
+          if (plan.factor === 1 && !entry.horizontalTexture) {
+            entry.horizontalTexture = this.createMaskTexture(entry.width, entry.height);
+            entry.byteSize += entry.width * entry.height * 2;
           }
           const encoder = this.device.createCommandEncoder();
           if (plan.factor === 1) {
@@ -6648,7 +6660,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         }
         entry.refinementIdentity = refinementIdentity;
       }
-      this.trimLocalMaskCache(longEdge > 1600 ? 160 * 1024 * 1024 : 96 * 1024 * 1024);
+      this.retainLocalMask(entry, longEdge);
       if (this.instrumentationEnabled) {
         const event = {
           kind: "gpu-luma",
@@ -6736,10 +6748,20 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       pass.end();
     }
 
+    retainLocalMask(entry, longEdge) {
+      entry.lastUseSerial = this.maskUseSerial;
+      this.trimLocalMaskCache(longEdge > 1600 ? 160 * 1024 * 1024 : 96 * 1024 * 1024);
+    }
+
+    /**
+     * Evict least-recently-used masks down to `budget`, except the ones the
+     * current render uses, which may exceed it together.
+     */
     trimLocalMaskCache(budget) {
       let total = [...this.localMasks.values()].reduce((sum, entry) => sum + entry.byteSize, 0);
-      while (this.localMasks.size && total > budget) {
-        const [key, entry] = this.localMasks.entries().next().value;
+      for (const [key, entry] of [...this.localMasks.entries()]) {
+        if (total <= budget) break;
+        if (entry.lastUseSerial === this.maskUseSerial) continue;
         this.destroyAfterActiveRenders(() => this.destroyLocalMaskEntry(entry));
         this.localMasks.delete(key);
         total -= entry.byteSize;
