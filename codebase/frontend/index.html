@@ -374,6 +374,7 @@
           </aside>
         </div>
 
+        <div id="noise-view-badge" class="noise-view-badge hidden" role="status">Noise only · Denoise</div>
         <div id="viewer-status-dock" class="viewer-status-dock" aria-live="polite">
           <div id="interpretation-gate" class="viewer-status-row viewer-status-attention hidden" role="alert">
             <span class="viewer-status-copy">
@@ -656,6 +657,13 @@
         </div>
         <div class="control-group-body">
           <div class="control-row select-control">
+            <label class="tooltip-trigger" for="denoise-algorithm" data-tooltip="Adaptive measures how noise grows with brightness in this image and removes less where it finds real texture. Wavelet is the original fixed-level method, kept for edits made with it.">Method</label>
+            <select id="denoise-algorithm">
+              <option value="adaptive-atrous-v1" selected>Adaptive</option>
+              <option value="compact-haar-residual-v1">Wavelet (legacy)</option>
+            </select>
+          </div>
+          <div id="denoise-legacy-method-row" class="control-row select-control" hidden>
             <label id="denoise-method-note" class="tooltip-trigger" for="denoise-method" data-tooltip="Two-scale cleanup for fine photographic noise.">Wavelet method</label>
             <select id="denoise-method">
               <option value="photo_fine" selected>Photo / Fine</option>
@@ -670,6 +678,9 @@
             <div class="control-row"><div class="control-heading"><label for="denoise-threshold">Noise threshold</label><output id="denoise-threshold-value">3.0</output></div><input id="denoise-threshold" type="range" min="1" max="8" step="0.1" value="3"></div>
             <div class="control-row"><div class="control-heading"><label for="denoise-luma-sigma">Luma noise level</label><output id="denoise-luma-sigma-value">0.035</output></div><input id="denoise-luma-sigma" type="range" min="0.005" max="0.15" step="0.005" value="0.035"></div>
             <div class="control-row"><div class="control-heading"><label for="denoise-chroma-sigma">Color noise level</label><output id="denoise-chroma-sigma-value">0.035</output></div><input id="denoise-chroma-sigma" type="range" min="0.005" max="0.2" step="0.005" value="0.035"></div>
+          </div>
+          <div class="denoise-view-actions">
+            <button id="denoise-show-noise" class="local-overlay-toggle" type="button" aria-pressed="false" disabled data-tooltip="Shows only what Denoise removes, as gray with the removed noise on top. Even grain is safe; visible edges, lettering or texture mean detail is being lost."><span class="local-overlay-icon" aria-hidden="true"></span><span>Show noise</span></button>
           </div>
           <!-- PRD 6.3 progressive disclosure: Amount and Detail Recovery are
                always visible; Luminance and Colour Noise sit under Advanced.
@@ -686,6 +697,12 @@
           <div id="denoise-advanced-panel" class="disclosure-content hidden">
             <div class="control-row"><div class="control-heading"><label for="denoise-luminance">Luminance</label><output id="denoise-luminance-value">50%</output></div><input id="denoise-luminance" type="range" min="0" max="1" step="0.01" value="0.5"></div>
             <div class="control-row"><div class="control-heading"><label for="denoise-color">Color Noise</label><output id="denoise-color-value">50%</output></div><input id="denoise-color" type="range" min="0" max="1" step="0.01" value="0.5"></div>
+            <div id="denoise-size-controls" class="denoise-size-controls">
+              <p class="denoise-size-heading tooltip-trigger" data-tooltip="How strongly each size of noise is removed. 50% is the measured amount; 0% leaves that size alone. Luminance and Color Noise still decide brightness versus colour.">Noise size</p>
+              <div class="control-row"><div class="control-heading"><label for="denoise-fine">Fine · 1–4 px</label><output id="denoise-fine-value">50%</output></div><input id="denoise-fine" type="range" min="0" max="1" step="0.01" value="0.5"></div>
+              <div class="control-row"><div class="control-heading"><label for="denoise-medium">Medium · ~8 px</label><output id="denoise-medium-value">50%</output></div><input id="denoise-medium" type="range" min="0" max="1" step="0.01" value="0.5"></div>
+              <div class="control-row"><div class="control-heading"><label for="denoise-coarse">Coarse · 16–32 px</label><output id="denoise-coarse-value">50%</output></div><input id="denoise-coarse" type="range" min="0" max="1" step="0.01" value="0.5"></div>
+            </div>
           </div>
           <div class="control-actions">
             <button id="denoise-recalculate" class="button-secondary" type="button">Recalculate Denoise</button>

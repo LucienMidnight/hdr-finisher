@@ -412,13 +412,17 @@ const MAX_DIFFERING_FRACTION = 0.0005;
     // retained offscreen target and one final copy presents it, so a
     // generation is one submission per batch plus that copy. The parity
     // comparisons above are the behavioural check: a half-written or mixed
-    // frame on the canvas would not match Direct.
+    // frame on the canvas would not match Direct. Global Clarity's map
+    // pre-pass fills its regions in the same batches as the tiles, so they
+    // count towards the batches too; they never reach the canvas.
+    const batchedUnits = (metrics) => metrics.tileCount + (metrics.clarityMapChunks || 0);
     const atomic = results.every((entry) => entry.metrics.submissions >= 1
-      && entry.metrics.submissions <= Math.ceil(entry.metrics.tileCount / entry.metrics.tileBatchSize) + 1);
+      && entry.metrics.submissions <= Math.ceil(batchedUnits(entry.metrics) / entry.metrics.tileBatchSize) + 1);
     if (!atomic) {
       throw new Error(`A tiled generation submitted more than its batches plus one presentation copy: ${JSON.stringify(results.map((entry) => ({
         label: entry.label, tileSize: entry.tileSize, submissions: entry.metrics.submissions,
-        tileCount: entry.metrics.tileCount, tileBatchSize: entry.metrics.tileBatchSize,
+        tileCount: entry.metrics.tileCount, clarityMapChunks: entry.metrics.clarityMapChunks,
+        tileBatchSize: entry.metrics.tileBatchSize,
       })))}`);
     }
     console.log("atomic assembly: batches into the retained target, one presentation copy  PASS");
@@ -441,7 +445,11 @@ const MAX_DIFFERING_FRACTION = 0.0005;
     //                         Detail composite is their input. Asserting the
     //                         two scopes apart is what distinguishes correct
     //                         downstream invalidation from a broken cache.
-    //  5. radius change    -- a global radius. Every band must regenerate.
+    //  5. radius change    -- the global Clarity radius. Clarity reads its own
+    //                         brightness map, not a packed band, so the global
+    //                         bands are reused and the map is only re-blurred:
+    //                         its pre-pass fills nothing. The local bands below
+    //                         regenerate, because their input changed.
     const cacheTrace = await page.evaluate(async (size) => {
       const render = async () => window.HDRFinisherPerformance.renderTiledTier(
         requiredProcessingLongEdge(), { tileSize: size },
@@ -507,8 +515,16 @@ const MAX_DIFFERING_FRACTION = 0.0005;
     expect("global amount/threshold drag, downstream local bands reused",
       metrics.globalDrag.detailLocalCacheHits, 0);
 
-    expect("radius change misses", metrics.radius.detailCacheMisses, tiles * stacks);
-    expect("radius change analysis passes", metrics.radius.detailAnalysisPasses, tiles * stacks * 2);
+    // Neither drag touches the picture entering Detail, so the Clarity map's
+    // pre-pass has nothing to fill; only the radius re-blurs it.
+    expect("global amount/threshold drag, clarity map regions filled", metrics.globalDrag.clarityMapChunks, 0);
+    expect("global amount/threshold drag, clarity map re-blurred", metrics.globalDrag.clarityMapReblurred, false);
+    expect("radius change, global bands reused", metrics.radius.detailGlobalCacheHits, tiles);
+    expect("radius change, global bands analysed", metrics.radius.detailGlobalCacheMisses, 0);
+    expect("radius change, downstream local bands rebuilt", metrics.radius.detailLocalCacheMisses, tiles * (stacks - 1));
+    expect("radius change analysis passes", metrics.radius.detailAnalysisPasses, tiles * (stacks - 1) * 2);
+    expect("radius change, clarity map regions filled", metrics.radius.clarityMapChunks, 0);
+    expect("radius change, clarity map re-blurred", metrics.radius.clarityMapReblurred, true);
 
     console.log(
       `Detail cache (${tiles} tiles x ${stacks} band stacks):
@@ -521,7 +537,8 @@ const MAX_DIFFERING_FRACTION = 0.0005;
 `
       + `  global amount drag global ${metrics.globalDrag.detailGlobalCacheHits} hits, local ${metrics.globalDrag.detailLocalCacheMisses} rebuilt  PASS
 `
-      + `  global radius      ${metrics.radius.detailCacheMisses} misses / ${metrics.radius.detailAnalysisPasses} analysis passes  PASS`,
+      + `  global radius      global ${metrics.radius.detailGlobalCacheHits} hits, local ${metrics.radius.detailLocalCacheMisses} rebuilt, `
+      + `clarity map re-blurred with ${metrics.radius.clarityMapChunks} regions refilled  PASS`,
     );
 
     const failures = results.filter((entry) => !entry.passed);

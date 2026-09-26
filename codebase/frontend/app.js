@@ -205,6 +205,9 @@ const MAX_ZOOM_PERCENT = 3200;
 // consecutive attempts so a genuine refusal cannot become a submit loop.
 const PREVIEW_WATCHDOG_INTERVAL_MS = 1000;
 const PREVIEW_WATCHDOG_MAX_REARMS = 20;
+// Matches `.bounded-help-tooltip { max-width }` so help wraps to a readable measure.
+const TOOLTIP_MAX_WIDTH = 260;
+const TOOLTIP_SIDE_RAILS = ".grade-rail, .workflow-side-panel";
 const ZOOM_STEPS = [1, 2, 3, 4, 5, 6.25, 8.33, 12.5, 16.67, 25, 33.33, 50, 66.67, 100, 200, 300, 400, 500, 600, 800, 1200, 1600, 2400, 3200];
 // Matches the .viewer-status-dock transform transition in styles.css.
 const VIEWER_STATUS_DOCK_SLIDE_MS = 200;
@@ -267,9 +270,14 @@ let pathMarchingAntFrame = 0;
 
 const defaultDenoiseDocument = () => ({
   schema_version: 1,
-  hdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0.5 }, analysis: { algorithm_version: "compact-haar-residual-v1", preset: "photo_fine", levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035 } },
-  sdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0.5 }, analysis: { algorithm_version: "compact-haar-residual-v1", preset: "photo_fine", levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035 } },
+  hdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0.5, fine_noise: 0.5, medium_noise: 0.5, coarse_noise: 0.5 }, analysis: { algorithm_version: "adaptive-atrous-v1", preset: "photo_fine", levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035 } },
+  sdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0.5, fine_noise: 0.5, medium_noise: 0.5, coarse_noise: 0.5 }, analysis: { algorithm_version: "adaptive-atrous-v1", preset: "photo_fine", levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035 } },
 });
+
+// The measured method is the default for new work; the original wavelet stays
+// selectable, and documents authored with it keep it.
+const DENOISE_ADAPTIVE_ALGORITHM = "adaptive-atrous-v1";
+const DENOISE_LEGACY_ALGORITHM = "compact-haar-residual-v1";
 
 const DENOISE_ANALYSIS_PRESETS = Object.freeze({
   photo_fine: Object.freeze({ levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035, note: "Two-scale cleanup for fine photographic noise." }),
@@ -309,6 +317,8 @@ const state = {
   pendingLocalAdjustment: null,
   pendingSubMask: null,
   localShowMask: false,
+  // Denoise's Show noise view. View state only: never saved or exported.
+  denoiseNoiseView: false,
   localOverlayColor: "#ff263d",
   compareWithoutLocals: false,
   localPointerGesture: null,
@@ -1362,6 +1372,10 @@ state.adjustments = defaultAdjustments();
 
 const els = {
   denoiseBypass: document.getElementById("denoise-bypass"),
+  denoiseShowNoise: document.getElementById("denoise-show-noise"),
+  noiseViewBadge: document.getElementById("noise-view-badge"),
+  denoiseAlgorithm: document.getElementById("denoise-algorithm"),
+  denoiseLegacyMethodRow: document.getElementById("denoise-legacy-method-row"),
   denoiseMethod: document.getElementById("denoise-method"),
   denoiseMethodNote: document.getElementById("denoise-method-note"),
   denoiseCustomSettings: document.getElementById("denoise-custom-settings"),
@@ -1376,6 +1390,13 @@ const els = {
   denoiseLuminance: document.getElementById("denoise-luminance"),
   denoiseColor: document.getElementById("denoise-color"),
   denoiseDetail: document.getElementById("denoise-detail"),
+  denoiseSizeControls: document.getElementById("denoise-size-controls"),
+  denoiseFine: document.getElementById("denoise-fine"),
+  denoiseMedium: document.getElementById("denoise-medium"),
+  denoiseCoarse: document.getElementById("denoise-coarse"),
+  denoiseFineValue: document.getElementById("denoise-fine-value"),
+  denoiseMediumValue: document.getElementById("denoise-medium-value"),
+  denoiseCoarseValue: document.getElementById("denoise-coarse-value"),
   denoiseAmountValue: document.getElementById("denoise-amount-value"),
   denoiseLuminanceValue: document.getElementById("denoise-luminance-value"),
   denoiseColorValue: document.getElementById("denoise-color-value"),
@@ -3338,6 +3359,8 @@ function bindEvents() {
     });
   });
   els.denoiseBypass?.addEventListener("click", () => setDenoiseEnabled(!state.denoise[state.currentView].enabled));
+  els.denoiseShowNoise?.addEventListener("click", toggleDenoiseNoiseView);
+  els.denoiseAlgorithm?.addEventListener("change", () => updateDenoiseAlgorithm(els.denoiseAlgorithm.value));
   els.denoiseMethod?.addEventListener("change", () => updateDenoiseAnalysisPreset(els.denoiseMethod.value));
   els.denoiseLevels?.addEventListener("change", () => updateCustomDenoiseAnalysis("levels", Number(els.denoiseLevels.value)));
   const denoiseAnalysisSliders = [
@@ -3354,6 +3377,9 @@ function bindEvents() {
     [els.denoiseLuminance, "luminance"],
     [els.denoiseColor, "color_noise"],
     [els.denoiseDetail, "detail_recovery"],
+    [els.denoiseFine, "fine_noise"],
+    [els.denoiseMedium, "medium_noise"],
+    [els.denoiseCoarse, "coarse_noise"],
   ];
   for (const [control, key] of denoiseSliders) {
     control?.addEventListener("pointerdown", () => state.previewScheduler?.beginInteraction());
@@ -9399,23 +9425,37 @@ function initializeBoundedTooltips() {
     const margin = 8;
     const gap = 7;
     const triggerRect = activeTrigger.getBoundingClientRect();
-    tooltip.style.maxWidth = `${Math.max(80, viewport.width - margin * 2)}px`;
+    // The stylesheet's readable measure is the cap; the viewport only narrows
+    // it further. An inline viewport-wide max-width let copy run on one line.
+    tooltip.style.maxWidth = `${Math.max(80, Math.min(TOOLTIP_MAX_WIDTH, viewport.width - margin * 2))}px`;
     tooltip.style.left = "0px";
     tooltip.style.top = "0px";
     const tooltipRect = tooltip.getBoundingClientRect();
     const minimumLeft = viewport.left + margin;
     const maximumLeft = viewport.left + viewport.width - margin - tooltipRect.width;
-    const left = clamp(
-      triggerRect.left + triggerRect.width / 2 - tooltipRect.width / 2,
-      minimumLeft,
-      Math.max(minimumLeft, maximumLeft),
-    );
     const minimumTop = viewport.top + margin;
     const maximumTop = viewport.top + viewport.height - margin - tooltipRect.height;
-    const below = triggerRect.bottom + gap;
-    const above = triggerRect.top - gap - tooltipRect.height;
-    const preferredTop = below <= maximumTop ? below : above;
-    const top = clamp(preferredTop, minimumTop, Math.max(minimumTop, maximumTop));
+    // Help for anything inside a side rail opens beside the rail, so it never
+    // covers the neighbouring module headers or controls the user is scanning.
+    const rail = activeTrigger.closest(TOOLTIP_SIDE_RAILS);
+    const railRect = rail?.getBoundingClientRect();
+    const besideRail = railRect && railRect.left - gap - tooltipRect.width >= minimumLeft;
+    let left;
+    let top;
+    if (besideRail) {
+      left = railRect.left - gap - tooltipRect.width;
+      top = clamp(triggerRect.top, minimumTop, Math.max(minimumTop, maximumTop));
+    } else {
+      left = clamp(
+        triggerRect.left + triggerRect.width / 2 - tooltipRect.width / 2,
+        minimumLeft,
+        Math.max(minimumLeft, maximumLeft),
+      );
+      const below = triggerRect.bottom + gap;
+      const above = triggerRect.top - gap - tooltipRect.height;
+      const preferredTop = below <= maximumTop ? below : above;
+      top = clamp(preferredTop, minimumTop, Math.max(minimumTop, maximumTop));
+    }
     tooltip.style.left = `${Math.round(left)}px`;
     tooltip.style.top = `${Math.round(top)}px`;
   };
@@ -9447,14 +9487,23 @@ function initializeBoundedTooltips() {
     const trigger = triggerFromEvent(event);
     if (trigger && !trigger.contains(event.relatedTarget)) schedule(trigger);
   });
+  // Clicking is acting, not asking: any press dismisses help, including a
+  // press on the trigger itself (twirling a module open changes the layout
+  // the tooltip was placed against).
+  document.addEventListener("pointerdown", () => {
+    if (activeTrigger || pendingTrigger) hide();
+  }, true);
   document.addEventListener("pointerout", (event) => {
     const trigger = triggerFromEvent(event);
-    if (!trigger || trigger.contains(event.relatedTarget) || document.activeElement === trigger) return;
+    if (!trigger || trigger.contains(event.relatedTarget)) return;
+    // Only keyboard focus keeps help open after the pointer leaves; a click
+    // also focuses the trigger and must not pin the tooltip.
+    if (trigger.matches(":focus-visible")) return;
     if (activeTrigger === trigger || pendingTrigger === trigger) hide();
   });
   document.addEventListener("focusin", (event) => {
     const trigger = triggerFromEvent(event);
-    if (trigger) schedule(trigger);
+    if (trigger && trigger.matches(":focus-visible")) schedule(trigger);
   });
   document.addEventListener("focusout", (event) => {
     const trigger = triggerFromEvent(event);
@@ -10151,10 +10200,20 @@ function renderDenoiseControls() {
   group?.classList.toggle("modified", modified);
   const analysis = settings.analysis;
   const analysisEnabled = enabled && !["preparing", "recalculating"].includes(runtime.status);
+  const adaptive = (analysis.algorithm_version || DENOISE_LEGACY_ALGORITHM) === DENOISE_ADAPTIVE_ALGORITHM;
+  if (els.denoiseAlgorithm) {
+    els.denoiseAlgorithm.value = adaptive ? DENOISE_ADAPTIVE_ALGORITHM : DENOISE_LEGACY_ALGORITHM;
+    els.denoiseAlgorithm.disabled = !analysisEnabled;
+  }
+  // Adaptive measures the noise itself, so the wavelet presets and their
+  // custom noise levels mean nothing to it.
+  if (els.denoiseLegacyMethodRow) els.denoiseLegacyMethodRow.hidden = adaptive;
+  // Noise size belongs to the adaptive method; the wavelet has fixed scales.
+  if (els.denoiseSizeControls) els.denoiseSizeControls.hidden = !adaptive;
   els.denoiseMethod.value = analysis.preset;
   els.denoiseMethod.disabled = !analysisEnabled;
   els.denoiseMethodNote.dataset.tooltip = DENOISE_ANALYSIS_PRESETS[analysis.preset]?.note || DENOISE_ANALYSIS_PRESETS.custom.note;
-  els.denoiseCustomSettings.hidden = analysis.preset !== "custom";
+  els.denoiseCustomSettings.hidden = adaptive || analysis.preset !== "custom";
   els.denoiseLevels.value = String(analysis.levels);
   els.denoiseLevels.disabled = !analysisEnabled;
   const analysisControls = [
@@ -10173,6 +10232,9 @@ function renderDenoiseControls() {
     [els.denoiseLuminance, els.denoiseLuminanceValue, settings.controls.luminance],
     [els.denoiseColor, els.denoiseColorValue, settings.controls.color_noise],
     [els.denoiseDetail, els.denoiseDetailValue, settings.controls.detail_recovery],
+    [els.denoiseFine, els.denoiseFineValue, settings.controls.fine_noise ?? 0.5],
+    [els.denoiseMedium, els.denoiseMediumValue, settings.controls.medium_noise ?? 0.5],
+    [els.denoiseCoarse, els.denoiseCoarseValue, settings.controls.coarse_noise ?? 0.5],
   ];
   for (const [input, output, value] of controls) {
     input.value = String(value);
@@ -10181,6 +10243,7 @@ function renderDenoiseControls() {
     updateRangeVisual(input);
   }
   els.denoiseRecalculate.disabled = !enabled || ["preparing", "recalculating"].includes(runtime.status);
+  renderDenoiseNoiseViewControl();
   renderDenoiseAdvancedVisibility();
   const labels = { off: "Off", preparing: "Preparing", ready: "Ready", dirty: "Dirty", recalculating: "Recalculating", error: "Error" };
   if (els.denoiseState) els.denoiseState.textContent = labels[runtime.status] || runtime.status;
@@ -10192,6 +10255,49 @@ function renderDenoiseControls() {
     recalculating: "Recalculating; the previous valid result remains interactive.",
     error: "Denoise could not be prepared. The original pipeline remains available.",
   }[runtime.status] || "");
+}
+
+/**
+ * Whether the current preview can show what Denoise removes. Only the WebGPU
+ * preview reconstructs denoise, and only once an analysis exists; a dirty
+ * analysis still has its previous valid result on screen.
+ */
+function denoiseNoiseViewAvailable(lane = state.currentView) {
+  const runtime = state.denoiseRuntime?.[lane];
+  return Boolean(
+    state.gpuPreview?.available
+    && state.denoise?.[lane]?.enabled
+    && runtime && !runtime.showOriginal
+    && ["ready", "dirty", "recalculating"].includes(runtime.status),
+  );
+}
+
+function denoiseNoiseViewActive(lane = state.currentView) {
+  return Boolean(state.denoiseNoiseView) && denoiseNoiseViewAvailable(lane);
+}
+
+function renderDenoiseNoiseViewControl() {
+  const active = denoiseNoiseViewActive();
+  if (els.denoiseShowNoise) {
+    els.denoiseShowNoise.disabled = !denoiseNoiseViewAvailable();
+    els.denoiseShowNoise.setAttribute("aria-pressed", String(active));
+    els.denoiseShowNoise.lastElementChild.textContent = active ? "Hide noise" : "Show noise";
+  }
+  els.noiseViewBadge?.classList.toggle("hidden", !active);
+  document.body.classList.toggle("denoise-noise-view", active);
+}
+
+function toggleDenoiseNoiseView() {
+  const lane = state.currentView;
+  if (!state.denoiseNoiseView && !denoiseNoiseViewAvailable(lane)) return;
+  state.denoiseNoiseView = !state.denoiseNoiseView;
+  renderDenoiseNoiseViewControl();
+  // A view change, not an edit: a new generation so no pass of the other view
+  // is accepted, without marking the grade dirty.
+  invalidatePreview(lane, { markDirty: false });
+  debouncePreview(lane);
+  // Scopes describe the graded picture, so they only refresh on the way back.
+  if (!state.denoiseNoiseView) debounceOverlayAndScopes();
 }
 
 function markDenoiseAnalysisDirty() {
@@ -10216,6 +10322,17 @@ function renderDenoiseAdvancedVisibility() {
   const open = Boolean(state.denoiseAdvancedOpen);
   els.denoiseAdvancedToggle?.setAttribute("aria-expanded", String(open));
   els.denoiseAdvancedPanel?.classList.toggle("hidden", !open);
+}
+
+function updateDenoiseAlgorithm(algorithm) {
+  if (![DENOISE_ADAPTIVE_ALGORITHM, DENOISE_LEGACY_ALGORITHM].includes(algorithm)) return;
+  const lane = state.currentView;
+  state.denoise[lane].analysis.algorithm_version = algorithm;
+  markDenoiseAnalysisDirty();
+  void persistDenoiseSettings();
+  // A method change is a new analysis; with Denoise on, run it now rather than
+  // leaving the previous method's result on screen until Recalculate.
+  if (state.denoise[lane].enabled) void recalculateDenoise(lane);
 }
 
 function updateDenoiseAnalysisPreset(presetName) {
@@ -10254,6 +10371,7 @@ async function setDenoiseEnabled(enabled) {
     runtime.generation += 1;
     runtime.status = "off";
     runtime.showOriginal = true;
+    state.denoiseNoiseView = false;
     state.gpuPreview?.cancelDenoiseProcessing?.({ selectOriginal: true });
     await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
     renderDenoiseControls();
@@ -10300,18 +10418,14 @@ async function recalculateDenoise(lane = state.currentView, options = {}) {
       state.editRevision,
       {
         name: settings.analysis.preset,
+        algorithm: analysis.algorithm_version || DENOISE_LEGACY_ALGORITHM,
         levels: analysis.levels,
         noiseThreshold: analysis.noise_threshold,
         lumaSigma: analysis.luma_sigma,
         chromaSigma: analysis.chroma_sigma,
       },
       sourceIdentity,
-      {
-        amount: settings.controls.amount,
-        luminance: settings.controls.luminance,
-        colorNoise: settings.controls.color_noise,
-        detailRecovery: settings.controls.detail_recovery,
-      },
+      denoiseRendererControls(settings.controls),
     );
     if (generation !== runtime.generation) return false;
     if (!ready) throw new Error("The denoise analysis was replaced before completion.");
@@ -10346,13 +10460,21 @@ async function updateLiveDenoiseControl(key, value) {
   // events and the last value is the one that lands.
   await denoiseInputQueue().submit({
     lane,
-    controls: {
-      amount: settings.controls.amount,
-      luminance: settings.controls.luminance,
-      colorNoise: settings.controls.color_noise,
-      detailRecovery: settings.controls.detail_recovery,
-    },
+    controls: denoiseRendererControls(settings.controls),
   });
+}
+
+/** The renderer's names for a lane's live denoise controls. */
+function denoiseRendererControls(controls) {
+  return {
+    amount: controls.amount,
+    luminance: controls.luminance,
+    colorNoise: controls.color_noise,
+    detailRecovery: controls.detail_recovery,
+    fineNoise: controls.fine_noise ?? 0.5,
+    mediumNoise: controls.medium_noise ?? 0.5,
+    coarseNoise: controls.coarse_noise ?? 0.5,
+  };
 }
 
 function denoiseInputQueue() {
@@ -11153,6 +11275,7 @@ async function renderGpuDraftInner(
     viewport: request.viewport || null,
     roiCatchUp,
     panPass,
+    noiseView: denoiseNoiseViewActive(lane),
     onSourceProgress: (progress) => {
       if (progress.state !== "building" || !sourceOptions.isCurrent() || !hideStatus) return;
       const completed = Math.max(0, Number(progress.completed) || 0);
@@ -12159,6 +12282,7 @@ function retireActiveSession() {
   state.localBrushVisibleBounds = null;
   state.localAdjustmentMenuId = null;
   state.localShowMask = false;
+  state.denoiseNoiseView = false;
   state.compareWithoutLocals = false;
   state.localPreviewDirty = false;
   state.localMaskCommitDepth = 0;

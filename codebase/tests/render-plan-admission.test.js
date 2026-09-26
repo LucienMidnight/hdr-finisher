@@ -286,8 +286,8 @@ test("a halo grows the working tile but not the whole-image resources", () => {
   assert.ok(haloed.totals.peakLogicalBytes > plain.totals.peakLogicalBytes);
 });
 
-test("Detail band identity reuses amount and threshold but invalidates radius and upstream input", () => {
-  const params = new Float32Array(166);
+test("Detail band identity reuses amounts, threshold and clarity radius but invalidates band radii and upstream input", () => {
+  const params = new Float32Array(175);
   params[149] = 0.25;
   params[150] = -0.4;
   params[151] = 0.75;
@@ -302,7 +302,12 @@ test("Detail band identity reuses amount and threshold but invalidates radius an
   liveDrag[152] = 1.6;
   liveDrag[154] = 0.4;
   assert.equal(Preview.detailBandIdentity(liveDrag, "upstream-a"), baseline);
+  // Clarity reads its own brightness map rather than a packed band, so a
+  // Radius drag -- and the map description it rewrites -- keeps every band.
   liveDrag[151] = 2.5;
+  for (let index = 167; index <= 174; index += 1) liveDrag[index] = index;
+  assert.equal(Preview.detailBandIdentity(liveDrag, "upstream-a"), baseline);
+  liveDrag[153] = 2.5;
   assert.notEqual(Preview.detailBandIdentity(liveDrag, "upstream-a"), baseline);
   assert.notEqual(Preview.detailBandIdentity(params, "upstream-b"), baseline);
 });
@@ -326,14 +331,19 @@ test("local Detail invalidates downstream bands when an earlier local changes", 
 });
 
 test("Detail halo covers the maximum separable and coarse-guide reach", () => {
-  const params = new Float32Array(166);
+  const params = new Float32Array(175);
+  params[148] = 1;
+  params[150] = 0.5;
   params[151] = 3;
   params[153] = 3;
   params[155] = 1;
   const diagonal = Math.hypot(7680, 4320);
   const halo = Preview.detailTileHalo(7680, 4320, params);
-  assert.ok(halo >= Math.ceil(diagonal * 0.03 * 2));
   assert.ok(halo >= Math.ceil(diagonal * 0.0012 * 4));
+  assert.ok(halo >= 3 * 2);
+  // Global Clarity's reach belongs to its frame map, not to the tile: at the
+  // maximum radius the halo is a small fraction of the blur's own width.
+  assert.ok(halo < diagonal * 0.03, `halo ${halo} still carries the clarity radius`);
 });
 
 test("24MP, 42MP and 8K all fit the Auto budget under Tiled execution", () => {

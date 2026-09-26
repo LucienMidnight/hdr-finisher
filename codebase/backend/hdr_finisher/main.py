@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from . import denoise_adaptive
 from .capabilities import probe_capabilities
 from .config import APP_NAME, APP_VERSION, DEFAULT_HOST, DEFAULT_PORT, DOCS_DIR, EXPORTS_DIR, FRONTEND_DIR, SAMPLES_DIR
 from .desktop_security import DesktopPathGrants, secret_matches
@@ -875,6 +876,59 @@ def webgpu_proxy(
             "X-Source-Level-State": source_state or "unknown",
         },
     )
+
+
+# Adaptive denoise models measured on preview proxies, newest last. A model is
+# a handful of numbers, but measuring one reads the whole proxy.
+_DENOISE_MODEL_CACHE: dict[tuple, dict] = {}
+_DENOISE_MODEL_CACHE_LIMIT = 16
+
+
+@app.get("/api/session/{session_id}/denoise-model/{kind}")
+def adaptive_denoise_model(
+    session_id: str,
+    kind: PreviewKind,
+    long_edge: int = Query(default=1600, ge=256, le=16384),
+    edit_revision: int | None = Query(default=None, ge=0),
+    geometry_signature: str | None = Query(default=None),
+) -> dict:
+    """The adaptive denoise noise model, measured on exactly the source proxy the
+    WebGPU preview denoises at this size and geometry."""
+    try:
+        session = store.get(session_id)
+        _check_revision(session.edit_revision, edit_revision)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RevisionConflictError as exc:
+        raise _revision_conflict(exc) from exc
+    _guard_preview_resources(session, long_edge)
+    authoritative_geometry = session.adjustments.shared.geometry.model_dump(mode="json")
+    if geometry_signature is not None:
+        try:
+            requested_geometry = json.loads(geometry_signature)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail="Invalid geometry signature.") from exc
+        if requested_geometry != authoritative_geometry:
+            raise HTTPException(status_code=409, detail="Stale geometry denoise request dropped.")
+    key = (session_id, kind.value, long_edge, json.dumps(authoritative_geometry, sort_keys=True))
+    cached = _DENOISE_MODEL_CACHE.pop(key, None)
+    if cached is None:
+        revision = session.edit_revision
+        try:
+            proxy, _working_space, _signature = session.render_cache.geometry_source_proxy(
+                kind,
+                long_edge,
+                session.adjustments,
+                session.sdr_match,
+                is_current=lambda: session.edit_revision == revision,
+            )
+        except StaleRender:
+            return JSONResponse(status_code=409, content={"detail": "Stale source mip request dropped."})
+        cached = denoise_adaptive.estimate_adaptive_model(np.asarray(proxy)).as_dict()
+    _DENOISE_MODEL_CACHE[key] = cached
+    while len(_DENOISE_MODEL_CACHE) > _DENOISE_MODEL_CACHE_LIMIT:
+        _DENOISE_MODEL_CACHE.pop(next(iter(_DENOISE_MODEL_CACHE)))
+    return cached
 
 
 @app.get("/api/session/{session_id}/proxy-stream/{kind}")

@@ -72,12 +72,17 @@ async function idle(page) {
     for (const handling of ["smooth_rolloff", "path_to_white", "luminance"]) {
       for (const anchorFactor of [1e4, 1, 1e-3]) cases.push({ handling, anchorFactor, compression: true });
     }
+    // Clarity at its strongest runs before the shoulder and moves bright edges
+    // up; the ceiling still has to hold over its whole-frame map in tiles.
+    for (const anchorFactor of [1, 1e-3]) cases.push({ handling: "smooth_rolloff", anchorFactor, compression: true, clarity: true });
     cases.push({ handling: "smooth_rolloff", anchorFactor: 1, compression: false });
 
     const rows = [];
     for (const entry of cases) {
-      const row = await page.evaluate(async ({ handling, anchorFactor, compression, targetNits }) => {
+      const row = await page.evaluate(async ({ handling, anchorFactor, compression, clarity = false, targetNits }) => {
         window.__ceilingCase = { anchorFactor };
+        state.adjustments.hdr.detail_section_enabled = true;
+        Object.assign(state.adjustments.hdr.detail, { clarity_amount: clarity ? 100 : 0, clarity_radius_percent: 3 });
         Object.assign(state.adjustments.hdr, {
           exposure: 2.5,
           highlight_section_enabled: compression,
@@ -119,7 +124,7 @@ async function idle(page) {
           }
         }
         return {
-          handling, anchorFactor, compression,
+          handling, anchorFactor, compression, clarity,
           hdrSurface: used.p16 > 0.5,
           anchor: used.p75,
           targetScene: used.p73,
@@ -136,7 +141,7 @@ async function idle(page) {
       if (row.error) { failures.push(`${JSON.stringify(row)}`); continue; }
       if (!row.hdrSurface) { failures.push("the canvas is not an HDR surface; the ceiling cannot be read back"); continue; }
       const breached = row.maxNits > TARGET_NITS * (1 + TOLERANCE);
-      if (row.compression && breached) failures.push(`${row.handling} anchor x${row.anchorFactor}: ${row.maxNits.toFixed(2)} nits > ${TARGET_NITS} (${row.overChannels} channels over)`);
+      if (row.compression && breached) failures.push(`${row.handling} anchor x${row.anchorFactor}${row.clarity ? " with clarity" : ""}: ${row.maxNits.toFixed(2)} nits > ${TARGET_NITS} (${row.overChannels} channels over)`);
       if (!row.compression && !breached) failures.push(`control: compression off never exceeded ${TARGET_NITS} nits (max ${row.maxNits.toFixed(1)}); the check cannot see a breach`);
     }
     const report = { recordedAt: new Date().toISOString(), targetNits: TARGET_NITS, tolerance: TOLERANCE, rows, failures, pageErrors };
@@ -144,7 +149,7 @@ async function idle(page) {
     fs.writeFileSync(outputPath, JSON.stringify(report, null, 2));
     for (const row of rows) {
       if (row.error) { console.log(row.error); continue; }
-      console.log(`${row.compression ? "compression on " : "compression OFF"} ${row.handling.padEnd(15)} anchor x${String(row.anchorFactor).padEnd(6)} (${row.anchor.toExponential(2)})  max ${row.maxNits.toFixed(2)} nits  channels over ${row.overChannels} of ${row.pixels * 3}`);
+      console.log(`${row.compression ? "compression on " : "compression OFF"} ${row.handling.padEnd(15)} anchor x${String(row.anchorFactor).padEnd(6)} (${row.anchor.toExponential(2)})${row.clarity ? "  clarity +100 at 3%" : ""}  max ${row.maxNits.toFixed(2)} nits  channels over ${row.overChannels} of ${row.pixels * 3}`);
     }
     if (pageErrors.length) failures.push(`page errors: ${pageErrors.join("; ")}`);
     if (failures.length) throw new Error(`Highlight ceiling test failed:\n  ${failures.join("\n  ")}`);

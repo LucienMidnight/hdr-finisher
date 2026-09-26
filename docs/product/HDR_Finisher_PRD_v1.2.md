@@ -463,6 +463,84 @@ which match the report.
 - Whatever is chosen is measured against a reference on the denoise corpus
   rather than accepted on appearance alone.
 
+### DENOISE-02 — Future denoise engines (ideas, not scheduled)
+
+Recorded 2026-09-25. The current plan is a Noise Preview view plus an upgraded
+classical algorithm (signal-dependent noise model, better transform, automatic
+noise estimation). The two engines below are parked until that work has landed
+and been measured; neither is committed scope.
+
+**Intel Open Image Denoise (OIDN) as an optional Render mode**
+
+- Licence: Apache-2.0, compatible with GPL-3.0 distribution; add to
+  `THIRD_PARTY_NOTICES.md`.
+- Integration: the backend can call OIDN's small C API directly (ctypes). It
+  cannot run in the WebGPU preview, so it would be an analysis-style step:
+  run once, cache the result, and blend live between source and denoised.
+- Quality: excellent on Monte Carlo render noise, best when the EXR carries
+  Blender's Denoising Albedo and Normal passes. Poor fit for camera noise
+  (trained on render noise; tends toward a smooth, painterly result).
+- Cost: installer is ~161 MB today; the CPU device plus built-in weights adds
+  an estimated 50–100 MB, more per GPU backend. Measure before committing;
+  consider CPU-only by default.
+- Open question: renders usually arrive already denoised in Blender. Confirm
+  there is real demand for finishing-time render denoise before building it.
+
+**Neural photo denoise (ONNX Runtime / DirectML)**
+
+- Potentially the best photographic result, closest to Lightroom AI Denoise
+  or DxO DeepPRIME.
+- Blockers: pretrained weights are frequently non-commercial even when the
+  code is permissive, which conflicts with GPL distribution; most available
+  models are trained on sRGB phone images rather than scene-linear HDR, and
+  the strongest results come from raw-domain (pre-demosaic) denoising.
+- First step if revisited: a weight-licence survey and a raw-domain
+  feasibility check against the RAW import path.
+
+### CLARITY-01 — Brush/mask Clarity GPU load (follow-up, not scheduled)
+
+Recorded 2026-09-26 on branch `feature/clarity-radius-pyramid`.
+
+**Background.** Clarity's blurred base used to be sampled with 17 taps spaced
+σ/4 apart, which drew faint contour bands (up to ~0.28 EV at Clarity +100)
+beside strong edges, and every preview tile processed a margin of 2σ around
+itself (7.3x the tile's own work at a 3% radius on 24 MP). The fix builds the
+base from a smooth brightness pyramid: box-average down until σ is 3–6
+texels, blur densely there, and upsample with a cubic B-spline. Export
+(`detail.py`) uses the same maths, so preview and export agree.
+
+- **Global Clarity** builds that map once for the whole picture, so tiles
+  need no Clarity margin (1.3x work at every radius) and a Radius drag only
+  re-blurs the small map.
+- **Brush/mask Clarity** was deliberately left per-tile in this round. Its
+  banding is fixed, but to stay pixel-identical with Direct and export each
+  tile now needs a wider margin than before: about 3x the tile's work at the
+  0.75% default (was 2x) and about 17x at 3% (was 7x). Large-radius local
+  Clarity on photos big enough to use tiled preview therefore works the GPU
+  harder than it used to. Steve chose this trade-off (banding fixed now, load
+  later).
+
+**Why it was deferred.** A whole-picture map for a local adjustment needs the
+picture as it stands *just before* that local (global Detail plus every
+earlier local, each with its own mask) across the whole frame, not just the
+visible tiles. The tiled preview only fetches masks for visible tiles, so this
+needs either a mask pre-fetch for the map's reach or a whole-frame prefix pass.
+
+**Direction.** Give each local with Clarity its own frame-level map, built by
+a pre-pass that runs the graph up to that local over the tiles within the
+map's reach (fetching their masks), cached by the upstream identity so Radius
+and Amount drags only re-blur the map. The global map already follows this
+pattern and is the template.
+
+**Acceptance criteria**
+
+- Tiled work per tile with brush/mask Clarity active returns to the same
+  ~1.3x as global Clarity at every radius.
+- No new banding: the clarity staircase test and Direct/Tiled and CPU/GPU
+  parity tests pass unchanged.
+- A local Clarity Radius drag does no work beyond re-blurring its map and
+  redrawing.
+
 ---
 
 ## 11b. Full-Tier Interactive Performance — Deferred Work

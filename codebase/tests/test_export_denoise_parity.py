@@ -27,6 +27,8 @@ These are the claims:
 from __future__ import annotations
 
 import numpy as np
+
+from hdr_finisher import denoise_adaptive
 import pytest
 
 from hdr_finisher.denoise_reference import (
@@ -117,6 +119,9 @@ def _document(lane: str = "hdr", **overrides) -> _Document:
     document = _Document(DenoiseDocumentSettings())
     settings = getattr(document.denoise, lane)
     settings.enabled = overrides.pop("enabled", True)
+    # The parity checks here pin the original wavelet, which documents that
+    # were authored with it keep; the adaptive route has its own tests below.
+    settings.analysis.algorithm_version = overrides.pop("algorithm_version", "compact-haar-residual-v1")
     settings.analysis.levels = overrides.pop("levels", 2)
     settings.controls.amount = overrides.pop("amount", 0.8)
     settings.controls.luminance = overrides.pop("luminance", 0.7)
@@ -245,3 +250,35 @@ def test_the_export_branch_actually_renders_the_denoised_source() -> None:
         "the export branch rendered identical pixels with denoise on and off, "
         "so the denoised source is being computed and discarded"
     )
+
+
+def test_adaptive_export_is_exactly_the_adaptive_reconstruction() -> None:
+    """The adaptive route measures its model on the export frame itself."""
+    image = _noisy(96, 128)
+    document = _document(algorithm_version=denoise_adaptive.ALGORITHM_VERSION)
+    lane = document.denoise.hdr
+    expected = denoise_adaptive.resolve_adaptive(
+        image,
+        denoise_adaptive.estimate_adaptive_model(image),
+        denoise_adaptive.AdaptiveControls(
+            amount=lane.controls.amount,
+            luminance=lane.controls.luminance,
+            color_noise=lane.controls.color_noise,
+            detail_recovery=lane.controls.detail_recovery,
+            fine_noise=lane.controls.fine_noise,
+            medium_noise=lane.controls.medium_noise,
+            coarse_noise=lane.controls.coarse_noise,
+        ),
+    )
+
+    produced = _denoised_export_source(_session(document, image), PreviewKind.HDR)
+    np.testing.assert_array_equal(produced, expected)
+    assert not np.array_equal(produced, image), "the adaptive export source was not denoised at all"
+
+
+def test_new_documents_default_to_adaptive_and_old_ones_keep_theirs() -> None:
+    assert DenoiseDocumentSettings().hdr.analysis.algorithm_version == denoise_adaptive.ALGORITHM_VERSION
+    legacy = DenoiseDocumentSettings.model_validate(
+        {"hdr": {"analysis": {"algorithm_version": "compact-haar-residual-v1"}}},
+    )
+    assert legacy.hdr.analysis.algorithm_version == "compact-haar-residual-v1"
