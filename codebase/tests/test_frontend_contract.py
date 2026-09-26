@@ -1584,8 +1584,10 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     # does not masquerade as a pipeline-order regression.
     # 160 and 161 carry the tile origin for tiled execution; Direct leaves
     # them at zero, so every index below keeps its meaning. 166 carries
-    # Denoise's Show noise view flag.
-    assert "const PARAM_COUNT = 167" in shader
+    # Denoise's Show noise view flag; 167-174 describe the Clarity map.
+    assert "const PARAM_COUNT = 175" in shader
+    assert "const CLARITY_MAP_SCALE_INDEX = 167" in shader
+    assert "const CLARITY_MAP_ORIGIN_Y_INDEX = 171" in shader
     assert "const NOISE_VIEW_INDEX = 166" in shader
     assert "const NOISE_VIEW_INDEX: u32 = 166u;" in shader
     assert "const TILE_ORIGIN_X_INDEX = 160" in shader

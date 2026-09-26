@@ -131,7 +131,7 @@ test("the Detail halo covers the shader's reach at maximum radii", () => {
     id: "l1",
     enabled: true,
     opacity: 1,
-    hdr_grade: { detail: { clarity_radius_percent: 3, sharpen_radius_px: 3 } },
+    hdr_grade: { detail: { clarity_amount: 40, clarity_radius_percent: 3, sharpen_radius_px: 3 } },
   };
 
   // The shader's own expressions, re-derived: `detailRadii()` and
@@ -140,33 +140,80 @@ test("the Detail halo covers the shader's reach at maximum radii", () => {
   const shaderRadii = [
     Math.max(0.35, diagonal * 0.0003),
     Math.max(0.70, diagonal * 0.0012),
-    Math.max(0.50, diagonal * 3 / 100),
-    Math.max(0.30, 3 * 1),
-    Math.max(0.35, diagonal * 0.0003),
-    Math.max(0.70, diagonal * 0.0012),
-    Math.max(0.50, diagonal * 3 / 100),
     Math.max(0.30, 3 * 1),
   ];
   // Separable analysis reaches two radii; texture's edge guide reaches two
   // coarse radii into the packed band; two pixels cover the edge sample.
-  const shaderReach = Math.ceil(Math.max(...shaderRadii.map((radius, index) => (
-    index % 4 === 1 ? 4 * radius : 2 * radius
-  ))) + 2);
+  const bandReach = Math.max(2 * shaderRadii[0], 4 * shaderRadii[1], 2 * shaderRadii[2]);
+  // A local's Clarity map is built inside the tile: the B-spline spans two
+  // coarse texels either side, each blurred texel reads `taps` texels either
+  // side, and each texel averages a whole block.
+  const map = Scale.clarityMapPlan(Math.max(0.50, diagonal * 3 / 100));
+  const shaderReach = Math.ceil(Math.max(bandReach, (map.taps + 2.5) * map.scale) + 2);
 
   const halo = Scale.detailReach(width, height, params, [local], "hdr");
   assert.ok(halo >= shaderReach, `halo ${halo} is shorter than the shader's ${shaderReach}`);
   assert.equal(halo, Preview.detailTileHalo(width, height, params, [local], "hdr"));
+  // Global Clarity reads a frame-level map, so however wide its radius it adds
+  // nothing to the halo: only texture and sharpen remain.
+  assert.equal(Scale.detailReach(width, height, params, [], "hdr"), Math.ceil(bandReach + 2));
+  assert.equal(
+    Scale.detailReach(width, height, activeParams({ 151: 0.2, 153: 3, 155: 1 }), [], "hdr"),
+    Scale.detailReach(width, height, params, [], "hdr"),
+  );
+  // A local whose Clarity is off builds no map and needs no map reach.
+  const clarityOff = { ...local, hdr_grade: { detail: { ...local.hdr_grade.detail, clarity_amount: 0 } } };
+  assert.equal(Scale.detailReach(width, height, params, [clarityOff], "hdr"), Math.ceil(bandReach + 2));
   // The halo grows with the radius it covers rather than being a constant.
   const smallLocal = {
     id: "l1",
     enabled: true,
     opacity: 1,
-    hdr_grade: { detail: { clarity_radius_percent: 0.2, sharpen_radius_px: 0.3 } },
+    hdr_grade: { detail: { clarity_amount: 40, clarity_radius_percent: 0.2, sharpen_radius_px: 0.3 } },
   };
   const smaller = Scale.detailReach(
     width, height, activeParams({ 151: 0.2, 153: 0.3, 155: 0.25 }), [smallLocal], "hdr",
   );
   assert.ok(halo > smaller);
+});
+
+test("the Clarity map spends exactly the requested blur, on a level a few texels wide", () => {
+  for (const sigma of [0.5, 2, 5.99, 6, 14.4, 54.1, 107.9, 216.3, 400]) {
+    const plan = Scale.clarityMapPlan(sigma);
+    assert.equal(plan.scale, 2 ** plan.level);
+    if (plan.level === 0) {
+      // Too narrow to shrink: the dense blur is the whole blur.
+      assert.ok(sigma < 2 * Scale.CLARITY_MAP_MIN_TEXELS);
+      assert.equal(plan.denseSigma, sigma);
+      assert.equal(plan.reach, plan.taps);
+    } else {
+      // The blur is between the minimum and twice it at the chosen level ...
+      const texels = sigma / plan.scale;
+      assert.ok(texels >= Scale.CLARITY_MAP_MIN_TEXELS && texels < 2 * Scale.CLARITY_MAP_MIN_TEXELS, `${sigma}: ${texels}`);
+      // ... and the box average and the B-spline's own spread plus the dense
+      // blur's add up to it exactly, in variance.
+      const inherent = (1 - 4 ** -plan.level) / 12 + 1 / 3;
+      assert.ok(Math.abs(plan.denseSigma ** 2 + inherent - texels ** 2) < 1e-9);
+      assert.equal(plan.reach, Math.ceil((plan.taps + 2.5) * plan.scale));
+    }
+    assert.equal(plan.taps, Math.ceil(Scale.CLARITY_MAP_TAP_REACH * plan.denseSigma));
+  }
+  // The level follows the radius; the map shrinks as the blur widens, so its
+  // cost does not.
+  assert.equal(Scale.clarityMapPlan(54.1).scale, 16);
+  assert.equal(Scale.clarityMapPlan(216.3).scale, 64);
+  // Sigma is a fraction of the frame diagonal, clamped to the slider's range.
+  assert.equal(Scale.claritySigma(6000, 4000, 3), Math.hypot(6000, 4000) * 0.03);
+  assert.equal(Scale.claritySigma(6000, 4000, 9), Math.hypot(6000, 4000) * 0.03);
+  assert.equal(Scale.claritySigma(10, 10, 0.2), 0.5);
+});
+
+test("the Clarity frame map's reach is declared only while global Clarity runs", () => {
+  const on = activeParams({ 150: 0.3, 151: 3 });
+  const off = activeParams({ 150: 0, 151: 3 });
+  const plan = Scale.clarityMapPlan(Scale.claritySigma(6000, 4000, 3));
+  assert.equal(Scale.clarityMapReach(6000, 4000, on), plan.reach);
+  assert.equal(Scale.clarityMapReach(6000, 4000, off), 0);
 });
 
 test("the film-plane halation reach follows the processing scale", () => {

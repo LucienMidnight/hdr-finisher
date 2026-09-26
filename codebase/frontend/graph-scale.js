@@ -148,6 +148,71 @@
     return { diagonal, sourcePixelScale: rawScale, global, locals };
   }
 
+  // Clarity's blurred base is built on a brightness pyramid rather than by
+  // sampling the full-resolution picture. The log luminance is box-averaged
+  // down by 2^level until the blur is CLARITY_MAP_MIN_TEXELS to twice that
+  // wide, blurred densely there, and brought back with a cubic B-spline. The
+  // averaging happens in two steps -- to the frame's base block size (see
+  // `clarityBaseScale`), then from those blocks to the radius's -- repeating
+  // the frame's edge pixels, then its edge blocks, where a block runs off the
+  // picture. The
+  // box and the B-spline each blur a little themselves; the dense blur takes
+  // exactly the rest, so the total spread is the requested sigma. Sampling the
+  // full picture sparsely instead turns a smooth fade into a staircase.
+  const CLARITY_MAP_MIN_TEXELS = 3;
+  // The dense blur's kernel stops at this many of its own sigmas.
+  const CLARITY_MAP_TAP_REACH = 3;
+  // The Clarity Radius slider's lower bound, in percent of the diagonal.
+  const CLARITY_RADIUS_MIN_PERCENT = 0.2;
+
+  /**
+   * The brightness map for one clarity sigma, in processing pixels. `detail.py`
+   * `clarity_map_plan` is the same arithmetic in float64; the shader receives
+   * these numbers rather than deriving them, so a level can never be chosen
+   * differently on either side of a boundary.
+   *
+   * `reach` is how far from a pixel the map reads the picture: the B-spline
+   * spans two coarse texels either side, each blurred texel reads `taps`
+   * texels either side, and each texel averages its whole block.
+   */
+  function clarityMapPlan(sigma) {
+    const target = Math.max(0.5, finiteNumber(sigma, 0.5));
+    const level = target < 2 * CLARITY_MAP_MIN_TEXELS
+      ? 0
+      : Math.floor(Math.log2(target / CLARITY_MAP_MIN_TEXELS));
+    const scale = 2 ** level;
+    const inherent = level === 0 ? 0 : (1 - 4 ** -level) / 12 + 1 / 3;
+    const denseSigma = Math.sqrt(Math.max((target / scale) ** 2 - inherent, 0));
+    const taps = denseSigma > 0.000001 ? Math.ceil(CLARITY_MAP_TAP_REACH * denseSigma) : 0;
+    const reach = level === 0 ? taps : Math.ceil((taps + 2.5) * scale);
+    return { sigma: target, level, scale, denseSigma, taps, reach };
+  }
+
+  /** Clarity's sigma: a fraction of the processing frame's diagonal. */
+  function claritySigma(width, height, radiusPercent) {
+    const diagonal = Math.hypot(Math.max(1, finiteNumber(width, 1)), Math.max(1, finiteNumber(height, 1)));
+    return Math.max(0.50, diagonal * Math.min(3, Math.max(CLARITY_RADIUS_MIN_PERCENT, finiteNumber(radiusPercent, 0.75))) / 100);
+  }
+
+  /**
+   * The block size the picture is first averaged to, whatever the radius:
+   * the map level of the slider's smallest radius on this frame. Every other
+   * radius averages that base map further. Changing the radius therefore never
+   * re-reads the picture, and the base map a frame keeps serves every radius.
+   */
+  function clarityBaseScale(width, height) {
+    return clarityMapPlan(claritySigma(width, height, CLARITY_RADIUS_MIN_PERCENT)).scale;
+  }
+
+  /** Whether global Clarity runs, and so whether the frame map is needed. */
+  function clarityActive(params) {
+    return params[148] > 0.5 && Math.abs(finiteNumber(params[150], 0)) > 0.000001;
+  }
+
+  function localClarityActive(grade) {
+    return Math.abs(finiteNumber(grade?.detail?.clarity_amount, 0)) > 0.000001;
+  }
+
   /**
    * How far past its own rectangle a tile has to be correct for the Detail
    * stage.
@@ -155,11 +220,30 @@
    * Separable analysis reaches two radii in each direction. Texture's edge
    * guide then reaches another two coarse radii into that packed band. The
    * extra two pixels cover the bilinear sample at the reach's edge.
+   *
+   * Global Clarity is absent: its map is built once for the whole frame, so a
+   * tile only samples it. Local Clarity builds its map inside the tile, which
+   * therefore has to carry the map's whole reach.
    */
   function detailReach(width, height, params, localAdjustments = [], lane = "hdr") {
     const { global, locals } = detailRadii(width, height, params, localAdjustments, lane);
-    const radii = [...global, ...locals.flat()];
-    return Math.ceil(Math.max(2 * radii[0], 4 * radii[1], ...radii.slice(2).map((radius) => 2 * radius)) + 2);
+    const reaches = [2 * global[0], 4 * global[1], 2 * global[3]];
+    const grades = (Array.isArray(localAdjustments) ? localAdjustments : []).map((local) => local?.[`${lane}_grade`]);
+    locals.forEach((radii, index) => {
+      reaches.push(2 * radii[0], 4 * radii[1], 2 * radii[3]);
+      if (localClarityActive(grades[index])) reaches.push(clarityMapPlan(radii[2]).reach);
+    });
+    return Math.ceil(Math.max(...reaches) + 2);
+  }
+
+  /**
+   * The picture area around a tile the global Clarity map has to have seen
+   * before that tile can be composited. It is not part of the tile halo: only
+   * the map's own pre-pass reads it, and only the base grade runs there.
+   */
+  function clarityMapReach(width, height, params) {
+    if (!clarityActive(params)) return 0;
+    return clarityMapPlan(claritySigma(width, height, params?.[151])).reach;
   }
 
   /**
@@ -308,10 +392,13 @@
       unit: "frame-diagonal + source-pixels",
       radius: "texture and clarity are fractions of the processing frame's diagonal; "
         + "the sharpen radius converts from source pixels by the processing scale (p[155])",
-      halo: "detail",
+      halo: "detail (texture and sharpen only; clarity reads a frame-level brightness map built "
+        + "by its own pre-pass over clarityMapReach, so it adds nothing to the tile halo)",
       coarse: "yes",
       cache: "detail band tiles, keyed by upstream identity and the full parameter set; "
-        + "amounts and sharpen threshold are excluded because they consume bands, not create them",
+        + "amounts, sharpen threshold and the clarity radius are excluded because they consume "
+        + "bands, not create them. The clarity map is keyed by the same upstream identity, and "
+        + "a radius change only re-blurs it",
       cpuFallback: "apply_detail(..., source_pixel_scale)",
     }),
     Object.freeze({
@@ -320,10 +407,11 @@
       unit: "frame-diagonal + source-pixels",
       radius: "same conversion as global Detail; the local shader reads its own copy of the "
         + "source-pixel scale in slot 20",
-      halo: "detail",
+      halo: "detail, including the clarity map's reach: a local builds its clarity map inside "
+        + "the tile (PRD CLARITY-01 tracks moving it to a frame-level map)",
       coarse: "yes",
       cache: "detail band tiles, keyed by the preceding local's identity plus this local's "
-        + "parameters and scale",
+        + "parameters and scale; the in-tile clarity map is rebuilt per tile",
       cpuFallback: "apply_local_stack -> _apply_local_grade -> apply_detail",
     }),
     Object.freeze({
@@ -435,6 +523,14 @@
     localDetailActive,
     detailRadii,
     detailReach,
+    CLARITY_MAP_MIN_TEXELS,
+    CLARITY_MAP_TAP_REACH,
+    clarityMapPlan,
+    claritySigma,
+    clarityBaseScale,
+    clarityActive,
+    localClarityActive,
+    clarityMapReach,
     spatialReachDetail,
     spatialReach,
     composedReach,

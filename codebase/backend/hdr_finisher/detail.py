@@ -64,7 +64,7 @@ def apply_detail(
 
     if detail.clarity_amount:
         radius = max(0.5, diagonal * float(detail.clarity_radius_percent) / 100.0)
-        base = _gaussian_blur(log_luma, radius)
+        base = clarity_base(log_luma, radius)
         band = log_luma - base
         # Suppress cross-edge bleeding while keeping texture inside surfaces.
         edge_weight = np.exp(-np.square(band / np.float32(0.75))).astype(np.float32)
@@ -99,6 +99,105 @@ def apply_detail(
     # Preserve exact source samples wherever all selected bands made no change;
     # merely enabling Detail must never alter or soften the image.
     return np.where((np.abs(delta) > 1e-7)[..., None], clipped, image).astype(np.float32)
+
+
+# Clarity's base is built on a brightness pyramid: box-average the log
+# luminance down by 2**level until sigma is CLARITY_MAP_MIN_TEXELS to twice
+# that, blur densely there, and upsample with a cubic B-spline. The box and the
+# B-spline blur a little themselves and the dense blur takes exactly the rest.
+# Sampling the full-resolution picture sparsely instead turns a smooth fade
+# into a staircase. `clarityMapPlan` in graph-scale.js is the same arithmetic,
+# and the WebGPU preview runs the same three steps.
+CLARITY_MAP_MIN_TEXELS = 3.0
+CLARITY_MAP_TAP_REACH = 3.0
+# The Clarity Radius slider's lower bound, in percent of the diagonal. The
+# picture is first averaged to that radius's block size, then further for
+# wider radii, so a radius change never re-reads the picture in the preview.
+CLARITY_RADIUS_MIN_PERCENT = 0.2
+
+
+def clarity_map_plan(sigma: float) -> dict:
+    target = max(0.5, float(sigma))
+    level = 0 if target < 2.0 * CLARITY_MAP_MIN_TEXELS else int(math.floor(math.log2(target / CLARITY_MAP_MIN_TEXELS)))
+    scale = 2 ** level
+    inherent = 0.0 if level == 0 else (1.0 - 4.0 ** -level) / 12.0 + 1.0 / 3.0
+    dense_sigma = math.sqrt(max((target / scale) ** 2 - inherent, 0.0))
+    taps = int(math.ceil(CLARITY_MAP_TAP_REACH * dense_sigma)) if dense_sigma > 1e-6 else 0
+    reach = taps if level == 0 else int(math.ceil((taps + 2.5) * scale))
+    return {"sigma": target, "level": level, "scale": scale, "dense_sigma": dense_sigma, "taps": taps, "reach": reach}
+
+
+def clarity_base_scale(height: int, width: int) -> int:
+    diagonal = math.hypot(height, width)
+    return clarity_map_plan(max(0.5, diagonal * CLARITY_RADIUS_MIN_PERCENT / 100.0))["scale"]
+
+
+def clarity_base(log_luma: np.ndarray, sigma: float) -> np.ndarray:
+    plan = clarity_map_plan(sigma)
+    scale = plan["scale"]
+    height, width = log_luma.shape
+    base_scale = min(scale, clarity_base_scale(height, width))
+    values = _block_mean(log_luma.astype(np.float32, copy=False), base_scale)
+    values = _block_mean(values, scale // base_scale)
+    kernel = _clarity_kernel(plan["dense_sigma"], plan["taps"])
+    values = _dense_blur_axis(_dense_blur_axis(values, kernel, 1), kernel, 0)
+    if scale == 1:
+        return values
+    return _bspline_upsample_axis(_bspline_upsample_axis(values, scale, width, 1), scale, height, 0)
+
+
+def _block_mean(values: np.ndarray, block: int) -> np.ndarray:
+    """Average ``block`` x ``block`` cells, repeating the edge where one runs off."""
+    if block <= 1:
+        return values
+    height, width = values.shape
+    rows, columns = -(-height // block), -(-width // block)
+    padded = np.pad(values, ((0, rows * block - height), (0, columns * block - width)), mode="edge")
+    return padded.reshape(rows, block, columns, block).mean(axis=(1, 3), dtype=np.float32)
+
+
+def _clarity_kernel(sigma: float, taps: int) -> np.ndarray:
+    if taps <= 0:
+        return np.ones(1, dtype=np.float32)
+    offsets = np.arange(-taps, taps + 1, dtype=np.float32)
+    kernel = np.exp(np.float32(-0.5) * np.square(offsets / np.float32(sigma)))
+    return (kernel / kernel.sum(dtype=np.float32)).astype(np.float32)
+
+
+def _dense_blur_axis(values: np.ndarray, kernel: np.ndarray, axis: int) -> np.ndarray:
+    taps = kernel.size // 2
+    if taps == 0:
+        return values
+    padding = [(0, 0), (0, 0)]
+    padding[axis] = (taps, taps)
+    padded = np.pad(values, padding, mode="edge")
+    size = values.shape[axis]
+    result = np.zeros_like(values, dtype=np.float32)
+    for tap, weight in enumerate(kernel):
+        window = [slice(None), slice(None)]
+        window[axis] = slice(tap, tap + size)
+        result += padded[tuple(window)] * weight
+    return result
+
+
+def _bspline_upsample_axis(coarse: np.ndarray, scale: int, size: int, axis: int) -> np.ndarray:
+    # Pixel centre x sits at (x + 0.5) / scale - 0.5 in coarse texel units.
+    position = (np.arange(size, dtype=np.float64) + 0.5) / scale - 0.5
+    base = np.floor(position).astype(np.int64)
+    t = (position - base).astype(np.float32)
+    weights = (
+        (1 - t) ** 3 / 6,
+        (3 * t ** 3 - 6 * t ** 2 + 4) / 6,
+        (-3 * t ** 3 + 3 * t ** 2 + 3 * t + 1) / 6,
+        t ** 3 / 6,
+    )
+    shape = [1, 1]
+    shape[axis] = -1
+    limit = coarse.shape[axis] - 1
+    result = np.zeros(coarse.shape[:axis] + (size,) + coarse.shape[axis + 1:], dtype=np.float32)
+    for offset, weight in enumerate(weights):
+        result += np.take(coarse, np.clip(base - 1 + offset, 0, limit), axis=axis) * weight.reshape(shape)
+    return result
 
 
 def _gaussian_blur(values: np.ndarray, sigma: float) -> np.ndarray:

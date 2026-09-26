@@ -5,10 +5,28 @@
   // extent. Direct leaves the tile fields zero and falls back to the bound
   // texture dimensions. 166 is Denoise's Show noise view (0 off, 1 on, 2 on
   // with nothing removed); it is view state and never reaches an export.
-  const PARAM_COUNT = 167;
+  // 167-171 describe the Clarity brightness map this buffer's Clarity reads:
+  // its block scale, dense-blur sigma and tap count (from `clarityMapPlan`),
+  // and the frame texel that the bound map's texel (0, 0) holds. The global
+  // buffer's map covers the frame, so its origin is zero; a local's map is
+  // built inside its tile and starts at the tile's first block. 172-174 are
+  // the same pair for the base map the picture is first averaged into (its
+  // block size, then its origin), which every radius averages further.
+  const PARAM_COUNT = 175;
   const TILE_ORIGIN_X_INDEX = 160;
   const TILE_ORIGIN_Y_INDEX = 161;
   const NOISE_VIEW_INDEX = 166;
+  const CLARITY_MAP_SCALE_INDEX = 167;
+  const CLARITY_MAP_SIGMA_INDEX = 168;
+  const CLARITY_MAP_TAPS_INDEX = 169;
+  const CLARITY_MAP_ORIGIN_X_INDEX = 170;
+  const CLARITY_MAP_ORIGIN_Y_INDEX = 171;
+  const CLARITY_BASE_SCALE_INDEX = 172;
+  const CLARITY_BASE_ORIGIN_X_INDEX = 173;
+  const CLARITY_BASE_ORIGIN_Y_INDEX = 174;
+  // The map stores each value as a half-float pair (value, remainder): the
+  // pair keeps near-float precision in a format the filterable binding takes.
+  const CLARITY_MAP_FORMAT = "rg16float";
   const CURVE_SAMPLES = 1024;
   const PEAK_HISTOGRAM_BINS = 4096;
   // The tile peak reduction target. A maximum is decomposable, so this grid
@@ -747,10 +765,58 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
   function detailBandIdentity(params, inputIdentity, scope = "global") {
     const values = Array.from(params || []);
     // Amounts and sharpen threshold consume packed bands but do not create
-    // them. Excluding them is what makes live drags true cache hits.
-    const ignored = scope === "global" ? [149, 150, 152, 154] : [14, 15, 17, 19];
-    ignored.forEach((index) => { if (index < values.length) values[index] = 0; });
+    // them. Excluding them is what makes live drags true cache hits. Clarity
+    // no longer has a packed band at all -- it reads its brightness map -- so
+    // its radius and map description are excluded too, and a Radius drag
+    // leaves every texture and sharpen band cached.
+    const clarityMap = [
+      CLARITY_MAP_SCALE_INDEX, CLARITY_MAP_SIGMA_INDEX, CLARITY_MAP_TAPS_INDEX,
+      CLARITY_MAP_ORIGIN_X_INDEX, CLARITY_MAP_ORIGIN_Y_INDEX,
+      CLARITY_BASE_SCALE_INDEX, CLARITY_BASE_ORIGIN_X_INDEX, CLARITY_BASE_ORIGIN_Y_INDEX,
+    ];
+    const ignored = scope === "global" ? [149, 150, 151, 152, 154] : [14, 15, 16, 17, 19];
+    [...ignored, ...clarityMap].forEach((index) => { if (index < values.length) values[index] = 0; });
     return `${inputIdentity}|${JSON.stringify(values)}`;
+  }
+
+  /**
+   * The texel extents of a Clarity map built from the picture rectangle
+   * `x, y, width, height`: the base map's and the finished map's, each
+   * covering every block the rectangle touches.
+   */
+  function clarityMapExtents(plan, x, y, width, height) {
+    const extent = (scale, origin, size) => Math.ceil((origin + size) / scale) - Math.floor(origin / scale);
+    return {
+      scale: plan.scale,
+      baseScale: plan.baseScale,
+      width: extent(plan.scale, x, width),
+      height: extent(plan.scale, y, height),
+      baseWidth: extent(plan.baseScale, x, width),
+      baseHeight: extent(plan.baseScale, y, height),
+    };
+  }
+
+  /**
+   * Describe the Clarity map a parameter buffer's Clarity will read. The
+   * shader takes these numbers as given rather than deriving them, so the
+   * pyramid level is chosen once, here, with the same float64 arithmetic as
+   * `detail.py`. `originX`/`originY` is the picture pixel the maps are built
+   * from: zero for a whole-frame map, the halo rectangle's corner for a map
+   * built inside a tile.
+   */
+  function writeClarityPlan(values, width, height, radiusPercent, originX = 0, originY = 0) {
+    const contract = graphScaleContract();
+    const plan = contract.clarityMapPlan(contract.claritySigma(width, height, radiusPercent));
+    const baseScale = Math.min(plan.scale, contract.clarityBaseScale(width, height));
+    values[CLARITY_MAP_SCALE_INDEX] = plan.scale;
+    values[CLARITY_MAP_SIGMA_INDEX] = plan.denseSigma;
+    values[CLARITY_MAP_TAPS_INDEX] = plan.taps;
+    values[CLARITY_MAP_ORIGIN_X_INDEX] = Math.floor(originX / plan.scale);
+    values[CLARITY_MAP_ORIGIN_Y_INDEX] = Math.floor(originY / plan.scale);
+    values[CLARITY_BASE_SCALE_INDEX] = baseScale;
+    values[CLARITY_BASE_ORIGIN_X_INDEX] = Math.floor(originX / baseScale);
+    values[CLARITY_BASE_ORIGIN_Y_INDEX] = Math.floor(originY / baseScale);
+    return { ...plan, baseScale };
   }
 
   /**
@@ -1190,6 +1256,8 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       this.pendingHighlightKeys = new Map();
       this.denoiseResolveVersion = 0;
       this.bindGroupLayout = null;
+      this.clarityMaps = null;
+      this.clarityFrameMap = null;
       this.pipelineLayout = null;
       this.maskBindGroupLayout = null;
       this.maskPipelineLayout = null;
@@ -1742,6 +1810,8 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       this.pipelines = new Map();
       this.surfaceKeys = new WeakMap();
       this.bindGroupLayout = null;
+      this.clarityMaps = null;
+      this.clarityFrameMap = null;
       this.pipelineLayout = null;
       this.maskBindGroupLayout = null;
       this.maskPipelineLayout = null;
@@ -1778,6 +1848,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       this.detailBandTiles.clear();
       for (const entry of this.maskTiles.values()) entry.texture?.destroy();
       this.maskTiles.clear();
+      this.releaseClarityMaps();
       this.detailCacheCounters = {
         hits: 0, misses: 0, analysisPasses: 0, evictions: 0,
         globalHits: 0, globalMisses: 0, localHits: 0, localMisses: 0,
@@ -2635,9 +2706,15 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         && selector.original.width === frame.width
         && selector.original.height === frame.height,
       );
-      if (denoiseActive) {
-        const alignment = denoiseTileAlignment(selector.cache.settings.levels);
-        if (halo % alignment) halo = Math.ceil(halo / alignment) * alignment;
+      const alignment = denoiseActive ? denoiseTileAlignment(selector.cache.settings.levels) : 1;
+      if (halo % alignment) halo = Math.ceil(halo / alignment) * alignment;
+      // Global Clarity's map pre-pass reads the picture around the tiles, not
+      // just their halos: its reach, rounded out to whole blocks and to the
+      // denoise grid. The source region has to cover that too.
+      const contract = graphScaleContract();
+      if (contract.clarityActive(params)) {
+        const clarity = contract.clarityMapPlan(contract.claritySigma(frame.width, frame.height, params[151]));
+        halo = Math.max(halo, clarity.reach + clarity.scale + alignment);
       }
       return halo;
     }
@@ -3004,6 +3081,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       const activeLocals = options.activeLocals || [];
       const { detailActive, spatialActive, filmNeighbourhoodActive } = this.graphActivity(params);
       const localDetailActive = activeLocals.some((local) => gpuLocalDetailActive(local[`${lane}_grade`]));
+      writeClarityPlan(params, proxy.width, proxy.height, params[151]);
       // Denoise reconstructs into a tile-sized texture rather than reading a
       // whole-frame resolved one. The alignment is the wavelet grid: a Haar
       // decomposition indexes from the frame's origin, so a tile that started
@@ -3201,16 +3279,56 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         return { rendered: false, refusals: ["mask tile unavailable or superseded"] };
       }
 
+      // Global Clarity reads one brightness map of the whole frame, filled by a
+      // pre-pass that runs only the base grade, so it adds nothing to the
+      // tile halo. The map is keyed by the picture entering Detail, and by
+      // Denoise's live controls when Denoise reconstructs that picture.
+      const clarityFrame = !noiseView && foregroundTiles.length && graphScaleContract().clarityActive(params)
+        ? this.planClarityFrameMap({
+          proxy,
+          params,
+          identity: `${detailBandIdentity(params, proxy.identity, "global")}|${denoiseActive ? JSON.stringify(denoiseControls) : "-"}`,
+          tiles: foregroundTiles,
+          workWidth,
+          workHeight,
+          alignment: denoiseAlignment,
+        })
+        : null;
+      if (clarityFrame && proxy.region) {
+        const region = proxy.region;
+        const uncovered = clarityFrame.chunks.some(({ region: chunk }) => (
+          chunk.x < region.x || chunk.y < region.y
+          || chunk.x + chunk.width > region.x + region.width
+          || chunk.y + chunk.height > region.y + region.height
+        ));
+        if (uncovered) {
+          this.recordStage("roi-region-refused", { lane, longEdge, region: { ...region }, reason: "clarity-map" });
+          return { rendered: false, refusals: ["roi source region does not cover the clarity map's reach"] };
+        }
+      }
+      const clarityChunks = clarityFrame ? clarityFrame.chunks.length : 0;
+
       const alignment = 256;
       const stride = Math.ceil(params.byteLength / alignment) * alignment;
-      const required = stride * plan.tileCount;
+      const required = stride * (plan.tileCount + clarityChunks);
       if (!this.tileCompositeParamBuffer || this.tileCompositeParamBuffer.size < required) {
         this.tileCompositeParamBuffer?.destroy();
         this.tileCompositeParamBuffer = this.device.createBuffer({
           size: required, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
       }
-      const slots = new Float32Array((stride / 4) * plan.tileCount);
+      const slots = new Float32Array((stride / 4) * (plan.tileCount + clarityChunks));
+      // The Clarity pre-pass's regions take the slots after the tiles'.
+      (clarityFrame?.chunks || []).forEach(({ region }, index) => {
+        const base = (plan.tileCount + index) * (stride / 4);
+        slots.set(params, base);
+        slots[base + 160] = region.x;
+        slots[base + 161] = region.y;
+        slots[base + 162] = region.width;
+        slots[base + 163] = region.height;
+        slots[base + 164] = proxy.width;
+        slots[base + 165] = proxy.height;
+      });
       plan.tiles.forEach((tile, index) => {
         const base = index * (stride / 4);
         slots.set(params, base);
@@ -3237,10 +3355,16 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         plan.tiles.forEach((tile, index) => {
           const offset = index * (localStride / 4);
           values.set(buildLocalParams(local, lane, options.sourcePixelScale || 1), offset);
+          values[offset + 160] = tile.haloRect.x;
+          values[offset + 161] = tile.haloRect.y;
           values[offset + 162] = tile.haloRect.width;
           values[offset + 163] = tile.haloRect.height;
           values[offset + 164] = proxy.width;
           values[offset + 165] = proxy.height;
+          // A local builds its Clarity map inside the tile; the map starts at
+          // the frame block holding the halo rectangle's first pixel.
+          const slot = values.subarray(offset, offset + PARAM_COUNT);
+          writeClarityPlan(slot, proxy.width, proxy.height, slot[16], tile.haloRect.x, tile.haloRect.y);
         });
         this.device.queue.writeBuffer(buffer, 0, values);
         return { buffer, stride: localStride };
@@ -3347,6 +3471,66 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         return true;
       };
 
+      // The Clarity pre-pass: fill whatever the frame map is missing for these
+      // tiles, then re-blur it if anything changed. Only the base grade runs
+      // over each region, and every tile below reads the finished map.
+      let clarityMapView = detailResultView;
+      if (clarityFrame) {
+        const [reduced] = clarityFrame.textures;
+        const bindWith = (view, binding) => this.bindGraphResources(view, view, binding, view);
+        for (const [chunkIndex, { texels, region }] of clarityFrame.chunks.entries()) {
+          if (isCurrent() === false) {
+            cancelled = true;
+            break;
+          }
+          const binding = {
+            buffer: this.tileCompositeParamBuffer, offset: (plan.tileCount + chunkIndex) * stride, size: params.byteLength,
+          };
+          if (denoiseActive) {
+            const resolved = await this.resolveDenoiseProxy(denoiseControls, {
+              region: { ...region },
+              destination: {
+                texture: graph.denoiseResolvedTexture,
+                width: graph.width,
+                height: graph.height,
+                byteSize: graph.width * graph.height * 8,
+              },
+              encoder,
+            });
+            if (resolved?.paramBuffer) denoiseParamBuffers.push(resolved.paramBuffer);
+            denoiseTileResolves += 1;
+            encoder.copyTextureToTexture(
+              { texture: graph.denoiseResolvedTexture, origin: { x: 0, y: 0, z: 0 } },
+              { texture: graph.sourceTexture, origin: { x: 0, y: 0, z: 0 } },
+              { width: region.width, height: region.height, depthOrArrayLayers: 1 },
+            );
+          } else {
+            const sourceOrigin = proxy.region || { x: 0, y: 0 };
+            encoder.copyTextureToTexture(
+              { texture: proxy.texture, origin: { x: region.x - sourceOrigin.x, y: region.y - sourceOrigin.y, z: 0 } },
+              { texture: graph.sourceTexture, origin: { x: 0, y: 0, z: 0 } },
+              { width: region.width, height: region.height, depthOrArrayLayers: 1 },
+            );
+          }
+          pass(baseView, pipelines.base, bindWith(sourceView, binding), region.width, region.height);
+          this.encodeClarityPass(encoder, reduced.createView(), pipelines.clarityReduce, bindWith(baseView, binding), texels, true);
+          batchTiles += 1;
+          if (batchTiles >= tileBatchSize) flushTiles();
+        }
+        if (!cancelled) {
+          // Any slot carries the frame size and the map's plan, which is all
+          // the level and blur passes read from it.
+          const binding = { buffer: this.tileCompositeParamBuffer, offset: 0, size: params.byteLength };
+          const finished = clarityFrame.textures[1];
+          if (clarityFrame.reblur) {
+            this.encodeClarityLevels(encoder, pipelines, (view) => bindWith(view, binding),
+              clarityFrame.textures, clarityFrame.extents);
+          }
+          clarityFrame.commit();
+          clarityMapView = finished.createView();
+        }
+      }
+
       // Denoise reconstructs into the same encoder, one tile at a time, so this
       // loop has to be able to wait for it. Command order is call order, and
       // every tile is reconstructed before the copy that reads it.
@@ -3356,7 +3540,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         // A superseded generation stops at a tile boundary. Nothing has been
         // submitted yet, so it never presents a partial frame; the newer
         // generation presents instead.
-        if (isCurrent() === false) {
+        if (cancelled || isCurrent() === false) {
           cancelled = true;
           break;
         }
@@ -3438,7 +3622,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
                 { width: tile.rect.width, height: tile.rect.height, depthOrArrayLayers: 1 },
               );
             }
-            pass(localView, pipelines.detailComposite, bind(baseView, detailResultView), width, height);
+            pass(localView, pipelines.detailComposite, bind(baseView, detailResultView, clarityMapView), width, height);
             localSource = graph.localTexture;
           }
 
@@ -3473,8 +3657,24 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
                   { width: tile.rect.width, height: tile.rect.height, depthOrArrayLayers: 1 },
                 );
               }
+              // A local's Clarity map is built here, from this tile's candidate.
+              // The halo carries the map's whole reach, so every texel the
+              // tile's own pixels read is the one the whole-frame map holds.
+              let localClarityView = detailResultView;
+              if (graphScaleContract().localClarityActive(local[`${lane}_grade`])) {
+                const clarity = writeClarityPlan(
+                  new Float32Array(PARAM_COUNT), proxy.width, proxy.height,
+                  Number(local[`${lane}_grade`].detail?.clarity_radius_percent) || 0.75,
+                );
+                const extents = clarityMapExtents(clarity, tile.haloRect.x, tile.haloRect.y, width, height);
+                const maps = this.clarityMapTextures("work", extents.baseWidth, extents.baseHeight);
+                localClarityView = this.encodeClarityMap(
+                  encoder, pipelines, (view) => bind(view, view, view, localBinding),
+                  finishView, maps.textures, extents,
+                ).createView();
+              }
               pass(scratchView, pipelines.localDetailComposite,
-                bind(finishView, detailResultView, detailResultView, localBinding), width, height);
+                bind(finishView, detailResultView, localClarityView, localBinding), width, height);
               pass(targetView, pipelines.localDetailMix,
                 bind(localSource.createView(), maskView, scratchView, localBinding), width, height);
             } else {
@@ -3553,6 +3753,9 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       // batches already submitted finish, and nothing further is encoded or
       // presented.
       if (cancelled) {
+        // Some of the map's pre-pass may never be submitted, so its record of
+        // what it holds cannot be trusted.
+        if (clarityFrame) this.clarityFrameMap = null;
         localBuffers.forEach((entry) => entry.buffer.destroy());
         denoiseParamBuffers.forEach((buffer) => buffer.destroy());
         this.recordStage("tiled-cancelled", {
@@ -3587,11 +3790,15 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       } finally {
         presentation?.release();
       }
-      if (encodeError) throw encodeError;
+      if (encodeError) {
+        if (clarityFrame) this.clarityFrameMap = null;
+        throw encodeError;
+      }
       localBuffers.forEach((entry) => entry.buffer.destroy());
       denoiseParamBuffers.forEach((buffer) => buffer.destroy());
       const validationError = await this.device.popErrorScope();
       if (validationError) {
+        if (clarityFrame) this.clarityFrameMap = null;
         if (peakTarget) peakTarget.busy = false;
         this.recordStage("tiled-validation-error", { message: validationError.message });
         return { rendered: false, refusals: [`validation: ${validationError.message}`] };
@@ -3717,6 +3924,14 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         detailGlobalCacheMisses: this.detailCacheCounters.globalMisses - cacheBefore.globalMisses,
         detailLocalCacheHits: this.detailCacheCounters.localHits - cacheBefore.localHits,
         detailLocalCacheMisses: this.detailCacheCounters.localMisses - cacheBefore.localMisses,
+        // The Clarity frame map: how many regions its pre-pass had to fill, and
+        // whether it was re-blurred. A Radius or Amount change fills none.
+        clarityMapChunks: clarityChunks,
+        // Denoise reconstructions this generation ran: one per tile, plus one
+        // per Clarity map region when Denoise feeds the map.
+        denoiseTileResolves,
+        clarityMapReblurred: Boolean(clarityFrame?.reblur),
+        clarityMapScale: clarityFrame ? clarityFrame.plan.scale : null,
         detailBandStacks: (detailActive ? 1 : 0)
           + activeLocals.filter((local) => gpuLocalDetailActive(local[`${lane}_grade`])).length,
         presentableGeneration: scheduler.presentableGeneration(plan), durationMs,
@@ -3943,6 +4158,12 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       // Direct reads a whole-frame resolved source; Tiled re-derives this per
       // generation from whether it reconstructs tiles.
       params[NOISE_VIEW_INDEX] = noiseView ? (sourceProxy !== proxy ? 1 : 2) : 0;
+      writeClarityPlan(params, proxy.width, proxy.height, params[151]);
+      // Direct's frame is every intermediate's size, which is what the shader
+      // falls back to. The Clarity map passes read map-sized textures, so the
+      // frame is stated rather than inferred.
+      params[164] = proxy.width;
+      params[165] = proxy.height;
       this.uploadParamsAndCurves(lane, adjustments, curveSampler, params);
       if (plan.decision.mode === "tiled") {
         const refusals = this.tiledExecutionRefusals({
@@ -4117,6 +4338,20 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           detailVerticalPass.draw(3);
           detailVerticalPass.end();
 
+          let compositeBindGroup = detailCompositeBindGroup;
+          if (graphScaleContract().clarityActive(params)) {
+            const extents = clarityMapExtents({
+              scale: params[CLARITY_MAP_SCALE_INDEX], baseScale: params[CLARITY_BASE_SCALE_INDEX],
+            }, 0, 0, proxy.width, proxy.height);
+            const maps = this.clarityMapTextures("work", extents.baseWidth, extents.baseHeight);
+            const map = this.encodeClarityMap(
+              encoder, pipelines, (view) => makeBindGroup(view, view, this.paramBuffer, view),
+              intermediate.baseTexture.createView(), maps.textures, extents,
+            );
+            compositeBindGroup = makeBindGroup(
+              intermediate.baseTexture.createView(), intermediate.detailBTexture.createView(), this.paramBuffer, map.createView(),
+            );
+          }
           const detailCompositePass = encoder.beginRenderPass({
             colorAttachments: [{
               view: intermediate.localTexture.createView(),
@@ -4126,7 +4361,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
             }],
           });
           detailCompositePass.setPipeline(pipelines.detailComposite);
-          detailCompositePass.setBindGroup(0, detailCompositeBindGroup);
+          detailCompositePass.setBindGroup(0, compositeBindGroup);
           detailCompositePass.draw(3);
           detailCompositePass.end();
           localSource = intermediate.localTexture;
@@ -4134,7 +4369,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         for (let index = 0; index < activeLocals.length; index += 1) {
           const local = activeLocals[index];
           const target = localSource === intermediate.baseTexture ? intermediate.localTexture : intermediate.baseTexture;
-          const localBuffer = this.localParamBuffer(local, lane, sourcePixelScale);
+          const localBuffer = this.localParamBuffer(local, lane, sourcePixelScale, proxy.width, proxy.height);
           if (gpuLocalDetailActive(local[`${lane}_grade`])) {
             // Preserve the pre-local source until the final mask mix. The normal
             // ping-pong target holds the unmasked candidate, while the two Detail
@@ -4185,10 +4420,23 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
             verticalPass.draw(3);
             verticalPass.end();
 
+            let clarityMapView = intermediate.detailBTexture.createView();
+            if (graphScaleContract().localClarityActive(local[`${lane}_grade`])) {
+              const values = this.localParamValues.get(`${local.id}:${lane}`);
+              const extents = clarityMapExtents({
+                scale: values[CLARITY_MAP_SCALE_INDEX], baseScale: values[CLARITY_BASE_SCALE_INDEX],
+              }, 0, 0, proxy.width, proxy.height);
+              const maps = this.clarityMapTextures("work", extents.baseWidth, extents.baseHeight);
+              clarityMapView = this.encodeClarityMap(
+                encoder, pipelines, (view) => makeBindGroup(view, view, localBuffer, view),
+                target.createView(), maps.textures, extents,
+              ).createView();
+            }
             const detailCompositeBindGroup = makeBindGroup(
               target.createView(),
               intermediate.detailBTexture.createView(),
               localBuffer,
+              clarityMapView,
             );
             const detailCompositePass = encoder.beginRenderPass({
               colorAttachments: [{
@@ -5783,6 +6031,16 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         fragment: { module: this.module, entryPoint: "detailCompositeFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
+      const clarityPipeline = (entryPoint) => this.device.createRenderPipeline({
+        layout: this.pipelineLayout,
+        vertex: { module: this.module, entryPoint: "vertexMain" },
+        fragment: { module: this.module, entryPoint, targets: [{ format: CLARITY_MAP_FORMAT }] },
+        primitive: { topology: "triangle-list" },
+      });
+      const clarityReduce = clarityPipeline("clarityReduceFragmentMain");
+      const clarityLevel = clarityPipeline("clarityLevelFragmentMain");
+      const clarityBlurHorizontal = clarityPipeline("clarityBlurHorizontalFragmentMain");
+      const clarityBlurVertical = clarityPipeline("clarityBlurVerticalFragmentMain");
       const extract = this.device.createRenderPipeline({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
@@ -5845,6 +6103,10 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         detailHorizontal,
         detailVertical,
         detailComposite,
+        clarityReduce,
+        clarityLevel,
+        clarityBlurHorizontal,
+        clarityBlurVertical,
         response,
         extract,
         blurHorizontal,
@@ -7325,10 +7587,191 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       }
     }
 
-    localParamBuffer(local, lane, sourcePixelScale) {
+    /**
+     * Textures for a Clarity map, grown on demand and kept between renders.
+     * `frame` holds the tiled path's whole-frame map (reduced, scratch,
+     * blurred); `work` is scratch for a map built and consumed within one
+     * render. They are small: a map texel covers a block of the picture.
+     */
+    clarityMapTextures(key, width, height) {
+      if (!this.clarityMaps) this.clarityMaps = new Map();
+      const existing = this.clarityMaps.get(key);
+      if (existing && existing.width >= width && existing.height >= height) return existing;
+      const grownWidth = Math.max(1, width, existing?.width || 0);
+      const grownHeight = Math.max(1, height, existing?.height || 0);
+      if (existing) this.destroyAfterActiveRenders(() => existing.textures.forEach((texture) => texture.destroy()));
+      const make = () => this.device.createTexture({
+        size: { width: grownWidth, height: grownHeight },
+        format: CLARITY_MAP_FORMAT,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      });
+      const entry = { width: grownWidth, height: grownHeight, textures: [make(), make(), make()] };
+      this.clarityMaps.set(key, entry);
+      this.recordAllocation("clarity-map", grownWidth * grownHeight * 4 * 3, { key, width: grownWidth, height: grownHeight });
+      return entry;
+    }
+
+    releaseClarityMaps() {
+      const maps = this.clarityMaps;
+      this.clarityMaps = new Map();
+      this.clarityFrameMap = null;
+      if (maps?.size) {
+        this.destroyAfterActiveRenders(() => maps.forEach((entry) => entry.textures.forEach((texture) => texture.destroy())));
+      }
+    }
+
+    /**
+     * Decide what the tiled path's whole-frame Clarity map still needs.
+     *
+     * The map belongs to the picture as it enters Detail, so it is kept for as
+     * long as that picture's identity holds; Clarity's own controls never
+     * invalidate it. It remembers which of its texels have been filled, so a
+     * viewport pass fills only the part its tiles read -- their rectangles
+     * plus the map's reach -- and a later pass fills the rest as it needs it.
+     * Missing texels are filled in chunks that fit the tile graph's textures,
+     * each a region of the picture that only the base grade runs over.
+     * `alignment` is Denoise's wavelet grid, which a reconstructed region
+     * has to start on.
+     */
+    planClarityFrameMap({ proxy, params, identity, tiles, workWidth, workHeight, alignment = 1 }) {
+      const plan = writeClarityPlan(new Float32Array(PARAM_COUNT), proxy.width, proxy.height, params[151]);
+      const extents = clarityMapExtents(plan, 0, 0, proxy.width, proxy.height);
+      // The frame keeps its base map, which every radius shares; only the
+      // finished map depends on the radius.
+      const scale = plan.baseScale;
+      const columns = extents.baseWidth;
+      const rows = extents.baseHeight;
+      const entry = this.clarityMapTextures("frame", columns, rows);
+      const reducedKey = `${identity}|s${scale}|${proxy.width}x${proxy.height}`;
+      let state = this.clarityFrameMap;
+      if (!state || state.reducedKey !== reducedKey || state.entry !== entry) {
+        state = { reducedKey, entry, blurKey: null, covered: new Uint8Array(columns * rows) };
+        this.clarityFrameMap = state;
+      }
+      const bounds = tiles.reduce((box, tile) => ({
+        x0: Math.min(box.x0, tile.rect.x),
+        y0: Math.min(box.y0, tile.rect.y),
+        x1: Math.max(box.x1, tile.rect.x + tile.rect.width),
+        y1: Math.max(box.y1, tile.rect.y + tile.rect.height),
+      }), { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity });
+      // Whole blocks of the finished map, in base texels.
+      const ratio = plan.scale / scale;
+      const needed = {
+        x0: Math.floor(Math.max(0, bounds.x0 - plan.reach) / plan.scale) * ratio,
+        y0: Math.floor(Math.max(0, bounds.y0 - plan.reach) / plan.scale) * ratio,
+        x1: Math.min(columns, Math.ceil(Math.min(proxy.width, bounds.x1 + plan.reach) / plan.scale) * ratio),
+        y1: Math.min(rows, Math.ceil(Math.min(proxy.height, bounds.y1 + plan.reach) / plan.scale) * ratio),
+      };
+      const missing = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+      for (let y = needed.y0; y < needed.y1; y += 1) {
+        for (let x = needed.x0; x < needed.x1; x += 1) {
+          if (state.covered[y * columns + x]) continue;
+          missing.x0 = Math.min(missing.x0, x);
+          missing.y0 = Math.min(missing.y0, y);
+          missing.x1 = Math.max(missing.x1, x + 1);
+          missing.y1 = Math.max(missing.y1, y + 1);
+        }
+      }
+      const chunks = [];
+      if (missing.x1 > missing.x0) {
+        // A chunk's region is its blocks widened to the alignment grid, which
+        // adds under one alignment step at each end.
+        const pad = 2 * Math.max(0, alignment - 1);
+        const stepX = Math.max(1, Math.floor((workWidth - pad) / scale));
+        const stepY = Math.max(1, Math.floor((workHeight - pad) / scale));
+        for (let ty = missing.y0; ty < missing.y1; ty += stepY) {
+          for (let tx = missing.x0; tx < missing.x1; tx += stepX) {
+            const texels = {
+              x: tx, y: ty,
+              width: Math.min(stepX, missing.x1 - tx),
+              height: Math.min(stepY, missing.y1 - ty),
+            };
+            const x0 = Math.floor((texels.x * scale) / alignment) * alignment;
+            const y0 = Math.floor((texels.y * scale) / alignment) * alignment;
+            const x1 = Math.min(proxy.width, Math.ceil(Math.min(proxy.width, (texels.x + texels.width) * scale) / alignment) * alignment);
+            const y1 = Math.min(proxy.height, Math.ceil(Math.min(proxy.height, (texels.y + texels.height) * scale) / alignment) * alignment);
+            chunks.push({ texels, region: { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } });
+          }
+        }
+      }
+      const blurKey = `${reducedKey}|${plan.scale}|${plan.denseSigma}|${plan.taps}`;
+      return {
+        plan, extents, state, chunks, columns, rows, blurKey,
+        textures: entry.textures,
+        reblur: chunks.length > 0 || state.blurKey !== blurKey,
+        // Recorded as filled only once the work that fills them is encoded;
+        // a generation that stops early discards the whole map instead.
+        commit: () => {
+          chunks.forEach(({ texels }) => {
+            for (let y = texels.y; y < texels.y + texels.height; y += 1) {
+              state.covered.fill(1, y * columns + texels.x, y * columns + texels.x + texels.width);
+            }
+          });
+          state.blurKey = blurKey;
+        },
+      };
+    }
+
+    /**
+     * Record one Clarity map pass into `encoder`. `rect` is the region of the
+     * target to write, in map texels; `load` keeps what the target already
+     * holds outside it, which is how the tiled pre-pass fills the frame map a
+     * piece at a time.
+     */
+    encodeClarityPass(encoder, targetView, pipeline, bindGroup, rect, load = false) {
+      const pass = encoder.beginRenderPass({
+        colorAttachments: [{
+          view: targetView,
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          loadOp: load ? "load" : "clear",
+          storeOp: "store",
+        }],
+      });
+      pass.setViewport(rect.x, rect.y, rect.width, rect.height, 0, 1);
+      pass.setScissorRect(rect.x, rect.y, rect.width, rect.height);
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, bindGroup);
+      pass.draw(3);
+      pass.end();
+    }
+
+    /**
+     * From a base map in `textures[0]` to the finished map in `textures[1]`:
+     * average up to the radius's block size (when it is coarser than the
+     * base), blur across, blur down. `plan` is `clarityMapExtents`' answer.
+     * `bind(view)` makes the bind group a pass reads `view` through, with the
+     * parameter buffer whose Clarity plan this map follows.
+     */
+    encodeClarityLevels(encoder, pipelines, bind, textures, plan) {
+      const [base, finished, scratch] = textures;
+      const rect = { x: 0, y: 0, width: plan.width, height: plan.height };
+      let source = base;
+      if (plan.scale > plan.baseScale) {
+        this.encodeClarityPass(encoder, finished.createView(), pipelines.clarityLevel, bind(base.createView()), rect);
+        source = finished;
+      }
+      this.encodeClarityPass(encoder, scratch.createView(), pipelines.clarityBlurHorizontal, bind(source.createView()), rect);
+      this.encodeClarityPass(encoder, finished.createView(), pipelines.clarityBlurVertical, bind(scratch.createView()), rect);
+      return finished;
+    }
+
+    /** A whole map in one go, from a picture covering the map's region. */
+    encodeClarityMap(encoder, pipelines, bind, sourceView, textures, plan) {
+      this.encodeClarityPass(encoder, textures[0].createView(), pipelines.clarityReduce, bind(sourceView), {
+        x: 0, y: 0, width: plan.baseWidth, height: plan.baseHeight,
+      });
+      return this.encodeClarityLevels(encoder, pipelines, bind, textures, plan);
+    }
+
+    localParamBuffer(local, lane, sourcePixelScale, frameWidth = 0, frameHeight = 0) {
       const key = `${local.id}:${lane}`;
       let buffer = this.localParamBuffers.get(key);
       const values = buildLocalParams(local, lane, sourcePixelScale);
+      if (frameWidth > 0 && frameHeight > 0) {
+        writeClarityPlan(values, frameWidth, frameHeight, values[16]);
+        values[164] = frameWidth;
+        values[165] = frameHeight;
+      }
       if (!buffer) {
         buffer = this.createStorageBuffer(values);
         this.localParamBuffers.set(key, buffer);
@@ -9210,6 +9653,151 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return total / weightTotal;
     }
 
+    // Clarity's brightness map. Log luminance is box-averaged over blocks of
+    // p[172] pixels anchored to the frame (the base map), averaged again over
+    // blocks of base texels up to p[167] pixels, blurred densely there (p[168]
+    // sigma, p[169] taps) and read back with a cubic B-spline. clarity_base in
+    // detail.py is the same arithmetic. Each value is stored as a half-float
+    // pair, value then remainder, so the filterable map keeps float precision.
+    // p[170], p[171] name the frame texel held at the bound map's origin, and
+    // p[173], p[174] the same for the base map.
+    fn clarityScale() -> i32 {
+      return max(1, i32(p[167]));
+    }
+    fn clarityMapOrigin() -> vec2i {
+      return vec2i(i32(p[170]), i32(p[171]));
+    }
+    fn clarityBaseScale() -> i32 {
+      return max(1, i32(p[172]));
+    }
+    fn clarityBaseOrigin() -> vec2i {
+      return vec2i(i32(p[173]), i32(p[174]));
+    }
+    // The last texel of the whole frame's map at a block size. Every read
+    // clamps to the frame, never to the tile, so a tile reads what the
+    // whole-frame map holds.
+    fn clarityTexelLimit(scale: i32) -> vec2i {
+      let frame = vec2i(frameDimensions());
+      return (frame + vec2i(scale - 1)) / scale - vec2i(1);
+    }
+    fn clarityFrameTexelLimit() -> vec2i {
+      return clarityTexelLimit(clarityScale());
+    }
+    fn claritySplit(value: f32) -> vec4f {
+      let upper = quantizeToF16(value);
+      return vec4f(upper, value - upper, 0.0, 1.0);
+    }
+    fn clarityMapValue(stored: vec4f) -> f32 {
+      return stored.x + stored.y;
+    }
+
+    // One base-map texel: the mean log luminance of its block, repeating the
+    // frame's edge pixels where the block runs off the picture.
+    @fragment fn clarityReduceFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let scale = clarityBaseScale();
+      let texel = vec2i(input.position.xy) + clarityBaseOrigin();
+      let lastPixel = vec2i(frameDimensions()) - vec2i(1);
+      let tileOrigin = vec2i(i32(p[160]), i32(p[161]));
+      let lastLocal = validTileDimensions() - vec2i(1);
+      var total = 0.0;
+      for (var y: i32 = 0; y < scale; y = y + 1) {
+        for (var x: i32 = 0; x < scale; x = x + 1) {
+          let framePixel = min(texel * scale + vec2i(x, y), lastPixel);
+          let localPixel = clamp(framePixel - tileOrigin, vec2i(0), lastLocal);
+          total += detailLogLuma(textureLoad(sourceTexture, localPixel, 0).rgb);
+        }
+      }
+      return claritySplit(total / f32(scale * scale));
+    }
+
+    // One map texel at the radius's block size: the mean of the base texels it
+    // covers, repeating the frame's edge texels where it runs off the picture.
+    @fragment fn clarityLevelFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let ratio = max(1, clarityScale() / clarityBaseScale());
+      let texel = vec2i(input.position.xy) + clarityMapOrigin();
+      let lastBase = clarityTexelLimit(clarityBaseScale());
+      let baseOrigin = clarityBaseOrigin();
+      let lastStored = vec2i(textureDimensions(sourceTexture)) - vec2i(1);
+      var total = 0.0;
+      for (var y: i32 = 0; y < ratio; y = y + 1) {
+        for (var x: i32 = 0; x < ratio; x = x + 1) {
+          let baseTexel = min(texel * ratio + vec2i(x, y), lastBase);
+          let stored = clamp(baseTexel - baseOrigin, vec2i(0), lastStored);
+          total += clarityMapValue(textureLoad(sourceTexture, stored, 0));
+        }
+      }
+      return claritySplit(total / f32(ratio * ratio));
+    }
+
+    fn clarityBlur(texel: vec2i, axis: vec2i) -> vec4f {
+      let taps = i32(p[169]);
+      if (taps <= 0) { return textureLoad(sourceTexture, texel, 0); }
+      let sigma = p[168];
+      let origin = clarityMapOrigin();
+      let limit = clarityFrameTexelLimit();
+      let lastStored = vec2i(textureDimensions(sourceTexture)) - vec2i(1);
+      var total = 0.0;
+      var weights = 0.0;
+      for (var tap: i32 = -taps; tap <= taps; tap = tap + 1) {
+        let distance = f32(tap) / sigma;
+        let weight = exp(-0.5 * distance * distance);
+        let frameTexel = clamp(texel + origin + axis * tap, vec2i(0), limit);
+        let stored = clamp(frameTexel - origin, vec2i(0), lastStored);
+        total += clarityMapValue(textureLoad(sourceTexture, stored, 0)) * weight;
+        weights += weight;
+      }
+      return claritySplit(total / weights);
+    }
+
+    @fragment fn clarityBlurHorizontalFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      return clarityBlur(vec2i(input.position.xy), vec2i(1, 0));
+    }
+
+    @fragment fn clarityBlurVerticalFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      return clarityBlur(vec2i(input.position.xy), vec2i(0, 1));
+    }
+
+    fn clarityMapAt(frameTexel: vec2i) -> f32 {
+      let limit = clarityFrameTexelLimit();
+      let lastStored = vec2i(textureDimensions(overlayMaskTexture)) - vec2i(1);
+      let stored = clamp(clamp(frameTexel, vec2i(0), limit) - clarityMapOrigin(), vec2i(0), lastStored);
+      return clarityMapValue(textureLoad(overlayMaskTexture, stored, 0));
+    }
+
+    fn clarityBsplineWeights(t: f32) -> vec4f {
+      let t2 = t * t;
+      let t3 = t2 * t;
+      let oneMinus = 1.0 - t;
+      return vec4f(
+        oneMinus * oneMinus * oneMinus / 6.0,
+        (3.0 * t3 - 6.0 * t2 + 4.0) / 6.0,
+        (-3.0 * t3 + 3.0 * t2 + 3.0 * t + 1.0) / 6.0,
+        t3 / 6.0
+      );
+    }
+
+    // Clarity's blurred base at a tile pixel, read from the map bound in the
+    // overlay slot.
+    fn clarityBase(coordinate: vec2i) -> f32 {
+      let scale = clarityScale();
+      let pixel = frameCoordinate(coordinate);
+      if (scale == 1) { return clarityMapAt(pixel); }
+      let position = (vec2f(pixel) + vec2f(0.5)) / f32(scale) - vec2f(0.5);
+      let firstTexel = vec2i(floor(position)) - vec2i(1);
+      let fraction = position - floor(position);
+      let across = clarityBsplineWeights(fraction.x);
+      let down = clarityBsplineWeights(fraction.y);
+      var total = 0.0;
+      for (var row: i32 = 0; row < 4; row = row + 1) {
+        var rowTotal = 0.0;
+        for (var column: i32 = 0; column < 4; column = column + 1) {
+          rowTotal += clarityMapAt(firstTexel + vec2i(column, row)) * across[column];
+        }
+        total += rowTotal * down[row];
+      }
+      return total;
+    }
+
     fn detailTextureEdgeWeight(coordinate: vec2f, logY: f32, coarse: f32) -> f32 {
       let dimensions = vec2f(textureDimensions(spatialTexture));
       let coarseRadius = max(0.70, length(frameDimensions()) * 0.0012);
@@ -9250,7 +9838,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return vec4f(
         detailHorizontalBlur(vec2f(coordinate), radii.x, 2, true),
         detailHorizontalBlur(vec2f(coordinate), radii.y, 2, true),
-        detailHorizontalBlur(vec2f(coordinate), radii.z, 8, true),
+        0.0,
         detailHorizontalBlur(vec2f(coordinate), radii.w, 3, true)
       );
     }
@@ -9262,7 +9850,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return vec4f(
         detailVerticalBlur(vec2f(coordinate), radii.x, 0u, 2, true),
         detailVerticalBlur(vec2f(coordinate), radii.y, 1u, 2, true),
-        detailVerticalBlur(vec2f(coordinate), radii.z, 2u, 8, true),
+        0.0,
         detailVerticalBlur(vec2f(coordinate), radii.w, 3u, 3, true)
       );
     }
@@ -9281,7 +9869,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         adjusted += (blurred.x - blurred.y) * edgeWeight * p[149];
       }
       if (abs(p[150]) > 0.000001) {
-        let band = logY - blurred.z;
+        let band = logY - clarityBase(coordinate);
         let edgeWeight = exp(-(band / 0.75) * (band / 0.75));
         adjusted += band * edgeWeight * p[150];
       }
@@ -9318,7 +9906,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return vec4f(
         detailHorizontalBlur(vec2f(coordinate), radii.x, 2, true),
         detailHorizontalBlur(vec2f(coordinate), radii.y, 2, true),
-        detailHorizontalBlur(vec2f(coordinate), radii.z, 8, true),
+        0.0,
         detailHorizontalBlur(vec2f(coordinate), radii.w, 3, true)
       );
     }
@@ -9330,7 +9918,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return vec4f(
         detailVerticalBlur(vec2f(coordinate), radii.x, 0u, 2, true),
         detailVerticalBlur(vec2f(coordinate), radii.y, 1u, 2, true),
-        detailVerticalBlur(vec2f(coordinate), radii.z, 2u, 8, true),
+        0.0,
         detailVerticalBlur(vec2f(coordinate), radii.w, 3u, 3, true)
       );
     }
@@ -9349,7 +9937,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         adjusted += (blurred.x - blurred.y) * edgeWeight * p[14];
       }
       if (abs(p[15]) > 0.000001) {
-        let band = logY - blurred.z;
+        let band = logY - clarityBase(coordinate);
         let edgeWeight = exp(-(band / 0.75) * (band / 0.75));
         adjusted += band * edgeWeight * p[15];
       }
