@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 import numpy as np
@@ -15,6 +17,7 @@ from .color_context import RenderColorContext, nits_to_scene_linear, scene_linea
 from .finishing import apply_geometry
 from .models import AdjustmentState, LocalAdjustment, LocalGrade, PreviewKind, SdrMatchState, ToneMapper
 from .detail import apply_detail
+from . import film_grain
 from .sdr_gamut import compress_to_srgb_gamut
 
 
@@ -44,6 +47,17 @@ FILM_GRAIN_GATE_DIMENSIONS_MM: dict[str, tuple[float, float]] = {
     "super8": (5.79, 4.01),
 }
 FILM_SPATIAL_REFERENCE_DIAGONAL_MM = float(np.hypot(36.0, 24.0))
+# Grain renders in row chunks on a few threads; NumPy releases the GIL for
+# the heavy array work, and each chunk is exact on its own.
+GRAIN_CHUNK_ROWS = 128
+# HDR reference white (scene 0.18) onto SDR's (100 of 203 nits), for grain
+# development; mirrored in the shader.
+GRAIN_DEVELOP_HDR_SCALE = np.float32((100.0 / 203.0) / 0.18)
+# Encoded SDR signal at which every grain has developed. Measured 2026-09-26
+# on a 0.003-3.0 scene gradient: 0.45 leaves 0.0005 stops RMS of grain
+# difference between HDR and SDR (the first grain left 0.0004); 1.0 left 0.011.
+GRAIN_DEVELOP_FULL = 0.45
+GRAIN_WORKERS = max(1, min(8, (os.cpu_count() or 2) - 1))
 HDR_FILM_HIGHLIGHT_DESATURATION_START = np.float32(0.50)
 HDR_FILM_HIGHLIGHT_DESATURATION_END = np.float32(0.82)
 SDR_FILM_HIGHLIGHT_DESATURATION_START = np.float32(0.62)
@@ -2276,87 +2290,84 @@ def _apply_density_grain(
     """Modulate the frame by the film grain density field.
 
     ``view_map`` substitutes a neutral mid-grey card for the picture after the
-    tonal response has been measured from it, so the viewer sees the grain
+    grain has been developed and qualified by it, so the viewer sees the grain
     field alone at exactly the density it is contributing to a mid-grey
-    subject, still carrying the shadow/midtone/highlight qualification the
-    image drives.
+    subject, still carrying the shadow/midtone/highlight qualification and the
+    grain texture the image drives.
+
+    The frame is rendered in row chunks on a few threads. Grain is a fixed
+    field over the frame, so a chunk is exactly the same rows of a whole-frame
+    render and the chunking never shows.
     """
-    region_height, region_width = image.shape[:2]
+    region_height = image.shape[0]
     left, top, width, height = FrameWindow.resolve(frame_window, image)
-    yy, xx = np.indices((region_height, region_width), dtype=np.float32)
-    yy += np.float32(top)
-    xx += np.float32(left)
-    physical_pitch = np.float32(_grain_pitch_pixels(width, height, look))
-    pitch = np.maximum(np.float32(1.0), physical_pitch)
-    pixel_coverage = np.minimum(np.float32(1.0), physical_pitch)
-    grain_x = xx / pitch
-    grain_y = yy / pitch
-    monochrome = _grain_value_noise(grain_x, grain_y, seed, 0.0)
-    softer = _grain_value_noise(grain_x * np.float32(0.53), grain_y * np.float32(0.53), seed, 17.0)
-    monochrome = monochrome + (softer - monochrome) * np.float32(0.55 * look.grain_softness / 100.0)
-
-    signal = np.clip(_film_encode_luma(np.maximum(_film_luma(image, kind), 0.0), kind), 0.0, 1.0)
-    shadow_weight = np.square(np.float32(1.0) - signal)
-    highlight_weight = np.square(signal)
-    midtone_weight = np.maximum(np.float32(0.0), np.float32(1.0) - shadow_weight - highlight_weight)
-    response = (
-        shadow_weight * np.float32(look.grain_shadow_response / 100.0)
-        + midtone_weight * np.float32(look.grain_midtone_response / 100.0)
-        + highlight_weight * np.float32(look.grain_highlight_response / 100.0)
-    )
+    physical_pitch = float(_grain_pitch_pixels(width, height, look))
+    pixel_coverage = np.float32(min(1.0, physical_pitch))
     amount = np.float32(0.18 * look.grain_amount / 100.0) * master * pixel_coverage
-    density_noise = monochrome * response * amount
-    base = image
-    if view_map:
-        base = np.full_like(image, _film_decode_luma(np.float32(0.5), kind))
-    result = np.maximum(base, 0.0) * np.exp2(density_noise[..., None])
+    neutral = _film_decode_luma(np.float32(0.5), kind)
 
-    chroma_mix = np.float32(look.grain_chroma / 100.0)
-    if chroma_mix > 0.0:
-        channel_noise = np.stack(
-            [_grain_value_noise(grain_x, grain_y, seed, salt) for salt in (31.0, 59.0, 83.0)], axis=-1
+    def render(first_row: int, last_row: int) -> np.ndarray:
+        part = image[first_row:last_row]
+        signal = np.clip(_film_encode_luma(np.maximum(_film_luma(part, kind), 0.0), kind), 0.0, 1.0).astype(np.float32)
+        develop_rgb, develop_luma = _grain_development_signals(part, kind)
+        shadow_weight = np.square(np.float32(1.0) - signal)
+        highlight_weight = np.square(signal)
+        midtone_weight = np.maximum(np.float32(0.0), np.float32(1.0) - shadow_weight - highlight_weight)
+        response = (
+            shadow_weight * np.float32(look.grain_shadow_response / 100.0)
+            + midtone_weight * np.float32(look.grain_midtone_response / 100.0)
+            + highlight_weight * np.float32(look.grain_highlight_response / 100.0)
         )
         # Dye-cloud color variation becomes objectionable pinhole color at the
-        # display boundary.  Film grain remains present there, but converges to
+        # display boundary. Film grain remains present there, but converges to
         # monochrome as the highlight approaches clipping.
-        chroma_highlight_guard = np.float32(1.0) - np.float32(0.8) * _smoothstep(0.88, 1.0, signal)
-        result *= np.exp2(
-            channel_noise
-            * response[..., None]
-            * amount
-            * chroma_mix
-            * chroma_highlight_guard[..., None]
-            * np.float32(0.45)
+        chroma = np.float32(look.grain_chroma / 100.0) * (
+            np.float32(1.0) - np.float32(0.8) * _smoothstep(0.88, 1.0, signal)
         )
+        noise = film_grain.grain_noise(
+            develop_rgb, develop_luma, (0.2126, 0.7152, 0.0722), left, top + first_row, physical_pitch, seed,
+            look.grain_film_type, float(look.grain_softness) / 100.0, chroma,
+        )
+        base = np.full_like(part, neutral) if view_map else part
+        return np.maximum(base, 0.0) * np.exp2(noise * (response * amount)[..., None])
+
+    bounds = list(range(0, region_height, GRAIN_CHUNK_ROWS)) + [region_height]
+    spans = list(zip(bounds[:-1], bounds[1:]))
+    if len(spans) <= 1:
+        result = render(0, region_height)
+    else:
+        with ThreadPoolExecutor(max_workers=GRAIN_WORKERS, thread_name_prefix="film-grain") as pool:
+            result = np.concatenate(list(pool.map(lambda span: render(*span), spans)), axis=0)
     return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
+
+
+def _grain_development_signals(image: np.ndarray, kind: PreviewKind) -> tuple[np.ndarray, np.ndarray]:
+    """The exposure that decides which grains develop, the same in both lanes.
+
+    HDR and SDR must carry the same grain, or the gain map between them fills
+    with grain. Each lane's own tone curve places a pixel differently, so both
+    develop from an SDR-scaled signal: HDR is brought to sRGB primaries and
+    scaled so its reference white lands on SDR's, then encoded as SDR is.
+    Shadows and lower midtones then match. Above them the two tone curves
+    part, so development is complete by ``GRAIN_DEVELOP_FULL``: shadows keep
+    their sparse grains and everything brighter shares the dense layer, as
+    the dense parts of a negative do. Grain strength still follows each
+    lane's own tones through the response sliders.
+    """
+    if kind == PreviewKind.HDR:
+        linear = acescg_to_linear_srgb(image) * GRAIN_DEVELOP_HDR_SCALE
+    else:
+        linear = image
+    full = np.float32(1.0 / GRAIN_DEVELOP_FULL)
+    rgb = np.clip(_srgb_encode(np.clip(linear, 0.0, 1.0)) * full, 0.0, 1.0).astype(np.float32)
+    luma = np.clip(_srgb_encode(np.clip(_linear_luma(linear), 0.0, 1.0)) * full, 0.0, 1.0).astype(np.float32)
+    return rgb, luma
 
 
 def _grain_pitch_pixels(width: int, height: int, look: object) -> float:
     """Return the physical grain correlation pitch at this render resolution."""
     grain_diameter_mm = (6.0 + 24.0 * float(look.grain_size) / 100.0) / 1000.0
     return _film_pixels_per_mm(width, height, look) * grain_diameter_mm
-
-
-def _grain_value_noise(x: np.ndarray, y: np.ndarray, seed: int, salt: float) -> np.ndarray:
-    """Bilinearly interpolate seeded lattice values into correlated grain clouds."""
-    x0 = np.floor(x).astype(np.float32)
-    y0 = np.floor(y).astype(np.float32)
-    tx = (x - x0).astype(np.float32)
-    ty = (y - y0).astype(np.float32)
-    tx = tx * tx * (np.float32(3.0) - np.float32(2.0) * tx)
-    ty = ty * ty * (np.float32(3.0) - np.float32(2.0) * ty)
-    top_left = _grain_hash(x0, y0, seed, salt)
-    top = top_left + (_grain_hash(x0 + np.float32(1.0), y0, seed, salt) - top_left) * tx
-    bottom_left = _grain_hash(x0, y0 + np.float32(1.0), seed, salt)
-    bottom = bottom_left + (
-        _grain_hash(x0 + np.float32(1.0), y0 + np.float32(1.0), seed, salt) - bottom_left
-    ) * tx
-    return (top + (bottom - top) * ty).astype(np.float32)
-
-
-def _grain_hash(x: np.ndarray, y: np.ndarray, seed: int, salt: float) -> np.ndarray:
-    phase = x * np.float32(12.9898) + y * np.float32(78.233) + np.float32(seed * 0.001 + salt)
-    return (np.mod(np.sin(phase) * np.float32(43758.5453), np.float32(1.0)) * np.float32(2.0) - np.float32(1.0)).astype(np.float32)
 
 
 def _curve_set_is_neutral(curve_source: object) -> bool:

@@ -12,10 +12,14 @@
   // built inside its tile and starts at the tile's first block. 172-174 are
   // the same pair for the base map the picture is first averaged into (its
   // block size, then its origin), which every radius averages further.
-  const PARAM_COUNT = 175;
+  // 175 is the grain film type (0 color negative, 1 black & white) and 176
+  // the high 16 bits of the grain seed, whose low half is 109.
+  const PARAM_COUNT = 177;
   const TILE_ORIGIN_X_INDEX = 160;
   const TILE_ORIGIN_Y_INDEX = 161;
   const NOISE_VIEW_INDEX = 166;
+  const GRAIN_FILM_TYPE_INDEX = 175;
+  const GRAIN_SEED_HIGH_INDEX = 176;
   const CLARITY_MAP_SCALE_INDEX = 167;
   const CLARITY_MAP_SIGMA_INDEX = 168;
   const CLARITY_MAP_TAPS_INDEX = 169;
@@ -8069,7 +8073,12 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     params[106] = (grain.grain_midtone_response ?? 100) / 100;
     params[107] = (grain.grain_highlight_response ?? 100) / 100;
     params[108] = (film.film_resolution ?? 100) / 100;
-    params[109] = inheritedGrain?.filmGrainSeed ?? adjustments.shared?.film_grain_seed ?? 271828;
+    // f32 holds integers exactly only to 2^24, so the seed travels in two
+    // 16-bit halves (109 low, 176 high) and the shader reassembles it.
+    const grainSeed = (inheritedGrain?.filmGrainSeed ?? adjustments.shared?.film_grain_seed ?? 271828) >>> 0;
+    params[109] = grainSeed & 0xffff;
+    params[GRAIN_SEED_HIGH_INDEX] = grainSeed >>> 16;
+    params[GRAIN_FILM_TYPE_INDEX] = grain.grain_film_type === "black_and_white" ? 1 : 0;
     const filmGates = {
       "65mm": [52.63, 23.01],
       "35mm": [36, 24],
@@ -9442,16 +9451,98 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       }
       return result;
     }
-    fn grainHash(coordinate: vec2f, salt: f32) -> f32 {
-      return fract(sin(dot(coordinate, vec2f(12.9898, 78.233)) + p[109] * 0.001 + salt) * 43758.5453) * 2.0 - 1.0;
+    // Film grain: the same field as backend film_grain.py, gathered per pixel
+    // where the CPU splats per grain. Grains are a Poisson process over a
+    // lattice of cells (a random count per cell, mean 6); each has its own
+    // position, radius and sensitivity, develops where the exposure passes
+    // that sensitivity, and the developed grains overlap as a union.
+    // How many grains a cell holds: the Poisson(6) cumulative probabilities
+    // its uniform draw exceeds, capped at 16 (film_grain.POISSON_CDF).
+    fn grainCount(draw: f32) -> u32 {
+      return select(0u, 1u, draw > 0.00247875229) + select(0u, 1u, draw > 0.017351266)
+        + select(0u, 1u, draw > 0.0619688034) + select(0u, 1u, draw > 0.151203886)
+        + select(0u, 1u, draw > 0.285056502) + select(0u, 1u, draw > 0.445679635)
+        + select(0u, 1u, draw > 0.606302798) + select(0u, 1u, draw > 0.743979752)
+        + select(0u, 1u, draw > 0.847237468) + select(0u, 1u, draw > 0.916076005)
+        + select(0u, 1u, draw > 0.957379103) + select(0u, 1u, draw > 0.979908049)
+        + select(0u, 1u, draw > 0.991172493) + select(0u, 1u, draw > 0.996371508)
+        + select(0u, 1u, draw > 0.998599648) + select(0u, 1u, draw > 0.999490917);
     }
-    fn grainValueNoise(coordinate: vec2f, salt: f32) -> f32 {
+    fn grainMix(value: u32) -> u32 {
+      var x = value;
+      x = x ^ (x >> 16u);
+      x = x * 0x7feb352du;
+      x = x ^ (x >> 15u);
+      x = x * 0x846ca68bu;
+      x = x ^ (x >> 16u);
+      return x;
+    }
+    fn grainSeed(salt: u32) -> u32 {
+      // The seed arrives split in 16-bit halves, which f32 carries exactly.
+      let seed = u32(p[109]) | (u32(p[176]) << 16u);
+      return grainMix(seed + salt * 0x9e3779b9u);
+    }
+    fn grainCellHash(cell: vec2i, seeded: u32) -> u32 {
+      return grainMix(grainMix(seeded ^ bitcast<u32>(cell.x)) ^ bitcast<u32>(cell.y));
+    }
+    fn grainUniform(hashed: u32, key: u32) -> f32 {
+      return f32(grainMix(hashed + key * 0x85ebca6bu) >> 8u) * (1.0 / 16777216.0);
+    }
+    fn grainMottle(coordinate: vec2f, seeded: u32) -> f32 {
       let cell = floor(coordinate);
-      let local = fract(coordinate);
+      let local = coordinate - cell;
       let blend = local * local * (vec2f(3.0) - 2.0 * local);
-      let top = mix(grainHash(cell, salt), grainHash(cell + vec2f(1.0, 0.0), salt), blend.x);
-      let bottom = mix(grainHash(cell + vec2f(0.0, 1.0), salt), grainHash(cell + vec2f(1.0, 1.0), salt), blend.x);
-      return mix(top, bottom, blend.y);
+      let c = vec2i(cell);
+      let v00 = grainUniform(grainCellHash(c, seeded), 0u) * 2.0 - 1.0;
+      let v10 = grainUniform(grainCellHash(c + vec2i(1, 0), seeded), 0u) * 2.0 - 1.0;
+      let v01 = grainUniform(grainCellHash(c + vec2i(0, 1), seeded), 0u) * 2.0 - 1.0;
+      let v11 = grainUniform(grainCellHash(c + vec2i(1, 1), seeded), 0u) * 2.0 - 1.0;
+      let top = v00 + (v10 - v00) * blend.x;
+      let bottom = v01 + (v11 - v01) * blend.x;
+      return top + (bottom - top) * blend.y;
+    }
+    fn grainDevelop(signal: f32) -> f32 {
+      return 0.06 + 0.88 * clamp(signal, 0.0, 1.0);
+    }
+    // Mean and spread of coverage for a flat exposure, in closed form for a
+    // Poisson field of grains with this profile.
+    fn grainCoverageStats(develop: f32, opacity: f32, edge: f32) -> vec2f {
+      let run = 1.0 - edge;
+      let first = 6.2831853 * (edge * edge * 0.5 + run * (edge * 0.5 + 0.15 * run));
+      let second = 6.2831853 * (edge * edge * 0.5 + run * (edge * 13.0 / 35.0 + run * 3.0 / 35.0));
+      let density = 6.0 * 0.26333333;
+      let meanLoss = density * opacity * develop * first;
+      let squareLoss = density * (2.0 * opacity * develop * first - opacity * opacity * (develop - 0.04 / 6.0) * second);
+      let transmit = exp(-meanLoss);
+      return vec2f(1.0 - transmit, sqrt(max(exp(-squareLoss) - transmit * transmit, 0.0)));
+    }
+    fn grainLayerNoise(u: vec2f, signal: f32, salt: u32, opacity: f32, clumping: f32, edge: f32, midSpread: f32) -> f32 {
+      let seeded = grainSeed(salt);
+      let mottle = grainMottle(u / 5.0, grainSeed(salt + 101u));
+      let develop = grainDevelop(signal + clumping * mottle);
+      let base = vec2i(floor(u));
+      var transmit = 1.0;
+      for (var dy = -1; dy <= 1; dy++) {
+        for (var dx = -1; dx <= 1; dx++) {
+          let cell = base + vec2i(dx, dy);
+          let hashed = grainCellHash(cell, seeded);
+          let count = grainCount(grainUniform(hashed, 999u));
+          for (var k = 0u; k < count; k++) {
+            let key = 8u * k;
+            let centre = vec2f(cell) + vec2f(grainUniform(hashed, key + 1u), grainUniform(hashed, key + 2u));
+            let radius = 0.3 + 0.4 * grainUniform(hashed, key + 3u);
+            let rho = length(u - centre) / radius;
+            if (rho < 1.0) {
+              let t = clamp((rho - edge) / (1.0 - edge), 0.0, 1.0);
+              let profile = 1.0 - t * t * (3.0 - 2.0 * t);
+              let developed = clamp((develop - grainUniform(hashed, key + 4u)) / 0.04 + 0.5, 0.0, 1.0);
+              transmit *= 1.0 - opacity * developed * profile;
+            }
+          }
+        }
+      }
+      let stats = grainCoverageStats(grainDevelop(signal), opacity, edge);
+      return ((1.0 - transmit) - stats.x) / sqrt(max(stats.y, 0.0001) * midSpread);
     }
     fn applyFilmLook(coordinate: vec2i) -> vec3f {
       var rgb = sampleFilm(coordinate);
@@ -9511,9 +9602,41 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         let physicalPitch = pixelsPerMm * (6.0 + 24.0 * p[102]) / 1000.0;
         let pitch = max(1.0, physicalPitch);
         let pixelCoverage = min(1.0, physicalPitch);
-        let grainCoordinate = vec2f(frameCoordinate(coordinate)) / pitch;
-        let mono = mix(grainValueNoise(grainCoordinate, 0.0), grainValueNoise(grainCoordinate * 0.53, 17.0), p[103] * 0.55);
+        let frame = vec2f(frameCoordinate(coordinate));
         let signal = clamp(filmSignalFromLuma(max(filmLuma(rgb), 0.0)), 0.0, 1.0);
+        // Color negative: three dye layers, blue coarsest, each developed by
+        // its own channel. Black & white: one layer of sharper, denser silver.
+        let blackAndWhite = p[175] > 0.5;
+        let opacity = select(0.45, 0.55, blackAndWhite);
+        let clumping = select(0.12, 0.20, blackAndWhite);
+        let edge = select(0.25, 0.45, blackAndWhite) * (1.0 - p[103]);
+        let midSpread = grainCoverageStats(grainDevelop(0.5), opacity, edge).y;
+        // Both lanes develop the same grains (_grain_development_signals in
+        // adjustments.py): HDR in sRGB primaries, reference white scaled onto
+        // SDR's, encoded as SDR is, and fully developed by signal 0.45 before
+        // the lanes' tone curves part. Otherwise the gain map fills with grain.
+        let developLinear = select(rgb, acescgToSrgb(rgb) * 2.7367268, p[0] > 0.5);
+        let developLuma = clamp(srgbEncode(clamp(lumaSrgb(developLinear), 0.0, 1.0)) / 0.45, 0.0, 1.0);
+        var grain = vec3f(0.0);
+        if (blackAndWhite) {
+          grain = vec3f(grainLayerNoise(frame / pitch, developLuma, 239u, opacity, clumping, edge, midSpread));
+        } else {
+          let developRgb = clamp(developLinear, vec3f(0.0), vec3f(1.0));
+          let channelSignal = clamp(
+            vec3f(srgbEncode(developRgb.r), srgbEncode(developRgb.g), srgbEncode(developRgb.b)) / 0.45, vec3f(0.0), vec3f(1.0)
+          );
+          let layers = vec3f(
+            grainLayerNoise(frame / max(1.0, physicalPitch * 0.9), channelSignal.r, 211u, opacity, clumping, edge, midSpread),
+            grainLayerNoise(frame / max(1.0, physicalPitch), channelSignal.g, 223u, opacity, clumping, edge, midSpread),
+            grainLayerNoise(frame / max(1.0, physicalPitch * 1.3), channelSignal.b, 227u, opacity, clumping, edge, midSpread)
+          );
+          let weights = vec3f(0.2126, 0.7152, 0.0722);
+          let mono = dot(layers, weights) / length(weights);
+          // Color separation fades toward monochrome as highlights approach clipping.
+          let chroma = p[104] * (1.0 - 0.8 * smoothRange(0.88, 1.0, signal));
+          grain = vec3f(mono) + chroma * 0.6 * (layers - vec3f(mono));
+        }
+        grain *= 0.37;
         let shadowWeight = pow(1.0 - signal, 2.0);
         let highlightWeight = pow(signal, 2.0);
         let midWeight = max(0.0, 1.0 - shadowWeight - highlightWeight);
@@ -9522,12 +9645,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         // The view map swaps the picture for a neutral mid-grey card once the
         // tonal response has been read from it, isolating the grain field.
         if (p[158] > 0.5) { rgb = vec3f(filmLumaFromSignal(0.5)); }
-        rgb *= exp2(vec3f(mono * amount));
-        if (p[104] > 0.0) {
-          let chroma = vec3f(grainValueNoise(grainCoordinate, 31.0), grainValueNoise(grainCoordinate, 59.0), grainValueNoise(grainCoordinate, 83.0));
-          let chromaHighlightGuard = 1.0 - 0.8 * smoothRange(0.88, 1.0, signal);
-          rgb *= exp2(chroma * amount * p[104] * chromaHighlightGuard * 0.45);
-        }
+        rgb *= exp2(grain * amount);
       }
       return max(rgb, vec3f(0.0));
     }

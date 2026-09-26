@@ -285,6 +285,7 @@ def test_inherited_grain_requires_atomic_override_but_other_film_controls_do_not
     ("grain_softness", 26.0),
     ("grain_chroma", 1.0),
     ("grain_film_format", "16mm"),
+    ("grain_film_type", "black_and_white"),
     ("grain_capture_geometry", "horizontal_strip"),
     ("grain_custom_width_mm", 37.0),
     ("grain_custom_height_mm", 25.0),

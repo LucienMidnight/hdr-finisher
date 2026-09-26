@@ -294,6 +294,7 @@ const SDR_MATCH_GRAIN_FIELDS = Object.freeze([
   "grain_softness",
   "grain_chroma",
   "grain_film_format",
+  "grain_film_type",
   "grain_capture_geometry",
   "grain_custom_width_mm",
   "grain_custom_height_mm",
@@ -719,6 +720,7 @@ const defaultFilmLook = () => ({
   grain_softness: 25,
   grain_chroma: 0,
   grain_film_format: "35mm",
+  grain_film_type: "color_negative",
   grain_capture_geometry: "frame",
   grain_custom_width_mm: 36,
   grain_custom_height_mm: 24,
@@ -3317,6 +3319,18 @@ function bindEvents() {
   });
 
   els.controls.forEach((control) => {
+    // Pressed-state buttons (the Film Look map views) are one click, one
+    // history step, so they skip the slider gesture plumbing below.
+    if (control.tagName === "BUTTON") {
+      control.addEventListener("click", () => {
+        beginGlobalEditGesture(control);
+        const pressed = control.getAttribute("aria-pressed") !== "true";
+        commitAdjustmentValue(control.dataset.path, pressed);
+        syncPressedControl(control, pressed);
+        endGlobalEditGesture(control);
+      });
+      return;
+    }
     const transactionOwnedControl = control.dataset.path === "shared.geometry.straighten_angle";
     control.addEventListener("pointerdown", () => {
       if (transactionOwnedControl) return;
@@ -9189,11 +9203,17 @@ function commitAdjustmentValue(path, value, { manual = false } = {}) {
   if (manual) state.previewScheduler?.endInteraction();
 }
 
+function syncPressedControl(control, pressed) {
+  control.setAttribute("aria-pressed", String(pressed));
+  control.lastElementChild.textContent = pressed ? control.dataset.hideLabel : control.dataset.showLabel;
+}
+
 function syncControlsFromState() {
   els.controls.forEach((control) => {
     const value = getValueByPath(state.adjustments, control.dataset.path);
     if (value === undefined) return;
-    if (control.type === "checkbox") control.checked = Boolean(value);
+    if (control.tagName === "BUTTON") syncPressedControl(control, Boolean(value));
+    else if (control.type === "checkbox") control.checked = Boolean(value);
     else {
       if (control.type === "range") syncRangeControlFromState(control.dataset.path, control);
       else if (control.type === "number" && /color_grading\..+\.(hue|saturation)$/.test(control.dataset.path)) {
@@ -9653,7 +9673,8 @@ function renderSessionChrome() {
       const unavailableModule = control.closest(".module-unavailable");
       const bypassedRawHighlightControl = control.matches("#raw-highlight-method, #raw-highlight-threshold")
         && els.rawHighlightBypass?.getAttribute("aria-pressed") !== "true";
-      control.disabled = !hasSession || Boolean(unavailableModule) || bypassedRawHighlightControl;
+      control.disabled = !hasSession || Boolean(unavailableModule) || bypassedRawHighlightControl
+        || (control.id === "film-grain-chroma" && filmGrainChromaInactive());
     }
   });
   els.viewButtons.forEach((button) => {
@@ -13243,10 +13264,22 @@ function renderGeometryResetState(defaults = defaultAdjustments()) {
   geometryReset.setAttribute("aria-label", "Reset all Crop & Rotate values");
 }
 
+// Black-and-white film has one silver layer and so no color grain.
+function filmGrainChromaInactive() {
+  return state.adjustments?.[state.currentView]?.film_look?.grain_film_type === "black_and_white";
+}
+
+function renderFilmGrainChroma() {
+  const chroma = document.getElementById("film-grain-chroma");
+  if (!chroma) return;
+  if (state.session) chroma.disabled = filmGrainChromaInactive();
+}
+
 function renderControlState() {
   const defaults = defaultAdjustments();
   const filmLook = state.adjustments[state.currentView]?.film_look;
   document.querySelector("[data-film-grain-custom]")?.toggleAttribute("hidden", filmLook?.grain_film_format !== "custom");
+  renderFilmGrainChroma();
   renderHighlightCompressionControls();
   renderSdrHighlightCompressionControls();
   els.controlRows.forEach((row) => {

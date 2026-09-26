@@ -25,7 +25,6 @@ from hdr_finisher.adjustments import (
     _diffusion_blur,
     _film_detail_blur,
     _grain_pitch_pixels,
-    _grain_value_noise,
     _halation_tint,
     _radius_pixels,
     _compress_scene_highlights,
@@ -404,16 +403,6 @@ def test_cpu_film_spatial_stages_reuse_the_response_frame(monkeypatch: pytest.Mo
 
     assert len(seen_sources) == 3
     assert all(source is response_frame for source in seen_sources)
-
-
-def test_physical_grain_value_noise_has_spatial_correlation() -> None:
-    yy, xx = np.indices((256, 256), dtype=np.float32)
-    noise = _grain_value_noise(xx / np.float32(6.0), yy / np.float32(6.0), 271828, 0.0)
-    horizontal_correlation = np.corrcoef(noise[:, :-1].ravel(), noise[:, 1:].ravel())[0, 1]
-    vertical_correlation = np.corrcoef(noise[:-1, :].ravel(), noise[1:, :].ravel())[0, 1]
-
-    assert horizontal_correlation > 0.9
-    assert vertical_correlation > 0.9
 
 
 @pytest.mark.parametrize(

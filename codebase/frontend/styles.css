@@ -5699,8 +5699,7 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 
 .film-module-header > span { color: var(--quiet); }
 
-.film-module-toggle,
-.film-map-toggle {
+.film-module-toggle {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -5712,9 +5711,9 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
   text-transform: none;
 }
 
-.film-map-toggle {
-  justify-content: flex-end;
-  width: 100%;
+/* The map views use Denoise's Show noise button, laid out the same way. */
+.film-map-actions {
+  display: flex;
   padding: 2px 0 4px;
 }
 
@@ -8551,7 +8550,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
 
 .checkbox-row > input[type="checkbox"],
 .film-module-toggle > input[type="checkbox"],
-.film-map-toggle > input[type="checkbox"],
 .proof-enable-row > input[type="checkbox"],
 .gradient-luma-toggle > input[type="checkbox"] {
   appearance: none;
@@ -8581,7 +8579,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
 
 .checkbox-row > input[type="checkbox"]::before,
 .film-module-toggle > input[type="checkbox"]::before,
-.film-map-toggle > input[type="checkbox"]::before,
 .proof-enable-row > input[type="checkbox"]::before,
 .gradient-luma-toggle > input[type="checkbox"]::before {
   content: "";
@@ -8604,7 +8601,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
 
 .checkbox-row > input[type="checkbox"]:checked,
 .film-module-toggle > input[type="checkbox"]:checked,
-.film-map-toggle > input[type="checkbox"]:checked,
 .proof-enable-row > input[type="checkbox"]:checked,
 .gradient-luma-toggle > input[type="checkbox"]:checked {
   border-color: transparent;
@@ -8625,7 +8621,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
 
 .checkbox-row > input[type="checkbox"]:checked::before,
 .film-module-toggle > input[type="checkbox"]:checked::before,
-.film-map-toggle > input[type="checkbox"]:checked::before,
 .proof-enable-row > input[type="checkbox"]:checked::before,
 .gradient-luma-toggle > input[type="checkbox"]:checked::before {
   transform: translate(28px, -50%);
@@ -8633,7 +8628,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
 
 .checkbox-row > input[type="checkbox"]:focus-visible,
 .film-module-toggle > input[type="checkbox"]:focus-visible,
-.film-map-toggle > input[type="checkbox"]:focus-visible,
 .proof-enable-row > input[type="checkbox"]:focus-visible,
 .gradient-luma-toggle > input[type="checkbox"]:focus-visible {
   outline: 0;
@@ -8722,7 +8716,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
 
   .checkbox-row > input[type="checkbox"]:checked,
   .film-module-toggle > input[type="checkbox"]:checked,
-  .film-map-toggle > input[type="checkbox"]:checked,
   .proof-enable-row > input[type="checkbox"]:checked,
   .gradient-luma-toggle > input[type="checkbox"]:checked {
     outline: 2px solid Highlight;
@@ -8732,7 +8725,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
 @media (prefers-reduced-motion: reduce) {
   .checkbox-row > input[type="checkbox"],
   .film-module-toggle > input[type="checkbox"],
-  .film-map-toggle > input[type="checkbox"],
   .proof-enable-row > input[type="checkbox"],
   .gradient-luma-toggle > input[type="checkbox"] {
     transition: none;

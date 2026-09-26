@@ -1584,8 +1584,11 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     # does not masquerade as a pipeline-order regression.
     # 160 and 161 carry the tile origin for tiled execution; Direct leaves
     # them at zero, so every index below keeps its meaning. 166 carries
-    # Denoise's Show noise view flag; 167-174 describe the Clarity map.
-    assert "const PARAM_COUNT = 175" in shader
+    # Denoise's Show noise view flag; 167-174 describe the Clarity map; 175 is
+    # the grain film type and 176 the grain seed's high half.
+    assert "const PARAM_COUNT = 177" in shader
+    assert "const GRAIN_FILM_TYPE_INDEX = 175" in shader
+    assert "const GRAIN_SEED_HIGH_INDEX = 176" in shader
     assert "const CLARITY_MAP_SCALE_INDEX = 167" in shader
     assert "const CLARITY_MAP_ORIGIN_Y_INDEX = 171" in shader
     assert "const NOISE_VIEW_INDEX = 166" in shader
@@ -1736,8 +1739,8 @@ def test_advanced_finishing_controls_are_wired_to_the_editor_and_export_contract
     assert "let diffusionDelta = spatial.rgb - qualified" in shader
     assert "let edgeProtection = smoothRange(0.025, 0.20, relativeDetail)" in shader
     assert "(1.0 - edgeProtection)" in shader
-    assert "chromaHighlightGuard" in shader
-    assert "rgb *= exp2(vec3f(mono * amount))" in shader
+    assert "chroma = p[104] * (1.0 - 0.8 * smoothRange(0.88, 1.0, signal))" in shader
+    assert "rgb *= exp2(grain * amount)" in shader
     assert "if (p[158] > 0.5) { rgb = vec3f(filmLumaFromSignal(0.5)); }" in shader
 
 
@@ -1758,10 +1761,10 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
         "grain_capture_geometry", "grain_custom_width_mm", "grain_custom_height_mm",
         "grain_view_map", "halation_view_map",
         "red_response", "green_response", "blue_response",
-        "highlight_desaturation", "shadow_desaturation",
+        "highlight_desaturation", "shadow_desaturation", "grain_film_type",
     ]:
         assert f'data-path="current.film_look.{path}"' in html
-    assert "grainValueNoise" in (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    assert "fn grainLayerNoise" in (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
     shader = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
     assert "halationEdgeSource" in shader
     assert "center * smoothRange(0.004, 0.12, relativeEdge)" in shader
