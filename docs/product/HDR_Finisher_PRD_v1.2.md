@@ -556,6 +556,129 @@ the Denoise Show noise view. Before publishing it as a version:
   export now uses the same, more accurate blur as the preview.
 - Tag `v0.8.13` and publish the GitHub release with the installers.
 
+### BW-01 — Dedicated Black & White module (planned, next up)
+
+Recorded 2026-09-26 after a review of the current modules. Not started.
+
+**The gap.** There is no channel-mixer-style control, so B&W conversion is
+fixed:
+
+- Color → Saturation −100 does produce monochrome, but always with the fixed
+  ACEScg luma weights (~27% R, 67% G, 5% B; `_apply_saturation_vibrance` in
+  `adjustments.py`). There is no way to decide how bright reds or blues
+  render — no "red filter darkens the sky".
+- Primaries hue/purity is a white-preserving color matrix, not a mixer. It
+  only shifts the grey conversion indirectly and unpredictably.
+- Film Look red/green/blue response is density/print response, not mix
+  weights.
+- Per-channel Curves run after Color, so there is nothing left to separate
+  once the image is grey.
+- Toning already works: Color Grading runs after Color, so its shadow and
+  highlight wheels can split-tone a mono image. No new toning control is
+  needed for v1.
+
+**Proposed module**
+
+1. **Channel mixer core.** R, G and B weight sliders with "Preserve
+   brightness" on by default. It normalizes the weights to sum to 1 so neutral
+   greys and whites keep their brightness when a slider moves; HDR headroom
+   lives mostly in neutral highlights, so they stay put.
+2. **Filter presets on top:** Red, Orange, Yellow, Green, Blue. These are
+   photographer-familiar, and each is just a set of mixer weights. For most
+   users they are the main way in; the sliders are for fine-tuning.
+3. **Neutral default equals today's result.** Default weights are the ACEScg
+   luma coefficients, so turning B&W on matches Saturation −100 exactly — no
+   jump.
+4. **Placement:** in scene-linear ACEScg, directly after Color and before
+   Tone Equalizer, Curves and Color Grading. That is where a lens filter or
+   film spectral sensitivity acts, and it leaves Grading available for
+   toning.
+5. **Not in v1:** a Lightroom-style 8-hue B&W mix. Hue-selective weighting in
+   HDR tends to be noisy in low-chroma shadows and bands at hue boundaries.
+   Revisit if presets plus the mixer feel too blunt.
+
+**Decisions for Steve (before building)**
+
+- **Shared or per-rendition?** Every module today is separate for HDR and
+  SDR. The recommendation is to make B&W on/off and the mix **shared**, like
+  geometry: a mono HDR over a color SDR base in one gain-map file would be
+  odd. Match/Rematch would then have nothing to copy.
+- Whether presets should also nudge contrast (as film filters do), or only
+  set weights. Recommendation: weights only.
+
+**Interactions to handle**
+
+- **Film Look adds color back.** Halation adds a red tint and chroma grain
+  adds color noise, both after the mix. With B&W on, both should go neutral
+  (real B&W film has no red halation).
+- **Local adjustments.** A local white balance change after B&W would tint the
+  image. That is acceptable as deliberate local toning, but it should be
+  documented.
+- **Highlight ceiling.** Heavy weights (for example R at 200%) can greatly
+  brighten saturated highlights. Output highlight compression runs last, so
+  the ceiling should hold, but prove it with the ceiling and HDR/SDR
+  stability tests. Clamp negative results at zero.
+- **Peak Fit / anchor measurement.** The mix runs before the highlight stage,
+  so the measured anchor must include it on both the whole-frame and bounded
+  strip paths (`sdr_highlight_stage_input` and the HDR peak measurement).
+- **CPU/GPU parity.** Implement in both `adjustments.py` and
+  `frontend/webgpu-preview.js`. The mix is a per-pixel dot product: cheap,
+  and easy to match exactly.
+
+**Plan**
+
+1. Clickable mockup on one colorful real image (sky, foliage, skin) showing
+   the five presets and the three sliders side by side. Steve judges whether
+   the presets feel right before any code is built.
+2. Model fields and pipeline stage (CPU), with a neutral-default test proving
+   B&W-on equals Saturation −100.
+3. WebGPU stage and CPU/GPU parity test.
+4. UI module (on/off, presets, sliders, Preserve brightness) in existing
+   module patterns, plus neutral halation and chroma grain when B&W is on.
+5. Ceiling, stability and Direct/Tiled parity tests; user-guide page.
+
+**Acceptance criteria**
+
+- B&W on with default weights is pixel-identical to Saturation −100.
+- With Preserve brightness on, neutral pixels are unchanged by any weight
+  change.
+- No output exceeds the highlight compression target, and there is no
+  HDR/SDR flashing during slider drags.
+- CPU and GPU agree within existing parity tolerances.
+- Exported HDR and SDR renditions are both monochrome, with no color
+  reintroduced by Film Look.
+
+### NEXT-01 — Follow-ups for the next session (reminder)
+
+Recorded 2026-09-27, after film grain v2 and the Black & White grain Film
+Type landed on `feature/denoise-clumpy-noise`. Not started.
+
+1. **Halation map.** Look at the Show halation map view again: what it shows,
+   and whether it is a useful guide to where halation will appear.
+2. **Image Structure → Detail.** Consider moving Image Structure (Image
+   Softness, Microcontrast, Film Resolution) out of Film Look into the Detail
+   module. Points to settle first:
+   - Film Resolution is scaled by Film Format, which lives in Film Look.
+   - The built-in Film Look presets set all three controls.
+   - Moving them may change their place in the pipeline.
+   - Saved documents need migrating.
+3. **Map buttons at the top.** Move the Show halation map and Show grain map
+   buttons from the bottom of their sections to the top, just under the
+   section header.
+4. **GPU heat while dragging Denoise sliders.** Dragging a Denoise slider
+   drives GPU temperature up sharply. Measure GPU load during a drag
+   (for example with `nvidia-smi`), then look at how often the drag
+   re-renders and at what resolution. Options include coalescing updates,
+   rendering drafts at lower resolution while dragging, and pausing when
+   idle.
+
+Film grain v2 context for any grain follow-up: at Amount 40 on a 42 MP frame,
+colour grain adds about 15 ms to an 11 MP GPU preview and about 50 ms at full
+resolution. CPU export takes 26 s, against 23 s for the first grain.
+`tests/grain-parity.js` checks that the preview matches the export.
+Black & white grain makes the chroma-grain item in BW-01 simpler: with B&W
+on, the module can switch grain to the Black & white Film Type.
+
 ---
 
 ## 11b. Full-Tier Interactive Performance — Deferred Work
