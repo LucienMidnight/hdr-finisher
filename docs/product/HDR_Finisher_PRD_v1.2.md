@@ -541,6 +541,21 @@ pattern and is the template.
 - A local Clarity Radius drag does no work beyond re-blurring its map and
   redrawing.
 
+### RELEASE-0.8.13 — Finish the 0.8.13 release (reminder)
+
+Recorded 2026-09-26. The app version is already 0.8.13 (`config.py`,
+`desktop/package.json`, `package-lock.json`) and a test installer was built
+from `main` for hands-on testing. It carries the Clarity brightness map
+(CLARITY-01 background above), adaptive denoise with noise-size controls, and
+the Denoise Show noise view. Before publishing it as a version:
+
+- Write `RELEASE_NOTES.md` for 0.8.13 (it still describes 0.8.12).
+- Add a 0.8.13 `<release>` entry to
+  `packaging/flatpak/io.github.LucienMidnight.hdr-finisher.metainfo.xml`.
+- Mention that exported Clarity shifts slightly next to strong edges, because
+  export now uses the same, more accurate blur as the preview.
+- Tag `v0.8.13` and publish the GitHub release with the installers.
+
 ---
 
 ## 11b. Full-Tier Interactive Performance — Deferred Work
