@@ -24,6 +24,7 @@ from .binaries import resolve_binary
 from .subprocess_utils import hidden_window_options
 from .color import acescg_to_linear_bt2020
 from .color_context import RenderColorContext, scene_linear_to_nits
+from . import denoise_adaptive
 from .denoise_reference import AnalysisPreset, ResolveControls
 from .denoise_tiles import analyze_denoise_tiled, resolve_denoise_tiled
 from .config import EXPORTS_DIR, SAMPLES_DIR
@@ -137,6 +138,23 @@ def _denoised_export_source(session: object, kind: PreviewKind) -> np.ndarray:
     if lane is None:
         return image
     analysis_settings = lane.analysis
+    if analysis_settings.algorithm_version == denoise_adaptive.ALGORITHM_VERSION:
+        # Measured at the export's own resolution, as the preview measures at
+        # its own: noise per pixel depends on the scale it is read at.
+        controls = lane.controls
+        return denoise_adaptive.resolve_adaptive(
+            image,
+            denoise_adaptive.estimate_adaptive_model(image),
+            denoise_adaptive.AdaptiveControls(
+                amount=controls.amount,
+                luminance=controls.luminance,
+                color_noise=controls.color_noise,
+                detail_recovery=controls.detail_recovery,
+                fine_noise=controls.fine_noise,
+                medium_noise=controls.medium_noise,
+                coarse_noise=controls.coarse_noise,
+            ),
+        )
     preset = AnalysisPreset(
         levels=analysis_settings.levels,
         noise_threshold=analysis_settings.noise_threshold,

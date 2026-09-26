@@ -315,6 +315,201 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
   textureStore(directOutput, storeAt, vec4f(rgb, 1.0));
 }`;
 
+  // Adaptive denoise: the WebGPU half of backend/hdr_finisher/denoise_adaptive.py.
+  // Five undecimated B3 bands in an orthonormal luminance/opponent basis, each
+  // scaled by a local Wiener gain against a per-pixel noise map from a model the
+  // backend measures on this exact proxy. Every constant and every edge rule
+  // mirrors the Python, so the preview and the export agree.
+  const ADAPTIVE_DENOISE_ALGORITHM_VERSION = "adaptive-atrous-v1";
+  const ADAPTIVE_DENOISE_LEVELS = 5;
+  // A tile's result equals the whole frame's when its scratch extends this far:
+  // the coarsest band reaches 62 pixels and the Wiener window 3 more.
+  const ADAPTIVE_DENOISE_TILE = 512;
+  const ADAPTIVE_DENOISE_MARGIN = 66;
+  const ADAPTIVE_DENOISE_SCRATCH = ADAPTIVE_DENOISE_TILE + 2 * ADAPTIVE_DENOISE_MARGIN;
+  // Per-dispatch uniform stride.
+  const ADAPTIVE_DENOISE_SLOT = 256;
+
+  /**
+   * The live controls, mapped exactly as AdaptiveControls maps them in Python:
+   * 0.5 everywhere is the measured result.
+   */
+  function adaptiveDenoiseStrengths(controls) {
+    const overall = 2 * controls.amount;
+    return {
+      luma: overall * 2 * controls.luminance,
+      chroma: overall * 2 * controls.colorNoise,
+      fineMultiplier: 1 + Math.max(0, 0.5 - controls.detailRecovery),
+      fineFloor: Math.max(0, controls.detailRecovery - 0.5) * 0.6,
+      // By noise size, for both components: bands 0-1, band 2, bands 3-4.
+      sizeMultiplier: (level) => 2 * (level < 2 ? controls.fineNoise : level === 2 ? controls.mediumNoise : controls.coarseNoise),
+    };
+  }
+
+  // The size controls only the adaptive method reads, validated like the rest.
+  function adaptiveDenoiseSizes(controls = {}) {
+    return Object.fromEntries(["fineNoise", "mediumNoise", "coarseNoise"].map((name) => {
+      const value = Number(controls[name] ?? 0.5);
+      if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error(`${name} must be between 0 and 1`);
+      return [name, value];
+    }));
+  }
+
+  const ADAPTIVE_DENOISE_SHADER_SOURCE = `
+// scratch: (originX, originY, width, height) in frame pixels
+// frame:   (frameWidth, frameHeight, level, axis)   axis 0 = horizontal
+// tile:    (x, y, width, height) of the output, in frame pixels
+// dest:    (originX, originY, 0, 0): where the destination's (0, 0) sits
+// model:   (a, b, c, 0)
+// strength:(luma, chroma, fineMultiplier, fineFloor)
+// sigma:   (Y, C1, C2, 0) band noise factors at this level
+struct AdaptiveParams {
+  scratch: vec4f, frame: vec4f, tile: vec4f, dest: vec4f,
+  model: vec4f, strength: vec4f, sigma: vec4f,
+};
+@group(0) @binding(0) var srcTex: texture_2d<f32>;
+@group(0) @binding(1) var auxTex: texture_2d<f32>;
+@group(0) @binding(2) var aux2Tex: texture_2d<f32>;
+@group(0) @binding(3) var aux3Tex: texture_2d<f32>;
+@group(0) @binding(4) var dstTex: texture_storage_2d<rgba32float, write>;
+@group(0) @binding(5) var outTex: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(6) var<uniform> ap: AdaptiveParams;
+
+const ACES_LUMA = vec3f(0.2722287, 0.6740818, 0.0536895);
+const INV_SQRT3 = 0.5773502691896258;
+const INV_SQRT2 = 0.7071067811865476;
+const INV_SQRT6 = 0.4082482904638631;
+const B3 = array<f32, 5>(0.0625, 0.25, 0.375, 0.25, 0.0625);
+
+fn toOpponent(rgb: vec3f) -> vec3f {
+  return vec3f(
+    (rgb.r + rgb.g + rgb.b) * INV_SQRT3,
+    (rgb.r - rgb.b) * INV_SQRT2,
+    (rgb.r - 2.0 * rgb.g + rgb.b) * INV_SQRT6,
+  );
+}
+fn fromOpponent(o: vec3f) -> vec3f {
+  return vec3f(
+    o.x * INV_SQRT3 + o.y * INV_SQRT2 + o.z * INV_SQRT6,
+    o.x * INV_SQRT3 - 2.0 * o.z * INV_SQRT6,
+    o.x * INV_SQRT3 - o.y * INV_SQRT2 + o.z * INV_SQRT6,
+  );
+}
+fn scratchSize() -> vec2i { return vec2i(i32(ap.scratch.z), i32(ap.scratch.w)); }
+fn scratchOrigin() -> vec2i { return vec2i(i32(ap.scratch.x), i32(ap.scratch.y)); }
+fn inScratch(id: vec3u) -> bool { return i32(id.x) < scratchSize().x && i32(id.y) < scratchSize().y; }
+fn clampLocal(local: vec2i) -> vec2i { return clamp(local, vec2i(0), scratchSize() - vec2i(1)); }
+
+// numpy "reflect" at a frame edge when the frame is wider than the reach, else
+// "edge"; then clamped into the scratch, which only disturbs the margin.
+fn reflectFrame(f: i32, extent: i32, reach: i32) -> i32 {
+  if (extent <= reach) { return clamp(f, 0, extent - 1); }
+  var g = f;
+  if (g < 0) { g = -g; }
+  if (g > extent - 1) { g = 2 * (extent - 1) - g; }
+  return g;
+}
+
+@compute @workgroup_size(8, 8)
+fn adaptiveLoadMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let rgb = textureLoad(srcTex, scratchOrigin() + vec2i(id.xy), 0).rgb;
+  textureStore(dstTex, vec2i(id.xy), vec4f(toOpponent(rgb), dot(rgb, ACES_LUMA)));
+}
+
+@compute @workgroup_size(8, 8)
+fn adaptiveBlurMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let level = i32(ap.frame.z);
+  let horizontal = ap.frame.w < 0.5;
+  let step = 1 << u32(level);
+  let reach = 2 * step;
+  let origin = scratchOrigin();
+  let p = vec2i(id.xy);
+  var total = vec4f(0.0);
+  for (var tap = 0; tap < 5; tap = tap + 1) {
+    let offset = (tap - 2) * step;
+    var f = origin + p;
+    if (horizontal) {
+      f.x = reflectFrame(f.x + offset, i32(ap.frame.x), reach);
+    } else {
+      f.y = reflectFrame(f.y + offset, i32(ap.frame.y), reach);
+    }
+    total += B3[tap] * textureLoad(srcTex, clampLocal(f - origin), 0);
+  }
+  textureStore(dstTex, p, total);
+}
+
+@compute @workgroup_size(8, 8)
+fn adaptiveNoiseMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let y = max(textureLoad(srcTex, vec2i(id.xy), 0).w, 0.0);
+  let variance = max(ap.model.z * y * y + ap.model.x * y + ap.model.y, 1e-20);
+  textureStore(dstTex, vec2i(id.xy), vec4f(variance, 0.0, 0.0, 0.0));
+}
+
+// Box sums are edge-replicated at every scratch boundary, as numpy's "edge"
+// pad is; at the frame's own edges that is the frame edge.
+@compute @workgroup_size(8, 8)
+fn adaptiveEnergyHorizontalMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  var total = vec3f(0.0);
+  for (var tap = -3; tap <= 3; tap = tap + 1) {
+    let q = clampLocal(p + vec2i(tap, 0));
+    let band = textureLoad(srcTex, q, 0).xyz - textureLoad(auxTex, q, 0).xyz;
+    total += band * band;
+  }
+  textureStore(dstTex, p, vec4f(total / 7.0, 0.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn adaptiveEnergyVerticalMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  var total = vec3f(0.0);
+  for (var tap = -3; tap <= 3; tap = tap + 1) {
+    total += textureLoad(srcTex, clampLocal(p + vec2i(0, tap)), 0).xyz;
+  }
+  textureStore(dstTex, p, vec4f(total / 7.0, 0.0));
+}
+
+// src = this level's input, aux = its smooth, aux2 = band energy, aux3 = noise
+// variance, sumTex = the band sum so far (read from level 1 on; the sum
+// ping-pongs between two textures because rgba32float cannot be read and
+// written in one pass).
+@group(0) @binding(7) var sumTex: texture_2d<f32>;
+@compute @workgroup_size(8, 8)
+fn adaptiveAccumulateMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let level = i32(ap.frame.z);
+  let band = textureLoad(srcTex, p, 0).xyz - textureLoad(auxTex, p, 0).xyz;
+  let energy = textureLoad(aux2Tex, p, 0).xyz;
+  let variance = textureLoad(aux3Tex, p, 0).x;
+  let fine = level < 2;
+  var strength = vec3f(ap.strength.x, ap.strength.y, ap.strength.y);
+  if (fine) { strength *= ap.strength.z; }
+  let noise = (strength * ap.sigma.xyz) * (strength * ap.sigma.xyz) * variance;
+  var gain = max(energy - noise, vec3f(0.0)) / max(energy, vec3f(1e-20));
+  if (fine && ap.strength.w > 0.0) { gain = max(gain, vec3f(ap.strength.w)); }
+  var sum = vec3f(0.0);
+  if (level > 0) { sum = textureLoad(sumTex, p, 0).xyz; }
+  textureStore(dstTex, p, vec4f(sum + band * gain, 0.0));
+}
+
+// src = the band sum, aux = the coarsest smooth. Writes only the tile.
+@compute @workgroup_size(8, 8)
+fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
+  let local = vec2i(id.xy);
+  let frameAt = scratchOrigin() + local;
+  let tile = vec4i(ap.tile);
+  if (frameAt.x < tile.x || frameAt.y < tile.y || frameAt.x >= tile.x + tile.z || frameAt.y >= tile.y + tile.w) { return; }
+  let opponent = textureLoad(srcTex, local, 0).xyz + textureLoad(auxTex, local, 0).xyz;
+  let storeAt = frameAt - vec2i(i32(ap.dest.x), i32(ap.dest.y));
+  textureStore(outTex, storeAt, vec4f(fromOpponent(opponent), 1.0));
+}`;
+
   // The Haar grid a denoise tile must land on. Level 0 consumes 2x2 source
   // blocks, level 1 consumes 2x2 blocks of those, and so on, so a tile that
   // starts on a multiple of 2^levels decomposes exactly as the whole image
@@ -4293,6 +4488,17 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       });
       if (!original) return false;
       if (generation !== this.denoiseSelectorGeneration || this.sessionId !== sessionId) return false;
+      if (preset?.algorithm === ADAPTIVE_DENOISE_ALGORITHM_VERSION) {
+        return this.analyzeAdaptiveDenoise(sessionId, lane, original, longEdge, editRevision, geometrySignature, generation, {
+          amount: controls.amount ?? 0.5,
+          luminance: controls.luminance ?? 0.5,
+          colorNoise: controls.colorNoise ?? controls.color_noise ?? 0.5,
+          detailRecovery: controls.detailRecovery ?? controls.detail_recovery ?? 0.5,
+          fineNoise: controls.fineNoise ?? controls.fine_noise ?? 0.5,
+          mediumNoise: controls.mediumNoise ?? controls.medium_noise ?? 0.5,
+          coarseNoise: controls.coarseNoise ?? controls.coarse_noise ?? 0.5,
+        });
+      }
       const pipelines = await this.ensureDenoisePipelines();
       const settings = {
         name: "Photo / Fine",
@@ -4471,6 +4677,292 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       });
     }
 
+    async ensureAdaptiveDenoisePipelines() {
+      if (this.adaptiveDenoisePipelines) return this.adaptiveDenoisePipelines;
+      const module = this.device.createShaderModule({ code: ADAPTIVE_DENOISE_SHADER_SOURCE });
+      const compilation = await module.getCompilationInfo();
+      const errors = compilation.messages.filter((message) => message.type === "error");
+      if (errors.length) throw new Error(errors.map((message) => message.message).join("; "));
+      const compute = GPUShaderStage.COMPUTE;
+      const sampled = { sampleType: "unfilterable-float" };
+      // One explicit layout for every entry point, so a pass binds the same
+      // eight slots and fills the ones it does not read with dummies.
+      const layout = this.device.createBindGroupLayout({
+        entries: [
+          { binding: 0, visibility: compute, texture: sampled },
+          { binding: 1, visibility: compute, texture: sampled },
+          { binding: 2, visibility: compute, texture: sampled },
+          { binding: 3, visibility: compute, texture: sampled },
+          { binding: 4, visibility: compute, storageTexture: { access: "write-only", format: "rgba32float" } },
+          { binding: 5, visibility: compute, storageTexture: { access: "write-only", format: "rgba16float" } },
+          { binding: 6, visibility: compute, buffer: { type: "uniform" } },
+          { binding: 7, visibility: compute, texture: sampled },
+        ],
+      });
+      const pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [layout] });
+      const names = ["Load", "Blur", "Noise", "EnergyHorizontal", "EnergyVertical", "Accumulate", "Final"];
+      const created = await Promise.all(names.map((name) => this.device.createComputePipelineAsync({
+        layout: pipelineLayout,
+        compute: { module, entryPoint: `adaptive${name}Main` },
+      })));
+      const dummy = (format, usage) => this.device.createTexture({ size: { width: 1, height: 1 }, format, usage });
+      this.adaptiveDenoisePipelines = {
+        layout,
+        ...Object.fromEntries(names.map((name, index) => [name[0].toLowerCase() + name.slice(1), created[index]])),
+        dummySampled: dummy("rgba32float", GPUTextureUsage.TEXTURE_BINDING),
+        dummyStorage32: dummy("rgba32float", GPUTextureUsage.STORAGE_BINDING),
+        dummyStorage16: dummy("rgba16float", GPUTextureUsage.STORAGE_BINDING),
+      };
+      return this.adaptiveDenoisePipelines;
+    }
+
+    /** One tile's worth of scratch, reused by every tile of every resolve. */
+    createAdaptiveDenoiseScratch() {
+      const size = ADAPTIVE_DENOISE_SCRATCH;
+      const make = (label) => this.device.createTexture({
+        label,
+        size: { width: size, height: size },
+        format: "rgba32float",
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
+      });
+      const names = ["current", "next", "blur", "energyRow", "energy", "noise", "sumA", "sumB"];
+      const textures = Object.fromEntries(names.map((name) => [name, make(`adaptive-denoise-${name}`)]));
+      return { textures, byteSize: names.length * size * size * 16, textureCount: names.length };
+    }
+
+    /**
+     * Fetch the noise model the backend measured on this exact proxy and
+     * install it as the selector's cache. Nothing heavier is cached: the
+     * reconstruction recomputes its bands from the original every time, which
+     * is what keeps a 42 MP frame's denoise from holding evidence at all.
+     */
+    async analyzeAdaptiveDenoise(sessionId, lane, original, longEdge, editRevision, geometrySignature, generation, controls) {
+      const startedAt = performance.now();
+      this.denoiseCounters.analysisCalls += 1;
+      this.recordStage("denoise-analysis", { state: "started", generation, longEdge, algorithm: ADAPTIVE_DENOISE_ALGORITHM_VERSION });
+      const response = await fetch(`/api/session/${sessionId}/denoise-model/${lane}?long_edge=${longEdge}&edit_revision=${editRevision}&geometry_signature=${encodeURIComponent(geometrySignature)}`);
+      if (!response.ok) throw new Error(`Denoise noise model request failed (${response.status}).`);
+      const model = await response.json();
+      if (generation !== this.denoiseSelectorGeneration || this.sessionId !== sessionId) {
+        this.recordStage("denoise-analysis", { state: "stale", generation });
+        return false;
+      }
+      await this.ensureAdaptiveDenoisePipelines();
+      const settings = { name: "Adaptive", algorithm: ADAPTIVE_DENOISE_ALGORITHM_VERSION, levels: 1 };
+      const scratch = this.createAdaptiveDenoiseScratch();
+      const previous = this.denoiseSourceSelector;
+      const cache = {
+        algorithmVersion: ADAPTIVE_DENOISE_ALGORITHM_VERSION,
+        settings,
+        model,
+        identity: `${original.identity}|${ADAPTIVE_DENOISE_ALGORITHM_VERSION}|${JSON.stringify(model)}`,
+        tiles: [],
+        levels: [],
+        resolveScratch: [],
+        adaptiveScratch: scratch,
+        byteSize: scratch.byteSize,
+        textureCount: scratch.textureCount,
+      };
+      this.denoiseSourceSelector = {
+        identity: original.identity,
+        original,
+        resolved: null,
+        selected: previous?.identity === original.identity ? previous.selected : "original",
+        cache,
+        generation,
+      };
+      this.destroyDenoiseSelector(previous);
+      this.denoiseCounters.allocations += cache.textureCount;
+      this.denoiseCounters.allocatedBytes += cache.byteSize;
+      this.denoiseCounters.evidenceBytes = 0;
+      this.denoiseCounters.analysisScratchBytes = 0;
+      this.denoiseCounters.resolveScratchBytes = scratch.byteSize;
+      this.recordAllocation("denoise-adaptive-scratch", scratch.byteSize, { textures: scratch.textureCount, longEdge });
+      this.recordStage("denoise-analysis", {
+        state: "ready", generation, durationMs: performance.now() - startedAt, algorithm: ADAPTIVE_DENOISE_ALGORITHM_VERSION,
+      });
+      return this.resolveDenoiseProxy(controls);
+    }
+
+    /**
+     * Encode the adaptive reconstruction of `target` into `candidate`.
+     *
+     * The target is covered by 512-pixel tiles, each computed from a scratch
+     * region 66 pixels wider on every side (clamped to the frame), so every
+     * tile equals the whole-frame result. Thirty-two dispatches per tile: the
+     * load, the noise map's two smoothing levels, five bands of blur, energy
+     * and accumulation, and the final write.
+     */
+    encodeAdaptiveDenoise(encoder, selector, weights, sizes, target, candidate, destinationOrigin) {
+      const pipelines = this.adaptiveDenoisePipelines;
+      const { model } = selector.cache;
+      const scratch = selector.cache.adaptiveScratch.textures;
+      const frameWidth = selector.original.width;
+      const frameHeight = selector.original.height;
+      const strengths = adaptiveDenoiseStrengths({
+        amount: weights[0], luminance: weights[1], colorNoise: weights[2], detailRecovery: weights[3], ...sizes,
+      });
+      const tiles = [];
+      for (let y = target.y; y < target.y + target.height; y += ADAPTIVE_DENOISE_TILE) {
+        for (let x = target.x; x < target.x + target.width; x += ADAPTIVE_DENOISE_TILE) {
+          const width = Math.min(ADAPTIVE_DENOISE_TILE, target.x + target.width - x);
+          const height = Math.min(ADAPTIVE_DENOISE_TILE, target.y + target.height - y);
+          const x0 = Math.max(0, x - ADAPTIVE_DENOISE_MARGIN);
+          const y0 = Math.max(0, y - ADAPTIVE_DENOISE_MARGIN);
+          const x1 = Math.min(frameWidth, x + width + ADAPTIVE_DENOISE_MARGIN);
+          const y1 = Math.min(frameHeight, y + height + ADAPTIVE_DENOISE_MARGIN);
+          tiles.push({ tile: { x, y, width, height }, scratch: { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } });
+        }
+      }
+      const dispatchesPerTile = 1 + 5 + ADAPTIVE_DENOISE_LEVELS * 5 + 1;
+      const paramBuffer = this.device.createBuffer({
+        size: Math.max(ADAPTIVE_DENOISE_SLOT, tiles.length * dispatchesPerTile * ADAPTIVE_DENOISE_SLOT),
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+      const slots = new Float32Array(paramBuffer.size / 4);
+      let slot = 0;
+      const originalView = selector.original.texture.createView();
+      const dispatch = (pipeline, binding, values, { width, height }) => {
+        slots.set(values, slot * (ADAPTIVE_DENOISE_SLOT / 4));
+        const view = (texture) => texture.createView();
+        const bindGroup = this.device.createBindGroup({
+          layout: pipelines.layout,
+          entries: [
+            { binding: 0, resource: binding.src || view(pipelines.dummySampled) },
+            { binding: 1, resource: binding.aux ? view(binding.aux) : view(pipelines.dummySampled) },
+            { binding: 2, resource: binding.aux2 ? view(binding.aux2) : view(pipelines.dummySampled) },
+            { binding: 3, resource: binding.aux3 ? view(binding.aux3) : view(pipelines.dummySampled) },
+            { binding: 4, resource: binding.dst ? view(binding.dst) : view(pipelines.dummyStorage32) },
+            { binding: 5, resource: binding.out ? view(binding.out) : view(pipelines.dummyStorage16) },
+            { binding: 6, resource: { buffer: paramBuffer, offset: slot * ADAPTIVE_DENOISE_SLOT, size: 112 } },
+            { binding: 7, resource: binding.sum ? view(binding.sum) : view(pipelines.dummySampled) },
+          ],
+        });
+        const pass = encoder.beginComputePass();
+        pass.setPipeline(pipeline);
+        pass.setBindGroup(0, bindGroup);
+        pass.dispatchWorkgroups(Math.ceil(width / 8), Math.ceil(height / 8));
+        pass.end();
+        slot += 1;
+      };
+      for (const { tile, scratch: region } of tiles) {
+        const common = (level, axis, sigmas = [0, 0, 0]) => [
+          region.x, region.y, region.width, region.height,
+          frameWidth, frameHeight, level, axis,
+          tile.x, tile.y, tile.width, tile.height,
+          destinationOrigin.x, destinationOrigin.y, 0, 0,
+          model.a, model.b, model.c, 0,
+          strengths.luma, strengths.chroma, strengths.fineMultiplier, strengths.fineFloor,
+          ...sigmas, 0,
+        ];
+        const blur = (level, from, to) => {
+          dispatch(pipelines.blur, { src: from.createView(), dst: scratch.blur }, common(level, 0), region);
+          dispatch(pipelines.blur, { src: scratch.blur.createView(), dst: to }, common(level, 1), region);
+        };
+        dispatch(pipelines.load, { src: originalView, dst: scratch.current }, common(0, 0), region);
+        // The noise map reads luminance smoothed by bands 0 and 1, carried in
+        // alpha through the same blur the bands use.
+        blur(0, scratch.current, scratch.next);
+        blur(1, scratch.next, scratch.energyRow);
+        dispatch(pipelines.noise, { src: scratch.energyRow.createView(), dst: scratch.noise }, common(0, 0), region);
+        let current = scratch.current;
+        let next = scratch.next;
+        let sum = scratch.sumA;
+        let nextSum = scratch.sumB;
+        for (let level = 0; level < ADAPTIVE_DENOISE_LEVELS; level += 1) {
+          // A size multiplier scales this band's noise the way strength does.
+          const sigmas = [0, 1, 2].map((component) => (
+            (Number(model.band_sigmas[component][level]) || 0) * strengths.sizeMultiplier(level)
+          ));
+          blur(level, current, next);
+          dispatch(pipelines.energyHorizontal, { src: current.createView(), aux: next, dst: scratch.energyRow }, common(level, 0), region);
+          dispatch(pipelines.energyVertical, { src: scratch.energyRow.createView(), dst: scratch.energy }, common(level, 1), region);
+          dispatch(pipelines.accumulate, {
+            src: current.createView(), aux: next, aux2: scratch.energy, aux3: scratch.noise, sum: level > 0 ? sum : null, dst: nextSum,
+          }, common(level, 0, sigmas), region);
+          [sum, nextSum] = [nextSum, sum];
+          [current, next] = [next, current];
+        }
+        dispatch(pipelines.final, { src: sum.createView(), aux: current, out: candidate.texture }, common(0, 0), region);
+      }
+      this.device.queue.writeBuffer(paramBuffer, 0, slots);
+      return { paramBuffer, dispatches: slot, tiles: tiles.length };
+    }
+
+    async resolveAdaptiveDenoise(selector, weights, sizes, generation, startedAt, region, destination, sharedEncoder) {
+      await this.ensureAdaptiveDenoisePipelines();
+      const frame = { x: 0, y: 0, width: selector.original.width, height: selector.original.height };
+      const target = region
+        ? {
+          x: Math.max(0, Math.floor(region.x)),
+          y: Math.max(0, Math.floor(region.y)),
+          width: Math.min(frame.width, Math.floor(region.x + region.width)) - Math.max(0, Math.floor(region.x)),
+          height: Math.min(frame.height, Math.floor(region.y + region.height)) - Math.max(0, Math.floor(region.y)),
+        }
+        : frame;
+      if (target.width <= 0 || target.height <= 0) return false;
+      const destinationOrigin = destination ? { x: target.x, y: target.y } : { x: 0, y: 0 };
+      const candidateIsNew = !destination && !selector.resolved;
+      const candidate = destination || selector.resolved
+        || this.createDenoiseTexture(frame.width, frame.height, "denoise-resolved");
+      let paramBuffer = null;
+      try {
+        const encoder = sharedEncoder || this.device.createCommandEncoder();
+        const encoded = this.encodeAdaptiveDenoise(encoder, selector, weights, sizes, target, candidate, destinationOrigin);
+        paramBuffer = encoded.paramBuffer;
+        this.denoiseCounters.resolveDispatches += encoded.dispatches;
+        this.denoiseCounters.resolveTiles += encoded.tiles;
+        if (sharedEncoder) {
+          const buffer = paramBuffer;
+          paramBuffer = null;
+          return { encoded: true, dispatches: encoded.dispatches, tiles: encoded.tiles, paramBuffer: buffer };
+        }
+        this.device.queue.submit([encoder.finish()]);
+        await this.device.queue.onSubmittedWorkDone();
+        if (generation !== this.denoiseSelectorGeneration || selector !== this.denoiseSourceSelector) {
+          if (candidateIsNew) candidate.texture.destroy();
+          this.recordStage("denoise-resolve", { state: "stale", generation });
+          return false;
+        }
+        if (candidateIsNew) {
+          selector.resolved = {
+            ...candidate,
+            workingSpace: selector.original.workingSpace,
+            pixelFormat: "rgba16float",
+            geometrySignature: selector.original.geometrySignature,
+            identity: selector.original.identity,
+          };
+          this.denoiseCounters.allocations += 1;
+          this.denoiseCounters.allocatedBytes += candidate.byteSize;
+          this.recordAllocation("denoise-resolved", candidate.byteSize, { generation });
+        }
+        const stage = {
+          state: "ready", generation, durationMs: performance.now() - startedAt, tiles: encoded.tiles,
+          dispatches: encoded.dispatches, algorithm: ADAPTIVE_DENOISE_ALGORITHM_VERSION,
+          region: region ? `${target.x},${target.y},${target.width},${target.height}` : "whole",
+        };
+        if (destination) {
+          this.recordStage("denoise-resolve", { ...stage, destination: "bounded" });
+          return true;
+        }
+        selector.selected = "resolved";
+        selector.resolvedVersion = ++this.denoiseResolveVersion;
+        selector.controls = {
+          amount: weights[0], luminance: weights[1], colorNoise: weights[2], detailRecovery: weights[3], ...sizes,
+        };
+        selector.resolvedRegion = region ? target : null;
+        this.denoiseCounters.atomicSwaps += 1;
+        this.recordStage("denoise-resolve", stage);
+        return true;
+      } catch (error) {
+        if (candidateIsNew) candidate.texture.destroy();
+        this.recordStage("denoise-resolve", { state: "error", generation, durationMs: performance.now() - startedAt });
+        throw error;
+      } finally {
+        paramBuffer?.destroy();
+      }
+    }
+
     /**
      * Reconstruct from cached evidence. Runs no analysis, by construction:
      * nothing here touches the analysis pipeline, so a drag of any live control
@@ -4509,6 +5001,11 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
         if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error(`${name} must be between 0 and 1`);
         return value;
       });
+      if (selector.cache.algorithmVersion === ADAPTIVE_DENOISE_ALGORITHM_VERSION) {
+        return this.resolveAdaptiveDenoise(
+          selector, weights, adaptiveDenoiseSizes(controls), generation, startedAt, region, destination, sharedEncoder,
+        );
+      }
       const pipelines = await this.ensureDenoisePipelines();
       const cache = selector.cache;
       const levelCount = cache.settings.levels;
@@ -4933,6 +5430,7 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       }
       for (const item of selector.cache?.resolveScratch || []) item.texture?.destroy();
       for (const buffer of selector.cache?.resolveParamBuffers || []) buffer.destroy();
+      for (const texture of Object.values(selector.cache?.adaptiveScratch?.textures || {})) texture.destroy();
     }
 
     async analyzeScope(canvas, { width = 256, height = 128, generation = 0, tier = "interactive" } = {}) {

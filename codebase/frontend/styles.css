@@ -2010,6 +2010,23 @@ label.select-control {
   display: flex;
 }
 
+.denoise-size-controls {
+  display: grid;
+  gap: 12px;
+}
+
+.denoise-size-controls[hidden] {
+  display: none;
+}
+
+.denoise-size-heading {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font: 400 10px/1.2 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 /* Marks the viewer while Denoise's Show noise replaces the graded picture, so
    the gray view is never mistaken for the edit itself. Bottom-left keeps it
    clear of the status dock above and the navigator at bottom-right. */

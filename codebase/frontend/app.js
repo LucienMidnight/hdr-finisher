@@ -270,9 +270,14 @@ let pathMarchingAntFrame = 0;
 
 const defaultDenoiseDocument = () => ({
   schema_version: 1,
-  hdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0.5 }, analysis: { algorithm_version: "compact-haar-residual-v1", preset: "photo_fine", levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035 } },
-  sdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0.5 }, analysis: { algorithm_version: "compact-haar-residual-v1", preset: "photo_fine", levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035 } },
+  hdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0.5, fine_noise: 0.5, medium_noise: 0.5, coarse_noise: 0.5 }, analysis: { algorithm_version: "adaptive-atrous-v1", preset: "photo_fine", levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035 } },
+  sdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0.5, fine_noise: 0.5, medium_noise: 0.5, coarse_noise: 0.5 }, analysis: { algorithm_version: "adaptive-atrous-v1", preset: "photo_fine", levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035 } },
 });
+
+// The measured method is the default for new work; the original wavelet stays
+// selectable, and documents authored with it keep it.
+const DENOISE_ADAPTIVE_ALGORITHM = "adaptive-atrous-v1";
+const DENOISE_LEGACY_ALGORITHM = "compact-haar-residual-v1";
 
 const DENOISE_ANALYSIS_PRESETS = Object.freeze({
   photo_fine: Object.freeze({ levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035, note: "Two-scale cleanup for fine photographic noise." }),
@@ -1369,6 +1374,8 @@ const els = {
   denoiseBypass: document.getElementById("denoise-bypass"),
   denoiseShowNoise: document.getElementById("denoise-show-noise"),
   noiseViewBadge: document.getElementById("noise-view-badge"),
+  denoiseAlgorithm: document.getElementById("denoise-algorithm"),
+  denoiseLegacyMethodRow: document.getElementById("denoise-legacy-method-row"),
   denoiseMethod: document.getElementById("denoise-method"),
   denoiseMethodNote: document.getElementById("denoise-method-note"),
   denoiseCustomSettings: document.getElementById("denoise-custom-settings"),
@@ -1383,6 +1390,13 @@ const els = {
   denoiseLuminance: document.getElementById("denoise-luminance"),
   denoiseColor: document.getElementById("denoise-color"),
   denoiseDetail: document.getElementById("denoise-detail"),
+  denoiseSizeControls: document.getElementById("denoise-size-controls"),
+  denoiseFine: document.getElementById("denoise-fine"),
+  denoiseMedium: document.getElementById("denoise-medium"),
+  denoiseCoarse: document.getElementById("denoise-coarse"),
+  denoiseFineValue: document.getElementById("denoise-fine-value"),
+  denoiseMediumValue: document.getElementById("denoise-medium-value"),
+  denoiseCoarseValue: document.getElementById("denoise-coarse-value"),
   denoiseAmountValue: document.getElementById("denoise-amount-value"),
   denoiseLuminanceValue: document.getElementById("denoise-luminance-value"),
   denoiseColorValue: document.getElementById("denoise-color-value"),
@@ -3346,6 +3360,7 @@ function bindEvents() {
   });
   els.denoiseBypass?.addEventListener("click", () => setDenoiseEnabled(!state.denoise[state.currentView].enabled));
   els.denoiseShowNoise?.addEventListener("click", toggleDenoiseNoiseView);
+  els.denoiseAlgorithm?.addEventListener("change", () => updateDenoiseAlgorithm(els.denoiseAlgorithm.value));
   els.denoiseMethod?.addEventListener("change", () => updateDenoiseAnalysisPreset(els.denoiseMethod.value));
   els.denoiseLevels?.addEventListener("change", () => updateCustomDenoiseAnalysis("levels", Number(els.denoiseLevels.value)));
   const denoiseAnalysisSliders = [
@@ -3362,6 +3377,9 @@ function bindEvents() {
     [els.denoiseLuminance, "luminance"],
     [els.denoiseColor, "color_noise"],
     [els.denoiseDetail, "detail_recovery"],
+    [els.denoiseFine, "fine_noise"],
+    [els.denoiseMedium, "medium_noise"],
+    [els.denoiseCoarse, "coarse_noise"],
   ];
   for (const [control, key] of denoiseSliders) {
     control?.addEventListener("pointerdown", () => state.previewScheduler?.beginInteraction());
@@ -10182,10 +10200,20 @@ function renderDenoiseControls() {
   group?.classList.toggle("modified", modified);
   const analysis = settings.analysis;
   const analysisEnabled = enabled && !["preparing", "recalculating"].includes(runtime.status);
+  const adaptive = (analysis.algorithm_version || DENOISE_LEGACY_ALGORITHM) === DENOISE_ADAPTIVE_ALGORITHM;
+  if (els.denoiseAlgorithm) {
+    els.denoiseAlgorithm.value = adaptive ? DENOISE_ADAPTIVE_ALGORITHM : DENOISE_LEGACY_ALGORITHM;
+    els.denoiseAlgorithm.disabled = !analysisEnabled;
+  }
+  // Adaptive measures the noise itself, so the wavelet presets and their
+  // custom noise levels mean nothing to it.
+  if (els.denoiseLegacyMethodRow) els.denoiseLegacyMethodRow.hidden = adaptive;
+  // Noise size belongs to the adaptive method; the wavelet has fixed scales.
+  if (els.denoiseSizeControls) els.denoiseSizeControls.hidden = !adaptive;
   els.denoiseMethod.value = analysis.preset;
   els.denoiseMethod.disabled = !analysisEnabled;
   els.denoiseMethodNote.dataset.tooltip = DENOISE_ANALYSIS_PRESETS[analysis.preset]?.note || DENOISE_ANALYSIS_PRESETS.custom.note;
-  els.denoiseCustomSettings.hidden = analysis.preset !== "custom";
+  els.denoiseCustomSettings.hidden = adaptive || analysis.preset !== "custom";
   els.denoiseLevels.value = String(analysis.levels);
   els.denoiseLevels.disabled = !analysisEnabled;
   const analysisControls = [
@@ -10204,6 +10232,9 @@ function renderDenoiseControls() {
     [els.denoiseLuminance, els.denoiseLuminanceValue, settings.controls.luminance],
     [els.denoiseColor, els.denoiseColorValue, settings.controls.color_noise],
     [els.denoiseDetail, els.denoiseDetailValue, settings.controls.detail_recovery],
+    [els.denoiseFine, els.denoiseFineValue, settings.controls.fine_noise ?? 0.5],
+    [els.denoiseMedium, els.denoiseMediumValue, settings.controls.medium_noise ?? 0.5],
+    [els.denoiseCoarse, els.denoiseCoarseValue, settings.controls.coarse_noise ?? 0.5],
   ];
   for (const [input, output, value] of controls) {
     input.value = String(value);
@@ -10293,6 +10324,17 @@ function renderDenoiseAdvancedVisibility() {
   els.denoiseAdvancedPanel?.classList.toggle("hidden", !open);
 }
 
+function updateDenoiseAlgorithm(algorithm) {
+  if (![DENOISE_ADAPTIVE_ALGORITHM, DENOISE_LEGACY_ALGORITHM].includes(algorithm)) return;
+  const lane = state.currentView;
+  state.denoise[lane].analysis.algorithm_version = algorithm;
+  markDenoiseAnalysisDirty();
+  void persistDenoiseSettings();
+  // A method change is a new analysis; with Denoise on, run it now rather than
+  // leaving the previous method's result on screen until Recalculate.
+  if (state.denoise[lane].enabled) void recalculateDenoise(lane);
+}
+
 function updateDenoiseAnalysisPreset(presetName) {
   const preset = DENOISE_ANALYSIS_PRESETS[presetName];
   if (!preset) return;
@@ -10376,18 +10418,14 @@ async function recalculateDenoise(lane = state.currentView, options = {}) {
       state.editRevision,
       {
         name: settings.analysis.preset,
+        algorithm: analysis.algorithm_version || DENOISE_LEGACY_ALGORITHM,
         levels: analysis.levels,
         noiseThreshold: analysis.noise_threshold,
         lumaSigma: analysis.luma_sigma,
         chromaSigma: analysis.chroma_sigma,
       },
       sourceIdentity,
-      {
-        amount: settings.controls.amount,
-        luminance: settings.controls.luminance,
-        colorNoise: settings.controls.color_noise,
-        detailRecovery: settings.controls.detail_recovery,
-      },
+      denoiseRendererControls(settings.controls),
     );
     if (generation !== runtime.generation) return false;
     if (!ready) throw new Error("The denoise analysis was replaced before completion.");
@@ -10422,13 +10460,21 @@ async function updateLiveDenoiseControl(key, value) {
   // events and the last value is the one that lands.
   await denoiseInputQueue().submit({
     lane,
-    controls: {
-      amount: settings.controls.amount,
-      luminance: settings.controls.luminance,
-      colorNoise: settings.controls.color_noise,
-      detailRecovery: settings.controls.detail_recovery,
-    },
+    controls: denoiseRendererControls(settings.controls),
   });
+}
+
+/** The renderer's names for a lane's live denoise controls. */
+function denoiseRendererControls(controls) {
+  return {
+    amount: controls.amount,
+    luminance: controls.luminance,
+    colorNoise: controls.color_noise,
+    detailRecovery: controls.detail_recovery,
+    fineNoise: controls.fine_noise ?? 0.5,
+    mediumNoise: controls.medium_noise ?? 0.5,
+    coarseNoise: controls.coarse_noise ?? 0.5,
+  };
 }
 
 function denoiseInputQueue() {

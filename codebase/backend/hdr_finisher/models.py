@@ -821,12 +821,20 @@ class DenoiseLiveControls(BaseModel):
     luminance: float = Field(default=0.5, ge=0.0, le=1.0)
     color_noise: float = Field(default=0.5, ge=0.0, le=1.0)
     detail_recovery: float = Field(default=0.5, ge=0.0, le=1.0)
+    # Adaptive only: strength by noise size, 0.5 being the measured amount.
+    # Fine covers ~1-4 px, medium ~8 px, coarse ~16-32 px.
+    fine_noise: float = Field(default=0.5, ge=0.0, le=1.0)
+    medium_noise: float = Field(default=0.5, ge=0.0, le=1.0)
+    coarse_noise: float = Field(default=0.5, ge=0.0, le=1.0)
 
 
 class DenoiseAnalysisSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    algorithm_version: Literal["compact-haar-residual-v1"] = "compact-haar-residual-v1"
+    # "adaptive-atrous-v1" measures the noise and ignores the preset fields
+    # below; "compact-haar-residual-v1" is the original wavelet, kept so a
+    # document authored with it renders exactly as it did.
+    algorithm_version: Literal["compact-haar-residual-v1", "adaptive-atrous-v1"] = "adaptive-atrous-v1"
     preset: Literal["photo_fine", "photo_mixed", "render_fine", "render_coarse", "custom"] = "photo_fine"
     levels: int = Field(default=2, ge=1, le=4)
     noise_threshold: float = Field(default=3.0, gt=0.0, le=16.0)
