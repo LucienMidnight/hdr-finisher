@@ -822,10 +822,20 @@ class DenoiseLiveControls(BaseModel):
     color_noise: float = Field(default=0.5, ge=0.0, le=1.0)
     detail_recovery: float = Field(default=0.5, ge=0.0, le=1.0)
     # Adaptive only: strength by noise size, 0.5 being the measured amount.
-    # Fine covers ~1-4 px, medium ~8 px, coarse ~16-32 px.
+    # Finest covers ~1-2 px, fine ~2-4 px, medium ~8 px, coarse ~16-32 px.
+    finest_noise: float = Field(default=0.5, ge=0.0, le=1.0)
     fine_noise: float = Field(default=0.5, ge=0.0, le=1.0)
     medium_noise: float = Field(default=0.5, ge=0.0, le=1.0)
     coarse_noise: float = Field(default=0.5, ge=0.0, le=1.0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _finest_follows_fine(cls, data: Any) -> Any:
+        # Fine used to cover ~1-4 px on its own; a document saved then keeps
+        # its look by giving the new finest band the same setting.
+        if isinstance(data, dict) and "fine_noise" in data and "finest_noise" not in data:
+            return {**data, "finest_noise": data["fine_noise"]}
+        return data
 
 
 class DenoiseAnalysisSettings(BaseModel):

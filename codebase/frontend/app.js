@@ -270,8 +270,8 @@ let pathMarchingAntFrame = 0;
 
 const defaultDenoiseDocument = () => ({
   schema_version: 1,
-  hdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0.5, fine_noise: 0.5, medium_noise: 0.5, coarse_noise: 0.5 }, analysis: { algorithm_version: "adaptive-atrous-v1", preset: "photo_fine", levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035 } },
-  sdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0.5, fine_noise: 0.5, medium_noise: 0.5, coarse_noise: 0.5 }, analysis: { algorithm_version: "adaptive-atrous-v1", preset: "photo_fine", levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035 } },
+  hdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0.5, finest_noise: 0.5, fine_noise: 0.5, medium_noise: 0.5, coarse_noise: 0.5 }, analysis: { algorithm_version: "adaptive-atrous-v1", preset: "photo_fine", levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035 } },
+  sdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0.5, finest_noise: 0.5, fine_noise: 0.5, medium_noise: 0.5, coarse_noise: 0.5 }, analysis: { algorithm_version: "adaptive-atrous-v1", preset: "photo_fine", levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035 } },
 });
 
 // The measured method is the default for new work; the original wavelet stays
@@ -1391,9 +1391,11 @@ const els = {
   denoiseColor: document.getElementById("denoise-color"),
   denoiseDetail: document.getElementById("denoise-detail"),
   denoiseSizeControls: document.getElementById("denoise-size-controls"),
+  denoiseFinest: document.getElementById("denoise-finest"),
   denoiseFine: document.getElementById("denoise-fine"),
   denoiseMedium: document.getElementById("denoise-medium"),
   denoiseCoarse: document.getElementById("denoise-coarse"),
+  denoiseFinestValue: document.getElementById("denoise-finest-value"),
   denoiseFineValue: document.getElementById("denoise-fine-value"),
   denoiseMediumValue: document.getElementById("denoise-medium-value"),
   denoiseCoarseValue: document.getElementById("denoise-coarse-value"),
@@ -3377,6 +3379,7 @@ function bindEvents() {
     [els.denoiseLuminance, "luminance"],
     [els.denoiseColor, "color_noise"],
     [els.denoiseDetail, "detail_recovery"],
+    [els.denoiseFinest, "finest_noise"],
     [els.denoiseFine, "fine_noise"],
     [els.denoiseMedium, "medium_noise"],
     [els.denoiseCoarse, "coarse_noise"],
@@ -10232,6 +10235,7 @@ function renderDenoiseControls() {
     [els.denoiseLuminance, els.denoiseLuminanceValue, settings.controls.luminance],
     [els.denoiseColor, els.denoiseColorValue, settings.controls.color_noise],
     [els.denoiseDetail, els.denoiseDetailValue, settings.controls.detail_recovery],
+    [els.denoiseFinest, els.denoiseFinestValue, settings.controls.finest_noise ?? settings.controls.fine_noise ?? 0.5],
     [els.denoiseFine, els.denoiseFineValue, settings.controls.fine_noise ?? 0.5],
     [els.denoiseMedium, els.denoiseMediumValue, settings.controls.medium_noise ?? 0.5],
     [els.denoiseCoarse, els.denoiseCoarseValue, settings.controls.coarse_noise ?? 0.5],
@@ -10471,6 +10475,8 @@ function denoiseRendererControls(controls) {
     luminance: controls.luminance,
     colorNoise: controls.color_noise,
     detailRecovery: controls.detail_recovery,
+    // Fine covered ~1-4 px before Finest was split from it.
+    finestNoise: controls.finest_noise ?? controls.fine_noise ?? 0.5,
     fineNoise: controls.fine_noise ?? 0.5,
     mediumNoise: controls.medium_noise ?? 0.5,
     coarseNoise: controls.coarse_noise ?? 0.5,

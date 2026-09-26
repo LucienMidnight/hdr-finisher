@@ -265,6 +265,7 @@ def test_adaptive_export_is_exactly_the_adaptive_reconstruction() -> None:
             luminance=lane.controls.luminance,
             color_noise=lane.controls.color_noise,
             detail_recovery=lane.controls.detail_recovery,
+            finest_noise=lane.controls.finest_noise,
             fine_noise=lane.controls.fine_noise,
             medium_noise=lane.controls.medium_noise,
             coarse_noise=lane.controls.coarse_noise,

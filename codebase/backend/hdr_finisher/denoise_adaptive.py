@@ -59,6 +59,19 @@ OPPONENT = np.asarray(
 # 8-16 px patches under-treated.
 BAND_RATIO_RANGE = (0.15, 0.6)
 COARSE_DECAY_RANGE = (0.45, 0.65)
+# Noise that clumps -- a demosaic's maze in deep shadow above all -- reads at
+# the same typical level as grain but has many more neighbourhoods far above
+# it, and the Wiener gain keeps those whole, as scattered crosses. So bands 0
+# and 1 are raised by how far the top of their local noise energy reaches in
+# flat areas compared with white noise read the same way. Plain grain reads 1.
+# Clumping can only be told from texture where the picture is flat, so the
+# correction fades out when too little of the frame is: a busy scene keeps the
+# base estimate rather than having its texture read as noise.
+TAIL_QUANTILE = 0.99
+TAIL_FACTOR_RANGE = (1.0, 4.0)
+TAIL_EVIDENCE_RANGE = (0.005, 0.02)
+TAIL_MIN_SAMPLES = 2000
+TAIL_QUIET_QUANTILE = 0.9
 # Estimation reads at most this many pixels, as evenly spaced tiles, so the
 # analysis cost of a 42 MP export is bounded like that of a preview.
 ESTIMATION_TILE = 256
@@ -92,21 +105,23 @@ class AdaptiveControls:
     Recovery below 0.5 cleans the two finest bands harder; above 0.5 it keeps a
     floor of those bands, grain included, which is what crisp edges need.
 
-    ``fine_noise``, ``medium_noise`` and ``coarse_noise`` scale by noise size
-    the same way, for both components: fine is bands 0-1 (~1-4 px), medium
-    band 2 (~8 px), coarse bands 3-4 (~16-32 px). 0 leaves that size alone.
+    ``finest_noise``, ``fine_noise``, ``medium_noise`` and ``coarse_noise``
+    scale by noise size the same way, for both components: finest is band 0
+    (~1-2 px), fine band 1 (~2-4 px), medium band 2 (~8 px), coarse bands 3-4
+    (~16-32 px). 0 leaves that size alone.
     """
 
     amount: float = 0.5
     luminance: float = 0.5
     color_noise: float = 0.5
     detail_recovery: float = 0.5
+    finest_noise: float = 0.5
     fine_noise: float = 0.5
     medium_noise: float = 0.5
     coarse_noise: float = 0.5
 
     def size_multiplier(self, level: int) -> float:
-        value = self.fine_noise if level < 2 else self.medium_noise if level == 2 else self.coarse_noise
+        value = (self.finest_noise, self.fine_noise, self.medium_noise)[level] if level < 3 else self.coarse_noise
         return 2.0 * float(value)
 
     def strengths(self) -> tuple[float, float]:
@@ -362,8 +377,112 @@ def _quantile_calibration(quantile: float) -> float:
     return _CALIBRATION[quantile]
 
 
+def _window_energies(source: np.ndarray, windows, model: AdaptiveNoiseModel):
+    """Per estimation window, the Wiener window energy of every component in
+    units of the model's own noise: bands 2-3, then bands 0-1."""
+    height, width = source.shape[:2]
+    for y0, x0, y1, x1 in windows:
+        rgb = source[y0:y1, x0:x1, :3]
+        edges = _Edges(y0 == 0, y1 == height, x0 == 0, x1 == width, height, width)
+        sigma = np.sqrt(_noise_variance(rgb @ ACESCG_LUMINANCE, model, edges))[..., None]
+        current = rgb @ OPPONENT.T
+        coarse, fine = [], []
+        for level in range(4):
+            smooth = _atrous(current, level, edges)
+            band = (current - smooth) / sigma
+            current = smooth
+            energy = _box(band * band, WIENER_RADIUS)
+            normalised = [energy[..., component] / _noise_power(model, component, level) for component in range(3)]
+            if level < 2:
+                fine.append(normalised)
+            else:
+                coarse.extend(normalised)
+        yield coarse, fine
+
+
+def _noise_power(model: AdaptiveNoiseModel, component: int, level: int) -> np.float32:
+    # A band measured as noiseless (a clean JPEG) reads as NaN and is not scaled.
+    power = model.band_sigmas[component][level] ** 2
+    return np.float32(power) if power > 1e-12 else np.float32(np.nan)
+
+
+def _energy_tails(source: np.ndarray, windows, model: AdaptiveNoiseModel, quiet_limits) -> tuple[list[list[float]], float]:
+    """``TAIL_QUANTILE`` of the band 0 and 1 window energy per component, read
+    only where bands 2-3 of every component are no busier than white noise
+    usually is, and the fraction of the picture that qualified.
+
+    Texture has energy across sizes, so requiring the coarser bands to look
+    like noise keeps it out. Selecting on bands 0-1 themselves would keep only
+    the places where clumps happen not to be.
+    """
+    kept: list[list[list[np.ndarray]]] = [[[], []] for _ in range(3)]
+    count = total = 0
+    for coarse, fine in _window_energies(source, windows, model):
+        with np.errstate(invalid="ignore"):
+            quiet = np.logical_and.reduce([energy <= limit for energy, limit in zip(coarse, quiet_limits)])
+        count += int(quiet.sum())
+        total += quiet.size
+        for level in (0, 1):
+            for component in range(3):
+                kept[component][level].append(fine[level][component][quiet])
+    tails = []
+    for component in range(3):
+        row = []
+        for level in (0, 1):
+            values = np.concatenate(kept[component][level])
+            values = values[np.isfinite(values)]
+            row.append(float(np.quantile(values, TAIL_QUANTILE)) if values.size >= TAIL_MIN_SAMPLES else float("nan"))
+        tails.append(row)
+    return tails, count / max(total, 1)
+
+
+_TAIL_REFERENCE: dict[str, list] = {}
+
+
+def _tail_reference() -> tuple[list[float], list[list[float]]]:
+    """White noise read through the whole estimator: the coarse-band energies
+    that define quiet (``TAIL_QUIET_QUANTILE`` of each), and the tails read
+    there."""
+    if not _TAIL_REFERENCE:
+        rng = np.random.default_rng(3)
+        noise = rng.standard_normal((1024, 1024, 3)).astype(np.float32) * np.float32(0.01) + np.float32(0.5)
+        model, windows = _measure_model(noise)
+        coarse = [[] for _ in range(6)]
+        for window_coarse, _ in _window_energies(noise, windows, model):
+            for index, energy in enumerate(window_coarse):
+                coarse[index].append(energy.ravel())
+        limits = [float(np.quantile(np.concatenate(values), TAIL_QUIET_QUANTILE)) for values in coarse]
+        _TAIL_REFERENCE["limits"] = limits
+        _TAIL_REFERENCE["tails"] = _energy_tails(noise, windows, model, limits)[0]
+    return _TAIL_REFERENCE["limits"], _TAIL_REFERENCE["tails"]
+
+
+def _tail_confidence(fraction: float) -> float:
+    """How much of a measured clumping to apply, from how much of the picture
+    was flat enough to measure it in."""
+    low, high = TAIL_EVIDENCE_RANGE
+    return float(np.clip((fraction - low) / (high - low), 0.0, 1.0))
+
+
 def estimate_adaptive_model(image: np.ndarray) -> AdaptiveNoiseModel:
     source = np.asarray(image, dtype=np.float32)
+    model, windows = _measure_model(source)
+    limits, reference = _tail_reference()
+    tails, fraction = _energy_tails(source, windows, model, limits)
+    confidence = _tail_confidence(fraction)
+    rows = []
+    for component, row in enumerate(model.band_sigmas):
+        factors = []
+        for level in (0, 1):
+            measured = tails[component][level] / reference[component][level]
+            measured = float(np.clip(measured, *TAIL_FACTOR_RANGE)) if np.isfinite(measured) else 1.0
+            factors.append(1.0 + confidence * (measured - 1.0))
+        rows.append(tuple(float(sigma * np.sqrt(factors[level])) if level < 2 else sigma for level, sigma in enumerate(row)))
+    return AdaptiveNoiseModel(a=model.a, b=model.b, c=model.c, band_sigmas=tuple(rows))
+
+
+def _measure_model(source: np.ndarray) -> tuple[AdaptiveNoiseModel, list[tuple[int, int, int, int]]]:
+    """The noise level and band factors, before the clumping correction."""
     height, width = source.shape[:2]
     windows = _sample_tiles(height, width)
     a, b, c = _estimate_variance_model(source, windows)
@@ -393,4 +512,4 @@ def estimate_adaptive_model(image: np.ndarray) -> AdaptiveNoiseModel:
         ratio = float(np.clip(s1 / max(s0, 1e-12), *BAND_RATIO_RANGE))
         decay = float(np.clip(ratio, *COARSE_DECAY_RANGE))
         rows.append(tuple([s0] + [s0 * ratio * decay ** (level - 1) for level in range(1, LEVELS)]))
-    return AdaptiveNoiseModel(a=a, b=b, c=c, band_sigmas=tuple(rows))
+    return AdaptiveNoiseModel(a=a, b=b, c=c, band_sigmas=tuple(rows)), windows

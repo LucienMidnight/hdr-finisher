@@ -359,15 +359,17 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       chroma: overall * 2 * controls.colorNoise,
       fineMultiplier: 1 + Math.max(0, 0.5 - controls.detailRecovery),
       fineFloor: Math.max(0, controls.detailRecovery - 0.5) * 0.6,
-      // By noise size, for both components: bands 0-1, band 2, bands 3-4.
-      sizeMultiplier: (level) => 2 * (level < 2 ? controls.fineNoise : level === 2 ? controls.mediumNoise : controls.coarseNoise),
+      // By noise size, for both components: band 0, band 1, band 2, bands 3-4.
+      sizeMultiplier: (level) => 2 * (level < 3 ? [controls.finestNoise, controls.fineNoise, controls.mediumNoise][level] : controls.coarseNoise),
     };
   }
 
   // The size controls only the adaptive method reads, validated like the rest.
+  // Finest falls back to Fine, which covered both bands before it was split.
   function adaptiveDenoiseSizes(controls = {}) {
-    return Object.fromEntries(["fineNoise", "mediumNoise", "coarseNoise"].map((name) => {
-      const value = Number(controls[name] ?? 0.5);
+    const fallback = { finestNoise: controls.fineNoise };
+    return Object.fromEntries(["finestNoise", "fineNoise", "mediumNoise", "coarseNoise"].map((name) => {
+      const value = Number(controls[name] ?? fallback[name] ?? 0.5);
       if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error(`${name} must be between 0 and 1`);
       return [name, value];
     }));
@@ -4742,6 +4744,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           luminance: controls.luminance ?? 0.5,
           colorNoise: controls.colorNoise ?? controls.color_noise ?? 0.5,
           detailRecovery: controls.detailRecovery ?? controls.detail_recovery ?? 0.5,
+          finestNoise: controls.finestNoise ?? controls.finest_noise ?? controls.fineNoise ?? controls.fine_noise ?? 0.5,
           fineNoise: controls.fineNoise ?? controls.fine_noise ?? 0.5,
           mediumNoise: controls.mediumNoise ?? controls.medium_noise ?? 0.5,
           coarseNoise: controls.coarseNoise ?? controls.coarse_noise ?? 0.5,

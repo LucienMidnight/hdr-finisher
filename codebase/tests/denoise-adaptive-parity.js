@@ -83,7 +83,7 @@ function halfToFloat(bits) {
     // Uneven size and detail settings, so the per-size mapping has to agree on
     // both sides rather than only at the neutral defaults.
     await page.evaluate(() => document.getElementById("denoise-advanced-toggle").click());
-    for (const [id, value] of [["denoise-fine", 0.3], ["denoise-medium", 0.8], ["denoise-coarse", 0.95], ["denoise-amount", 0.6], ["denoise-detail", 0.7]]) {
+    for (const [id, value] of [["denoise-finest", 0.65], ["denoise-fine", 0.3], ["denoise-medium", 0.8], ["denoise-coarse", 0.95], ["denoise-amount", 0.6], ["denoise-detail", 0.7]]) {
       await page.evaluate(([target, next]) => {
         const input = document.getElementById(target);
         input.value = String(next);
@@ -158,7 +158,7 @@ spec = json.load(open(${JSON.stringify(path.join(scratch, "model.json"))}))
 image = np.fromfile(${JSON.stringify(inputPath)}, dtype=np.float32).reshape(${context.height}, ${context.width}, 4)
 model = da.AdaptiveNoiseModel(a=spec["a"], b=spec["b"], c=spec["c"], band_sigmas=tuple(tuple(row) for row in spec["band_sigmas"]))
 c = spec["controls"]
-controls = da.AdaptiveControls(amount=c["amount"], luminance=c["luminance"], color_noise=c["colorNoise"], detail_recovery=c["detailRecovery"], fine_noise=c["fineNoise"], medium_noise=c["mediumNoise"], coarse_noise=c["coarseNoise"])
+controls = da.AdaptiveControls(amount=c["amount"], luminance=c["luminance"], color_noise=c["colorNoise"], detail_recovery=c["detailRecovery"], finest_noise=c["finestNoise"], fine_noise=c["fineNoise"], medium_noise=c["mediumNoise"], coarse_noise=c["coarseNoise"])
 da.resolve_adaptive(image, model, controls).astype(np.float32).tofile(${JSON.stringify(outputPath)})
 `], { stdio: "inherit" });
     const reference = new Float32Array(fs.readFileSync(outputPath).buffer.slice(0));
