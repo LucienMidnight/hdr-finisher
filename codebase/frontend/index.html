@@ -1377,6 +1377,7 @@
           </div>
 
           <div class="film-module-header"><strong>Halation</strong><label class="film-module-toggle"><input type="checkbox" checked data-path="current.film_look.halation_enabled"> Enabled</label></div>
+          <div class="film-map-actions"><button class="local-overlay-toggle film-map-toggle" type="button" aria-pressed="false" data-path="current.film_look.halation_view_map" data-show-label="Show halation map" data-hide-label="Hide halation map" data-tooltip="Shows which highlights halation qualifies, as a grayscale map. Preview only: never exported."><span class="local-overlay-icon" aria-hidden="true"></span><span>Show halation map</span></button></div>
           <div class="control-pair">
             <div class="control-row" data-control-path="current.film_look.halation_amount"><div class="control-heading"><label for="film-halation-amount">Amount</label><output data-value-path="current.film_look.halation_amount">0%</output></div><input id="film-halation-amount" type="range" min="0" max="100" step="1" value="0" data-path="current.film_look.halation_amount"></div>
             <div class="control-row" data-control-path="current.film_look.halation_sensitivity"><div class="control-heading"><label for="film-halation-sensitivity">Sensitivity</label><output data-value-path="current.film_look.halation_sensitivity">75%</output></div><input id="film-halation-sensitivity" type="range" min="0" max="100" step="1" value="75" data-path="current.film_look.halation_sensitivity"></div>
@@ -1386,7 +1387,6 @@
             <div class="control-row" data-control-path="current.film_look.halation_hue_offset"><div class="control-heading"><label for="film-halation-hue">Hue Offset</label><output data-value-path="current.film_look.halation_hue_offset">0%</output></div><input id="film-halation-hue" type="range" min="-100" max="100" step="1" value="0" data-path="current.film_look.halation_hue_offset"></div>
             <div class="control-row" data-control-path="current.film_look.halation_saturation"><div class="control-heading"><label for="film-halation-saturation">Saturation</label><output data-value-path="current.film_look.halation_saturation">75%</output></div><input id="film-halation-saturation" type="range" min="0" max="100" step="1" value="75" data-path="current.film_look.halation_saturation"></div>
           </div>
-          <div class="film-map-actions"><button class="local-overlay-toggle film-map-toggle" type="button" aria-pressed="false" data-path="current.film_look.halation_view_map" data-show-label="Show halation map" data-hide-label="Hide halation map" data-tooltip="Shows which highlights halation qualifies, as a grayscale map. Preview only: never exported."><span class="local-overlay-icon" aria-hidden="true"></span><span>Show halation map</span></button></div>
 
           <div class="film-module-header"><strong>Bloom &amp; Diffusion</strong><label class="film-module-toggle"><input type="checkbox" checked data-path="current.film_look.bloom_enabled"> Enabled</label></div>
           <div class="control-pair">
@@ -1406,6 +1406,7 @@
           <div class="control-row" data-control-path="current.film_look.film_resolution"><div class="control-heading"><label for="film-resolution">Film Resolution</label><output data-value-path="current.film_look.film_resolution">100%</output></div><input id="film-resolution" type="range" min="0" max="100" step="1" value="100" data-path="current.film_look.film_resolution"></div>
 
           <div class="film-module-header"><strong>Grain</strong><label class="film-module-toggle"><input type="checkbox" checked data-path="current.film_look.grain_enabled"> Enabled</label></div>
+          <div class="film-map-actions"><button class="local-overlay-toggle film-map-toggle" type="button" aria-pressed="false" data-path="current.film_look.grain_view_map" data-show-label="Show grain map" data-hide-label="Hide grain map" data-tooltip="Shows the grain field alone on mid-gray, at the strength each tone of the picture receives. Preview only: never exported."><span class="local-overlay-icon" aria-hidden="true"></span><span>Show grain map</span></button></div>
           <div class="control-pair">
             <label class="select-control"><span class="tooltip-trigger" data-tooltip="Color negative builds grain from three dye layers of different sizes. Black &amp; white uses one layer of sharper silver grains and has no color grain.">Film Type</span><select id="film-grain-type" data-path="current.film_look.grain_film_type"><option value="color_negative" selected>Color negative</option><option value="black_and_white">Black &amp; white</option></select></label>
           </div>
@@ -1430,7 +1431,6 @@
             <div class="control-row" data-control-path="current.film_look.grain_midtone_response"><div class="control-heading"><label for="film-grain-mid">Midtone Response</label><output data-value-path="current.film_look.grain_midtone_response">100%</output></div><input id="film-grain-mid" type="range" min="0" max="150" step="1" value="100" data-path="current.film_look.grain_midtone_response"></div>
             <div class="control-row" data-control-path="current.film_look.grain_highlight_response"><div class="control-heading"><label for="film-grain-highlight">Highlight Response</label><output data-value-path="current.film_look.grain_highlight_response">100%</output></div><input id="film-grain-highlight" type="range" min="0" max="150" step="1" value="100" data-path="current.film_look.grain_highlight_response"></div>
           </div>
-          <div class="film-map-actions"><button class="local-overlay-toggle film-map-toggle" type="button" aria-pressed="false" data-path="current.film_look.grain_view_map" data-show-label="Show grain map" data-hide-label="Hide grain map" data-tooltip="Shows the grain field alone on mid-gray, at the strength each tone of the picture receives. Preview only: never exported."><span class="local-overlay-icon" aria-hidden="true"></span><span>Show grain map</span></button></div>
         </div>
       </section>
 
