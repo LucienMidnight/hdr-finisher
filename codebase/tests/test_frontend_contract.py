@@ -52,7 +52,7 @@ def test_raw_highlight_reconstruction_is_a_versioned_module_stack_control() -> N
     assert '.control-group[data-group="raw-highlights"] > .control-group-header::before { content: "02"; }' in css
     assert '.control-group[data-group="geometry"] > .control-group-header::before { content: "03"; }' in css
     assert '.control-group[data-group="denoise"] > .control-group-header::before { content: "05"; }' in css
-    assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "16"; }' in css
+    assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "17"; }' in css
     assert 'rawHighlightGroup?.classList.toggle("hidden", !bridgeQualified)' not in script
     assert 'highlight_reconstruction: {' in script
     assert 'method: els.rawHighlightMethod?.value || "opposed_color_v1"' in script
@@ -150,7 +150,7 @@ def test_live_denoise_input_is_coalesced() -> None:
     assert markup.index("latest-work-queue.js") < markup.index("app.js")
     live_control = javascript[
         javascript.index("async function updateLiveDenoiseControl("):
-        javascript.index("function denoiseInputQueue()")
+        javascript.index("function denoiseRendererControls(")
     ]
     # The live control path goes through the queue, not straight to the
     # renderer, so a drag costs runs rather than input events.
@@ -234,9 +234,12 @@ def test_processing_scale_contract_is_declared_and_consumed() -> None:
         'id: "geometry"',
     ):
         assert module_id in contract
-    # The quarter-resolution grid the halo converts through is the shader's own
-    # constant, so a shader change cannot silently outrun the halo.
-    assert "const SPATIAL_SCALE: f32 = 4.0;" in webgpu
+    # The spatial grid the halo converts through is one rule on both sides
+    # (1, 2 or 4 pixels a texel by the frame's long edge), so a shader change
+    # cannot silently outrun the halo. Halos stay multiples of four.
+    assert "return select(select(1.0, 2.0, longEdge >= 2048.0), 4.0, longEdge >= 4096.0);" in webgpu
+    assert "if (longEdge >= 4096) return 4;" in contract
+    assert "return longEdge >= 2048 ? 2 : 1;" in contract
     assert "const SPATIAL_SCALE = 4;" in contract
     # The viewport request declares the processing scale it will run at, derived
     # from the same contract the renderer and the CPU reference use.
@@ -564,7 +567,7 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert 'id="tone-equalizer-add"' in html
     assert 'id="tone-equalizer-remove"' in html
     assert 'id="tone-equalizer-radius"' in html
-    assert html.count("data-section-path=") == 15
+    assert html.count("data-section-path=") == 16
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
     assert "--bypass-icon-shape:" in css
     assert "--bypass-icon-visible: var(--accent)" in css
@@ -586,7 +589,8 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert '.control-group[data-group="hdr-highlights"] > .control-group-header::before { content: "10"; }' in css
     assert '.control-group[data-group="curves"] > .control-group-header::before { content: "10"; }' in css
     assert '"sdr-tone", "sdr-highlights", "sdr-equalizer", "sdr-zones", "curves", "sdr-color"' in script
-    assert "colorGrading.after(localAdjustmentsGroup)" in script
+    assert "colorGrading.after(blackAndWhiteGroup)" in script
+    assert "beforeLocals.after(localAdjustmentsGroup)" in script
     assert "Output target" in html
     assert "Sets the final peak after grading" in html
     assert '<option value="clip">Clip</option>' in html
@@ -784,7 +788,7 @@ def test_explanatory_copy_uses_title_hover_without_persistent_helper_rows() -> N
     assert 'data-tooltip="Adjust exposure by scene brightness.' in html
     assert 'data-tooltip="Adjust the tone-mapped SDR image by brightness.' in html
     assert html.count('data-tooltip="Range controls how wide a luminance zone is;') == 2
-    assert 'data-tooltip="Corrective, scale-selective detail.' in html
+    assert 'data-tooltip="Scale-selective detail:' in html
     assert 'data-tooltip="Controls physical enlargement for halation, resolution, and grain.' in html
     assert 'data-tooltip="Strip modes anchor the cross-scan dimension' in html
     assert 'id="denoise-method-note" class="tooltip-trigger"' in html
@@ -1584,8 +1588,25 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     # does not masquerade as a pipeline-order regression.
     # 160 and 161 carry the tile origin for tiled execution; Direct leaves
     # them at zero, so every index below keeps its meaning. 166 carries
-    # Denoise's Show noise view flag; 167-174 describe the Clarity map.
-    assert "const PARAM_COUNT = 175" in shader
+    # Denoise's Show noise view flag; 167-174 describe the Clarity map; 175 is
+    # the grain film type and 176 the grain seed's high half.
+    assert "const PARAM_COUNT = 186" in shader
+    # BW-01: Black & White runs straight after Color in every lane and path,
+    # and before the SDR highlight stage on both SDR paths.
+    assert "let scene = sceneColor(hdrContrast(hdrBase(source)));" in shader
+    assert "let balanced = blackAndWhite(scene, guide);" in shader
+    assert "fn sdrScenePrefix(source: vec3f) -> vec3f {" in shader and "return sceneColor(rgb);" in shader
+    assert "let grey = blackAndWhite(scene, guide);" in shader
+    assert "acescgToSrgb(grey) * ((100.0 / 203.0) / 0.18)" in shader
+    assert "toneMap(grey)" in shader
+    assert "rgb = acescgToSrgb(blackAndWhite(srgbToAcescg(rgb), srgbToAcescg(guide)));" in shader
+    # Each pixel's colour comes from the source around it, only with a slider set.
+    assert "blackAndWhiteGuideSource = blackAndWhiteLatticeMean(sourceTexture, coordinate, validTileDimensions());" in shader
+    assert "guideSource = peakBlackAndWhiteLatticeMean(peakSource, vec2i(id.xy), vec2i(dimensions));" in shader
+    assert "return peakAcescgToSrgb(peakBlackAndWhite(scene, guide)) * ((100.0 / 203.0) / 0.18);" in shader
+    assert "rgb = peakAcescgToSrgb(peakBlackAndWhite(peakSrgbToAcescg(rgb), peakSrgbToAcescg(guide)));" in shader
+    assert "const GRAIN_FILM_TYPE_INDEX = 175" in shader
+    assert "const GRAIN_SEED_HIGH_INDEX = 176" in shader
     assert "const CLARITY_MAP_SCALE_INDEX = 167" in shader
     assert "const CLARITY_MAP_ORIGIN_Y_INDEX = 171" in shader
     assert "const NOISE_VIEW_INDEX = 166" in shader
@@ -1608,8 +1629,8 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     assert "localDetailVerticalFragmentMain" in shader
     assert "localDetailCompositeFragmentMain" in shader
     assert "localDetailMixFragmentMain" in shader
-    assert "let contrasted = hdrContrast(hdrBase(source))" in shader
-    assert "let balanced = sceneColor(contrasted)" in shader
+    assert "let scene = sceneColor(hdrContrast(hdrBase(source)))" in shader
+    assert "let balanced = blackAndWhite(scene, guide)" in shader
     assert "let equalized = toneEqualizer(balanced)" in shader
     assert "let primaries = hdrPrimaries(equalized)" in shader
     # Film Look resolves into its own target so the output limiter can anchor on
@@ -1637,8 +1658,8 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     assert shader.count("min(0.12 * (extrema.y - extrema.x), SHARPEN_HALO_ALLOWANCE_EV)") == 2
     assert "0.12 * (extrema.y - extrema.x);" not in shader
     assert "sdrReferenceColor(sdrContrast(toneEqualizer(highlightRecovery(rgb))))" in shader
-    assert "toneMap(sceneColor(rgb))" in shader
-    assert "sdrPrimaries(sdrContrast(toneEqualizer(highlightRecovery(toneMap(sceneColor(rgb))))))" in shader
+    assert "toneMap(grey)" in shader
+    assert "sdrPrimaries(sdrContrast(toneEqualizer(highlightRecovery(toneMap(grey)))))" in shader
     assert "let y = max(select(lumaSrgb(input), lumaAces(input), p[0] > 0.5), 0.0)" in shader
     assert "retoneMapSdrReference(rgb)" in shader
     assert "let displayReferenceWhite = 100.0 / 203.0" in shader
@@ -1660,7 +1681,7 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     assert "fn hdrSoftCeiling(input: vec3f) -> vec3f" in shader
     assert "fn sdrPeakFit(input: vec3f) -> vec3f" in shader
     assert "fn sdrSoftCeiling(input: vec3f) -> vec3f" in shader
-    assert "acescgToSrgb(sceneColor(rgb)) * ((100.0 / 203.0) / 0.18)" in shader
+    assert "acescgToSrgb(grey) * ((100.0 / 203.0) / 0.18)" in shader
     assert "let transport = acescgToBt2020(input)" in shader
     assert "return bt2020ToAcescg(mappedTransport)" in shader
     assert "(mappedRgb - vec3f(targetValue)) * (1.0 - progress)" in shader
@@ -1736,8 +1757,8 @@ def test_advanced_finishing_controls_are_wired_to_the_editor_and_export_contract
     assert "let diffusionDelta = spatial.rgb - qualified" in shader
     assert "let edgeProtection = smoothRange(0.025, 0.20, relativeDetail)" in shader
     assert "(1.0 - edgeProtection)" in shader
-    assert "chromaHighlightGuard" in shader
-    assert "rgb *= exp2(vec3f(mono * amount))" in shader
+    assert "chroma = p[104] * (1.0 - 0.8 * smoothRange(0.88, 1.0, signal))" in shader
+    assert "rgb *= exp2(grain * amount)" in shader
     assert "if (p[158] > 0.5) { rgb = vec3f(filmLumaFromSignal(0.5)); }" in shader
 
 
@@ -1754,14 +1775,19 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     for path in [
         "print_strength", "color_density", "grain_amount", "grain_shadow_response",
         "grain_midtone_response", "grain_highlight_response", "halation_amount",
-        "bloom_amount", "image_softness", "microcontrast", "grain_film_format",
+        "bloom_amount", "grain_film_format",
         "grain_capture_geometry", "grain_custom_width_mm", "grain_custom_height_mm",
         "grain_view_map", "halation_view_map",
         "red_response", "green_response", "blue_response",
-        "highlight_desaturation", "shadow_desaturation",
+        "highlight_desaturation", "shadow_desaturation", "grain_film_type",
     ]:
         assert f'data-path="current.film_look.{path}"' in html
-    assert "grainValueNoise" in (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    # NEXT-01 #2: Softness and Microcontrast are Detail controls now.
+    for path in ("image_softness", "microcontrast", "image_structure_enabled"):
+        assert f'data-path="current.film_look.{path}"' not in html
+    assert 'data-path="current.detail.softness"' in html
+    assert 'data-path="current.detail.microcontrast"' in html
+    assert "fn grainLayerNoise" in (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
     shader = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
     assert "halationEdgeSource" in shader
     assert "center * smoothRange(0.004, 0.12, relativeEdge)" in shader
@@ -1795,8 +1821,9 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     assert "filmPhysicalBlur(coordinate, 0.04 + 0.08 * resolutionLoss, 32)" in shader
     # Bloom stays output-relative and halation stays film-plane -- the change is
     # only which extent they are relative to.
-    assert "clamp(length(frameSpatial) * max(p[95], 0.0) / 100.0, 0.25, 64.0)" in shader
-    assert "clamp(filmPixelsPerMm(frameSpatial) * halationRadiusMm, 0.25, 64.0)" in shader
+    assert "let blurCap = 256.0 / spatialScale();" in shader
+    assert "clamp(length(frameSpatial) * max(p[95], 0.0) / 100.0, 0.25, blurCap)" in shader
+    assert "clamp(filmPixelsPerMm(frameSpatial) * halationRadiusMm, 0.25, blurCap)" in shader
     assert "length(frameSpatial) * max(p[88], 0.0) / 100.0" not in shader
     assert "filmBlur(coordinate, 0.06, 24)" in shader
     assert "let canonicalTintSrgb = mix(vec3f(warmY), warm" in shader
@@ -2388,7 +2415,7 @@ def test_perspective_module_is_numbered_fourth_and_exposes_draft_guided_tools() 
     assert 'id="perspective-horizontal-tool"' in html
     assert 'id="perspective-apply"' in html and 'id="perspective-cancel"' in html
     assert '.control-group[data-group="perspective"] > .control-group-header::before { content: "04"; }' in css
-    assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "16"; }' in css
+    assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "17"; }' in css
     assert "function openPerspectiveMode()" in javascript
     assert "function closePerspectiveMode(commit)" in javascript
     assert 'transient_adjustments: true' in javascript
@@ -2512,7 +2539,10 @@ def test_adjustment_group_presets_are_scoped_persistent_and_available_in_headers
     assert "function builtInGroupPresets(context)" in javascript
     assert 'kind.textContent = "Built-in"' in javascript
     assert "if (!preset.builtIn)" in javascript
-    assert "const FILM_LOOK_PRESET_RECIPE_VERSION = 1" in javascript
+    assert "const FILM_LOOK_PRESET_RECIPE_VERSION = 2" in javascript
+    start = javascript.index("const FILM_LOOK_PRESETS")
+    presets = javascript[start:javascript.index("\n]);", start)]
+    assert "image_softness" not in presets and "microcontrast" not in presets
     assert "function completeFilmLookRecipe(values)" in javascript
     assert 'name: "Clean Cinema"' in javascript
     assert 'name: "Soft Color Negative"' in javascript
@@ -2571,9 +2601,10 @@ def test_detail_uses_numbered_module_header_and_sharpen_targeting_hierarchy() ->
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
 
     assert '>Detail <span class="module-modified-marker" aria-hidden="true"></span></button>' in html
-    assert '.control-group[data-group="detail"] > .control-group-header::before { content: "14"; }' in css
-    assert '.control-group[data-group="film-look"] > .control-group-header::before { content: "15"; }' in css
-    assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "16"; }' in css
+    assert '.control-group[data-group="black-and-white"] > .control-group-header::before { content: "13"; }' in css
+    assert '.control-group[data-group="detail"] > .control-group-header::before { content: "15"; }' in css
+    assert '.control-group[data-group="film-look"] > .control-group-header::before { content: "16"; }' in css
+    assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "17"; }' in css
     assert 'data-control-path="current.detail.sharpen_amount"' in html
     assert '<div class="slider-group-relationship">Targeting</div>' in html
     assert 'class="control-row compact-subrail" data-control-path="current.detail.sharpen_radius_px"' in html

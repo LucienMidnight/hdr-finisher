@@ -5699,8 +5699,7 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 
 .film-module-header > span { color: var(--quiet); }
 
-.film-module-toggle,
-.film-map-toggle {
+.film-module-toggle {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -5712,9 +5711,9 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
   text-transform: none;
 }
 
-.film-map-toggle {
-  justify-content: flex-end;
-  width: 100%;
+/* The map views use Denoise's Show noise button, laid out the same way. */
+.film-map-actions {
+  display: flex;
   padding: 2px 0 4px;
 }
 
@@ -8022,10 +8021,11 @@ body[data-active-lane="hdr"] .control-group[data-group="curves"] > .control-grou
 .control-group[data-group="hdr-color"] > .control-group-header::before,
 .control-group[data-group="sdr-color"] > .control-group-header::before { content: "11"; }
 .control-group[data-group="color-grading"] > .control-group-header::before { content: "12"; }
-.control-group[data-group="local-adjustments"] > .control-group-header::before { content: "13"; }
-.control-group[data-group="detail"] > .control-group-header::before { content: "14"; }
-.control-group[data-group="film-look"] > .control-group-header::before { content: "15"; }
-.control-group[data-group="vignette"] > .control-group-header::before { content: "16"; }
+.control-group[data-group="black-and-white"] > .control-group-header::before { content: "13"; }
+.control-group[data-group="local-adjustments"] > .control-group-header::before { content: "14"; }
+.control-group[data-group="detail"] > .control-group-header::before { content: "15"; }
+.control-group[data-group="film-look"] > .control-group-header::before { content: "16"; }
+.control-group[data-group="vignette"] > .control-group-header::before { content: "17"; }
 
 .control-group:not(.collapsed) > .control-group-header::before {
   color: var(--accent-strong);
@@ -8551,7 +8551,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
 
 .checkbox-row > input[type="checkbox"],
 .film-module-toggle > input[type="checkbox"],
-.film-map-toggle > input[type="checkbox"],
 .proof-enable-row > input[type="checkbox"],
 .gradient-luma-toggle > input[type="checkbox"] {
   appearance: none;
@@ -8581,7 +8580,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
 
 .checkbox-row > input[type="checkbox"]::before,
 .film-module-toggle > input[type="checkbox"]::before,
-.film-map-toggle > input[type="checkbox"]::before,
 .proof-enable-row > input[type="checkbox"]::before,
 .gradient-luma-toggle > input[type="checkbox"]::before {
   content: "";
@@ -8604,7 +8602,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
 
 .checkbox-row > input[type="checkbox"]:checked,
 .film-module-toggle > input[type="checkbox"]:checked,
-.film-map-toggle > input[type="checkbox"]:checked,
 .proof-enable-row > input[type="checkbox"]:checked,
 .gradient-luma-toggle > input[type="checkbox"]:checked {
   border-color: transparent;
@@ -8625,7 +8622,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
 
 .checkbox-row > input[type="checkbox"]:checked::before,
 .film-module-toggle > input[type="checkbox"]:checked::before,
-.film-map-toggle > input[type="checkbox"]:checked::before,
 .proof-enable-row > input[type="checkbox"]:checked::before,
 .gradient-luma-toggle > input[type="checkbox"]:checked::before {
   transform: translate(28px, -50%);
@@ -8633,7 +8629,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
 
 .checkbox-row > input[type="checkbox"]:focus-visible,
 .film-module-toggle > input[type="checkbox"]:focus-visible,
-.film-map-toggle > input[type="checkbox"]:focus-visible,
 .proof-enable-row > input[type="checkbox"]:focus-visible,
 .gradient-luma-toggle > input[type="checkbox"]:focus-visible {
   outline: 0;
@@ -8722,7 +8717,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
 
   .checkbox-row > input[type="checkbox"]:checked,
   .film-module-toggle > input[type="checkbox"]:checked,
-  .film-map-toggle > input[type="checkbox"]:checked,
   .proof-enable-row > input[type="checkbox"]:checked,
   .gradient-luma-toggle > input[type="checkbox"]:checked {
     outline: 2px solid Highlight;
@@ -8732,7 +8726,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
 @media (prefers-reduced-motion: reduce) {
   .checkbox-row > input[type="checkbox"],
   .film-module-toggle > input[type="checkbox"],
-  .film-map-toggle > input[type="checkbox"],
   .proof-enable-row > input[type="checkbox"],
   .gradient-luma-toggle > input[type="checkbox"] {
     transition: none;
@@ -9303,3 +9296,14 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
   color: var(--inverse);
   font-weight: 600;
 }
+
+/* BW-01 Black & White: each track runs from the grey that colour becomes when
+   darkened to the grey it becomes when lightened, through the colour itself. */
+.bw-reds .slider-track { background: linear-gradient(90deg, #2b2b2b, #c8453f, #e6e6e6); }
+.bw-oranges .slider-track { background: linear-gradient(90deg, #2b2b2b, #d27a34, #e6e6e6); }
+.bw-yellows .slider-track { background: linear-gradient(90deg, #2b2b2b, #cdb13a, #e6e6e6); }
+.bw-greens .slider-track { background: linear-gradient(90deg, #2b2b2b, #4c9a55, #e6e6e6); }
+.bw-aquas .slider-track { background: linear-gradient(90deg, #2b2b2b, #3fa3a6, #e6e6e6); }
+.bw-blues .slider-track { background: linear-gradient(90deg, #2b2b2b, #3f6fc4, #e6e6e6); }
+.bw-purples .slider-track { background: linear-gradient(90deg, #2b2b2b, #7b52c0, #e6e6e6); }
+.bw-magentas .slider-track { background: linear-gradient(90deg, #2b2b2b, #b84f9a, #e6e6e6); }

@@ -431,6 +431,10 @@ def _semantic_sdr_translation(adjustments: AdjustmentState, settled_hdr: np.ndar
     sdr.film_look_section_enabled = hdr.film_look_section_enabled
     sdr.color_grading_section_enabled = hdr.color_grading_section_enabled
     sdr.vignette_section_enabled = hdr.vignette_section_enabled
+    # A mono HDR target needs a mono SDR: the translation cannot reach grey
+    # through Saturation alone once the B&W sliders reshape it (BW-01).
+    sdr.black_and_white_section_enabled = hdr.black_and_white_section_enabled
+    sdr.black_and_white = hdr.black_and_white.model_copy(deep=True)
 
     for name in (
         "white_balance_kelvin", "tint", "saturation", "vibrance",
@@ -692,7 +696,6 @@ def _tonal_analysis_copy(adjustments: AdjustmentState) -> AdjustmentState:
         look.grain_enabled = False
         look.halation_enabled = False
         look.bloom_enabled = False
-        look.image_structure_enabled = False
         look.film_resolution = 100.0
     return result
 

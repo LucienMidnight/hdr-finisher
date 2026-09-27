@@ -64,3 +64,13 @@ def test_denoise_analysis_accepts_planned_wavelet_methods_and_custom_scales() ->
         })
         assert settings.hdr.analysis.preset == preset
         assert settings.hdr.analysis.levels == levels
+
+
+def test_documents_saved_before_finest_keep_their_fine_setting_on_it() -> None:
+    from hdr_finisher.models import DenoiseLiveControls
+
+    old = DenoiseLiveControls.model_validate({"fine_noise": 0.76, "medium_noise": 0.16})
+    assert old.finest_noise == 0.76 and old.fine_noise == 0.76
+    both = DenoiseLiveControls.model_validate({"finest_noise": 0.9, "fine_noise": 0.3})
+    assert (both.finest_noise, both.fine_noise) == (0.9, 0.3)
+    assert DenoiseLiveControls().finest_noise == 0.5

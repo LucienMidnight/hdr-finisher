@@ -58,6 +58,16 @@ These limits apply independently to the HDR and SDR color panels.
 
 Values above the slider range are for deliberate effects and difficult corrections. Extreme Saturation, Vibrance, or Purity can create negative or far-out-of-gamut intermediate colors. The final HDR and SDR output stages sanitize or compress them, but that does not guarantee a pleasing result.
 
+## Black & White in HDR and SDR
+
+Off by default; the eye button turns it on for the current rendition. All sliders at 0 equal Saturation −100.
+
+| Control | Purpose | Range |
+|---|---|---|
+| Reds, Oranges, Yellows, Greens, Aquas, Blues, Purples, Magentas | How bright that colour becomes in grey. ±100 is two stops brighter or darker for a fully coloured area; greys never move; deep shadows respond less. | -100 to +100 |
+| Presets | Yellow, Orange, Red, Green, Blue filters; Infrared look; Orthochromatic. Set the sliders only. | — |
+| Match HDR black & white | SDR only: copies the HDR sliders and on/off once. | — |
+
 ## Film Look in HDR and SDR
 
 Film Look uses the same structure in each branch. Amount and sensitivity controls are normalized; Radius is a percentage of the current image diagonal.
@@ -72,18 +82,23 @@ Film Look uses the same structure in each branch. Amount and sensitivity control
 | Halation Amount / Sensitivity | Control warm highlight-edge scatter and the branch-relative highlight population that qualifies. | 0–100% |
 | Halation Radius | Sets edge-scatter scale as a percentage of image diagonal. | Slider 0–2%; direct entry 0–5% |
 | Halation Hue Offset / Saturation | Tune the warm scatter color without changing the source grade. | Hue -100 to +100%; Saturation 0–100% |
-| View qualification map | Replaces the viewer with the Halation qualification diagnostic. It is suppressed during export. | Off/On |
+| Show halation map | Replaces the viewer with a grey map of where the halation glow can appear. It shows placement, not strength. It is suppressed during export. | Off/On |
 | Bloom Amount / Sensitivity | Control broad neutral highlight diffusion and branch-relative qualification. | 0–100% |
 | Bloom Radius | Sets diffusion scale as a percentage of image diagonal. | Slider 0–4%; direct entry 0–10% |
 | Highlight Detail | Retains local bright-source detail inside Bloom. Technically, it crossfades the energy-moving diffusion component while leaving the additive optical bloom available: 100% preserves the source edge and 0% applies maximum core softening. | 0–100% |
-| Image Softness | Removes digital edge hardness before grain. | 0–100% |
-| Microcontrast | Reduces or increases fine local contrast before grain. | -100 to +100% |
 | Grain Amount / Size / Softness / Chroma | Set density-grain strength, scale, clumping, and colored component. | 0–100% |
 | Shadow / Midtone / Highlight Response | Weight grain by local density instead of overlaying uniform noise. | 0–150% |
 | Film Resolution | Reduces pre-grain resolving character as the value moves below 100%. | 0–100% |
-| View grain map | Replaces the viewer with the grain field alone, painted on a neutral mid-grey card that still carries the tonal response the picture drives. It is suppressed during export, and the Halation map takes precedence if both are on. | Off/On |
+| Show grain map | Replaces the viewer with the grain field alone, painted on a neutral mid-grey card that still carries the tonal response the picture drives. It is suppressed during export, and the Halation map takes precedence if both are on. | Off/On |
 
 The deterministic grain seed lives in shared adjustment state. HDR and SDR can use different response values but sample the same spatial field.
+
+Softness and Microcontrast moved to the Detail section:
+
+| Control | Purpose | Range |
+|---|---|---|
+| Softness | Softens digital edge hardness across the whole picture, in colour. Runs after local adjustments, before grain; follows Detail's on/off, not Film Look's Look Strength. | 0–100 |
+| Microcontrast | Lowers or raises fine local contrast across the whole picture, in colour. Works differently from Texture. Same placement as Softness. | -100 to +100 |
 
 ## Lift, Gamma, Gain in HDR and SDR
 

@@ -40,6 +40,7 @@ from .adjustments import (
     FrameWindow,
     HighlightAnchor,
     apply_fixed_source_adjustments,
+    black_and_white_needs_guide,
     clip_hdr_output_target,
     compress_hdr_output_highlights,
     hdr_highlight_peak_signal,
@@ -205,11 +206,15 @@ def strip_execution_refusals(
         spatial = (
             (look.halation_enabled and (look.halation_view_map or (look.halation_amount > 0.0 and look.halation_radius > 0.0)))
             or (look.bloom_enabled and look.bloom_amount > 0.0 and look.bloom_radius > 0.0)
-            or (look.image_structure_enabled and (look.image_softness != 0.0 or look.microcontrast != 0.0))
             or look.film_resolution < 100.0
         )
         if spatial:
             reasons.append("spatial film effects")
+    if branch.detail_section_enabled and (branch.detail.softness != 0.0 or branch.detail.microcontrast != 0.0):
+        reasons.append("detail softness or microcontrast")
+    if branch.black_and_white_section_enabled and black_and_white_needs_guide(branch.black_and_white):
+        # Each pixel's colour is read from its neighbourhood (BW_GUIDE_REACH).
+        reasons.append("black & white colour response")
     # Grain and vignette are placed against the frame through ``FrameWindow``,
     # so a strip draws its share of the frame's vignette and samples the
     # frame's grain field rather than starting its own. Neither needs a

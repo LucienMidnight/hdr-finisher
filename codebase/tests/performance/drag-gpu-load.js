@@ -1,7 +1,11 @@
 // P6 (Preview Responsiveness Tuning Sprint): GPU load while dragging.
 //
 //   node tests/run-in-electron.js tests/performance/drag-gpu-load.js [--seconds 5]
-//        [--zooms fit,200] [--output path] [--no-assert]
+//        [--zooms fit,200] [--output path] [--no-assert] [--control exposure|denoise]
+//
+// --control denoise turns adaptive Denoise on and drags its Amount slider
+// instead (NEXT-01 #4: Denoise drags heat the card). Rows then also report
+// how many reconstructions ran per second.
 //
 // A scripted continuous Exposure drag on the 42.4 MP fixture (Precise, the
 // full-detail default), at Fit and 200%. Measured independently of the code
@@ -58,6 +62,9 @@ const outputPath = path.resolve(option("--output", "output/performance/drag-gpu-
 const seconds = Math.max(1, Number(option("--seconds", "5")));
 const zooms = option("--zooms", "fit,200").split(",");
 const enforce = !args.includes("--no-assert");
+const controlKind = option("--control", "exposure");
+if (!["exposure", "denoise"].includes(controlKind)) throw new Error(`Unknown --control ${controlKind}`);
+const CONTROL_SELECTOR = controlKind === "denoise" ? "#denoise-amount" : '[data-path="hdr.exposure"]';
 const CAP_FPS = 60;
 
 async function idle(page) {
@@ -68,7 +75,8 @@ async function idle(page) {
 async function measureDrag(page, zoom) {
   await page.evaluate((value) => (value === "fit" ? setZoomMode("fit") : setCustomZoom(Number(value))), zoom);
   await idle(page);
-  const control = page.locator('[data-path="hdr.exposure"]').first();
+  const control = page.locator(CONTROL_SELECTOR).first();
+  await control.scrollIntoViewIfNeeded();
   const box = await control.boundingBox();
   const x0 = box.x + box.width * 0.5;
   const y = box.y + box.height * 0.5;
@@ -76,6 +84,7 @@ async function measureDrag(page, zoom) {
   await page.waitForTimeout(2000);
   const idleGpu = idleSampler.stop();
   await page.evaluate(() => window.__dragProbe.start());
+  const denoiseRunsBefore = await page.evaluate(() => state.denoiseInputQueue?.stats?.started ?? 0);
   const sampler = startGpuSampler();
   await page.mouse.move(x0, y);
   await page.mouse.down();
@@ -83,8 +92,9 @@ async function measureDrag(page, zoom) {
   // round trip of several milliseconds, which would cap the drag at the
   // driver's own speed. So the pointer is moved from inside the page, on a
   // 1 ms timer, through the same pointer events the slider listens to.
-  await page.evaluate(({ x0, y, width, seconds }) => new Promise((resolve) => {
-    const control = document.querySelector('[data-path="hdr.exposure"]');
+  await page.evaluate(({ x0, y, width, seconds, selector, kind }) => new Promise((resolve) => {
+    const control = document.querySelector(selector);
+    if (kind === "denoise") control.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse", buttons: 1, isPrimary: true }));
     const started = performance.now();
     const timer = setInterval(() => {
       const elapsed = performance.now() - started;
@@ -94,16 +104,37 @@ async function measureDrag(page, zoom) {
         return;
       }
       const offset = Math.sin((elapsed / 800) * Math.PI * 2) * width * 0.18;
+      if (kind === "denoise") {
+        // A native range input: the browser turns pointer moves into input
+        // events, so the scripted drag sends those directly.
+        const value = 0.5 + Math.sin((elapsed / 800) * Math.PI * 2) * 0.18;
+        if (Math.abs(Number(control.value) - value) >= 0.005) {
+          control.value = String(value);
+          control.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        return;
+      }
       const init = { bubbles: true, cancelable: true, clientX: x0 + offset, clientY: y, pointerId: 1, pointerType: "mouse", buttons: 1, isPrimary: true };
       control.dispatchEvent(new PointerEvent("pointermove", init));
       window.dispatchEvent(new PointerEvent("pointermove", init));
     }, 1);
-  }), { x0, y, width: box.width, seconds });
+  }), { x0, y, width: box.width, seconds, selector: CONTROL_SELECTOR, kind: controlKind });
   await page.mouse.up();
+  if (controlKind === "denoise") {
+    await page.evaluate((selector) => {
+      const control = document.querySelector(selector);
+      control.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse", isPrimary: true }));
+      control.dispatchEvent(new Event("change", { bubbles: true }));
+    }, CONTROL_SELECTOR);
+  }
   const gpu = sampler.stop();
+  const releasedAt = Date.now();
+  await page.waitForFunction(() => viewerState().status === "ready" && !state.gpuDraftInFlight && !state.denoiseInputQueue?.busy, null, { timeout: 300000 });
+  const settleMs = Date.now() - releasedAt;
   const result = await page.evaluate(() => window.__dragProbe.stop());
+  const denoiseRuns = (await page.evaluate(() => state.denoiseInputQueue?.stats?.started ?? 0)) - denoiseRunsBefore;
   await idle(page);
-  return { zoom, ...result, card: gpu, cardIdle: idleGpu };
+  return { zoom, control: controlKind, ...result, denoiseRunsPerS: Number((denoiseRuns / result.durationS).toFixed(1)), settleMs, card: gpu, cardIdle: idleGpu };
 }
 
 (async () => {
@@ -139,7 +170,10 @@ async function measureDrag(page, zoom) {
           this.active = true; this.inFlight = 0; this.maxInFlight = 0; this.submits = 0;
           this.presented = []; this.coarse = 0; this.rafIntervals = []; this.lastRaf = null;
           this.startedAt = performance.now();
-          if (preview.performanceMetrics) preview.performanceMetrics.renders = [];
+          if (preview.performanceMetrics) {
+            preview.performanceMetrics.renders = [];
+            preview.performanceMetrics.stages = [];
+          }
           const tick = (time) => {
             if (!this.active) return;
             if (this.lastRaf !== null) this.rafIntervals.push(time - this.lastRaf);
@@ -162,6 +196,22 @@ async function measureDrag(page, zoom) {
             perSecond.push(inWindow.filter((t) => t >= from && t < from + 1000).length);
           }
           const renders = (preview.performanceMetrics?.renders || []);
+          // Where the drag's work went: count and mean duration per renderer
+          // stage, and the kinds of render that ran.
+          const stageSummary = {};
+          for (const entry of preview.performanceMetrics?.stages || []) {
+            if (entry.at > endedAt) continue;
+            const key = [entry.stage, entry.state, entry.region === "whole" ? "whole" : entry.region ? "region" : null, entry.destination].filter(Boolean).join(":");
+            const row = stageSummary[key] || (stageSummary[key] = { count: 0, durationMs: 0 });
+            row.count += 1;
+            row.durationMs += Number(entry.durationMs) || 0;
+          }
+          for (const row of Object.values(stageSummary)) row.durationMs = Number((row.durationMs / row.count).toFixed(1));
+          const renderKinds = {};
+          for (const entry of renders) {
+            const key = [entry.execution, entry.tier, entry.longEdge].filter((value) => value !== undefined).join(":");
+            renderKinds[key] = (renderKinds[key] || 0) + 1;
+          }
           const gpuMs = renders.map((entry) => entry.gpuMs).filter(Number.isFinite);
           const sortedRaf = [...this.rafIntervals].sort((a, b) => a - b);
           return {
@@ -175,6 +225,8 @@ async function measureDrag(page, zoom) {
             maxFramesInFlight: this.maxInFlight,
             gpuBusyMsPerS: gpuMs.length ? Number((gpuMs.reduce((sum, value) => sum + value, 0) / duration).toFixed(1)) : null,
             gpuMsSamples: gpuMs.length,
+            stageSummary,
+            renderKinds,
           };
         },
       };
@@ -196,10 +248,21 @@ async function measureDrag(page, zoom) {
       window.__dragProbe = probe;
     });
 
+    if (controlKind === "denoise") {
+      await page.evaluate(() => {
+        const group = document.querySelector(".denoise-group .group-toggle");
+        if (group && group.getAttribute("aria-expanded") !== "true") group.click();
+        document.querySelector("#denoise-bypass").click();
+      });
+      await page.waitForFunction(() => ["ready", "error"].includes(state.denoiseRuntime[state.currentView].status), null, { timeout: 600000 });
+      const status = await page.evaluate(() => state.denoiseRuntime[state.currentView].status);
+      if (status !== "ready") throw new Error(`Denoise did not become ready (${status})`);
+      await idle(page);
+    }
     const rows = [];
     for (const zoom of zooms) rows.push(await measureDrag(page, zoom));
     for (const row of rows) {
-      console.log(`${String(row.zoom).padEnd(4)} refresh ${row.refreshHz} Hz  presented ${row.presentedFps} fps (worst second ${row.worstSecondFps})  in flight max ${row.maxFramesInFlight}  submits ${row.submits}  GPU busy ${row.gpuBusyMsPerS} ms/s  card ${row.card.utilizationPct}% ${row.card.powerW} W (idle ${row.cardIdle.utilizationPct}% ${row.cardIdle.powerW} W)  coarse ${row.coarseFrames}`);
+      console.log(`${row.control} ${String(row.zoom).padEnd(4)} runs ${row.denoiseRunsPerS}/s  settle ${row.settleMs} ms  refresh ${row.refreshHz} Hz  presented ${row.presentedFps} fps (worst second ${row.worstSecondFps})  in flight max ${row.maxFramesInFlight}  submits ${row.submits}  GPU busy ${row.gpuBusyMsPerS} ms/s  card ${row.card.utilizationPct}% ${row.card.powerW} W (idle ${row.cardIdle.utilizationPct}% ${row.cardIdle.powerW} W)  coarse ${row.coarseFrames}`);
       if (enforce) {
         if (row.presentedFps > CAP_FPS * 1.05) failures.push(`${row.zoom}: ${row.presentedFps} fps is above the ${CAP_FPS} fps cap`);
         if (row.maxFramesInFlight > 1) failures.push(`${row.zoom}: ${row.maxFramesInFlight} GPU frames in flight`);

@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from hdr_finisher.adjustments import apply_adjustments
 from hdr_finisher.models import (
     AdjustmentState,
-    DetailAdjustments,
+    BranchDetailAdjustments,
     EditCommand,
     EditDocument,
     PreviewKind,
@@ -82,8 +82,8 @@ def test_schema_v4_has_neutral_detail_and_inactive_match_defaults(tmp_path: Path
     document = store.get(session_id).edit_document()
 
     assert document.schema_version == 4
-    assert document.global_adjustments.hdr.detail == DetailAdjustments()
-    assert document.global_adjustments.sdr.detail == DetailAdjustments()
+    assert document.global_adjustments.hdr.detail == BranchDetailAdjustments()
+    assert document.global_adjustments.sdr.detail == BranchDetailAdjustments()
     assert document.sdr_match == SdrMatchState()
 
 
@@ -285,6 +285,7 @@ def test_inherited_grain_requires_atomic_override_but_other_film_controls_do_not
     ("grain_softness", 26.0),
     ("grain_chroma", 1.0),
     ("grain_film_format", "16mm"),
+    ("grain_film_type", "black_and_white"),
     ("grain_capture_geometry", "horizontal_strip"),
     ("grain_custom_width_mm", 37.0),
     ("grain_custom_height_mm", 25.0),

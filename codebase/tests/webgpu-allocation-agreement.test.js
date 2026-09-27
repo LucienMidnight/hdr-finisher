@@ -15,7 +15,7 @@ const { test } = require("node:test");
 
 // Kept in step with webgpu-preview.js, where 160 and 161 carry the tile origin
 // and 166 the Show noise view flag, and 167-174 describe the Clarity map.
-const PARAM_COUNT = 175;
+const PARAM_COUNT = 186;
 
 const BYTES_PER_PIXEL = {
   rgba32float: 16,
@@ -173,7 +173,8 @@ test("resident total equals live device bytes across detail, spatial, scope, and
   const categories = memory.resident.categories;
   assert.equal(categories.gradingCoreBytes, 640 * 480 * 8 * 4);
   assert.equal(categories.gradingDetailBytes, 640 * 480 * 8 * 2);
-  assert.equal(categories.gradingSpatialBytes, 160 * 120 * 8 * 2);
+  // A frame under 2048 px runs its spatial stage at full resolution.
+  assert.equal(categories.gradingSpatialBytes, 640 * 480 * 8 * 2);
   assert.equal(categories.parameterBufferBytes, PARAM_COUNT * 4 + 1024 * 4);
   // The scope pool reports its texture, its row-aligned read buffer, and its
   // parameter buffer as one byte size, so it covers every scope-owned buffer.
@@ -202,7 +203,7 @@ test("a resize destroys the previous graph and residency follows the live device
   assert.equal(afterResize, ledger.liveBytes);
   assert.equal(
     afterResize,
-    320 * 240 * 8 * 6 + Math.ceil(320 / 4) * Math.ceil(240 / 4) * 8 * 2,
+    320 * 240 * 8 * 6 + 320 * 240 * 8 * 2,
   );
 });
 

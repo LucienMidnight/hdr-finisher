@@ -140,7 +140,17 @@ Object.assign(MANUAL_VALUE_RULES, {
   "current.vignette.roundness": { min: -100, max: 100, decimals: 0 },
   "current.vignette.feather": { min: 0, max: 100, decimals: 0 },
   "current.vignette.highlight_protection": { min: 0, max: 100, decimals: 0 },
+  "current.black_and_white.reds": { min: -100, max: 100, decimals: 0 },
+  "current.black_and_white.oranges": { min: -100, max: 100, decimals: 0 },
+  "current.black_and_white.yellows": { min: -100, max: 100, decimals: 0 },
+  "current.black_and_white.greens": { min: -100, max: 100, decimals: 0 },
+  "current.black_and_white.aquas": { min: -100, max: 100, decimals: 0 },
+  "current.black_and_white.blues": { min: -100, max: 100, decimals: 0 },
+  "current.black_and_white.purples": { min: -100, max: 100, decimals: 0 },
+  "current.black_and_white.magentas": { min: -100, max: 100, decimals: 0 },
   "current.detail.texture_amount": { min: -100, max: 100, decimals: 0 },
+  "current.detail.softness": { min: 0, max: 100, decimals: 0 },
+  "current.detail.microcontrast": { min: -100, max: 100, decimals: 0 },
   "current.detail.clarity_amount": { min: -100, max: 100, decimals: 0 },
   "current.detail.clarity_radius_percent": { min: 0.2, max: 3, decimals: 2 },
   "current.detail.sharpen_amount": { min: 0, max: 100, decimals: 0 },
@@ -174,8 +184,6 @@ Object.assign(MANUAL_VALUE_RULES, {
   "current.film_look.bloom_sensitivity": { min: 0, max: 100, decimals: 0 },
   "current.film_look.bloom_radius": { min: 0, max: 10, decimals: 2 },
   "current.film_look.bloom_highlight_detail": { min: 0, max: 100, decimals: 0 },
-  "current.film_look.image_softness": { min: 0, max: 100, decimals: 0 },
-  "current.film_look.microcontrast": { min: -100, max: 100, decimals: 0 },
 });
 
 const TONE_EQUALIZER_MIN_EV = -6;
@@ -270,8 +278,8 @@ let pathMarchingAntFrame = 0;
 
 const defaultDenoiseDocument = () => ({
   schema_version: 1,
-  hdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0.5, fine_noise: 0.5, medium_noise: 0.5, coarse_noise: 0.5 }, analysis: { algorithm_version: "adaptive-atrous-v1", preset: "photo_fine", levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035 } },
-  sdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0.5, fine_noise: 0.5, medium_noise: 0.5, coarse_noise: 0.5 }, analysis: { algorithm_version: "adaptive-atrous-v1", preset: "photo_fine", levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035 } },
+  hdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0.5, finest_noise: 0.5, fine_noise: 0.5, medium_noise: 0.5, coarse_noise: 0.5 }, analysis: { algorithm_version: "adaptive-atrous-v1", preset: "photo_fine", levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035 } },
+  sdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0.5, finest_noise: 0.5, fine_noise: 0.5, medium_noise: 0.5, coarse_noise: 0.5 }, analysis: { algorithm_version: "adaptive-atrous-v1", preset: "photo_fine", levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035 } },
 });
 
 // The measured method is the default for new work; the original wavelet stays
@@ -294,6 +302,7 @@ const SDR_MATCH_GRAIN_FIELDS = Object.freeze([
   "grain_softness",
   "grain_chroma",
   "grain_film_format",
+  "grain_film_type",
   "grain_capture_geometry",
   "grain_custom_width_mm",
   "grain_custom_height_mm",
@@ -719,6 +728,7 @@ const defaultFilmLook = () => ({
   grain_softness: 25,
   grain_chroma: 0,
   grain_film_format: "35mm",
+  grain_film_type: "color_negative",
   grain_capture_geometry: "frame",
   grain_custom_width_mm: 36,
   grain_custom_height_mm: 24,
@@ -739,12 +749,11 @@ const defaultFilmLook = () => ({
   bloom_sensitivity: 80,
   bloom_radius: 0.5,
   bloom_highlight_detail: 75,
-  image_structure_enabled: true,
-  image_softness: 0,
-  microcontrast: 0,
 });
 
-const FILM_LOOK_PRESET_RECIPE_VERSION = 1;
+// 2: Image Softness and Microcontrast left Film Look for Detail (NEXT-01 #2),
+// and the presets no longer set them.
+const FILM_LOOK_PRESET_RECIPE_VERSION = 2;
 
 function completeFilmLookRecipe(values) {
   return Object.freeze({
@@ -762,28 +771,28 @@ const FILM_LOOK_PRESETS = Object.freeze([
     name: "Clean Cinema",
     description: "Fine texture, restrained density, and a clean highlight finish.",
     recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
-    recipe: completeFilmLookRecipe({ print_strength: 42, print_contrast: 6, print_toe: 3, print_shoulder: 10, color_density: 9, red_response: 3, blue_response: -2, highlight_desaturation: 12, shadow_desaturation: 5, grain_amount: 14, grain_size: 22, grain_softness: 50, grain_chroma: 10, grain_film_format: "65mm", grain_shadow_response: 82, grain_highlight_response: 110, film_resolution: 98, halation_amount: 6, halation_sensitivity: 84, halation_radius: 0.16, halation_saturation: 68, bloom_amount: 4, bloom_sensitivity: 88, bloom_radius: 0.32, bloom_highlight_detail: 90, image_softness: 2, microcontrast: -2 }),
+    recipe: completeFilmLookRecipe({ print_strength: 42, print_contrast: 6, print_toe: 3, print_shoulder: 10, color_density: 9, red_response: 3, blue_response: -2, highlight_desaturation: 12, shadow_desaturation: 5, grain_amount: 14, grain_size: 22, grain_softness: 50, grain_chroma: 10, grain_film_format: "65mm", grain_shadow_response: 82, grain_highlight_response: 110, film_resolution: 98, halation_amount: 6, halation_sensitivity: 84, halation_radius: 0.16, halation_saturation: 68, bloom_amount: 4, bloom_sensitivity: 88, bloom_radius: 0.32, bloom_highlight_detail: 90 }),
   }),
   Object.freeze({
     id: "soft-color-negative",
     name: "Soft Color Negative",
     description: "Gentle shoulders, soft color separation, and quiet portrait texture.",
     recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
-    recipe: completeFilmLookRecipe({ print_strength: 48, print_contrast: -2, print_toe: 7, print_shoulder: 22, color_density: 12, red_response: 5, green_response: -1, blue_response: -4, highlight_desaturation: 28, shadow_desaturation: 9, grain_amount: 22, grain_size: 38, grain_softness: 52, grain_chroma: 13, grain_film_format: "35mm", grain_shadow_response: 88, grain_midtone_response: 98, grain_highlight_response: 112, film_resolution: 94, halation_amount: 9, halation_sensitivity: 78, halation_radius: 0.24, halation_saturation: 74, bloom_amount: 9, bloom_sensitivity: 76, bloom_radius: 0.62, bloom_highlight_detail: 78, image_softness: 8, microcontrast: -7 }),
+    recipe: completeFilmLookRecipe({ print_strength: 48, print_contrast: -2, print_toe: 7, print_shoulder: 22, color_density: 12, red_response: 5, green_response: -1, blue_response: -4, highlight_desaturation: 28, shadow_desaturation: 9, grain_amount: 22, grain_size: 38, grain_softness: 52, grain_chroma: 13, grain_film_format: "35mm", grain_shadow_response: 88, grain_midtone_response: 98, grain_highlight_response: 112, film_resolution: 94, halation_amount: 9, halation_sensitivity: 78, halation_radius: 0.24, halation_saturation: 74, bloom_amount: 9, bloom_sensitivity: 76, bloom_radius: 0.62, bloom_highlight_detail: 78 }),
   }),
   Object.freeze({
     id: "dense-print",
     name: "Dense Print",
     description: "Deeper color, firmer print contrast, and a richer projected finish.",
     recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
-    recipe: completeFilmLookRecipe({ print_strength: 62, print_contrast: 18, print_toe: 12, print_shoulder: 15, color_density: 26, red_response: 7, green_response: -2, blue_response: -6, highlight_desaturation: 20, shadow_desaturation: 12, grain_amount: 30, grain_size: 46, grain_softness: 34, grain_chroma: 18, grain_film_format: "35mm", grain_shadow_response: 92, grain_midtone_response: 104, grain_highlight_response: 118, film_resolution: 90, halation_amount: 13, halation_sensitivity: 72, halation_radius: 0.28, halation_hue_offset: 2, halation_saturation: 82, bloom_amount: 8, bloom_sensitivity: 78, bloom_radius: 0.5, bloom_highlight_detail: 80, image_softness: 6, microcontrast: -3 }),
+    recipe: completeFilmLookRecipe({ print_strength: 62, print_contrast: 18, print_toe: 12, print_shoulder: 15, color_density: 26, red_response: 7, green_response: -2, blue_response: -6, highlight_desaturation: 20, shadow_desaturation: 12, grain_amount: 30, grain_size: 46, grain_softness: 34, grain_chroma: 18, grain_film_format: "35mm", grain_shadow_response: 92, grain_midtone_response: 104, grain_highlight_response: 118, film_resolution: 90, halation_amount: 13, halation_sensitivity: 72, halation_radius: 0.28, halation_hue_offset: 2, halation_saturation: 82, bloom_amount: 8, bloom_sensitivity: 78, bloom_radius: 0.5, bloom_highlight_detail: 80 }),
   }),
   Object.freeze({
     id: "high-speed-texture",
     name: "High-Speed Texture",
     description: "Coarse responsive grain, open glow, and softened fine detail for low-light character.",
     recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
-    recipe: completeFilmLookRecipe({ print_strength: 54, print_contrast: 7, print_toe: 10, print_shoulder: 18, color_density: 17, red_response: 8, green_response: -3, blue_response: -7, highlight_desaturation: 30, shadow_desaturation: 17, grain_amount: 56, grain_size: 76, grain_softness: 29, grain_chroma: 27, grain_film_format: "16mm", grain_shadow_response: 100, grain_midtone_response: 114, grain_highlight_response: 130, film_resolution: 80, halation_amount: 16, halation_sensitivity: 66, halation_radius: 0.36, halation_hue_offset: 3, halation_saturation: 86, bloom_amount: 12, bloom_sensitivity: 70, bloom_radius: 0.7, bloom_highlight_detail: 70, image_softness: 13, microcontrast: -9 }),
+    recipe: completeFilmLookRecipe({ print_strength: 54, print_contrast: 7, print_toe: 10, print_shoulder: 18, color_density: 17, red_response: 8, green_response: -3, blue_response: -7, highlight_desaturation: 30, shadow_desaturation: 17, grain_amount: 56, grain_size: 76, grain_softness: 29, grain_chroma: 27, grain_film_format: "16mm", grain_shadow_response: 100, grain_midtone_response: 114, grain_highlight_response: 130, film_resolution: 80, halation_amount: 16, halation_sensitivity: 66, halation_radius: 0.36, halation_hue_offset: 3, halation_saturation: 86, bloom_amount: 12, bloom_sensitivity: 70, bloom_radius: 0.7, bloom_highlight_detail: 70 }),
   }),
 ]);
 
@@ -796,6 +805,29 @@ const defaultColorGrading = () => ({
 });
 
 const defaultVignette = () => ({ amount: 0, midpoint: 50, roundness: 0, feather: 75, highlight_protection: 0, center_x: 0.5, center_y: 0.5 });
+// BW-01 Black & White: how bright each colour becomes in grey. All zero is the
+// plain luminance conversion, the same as Saturation -100.
+const BLACK_AND_WHITE_SLIDERS = Object.freeze(["reds", "oranges", "yellows", "greens", "aquas", "blues", "purples", "magentas"]);
+const defaultBlackAndWhite = () => Object.fromEntries(BLACK_AND_WHITE_SLIDERS.map((name) => [name, 0]));
+// Built-in starting points modelled on common black & white filters and film
+// types. They set the sliders only, never the on/off. Values are first
+// estimates, to be tuned on real pictures.
+const BLACK_AND_WHITE_PRESETS = Object.freeze([
+  { id: "yellow-filter", name: "Yellow filter", description: "Natural skies: blues a little darker, skin and foliage a little lighter.",
+    values: { reds: 10, oranges: 15, yellows: 20, greens: 5, aquas: -15, blues: -30, purples: -20, magentas: 0 } },
+  { id: "orange-filter", name: "Orange filter", description: "The landscape classic: darker skies and water, smoother skin.",
+    values: { reds: 25, oranges: 35, yellows: 20, greens: -10, aquas: -35, blues: -55, purples: -35, magentas: 5 } },
+  { id: "red-filter", name: "Red filter", description: "Dramatic: very dark skies, bright reds and warm tones.",
+    values: { reds: 55, oranges: 45, yellows: 15, greens: -30, aquas: -60, blues: -85, purples: -50, magentas: 25 } },
+  { id: "green-filter", name: "Green filter", description: "Lighter foliage, darker reds and lips; outdoor portraits.",
+    values: { reds: -35, oranges: -20, yellows: 20, greens: 45, aquas: 20, blues: -15, purples: -25, magentas: -30 } },
+  { id: "blue-filter", name: "Blue filter", description: "Hazy and atmospheric: warm tones darker, skies pale.",
+    values: { reds: -45, oranges: -35, yellows: -25, greens: -10, aquas: 25, blues: 45, purples: 25, magentas: -10 } },
+  { id: "infrared", name: "Infrared look", description: "Glowing foliage and near-black skies, like infrared film.",
+    values: { reds: 10, oranges: 20, yellows: 70, greens: 90, aquas: -50, blues: -90, purples: -40, magentas: 0 } },
+  { id: "orthochromatic", name: "Orthochromatic", description: "Early film blind to red: dark reds and skin, pale blues.",
+    values: { reds: -80, oranges: -55, yellows: -15, greens: 10, aquas: 35, blues: 55, purples: 35, magentas: -30 } },
+].map((preset) => Object.freeze(preset)));
 const defaultGeometry = () => ({
   rotation: 0,
   flip_horizontal: false,
@@ -1242,13 +1274,15 @@ const defaultAdjustments = () => ({
     primaries_section_enabled: true,
     curves_section_enabled: true,
     detail_section_enabled: true,
+    black_and_white_section_enabled: false,
     film_look_section_enabled: true,
     color_grading_section_enabled: true,
     vignette_section_enabled: true,
+    black_and_white: defaultBlackAndWhite(),
     film_look: defaultFilmLook(),
     color_grading: defaultColorGrading(),
     vignette: defaultVignette(),
-    detail: { texture_amount: 0, clarity_amount: 0, clarity_radius_percent: 0.75, sharpen_amount: 0, sharpen_radius_px: 0.8, sharpen_threshold: 10 },
+    detail: { texture_amount: 0, clarity_amount: 0, clarity_radius_percent: 0.75, sharpen_amount: 0, sharpen_radius_px: 0.8, sharpen_threshold: 10, softness: 0, microcontrast: 0 },
     exposure: 0,
     highlight_compression_start_nits: 400,
     highlight_compression_target_nits: 1000,
@@ -1303,13 +1337,15 @@ const defaultAdjustments = () => ({
     primaries_section_enabled: true,
     curves_section_enabled: true,
     detail_section_enabled: true,
+    black_and_white_section_enabled: false,
     film_look_section_enabled: true,
     color_grading_section_enabled: true,
     vignette_section_enabled: true,
+    black_and_white: defaultBlackAndWhite(),
     film_look: defaultFilmLook(),
     color_grading: defaultColorGrading(),
     vignette: defaultVignette(),
-    detail: { texture_amount: 0, clarity_amount: 0, clarity_radius_percent: 0.75, sharpen_amount: 0, sharpen_radius_px: 0.8, sharpen_threshold: 10 },
+    detail: { texture_amount: 0, clarity_amount: 0, clarity_radius_percent: 0.75, sharpen_amount: 0, sharpen_radius_px: 0.8, sharpen_threshold: 10, softness: 0, microcontrast: 0 },
     exposure: 0,
     highlight_recovery: 0.6,
     highlight_compression_start_percent: 50,
@@ -1391,9 +1427,11 @@ const els = {
   denoiseColor: document.getElementById("denoise-color"),
   denoiseDetail: document.getElementById("denoise-detail"),
   denoiseSizeControls: document.getElementById("denoise-size-controls"),
+  denoiseFinest: document.getElementById("denoise-finest"),
   denoiseFine: document.getElementById("denoise-fine"),
   denoiseMedium: document.getElementById("denoise-medium"),
   denoiseCoarse: document.getElementById("denoise-coarse"),
+  denoiseFinestValue: document.getElementById("denoise-finest-value"),
   denoiseFineValue: document.getElementById("denoise-fine-value"),
   denoiseMediumValue: document.getElementById("denoise-medium-value"),
   denoiseCoarseValue: document.getElementById("denoise-coarse-value"),
@@ -1496,7 +1534,9 @@ const els = {
   sdrMatchRevert: document.getElementById("sdr-match-revert"),
   sdrMatchEntireStatus: document.getElementById("sdr-match-entire-status"),
   detailSdrActions: document.getElementById("detail-sdr-actions"),
+  blackAndWhiteSdrActions: document.getElementById("black-and-white-sdr-actions"),
   detailMatchHdr: document.getElementById("detail-match-hdr"),
+  blackAndWhiteMatchHdr: document.getElementById("black-and-white-match-hdr"),
   overlayPresetNote: document.getElementById("overlay-preset-note"),
   falseColorKey: document.getElementById("false-color-key"),
   curveReset: document.getElementById("curve-reset"),
@@ -1799,12 +1839,16 @@ const controlGroups = {
   "hdr-color": ["hdr.white_balance_kelvin", "hdr.tint", "hdr.saturation", "hdr.vibrance", "hdr.red_hue", "hdr.red_purity", "hdr.green_hue", "hdr.green_purity", "hdr.blue_hue", "hdr.blue_purity", "hdr.tint_hue", "hdr.tint_purity"],
   "hdr-zones": ["hdr.lift", "hdr.lift_range", "hdr.lift_pivot", "hdr.gamma", "hdr.gamma_range", "hdr.gamma_pivot", "hdr.gain", "hdr.gain_range", "hdr.gain_pivot"],
   "hdr-detail": ["hdr.detail"],
+  // Black & White: its Reset returns the sliders only. It is deliberately not
+  // in sectionPathForGroup, so Reset leaves the module on or off as it was.
+  "hdr-black-and-white": ["hdr.black_and_white"],
   "sdr-tone": ["sdr.exposure", "sdr.contrast", "sdr.contrast_pivot", "sdr.shadow"],
   "sdr-highlights": ["sdr.highlight_compression_mode", "sdr.highlight_compression_start_percent", "sdr.highlight_compression_softness", "sdr.highlight_compression_peak_detail", "sdr.highlight_compression_peak_measurement", "sdr.highlight_compression_manual_peak_percent", "sdr.highlight_compression_bias", "sdr.highlight_compression_color_handling"],
   "sdr-equalizer": ["sdr.tone_equalizer_nodes", "sdr.tone_equalizer_influence_radius", "sdr.tone_equalizer_smoothing"],
   "sdr-color": ["sdr.white_balance_kelvin", "sdr.tint", "sdr.saturation", "sdr.vibrance", "sdr.red_hue", "sdr.red_purity", "sdr.green_hue", "sdr.green_purity", "sdr.blue_hue", "sdr.blue_purity", "sdr.tint_hue", "sdr.tint_purity"],
   "sdr-zones": ["sdr.lift", "sdr.lift_range", "sdr.lift_pivot", "sdr.gamma", "sdr.gamma_range", "sdr.gamma_pivot", "sdr.gain", "sdr.gain_range", "sdr.gain_pivot"],
   "sdr-detail": ["sdr.detail"],
+  "sdr-black-and-white": ["sdr.black_and_white"],
 };
 
 const falseColorPaletteTokens = [
@@ -1843,6 +1887,7 @@ const GROUP_PRESET_LABELS = {
   curves: "Curves",
   "color-grading": "Color Grading",
   detail: "Detail",
+  "black-and-white": "Black & White",
   "film-look": "Film Look",
   vignette: "Vignette",
   denoise: "Denoise",
@@ -1863,7 +1908,7 @@ function groupPresetPaths(groupId) {
 function groupPresetContextForElement(groupElement) {
   const rawGroup = groupElement?.dataset.group || "";
   if (["geometry", "perspective", "local-adjustments"].includes(rawGroup)) return null;
-  const groupId = ["curves", "color-grading", "detail", "film-look", "vignette", "denoise"].includes(rawGroup)
+  const groupId = ["curves", "color-grading", "detail", "black-and-white", "film-look", "vignette", "denoise"].includes(rawGroup)
     ? `${state.currentView}-${rawGroup}`
     : rawGroup;
   const paths = groupPresetPaths(groupId);
@@ -3315,6 +3360,18 @@ function bindEvents() {
   });
 
   els.controls.forEach((control) => {
+    // Pressed-state buttons (the Film Look map views) are one click, one
+    // history step, so they skip the slider gesture plumbing below.
+    if (control.tagName === "BUTTON") {
+      control.addEventListener("click", () => {
+        beginGlobalEditGesture(control);
+        const pressed = control.getAttribute("aria-pressed") !== "true";
+        commitAdjustmentValue(control.dataset.path, pressed);
+        syncPressedControl(control, pressed);
+        endGlobalEditGesture(control);
+      });
+      return;
+    }
     const transactionOwnedControl = control.dataset.path === "shared.geometry.straighten_angle";
     control.addEventListener("pointerdown", () => {
       if (transactionOwnedControl) return;
@@ -3377,16 +3434,25 @@ function bindEvents() {
     [els.denoiseLuminance, "luminance"],
     [els.denoiseColor, "color_noise"],
     [els.denoiseDetail, "detail_recovery"],
+    [els.denoiseFinest, "finest_noise"],
     [els.denoiseFine, "fine_noise"],
     [els.denoiseMedium, "medium_noise"],
     [els.denoiseCoarse, "coarse_noise"],
   ];
   for (const [control, key] of denoiseSliders) {
-    control?.addEventListener("pointerdown", () => state.previewScheduler?.beginInteraction());
+    // Capture phase: the instrument slider's own pointerdown moves the value
+    // to the click and fires `input` at once, and that first reconstruction
+    // must already count as part of the drag (else it is a whole-frame one).
+    control?.addEventListener("pointerdown", () => state.previewScheduler?.beginInteraction(), { capture: true });
     control?.addEventListener("input", () => updateLiveDenoiseControl(key, Number(control.value)));
     for (const eventName of ["pointerup", "pointercancel", "change"]) {
       control?.addEventListener(eventName, () => {
         state.previewScheduler?.endInteraction();
+        const stale = state.denoiseWholeFrameStale;
+        if (stale) {
+          state.denoiseWholeFrameStale = null;
+          void denoiseInputQueue().submit({ ...stale, wholeFrame: true });
+        }
         if (eventName === "change") void persistDenoiseSettings();
       });
     }
@@ -3500,7 +3566,9 @@ function bindEvents() {
   });
   els.groupResets.forEach((button) => {
     button.addEventListener("click", () => resetControlGroup(
-      button.dataset.resetGroup === "detail" ? `${state.currentView}-detail` : button.dataset.resetGroup
+      ["detail", "black-and-white"].includes(button.dataset.resetGroup)
+        ? `${state.currentView}-${button.dataset.resetGroup}`
+        : button.dataset.resetGroup
     ));
   });
   els.sdrMatchHdrColors.addEventListener("click", matchHdrColorsToSdr);
@@ -3509,6 +3577,7 @@ function bindEvents() {
   ));
   els.sdrMatchRevert?.addEventListener("click", () => setSdrMatch("revert"));
   els.detailMatchHdr?.addEventListener("click", () => matchLaneObject("detail"));
+  els.blackAndWhiteMatchHdr?.addEventListener("click", matchHdrBlackAndWhiteToSdr);
   els.filmLookReset?.addEventListener("click", resetFilmLook);
   els.filmLookMatchHdr?.addEventListener("click", matchHdrFilmLookToSdr);
   els.colorGradingReset?.addEventListener("click", () => resetLaneObject("color_grading", defaultColorGrading()));
@@ -5046,7 +5115,8 @@ function previewGraphTimingKey(lane = state.currentView) {
   return [lane, Boolean(state.denoise?.[lane]?.enabled), gpuDetailGraphActive(lane),
     localAdjustments().filter((item) => item.enabled !== false).length,
     Number(film.grain_amount) > 0, Number(film.bloom_amount) > 0,
-    Number(film.halation_amount) > 0, Number(film.image_softness) > 0,
+    Number(film.halation_amount) > 0,
+    Number(state.adjustments?.[lane]?.detail?.softness) > 0 || (Number(state.adjustments?.[lane]?.detail?.microcontrast) || 0) !== 0,
     state.zoomMode === "custom" ? "zoom" : "fit"].join(":");
 }
 
@@ -9186,11 +9256,17 @@ function commitAdjustmentValue(path, value, { manual = false } = {}) {
   if (manual) state.previewScheduler?.endInteraction();
 }
 
+function syncPressedControl(control, pressed) {
+  control.setAttribute("aria-pressed", String(pressed));
+  control.lastElementChild.textContent = pressed ? control.dataset.hideLabel : control.dataset.showLabel;
+}
+
 function syncControlsFromState() {
   els.controls.forEach((control) => {
     const value = getValueByPath(state.adjustments, control.dataset.path);
     if (value === undefined) return;
-    if (control.type === "checkbox") control.checked = Boolean(value);
+    if (control.tagName === "BUTTON") syncPressedControl(control, Boolean(value));
+    else if (control.type === "checkbox") control.checked = Boolean(value);
     else {
       if (control.type === "range") syncRangeControlFromState(control.dataset.path, control);
       else if (control.type === "number" && /color_grading\..+\.(hue|saturation)$/.test(control.dataset.path)) {
@@ -9650,7 +9726,8 @@ function renderSessionChrome() {
       const unavailableModule = control.closest(".module-unavailable");
       const bypassedRawHighlightControl = control.matches("#raw-highlight-method, #raw-highlight-threshold")
         && els.rawHighlightBypass?.getAttribute("aria-pressed") !== "true";
-      control.disabled = !hasSession || Boolean(unavailableModule) || bypassedRawHighlightControl;
+      control.disabled = !hasSession || Boolean(unavailableModule) || bypassedRawHighlightControl
+        || (control.id === "film-grain-chroma" && filmGrainChromaInactive());
     }
   });
   els.viewButtons.forEach((button) => {
@@ -10232,6 +10309,7 @@ function renderDenoiseControls() {
     [els.denoiseLuminance, els.denoiseLuminanceValue, settings.controls.luminance],
     [els.denoiseColor, els.denoiseColorValue, settings.controls.color_noise],
     [els.denoiseDetail, els.denoiseDetailValue, settings.controls.detail_recovery],
+    [els.denoiseFinest, els.denoiseFinestValue, settings.controls.finest_noise ?? settings.controls.fine_noise ?? 0.5],
     [els.denoiseFine, els.denoiseFineValue, settings.controls.fine_noise ?? 0.5],
     [els.denoiseMedium, els.denoiseMediumValue, settings.controls.medium_noise ?? 0.5],
     [els.denoiseCoarse, els.denoiseCoarseValue, settings.controls.coarse_noise ?? 0.5],
@@ -10471,30 +10549,90 @@ function denoiseRendererControls(controls) {
     luminance: controls.luminance,
     colorNoise: controls.color_noise,
     detailRecovery: controls.detail_recovery,
+    // Fine covered ~1-4 px before Finest was split from it.
+    finestNoise: controls.finest_noise ?? controls.fine_noise ?? 0.5,
     fineNoise: controls.fine_noise ?? 0.5,
     mediumNoise: controls.medium_noise ?? 0.5,
     coarseNoise: controls.coarse_noise ?? 0.5,
   };
 }
 
+// Frames a Denoise drag may start per second: the drag cap every other slider
+// has (HDRPreviewScheduler maxInteractiveFps).
+const DENOISE_DRAG_MAX_FPS = 60;
+
+// Margin, in source pixels, reconstructed around the visible area during a
+// drag, so filters that sample neighbours near the viewer edge see denoised
+// pixels. Also the grid the region is snapped to (a wavelet tile must start
+// on its own grid).
+const LIVE_DENOISE_REGION_MARGIN = 64;
+
+/**
+ * The part of the denoise frame on screen, or null when that is the whole
+ * frame or cannot be mapped (any crop, rotation or perspective moves the
+ * output away from the source grid, so those keep whole-frame work).
+ */
+function liveDenoiseRegion() {
+  const source = state.gpuPreview?.denoiseSourceSelector?.original;
+  if (!source?.width || !source?.height || !geometryTransformIsNeutral()) return null;
+  const visible = visibleOutputRect(source.width, source.height);
+  if (!visible) return null;
+  const grid = LIVE_DENOISE_REGION_MARGIN;
+  const x = Math.max(0, Math.floor((visible.x - grid) / grid) * grid);
+  const y = Math.max(0, Math.floor((visible.y - grid) / grid) * grid);
+  return {
+    x,
+    y,
+    width: Math.min(source.width, visible.x + visible.width + grid) - x,
+    height: Math.min(source.height, visible.y + visible.height + grid) - y,
+  };
+}
+
+async function runLiveDenoise({ lane, controls, wholeFrame = false }) {
+  const startedAt = performance.now();
+  const interacting = !wholeFrame && Boolean(state.previewScheduler?.interacting);
+  // NEXT-01 #4. During a drag only what is on screen is reconstructed: a
+  // tiled render (Full, or zoomed in) reconstructs each tile it draws itself,
+  // and a whole-frame render zoomed in needs only the visible region. At 200%
+  // on a 42 MP frame the whole-frame reconstruction took ~145 ms a step. The
+  // rest of the frame is brought up to date once, on release (wholeFrame).
+  const region = interacting ? liveDenoiseRegion() : null;
+  if (interacting && interactiveDraftGuaranteedTiled(lane) && state.gpuPreview?.setDenoiseControls?.(controls)) {
+    state.denoiseWholeFrameStale = { lane, controls };
+  } else {
+    const ready = await state.gpuPreview?.resolveDenoiseProxy?.(controls, region ? { region } : {});
+    if (!ready) return;
+    state.denoiseWholeFrameStale = region ? { lane, controls } : null;
+  }
+  if (lane !== state.currentView) return;
+  if (interacting) {
+    // NEXT-01 #4. During a drag the picture is drawn by the ordinary drag
+    // path, so a Denoise drag gets what every other slider has: the 60 fps
+    // cap, one frame on the GPU at a time, throttled scopes and the settled
+    // pass on release. Drawing a settled frame per reconstruction here, back
+    // to back, ran above the cap with frames queued on the GPU and cost 60%
+    // more card power than an Exposure drag at Fit.
+    invalidatePreview(lane, { markDirty: false });
+    debouncePreview(lane);
+    // The next reconstruction waits for this one to leave the GPU and for the
+    // frame interval, so reconstructions cannot outrun the drawing.
+    await state.gpuPreview?.waitForSubmittedWork?.();
+    const remaining = 1000 / DENOISE_DRAG_MAX_FPS - (performance.now() - startedAt);
+    if (remaining > 0) await new Promise((resolve) => window.setTimeout(resolve, remaining));
+    return;
+  }
+  await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
+  debounceOverlayAndScopes();
+}
+
 function denoiseInputQueue() {
   if (!state.denoiseInputQueue) {
     const Queue = window.HDRLatestWorkQueue;
     state.denoiseInputQueue = Queue
-      ? new Queue(async ({ lane, controls }) => {
-        const ready = await state.gpuPreview?.resolveDenoiseProxy?.(controls);
-        if (!ready || lane !== state.currentView) return;
-        await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
-        debounceOverlayAndScopes();
-      }, { onError: (error) => console.warn("Live denoise reconstruction failed.", error) })
+      ? new Queue(runLiveDenoise, { onError: (error) => console.warn("Live denoise reconstruction failed.", error) })
       : null;
   }
-  return state.denoiseInputQueue || { submit: async ({ lane, controls }) => {
-    const ready = await state.gpuPreview?.resolveDenoiseProxy?.(controls);
-    if (!ready || lane !== state.currentView) return;
-    await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
-    debounceOverlayAndScopes();
-  }, stats: null };
+  return state.denoiseInputQueue || { submit: runLiveDenoise, stats: null };
 }
 
 function removeToneEqualizerNode(requestedIndex = null, lane = state.currentView) {
@@ -12119,8 +12257,14 @@ function arrangeLaneControlGroups(lane) {
     if (group) panel.append(group);
   }
   const colorGrading = document.querySelector('.control-group[data-group="color-grading"]');
+  const blackAndWhiteGroup = document.querySelector('.control-group[data-group="black-and-white"]');
   const localAdjustmentsGroup = document.querySelector('.control-group[data-group="local-adjustments"]');
-  if (colorGrading && localAdjustmentsGroup) colorGrading.after(localAdjustmentsGroup);
+  // Panel order after Color: 12 Color Grading, 13 Black & White, 14 Local
+  // Adjustments. Only the panel order: Black & White still processes straight
+  // after Color, so the Color Grading wheels can tone the grey picture.
+  if (colorGrading && blackAndWhiteGroup) colorGrading.after(blackAndWhiteGroup);
+  const beforeLocals = blackAndWhiteGroup || colorGrading;
+  if (beforeLocals && localAdjustmentsGroup) beforeLocals.after(localAdjustmentsGroup);
 }
 
 function renderLaneChrome() {
@@ -12152,6 +12296,7 @@ function renderLaneChrome() {
   els.colorGradingSdrActions?.classList.toggle("hidden", lane !== "sdr");
   els.vignetteSdrActions?.classList.toggle("hidden", lane !== "sdr");
   els.detailSdrActions?.classList.toggle("hidden", lane !== "sdr");
+  els.blackAndWhiteSdrActions?.classList.toggle("hidden", lane !== "sdr");
   const match = state.editDocument?.sdr_match;
   els.sdrMatchEntireActions?.classList.toggle("hidden", lane !== "sdr");
   if (els.sdrMatchEntire) {
@@ -13187,6 +13332,7 @@ function formatControlValue(path, value) {
   if (path.endsWith("white_balance_kelvin")) return `${Math.round(numeric)} K`;
   if (path.endsWith("clarity_radius_percent")) return `${numeric.toFixed(2)}%`;
   if (path.endsWith("sharpen_radius_px")) return `${numeric.toFixed(2)} px`;
+  if (path.includes(".black_and_white.")) return `${numeric > 0 ? "+" : ""}${Math.round(numeric)}`;
   if (path.includes(".detail.")) return `${numeric > 0 && !path.endsWith("sharpen_threshold") ? "+" : ""}${Math.round(numeric)}`;
   if (path.endsWith("_hue")) return `${numeric > 0 ? "+" : ""}${numeric.toFixed(1)}°`;
   if (path.endsWith("_purity") || path.endsWith(".saturation") || path.endsWith(".vibrance")) return `${numeric > 0 ? "+" : ""}${Math.round(path.endsWith("_purity") ? numeric : numeric * 100)}%`;
@@ -13196,7 +13342,7 @@ function formatControlValue(path, value) {
   if (path.endsWith("film_look.halation_radius")) return `${numeric.toFixed(2)}% 35mm gate`;
   if (path.endsWith("film_look.bloom_radius")) return `${numeric.toFixed(2)}% output diag`;
   if (path.includes("film_look")) {
-    const signed = /(contrast|toe|shoulder|density|microcontrast|hue_offset)$/.test(path);
+    const signed = /(contrast|toe|shoulder|density|hue_offset)$/.test(path);
     return `${signed && numeric > 0 ? "+" : ""}${Math.round(numeric)}%`;
   }
   if (path.endsWith("highlight_compression_softness")) {
@@ -13237,10 +13383,22 @@ function renderGeometryResetState(defaults = defaultAdjustments()) {
   geometryReset.setAttribute("aria-label", "Reset all Crop & Rotate values");
 }
 
+// Black-and-white film has one silver layer and so no color grain.
+function filmGrainChromaInactive() {
+  return state.adjustments?.[state.currentView]?.film_look?.grain_film_type === "black_and_white";
+}
+
+function renderFilmGrainChroma() {
+  const chroma = document.getElementById("film-grain-chroma");
+  if (!chroma) return;
+  if (state.session) chroma.disabled = filmGrainChromaInactive();
+}
+
 function renderControlState() {
   const defaults = defaultAdjustments();
   const filmLook = state.adjustments[state.currentView]?.film_look;
   document.querySelector("[data-film-grain-custom]")?.toggleAttribute("hidden", filmLook?.grain_film_format !== "custom");
+  renderFilmGrainChroma();
   renderHighlightCompressionControls();
   renderSdrHighlightCompressionControls();
   els.controlRows.forEach((row) => {
@@ -13273,6 +13431,9 @@ function renderControlState() {
   els.colorGradingReset?.closest(".control-group")?.classList.toggle("modified", gradingModified);
   const detailModified = !valuesEqual(state.adjustments[state.currentView]?.detail, currentLaneDefaults.detail);
   document.querySelector(".detail-group")?.classList.toggle("modified", detailModified);
+  const blackAndWhiteModified = state.adjustments[state.currentView]?.black_and_white_section_enabled === true
+    || !valuesEqual(state.adjustments[state.currentView]?.black_and_white, currentLaneDefaults.black_and_white);
+  document.querySelector(".black-and-white-group")?.classList.toggle("modified", blackAndWhiteModified);
   const vignetteModified = !valuesEqual(state.adjustments[state.currentView]?.vignette, currentLaneDefaults.vignette);
   if (els.vignetteState) els.vignetteState.textContent = "";
   els.vignetteReset?.closest(".control-group")?.classList.toggle("modified", vignetteModified);
@@ -13369,6 +13530,16 @@ function builtInGroupPresets(context) {
         [`denoise.${context.lane}.analysis`]: JSON.parse(JSON.stringify(defaults.analysis)),
       },
     }];
+  }
+  if (context?.group === "black-and-white") {
+    return BLACK_AND_WHITE_PRESETS.map((preset) => ({
+      id: `built-in:${preset.id}`,
+      groupId: context.groupId,
+      name: preset.name,
+      description: preset.description,
+      builtIn: true,
+      values: { [`${context.lane}.black_and_white`]: { ...defaultBlackAndWhite(), ...preset.values } },
+    }));
   }
   if (context?.group !== "film-look") return [];
   const path = `${context.lane}.film_look`;
@@ -13502,6 +13673,13 @@ function applyGroupPreset(preset) {
   context.paths.forEach((path) => {
     if (Object.hasOwn(preset.values, path)) setGroupPresetPathValue(context, path, JSON.parse(JSON.stringify(preset.values[path])));
   });
+  if (context.group === "film-look") {
+    // Film Look presets saved before NEXT-01 #2 still carry Image Structure.
+    // Those controls are Detail's now, and a preset may only change its own
+    // group, so they are dropped rather than moved.
+    const look = state.adjustments[context.lane]?.film_look;
+    if (look) for (const key of ["image_structure_enabled", "image_softness", "microcontrast"]) delete look[key];
+  }
   if (context.group === "denoise") {
     const runtime = state.denoiseRuntime[context.lane];
     runtime.dirty = true;
@@ -13650,6 +13828,17 @@ function resetLaneObject(key, neutral) {
   invalidatePreview(lane);
   renderControlState();
   debouncePreview(lane);
+}
+
+/** Copy HDR's Black & White, sliders and on/off, to SDR once (BW-01). */
+function matchHdrBlackAndWhiteToSdr() {
+  if (!state.session) return;
+  state.adjustments.sdr.black_and_white = JSON.parse(JSON.stringify(state.adjustments.hdr.black_and_white));
+  state.adjustments.sdr.black_and_white_section_enabled = state.adjustments.hdr.black_and_white_section_enabled === true;
+  syncControlsFromState();
+  invalidatePreview("sdr");
+  renderControlState();
+  debouncePreview("sdr");
 }
 
 function matchLaneObject(key) {

@@ -172,6 +172,7 @@ class FilmLookAdjustments(BaseModel):
         "65mm", "35mm", "super35", "super16", "16mm", "super8", "custom"
     ] = "35mm"
     grain_capture_geometry: Literal["frame", "horizontal_strip", "vertical_strip"] = "frame"
+    grain_film_type: Literal["color_negative", "black_and_white"] = "color_negative"
     grain_custom_width_mm: float = Field(default=36.0, ge=1.0, le=500.0)
     grain_custom_height_mm: float = Field(default=24.0, ge=1.0, le=500.0)
     grain_shadow_response: float = Field(default=100.0, ge=0.0, le=150.0)
@@ -193,10 +194,6 @@ class FilmLookAdjustments(BaseModel):
     bloom_sensitivity: float = Field(default=80.0, ge=0.0, le=100.0)
     bloom_radius: float = Field(default=0.5, ge=0.0, le=10.0)
     bloom_highlight_detail: float = Field(default=75.0, ge=0.0, le=100.0)
-
-    image_structure_enabled: bool = True
-    image_softness: float = Field(default=0.0, ge=0.0, le=100.0)
-    microcontrast: float = Field(default=0.0, ge=-100.0, le=100.0)
 
 
 class ColorWheelAdjustments(BaseModel):
@@ -301,8 +298,79 @@ class DetailAdjustments(BaseModel):
     sharpen_threshold: float = Field(default=10.0, ge=0.0, le=100.0)
 
 
+class BlackAndWhiteAdjustments(BaseModel):
+    """How bright each colour becomes in grey (BW-01).
+
+    The module's on/off is the rendition's ``black_and_white_section_enabled``.
+    With every slider at 0 the conversion is ACEScg luminance, exactly what
+    Saturation -100 gives.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    reds: float = Field(default=0.0, ge=-100.0, le=100.0)
+    oranges: float = Field(default=0.0, ge=-100.0, le=100.0)
+    yellows: float = Field(default=0.0, ge=-100.0, le=100.0)
+    greens: float = Field(default=0.0, ge=-100.0, le=100.0)
+    aquas: float = Field(default=0.0, ge=-100.0, le=100.0)
+    blues: float = Field(default=0.0, ge=-100.0, le=100.0)
+    purples: float = Field(default=0.0, ge=-100.0, le=100.0)
+    magentas: float = Field(default=0.0, ge=-100.0, le=100.0)
+
+
+class BranchDetailAdjustments(DetailAdjustments):
+    """Global Detail for one rendition: the local-grade controls plus two more.
+
+    Softness and Microcontrast moved here from Film Look's Image Structure
+    (NEXT-01 #2). Only the controls moved: they still run where Image
+    Structure ran, after the local adjustments, on the film response frame,
+    so a picture looks the same. They are global only, which is why local
+    grades keep the plain ``DetailAdjustments``.
+    """
+
+    softness: float = Field(default=0.0, ge=0.0, le=100.0)
+    microcontrast: float = Field(default=0.0, ge=-100.0, le=100.0)
+
+
+_LEGACY_IMAGE_STRUCTURE_FIELDS = ("image_structure_enabled", "image_softness", "microcontrast")
+
+
+def move_image_structure_into_detail(value: object) -> object:
+    """Carry a saved Film Look Image Structure into Detail.
+
+    Image Structure was scaled by Look Strength and switched off with Film
+    Look; Detail's controls are neither. So the values carried over are the
+    ones that were in effect: scaled by Look Strength, and only when Image
+    Structure and Film Look were both on.
+    """
+    if not isinstance(value, dict):
+        return value
+    look = value.get("film_look")
+    if not isinstance(look, dict) or not any(field in look for field in _LEGACY_IMAGE_STRUCTURE_FIELDS):
+        return value
+    normalized = dict(value)
+    look = dict(look)
+    structure_enabled = bool(look.pop("image_structure_enabled", True))
+    softness = float(look.pop("image_softness", 0.0) or 0.0)
+    microcontrast = float(look.pop("microcontrast", 0.0) or 0.0)
+    normalized["film_look"] = look
+    in_effect = structure_enabled and bool(normalized.get("film_look_section_enabled", True))
+    if in_effect and (softness != 0.0 or microcontrast != 0.0):
+        strength = float(look.get("look_strength", 100.0)) / 100.0
+        detail = dict(normalized.get("detail") or {})
+        detail.setdefault("softness", round(softness * strength, 4))
+        detail.setdefault("microcontrast", round(microcontrast * strength, 4))
+        normalized["detail"] = detail
+    return normalized
+
+
 class HDRAdjustments(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def carry_image_structure_into_detail(cls, value: object) -> object:
+        return move_image_structure_into_detail(value)
 
     @model_validator(mode="before")
     @classmethod
@@ -325,13 +393,15 @@ class HDRAdjustments(BaseModel):
     primaries_section_enabled: bool = True
     curves_section_enabled: bool = True
     detail_section_enabled: bool = True
+    black_and_white_section_enabled: bool = False
     film_look_section_enabled: bool = True
     color_grading_section_enabled: bool = True
     vignette_section_enabled: bool = True
     film_look: FilmLookAdjustments = Field(default_factory=FilmLookAdjustments)
     color_grading: ColorGradingAdjustments = Field(default_factory=ColorGradingAdjustments)
     vignette: VignetteAdjustments = Field(default_factory=VignetteAdjustments)
-    detail: DetailAdjustments = Field(default_factory=DetailAdjustments)
+    detail: BranchDetailAdjustments = Field(default_factory=BranchDetailAdjustments)
+    black_and_white: BlackAndWhiteAdjustments = Field(default_factory=BlackAndWhiteAdjustments)
     exposure: float = Field(default=0.0, ge=-8.0, le=8.0)
     highlight_compression_start_nits: float = Field(default=400.0, ge=1.0, le=9999.0)
     highlight_compression_target_nits: float = Field(default=1000.0, ge=2.0, le=10000.0)
@@ -405,6 +475,11 @@ class HDRAdjustments(BaseModel):
 class SDRAdjustments(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    @model_validator(mode="before")
+    @classmethod
+    def carry_image_structure_into_detail(cls, value: object) -> object:
+        return move_image_structure_into_detail(value)
+
     # Projects saved before the SDR highlight-compression pipeline retain their
     # original base-rendition rendering. New edits use the neutral v2 placement
     # plus an explicit, delivery-gamut highlight stage.
@@ -418,13 +493,15 @@ class SDRAdjustments(BaseModel):
     primaries_section_enabled: bool = True
     curves_section_enabled: bool = True
     detail_section_enabled: bool = True
+    black_and_white_section_enabled: bool = False
     film_look_section_enabled: bool = True
     color_grading_section_enabled: bool = True
     vignette_section_enabled: bool = True
     film_look: FilmLookAdjustments = Field(default_factory=FilmLookAdjustments)
     color_grading: ColorGradingAdjustments = Field(default_factory=ColorGradingAdjustments)
     vignette: VignetteAdjustments = Field(default_factory=VignetteAdjustments)
-    detail: DetailAdjustments = Field(default_factory=DetailAdjustments)
+    detail: BranchDetailAdjustments = Field(default_factory=BranchDetailAdjustments)
+    black_and_white: BlackAndWhiteAdjustments = Field(default_factory=BlackAndWhiteAdjustments)
     exposure: float = Field(default=0.0, ge=-8.0, le=8.0)
     highlight_recovery: float = Field(default=0.6, ge=0.0, le=4.0)
     highlight_compression_start_percent: float = Field(default=50.0, ge=1.0, le=99.0)
@@ -822,10 +899,20 @@ class DenoiseLiveControls(BaseModel):
     color_noise: float = Field(default=0.5, ge=0.0, le=1.0)
     detail_recovery: float = Field(default=0.5, ge=0.0, le=1.0)
     # Adaptive only: strength by noise size, 0.5 being the measured amount.
-    # Fine covers ~1-4 px, medium ~8 px, coarse ~16-32 px.
+    # Finest covers ~1-2 px, fine ~2-4 px, medium ~8 px, coarse ~16-32 px.
+    finest_noise: float = Field(default=0.5, ge=0.0, le=1.0)
     fine_noise: float = Field(default=0.5, ge=0.0, le=1.0)
     medium_noise: float = Field(default=0.5, ge=0.0, le=1.0)
     coarse_noise: float = Field(default=0.5, ge=0.0, le=1.0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _finest_follows_fine(cls, data: Any) -> Any:
+        # Fine used to cover ~1-4 px on its own; a document saved then keeps
+        # its look by giving the new finest band the same setting.
+        if isinstance(data, dict) and "fine_noise" in data and "finest_noise" not in data:
+            return {**data, "finest_noise": data["fine_noise"]}
+        return data
 
 
 class DenoiseAnalysisSettings(BaseModel):

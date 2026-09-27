@@ -49,7 +49,7 @@ function activeParams(overrides = {}) {
   params[92] = 1;   // bloom enabled
   params[93] = 0.5;
   params[95] = 0.5; // bloom radius (frame diagonal, percent)
-  params[97] = 1;   // image structure enabled
+  params[97] = 1;   // Detail enabled, for Softness/Microcontrast (NEXT-01 #2)
   params[98] = 0.4; // softness
   params[99] = 0.3; // microcontrast
   params[108] = 1;  // film resolution 100%
@@ -221,14 +221,33 @@ test("the film-plane halation reach follows the processing scale", () => {
   const native = Scale.spatialReachDetail(NATIVE.width, NATIVE.height, activeParams({ 88: radius }));
   const display = Scale.spatialReachDetail(DISPLAY.width, DISPLAY.height, activeParams({ 88: radius }));
   // The physical radius is the same, so its pixel reach is proportional to the
-  // frame's pixels-per-mm: a quarter-size frame reaches a quarter as far.
-  assert.ok(Math.abs(native.blurTexels / display.blurTexels - 4) < 0.01,
-    `expected a 4x reach ratio, got ${native.blurTexels} vs ${display.blurTexels}`);
+  // frame's pixels-per-mm: a quarter-size frame reaches a quarter as far. The
+  // blur is counted in texels of each frame's own spatial grid.
+  const nativeGrid = Scale.spatialGridScale(NATIVE.width, NATIVE.height);
+  const displayGrid = Scale.spatialGridScale(DISPLAY.width, DISPLAY.height);
+  const ratio = (native.blurTexels * nativeGrid) / (display.blurTexels * displayGrid);
+  assert.ok(Math.abs(ratio - 4) < 0.01, `expected a 4x pixel reach ratio, got ${ratio}`);
   assert.ok(native.total > display.total);
   // A radius of zero switches the stage off in the parameter build, so the
   // halation contribution is zero.
   const off = Scale.spatialReachDetail(NATIVE.width, NATIVE.height, activeParams({ 85: 0, 92: 0 }));
   assert.equal(off.blurTexels, 0);
+});
+
+test("the spatial grid keeps the default halation glow at two texels or more", () => {
+  // NEXT-01 #1: on a fixed quarter grid the 0.2% glow was half a texel on a
+  // Fit preview, so the effect and its map went blocky and changed with zoom.
+  assert.equal(Scale.spatialGridScale(905, 603), 1);
+  assert.equal(Scale.spatialGridScale(3990, 2660), 2);
+  assert.equal(Scale.spatialGridScale(7980, 5320), 4);
+  for (const width of [600, 905, 1500, 2047, 2048, 3000, 4095, 4096, 7980, 12000]) {
+    const height = Math.round(width * 2 / 3);
+    const { blurTexels } = Scale.spatialReachDetail(width, height, activeParams({ 88: 0.2 }));
+    assert.ok(blurTexels >= 1.9, `${width} px: the default glow is ${blurTexels} texels`);
+  }
+  // Every grid divides the four-pixel halo alignment, so a tile's grid lines
+  // up with the frame's whichever scale the frame uses.
+  for (const scale of [1, 2, 4]) assert.equal(Scale.SPATIAL_SCALE % scale, 0);
 });
 
 test("the spatial reach is anchored to the quarter-resolution grid and capped", () => {
@@ -263,8 +282,12 @@ test("the composed reach composes Detail and the film stage, and rounds to the g
   assert.equal(detailOnly.spatialHalo, 0);
   assert.equal(detailOnly.halo, detailOnly.detailHalo);
 
-  // Nothing active reserves nothing.
-  const idle = Scale.composedReach(NATIVE.width, NATIVE.height, activeParams({ 78: 0, 79: 0, 148: 0 }), [], "hdr");
+  // Nothing active reserves nothing. Detail's switch drives both 148 and
+  // 97 (its Softness/Microcontrast, which run in the film stage).
+  const idle = Scale.composedReach(NATIVE.width, NATIVE.height, activeParams({ 78: 0, 79: 0, 148: 0, 97: 0 }), [], "hdr");
+  // Softness/Microcontrast reserve a film-stage reach with Film Look off.
+  const structureOnly = Scale.composedReach(NATIVE.width, NATIVE.height, activeParams({ 78: 0, 79: 0, 148: 0 }), [], "hdr");
+  assert.ok(structureOnly.spatialHalo > 0);
   assert.deepEqual(idle, { halo: 0, detailHalo: 0, spatialHalo: 0 });
 });
 
@@ -291,7 +314,7 @@ test("the local-detail switch is one rule for the chain, the metrics and the hal
   // A local whose only active module is Detail still reserves a detail halo.
   const local = { id: "l1", enabled: true, opacity: 1, hdr_grade: { detail: { sharpen_amount: 40 } } };
   const composed = Scale.composedReach(
-    NATIVE.width, NATIVE.height, activeParams({ 148: 0, 79: 0 }), [local], "hdr",
+    NATIVE.width, NATIVE.height, activeParams({ 148: 0, 97: 0, 79: 0 }), [local], "hdr",
   );
   assert.ok(composed.detailHalo > 0);
   assert.equal(composed.spatialHalo, 0);

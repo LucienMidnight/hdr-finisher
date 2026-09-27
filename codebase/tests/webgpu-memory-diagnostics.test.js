@@ -81,7 +81,8 @@ test("live diagnostics count all four grading textures and separate byte lifetim
   const resources = preview.diagnosticsSnapshot().resources;
   const expectedGrading = (400 * 200 * 8 * 4)
     + (400 * 200 * 8 * 2)
-    + (100 * 50 * 8 * 2);
+    // A frame under 2048 px holds its spatial pair at full resolution.
+    + (400 * 200 * 8 * 2);
   assert.equal(resources.gradingIntermediateBytes, expectedGrading);
   assert.equal(resources.memory.resident.categories.gradingCoreBytes, 400 * 200 * 8 * 4);
   assert.equal(resources.memory.resident.categories.gradingDetailBytes, 400 * 200 * 8 * 2);

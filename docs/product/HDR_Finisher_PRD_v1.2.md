@@ -556,6 +556,157 @@ the Denoise Show noise view. Before publishing it as a version:
   export now uses the same, more accurate blur as the preview.
 - Tag `v0.8.13` and publish the GitHub release with the installers.
 
+### BW-01 — Black & White module (built 2026-09-27, awaiting Steve's test)
+
+Recorded 2026-09-26; redesigned with Steve and built on 2026-09-27 on
+`feature/bw-and-followups`.
+
+**The gap.** Saturation −100 gave monochrome only with fixed ACEScg luma
+weights: no way to decide how bright reds or blues render in grey. Primaries
+already covers colour channel mixing, so no general channel mixer was added.
+
+**Design (Steve's decisions)**
+
+- **Only B&W-specific controls** (see memory `minimal-specific-modules`): the
+  monochrome conversion itself and an 8-colour Color Response mixer, Reds,
+  Oranges, Yellows, Greens, Aquas, Blues, Purples, Magentas (−100..+100),
+  setting how bright each colour becomes in grey. No mixer weights, toning,
+  contrast or grain controls.
+- **On/off is the section's eye**, off by default; there is no Enabled
+  checkbox. On with every slider at 0 is pixel-identical to Saturation −100
+  (tested). Reset returns the sliders to 0 and leaves on/off alone.
+- **Panel position:** 13, after Color Grading (Steve, 2026-09-27). Panel order
+  only: B&W still processes straight after Color, so Color Grading can tone
+  the grey picture.
+- **Per rendition**, like other modules, with **Match HDR black & white**
+  copying sliders and on/off to SDR once. SDR Match (entire) copies it too.
+- **Presets** through the existing group-preset system, sliders only: Yellow,
+  Orange, Red, Green, Blue filters, Infrared look, Orthochromatic. No Neutral
+  preset: turning B&W on is neutral. The values are first estimates for
+  Steve to tune.
+
+**Maths.** Per pixel, in scene-linear ACEScg: grey = ACEScg luma × 2^(2 ·
+weight · response). Response blends the two sliders either side of the
+pixel's Oklab hue (centres at the hues of #FF0000, #FF8000, #FFFF00, #00FF00,
+#00FFFF, #0000FF, #8000FF, #FF00FF) with a smoothstep: no step at a boundary,
+no overshoot. Weight fades in with relative chroma (full at C/L 0.12) so greys
+never move, and fades out in deep shadow (Oklab L 0.25 → 0.12, about 3.5 → 7
+stops under mid grey) so shadow colour noise is not turned into brightness
+noise: 1.0× the plain conversion's noise at −7 EV (3.5× without the fade),
+2.0× at −5 EV with 40% colour noise (5.1× without). Hue and chroma are
+exposure-invariant, so HDR and SDR agree.
+
+**Fix after Steve's first test (2026-09-27).** On DSC00264 (high ISO, a strongly
+orange background, Oranges +100 beside Yellows +54 and Greens −53) B&W was
+3.6× as noisy as Saturation −100: each pixel's noisy hue jumped between
+neighbouring sliders, turning colour noise into brightness noise. Hue, chroma
+and lightness are now read from a guide, the mean of a 5×5 lattice of source
+pixels two apart (a 9×9 footprint) taken through the same pointwise stages as
+the pixel; brightness still comes from the pixel. That photo drops to 1.33×
+(the rest is the brighter oranges lifting their own noise). Colour edges blend
+the slider within 4 px. GPU tiles reserve that 4 px reach; the CPU strip path
+refuses B&W with sliders set and renders whole-frame.
+
+**Placement.** Straight after Color, before highlight limiting measures the
+picture: HDR after Color; SDR scene-linear path after Color, before the sRGB
+placement; SDR authored-reference path in `_sdr_reference_pre_highlight`
+(Color runs after the highlight stage there). The GPU peak shader applies it
+on both SDR paths. Note: the GPU's quick HDR anchor estimate reads the picture
+before Color, so it ignores Saturation and B&W alike (pre-existing; the CPU
+limiter measures the finished picture).
+
+**Interactions.** With B&W on, Film Look adds no colour back: halation tint,
+grain chroma and the red/green/blue print response are neutralised at render
+time (saved values kept). Color Grading, RGB Curves and locals can still add
+colour on purpose, so an export is not promised to be fully monochrome.
+
+**Verification.** `tests/test_black_and_white.py` (identity with Saturation
+−100, neutrals fixed, smooth hue sweep, extreme HDR colours bounded to ±2 stops
+with no spikes, dark noise, ceiling with every slider at +100 in all three
+modes, Film Look neutral, both SDR highlight-stage inputs grey, per-rendition);
+`tests/bw-parity.js` (GPU vs CPU and grey on the GPU, HDR and SDR, with and
+without Film Look: added difference ≤0.05 levels mean, p99.9 1 level). On a
+real iPhone HDR HEIC (authored-reference SDR path) agreement is looser in
+extreme settings (up to 0.19 levels mean, p99.9 6 levels with every slider at
+±100 plus Film Look) because the two renderers start from slightly different
+authored-SDR pixels; typical presets stay ~0.08 mean, p99.9 1 level.
+
+**Not in v1 / open.** Slider strength (±2 stops), the chroma and shadow fade
+points and the preset values are first estimates for Steve's hands-on test.
+
+### NEXT-01 — Follow-ups for the next session (reminder)
+
+Recorded 2026-09-27, after film grain v2 and the Black & White grain Film
+Type landed on `feature/denoise-clumpy-noise`.
+
+**Status 2026-09-27 (branch `feature/bw-and-followups`): items 1–4 done.**
+
+- **1 Halation map.** Kept as a placement guide (Steve's choice); its tooltip
+  now says it shows where the glow can appear, not how strong it is. Testing
+  it at several zooms found a real preview bug: halation and bloom always ran
+  on a quarter-resolution grid, so at Fit (a ~905 px frame) the default glow
+  was half a texel and the effect and map went blocky and changed with zoom,
+  while the export did not. The grid is now 1, 2 or 4 px a texel by frame
+  size (`HDRGraphScale.spatialGridScale`). The HDR map was also shown several
+  times brighter than white; it now places its white at SDR white.
+- **2 Image Structure.** Softness and Microcontrast moved to Detail as
+  controls only; the processing stays where Image Structure ran (after
+  locals, on the film response frame). They follow Detail's switch, ignore
+  Look Strength, and the Film Look presets no longer set them. Old projects
+  carry their values into Detail scaled by Look Strength. Film Resolution
+  stays in Film Look under "Resolution".
+- **3 Map buttons** moved under their section headers.
+- **4 Denoise GPU heat.** A drag drew a settled frame per reconstruction, back
+  to back, and zoomed in rebuilt the whole 42 MP frame each step. Now it is
+  paced like other sliders and only the visible area is reconstructed during
+  a drag. 42 MP at 200%: 85 W / 7 fps → ~63 W / 49 fps (Exposure drag 64 W).
+  At Fit ~27–31 W vs Exposure's 21 W; Steve chose this smoother pacing over a
+  30/s cap that matched Exposure (~23 W).
+
+**Future work recorded from this round**
+
+- **PIPE-01 — Review the whole pipeline order before v1.** Softness and
+  Microcontrast now sit in Detail's panel but run in the film stage. Decide
+  the best place for them, and review the order and grouping of every stage
+  (Detail vs locals vs Film Look, where B&W and Color sit) before v1.
+- **DISPLAY-01 — HDR preview stuck in SDR after moving between monitors.**
+  Reported by Steve 2026-09-27: dragging the window from an HDR monitor to an
+  SDR one switches the HDR preview to its SDR rendering, as it should, but
+  moving it back to the HDR monitor leaves it stuck in SDR. Zooming a little
+  brings HDR back, so the display-capability change (the
+  `(dynamic-range: high)` media query / canvas HDR configuration) is probably
+  not triggering a re-render or surface reconfigure on its own. Look into it.
+- **DETAIL-01 — Texture vs Microcontrast.** They look and behave very
+  differently (Texture is a luminance band in log space; Microcontrast is a
+  colour high-pass at 0.06% of the diagonal). Look at both behaviours in a
+  future sprint.
+
+1. **Halation map.** Look at the Show halation map view again: what it shows,
+   and whether it is a useful guide to where halation will appear.
+2. **Image Structure → Detail.** Consider moving Image Structure (Image
+   Softness, Microcontrast, Film Resolution) out of Film Look into the Detail
+   module. Points to settle first:
+   - Film Resolution is scaled by Film Format, which lives in Film Look.
+   - The built-in Film Look presets set all three controls.
+   - Moving them may change their place in the pipeline.
+   - Saved documents need migrating.
+3. **Map buttons at the top.** Move the Show halation map and Show grain map
+   buttons from the bottom of their sections to the top, just under the
+   section header.
+4. **GPU heat while dragging Denoise sliders.** Dragging a Denoise slider
+   drives GPU temperature up sharply. Measure GPU load during a drag
+   (for example with `nvidia-smi`), then look at how often the drag
+   re-renders and at what resolution. Options include coalescing updates,
+   rendering drafts at lower resolution while dragging, and pausing when
+   idle.
+
+Film grain v2 context for any grain follow-up: at Amount 40 on a 42 MP frame,
+colour grain adds about 15 ms to an 11 MP GPU preview and about 50 ms at full
+resolution. CPU export takes 26 s, against 23 s for the first grain.
+`tests/grain-parity.js` checks that the preview matches the export.
+Black & white grain makes the chroma-grain item in BW-01 simpler: with B&W
+on, the module can switch grain to the Black & white Film Type.
+
 ---
 
 ## 11b. Full-Tier Interactive Performance — Deferred Work

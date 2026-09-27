@@ -287,7 +287,7 @@ test("a halo grows the working tile but not the whole-image resources", () => {
 });
 
 test("Detail band identity reuses amounts, threshold and clarity radius but invalidates band radii and upstream input", () => {
-  const params = new Float32Array(175);
+  const params = new Float32Array(186);
   params[149] = 0.25;
   params[150] = -0.4;
   params[151] = 0.75;
@@ -331,7 +331,7 @@ test("local Detail invalidates downstream bands when an earlier local changes", 
 });
 
 test("Detail halo covers the maximum separable and coarse-guide reach", () => {
-  const params = new Float32Array(175);
+  const params = new Float32Array(186);
   params[148] = 1;
   params[150] = 0.5;
   params[151] = 3;

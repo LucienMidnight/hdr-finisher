@@ -57,6 +57,7 @@ _SDR_GRAIN_FIELDS = (
     "grain_softness",
     "grain_chroma",
     "grain_film_format",
+    "grain_film_type",
     "grain_capture_geometry",
     "grain_custom_width_mm",
     "grain_custom_height_mm",

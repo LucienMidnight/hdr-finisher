@@ -150,6 +150,7 @@ def _denoised_export_source(session: object, kind: PreviewKind) -> np.ndarray:
                 luminance=controls.luminance,
                 color_noise=controls.color_noise,
                 detail_recovery=controls.detail_recovery,
+                finest_noise=controls.finest_noise,
                 fine_noise=controls.fine_noise,
                 medium_noise=controls.medium_noise,
                 coarse_noise=controls.coarse_noise,

@@ -12,10 +12,14 @@
   // built inside its tile and starts at the tile's first block. 172-174 are
   // the same pair for the base map the picture is first averaged into (its
   // block size, then its origin), which every radius averages further.
-  const PARAM_COUNT = 175;
+  // 175 is the grain film type (0 color negative, 1 black & white) and 176
+  // the high 16 bits of the grain seed, whose low half is 109.
+  const PARAM_COUNT = 186;
   const TILE_ORIGIN_X_INDEX = 160;
   const TILE_ORIGIN_Y_INDEX = 161;
   const NOISE_VIEW_INDEX = 166;
+  const GRAIN_FILM_TYPE_INDEX = 175;
+  const GRAIN_SEED_HIGH_INDEX = 176;
   const CLARITY_MAP_SCALE_INDEX = 167;
   const CLARITY_MAP_SIGMA_INDEX = 168;
   const CLARITY_MAP_TAPS_INDEX = 169;
@@ -44,12 +48,97 @@
    * deliberately lazy and loud: a build that forgot the script must fail at the
    * first halo computation rather than quietly reserve a halo of zero.
    */
+  // Frame pixels per halation/bloom texel for a frame of this size. The rule
+  // is HDRGraphScale.spatialGridScale; the memory models below also run where
+  // that module is not loaded, so they fall back to the same rule.
+  function spatialGridScale(width, height) {
+    const contract = typeof window !== "undefined" ? window.HDRGraphScale : null;
+    if (contract?.spatialGridScale) return contract.spatialGridScale(width, height);
+    const longEdge = Math.max(Number(width) || 1, Number(height) || 1);
+    if (longEdge >= 4096) return 4;
+    return longEdge >= 2048 ? 2 : 1;
+  }
+
   function graphScaleContract() {
     const module = (typeof window !== "undefined" && window.HDRGraphScale) || null;
     if (!module) {
       throw new Error("HDRGraphScale is not loaded; the processing-scale contract is required");
     }
     return module;
+  }
+
+  // BW-01 Black & White, in WGSL for both the render and the peak shaders
+  // (each names its parameter array differently). Mirrors
+  // `_apply_black_and_white` in adjustments.py: ACEScg luminance, scaled per
+  // pixel by up to two stops by the sliders either side of its Oklab hue, in
+  // proportion to its relative chroma. p[177] switches it on; p[178..185] are
+  // Reds..Magentas / 100. Hue, chroma and lightness come from \`guide\`: the
+  // mean of a 5x5 lattice of source pixels two apart around the pixel, taken
+  // through the same pointwise stages (adjustments.py BW_GUIDE_STEP), so
+  // colour noise is not turned into brightness noise.
+  const BLACK_AND_WHITE_PARAM = 177;
+  const BLACK_AND_WHITE_GUIDE_STEP = 2;
+  const BLACK_AND_WHITE_GUIDE_TAPS = 2;
+  function blackAndWhiteWgsl(params, name) {
+    return `
+fn ${name}NeedsGuide() -> bool {
+  if (${params}[${BLACK_AND_WHITE_PARAM}] < 0.5) { return false; }
+  for (var index = 1u; index <= 8u; index = index + 1u) {
+    if (${params}[${BLACK_AND_WHITE_PARAM}u + index] != 0.0) { return true; }
+  }
+  return false;
+}
+fn ${name}Cbrt(value: f32) -> f32 {
+  return select(0.0, sign(value) * pow(abs(value), 1.0 / 3.0), abs(value) > 0.0);
+}
+fn ${name}(input: vec3f, guide: vec3f) -> vec3f {
+  if (${params}[${BLACK_AND_WHITE_PARAM}] < 0.5) { return input; }
+  let y = dot(input, vec3f(0.2722287, 0.6740818, 0.0536895));
+  var sliders = array<f32, 9>(
+    ${params}[178], ${params}[179], ${params}[180], ${params}[181],
+    ${params}[182], ${params}[183], ${params}[184], ${params}[185], ${params}[178]
+  );
+  var anySlider = false;
+  for (var index = 0u; index < 8u; index = index + 1u) {
+    if (sliders[index] != 0.0) { anySlider = true; }
+  }
+  if (!anySlider) { return vec3f(y); }
+  let lms = vec3f(
+    ${name}Cbrt(0.6317629967 * guide.r + 0.3488996982 * guide.g + 0.0193373050 * guide.b),
+    ${name}Cbrt(0.2700628984 * guide.r + 0.6309344642 * guide.g + 0.0990026374 * guide.b),
+    ${name}Cbrt(0.0987429103 * guide.r + 0.1852327013 * guide.g + 0.7160243884 * guide.b)
+  );
+  let lightness = 0.2104542553 * lms.x + 0.7936177850 * lms.y - 0.0040720468 * lms.z;
+  let a = 1.9779984951 * lms.x - 2.4285922050 * lms.y + 0.4505937099 * lms.z;
+  let b = 0.0259040371 * lms.x + 0.7827717662 * lms.y - 0.8086757660 * lms.z;
+  var hue = degrees(atan2(b, a));
+  hue = hue - 360.0 * floor(hue / 360.0);
+  var centres = array<f32, 9>(29.0, 53.0, 110.0, 143.0, 195.0, 264.0, 294.0, 328.0, 389.0);
+  if (hue < centres[0]) { hue = hue + 360.0; }
+  var segment = 7u;
+  for (var index = 0u; index < 8u; index = index + 1u) {
+    if (hue >= centres[index] && hue < centres[index + 1u]) { segment = index; }
+  }
+  var t = clamp((hue - centres[segment]) / (centres[segment + 1u] - centres[segment]), 0.0, 1.0);
+  t = t * t * (3.0 - 2.0 * t);
+  let response = sliders[segment] * (1.0 - t) + sliders[segment + 1u] * t;
+  let relativeChroma = length(vec2f(a, b)) / (max(lightness, 0.0) + 0.05);
+  let chromaT = clamp(relativeChroma / 0.12, 0.0, 1.0);
+  let shadowT = clamp((lightness - 0.12) / (0.25 - 0.12), 0.0, 1.0);
+  let weight = chromaT * chromaT * (3.0 - 2.0 * chromaT) * shadowT * shadowT * (3.0 - 2.0 * shadowT);
+  return vec3f(y * exp2(2.0 * weight * response));
+}
+// The lattice mean the guide is built from, edges clamped to \`limit\`.
+fn ${name}LatticeMean(texture: texture_2d<f32>, coordinate: vec2i, limit: vec2i) -> vec3f {
+  var total = vec3f(0.0);
+  for (var y = -${BLACK_AND_WHITE_GUIDE_TAPS}; y <= ${BLACK_AND_WHITE_GUIDE_TAPS}; y = y + 1) {
+    for (var x = -${BLACK_AND_WHITE_GUIDE_TAPS}; x <= ${BLACK_AND_WHITE_GUIDE_TAPS}; x = x + 1) {
+      let at = clamp(coordinate + vec2i(x, y) * ${BLACK_AND_WHITE_GUIDE_STEP}, vec2i(0), limit - vec2i(1));
+      total += textureLoad(texture, at, 0).rgb;
+    }
+  }
+  return total / ${(2 * BLACK_AND_WHITE_GUIDE_TAPS + 1) ** 2}.0;
+}`;
   }
 
   const PEAK_REDUCTION_SHADER_SOURCE = `
@@ -70,6 +159,14 @@ fn peakAcescgToSrgb(rgb: vec3f) -> vec3f {
     -0.0240033568 * rgb.r - 0.1289689761 * rgb.g + 1.1529723329 * rgb.b
   );
 }
+fn peakSrgbToAcescg(rgb: vec3f) -> vec3f {
+  return vec3f(
+    0.6130974024 * rgb.r + 0.3395231366 * rgb.g + 0.0473794610 * rgb.b,
+    0.0701937225 * rgb.r + 0.9163538791 * rgb.g + 0.0134523985 * rgb.b,
+    0.0206155922 * rgb.r + 0.1095697729 * rgb.g + 0.8698146349 * rgb.b
+  );
+}
+${blackAndWhiteWgsl("peakParams", "peakBlackAndWhite")}
 fn peakAcescgToBt2020(rgb: vec3f) -> vec3f {
   return vec3f(
     1.0260187082 * rgb.r - 0.0221655448 * rgb.g - 0.0038531634 * rgb.b,
@@ -112,22 +209,37 @@ fn peakSceneColor(input: vec3f) -> vec3f {
   let vibranceWeight = pow(1.0 - relativeChroma, 2.0);
   return neutral + chroma * max(0.0, 1.0 + peakParams[71] * vibranceWeight) * max(0.0, 1.0 + peakParams[70]);
 }
-fn peakSdrInput(input: vec3f) -> vec3f {
-  var rgb = input * exp2(peakParams[2]);
-  if (peakParams[1] > 0.5) {
-    rgb = max(rgb, vec3f(0.0));
-    if (peakParams[4] != 0.0) {
-      let mask = 1.0 - smoothstep(0.0, 0.5, peakSrgbLuma(rgb));
-      rgb = max(rgb + vec3f(peakParams[4] * 0.08 * mask), vec3f(0.0));
-    }
-    return rgb;
+fn peakSdrReferencePrefix(input: vec3f) -> vec3f {
+  var rgb = max(input * exp2(peakParams[2]), vec3f(0.0));
+  if (peakParams[4] != 0.0) {
+    let mask = 1.0 - smoothstep(0.0, 0.5, peakSrgbLuma(rgb));
+    rgb = max(rgb + vec3f(peakParams[4] * 0.08 * mask), vec3f(0.0));
   }
-  rgb = max(rgb, vec3f(0.0));
+  return rgb;
+}
+fn peakSdrScenePrefix(input: vec3f) -> vec3f {
+  var rgb = max(input * exp2(peakParams[2]), vec3f(0.0));
   if (peakParams[4] != 0.0) {
     let mask = 1.0 - smoothstep(0.0, 0.5, peakLuma(rgb));
     rgb = max(rgb + vec3f(peakParams[4] * 0.08 * mask), vec3f(0.0));
   }
-  return peakAcescgToSrgb(peakSceneColor(rgb)) * ((100.0 / 203.0) / 0.18);
+  return peakSceneColor(rgb);
+}
+fn peakSdrInput(input: vec3f, guideSource: vec3f) -> vec3f {
+  let needsGuide = peakBlackAndWhiteNeedsGuide();
+  if (peakParams[1] > 0.5) {
+    var rgb = peakSdrReferencePrefix(input);
+    if (peakParams[${BLACK_AND_WHITE_PARAM}] > 0.5) {
+      var guide = rgb;
+      if (needsGuide) { guide = peakSdrReferencePrefix(guideSource); }
+      rgb = peakAcescgToSrgb(peakBlackAndWhite(peakSrgbToAcescg(rgb), peakSrgbToAcescg(guide)));
+    }
+    return rgb;
+  }
+  let scene = peakSdrScenePrefix(input);
+  var guide = scene;
+  if (needsGuide) { guide = peakSdrScenePrefix(guideSource); }
+  return peakAcescgToSrgb(peakBlackAndWhite(scene, guide)) * ((100.0 / 203.0) / 0.18);
 }
 
 // The measurement domain follows the selected colour handling: BT.2020 channel
@@ -161,7 +273,11 @@ fn peakReductionMain(@builtin(global_invocation_id) id: vec3u) {
   if (id.x >= dimensions.x || id.y >= dimensions.y) { return; }
   let source = textureLoad(peakSource, vec2i(id.xy), 0).rgb;
   let sdrV2 = peakParams[0] < 0.5 && peakParams[159] > 0.5;
-  let rgb = select(peakTone(source), peakSdrInput(source), sdrV2);
+  var guideSource = source;
+  if (sdrV2 && peakBlackAndWhiteNeedsGuide()) {
+    guideSource = peakBlackAndWhiteLatticeMean(peakSource, vec2i(id.xy), vec2i(dimensions));
+  }
+  let rgb = select(peakTone(source), peakSdrInput(source, guideSource), sdrV2);
   recordPeak(peakSignalOf(rgb, sdrV2));
 }
 
@@ -359,15 +475,17 @@ fn resolveTwoLevelMain(@builtin(global_invocation_id) id: vec3u) {
       chroma: overall * 2 * controls.colorNoise,
       fineMultiplier: 1 + Math.max(0, 0.5 - controls.detailRecovery),
       fineFloor: Math.max(0, controls.detailRecovery - 0.5) * 0.6,
-      // By noise size, for both components: bands 0-1, band 2, bands 3-4.
-      sizeMultiplier: (level) => 2 * (level < 2 ? controls.fineNoise : level === 2 ? controls.mediumNoise : controls.coarseNoise),
+      // By noise size, for both components: band 0, band 1, band 2, bands 3-4.
+      sizeMultiplier: (level) => 2 * (level < 3 ? [controls.finestNoise, controls.fineNoise, controls.mediumNoise][level] : controls.coarseNoise),
     };
   }
 
   // The size controls only the adaptive method reads, validated like the rest.
+  // Finest falls back to Fine, which covered both bands before it was split.
   function adaptiveDenoiseSizes(controls = {}) {
-    return Object.fromEntries(["fineNoise", "mediumNoise", "coarseNoise"].map((name) => {
-      const value = Number(controls[name] ?? 0.5);
+    const fallback = { finestNoise: controls.fineNoise };
+    return Object.fromEntries(["finestNoise", "fineNoise", "mediumNoise", "coarseNoise"].map((name) => {
+      const value = Number(controls[name] ?? fallback[name] ?? 0.5);
       if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error(`${name} must be between 0 and 1`);
       return [name, value];
     }));
@@ -666,8 +784,9 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     const sourceBytes = pixels * sourceBytesPerPixel;
     const gradingBytes = pixels * 8 * 4;
     const detailBytes = detailActive ? pixels * 8 * 2 : 0;
-    const spatialWidth = Math.ceil(normalizedWidth / 4);
-    const spatialHeight = Math.ceil(normalizedHeight / 4);
+    const spatialGrid = spatialGridScale(normalizedWidth, normalizedHeight);
+    const spatialWidth = Math.ceil(normalizedWidth / spatialGrid);
+    const spatialHeight = Math.ceil(normalizedHeight / spatialGrid);
     const spatialBytes = spatialActive ? spatialWidth * spatialHeight * 8 * 2 : 0;
     const denoise = denoiseLevels > 0
       ? denoiseLogicalBytes(normalizedWidth, normalizedHeight, denoiseLevels)
@@ -748,8 +867,8 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
    *
    * Every number here mirrors a line of the shader, because a halo that is
    * derived differently from the radius it is covering is a seam waiting to
-   * appear at one particular setting. The blur runs on the quarter-resolution
-   * grid, so its reach converts back to full resolution by four; the extract
+   * appear at one particular setting. The blur runs on the frame's spatial
+   * grid (1, 2 or 4 pixels a texel), so its reach converts back by that; the extract
    * and the finish pass read the film texture directly and reach their own
    * short distances into it.
    *
@@ -870,7 +989,8 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     }
     if (spatialActive) {
       add("tile-spatial-film", "spatial", "resident",
-        Math.ceil(workWidth / 4) * Math.ceil(workHeight / 4) * 8 * 2, { textures: 2, tile: true });
+        Math.ceil(workWidth / spatialGridScale(width, height)) * Math.ceil(workHeight / spatialGridScale(width, height)) * 8 * 2,
+        { textures: 2, tile: true });
     }
     if (denoiseLevels > 0) {
       const denoise = denoiseLogicalBytes(workWidth, workHeight, denoiseLevels);
@@ -931,7 +1051,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     const width = Math.max(1, Math.floor(Number(options.width) || 1));
     const height = Math.max(1, Math.floor(Number(options.height) || 1));
     const pixels = width * height;
-    const spatialPixels = Math.ceil(width / 4) * Math.ceil(height / 4);
+    const spatialPixels = Math.ceil(width / spatialGridScale(width, height)) * Math.ceil(height / spatialGridScale(width, height));
     const sourceBytesPerPixel = options.sourceBytesPerPixel === 16 ? 16 : 8;
     const detailActive = options.detailActive !== false;
     const spatialActive = options.spatialActive !== false;
@@ -2029,7 +2149,8 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       );
       const gradingSpatialBytes = intermediateEntries.reduce((sum, entry) => {
         if (!entry.spatialATexture || !entry.spatialBTexture) return sum;
-        return sum + Math.ceil(entry.width / 4) * Math.ceil(entry.height / 4) * 8 * 2;
+        const grid = spatialGridScale(entry.width, entry.height);
+        return sum + Math.ceil(entry.width / grid) * Math.ceil(entry.height / grid) * 8 * 2;
       }, 0);
       const gradingDetailBytes = intermediateEntries.reduce((sum, entry) => (
         sum + (entry.detailATexture && entry.detailBTexture ? entry.width * entry.height * 8 * 2 : 0)
@@ -2179,8 +2300,9 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
             0,
           ),
           gradingIntermediateBytes: [...this.intermediates.values()].reduce((sum, entry) => {
-            const spatialWidth = Math.max(1, Math.ceil(entry.width / 4));
-            const spatialHeight = Math.max(1, Math.ceil(entry.height / 4));
+            const grid = spatialGridScale(entry.width, entry.height);
+            const spatialWidth = Math.max(1, Math.ceil(entry.width / grid));
+            const spatialHeight = Math.max(1, Math.ceil(entry.height / grid));
             const spatialBytes = entry.spatialATexture && entry.spatialBTexture
               ? spatialWidth * spatialHeight * 8 * 2
               : 0;
@@ -2281,6 +2403,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         proxy.identity, this.highlightSourceToken(proxy), lane, params[1], params[159], measurement,
         params[2], params[4], params[8], params[9], params[110],
         ...params.slice(10, 12), ...params.slice(61, 73),
+        ...params.slice(BLACK_AND_WHITE_PARAM, BLACK_AND_WHITE_PARAM + 9),
       ]);
       return { measurement, key, cached: this.peakReductionCache.get(key) };
     }
@@ -2503,11 +2626,12 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
      * stop following the image and follow the tile instead, so peak residency
      * stays flat as the selected tier grows.
      */
-    ensureTileGraph(width, height, outputFormat, sourceFormat, spatialActive = false, denoiseActive = false) {
+    ensureTileGraph(width, height, outputFormat, sourceFormat, spatialActive = false, denoiseActive = false, spatialGrid = 4) {
       const current = this.tileGraph;
       if (current && current.width === width && current.height === height
         && current.outputFormat === outputFormat && current.sourceFormat === sourceFormat
-        && current.spatialActive === spatialActive && current.denoiseActive === denoiseActive) {
+        && current.spatialActive === spatialActive && current.denoiseActive === denoiseActive
+        && current.spatialGrid === spatialGrid) {
         return current;
       }
       this.destroyTileGraph();
@@ -2515,10 +2639,10 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         size: { width, height }, format, usage,
       });
       const attachment = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING;
-      // The spatial pair is a quarter of the work tile in each axis, the same
-      // ratio the Direct graph uses, so it costs an eighth of one intermediate.
-      const spatialWidth = Math.max(1, Math.ceil(width / 4));
-      const spatialHeight = Math.max(1, Math.ceil(height / 4));
+      // The spatial pair is the work tile over the frame's spatial grid in
+      // each axis, the same ratio the Direct graph uses.
+      const spatialWidth = Math.max(1, Math.ceil(width / spatialGrid));
+      const spatialHeight = Math.max(1, Math.ceil(height / spatialGrid));
       const makeSpatial = () => this.device.createTexture({
         size: { width: spatialWidth, height: spatialHeight }, format: "rgba16float", usage: attachment,
       });
@@ -2540,6 +2664,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           spatialBTexture: spatialActive ? makeSpatial() : null,
           spatialWidth,
           spatialHeight,
+          spatialGrid,
           denoiseActive,
           // One tile's worth of denoised picture, rebuilt per tile from cached
           // evidence. The whole-frame resolved texture this replaces is 340 MB
@@ -3232,6 +3357,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let cancelled = false;
       const graph = this.ensureTileGraph(
         workWidth, workHeight, surface.format, proxy.pixelFormat, spatialActive, denoiseActive,
+        spatialGridScale(proxy.width, proxy.height),
       );
       if (!graph) return { rendered: false, refusals: ["tile graph allocation failed"] };
 
@@ -3688,13 +3814,13 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           pass(filmView, pipelines.response, bind(localSource.createView()), width, height);
           let spatialResultView = sourceView;
           if (spatialActive) {
-            // The quarter-resolution grid is anchored to the frame, and this
-            // tile's halo rectangle starts on one of its texels, so the valid
-            // region is exactly the tile's own quarter extent. Rendering only
-            // that region keeps an edge tile from writing texels its source
-            // never covered, which `validSpatialDimensions()` then reads back.
-            const spatialWidth = Math.ceil(width / 4);
-            const spatialHeight = Math.ceil(height / 4);
+            // The spatial grid is anchored to the frame, and this tile's halo
+            // rectangle starts on one of its texels, so the valid region is
+            // exactly the tile's own extent on that grid. Rendering only that
+            // region keeps an edge tile from writing texels its source never
+            // covered, which `validSpatialDimensions()` then reads back.
+            const spatialWidth = Math.ceil(width / graph.spatialGrid);
+            const spatialHeight = Math.ceil(height / graph.spatialGrid);
             const spatialAView = graph.spatialATexture.createView();
             const spatialBView = graph.spatialBTexture.createView();
             pass(spatialAView, pipelines.extract, bind(filmView, spatialBView), spatialWidth, spatialHeight, 0);
@@ -4742,6 +4868,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           luminance: controls.luminance ?? 0.5,
           colorNoise: controls.colorNoise ?? controls.color_noise ?? 0.5,
           detailRecovery: controls.detailRecovery ?? controls.detail_recovery ?? 0.5,
+          finestNoise: controls.finestNoise ?? controls.finest_noise ?? controls.fineNoise ?? controls.fine_noise ?? 0.5,
           fineNoise: controls.fineNoise ?? controls.fine_noise ?? 0.5,
           mediumNoise: controls.mediumNoise ?? controls.medium_noise ?? 0.5,
           coarseNoise: controls.coarseNoise ?? controls.coarse_noise ?? 0.5,
@@ -5234,6 +5361,33 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
      * reconstruction still reads the original at its true frame position, so
      * the result is the same pixels either way; only where they land differs.
      */
+    /**
+     * Hand the tiled path new Denoise controls without reconstructing the
+     * whole frame.
+     *
+     * A tiled render reconstructs each tile it draws from `selector.controls`,
+     * so during a drag at Full or when zoomed in, a whole-frame reconstruction
+     * per step is work nobody sees (NEXT-01 #4). The whole-frame result is
+     * left as it was; the caller must run `resolveDenoiseProxy` once the drag
+     * ends so a later Direct render does not show the old controls.
+     */
+    setDenoiseControls(controls = {}) {
+      const selector = this.denoiseSourceSelector;
+      if (!selector?.cache || !selector.original || selector.selected !== "resolved") return false;
+      const weights = ["amount", "luminance", "colorNoise", "detailRecovery"].map((name) => {
+        const value = Number(controls[name] ?? 0.5);
+        if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error(`${name} must be between 0 and 1`);
+        return value;
+      });
+      const sizes = selector.cache.algorithmVersion === ADAPTIVE_DENOISE_ALGORITHM_VERSION
+        ? adaptiveDenoiseSizes(controls)
+        : {};
+      selector.controls = {
+        amount: weights[0], luminance: weights[1], colorNoise: weights[2], detailRecovery: weights[3], ...sizes,
+      };
+      return true;
+    }
+
     async resolveDenoiseProxy(controls = {}, { region = null, destination = null, encoder: sharedEncoder = null } = {}) {
       const selector = this.denoiseSourceSelector;
       if (!selector?.cache || !selector.original) return false;
@@ -6119,8 +6273,9 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
 
     ensureIntermediate(canvas, width, height, spatialActive = false, detailActive = false) {
       const current = this.intermediates.get(canvas);
-      const spatialWidth = Math.max(1, Math.ceil(width / 4));
-      const spatialHeight = Math.max(1, Math.ceil(height / 4));
+      const spatialGrid = spatialGridScale(width, height);
+      const spatialWidth = Math.max(1, Math.ceil(width / spatialGrid));
+      const spatialHeight = Math.max(1, Math.ceil(height / spatialGrid));
       const createSpatialTexture = () => this.device.createTexture({
         size: { width: spatialWidth, height: spatialHeight },
         format: "rgba16float",
@@ -8013,6 +8168,13 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     params[70] = colorActive ? colorSource.saturation || 0 : 0;
     params[71] = colorActive ? colorSource.vibrance || 0 : 0;
     params[72] = colorActive ? 1 : 0;
+    // BW-01 Black & White: on/off and Reds..Magentas / 100 (blackAndWhiteWgsl).
+    const blackAndWhiteOn = branch.black_and_white_section_enabled === true;
+    const blackAndWhite = branch.black_and_white || {};
+    params[BLACK_AND_WHITE_PARAM] = blackAndWhiteOn ? 1 : 0;
+    ["reds", "oranges", "yellows", "greens", "aquas", "blues", "purples", "magentas"].forEach((name, index) => {
+      params[BLACK_AND_WHITE_PARAM + 1 + index] = blackAndWhiteOn ? (Number(blackAndWhite[name]) || 0) / 100 : 0;
+    });
     params[73] = lane === "hdr" ? ((branch.highlight_compression_target_nits ?? 1000) * 0.18 / projectReferenceWhite) : sdrHighlightV2 ? 1 : 0;
     params[74] = highlightEnabled ? (branch.highlight_compression_mode === "peak_fit" ? 1 : branch.highlight_compression_mode === "soft_ceiling" ? 2 : branch.highlight_compression_mode === "clip" ? 3 : 0) : 0;
     params[75] = lane === "hdr"
@@ -8033,9 +8195,12 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     params[82] = (film.print_toe || 0) / 100;
     params[83] = (film.print_shoulder || 0) / 100;
     params[84] = (film.color_density || 0) / 100;
-    params[143] = (film.red_response || 0) / 100;
-    params[144] = (film.green_response || 0) / 100;
-    params[145] = (film.blue_response || 0) / 100;
+    // With Black & White on, Film Look adds no colour back: no per-channel
+    // print response, no halation tint, no grain colour
+    // (adjustments.py black_and_white_neutral_film_look).
+    params[143] = blackAndWhiteOn ? 0 : (film.red_response || 0) / 100;
+    params[144] = blackAndWhiteOn ? 0 : (film.green_response || 0) / 100;
+    params[145] = blackAndWhiteOn ? 0 : (film.blue_response || 0) / 100;
     params[146] = (film.highlight_desaturation || 0) / 100;
     params[147] = (film.shadow_desaturation || 0) / 100;
     params[85] = film.halation_enabled !== false && ((((film.halation_amount || 0) > 0) && (film.halation_radius || 0) > 0) || film.halation_view_map) ? 1 : 0;
@@ -8043,16 +8208,20 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     params[87] = (film.halation_sensitivity ?? 75) / 100;
     params[88] = film.halation_radius ?? 0.2;
     params[89] = (film.halation_hue_offset || 0) / 100;
-    params[90] = (film.halation_saturation ?? 75) / 100;
+    params[90] = blackAndWhiteOn ? 0 : (film.halation_saturation ?? 75) / 100;
     params[91] = film.halation_view_map ? 1 : 0;
     params[92] = film.bloom_enabled !== false && (film.bloom_radius || 0) > 0 ? 1 : 0;
     params[93] = (film.bloom_amount || 0) / 100;
     params[94] = (film.bloom_sensitivity ?? 80) / 100;
     params[95] = film.bloom_radius ?? 0.5;
     params[96] = (film.bloom_highlight_detail ?? 75) / 100;
-    params[97] = film.image_structure_enabled !== false ? 1 : 0;
-    params[98] = (film.image_softness || 0) / 100;
-    params[99] = (film.microcontrast || 0) / 100;
+    // 97-99: Detail's Softness and Microcontrast, run in the film stage where
+    // Film Look's Image Structure ran (NEXT-01 #2). Detail's switch gates
+    // them; Look Strength and the Film Look switch do not.
+    const structureDetail = branch.detail || {};
+    params[97] = branch.detail_section_enabled !== false ? 1 : 0;
+    params[98] = (Number(structureDetail.softness) || 0) / 100;
+    params[99] = (Number(structureDetail.microcontrast) || 0) / 100;
     const grain = inheritedGrain?.filmLook || film;
     const grainSectionEnabled = inheritedGrain
       ? inheritedGrain.filmLookSectionEnabled !== false
@@ -8061,12 +8230,17 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     params[101] = (grain.grain_amount || 0) / 100;
     params[102] = (grain.grain_size ?? 50) / 100;
     params[103] = (grain.grain_softness ?? 25) / 100;
-    params[104] = (grain.grain_chroma || 0) / 100;
+    params[104] = blackAndWhiteOn ? 0 : (grain.grain_chroma || 0) / 100;
     params[105] = (grain.grain_shadow_response ?? 100) / 100;
     params[106] = (grain.grain_midtone_response ?? 100) / 100;
     params[107] = (grain.grain_highlight_response ?? 100) / 100;
     params[108] = (film.film_resolution ?? 100) / 100;
-    params[109] = inheritedGrain?.filmGrainSeed ?? adjustments.shared?.film_grain_seed ?? 271828;
+    // f32 holds integers exactly only to 2^24, so the seed travels in two
+    // 16-bit halves (109 low, 176 high) and the shader reassembles it.
+    const grainSeed = (inheritedGrain?.filmGrainSeed ?? adjustments.shared?.film_grain_seed ?? 271828) >>> 0;
+    params[109] = grainSeed & 0xffff;
+    params[GRAIN_SEED_HIGH_INDEX] = grainSeed >>> 16;
+    params[GRAIN_FILM_TYPE_INDEX] = grain.grain_film_type === "black_and_white" ? 1 : 0;
     const filmGates = {
       "65mm": [52.63, 23.01],
       "35mm": [36, 24],
@@ -9049,6 +9223,10 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let mapped = toneCurveLuma(sceneY);
       return clamp(select(vec3f(0.0), rgb * (mapped / max(y, 0.00000001)), y > 0.00000001), vec3f(0.0), vec3f(1.0));
     }
+    ${blackAndWhiteWgsl("p", "blackAndWhite")}
+    // The source-pixel lattice mean for Black & White's guide, filled by
+    // baseFragmentMain only when a slider is set.
+    var<private> blackAndWhiteGuideSource: vec3f;
     fn sceneColor(input: vec3f) -> vec3f {
       if (p[72] < 0.5) { return input; }
       return hdrColor(whiteBalance(input));
@@ -9058,8 +9236,10 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return compressSrgbGamut(acescgToSrgb(sceneColor(srgbToAcescg(input))));
     }
     fn renderHdrBase(source: vec3f) -> vec3f {
-      let contrasted = hdrContrast(hdrBase(source));
-      let balanced = sceneColor(contrasted);
+      let scene = sceneColor(hdrContrast(hdrBase(source)));
+      var guide = scene;
+      if (blackAndWhiteNeedsGuide()) { guide = sceneColor(hdrContrast(hdrBase(blackAndWhiteGuideSource))); }
+      let balanced = blackAndWhite(scene, guide);
       let equalized = toneEqualizer(balanced);
       let primaries = hdrPrimaries(equalized);
       return max(applyColorGrading(applyCurves(primaries, true), true), vec3f(0.0));
@@ -9077,13 +9257,33 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let display = max(acescgToSrgb(rgb), vec3f(0.0));
       return display / (vec3f(1.0) + display);
     }
+    fn sdrReferencePrefix(source: vec3f) -> vec3f {
+      var rgb = select(clamp(source, vec3f(0.0), vec3f(1.0)), max(source, vec3f(0.0)), p[159] > 0.5) * exp2(p[2]);
+      if (p[4] != 0.0) {
+        let mask = 1.0 - smoothRange(0.0, 0.5, lumaSrgb(rgb));
+        rgb = max(rgb + vec3f(p[4] * 0.08 * mask), vec3f(0.0));
+      }
+      return rgb;
+    }
+    fn sdrScenePrefix(source: vec3f) -> vec3f {
+      var rgb = max(source * exp2(p[2]), vec3f(0.0));
+      if (p[4] != 0.0) {
+        let mask = 1.0 - smoothRange(0.0, 0.5, lumaAces(rgb));
+        rgb = max(rgb + vec3f(p[4] * 0.08 * mask), vec3f(0.0));
+      }
+      return sceneColor(rgb);
+    }
     fn renderSdrBase(source: vec3f) -> vec3f {
       var rgb: vec3f;
+      let needsGuide = blackAndWhiteNeedsGuide();
       if (p[1] > 0.5) {
-        rgb = select(clamp(source, vec3f(0.0), vec3f(1.0)), max(source, vec3f(0.0)), p[159] > 0.5) * exp2(p[2]);
-        if (p[4] != 0.0) {
-          let mask = 1.0 - smoothRange(0.0, 0.5, lumaSrgb(rgb));
-          rgb = max(rgb + vec3f(p[4] * 0.08 * mask), vec3f(0.0));
+        rgb = sdrReferencePrefix(source);
+        // BW-01: on this path Color runs after the highlight stage, but B&W
+        // must come before it (adjustments.py _sdr_reference_pre_highlight).
+        if (p[177] > 0.5) {
+          var guide = rgb;
+          if (needsGuide) { guide = sdrReferencePrefix(blackAndWhiteGuideSource); }
+          rgb = acescgToSrgb(blackAndWhite(srgbToAcescg(rgb), srgbToAcescg(guide)));
         }
         if (p[159] > 0.5) {
           rgb = sdrPeakFit(sdrSoftCeiling(rgb));
@@ -9097,22 +9297,21 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           rgb = applyColorGrading(applyCurves(sdrPrimaries(sdrReferenceColor(sdrContrast(toneEqualizer(highlightRecovery(rgb))))), false), false);
         }
       } else {
-        rgb = max(source * exp2(p[2]), vec3f(0.0));
-        if (p[4] != 0.0) {
-          let mask = 1.0 - smoothRange(0.0, 0.5, lumaAces(rgb));
-          rgb = max(rgb + vec3f(p[4] * 0.08 * mask), vec3f(0.0));
-        }
+        let scene = sdrScenePrefix(source);
+        var guide = scene;
+        if (needsGuide) { guide = sdrScenePrefix(blackAndWhiteGuideSource); }
+        let grey = blackAndWhite(scene, guide);
         if (p[159] > 0.5) {
           // The SDR shoulder is the scene-to-display placement, not a final
           // limiter: every stage below it is display-referred. Only the ceiling
           // runs in applyOutputHighlights.
-          rgb = compressSrgbGamut(sdrPeakFit(sdrSoftCeiling(acescgToSrgb(sceneColor(rgb)) * ((100.0 / 203.0) / 0.18))));
+          rgb = compressSrgbGamut(sdrPeakFit(sdrSoftCeiling(acescgToSrgb(grey) * ((100.0 / 203.0) / 0.18))));
           rgb = toneEqualizer(rgb);
           rgb = sdrContrast(rgb);
           rgb = sdrPrimaries(rgb);
           rgb = applyColorGrading(applyCurves(rgb, false), false);
         } else {
-          rgb = applyColorGrading(applyCurves(sdrPrimaries(sdrContrast(toneEqualizer(highlightRecovery(toneMap(sceneColor(rgb)))))), false), false);
+          rgb = applyColorGrading(applyCurves(sdrPrimaries(sdrContrast(toneEqualizer(highlightRecovery(toneMap(grey))))), false), false);
         }
       }
       return clamp(rgb, vec3f(0.0), vec3f(1.0));
@@ -9351,14 +9550,22 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     // coincide with the frame's: with a halo that is a multiple of four, a
     // tile's texel j is the frame's texel j + haloRect.x / 4, covering the same
     // four source pixels the Direct render covered.
-    const SPATIAL_SCALE: f32 = 4.0;
+    // Frame pixels per spatial texel: 1, 2 or 4 by the frame's long edge, so
+    // the default halation glow spans about two texels or more at every size
+    // (NEXT-01 #1). Mirrors HDRGraphScale.spatialGridScale; tile halos are
+    // multiples of four, so a tile's grid lines up with the frame's at every
+    // scale.
+    fn spatialScale() -> f32 {
+      let longEdge = max(frameDimensions().x, frameDimensions().y);
+      return select(select(1.0, 2.0, longEdge >= 2048.0), 4.0, longEdge >= 4096.0);
+    }
 
     fn validSpatialDimensions() -> vec2i {
-      return (validTileDimensions() + vec2i(3)) / vec2i(4);
+      return vec2i(ceil(vec2f(validTileDimensions()) / spatialScale()));
     }
 
     fn frameSpatialDimensions() -> vec2f {
-      return ceil(frameDimensions() / SPATIAL_SCALE);
+      return ceil(frameDimensions() / spatialScale());
     }
 
     // Sampling is in texel coordinates, not in normalized uv, because the
@@ -9421,12 +9628,13 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       // distance and shares Film Format/capture geometry with grain and MTF.
       // Both are properties of the picture, so both are derived from the
       // frame's quarter-resolution size and not from this tile's.
-      // Spatial intermediates are quarter resolution, so the CPU/export cap of
-      // 256 full-resolution pixels becomes 64 samples in this texture.
+      // The CPU/export cap of 256 full-resolution pixels is 256 / scale
+      // samples in this texture.
       let frameSpatial = frameSpatialDimensions();
-      let bloomRadius = clamp(length(frameSpatial) * max(p[95], 0.0) / 100.0, 0.25, 64.0);
+      let blurCap = 256.0 / spatialScale();
+      let bloomRadius = clamp(length(frameSpatial) * max(p[95], 0.0) / 100.0, 0.25, blurCap);
       let halationRadiusMm = 43.2666153 * max(p[88], 0.0) / 100.0;
-      let halationRadius = clamp(filmPixelsPerMm(frameSpatial) * halationRadiusMm, 0.25, 64.0);
+      let halationRadius = clamp(filmPixelsPerMm(frameSpatial) * halationRadiusMm, 0.25, blurCap);
       // The two effects carry different radii in the same packed texture, so
       // each walks its own kernel. An inactive effect's channels are already
       // zero out of the extract pass and are not worth walking.
@@ -9439,23 +9647,105 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       }
       return result;
     }
-    fn grainHash(coordinate: vec2f, salt: f32) -> f32 {
-      return fract(sin(dot(coordinate, vec2f(12.9898, 78.233)) + p[109] * 0.001 + salt) * 43758.5453) * 2.0 - 1.0;
+    // Film grain: the same field as backend film_grain.py, gathered per pixel
+    // where the CPU splats per grain. Grains are a Poisson process over a
+    // lattice of cells (a random count per cell, mean 6); each has its own
+    // position, radius and sensitivity, develops where the exposure passes
+    // that sensitivity, and the developed grains overlap as a union.
+    // How many grains a cell holds: the Poisson(6) cumulative probabilities
+    // its uniform draw exceeds, capped at 16 (film_grain.POISSON_CDF).
+    fn grainCount(draw: f32) -> u32 {
+      return select(0u, 1u, draw > 0.00247875229) + select(0u, 1u, draw > 0.017351266)
+        + select(0u, 1u, draw > 0.0619688034) + select(0u, 1u, draw > 0.151203886)
+        + select(0u, 1u, draw > 0.285056502) + select(0u, 1u, draw > 0.445679635)
+        + select(0u, 1u, draw > 0.606302798) + select(0u, 1u, draw > 0.743979752)
+        + select(0u, 1u, draw > 0.847237468) + select(0u, 1u, draw > 0.916076005)
+        + select(0u, 1u, draw > 0.957379103) + select(0u, 1u, draw > 0.979908049)
+        + select(0u, 1u, draw > 0.991172493) + select(0u, 1u, draw > 0.996371508)
+        + select(0u, 1u, draw > 0.998599648) + select(0u, 1u, draw > 0.999490917);
     }
-    fn grainValueNoise(coordinate: vec2f, salt: f32) -> f32 {
+    fn grainMix(value: u32) -> u32 {
+      var x = value;
+      x = x ^ (x >> 16u);
+      x = x * 0x7feb352du;
+      x = x ^ (x >> 15u);
+      x = x * 0x846ca68bu;
+      x = x ^ (x >> 16u);
+      return x;
+    }
+    fn grainSeed(salt: u32) -> u32 {
+      // The seed arrives split in 16-bit halves, which f32 carries exactly.
+      let seed = u32(p[109]) | (u32(p[176]) << 16u);
+      return grainMix(seed + salt * 0x9e3779b9u);
+    }
+    fn grainCellHash(cell: vec2i, seeded: u32) -> u32 {
+      return grainMix(grainMix(seeded ^ bitcast<u32>(cell.x)) ^ bitcast<u32>(cell.y));
+    }
+    fn grainUniform(hashed: u32, key: u32) -> f32 {
+      return f32(grainMix(hashed + key * 0x85ebca6bu) >> 8u) * (1.0 / 16777216.0);
+    }
+    fn grainMottle(coordinate: vec2f, seeded: u32) -> f32 {
       let cell = floor(coordinate);
-      let local = fract(coordinate);
+      let local = coordinate - cell;
       let blend = local * local * (vec2f(3.0) - 2.0 * local);
-      let top = mix(grainHash(cell, salt), grainHash(cell + vec2f(1.0, 0.0), salt), blend.x);
-      let bottom = mix(grainHash(cell + vec2f(0.0, 1.0), salt), grainHash(cell + vec2f(1.0, 1.0), salt), blend.x);
-      return mix(top, bottom, blend.y);
+      let c = vec2i(cell);
+      let v00 = grainUniform(grainCellHash(c, seeded), 0u) * 2.0 - 1.0;
+      let v10 = grainUniform(grainCellHash(c + vec2i(1, 0), seeded), 0u) * 2.0 - 1.0;
+      let v01 = grainUniform(grainCellHash(c + vec2i(0, 1), seeded), 0u) * 2.0 - 1.0;
+      let v11 = grainUniform(grainCellHash(c + vec2i(1, 1), seeded), 0u) * 2.0 - 1.0;
+      let top = v00 + (v10 - v00) * blend.x;
+      let bottom = v01 + (v11 - v01) * blend.x;
+      return top + (bottom - top) * blend.y;
+    }
+    fn grainDevelop(signal: f32) -> f32 {
+      return 0.06 + 0.88 * clamp(signal, 0.0, 1.0);
+    }
+    // Mean and spread of coverage for a flat exposure, in closed form for a
+    // Poisson field of grains with this profile.
+    fn grainCoverageStats(develop: f32, opacity: f32, edge: f32) -> vec2f {
+      let run = 1.0 - edge;
+      let first = 6.2831853 * (edge * edge * 0.5 + run * (edge * 0.5 + 0.15 * run));
+      let second = 6.2831853 * (edge * edge * 0.5 + run * (edge * 13.0 / 35.0 + run * 3.0 / 35.0));
+      let density = 6.0 * 0.26333333;
+      let meanLoss = density * opacity * develop * first;
+      let squareLoss = density * (2.0 * opacity * develop * first - opacity * opacity * (develop - 0.04 / 6.0) * second);
+      let transmit = exp(-meanLoss);
+      return vec2f(1.0 - transmit, sqrt(max(exp(-squareLoss) - transmit * transmit, 0.0)));
+    }
+    fn grainLayerNoise(u: vec2f, signal: f32, salt: u32, opacity: f32, clumping: f32, edge: f32, midSpread: f32) -> f32 {
+      let seeded = grainSeed(salt);
+      let mottle = grainMottle(u / 5.0, grainSeed(salt + 101u));
+      let develop = grainDevelop(signal + clumping * mottle);
+      let base = vec2i(floor(u));
+      var transmit = 1.0;
+      for (var dy = -1; dy <= 1; dy++) {
+        for (var dx = -1; dx <= 1; dx++) {
+          let cell = base + vec2i(dx, dy);
+          let hashed = grainCellHash(cell, seeded);
+          let count = grainCount(grainUniform(hashed, 999u));
+          for (var k = 0u; k < count; k++) {
+            let key = 8u * k;
+            let centre = vec2f(cell) + vec2f(grainUniform(hashed, key + 1u), grainUniform(hashed, key + 2u));
+            let radius = 0.3 + 0.4 * grainUniform(hashed, key + 3u);
+            let rho = length(u - centre) / radius;
+            if (rho < 1.0) {
+              let t = clamp((rho - edge) / (1.0 - edge), 0.0, 1.0);
+              let profile = 1.0 - t * t * (3.0 - 2.0 * t);
+              let developed = clamp((develop - grainUniform(hashed, key + 4u)) / 0.04 + 0.5, 0.0, 1.0);
+              transmit *= 1.0 - opacity * developed * profile;
+            }
+          }
+        }
+      }
+      let stats = grainCoverageStats(grainDevelop(signal), opacity, edge);
+      return ((1.0 - transmit) - stats.x) / sqrt(max(stats.y, 0.0001) * midSpread);
     }
     fn applyFilmLook(coordinate: vec2i) -> vec3f {
       var rgb = sampleFilm(coordinate);
       if (p[78] >= 0.5 && p[79] > 0.0) {
         var spatial = vec4f(0.0);
         if (p[85] > 0.5 || (p[92] > 0.5 && p[93] > 0.0)) {
-          spatial = sampleSpatialTexel((vec2f(coordinate) + vec2f(0.5)) / SPATIAL_SCALE);
+          spatial = sampleSpatialTexel((vec2f(coordinate) + vec2f(0.5)) / spatialScale());
         }
         if (p[85] > 0.5) {
           let halationRadius = filmPhysicalOffset(p[88], 256);
@@ -9467,7 +9757,11 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           let warmY = lumaSrgb(warm);
           let canonicalTintSrgb = mix(vec3f(warmY), warm, clamp(p[90], 0.0, 1.0));
           let tint = select(canonicalTintSrgb, srgbToAcescg(canonicalTintSrgb), p[0] > 0.5);
-          if (p[91] > 0.5) { return vec3f(clamp(filmSignalFromLuma(haloY), 0.0, 1.0)); }
+          // The map's white sits at SDR white in either lane (adjustments.py
+          // _apply_halation): 0.18 / (100 / 203) in HDR scene values.
+          if (p[91] > 0.5) {
+            return vec3f(clamp(filmSignalFromLuma(haloY), 0.0, 1.0) * select(1.0, 0.18 / (100.0 / 203.0), p[0] > 0.5));
+          }
           rgb += haloY * tint * (0.42 * p[86] * p[79]);
         }
         if (p[92] > 0.5 && p[93] > 0.0) {
@@ -9484,13 +9778,19 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           let diffusion = diffusionDelta * ((1.0 - p[96]) * 0.35 * amount * (1.0 - edgeProtection));
           rgb = max(rgb + additive + diffusion, vec3f(0.0));
         }
-        if (p[97] > 0.5 && (abs(p[98]) > 0.000001 || abs(p[99]) > 0.000001)) {
-          let structureBlur = filmBlur(coordinate, 0.06, 24);
-          let structureSource = rgb;
-          rgb = structureSource
-            + (structureBlur - structureSource) * p[98] * p[79] * 0.65
-            + (structureSource - structureBlur) * p[99] * p[79] * 0.5;
-        }
+      }
+      // Detail's Softness and Microcontrast (NEXT-01 #2): in the film stage
+      // where Image Structure ran, but on Detail's switch and not scaled by
+      // Look Strength, so they also run with Film Look off.
+      if (p[97] > 0.5 && (abs(p[98]) > 0.000001 || abs(p[99]) > 0.000001)) {
+        let structureBlur = filmBlur(coordinate, 0.06, 24);
+        let structureSource = rgb;
+        rgb = structureSource
+          + (structureBlur - structureSource) * p[98] * 0.65
+          + (structureSource - structureBlur) * p[99] * 0.5;
+        rgb = select(clamp(rgb, vec3f(0.0), vec3f(1.0)), max(rgb, vec3f(0.0)), p[0] > 0.5);
+      }
+      if (p[78] >= 0.5 && p[79] > 0.0) {
         if (p[108] < 1.0) {
           let resolutionLoss = (1.0 - p[108]) * p[79];
           let resolutionSource = sampleFilm(coordinate);
@@ -9508,9 +9808,41 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         let physicalPitch = pixelsPerMm * (6.0 + 24.0 * p[102]) / 1000.0;
         let pitch = max(1.0, physicalPitch);
         let pixelCoverage = min(1.0, physicalPitch);
-        let grainCoordinate = vec2f(frameCoordinate(coordinate)) / pitch;
-        let mono = mix(grainValueNoise(grainCoordinate, 0.0), grainValueNoise(grainCoordinate * 0.53, 17.0), p[103] * 0.55);
+        let frame = vec2f(frameCoordinate(coordinate));
         let signal = clamp(filmSignalFromLuma(max(filmLuma(rgb), 0.0)), 0.0, 1.0);
+        // Color negative: three dye layers, blue coarsest, each developed by
+        // its own channel. Black & white: one layer of sharper, denser silver.
+        let blackAndWhite = p[175] > 0.5;
+        let opacity = select(0.45, 0.55, blackAndWhite);
+        let clumping = select(0.12, 0.20, blackAndWhite);
+        let edge = select(0.25, 0.45, blackAndWhite) * (1.0 - p[103]);
+        let midSpread = grainCoverageStats(grainDevelop(0.5), opacity, edge).y;
+        // Both lanes develop the same grains (_grain_development_signals in
+        // adjustments.py): HDR in sRGB primaries, reference white scaled onto
+        // SDR's, encoded as SDR is, and fully developed by signal 0.45 before
+        // the lanes' tone curves part. Otherwise the gain map fills with grain.
+        let developLinear = select(rgb, acescgToSrgb(rgb) * 2.7367268, p[0] > 0.5);
+        let developLuma = clamp(srgbEncode(clamp(lumaSrgb(developLinear), 0.0, 1.0)) / 0.45, 0.0, 1.0);
+        var grain = vec3f(0.0);
+        if (blackAndWhite) {
+          grain = vec3f(grainLayerNoise(frame / pitch, developLuma, 239u, opacity, clumping, edge, midSpread));
+        } else {
+          let developRgb = clamp(developLinear, vec3f(0.0), vec3f(1.0));
+          let channelSignal = clamp(
+            vec3f(srgbEncode(developRgb.r), srgbEncode(developRgb.g), srgbEncode(developRgb.b)) / 0.45, vec3f(0.0), vec3f(1.0)
+          );
+          let layers = vec3f(
+            grainLayerNoise(frame / max(1.0, physicalPitch * 0.9), channelSignal.r, 211u, opacity, clumping, edge, midSpread),
+            grainLayerNoise(frame / max(1.0, physicalPitch), channelSignal.g, 223u, opacity, clumping, edge, midSpread),
+            grainLayerNoise(frame / max(1.0, physicalPitch * 1.3), channelSignal.b, 227u, opacity, clumping, edge, midSpread)
+          );
+          let weights = vec3f(0.2126, 0.7152, 0.0722);
+          let mono = dot(layers, weights) / length(weights);
+          // Color separation fades toward monochrome as highlights approach clipping.
+          let chroma = p[104] * (1.0 - 0.8 * smoothRange(0.88, 1.0, signal));
+          grain = vec3f(mono) + chroma * 0.6 * (layers - vec3f(mono));
+        }
+        grain *= 0.37;
         let shadowWeight = pow(1.0 - signal, 2.0);
         let highlightWeight = pow(signal, 2.0);
         let midWeight = max(0.0, 1.0 - shadowWeight - highlightWeight);
@@ -9519,12 +9851,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         // The view map swaps the picture for a neutral mid-grey card once the
         // tonal response has been read from it, isolating the grain field.
         if (p[158] > 0.5) { rgb = vec3f(filmLumaFromSignal(0.5)); }
-        rgb *= exp2(vec3f(mono * amount));
-        if (p[104] > 0.0) {
-          let chroma = vec3f(grainValueNoise(grainCoordinate, 31.0), grainValueNoise(grainCoordinate, 59.0), grainValueNoise(grainCoordinate, 83.0));
-          let chromaHighlightGuard = 1.0 - 0.8 * smoothRange(0.88, 1.0, signal);
-          rgb *= exp2(chroma * amount * p[104] * chromaHighlightGuard * 0.45);
-        }
+        rgb *= exp2(grain * amount);
       }
       return max(rgb, vec3f(0.0));
     }
@@ -9984,6 +10311,9 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         let removed = noiseViewEncode(source) - noiseViewEncode(denoised);
         return vec4f(clamp(vec3f(0.5) + removed * NOISE_VIEW_GAIN, vec3f(0.0), vec3f(1.0)), 1.0);
       }
+      if (blackAndWhiteNeedsGuide()) {
+        blackAndWhiteGuideSource = blackAndWhiteLatticeMean(sourceTexture, coordinate, validTileDimensions());
+      }
       let output = select(renderSdrBase(source), renderHdrBase(source), p[0] > 0.5);
       return vec4f(output, 1.0);
     }
@@ -10020,8 +10350,8 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     }
 
     @fragment fn spatialExtractFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      let center = input.position.xy * SPATIAL_SCALE;
-      let offset = vec2f(SPATIAL_SCALE * 0.25);
+      let center = input.position.xy * spatialScale();
+      let offset = vec2f(spatialScale() * 0.25);
       return (
         packedQualifiedSample(center + vec2f(-offset.x, -offset.y))
         + packedQualifiedSample(center + vec2f(offset.x, -offset.y))
