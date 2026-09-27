@@ -195,10 +195,6 @@ class FilmLookAdjustments(BaseModel):
     bloom_radius: float = Field(default=0.5, ge=0.0, le=10.0)
     bloom_highlight_detail: float = Field(default=75.0, ge=0.0, le=100.0)
 
-    image_structure_enabled: bool = True
-    image_softness: float = Field(default=0.0, ge=0.0, le=100.0)
-    microcontrast: float = Field(default=0.0, ge=-100.0, le=100.0)
-
 
 class ColorWheelAdjustments(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -302,8 +298,59 @@ class DetailAdjustments(BaseModel):
     sharpen_threshold: float = Field(default=10.0, ge=0.0, le=100.0)
 
 
+class BranchDetailAdjustments(DetailAdjustments):
+    """Global Detail for one rendition: the local-grade controls plus two more.
+
+    Softness and Microcontrast moved here from Film Look's Image Structure
+    (NEXT-01 #2). Only the controls moved: they still run where Image
+    Structure ran, after the local adjustments, on the film response frame,
+    so a picture looks the same. They are global only, which is why local
+    grades keep the plain ``DetailAdjustments``.
+    """
+
+    softness: float = Field(default=0.0, ge=0.0, le=100.0)
+    microcontrast: float = Field(default=0.0, ge=-100.0, le=100.0)
+
+
+_LEGACY_IMAGE_STRUCTURE_FIELDS = ("image_structure_enabled", "image_softness", "microcontrast")
+
+
+def move_image_structure_into_detail(value: object) -> object:
+    """Carry a saved Film Look Image Structure into Detail.
+
+    Image Structure was scaled by Look Strength and switched off with Film
+    Look; Detail's controls are neither. So the values carried over are the
+    ones that were in effect: scaled by Look Strength, and only when Image
+    Structure and Film Look were both on.
+    """
+    if not isinstance(value, dict):
+        return value
+    look = value.get("film_look")
+    if not isinstance(look, dict) or not any(field in look for field in _LEGACY_IMAGE_STRUCTURE_FIELDS):
+        return value
+    normalized = dict(value)
+    look = dict(look)
+    structure_enabled = bool(look.pop("image_structure_enabled", True))
+    softness = float(look.pop("image_softness", 0.0) or 0.0)
+    microcontrast = float(look.pop("microcontrast", 0.0) or 0.0)
+    normalized["film_look"] = look
+    in_effect = structure_enabled and bool(normalized.get("film_look_section_enabled", True))
+    if in_effect and (softness != 0.0 or microcontrast != 0.0):
+        strength = float(look.get("look_strength", 100.0)) / 100.0
+        detail = dict(normalized.get("detail") or {})
+        detail.setdefault("softness", round(softness * strength, 4))
+        detail.setdefault("microcontrast", round(microcontrast * strength, 4))
+        normalized["detail"] = detail
+    return normalized
+
+
 class HDRAdjustments(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def carry_image_structure_into_detail(cls, value: object) -> object:
+        return move_image_structure_into_detail(value)
 
     @model_validator(mode="before")
     @classmethod
@@ -332,7 +379,7 @@ class HDRAdjustments(BaseModel):
     film_look: FilmLookAdjustments = Field(default_factory=FilmLookAdjustments)
     color_grading: ColorGradingAdjustments = Field(default_factory=ColorGradingAdjustments)
     vignette: VignetteAdjustments = Field(default_factory=VignetteAdjustments)
-    detail: DetailAdjustments = Field(default_factory=DetailAdjustments)
+    detail: BranchDetailAdjustments = Field(default_factory=BranchDetailAdjustments)
     exposure: float = Field(default=0.0, ge=-8.0, le=8.0)
     highlight_compression_start_nits: float = Field(default=400.0, ge=1.0, le=9999.0)
     highlight_compression_target_nits: float = Field(default=1000.0, ge=2.0, le=10000.0)
@@ -406,6 +453,11 @@ class HDRAdjustments(BaseModel):
 class SDRAdjustments(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    @model_validator(mode="before")
+    @classmethod
+    def carry_image_structure_into_detail(cls, value: object) -> object:
+        return move_image_structure_into_detail(value)
+
     # Projects saved before the SDR highlight-compression pipeline retain their
     # original base-rendition rendering. New edits use the neutral v2 placement
     # plus an explicit, delivery-gamut highlight stage.
@@ -425,7 +477,7 @@ class SDRAdjustments(BaseModel):
     film_look: FilmLookAdjustments = Field(default_factory=FilmLookAdjustments)
     color_grading: ColorGradingAdjustments = Field(default_factory=ColorGradingAdjustments)
     vignette: VignetteAdjustments = Field(default_factory=VignetteAdjustments)
-    detail: DetailAdjustments = Field(default_factory=DetailAdjustments)
+    detail: BranchDetailAdjustments = Field(default_factory=BranchDetailAdjustments)
     exposure: float = Field(default=0.0, ge=-8.0, le=8.0)
     highlight_recovery: float = Field(default=0.6, ge=0.0, le=4.0)
     highlight_compression_start_percent: float = Field(default=50.0, ge=1.0, le=99.0)

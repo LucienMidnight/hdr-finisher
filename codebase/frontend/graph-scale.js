@@ -94,13 +94,14 @@
     // pair, because they are the two that blur on it.
     const spatialActive = filmActive
       && (params[85] > 0.5 || (params[92] > 0.5 && params[93] > 0));
-    // Image structure and film resolution blur the film texture directly, at
-    // full resolution. They allocate nothing, but they read past the pixel
-    // they are writing just as surely, so they need a halo.
-    const filmBlurActive = filmActive && (
-      (params[97] > 0.5 && (Math.abs(params[98]) > 0.000001 || Math.abs(params[99]) > 0.000001))
-      || params[108] < 1
-    );
+    // Softness/Microcontrast and film resolution blur the film texture
+    // directly, at full resolution. They allocate nothing, but they read past
+    // the pixel they are writing just as surely, so they need a halo. Softness
+    // and Microcontrast are Detail controls run in the film stage (NEXT-01
+    // #2), so they count whether or not Film Look is on.
+    const structureActive = params[97] > 0.5
+      && (Math.abs(params[98]) > 0.000001 || Math.abs(params[99]) > 0.000001);
+    const filmBlurActive = structureActive || (filmActive && params[108] < 1);
     return {
       spatialActive,
       filmNeighbourhoodActive: spatialActive || filmBlurActive,

@@ -1322,7 +1322,7 @@
 
       <section class="control-group collapsed detail-group" data-group="detail">
         <div class="control-group-header">
-          <button class="group-toggle" type="button" aria-expanded="false" data-tooltip="Corrective, scale-selective detail. Unlike Film Look Microcontrast, these controls select fine texture, mid-scale clarity, and qualified edges independently.">Detail <span class="module-modified-marker" aria-hidden="true"></span></button>
+          <button class="group-toggle" type="button" aria-expanded="false" data-tooltip="Scale-selective detail: fine texture, mid-scale clarity, qualified edges, and an overall softness and microcontrast.">Detail <span class="module-modified-marker" aria-hidden="true"></span></button>
           <button class="section-bypass text-button" type="button" data-section-path="current.detail_section_enabled" aria-pressed="true" aria-label="Toggle Detail preview">&#9673;</button>
           <button class="group-reset text-button" type="button" data-reset-group="detail">Reset</button>
         </div>
@@ -1331,6 +1331,10 @@
           <div class="control-row" data-control-path="current.detail.texture_amount"><div class="control-heading"><label for="detail-texture">Texture</label><output data-value-path="current.detail.texture_amount">0</output></div><input id="detail-texture" type="range" min="-100" max="100" step="1" value="0" data-path="current.detail.texture_amount"></div>
           <div class="control-row" data-control-path="current.detail.clarity_amount"><div class="control-heading"><label for="detail-clarity">Clarity</label><output data-value-path="current.detail.clarity_amount">0</output></div><input id="detail-clarity" type="range" min="-100" max="100" step="1" value="0" data-path="current.detail.clarity_amount"></div>
           <div class="control-row" data-control-path="current.detail.clarity_radius_percent"><div class="control-heading"><label for="detail-clarity-radius">Clarity Radius</label><output data-value-path="current.detail.clarity_radius_percent">0.75%</output></div><input id="detail-clarity-radius" type="range" min="0.2" max="3" step="0.05" value="0.75" data-path="current.detail.clarity_radius_percent"></div>
+          <div class="control-pair">
+            <div class="control-row" data-control-path="current.detail.softness"><div class="control-heading"><label for="detail-softness" class="tooltip-trigger" data-tooltip="Softens hard digital edges across the whole picture, in colour. Runs after local adjustments, before grain.">Softness</label><output data-value-path="current.detail.softness">0</output></div><input id="detail-softness" type="range" min="0" max="100" step="1" value="0" data-path="current.detail.softness"></div>
+            <div class="control-row" data-control-path="current.detail.microcontrast"><div class="control-heading"><label for="detail-microcontrast" class="tooltip-trigger" data-tooltip="Lowers or raises fine local contrast across the whole picture, in colour. It works differently from Texture. Runs after local adjustments, before grain.">Microcontrast</label><output data-value-path="current.detail.microcontrast">0</output></div><input id="detail-microcontrast" type="range" min="-100" max="100" step="1" value="0" data-path="current.detail.microcontrast"></div>
+          </div>
           <div class="slider-group-tile" data-slider-relationship="targeting">
             <div class="control-row slider-group-parent" data-control-path="current.detail.sharpen_amount"><div class="control-heading"><label for="detail-sharpen">Sharpen</label><output data-value-path="current.detail.sharpen_amount">0</output></div><input id="detail-sharpen" type="range" min="0" max="200" step="1" value="0" data-path="current.detail.sharpen_amount"></div>
             <div class="slider-group-relationship">Targeting</div>
@@ -1398,11 +1402,7 @@
             <div class="control-row" data-control-path="current.film_look.bloom_highlight_detail"><div class="control-heading"><label for="film-bloom-detail">Highlight Detail</label><output data-value-path="current.film_look.bloom_highlight_detail">75%</output></div><input id="film-bloom-detail" type="range" min="0" max="100" step="1" value="75" data-path="current.film_look.bloom_highlight_detail"></div>
           </div>
 
-          <div class="film-module-header"><strong>Image Structure</strong><label class="film-module-toggle"><input type="checkbox" checked data-path="current.film_look.image_structure_enabled"> Enabled</label></div>
-          <div class="control-pair">
-            <div class="control-row" data-control-path="current.film_look.image_softness"><div class="control-heading"><label for="film-image-softness">Image Softness</label><output data-value-path="current.film_look.image_softness">0%</output></div><input id="film-image-softness" type="range" min="0" max="100" step="1" value="0" data-path="current.film_look.image_softness"></div>
-            <div class="control-row" data-control-path="current.film_look.microcontrast"><div class="control-heading"><label for="film-microcontrast">Microcontrast</label><output data-value-path="current.film_look.microcontrast">0%</output></div><input id="film-microcontrast" type="range" min="-100" max="100" step="1" value="0" data-path="current.film_look.microcontrast"></div>
-          </div>
+          <div class="film-module-header"><strong>Resolution</strong></div>
           <div class="control-row" data-control-path="current.film_look.film_resolution"><div class="control-heading"><label for="film-resolution">Film Resolution</label><output data-value-path="current.film_look.film_resolution">100%</output></div><input id="film-resolution" type="range" min="0" max="100" step="1" value="100" data-path="current.film_look.film_resolution"></div>
 
           <div class="film-module-header"><strong>Grain</strong><label class="film-module-toggle"><input type="checkbox" checked data-path="current.film_look.grain_enabled"> Enabled</label></div>

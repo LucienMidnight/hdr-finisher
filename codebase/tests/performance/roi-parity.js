@@ -48,7 +48,7 @@ function flag(name) {
 }
 
 // A representative film-look graph for the tolerance run: grain, halation,
-// bloom, image structure (softness and microcontrast). These are the modules
+// bloom, and Detail's softness and microcontrast (run in the film stage). These are the modules
 // whose identity the Phase 0 tolerance table has to cover; Denoise is a
 // separate analysis pipeline and is exercised by its own scenarios.
 const FILM_LOOK_SETTINGS = [
@@ -56,8 +56,8 @@ const FILM_LOOK_SETTINGS = [
   ["current.film_look.grain_size", 60],
   ["current.film_look.halation_amount", 35],
   ["current.film_look.bloom_amount", 25],
-  ["current.film_look.image_softness", 15],
-  ["current.film_look.microcontrast", 20],
+  ["current.detail.softness", 15],
+  ["current.detail.microcontrast", 20],
 ];
 
 async function applyFilmLook(page) {

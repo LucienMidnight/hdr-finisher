@@ -651,7 +651,42 @@ fixed:
 ### NEXT-01 — Follow-ups for the next session (reminder)
 
 Recorded 2026-09-27, after film grain v2 and the Black & White grain Film
-Type landed on `feature/denoise-clumpy-noise`. Not started.
+Type landed on `feature/denoise-clumpy-noise`.
+
+**Status 2026-09-27 (branch `feature/bw-and-followups`): items 1–4 done.**
+
+- **1 Halation map.** Kept as a placement guide (Steve's choice); its tooltip
+  now says it shows where the glow can appear, not how strong it is. Testing
+  it at several zooms found a real preview bug: halation and bloom always ran
+  on a quarter-resolution grid, so at Fit (a ~905 px frame) the default glow
+  was half a texel and the effect and map went blocky and changed with zoom,
+  while the export did not. The grid is now 1, 2 or 4 px a texel by frame
+  size (`HDRGraphScale.spatialGridScale`). The HDR map was also shown several
+  times brighter than white; it now places its white at SDR white.
+- **2 Image Structure.** Softness and Microcontrast moved to Detail as
+  controls only; the processing stays where Image Structure ran (after
+  locals, on the film response frame). They follow Detail's switch, ignore
+  Look Strength, and the Film Look presets no longer set them. Old projects
+  carry their values into Detail scaled by Look Strength. Film Resolution
+  stays in Film Look under "Resolution".
+- **3 Map buttons** moved under their section headers.
+- **4 Denoise GPU heat.** A drag drew a settled frame per reconstruction, back
+  to back, and zoomed in rebuilt the whole 42 MP frame each step. Now it is
+  paced like other sliders and only the visible area is reconstructed during
+  a drag. 42 MP at 200%: 85 W / 7 fps → ~63 W / 49 fps (Exposure drag 64 W).
+  At Fit ~27–31 W vs Exposure's 21 W; Steve chose this smoother pacing over a
+  30/s cap that matched Exposure (~23 W).
+
+**Future work recorded from this round**
+
+- **PIPE-01 — Review the whole pipeline order before v1.** Softness and
+  Microcontrast now sit in Detail's panel but run in the film stage. Decide
+  the best place for them, and review the order and grouping of every stage
+  (Detail vs locals vs Film Look, where B&W and Color sit) before v1.
+- **DETAIL-01 — Texture vs Microcontrast.** They look and behave very
+  differently (Texture is a luminance band in log space; Microcontrast is a
+  colour high-pass at 0.06% of the diagonal). Look at both behaviours in a
+  future sprint.
 
 1. **Halation map.** Look at the Show halation map view again: what it shows,
    and whether it is a useful guide to where halation will appear.

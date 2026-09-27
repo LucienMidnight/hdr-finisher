@@ -49,7 +49,7 @@ function activeParams(overrides = {}) {
   params[92] = 1;   // bloom enabled
   params[93] = 0.5;
   params[95] = 0.5; // bloom radius (frame diagonal, percent)
-  params[97] = 1;   // image structure enabled
+  params[97] = 1;   // Detail enabled, for Softness/Microcontrast (NEXT-01 #2)
   params[98] = 0.4; // softness
   params[99] = 0.3; // microcontrast
   params[108] = 1;  // film resolution 100%
@@ -282,8 +282,12 @@ test("the composed reach composes Detail and the film stage, and rounds to the g
   assert.equal(detailOnly.spatialHalo, 0);
   assert.equal(detailOnly.halo, detailOnly.detailHalo);
 
-  // Nothing active reserves nothing.
-  const idle = Scale.composedReach(NATIVE.width, NATIVE.height, activeParams({ 78: 0, 79: 0, 148: 0 }), [], "hdr");
+  // Nothing active reserves nothing. Detail's switch drives both 148 and
+  // 97 (its Softness/Microcontrast, which run in the film stage).
+  const idle = Scale.composedReach(NATIVE.width, NATIVE.height, activeParams({ 78: 0, 79: 0, 148: 0, 97: 0 }), [], "hdr");
+  // Softness/Microcontrast reserve a film-stage reach with Film Look off.
+  const structureOnly = Scale.composedReach(NATIVE.width, NATIVE.height, activeParams({ 78: 0, 79: 0, 148: 0 }), [], "hdr");
+  assert.ok(structureOnly.spatialHalo > 0);
   assert.deepEqual(idle, { halo: 0, detailHalo: 0, spatialHalo: 0 });
 });
 
@@ -310,7 +314,7 @@ test("the local-detail switch is one rule for the chain, the metrics and the hal
   // A local whose only active module is Detail still reserves a detail halo.
   const local = { id: "l1", enabled: true, opacity: 1, hdr_grade: { detail: { sharpen_amount: 40 } } };
   const composed = Scale.composedReach(
-    NATIVE.width, NATIVE.height, activeParams({ 148: 0, 79: 0 }), [local], "hdr",
+    NATIVE.width, NATIVE.height, activeParams({ 148: 0, 97: 0, 79: 0 }), [local], "hdr",
   );
   assert.ok(composed.detailHalo > 0);
   assert.equal(composed.spatialHalo, 0);

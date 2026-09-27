@@ -8103,9 +8103,13 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     params[94] = (film.bloom_sensitivity ?? 80) / 100;
     params[95] = film.bloom_radius ?? 0.5;
     params[96] = (film.bloom_highlight_detail ?? 75) / 100;
-    params[97] = film.image_structure_enabled !== false ? 1 : 0;
-    params[98] = (film.image_softness || 0) / 100;
-    params[99] = (film.microcontrast || 0) / 100;
+    // 97-99: Detail's Softness and Microcontrast, run in the film stage where
+    // Film Look's Image Structure ran (NEXT-01 #2). Detail's switch gates
+    // them; Look Strength and the Film Look switch do not.
+    const structureDetail = branch.detail || {};
+    params[97] = branch.detail_section_enabled !== false ? 1 : 0;
+    params[98] = (Number(structureDetail.softness) || 0) / 100;
+    params[99] = (Number(structureDetail.microcontrast) || 0) / 100;
     const grain = inheritedGrain?.filmLook || film;
     const grainSectionEnabled = inheritedGrain
       ? inheritedGrain.filmLookSectionEnabled !== false
@@ -9637,13 +9641,19 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           let diffusion = diffusionDelta * ((1.0 - p[96]) * 0.35 * amount * (1.0 - edgeProtection));
           rgb = max(rgb + additive + diffusion, vec3f(0.0));
         }
-        if (p[97] > 0.5 && (abs(p[98]) > 0.000001 || abs(p[99]) > 0.000001)) {
-          let structureBlur = filmBlur(coordinate, 0.06, 24);
-          let structureSource = rgb;
-          rgb = structureSource
-            + (structureBlur - structureSource) * p[98] * p[79] * 0.65
-            + (structureSource - structureBlur) * p[99] * p[79] * 0.5;
-        }
+      }
+      // Detail's Softness and Microcontrast (NEXT-01 #2): in the film stage
+      // where Image Structure ran, but on Detail's switch and not scaled by
+      // Look Strength, so they also run with Film Look off.
+      if (p[97] > 0.5 && (abs(p[98]) > 0.000001 || abs(p[99]) > 0.000001)) {
+        let structureBlur = filmBlur(coordinate, 0.06, 24);
+        let structureSource = rgb;
+        rgb = structureSource
+          + (structureBlur - structureSource) * p[98] * 0.65
+          + (structureSource - structureBlur) * p[99] * 0.5;
+        rgb = select(clamp(rgb, vec3f(0.0), vec3f(1.0)), max(rgb, vec3f(0.0)), p[0] > 0.5);
+      }
+      if (p[78] >= 0.5 && p[79] > 0.0) {
         if (p[108] < 1.0) {
           let resolutionLoss = (1.0 - p[108]) * p[79];
           let resolutionSource = sampleFilm(coordinate);

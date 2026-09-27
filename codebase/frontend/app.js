@@ -141,6 +141,8 @@ Object.assign(MANUAL_VALUE_RULES, {
   "current.vignette.feather": { min: 0, max: 100, decimals: 0 },
   "current.vignette.highlight_protection": { min: 0, max: 100, decimals: 0 },
   "current.detail.texture_amount": { min: -100, max: 100, decimals: 0 },
+  "current.detail.softness": { min: 0, max: 100, decimals: 0 },
+  "current.detail.microcontrast": { min: -100, max: 100, decimals: 0 },
   "current.detail.clarity_amount": { min: -100, max: 100, decimals: 0 },
   "current.detail.clarity_radius_percent": { min: 0.2, max: 3, decimals: 2 },
   "current.detail.sharpen_amount": { min: 0, max: 100, decimals: 0 },
@@ -174,8 +176,6 @@ Object.assign(MANUAL_VALUE_RULES, {
   "current.film_look.bloom_sensitivity": { min: 0, max: 100, decimals: 0 },
   "current.film_look.bloom_radius": { min: 0, max: 10, decimals: 2 },
   "current.film_look.bloom_highlight_detail": { min: 0, max: 100, decimals: 0 },
-  "current.film_look.image_softness": { min: 0, max: 100, decimals: 0 },
-  "current.film_look.microcontrast": { min: -100, max: 100, decimals: 0 },
 });
 
 const TONE_EQUALIZER_MIN_EV = -6;
@@ -741,12 +741,11 @@ const defaultFilmLook = () => ({
   bloom_sensitivity: 80,
   bloom_radius: 0.5,
   bloom_highlight_detail: 75,
-  image_structure_enabled: true,
-  image_softness: 0,
-  microcontrast: 0,
 });
 
-const FILM_LOOK_PRESET_RECIPE_VERSION = 1;
+// 2: Image Softness and Microcontrast left Film Look for Detail (NEXT-01 #2),
+// and the presets no longer set them.
+const FILM_LOOK_PRESET_RECIPE_VERSION = 2;
 
 function completeFilmLookRecipe(values) {
   return Object.freeze({
@@ -764,28 +763,28 @@ const FILM_LOOK_PRESETS = Object.freeze([
     name: "Clean Cinema",
     description: "Fine texture, restrained density, and a clean highlight finish.",
     recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
-    recipe: completeFilmLookRecipe({ print_strength: 42, print_contrast: 6, print_toe: 3, print_shoulder: 10, color_density: 9, red_response: 3, blue_response: -2, highlight_desaturation: 12, shadow_desaturation: 5, grain_amount: 14, grain_size: 22, grain_softness: 50, grain_chroma: 10, grain_film_format: "65mm", grain_shadow_response: 82, grain_highlight_response: 110, film_resolution: 98, halation_amount: 6, halation_sensitivity: 84, halation_radius: 0.16, halation_saturation: 68, bloom_amount: 4, bloom_sensitivity: 88, bloom_radius: 0.32, bloom_highlight_detail: 90, image_softness: 2, microcontrast: -2 }),
+    recipe: completeFilmLookRecipe({ print_strength: 42, print_contrast: 6, print_toe: 3, print_shoulder: 10, color_density: 9, red_response: 3, blue_response: -2, highlight_desaturation: 12, shadow_desaturation: 5, grain_amount: 14, grain_size: 22, grain_softness: 50, grain_chroma: 10, grain_film_format: "65mm", grain_shadow_response: 82, grain_highlight_response: 110, film_resolution: 98, halation_amount: 6, halation_sensitivity: 84, halation_radius: 0.16, halation_saturation: 68, bloom_amount: 4, bloom_sensitivity: 88, bloom_radius: 0.32, bloom_highlight_detail: 90 }),
   }),
   Object.freeze({
     id: "soft-color-negative",
     name: "Soft Color Negative",
     description: "Gentle shoulders, soft color separation, and quiet portrait texture.",
     recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
-    recipe: completeFilmLookRecipe({ print_strength: 48, print_contrast: -2, print_toe: 7, print_shoulder: 22, color_density: 12, red_response: 5, green_response: -1, blue_response: -4, highlight_desaturation: 28, shadow_desaturation: 9, grain_amount: 22, grain_size: 38, grain_softness: 52, grain_chroma: 13, grain_film_format: "35mm", grain_shadow_response: 88, grain_midtone_response: 98, grain_highlight_response: 112, film_resolution: 94, halation_amount: 9, halation_sensitivity: 78, halation_radius: 0.24, halation_saturation: 74, bloom_amount: 9, bloom_sensitivity: 76, bloom_radius: 0.62, bloom_highlight_detail: 78, image_softness: 8, microcontrast: -7 }),
+    recipe: completeFilmLookRecipe({ print_strength: 48, print_contrast: -2, print_toe: 7, print_shoulder: 22, color_density: 12, red_response: 5, green_response: -1, blue_response: -4, highlight_desaturation: 28, shadow_desaturation: 9, grain_amount: 22, grain_size: 38, grain_softness: 52, grain_chroma: 13, grain_film_format: "35mm", grain_shadow_response: 88, grain_midtone_response: 98, grain_highlight_response: 112, film_resolution: 94, halation_amount: 9, halation_sensitivity: 78, halation_radius: 0.24, halation_saturation: 74, bloom_amount: 9, bloom_sensitivity: 76, bloom_radius: 0.62, bloom_highlight_detail: 78 }),
   }),
   Object.freeze({
     id: "dense-print",
     name: "Dense Print",
     description: "Deeper color, firmer print contrast, and a richer projected finish.",
     recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
-    recipe: completeFilmLookRecipe({ print_strength: 62, print_contrast: 18, print_toe: 12, print_shoulder: 15, color_density: 26, red_response: 7, green_response: -2, blue_response: -6, highlight_desaturation: 20, shadow_desaturation: 12, grain_amount: 30, grain_size: 46, grain_softness: 34, grain_chroma: 18, grain_film_format: "35mm", grain_shadow_response: 92, grain_midtone_response: 104, grain_highlight_response: 118, film_resolution: 90, halation_amount: 13, halation_sensitivity: 72, halation_radius: 0.28, halation_hue_offset: 2, halation_saturation: 82, bloom_amount: 8, bloom_sensitivity: 78, bloom_radius: 0.5, bloom_highlight_detail: 80, image_softness: 6, microcontrast: -3 }),
+    recipe: completeFilmLookRecipe({ print_strength: 62, print_contrast: 18, print_toe: 12, print_shoulder: 15, color_density: 26, red_response: 7, green_response: -2, blue_response: -6, highlight_desaturation: 20, shadow_desaturation: 12, grain_amount: 30, grain_size: 46, grain_softness: 34, grain_chroma: 18, grain_film_format: "35mm", grain_shadow_response: 92, grain_midtone_response: 104, grain_highlight_response: 118, film_resolution: 90, halation_amount: 13, halation_sensitivity: 72, halation_radius: 0.28, halation_hue_offset: 2, halation_saturation: 82, bloom_amount: 8, bloom_sensitivity: 78, bloom_radius: 0.5, bloom_highlight_detail: 80 }),
   }),
   Object.freeze({
     id: "high-speed-texture",
     name: "High-Speed Texture",
     description: "Coarse responsive grain, open glow, and softened fine detail for low-light character.",
     recipeVersion: FILM_LOOK_PRESET_RECIPE_VERSION,
-    recipe: completeFilmLookRecipe({ print_strength: 54, print_contrast: 7, print_toe: 10, print_shoulder: 18, color_density: 17, red_response: 8, green_response: -3, blue_response: -7, highlight_desaturation: 30, shadow_desaturation: 17, grain_amount: 56, grain_size: 76, grain_softness: 29, grain_chroma: 27, grain_film_format: "16mm", grain_shadow_response: 100, grain_midtone_response: 114, grain_highlight_response: 130, film_resolution: 80, halation_amount: 16, halation_sensitivity: 66, halation_radius: 0.36, halation_hue_offset: 3, halation_saturation: 86, bloom_amount: 12, bloom_sensitivity: 70, bloom_radius: 0.7, bloom_highlight_detail: 70, image_softness: 13, microcontrast: -9 }),
+    recipe: completeFilmLookRecipe({ print_strength: 54, print_contrast: 7, print_toe: 10, print_shoulder: 18, color_density: 17, red_response: 8, green_response: -3, blue_response: -7, highlight_desaturation: 30, shadow_desaturation: 17, grain_amount: 56, grain_size: 76, grain_softness: 29, grain_chroma: 27, grain_film_format: "16mm", grain_shadow_response: 100, grain_midtone_response: 114, grain_highlight_response: 130, film_resolution: 80, halation_amount: 16, halation_sensitivity: 66, halation_radius: 0.36, halation_hue_offset: 3, halation_saturation: 86, bloom_amount: 12, bloom_sensitivity: 70, bloom_radius: 0.7, bloom_highlight_detail: 70 }),
   }),
 ]);
 
@@ -1250,7 +1249,7 @@ const defaultAdjustments = () => ({
     film_look: defaultFilmLook(),
     color_grading: defaultColorGrading(),
     vignette: defaultVignette(),
-    detail: { texture_amount: 0, clarity_amount: 0, clarity_radius_percent: 0.75, sharpen_amount: 0, sharpen_radius_px: 0.8, sharpen_threshold: 10 },
+    detail: { texture_amount: 0, clarity_amount: 0, clarity_radius_percent: 0.75, sharpen_amount: 0, sharpen_radius_px: 0.8, sharpen_threshold: 10, softness: 0, microcontrast: 0 },
     exposure: 0,
     highlight_compression_start_nits: 400,
     highlight_compression_target_nits: 1000,
@@ -1311,7 +1310,7 @@ const defaultAdjustments = () => ({
     film_look: defaultFilmLook(),
     color_grading: defaultColorGrading(),
     vignette: defaultVignette(),
-    detail: { texture_amount: 0, clarity_amount: 0, clarity_radius_percent: 0.75, sharpen_amount: 0, sharpen_radius_px: 0.8, sharpen_threshold: 10 },
+    detail: { texture_amount: 0, clarity_amount: 0, clarity_radius_percent: 0.75, sharpen_amount: 0, sharpen_radius_px: 0.8, sharpen_threshold: 10, softness: 0, microcontrast: 0 },
     exposure: 0,
     highlight_recovery: 0.6,
     highlight_compression_start_percent: 50,
@@ -5071,7 +5070,8 @@ function previewGraphTimingKey(lane = state.currentView) {
   return [lane, Boolean(state.denoise?.[lane]?.enabled), gpuDetailGraphActive(lane),
     localAdjustments().filter((item) => item.enabled !== false).length,
     Number(film.grain_amount) > 0, Number(film.bloom_amount) > 0,
-    Number(film.halation_amount) > 0, Number(film.image_softness) > 0,
+    Number(film.halation_amount) > 0,
+    Number(state.adjustments?.[lane]?.detail?.softness) > 0 || (Number(state.adjustments?.[lane]?.detail?.microcontrast) || 0) !== 0,
     state.zoomMode === "custom" ? "zoom" : "fit"].join(":");
 }
 
@@ -13289,7 +13289,7 @@ function formatControlValue(path, value) {
   if (path.endsWith("film_look.halation_radius")) return `${numeric.toFixed(2)}% 35mm gate`;
   if (path.endsWith("film_look.bloom_radius")) return `${numeric.toFixed(2)}% output diag`;
   if (path.includes("film_look")) {
-    const signed = /(contrast|toe|shoulder|density|microcontrast|hue_offset)$/.test(path);
+    const signed = /(contrast|toe|shoulder|density|hue_offset)$/.test(path);
     return `${signed && numeric > 0 ? "+" : ""}${Math.round(numeric)}%`;
   }
   if (path.endsWith("highlight_compression_softness")) {
@@ -13607,6 +13607,13 @@ function applyGroupPreset(preset) {
   context.paths.forEach((path) => {
     if (Object.hasOwn(preset.values, path)) setGroupPresetPathValue(context, path, JSON.parse(JSON.stringify(preset.values[path])));
   });
+  if (context.group === "film-look") {
+    // Film Look presets saved before NEXT-01 #2 still carry Image Structure.
+    // Those controls are Detail's now, and a preset may only change its own
+    // group, so they are dropped rather than moved.
+    const look = state.adjustments[context.lane]?.film_look;
+    if (look) for (const key of ["image_structure_enabled", "image_softness", "microcontrast"]) delete look[key];
+  }
   if (context.group === "denoise") {
     const runtime = state.denoiseRuntime[context.lane];
     runtime.dirty = true;

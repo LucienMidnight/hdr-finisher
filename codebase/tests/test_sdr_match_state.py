@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from hdr_finisher.adjustments import apply_adjustments
 from hdr_finisher.models import (
     AdjustmentState,
-    DetailAdjustments,
+    BranchDetailAdjustments,
     EditCommand,
     EditDocument,
     PreviewKind,
@@ -82,8 +82,8 @@ def test_schema_v4_has_neutral_detail_and_inactive_match_defaults(tmp_path: Path
     document = store.get(session_id).edit_document()
 
     assert document.schema_version == 4
-    assert document.global_adjustments.hdr.detail == DetailAdjustments()
-    assert document.global_adjustments.sdr.detail == DetailAdjustments()
+    assert document.global_adjustments.hdr.detail == BranchDetailAdjustments()
+    assert document.global_adjustments.sdr.detail == BranchDetailAdjustments()
     assert document.sdr_match == SdrMatchState()
 
 

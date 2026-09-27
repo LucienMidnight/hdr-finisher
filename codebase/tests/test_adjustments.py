@@ -378,7 +378,7 @@ def test_cpu_film_spatial_stages_reuse_the_response_frame(monkeypatch: pytest.Mo
     look = state.hdr.film_look
     look.halation_amount = 20
     look.bloom_amount = 20
-    look.image_softness = 10
+    state.hdr.detail.softness = 10
     look.film_resolution = 90
     look.grain_enabled = False
     response_frame = np.full_like(image, 0.25)
@@ -595,9 +595,8 @@ def test_inactive_film_spatial_stages_do_not_blur(monkeypatch: pytest.MonkeyPatc
     look.halation_amount = 0
     look.bloom_enabled = True
     look.bloom_amount = 0
-    look.image_structure_enabled = True
-    look.image_softness = 0
-    look.microcontrast = 0
+    getattr(state, kind.value).detail.softness = 0
+    getattr(state, kind.value).detail.microcontrast = 0
     look.film_resolution = 100
 
     def unexpected_blur(*_args: object, **_kwargs: object) -> np.ndarray:

@@ -787,7 +787,7 @@ def test_explanatory_copy_uses_title_hover_without_persistent_helper_rows() -> N
     assert 'data-tooltip="Adjust exposure by scene brightness.' in html
     assert 'data-tooltip="Adjust the tone-mapped SDR image by brightness.' in html
     assert html.count('data-tooltip="Range controls how wide a luminance zone is;') == 2
-    assert 'data-tooltip="Corrective, scale-selective detail.' in html
+    assert 'data-tooltip="Scale-selective detail:' in html
     assert 'data-tooltip="Controls physical enlargement for halation, resolution, and grain.' in html
     assert 'data-tooltip="Strip modes anchor the cross-scan dimension' in html
     assert 'id="denoise-method-note" class="tooltip-trigger"' in html
@@ -1760,13 +1760,18 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     for path in [
         "print_strength", "color_density", "grain_amount", "grain_shadow_response",
         "grain_midtone_response", "grain_highlight_response", "halation_amount",
-        "bloom_amount", "image_softness", "microcontrast", "grain_film_format",
+        "bloom_amount", "grain_film_format",
         "grain_capture_geometry", "grain_custom_width_mm", "grain_custom_height_mm",
         "grain_view_map", "halation_view_map",
         "red_response", "green_response", "blue_response",
         "highlight_desaturation", "shadow_desaturation", "grain_film_type",
     ]:
         assert f'data-path="current.film_look.{path}"' in html
+    # NEXT-01 #2: Softness and Microcontrast are Detail controls now.
+    for path in ("image_softness", "microcontrast", "image_structure_enabled"):
+        assert f'data-path="current.film_look.{path}"' not in html
+    assert 'data-path="current.detail.softness"' in html
+    assert 'data-path="current.detail.microcontrast"' in html
     assert "fn grainLayerNoise" in (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
     shader = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
     assert "halationEdgeSource" in shader
@@ -2519,7 +2524,10 @@ def test_adjustment_group_presets_are_scoped_persistent_and_available_in_headers
     assert "function builtInGroupPresets(context)" in javascript
     assert 'kind.textContent = "Built-in"' in javascript
     assert "if (!preset.builtIn)" in javascript
-    assert "const FILM_LOOK_PRESET_RECIPE_VERSION = 1" in javascript
+    assert "const FILM_LOOK_PRESET_RECIPE_VERSION = 2" in javascript
+    start = javascript.index("const FILM_LOOK_PRESETS")
+    presets = javascript[start:javascript.index("\n]);", start)]
+    assert "image_softness" not in presets and "microcontrast" not in presets
     assert "function completeFilmLookRecipe(values)" in javascript
     assert 'name: "Clean Cinema"' in javascript
     assert 'name: "Soft Color Negative"' in javascript

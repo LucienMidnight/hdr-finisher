@@ -692,7 +692,6 @@ def _tonal_analysis_copy(adjustments: AdjustmentState) -> AdjustmentState:
         look.grain_enabled = False
         look.halation_enabled = False
         look.bloom_enabled = False
-        look.image_structure_enabled = False
         look.film_resolution = 100.0
     return result
 

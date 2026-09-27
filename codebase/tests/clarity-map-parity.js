@@ -85,7 +85,7 @@ tifffile.imwrite(sys.argv[1], rgb, photometric="rgb")
     const compare = async (detail) => page.evaluate(async ({ detail, longEdge }) => {
       Object.assign(state.adjustments.hdr.detail, {
         texture_amount: 0, clarity_amount: 0, clarity_radius_percent: 0.75,
-        sharpen_amount: 0, sharpen_radius_px: 0.8, sharpen_threshold: 10,
+        sharpen_amount: 0, sharpen_radius_px: 0.8, sharpen_threshold: 10, softness: 0, microcontrast: 0,
       }, detail);
       if (!await renderGpuDraft("hdr", { longEdge })) return { error: "GPU render failed" };
       await state.gpuPreview.device.queue.onSubmittedWorkDone();
@@ -137,6 +137,27 @@ tifffile.imwrite(sys.argv[1], rgb, photometric="rgb")
     }
     if (failures.length) throw new Error(`Clarity preview and export disagree: ${JSON.stringify(failures)}`);
     console.log("Clarity's brightness map matches between the WebGPU preview and the CPU export.");
+
+    // Detail's Softness and Microcontrast (NEXT-01 #2) run in the film stage
+    // on both sides; the same added-difference measure holds them to the
+    // same agreement.
+    const structureFailures = [];
+    for (const detail of [{ softness: 60 }, { microcontrast: 80 }, { microcontrast: -60 }, { softness: 30, microcontrast: 50 }]) {
+      const result = await compare(detail);
+      if (result.error) throw new Error(`${JSON.stringify(detail)}: ${result.error}`);
+      const added = result.differences.map((value, index) => Math.max(0, value - neutral.differences[index]) / 255);
+      const mean = added.reduce((sum, value) => sum + value, 0) / added.length;
+      const sorted = [...added].sort((left, right) => left - right);
+      const p999 = sorted[Math.floor(sorted.length * 0.999)];
+      const passed = mean <= MAX_CLARITY_MEAN_DIFFERENCE && p999 <= MAX_CLARITY_P999_DIFFERENCE;
+      if (!passed) structureFailures.push({ detail, mean, p999 });
+      console.log(
+        `${JSON.stringify(detail).padEnd(36)} added GPU/CPU difference: mean ${(mean * 255).toFixed(3)} levels, `
+        + `p99.9 ${(p999 * 255).toFixed(1)} levels  ${passed ? "PASS" : "FAIL"}`,
+      );
+    }
+    if (structureFailures.length) throw new Error(`Softness/Microcontrast preview and export disagree: ${JSON.stringify(structureFailures)}`);
+    console.log("Detail Softness and Microcontrast match between the WebGPU preview and the CPU export.");
   } finally {
     await browser.close();
     fs.rmSync(path.dirname(fixturePath), { recursive: true, force: true });

@@ -47,9 +47,6 @@ function argument(name, fallback = null) {
       bloom_radius: 3,
       bloom_sensitivity: 75,
       bloom_highlight_detail: selected === "diffusion" ? 0 : 100,
-      image_structure_enabled: false,
-      image_softness: 0,
-      microcontrast: 0,
       film_resolution: 100,
     });
   }, scenario);

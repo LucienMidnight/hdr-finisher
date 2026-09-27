@@ -400,7 +400,7 @@ def _apply_hdr_adjustments(
             compiled_masks=compiled_local_masks,
             source_pixel_scale=source_pixel_scale,
         )
-    if hdr.film_look_section_enabled:
+    if hdr.film_look_section_enabled or _structure_is_active(hdr):
         result = _apply_film_look(result, adjustments, PreviewKind.HDR, include_grain=False)
     if hdr.vignette_section_enabled:
         result = _apply_vignette(result, hdr.vignette, PreviewKind.HDR, frame_window=frame_window)
@@ -746,7 +746,7 @@ def _apply_sdr_adjustments(
             compiled_masks=compiled_local_masks,
             source_pixel_scale=source_pixel_scale,
         )
-    if sdr.film_look_section_enabled:
+    if sdr.film_look_section_enabled or _structure_is_active(sdr):
         result = _apply_film_look(result, adjustments, PreviewKind.SDR, include_grain=False)
     if sdr.vignette_section_enabled:
         result = _apply_vignette(result, sdr.vignette, PreviewKind.SDR, frame_window=frame_window)
@@ -867,7 +867,7 @@ def _apply_sdr_adjustments_to_reference(
             compiled_masks=compiled_local_masks,
             source_pixel_scale=source_pixel_scale,
         )
-    if sdr.film_look_section_enabled:
+    if sdr.film_look_section_enabled or _structure_is_active(sdr):
         result = _apply_film_look(result, adjustments, PreviewKind.SDR, include_grain=False)
     if sdr.vignette_section_enabled:
         result = _apply_vignette(result, sdr.vignette, PreviewKind.SDR, frame_window=frame_window)
@@ -1595,12 +1595,22 @@ def _apply_curves(image: np.ndarray, adjustments: AdjustmentState, kind: Preview
 def _apply_film_look(
     image: np.ndarray, adjustments: AdjustmentState, kind: PreviewKind, *, include_grain: bool = True
 ) -> np.ndarray:
-    """Apply the finishing look after curves, with grain deliberately last."""
+    """Apply the finishing look after curves, with grain deliberately last.
+
+    Detail's Softness and Microcontrast also run here, where Film Look's Image
+    Structure used to (NEXT-01 #2), but they answer to Detail's switch rather
+    than Film Look's, and are not scaled by Look Strength.
+    """
     branch = adjustments.hdr if kind == PreviewKind.HDR else adjustments.sdr
     look = branch.film_look
     strength = np.float32(look.look_strength / 100.0)
-    if strength <= 0.0:
-        return image
+    structure_active = _structure_is_active(branch)
+    if not branch.film_look_section_enabled or strength <= 0.0:
+        if not structure_active:
+            return image
+        result = image.astype(np.float32, copy=True)
+        result = _apply_image_structure(result, branch.detail, kind)
+        return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
 
     response_active = any(
         float(getattr(look, field, 0.0)) != 0.0
@@ -1619,9 +1629,6 @@ def _apply_film_look(
     )
     halation_map_active = look.halation_enabled and look.halation_view_map
     bloom_active = look.bloom_enabled and look.bloom_amount > 0.0 and look.bloom_radius > 0.0
-    structure_active = look.image_structure_enabled and (
-        look.image_softness != 0.0 or look.microcontrast != 0.0
-    )
     resolution_active = look.film_resolution < 100.0
     grain_active = include_grain and look.grain_enabled and (
         look.grain_amount > 0.0 or look.grain_view_map
@@ -1655,7 +1662,7 @@ def _apply_film_look(
     if bloom_active:
         result = _apply_bloom(result, look, kind, strength, spatial_source=spatial_source)
     if structure_active:
-        result = _apply_image_structure(result, look, kind, strength, spatial_source=spatial_source)
+        result = _apply_image_structure(result, branch.detail, kind, spatial_source=spatial_source)
     if resolution_active:
         result = _apply_film_resolution(result, look, strength, spatial_source=spatial_source)
     if include_grain and look.grain_enabled and strength > 0.0:
@@ -2238,16 +2245,21 @@ def _apply_bloom(
     return np.maximum(image + additive + diffusion, 0.0).astype(np.float32)
 
 
+def _structure_is_active(branch: object) -> bool:
+    """Whether Detail's Softness or Microcontrast has anything to do."""
+    detail = branch.detail
+    return bool(branch.detail_section_enabled) and (detail.softness != 0.0 or detail.microcontrast != 0.0)
+
+
 def _apply_image_structure(
     image: np.ndarray,
-    look: object,
+    detail: object,
     kind: PreviewKind,
-    master: np.float32,
     *,
     spatial_source: np.ndarray | None = None,
 ) -> np.ndarray:
-    softness = np.float32(look.image_softness / 100.0) * master
-    microcontrast = np.float32(look.microcontrast / 100.0) * master
+    softness = np.float32(detail.softness / 100.0)
+    microcontrast = np.float32(detail.microcontrast / 100.0)
     if softness == 0.0 and microcontrast == 0.0:
         return image
     radius = max(1, _radius_pixels(image, 0.06, maximum=24))

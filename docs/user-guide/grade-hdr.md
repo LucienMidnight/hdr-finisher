@@ -128,9 +128,11 @@ Use Luma first for tonal shape. RGB channel curves alter color balance and can c
 Film Look is the final creative layer after Curves. Open its **Preset** browser to apply the built-in Large Format Fine, 35mm Fine, 35mm Balanced, 35mm Fast, or 16mm Fine model. Each model populates the Film Look controls as an editable starting point. Built-ins cannot be deleted; **Reset** returns the group to the Neutral defaults. They are generic cinema-finishing models informed by published motion-picture film behavior, not claims of exact stock matching.
 
 - **Cinema Print** shapes contrast, toe, shoulder, and subtractive color density in a perceptual scene-aware domain. It preserves HDR headroom rather than imposing a literal print-film white level.
-- **Halation** adds warm edge scatter around branch-relative highlights. Sensitivity selects analogous highlight populations in HDR and SDR; **View qualification map** is a preview diagnostic and is never baked into an export.
+- **Halation** adds warm edge scatter around branch-relative highlights. Sensitivity selects analogous highlight populations in HDR and SDR. **Show halation map** shows where the glow can appear, not how strong it is (Amount and Hue do not change it); it is a preview diagnostic and is never baked into an export.
 - **Bloom & Diffusion** creates a broader, mostly neutral highlight glow using a smooth linear-light diffusion filter. Highlight Detail separates optical bloom from core diffusion: at 100% the source edge stays intact beneath the added glow; lower values progressively move highlight energy outward and soften the bright core.
-- **Image Structure** softens brittle digital edges or adjusts microcontrast before grain.
+- **Resolution** (Film Resolution) reduces fine resolving character the way a finite film MTF does.
+
+**Softness** and **Microcontrast** now live in the **Detail** section. Softness softens brittle digital edges; Microcontrast lowers or raises fine local contrast. They work in colour and differently from Texture. They follow Detail's on/off, Reset and Match HDR detail, and are not scaled by Film Look's Look Strength. They still run late in the pipeline, after local adjustments and before grain, so the Film Look presets no longer set them. Projects saved with the old Film Look Image Structure open with those values carried into Detail, scaled by the Look Strength they had.
 - **Grain** varies through shadows, midtones, and highlights. Film Resolution controls the pre-grain resolving character; grain is the last creative operation, followed only by enabled output highlight compression. **View grain map** isolates the grain field on a neutral mid-grey card so size, softness, chroma, and the shadow/midtone/highlight response can be judged without the picture; like the Halation map it is a preview diagnostic and never reaches an export.
 
 Radius values are percentages of image diagonal, so their apparent scale remains consistent between proxy preview and full-resolution export. The HDR and SDR branches share a deterministic grain field while retaining independent grain strength and response.
@@ -148,7 +150,7 @@ The current HDR order is:
 7. Film Response and Color Density
 8. Halation
 9. Bloom/Diffusion
-10. Image Softness and Microcontrast
+10. Detail Softness and Microcontrast
 11. Grain
 12. Output Highlights: Peak Fit, Soft Ceiling, or Clip
 13. Clamp final negative values to zero
