@@ -674,7 +674,7 @@ Type landed on `feature/denoise-clumpy-noise`.
   SDR one switches the HDR preview to its SDR rendering, as it should, but
   moving it back to the HDR monitor leaves it stuck in SDR. Zooming a little
   brings HDR back, so the display-capability change (the
-  \`(dynamic-range: high)\` media query / canvas HDR configuration) is probably
+  `(dynamic-range: high)` media query / canvas HDR configuration) is probably
   not triggering a re-render or surface reconfigure on its own. Look into it.
 - **DETAIL-01 — Texture vs Microcontrast.** They look and behave very
   differently (Texture is a luminance band in log space; Microcontrast is a
