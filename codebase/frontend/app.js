@@ -12257,8 +12257,14 @@ function arrangeLaneControlGroups(lane) {
     if (group) panel.append(group);
   }
   const colorGrading = document.querySelector('.control-group[data-group="color-grading"]');
+  const blackAndWhiteGroup = document.querySelector('.control-group[data-group="black-and-white"]');
   const localAdjustmentsGroup = document.querySelector('.control-group[data-group="local-adjustments"]');
-  if (colorGrading && localAdjustmentsGroup) colorGrading.after(localAdjustmentsGroup);
+  // Panel order after Color: 12 Color Grading, 13 Black & White, 14 Local
+  // Adjustments. Only the panel order: Black & White still processes straight
+  // after Color, so the Color Grading wheels can tone the grey picture.
+  if (colorGrading && blackAndWhiteGroup) colorGrading.after(blackAndWhiteGroup);
+  const beforeLocals = blackAndWhiteGroup || colorGrading;
+  if (beforeLocals && localAdjustmentsGroup) beforeLocals.after(localAdjustmentsGroup);
 }
 
 function renderLaneChrome() {

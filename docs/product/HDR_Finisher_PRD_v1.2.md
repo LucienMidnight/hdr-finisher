@@ -575,6 +575,9 @@ already covers colour channel mixing, so no general channel mixer was added.
 - **On/off is the section's eye**, off by default; there is no Enabled
   checkbox. On with every slider at 0 is pixel-identical to Saturation −100
   (tested). Reset returns the sliders to 0 and leaves on/off alone.
+- **Panel position:** 13, after Color Grading (Steve, 2026-09-27). Panel order
+  only: B&W still processes straight after Color, so Color Grading can tone
+  the grey picture.
 - **Per rendition**, like other modules, with **Match HDR black & white**
   copying sliders and on/off to SDR once. SDR Match (entire) copies it too.
 - **Presets** through the existing group-preset system, sliders only: Yellow,
@@ -666,6 +669,13 @@ Type landed on `feature/denoise-clumpy-noise`.
   Microcontrast now sit in Detail's panel but run in the film stage. Decide
   the best place for them, and review the order and grouping of every stage
   (Detail vs locals vs Film Look, where B&W and Color sit) before v1.
+- **DISPLAY-01 — HDR preview stuck in SDR after moving between monitors.**
+  Reported by Steve 2026-09-27: dragging the window from an HDR monitor to an
+  SDR one switches the HDR preview to its SDR rendering, as it should, but
+  moving it back to the HDR monitor leaves it stuck in SDR. Zooming a little
+  brings HDR back, so the display-capability change (the
+  \`(dynamic-range: high)\` media query / canvas HDR configuration) is probably
+  not triggering a re-render or surface reconfigure on its own. Look into it.
 - **DETAIL-01 — Texture vs Microcontrast.** They look and behave very
   differently (Texture is a luminance band in log space; Microcontrast is a
   colour high-pass at 0.06% of the diagonal). Look at both behaviours in a

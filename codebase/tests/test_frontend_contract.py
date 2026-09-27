@@ -52,7 +52,7 @@ def test_raw_highlight_reconstruction_is_a_versioned_module_stack_control() -> N
     assert '.control-group[data-group="raw-highlights"] > .control-group-header::before { content: "02"; }' in css
     assert '.control-group[data-group="geometry"] > .control-group-header::before { content: "03"; }' in css
     assert '.control-group[data-group="denoise"] > .control-group-header::before { content: "05"; }' in css
-    assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "16"; }' in css
+    assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "17"; }' in css
     assert 'rawHighlightGroup?.classList.toggle("hidden", !bridgeQualified)' not in script
     assert 'highlight_reconstruction: {' in script
     assert 'method: els.rawHighlightMethod?.value || "opposed_color_v1"' in script
@@ -589,7 +589,8 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert '.control-group[data-group="hdr-highlights"] > .control-group-header::before { content: "10"; }' in css
     assert '.control-group[data-group="curves"] > .control-group-header::before { content: "10"; }' in css
     assert '"sdr-tone", "sdr-highlights", "sdr-equalizer", "sdr-zones", "curves", "sdr-color"' in script
-    assert "colorGrading.after(localAdjustmentsGroup)" in script
+    assert "colorGrading.after(blackAndWhiteGroup)" in script
+    assert "beforeLocals.after(localAdjustmentsGroup)" in script
     assert "Output target" in html
     assert "Sets the final peak after grading" in html
     assert '<option value="clip">Clip</option>' in html
@@ -2414,7 +2415,7 @@ def test_perspective_module_is_numbered_fourth_and_exposes_draft_guided_tools() 
     assert 'id="perspective-horizontal-tool"' in html
     assert 'id="perspective-apply"' in html and 'id="perspective-cancel"' in html
     assert '.control-group[data-group="perspective"] > .control-group-header::before { content: "04"; }' in css
-    assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "16"; }' in css
+    assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "17"; }' in css
     assert "function openPerspectiveMode()" in javascript
     assert "function closePerspectiveMode(commit)" in javascript
     assert 'transient_adjustments: true' in javascript
@@ -2600,9 +2601,10 @@ def test_detail_uses_numbered_module_header_and_sharpen_targeting_hierarchy() ->
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
 
     assert '>Detail <span class="module-modified-marker" aria-hidden="true"></span></button>' in html
-    assert '.control-group[data-group="detail"] > .control-group-header::before { content: "14"; }' in css
-    assert '.control-group[data-group="film-look"] > .control-group-header::before { content: "15"; }' in css
-    assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "16"; }' in css
+    assert '.control-group[data-group="black-and-white"] > .control-group-header::before { content: "13"; }' in css
+    assert '.control-group[data-group="detail"] > .control-group-header::before { content: "15"; }' in css
+    assert '.control-group[data-group="film-look"] > .control-group-header::before { content: "16"; }' in css
+    assert '.control-group[data-group="vignette"] > .control-group-header::before { content: "17"; }' in css
     assert 'data-control-path="current.detail.sharpen_amount"' in html
     assert '<div class="slider-group-relationship">Targeting</div>' in html
     assert 'class="control-row compact-subrail" data-control-path="current.detail.sharpen_radius_px"' in html

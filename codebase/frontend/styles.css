@@ -8021,10 +8021,11 @@ body[data-active-lane="hdr"] .control-group[data-group="curves"] > .control-grou
 .control-group[data-group="hdr-color"] > .control-group-header::before,
 .control-group[data-group="sdr-color"] > .control-group-header::before { content: "11"; }
 .control-group[data-group="color-grading"] > .control-group-header::before { content: "12"; }
-.control-group[data-group="local-adjustments"] > .control-group-header::before { content: "13"; }
-.control-group[data-group="detail"] > .control-group-header::before { content: "14"; }
-.control-group[data-group="film-look"] > .control-group-header::before { content: "15"; }
-.control-group[data-group="vignette"] > .control-group-header::before { content: "16"; }
+.control-group[data-group="black-and-white"] > .control-group-header::before { content: "13"; }
+.control-group[data-group="local-adjustments"] > .control-group-header::before { content: "14"; }
+.control-group[data-group="detail"] > .control-group-header::before { content: "15"; }
+.control-group[data-group="film-look"] > .control-group-header::before { content: "16"; }
+.control-group[data-group="vignette"] > .control-group-header::before { content: "17"; }
 
 .control-group:not(.collapsed) > .control-group-header::before {
   color: var(--accent-strong);
