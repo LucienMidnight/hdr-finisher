@@ -90,7 +90,19 @@ tifffile.imwrite(sys.argv[1], rgb.astype(np.float32), photometric="rgb")
     const { session } = await sessionResponse.json();
     await page.evaluate((loadedSession) => activateDesktopSession(loadedSession, ""), session);
 
-    const compare = async (testCase, amount) => page.evaluate(async ({ testCase, amount, longEdge }) => {
+    // The app's own startup and settle passes can repaint the canvas at its
+    // own preview size between this render and the capture; they are stood
+    // down first, and a size mismatch is taken again rather than failed.
+    const compare = async (...args) => {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const result = await compareOnce(...args);
+        if (!String(result.error || "").includes(" vs CPU ")) return result;
+      }
+      return compareOnce(...args);
+    };
+    const compareOnce = async (testCase, amount) => page.evaluate(async ({ testCase, amount, longEdge }) => {
+      state.previewScheduler?.cancel();
+      while (state.gpuDraftInFlight) await state.gpuDraftInFlight.catch(() => null);
       const lane = testCase.lane;
       state.adjustments[lane].film_look_section_enabled = true;
       Object.assign(state.adjustments[lane].film_look, {
