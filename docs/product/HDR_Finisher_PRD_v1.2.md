@@ -556,97 +556,69 @@ the Denoise Show noise view. Before publishing it as a version:
   export now uses the same, more accurate blur as the preview.
 - Tag `v0.8.13` and publish the GitHub release with the installers.
 
-### BW-01 — Dedicated Black & White module (planned, next up)
+### BW-01 — Black & White module (built 2026-09-27, awaiting Steve's test)
 
-Recorded 2026-09-26 after a review of the current modules. Not started.
+Recorded 2026-09-26; redesigned with Steve and built on 2026-09-27 on
+`feature/bw-and-followups`.
 
-**The gap.** There is no channel-mixer-style control, so B&W conversion is
-fixed:
+**The gap.** Saturation −100 gave monochrome only with fixed ACEScg luma
+weights: no way to decide how bright reds or blues render in grey. Primaries
+already covers colour channel mixing, so no general channel mixer was added.
 
-- Color → Saturation −100 does produce monochrome, but always with the fixed
-  ACEScg luma weights (~27% R, 67% G, 5% B; `_apply_saturation_vibrance` in
-  `adjustments.py`). There is no way to decide how bright reds or blues
-  render — no "red filter darkens the sky".
-- Primaries hue/purity is a white-preserving color matrix, not a mixer. It
-  only shifts the grey conversion indirectly and unpredictably.
-- Film Look red/green/blue response is density/print response, not mix
-  weights.
-- Per-channel Curves run after Color, so there is nothing left to separate
-  once the image is grey.
-- Toning already works: Color Grading runs after Color, so its shadow and
-  highlight wheels can split-tone a mono image. No new toning control is
-  needed for v1.
+**Design (Steve's decisions)**
 
-**Proposed module**
+- **Only B&W-specific controls** (see memory `minimal-specific-modules`): the
+  monochrome conversion itself and an 8-colour Color Response mixer, Reds,
+  Oranges, Yellows, Greens, Aquas, Blues, Purples, Magentas (−100..+100),
+  setting how bright each colour becomes in grey. No mixer weights, toning,
+  contrast or grain controls.
+- **On/off is the section's eye**, off by default; there is no Enabled
+  checkbox. On with every slider at 0 is pixel-identical to Saturation −100
+  (tested). Reset returns the sliders to 0 and leaves on/off alone.
+- **Per rendition**, like other modules, with **Match HDR black & white**
+  copying sliders and on/off to SDR once. SDR Match (entire) copies it too.
+- **Presets** through the existing group-preset system, sliders only: Yellow,
+  Orange, Red, Green, Blue filters, Infrared look, Orthochromatic. No Neutral
+  preset: turning B&W on is neutral. The values are first estimates for
+  Steve to tune.
 
-1. **Channel mixer core.** R, G and B weight sliders with "Preserve
-   brightness" on by default. It normalizes the weights to sum to 1 so neutral
-   greys and whites keep their brightness when a slider moves; HDR headroom
-   lives mostly in neutral highlights, so they stay put.
-2. **Filter presets on top:** Red, Orange, Yellow, Green, Blue. These are
-   photographer-familiar, and each is just a set of mixer weights. For most
-   users they are the main way in; the sliders are for fine-tuning.
-3. **Neutral default equals today's result.** Default weights are the ACEScg
-   luma coefficients, so turning B&W on matches Saturation −100 exactly — no
-   jump.
-4. **Placement:** in scene-linear ACEScg, directly after Color and before
-   Tone Equalizer, Curves and Color Grading. That is where a lens filter or
-   film spectral sensitivity acts, and it leaves Grading available for
-   toning.
-5. **Not in v1:** a Lightroom-style 8-hue B&W mix. Hue-selective weighting in
-   HDR tends to be noisy in low-chroma shadows and bands at hue boundaries.
-   Revisit if presets plus the mixer feel too blunt.
+**Maths.** Per pixel, in scene-linear ACEScg: grey = ACEScg luma × 2^(2 ·
+weight · response). Response blends the two sliders either side of the
+pixel's Oklab hue (centres at the hues of #FF0000, #FF8000, #FFFF00, #00FF00,
+#00FFFF, #0000FF, #8000FF, #FF00FF) with a smoothstep: no step at a boundary,
+no overshoot. Weight fades in with relative chroma (full at C/L 0.12) so greys
+never move, and fades out in deep shadow (Oklab L 0.25 → 0.12, about 3.5 → 7
+stops under mid grey) so shadow colour noise is not turned into brightness
+noise: 1.0× the plain conversion's noise at −7 EV (3.5× without the fade),
+2.0× at −5 EV with 40% colour noise (5.1× without). Hue and chroma are
+exposure-invariant, so HDR and SDR agree.
 
-**Decisions for Steve (before building)**
+**Placement.** Straight after Color, before highlight limiting measures the
+picture: HDR after Color; SDR scene-linear path after Color, before the sRGB
+placement; SDR authored-reference path in `_sdr_reference_pre_highlight`
+(Color runs after the highlight stage there). The GPU peak shader applies it
+on both SDR paths. Note: the GPU's quick HDR anchor estimate reads the picture
+before Color, so it ignores Saturation and B&W alike (pre-existing; the CPU
+limiter measures the finished picture).
 
-- **Shared or per-rendition?** Every module today is separate for HDR and
-  SDR. The recommendation is to make B&W on/off and the mix **shared**, like
-  geometry: a mono HDR over a color SDR base in one gain-map file would be
-  odd. Match/Rematch would then have nothing to copy.
-- Whether presets should also nudge contrast (as film filters do), or only
-  set weights. Recommendation: weights only.
+**Interactions.** With B&W on, Film Look adds no colour back: halation tint,
+grain chroma and the red/green/blue print response are neutralised at render
+time (saved values kept). Color Grading, RGB Curves and locals can still add
+colour on purpose, so an export is not promised to be fully monochrome.
 
-**Interactions to handle**
+**Verification.** `tests/test_black_and_white.py` (identity with Saturation
+−100, neutrals fixed, smooth hue sweep, extreme HDR colours bounded to ±2 stops
+with no spikes, dark noise, ceiling with every slider at +100 in all three
+modes, Film Look neutral, both SDR highlight-stage inputs grey, per-rendition);
+`tests/bw-parity.js` (GPU vs CPU and grey on the GPU, HDR and SDR, with and
+without Film Look: added difference ≤0.05 levels mean, p99.9 1 level). On a
+real iPhone HDR HEIC (authored-reference SDR path) agreement is looser in
+extreme settings (up to 0.19 levels mean, p99.9 6 levels with every slider at
+±100 plus Film Look) because the two renderers start from slightly different
+authored-SDR pixels; typical presets stay ~0.08 mean, p99.9 1 level.
 
-- **Film Look adds color back.** Halation adds a red tint and chroma grain
-  adds color noise, both after the mix. With B&W on, both should go neutral
-  (real B&W film has no red halation).
-- **Local adjustments.** A local white balance change after B&W would tint the
-  image. That is acceptable as deliberate local toning, but it should be
-  documented.
-- **Highlight ceiling.** Heavy weights (for example R at 200%) can greatly
-  brighten saturated highlights. Output highlight compression runs last, so
-  the ceiling should hold, but prove it with the ceiling and HDR/SDR
-  stability tests. Clamp negative results at zero.
-- **Peak Fit / anchor measurement.** The mix runs before the highlight stage,
-  so the measured anchor must include it on both the whole-frame and bounded
-  strip paths (`sdr_highlight_stage_input` and the HDR peak measurement).
-- **CPU/GPU parity.** Implement in both `adjustments.py` and
-  `frontend/webgpu-preview.js`. The mix is a per-pixel dot product: cheap,
-  and easy to match exactly.
-
-**Plan**
-
-1. Clickable mockup on one colorful real image (sky, foliage, skin) showing
-   the five presets and the three sliders side by side. Steve judges whether
-   the presets feel right before any code is built.
-2. Model fields and pipeline stage (CPU), with a neutral-default test proving
-   B&W-on equals Saturation −100.
-3. WebGPU stage and CPU/GPU parity test.
-4. UI module (on/off, presets, sliders, Preserve brightness) in existing
-   module patterns, plus neutral halation and chroma grain when B&W is on.
-5. Ceiling, stability and Direct/Tiled parity tests; user-guide page.
-
-**Acceptance criteria**
-
-- B&W on with default weights is pixel-identical to Saturation −100.
-- With Preserve brightness on, neutral pixels are unchanged by any weight
-  change.
-- No output exceeds the highlight compression target, and there is no
-  HDR/SDR flashing during slider drags.
-- CPU and GPU agree within existing parity tolerances.
-- Exported HDR and SDR renditions are both monochrome, with no color
-  reintroduced by Film Look.
+**Not in v1 / open.** Slider strength (±2 stops), the chroma and shadow fade
+points and the preset values are first estimates for Steve's hands-on test.
 
 ### NEXT-01 — Follow-ups for the next session (reminder)
 

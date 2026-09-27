@@ -9295,3 +9295,14 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
   color: var(--inverse);
   font-weight: 600;
 }
+
+/* BW-01 Black & White: each track runs from the grey that colour becomes when
+   darkened to the grey it becomes when lightened, through the colour itself. */
+.bw-reds .slider-track { background: linear-gradient(90deg, #2b2b2b, #c8453f, #e6e6e6); }
+.bw-oranges .slider-track { background: linear-gradient(90deg, #2b2b2b, #d27a34, #e6e6e6); }
+.bw-yellows .slider-track { background: linear-gradient(90deg, #2b2b2b, #cdb13a, #e6e6e6); }
+.bw-greens .slider-track { background: linear-gradient(90deg, #2b2b2b, #4c9a55, #e6e6e6); }
+.bw-aquas .slider-track { background: linear-gradient(90deg, #2b2b2b, #3fa3a6, #e6e6e6); }
+.bw-blues .slider-track { background: linear-gradient(90deg, #2b2b2b, #3f6fc4, #e6e6e6); }
+.bw-purples .slider-track { background: linear-gradient(90deg, #2b2b2b, #7b52c0, #e6e6e6); }
+.bw-magentas .slider-track { background: linear-gradient(90deg, #2b2b2b, #b84f9a, #e6e6e6); }

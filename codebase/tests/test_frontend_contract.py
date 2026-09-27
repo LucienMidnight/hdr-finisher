@@ -567,7 +567,7 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert 'id="tone-equalizer-add"' in html
     assert 'id="tone-equalizer-remove"' in html
     assert 'id="tone-equalizer-radius"' in html
-    assert html.count("data-section-path=") == 15
+    assert html.count("data-section-path=") == 16
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
     assert "--bypass-icon-shape:" in css
     assert "--bypass-icon-visible: var(--accent)" in css
@@ -1589,7 +1589,15 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     # them at zero, so every index below keeps its meaning. 166 carries
     # Denoise's Show noise view flag; 167-174 describe the Clarity map; 175 is
     # the grain film type and 176 the grain seed's high half.
-    assert "const PARAM_COUNT = 177" in shader
+    assert "const PARAM_COUNT = 186" in shader
+    # BW-01: Black & White runs straight after Color in every lane and path,
+    # and before the SDR highlight stage on both SDR paths.
+    assert "let balanced = blackAndWhite(sceneColor(contrasted));" in shader
+    assert "acescgToSrgb(blackAndWhite(sceneColor(rgb)))" in shader
+    assert "toneMap(blackAndWhite(sceneColor(rgb)))" in shader
+    assert "if (p[177] > 0.5) { rgb = acescgToSrgb(blackAndWhite(srgbToAcescg(rgb))); }" in shader
+    assert "peakAcescgToSrgb(peakBlackAndWhite(peakSceneColor(rgb)))" in shader
+    assert "rgb = peakAcescgToSrgb(peakBlackAndWhite(peakSrgbToAcescg(rgb)));" in shader
     assert "const GRAIN_FILM_TYPE_INDEX = 175" in shader
     assert "const GRAIN_SEED_HIGH_INDEX = 176" in shader
     assert "const CLARITY_MAP_SCALE_INDEX = 167" in shader
@@ -1615,7 +1623,7 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     assert "localDetailCompositeFragmentMain" in shader
     assert "localDetailMixFragmentMain" in shader
     assert "let contrasted = hdrContrast(hdrBase(source))" in shader
-    assert "let balanced = sceneColor(contrasted)" in shader
+    assert "let balanced = blackAndWhite(sceneColor(contrasted))" in shader
     assert "let equalized = toneEqualizer(balanced)" in shader
     assert "let primaries = hdrPrimaries(equalized)" in shader
     # Film Look resolves into its own target so the output limiter can anchor on
@@ -1643,8 +1651,8 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     assert shader.count("min(0.12 * (extrema.y - extrema.x), SHARPEN_HALO_ALLOWANCE_EV)") == 2
     assert "0.12 * (extrema.y - extrema.x);" not in shader
     assert "sdrReferenceColor(sdrContrast(toneEqualizer(highlightRecovery(rgb))))" in shader
-    assert "toneMap(sceneColor(rgb))" in shader
-    assert "sdrPrimaries(sdrContrast(toneEqualizer(highlightRecovery(toneMap(sceneColor(rgb))))))" in shader
+    assert "toneMap(blackAndWhite(sceneColor(rgb)))" in shader
+    assert "sdrPrimaries(sdrContrast(toneEqualizer(highlightRecovery(toneMap(blackAndWhite(sceneColor(rgb)))))))" in shader
     assert "let y = max(select(lumaSrgb(input), lumaAces(input), p[0] > 0.5), 0.0)" in shader
     assert "retoneMapSdrReference(rgb)" in shader
     assert "let displayReferenceWhite = 100.0 / 203.0" in shader
@@ -1666,7 +1674,7 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     assert "fn hdrSoftCeiling(input: vec3f) -> vec3f" in shader
     assert "fn sdrPeakFit(input: vec3f) -> vec3f" in shader
     assert "fn sdrSoftCeiling(input: vec3f) -> vec3f" in shader
-    assert "acescgToSrgb(sceneColor(rgb)) * ((100.0 / 203.0) / 0.18)" in shader
+    assert "acescgToSrgb(blackAndWhite(sceneColor(rgb))) * ((100.0 / 203.0) / 0.18)" in shader
     assert "let transport = acescgToBt2020(input)" in shader
     assert "return bt2020ToAcescg(mappedTransport)" in shader
     assert "(mappedRgb - vec3f(targetValue)) * (1.0 - progress)" in shader

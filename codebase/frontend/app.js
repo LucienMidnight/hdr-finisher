@@ -140,6 +140,14 @@ Object.assign(MANUAL_VALUE_RULES, {
   "current.vignette.roundness": { min: -100, max: 100, decimals: 0 },
   "current.vignette.feather": { min: 0, max: 100, decimals: 0 },
   "current.vignette.highlight_protection": { min: 0, max: 100, decimals: 0 },
+  "current.black_and_white.reds": { min: -100, max: 100, decimals: 0 },
+  "current.black_and_white.oranges": { min: -100, max: 100, decimals: 0 },
+  "current.black_and_white.yellows": { min: -100, max: 100, decimals: 0 },
+  "current.black_and_white.greens": { min: -100, max: 100, decimals: 0 },
+  "current.black_and_white.aquas": { min: -100, max: 100, decimals: 0 },
+  "current.black_and_white.blues": { min: -100, max: 100, decimals: 0 },
+  "current.black_and_white.purples": { min: -100, max: 100, decimals: 0 },
+  "current.black_and_white.magentas": { min: -100, max: 100, decimals: 0 },
   "current.detail.texture_amount": { min: -100, max: 100, decimals: 0 },
   "current.detail.softness": { min: 0, max: 100, decimals: 0 },
   "current.detail.microcontrast": { min: -100, max: 100, decimals: 0 },
@@ -797,6 +805,29 @@ const defaultColorGrading = () => ({
 });
 
 const defaultVignette = () => ({ amount: 0, midpoint: 50, roundness: 0, feather: 75, highlight_protection: 0, center_x: 0.5, center_y: 0.5 });
+// BW-01 Black & White: how bright each colour becomes in grey. All zero is the
+// plain luminance conversion, the same as Saturation -100.
+const BLACK_AND_WHITE_SLIDERS = Object.freeze(["reds", "oranges", "yellows", "greens", "aquas", "blues", "purples", "magentas"]);
+const defaultBlackAndWhite = () => Object.fromEntries(BLACK_AND_WHITE_SLIDERS.map((name) => [name, 0]));
+// Built-in starting points modelled on common black & white filters and film
+// types. They set the sliders only, never the on/off. Values are first
+// estimates, to be tuned on real pictures.
+const BLACK_AND_WHITE_PRESETS = Object.freeze([
+  { id: "yellow-filter", name: "Yellow filter", description: "Natural skies: blues a little darker, skin and foliage a little lighter.",
+    values: { reds: 10, oranges: 15, yellows: 20, greens: 5, aquas: -15, blues: -30, purples: -20, magentas: 0 } },
+  { id: "orange-filter", name: "Orange filter", description: "The landscape classic: darker skies and water, smoother skin.",
+    values: { reds: 25, oranges: 35, yellows: 20, greens: -10, aquas: -35, blues: -55, purples: -35, magentas: 5 } },
+  { id: "red-filter", name: "Red filter", description: "Dramatic: very dark skies, bright reds and warm tones.",
+    values: { reds: 55, oranges: 45, yellows: 15, greens: -30, aquas: -60, blues: -85, purples: -50, magentas: 25 } },
+  { id: "green-filter", name: "Green filter", description: "Lighter foliage, darker reds and lips; outdoor portraits.",
+    values: { reds: -35, oranges: -20, yellows: 20, greens: 45, aquas: 20, blues: -15, purples: -25, magentas: -30 } },
+  { id: "blue-filter", name: "Blue filter", description: "Hazy and atmospheric: warm tones darker, skies pale.",
+    values: { reds: -45, oranges: -35, yellows: -25, greens: -10, aquas: 25, blues: 45, purples: 25, magentas: -10 } },
+  { id: "infrared", name: "Infrared look", description: "Glowing foliage and near-black skies, like infrared film.",
+    values: { reds: 10, oranges: 20, yellows: 70, greens: 90, aquas: -50, blues: -90, purples: -40, magentas: 0 } },
+  { id: "orthochromatic", name: "Orthochromatic", description: "Early film blind to red: dark reds and skin, pale blues.",
+    values: { reds: -80, oranges: -55, yellows: -15, greens: 10, aquas: 35, blues: 55, purples: 35, magentas: -30 } },
+].map((preset) => Object.freeze(preset)));
 const defaultGeometry = () => ({
   rotation: 0,
   flip_horizontal: false,
@@ -1243,9 +1274,11 @@ const defaultAdjustments = () => ({
     primaries_section_enabled: true,
     curves_section_enabled: true,
     detail_section_enabled: true,
+    black_and_white_section_enabled: false,
     film_look_section_enabled: true,
     color_grading_section_enabled: true,
     vignette_section_enabled: true,
+    black_and_white: defaultBlackAndWhite(),
     film_look: defaultFilmLook(),
     color_grading: defaultColorGrading(),
     vignette: defaultVignette(),
@@ -1304,9 +1337,11 @@ const defaultAdjustments = () => ({
     primaries_section_enabled: true,
     curves_section_enabled: true,
     detail_section_enabled: true,
+    black_and_white_section_enabled: false,
     film_look_section_enabled: true,
     color_grading_section_enabled: true,
     vignette_section_enabled: true,
+    black_and_white: defaultBlackAndWhite(),
     film_look: defaultFilmLook(),
     color_grading: defaultColorGrading(),
     vignette: defaultVignette(),
@@ -1499,7 +1534,9 @@ const els = {
   sdrMatchRevert: document.getElementById("sdr-match-revert"),
   sdrMatchEntireStatus: document.getElementById("sdr-match-entire-status"),
   detailSdrActions: document.getElementById("detail-sdr-actions"),
+  blackAndWhiteSdrActions: document.getElementById("black-and-white-sdr-actions"),
   detailMatchHdr: document.getElementById("detail-match-hdr"),
+  blackAndWhiteMatchHdr: document.getElementById("black-and-white-match-hdr"),
   overlayPresetNote: document.getElementById("overlay-preset-note"),
   falseColorKey: document.getElementById("false-color-key"),
   curveReset: document.getElementById("curve-reset"),
@@ -1802,12 +1839,16 @@ const controlGroups = {
   "hdr-color": ["hdr.white_balance_kelvin", "hdr.tint", "hdr.saturation", "hdr.vibrance", "hdr.red_hue", "hdr.red_purity", "hdr.green_hue", "hdr.green_purity", "hdr.blue_hue", "hdr.blue_purity", "hdr.tint_hue", "hdr.tint_purity"],
   "hdr-zones": ["hdr.lift", "hdr.lift_range", "hdr.lift_pivot", "hdr.gamma", "hdr.gamma_range", "hdr.gamma_pivot", "hdr.gain", "hdr.gain_range", "hdr.gain_pivot"],
   "hdr-detail": ["hdr.detail"],
+  // Black & White: its Reset returns the sliders only. It is deliberately not
+  // in sectionPathForGroup, so Reset leaves the module on or off as it was.
+  "hdr-black-and-white": ["hdr.black_and_white"],
   "sdr-tone": ["sdr.exposure", "sdr.contrast", "sdr.contrast_pivot", "sdr.shadow"],
   "sdr-highlights": ["sdr.highlight_compression_mode", "sdr.highlight_compression_start_percent", "sdr.highlight_compression_softness", "sdr.highlight_compression_peak_detail", "sdr.highlight_compression_peak_measurement", "sdr.highlight_compression_manual_peak_percent", "sdr.highlight_compression_bias", "sdr.highlight_compression_color_handling"],
   "sdr-equalizer": ["sdr.tone_equalizer_nodes", "sdr.tone_equalizer_influence_radius", "sdr.tone_equalizer_smoothing"],
   "sdr-color": ["sdr.white_balance_kelvin", "sdr.tint", "sdr.saturation", "sdr.vibrance", "sdr.red_hue", "sdr.red_purity", "sdr.green_hue", "sdr.green_purity", "sdr.blue_hue", "sdr.blue_purity", "sdr.tint_hue", "sdr.tint_purity"],
   "sdr-zones": ["sdr.lift", "sdr.lift_range", "sdr.lift_pivot", "sdr.gamma", "sdr.gamma_range", "sdr.gamma_pivot", "sdr.gain", "sdr.gain_range", "sdr.gain_pivot"],
   "sdr-detail": ["sdr.detail"],
+  "sdr-black-and-white": ["sdr.black_and_white"],
 };
 
 const falseColorPaletteTokens = [
@@ -1846,6 +1887,7 @@ const GROUP_PRESET_LABELS = {
   curves: "Curves",
   "color-grading": "Color Grading",
   detail: "Detail",
+  "black-and-white": "Black & White",
   "film-look": "Film Look",
   vignette: "Vignette",
   denoise: "Denoise",
@@ -1866,7 +1908,7 @@ function groupPresetPaths(groupId) {
 function groupPresetContextForElement(groupElement) {
   const rawGroup = groupElement?.dataset.group || "";
   if (["geometry", "perspective", "local-adjustments"].includes(rawGroup)) return null;
-  const groupId = ["curves", "color-grading", "detail", "film-look", "vignette", "denoise"].includes(rawGroup)
+  const groupId = ["curves", "color-grading", "detail", "black-and-white", "film-look", "vignette", "denoise"].includes(rawGroup)
     ? `${state.currentView}-${rawGroup}`
     : rawGroup;
   const paths = groupPresetPaths(groupId);
@@ -3524,7 +3566,9 @@ function bindEvents() {
   });
   els.groupResets.forEach((button) => {
     button.addEventListener("click", () => resetControlGroup(
-      button.dataset.resetGroup === "detail" ? `${state.currentView}-detail` : button.dataset.resetGroup
+      ["detail", "black-and-white"].includes(button.dataset.resetGroup)
+        ? `${state.currentView}-${button.dataset.resetGroup}`
+        : button.dataset.resetGroup
     ));
   });
   els.sdrMatchHdrColors.addEventListener("click", matchHdrColorsToSdr);
@@ -3533,6 +3577,7 @@ function bindEvents() {
   ));
   els.sdrMatchRevert?.addEventListener("click", () => setSdrMatch("revert"));
   els.detailMatchHdr?.addEventListener("click", () => matchLaneObject("detail"));
+  els.blackAndWhiteMatchHdr?.addEventListener("click", matchHdrBlackAndWhiteToSdr);
   els.filmLookReset?.addEventListener("click", resetFilmLook);
   els.filmLookMatchHdr?.addEventListener("click", matchHdrFilmLookToSdr);
   els.colorGradingReset?.addEventListener("click", () => resetLaneObject("color_grading", defaultColorGrading()));
@@ -12245,6 +12290,7 @@ function renderLaneChrome() {
   els.colorGradingSdrActions?.classList.toggle("hidden", lane !== "sdr");
   els.vignetteSdrActions?.classList.toggle("hidden", lane !== "sdr");
   els.detailSdrActions?.classList.toggle("hidden", lane !== "sdr");
+  els.blackAndWhiteSdrActions?.classList.toggle("hidden", lane !== "sdr");
   const match = state.editDocument?.sdr_match;
   els.sdrMatchEntireActions?.classList.toggle("hidden", lane !== "sdr");
   if (els.sdrMatchEntire) {
@@ -13280,6 +13326,7 @@ function formatControlValue(path, value) {
   if (path.endsWith("white_balance_kelvin")) return `${Math.round(numeric)} K`;
   if (path.endsWith("clarity_radius_percent")) return `${numeric.toFixed(2)}%`;
   if (path.endsWith("sharpen_radius_px")) return `${numeric.toFixed(2)} px`;
+  if (path.includes(".black_and_white.")) return `${numeric > 0 ? "+" : ""}${Math.round(numeric)}`;
   if (path.includes(".detail.")) return `${numeric > 0 && !path.endsWith("sharpen_threshold") ? "+" : ""}${Math.round(numeric)}`;
   if (path.endsWith("_hue")) return `${numeric > 0 ? "+" : ""}${numeric.toFixed(1)}°`;
   if (path.endsWith("_purity") || path.endsWith(".saturation") || path.endsWith(".vibrance")) return `${numeric > 0 ? "+" : ""}${Math.round(path.endsWith("_purity") ? numeric : numeric * 100)}%`;
@@ -13378,6 +13425,9 @@ function renderControlState() {
   els.colorGradingReset?.closest(".control-group")?.classList.toggle("modified", gradingModified);
   const detailModified = !valuesEqual(state.adjustments[state.currentView]?.detail, currentLaneDefaults.detail);
   document.querySelector(".detail-group")?.classList.toggle("modified", detailModified);
+  const blackAndWhiteModified = state.adjustments[state.currentView]?.black_and_white_section_enabled === true
+    || !valuesEqual(state.adjustments[state.currentView]?.black_and_white, currentLaneDefaults.black_and_white);
+  document.querySelector(".black-and-white-group")?.classList.toggle("modified", blackAndWhiteModified);
   const vignetteModified = !valuesEqual(state.adjustments[state.currentView]?.vignette, currentLaneDefaults.vignette);
   if (els.vignetteState) els.vignetteState.textContent = "";
   els.vignetteReset?.closest(".control-group")?.classList.toggle("modified", vignetteModified);
@@ -13474,6 +13524,16 @@ function builtInGroupPresets(context) {
         [`denoise.${context.lane}.analysis`]: JSON.parse(JSON.stringify(defaults.analysis)),
       },
     }];
+  }
+  if (context?.group === "black-and-white") {
+    return BLACK_AND_WHITE_PRESETS.map((preset) => ({
+      id: `built-in:${preset.id}`,
+      groupId: context.groupId,
+      name: preset.name,
+      description: preset.description,
+      builtIn: true,
+      values: { [`${context.lane}.black_and_white`]: { ...defaultBlackAndWhite(), ...preset.values } },
+    }));
   }
   if (context?.group !== "film-look") return [];
   const path = `${context.lane}.film_look`;
@@ -13762,6 +13822,17 @@ function resetLaneObject(key, neutral) {
   invalidatePreview(lane);
   renderControlState();
   debouncePreview(lane);
+}
+
+/** Copy HDR's Black & White, sliders and on/off, to SDR once (BW-01). */
+function matchHdrBlackAndWhiteToSdr() {
+  if (!state.session) return;
+  state.adjustments.sdr.black_and_white = JSON.parse(JSON.stringify(state.adjustments.hdr.black_and_white));
+  state.adjustments.sdr.black_and_white_section_enabled = state.adjustments.hdr.black_and_white_section_enabled === true;
+  syncControlsFromState();
+  invalidatePreview("sdr");
+  renderControlState();
+  debouncePreview("sdr");
 }
 
 function matchLaneObject(key) {

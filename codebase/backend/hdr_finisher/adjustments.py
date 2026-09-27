@@ -376,6 +376,8 @@ def _apply_hdr_adjustments(
         )
     if hdr.color_section_enabled:
         result = _apply_hdr_color(result, hdr)
+    if hdr.black_and_white_section_enabled:
+        result = _apply_black_and_white(result, hdr.black_and_white)
     if hdr.tone_equalizer_section_enabled:
         result = _apply_hdr_tone_equalizer(result, hdr)
     if hdr.primaries_section_enabled:
@@ -577,6 +579,99 @@ def _apply_saturation_vibrance(image: np.ndarray, saturation: float, vibrance: f
     return (luma + chroma * vibrance_factor * np.float32(saturation_factor)).astype(np.float32)
 
 
+# BW-01 Black & White. Hue and relative chroma are read in Oklab, whose cone
+# response is reached from ACEScg in one matrix (Oklab's M1 after ACEScg to
+# linear sRGB). Both are exposure-invariant, so HDR and SDR, dark and bright,
+# see the same colour. The WebGPU shader carries the same constants.
+BW_ACESCG_TO_LMS = np.array(
+    [
+        [0.6317629967, 0.3488996982, 0.0193373050],
+        [0.2700628984, 0.6309344642, 0.0990026374],
+        [0.0987429103, 0.1852327013, 0.7160243884],
+    ],
+    dtype=np.float32,
+)
+BW_LMS_TO_OKLAB = np.array(
+    [
+        [0.2104542553, 0.7936177850, -0.0040720468],
+        [1.9779984951, -2.4285922050, 0.4505937099],
+        [0.0259040371, 0.7827717662, -0.8086757660],
+    ],
+    dtype=np.float32,
+)
+# Oklab hue of #FF0000, #FF8000, #FFFF00, #00FF00, #00FFFF, #0000FF, #8000FF
+# and #FF00FF, one per slider.
+BW_HUE_CENTRES_DEG = (29.0, 53.0, 110.0, 143.0, 195.0, 264.0, 294.0, 328.0)
+BW_SLIDERS = ("reds", "oranges", "yellows", "greens", "aquas", "blues", "purples", "magentas")
+# A slider at +/-100 moves a fully coloured pixel this many stops.
+BW_RESPONSE_STOPS = 2.0
+# Relative chroma (C / L in Oklab) at which a colour takes its slider in full.
+# Skin sits near 0.09 and a blue sky near 0.19; greys near 0.
+BW_CHROMA_FULL = 0.12
+# Added to Oklab L before dividing, so near-black noise, whose chroma is large
+# only because L is tiny, is not pushed around by the sliders.
+BW_LIGHTNESS_FLOOR = 0.05
+# Oklab lightness over which the sliders fade in (scene-linear ~0.0017 to
+# ~0.016, about 7 to 3.5 stops under mid grey). Hue in deep shadow is mostly
+# colour noise, and giving each noise speckle its own slider multiplied it:
+# 3.5x the plain conversion's noise at -7 stops without this, 1.0x with it.
+BW_SHADOW_FADE = (0.12, 0.25)
+
+
+def _bw_hue_response(hue_deg: np.ndarray, sliders: np.ndarray) -> np.ndarray:
+    """Blend the two sliders either side of each hue with a smoothstep.
+
+    The weights of the two neighbours always sum to one and never overshoot,
+    so there is no step at a hue boundary and no value beyond a slider's own.
+    """
+    centres = np.array(BW_HUE_CENTRES_DEG + (BW_HUE_CENTRES_DEG[0] + 360.0,), dtype=np.float32)
+    values = np.concatenate([sliders, sliders[:1]]).astype(np.float32)
+    hue = np.where(hue_deg < centres[0], hue_deg + np.float32(360.0), hue_deg).astype(np.float32)
+    index = np.clip(np.searchsorted(centres, hue, side="right") - 1, 0, len(BW_SLIDERS) - 1)
+    t = (hue - centres[index]) / (centres[index + 1] - centres[index])
+    t = t * t * (np.float32(3.0) - np.float32(2.0) * t)
+    return (values[index] * (np.float32(1.0) - t) + values[index + 1] * t).astype(np.float32)
+
+
+def _apply_black_and_white(image: np.ndarray, bw: object) -> np.ndarray:
+    """Monochrome from scene-linear ACEScg, with each colour's grey set by its slider.
+
+    All sliders at 0 give ACEScg luminance, pixel for pixel what Saturation
+    -100 gives. A slider scales a pixel's grey by up to BW_RESPONSE_STOPS,
+    in proportion to how coloured it is, so neutrals never move.
+    """
+    luma = _acescg_luma(image).astype(np.float32)
+    sliders = np.array([float(getattr(bw, name)) / 100.0 for name in BW_SLIDERS], dtype=np.float32)
+    if np.any(sliders != 0.0):
+        lms = np.cbrt(image.astype(np.float32) @ BW_ACESCG_TO_LMS.T)
+        lab = lms @ BW_LMS_TO_OKLAB.T
+        lightness, a, b = lab[..., 0], lab[..., 1], lab[..., 2]
+        hue = np.degrees(np.arctan2(b, a)).astype(np.float32) % np.float32(360.0)
+        relative_chroma = np.hypot(a, b) / (np.maximum(lightness, 0.0) + np.float32(BW_LIGHTNESS_FLOOR))
+        weight = _smoothstep(0.0, BW_CHROMA_FULL, relative_chroma) * _smoothstep(
+            BW_SHADOW_FADE[0], BW_SHADOW_FADE[1], lightness
+        )
+        stops = np.float32(BW_RESPONSE_STOPS) * weight * _bw_hue_response(hue, sliders)
+        luma = (luma * np.exp2(stops)).astype(np.float32)
+    return np.repeat(luma[..., None], 3, axis=-1).astype(np.float32)
+
+
+def black_and_white_neutral_film_look(look: object) -> object:
+    """Film Look with the colour it would add to a mono picture taken out.
+
+    Halation's warm tint, grain's colour and the per-channel print response
+    would tint a black & white picture; real B&W film has none of them. The
+    saved values are left as they are.
+    """
+    return look.model_copy(update={
+        "halation_saturation": 0.0,
+        "grain_chroma": 0.0,
+        "red_response": 0.0,
+        "green_response": 0.0,
+        "blue_response": 0.0,
+    })
+
+
 def _apply_hdr_base_adjustments(image: np.ndarray, adjustments: AdjustmentState) -> np.ndarray:
     hdr = adjustments.hdr
     result = image.astype(np.float32, copy=True)
@@ -773,6 +868,9 @@ def _sdr_pre_highlight(image: np.ndarray, adjustments: AdjustmentState) -> np.nd
         result = np.clip(result + sdr.shadow * 0.08 * shadow_mask[..., None], 0.0, None)
     if _sdr_color_is_enabled(adjustments):
         result = _apply_hdr_color(result, adjustments.sdr)
+    if sdr.black_and_white_section_enabled:
+        # Before the highlight stage measures the picture (BW-01).
+        result = _apply_black_and_white(result, sdr.black_and_white)
     if sdr.rendering_version == "legacy_base_v1":
         return result
     # Neutral SDR placement: scene 0.18 is the 100-nit diffuse-white anchor
@@ -794,6 +892,12 @@ def _sdr_reference_pre_highlight(image: np.ndarray, adjustments: AdjustmentState
     if sdr.tone_section_enabled and sdr.shadow != 0:
         shadow_mask = 1.0 - _smoothstep(0.0, 0.5, _linear_luma(result))
         result = np.clip(result + sdr.shadow * 0.08 * shadow_mask[..., None], 0.0, None)
+    if sdr.black_and_white_section_enabled:
+        # On this path Color runs after the highlight stage, but B&W must come
+        # before it, so the stage measures and shapes the grey picture (BW-01).
+        result = acescg_to_linear_srgb(
+            _apply_black_and_white(linear_srgb_to_acescg(result), sdr.black_and_white)
+        ).astype(np.float32)
     return result
 
 
@@ -1603,6 +1707,8 @@ def _apply_film_look(
     """
     branch = adjustments.hdr if kind == PreviewKind.HDR else adjustments.sdr
     look = branch.film_look
+    if branch.black_and_white_section_enabled:
+        look = black_and_white_neutral_film_look(look)
     strength = np.float32(look.look_strength / 100.0)
     structure_active = _structure_is_active(branch)
     if not branch.film_look_section_enabled or strength <= 0.0:
@@ -1692,6 +1798,8 @@ def apply_final_grain(
     if not branch.film_look_section_enabled:
         return image
     look = branch.film_look
+    if branch.black_and_white_section_enabled:
+        look = black_and_white_neutral_film_look(look)
     strength = np.float32(look.look_strength / 100.0)
     if not look.grain_enabled or strength <= 0.0:
         return image

@@ -80,7 +80,7 @@ Sensitivity is branch-relative, so a copied Halation or Bloom value qualifies an
 For a scene-linear source without an authored SDR reference:
 
 1. SDR exposure and shadow
-2. Independent SDR color grade (optionally initialized from HDR with Match HDR colors)
+2. Independent SDR color grade (optionally initialized from HDR with Match HDR colors), then Black & White when on
 3. Fixed `0.18` to `100/203` placement and conversion to display-linear sRGB
 4. Highlight Compression and sRGB gamut compression
 5. Exposure Bands
@@ -92,11 +92,12 @@ For an authored SDR reference such as supported Apple HDR HEIC:
 
 1. Begin with the authored display-linear sRGB rendition
 2. Exposure and shadow
-3. Optional Highlight Compression (bypassed on import)
-4. Exposure Bands
-5. Contrast, then SDR color grade through ACEScg and back to sRGB
-6. Lift/Gamma/Gain and Curves
-7. Film Response/Color Density, Halation, Bloom, Detail Softness and Microcontrast, then Grain
+3. Black & White when on (before the highlight stage, although Color comes later on this path)
+4. Optional Highlight Compression (bypassed on import)
+5. Exposure Bands
+6. Contrast, then SDR color grade through ACEScg and back to sRGB
+7. Lift/Gamma/Gain and Curves
+8. Film Response/Color Density, Halation, Bloom, Detail Softness and Microcontrast, then Grain
 
 The final result is clipped to the normalized SDR range.
 

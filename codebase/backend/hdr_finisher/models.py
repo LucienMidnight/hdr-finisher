@@ -298,6 +298,26 @@ class DetailAdjustments(BaseModel):
     sharpen_threshold: float = Field(default=10.0, ge=0.0, le=100.0)
 
 
+class BlackAndWhiteAdjustments(BaseModel):
+    """How bright each colour becomes in grey (BW-01).
+
+    The module's on/off is the rendition's ``black_and_white_section_enabled``.
+    With every slider at 0 the conversion is ACEScg luminance, exactly what
+    Saturation -100 gives.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    reds: float = Field(default=0.0, ge=-100.0, le=100.0)
+    oranges: float = Field(default=0.0, ge=-100.0, le=100.0)
+    yellows: float = Field(default=0.0, ge=-100.0, le=100.0)
+    greens: float = Field(default=0.0, ge=-100.0, le=100.0)
+    aquas: float = Field(default=0.0, ge=-100.0, le=100.0)
+    blues: float = Field(default=0.0, ge=-100.0, le=100.0)
+    purples: float = Field(default=0.0, ge=-100.0, le=100.0)
+    magentas: float = Field(default=0.0, ge=-100.0, le=100.0)
+
+
 class BranchDetailAdjustments(DetailAdjustments):
     """Global Detail for one rendition: the local-grade controls plus two more.
 
@@ -373,6 +393,7 @@ class HDRAdjustments(BaseModel):
     primaries_section_enabled: bool = True
     curves_section_enabled: bool = True
     detail_section_enabled: bool = True
+    black_and_white_section_enabled: bool = False
     film_look_section_enabled: bool = True
     color_grading_section_enabled: bool = True
     vignette_section_enabled: bool = True
@@ -380,6 +401,7 @@ class HDRAdjustments(BaseModel):
     color_grading: ColorGradingAdjustments = Field(default_factory=ColorGradingAdjustments)
     vignette: VignetteAdjustments = Field(default_factory=VignetteAdjustments)
     detail: BranchDetailAdjustments = Field(default_factory=BranchDetailAdjustments)
+    black_and_white: BlackAndWhiteAdjustments = Field(default_factory=BlackAndWhiteAdjustments)
     exposure: float = Field(default=0.0, ge=-8.0, le=8.0)
     highlight_compression_start_nits: float = Field(default=400.0, ge=1.0, le=9999.0)
     highlight_compression_target_nits: float = Field(default=1000.0, ge=2.0, le=10000.0)
@@ -471,6 +493,7 @@ class SDRAdjustments(BaseModel):
     primaries_section_enabled: bool = True
     curves_section_enabled: bool = True
     detail_section_enabled: bool = True
+    black_and_white_section_enabled: bool = False
     film_look_section_enabled: bool = True
     color_grading_section_enabled: bool = True
     vignette_section_enabled: bool = True
@@ -478,6 +501,7 @@ class SDRAdjustments(BaseModel):
     color_grading: ColorGradingAdjustments = Field(default_factory=ColorGradingAdjustments)
     vignette: VignetteAdjustments = Field(default_factory=VignetteAdjustments)
     detail: BranchDetailAdjustments = Field(default_factory=BranchDetailAdjustments)
+    black_and_white: BlackAndWhiteAdjustments = Field(default_factory=BlackAndWhiteAdjustments)
     exposure: float = Field(default=0.0, ge=-8.0, le=8.0)
     highlight_recovery: float = Field(default=0.6, ge=0.0, le=4.0)
     highlight_compression_start_percent: float = Field(default=50.0, ge=1.0, le=99.0)

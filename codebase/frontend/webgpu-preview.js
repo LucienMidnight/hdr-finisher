@@ -14,7 +14,7 @@
   // block size, then its origin), which every radius averages further.
   // 175 is the grain film type (0 color negative, 1 black & white) and 176
   // the high 16 bits of the grain seed, whose low half is 109.
-  const PARAM_COUNT = 177;
+  const PARAM_COUNT = 186;
   const TILE_ORIGIN_X_INDEX = 160;
   const TILE_ORIGIN_Y_INDEX = 161;
   const NOISE_VIEW_INDEX = 166;
@@ -67,6 +67,57 @@
     return module;
   }
 
+  // BW-01 Black & White, in WGSL for both the render and the peak shaders
+  // (each names its parameter array differently). Mirrors
+  // `_apply_black_and_white` in adjustments.py: ACEScg luminance, scaled per
+  // pixel by up to two stops by the sliders either side of its Oklab hue, in
+  // proportion to its relative chroma. p[177] switches it on; p[178..185] are
+  // Reds..Magentas / 100.
+  const BLACK_AND_WHITE_PARAM = 177;
+  function blackAndWhiteWgsl(params, name) {
+    return `
+fn ${name}Cbrt(value: f32) -> f32 {
+  return select(0.0, sign(value) * pow(abs(value), 1.0 / 3.0), abs(value) > 0.0);
+}
+fn ${name}(input: vec3f) -> vec3f {
+  if (${params}[${BLACK_AND_WHITE_PARAM}] < 0.5) { return input; }
+  let y = dot(input, vec3f(0.2722287, 0.6740818, 0.0536895));
+  var sliders = array<f32, 9>(
+    ${params}[178], ${params}[179], ${params}[180], ${params}[181],
+    ${params}[182], ${params}[183], ${params}[184], ${params}[185], ${params}[178]
+  );
+  var anySlider = false;
+  for (var index = 0u; index < 8u; index = index + 1u) {
+    if (sliders[index] != 0.0) { anySlider = true; }
+  }
+  if (!anySlider) { return vec3f(y); }
+  let lms = vec3f(
+    ${name}Cbrt(0.6317629967 * input.r + 0.3488996982 * input.g + 0.0193373050 * input.b),
+    ${name}Cbrt(0.2700628984 * input.r + 0.6309344642 * input.g + 0.0990026374 * input.b),
+    ${name}Cbrt(0.0987429103 * input.r + 0.1852327013 * input.g + 0.7160243884 * input.b)
+  );
+  let lightness = 0.2104542553 * lms.x + 0.7936177850 * lms.y - 0.0040720468 * lms.z;
+  let a = 1.9779984951 * lms.x - 2.4285922050 * lms.y + 0.4505937099 * lms.z;
+  let b = 0.0259040371 * lms.x + 0.7827717662 * lms.y - 0.8086757660 * lms.z;
+  var hue = degrees(atan2(b, a));
+  hue = hue - 360.0 * floor(hue / 360.0);
+  var centres = array<f32, 9>(29.0, 53.0, 110.0, 143.0, 195.0, 264.0, 294.0, 328.0, 389.0);
+  if (hue < centres[0]) { hue = hue + 360.0; }
+  var segment = 7u;
+  for (var index = 0u; index < 8u; index = index + 1u) {
+    if (hue >= centres[index] && hue < centres[index + 1u]) { segment = index; }
+  }
+  var t = clamp((hue - centres[segment]) / (centres[segment + 1u] - centres[segment]), 0.0, 1.0);
+  t = t * t * (3.0 - 2.0 * t);
+  let response = sliders[segment] * (1.0 - t) + sliders[segment + 1u] * t;
+  let relativeChroma = length(vec2f(a, b)) / (max(lightness, 0.0) + 0.05);
+  let chromaT = clamp(relativeChroma / 0.12, 0.0, 1.0);
+  let shadowT = clamp((lightness - 0.12) / (0.25 - 0.12), 0.0, 1.0);
+  let weight = chromaT * chromaT * (3.0 - 2.0 * chromaT) * shadowT * shadowT * (3.0 - 2.0 * shadowT);
+  return vec3f(y * exp2(2.0 * weight * response));
+}`;
+  }
+
   const PEAK_REDUCTION_SHADER_SOURCE = `
 @group(0) @binding(0) var peakSource: texture_2d<f32>;
 @group(0) @binding(1) var<storage, read> peakParams: array<f32>;
@@ -85,6 +136,14 @@ fn peakAcescgToSrgb(rgb: vec3f) -> vec3f {
     -0.0240033568 * rgb.r - 0.1289689761 * rgb.g + 1.1529723329 * rgb.b
   );
 }
+fn peakSrgbToAcescg(rgb: vec3f) -> vec3f {
+  return vec3f(
+    0.6130974024 * rgb.r + 0.3395231366 * rgb.g + 0.0473794610 * rgb.b,
+    0.0701937225 * rgb.r + 0.9163538791 * rgb.g + 0.0134523985 * rgb.b,
+    0.0206155922 * rgb.r + 0.1095697729 * rgb.g + 0.8698146349 * rgb.b
+  );
+}
+${blackAndWhiteWgsl("peakParams", "peakBlackAndWhite")}
 fn peakAcescgToBt2020(rgb: vec3f) -> vec3f {
   return vec3f(
     1.0260187082 * rgb.r - 0.0221655448 * rgb.g - 0.0038531634 * rgb.b,
@@ -135,6 +194,9 @@ fn peakSdrInput(input: vec3f) -> vec3f {
       let mask = 1.0 - smoothstep(0.0, 0.5, peakSrgbLuma(rgb));
       rgb = max(rgb + vec3f(peakParams[4] * 0.08 * mask), vec3f(0.0));
     }
+    if (peakParams[${BLACK_AND_WHITE_PARAM}] > 0.5) {
+      rgb = peakAcescgToSrgb(peakBlackAndWhite(peakSrgbToAcescg(rgb)));
+    }
     return rgb;
   }
   rgb = max(rgb, vec3f(0.0));
@@ -142,7 +204,7 @@ fn peakSdrInput(input: vec3f) -> vec3f {
     let mask = 1.0 - smoothstep(0.0, 0.5, peakLuma(rgb));
     rgb = max(rgb + vec3f(peakParams[4] * 0.08 * mask), vec3f(0.0));
   }
-  return peakAcescgToSrgb(peakSceneColor(rgb)) * ((100.0 / 203.0) / 0.18);
+  return peakAcescgToSrgb(peakBlackAndWhite(peakSceneColor(rgb))) * ((100.0 / 203.0) / 0.18);
 }
 
 // The measurement domain follows the selected colour handling: BT.2020 channel
@@ -2302,6 +2364,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         proxy.identity, this.highlightSourceToken(proxy), lane, params[1], params[159], measurement,
         params[2], params[4], params[8], params[9], params[110],
         ...params.slice(10, 12), ...params.slice(61, 73),
+        ...params.slice(BLACK_AND_WHITE_PARAM, BLACK_AND_WHITE_PARAM + 9),
       ]);
       return { measurement, key, cached: this.peakReductionCache.get(key) };
     }
@@ -8066,6 +8129,13 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     params[70] = colorActive ? colorSource.saturation || 0 : 0;
     params[71] = colorActive ? colorSource.vibrance || 0 : 0;
     params[72] = colorActive ? 1 : 0;
+    // BW-01 Black & White: on/off and Reds..Magentas / 100 (blackAndWhiteWgsl).
+    const blackAndWhiteOn = branch.black_and_white_section_enabled === true;
+    const blackAndWhite = branch.black_and_white || {};
+    params[BLACK_AND_WHITE_PARAM] = blackAndWhiteOn ? 1 : 0;
+    ["reds", "oranges", "yellows", "greens", "aquas", "blues", "purples", "magentas"].forEach((name, index) => {
+      params[BLACK_AND_WHITE_PARAM + 1 + index] = blackAndWhiteOn ? (Number(blackAndWhite[name]) || 0) / 100 : 0;
+    });
     params[73] = lane === "hdr" ? ((branch.highlight_compression_target_nits ?? 1000) * 0.18 / projectReferenceWhite) : sdrHighlightV2 ? 1 : 0;
     params[74] = highlightEnabled ? (branch.highlight_compression_mode === "peak_fit" ? 1 : branch.highlight_compression_mode === "soft_ceiling" ? 2 : branch.highlight_compression_mode === "clip" ? 3 : 0) : 0;
     params[75] = lane === "hdr"
@@ -8086,9 +8156,12 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     params[82] = (film.print_toe || 0) / 100;
     params[83] = (film.print_shoulder || 0) / 100;
     params[84] = (film.color_density || 0) / 100;
-    params[143] = (film.red_response || 0) / 100;
-    params[144] = (film.green_response || 0) / 100;
-    params[145] = (film.blue_response || 0) / 100;
+    // With Black & White on, Film Look adds no colour back: no per-channel
+    // print response, no halation tint, no grain colour
+    // (adjustments.py black_and_white_neutral_film_look).
+    params[143] = blackAndWhiteOn ? 0 : (film.red_response || 0) / 100;
+    params[144] = blackAndWhiteOn ? 0 : (film.green_response || 0) / 100;
+    params[145] = blackAndWhiteOn ? 0 : (film.blue_response || 0) / 100;
     params[146] = (film.highlight_desaturation || 0) / 100;
     params[147] = (film.shadow_desaturation || 0) / 100;
     params[85] = film.halation_enabled !== false && ((((film.halation_amount || 0) > 0) && (film.halation_radius || 0) > 0) || film.halation_view_map) ? 1 : 0;
@@ -8096,7 +8169,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     params[87] = (film.halation_sensitivity ?? 75) / 100;
     params[88] = film.halation_radius ?? 0.2;
     params[89] = (film.halation_hue_offset || 0) / 100;
-    params[90] = (film.halation_saturation ?? 75) / 100;
+    params[90] = blackAndWhiteOn ? 0 : (film.halation_saturation ?? 75) / 100;
     params[91] = film.halation_view_map ? 1 : 0;
     params[92] = film.bloom_enabled !== false && (film.bloom_radius || 0) > 0 ? 1 : 0;
     params[93] = (film.bloom_amount || 0) / 100;
@@ -8118,7 +8191,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     params[101] = (grain.grain_amount || 0) / 100;
     params[102] = (grain.grain_size ?? 50) / 100;
     params[103] = (grain.grain_softness ?? 25) / 100;
-    params[104] = (grain.grain_chroma || 0) / 100;
+    params[104] = blackAndWhiteOn ? 0 : (grain.grain_chroma || 0) / 100;
     params[105] = (grain.grain_shadow_response ?? 100) / 100;
     params[106] = (grain.grain_midtone_response ?? 100) / 100;
     params[107] = (grain.grain_highlight_response ?? 100) / 100;
@@ -9111,6 +9184,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let mapped = toneCurveLuma(sceneY);
       return clamp(select(vec3f(0.0), rgb * (mapped / max(y, 0.00000001)), y > 0.00000001), vec3f(0.0), vec3f(1.0));
     }
+    ${blackAndWhiteWgsl("p", "blackAndWhite")}
     fn sceneColor(input: vec3f) -> vec3f {
       if (p[72] < 0.5) { return input; }
       return hdrColor(whiteBalance(input));
@@ -9121,7 +9195,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     }
     fn renderHdrBase(source: vec3f) -> vec3f {
       let contrasted = hdrContrast(hdrBase(source));
-      let balanced = sceneColor(contrasted);
+      let balanced = blackAndWhite(sceneColor(contrasted));
       let equalized = toneEqualizer(balanced);
       let primaries = hdrPrimaries(equalized);
       return max(applyColorGrading(applyCurves(primaries, true), true), vec3f(0.0));
@@ -9147,6 +9221,9 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           let mask = 1.0 - smoothRange(0.0, 0.5, lumaSrgb(rgb));
           rgb = max(rgb + vec3f(p[4] * 0.08 * mask), vec3f(0.0));
         }
+        // BW-01: on this path Color runs after the highlight stage, but B&W
+        // must come before it (adjustments.py _sdr_reference_pre_highlight).
+        if (p[177] > 0.5) { rgb = acescgToSrgb(blackAndWhite(srgbToAcescg(rgb))); }
         if (p[159] > 0.5) {
           rgb = sdrPeakFit(sdrSoftCeiling(rgb));
           rgb = toneEqualizer(rgb);
@@ -9168,13 +9245,13 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           // The SDR shoulder is the scene-to-display placement, not a final
           // limiter: every stage below it is display-referred. Only the ceiling
           // runs in applyOutputHighlights.
-          rgb = compressSrgbGamut(sdrPeakFit(sdrSoftCeiling(acescgToSrgb(sceneColor(rgb)) * ((100.0 / 203.0) / 0.18))));
+          rgb = compressSrgbGamut(sdrPeakFit(sdrSoftCeiling(acescgToSrgb(blackAndWhite(sceneColor(rgb))) * ((100.0 / 203.0) / 0.18))));
           rgb = toneEqualizer(rgb);
           rgb = sdrContrast(rgb);
           rgb = sdrPrimaries(rgb);
           rgb = applyColorGrading(applyCurves(rgb, false), false);
         } else {
-          rgb = applyColorGrading(applyCurves(sdrPrimaries(sdrContrast(toneEqualizer(highlightRecovery(toneMap(sceneColor(rgb)))))), false), false);
+          rgb = applyColorGrading(applyCurves(sdrPrimaries(sdrContrast(toneEqualizer(highlightRecovery(toneMap(blackAndWhite(sceneColor(rgb))))))), false), false);
         }
       }
       return clamp(rgb, vec3f(0.0), vec3f(1.0));

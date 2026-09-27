@@ -58,6 +58,16 @@ These limits apply independently to the HDR and SDR color panels.
 
 Values above the slider range are for deliberate effects and difficult corrections. Extreme Saturation, Vibrance, or Purity can create negative or far-out-of-gamut intermediate colors. The final HDR and SDR output stages sanitize or compress them, but that does not guarantee a pleasing result.
 
+## Black & White in HDR and SDR
+
+Off by default; the eye button turns it on for the current rendition. All sliders at 0 equal Saturation −100.
+
+| Control | Purpose | Range |
+|---|---|---|
+| Reds, Oranges, Yellows, Greens, Aquas, Blues, Purples, Magentas | How bright that colour becomes in grey. ±100 is two stops brighter or darker for a fully coloured area; greys never move; deep shadows respond less. | -100 to +100 |
+| Presets | Yellow, Orange, Red, Green, Blue filters; Infrared look; Orthochromatic. Set the sliders only. | — |
+| Match HDR black & white | SDR only: copies the HDR sliders and on/off once. | — |
+
 ## Film Look in HDR and SDR
 
 Film Look uses the same structure in each branch. Amount and sensitivity controls are normalized; Radius is a percentage of the current image diagonal.
