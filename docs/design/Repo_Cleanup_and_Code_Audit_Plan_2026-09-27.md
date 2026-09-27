@@ -28,16 +28,22 @@ catalogs, and anything that deliberately changes exported pixels.
   measured before and after.
 - **Small batches.** One kind of fix per change, tests run each time, easy to undo.
 - **Git history is not rewritten.**
-- **Untracked files are not in Git.** `backup/`, `output/`, `.kilo/`, ignored `docs/testing/`
-  files, and the outer workspace can't be restored from Git. Zip them to an external archive
-  before anything in them is deleted.
+- **Untracked files are moved, never deleted.** `backup/`, `output/`, `.kilo/`, ignored
+  `docs/testing/` files, and the outer workspace can't be restored from Git. They rely on
+  Backblaze, which keeps deleted files only for a limited time and skips `.exe`, `.dll`, and
+  `.log` files. So anything approved for removal is moved to
+  `D:\AI\Big Projects Backup\HDR Finisher pre-audit 2026-09-27\` instead of deleted. The files
+  Backblaze skips were zipped there on 2026-09-27 (`files-backblaze-skips.zip`).
+  Output that can be rebuilt with a known command (for example build output in
+  `codebase/output/`, which holds about 1.5 GB of `.exe`, `.dll`, and `.log` files) may be
+  deleted outright once Steve approves.
 - **Worktree safety.** Before removing any worktree or temporary checkout, check for and unlink any
   junctions or symlinks inside it (a past removal followed a junction and wiped the real `.venv`).
 
 ## 3. Before starting
 
-1. Commit the current state and tag it `pre-audit-2026-09-27` so today's state can always be
-   restored. Merge or park any branch still in progress, so the cleanup doesn't cause merge
+1. Done 2026-09-27: today's code is tagged `pre-audit-2026-09-27` (commit `02dcb1f`), and audit
+   work happens on the `audit/repo-cleanup` branch. Merge or park any branch still in progress, so the cleanup doesn't cause merge
    conflicts. 0.8.13 ships after the audit, with its release notes covering the cleanup too.
 2. Run the tests and write down what passes and fails today, so a pre-existing failure isn't
    blamed on the cleanup:
