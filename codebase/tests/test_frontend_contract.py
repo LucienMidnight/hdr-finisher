@@ -150,7 +150,7 @@ def test_live_denoise_input_is_coalesced() -> None:
     assert markup.index("latest-work-queue.js") < markup.index("app.js")
     live_control = javascript[
         javascript.index("async function updateLiveDenoiseControl("):
-        javascript.index("function denoiseInputQueue()")
+        javascript.index("function denoiseRendererControls(")
     ]
     # The live control path goes through the queue, not straight to the
     # renderer, so a drag costs runs rather than input events.
@@ -234,9 +234,12 @@ def test_processing_scale_contract_is_declared_and_consumed() -> None:
         'id: "geometry"',
     ):
         assert module_id in contract
-    # The quarter-resolution grid the halo converts through is the shader's own
-    # constant, so a shader change cannot silently outrun the halo.
-    assert "const SPATIAL_SCALE: f32 = 4.0;" in webgpu
+    # The spatial grid the halo converts through is one rule on both sides
+    # (1, 2 or 4 pixels a texel by the frame's long edge), so a shader change
+    # cannot silently outrun the halo. Halos stay multiples of four.
+    assert "return select(select(1.0, 2.0, longEdge >= 2048.0), 4.0, longEdge >= 4096.0);" in webgpu
+    assert "if (longEdge >= 4096) return 4;" in contract
+    assert "return longEdge >= 2048 ? 2 : 1;" in contract
     assert "const SPATIAL_SCALE = 4;" in contract
     # The viewport request declares the processing scale it will run at, derived
     # from the same contract the renderer and the CPU reference use.
@@ -1798,8 +1801,9 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     assert "filmPhysicalBlur(coordinate, 0.04 + 0.08 * resolutionLoss, 32)" in shader
     # Bloom stays output-relative and halation stays film-plane -- the change is
     # only which extent they are relative to.
-    assert "clamp(length(frameSpatial) * max(p[95], 0.0) / 100.0, 0.25, 64.0)" in shader
-    assert "clamp(filmPixelsPerMm(frameSpatial) * halationRadiusMm, 0.25, 64.0)" in shader
+    assert "let blurCap = 256.0 / spatialScale();" in shader
+    assert "clamp(length(frameSpatial) * max(p[95], 0.0) / 100.0, 0.25, blurCap)" in shader
+    assert "clamp(filmPixelsPerMm(frameSpatial) * halationRadiusMm, 0.25, blurCap)" in shader
     assert "length(frameSpatial) * max(p[88], 0.0) / 100.0" not in shader
     assert "filmBlur(coordinate, 0.06, 24)" in shader
     assert "let canonicalTintSrgb = mix(vec3f(warmY), warm" in shader

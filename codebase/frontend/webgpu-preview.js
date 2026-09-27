@@ -48,6 +48,17 @@
    * deliberately lazy and loud: a build that forgot the script must fail at the
    * first halo computation rather than quietly reserve a halo of zero.
    */
+  // Frame pixels per halation/bloom texel for a frame of this size. The rule
+  // is HDRGraphScale.spatialGridScale; the memory models below also run where
+  // that module is not loaded, so they fall back to the same rule.
+  function spatialGridScale(width, height) {
+    const contract = typeof window !== "undefined" ? window.HDRGraphScale : null;
+    if (contract?.spatialGridScale) return contract.spatialGridScale(width, height);
+    const longEdge = Math.max(Number(width) || 1, Number(height) || 1);
+    if (longEdge >= 4096) return 4;
+    return longEdge >= 2048 ? 2 : 1;
+  }
+
   function graphScaleContract() {
     const module = (typeof window !== "undefined" && window.HDRGraphScale) || null;
     if (!module) {
@@ -672,8 +683,9 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     const sourceBytes = pixels * sourceBytesPerPixel;
     const gradingBytes = pixels * 8 * 4;
     const detailBytes = detailActive ? pixels * 8 * 2 : 0;
-    const spatialWidth = Math.ceil(normalizedWidth / 4);
-    const spatialHeight = Math.ceil(normalizedHeight / 4);
+    const spatialGrid = spatialGridScale(normalizedWidth, normalizedHeight);
+    const spatialWidth = Math.ceil(normalizedWidth / spatialGrid);
+    const spatialHeight = Math.ceil(normalizedHeight / spatialGrid);
     const spatialBytes = spatialActive ? spatialWidth * spatialHeight * 8 * 2 : 0;
     const denoise = denoiseLevels > 0
       ? denoiseLogicalBytes(normalizedWidth, normalizedHeight, denoiseLevels)
@@ -754,8 +766,8 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
    *
    * Every number here mirrors a line of the shader, because a halo that is
    * derived differently from the radius it is covering is a seam waiting to
-   * appear at one particular setting. The blur runs on the quarter-resolution
-   * grid, so its reach converts back to full resolution by four; the extract
+   * appear at one particular setting. The blur runs on the frame's spatial
+   * grid (1, 2 or 4 pixels a texel), so its reach converts back by that; the extract
    * and the finish pass read the film texture directly and reach their own
    * short distances into it.
    *
@@ -876,7 +888,8 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     }
     if (spatialActive) {
       add("tile-spatial-film", "spatial", "resident",
-        Math.ceil(workWidth / 4) * Math.ceil(workHeight / 4) * 8 * 2, { textures: 2, tile: true });
+        Math.ceil(workWidth / spatialGridScale(width, height)) * Math.ceil(workHeight / spatialGridScale(width, height)) * 8 * 2,
+        { textures: 2, tile: true });
     }
     if (denoiseLevels > 0) {
       const denoise = denoiseLogicalBytes(workWidth, workHeight, denoiseLevels);
@@ -937,7 +950,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     const width = Math.max(1, Math.floor(Number(options.width) || 1));
     const height = Math.max(1, Math.floor(Number(options.height) || 1));
     const pixels = width * height;
-    const spatialPixels = Math.ceil(width / 4) * Math.ceil(height / 4);
+    const spatialPixels = Math.ceil(width / spatialGridScale(width, height)) * Math.ceil(height / spatialGridScale(width, height));
     const sourceBytesPerPixel = options.sourceBytesPerPixel === 16 ? 16 : 8;
     const detailActive = options.detailActive !== false;
     const spatialActive = options.spatialActive !== false;
@@ -2035,7 +2048,8 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       );
       const gradingSpatialBytes = intermediateEntries.reduce((sum, entry) => {
         if (!entry.spatialATexture || !entry.spatialBTexture) return sum;
-        return sum + Math.ceil(entry.width / 4) * Math.ceil(entry.height / 4) * 8 * 2;
+        const grid = spatialGridScale(entry.width, entry.height);
+        return sum + Math.ceil(entry.width / grid) * Math.ceil(entry.height / grid) * 8 * 2;
       }, 0);
       const gradingDetailBytes = intermediateEntries.reduce((sum, entry) => (
         sum + (entry.detailATexture && entry.detailBTexture ? entry.width * entry.height * 8 * 2 : 0)
@@ -2185,8 +2199,9 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
             0,
           ),
           gradingIntermediateBytes: [...this.intermediates.values()].reduce((sum, entry) => {
-            const spatialWidth = Math.max(1, Math.ceil(entry.width / 4));
-            const spatialHeight = Math.max(1, Math.ceil(entry.height / 4));
+            const grid = spatialGridScale(entry.width, entry.height);
+            const spatialWidth = Math.max(1, Math.ceil(entry.width / grid));
+            const spatialHeight = Math.max(1, Math.ceil(entry.height / grid));
             const spatialBytes = entry.spatialATexture && entry.spatialBTexture
               ? spatialWidth * spatialHeight * 8 * 2
               : 0;
@@ -2509,11 +2524,12 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
      * stop following the image and follow the tile instead, so peak residency
      * stays flat as the selected tier grows.
      */
-    ensureTileGraph(width, height, outputFormat, sourceFormat, spatialActive = false, denoiseActive = false) {
+    ensureTileGraph(width, height, outputFormat, sourceFormat, spatialActive = false, denoiseActive = false, spatialGrid = 4) {
       const current = this.tileGraph;
       if (current && current.width === width && current.height === height
         && current.outputFormat === outputFormat && current.sourceFormat === sourceFormat
-        && current.spatialActive === spatialActive && current.denoiseActive === denoiseActive) {
+        && current.spatialActive === spatialActive && current.denoiseActive === denoiseActive
+        && current.spatialGrid === spatialGrid) {
         return current;
       }
       this.destroyTileGraph();
@@ -2521,10 +2537,10 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         size: { width, height }, format, usage,
       });
       const attachment = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING;
-      // The spatial pair is a quarter of the work tile in each axis, the same
-      // ratio the Direct graph uses, so it costs an eighth of one intermediate.
-      const spatialWidth = Math.max(1, Math.ceil(width / 4));
-      const spatialHeight = Math.max(1, Math.ceil(height / 4));
+      // The spatial pair is the work tile over the frame's spatial grid in
+      // each axis, the same ratio the Direct graph uses.
+      const spatialWidth = Math.max(1, Math.ceil(width / spatialGrid));
+      const spatialHeight = Math.max(1, Math.ceil(height / spatialGrid));
       const makeSpatial = () => this.device.createTexture({
         size: { width: spatialWidth, height: spatialHeight }, format: "rgba16float", usage: attachment,
       });
@@ -2546,6 +2562,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           spatialBTexture: spatialActive ? makeSpatial() : null,
           spatialWidth,
           spatialHeight,
+          spatialGrid,
           denoiseActive,
           // One tile's worth of denoised picture, rebuilt per tile from cached
           // evidence. The whole-frame resolved texture this replaces is 340 MB
@@ -3238,6 +3255,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let cancelled = false;
       const graph = this.ensureTileGraph(
         workWidth, workHeight, surface.format, proxy.pixelFormat, spatialActive, denoiseActive,
+        spatialGridScale(proxy.width, proxy.height),
       );
       if (!graph) return { rendered: false, refusals: ["tile graph allocation failed"] };
 
@@ -3694,13 +3712,13 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           pass(filmView, pipelines.response, bind(localSource.createView()), width, height);
           let spatialResultView = sourceView;
           if (spatialActive) {
-            // The quarter-resolution grid is anchored to the frame, and this
-            // tile's halo rectangle starts on one of its texels, so the valid
-            // region is exactly the tile's own quarter extent. Rendering only
-            // that region keeps an edge tile from writing texels its source
-            // never covered, which `validSpatialDimensions()` then reads back.
-            const spatialWidth = Math.ceil(width / 4);
-            const spatialHeight = Math.ceil(height / 4);
+            // The spatial grid is anchored to the frame, and this tile's halo
+            // rectangle starts on one of its texels, so the valid region is
+            // exactly the tile's own extent on that grid. Rendering only that
+            // region keeps an edge tile from writing texels its source never
+            // covered, which `validSpatialDimensions()` then reads back.
+            const spatialWidth = Math.ceil(width / graph.spatialGrid);
+            const spatialHeight = Math.ceil(height / graph.spatialGrid);
             const spatialAView = graph.spatialATexture.createView();
             const spatialBView = graph.spatialBTexture.createView();
             pass(spatialAView, pipelines.extract, bind(filmView, spatialBView), spatialWidth, spatialHeight, 0);
@@ -6153,8 +6171,9 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
 
     ensureIntermediate(canvas, width, height, spatialActive = false, detailActive = false) {
       const current = this.intermediates.get(canvas);
-      const spatialWidth = Math.max(1, Math.ceil(width / 4));
-      const spatialHeight = Math.max(1, Math.ceil(height / 4));
+      const spatialGrid = spatialGridScale(width, height);
+      const spatialWidth = Math.max(1, Math.ceil(width / spatialGrid));
+      const spatialHeight = Math.max(1, Math.ceil(height / spatialGrid));
       const createSpatialTexture = () => this.device.createTexture({
         size: { width: spatialWidth, height: spatialHeight },
         format: "rgba16float",
@@ -9390,14 +9409,22 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     // coincide with the frame's: with a halo that is a multiple of four, a
     // tile's texel j is the frame's texel j + haloRect.x / 4, covering the same
     // four source pixels the Direct render covered.
-    const SPATIAL_SCALE: f32 = 4.0;
+    // Frame pixels per spatial texel: 1, 2 or 4 by the frame's long edge, so
+    // the default halation glow spans about two texels or more at every size
+    // (NEXT-01 #1). Mirrors HDRGraphScale.spatialGridScale; tile halos are
+    // multiples of four, so a tile's grid lines up with the frame's at every
+    // scale.
+    fn spatialScale() -> f32 {
+      let longEdge = max(frameDimensions().x, frameDimensions().y);
+      return select(select(1.0, 2.0, longEdge >= 2048.0), 4.0, longEdge >= 4096.0);
+    }
 
     fn validSpatialDimensions() -> vec2i {
-      return (validTileDimensions() + vec2i(3)) / vec2i(4);
+      return vec2i(ceil(vec2f(validTileDimensions()) / spatialScale()));
     }
 
     fn frameSpatialDimensions() -> vec2f {
-      return ceil(frameDimensions() / SPATIAL_SCALE);
+      return ceil(frameDimensions() / spatialScale());
     }
 
     // Sampling is in texel coordinates, not in normalized uv, because the
@@ -9460,12 +9487,13 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       // distance and shares Film Format/capture geometry with grain and MTF.
       // Both are properties of the picture, so both are derived from the
       // frame's quarter-resolution size and not from this tile's.
-      // Spatial intermediates are quarter resolution, so the CPU/export cap of
-      // 256 full-resolution pixels becomes 64 samples in this texture.
+      // The CPU/export cap of 256 full-resolution pixels is 256 / scale
+      // samples in this texture.
       let frameSpatial = frameSpatialDimensions();
-      let bloomRadius = clamp(length(frameSpatial) * max(p[95], 0.0) / 100.0, 0.25, 64.0);
+      let blurCap = 256.0 / spatialScale();
+      let bloomRadius = clamp(length(frameSpatial) * max(p[95], 0.0) / 100.0, 0.25, blurCap);
       let halationRadiusMm = 43.2666153 * max(p[88], 0.0) / 100.0;
-      let halationRadius = clamp(filmPixelsPerMm(frameSpatial) * halationRadiusMm, 0.25, 64.0);
+      let halationRadius = clamp(filmPixelsPerMm(frameSpatial) * halationRadiusMm, 0.25, blurCap);
       // The two effects carry different radii in the same packed texture, so
       // each walks its own kernel. An inactive effect's channels are already
       // zero out of the extract pass and are not worth walking.
@@ -9576,7 +9604,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       if (p[78] >= 0.5 && p[79] > 0.0) {
         var spatial = vec4f(0.0);
         if (p[85] > 0.5 || (p[92] > 0.5 && p[93] > 0.0)) {
-          spatial = sampleSpatialTexel((vec2f(coordinate) + vec2f(0.5)) / SPATIAL_SCALE);
+          spatial = sampleSpatialTexel((vec2f(coordinate) + vec2f(0.5)) / spatialScale());
         }
         if (p[85] > 0.5) {
           let halationRadius = filmPhysicalOffset(p[88], 256);
@@ -9588,7 +9616,11 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           let warmY = lumaSrgb(warm);
           let canonicalTintSrgb = mix(vec3f(warmY), warm, clamp(p[90], 0.0, 1.0));
           let tint = select(canonicalTintSrgb, srgbToAcescg(canonicalTintSrgb), p[0] > 0.5);
-          if (p[91] > 0.5) { return vec3f(clamp(filmSignalFromLuma(haloY), 0.0, 1.0)); }
+          // The map's white sits at SDR white in either lane (adjustments.py
+          // _apply_halation): 0.18 / (100 / 203) in HDR scene values.
+          if (p[91] > 0.5) {
+            return vec3f(clamp(filmSignalFromLuma(haloY), 0.0, 1.0) * select(1.0, 0.18 / (100.0 / 203.0), p[0] > 0.5));
+          }
           rgb += haloY * tint * (0.42 * p[86] * p[79]);
         }
         if (p[92] > 0.5 && p[93] > 0.0) {
@@ -10168,8 +10200,8 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     }
 
     @fragment fn spatialExtractFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      let center = input.position.xy * SPATIAL_SCALE;
-      let offset = vec2f(SPATIAL_SCALE * 0.25);
+      let center = input.position.xy * spatialScale();
+      let offset = vec2f(spatialScale() * 0.25);
       return (
         packedQualifiedSample(center + vec2f(-offset.x, -offset.y))
         + packedQualifiedSample(center + vec2f(offset.x, -offset.y))

@@ -2185,8 +2185,13 @@ def _apply_halation(
     edge_scatter = np.maximum(blurred - source * np.float32(0.15), 0.0)
     tint = _halation_tint(look.halation_hue_offset, look.halation_saturation, kind)
     halo = edge_scatter[..., None] * tint
-    map_signal = _film_encode_luma(np.maximum(edge_scatter, 0.0), kind)
-    halation_map = np.repeat(np.clip(map_signal, 0.0, 1.0)[..., None], 3, axis=-1).astype(np.float32)
+    map_signal = np.clip(_film_encode_luma(np.maximum(edge_scatter, 0.0), kind), 0.0, 1.0)
+    if kind == PreviewKind.HDR:
+        # The map is a 0-1 signal shown as grey. HDR scene values place SDR
+        # white at 0.18 / (100 / 203), so an unscaled map lit the HDR view
+        # several times brighter than white and read as solid white shapes.
+        map_signal = map_signal * (SDR_SCENE_MIDDLE_GRAY / SDR_DISPLAY_REFERENCE_WHITE)
+    halation_map = np.repeat(map_signal[..., None], 3, axis=-1).astype(np.float32)
     amount = np.float32(0.42 * look.halation_amount / 100.0) * master
     return (image + halo * amount).astype(np.float32), halation_map
 

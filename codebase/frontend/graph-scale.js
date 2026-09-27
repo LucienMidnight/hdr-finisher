@@ -29,10 +29,26 @@
 
   const CONTRACT_VERSION = 1;
 
-  // The quarter-resolution grid the spatial stage runs on. Mirrors
-  // `SPATIAL_SCALE` in the shader; the halo converts a quarter-res reach back
-  // to full resolution by this factor.
+  // The coarsest grid the spatial stage (halation and bloom) runs on, and the
+  // alignment every tile halo keeps: a halo that is a multiple of four starts
+  // on a texel of every grid `spatialGridScale` can choose.
   const SPATIAL_SCALE = 4;
+
+  /**
+   * How many frame pixels one spatial texel covers, for a frame of this size.
+   * Mirrors `spatialScale()` in the shader.
+   *
+   * NEXT-01 #1: a fixed quarter-resolution grid made the halation glow (0.2%
+   * of a 35mm diagonal: about 2 px on a 905 px Fit preview) narrower than one
+   * texel, so the effect and the Show halation map went blocky at Fit and
+   * changed with zoom while the export stayed the same. The grid now keeps
+   * the default glow at about two texels or more at every frame size.
+   */
+  function spatialGridScale(width, height) {
+    const longEdge = Math.max(finiteNumber(width, 1), finiteNumber(height, 1));
+    if (longEdge >= 4096) return 4;
+    return longEdge >= 2048 ? 2 : 1;
+  }
 
   // Film gate widths the pixels-per-mm conversion divides by, in millimetres.
   // p[140] and p[141] are the gate dimensions, p[142] selects the axis the
@@ -254,10 +270,14 @@
    */
   function spatialReachDetail(width, height, params) {
     const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
+    const grid = spatialGridScale(width, height);
     const quarter = [
-      Math.ceil(Math.max(1, finiteNumber(width, 1)) / SPATIAL_SCALE),
-      Math.ceil(Math.max(1, finiteNumber(height, 1)) / SPATIAL_SCALE),
+      Math.ceil(Math.max(1, finiteNumber(width, 1)) / grid),
+      Math.ceil(Math.max(1, finiteNumber(height, 1)) / grid),
     ];
+    // The shader caps a blur at 256 full-resolution pixels (the CPU/export
+    // cap), which is 256 / grid texels.
+    const blurCap = 256 / grid;
     const bloomActive = params[92] > 0.5 && params[93] > 0;
     const halationActive = params[85] > 0.5;
 
@@ -269,7 +289,7 @@
     let blurTexels = 0;
     if (bloomActive) {
       blurTexels = Math.max(blurTexels,
-        clamp(Math.hypot(quarter[0], quarter[1]) * Math.max(finiteNumber(params[95], 0), 0) / 100, 0.25, 64));
+        clamp(Math.hypot(quarter[0], quarter[1]) * Math.max(finiteNumber(params[95], 0), 0) / 100, 0.25, blurCap));
     }
     if (halationActive) {
       // `filmPixelsPerMm` over the frame's quarter-resolution size.
@@ -284,7 +304,7 @@
         pixelsPerMm = quarter[0] / params[FILM_GATE_WIDTH_INDEX];
       }
       blurTexels = Math.max(blurTexels,
-        clamp(pixelsPerMm * 43.2666153 * Math.max(finiteNumber(params[88], 0), 0) / 100, 0.25, 64));
+        clamp(pixelsPerMm * 43.2666153 * Math.max(finiteNumber(params[88], 0), 0) / 100, 0.25, blurCap));
     }
 
     // Full-resolution reads: halation's edge source from `filmPhysicalOffset`,
@@ -320,7 +340,7 @@
       direct = Math.max(direct, physicalOffset(0.04 + 0.08 * (1 - params[108]) * params[79], 32));
     }
 
-    const total = Math.ceil(blurTexels) * SPATIAL_SCALE + Math.ceil(direct);
+    const total = Math.ceil(blurTexels) * grid + Math.ceil(direct);
     return {
       quarter,
       blurTexels,
@@ -518,6 +538,7 @@
   const HDRGraphScale = Object.freeze({
     CONTRACT_VERSION,
     SPATIAL_SCALE,
+    spatialGridScale,
     processingScaleFor,
     graphActivity,
     localDetailActive,

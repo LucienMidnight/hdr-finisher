@@ -221,14 +221,33 @@ test("the film-plane halation reach follows the processing scale", () => {
   const native = Scale.spatialReachDetail(NATIVE.width, NATIVE.height, activeParams({ 88: radius }));
   const display = Scale.spatialReachDetail(DISPLAY.width, DISPLAY.height, activeParams({ 88: radius }));
   // The physical radius is the same, so its pixel reach is proportional to the
-  // frame's pixels-per-mm: a quarter-size frame reaches a quarter as far.
-  assert.ok(Math.abs(native.blurTexels / display.blurTexels - 4) < 0.01,
-    `expected a 4x reach ratio, got ${native.blurTexels} vs ${display.blurTexels}`);
+  // frame's pixels-per-mm: a quarter-size frame reaches a quarter as far. The
+  // blur is counted in texels of each frame's own spatial grid.
+  const nativeGrid = Scale.spatialGridScale(NATIVE.width, NATIVE.height);
+  const displayGrid = Scale.spatialGridScale(DISPLAY.width, DISPLAY.height);
+  const ratio = (native.blurTexels * nativeGrid) / (display.blurTexels * displayGrid);
+  assert.ok(Math.abs(ratio - 4) < 0.01, `expected a 4x pixel reach ratio, got ${ratio}`);
   assert.ok(native.total > display.total);
   // A radius of zero switches the stage off in the parameter build, so the
   // halation contribution is zero.
   const off = Scale.spatialReachDetail(NATIVE.width, NATIVE.height, activeParams({ 85: 0, 92: 0 }));
   assert.equal(off.blurTexels, 0);
+});
+
+test("the spatial grid keeps the default halation glow at two texels or more", () => {
+  // NEXT-01 #1: on a fixed quarter grid the 0.2% glow was half a texel on a
+  // Fit preview, so the effect and its map went blocky and changed with zoom.
+  assert.equal(Scale.spatialGridScale(905, 603), 1);
+  assert.equal(Scale.spatialGridScale(3990, 2660), 2);
+  assert.equal(Scale.spatialGridScale(7980, 5320), 4);
+  for (const width of [600, 905, 1500, 2047, 2048, 3000, 4095, 4096, 7980, 12000]) {
+    const height = Math.round(width * 2 / 3);
+    const { blurTexels } = Scale.spatialReachDetail(width, height, activeParams({ 88: 0.2 }));
+    assert.ok(blurTexels >= 1.9, `${width} px: the default glow is ${blurTexels} texels`);
+  }
+  // Every grid divides the four-pixel halo alignment, so a tile's grid lines
+  // up with the frame's whichever scale the frame uses.
+  for (const scale of [1, 2, 4]) assert.equal(Scale.SPATIAL_SCALE % scale, 0);
 });
 
 test("the spatial reach is anchored to the quarter-resolution grid and capped", () => {
