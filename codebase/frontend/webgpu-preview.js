@@ -41,7 +41,7 @@
   const SCOPE_PEAK_GRID = 64;
 
   /**
-   * The processing-scale contract (sprint PRD Phase 3 item 3, PRD 5.9).
+   * The processing-scale contract shared by preview nodes and diagnostics.
    *
    * Every scale-dependent radius and every tile halo is declared and computed
    * in `graph-scale.js`, which the page loads before this file. The resolver is
@@ -847,13 +847,13 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
    * device's own limits.
    *
    * This function is pure: the same inputs always produce the same plan and the
-   * same decision, which is what the Phase 2 exit gate requires.
+   * same decision.
    */
   const DEFAULT_TILE_SIZE = 512;
   // A highlight measurement this many times the estimate (or the carried last
   // measurement) is measured once more before it is trusted.
   const HIGHLIGHT_ANCHOR_RECHECK_FACTOR = 8;
-  // Phase 5 item 3: bounded staging ring for source streaming. Four 16 MiB
+  // Bounded staging ring for source streaming. Four 16 MiB
   // chunks keep the staging bound unchanged while overlapping fetches with
   // copies and draining the queue once per stream instead of once per chunk.
   const SOURCE_UPLOAD_RING_SIZE = 4;
@@ -1060,7 +1060,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     // The live planner knows what each resident source level really occupies.
     // Charging the current frame's size once per cached level counted a 1024
     // px mip as if it were native, so a 42 MP render was charged 2.37 GB for
-    // 339 MB of source (Preview Responsiveness Tuning Sprint P2).
+    // 339 MB of source.
     const residentSourceBytes = Number.isFinite(Number(options.sourceProxyBytes))
       ? Math.max(0, Number(options.sourceProxyBytes)) : null;
     const maskCount = Math.max(0, Math.floor(Number(options.maskCount) || 0));
@@ -1308,7 +1308,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     /**
      * The declared per-module scale contract, for diagnostics and tests.
      *
-     * `HDRGraphScale.MODULE_SCALE_CONTRACT` names each module the sprint asks
+     * `HDRGraphScale.MODULE_SCALE_CONTRACT` names each scale-sensitive module,
      * about, its authored unit, its radius conversion, its halo and its cache
      * identity. Exposing it here keeps the renderer's diagnostics able to state
      * which contract the running build implements.
@@ -1348,10 +1348,10 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       // superseded stream without waiting for the whole image.
       this.sourceAbort = null;
       // What the canvas is currently showing, so an ROI pass can keep it and
-      // composite only the foreground tiles into it (Phase 2).
+      // composite only the foreground tiles into it.
       this.lastPresentedFrame = null;
       this.presentationTarget = null;
-      // Bounded submission log for the Phase 2 stop-gate measurement.
+      // Bounded submission log for the supersession stop-gate measurement.
       this.submissionLog = [];
       this.paramBuffer = null;
       this.curveBuffer = null;
@@ -1360,6 +1360,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       this.surfaceKeys = new WeakMap();
       this.intermediates = new Map();
       this.localMasks = new Map();
+      this.localMaskInflight = new Map();
       this.localParamBuffers = new Map();
       this.localParamValues = new Map();
       this.scopeSources = new WeakMap();
@@ -1374,6 +1375,10 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       // In-flight measurements by cache key, so a settled frame reuses the one
       // a drag frame deferred instead of running the same reduction twice.
       this.pendingHighlightKeys = new Map();
+      // Deferred measurements are an optional refinement, so their failure
+      // must not replace the accepted frame. Keep a bounded diagnostic trail
+      // instead of making those failures disappear.
+      this.highlightMeasurementFailures = [];
       this.denoiseResolveVersion = 0;
       this.bindGroupLayout = null;
       this.clarityMaps = null;
@@ -1389,12 +1394,12 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       this.featherReferenceScale = null;
       // Masks a render uses are never trimmed from the cache by that render:
       // at native size one feathered luma mask exceeds the cache budget on its
-      // own, and trimming it rebuilt the mask on every drag frame (P7).
+      // own, and trimming it would rebuild the mask on every drag frame.
       this.maskUseSerial = 0;
       this.gpuAnalyticMasksEnabled = true;
       this.instrumentationEnabled = false;
       this.performanceMetrics = { renders: [], scopes: [], maskEvents: [], stages: [], allocations: [], presentations: [] };
-      // Phase 0 denoise seam. This remains null until the explicit selector
+      // Denoise seam. This remains null until the explicit selector
       // benchmark asks for it, so the established never-used path owns no
       // denoise resources and performs no denoise dispatches.
       this.denoiseSourceSelector = null;
@@ -1407,7 +1412,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       this.activeRenderCount = 0;
       this.activeScopeCount = 0;
       this.deferredDestroy = [];
-      // Phase 2 planner state. The budget is an application allocation budget
+      // Planner state. The budget is an application allocation budget
       // chosen by the user, never a physical VRAM measurement.
       this.memoryBudget = "auto";
       this.lastRenderPlan = null;
@@ -1420,16 +1425,16 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       // no larger than this.
       this.maxSourceChunkBytes = 16 * 1024 * 1024;
       this.sourceTransportMetrics = null;
-      // Phase 5 item 4: which route carries an above-budget source frame.
+      // Which route carries an above-budget source frame.
       // "stream" reads one chunked row-strip response through the staging ring,
       // "single" reads one prebuilt whole-frame response the same way, and
       // "strips" is the per-strip request route the ring first landed with.
       // The streaming route is the measured default; the others stay for the
       // A/B driver and as an in-field fallback.
       this.sourceTransportMode = "stream";
-      // Phase 5 item 2: the calibrated Auto budget, once a device exists.
+      // The calibrated Auto budget, once a device exists.
       this.gpuBudget = null;
-      // Phase 5 item 1: one allocator owns the budget, the LRU order and the
+      // One allocator owns the budget, the LRU order and the
       // reservations for everything the renderer caches. Cache entries are
       // evicted through it by global least-recent use, not by per-cache caps.
       const GpuAllocator = typeof window !== "undefined" ? window.HDRGpuAllocator : null;
@@ -1439,7 +1444,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       // A lane keeps its source levels until the central budget asks for them
       // back; this cap only stops pathological key growth.
       this.proxyLevelCapPerLane = 6;
-      // Phase 4 tiled execution. The admission planner uses it when Direct
+      // Tiled execution. The admission planner uses it when Direct
       // does not fit; the diagnostic hook can still invoke it explicitly.
       this.tileGraph = null;
       this.tileScheduler = null;
@@ -1448,7 +1453,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       this.pendingCacheTrim = null;
       this.detailBandTiles = new Map();
       this.maskTiles = new Map();
-      // Phase 5 item 1: every cache map is registered through the allocator, so
+      // Every cache map is registered through the allocator, so
       // a set, delete or clear *is* an allocation event and no call site can
       // forget to report one. Reads touch the global LRU order.
       this.proxies = this.trackGpuCache("source-proxy", this.proxies);
@@ -1505,7 +1510,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     }
 
     /**
-     * Phase 5 item 2: calibrate Auto from verified device information and a
+     * Calibrate Auto from verified device information and a
      * bounded allocation probe. The probe is a real device allocation of the
      * candidate's probe size, created and destroyed immediately; a failure is
      * evidence, not an exception, and it downgrades the budget.
@@ -1551,7 +1556,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     }
 
     /**
-     * Central registry hooks (Phase 5 item 1). Every cache entry the renderer
+     * Central registry hooks. Every cache entry the renderer
      * holds must pass through `gpuCacheEntry` so the allocator sees its bytes
      * and can release the *texture*, not just the map key, when it evicts.
      * Registration is the allocation: there is no second place to forget.
@@ -1741,7 +1746,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
      * diagnostic Execution setting forces a route. A region (viewport) request
      * used to be forced to Tiled even when Direct was admitted; it now goes
      * through ordinary admission, Direct when it fits and Tiled only when
-     * refused (Preview Responsiveness Tuning Sprint P2).
+     * refused.
      */
     executionOverrideFor(sourceOptions = null) {
       return this.executionOverride || null;
@@ -1821,7 +1826,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           timestampQueries,
           limits: snapshotDeviceLimits(this.device.limits),
         };
-        // Phase 5 item 2: Auto is calibrated once the device exists, and the
+        // Auto is calibrated once the device exists, and the
         // allocator adopts the calibrated number.
         this.calibrateGpuBudget();
         this.context = this.canvas.getContext("webgpu");
@@ -1951,6 +1956,9 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       // Source fetches for the session being replaced have nowhere to land.
       this.sourceAbort?.abort();
       this.sourceAbort = null;
+      this.maskRequestCoordinator?.cancel();
+      this.backgroundMaskRequestCoordinator?.cancel();
+      this.localMaskInflight.clear();
       // A different session has no accepted frame to retain.
       this.lastPresentedFrame = null;
       if (this.presentationTarget) {
@@ -2130,7 +2138,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       const sceneLuminanceBytes = [...this.sceneLuminance.values()]
         .reduce((sum, entry) => sum + (entry.byteSize || 0), 0);
       const localMaskBytes = [...this.localMasks.values()].reduce((sum, entry) => sum + (entry.byteSize || 0), 0);
-      // Phase 5's two LRU caches and the tiled working graph. These are real
+      // The two LRU caches and the tiled working graph are real
       // device textures with the same lifetime as any other cache here, so
       // leaving them out made a tiled render's reported peak smaller than a
       // Direct one's while it actually held more.
@@ -2175,7 +2183,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         + [...this.localParamBuffers.values()].reduce((sum, buffer) => sum + (buffer.size || 0), 0)
         + intermediateEntries.reduce((sum, entry) => sum + (entry.compositeParamBuffer?.size || 0), 0)
         + denoiseParameterBufferBytes;
-      // Phase 5 item 1: the retained presentation target is live device memory
+      // The retained presentation target is live device memory
       // (and a pinned allocator reservation). It used to be missing from the
       // resident categories while the peak-agreement driver counted it, which
       // is exactly the drift the exit gate measures.
@@ -2236,7 +2244,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         : null;
       return {
         planned,
-        // Phase 5 item 1: the central allocator's view. `usedBytes` is every
+        // The central allocator's view. `usedBytes` is every
         // registered cache entry plus every reservation; `overBudgetBytes` is
         // what eviction could not fund. Peak agreement is measured against the
         // driver/browser overhead separately by the peak-agreement driver.
@@ -2274,6 +2282,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         stages: (this.performanceMetrics.stages || []).map((entry) => ({ ...entry })),
         allocations: (this.performanceMetrics.allocations || []).map((entry) => ({ ...entry })),
         presentations: (this.performanceMetrics.presentations || []).map((entry) => ({ ...entry })),
+        highlightMeasurementFailures: this.highlightMeasurementFailures.map((entry) => ({ ...entry })),
         denoise: {
           ...this.denoiseCounters,
           selectorCreated: Boolean(this.denoiseSourceSelector),
@@ -2316,12 +2325,12 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           denoiseBytes: (this.denoiseSourceSelector?.resolved?.byteSize || 0)
             + (this.denoiseSourceSelector?.cache?.byteSize || 0),
           memory,
-          // Phase 2 planner surface: the budget in force, the last plan and its
+          // Planner surface: the budget in force, the last plan and its
           // admission decision, and any recorded allocation backoff.
           budget: {
             setting: this.memoryBudget,
             bytes: this.memoryBudgetBytes(),
-            // Phase 5 item 2: where Auto's number came from, and the probe
+            // Where Auto's number came from, and the probe
             // evidence behind it. Never a claim about physical VRAM.
             calibration: this.gpuBudget,
           },
@@ -2339,9 +2348,9 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     /**
      * Why a node keeps a graph off the tiled path.
      *
-     * Phase 5 adds haloed Detail, mask tiles, overlays and the sequential local
-     * stack. Remaining refusals are modules whose absolute-coordinate or
-     * multiscale contracts are owned by later phases.
+     * Haloed Detail, mask tiles, overlays and the sequential local stack are
+     * supported. Any refusal must name a module whose absolute-coordinate or
+     * multiscale contract is not supported by the tiled path.
      */
     tiledExecutionRefusals({ activeLocals = [], detailActive, spatialActive, overlayMask, params, surface }) {
       const reasons = [];
@@ -2472,6 +2481,30 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       };
     }
 
+    recordHighlightMeasurementFailure(error, { lane, key, used }) {
+      const classify = typeof window !== "undefined" ? window.HDRRenderFailure?.classify : null;
+      const failure = classify
+        ? classify(error)
+        : { kind: error?.name === "AbortError" ? "superseded" : "transport", detail: error?.message || String(error) };
+      const record = {
+        lane,
+        key,
+        used,
+        kind: failure.kind,
+        detail: failure.detail,
+        at: performance.now(),
+      };
+      this.highlightMeasurementFailures.push(record);
+      if (this.highlightMeasurementFailures.length > 40) this.highlightMeasurementFailures.shift();
+      this.recordStage("highlight-anchor-measurement-failed", record);
+      if (typeof window !== "undefined" && typeof CustomEvent !== "undefined") {
+        window.dispatchEvent(new CustomEvent("hdrfinisher:highlight-anchor-measurement-failed", {
+          detail: { ...record },
+        }));
+      }
+      return record;
+    }
+
     /**
      * The last real measurement for this lane, carried through the change in
      * the tone stages the measurement applies (exposure, shadow lift,
@@ -2511,7 +2544,10 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
             detail: { lane, key: anchor.key, used, measured: value },
           }));
         }
-      }).catch(() => null).finally(() => {
+      }).catch((error) => {
+        this.recordHighlightMeasurementFailure(error, { lane, key: anchor.key, used });
+        return null;
+      }).finally(() => {
         if (this.pendingHighlightKeys.get(anchor.key) === run) this.pendingHighlightKeys.delete(anchor.key);
       });
       this.pendingHighlightKeys.set(anchor.key, run);
@@ -2885,7 +2921,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       // accepted frame stays on screen until its replacement can actually be
       // encoded, and a superseded generation never clears it.
       const surface = this.configureSurface(canvas, context, lane === "hdr");
-      // Phase 3 item 2: a magnified ROI fetches only the source region it will
+      // A magnified ROI fetches only the source region it will
       // process, from the mip this pass needs, instead of the whole frame at
       // that scale. `roiRegionFor` returns null unless the retained frame
       // makes the region safe, so this is the ordinary whole-frame route in
@@ -3282,14 +3318,14 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         generation: Number(options.applicationGeneration ?? 0),
         tileSize,
         nodes,
-        // Phase 2 work item 3: a real viewport request orders visible tiles
+        // A real viewport request orders visible tiles
         // first and lets a magnified ROI keep offscreen tiles out of the
         // foreground batch. No viewport means Fit, which is the whole output.
         viewport: viewportRequest.fit ? undefined : viewportRequest.visible,
       });
       const workWidth = Math.min(proxy.width, tileSize + halo * 2);
       const workHeight = Math.min(proxy.height, tileSize + halo * 2);
-      // Phase 2 foreground selection. With a viewport and an accepted frame of
+      // Foreground selection. With a viewport and an accepted frame of
       // this exact size and identity already on the canvas, only the tiles that
       // intersect the viewport are processed and the rest of the accepted
       // frame is kept: offscreen tiles are not part of the foreground batch.
@@ -3317,7 +3353,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       const retainedFrame = this.retainedTiledFrame(
         options.sessionId, lane, options.geometrySignature || "{}", surface.format,
       );
-      // Phase 2 item 8, the display-scale pan cache. A viewport pass over a
+      // Display-scale pan cache. A viewport pass over a
       // retained frame is split into the tiles that still owe the current
       // generation and the tiles the cache already holds at this display
       // scale (the plan's identity is per proxy, so the scale is part of the
@@ -3337,7 +3373,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         : null;
       const foregroundTiles = panCache ? panCache.pending : plan.tiles;
       const reusedTiles = panCache ? panCache.cached : [];
-      // Phase 3 item 2: a region source only carries the viewport's corner of
+      // A region source only carries the viewport's corner of
       // the frame, so every tile this pass will copy must lie inside it. The
       // fetch region is sized for exactly that; a miss means the region math
       // and the plan disagree, and refusing is safer than reading outside the
@@ -3536,7 +3572,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       }
       let encodeError = null;
       let processedTiles = 0;
-      // Small-batch submission (Phase 2 item 5). The GPU starts on one batch
+      // Small-batch submission. The GPU starts on one batch
       // while the CPU encodes the next, and a superseded generation stops
       // submitting at the next batch boundary instead of finishing the image.
       // The retained target keeps the batches invisible until the final copy.
@@ -3990,7 +4026,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         exactPeak: measuredPeak, exactPeakLongEdge: Math.max(proxy.width, proxy.height),
         tileCount: plan.tileCount, visibleCount: plan.visibleCount, submissions,
         tileBatchSize,
-        // Phase 2 work item 6: what the request asked for versus what the graph
+        // What the request asked for versus what the graph
         // processed. Each tile processes its haloed rect, so the sum is the
         // real processed area and the ratio is the halo amplification.
         viewport: plan.viewport ? { ...plan.viewport } : null,
@@ -4005,7 +4041,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         },
         activeNodes: nodes.map((node) => node.id || node),
         roiCatchUp: Boolean(options.roiCatchUp),
-        // Phase 2 item 8, the display-scale pan cache. `viewportTiles` is what
+        // Display-scale pan cache diagnostics. `viewportTiles` is what
         // the padded region asked for; `reusedTiles` came back from the
         // retained frame at this generation and was not re-processed;
         // `foregroundTiles` is what actually ran. A pan back into a refined
@@ -4029,14 +4065,14 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         ),
         outputPixels: proxy.width * proxy.height,
         workingSetBytes: graph.byteSize, proxyBytes: proxy.byteSize,
-        // Phase 3 item 2: what the source transport actually carried. A region
+        // What the source transport actually carried. A region
         // pass uploads its region, not the frame, and the driver reads these
         // to prove the warm-Fit and ROI transport gates.
         sourceRoute: proxy.region ? "region" : (proxy.streamed ? "streamed" : "whole-frame"),
         sourceRegion: proxy.region ? { ...proxy.region } : null,
         sourceTextureBytes: proxy.byteSize,
         sourceFrameBytes: proxy.width * proxy.height * (proxy.pixelFormat === "rgba16float" ? 8 : 16),
-        // Phase 3 item 3: the processing scale this generation ran at. It is the
+        // The processing scale this generation ran at. It is the
         // same number the graph's radius conversions used, so telemetry and the
         // contract can never disagree about which scale produced the frame.
         processingScale: Number.isFinite(Number(options.sourcePixelScale))
@@ -4101,7 +4137,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       const sourceIdentity = sourceOptions?.identity || "source";
       const context = canvas.getContext("webgpu");
       if (!context) throw new Error("The comparison WebGPU canvas context is unavailable");
-      // Phase 3 item 2: a magnified ROI fetches only the region it processes,
+      // A magnified ROI fetches only the region it processes,
       // at the mip this pass needs. Admission has not run yet, so a region
       // request that is later admitted Direct is replaced by the whole frame
       // below.
@@ -4235,19 +4271,23 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       // skips this entirely: it carries bounded per-tile masks instead.
       if (plan.decision.mode !== "tiled") {
         this.maskUseSerial += 1;
-        masks = await Promise.all(activeLocals.map((local) => this.loadLocalMask(
+        const isMaskCurrent = () => resourceGeneration === this.resourceGeneration
+          && serial === this.renderSerials.get(canvas)
+          && sourceOptions?.isCurrent?.() !== false;
+        const loadedMasks = await this.loadDirectMasks({
+          generation: `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${Number(sourceOptions?.applicationGeneration ?? 0)}:${serial}`,
           sessionId,
-          local,
+          activeLocals,
           longEdge,
           editRevision,
           geometrySignature,
-          () => serial === this.renderSerials.get(canvas),
-        )));
+          isCurrent: isMaskCurrent,
+        });
+        masks = loadedMasks.results;
         masksReadyAt = performance.now();
-        if (resourceGeneration !== this.resourceGeneration
-          || serial !== this.renderSerials.get(canvas)
+        if (!loadedMasks.current || !isMaskCurrent()
           || masks.some((mask) => !mask)
-          || sourceOptions?.isCurrent?.() === false) return this.refuseRender("superseded-after-masks");
+        ) return this.refuseRender("superseded-after-masks");
       }
       const measuredPeak = params[75];
       // The resize happens at presentation time, not here. Resizing a visible
@@ -5757,7 +5797,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     }
 
     /**
-     * Diagnostic readback (Phase 2 work item 9). The retained presentation
+     * Diagnostic readback. The retained presentation
      * target is the frame both the legacy whole-frame pass and the ROI pass
      * composite into, before the single copy to the canvas, so comparing a
      * region of it compares rendered pixels rather than a canvas screenshot.
@@ -6043,7 +6083,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     }
 
     /**
-     * Bounded submission log for the Phase 2 stop-gate measurement. Records
+     * Bounded submission log for the supersession stop-gate measurement. Records
      * when a tiled generation submitted and how many tiles that batch carried,
      * so a driver can prove that a superseded generation stopped submitting
      * within the gate instead of finishing the image.
@@ -6061,7 +6101,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     }
 
     /**
-     * The retained presentation target (Phase 2 item 4).
+     * The retained presentation target.
      *
      * A swap-chain texture is undefined outside what the current pass writes,
      * so it cannot hold the accepted frame between generations. This texture
@@ -6584,7 +6624,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     }
 
     /**
-     * Select the transport for an above-budget source frame (Phase 5 item 4).
+     * Select the transport for an above-budget source frame.
      * Kept on the renderer so a driver can A/B the routes against the same
      * session and a field problem can fall back without a rebuild.
      */
@@ -6597,7 +6637,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
 
     /**
      * Read one whole-frame proxy response as a byte stream and fill the source
-     * texture through the bounded staging ring (Phase 5 item 4).
+     * texture through the bounded staging ring.
      *
      * The per-strip route pays a fresh backend encode and a request round trip
      * per chunk. This route asks for the frame once: `stream` reads it back as
@@ -6961,7 +7001,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     }
 
     /**
-     * Load only the source region one ROI pass will process (Phase 3 item 2).
+     * Load only the source region one ROI pass will process.
      *
      * The whole-frame route uploads the entire frame at the pass's scale even
      * though a magnified pass reads a viewport-sized corner of it. This asks
@@ -7170,7 +7210,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           if (regional) return regional;
         }
         // A whole-frame response above the chunk budget is exactly the
-        // image-sized browser buffer this sprint removes. The streaming route
+        // image-sized browser buffer that bounded transport avoids. The streaming route
         // reads that frame back in bounded row strips; the strip route stays as
         // the fallback when the streaming endpoint is unavailable.
         if (longEdge * longEdge * 8 > this.maxSourceChunkBytes) {
@@ -7298,16 +7338,53 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       }
     }
 
-    async loadLocalMask(sessionId, local, longEdge, editRevision, geometrySignature, isCurrent = () => true) {
-      if (local.mask?.operator !== "leaf") {
-        return this.loadGpuMaskGraph(sessionId, local, longEdge, editRevision, geometrySignature, isCurrent);
+    async loadDirectMasks({
+      generation, sessionId, activeLocals, longEdge, editRevision, geometrySignature, isCurrent = () => true,
+    }) {
+      const tasks = Array.from(activeLocals || []);
+      if (!tasks.length) return { results: [], current: isCurrent() };
+      if (!this.maskRequestCoordinator) {
+        const results = [];
+        for (const local of tasks) {
+          if (!isCurrent()) break;
+          results.push(await this.loadLocalMask(
+            sessionId, local, longEdge, editRevision, geometrySignature, isCurrent,
+          ));
+        }
+        while (results.length < tasks.length) results.push(null);
+        return { results, current: isCurrent() };
       }
-      return this.loadMaskLeaf(sessionId, local, local.mask, "", longEdge, editRevision, geometrySignature, isCurrent);
+      return this.maskRequestCoordinator.run(
+        generation,
+        tasks,
+        (local, _index, signal) => this.loadLocalMask(
+          sessionId, local, longEdge, editRevision, geometrySignature, isCurrent, signal,
+        ),
+        isCurrent,
+      );
     }
 
-    async loadMaskLeaf(sessionId, local, expression, maskPath, longEdge, editRevision, geometrySignature, isCurrent = () => true) {
+    async loadLocalMask(
+      sessionId, local, longEdge, editRevision, geometrySignature, isCurrent = () => true, signal = undefined,
+    ) {
+      if (local.mask?.operator !== "leaf") {
+        return this.loadGpuMaskGraph(sessionId, local, longEdge, editRevision, geometrySignature, isCurrent, signal);
+      }
+      return this.loadMaskLeaf(
+        sessionId, local, local.mask, "", longEdge, editRevision, geometrySignature, isCurrent, signal,
+      );
+    }
+
+    async loadMaskLeaf(
+      sessionId, local, expression, maskPath, longEdge, editRevision, geometrySignature,
+      isCurrent = () => true, signal = undefined,
+    ) {
       const leafLocal = { ...local, id: maskPath ? `${local.id}:${maskPath}` : local.id, mask: expression };
-      if (isGpuLumaMask(expression)) return this.loadGpuLumaMask(sessionId, leafLocal, longEdge, editRevision, geometrySignature, isCurrent);
+      if (isGpuLumaMask(expression)) {
+        return this.loadGpuLumaMask(
+          sessionId, leafLocal, longEdge, editRevision, geometrySignature, isCurrent, signal,
+        );
+      }
       const maskSignature = gpuMaskIdentity(expression);
       const key = `${sessionId}:${longEdge}:${geometrySignature}:cpu-spatial-leaf:${maskSignature}`;
       const cached = this.localMasks.get(key);
@@ -7317,55 +7394,71 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         cached.lastUseSerial = this.maskUseSerial;
         return cached;
       }
-      const pathQuery = maskPath ? `&mask_path=${encodeURIComponent(maskPath)}` : "";
-      const startedAt = performance.now();
-      const response = await fetch(`/api/session/${sessionId}/local-mask/${encodeURIComponent(local.id)}?long_edge=${longEdge}&edit_revision=${editRevision}&geometry_signature=${encodeURIComponent(geometrySignature)}&spatial_only=true${pathQuery}`);
-      // A refused or stale mask still owns its body: a native-edge mask is tens
-      // of MB, and leaving it unread holds an HTTP/1.1 connection (§15.56).
-      if (!response.ok || response.headers.get("X-Geometry-Signature") !== geometrySignature) {
-        await response.body?.cancel?.().catch(() => null);
-        return null;
-      }
-      const width = Number(response.headers.get("X-Image-Width"));
-      const height = Number(response.headers.get("X-Image-Height"));
-      const source = new Uint8Array(await response.arrayBuffer());
-      if (!isCurrent()) return null;
-      const bytesPerRow = Math.ceil(width / 256) * 256;
-      const padded = bytesPerRow === width ? source : new Uint8Array(bytesPerRow * height);
-      if (padded !== source) {
-        for (let row = 0; row < height; row += 1) padded.set(source.subarray(row * width, (row + 1) * width), row * bytesPerRow);
-      }
-      const texture = this.device.createTexture({
-        size: { width, height },
-        format: "r8unorm",
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-      });
-      this.device.queue.writeTexture(
-        { texture },
-        padded,
-        { bytesPerRow, rowsPerImage: height },
-        { width, height },
-      );
-      const entry = { kind: "cpu-spatial-leaf", texture, width, height, byteSize: width * height };
-      this.localMasks.set(key, entry);
-      this.retainLocalMask(entry, longEdge);
-      if (this.instrumentationEnabled) {
-        this.performanceMetrics.maskEvents ||= [];
-        this.performanceMetrics.maskEvents.push({
-          kind: "cpu-spatial-leaf",
-          maskPath: maskPath || "root",
-          longEdge,
-          width,
-          height,
-          cpuMaskMs: Number(response.headers.get("X-CPU-Mask-Ms")) || null,
-          requestMs: performance.now() - startedAt,
-          cpuMaskRequest: true,
+      const inflight = this.localMaskInflight.get(key);
+      if (inflight && !inflight.signal?.aborted) return inflight.promise;
+      const pending = (async () => {
+        const pathQuery = maskPath ? `&mask_path=${encodeURIComponent(maskPath)}` : "";
+        const startedAt = performance.now();
+        const response = await fetch(
+          `/api/session/${sessionId}/local-mask/${encodeURIComponent(local.id)}?long_edge=${longEdge}&edit_revision=${editRevision}&geometry_signature=${encodeURIComponent(geometrySignature)}&spatial_only=true${pathQuery}`,
+          { signal },
+        );
+        // A refused or stale mask still owns its body: a native-edge mask is tens
+        // of MB, and leaving it unread holds an HTTP/1.1 connection (§15.56).
+        if (!response.ok || response.headers.get("X-Geometry-Signature") !== geometrySignature) {
+          await response.body?.cancel?.().catch(() => null);
+          return null;
+        }
+        const width = Number(response.headers.get("X-Image-Width"));
+        const height = Number(response.headers.get("X-Image-Height"));
+        const source = new Uint8Array(await response.arrayBuffer());
+        if (signal?.aborted || !isCurrent()) return null;
+        const bytesPerRow = Math.ceil(width / 256) * 256;
+        const padded = bytesPerRow === width ? source : new Uint8Array(bytesPerRow * height);
+        if (padded !== source) {
+          for (let row = 0; row < height; row += 1) padded.set(source.subarray(row * width, (row + 1) * width), row * bytesPerRow);
+        }
+        const texture = this.device.createTexture({
+          size: { width, height },
+          format: "r8unorm",
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
         });
+        this.device.queue.writeTexture(
+          { texture },
+          padded,
+          { bytesPerRow, rowsPerImage: height },
+          { width, height },
+        );
+        const entry = { kind: "cpu-spatial-leaf", texture, width, height, byteSize: width * height };
+        this.localMasks.set(key, entry);
+        this.retainLocalMask(entry, longEdge);
+        if (this.instrumentationEnabled) {
+          this.performanceMetrics.maskEvents ||= [];
+          this.performanceMetrics.maskEvents.push({
+            kind: "cpu-spatial-leaf",
+            maskPath: maskPath || "root",
+            longEdge,
+            width,
+            height,
+            cpuMaskMs: Number(response.headers.get("X-CPU-Mask-Ms")) || null,
+            requestMs: performance.now() - startedAt,
+            cpuMaskRequest: true,
+          });
+        }
+        return entry;
+      })();
+      const record = { promise: pending, signal };
+      this.localMaskInflight.set(key, record);
+      try {
+        return await pending;
+      } finally {
+        if (this.localMaskInflight.get(key) === record) this.localMaskInflight.delete(key);
       }
-      return entry;
     }
 
-    async loadGpuMaskGraph(sessionId, local, longEdge, editRevision, geometrySignature, isCurrent = () => true) {
+    async loadGpuMaskGraph(
+      sessionId, local, longEdge, editRevision, geometrySignature, isCurrent = () => true, signal = undefined,
+    ) {
       const startedAt = performance.now();
       const layoutIdentity = gpuMaskGraphLayoutIdentity(local.mask);
       const key = `${sessionId}:${local.id}:${longEdge}:${geometrySignature}:gpu-mask-graph:${layoutIdentity}`;
@@ -7380,7 +7473,9 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
 
       const resolveNode = async (expression, path) => {
         if (expression.operator === "leaf") {
-          const leafEntry = await this.loadMaskLeaf(sessionId, local, expression, path, longEdge, editRevision, geometrySignature, isCurrent);
+          const leafEntry = await this.loadMaskLeaf(
+            sessionId, local, expression, path, longEdge, editRevision, geometrySignature, isCurrent, signal,
+          );
           return leafEntry ? { expression, leafEntry, children: [] } : null;
         }
         if (expression.enabled === false) {
@@ -7390,8 +7485,11 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         const activeChildren = expression.children
           .map((child, index) => ({ child, index }))
           .filter(({ child }) => child.enabled !== false);
-        const children = await Promise.all(activeChildren.map(({ child, index }) =>
-          resolveNode(child, path ? `${path}.${index}` : String(index))));
+        const children = [];
+        for (const { child, index } of activeChildren) {
+          if (signal?.aborted || !isCurrent()) return null;
+          children.push(await resolveNode(child, path ? `${path}.${index}` : String(index)));
+        }
         return children.some((child) => !child) ? null : { expression, children };
       };
       const resolved = await resolveNode(local.mask, "");
@@ -7470,13 +7568,19 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return entry;
     }
 
-    async loadSceneLuminance(sessionId, longEdge, editRevision, geometrySignature) {
+    async loadSceneLuminance(
+      sessionId, longEdge, editRevision, geometrySignature, isCurrent = () => true, signal = undefined,
+    ) {
       const key = `${sessionId}:${longEdge}:${geometrySignature}`;
       const cached = this.sceneLuminance.get(key);
       if (cached) return { ...cached, created: false };
-      if (this.sceneLuminanceInflight.has(key)) return this.sceneLuminanceInflight.get(key);
+      const inflight = this.sceneLuminanceInflight.get(key);
+      if (inflight && !inflight.signal?.aborted) return inflight.promise;
       const pending = (async () => {
-        const source = await this.loadProxy(sessionId, "hdr", longEdge, geometrySignature, editRevision);
+        const source = await this.loadProxy(
+          sessionId, "hdr", longEdge, geometrySignature, editRevision, "source", { signal, isCurrent },
+        );
+        if (!source || signal?.aborted || !isCurrent()) return null;
         const texture = this.createMaskTexture(source.width, source.height);
         const params = this.createStorageBuffer(new Float32Array(4));
         this.device.queue.writeBuffer(params, 0, new Float32Array(4));
@@ -7502,18 +7606,23 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         }
         return { ...entry, created: true };
       })();
-      this.sceneLuminanceInflight.set(key, pending);
+      const record = { promise: pending, signal };
+      this.sceneLuminanceInflight.set(key, record);
       try {
         return await pending;
       } finally {
-        this.sceneLuminanceInflight.delete(key);
+        if (this.sceneLuminanceInflight.get(key) === record) this.sceneLuminanceInflight.delete(key);
       }
     }
 
-    async loadGpuLumaMask(sessionId, local, longEdge, editRevision, geometrySignature, isCurrent = () => true) {
+    async loadGpuLumaMask(
+      sessionId, local, longEdge, editRevision, geometrySignature, isCurrent = () => true, signal = undefined,
+    ) {
       const startedAt = performance.now();
-      const scene = await this.loadSceneLuminance(sessionId, longEdge, editRevision, geometrySignature);
-      if (!isCurrent()) return null;
+      const scene = await this.loadSceneLuminance(
+        sessionId, longEdge, editRevision, geometrySignature, isCurrent, signal,
+      );
+      if (!scene || signal?.aborted || !isCurrent()) return null;
       const baseSignature = gpuLumaBaseIdentity(local.mask);
       const key = `${sessionId}:${longEdge}:${geometrySignature}:gpu-luma:${baseSignature}`;
       let entry = this.localMasks.get(key);

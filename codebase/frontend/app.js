@@ -1,6 +1,6 @@
 const desktop = window.hdrFinisherDesktop || null;
 const FINE_ADJUSTMENT_SCALE = 0.1;
-// Deferred follow-up delays (Phase 2 item 8): the pan follow-up fires shortly
+// Deferred follow-up delays: the pan follow-up fires shortly
 // after the scroll pauses; the whole-frame catch-up waits longer so it never
 // competes with the pan it follows. Declared before boot() runs, because the
 // coordinator is constructed during it.
@@ -417,7 +417,7 @@ const state = {
   scopeGeneration: 0,
   previewResolution: DEFAULT_PREVIEW_RESOLUTION,
   previewResolutionOverride: false,
-  // P5 (Preview Responsiveness Tuning Sprint): the single opt-in "Faster
+  // The single opt-in "Faster
   // dragging on slower hardware". Off, every drag frame is exact; on, the
   // latency controller may show a softer frame while a gesture is active.
   fasterDragging: false,
@@ -439,13 +439,13 @@ const state = {
   gpuFailurePolicy: null,
   gpuRebuildAttempts: 0,
   gpuRenderRetries: 0,
-  // Phase 2 ROI switch. "fit" keeps the app on whole-frame rendering (the
+  // ROI rendering switch. "fit" keeps the app on whole-frame rendering (the
   // shipped behaviour); "refinement" limits the refinement-tier pass to the
   // visible region and keeps the retained frame everywhere else. Interactive
   // pan and zoom are never ROI-limited, so they cannot show a gap.
   roiPreviewMode: "fit",
   roiCatchUpError: null,
-  // Phase 2 item 8, the display-scale pan cache. A pan is a compositor
+  // Display-scale pan cache. A pan is a compositor
   // operation, but a scroll can expose a strip that was never refined for the
   // current generation. The coordinator asks for a refinement pass limited to
   // the new visible region once the scroll pauses; the renderer reuses every
@@ -470,13 +470,13 @@ const state = {
   compareHoldTimer: null,
   compareHeld: false,
   comparePeekActive: false,
-  // Phase 5 item 5: a peek asked for before the inactive lane was prepared.
+  // A peek asked for before the inactive lane was prepared.
   // It completes when the explicit preload lands, if the hold is still down.
   comparePendingPeek: false,
   compareLayout: "single",
   // What the comparison pane is actually showing, as opposed to what the
   // primary pane is. The two are rendered by different calls at different
-  // times and, since Phase 1 let the primary pane hold any selected tier, at
+  // times, and the primary pane may hold any selected tier at
   // different resolutions. Recording it is what lets the UI say so.
   comparisonPresentation: null,
   comparisonRenderedLane: null,
@@ -2214,7 +2214,7 @@ function initializePreviewScheduler() {
     highQuality: () => previewNeedsRefinement(),
     onFrame: async (task) => {
       if (state.localMaskDraftDirty) return false;
-      // P5: a softer frame is only for an active gesture with Faster
+      // A softer frame is only for an active gesture with Faster
       // dragging on. A frame that runs after release (a coalesced one, or an
       // edit with no gesture) is exact, so nothing coarse follows the release.
       const gesture = Boolean(state.previewScheduler?.interacting);
@@ -2252,7 +2252,7 @@ function initializePreviewScheduler() {
         // reaches the canvas (see renderGpuDraftInner's isCurrent).
         reason: decision.coarse ? "drag-coarse" : undefined,
       });
-      // P6: at most one drag frame on the GPU. The next frame waits for this
+      // At most one drag frame may be on the GPU. The next frame waits for this
       // one to finish on the device, not merely to be submitted, so rapid
       // input coalesces to the newest task instead of queueing obsolete
       // frames (up to seven were measured in flight at 200%).
@@ -2275,7 +2275,7 @@ function initializePreviewScheduler() {
     onRefine: (task) => refinePreview(task.lane, task),
     onInactive: (task) => preloadInactiveLane(task.lane, task.applicationGeneration),
   });
-  // Phase 2 work item 1: the coordinator owns generations, cancellation
+  // The coordinator owns generations, cancellation
   // tokens, priority, one-in-flight/one-latest coalescing, presentation
   // bookkeeping and the deferred follow-ups. app.js supplies the renderer call
   // and the state it presents, and emits intent for everything else.
@@ -2330,11 +2330,11 @@ function initializePreviewScheduler() {
       else stopPreviewWatchdog();
       return state.previewWatchdogTimer !== 0;
     },
-    // Phase 2 work item 9: legacy-versus-ROI A/B over the visible region.
+    // Legacy-versus-ROI diagnostic A/B over the visible region.
     roiParity: (options = {}) => runRoiParity(options),
     gpuSnapshot: () => state.gpuPreview?.diagnosticsSnapshot?.() || null,
     enableGpuInstrumentation: (enabled = true) => state.gpuPreview?.setInstrumentationEnabled?.(enabled),
-    // Phase 5 item 4 A/B: "stream" (default), "single", or the legacy "strips".
+    // Source transport A/B: "stream" (default), "single", or legacy "strips".
     setSourceTransport: (mode) => state.gpuPreview?.setSourceTransport?.(mode) || null,
     sourceTransportMode: () => state.gpuPreview?.sourceTransportMode || null,
     renderGpuTier: (longEdge) => renderGpuDraft(state.currentView, {
@@ -2369,7 +2369,7 @@ function initializePreviewScheduler() {
     measureExactPeak: (options = {}) => measureExactScopePeak(options),
     tiledExecutionMetrics: () => state.gpuPreview?.tiledExecutionMetrics || null,
     denoiseInputStats: () => state.denoiseInputQueue?.stats || null,
-    // Phase 2 ROI switch. "fit" (default) keeps whole-frame rendering;
+    // ROI rendering switch. "fit" (default) keeps whole-frame rendering;
     // "refinement" limits the refinement-tier pass to the visible region.
     setRoiPreviewMode: (mode) => {
       state.roiPreviewMode = mode === "refinement" ? "refinement" : "fit";
@@ -2397,7 +2397,7 @@ function initializePreviewScheduler() {
         ? !state.renderCoordinator.catchUpPending(state.currentView)
         : true;
     },
-    // Phase 2 item 8 diagnostics: the deferred pan follow-up and the cache
+    // Deferred pan diagnostics and the cache
     // evidence the renderer reports through tiledExecutionMetrics.
     roiPanState: () => ({
       timerPending: state.renderCoordinator
@@ -2425,7 +2425,7 @@ function initializePreviewScheduler() {
         width: Math.max(1, Math.round(source.width * ratio)),
         height: Math.max(1, Math.round(source.height * ratio)),
       };
-      // Phase 3 item 3: the request declares the processing scale the graph will
+      // The request declares the processing scale the graph will
       // run at. It is the same contract the renderer and the CPU reference
       // derive, so a request can never describe a scale the pass did not use.
       const scale = window.HDRGraphScale?.processingScaleFor
@@ -2696,7 +2696,7 @@ function applyLayoutState() {
 /**
  * Technical and Diagnostics are readouts, not scopes; they share one panel.
  *
- * P5 (Preview Responsiveness Tuning Sprint, ledger 9.6): Technical is a short
+ * Technical is a short
  * plain-language list that fits the panel at its minimum height. Diagnostics
  * is the full list it used to be.
  */
@@ -3625,7 +3625,7 @@ function bindEvents() {
     updateNavigationViewport();
     // The pan itself is compositor-only; this updates the coordinator's
     // viewport model and schedules the deferred follow-up that refines a newly
-    // exposed strip (Phase 2 pan cache).
+    // exposed strip.
     state.renderCoordinator?.noteViewport(
       state.currentView,
       visibleOutputRect(els.previewCanvas.width, els.previewCanvas.height),
@@ -4460,14 +4460,14 @@ async function requestRoiPanRefinement() {
 }
 
 /**
- * Phase 2 work item 9: the legacy-versus-ROI A/B path.
+ * The legacy-versus-ROI diagnostic A/B path.
  *
  * Renders the same edit both ways at the same tier and compares the visible
  * region pointwise through the frozen request contract. The generation is
  * bumped between the two passes so the ROI pass re-renders the region instead
  * of reusing the legacy pass's accepted tiles; the graph and edit state are
  * identical, so the route is the only difference under test. The tolerance is
- * supplied by the caller because the Phase 0 per-module tolerance sign-off is
+ * supplied by the caller because each module's tolerance is
  * still outstanding.
  */
 async function runRoiParity(options = {}) {
@@ -5103,7 +5103,7 @@ function bootstrapProxyLongEdge() {
 }
 
 function interactiveProxyLongEdge() {
-  // PRD 2.2 and the Phase 1 exit gate: once the selected tier has produced a
+  // Once the selected tier has produced a
   // valid result, a gesture may not change the processing resolution. The
   // previous display-bounded 512-1024 proxy is now the bootstrap path only.
   if (selectedTierReady()) return requiredProcessingLongEdge();
@@ -5123,7 +5123,7 @@ function previewGraphTimingKey(lane = state.currentView) {
 /**
  * The latency controller's preference for the current setting.
  *
- * P5 (Preview Responsiveness Tuning Sprint) replaced the three-way preview
+ * The preview policy uses
  * response menu with one opt-in. Off is the old Precise: every frame exact,
  * no coarse pass. On is the old Balanced: the controller may choose a coarse
  * scale when its timing evidence says an exact frame would be slow.
@@ -5196,7 +5196,7 @@ function settledProxyLongEdge() {
   if (resident) return resident;
   // The settled pass always aims at the selected tier. Stopping short of it
   // here is what produced the old "low while dragging, high once it settles"
-  // jump that this sprint removes.
+  // jump that the current policy prevents.
   return Math.round(requiredProcessingLongEdge());
 }
 
@@ -5409,7 +5409,7 @@ async function renderPreviewForLane(
     if (displayWhenReady && requestIsCurrent()) {
       const detail = payload?.detail || "Preview failed to render.";
       setPreviewError(detail);
-      // PRD 2.3 and the Phase 1 exit gate: a CPU preview failure moves the
+      // A CPU preview failure moves the
       // viewer to Unavailable and keeps the last valid presentation. Clearing
       // the image here destroyed a good frame because a later one failed.
       if (state.acceptedPresentation?.lane === lane) markPreviewUnavailable(detail);
@@ -5701,7 +5701,7 @@ async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 16
 
 function refreshScopes(longEdge = 960, { tier = "settled", generation = null, lane = state.currentView } = {}) {
   if (!state.session || geometryDraftActive()) return Promise.resolve(false);
-  // P5/P6: a live GPU scope during a drag reads the presented canvas, not the
+  // A live GPU scope during a drag reads the presented canvas, not the
   // backend's copy, so it does not wait for a save round trip. Waiting put its
   // readback on the GPU beside the next drag frame. The save still runs at
   // release and in the settled pass, and a CPU scope still saves first.
@@ -5796,7 +5796,7 @@ async function runGpuScopeRequest(request) {
   const sampleHeight = tier === "interactive"
     ? state.scopeQuality === "performance" ? 128 : state.scopeQuality === "reference" ? 256 : 192
     : state.scopeQuality === "performance" ? 256 : state.scopeQuality === "reference" ? 512 : 384;
-  // P6: a live scope never shares the GPU with a drag frame. The scheduler
+  // A live scope never shares the GPU with a drag frame. The scheduler
   // starts it in the gap after a frame; if a frame has started since, this
   // pass stands down and the next one (at most 100 ms later) runs instead.
   if (tier === "interactive" && state.previewScheduler?.frameInFlight) {
@@ -8135,21 +8135,29 @@ async function renderPerspectiveDraftPreview() {
   const isCurrent = () => state.perspectiveMode && controller === state.perspectivePreviewController
     && state.session?.session_id === sessionId && state.currentView === lane
     && signature === JSON.stringify(state.adjustments.shared.geometry);
-  const response = await fetch(`/api/session/${state.session.session_id}/preview/${state.currentView}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      adjustments: state.adjustments,
-      transient_adjustments: true,
-      edit_revision: state.editRevision,
-      include_locals: !state.compareWithoutLocals,
-      local_adjustments: state.compareWithoutLocals ? [] : localAdjustments(),
-      long_edge: perspectiveDraftLongEdge(),
-      hdr_display: mediaQueryMatch("(dynamic-range: high)"),
-      tier: "interactive",
-    }),
-    signal: controller.signal,
-  }).catch((error) => error.name === "AbortError" ? null : null);
+  let response;
+  try {
+    response = await fetch(`/api/session/${state.session.session_id}/preview/${state.currentView}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        adjustments: state.adjustments,
+        transient_adjustments: true,
+        edit_revision: state.editRevision,
+        include_locals: !state.compareWithoutLocals,
+        local_adjustments: state.compareWithoutLocals ? [] : localAdjustments(),
+        long_edge: perspectiveDraftLongEdge(),
+        hdr_display: mediaQueryMatch("(dynamic-range: high)"),
+        tier: "interactive",
+      }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error?.name === "AbortError" || !isCurrent()) return;
+    console.error(error);
+    els.perspectiveStatus.textContent = error?.message || "Perspective preview failed.";
+    return;
+  }
   if (!response || !isCurrent()) return;
   if (!response.ok) {
     const payload = await safeJson(response);
@@ -11432,7 +11440,7 @@ async function renderGpuDraftInner(
       && generation === state.previewGeneration[lane]
       && requestedGeometrySignature === geometrySignature()
       && (allowInactive || lane === state.currentView)
-      // P5: a softer drag frame is never shown after release. One still on
+      // A softer drag frame is never shown after release. One still on
       // the GPU when the pointer lifts is dropped before it reaches the
       // canvas; the settled pass that follows the release draws full detail.
       && !(request.coarse && request.reason === "drag-coarse" && !state.previewScheduler?.interacting),
@@ -11488,7 +11496,7 @@ async function renderGpuDraftInner(
     );
     const exactEdge = refinementProxyLongEdge();
     const visibleEdge = Math.min(exactEdge, Math.max(1, displayedLongEdge()));
-    // Total wall time is the model input on purpose. Phase 5 checked feeding
+    // Total wall time is the model input on purpose. Feeding
     // the renderer's graph-only stage time here (source and mask waits
     // excluded): at 42 MP it made the controller skip the coarse frame
     // entirely at warm 50%, because a scale change always pays a fresh source
@@ -12561,7 +12569,7 @@ async function showCachedPreview(lane) {
 }
 
 /**
- * Phase 5 item 5: whether the editor is actually idle.
+ * Whether the editor is actually idle.
  *
  * The inactive lane's preparation is a whole-frame proxy upload for a lane
  * nobody is looking at. `requestIdleCallback` fires on any quiet moment in the
@@ -12652,7 +12660,7 @@ function renderCompareStatus() {
   const other = state.currentView === "hdr" ? "sdr" : "hdr";
   const ready = cacheReady(other);
   els.compareLayoutButtons.forEach((button) => { button.disabled = false; });
-  // Phase 5 item 5: readiness no longer gates the control. Inactive-lane work
+  // Readiness does not gate the control. Inactive-lane work
   // is deferred to true idle, so disabling the control would make the
   // deferral unreachable; an explicit click or held comparison starts the
   // load now instead. `dataset.prepared` keeps the state observable to
@@ -15987,7 +15995,7 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
       renderOverlayPresetNote();
       updateExportAvailability();
     }
-    // P5 (Preview Responsiveness Tuning Sprint): a global-edit save used to
+    // A global-edit save used to
     // start a new render generation for values already on screen, both during
     // a drag (the scope pass saves) and after release, where it cost a
     // duplicate render and the settle debounce before the settled pass.

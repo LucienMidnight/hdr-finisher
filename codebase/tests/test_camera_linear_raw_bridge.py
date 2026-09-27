@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from hdr_finisher import raw_import
 from hdr_finisher.models import (
     LensCorrectionSettings,
     RawHighlightReconstructionSettings,
@@ -106,6 +107,50 @@ def _install_rawpy(
     monkeypatch.setitem(sys.modules, "rawpy", fake_rawpy)
     monkeypatch.setattr("hdr_finisher.raw_import._read_raw_exif", lambda _path: ({}, None))
     return calls, FakeRaw
+
+
+def test_decode_raw_is_only_the_ordered_phase_coordinator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[str] = []
+    inspection = object()
+    plan = object()
+    decoded = object()
+    image = np.zeros((1, 1, 3), dtype=np.float32)
+    corrected = SimpleNamespace(image=image)
+    metadata = {"raw_input": True}
+
+    monkeypatch.setattr(
+        raw_import,
+        "_inspect_raw",
+        lambda *_args, **_kwargs: events.append("inspect") or inspection,
+    )
+    monkeypatch.setattr(
+        raw_import,
+        "_build_raw_decode_plan",
+        lambda _settings, value: events.append("plan") or (plan if value is inspection else None),
+    )
+    monkeypatch.setattr(
+        raw_import,
+        "_execute_raw_decode",
+        lambda *_args, **_kwargs: events.append("execute") or decoded,
+    )
+    monkeypatch.setattr(
+        raw_import,
+        "_apply_raw_corrections",
+        lambda *_args, **_kwargs: events.append("correct") or corrected,
+    )
+    monkeypatch.setattr(
+        raw_import,
+        "_build_raw_provenance",
+        lambda *_args, **_kwargs: events.append("provenance") or metadata,
+    )
+
+    actual_image, actual_metadata = decode_raw(tmp_path / "source.raw", RawImportSettings())
+
+    assert events == ["inspect", "plan", "execute", "correct", "provenance"]
+    assert actual_image is image
+    assert actual_metadata is metadata
 
 
 def test_bridge_uses_exact_neutral_libraw_contract_and_records_transport(

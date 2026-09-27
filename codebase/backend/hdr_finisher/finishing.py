@@ -677,7 +677,7 @@ def _resize_lanczos(image: np.ndarray, width: int, height: int) -> np.ndarray:
     channels: list[np.ndarray] = []
     for index in range(image.shape[2]):
         source = image[..., index].astype(np.float32, copy=False)
-        resized = Image.fromarray(source, mode="F").resize((width, height), Image.Resampling.LANCZOS)
+        resized = Image.fromarray(source).resize((width, height), Image.Resampling.LANCZOS)
         channel = np.asarray(resized, dtype=np.float32)
         channels.append(np.clip(channel, float(np.min(source)), float(np.max(source))))
     return np.stack(channels, axis=-1).astype(np.float32)

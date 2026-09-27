@@ -575,7 +575,7 @@ def _load_heif(
             base_linear_p3.copy(), _linear_display_p3_to_linear_srgb, cancelled=cancelled
         )
         resized_gainmap = np.asarray(
-            Image.fromarray(np.clip(aux_array, 0.0, 1.0), mode="F").resize(
+            Image.fromarray(np.clip(aux_array, 0.0, 1.0)).resize(
                 (base_array.shape[1], base_array.shape[0]),
                 resample=Image.Resampling.LANCZOS,
             ),

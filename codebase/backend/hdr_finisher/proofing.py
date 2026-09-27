@@ -27,7 +27,6 @@ from .gainmap_decoders import parse_jpeg_gain_map_probe
 from .models import (
     BrowserEvidenceRecord,
     BrowserEvidenceResponse,
-    ExportSettings,
     JPEGGainMapProofMetadata,
     PreviewKind,
     ProofArtifactRequest,
@@ -217,23 +216,7 @@ class ProofArtifactStore:
         # staging target so concurrent/retried builds cannot collide, and allow
         # the exporter to replace that owned target if it created a partial file.
         staged = self.root / f"request-{signature}-{uuid4().hex}{suffix}"
-        export_settings = ExportSettings(
-            format=request.format,
-            quality=request.quality,
-            jpeg_gain_map_quality=request.jpeg_gain_map_quality,
-            jpeg_gain_map_scale=request.jpeg_gain_map_scale,
-            jpeg_chroma_subsampling=request.jpeg_chroma_subsampling,
-            avif_bit_depth=request.avif_bit_depth,
-            avif_chroma_subsampling=request.avif_chroma_subsampling,
-            avif_gain_map_chroma_subsampling=request.avif_gain_map_chroma_subsampling,
-            avif_gain_map_quality=request.avif_gain_map_quality,
-            avif_gain_map_scale=request.avif_gain_map_scale,
-            jpegxl_precision=request.jpegxl_precision,
-            dithering=request.dithering,
-            output_path=str(staged),
-            overwrite=True,
-            output_finishing=request.output_finishing,
-        )
+        export_settings = request.to_export_settings(str(staged))
         try:
             result = backend.export(
                 proxy_session,

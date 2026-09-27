@@ -92,6 +92,42 @@ class LensProfileRecord:
         return self.__dict__.copy()
 
 
+@dataclass(frozen=True)
+class _RawInspection:
+    exif: dict[str, Any]
+    exif_warning: dict[str, Any] | None
+    dng_inspection: LinearDngInspection | None
+    opcode_plan: bool
+
+
+@dataclass(frozen=True)
+class _RawDecodePlan:
+    rawpy: Any
+    opcode_plan: bool
+
+
+@dataclass
+class _RawDecodeResult:
+    developed: np.ndarray
+    exif: dict[str, Any]
+    is_mosaiced: bool
+    camera_white_balance: list[float] | None
+    daylight_white_balance: list[float] | None
+    sizes: Any
+    bridge_metadata: CameraLinearMetadata | None = None
+    legacy_fallback_reason: str | None = None
+    bridge_transport_diagnostics: dict[str, list[int]] | None = None
+    highlight_reconstruction_diagnostics: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class _RawCorrectionResult:
+    image: np.ndarray
+    lens_settings: LensCorrectionSettings
+    lens_metadata: dict[str, Any]
+    opcode_audit: dict[str, Any] | None
+
+
 def decode_raw(
     path: Path,
     settings: RawImportSettings,
@@ -100,13 +136,43 @@ def decode_raw(
     cancelled: Callable[[], bool] | None = None,
     dng_inspection: LinearDngInspection | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
+    inspection = _inspect_raw(path, dng_inspection=dng_inspection, progress=progress, cancelled=cancelled)
+    plan = _build_raw_decode_plan(settings, inspection)
+    decoded = _execute_raw_decode(path, settings, inspection, plan, progress=progress, cancelled=cancelled)
+    corrected = _apply_raw_corrections(
+        path,
+        settings,
+        inspection,
+        plan,
+        decoded,
+        progress=progress,
+        cancelled=cancelled,
+    )
+    metadata = _build_raw_provenance(path, settings, inspection, plan, decoded, corrected)
+    return corrected.image, metadata
+
+
+def _inspect_raw(
+    path: Path,
+    *,
+    dng_inspection: LinearDngInspection | None,
+    progress: Callable[[str, str], None] | None,
+    cancelled: Callable[[], bool] | None,
+) -> _RawInspection:
     _raise_if_cancelled(cancelled)
     if progress:
         progress("raw_metadata", "Reading camera and lens metadata")
     exif, exif_warning = _read_raw_exif(path)
     _raise_if_cancelled(cancelled)
     opcode_plan = bool(dng_inspection and dng_inspection.required_opcodes)
-    if opcode_plan and settings.lens.mode == "manual" and (
+    return _RawInspection(exif, exif_warning, dng_inspection, opcode_plan)
+
+
+def _build_raw_decode_plan(
+    settings: RawImportSettings,
+    inspection: _RawInspection,
+) -> _RawDecodePlan:
+    if inspection.opcode_plan and settings.lens.mode == "manual" and (
         settings.lens.distortion or settings.lens.chromatic_aberration or settings.lens.vignetting
     ):
         raise RawImportError(
@@ -117,7 +183,20 @@ def decode_raw(
         import rawpy
     except ImportError as exc:
         raise RawImportError("RAW/DNG input requires the bundled rawpy/LibRaw decoder.") from exc
+    return _RawDecodePlan(rawpy, inspection.opcode_plan)
 
+
+def _execute_raw_decode(
+    path: Path,
+    settings: RawImportSettings,
+    inspection: _RawInspection,
+    plan: _RawDecodePlan,
+    *,
+    progress: Callable[[str, str], None] | None,
+    cancelled: Callable[[], bool] | None,
+) -> _RawDecodeResult:
+    rawpy = plan.rawpy
+    exif = inspection.exif
     bridge_metadata: CameraLinearMetadata | None = None
     legacy_fallback_reason: str | None = None
     bridge_transport_diagnostics: dict[str, list[int]] | None = None
@@ -132,7 +211,7 @@ def decode_raw(
             camera_white_balance = _float_list(getattr(raw, "camera_whitebalance", None))
             daylight_white_balance = _float_list(getattr(raw, "daylight_whitebalance", None))
             sizes = getattr(raw, "sizes", None)
-            if opcode_plan:
+            if plan.opcode_plan:
                 version = tuple(int(item) for item in rawpy.libraw_version)
                 if version not in VERIFIED_LIBRAW_IGNORES_OPCODE_LIST3:
                     raise RawImportError(
@@ -180,17 +259,44 @@ def decode_raw(
         raise
     except Exception as exc:
         raise RawImportError(f"LibRaw could not develop {path.suffix.upper()} input: {exc}") from exc
+    return _RawDecodeResult(
+        developed=developed,
+        exif=exif,
+        is_mosaiced=is_mosaiced,
+        camera_white_balance=camera_white_balance,
+        daylight_white_balance=daylight_white_balance,
+        sizes=sizes,
+        bridge_metadata=bridge_metadata,
+        legacy_fallback_reason=legacy_fallback_reason,
+        bridge_transport_diagnostics=bridge_transport_diagnostics,
+        highlight_reconstruction_diagnostics=highlight_reconstruction_diagnostics,
+    )
 
+
+def _apply_raw_corrections(
+    path: Path,
+    settings: RawImportSettings,
+    inspection: _RawInspection,
+    plan: _RawDecodePlan,
+    decoded: _RawDecodeResult,
+    *,
+    progress: Callable[[str, str], None] | None,
+    cancelled: Callable[[], bool] | None,
+) -> _RawCorrectionResult:
+    rawpy = plan.rawpy
     _raise_if_cancelled(cancelled)
     opcode_audit: dict[str, Any] | None = None
-    if opcode_plan:
+    if plan.opcode_plan:
         from .dng_color import build_color_transform, transform_normalized_to_acescg_in_place
         from .dng_opcodes import apply_opcode_list3
         from .linear_dng import color_metadata_from_mapping, crop_and_orient
 
-        camera_linear = np.asarray(developed).astype(np.float32)
+        dng_inspection = inspection.dng_inspection
+        if dng_inspection is None:
+            raise RawImportError("Mandatory DNG operation plan is missing its inspection metadata.")
+        camera_linear = np.asarray(decoded.developed).astype(np.float32)
         camera_linear *= np.float32(1.0 / 65535.0)
-        del developed
+        decoded.developed = np.empty((0,), dtype=np.uint16)
         if progress:
             progress("dng_opcodes", "Experimental DNG Import: applying mandatory DNG operations")
         camera_linear, opcode_diagnostics = apply_opcode_list3(
@@ -216,23 +322,23 @@ def decode_raw(
             "application_stage": "camera_linear_after_demosaic_before_dng_color_transform",
             "operations": list(opcode_diagnostics),
         }
-    elif bridge_metadata is not None:
+    elif decoded.bridge_metadata is not None:
         camera_linear = _normalize_camera_rgb_float32(
-            developed, bridge_metadata, cancelled=cancelled
+            decoded.developed, decoded.bridge_metadata, cancelled=cancelled
         )
-        del developed
+        decoded.developed = np.empty((0,), dtype=np.uint16)
         if progress:
             progress("color_conversion", "Applying RAW white balance and converting camera RGB to ACEScg")
         image = _camera_rgb_to_acescg_float32(
-            camera_linear, bridge_metadata, cancelled=cancelled
+            camera_linear, decoded.bridge_metadata, cancelled=cancelled
         )
     else:
-        aces2065 = np.asarray(developed).astype(np.float32)
+        aces2065 = np.asarray(decoded.developed).astype(np.float32)
         aces2065 *= np.float32(1.0 / 65535.0)
-        del developed
+        decoded.developed = np.empty((0,), dtype=np.uint16)
     lens_metadata: dict[str, Any] = {}
     lens_settings = settings.lens
-    if opcode_plan and lens_settings.mode == "auto":
+    if plan.opcode_plan and lens_settings.mode == "auto":
         lens_settings = lens_settings.model_copy(update={"mode": "off"})
         lens_metadata = {
             "mode": "off",
@@ -240,43 +346,55 @@ def decode_raw(
             "applied": False,
             "reason": "Automatic Lensfun correction was disabled because mandatory DNG corrections were applied.",
         }
-    elif path.suffix.lower() == ".dng" and not is_mosaiced and lens_settings.mode == "auto":
+    elif path.suffix.lower() == ".dng" and not decoded.is_mosaiced and lens_settings.mode == "auto":
         lens_settings = lens_settings.model_copy(update={"mode": "off"})
     lens_settings = lens_settings.model_copy(
         update={
-            "focal_length_mm": lens_settings.focal_length_mm or exif.get("focal_length_mm"),
-            "aperture": lens_settings.aperture or exif.get("aperture"),
-            "focus_distance_m": lens_settings.focus_distance_m or exif.get("focus_distance_m"),
+            "focal_length_mm": lens_settings.focal_length_mm or decoded.exif.get("focal_length_mm"),
+            "aperture": lens_settings.aperture or decoded.exif.get("aperture"),
+            "focus_distance_m": lens_settings.focus_distance_m or decoded.exif.get("focus_distance_m"),
         }
     )
     if lens_settings.mode != "off":
         if progress:
             progress("lens_correction", "Applying selected Lensfun corrections")
-        lens_input = aces2065 if not opcode_plan and bridge_metadata is None else image
+        lens_input = aces2065 if not plan.opcode_plan and decoded.bridge_metadata is None else image
         lens_output, lens_metadata = apply_lens_correction(
             lens_input,
             lens_settings,
-            camera_maker=exif.get("camera_maker"),
-            camera_model=exif.get("camera_model"),
-            lens_maker=exif.get("lens_maker"),
-            lens_name=exif.get("lens_model") or exif.get("lens_name"),
+            camera_maker=decoded.exif.get("camera_maker"),
+            camera_model=decoded.exif.get("camera_model"),
+            lens_maker=decoded.exif.get("lens_maker"),
+            lens_name=decoded.exif.get("lens_model") or decoded.exif.get("lens_name"),
             cancelled=cancelled,
         )
-        if not opcode_plan and bridge_metadata is None:
+        if not plan.opcode_plan and decoded.bridge_metadata is None:
             aces2065 = lens_output
         else:
             image = lens_output
     _raise_if_cancelled(cancelled)
-    if not opcode_plan and bridge_metadata is None:
+    if not plan.opcode_plan and decoded.bridge_metadata is None:
         if progress:
             progress("color_conversion", "Converting linear ACES2065-1 to ACEScg")
         image = transform_float32_bounded(
             aces2065, aces2065_to_acescg, cancelled=cancelled
         )
+    return _RawCorrectionResult(image, lens_settings, lens_metadata, opcode_audit)
+
+
+def _build_raw_provenance(
+    path: Path,
+    settings: RawImportSettings,
+    inspection: _RawInspection,
+    plan: _RawDecodePlan,
+    decoded: _RawDecodeResult,
+    corrected: _RawCorrectionResult,
+) -> dict[str, Any]:
+    rawpy = plan.rawpy
     rawpy_version = str(getattr(rawpy, "__version__", "unknown"))
     libraw_version_value = getattr(rawpy, "libraw_version", ())
     libraw_version = ".".join(map(str, libraw_version_value)) if libraw_version_value else "unknown"
-    if opcode_plan:
+    if plan.opcode_plan:
         bit_depth = "16-bit LibRaw linear development"
         raw_development: dict[str, Any] = {
             "white_balance": settings.white_balance,
@@ -285,20 +403,20 @@ def decode_raw(
             "highlight_mode": "clip",
             "output_space": "ACES2065-1",
         }
-    elif bridge_metadata is not None:
+    elif decoded.bridge_metadata is not None:
         bit_depth = "16-bit LibRaw camera-RGB transport; float32 color development"
         raw_development = _bridge_provenance(
-            bridge_metadata,
+            decoded.bridge_metadata,
             rawpy_version=rawpy_version,
             libraw_version=libraw_version,
-            transport_diagnostics=bridge_transport_diagnostics or {},
-            highlight_reconstruction=highlight_reconstruction_diagnostics or {},
+            transport_diagnostics=decoded.bridge_transport_diagnostics or {},
+            highlight_reconstruction=decoded.highlight_reconstruction_diagnostics or {},
         )
     else:
         bit_depth = "16-bit LibRaw linear development; float32 ACEScg conversion"
         raw_development = {
             "pipeline": LEGACY_RAW_PIPELINE,
-            "fallback_reason": legacy_fallback_reason or "camera-linear bridge qualification unavailable",
+            "fallback_reason": decoded.legacy_fallback_reason or "camera-linear bridge qualification unavailable",
             "decoder": "LibRaw",
             "rawpy_version": rawpy_version,
             "libraw_version": libraw_version,
@@ -315,50 +433,50 @@ def decode_raw(
         "raw_input": True,
         "dng_input": path.suffix.lower() == ".dng",
         "raw_convenience_beta": True,
-        "raw_mosaiced": is_mosaiced,
+        "raw_mosaiced": decoded.is_mosaiced,
         "raw_development": raw_development,
-        "camera_white_balance": camera_white_balance,
-        "daylight_white_balance": daylight_white_balance,
-        "raw_sizes": _sizes_payload(sizes),
-        "raw_exif": exif,
-        "lens_correction": lens_metadata or {"mode": lens_settings.mode, "applied": False},
+        "camera_white_balance": decoded.camera_white_balance,
+        "daylight_white_balance": decoded.daylight_white_balance,
+        "raw_sizes": _sizes_payload(decoded.sizes),
+        "raw_exif": decoded.exif,
+        "lens_correction": corrected.lens_metadata or {"mode": corrected.lens_settings.mode, "applied": False},
         "decoder_normalized_to_acescg": True,
     }
-    if exif_warning is not None:
-        metadata["raw_exif_warning"] = exif_warning
-    if not opcode_plan:
+    if inspection.exif_warning is not None:
+        metadata["raw_exif_warning"] = inspection.exif_warning
+    if not plan.opcode_plan:
         metadata["raw_pipeline"] = str(raw_development["pipeline"])
-        if legacy_fallback_reason is not None:
-            metadata["raw_fallback_reason"] = legacy_fallback_reason
+        if decoded.legacy_fallback_reason is not None:
+            metadata["raw_fallback_reason"] = decoded.legacy_fallback_reason
     metadata.update(
         {
             key: value
             for key, value in {
-                "camera_maker": exif.get("camera_maker"),
-                "camera_model": exif.get("camera_model"),
-                "lens_maker": exif.get("lens_maker"),
-                "lens": exif.get("lens_model") or exif.get("lens_name"),
-                "iso": exif.get("iso"),
-                "shutter_speed": exif.get("shutter_speed"),
-                "focal_length_mm": exif.get("focal_length_mm"),
-                "aperture": exif.get("aperture"),
+                "camera_maker": decoded.exif.get("camera_maker"),
+                "camera_model": decoded.exif.get("camera_model"),
+                "lens_maker": decoded.exif.get("lens_maker"),
+                "lens": decoded.exif.get("lens_model") or decoded.exif.get("lens_name"),
+                "iso": decoded.exif.get("iso"),
+                "shutter_speed": decoded.exif.get("shutter_speed"),
+                "focal_length_mm": decoded.exif.get("focal_length_mm"),
+                "aperture": decoded.exif.get("aperture"),
             }.items()
             if value not in (None, "")
         }
     )
-    if opcode_audit is not None:
+    if corrected.opcode_audit is not None:
         metadata.update(
             {
                 "experimental_dng_import": True,
                 "experimental_dng_label": "Experimental DNG Import",
                 "dng_route": "mosaiced_raw_dng",
                 "dng_color_path": "camera_linear_after_libraw_demosaic",
-                "dng_operations": " → ".join(item["name"] for item in opcode_audit["operations"]),
+                "dng_operations": " → ".join(item["name"] for item in corrected.opcode_audit["operations"]),
                 "dng_warnings": "Automatic Lensfun disabled to prevent duplicate correction.",
-                "dng_opcode_audit": opcode_audit,
+                "dng_opcode_audit": corrected.opcode_audit,
             }
         )
-    return image, metadata
+    return metadata
 
 
 def _develop_libraw_camera_rgb(raw: Any, rawpy: Any) -> np.ndarray:

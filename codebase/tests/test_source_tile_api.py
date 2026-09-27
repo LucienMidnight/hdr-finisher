@@ -38,7 +38,7 @@ def _large_png_bytes(width: int = 320, height: int = 240) -> bytes:
     blue = (np.abs(x - y) % 256.0).astype(np.float32)
     pixels = np.stack((red, green, blue), axis=-1).astype(np.uint8)
     buffer = io.BytesIO()
-    Image.fromarray(pixels, mode="RGB").save(buffer, format="PNG")
+    Image.fromarray(pixels).save(buffer, format="PNG")
     return buffer.getvalue()
 
 

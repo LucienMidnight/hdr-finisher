@@ -19,14 +19,16 @@ const path = require("node:path");
 const vm = require("node:vm");
 const { test } = require("node:test");
 
+const dispatched = [];
 const context = vm.createContext({
-  window: { dispatchEvent() {} },
+  window: { dispatchEvent(event) { dispatched.push(event); } },
   CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
   performance: { now: () => 1 },
   console,
   GPUTextureUsage: { COPY_SRC: 1, COPY_DST: 2, TEXTURE_BINDING: 4, STORAGE_BINDING: 8, RENDER_ATTACHMENT: 16 },
   GPUBufferUsage: { MAP_READ: 1, MAP_WRITE: 2, COPY_SRC: 4, COPY_DST: 8, UNIFORM: 64, STORAGE: 128, QUERY_RESOLVE: 512 },
 });
+vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend/render-failure.js"), "utf8"), context);
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend/graph-scale.js"), "utf8"), context);
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend/webgpu-preview.js"), "utf8"), context);
 const Preview = context.window.HDRWebGPUPreview;
@@ -115,6 +117,31 @@ test("a drag frame with nothing measured yet uses the estimate", async () => {
   const params = peakFitParams(3.79);
   const anchor = preview.highlightAnchorRequest("hdr", ADJUSTMENTS, original, params);
   assert.equal(await preview.resolveHighlightAnchor(anchor, original, params, { interactive: true, lane: "hdr" }), params[75]);
+});
+
+test("a failed deferred measurement keeps a bounded classified diagnostic and emits an event", async () => {
+  const { preview } = previewWithReductions([]);
+  preview.runPeakReduction = async () => { throw new Error("device lost during mapAsync"); };
+  const params = peakFitParams(3.79);
+  const anchor = preview.highlightAnchorRequest("hdr", ADJUSTMENTS, original, params);
+
+  assert.equal(await preview.resolveHighlightAnchor(anchor, original, params, { interactive: true, lane: "hdr" }), params[75]);
+  await preview.pendingHighlightMeasurement;
+
+  const failures = preview.diagnosticsSnapshot().highlightMeasurementFailures;
+  assert.equal(failures.length, 1);
+  assert.equal(failures[0].kind, "device-lost");
+  assert.match(failures[0].detail, /device lost/);
+  assert.equal(dispatched.at(-1).type, "hdrfinisher:highlight-anchor-measurement-failed");
+  assert.equal(dispatched.at(-1).detail.kind, "device-lost");
+
+  for (let index = 0; index < 45; index += 1) {
+    preview.recordHighlightMeasurementFailure(new Error(`failure ${index}`), {
+      lane: "hdr", key: `key-${index}`, used: 1,
+    });
+  }
+  assert.equal(preview.diagnosticsSnapshot().highlightMeasurementFailures.length, 40);
+  assert.equal(preview.diagnosticsSnapshot().highlightMeasurementFailures[0].key, "key-5");
 });
 
 test("a change to the authored source peak alone does not move a carried anchor", async () => {

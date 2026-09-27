@@ -9,6 +9,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 import subprocess
 from time import perf_counter
+from typing import Callable
 import zlib
 
 import numpy as np
@@ -204,6 +205,81 @@ def _render_export_branch(
     return apply_sdr_output_highlight_compression(image, adjustments)
 
 
+@dataclass(frozen=True)
+class _PreparedExport:
+    staging_suffix: str
+    write: Callable[[Path], None]
+    validate: Callable[[Path], str | None]
+
+
+def _execute_export(
+    backend: ExportBackend,
+    session: object,
+    settings: ExportSettings,
+    *,
+    suffix: str,
+    prepare: Callable[[], _PreparedExport],
+    success_message: Callable[[Path, str | None], str],
+    failure_prefix: str | None,
+    timings_ms: dict[str, float] | None = None,
+) -> ExportResponse:
+    """Run the shared prepare/write/validate/replace export lifecycle."""
+    output_path: Path | None = None
+    staged_output: Path | None = None
+    timings = timings_ms if timings_ms is not None else {}
+    try:
+        output_path = Path(
+            _resolve_output_path(getattr(session, "session_id", "session"), settings, suffix)
+        )
+        _require_overwrite_permission(output_path, settings)
+        prepared = prepare()
+        with NamedTemporaryFile(
+            prefix=f".{output_path.stem}.",
+            suffix=prepared.staging_suffix,
+            dir=output_path.parent,
+            delete=False,
+        ) as staged_file:
+            staged_output = Path(staged_file.name)
+        prepared.write(staged_output)
+        _fsync_path(staged_output)
+        validation = prepared.validate(staged_output)
+        os.replace(staged_output, output_path)
+        staged_output = None
+    except ExportOverwriteRequired:
+        raise
+    except (ExportProcessError, JPEGXLError, OSError, ValueError) as exc:
+        message = str(exc) if failure_prefix is None else f"{failure_prefix}: {exc}"
+        return ExportResponse(
+            accepted=False,
+            backend=backend.name,
+            message=message,
+            output_path=str(output_path) if output_path is not None else settings.output_path,
+            timings_ms=timings,
+        )
+    finally:
+        _remove_incomplete_output(staged_output)
+    return ExportResponse(
+        accepted=True,
+        backend=backend.name,
+        message=success_message(output_path, validation),
+        output_path=str(output_path),
+        timings_ms=timings,
+    )
+
+
+def _fsync_path(path: Path) -> None:
+    with path.open("ab") as handle:
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _validate_pillow_output(path: Path) -> None:
+    from PIL import Image
+
+    with Image.open(path) as decoded:
+        decoded.verify()
+
+
 class SDRPNGExportBackend(ExportBackend):
     name = "sdr_png"
 
@@ -211,34 +287,30 @@ class SDRPNGExportBackend(ExportBackend):
         if self.capability.status != CapabilityStatus.AVAILABLE:
             return ExportResponse(accepted=False, backend=self.name, message=self.capability.detail)
 
-        output_path = _resolve_output_path(getattr(session, "session_id", "session"), settings, ".png")
-        _require_overwrite_permission(Path(output_path), settings)
-        finishing_adjustments = _finishing_adjustments_for_export(session)
-        image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
-        try:
-            _write_sdr_atomic(
-                Path(output_path),
-                ".png",
+        def prepare() -> _PreparedExport:
+            finishing_adjustments = _finishing_adjustments_for_export(session)
+            image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
+            exif_payload = _source_exif_payload(session, settings.metadata_policy)
+            return _PreparedExport(
+                ".sdr.tmp.png",
                 lambda staged: _write_sdr_png(
                     staged,
                     image,
                     bit_depth=settings.sdr_png_bit_depth,
                     dithering=settings.dithering,
-                    exif_payload=_source_exif_payload(session, settings.metadata_policy),
+                    exif_payload=exif_payload,
                 ),
+                _validate_pillow_output,
             )
-        except (ExportProcessError, OSError, ValueError) as exc:
-            return ExportResponse(
-                accepted=False,
-                backend=self.name,
-                message=f"SDR PNG export failed: {exc}",
-                output_path=output_path,
-            )
-        return ExportResponse(
-            accepted=True,
-            backend=self.name,
-            message=f"SDR PNG exported to {output_path}",
-            output_path=output_path,
+
+        return _execute_export(
+            self,
+            session,
+            settings,
+            suffix=".png",
+            prepare=prepare,
+            success_message=lambda path, _validation: f"SDR PNG exported to {path}",
+            failure_prefix="SDR PNG export failed",
         )
 
 
@@ -249,35 +321,31 @@ class SDRJPEGExportBackend(ExportBackend):
         if self.capability.status != CapabilityStatus.AVAILABLE:
             return ExportResponse(accepted=False, backend=self.name, message=self.capability.detail)
 
-        output_path = _resolve_output_path(getattr(session, "session_id", "session"), settings, ".jpg")
-        _require_overwrite_permission(Path(output_path), settings)
-        finishing_adjustments = _finishing_adjustments_for_export(session)
-        image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
-        try:
-            _write_sdr_atomic(
-                Path(output_path),
-                ".jpg",
+        def prepare() -> _PreparedExport:
+            finishing_adjustments = _finishing_adjustments_for_export(session)
+            image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
+            exif_payload = _source_exif_payload(session, settings.metadata_policy)
+            return _PreparedExport(
+                ".sdr.tmp.jpg",
                 lambda staged: _write_sdr_jpeg(
                     staged,
                     image,
                     quality=settings.quality,
                     chroma_subsampling=settings.jpeg_chroma_subsampling,
                     dithering=settings.dithering,
-                    exif_payload=_source_exif_payload(session, settings.metadata_policy),
+                    exif_payload=exif_payload,
                 ),
+                _validate_pillow_output,
             )
-        except (ExportProcessError, OSError, ValueError) as exc:
-            return ExportResponse(
-                accepted=False,
-                backend=self.name,
-                message=f"SDR JPEG export failed: {exc}",
-                output_path=output_path,
-            )
-        return ExportResponse(
-            accepted=True,
-            backend=self.name,
-            message=f"SDR JPEG exported to {output_path}",
-            output_path=output_path,
+
+        return _execute_export(
+            self,
+            session,
+            settings,
+            suffix=".jpg",
+            prepare=prepare,
+            success_message=lambda path, _validation: f"SDR JPEG exported to {path}",
+            failure_prefix="SDR JPEG export failed",
         )
 
 
@@ -289,42 +357,31 @@ class SDRJPEGXLExportBackend(ExportBackend):
     def export(self, session: object, settings: ExportSettings) -> ExportResponse:
         if self.capability.status != CapabilityStatus.AVAILABLE:
             return ExportResponse(accepted=False, backend=self.name, message=self.capability.detail)
-        output_path = Path(_resolve_output_path(getattr(session, "session_id", "session"), settings, ".jxl"))
-        _require_overwrite_permission(output_path, settings)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        finishing_adjustments = _finishing_adjustments_for_export(session)
-        sdr_image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
-        staged_output: Path | None = None
-        try:
+
+        def prepare() -> _PreparedExport:
+            finishing_adjustments = _finishing_adjustments_for_export(session)
+            sdr_image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
             payload = encode_sdr_jpegxl(
                 sdr_image,
                 int(settings.quality),
                 dithering=settings.dithering,
                 exif_payload=_source_exif_payload(session, settings.metadata_policy),
             )
-            validation = validate_sdr_jpegxl(payload, sdr_image.shape[:2])
-            with NamedTemporaryFile(
-                prefix=f".{output_path.stem}.", suffix=".sdr.tmp.jxl", dir=output_path.parent, delete=False
-            ) as staged_file:
-                staged_output = Path(staged_file.name)
-                staged_file.write(payload)
-                staged_file.flush()
-                os.fsync(staged_file.fileno())
-            os.replace(staged_output, output_path)
-            staged_output = None
-        except (JPEGXLError, OSError, ValueError) as exc:
-            _remove_incomplete_output(staged_output)
-            return ExportResponse(
-                accepted=False,
-                backend=self.name,
-                message=f"JPEG XL SDR export failed: {exc}",
-                output_path=str(output_path),
+            shape = sdr_image.shape[:2]
+            return _PreparedExport(
+                ".sdr.tmp.jxl",
+                lambda staged: staged.write_bytes(payload),
+                lambda staged: validate_sdr_jpegxl(staged.read_bytes(), shape),
             )
-        return ExportResponse(
-            accepted=True,
-            backend=self.name,
-            message=f"JPEG XL SDR exported to {output_path}. {validation}",
-            output_path=str(output_path),
+
+        return _execute_export(
+            self,
+            session,
+            settings,
+            suffix=".jxl",
+            prepare=prepare,
+            success_message=lambda path, validation: f"JPEG XL SDR exported to {path}. {validation}",
+            failure_prefix="JPEG XL SDR export failed",
         )
 
 
@@ -343,110 +400,76 @@ class AVIFGainMapExportBackend(ExportBackend):
                 message="AVIF gain map export requires avifgainmaputil.",
             )
 
-        output_path = Path(_resolve_output_path(getattr(session, "session_id", "session"), settings, ".avif"))
-        _require_overwrite_permission(output_path, settings)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
         timings_ms: dict[str, float] = {}
-        finishing_adjustments = _finishing_adjustments_for_export(session)
-        phase_started = perf_counter()
-        hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
-        sdr_image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
-        timings_ms["render_renditions"] = round((perf_counter() - phase_started) * 1000.0, 3)
 
-        staged_output: Path | None = None
-        try:
-            with NamedTemporaryFile(
-                prefix=f".{output_path.stem}.", suffix=".gainmap.tmp.avif", dir=output_path.parent, delete=False
-            ) as staged_file:
-                staged_output = Path(staged_file.name)
-            with TemporaryDirectory(prefix="hdr_finisher_export_") as temp_dir_name:
-                temp_dir = Path(temp_dir_name)
-                base_y4m_path = temp_dir / "base_sdr.y4m"
-                hdr_y4m_path = temp_dir / "alternate_hdr.y4m"
-
-                phase_started = perf_counter()
-                _write_sdr_y4m(
-                    base_y4m_path,
-                    sdr_image,
-                    bit_depth=settings.avif_bit_depth,
-                    chroma_subsampling=settings.avif_chroma_subsampling,
-                    dithering=settings.dithering,
-                )
-                _write_hdr_y4m(
-                    hdr_y4m_path,
-                    hdr_image,
-                    bit_depth=settings.avif_bit_depth,
-                    # Gain-map computation needs an unreduced HDR reference.
-                    # The selected chroma still controls the delivered base and
-                    # final primary item below.
-                    chroma_subsampling="444",
-                    reference_white_nits=getattr(session, "hdr_reference_white_nits", 203),
-                )
-                timings_ms["prepare_y4m"] = round((perf_counter() - phase_started) * 1000.0, 3)
-                phase_started = perf_counter()
-                _run_command(
-                    [
-                        str(gainmaputil),
-                        "combine",
-                        str(base_y4m_path),
-                        # avifgainmaputil accepts Y4M directly. Passing the
-                        # authored HDR rendition avoids a redundant lossy AVIF
-                        # encode followed by an immediate decode inside the
-                        # combiner, while preserving its full 4:4:4 reference.
-                        str(hdr_y4m_path),
-                        str(staged_output),
-                        "--cicp-base",
-                        "1/13/1",
-                        "--cicp-alternate",
-                        "9/16/9",
-                        "--depth-gain-map",
-                        "10",
-                        "--yuv-gain-map",
-                        settings.avif_gain_map_chroma_subsampling,
-                        "--qgain-map",
-                        str(int(settings.avif_gain_map_quality or settings.quality)),
-                        "--downscaling",
-                        "1" if settings.avif_gain_map_scale == "full" else "2",
-                        "--max-headroom",
-                        "0",
-                        "-q",
-                        str(int(settings.quality)),
-                        "-d",
-                        str(settings.avif_bit_depth),
-                        "-y",
-                        settings.avif_chroma_subsampling,
-                    ]
-                )
-                timings_ms["encode"] = round((perf_counter() - phase_started) * 1000.0, 3)
+        def prepare() -> _PreparedExport:
+            finishing_adjustments = _finishing_adjustments_for_export(session)
             phase_started = perf_counter()
-            validation = _validate_avif_output(
-                staged_output,
-                expected_bit_depth=settings.avif_bit_depth,
-                expected_chroma=settings.avif_chroma_subsampling,
-                expected_gain_map_chroma=settings.avif_gain_map_chroma_subsampling,
-            )
-            timings_ms["validate"] = round((perf_counter() - phase_started) * 1000.0, 3)
-            os.replace(staged_output, output_path)
-            staged_output = None
-        except (ExportProcessError, OSError, ValueError) as exc:
-            _remove_incomplete_output(staged_output)
-            return ExportResponse(
-                accepted=False,
-                backend=self.name,
-                message=str(exc),
-                output_path=str(output_path),
-                timings_ms=timings_ms,
-            )
+            hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
+            sdr_image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
+            timings_ms["render_renditions"] = round((perf_counter() - phase_started) * 1000.0, 3)
 
-        message = f"AVIF gain map export finished at {output_path}"
-        if validation:
-            message = f"{message}. {validation}"
-        return ExportResponse(
-            accepted=True,
-            backend=self.name,
-            message=message,
-            output_path=str(output_path),
+            def write(staged_output: Path) -> None:
+                with TemporaryDirectory(prefix="hdr_finisher_export_") as temp_dir_name:
+                    temp_dir = Path(temp_dir_name)
+                    base_y4m_path = temp_dir / "base_sdr.y4m"
+                    hdr_y4m_path = temp_dir / "alternate_hdr.y4m"
+                    started = perf_counter()
+                    _write_sdr_y4m(
+                        base_y4m_path,
+                        sdr_image,
+                        bit_depth=settings.avif_bit_depth,
+                        chroma_subsampling=settings.avif_chroma_subsampling,
+                        dithering=settings.dithering,
+                    )
+                    _write_hdr_y4m(
+                        hdr_y4m_path,
+                        hdr_image,
+                        bit_depth=settings.avif_bit_depth,
+                        chroma_subsampling="444",
+                        reference_white_nits=getattr(session, "hdr_reference_white_nits", 203),
+                    )
+                    timings_ms["prepare_y4m"] = round((perf_counter() - started) * 1000.0, 3)
+                    started = perf_counter()
+                    _run_command(
+                        [
+                            str(gainmaputil), "combine", str(base_y4m_path), str(hdr_y4m_path),
+                            str(staged_output), "--cicp-base", "1/13/1", "--cicp-alternate", "9/16/9",
+                            "--depth-gain-map", "10", "--yuv-gain-map",
+                            settings.avif_gain_map_chroma_subsampling, "--qgain-map",
+                            str(int(settings.avif_gain_map_quality or settings.quality)), "--downscaling",
+                            "1" if settings.avif_gain_map_scale == "full" else "2", "--max-headroom", "0",
+                            "-q", str(int(settings.quality)), "-d", str(settings.avif_bit_depth),
+                            "-y", settings.avif_chroma_subsampling,
+                        ]
+                    )
+                    timings_ms["encode"] = round((perf_counter() - started) * 1000.0, 3)
+
+            def validate(staged_output: Path) -> str | None:
+                started = perf_counter()
+                result = _validate_avif_output(
+                    staged_output,
+                    expected_bit_depth=settings.avif_bit_depth,
+                    expected_chroma=settings.avif_chroma_subsampling,
+                    expected_gain_map_chroma=settings.avif_gain_map_chroma_subsampling,
+                )
+                timings_ms["validate"] = round((perf_counter() - started) * 1000.0, 3)
+                return result
+
+            return _PreparedExport(".gainmap.tmp.avif", write, validate)
+
+        def success(path: Path, validation: str | None) -> str:
+            message = f"AVIF gain map export finished at {path}"
+            return f"{message}. {validation}" if validation else message
+
+        return _execute_export(
+            self,
+            session,
+            settings,
+            suffix=".avif",
+            prepare=prepare,
+            success_message=success,
+            failure_prefix=None,
             timings_ms=timings_ms,
         )
 
@@ -468,92 +491,75 @@ class JPEGUltraHDRExportBackend(ExportBackend):
                 message="JPEG Ultra HDR export requires a working ultrahdr_app binary in bin/ or on PATH.",
             )
 
-        output_path = Path(_resolve_output_path(getattr(session, "session_id", "session"), settings, ".jpg"))
-        _require_overwrite_permission(output_path, settings)
-        finishing_adjustments = _finishing_adjustments_for_export(session)
-        hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
-        sdr_image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
+        def prepare() -> _PreparedExport:
+            finishing_adjustments = _finishing_adjustments_for_export(session)
+            hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
+            sdr_image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
+            if hdr_image.shape != sdr_image.shape or hdr_image.ndim != 3 or hdr_image.shape[2] < 3:
+                raise ExportProcessError(
+                    "The independently authored HDR and SDR renditions must have matching RGB dimensions."
+                )
 
-        if hdr_image.shape != sdr_image.shape or hdr_image.ndim != 3 or hdr_image.shape[2] < 3:
-            return ExportResponse(
-                accepted=False,
-                backend=self.name,
-                message="The independently authored HDR and SDR renditions must have matching RGB dimensions.",
-                output_path=str(output_path),
+            def write(staged_output: Path) -> None:
+                with TemporaryDirectory(prefix="hdr_finisher_ultrahdr_") as temp_dir_name:
+                    temp_dir = Path(temp_dir_name)
+                    hdr_raw_path = temp_dir / "hdr_bt2020_linear_rgba_f16.raw"
+                    sdr_raw_path = temp_dir / "sdr_srgb_rgba8888.raw"
+                    sdr_jpeg_path = temp_dir / "sdr_primary.jpg"
+                    unfiltered_path = temp_dir / "unfiltered_ultrahdr.jpg"
+                    exif_payload = _source_exif_payload(session, settings.metadata_policy)
+                    exif_path = _write_temporary_exif(temp_dir, exif_payload)
+                    reference_white_nits = getattr(session, "hdr_reference_white_nits", 203)
+                    hdr_rgba, target_peak_nits = _prepare_hdr_linear_rgba_f16(
+                        hdr_image, reference_white_nits
+                    )
+                    hdr_raw_path.write_bytes(hdr_rgba.tobytes(order="C"))
+                    sdr_rgb = _linear_to_srgb8(sdr_image[..., :3], dither=settings.dithering)
+                    sdr_rgb = _floor_ultrahdr_base(sdr_rgb, hdr_image)
+                    _write_sdr_rgba8888_pixels(sdr_raw_path, sdr_rgb)
+                    _write_sdr_jpeg_pixels(
+                        sdr_jpeg_path,
+                        sdr_rgb,
+                        quality=int(settings.quality),
+                        chroma_subsampling=settings.jpeg_chroma_subsampling,
+                        exif_payload=exif_payload,
+                    )
+                    command = _build_ultrahdr_encode_command(
+                        ultrahdr_app,
+                        hdr_raw_path,
+                        sdr_raw_path,
+                        unfiltered_path,
+                        sdr_jpeg_path=sdr_jpeg_path,
+                        exif_path=exif_path,
+                        width=int(hdr_image.shape[1]),
+                        height=int(hdr_image.shape[0]),
+                        quality=int(settings.quality),
+                        gain_map_quality=100,
+                        gain_map_scale=settings.jpeg_gain_map_scale,
+                        target_peak_nits=target_peak_nits,
+                    )
+                    _run_command(command)
+                    _denoise_ultrahdr_gain_map(
+                        unfiltered_path,
+                        staged_output,
+                        ultrahdr_app,
+                        gain_map_quality=int(settings.jpeg_gain_map_quality),
+                    )
+
+            return _PreparedExport(
+                ".ultrahdr.tmp.jpg",
+                write,
+                lambda staged: _validate_ultrahdr_output(staged, ultrahdr_app),
             )
 
-        staged_output: Path | None = None
-        try:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            with NamedTemporaryFile(
-                prefix=f".{output_path.stem}.", suffix=".ultrahdr.tmp.jpg", dir=output_path.parent, delete=False
-            ) as staged_file:
-                staged_output = Path(staged_file.name)
-
-            with TemporaryDirectory(prefix="hdr_finisher_ultrahdr_") as temp_dir_name:
-                temp_dir = Path(temp_dir_name)
-                hdr_raw_path = temp_dir / "hdr_bt2020_linear_rgba_f16.raw"
-                sdr_raw_path = temp_dir / "sdr_srgb_rgba8888.raw"
-                sdr_jpeg_path = temp_dir / "sdr_primary.jpg"
-                unfiltered_path = temp_dir / "unfiltered_ultrahdr.jpg"
-                exif_payload = _source_exif_payload(session, settings.metadata_policy)
-                exif_path = _write_temporary_exif(temp_dir, exif_payload)
-                reference_white_nits = getattr(session, "hdr_reference_white_nits", 203)
-                hdr_rgba, target_peak_nits = _prepare_hdr_linear_rgba_f16(hdr_image, reference_white_nits)
-                hdr_raw_path.write_bytes(hdr_rgba.tobytes(order="C"))
-                sdr_rgb = _linear_to_srgb8(sdr_image[..., :3], dither=settings.dithering)
-                # Floor before either write: the raw pixels generate the gain map
-                # and the JPEG becomes the base, so they have to agree.
-                sdr_rgb = _floor_ultrahdr_base(sdr_rgb, hdr_image)
-                _write_sdr_rgba8888_pixels(sdr_raw_path, sdr_rgb)
-                _write_sdr_jpeg_pixels(
-                    sdr_jpeg_path,
-                    sdr_rgb,
-                    quality=int(settings.quality),
-                    chroma_subsampling=settings.jpeg_chroma_subsampling,
-                    exif_payload=exif_payload,
-                )
-                command = _build_ultrahdr_encode_command(
-                    ultrahdr_app,
-                    hdr_raw_path,
-                    sdr_raw_path,
-                    unfiltered_path,
-                    sdr_jpeg_path=sdr_jpeg_path,
-                    exif_path=exif_path,
-                    width=int(hdr_image.shape[1]),
-                    height=int(hdr_image.shape[0]),
-                    quality=int(settings.quality),
-                    # The intermediate is decoded for the default denoise pass;
-                    # defer the user's requested compression to the final map.
-                    gain_map_quality=100,
-                    gain_map_scale=settings.jpeg_gain_map_scale,
-                    target_peak_nits=target_peak_nits,
-                )
-                _run_command(command)
-                _denoise_ultrahdr_gain_map(
-                    unfiltered_path,
-                    staged_output,
-                    ultrahdr_app,
-                    gain_map_quality=int(settings.jpeg_gain_map_quality),
-                )
-
-            validation = _validate_ultrahdr_output(staged_output, ultrahdr_app)
-            os.replace(staged_output, output_path)
-            staged_output = None
-        except (ExportProcessError, OSError, ValueError) as exc:
-            _remove_incomplete_output(staged_output)
-            return ExportResponse(
-                accepted=False,
-                backend=self.name,
-                message=f"JPEG Ultra HDR export failed: {exc}",
-                output_path=str(output_path),
-            )
-
-        return ExportResponse(
-            accepted=True,
-            backend=self.name,
-            message=f"JPEG Ultra HDR exported to {output_path}. {validation}",
-            output_path=str(output_path),
+        return _execute_export(
+            self,
+            session,
+            settings,
+            suffix=".jpg",
+            prepare=prepare,
+            success_message=lambda path, validation: f"JPEG Ultra HDR exported to {path}. {validation}",
+            failure_prefix="JPEG Ultra HDR export failed",
         )
 
 
@@ -565,13 +571,10 @@ class JPEGXLHDRExportBackend(ExportBackend):
     def export(self, session: object, settings: ExportSettings) -> ExportResponse:
         if self.capability.status != CapabilityStatus.AVAILABLE:
             return ExportResponse(accepted=False, backend=self.name, message=self.capability.detail)
-        output_path = Path(_resolve_output_path(getattr(session, "session_id", "session"), settings, ".jxl"))
-        _require_overwrite_permission(output_path, settings)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        finishing_adjustments = _finishing_adjustments_for_export(session)
-        hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
-        staged_output: Path | None = None
-        try:
+
+        def prepare() -> _PreparedExport:
+            finishing_adjustments = _finishing_adjustments_for_export(session)
+            hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
             payload = encode_hdr_jpegxl(
                 hdr_image,
                 int(settings.quality),
@@ -579,31 +582,23 @@ class JPEGXLHDRExportBackend(ExportBackend):
                 exif_payload=_source_exif_payload(session, settings.metadata_policy),
                 reference_white_nits=getattr(session, "hdr_reference_white_nits", 203),
             )
-            validation = validate_jpegxl(
-                payload, hdr_image.shape[:2], settings.jpegxl_precision
+            shape = hdr_image.shape[:2]
+            return _PreparedExport(
+                ".tmp.jxl",
+                lambda staged: staged.write_bytes(payload),
+                lambda staged: validate_jpegxl(
+                    staged.read_bytes(), shape, settings.jpegxl_precision
+                ),
             )
-            with NamedTemporaryFile(
-                prefix=f".{output_path.stem}.", suffix=".tmp.jxl", dir=output_path.parent, delete=False
-            ) as staged_file:
-                staged_output = Path(staged_file.name)
-                staged_file.write(payload)
-                staged_file.flush()
-                os.fsync(staged_file.fileno())
-            os.replace(staged_output, output_path)
-            staged_output = None
-        except (JPEGXLError, OSError, ValueError) as exc:
-            _remove_incomplete_output(staged_output)
-            return ExportResponse(
-                accepted=False,
-                backend=self.name,
-                message=f"JPEG XL HDR export failed: {exc}",
-                output_path=str(output_path),
-            )
-        return ExportResponse(
-            accepted=True,
-            backend=self.name,
-            message=f"JPEG XL HDR exported to {output_path}. {validation}",
-            output_path=str(output_path),
+
+        return _execute_export(
+            self,
+            session,
+            settings,
+            suffix=".jxl",
+            prepare=prepare,
+            success_message=lambda path, validation: f"JPEG XL HDR exported to {path}. {validation}",
+            failure_prefix="JPEG XL HDR export failed",
         )
 
 
@@ -627,28 +622,6 @@ def _resolve_output_path(session_id: str, settings: ExportSettings, suffix: str)
 def _require_overwrite_permission(output_path: Path, settings: ExportSettings) -> None:
     if output_path.exists() and not settings.overwrite:
         raise ExportOverwriteRequired(output_path)
-
-
-def _write_sdr_atomic(output_path: Path, suffix: str, writer) -> None:
-    """Write a Pillow/imagecodecs SDR file without exposing partial output."""
-
-    staged_output: Path | None = None
-    try:
-        with NamedTemporaryFile(
-            prefix=f".{output_path.stem}.", suffix=f".sdr.tmp{suffix}", dir=output_path.parent, delete=False
-        ) as staged_file:
-            staged_output = Path(staged_file.name)
-        writer(staged_output)
-        from PIL import Image
-
-        with Image.open(staged_output) as decoded:
-            decoded.verify()
-        with staged_output.open("ab") as staged_file:
-            os.fsync(staged_file.fileno())
-        os.replace(staged_output, output_path)
-        staged_output = None
-    finally:
-        _remove_incomplete_output(staged_output)
 
 
 def _write_sdr_png(

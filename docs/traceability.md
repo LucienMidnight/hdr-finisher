@@ -75,7 +75,7 @@ This index maps user-facing areas to their current state model, implementation, 
 | Adjustments and curves/equalizer/color | `test_adjustments.py` |
 | API contracts and session paths | `test_api.py` |
 | Preview/display/performance pipeline | `test_preview_display.py`, `test_render_cache.py`, `test_performance_pipeline.py`, `tests/performance/preview-performance.js` |
-| Frontend labels/state contract | `test_frontend_contract.py` |
+| Frontend labels/state contract | `test_frontend_*_contract.py` |
 | Capabilities | `test_capability_gates.py` |
 | AVIF inspection | `test_avif_info.py` |
 | Ultra HDR encoding/validation | `test_ultrahdr_export.py` |

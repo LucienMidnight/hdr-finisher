@@ -1802,8 +1802,8 @@ body[data-active-lane="sdr"] .lane-dot {
   margin-bottom: 8px;
 }
 
-/* P5 (Preview Responsiveness Tuning Sprint): Technical is a short readout that
-   fits the scopes panel at its minimum height; Diagnostics keeps every row. */
+/* Technical is a short readout that fits the scopes panel at its minimum
+   height; Diagnostics keeps every row. */
 .technical-summary {
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr) minmax(0, 1.15fr);
 }
@@ -7953,7 +7953,7 @@ body {
   text-transform: var(--group-title-text-transform);
 }
 
-/* UI refinement sprint: shared instrument components and panel hierarchy. */
+/* Shared instrument components and panel hierarchy. */
 
 /* Continuous Control Panel chassis and numbered, independently open sections. */
 .grade-rail {

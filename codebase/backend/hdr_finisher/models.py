@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 import math
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer, model_validator
 
 from .color_context import validate_reference_white
 
@@ -363,128 +363,15 @@ def move_image_structure_into_detail(value: object) -> object:
     return normalized
 
 
-class HDRAdjustments(BaseModel):
+class _BranchAdjustments(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    _serialized_field_order: ClassVar[tuple[str, ...]]
 
     @model_validator(mode="before")
     @classmethod
     def carry_image_structure_into_detail(cls, value: object) -> object:
         return move_image_structure_into_detail(value)
 
-    @model_validator(mode="before")
-    @classmethod
-    def enable_an_explicit_highlight_mode(cls, value: object) -> object:
-        """Keep partial API payloads that explicitly choose a mode intuitive."""
-        if not isinstance(value, dict):
-            return value
-        if "highlight_compression_mode" not in value or "highlight_section_enabled" in value:
-            return value
-        if value.get("highlight_compression_mode") == "off":
-            return value
-        normalized = dict(value)
-        normalized["highlight_section_enabled"] = True
-        return normalized
-
-    tone_section_enabled: bool = True
-    highlight_section_enabled: bool = False
-    tone_equalizer_section_enabled: bool = True
-    color_section_enabled: bool = True
-    primaries_section_enabled: bool = True
-    curves_section_enabled: bool = True
-    detail_section_enabled: bool = True
-    black_and_white_section_enabled: bool = False
-    film_look_section_enabled: bool = True
-    color_grading_section_enabled: bool = True
-    vignette_section_enabled: bool = True
-    film_look: FilmLookAdjustments = Field(default_factory=FilmLookAdjustments)
-    color_grading: ColorGradingAdjustments = Field(default_factory=ColorGradingAdjustments)
-    vignette: VignetteAdjustments = Field(default_factory=VignetteAdjustments)
-    detail: BranchDetailAdjustments = Field(default_factory=BranchDetailAdjustments)
-    black_and_white: BlackAndWhiteAdjustments = Field(default_factory=BlackAndWhiteAdjustments)
-    exposure: float = Field(default=0.0, ge=-8.0, le=8.0)
-    highlight_compression_start_nits: float = Field(default=400.0, ge=1.0, le=9999.0)
-    highlight_compression_target_nits: float = Field(default=1000.0, ge=2.0, le=10000.0)
-    highlight_compression_softness: float = Field(default=0.0, ge=0.0, le=100.0)
-    # ``off`` remains accepted for v4 project/API compatibility, but the UI
-    # uses highlight_section_enabled as the sole bypass control.
-    highlight_compression_mode: Literal["off", "peak_fit", "soft_ceiling", "clip"] = "peak_fit"
-    highlight_compression_peak_measurement: Literal["maximum", "robust", "manual"] = "maximum"
-    highlight_compression_source_peak_nits: float = Field(default=1000.0, ge=1.0, le=1_000_000.0)
-    highlight_compression_manual_peak_nits: float = Field(default=1000.0, ge=1.0, le=1_000_000.0)
-    highlight_compression_peak_detail: float = Field(default=35.0, ge=0.0, le=100.0)
-    highlight_compression_bias: float = Field(default=0.0, ge=-100.0, le=100.0)
-    highlight_compression_color_handling: Literal["smooth_rolloff", "preserve_color", "path_to_white"] = "smooth_rolloff"
-    shadow_lift: float = Field(default=0.0, ge=-1.0, le=1.0)
-    tone_equalizer_nodes: list[ToneEqualizerNode] = Field(
-        default_factory=_default_tone_equalizer_nodes,
-        min_length=2,
-        max_length=16,
-    )
-    tone_equalizer_influence_radius: float = Field(default=1.5, ge=0.25, le=12.0)
-    tone_equalizer_smoothing: float = Field(default=0.5, ge=0.0, le=1.0)
-    lift: float = Field(default=0.0, ge=-1.0, le=1.0)
-    gamma: float = Field(default=0.0, ge=-2.0, le=2.0)
-    gain: float = Field(default=0.0, ge=-1.0, le=1.0)
-    lift_pivot: float = Field(default=-2.0, ge=-12.0, le=12.0)
-    lift_range: float = Field(default=4.0, ge=0.5, le=24.0)
-    gamma_pivot: float = Field(default=0.0, ge=-12.0, le=12.0)
-    gamma_range: float = Field(default=4.25, ge=0.5, le=24.0)
-    gain_pivot: float = Field(default=2.0, ge=-12.0, le=12.0)
-    gain_range: float = Field(default=4.0, ge=0.5, le=24.0)
-    contrast: float = Field(default=0.0, ge=-2.0, le=2.0)
-    contrast_pivot: float = Field(default=0.1845, ge=0.0001, le=18.0)
-    white_balance_kelvin: int = Field(default=6500, ge=1000, le=25000)
-    tint: float = Field(default=0.0, ge=-2.0, le=2.0)
-    saturation: float = Field(default=0.0, ge=-1.0, le=3.0)
-    vibrance: float = Field(default=0.0, ge=-1.0, le=3.0)
-    red_hue: float = Field(default=0.0, ge=-180.0, le=180.0)
-    red_purity: float = Field(default=0.0, ge=-99.0, le=400.0)
-    green_hue: float = Field(default=0.0, ge=-180.0, le=180.0)
-    green_purity: float = Field(default=0.0, ge=-99.0, le=400.0)
-    blue_hue: float = Field(default=0.0, ge=-180.0, le=180.0)
-    blue_purity: float = Field(default=0.0, ge=-99.0, le=400.0)
-    tint_hue: float = Field(default=0.0, ge=-180.0, le=180.0)
-    tint_purity: float = Field(default=0.0, ge=0.0, le=99.0)
-    luma_curve: list[list[float]] = Field(default_factory=_default_curve_points)
-    red_curve: list[list[float]] = Field(default_factory=_default_curve_points)
-    green_curve: list[list[float]] = Field(default_factory=_default_curve_points)
-    blue_curve: list[list[float]] = Field(default_factory=_default_curve_points)
-
-    @model_validator(mode="after")
-    def normalize_tone_equalizer_nodes(self) -> "HDRAdjustments":
-        if self.highlight_compression_target_nits <= self.highlight_compression_start_nits:
-            raise ValueError("highlight compression target must be brighter than its start")
-        nodes = sorted(self.tone_equalizer_nodes, key=lambda node: node.input_ev)
-        normalized: list[ToneEqualizerNode] = []
-        for index, node in enumerate(nodes):
-            input_ev = node.input_ev
-            if index == 0:
-                input_ev = -6.0
-            elif index == len(nodes) - 1:
-                input_ev = 6.0
-            else:
-                minimum = normalized[-1].input_ev + 0.1
-                maximum = 6.0 - 0.1 * (len(nodes) - index - 1)
-                input_ev = min(max(input_ev, minimum), maximum)
-            normalized.append(ToneEqualizerNode(input_ev=input_ev, adjustment_ev=node.adjustment_ev))
-        self.tone_equalizer_nodes = normalized
-        return self
-
-
-class SDRAdjustments(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    @model_validator(mode="before")
-    @classmethod
-    def carry_image_structure_into_detail(cls, value: object) -> object:
-        return move_image_structure_into_detail(value)
-
-    # Projects saved before the SDR highlight-compression pipeline retain their
-    # original base-rendition rendering. New edits use the neutral v2 placement
-    # plus an explicit, delivery-gamut highlight stage.
-    rendering_version: Literal["legacy_base_v1", "highlight_v2"] = "highlight_v2"
-    base_section_enabled: bool = True
-    use_authored_base: bool = True
     tone_section_enabled: bool = True
     highlight_section_enabled: bool = True
     tone_equalizer_section_enabled: bool = True
@@ -502,21 +389,12 @@ class SDRAdjustments(BaseModel):
     detail: BranchDetailAdjustments = Field(default_factory=BranchDetailAdjustments)
     black_and_white: BlackAndWhiteAdjustments = Field(default_factory=BlackAndWhiteAdjustments)
     exposure: float = Field(default=0.0, ge=-8.0, le=8.0)
-    highlight_recovery: float = Field(default=0.6, ge=0.0, le=4.0)
-    highlight_compression_start_percent: float = Field(default=50.0, ge=1.0, le=99.0)
     highlight_compression_softness: float = Field(default=0.0, ge=0.0, le=100.0)
     highlight_compression_mode: Literal["off", "peak_fit", "soft_ceiling", "clip"] = "peak_fit"
     highlight_compression_peak_measurement: Literal["maximum", "robust", "manual"] = "maximum"
-    highlight_compression_source_peak_percent: float = Field(default=100.0, ge=1.0, le=1_000_000.0)
-    highlight_compression_manual_peak_percent: float = Field(default=100.0, ge=1.0, le=1_000_000.0)
     highlight_compression_peak_detail: float = Field(default=35.0, ge=0.0, le=100.0)
     highlight_compression_bias: float = Field(default=0.0, ge=-100.0, le=100.0)
-    highlight_compression_color_handling: Literal[
-        "smooth_rolloff", "preserve_color", "path_to_white"
-    ] = "smooth_rolloff"
-    tone_contrast: float = Field(default=1.0, ge=0.5, le=1.5)
-    tone_skew: float = Field(default=0.0, ge=-1.0, le=1.0)
-    shadow: float = Field(default=0.0, ge=-2.0, le=2.0)
+    highlight_compression_color_handling: Literal["smooth_rolloff", "preserve_color", "path_to_white"] = "smooth_rolloff"
     tone_equalizer_nodes: list[ToneEqualizerNode] = Field(
         default_factory=_default_tone_equalizer_nodes,
         min_length=2,
@@ -547,14 +425,13 @@ class SDRAdjustments(BaseModel):
     blue_purity: float = Field(default=0.0, ge=-99.0, le=400.0)
     tint_hue: float = Field(default=0.0, ge=-180.0, le=180.0)
     tint_purity: float = Field(default=0.0, ge=0.0, le=99.0)
-    tone_mapper: ToneMapper = ToneMapper.FILMIC
     luma_curve: list[list[float]] = Field(default_factory=_default_curve_points)
     red_curve: list[list[float]] = Field(default_factory=_default_curve_points)
     green_curve: list[list[float]] = Field(default_factory=_default_curve_points)
     blue_curve: list[list[float]] = Field(default_factory=_default_curve_points)
 
     @model_validator(mode="after")
-    def normalize_tone_equalizer_nodes(self) -> "SDRAdjustments":
+    def normalize_tone_equalizer_nodes(self) -> "_BranchAdjustments":
         nodes = sorted(self.tone_equalizer_nodes, key=lambda node: node.input_ev)
         normalized: list[ToneEqualizerNode] = []
         for index, node in enumerate(nodes):
@@ -570,6 +447,103 @@ class SDRAdjustments(BaseModel):
             normalized.append(ToneEqualizerNode(input_ev=input_ev, adjustment_ev=node.adjustment_ev))
         self.tone_equalizer_nodes = normalized
         return self
+
+    @model_serializer(mode="wrap")
+    def preserve_serialized_field_order(self, handler):
+        payload = handler(self)
+        return {
+            name: payload[name]
+            for name in type(self)._serialized_field_order
+            if name in payload
+        }
+
+
+_COMMON_BRANCH_FIELD_ORDER = (
+    "tone_section_enabled", "highlight_section_enabled", "tone_equalizer_section_enabled",
+    "color_section_enabled", "primaries_section_enabled", "curves_section_enabled",
+    "detail_section_enabled", "black_and_white_section_enabled", "film_look_section_enabled",
+    "color_grading_section_enabled", "vignette_section_enabled", "film_look", "color_grading",
+    "vignette", "detail", "black_and_white", "exposure",
+)
+_COMMON_TONE_FIELD_ORDER = (
+    "tone_equalizer_nodes", "tone_equalizer_influence_radius", "tone_equalizer_smoothing",
+    "lift", "gamma", "gain", "lift_pivot", "lift_range", "gamma_pivot", "gamma_range",
+    "gain_pivot", "gain_range", "contrast", "contrast_pivot", "white_balance_kelvin", "tint",
+    "saturation", "vibrance", "red_hue", "red_purity", "green_hue", "green_purity",
+    "blue_hue", "blue_purity", "tint_hue", "tint_purity",
+)
+_CURVE_FIELD_ORDER = ("luma_curve", "red_curve", "green_curve", "blue_curve")
+
+
+class HDRAdjustments(_BranchAdjustments):
+    _serialized_field_order: ClassVar[tuple[str, ...]] = (
+        *_COMMON_BRANCH_FIELD_ORDER,
+        "highlight_compression_start_nits", "highlight_compression_target_nits",
+        "highlight_compression_softness", "highlight_compression_mode",
+        "highlight_compression_peak_measurement", "highlight_compression_source_peak_nits",
+        "highlight_compression_manual_peak_nits", "highlight_compression_peak_detail",
+        "highlight_compression_bias", "highlight_compression_color_handling", "shadow_lift",
+        *_COMMON_TONE_FIELD_ORDER,
+        *_CURVE_FIELD_ORDER,
+    )
+
+    highlight_section_enabled: bool = False
+    highlight_compression_start_nits: float = Field(default=400.0, ge=1.0, le=9999.0)
+    highlight_compression_target_nits: float = Field(default=1000.0, ge=2.0, le=10000.0)
+    highlight_compression_source_peak_nits: float = Field(default=1000.0, ge=1.0, le=1_000_000.0)
+    highlight_compression_manual_peak_nits: float = Field(default=1000.0, ge=1.0, le=1_000_000.0)
+    shadow_lift: float = Field(default=0.0, ge=-1.0, le=1.0)
+    contrast_pivot: float = Field(default=0.1845, ge=0.0001, le=18.0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def enable_an_explicit_highlight_mode(cls, value: object) -> object:
+        """Keep partial API payloads that explicitly choose a mode intuitive."""
+        if not isinstance(value, dict):
+            return value
+        if "highlight_compression_mode" not in value or "highlight_section_enabled" in value:
+            return value
+        if value.get("highlight_compression_mode") == "off":
+            return value
+        normalized = dict(value)
+        normalized["highlight_section_enabled"] = True
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_highlight_range(self) -> "HDRAdjustments":
+        if self.highlight_compression_target_nits <= self.highlight_compression_start_nits:
+            raise ValueError("highlight compression target must be brighter than its start")
+        return self
+
+
+class SDRAdjustments(_BranchAdjustments):
+    _serialized_field_order: ClassVar[tuple[str, ...]] = (
+        "rendering_version", "base_section_enabled", "use_authored_base",
+        *_COMMON_BRANCH_FIELD_ORDER,
+        "highlight_recovery", "highlight_compression_start_percent",
+        "highlight_compression_softness", "highlight_compression_mode",
+        "highlight_compression_peak_measurement", "highlight_compression_source_peak_percent",
+        "highlight_compression_manual_peak_percent", "highlight_compression_peak_detail",
+        "highlight_compression_bias", "highlight_compression_color_handling",
+        "tone_contrast", "tone_skew", "shadow",
+        *_COMMON_TONE_FIELD_ORDER,
+        "tone_mapper",
+        *_CURVE_FIELD_ORDER,
+    )
+
+    # Projects saved before the SDR highlight-compression pipeline retain their
+    # original base-rendition rendering. New edits use the neutral v2 placement.
+    rendering_version: Literal["legacy_base_v1", "highlight_v2"] = "highlight_v2"
+    base_section_enabled: bool = True
+    use_authored_base: bool = True
+    highlight_recovery: float = Field(default=0.6, ge=0.0, le=4.0)
+    highlight_compression_start_percent: float = Field(default=50.0, ge=1.0, le=99.0)
+    highlight_compression_source_peak_percent: float = Field(default=100.0, ge=1.0, le=1_000_000.0)
+    highlight_compression_manual_peak_percent: float = Field(default=100.0, ge=1.0, le=1_000_000.0)
+    tone_contrast: float = Field(default=1.0, ge=0.5, le=1.5)
+    tone_skew: float = Field(default=0.0, ge=-1.0, le=1.0)
+    shadow: float = Field(default=0.0, ge=-2.0, le=2.0)
+    tone_mapper: ToneMapper = ToneMapper.FILMIC
 
 
 class SharedAdjustments(BaseModel):
@@ -1384,7 +1358,17 @@ class ExportTargetIdentity(BaseModel):
     modifiedNs: str
 
 
-class ExportSettings(BaseModel):
+_ENCODING_FIELD_ORDER = (
+    "format", "quality", "jpeg_gain_map_quality", "jpeg_gain_map_scale",
+    "jpeg_chroma_subsampling", "avif_bit_depth", "avif_chroma_subsampling",
+    "avif_gain_map_chroma_subsampling", "avif_gain_map_quality", "avif_gain_map_scale",
+    "jpegxl_precision", "dithering",
+)
+
+
+class _EncodingSettings(BaseModel):
+    _serialized_field_order: ClassVar[tuple[str, ...]]
+
     format: str = "jpeg_ultrahdr"
     quality: int = Field(default=85, ge=1, le=100)
     jpeg_gain_map_quality: int = Field(default=100, ge=1, le=100)
@@ -1395,16 +1379,36 @@ class ExportSettings(BaseModel):
     avif_gain_map_chroma_subsampling: Literal["400", "420", "422", "444"] = "444"
     avif_gain_map_quality: int | None = Field(default=None, ge=1, le=100)
     avif_gain_map_scale: Literal["full", "half"] = "half"
-    sdr_png_bit_depth: Literal[8, 16] = 8
     jpegxl_precision: Literal["uint10", "uint12", "uint16", "float16", "float32"] = "uint12"
     dithering: Literal["auto", "off", "subtle"] = "auto"
+    output_finishing: OutputFinishingSettings = Field(default_factory=OutputFinishingSettings)
+
+    @model_serializer(mode="wrap")
+    def preserve_serialized_field_order(self, handler):
+        payload = handler(self)
+        return {
+            name: payload[name]
+            for name in type(self)._serialized_field_order
+            if name in payload
+        }
+
+
+class ExportSettings(_EncodingSettings):
+    _serialized_field_order: ClassVar[tuple[str, ...]] = (
+        *_ENCODING_FIELD_ORDER[:10],
+        "sdr_png_bit_depth",
+        *_ENCODING_FIELD_ORDER[10:],
+        "metadata_policy", "output_path", "path_grant", "overwrite", "overwrite_target",
+        "edit_revision", "output_finishing",
+    )
+
+    sdr_png_bit_depth: Literal[8, 16] = 8
     metadata_policy: Literal["none", "copyright", "all_except_location", "all_including_location"] = "none"
     output_path: str | None = None
     path_grant: str | None = None
     overwrite: bool = False
     overwrite_target: ExportTargetIdentity | None = None
     edit_revision: int | None = Field(default=None, ge=0)
-    output_finishing: OutputFinishingSettings = Field(default_factory=OutputFinishingSettings)
 
 
 class ExportResponse(BaseModel):
@@ -1457,28 +1461,33 @@ class DesktopProjectSaveRequest(BaseModel):
     project_grant: str
 
 
-class ProofArtifactRequest(BaseModel):
+class ProofArtifactRequest(_EncodingSettings):
+    _serialized_field_order: ClassVar[tuple[str, ...]] = (
+        "adjustments", "edit_revision", *_ENCODING_FIELD_ORDER,
+        "long_edge", "output_finishing", "force",
+    )
+
     adjustments: AdjustmentState | None = None
     edit_revision: int | None = Field(default=None, ge=0)
-    format: str = "jpeg_ultrahdr"
     quality: int = Field(default=90, ge=1, le=100)
-    jpeg_gain_map_quality: int = Field(default=100, ge=1, le=100)
-    jpeg_gain_map_scale: Literal["full", "half"] = "full"
-    jpeg_chroma_subsampling: Literal["420", "422", "444"] = "420"
-    avif_bit_depth: Literal[8, 10, 12] = 10
-    avif_chroma_subsampling: Literal["420", "422", "444"] = "420"
-    avif_gain_map_chroma_subsampling: Literal["400", "420", "422", "444"] = "444"
-    avif_gain_map_quality: int | None = Field(default=None, ge=1, le=100)
-    avif_gain_map_scale: Literal["full", "half"] = "half"
-    jpegxl_precision: Literal["uint10", "uint12", "uint16", "float16", "float32"] = "uint12"
-    dithering: Literal["auto", "off", "subtle"] = "auto"
     long_edge: int = Field(default=1200, ge=256, le=1600)
-    output_finishing: OutputFinishingSettings = Field(default_factory=OutputFinishingSettings)
     # An explicit Build proof is the user's escape hatch when they suspect the
     # cached artifact rather than the grade, so it rebuilds instead of replaying
     # the cache. Excluded from the request signature: a forced build must land
     # on the same cache entry an ordinary one would, not a parallel one.
     force: bool = False
+
+    def to_export_settings(self, output_path: str) -> ExportSettings:
+        encoding = {
+            name: getattr(self, name)
+            for name in _ENCODING_FIELD_ORDER
+        }
+        return ExportSettings(
+            **encoding,
+            output_path=output_path,
+            overwrite=True,
+            output_finishing=self.output_finishing,
+        )
 
 
 class ProjectSaveRequest(BaseModel):
@@ -1606,7 +1615,7 @@ class BrowserEvidenceRecord(BaseModel):
     color_observation: str
     overall_observation: str
     notes: str = ""
-    observed_at: datetime = Field(default_factory=datetime.utcnow)
+    observed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class BrowserEvidenceResponse(BaseModel):
