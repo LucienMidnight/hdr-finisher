@@ -218,3 +218,61 @@ def test_black_and_white_is_per_rendition() -> None:
     state.hdr.black_and_white_section_enabled = True
     sdr = apply_adjustments(image, state, PreviewKind.SDR)
     assert float((sdr.max(axis=-1) - sdr.min(axis=-1)).max()) > 0.05
+
+
+STEVES_SLIDERS = {"reds": 42, "oranges": 100, "yellows": 54, "greens": -53, "aquas": -44, "blues": -45, "purples": -42, "magentas": -45}
+
+
+def _relative_noise(grey: np.ndarray) -> float:
+    """High-pass standard deviation over the mean: brightness noise as a share of brightness."""
+    blurred = sum(np.roll(np.roll(grey, dy, 0), dx, 1) for dy in (-1, 0, 1) for dx in (-1, 0, 1)) / 9.0
+    return float((grey - blurred)[4:-4, 4:-4].std() / grey.mean())
+
+
+@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
+def test_colour_noise_in_a_strongly_coloured_area_is_not_turned_into_brightness_noise(kind: PreviewKind) -> None:
+    """A noisy orange wall, as in Steve's DSC00264, with Oranges +100 beside Greens -53.
+
+    Taking each pixel's slider from its own noisy hue made the brightness noise
+    3.6x Saturation -100's there; each pixel's colour now comes from its
+    neighbourhood, so relative noise stays close to the plain conversion's.
+    """
+    rng = np.random.default_rng(21)
+    orange = linear_srgb_to_acescg(np.array([[[0.065, 0.035, 0.006]]], np.float32))[0, 0]
+    wall = (orange + rng.normal(0.0, 1.0, (96, 96, 3)) * np.array([0.008, 0.005, 0.0023], np.float32)).astype(np.float32)
+    plain = AdjustmentState()
+    getattr(plain, kind.value).saturation = -1.0
+    bw = AdjustmentState()
+    branch = getattr(bw, kind.value)
+    branch.black_and_white_section_enabled = True
+    branch.black_and_white = BlackAndWhiteAdjustments(**STEVES_SLIDERS)
+    reference = _relative_noise(apply_adjustments(wall, plain, kind, include_grain=False)[..., 0])
+    graded = _relative_noise(apply_adjustments(wall, bw, kind, include_grain=False)[..., 0])
+    assert graded <= reference * 1.35, (graded, reference)
+
+
+def test_a_colour_edge_only_blurs_the_slider_within_its_neighbourhood() -> None:
+    red = linear_srgb_to_acescg(np.array([[[0.5, 0.03, 0.03]]], np.float32))[0, 0]
+    blue = linear_srgb_to_acescg(np.array([[[0.03, 0.05, 0.5]]], np.float32))[0, 0]
+    image = np.empty((12, 40, 3), np.float32)
+    image[:, :20] = red
+    image[:, 20:] = blue
+    state = AdjustmentState()
+    state.hdr.black_and_white_section_enabled = True
+    state.hdr.black_and_white = BlackAndWhiteAdjustments(reds=100, blues=-100)
+    out = apply_adjustments(image, state, PreviewKind.HDR, include_grain=False, include_output_highlight_compression=False)[6, :, 0]
+    plain = _apply_black_and_white(image, BlackAndWhiteAdjustments(reds=100, blues=-100))[6, :, 0]
+    # Further than the lattice reach from the edge, every pixel is exactly the
+    # per-pixel result; only the four pixels either side can blend.
+    np.testing.assert_allclose(out[:16], plain[:16], rtol=1e-5)
+    np.testing.assert_allclose(out[24:], plain[24:], rtol=1e-5)
+
+
+def test_strip_rendering_refuses_black_and_white_sliders_and_accepts_the_plain_conversion() -> None:
+    from hdr_finisher.cpu_strips import strip_execution_refusals
+
+    state = AdjustmentState()
+    state.hdr.black_and_white_section_enabled = True
+    assert "black & white colour response" not in strip_execution_refusals(state, PreviewKind.HDR)
+    state.hdr.black_and_white = BlackAndWhiteAdjustments(oranges=50)
+    assert "black & white colour response" in strip_execution_refusals(state, PreviewKind.HDR)

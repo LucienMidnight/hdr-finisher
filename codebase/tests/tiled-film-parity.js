@@ -69,8 +69,12 @@ const MAX_CHANNEL_DELTA = 0;
     // close. Off-centre, a wrong origin is a visible shift.
     // Softness and Microcontrast are Detail controls (NEXT-01 #2) that run in
     // the film stage, so they are set on Detail but tested here.
-    const configure = async (overrides = {}) => page.evaluate(({ detail_softness = 0, detail_microcontrast = 0, ...extra }) => {
+    // Black & White with sliders set reads each pixel's colour from the source
+    // around it (BW-01), so tiles need its reach in their halo too.
+    const configure = async (overrides = {}) => page.evaluate(({ detail_softness = 0, detail_microcontrast = 0, bw = null, ...extra }) => {
       Object.assign(state.adjustments.hdr.detail, { softness: detail_softness, microcontrast: detail_microcontrast });
+      state.adjustments.hdr.black_and_white_section_enabled = Boolean(bw);
+      state.adjustments.hdr.black_and_white = { reds: 0, oranges: 0, yellows: 0, greens: 0, aquas: 0, blues: 0, purples: 0, magentas: 0, ...(bw || {}) };
       state.adjustments.hdr.exposure = 0.85;
       state.adjustments.hdr.contrast = 18;
       state.adjustments.hdr.saturation = 12;
@@ -226,6 +230,14 @@ const MAX_CHANNEL_DELTA = 0;
     for (const tileSize of tileSizes) await parityPass("halation-view-map", tileSize);
     await configure({ halation_amount: 0, halation_view_map: false, bloom_amount: 0,
       film_resolution: 100 });
+
+    // Black & White's neighbourhood colour, alone and under the spatial effects.
+    await configure({ bw: { reds: -100, oranges: 100, yellows: -100, greens: 100, aquas: -100, blues: 100, purples: -100, magentas: 100 } });
+    for (const tileSize of tileSizes) await parityPass("black-and-white", tileSize);
+    await configure({ bw: { oranges: 100, greens: -60, blues: -80 }, halation_amount: 70, halation_radius: 1.2,
+      bloom_amount: 55, bloom_radius: 3.0, detail_softness: 25, film_resolution: 82 });
+    for (const tileSize of tileSizes) await parityPass("bw+spatial", tileSize);
+    await configure({ film_resolution: 100 });
 
     // 3 -- the grain view map: a neutral grey card carrying the grain field and
     // nothing else. Any tile-origin drift in the noise is the whole signal here.

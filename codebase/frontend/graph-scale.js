@@ -350,6 +350,19 @@
     };
   }
 
+  // BW-01: p[177] turns Black & White on, p[178..185] are its sliders; with
+  // any slider set, each pixel's colour is the mean of a 5x5 lattice two
+  // pixels apart, four pixels either side.
+  const BLACK_AND_WHITE_PARAM = 177;
+  const BLACK_AND_WHITE_GUIDE_REACH = 4;
+  function blackAndWhiteGuideReach(params) {
+    if (!(params.length > BLACK_AND_WHITE_PARAM + 8) || !(params[BLACK_AND_WHITE_PARAM] > 0.5)) return 0;
+    for (let index = 1; index <= 8; index += 1) {
+      if (params[BLACK_AND_WHITE_PARAM + index] !== 0) return BLACK_AND_WHITE_GUIDE_REACH;
+    }
+    return 0;
+  }
+
   function spatialReach(width, height, params) {
     return spatialReachDetail(width, height, params).total;
   }
@@ -371,10 +384,14 @@
     const detailHalo = (detailActive || localDetailOn)
       ? detailReach(width, height, params, localAdjustments, lane)
       : 0;
+    // Black & White reads each pixel's colour from the source around it
+    // (BW_GUIDE_REACH in adjustments.py) before any later stage runs, so that
+    // reach adds to whatever Detail and the film stage need.
+    const blackAndWhiteHalo = blackAndWhiteGuideReach(params);
     const spatialHalo = filmNeighbourhoodActive ? spatialReach(width, height, params) : 0;
     const halo = spatialHalo > 0
-      ? Math.ceil((detailHalo + spatialHalo) / SPATIAL_SCALE) * SPATIAL_SCALE
-      : detailHalo;
+      ? Math.ceil((detailHalo + spatialHalo + blackAndWhiteHalo) / SPATIAL_SCALE) * SPATIAL_SCALE
+      : detailHalo + blackAndWhiteHalo;
     return { halo, detailHalo, spatialHalo };
   }
 
@@ -555,6 +572,7 @@
     clarityMapReach,
     spatialReachDetail,
     spatialReach,
+    blackAndWhiteGuideReach,
     composedReach,
     alignReach,
     MODULE_SCALE_CONTRACT,

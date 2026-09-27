@@ -593,6 +593,17 @@ noise: 1.0× the plain conversion's noise at −7 EV (3.5× without the fade),
 2.0× at −5 EV with 40% colour noise (5.1× without). Hue and chroma are
 exposure-invariant, so HDR and SDR agree.
 
+**Fix after Steve's first test (2026-09-27).** On DSC00264 (high ISO, a strongly
+orange background, Oranges +100 beside Yellows +54 and Greens −53) B&W was
+3.6× as noisy as Saturation −100: each pixel's noisy hue jumped between
+neighbouring sliders, turning colour noise into brightness noise. Hue, chroma
+and lightness are now read from a guide, the mean of a 5×5 lattice of source
+pixels two apart (a 9×9 footprint) taken through the same pointwise stages as
+the pixel; brightness still comes from the pixel. That photo drops to 1.33×
+(the rest is the brighter oranges lifting their own noise). Colour edges blend
+the slider within 4 px. GPU tiles reserve that 4 px reach; the CPU strip path
+refuses B&W with sliders set and renders whole-frame.
+
 **Placement.** Straight after Color, before highlight limiting measures the
 picture: HDR after Color; SDR scene-linear path after Color, before the sRGB
 placement; SDR authored-reference path in `_sdr_reference_pre_highlight`

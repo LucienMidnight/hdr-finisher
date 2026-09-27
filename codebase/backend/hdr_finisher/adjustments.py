@@ -368,16 +368,13 @@ def _apply_hdr_adjustments(
 ) -> np.ndarray:
     color_context = color_context or RenderColorContext()
     hdr = adjustments.hdr
-    result = image.astype(np.float32, copy=True)
-    if hdr.tone_section_enabled:
-        result = _apply_hdr_base_adjustments(result, adjustments)
-        result = _apply_luminance_section_controls(
-            result, hdr, PreviewKind.HDR, apply_primaries=False, apply_contrast=True
-        )
-    if hdr.color_section_enabled:
-        result = _apply_hdr_color(result, hdr)
+    result = _hdr_before_black_and_white(image.astype(np.float32, copy=True), adjustments)
     if hdr.black_and_white_section_enabled:
-        result = _apply_black_and_white(result, hdr.black_and_white)
+        result = _apply_black_and_white(
+            result,
+            hdr.black_and_white,
+            guide=_black_and_white_guide(image, hdr.black_and_white, _hdr_before_black_and_white, adjustments),
+        )
     if hdr.tone_equalizer_section_enabled:
         result = _apply_hdr_tone_equalizer(result, hdr)
     if hdr.primaries_section_enabled:
@@ -527,6 +524,20 @@ def _clip_to_output_target(
     return np.clip(linear_bt2020_to_acescg(transport), 0.0, None).astype(np.float32, copy=False)
 
 
+def _hdr_before_black_and_white(image: np.ndarray, adjustments: AdjustmentState) -> np.ndarray:
+    """HDR Tone and Color: every stage before Black & White. All pointwise."""
+    hdr = adjustments.hdr
+    result = image
+    if hdr.tone_section_enabled:
+        result = _apply_hdr_base_adjustments(result, adjustments)
+        result = _apply_luminance_section_controls(
+            result, hdr, PreviewKind.HDR, apply_primaries=False, apply_contrast=True
+        )
+    if hdr.color_section_enabled:
+        result = _apply_hdr_color(result, hdr)
+    return result
+
+
 def _apply_hdr_color(image: np.ndarray, hdr) -> np.ndarray:
     if _color_settings_are_neutral(hdr):
         return image
@@ -633,17 +644,53 @@ def _bw_hue_response(hue_deg: np.ndarray, sliders: np.ndarray) -> np.ndarray:
     return (values[index] * (np.float32(1.0) - t) + values[index + 1] * t).astype(np.float32)
 
 
-def _apply_black_and_white(image: np.ndarray, bw: object) -> np.ndarray:
+# Which colour a pixel takes its slider from is read from its neighbourhood:
+# the mean of a 5x5 lattice of source pixels BW_GUIDE_STEP apart (a 9x9
+# footprint), taken through the same pointwise stages as the pixel. Per-pixel
+# hue in a noisy, strongly coloured area jumps between neighbouring sliders
+# and turned colour noise into brightness noise: 3.6x Saturation -100's noise
+# on a high-ISO frame with Oranges +100 beside Greens -53, 1.26x with this.
+BW_GUIDE_STEP = 2
+BW_GUIDE_TAPS = 2  # each side, so offsets -4, -2, 0, 2, 4
+BW_GUIDE_REACH = BW_GUIDE_STEP * BW_GUIDE_TAPS
+
+
+def black_and_white_needs_guide(bw: object) -> bool:
+    return any(float(getattr(bw, name)) != 0.0 for name in BW_SLIDERS)
+
+
+def _bw_lattice_mean(image: np.ndarray) -> np.ndarray:
+    """Mean of the 5x5 lattice around each pixel, edges clamped (as the shader does)."""
+    reach = BW_GUIDE_REACH
+    padded = np.pad(image.astype(np.float32), ((reach, reach), (reach, reach), (0, 0)), mode="edge")
+    height, width = image.shape[:2]
+    offsets = range(0, 2 * reach + 1, BW_GUIDE_STEP)
+    rows = sum(padded[offset:offset + height] for offset in offsets)
+    total = sum(rows[:, offset:offset + width] for offset in offsets)
+    return (total / np.float32(len(offsets) ** 2)).astype(np.float32)
+
+
+def _black_and_white_guide(image: np.ndarray, bw: object, before, adjustments: AdjustmentState) -> np.ndarray | None:
+    """The neighbourhood colour each pixel's slider is chosen from, or None when no slider is set."""
+    if not black_and_white_needs_guide(bw):
+        return None
+    return before(_bw_lattice_mean(image), adjustments)
+
+
+def _apply_black_and_white(image: np.ndarray, bw: object, *, guide: np.ndarray | None = None) -> np.ndarray:
     """Monochrome from scene-linear ACEScg, with each colour's grey set by its slider.
 
     All sliders at 0 give ACEScg luminance, pixel for pixel what Saturation
     -100 gives. A slider scales a pixel's grey by up to BW_RESPONSE_STOPS,
-    in proportion to how coloured it is, so neutrals never move.
+    in proportion to how coloured it is, so neutrals never move. Hue, chroma
+    and lightness are read from ``guide`` (the neighbourhood colour, see
+    BW_GUIDE_STEP) when given, else from the pixel itself.
     """
     luma = _acescg_luma(image).astype(np.float32)
     sliders = np.array([float(getattr(bw, name)) / 100.0 for name in BW_SLIDERS], dtype=np.float32)
     if np.any(sliders != 0.0):
-        lms = np.cbrt(image.astype(np.float32) @ BW_ACESCG_TO_LMS.T)
+        colour = image if guide is None else guide
+        lms = np.cbrt(colour.astype(np.float32) @ BW_ACESCG_TO_LMS.T)
         lab = lms @ BW_LMS_TO_OKLAB.T
         lightness, a, b = lab[..., 0], lab[..., 1], lab[..., 2]
         hue = np.degrees(np.arctan2(b, a)).astype(np.float32) % np.float32(360.0)
@@ -860,17 +907,14 @@ def _sdr_pre_highlight(image: np.ndarray, adjustments: AdjustmentState) -> np.nd
     measured anchor the anchor the render actually uses.
     """
     sdr = adjustments.sdr
-    result = image.astype(np.float32, copy=True)
-    if sdr.tone_section_enabled:
-        result = np.clip(result * np.float32(2.0 ** sdr.exposure), 0.0, None)
-    if sdr.tone_section_enabled and sdr.shadow != 0:
-        shadow_mask = 1.0 - _smoothstep(0.0, 0.5, _acescg_luma(result))
-        result = np.clip(result + sdr.shadow * 0.08 * shadow_mask[..., None], 0.0, None)
-    if _sdr_color_is_enabled(adjustments):
-        result = _apply_hdr_color(result, adjustments.sdr)
+    result = _sdr_before_black_and_white(image.astype(np.float32, copy=True), adjustments)
     if sdr.black_and_white_section_enabled:
         # Before the highlight stage measures the picture (BW-01).
-        result = _apply_black_and_white(result, sdr.black_and_white)
+        result = _apply_black_and_white(
+            result,
+            sdr.black_and_white,
+            guide=_black_and_white_guide(image, sdr.black_and_white, _sdr_before_black_and_white, adjustments),
+        )
     if sdr.rendering_version == "legacy_base_v1":
         return result
     # Neutral SDR placement: scene 0.18 is the 100-nit diffuse-white anchor
@@ -879,10 +923,24 @@ def _sdr_pre_highlight(image: np.ndarray, adjustments: AdjustmentState) -> np.nd
     return acescg_to_linear_srgb(result * SDR_SCENE_TO_DISPLAY_SCALE)
 
 
-def _sdr_reference_pre_highlight(image: np.ndarray, adjustments: AdjustmentState) -> np.ndarray:
-    """The authored-SDR-base equivalent of ``_sdr_pre_highlight``."""
+def _sdr_before_black_and_white(image: np.ndarray, adjustments: AdjustmentState) -> np.ndarray:
+    """SDR exposure, shadow and Color in scene-linear ACEScg. All pointwise."""
     sdr = adjustments.sdr
-    result = image.astype(np.float32, copy=True)
+    result = image
+    if sdr.tone_section_enabled:
+        result = np.clip(result * np.float32(2.0 ** sdr.exposure), 0.0, None)
+    if sdr.tone_section_enabled and sdr.shadow != 0:
+        shadow_mask = 1.0 - _smoothstep(0.0, 0.5, _acescg_luma(result))
+        result = np.clip(result + sdr.shadow * 0.08 * shadow_mask[..., None], 0.0, None)
+    if _sdr_color_is_enabled(adjustments):
+        result = _apply_hdr_color(result, adjustments.sdr)
+    return result
+
+
+def _sdr_reference_before_black_and_white(image: np.ndarray, adjustments: AdjustmentState) -> np.ndarray:
+    """The authored-reference path up to Black & White, in display-linear sRGB."""
+    sdr = adjustments.sdr
+    result = image
     if sdr.rendering_version == "legacy_base_v1":
         result = np.clip(result, 0.0, 1.0)
     else:
@@ -892,11 +950,23 @@ def _sdr_reference_pre_highlight(image: np.ndarray, adjustments: AdjustmentState
     if sdr.tone_section_enabled and sdr.shadow != 0:
         shadow_mask = 1.0 - _smoothstep(0.0, 0.5, _linear_luma(result))
         result = np.clip(result + sdr.shadow * 0.08 * shadow_mask[..., None], 0.0, None)
+    return result
+
+
+def _sdr_reference_pre_highlight(image: np.ndarray, adjustments: AdjustmentState) -> np.ndarray:
+    """The authored-SDR-base equivalent of ``_sdr_pre_highlight``."""
+    sdr = adjustments.sdr
+    result = _sdr_reference_before_black_and_white(image.astype(np.float32, copy=True), adjustments)
     if sdr.black_and_white_section_enabled:
         # On this path Color runs after the highlight stage, but B&W must come
         # before it, so the stage measures and shapes the grey picture (BW-01).
+        guide = _black_and_white_guide(image, sdr.black_and_white, _sdr_reference_before_black_and_white, adjustments)
         result = acescg_to_linear_srgb(
-            _apply_black_and_white(linear_srgb_to_acescg(result), sdr.black_and_white)
+            _apply_black_and_white(
+                linear_srgb_to_acescg(result),
+                sdr.black_and_white,
+                guide=None if guide is None else linear_srgb_to_acescg(guide),
+            )
         ).astype(np.float32)
     return result
 

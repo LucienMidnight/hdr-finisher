@@ -72,14 +72,26 @@
   // `_apply_black_and_white` in adjustments.py: ACEScg luminance, scaled per
   // pixel by up to two stops by the sliders either side of its Oklab hue, in
   // proportion to its relative chroma. p[177] switches it on; p[178..185] are
-  // Reds..Magentas / 100.
+  // Reds..Magentas / 100. Hue, chroma and lightness come from \`guide\`: the
+  // mean of a 5x5 lattice of source pixels two apart around the pixel, taken
+  // through the same pointwise stages (adjustments.py BW_GUIDE_STEP), so
+  // colour noise is not turned into brightness noise.
   const BLACK_AND_WHITE_PARAM = 177;
+  const BLACK_AND_WHITE_GUIDE_STEP = 2;
+  const BLACK_AND_WHITE_GUIDE_TAPS = 2;
   function blackAndWhiteWgsl(params, name) {
     return `
+fn ${name}NeedsGuide() -> bool {
+  if (${params}[${BLACK_AND_WHITE_PARAM}] < 0.5) { return false; }
+  for (var index = 1u; index <= 8u; index = index + 1u) {
+    if (${params}[${BLACK_AND_WHITE_PARAM}u + index] != 0.0) { return true; }
+  }
+  return false;
+}
 fn ${name}Cbrt(value: f32) -> f32 {
   return select(0.0, sign(value) * pow(abs(value), 1.0 / 3.0), abs(value) > 0.0);
 }
-fn ${name}(input: vec3f) -> vec3f {
+fn ${name}(input: vec3f, guide: vec3f) -> vec3f {
   if (${params}[${BLACK_AND_WHITE_PARAM}] < 0.5) { return input; }
   let y = dot(input, vec3f(0.2722287, 0.6740818, 0.0536895));
   var sliders = array<f32, 9>(
@@ -92,9 +104,9 @@ fn ${name}(input: vec3f) -> vec3f {
   }
   if (!anySlider) { return vec3f(y); }
   let lms = vec3f(
-    ${name}Cbrt(0.6317629967 * input.r + 0.3488996982 * input.g + 0.0193373050 * input.b),
-    ${name}Cbrt(0.2700628984 * input.r + 0.6309344642 * input.g + 0.0990026374 * input.b),
-    ${name}Cbrt(0.0987429103 * input.r + 0.1852327013 * input.g + 0.7160243884 * input.b)
+    ${name}Cbrt(0.6317629967 * guide.r + 0.3488996982 * guide.g + 0.0193373050 * guide.b),
+    ${name}Cbrt(0.2700628984 * guide.r + 0.6309344642 * guide.g + 0.0990026374 * guide.b),
+    ${name}Cbrt(0.0987429103 * guide.r + 0.1852327013 * guide.g + 0.7160243884 * guide.b)
   );
   let lightness = 0.2104542553 * lms.x + 0.7936177850 * lms.y - 0.0040720468 * lms.z;
   let a = 1.9779984951 * lms.x - 2.4285922050 * lms.y + 0.4505937099 * lms.z;
@@ -115,6 +127,17 @@ fn ${name}(input: vec3f) -> vec3f {
   let shadowT = clamp((lightness - 0.12) / (0.25 - 0.12), 0.0, 1.0);
   let weight = chromaT * chromaT * (3.0 - 2.0 * chromaT) * shadowT * shadowT * (3.0 - 2.0 * shadowT);
   return vec3f(y * exp2(2.0 * weight * response));
+}
+// The lattice mean the guide is built from, edges clamped to \`limit\`.
+fn ${name}LatticeMean(texture: texture_2d<f32>, coordinate: vec2i, limit: vec2i) -> vec3f {
+  var total = vec3f(0.0);
+  for (var y = -${BLACK_AND_WHITE_GUIDE_TAPS}; y <= ${BLACK_AND_WHITE_GUIDE_TAPS}; y = y + 1) {
+    for (var x = -${BLACK_AND_WHITE_GUIDE_TAPS}; x <= ${BLACK_AND_WHITE_GUIDE_TAPS}; x = x + 1) {
+      let at = clamp(coordinate + vec2i(x, y) * ${BLACK_AND_WHITE_GUIDE_STEP}, vec2i(0), limit - vec2i(1));
+      total += textureLoad(texture, at, 0).rgb;
+    }
+  }
+  return total / ${(2 * BLACK_AND_WHITE_GUIDE_TAPS + 1) ** 2}.0;
 }`;
   }
 
@@ -186,25 +209,37 @@ fn peakSceneColor(input: vec3f) -> vec3f {
   let vibranceWeight = pow(1.0 - relativeChroma, 2.0);
   return neutral + chroma * max(0.0, 1.0 + peakParams[71] * vibranceWeight) * max(0.0, 1.0 + peakParams[70]);
 }
-fn peakSdrInput(input: vec3f) -> vec3f {
-  var rgb = input * exp2(peakParams[2]);
-  if (peakParams[1] > 0.5) {
-    rgb = max(rgb, vec3f(0.0));
-    if (peakParams[4] != 0.0) {
-      let mask = 1.0 - smoothstep(0.0, 0.5, peakSrgbLuma(rgb));
-      rgb = max(rgb + vec3f(peakParams[4] * 0.08 * mask), vec3f(0.0));
-    }
-    if (peakParams[${BLACK_AND_WHITE_PARAM}] > 0.5) {
-      rgb = peakAcescgToSrgb(peakBlackAndWhite(peakSrgbToAcescg(rgb)));
-    }
-    return rgb;
+fn peakSdrReferencePrefix(input: vec3f) -> vec3f {
+  var rgb = max(input * exp2(peakParams[2]), vec3f(0.0));
+  if (peakParams[4] != 0.0) {
+    let mask = 1.0 - smoothstep(0.0, 0.5, peakSrgbLuma(rgb));
+    rgb = max(rgb + vec3f(peakParams[4] * 0.08 * mask), vec3f(0.0));
   }
-  rgb = max(rgb, vec3f(0.0));
+  return rgb;
+}
+fn peakSdrScenePrefix(input: vec3f) -> vec3f {
+  var rgb = max(input * exp2(peakParams[2]), vec3f(0.0));
   if (peakParams[4] != 0.0) {
     let mask = 1.0 - smoothstep(0.0, 0.5, peakLuma(rgb));
     rgb = max(rgb + vec3f(peakParams[4] * 0.08 * mask), vec3f(0.0));
   }
-  return peakAcescgToSrgb(peakBlackAndWhite(peakSceneColor(rgb))) * ((100.0 / 203.0) / 0.18);
+  return peakSceneColor(rgb);
+}
+fn peakSdrInput(input: vec3f, guideSource: vec3f) -> vec3f {
+  let needsGuide = peakBlackAndWhiteNeedsGuide();
+  if (peakParams[1] > 0.5) {
+    var rgb = peakSdrReferencePrefix(input);
+    if (peakParams[${BLACK_AND_WHITE_PARAM}] > 0.5) {
+      var guide = rgb;
+      if (needsGuide) { guide = peakSdrReferencePrefix(guideSource); }
+      rgb = peakAcescgToSrgb(peakBlackAndWhite(peakSrgbToAcescg(rgb), peakSrgbToAcescg(guide)));
+    }
+    return rgb;
+  }
+  let scene = peakSdrScenePrefix(input);
+  var guide = scene;
+  if (needsGuide) { guide = peakSdrScenePrefix(guideSource); }
+  return peakAcescgToSrgb(peakBlackAndWhite(scene, guide)) * ((100.0 / 203.0) / 0.18);
 }
 
 // The measurement domain follows the selected colour handling: BT.2020 channel
@@ -238,7 +273,11 @@ fn peakReductionMain(@builtin(global_invocation_id) id: vec3u) {
   if (id.x >= dimensions.x || id.y >= dimensions.y) { return; }
   let source = textureLoad(peakSource, vec2i(id.xy), 0).rgb;
   let sdrV2 = peakParams[0] < 0.5 && peakParams[159] > 0.5;
-  let rgb = select(peakTone(source), peakSdrInput(source), sdrV2);
+  var guideSource = source;
+  if (sdrV2 && peakBlackAndWhiteNeedsGuide()) {
+    guideSource = peakBlackAndWhiteLatticeMean(peakSource, vec2i(id.xy), vec2i(dimensions));
+  }
+  let rgb = select(peakTone(source), peakSdrInput(source, guideSource), sdrV2);
   recordPeak(peakSignalOf(rgb, sdrV2));
 }
 
@@ -9185,6 +9224,9 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return clamp(select(vec3f(0.0), rgb * (mapped / max(y, 0.00000001)), y > 0.00000001), vec3f(0.0), vec3f(1.0));
     }
     ${blackAndWhiteWgsl("p", "blackAndWhite")}
+    // The source-pixel lattice mean for Black & White's guide, filled by
+    // baseFragmentMain only when a slider is set.
+    var<private> blackAndWhiteGuideSource: vec3f;
     fn sceneColor(input: vec3f) -> vec3f {
       if (p[72] < 0.5) { return input; }
       return hdrColor(whiteBalance(input));
@@ -9194,8 +9236,10 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return compressSrgbGamut(acescgToSrgb(sceneColor(srgbToAcescg(input))));
     }
     fn renderHdrBase(source: vec3f) -> vec3f {
-      let contrasted = hdrContrast(hdrBase(source));
-      let balanced = blackAndWhite(sceneColor(contrasted));
+      let scene = sceneColor(hdrContrast(hdrBase(source)));
+      var guide = scene;
+      if (blackAndWhiteNeedsGuide()) { guide = sceneColor(hdrContrast(hdrBase(blackAndWhiteGuideSource))); }
+      let balanced = blackAndWhite(scene, guide);
       let equalized = toneEqualizer(balanced);
       let primaries = hdrPrimaries(equalized);
       return max(applyColorGrading(applyCurves(primaries, true), true), vec3f(0.0));
@@ -9213,17 +9257,34 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let display = max(acescgToSrgb(rgb), vec3f(0.0));
       return display / (vec3f(1.0) + display);
     }
+    fn sdrReferencePrefix(source: vec3f) -> vec3f {
+      var rgb = select(clamp(source, vec3f(0.0), vec3f(1.0)), max(source, vec3f(0.0)), p[159] > 0.5) * exp2(p[2]);
+      if (p[4] != 0.0) {
+        let mask = 1.0 - smoothRange(0.0, 0.5, lumaSrgb(rgb));
+        rgb = max(rgb + vec3f(p[4] * 0.08 * mask), vec3f(0.0));
+      }
+      return rgb;
+    }
+    fn sdrScenePrefix(source: vec3f) -> vec3f {
+      var rgb = max(source * exp2(p[2]), vec3f(0.0));
+      if (p[4] != 0.0) {
+        let mask = 1.0 - smoothRange(0.0, 0.5, lumaAces(rgb));
+        rgb = max(rgb + vec3f(p[4] * 0.08 * mask), vec3f(0.0));
+      }
+      return sceneColor(rgb);
+    }
     fn renderSdrBase(source: vec3f) -> vec3f {
       var rgb: vec3f;
+      let needsGuide = blackAndWhiteNeedsGuide();
       if (p[1] > 0.5) {
-        rgb = select(clamp(source, vec3f(0.0), vec3f(1.0)), max(source, vec3f(0.0)), p[159] > 0.5) * exp2(p[2]);
-        if (p[4] != 0.0) {
-          let mask = 1.0 - smoothRange(0.0, 0.5, lumaSrgb(rgb));
-          rgb = max(rgb + vec3f(p[4] * 0.08 * mask), vec3f(0.0));
-        }
+        rgb = sdrReferencePrefix(source);
         // BW-01: on this path Color runs after the highlight stage, but B&W
         // must come before it (adjustments.py _sdr_reference_pre_highlight).
-        if (p[177] > 0.5) { rgb = acescgToSrgb(blackAndWhite(srgbToAcescg(rgb))); }
+        if (p[177] > 0.5) {
+          var guide = rgb;
+          if (needsGuide) { guide = sdrReferencePrefix(blackAndWhiteGuideSource); }
+          rgb = acescgToSrgb(blackAndWhite(srgbToAcescg(rgb), srgbToAcescg(guide)));
+        }
         if (p[159] > 0.5) {
           rgb = sdrPeakFit(sdrSoftCeiling(rgb));
           rgb = toneEqualizer(rgb);
@@ -9236,22 +9297,21 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           rgb = applyColorGrading(applyCurves(sdrPrimaries(sdrReferenceColor(sdrContrast(toneEqualizer(highlightRecovery(rgb))))), false), false);
         }
       } else {
-        rgb = max(source * exp2(p[2]), vec3f(0.0));
-        if (p[4] != 0.0) {
-          let mask = 1.0 - smoothRange(0.0, 0.5, lumaAces(rgb));
-          rgb = max(rgb + vec3f(p[4] * 0.08 * mask), vec3f(0.0));
-        }
+        let scene = sdrScenePrefix(source);
+        var guide = scene;
+        if (needsGuide) { guide = sdrScenePrefix(blackAndWhiteGuideSource); }
+        let grey = blackAndWhite(scene, guide);
         if (p[159] > 0.5) {
           // The SDR shoulder is the scene-to-display placement, not a final
           // limiter: every stage below it is display-referred. Only the ceiling
           // runs in applyOutputHighlights.
-          rgb = compressSrgbGamut(sdrPeakFit(sdrSoftCeiling(acescgToSrgb(blackAndWhite(sceneColor(rgb))) * ((100.0 / 203.0) / 0.18))));
+          rgb = compressSrgbGamut(sdrPeakFit(sdrSoftCeiling(acescgToSrgb(grey) * ((100.0 / 203.0) / 0.18))));
           rgb = toneEqualizer(rgb);
           rgb = sdrContrast(rgb);
           rgb = sdrPrimaries(rgb);
           rgb = applyColorGrading(applyCurves(rgb, false), false);
         } else {
-          rgb = applyColorGrading(applyCurves(sdrPrimaries(sdrContrast(toneEqualizer(highlightRecovery(toneMap(blackAndWhite(sceneColor(rgb))))))), false), false);
+          rgb = applyColorGrading(applyCurves(sdrPrimaries(sdrContrast(toneEqualizer(highlightRecovery(toneMap(grey))))), false), false);
         }
       }
       return clamp(rgb, vec3f(0.0), vec3f(1.0));
@@ -10250,6 +10310,9 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         let denoised = textureLoad(overlayMaskTexture, coordinate, 0).rgb;
         let removed = noiseViewEncode(source) - noiseViewEncode(denoised);
         return vec4f(clamp(vec3f(0.5) + removed * NOISE_VIEW_GAIN, vec3f(0.0), vec3f(1.0)), 1.0);
+      }
+      if (blackAndWhiteNeedsGuide()) {
+        blackAndWhiteGuideSource = blackAndWhiteLatticeMean(sourceTexture, coordinate, validTileDimensions());
       }
       let output = select(renderSdrBase(source), renderHdrBase(source), p[0] > 0.5);
       return vec4f(output, 1.0);
