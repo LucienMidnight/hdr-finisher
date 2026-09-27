@@ -5241,6 +5241,33 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
      * reconstruction still reads the original at its true frame position, so
      * the result is the same pixels either way; only where they land differs.
      */
+    /**
+     * Hand the tiled path new Denoise controls without reconstructing the
+     * whole frame.
+     *
+     * A tiled render reconstructs each tile it draws from `selector.controls`,
+     * so during a drag at Full or when zoomed in, a whole-frame reconstruction
+     * per step is work nobody sees (NEXT-01 #4). The whole-frame result is
+     * left as it was; the caller must run `resolveDenoiseProxy` once the drag
+     * ends so a later Direct render does not show the old controls.
+     */
+    setDenoiseControls(controls = {}) {
+      const selector = this.denoiseSourceSelector;
+      if (!selector?.cache || !selector.original || selector.selected !== "resolved") return false;
+      const weights = ["amount", "luminance", "colorNoise", "detailRecovery"].map((name) => {
+        const value = Number(controls[name] ?? 0.5);
+        if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error(`${name} must be between 0 and 1`);
+        return value;
+      });
+      const sizes = selector.cache.algorithmVersion === ADAPTIVE_DENOISE_ALGORITHM_VERSION
+        ? adaptiveDenoiseSizes(controls)
+        : {};
+      selector.controls = {
+        amount: weights[0], luminance: weights[1], colorNoise: weights[2], detailRecovery: weights[3], ...sizes,
+      };
+      return true;
+    }
+
     async resolveDenoiseProxy(controls = {}, { region = null, destination = null, encoder: sharedEncoder = null } = {}) {
       const selector = this.denoiseSourceSelector;
       if (!selector?.cache || !selector.original) return false;

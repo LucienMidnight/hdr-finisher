@@ -3399,11 +3399,19 @@ function bindEvents() {
     [els.denoiseCoarse, "coarse_noise"],
   ];
   for (const [control, key] of denoiseSliders) {
-    control?.addEventListener("pointerdown", () => state.previewScheduler?.beginInteraction());
+    // Capture phase: the instrument slider's own pointerdown moves the value
+    // to the click and fires `input` at once, and that first reconstruction
+    // must already count as part of the drag (else it is a whole-frame one).
+    control?.addEventListener("pointerdown", () => state.previewScheduler?.beginInteraction(), { capture: true });
     control?.addEventListener("input", () => updateLiveDenoiseControl(key, Number(control.value)));
     for (const eventName of ["pointerup", "pointercancel", "change"]) {
       control?.addEventListener(eventName, () => {
         state.previewScheduler?.endInteraction();
+        const stale = state.denoiseWholeFrameStale;
+        if (stale) {
+          state.denoiseWholeFrameStale = null;
+          void denoiseInputQueue().submit({ ...stale, wholeFrame: true });
+        }
         if (eventName === "change") void persistDenoiseSettings();
       });
     }
@@ -10504,24 +10512,82 @@ function denoiseRendererControls(controls) {
   };
 }
 
+// Frames a Denoise drag may start per second: the drag cap every other slider
+// has (HDRPreviewScheduler maxInteractiveFps).
+const DENOISE_DRAG_MAX_FPS = 60;
+
+// Margin, in source pixels, reconstructed around the visible area during a
+// drag, so filters that sample neighbours near the viewer edge see denoised
+// pixels. Also the grid the region is snapped to (a wavelet tile must start
+// on its own grid).
+const LIVE_DENOISE_REGION_MARGIN = 64;
+
+/**
+ * The part of the denoise frame on screen, or null when that is the whole
+ * frame or cannot be mapped (any crop, rotation or perspective moves the
+ * output away from the source grid, so those keep whole-frame work).
+ */
+function liveDenoiseRegion() {
+  const source = state.gpuPreview?.denoiseSourceSelector?.original;
+  if (!source?.width || !source?.height || !geometryTransformIsNeutral()) return null;
+  const visible = visibleOutputRect(source.width, source.height);
+  if (!visible) return null;
+  const grid = LIVE_DENOISE_REGION_MARGIN;
+  const x = Math.max(0, Math.floor((visible.x - grid) / grid) * grid);
+  const y = Math.max(0, Math.floor((visible.y - grid) / grid) * grid);
+  return {
+    x,
+    y,
+    width: Math.min(source.width, visible.x + visible.width + grid) - x,
+    height: Math.min(source.height, visible.y + visible.height + grid) - y,
+  };
+}
+
+async function runLiveDenoise({ lane, controls, wholeFrame = false }) {
+  const startedAt = performance.now();
+  const interacting = !wholeFrame && Boolean(state.previewScheduler?.interacting);
+  // NEXT-01 #4. During a drag only what is on screen is reconstructed: a
+  // tiled render (Full, or zoomed in) reconstructs each tile it draws itself,
+  // and a whole-frame render zoomed in needs only the visible region. At 200%
+  // on a 42 MP frame the whole-frame reconstruction took ~145 ms a step. The
+  // rest of the frame is brought up to date once, on release (wholeFrame).
+  const region = interacting ? liveDenoiseRegion() : null;
+  if (interacting && interactiveDraftGuaranteedTiled(lane) && state.gpuPreview?.setDenoiseControls?.(controls)) {
+    state.denoiseWholeFrameStale = { lane, controls };
+  } else {
+    const ready = await state.gpuPreview?.resolveDenoiseProxy?.(controls, region ? { region } : {});
+    if (!ready) return;
+    state.denoiseWholeFrameStale = region ? { lane, controls } : null;
+  }
+  if (lane !== state.currentView) return;
+  if (interacting) {
+    // NEXT-01 #4. During a drag the picture is drawn by the ordinary drag
+    // path, so a Denoise drag gets what every other slider has: the 60 fps
+    // cap, one frame on the GPU at a time, throttled scopes and the settled
+    // pass on release. Drawing a settled frame per reconstruction here, back
+    // to back, ran above the cap with frames queued on the GPU and cost 60%
+    // more card power than an Exposure drag at Fit.
+    invalidatePreview(lane, { markDirty: false });
+    debouncePreview(lane);
+    // The next reconstruction waits for this one to leave the GPU and for the
+    // frame interval, so reconstructions cannot outrun the drawing.
+    await state.gpuPreview?.waitForSubmittedWork?.();
+    const remaining = 1000 / DENOISE_DRAG_MAX_FPS - (performance.now() - startedAt);
+    if (remaining > 0) await new Promise((resolve) => window.setTimeout(resolve, remaining));
+    return;
+  }
+  await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
+  debounceOverlayAndScopes();
+}
+
 function denoiseInputQueue() {
   if (!state.denoiseInputQueue) {
     const Queue = window.HDRLatestWorkQueue;
     state.denoiseInputQueue = Queue
-      ? new Queue(async ({ lane, controls }) => {
-        const ready = await state.gpuPreview?.resolveDenoiseProxy?.(controls);
-        if (!ready || lane !== state.currentView) return;
-        await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
-        debounceOverlayAndScopes();
-      }, { onError: (error) => console.warn("Live denoise reconstruction failed.", error) })
+      ? new Queue(runLiveDenoise, { onError: (error) => console.warn("Live denoise reconstruction failed.", error) })
       : null;
   }
-  return state.denoiseInputQueue || { submit: async ({ lane, controls }) => {
-    const ready = await state.gpuPreview?.resolveDenoiseProxy?.(controls);
-    if (!ready || lane !== state.currentView) return;
-    await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
-    debounceOverlayAndScopes();
-  }, stats: null };
+  return state.denoiseInputQueue || { submit: runLiveDenoise, stats: null };
 }
 
 function removeToneEqualizerNode(requestedIndex = null, lane = state.currentView) {
