@@ -75,7 +75,7 @@ An imported upload is copied into a temporary owned source, decoded, normalized,
 - Preview settings and capabilities
 - Render cache
 
-There is no database and no persistent project-file format. Ejecting/replacing the session discards unsaved adjustments. Reloading or restarting also resets interface preferences and layout to canonical defaults. Exports and manually recorded proof evidence are the durable artifacts.
+There is no database. Sessions live in memory, while `.hdrfinisher` project files persist the source reference, adjustment document, and project settings so work can be reopened. Ejecting or replacing a session discards adjustments that have not been saved to a project. Application preferences are stored separately as local desktop state. Exports and manually recorded proof evidence are additional durable artifacts.
 
 ## Preview scheduling
 

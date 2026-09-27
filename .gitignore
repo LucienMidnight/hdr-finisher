@@ -12,6 +12,8 @@ env/
 # Editor / OS
 .vscode/
 .idea/
+.claude/
+.kilo/
 .DS_Store
 Thumbs.db
 

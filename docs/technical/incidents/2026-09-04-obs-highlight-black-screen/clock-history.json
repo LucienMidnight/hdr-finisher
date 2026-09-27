@@ -1,0 +1,92 @@
+[
+  {
+    "RecordId": 190330,
+    "TimeCreated": "2026-09-04T10:29:28.868546+07:00",
+    "Id": 1,
+    "Message": "The system time has changed to ‎2026‎-‎09‎-‎04T03:29:28.868317800Z from ‎2026‎-‎09‎-‎04T03:29:28.867827400Z.\r\nTime Delta: 0 ms\r\n\r\nChange Reason: An application or system component changed the time.\r\nProcess: '\\Device\\HarddiskVolume3\\Windows\\System32\\svchost.exe' (PID 4624).\r\n\r\nRTC time: ‎2026‎-‎09‎-‎04T10:29:28.868317800Z\r\nCurrent time zone bias: -420\r\nRTC time is in UTC: false\r\nSystem time was based on RTC time: false"
+  },
+  {
+    "RecordId": 190327,
+    "TimeCreated": "2026-09-04T10:29:28.8680931+07:00",
+    "Id": 1,
+    "Message": "The system time has changed to ‎2026‎-‎09‎-‎04T03:29:28.867827400Z from ‎2026‎-‎09‎-‎03T20:29:28.452088900Z.\r\nTime Delta: 25200415 ms\r\n\r\nChange Reason: An application or system component changed the time.\r\nProcess: '\\Device\\HarddiskVolume3\\Windows\\System32\\svchost.exe' (PID 4624).\r\n\r\nRTC time: ‎2026‎-‎09‎-‎04T10:29:28.867827400Z\r\nCurrent time zone bias: -420\r\nRTC time is in UTC: false\r\nSystem time was based on RTC time: false"
+  },
+  {
+    "RecordId": 190118,
+    "TimeCreated": "2026-09-04T02:21:35.7340054+07:00",
+    "Id": 25,
+    "Message": "The system time was initialized to ‎2026‎-‎09‎-‎03T19:21:35.500000000Z. \r\n\r\nLoader time: ‎2026‎-‎09‎-‎03T19:21:34.000000000Z\r\nInternal boot flags: 0x2\r\nHAL RTC error code: 0x0\r\nRTC time is in UTC: false\r\nSoft boot: false\r\nSuccess: true\r\nPhase: 0"
+  },
+  {
+    "RecordId": 190117,
+    "TimeCreated": "2026-09-04T02:21:35.7340039+07:00",
+    "Id": 12,
+    "Message": "The operating system started at system time ‎2026‎-‎09‎-‎03T19:21:35.500000000Z."
+  },
+  {
+    "RecordId": 190076,
+    "TimeCreated": "2026-09-04T08:46:25.7448223+07:00",
+    "Id": 25,
+    "Message": "The system time was initialized to ‎2026‎-‎09‎-‎04T01:46:25.500000000Z. \r\n\r\nLoader time: ‎2026‎-‎09‎-‎04T01:46:23.000000000Z\r\nInternal boot flags: 0x2\r\nHAL RTC error code: 0x0\r\nRTC time is in UTC: false\r\nSoft boot: false\r\nSuccess: true\r\nPhase: 0"
+  },
+  {
+    "RecordId": 190075,
+    "TimeCreated": "2026-09-04T08:46:25.7448218+07:00",
+    "Id": 12,
+    "Message": "The operating system started at system time ‎2026‎-‎09‎-‎04T01:46:25.500000000Z."
+  },
+  {
+    "RecordId": 190074,
+    "TimeCreated": "2026-09-04T08:46:04.6526829+07:00",
+    "Id": 13,
+    "Message": "The operating system is shutting down at system time ‎2026‎-‎09‎-‎04T01:46:04.652681900Z."
+  },
+  {
+    "RecordId": 190058,
+    "TimeCreated": "2026-09-04T08:45:59.8607259+07:00",
+    "Id": 1,
+    "Message": "The system time has changed to ‎2026‎-‎09‎-‎04T01:45:59.860542400Z from ‎2026‎-‎09‎-‎04T01:45:59.859393600Z.\r\nTime Delta: 1 ms\r\n\r\nChange Reason: An application or system component changed the time.\r\nProcess: '\\Device\\HarddiskVolume3\\Windows\\System32\\svchost.exe' (PID 20988).\r\n\r\nRTC time: ‎2026‎-‎09‎-‎04T08:45:59.860542400Z\r\nCurrent time zone bias: -420\r\nRTC time is in UTC: false\r\nSystem time was based on RTC time: false"
+  },
+  {
+    "RecordId": 189884,
+    "TimeCreated": "2026-09-04T07:32:08.5001438+07:00",
+    "Id": 1,
+    "Message": "The system time has changed to ‎2026‎-‎09‎-‎04T00:32:08.500000000Z from ‎2026‎-‎09‎-‎03T17:57:14.792214600Z.\r\nTime Delta: 23693707 ms\r\n\r\nChange Reason: System time synchronized with the hardware clock.\r\nProcess: '' (PID 4).\r\n\r\nRTC time: ‎2026‎-‎09‎-‎04T07:32:08.500000000Z\r\nCurrent time zone bias: -420\r\nRTC time is in UTC: false\r\nSystem time was based on RTC time: false"
+  },
+  {
+    "RecordId": 189880,
+    "TimeCreated": "2026-09-04T00:57:13.0290617+07:00",
+    "Id": 1,
+    "Message": "The system time has changed to ‎2026‎-‎09‎-‎03T17:57:11.500000000Z from ‎2026‎-‎09‎-‎03T17:57:13.028470900Z.\r\nTime Delta: -1528 ms\r\n\r\nChange Reason: System time synchronized with the hardware clock.\r\nProcess: '' (PID 4).\r\n\r\nRTC time: ‎2026‎-‎09‎-‎04T00:57:11.500000000Z\r\nCurrent time zone bias: -420\r\nRTC time is in UTC: false\r\nSystem time was based on RTC time: false"
+  },
+  {
+    "RecordId": 189607,
+    "TimeCreated": "2026-09-03T16:39:05.7971771+07:00",
+    "Id": 1,
+    "Message": "The system time has changed to ‎2026‎-‎09‎-‎03T09:39:05.797034700Z from ‎2026‎-‎09‎-‎03T09:39:05.796592400Z.\r\nTime Delta: 0 ms\r\n\r\nChange Reason: An application or system component changed the time.\r\nProcess: '\\Device\\HarddiskVolume3\\Windows\\System32\\svchost.exe' (PID 20988).\r\n\r\nRTC time: ‎2026‎-‎09‎-‎03T16:39:05.797034700Z\r\nCurrent time zone bias: -420\r\nRTC time is in UTC: false\r\nSystem time was based on RTC time: false"
+  },
+  {
+    "RecordId": 189605,
+    "TimeCreated": "2026-09-03T16:39:05.7968637+07:00",
+    "Id": 1,
+    "Message": "The system time has changed to ‎2026‎-‎09‎-‎03T09:39:05.796592400Z from ‎2026‎-‎09‎-‎03T09:39:06.950312000Z.\r\nTime Delta: -1153 ms\r\n\r\nChange Reason: An application or system component changed the time.\r\nProcess: '\\Device\\HarddiskVolume3\\Windows\\System32\\svchost.exe' (PID 20988).\r\n\r\nRTC time: ‎2026‎-‎09‎-‎03T16:39:05.796592400Z\r\nCurrent time zone bias: -420\r\nRTC time is in UTC: false\r\nSystem time was based on RTC time: false"
+  },
+  {
+    "RecordId": 189395,
+    "TimeCreated": "2026-09-03T07:32:58.7316839+07:00",
+    "Id": 1,
+    "Message": "The system time has changed to ‎2026‎-‎09‎-‎03T00:32:58.731449700Z from ‎2026‎-‎09‎-‎03T00:32:58.730823000Z.\r\nTime Delta: 0 ms\r\n\r\nChange Reason: An application or system component changed the time.\r\nProcess: '\\Device\\HarddiskVolume3\\Windows\\System32\\svchost.exe' (PID 20988).\r\n\r\nRTC time: ‎2026‎-‎09‎-‎03T07:32:58.731449700Z\r\nCurrent time zone bias: -420\r\nRTC time is in UTC: false\r\nSystem time was based on RTC time: false"
+  },
+  {
+    "RecordId": 189392,
+    "TimeCreated": "2026-09-03T07:32:58.7310618+07:00",
+    "Id": 1,
+    "Message": "The system time has changed to ‎2026‎-‎09‎-‎03T00:32:58.730823000Z from ‎2026‎-‎09‎-‎03T00:32:59.884008200Z.\r\nTime Delta: -1153 ms\r\n\r\nChange Reason: An application or system component changed the time.\r\nProcess: '\\Device\\HarddiskVolume3\\Windows\\System32\\svchost.exe' (PID 20988).\r\n\r\nRTC time: ‎2026‎-‎09‎-‎03T07:32:58.730823000Z\r\nCurrent time zone bias: -420\r\nRTC time is in UTC: false\r\nSystem time was based on RTC time: false"
+  },
+  {
+    "RecordId": 189373,
+    "TimeCreated": "2026-09-03T07:32:42.5001603+07:00",
+    "Id": 1,
+    "Message": "The system time has changed to ‎2026‎-‎09‎-‎03T00:32:42.500000000Z from ‎2026‎-‎09‎-‎02T16:29:55.834012800Z.\r\nTime Delta: 28966665 ms\r\n\r\nChange Reason: System time synchronized with the hardware clock.\r\nProcess: '' (PID 4).\r\n\r\nRTC time: ‎2026‎-‎09‎-‎03T07:32:42.500000000Z\r\nCurrent time zone bias: -420\r\nRTC time is in UTC: false\r\nSystem time was based on RTC time: false"
+  }
+]

@@ -1,0 +1,42 @@
+[
+  {
+    "ProcessName": "HDR Finisher",
+    "Id": 1732,
+    "Path": "C:\\Program Files\\HDR Finisher\\HDR Finisher.exe",
+    "Responding": true,
+    "WorkingSet64": 44584960,
+    "StartTime": "2026-09-04T03:04:00.2230833+07:00"
+  },
+  {
+    "ProcessName": "HDR Finisher",
+    "Id": 10092,
+    "Path": null,
+    "Responding": true,
+    "WorkingSet64": 201646080,
+    "StartTime": null
+  },
+  {
+    "ProcessName": "HDR Finisher",
+    "Id": 13872,
+    "Path": "C:\\Program Files\\HDR Finisher\\HDR Finisher.exe",
+    "Responding": true,
+    "WorkingSet64": 121020416,
+    "StartTime": "2026-09-04T03:04:00.0880866+07:00"
+  },
+  {
+    "ProcessName": "HDR Finisher Backend",
+    "Id": 17704,
+    "Path": "C:\\Program Files\\HDR Finisher\\resources\\backend\\HDR Finisher Backend.exe",
+    "Responding": true,
+    "WorkingSet64": 638652416,
+    "StartTime": "2026-09-04T03:04:00.2953354+07:00"
+  },
+  {
+    "ProcessName": "obs64",
+    "Id": 9028,
+    "Path": "C:\\Program Files\\obs-studio\\bin\\64bit\\obs64.exe",
+    "Responding": true,
+    "WorkingSet64": 258564096,
+    "StartTime": "2026-09-04T02:58:00.2869817+07:00"
+  }
+]

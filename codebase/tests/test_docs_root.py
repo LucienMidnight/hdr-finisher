@@ -39,19 +39,24 @@ def test_development_docs_root_holds_the_help_documents() -> None:
     )
 
 
-def test_docs_root_ignores_a_docs_directory_beside_the_backend() -> None:
+def test_docs_root_ignores_a_docs_directory_beside_the_backend(tmp_path: Path) -> None:
     """The regression itself: `codebase/docs` must not capture the decision.
 
-    It exists in this repository and holds audit notes rather than help
-    content, so if its mere presence still chose the root, Help would break
-    again exactly as it did.
+    Use a synthetic source tree so this remains a real regression test without
+    requiring audit notes to live beside the backend forever.
     """
-    beside_backend = config.RESOURCE_ROOT / "docs"
-    if not beside_backend.is_dir():
-        pytest.skip("No docs directory beside the backend, so there is nothing to shadow.")
-    assert config.DOCS_DIR != beside_backend
+    project_root = tmp_path / "codebase"
+    beside_backend = project_root / "docs"
+    beside_backend.mkdir(parents=True)
+    selected = config._select_docs_root(
+        bundled=False,
+        resource_root=project_root,
+        project_root=project_root,
+    )
+    assert selected == tmp_path / "docs"
+    assert selected != beside_backend
     assert not (beside_backend / DEFAULT_HELP_DOCUMENT).is_file(), (
-        "codebase/docs now holds help content too, so this test no longer "
+        "the synthetic adjacent docs now holds help content too, so this test no longer "
         "distinguishes the two roots and needs rethinking."
     )
 

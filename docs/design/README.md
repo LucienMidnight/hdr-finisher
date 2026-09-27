@@ -6,6 +6,8 @@ This directory contains non-code design reviews, layout explorations, and durabl
 
 - [HDR Finisher design guidelines](HDR_Finisher_Design_Guidelines.md) — the living visual, interaction, copy, and startup-state standard for the shipped app.
 - [Repository cleanup and code audit plan](Repo_Cleanup_and_Code_Audit_Plan_2026-09-27.md) — draft plan to tidy the repository and clean up AI-slop in the code before it grows further; nothing changes without approval.
+- [Repository cleanup baseline](Repo_Cleanup_and_Code_Audit_Baseline_2026-09-27.md) — before-change test results, warnings, and known parity-gate failures.
+- [Repository cleanup inventory and decision table](Repo_Cleanup_Inventory_and_Decision_Table_2026-09-27.md) — measured folder inventory, recovery paths, and pending keep/move/archive/delete decisions.
 - [Code audit stabilization sprint PRD](Code_Audit_Stabilization_Sprint_PRD_2026-08-20.md) — the approved findings, implemented corrections, release gates, and v0.5.0 verification record for the JPEG XL, RAW/DNG, import-pipeline, proofing, and viewer-refresh work.
 - [Import pipeline architecture](Import_Pipeline_Architecture.md) — staged preview versus authoritative decode, latest-request-wins ownership, color/memory invariants, AVIF reconstruction, cancellation, and importer extension checklist.
 - [Layout restructuring design review](<Design review_ layout restructuring.zip>)

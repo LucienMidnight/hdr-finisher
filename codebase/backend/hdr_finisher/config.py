@@ -35,13 +35,22 @@ def _runtime_root() -> Path:
     return PROJECT_ROOT
 
 
+def _select_docs_root(*, bundled: bool, resource_root: Path, project_root: Path) -> Path:
+    """Choose documentation by runtime mode, never by adjacent-folder presence."""
+    return resource_root / "docs" if bundled else project_root.parent / "docs"
+
+
 RESOURCE_ROOT = _resource_root()
 RUNTIME_ROOT = _runtime_root()
 FRONTEND_DIR = RESOURCE_ROOT / "frontend"
 # Packaged builds carry their own `docs` beside the backend; a development run
 # serves the repository's, which is the parent of `codebase/`. Keyed on whether
 # this is bundled, not on whether a directory exists.
-DOCS_DIR = RESOURCE_ROOT / "docs" if _is_bundled() else PROJECT_ROOT.parent / "docs"
+DOCS_DIR = _select_docs_root(
+    bundled=_is_bundled(),
+    resource_root=RESOURCE_ROOT,
+    project_root=PROJECT_ROOT,
+)
 BIN_DIR = RESOURCE_ROOT / "bin"
 SAMPLES_DIR = RESOURCE_ROOT / "samples"
 APP_DATA_DIR = Path(

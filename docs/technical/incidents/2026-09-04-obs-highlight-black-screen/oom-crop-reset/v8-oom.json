@@ -1,0 +1,5 @@
+{
+  "v8-oom-location": "MarkCompactCollector: young object promotion failed",
+  "v8-oom-stack": "syncGlobalEditState in http://127.0.0.1:52614/static/app.js?v=0.8.8:13178:35\nrefreshScopes in =\n<none> in =:4092:45\n$\n",
+  "v8-oom-last-few-messages": "> 4049.5 (4081.6) MB, pooled: 0.0 MB, 9.53 / 0.00 ms (average mu = 0.118, current mu = 0.079) allocation failure; \n[28456:00003F6400510000]  2983214 ms: Scavenge (during sweeping) 4063.5 (4081.6) -> 4051.5 (4082.4) MB, pooled: 0.0 MB, 127.27 / 0.00 ms (average mu = 0.118, current mu = 0.079) allocation failure; \n[28456:00003F6400510000]  2983245 ms: Scavenge (during sweeping) 4064.3 (4082.4) -> 4053.5 (4082.4) MB, pooled: 0.0 MB, 28.84 / 0.00 ms (average mu = 0.118, current mu = 0.079) allocation failure; \n"
+}
