@@ -860,12 +860,65 @@ def _apply_sdr_adjustments(
                 result, sdr, peak_override=None if highlight_anchor is None else highlight_anchor.sdr_peak
             )
         result = _compress_to_srgb_gamut(result)
+    return _apply_sdr_post_highlight_tail(
+        result,
+        image,
+        adjustments,
+        include_grain=include_grain,
+        include_output_highlight_compression=include_output_highlight_compression,
+        local_adjustments=local_adjustments,
+        fixed_source=fixed_source,
+        compiled_local_masks=compiled_local_masks,
+        source_pixel_scale=source_pixel_scale,
+        frame_window=frame_window,
+        color_after_tone_controls=False,
+    )
+
+
+def _apply_sdr_color_stage(result: np.ndarray, adjustments: AdjustmentState) -> np.ndarray:
+    """Color on the authored-reference path, after the highlight stage.
+
+    The generated path applies Color earlier, in scene-linear ACEScg inside
+    ``_sdr_before_black_and_white``; the authored reference applies it here, in
+    display-linear sRGB, and returns to that space after the grade.
+    """
+    if not _sdr_color_is_enabled(adjustments):
+        return result
+    acescg = linear_srgb_to_acescg(result)
+    graded = _apply_hdr_color(acescg, adjustments.sdr)
+    return _compress_to_srgb_gamut(acescg_to_linear_srgb(graded))
+
+
+def _apply_sdr_post_highlight_tail(
+    result: np.ndarray,
+    image: np.ndarray,
+    adjustments: AdjustmentState,
+    *,
+    include_grain: bool,
+    include_output_highlight_compression: bool,
+    local_adjustments: list[LocalAdjustment] | None,
+    fixed_source: np.ndarray | None,
+    compiled_local_masks: dict[str, np.ndarray] | None,
+    source_pixel_scale: float,
+    frame_window: FrameWindow | None,
+    color_after_tone_controls: bool,
+) -> np.ndarray:
+    """Every SDR stage after the highlight stage, in one explicit order.
+
+    Both SDR entry points share this tail so a stage or a fix lands once. The
+    only branch difference inside it is where Color runs: the authored
+    reference applies it here, between the tone controls and Primaries, while
+    the generated path applies it in its scene-linear prefix.
+    """
+    sdr = adjustments.sdr
     if sdr.tone_equalizer_section_enabled:
         result = _apply_sdr_tone_equalizer(result, sdr)
     if sdr.tone_section_enabled:
         result = _apply_luminance_section_controls(
             result, sdr, PreviewKind.SDR, apply_primaries=False, apply_contrast=True
         )
+    if color_after_tone_controls:
+        result = _apply_sdr_color_stage(result, adjustments)
     if sdr.primaries_section_enabled:
         result = _apply_luminance_section_controls(
             result, sdr, PreviewKind.SDR, apply_primaries=True, apply_contrast=False
@@ -1009,47 +1062,19 @@ def _apply_sdr_adjustments_to_reference(
         result = _compress_sdr_highlights(
             result, sdr, peak_override=None if highlight_anchor is None else highlight_anchor.sdr_peak
         )
-    if sdr.tone_equalizer_section_enabled:
-        result = _apply_sdr_tone_equalizer(result, sdr)
-    if sdr.tone_section_enabled:
-        result = _apply_luminance_section_controls(
-            result, sdr, PreviewKind.SDR, apply_primaries=False, apply_contrast=True
-        )
-    if _sdr_color_is_enabled(adjustments):
-        acescg = linear_srgb_to_acescg(result)
-        graded = _apply_hdr_color(acescg, adjustments.sdr)
-        result = _compress_to_srgb_gamut(acescg_to_linear_srgb(graded))
-    if sdr.primaries_section_enabled:
-        result = _apply_luminance_section_controls(
-            result, sdr, PreviewKind.SDR, apply_primaries=True, apply_contrast=False
-        )
-    if sdr.curves_section_enabled:
-        result = _apply_curves(result, adjustments, PreviewKind.SDR)
-    if sdr.color_grading_section_enabled:
-        result = _apply_color_grading(result, sdr.color_grading, PreviewKind.SDR)
-    if sdr.detail_section_enabled:
-        result = apply_detail(result, sdr.detail, PreviewKind.SDR, source_pixel_scale=source_pixel_scale)
-    if local_adjustments:
-        from .local_adjustments import apply_local_stack
-
-        result = apply_local_stack(
-            result,
-            image if fixed_source is None else fixed_source,
-            local_adjustments,
-            PreviewKind.SDR,
-            adjustments.shared.geometry,
-            compiled_masks=compiled_local_masks,
-            source_pixel_scale=source_pixel_scale,
-        )
-    if sdr.film_look_section_enabled or _structure_is_active(sdr):
-        result = _apply_film_look(result, adjustments, PreviewKind.SDR, include_grain=False)
-    if sdr.vignette_section_enabled:
-        result = _apply_vignette(result, sdr.vignette, PreviewKind.SDR, frame_window=frame_window)
-    if include_grain:
-        result = apply_final_grain(result, adjustments, PreviewKind.SDR, frame_window=frame_window)
-    if include_output_highlight_compression:
-        result = apply_sdr_output_highlight_compression(result, adjustments)
-    return np.clip(result, 0.0, 1.0)
+    return _apply_sdr_post_highlight_tail(
+        result,
+        image,
+        adjustments,
+        include_grain=include_grain,
+        include_output_highlight_compression=include_output_highlight_compression,
+        local_adjustments=local_adjustments,
+        fixed_source=fixed_source,
+        compiled_local_masks=compiled_local_masks,
+        source_pixel_scale=source_pixel_scale,
+        frame_window=frame_window,
+        color_after_tone_controls=True,
+    )
 
 
 def _sdr_color_is_enabled(adjustments: AdjustmentState) -> bool:
@@ -1341,6 +1366,123 @@ def sdr_highlight_peak_signal(display_linear: np.ndarray, sdr: object) -> np.nda
     return np.clip(_linear_luma(display_linear), 0.0, None)
 
 
+@dataclass(frozen=True)
+class _PeakFitParameters:
+    """The stop-domain shoulder numbers both highlight lanes fit."""
+
+    effective_start: np.float32
+    effective_start_stop: float
+    stop_span: float
+    source_span: float
+    normalized_start_slope: float
+    normalized_end_slope: float
+    curve_bias: float
+
+
+def _peak_fit_parameters(
+    start_stop: float,
+    target_stop: float,
+    peak_stop: float,
+    detail: float,
+    curve_bias: float,
+) -> _PeakFitParameters:
+    """Compute the Peak Fit shoulder's shared stop-domain parameters.
+
+    Both lanes build their shoulder from these numbers, so a fix to the
+    effective start, the spans, or the endpoint slopes reaches HDR and SDR
+    together. ``detail`` and ``curve_bias`` arrive already clamped because the
+    lanes keep their own scalar types; each lane's evaluation form stays local
+    to preserve its exact rounding.
+    """
+    required_ratio = min(
+        max((1.0 / (1.0 + curve_bias) + detail / (1.0 - curve_bias)) / 3.0, 0.001),
+        0.95,
+    )
+    requested_ratio = (target_stop - start_stop) / max(peak_stop - start_stop, 1e-6)
+    effective_start_stop = start_stop
+    if requested_ratio < required_ratio:
+        effective_start_stop = (target_stop - required_ratio * peak_stop) / (1.0 - required_ratio)
+    stop_span = target_stop - effective_start_stop
+    source_span = max(peak_stop - effective_start_stop, 1e-6)
+    return _PeakFitParameters(
+        effective_start=np.float32(2.0 ** effective_start_stop),
+        effective_start_stop=effective_start_stop,
+        stop_span=stop_span,
+        source_span=source_span,
+        normalized_start_slope=source_span / max(stop_span * (1.0 + curve_bias), 1e-6),
+        normalized_end_slope=detail * source_span / max(stop_span * (1.0 - curve_bias), 1e-6),
+        curve_bias=curve_bias,
+    )
+
+
+def _peak_fit_progress(signal: np.ndarray, params: _PeakFitParameters) -> tuple[np.ndarray, np.ndarray]:
+    """The shoulder's 0..1 position and biased blend weight for a signal."""
+    input_stop = np.log2(np.maximum(signal, params.effective_start))
+    u = np.clip((input_stop - params.effective_start_stop) / params.source_span, 0.0, 1.0)
+    w = np.clip(u + params.curve_bias * u * (1.0 - u), 0.0, 1.0)
+    return u, w
+
+
+def _peak_fit_ratio_application(
+    result: np.ndarray, compression_signal: np.ndarray, target_signal: np.ndarray, active: np.ndarray
+) -> np.ndarray:
+    """Apply the shoulder's mapped signal back onto the RGB result."""
+    ratio = np.where(
+        compression_signal > 1e-8,
+        target_signal / np.maximum(compression_signal, 1e-8),
+        1.0,
+    ).astype(np.float32)
+    return np.where(active, result * ratio[..., None], result)
+
+
+def _peak_fit_group_channels(
+    mapped: np.ndarray, neutral: np.ndarray, progress: np.ndarray, active: np.ndarray
+) -> np.ndarray:
+    """Converge grouped channels toward the neutral shoulder end.
+
+    ``progress`` is the shoulder's 0..1 position; the smoothstep keeps the
+    colour blend continuous at both ends of the fit.
+    """
+    blend = progress * progress * (np.float32(3.0) - np.float32(2.0) * progress)
+    return np.where(
+        active,
+        neutral + (mapped - neutral) * (np.float32(1.0) - blend[..., None]),
+        mapped,
+    )
+
+
+def _soft_ceiling_exponent(softness: float) -> np.float32:
+    """The generalized soft ceiling's power, from the Softness control."""
+    clamped = min(max(float(softness), 0.0), 100.0)
+    return np.float32(2.0 ** (5.0 * (1.0 - clamped / 100.0)))
+
+
+def _soft_ceiling_curve(normalized: np.ndarray, exponent: np.float32) -> np.ndarray:
+    """The generalized soft-ceiling response for the normalized excess.
+
+    A generalized soft ceiling preserves unit slope at the start and approaches
+    the selected target without clipping. Higher softness makes the shoulder
+    engage earlier; lower values keep more contrast until close to the target.
+    """
+    compressed_normalized = np.zeros_like(normalized, dtype=np.float32)
+    lower = (normalized > 0.0) & (normalized <= 1.0)
+    upper = normalized > 1.0
+    with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+        compressed_normalized[lower] = normalized[lower] / np.power(
+            1.0 + np.power(normalized[lower], exponent), 1.0 / exponent
+        )
+        compressed_normalized[upper] = 1.0 / np.power(
+            1.0 + np.power(1.0 / normalized[upper], exponent), 1.0 / exponent
+        )
+    return compressed_normalized
+
+
+def _soft_ceiling_activation(softness: float) -> np.float32:
+    """How much of the ceiling curve engages, as a smoothstep of Softness."""
+    activation = np.float32(min(max(float(softness) / 10.0, 0.0), 1.0))
+    return activation * activation * (np.float32(3.0) - np.float32(2.0) * activation)
+
+
 def _compress_sdr_highlights(
     image: np.ndarray, sdr: object, *, peak_override: float | None = None
 ) -> np.ndarray:
@@ -1401,78 +1543,44 @@ def _compress_sdr_highlights(
         peak_stop = float(np.log2(peak))
         detail = np.clip(float(getattr(sdr, "highlight_compression_peak_detail", 35.0)) / 100.0, 0.0, 1.0)
         curve_bias = np.clip(float(getattr(sdr, "highlight_compression_bias", 0.0)) / 100.0, -1.0, 1.0) * 0.6
-        required_ratio = np.clip(
-            (1.0 / (1.0 + curve_bias) + detail / (1.0 - curve_bias)) / 3.0,
-            0.001,
-            0.95,
-        )
-        requested_ratio = (target_stop - start_stop) / max(peak_stop - start_stop, 1e-6)
-        effective_start_stop = start_stop
-        if requested_ratio < required_ratio:
-            effective_start_stop = (target_stop - required_ratio * peak_stop) / (1.0 - required_ratio)
-        effective_start = np.float32(2.0**effective_start_stop)
-        stop_span = target_stop - effective_start_stop
-        source_span = max(peak_stop - effective_start_stop, 1e-6)
-        normalized_start_slope = source_span / max(stop_span * (1.0 + curve_bias), 1e-6)
-        normalized_end_slope = detail * source_span / max(stop_span * (1.0 - curve_bias), 1e-6)
+        params = _peak_fit_parameters(start_stop, target_stop, peak_stop, detail, curve_bias)
 
         def map_signal(signal: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-            input_stop = np.log2(np.maximum(signal, effective_start))
-            u = np.clip((input_stop - effective_start_stop) / source_span, 0.0, 1.0)
-            w = np.clip(u + curve_bias * u * (1.0 - u), 0.0, 1.0)
+            u, w = _peak_fit_progress(signal, params)
             mapped_normalized = w * (
-                normalized_start_slope
+                params.normalized_start_slope
                 + w
                 * (
-                    -2.0 * normalized_start_slope
+                    -2.0 * params.normalized_start_slope
                     + 3.0
-                    - normalized_end_slope
-                    + w * (normalized_start_slope - 2.0 + normalized_end_slope)
+                    - params.normalized_end_slope
+                    + w * (params.normalized_start_slope - 2.0 + params.normalized_end_slope)
                 )
             )
-            mapped = np.exp2(effective_start_stop + stop_span * mapped_normalized).astype(np.float32)
-            return np.where(signal > effective_start, mapped, signal), u
+            mapped = np.exp2(
+                params.effective_start_stop + params.stop_span * mapped_normalized
+            ).astype(np.float32)
+            return np.where(signal > params.effective_start, mapped, signal), u
 
         if smooth_rolloff:
             for channel_index in range(3):
                 channel = result[..., channel_index]
                 mapped, _ = map_signal(channel)
-                result[..., channel_index] = np.where(channel > effective_start, mapped, channel)
+                result[..., channel_index] = np.where(channel > params.effective_start, mapped, channel)
             return result
 
         target_signal, progress = map_signal(compression_signal)
-        ratio = np.where(
-            compression_signal > 1e-8,
-            target_signal / np.maximum(compression_signal, 1e-8),
-            1.0,
-        ).astype(np.float32)
-        mapped = np.where(compression_signal[..., None] > effective_start, result * ratio[..., None], result)
+        active = compression_signal[..., None] > params.effective_start
+        mapped = _peak_fit_ratio_application(result, compression_signal, target_signal, active)
         if grouped_channels:
-            neutral = target_signal[..., None]
-            blend = progress * progress * (np.float32(3.0) - np.float32(2.0) * progress)
-            mapped = np.where(
-                compression_signal[..., None] > effective_start,
-                neutral + (mapped - neutral) * (np.float32(1.0) - blend[..., None]),
-                mapped,
-            )
+            mapped = _peak_fit_group_channels(mapped, target_signal[..., None], progress, active)
         return mapped.astype(np.float32, copy=False)
 
     span = target - start
     excess = np.maximum(positive_luma - start, 0.0)
     normalized = excess / span
-    exponent = np.float32(2.0 ** (5.0 * (1.0 - np.clip(softness, 0.0, 100.0) / 100.0)))
-    compressed_normalized = np.zeros_like(normalized, dtype=np.float32)
-    lower = (normalized > 0.0) & (normalized <= 1.0)
-    upper = normalized > 1.0
-    with np.errstate(over="ignore", under="ignore", invalid="ignore"):
-        compressed_normalized[lower] = normalized[lower] / np.power(
-            1.0 + np.power(normalized[lower], exponent), 1.0 / exponent
-        )
-        compressed_normalized[upper] = 1.0 / np.power(
-            1.0 + np.power(1.0 / normalized[upper], exponent), 1.0 / exponent
-        )
-    activation = np.float32(np.clip(softness / 10.0, 0.0, 1.0))
-    activation = activation * activation * (np.float32(3.0) - np.float32(2.0) * activation)
+    compressed_normalized = _soft_ceiling_curve(normalized, _soft_ceiling_exponent(softness))
+    activation = _soft_ceiling_activation(softness)
     compressed_excess = excess + activation * (span * compressed_normalized - excess)
     target_luma = np.where(positive_luma > start, start + compressed_excess, positive_luma)
     ratio = np.where(positive_luma > 1e-8, target_luma / np.maximum(positive_luma, 1e-8), 1.0).astype(np.float32)
@@ -1524,100 +1632,66 @@ def _compress_scene_highlights(
         peak_stop = float(np.log2(peak))
         detail = min(max(float(peak_detail) / 100.0, 0.0), 1.0)
         curve_bias = min(max(float(bias) / 100.0, -1.0), 1.0) * 0.6
-        required_ratio = (
-            1.0 / (1.0 + curve_bias) + detail / (1.0 - curve_bias)
-        ) / 3.0
-        required_ratio = min(max(required_ratio, 0.001), 0.95)
-        requested_ratio = (target_stop - start_stop) / max(peak_stop - start_stop, 1e-6)
-        effective_start_stop = start_stop
-        if requested_ratio < required_ratio:
-            effective_start_stop = (target_stop - required_ratio * peak_stop) / (1.0 - required_ratio)
-        effective_start = np.float32(2.0 ** effective_start_stop)
-        stop_span = target_stop - effective_start_stop
-        normalized_start_slope = (peak_stop - effective_start_stop) / max(stop_span * (1.0 + curve_bias), 1e-6)
-        normalized_end_slope = detail * (peak_stop - effective_start_stop) / max(stop_span * (1.0 - curve_bias), 1e-6)
+        params = _peak_fit_parameters(start_stop, target_stop, peak_stop, detail, curve_bias)
         if smooth_rolloff:
             # Work on one BT.2020 channel at a time to avoid several
             # full-resolution HxWx3 curve temporaries for large RAW exports.
             for channel_index in range(3):
                 channel = transport[..., channel_index]
-                active = channel > effective_start
+                active = channel > params.effective_start
                 if not np.any(active):
                     continue
-                u = np.maximum(channel, effective_start)
+                u = np.maximum(channel, params.effective_start)
                 np.log2(u, out=u)
-                u -= np.float32(effective_start_stop)
-                u /= np.float32(max(peak_stop - effective_start_stop, 1e-6))
+                u -= np.float32(params.effective_start_stop)
+                u /= np.float32(params.source_span)
                 np.clip(u, 0.0, 1.0, out=u)
-                w = u + np.float32(curve_bias) * u * (np.float32(1.0) - u)
+                w = u + np.float32(params.curve_bias) * u * (np.float32(1.0) - u)
                 np.clip(w, 0.0, 1.0, out=w)
                 mapped = w * (
-                    np.float32(normalized_start_slope)
+                    np.float32(params.normalized_start_slope)
                     + w
                     * (
-                        np.float32(-2.0 * normalized_start_slope + 3.0 - normalized_end_slope)
-                        + w * np.float32(normalized_start_slope - 2.0 + normalized_end_slope)
+                        np.float32(-2.0 * params.normalized_start_slope + 3.0 - params.normalized_end_slope)
+                        + w * np.float32(params.normalized_start_slope - 2.0 + params.normalized_end_slope)
                     )
                 )
-                mapped *= np.float32(stop_span)
-                mapped += np.float32(effective_start_stop)
+                mapped *= np.float32(params.stop_span)
+                mapped += np.float32(params.effective_start_stop)
                 np.exp2(mapped, out=mapped)
                 channel[active] = mapped[active]
             mapped_acescg = linear_bt2020_to_acescg(transport)
             return np.where(
-                compression_signal[..., None] > effective_start,
+                compression_signal[..., None] > params.effective_start,
                 mapped_acescg,
                 result,
             ).astype(np.float32, copy=False)
         curve_input = compression_signal
-        input_stop = np.log2(np.maximum(curve_input, effective_start))
-        u = np.clip((input_stop - effective_start_stop) / max(peak_stop - effective_start_stop, 1e-6), 0.0, 1.0)
-        w = np.clip(u + curve_bias * u * (1.0 - u), 0.0, 1.0)
+        u, w = _peak_fit_progress(curve_input, params)
         h10 = w * (1.0 - w) * (1.0 - w)
         h01 = w * w * (3.0 - 2.0 * w)
         h11 = w * w * (w - 1.0)
-        mapped_normalized = h10 * normalized_start_slope + h01 + h11 * normalized_end_slope
-        mapped_stop = effective_start_stop + stop_span * mapped_normalized
+        mapped_normalized = h10 * params.normalized_start_slope + h01 + h11 * params.normalized_end_slope
+        mapped_stop = params.effective_start_stop + params.stop_span * mapped_normalized
         target_luma = np.where(
-            curve_input > effective_start,
+            curve_input > params.effective_start,
             np.exp2(mapped_stop).astype(np.float32),
             curve_input,
         )
-        ratio = np.where(
-            compression_signal > 1e-8,
-            target_luma / np.maximum(compression_signal, 1e-8),
-            1.0,
-        ).astype(np.float32)
-        mapped = np.where(compression_signal[..., None] > effective_start, result * ratio[..., None], result)
+        active = compression_signal[..., None] > params.effective_start
+        mapped = _peak_fit_ratio_application(result, compression_signal, target_luma, active)
         if grouped_channels:
             # Qualify and anchor on the brightest RGB channel, then converge the
             # grouped channels toward white through the Peak Fit shoulder.
-            neutral = target_luma[..., None]
-            progress = u * u * (np.float32(3.0) - np.float32(2.0) * u)
-            color_mapped = neutral + (mapped - neutral) * (np.float32(1.0) - progress[..., None])
-            mapped = np.where(compression_signal[..., None] > effective_start, color_mapped, mapped)
+            mapped = _peak_fit_group_channels(mapped, target_luma[..., None], u, active)
         return mapped.astype(np.float32, copy=False)
 
     span = np.float32(target - start)
     excess = np.maximum(positive_luma - start, 0.0)
     normalized = excess / span
-    # A generalized soft ceiling preserves unit slope at the start and approaches
-    # the selected target without clipping. Higher softness makes the shoulder
-    # engage earlier; lower values keep more contrast until close to the target.
-    exponent = np.float32(2.0 ** (5.0 * (1.0 - min(max(softness, 0.0), 100.0) / 100.0)))
-    compressed_normalized = np.zeros_like(normalized, dtype=np.float32)
-    lower = (normalized > 0.0) & (normalized <= 1.0)
-    upper = normalized > 1.0
-    with np.errstate(over="ignore", under="ignore", invalid="ignore"):
-        compressed_normalized[lower] = normalized[lower] / np.power(
-            1.0 + np.power(normalized[lower], exponent), 1.0 / exponent
-        )
-        compressed_normalized[upper] = 1.0 / np.power(
-            1.0 + np.power(1.0 / normalized[upper], exponent), 1.0 / exponent
-        )
+    compressed_normalized = _soft_ceiling_curve(normalized, _soft_ceiling_exponent(softness))
     compressed_normalized = np.where(compressed_normalized > 0.99999, 1.0, compressed_normalized)
-    activation = np.float32(min(max(softness / 10.0, 0.0), 1.0))
-    activation = activation * activation * (np.float32(3.0) - np.float32(2.0) * activation)
+    activation = _soft_ceiling_activation(softness)
     compressed_excess = (
         span * compressed_normalized
         if activation >= 1.0
@@ -1771,9 +1845,9 @@ def _apply_film_look(
 ) -> np.ndarray:
     """Apply the finishing look after curves, with grain deliberately last.
 
-    Detail's Softness and Microcontrast also run here, where Film Look's Image
-    Structure used to (NEXT-01 #2), but they answer to Detail's switch rather
-    than Film Look's, and are not scaled by Look Strength.
+    Detail's Softness and Microcontrast run in this stage, on the film response
+    frame, but they answer to Detail's switch rather than Film Look's and are
+    not scaled by Look Strength.
     """
     branch = adjustments.hdr if kind == PreviewKind.HDR else adjustments.sdr
     look = branch.film_look

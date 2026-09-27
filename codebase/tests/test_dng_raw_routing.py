@@ -77,7 +77,7 @@ def _install_rawpy(monkeypatch: pytest.MonkeyPatch, *, libraw_version: tuple[int
         HighlightMode=SimpleNamespace(Clip="Clip"),
     )
     monkeypatch.setitem(sys.modules, "rawpy", fake)
-    monkeypatch.setattr("hdr_finisher.raw_import._read_raw_exif", lambda _path: {})
+    monkeypatch.setattr("hdr_finisher.raw_import._read_raw_exif", lambda _path: ({}, None))
     return calls
 
 

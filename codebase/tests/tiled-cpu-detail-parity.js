@@ -154,6 +154,10 @@ const MAX_SEAM_ELEVATION = 0.5;
 
     const captureAgainstReference = async (mode, tileSize) => {
       const info = await page.evaluate(async ({ mode, tileSize }) => {
+        // Stop the app's own preview work first: a queued settled pass would
+        // present at the display tier and replace this frame.
+        state.previewScheduler?.cancel();
+        while (state.gpuDraftInFlight) await state.gpuDraftInFlight.catch(() => null);
         const longEdge = previewTargetLongEdge();
         const result = mode === "tiled"
           ? await window.HDRFinisherPerformance.renderTiledTier(longEdge, { tileSize })
@@ -167,33 +171,32 @@ const MAX_SEAM_ELEVATION = 0.5;
         }
         await state.gpuPreview.device.queue.onSubmittedWorkDone();
         const canvas = els.previewCanvas;
-        return { width: canvas.width, height: canvas.height, metrics: result.metrics || null };
+        // Read the canvas's own pixels here, in the same task chain. An
+        // element screenshot is taken later, through layout and the
+        // compositor, and the app's follow-up pass can present over this
+        // frame in the meantime; the backing store is the frame this render
+        // produced.
+        return {
+          width: canvas.width,
+          height: canvas.height,
+          dataUrl: canvas.toDataURL("image/png"),
+          metrics: result.metrics || null,
+        };
       }, { mode, tileSize });
       if (info.error) throw new Error(JSON.stringify(info));
 
-      // Force the canvas to its own backing size so the screenshot is 1:1.
-      await page.locator("#preview-canvas").evaluate((canvas) => {
-        canvas.style.setProperty("width", `${canvas.width}px`, "important");
-        canvas.style.setProperty("height", `${canvas.height}px`, "important");
-        canvas.style.setProperty("max-width", "none", "important");
-        canvas.style.setProperty("max-height", "none", "important");
-        canvas.style.setProperty("object-fit", "fill", "important");
-      });
-      await page.waitForTimeout(200);
-      const shot = (await page.locator("#preview-canvas").screenshot()).toString("base64");
-
-      const analysis = await page.evaluate(async ({ base64, tileSize }) => {
-        const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${base64}`)).blob());
+      const analysis = await page.evaluate(async ({ dataUrl, tileSize }) => {
+        const bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob());
         const surface = document.createElement("canvas");
         surface.width = bitmap.width;
         surface.height = bitmap.height;
         surface.getContext("2d").drawImage(bitmap, 0, 0);
         const cpu = window.__cpuReference;
         const width = bitmap.width;
-        // CSS layout rounding can add a row to the capture. The width is exact,
-        // so cropping to the reference height keeps the comparison aligned.
+        // The canvas backing store is read directly, so the capture is the
+        // render's own pixel grid; the reference must match it exactly.
         const height = cpu.length / 4 / width;
-        if (!Number.isInteger(height) || bitmap.height < height) {
+        if (!Number.isInteger(height) || bitmap.height !== height) {
           return { error: `capture ${bitmap.width}x${bitmap.height} cannot align to reference ${cpu.length / 4} px` };
         }
         const pixels = surface.getContext("2d").getImageData(0, 0, width, height).data;
@@ -267,7 +270,7 @@ const MAX_SEAM_ELEVATION = 0.5;
           columns: { ...columns, elevation: columns.boundaryMean - columns.interiorMean },
           rows: { ...rows, elevation: rows.boundaryMean - rows.interiorMean },
         };
-      }, { base64: shot, tileSize: tileSize || 0 });
+      }, { dataUrl: info.dataUrl, tileSize: tileSize || 0 });
       if (analysis.error) throw new Error(`${mode}: ${analysis.error}`);
       return { ...analysis, metrics: info.metrics };
     };

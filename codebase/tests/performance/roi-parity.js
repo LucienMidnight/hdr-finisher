@@ -115,6 +115,7 @@ function assert(condition, message) {
         selectedSource: snapshot.denoise.selectedSource,
         resolvedResident: snapshot.denoise.resolvedResident,
         cacheReady: snapshot.denoise.cacheReady,
+        algorithmVersion: snapshot.denoise.algorithmVersion,
         identity: snapshot.denoise.identity,
         controls: snapshot.denoise.controls,
       },
@@ -289,8 +290,17 @@ function assert(condition, message) {
       // render: the counters are cumulative, so "after" must exceed "ready".
       assert(denoiseReady?.selector.selectedSource === "resolved",
         `Denoise never selected its resolved source: ${JSON.stringify(denoiseReady)}`);
-      assert(denoiseReady?.counters.analysisDispatches > 0 && denoiseReady?.counters.analysisTiles > 0,
-        `Denoise analysis never dispatched: ${JSON.stringify(denoiseReady)}`);
+      // The wavelet method proves its analysis with tile dispatches; the
+      // adaptive method fetches a backend noise model and dispatches no
+      // analysis tiles, so its call plus an installed cache is the equivalent
+      // fact.
+      const adaptiveAnalysis = denoiseReady?.selector.algorithmVersion === "adaptive-atrous-v1";
+      const analysisRan = adaptiveAnalysis
+        ? denoiseReady?.counters.analysisCalls > 0 && denoiseReady?.selector.cacheReady === true
+        : denoiseReady?.counters.analysisDispatches > 0 && denoiseReady?.counters.analysisTiles > 0;
+      assert(analysisRan,
+        `Denoise analysis never ran (${denoiseReady?.selector.algorithmVersion || "unknown"}): `
+        + `${JSON.stringify(denoiseReady)}`);
       assert(denoiseAfter?.counters.resolveDispatches > denoiseReady?.counters.resolveDispatches,
         `The parity passes did not resolve Denoise from the cache: ${JSON.stringify({ ready: denoiseReady?.counters, after: denoiseAfter?.counters })}`);
       assert(denoiseAfter?.counters.resolveTiles > denoiseReady?.counters.resolveTiles,
@@ -305,6 +315,7 @@ function assert(condition, message) {
       spatialSweep: spatialSweep ? outcome.samples : null,
       denoise: denoise ? {
         settings: denoiseReady?.selector.controls ?? null,
+        algorithmVersion: denoiseReady?.selector.algorithmVersion ?? null,
         identity: denoiseReady?.selector.identity ?? null,
         before: denoiseBefore,
         ready: denoiseReady,

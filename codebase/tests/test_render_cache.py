@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from threading import Event, Thread
+import time
 
 import numpy as np
 import pytest
@@ -843,3 +844,119 @@ def test_geometry_tiles_served_from_a_warm_mip_match_the_cold_path(tmp_path) -> 
     assert warm_placement == cold_placement
     assert warm_cache.mip_store.diagnostics()["disk_hits"] >= 1
     assert warm_cache.mip_store.diagnostics()["cold_builds"] == 0
+
+
+def test_source_mip_read_failure_is_recorded_instead_of_looking_like_a_miss(
+    tmp_path, monkeypatch
+) -> None:
+    image = _mip_image()
+    identity = _mip_identity(image)
+    expected, _ = SourceMipStore(tmp_path / "reference").level(identity, 256, image)
+    root = tmp_path / "mips"
+    SourceMipStore(root).level(identity, 256, image)
+    store = SourceMipStore(root)
+    target = store._level_path(identity, 256)
+    original_read = render_cache_module.Path.read_bytes
+
+    def deny(self):
+        if self == target:
+            raise PermissionError("denied by test")
+        return original_read(self)
+
+    monkeypatch.setattr(render_cache_module.Path, "read_bytes", deny)
+    level, state = store.level(identity, 256, image)
+
+    assert state == "built"
+    np.testing.assert_array_equal(level, expected)
+    diagnostics = store.diagnostics()
+    assert diagnostics["disk_read_failures"] == 1
+    assert diagnostics["disk_hits"] == 0
+    assert diagnostics["last_failure"] == {"category": "read", "path": str(target)}
+
+
+def test_source_mip_write_failure_is_recorded_and_stays_nonfatal(tmp_path, monkeypatch) -> None:
+    image = _mip_image()
+    identity = _mip_identity(image)
+    expected, _ = SourceMipStore(tmp_path / "reference").level(identity, 256, image)
+    store = SourceMipStore(tmp_path / "mips")
+
+    def deny_replace(source, destination):
+        raise PermissionError("denied by test")
+
+    monkeypatch.setattr(render_cache_module.os, "replace", deny_replace)
+    level, state = store.level(identity, 256, image)
+
+    assert state == "built"
+    np.testing.assert_array_equal(level, expected)
+    diagnostics = store.diagnostics()
+    assert diagnostics["disk_write_failures"] == 1
+    assert diagnostics["write_failures"] == 1
+    assert diagnostics["last_failure"] == {"category": "write", "path": str(store._level_path(identity, 256))}
+
+
+def test_source_mip_stale_cleanup_counts_only_successful_deletions(tmp_path, monkeypatch) -> None:
+    image = _mip_image()
+    identity = _mip_identity(image)
+    root = tmp_path / "mips"
+    stale = root / "v0" / "deadbeef"
+    stale.mkdir(parents=True)
+    (stale / "256.f32").write_bytes(b"old")
+    store = SourceMipStore(root)
+
+    def deny_rmtree(path, *args, **kwargs):
+        raise PermissionError("denied by test")
+
+    monkeypatch.setattr(render_cache_module.shutil, "rmtree", deny_rmtree)
+    store.level(identity, 256, image)
+
+    assert stale.exists()
+    diagnostics = store.diagnostics()
+    assert diagnostics["stale_removed"] == 0
+    assert diagnostics["disk_delete_failures"] == 1
+    assert diagnostics["last_failure"] == {"category": "delete", "path": str(root / "v0")}
+
+
+def test_strip_and_whole_frame_paths_share_one_single_flight(monkeypatch) -> None:
+    image = _mip_image()
+    cache = SessionRenderCache(image, None)
+    adjustments = AdjustmentState()
+    started = Event()
+    release = Event()
+    calls: list[str] = []
+    original_strips = render_cache_module.render_in_strips
+
+    def delayed_strips(*args, **kwargs):
+        calls.append("strips")
+        started.set()
+        assert release.wait(2)
+        return original_strips(*args, **kwargs)
+
+    monkeypatch.setattr(render_cache_module, "render_in_strips", delayed_strips)
+    results: dict[str, object] = {}
+
+    def run_strips() -> None:
+        results["strips"] = cache.adjusted_frame_in_strips(adjustments, PreviewKind.HDR, 256)
+
+    def run_whole_frame() -> None:
+        assert started.wait(2)
+        results["whole_frame"] = cache.adjusted_frame(adjustments, PreviewKind.HDR, 256)
+
+    strip_thread = Thread(target=run_strips)
+    whole_thread = Thread(target=run_whole_frame)
+    strip_thread.start()
+    whole_thread.start()
+    deadline = time.monotonic() + 2.0
+    while cache._singleflight_waits < 1 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert cache._singleflight_waits >= 1, "the whole-frame request never joined the strip flight"
+    release.set()
+    strip_thread.join(5)
+    whole_thread.join(5)
+    assert not strip_thread.is_alive() and not whole_thread.is_alive()
+
+    strip_frame, report = results["strips"]
+    assert calls == ["strips"]
+    assert "cached" not in report.passes
+    np.testing.assert_array_equal(results["whole_frame"], strip_frame)
+    assert cache._misses == 1
+    assert cache._hits == 1

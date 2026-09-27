@@ -350,7 +350,7 @@ def test_raw_decoder_returns_canonical_acescg_without_second_loader_transform(
     monkeypatch.setitem(sys.modules, "rawpy", fake_rawpy)
     monkeypatch.setattr(
         "hdr_finisher.raw_import._read_raw_exif",
-        lambda _path: {"camera_maker": "SONY", "camera_model": "ILCE-7RM3", "iso": "640"},
+        lambda _path: ({"camera_maker": "SONY", "camera_model": "ILCE-7RM3", "iso": "640"}, None),
     )
     source = tmp_path / "synthetic.dng"
     source.write_bytes(b"synthetic raw")

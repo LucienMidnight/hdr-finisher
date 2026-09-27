@@ -17,6 +17,7 @@ from hdr_finisher.adjustments import (
     _apply_curve_set,
     _apply_saturation_vibrance,
     _apply_sdr_adjustments,
+    _apply_sdr_adjustments_to_reference,
     _apply_sdr_tone_equalizer,
     _curve_domain_decode,
     _curve_domain_encode,
@@ -2098,3 +2099,134 @@ def test_representative_slider_travel_remains_display_safe_and_ordered(
         assert np.all(np.diff(luma) >= -1e-5), f"{branch_name}.{field_name} inverted tone ordering at {value}"
         if kind == PreviewKind.SDR:
             assert float(output.max()) <= 1.0, f"{branch_name}.{field_name} escaped the SDR display range at {value}"
+
+
+def test_sdr_branches_share_one_post_highlight_tail(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Both SDR entry points run one tail in one explicit order.
+
+    Guards the extracted tail: a stage added to it reaches both branches, a
+    branch that stops going through it fails here, and the only branch
+    difference inside it stays Color, which the authored reference runs
+    between the tone controls and Primaries.
+    """
+    calls: list[str] = []
+    tail_entries = [0]
+
+    def spy(name: str) -> None:
+        original = getattr(adjustments_module, name)
+
+        def wrapper(*args, **kwargs):
+            calls.append(name)
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(adjustments_module, name, wrapper)
+
+    original_controls = adjustments_module._apply_luminance_section_controls
+
+    def spy_controls(*args, **kwargs):
+        calls.append("primaries" if kwargs.get("apply_primaries") else "tone")
+        return original_controls(*args, **kwargs)
+
+    monkeypatch.setattr(adjustments_module, "_apply_luminance_section_controls", spy_controls)
+
+    original_tail = adjustments_module._apply_sdr_post_highlight_tail
+
+    def spy_tail(*args, **kwargs):
+        tail_entries[0] += 1
+        calls.append("tail")
+        return original_tail(*args, **kwargs)
+
+    monkeypatch.setattr(adjustments_module, "_apply_sdr_post_highlight_tail", spy_tail)
+
+    for name in (
+        "_apply_sdr_tone_equalizer",
+        "_apply_hdr_color",
+        "_apply_curves",
+        "_apply_color_grading",
+        "apply_detail",
+        "_apply_film_look",
+        "_apply_vignette",
+        "apply_final_grain",
+        "apply_sdr_output_highlight_compression",
+    ):
+        spy(name)
+
+    image = np.linspace(0.0, 1.2, 24 * 32 * 3, dtype=np.float32).reshape(24, 32, 3)
+
+    def tail_of(function, state: AdjustmentState | None = None) -> list[str]:
+        calls.clear()
+        tail_entries[0] = 0
+        function(image, state or AdjustmentState())
+        assert tail_entries[0] == 1, f"{function.__name__} did not use the shared tail exactly once"
+        return calls[calls.index("tail") + 1:]
+
+    expected = [
+        "_apply_sdr_tone_equalizer",
+        "tone",
+        "primaries",
+        "_apply_curves",
+        "_apply_color_grading",
+        "apply_detail",
+        "_apply_film_look",
+        "_apply_vignette",
+        "apply_final_grain",
+        "apply_sdr_output_highlight_compression",
+    ]
+    assert tail_of(_apply_sdr_adjustments) == expected
+    assert tail_of(_apply_sdr_adjustments_to_reference) == expected
+
+    colored = AdjustmentState(sdr=SDRAdjustments(color_section_enabled=True, saturation=0.5))
+    generated_colored = tail_of(_apply_sdr_adjustments, colored)
+    reference_colored = tail_of(_apply_sdr_adjustments_to_reference, colored)
+    # The generated path grades Color in its prefix, so the recorded tail is
+    # unchanged; the reference grades it inside the tail, after the tone
+    # controls.
+    assert "_apply_hdr_color" not in generated_colored
+    assert reference_colored == generated_colored[:2] + ["_apply_hdr_color"] + generated_colored[2:]
+
+
+def test_both_highlight_lanes_build_their_curves_from_the_shared_helpers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Peak Fit and the soft ceiling are built once, then evaluated per lane.
+
+    Guards the extraction: a fix to the shared stop-domain parameters or to the
+    soft-ceiling construction reaches the HDR and SDR lanes together. The
+    evaluation form stays local to each lane, so that part is pinned by the
+    output tests instead.
+    """
+    calls: list[str] = []
+
+    def spy(name: str) -> None:
+        original = getattr(adjustments_module, name)
+
+        def wrapper(*args, **kwargs):
+            calls.append(name)
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(adjustments_module, name, wrapper)
+
+    for name in (
+        "_peak_fit_parameters",
+        "_soft_ceiling_curve",
+        "_soft_ceiling_exponent",
+        "_soft_ceiling_activation",
+    ):
+        spy(name)
+
+    hdr_image = np.linspace(0.02, 6.0, 12 * 16 * 3, dtype=np.float32).reshape(12, 16, 3)
+    sdr_image = np.linspace(0.02, 3.0, 12 * 16 * 3, dtype=np.float32).reshape(12, 16, 3)
+
+    _compress_scene_highlights(hdr_image, mode="peak_fit", source_peak_nits=4000.0)
+    _compress_sdr_highlights(sdr_image, SDRAdjustments())
+    assert calls.count("_peak_fit_parameters") == 2
+
+    calls.clear()
+    _compress_scene_highlights(hdr_image, softness=50.0)
+    _compress_sdr_highlights(
+        sdr_image,
+        SDRAdjustments(highlight_compression_mode="soft_ceiling", highlight_compression_softness=50.0),
+    )
+    assert calls.count("_soft_ceiling_exponent") == 2
+    assert calls.count("_soft_ceiling_curve") == 2
+    assert calls.count("_soft_ceiling_activation") == 2

@@ -125,8 +125,9 @@ def test_raw_exif_reader_uses_standard_cross_vendor_tags(
     source = tmp_path / "camera.nef"
     source.write_bytes(b"raw")
 
-    metadata = _read_raw_exif(source)
+    metadata, warning = _read_raw_exif(source)
 
+    assert warning is None
     assert metadata == {
         "camera_maker": "NIKON CORPORATION",
         "camera_model": "NIKON Z 8",
@@ -160,6 +161,43 @@ def test_libraw_metadata_fills_vendor_aware_lens_and_shot_fallbacks() -> None:
     assert merged["aperture"] == 4.0
     assert merged["iso"] == "1000"
     assert merged["shutter_speed"] == 0.004
+
+
+def test_libraw_metadata_restores_camera_identity_when_exif_is_missing() -> None:
+    raw = SimpleNamespace(camera_manufacturer="SONY\x00", camera_model="ILCE-7RM3\x00")
+
+    merged = _merge_missing_metadata({}, _read_libraw_metadata(raw))
+
+    assert merged["camera_maker"] == "SONY"
+    assert merged["camera_model"] == "ILCE-7RM3"
+
+
+def test_raw_exif_reader_reports_unreadable_files_without_raising(tmp_path: Path) -> None:
+    metadata, warning = _read_raw_exif(tmp_path / "missing.nef")
+
+    assert metadata == {}
+    assert warning is not None
+    assert warning["code"] == "exif_unavailable"
+    assert warning["reason"] == "io_error"
+    assert "missing.nef" in warning["message"]
+
+
+def test_raw_exif_reader_reports_parse_failures_without_raising(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def corrupt(_handle, **_kwargs):
+        raise ValueError("corrupt tag block")
+
+    monkeypatch.setitem(sys.modules, "exifread", SimpleNamespace(process_file=corrupt))
+    source = tmp_path / "broken.nef"
+    source.write_bytes(b"raw")
+
+    metadata, warning = _read_raw_exif(source)
+
+    assert metadata == {}
+    assert warning is not None
+    assert warning["code"] == "exif_unavailable"
+    assert warning["reason"] == "parse_error"
 
 
 def test_auto_lensfun_match_passes_exact_camera_and_lens_identity() -> None:

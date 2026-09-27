@@ -785,6 +785,49 @@ def test_local_mask_tile_batch_bounds_identities_and_rejects_stale_requests() ->
     ).status_code == 422
 
 
+def test_local_mask_tile_answers_to_the_whole_mask_resource_policy(monkeypatch) -> None:
+    """The single-tile endpoint enforces the same bound and guard as its siblings.
+
+    The endpoint compiles the authoritative whole-image mask, so an unbounded
+    long_edge is a real resource-policy bypass even though only one tile
+    crosses the boundary.
+    """
+    from hdr_finisher import main as main_module
+
+    session_id, signature, revision = _create_mask_batch_session(["mask-tile-policy"])
+    params = {
+        "x": 0,
+        "y": 0,
+        "width": 64,
+        "height": 64,
+        "halo": 0,
+        "edit_revision": revision,
+        "geometry_signature": signature,
+    }
+    oversized = client.get(
+        f"/api/session/{session_id}/local-mask-tile/mask-tile-policy",
+        params={**params, "long_edge": 20000},
+    )
+    assert oversized.status_code == 422
+
+    def refuse(_session, max_dimension):
+        assert int(max_dimension) > main_module.FULL_PREVIEW_BASELINE_DIMENSION
+        return {"allowed": False, "reason": "measured host working memory"}
+
+    monkeypatch.setattr(main_module, "_preview_resource_payload", refuse)
+    tile = client.get(
+        f"/api/session/{session_id}/local-mask-tile/mask-tile-policy",
+        params={**params, "long_edge": 16384},
+    )
+    assert tile.status_code == 507
+    assert tile.json()["detail"] == "measured host working memory"
+    whole = client.get(
+        f"/api/session/{session_id}/local-mask/mask-tile-policy",
+        params={**params, "long_edge": 16384, "spatial_only": True},
+    )
+    assert whole.status_code == 507
+
+
 def test_local_luminance_sampling_returns_a_low_precision_scene_ev_range() -> None:
     upload = client.post("/api/session", files={"file": ("luma.png", make_png_bytes(), "image/png")})
     assert upload.status_code == 200

@@ -321,10 +321,9 @@ class BlackAndWhiteAdjustments(BaseModel):
 class BranchDetailAdjustments(DetailAdjustments):
     """Global Detail for one rendition: the local-grade controls plus two more.
 
-    Softness and Microcontrast moved here from Film Look's Image Structure
-    (NEXT-01 #2). Only the controls moved: they still run where Image
-    Structure ran, after the local adjustments, on the film response frame,
-    so a picture looks the same. They are global only, which is why local
+    Softness and Microcontrast are global controls. They run after the local
+    adjustments, on the film response frame, so a picture looks the same as it
+    did when Film Look owned them. They are global only, which is why local
     grades keep the plain ``DetailAdjustments``.
     """
 

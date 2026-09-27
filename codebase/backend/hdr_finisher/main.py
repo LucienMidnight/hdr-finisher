@@ -144,6 +144,39 @@ def _guard_preview_resources(session, max_dimension: int) -> None:
         raise HTTPException(status_code=507, detail=payload["reason"])
 
 
+def _checked_edit_session(session_id: str, edit_revision: int | None):
+    """Session lookup and revision check with the mask endpoints' error shape."""
+    try:
+        session = store.get(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    try:
+        _check_revision(session.edit_revision, edit_revision)
+    except RevisionConflictError as exc:
+        raise _revision_conflict(exc) from exc
+    return session
+
+
+def _check_mask_geometry(session, geometry_signature: str | None) -> None:
+    """Reject a mask request whose geometry no longer matches the session."""
+    if geometry_signature is None:
+        return
+    try:
+        requested_geometry = json.loads(geometry_signature)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid geometry signature.") from exc
+    if requested_geometry != session.adjustments.shared.geometry.model_dump(mode="json"):
+        raise HTTPException(status_code=409, detail="Stale local mask geometry request dropped.")
+
+
+def _checked_mask_local(session, local_id: str):
+    """The session's local adjustment with ``local_id``, or a 404."""
+    try:
+        return next(item for item in session.local_adjustments if item.id == local_id)
+    except StopIteration as exc:
+        raise HTTPException(status_code=404, detail=f"Local adjustment '{local_id}' was not found.") from exc
+
+
 @app.middleware("http")
 async def desktop_request_boundary(request: Request, call_next):
     if desktop_authoring_secret and request.url.path.startswith("/api/"):
@@ -521,11 +554,11 @@ def open_project_file(request: ProjectOpenRequest) -> SessionSummary:
 def _render_selected_execution(session, request, kind, adjustments, preview_long_edge, is_current):
     """Render one preview frame through the route the request asked for.
 
-    ``execution="strips"`` is the engineering entry to the bounded CPU path of
-    PRD Phase 4. It is answered 409 with the refusal list rather than quietly
-    rendering whole-frame, because a caller measuring the bounded path needs to
-    know it did not run. The engineering-only Full selector requests this route
-    for CPU previews; public tiers continue to use whole-frame execution.
+    ``execution="strips"`` selects the bounded CPU path. A request it cannot
+    serve is answered 409 with the refusal list rather than quietly rendering
+    whole-frame, because a caller measuring the bounded path needs to know it
+    did not run. The engineering-only Full selector requests this route for
+    CPU previews; public tiers continue to use whole-frame execution.
     """
     local_adjustments = (
         (
@@ -1165,24 +1198,9 @@ def local_mask_proxy(
     spatial_only: bool = Query(default=False),
     mask_path: str | None = Query(default=None, pattern=r"^\d+(?:\.\d+)*$"),
 ) -> Response:
-    try:
-        session = store.get(session_id)
-        _check_revision(session.edit_revision, edit_revision)
-        local = next(item for item in session.local_adjustments if item.id == local_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except StopIteration as exc:
-        raise HTTPException(status_code=404, detail=f"Local adjustment '{local_id}' was not found.") from exc
-    except RevisionConflictError as exc:
-        raise _revision_conflict(exc) from exc
-    if geometry_signature is not None:
-        try:
-            requested_geometry = json.loads(geometry_signature)
-        except json.JSONDecodeError as exc:
-            raise HTTPException(status_code=400, detail="Invalid geometry signature.") from exc
-        authoritative_geometry = session.adjustments.shared.geometry.model_dump(mode="json")
-        if requested_geometry != authoritative_geometry:
-            raise HTTPException(status_code=409, detail="Stale local mask geometry request dropped.")
+    session = _checked_edit_session(session_id, edit_revision)
+    local = _checked_mask_local(session, local_id)
+    _check_mask_geometry(session, geometry_signature)
     _guard_preview_resources(session, long_edge)
     selected_mask = _mask_expression_at_path(local.mask, mask_path)
     mask_source = local.model_copy(
@@ -1226,7 +1244,7 @@ def local_mask_tile_proxy(
     width: int = Query(default=512, ge=1, le=8192),
     height: int = Query(default=512, ge=1, le=8192),
     halo: int = Query(default=0, ge=0, le=2048),
-    long_edge: int = Query(default=1600, ge=256),
+    long_edge: int = Query(default=1600, ge=256, le=16384),
     edit_revision: int | None = Query(default=None, ge=0),
     geometry_signature: str | None = Query(default=None),
 ) -> Response:
@@ -1236,25 +1254,13 @@ def local_mask_tile_proxy(
     normalization and Boolean graphs cannot change at tile edges.  Only the
     requested haloed rectangle crosses the browser boundary; this retires the
     old endpoint's 16,384-pixel transport ceiling without approximating mask
-    semantics.
+    semantics. Compilation is still bounded by the same hard request-dimension
+    bound and resource guard as the whole-mask endpoint.
     """
-    try:
-        session = store.get(session_id)
-        _check_revision(session.edit_revision, edit_revision)
-        local = next(item for item in session.local_adjustments if item.id == local_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except StopIteration as exc:
-        raise HTTPException(status_code=404, detail=f"Local adjustment '{local_id}' was not found.") from exc
-    except RevisionConflictError as exc:
-        raise _revision_conflict(exc) from exc
-    if geometry_signature is not None:
-        try:
-            requested_geometry = json.loads(geometry_signature)
-        except json.JSONDecodeError as exc:
-            raise HTTPException(status_code=400, detail="Invalid geometry signature.") from exc
-        if requested_geometry != session.adjustments.shared.geometry.model_dump(mode="json"):
-            raise HTTPException(status_code=409, detail="Stale local mask geometry request dropped.")
+    session = _checked_edit_session(session_id, edit_revision)
+    local = _checked_mask_local(session, local_id)
+    _check_mask_geometry(session, geometry_signature)
+    _guard_preview_resources(session, long_edge)
 
     started = perf_counter()
     mask = session.render_cache.compiled_local_mask(
@@ -1308,20 +1314,8 @@ def local_mask_tiles_batch_proxy(
     failing the batch, and the payload is one length-prefixed container so the
     browser parses a single response.
     """
-    try:
-        session = store.get(session_id)
-        _check_revision(session.edit_revision, request.edit_revision)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except RevisionConflictError as exc:
-        raise _revision_conflict(exc) from exc
-    if request.geometry_signature is not None:
-        try:
-            requested_geometry = json.loads(request.geometry_signature)
-        except json.JSONDecodeError as exc:
-            raise HTTPException(status_code=400, detail="Invalid geometry signature.") from exc
-        if requested_geometry != session.adjustments.shared.geometry.model_dump(mode="json"):
-            raise HTTPException(status_code=409, detail="Stale local mask geometry request dropped.")
+    session = _checked_edit_session(session_id, request.edit_revision)
+    _check_mask_geometry(session, request.geometry_signature)
     _guard_preview_resources(session, request.long_edge)
 
     locals_by_id = {item.id: item for item in session.local_adjustments}
@@ -1414,16 +1408,8 @@ def local_mask_preview_proxy(
     request: LocalMaskPreviewRequest,
 ) -> Response:
     """Compile a live mask-control draft without changing edit history."""
-    try:
-        session = store.get(session_id)
-        _check_revision(session.edit_revision, request.edit_revision)
-        next(item for item in session.local_adjustments if item.id == local_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except StopIteration as exc:
-        raise HTTPException(status_code=404, detail=f"Local adjustment '{local_id}' was not found.") from exc
-    except RevisionConflictError as exc:
-        raise _revision_conflict(exc) from exc
+    session = _checked_edit_session(session_id, request.edit_revision)
+    _checked_mask_local(session, local_id)
     _guard_preview_resources(session, request.long_edge)
     started = perf_counter()
     mask = session.render_cache.compiled_mask_draft(

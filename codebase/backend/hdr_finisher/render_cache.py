@@ -4,6 +4,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field, replace
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import shutil
@@ -41,6 +42,9 @@ from .local_adjustments import (
 )
 from .models import AdjustmentState, LocalAdjustment, MaskExpression, MaskPoint, PreviewKind, SdrMatchState
 from .preview import ResizeCancelled, downsample_image
+
+
+logger = logging.getLogger(__name__)
 
 
 class StaleRender(RuntimeError):
@@ -190,6 +194,8 @@ class SourceMipStore:
         self._build_progress: dict[tuple[str, int], tuple[int, int]] = {}
         self._memory_bytes = 0
         self._cleaned = False
+        self._last_failure: dict[str, str] | None = None
+        self._logged_failures: set[str] = set()
         self._counters: dict[str, float] = {
             "memory_hits": 0,
             "disk_hits": 0,
@@ -204,6 +210,9 @@ class SourceMipStore:
             "corrupt_discards": 0,
             "stale_removed": 0,
             "write_failures": 0,
+            "disk_read_failures": 0,
+            "disk_write_failures": 0,
+            "disk_delete_failures": 0,
             "singleflight_waits": 0,
         }
 
@@ -281,6 +290,7 @@ class SourceMipStore:
             counters = dict(self._counters)
             memory_entries = len(self._memory)
             memory_bytes = self._memory_bytes
+            last_failure = dict(self._last_failure) if self._last_failure is not None else None
             active_builds = [
                 {"identity": digest, "long_edge": edge, "completed": done, "total": total}
                 for (digest, edge), (done, total) in self._build_progress.items()
@@ -298,6 +308,7 @@ class SourceMipStore:
                 "disk_bytes": disk_bytes,
                 "disk_budget_bytes": self.disk_budget_bytes,
                 "root": str(self.root),
+                "last_failure": last_failure,
                 "active_builds": active_builds,
             }
         )
@@ -367,11 +378,32 @@ class SourceMipStore:
     def _level_path(self, identity: SourceMipIdentity, edge: int) -> Path:
         return self._identity_dir(identity) / f"{int(edge)}.f32"
 
+    def _record_filesystem_failure(self, category: str, path: Path, exc: OSError) -> None:
+        """Count, remember, and log a filesystem failure without raising.
+
+        Cache failures stay nonfatal, but diagnostics must not confuse them
+        with an ordinary miss: the last category and path travel with the
+        counters, and each category is logged at most once.
+        """
+        with self._lock:
+            self._counters[f"disk_{category}_failures"] += 1
+            self._last_failure = {"category": category, "path": str(path)}
+            if category == "write":
+                self._counters["write_failures"] += 1
+            first = category not in self._logged_failures
+            if first:
+                self._logged_failures.add(category)
+        if first:
+            logger.warning("Source mip cache %s failed for %s: %s", category, path, exc)
+
     def _read_disk_level(self, identity: SourceMipIdentity, edge: int) -> np.ndarray | None:
         path = self._level_path(identity, edge)
         try:
             data = path.read_bytes()
-        except OSError:
+        except FileNotFoundError:
+            return None
+        except OSError as exc:
+            self._record_filesystem_failure("read", path, exc)
             return None
         expected_width, expected_height = downsample_target_dimensions(identity.width, identity.height, edge)
         header_size = _SOURCE_MIP_HEADER.size
@@ -424,9 +456,8 @@ class SourceMipStore:
             temp = path.with_name(f".{path.name}.{os.getpid()}.{get_ident()}.tmp")
             temp.write_bytes(header + payload)
             os.replace(temp, path)
-        except OSError:
-            with self._lock:
-                self._counters["write_failures"] += 1
+        except OSError as exc:
+            self._record_filesystem_failure("write", path, exc)
 
     def _discard_corrupt(self, path: Path) -> None:
         try:
@@ -454,29 +485,41 @@ class SourceMipStore:
             if self._cleaned:
                 return
             self._cleaned = True
-        current = f"v{SOURCE_MIP_FORMAT_VERSION}"
         removed = 0
         try:
             children = list(self.root.iterdir())
-        except OSError:
+        except OSError as exc:
+            self._record_filesystem_failure("read", self.root, exc)
             children = []
         for child in children:
             try:
-                if child.is_dir() and child.name.startswith("v"):
-                    suffix = child.name[1:]
-                    if suffix.isdigit() and int(suffix) != SOURCE_MIP_FORMAT_VERSION:
-                        shutil.rmtree(child, ignore_errors=True)
-                        removed += 1
-            except OSError:
+                is_stale_version = (
+                    child.is_dir()
+                    and child.name.startswith("v")
+                    and child.name[1:].isdigit()
+                    and int(child.name[1:]) != SOURCE_MIP_FORMAT_VERSION
+                )
+            except OSError as exc:
+                self._record_filesystem_failure("read", child, exc)
                 continue
+            if not is_stale_version:
+                continue
+            try:
+                shutil.rmtree(child)
+            except OSError as exc:
+                self._record_filesystem_failure("delete", child, exc)
+                continue
+            removed += 1
         try:
-            for path in self.root.rglob("*.tmp"):
-                try:
-                    path.unlink(missing_ok=True)
-                except OSError:
-                    continue
-        except OSError:
-            pass
+            stale_temps = list(self.root.rglob("*.tmp"))
+        except OSError as exc:
+            self._record_filesystem_failure("read", self.root, exc)
+            stale_temps = []
+        for path in stale_temps:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as exc:
+                self._record_filesystem_failure("delete", path, exc)
         with self._lock:
             self._counters["stale_removed"] += removed
 
@@ -504,7 +547,8 @@ class SourceMipStore:
                 break
             try:
                 path.unlink()
-            except OSError:
+            except OSError as exc:
+                self._record_filesystem_failure("delete", path, exc)
                 continue
             total -= size
             removed += 1
@@ -539,6 +583,16 @@ def _env_int(name: str, fallback: int) -> int:
 
 _default_source_mip_store: SourceMipStore | None = None
 _default_source_mip_store_resolved = False
+_source_mip_root_failure_logged = False
+
+
+def _log_source_mip_root_failure(root: Path, exc: OSError) -> None:
+    """Report an unusable persistent cache root once, then stay quiet."""
+    global _source_mip_root_failure_logged
+    if _source_mip_root_failure_logged:
+        return
+    _source_mip_root_failure_logged = True
+    logger.warning("Source mip cache root %s is unavailable: %s", root, exc)
 
 
 def default_source_mip_store() -> SourceMipStore | None:
@@ -558,7 +612,8 @@ def default_source_mip_store() -> SourceMipStore | None:
     root = Path(configured) if configured else APP_DATA_DIR / "source-mips"
     try:
         root.mkdir(parents=True, exist_ok=True)
-    except OSError:
+    except OSError as exc:
+        _log_source_mip_root_failure(root, exc)
         return None
     _default_source_mip_store = SourceMipStore(
         root,
@@ -566,13 +621,6 @@ def default_source_mip_store() -> SourceMipStore | None:
         disk_budget_bytes=_env_int("HDR_FINISHER_SOURCE_MIP_DISK_BYTES", DEFAULT_SOURCE_MIP_DISK_BYTES),
     )
     return _default_source_mip_store
-
-
-def reset_default_source_mip_store() -> None:
-    """Test hook: forget the resolved default so a new environment applies."""
-    global _default_source_mip_store, _default_source_mip_store_resolved
-    _default_source_mip_store = None
-    _default_source_mip_store_resolved = False
 
 
 @dataclass
@@ -931,6 +979,42 @@ class SessionRenderCache:
         fixed_source = downsample_image(apply_geometry(source, adjustments.shared.geometry), edge)
         return sample_luminance_evs(fixed_source, points)
 
+    def _acquire_frame_flight(
+        self,
+        key: tuple[object, ...],
+        flight_key: tuple[object, ...],
+        is_current: Callable[[], bool] | None,
+        *,
+        record_diagnostics: bool = True,
+    ) -> tuple[np.ndarray | None, Event | None]:
+        """Return a cached frame, or take this key's single flight.
+
+        Both the whole-frame and strip paths acquire through here, so a
+        concurrent request on either path waits for the one that is building
+        instead of rendering the same key twice. The caller that receives the
+        flight owns detaching and setting it.
+        """
+        while True:
+            with self._lock:
+                cached = self._frames.get(key)
+                if cached is not None:
+                    if record_diagnostics:
+                        self._hits += 1
+                    self._frames.move_to_end(key)
+                    return cached, None
+                if is_current is not None and not is_current():
+                    self._stale_cancellations += 1
+                    raise StaleRender("A newer adjustment replaced this render.")
+                flight = self._inflight.get(flight_key)
+                if flight is None:
+                    flight = Event()
+                    self._inflight[flight_key] = flight
+                    if record_diagnostics:
+                        self._misses += 1
+                    return None, flight
+                self._singleflight_waits += 1
+            flight.wait()
+
     def adjusted_frame(
         self,
         adjustments: AdjustmentState,
@@ -948,27 +1032,14 @@ class SessionRenderCache:
         signature = adjustment_signature(adjustments) + local_adjustment_signature(local_adjustments) + match_signature + repr(self.color_context.cache_key)
         key = (source_epoch, kind.value, edge, signature)
         flight_key = ("frame", *key)
-        while True:
-            with self._lock:
-                cached = self._frames.get(key)
-                if cached is not None:
-                    if _record_diagnostics:
-                        self._hits += 1
-                    self._frames.move_to_end(key)
-                    return cached
-                if is_current is not None and not is_current():
-                    self._stale_cancellations += 1
-                    raise StaleRender("A newer adjustment replaced this render.")
-                flight = self._inflight.get(flight_key)
-                if flight is None:
-                    flight = Event()
-                    self._inflight[flight_key] = flight
-                    if _record_diagnostics:
-                        self._misses += 1
-                    source, sdr_reference = self._proxies_locked(edge)
-                    break
-                self._singleflight_waits += 1
-            flight.wait()
+        cached, flight = self._acquire_frame_flight(
+            key, flight_key, is_current, record_diagnostics=_record_diagnostics
+        )
+        if cached is not None:
+            return cached
+        assert flight is not None
+        with self._lock:
+            source, sdr_reference = self._proxies_locked(edge)
 
         try:
             compiled_masks = self._compiled_masks(
@@ -1024,11 +1095,12 @@ class SessionRenderCache:
     ) -> tuple[np.ndarray, StripReport]:
         """Produce the same frame ``adjusted_frame`` does, through the bounded path.
 
-        Shares the frame cache with ``adjusted_frame`` under the same key, so
-        the two are interchangeable to every consumer: whichever runs first, the
-        other finds its result. It raises ``StripExecutionRefused`` for a graph
-        the strip path cannot reproduce exactly, and the caller decides whether
-        to fall back -- this method never silently renders whole-frame instead.
+        Shares the frame cache and single-flight with ``adjusted_frame`` under
+        the same key, so the two are interchangeable to every consumer:
+        whichever runs first, the other waits for or finds its result. It
+        raises ``StripExecutionRefused`` for a graph the strip path cannot
+        reproduce exactly, and the caller decides whether to fall back -- this
+        method never silently renders whole-frame instead.
         """
         edge = max(256, int(long_edge))
         with self._lock:
@@ -1056,11 +1128,8 @@ class SessionRenderCache:
         if refusals:
             raise StripExecutionRefused(refusals)
 
-        with self._lock:
-            cached = self._frames.get(key)
-            if cached is not None:
-                self._hits += 1
-                self._frames.move_to_end(key)
+        flight_key = ("frame", *key)
+        cached, flight = self._acquire_frame_flight(key, flight_key, is_current)
         if cached is not None:
             from .cpu_strips import plan_strips
             from .scopes import scope_peak_value
@@ -1084,11 +1153,7 @@ class SessionRenderCache:
                         self._frame_scope_peaks[key] = peak
             return cached, StripReport(plan=plan, passes=passes, scope_peak_value=peak)
 
-        if is_current is not None and not is_current():
-            with self._lock:
-                self._stale_cancellations += 1
-            raise StaleRender("A newer adjustment replaced this render.")
-
+        assert flight is not None
         try:
             processed, report = render_in_strips(
                 source,
@@ -1104,17 +1169,22 @@ class SessionRenderCache:
                 budget_bytes=budget_bytes,
                 is_current=is_current,
             )
+            with self._lock:
+                self._frames[key] = processed
+                if report.scope_peak_value is not None:
+                    self._frame_scope_peaks[key] = float(report.scope_peak_value)
+                self._evict_locked()
         except StripCancelled as exc:
             with self._lock:
                 self._stale_cancellations += 1
             raise StaleRender("A newer adjustment replaced this render.") from exc
-
-        with self._lock:
-            self._misses += 1
-            self._frames[key] = processed
-            if report.scope_peak_value is not None:
-                self._frame_scope_peaks[key] = float(report.scope_peak_value)
-            self._evict_locked()
+        finally:
+            with self._lock:
+                # Invalidation may have removed this flight and a newer caller
+                # may already own the same key. Only detach our own event.
+                if self._inflight.get(flight_key) is flight:
+                    self._inflight.pop(flight_key, None)
+            flight.set()
         return processed, report
 
     def scope_result(

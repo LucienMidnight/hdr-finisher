@@ -128,10 +128,11 @@ def _denoised_export_source(session: object, kind: PreviewKind) -> np.ndarray:
     that, so export has to denoise before grading too, or the two would differ
     by where in the graph the noise was removed rather than by resolution.
 
-    Analysis and reconstruction are the tiled reference routines, which Phase 6
-    proved bit-identical to the whole-image ones. That matters twice over: the
-    export stays bounded on a 42 MP frame, and it is the same arithmetic the
-    preview's GPU path was pinned against by a shared fixture.
+    Analysis and reconstruction are the tiled reference routines, bit-identical
+    to the whole-image ones and pinned by the denoise parity suites. That
+    matters twice over: the export stays bounded on a 42 MP frame, and it is
+    the same arithmetic the preview's GPU path is pinned against by a shared
+    fixture.
     """
     image = getattr(session, "image")
     lane = denoise_settings_for_export(session, kind)
@@ -201,26 +202,6 @@ def _render_export_branch(
     if kind == PreviewKind.HDR:
         return apply_hdr_output_highlight_compression(image, adjustments, color_context=color_context)
     return apply_sdr_output_highlight_compression(image, adjustments)
-
-
-class StubExportBackend(ExportBackend):
-    name = "stub"
-
-    def export(self, session: object, settings: ExportSettings) -> ExportResponse:
-        session_id = getattr(session, "session_id", "session")
-        if self.capability.status != CapabilityStatus.AVAILABLE:
-            return ExportResponse(
-                accepted=False,
-                backend=self.name,
-                message=f"{settings.format} export is not available yet: {self.capability.detail}",
-            )
-        output_path = settings.output_path or str(Path.cwd() / f"{session_id}.{settings.format}")
-        return ExportResponse(
-            accepted=False,
-            backend=self.name,
-            message=f"{settings.format} export backend is detected but still stubbed in this milestone.",
-            output_path=output_path,
-        )
 
 
 class SDRPNGExportBackend(ExportBackend):
@@ -889,11 +870,6 @@ def _write_sdr_rgba8888_pixels(path: Path, rgb: np.ndarray) -> None:
     """Write already-quantized sRGB pixels as libultrahdr's RGBA intent."""
     alpha = np.full((*rgb.shape[:2], 1), 255, dtype=np.uint8)
     rgba = np.concatenate([rgb, alpha], axis=-1)
-    path.write_bytes(rgba.tobytes(order="C"))
-
-
-def _write_hdr_linear_rgba_f16(path: Path, image: np.ndarray, reference_white_nits: int = 203) -> None:
-    rgba, _target_peak_nits = _prepare_hdr_linear_rgba_f16(image, reference_white_nits)
     path.write_bytes(rgba.tobytes(order="C"))
 
 

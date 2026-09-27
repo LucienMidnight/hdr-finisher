@@ -103,7 +103,7 @@ def decode_raw(
     _raise_if_cancelled(cancelled)
     if progress:
         progress("raw_metadata", "Reading camera and lens metadata")
-    exif = _read_raw_exif(path)
+    exif, exif_warning = _read_raw_exif(path)
     _raise_if_cancelled(cancelled)
     opcode_plan = bool(dng_inspection and dng_inspection.required_opcodes)
     if opcode_plan and settings.lens.mode == "manual" and (
@@ -324,6 +324,8 @@ def decode_raw(
         "lens_correction": lens_metadata or {"mode": lens_settings.mode, "applied": False},
         "decoder_normalized_to_acescg": True,
     }
+    if exif_warning is not None:
+        metadata["raw_exif_warning"] = exif_warning
     if not opcode_plan:
         metadata["raw_pipeline"] = str(raw_development["pipeline"])
         if legacy_fallback_reason is not None:
@@ -1301,14 +1303,37 @@ def _sizes_payload(sizes: Any) -> dict[str, int]:
     return {name: int(getattr(sizes, name)) for name in names if getattr(sizes, name, None) is not None}
 
 
-def _read_raw_exif(path: Path) -> dict[str, Any]:
+def _read_raw_exif(path: Path) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """Read exact EXIF identity, plus a structured warning when that fails.
+
+    A missing reader, an unreadable file, or a malformed tag block must not
+    look like an ordinary "no metadata" result: the caller keeps its soft
+    fallback, and the warning travels into provenance so a skipped automatic
+    lens match can be told apart from one that never had the identity.
+    """
     try:
         import exifread
-
+    except ImportError as exc:
+        return {}, {
+            "code": "exif_unavailable",
+            "reason": "missing_dependency",
+            "message": f"exifread is not installed: {exc}",
+        }
+    try:
         with path.open("rb") as handle:
             tags = exifread.process_file(handle, details=False, extract_thumbnail=False)
-    except Exception:
-        return {}
+    except OSError as exc:
+        return {}, {
+            "code": "exif_unavailable",
+            "reason": "io_error",
+            "message": f"Could not read {path.name}: {exc}",
+        }
+    except Exception as exc:
+        return {}, {
+            "code": "exif_unavailable",
+            "reason": "parse_error",
+            "message": f"Could not parse EXIF in {path.name}: {exc}",
+        }
 
     def text(*names: str) -> str | None:
         for name in names:
@@ -1348,16 +1373,23 @@ def _read_raw_exif(path: Path) -> dict[str, Any]:
             "focus_distance_m": number("EXIF SubjectDistance"),
         }.items()
         if value is not None
-    }
+    }, None
 
 
 def _read_libraw_metadata(raw: Any) -> dict[str, Any]:
-    """Return vendor-aware LibRaw metadata without replacing exact EXIF identity."""
+    """Return vendor-aware LibRaw metadata as a fallback for missing EXIF.
+
+    Exact EXIF identity wins wherever it exists; this fills the camera and lens
+    fields that a failed or partial EXIF read leaves behind, so Lensfun's
+    automatic match can still qualify.
+    """
     lens = getattr(raw, "lens", None)
     other = getattr(raw, "other", None)
     return {
         key: value
         for key, value in {
+            "camera_maker": _clean_metadata_text(getattr(raw, "camera_manufacturer", None)),
+            "camera_model": _clean_metadata_text(getattr(raw, "camera_model", None)),
             "lens_maker": _clean_metadata_text(getattr(lens, "make", None)),
             "lens_model": _clean_metadata_text(getattr(lens, "model", None)),
             "focal_length_mm": _positive_float(getattr(other, "focal_length", None)),

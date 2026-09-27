@@ -40,6 +40,11 @@
     "test:gpu-highlights": "node tests/gpu-highlight-compression-parity.js",
     "test:sdr-match-gpu": "node tests/sdr-match-gpu-interaction.js",
     "test:sdr-gamut-gpu": "node tests/sdr-gamut-gpu-parity.js",
+    "test:bw-parity": "node tests/run-in-electron.js tests/bw-parity.js",
+    "test:clarity-map-parity": "node tests/run-in-electron.js tests/clarity-map-parity.js",
+    "test:grain-parity": "node tests/run-in-electron.js tests/grain-parity.js",
+    "test:denoise-tiled-parity": "node tests/run-in-electron.js tests/denoise-tiled-parity.js",
+    "test:tiled-cpu-detail-parity": "node tests/run-in-electron.js tests/tiled-cpu-detail-parity.js",
     "test:webgpu-shader": "node tests/webgpu-shader-compilation.js",
     "test:webgpu-memory": "node --test tests/webgpu-memory-diagnostics.test.js",
     "test:webgpu-allocation-agreement": "node --test tests/webgpu-allocation-agreement.test.js",
@@ -80,7 +85,7 @@
     "test:packaged-baselines": "node tests/performance/packaged-baselines.js",
     "test:fit-filtering": "node tests/performance/fit-filtering-ab.js",
     "test:export-parity": "node tests/performance/export-parity.js",
-    "test:electron": "node tests/run-in-electron.js"
+    "test:electron": "node tests/run-in-electron.js tests/startup-state.js"
   },
   "devDependencies": {
     "playwright": "^1.50.0"

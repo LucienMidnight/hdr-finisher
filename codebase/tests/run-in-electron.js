@@ -273,6 +273,15 @@ function packagedExecutable() {
       return window;
     },
     close: async () => { stop(); },
+    // Playwright reports the browser build here and several drivers put it in
+    // their report. Electron's Chromium version is the honest answer.
+    version: async () => {
+      try {
+        return await app.evaluate(() => process.versions.chrome || process.versions.electron || "unknown");
+      } catch {
+        return "unknown";
+      }
+    },
     contexts: () => [],
     isConnected: () => true,
   });
