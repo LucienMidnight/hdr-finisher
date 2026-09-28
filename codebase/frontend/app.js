@@ -657,7 +657,7 @@ const state = {
       overlay_mode: "off",
       false_color_band_anchor: "project",
       false_color_ceiling_nits: 1000,
-      overlay_opacity: 0.72,
+      overlay_opacity: 0.5,
       overlay_threshold: 100,
     },
   },
@@ -1392,7 +1392,7 @@ const defaultAdjustments = () => ({
     overlay_mode: "off",
     false_color_band_anchor: "project",
     false_color_ceiling_nits: 1000,
-    overlay_opacity: 0.72,
+    overlay_opacity: 0.5,
     overlay_threshold: 100,
     film_grain_seed: 271828,
     geometry: defaultGeometry(),
@@ -11311,6 +11311,8 @@ async function applyOverlayUrl(url, isCurrent = () => true) {
   if (previousUrl) URL.revokeObjectURL(previousUrl);
   els.previewOverlay.src = url;
   els.previewOverlay.dataset.objectUrl = url;
+  delete els.previewOverlay.dataset.stale;
+  els.previewOverlay.style.opacity = "1";
   els.previewOverlay.style.display = "block";
   syncOverlayPlacement();
   return true;
@@ -11385,8 +11387,10 @@ function clearPreviewOverlay() {
   const previousUrl = els.previewOverlay.dataset.objectUrl;
   if (previousUrl) URL.revokeObjectURL(previousUrl);
   delete els.previewOverlay.dataset.objectUrl;
+  delete els.previewOverlay.dataset.stale;
   els.previewOverlay.removeAttribute("src");
   els.previewOverlay.style.display = "none";
+  els.previewOverlay.style.opacity = "";
   els.previewOverlay.style.left = "";
   els.previewOverlay.style.top = "";
   els.previewOverlay.style.width = "";
@@ -12015,6 +12019,10 @@ function invalidatePreview(lane, { local = false, markDirty = true } = {}) {
     cancelRoiCatchUp();
     cancelRoiPanRefinement();
     state.previewGeneration[lane] += 1;
+  }
+  if (lane === state.currentView && state.overlayPresented?.generation !== state.previewGeneration[lane]) {
+    els.previewOverlay.style.opacity = "0.5";
+    els.previewOverlay.dataset.stale = "true";
   }
   window.HDRProofing?.invalidate(lane);
   renderCompareStatus();

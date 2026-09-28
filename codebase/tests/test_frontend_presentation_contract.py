@@ -133,6 +133,20 @@ def test_overlay_acceptance_is_generation_and_geometry_safe() -> None:
     assert "state.previewGeneration[lane] === overlayGeneration" in overlay
     assert "geometrySignature() === overlaySignature" in overlay
 
+def test_stale_overlay_is_dimmed_until_its_current_replacement_arrives() -> None:
+    javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    invalidate = javascript[javascript.index("function invalidatePreview(") : javascript.index("function markGlobalEditDirty(")]
+    apply_overlay = javascript[javascript.index("async function applyOverlayUrl(") : javascript.index("function clearPreviewImage(")]
+    clear_overlay = javascript[javascript.index("function clearPreviewOverlay(") : javascript.index("function syncViewerStatusDock(")]
+
+    assert 'els.previewOverlay.style.opacity = "0.5";' in invalidate
+    assert 'els.previewOverlay.dataset.stale = "true";' in invalidate
+    assert "state.overlayPresented?.generation !== state.previewGeneration[lane]" in invalidate
+    assert "delete els.previewOverlay.dataset.stale;" in apply_overlay
+    assert 'els.previewOverlay.style.opacity = "1";' in apply_overlay
+    assert "delete els.previewOverlay.dataset.stale;" in clear_overlay
+    assert 'els.previewOverlay.style.opacity = "";' in clear_overlay
+
 def test_generation_change_reports_updating_immediately() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     invalidate = javascript[javascript.index("function invalidatePreview(") : javascript.index("function markGlobalEditDirty(")]

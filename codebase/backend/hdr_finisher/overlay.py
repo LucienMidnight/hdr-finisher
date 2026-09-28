@@ -71,8 +71,7 @@ def _false_color_overlay(image: np.ndarray, adjustments: AdjustmentState, opacit
     band_index = np.searchsorted(bands, luminance_nits, side="right")
     palette = FALSE_COLOR_PALETTE[band_index]
 
-    normalized = np.clip(luminance_nits / max(peak_nits, 1e-4), 0.0, 1.0)
-    alpha = opacity * 255.0 * (0.45 + 0.55 * normalized)
+    alpha = np.full(luminance_nits.shape, opacity * 255.0, dtype=np.float32)
     return _stack_rgba(palette, alpha)
 
 

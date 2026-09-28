@@ -552,7 +552,7 @@ class SharedAdjustments(BaseModel):
     overlay_mode: OverlayMode = OverlayMode.OFF
     false_color_band_anchor: Literal["project", "100_nits", "203_nits"] = "project"
     false_color_ceiling_nits: Literal[100, 1000, 4000] = 1000
-    overlay_opacity: float = 0.72
+    overlay_opacity: float = 0.5
     overlay_threshold: float = Field(default=100.0, ge=1.0, le=10000.0)
     film_grain_seed: int = Field(default=271828, ge=0, le=2_147_483_647)
     geometry: GeometryAdjustments = Field(default_factory=GeometryAdjustments)

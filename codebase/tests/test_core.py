@@ -506,6 +506,54 @@ def test_false_color_overlay_returns_rgba_pixels() -> None:
     assert overlay[..., 3].max() > 0
 
 
+@pytest.mark.parametrize(("opacity", "expected_alpha"), [(0.1, 26), (0.5, 128), (1.0, 255)])
+def test_false_color_alpha_is_uniform_at_requested_opacity(opacity: float, expected_alpha: int) -> None:
+    image = np.array([[[0.001, 0.001, 0.001], [40.0, 40.0, 40.0]]], dtype=np.float32)
+    adjustments = AdjustmentState.model_validate(
+        {"shared": {"overlay_mode": "false_color", "overlay_opacity": opacity}}
+    )
+
+    overlay = build_overlay_rgba(image, adjustments, PreviewKind.HDR)
+
+    assert np.all(overlay[..., 3] == expected_alpha)
+
+
+def test_false_color_at_full_opacity_fully_replaces_image_including_edges() -> None:
+    image = np.array(
+        [
+            [[0.001, 0.001, 0.001], [0.05, 0.05, 0.05], [0.2, 0.2, 0.2], [1.0, 1.0, 1.0]],
+            [[2.0, 2.0, 2.0], [4.0, 4.0, 4.0], [10.0, 10.0, 10.0], [40.0, 40.0, 40.0]],
+        ],
+        dtype=np.float32,
+    )
+    overlay = build_overlay_rgba(
+        image,
+        AdjustmentState.model_validate({"shared": {"overlay_mode": "false_color", "overlay_opacity": 1.0}}),
+        PreviewKind.HDR,
+    )
+    base = np.arange(image.size, dtype=np.uint8).reshape(image.shape)
+    alpha = overlay[..., 3:4].astype(np.uint16)
+    composited = (
+        (
+            overlay[..., :3].astype(np.uint16) * alpha
+            + base.astype(np.uint16) * (255 - alpha)
+            + 127
+        )
+        // 255
+    ).astype(np.uint8)
+
+    assert np.all(overlay[..., 3] == 255)
+    assert np.array_equal(composited, overlay[..., :3])
+    assert np.array_equal(composited[0, 0], overlay[0, 0, :3])
+    assert np.array_equal(composited[-1, -1], overlay[-1, -1, :3])
+
+
+def test_new_projects_use_half_opacity_without_overriding_saved_values() -> None:
+    assert AdjustmentState().shared.overlay_opacity == 0.5
+    restored = AdjustmentState.model_validate({"shared": {"overlay_opacity": 0.72}})
+    assert restored.shared.overlay_opacity == 0.72
+
+
 def test_zebra_overlay_is_transparent_below_threshold() -> None:
     image = np.ones((4, 4, 3), dtype=np.float32) * 0.17
     adjustments = AdjustmentState.model_validate(

@@ -9,6 +9,7 @@ HDR Finisher 0.8.12 tightens the frontend pipeline and makes local mask controls
 - Gradient-mask luminance selection is now a single grayscale rail with four handles, live EV readouts, and a clear selected-range fill.
 - Control-panel luminance adjustments and on-image mask feedback now update through the same state synchronization path.
 - Browser interaction coverage now exercises source replacement, transformed path drawing, feather feedback, pipeline controls, and all four luminance handles with real pointer input.
+- False Color now applies its selected opacity uniformly across every luminance band. New projects start at 50%; existing projects retain their saved opacity, so previously saved overlays may appear stronger in dark regions.
 
 ## Downloads
 
