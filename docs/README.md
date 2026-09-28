@@ -44,6 +44,12 @@ Pages carry their own verification dates where implementation freshness matters.
 3. [Development guide](technical/development.md)
 4. [Documentation maintenance](contributing/documentation.md)
 
+### Where the repository lives
+
+- `codebase/` contains the application, frontend, desktop shell, tests, and build tools. Disposable test and build output goes in its ignored `output/` directory.
+- `docs/` is the home for product plans, design work, technical evidence, test strategy, and user documentation.
+- `packaging/` contains operating-system packaging definitions; `.github/` contains repository automation.
+
 ## User manual
 
 - [Install and run](getting-started/install-and-run.md)

@@ -460,7 +460,7 @@ were approved and findings 12–20 are implemented.
 | Python suite after the last batch | 1,466 passed, 3 skipped (baseline 1,448 / 3) |
 | Earlier desktop unit gate for findings 1–11 | 22 passed |
 | Earlier `npm run test:electron` baseline | Pass |
-| Current Electron smoke and export-parity rerun | Host-blocked before first window: Electron GPU helper repeatedly crashed with Windows status `-1073741515`, including with hardware acceleration disabled |
+| Electron smoke and export-parity rerun (2026-09-28) | Both passed with desktop-app permission; export parity completed all six scenarios. The restricted launch still closed before its first window. |
 | ROI parity after all backend batches | Max difference 0, no page errors |
 | SDR branch hash matrix | 26/26 byte-identical |
 | Highlight-curve hash matrix | 33/33 byte-identical |
@@ -488,25 +488,50 @@ compression, SDR gamut, ROI and denoise ROI, export) was run at the baseline
 and is recorded in the Baseline document. Reports live in
 `codebase/output/performance/electron-*.json`.
 
-The earlier batches through finding 20 are committed on `audit/repo-cleanup` at
-`5880184`. Finding 15 batches 1–8, finding 16 batches 1–4, and finding 17 are the current uncommitted diff, so
-`git status` and `git diff` are their recovery path.
+The earlier batches through finding 20 were committed at `5880184`.
+Finding 15 batches 1–8, finding 16 batches 1–4, and finding 17 were
+subsequently committed on `audit/repo-cleanup` at `49697fe`.
+
+### September 28 validation closeout
+
+With desktop-app permission, `npm run test:electron` passed its fresh-profile
+startup check. `node tests/run-in-electron.js tests/performance/export-parity.js`
+passed all six export scenarios. The first restricted smoke attempt closed
+before a window; this was a host permission boundary, not an application test
+failure.
+
+The held-constant release-to-settled latency command from the Baseline document
+ran twice at 2560×1440 with the generated 7968×5320 source, NVIDIA Lovelace,
+Electron 43.4.0, and AC power. Both runs reported zero failures and nine warm
+samples per view state. Warm median milliseconds were:
+
+| View | Baseline | After run 1 | After run 2 |
+|---|---:|---:|---:|
+| Fit | 3.9 | 5.4 | 2.9 |
+| 100% | 5.2 | 5.3 | 5.1 |
+| 200% | 4.5 | 5.5 | 4.6 |
+| 400% | 5.2 | 5.5 | 5.3 |
+
+The two after runs straddle the baseline at Fit and 100%; 200% differs by
+0.1–1.0 ms and 400% by 0.1–0.3 ms. This evidence shows run-to-run variation
+and no consistent
+slowdown, but it cannot prove that latency is numerically unchanged at
+sub-millisecond precision. The ignored reports are
+`codebase/output/performance/electron-headline-latency-after-audit.json` and
+`electron-headline-latency-after-audit-repeat.json` in the same directory.
+The required repository map was added to `docs/README.md`.
 
 ## Remaining batches
 
 Findings 1–20 are implemented. No approved code-audit batch remains.
-
-The live Electron smoke and export-parity rerun also remain an environment
-validation follow-up because the host GPU helper exits before the application
-creates a window.
+The Electron and preview-smoothness validation follow-ups were run on
+September 28 as recorded above.
 
 ## Handoff
 
-**State.** Baseline follow-ups 1–4 are closed. Findings 1–14 and 18–20 are
-implemented and committed at `5880184`. Findings 15–17 are complete in the current
-uncommitted diff. The current live Electron rerun is host-blocked
-as recorded above: the startup driver again closed before a first window and
-returned no application log.
+**State.** Baseline follow-ups 1–4 are closed. Findings 1–20 are implemented
+and committed through `49697fe`. The September 28 Electron, export-parity,
+preview-smoothness, and documentation closeout is recorded above.
 
 **Environment.**
 - Python gate: from `codebase/`, `.venv/Scripts/python.exe -m pytest -q tests`.
@@ -525,10 +550,8 @@ require byte-identical hashes, then add a structural fixture that pins the new
 shared path. One extraction per batch, and never unify lane-specific rounding
 just because two forms are algebraically equal.
 
-**Validation follow-up.** Restore a working Electron GPU helper on this host,
-then rerun `npm run test:electron` and
-`node tests/run-in-electron.js tests/performance/export-parity.js`. The current
-failure occurs before test code or the application window starts.
+**Validation note.** Electron drivers require desktop-app permission on this
+host. Restricted launches can close before the application window starts.
 
 **Working agreements.** No pixel changes, preview must not get slower, nothing
 is deleted without Steve's yes, and this Results document is updated after each
