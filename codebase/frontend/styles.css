@@ -348,8 +348,8 @@
 html,
 body {
   margin: 0;
-  min-width: 1180px;
-  min-height: 100%;
+  min-width: 0;
+  min-height: 0;
   color: var(--text);
   background: var(--app);
   font-family: var(--sans);
@@ -427,12 +427,13 @@ h2 {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 230px minmax(0, 1fr) 320px;
-  grid-template-rows: 52px minmax(0, 1fr);
-  gap: 1px;
+  grid-template-columns: var(--rail-w) var(--splitter-size) minmax(0, 1fr) var(--splitter-size) var(--grade-w);
+  grid-template-rows: var(--top-h) minmax(0, 1fr);
+  gap: 0;
   width: 100vw;
   height: 100vh;
-  background: var(--hairline);
+  min-height: 0;
+  background: var(--app);
 }
 
 .panel {
@@ -445,10 +446,11 @@ h2 {
   grid-column: 1 / -1;
   grid-row: 1;
   display: grid;
-  grid-template-columns: minmax(230px, auto) minmax(180px, 1fr) auto;
+  grid-template-columns: minmax(220px, 1fr) auto minmax(220px, 1fr);
   align-items: center;
   gap: 16px;
-  padding: 7px 12px;
+  min-height: var(--top-h);
+  padding: 0 16px;
   min-width: 0;
   background: var(--panel);
   border-bottom: 1px solid var(--hairline);
@@ -672,11 +674,18 @@ output {
 .source-rail {
   grid-column: 1;
   grid-row: 2;
+  position: static;
+  z-index: auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 14px 12px;
+  width: auto;
+  gap: 0;
+  padding: 0 16px 18px;
+  overflow-x: hidden;
   overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+  transition: none;
 }
 
 .source-rail-expand {
@@ -833,24 +842,26 @@ input[type="text"] {
 }
 
 .workspace-main {
-  grid-column: 2;
+  grid-column: 3;
   grid-row: 2;
   display: grid;
-  grid-template-rows: minmax(360px, 1fr) 300px;
-  gap: 1px;
+  grid-template-rows: minmax(320px, 1fr) var(--splitter-size) var(--dock-h);
+  gap: 0;
   min-width: 0;
   min-height: 0;
-  background: var(--hairline);
+  background: var(--app);
 }
 
 .viewer-panel {
   position: relative;
   container-type: inline-size;
   display: grid;
-  grid-template-rows: 38px minmax(0, 1fr) 28px;
+  grid-row: 1;
+  grid-template-rows: var(--panel-header-h) minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  border-radius: 0;
 }
 
 .viewer-bar {
@@ -1826,9 +1837,10 @@ body[data-active-lane="sdr"] .lane-dot {
 }
 
 .grade-rail {
-  grid-column: 3;
+  grid-column: 5;
   grid-row: 2;
-  padding: 12px;
+  min-height: 0;
+  padding: 0;
   /* Declaring only overflow-y promotes overflow-x from visible to auto, so the
      rail gains a horizontal scrollbar it never wants. Hidden tooltips still
      count toward scroll extent, and one wider than the rail is enough to
@@ -1836,11 +1848,11 @@ body[data-active-lane="sdr"] .lane-dot {
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-gutter: stable;
-  border-top: 2px solid var(--text);
-}
-
-body[data-active-lane="sdr"] .grade-rail {
-  border-top-color: var(--quiet);
+  border: 0;
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--hf-chassis);
+  scrollbar-color: var(--border) var(--panel);
 }
 
 .grade-header {
@@ -3061,30 +3073,7 @@ input[type="range"] {
   font-size: 11px;
 }
 
-@media (min-width: 2100px) {
-  .app-shell {
-    grid-template-columns: 260px minmax(0, 1fr) 340px;
-  }
-
-  .workspace-main {
-    grid-template-rows: minmax(420px, 1fr) 340px;
-  }
-}
-
 @media (max-width: 1599px) {
-  .app-shell {
-    grid-template-columns: 56px minmax(0, 1fr) 300px;
-  }
-
-  .source-rail {
-    position: relative;
-    z-index: 5;
-    width: 56px;
-    overflow: hidden;
-    padding-inline: 10px;
-    transition: width 120ms ease;
-  }
-
   .source-rail-expand {
     display: block;
     position: absolute;
@@ -3162,10 +3151,6 @@ input[type="range"] {
     padding-right: 52px;
   }
 
-  .workspace-main {
-    grid-template-rows: minmax(360px, 1fr) 270px;
-  }
-
   .pipeline-chip {
     display: none;
   }
@@ -3184,26 +3169,8 @@ input[type="range"] {
 }
 
 @media (max-width: 1399px) {
-  .app-shell {
-    grid-template-columns: 56px minmax(0, 1fr) 288px;
-  }
-
-  .top-bar {
-    grid-template-columns: minmax(190px, auto) minmax(120px, 1fr) auto;
-    gap: 10px;
-  }
-
   .capability-chip {
     display: none;
-  }
-
-  .source-rail,
-  .grade-rail {
-    padding-inline: 10px;
-  }
-
-  .workspace-main {
-    grid-template-rows: minmax(360px, 1fr) 240px;
   }
 
   .dock-summary,
@@ -3221,10 +3188,6 @@ input[type="range"] {
 }
 
 @media (max-height: 820px) {
-  .workspace-main {
-    grid-template-rows: minmax(320px, 1fr) 220px;
-  }
-
   .control-group {
     padding-block: 5px;
   }
@@ -3236,43 +3199,10 @@ input[type="range"] {
 
 /* Instrument shell ------------------------------------------------------- */
 
-html,
-body {
-  min-width: 1280px;
-}
-
 html[data-resizing="true"],
 html[data-resizing="true"] * {
   cursor: inherit !important;
   user-select: none !important;
-}
-
-.app-shell {
-  grid-template-columns: var(--rail-w) var(--splitter-size) minmax(0, 1fr) var(--splitter-size) var(--grade-w);
-  grid-template-rows: var(--top-h) minmax(0, 1fr);
-  gap: 0;
-  background: var(--app);
-}
-
-.top-bar {
-  grid-column: 1 / -1;
-  min-height: var(--top-h);
-  padding: 6px 12px;
-  background: var(--app);
-}
-
-.panel {
-  background: var(--panel);
-}
-
-.source-rail {
-  grid-column: 1;
-  grid-row: 2;
-  width: auto;
-  gap: 18px;
-  padding: 16px 14px 12px;
-  overflow-x: hidden;
-  border: 0;
 }
 
 .source-rail > *,
@@ -3287,26 +3217,6 @@ html[data-resizing="true"] * {
 
 .source-rail-expand {
   display: none;
-}
-
-.workspace-main {
-  grid-column: 3;
-  grid-row: 2;
-  grid-template-rows: minmax(320px, 1fr) var(--splitter-size) var(--dock-h);
-  gap: 0;
-  background: var(--app);
-}
-
-.grade-rail {
-  grid-column: 5;
-  grid-row: 2;
-  padding: 14px 14px 24px;
-  border-top: 0;
-  scrollbar-color: var(--border) var(--panel);
-}
-
-body[data-active-lane="sdr"] .grade-rail {
-  border-top: 0;
 }
 
 .splitter {
@@ -3367,12 +3277,6 @@ body[data-active-lane="sdr"] .grade-rail {
 
 .dock-splitter {
   grid-row: 2;
-}
-
-.viewer-panel {
-  grid-row: 1;
-  grid-template-rows: 38px minmax(0, 1fr) 28px;
-  border-radius: 0;
 }
 
 .viewer-bar {
@@ -5853,19 +5757,6 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 @media (max-width: 1599px) {
-  .app-shell {
-    grid-template-columns: var(--rail-w) var(--splitter-size) minmax(0, 1fr) var(--splitter-size) var(--grade-w);
-  }
-
-  .source-rail {
-    position: static;
-    z-index: auto;
-    width: auto;
-    padding: 16px 14px 12px;
-    overflow-y: auto;
-    transition: none;
-  }
-
   .source-rail:hover,
   .source-rail:focus-within,
   .source-rail.pinned-open {
@@ -5890,29 +5781,12 @@ input[type="range"]::-webkit-slider-thumb {
     display: none;
   }
 
-  .workspace-main {
-    grid-template-rows: minmax(320px, 1fr) var(--splitter-size) var(--dock-h);
-  }
-
   .scope-layout {
     grid-template-columns: minmax(0, 1fr) 200px;
   }
 }
 
 @media (max-width: 1399px) {
-  .app-shell {
-    grid-template-columns: var(--rail-w) var(--splitter-size) minmax(0, 1fr) var(--splitter-size) var(--grade-w);
-  }
-
-  .source-rail,
-  .grade-rail {
-    padding-inline: 12px;
-  }
-
-  .workspace-main {
-    grid-template-rows: minmax(320px, 1fr) var(--splitter-size) var(--dock-h);
-  }
-
   .scope-layout {
     grid-template-columns: minmax(0, 1fr) 200px;
   }
@@ -5925,11 +5799,6 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 /* Linear Grade / Proof / Export workflow -------------------------------- */
-.top-bar {
-  grid-template-columns: minmax(210px, auto) auto minmax(80px, 1fr) auto;
-  gap: 12px;
-}
-
 .workflow-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(76px, 1fr));
@@ -6158,10 +6027,6 @@ body[data-workflow="export"] #export-sheet {
 @media (max-width: 1500px) {
   .top-file-meta {
     display: none;
-  }
-
-  .top-bar {
-    grid-template-columns: minmax(190px, 1fr) auto auto;
   }
 }
 
@@ -6521,14 +6386,6 @@ body[data-workflow="export"] #export-sheet {
   --control-row-h: 36px;
 }
 
-.top-bar {
-  grid-template-columns: minmax(220px, 1fr) auto minmax(220px, 1fr);
-  gap: 16px;
-  min-height: var(--top-h);
-  padding: 0 16px;
-  background: var(--panel);
-}
-
 .product-mark {
   box-sizing: border-box;
   width: 26px;
@@ -6575,19 +6432,6 @@ body[data-workflow="export"] #export-sheet {
 
 .workflow-tab.active::before { content: none; }
 .workflow-tab.active > span { color: var(--accent); }
-
-.source-rail {
-  position: static;
-  z-index: auto;
-  width: auto;
-  gap: 0;
-  padding: 0 16px 18px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  border-right: 1px solid var(--border);
-  background: var(--panel);
-  transition: none;
-}
 
 .source-rail > *,
 .source-rail .rail-title-row h1,
@@ -6650,12 +6494,6 @@ body[data-workflow="export"] #export-sheet {
 .viewport-frame {
   background: var(--frame-color);
   background-image: none;
-}
-
-.grade-rail {
-  padding: 0 0 24px;
-  border-left: 1px solid var(--border);
-  background: var(--panel);
 }
 
 .workflow-rail-panel { display: block; }
@@ -7138,20 +6976,6 @@ input[type="range"]::-webkit-slider-thumb {
 .capability-chip.ready { color: var(--accent-strong); }
 
 /* Annotation refinement pass ------------------------------------------- */
-
-html,
-body {
-  min-height: 720px;
-}
-
-.app-shell {
-  min-height: 720px;
-  height: max(100vh, 720px);
-}
-
-.viewer-panel {
-  grid-template-rows: 38px minmax(0, 1fr);
-}
 
 .source-rail > .source-file-identity,
 .source-rail > .source-summary,
@@ -7836,17 +7660,6 @@ body {
 
 /* Compact cross-platform workspace ------------------------------------- */
 
-html,
-body {
-  min-width: 0;
-  min-height: 0;
-}
-
-.app-shell {
-  min-height: 0;
-  height: 100vh;
-}
-
 .app-shell.compact-workspace {
   grid-template-columns: 44px 0 minmax(0, 1fr) var(--splitter-size) var(--grade-w);
 }
@@ -7956,11 +7769,6 @@ body {
 /* Shared instrument components and panel hierarchy. */
 
 /* Continuous Control Panel chassis and numbered, independently open sections. */
-.grade-rail {
-  border-left: 1px solid var(--border);
-  background: var(--hf-chassis);
-}
-
 #grade-workflow-panel {
   min-height: 100%;
   background: var(--hf-panel);
@@ -8933,10 +8741,6 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
   filter: brightness(0) invert(96%);
 }
 
-.viewer-panel {
-  grid-template-rows: var(--panel-header-h) minmax(0, 1fr);
-}
-
 .viewer-bar,
 .rail-title-row,
 .source-rail .rail-title-row,
@@ -8950,21 +8754,12 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
   padding-block: 0;
 }
 
-.grade-rail,
 #grade-workflow-panel {
   min-height: 0;
   border-radius: 0;
 }
 
-.grade-rail {
-  padding-bottom: 0;
-}
-
 /* Keep the viewer header mechanically stable while the center pane resizes. */
-.viewer-panel {
-  grid-template-rows: var(--panel-header-h) minmax(0, 1fr);
-}
-
 .viewer-bar {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);

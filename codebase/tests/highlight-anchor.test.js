@@ -30,6 +30,7 @@ const context = vm.createContext({
 });
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend/render-failure.js"), "utf8"), context);
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend/graph-scale.js"), "utf8"), context);
+vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend/webgpu-shaders.js"), "utf8"), context);
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend/webgpu-preview.js"), "utf8"), context);
 const Preview = context.window.HDRWebGPUPreview;
 

@@ -16,6 +16,11 @@ const source = fs.readFileSync(
   path.join(__dirname, "../frontend/webgpu-preview.js"),
   "utf8",
 );
+const transportSource = fs.readFileSync(
+  path.join(__dirname, "../frontend/source-transport.js"),
+  "utf8",
+);
+const shaderSource = fs.readFileSync(path.join(__dirname, "../frontend/webgpu-shaders.js"), "utf8");
 // The renderer's halo math is the declared processing-scale contract, which the
 // page loads as its own script. The harness mirrors that script set.
 const graphScaleSource = fs.readFileSync(
@@ -53,6 +58,8 @@ function loadPreview(fetchImpl) {
   });
   vm.runInContext(graphScaleSource, context);
   vm.runInContext(gpuAllocatorSource, context);
+  vm.runInContext(transportSource, context);
+  vm.runInContext(shaderSource, context);
   vm.runInContext(source, context);
   return context.window.HDRWebGPUPreview;
 }

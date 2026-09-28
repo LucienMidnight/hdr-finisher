@@ -102,6 +102,7 @@ function loadPreviewModule() {
     path.join(__dirname, "../frontend/graph-scale.js"),
     "utf8",
   );
+  const shaderSource = fs.readFileSync(path.join(__dirname, "../frontend/webgpu-shaders.js"), "utf8");
   const allocatorSource = fs.readFileSync(
     path.join(__dirname, "../frontend/gpu-allocator.js"),
     "utf8",
@@ -125,6 +126,7 @@ function loadPreviewModule() {
   vm.runInContext(graphScaleSource, context);
   vm.runInContext(allocatorSource, context);
   vm.runInContext(budgetSource, context);
+  vm.runInContext(shaderSource, context);
   vm.runInContext(source, context);
   return context.window.HDRWebGPUPreview;
 }

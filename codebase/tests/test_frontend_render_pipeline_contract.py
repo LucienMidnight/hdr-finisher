@@ -13,8 +13,15 @@ FRONTEND = ROOT / "frontend"
 DESKTOP = ROOT / "desktop"
 
 
+def _webgpu_source() -> str:
+    return "\n".join((
+        (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8"),
+        (FRONTEND / "webgpu-shaders.js").read_text(encoding="utf-8"),
+    ))
+
+
 def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_bands() -> None:
-    shader = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    shader = _webgpu_source()
     # The packed parameter layout currently occupies indices 0..159. Keep the
     # contract aligned with the actual highest shader index so stale padding
     # does not masquerade as a pipeline-order regression.
@@ -133,7 +140,7 @@ def test_advanced_finishing_controls_are_wired_to_the_editor_and_export_contract
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     script = (FRONTEND / "app.js").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
-    shader = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    shader = _webgpu_source()
     assert 'data-group="geometry"' in html
     assert 'id="crop-guide"' in html
     assert 'id="crop-grid-density"' in html
@@ -217,8 +224,8 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
         assert f'data-path="current.film_look.{path}"' not in html
     assert 'data-path="current.detail.softness"' in html
     assert 'data-path="current.detail.microcontrast"' in html
-    assert "fn grainLayerNoise" in (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
-    shader = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    assert "fn grainLayerNoise" in _webgpu_source()
+    shader = _webgpu_source()
     assert "halationEdgeSource" in shader
     assert "center * smoothRange(0.004, 0.12, relativeEdge)" in shader
     assert "let edgeRadius = clamp(halationRadius / 4, 1, 16)" in shader
@@ -283,7 +290,10 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     scheduler = (FRONTEND / "preview-scheduler.js").read_text(encoding="utf-8")
-    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    scope_analysis = (FRONTEND / "scope-analysis.js").read_text(encoding="utf-8")
+    scope_readback = (FRONTEND / "scope-readback.js").read_text(encoding="utf-8")
+    source_transport = (FRONTEND / "source-transport.js").read_text(encoding="utf-8")
+    webgpu = _webgpu_source()
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
 
     # One opt-in replaces the
@@ -312,7 +322,7 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     assert 'await this.callbacks.onSettle?.({ ...task, tier: "settled" });' in scheduler
     assert 'await this.callbacks.onRefine?.({ ...task, tier: "refinement" });' in scheduler
     assert "await Promise.all([" not in scheduler[scheduler.index("armSettle(task)"):scheduler.index("cancelIdleWork()")]
-    assert "rgba16f" in webgpu and "X-Pixel-Format" in webgpu
+    assert "rgba16f" in source_transport and "X-Pixel-Format" in source_transport
     assert "this.paramBuffer" in webgpu and "this.curveBuffer" in webgpu
     assert "this.curveSampleCache" in webgpu
     assert "Settled WebGPU authoring preview" in javascript
@@ -321,7 +331,7 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
         javascript.index("async function runGpuScopeRequest")
     ]
     assert "defaultGeometry" not in gpu_scope_eligibility
-    assert "this.scopeSources.get(canvas) !== source" in webgpu
+    assert "renderer.scopeSources.get(canvas) !== source" in scope_readback
     assert "analysis.sessionId !== request.sessionId" in javascript
     assert "analysis.sourceSerial !== accepted?.sourceSerial" in javascript
     assert "analysis.applicationGeneration !== accepted?.generation" in javascript
@@ -329,13 +339,13 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
     assert "state.acceptedPresentation?.generation === state.previewGeneration[lane]" in javascript
     assert "return enqueueGpuScopeRequest(request);" in javascript
     assert "state.pendingGpuScopeRequest?.resolve(false);" in javascript
-    assert "const sortedLuma = lumaValues.sort();" in javascript
-    assert "Array.from(lumaValues).sort" not in javascript
+    assert "const sortedLuma = lumaValues.sort();" in scope_analysis
+    assert "Array.from(lumaValues).sort" not in scope_analysis
     assert "this.resourceGeneration" in webgpu
     assert "this.destroyAfterActiveRenders" in webgpu
     assert "settledScopeFragmentMain" in webgpu
     assert "full-cell maximum" in webgpu
-    assert "cellPeaks" in webgpu
+    assert "cellPeaks" in scope_readback
     assert "peakReductionMain" in webgpu
     assert "measureToneAdjustedPeak" in webgpu
     # Interactive frames never wait for the whole-image reduction: they carry
@@ -372,7 +382,7 @@ def test_interactive_preview_scheduler_and_quality_preference_contract() -> None
 def test_electron_preview_correctness_contract() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
-    webgpu_javascript = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    webgpu_javascript = _webgpu_source()
     main = (DESKTOP / "main.js").read_text(encoding="utf-8")
     preload = (DESKTOP / "preload.js").read_text(encoding="utf-8")
 
@@ -404,8 +414,8 @@ def test_electron_preview_correctness_contract() -> None:
     assert 'longEdge: previewLongEdge' in sdr_match_action
     assert 'tier: previewTier' in sdr_match_action
     assert 'renderPreviewForLane("sdr", state.currentView === "sdr", previewLongEdge' in sdr_match_action
-    assert "sourceOptions?.identity" in (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
-    assert "sourceOptions?.inheritedGrain" in (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    assert "sourceOptions?.identity" in _webgpu_source()
+    assert "sourceOptions?.inheritedGrain" in _webgpu_source()
     assert "defaultGeometry" not in gpu_eligibility
     assert "geometrySignature" not in gpu_eligibility
     assert "cached.geometrySignature === geometrySignature()" in javascript
@@ -439,7 +449,7 @@ def test_electron_preview_correctness_contract() -> None:
     assert 'if (tier === "interactive" && state.previewScheduler?.frameInFlight) {' in javascript
     # A softer drag frame still on the GPU at release never reaches the canvas.
     assert '&& !(request.coarse && request.reason === "drag-coarse" && !state.previewScheduler?.interacting),' in gpu_draft
-    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    webgpu = _webgpu_source()
     assert "sourceOptions?.isCurrent?.() === false" in webgpu
     # A deferred render is classified as superseded, so it returns without
     # recording a failure and without disabling the device.
@@ -480,7 +490,7 @@ def test_electron_preview_correctness_contract() -> None:
     assert 'desktop.resolveDroppedFiles(files)' not in javascript
     assert 'handle("desktop:write-clipboard-text"' in main
     assert "clipboard.writeText(value)" in main
-    assert "var highlightMask = smoothRange" in (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    assert "var highlightMask = smoothRange" in _webgpu_source()
 
 def test_preview_viewport_keeps_a_stable_aspect_across_interactive_and_settled_tiers() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
@@ -553,8 +563,9 @@ def test_project_open_shows_immediate_loading_feedback() -> None:
 
 def test_phase_one_local_influence_and_latest_generation_contract() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    mask_loader = (FRONTEND / "mask-loader.js").read_text(encoding="utf-8")
     scheduler = (FRONTEND / "preview-scheduler.js").read_text(encoding="utf-8")
-    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    webgpu = _webgpu_source()
 
     assert 'const influenceOnly = name === "mask_opacity"' in javascript
     assert "scheduleLocalPreview();" in javascript
@@ -575,7 +586,7 @@ def test_phase_one_local_influence_and_latest_generation_contract() -> None:
     assert "recordStaleResult" in scheduler
     assert "gpuMaskIdentity(expression)" in webgpu
     assert "p[1] * p[13]" in webgpu
-    assert "spatial_only=true${pathQuery}" in webgpu
+    assert "spatial_only=true${pathQuery}" in mask_loader
     gpu_eligibility = javascript[
         javascript.index("function gpuPreviewEligible(lane = state.currentView)"):
         javascript.index("function gpuPreviewSourceOptions")
@@ -596,7 +607,7 @@ def test_phase_one_local_influence_and_latest_generation_contract() -> None:
     assert render_to.index("const activeLocals = activeGpuLocals") < render_to.index("this.loadProxy(")
 
 def test_webgpu_local_detail_uses_ordered_gpu_chain_and_scaled_parameters() -> None:
-    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    webgpu = _webgpu_source()
 
     params = webgpu[webgpu.index("function buildLocalParams"):webgpu.index("function gpuMaskInfluenceOpacity")]
     assert "new Float32Array(PARAM_COUNT)" in params
@@ -634,11 +645,12 @@ def test_export_waits_for_pending_edits_and_formats_structured_errors() -> None:
 
 def test_phase_two_gpu_luma_retained_mask_contract() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
-    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    source_transport = (FRONTEND / "source-transport.js").read_text(encoding="utf-8")
+    webgpu = _webgpu_source()
 
     assert 'sessionId, "hdr", longEdge, geometrySignature, editRevision, "source", { signal, isCurrent }' in webgpu
-    assert "geometry_signature=${encodeURIComponent(geometrySignature)}" in webgpu
-    assert "acceptedGeometry !== geometrySignature" in webgpu
+    assert "geometry_signature=${encodeURIComponent(geometrySignature)}" in source_transport
+    assert "acceptedGeometry !== geometrySignature" in source_transport
     assert "${sessionId}:${longEdge}:${geometrySignature}" in webgpu
     assert 'entryPoint: "sceneLuminanceFragmentMain"' not in webgpu
     assert 'this.createMaskPipeline("sceneLuminanceFragmentMain")' in webgpu
@@ -671,14 +683,15 @@ def test_phase_two_gpu_luma_retained_mask_contract() -> None:
     assert "gpuResident: true" in javascript
 
 def test_phase_four_retained_boolean_mask_graph_contract() -> None:
-    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    mask_loader = (FRONTEND / "mask-loader.js").read_text(encoding="utf-8")
+    webgpu = _webgpu_source()
 
     assert 'sessionId, local, longEdge, editRevision, geometrySignature, isCurrent, signal' in webgpu
     assert "geometry_signature=${encodeURIComponent(geometrySignature)}" in webgpu
-    assert 'response.headers.get("X-Geometry-Signature") !== geometrySignature' in webgpu
+    assert 'response.headers.get("X-Geometry-Signature") !== geometrySignature' in mask_loader
     assert 'this.createMaskPipeline("maskCombineFragmentMain")' in webgpu
-    assert 'mask_path=${encodeURIComponent(maskPath)}' in webgpu
-    assert 'spatial_only=true${pathQuery}' in webgpu
+    assert 'mask_path=${encodeURIComponent(maskPath)}' in mask_loader
+    assert 'spatial_only=true${pathQuery}' in mask_loader
     assert 'kind: "gpu-mask-graph"' in webgpu
     assert "gpuMaskGraphPassCount" in webgpu
     assert "gpuMaskOperatorCode" in webgpu

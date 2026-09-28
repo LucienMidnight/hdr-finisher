@@ -28,6 +28,7 @@ function loadPreview() {
     console,
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend/graph-scale.js"), "utf8"), context);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend/webgpu-shaders.js"), "utf8"), context);
   vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend/webgpu-preview.js"), "utf8"), context);
   return context.window.HDRWebGPUPreview;
 }

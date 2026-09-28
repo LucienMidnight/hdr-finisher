@@ -13,6 +13,13 @@ FRONTEND = ROOT / "frontend"
 DESKTOP = ROOT / "desktop"
 
 
+def _webgpu_source() -> str:
+    return "\n".join((
+        (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8"),
+        (FRONTEND / "webgpu-shaders.js").read_text(encoding="utf-8"),
+    ))
+
+
 def test_raw_development_is_first_grade_control_group() -> None:
     markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
@@ -76,27 +83,29 @@ def test_staged_import_waits_for_the_authoritative_preview_and_resets_fit_zoom()
 
 def test_local_bypass_renders_optimistically_and_tiled_masks_ignore_grade_revisions() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
-    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    mask_loader = (FRONTEND / "mask-loader.js").read_text(encoding="utf-8")
+    webgpu = _webgpu_source()
     bypass = javascript[
         javascript.index('const bypassButton = event.target.closest("button[data-local-bypass-id]")'):
         javascript.index('const subMaskBypassButton = event.target.closest("button[data-sub-mask-bypass-id]")')
     ]
-    tile_loader = webgpu[
-        webgpu.index("async loadLocalMaskTile"):
-        webgpu.index("trimMaskTiles", webgpu.index("async loadLocalMaskTile"))
+    tile_loader = mask_loader[
+        mask_loader.index("async function loadCpuMaskTiles"):
+        mask_loader.index("const HDRMaskLoader")
     ]
 
     assert bypass.index("scheduleLocalPreview();") < bypass.index('queueEditCommand(')
     assert "{ refreshPreview: false }" in bypass
     assert "editRevision}:${signature}" not in tile_loader
-    assert "geometrySignature}:${signature}:" in tile_loader
+    assert "geometrySignature}:${maskSignature}:" in tile_loader
     assert "${prefix}${tile.key}" in tile_loader
 
 def test_tiled_mask_transport_is_batched_not_one_request_per_tile() -> None:
-    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
-    loader = webgpu[
-        webgpu.index("async loadLocalMaskTiles"):
-        webgpu.index("trimMaskTiles", webgpu.index("async loadLocalMaskTiles"))
+    mask_loader = (FRONTEND / "mask-loader.js").read_text(encoding="utf-8")
+    webgpu = _webgpu_source()
+    loader = mask_loader[
+        mask_loader.index("async function loadCpuMaskTiles"):
+        mask_loader.index("const HDRMaskLoader")
     ]
 
     assert "/local-mask-tiles" in loader
@@ -105,7 +114,7 @@ def test_tiled_mask_transport_is_batched_not_one_request_per_tile() -> None:
 
 def test_presentation_gate_owns_every_presentation_resize() -> None:
     markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
-    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    webgpu = _webgpu_source()
 
     assert markup.index("presentation-gate.js") < markup.index("webgpu-preview.js")
     assert webgpu.count("presentationGate.acquire(") == 2
@@ -118,7 +127,7 @@ def test_presentation_gate_owns_every_presentation_resize() -> None:
 def test_failure_taxonomy_replaces_sticky_gpu_disablement() -> None:
     markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
-    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    webgpu = _webgpu_source()
     taxonomy = (FRONTEND / "render-failure.js").read_text(encoding="utf-8")
 
     assert markup.index("render-failure.js") < markup.index("app.js")
@@ -155,16 +164,28 @@ def test_live_denoise_input_is_coalesced() -> None:
     assert "this.stats.coalesced += 1;" in queue
 
 def test_source_transport_carries_abort_and_generation_checks() -> None:
-    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    webgpu = _webgpu_source()
+    transport = (FRONTEND / "source-transport.js").read_text(encoding="utf-8")
+    markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
 
+    assert markup.index("source-transport.js") < markup.index("webgpu-preview.js")
+    assert "bounded source transport is required" in webgpu
     # A replaced session aborts source work that has nowhere to land.
     assert "this.sourceAbort?.abort();" in webgpu
     assert "sourceAbortSignal()" in webgpu
     # Both source routes take the caller's currency check and stop early.
-    assert "supersededSourceError" in webgpu
-    assert 'assertCurrent("Source tile stream was superseded")' in webgpu
-    assert 'assertCurrent("Source tile probe was superseded")' in webgpu
-    assert 'throw supersededSourceError("Source proxy was superseded")' in webgpu
+    assert "supersededError" in transport
+    assert "readChunk" in transport
+    assert "copyChunkStaged" in transport
+    assert "releaseStaging" in transport
+    assert "loadWholeFrame" in transport
+    assert "loadProxy" in transport
+    assert "loadStreaming" in transport
+    assert "loadStrips" in transport
+    assert "loadRegion" in transport
+    assert 'assertCurrent("Source tile stream was superseded")' in transport
+    assert 'assertCurrent("Source tile probe was superseded")' in transport
+    assert 'supersededError("Source proxy was superseded")' in transport
     # The presenting renderers pass their currency into the proxy load. The
     # third site is the ROI region fallback: a viewport request admitted Direct
     # reloads the whole frame and must carry the same checks.
@@ -174,7 +195,7 @@ def test_source_transport_carries_abort_and_generation_checks() -> None:
 def test_viewport_request_contract_reaches_the_scheduler() -> None:
     markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
-    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    webgpu = _webgpu_source()
     contract = (FRONTEND / "viewport-request.js").read_text(encoding="utf-8")
 
     assert markup.index("viewport-request.js") < markup.index("webgpu-preview.js")
@@ -195,7 +216,7 @@ def test_viewport_request_contract_reaches_the_scheduler() -> None:
 def test_processing_scale_contract_is_declared_and_consumed() -> None:
     markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
-    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    webgpu = _webgpu_source()
     contract = (FRONTEND / "graph-scale.js").read_text(encoding="utf-8")
 
     # The declared contract loads before the renderer that consumes it.
@@ -244,7 +265,7 @@ def test_processing_scale_contract_is_declared_and_consumed() -> None:
     assert "processingScale: Number.isFinite(Number(options.sourcePixelScale))" in webgpu
 
 def test_retained_presentation_target_owns_the_tiled_frame() -> None:
-    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    webgpu = _webgpu_source()
 
     # The target survives between generations and is a copy source; the canvas
     # is configured to be a copy destination.
@@ -263,7 +284,7 @@ def test_retained_presentation_target_owns_the_tiled_frame() -> None:
     assert "execution: \"direct\"," in webgpu
 
 def test_tiled_encoding_submits_in_small_batches() -> None:
-    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    webgpu = _webgpu_source()
 
     # Batches are submitted as they are encoded, so the GPU works while the CPU
     # encodes the next batch and a superseded generation stops at a boundary.
@@ -292,13 +313,13 @@ def test_roi_refinement_is_opt_in_and_tier_limited() -> None:
     assert 'setRoiPreviewMode: (mode) => {' in javascript
     assert "visibleOutputRect: () => visibleOutputRect(els.previewCanvas.width, els.previewCanvas.height)," in javascript
     # The renderer distinguishes a requested viewport from Fit's effective one.
-    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    webgpu = _webgpu_source()
     assert "viewportRequested: Boolean(options.viewport)," in webgpu
     assert "outputPixels: proxy.width * proxy.height," in webgpu
 
 def test_display_scale_pan_cache_is_generation_aware() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
-    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    webgpu = _webgpu_source()
     contract = (FRONTEND / "viewport-request.js").read_text(encoding="utf-8")
     coordinator = (FRONTEND / "render-coordinator.js").read_text(encoding="utf-8")
 
@@ -401,7 +422,7 @@ def test_app_emits_intent_to_the_render_coordinator() -> None:
 
 def test_roi_parity_diagnostic_compares_legacy_and_roi() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
-    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    webgpu = _webgpu_source()
     contract = (FRONTEND / "viewport-request.js").read_text(encoding="utf-8")
 
     # The A/B path renders the same edit whole frame and ROI, with

@@ -15,7 +15,7 @@ const context = vm.createContext({
   GPUTextureUsage: { COPY_SRC: 1, COPY_DST: 2, TEXTURE_BINDING: 4, STORAGE_BINDING: 8, RENDER_ATTACHMENT: 16 },
   GPUBufferUsage: { MAP_READ: 1, MAP_WRITE: 2, COPY_SRC: 4, COPY_DST: 8, UNIFORM: 64, STORAGE: 128, QUERY_RESOLVE: 512 },
 });
-for (const file of ["mask-request-coordinator.js", "graph-scale.js", "webgpu-preview.js"]) {
+for (const file of ["mask-request-coordinator.js", "graph-scale.js", "mask-loader.js", "webgpu-shaders.js", "webgpu-preview.js"]) {
   vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend", file), "utf8"), context);
 }
 const Preview = context.window.HDRWebGPUPreview;

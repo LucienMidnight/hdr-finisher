@@ -22,6 +22,7 @@ const graphScaleSource = fs.readFileSync(
   path.join(__dirname, "../frontend/graph-scale.js"),
   "utf8",
 );
+const shaderSource = fs.readFileSync(path.join(__dirname, "../frontend/webgpu-shaders.js"), "utf8");
 const context = vm.createContext({
   window: {},
   performance: { now: () => 1 },
@@ -30,6 +31,7 @@ const context = vm.createContext({
   GPUBufferUsage: { MAP_READ: 1, MAP_WRITE: 2, COPY_SRC: 4, COPY_DST: 8, UNIFORM: 64, STORAGE: 128, QUERY_RESOLVE: 512 },
 });
 vm.runInContext(graphScaleSource, context);
+vm.runInContext(shaderSource, context);
 vm.runInContext(source, context);
 const Preview = context.window.HDRWebGPUPreview;
 

@@ -88,7 +88,10 @@ def test_hdr_histogram_flags_transport_primary_above_pq_limit_even_with_legal_lu
 
 
 def test_gpu_histogram_contract_matches_cpu_domain_and_normalization() -> None:
-    javascript = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    javascript = "\n".join((
+        (ROOT / "frontend" / "app.js").read_text(encoding="utf-8"),
+        (ROOT / "frontend" / "scope-analysis.js").read_text(encoding="utf-8"),
+    ))
 
     assert "linearSrgbToScopeSignal" in javascript
     assert "hdrWaveformRec2020(r, g, b)" in javascript

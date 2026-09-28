@@ -123,7 +123,11 @@ def test_hdr_scope_reports_final_peak_fit_after_exposure_band_expansion() -> Non
 
 
 def test_gpu_waveform_uses_the_same_acescg_to_rec2020_matrix() -> None:
-    app = (Path(__file__).resolve().parents[1] / "frontend" / "app.js").read_text(encoding="utf-8")
+    frontend = Path(__file__).resolve().parents[1] / "frontend"
+    app = "\n".join((
+        (frontend / "app.js").read_text(encoding="utf-8"),
+        (frontend / "scope-analysis.js").read_text(encoding="utf-8"),
+    ))
 
     assert "function hdrWaveformRec2020(r, g, b)" in app
     for coefficient in (

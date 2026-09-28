@@ -7,8 +7,8 @@ executed from the review table, the evidence, and what remains.
 Validation host: dev-tree Electron host plus the `codebase/.venv` Python
 environment, Windows, AC power. Every batch below ran the full Python suite and
 matched or beat the baseline of 1,448 passed / 3 skipped. The continuation
-audit after finding 11 was approved through finding 20. This pass stops after
-finding 18 as requested; findings 15–17 remain the next structural batches.
+audit after finding 11 was approved through finding 20. The resumed pass
+completed findings 15–17 in small, independently validated batches.
 
 ## Finding status
 
@@ -28,9 +28,9 @@ finding 18 as requested; findings 15–17 remain the next structural batches.
 | 12 | Direct whole-frame masks bypass bounded/cancellable mask request coordination | Implemented |
 | 13 | Perspective draft preview swallows every fetch failure | Implemented |
 | 14 | Deferred highlight measurement failures disappear without diagnostics | Implemented |
-| 15 | `webgpu-preview.js` remains a renderer/transport/cache/shader grab bag | Approved — deferred after finding 18 |
-| 16 | `app.js` remains a 734-function application grab bag | Approved — deferred after finding 18 |
-| 17 | `styles.css` is an override stack with contradictory late patches | Approved — deferred after finding 18 |
+| 15 | `webgpu-preview.js` remains a renderer/transport/cache/shader grab bag | Implemented |
+| 16 | `app.js` remains a 734-function application grab bag | Implemented |
+| 17 | `styles.css` is an override stack with contradictory late patches | Implemented |
 | 18 | Frontend contract tests pin source text instead of behavior | Implemented |
 | 19 | Frontend comments still carry sprint/phase/work-item history | Implemented |
 | 20 | The baseline deprecation warnings remain live | Implemented |
@@ -256,21 +256,199 @@ reviewed contract tests, unique test names, and removal of the legacy monolith.
 The resulting focused gate collects and passes 102 tests including the
 inventory check.
 
+### 18. Renderer source-transport boundary (finding 15, batch 1)
+
+Added `source-transport.js` as an explicit dependency loaded before the WebGPU
+renderer. It now owns the bounded upload-ring size and mechanics, pending
+response-read cancellation, superseded-source error contract, staging-buffer
+release, and the diagnostic A/B transport-mode selection. This established the
+loud dependency boundary used by the next transport extraction.
+
+The existing `source-transport.test.js` behavior harness now loads the module
+as the page does. All 20 transport cases pass, including the 42 MP staging
+bound, one-drain ring reuse, stream/strip/whole-frame routing, stale geometry,
+single-flight, session abort, and supersession cleanup. The complete desktop
+JavaScript unit gate remains 239/239 and the split frontend contract gate
+remains 102/102. The full Python suite remains 1,466 passed / 3 skipped.
+
+### 19. Source proxy coordinator (finding 15, batch 2)
+
+`source-transport.js` now also owns whole-frame fetch/validation/upload,
+source-proxy cache reuse, keyed single-flight, region/stream/strip/whole-frame
+route selection, and advisory source-mip progress polling. The renderer's
+`loadProxy` entry point is a thin compatibility delegate; its existing streamed,
+strip, and ROI upload implementations remain the next transport sub-batch.
+
+The same 20-case transport harness passed after each step. The complete desktop
+JavaScript gate remains 239/239, the frontend contract gate remains 102/102,
+and the full Python suite remains 1,466 passed / 3 skipped.
+
+### 20. Single-response source streaming (finding 15, batch 3)
+
+Moved the complete `proxy-stream`/streamed-`proxy` upload lifetime into
+`source-transport.js`: response ownership, header and geometry validation,
+supersession polling, bounded row assembly, staging-ring copies and drain,
+partial-texture destruction, unread-body cancellation, cache publication, and
+transport metrics. `HDRWebGPUPreview.loadProxyStreaming` is now a thin delegate.
+
+All 20 transport cases pass, including early EOF, a superseded pending read,
+unavailable-route fallback, geometry rejection before upload, and the 42 MP
+bounded-staging case. The complete desktop JavaScript gate remains 239/239,
+the frontend contract gate remains 102/102, and the full Python suite remains
+1,466 passed / 3 skipped.
+
+### 21. Per-strip source transport (finding 15, batch 4)
+
+Moved the complete bounded `source-tile` whole-frame route into
+`source-transport.js`: probe and epoch handling, stale-geometry checks, chunk
+fetches, staging-ring copies, partial-texture cleanup, cache publication, and
+metrics. `HDRWebGPUPreview.loadProxyStreamed` is now a thin delegate. All 20
+transport cases, 239 desktop JavaScript tests, 102 frontend contracts, and the
+full 1,466 passed / 3 skipped Python suite remain green.
+
+### 22. ROI source transport (finding 15, batch 5)
+
+Moved the magnified-viewport `source-tile` route into `source-transport.js`,
+including the probe, source-epoch propagation, geometry and region validation,
+bounded row-chunk uploads, supersession cleanup, cache publication, and
+transport metrics. `HDRWebGPUPreview.loadProxyRegion` is now a thin delegate,
+so every source-pixel network/upload lifetime is owned by one explicit module.
+
+All 20 source-transport cases pass, including the four ROI-region cases. The
+complete desktop JavaScript gate remains 239/239, the frontend contract gate
+remains 102/102 after moving its static ownership assertions, and the full
+Python suite remains 1,466 passed / 3 skipped.
+
+### 23. CPU mask transport (finding 15, batch 6)
+
+Added `mask-loader.js` and moved both CPU-rendered mask lifetimes into it: the
+whole-mask leaf path and the batched tiled path. It owns request bodies,
+response cancellation, geometry validation, row padding, texture upload,
+cache publication, keyed in-flight reuse, and supersession checks. The
+renderer retains mask-type selection and GPU graph orchestration.
+
+The focused mask gate passes 14/14 cases, including stale-body cancellation,
+post-read supersession, cache reuse, bounded batched upload, and coordinator
+cancellation. The complete desktop JavaScript gate grew to 244/244; frontend
+contracts remain 102/102 and the full Python suite remains 1,466/3.
+
+### 24. Scope readback (finding 15, batch 7)
+
+Added `scope-readback.js` for the two authoring-scope mapping lifetimes: the
+settled exact-peak grid and the histogram/waveform analysis buffer. It owns
+mapping, padded-row unpacking, stale-source rejection, timing metrics, unmap,
+resource release, and deferred-destroy flushing. Encoding and resource-pool
+allocation remain renderer responsibilities.
+
+Four focused cases pin padded unpacking, stale rejection, peak maximum, and
+failed-map cleanup. The complete desktop JavaScript gate is 248/248; frontend
+contracts remain 102/102 and the full Python suite remains 1,466/3.
+
+### 25. WebGPU shader ownership (finding 15, batch 8)
+
+Moved all five WGSL programs—main grading, luma/mask, peak reduction, compact
+denoise, and adaptive denoise—plus their Black & White shader generator into
+`webgpu-shaders.js`. The renderer now consumes one explicit immutable shader
+module and contains no vertex, fragment, or compute function bodies.
+
+SHA-256 comparison against committed pre-extraction source at `5880184`
+matched all five generated shader strings exactly. Two permanent fixtures pin
+those byte identities and the load-order/ownership boundary. The complete
+desktop JavaScript gate is 250/250; frontend contracts remain 102/102 and the
+full Python suite remains 1,466/3.
+
+### 26. Scope UI and analysis ownership (finding 16, batch 1)
+
+Added `scope-ui.js` for scope freshness, resolution/profile labels, guide and
+tooltip text, guide positioning, channel filtering, and scope titles. Added
+`scope-analysis.js` for the GPU scope payload, robust population peak, analysis
+bounds, HDR luminance conversion, SDR transfer, and vectorscope payload. Both
+modules receive channel mode and reference white explicitly; `app.js` retains
+request scheduling, accepted-presentation checks, DOM/canvas orchestration,
+and thin compatibility delegates.
+
+Nine focused behavior cases cover the extracted boundary. The complete desktop
+JavaScript gate grew to 259/259, frontend contracts remain 102/102 after moving
+their ownership assertions, and the full Python suite remains 1,466/3.
+
+### 27. Geometry calculation ownership (finding 16, batch 2)
+
+Added `geometry-math.js` for neutral-transform detection, projective point
+mapping, rotated and cropped source-frame dimensions, crop aspect ratios, and
+recursive local-mask expression projection. These calculations now take the
+source, geometry, coordinate map, and mask expression explicitly. `app.js`
+retains authoritative geometry-map requests, cache lifetime, gestures, and DOM
+rendering through thin delegates.
+
+Five focused cases pin rotation/straighten/crop sizing, authoritative-map
+precedence, points at infinity, recursive gradient/path projection, and the
+null path-handle invariant. The complete desktop JavaScript gate is 264/264,
+frontend contracts remain 102/102, and the full Python suite remains 1,466/3.
+
+### 28. Import and project transport ownership (finding 16, batch 3)
+
+Added `project-io.js` for desktop-grant and path-based project open/save
+requests; import-job creation, polling, and cancellation; source upload;
+session recovery/eject; safe JSON decoding; relink classification; and
+response-error normalization. Its public operations take `fetch` and all
+path/grant/session inputs explicitly. `app.js` retains unsaved-change policy,
+dialog choices, generation ownership, activation, and document-state rendering.
+
+Seven focused behavior cases pin project and import endpoint/body contracts,
+optional relink fields, abort-signal forwarding, browser-owned FormData
+headers, invalid JSON, and error normalization. The complete desktop
+JavaScript gate is 271/271, frontend contracts remain 102/102, and the full
+Python suite remains 1,466/3.
+
+### 29. Local-mask expression ownership (finding 16, batch 4)
+
+Added `mask-expression.js` for authoring defaults, identity injection,
+sub-mask flattening and lookup, parent/typed-leaf traversal, expression
+replacement, copied-tree identity regeneration, and spatial cache signatures.
+`app.js` retains gestures, selection state, command persistence, canvas
+rendering, and thin compatibility delegates.
+
+Six focused behavior cases pin every mask-tool default, explicit identity,
+left-spine display order, typed traversal, replacement/regeneration, and the
+leaf-opacity cache invariant. This closes the four planned finding-16
+verticals without mixing pixel math with application orchestration. The
+complete desktop JavaScript gate is 277/277, frontend contracts remain
+102/102, and the full Python suite remains 1,466/3.
+
+### 30. Shell cascade consolidation (finding 17)
+
+Added `css-app-shell-matrix.js` and captured normal, wide, compact, desktop,
+and native-menu states through the live FastAPI application in headless Edge.
+Consolidated the final effective ownership of `html`/`body`, `.app-shell`,
+`.top-bar`, `.workspace-main`, `.source-rail`, `.grade-rail`, and
+`.viewer-panel` into their primary rules, removing dead breakpoint rules and
+late reversals.
+
+All five before/after screenshots are SHA-256 identical and their computed
+grid columns, rows, gaps, backgrounds, dimensions, and desktop offsets match.
+The CSSOM inventory fell from 1,467 to 1,422 leaf rules; repeated selectors
+fell from 159 to 151 and rules under repeated selectors from 417 to 373.
+Static contracts now require one top-level primary rule for each shell owner
+and require the five-state live-browser matrix. Remaining repeated selectors
+are component and state refinements rather than the contradictory shell
+reversal identified by this finding, so they were not merged mechanically.
+The startup-state, workflow-stage-overlay, and local-stack-sizing browser
+checks also pass against the consolidated stylesheet. This closes finding 17.
+
 ## Continuation audit — frontend, styles, and tests
 
 This is the next decision table required by the plan. It is based on source
 inspection of the current working tree after findings 1–11. All nine findings
-were approved; findings 12–14 and 18–20 are implemented in this pass, while the
-larger structural findings 15–17 are intentionally deferred after finding 18.
+were approved and findings 12–20 are implemented.
 
 | # | What's wrong (plain) | Where | What it means for you | Proposed fix | Risk | Decision |
 |---|---|---|---|---|---|---|
 | 12 | The Direct renderer started every active whole-frame local mask with one unbounded `Promise.all`, bypassing the tiled coordinator. | `frontend/webgpu-preview.js`; `tests/direct-mask-coordination.test.js` | Obsolete mask responses could consume browser slots and memory. | Implemented: shared bounded coordinator, cancellation signals, sequential compound leaves, and keyed in-flight reuse. | Medium | Implemented |
 | 13 | The perspective draft request caught both `AbortError` and real network/backend failures and returned `null` for either; the conditional literally had the same result on both sides. | `frontend/app.js`; `tests/perspective-draft-preview.test.js` | Cancellation is harmless, but a disconnected backend or failed request silently left the previous image and gave no status, so the control appeared to have stopped working. | Implemented: ignore `AbortError`; surface a current non-cancellation exception through the Perspective status. Added cancellation and rejected-fetch behavior cases. | Low | Implemented |
 | 14 | Deferred highlight measurement failures disappeared without diagnostics. | `frontend/webgpu-preview.js`; `tests/highlight-anchor.test.js` | Support could not explain why refinement stayed on an approximation. | Implemented: bounded classified diagnostics and a paired failure event, while preserving the non-fatal fallback. | Low | Implemented |
-| 15 | `webgpu-preview.js` is still one 532 KB classic script containing WGSL, curve math, admission planning, source transport, GPU allocation/cache policy, denoise, masks, scopes, and presentation. These parts share one large mutable renderer object, so an edit to one subsystem has a very wide review surface. | `frontend/webgpu-preview.js` (about 10,000 physical lines) | GPU work is harder to review and isolate; transport or mask changes can accidentally disturb shader/presentation code, and unit tests must load the whole file. | After findings 12 and 18, extract leaf modules in dependency order: transport, mask loading, scope readback, and shader sources. Keep `HDRWebGPUPreview` as the coordinator and run the full Electron parity battery after each extraction. | High | Approved — deferred |
-| 16 | `app.js` is still an 870 KB classic script with 734 named functions covering boot, global state, importing, project I/O, grading controls, geometry, preview scheduling, scopes, proof/export handoff, local masks, and DOM rendering. Existing extracted coordinators are consumed through load-order-dependent `window.HDR*` globals. | `frontend/app.js`; script order at the end of `frontend/index.html` | Unrelated UI work collides in one file, hidden global dependencies make ordering part of correctness, and safe ownership boundaries remain unclear. | First give extracted modules behavior tests and explicit inputs; then move one vertical at a time (import/project lifecycle, geometry tools, local-mask authoring, scope/UI rendering). Do not split pixel math and orchestration in the same batch. | High | Approved — deferred |
-| 17 | The stylesheet has grown as successive late override passes instead of one owned rule per component. A leaf-rule inventory found 1,467 rules: 159 selectors occur more than once (417 rules total), 21 selectors occur at least four times, and `.app-shell` occurs nine times. Top-level patches set a 720 px minimum and later reset it to zero; several sections explicitly call themselves a “final cascade” or refinement pass. Breakpoint repeats are valid, but these top-level reversals make final behavior depend on distant source order. | `frontend/styles.css`, especially `:428`, `:3250`, `:6518`, `:7140`, `:7837`, `:7956`, `:8735` | A local CSS change can be silently overridden thousands of lines later; deleting what looks obsolete can change compact or desktop layouts. | Build a computed-style/screenshot matrix for normal, compact, desktop, native-menu, and supported viewport sizes; consolidate one component at a time while preserving that matrix byte/geometry-equivalently. Keep media/container overrides next to their owner. | Medium | Approved — deferred |
+| 15 | `webgpu-preview.js` combined renderer coordination with source/mask transport, readback, and 129 KB of generated WGSL. | `frontend/webgpu-preview.js`; `frontend/source-transport.js`; `frontend/mask-loader.js`; `frontend/scope-readback.js`; `frontend/webgpu-shaders.js` | GPU subsystems now have explicit owners and focused behavior gates; renderer changes no longer carry transport or shader bodies in their review surface. | Implemented in eight validated batches: complete source transport, CPU mask transport, authoring-scope readback, and byte-identical shader ownership. `HDRWebGPUPreview` remains the GPU coordinator. | High | Implemented |
+| 16 | `app.js` was an 870 KB classic script with 734 named functions covering boot, global state, importing, project I/O, grading controls, geometry, preview scheduling, scopes, proof/export handoff, local masks, and DOM rendering. | `frontend/app.js`; `scope-ui.js`; `scope-analysis.js`; `geometry-math.js`; `project-io.js`; `mask-expression.js` | Pure calculation and transport responsibilities now have explicit owners and focused behavior tests; `app.js` remains the DOM/orchestration shell. | Implemented in four vertical batches without mixing pixel math and application orchestration. | High | Implemented |
+| 17 | The stylesheet grew as successive late override passes instead of one owned rule per component. The original inventory found 1,467 rules, 159 repeated selectors, and 417 rules under repeated selectors; `.app-shell` occurred nine times and top-level minimum sizes reversed later. | `frontend/styles.css`; `tests/css-app-shell-matrix.js` | The core shell no longer depends on distant reversals; remaining repeats can be evaluated component-by-component against a permanent live-browser matrix. | Implemented: five-state matrix added; shell chassis consolidated with byte-identical screenshots and geometry; primary-rule uniqueness is contract-pinned. Inventory is now 1,422 / 151 / 373. | Medium | Implemented |
 | 18 | The former `test_frontend_contract.py` primarily snapshotted implementation text and coupled unrelated frontend areas. | Six `tests/test_frontend_*_contract.py` modules plus `test_frontend_inventory_contract.py` | Frontend contracts now fail within their owning area, and the suite can migrate behavior one subsystem at a time without restoring a catch-all file. | Implemented: split 101 reviewed contracts by responsibility and added an inventory/uniqueness gate; focused JavaScript and Electron suites retain runtime behavior ownership. | Medium | Implemented |
 | 19 | Frontend files carried 88 sprint/phase/work-item history markers. | Frontend files and `tests/test_frontend_contract.py` | Live invariants were obscured by implementation history. | Implemented: present-tense invariant comments; history retained in the audit/PRD. | Low | Implemented |
 | 20 | UTC, Pillow, and TestClient deprecation warnings remained live. | Models, image call sites, fixture, and `requirements-dev.txt` | Warnings hid new regressions and future removals. | Implemented: aware UTC, inferred Pillow modes, and `httpx2`; warning-count gate is clean. | Medium | Implemented |
@@ -286,10 +464,23 @@ larger structural findings 15–17 are intentionally deferred after finding 18.
 | ROI parity after all backend batches | Max difference 0, no page errors |
 | SDR branch hash matrix | 26/26 byte-identical |
 | Highlight-curve hash matrix | 33/33 byte-identical |
-| Continuation findings 12–20 | Findings 12–14 and 18–20 implemented; findings 15–17 approved and deferred as requested |
+| Continuation findings 12–20 | All findings implemented |
 | Continuation warning confirmation | 56 passed, no warnings (`test_source_tile_api`, `test_proofing`, `test_launcher`) |
-| Desktop JavaScript unit gate | 239/239 passed |
+| Desktop JavaScript unit gate | 277/277 passed |
 | Split frontend contract gate | 102/102 passed, including the inventory check |
+| Finding 15 source-transport batch 1 | 20/20 focused transport cases; 239/239 desktop JavaScript; 102/102 frontend contracts; 1,466 passed / 3 skipped full Python suite |
+| Finding 15 source-transport batch 2 | 20/20 focused transport cases; 239/239 desktop JavaScript; 102/102 frontend contracts; 1,466 passed / 3 skipped full Python suite |
+| Finding 15 source-transport batch 3 | 20/20 focused transport cases; 239/239 desktop JavaScript; 102/102 frontend contracts; 1,466 passed / 3 skipped full Python suite |
+| Finding 15 source-transport batch 4 | 20/20 focused transport cases; 239/239 desktop JavaScript; 102/102 frontend contracts; 1,466 passed / 3 skipped full Python suite |
+| Finding 15 source-transport batch 5 | 20/20 focused transport cases (including 4/4 ROI); 239/239 desktop JavaScript; 102/102 frontend contracts; 1,466 passed / 3 skipped full Python suite |
+| Finding 15 mask-loading batch 6 | 14/14 focused mask cases; 244/244 desktop JavaScript; 102/102 frontend contracts; 1,466 passed / 3 skipped full Python suite |
+| Finding 15 scope-readback batch 7 | 4/4 focused readback cases; 248/248 desktop JavaScript; 102/102 frontend contracts; 1,466 passed / 3 skipped full Python suite |
+| Finding 15 shader-source batch 8 | 5/5 historical shader hashes exact; 250/250 desktop JavaScript; 102/102 frontend contracts; 1,466 passed / 3 skipped full Python suite |
+| Finding 16 scope/UI batch 1 | 9/9 focused behavior cases; 259/259 desktop JavaScript; 102/102 frontend contracts; 1,466 passed / 3 skipped full Python suite |
+| Finding 16 geometry-math batch 2 | 5/5 focused behavior cases; 264/264 desktop JavaScript; 102/102 frontend contracts; 1,466 passed / 3 skipped full Python suite |
+| Finding 16 import/project transport batch 3 | 7/7 focused behavior cases; 271/271 desktop JavaScript; 102/102 frontend contracts; 1,466 passed / 3 skipped full Python suite |
+| Finding 16 local-mask expression batch 4 | 6/6 focused behavior cases; 277/277 desktop JavaScript; 102/102 frontend contracts; 1,466 passed / 3 skipped full Python suite |
+| Finding 17 shell cascade | 5/5 computed-style states and screenshot hashes exact; CSS leaf rules 1,467 → 1,422; repeated-selector rules 417 → 373; startup-state, workflow-stage-overlay, and local-stack-sizing browser checks pass |
 
 The full Electron parity battery (B&W, clarity-map, grain, tiled denoise, tiled
 CPU detail, tiled/direct, tiled film, adaptive denoise, GPU scopes, highlight
@@ -297,17 +488,13 @@ compression, SDR gamut, ROI and denoise ROI, export) was run at the baseline
 and is recorded in the Baseline document. Reports live in
 `codebase/output/performance/electron-*.json`.
 
-The earlier batches are committed on `audit/repo-cleanup`; findings 6, 7, and 9
-and their fixtures are uncommitted, so `git status` and `git diff` are the
-recovery path for the current batches.
+The earlier batches through finding 20 are committed on `audit/repo-cleanup` at
+`5880184`. Finding 15 batches 1–8, finding 16 batches 1–4, and finding 17 are the current uncommitted diff, so
+`git status` and `git diff` are their recovery path.
 
 ## Remaining batches
 
-Findings 1–14 and 18–20 are implemented. Per Steve's request, this pass stops
-after finding 18. The approved structural findings 15–17 remain, in that
-order: renderer leaf modules, application verticals, then stylesheet
-consolidation. Each runtime batch keeps the original no-pixel-change and
-preview-performance gates.
+Findings 1–20 are implemented. No approved code-audit batch remains.
 
 The live Electron smoke and export-parity rerun also remain an environment
 validation follow-up because the host GPU helper exits before the application
@@ -316,11 +503,10 @@ creates a window.
 ## Handoff
 
 **State.** Baseline follow-ups 1–4 are closed. Findings 1–14 and 18–20 are
-implemented; findings 15–17 are approved but intentionally deferred after
-finding 18. Findings 1–5, 8, 10, and 11 are committed on
-`audit/repo-cleanup`; findings 6, 7, 9, and 12–14 plus 18–20 are validated in
-the current uncommitted batches. The current live Electron rerun is
-host-blocked as recorded above.
+implemented and committed at `5880184`. Findings 15–17 are complete in the current
+uncommitted diff. The current live Electron rerun is host-blocked
+as recorded above: the startup driver again closed before a first window and
+returned no application log.
 
 **Environment.**
 - Python gate: from `codebase/`, `.venv/Scripts/python.exe -m pytest -q tests`.

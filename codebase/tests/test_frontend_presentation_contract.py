@@ -13,6 +13,13 @@ FRONTEND = ROOT / "frontend"
 DESKTOP = ROOT / "desktop"
 
 
+def _webgpu_source() -> str:
+    return "\n".join((
+        (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8"),
+        (FRONTEND / "webgpu-shaders.js").read_text(encoding="utf-8"),
+    ))
+
+
 def test_interaction_holds_the_selected_tier_once_it_has_produced_a_result() -> None:
     """A gesture may not lower the processing resolution.
 
@@ -138,7 +145,7 @@ def test_generation_change_reports_updating_immediately() -> None:
 
 def test_detail_interaction_backpressures_the_gpu_queue() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
-    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    webgpu = _webgpu_source()
 
     scheduler = javascript[javascript.index("function initializePreviewScheduler()") : javascript.index("function observeScopeSize()")]
     assert 'tier: tiled && decision.coarse ? "refinement" : "interactive"' in scheduler

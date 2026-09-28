@@ -13,11 +13,18 @@ FRONTEND = ROOT / "frontend"
 DESKTOP = ROOT / "desktop"
 
 
+def _webgpu_source() -> str:
+    return "\n".join((
+        (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8"),
+        (FRONTEND / "webgpu-shaders.js").read_text(encoding="utf-8"),
+    ))
+
+
 def test_viewer_exposes_icon_comparison_layouts_with_active_lane_scopes() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
-    webgpu = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    webgpu = _webgpu_source()
 
     for layout in ["single", "split-vertical", "split-horizontal", "side-horizontal", "side-vertical"]:
         assert f'data-compare-layout="{layout}"' in html
@@ -106,6 +113,7 @@ def test_local_adjustments_use_group_and_folder_hierarchy_with_locked_tool_assig
 def test_path_mask_exposes_draft_bezier_and_independent_feather_contract() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    mask_expression = (FRONTEND / "mask-expression.js").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
 
     assert 'id="local-mask-overlay" class="local-mask-overlay" tabindex="0"' in html
@@ -113,6 +121,9 @@ def test_path_mask_exposes_draft_bezier_and_independent_feather_contract() -> No
         'feather_mode: "outer_boundary"',
         "feather_softness: 0",
         'feather_nodes: []',
+    ]:
+        assert contract in mask_expression
+    for contract in [
         "function finishLocalPathDraft()",
         "function splitPathSegment(nodes, segmentIndex, t = 0.5)",
         "function materializeFeatherNodes(leaf)",
@@ -130,13 +141,14 @@ def test_path_mask_exposes_draft_bezier_and_independent_feather_contract() -> No
 
 def test_local_mask_authoring_uses_bidirectional_authoritative_geometry_mapping() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    geometry_math = (FRONTEND / "geometry-math.js").read_text(encoding="utf-8")
 
     assert 'fetch(`/api/session/${state.session.session_id}/geometry-map`' in javascript
     assert "projectivePoint(coordinateMap.outputToSource, point)" in javascript
     assert "projectivePoint(coordinateMap.sourceToOutput, point)" in javascript
     assert "applySourceGeometryCanvasTransform(context, imageRect, rect, coordinateMap.sourceToOutput)" in javascript
     assert "projectMaskExpressionToOutput(editorExpression, coordinateMap.sourceToOutput)" in javascript
-    assert "const denominator = matrix[6] * point.x + matrix[7] * point.y + matrix[8]" in javascript
+    assert "const denominator = matrix[6] * point.x + matrix[7] * point.y + matrix[8]" in geometry_math
     assert 'if (state.gradeMode === "local") void ensureGeometryCoordinateMap();' in javascript
     assert 'renderPhase: "mask"' in javascript
     assert 'renderPhase: "gizmo"' in javascript
@@ -338,6 +350,7 @@ def test_detail_uses_numbered_module_header_and_sharpen_targeting_hierarchy() ->
 
 def test_vectorscope_uses_display_signal_targets_in_cpu_and_gpu_paths() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    scope_analysis = (FRONTEND / "scope-analysis.js").read_text(encoding="utf-8")
     scopes = (ROOT / "backend" / "hdr_finisher" / "scopes.py").read_text(encoding="utf-8")
 
     assert "acescg_to_linear_bt2020(working_rgb)" in scopes
@@ -345,18 +358,19 @@ def test_vectorscope_uses_display_signal_targets_in_cpu_and_gpu_paths() -> None:
     assert "signal_rgb = _scope_srgb_oetf(linear_srgb)" in scopes
     assert "0.5 + (signal_rgb[..., 2] - signal_luma)" in scopes
     assert "0.5 + 0.5 * (signal_rgb" not in scopes
-    assert "vectorscopeTransferLut(hdr, referenceWhite)" in javascript
-    assert "1.0260187082 * workingR - 0.0221655448 * workingG" in javascript
-    assert "const [kr, kg, kb] = hdr ? [0.2627, 0.6780, 0.0593]" in javascript
-    assert "0.5 + (b - y) / (2 * (1 - kb))" in javascript
-    assert "0.5 + 0.5 * (b - y)" not in javascript
-    assert "const normalizationPeak = robustScopePopulationPeak(grid)" in javascript
+    assert "vectorscopeTransferLut(hdr, referenceWhite)" in scope_analysis
+    assert "1.0260187082 * workingR - 0.0221655448 * workingG" in scope_analysis
+    assert "const [kr, kg, kb] = hdr ? [0.2627, 0.6780, 0.0593]" in scope_analysis
+    assert "0.5 + (b - y) / (2 * (1 - kb))" in scope_analysis
+    assert "0.5 + 0.5 * (b - y)" not in scope_analysis
+    assert "const normalizationPeak = robustScopePopulationPeak(grid)" in scope_analysis
     assert "function renderScopeControlAvailability()" in javascript
     assert 'els.scopeChannelMode?.classList.toggle("hidden", technical || vectorscope)' in javascript
     assert 'const rangeRelevant = !technical && !vectorscope && state.currentView === "hdr"' in javascript
 
 def test_scope_region_is_an_optional_remappable_post_geometry_scope_tool() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    scope_analysis = (FRONTEND / "scope-analysis.js").read_text(encoding="utf-8")
     shell = (FRONTEND / "application-shell.js").read_text(encoding="utf-8")
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
@@ -370,7 +384,7 @@ def test_scope_region_is_an_optional_remappable_post_geometry_scope_tool() -> No
     assert '"view.scopeRegion": "Shift+R"' in shell
     assert 'id: "view.scopeRegion"' in javascript
     assert "scope_region: scopeRegion" in javascript
-    assert "function scopeAnalysisBounds" in javascript
+    assert "function scopeAnalysisBounds" in scope_analysis
     assert "function beginScopeRegionDrag" in javascript
     assert "function handleScopeRegionKeydown" in javascript
     assert "var(--curve-selected-ring)" in css
@@ -378,7 +392,7 @@ def test_scope_region_is_an_optional_remappable_post_geometry_scope_tool() -> No
     assert "var(--accent)" in css
 
 def test_denoise_phase_zero_selector_remains_lazy_and_outside_the_base_shader() -> None:
-    preview = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    preview = _webgpu_source()
     app_script = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
     assert "this.denoiseSourceSelector = null;" in preview
@@ -393,7 +407,7 @@ def test_denoise_phase_zero_selector_remains_lazy_and_outside_the_base_shader() 
     assert "selectDenoiseSelectorSeam" in app_script
 
 def test_denoise_phase_two_keeps_analysis_structural_and_resolve_reconstruction_only() -> None:
-    preview = (FRONTEND / "webgpu-preview.js").read_text(encoding="utf-8")
+    preview = _webgpu_source()
     app_script = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
     assert 'DENOISE_ALGORITHM_VERSION = "compact-haar-residual-v1"' in preview

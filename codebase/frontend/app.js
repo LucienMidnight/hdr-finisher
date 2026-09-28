@@ -1,4 +1,14 @@
 const desktop = window.hdrFinisherDesktop || null;
+const scopeUi = window.HDRScopeUI;
+if (!scopeUi) throw new Error("HDRScopeUI is not loaded; scope presentation helpers are required");
+const scopeAnalysis = window.HDRScopeAnalysis;
+if (!scopeAnalysis) throw new Error("HDRScopeAnalysis is not loaded; scope payload analysis is required");
+const geometryMath = window.HDRGeometryMath;
+if (!geometryMath) throw new Error("HDRGeometryMath is not loaded; geometry calculations are required");
+const projectIo = window.HDRProjectIO;
+if (!projectIo) throw new Error("HDRProjectIO is not loaded; project transport is required");
+const maskExpression = window.HDRMaskExpression;
+if (!maskExpression) throw new Error("HDRMaskExpression is not loaded; local-mask authoring is required");
 const FINE_ADJUSTMENT_SCALE = 0.1;
 // Deferred follow-up delays: the pan follow-up fires shortly
 // after the scroll pauses; the whole-frame catch-up waits longer so it never
@@ -250,7 +260,6 @@ const LEGACY_UI_PREFERENCE_KEYS = new Set([
 ]);
 const COMPARE_LAYOUTS = new Set(["single", "split-vertical", "split-horizontal", "side-horizontal", "side-vertical"]);
 const waveformCanvasCache = new WeakMap();
-const vectorscopeTransferLutCache = new Map();
 // Session-bound fallback brush rasters use local IDs or mask objects as keys.
 // Keep only a small LRU working set and clear it whenever the active session is
 // retired so deleted locals and replaced projects cannot retain canvases.
@@ -851,18 +860,7 @@ const IDENTITY_GEOMETRY_COORDINATE_MAP = Object.freeze({
 });
 
 function geometryTransformIsNeutral(geometry = state.adjustments.shared?.geometry) {
-  const crop = geometry?.crop || {};
-  return (Number(geometry?.rotation) || 0) === 0
-    && !geometry?.flip_horizontal
-    && !geometry?.flip_vertical
-    && Math.abs(Number(geometry?.straighten_angle) || 0) < 1e-8
-    && Math.abs(Number(geometry?.perspective_horizontal) || 0) < 1e-8
-    && Math.abs(Number(geometry?.perspective_vertical) || 0) < 1e-8
-    && Math.abs(Number(geometry?.perspective_rotate) || 0) < 1e-8
-    && Math.abs((Number(crop.x) || 0)) < 1e-8
-    && Math.abs((Number(crop.y) || 0)) < 1e-8
-    && Math.abs((Number(crop.width) || 1) - 1) < 1e-8
-    && Math.abs((Number(crop.height) || 1) - 1) < 1e-8;
+  return geometryMath.geometryTransformIsNeutral(geometry);
 }
 
 function geometryCoordinateMapKey(signature = geometrySignature(), longEdge = settledProxyLongEdge()) {
@@ -875,12 +873,7 @@ function currentGeometryCoordinateMap() {
 }
 
 function projectivePoint(matrix, point) {
-  const denominator = matrix[6] * point.x + matrix[7] * point.y + matrix[8];
-  if (Math.abs(denominator) < 1e-10) return { x: Number.NaN, y: Number.NaN };
-  return {
-    x: (matrix[0] * point.x + matrix[1] * point.y + matrix[2]) / denominator,
-    y: (matrix[3] * point.x + matrix[4] * point.y + matrix[5]) / denominator,
-  };
+  return geometryMath.projectivePoint(matrix, point);
 }
 
 async function ensureGeometryCoordinateMap() {
@@ -3815,7 +3808,7 @@ async function uploadFile(file, { confirmedDocument = documentTransitionToken(),
   if (generation !== state.importGeneration) return false;
   const activeJobId = state.activeImportJobId;
   state.activeImportJobId = null;
-  if (activeJobId) await fetch(`/api/import-jobs/${activeJobId}`, { method: "DELETE" }).catch(() => null);
+  if (activeJobId) await projectIo.cancelImportJob(fetch, activeJobId).catch(() => null);
   if (generation !== state.importGeneration) return false;
   const previousUpload = state.byteUploadQueue;
   let releaseUpload;
@@ -3845,8 +3838,7 @@ async function uploadFile(file, { confirmedDocument = documentTransitionToken(),
     setIndeterminatePreviewMessage(`${detail} · ${elapsed.toFixed(1)}s elapsed`);
   }, 250);
   try {
-    const response = await fetch("/api/session", { method: "POST", body: formData });
-    const payload = await safeJson(response);
+    const { response, payload } = await projectIo.uploadSource(fetch, formData);
     if (generation !== state.importGeneration) return false;
     if (!response.ok || !payload?.session) {
       const detail = payload?.detail || `Upload failed with HTTP ${response.status}.`;
@@ -3895,8 +3887,9 @@ async function uploadFile(file, { confirmedDocument = documentTransitionToken(),
     // the new session. Reconcile with backend truth before reporting failure so
     // the frontend never continues editing a session whose owned source was
     // retired by a completed upload.
-    const currentResponse = await fetch("/api/session/current").catch(() => null);
-    const currentPayload = currentResponse ? await safeJson(currentResponse) : null;
+    const currentResult = await projectIo.fetchCurrentSession(fetch).catch(() => null);
+    const currentResponse = currentResult?.response;
+    const currentPayload = currentResult?.payload;
     if (
       generation === state.importGeneration
       && currentResponse?.ok
@@ -3938,10 +3931,10 @@ async function ejectCurrentSession() {
   const generation = claimSessionReplacement();
   const activeJobId = state.activeImportJobId;
   state.activeImportJobId = null;
-  if (activeJobId) await fetch(`/api/import-jobs/${activeJobId}`, { method: "DELETE" }).catch(() => null);
+  if (activeJobId) await projectIo.cancelImportJob(fetch, activeJobId).catch(() => null);
   await state.byteUploadQueue.catch(() => null);
   if (generation !== state.importGeneration) return;
-  await fetch("/api/session/current", { method: "DELETE" }).catch(() => null);
+  await projectIo.ejectCurrentSession(fetch).catch(() => null);
   retireActiveSession();
   state.session = null;
   state.renderCoordinator?.noteSource(null);
@@ -5913,7 +5906,7 @@ function markScopeUpdating() {
 }
 
 function scopeFreshnessLabel(tier) {
-  return tier === "interactive" ? "Preview" : tier === "refinement" ? "Refined" : "Settled";
+  return scopeUi.freshnessLabel(tier);
 }
 
 async function runScopeRequest(request) {
@@ -6036,20 +6029,11 @@ function waveformScopeLongEdge(tier, requestedLongEdge) {
 }
 
 function vectorscopeRequestResolution(tier) {
-  if (state.scopeQuality === "performance") {
-    const bins = tier === "interactive" ? 96 : 128;
-    return { bins, columns: bins };
-  }
-  if (state.scopeQuality === "reference") {
-    const bins = tier === "interactive" ? 192 : 384;
-    return { bins, columns: bins };
-  }
-  const bins = tier === "interactive" ? 128 : 256;
-  return { bins, columns: bins };
+  return scopeUi.requestResolution(tier, state.scopeQuality);
 }
 
 function scopeQualityProfile() {
-  return SCOPE_QUALITY_PROFILES[state.scopeQuality] || SCOPE_QUALITY_PROFILES[DEFAULT_SCOPE_QUALITY];
+  return scopeUi.qualityProfile(SCOPE_QUALITY_PROFILES, state.scopeQuality, DEFAULT_SCOPE_QUALITY);
 }
 
 function drawHistogram(scope) {
@@ -6227,57 +6211,23 @@ function drawScopeGrid(ctx, scope, isWaveform, plotLeft, plotTop, plotWidth, plo
 }
 
 function scopeGuidesForDisplay(scope) {
-  if (scope.preview_kind === "hdr") {
-    const ceiling = scopeHdrCeiling(scope);
-    if (ceiling >= 10000) return new Set([1, 10, 100, 203, 1000, 4000, 10000]);
-    if (ceiling >= 4000) return new Set([1, 10, 100, 203, 1000, 4000]);
-    return new Set([1, 10, 100, 203, 1000]);
-  }
-  return new Set([0.18, 0.5, 1]);
+  return scopeUi.guidesForDisplay(scope);
 }
 
 function compactScopeGuideLabel(scope, guide) {
-  if (scope.preview_kind !== "hdr") return guide.label;
-  const value = Number(guide.value);
-  const compactValue = value >= 1000
-    ? `${Number((value / 1000).toFixed(value % 1000 === 0 ? 0 : 1))}k`
-    : String(Number(value.toFixed(value < 10 ? 1 : 0)));
-  return /\bactive\b/i.test(guide.label) ? `RW ${compactValue}` : compactValue;
+  return scopeUi.compactGuideLabel(scope, guide);
 }
 
 function scopeGuideTooltip(scope) {
-  if (scope?.scope_type === "vectorscope") {
-    return "Chroma direction and saturation. Distance from center indicates saturation.";
-  }
-  const labeledGuides = scopeGuidesForDisplay(scope);
-  const guides = (scope?.guides || []).filter((guide) => labeledGuides.has(Number(guide.value)));
-  if (!guides.length) return "";
-  const descriptions = guides.map((guide) => {
-    const shortLabel = compactScopeGuideLabel(scope, guide);
-    if (scope.preview_kind !== "hdr") return `${shortLabel} output`;
-    if (/\bactive\b/i.test(guide.label)) return `${shortLabel}: active HDR reference white`;
-    const detail = String(guide.label || "").replace(/^\s*[\d.]+\s*/, "").trim();
-    if (detail === "nit") return `${shortLabel}: 1 nit`;
-    return detail ? `${shortLabel}: ${detail}` : `${shortLabel}: ${Number(guide.value)} nits`;
-  });
-  return `Scope guides — ${descriptions.join("; ")}. RW means active HDR reference white.`;
+  return scopeUi.guideTooltip(scope);
 }
 
 function guidePosition(scope, value) {
-  if (scope.preview_kind === "hdr") {
-    const min = Math.log10(1);
-    const max = Math.log10(scopeHdrCeiling(scope));
-    return (Math.log10(Math.max(value, 1)) - min) / (max - min);
-  }
-  return Math.min(1, Math.max(0, value));
+  return scopeUi.guidePosition(scope, value);
 }
 
 function scopeHdrCeiling(scope) {
-  const edge = Number(scope?.bin_edges?.[scope.bin_edges.length - 1]);
-  if (!Number.isFinite(edge)) return 4000;
-  if (edge >= 10000 - 1) return 10000;
-  if (edge >= 4000 - 1) return 4000;
-  return 1000;
+  return scopeUi.hdrCeiling(scope);
 }
 
 function bindZoneScopeOverlays() {
@@ -6502,22 +6452,11 @@ function drawWaveformParade(ctx, channels, palette, plotLeft, plotTop, plotWidth
 }
 
 function filteredScopeChannels(channels) {
-  if (state.scopeChannelMode === "luma") {
-    return channels.filter((channel) => channel.name === "Y");
-  }
-  if (state.scopeChannelMode === "parade") {
-    return channels.filter((channel) => channel.name === "R" || channel.name === "G" || channel.name === "B");
-  }
-  return channels.filter((channel) => channel.name === "R" || channel.name === "G" || channel.name === "B");
+  return scopeUi.filteredChannels(channels, state.scopeChannelMode);
 }
 
 function scopeTitleFor(scope) {
-  const suffix = state.scopeChannelMode === "luma" ? " Luma" : state.scopeChannelMode === "parade" ? " Parade" : "";
-  if (scope.scope_type === "vectorscope") return `${scope.preview_kind.toUpperCase()} Vectorscope`;
-  if (scope.scope_type === "reference_nits_waveform") return `HDR Reference Waveform${suffix}`;
-  if (scope.scope_type === "normalized_waveform") return `SDR Waveform${suffix}`;
-  if (scope.scope_type === "reference_nits_histogram") return `Reference Nit Histogram${suffix}`;
-  return `SDR Histogram${suffix}`;
+  return scopeUi.titleFor(scope, state.scopeChannelMode);
 }
 
 function hexToRgb(value) {
@@ -8196,10 +8135,7 @@ function openCropMode() {
 }
 
 function responseErrorMessage(payload, fallback) {
-  if (typeof payload?.detail === "string") return payload.detail;
-  if (typeof payload?.detail?.message === "string") return payload.detail.message;
-  if (typeof payload?.message === "string") return payload.message;
-  return fallback;
+  return projectIo.responseErrorMessage(payload, fallback);
 }
 
 function closeCropMode(commit) {
@@ -8554,16 +8490,7 @@ function updateCropDraftControl(path, value) {
 }
 
 function cropAspectRatio() {
-  const geometry = activeCropGeometry();
-  if (geometry.ratio_mode === "free") return null;
-  if (geometry.ratio_mode === "original") {
-    const source = state.session?.source;
-    if (!source) return null;
-    return [90, 270].includes(geometry.rotation) ? source.height / source.width : source.width / source.height;
-  }
-  if (geometry.ratio_mode === "custom") return geometry.custom_ratio.width / geometry.custom_ratio.height;
-  const [width, height] = geometry.ratio_mode.split(":").map(Number);
-  return width / height;
+  return geometryMath.cropAspectRatio(activeCropGeometry(), state.session?.source);
 }
 
 function cropAuthoringFrameAspect() {
@@ -8603,7 +8530,7 @@ function cropAuthoringFrameAspect() {
 }
 
 function projectOpenNeedsSourceRelink(payload) {
-  return payload?.detail?.code === "source_relink_required";
+  return projectIo.needsSourceRelink(payload);
 }
 
 function beginProjectOpenStatus(label) {
@@ -8618,39 +8545,8 @@ function beginProjectOpenStatus(label) {
 
 function sourcePixelFrameDimensions(geometry = state.adjustments?.shared?.geometry) {
   const source = state.session?.source;
-  if (!source?.width || !source?.height || !geometry) return null;
   const map = geometryCoordinateMapCache.get(geometryCoordinateMapKey(JSON.stringify(geometry)));
-  if (map?.fullOutputWidth && map?.fullOutputHeight) return { width: map.fullOutputWidth, height: map.fullOutputHeight };
-  let width = Number(source.width);
-  let height = Number(source.height);
-  if ([90, 270].includes(Number(geometry.rotation) || 0)) [width, height] = [height, width];
-  const angle = Math.abs((Number(geometry.straighten_angle) || 0) + (Number(geometry.perspective_rotate) || 0)) * Math.PI / 180;
-  const sine = Math.abs(Math.sin(angle));
-  const cosine = Math.abs(Math.cos(angle));
-  if (sine >= 1e-9) {
-    const widthIsLonger = width >= height;
-    const sideLong = widthIsLonger ? width : height;
-    const sideShort = widthIsLonger ? height : width;
-    let safeWidth;
-    let safeHeight;
-    if (sideShort <= 2 * sine * cosine * sideLong || Math.abs(sine - cosine) < 1e-9) {
-      const halfShort = 0.5 * sideShort;
-      safeWidth = widthIsLonger ? halfShort / sine : halfShort / cosine;
-      safeHeight = widthIsLonger ? halfShort / cosine : halfShort / sine;
-    } else {
-      const cosineDouble = cosine * cosine - sine * sine;
-      safeWidth = (width * cosine - height * sine) / cosineDouble;
-      safeHeight = (height * cosine - width * sine) / cosineDouble;
-    }
-    width = Math.max(1, Math.floor(Math.abs(safeWidth)) - 4);
-    height = Math.max(1, Math.floor(Math.abs(safeHeight)) - 4);
-  }
-  const crop = geometry.crop || { x: 0, y: 0, width: 1, height: 1 };
-  const left = clamp(Math.round(Number(crop.x || 0) * width), 0, Math.max(0, width - 1));
-  const top = clamp(Math.round(Number(crop.y || 0) * height), 0, Math.max(0, height - 1));
-  const right = clamp(Math.round((Number(crop.x || 0) + Number(crop.width || 1)) * width), left + 1, width);
-  const bottom = clamp(Math.round((Number(crop.y || 0) + Number(crop.height || 1)) * height), top + 1, height);
-  return { width: right - left, height: bottom - top };
+  return geometryMath.sourcePixelFrameDimensions(source, geometry, map);
 }
 
 /**
@@ -8730,239 +8626,12 @@ function presentScopePayload(payload, { generation, tier, lane, mode, source, me
   }));
 }
 
-function hdrWaveformRec2020(r, g, b) {
-  return [
-    Math.max(0, 1.0260187082 * r - 0.0221655448 * g - 0.0038531634 * b),
-    Math.max(0, -0.0017230808 * r + 1.0023190716 * g - 0.0005959908 * b),
-    Math.max(0, -0.0051099278 * r - 0.0216355504 * g + 1.0267454781 * b),
-  ];
-}
-
-function linearSrgbToScopeSignal(value) {
-  const linear = clamp(value, 0, 1);
-  return linear <= 0.0031308 ? 12.92 * linear : 1.055 * linear ** (1 / 2.4) - 0.055;
-}
-
-function buildGpuScopePayload(analysis, { lane, mode, tier, generation, bins, columns, maxNits, scopeRegion = null, exactPeak = null }) {
-  const hdr = lane === "hdr";
-  const referenceWhite = projectReferenceWhiteNits();
-  const ceiling = maxNits === 1000 ? 1000 : maxNits === 10000 ? 10000 : 4000;
-  const channelEntries = state.scopeChannelMode === "luma"
-    ? [[3, "Y"]]
-    : [[0, "R"], [1, "G"], [2, "B"]];
-  if (mode === "vectorscope") return buildGpuVectorscopePayload(analysis, { lane, tier, generation, bins, scopeRegion });
-  const binEdges = hdr
-    ? Array.from({ length: bins + 1 }, (_, index) => 10 ** (Math.log10(ceiling) * index / bins))
-    : Array.from({ length: bins + 1 }, (_, index) => index / bins);
-  const counts = channelEntries.map(() => new Int32Array(mode === "waveform" ? bins * columns : bins));
-  const bounds = scopeAnalysisBounds(analysis, scopeRegion);
-  const lumaValues = new Float32Array(bounds.width * bounds.height);
-  let peak = 0;
-  let clipped = false;
-  let above100 = 0;
-  let above203 = 0;
-  let above1000 = 0;
-  let regionPixel = 0;
-  for (let sourceY = bounds.y0; sourceY < bounds.y1; sourceY += 1) {
-    for (let sourceX = bounds.x0; sourceX < bounds.x1; sourceX += 1) {
-      const pixel = sourceY * analysis.width + sourceX;
-      const offset = pixel * 3;
-      const r = Math.max(0, analysis.pixels[offset]);
-      const g = Math.max(0, analysis.pixels[offset + 1]);
-      const b = Math.max(0, analysis.pixels[offset + 2]);
-      const scopeRgb = hdr
-        ? hdrWaveformRec2020(r, g, b)
-        : [linearSrgbToScopeSignal(r), linearSrgbToScopeSignal(g), linearSrgbToScopeSignal(b)];
-      const luma = hdr
-        ? 0.2627 * scopeRgb[0] + 0.6780 * scopeRgb[1] + 0.0593 * scopeRgb[2]
-        : 0.2126 * scopeRgb[0] + 0.7152 * scopeRgb[1] + 0.0722 * scopeRgb[2];
-      const scopeLuma = luma;
-      const values = hdr
-        ? [...scopeRgb, scopeLuma].map((value) => value / 0.18 * referenceWhite)
-        : [...scopeRgb, scopeLuma].map((value) => clamp(value, 0, 1));
-      lumaValues[regionPixel] = values[3];
-      regionPixel += 1;
-      peak = Math.max(peak, values[3]);
-      if (hdr && analysis.cellPeaks) {
-        peak = Math.max(peak, Math.max(0, analysis.cellPeaks[pixel]) / 0.18 * referenceWhite);
-      }
-      clipped ||= hdr
-        ? values[0] >= 10000 || values[1] >= 10000 || values[2] >= 10000
-        : r >= 1 || g >= 1 || b >= 1;
-      if (hdr) {
-        above100 += values[3] > 100 ? 1 : 0;
-        above203 += values[3] > 203 ? 1 : 0;
-        above1000 += values[3] > 1000 ? 1 : 0;
-      }
-      const column = Math.min(columns - 1, Math.floor((sourceX - bounds.x0) / bounds.width * columns));
-      channelEntries.forEach(([valueIndex], channel) => {
-        const value = values[valueIndex];
-        const bin = hdr
-          ? Math.min(bins - 1, Math.max(0, Math.floor(Math.log10(clamp(value, 1, ceiling)) / Math.log10(ceiling) * bins)))
-          : Math.min(bins - 1, Math.max(0, Math.floor(value * bins)));
-        counts[channel][mode === "waveform" ? bin * columns + column : bin] += 1;
-      });
-    }
-  }
-  // TypedArray#sort is numeric and in-place. Avoid boxing every sample into a
-  // second JavaScript array during frequent scope refreshes.
-  const sortedLuma = lumaValues.sort();
-  const percentile = (amount) => sortedLuma[Math.min(sortedLuma.length - 1, Math.round((sortedLuma.length - 1) * amount))] || 0;
-  const formatNits = (value) => value >= 1000 ? `${value.toFixed(0)} nit` : value >= 99.995 ? `${value.toFixed(1)} nit` : `${value.toFixed(2)} nit`;
-  const sampleCount = Math.max(1, lumaValues.length);
-  // A measured full-resolution peak replaces the proxy's rather than being
-  // maximised with it. The proxy can read *high* as well as low -- Lanczos
-  // rings at a hard edge and can overshoot the values it resampled from -- and
-  // that overshoot is an artifact of the preview, not something the export
-  // will contain. What this number promises is what the export contains.
-  const measuredPeak = Number.isFinite(exactPeak?.peak)
-    ? exactPeak.peak / 0.18 * referenceWhite
-    : null;
-  const reportedPeak = hdr && measuredPeak !== null ? measuredPeak : peak;
-  const peakLabel = hdr && measuredPeak !== null ? "Peak" : "Peak (preview)";
-  const stats = hdr ? [
-    { label: peakLabel, value: formatNits(reportedPeak) },
-    { label: "P99", value: formatNits(percentile(0.99)) },
-    { label: "P95", value: formatNits(percentile(0.95)) },
-    { label: "Median", value: formatNits(percentile(0.5)) },
-    { label: "% > 100", value: `${(above100 / sampleCount * 100).toFixed(2)}%` },
-    { label: "% > 203", value: `${(above203 / sampleCount * 100).toFixed(2)}%` },
-    { label: "% > 1000", value: `${(above1000 / sampleCount * 100).toFixed(2)}%` },
-  ] : [
-    { label: "Peak", value: peak.toFixed(3) },
-    { label: "P95", value: percentile(0.95).toFixed(3) },
-    { label: "Median", value: percentile(0.5).toFixed(3) },
-  ];
-  const channels = channelEntries.map(([, name], index) => ({
-    name,
-    bins: mode === "waveform" ? [] : Array.from(counts[index]),
-    grid: mode === "waveform"
-      ? Array.from({ length: bins }, (_, row) => Array.from(counts[index].subarray(row * columns, (row + 1) * columns)))
-      : [],
-  }));
-  const populationPeak = robustScopePopulationPeak(counts, mode === "histogram" ? 0.985 : 0.995);
-  const hdrGuides = [[1, "1 nit"], [10, "10"], [25, "25"], [50, "50"], [100, "100 controlled white"], [203, "203 standard white"], [400, "400"], [600, "600"], [1000, "1000"], [2000, "2000"], [4000, "4000"], [10000, "10000 PQ limit"]]
-    .map(([value, label]) => [value, value === referenceWhite ? `${label} · active` : label]);
-  return {
-    preview_kind: lane,
-    scope_type: hdr ? `reference_nits_${mode}` : `normalized_${mode}`,
-    tier,
-    generation,
-    normalization_peak: populationPeak,
-    peak_value: reportedPeak,
-    peak_exact: hdr && measuredPeak !== null,
-    peak_measured_long_edge: exactPeak?.longEdge ?? null,
-    clipped,
-    x_axis: hdr ? "reference_nits_log10" : "normalized",
-    bin_edges: binEdges,
-    guides: hdr ? hdrGuides.filter(([value]) => value <= ceiling).map(([value, label]) => ({ value, label })) : [{ value: 0.18, label: mode === "histogram" ? "18% signal" : "18%" }, { value: 0.5, label: mode === "histogram" ? "50% signal" : "50%" }, { value: 1, label: mode === "histogram" ? "100% signal" : "100%" }],
-    stats,
-    channels,
-  };
-}
-
-function robustScopePopulationPeak(counts, percentile = 0.995) {
-  const positive = [];
-  counts.forEach((channel) => channel.forEach((value) => {
-    if (value > 0) positive.push(value);
-  }));
-  if (!positive.length) return 1;
-  positive.sort((left, right) => left - right);
-  return Math.max(1, positive[Math.floor((positive.length - 1) * percentile)]);
-}
-
-function scopeAnalysisBounds(analysis, region = null) {
-  if (!region) return { x0: 0, y0: 0, x1: analysis.width, y1: analysis.height, width: analysis.width, height: analysis.height };
-  const x0 = Math.min(analysis.width - 1, Math.max(0, Math.floor(region.x * analysis.width)));
-  const y0 = Math.min(analysis.height - 1, Math.max(0, Math.floor(region.y * analysis.height)));
-  const x1 = Math.min(analysis.width, Math.max(x0 + 1, Math.ceil((region.x + region.width) * analysis.width)));
-  const y1 = Math.min(analysis.height, Math.max(y0 + 1, Math.ceil((region.y + region.height) * analysis.height)));
-  return { x0, y0, x1, y1, width: x1 - x0, height: y1 - y0 };
-}
-
-function buildGpuVectorscopePayload(analysis, { lane, tier, generation, bins, scopeRegion = null }) {
-  const hdr = lane === "hdr";
-  const referenceWhite = projectReferenceWhiteNits();
-  const transfer = vectorscopeTransferLut(hdr, referenceWhite);
-  const grid = Array.from({ length: bins }, () => new Int32Array(bins));
-  let peak = 0;
-  const bounds = scopeAnalysisBounds(analysis, scopeRegion);
-  for (let sourceY = bounds.y0; sourceY < bounds.y1; sourceY += 1) {
-    for (let sourceX = bounds.x0; sourceX < bounds.x1; sourceX += 1) {
-      const pixel = sourceY * analysis.width + sourceX;
-      const offset = pixel * 3;
-      const workingR = Math.max(0, analysis.pixels[offset]);
-      const workingG = Math.max(0, analysis.pixels[offset + 1]);
-      const workingB = Math.max(0, analysis.pixels[offset + 2]);
-      const sceneY = hdr
-        ? 0.2722287 * workingR + 0.6740818 * workingG + 0.0536895 * workingB
-        : 0.2126 * workingR + 0.7152 * workingG + 0.0722 * workingB;
-      peak = Math.max(peak, hdr ? sceneY / 0.18 * referenceWhite : sceneY);
-      if (hdr && analysis.cellPeaks) {
-        peak = Math.max(peak, Math.max(0, analysis.cellPeaks[pixel]) / 0.18 * referenceWhite);
-      }
-      const linearR = hdr ? Math.max(0, 1.0260187082 * workingR - 0.0221655448 * workingG - 0.0038531634 * workingB) : workingR;
-      const linearG = hdr ? Math.max(0, -0.0017230808 * workingR + 1.0023190716 * workingG - 0.0005959908 * workingB) : workingG;
-      const linearB = hdr ? Math.max(0, -0.0051099278 * workingR - 0.0216355504 * workingG + 1.0267454781 * workingB) : workingB;
-      const r = sampleVectorscopeTransfer(transfer, linearR);
-      const g = sampleVectorscopeTransfer(transfer, linearG);
-      const b = sampleVectorscopeTransfer(transfer, linearB);
-      const [kr, kg, kb] = hdr ? [0.2627, 0.6780, 0.0593] : [0.2126, 0.7152, 0.0722];
-      const y = kr * r + kg * g + kb * b;
-      const u = clamp(0.5 + (b - y) / (2 * (1 - kb)), 0, 1);
-      const v = clamp(0.5 + (r - y) / (2 * (1 - kr)), 0, 1);
-      grid[Math.min(bins - 1, Math.floor(v * bins))][Math.min(bins - 1, Math.floor(u * bins))] += 1;
-    }
-  }
-  const normalizationPeak = robustScopePopulationPeak(grid);
-  return {
-    preview_kind: lane,
-    scope_type: "vectorscope",
-    tier,
-    generation,
-    normalization_peak: normalizationPeak,
-    peak_value: peak,
-    clipped: peak >= (hdr ? 10000 : 1),
-    x_axis: "chroma_uv",
-    bin_edges: Array.from({ length: bins + 1 }, (_, index) => index / bins),
-    guides: [],
-    stats: [{ label: "Peak", value: hdr ? `${peak.toFixed(1)} nit` : peak.toFixed(3) }],
-    channels: [{ name: "Y", bins: [], grid: grid.map((row) => Array.from(row)) }],
-  };
-}
-
-function vectorscopeTransferLut(hdr, referenceWhite) {
-  const key = `${hdr ? "pq" : "srgb"}:${hdr ? referenceWhite : 1}`;
-  const cached = vectorscopeTransferLutCache.get(key);
-  if (cached) return cached;
-  const size = 4096;
-  const maximumLinear = hdr ? 10000 * 0.18 / Math.max(1, referenceWhite) : 1;
-  const values = new Float32Array(size);
-  for (let index = 0; index < size; index += 1) {
-    const linear = maximumLinear * index / (size - 1);
-    if (hdr) {
-      const m1 = 2610 / 16384;
-      const m2 = 2523 / 32;
-      const c1 = 3424 / 4096;
-      const c2 = 2413 / 128;
-      const c3 = 2392 / 128;
-      const lm1 = Math.pow(linear / maximumLinear, m1);
-      values[index] = Math.pow((c1 + c2 * lm1) / (1 + c3 * lm1), m2);
-    } else {
-      values[index] = linear <= 0.0031308 ? 12.92 * linear : 1.055 * Math.pow(linear, 1 / 2.4) - 0.055;
-    }
-  }
-  const result = { values, maximumLinear };
-  vectorscopeTransferLutCache.set(key, result);
-  return result;
-}
-
-function sampleVectorscopeTransfer(transfer, linear) {
-  const position = clamp(linear / transfer.maximumLinear, 0, 1) * (transfer.values.length - 1);
-  const lower = Math.floor(position);
-  const upper = Math.min(transfer.values.length - 1, lower + 1);
-  const mix = position - lower;
-  return transfer.values[lower] + (transfer.values[upper] - transfer.values[lower]) * mix;
+function buildGpuScopePayload(analysis, options) {
+  return scopeAnalysis.buildGpuScopePayload(analysis, {
+    ...options,
+    channelMode: state.scopeChannelMode,
+    referenceWhite: projectReferenceWhiteNits(),
+  });
 }
 
 function beginCropDrag(event) {
@@ -11815,11 +11484,7 @@ function hidePreviewMessage() {
 }
 
 async function safeJson(response) {
-  try {
-    return await response.json();
-  } catch {
-    return null;
-  }
+  return projectIo.safeJson(response);
 }
 
 function defaultInterpretationValue(session) {
@@ -14117,58 +13782,7 @@ function defaultLocalGrade() {
 }
 
 function newMaskLeaf(type) {
-  if (type === "brush") {
-    return {
-      type,
-      strokes: [],
-      brush_radius: 0.025,
-      brush_hardness: 0.75,
-      brush_flow: 1,
-      brush_opacity: 1,
-      brush_smoothing: 0.35,
-      mask_shift_edge: 0,
-      mask_feather: 0,
-      mask_opacity: 1,
-    };
-  }
-  if (type === "linear_gradient") {
-    return {
-      type,
-      start: { x: 0.25, y: 0.5 },
-      end: { x: 0.75, y: 0.5 },
-      gradient_midpoint_1: 1 / 3,
-      gradient_midpoint_2: 2 / 3,
-      gradient_fan: 0,
-      gradient_luma_enabled: false,
-      fade_in_start_ev: -12,
-      full_start_ev: -8,
-      full_end_ev: 6,
-      fade_out_end_ev: 10,
-      mask_opacity: 1,
-    };
-  }
-  if (type === "luminance_range") {
-    return {
-      type,
-      fade_in_start_ev: -8.75,
-      reference_start_ev: -8,
-      full_start_ev: -8,
-      full_end_ev: 6,
-      reference_end_ev: 6,
-      fade_out_end_ev: 6.75,
-      mask_feather: 0,
-      mask_opacity: 1,
-    };
-  }
-  return {
-    type: "path",
-    nodes: [],
-    feather: 0.02,
-    feather_softness: 0,
-    feather_mode: "outer_boundary",
-    feather_nodes: [],
-    mask_opacity: 1,
-  };
+  return maskExpression.createLeaf(type);
 }
 
 function syncDesktopDocumentState() {
@@ -14229,14 +13843,7 @@ function syncSourceFilenameOverflow() {
 }
 
 function newMaskExpression(type) {
-  return {
-    id: crypto.randomUUID(),
-    enabled: true,
-    operator: "leaf",
-    leaf: newMaskLeaf(type),
-    children: [],
-    inverted: false,
-  };
+  return maskExpression.createExpression(type, () => crypto.randomUUID());
 }
 
 function newLocalAdjustment(type, pending = null) {
@@ -14702,23 +14309,11 @@ function selectedLocal() {
 }
 
 function subMaskRows(expression, rows = []) {
-  if (!expression || expression.operator === "leaf") return rows;
-  const children = expression.children || [];
-  if (children[0]) subMaskRows(children[0], rows);
-  children.slice(1).forEach((child, index) => {
-    rows.push({
-      id: expression.id || `${rows.length}:${index}`,
-      container: expression,
-      expression: child,
-      operator: expression.operator,
-    });
-  });
-  return rows;
+  return maskExpression.subMaskRows(expression, rows);
 }
 
 function subMaskEntry(local, id) {
-  if (!local || !id) return null;
-  return subMaskRows(local.mask).find((entry) => entry.id === id) || null;
+  return maskExpression.subMaskEntry(local, id);
 }
 
 function selectedChildMaskParts(local = selectedLocal()) {
@@ -14746,9 +14341,7 @@ function selectedMaskExpression(local = selectedLocal()) {
 }
 
 function parentMaskExpression(expression) {
-  let current = expression;
-  while (current && current.operator !== "leaf" && current.children?.[0]) current = current.children[0];
-  return current || null;
+  return maskExpression.parentExpression(expression);
 }
 
 function selectedMaskLeaf(local = selectedLocal(), type = null) {
@@ -14756,17 +14349,11 @@ function selectedMaskLeaf(local = selectedLocal(), type = null) {
 }
 
 function replaceMaskExpression(expression, targetId, replacement) {
-  if (!expression) return expression;
-  if (expression.id === targetId) return replacement;
-  if (expression.operator === "leaf") return expression;
-  expression.children = (expression.children || []).map((child) => replaceMaskExpression(child, targetId, replacement));
-  return expression;
+  return maskExpression.replaceExpression(expression, targetId, replacement);
 }
 
 function regenerateMaskExpressionIds(expression) {
-  if (!expression) return;
-  expression.id = crypto.randomUUID();
-  (expression.children || []).forEach(regenerateMaskExpressionIds);
+  maskExpression.regenerateIds(expression, () => crypto.randomUUID());
 }
 
 function renderLocalAdjustments() {
@@ -15750,13 +15337,7 @@ function hideBrushSettingsPreview() {
 }
 
 function firstMaskLeaf(expression, type = null) {
-  if (!expression) return null;
-  if (expression.operator === "leaf") return !type || expression.leaf?.type === type ? expression.leaf : null;
-  for (const child of expression.children || []) {
-    const found = firstMaskLeaf(child, type);
-    if (found) return found;
-  }
-  return null;
+  return maskExpression.firstLeaf(expression, type);
 }
 
 async function moveSelectedLocal(direction) {
@@ -17199,48 +16780,15 @@ function renderChildMaskComparisonOverlay(context, local, parts, x, y, imageRect
 }
 
 function projectiveMatrixIsAffine(matrix) {
-  return matrix?.length === 9
-    && Math.abs(Number(matrix[6])) < 1e-10
-    && Math.abs(Number(matrix[7])) < 1e-10
-    && Math.abs(Number(matrix[8])) > 1e-10;
+  return geometryMath.projectiveMatrixIsAffine(matrix);
 }
 
 function projectPathNodeToOutput(node, matrix) {
-  const projected = { ...node, ...projectivePoint(matrix, node) };
-  for (const prefix of ["in", "out"]) {
-    const source = { x: node?.[`${prefix}_x`], y: node?.[`${prefix}_y`] };
-    // Sharp nodes persist absent handles as null. Number(null) is zero, so a
-    // coercing finite check projects those missing handles from source (0, 0)
-    // and turns every straight edge into a giant Bezier curve whenever the
-    // geometry map is projective (for example after Straighten). Preserve the
-    // nulls; only real numeric handle pairs may be projected.
-    if (!Number.isFinite(source.x) || !Number.isFinite(source.y)) continue;
-    const handle = projectivePoint(matrix, source);
-    projected[`${prefix}_x`] = handle.x;
-    projected[`${prefix}_y`] = handle.y;
-  }
-  return projected;
+  return geometryMath.projectPathNodeToOutput(node, matrix);
 }
 
 function projectMaskExpressionToOutput(expression, matrix) {
-  if (!expression) return expression;
-  if (expression.operator !== "leaf") {
-    return {
-      ...expression,
-      children: (expression.children || []).map((child) => projectMaskExpressionToOutput(child, matrix)),
-    };
-  }
-  const leaf = expression.leaf;
-  if (!leaf) return expression;
-  const projectedLeaf = { ...leaf };
-  if (leaf.type === "linear_gradient") {
-    projectedLeaf.start = projectivePoint(matrix, leaf.start);
-    projectedLeaf.end = projectivePoint(matrix, leaf.end);
-  } else if (leaf.type === "path") {
-    projectedLeaf.nodes = (leaf.nodes || []).map((node) => projectPathNodeToOutput(node, matrix));
-    projectedLeaf.feather_nodes = (leaf.feather_nodes || []).map((node) => projectPathNodeToOutput(node, matrix));
-  }
-  return { ...expression, leaf: projectedLeaf };
+  return geometryMath.projectMaskExpressionToOutput(expression, matrix);
 }
 
 function applySourceGeometryCanvasTransform(context, imageRect, paneRect, matrix) {
@@ -17267,11 +16815,7 @@ function queueLocalMaskOverlayRender() {
 }
 
 function localMaskSpatialSignature(expression) {
-  if (expression?.operator !== "leaf" || !expression.leaf) return JSON.stringify(expression);
-  return JSON.stringify({
-    ...expression,
-    leaf: { ...expression.leaf, mask_opacity: 1 },
-  });
+  return maskExpression.spatialSignature(expression);
 }
 
 function localComparisonMaskSlot(localId, childId, role) {
@@ -18454,7 +17998,7 @@ async function openDesktopSelection(selection) {
 async function openStagedDesktopSource(selection) {
   const generation = claimSessionReplacement();
   if (state.activeImportJobId) {
-    await fetch(`/api/import-jobs/${state.activeImportJobId}`, { method: "DELETE" }).catch(() => null);
+    await projectIo.cancelImportJob(fetch, state.activeImportJobId).catch(() => null);
   }
   if (generation !== state.importGeneration) return;
   await state.byteUploadQueue.catch(() => null);
@@ -18464,18 +18008,14 @@ async function openStagedDesktopSource(selection) {
   updateExportAvailability();
   setIndeterminatePreviewMessage("Starting import · 0.0s elapsed");
   setImportCancelVisible(true);
-  const response = await fetch("/api/import-jobs", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      grant: selection.grant,
-      raw_import_settings: selection.rawImportSettings || undefined,
-      replace_session_id: selection.replaceSessionId || null,
-    }),
+  const { response, payload: initialJob } = await projectIo.createImportJob(fetch, {
+    grant: selection.grant,
+    rawImportSettings: selection.rawImportSettings,
+    replaceSessionId: selection.replaceSessionId,
   });
-  let job = await safeJson(response);
+  let job = initialJob;
   if (generation !== state.importGeneration) {
-    if (job?.job_id) await fetch(`/api/import-jobs/${job.job_id}`, { method: "DELETE" }).catch(() => null);
+    if (job?.job_id) await projectIo.cancelImportJob(fetch, job.job_id).catch(() => null);
     return;
   }
   if (!response.ok || !job?.job_id) {
@@ -18492,8 +18032,7 @@ async function openStagedDesktopSource(selection) {
     const reassurance = elapsed >= 10 ? " · still working normally" : "";
     setIndeterminatePreviewMessage(`${label}${reassurance} · ${elapsed.toFixed(1)}s elapsed`);
     if (job.state === "ready" && job.session_id) {
-      const sessionResponse = await fetch(`/api/session/${job.session_id}`);
-      const payload = await safeJson(sessionResponse);
+      const { response: sessionResponse, payload } = await projectIo.fetchSession(fetch, job.session_id);
       if (generation !== state.importGeneration || state.activeImportJobId !== job.job_id) return;
       state.activeImportJobId = null;
       state.importInProgress = false;
@@ -18516,8 +18055,8 @@ async function openStagedDesktopSource(selection) {
       return;
     }
     await new Promise((resolve) => window.setTimeout(resolve, 250));
-    const poll = await fetch(`/api/import-jobs/${job.job_id}`);
-    job = await safeJson(poll);
+    const { response: poll, payload } = await projectIo.pollImportJob(fetch, job.job_id);
+    job = payload;
     if (!poll.ok) {
       state.activeImportJobId = null;
       state.importInProgress = false;
@@ -18538,7 +18077,7 @@ async function cancelActiveImport() {
   setIndeterminatePreviewMessage("Cancelling import...");
   updateExportAvailability();
   if (jobId) {
-    await fetch(`/api/import-jobs/${jobId}`, { method: "DELETE" }).catch(() => null);
+    await projectIo.cancelImportJob(fetch, jobId).catch(() => null);
   }
   finishCancelledImport();
 }
@@ -18617,7 +18156,7 @@ async function openProjectFromPath(desktopSelection = null) {
     const replacementGeneration = ++state.importGeneration;
     const activeJobId = state.activeImportJobId;
     state.activeImportJobId = null;
-    if (activeJobId) await fetch(`/api/import-jobs/${activeJobId}`, { method: "DELETE" }).catch(() => null);
+    if (activeJobId) await projectIo.cancelImportJob(fetch, activeJobId).catch(() => null);
     await state.byteUploadQueue.catch(() => null);
     if (replacementGeneration !== state.importGeneration) return;
     const openGeneration = ++state.projectOpenGeneration;
@@ -18629,26 +18168,23 @@ async function openProjectFromPath(desktopSelection = null) {
     const statusTimer = beginProjectOpenStatus(selection.path?.split(/[\\/]/).pop() || "loading source");
     await new Promise((resolve) => window.requestAnimationFrame(resolve));
     try {
-      let response = await fetch("/api/desktop/project/open", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project_grant: selection.grant }),
+      let result = await projectIo.openDesktopProject(fetch, {
+        projectGrant: selection.grant,
         signal: controller.signal,
       }).catch((error) => error.name === "AbortError" ? null : Promise.reject(error));
-      if (!response || openGeneration !== state.projectOpenGeneration) return;
-      let payload = await safeJson(response);
+      if (!result || openGeneration !== state.projectOpenGeneration) return;
+      let { response, payload } = result;
       if (openGeneration !== state.projectOpenGeneration) return;
       if (!response.ok && projectOpenNeedsSourceRelink(payload)) {
         const source = await desktop.relinkSource();
         if (!source || openGeneration !== state.projectOpenGeneration) return;
-        response = await fetch("/api/desktop/project/open", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ project_grant: selection.grant, source_grant: source.grant }),
+        result = await projectIo.openDesktopProject(fetch, {
+          projectGrant: selection.grant,
+          sourceGrant: source.grant,
           signal: controller.signal,
         }).catch((error) => error.name === "AbortError" ? null : Promise.reject(error));
-        if (!response || openGeneration !== state.projectOpenGeneration) return;
-        payload = await safeJson(response);
+        if (!result || openGeneration !== state.projectOpenGeneration) return;
+        ({ response, payload } = result);
       }
       if (openGeneration !== state.projectOpenGeneration) return;
       if (!response.ok || !payload?.session) {
@@ -18681,24 +18217,16 @@ async function openProjectFromPath(desktopSelection = null) {
   await new Promise((resolve) => window.requestAnimationFrame(resolve));
   let sourcePath = null;
   try {
-    let response = await fetch("/api/project/open", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path }),
-    });
-    let payload = await safeJson(response);
+    let result = await projectIo.openPathProject(fetch, { path });
+    let { response, payload } = result;
     if (!response.ok && projectOpenNeedsSourceRelink(payload)) {
       sourcePath = await window.HDRDialogs.prompt(
         "The saved source is unavailable or changed. Select the matching original source path.",
         "", { title: "Relink source" },
       );
       if (!sourcePath) return;
-      response = await fetch("/api/project/open", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path, source_path: sourcePath }),
-      });
-      payload = await safeJson(response);
+      result = await projectIo.openPathProject(fetch, { path, sourcePath });
+      ({ response, payload } = result);
     }
     if (!response.ok || !payload?.session) {
       await window.HDRDialogs.alert(
@@ -18736,12 +18264,10 @@ async function saveProjectToPath({ saveAs = false } = {}) {
       );
     }
     if (!selection) return false;
-    const response = await fetch(`/api/desktop/session/${state.session.session_id}/project/save`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ project_grant: selection.grant }),
+    const { response, payload } = await projectIo.saveDesktopProject(fetch, {
+      sessionId: state.session.session_id,
+      projectGrant: selection.grant,
     });
-    const payload = await safeJson(response);
     if (!response.ok) {
       await window.HDRDialogs.alert(
         responseErrorMessage(payload, "The project could not be saved."),
@@ -18772,12 +18298,11 @@ async function saveProjectToPath({ saveAs = false } = {}) {
     );
     if (!sourcePath) return false;
   }
-  const response = await fetch(`/api/session/${state.session.session_id}/project/save`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path, source_path: sourcePath }),
+  const { response, payload } = await projectIo.savePathProject(fetch, {
+    sessionId: state.session.session_id,
+    path,
+    sourcePath,
   });
-  const payload = await safeJson(response);
   if (!response.ok) {
     await window.HDRDialogs.alert(
         responseErrorMessage(payload, "The project could not be saved."),

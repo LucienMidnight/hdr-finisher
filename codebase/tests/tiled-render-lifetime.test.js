@@ -14,6 +14,7 @@ const graphScaleSource = fs.readFileSync(
   path.join(__dirname, "../frontend/graph-scale.js"),
   "utf8",
 );
+const shaderSource = fs.readFileSync(path.join(__dirname, "../frontend/webgpu-shaders.js"), "utf8");
 
 function loadPreview() {
   const context = vm.createContext({
@@ -32,6 +33,7 @@ function loadPreview() {
     },
   });
   vm.runInContext(graphScaleSource, context);
+  vm.runInContext(shaderSource, context);
   vm.runInContext(source, context);
   return context.window.HDRWebGPUPreview;
 }

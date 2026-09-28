@@ -464,3 +464,9 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     assert '["Current Preview Size", currentPreviewSizeLabel()]' in javascript
     assert "compact-workspace" in css
     assert "source-overlay-open" in css
+    for selector in ("app-shell", "top-bar", "workspace-main", "source-rail", "grade-rail", "viewer-panel"):
+        assert len(re.findall(rf"(?m)^\.{selector}\s*\{{", css)) == 1
+    assert len(re.findall(r"(?m)^html,\r?\nbody \{", css)) == 1
+    matrix = (Path(__file__).parent / "css-app-shell-matrix.js").read_text(encoding="utf-8")
+    for state in ("normal-1440", "wide-2200", "compact-1100", "desktop-1440", "native-menu-1440"):
+        assert state in matrix

@@ -119,6 +119,7 @@ def test_panel_titles_and_scope_description_follow_shared_design_contract() -> N
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
     app = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    scope_ui = (FRONTEND / "scope-ui.js").read_text(encoding="utf-8")
 
     assert '<h1 class="panel-title">Metadata</h1>' in html
     assert 'id="preview-window-title" class="panel-title" tabindex="0" aria-describedby="viewer-branch-note"' in html
@@ -137,7 +138,7 @@ def test_panel_titles_and_scope_description_follow_shared_design_contract() -> N
     assert 'id="scope-note" class="visually-hidden"' in html
     assert 'id="histogram" width="720" height="220" aria-label="Image scope" aria-describedby="scope-note"' in html
     assert "compactScopeGuideLabel(scope, guide)" in app
-    assert "RW means active HDR reference white" in app
+    assert "RW means active HDR reference white" in scope_ui
     assert "--panel-title-font-family:" in css
     assert "--panel-title-font-size:" in css
     assert "--group-title-font-family: var(--display)" in css
