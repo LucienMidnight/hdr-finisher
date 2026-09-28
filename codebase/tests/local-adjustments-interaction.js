@@ -53,6 +53,7 @@ async function canvasVariationCount(locator) {
     const failure = request.failure()?.errorText || "unknown failure";
     if (failure === "net::ERR_ABORTED" && /\/(preview|scopes)(\/|\?)/.test(request.url())) return;
     if (failure === "net::ERR_ABORTED" && /\/local-mask\/[^/]+\/preview$/.test(new URL(request.url()).pathname)) return;
+    if (failure === "net::ERR_ABORTED" && request.method() === "GET" && /\/local-mask\/[^/]+$/.test(new URL(request.url()).pathname)) return;
     requestFailures.push(`${request.method()} ${request.url()}: ${failure}`);
   });
 
@@ -116,10 +117,50 @@ async function canvasVariationCount(locator) {
       } else {
         assert(visiblePixels > 100, `${tool} did not render a visible preview gizmo.`);
       }
+      const visibilityBefore = await page.evaluate(() => ({
+        revision: state.editRevision,
+        document: JSON.stringify(state.editDocument),
+        localId: selectedLocal().id,
+      }));
+      const gizmoToggle = page.locator("#local-gizmo-toggle");
+      await gizmoToggle.click();
+      assert(await gizmoToggle.textContent() === "Show gizmo to edit", `${tool} did not expose the hidden-gizmo state.`);
+      assert(await gizmoToggle.getAttribute("aria-pressed") === "true", `${tool} gizmo toggle did not expose its pressed state.`);
+      const maskOverlay = page.locator("#local-mask-overlay");
+      assert(!await maskOverlay.evaluate((canvas) => canvas.classList.contains("editing")), `${tool} kept invisible gizmo hit-testing enabled.`);
+      const visibilityAfter = await page.evaluate(() => ({
+        revision: state.editRevision,
+        document: JSON.stringify(state.editDocument),
+        hidden: state.localHiddenGizmoIds.has(selectedLocal().id),
+        enabled: selectedLocal().enabled,
+      }));
+      assert(visibilityAfter.hidden, `${tool} did not remember gizmo visibility by adjustment ID.`);
+      assert(visibilityAfter.enabled !== false, `${tool} hiding disabled the local adjustment.`);
+      assert(visibilityAfter.revision === visibilityBefore.revision && visibilityAfter.document === visibilityBefore.document,
+        `${tool} gizmo visibility entered project state or undo history.`);
+      if (visiblePixels > 100 && tool !== "luminance_range") {
+        const hiddenPixels = await overlayPixelCount(page);
+        assert(hiddenPixels > 100, `${tool} hiding the gizmo also removed the mask overlay.`);
+      }
+      const editBefore = await page.evaluate(() => JSON.stringify(selectedMaskLeaf(selectedLocal())));
+      const hiddenOverlayBox = await maskOverlay.boundingBox();
+      await page.mouse.click(hiddenOverlayBox.x + 20, hiddenOverlayBox.y + 20);
+      assert(await page.evaluate(() => state.localPointerGesture === null), `${tool} accepted an editing gesture while hidden.`);
+      assert(await page.evaluate(() => JSON.stringify(selectedMaskLeaf(selectedLocal()))) === editBefore, `${tool} changed after a hidden-gizmo pointer gesture.`);
+      await gizmoToggle.click();
+      assert(await gizmoToggle.textContent() === "Hide gizmo", `${tool} did not restore its gizmo.`);
       await page.locator("#preview-primary-pane").screenshot({
         path: path.join(outputDirectory, `local-adjustments-${tool.replaceAll("_", "-")}-overlay-qa.png`),
       });
     }
+    const localRows = page.locator("#local-adjustment-list .local-adjustment-select[data-local-id]");
+    await localRows.first().click();
+    await page.locator("#local-gizmo-toggle").click();
+    await localRows.nth(1).click();
+    assert(await page.locator("#local-gizmo-toggle").textContent() === "Hide gizmo", "Gizmo visibility leaked to a different adjustment.");
+    await localRows.first().click();
+    assert(await page.locator("#local-gizmo-toggle").textContent() === "Show gizmo to edit", "Per-adjustment gizmo visibility was lost after switching adjustments.");
+    await page.locator("#local-gizmo-toggle").click();
     const featherSamples = await page.evaluate(() => [0, 0.08, 0.25, 0.5, 0.75, 1].map((amount) => {
       const settings = brushStrokeSettings({
         brush_radius: 0.05,
@@ -159,7 +200,6 @@ async function canvasVariationCount(locator) {
     assert(maskFeatherSmoothing.at(-1).outside > 2, `Maximum Mask Feather is still too narrow: ${JSON.stringify(maskFeatherSmoothing)}`);
     await page.screenshot({ path: path.join(outputDirectory, "local-adjustments-overlay-qa.png"), fullPage: false });
 
-    const localRows = page.locator("#local-adjustment-list .local-adjustment-select[data-local-id]");
     const brushRow = localRows.first();
     await brushRow.click();
     const brushSize = page.locator(".local-mask-subpanel").first().locator('input[type="range"]').first();

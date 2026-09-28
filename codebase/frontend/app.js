@@ -335,6 +335,9 @@ const state = {
   pendingLocalAdjustment: null,
   pendingSubMask: null,
   localShowMask: false,
+  // Per-adjustment editor visibility is session-only UI state. It never enters
+  // edit commands, project serialization, or undo history.
+  localHiddenGizmoIds: new Set(),
   // Denoise's Show noise view. View state only: never saved or exported.
   denoiseNoiseView: false,
   localOverlayColor: "#ff263d",
@@ -1578,6 +1581,7 @@ const els = {
   localRename: document.getElementById("local-rename"),
   localDuplicate: document.getElementById("local-duplicate"),
   localAddAdjustment: document.getElementById("local-add-adjustment"),
+  localGizmoToggle: document.getElementById("local-gizmo-toggle"),
   localInvert: document.getElementById("local-invert"),
   localDelete: document.getElementById("local-delete"),
   localMoveUp: document.getElementById("local-move-up"),
@@ -12100,6 +12104,7 @@ function retireActiveSession() {
   state.localBrushVisibleBounds = null;
   state.localAdjustmentMenuId = null;
   state.localShowMask = false;
+  state.localHiddenGizmoIds.clear();
   state.denoiseNoiseView = false;
   state.compareWithoutLocals = false;
   state.localPreviewDirty = false;
@@ -13859,6 +13864,14 @@ function newLocalAdjustment(type, pending = null) {
   };
 }
 
+function localGizmoVisible(local = selectedLocal()) {
+  return Boolean(local && !state.localHiddenGizmoIds.has(local.id));
+}
+
+function showLocalGizmo(local = selectedLocal()) {
+  if (local) state.localHiddenGizmoIds.delete(local.id);
+}
+
 async function finishLocalPathDraft() {
   const draft = state.localPathDraft;
   if (!draft || draft.finishing) return false;
@@ -13965,6 +13978,7 @@ async function assignToolToPending(type) {
     local.mask = wrapper;
     state.pendingSubMask = null;
     state.selectedLocalId = local.id;
+    showLocalGizmo(local);
     state.selectedSubMaskId = wrapper.id;
     if (type === "path") {
       state.localPathDraft = { localId: local.id, command: "update", previousMask, finishing: false };
@@ -13984,6 +13998,7 @@ async function assignToolToPending(type) {
   const local = newLocalAdjustment(type, pending);
   state.pendingLocalAdjustment = null;
   state.selectedLocalId = local.id;
+  showLocalGizmo(local);
   state.selectedSubMaskId = null;
   setGradeMode("local");
   if (type === "path") {
@@ -14026,6 +14041,20 @@ function bindLocalAdjustmentEvents() {
     if (els.localEraser.disabled) return;
     state.localErase = !state.localErase;
     updateLocalToolState();
+  });
+  els.localGizmoToggle?.addEventListener("click", () => {
+    const local = selectedLocal();
+    if (!local) return;
+    if (localGizmoVisible(local)) {
+      state.localHiddenGizmoIds.add(local.id);
+      state.localPointerGesture = null;
+      state.localBrushCursor = null;
+      state.localPathCursor = null;
+      state.hoveredPathTarget = null;
+    } else {
+      showLocalGizmo(local);
+    }
+    renderLocalAdjustments();
   });
   els.localAdjustmentList?.addEventListener("click", async (event) => {
     const bypassButton = event.target.closest("button[data-local-bypass-id]");
@@ -14484,6 +14513,11 @@ function renderLocalAdjustments() {
   }
   syncDesktopDocumentState();
   if (local && !pendingSelected) {
+    const gizmoVisible = localGizmoVisible(local);
+    if (els.localGizmoToggle) {
+      els.localGizmoToggle.textContent = gizmoVisible ? "Hide gizmo" : "Show gizmo to edit";
+      els.localGizmoToggle.setAttribute("aria-pressed", String(!gizmoVisible));
+    }
     els.localOpacity.value = String(local.opacity);
     els.localOpacityValue.textContent = `${Math.round(local.opacity * 100)}%`;
     els.localOpacity.closest(".control-row")?.classList.toggle("modified", Math.abs(Number(local.opacity) - 1) > 1e-8);
@@ -14889,7 +14923,8 @@ function createPathFeatherControl(local, leaf) {
   });
   input.addEventListener("change", () => commitSelectedLocal());
   bindLocalPreviewInteraction(input);
-  label.append(heading, output, input, status);
+  label.append(heading, input, output, status);
+  enhanceRangeControl(input);
   return label;
 }
 
@@ -15671,6 +15706,7 @@ function bindLocalMaskCanvas() {
     if (event.button !== 0) return;
     const local = selectedLocal();
     if (!local || state.gradeMode !== "local") return;
+    if (!localGizmoVisible(local)) return;
     const leaf = selectedMaskLeaf(local);
     if (!leaf) return;
     const displayPoint = localDisplayPointerPoint(event);
@@ -15787,6 +15823,7 @@ function bindLocalMaskCanvas() {
     renderLocalMaskOverlay();
   });
   canvas.addEventListener("pointermove", (event) => {
+    if (!localGizmoVisible()) return;
     const gesture = state.localPointerGesture;
     const point = gesture?.type === "luminance_sample"
       ? localDisplayPointerPoint(event)
@@ -15848,6 +15885,7 @@ function bindLocalMaskCanvas() {
   canvas.addEventListener("contextmenu", (event) => {
     event.preventDefault();
     const local = selectedLocal();
+    if (!localGizmoVisible(local)) return;
     const leaf = selectedMaskLeaf(local, "path");
     if (!leaf || state.localPathDraft) return;
     const nodes = activePathNodes(leaf);
@@ -16427,6 +16465,7 @@ function updatePathHandleGesture(gesture, point) {
 
 function handlePathCanvasKeydown(event) {
   const local = selectedLocal();
+  if (!localGizmoVisible(local)) return;
   const leaf = selectedMaskLeaf(local, "path");
   if (!leaf) return;
   if (state.localPathDraft) {
@@ -16610,7 +16649,8 @@ function renderLocalMaskOverlay() {
     && state.gradeMode === "local"
     && Boolean(local)
     && local.enabled !== false;
-  canvas.classList.toggle("editing", active);
+  const gizmoVisible = localGizmoVisible(local);
+  canvas.classList.toggle("editing", active && gizmoVisible);
   syncLocalMaskOverlayViewport();
   const rect = canvas.getBoundingClientRect();
   if (!rect?.width || !rect?.height) return;
@@ -16682,12 +16722,12 @@ function renderLocalMaskOverlay() {
   }
   const coordinateMap = currentGeometryCoordinateMap();
   if (coordinateMap) {
-    if (projectiveMatrixIsAffine(coordinateMap.sourceToOutput)) {
+    if (gizmoVisible && projectiveMatrixIsAffine(coordinateMap.sourceToOutput)) {
       context.save();
       applySourceGeometryCanvasTransform(context, imageRect, rect, coordinateMap.sourceToOutput);
       drawMaskExpression(context, editorExpression, x, y, { ...drawOptions, renderPhase: "gizmo", skipBrush: true });
       context.restore();
-    } else {
+    } else if (gizmoVisible) {
       drawMaskExpression(
         context,
         projectMaskExpressionToOutput(editorExpression, coordinateMap.sourceToOutput),
@@ -16711,10 +16751,10 @@ function renderLocalMaskOverlay() {
       editorExpression,
       x,
       y,
-      drawOptions,
+      { ...drawOptions, suppressGizmo: !gizmoVisible },
       brushOutputSpaceMapper(imageRect, coordinateMap.sourceToOutput),
     );
-  } else {
+  } else if (!coordinateMap) {
     void ensureGeometryCoordinateMap();
   }
   if (!gpuLumaMaskPreviewActive(local)) void queueAuthoritativeLocalMask(local);
@@ -16745,12 +16785,13 @@ function renderChildMaskComparisonOverlay(context, local, parts, x, y, imageRect
   };
   const coordinateMap = currentGeometryCoordinateMap();
   if (coordinateMap) {
-    if (projectiveMatrixIsAffine(coordinateMap.sourceToOutput)) {
+    const gizmoVisible = localGizmoVisible(local);
+    if (gizmoVisible && projectiveMatrixIsAffine(coordinateMap.sourceToOutput)) {
       context.save();
       applySourceGeometryCanvasTransform(context, imageRect, paneRect, coordinateMap.sourceToOutput);
       drawMaskExpression(context, parts.child, x, y, { ...drawOptions, renderPhase: "gizmo", skipBrush: true });
       context.restore();
-    } else {
+    } else if (gizmoVisible) {
       drawMaskExpression(
         context,
         projectMaskExpressionToOutput(parts.child, coordinateMap.sourceToOutput),
@@ -16771,7 +16812,7 @@ function renderChildMaskComparisonOverlay(context, local, parts, x, y, imageRect
       parts.child,
       x,
       y,
-      drawOptions,
+      { ...drawOptions, suppressGizmo: !gizmoVisible },
       brushOutputSpaceMapper(imageRect, coordinateMap.sourceToOutput),
     );
   } else {
@@ -17083,11 +17124,11 @@ function drawBrushExpressionOutputSpace(context, expression, x, y, options, mapp
   if (state.localShowMask && !options.authoritative) {
     drawBrushMaskOverlay(context, transformedLeaf, null, x, y, expression.inverted, outputOptions);
   }
-  if (state.localShowMask && activeStroke) {
+  if (!options.suppressGizmo && state.localShowMask && activeStroke) {
     drawActiveBrushStrokeOverlay(context, activeStroke, x, y, mapper, options.overlayColor);
   }
   const cursor = state.localBrushCursor || activeStroke?.points?.at(-1);
-  if (cursor) {
+  if (!options.suppressGizmo && cursor) {
     const settings = brushSettings(leaf);
     drawBrushGizmo(context, mapper.point(cursor), { ...settings, radius: mapper.radius(settings.radius, cursor) }, x, y);
   }

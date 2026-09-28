@@ -4308,6 +4308,8 @@ input[type="text"] {
 }
 
 .local-mask-footer-actions {
+  display: grid;
+  gap: 6px;
   margin-top: 9px;
   padding-top: 9px;
   border-top: 1px solid #303b3e;
@@ -5005,7 +5007,7 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 }
 
 .local-mask-footer-actions {
-  display: none;
+  display: grid;
 }
 
 .local-lane-folder {

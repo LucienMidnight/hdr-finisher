@@ -151,6 +151,30 @@ async function activePreviewBox(page) {
     current = await pathState(page);
     assert(!current.draft && current.leaf.feather_mode === "outer_boundary", "Closed path did not enter outer-boundary editing.");
 
+    const feather = page.locator('input[type="range"][data-default-value="4"]');
+    assert(await feather.count() === 1, "Path Feather did not expose its dedicated range input.");
+    const featherDom = await feather.evaluate((input) => ({
+      shell: input.parentElement?.classList.contains("range-shell"),
+      rail: Boolean(input.parentElement?.querySelector(".slider-track")),
+      fill: Boolean(input.parentElement?.querySelector(".slider-fill")),
+      order: [...input.closest("label").children].map((child) => child.className),
+      instrumentStep: input.dataset.instrumentStep,
+      step: input.step,
+    }));
+    assert(featherDom.shell && featherDom.rail && featherDom.fill, `Path Feather is missing its enhanced rail/fill: ${JSON.stringify(featherDom)}`);
+    assert(featherDom.order[0] === "instrument-control-label" && featherDom.order[1] === "range-shell" && featherDom.order[2] === "",
+      `Path Feather child order does not match the local sliders: ${JSON.stringify(featherDom.order)}`);
+    assert(featherDom.instrumentStep === "1" && featherDom.step === "0.1", `Path Feather precision enhancement is wrong: ${JSON.stringify(featherDom)}`);
+    await feather.fill("20");
+    assert(await feather.locator("xpath=../following-sibling::output[1]").textContent() === "20%", "Path Feather output did not follow its value.");
+    assert(await feather.evaluate((input) => input.parentElement.style.getPropertyValue("--pos")) === "20%", "Path Feather fill did not redraw after input.");
+    response = page.waitForResponse((item) => item.url().includes("/edit-commands") && item.request().method() === "POST");
+    await feather.dblclick();
+    assert((await response).ok(), "Path Feather double-click reset did not commit.");
+    assert(await feather.inputValue() === "4", "Path Feather double-click did not restore its declared default.");
+    assert(await feather.locator("xpath=../following-sibling::output[1]").textContent() === "4%", "Path Feather reset did not update its output.");
+    assert(await feather.evaluate((input) => input.parentElement.style.getPropertyValue("--pos")) === "4%", "Path Feather reset did not redraw its fill.");
+
     const sharpProjection = await page.evaluate(() => {
       const expression = newMaskExpression("path");
       expression.leaf.nodes = [
