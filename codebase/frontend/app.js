@@ -7,6 +7,8 @@ const geometryMath = window.HDRGeometryMath;
 if (!geometryMath) throw new Error("HDRGeometryMath is not loaded; geometry calculations are required");
 const projectIo = window.HDRProjectIO;
 if (!projectIo) throw new Error("HDRProjectIO is not loaded; project transport is required");
+const status = window.HDRStatus;
+if (!status) throw new Error("HDRStatus is not loaded; application status reporting is required");
 const maskExpression = window.HDRMaskExpression;
 if (!maskExpression) throw new Error("HDRMaskExpression is not loaded; local-mask authoring is required");
 const FINE_ADJUSTMENT_SCALE = 0.1;
@@ -1497,10 +1499,6 @@ const els = {
   rawHighlightThresholdValue: document.getElementById("raw-highlight-threshold-value"),
   metadataToggle: document.getElementById("metadata-toggle"),
   metadataPanel: document.getElementById("metadata-panel"),
-  interpretationGate: document.getElementById("interpretation-gate"),
-  interpretationGateCopy: document.getElementById("interpretation-gate-copy"),
-  acceptInterpretation: document.getElementById("accept-interpretation"),
-  manualInterpretation: document.getElementById("manual-interpretation"),
   curveEditor: document.getElementById("curve-editor"),
   toneEqualizerEditor: document.getElementById("tone-equalizer-editor"),
   highlightCompressionGraph: document.getElementById("highlight-compression-graph"),
@@ -1561,8 +1559,6 @@ const els = {
   comparisonImage: document.getElementById("comparison-image"),
   previewOverlay: document.getElementById("preview-overlay"),
   localMaskOverlay: document.getElementById("local-mask-overlay"),
-  pathMaskProgress: document.getElementById("path-mask-progress"),
-  pathMaskProgressCopy: document.getElementById("path-mask-progress-copy"),
   straightenGridOverlay: document.getElementById("straighten-grid-overlay"),
   perspectiveEditorOverlay: document.getElementById("perspective-editor-overlay"),
   perspectiveGuideSvg: document.getElementById("perspective-guide-svg"),
@@ -1616,8 +1612,6 @@ const els = {
   emptyState: document.getElementById("empty-state"),
   viewerStatusDock: document.getElementById("viewer-status-dock"),
   viewerTierStatus: document.getElementById("viewer-tier-status"),
-  proofBuildStatus: document.getElementById("proof-build-status"),
-  proofBuildStatusCopy: document.getElementById("proof-build-status-copy"),
   proofLaneButtons: [...document.querySelectorAll("#proof-lane-switch button")],
   previewStatus: document.getElementById("preview-status"),
   previewStatusCopy: document.getElementById("preview-status-copy"),
@@ -3188,7 +3182,7 @@ function bindEvents() {
     if (!await confirmUnsavedTransition("replace the source with a test pattern")) return;
     const confirmedDocument = documentTransitionToken();
     const importGeneration = claimSessionReplacement();
-    els.badge.textContent = "Generating delivery proof test pattern...";
+    status.post({ id: "proof", severity: "progress", message: "Generating delivery proof test pattern…", progress: "indeterminate" });
     try {
       const response = await fetch("/api/proof/test-pattern");
       if (importGeneration !== state.importGeneration) return;
@@ -3197,7 +3191,7 @@ function bindEvents() {
       if (importGeneration !== state.importGeneration) return;
       await importByteFile(file, "replace the source with a test pattern", confirmedDocument, importGeneration);
     } catch (error) {
-      showUploadError(error?.message || "The delivery proof test pattern could not be generated.");
+      status.post({ id: "proof", severity: "error", message: error?.message || "The delivery proof test pattern could not be generated." });
     }
   });
   els.emptyImportButton.addEventListener("click", requestSourceImport);
@@ -3258,12 +3252,6 @@ function bindEvents() {
     state.metadataOpen = !state.metadataOpen;
     renderMetadataVisibility();
   });
-  els.acceptInterpretation.addEventListener("click", () => {
-    state.interpretationGateDismissed = true;
-    renderInterpretationGate();
-    updateExportAvailability();
-  });
-  els.manualInterpretation.addEventListener("click", openManualInterpretation);
   els.interpretationMode.addEventListener("change", () => {
     renderSourceSettingsControls();
   });
@@ -3829,7 +3817,7 @@ async function uploadFile(file, { confirmedDocument = documentTransitionToken(),
   renderExperimentalDngNote(file);
   const formData = new FormData();
   formData.append("file", file);
-  els.badge.textContent = "Loading image and building session...";
+  status.post({ id: "import", severity: "progress", message: "Loading image and building session…", progress: "indeterminate" });
   state.importInProgress = true;
   updateExportAvailability();
   setPreviewMessage("Reading source file...", 8);
@@ -3883,6 +3871,7 @@ async function uploadFile(file, { confirmedDocument = documentTransitionToken(),
     hidePreviewMessage();
     prepareInactivePreview();
     if (previewNeedsRefinement()) debouncePreview("hdr");
+    status.post({ id: "import", severity: "success", message: "Source imported." });
     return true;
   } catch (error) {
     if (generation !== state.importGeneration) return false;
@@ -3917,8 +3906,7 @@ async function uploadFile(file, { confirmedDocument = documentTransitionToken(),
 }
 
 function showUploadError(message) {
-  els.badge.textContent = message;
-  els.badge.className = "badge bad";
+  status.post({ id: "import", severity: "error", message });
   if (state.session) {
     hidePreviewMessage();
     renderSession();
@@ -3971,8 +3959,7 @@ async function ejectCurrentSession() {
   };
   clearPreviewImage();
   clearPreviewOverlay();
-  els.badge.textContent = "No file loaded.";
-  els.badge.className = "badge neutral";
+  syncProjectBadge();
   renderSourceFilename("No active image");
   syncCopySourcePathButton();
   els.metadataList.innerHTML = "";
@@ -4014,8 +4001,7 @@ function renderSession() {
   renderExperimentalDngNote(session);
   renderSourceFilename(session.source.filename);
   clearPreviewOverlay();
-  els.badge.textContent = session.analysis.badge_message;
-  els.badge.className = badgeClass(session.analysis.classification);
+  syncProjectBadge();
   syncCopySourcePathButton();
   syncInterpretationControls(session);
   renderRawImportControls(session);
@@ -6785,13 +6771,14 @@ function splitOutputPath(path) {
 
 async function exportCurrentSession() {
   if (!state.session) return;
+  status.post({ id: "export", severity: "progress", message: "Export queued…", progress: "indeterminate" });
   const pendingApplied = await (state.editCommandQueue || Promise.resolve(true));
   const globalsApplied = pendingApplied === false ? false : await syncGlobalEditState();
   const editsApplied = globalsApplied === false
     ? false
     : await (state.editCommandQueue || Promise.resolve(true));
   if (editsApplied === false) {
-    els.exportStatus.textContent = "Export paused because the latest edit could not be saved. Review the edit error and try again.";
+    status.post({ id: "export", severity: "error", message: "Export paused because the latest edit could not be saved. Review the edit error and try again." });
     return;
   }
   let outputPath = buildExportOutputPath();
@@ -6806,7 +6793,7 @@ async function exportCurrentSession() {
       formatName: els.exportFormat.value === "avif_gain_map" ? "AVIF gain map" : els.exportFormat.value === "sdr_jpeg" ? "JPEG image" : els.exportFormat.value === "sdr_png" ? "PNG image" : els.exportFormat.value === "sdr_jpegxl" ? "JPEG XL SDR" : els.exportFormat.value === "jpegxl_hdr" ? "JPEG XL HDR" : "JPEG Ultra HDR",
     });
     if (!selection) {
-      els.exportStatus.textContent = "Export cancelled.";
+      status.post({ id: "export", severity: "success", message: "Export cancelled." });
       return;
     }
     outputPath = selection.path;
@@ -6814,9 +6801,10 @@ async function exportCurrentSession() {
     nativeOverwrite = selection.overwriteTarget || null;
   }
   els.exportConfirmButton.disabled = true;
-  els.exportStatus.textContent = "Encoding and validating the finished file…";
+  status.post({ id: "export", severity: "progress", message: "Rendering full-resolution HDR and SDR endpoints…", progress: "indeterminate" });
   els.exportResult.classList.add("hidden");
   const exportStartedAt = performance.now();
+  let lastExportExpectation = "Rendering full-resolution HDR and SDR endpoints";
   const exportTicker = window.setInterval(() => {
     const elapsedSeconds = Math.max(1, Math.round((performance.now() - exportStartedAt) / 1000));
     const expectation = elapsedSeconds < 20
@@ -6824,7 +6812,10 @@ async function exportCurrentSession() {
       : elapsedSeconds < 60
         ? "Encoding gain-map media; large sources can take a minute or more"
         : "Still working locally; the final file will be validated before completion";
-    els.exportStatus.textContent = `${expectation} · ${elapsedSeconds}s elapsed`;
+    if (expectation !== lastExportExpectation) {
+      lastExportExpectation = expectation;
+      status.update("export", { severity: "progress", message: expectation, progress: "indeterminate" });
+    }
   }, 1000);
   try {
     desktop?.setOperationProgress({ kind: "export", value: 0.01, state: "indeterminate" });
@@ -6837,22 +6828,24 @@ async function exportCurrentSession() {
         { title: "Overwrite file", confirmLabel: "Overwrite", destructive: true },
       );
       if (!approved) {
-        els.exportStatus.textContent = "Export cancelled; the existing file was left unchanged.";
+        status.post({ id: "export", severity: "success", message: "Export cancelled; the existing file was left unchanged." });
         return;
       }
-      els.exportStatus.textContent = "Replacing the existing file and validating the result...";
+      status.post({ id: "export", severity: "progress", message: "Replacing the existing file and validating the result…", progress: "indeterminate" });
       response = await requestSessionExport(outputPath, true, pathGrant, null);
       payload = await safeJson(response);
     }
     if (!response.ok) {
-      els.exportStatus.textContent = responseErrorMessage(payload, "Export failed.");
+      status.post({ id: "export", severity: "error", message: responseErrorMessage(payload, "Export failed.") });
       return;
     }
     const exportMessage = payload.message || "Export request finished.";
     const totalExportMs = Number(payload.timings_ms?.total);
-    els.exportStatus.textContent = Number.isFinite(totalExportMs)
+    const completedMessage = Number.isFinite(totalExportMs)
       ? `${exportMessage} Completed in ${(totalExportMs / 1000).toFixed(1)}s.`
       : exportMessage;
+    status.post({ id: "export", severity: "success", message: completedMessage });
+    els.exportStatus.textContent = "The completed export is available below.";
     if (payload.output_path) {
       const parsed = splitOutputPath(payload.output_path);
       els.exportFilename.value = parsed.filename;
@@ -6863,7 +6856,7 @@ async function exportCurrentSession() {
     }
   } catch (error) {
     console.error(error);
-    els.exportStatus.textContent = "Export could not reach the local HDR Finisher server.";
+    status.post({ id: "export", severity: "error", message: "Export could not reach the local HDR Finisher server." });
   } finally {
     window.clearInterval(exportTicker);
     els.exportConfirmButton.disabled = false;
@@ -7504,7 +7497,11 @@ async function confirmMediaBrowserSelection() {
       if (els.directoryBrowser.open) els.directoryBrowser.close();
       resolve?.(selection);
     } catch (error) {
-      els.directoryBrowserStatus.textContent = error?.message || `Could not ${mode === "project_open" ? "open" : "save"} that project.`;
+      status.post({
+        id: mode === "project_open" ? "project-open" : "project-save",
+        severity: "error",
+        message: error?.message || `Could not ${mode === "project_open" ? "open" : "save"} that project.`,
+      });
     }
     return;
   }
@@ -7541,7 +7538,7 @@ function sanitizeProjectFilename(value) {
 async function applyInterpretationOverride() {
   if (!state.session) return;
   const override = interpretationPayload();
-  els.badge.textContent = "Re-interpreting source file...";
+  status.post({ id: "interpretation", severity: "progress", message: "Re-interpreting source file…", progress: "indeterminate" });
   setPreviewMessage("Re-interpreting source file...", 8);
   try {
     const response = await fetch(`/api/session/${state.session.session_id}/interpretation`, {
@@ -7551,8 +7548,7 @@ async function applyInterpretationOverride() {
     });
     const payload = await safeJson(response);
     if (!response.ok || !payload?.session) {
-      els.badge.textContent = payload?.detail || "Interpretation override failed.";
-      els.badge.className = "badge bad";
+      status.post({ id: "interpretation", severity: "error", message: payload?.detail || "Interpretation override failed." });
       setPreviewError(payload?.detail || "Interpretation override failed.");
       return;
     }
@@ -7579,11 +7575,12 @@ async function applyInterpretationOverride() {
     hidePreviewMessage();
     prepareInactivePreview();
     if (previewNeedsRefinement()) debouncePreview(state.currentView);
+    status.post({ id: "interpretation", severity: "success", message: "Source interpretation applied." });
   } catch (error) {
     console.error(error);
-    els.badge.textContent = "Interpretation override could not reach the local HDR Finisher server.";
-    els.badge.className = "badge bad";
-    setPreviewError(els.badge.textContent);
+    const message = "Interpretation override could not reach the local HDR Finisher server.";
+    status.post({ id: "interpretation", severity: "error", message });
+    setPreviewError(message);
   }
 }
 
@@ -7595,12 +7592,6 @@ async function resetInterpretationToAuto() {
   els.interpretationLinearReference.value = "scene_0_18";
   renderSourceSettingsControls();
   await applyInterpretationOverride();
-}
-
-function badgeClass(classification) {
-  if (classification === "HDR_TRUE") return "badge good hdr-true";
-  if (classification === "HDR_ENCODED" || classification === "HDR_LINEAR_UNCONFIRMED") return "badge warn";
-  return "badge bad";
 }
 
 function setValueByPath(target, path, value) {
@@ -8538,13 +8529,13 @@ function projectOpenNeedsSourceRelink(payload) {
 }
 
 function beginProjectOpenStatus(label) {
-  const startedAt = performance.now();
-  const update = () => {
-    const elapsed = Math.max(0, (performance.now() - startedAt) / 1000);
-    setIndeterminatePreviewMessage(`Opening project · ${label} · ${elapsed.toFixed(1)}s elapsed`);
-  };
-  update();
-  return window.setInterval(update, 250);
+  status.post({
+    id: "project-open",
+    severity: "progress",
+    message: `Opening project · ${label}`,
+    progress: "indeterminate",
+  });
+  return 0;
 }
 
 function sourcePixelFrameDimensions(geometry = state.adjustments?.shared?.geometry) {
@@ -11397,30 +11388,10 @@ function clearPreviewOverlay() {
   els.previewOverlay.style.height = "";
 }
 
-// The dock slides out from under the viewer header whenever any row has something
-// to report, and slides back once they are all clear.
 function syncViewerStatusDock() {
   const dock = els.viewerStatusDock;
   if (!dock) return;
-  const rows = [...dock.children];
-  const shown = rows.filter((row) => !row.classList.contains("hidden"));
-  window.clearTimeout(state.viewerStatusDockTimer);
-  state.viewerStatusDockTimer = 0;
-  if (shown.length) {
-    // Remember which rows are up so the slide back can hold exactly those, and
-    // not summon the idle ones into an empty bar on the way out.
-    rows.forEach((row) => row.classList.toggle("held", shown.includes(row)));
-    dock.classList.remove("closing");
-    dock.classList.add("open");
-    return;
-  }
-  if (!dock.classList.contains("open")) return;
-  dock.classList.remove("open");
-  dock.classList.add("closing");
-  state.viewerStatusDockTimer = window.setTimeout(() => {
-    dock.classList.remove("closing");
-    rows.forEach((row) => row.classList.remove("held"));
-  }, VIEWER_STATUS_DOCK_SLIDE_MS);
+  dock.classList.add("open");
 }
 
 function setViewerStatusRow(row, message, { error = false, progress = null } = {}) {
@@ -11861,11 +11832,27 @@ function openManualInterpretation() {
 function renderInterpretationGate() {
   const needsReview = Boolean(state.session?.analysis?.needs_color_override);
   const visible = needsReview && !state.interpretationGateDismissed;
-  els.interpretationGate.classList.toggle("hidden", !visible);
-  syncViewerStatusDock();
-  if (needsReview) {
-    els.interpretationGateCopy.textContent = overrideMessage(state.session);
-  }
+  if (!visible) return status.clear("source-interpretation");
+  status.post({
+    id: "source-interpretation",
+    nodeId: "interpretation-gate",
+    copyId: "interpretation-gate-copy",
+    severity: "attention",
+    message: `Source interpretation needs review — ${overrideMessage(state.session)}`,
+    persistent: true,
+    actions: [
+      {
+        label: "Use assumption",
+        id: "accept-interpretation",
+        run: () => {
+          state.interpretationGateDismissed = true;
+          renderInterpretationGate();
+          updateExportAvailability();
+        },
+      },
+      { label: "Set manually", id: "manual-interpretation", run: openManualInterpretation },
+    ],
+  });
 }
 
 async function switchLane(lane) {
@@ -12038,6 +12025,7 @@ function markGlobalEditDirty() {
   state.globalEditDirty = true;
   state.globalEditGeneration += 1;
   state.documentDirty = true;
+  syncProjectBadge();
   updateExportAvailability();
 }
 
@@ -13798,7 +13786,17 @@ function newMaskLeaf(type) {
   return maskExpression.createLeaf(type);
 }
 
+function syncProjectBadge() {
+  if (!els.badge) return;
+  const projectName = state.projectPath
+    ? String(state.projectPath).split(/[/\\]/).pop()
+    : state.session?.source?.filename || "No project";
+  els.badge.textContent = state.documentDirty ? `${projectName} · Unsaved` : projectName;
+  els.badge.className = `badge ${state.documentDirty ? "warn" : "neutral"}`;
+}
+
 function syncDesktopDocumentState() {
+  syncProjectBadge();
   if (!desktop) return;
   const displayName = state.projectPath
     ? String(state.projectPath).split(/[/\\]/).pop()
@@ -14030,8 +14028,7 @@ function bindLocalAdjustmentEvents() {
   els.localToolButtons.forEach((button) => button.addEventListener("click", async () => {
     if (state.localPathDraft) await finishLocalPathDraft();
     if (!state.session) {
-      els.badge.textContent = "Load an image before creating a local adjustment.";
-      els.badge.className = "badge warn";
+      status.post({ id: "edit", severity: "attention", message: "Load an image before creating a local adjustment." });
       if (els.localEmpty) els.localEmpty.textContent = "Load an image, then choose a mask tool to create the first local adjustment.";
       updateLocalToolState();
       return;
@@ -15525,11 +15522,11 @@ async function setSdrMatch(action) {
       await renderComparisonPreview(other, { force: true });
     }
     syncDesktopDocumentState();
+    status.post({ id: "match", severity: "success", message: "HDR grade matched to SDR." });
     return true;
   } catch (error) {
     console.error(error);
-    els.badge.textContent = error.message;
-    els.badge.className = "badge bad";
+    status.post({ id: "match", severity: "error", message: error.message });
     return false;
   } finally {
     hidePreviewMessage();
@@ -15631,11 +15628,13 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
       invalidatePreview("sdr", { local: true });
       debouncePreview(state.currentView);
     }
+    if (status.get("edit")?.severity === "error") {
+      status.post({ id: "edit", severity: "success", message: "Edits saved." });
+    }
     return true;
   }).catch((error) => {
     console.error(error);
-    els.badge.textContent = error.message;
-    els.badge.className = "badge bad";
+    status.post({ id: "edit", severity: "error", message: error.message });
     return false;
   });
   return state.editCommandQueue;
@@ -16009,8 +16008,7 @@ async function finishLuminanceSampleGesture(gesture) {
     await commitSelectedLocal();
   } catch (error) {
     console.error(error);
-    els.badge.textContent = error.message;
-    els.badge.className = "badge bad";
+    status.post({ id: "edit", severity: "error", message: error.message });
     queueLocalMaskOverlayRender();
   }
 }
@@ -16600,14 +16598,19 @@ function beginPathMaskProgress(local) {
     maskSignature: JSON.stringify(local.mask),
     spatialSignature: localMaskSpatialSignature(local.mask),
   };
-  if (state.pathMaskProgressTimer || !els.pathMaskProgress?.classList.contains("hidden")) return;
+  if (state.pathMaskProgressTimer || status.get("path-mask")?.severity === "progress") return;
   state.pathMaskProgressStartedAt = performance.now();
   state.pathMaskProgressTimer = window.setTimeout(() => {
     state.pathMaskProgressTimer = 0;
     if (!state.pathMaskProgressTarget) return;
-    els.pathMaskProgressCopy.textContent = "Updating feather…";
-    els.pathMaskProgress.classList.remove("hidden", "error");
-    syncViewerStatusDock();
+    status.post({
+      id: "path-mask",
+      nodeId: "path-mask-progress",
+      copyId: "path-mask-progress-copy",
+      severity: "progress",
+      message: "Updating feather…",
+      progress: "indeterminate",
+    });
   }, 400);
 }
 
@@ -16618,8 +16621,7 @@ function finishPathMaskProgress(localId, signature, spatialOnly = false) {
   window.clearTimeout(state.pathMaskProgressTimer);
   state.pathMaskProgressTimer = 0;
   state.pathMaskProgressTarget = null;
-  els.pathMaskProgress?.classList.add("hidden");
-  syncViewerStatusDock();
+  status.clear("path-mask");
   if (window.HDRFinisherPerformance) {
     window.HDRFinisherPerformance.pathMaskLatencyMs = performance.now() - state.pathMaskProgressStartedAt;
   }
@@ -16629,19 +16631,20 @@ function cancelPathMaskProgress() {
   window.clearTimeout(state.pathMaskProgressTimer);
   state.pathMaskProgressTimer = 0;
   state.pathMaskProgressTarget = null;
-  els.pathMaskProgress?.classList.add("hidden");
-  els.pathMaskProgress?.classList.remove("error");
-  syncViewerStatusDock();
+  status.clear("path-mask");
 }
 
 function failPathMaskProgress(localId) {
   if (state.pathMaskProgressTarget?.localId !== localId) return;
   window.clearTimeout(state.pathMaskProgressTimer);
   state.pathMaskProgressTimer = 0;
-  els.pathMaskProgressCopy.textContent = "Feather preview could not be updated.";
-  els.pathMaskProgress.classList.remove("hidden");
-  els.pathMaskProgress.classList.add("error");
-  syncViewerStatusDock();
+  status.post({
+    id: "path-mask",
+    nodeId: "path-mask-progress",
+    copyId: "path-mask-progress-copy",
+    severity: "error",
+    message: "Feather preview could not be updated.",
+  });
 }
 
 function renderLocalMaskOverlay() {
@@ -18052,7 +18055,7 @@ async function openStagedDesktopSource(selection) {
   if (generation !== state.importGeneration) return;
   await state.byteUploadQueue.catch(() => null);
   if (generation !== state.importGeneration) return;
-  els.badge.textContent = "Loading image and building session...";
+  status.post({ id: "import", severity: "progress", message: "Loading image and building session…", progress: "indeterminate" });
   state.importInProgress = true;
   updateExportAvailability();
   setIndeterminatePreviewMessage("Starting import · 0.0s elapsed");
@@ -18093,6 +18096,7 @@ async function openStagedDesktopSource(selection) {
       const retainedProjectPath = selection.replaceSessionId ? state.projectPath : "";
       await activateDesktopSession(payload.session, retainedProjectPath);
       if (!selection.replaceSessionId) await recordSuccessfulMediaImport(selection.path);
+      status.post({ id: "import", severity: "success", message: "Source imported." });
       return;
     }
     if (job.state === "error" || job.state === "cancelled") {
@@ -18136,8 +18140,11 @@ function finishCancelledImport() {
   setImportCancelVisible(false);
   hidePreviewMessage();
   if (!state.session) clearPreviewImage();
-  els.badge.textContent = state.session ? "Import cancelled. Current image kept." : "Import cancelled.";
-  els.badge.className = "badge neutral";
+  status.post({
+    id: "import",
+    severity: "success",
+    message: state.session ? "Import cancelled. Current image kept." : "Import cancelled.",
+  });
   updateExportAvailability();
 }
 
@@ -18226,7 +18233,10 @@ async function openProjectFromPath(desktopSelection = null) {
       if (openGeneration !== state.projectOpenGeneration) return;
       if (!response.ok && projectOpenNeedsSourceRelink(payload)) {
         const source = await desktop.relinkSource();
-        if (!source || openGeneration !== state.projectOpenGeneration) return;
+        if (!source || openGeneration !== state.projectOpenGeneration) {
+          status.clear("project-open");
+          return;
+        }
         result = await projectIo.openDesktopProject(fetch, {
           projectGrant: selection.grant,
           sourceGrant: source.grant,
@@ -18237,20 +18247,28 @@ async function openProjectFromPath(desktopSelection = null) {
       }
       if (openGeneration !== state.projectOpenGeneration) return;
       if (!response.ok || !payload?.session) {
-        await window.HDRDialogs.alert(
-          responseErrorMessage(payload, "The project could not be opened."),
-          { title: "Open project" },
-        );
+        status.post({
+          id: "project-open",
+          severity: "error",
+          message: responseErrorMessage(payload, "The project could not be opened."),
+        });
         return;
       }
       await activateDesktopSession(payload.session, selection.path);
       projectActivated = true;
+      status.post({ id: "project-open", severity: "success", message: "Project opened." });
+      return;
+    } catch (error) {
+      if (error?.name !== "AbortError") {
+        status.post({ id: "project-open", severity: "error", message: error?.message || "The project could not be opened." });
+      }
       return;
     } finally {
       if (openGeneration === state.projectOpenGeneration) {
         window.clearInterval(statusTimer);
         els.projectOpen.disabled = false;
         if (!projectActivated) hidePreviewMessage();
+        if (!projectActivated && status.get("project-open")?.severity === "progress") status.clear("project-open");
       }
     }
   }
@@ -18273,21 +18291,29 @@ async function openProjectFromPath(desktopSelection = null) {
         "The saved source is unavailable or changed. Select the matching original source path.",
         "", { title: "Relink source" },
       );
-      if (!sourcePath) return;
+      if (!sourcePath) {
+        status.clear("project-open");
+        return;
+      }
       result = await projectIo.openPathProject(fetch, { path, sourcePath });
       ({ response, payload } = result);
     }
     if (!response.ok || !payload?.session) {
-      await window.HDRDialogs.alert(
-          responseErrorMessage(payload, "The project could not be opened."),
-          { title: "Open project" },
-        );
+      status.post({
+        id: "project-open",
+        severity: "error",
+        message: responseErrorMessage(payload, "The project could not be opened."),
+      });
       return;
     }
     await activateDesktopSession(payload.session, path);
+    status.post({ id: "project-open", severity: "success", message: "Project opened." });
+  } catch (error) {
+    status.post({ id: "project-open", severity: "error", message: error?.message || "The project could not be opened." });
   } finally {
     window.clearInterval(statusTimer);
     hidePreviewMessage();
+    if (status.get("project-open")?.severity === "progress") status.clear("project-open");
   }
 }
 
@@ -18295,33 +18321,50 @@ async function saveProjectToPath({ saveAs = false } = {}) {
   if (!state.session) return false;
   const pendingApplied = await (state.editCommandQueue || Promise.resolve(true));
   const globalsApplied = pendingApplied === false ? false : await syncGlobalEditState();
-  if (globalsApplied === false) return false;
+  if (globalsApplied === false) {
+    status.post({ id: "project-save", severity: "error", message: "The project could not be saved because the latest edit failed." });
+    return false;
+  }
   if (desktop) {
     const suggestedName = `${state.session.source.filename.replace(/\.[^.]+$/, "")}.hdrfinisher`;
     let selection = null;
-    if (!saveAs && state.projectPath) {
-      selection = await desktop.grantProjectPath(state.projectPath, "project-save");
-    } else {
-      const existing = splitOutputPath(state.projectPath);
-      const initialDirectory = state.projectPath
-        ? existing.directory
-        : state.appPreferences?.folders?.projectSave || "";
-      selection = await chooseProjectPath(
-        "project_save",
-        initialDirectory,
-        state.projectPath ? `${existing.filename}.hdrfinisher` : suggestedName,
-      );
+    try {
+      if (!saveAs && state.projectPath) {
+        selection = await desktop.grantProjectPath(state.projectPath, "project-save");
+      } else {
+        const existing = splitOutputPath(state.projectPath);
+        const initialDirectory = state.projectPath
+          ? existing.directory
+          : state.appPreferences?.folders?.projectSave || "";
+        selection = await chooseProjectPath(
+          "project_save",
+          initialDirectory,
+          state.projectPath ? `${existing.filename}.hdrfinisher` : suggestedName,
+        );
+      }
+    } catch (error) {
+      status.post({ id: "project-save", severity: "error", message: error?.message || "The project could not be saved." });
+      return false;
     }
     if (!selection) return false;
-    const { response, payload } = await projectIo.saveDesktopProject(fetch, {
-      sessionId: state.session.session_id,
-      projectGrant: selection.grant,
-    });
+    status.post({ id: "project-save", severity: "progress", message: "Saving project…", progress: "indeterminate" });
+    let response;
+    let payload;
+    try {
+      ({ response, payload } = await projectIo.saveDesktopProject(fetch, {
+        sessionId: state.session.session_id,
+        projectGrant: selection.grant,
+      }));
+    } catch (error) {
+      status.post({ id: "project-save", severity: "error", message: error?.message || "The project could not be saved." });
+      return false;
+    }
     if (!response.ok) {
-      await window.HDRDialogs.alert(
-        responseErrorMessage(payload, "The project could not be saved."),
-        { title: "Save project" },
-      );
+      status.post({
+        id: "project-save",
+        severity: "error",
+        message: responseErrorMessage(payload, "The project could not be saved."),
+      });
       return false;
     }
     state.projectPath = payload.path;
@@ -18330,8 +18373,8 @@ async function saveProjectToPath({ saveAs = false } = {}) {
     state.documentDirty = false;
     syncCopySourcePathButton();
     syncDesktopDocumentState();
-    els.badge.textContent = `Project saved · revision ${payload.revision}`;
-    els.badge.className = "badge good";
+    syncProjectBadge();
+    status.post({ id: "project-save", severity: "success", message: `Project saved · revision ${payload.revision}` });
     return true;
   }
   const path = await window.HDRDialogs.prompt(
@@ -18347,16 +18390,25 @@ async function saveProjectToPath({ saveAs = false } = {}) {
     );
     if (!sourcePath) return false;
   }
-  const { response, payload } = await projectIo.savePathProject(fetch, {
-    sessionId: state.session.session_id,
-    path,
-    sourcePath,
-  });
+  status.post({ id: "project-save", severity: "progress", message: "Saving project…", progress: "indeterminate" });
+  let response;
+  let payload;
+  try {
+    ({ response, payload } = await projectIo.savePathProject(fetch, {
+      sessionId: state.session.session_id,
+      path,
+      sourcePath,
+    }));
+  } catch (error) {
+    status.post({ id: "project-save", severity: "error", message: error?.message || "The project could not be saved." });
+    return false;
+  }
   if (!response.ok) {
-    await window.HDRDialogs.alert(
-        responseErrorMessage(payload, "The project could not be saved."),
-        { title: "Save project" },
-      );
+    status.post({
+      id: "project-save",
+      severity: "error",
+      message: responseErrorMessage(payload, "The project could not be saved."),
+    });
     return false;
   }
   state.projectPath = payload.path;
@@ -18364,8 +18416,8 @@ async function saveProjectToPath({ saveAs = false } = {}) {
   loadDenoiseDocument(state.editDocument);
   state.documentDirty = false;
   syncCopySourcePathButton();
-  els.badge.textContent = `Project saved · revision ${payload.revision}`;
-  els.badge.className = "badge good";
+  syncProjectBadge();
+  status.post({ id: "project-save", severity: "success", message: `Project saved · revision ${payload.revision}` });
   return true;
 }
 

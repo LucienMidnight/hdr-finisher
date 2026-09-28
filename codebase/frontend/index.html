@@ -375,17 +375,8 @@
         </div>
 
         <div id="noise-view-badge" class="noise-view-badge hidden" role="status">Noise only · Denoise</div>
-        <div id="viewer-status-dock" class="viewer-status-dock" aria-live="polite">
-          <div id="interpretation-gate" class="viewer-status-row viewer-status-attention hidden" role="alert">
-            <span class="viewer-status-copy">
-              <span class="attention-label">Source interpretation needs review</span>
-              <span id="interpretation-gate-copy">We found ambiguous source metadata. Confirm the assumption before judging color or export.</span>
-            </span>
-            <span class="button-row">
-              <button id="accept-interpretation" class="button-secondary" type="button">Use assumption</button>
-              <button id="manual-interpretation" class="button-secondary" type="button">Set manually</button>
-            </span>
-          </div>
+        <div id="viewer-status-dock" class="viewer-status-dock">
+          <div id="application-status-entries" class="application-status-entries"></div>
           <div id="viewer-tier-status" class="viewer-status-row hidden" role="status">
             <span class="viewer-status-copy"></span>
           </div>
@@ -393,14 +384,6 @@
             <span id="preview-status-copy" class="viewer-status-copy" role="status"></span>
             <progress id="preview-progress" class="preview-progress" aria-label="Preview progress"></progress>
             <button id="cancel-import" class="button-secondary preview-cancel hidden" type="button">Cancel import</button>
-          </div>
-          <div id="path-mask-progress" class="viewer-status-row hidden" role="status">
-            <span id="path-mask-progress-copy" class="viewer-status-copy">Updating feather…</span>
-            <progress class="preview-progress" aria-label="Path feather progress"></progress>
-          </div>
-          <div id="proof-build-status" class="viewer-status-row hidden" role="status">
-            <span id="proof-build-status-copy" class="viewer-status-copy">Building proof…</span>
-            <progress class="preview-progress" aria-label="Proof build progress"></progress>
           </div>
         </div>
         <div class="viewport-frame" id="dropzone">
@@ -1862,6 +1845,7 @@
   <script src="/static/preview-latency-controller.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/desktop-chrome.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/app-dialog.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+  <script src="/static/status-manager.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/application-shell.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/app.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/proofing-ui.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>

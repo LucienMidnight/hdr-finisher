@@ -104,9 +104,20 @@
 
   async function openProofExternally() {
     if (!desktop || !state.proofArtifact || state.proofDirty) return;
-    const response = await fetch(`/api/proof/external/${state.proofArtifact.artifact_id}`, { method: "POST" });
-    const payload = await parseProofResponse(response, "The external proof link could not be created.");
-    await desktop.openProofExternally(`${window.location.origin}${payload.url}`);
+    try {
+      const response = await fetch(`/api/proof/external/${state.proofArtifact.artifact_id}`, { method: "POST" });
+      const payload = await parseProofResponse(response, "The external proof link could not be created.");
+      await desktop.openProofExternally(`${window.location.origin}${payload.url}`);
+      if (window.HDRStatus.get("external-link")?.severity === "error") {
+        window.HDRStatus.post({ id: "external-link", severity: "success", message: "External proof opened." });
+      }
+    } catch (error) {
+      window.HDRStatus.post({
+        id: "external-link",
+        severity: "error",
+        message: error?.message || "The external proof could not be opened.",
+      });
+    }
   }
 
   function invalidateProof() {
@@ -232,6 +243,7 @@
       artifactDirty = false;
       phase = "idle";
       buildStage = null;
+      window.HDRStatus.post({ id: "proof", severity: "success", message: "Proof is ready." });
       syncProofPresentation();
       renderProofUi();
     } catch (error) {
@@ -273,6 +285,7 @@
     phase = "error";
     errorMessage = message;
     state.proofDirty = true;
+    window.HDRStatus.post({ id: "proof", severity: "error", message });
     renderProofUi();
   }
 
@@ -348,15 +361,18 @@
   // dock gives imports, and it must be legible from any workflow stage.
   function syncProofBuildStatus() {
     if (phase !== "updating") {
-      setViewerStatusRow(els.proofBuildStatus, null);
+      if (window.HDRStatus.get("proof")?.severity === "progress") window.HDRStatus.clear("proof");
       return;
     }
     const prefix = state.proofReconstruction ? "Rebuilding proof" : "Building proof";
-    setViewerStatusRow(
-      els.proofBuildStatus,
-      buildStage ? `${prefix} · ${buildStage.copy()}` : `${prefix}…`,
-      { progress: buildStage ? buildStage.percent : null },
-    );
+    window.HDRStatus.post({
+      id: "proof",
+      nodeId: "proof-build-status",
+      copyId: "proof-build-status-copy",
+      severity: "progress",
+      message: buildStage ? `${prefix} · ${buildStage.copy()}` : `${prefix}…`,
+      progress: buildStage ? buildStage.percent : "indeterminate",
+    });
   }
 
   function proofStatusMessage(encoderReady) {

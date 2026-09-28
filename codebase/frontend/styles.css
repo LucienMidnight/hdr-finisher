@@ -857,7 +857,7 @@ input[type="text"] {
   container-type: inline-size;
   display: grid;
   grid-row: 1;
-  grid-template-rows: var(--panel-header-h) minmax(0, 1fr);
+  grid-template-rows: var(--panel-header-h) auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -1555,36 +1555,83 @@ body[data-active-lane="sdr"] .lane-dot {
   line-height: 1.5;
 }
 
-/* Progress reporting lives in a bar that slides out from under the viewer header.
-   It sits on the viewer panel rather than inside .viewport-frame, so zoom
-   scrolling cannot carry it out of view, and it is fully opaque so nothing
-   reads through it. */
+/* Application status stays under the viewer header, outside the zooming frame,
+   so it remains available even while the empty state is shown. */
 .viewer-status-dock {
-  position: absolute;
-  top: var(--panel-header-h, 38px);
-  right: 0;
-  left: 0;
+  position: relative;
   z-index: 35;
-  display: grid;
+  display: block;
+  height: 38px;
   pointer-events: none;
-  transform: translateY(-100%);
-  transition: transform 200ms ease, visibility 200ms;
-  visibility: hidden;
-}
-
-.viewer-status-dock.open,
-.viewer-status-dock.closing {
   visibility: visible;
 }
 
-.viewer-status-dock.open {
-  transform: translateY(0);
+.application-status-entries {
+  display: flex;
+  height: 38px;
+  flex-wrap: nowrap;
+  align-items: stretch;
 }
 
-/* Rows are display:none when idle, which would collapse the bar before it could
-   move. Hold the last one laid out for the length of the slide back up. */
-.viewer-status-dock.closing > .viewer-status-row.held.hidden {
-  display: flex !important;
+.status-entry {
+  display: flex;
+  flex: 1 1 0;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px 12px;
+  min-width: 0;
+  height: 38px;
+  box-sizing: border-box;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--body);
+  font: 11px var(--mono);
+  pointer-events: auto;
+}
+
+.status-entry + .status-entry {
+  border-left: 1px solid var(--hairline);
+}
+
+.status-entry-copy {
+  flex: 1 1 180px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-entry-progress {
+  flex: 1 1 100px;
+  max-width: 220px;
+}
+
+.status-entry-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.status-entry.status-error {
+  color: var(--error-text);
+  box-shadow: inset 3px 0 0 var(--blocking);
+}
+
+.status-entry.status-attention {
+  box-shadow: inset 3px 0 0 var(--attention);
+}
+
+.status-entry.status-success {
+  box-shadow: inset 3px 0 0 var(--success, #62b78f);
+}
+
+.viewer-status-dock > .viewer-status-row {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
 }
 
 .viewer-status-row {

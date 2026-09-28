@@ -64,6 +64,7 @@
     "test:full-tier-tone-cost": "node tests/performance/full-tier-tone-cost.js",
     "test:full-tier-instrumented-tiling": "node tests/performance/full-tier-instrumented-tiling.js",
     "test:in-app-confirmations": "node tests/in-app-confirmations.js",
+    "test:status-manager": "node tests/status-manager-interaction.js",
     "test:denoise-disclosure": "node tests/denoise-progressive-disclosure.js",
     "test:denoise-noise-view": "node tests/denoise-noise-view.js",
     "test:denoise-adaptive-parity": "node tests/denoise-adaptive-parity.js",

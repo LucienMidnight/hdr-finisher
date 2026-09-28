@@ -253,13 +253,15 @@ def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     assert 'fetch("/api/media-browser/recents"' in javascript
     assert "await recordSuccessfulMediaImport(selection.path)" in javascript
     assert 'await chooseProjectPath(\n      "project_open"' in javascript
-    assert 'await chooseProjectPath(\n        "project_save"' in javascript
+    assert '"project_save",\n          initialDirectory' in javascript
     assert 'desktop.grantProjectPath(requestedPath' in javascript
     assert 'mode === "project_save" && selection.exists' in javascript
     assert 'addEventListener("click", () => openProjectFromPath())' in javascript
     # MINOR-10: likewise for the project-open failure report.
     assert 'responseErrorMessage(payload, "The project could not be opened.")' in javascript
-    assert "window.HDRDialogs.alert(" in javascript
+    assert 'status.post({' in javascript
+    assert 'id: "project-open"' in javascript
+    assert "window.HDRDialogs.alert(" not in javascript
     assert "window.alert(" not in javascript
     assert 'grantProjectPath: (filePath, intent)' in (DESKTOP / "preload.js").read_text(encoding="utf-8")
     assert 'id="directory-browser-kicker"' not in html

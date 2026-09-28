@@ -813,8 +813,23 @@
   }
 
   async function openProjectWebsite(url = PROJECT_URL) {
-    if (shell.desktop?.openProjectWebsite) return shell.desktop.openProjectWebsite(url);
-    window.open(url, "_blank", "noopener,noreferrer");
+    try {
+      if (shell.desktop?.openProjectWebsite) {
+        const result = await shell.desktop.openProjectWebsite(url);
+        if (window.HDRStatus.get("external-link")?.severity === "error") {
+          window.HDRStatus.post({ id: "external-link", severity: "success", message: "External link opened." });
+        }
+        return result;
+      }
+      return window.open(url, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      window.HDRStatus.post({
+        id: "external-link",
+        severity: "error",
+        message: error?.message || "That external link could not be opened.",
+      });
+      return null;
+    }
   }
 
   async function checkForUpdates({ force = false, manual = false } = {}) {
@@ -971,10 +986,15 @@
       if (external && shell.desktop?.openDocumentation) {
         event.preventDefault();
         if (external.href.startsWith(PROJECT_URL)) openProjectWebsite(external.href);
-        else shell.desktop.openDocumentation(external.href).catch((error) => window.HDRDialogs.alert(
-          error?.message || "That documentation link could not be opened.",
-          { title: "Documentation" },
-        ));
+        else shell.desktop.openDocumentation(external.href).then(() => {
+          if (window.HDRStatus.get("external-link")?.severity === "error") {
+            window.HDRStatus.post({ id: "external-link", severity: "success", message: "Documentation opened." });
+          }
+        }).catch((error) => window.HDRStatus.post({
+          id: "external-link",
+          severity: "error",
+          message: error?.message || "That documentation link could not be opened.",
+        }));
       }
     });
     byId("frame-toggle").addEventListener("click", toggleFramePopover);

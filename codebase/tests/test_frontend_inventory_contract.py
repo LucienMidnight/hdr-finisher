@@ -11,6 +11,7 @@ CONTRACT_MODULES = {
     "test_frontend_presentation_contract.py",
     "test_frontend_render_pipeline_contract.py",
     "test_frontend_source_workflow_contract.py",
+    "test_frontend_status_contract.py",
 }
 
 
@@ -34,5 +35,5 @@ def test_frontend_contract_split_preserves_the_reviewed_inventory() -> None:
             and node.name.startswith("test_")
         )
 
-    assert len(test_names) == 101
+    assert len(test_names) == 105
     assert len(test_names) == len(set(test_names))

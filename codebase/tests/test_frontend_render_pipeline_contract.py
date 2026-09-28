@@ -557,9 +557,14 @@ def test_desktop_source_open_handoffs_surface_failures() -> None:
 
 def test_project_open_shows_immediate_loading_feedback() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    status = javascript[javascript.index("function beginProjectOpenStatus(") : javascript.index("function sourcePixelFrameDimensions(")]
+    project_open = javascript[javascript.index("async function openProjectFromPath(") : javascript.index("async function saveProjectToPath(")]
 
-    assert "setIndeterminatePreviewMessage(`Opening project" in javascript
-    assert "els.projectOpen.disabled = true;" in javascript
+    assert 'id: "project-open"' in status
+    assert 'severity: "progress"' in status
+    assert "`Opening project · ${label}" in status
+    assert "els.projectOpen.disabled = true;" in project_open
+    assert project_open.index("beginProjectOpenStatus(") < project_open.index("window.requestAnimationFrame(resolve)")
 
 def test_phase_one_local_influence_and_latest_generation_contract() -> None:
     javascript = (FRONTEND / "app.js").read_text(encoding="utf-8")
