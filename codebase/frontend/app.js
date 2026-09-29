@@ -287,8 +287,8 @@ let pathMarchingAntFrame = 0;
 
 const defaultDenoiseDocument = () => ({
   schema_version: 1,
-  hdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0.5, finest_noise: 0.5, fine_noise: 0.5, medium_noise: 0.5, coarse_noise: 0.5 }, analysis: { algorithm_version: "adaptive-atrous-v1", preset: "photo_fine", levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035 } },
-  sdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0.5, finest_noise: 0.5, fine_noise: 0.5, medium_noise: 0.5, coarse_noise: 0.5 }, analysis: { algorithm_version: "adaptive-atrous-v1", preset: "photo_fine", levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035 } },
+  hdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0, finest_noise: 0.5, fine_noise: 0.5, medium_noise: 0.5, coarse_noise: 0.5 }, analysis: { algorithm_version: "adaptive-atrous-v1", preset: "photo_fine", levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035 } },
+  sdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0, finest_noise: 0.5, fine_noise: 0.5, medium_noise: 0.5, coarse_noise: 0.5 }, analysis: { algorithm_version: "adaptive-atrous-v1", preset: "photo_fine", levels: 2, noise_threshold: 3, luma_sigma: 0.035, chroma_sigma: 0.035 } },
 });
 
 // The measured method is the default for new work; the original wavelet stays
@@ -355,6 +355,7 @@ const state = {
   localBrushPreviewPinned: false,
   localBrushVisibleBounds: null,
   localAdjustmentMenuId: null,
+  localRenameId: null,
   localMaskDraftDirty: false,
   localMaskDraftTimer: 0,
   localMaskDraftController: null,
@@ -1577,7 +1578,6 @@ const els = {
   localEmpty: document.getElementById("local-empty"),
   localEditor: document.getElementById("local-editor"),
   localCompare: document.getElementById("local-compare"),
-  localRename: document.getElementById("local-rename"),
   localDuplicate: document.getElementById("local-duplicate"),
   localAddAdjustment: document.getElementById("local-add-adjustment"),
   localGizmoToggle: document.getElementById("local-gizmo-toggle"),
@@ -13922,13 +13922,17 @@ function cancelLocalPathDraft() {
 
 function beginPendingLocalAdjustment() {
   if (state.pendingLocalAdjustment) return state.pendingLocalAdjustment;
+  const currentLocal = selectedLocal();
   const number = localAdjustments().length + 1;
   state.pendingLocalAdjustment = {
     id: crypto.randomUUID(),
     name: `Local Adjustment ${number}`,
   };
   state.pendingSubMask = null;
-  state.selectedLocalId = state.pendingLocalAdjustment.id;
+  // Keep the existing editor mounted while the new row waits for a mask
+  // choice. Collapsing it makes the entire grade rail jump to a new scroll
+  // position even though only the adjustment stack changed.
+  if (!currentLocal) state.selectedLocalId = state.pendingLocalAdjustment.id;
   state.selectedSubMaskId = null;
   state.localTool = null;
   return state.pendingLocalAdjustment;
@@ -14117,11 +14121,29 @@ function bindLocalAdjustmentEvents() {
     }
     const button = event.target.closest("button[data-local-id]");
     if (!button) return;
-    state.selectedLocalId = button.dataset.localId;
-    state.selectedSubMaskId = button.dataset.subMaskId || null;
+    const localId = button.dataset.localId;
+    const subMaskId = button.dataset.subMaskId || null;
+    const selectionChanged = state.selectedLocalId !== localId || state.selectedSubMaskId !== subMaskId;
+    state.selectedLocalId = localId;
+    state.selectedSubMaskId = subMaskId;
     state.localCreationTool = null;
     state.localTool = selectedMaskLeaf()?.type || null;
     state.localAdjustmentMenuId = null;
+    if (!subMaskId && event.detail >= 2 && localAdjustments().some((item) => item.id === localId)) {
+      state.localRenameId = localId;
+      renderLocalAdjustments();
+      return;
+    }
+    state.localRenameId = null;
+    if (selectionChanged) renderLocalAdjustments();
+  });
+  els.localAdjustmentList?.addEventListener("dblclick", (event) => {
+    if (event.target.closest("input, .local-adjustment-bypass, .local-adjustment-menu-button")) return;
+    const button = event.target.closest("button[data-local-id]:not([data-sub-mask-id])");
+    if (!button || !localAdjustments().some((item) => item.id === button.dataset.localId)) return;
+    state.selectedLocalId = button.dataset.localId;
+    state.selectedSubMaskId = null;
+    state.localRenameId = button.dataset.localId;
     renderLocalAdjustments();
   });
   document.addEventListener("pointerdown", (event) => {
@@ -14170,18 +14192,6 @@ function bindLocalAdjustmentEvents() {
     control.addEventListener("change", () => commitSelectedLocal({ refreshPreview: false }));
     bindLocalPreviewInteraction(control);
   });
-  els.localRename?.addEventListener("click", async () => {
-    const local = selectedLocal();
-    if (!local) return;
-    const name = (await window.HDRDialogs.prompt(
-      "Local adjustment name", local.name,
-      { title: "Rename adjustment", confirmLabel: "Rename" },
-    ))?.trim();
-    if (name) {
-      local.name = name;
-      commitSelectedLocal();
-    }
-  });
   els.localDuplicate?.addEventListener("click", async () => {
     const local = selectedLocal();
     if (!local) return;
@@ -14195,10 +14205,20 @@ function bindLocalAdjustmentEvents() {
   });
   els.localAddAdjustment?.addEventListener("click", async () => {
     if (!state.session) return;
+    const gradeRail = els.localPanel?.closest(".grade-rail");
+    const scrollTop = gradeRail?.scrollTop ?? 0;
     beginPendingLocalAdjustment();
     const type = state.localCreationTool;
     if (type) await assignToolToPending(type);
     renderLocalAdjustments();
+    const restoreScroll = () => {
+      if (gradeRail) gradeRail.scrollTop = scrollTop;
+    };
+    restoreScroll();
+    requestAnimationFrame(() => {
+      restoreScroll();
+      requestAnimationFrame(restoreScroll);
+    });
   });
   els.localInvert?.addEventListener("click", () => {
     const local = selectedLocal();
@@ -14210,9 +14230,9 @@ function bindLocalAdjustmentEvents() {
     commitSelectedLocal();
   });
   els.localDelete?.addEventListener("click", async () => {
-    if (state.pendingLocalAdjustment && state.selectedLocalId === state.pendingLocalAdjustment.id) {
+    if (state.pendingLocalAdjustment) {
       state.pendingLocalAdjustment = null;
-      state.selectedLocalId = localAdjustments()[0]?.id || null;
+      if (!selectedLocal()) state.selectedLocalId = localAdjustments()[0]?.id || null;
       renderLocalAdjustments();
       return;
     }
@@ -14382,6 +14402,61 @@ function regenerateMaskExpressionIds(expression) {
   maskExpression.regenerateIds(expression, () => crypto.randomUUID());
 }
 
+function finishInlineLocalRename(local, input, { cancel = false } = {}) {
+  if (!local || input.dataset.finished === "true") return;
+  input.dataset.finished = "true";
+  const name = input.value.trim();
+  state.localRenameId = null;
+  if (!cancel && name && name !== local.name) {
+    local.name = name;
+    renderLocalAdjustments();
+    void commitSelectedLocal();
+    return;
+  }
+  renderLocalAdjustments();
+}
+
+function createLocalAdjustmentCopy({ title, subtitle }) {
+  const copy = document.createElement("span");
+  copy.className = "local-adjustment-copy";
+  const name = document.createElement("span");
+  name.textContent = title;
+  copy.append(name);
+  const detail = document.createElement("small");
+  detail.textContent = subtitle;
+  copy.append(detail);
+  return copy;
+}
+
+function appendInlineLocalRenameEditor(item, local) {
+  if (!item || !local || state.localRenameId !== local.id) return;
+  const input = document.createElement("input");
+  input.className = "local-adjustment-name-input";
+  input.type = "text";
+  input.value = local.name;
+  input.setAttribute("aria-label", "Local adjustment name");
+  input.addEventListener("pointerdown", (event) => event.stopPropagation());
+  input.addEventListener("click", (event) => event.stopPropagation());
+  input.addEventListener("dblclick", (event) => event.stopPropagation());
+  input.addEventListener("keydown", (event) => {
+    event.stopPropagation();
+    if (event.key === "Enter") {
+      event.preventDefault();
+      finishInlineLocalRename(local, input);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      finishInlineLocalRename(local, input, { cancel: true });
+    }
+  });
+  input.addEventListener("blur", () => finishInlineLocalRename(local, input));
+  item.append(input);
+  requestAnimationFrame(() => {
+    if (!input.isConnected) return;
+    input.focus({ preventScroll: true });
+    input.select();
+  });
+}
+
 function renderLocalAdjustments() {
   if (!els.localAdjustmentList) return;
   const locals = localAdjustments();
@@ -14390,6 +14465,9 @@ function renderLocalAdjustments() {
   const validMenuIds = new Set(locals.flatMap((local) => [local.id, ...subMaskRows(local.mask).map((entry) => entry.id)]));
   if (state.localAdjustmentMenuId && !validMenuIds.has(state.localAdjustmentMenuId)) {
     state.localAdjustmentMenuId = null;
+  }
+  if (state.localRenameId && !locals.some((local) => local.id === state.localRenameId)) {
+    state.localRenameId = null;
   }
   els.localAdjustmentList.innerHTML = "";
   const appendRow = (local, { subMask = null, pending = null } = {}) => {
@@ -14408,13 +14486,15 @@ function renderLocalAdjustments() {
       button.dataset.subMaskId = pending.id;
     }
     const active = pending
-      ? (pending.parentLocalId ? state.selectedSubMaskId === pending.id : state.selectedLocalId === pending.id)
-      : local?.id === state.selectedLocalId && (subMask ? subMask.id === state.selectedSubMaskId : !state.selectedSubMaskId);
+      ? (pending.parentLocalId ? state.selectedSubMaskId === pending.id : state.pendingLocalAdjustment?.id === pending.id)
+      : local?.id === state.selectedLocalId
+        && !(!subMask && state.pendingLocalAdjustment)
+        && (subMask ? subMask.id === state.selectedSubMaskId : !state.selectedSubMaskId);
     button.classList.toggle("active", active);
     const leaf = subMask ? firstMaskLeaf(subMask.expression) : firstMaskLeaf(local?.mask);
     const title = pending?.name || (subMask ? `Sub-mask ${subMaskRows(local.mask).findIndex((entry) => entry.id === subMask.id) + 1}` : local.name);
     const subtitle = pending ? "Pick a tool" : localMaskTypeLabel(leaf?.type || "mask");
-    button.innerHTML = `<span class="local-adjustment-copy"><span>${escapeHtml(title)}</span><small>${escapeHtml(subtitle)}</small></span>`;
+    button.append(createLocalAdjustmentCopy({ title, subtitle }));
     if (pending) {
       els.localAdjustmentList.append(item);
       item.append(button);
@@ -14443,6 +14523,7 @@ function renderLocalAdjustments() {
     menuButton.title = `More actions for ${title}`;
     menuButton.textContent = "⋯";
     item.append(button, bypassButton, menuButton);
+    if (!subMask) appendInlineLocalRenameEditor(item, local);
     if (state.localAdjustmentMenuId === menuId) {
       const menu = document.createElement("div");
       menu.className = "local-adjustment-menu";
@@ -14497,9 +14578,9 @@ function renderLocalAdjustments() {
   const pendingSelected = state.pendingLocalAdjustment?.id === state.selectedLocalId
     || state.pendingSubMask?.id === state.selectedSubMaskId;
   els.localEditor?.classList.toggle("hidden", !local || pendingSelected);
+  els.localMaskFooterActions?.classList.toggle("hidden", !local || pendingSelected);
   const selectedIndex = local ? locals.findIndex((item) => item.id === local.id) : -1;
   if (els.localAddAdjustment) els.localAddAdjustment.disabled = !state.session;
-  if (els.localRename) els.localRename.disabled = !local || Boolean(state.selectedSubMaskId);
   if (els.localDuplicate) els.localDuplicate.disabled = !local || Boolean(state.selectedSubMaskId);
   if (els.localDelete) els.localDelete.disabled = !local && !pendingSelected;
   if (els.localMoveUp) els.localMoveUp.disabled = !local || Boolean(state.selectedSubMaskId) || selectedIndex <= 0;
@@ -14757,7 +14838,7 @@ function renderMaskTreeEditor(local) {
       leaf.strokes = [];
       commitSelectedLocal();
     });
-    actions.append(els.localInvert, clearStrokes, undoStroke);
+    actions.append(clearStrokes, undoStroke);
     els.localInvert.textContent = selectedMaskExpression(local)?.inverted ? "Restore Mask" : "Invert Mask";
     els.localInvert.disabled = !hasStrokes;
     maskPanel.append(actions);
@@ -16355,6 +16436,15 @@ function pathTargetAtPointer(event, nodes, selectedIndex) {
     const display = sourcePointToDisplay(point);
     return display ? { x: rect.left + display.x * rect.width, y: rect.top + display.y * rect.height } : null;
   };
+  // A visible node is the user's primary target. Check every node before the
+  // selected node's Bezier handles so a handle that overlaps a neighbouring
+  // node cannot keep the old Smooth node selected or make Smooth feel like a
+  // persistent tool mode.
+  for (let index = 0; index < nodes.length; index += 1) {
+    const position = screen(nodes[index]);
+    if (!position) return null;
+    if (Math.hypot(px - position.x, py - position.y) <= 14) return { type: "node", index };
+  }
   const selected = selectedIndex === null ? null : nodes[selectedIndex];
   if (selected) {
     for (const handle of ["in", "out"]) {
@@ -16363,11 +16453,6 @@ function pathTargetAtPointer(event, nodes, selectedIndex) {
       if (!position) return null;
       if (Math.hypot(px - position.x, py - position.y) <= 14) return { type: "handle", index: selectedIndex, handle };
     }
-  }
-  for (let index = 0; index < nodes.length; index += 1) {
-    const position = screen(nodes[index]);
-    if (!position) return null;
-    if (Math.hypot(px - position.x, py - position.y) <= 14) return { type: "node", index };
   }
   let nearest = null;
   for (let segment = 0; segment < nodes.length; segment += 1) {

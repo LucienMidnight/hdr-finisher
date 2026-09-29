@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from hdr_finisher.models import DenoiseDocumentSettings, EditCommand
+from hdr_finisher.models import DenoiseDocumentSettings, DenoiseLiveControls, EditCommand
 from hdr_finisher.projects import open_project, save_project
 from hdr_finisher.sessions import SessionStore
 
@@ -18,6 +18,7 @@ def test_denoise_settings_are_versioned_undoable_and_project_persistent(tmp_path
     settings = DenoiseDocumentSettings()
     settings.hdr.enabled = True
     settings.hdr.controls.amount = 0.73
+    settings.hdr.controls.detail_recovery = 0.63
 
     changed = store.apply_edit_commands(
         payload.session_id,
@@ -30,6 +31,7 @@ def test_denoise_settings_are_versioned_undoable_and_project_persistent(tmp_path
     assert changed.document.denoise.schema_version == 1
     assert changed.document.denoise.hdr.enabled is True
     assert changed.document.denoise.hdr.controls.amount == 0.73
+    assert changed.document.denoise.hdr.controls.detail_recovery == 0.63
 
     undone = store.apply_edit_commands(
         payload.session_id,
@@ -49,6 +51,13 @@ def test_denoise_settings_are_versioned_undoable_and_project_persistent(tmp_path
     assert reopened.denoise.schema_version == 1
     assert reopened.denoise.hdr.enabled is True
     assert reopened.denoise.hdr.controls.amount == 0.73
+    assert reopened.denoise.hdr.controls.detail_recovery == 0.63
+
+
+def test_new_denoise_settings_default_detail_recovery_to_zero() -> None:
+    settings = DenoiseDocumentSettings()
+    assert settings.hdr.controls.detail_recovery == 0.0
+    assert settings.sdr.controls.detail_recovery == 0.0
 
 
 def test_denoise_analysis_accepts_planned_wavelet_methods_and_custom_scales() -> None:
@@ -67,8 +76,6 @@ def test_denoise_analysis_accepts_planned_wavelet_methods_and_custom_scales() ->
 
 
 def test_documents_saved_before_finest_keep_their_fine_setting_on_it() -> None:
-    from hdr_finisher.models import DenoiseLiveControls
-
     old = DenoiseLiveControls.model_validate({"fine_noise": 0.76, "medium_noise": 0.16})
     assert old.finest_noise == 0.76 and old.fine_noise == 0.76
     both = DenoiseLiveControls.model_validate({"finest_noise": 0.9, "fine_noise": 0.3})

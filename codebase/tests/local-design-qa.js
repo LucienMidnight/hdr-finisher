@@ -229,7 +229,7 @@ function assert(condition, message) {
 
     const panelBox = await page.locator("#local-adjustments-panel").boundingBox();
     const headingBox = await page.locator(".local-section-heading").first().boundingBox();
-    const actionsBox = await page.locator(".local-stack-secondary-actions").boundingBox();
+    const actionsBox = await page.locator(".local-stack-primary-actions").boundingBox();
     await page.screenshot({
       path: implementationPath,
       clip: {

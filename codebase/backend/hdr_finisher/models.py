@@ -870,7 +870,7 @@ class DenoiseLiveControls(BaseModel):
     amount: float = Field(default=0.5, ge=0.0, le=1.0)
     luminance: float = Field(default=0.5, ge=0.0, le=1.0)
     color_noise: float = Field(default=0.5, ge=0.0, le=1.0)
-    detail_recovery: float = Field(default=0.5, ge=0.0, le=1.0)
+    detail_recovery: float = Field(default=0.0, ge=0.0, le=1.0)
     # Adaptive only: strength by noise size, 0.5 being the measured amount.
     # Finest covers ~1-2 px, fine ~2-4 px, medium ~8 px, coarse ~16-32 px.
     finest_noise: float = Field(default=0.5, ge=0.0, le=1.0)

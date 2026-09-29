@@ -65,6 +65,8 @@ function assert(condition, message) {
 
     assert(await shown("denoise-amount"), "Amount is not always visible.");
     assert(await shown("denoise-detail"), "Detail Recovery is not always visible.");
+    assert(await page.locator("#denoise-detail").inputValue() === "0", "A new project did not start Detail Recovery at 0%.");
+    assert(await page.locator("#denoise-detail-value").textContent() === "0%", "The new Detail Recovery default was not displayed as 0%.");
     assert(await shown("denoise-algorithm"), "The method selector is not visible.");
     // The wavelet presets belong to the legacy method: hidden under Adaptive,
     // back as soon as the legacy method is chosen.

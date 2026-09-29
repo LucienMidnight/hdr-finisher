@@ -29,6 +29,7 @@
     "test:media-browser-preview": "node tests/media-browser-preview-interaction.js",
     "test:export-presets": "node tests/export-presets-interaction.js",
     "test:local-design": "node tests/local-design-qa.js",
+    "test:local-usability": "node tests/local-adjustment-usability.js",
     "test:workflow-overlays": "node tests/workflow-stage-overlays.js",
     "test:scope-region": "node tests/scope-region-interaction.js",
     "test:startup-state": "node tests/startup-state.js",

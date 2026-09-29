@@ -48,7 +48,7 @@ class ResolveControls:
     amount: float = 0.5
     luminance: float = 0.5
     color_noise: float = 0.5
-    detail_recovery: float = 0.5
+    detail_recovery: float = 0.0
 
 
 @dataclass(frozen=True)

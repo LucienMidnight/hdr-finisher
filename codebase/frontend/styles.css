@@ -1848,6 +1848,10 @@ body[data-active-lane="sdr"] .lane-dot {
   border-radius: 0;
   background: var(--hf-chassis);
   scrollbar-color: var(--border) var(--panel);
+  /* Stack rows are inserted above the focused toolbar. Browser scroll
+     anchoring must not move the surrounding control panel when that happens;
+     the stack owns its own overflow. */
+  overflow-anchor: none;
 }
 
 .grade-header {
@@ -4800,6 +4804,24 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
   font-size: 10px;
 }
 
+.local-adjustment-name-input {
+  position: absolute;
+  z-index: 3;
+  top: 6px;
+  right: 72px;
+  left: 8px;
+  height: 21px;
+  min-width: 0;
+  padding: 1px 5px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  color: var(--text);
+  background: var(--deep);
+  font: 600 11px var(--sans);
+  outline: 0;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 45%);
+}
+
 .local-adjustment-list .local-adjustment-menu-button {
   position: absolute;
   z-index: 2;
@@ -4895,21 +4917,40 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 }
 
 .local-action-row {
-  gap: 5px;
+  gap: 0;
   margin: 5px 0;
+  justify-content: flex-start;
 }
 
-.local-action-row button {
+.local-stack-primary-actions button {
+  position: relative;
+  flex: 0 0 38px;
   min-height: 29px;
-  border-color: var(--local-button-border);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
   color: var(--local-button-text);
-  background: var(--local-button-background);
+  background: transparent;
+}
+
+.local-stack-primary-actions button:hover:not(:disabled),
+.local-stack-primary-actions button:focus-visible {
+  color: var(--accent-strong);
+  background: var(--accent-bed);
+}
+
+.local-stack-primary-actions #local-delete,
+.local-stack-primary-actions #local-duplicate,
+.local-stack-primary-actions #local-move-up,
+.local-stack-primary-actions #local-move-down {
+  border-left: 1px solid var(--local-button-border);
 }
 
 .local-stack-primary-actions #local-add-adjustment { order: 1; }
 .local-stack-primary-actions #local-delete { order: 2; }
 .local-stack-primary-actions #local-duplicate { order: 3; }
-.local-stack-primary-actions #local-rename { order: 4; }
+.local-stack-primary-actions #local-move-up { order: 4; }
+.local-stack-primary-actions #local-move-down { order: 5; }
 
 #local-duplicate,
 #local-move-up,
@@ -4929,10 +4970,6 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 .local-move-up-icon,
 .local-move-down-icon {
   font-size: 15px;
-}
-
-.local-stack-secondary-actions {
-  justify-content: flex-start;
 }
 
 .local-mask-tree {
@@ -4992,7 +5029,7 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 }
 
 .local-brush-actions button:last-child {
-  grid-column: 1 / -1;
+  grid-column: auto;
 }
 
 .local-brush-actions #local-invert[aria-pressed="true"] {
@@ -5003,6 +5040,14 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 
 .local-mask-footer-actions {
   display: grid;
+}
+
+.local-mask-top-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin: 7px 0 5px;
+  padding: 0;
+  border-top: 0;
 }
 
 .local-lane-folder {

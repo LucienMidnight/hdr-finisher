@@ -665,7 +665,7 @@
                that measurement is deferred with DENOISE-01 -- so renaming it
                now would be the one thing 6.3 rules out. -->
           <div class="control-row"><div class="control-heading"><label for="denoise-amount">Amount</label><output id="denoise-amount-value">50%</output></div><input id="denoise-amount" type="range" min="0" max="1" step="0.01" value="0.5"></div>
-          <div class="control-row"><div class="control-heading"><label for="denoise-detail">Detail Recovery</label><output id="denoise-detail-value">50%</output></div><input id="denoise-detail" type="range" min="0" max="1" step="0.01" value="0.5"></div>
+          <div class="control-row"><div class="control-heading"><label for="denoise-detail">Detail Recovery</label><output id="denoise-detail-value">0%</output></div><input id="denoise-detail" type="range" min="0" max="1" step="0.01" value="0"></div>
           <button id="denoise-advanced-toggle" class="disclosure-trigger" type="button" aria-expanded="false" aria-controls="denoise-advanced-panel">
             <span>Advanced</span>
           </button>
@@ -717,23 +717,20 @@
           <ol id="local-adjustment-list" class="local-adjustment-list" aria-label="Local adjustment stack"></ol>
           <div id="local-empty" class="local-empty">Choose a mask tool, then press + — or press + first and pick a tool.</div>
         </div>
+        <div id="local-mask-footer-actions" class="local-mask-footer-actions local-mask-top-actions hidden">
+          <button id="local-gizmo-toggle" type="button" aria-pressed="false">Hide gizmo</button>
+          <button id="local-invert" type="button" aria-pressed="false">Invert mask</button>
+        </div>
         <div class="local-action-row local-stack-primary-actions">
-          <button id="local-rename" type="button">Rename</button>
           <button id="local-duplicate" type="button"><span class="local-duplicate-icon" aria-hidden="true"></span><span class="local-action-label">Duplicate</span></button>
           <button id="local-delete" class="local-stack-icon-button" type="button" aria-label="Remove selected local adjustment" title="Remove selected local adjustment">−</button>
           <button id="local-add-adjustment" class="local-stack-icon-button" type="button" aria-label="Add local adjustment" title="Add local adjustment">+</button>
-        </div>
-        <div class="local-action-row local-stack-secondary-actions">
           <button id="local-move-up" type="button" aria-label="Move local adjustment up" title="Move local adjustment up"><span class="local-move-up-icon" aria-hidden="true"></span></button>
           <button id="local-move-down" type="button" aria-label="Move local adjustment down" title="Move local adjustment down"><span class="local-move-down-icon" aria-hidden="true"></span></button>
         </div>
         <div id="local-editor" class="local-editor hidden">
           <div class="local-mask-tree">
             <div id="local-mask-tree-summary"></div>
-            <div id="local-mask-footer-actions" class="local-mask-footer-actions">
-              <button id="local-gizmo-toggle" type="button" aria-pressed="false">Hide gizmo</button>
-              <button id="local-invert" type="button" aria-pressed="false">Invert painted mask</button>
-            </div>
           </div>
           <div id="local-gradient-controls" class="local-gradient-controls hidden" aria-live="polite"></div>
           <div class="local-lane-folder">

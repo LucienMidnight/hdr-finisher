@@ -2631,7 +2631,7 @@
         && denoiseSelector.original.height === proxy.height,
       );
       const denoiseControls = denoiseSelector?.controls
-        || { amount: 0.5, luminance: 0.5, colorNoise: 0.5, detailRecovery: 0.5 };
+        || { amount: 0.5, luminance: 0.5, colorNoise: 0.5, detailRecovery: 0 };
       // Show noise differences the original against this generation's own
       // reconstruction, so whether anything was removed is decided here.
       const noiseView = params[NOISE_VIEW_INDEX] > 0;
@@ -4269,7 +4269,7 @@
           amount: controls.amount ?? 0.5,
           luminance: controls.luminance ?? 0.5,
           colorNoise: controls.colorNoise ?? controls.color_noise ?? 0.5,
-          detailRecovery: controls.detailRecovery ?? controls.detail_recovery ?? 0.5,
+          detailRecovery: controls.detailRecovery ?? controls.detail_recovery ?? 0,
           finestNoise: controls.finestNoise ?? controls.finest_noise ?? controls.fineNoise ?? controls.fine_noise ?? 0.5,
           fineNoise: controls.fineNoise ?? controls.fine_noise ?? 0.5,
           mediumNoise: controls.mediumNoise ?? controls.medium_noise ?? 0.5,
@@ -4450,7 +4450,7 @@
         amount: controls.amount ?? 0.5,
         luminance: controls.luminance ?? 0.5,
         colorNoise: controls.colorNoise ?? controls.color_noise ?? 0.5,
-        detailRecovery: controls.detailRecovery ?? controls.detail_recovery ?? 0.5,
+        detailRecovery: controls.detailRecovery ?? controls.detail_recovery ?? 0,
       });
     }
 
