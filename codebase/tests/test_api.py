@@ -459,6 +459,86 @@ def test_local_mask_draft_matches_the_same_mask_after_commit() -> None:
     assert draft.content == settled.content
 
 
+
+def test_uncommitted_path_draft_matches_its_spatial_mask_and_checks_geometry() -> None:
+    """The GPU rasterizes a leaf the backend has not acknowledged through the
+    draft endpoint. It must equal the spatial mask that leaf gets once
+    committed, and must refuse a stale geometry the way the GET endpoint does."""
+    upload = client.post("/api/session", files={"file": ("path.png", make_png_bytes(), "image/png")})
+    assert upload.status_code == 200
+    session_id = upload.json()["session"]["session_id"]
+    sharp = lambda x, y: {"x": x, "y": y, "node_type": "sharp"}  # noqa: E731
+    mask = {
+        "operator": "leaf",
+        "leaf": {
+            "type": "path",
+            "nodes": [sharp(0.3, 0.3), sharp(0.7, 0.3), sharp(0.65, 0.7), sharp(0.35, 0.7)],
+            "feather": 0.05,
+            "feather_softness": 1.0,
+            "mask_opacity": 0.6,
+        },
+    }
+    created = client.post(
+        f"/api/session/{session_id}/edit-commands",
+        json={"commands": [{
+            "expected_revision": 0,
+            "command_type": "create_local",
+            "payload": {"local": {"id": "path-mask", "name": "Path", "mask": mask}},
+        }]},
+    )
+    assert created.status_code == 200
+    revision = created.json()["revision"]
+    geometry = created.json()["document"]["global_adjustments"]["shared"]["geometry"]
+    geometry_signature = json.dumps(geometry, separators=(",", ":"))
+
+    # A wider Feather that is still only on the client.
+    widened = json.loads(json.dumps(mask))
+    widened["leaf"]["feather"] = 0.12
+    widened["leaf"]["mask_opacity"] = 1.0
+    draft = client.post(
+        f"/api/session/{session_id}/local-mask/path-mask/preview",
+        json={"mask": widened, "edit_revision": revision, "long_edge": 256, "geometry_signature": geometry_signature},
+    )
+    assert draft.status_code == 200
+    assert draft.headers["x-geometry-signature"] == geometry_signature
+    committed_before = client.get(
+        f"/api/session/{session_id}/local-mask/path-mask",
+        params={"long_edge": 256, "edit_revision": revision, "spatial_only": True},
+    )
+    assert committed_before.status_code == 200
+    assert draft.content != committed_before.content
+
+    stale_geometry = dict(geometry, crop={"x": 0.1, "y": 0.0, "width": 0.9, "height": 1.0})
+    stale = client.post(
+        f"/api/session/{session_id}/local-mask/path-mask/preview",
+        json={
+            "mask": widened,
+            "edit_revision": revision,
+            "long_edge": 256,
+            "geometry_signature": json.dumps(stale_geometry, separators=(",", ":")),
+        },
+    )
+    assert stale.status_code == 409
+
+    committed_local = created.json()["document"]["local_adjustments"][0]
+    committed_local["mask"]["leaf"]["feather"] = 0.12
+    updated = client.post(
+        f"/api/session/{session_id}/edit-commands",
+        json={"commands": [{
+            "expected_revision": revision,
+            "command_type": "update_local",
+            "target_id": "path-mask",
+            "payload": {"local": committed_local},
+        }]},
+    )
+    assert updated.status_code == 200
+    settled = client.get(
+        f"/api/session/{session_id}/local-mask/path-mask",
+        params={"long_edge": 256, "edit_revision": updated.json()["revision"], "spatial_only": True},
+    )
+    assert settled.status_code == 200
+    assert draft.content == settled.content
+
 def test_local_mask_graph_leaves_are_addressable_as_retained_spatial_masks() -> None:
     upload = client.post("/api/session", files={"file": ("mask-graph.png", make_png_bytes(), "image/png")})
     assert upload.status_code == 200

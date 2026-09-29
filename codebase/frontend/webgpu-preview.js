@@ -6009,8 +6009,19 @@
         );
       }
       const maskSignature = gpuMaskIdentity(expression);
+      // The mask endpoint rasterizes the backend's committed local, and the
+      // edit revision only moves when a commit lands. While a mask control is
+      // being dragged the leaf here is newer than that, so a plain fetch would
+      // return the committed mask and cache it under this leaf's identity,
+      // where every later frame at this resolution reuses it. Rasterize the
+      // requested leaf itself until the backend has acknowledged it.
+      const acknowledged = this.acknowledgedMaskSignature?.(local.id, maskPath);
+      const draftExpression = acknowledged !== undefined && acknowledged !== spatialMaskSignature(expression)
+        ? spatialLeafExpression(expression)
+        : null;
       return maskLoader().loadCpuMaskLeaf(this, {
         sessionId, local, maskPath, longEdge, editRevision, geometrySignature, maskSignature, isCurrent, signal,
+        draftExpression,
       });
     }
 
@@ -7071,6 +7082,20 @@
     });
   }
 
+  function spatialLeafExpression(expression) {
+    if (expression?.operator !== "leaf" || !expression.leaf) return expression;
+    return { ...expression, leaf: { ...expression.leaf, mask_opacity: 1 } };
+  }
+
+  /** Key-order independent spatial identity, comparable with a backend document. */
+  function spatialMaskSignature(expression) {
+    return JSON.stringify(gpuMaskRenderPayload(spatialLeafExpression(expression)) ?? null, (key, entry) => (
+      entry && typeof entry === "object" && !Array.isArray(entry)
+        ? Object.fromEntries(Object.keys(entry).sort().map((name) => [name, entry[name]]))
+        : entry
+    ));
+  }
+
   function gpuMaskRenderPayload(expression) {
     if (!expression) return expression;
     const { id, children, ...payload } = expression;
@@ -7183,6 +7208,7 @@
     return 0;
   }
 
+  HDRWebGPUPreview.spatialMaskSignature = spatialMaskSignature;
   window.HDRWebGPUPreview = HDRWebGPUPreview;
 
 })();

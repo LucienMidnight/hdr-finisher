@@ -1410,6 +1410,8 @@ def local_mask_preview_proxy(
     """Compile a live mask-control draft without changing edit history."""
     session = _checked_edit_session(session_id, request.edit_revision)
     _checked_mask_local(session, local_id)
+    if request.adjustments is None:
+        _check_mask_geometry(session, request.geometry_signature)
     _guard_preview_resources(session, request.long_edge)
     started = perf_counter()
     mask = session.render_cache.compiled_mask_draft(
@@ -1428,6 +1430,8 @@ def local_mask_preview_proxy(
             "X-Pixel-Format": "r8unorm",
             "X-Local-Adjustment": local_id,
             "X-Mask-Preview": "draft",
+            "X-Geometry-Signature": request.geometry_signature
+            or (request.adjustments or session.adjustments).shared.geometry.model_dump_json(),
             "X-CPU-Mask-Ms": f"{cpu_mask_ms:.3f}",
         },
     )

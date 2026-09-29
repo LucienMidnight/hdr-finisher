@@ -18,6 +18,7 @@
     maskSignature,
     isCurrent = () => true,
     signal = undefined,
+    draftExpression = null,
   }) {
     const key = `${sessionId}:${longEdge}:${geometrySignature}:cpu-spatial-leaf:${maskSignature}`;
     const cached = renderer.localMasks.get(key);
@@ -32,10 +33,25 @@
     const pending = (async () => {
       const pathQuery = maskPath ? `&mask_path=${encodeURIComponent(maskPath)}` : "";
       const startedAt = performance.now();
-      const response = await fetch(
-        `/api/session/${sessionId}/local-mask/${encodeURIComponent(local.id)}?long_edge=${longEdge}&edit_revision=${editRevision}&geometry_signature=${encodeURIComponent(geometrySignature)}&spatial_only=true${pathQuery}`,
-        { signal },
-      );
+      // A leaf the backend has not committed yet is rasterized from the
+      // request itself; the committed endpoint would answer with the older
+      // mask while this key names the newer one.
+      const response = draftExpression
+        ? await fetch(`/api/session/${sessionId}/local-mask/${encodeURIComponent(local.id)}/preview`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mask: draftExpression,
+            edit_revision: editRevision,
+            long_edge: longEdge,
+            geometry_signature: geometrySignature,
+          }),
+          signal,
+        })
+        : await fetch(
+          `/api/session/${sessionId}/local-mask/${encodeURIComponent(local.id)}?long_edge=${longEdge}&edit_revision=${editRevision}&geometry_signature=${encodeURIComponent(geometrySignature)}&spatial_only=true${pathQuery}`,
+          { signal },
+        );
       // A refused or stale mask still owns its body: a native-edge mask is tens
       // of MB, and leaving it unread holds an HTTP/1.1 connection (§15.56).
       if (!response.ok || response.headers.get("X-Geometry-Signature") !== geometrySignature) {
@@ -78,6 +94,7 @@
           cpuMaskMs: Number(response.headers.get("X-CPU-Mask-Ms")) || null,
           requestMs: performance.now() - startedAt,
           cpuMaskRequest: true,
+          draft: Boolean(draftExpression),
         });
       }
       return entry;

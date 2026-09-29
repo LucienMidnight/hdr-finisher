@@ -179,3 +179,35 @@ test("a superseded tile batch publishes none of its decoded entries", async () =
   assert.equal(target.maskTiles.size, 0);
   assert.equal(target.writes.length, 0);
 });
+
+test("an unacknowledged leaf is rasterized from the request, not the committed mask", async () => {
+  const target = renderer();
+  const calls = [];
+  context.fetch = async (url, init = {}) => {
+    calls.push({ url, init });
+    return {
+      ok: true,
+      headers: { get: (name) => ({
+        "X-Geometry-Signature": "{}",
+        "X-Image-Width": "2",
+        "X-Image-Height": "2",
+      }[name] || null) },
+      arrayBuffer: async () => new Uint8Array([0, 64, 128, 255]).buffer,
+    };
+  };
+  const draftExpression = { operator: "leaf", leaf: { type: "path", feather: 0.2, mask_opacity: 1 } };
+
+  const entry = await request(target, { draftExpression });
+
+  assert.ok(entry);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "/api/session/session/local-mask/local-1/preview");
+  assert.equal(calls[0].init.method, "POST");
+  assert.deepEqual(JSON.parse(calls[0].init.body), {
+    mask: draftExpression,
+    edit_revision: 4,
+    long_edge: 2048,
+    geometry_signature: "{}",
+  });
+  assert.equal(target.localMasks.size, 1);
+});

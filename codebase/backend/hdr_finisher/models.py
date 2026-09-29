@@ -1198,6 +1198,7 @@ class LocalMaskPreviewRequest(BaseModel):
     adjustments: AdjustmentState | None = None
     edit_revision: int | None = Field(default=None, ge=0)
     long_edge: int = Field(default=1600, ge=256, le=16384)
+    geometry_signature: str | None = None
 
 
 MAX_MASK_TILE_BATCH_ENTRIES = 64
