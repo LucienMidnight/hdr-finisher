@@ -1353,6 +1353,38 @@ def test_peak_fit_path_to_white_caps_saturated_peak_channels() -> None:
     np.testing.assert_allclose(neutralized[0, 1], [target_linear] * 3, rtol=3e-5, atol=3e-5)
 
 
+@pytest.mark.parametrize("color_handling", ["smooth_rolloff", "path_to_white"])
+def test_peak_fit_color_treatment_engages_continuously_above_target(color_handling: str) -> None:
+    """A sub-percent peak change must not switch the whole colour path on."""
+    target_nits = 1000.0
+    target_linear = np.float32(target_nits * 0.18 / 203.0)
+    if color_handling == "smooth_rolloff":
+        image = linear_bt2020_to_acescg(
+            np.asarray([[[target_linear, target_linear * 0.35, target_linear * 0.08]]], dtype=np.float32)
+        )
+    else:
+        image = np.asarray([[[target_linear, target_linear * 0.35, target_linear * 0.08]]], dtype=np.float32)
+
+    at_target = _compress_scene_highlights(
+        image, 400.0, target_nits, mode="peak_fit",
+        source_peak_nits=target_nits, color_handling=color_handling,
+    )
+    barely_over = _compress_scene_highlights(
+        image, 400.0, target_nits, mode="peak_fit",
+        source_peak_nits=target_nits * (2.0 ** 0.001), color_handling=color_handling,
+    )
+    quarter_stop_over = _compress_scene_highlights(
+        image, 400.0, target_nits, mode="peak_fit",
+        source_peak_nits=target_nits * (2.0 ** 0.25), color_handling=color_handling,
+    )
+
+    np.testing.assert_array_equal(at_target, image)
+    tiny_delta = float(np.max(np.abs(barely_over - image)))
+    engaged_delta = float(np.max(np.abs(quarter_stop_over - image)))
+    assert tiny_delta < 1e-4
+    assert engaged_delta > tiny_delta * 100.0
+
+
 def test_peak_fit_smooth_rolloff_maps_rec2020_channels_without_lifting_weak_channels() -> None:
     scale = np.float32(0.18 / 203.0)
     transport_nits = np.array(

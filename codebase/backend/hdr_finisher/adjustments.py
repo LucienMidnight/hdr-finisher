@@ -1415,6 +1415,12 @@ def _peak_fit_parameters(
     )
 
 
+def _peak_fit_activation(peak_stop: float, target_stop: float) -> np.float32:
+    """Fade Peak Fit continuously from identity over the first quarter stop."""
+    position = np.float32(min(max((peak_stop - target_stop) / 0.25, 0.0), 1.0))
+    return position * position * (np.float32(3.0) - np.float32(2.0) * position)
+
+
 def _peak_fit_progress(signal: np.ndarray, params: _PeakFitParameters) -> tuple[np.ndarray, np.ndarray]:
     """The shoulder's 0..1 position and biased blend weight for a signal."""
     input_stop = np.log2(np.maximum(signal, params.effective_start))
@@ -1630,6 +1636,7 @@ def _compress_scene_highlights(
         start_stop = float(np.log2(start))
         target_stop = float(np.log2(target))
         peak_stop = float(np.log2(peak))
+        peak_fit_activation = _peak_fit_activation(peak_stop, target_stop)
         detail = min(max(float(peak_detail) / 100.0, 0.0), 1.0)
         curve_bias = min(max(float(bias) / 100.0, -1.0), 1.0) * 0.6
         params = _peak_fit_parameters(start_stop, target_stop, peak_stop, detail, curve_bias)
@@ -1661,11 +1668,12 @@ def _compress_scene_highlights(
                 np.exp2(mapped, out=mapped)
                 channel[active] = mapped[active]
             mapped_acescg = linear_bt2020_to_acescg(transport)
-            return np.where(
+            mapped_result = np.where(
                 compression_signal[..., None] > params.effective_start,
                 mapped_acescg,
                 result,
-            ).astype(np.float32, copy=False)
+            )
+            return (result + peak_fit_activation * (mapped_result - result)).astype(np.float32, copy=False)
         curve_input = compression_signal
         u, w = _peak_fit_progress(curve_input, params)
         h10 = w * (1.0 - w) * (1.0 - w)
@@ -1684,7 +1692,7 @@ def _compress_scene_highlights(
             # Qualify and anchor on the brightest RGB channel, then converge the
             # grouped channels toward white through the Peak Fit shoulder.
             mapped = _peak_fit_group_channels(mapped, target_luma[..., None], u, active)
-        return mapped.astype(np.float32, copy=False)
+        return (result + peak_fit_activation * (mapped - result)).astype(np.float32, copy=False)
 
     span = np.float32(target - start)
     excess = np.maximum(positive_luma - start, 0.0)

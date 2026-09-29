@@ -3713,6 +3713,11 @@ function bindEvents() {
     invalidatePreview(lane, { markDirty: false });
     debouncePreview(lane);
   });
+  window.addEventListener("hdrfinisher:highlight-anchor-needed", (event) => {
+    const { lane, key, used } = event.detail || {};
+    if (!state.session || lane !== state.currentView || !key) return;
+    void measureExactHighlightAnchor({ lane, key, used });
+  });
   window.addEventListener("hdrfinisher:webgpulost", (event) => {
     const message = event.detail?.message || "WebGPU device lost";
     const verdict = state.gpuFailurePolicy?.record(new Error(message), { deviceLost: true });
@@ -5189,6 +5194,7 @@ function refinementProxyLongEdge() {
 // One measured peak per edit state, so a scope refresh that changes nothing
 // about the picture does not pay for the pass again.
 const exactScopePeakCache = new Map();
+const exactHighlightAnchorInflight = new Map();
 
 function exactScopePeakKey(lane = state.currentView) {
   return [
@@ -5286,6 +5292,65 @@ async function measureExactScopePeak({ lane = state.currentView, force = false }
     while (exactScopePeakCache.size > 8) exactScopePeakCache.delete(exactScopePeakCache.keys().next().value);
   }
   return measured;
+}
+
+/**
+ * Resolve Peak Fit's shoulder anchor from the native finished picture.
+ *
+ * Unlike the scope peak this reduction runs before output highlights and uses
+ * the selected colour mode's signal.  Its renderer cache key deliberately
+ * excludes preview resolution, so every zoom reuses this one value.
+ */
+async function measureExactHighlightAnchor({ lane, key, used }) {
+  if (!state.gpuPreview?.available || !state.session || !key || state.importInProgress) return null;
+  if (exactHighlightAnchorInflight.has(key)) return exactHighlightAnchorInflight.get(key);
+  const sessionId = state.session.session_id;
+  const importGeneration = state.importGeneration;
+  const previewGeneration = state.previewGeneration[lane];
+  const nativeEdge = previewTargetLongEdge("full");
+  const run = (async () => {
+    try {
+      const result = await state.gpuPreview.renderTiledTo(
+        els.previewCanvas,
+        sessionId,
+        lane,
+        JSON.parse(JSON.stringify(state.adjustments)),
+        sampleCurvePoints,
+        nativeEdge,
+        state.compareWithoutLocals ? [] : JSON.parse(JSON.stringify(localAdjustments())),
+        state.editRevision,
+        null,
+        projectReferenceWhiteNits(),
+        { width: state.session.source.width, height: state.session.source.height },
+        {
+          ...(gpuPreviewSourceOptions(lane) || {}),
+          tier: "settled",
+          measureOnly: true,
+          highlightAnchorOnly: true,
+          applicationGeneration: previewGeneration,
+          isCurrent: () => state.session?.session_id === sessionId
+            && state.importGeneration === importGeneration
+            && state.previewGeneration[lane] === previewGeneration,
+        },
+      );
+      if (state.session?.session_id !== sessionId || state.importGeneration !== importGeneration
+        || state.previewGeneration[lane] !== previewGeneration) return null;
+      if (result?.highlightAnchor?.key !== key || !Number.isFinite(result.highlightAnchor.value)) return null;
+      const measured = result.highlightAnchor.value;
+      if (Math.abs(measured / Math.max(Number(used) || measured, 1e-9) - 1) > 0.0001) {
+        invalidatePreview(lane, { markDirty: false });
+        debouncePreview(lane);
+      }
+      return measured;
+    } catch (error) {
+      console.warn("Native highlight anchor measurement failed", error);
+      return null;
+    } finally {
+      exactHighlightAnchorInflight.delete(key);
+    }
+  })();
+  exactHighlightAnchorInflight.set(key, run);
+  return run;
 }
 
 function scopeLongEdge(tier) {

@@ -821,6 +821,10 @@
       // In-flight measurements by cache key, so a settled frame reuses the one
       // a drag frame deferred instead of running the same reduction twice.
       this.pendingHighlightKeys = new Map();
+      // Canonical anchor requests are keyed without preview resolution.  Keep
+      // one notification outstanding until the app's native tiled reduction
+      // publishes the value.
+      this.requestedCanonicalHighlightKeys = new Set();
       // Deferred measurements are an optional refinement, so their failure
       // must not replace the accepted frame. Keep a bounded diagnostic trail
       // instead of making those failures disappear.
@@ -1469,6 +1473,7 @@
       }
       this.scopeResources.clear();
       this.peakReductionCache.clear();
+      this.requestedCanonicalHighlightKeys.clear();
     }
 
     invalidateSurfaces() {
@@ -1855,12 +1860,23 @@
       const measures = (lane === "hdr" || params[159] > 0.5) && params[74] === 1 && measurement !== "manual";
       if (!measures) return null;
       const key = JSON.stringify([
-        proxy.identity, this.highlightSourceToken(proxy), lane, params[1], params[159], measurement,
+        measurement === "maximum" ? [proxy.sessionId, proxy.geometrySignature, proxy.sourceIdentity] : proxy.identity,
+        this.highlightSourceToken(proxy), lane, params[1], params[159], measurement,
         params[2], params[4], params[8], params[9], params[110],
         ...params.slice(10, 12), ...params.slice(61, 73),
         ...params.slice(BLACK_AND_WHITE_PARAM, BLACK_AND_WHITE_PARAM + 9),
       ]);
       return { measurement, key, cached: this.peakReductionCache.get(key) };
+    }
+
+    requestCanonicalHighlightAnchor(anchor, lane, used) {
+      if (this.requestedCanonicalHighlightKeys.has(anchor.key)) return;
+      this.requestedCanonicalHighlightKeys.add(anchor.key);
+      if (typeof window !== "undefined" && typeof CustomEvent !== "undefined") {
+        window.dispatchEvent(new CustomEvent("hdrfinisher:highlight-anchor-needed", {
+          detail: { lane, key: anchor.key, used },
+        }));
+      }
     }
 
     /**
@@ -1895,27 +1911,35 @@
      */
     async resolveHighlightAnchor(anchor, sourceProxy, params, { interactive = false, lane = "hdr" } = {}) {
       const estimate = params[75];
-      if (anchor.cached !== undefined) {
-        this.noteHighlightMeasurement(lane, sourceProxy, params, anchor.cached);
-        return anchor.cached;
+      // The native reduction can land between request construction and this
+      // call, so consult the live cache as well as the request snapshot.
+      const cached = this.peakReductionCache.has(anchor.key)
+        ? this.peakReductionCache.get(anchor.key)
+        : anchor.cached;
+      if (cached !== undefined) {
+        this.noteHighlightMeasurement(lane, sourceProxy, params, cached);
+        return cached;
       }
       const carried = this.carriedHighlightAnchor(lane, sourceProxy, params);
-      const inFlight = this.pendingHighlightKeys.get(anchor.key);
-      if (!interactive && inFlight) {
-        await inFlight;
-        const measured = this.peakReductionCache.get(anchor.key);
-        if (measured !== undefined) return measured;
+      const used = carried ?? estimate;
+      // Robust percentile measurement still uses the retained top-k reduction.
+      // The native tiled maximum below is exact only for the maximum mode.
+      if (anchor.measurement !== "maximum") {
+        if (interactive) {
+          this.scheduleHighlightMeasurement(anchor, sourceProxy, params, lane, used);
+          return used;
+        }
+        const value = await this.measureToneAdjustedPeak(sourceProxy, params, anchor.measurement, anchor.key, {
+          reference: Math.max(estimate, carried ?? 0),
+        });
+        this.noteHighlightMeasurement(lane, sourceProxy, params, value);
+        return value;
       }
-      if (interactive) {
-        const used = carried ?? estimate;
-        this.scheduleHighlightMeasurement(anchor, sourceProxy, params, lane, used);
-        return used;
-      }
-      const value = await this.measureToneAdjustedPeak(sourceProxy, params, anchor.measurement, anchor.key, {
-        reference: Math.max(estimate, carried ?? 0),
-      });
-      this.noteHighlightMeasurement(lane, sourceProxy, params, value);
-      return value;
+      // A display proxy is never allowed to define the canonical cache entry:
+      // its mip changes with zoom.  Present immediately with the best carried
+      // estimate and ask the scheduler for one native finished-image reduction.
+      this.requestCanonicalHighlightAnchor(anchor, lane, used);
+      return used;
     }
 
     noteHighlightMeasurement(lane, sourceProxy, params, value) {
@@ -2397,9 +2421,14 @@
       // and shared by every tile. Measuring per tile would make each tile fit
       // its own peak and the seams would show.
       const anchor = this.highlightAnchorRequest(lane, adjustments, proxy, params);
-      if (anchor) {
+      const highlightAnchorOnly = Boolean(sourceOptions?.highlightAnchorOnly);
+      if (anchor && !highlightAnchorOnly) {
         params[75] = await this.resolveHighlightAnchor(anchor, proxy, params, { interactive: false, lane });
       }
+      // The finish pass is upstream of output highlights, so this sentinel
+      // only changes what the tile reduction reads.  Nothing is presented by
+      // an anchor-only pass.
+      if (highlightAnchorOnly) params[74] = -1;
 
       const overlayIndex = maskOverlay?.localId
         ? activeLocals.findIndex((local) => local.id === maskOverlay.localId)
@@ -2413,7 +2442,7 @@
 
       this.uploadParamsAndCurves(lane, adjustments, curveSampler, params);
 
-      return this.encodeTiledGeneration(canvas, context, proxy, surface, pipelines, params, {
+      const result = await this.encodeTiledGeneration(canvas, context, proxy, surface, pipelines, params, {
         measureOnly,
         Scheduler,
         serial,
@@ -2436,6 +2465,16 @@
         dpr: sourceOptions?.dpr,
         zoom: sourceOptions?.zoom,
       });
+      const measured = result?.metrics?.exactPeak;
+      if (highlightAnchorOnly && anchor && Number.isFinite(measured)) {
+        this.peakReductionCache.set(anchor.key, measured);
+        this.requestedCanonicalHighlightKeys.delete(anchor.key);
+        this.noteHighlightMeasurement(lane, proxy, params, measured);
+        result.highlightAnchor = { key: anchor.key, value: measured };
+      } else if (highlightAnchorOnly && anchor) {
+        this.requestedCanonicalHighlightKeys.delete(anchor.key);
+      }
+      return result;
       } finally {
         if (proxyPin) this.gpuAllocator.unpin(proxyPin);
         this.finishActiveRender();

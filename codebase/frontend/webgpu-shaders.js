@@ -981,6 +981,10 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let startStop = log2(start);
       let targetStop = log2(targetLevel);
       let peakStop = log2(peakLevel);
+      // Fade the shoulder in over the first quarter stop of overage.  This
+      // keeps a measurement crossing the target from switching the complete
+      // colour treatment on at once; the later delivery clamp stays exact.
+      let peakFitActivation = smoothstep(0.0, 0.25, peakStop - targetStop);
       let curveBias = p[77];
       let requestedRatio = (targetStop - startStop) / max(peakStop - startStop, 0.000001);
       let requiredRatio = clamp((1.0 / (1.0 + curveBias) + p[76] / (1.0 - curveBias)) / 3.0, 0.001, 0.95);
@@ -1001,14 +1005,15 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           peakFitChannel(transport.g, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1),
           peakFitChannel(transport.b, effectiveStart, effectiveStartStop, peakStop, curveBias, stopSpan, m0, m1)
         );
-        return bt2020ToAcescg(mappedTransport);
+        return mix(input, bt2020ToAcescg(mappedTransport), peakFitActivation);
       }
       let mapped = w * (1.0 - w) * (1.0 - w) * m0 + w * w * (3.0 - 2.0 * w) + w * w * (w - 1.0) * m1;
       let targetValue = exp2(effectiveStartStop + stopSpan * mapped);
       let mappedRgb = input * (targetValue / max(signal, 0.00000001));
-      if (p[110] < 0.5) { return mappedRgb; }
+      if (p[110] < 0.5) { return mix(input, mappedRgb, peakFitActivation); }
       let progress = u * u * (3.0 - 2.0 * u);
-      return vec3f(targetValue) + (mappedRgb - vec3f(targetValue)) * (1.0 - progress);
+      let neutralized = vec3f(targetValue) + (mappedRgb - vec3f(targetValue)) * (1.0 - progress);
+      return mix(input, neutralized, peakFitActivation);
     }
     fn sdrSoftCeiling(input: vec3f) -> vec3f {
       if (p[74] != 2.0 || p[3] <= 0.0) { return input; }
@@ -2400,6 +2405,16 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     fn scopePeakSignal(rgb: vec3f) -> f32 {
       return max(select(lumaSrgb(rgb), lumaAces(rgb), p[0] > 0.5), 0.0);
     }
+    fn highlightAnchorSignal(rgb: vec3f) -> f32 {
+      if (p[110] > 1.5) {
+        let transport = acescgToBt2020(rgb);
+        return max(max(max(transport.r, transport.g), transport.b), 0.0);
+      }
+      if (p[110] > 0.5) {
+        return max(max(max(rgb.r, rgb.g), rgb.b), 0.0);
+      }
+      return max(lumaAces(rgb), 0.0);
+    }
     @fragment fn scopeFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let targetDimensions = max(vec2f(p[136], p[137]), vec2f(1.0));
       let sourceDimensions = vec2f(textureDimensions(sourceTexture));
@@ -2449,7 +2464,16 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       var peak = 0.0;
       for (var y = start.y; y < end.y; y = y + 1u) {
         for (var x = start.x; x < end.x; x = x + 1u) {
-          peak = max(peak, scopePeakSignal(scopeOutputAt(vec2i(i32(x), i32(y)))));
+          let coordinate = vec2i(i32(x), i32(y));
+          // p[74] == -1 selects the native, pre-compression Peak Fit anchor.
+          // Ordinary scope reductions continue to measure post-compression
+          // output luminance.
+          let signal = select(
+            scopePeakSignal(scopeOutputAt(coordinate)),
+            highlightAnchorSignal(finishedAt(coordinate)),
+            p[74] < -0.5
+          );
+          peak = max(peak, signal);
         }
       }
       return vec4f(peak, peak, peak, peak);

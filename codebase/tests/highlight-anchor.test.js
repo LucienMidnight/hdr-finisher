@@ -71,35 +71,51 @@ test("a measurement on the denoised source is not reused for the original, or fo
   assert.notEqual(preview.highlightAnchorRequest("hdr", ADJUSTMENTS, resolved, params).key, onResolved);
 });
 
-test("an implausible measurement is taken again, and the second result is used as measured", async () => {
+test("display resolutions share one canonical highlight-anchor key", () => {
+  const preview = new Preview(null);
+  const smaller = { ...original, identity: "s:hdr:2356:{}:source", longEdge: 2356 };
+  const larger = { ...original, identity: "s:hdr:2871:{}:source", longEdge: 2871 };
+  assert.equal(
+    preview.highlightAnchorRequest("hdr", ADJUSTMENTS, smaller, peakFitParams()).key,
+    preview.highlightAnchorRequest("hdr", ADJUSTMENTS, larger, peakFitParams()).key,
+  );
+});
+
+test("a display proxy uses its estimate and requests one native reduction", async () => {
+  dispatched.length = 0;
+  const { preview, calls } = previewWithReductions([4.83]);
+  const params = peakFitParams(3.79);
+  const anchor = preview.highlightAnchorRequest("hdr", ADJUSTMENTS, original, params);
+  assert.equal(await preview.resolveHighlightAnchor(anchor, original, params, { interactive: false, lane: "hdr" }), params[75]);
+  assert.equal(await preview.resolveHighlightAnchor(anchor, original, params, { interactive: false, lane: "hdr" }), params[75]);
+  assert.equal(calls.length, 0, "the zoom-sized proxy must never populate the canonical cache");
+  assert.equal(dispatched.filter((event) => event.type === "hdrfinisher:highlight-anchor-needed").length, 1);
+});
+
+test("a published native anchor is reused at every display resolution", async () => {
+  const preview = new Preview(null);
+  const params = peakFitParams(3.79);
+  const anchor = preview.highlightAnchorRequest("hdr", ADJUSTMENTS, original, params);
+  preview.peakReductionCache.set(anchor.key, 4.83);
+  const otherSize = { ...original, identity: "s:hdr:2871:{}:source", longEdge: 2871 };
+  const otherAnchor = preview.highlightAnchorRequest("hdr", ADJUSTMENTS, otherSize, params);
+  assert.equal(otherAnchor.key, anchor.key);
+  assert.equal(await preview.resolveHighlightAnchor(otherAnchor, otherSize, params, { lane: "hdr" }), 4.83);
+});
+
+test("an implausible low-level reduction is still rechecked before publication", async () => {
   const { preview, calls } = previewWithReductions([36922.6, 4.5]);
   const params = peakFitParams(3.79);
-  const anchor = preview.highlightAnchorRequest("hdr", ADJUSTMENTS, original, params);
-  const value = await preview.resolveHighlightAnchor(anchor, original, params, { interactive: false, lane: "hdr" });
+  const value = await preview.measureToneAdjustedPeak(original, params, "maximum", "test", { reference: 3.79 });
   assert.equal(value, 4.5);
   assert.equal(calls.length, 2);
-  assert.equal(preview.peakReductionCache.get(anchor.key), 4.5);
-});
-
-test("a plausible measurement is used once and never second-guessed", async () => {
-  const { preview, calls } = previewWithReductions([4.83, 99]);
-  const params = peakFitParams(3.79);
-  const anchor = preview.highlightAnchorRequest("hdr", ADJUSTMENTS, original, params);
-  assert.equal(await preview.resolveHighlightAnchor(anchor, original, params, { interactive: false, lane: "hdr" }), 4.83);
-  assert.equal(calls.length, 1);
-});
-
-test("a repeated implausible result stands: nothing is invented or clamped", async () => {
-  const { preview } = previewWithReductions([500, 500]);
-  const params = peakFitParams(3.79);
-  const anchor = preview.highlightAnchorRequest("hdr", ADJUSTMENTS, original, params);
-  assert.equal(await preview.resolveHighlightAnchor(anchor, original, params, { interactive: false, lane: "hdr" }), 500);
 });
 
 test("a drag frame carries the last real measurement through the change in exposure", async () => {
-  const { preview, calls } = previewWithReductions([4.5, 6.0]);
+  const { preview } = previewWithReductions([]);
   const settled = peakFitParams(3.79);
   const anchor = preview.highlightAnchorRequest("hdr", ADJUSTMENTS, original, settled);
+  preview.peakReductionCache.set(anchor.key, 4.5);
   await preview.resolveHighlightAnchor(anchor, original, settled, { interactive: false, lane: "hdr" });
   // One stop brighter: the estimate doubles, so the carried anchor doubles.
   const dragged = peakFitParams(7.58);
@@ -107,10 +123,6 @@ test("a drag frame carries the last real measurement through the change in expos
   const dragAnchor = preview.highlightAnchorRequest("hdr", { hdr: { ...ADJUSTMENTS.hdr, exposure: 1.4 } }, original, dragged);
   const carried = await preview.resolveHighlightAnchor(dragAnchor, original, dragged, { interactive: true, lane: "hdr" });
   assert.ok(Math.abs(carried - 9.0) < 1e-6, `carried ${carried}`);
-  // The measurement the drag frame skipped runs afterwards.
-  await preview.pendingHighlightMeasurement;
-  assert.equal(calls.length, 2);
-  assert.equal(preview.peakReductionCache.get(dragAnchor.key), 6.0);
 });
 
 test("a drag frame with nothing measured yet uses the estimate", async () => {
@@ -120,22 +132,15 @@ test("a drag frame with nothing measured yet uses the estimate", async () => {
   assert.equal(await preview.resolveHighlightAnchor(anchor, original, params, { interactive: true, lane: "hdr" }), params[75]);
 });
 
-test("a failed deferred measurement keeps a bounded classified diagnostic and emits an event", async () => {
+test("measurement failures keep a bounded classified diagnostic", () => {
   const { preview } = previewWithReductions([]);
-  preview.runPeakReduction = async () => { throw new Error("device lost during mapAsync"); };
-  const params = peakFitParams(3.79);
-  const anchor = preview.highlightAnchorRequest("hdr", ADJUSTMENTS, original, params);
-
-  assert.equal(await preview.resolveHighlightAnchor(anchor, original, params, { interactive: true, lane: "hdr" }), params[75]);
-  await preview.pendingHighlightMeasurement;
-
+  preview.recordHighlightMeasurementFailure(new Error("device lost during mapAsync"), {
+    lane: "hdr", key: "failed", used: 3.79,
+  });
   const failures = preview.diagnosticsSnapshot().highlightMeasurementFailures;
   assert.equal(failures.length, 1);
   assert.equal(failures[0].kind, "device-lost");
   assert.match(failures[0].detail, /device lost/);
-  assert.equal(dispatched.at(-1).type, "hdrfinisher:highlight-anchor-measurement-failed");
-  assert.equal(dispatched.at(-1).detail.kind, "device-lost");
-
   for (let index = 0; index < 45; index += 1) {
     preview.recordHighlightMeasurementFailure(new Error(`failure ${index}`), {
       lane: "hdr", key: `key-${index}`, used: 1,
@@ -146,9 +151,10 @@ test("a failed deferred measurement keeps a bounded classified diagnostic and em
 });
 
 test("a change to the authored source peak alone does not move a carried anchor", async () => {
-  const { preview } = previewWithReductions([4.5, 4.5]);
+  const { preview } = previewWithReductions([]);
   const settled = peakFitParams(3.79);
   const anchor = preview.highlightAnchorRequest("hdr", ADJUSTMENTS, original, settled);
+  preview.peakReductionCache.set(anchor.key, 4.5);
   await preview.resolveHighlightAnchor(anchor, original, settled, { interactive: false, lane: "hdr" });
   // Same tone settings, but the estimate (from the authored peak) moved 25%.
   const drifted = peakFitParams(3.79 * 1.25);

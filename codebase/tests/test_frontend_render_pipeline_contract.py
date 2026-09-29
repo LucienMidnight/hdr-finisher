@@ -122,7 +122,7 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     assert "fn sdrSoftCeiling(input: vec3f) -> vec3f" in shader
     assert "acescgToSrgb(grey) * ((100.0 / 203.0) / 0.18)" in shader
     assert "let transport = acescgToBt2020(input)" in shader
-    assert "return bt2020ToAcescg(mappedTransport)" in shader
+    assert "return mix(input, bt2020ToAcescg(mappedTransport), peakFitActivation)" in shader
     assert "(mappedRgb - vec3f(targetValue)) * (1.0 - progress)" in shader
     assert "let requiredRatio = clamp(" in shader
     assert "let targetValue = exp2(effectiveStartStop + stopSpan * mapped)" in shader
