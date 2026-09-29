@@ -392,10 +392,12 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     assert 'class="preview-metadata-panel"' not in html
     assert 'id="viewer-lane-label"' not in html
     assert ".preview-title-wrap:hover .preview-title-tooltip" in css
-    assert 'id="preview-status-copy"' in html
-    assert '<progress id="preview-progress"' in html
-    assert 'id="cancel-import"' in html
-    assert 'els.cancelImport?.addEventListener("click", cancelActiveImport);' in javascript
+    assert 'id="viewer-tier-status"' not in html
+    assert 'id="preview-status"' not in html
+    assert 'nodeId: "preview-status"' in javascript
+    assert 'copyId: "preview-status-copy"' in javascript
+    assert 'progressId: "preview-progress"' in javascript
+    assert '{ id: "cancel-import", label: "Cancel import", run: cancelActiveImport }' in javascript
     assert "Import cancelled. Current image kept." in javascript
     assert 'id="override-warning"' not in html
     assert 'id="apply-interpretation" class="button-primary"' in html
@@ -449,7 +451,7 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     assert "dockH: [240, 340]" in javascript
     assert "dockH: 252" in javascript
     assert "updateProbeReadout" not in javascript
-    assert ".preview-progress" in css
+    assert ".status-entry-progress" in css
     assert "Processing complete. Decoding preview..." in javascript
     assert "{ showProgress: false }" in javascript
     assert "renderPreviewForLane(lane, true, longEdge, { showProgress: false })" in javascript

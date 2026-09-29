@@ -31,6 +31,25 @@ function assert(condition, message) {
     assert(await page.locator('[data-status-id="save-test"]').count() === 1, "Updating a channel must replace its entry.");
     assert(await page.locator('[data-status-id="export-test"]').count() === 1, "Save and export channels must coexist.");
     assert((await page.locator('[data-status-id="save-test"] progress').getAttribute("value")) === "60", "Determinate progress did not update.");
+    assert(await page.locator('[data-status-id="application"]').count() === 0, "Ready must yield the single fixed row to active status.");
+    const fixedRow = await page.evaluate(() => {
+      const dock = document.getElementById("viewer-status-dock").getBoundingClientRect();
+      return [...document.querySelectorAll("#application-status-entries > .status-entry")].every((entry) => {
+        const rect = entry.getBoundingClientRect();
+        return Math.abs(rect.top - dock.top) < 1 && rect.bottom <= dock.bottom + 1;
+      });
+    });
+    assert(fixedRow, "Status entries escaped into a second row below the fixed bar.");
+    await page.evaluate(() => {
+      HDRStatus.clear("save-test");
+      HDRStatus.clear("export-test");
+    });
+    assert((await page.locator('[data-status-id="application"]').textContent()) === "Ready", "Ready did not return when the fixed bar became idle.");
+    await page.evaluate(() => setIndeterminatePreviewMessage("Preparing test view…"));
+    assert(await page.locator("#preview-status").count() === 1, "Preview progress did not use the fixed status row.");
+    assert(await page.locator("#viewer-status-dock .status-entry").count() === 1, "Preview progress created a second status row.");
+    await page.evaluate(() => hidePreviewMessage());
+    assert((await page.locator('[data-status-id="application"]').textContent()) === "Ready", "Preview completion did not restore the idle status.");
 
     const result = await page.evaluate(async () => {
       const host = document.createElement("div");

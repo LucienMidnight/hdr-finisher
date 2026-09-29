@@ -229,8 +229,6 @@ const PREVIEW_WATCHDOG_MAX_REARMS = 20;
 const TOOLTIP_MAX_WIDTH = 260;
 const TOOLTIP_SIDE_RAILS = ".grade-rail, .workflow-side-panel";
 const ZOOM_STEPS = [1, 2, 3, 4, 5, 6.25, 8.33, 12.5, 16.67, 25, 33.33, 50, 66.67, 100, 200, 300, 400, 500, 600, 800, 1200, 1600, 2400, 3200];
-// Matches the .viewer-status-dock transform transition in styles.css.
-const VIEWER_STATUS_DOCK_SLIDE_MS = 200;
 const LAYOUT_DEFAULTS = { railW: 268, gradeW: 340, dockH: 252, dockOpen: true, dockTab: "histogram" };
 const LAYOUT_LIMITS = {
   railW: [200, 380],
@@ -362,7 +360,9 @@ const state = {
   localMaskDraftController: null,
   localMaskDraftGeneration: 0,
   localMaskDraftPending: null,
-  viewerStatusDockTimer: 0,
+  viewerTierStatusEntry: null,
+  previewStatusEntry: null,
+  previewCancelVisible: false,
   pathMaskProgressTimer: 0,
   pathMaskProgressTarget: null,
   pathMaskProgressStartedAt: 0,
@@ -1109,11 +1109,14 @@ function renderViewerStatus() {
   const viewer = viewerState();
   const label = viewerStatusLabel(viewer);
   if (els.previewQualityStatus) els.previewQualityStatus.textContent = label;
-  // Ready is the quiet state; the dock is for work the viewer is waiting on.
-  setViewerStatusRow(els.viewerTierStatus, viewer.status === "ready" ? null : label, {
-    error: viewer.status === "unavailable",
-  });
-  syncViewerStatusDock();
+  // Ready is the quiet state. Active viewer work occupies the same fixed status
+  // slot as import/render progress instead of opening a second row beneath it.
+  state.viewerTierStatusEntry = viewer.status === "ready" ? null : {
+    nodeId: "viewer-tier-status",
+    severity: viewer.status === "unavailable" ? "error" : "progress",
+    message: label,
+  };
+  syncViewerStatusEntry();
   return viewer;
 }
 
@@ -1610,13 +1613,7 @@ const els = {
   proofPreviewSwitch: document.getElementById("proof-preview-switch"),
   proofPreviewButtons: [...document.querySelectorAll("[data-proof-preview]")],
   emptyState: document.getElementById("empty-state"),
-  viewerStatusDock: document.getElementById("viewer-status-dock"),
-  viewerTierStatus: document.getElementById("viewer-tier-status"),
   proofLaneButtons: [...document.querySelectorAll("#proof-lane-switch button")],
-  previewStatus: document.getElementById("preview-status"),
-  previewStatusCopy: document.getElementById("preview-status-copy"),
-  previewProgress: document.getElementById("preview-progress"),
-  cancelImport: document.getElementById("cancel-import"),
   viewerBranchNote: document.getElementById("viewer-branch-note"),
   compareButton: document.getElementById("compare-button"),
   compareLayoutButtons: [...document.querySelectorAll("button[data-compare-layout]")],
@@ -3177,7 +3174,6 @@ function bindEvents() {
     event.target.value = "";
   });
   els.importButton.addEventListener("click", requestSourceImport);
-  els.cancelImport?.addEventListener("click", cancelActiveImport);
   els.testPatternButton.addEventListener("click", async () => {
     if (!await confirmUnsavedTransition("replace the source with a test pattern")) return;
     const confirmedDocument = documentTransitionToken();
@@ -5661,14 +5657,14 @@ async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 16
       : state.editRevision === revision && state.previewGeneration[lane] === overlayGeneration);
   if (!requestIsCurrent()) return;
   if (response.status === 204) {
-    clearPreviewOverlay();
+    // Keep the last valid overlay continuously composited until a replacement
+    // arrives. A transient empty response must not flash the bare image.
     return;
   }
   if (!response.ok) {
-    // Mid-drag, a refused interim request (typically a revision the backend
-    // has already moved past) keeps the last overlay; the next one replaces it.
-    if (interim) await response.body?.cancel?.().catch(() => null);
-    else clearPreviewOverlay();
+    // A refused request (typically a revision the backend has already moved
+    // past) keeps the last overlay; the next valid generation replaces it.
+    await response.body?.cancel?.().catch(() => null);
     return;
   }
 
@@ -11291,7 +11287,6 @@ async function applyOverlayUrl(url, isCurrent = () => true) {
     });
   } catch {
     URL.revokeObjectURL(url);
-    if (isCurrent()) clearPreviewOverlay();
     return false;
   }
   if (!isCurrent()) {
@@ -11388,78 +11383,73 @@ function clearPreviewOverlay() {
   els.previewOverlay.style.height = "";
 }
 
-function syncViewerStatusDock() {
-  const dock = els.viewerStatusDock;
-  if (!dock) return;
-  dock.classList.add("open");
-}
-
-function setViewerStatusRow(row, message, { error = false, progress = null } = {}) {
-  if (!row) return;
-  const copy = row.querySelector(".viewer-status-copy");
-  if (message === null) {
-    row.classList.add("hidden");
-  } else {
-    if (copy) copy.textContent = message;
-    row.classList.remove("hidden");
+function syncViewerStatusEntry() {
+  const next = state.previewStatusEntry || state.viewerTierStatusEntry;
+  if (!next) {
+    status.clear("viewer");
+    return;
   }
-  const bar = row.querySelector("progress");
-  if (bar && message !== null) {
-    if (progress === null) {
-      bar.removeAttribute("value");
-      bar.setAttribute("aria-valuetext", message);
-    } else {
-      bar.max = 100;
-      bar.value = clamp(Number(progress) || 0, 0, 100);
-      bar.setAttribute("aria-valuetext", `${Math.round(bar.value)}% — ${message}`);
-    }
-  }
-  row.classList.toggle("error", Boolean(message !== null && error));
-  syncViewerStatusDock();
+  const normalized = {
+    id: "viewer",
+    ...next,
+    actions: state.previewStatusEntry && state.previewCancelVisible
+      ? [{ id: "cancel-import", label: "Cancel import", run: cancelActiveImport }]
+      : [],
+    cancelVisible: Boolean(state.previewStatusEntry && state.previewCancelVisible),
+  };
+  const current = status.get("viewer");
+  if (current
+    && current.message === normalized.message
+    && current.severity === normalized.severity
+    && current.progress === normalized.progress
+    && current.nodeId === normalized.nodeId
+    && current.cancelVisible === normalized.cancelVisible) return;
+  status.post(normalized);
 }
 
 function setPreviewMessage(message, progress = 0) {
-  els.previewStatusCopy.textContent = message;
-  els.previewProgress.value = clamp(Number(progress) || 0, 0, 100);
-  els.previewProgress.max = 100;
-  els.previewProgress.setAttribute("aria-valuetext", `${Math.round(els.previewProgress.value)}% — ${message}`);
-  els.previewProgress.classList.remove("hidden");
-  els.previewStatus.classList.remove("hidden", "error");
-  syncViewerStatusDock();
+  state.previewStatusEntry = {
+    nodeId: "preview-status",
+    copyId: "preview-status-copy",
+    progressId: "preview-progress",
+    severity: "progress",
+    message,
+    progress: clamp(Number(progress) || 0, 0, 100),
+  };
+  syncViewerStatusEntry();
 }
 
 function setIndeterminatePreviewMessage(message) {
-  els.previewStatusCopy.textContent = message;
-  els.previewProgress.removeAttribute("value");
-  els.previewProgress.max = 100;
-  els.previewProgress.setAttribute("aria-valuetext", message);
-  els.previewProgress.classList.remove("hidden");
-  els.previewStatus.classList.remove("hidden", "error");
-  syncViewerStatusDock();
+  state.previewStatusEntry = {
+    nodeId: "preview-status",
+    copyId: "preview-status-copy",
+    progressId: "preview-progress",
+    severity: "progress",
+    message,
+    progress: "indeterminate",
+  };
+  syncViewerStatusEntry();
 }
 
 function setPreviewError(message) {
-  els.previewStatusCopy.textContent = message;
-  els.previewProgress.classList.add("hidden");
-  els.previewStatus.classList.remove("hidden");
-  els.previewStatus.classList.add("error");
-  syncViewerStatusDock();
+  state.previewStatusEntry = {
+    nodeId: "preview-status",
+    copyId: "preview-status-copy",
+    severity: "error",
+    message,
+  };
+  syncViewerStatusEntry();
 }
 
 function setImportCancelVisible(visible) {
-  if (!els.cancelImport) return;
-  els.cancelImport.classList.toggle("hidden", !visible);
-  els.cancelImport.disabled = false;
+  state.previewCancelVisible = Boolean(visible);
+  syncViewerStatusEntry();
 }
 
 function hidePreviewMessage() {
-  els.previewStatusCopy.textContent = "";
-  els.previewProgress.removeAttribute("aria-valuetext");
-  els.previewProgress.classList.add("hidden");
-  els.previewStatus.classList.add("hidden");
-  els.previewStatus.classList.remove("error");
-  setImportCancelVisible(false);
-  syncViewerStatusDock();
+  state.previewStatusEntry = null;
+  state.previewCancelVisible = false;
+  syncViewerStatusEntry();
 }
 
 async function safeJson(response) {
@@ -12007,8 +11997,10 @@ function invalidatePreview(lane, { local = false, markDirty = true } = {}) {
     cancelRoiPanRefinement();
     state.previewGeneration[lane] += 1;
   }
-  if (lane === state.currentView && state.overlayPresented?.generation !== state.previewGeneration[lane]) {
-    els.previewOverlay.style.opacity = "0.5";
+  if (lane === state.currentView && state.overlayPresented
+    && state.overlayPresented.generation !== state.previewGeneration[lane]) {
+    // The old overlay remains fully composited while its replacement renders.
+    // Dimming here made every slider input look like the overlay toggled off.
     els.previewOverlay.dataset.stale = "true";
   }
   window.HDRProofing?.invalidate(lane);
@@ -18126,7 +18118,7 @@ async function cancelActiveImport() {
   state.importGeneration += 1;
   state.activeImportJobId = null;
   state.importInProgress = false;
-  if (els.cancelImport) els.cancelImport.disabled = true;
+  setImportCancelVisible(false);
   setIndeterminatePreviewMessage("Cancelling import...");
   updateExportAvailability();
   if (jobId) {

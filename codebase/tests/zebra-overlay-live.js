@@ -91,7 +91,7 @@ const installProbe = () => {
 };
 
 (async () => {
-  const browser = await chromium.launch({ headless: false, channel: option("--channel", "msedge") });
+  const browser = await chromium.launch({ headless: args.includes("--headless"), channel: option("--channel", "msedge") });
   const page = await browser.newPage();
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
@@ -153,12 +153,21 @@ const installProbe = () => {
     }));
     const dragStartedAt = await page.evaluate(() => performance.now());
     const steps = 24;
+    const continuitySamples = [];
     for (let stroke = 0; stroke < strokes; stroke += 1) {
       const startX = await thumbX();
       await page.mouse.move(startX, y);
       await page.mouse.down();
       for (let index = 1; index <= steps; index += 1) {
         await page.mouse.move(startX + ((endX - startX) * index) / steps, y);
+        continuitySamples.push(await page.evaluate(() => {
+          const overlay = document.getElementById("preview-overlay");
+          return {
+            display: overlay.style.display,
+            opacity: overlay.style.opacity,
+            src: overlay.getAttribute("src"),
+          };
+        }));
         await page.waitForTimeout(dragMs / strokes / steps);
       }
       if (stroke < strokes - 1) await page.mouse.up();
@@ -175,6 +184,11 @@ const installProbe = () => {
     const dragRenderMs = dragMetrics.renderMs.slice(-Math.max(1, framesDuringDrag)).sort((a, b) => a - b);
     const renderP50 = dragRenderMs.length ? Math.round(dragRenderMs[Math.floor(dragRenderMs.length / 2)]) : null;
     await page.mouse.up();
+    if (mode !== "off") {
+      const interrupted = continuitySamples.find((sample) => sample.display === "none"
+        || !sample.src || Number(sample.opacity || 1) < 1);
+      assert(!interrupted, `The ${mode} overlay stopped fully covering the preview during the exposure drag: ${JSON.stringify(interrupted)}`);
+    }
 
     await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 120000 });
     // Give any post-settle overlay request time to land.
@@ -219,6 +233,8 @@ const installProbe = () => {
         && after.overlayPresented.generation === after.generation
         && after.overlayPresented.interim === false),
       framesDuringDrag,
+      continuousDuringDrag: mode === "off" || continuitySamples.every((sample) => sample.display !== "none"
+        && Boolean(sample.src) && Number(sample.opacity || 1) === 1),
       dragRenderP50Ms: renderP50,
       coverageBefore,
       coverageDuring,

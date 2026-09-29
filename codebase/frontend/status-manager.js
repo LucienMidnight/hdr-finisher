@@ -4,9 +4,28 @@
   const SUCCESS_TIMEOUT_MS = 4000;
   const SEVERITIES = new Set(["info", "progress", "success", "error", "attention"]);
 
-  function create(container, { successTimeoutMs = SUCCESS_TIMEOUT_MS, focusFallback = null } = {}) {
+  function create(container, { successTimeoutMs = SUCCESS_TIMEOUT_MS, focusFallback = null, emptyMessage = null } = {}) {
     if (!container) throw new Error("A status entry container is required.");
     const entries = new Map();
+    let emptyNode = null;
+
+    const syncEmptyState = () => {
+      if (!emptyMessage || entries.size) {
+        emptyNode?.remove();
+        emptyNode = null;
+        return;
+      }
+      if (emptyNode) return;
+      emptyNode = document.createElement("section");
+      emptyNode.className = "status-entry status-info";
+      emptyNode.dataset.statusId = "application";
+      emptyNode.setAttribute("role", "status");
+      const copy = document.createElement("span");
+      copy.className = "status-entry-copy";
+      copy.textContent = emptyMessage;
+      emptyNode.append(copy);
+      container.append(emptyNode);
+    };
 
     const clearTimer = (record) => {
       if (!record?.timer) return;
@@ -34,7 +53,7 @@
       scheduleDismiss(record, Math.max(1, record.remaining || successTimeoutMs));
     };
 
-    function clear(id, { restoreFocus = false } = {}) {
+    function clear(id, { restoreFocus = false, syncEmpty = true } = {}) {
       const record = entries.get(id);
       if (!record) return false;
       const ownedFocus = record.node.contains(document.activeElement);
@@ -45,6 +64,7 @@
         const target = typeof focusFallback === "function" ? focusFallback() : focusFallback;
         (target || document.querySelector("#project-open, #file-open, button, [tabindex='0']"))?.focus?.();
       }
+      if (syncEmpty) syncEmptyState();
       return true;
     }
 
@@ -52,7 +72,9 @@
       if (!entry?.id) throw new Error("Status entries need an id/channel.");
       const severity = SEVERITIES.has(entry.severity) ? entry.severity : "info";
       const normalized = { ...entry, id: String(entry.id), severity, message: String(entry.message || "") };
-      clear(normalized.id);
+      clear(normalized.id, { syncEmpty: false });
+      emptyNode?.remove();
+      emptyNode = null;
 
       const node = document.createElement("section");
       if (normalized.nodeId) node.id = normalized.nodeId;
@@ -69,6 +91,7 @@
 
       if (normalized.progress !== undefined && normalized.progress !== null) {
         const progress = document.createElement("progress");
+        if (normalized.progressId) progress.id = normalized.progressId;
         progress.className = "status-entry-progress";
         progress.setAttribute("aria-label", normalized.progressLabel || normalized.message || "Progress");
         if (Number.isFinite(Number(normalized.progress))) {
@@ -125,6 +148,7 @@
       return entries.get(String(id))?.entry || null;
     }
 
+    syncEmptyState();
     return { post, update, clear, get };
   }
 
@@ -133,7 +157,7 @@
   if (container) {
     global.HDRStatus = create(container, {
       focusFallback: () => document.getElementById("project-open") || document.getElementById("file-open"),
+      emptyMessage: "Ready",
     });
-    global.HDRStatus.post({ id: "application", severity: "info", message: "Ready" });
   }
 })(window);

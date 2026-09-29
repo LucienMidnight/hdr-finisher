@@ -7,10 +7,18 @@ FRONTEND = ROOT / "frontend"
 
 def test_status_manager_is_loaded_before_feature_code_and_dock_is_single_announcer() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    app = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    manager = (FRONTEND / "status-manager.js").read_text(encoding="utf-8")
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
 
     assert 'id="viewer-status-dock" class="viewer-status-dock">' in html
     assert 'id="viewer-status-dock" class="viewer-status-dock" aria-live=' not in html
     assert 'id="application-status-entries"' in html
+    assert 'class="viewer-status-row' not in html
+    assert 'nodeId: "viewer-tier-status"' in app
+    assert 'nodeId: "preview-status"' in app
+    assert 'emptyMessage: "Ready"' in manager
+    assert '.viewer-status-dock > .viewer-status-row' not in css
     assert html.index("status-manager.js") < html.index("application-shell.js") < html.index("app.js")
 
 

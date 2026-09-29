@@ -1619,52 +1619,16 @@ body[data-active-lane="sdr"] .lane-dot {
   box-shadow: inset 3px 0 0 var(--blocking);
 }
 
+.status-entry.status-progress {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
 .status-entry.status-attention {
   box-shadow: inset 3px 0 0 var(--attention);
 }
 
 .status-entry.status-success {
   box-shadow: inset 3px 0 0 var(--success, #62b78f);
-}
-
-.viewer-status-dock > .viewer-status-row {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  left: 0;
-}
-
-.viewer-status-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 14px;
-  padding: 9px 14px;
-  border-bottom: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--body);
-  font-family: var(--mono);
-  font-size: 11px;
-  pointer-events: auto;
-}
-
-.viewer-status-row + .viewer-status-row {
-  border-top: 1px solid var(--hairline);
-}
-
-.viewer-status-row:not(:last-child) {
-  border-bottom: 0;
-}
-
-.viewer-status-copy {
-  flex: 1 1 240px;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.viewer-status-row .preview-progress {
-  flex: 1 1 clamp(90px, 22cqi, 260px);
-  max-width: 260px;
 }
 
 .path-feather-status {
@@ -1680,22 +1644,6 @@ body[data-active-lane="sdr"] .lane-dot {
 
 .path-feather-status.blocking {
   color: var(--blocking);
-}
-
-.viewer-status-row.error {
-  color: var(--error-text);
-  box-shadow: inset 3px 0 0 var(--blocking);
-}
-
-.viewer-status-attention {
-  box-shadow: inset 3px 0 0 var(--attention);
-}
-
-.viewer-status-row .button-row {
-  display: flex;
-  flex: 0 0 auto;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 
 .probe-strip {
@@ -7091,16 +7039,7 @@ input[type="range"]::-webkit-slider-thumb {
   line-height: 1.4;
 }
 
-.viewer-status-row {
-  box-shadow: inset 3px 0 0 var(--accent);
-  color: var(--text);
-  font-family: var(--sans);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: .01em;
-}
-
-.preview-progress {
+.status-entry-progress {
   appearance: none;
   width: 100%;
   height: 6px;
@@ -7110,23 +7049,18 @@ input[type="range"]::-webkit-slider-thumb {
   accent-color: var(--accent);
 }
 
-.preview-cancel {
-  min-width: 96px;
-  white-space: nowrap;
-}
-
-.preview-progress::-webkit-progress-bar {
+.status-entry-progress::-webkit-progress-bar {
   border-radius: 999px;
   background: var(--input);
 }
 
-.preview-progress::-webkit-progress-value {
+.status-entry-progress::-webkit-progress-value {
   border-radius: 999px;
   background: var(--accent);
   transition: width 180ms ease-out;
 }
 
-.preview-progress::-moz-progress-bar {
+.status-entry-progress::-moz-progress-bar {
   border-radius: 999px;
   background: var(--accent);
   transition: width 180ms ease-out;
@@ -7135,7 +7069,7 @@ input[type="range"]::-webkit-slider-thumb {
 /* appearance: none drops the engine's built-in indeterminate animation, leaving
    a dead grey track on every wait we cannot measure - imports, feather updates,
    proof builds. Sweep it ourselves so those still read as working. */
-.preview-progress:indeterminate::-webkit-progress-bar {
+.status-entry-progress:indeterminate::-webkit-progress-bar {
   background:
     linear-gradient(90deg, transparent, var(--accent), transparent) no-repeat,
     var(--input);
@@ -7143,7 +7077,7 @@ input[type="range"]::-webkit-slider-thumb {
   animation: viewer-status-sweep 1150ms ease-in-out infinite;
 }
 
-.preview-progress:indeterminate::-moz-progress-bar {
+.status-entry-progress:indeterminate::-moz-progress-bar {
   background: transparent;
 }
 
@@ -7153,20 +7087,12 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .preview-progress:indeterminate::-webkit-progress-bar {
+  .status-entry-progress:indeterminate::-webkit-progress-bar {
     background:
       linear-gradient(90deg, transparent, var(--accent), transparent) center no-repeat,
       var(--input);
     animation: none;
   }
-}
-
-.viewer-status-row.error {
-  box-shadow: inset 3px 0 0 var(--blocking);
-}
-
-.viewer-status-attention {
-  box-shadow: inset 3px 0 0 var(--attention);
 }
 
 .analysis-dock {
