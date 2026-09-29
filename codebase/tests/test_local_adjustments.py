@@ -419,6 +419,41 @@ def test_overlapping_outer_path_feather_bands_merge_without_hotspots() -> None:
     assert mask[123, 128] > 0.0
 
 
+def test_mixed_path_and_feather_node_types_keep_falloff_stable_across_resolutions() -> None:
+    leaf = MaskLeaf(
+        type="path",
+        nodes=[
+            PathNode(x=0.2, y=0.2, out_x=0.35, out_y=0.08, node_type="smooth"),
+            PathNode(x=0.8, y=0.2, in_x=0.65, in_y=0.08, node_type="smooth"),
+            PathNode(x=0.8, y=0.8),
+            PathNode(x=0.2, y=0.8),
+        ],
+        feather_mode="outer_boundary",
+        feather_nodes=_feather_nodes(0.1, 0.1, 0.9, 0.9),
+        feather_softness=1.0,
+    )
+
+    def raster(size: int) -> np.ndarray:
+        axis = (np.arange(size, dtype=np.float32) + 0.5) / size
+        x, y = np.meshgrid(axis, axis)
+        reference = np.full((size, size, 3), 0.18, dtype=np.float32)
+        return evaluate_mask(_leaf(leaf), reference, x, y)
+
+    low = raster(257)
+    high = raster(321)
+    high_at_low_resolution = np.asarray(
+        Image.fromarray(high).resize(low.shape[::-1], Image.Resampling.BILINEAR),
+        dtype=np.float32,
+    )
+    difference = np.abs(low - high_at_low_resolution)
+
+    # A small phase difference at the one-pixel antialiased contour is normal;
+    # the old whole-perimeter pairing produced gaps with nearly 0.8 alpha
+    # disagreement and hundreds of pixels above 0.1.
+    assert float(np.max(difference)) < 0.075
+    assert not np.any(difference > 0.1)
+
+
 def test_outer_boundary_path_payload_round_trips_all_vector_state() -> None:
     original = MaskLeaf(
         type="path",

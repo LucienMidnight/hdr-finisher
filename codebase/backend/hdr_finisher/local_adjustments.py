@@ -802,6 +802,18 @@ def _soft_segment(
 
 def _path_mask(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray, pixel_aspect: float = 1.0) -> np.ndarray:
     nodes = _flatten_path(leaf)
+    outer: list[tuple[float, float]] | None = None
+    if (
+        leaf.feather_mode == "outer_boundary"
+        and leaf.feather_nodes
+        and len(leaf.nodes) == len(leaf.feather_nodes)
+    ):
+        # Corresponding Path and Feather nodes describe the two ends of the
+        # same falloff band. Flatten them with the same t values per segment.
+        # Flattening independently can give a smooth side twelve samples while
+        # its sharp counterpart gets one; resampling the complete perimeter
+        # then pairs unrelated segments and collapses parts of the band.
+        nodes, outer = _flatten_corresponding_path_nodes(leaf.nodes, leaf.feather_nodes)
     inside = _points_inside_polygon(x, y, nodes)
     if leaf.feather_mode != "outer_boundary":
         if leaf.feather <= 0.0:
@@ -812,7 +824,8 @@ def _path_mask(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray, pixel_aspect: float
 
     if not leaf.feather_nodes and leaf.feather <= 0.0:
         return inside.astype(np.float32)
-    outer = _flatten_path_nodes(leaf.feather_nodes) if leaf.feather_nodes else None
+    if outer is None and leaf.feather_nodes:
+        outer = _flatten_path_nodes(leaf.feather_nodes)
     transition = _additive_outer_path_feather(
         x,
         y,
@@ -1009,30 +1022,62 @@ def _flatten_path(leaf: MaskLeaf, steps: int = 12) -> list[tuple[float, float]]:
     return _flatten_path_nodes(leaf.nodes, steps)
 
 
+def _path_segment_is_curved(first: object, second: object) -> bool:
+    return any(
+        getattr(node, f"{handle}_{axis}") is not None
+        and getattr(node, f"{handle}_{axis}") != getattr(node, axis)
+        for node, handle in ((first, "out"), (second, "in"))
+        for axis in ("x", "y")
+    )
+
+
+def _flatten_path_segment(first: object, second: object, sample_count: int) -> list[tuple[float, float]]:
+    p0 = np.array([first.x, first.y], dtype=np.float32)
+    p1 = np.array(
+        [first.out_x if first.out_x is not None else first.x, first.out_y if first.out_y is not None else first.y],
+        dtype=np.float32,
+    )
+    p2 = np.array(
+        [second.in_x if second.in_x is not None else second.x, second.in_y if second.in_y is not None else second.y],
+        dtype=np.float32,
+    )
+    p3 = np.array([second.x, second.y], dtype=np.float32)
+    vertices: list[tuple[float, float]] = []
+    for index in range(sample_count):
+        t = np.float32(index / sample_count)
+        point = (
+            ((1.0 - t) ** 3) * p0
+            + 3.0 * ((1.0 - t) ** 2) * t * p1
+            + 3.0 * (1.0 - t) * (t**2) * p2
+            + (t**3) * p3
+        )
+        vertices.append((float(point[0]), float(point[1])))
+    return vertices
+
+
+def _flatten_corresponding_path_nodes(
+    inner_nodes: list, outer_nodes: list, steps: int = 12
+) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+    inner_vertices: list[tuple[float, float]] = []
+    outer_vertices: list[tuple[float, float]] = []
+    for index, inner_first in enumerate(inner_nodes):
+        inner_second = inner_nodes[(index + 1) % len(inner_nodes)]
+        outer_first = outer_nodes[index]
+        outer_second = outer_nodes[(index + 1) % len(outer_nodes)]
+        sample_count = steps if (
+            _path_segment_is_curved(inner_first, inner_second)
+            or _path_segment_is_curved(outer_first, outer_second)
+        ) else 1
+        inner_vertices.extend(_flatten_path_segment(inner_first, inner_second, sample_count))
+        outer_vertices.extend(_flatten_path_segment(outer_first, outer_second, sample_count))
+    return inner_vertices, outer_vertices
+
+
 def _flatten_path_nodes(nodes: list, steps: int = 12) -> list[tuple[float, float]]:
     vertices: list[tuple[float, float]] = []
     for first, second in zip(nodes, nodes[1:] + nodes[:1]):
-        p0 = np.array([first.x, first.y], dtype=np.float32)
-        p1 = np.array(
-            [first.out_x if first.out_x is not None else first.x, first.out_y if first.out_y is not None else first.y],
-            dtype=np.float32,
-        )
-        p2 = np.array(
-            [second.in_x if second.in_x is not None else second.x, second.in_y if second.in_y is not None else second.y],
-            dtype=np.float32,
-        )
-        p3 = np.array([second.x, second.y], dtype=np.float32)
-        curved = not (np.array_equal(p0, p1) and np.array_equal(p2, p3))
-        sample_count = steps if curved else 1
-        for index in range(sample_count):
-            t = np.float32(index / sample_count)
-            point = (
-                ((1.0 - t) ** 3) * p0
-                + 3.0 * ((1.0 - t) ** 2) * t * p1
-                + 3.0 * (1.0 - t) * (t**2) * p2
-                + (t**3) * p3
-            )
-            vertices.append((float(point[0]), float(point[1])))
+        sample_count = steps if _path_segment_is_curved(first, second) else 1
+        vertices.extend(_flatten_path_segment(first, second, sample_count))
     return vertices
 
 
