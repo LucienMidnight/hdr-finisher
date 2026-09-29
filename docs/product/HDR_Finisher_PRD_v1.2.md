@@ -1538,6 +1538,37 @@ Work on Gradient, Luma, Path, or a future mask type must preserve these cross-to
 
 ### Recommended Next Steps After This Checkpoint
 
+#### Deferred: separate sprints for local-grade transfer and preview settling (recorded 2026-09-28)
+
+These were cut from the 2026-09-28 usability remediation pass to keep that pass small. Tackle each later as its own sprint with its own PRD. Do not fold them into unrelated work.
+
+**A. Local-grade transfer between lanes**
+
+Scope: per-adjustment `…` menu actions (`Use this mask in SDR/HDR`, `Copy grade to SDR/HDR`, `Move grade to SDR/HDR`) plus an SDR-lane `Match HDR local adjustments` action that works independently of `Match entire HDR grade`. Masks stay shared (`LocalAdjustment.mask`); only `hdr_grade` / `sdr_grade` move.
+
+Findings to resolve first:
+
+- The HDR→SDR local translator is not a pure function of the local grade. `sdr_match._translate_local_grade` takes a `highlight_factor` derived from the settled HDR render, weighted by the local's mask (`_materialize_local_grades`). Any HDR→SDR copy or local-only match is therefore an asynchronous backend action. Like `apply_sdr_match_action`, it needs a revision snapshot, an HDR render at `MATCH_ANALYSIS_EDGE`, translation, and then a single command, and it can fail. The result depends on the whole HDR grade, not just the local.
+- Locals translated on their own are not fitted together with a matched SDR base, which `Match entire HDR grade` does. Expect different results between local-only and full Match, and document it.
+- Atomic undo: `history_group` coalescing only merges entries with the same `command_type` and `target_id` (`sessions.py`). A bulk or move operation needs one command carrying the full target `local_adjustments` array, modeled on `set_sdr_match`, not a batch of `update_local`.
+- `materialize_sdr_match` already calls `_materialize_local_grades`. The refactor is to split out the settled-HDR render and the reference-white guard so the local path can succeed when the global fit fails. Tests must name the exact failure point that lets them diverge.
+- Decide whether HDR→SDR local copies need the authored-SDR consent that Match requires.
+- SDR→HDR copy is an exact value copy; no inverse translation exists.
+- `Use this mask in SDR/HDR` is just "switch lane, keep selection". Only confirm that lane switching keeps the selected local and its Path/Brush edit mode.
+- Housekeeping: the "Match Entire HDR Grade" section above still describes the legacy v1 captured-recipe model (Rematch, Revert, staleness). Current matches are `hdr-to-sdr-materialized-v2`: one-shot and stateless. Rewrite that section as part of this sprint.
+
+**B. Preview quality and settling**
+
+Scope: an optional full-resolution settle, never replacing a sharp frame with a softer one on zoom-out, and replacing the fixed `refinementMs: 520` (`preview-scheduler.js`) with an adaptive dispatch (proposed ≤200 ms).
+
+Findings to resolve first:
+
+- A new `fullResolutionSettling` preference would overlap the existing auto/override preview resolution (`1K/2K/4K/Full`, `previewResolutionOverride`), the "Faster dragging" opt-in, and `roiPreviewMode`. Define how they combine, or fold full-resolution settling into the existing resolution control. At Fit zoom a full-resolution settle is mostly downsampled again, and PERF-04 already records settle work at Full as expensive.
+- "No softening on zoom-out" is the existing Viewport ROI rule that pan and zoom never trigger a render. Enforce and test it as that rule. Define an "adequate" retained frame, e.g. same generation and long edge ≥ displayed long edge × DPR.
+- `armRefinement` runs only after settle plus settled scopes, and only when `previewNeedsRefinement()` is true. Measure any refinement budget from the end of settle, not from the last input, and decide whether settled scopes must finish first.
+- "Prioritize visible tiles" is ROI refinement, which is still an opt-in diagnostic mode awaiting owner review (Viewport ROI PRD §15.11). Enabling it by default is an owner decision.
+- Benchmark against the audited fixture, recording render time separately from scheduler delay.
+
 #### V1 Launch Distribution and Signing Plan
 
 Signing is not a V1 launch blocker. The first public builds may ship unsigned from the project's official GitHub Releases page while the project remains free and open source.

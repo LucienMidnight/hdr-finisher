@@ -36,6 +36,7 @@ const GRADING_PRESET_GROUPS = new Set([
   "hdr-curves", "sdr-curves", "hdr-color-grading", "sdr-color-grading",
   "hdr-film-look", "sdr-film-look", "hdr-vignette", "sdr-vignette",
   "hdr-detail", "sdr-detail",
+  "hdr-black-and-white", "sdr-black-and-white",
   "hdr-denoise", "sdr-denoise",
 ]);
 

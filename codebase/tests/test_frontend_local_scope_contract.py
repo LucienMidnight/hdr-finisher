@@ -483,3 +483,22 @@ def test_denoise_phase_three_exposes_locked_wavelet_methods_and_four_live_contro
     assert "refinementProxyLongEdge()," in app_script
     assert "denoiseDocumentSessionId" in app_script
     assert "evictDenoiseCache" in app_script
+
+
+def test_black_and_white_presets_are_allowed_and_slider_only() -> None:
+    app_script = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    desktop_script = (DESKTOP / "main.js").read_text(encoding="utf-8")
+
+    for group_id in ("hdr-black-and-white", "sdr-black-and-white"):
+        assert f'"{group_id}"' in desktop_script
+
+    preset_block = app_script[
+        app_script.index("const BLACK_AND_WHITE_PRESETS"):
+        app_script.index("const defaultGeometry")
+    ]
+    for slider in ("reds", "oranges", "yellows", "greens", "aquas", "blues", "purples", "magentas"):
+        assert f"{slider}:" in preset_block
+    assert "section_enabled" not in preset_block
+    assert "enabled" not in preset_block
+    assert 'values: { [`${context.lane}.black_and_white`]' in app_script
+    assert "built-ins change only the visible sliders; on/off is unchanged." in app_script

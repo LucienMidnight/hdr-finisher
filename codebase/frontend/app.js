@@ -13160,6 +13160,8 @@ async function openGroupPresetDialog(groupElement) {
   els.groupPresetTitle.textContent = `${context.label} Presets`;
   els.groupPresetContext.textContent = context.group === "film-look"
     ? `${context.lane.toUpperCase()} Film Look · built-ins are editable starting points; Reset returns Neutral.`
+    : context.group === "black-and-white"
+      ? `${context.lane.toUpperCase()} Black & White · built-ins change only the visible sliders; on/off is unchanged.`
     : context.group === "denoise"
       ? `${context.lane.toUpperCase()} Denoise · presets update cached-analysis settings and live controls; use Recalculate Denoise to rebuild analysis.`
       : `${context.lane.toUpperCase()} ${context.label} · presets affect only this adjustment group.`;
@@ -13289,7 +13291,7 @@ async function renderGroupPresetList() {
     if (state.groupPresetContext !== context) return;
     els.groupPresetList.replaceChildren();
     if (builtIns.length) {
-      appendGroupPresetSubheading("Built-in character recipes");
+      appendGroupPresetSubheading(context.group === "black-and-white" ? "Built-in filter presets" : "Built-in character recipes");
       builtIns.forEach(appendGroupPresetRow);
     }
     if (presets.length) {
