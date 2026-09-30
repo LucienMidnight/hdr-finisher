@@ -12811,9 +12811,9 @@ function scheduleZoomRefinement() {
     state.zoomRefinementTimer = 0;
     if (!state.session || !gpuPreviewEligible(state.currentView)) return;
     const target = requiredProcessingLongEdge();
+    const lane = state.currentView;
+    const sessionId = state.session.session_id;
     if (state.acceptedPresentation?.processedLongEdge !== target) {
-      const lane = state.currentView;
-      const sessionId = state.session.session_id;
       const decision = interactiveScaleDecision(lane);
       if (decision.coarse && decision.edge < target) {
         // Zoom can require the tiled renderer even for its reduced pass.
@@ -12832,6 +12832,16 @@ function scheduleZoomRefinement() {
       }
     } else {
       noteViewerPan();
+    }
+    // Zoom cancels the adjustment scheduler, including its scope obligation.
+    // Restore scopes only after the replacement frame is exact and current;
+    // a superseded zoom must not analyze the next zoom's old canvas.
+    const accepted = state.acceptedPresentation;
+    if (state.session?.session_id === sessionId && state.currentView === lane
+      && requiredProcessingLongEdge() === target && accepted?.lane === lane
+      && accepted.generation === state.previewGeneration[lane]
+      && accepted.exact && accepted.processedLongEdge === target) {
+      await refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane });
     }
   }, 80);
 }
