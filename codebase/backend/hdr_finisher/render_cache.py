@@ -40,6 +40,7 @@ from .local_adjustments import (
     sample_luminance_evs,
     spatial_mask_signature,
 )
+from .mask_work import checkpoint as mask_checkpoint, cache_lock as mask_cache_lock, phase as mask_phase
 from .models import AdjustmentState, LocalAdjustment, MaskExpression, MaskPoint, PreviewKind, SdrMatchState
 from .preview import ResizeCancelled, downsample_image
 
@@ -930,9 +931,10 @@ class SessionRenderCache:
         spatial_only: bool = False,
     ) -> np.ndarray:
         edge = max(256, int(long_edge))
-        with self._lock:
+        with mask_cache_lock(self._lock):
             source_epoch = self._source_epoch
-            source, _sdr_reference = self._proxies_locked(edge)
+            with mask_phase("source"):
+                source, _sdr_reference = self._proxies_locked(edge)
         # The overlay remains inspectable while the adjustment is bypassed.
         # Rendering filters disabled/zero-opacity locals, so compile an enabled
         # view of this one mask without changing the persisted adjustment.
@@ -1390,7 +1392,8 @@ class SessionRenderCache:
             key = (source_epoch, edge, geometry_signature, local.id, mask_signature)
             flight_key = ("mask", *key)
             while True:
-                with self._lock:
+                mask_checkpoint()
+                with mask_cache_lock(self._lock):
                     mask = self._masks.get(key)
                     if mask is not None:
                         self._hits += 1
@@ -1408,14 +1411,18 @@ class SessionRenderCache:
                         self._inflight[flight_key] = flight
                         break
                     self._singleflight_waits += 1
-                flight.wait()
+                with mask_phase("singleflight_wait"):
+                    flight.wait(0.05)
 
             if mask is None:
                 owns_flight = flight is not None
                 try:
-                    mask = compile_geometry_fixed_mask(source, local.mask, geometry, spatial_only=True)
+                    mask_checkpoint()
+                    with mask_phase("compute"):
+                        mask = compile_geometry_fixed_mask(source, local.mask, geometry, spatial_only=True)
+                    mask_checkpoint()
                     mask.setflags(write=False)
-                    with self._lock:
+                    with mask_cache_lock(self._lock):
                         if source_epoch == self._source_epoch:
                             existing = self._masks.get(key)
                             if existing is None:

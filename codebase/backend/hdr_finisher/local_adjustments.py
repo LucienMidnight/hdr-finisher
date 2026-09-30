@@ -7,6 +7,7 @@ import os
 import numpy as np
 
 from .color import acescg_to_linear_srgb, linear_srgb_to_acescg
+from .mask_work import checkpoint as mask_checkpoint
 from .finishing import apply_geometry
 from .models import GeometryAdjustments, LocalAdjustment, LocalGrade, MaskExpression, MaskLeaf, MaskPoint, PreviewKind
 from .detail import apply_detail, detail_is_neutral
@@ -107,6 +108,7 @@ def compile_preview_mask(
     geometry: GeometryAdjustments,
 ) -> np.ndarray:
     """Compile one preview mask to an r8-equivalent array for cache reuse."""
+    mask_checkpoint()
     height, width = fixed_source.shape[:2]
     source_x, source_y = source_coordinate_grid(width, height, 0, 0, width, height, geometry)
     mask = evaluate_mask(expression, fixed_source, source_x, source_y, width / max(height, 1))
@@ -169,8 +171,10 @@ def compile_geometry_fixed_mask(
     Build the mask in source space and run the same destructive geometry code
     instead so image pixels and local influence cannot diverge.
     """
+    mask_checkpoint()
     mask_expression = spatial_mask_expression(expression) if spatial_only else expression
     source_mask = compile_preview_mask(source, mask_expression, GeometryAdjustments())
+    mask_checkpoint()
     fixed = apply_geometry(source_mask[..., None], geometry)[..., 0]
     return np.rint(np.clip(fixed, 0.0, 255.0)).astype(np.uint8)
 
@@ -182,6 +186,7 @@ def evaluate_mask(
     source_y: np.ndarray,
     pixel_aspect: float = 1.0,
 ) -> np.ndarray:
+    mask_checkpoint()
     if not expression.enabled:
         if expression.operator != "leaf" and expression.children:
             return evaluate_mask(
@@ -430,6 +435,7 @@ def _brush_masks(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarr
         return float(transformed[0]), float(transformed[1])
 
     for stroke in leaf.strokes:
+        mask_checkpoint()
         points = stroke.points
         shapes = []
         if len(points) == 1:
@@ -475,6 +481,7 @@ def _brush_masks(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarr
         columns = slice(min(shape[1].start for shape in shapes), max(shape[1].stop for shape in shapes))
         stroke_mask = np.zeros((rows.stop - rows.start, columns.stop - columns.start), dtype=np.float32)
         for shape_rows, shape_columns, x0, y0, x1, y1, radius in shapes:
+            mask_checkpoint()
             local_rows = slice(shape_rows.start - rows.start, shape_rows.stop - rows.start)
             local_columns = slice(shape_columns.start - columns.start, shape_columns.stop - columns.start)
             if len(points) == 1:
@@ -685,6 +692,7 @@ def _box_blur_axis(values: np.ndarray, radius: int, axis: int) -> np.ndarray:
     strip_size = max(1, min(512, (64 * 1024 * 1024) // (16 * extended_length)))
     result = np.empty(values.shape, dtype=np.float32)
     for start in range(0, values.shape[other_axis], strip_size):
+        mask_checkpoint()
         region = [slice(None)] * 2
         region[other_axis] = slice(start, start + strip_size)
         strip = values[tuple(region)]

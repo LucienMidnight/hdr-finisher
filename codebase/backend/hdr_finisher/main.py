@@ -157,6 +157,69 @@ def _checked_edit_session(session_id: str, edit_revision: int | None):
     return session
 
 
+def _cancellable_mask_request(endpoint):
+    """Poll disconnects outside the CPU worker; never change mask arithmetic."""
+    import inspect
+    from functools import wraps
+    from threading import Event
+    import anyio
+    from starlette.concurrency import run_in_threadpool
+    from .mask_work import request_work
+
+    @wraps(endpoint)
+    async def wrapped(*args, **kwargs):
+        http_request = kwargs.pop("http_request")
+        disconnected = Event()
+        queued_at = perf_counter()
+        queue_ms = 0.0
+        def check():
+            if disconnected.is_set():
+                raise HTTPException(status_code=409, detail="Disconnected local mask work cancelled.")
+        def work():
+            nonlocal queue_ms
+            queue_ms = (perf_counter() - queued_at) * 1000
+            with request_work(check, None):
+                return endpoint(*args, **kwargs)
+        async def watch():
+            while True:
+                if await http_request.is_disconnected():
+                    disconnected.set()
+                    return
+                await anyio.sleep(.05)
+        error = None
+        async with anyio.create_task_group() as group:
+            group.start_soon(watch)
+            try:
+                response = await run_in_threadpool(work)
+            except Exception as exc:
+                error = exc
+            finally:
+                group.cancel_scope.cancel()
+        if error is not None:
+            raise error
+        response.headers["X-Mask-Worker-Queue-Ms"] = f"{queue_ms:.3f}"
+        return response
+    signature = inspect.signature(endpoint)
+    wrapped.__signature__ = signature.replace(parameters=[*signature.parameters.values(),
+        inspect.Parameter("http_request", inspect.Parameter.KEYWORD_ONLY, annotation=Request)])
+    return wrapped
+
+
+def _compile_current_mask(session, method, *args, timing=None, expected_revision=None, **kwargs):
+    # Snapshot the revision even for compatibility clients omitting it.
+    from .mask_work import request_work
+    revision = session.edit_revision if expected_revision is None else expected_revision
+    def check():
+        if session.edit_revision != revision:
+            raise HTTPException(status_code=409, detail="Obsolete local mask work cancelled.")
+    with request_work(check, timing):
+        return method(*args, **kwargs)
+
+
+def _mask_timing_headers(timing):
+    return {f"X-Mask-{name.replace('_', '-')}-Ms": f"{value:.3f}" for name, value in timing.items()}
+
+
 def _check_mask_geometry(session, geometry_signature: str | None) -> None:
     """Reject a mask request whose geometry no longer matches the session."""
     if geometry_signature is None:
@@ -1189,6 +1252,7 @@ def _slice_mask_tile(
 
 
 @app.get("/api/session/{session_id}/local-mask/{local_id}")
+@_cancellable_mask_request
 def local_mask_proxy(
     session_id: str,
     local_id: str,
@@ -1210,12 +1274,13 @@ def local_mask_proxy(
         },
         deep=True,
     )
+    timing = {}
     started = perf_counter()
-    mask = session.render_cache.compiled_local_mask(
+    mask = _compile_current_mask(session, session.render_cache.compiled_local_mask,
         session.adjustments,
         mask_source,
         long_edge,
-        spatial_only=spatial_only,
+        spatial_only=spatial_only, timing=timing, expected_revision=edit_revision,
     )
     cpu_mask_ms = (perf_counter() - started) * 1000.0
     height, width = mask.shape
@@ -1223,6 +1288,7 @@ def local_mask_proxy(
         content=mask.tobytes(order="C"),
         media_type="application/octet-stream",
         headers={
+            **_mask_timing_headers(timing),
             "X-Image-Width": str(width),
             "X-Image-Height": str(height),
             "X-Pixel-Format": "r8unorm",
@@ -1236,6 +1302,7 @@ def local_mask_proxy(
 
 
 @app.get("/api/session/{session_id}/local-mask-tile/{local_id}")
+@_cancellable_mask_request
 def local_mask_tile_proxy(
     session_id: str,
     local_id: str,
@@ -1262,12 +1329,13 @@ def local_mask_tile_proxy(
     _check_mask_geometry(session, geometry_signature)
     _guard_preview_resources(session, long_edge)
 
+    timing = {}
     started = perf_counter()
-    mask = session.render_cache.compiled_local_mask(
+    mask = _compile_current_mask(session, session.render_cache.compiled_local_mask,
         session.adjustments,
         local,
         long_edge,
-        spatial_only=True,
+        spatial_only=True, timing=timing, expected_revision=edit_revision,
     )
     sliced = _slice_mask_tile(mask, x, y, width, height, halo)
     if sliced is None:
@@ -1278,6 +1346,7 @@ def local_mask_tile_proxy(
         content=payload,
         media_type="application/octet-stream",
         headers={
+            **_mask_timing_headers(timing),
             "X-Tile-X": str(geometry["tile_x"]),
             "X-Tile-Y": str(geometry["tile_y"]),
             "X-Tile-Width": str(geometry["tile_width"]),
@@ -1300,6 +1369,7 @@ def local_mask_tile_proxy(
 
 
 @app.post("/api/session/{session_id}/local-mask-tiles")
+@_cancellable_mask_request
 def local_mask_tiles_batch_proxy(
     session_id: str,
     request: LocalMaskTileBatchRequest,
@@ -1322,6 +1392,7 @@ def local_mask_tiles_batch_proxy(
     compiled: dict[tuple[str, str | None], np.ndarray] = {}
     entries: list[dict[str, object]] = []
     payloads: list[bytes] = []
+    timing = {}
     started = perf_counter()
     for index, tile in enumerate(request.tiles):
         entry: dict[str, object] = {
@@ -1358,11 +1429,11 @@ def local_mask_tiles_batch_proxy(
                 },
                 deep=True,
             )
-            mask = session.render_cache.compiled_local_mask(
+            mask = _compile_current_mask(session, session.render_cache.compiled_local_mask,
                 session.adjustments,
                 mask_source,
                 request.long_edge,
-                spatial_only=True,
+                spatial_only=True, timing=timing, expected_revision=request.edit_revision,
             )
             compiled[identity] = mask
         sliced = _slice_mask_tile(mask, tile.x, tile.y, tile.width, tile.height, tile.halo)
@@ -1392,6 +1463,7 @@ def local_mask_tiles_batch_proxy(
         content=body,
         media_type="application/octet-stream",
         headers={
+            **_mask_timing_headers(timing),
             "X-Mask-Batch-Entries": str(len(entries)),
             "X-Mask-Batch-Bytes": str(len(body)),
             "X-Mask-Batch-Compiles": str(len(compiled)),
@@ -1402,6 +1474,7 @@ def local_mask_tiles_batch_proxy(
 
 
 @app.post("/api/session/{session_id}/local-mask/{local_id}/preview")
+@_cancellable_mask_request
 def local_mask_preview_proxy(
     session_id: str,
     local_id: str,
@@ -1413,11 +1486,12 @@ def local_mask_preview_proxy(
     if request.adjustments is None:
         _check_mask_geometry(session, request.geometry_signature)
     _guard_preview_resources(session, request.long_edge)
+    timing = {}
     started = perf_counter()
-    mask = session.render_cache.compiled_mask_draft(
+    mask = _compile_current_mask(session, session.render_cache.compiled_mask_draft,
         request.adjustments or session.adjustments,
         request.mask,
-        request.long_edge,
+        request.long_edge, timing=timing, expected_revision=request.edit_revision,
     )
     cpu_mask_ms = (perf_counter() - started) * 1000.0
     height, width = mask.shape
@@ -1425,6 +1499,7 @@ def local_mask_preview_proxy(
         content=mask.tobytes(order="C"),
         media_type="application/octet-stream",
         headers={
+            **_mask_timing_headers(timing),
             "X-Image-Width": str(width),
             "X-Image-Height": str(height),
             "X-Pixel-Format": "r8unorm",
