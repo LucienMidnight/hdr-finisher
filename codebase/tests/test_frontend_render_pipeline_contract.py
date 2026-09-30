@@ -413,7 +413,12 @@ def test_electron_preview_correctness_contract() -> None:
     assert 'state.currentView === "sdr"\n      ? refinementProxyLongEdge()' in sdr_match_action
     assert 'longEdge: previewLongEdge' in sdr_match_action
     assert 'tier: previewTier' in sdr_match_action
-    assert 'renderPreviewForLane("sdr", state.currentView === "sdr", previewLongEdge' in sdr_match_action
+    assert 'await presentMatchedSdrPreview(gpuOptions)' in sdr_match_action
+    match_presentation = javascript[
+        javascript.index("async function presentMatchedSdrPreview(options)"):
+        javascript.index("function recordAcknowledgedLocals")
+    ]
+    assert 'renderPreviewForLane("sdr", state.currentView === "sdr", options.longEdge' in match_presentation
     assert "sourceOptions?.identity" in _webgpu_source()
     assert "sourceOptions?.inheritedGrain" in _webgpu_source()
     assert "defaultGeometry" not in gpu_eligibility
