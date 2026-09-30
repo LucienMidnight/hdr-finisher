@@ -430,8 +430,8 @@ def _brush_masks(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarr
         return float(transformed[0]), float(transformed[1])
 
     for stroke in leaf.strokes:
-        stroke_mask = np.zeros(x.shape, dtype=np.float32)
         points = stroke.points
+        shapes = []
         if len(points) == 1:
             point = points[0]
             point_x, point_y = metric_point(point)
@@ -445,15 +445,7 @@ def _brush_masks(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarr
                 point_y,
                 radius,
             )
-            if rows.stop > rows.start and columns.stop > columns.start:
-                stroke_mask[rows, columns] = _soft_disc(
-                    metric_x[rows, columns],
-                    metric_y[rows, columns],
-                    point_x,
-                    point_y,
-                    radius,
-                    stroke.hardness,
-                )
+            shapes.append((rows, columns, point_x, point_y, point_x, point_y, radius))
         else:
             for first, second in zip(points[:-1], points[1:]):
                 first_x, first_y = metric_point(first)
@@ -469,19 +461,37 @@ def _brush_masks(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarr
                     second_y,
                     radius,
                 )
-                if rows.stop <= rows.start or columns.stop <= columns.start:
-                    continue
-                segment = _soft_segment(
-                    metric_x[rows, columns],
-                    metric_y[rows, columns],
-                    first_x,
-                    first_y,
-                    second_x,
-                    second_y,
-                    radius,
-                    stroke.hardness,
+                shapes.append((rows, columns, first_x, first_y, second_x, second_y, radius))
+        shapes = [
+            shape for shape in shapes
+            if shape[0].stop > shape[0].start and shape[1].stop > shape[1].start
+        ]
+        if not shapes:
+            continue
+        # Outside the union of the capsule bounds paint/erase strength is zero.
+        # Keep stroke accumulation local too: a short mark must not allocate
+        # and traverse several native-size float arrays for every stroke.
+        rows = slice(min(shape[0].start for shape in shapes), max(shape[0].stop for shape in shapes))
+        columns = slice(min(shape[1].start for shape in shapes), max(shape[1].stop for shape in shapes))
+        stroke_mask = np.zeros((rows.stop - rows.start, columns.stop - columns.start), dtype=np.float32)
+        for shape_rows, shape_columns, x0, y0, x1, y1, radius in shapes:
+            local_rows = slice(shape_rows.start - rows.start, shape_rows.stop - rows.start)
+            local_columns = slice(shape_columns.start - columns.start, shape_columns.stop - columns.start)
+            if len(points) == 1:
+                segment = _soft_disc(
+                    metric_x[shape_rows, shape_columns], metric_y[shape_rows, shape_columns],
+                    x0, y0, radius, stroke.hardness,
                 )
-                stroke_mask[rows, columns] = np.maximum(stroke_mask[rows, columns], segment)
+            else:
+                segment = _soft_segment(
+                    metric_x[shape_rows, shape_columns], metric_y[shape_rows, shape_columns],
+                    x0, y0, x1, y1, radius, stroke.hardness,
+                )
+            np.maximum(
+                stroke_mask[local_rows, local_columns], segment,
+                out=stroke_mask[local_rows, local_columns],
+            )
+        coverage = result[rows, columns]
         if stroke.erase:
             if erase_attenuation is None:
                 erase_attenuation = np.ones(x.shape, dtype=np.float32)
@@ -489,7 +499,7 @@ def _brush_masks(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarr
                 np.float32(stroke.opacity),
                 stroke_mask * np.float32(stroke.flow),
             )
-            erase_attenuation *= 1.0 - erase_strength
+            erase_attenuation[rows, columns] *= 1.0 - erase_strength
         else:
             # Repeated low-flow passes build coverage, while opacity is the
             # ceiling for this brush preset. A lower-opacity stroke must never
@@ -500,9 +510,9 @@ def _brush_masks(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarr
             )
             accumulated = np.minimum(
                 np.float32(stroke.opacity),
-                result + paint_strength,
+                coverage + paint_strength,
             )
-            result = np.maximum(result, accumulated)
+            np.maximum(coverage, accumulated, out=coverage)
             if erase_attenuation is not None:
                 # Erase is retained as a final-stage attenuation so it can cut
                 # shifted, feathered, and inverted coverage. A later paint
@@ -510,9 +520,10 @@ def _brush_masks(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarr
                 # in stroke order; otherwise an erased pixel is permanent.
                 restored = np.minimum(
                     np.float32(stroke.opacity),
-                    erase_attenuation + paint_strength,
+                    erase_attenuation[rows, columns] + paint_strength,
                 )
-                erase_attenuation = np.maximum(erase_attenuation, restored)
+                attenuation = erase_attenuation[rows, columns]
+                np.maximum(attenuation, restored, out=attenuation)
     return result, erase_attenuation
 
 
