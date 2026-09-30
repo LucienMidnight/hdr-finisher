@@ -674,25 +674,50 @@ def _gaussian_box_widths(sigma: float, passes: int) -> list[int]:
 
 
 def _box_blur_axis(values: np.ndarray, radius: int, axis: int) -> np.ndarray:
-    """Apply one edge-extended float32 box pass in linear time."""
+    """Apply an exact box pass with bounded prefix-sum scratch arrays.
+
+    Rows (horizontal) or columns (vertical) are independent. Splitting the
+    other axis preserves each prefix sum's order and float32 rounding, while
+    avoiding native-frame padding, cumulative and concatenation copies.
+    """
+    other_axis = 1 - axis
+    extended_length = values.shape[axis] + 2 * radius + 1
+    strip_size = max(1, min(512, (64 * 1024 * 1024) // (16 * extended_length)))
+    result = np.empty(values.shape, dtype=np.float32)
+    for start in range(0, values.shape[other_axis], strip_size):
+        region = [slice(None)] * 2
+        region[other_axis] = slice(start, start + strip_size)
+        strip = values[tuple(region)]
+        if axis == 0:
+            # Prefix sums along contiguous rows avoid a native-width stride
+            # for every addition in the vertical pass.
+            result[tuple(region)] = _box_blur_strip(np.ascontiguousarray(strip.T), radius, 1).T
+        else:
+            result[tuple(region)] = _box_blur_strip(strip, radius, axis)
+    return result
+
+
+def _box_blur_strip(values: np.ndarray, radius: int, axis: int) -> np.ndarray:
     padding = [(0, 0)] * values.ndim
     padding[axis] = (radius, radius)
     padded = np.pad(values, padding, mode="edge")
-    zero_shape = list(padded.shape)
-    zero_shape[axis] = 1
-    cumulative = np.concatenate(
-        [
-            np.zeros(zero_shape, dtype=np.float32),
-            np.cumsum(padded, axis=axis, dtype=np.float32),
-        ],
-        axis=axis,
-    )
+    cumulative_shape = list(padded.shape)
+    cumulative_shape[axis] += 1
+    cumulative = np.empty(cumulative_shape, dtype=np.float32)
+    first = [slice(None)] * values.ndim
+    first[axis] = 0
+    cumulative[tuple(first)] = 0.0
+    rest = [slice(None)] * values.ndim
+    rest[axis] = slice(1, None)
+    np.cumsum(padded, axis=axis, dtype=np.float32, out=cumulative[tuple(rest)])
     width = radius * 2 + 1
     after = [slice(None)] * values.ndim
     before = [slice(None)] * values.ndim
     after[axis] = slice(width, None)
     before[axis] = slice(None, -width)
-    return (cumulative[tuple(after)] - cumulative[tuple(before)]) / np.float32(width)
+    result = np.subtract(cumulative[tuple(after)], cumulative[tuple(before)])
+    result /= np.float32(width)
+    return result
 
 
 def _mask_radii_pixels(x: np.ndarray, y: np.ndarray, radius: float) -> tuple[float, float]:
