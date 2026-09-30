@@ -2374,7 +2374,8 @@
       if (!Scheduler) return { rendered: false, refusals: ["tile scheduler is unavailable"] };
       this.activeRenderCount += 1;
       const serial = (this.renderSerials.get(canvas) || 0) + 1;
-      this.renderSerials.set(canvas, serial);
+      // Read-only reductions do not supersede the visible canvas generation.
+      if (!sourceOptions?.measureOnly) this.renderSerials.set(canvas, serial);
       // The source this pass reads is pinned for the pass: a cache allocation
       // inside the pass may trigger global eviction, and the texture being
       // copied from must never be the victim.

@@ -3719,7 +3719,7 @@ function bindEvents() {
   window.addEventListener("hdrfinisher:highlight-anchor-needed", (event) => {
     const { lane, key, used } = event.detail || {};
     if (!state.session || lane !== state.currentView || !key) return;
-    void measureExactHighlightAnchor({ lane, key, used });
+    scheduleExactHighlightAnchor({ lane, key, used });
   });
   window.addEventListener("hdrfinisher:webgpulost", (event) => {
     const message = event.detail?.message || "WebGPU device lost";
@@ -5262,11 +5262,13 @@ async function measureExactScopePeakInner(lane, key) {
   // replaced is worse than no result at all.
   const sessionId = state.session.session_id;
   const importGeneration = state.importGeneration;
+  const foregroundSerial = state.gpuRenderSerial;
   let measured = null;
   const generation = state.previewGeneration[lane];
   const revision = state.editRevision;
   const current = () => state.session?.session_id === sessionId
     && state.importGeneration === importGeneration && !state.importInProgress
+            && state.gpuRenderSerial === foregroundSerial
     && state.previewGeneration[lane] === generation && state.editRevision === revision;
   try {
     const result = await state.gpuPreview.renderTiledTo(
@@ -5326,12 +5328,43 @@ async function measureExactScopePeakInner(lane, key) {
  * the selected colour mode's signal.  Its renderer cache key deliberately
  * excludes preview resolution, so every zoom reuses this one value.
  */
+const pendingHighlightAnchors = new Map();
+function scheduleExactHighlightAnchor(request) {
+  const { lane, key } = request;
+  const previous = pendingHighlightAnchors.get(lane);
+  if (previous) window.clearTimeout(previous.timer);
+  // Renderer deduplication covers dispatched work. Pending work belongs to
+  // this latest-input queue and must not suppress a later generation's event.
+  state.gpuPreview?.requestedCanonicalHighlightKeys?.delete(key);
+  const pending = { request, sessionId: state.session?.session_id, timer: null };
+  const dispatch = () => {
+    if (pendingHighlightAnchors.get(lane) !== pending) return;
+    if (state.session?.session_id !== pending.sessionId || state.currentView !== lane || state.importInProgress) {
+      pendingHighlightAnchors.delete(lane);
+      return;
+    }
+    const scheduler = state.previewScheduler;
+    if (scheduler?.interacting || scheduler?.frameInFlight || scheduler?.framePending
+      || state.gpuDraftInFlight || !state.acceptedPresentation?.exact
+      || state.acceptedPresentation?.generation !== state.previewGeneration[lane]) {
+      pending.timer = window.setTimeout(dispatch, 200);
+      return;
+    }
+    pendingHighlightAnchors.delete(lane);
+    void measureExactHighlightAnchor(pending.request);
+  };
+  pendingHighlightAnchors.set(lane, pending);
+  pending.timer = window.setTimeout(dispatch, 200);
+}
+
 async function measureExactHighlightAnchor({ lane, key, used }) {
   if (!state.gpuPreview?.available || !state.session || !key || state.importInProgress) return null;
   if (exactHighlightAnchorInflight.has(key)) return exactHighlightAnchorInflight.get(key);
   const sessionId = state.session.session_id;
   const importGeneration = state.importGeneration;
+  const foregroundSerial = state.gpuRenderSerial;
   const previewGeneration = state.previewGeneration[lane];
+  const revision = state.editRevision;
   const nativeEdge = previewTargetLongEdge("full");
   const run = (async () => {
     try {
@@ -5354,11 +5387,14 @@ async function measureExactHighlightAnchor({ lane, key, used }) {
           highlightAnchorOnly: true,
           applicationGeneration: previewGeneration,
           isCurrent: () => state.session?.session_id === sessionId
-            && state.importGeneration === importGeneration
+            && state.importGeneration === importGeneration && !state.importInProgress
+            && state.gpuRenderSerial === foregroundSerial
+            && state.currentView === lane && state.editRevision === revision
             && state.previewGeneration[lane] === previewGeneration,
         },
       );
       if (state.session?.session_id !== sessionId || state.importGeneration !== importGeneration
+        || state.editRevision !== revision || state.currentView !== lane
         || state.previewGeneration[lane] !== previewGeneration) return null;
       if (result?.highlightAnchor?.key !== key || !Number.isFinite(result.highlightAnchor.value)) return null;
       const measured = result.highlightAnchor.value;
@@ -11179,6 +11215,7 @@ async function renderGpuDraftInner(
   // starts; a superseded or coalesced intent never consumes one.
   const serial = Number(request.dispatchSerial) || 0;
   state.gpuRenderSerial = serial;
+  if (!allowInactive) state.gpuPreview?.backgroundMaskRequestCoordinator?.cancel();
   const sessionId = state.session.session_id;
   const generation = Number.isFinite(Number(request.applicationGeneration))
     ? Number(request.applicationGeneration)
