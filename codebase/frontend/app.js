@@ -12689,7 +12689,7 @@ function setZoomMode(mode) {
   if (changed) scheduleZoomRefinement();
 }
 
-const navigationThumbnail = { timer: 0, controller: null, key: "", url: "" };
+const navigationThumbnail = { timer: 0, controller: null, key: "", url: "", inflightKey: "" };
 
 function clearNavigationThumbnail() {
   window.clearTimeout(navigationThumbnail.timer);
@@ -12728,20 +12728,45 @@ function scheduleNavigationThumbnail() {
   navigationThumbnail.timer = window.setTimeout(() => { void refreshNavigationThumbnail(); }, 300);
 }
 
+function navigationThumbnailWorkReady() {
+  const lane = state.currentView;
+  const accepted = state.acceptedPresentation;
+  return !state.importInProgress && !state.zoomRefinementTimer
+    && !state.gpuDraftInFlight && !state.previewScheduler?.interacting
+    && !(state.gpuPreview?.activeRenderCount > 0)
+    && accepted?.lane === lane && accepted.exact
+    && accepted.generation === state.previewGeneration[lane]
+    && accepted.geometrySignature === geometrySignature()
+    && accepted.processedLongEdge >= requiredProcessingLongEdge();
+}
+
 async function refreshNavigationThumbnail() {
   if (!state.session || state.zoomMode !== "custom" || state.zoomPercent < 100) return;
+  // This overview is a CPU whole-image render even in a GPU editing session.
+  // Starting it 300ms into native zoom competes with foreground mask builds.
+  // Wait for the requested frame and native background work to finish first.
+  if (!navigationThumbnailWorkReady()) {
+    navigationThumbnail.timer = window.setTimeout(() => { void refreshNavigationThumbnail(); }, 300);
+    return;
+  }
   const sessionId = state.session.session_id;
   const lane = state.currentView;
   if (await syncGlobalEditState() === false || state.session?.session_id !== sessionId) return;
+  if (!navigationThumbnailWorkReady()) {
+    navigationThumbnail.timer = window.setTimeout(() => { void refreshNavigationThumbnail(); }, 300);
+    return;
+  }
   const request = window.HDRWholeImagePreviewPipe.request("navigation", state.session.source.width,
-    { sessionId, lane, editRevision: state.editRevision, geometrySignature: geometrySignature() });
+    { sessionId, lane, editRevision: state.editRevision, geometrySignature: geometrySignature(), includeLocals: !state.compareWithoutLocals });
   const key = JSON.stringify(request);
   if (navigationThumbnail.key === key && navigationThumbnail.url) return;
+  if (navigationThumbnail.inflightKey === key && navigationThumbnail.controller) return;
   navigationThumbnail.controller?.abort();
   const controller = new AbortController();
   navigationThumbnail.controller = controller;
+  navigationThumbnail.inflightKey = key;
   try {
-    const response = await fetch(`/api/session/${sessionId}/preview/${lane}`, {
+    const response = await fetch(`/api/session/${sessionId}/preview/${lane}?purpose=navigation`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ edit_revision: request.editRevision, include_locals: !state.compareWithoutLocals,
@@ -12751,7 +12776,9 @@ async function refreshNavigationThumbnail() {
     if (!response.ok) return;
     const blob = await response.blob();
     if (controller !== navigationThumbnail.controller || state.session?.session_id !== sessionId
-      || state.editRevision !== request.editRevision || state.currentView !== lane) return;
+      || state.editRevision !== request.editRevision || state.currentView !== lane
+      || state.zoomMode !== "custom" || state.zoomPercent < 100
+      || request.includeLocals !== !state.compareWithoutLocals) return;
     const url = URL.createObjectURL(blob);
     const previous = navigationThumbnail.url;
     navigationThumbnail.url = url;
@@ -12761,6 +12788,11 @@ async function refreshNavigationThumbnail() {
     if (previous) URL.revokeObjectURL(previous);
   } catch (error) {
     if (error.name !== "AbortError") console.warn("Navigation thumbnail unavailable", error);
+  } finally {
+    if (navigationThumbnail.controller === controller) {
+      navigationThumbnail.controller = null;
+      navigationThumbnail.inflightKey = "";
+    }
   }
 }
 
