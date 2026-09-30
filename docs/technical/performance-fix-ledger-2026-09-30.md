@@ -74,3 +74,9 @@ Heavy-project automatic-anchor comparison, one fresh-profile observation each, w
 Both runs evaluated the same 28 candidates, had zero CPU preview fallback requests and zero page errors. End-to-end Match was about 33% shorter in this pair; this is not a stable percentile estimate. Raw evidence: `output/performance/review/match-input-reuse-disabled-review.json` and `match-input-reuse-review.json`. Feather release samples in those runs stayed around 0.58–0.69 seconds for the first two edits and 0.17–0.19 seconds for the warm repeat.
 
 All 39 Match input/materialization/state tests passed, including exact candidate pixels, exact complete calibrated recipe/quality/status equivalence against the unwrapped original path, stale geometry/mask prevention, translation-to-candidate reuse, failure cleanup and concurrent-call isolation.
+
+## Exact Peak request ownership
+
+Concurrent requests for the same Exact Peak key now share one native measurement. A session/import/revision/generation change makes its renderer currency callback false so obsolete mask loading/encoding can stop. Stale answers and refused/failed measurements do not populate the completed peak cache; later requests can retry. This does not reduce the intrinsic work for the first valid native measurement or change peak accuracy.
+
+Seven regression tests cover concurrent/forced sharing, generation/revision/session/import invalidation, transient retry and replacement-flight ownership. All 17 frontend contract tests pass. Electron verification reports the same exact peak (7.5234375) for Direct and 256-/512-pixel tiled paths, preserves canvas/scope/diagnostic isolation, and verifies peak labels; its built-in small test pattern does not establish heavy-project cold latency or specular under-reporting.

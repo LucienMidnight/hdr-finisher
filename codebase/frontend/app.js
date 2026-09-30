@@ -5197,6 +5197,7 @@ function refinementProxyLongEdge() {
 // One measured peak per edit state, so a scope refresh that changes nothing
 // about the picture does not pay for the pass again.
 const exactScopePeakCache = new Map();
+const exactScopePeakInflight = new Map();
 const exactHighlightAnchorInflight = new Map();
 
 function exactScopePeakKey(lane = state.currentView) {
@@ -5243,6 +5244,17 @@ async function measureExactScopePeak({ lane = state.currentView, force = false }
   if (state.importInProgress) return null;
   const key = exactScopePeakKey(lane);
   if (!force && exactScopePeakCache.has(key)) return exactScopePeakCache.get(key);
+  if (exactScopePeakInflight.has(key)) return exactScopePeakInflight.get(key);
+  const run = measureExactScopePeakInner(lane, key);
+  exactScopePeakInflight.set(key, run);
+  try {
+    return await run;
+  } finally {
+    if (exactScopePeakInflight.get(key) === run) exactScopePeakInflight.delete(key);
+  }
+}
+
+async function measureExactScopePeakInner(lane, key) {
   const nativeEdge = previewTargetLongEdge("full");
   const started = performance.now();
   // The session this measurement describes. A native render takes seconds on a
@@ -5251,6 +5263,11 @@ async function measureExactScopePeak({ lane = state.currentView, force = false }
   const sessionId = state.session.session_id;
   const importGeneration = state.importGeneration;
   let measured = null;
+  const generation = state.previewGeneration[lane];
+  const revision = state.editRevision;
+  const current = () => state.session?.session_id === sessionId
+    && state.importGeneration === importGeneration && !state.importInProgress
+    && state.previewGeneration[lane] === generation && state.editRevision === revision;
   try {
     const result = await state.gpuPreview.renderTiledTo(
       els.previewCanvas,
@@ -5269,9 +5286,10 @@ async function measureExactScopePeak({ lane = state.currentView, force = false }
         tier: "settled",
         measureOnly: true,
         applicationGeneration: state.previewGeneration[lane],
+        isCurrent: current,
       },
     );
-    if (state.session?.session_id !== sessionId || state.importGeneration !== importGeneration) {
+    if (!current() || exactScopePeakKey(lane) !== key) {
       return null;
     }
     if (result?.rendered && Number.isFinite(result.metrics?.exactPeak)) {
@@ -5290,7 +5308,8 @@ async function measureExactScopePeak({ lane = state.currentView, force = false }
   }
   // Only cache against a session that is still the one in hand, or a later
   // session could read this answer as its own.
-  if (state.session?.session_id === sessionId && state.importGeneration === importGeneration) {
+  if (!current() || exactScopePeakKey(lane) !== key) return null;
+  if (measured?.exact) {
     exactScopePeakCache.set(key, measured);
     while (exactScopePeakCache.size > 8) exactScopePeakCache.delete(exactScopePeakCache.keys().next().value);
   }
