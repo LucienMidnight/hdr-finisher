@@ -389,6 +389,31 @@
     return graphScaleContract().spatialReach(width, height, params);
   }
 
+  // Tile position changes the uniform slots, but neither the local grade nor
+  // the picture entering its Detail bands. Build those once per generation,
+  // especially for brush masks whose serialized stroke history can be large.
+  function buildTiledLocalState(proxyIdentity, params, locals, lane, sourcePixelScale = 1) {
+    const states = locals.map((local) => ({
+      params: buildLocalParams(local, lane, sourcePixelScale), detailPrefix: null,
+    }));
+    let lastDetail = -1;
+    locals.forEach((local, index) => {
+      if (gpuLocalDetailActive(local[`${lane}_grade`])) lastDetail = index;
+    });
+    if (lastDetail < 0) return states;
+    let precedingIdentity = `${proxyIdentity}|${JSON.stringify(Array.from(params))}`;
+    locals.forEach((local, index) => {
+      if (index > lastDetail) return;
+      if (gpuLocalDetailActive(local[`${lane}_grade`])) {
+        states[index].detailPrefix = `local:${local.id}|${detailBandIdentity(states[index].params, precedingIdentity, "local")}`;
+      }
+      if (index < lastDetail) {
+        precedingIdentity += `|${JSON.stringify(gpuMaskRenderPayload(local.mask))}|${JSON.stringify(local[`${lane}_grade`])}|${local.opacity}`;
+      }
+    });
+    return states;
+  }
+
   function detailBandIdentity(params, inputIdentity, scope = "global") {
     const values = Array.from(params || []);
     // Amounts and sharpen threshold consume packed bands but do not create
@@ -2908,7 +2933,10 @@
       });
       this.device.queue.writeBuffer(this.tileCompositeParamBuffer, 0, slots);
 
-      const localBuffers = activeLocals.map((local) => {
+      const tiledLocalState = buildTiledLocalState(
+        proxy.identity, params, activeLocals, lane, options.sourcePixelScale || 1,
+      );
+      const localBuffers = activeLocals.map((local, localIndex) => {
         const localStride = Math.ceil(PARAM_COUNT * 4 / alignment) * alignment;
         const buffer = this.device.createBuffer({
           size: localStride * plan.tileCount,
@@ -2917,7 +2945,7 @@
         const values = new Float32Array((localStride / 4) * plan.tileCount);
         plan.tiles.forEach((tile, index) => {
           const offset = index * (localStride / 4);
-          values.set(buildLocalParams(local, lane, options.sourcePixelScale || 1), offset);
+          values.set(tiledLocalState[localIndex].params, offset);
           values[offset + 160] = tile.haloRect.x;
           values[offset + 161] = tile.haloRect.y;
           values[offset + 162] = tile.haloRect.width;
@@ -3189,7 +3217,6 @@
             localSource = graph.localTexture;
           }
 
-          let precedingIdentity = `${proxy.identity}|${JSON.stringify(Array.from(params))}`;
           activeLocals.forEach((local, localIndex) => {
             const target = localSource === graph.baseTexture ? graph.localTexture : graph.baseTexture;
             const targetView = target.createView();
@@ -3202,9 +3229,7 @@
             if (gpuLocalDetailActive(local[`${lane}_grade`])) {
               pass(finishView, pipelines.localCandidate,
                 bind(localSource.createView(), localSource.createView(), localSource.createView(), localBinding), width, height);
-              const localValues = buildLocalParams(local, lane, options.sourcePixelScale || 1);
-              const bandIdentity = detailBandIdentity(localValues, precedingIdentity, "local");
-              const prefix = `local:${local.id}|${bandIdentity}`;
+              const prefix = tiledLocalState[localIndex].detailPrefix;
               const key = bandTileKey(prefix, tile);
               const packed = this.detailBandTile(key, tile.rect.width, tile.rect.height, "local");
               pinnedDetail.push(key);
@@ -3245,7 +3270,6 @@
                 bind(localSource.createView(), maskView, maskView, localBinding), width, height);
             }
             localSource = target;
-            precedingIdentity += `|${JSON.stringify(gpuMaskRenderPayload(local.mask))}|${JSON.stringify(local[`${lane}_grade`])}|${local.opacity}`;
           });
 
           pass(filmView, pipelines.response, bind(localSource.createView()), width, height);
