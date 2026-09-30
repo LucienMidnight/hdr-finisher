@@ -22,7 +22,7 @@ from .adjustments import (
 from .color import acescg_to_linear_srgb
 from .color_context import RenderColorContext
 from .finishing import apply_geometry
-from .local_adjustments import _apply_local_grade, compile_geometry_fixed_mask
+from .local_adjustments import _apply_local_grade
 from .models import (
     AdjustmentState,
     ColorGradingAdjustments,
@@ -36,6 +36,7 @@ from .models import (
     ToneEqualizerNode,
 )
 from .sdr_gamut import compress_to_srgb_gamut, linear_srgb_to_oklab
+from .sdr_match_inputs import match_spatial_mask, render_match_candidate, reuse_match_render_inputs
 
 
 MATCH_SHOULDER_START = np.float32(0.90)
@@ -191,6 +192,7 @@ def _refine_image_exposure(
     sdr.exposure = best_exposure
 
 
+@reuse_match_render_inputs
 def materialize_sdr_match(
     source: np.ndarray,
     adjustments: AdjustmentState,
@@ -503,7 +505,7 @@ def _materialize_local_grades(
     for local in local_adjustments:
         factor = 1.0
         try:
-            mask = compile_geometry_fixed_mask(source, local.mask, adjustments.shared.geometry, spatial_only=True)
+            mask = match_spatial_mask(source, local.mask, adjustments.shared.geometry)
             weights = np.maximum(mask.astype(np.float32), 0.0)
             if weights.shape == derivative.shape and float(np.sum(weights)) > 1e-6:
                 factor = float(np.sum(weights * derivative) / np.sum(weights))
@@ -706,14 +708,7 @@ def _render_candidate(
     local_adjustments: list[LocalAdjustment],
     source_pixel_scale: float,
 ) -> np.ndarray:
-    return apply_adjustments(
-        source,
-        adjustments,
-        PreviewKind.SDR,
-        include_grain=False,
-        local_adjustments=local_adjustments,
-        source_pixel_scale=source_pixel_scale,
-    )
+    return render_match_candidate(source, adjustments, local_adjustments, source_pixel_scale)
 
 
 def _fit_image_semantic_controls(

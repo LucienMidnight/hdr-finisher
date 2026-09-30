@@ -57,6 +57,18 @@ def _curve_is_identity(points: list[list[float]]) -> bool:
     return all(abs(x - y) < 1e-7 for x, y in points)
 
 
+def test_input_reuse_preserves_the_complete_generated_recipe() -> None:
+    source = tifffile.imread(FIXTURE).astype(np.float32)
+    adjustments, locals_ = _calibrated_grade()
+    options = dict(reference_white_nits=203, source_pixel_scale=1.0)
+    baseline = materialize_sdr_match.__wrapped__(source, adjustments, locals_, **options)
+    reused = materialize_sdr_match(source, adjustments, locals_, **options)
+    assert reused.adjustments.model_dump() == baseline.adjustments.model_dump()
+    assert [local.model_dump() for local in reused.local_adjustments] == [local.model_dump() for local in baseline.local_adjustments]
+    assert reused.quality == baseline.quality
+    assert reused.status == baseline.status
+
+
 def _curve_has_useful_slope(points: list[list[float]]) -> bool:
     values = np.asarray(points, dtype=np.float32)
     return bool(np.all(np.diff(values[:, 1]) / np.diff(values[:, 0]) >= 0.19))

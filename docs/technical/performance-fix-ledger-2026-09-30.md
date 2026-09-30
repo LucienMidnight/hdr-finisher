@@ -8,7 +8,7 @@ Steve requested investigation of all prioritized areas, targeted repairs, and a 
 | Drag input backpressure | Tiled local parameters and brush/grade cache identities built once per generation; broader event-loop correlation pending | In progress |
 | CPU routing / request churn | Transient post-Match GPU recovery `6b0d83f`; identical CPU preview requests now share one computation | In progress |
 | GPU mask cache growth | Cancelled tiled generations now close validation scopes, release temporary buffers/peak reservations, and schedule cache trimming | In progress |
-| Match / cold Exact Peak | Candidate reuse and peak-stage investigation pending | Open |
+| Match / cold Exact Peak | Match reuses geometry-fixed source and spatial masks across candidates; cold Exact Peak investigation pending | In progress |
 | Active-edit endurance | 30–45-minute replay after fixes, preserving automatic anchors | Pending |
 
 ## Bounded feather prefix sums
@@ -57,3 +57,18 @@ The mid-encode cancellation return skipped `popErrorScope`, peak-target release 
 Every tiled exit now schedules trimming after submitted work drains and overlapping render/scope lifetimes end. Device replacement prevents an old callback from trimming a new device's caches. The encoder's `finally` balances its validation scope and releases local/denoise parameter buffers on success, cancellation and exceptions; cancelled/failed encodes release their peak reservation. A pre-presentation refusal also releases its already-created local buffers and peak reservation.
 
 Five regression tests cover cancellation, exceptions, successful peak-readback ownership, queue/lifetime ordering and device replacement. Direct/Tiled parity and cache reuse are checked again after this change. A broader frontend contract check passes 16 of 17 tests; its remaining source-string assertion still expects CPU fallback directly inside `setSdrMatch`, which moved into the previously committed recovery helper. That assertion needs updating; the behavioral Match recovery tests already cover the helper.
+
+## Match input reuse
+
+Match candidates use the same source, geometry and spatial masks while varying editable SDR controls. Previously every candidate reapplied source geometry and compiled every active mask. A context local to one Match now retains the geometry-fixed source and read-only spatial masks; mask/geometry signatures distinguish changed inputs, and independent/nested calls have separate contexts. The context is released on success or failure. Candidate grading, search order, quality checks and the output recipe remain unchanged.
+
+Heavy-project automatic-anchor comparison, one fresh-profile observation each, with the rest of the implementation held constant:
+
+| Observation | Match settled ms | Backend materialization ms | Exposure candidate ms (9) | Semantic candidate ms (11) | RGB candidate ms (6) |
+|---|---:|---:|---:|---:|---:|
+| Input reuse disabled | 15,528 | 14,380.821 | 4,369.479 | 4,852.976 | 2,723.057 |
+| Input reuse enabled | 10,429 | 9,308.504 | 2,721.770 | 2,884.107 | 1,650.774 |
+
+Both runs evaluated the same 28 candidates, had zero CPU preview fallback requests and zero page errors. End-to-end Match was about 33% shorter in this pair; this is not a stable percentile estimate. Raw evidence: `output/performance/review/match-input-reuse-disabled-review.json` and `match-input-reuse-review.json`. Feather release samples in those runs stayed around 0.58–0.69 seconds for the first two edits and 0.17–0.19 seconds for the warm repeat.
+
+All 39 Match input/materialization/state tests passed, including exact candidate pixels, exact complete calibrated recipe/quality/status equivalence against the unwrapped original path, stale geometry/mask prevention, translation-to-candidate reuse, failure cleanup and concurrent-call isolation.
