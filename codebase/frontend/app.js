@@ -15650,16 +15650,17 @@ async function setSdrMatch(action) {
       : settledProxyLongEdge();
     const previewTier = previewLongEdge >= refinementProxyLongEdge() ? "refinement" : "settled";
     if (state.denoise.sdr.enabled) await recalculateDenoise("sdr");
-    const gpuReady = await renderGpuDraft("sdr", {
+    const gpuOptions = {
       hideStatus: false,
       longEdge: previewLongEdge,
       allowInactive: state.currentView !== "sdr",
       tier: previewTier,
-    });
-    if (!gpuReady) {
-      await renderPreviewForLane("sdr", state.currentView === "sdr", previewLongEdge, {
-        progressSteps: [20, 60, 90],
-      });
+    };
+    const previewDeferred = await presentMatchedSdrPreview(gpuOptions);
+    if (previewDeferred) {
+      syncDesktopDocumentState();
+      status.post({ id: "match", severity: "info", message: "HDR grade matched to SDR · preview updating." });
+      return true;
     }
     await refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane: "sdr" });
     if (state.compareLayout !== "single") {
@@ -15678,6 +15679,46 @@ async function setSdrMatch(action) {
     renderLaneChrome();
     if (els.sdrMatchRevert) els.sdrMatchRevert.disabled = false;
   }
+}
+
+async function presentMatchedSdrPreview(options) {
+  const sessionId = state.session?.session_id;
+  const generation = state.previewGeneration.sdr;
+  const current = () => state.session?.session_id === sessionId
+    && state.previewGeneration.sdr === generation;
+  const presented = () => current()
+    && state.acceptedPresentation?.lane === "sdr"
+    && state.acceptedPresentation.generation === generation
+    && state.acceptedPresentation.exact
+    && state.acceptedPresentation.processedLongEdge === options.longEdge
+    && state.acceptedPresentation.geometrySignature === geometrySignature();
+  if (presented()) return false;
+  let rendered = await renderGpuDraft("sdr", options);
+  // Peak/mask work can supersede the first presentation after Match. As in
+  // settlePreview, drain pending work and retry once before choosing CPU.
+  if (!rendered && transientGpuRefusal() && current()) {
+    const edits = state.editCommandQueue;
+    const editsReady = !edits || await edits !== false;
+    const pending = state.gpuDraftInFlight;
+    if (pending) await pending.catch(() => null);
+    if (presented()) return false;
+    if (editsReady && current()) {
+      rendered = await renderGpuDraft("sdr", { ...options, allowInactive: state.currentView !== "sdr" });
+    }
+  }
+  if (!current()) return true;
+  if (!rendered) {
+    if (transientGpuRefusal()) {
+      // A second cancellation still has no CPU failure to recover from. Arm
+      // real replacement work rather than claiming an exact frame is ready.
+      debouncePreview("sdr");
+      return true;
+    }
+    await renderPreviewForLane("sdr", state.currentView === "sdr", options.longEdge, {
+      progressSteps: [20, 60, 90],
+    });
+  }
+  return false;
 }
 
 /**

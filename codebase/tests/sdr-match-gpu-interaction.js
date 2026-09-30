@@ -73,6 +73,10 @@ function sameBuffer(left, right) {
     await page.waitForFunction((revision) => (
       state.editRevision > revision && state.editDocument?.sdr_match?.materialized_status && !els.sdrMatchEntire.disabled
     ), authored.revision, { timeout: 30000 });
+    await page.waitForFunction(() => state.acceptedPresentation?.lane === "sdr"
+      && state.acceptedPresentation.generation === state.previewGeneration.sdr
+      && state.acceptedPresentation.exact && !state.gpuDraftInFlight
+      && viewerState().status === "ready", null, { timeout: 30000 });
 
     const matched = await page.evaluate(async () => {
       const match = state.editDocument.sdr_match;
@@ -82,7 +86,7 @@ function sameBuffer(left, right) {
       const globalRgbCurves = ["red_curve", "green_curve", "blue_curve"];
       const curveNeutral = (points) => points.every(([x, y]) => Math.abs(x - y) < 0.000001);
       state.gpuPreview.setInstrumentationEnabled(true);
-      const rendered = await renderGpuDraft("sdr", { longEdge: settledProxyLongEdge() });
+      const rendered = !await presentMatchedSdrPreview({ longEdge: refinementProxyLongEdge(), tier: "refinement" });
       await new Promise((resolve) => requestAnimationFrame(() => resolve()));
       const accepted = state.acceptedPresentation;
       const unsupportedCurveLocal = JSON.parse(JSON.stringify(local));
@@ -119,6 +123,7 @@ function sameBuffer(left, right) {
         sourceOptions: gpuPreviewSourceOptions("sdr"),
         gpuEligible: gpuPreviewEligible("sdr"),
         gpuRendered: rendered,
+        gpuRefusal: state.lastGpuDraftRefusal,
         acceptedLane: accepted?.lane,
         acceptedGeneration: accepted?.generation,
         acceptedTransport: accepted?.transport,
