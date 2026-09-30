@@ -60,6 +60,8 @@ Five regression tests cover cancellation, exceptions, successful peak-readback o
 
 The outdated Match source assertion was subsequently updated to follow the recovery helper and its selected-edge CPU fallback. All 17 frontend contracts and 32 focused Node regression tests then passed.
 
+A follow-up lifetime check tightened trim ordering: wait for active encoders to end, then drain their submissions, and repeat if a new render started during the drain. Waiting for an earlier queue fence before a later encoder ends would not cover that encoder's later submissions. A sixth cleanup test explicitly simulates that overlap and verifies no eviction occurs before the second drain.
+
 ## Match input reuse
 
 Match candidates use the same source, geometry and spatial masks while varying editable SDR controls. Previously every candidate reapplied source geometry and compiled every active mask. A context local to one Match now retains the geometry-fixed source and read-only spatial masks; mask/geometry signatures distinguish changed inputs, and independent/nested calls have separate contexts. The context is released on success or failure. Candidate grading, search order, quality checks and the output recipe remain unchanged.

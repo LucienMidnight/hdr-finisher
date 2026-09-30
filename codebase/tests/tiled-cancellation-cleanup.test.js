@@ -58,9 +58,24 @@ test('Cache trim waits for submitted work and overlapping active renders', async
   preview.device = { queue: { onSubmittedWorkDone: () => new Promise(resolve => { drain = resolve; }) } };
   preview.destroyAfterActiveRenders = callback => { release = callback; };
   preview.trimDetailBandTiles = preview.trimMaskTiles = () => trimmed++;
-  preview.scheduleTileCacheTrim(); assert.equal(trimmed, 0); assert.equal(release, undefined);
-  drain(); await Promise.resolve(); assert.equal(trimmed, 0); assert.equal(typeof release, 'function');
-  release(); await preview.pendingCacheTrim; assert.equal(trimmed, 2);
+  preview.scheduleTileCacheTrim(); assert.equal(trimmed, 0); assert.equal(drain, undefined);
+  release(); assert.equal(trimmed, 0); assert.equal(typeof drain, 'function');
+  drain(); await preview.pendingCacheTrim; assert.equal(trimmed, 2);
+});
+
+test('A render starting during queue drain requires another lifetime wait and drain', async () => {
+  let trimmed = 0;
+  const releases = [], drains = [];
+  const Preview = vm.runInNewContext(`(class { ${source.slice(trimStart, trimEnd)} })`);
+  const preview = new Preview();
+  preview.device = { queue: { onSubmittedWorkDone: () => new Promise(resolve => drains.push(resolve)) } };
+  preview.destroyAfterActiveRenders = callback => releases.push(callback);
+  preview.trimDetailBandTiles = preview.trimMaskTiles = () => trimmed++;
+  preview.scheduleTileCacheTrim(); releases[0]();
+  preview.activeRenderCount = 1; drains[0](); await Promise.resolve();
+  assert.equal(trimmed, 0); assert.equal(releases.length, 2); assert.equal(drains.length, 1);
+  preview.activeRenderCount = 0; releases[1](); assert.equal(drains.length, 2);
+  assert.equal(trimmed, 0); drains[1](); await preview.pendingCacheTrim; assert.equal(trimmed, 2);
 });
 
 test('Device replacement does not trim the replacement device caches', async () => {

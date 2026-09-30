@@ -2655,18 +2655,24 @@
     scheduleTileCacheTrim() {
       const device = this.device;
       if (!device?.queue) return;
-      // A cancelled generation may already have submitted batches. Wait for
-      // them, then for any overlapping render/scope lifetime, before evicting
-      // textures. Every tiled exit schedules this, including mask refusals.
-      this.pendingCacheTrim = device.queue.onSubmittedWorkDone().then(() => new Promise((resolve) => {
+      // Wait for active encoders first, then drain all their submissions. A
+      // new render may start during that drain: wait again rather than destroy
+      // textures that its later submissions still need.
+      const trimWhenIdle = () => new Promise((resolve, reject) => {
         this.destroyAfterActiveRenders(() => {
-          if (this.device === device) {
+          device.queue.onSubmittedWorkDone().then(() => {
+            if (this.device !== device) return resolve();
+            if (this.activeRenderCount > 0 || this.activeScopeCount > 0) {
+              resolve(trimWhenIdle());
+              return;
+            }
             this.trimDetailBandTiles();
             this.trimMaskTiles();
-          }
-          resolve();
+            resolve();
+          }).catch(reject);
         });
-      })).catch(() => null);
+      });
+      this.pendingCacheTrim = trimWhenIdle().catch(() => null);
     }
 
     /** Encode and submit one complete haloed tiled generation. */
