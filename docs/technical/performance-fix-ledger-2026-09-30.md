@@ -4,9 +4,9 @@ Steve requested investigation of all prioritized areas, targeted repairs, and a 
 
 | Area | Current evidence / action | Status |
 |---|---|---|
-| CPU masks / automatic anchors | Stroke-bound accumulation committed `2f12520`; bounded feather prefix sums added next | In progress |
+| CPU masks / automatic anchors | Stroke-bound accumulation `2f12520`; bounded feather prefix sums `ce07ab9` | In progress |
 | Drag input backpressure | Correlation and main-thread work investigation pending | Open |
-| CPU routing / request churn | Transient post-Match GPU recovery committed `6b0d83f`; unsupported-local CPU request churn still open | In progress |
+| CPU routing / request churn | Transient post-Match GPU recovery `6b0d83f`; identical CPU preview requests now share one computation | In progress |
 | GPU mask cache growth | Identity/lifetime/eviction investigation pending | Open |
 | Match / cold Exact Peak | Candidate reuse and peak-stage investigation pending | Open |
 | Active-edit endurance | 30–45-minute replay after fixes, preserving automatic anchors | Pending |
@@ -31,3 +31,13 @@ Verification covers axes, radii larger than image dimensions, non-divisible stri
 .venv/Scripts/python.exe tests/performance/mask-blur-benchmark.py strips
 .venv/Scripts/python.exe -m pytest tests/test_mask_blur_strips.py tests/test_local_adjustments.py tests/test_render_cache.py -q
 ```
+
+## CPU request churn
+
+`renderPreviewForLane` previously aborted the lane's existing controller for every call, even when session, revision, generation, geometry, locals, resolution and execution inputs were identical. The recovery watchdog did not count CPU preview work as in flight and rearmed once per second. Together these could keep replacing a healthy long-running CPU request; earlier non-neutral local-curve samples started 21 requests.
+
+Identical CPU requests now share the lane's in-flight promise. A changed render identity still starts fresh work; an older completion cannot remove the replacement record. The watchdog stands down only for a matching current-session/current-generation CPU flight, preserving recovery for obsolete work.
+
+Before adding the watchdog guard, a heavy-project local-luma edit with request coalescing already produced **one completed CPU request and zero failed CPU preview requests per lane**: HDR request 5,364 ms / settled 7,248.1 ms; SDR request 5,534 ms / settled 7,553.5 ms. Each lane has one sample. The earlier 25–32-second samples had different cache and request-churn conditions; do not treat this as a homogeneous percentage-speedup estimate. The saved recipe still takes the supported CPU path for non-neutral local curves; no GPU eligibility or grading algorithm changed.
+
+Raw evidence: `output/performance/review/cpu-singleflight-local-luma.json`. Regression tests verify same-input coalescing, generation/revision changes, failure retry, old-flight completion and watchdog recovery versus legitimate current CPU work. Subsequent regression covers the normal GPU Match path.

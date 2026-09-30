@@ -2183,6 +2183,9 @@ function installPreviewWatchdog() {
       return;
     }
     if (state.previewScheduler.interacting || state.gpuDraftInFlight) return;
+    const cpuFlight = state.cpuPreviewInflight?.get(state.currentView);
+    if (cpuFlight?.sessionId === state.session.session_id
+      && cpuFlight.generation === state.previewGeneration[state.currentView]) return;
     if (geometryDraftActive() || state.localMaskDraftDirty || state.comparePeekActive) return;
     const laneState = state.renderCoordinator?.snapshot?.()?.lanes?.[state.currentView];
     if (laneState?.inFlight || laneState?.pending) return;
@@ -5387,6 +5390,36 @@ async function refreshPreview(options = {}) {
 }
 
 async function renderPreviewForLane(
+  lane,
+  displayWhenReady,
+  longEdge = 1600,
+  options = {},
+) {
+  if (!state.session || geometryDraftActive()) return false;
+  const sessionId = state.session.session_id;
+  if (await syncGlobalEditState() === false || state.session?.session_id !== sessionId) return false;
+  if (geometryDraftActive()) return false;
+  const raw = options.raw ?? !state.gpuPreview?.available;
+  const key = JSON.stringify([sessionId, state.editRevision, state.previewGeneration[lane],
+    geometrySignature(), longEdge, displayWhenReady, raw, state.compareWithoutLocals,
+    state.localPreviewDirty && !state.compareWithoutLocals ? localAdjustments() : null]);
+  const inflight = state.cpuPreviewInflight ||= new Map();
+  const previous = inflight.get(lane);
+  // Scheduler settle, scopes and lane preparation can ask for the same CPU
+  // image while it is still computing. Aborting and restarting that request
+  // wastes the backend work and can prevent any current frame from finishing.
+  if (previous?.key === key) return previous.promise;
+  const record = { key, sessionId, generation: state.previewGeneration[lane], promise: null };
+  record.promise = renderPreviewForLaneInner(lane, displayWhenReady, longEdge, { ...options, raw });
+  inflight.set(lane, record);
+  try {
+    return await record.promise;
+  } finally {
+    if (inflight.get(lane) === record) inflight.delete(lane);
+  }
+}
+
+async function renderPreviewForLaneInner(
   lane,
   displayWhenReady,
   longEdge = 1600,
