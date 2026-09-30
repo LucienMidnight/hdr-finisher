@@ -2652,11 +2652,29 @@
       return bytes;
     }
 
+    scheduleTileCacheTrim() {
+      const device = this.device;
+      if (!device?.queue) return;
+      // A cancelled generation may already have submitted batches. Wait for
+      // them, then for any overlapping render/scope lifetime, before evicting
+      // textures. Every tiled exit schedules this, including mask refusals.
+      this.pendingCacheTrim = device.queue.onSubmittedWorkDone().then(() => new Promise((resolve) => {
+        this.destroyAfterActiveRenders(() => {
+          if (this.device === device) {
+            this.trimDetailBandTiles();
+            this.trimMaskTiles();
+          }
+          resolve();
+        });
+      })).catch(() => null);
+    }
+
     /** Encode and submit one complete haloed tiled generation. */
     async encodeTiledGeneration(canvas, context, proxy, surface, pipelines, params, options = {}) {
       const Scheduler = options.Scheduler
         || (typeof window !== "undefined" ? window.HDRTileScheduler : null);
       if (!Scheduler) return { rendered: false, refusals: ["tile scheduler is unavailable"] };
+      try {
       const tileSize = Math.max(64, Math.floor(Number(options.tileSize) || Scheduler.DEFAULT_TILE_SIZE));
       // A measurement pass renders the graph to read one number off it and
       // presents nothing, so it must leave every piece of state that describes
@@ -2994,12 +3012,16 @@
           )
           : { current: () => true, release: () => {} };
         if (!presentation) {
+          localBuffers.forEach((entry) => entry.buffer.destroy());
+          if (peakTarget) peakTarget.busy = false;
           this.recordStage("tiled-refused", { lane, longEdge, refusals: ["superseded-before-presentation"] });
           return { rendered: false, refusals: ["superseded-before-presentation"] };
         }
         this.configureSurface(canvas, context, lane === "hdr");
       }
       let encodeError = null;
+      let validationError = null;
+      let validationScopeOpen = false;
       let processedTiles = 0;
       // Small-batch submission. The GPU starts on one batch
       // while the CPU encodes the next, and a superseded generation stops
@@ -3011,6 +3033,7 @@
       try {
       if (!measureOnly) this.scopeSources.delete(canvas);
       this.device.pushErrorScope("validation");
+      validationScopeOpen = true;
       let encoder = this.device.createCommandEncoder();
       const flushTiles = () => {
         if (batchTiles === 0) return;
@@ -3343,8 +3366,6 @@
         // Some of the map's pre-pass may never be submitted, so its record of
         // what it holds cannot be trusted.
         if (clarityFrame) this.clarityFrameMap = null;
-        localBuffers.forEach((entry) => entry.buffer.destroy());
-        denoiseParamBuffers.forEach((buffer) => buffer.destroy());
         this.recordStage("tiled-cancelled", {
           lane, processedTiles, foregroundTiles: foregroundTiles.length, submissions,
         });
@@ -3376,14 +3397,17 @@
         encodeError = error;
       } finally {
         presentation?.release();
+        localBuffers.forEach((entry) => entry.buffer.destroy());
+        denoiseParamBuffers.forEach((buffer) => buffer.destroy());
+        if (cancelled || encodeError) {
+          if (peakTarget) peakTarget.busy = false;
+        }
+        if (validationScopeOpen) validationError = await this.device.popErrorScope();
       }
       if (encodeError) {
         if (clarityFrame) this.clarityFrameMap = null;
         throw encodeError;
       }
-      localBuffers.forEach((entry) => entry.buffer.destroy());
-      denoiseParamBuffers.forEach((buffer) => buffer.destroy());
-      const validationError = await this.device.popErrorScope();
       if (validationError) {
         if (clarityFrame) this.clarityFrameMap = null;
         if (peakTarget) peakTarget.busy = false;
@@ -3436,14 +3460,6 @@
       }
       const detailCacheBytes = this.trimDetailBandTiles(pinnedDetail);
       const maskCacheBytes = this.trimMaskTiles(pinnedMasks);
-      // The trim above cannot evict this generation's own tiles, because
-      // submitted work still references them. Once the queue drains they are
-      // evictable, so trim again without pins. Retained as a promise so a
-      // measurement can await the steady state rather than sampling mid-trim.
-      this.pendingCacheTrim = this.device.queue.onSubmittedWorkDone().then(() => {
-        this.trimDetailBandTiles();
-        this.trimMaskTiles();
-      }).catch(() => null);
       const durationMs = performance.now() - startedAt;
       const metrics = {
         width: proxy.width, height: proxy.height, tileSize, halo,
@@ -3534,6 +3550,9 @@
         hdr: surface.hdr, proxyFormat: proxy.pixelFormat,
         sourceSerial: proxy.sourceSerial ?? null, execution: "tiled", metrics,
       };
+      } finally {
+        this.scheduleTileCacheTrim();
+      }
     }
 
     /** Record why a render declined, so a falsy result is diagnosable. */

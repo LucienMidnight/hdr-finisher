@@ -7,7 +7,7 @@ Steve requested investigation of all prioritized areas, targeted repairs, and a 
 | CPU masks / automatic anchors | Stroke-bound accumulation `2f12520`; bounded feather prefix sums `ce07ab9` | In progress |
 | Drag input backpressure | Tiled local parameters and brush/grade cache identities built once per generation; broader event-loop correlation pending | In progress |
 | CPU routing / request churn | Transient post-Match GPU recovery `6b0d83f`; identical CPU preview requests now share one computation | In progress |
-| GPU mask cache growth | Identity/lifetime/eviction investigation pending | Open |
+| GPU mask cache growth | Cancelled tiled generations now close validation scopes, release temporary buffers/peak reservations, and schedule cache trimming | In progress |
 | Match / cold Exact Peak | Candidate reuse and peak-stage investigation pending | Open |
 | Active-edit endurance | 30–45-minute replay after fixes, preserving automatic anchors | Pending |
 
@@ -49,3 +49,11 @@ The tiled path rebuilt each local's grade parameters for every tile's uniform sl
 They are now computed once per generation. Tile-specific positions and Clarity plans still populate their own slots. Local Detail prefixes remain exactly the same strings, including preceding masks, grades, opacity, lane and source scale. A render without local Detail avoids that serialization entirely. This removes repeated synchronous work; it does not establish how much of the previously observed slow mouse gesture was browser main-thread work.
 
 Four dependency tests cover exact identity preservation, downstream invalidation, absence of unnecessary serialization, and lane/scale changes. Electron Direct/Tiled pixel parity checks use 256- and 512-pixel tiles with standard, maximum-radius and denoised grades; the completed optimized run has zero channel differences and passes Detail cache reuse and atomic presentation checks. The first optimized run failed the denoised 512-pixel capture (9.2181% differing pixels, max delta 255); a baseline comparison passed (one pixel differing by one), and the optimized repeat passed. The isolated failure remains a capture/render concurrency concern for follow-up, rather than evidence of consistently passing runs.
+
+## Cancelled tiled generation cleanup
+
+The mid-encode cancellation return skipped `popErrorScope`, peak-target release and post-submission cache trimming. Mask-load supersession also returned before cache trimming. Encoder exceptions skipped temporary-buffer cleanup. These are definite lifetime gaps, though the original endurance cache growth cannot be attributed to them alone.
+
+Every tiled exit now schedules trimming after submitted work drains and overlapping render/scope lifetimes end. Device replacement prevents an old callback from trimming a new device's caches. The encoder's `finally` balances its validation scope and releases local/denoise parameter buffers on success, cancellation and exceptions; cancelled/failed encodes release their peak reservation. A pre-presentation refusal also releases its already-created local buffers and peak reservation.
+
+Five regression tests cover cancellation, exceptions, successful peak-readback ownership, queue/lifetime ordering and device replacement. Direct/Tiled parity and cache reuse are checked again after this change. A broader frontend contract check passes 16 of 17 tests; its remaining source-string assertion still expects CPU fallback directly inside `setSdrMatch`, which moved into the previously committed recovery helper. That assertion needs updating; the behavioral Match recovery tests already cover the helper.
