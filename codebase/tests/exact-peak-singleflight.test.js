@@ -51,6 +51,13 @@ test('A transient refusal can retry instead of poisoning the completed cache', a
   assert.equal((await second).exact, true);
 });
 
+test('A valid shorter-edge result retains its disclosure and remains reusable', async () => {
+  const f = fixture(), first = f.run();
+  f.jobs[0].resolve({ rendered: true, metrics: { exactPeak: 3, exactPeakLongEdge: 4608, tileCount: 81 } });
+  const measured = await first; assert.equal(measured.exact, false);
+  assert.equal(await f.run(), measured); assert.equal(f.jobs.length, 1);
+});
+
 test('Old completion cannot remove or satisfy a newer edit measurement', async () => {
   const f = fixture(), first = f.run(); f.state.previewGeneration.hdr++;
   const second = f.run(); assert.equal(f.jobs.length, 2);

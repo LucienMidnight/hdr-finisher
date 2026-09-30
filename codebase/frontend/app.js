@@ -5309,7 +5309,10 @@ async function measureExactScopePeakInner(lane, key) {
   // Only cache against a session that is still the one in hand, or a later
   // session could read this answer as its own.
   if (!current() || exactScopePeakKey(lane) !== key) return null;
-  if (measured?.exact) {
+  // A geometry-cropped native result may have a shorter output edge than the
+  // imported source. Retain its valid measurement and existing disclosure;
+  // only a failed/refused measurement (no finite peak) must remain retryable.
+  if (Number.isFinite(measured?.peak)) {
     exactScopePeakCache.set(key, measured);
     while (exactScopePeakCache.size > 8) exactScopePeakCache.delete(exactScopePeakCache.keys().next().value);
   }
