@@ -4,12 +4,12 @@ Steve requested investigation of all prioritized areas, targeted repairs, and a 
 
 | Area | Current evidence / action | Status |
 |---|---|---|
-| CPU masks / automatic anchors | Stroke-bound accumulation `2f12520`; bounded feather prefix sums `ce07ab9` | In progress |
-| Drag input backpressure | Tiled local parameters and brush/grade cache identities built once per generation; broader event-loop correlation pending | In progress |
-| CPU routing / request churn | Transient post-Match GPU recovery `6b0d83f`; identical CPU preview requests now share one computation | In progress |
-| GPU mask cache growth | Cancelled tiled generations now close validation scopes, release temporary buffers/peak reservations, and schedule cache trimming | In progress |
-| Match / cold Exact Peak | Match reuses geometry-fixed source and spatial masks across candidates; cold Exact Peak investigation pending | In progress |
-| Active-edit endurance | 30–45-minute replay after fixes, preserving automatic anchors | Pending |
+| CPU masks / automatic anchors | Stroke-bound accumulation `2f12520`; bounded feather prefix sums `ce07ab9`; native scheduling remains a priority | Targeted pass complete; residual tails |
+| Drag input backpressure | Tiled parameters/identities prepared once per generation `50e1116`; broader event-loop correlation remains open | Targeted pass complete |
+| CPU routing / request churn | Post-Match recovery `6b0d83f`; CPU request coalescing/watchdog guard `9f9098d` | Targeted pass complete; native zoom fallback remains |
+| GPU mask cache growth | Cancellation cleanup `8367099`; overlapping submission fence `fe35b3c` | Targeted pass complete; residency plateau observed |
+| Match / cold Exact Peak | Candidate input reuse `05ee0b3`; peak sharing/currency `db8a4d0`; cropped peak reuse `6083326` | Targeted pass complete |
+| Active-edit endurance | 30-minute replay plus 2-minute idle, 941 operations, automatic anchors retained | Complete; original stall not proven resolved |
 
 ## Bounded feather prefix sums
 
@@ -84,3 +84,35 @@ Concurrent requests for the same Exact Peak key now share one native measurement
 Seven regression tests cover concurrent/forced sharing, generation/revision/session/import invalidation, transient retry and replacement-flight ownership. All 17 frontend contract tests pass. Electron verification reports the same exact peak (7.5234375) for Direct and 256-/512-pixel tiled paths, preserves canvas/scope/diagnostic isolation, and verifies peak labels; its built-in small test pattern does not establish heavy-project cold latency or specular under-reporting.
 
 A subsequent cache edge-case fix retains any valid finite peak, including a native geometry-cropped result whose shorter edge carries the existing `exact: false` disclosure. Failed/refused results remain retryable. An eighth regression verifies this reuse without changing its disclosure. This follow-up was made after the endurance replay; the replay did not exercise Exact Peak.
+
+## Active-edit endurance after the targeted pass
+
+The replay completed 30.08 minutes of active editing (84 cycles, 941 operations, including 17 Match operations), followed by two minutes idle. It retained automatic anchors and used the existing heavy project, without saving it. There were zero page errors, zero sampler errors, and no recorded GPU allocation backoff. The original approximately 30-minute interactive stall has not been proven resolved.
+
+The frozen implementation was `fe35b3c76aa9b4bb0e7fcb2afb1349eee8126f4c`, with the existing uncommitted measurement instrumentation. Source hashes were checked unchanged during the replay. Evidence under `ai/codebase/output/performance/review/`: `long-session-after-targeted-fixes.json`, `long-session-after-targeted-fixes-summary.json`, and `long-session-after-targeted-fixes-code-manifest.json`. The raw artifacts are local ignored files; this ledger is the committed record. The photo project SHA-256 is `246ba308dcba22c5483c32ed4c31f5c81a2804504cd01dec2482b6d5be307d56`.
+
+| Observation | After targeted fixes | Earlier endurance context |
+|---|---:|---:|
+| End GPU mask residency, decimal GB | 1.05 | 5.71 |
+| End allocator registered bytes, decimal GB | 3.09 | 6.40 |
+| Main backend peak working set, GiB | 17.06 | 23.53 |
+| Main backend working set after idle, GiB | 0.81 | 0.81 |
+| Worst SDR feather release, seconds | 16.00 | 22.13 |
+| Worst zoom to 100%, seconds | 42.57 | 56.11 |
+
+GPU mask residency plateaued around 1.03–1.17 GB by cycle 4; registered bytes settled around 3.05–3.09 GB by cycle 16. Allocator eviction counters do not count manual mask trimming. Electron GPU-process private memory is not a VRAM measurement.
+
+These are directional comparisons, not matched latency A/B results: the earlier run completed 404 operations versus 941 now, repeated inputs have different cache histories, and its viewport/display metadata was not recorded. The current run used a 2560 × 1440 viewport at DPR 1 on the primary display. Repeated edits becoming warm also mean the aggregate medians do not establish performance for continually new strokes or inputs.
+
+| Current operation | Samples | Median ms | p95 ms | Maximum ms |
+|---|---:|---:|---:|---:|
+| HDR feather release | 84 | 166.7 | 726.4 | 13,497.0 |
+| SDR feather release | 84 | 162.6 | 9,980.2 | 16,001.8 |
+| Zoom to 100%, total | 84 | 223 | 29,418 | 42,572 |
+| Match, total | 17 | 9,048 | 9,737 | 10,723 |
+
+The remaining tails coincide with costly native masks and CPU fallback. The worst zoom included a selected brush-mask request of 42.40 seconds (42.27 seconds reported backend CPU work), another mask request of 26.38 seconds, and a CPU SDR preview of 22.94 seconds. These overlap and must not be summed. Early small-edge SDR feather masks also took roughly 13.5–15 seconds while native background masks ran concurrently. Browser cancellation does not stop already-running server computation.
+
+The next investigation should prioritize native automatic-anchor/mask scheduling, cancellation and contention, then the remaining native-zoom CPU fallback. Measure queue/lock wait separately from compilation before attributing the tails to a specific lock. A subsequent endurance run should vary strokes and inputs more aggressively to avoid measuring mostly cache reuse. The isolated denoised parity failure recorded above also remains open for focused capture/render concurrency investigation.
+
+Final regression verification: **246 Python tests and 41 Node tests passed** across local masks, render cache, blur strips, Match inputs/materialization/state, frontend contracts, Match recovery, CPU sharing, tiled preparation/cancellation/lifetime, allocator behavior and Exact Peak ownership. Electron checks additionally covered Match GPU interaction, Direct/Tiled parity, cache reuse, atomic presentation and Exact Peak isolation. Each implementation fix has its own commit; preexisting measurement work remains separate.
