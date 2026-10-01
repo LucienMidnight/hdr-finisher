@@ -200,3 +200,76 @@ GPU allocator registered resources peaked at **5.41 GB decimal**, ended active a
 After endurance, a separate sequential disposable Electron integration ran `tests/performance/highlight-anchor-stability.js` on its 42.4 MP noisy fixture at 200% zoom with denoise off/on. All eight strokes passed: largest consecutive normalized-anchor step 0.0015 stops; largest resting error against independent source/grade measurement 0.0014 (0.14%), within the unchanged 1% tolerance. Artifact: `highlight-anchor-stability-followup.json`. Ten additional focused highlight-anchor tests passed, giving **252 Python and 51 Node tests** across the final focused checks. This supplements the previously passing Exact Peak isolation and repeated Direct/Tiled parity integrations.
 
 Remaining issues: costly full-resolution mask computation; long shared-flight waits under concurrent native work; persistent GPU/backend cache residency; the isolated historical denoised parity failure's unestablished cause; and the need to corroborate the original stall report with additional real editing evidence. No grading, denoise, mask arithmetic or peak tolerance was relaxed.
+
+## October 1 follow-up: native feather layout, shared waiters, trim coalescing and capture currency
+
+The [investigation record](performance-followup-investigation-2026-10-01.md) lists five ranked fixes/experiments per follow-up area, distinguishes tracing and measurements from hypotheses, and records rejected candidates. Existing uncommitted instrumentation/unrelated changes were preserved. The original project and RAW remain read-only inputs.
+
+### Independently committed changes
+
+- `e75b5d8`: keep six vertical feather prefix-sum passes in contiguous transposed storage, gathering/scattering once rather than per pass. Prefix arithmetic, ordering, float32 rounding, edge extension, normalization and quantization are unchanged. Cancellation remains between strips and is checked around transposes.
+- `5ed9cd3`: stale CPU frame waiters recheck currency every 50 ms while a valid owner remains alive. Mask/frame single-flight diagnostics count distinct joined events instead of mask polling iterations. Existing request phase timings still distinguish worker admission, cache-lock wait, shared-flight wait, source preparation and computation.
+- `07b5719`: one pending tile-cache trim/fence obligation per GPU device; overlapping renders still force a new lifetime wait and queue drain. An old device completion cannot clear or trim a replacement device's obligation. This removes redundant callbacks/retained closures; it does not establish a reduction in cache residency or a leak fix.
+- `aea5ab6`, corrected by `9f2945d` and `eaf8a08`: preserve first/repeated screenshots and currency metadata before assertions; compare source/resolved/recipe identity and application session/lane/generation/revision. Work counters must remain stable within each capture. Tiled reconstruction legitimately advances the denoise selector work counter, so equality of that counter across Direct/Tiled is not required. Pixel thresholds remain max channel delta 1 / differing fraction 0.0005.
+- `69f9114`, `999a309`, `eaf8a08`: read-only fixture profiler, ranked evidence and frozen sequential campaign. Failed attempts have separate artifact directories.
+
+### Controlled native-stage measurements
+
+Frozen campaign `eaf8a08` ran three isolated processes per implementation, alternating prior/current/current/prior/prior/current, with no other campaign workloads. `prior` reinstates the previous feather function inside its own benchmark process, retaining the same box-pass implementation; production files are never swapped. A seeded 7,362 × 4,908 float mask at sigma 400 and the project's 34-stroke brush on a synthetic source were measured. The brush uses identity geometry; this is not RAW/luminance-mask or transport benchmarking. cProfile overhead is present equally in brush samples.
+
+| Measurement, n=3 each | Prior median (range) | Current median (range) |
+|---|---:|---:|
+| Twelve-pass float feather, ms | 3,309.4 (3,303.8–3,330.0) | 2,608.4 (2,580.5–2,641.7) |
+| Fixture spatial brush compile, ms | 7,850.4 (7,811.6–7,854.2) | 7,147.5 (7,131.5–7,211.5) |
+| Process peak working set, decimal GB | 2.0962 | 2.0965 |
+
+Median feather time was 21.2% lower; complete brush time was 9.0% lower in this isolated workload. No process-memory improvement is claimed. All six float hashes equal `cdbbc69a929684e478d2d40453d6351496002af64bea6e67574f2834103cf463`; all six compiled brush hashes equal `86919fa34e29cfeecd4bb1d82b83ff6bc4a94b9a357ef75c145a805ea9d4fd17`. Evidence: `output/performance/review/followup-2026-10-01-attempt-3/native-*.json`.
+
+Initial profiling attributed about 4.04 seconds cumulatively to stroke rasterization and 3.41 seconds to feather, with 414 brush segments and 145 ms coordinate-grid work. Nested timings are not additive. Prefix sums themselves took about 1.44 seconds; repeated vertical gathers took about 620 ms plus scatter work. Remaining capsule scratch allocation and pre-feather reuse experiments are ranked ahead of risky arithmetic changes or arbitrary cache-budget reductions.
+
+### Consolidated accuracy checks and retained failures
+
+The frozen campaign passed **264 Python and 80 Node tests** in independent parallel CPU suites before any GPU/performance workloads. Two sequential fresh Electron profiles passed standard, maximum-radius and denoised parity at 256/512/repeated-512 tiles, with identical repeated captures, cache-reuse and atomic-presentation checks. All six denoised comparisons had zero differing channels. Exact Peak was 7.5234375 in Direct and both tiled sizes, preserving canvas/scope/diagnostic isolation. Its built-in flat-highlight pattern does not establish heavy-photo specular under-reporting or cold Exact Peak latency. Match GPU/undo/redo/reset integration passed. Eight 42.4 MP automatic-anchor strokes with denoise off/on passed the unchanged accuracy tolerances.
+
+Retained failed attempts:
+
+1. `followup-2026-10-01/`: harness referenced nonexistent `test_frontend_contracts.py`; corrected to `test_frontend_render_pipeline_contract.py` in `999a309`. No GPU run began.
+2. `followup-2026-10-01-attempt-2/`: all 264/80 CPU tests and six native samples passed, but execution-sandbox Electron GPU startup crashed repeatedly with exit `-1073741515`. Disabling only the GPU sandbox then produced renderer launch failure (exit 49). Running the authorized disposable-profile test outside the execution sandbox restored startup. No product settings or GPU routing were changed.
+3. The first outside-sandbox parity run rejected a legitimate denoise work-counter change (3 → 23) between Direct and tiled rendering; source identity/application currency and within-capture marks were stable. Its screenshots/metadata are preserved in `parity-outside-sandbox/`. `9f2945d` corrected the overstrict harness condition; this is not a reproduced rendering defect or an explanation of the historical 9.2181% pixel failure. Both corrected fresh-profile repeats passed.
+
+### Completed frozen endurance and idle recovery
+
+Frozen at `eaf8a08`, with preserved preexisting instrumentation, the campaign completed **30.07 minutes active, 1,293 operations / 85 cycles / 18 Matches**, followed by **124 seconds idle**. No CPU suite, other GPU integration or benchmark from this campaign overlapped the replay. The disposable Electron viewport was 2560 × 1440, DPR 1, pinned to the primary display. Inputs varied deterministic strokes, feather, exposure and clarity radius; original automatic anchors were retained. Denoise was exercised separately by the large-image anchor integration. Source/project/RAW hashes and the measurement harness remained unchanged throughout the campaign.
+
+| Operation | Samples | Median ms | p95 ms | Maximum ms | Previous fresh replay maximum ms |
+|---|---:|---:|---:|---:|---:|
+| HDR feather release to exact | 85 | 388.8 | 503.2 | 637.1 | 531.1 |
+| SDR feather release to exact | 85 | 386.4 | 503.9 | 576.8 | 591.4 |
+| Native zoom to observed stable | 85 | 8,337 | 9,653 | 10,791 | 11,905 |
+| Fit to observed stable | 85 | 195 | 568 | 620 | 630 |
+| Match to observed stable | 18 | 9,434.5 | 10,594 | 10,594 | 10,689 |
+
+Median here is the arithmetic mean of the middle two sorted observations for even counts; p95 uses index floor(0.95 × count). Prior ledger medians used an order statistic, so the Match median convention differs. These are directional cross-replay observations, not matched A/B causal percentages: process startup, cache histories, completed cycles and system state differ. HDR feather maximum increased; a uniform workflow speedup is not established. The separate cold one-cycle fresh replay observed native zoom **12,313 ms**, HDR/SDR feather releases **382.0/380.3 ms**, and Match **10,024 ms**; it is not pooled into endurance. The controlled feather/brush benchmark above supports its isolated improvement, while native zoom remains expensive.
+
+No page errors, sampler errors or recorded GPU failure-policy events occurred. Cycle 72 and the minute-27 window completed. Every timeout predicate would have been retained by the existing replay checkpoint: viewer state, accepted presentation, required edge/generation, GPU draft, scope Updating and in-flight states, pending/in-flight anchors and background-mask work. No timeout occurred in this run.
+
+The slowest successful native mask reported **9,957.301 ms computation**, **0.004 ms cache-lock acquisition**, **1.030 ms worker admission**, and **0.014 ms source preparation**. Shared-flight wait peaked at **9,498.898 ms**, lock wait at **240.038 ms**, and worker admission at **127.358 ms** on different requests. These are elapsed phases, not isolated CPU time; overlapping request durations are never added. Shared-flight waiting remains substantial and does not by itself identify an obsolete owner or priority inversion. Aborted transports do not normally report phase headers.
+
+| Registered GPU resources, decimal GB | Previous fresh replay | Current replay |
+|---|---:|---:|
+| Checkpoint peak | 5.41 | 5.74 |
+| Active completion | 5.19 | 5.07 |
+| Idle completion | 5.37 | 5.07 |
+| Budget | 6.44 | 6.44 |
+
+Current registered resources were not monotonic (e.g. 5.66 GB at cycle 48, 5.53 at cycle 63, 4.72 at cycle 76). End residency consists mainly of **3.48 GB Detail tiles / 1.00 GB mask tiles**, plus 0.36 GB source proxies and smaller graph/scene/whole-mask resources. Reserved and over-budget bytes were zero at active/idle completion; central allocator evictions were zero, excluding manual tile trimming. Peak registered bytes increased versus the previous replay while idle bytes were lower: no general memory improvement or leak-free conclusion is warranted, and coalescing trim obligations is not the same as shrinking cache targets.
+
+At active completion one anchor was still in flight. By the first 10-second idle checkpoint, pending/in-flight anchors, background masks and CPU/GPU scope requests were all zero, and remained drained through 120 seconds. Background-mask totals were 2,989 starts / 970 cancellations, max concurrency 2. The viewer remained Ready and scopes Settled. Registered cache bytes stayed at 5.07 GB; idle drainage does not imply cache release.
+
+Main backend peak working set was **6.93 GiB**, peak private memory **8.66 GiB**. At the samples nearest active/idle completion its working set/private memory stayed approximately **1.30/1.83 GiB**. Renderer private memory fell approximately **0.67 → 0.43 GiB**; GPU-process private memory **6.91 → 6.90 GiB**, which is **not a VRAM measurement**. These process observations are separate from registered GPU allocations and the isolated benchmark's process peak.
+
+The large-image anchor integration's worst consecutive step was **0.0015 stops**, maximum resting error **0.0014 (0.14%)**, within the unchanged 1% resting tolerance. Both denoise states passed. The isolated historical denoised parity failure was not reproduced by either corrected profile, but its cause is still unestablished.
+
+Evidence: `output/performance/review/followup-2026-10-01-attempt-3/` contains CPU/integration logs, parity screenshots/currency metadata, six native-stage measurements, `short-fresh.json`, `endurance.json`, `summary.json`, `anchor-denoise.json`, and before/after manifests with `hash-verification.json` reporting **no changed frozen inputs**. The original project remains SHA-256 `246ba308dcba22c5483c32ed4c31f5c81a2804504cd01dec2482b6d5be307d56`; RAW remains `91762691cba4b6653848eef8deebf30d956bab9b7c44192272fc008ba9e4b5e4`. Neither was saved or modified. Giant traces/private source files remain ignored and uncommitted.
+
+Remaining priorities: profile/fuse brush ROI temporaries with exact rounding checks; compare bounded pre-feather raster reuse against fresh-stroke misses; run mask concurrency 1/2/4 experiments with owner/request correlation; measure lock-held proxy preparation; and test cache pressure versus warm-return latency before changing budgets. Rendering/capture replacement stress and heavy-photo Exact Peak/specular evidence remain open. This second successful fresh 30-minute replay strengthens the scheduling/recovery evidence. It still does **not** prove the owner's original stall fixed, identify the first minute-27 timeout's cause, or establish leak-free behavior.
