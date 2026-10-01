@@ -2656,6 +2656,9 @@
     scheduleTileCacheTrim() {
       const device = this.device;
       if (!device?.queue) return;
+      if (this.pendingCacheTrim && this.pendingCacheTrimDevice === device) {
+        return this.pendingCacheTrim;
+      }
       // Wait for active encoders first, then drain all their submissions. A
       // new render may start during that drain: wait again rather than destroy
       // textures that its later submissions still need.
@@ -2673,7 +2676,15 @@
           }).catch(reject);
         });
       });
-      this.pendingCacheTrim = trimWhenIdle().catch(() => null);
+      this.pendingCacheTrimDevice = device;
+      const pending = trimWhenIdle().catch(() => null).finally(() => {
+        // A replacement device may already have scheduled its own trim.
+        if (this.pendingCacheTrim !== pending) return;
+        this.pendingCacheTrim = null;
+        this.pendingCacheTrimDevice = null;
+      });
+      this.pendingCacheTrim = pending;
+      return pending;
     }
 
     /** Encode and submit one complete haloed tiled generation. */

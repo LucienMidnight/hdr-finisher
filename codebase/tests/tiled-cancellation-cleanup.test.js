@@ -88,3 +88,35 @@ test('Device replacement does not trim the replacement device caches', async () 
   preview.scheduleTileCacheTrim(); preview.device = {}; drain(); await preview.pendingCacheTrim;
   assert.equal(trimmed, 0);
 });
+
+test('Repeated trim requests share one device obligation and allow later trims', async () => {
+  let trimmed = 0;
+  const releases = [], drains = [];
+  const Preview = vm.runInNewContext(`(class { ${source.slice(trimStart, trimEnd)} })`);
+  const preview = new Preview();
+  preview.device = { queue: { onSubmittedWorkDone: () => new Promise(resolve => drains.push(resolve)) } };
+  preview.destroyAfterActiveRenders = callback => releases.push(callback);
+  preview.trimDetailBandTiles = preview.trimMaskTiles = () => trimmed++;
+  const first = preview.scheduleTileCacheTrim();
+  for (let i = 0; i < 100; i++) assert.equal(preview.scheduleTileCacheTrim(), first);
+  assert.equal(releases.length, 1);
+  releases[0](); drains[0](); await first;
+  assert.equal(trimmed, 2); assert.equal(preview.pendingCacheTrim, null);
+  const next = preview.scheduleTileCacheTrim();
+  assert.notEqual(next, first); assert.equal(releases.length, 2);
+  releases[1](); drains[1](); await next;
+  assert.equal(trimmed, 4);
+});
+
+test('Old trim completion cannot clear a replacement device obligation', async () => {
+  const drains = [];
+  const Preview = vm.runInNewContext(`(class { ${source.slice(trimStart, trimEnd)} })`);
+  const preview = new Preview();
+  const device = () => ({ queue: { onSubmittedWorkDone: () => new Promise(resolve => drains.push(resolve)) } });
+  preview.device = device(); preview.destroyAfterActiveRenders = callback => callback();
+  preview.trimDetailBandTiles = preview.trimMaskTiles = () => {};
+  const old = preview.scheduleTileCacheTrim();
+  preview.device = device(); const next = preview.scheduleTileCacheTrim();
+  drains[0](); await old; assert.equal(preview.pendingCacheTrim, next);
+  drains[1](); await next; assert.equal(preview.pendingCacheTrim, null);
+});
