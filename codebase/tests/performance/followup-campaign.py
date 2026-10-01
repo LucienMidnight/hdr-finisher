@@ -9,7 +9,7 @@ import sys
 from datetime import datetime, timezone
 
 ROOT = Path(__file__).resolve().parents[2]
-OUT = ROOT / 'output/performance/review/followup-2026-10-01'
+OUT = ROOT / 'output/performance/review/followup-2026-10-01-attempt-2'
 PROJECT = Path(r'D:\Photos\Play_Raw\Fantastic light over village - AdamFromCanada\DSC00950.hdrfinisher')
 RAW = PROJECT.with_suffix('.ARW')
 PYTHON = str(ROOT / '.venv/Scripts/python.exe')
@@ -49,7 +49,7 @@ def main():
     try:
         cpu_python = ['tests/test_mask_blur_strips.py', 'tests/test_mask_work.py', 'tests/test_local_adjustments.py',
                       'tests/test_render_cache.py', 'tests/test_sdr_match_inputs.py', 'tests/test_sdr_match_materialization.py',
-                      'tests/test_sdr_match_state.py', 'tests/test_frontend_contracts.py']
+                      'tests/test_sdr_match_state.py', 'tests/test_frontend_render_pipeline_contract.py']
         cpu_node = ['tests/tiled-cancellation-cleanup.test.js', 'tests/tiled-render-lifetime.test.js',
                     'tests/tiled-local-state.test.js', 'tests/exact-peak-singleflight.test.js',
                     'tests/native-anchor-scheduling.test.js', 'tests/highlight-anchor.test.js',
