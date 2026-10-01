@@ -79,10 +79,39 @@ def test_obsolete_waiter_leaves_owner_running_and_wait_is_separate(monkeypatch):
         assert timing['lock_wait'] < timing['singleflight_wait']
         assert 'compute' not in timing
         assert owner.is_alive()
+        assert cache._singleflight_waits == 1
     finally:
         release.set()
         owner.join(2)
     assert len(cache._masks) == 1
+
+
+def test_stale_frame_waiter_exits_without_releasing_valid_owner():
+    from hdr_finisher.render_cache import StaleRender
+    cache = SessionRenderCache(np.ones((32, 48, 3), dtype=np.float32), None)
+    key = ('fixture',)
+    flight_key = ('frame', *key)
+    _, owner = cache._acquire_frame_flight(key, flight_key, None)
+    stale = Event()
+    errors = []
+    def wait():
+        try:
+            cache._acquire_frame_flight(key, flight_key, lambda: not stale.is_set())
+        except StaleRender as error:
+            errors.append(error)
+    waiter = Thread(target=wait, daemon=True)
+    waiter.start()
+    deadline = time.monotonic() + 2
+    while cache._singleflight_waits == 0 and time.monotonic() < deadline:
+        time.sleep(.01)
+    stale.set()
+    waiter.join(1)
+    assert not waiter.is_alive()
+    assert len(errors) == 1
+    assert cache._inflight[flight_key] is owner
+    assert not owner.is_set()
+    assert cache._singleflight_waits == 1
+    owner.set()
 
 
 def test_http_disconnect_cancels_worker_and_preserves_http_error_shape():

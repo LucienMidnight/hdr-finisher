@@ -996,6 +996,7 @@ class SessionRenderCache:
         instead of rendering the same key twice. The caller that receives the
         flight owns detaching and setting it.
         """
+        waited_flight = None
         while True:
             with self._lock:
                 cached = self._frames.get(key)
@@ -1014,8 +1015,12 @@ class SessionRenderCache:
                     if record_diagnostics:
                         self._misses += 1
                     return None, flight
-                self._singleflight_waits += 1
-            flight.wait()
+                if flight is not waited_flight:
+                    self._singleflight_waits += 1
+                    waited_flight = flight
+            # Obsolete waiters must not depend on a still-valid owner's
+            # completion to notice cancellation. The owner remains shared.
+            flight.wait(0.05)
 
     def adjusted_frame(
         self,
@@ -1391,6 +1396,7 @@ class SessionRenderCache:
             mask_signature = spatial_mask_signature(local.mask)
             key = (source_epoch, edge, geometry_signature, local.id, mask_signature)
             flight_key = ("mask", *key)
+            waited_flight = None
             while True:
                 mask_checkpoint()
                 with mask_cache_lock(self._lock):
@@ -1410,7 +1416,9 @@ class SessionRenderCache:
                         flight = Event()
                         self._inflight[flight_key] = flight
                         break
-                    self._singleflight_waits += 1
+                    if flight is not waited_flight:
+                        self._singleflight_waits += 1
+                        waited_flight = flight
                 with mask_phase("singleflight_wait"):
                     flight.wait(0.05)
 
