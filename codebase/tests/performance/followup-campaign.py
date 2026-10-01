@@ -9,7 +9,7 @@ import sys
 from datetime import datetime, timezone
 
 ROOT = Path(__file__).resolve().parents[2]
-OUT = ROOT / 'output/performance/review/followup-2026-10-01-attempt-2'
+OUT = ROOT / 'output/performance/review/followup-2026-10-01-attempt-3'
 PROJECT = Path(r'D:\Photos\Play_Raw\Fantastic light over village - AdamFromCanada\DSC00950.hdrfinisher')
 RAW = PROJECT.with_suffix('.ARW')
 PYTHON = str(ROOT / '.venv/Scripts/python.exe')

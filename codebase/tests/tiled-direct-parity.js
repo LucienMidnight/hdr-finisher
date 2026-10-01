@@ -147,8 +147,10 @@ const MAX_DIFFERING_FRACTION = 0.0005;
         denoiseSelected: state.gpuPreview.denoiseSourceSelector?.selected ?? null,
         denoiseIdentity: state.gpuPreview.denoiseSourceSelector?.identity ?? null,
         denoiseResolvedIdentity: state.gpuPreview.denoiseSourceSelector?.resolved?.identity ?? null,
+        denoiseRecipe: JSON.stringify({ cache: state.gpuPreview.denoiseSourceSelector?.cache?.identity,
+          controls: state.gpuPreview.denoiseSourceSelector?.controls }),
         application: { session: state.session?.session_id, lane: state.currentView,
-          generation: state.previewGeneration[state.currentView], revision: state.editDocument?.revision } };
+          generation: state.previewGeneration[state.currentView], revision: state.editRevision } };
     });
     const assertComparable = (label, tileSize, direct, tiled) => {
       const stable = (capture) => capture.mark.presentations === capture.after.presentations
@@ -159,6 +161,7 @@ const MAX_DIFFERING_FRACTION = 0.0005;
         && capture.mark.denoiseSelected === capture.after.denoiseSelected
         && capture.mark.denoiseIdentity === capture.after.denoiseIdentity
         && capture.mark.denoiseResolvedIdentity === capture.after.denoiseResolvedIdentity
+        && capture.mark.denoiseRecipe === capture.after.denoiseRecipe
         && JSON.stringify(capture.mark.application) === JSON.stringify(capture.after.application);
       if (direct.mark.execution !== "direct" || direct.mark.rendererFrame?.execution !== "direct"
         || tiled.mark.rendererFrame?.execution !== "tiled" || !stable(direct) || !stable(tiled)
@@ -169,6 +172,7 @@ const MAX_DIFFERING_FRACTION = 0.0005;
         || direct.mark.denoiseSelected !== tiled.mark.denoiseSelected
         || direct.mark.denoiseIdentity !== tiled.mark.denoiseIdentity
         || direct.mark.denoiseResolvedIdentity !== tiled.mark.denoiseResolvedIdentity
+        || direct.mark.denoiseRecipe !== tiled.mark.denoiseRecipe
         || JSON.stringify(direct.mark.application) !== JSON.stringify(tiled.mark.application)) {
         throw new Error(`${label} tileSize ${tileSize}: the app presented its own frame during the captures, so they are not comparable: `
           + JSON.stringify({ direct, tiled }));
