@@ -46,3 +46,19 @@ def test_twelve_pass_feather_preserves_low_alpha_and_quantization(sigma):
     np.testing.assert_array_equal(actual, expected)
     scale = np.float32(values.max() / max(float(expected.max()), 1e-12))
     np.testing.assert_array_equal(np.rint(actual * scale * 255), np.rint(expected * scale * 255))
+
+
+@pytest.mark.parametrize("shape", [(1, 19), (19, 1), (517, 533)])
+@pytest.mark.parametrize("sigma", [(0, 80), (80, 0), (5, 100), (0.1, 0.1)])
+def test_contiguous_vertical_passes_preserve_anisotropic_float_output(shape, sigma):
+    values = np.random.default_rng(73).random(shape, dtype=np.float32)
+    original = values.copy()
+    expected = values.copy()
+    if max(sigma) >= .25:
+        for axis, s in [(1, sigma[0]), (0, sigma[1])]:
+            for width in _gaussian_box_widths(s, 6):
+                if width > 1:
+                    expected = whole_frame_box(expected, (width - 1) // 2, axis)
+        expected = np.clip(expected, 0, 1)
+    np.testing.assert_array_equal(_gaussian_blur_float(values, sigma), expected)
+    np.testing.assert_array_equal(values, original)

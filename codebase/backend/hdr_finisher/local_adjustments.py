@@ -658,10 +658,20 @@ def _gaussian_blur_float(
         radius = max(0, (width - 1) // 2)
         if radius:
             result = _box_blur_axis(result, radius, axis=1)
-    for width in _gaussian_box_widths(float(sigma_y), passes):
+    vertical_widths = _gaussian_box_widths(float(sigma_y), passes)
+    # Keep all vertical passes contiguous in the same orientation. Previously
+    # each pass gathered and scattered every strip independently. Transposing
+    # once preserves each column's prefix-sum order and float32 rounding.
+    if any(width > 1 for width in vertical_widths):
+        mask_checkpoint()
+        result = np.ascontiguousarray(result.T)
+    for width in vertical_widths:
         radius = max(0, (width - 1) // 2)
         if radius:
-            result = _box_blur_axis(result, radius, axis=0)
+            result = _box_blur_axis(result, radius, axis=1)
+    if any(width > 1 for width in vertical_widths):
+        mask_checkpoint()
+        result = np.ascontiguousarray(result.T)
     return np.clip(result, 0.0, 1.0).astype(np.float32, copy=False)
 
 
