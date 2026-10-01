@@ -28,11 +28,17 @@ class ImportJob:
     preview_path: Path | None = None
     session_id: str | None = None
     error: str | None = None
+    phase_history: list[dict[str, object]] = field(default_factory=list)
     cancel_event: Event = field(default_factory=Event, repr=False)
     state_lock: RLock = field(default_factory=RLock, repr=False)
 
     def payload(self) -> dict[str, object]:
         with self.state_lock:
+            now = time.monotonic()
+            history = [dict(entry) for entry in self.phase_history]
+            if history and history[-1].get("ended_ms") is None:
+                started_ms = int(history[-1]["started_ms"])
+                history[-1]["duration_ms"] = max(0, int((now - self.created_at) * 1000.0) - started_ms)
             return {
                 "job_id": self.job_id,
                 "state": self.state,
@@ -44,6 +50,10 @@ class ImportJob:
                 "preview_url": f"/api/import-jobs/{self.job_id}/preview" if self.preview_path is not None else None,
                 "session_id": self.session_id,
                 "error": self.error,
+                # Measurement metadata.  Keeping the backend transition log
+                # avoids attributing a 250 ms frontend polling interval to a
+                # RAW-development phase in performance traces.
+                "phase_history": history,
             }
 
 
@@ -181,6 +191,19 @@ class ImportJobManager:
 
     def _set_phase(self, job: ImportJob, state: str, phase: str, label: str) -> None:
         with job.state_lock:
+            elapsed_ms = int(max(0.0, time.monotonic() - job.created_at) * 1000.0)
+            if job.phase_history and job.phase_history[-1].get("ended_ms") is None:
+                previous = job.phase_history[-1]
+                previous["ended_ms"] = elapsed_ms
+                previous["duration_ms"] = max(0, elapsed_ms - int(previous["started_ms"]))
+            job.phase_history.append({
+                "state": state,
+                "phase": phase,
+                "label": label,
+                "started_ms": elapsed_ms,
+                "ended_ms": None,
+                "duration_ms": 0,
+            })
             job.state = state
             job.phase = phase
             job.phase_label = label

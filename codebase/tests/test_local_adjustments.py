@@ -1281,3 +1281,87 @@ def test_project_round_trip_keeps_vector_state_and_references_source(tmp_path: P
     assert reopened_path.feather == pytest.approx(0.08)
     assert reopened_path.feather_nodes == path_local.mask.leaf.feather_nodes
     assert reopened.source_path == source.resolve()
+
+
+def test_reduced_feather_stays_within_two_mask_levels_of_the_full_blur(monkeypatch) -> None:
+    """The painted-mask feather blurs block means; the tolerance is 2 of 255.
+
+    The cases are the ones that broke earlier attempts: a small mark under a
+    wide feather (the rescale to the painted peak amplifies any error), hard
+    marks against the frame edge and corner, and a frame that is not a whole
+    number of blocks.
+    """
+    import numpy as np
+    import hdr_finisher.local_adjustments as module
+    from hdr_finisher.models import GeometryAdjustments, MaskExpression
+
+    def stroke(points, **values):
+        return {"points": [{"x": px, "y": py, "pressure": 1.0} for px, py in points],
+                "radius": 0.05, "hardness": 0.5, "flow": 1.0, "opacity": 1.0, "erase": False, **values}
+
+    cases = {
+        "small mark, wide feather": ([stroke([(0.5, 0.5)], radius=0.006, hardness=1.0)], 0.05),
+        "hard mark in the corner": ([stroke([(0.0, 0.0), (0.06, 0.03)], radius=0.08, hardness=1.0)], 0.03),
+        "strokes along two edges": ([stroke([(0.0, 0.2), (0.0, 0.8)], radius=0.03, hardness=0.9),
+                                     stroke([(0.3, 1.0), (0.9, 1.0)], radius=0.04, flow=0.5, opacity=0.6)], 0.02),
+        "erase over a soft stroke": ([stroke([(0.2, 0.3), (0.8, 0.6)], radius=0.1, hardness=0.1),
+                                      stroke([(0.5, 0.2), (0.5, 0.8)], radius=0.03, erase=True)], 0.012),
+    }
+    reduced_factor = module._reduced_blur_factor
+    for name, (strokes, feather) in cases.items():
+        expression = MaskExpression.model_validate({"operator": "leaf", "leaf": {
+            "type": "brush", "strokes": strokes, "mask_feather": feather, "mask_opacity": 0.9}})
+        for width, height in ((1203, 801), (640, 997)):
+            x, y = module.source_coordinate_grid(width, height, 0, 0, width, height, GeometryAdjustments())
+            sigma = module._mask_radii_pixels(x, y, module._painted_mask_feather_radius(feather))[0]
+            assert reduced_factor(x, sigma) >= 2, name
+            reduced = module.evaluate_mask(expression, None, x, y)
+            monkeypatch.setattr(module, "_reduced_blur_factor", lambda *_: 1)
+            full = module.evaluate_mask(expression, None, x, y)
+            monkeypatch.setattr(module, "_reduced_blur_factor", reduced_factor)
+            levels = np.abs(np.rint(reduced * 255.0) - np.rint(full * 255.0))
+            assert levels.max() <= 2, (name, width, height, float(levels.max()))
+
+    # A narrow feather and a luminance mask keep the full-resolution blur.
+    assert reduced_factor(np.zeros((800, 1200), dtype=np.float32), 31.0) == 1
+    assert reduced_factor(np.zeros((800, 1200), dtype=np.float32), 64.0) == 4
+
+
+def test_threaded_brush_raster_is_byte_identical_and_cancellable(monkeypatch) -> None:
+    import numpy as np
+    import hdr_finisher.local_adjustments as module
+    from hdr_finisher.mask_work import request_work
+    from hdr_finisher.models import GeometryAdjustments, MaskLeaf
+
+    def stroke(points, **values):
+        return {"points": [{"x": px, "y": py, "pressure": pressure} for px, py, pressure in points],
+                "radius": 0.06, "hardness": 0.4, "flow": 0.6, "opacity": 0.8, "erase": False, **values}
+
+    leaf = MaskLeaf.model_validate({"type": "brush", "strokes": [
+        stroke([(0.2, 0.2, 1.0), (0.5, 0.4, 0.6), (0.8, 0.3, 1.0)]),
+        stroke([(0.5, 0.5, 1.0)], radius=0.1),
+        stroke([(0.3, 0.3, 1.0), (0.7, 0.7, 1.0)], erase=True, opacity=0.7),
+        stroke([(0.4, 0.1, 0.8), (0.45, 0.9, 1.0)], hardness=1.0, flow=0.3),
+    ]})
+    geometry = GeometryAdjustments(straighten_angle=4.0, flip_horizontal=True)
+    x, y = module.source_coordinate_grid(360, 240, 0, 0, 360, 240, geometry)
+
+    monkeypatch.setattr(module, "_BRUSH_WORKERS", 1)
+    expected, expected_erase = module._brush_masks(leaf, x, y)
+    monkeypatch.setattr(module, "_BRUSH_WORKERS", 4)
+    monkeypatch.setattr(module, "_BRUSH_THREADED_PIXELS", 1)
+    threaded, threaded_erase = module._brush_masks(leaf, x, y)
+    assert np.array_equal(expected, threaded)
+    assert np.array_equal(expected_erase, threaded_erase)
+
+    class Cancelled(Exception):
+        pass
+
+    # A worker thread sees the request's checks, not an empty context.
+    calls = []
+    def check():
+        calls.append(1)
+        if len(calls) > 3:
+            raise Cancelled()
+    with pytest.raises(Cancelled), request_work(check, {}):
+        module._brush_masks(leaf, x, y)

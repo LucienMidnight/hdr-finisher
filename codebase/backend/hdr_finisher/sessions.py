@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import hashlib
 import json
+from time import perf_counter
 from pathlib import Path
 from threading import RLock
 from typing import Any, Callable
@@ -536,6 +537,7 @@ class SessionStore:
         expected_revision: int,
         action: str,
         authored_sdr_override_consent: bool = False,
+        timing: dict[str, object] | None = None,
     ) -> EditStateResponse:
         """Materialize a normal SDR recipe, or explicitly manage a legacy v1 match."""
         with self._lock:
@@ -596,7 +598,11 @@ class SessionStore:
                 analysis_locals = [item.model_copy(deep=True) for item in current_locals]
                 analysis_reference_white = reference_white
 
+            source_started = perf_counter()
             source, _ = session.render_cache.source_pair(MATCH_ANALYSIS_EDGE)
+            if timing is not None:
+                timing["source_proxy_ms"] = round((perf_counter() - source_started) * 1000.0, 3)
+            settled_started = perf_counter()
             settled = apply_adjustments(
                 source,
                 analysis_adjustments,
@@ -606,6 +612,8 @@ class SessionStore:
                 color_context=RenderColorContext(analysis_reference_white),
                 source_pixel_scale=min(1.0, MATCH_ANALYSIS_EDGE / max(session.image.shape[:2])),
             )
+            if timing is not None:
+                timing["settled_hdr_ms"] = round((perf_counter() - settled_started) * 1000.0, 3)
             try:
                 materialized = materialize_sdr_match(
                     source,
@@ -614,6 +622,7 @@ class SessionStore:
                     reference_white_nits=analysis_reference_white,
                     source_pixel_scale=min(1.0, 768 / max(session.image.shape[:2])),
                     settled_hdr=settled,
+                    timing=timing,
                 )
             except SDRMatchMaterializationError as exc:
                 raise EditCommandError(str(exc)) from exc
@@ -651,7 +660,11 @@ class SessionStore:
                 "replaces_authored_sdr": action == "match" and has_authored_sdr,
             },
         )
-        return self.apply_edit_commands(session_id, [command])
+        commit_started = perf_counter()
+        response = self.apply_edit_commands(session_id, [command])
+        if timing is not None:
+            timing["document_commit_ms"] = round((perf_counter() - commit_started) * 1000.0, 3)
+        return response
 
     def _apply_edit_command(self, session: LoadedSession, command: EditCommand) -> None:
         if command.command_type == "undo":

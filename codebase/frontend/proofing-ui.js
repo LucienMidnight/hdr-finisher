@@ -42,6 +42,14 @@
       artifactDirty = true;
       markProofDirty();
     });
+    els.chromeProofSize.addEventListener("change", () => {
+      state.proofSize = els.chromeProofSize.value === "full" ? "full" : "reduced";
+      artifactDirty = true;
+      markProofDirty();
+    });
+    // The full-size label states whether the export adds finishing the proof
+    // does not carry, so it has to follow those two export controls.
+    [els.exportResizeMode, els.exportSharpening].forEach((control) => control?.addEventListener("change", renderProofUi));
     els.chromeProofTarget.addEventListener("change", () => {
       state.proofTarget = els.chromeProofTarget.value;
       markProofDirty();
@@ -144,6 +152,9 @@
     state.proofSdrReconstruction = null;
     state.proofDeliveryAvailable = true;
     state.proofPreview = "delivered";
+    // A full-size proof costs more than an export, so a new image never
+    // inherits that choice from the last one.
+    state.proofSize = "reduced";
     state.proofDirty = true;
     artifactDirty = true;
     phase = "idle";
@@ -201,6 +212,7 @@
             jpegxl_precision: els.jpegxlPrecision.value || "uint12",
             dithering: els.exportDithering.disabled ? "off" : els.exportDithering.value || "auto",
             long_edge: Math.min(1200, state.session.preview?.long_edge || 1200),
+            full_size: state.proofSize === "full",
             force,
           }),
         });
@@ -301,7 +313,7 @@
     els.chromeProofWatermark.style.display = canShow && state.proofWatermarkEnabled ? "flex" : "none";
     if (state.activeWorkflow === "proof" && state.proofEnabled && state.currentView === "hdr" && !state.comparePeekActive) {
       els.viewerBranchNote.textContent = canShow
-        ? `Chromium Proof · ${proofFormatLabel()} · ${proofPreviewLabel()} · scopes: authored HDR.`
+        ? `Chromium Proof · ${proofSizeLabel()} · ${proofFormatLabel()} · ${proofPreviewLabel()} · scopes: authored HDR.`
         : "Chromium Proof is not current · build or refresh it from the Proof settings rail.";
       els.scopeKindLabel.textContent = "HDR";
     } else {
@@ -327,6 +339,10 @@
       els.openProofExternal.disabled = !desktop || !state.proofArtifact || state.proofDirty || phase === "updating";
     }
     els.chromeProofFormat.value = state.proofFormat;
+    els.chromeProofSize.value = state.proofSize;
+    els.chromeProofWatermark.textContent = state.proofArtifact && !state.proofArtifact.full_size
+      ? "PROOF · REDUCED"
+      : "PROOF";
     els.chromeProofTarget.value = state.proofTarget;
     els.chromeProofCustomNits.value = String(state.proofCustomNits);
     els.chromeProofCustomField.classList.toggle("hidden", state.proofTarget !== "custom");
@@ -389,7 +405,7 @@
       return `${proofFormatLabel()} · ${proofTargetLabel()}. Build the proof when you are ready to review.${fallback}`;
     }
     const result = state.proofReconstruction;
-    const details = [`${proofFormatLabel()} · ${proofPreviewLabel()}`];
+    const details = [proofSizeLabel(), `${proofFormatLabel()} · ${proofPreviewLabel()}`];
     if (state.proofPreview !== "hdr") details.push(`reference ${result.target_label}`);
     details.push(`${result.resolved_headroom.toFixed(2)} stops`);
     if (result.display_label) details.push(result.display_label);
@@ -492,6 +508,22 @@
       jpeg_ultrahdr: "JPEG Ultra HDR",
       jpegxl_hdr: "JPEG XL HDR",
     }[state.proofFormat] || "HDR delivery";
+  }
+
+  // A reduced proof is the export pipeline on a downscaled source, so it has
+  // to say so wherever it is described. A full-size proof is the export's own
+  // pixels only while the export adds no resize or output sharpening, which
+  // the proof request does not carry.
+  function proofSizeLabel() {
+    const artifact = state.proofArtifact;
+    if (!artifact) return state.proofSize === "full" ? "Full size" : "Reduced";
+    const size = `${Number(artifact.width).toLocaleString()} × ${Number(artifact.height).toLocaleString()} px`;
+    if (!artifact.full_size) return `REDUCED PROOF ${size} · not the export's pixels`;
+    const finishingNeutral = (els.exportResizeMode?.value || "original") === "original"
+      && (els.exportSharpening?.value || "off") === "off";
+    return finishingNeutral
+      ? `Full size ${size} · same pixels as export`
+      : `Full size ${size} · export resize and output sharpening are not included`;
   }
 
   function proofPreviewLabel() {

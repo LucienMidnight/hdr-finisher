@@ -69,6 +69,7 @@ class ProofArtifact:
     hdr_authored: np.ndarray
     sdr_authored: np.ndarray
     jpeg_gain_map: JPEGGainMapProofMetadata | None = None
+    full_size: bool = False
 
 
 @dataclass
@@ -195,7 +196,15 @@ class ProofArtifactStore:
                 if cached is not None and cached.path.exists():
                     return self._response(cached)
 
-        source, sdr_reference = getattr(session, "render_cache").source_pair(request.long_edge)
+        render_cache = getattr(session, "render_cache")
+        if request.full_size:
+            # The export grades ``session.image``. A full-size proof has to
+            # grade that same array, not a level the cache answers for an edge.
+            source = getattr(session, "image", render_cache.image)
+            sdr_reference = getattr(session, "sdr_reference_image", render_cache.sdr_reference_image)
+        else:
+            source, sdr_reference = render_cache.source_pair(request.long_edge)
+        full_size = bool(request.full_size or source.shape[:2] == render_cache.image.shape[:2])
         proxy_session = SimpleNamespace(
             session_id=f"proof-{getattr(session, 'session_id', 'session')}",
             image=source,
@@ -284,6 +293,7 @@ class ProofArtifactStore:
             hdr_authored=np.ascontiguousarray(hdr_authored, dtype=np.float32),
             sdr_authored=np.ascontiguousarray(sdr_matrix_endpoint, dtype=np.float32),
             jpeg_gain_map=jpeg_gain_map,
+            full_size=full_size,
         )
         with self._lock:
             self._artifacts[artifact_id] = artifact
@@ -579,6 +589,7 @@ class ProofArtifactStore:
             wrong_mime_url=f"/api/proof/artifact/{artifact.artifact_id}{suffix}?mime=wrong",
             width=artifact.width,
             height=artifact.height,
+            full_size=artifact.full_size,
             quality=artifact.quality,
             metadata_summary=artifact.metadata_summary,
             encoded_headroom=round(artifact.encoded_headroom, 4),

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, wait
 import json
 import math
 import os
+from threading import Lock
 
 import numpy as np
 
 from .color import acescg_to_linear_srgb, linear_srgb_to_acescg
-from .mask_work import checkpoint as mask_checkpoint
+from .mask_work import checkpoint as mask_checkpoint, in_request_context as mask_in_request_context
 from .finishing import apply_geometry
 from .models import GeometryAdjustments, LocalAdjustment, LocalGrade, MaskExpression, MaskLeaf, MaskPoint, PreviewKind
 from .detail import apply_detail, detail_is_neutral
@@ -177,6 +179,120 @@ def compile_geometry_fixed_mask(
     mask_checkpoint()
     fixed = apply_geometry(source_mask[..., None], geometry)[..., 0]
     return np.rint(np.clip(fixed, 0.0, 255.0)).astype(np.uint8)
+
+
+# A feathered luminance mask is a plain blur, so a region of it is exact once
+# the blur's whole reach is evaluated around it. Beyond this reach the region
+# would be most of the image anyway and the whole mask is compiled instead.
+_REGION_MARGIN_LIMIT = 768
+
+
+def mask_region_margin(expression: MaskExpression, long_edge: int) -> int | None:
+    """How much surrounding mask a region needs to come out exact.
+
+    ``None`` means the mask cannot be evaluated for a region at all: a brush
+    feather rescales to the painted peak of the whole image and Shift Edge
+    normalizes to it. Everything else depends only on a pixel or on a bounded
+    neighbourhood of it. ``long_edge`` is the uncropped source's, at the size
+    the mask is evaluated at.
+    """
+    if not expression.enabled:
+        if expression.operator != "leaf" and expression.children:
+            return mask_region_margin(expression.children[0], long_edge)
+        return 0
+    if expression.operator != "leaf":
+        margins = [mask_region_margin(child, long_edge) for child in expression.children if child.enabled]
+        return None if any(margin is None for margin in margins) else max(margins, default=0)
+    leaf = expression.leaf
+    if leaf is None:
+        return 0
+    if leaf.type == "brush":
+        return None if leaf.mask_feather > 0.0 or leaf.mask_shift_edge != 0.0 else 0
+    if leaf.type == "luminance_range":
+        if leaf.mask_feather <= 0.0:
+            return 0
+        sigma = min(2048.0, _luminance_mask_feather_radius(leaf.mask_feather) * long_edge)
+        if sigma < 0.25:
+            return 0
+        # Six box passes together reach about 4.3 sigma; the first and last
+        # pixels of each pass repeat the block's edge, which must stay outside.
+        margin = int(math.ceil(sigma * 5.0)) + 8
+        return margin if margin <= _REGION_MARGIN_LIMIT else None
+    if leaf.type in {"linear_gradient", "path"}:
+        return 0
+    return None
+
+
+def compile_geometry_fixed_mask_region(
+    source: np.ndarray,
+    expression: MaskExpression,
+    geometry: GeometryAdjustments,
+    rect: tuple[int, int, int, int],
+    *,
+    spatial_only: bool = False,
+) -> tuple[np.ndarray, tuple[int, int]] | None:
+    """One rectangle of ``compile_geometry_fixed_mask`` without the rest of it.
+
+    ``rect`` is ``(left, top, right, bottom)`` in the geometry-fixed output.
+    Returns the block and the whole output's ``(width, height)``, or ``None``
+    when this mask or this geometry needs the whole image (see
+    ``mask_region_margin``; straighten and perspective resample the frame).
+    The block holds the values the whole compile would, up to float rounding
+    in the last place: the same source-space evaluation, at the same pixel
+    centres, carried through the same quarter turns, flips and crop.
+    """
+    from .finishing import _crop_bounds, _oriented_view, geometry_resample_stage
+
+    if geometry_resample_stage(geometry) != "index":
+        return None
+    mask_expression = spatial_mask_expression(expression) if spatial_only else expression
+    source_height, source_width = source.shape[:2]
+    margin = mask_region_margin(mask_expression, max(source_width, source_height))
+    if margin is None:
+        return None
+    mask_checkpoint()
+    quarter = geometry.rotation in (90, 270)
+    oriented_width, oriented_height = (source_height, source_width) if quarter else (source_width, source_height)
+    crop_left, crop_top, crop_right, crop_bottom = _crop_bounds(oriented_width, oriented_height, geometry)
+    output_width, output_height = crop_right - crop_left, crop_bottom - crop_top
+    left = min(max(0, int(rect[0])), output_width)
+    top = min(max(0, int(rect[1])), output_height)
+    right = min(max(left, int(rect[2])), output_width)
+    bottom = min(max(top, int(rect[3])), output_height)
+    if right <= left or bottom <= top:
+        return np.zeros((0, 0), dtype=np.uint8), (output_width, output_height)
+    # The rectangle in the oriented, uncropped frame, with the margin the
+    # mask's neighbourhood needs. The frame continues past the crop.
+    wide_left = max(0, crop_left + left - margin)
+    wide_top = max(0, crop_top + top - margin)
+    wide_right = min(oriented_width, crop_left + right + margin)
+    wide_bottom = min(oriented_height, crop_top + bottom + margin)
+    # Which source pixels that is: quarter turns and flips only move whole
+    # pixels, so the rectangle is a rectangle of the source too.
+    columns = np.broadcast_to(np.arange(source_width, dtype=np.int32), (source_height, source_width))
+    rows = np.broadcast_to(np.arange(source_height, dtype=np.int32)[:, None], (source_height, source_width))
+    source_columns = _oriented_view(columns, geometry)[wide_top:wide_bottom, wide_left:wide_right]
+    source_rows = _oriented_view(rows, geometry)[wide_top:wide_bottom, wide_left:wide_right]
+    source_left, source_right = int(source_columns.min()), int(source_columns.max()) + 1
+    source_top, source_bottom = int(source_rows.min()), int(source_rows.max()) + 1
+    source_x, source_y = source_coordinate_grid(
+        source_width, source_height, source_left, source_top,
+        source_right - source_left, source_bottom - source_top, GeometryAdjustments(),
+    )
+    mask = evaluate_mask(
+        mask_expression,
+        source[source_top:source_bottom, source_left:source_right],
+        source_x,
+        source_y,
+        source_width / max(source_height, 1),
+    )
+    block = np.rint(np.clip(mask, 0.0, 1.0) * 255.0).astype(np.uint8)
+    mask_checkpoint()
+    oriented = _oriented_view(block, geometry)
+    inner_left = crop_left + left - wide_left
+    inner_top = crop_top + top - wide_top
+    result = oriented[inner_top:inner_top + (bottom - top), inner_left:inner_left + (right - left)]
+    return np.ascontiguousarray(result), (output_width, output_height)
 
 
 def evaluate_mask(
@@ -423,9 +539,27 @@ def sample_luminance_evs(
     return low, high, float(np.clip(center, low, high)), len(sampled)
 
 
+# A brush raster this large is split into row bands on worker threads. Every
+# pixel still gets the same float32 operations in the same order, so the mask
+# is byte-identical to the single-threaded one.
+# Below this size the bands are too small for threads to pay for themselves:
+# a 6 MP raster measured about twice as slow threaded as on one thread.
+_BRUSH_THREADED_PIXELS = 16_000_000
+_BRUSH_WORKERS = max(1, min(8, (os.cpu_count() or 2) // 2))
+_brush_pool: ThreadPoolExecutor | None = None
+_brush_pool_lock = Lock()
+
+
+def _brush_executor() -> ThreadPoolExecutor:
+    global _brush_pool
+    with _brush_pool_lock:
+        if _brush_pool is None:
+            _brush_pool = ThreadPoolExecutor(max_workers=_BRUSH_WORKERS, thread_name_prefix="brush-raster")
+        return _brush_pool
+
+
 def _brush_masks(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray | None]:
     result = np.zeros(x.shape, dtype=np.float32)
-    erase_attenuation: np.ndarray | None = None
     metric_x, metric_y, metric_transform, metric_origin = _brush_display_metric(x, y)
 
     def metric_point(point: MaskPoint) -> tuple[float, float]:
@@ -434,6 +568,7 @@ def _brush_masks(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarr
         )
         return float(transformed[0]), float(transformed[1])
 
+    prepared = []
     for stroke in leaf.strokes:
         mask_checkpoint()
         points = stroke.points
@@ -479,59 +614,220 @@ def _brush_masks(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarr
         # and traverse several native-size float arrays for every stroke.
         rows = slice(min(shape[0].start for shape in shapes), max(shape[0].stop for shape in shapes))
         columns = slice(min(shape[1].start for shape in shapes), max(shape[1].stop for shape in shapes))
-        stroke_mask = np.zeros((rows.stop - rows.start, columns.stop - columns.start), dtype=np.float32)
-        for shape_rows, shape_columns, x0, y0, x1, y1, radius in shapes:
+        prepared.append((stroke, len(points) == 1, shapes, rows, columns))
+
+    erase_attenuation: np.ndarray | None = (
+        np.ones(x.shape, dtype=np.float32) if any(item[0].erase for item in prepared) else None
+    )
+
+    def accumulate(top: int, bottom: int) -> None:
+        """Apply every stroke, in order, to the rows ``top:bottom``."""
+        erase_seen = False
+        for stroke, single_point, shapes, stroke_rows, columns in prepared:
             mask_checkpoint()
-            local_rows = slice(shape_rows.start - rows.start, shape_rows.stop - rows.start)
-            local_columns = slice(shape_columns.start - columns.start, shape_columns.stop - columns.start)
-            if len(points) == 1:
-                segment = _soft_disc(
-                    metric_x[shape_rows, shape_columns], metric_y[shape_rows, shape_columns],
-                    x0, y0, radius, stroke.hardness,
+            rows = slice(max(stroke_rows.start, top), min(stroke_rows.stop, bottom))
+            if rows.stop <= rows.start:
+                erase_seen = erase_seen or stroke.erase
+                continue
+            stroke_mask = np.zeros((rows.stop - rows.start, columns.stop - columns.start), dtype=np.float32)
+            for all_shape_rows, shape_columns, x0, y0, x1, y1, radius in shapes:
+                shape_rows = slice(max(all_shape_rows.start, top), min(all_shape_rows.stop, bottom))
+                if shape_rows.stop <= shape_rows.start:
+                    continue
+                mask_checkpoint()
+                local_rows = slice(shape_rows.start - rows.start, shape_rows.stop - rows.start)
+                local_columns = slice(shape_columns.start - columns.start, shape_columns.stop - columns.start)
+                if single_point:
+                    segment = _soft_disc(
+                        metric_x[shape_rows, shape_columns], metric_y[shape_rows, shape_columns],
+                        x0, y0, radius, stroke.hardness,
+                    )
+                else:
+                    segment = _soft_segment(
+                        metric_x[shape_rows, shape_columns], metric_y[shape_rows, shape_columns],
+                        x0, y0, x1, y1, radius, stroke.hardness,
+                    )
+                np.maximum(
+                    stroke_mask[local_rows, local_columns], segment,
+                    out=stroke_mask[local_rows, local_columns],
                 )
-            else:
-                segment = _soft_segment(
-                    metric_x[shape_rows, shape_columns], metric_y[shape_rows, shape_columns],
-                    x0, y0, x1, y1, radius, stroke.hardness,
-                )
-            np.maximum(
-                stroke_mask[local_rows, local_columns], segment,
-                out=stroke_mask[local_rows, local_columns],
-            )
-        coverage = result[rows, columns]
-        if stroke.erase:
-            if erase_attenuation is None:
-                erase_attenuation = np.ones(x.shape, dtype=np.float32)
-            erase_strength = np.minimum(
-                np.float32(stroke.opacity),
-                stroke_mask * np.float32(stroke.flow),
-            )
-            erase_attenuation[rows, columns] *= 1.0 - erase_strength
-        else:
-            # Repeated low-flow passes build coverage, while opacity is the
-            # ceiling for this brush preset. A lower-opacity stroke must never
-            # reduce coverage that was painted previously.
-            paint_strength = np.minimum(
-                np.float32(stroke.opacity),
-                stroke_mask * np.float32(stroke.flow),
-            )
-            accumulated = np.minimum(
-                np.float32(stroke.opacity),
-                coverage + paint_strength,
-            )
-            np.maximum(coverage, accumulated, out=coverage)
-            if erase_attenuation is not None:
-                # Erase is retained as a final-stage attenuation so it can cut
-                # shifted, feathered, and inverted coverage. A later paint
-                # stroke must nevertheless be able to restore that attenuation
-                # in stroke order; otherwise an erased pixel is permanent.
-                restored = np.minimum(
+            coverage = result[rows, columns]
+            if stroke.erase:
+                erase_seen = True
+                erase_strength = np.minimum(
                     np.float32(stroke.opacity),
-                    erase_attenuation[rows, columns] + paint_strength,
+                    stroke_mask * np.float32(stroke.flow),
                 )
-                attenuation = erase_attenuation[rows, columns]
-                np.maximum(attenuation, restored, out=attenuation)
+                erase_attenuation[rows, columns] *= 1.0 - erase_strength
+            else:
+                # Repeated low-flow passes build coverage, while opacity is the
+                # ceiling for this brush preset. A lower-opacity stroke must never
+                # reduce coverage that was painted previously.
+                paint_strength = np.minimum(
+                    np.float32(stroke.opacity),
+                    stroke_mask * np.float32(stroke.flow),
+                )
+                accumulated = np.minimum(
+                    np.float32(stroke.opacity),
+                    coverage + paint_strength,
+                )
+                np.maximum(coverage, accumulated, out=coverage)
+                if erase_seen:
+                    # Erase is retained as a final-stage attenuation so it can cut
+                    # shifted, feathered, and inverted coverage. A later paint
+                    # stroke must nevertheless be able to restore that attenuation
+                    # in stroke order; otherwise an erased pixel is permanent.
+                    restored = np.minimum(
+                        np.float32(stroke.opacity),
+                        erase_attenuation[rows, columns] + paint_strength,
+                    )
+                    attenuation = erase_attenuation[rows, columns]
+                    np.maximum(attenuation, restored, out=attenuation)
+
+    if not prepared:
+        return result, erase_attenuation
+    top = min(item[3].start for item in prepared)
+    bottom = max(item[3].stop for item in prepared)
+    _over_row_bands(accumulate, top, bottom, x.size)
     return result, erase_attenuation
+
+
+def _over_row_bands(work, top: int, bottom: int, pixels: int) -> None:
+    """Run ``work(top, bottom)`` over the rows, in threaded bands when large.
+
+    Bands are disjoint row ranges, so no two workers write the same pixel.
+    """
+    band_count = min(_BRUSH_WORKERS * 4, bottom - top) if pixels >= _BRUSH_THREADED_PIXELS else 1
+    if _BRUSH_WORKERS < 2 or band_count < 2:
+        work(top, bottom)
+        return
+    edges = [top + (bottom - top) * index // band_count for index in range(band_count + 1)]
+    run = mask_in_request_context(work)
+    futures = [_brush_executor().submit(run, edges[index], edges[index + 1]) for index in range(band_count)]
+    try:
+        for future in futures:
+            future.result()
+    finally:
+        for future in futures:
+            future.cancel()
+        wait(futures)
+
+
+# A painted mask's feather is far wider than a pixel, so the blur itself is
+# done on a grid of block averages and interpolated back. The strokes are
+# still painted at full resolution: the feather rescales its result to the
+# painted peak, which multiplies any error in painted area across the whole
+# mask. The reduction keeps the feather at least this many coarse pixels wide,
+# which holds the result within two of 255 mask levels of the full-resolution
+# blur (owner decision, 2026-10-01).
+_REDUCED_BLUR_MIN_SIGMA = 16.0
+_REDUCED_BLUR_MAX_FACTOR = 32
+
+
+def _reduced_blur_factor(mask: np.ndarray, sigma: float) -> int:
+    """Block size for the reduced blur; 1 keeps the full-resolution blur."""
+    factor = int(min(sigma / _REDUCED_BLUR_MIN_SIGMA, _REDUCED_BLUR_MAX_FACTOR))
+    return factor if factor >= 2 and min(mask.shape) >= 2 * factor else 1
+
+
+def _gaussian_blur_reduced(mask: np.ndarray, sigma: float, factor: int) -> np.ndarray:
+    """Approximate ``_gaussian_blur_float`` through ``factor``-pixel block means.
+
+    Two properties of the full blur decide how this is built:
+
+    * The feather rescales the blur to the painted peak, so it has to match in
+      proportion, not just in level: a small mark under a wide feather is
+      amplified many times over. Each coarse pass is therefore a box of the
+      exact fractional width that reproduces the full passes' spread.
+    * Every full pass repeats the frame's outermost pixel as padding. A mark
+      against the frame edge makes that pixel differ sharply from the block
+      around it, so the value at the outermost pixel is carried through every
+      pass alongside the block values instead of being inferred from them.
+    """
+    height, width = mask.shape
+    passes = 6
+    # Block averaging and the interpolation back add a little spread of their
+    # own, which is taken out of the passes.
+    full_variance = sum((box * box - 1) / 12.0 for box in _gaussian_box_widths(sigma, passes))
+    own_variance = (1.0 - 1.0 / (factor * factor)) / 12.0 + 1.0 / 6.0
+    half_width = math.sqrt(3.0 * max(full_variance / (factor * factor) - own_variance, 1e-6) / passes)
+
+    def block_means(values: np.ndarray, axis: int) -> np.ndarray:
+        length = values.shape[axis]
+        means = np.add.reduceat(values, np.arange(0, length, factor), axis=axis, dtype=np.float64)
+        means /= factor
+        short = -length % factor
+        if short:
+            # The last block is narrower; average only the pixels it holds.
+            last = [slice(None)] * values.ndim
+            last[axis] = -1
+            means[tuple(last)] *= factor / (factor - short)
+        return means
+
+    def layout(length: int) -> tuple[np.ndarray, np.ndarray]:
+        """Cell boundaries and sample positions along one axis, in block units.
+
+        Samples are the first pixel, every block center, and the last pixel.
+        Cells are the blocks, with a padding cell outside each end.
+        """
+        count = -(-length // factor)
+        boundaries = np.minimum(np.arange(count + 1, dtype=np.float64), length / factor) - 0.5
+        centers = 0.5 * (boundaries[:-1] + boundaries[1:])
+        first, last = 0.5 / factor - 0.5, (length - 0.5) / factor - 0.5
+        padding = half_width + 2.0
+        edges = np.concatenate(([boundaries[0] - padding], boundaries, [boundaries[-1] + padding]))
+        return edges, np.concatenate(([first], centers, [last]))
+
+    def box_pass(samples: np.ndarray, edges: np.ndarray, positions: np.ndarray) -> np.ndarray:
+        """Average each row over a box centered on every sample position.
+
+        ``samples`` holds the first-pixel value, the block values and the
+        last-pixel value. The row is the block values as a step function,
+        continued outward by the first and last pixel values.
+        """
+        integral = np.zeros((samples.shape[0], samples.shape[1] + 1), dtype=np.float64)
+        np.cumsum(samples * np.diff(edges), axis=1, out=integral[:, 1:])
+
+        def up_to(points: np.ndarray) -> np.ndarray:
+            cell = np.clip(np.searchsorted(edges, points, side="right") - 1, 0, samples.shape[1] - 1)
+            return integral[:, cell] + (points - edges[cell]) * samples[:, cell]
+
+        return (up_to(positions + half_width) - up_to(positions - half_width)) / (2.0 * half_width)
+
+    mask_checkpoint()
+    # The coarse grid is small; float64 keeps its sums exact enough that only
+    # the approximation itself separates it from the full blur. The frame's
+    # top and bottom pixel rows ride along through the horizontal passes: they
+    # are what the first vertical pass pads with.
+    column_edges, column_positions = layout(width)
+    row_edges, row_positions = layout(height)
+    rows = np.concatenate((mask[:1], block_means(mask, 0), mask[-1:]), axis=0, dtype=np.float64)
+    coarse = np.concatenate((rows[:, :1], block_means(rows, 1), rows[:, -1:]), axis=1)
+    for _ in range(passes):
+        coarse = box_pass(coarse, column_edges, column_positions)
+    coarse = np.ascontiguousarray(coarse.T)
+    for _ in range(passes):
+        coarse = box_pass(coarse, row_edges, row_positions)
+    coarse = np.ascontiguousarray(coarse.T).astype(np.float32)
+
+    def taps(length: int, positions: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        pixels = (np.arange(length, dtype=np.float64) + 0.5) / factor - 0.5
+        lower = np.clip(np.searchsorted(positions, pixels, side="right") - 1, 0, len(positions) - 2)
+        span = np.maximum(positions[lower + 1] - positions[lower], 1e-9)
+        return lower, np.clip((pixels - positions[lower]) / span, 0.0, 1.0).astype(np.float32)
+
+    left, across = taps(width, column_positions)
+    wide = coarse[:, left]
+    wide += (coarse[:, left + 1] - wide) * across
+    top, down = taps(height, row_positions)
+    result = np.empty((height, width), dtype=np.float32)
+    for start in range(0, height, 256):
+        mask_checkpoint()
+        band = slice(start, start + 256)
+        rows = wide[top[band]]
+        rows += (wide[top[band] + 1] - rows) * down[band, None]
+        result[band] = rows
+    return np.clip(result, 0.0, 1.0, out=result)
 
 
 def _brush_display_metric(
@@ -567,11 +863,21 @@ def _brush_display_metric(
 
     horizontal_step = float(np.linalg.norm(basis[:, 0]))
     transform = np.linalg.inv(basis) * horizontal_step
-    delta_x = x.astype(np.float64, copy=False) - origin[0]
-    delta_y = y.astype(np.float64, copy=False) - origin[1]
-    metric_x = transform[0, 0] * delta_x + transform[0, 1] * delta_y
-    metric_y = transform[1, 0] * delta_x + transform[1, 1] * delta_y
-    return metric_x.astype(np.float32), metric_y.astype(np.float32), transform, origin
+    metric_x = np.empty(x.shape, dtype=np.float32)
+    metric_y = np.empty(x.shape, dtype=np.float32)
+
+    def convert(top: int, bottom: int) -> None:
+        # A few rows at a time: the float64 intermediates of a native frame
+        # are several hundred megabytes each when taken whole.
+        for start in range(top, bottom, 64):
+            rows = slice(start, min(start + 64, bottom))
+            delta_x = x[rows].astype(np.float64, copy=False) - origin[0]
+            delta_y = y[rows].astype(np.float64, copy=False) - origin[1]
+            metric_x[rows] = transform[0, 0] * delta_x + transform[0, 1] * delta_y
+            metric_y[rows] = transform[1, 0] * delta_x + transform[1, 1] * delta_y
+
+    _over_row_bands(convert, 0, x.shape[0], x.size)
+    return metric_x, metric_y, transform, origin
 
 
 def _brush_mask(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> np.ndarray:
@@ -593,7 +899,13 @@ def _feather_mask(
     pixel_radii = _mask_radii_pixels(x, y, radius)
     if max(pixel_radii) < 0.25:
         return mask
-    blurred = _gaussian_blur_float(mask, pixel_radii)
+    # A luminance mask carries image detail down to the pixel and its feather
+    # is narrow; only painted masks take the reduced blur.
+    factor = 1 if luminance_range else _reduced_blur_factor(mask, pixel_radii[0])
+    if factor >= 2:
+        blurred = _gaussian_blur_reduced(mask, pixel_radii[0], factor)
+    else:
+        blurred = _gaussian_blur_float(mask, pixel_radii)
     if luminance_range:
         # A luma feather is a plain blur of what the range selects (owner
         # decision, 2026-09-25): a large area keeps full strength with a soft

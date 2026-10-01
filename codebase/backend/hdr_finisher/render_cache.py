@@ -36,11 +36,18 @@ from .finishing import (
 )
 from .local_adjustments import (
     compile_geometry_fixed_mask,
+    compile_geometry_fixed_mask_region,
     mask_influence_opacity,
     sample_luminance_evs,
     spatial_mask_signature,
 )
-from .mask_work import checkpoint as mask_checkpoint, cache_lock as mask_cache_lock, phase as mask_phase
+from .mask_work import (
+    checkpoint as mask_checkpoint,
+    cache_lock as mask_cache_lock,
+    obsolete_checkpoint as mask_obsolete_checkpoint,
+    phase as mask_phase,
+    shared_work as mask_shared_work,
+)
 from .models import AdjustmentState, LocalAdjustment, MaskExpression, MaskPoint, PreviewKind, SdrMatchState
 from .preview import ResizeCancelled, downsample_image
 
@@ -654,6 +661,9 @@ class SessionRenderCache:
     _masks: OrderedDict[tuple[int, int, str, str, str], np.ndarray] = field(default_factory=OrderedDict, init=False, repr=False)
     _geometry_maps: OrderedDict[tuple[int, str], tuple[tuple[float, ...], tuple[float, ...], int, int]] = field(default_factory=OrderedDict, init=False, repr=False)
     _inflight: dict[tuple[object, ...], Event] = field(default_factory=dict, init=False, repr=False)
+    # Requests currently waiting on each mask flight. An owner whose own
+    # client left keeps computing while this is non-zero.
+    _flight_waiters: dict[tuple[object, ...], int] = field(default_factory=dict, init=False, repr=False)
     _hits: int = field(default=0, init=False, repr=False)
     _misses: int = field(default=0, init=False, repr=False)
     _evictions: int = field(default=0, init=False, repr=False)
@@ -714,7 +724,7 @@ class SessionRenderCache:
             self._scopes.clear()
             if clear_masks:
                 self._masks.clear()
-            self._cancel_inflight_locked()
+            self._cancel_inflight_locked(keep_masks=not clear_masks)
 
     def source_proxy(self, kind: PreviewKind, long_edge: int) -> tuple[np.ndarray, str]:
         source, sdr_reference = self._proxies(long_edge)
@@ -957,6 +967,29 @@ class SessionRenderCache:
             compile_geometry_fixed_mask(source, local_adjustment.mask, adjustments.shared.geometry),
             edge,
         )
+
+    def compiled_local_mask_region(
+        self,
+        adjustments: AdjustmentState,
+        local_adjustment: LocalAdjustment,
+        long_edge: int,
+        rect: tuple[int, int, int, int],
+    ) -> tuple[np.ndarray, tuple[int, int]] | None:
+        """The spatial mask for one output rectangle, or ``None`` when it needs the whole image.
+
+        A mask that depends only on a pixel or a bounded neighbourhood is
+        evaluated for the rectangle alone, so a magnified view pays for what is
+        on screen. Nothing is cached here: the renderer keeps the tiles it was
+        sent, and a whole-image compile of the same mask is never started.
+        """
+        edge = max(256, int(long_edge))
+        with mask_cache_lock(self._lock):
+            with mask_phase("source"):
+                source, _sdr_reference = self._proxies_locked(edge)
+        with mask_phase("compute"):
+            return compile_geometry_fixed_mask_region(
+                source, local_adjustment.mask, adjustments.shared.geometry, rect, spatial_only=True,
+            )
 
     def compiled_mask_draft(
         self,
@@ -1301,7 +1334,7 @@ class SessionRenderCache:
                 "scope_bytes": scope_bytes,
                 "local_mask_bytes": mask_bytes,
                 "local_mask_entries": len(self._masks),
-                "local_mask_budget_bytes": 160 * 1024 * 1024 if any(key[1] > 1600 for key in self._masks) else 96 * 1024 * 1024,
+                "local_mask_budget_bytes": self._mask_budget_locked(),
                 "managed_bytes": source_bytes + proxy_bytes + frame_bytes + matched_base_bytes + scope_bytes + mask_bytes,
                 "entries": len(self._source_proxies) + len(self._frames) + len(self._matched_sdr_bases) + len(self._scopes) + len(self._masks),
                 "hits": self._hits,
@@ -1397,48 +1430,67 @@ class SessionRenderCache:
             key = (source_epoch, edge, geometry_signature, local.id, mask_signature)
             flight_key = ("mask", *key)
             waited_flight = None
-            while True:
-                mask_checkpoint()
-                with mask_cache_lock(self._lock):
-                    mask = self._masks.get(key)
-                    if mask is not None:
-                        self._hits += 1
-                        self._masks.move_to_end(key)
-                        break
-                    # A request that outlived source replacement may finish for
-                    # its original caller, but must not join or populate the
-                    # current source's cache.
-                    if source_epoch != self._source_epoch:
-                        flight = None
-                        break
-                    flight = self._inflight.get(flight_key)
-                    if flight is None:
-                        flight = Event()
-                        self._inflight[flight_key] = flight
-                        break
-                    if flight is not waited_flight:
-                        self._singleflight_waits += 1
-                        waited_flight = flight
-                with mask_phase("singleflight_wait"):
-                    flight.wait(0.05)
+            waiting = False
+            try:
+                while True:
+                    mask_checkpoint()
+                    with mask_cache_lock(self._lock):
+                        mask = self._masks.get(key)
+                        if mask is not None:
+                            self._hits += 1
+                            self._masks.move_to_end(key)
+                            break
+                        # A request that outlived source replacement may finish for
+                        # its original caller, but must not join or populate the
+                        # current source's cache.
+                        if source_epoch != self._source_epoch:
+                            flight = None
+                            break
+                        flight = self._inflight.get(flight_key)
+                        if flight is None:
+                            flight = Event()
+                            self._inflight[flight_key] = flight
+                            break
+                        if flight is not waited_flight:
+                            self._singleflight_waits += 1
+                            waited_flight = flight
+                        if not waiting:
+                            waiting = True
+                            self._flight_waiters[flight_key] = self._flight_waiters.get(flight_key, 0) + 1
+                    with mask_phase("singleflight_wait"):
+                        flight.wait(0.05)
+            finally:
+                if waiting:
+                    with self._lock:
+                        remaining = self._flight_waiters.get(flight_key, 1) - 1
+                        if remaining > 0:
+                            self._flight_waiters[flight_key] = remaining
+                        else:
+                            self._flight_waiters.pop(flight_key, None)
 
             if mask is None:
                 owns_flight = flight is not None
                 try:
                     mask_checkpoint()
-                    with mask_phase("compute"):
-                        mask = compile_geometry_fixed_mask(source, local.mask, geometry, spatial_only=True)
-                    mask_checkpoint()
+                    with mask_shared_work(lambda: self._flight_waiters.get(flight_key, 0) > 0):
+                        with mask_phase("compute"):
+                            mask = compile_geometry_fixed_mask(source, local.mask, geometry, spatial_only=True)
+                    # An obsolete mask is never cached. A finished, still-valid
+                    # one is, even when its own requester left meanwhile: the
+                    # key names the mask, not the request, and the next request
+                    # for it would otherwise pay for the whole compile again.
+                    mask_obsolete_checkpoint()
                     mask.setflags(write=False)
-                    with mask_cache_lock(self._lock):
+                    with self._lock:
                         if source_epoch == self._source_epoch:
                             existing = self._masks.get(key)
                             if existing is None:
                                 self._masks[key] = mask
                                 self._misses += 1
-                                self._evict_masks_locked(160 * 1024 * 1024 if edge > 1600 else 96 * 1024 * 1024)
+                                self._evict_masks_locked(self._mask_budget_locked())
                             else:
                                 mask = existing
+                    mask_checkpoint()
                 finally:
                     if owns_flight:
                         with self._lock:
@@ -1449,11 +1501,29 @@ class SessionRenderCache:
             compiled[local.id] = mask
         return compiled
 
+    def _mask_budget_locked(self) -> int:
+        # The budget follows the largest edge held, not the edge just inserted:
+        # a Fit-sized insert must not shrink the cache under the native masks
+        # the next zoom would then have to compile again.
+        return 160 * 1024 * 1024 if any(key[1] > 1600 for key in self._masks) else 96 * 1024 * 1024
+
     def _evict_masks_locked(self, budget: int) -> None:
         total = sum(int(mask.nbytes) for mask in self._masks.values())
-        while self._masks and total > budget:
-            _key, removed = self._masks.popitem(last=False)
-            total -= int(removed.nbytes)
+        if total <= budget:
+            return
+        # The cache only hears about a mask when a client asks for it, and a
+        # client that already holds one stops asking. Plain LRU therefore
+        # evicted the live masks of untouched locals while keeping every
+        # superseded shape of the local being edited. Drop superseded shapes
+        # (same local, edge and geometry; an older spatial identity) first.
+        live: dict[tuple[object, ...], tuple[object, ...]] = {}
+        for key in self._masks:
+            live[key[:4]] = key
+        superseded = [key for key in self._masks if live[key[:4]] is not key]
+        for key in [*superseded, *live.values()]:
+            if total <= budget:
+                break
+            total -= int(self._masks.pop(key).nbytes)
             self._evictions += 1
 
     def _evict_locked(self) -> None:
@@ -1469,10 +1539,19 @@ class SessionRenderCache:
             self._frame_scope_peaks.pop(evicted, None)
             self._evictions += 1
 
-    def _cancel_inflight_locked(self) -> None:
-        for event in self._inflight.values():
-            event.set()
+    def _cancel_inflight_locked(self, *, keep_masks: bool = False) -> None:
+        # A grade edit invalidates adjusted frames and scopes, not spatial
+        # masks: their key holds everything they depend on. Detaching a mask
+        # flight here made its waiters start the same compile a second time.
+        kept = {
+            key: event for key, event in self._inflight.items()
+            if keep_masks and key and key[0] == "mask"
+        }
+        for key, event in self._inflight.items():
+            if key not in kept:
+                event.set()
         self._inflight.clear()
+        self._inflight.update(kept)
 
 
 def rgba_proxy_pixel_format(image: np.ndarray, prefer_half: bool = True) -> str:

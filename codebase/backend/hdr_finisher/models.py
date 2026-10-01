@@ -1465,13 +1465,16 @@ class DesktopProjectSaveRequest(BaseModel):
 class ProofArtifactRequest(_EncodingSettings):
     _serialized_field_order: ClassVar[tuple[str, ...]] = (
         "adjustments", "edit_revision", *_ENCODING_FIELD_ORDER,
-        "long_edge", "output_finishing", "force",
+        "long_edge", "full_size", "output_finishing", "force",
     )
 
     adjustments: AdjustmentState | None = None
     edit_revision: int | None = Field(default=None, ge=0)
     quality: int = Field(default=90, ge=1, le=100)
     long_edge: int = Field(default=1200, ge=256, le=1600)
+    # A full-size proof is the export itself: the session's own source at its
+    # own resolution, not a downscaled level. ``long_edge`` is ignored for it.
+    full_size: bool = False
     # An explicit Build proof is the user's escape hatch when they suspect the
     # cached artifact rather than the grade, so it rebuilds instead of replaying
     # the cache. Excluded from the request signature: a forced build must land
@@ -1531,6 +1534,9 @@ class ProofArtifactResponse(BaseModel):
     wrong_mime_url: str
     width: int
     height: int
+    # True when the proof was encoded from the source at its own resolution,
+    # which is what an export does. A reduced proof must be labelled as one.
+    full_size: bool = False
     quality: int
     metadata_summary: str
     encoded_headroom: float

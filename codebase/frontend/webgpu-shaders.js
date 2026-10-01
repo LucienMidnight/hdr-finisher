@@ -2337,12 +2337,40 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return vec4f(output, 1.0);
     }
 
+    // Where a pass's pixel falls in its mask texture. A mask texture normally
+    // has one texel per pixel of the pass. A soft mask is one small bitmap of
+    // a stated rectangle of the picture (slots 186-189: origin and size, in
+    // frame pixels), stretched over whatever the pass is drawing; slots 160
+    // and 161 hold the pass's own origin in the frame.
+    fn maskUv(coordinate: vec2i, textureSize: vec2f) -> vec2f {
+      if (arrayLength(&p) > 189u && p[188] > 0.0 && p[189] > 0.0) {
+        let framePosition = vec2f(p[160], p[161]) + vec2f(coordinate) + vec2f(0.5);
+        return (framePosition - vec2f(p[186], p[187])) / vec2f(p[188], p[189]);
+      }
+      return (vec2f(coordinate) + vec2f(0.5)) / textureSize;
+    }
+
+    // The one place a local reads its mask. The local passes and the
+    // diagnostic probe below all call it, so what the probe reports is what
+    // the picture was drawn with.
+    fn localMaskValue(coordinate: vec2i) -> f32 {
+      let uv = maskUv(coordinate, vec2f(textureDimensions(spatialTexture)));
+      return textureSampleLevel(spatialTexture, spatialSampler, uv, 0.0).r;
+    }
+
+    // Diagnostic only: the mask as a local pass samples it, before the local's
+    // and the mask's opacity, for the preview-versus-export comparison.
+    @fragment fn localMaskProbeFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      // Every pixel of the probe's target is a pixel of the pass it stands in
+      // for, where the local passes' clamp to the valid size changes nothing.
+      return vec4f(vec3f(localMaskValue(vec2i(input.position.xy))), 1.0);
+    }
+
     @fragment fn localAdjustmentFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let dimensions = vec2u(validTileDimensions());
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let source = textureLoad(sourceTexture, coordinate, 0).rgb;
-      let uv = (vec2f(coordinate) + vec2f(0.5)) / vec2f(textureDimensions(spatialTexture));
-      let influence = clamp(textureSampleLevel(spatialTexture, spatialSampler, uv, 0.0).r * p[1] * p[13], 0.0, 1.0);
+      let influence = clamp(localMaskValue(coordinate) * p[1] * p[13], 0.0, 1.0);
       return vec4f(mix(source, applyLocalGrade(source), influence), 1.0);
     }
 
@@ -2356,8 +2384,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let dimensions = vec2u(validTileDimensions());
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), vec2i(dimensions) - vec2i(1));
       let source = textureLoad(sourceTexture, coordinate, 0).rgb;
-      let uv = (vec2f(coordinate) + vec2f(0.5)) / vec2f(textureDimensions(spatialTexture));
-      let influence = clamp(textureSampleLevel(spatialTexture, spatialSampler, uv, 0.0).r * p[1] * p[13], 0.0, 1.0);
+      let influence = clamp(localMaskValue(coordinate) * p[1] * p[13], 0.0, 1.0);
       let candidate = textureLoad(overlayMaskTexture, coordinate, 0).rgb;
       return vec4f(mix(source, candidate, influence), 1.0);
     }
@@ -2505,6 +2532,16 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return vec4f(total / f32(max(count, 1u)), peak);
     }
 
+    // What a region pass shows outside the tiles it has drawn: the whole
+    // picture from the last finished frame, which may be a smaller one,
+    // stretched over this frame and given the same output mapping.
+    @fragment fn placeholderFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let uv = input.position.xy / frameDimensions();
+      let filmOutput = applyOutputHighlights(textureSampleLevel(spatialTexture, spatialSampler, uv, 0.0).rgb);
+      let output = select(clamp(filmOutput, vec3f(0.0), vec3f(1.0)), displayHdr(filmOutput), p[0] > 0.5);
+      return vec4f(displayEncode(output), 1.0);
+    }
+
     @fragment fn fragmentMain(input: VertexOut) -> @location(0) vec4f {
       let dimensions = textureDimensions(sourceTexture);
       // This is the one pass whose render target is the whole canvas while its
@@ -2520,7 +2557,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let output = select(clamp(filmOutput, vec3f(0.0), vec3f(1.0)), displayHdr(filmOutput), p[0] > 0.5);
       var encoded = displayEncode(output);
       if (p[131] > 0.5) {
-        let uv = (vec2f(coordinate) + vec2f(0.5)) / vec2f(textureDimensions(overlayMaskTexture));
+        let uv = maskUv(coordinate, vec2f(textureDimensions(overlayMaskTexture)));
         let mask = textureSampleLevel(overlayMaskTexture, spatialSampler, uv, 0.0).r;
         encoded = mix(encoded, vec3f(p[133], p[134], p[135]), clamp(mask * p[132] * 0.52, 0.0, 0.52));
       }

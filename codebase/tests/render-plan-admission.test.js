@@ -412,17 +412,26 @@ test("a source the render has yet to hold resident is charged at its frame size"
   assert.equal(plan.entries.find((entry) => entry.id === "source-proxy").bytes, 1000 + 4000 * 3000 * 8);
 });
 
-test("a region request is admitted like any other: Direct when it fits", () => {
+test("a magnified view is drawn for its region even when the whole frame would fit", () => {
   const preview = new Preview(null);
   preview.setMemoryBudget(8);
   const viewport = { x: 3000, y: 2000, width: 969, height: 522 };
-  const override = preview.executionOverrideFor({ viewport });
-  assert.equal(override, null);
+  // Viewport-Bounded GPU Preview PRD 5.2: frame time does not depend on image size.
+  const override = preview.executionOverrideFor({ viewport, tier: "settled" });
+  assert.equal(override, "tiled");
   const plan = preview.planRender(7968, 5320, { sourceBytesPerPixel: 8, executionOverride: override });
-  assert.equal(plan.decision.mode, "direct");
-  // The diagnostic Execution override still applies to region requests.
-  preview.executionOverride = "tiled";
-  assert.equal(preview.executionOverrideFor({ viewport }), "tiled");
+  assert.equal(plan.decision.mode, "tiled");
+  // A whole-frame request is still admitted like any other: Direct when it fits.
+  assert.equal(preview.executionOverrideFor({ viewport: null, tier: "settled" }), null);
+  assert.equal(preview.planRender(7968, 5320, { sourceBytesPerPixel: 8 }).decision.mode, "direct");
+  // The catch-up after a region pass completes that frame on the same route.
+  assert.equal(preview.executionOverrideFor({ viewport: null, roiCatchUp: true, tier: "refinement" }), "tiled");
+  // A drag frame over a magnified view is a region pass like any other.
+  assert.equal(preview.executionOverrideFor({ viewport, tier: "interactive" }), "tiled");
+  assert.equal(preview.executionOverrideFor({ viewport: null, tier: "interactive" }), null);
+  // The diagnostic Execution override still decides when it is set.
+  preview.executionOverride = "direct";
+  assert.equal(preview.executionOverrideFor({ viewport, tier: "settled" }), "direct");
 });
 
 test("stale source levels are evicted before planning, current levels are kept", () => {

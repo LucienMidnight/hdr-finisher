@@ -98,7 +98,10 @@ def test_local_bypass_renders_optimistically_and_tiled_masks_ignore_grade_revisi
     assert "{ refreshPreview: false }" in bypass
     assert "editRevision}:${signature}" not in tile_loader
     assert "geometrySignature}:${maskSignature}:" in tile_loader
-    assert "${prefix}${tile.key}" in tile_loader
+    # A mask tile is kept by where it is. The plan's own tile key carries the
+    # edit revision, which would refetch every tile after every edit.
+    assert "${prefix}${spatialTileKey(tile)}" in tile_loader
+    assert "${prefix}${tile.key}" not in tile_loader
 
 def test_tiled_mask_transport_is_batched_not_one_request_per_tile() -> None:
     mask_loader = (FRONTEND / "mask-loader.js").read_text(encoding="utf-8")
@@ -326,11 +329,13 @@ def test_display_scale_pan_cache_is_generation_aware() -> None:
     # The cache is the accepted-generation ledger, so the partition is the
     # contract's job and is unit tested there.
     assert "static partitionByGeneration(tiles, acceptedGeneration, generation)" in contract
-    assert "const panCache = viewportTiles" in webgpu
+    assert "const panCache = candidateTiles" in webgpu
     assert "Contract.partitionByGeneration(" in webgpu
-    # Only a retained frame may answer from the cache; a new target size or a
-    # direct pass redraws whole.
-    assert "const viewportTiles = retainedFrame && Contract && foregroundRegion" in webgpu
+    # A retained frame answers from the cache. A magnified pass over a frame
+    # that is not retained (a zoom in, a direct pass in between) draws only
+    # its region and forgets every tile accepted for the frame before it.
+    assert "const viewportTiles = (retainedFrame || regionOnly) && Contract && foregroundRegion" in webgpu
+    assert "if (regionOnly) scheduler.accepted.clear();" in webgpu
     assert "const foregroundTiles = panCache ? panCache.pending : plan.tiles;" in webgpu
     # A measurement pass never presents, so it must not make the cache believe
     # its tiles are in the retained frame.

@@ -17,6 +17,7 @@ from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import MutableHeaders
 
 from . import denoise_adaptive
 from .capabilities import probe_capabilities
@@ -27,6 +28,8 @@ from .folder_picker import pick_directory
 from .loader import LoaderError
 from .media_browser import MediaBrowserError, MediaBrowserInterpretationRequired, MediaBrowserStore
 from .import_jobs import ImportJobManager
+from .local_adjustments import spatial_mask_signature
+from .mask_softness import SOFT_ESTIMATE_LIMIT, bitmap_frame_rect, soft_mask_verdict
 from .raw_import import list_lens_profiles
 from .models import (
     DirectoryPickRequest,
@@ -106,6 +109,8 @@ _EXPORT_SUFFIXES = {
 # ring's chunk budget (16 MiB) so the client copies each strip without
 # re-splitting it while the next strip is still being encoded.
 PROXY_STREAM_CHUNK_BYTES = 16 * 1024 * 1024
+# How long an aborted mask request's work survives with nobody waiting on it.
+MASK_ABANDON_GRACE_SECONDS = 0.15
 
 
 def _preview_resource_payload(session, max_dimension: int) -> dict[str, object]:
@@ -170,19 +175,25 @@ def _cancellable_mask_request(endpoint):
     async def wrapped(*args, **kwargs):
         http_request = kwargs.pop("http_request")
         disconnected = Event()
+        disconnected_at = 0.0
         queued_at = perf_counter()
         queue_ms = 0.0
-        def check():
-            if disconnected.is_set():
+        def abandon():
+            # A client that aborts usually asks again at once under a newer
+            # request. Give that request a moment to join the shared compile
+            # before treating the work as unwanted.
+            if disconnected.is_set() and perf_counter() - disconnected_at >= MASK_ABANDON_GRACE_SECONDS:
                 raise HTTPException(status_code=409, detail="Disconnected local mask work cancelled.")
         def work():
             nonlocal queue_ms
             queue_ms = (perf_counter() - queued_at) * 1000
-            with request_work(check, None):
+            with request_work(None, None, abandon=abandon):
                 return endpoint(*args, **kwargs)
         async def watch():
+            nonlocal disconnected_at
             while True:
                 if await http_request.is_disconnected():
+                    disconnected_at = perf_counter()
                     disconnected.set()
                     return
                 await anyio.sleep(.05)
@@ -205,19 +216,70 @@ def _cancellable_mask_request(endpoint):
     return wrapped
 
 
-def _compile_current_mask(session, method, *args, timing=None, expected_revision=None, **kwargs):
+def _committed_mask_identity(session, local_id: str, mask_path: str | None):
+    """What a committed mask's pixels depend on, or None when it is gone."""
+    try:
+        local = next(item for item in session.local_adjustments if item.id == local_id)
+        expression = _mask_expression_at_path(local.mask, mask_path)
+    except (StopIteration, HTTPException):
+        return None
+    return session.adjustments.shared.geometry.model_dump_json(), spatial_mask_signature(expression)
+
+
+def _compile_current_mask(session, method, *args, timing=None, expected_revision=None, identity=None, **kwargs):
+    """Run mask work that stops once the session no longer wants its result.
+
+    ``identity`` returns what the mask's pixels depend on. An edit that leaves
+    it unchanged (a grade slider, another local) does not make the work
+    obsolete: its result is the mask the next request will ask for. Without
+    ``identity`` (an uncommitted draft) any newer revision is obsolete.
+    """
     # Snapshot the revision even for compatibility clients omitting it.
     from .mask_work import request_work
     revision = session.edit_revision if expected_revision is None else expected_revision
+    wanted = identity() if identity is not None else None
     def check():
-        if session.edit_revision != revision:
-            raise HTTPException(status_code=409, detail="Obsolete local mask work cancelled.")
+        nonlocal revision
+        current = session.edit_revision
+        if current == revision:
+            return
+        if wanted is not None and identity() == wanted:
+            revision = current
+            return
+        raise HTTPException(status_code=409, detail="Obsolete local mask work cancelled.")
     with request_work(check, timing):
         return method(*args, **kwargs)
 
 
 def _mask_timing_headers(timing):
     return {f"X-Mask-{name.replace('_', '-')}-Ms": f"{value:.3f}" for name, value in timing.items()}
+
+
+# A bitmap larger than this is never stretched: the renderer asks for the
+# frame's own size above it.
+SOFT_MASK_MAX_LONG_EDGE = 3200
+
+
+def _mask_softness_headers(session, adjustments, expression, bitmap, long_edge: int, spatial: bool) -> dict[str, str]:
+    """Tell the renderer whether this bitmap may stand in for the mask at every zoom."""
+    if not spatial:
+        return {}
+    if int(long_edge) > SOFT_MASK_MAX_LONG_EDGE:
+        return {}
+    # The source at the bitmap's scale, which the mask was compiled on.
+    proxy, _sdr_reference = session.render_cache._proxies(long_edge)
+    geometry = adjustments.shared.geometry
+    rect = bitmap_frame_rect(
+        int(session.source.width), int(session.source.height), proxy.shape[1], proxy.shape[0], geometry,
+    )
+    verdict = soft_mask_verdict(expression, bitmap, proxy.shape[1], proxy.shape[0], rect=rect)
+    return {
+        "X-Mask-Soft": "1" if verdict.soft else "0",
+        "X-Mask-Soft-Reason": verdict.reason,
+        "X-Mask-Soft-Estimate": f"{verdict.estimate:.3f}",
+        "X-Mask-Soft-Limit": f"{SOFT_ESTIMATE_LIMIT:.3f}",
+        "X-Mask-Frame-Rect": ",".join(f"{value:.9f}" for value in (rect or (0.0, 0.0, 1.0, 1.0))),
+    }
 
 
 def _check_mask_geometry(session, geometry_signature: str | None) -> None:
@@ -240,26 +302,49 @@ def _checked_mask_local(session, local_id: str):
         raise HTTPException(status_code=404, detail=f"Local adjustment '{local_id}' was not found.") from exc
 
 
-@app.middleware("http")
-async def desktop_request_boundary(request: Request, call_next):
-    if desktop_authoring_secret and request.url.path.startswith("/api/"):
-        if request.url.path == "/api/desktop/grant":
-            allowed = secret_matches(request.headers.get("x-hdr-finisher-control"), desktop_control_secret)
-        else:
-            allowed = secret_matches(request.headers.get("x-hdr-finisher-token"), desktop_authoring_secret)
-        if not allowed:
-            return JSONResponse(status_code=401, content={"detail": "Desktop authorization is required."})
-    response = await call_next(request)
-    if desktop_authoring_secret:
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' blob: data:; connect-src 'self'; worker-src 'self' blob:; "
-            "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
-        )
-        response.headers["X-Content-Type-Options"] = "nosniff"
-    return response
+class DesktopRequestBoundary:
+    """Desktop authorization and response hardening, as plain ASGI.
+
+    This was an ``@app.middleware("http")`` function. That wrapper hands the
+    route a substitute ``receive``, through which ``Request.is_disconnected()``
+    never reports the client closing the connection, so an aborted mask
+    request kept its worker computing to the end. Passing ``receive`` through
+    untouched is what lets the mask endpoints notice a client that left.
+    """
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        request = Request(scope)
+        if desktop_authoring_secret and request.url.path.startswith("/api/"):
+            if request.url.path == "/api/desktop/grant":
+                allowed = secret_matches(request.headers.get("x-hdr-finisher-control"), desktop_control_secret)
+            else:
+                allowed = secret_matches(request.headers.get("x-hdr-finisher-token"), desktop_authoring_secret)
+            if not allowed:
+                response = JSONResponse(status_code=401, content={"detail": "Desktop authorization is required."})
+                await response(scope, receive, send)
+                return
+
+        async def send_hardened(message) -> None:
+            if message["type"] == "http.response.start" and desktop_authoring_secret:
+                headers = MutableHeaders(scope=message)
+                headers["Content-Security-Policy"] = (
+                    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+                    "img-src 'self' blob: data:; connect-src 'self'; worker-src 'self' blob:; "
+                    "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+                )
+                headers["X-Content-Type-Options"] = "nosniff"
+            await send(message)
+
+        await self.app(scope, receive, send_hardened)
 
 
+app.add_middleware(DesktopRequestBoundary)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -565,14 +650,20 @@ def post_edit_commands(session_id: str, batch: EditCommandBatch) -> EditStateRes
 
 
 @app.post("/api/session/{session_id}/sdr-match", response_model=EditStateResponse)
-def post_sdr_match(session_id: str, request: SdrMatchActionRequest) -> EditStateResponse:
+def post_sdr_match(session_id: str, request: SdrMatchActionRequest, response: Response) -> EditStateResponse:
+    timing: dict[str, object] = {}
+    started = perf_counter()
     try:
-        return store.apply_sdr_match_action(
+        result = store.apply_sdr_match_action(
             session_id,
             expected_revision=request.expected_revision,
             action=request.action,
             authored_sdr_override_consent=request.authored_sdr_override_consent,
+            timing=timing,
         )
+        timing["request_total_ms"] = round((perf_counter() - started) * 1000.0, 3)
+        response.headers["X-SDR-Match-Timing"] = json.dumps(timing, separators=(",", ":"))
+        return result
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RevisionConflictError as exc:
@@ -1216,15 +1307,20 @@ def _slice_mask_tile(
     width: int,
     height: int,
     halo: int,
+    *,
+    output_size: tuple[int, int] | None = None,
+    origin: tuple[int, int] = (0, 0),
 ) -> tuple[dict[str, int], bytes] | None:
     """Slice one globally anchored tile out of a compiled mask.
 
     Returns the clamped tile/core geometry and the r8 payload, or ``None``
     when the requested rectangle lies entirely outside the compiled mask.
     Single-tile and batch transport share this so both answer with identical
-    geometry for identical requests.
+    geometry for identical requests. ``mask`` may be a block of the output
+    starting at ``origin``; ``output_size`` is then the whole output's
+    ``(width, height)`` and the block must cover the tile and its halo.
     """
-    output_height, output_width = mask.shape
+    output_height, output_width = mask.shape if output_size is None else (output_size[1], output_size[0])
     core_x0 = min(x, output_width)
     core_y0 = min(y, output_height)
     core_x1 = min(output_width, x + width)
@@ -1235,7 +1331,9 @@ def _slice_mask_tile(
     tile_y0 = max(0, core_y0 - halo)
     tile_x1 = min(output_width, core_x1 + halo)
     tile_y1 = min(output_height, core_y1 + halo)
-    tile = np.ascontiguousarray(mask[tile_y0:tile_y1, tile_x0:tile_x1])
+    tile = np.ascontiguousarray(mask[tile_y0 - origin[1]:tile_y1 - origin[1], tile_x0 - origin[0]:tile_x1 - origin[0]])
+    if tile.shape != (tile_y1 - tile_y0, tile_x1 - tile_x0):
+        return None
     geometry = {
         "output_width": output_width,
         "output_height": output_height,
@@ -1281,6 +1379,7 @@ def local_mask_proxy(
         mask_source,
         long_edge,
         spatial_only=spatial_only, timing=timing, expected_revision=edit_revision,
+        identity=lambda: _committed_mask_identity(session, local_id, mask_path),
     )
     cpu_mask_ms = (perf_counter() - started) * 1000.0
     height, width = mask.shape
@@ -1289,6 +1388,7 @@ def local_mask_proxy(
         media_type="application/octet-stream",
         headers={
             **_mask_timing_headers(timing),
+            **_mask_softness_headers(session, session.adjustments, selected_mask, mask, long_edge, spatial_only),
             "X-Image-Width": str(width),
             "X-Image-Height": str(height),
             "X-Pixel-Format": "r8unorm",
@@ -1336,6 +1436,7 @@ def local_mask_tile_proxy(
         local,
         long_edge,
         spatial_only=True, timing=timing, expected_revision=edit_revision,
+        identity=lambda: _committed_mask_identity(session, local_id, None),
     )
     sliced = _slice_mask_tile(mask, x, y, width, height, halo)
     if sliced is None:
@@ -1390,6 +1491,18 @@ def local_mask_tiles_batch_proxy(
 
     locals_by_id = {item.id: item for item in session.local_adjustments}
     compiled: dict[tuple[str, str | None], np.ndarray] = {}
+    # A mask that can be evaluated for a region is evaluated once for the
+    # rectangle around all of its requested tiles and never for the whole image.
+    regions: dict[tuple[str, str | None], tuple[np.ndarray, tuple[int, int], tuple[int, int]] | None] = {}
+    bounds: dict[tuple[str, str | None], list[int]] = {}
+    for tile in request.tiles:
+        box = bounds.setdefault((tile.local_id, tile.mask_path), [tile.x - tile.halo, tile.y - tile.halo,
+                                                                  tile.x + tile.width + tile.halo,
+                                                                  tile.y + tile.height + tile.halo])
+        box[0] = min(box[0], tile.x - tile.halo)
+        box[1] = min(box[1], tile.y - tile.halo)
+        box[2] = max(box[2], tile.x + tile.width + tile.halo)
+        box[3] = max(box[3], tile.y + tile.height + tile.halo)
     entries: list[dict[str, object]] = []
     payloads: list[bytes] = []
     timing = {}
@@ -1413,7 +1526,7 @@ def local_mask_tiles_batch_proxy(
             continue
         identity = (tile.local_id, tile.mask_path)
         mask = compiled.get(identity)
-        if mask is None:
+        if mask is None and regions.get(identity) is None:
             try:
                 selected_mask = _mask_expression_at_path(local.mask, tile.mask_path)
             except HTTPException as exc:
@@ -1429,14 +1542,33 @@ def local_mask_tiles_batch_proxy(
                 },
                 deep=True,
             )
-            mask = _compile_current_mask(session, session.render_cache.compiled_local_mask,
-                session.adjustments,
-                mask_source,
-                request.long_edge,
-                spatial_only=True, timing=timing, expected_revision=request.edit_revision,
-            )
-            compiled[identity] = mask
-        sliced = _slice_mask_tile(mask, tile.x, tile.y, tile.width, tile.height, tile.halo)
+            if identity not in regions:
+                box = bounds[identity]
+                origin = (max(0, box[0]), max(0, box[1]))
+                region = _compile_current_mask(session, session.render_cache.compiled_local_mask_region,
+                    session.adjustments,
+                    mask_source,
+                    request.long_edge,
+                    (origin[0], origin[1], box[2], box[3]),
+                    timing=timing, expected_revision=request.edit_revision,
+                    identity=lambda tile=tile: _committed_mask_identity(session, tile.local_id, tile.mask_path),
+                )
+                regions[identity] = None if region is None else (region[0], region[1], origin)
+            if regions[identity] is None:
+                mask = _compile_current_mask(session, session.render_cache.compiled_local_mask,
+                    session.adjustments,
+                    mask_source,
+                    request.long_edge,
+                    spatial_only=True, timing=timing, expected_revision=request.edit_revision,
+                    identity=lambda tile=tile: _committed_mask_identity(session, tile.local_id, tile.mask_path),
+                )
+                compiled[identity] = mask
+        region = regions.get(identity)
+        if region is not None:
+            sliced = _slice_mask_tile(region[0], tile.x, tile.y, tile.width, tile.height, tile.halo,
+                                      output_size=region[1], origin=region[2])
+        else:
+            sliced = _slice_mask_tile(mask, tile.x, tile.y, tile.width, tile.height, tile.halo)
         if sliced is None:
             entry["status"] = "outside"
             entry["error"] = "Mask tile rectangle is outside the output."
@@ -1467,6 +1599,7 @@ def local_mask_tiles_batch_proxy(
             "X-Mask-Batch-Entries": str(len(entries)),
             "X-Mask-Batch-Bytes": str(len(body)),
             "X-Mask-Batch-Compiles": str(len(compiled)),
+            "X-Mask-Batch-Regions": str(sum(1 for region in regions.values() if region is not None)),
             "X-Edit-Revision": str(session.edit_revision),
             "X-CPU-Mask-Ms": f"{cpu_mask_ms:.3f}",
         },
@@ -1500,6 +1633,9 @@ def local_mask_preview_proxy(
         media_type="application/octet-stream",
         headers={
             **_mask_timing_headers(timing),
+            **_mask_softness_headers(
+                session, request.adjustments or session.adjustments, request.mask, mask, request.long_edge, True,
+            ),
             "X-Image-Width": str(width),
             "X-Image-Height": str(height),
             "X-Pixel-Format": "r8unorm",

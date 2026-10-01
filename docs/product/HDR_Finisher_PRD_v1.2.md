@@ -995,6 +995,28 @@ tested. The second is acceptable; silence is not.
 
 ---
 
+## 11d. Owner Note (2026-10-01): Accuracy Tolerances and CPU/GPU Direction
+
+Two open decisions for Steve, raised by the October 1 performance pass (see section 14 of `GPU_Performance_Review_Sprint_PRD_2026-09-29.md`). Neither is decided here. A draft tolerance policy and the proposed architecture direction are in `Viewport_Bounded_GPU_Preview_PRD_2026-10-01.md`.
+
+**1. Define accuracy tolerances.** Recent performance work has treated "byte-identical output" as the rule for any change to masks, feathering and tiling. That rule is safe but rules out the largest wins. One exception was approved on October 1: the feather of a painted mask may differ by up to 2 of 255 mask levels. Under it the native brush-mask compile went from about 7.3 s to about 1.7 s, measured at 1 level of difference. A faster variant (about 0.4 s) was rejected because it reached 13 levels on small marks and marks at the frame edge; with no written tolerance there was no basis for judging whether any part of that was acceptable. A written tolerance would let performance work and its tests be judged against what a viewer can see instead of against bit equality. Things to settle:
+
+- A tolerance per stage, for example mask levels (out of 255), final-image difference in stops or delta-E, and exact-peak error, with separate limits for preview and for export if they should differ.
+- Which outputs must stay bit-exact regardless (for example preview-versus-export agreement, or re-exporting an unchanged project).
+- How tolerance is tested: maximum difference, share of pixels above a threshold, and which fixtures (hard-edged brushes, strokes at image borders, extreme local adjustments).
+- Whether a tolerance change needs sign-off per change or is pre-approved within the written limits.
+
+**2. Decide the CPU/GPU architecture direction.** Today the GPU renderer lives in the Electron window (WebGPU) while mask compilation, Match and export run in the Python backend on the CPU with NumPy. The preview equals the export because both use the backend's masks. This split is why native-resolution brush masks and Match take seconds. Options to weigh:
+
+- Keep the split and make the CPU side faster (threads, reduced-resolution work, parallel Match candidates). Smallest change; one implementation; bounded gains.
+- Move mask rasterization and feathering to the GPU for preview while export stays on the CPU. Fastest preview; two implementations that must agree within the tolerance from point 1.
+- Give the backend a GPU path so preview and export share one GPU implementation. One implementation again; adds a native dependency and makes export depend on the user's graphics driver.
+- Evaluate Match candidates on the GPU. Needs frame readback and a decision on which side owns the final recipe.
+
+Point 1 should be settled first: every GPU option produces results that are close to, but not bit-identical with, the CPU ones.
+
+---
+
 ## 12. Out of Scope for v1 (Explicit Deferrals)
 
 The following are reasonable future features but are explicitly deferred to avoid scope bloat:

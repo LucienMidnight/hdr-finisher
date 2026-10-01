@@ -65,11 +65,13 @@ def test_proof_request_order_signature_and_export_conversion_are_stable() -> Non
         "jpeg_gain_map_scale", "jpeg_chroma_subsampling", "avif_bit_depth",
         "avif_chroma_subsampling", "avif_gain_map_chroma_subsampling",
         "avif_gain_map_quality", "avif_gain_map_scale", "jpegxl_precision", "dithering",
-        "long_edge", "output_finishing", "force",
+        "long_edge", "full_size", "output_finishing", "force",
     )
+    # The signature is an in-process cache key, never persisted. It changed on
+    # October 1, 2026 when ``full_size`` joined the request.
     assert ProofArtifactStore._request_signature(
         "session", request, RenderColorContext(203)
-    ) == "27295d5e6543edfd11f1b83a"
+    ) == "0b9fbcccd924d09174483779"
 
     converted = request.to_export_settings("proof.jpg")
     for name in (

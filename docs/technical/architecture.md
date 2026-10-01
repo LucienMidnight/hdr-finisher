@@ -83,6 +83,18 @@ The interaction-aware scheduler coalesces control input to one WebGPU render per
 
 The validated WebGPU surface remains the settled authoring preview for HDR and SDR. Source proxies prefer aligned RGBA16F and fall back to RGBA32F for non-finite or out-of-range values. The renderer writes the active branch through Curves into an RGBA16F intermediate, applies Film Response into a second intermediate, then extracts qualified highlight energy into a quarter-resolution RGBA16F surface. Separable Gaussian passes blur Bloom RGB and Halation luma at their independent radii before the full-resolution composite applies diffusion, Image Structure, and seeded Grain. The CPU renderer uses a dense three-pass Gaussian approximation with the same linear-light compositing semantics. Parameters, reference constants, and ordering mirror the CPU processor; the backend remains authoritative for proof and export.
 
+### Masks and magnified views
+
+Export and Proof compile every mask on the CPU for the whole image; that is the reference. The preview draws a mask one of three ways, chosen per mask:
+
+- **Soft.** The bitmap compiled for the Fit view is stretched over a magnified frame by the shader, so zooming in neither compiles nor uploads it. The backend judges each bitmap it serves (`mask_softness.py`: how sharply the bitmap bends, how far it changes at the frame edge, and what a brush's settings say about small marks) and says so in the `X-Mask-Soft` response header, with the bitmap's exact placement in a cropped frame in `X-Mask-Frame-Rect`. Anything not shown to be soft takes one of the exact paths.
+- **Exact, for the visible region.** Gradient, path, unfeathered-brush and luminance masks depend on a pixel or a bounded neighbourhood, so the tile endpoint evaluates them for the rectangle around the requested tiles (`compile_geometry_fixed_mask_region`) instead of the whole image.
+- **Exact, whole image.** A feathered or edge-shifted brush that is not soft depends on the painted peak of the whole image and is compiled whole, as before.
+
+Luminance masks and simple linear gradients are also made on the GPU where their inputs are resident.
+
+At and above 100% zoom a frame is drawn for the visible region plus a margin on the tiled route, whatever the image's size. Outside the tiles it has drawn, a region pass shows the last finished frame stretched. A pan draws what it exposes, and the rest of the frame is completed in the background only when that needs no mask from the backend. `readLocalMaskRegion` reads back the mask each local pass sampled, for the preview-versus-export comparison.
+
 Fallback scopes use vectorized bin-index generation and `numpy.bincount`. Scope results and adjusted frames are single-flight and cached by source state, lane, proxy level, dimensions, and adjustment signature. Cache diagnostics report managed bytes, hits, misses, evictions, in-flight work, and stale cancellations.
 
 ## API shape

@@ -61,6 +61,9 @@
       this.dispatch = typeof options.dispatch === "function" ? options.dispatch : null;
       this.present = typeof options.present === "function" ? options.present : null;
       this.canPanRefine = typeof options.canPanRefine === "function" ? options.canPanRefine : null;
+      // Asked when the catch-up is due: whether completing the frame is worth
+      // starting at all (see the region route in app.js).
+      this.canCatchUp = typeof options.canCatchUp === "function" ? options.canCatchUp : null;
       this.onRefusal = typeof options.onRefusal === "function" ? options.onRefusal : null;
       this.onError = typeof options.onError === "function" ? options.onError : null;
       this.onFollowUpStart = typeof options.onFollowUpStart === "function" ? options.onFollowUpStart : null;
@@ -69,6 +72,11 @@
       this.panDelayMs = clampDelay(options.panDelayMs, DEFAULT_PAN_DELAY_MS);
 
       this.roiMode = options.roiMode === "refinement" ? "refinement" : "fit";
+      // The app draws a magnified view for its region only (Viewport PRD
+      // 5.2). Every such pass then needs the follow-ups, whatever the
+      // experimental ROI switch says: a pan has to draw what it exposes and
+      // the rest of the frame has to reach the same generation.
+      this.regionRoute = Boolean(options.regionRoute);
       this.sessionId = options.sessionId ?? null;
       this.activeLane = options.activeLane || "hdr";
       this.tokenSerial = 0;
@@ -209,6 +217,11 @@
       this.cancelFollowUps(lane);
       this.cancelInFlight(lane, reason);
       this.dropPending(lane, reason);
+    }
+
+    /** Whether a presented viewport pass is followed up at all. */
+    followUpsEnabled() {
+      return this.regionRoute || this.roiMode === "refinement";
     }
 
     setRoiMode(mode, { cancelFollowUps = true } = {}) {
@@ -491,7 +504,7 @@
      * whatever app-side facts (session, geometry) the caller requires.
      */
     panCandidate(lane) {
-      if (this.roiMode !== "refinement") return false;
+      if (!this.followUpsEnabled()) return false;
       const st = this.laneState(lane);
       const accepted = st.accepted;
       if (!accepted || accepted.lane !== lane) return false;
@@ -504,7 +517,7 @@
     }
 
     notePan(lane) {
-      if (this.roiMode !== "refinement") return false;
+      if (!this.followUpsEnabled()) return false;
       if (!this.panCandidate(lane)) return false;
       this.cancelPan(lane);
       const st = this.laneState(lane);
@@ -533,7 +546,7 @@
      * itself while that work finishes.
      */
     async requestPanRefinement(lane) {
-      if (this.roiMode !== "refinement") return false;
+      if (!this.followUpsEnabled()) return false;
       if (!this.panCandidate(lane)) return false;
       const st = this.laneState(lane);
       if (this.foregroundBusy()) {
@@ -569,17 +582,18 @@
      * yields to newer work like any other.
      */
     armCatchUp(lane, { longEdge = 0, generation = null } = {}) {
-      if (this.roiMode !== "refinement") return false;
+      if (!this.followUpsEnabled()) return false;
       const st = this.laneState(lane);
       this.cancelCatchUp(lane);
       const targetGeneration = generation === null ? st.editGeneration : Number(generation);
       const targetEdge = Math.max(0, toInt(longEdge, 0));
       st.catchUpTimer = this.setTimer(() => {
         st.catchUpTimer = null;
-        if (this.roiMode !== "refinement") return;
+        if (!this.followUpsEnabled()) return;
         if (this.activeLane !== lane) return;
         if (!this.sessionId) return;
         if (targetGeneration !== st.editGeneration) return;
+        if (this.canCatchUp && !this.canCatchUp(lane, targetEdge)) return;
         if (this.onFollowUpStart) this.onFollowUpStart(lane, "catch-up");
         void this.submit({
           lane,

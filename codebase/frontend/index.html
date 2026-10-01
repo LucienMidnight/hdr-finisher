@@ -344,6 +344,12 @@
                   <option value="jpegxl_hdr">JPEG XL HDR</option>
                 </select>
               </label>
+              <label class="tooltip-trigger" data-tooltip="Reduced builds quickly from a downscaled source. Full size encodes the same pixels the export writes and takes about twice as long as an export.">Proof size
+                <select id="chrome-proof-size">
+                  <option value="reduced">Reduced · 1,200 px</option>
+                  <option value="full">Full size · export pixels</option>
+                </select>
+              </label>
               <label>Target display peak
                 <select id="chrome-proof-target">
                   <option value="auto">Auto · current display</option>

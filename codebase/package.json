@@ -89,6 +89,8 @@
     "test:packaged-baselines": "node tests/performance/packaged-baselines.js",
     "test:fit-filtering": "node tests/performance/fit-filtering-ab.js",
     "test:export-parity": "node tests/performance/export-parity.js",
+    "test:proof-size": "node tests/run-in-electron.js tests/proof-size-interaction.js",
+    "test:preview-export-compare": "node tests/run-in-electron.js tests/performance/preview-export-compare.js",
     "test:electron": "node tests/run-in-electron.js tests/startup-state.js"
   },
   "devDependencies": {

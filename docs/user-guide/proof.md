@@ -24,13 +24,27 @@ Therefore, a 1,000-nit-authored result may appear closer to SDR on a 400-nit dis
 1. Open **Proof**.
 2. Enable **Show Chrome proof**.
 3. Select JPEG Ultra HDR or AVIF + gain map.
-4. Select a target display peak.
-5. Choose the active display when Windows telemetry is available.
-6. Click **Build proof**.
+4. Select a proof size (see below).
+5. Select a target display peak.
+6. Choose the active display when Windows telemetry is available.
+7. Click **Build proof**.
 
 The proof is generated from encoded media, not merely from the live working image. That catches encoder metadata, quantization, gamut, and endpoint behavior that an unencoded simulation could miss.
 
 After the proof is built, use **HDR adaptation** to inspect the reconstruction at the selected display target and **SDR base** to inspect the exact encoded fallback without leaving the Proof page. Switching these previews does not rebuild the artifact or change export settings.
+
+## Proof size
+
+| Size | What it is | When to use it |
+|---|---|---|
+| Reduced · 1,200 px | The export pipeline run on a downscaled copy of the source. Builds in seconds. | Checking tone, colour and gain-map behaviour while grading. |
+| Full size · export pixels | The export itself: the same source, the same pipeline, the same encoder settings. The file is byte-for-byte what Export writes with the same format settings. Takes about twice as long as an export (measured once: 229 s against 118 s on a 21 MP crop). | The final check before delivery, and whenever detail, sharpening, grain, mask edges or the measured peak matter. |
+
+A reduced proof is labelled **REDUCED PROOF** in the status line and the viewer note, and its watermark reads **PROOF · REDUCED**. It is not the export's pixels: fine detail, grain and small highlights are averaged by the downscale, so its measured peak and encoded headroom can be lower than the export's.
+
+A full-size proof does not include the export's **Resize** or **Output Sharpening**. When either is set, the label says so; the proof then shows the picture before that finishing.
+
+Changing the size marks the proof stale. Rebuild to see the new size.
 
 ## Target display peak
 

@@ -14,7 +14,15 @@
   // block size, then its origin), which every radius averages further.
   // 175 is the grain film type (0 color negative, 1 black & white) and 176
   // the high 16 bits of the grain seed, whose low half is 109.
-  const PARAM_COUNT = 186;
+  const PARAM_COUNT = 190;
+  // Slots 186-189: the frame rectangle a mask texture covers when it is one
+  // small bitmap stretched over the pass (a soft mask), else zero.
+  const MASK_RECT_INDEX = 186;
+  // A soft mask is drawn from the bitmap a Fit view already holds. When none
+  // is resident it is asked for at this long edge. Above the larger edge a
+  // frame is magnified and its soft masks come from the small bitmap.
+  const SOFT_MASK_LONG_EDGE = 1600;
+  const SOFT_MASK_MAX_EDGE = 3200;
   const TILE_ORIGIN_X_INDEX = 160;
   const TILE_ORIGIN_Y_INDEX = 161;
   const NOISE_VIEW_INDEX = 166;
@@ -871,6 +879,11 @@
       // at native size one feathered luma mask exceeds the cache budget on its
       // own, and trimming it would rebuild the mask on every drag frame.
       this.maskUseSerial = 0;
+      this.frameMaskRecord = null;
+      this.maskProbePipeline = null;
+      // The small bitmap last loaded for each mask, by spatial identity.
+      this.softMasks = new Map();
+      this.softMaskMaxEdge = SOFT_MASK_MAX_EDGE;
       this.gpuAnalyticMasksEnabled = true;
       this.instrumentationEnabled = false;
       this.performanceMetrics = { renders: [], scopes: [], maskEvents: [], stages: [], allocations: [], presentations: [] };
@@ -1208,7 +1221,10 @@
         const sameLane = proxy.lane === lane;
         const outdated = sameLane && (proxy.geometrySignature !== geometrySignature
           || proxy.sourceIdentity !== sourceIdentity);
-        const oldRegion = sameLane && String(proxy.identity || key).includes(":region:");
+        // A region source is replaced by the next region, not by a whole-frame
+        // render at another size: zooming back in then needs no fetch.
+        const oldRegion = sameLane && String(keep || "").includes(":region:")
+          && String(proxy.identity || key).includes(":region:");
         if (!otherSession && !outdated && !oldRegion) continue;
         this.evictGpuCacheEntry("source-proxy", key);
         evicted += 1;
@@ -1224,7 +1240,13 @@
      * refused.
      */
     executionOverrideFor(sourceOptions = null) {
-      return this.executionOverride || null;
+      if (this.executionOverride) return this.executionOverride;
+      // A magnified view is drawn for the visible region only, whatever the
+      // image's size: the tiled route. That includes a drag frame, which is a
+      // region pass like any other and costs what is on screen. The catch-up
+      // that follows a region pass stays on the same route, so it completes
+      // the frame the region pass started instead of replacing it.
+      return sourceOptions?.viewport || sourceOptions?.roiCatchUp ? "tiled" : null;
     }
 
     admitDirect(width, height, options = {}) {
@@ -1422,6 +1444,8 @@
       this.paramBuffer = null;
       this.curveBuffer = null;
       this.peakReductionPipeline = null;
+      this.maskProbePipeline = null;
+      this.frameMaskRecord = null;
       this.deviceLost = false;
       return this.initialize();
     }
@@ -1436,6 +1460,10 @@
       this.localMaskInflight.clear();
       // A different session has no accepted frame to retain.
       this.lastPresentedFrame = null;
+      this.frameMaskRecord = null;
+      this.softMasks.clear();
+      this.placeholderSource = null;
+      this.presentedMaskKeys = null;
       if (this.presentationTarget) {
         const target = this.presentationTarget;
         if (target.allocatorEntry) {
@@ -2249,15 +2277,41 @@
     roiRegionFor(canvas, context, sessionId, lane, adjustments, sourceSize, referenceWhiteNits, sourceOptions, activeLocals, longEdge) {
       const viewport = sourceOptions?.viewport || null;
       if (!viewport) return null;
+      // Only the tiled route draws a region; anything else needs the frame.
+      if (this.executionOverrideFor(sourceOptions) !== "tiled") return null;
       const geometrySignature = JSON.stringify(adjustments.shared?.geometry || {});
+      // A luminance mask is made on the GPU from the whole frame's source and
+      // on the CPU from anything less, which costs about a second per region
+      // at 42 MP. Until it is made per region on the GPU, a frame with one
+      // fetches the whole source: slower once, then nothing more to fetch.
+      if (lane === "hdr" && (sourceOptions?.identity || "source") === "source"
+        && (activeLocals || []).some((local) => maskUsesLuminance(local.mask))) return null;
+      // The whole frame's source, once resident, serves every region of it
+      // with no fetch at all.
+      if (this.wholeSourceResident(sessionId, lane, longEdge, geometrySignature, sourceOptions?.identity || "source")) {
+        return null;
+      }
       const surface = this.configureSurface(canvas, context, lane === "hdr");
-      if (!this.retainedTiledFrame(sessionId, lane, geometrySignature, surface.format)) return null;
-      const previousFrame = this.lastPresentedFrame;
       const Contract = typeof window !== "undefined" ? window.HDRViewportRequest : null;
-      if (!previousFrame?.workingSpace || !Contract?.sourceFetchRegion) return null;
+      if (!Contract?.sourceFetchRegion) return null;
+      let previousFrame = this.retainedTiledFrame(sessionId, lane, geometrySignature, surface.format)
+        ? this.lastPresentedFrame : null;
       // A viewport is measured in the requested frame's coordinates. A
-      // retained frame from the preceding scale cannot anchor its ROI fetch.
-      if (Math.max(previousFrame.width, previousFrame.height) !== longEdge) return null;
+      // retained frame from another scale cannot anchor its ROI fetch.
+      if (previousFrame && (previousFrame.longEdge || Math.max(previousFrame.width, previousFrame.height)) !== longEdge) {
+        previousFrame = null;
+      }
+      if (!previousFrame) {
+        // The first magnified pass has no frame of its own size to go by. The
+        // app states the size it will be, and any frame of this session and
+        // lane gives the working space. The fetch clamps to the real frame.
+        const size = sourceOptions?.frameSize;
+        const known = this.lastPresentedFrame;
+        if (!(size?.width > 0 && size?.height > 0) || !known?.workingSpace
+          || known.sessionId !== sessionId || known.lane !== lane) return null;
+        previousFrame = { width: size.width, height: size.height, workingSpace: known.workingSpace };
+      }
+      if (!previousFrame.workingSpace) return null;
       const Scheduler = typeof window !== "undefined" ? window.HDRTileScheduler : null;
       const tileSize = Math.max(64, Math.floor(Number(sourceOptions?.tileSize) || Scheduler?.DEFAULT_TILE_SIZE || 512));
       const halo = this.roiSourceHalo(
@@ -2274,6 +2328,41 @@
         request.halo,
         request.minimumRoiFraction,
       );
+    }
+
+    /**
+     * Whether the rest of a frame can be drawn around a region pass without
+     * asking the backend for a single mask: every local's mask is a soft
+     * bitmap already resident, or is made on the GPU. A hard-edged mask is
+     * produced for the visible region only (Viewport PRD 5.1), so a frame
+     * with one is completed tile by tile as the view reaches it, never whole.
+     */
+    catchUpNeedsNoBackendMasks(sessionId, lane, longEdge, geometrySignature, localAdjustments) {
+      return activeGpuLocals(lane, localAdjustments).every((local) => {
+        const mask = local.mask;
+        if (isGpuLumaMask(mask)) return this.wholeSourceResident(sessionId, "hdr", longEdge, geometrySignature, "source");
+        if (mask?.operator !== "leaf") return false;
+        if (this.gpuAnalyticMasksEnabled && isGpuLinearGradientMask(mask, geometrySignature)) return true;
+        const entry = this.softMasks.get(softMaskIdentity(sessionId, geometrySignature, gpuMaskIdentity(mask)));
+        return Boolean(entry && !entry.destroyed && (entry.soft || (entry.larger?.soft && !entry.larger.destroyed)));
+      });
+    }
+
+    wholeSourceResident(sessionId, lane, longEdge, geometrySignature, sourceIdentity = "source") {
+      return this.proxies.has(`${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}`);
+    }
+
+    /**
+     * The last finished frame of this session, lane and geometry, if its
+     * texture is still the one the direct route holds for this canvas.
+     */
+    placeholderFor(canvas, sessionId, lane, geometrySignature) {
+      const source = this.placeholderSource;
+      if (!source || source.canvas !== canvas || source.sessionId !== sessionId || source.lane !== lane
+        || source.geometrySignature !== geometrySignature) return null;
+      const intermediate = this.intermediates.get(canvas);
+      return intermediate && intermediate === source.intermediate && intermediate.finishTexture === source.texture
+        ? source.texture : null;
     }
 
     /** One immutable frame-anchored request shared by source, graph and masks. */
@@ -2588,6 +2677,29 @@
       if (this.gpuAnalyticMasksEnabled && proxy && isGpuLinearGradientMask(batch.local.mask, geometrySignature)) {
         return this.loadGpuLinearGradientTiles(sessionId, batch, longEdge, geometrySignature, signature, isCurrent, proxy);
       }
+      if (isGpuLumaMask(batch.local.mask)
+        && this.wholeSourceResident(sessionId, "hdr", longEdge, geometrySignature, "source")) {
+        // The same GPU-made mask the direct route draws with, once the source
+        // it is made from is on the GPU: no backend compile, no upload.
+        const luma = await this.loadGpuLumaMask(
+          sessionId, batch.local, longEdge, editRevision, geometrySignature, isCurrent, signal,
+        );
+        if (luma) {
+          luma.wholeFrame = true;
+          return { localIndex: batch.localIndex, entries: new Map(batch.tiles.map((tile) => [tile.key, luma])) };
+        }
+        if (signal?.aborted || !isCurrent()) return { localIndex: batch.localIndex, entries: new Map() };
+      }
+      if (longEdge > SOFT_MASK_MAX_EDGE) {
+        // A soft mask is the same small bitmap for every tile.
+        const soft = await this.softLeafMask(
+          sessionId, batch.local, batch.local.mask, "", editRevision, geometrySignature, isCurrent, signal,
+        );
+        if (soft) {
+          return { localIndex: batch.localIndex, entries: new Map(batch.tiles.map((tile) => [tile.key, soft])) };
+        }
+        if (signal?.aborted || !isCurrent()) return { localIndex: batch.localIndex, entries: new Map() };
+      }
       return maskLoader().loadCpuMaskTiles(this, {
         sessionId, batch, longEdge, editRevision, geometrySignature, maskSignature: signature, isCurrent, signal,
       });
@@ -2603,7 +2715,7 @@
       const leaf = expression.leaf;
       for (const tile of batch.tiles) {
         if (!isCurrent()) break;
-        const key = `${prefix}${tile.key}`;
+        const key = `${prefix}${maskLoader().spatialTileKey(tile)}`;
         let entry = this.maskTiles.get(key);
         if (!entry) {
           const rect = tile.haloRect;
@@ -2640,7 +2752,10 @@
     }
 
     trimMaskTiles(pinned = []) {
-      const protectedKeys = new Set(pinned);
+      // The tiles of the frame on screen stay, whoever is trimming: a
+      // measurement pass over the whole image must not cost the viewer the
+      // masks under the region it is looking at.
+      const protectedKeys = new Set([...pinned, ...(this.presentedMaskKeys || [])]);
       const budget = this.cacheBudgetBytes(0.20, 32 * 1024 * 1024);
       let bytes = [...this.maskTiles.values()].reduce((sum, entry) => sum + entry.byteSize, 0);
       for (const [key, entry] of [...this.maskTiles]) {
@@ -2823,12 +2938,22 @@
       // processes nothing at all, and a newly exposed strip is the only work.
       // A frame that is not retained -- a new target size, a direct pass in
       // between -- has no trustworthy cache, so it redraws whole.
-      const viewportTiles = retainedFrame && Contract && foregroundRegion
+      // A magnified pass draws only its region even when the target holds
+      // no frame of this size yet (a zoom in, a lane switch): the rest of the
+      // target is filled from the last finished frame instead of being drawn,
+      // and nothing drawn for an earlier frame counts as current.
+      const regionOnly = !retainedFrame && !measureOnly && Boolean(Contract && foregroundRegion);
+      if (regionOnly) scheduler.accepted.clear();
+      const viewportTiles = (retainedFrame || regionOnly) && Contract && foregroundRegion
         ? Contract.foregroundTiles(plan.tiles, foregroundRegion)
         : null;
-      const panCache = viewportTiles
+      // A catch-up over a retained frame owes only the tiles the region pass
+      // before it did not draw at this generation.
+      const candidateTiles = viewportTiles
+        || (retainedFrame && !measureOnly && options.roiCatchUp && Contract ? plan.tiles : null);
+      const panCache = candidateTiles
         ? Contract.partitionByGeneration(
-          viewportTiles,
+          candidateTiles,
           (key) => scheduler.acceptedGeneration(key),
           plan.generation,
         )
@@ -2962,6 +3087,10 @@
         slots[base + 163] = tile.haloRect.height;
         slots[base + 164] = proxy.width;
         slots[base + 165] = proxy.height;
+        writeMaskRect(
+          slots, base, options.overlayIndex >= 0 ? maskMatrix[index][options.overlayIndex] : null,
+          proxy.width, proxy.height,
+        );
         // The peak reduction reads its grid from the same slots the scope
         // passes do. Nothing else in the render graph reads them.
         slots[base + 136] = SCOPE_PEAK_GRID;
@@ -2988,6 +3117,7 @@
           values[offset + 163] = tile.haloRect.height;
           values[offset + 164] = proxy.width;
           values[offset + 165] = proxy.height;
+          writeMaskRect(values, offset, maskMatrix[index][localIndex], proxy.width, proxy.height);
           // A local builds its Clarity map inside the tile; the map starts at
           // the frame block holding the halo rectangle's first pixel.
           const slot = values.subarray(offset, offset + PARAM_COUNT);
@@ -3010,7 +3140,7 @@
       const peakView = peakTarget?.texture.createView() || null;
       const globalInputIdentity = detailBandIdentity(params, proxy.identity, "global");
       const pinnedDetail = [];
-      const pinnedMasks = maskMatrix.flat().filter(Boolean).map((entry) => entry.key);
+      const pinnedMasks = maskMatrix.flat().map((entry) => entry?.key).filter(Boolean);
       const cacheBefore = { ...this.detailCacheCounters };
       const startedAt = performance.now();
       // The presentation gate is taken here, after every await this generation
@@ -3078,6 +3208,23 @@
       // presenting pass composites into the retained target instead and copies
       // that to the canvas once the frame is complete.
       const canvasView = presentationTarget ? presentationTarget.texture.createView() : null;
+      let placeholderDrawn = false;
+      if (regionOnly && canvasView) {
+        const placeholder = options.allowPlaceholder && !noiseView
+          ? this.placeholderFor(canvas, options.sessionId, lane, options.geometrySignature || "{}")
+          : null;
+        const fill = encoder.beginRenderPass({
+          colorAttachments: [{ view: canvasView, loadOp: "clear", clearValue: { r: 0, g: 0, b: 0, a: 1 }, storeOp: "store" }],
+        });
+        if (placeholder) {
+          const view = placeholder.createView();
+          fill.setPipeline(pipelines.placeholder);
+          fill.setBindGroup(0, this.bindGraphResources(view, view, { buffer: this.paramBuffer }, view));
+          fill.draw(3);
+          placeholderDrawn = true;
+        }
+        fill.end();
+      }
       const bandTileKey = (prefix, candidate) => `${prefix}|${candidate.rect.x},${candidate.rect.y},${candidate.rect.width},${candidate.rect.height}|h${candidate.halo}`;
       const intersect = (left, right) => {
         const x0 = Math.max(left.x, right.x);
@@ -3359,7 +3506,7 @@
               view: canvasView,
               // A retained ROI pass loads the accepted frame and overwrites
               // only the tiles it processed; the first full pass clears.
-              loadOp: position === 0 && !retainedFrame ? "clear" : "load",
+              loadOp: position === 0 && !retainedFrame && !regionOnly ? "clear" : "load",
               clearValue: { r: 0, g: 0, b: 0, a: 1 }, storeOp: "store",
             }],
           });
@@ -3444,12 +3591,20 @@
           width: proxy.width,
           height: proxy.height,
           execution: "tiled",
+          longEdge: proxy.longEdge,
           format: surface.format,
           // A retained pass that wants a region source needs this pass's
           // working space to derive the same parameters before its fetch.
           workingSpace: proxy.workingSpace,
           applicationGeneration: Number(options.applicationGeneration ?? 0),
         };
+        this.recordFrameMasks({
+          execution: "tiled", sessionId: options.sessionId, lane, width: proxy.width, height: proxy.height,
+          locals: activeLocals, retained: Boolean(panCache),
+          pieces: foregroundTiles.map((tile) => ({
+            rect: tile.rect, origin: tile.haloRect, entries: maskMatrix[tileIndexByKey.get(tile.key)],
+          })),
+        });
       }
       // Taken now, while this generation's grid is still the one in the
       // target. It is an exact maximum over every pixel the tiles covered, and
@@ -3476,6 +3631,7 @@
           identity: proxy.identity,
         };
       }
+      if (!measureOnly) this.presentedMaskKeys = new Set(pinnedMasks);
       const detailCacheBytes = this.trimDetailBandTiles(pinnedDetail);
       const maskCacheBytes = this.trimMaskTiles(pinnedMasks);
       const durationMs = performance.now() - startedAt;
@@ -3786,6 +3942,7 @@
       // Direct reads a whole-frame resolved source; Tiled re-derives this per
       // generation from whether it reconstructs tiles.
       params[NOISE_VIEW_INDEX] = noiseView ? (sourceProxy !== proxy ? 1 : 2) : 0;
+      writeMaskRect(params, 0, overlayIndex >= 0 ? masks[overlayIndex] : null, proxy.width, proxy.height);
       writeClarityPlan(params, proxy.width, proxy.height, params[151]);
       // Direct's frame is every intermediate's size, which is what the shader
       // falls back to. The Clarity map passes read map-sized textures, so the
@@ -3802,7 +3959,9 @@
           params,
           surface,
         });
-        if (sourceOptions?.tier === "interactive") refusals.push("interactive render");
+        // A whole-frame tiled pass is too slow for a drag frame; a region
+        // pass is bounded by the viewport and is not.
+        if (sourceOptions?.tier === "interactive" && !sourceOptions?.viewport) refusals.push("interactive render");
         if (refusals.length) {
           this.recordStage("tiled-refused", { lane, longEdge, refusals });
           return this.refuseRender(`tiled-refused:${refusals.join(",")}`);
@@ -3825,6 +3984,9 @@
           // renderTiledTo, so the ROI flags have to be forwarded here too or
           // the catch-up and pan telemetry can never be true.
           roiCatchUp: sourceOptions?.roiCatchUp,
+          // This entry has uploaded the frame's parameters, which the
+          // placeholder's output mapping reads.
+          allowPlaceholder: true,
           panPass: sourceOptions?.panPass,
           lane,
           longEdge,
@@ -3997,7 +4159,7 @@
         for (let index = 0; index < activeLocals.length; index += 1) {
           const local = activeLocals[index];
           const target = localSource === intermediate.baseTexture ? intermediate.localTexture : intermediate.baseTexture;
-          const localBuffer = this.localParamBuffer(local, lane, sourcePixelScale, proxy.width, proxy.height);
+          const localBuffer = this.localParamBuffer(local, lane, sourcePixelScale, proxy.width, proxy.height, masks[index]);
           if (gpuLocalDetailActive(local[`${lane}_grade`])) {
             // Preserve the pre-local source until the final mask mix. The normal
             // ping-pong target holds the unmasked candidate, while the two Detail
@@ -4234,9 +4396,24 @@
         width: proxy.width,
         height: proxy.height,
         execution: "direct",
+        longEdge: proxy.longEdge,
+        workingSpace: proxy.workingSpace,
         format: presentationSurface.format,
         applicationGeneration: Number(sourceOptions?.applicationGeneration ?? 0),
       };
+      // The finished picture of this frame, for a region pass to show outside
+      // the tiles it draws.
+      this.placeholderSource = noiseView ? null : {
+        canvas, sessionId, lane, geometrySignature, intermediate, texture: intermediate.finishTexture,
+      };
+      this.recordFrameMasks({
+        execution: "direct", sessionId, lane, width: proxy.width, height: proxy.height, locals: activeLocals,
+        pieces: activeLocals.length ? [{
+          rect: { x: 0, y: 0, width: proxy.width, height: proxy.height },
+          origin: { x: 0, y: 0, width: proxy.width, height: proxy.height },
+          entries: masks,
+        }] : [],
+      });
       const submittedAt = performance.now();
       this.recordStage("grading", {
         serial,
@@ -5310,6 +5487,147 @@
       }
     }
 
+    /**
+     * Which mask texture each local was drawn with, for the frame on screen.
+     *
+     * Diagnostic bookkeeping only: it holds references, never textures of its
+     * own. A tiled pass over a retained frame adds its tiles to the record;
+     * any other pass replaces it.
+     */
+    recordFrameMasks({ execution, sessionId, lane, width, height, locals, pieces, retained = false }) {
+      const localIds = locals.map((local) => local.id);
+      const identity = `${execution}:${sessionId}:${lane}:${width}x${height}:${localIds.join(",")}`;
+      if (!retained || this.frameMaskRecord?.identity !== identity) {
+        this.frameMaskRecord = { identity, execution, lane, width, height, localIds, pieces: new Map() };
+      }
+      for (const piece of pieces) this.frameMaskRecord.pieces.set(`${piece.rect.x},${piece.rect.y}`, piece);
+    }
+
+    /**
+     * Diagnostic readback of one local's mask as the frame on screen sampled
+     * it, for a region of the output, before the local's and the mask's
+     * opacity. Each texture the frame bound is drawn through the same shader
+     * function the local passes use. Nothing is compiled or fetched: a mask
+     * that is no longer resident is reported as missing, never rebuilt.
+     */
+    async readLocalMaskRegion(localId, x = 0, y = 0, width = 16, height = 16) {
+      const record = this.frameMaskRecord;
+      const localIndex = record ? record.localIds.indexOf(localId) : -1;
+      if (localIndex < 0) return { error: "No mask was recorded for this local in the frame on screen." };
+      const left = Math.min(Math.max(0, Math.trunc(Number(x) || 0)), record.width - 1);
+      const top = Math.min(Math.max(0, Math.trunc(Number(y) || 0)), record.height - 1);
+      const region = {
+        x: left,
+        y: top,
+        width: Math.min(Math.max(1, Math.trunc(Number(width) || 1)), record.width - left),
+        height: Math.min(Math.max(1, Math.trunc(Number(height) || 1)), record.height - top),
+      };
+      this.maskProbePipeline ||= this.device.createRenderPipeline({
+        layout: this.pipelineLayout,
+        vertex: { module: this.module, entryPoint: "vertexMain" },
+        fragment: { module: this.module, entryPoint: "localMaskProbeFragmentMain", targets: [{ format: "r16float" }] },
+        primitive: { topology: "triangle-list" },
+      });
+      // The probe reads only the slots that place a mask: the pass's origin in
+      // the frame and, for a soft mask, the rectangle its bitmap covers.
+      const slots = new Float32Array(PARAM_COUNT);
+      const parameters = this.createStorageBuffer(slots);
+      const values = new Float32Array(region.width * region.height).fill(Number.NaN);
+      const sources = new Set();
+      let covered = 0;
+      let missing = 0;
+      this.device.pushErrorScope("validation");
+      try {
+        for (const piece of record.pieces.values()) {
+          const x0 = Math.max(piece.rect.x, region.x);
+          const y0 = Math.max(piece.rect.y, region.y);
+          const x1 = Math.min(piece.rect.x + piece.rect.width, region.x + region.width);
+          const y1 = Math.min(piece.rect.y + piece.rect.height, region.y + region.height);
+          if (x1 <= x0 || y1 <= y0) continue;
+          const entry = piece.entries[localIndex];
+          const resident = entry?.texture
+            && (entry.key ? this.maskTiles.get(entry.key) === entry : !entry.destroyed);
+          if (!resident) {
+            missing += 1;
+            continue;
+          }
+          const copyWidth = x1 - x0;
+          const copyHeight = y1 - y0;
+          const originX = x0 - piece.origin.x;
+          const originY = y0 - piece.origin.y;
+          // The pass this piece stands for: the whole frame on the direct
+          // route, one tile and its halo on the tiled route.
+          const passWidth = piece.origin.width;
+          const passHeight = piece.origin.height;
+          slots[160] = piece.origin.x;
+          slots[161] = piece.origin.y;
+          writeMaskRect(slots, 0, entry, record.width, record.height);
+          this.device.queue.writeBuffer(parameters, 0, slots);
+          const target = this.device.createTexture({
+            size: { width: passWidth, height: passHeight },
+            format: "r16float",
+            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+          });
+          const bytesPerRow = Math.ceil((copyWidth * 2) / 256) * 256;
+          const buffer = this.device.createBuffer({
+            size: bytesPerRow * copyHeight,
+            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+          });
+          const maskView = entry.texture.createView();
+          const encoder = this.device.createCommandEncoder();
+          const pass = encoder.beginRenderPass({
+            colorAttachments: [{
+              view: target.createView(), clearValue: { r: 0, g: 0, b: 0, a: 1 }, loadOp: "clear", storeOp: "store",
+            }],
+          });
+          pass.setViewport(0, 0, passWidth, passHeight, 0, 1);
+          pass.setScissorRect(originX, originY, copyWidth, copyHeight);
+          pass.setPipeline(this.maskProbePipeline);
+          pass.setBindGroup(0, this.bindGraphResources(maskView, maskView, { buffer: parameters }, maskView));
+          pass.draw(3);
+          pass.end();
+          encoder.copyTextureToBuffer(
+            { texture: target, origin: { x: originX, y: originY, z: 0 } },
+            { buffer, bytesPerRow, rowsPerImage: copyHeight },
+            { width: copyWidth, height: copyHeight },
+          );
+          this.device.queue.submit([encoder.finish()]);
+          try {
+            await buffer.mapAsync(GPUMapMode.READ);
+            const halves = new Uint16Array(buffer.getMappedRange());
+            const stride = bytesPerRow / 2;
+            for (let row = 0; row < copyHeight; row += 1) {
+              const base = (y0 - region.y + row) * region.width + (x0 - region.x);
+              for (let column = 0; column < copyWidth; column += 1) {
+                values[base + column] = halfToFloat(halves[row * stride + column]);
+              }
+            }
+            covered += copyWidth * copyHeight;
+            const placement = slots[MASK_RECT_INDEX + 2] > 0
+              ? (entry.soft ? ` soft ${entry.width}x${entry.height}` : " whole frame") : "";
+            sources.add(`${entry.kind || "cpu-mask-tile"}${placement}`);
+          } finally {
+            if (buffer.mapState === "mapped") buffer.unmap();
+            buffer.destroy();
+            target.destroy();
+          }
+        }
+      } finally {
+        const validationError = await this.device.popErrorScope();
+        parameters.destroy();
+        if (validationError) return { error: `validation: ${validationError.message}` };
+      }
+      return {
+        ...region,
+        values,
+        execution: record.execution,
+        lane: record.lane,
+        sources: [...sources],
+        coveredPixels: covered,
+        missingPieces: missing,
+      };
+    }
+
     disposeDenoiseSelectorSeam() {
       this.denoiseSelectorGeneration += 1;
       const selector = this.denoiseSourceSelector;
@@ -5669,6 +5987,12 @@
         fragment: { module: this.module, entryPoint: "fragmentMain", targets: [{ format }] },
         primitive: { topology: "triangle-list" },
       });
+      const placeholder = this.device.createRenderPipeline({
+        layout: this.pipelineLayout,
+        vertex: { module: this.module, entryPoint: "vertexMain" },
+        fragment: { module: this.module, entryPoint: "placeholderFragmentMain", targets: [{ format }] },
+        primitive: { topology: "triangle-list" },
+      });
       // Max blending is what lets every tile accumulate into one grid without
       // a readback each. `one`/`one` with operation `max` is a plain maximum:
       // the factors are ignored for min and max operations.
@@ -5710,6 +6034,7 @@
         blurHorizontal,
         blurVertical,
         composite,
+        placeholder,
       };
       this.pipelines.set(format, pipelines);
       return pipelines;
@@ -6100,7 +6425,7 @@
 
     async loadMaskLeaf(
       sessionId, local, expression, maskPath, longEdge, editRevision, geometrySignature,
-      isCurrent = () => true, signal = undefined,
+      isCurrent = () => true, signal = undefined, allowSoft = true,
     ) {
       const leafLocal = { ...local, id: maskPath ? `${local.id}:${maskPath}` : local.id, mask: expression };
       if (isGpuLumaMask(expression)) {
@@ -6108,6 +6433,82 @@
           sessionId, leafLocal, longEdge, editRevision, geometrySignature, isCurrent, signal,
         );
       }
+      if (allowSoft && longEdge > SOFT_MASK_MAX_EDGE) {
+        const soft = await this.softLeafMask(
+          sessionId, local, expression, maskPath, editRevision, geometrySignature, isCurrent, signal,
+        );
+        if (soft) return soft;
+        if (signal?.aborted || !isCurrent()) return null;
+      }
+      return this.loadCpuLeafAt(
+        sessionId, local, expression, maskPath, longEdge, editRevision, geometrySignature, isCurrent, signal,
+      );
+    }
+
+    /**
+     * The small bitmap of a CPU-made leaf, if the backend showed it is soft
+     * enough to be stretched over a magnified frame; otherwise null and the
+     * caller takes the exact path. Zooming in reuses the bitmap the Fit view
+     * loaded, so a soft mask costs no compile and no upload.
+     */
+    async softLeafMask(
+      sessionId, local, expression, maskPath, editRevision, geometrySignature,
+      isCurrent = () => true, signal = undefined,
+    ) {
+      if (expression?.operator !== "leaf" || expression.leaf?.type === "luminance_range") return null;
+      const identity = softMaskIdentity(sessionId, geometrySignature, gpuMaskIdentity(expression));
+      let entry = this.softMasks.get(identity);
+      // The verdict belongs to the mask and its bitmap size, so it outlives
+      // the texture: a mask shown not to be soft is not asked for again.
+      if (entry && !entry.soft) {
+        // Edges a little too steep for the Fit bitmap may still be carried by
+        // a larger one. It is tried once per mask; a whole-image compile is
+        // the only alternative for a feathered brush.
+        if (!entry.softRetryable || entry.longEdge >= SOFT_MASK_MAX_EDGE) return null;
+        // Steepness falls roughly in proportion to the bitmap's size. A mask
+        // that would still be over the limit at the larger size is not worth
+        // the compile: the estimate has to come down with half a level to spare.
+        const expected = entry.softEstimate * entry.longEdge / SOFT_MASK_MAX_EDGE;
+        if (!(expected <= entry.softLimit - 0.5)) return null;
+        if (entry.larger === undefined || entry.larger?.destroyed) {
+          entry.larger = await this.loadCpuLeafAt(
+            sessionId, local, expression, maskPath, SOFT_MASK_MAX_EDGE, editRevision, geometrySignature,
+            isCurrent, signal, false,
+          ) || undefined;
+        }
+        if (!entry.larger?.soft) return null;
+        entry.larger.lastUseSerial = this.maskUseSerial;
+        return entry.larger;
+      }
+      if (!entry || entry.destroyed) {
+        // An evicted bitmap is asked for at the size it had, which the backend
+        // still holds, rather than compiled again at another.
+        entry = await this.loadCpuLeafAt(
+          sessionId, local, expression, maskPath, entry?.longEdge || SOFT_MASK_LONG_EDGE, editRevision,
+          geometrySignature, isCurrent, signal,
+        );
+      }
+      if (!entry?.soft || entry.destroyed) return null;
+      if (entry.cacheKey && this.localMasks.get(entry.cacheKey) === entry) {
+        this.localMasks.delete(entry.cacheKey);
+        this.localMasks.set(entry.cacheKey, entry);
+      }
+      entry.lastUseSerial = this.maskUseSerial;
+      return entry;
+    }
+
+    /** Called by the mask loader for every small bitmap it uploads. */
+    rememberSoftMask(sessionId, geometrySignature, maskSignature, entry) {
+      const identity = softMaskIdentity(sessionId, geometrySignature, maskSignature);
+      this.softMasks.delete(identity);
+      this.softMasks.set(identity, entry);
+      while (this.softMasks.size > 128) this.softMasks.delete(this.softMasks.keys().next().value);
+    }
+
+    async loadCpuLeafAt(
+      sessionId, local, expression, maskPath, longEdge, editRevision, geometrySignature,
+      isCurrent = () => true, signal = undefined, remember = true,
+    ) {
       const maskSignature = gpuMaskIdentity(expression);
       // The mask endpoint rasterizes the backend's committed local, and the
       // edit revision only moves when a commit lands. While a mask control is
@@ -6121,7 +6522,7 @@
         : null;
       return maskLoader().loadCpuMaskLeaf(this, {
         sessionId, local, maskPath, longEdge, editRevision, geometrySignature, maskSignature, isCurrent, signal,
-        draftExpression,
+        draftExpression, remember,
       });
     }
 
@@ -6142,8 +6543,10 @@
 
       const resolveNode = async (expression, path) => {
         if (expression.operator === "leaf") {
+          // A combination is built texel for texel from its leaves, so each
+          // leaf is loaded at the frame's own size, never as a small bitmap.
           const leafEntry = await this.loadMaskLeaf(
-            sessionId, local, expression, path, longEdge, editRevision, geometrySignature, isCurrent, signal,
+            sessionId, local, expression, path, longEdge, editRevision, geometrySignature, isCurrent, signal, false,
           );
           return leafEntry ? { expression, leafEntry, children: [] } : null;
         }
@@ -6696,7 +7099,7 @@
       return this.encodeClarityLevels(encoder, pipelines, bind, textures, plan);
     }
 
-    localParamBuffer(local, lane, sourcePixelScale, frameWidth = 0, frameHeight = 0) {
+    localParamBuffer(local, lane, sourcePixelScale, frameWidth = 0, frameHeight = 0, maskEntry = null) {
       const key = `${local.id}:${lane}`;
       let buffer = this.localParamBuffers.get(key);
       const values = buildLocalParams(local, lane, sourcePixelScale);
@@ -6704,6 +7107,7 @@
         writeClarityPlan(values, frameWidth, frameHeight, values[16]);
         values[164] = frameWidth;
         values[165] = frameHeight;
+        writeMaskRect(values, 0, maskEntry, frameWidth, frameHeight);
       }
       if (!buffer) {
         buffer = this.createStorageBuffer(values);
@@ -7169,6 +7573,30 @@
     return values;
   }
 
+  function softMaskIdentity(sessionId, geometrySignature, maskSignature) {
+    return `${sessionId}:${geometrySignature}:${maskSignature}`;
+  }
+
+  /**
+   * State where a pass's mask texture sits in the frame. A soft mask's small
+   * bitmap and a whole-frame mask need it; a tile's own mask texture has one
+   * texel per pixel of the pass, which the zero rectangle means.
+   */
+  function writeMaskRect(values, offset, entry, frameWidth, frameHeight) {
+    // A whole-frame mask bound to a tile's pass is placed the same way, at
+    // one texel per pixel.
+    const stretched = Boolean(entry?.wholeFrame)
+      || (Boolean(entry?.soft) && (entry.width !== frameWidth || entry.height !== frameHeight));
+    const rect = stretched && Array.isArray(entry.frameRect) && entry.frameRect.length === 4
+      && entry.frameRect.every(Number.isFinite) && entry.frameRect[2] > 0 && entry.frameRect[3] > 0
+      ? entry.frameRect : [0, 0, 1, 1];
+    values[offset + MASK_RECT_INDEX] = stretched ? rect[0] * frameWidth : 0;
+    values[offset + MASK_RECT_INDEX + 1] = stretched ? rect[1] * frameHeight : 0;
+    values[offset + MASK_RECT_INDEX + 2] = stretched ? rect[2] * frameWidth : 0;
+    values[offset + MASK_RECT_INDEX + 3] = stretched ? rect[3] * frameHeight : 0;
+    return stretched;
+  }
+
   function gpuMaskInfluenceOpacity(expression) {
     if (expression?.operator !== "leaf" || !expression.leaf) return 1;
     return Math.min(1, Math.max(0, Number(expression.leaf.mask_opacity ?? 1)));
@@ -7203,6 +7631,12 @@
       ...payload,
       children: (children || []).map(gpuMaskRenderPayload),
     };
+  }
+
+  function maskUsesLuminance(expression) {
+    if (!expression) return false;
+    if (expression.operator === "leaf") return expression.leaf?.type === "luminance_range";
+    return (expression.children || []).some(maskUsesLuminance);
   }
 
   function isGpuLumaMask(expression) {

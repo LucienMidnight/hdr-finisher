@@ -28,8 +28,10 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     # 160 and 161 carry the tile origin for tiled execution; Direct leaves
     # them at zero, so every index below keeps its meaning. 166 carries
     # Denoise's Show noise view flag; 167-174 describe the Clarity map; 175 is
-    # the grain film type and 176 the grain seed's high half.
-    assert "const PARAM_COUNT = 186" in shader
+    # the grain film type and 176 the grain seed's high half. 186-189 state
+    # the frame rectangle a soft or whole-frame mask texture covers.
+    assert "const PARAM_COUNT = 190" in shader
+    assert "const MASK_RECT_INDEX = 186" in shader
     # BW-01: Black & White runs straight after Color in every lane and path,
     # and before the SDR highlight stage on both SDR paths.
     assert "let scene = sceneColor(hdrContrast(hdrBase(source)));" in shader

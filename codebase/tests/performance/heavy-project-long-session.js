@@ -1,0 +1,59 @@
+/** Bounded endurance replay using original automatic anchors. No project saves. */
+const path=require('path'); const {chromium}=require('playwright');
+const c=require('./heavy-project-review-common'); const {selectLocal}=require('./heavy-project-drag-review');
+const args=process.argv.slice(2); const opt=(k,d)=>args.includes(k)?args[args.indexOf(k)+1]:d;
+const project=path.resolve(opt('--project','')); const output=path.resolve(opt('--output','output/performance/review/long-session.json'));
+const freshWork=args.includes('--fresh-work');
+const minutes=Number(opt('--minutes',30)); const idleMinutes=Number(opt('--idle-minutes',2));
+async function main(){
+ const browser=await chromium.launch({headless:false}); const page=await browser.newPage({viewport:{width:2560,height:1440}});
+ const report={...c.manifest(project),schemaVersion:1,activeMinutes:minutes,idleMinutes,anchorPolicy:'Original fixture automatic; no manual override',operations:[],checkpoints:[],errors:[],status:'running'};
+ report.freshWork=freshWork; report.inputPolicy=freshWork?'Deterministic unique strokes, feather, exposure and clarity radius per lane/cycle; retained fixture strokes':'Original repeated two-value edits';
+ report.displayContext=JSON.parse(process.env.HDR_FINISHER_REVIEW_DISPLAY_CONTEXT||'null');
+ report.actualViewport=await page.evaluate(()=>({width:innerWidth,height:innerHeight,devicePixelRatio}));
+ const requests=c.networkProbe(page); const memory=c.sampler(); page.on('pageerror',e=>report.errors.push(String(e)));
+ async function checkpoint(label){ report.checkpoints.push({label,at:Date.now(),state:await page.evaluate(()=>{const g=HDRFinisherPerformance.gpuSnapshot();return {nativeAnchors:{cached:state.gpuPreview?.peakReductionCache?.size,pending:pendingHighlightAnchors.size,inflight:exactHighlightAnchorInflight.size,backgroundMasks:state.gpuPreview?.backgroundMaskRequestCoordinator?.snapshot()},readiness:{gpuDraftInFlight:Boolean(state.gpuDraftInFlight),generation:state.previewGeneration[state.currentView],requiredEdge:requiredProcessingLongEdge(),scopeUpdating:document.querySelector("#scope-freshness")?.classList.contains("updating"),scopeText:document.querySelector("#scope-freshness")?.textContent,gpuScopeInFlight:Boolean(state.gpuScopeRequestInFlight),cpuScopeInFlight:Boolean(state.scopeRequestInFlight),scopeGeneration:state.scopeGeneration},lane:state.currentView,viewer:viewerState(),accepted:state.acceptedPresentation,refusal:state.lastGpuDraftRefusal,gpu:{available:g.available,resources:g.resources,renders:g.renders?.slice(-2)},scheduler:HDRFinisherPerformance.snapshot(),failurePolicy:state.gpuFailurePolicy?.snapshot?.()};})}); report.memorySamples=memory.rows;report.samplerErrors=memory.errors;c.write(output,report); }
+ async function operation(name,action){ const start=Date.now(),n=requests.length,b=await c.mark(page); const detail=await action(); await c.stable(page,180000); const end=Date.now();report.operations.push({name,startedAt:start,totalMs:end-start,drag:detail?.trustedPointers?detail:undefined,input:detail?.sequence?detail:undefined,observation:await c.result(page,b,b.at),requests:requests.slice(n)});c.write(output,report); }
+ try{
+  await c.open(page,project,false);await checkpoint('opened');
+  const originals=await page.evaluate(()=>{const brush=state.editDocument.local_adjustments.find(x=>x.mask?.leaf?.type==='brush');return {strokes:structuredClone(brush.mask.leaf.strokes),feather:brush.mask.leaf.mask_feather,exposure:{hdr:state.adjustments.hdr.exposure,sdr:state.adjustments.sdr.exposure}};});
+  report.activeStartedAt=Date.now(); const deadline=report.activeStartedAt+minutes*60000;let cycle=0;
+  while(Date.now()<deadline){
+   cycle++; console.log(`Cycle ${cycle} elapsed ${((Date.now()-report.activeStartedAt)/60000).toFixed(2)} min`);
+   for(const lane of ['hdr','sdr']){
+    await operation(`${cycle} ${lane} switch`,()=>page.evaluate(x=>switchLane(x),lane));
+    if(freshWork) await operation(`${cycle} ${lane} fresh inputs`,()=>page.evaluate(({cycle,lane,originals})=>{
+      const sequence=cycle*2+(lane==='sdr'?1:0);
+      commitAdjustmentValue(`${lane}.exposure`,originals.exposure[lane]+Math.sin(sequence*1.731)*.12);
+      commitAdjustmentValue(`${lane}.detail.clarity_radius_percent`,.5+((sequence*.61803398875)%1)*1.2);
+    },{cycle,lane,originals}));
+    for(const p of ['exposure','detail.clarity_amount'])await operation(`${cycle} ${lane} ${p} drag`,()=>c.drag(page,`current.${p}`,cycle%2?1:-1));
+    await selectLocal(page,'brush');
+    if(freshWork) await operation(`${cycle} ${lane} fresh brush stroke`,()=>page.evaluate(async({cycle,lane,originals})=>{
+      const sequence=cycle*2+(lane==='sdr'?1:0);
+      const local=structuredClone(state.editDocument.local_adjustments.find(x=>x.id===state.selectedLocalId));
+      const phase=(sequence*.61803398875)%1;
+      const x=.18+phase*.58,y=.16+((sequence*.41421356237)%1)*.64;
+      local.mask.leaf.strokes=[...originals.strokes,{points:[{x,y,pressure:.8},{x:Math.min(.94,x+.025+phase*.04),y:Math.min(.94,y+.03),pressure:1}],
+        radius:.008+phase*.018,hardness:.25+phase*.55,flow:.25+phase*.5,opacity:.4+phase*.5,erase:sequence%5===0}];
+      local.mask.leaf.mask_feather=Math.max(.001,Math.min(.1,originals.feather*(.7+.6*phase)+sequence*.000001));
+      if(!await queueEditCommand('update_local',{local},local.id))throw Error('Fresh brush edit failed');
+      return {sequence,x,y,phase};
+    },{cycle,lane,originals}));
+    await operation(`${cycle} ${lane} brush feather drag`,()=>c.drag(page,'input[data-local-mask-param="mask_feather"]',cycle%2?1:-1));
+    if(await page.locator('#grade-mode-local').getAttribute('aria-expanded')==='true')await page.locator('#grade-mode-local').click();
+   }
+   await operation(`${cycle} zoom 100`,()=>page.locator('#zoom-actual').click());
+   await operation(`${cycle} pan`,()=>page.evaluate(()=>{const v=document.querySelector('#dropzone');v.scrollLeft+=v.scrollLeft>100?-180:180;v.scrollTop+=v.scrollTop>100?-120:120;v.dispatchEvent(new Event('scroll'));}));
+   await operation(`${cycle} zoom Fit`,()=>page.locator('#zoom-fit').click());
+   if(cycle===1||cycle%5===0)await operation(`${cycle} Match entire HDR grade`,async()=>{if(!await page.evaluate(()=>setSdrMatch('match')))throw Error('Match returned false');});
+   await checkpoint(`cycle ${cycle}`);
+   await page.waitForTimeout(1000);
+  }
+  report.activeEndedAt=Date.now();await checkpoint('active complete');
+  for(let i=0;i<idleMinutes*6;i++){await page.waitForTimeout(10000);await checkpoint(`idle ${(i+1)*10}s`);}
+  report.status='complete';report.completedAt=new Date().toISOString();
+ }catch(e){report.status='failed';report.failure=String(e.stack||e);await checkpoint('failure').catch(()=>{});throw e;}
+ finally{memory.stop();report.memorySamples=memory.rows;report.samplerErrors=memory.errors;report.requests=requests;c.write(output,report);await browser.close();}
+}
+main().catch(e=>{console.error(e);process.exitCode=1;});

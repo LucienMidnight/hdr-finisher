@@ -19,7 +19,7 @@ function encoding({ cancelled = false, throws = false } = {}) {
   };
   const peakTarget = { busy: true };
   const context = vm.createContext({ renderer, cancelled, peakTarget,
-    lane: 'hdr', longEdge: 1600, options: {}, measureOnly: true,
+    lane: 'hdr', longEdge: 1600, options: {}, measureOnly: true, regionOnly: false,
     presentation: { release: () => released++ }, presentationTarget: null,
     localBuffers: [{ buffer: { destroy: () => freed++ } }],
     denoiseParamBuffers: [{ destroy: () => freed++ }],

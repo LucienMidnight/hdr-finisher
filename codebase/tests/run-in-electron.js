@@ -108,12 +108,15 @@ function packagedExecutable() {
     })}`);
   }
 
+  const diagnosticGpuArgs = process.env.HDR_FINISHER_ELECTRON_DISABLE_GPU_SANDBOX === "1"
+    ? ["--disable-gpu-sandbox"]
+    : [];
   const app = await playwright._electron.launch({
     // An absolute app path. `.` is not enough: Electron falls back to its own
     // `resources/app` when the app argument is not resolved, and this
     // checkout's Electron distribution carries a leftover review launcher
     // there (it forces a review profile and re-requires the desktop main.js).
-    args: packaged ? [] : [DESKTOP_DIRECTORY],
+    args: packaged ? diagnosticGpuArgs : [...diagnosticGpuArgs, DESKTOP_DIRECTORY],
     cwd: DESKTOP_DIRECTORY,
     executablePath: packaged ? packagedExecutable() : electronExecutable(),
     env: launchEnvironment,
@@ -125,6 +128,10 @@ function packagedExecutable() {
   // process pid is what owns the window and the backend sidecar, so shutdown
   // is anchored to it.
   const electronMainProcessId = await app.evaluate(() => process.pid);
+  // Performance drivers are loaded below, after launch. Expose the real tree
+  // root so they can take read-only OS memory snapshots without guessing from
+  // Playwright's Windows launcher process.
+  process.env.HDR_FINISHER_ELECTRON_MAIN_PID = String(electronMainProcessId);
   // Power mode is part of every §8 latency report and only the main process
   // can see it.
   process.env.HDR_FINISHER_POWER_MODE = await app.evaluate(({ powerMonitor }) => (
@@ -270,6 +277,23 @@ function packagedExecutable() {
           }
         }
       }
+      // Opt-in benchmark placement: keep a test window wholly on the named
+      // primary display, rather than straddling mixed HDR/SDR monitors.
+      const displayContext = await app.evaluate(({ screen, BrowserWindow }, pinPrimary) => {
+        const win = BrowserWindow.getAllWindows()[0];
+        if (pinPrimary && win) {
+          const area = screen.getPrimaryDisplay().workArea;
+          if (win.isMaximized()) win.unmaximize();
+          const bounds = win.getBounds();
+          win.setBounds({ x: area.x, y: area.y, width: Math.min(bounds.width, area.width), height: Math.min(bounds.height, area.height) });
+        }
+        const bounds = win?.getBounds();
+        const display = bounds ? screen.getDisplayMatching(bounds) : screen.getPrimaryDisplay();
+        return { pinnedPrimary: pinPrimary, bounds, display, displays: screen.getAllDisplays(), primaryId: screen.getPrimaryDisplay().id };
+      }, process.env.HDR_FINISHER_REVIEW_PRIMARY_DISPLAY === '1'
+        || (process.env.HDR_FINISHER_REVIEW_PRIMARY_DISPLAY !== '0'
+          && /heavy-project-(drag-review|long-session)\.js$/.test(testPath)));
+      process.env.HDR_FINISHER_REVIEW_DISPLAY_CONTEXT = JSON.stringify(displayContext);
       return window;
     },
     close: async () => { stop(); },

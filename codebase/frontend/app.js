@@ -711,6 +711,7 @@ const state = {
   proofPreview: "delivered",
   proofDirty: true,
   proofFormat: "jpeg_ultrahdr",
+  proofSize: "reduced",
   proofTarget: "auto",
   proofCustomNits: 1000,
   proofDisplayId: "",
@@ -1190,6 +1191,9 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
   // render ever does overshoot, this reports Preparing and the scheduler
   // renders the tier properly, which self-heals instead of misreporting.
   const exact = longEdge > 0 && processedEdge === requiredProcessingLongEdge();
+  // The size a Fit view was last processed at: the mask bitmaps of that size
+  // are the ones every zoom level reuses (see maskOverviewLongEdge).
+  if (state.zoomMode === "fit" && exact) state.fitProcessingLongEdge = processedEdge;
   state.acceptedPresentation = {
     lane,
     generation,
@@ -1605,6 +1609,7 @@ const els = {
   chromeProofRefresh: document.getElementById("chrome-proof-refresh"),
   openProofExternal: document.getElementById("open-proof-external"),
   chromeProofFormat: document.getElementById("chrome-proof-format"),
+  chromeProofSize: document.getElementById("chrome-proof-size"),
   chromeProofTarget: document.getElementById("chrome-proof-target"),
   chromeProofCustomField: document.getElementById("chrome-proof-custom-field"),
   chromeProofCustomNits: document.getElementById("chrome-proof-custom-nits"),
@@ -2294,6 +2299,17 @@ function initializePreviewScheduler() {
         else if (reason === "pan") state.roiPanError = null;
       },
       roiMode: state.roiPreviewMode,
+      regionRoute: true,
+      // The frame around a region pass is completed in the background only
+      // when that costs the backend nothing. With a hard-edged mask in play it
+      // would compile that mask for the whole image, which is the stall this
+      // route exists to remove; the pan pass draws what the view reaches.
+      canCatchUp: (lane, longEdge) => state.roiPreviewMode === "refinement" || Boolean(
+        state.session && state.gpuPreview?.catchUpNeedsNoBackendMasks?.(
+          state.session.session_id, lane, longEdge, geometrySignature(),
+          state.compareWithoutLocals ? [] : localAdjustments(),
+        ),
+      ),
       catchUpDelayMs: ROI_CATCH_UP_DELAY_MS,
       panDelayMs: ROI_PAN_DELAY_MS,
     })
@@ -4818,6 +4834,9 @@ function renderWorkflowContext() {
       ["Stage", "Chromium Proof"],
       ["Status", proofStatus],
       ["Format", proofFormat],
+      ["Size", !state.proofArtifact
+        ? (state.proofSize === "full" ? "Full size" : "Reduced")
+        : `${state.proofArtifact.full_size ? "Full size" : "Reduced"} · ${state.proofArtifact.width} × ${state.proofArtifact.height}`],
       ["Display ID", selectedDisplay?.id || state.proofDisplayId || "Unavailable"],
     ],
     export: [
@@ -11127,6 +11146,21 @@ async function applyComparisonUrl(url) {
  * the one caller that can start while another render is still running, so it
  * waits on this instead of superseding it.
  */
+/**
+ * The size of the frame a render at `longEdge` produces. The processing edge
+ * is the uncropped source's long edge at that size, so the frame is the
+ * full-resolution output scaled by the processing edge over the source's.
+ */
+function gpuFrameSizeAt(longEdge) {
+  const source = { width: state.session?.source?.width || 1, height: state.session?.source?.height || 1 };
+  const frame = sourcePixelFrameDimensions(state.adjustments?.shared?.geometry) || source;
+  const scale = Math.min(1, longEdge / Math.max(1, source.width, source.height));
+  return {
+    width: Math.max(1, Math.round(frame.width * scale)),
+    height: Math.max(1, Math.round(frame.height * scale)),
+  };
+}
+
 function renderGpuDraft(lane = state.currentView, options = {}) {
   const tier = options.tier || "settled";
   const longEdge = Number(options.longEdge) > 0 ? Number(options.longEdge) : settledProxyLongEdge();
@@ -11135,13 +11169,8 @@ function renderGpuDraft(lane = state.currentView, options = {}) {
     // The visible region is measured here, where the mounted canvas is known,
     // and handed to the coordinator so the deferred pan pass can use the same
     // model without measuring DOM state from inside the state machine.
-    const frame = sourcePixelFrameDimensions(state.adjustments?.shared?.geometry)
-      || { width: state.session?.source?.width || 1, height: state.session?.source?.height || 1 };
-    const scale = longEdge / Math.max(frame.width, frame.height);
-    coordinator.noteViewport(lane, visibleOutputRect(
-      Math.max(1, Math.round(frame.width * scale)),
-      Math.max(1, Math.round(frame.height * scale)),
-    ));
+    const frame = gpuFrameSizeAt(longEdge);
+    coordinator.noteViewport(lane, visibleOutputRect(frame.width, frame.height));
     coordinator.noteScale(lane, { tier, longEdge });
   }
   const pending = coordinator
@@ -11240,6 +11269,9 @@ async function renderGpuDraftInner(
     tier,
     applicationGeneration: generation,
     viewport: request.viewport || null,
+    // The frame this pass will produce, so that the first magnified pass can
+    // fetch only the region it draws.
+    frameSize: gpuFrameSizeAt(longEdge),
     roiCatchUp,
     panPass,
     noiseView: denoiseNoiseViewActive(lane),
@@ -11328,8 +11360,12 @@ async function renderGpuDraftInner(
     renderReadouts();
       if (hideStatus) hidePreviewMessage();
       const submittedAt = performance.now();
-      requestAnimationFrame((presentedAt) => {
+      requestAnimationFrame((animationFrameAt) => {
         if (serial !== state.gpuRenderSerial || (!allowInactive && lane !== state.currentView)) return;
+        // rAF supplies the start of the frame, which can precede this render's
+        // submission. Use the callback observation for latency, retaining the
+        // frame timestamp independently for trace interpretation.
+        const presentedAt = performance.now();
         state.gpuPreview?.recordPresentation?.({
           serial,
           lane,
@@ -11337,6 +11373,7 @@ async function renderGpuDraftInner(
           submittedAt,
           presentedAt,
           submitToPresentMs: presentedAt - submittedAt,
+          animationFrameAt,
         });
         window.dispatchEvent(new CustomEvent("hdrfinisher:preview-presented", {
           detail: { serial, sourceSerial: result.sourceSerial, generation, lane, longEdge, submittedAt, presentedAt },
@@ -17377,12 +17414,25 @@ function localComparisonMaskEntry(local, childId, role) {
   return entry?.geometrySignature === geometrySignature() ? entry : null;
 }
 
+/**
+ * The size the mask overlay asks for. At a magnified view the renderer draws
+ * soft masks from the bitmap the Fit view compiled, so the overlay asks for
+ * that same bitmap instead of having a third size compiled beside it.
+ */
+function maskOverviewLongEdge() {
+  const settled = settledProxyLongEdge();
+  const shared = window.HDRWholeImagePreviewPipe.edgeFor("maskOverview", settled);
+  return shared === settled || !(state.fitProcessingLongEdge > 0)
+    ? shared
+    : window.HDRWholeImagePreviewPipe.edgeFor("maskOverview", state.fitProcessingLongEdge);
+}
+
 function queueLocalComparisonMask(local, childId, role, expression) {
   if (!state.session || !local || !expression) return;
   const sessionId = state.session.session_id;
   const slot = localComparisonMaskSlot(local.id, childId, role);
   const signature = localMaskSpatialSignature(expression);
-  const longEdge = window.HDRWholeImagePreviewPipe.edgeFor("maskOverview", settledProxyLongEdge());
+  const longEdge = maskOverviewLongEdge();
   const requestedGeometrySignature = geometrySignature();
   const key = `${sessionId}:${slot}:${longEdge}:${requestedGeometrySignature}:${signature}`;
   if (localComparisonMaskCache.get(slot)?.key === key) return;
@@ -17743,7 +17793,7 @@ async function queueAuthoritativeLocalMask(local) {
   if (local.mask.operator === "leaf" && local.mask.leaf?.type === "brush" && !(local.mask.leaf.strokes || []).length) return;
   if (state.localMaskDraftDirty) return;
   const signature = localMaskSpatialSignature(local.mask);
-  const longEdge = window.HDRWholeImagePreviewPipe.edgeFor("maskOverview", settledProxyLongEdge());
+  const longEdge = maskOverviewLongEdge();
   const revision = state.editRevision;
   const requestedGeometrySignature = geometrySignature();
   const sessionId = state.session.session_id;
@@ -17809,7 +17859,7 @@ function scheduleAuthoritativeLocalMaskDraft(local) {
     mask: JSON.parse(signature),
     signature,
     revision: state.editRevision,
-    longEdge: window.HDRWholeImagePreviewPipe.edgeFor("maskOverview", settledProxyLongEdge()),
+    longEdge: maskOverviewLongEdge(),
     adjustments: JSON.parse(JSON.stringify(state.adjustments)),
     geometrySignature: geometrySignature(),
     generation: ++state.localMaskDraftGeneration,

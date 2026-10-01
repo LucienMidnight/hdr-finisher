@@ -8,6 +8,10 @@ pixel snapshot or match-only rendering stage is returned or persisted.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from contextvars import ContextVar
+from contextlib import contextmanager
+from time import perf_counter
+from typing import Iterator
 
 import numpy as np
 
@@ -43,6 +47,25 @@ MATCH_SHOULDER_START = np.float32(0.90)
 MATCH_SHOULDER_WIDTH = np.float32(0.10)
 MATCH_ANALYSIS_EDGE = 768
 MATCH_REVIEW_P95_LUMA_LIMIT = 0.06
+
+
+_MATCH_TIMING: ContextVar[dict[str, object] | None] = ContextVar("sdr_match_timing", default=None)
+
+
+@contextmanager
+def _match_stage(name: str) -> Iterator[None]:
+    timing = _MATCH_TIMING.get()
+    previous = timing.get("candidate_label") if timing is not None else None
+    started = perf_counter()
+    if timing is not None:
+        timing["candidate_label"] = name
+    try:
+        yield
+    finally:
+        if timing is not None:
+            stages = timing.setdefault("stage_ms", {})
+            stages[name] = round(float(stages.get(name, 0.0)) + (perf_counter() - started) * 1000.0, 3)
+            timing["candidate_label"] = previous
 
 
 class SDRMatchMaterializationError(ValueError):
@@ -201,8 +224,40 @@ def materialize_sdr_match(
     reference_white_nits: int,
     source_pixel_scale: float,
     settled_hdr: np.ndarray | None = None,
+    timing: dict[str, object] | None = None,
 ) -> MaterializedSDRMatch:
     """Fit a temporary HDR target into normal, editable SDR controls."""
+    timing_token = _MATCH_TIMING.set(timing)
+    materialize_started = perf_counter()
+    if timing is not None:
+        timing.setdefault("stage_ms", {})
+        timing.setdefault("candidate_passes", {})
+        timing["analysis_edge"] = MATCH_ANALYSIS_EDGE
+    try:
+        return _materialize_sdr_match_impl(
+            source,
+            adjustments,
+            local_adjustments,
+            reference_white_nits=reference_white_nits,
+            source_pixel_scale=source_pixel_scale,
+            settled_hdr=settled_hdr,
+        )
+    finally:
+        if timing is not None:
+            timing["materialize_total_ms"] = round((perf_counter() - materialize_started) * 1000.0, 3)
+            timing.pop("candidate_label", None)
+        _MATCH_TIMING.reset(timing_token)
+
+
+def _materialize_sdr_match_impl(
+    source: np.ndarray,
+    adjustments: AdjustmentState,
+    local_adjustments: list[LocalAdjustment],
+    *,
+    reference_white_nits: int,
+    source_pixel_scale: float,
+    settled_hdr: np.ndarray | None = None,
+) -> MaterializedSDRMatch:
     if reference_white_nits not in {100, 203}:
         raise SDRMatchMaterializationError("SDR Match requires the app-wide 100/203-nit reference convention.")
     source = np.asarray(source, dtype=np.float32)
@@ -218,7 +273,8 @@ def materialize_sdr_match(
         )
     if not np.isfinite(settled_hdr).all():
         raise SDRMatchMaterializationError("The HDR analysis produced invalid values.")
-    target = build_sdr_match_target(settled_hdr)
+    with _match_stage("target_build"):
+        target = build_sdr_match_target(settled_hdr)
     hdr_normalized_luma = (
         np.maximum(_acescg_luma(settled_hdr), 0.0)
         / np.float32(0.18)
@@ -230,30 +286,40 @@ def materialize_sdr_match(
     if not np.isfinite(target).all():
         raise SDRMatchMaterializationError("The HDR analysis produced invalid values.")
 
-    result_adjustments = adjustments.model_copy(deep=True)
-    result_adjustments.sdr = _semantic_sdr_translation(adjustments, settled_hdr)
-    result_locals = _materialize_local_grades(source, settled_hdr, adjustments, local_adjustments)
+    with _match_stage("semantic_translation"):
+        result_adjustments = adjustments.model_copy(deep=True)
+        result_adjustments.sdr = _semantic_sdr_translation(adjustments, settled_hdr)
+        result_locals = _materialize_local_grades(source, settled_hdr, adjustments, local_adjustments)
 
-    _fit_neutral_tonal_response(result_adjustments, adjustments, reference_white_nits)
-    _refine_image_exposure(
-        source, result_adjustments, result_locals, source_pixel_scale, target, body
-    )
+    with _match_stage("neutral_tonal_fit"):
+        _fit_neutral_tonal_response(result_adjustments, adjustments, reference_white_nits)
+    with _match_stage("exposure_refinement"):
+        _refine_image_exposure(
+            source, result_adjustments, result_locals, source_pixel_scale, target, body
+        )
 
-    candidate = _render_candidate(source, result_adjustments, result_locals, source_pixel_scale)
-    quality = _quality_metrics(target, candidate, body)
-    candidate, quality = _apply_tone_equalizer_merge(
-        source, result_adjustments, result_locals, source_pixel_scale, target, body, candidate, quality
-    )
-    candidate, quality = _fit_image_semantic_controls(
-        source,
-        result_adjustments,
-        result_locals,
-        source_pixel_scale,
-        target,
-        candidate,
-        quality,
-        body,
-    )
+    with _match_stage("base_candidate"):
+        candidate = _render_candidate(source, result_adjustments, result_locals, source_pixel_scale)
+        quality = _quality_metrics(target, candidate, body)
+    with _match_stage("tone_equalizer_merge"):
+        candidate, quality = _apply_tone_equalizer_merge(
+            source, result_adjustments, result_locals, source_pixel_scale, target, body, candidate, quality
+        )
+    with _match_stage("semantic_control_fit"):
+        candidate, quality = _fit_image_semantic_controls(
+            source,
+            result_adjustments,
+            result_locals,
+            source_pixel_scale,
+            target,
+            candidate,
+            quality,
+            body,
+        )
+    timing = _MATCH_TIMING.get()
+    rgb_refinement_started = perf_counter()
+    if timing is not None:
+        timing["candidate_label"] = "rgb_curve_refinement"
     if quality.p95_oklab_error > 0.04:
         # A color-only residual is occasionally needed for saturated gamut-edge
         # patches. Keep these curves sparse and strictly sloped; the luma curve
@@ -314,6 +380,12 @@ def materialize_sdr_match(
                 quality = trial_quality
             else:
                 setattr(result_adjustments.sdr, channel_name, previous)
+    if timing is not None:
+        timing["stage_ms"]["rgb_curve_refinement"] = round(
+            (perf_counter() - rgb_refinement_started) * 1000.0, 3
+        )
+        timing["candidate_label"] = "luma_recovery"
+    luma_recovery_started = perf_counter()
     if quality.p95_luma_error > 0.05 or quality.p95_oklab_error > 0.05:
         # A few conservative luma-only corrections are permitted before
         # rejecting. Final-stage HDR compression can make the captured shoulder
@@ -329,6 +401,12 @@ def materialize_sdr_match(
                 quality.p95_luma_error <= 0.05 and quality.p95_oklab_error <= 0.05
             ):
                 break
+
+    if timing is not None:
+        timing["stage_ms"]["luma_recovery"] = round(
+            (perf_counter() - luma_recovery_started) * 1000.0, 3
+        )
+        timing["candidate_label"] = None
 
     # A final-output HDR shoulder can leave a slightly broader luma residual
     # than the former early-stage curve. Preserve a valid editable recipe as
@@ -708,7 +786,17 @@ def _render_candidate(
     local_adjustments: list[LocalAdjustment],
     source_pixel_scale: float,
 ) -> np.ndarray:
-    return render_match_candidate(source, adjustments, local_adjustments, source_pixel_scale)
+    timing = _MATCH_TIMING.get()
+    label = str(timing.get("candidate_label") or "unclassified") if timing is not None else ""
+    started = perf_counter()
+    try:
+        return render_match_candidate(source, adjustments, local_adjustments, source_pixel_scale)
+    finally:
+        if timing is not None:
+            passes = timing.setdefault("candidate_passes", {})
+            entry = passes.setdefault(label, {"count": 0, "total_ms": 0.0})
+            entry["count"] = int(entry["count"]) + 1
+            entry["total_ms"] = round(float(entry["total_ms"]) + (perf_counter() - started) * 1000.0, 3)
 
 
 def _fit_image_semantic_controls(

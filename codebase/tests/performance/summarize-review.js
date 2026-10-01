@@ -1,0 +1,17 @@
+/** Reproducible read-only summary of drag/endurance artifacts. */
+const fs=require('fs');
+const sources=process.argv.slice(2);
+const reports=sources.map(file=>JSON.parse(fs.readFileSync(file,'utf8')));
+if(!reports.length)throw Error('Provide one endurance artifact or one/more disjoint drag artifacts');
+if(reports.length>1&&reports.some(x=>!x.rows))throw Error('Only drag artifacts can be combined');
+const r=reports.length===1?reports[0]:{status:reports.every(x=>x.status==='complete')?'complete':'partial',rows:reports.flatMap(x=>x.rows),errors:reports.flatMap(x=>x.errors||[]),failure:reports.map(x=>x.failure).filter(Boolean)};
+if(r.rows&&new Set(r.rows.map(x=>x.name)).size!==r.rows.length)throw Error('Duplicate rows: select disjoint artifacts, do not pool retries');
+function stats(v){const s=v.filter(Number.isFinite).sort((a,b)=>a-b);return {n:s.length,medianMs:s[Math.floor((s.length-1)/2)]??null,p95Ms:s[Math.max(0,Math.ceil(s.length*.95)-1)]??null,maxMs:s.at(-1)??null};}
+if(r.rows){
+ console.log(JSON.stringify({sources,status:r.status,rows:r.rows.length,observations:r.rows.reduce((n,x)=>n+x.observations.length,0),errors:r.errors,failure:r.failure,coverage:r.rows.map(x=>({name:x.name,n:x.observations.length,first:stats(x.observations.map(y=>y.inputToFirstFrameMs)),release:stats(x.observations.map(y=>y.releaseToObservedStableMs)),exact:stats(x.observations.map(y=>y.releaseToExactMs)),apply:stats(x.observations.map(y=>y.applyToObservedStableMs)),routes:[...new Set(x.observations.map(y=>y.accepted?.transport))],minTrustedPointers:Math.min(...x.observations.map(y=>y.trustedPointers)),cpuMask:stats(x.observations.flatMap(y=>y.requests||[]).map(y=>Number(y.headers?.['x-cpu-mask-ms'])).filter(x=>Number.isFinite(x)&&x>0))}))},null,2));
+}else{
+ const groups={};for(const x of r.operations){const k=x.name.replace(/^\d+ /,'');(groups[k]||=[]).push(x);}
+ const os=(r.memorySamples||[]).map(x=>({at:x.capturedAt,tree:(x.processes||[]).reduce((n,p)=>n+p.workingSetBytes,0),python:Math.max(0,...(x.processes||[]).filter(p=>p.name==='python').map(p=>p.workingSetBytes)),pythonPrivate:Math.max(0,...(x.processes||[]).filter(p=>p.name==='python').map(p=>p.privateBytes)),boardMiB:Number(String(x.boardSample).split(',')[0])}));
+ const checkpoint=r.checkpoints.map(x=>({label:x.label,at:x.at,allocator:x.state.gpu?.resources?.memory?.allocator,logical:x.state.gpu?.resources?.memory?.resident?.totalBytes,failure:x.state.failurePolicy,stale:x.state.scheduler?.staleResults}));
+ console.log(JSON.stringify({status:r.status,failure:r.failure,activeMs:r.activeEndedAt-r.activeStartedAt,ops:r.operations.length,cycles:r.checkpoints.filter(x=>/^cycle /.test(x.label)).length,samples:os.length,errors:r.errors,samplerErrors:r.samplerErrors,peaks:{tree:Math.max(...os.map(x=>x.tree)),python:Math.max(...os.map(x=>x.python)),pythonPrivate:Math.max(...os.map(x=>x.pythonPrivate)),boardMiB:Math.max(...os.map(x=>x.boardMiB)),allocator:Math.max(...checkpoint.map(x=>x.allocator?.registeredBytes||0)),logical:Math.max(...checkpoint.map(x=>x.logical||0))},first:os[0],last:os.at(-1),groups:Object.entries(groups).map(([name,v])=>({name,total:stats(v.map(x=>x.totalMs)),release:stats(v.map(x=>x.drag?.releaseToObservedStableMs)),firstMs:v[0]?.totalMs,lastMs:v.at(-1)?.totalMs,routes:[...new Set(v.map(x=>x.observation.accepted?.transport))],cpuMask:stats(v.flatMap(x=>x.requests).map(x=>Number(x.headers?.['x-cpu-mask-ms'])).filter(x=>Number.isFinite(x)&&x>0))})),checkpoints:checkpoint},null,2));
+}

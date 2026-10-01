@@ -736,8 +736,11 @@ def test_local_mask_tile_batch_reassembles_one_compile_for_many_tiles() -> None:
 
     assert response.status_code == 200
     assert response.headers["x-mask-batch-entries"] == str(len(tiles))
-    # One identity, one compile, however many tiles the batch carries.
-    assert response.headers["x-mask-batch-compiles"] == "1"
+    # One identity, one evaluation, however many tiles the batch carries: a
+    # mask that depends only on its own pixels is evaluated once for the
+    # rectangle around its tiles, and never compiled for the whole image.
+    assert response.headers["x-mask-batch-compiles"] == "0"
+    assert response.headers["x-mask-batch-regions"] == "1"
     manifest, entries = parse_mask_tile_batch(response.content)
     assert manifest["edit_revision"] == revision
     assert manifest["long_edge"] == 256
@@ -786,9 +789,10 @@ def test_local_mask_tile_batch_reports_edge_outside_missing_and_invalid_entries(
     assert outside["status"] == "outside" and outside["payload_length"] == 0 and outside["payload"] == b""
     assert missing["status"] == "missing"
     assert invalid["status"] == "invalid"
-    # Only the edge entry needed a compile; the outside, missing and invalid
-    # entries must not compile or recompile anything.
-    assert response.headers["x-mask-batch-compiles"] == "1"
+    # Only the local with tiles to serve was evaluated; the outside, missing
+    # and invalid entries must not compile or recompile anything.
+    assert response.headers["x-mask-batch-compiles"] == "0"
+    assert response.headers["x-mask-batch-regions"] == "1"
 
     single = client.get(
         f"/api/session/{session_id}/local-mask-tile/mask-batch-edge",
@@ -816,8 +820,9 @@ def test_local_mask_tile_batch_bounds_identities_and_rejects_stale_requests() ->
     }
     response = client.post(f"/api/session/{session_id}/local-mask-tiles", json=batch)
     assert response.status_code == 200
-    # Two locals in one batch compile their two distinct identities once each.
-    assert response.headers["x-mask-batch-compiles"] == "2"
+    # Two locals in one batch evaluate their two distinct identities once each.
+    assert response.headers["x-mask-batch-compiles"] == "0"
+    assert response.headers["x-mask-batch-regions"] == "2"
     manifest, entries = parse_mask_tile_batch(response.content)
     assert [entry["status"] for entry in entries] == ["ok", "ok"]
     assert [entry["local_id"] for entry in entries] == ["mask-batch-a", "mask-batch-b"]

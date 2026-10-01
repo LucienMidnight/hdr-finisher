@@ -19,6 +19,7 @@
     isCurrent = () => true,
     signal = undefined,
     draftExpression = null,
+    remember = true,
   }) {
     const key = `${sessionId}:${longEdge}:${geometrySignature}:cpu-spatial-leaf:${maskSignature}`;
     const cached = renderer.localMasks.get(key);
@@ -80,8 +81,25 @@
         { bytesPerRow, rowsPerImage: height },
         { width, height },
       );
-      const entry = { kind: "cpu-spatial-leaf", texture, width, height, byteSize: width * height };
+      const entry = {
+        kind: "cpu-spatial-leaf", texture, width, height, byteSize: width * height, cacheKey: key, longEdge,
+        // The backend's verdict on this bitmap: soft enough to be stretched
+        // over a magnified frame, or not shown to be.
+        soft: response.headers.get("X-Mask-Soft") === "1",
+        // Not soft only because its edges are too steep for this bitmap's
+        // size, which a larger bitmap may fix; other reasons are about the
+        // mask itself.
+        softRetryable: ["bend", "border"].includes(response.headers.get("X-Mask-Soft-Reason") || ""),
+        softEstimate: Number(response.headers.get("X-Mask-Soft-Estimate")),
+        softLimit: Number(response.headers.get("X-Mask-Soft-Limit")),
+        // Where the bitmap sits in the full-resolution frame, as fractions of
+        // it: a crop is rounded differently at the bitmap's size.
+        frameRect: (response.headers.get("X-Mask-Frame-Rect") || "0,0,1,1").split(",").map(Number),
+      };
       renderer.localMasks.set(key, entry);
+      if (remember && longEdge <= (renderer.softMaskMaxEdge || 0)) {
+        renderer.rememberSoftMask?.(sessionId, geometrySignature, maskSignature, entry);
+      }
       renderer.retainLocalMask(entry, longEdge);
       if (renderer.instrumentationEnabled) {
         renderer.performanceMetrics.maskEvents ||= [];
@@ -108,6 +126,11 @@
     }
   }
 
+  /** Where a tile is, and how far its halo reaches: what a mask tile depends on. */
+  function spatialTileKey(tile) {
+    return `${tile.rect.x},${tile.rect.y},${tile.rect.width},${tile.rect.height}|h${tile.halo}`;
+  }
+
   /** Load every missing tile for one local through one bounded batch request. */
   async function loadCpuMaskTiles(renderer, {
     sessionId,
@@ -120,12 +143,14 @@
     signal,
   }) {
     // Grade values, opacity and bypass do not alter the spatial mask. Spatial
-    // identity plus geometry is the actual cache invalidation boundary.
+    // identity plus geometry is the actual cache invalidation boundary, and a
+    // tile of it is the same tile whichever edit or source level asked: the
+    // plan's own tile key carries the edit revision, so it is not used here.
     const prefix = `${sessionId}:${batch.local.id}:${longEdge}:${geometrySignature}:${maskSignature}:`;
     const entries = new Map();
     const missing = [];
     for (const tile of batch.tiles) {
-      const key = `${prefix}${tile.key}`;
+      const key = `${prefix}${spatialTileKey(tile)}`;
       const cached = renderer.maskTiles.get(key);
       if (cached) {
         renderer.maskTiles.delete(key);
@@ -191,7 +216,7 @@
     return { localIndex: batch.localIndex, entries };
   }
 
-  const HDRMaskLoader = Object.freeze({ loadCpuMaskLeaf, loadCpuMaskTiles });
+  const HDRMaskLoader = Object.freeze({ loadCpuMaskLeaf, loadCpuMaskTiles, spatialTileKey });
 
   if (typeof window !== "undefined") window.HDRMaskLoader = HDRMaskLoader;
   if (typeof module !== "undefined" && module.exports) module.exports = { HDRMaskLoader };
