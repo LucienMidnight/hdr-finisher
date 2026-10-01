@@ -144,7 +144,11 @@ const MAX_DIFFERING_FRACTION = 0.0005;
         rendererSerial: state.gpuPreview.renderSerials.get(els.previewCanvas),
         rendererFrame: structuredClone(state.gpuPreview.lastPresentedFrame),
         denoiseGeneration: state.gpuPreview.denoiseSelectorGeneration,
-        denoiseSelected: state.gpuPreview.denoiseSourceSelector?.selected ?? null };
+        denoiseSelected: state.gpuPreview.denoiseSourceSelector?.selected ?? null,
+        denoiseIdentity: state.gpuPreview.denoiseSourceSelector?.identity ?? null,
+        denoiseResolvedIdentity: state.gpuPreview.denoiseSourceSelector?.resolved?.identity ?? null,
+        application: { session: state.session?.session_id, lane: state.currentView,
+          generation: state.previewGeneration[state.currentView], revision: state.editDocument?.revision } };
     });
     const assertComparable = (label, tileSize, direct, tiled) => {
       const stable = (capture) => capture.mark.presentations === capture.after.presentations
@@ -152,16 +156,35 @@ const MAX_DIFFERING_FRACTION = 0.0005;
         && capture.mark.rendererSerial === capture.after.rendererSerial
         && JSON.stringify(capture.mark.rendererFrame) === JSON.stringify(capture.after.rendererFrame)
         && capture.mark.denoiseGeneration === capture.after.denoiseGeneration
-        && capture.mark.denoiseSelected === capture.after.denoiseSelected;
+        && capture.mark.denoiseSelected === capture.after.denoiseSelected
+        && capture.mark.denoiseIdentity === capture.after.denoiseIdentity
+        && capture.mark.denoiseResolvedIdentity === capture.after.denoiseResolvedIdentity
+        && JSON.stringify(capture.mark.application) === JSON.stringify(capture.after.application);
       if (direct.mark.execution !== "direct" || direct.mark.rendererFrame?.execution !== "direct"
         || tiled.mark.rendererFrame?.execution !== "tiled" || !stable(direct) || !stable(tiled)
-        || direct.after.backing.join("x") !== tiled.after.backing.join("x")) {
+        || direct.after.backing.join("x") !== tiled.after.backing.join("x")
+        || direct.mark.denoiseGeneration !== tiled.mark.denoiseGeneration
+        || direct.mark.denoiseSelected !== tiled.mark.denoiseSelected
+        || direct.mark.denoiseIdentity !== tiled.mark.denoiseIdentity
+        || direct.mark.denoiseResolvedIdentity !== tiled.mark.denoiseResolvedIdentity
+        || JSON.stringify(direct.mark.application) !== JSON.stringify(tiled.mark.application)) {
         throw new Error(`${label} tileSize ${tileSize}: the app presented its own frame during the captures, so they are not comparable: `
           + JSON.stringify({ direct, tiled }));
       }
     };
     await presentedFrame();
     const results = [];
+    const preserveCapture = (label, size, route, shots, repeat, mark, after) => {
+      const directory = process.env.HDR_FINISHER_DUMP_PARITY;
+      if (!directory) return;
+      fs.mkdirSync(directory, { recursive: true });
+      for (const [kind, captures] of [[route, shots], [`${route}-repeat`, repeat]]) {
+        captures.forEach((shot, index) => fs.writeFileSync(path.join(directory,
+          `${label}-${size}-${index}-${kind}.png`), Buffer.from(shot.data, 'base64')));
+      }
+      fs.writeFileSync(path.join(directory, `${label}-${size}-${route}-currency.json`),
+        JSON.stringify({ mark, after }, null, 2));
+    };
     // One parity pass at one tile size. `label` names the radius configuration
     // so the maximum-radius seam run is reported apart from the standard one.
     const parityPass = async (label, tileSize) => {
@@ -227,10 +250,11 @@ const MAX_DIFFERING_FRACTION = 0.0005;
         : [{ data: (await page.locator("#preview-canvas").screenshot()).toString("base64"), x: 0, y: 0 }];
       const directRepeat = native ? await captureCanvasTiles(page, comparison.width, comparison.height)
         : [{ data: (await page.locator("#preview-canvas").screenshot()).toString("base64"), x: 0, y: 0 }];
+      const directFrame = { mark: directMark, after: await presentedFrame() };
+      preserveCapture(label, tileSize, 'direct', directShot, directRepeat, directMark, directFrame.after);
       if (directShot.some((shot, index) => shot.data !== directRepeat[index]?.data)) {
         throw new Error(`${label} tileSize ${tileSize}: repeated Direct screenshots changed within one renderer generation`);
       }
-      const directFrame = { mark: directMark, after: await presentedFrame() };
 
       const tiledResult = await page.evaluate(async (size) => {
         const result = await window.HDRFinisherPerformance.renderTiledTier(requiredProcessingLongEdge(), { tileSize: size });
@@ -249,10 +273,12 @@ const MAX_DIFFERING_FRACTION = 0.0005;
         : [{ data: (await page.locator("#preview-canvas").screenshot()).toString("base64"), x: 0, y: 0 }];
       const tiledRepeat = native ? await captureCanvasTiles(page, comparison.width, comparison.height)
         : [{ data: (await page.locator("#preview-canvas").screenshot()).toString("base64"), x: 0, y: 0 }];
+      const tiledFrame = { mark: tiledMark, after: await presentedFrame() };
+      preserveCapture(label, tileSize, 'tiled', tiledShot, tiledRepeat, tiledMark, tiledFrame.after);
       if (tiledShot.some((shot, index) => shot.data !== tiledRepeat[index]?.data)) {
         throw new Error(`${label} tileSize ${tileSize}: repeated Tiled screenshots changed within one renderer generation`);
       }
-      assertComparable(label, tileSize, directFrame, { mark: tiledMark, after: await presentedFrame() });
+      assertComparable(label, tileSize, directFrame, tiledFrame);
       if (process.env.HDR_FINISHER_DUMP_PARITY) {
         // The two presented frames, for inspecting where they differ.
         fs.mkdirSync(process.env.HDR_FINISHER_DUMP_PARITY, { recursive: true });
