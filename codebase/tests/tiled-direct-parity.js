@@ -163,7 +163,9 @@ const MAX_DIFFERING_FRACTION = 0.0005;
       if (direct.mark.execution !== "direct" || direct.mark.rendererFrame?.execution !== "direct"
         || tiled.mark.rendererFrame?.execution !== "tiled" || !stable(direct) || !stable(tiled)
         || direct.after.backing.join("x") !== tiled.after.backing.join("x")
-        || direct.mark.denoiseGeneration !== tiled.mark.denoiseGeneration
+        // Tiled reconstruction advances the selector's work counter per tile.
+        // It must be stable within each capture, but need not match Direct's
+        // counter. Source identity and application currency must still match.
         || direct.mark.denoiseSelected !== tiled.mark.denoiseSelected
         || direct.mark.denoiseIdentity !== tiled.mark.denoiseIdentity
         || direct.mark.denoiseResolvedIdentity !== tiled.mark.denoiseResolvedIdentity
